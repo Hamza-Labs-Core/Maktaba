@@ -269,7 +269,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
-<<<<<<< HEAD
+- **The first video played right after Maktaba first starts is no longer refused.** The API makes
+  the machine's stream signing key as it starts, and the streaming role looked for it every two
+  seconds: a signed stream URL in between was refused ("bad signature"), and so was every one
+  after the key file was replaced. A URL naming a key the streaming role has not read yet now
+  reads the key file again at once (at most every 100 ms; a request that finds that read under
+  way waits for it), and the key a replaced file held still verifies the URLs it signed, for a
+  day.
 - **Video transcodes work on an NVIDIA GPU (and are found on Windows).** The VOD transcodes
   (HLS and DASH, Story 8.5) passed `-hwaccel nvenc`, which FFmpeg does not have (NVENC is an
   encoder; NVIDIA decoding is `cuda`), and libx264's `-preset veryfast` to every encoder, which
@@ -287,15 +293,6 @@ don't append a line here; docs-only PRs are exempt.
   (`MAKTABA_FFMPEG_BIN`). Each rung of an HLS transcode is now its own variant (`v1`, `v2` were
   never written, so the master playlist's lower rungs 404'd), a source without audio transcodes,
   and a session asking for software (`force_software`) gets it.
-=======
-- **The first video played right after Maktaba first starts is no longer refused.** The API makes
-  the machine's stream signing key as it starts, and the streaming role looked for it every two
-  seconds: a signed stream URL in between was refused ("bad signature"), and so was every one
-  after the key file was replaced. A URL naming a key the streaming role has not read yet now
-  reads the key file again at once (at most every 100 ms; a request that finds that read under
-  way waits for it), and the key a replaced file held still verifies the URLs it signed, for a
-  day.
->>>>>>> origin/main
 - **The second listen's tries count from the end of each try, and a stopped transcript comes
   back (follow-up of #221).** The wait between tries counted from when the try was queued, so a
   job that waited hours used it up; it now counts from the end of the try. A transcript the
