@@ -3548,6 +3548,7 @@
   "setup.check.note.second_listen_gpu_old": "{gpu} is older than the second listen supports (compute capability {compute}; it needs Turing or newer), so Whisper's words are kept and no Hugging Face sign-in is needed.",
   "setup.check.note.second_listen_driver_old": "The NVIDIA driver {driver} is older than the second listen needs: update it to {need} or newer. Until then Whisper's words are kept.",
   "setup.check.note.second_listen_intel_mac": "This Mac has an Intel processor: the second listen runs on Apple Silicon only, so Whisper's words are kept.",
+  "setup.check.note.node_config_other_pc": "The machine settings in {path} belong to another PC: {machine} is not that machine, so it works for no home yet. To have {machine} work for a home, join it as its own machine (Help: Machines, Add a machine); its settings are then kept on {machine} only.",
   "setup.error.username_length": "A username is 1 to {max} characters.",
   "setup.error.username_space": "A username cannot start or end with a space.",
   "setup.error.username_control": "A username cannot hold control characters.",

@@ -1,6 +1,10 @@
 """Where transcribe runs while the second listen is on (review of story 38.8, item 1): a
 machine that cannot run it leaves the stage to those that can unless the rules let it,
-its transcripts record that they lack it, and a machine that runs it queues them again."""
+its transcripts record that they lack it, and a machine that runs it queues them again,
+backing off from those it cannot give it and stopping after a few tries.
+
+The tests on a database run in the integration tier: the engine's drain takes longer than
+the unit tier's 0.1 s (SQLite always; Postgres with ``MAKTABA_TEST_PG_URL``)."""
 
 from __future__ import annotations
 
@@ -13,9 +17,10 @@ import numpy as np
 import pytest
 
 from maktaba_pipeline.cluster.stages import StageSelector, refresh_stages
+from maktaba_pipeline.engine.context import StageFailure
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, Subject
-from maktaba_pipeline.engine.sql import dumps, now, to_ts
+from maktaba_pipeline.engine.sql import dumps, now, parse_ts, to_ts
 from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt import cohere, engine, model_share
@@ -92,6 +97,7 @@ async def _set_rule(db: Database, on: bool) -> None:
     )
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_the_rule_is_read_before_each_selection(
     db: Database, on_ct2: None, monkeypatch: pytest.MonkeyPatch
@@ -116,6 +122,7 @@ async def _no_relisten(db: Any) -> int:
     return 0
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_an_unreadable_rule_keeps_the_last_one_read(
     db: Database, on_ct2: None, monkeypatch: pytest.MonkeyPatch
@@ -182,6 +189,7 @@ async def _refine_source(db: Database, vid: Any) -> str:
     return str(meta["refine"]["source"])
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_a_transcript_without_its_second_listen_says_so_in_its_fingerprint(
     db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
@@ -233,6 +241,7 @@ async def _skipped_transcript(
     return vid
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_a_machine_with_the_second_listen_queues_the_transcripts_without_it(
     db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
@@ -278,6 +287,7 @@ async def test_a_machine_with_the_second_listen_queues_the_transcripts_without_i
     assert await tr.relisten(db) == 0  # nothing left without it
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_the_sweep_waits_between_rounds_and_for_recent_transcripts(
     db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
@@ -295,6 +305,7 @@ async def test_the_sweep_waits_between_rounds_and_for_recent_transcripts(
     assert await tr.relisten(db) == 1
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_a_machine_without_the_second_listen_gives_a_relisten_job_back(
     db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
@@ -320,6 +331,7 @@ async def test_a_machine_without_the_second_listen_gives_a_relisten_job_back(
     assert fake.calls == 1 and job["state"] == "done"
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_a_relisten_job_runs_on_a_transcript_recorded_before_the_mark(
     db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
@@ -341,6 +353,189 @@ async def test_a_relisten_job_runs_on_a_transcript_recorded_before_the_mark(
     )
     await drain_core(db, rt, only={"transcribe"})
     assert fake.calls == 2 and await _refine_source(db, vid) == "hf"
+
+
+# --- a transcript the second listen cannot reach: backoff, turns, a stop said once ------
+
+
+async def _tries(db: Database, vid: Any) -> Any:
+    return await db.fetchrow(
+        "SELECT attempts, last_job_id, last_at, next_at, stopped_at FROM relisten_attempts"
+        " WHERE video_id = $1",
+        str(vid),
+    )
+
+
+async def _sweep(db: Database, monkeypatch: pytest.MonkeyPatch) -> int:
+    """A sweep now (the ten minutes between two of them gone)."""
+    monkeypatch.setattr(tr, "_LAST_RELISTEN", [])
+    return await tr.relisten(db)
+
+
+async def _wait_over(db: Database, vid: Any) -> None:
+    await db.execute(
+        "UPDATE relisten_attempts SET next_at = $2 WHERE video_id = $1",
+        str(vid),
+        to_ts(db, now() - timedelta(seconds=1)),
+    )
+
+
+def _cannot_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The worker that runs the second listen cannot read the video's file."""
+
+    async def decode(path: str, timeout: float = 0) -> np.ndarray:
+        raise StageFailure("permission_denied", f"{path}: permission denied", retryable=False)
+
+    monkeypatch.setattr(tr, "decode_audio", decode)
+
+
+async def _notes(db: Database) -> list[Any]:
+    return list(
+        await db.fetch(
+            "SELECT job_id, message FROM job_events"
+            " WHERE stage = 'transcribe' AND kind = 'step' AND level = 'warn'"
+        )
+    )
+
+
+def _here(monkeypatch: pytest.MonkeyPatch) -> None:
+    _capable(monkeypatch, True)
+    monkeypatch.setattr(tr, "_has_second_listen_model", lambda model: True)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_file_that_keeps_failing_backs_off_and_stops(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rt = await core_runtime(db)
+    vid = await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=3)
+    _here(monkeypatch)
+    _cannot_read(monkeypatch)
+    for n in range(1, tr.RELISTEN_TRIES + 1):
+        assert await _sweep(db, monkeypatch) == 1
+        await drain_core(db, rt, only={"transcribe"})
+        job = await _last_job(db, vid)
+        assert job["state"] == "failed"
+        tries = await _tries(db, vid)
+        assert tries["attempts"] == n and tries["last_job_id"] == job["id"]
+        # each wait twice the last (within the engine's jitter), at most a day
+        step = min(tr.RELISTEN_BACKOFF_S * 2 ** (n - 1), tr.RELISTEN_BACKOFF_MAX_S)
+        wait = (parse_ts(tries["next_at"]) - parse_ts(tries["last_at"])).total_seconds()  # type: ignore[operator]
+        assert 0.74 * step <= wait <= 1.26 * step
+        assert await _sweep(db, monkeypatch) == 0  # it waits
+        await _wait_over(db, vid)
+    # out of tries: no more jobs, said once, on the last one
+    assert await _sweep(db, monkeypatch) == 0
+    assert (await _tries(db, vid))["stopped_at"] is not None
+    notes = await _notes(db)
+    assert len(notes) == 1 and notes[0]["job_id"] == job["id"]
+    assert f"{tr.RELISTEN_TRIES} tries" in notes[0]["message"]
+    assert "permission denied" in notes[0]["message"]
+    assert await _sweep(db, monkeypatch) == 0
+    assert len(await _notes(db)) == 1
+    assert fake.calls == 1  # Whisper never ran again
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_newer_transcripts_get_their_turn_while_an_old_one_backs_off(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rt = await core_runtime(db)
+    vids = {}
+    for name, hours in (("old", 5), ("newer", 2), ("newest", 1.5)):
+        (tmp_path / name).mkdir()
+        vids[name] = await _skipped_transcript(db, rt, tmp_path / name, monkeypatch, hours)
+    _here(monkeypatch)
+    _cannot_read(monkeypatch)
+    monkeypatch.setattr(tr, "RELISTEN_BATCH", 1)
+
+    async def turn() -> str:
+        assert await _sweep(db, monkeypatch) == 1
+        pending = [
+            name for name, vid in vids.items() if (await _last_job(db, vid))["state"] == "pending"
+        ]
+        await drain_core(db, rt, only={"transcribe"})
+        assert len(pending) == 1
+        return pending[0]
+
+    assert await turn() == "old"  # the oldest first
+    assert await turn() == "newer"  # the old one waits
+    await _wait_over(db, vids["old"])
+    assert await turn() == "newest"  # untried before tried, however old
+    assert await turn() == "old"
+    assert await _sweep(db, monkeypatch) == 0  # the others wait
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_the_second_listen_clears_the_record(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rt = await core_runtime(db)
+    vid = await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=3)
+    _here(monkeypatch)
+
+    def no_model(result: Any, audio: Any, model: str, *_rest: Any) -> dict[str, Any]:
+        return {"model": model, "source": "skipped", "skipped": "OSError: it did not load"}
+
+    # the model does not load: the relisten job makes the transcript again without it
+    monkeypatch.setattr(tr, "_refine", no_model)
+    assert await _sweep(db, monkeypatch) == 1
+    await drain_core(db, rt, only={"transcribe"})
+    assert fake.calls == 2 and await _refine_source(db, vid) == "skipped"
+    assert (await _tries(db, vid))["attempts"] == 1  # the try counts
+
+    # it loads now: the next try gives the transcript its second listen, the record goes
+    _here(monkeypatch)
+    await db.execute(
+        "UPDATE transcripts SET created_at = $2 WHERE video_id = $1 AND is_active",
+        str(vid),
+        to_ts(db, now() - timedelta(hours=3)),
+    )
+    await _wait_over(db, vid)
+    assert await _sweep(db, monkeypatch) == 1
+    assert (await _tries(db, vid))["attempts"] == 2
+    await drain_core(db, rt, only={"transcribe"})
+    assert fake.calls == 3 and await _refine_source(db, vid) == "hf"
+    assert await _tries(db, vid) is None
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_an_ordinary_run_starts_the_tries_over(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An operator's run (or a changed file) makes a new transcript: the tries of the
+    old one, even stopped ones, go with it."""
+    rt = await core_runtime(db)
+    vid = await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=3)
+    await db.execute(
+        "INSERT INTO relisten_attempts (video_id, attempts, last_at, next_at, stopped_at)"
+        " VALUES ($1, $2, $3, $3, $3)",
+        str(vid),
+        tr.RELISTEN_TRIES,
+        to_ts(db, now()),
+    )
+    _here(monkeypatch)
+    assert await _sweep(db, monkeypatch) == 0  # stopped
+
+    def no_model(result: Any, audio: Any, model: str, *_rest: Any) -> dict[str, Any]:
+        return {"model": model, "source": "skipped", "skipped": "OSError: it did not load"}
+
+    monkeypatch.setattr(tr, "_refine", no_model)
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe", force=True)
+    await drain_core(db, rt, only={"transcribe"})
+    assert fake.calls == 2 and await _refine_source(db, vid) == "skipped"
+    assert await _tries(db, vid) is None
+    await db.execute(
+        "UPDATE transcripts SET created_at = $2 WHERE video_id = $1 AND is_active",
+        str(vid),
+        to_ts(db, now() - timedelta(hours=3)),
+    )
+    assert await _sweep(db, monkeypatch) == 1  # tried again, from the first try
+    assert (await _tries(db, vid))["attempts"] == 1
 
 
 @pytest.mark.unit

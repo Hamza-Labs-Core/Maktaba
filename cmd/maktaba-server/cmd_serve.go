@@ -93,6 +93,12 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	if err := supervisor.CheckNodeConfig(cfg); err != nil {
 		return err
 	}
+	// Epic 38 story 38.1: the roaming profile's node config is another PC's (its
+	// machine_id), so this PC runs as no home's machine until it joins as its own:
+	// said once, at the start.
+	if p, owner := config.LocalForeignNodeConfig(); p != "" && !config.LocalNodeConfig().Joined() {
+		fmt.Fprintln(os.Stderr, "[serve]", config.ForeignNodeLine(p, owner))
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	// Under maktaba-launcher (Epic 35, story 35.2): every role starts from the
