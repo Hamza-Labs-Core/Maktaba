@@ -14,7 +14,13 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    # 8-9 min on main (2026-10-22: the coverage floor ~2 min, ruff + mypy and
+    # golangci-lint (api) ~1.5 min each), plus "Set up pnpm", whose
+    # self-installer's npm install of pnpm has stalled for 2-7 min (lint,
+    # unit, mac-app and linux-app alike): the 10-minute limit cancelled two of
+    # main's last six runs. 20 leaves that headroom; a lint that hangs still
+    # ends.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6.0.2
         with:
