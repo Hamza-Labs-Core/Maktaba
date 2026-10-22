@@ -537,8 +537,9 @@ func (a *appSetup) askModelsNoSignIn(string) (any, error) {
 
 // installAndCheck offers to run the install command check named
 // (ffmpeg_install's), asked in the terminal (never from an answers file), and
-// runs check again after it. The setup ends when there is no command, it is
-// declined, or it fails.
+// runs check again after it. Only when ffmpeg is all that blocks: with another
+// problem the setup ends anyway, so nothing is installed for it. The setup ends
+// when there is no command, it is declined, or it fails.
 func (a *appSetup) installAndCheck(ctx context.Context, res json.RawMessage) (json.RawMessage, error) {
 	blocked := errors.New(a.t.get("terminal.blockedEnd"))
 	var c struct {
@@ -547,6 +548,9 @@ func (a *appSetup) installAndCheck(ctx context.Context, res json.RawMessage) (js
 	command := ""
 	if json.Unmarshal(res, &c) == nil {
 		for _, p := range c.Problems {
+			if !strings.HasPrefix(p.Code, "ffmpeg_") && !strings.HasPrefix(p.Code, "ffprobe_") {
+				return nil, blocked
+			}
 			if s, ok := p.Params["command"].(string); p.Code == "ffmpeg_install" && ok {
 				command = s
 			}
