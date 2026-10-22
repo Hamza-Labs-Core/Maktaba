@@ -269,6 +269,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The first video played right after Maktaba first starts is no longer refused.** The API makes
+  the machine's stream signing key as it starts, and the streaming role looked for it every two
+  seconds: a signed stream URL in between was refused ("bad signature"), and so was every one
+  after the key file was replaced. A URL naming a key the streaming role has not read yet now
+  reads the key file again at once (at most every 100 ms; a request that finds that read under
+  way waits for it), and the key a replaced file held still verifies the URLs it signed, for a
+  day.
 - **The second listen's tries count from the end of each try, and a stopped transcript comes
   back (follow-up of #221).** The wait between tries counted from when the try was queued, so a
   job that waited hours used it up; it now counts from the end of the try. A transcript the
