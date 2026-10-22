@@ -60,6 +60,9 @@ type HWAccelConfig struct {
 type TranscodeConfig struct {
 	MaxConcurrent int
 	QueueDepth    int
+	// MinFreeGiB: no transcode starts with less free on the cache's disk (a
+	// transcode keeps every segment until its session closes); 0: no floor.
+	MinFreeGiB int
 }
 
 type DatabaseConfig struct {
@@ -102,6 +105,7 @@ func Load() Config {
 		Transcode: TranscodeConfig{
 			MaxConcurrent: envInt("MAKTABA_TRANSCODE_MAX_CONCURRENT", 0),
 			QueueDepth:    envInt("MAKTABA_TRANSCODE_QUEUE_DEPTH", 4),
+			MinFreeGiB:    envInt("MAKTABA_TRANSCODE_MIN_FREE_GIB", 20),
 		},
 		Database: DatabaseConfig{
 			URL: envStr("MAKTABA_DATABASE_URL", ""),
@@ -117,6 +121,14 @@ func (c Config) LeewayDuration() time.Duration {
 // JWKSRefreshDuration returns the refresh interval as a duration.
 func (c Config) JWKSRefreshDuration() time.Duration {
 	return time.Duration(c.JWT.JWKSRefreshSec) * time.Second
+}
+
+// TranscodeMinFreeBytes is the free space a transcode needs to start (0: none).
+func (c Config) TranscodeMinFreeBytes() uint64 {
+	if c.Transcode.MinFreeGiB <= 0 {
+		return 0
+	}
+	return uint64(c.Transcode.MinFreeGiB) * 1024 * 1024 * 1024
 }
 
 // CacheMaxBytes returns the byte cap.

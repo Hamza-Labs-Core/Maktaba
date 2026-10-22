@@ -125,6 +125,11 @@ type Server struct {
 	// (cache/hls/{session_id}). Required when Transcode is set so the
 	// orchestrator and the manifest handler agree on the directory.
 	ResolveDir func(sessID string) string
+
+	// TranscodeRoom, when set, says whether a new transcode may start (a nil
+	// error): its folder keeps every segment until the session closes, so
+	// main.go refuses one with too little free on the cache's disk.
+	TranscodeRoom func() error
 }
 
 // New returns a Server with sensible defaults filled in.
@@ -187,6 +192,10 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	state := session.StateActive
 
 	if mode == session.ModeTranscode {
+		// before a slot is taken: a refused open holds none
+		if s.TranscodeRoom != nil && s.TranscodeRoom() != nil {
+			return OpenSessionResponse{}, ErrResourceExhausted
+		}
 		decision, _ := s.Allocator.Decide(slots.Request{
 			CanDirectCap: row.Height >= 720 && verdict.Mode == capability.ModeTranscode,
 			AcceptQueue:  req.AcceptQueue,

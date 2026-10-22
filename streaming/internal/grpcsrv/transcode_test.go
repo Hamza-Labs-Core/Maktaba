@@ -141,6 +141,33 @@ func TestOpenSession_SpawnFailureAborts(t *testing.T) {
 	}
 }
 
+// Too little free on the cache's disk: no transcode starts, no slot or
+// session is held.
+func TestOpenSession_NoRoomRefusesTranscode(t *testing.T) {
+	srv, row, _ := transcodeSetup(t)
+	orch := &fakeOrchestrator{}
+	srv.Transcode = orch
+	srv.TranscodeRoom = func() error { return errors.New("disk low") }
+	for i := 0; i < 3; i++ {
+		_, err := srv.OpenSession(context.Background(), OpenSessionRequest{
+			VideoID: row.VideoID.String(), UserID: uuid.New().String(), ClientProfile: "generic",
+		})
+		if !errors.Is(err, ErrResourceExhausted) {
+			t.Fatalf("err=%v want ErrResourceExhausted", err)
+		}
+	}
+	if all, _ := srv.Sessions.List(context.Background()); len(all) != 0 || orch.lastJob.SessionID != "" {
+		t.Fatalf("refused opens left %d sessions, job %+v", len(all), orch.lastJob)
+	}
+	// room again: the slots were not taken by the refusals
+	srv.TranscodeRoom = func() error { return nil }
+	if _, err := srv.OpenSession(context.Background(), OpenSessionRequest{
+		VideoID: row.VideoID.String(), UserID: uuid.New().String(), ClientProfile: "generic",
+	}); err != nil || orch.lastJob.SessionID == "" {
+		t.Fatalf("with room: %v, job %+v", err, orch.lastJob)
+	}
+}
+
 func TestOpenSession_DirectModeSkipsSpawn(t *testing.T) {
 	srv, _, _ := transcodeSetup(t)
 	orch := &fakeOrchestrator{}

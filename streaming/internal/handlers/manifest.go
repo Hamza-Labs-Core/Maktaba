@@ -86,6 +86,15 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 		httpx.Write(w, http.StatusInternalServerError, "read-failed", "manifest read failed", err.Error())
 		return
 	}
+	// a player reloading it is still there, paused or not (the reaper)
+	_ = h.Sessions.Touch(r.Context(), id, h.now())
+	if wantDASH {
+		written := h.now()
+		if info, err := os.Stat(path); err == nil {
+			written = info.ModTime()
+		}
+		data = transcodeMPD(data, dir, written, h.now())
+	}
 	if sig := r.URL.Query().Get("sig"); sig != "" {
 		if wantDASH {
 			data = SignMPD(data, sig)
@@ -129,6 +138,11 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", err.Error())
 		return
 	}
+	// a paused player reloads the playlist of a transcode still running: the
+	// session stays (the reaper)
+	if id, err := uuid.Parse(sub); err == nil {
+		_ = h.Sessions.Touch(r.Context(), id, h.now())
+	}
 	data = startAtBeginning(data)
 	if sig := r.URL.Query().Get("sig"); sig != "" {
 		data = SignPlaylist(data, sig)
@@ -139,8 +153,10 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 	_, _ = w.Write(data)
 }
 
-// ServeSegment handles /stream/{session_id}/{rendition}/seg-{n}.ts and
-// updates the session heartbeat (Story 8.9 AC-2).
+// ServeSegment handles /stream/{session_id}/{rendition}/seg-{n}.ts, and a
+// DASH session's /stream/{session_id}/{segment}.m4s (its init and chunks sit in
+// the session's folder itself), and updates the session heartbeat (Story 8.9
+// AC-2).
 func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	sub := auth.SubjectFromContext(r.Context())
 	id, err := uuid.Parse(sub)
@@ -150,15 +166,24 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	}
 	rendition := chiURLParam(r, "rendition")
 	segment := chiURLParam(r, "segment")
-	if rendition == "" || segment == "" {
+	if segment == "" {
 		httpx.Write(w, http.StatusBadRequest, "missing-segment", "segment path incomplete", "")
 		return
+	}
+	parts := []string{rendition, segment}
+	if rendition == "" {
+		// the session's folder itself: a DASH segment only
+		if !strings.HasSuffix(segment, ".m4s") {
+			httpx.Write(w, http.StatusNotFound, "segment-not-found", "not a segment", "")
+			return
+		}
+		parts = []string{segment}
 	}
 
 	// Story 23.5 AC-2: rendition + segment are untrusted URL segments
 	// — canonicalize before touching disk.
 	base := h.Layout.HLSDir(sub)
-	path, err := httpx.CanonicalUnder(base, rendition, segment)
+	path, err := httpx.CanonicalUnder(base, parts...)
 	if err != nil {
 		httpx.Write(w, http.StatusNotFound, "segment-not-found",
 			"segment not yet written by FFmpeg", "")
@@ -181,11 +206,7 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now().UTC()
-	if h.Now != nil {
-		now = h.Now()
-	}
-	_ = h.Sessions.Touch(r.Context(), id, now)
+	_ = h.Sessions.Touch(r.Context(), id, h.now())
 
 	w.Header().Set("Content-Type", segmentContentType(segment))
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
@@ -215,6 +236,13 @@ func startAtBeginning(data []byte) []byte {
 	out = append(out, data[:i+1]...)
 	out = append(out, start...)
 	return append(out, data[i+1:]...)
+}
+
+func (h *ManifestHandler) now() time.Time {
+	if h.Now != nil {
+		return h.Now()
+	}
+	return time.Now().UTC()
 }
 
 func manifestContentType(isDASH bool) string {

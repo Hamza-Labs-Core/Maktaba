@@ -391,6 +391,10 @@ func buildGRPCServer(bg *background, logger *slog.Logger, backend probe.Backend,
 		ffmpeg.HWAccelVideoToolbox: &vodGate{gate: channel.DefaultVTGate()},
 	})
 	srv.ResolveDir = layout.HLSDir
+	// a transcode keeps every segment until its session closes: none starts
+	// with less than the floor free on the cache's disk
+	minFree := cfg.TranscodeMinFreeBytes()
+	srv.TranscodeRoom = func() error { return transcodeRoom(layout.Root, minFree, logger) }
 	return srv
 }
 
@@ -510,7 +514,7 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 	// the closed sessions' folders, and a previous run's (at start, then with
 	// the reaper)
 	bg.Go(func(ctx context.Context) {
-		purge := func() { purgeVODSessions(ctx, layout, store, vodSessionIdle, time.Now(), logger) }
+		purge := func() { purgeVODSessions(ctx, layout, store, time.Now(), logger) }
 		purge()
 		tick(ctx, vodSessionSweep, purge)
 	})

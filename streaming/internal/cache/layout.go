@@ -246,49 +246,60 @@ func (g *GC) LastSweep() time.Time {
 	return time.Unix(0, v)
 }
 
+// errNoRoot: a layout without a root would act on the working directory's
+// tiers.
+var errNoRoot = errors.New("cache: no root")
+
 // PurgeSession removes the entire HLS folder for a session — once it is
 // closed, so the cache cap excludes per-session HLS bytes.
 func (l *Layout) PurgeSession(sessionID string) error {
+	if l.Root == "" {
+		return errNoRoot
+	}
 	return os.RemoveAll(l.HLSDir(sessionID))
 }
 
-// SessionDir is a VOD session's folder in the HLS tier.
-type SessionDir struct {
-	ID string // the session's id, the folder's name
-	// Changed is when a file was last added to it or renamed in it (the
-	// folder's or a variant subfolder's: a new segment, a rewritten playlist).
-	Changed time.Time
-}
-
-// SessionDirs lists the VOD sessions' folders in the HLS tier: those named by
-// a session id (a channel's, "channel-<id>", are not sessions').
-func (l *Layout) SessionDirs() ([]SessionDir, error) {
-	dir := filepath.Join(l.Root, TierHLS)
-	entries, err := os.ReadDir(dir)
+// SessionDirs lists the VOD sessions' folders in the HLS tier by session id:
+// those named by one (a channel's, "channel-<id>", are not sessions').
+func (l *Layout) SessionDirs() ([]string, error) {
+	if l.Root == "" {
+		return nil, errNoRoot
+	}
+	entries, err := os.ReadDir(filepath.Join(l.Root, TierHLS))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	var out []SessionDir
+	var ids []string
 	for _, e := range entries {
-		if id, err := uuid.Parse(e.Name()); !e.IsDir() || err != nil || id.String() != e.Name() {
+		if id, err := uuid.Parse(e.Name()); e.IsDir() && err == nil && id.String() == e.Name() {
+			ids = append(ids, e.Name())
+		}
+	}
+	return ids, nil
+}
+
+// SessionChanged is when a file was last added to or renamed in the session's
+// folder or one of its variant folders (a new segment, a rewritten playlist);
+// zero when there is no such folder.
+func (l *Layout) SessionChanged(sessionID string) time.Time {
+	dir := l.HLSDir(sessionID)
+	var changed time.Time
+	if info, err := os.Stat(dir); err == nil && info.IsDir() {
+		changed = info.ModTime()
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if !e.IsDir() {
 			continue
 		}
-		d := SessionDir{ID: e.Name()}
-		_ = filepath.WalkDir(filepath.Join(dir, e.Name()), func(path string, de fs.DirEntry, err error) error {
-			if err != nil || !de.IsDir() {
-				return nil
-			}
-			if info, err := de.Info(); err == nil && info.ModTime().After(d.Changed) {
-				d.Changed = info.ModTime()
-			}
-			return nil
-		})
-		out = append(out, d)
+		if info, err := e.Info(); err == nil && info.ModTime().After(changed) {
+			changed = info.ModTime()
+		}
 	}
-	return out, nil
+	return changed
 }
 
 // Stat returns total bytes across all non-HLS tiers without sweeping.

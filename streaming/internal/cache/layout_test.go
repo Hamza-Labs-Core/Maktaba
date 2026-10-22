@@ -58,8 +58,15 @@ func TestLayout_PurgeSession(t *testing.T) {
 }
 
 // SessionDirs: the HLS tier's folders named by a session id (not a channel's,
-// not a file), each with when ffmpeg last added to it or a variant subfolder.
+// not a file); SessionChanged: when ffmpeg last added to one or a variant
+// subfolder. A layout without a root touches nothing.
 func TestLayout_SessionDirs(t *testing.T) {
+	if _, err := New("").SessionDirs(); err == nil {
+		t.Error("SessionDirs without a root")
+	}
+	if err := New("").PurgeSession("6f1c2a7e-3b4d-4c5e-8f90-a1b2c3d4e5f6"); err == nil {
+		t.Error("PurgeSession without a root")
+	}
 	l := New(t.TempDir())
 	if dirs, err := l.SessionDirs(); err != nil || len(dirs) != 0 {
 		t.Fatalf("no tier: %v %v", dirs, err)
@@ -78,12 +85,24 @@ func TestLayout_SessionDirs(t *testing.T) {
 	old, recent := time.Now().Add(-time.Hour).Truncate(time.Second), time.Now().Add(-time.Minute).Truncate(time.Second)
 	_ = os.Chtimes(l.HLSDir(sess), old, old)
 	_ = os.Chtimes(v0, recent, recent)
-	dirs, err := l.SessionDirs()
-	if err != nil || len(dirs) != 1 || dirs[0].ID != sess {
-		t.Fatalf("%+v %v", dirs, err)
+	ids, err := l.SessionDirs()
+	if err != nil || len(ids) != 1 || ids[0] != sess {
+		t.Fatalf("%v %v", ids, err)
 	}
-	if !dirs[0].Changed.Equal(recent) {
-		t.Errorf("changed %v, want the variant folder's %v", dirs[0].Changed, recent)
+	if changed := l.SessionChanged(sess); !changed.Equal(recent) {
+		t.Errorf("changed %v, want the variant folder's %v", changed, recent)
+	}
+	if changed := l.SessionChanged("0b9e7d6c-5a4b-4c3d-9e8f-7a6b5c4d3e2f"); !changed.IsZero() {
+		t.Errorf("a file's changed %v", changed)
+	}
+}
+
+func TestFreeBytes(t *testing.T) {
+	if free, err := FreeBytes(t.TempDir()); err != nil || free == 0 {
+		t.Fatalf("free %d, %v", free, err)
+	}
+	if _, err := FreeBytes(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Error("a missing folder's free space")
 	}
 }
 
