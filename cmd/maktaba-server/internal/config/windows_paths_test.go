@@ -518,6 +518,50 @@ func TestNodeConfigLeftByAFailedClaim(t *testing.T) {
 	}
 }
 
+// A node.json an editor saved with a UTF-8 BOM (Notepad, PowerShell 5.1) is read past it,
+// as the pipeline reads it (utf-8-sig): it is the node config, never taken for broken with
+// a backup read instead, and its owner is read too. The broken node.json the pipeline
+// keeps aside when a leftover takes its name (node.json.broken-*) is no leftover: it is
+// never read as the node config, even when it parses.
+func TestNodeConfigWithABOMAndAKeptBrokenOne(t *testing.T) {
+	t.Parallel()
+	_, cur, env := winLayout(t)
+	getenv := func(k string) string { return env[k] }
+	base := filepath.Dir(filepath.Dir(cur.Config))
+	dir := filepath.Join(env["APPDATA"], "Maktaba")
+	original, local := filepath.Join(dir, "node.json"), filepath.Join(cur.Config, "node.json")
+	bak := filepath.Join(dir, ".node.json-1792600000-4242-0badf00d.bak")
+	const bom = "\xef\xbb\xbf"
+	writeAt(t, original, bom+`{"node_id":"n2","private_key":"k","database_url":"postgres://two"}`)
+	writeAt(t, bak, `{"node_id":"n1","private_key":"k","database_url":"postgres://one"}`)
+	if got := nodeConfigFile(original, os.ReadFile); got != original {
+		t.Fatalf("a BOM'd node.json is whole: read from %s", got)
+	}
+	if n := ReadNodeConfig(getenv, "windows", base, os.ReadFile); n.Err != nil || !n.Joined() || n.NodeID != "n2" {
+		t.Fatalf("a BOM'd node.json: %+v (err %v)", n, n.Err)
+	}
+	writeAt(t, original, bom+`{"node_id":"n2","private_key":"k","database_url":"postgres://two","machine_id":"other-pc"}`)
+	if got := NodeConfigPath(getenv, "windows", base); got != local {
+		t.Fatalf("another PC's, past its BOM: %s, want %s", got, local)
+	}
+	if p, owner := ForeignNodeConfig(getenv, "windows", base); p != original || owner != "other-pc" {
+		t.Fatalf("another PC's, past its BOM: %q %q", p, owner)
+	}
+
+	for _, p := range []string{original, bak} {
+		if err := os.Remove(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeAt(t, filepath.Join(dir, "node.json.broken-1792600000-3fa1"), `{"node_id":"n3","private_key":"k","database_url":"postgres://three"}`)
+	if got := NodeConfigPath(getenv, "windows", base); got != local {
+		t.Fatalf("a kept broken node.json is no node config: %s, want %s", got, local)
+	}
+	if n := ReadNodeConfig(getenv, "windows", base, os.ReadFile); n.Joined() || n.Err != nil {
+		t.Fatalf("a kept broken node.json is no node config: %+v (err %v)", n, n.Err)
+	}
+}
+
 // node.json: one per machine, where it is: the roaming profile's of a machine that
 // joined before Epic 38 (a stray file in the new place does not take its place),
 // else %LOCALAPPDATA%\Maktaba\node.json, where a new join writes.

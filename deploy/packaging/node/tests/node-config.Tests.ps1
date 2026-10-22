@@ -71,6 +71,23 @@ try {
     Set-Content -LiteralPath $bak -Value '{"node_id":"n9","private_key":"k","machine_id":"pc-b"}'
     Assert-Equal $new (Get-NodeConfigPath) 'another PC''s leftovers are skipped'
     Assert-Equal 0 @(Get-NodeConfigFiles).Count 'another PC''s leftovers are never ones to forget here'
+
+    # a node.json an editor saved with a UTF-8 BOM is whole: every reader reads past it
+    Remove-Item -LiteralPath $bak, $tmp -Force
+    [System.IO.File]::WriteAllText($old, '{"node_id":"n2","private_key":"k","database_url":"postgres://two"}', (New-Object System.Text.UTF8Encoding $true))
+    Set-Content -LiteralPath $bak -Value '{"node_id":"n1","private_key":"k","database_url":"postgres://one"}'
+    Assert-Equal 239 ([System.IO.File]::ReadAllBytes($old)[0]) 'the test''s node.json starts with a BOM'
+    Assert-Equal $old (Get-NodeConfigSource -Path $old) 'a BOM''d node.json is the node config, not a backup beside it'
+    Assert-Equal $old (Get-NodeConfigPath) 'a BOM''d roaming node.json is this PC''s'
+
+    # the broken node.json the pipeline kept aside is never the node config, and goes with
+    # the rest to forget the home
+    Remove-Item -LiteralPath $old, $bak -Force
+    $kept = Join-Path $roaming 'Maktaba\node.json.broken-1792600000-3fa1'
+    Set-Content -LiteralPath $kept -Value '{"node_id":"n3","private_key":"k"}'
+    Assert-Equal $new (Get-NodeConfigPath) 'a kept broken node.json is no node config'
+    Set-Content -LiteralPath $old -Value '{"node_id":"n1","private_key":"k","machine_id":"pc-a"}'
+    Assert-Equal "$old;$kept" ((@(Get-NodeConfigFiles)) -join ';') 'to forget the home, a kept broken node.json goes too'
 } finally {
     Remove-Item -LiteralPath $T -Recurse -Force -ErrorAction SilentlyContinue
 }

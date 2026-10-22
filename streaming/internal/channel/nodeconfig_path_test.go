@@ -125,3 +125,51 @@ func TestNodeConfigLeftByAFailedClaim(t *testing.T) {
 		t.Fatalf("another PC's leftovers: %s", role)
 	}
 }
+
+// A node.json saved with a UTF-8 BOM (Notepad, PowerShell 5.1) is read past it, as the
+// pipeline reads it: it is the node config (never a backup beside it), and its owner is
+// read too. The broken node.json the pipeline keeps aside (node.json.broken-*) is never
+// read as the node config (the same rule as maktaba-server and the pipeline).
+func TestNodeConfigWithABOMAndAKeptBrokenOne(t *testing.T) {
+	base := t.TempDir()
+	env := map[string]string{"APPDATA": filepath.Join(base, "Roaming"), "LOCALAPPDATA": filepath.Join(base, "Local"),
+		"MAKTABA_MACHINE_ID": "this-pc"} // never this PC's real MachineGuid
+	getenv := func(k string) string { return env[k] }
+	dir := filepath.Join(base, "Roaming", "Maktaba")
+	oldPath, newPath := filepath.Join(dir, "node.json"), filepath.Join(base, "Local", "Maktaba", "node.json")
+	bak := filepath.Join(dir, ".node.json-1792600000-4242-0badf00d.bak")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write := func(p, body string) {
+		t.Helper()
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const bom = "\xef\xbb\xbf"
+	write(oldPath, bom+`{"node_id":"n2","private_key":"k","database_url":"postgres://two"}`)
+	write(bak, `{"node_id":"n1","private_key":"k","database_url":"postgres://one"}`)
+	if got := NodeConfigFile(oldPath, os.ReadFile); got != oldPath {
+		t.Fatalf("a BOM'd node.json is whole: read from %s", got)
+	}
+	if role, id := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleNode || id != "n2" {
+		t.Fatalf("a BOM'd node.json: %s %s", role, id)
+	}
+	write(oldPath, bom+`{"node_id":"n2","private_key":"k","database_url":"postgres://two","machine_id":"other-pc"}`)
+	if got := NodeConfigPath(getenv, "windows", base); got != newPath {
+		t.Fatalf("another PC's, past its BOM: %s, want %s", got, newPath)
+	}
+	for _, p := range []string{oldPath, bak} {
+		if err := os.Remove(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(dir, "node.json.broken-1792600000-3fa1"), `{"node_id":"n3","private_key":"k","database_url":"postgres://three"}`)
+	if got := NodeConfigPath(getenv, "windows", base); got != newPath {
+		t.Fatalf("a kept broken node.json is no node config: %s, want %s", got, newPath)
+	}
+	if role, _ := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleHome {
+		t.Fatalf("a kept broken node.json is no node config: %s", role)
+	}
+}

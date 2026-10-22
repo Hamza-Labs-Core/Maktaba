@@ -171,6 +171,15 @@ func TestNodeModeConfigFromNodeJSON(t *testing.T) {
 		ns.ConfigPath != filepath.Join(roaming, "node.json") {
 		t.Fatalf("node mode from the roaming config's backup = %+v %v", ns, ok)
 	}
+	// a node.json saved with a UTF-8 BOM (Notepad, PowerShell 5.1): read past it
+	if err := os.WriteFile(p, append([]byte("\xef\xbb\xbf"), b...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	delete(env, "MAKTABA_NODE_ID")
+	delete(env, "DATABASE_URL")
+	if ns, ok := NodeMode(getenv, "windows", dir, os.ReadFile); !ok || ns.NodeID != cfg["node_id"] || ns.DatabaseURL != cfg["database_url"] {
+		t.Fatalf("node mode from a BOM'd node.json = %+v %v", ns, ok)
+	}
 	pm, err := pathmap.FromJSON([]byte(`{"Y:/": "/Volumes/Y/"}`))
 	if err != nil || pm.Apply("Y:/Shows/a.mp4") != "/Volumes/Y/Shows/a.mp4" {
 		t.Errorf("path map: %v %q", err, pm.Apply("Y:/Shows/a.mp4"))
