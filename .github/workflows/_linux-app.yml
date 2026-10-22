@@ -90,11 +90,12 @@ jobs:
           key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
           restore-keys: linux-app-downloads-${{ matrix.arch }}-
 
-      - name: shellcheck, the payload tool's and the removal script's tests
+      - name: shellcheck, the payload tool's, the removal script's and the bundle versions' tests
         run: |
           shellcheck -x tools/release/linux-app/*.sh
           python3 tools/release/linux-app/test_payload_tool.py -v
           bash tools/release/linux-app/test_package_remove.sh
+          bash tools/release/linux-app/test_bundle.sh
 
       # On failure the last lines go into an annotation: readable on the run's
       # page without signing in (the job log is not).
