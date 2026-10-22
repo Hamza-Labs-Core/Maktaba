@@ -164,6 +164,27 @@ func TestHLSArgs_HWAccelEncoder(t *testing.T) {
 	}
 }
 
+// A transcode opened at a position: an accurate seek before the input, and
+// the HLS output's timestamps the source's; a DASH transcode starts at 0.
+func TestTranscodeArgs_Start(t *testing.T) {
+	plan := SoftwarePlan(3, true)
+	plan.Start = 1213
+	args := HLSArgs("/in.mp4", "/out", "master.m3u8", DefaultLadder(0), plan)
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "-ss 1213 -i /in.mp4") || argAfter(args, "-output_ts_offset") != "1213" {
+		t.Errorf("hls from 1213 s: %s", joined)
+	}
+	dash := strings.Join(DASHArgs("/in.mp4", "/out", DefaultLadder(0), plan), " ")
+	if strings.Contains(dash, "-ss ") || strings.Contains(dash, "-output_ts_offset") {
+		t.Errorf("dash: %s", dash)
+	}
+	plan.Start = 0
+	if joined := strings.Join(HLSArgs("/in.mp4", "/out", "master.m3u8", DefaultLadder(0), plan), " "); strings.Contains(joined, "-ss ") ||
+		strings.Contains(joined, "-output_ts_offset") {
+		t.Errorf("from the start: %s", joined)
+	}
+}
+
 func TestDASHArgs_OutputsMPD(t *testing.T) {
 	args := DASHArgs("/in.mp4", "/out", DefaultLadder(0), SoftwarePlan(3, true))
 	joined := strings.Join(args, " ")

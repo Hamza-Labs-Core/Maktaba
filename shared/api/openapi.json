@@ -7327,6 +7327,10 @@
             "type": "number",
             "description": "The video's length in the catalogue (absent when unknown)."
           },
+          "start_sec": {
+            "type": "number",
+            "description": "Where in the video the stream starts, in seconds (a transcode opened at `start_sec` starts there; its times are the video's). Absent at 0."
+          },
           "warnings": {
             "type": "array",
             "items": {

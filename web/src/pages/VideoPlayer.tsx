@@ -41,6 +41,11 @@ interface OpenSessionResponse {
   expires_at: string;
   /** The video's length in the catalogue (absent when unknown). */
   duration_sec?: number;
+  /**
+   * Where in the video the stream starts (absent: its start): a transcode
+   * opened at a position. Its times are the video's; before it, nothing plays.
+   */
+  start_sec?: number;
   /** Sidecar subtitle tracks, when the server lists them. */
   subtitles?: SubtitleTrack[];
 }
@@ -127,6 +132,10 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
   // When the stream went away and was opened again: past GONE_REOPENS within
   // GONE_WINDOW_MS, the error screen instead of a reopen loop.
   const goneRef = useRef<number[]>([]);
+  // A stream attached at a position, not yet playing: the element's time is
+  // not the viewer's yet, so no progress is posted (it would move the resume
+  // point back).
+  const startingRef = useRef(false);
 
   const tParam = Number(params.get("t"));
   const startAt = Number.isFinite(tParam) && tParam > 0 ? tParam : 0;
@@ -156,7 +165,11 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
     setPlayError(false);
     setSession(null);
     api
-      .post<OpenSessionResponse>("/api/stream/sessions", { video_id: videoId })
+      .post<OpenSessionResponse>("/api/stream/sessions", {
+        video_id: videoId,
+        // a transcode starts there (?t=, the resume point)
+        ...(startAt > 0 ? { start_sec: Math.floor(startAt) } : {}),
+      })
       .then((s) => {
         if (cancelled) {
           // Left before the answer came: close the session it opened.
@@ -192,7 +205,7 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
         void api.delete(`/api/stream/sessions/${encodeURIComponent(id)}`).catch(() => {});
       }
     };
-  }, [videoId, t, failure, reload]);
+  }, [videoId, startAt, t, failure, reload]);
 
   // Chapter ticks for the scrubber.
   useEffect(() => {
@@ -215,6 +228,7 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
     if (!el || !session) return;
     let last = 0;
     const beat = (completed = false) => {
+      if (startingRef.current) return;
       void api
         .post(`/api/stream/sessions/${encodeURIComponent(session.session_id)}/progress`, {
           position_sec: Math.floor(el.currentTime),
@@ -260,12 +274,18 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
     resumeRef.current = null;
     const at = resume ? resume.at : startAt;
     el.playbackRate = speed;
+    startingRef.current = at > 0;
+    const onPlaying = () => {
+      startingRef.current = false;
+    };
+    el.addEventListener("playing", onPlaying);
     const resumePlay = () => {
       if (resume?.play) void el.play?.()?.catch?.(() => {});
     };
-    // A start past the end (?t=99999) lands just before the end instead.
+    // A start past the end (?t=99999) lands just before the end instead: the
+    // video's end (a transcode's playlist ends where it has got to).
     const clampStart = () => {
-      const d = el.duration;
+      const d = session.duration_sec || el.duration;
       if (Number.isFinite(d) && d > 0 && el.currentTime > d - 1)
         el.currentTime = Math.max(0, d - 1);
     };
@@ -282,6 +302,7 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
       return () => {
         el.removeEventListener("loadedmetadata", onMeta);
         el.removeEventListener("error", onError);
+        el.removeEventListener("playing", onPlaying);
       };
     }
     let cancelled = false;
@@ -342,10 +363,19 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
     });
     el.addEventListener("loadedmetadata", clampStart, { once: true });
     el.addEventListener("loadedmetadata", resumePlay, { once: true });
+    // A transcode opened at a position starts there: a seek before it opens the
+    // video again at the seek's position.
+    const streamStart = session.start_sec ?? 0;
+    const onSeeking = () => {
+      if (streamStart > 0 && el.currentTime < streamStart - 1) refresh(el.currentTime, !el.paused);
+    };
+    el.addEventListener("seeking", onSeeking);
     return () => {
       cancelled = true;
       el.removeEventListener("loadedmetadata", clampStart);
       el.removeEventListener("loadedmetadata", resumePlay);
+      el.removeEventListener("playing", onPlaying);
+      el.removeEventListener("seeking", onSeeking);
       h.detach();
     };
     // speed is applied on attach only; the controls set it live.

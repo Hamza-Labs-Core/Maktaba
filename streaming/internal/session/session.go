@@ -63,6 +63,10 @@ const (
 	// ReasonTranscodeFailed: its transcode ended short of the video's end
 	// while it was open; the player's reopen gets a new one.
 	ReasonTranscodeFailed CloseReason = "transcode-failed"
+	// ReasonMoved: its viewer opened the video at a position its stream does
+	// not reach (before its start, or far past what was transcoded): a new
+	// stream starts there.
+	ReasonMoved CloseReason = "moved"
 )
 
 // Row is the in-memory shape mirroring the streaming_sessions row.
@@ -89,6 +93,10 @@ type Row struct {
 	// SlotHold is the transcode slot the session holds ("": none), given
 	// back when its transcode ends or it closes.
 	SlotHold string
+
+	// StartSec is where in the video its stream starts (seconds): an HLS
+	// transcode opened at a position; 0 for the others.
+	StartSec int
 }
 
 // Ender is a Transcoder that tells how its transcode ended (the ffmpeg

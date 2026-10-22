@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -152,7 +154,12 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 	if !h.reloaded(w, r, row) {
 		return
 	}
-	data = startAtBeginning(data)
+	if !row.TranscodeFinished() {
+		// ffmpeg writes it on SIGTERM too: until its end is recorded (then a
+		// 410), a reload must not end the video at the cut
+		data = withoutEndlist(data)
+	}
+	data = startAt(gapsBefore(data, row.StartSec), row.StartSec)
 	if sig := r.URL.Query().Get("sig"); sig != "" {
 		data = SignPlaylist(data, sig)
 	}
@@ -223,12 +230,13 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// startAtBeginning has an EVENT playlist (a transcode's, every segment listed)
-// start at its first segment: a player starts a playlist without
-// #EXT-X-ENDLIST near its end (hls.js three target durations before it),
-// which skips the video's start when the transcode runs ahead of the player.
-// A position the player is asked to start at (a resume) still wins.
-func startAtBeginning(data []byte) []byte {
+// startAt has an EVENT playlist (a transcode's, every segment listed) start at
+// its stream's first segment, offset seconds in (after the gaps before it): a
+// player starts a playlist without #EXT-X-ENDLIST near its end (hls.js three
+// target durations before it), which skips the stream's start when the
+// transcode runs ahead of the player. A position the player is asked to start
+// at (a resume) still wins.
+func startAt(data []byte, offset int) []byte {
 	if !bytes.HasPrefix(data, []byte("#EXTM3U")) || !bytes.Contains(data, []byte("#EXT-X-PLAYLIST-TYPE:EVENT")) ||
 		bytes.Contains(data, []byte("#EXT-X-START:")) {
 		return data
@@ -237,14 +245,72 @@ func startAtBeginning(data []byte) []byte {
 	if i < 0 {
 		return data
 	}
-	start := "#EXT-X-START:TIME-OFFSET=0\n"
-	if i > 0 && data[i-1] == '\r' {
-		start = "#EXT-X-START:TIME-OFFSET=0\r\n"
-	}
+	start := "#EXT-X-START:TIME-OFFSET=" + strconv.Itoa(offset) + lineEnd(data, i)
 	out := make([]byte, 0, len(data)+len(start))
 	out = append(out, data[:i+1]...)
 	out = append(out, start...)
 	return append(out, data[i+1:]...)
+}
+
+// lineEnd is the playlist's line ending, as its line ending at i has it.
+func lineEnd(data []byte, i int) string {
+	if i > 0 && data[i-1] == '\r' {
+		return "\r\n"
+	}
+	return "\n"
+}
+
+// gapsBefore lists the part of the video before a stream that starts start
+// seconds in as gaps (#EXT-X-GAP: segments no player loads, gap-<n>.ts, none
+// longer than the target duration): the playlist's times are then the
+// video's, and its segments' timestamps (-output_ts_offset), so the seek bar,
+// the position (progress, the resume point), chapters and subtitles keep to
+// the video. A seek into the gaps is the player's to answer (the web opens the
+// video again there).
+func gapsBefore(data []byte, start int) []byte {
+	if start <= 0 {
+		return data
+	}
+	first := bytes.Index(data, []byte("#EXTINF:"))
+	if first < 0 {
+		return data
+	}
+	target := segmentTarget
+	if m := targetDuration.FindSubmatch(data); m != nil {
+		if t, err := strconv.Atoi(string(m[1])); err == nil && t > 0 {
+			target = t
+		}
+	}
+	nl := lineEnd(data, bytes.IndexByte(data, '\n'))
+	var gaps bytes.Buffer
+	for n, left := 0, start; left > 0; n++ {
+		d := min(left, target)
+		fmt.Fprintf(&gaps, "#EXTINF:%d.000000,%s#EXT-X-GAP%sgap-%d.ts%s", d, nl, nl, n, nl)
+		left -= d
+	}
+	out := make([]byte, 0, len(data)+gaps.Len())
+	out = append(out, data[:first]...)
+	out = append(out, gaps.Bytes()...)
+	return append(out, data[first:]...)
+}
+
+// segmentTarget is the target duration when a playlist names none (ffmpeg's
+// segments are 6 s).
+const segmentTarget = 6
+
+var targetDuration = regexp.MustCompile(`#EXT-X-TARGETDURATION:(\d+)`)
+
+// withoutEndlist drops a playlist's #EXT-X-ENDLIST.
+func withoutEndlist(data []byte) []byte {
+	i := bytes.Index(data, []byte("#EXT-X-ENDLIST"))
+	if i < 0 {
+		return data
+	}
+	end := i + len("#EXT-X-ENDLIST")
+	for end < len(data) && (data[end] == '\r' || data[end] == '\n') {
+		end++
+	}
+	return append(append([]byte{}, data[:i]...), data[end:]...)
 }
 
 // reloaded handles a player's (re)load of a session's playlist or MPD: a

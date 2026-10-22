@@ -162,7 +162,69 @@ func TestManifestHandler_PlaylistReloads(t *testing.T) {
 	}
 }
 
-// startAtBeginning: only an EVENT playlist without a start of its own, in its
+// A stream opened 20 s into the video: its playlist lists 0–20 s as gaps
+// (none longer than the target duration), starts players at 20 s, and keeps
+// #EXT-X-ENDLIST only once the transcode is finished (ffmpeg writes it on
+// SIGTERM too).
+func TestManifestHandler_ServeRenditionIndex_StartedAtAPosition(t *testing.T) {
+	layout := cache.New(t.TempDir())
+	_ = layout.EnsureTiers()
+	index := "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n" +
+		"#EXT-X-INDEPENDENT-SEGMENTS\n#EXTINF:6.000000,\nseg-0.ts\n#EXTINF:4.000000,\nseg-1.ts\n#EXT-X-ENDLIST\n"
+	gaps := "#EXTINF:6.000000,\n#EXT-X-GAP\ngap-0.ts\n#EXTINF:6.000000,\n#EXT-X-GAP\ngap-1.ts\n" +
+		"#EXTINF:6.000000,\n#EXT-X-GAP\ngap-2.ts\n#EXTINF:2.000000,\n#EXT-X-GAP\ngap-3.ts\n"
+	for name, c := range map[string]struct {
+		tr      fakeTranscode
+		endlist bool
+	}{
+		"running":  {fakeTranscode{active: true}, false},
+		"finished": {fakeTranscode{ended: true, finished: true}, true},
+	} {
+		id := uuid.New()
+		v0 := filepath.Join(layout.HLSDir(id.String()), "v0")
+		_ = os.MkdirAll(v0, 0o755)
+		_ = os.WriteFile(filepath.Join(v0, "index.m3u8"), []byte(index), 0o644)
+		h := &ManifestHandler{Sessions: &fakeSessionStore{rows: map[uuid.UUID]*session.Row{
+			id: {ID: id, Format: session.FormatHLS, Mode: session.ModeTranscode, Transcoder: c.tr, StartSec: 20},
+		}}, Layout: layout}
+		r := chi.NewRouter()
+		r.With(injectSubject(id.String())).Get("/stream/{session_id}/{rendition}/index.m3u8", h.ServeRenditionIndex)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest("GET", "/stream/"+id.String()+"/v0/index.m3u8", nil))
+		want := "#EXTM3U\n#EXT-X-START:TIME-OFFSET=20\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n" +
+			"#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n" + gaps +
+			"#EXTINF:6.000000,\nseg-0.ts\n#EXTINF:4.000000,\nseg-1.ts\n"
+		if c.endlist {
+			want += "#EXT-X-ENDLIST\n"
+		}
+		if rec.Code != 200 || rec.Body.String() != want {
+			t.Errorf("%s: %d\n%s\nwant\n%s", name, rec.Code, rec.Body.String(), want)
+		}
+	}
+}
+
+func TestGapsBeforeAndEndlist(t *testing.T) {
+	pl := "#EXTM3U\r\n#EXT-X-TARGETDURATION:4\r\n#EXTINF:4.000000,\r\nseg-0.ts\r\n#EXT-X-ENDLIST\r\n"
+	if got := string(gapsBefore([]byte(pl), 0)); got != pl {
+		t.Errorf("no start: %q", got)
+	}
+	want := "#EXTM3U\r\n#EXT-X-TARGETDURATION:4\r\n#EXTINF:4.000000,\r\n#EXT-X-GAP\r\ngap-0.ts\r\n" +
+		"#EXTINF:1.000000,\r\n#EXT-X-GAP\r\ngap-1.ts\r\n#EXTINF:4.000000,\r\nseg-0.ts\r\n#EXT-X-ENDLIST\r\n"
+	if got := string(gapsBefore([]byte(pl), 5)); got != want {
+		t.Errorf("5 s in, 4 s target: %q", got)
+	}
+	if got := string(gapsBefore([]byte("#EXTM3U\n"), 5)); got != "#EXTM3U\n" {
+		t.Errorf("no segment yet: %q", got)
+	}
+	if got := string(withoutEndlist([]byte(pl))); got != "#EXTM3U\r\n#EXT-X-TARGETDURATION:4\r\n#EXTINF:4.000000,\r\nseg-0.ts\r\n" {
+		t.Errorf("without ENDLIST: %q", got)
+	}
+	if got := string(startAt([]byte("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\n"), 1213)); got != "#EXTM3U\n#EXT-X-START:TIME-OFFSET=1213\n#EXT-X-PLAYLIST-TYPE:EVENT\n" {
+		t.Errorf("start at 1213: %q", got)
+	}
+}
+
+// startAt: only an EVENT playlist without a start of its own, in its
 // line endings.
 func TestStartAtBeginning(t *testing.T) {
 	const start = "#EXT-X-START:TIME-OFFSET=0\n"
@@ -178,7 +240,7 @@ func TestStartAtBeginning(t *testing.T) {
 		"not hls":  {"<MPD/>", "<MPD/>"},
 		"one line": {"#EXTM3U #EXT-X-PLAYLIST-TYPE:EVENT", "#EXTM3U #EXT-X-PLAYLIST-TYPE:EVENT"},
 	} {
-		if got := string(startAtBeginning([]byte(c.in))); got != c.want {
+		if got := string(startAt([]byte(c.in), 0)); got != c.want {
 			t.Errorf("%s: %q, want %q", name, got, c.want)
 		}
 	}

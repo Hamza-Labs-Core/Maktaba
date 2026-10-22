@@ -39,6 +39,9 @@ type Job struct {
 	SourceCodec string
 	// NoAudio: the source has no audio stream (none is mapped).
 	NoAudio bool
+	// StartSec is where in the source the transcode starts (seconds; HLS
+	// only, EncodePlan.Start).
+	StartSec int
 
 	// toneMap: the runner's tone-mapping for an HDR source (toneMapFor)
 	toneMap string
@@ -556,6 +559,7 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 	}
 	plan := PlanFor(hw, hwRungs, rungs, job.SourceCodec, !job.NoAudio)
 	plan.ToneMap = job.toneMap
+	plan.Start = job.StartSec
 	var args Args
 	if strings.EqualFold(job.Format, "dash") {
 		args = DASHArgs(job.InputPath, job.OutputDir, job.Ladder, plan)

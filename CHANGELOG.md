@@ -605,14 +605,17 @@ don't append a line here; docs-only PRs are exempt.
   plays on; one cut short (the session reaped, ffmpeg failed) never ends the video there: its
   playlist answers 410 and the web player opens the video again where it was, as it also does
   when its stream is gone for good (404 after the retries), instead of the error screen, and
-  marks a video watched only near its real end. A session's folder is removed when its player
-  closes it, and one a previous run left behind once it has not changed for 90 s; nothing removed
-  those folders before. A transcode's segments take about 4.8 GB an hour for the 1080p ladder on
-  the cache's disk, outside the cache's cap: no transcode starts with less free there than
-  `[media] transcode_min_free_gib` in server.toml (default: a tenth of the disk, between 3 and 20
-  GiB), and below it the transcodes kept for closed sessions go, the longest unwatched first. A
-  refused video says "not enough disk space to prepare this video" (507), not that the server is
-  busy.
+  marks a video watched only near its real end. A transcode opened at a position (a resume, such
+  a reopen) starts there: ffmpeg seeks to it, and its playlist lists the part before as gaps, so
+  the player's times, seek bar, progress and resume point stay the video's, and a seek before it
+  opens the video again there (it started at 0 before, and the player jumped back). A session's
+  folder is removed when its player closes it, and one a previous run left behind once it has not
+  changed for 90 s; nothing removed those folders before. A transcode's segments take about 4.8
+  GB an hour for the 1080p ladder on the cache's disk, outside the cache's cap: no transcode
+  starts with less free there than `[media] transcode_min_free_gib` in server.toml (default: a
+  tenth of the disk, between 3 and 20 GiB), and below it the transcodes kept for closed sessions
+  go, the longest unwatched first. A refused video says "not enough disk space to prepare this
+  video" (507), not that the server is busy.
 - **Video transcodes give their slot back.** A transcode slot was taken at each session's open
   and never returned, so once a process had run as many transcodes as it has slots (a quarter of
   its CPUs by default), every 720p-and-up video played direct, whatever the player could decode,

@@ -133,6 +133,64 @@ describe("VideoPlayer — hls.js (no native HLS)", () => {
     renderPlayer("/videos/vid-1/watch?t=42");
     const hls = await hlsReady();
     expect(hls.config.startPosition).toBe(42);
+    // the transcode starts there too
+    expect(opens()[0][1]).toEqual({ video_id: "vid-1", start_sec: 42 });
+  });
+
+  it("opens the video again at a seek before its stream's start", async () => {
+    post
+      .mockResolvedValueOnce(session({ start_sec: 1200 }))
+      .mockResolvedValueOnce(
+        session({ session_id: "sess-new", manifest_url: "/stream/sess-new/manifest.m3u8?sig=n" })
+      );
+    renderPlayer("/videos/vid-1/watch?t=1213");
+    const first = await hlsReady();
+    const video = screen.getByTestId("mkt-video") as HTMLVideoElement;
+    // a seek within the stream stays
+    Object.defineProperty(video, "currentTime", {
+      value: 1500,
+      configurable: true,
+      writable: true,
+    });
+    act(() => {
+      video.dispatchEvent(new Event("seeking"));
+    });
+    expect(opens()).toHaveLength(1);
+    // before its start: a new stream from there
+    video.currentTime = 90;
+    act(() => {
+      video.dispatchEvent(new Event("seeking"));
+    });
+    const second = await hlsReady(2);
+    expect(opens()[1][1]).toEqual({ video_id: "vid-1", start_sec: 90 });
+    expect(second.config.startPosition).toBe(90);
+    expect(first.destroy).toHaveBeenCalled();
+  });
+
+  it("posts no progress from a stream attached at a position until it plays", async () => {
+    post.mockImplementation((url: string) =>
+      url === "/api/stream/sessions"
+        ? Promise.resolve(session({ start_sec: 1213 }))
+        : Promise.resolve(undefined)
+    );
+    renderPlayer("/videos/vid-1/watch?t=1213");
+    await hlsReady();
+    const video = screen.getByTestId("mkt-video") as HTMLVideoElement;
+    const progress = () => post.mock.calls.filter((c) => String(c[0]).endsWith("/progress"));
+    // not at its start yet (the element at 0): nothing that would move the
+    // resume point back
+    Object.defineProperty(video, "currentTime", { value: 0, configurable: true, writable: true });
+    act(() => {
+      video.dispatchEvent(new Event("timeupdate"));
+      video.dispatchEvent(new Event("pause"));
+    });
+    expect(progress()).toHaveLength(0);
+    video.currentTime = 1213;
+    act(() => {
+      video.dispatchEvent(new Event("playing"));
+      video.dispatchEvent(new Event("pause"));
+    });
+    await waitFor(() => expect(progress().at(-1)?.[1]).toEqual({ position_sec: 1213 }));
   });
 
   it("requests child URIs exactly as given and carries the sig only onto bare same-session ones", async () => {

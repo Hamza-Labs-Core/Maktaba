@@ -252,6 +252,58 @@ func TestOpenSession_ReopenAfterADeadTranscode(t *testing.T) {
 	}
 }
 
+// A viewer at a position (a resume, a reopen): an HLS transcode starts there
+// and the session says so; a DASH one starts at 0. An open session is handed
+// back only when its stream reaches the position (from its start to a minute
+// past what it has written); otherwise a new one starts there.
+func TestOpenSession_StartsAtThePosition(t *testing.T) {
+	ctx := context.Background()
+	srv, row, root := transcodeSetup(t)
+	orch := &fakeOrchestrator{}
+	srv.Transcode = orch
+	user := uuid.New().String()
+	open := func(start int, format string) OpenSessionResponse {
+		t.Helper()
+		resp, err := srv.OpenSession(ctx, OpenSessionRequest{VideoID: row.VideoID.String(), UserID: user,
+			ClientProfile: "generic", StartSec: start, Format: format})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+	first := open(1213, "")
+	if first.StartSec != 1213 || orch.lastJob.StartSec != 1213 {
+		t.Fatalf("opened at 1213: session %d, job %d", first.StartSec, orch.lastJob.StartSec)
+	}
+	// 30 s written: a position up to a minute past them is this session's
+	v0 := filepath.Join(root, "hls", first.SessionID, "v0")
+	_ = os.MkdirAll(v0, 0o755)
+	_ = os.WriteFile(filepath.Join(v0, "index.m3u8"),
+		[]byte("#EXTM3U\n#EXTINF:6.000000,\ns0.ts\n#EXTINF:6.000000,\ns1.ts\n#EXTINF:18.000000,\ns2.ts\n"), 0o644)
+	for _, at := range []int{1213, 1240, 1300} {
+		if again := open(at, ""); again.SessionID != first.SessionID {
+			t.Errorf("at %d: a new session, want the open one", at)
+		}
+	}
+	calls := orch.calls
+	moved := open(1400, "") // past what it reaches
+	if moved.SessionID == first.SessionID || moved.StartSec != 1400 || orch.calls != calls+1 {
+		t.Fatalf("at 1400: %+v", moved)
+	}
+	id, _ := uuid.Parse(first.SessionID)
+	if old, _, _ := srv.Sessions.Get(ctx, id); old.ClosedReason != session.ReasonMoved {
+		t.Errorf("the session moved from: %q", old.ClosedReason)
+	}
+	if back := open(0, ""); back.SessionID == moved.SessionID || back.StartSec != 0 { // before its start
+		t.Errorf("at 0: %+v", back)
+	}
+	other := OpenSessionRequest{VideoID: row.VideoID.String(), UserID: uuid.New().String(), ClientProfile: "generic",
+		StartSec: 1213, Format: "dash"}
+	if dash, err := srv.OpenSession(ctx, other); err != nil || dash.StartSec != 0 || orch.lastJob.StartSec != 0 {
+		t.Errorf("dash: %v, %+v, job %d", err, dash, orch.lastJob.StartSec)
+	}
+}
+
 func TestOpenSession_DirectModeSkipsSpawn(t *testing.T) {
 	srv, _, _ := transcodeSetup(t)
 	orch := &fakeOrchestrator{}

@@ -88,6 +88,10 @@ type OpenSessionResponse struct {
 	// DurationSec is the video's length in the catalogue (0: unknown): a
 	// player knows the real end of a stream that may stop short of it.
 	DurationSec float64 `json:"duration_sec,omitempty"`
+	// StartSec is where in the video the stream starts (seconds; 0: its
+	// start): a transcode opened at a position (start_sec) starts there, its
+	// times the video's, the part before it gaps a player cannot play.
+	StartSec float64 `json:"start_sec,omitempty"`
 }
 
 // Rendition is a single ABR ladder rung.

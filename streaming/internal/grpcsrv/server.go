@@ -13,7 +13,11 @@ package grpcsrv
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,6 +70,10 @@ type OpenSessionResponse struct {
 	ExpiresAt    time.Time
 	State        string // "active" | "queued"
 	Queue        *QueueState
+	// StartSec is where in the video the stream starts (seconds): an HLS
+	// transcode opened at a position starts there (its playlist lists the part
+	// before as gaps, its times the video's); 0 for the others.
+	StartSec int
 }
 
 // Capabilities mirrors GetCapabilities response.
@@ -178,12 +186,17 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	// Dedupe: existing open session for the same (user, video). One whose
 	// transcode ended short of the end (it failed) is closed instead: the
 	// player opening the video again (its playlist answered 410) gets a new
-	// transcode, not the same dead one.
+	// transcode, not the same dead one. So is one whose stream does not reach
+	// the position asked for: a new one starts there.
 	if existing, ok, _ := s.Sessions.ActiveByUserVideo(ctx, userUUID, videoUUID); ok && existing != nil {
-		if !existing.TranscodeCut() {
+		switch {
+		case existing.TranscodeCut():
+			_ = s.Sessions.Close(ctx, existing.ID, session.ReasonTranscodeFailed, s.Now().UTC())
+		case !s.reaches(existing, req.StartSec):
+			_ = s.Sessions.Close(ctx, existing.ID, session.ReasonMoved, s.Now().UTC())
+		default:
 			return s.respFor(existing, ladderFor(row, req)), nil
 		}
-		_ = s.Sessions.Close(ctx, existing.ID, session.ReasonTranscodeFailed, s.Now().UTC())
 	}
 
 	profile, _ := s.Profiles.Get(req.ClientProfile)
@@ -234,6 +247,11 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	if strings.EqualFold(req.Format, "dash") {
 		format = session.FormatDASH
 	}
+	// an HLS transcode starts where the viewer is (a resume, a reopen)
+	start := 0
+	if mode == session.ModeTranscode && format == session.FormatHLS && req.StartSec > 0 {
+		start = req.StartSec
+	}
 
 	sessID := uuid.New()
 	ladder := ladderFor(row, req)
@@ -271,6 +289,7 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 			MasterName:  "master.m3u8",
 			SourceCodec: row.VideoCodec,
 			NoAudio:     row.AudioCodec == "" && row.AudioChannels == 0,
+			StartSec:    start,
 		})
 		if terr != nil {
 			release()
@@ -295,6 +314,7 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		State:         state,
 		Transcoder:    transcoder,
 		SlotHold:      holdID,
+		StartSec:      start,
 	}
 	if err := s.Sessions.Insert(ctx, sessRow); err != nil {
 		// Don't leak the FFmpeg child if the row can't be stored.
@@ -332,12 +352,46 @@ func (s *Server) respFor(row *session.Row, ladder []ffmpeg.Rendition) OpenSessio
 		ManifestPath: manifestPath,
 		ExpiresAt:    s.Now().UTC().Add(s.SessionTTL),
 		State:        string(row.State),
+		StartSec:     row.StartSec,
 	}
 	if row.State == session.StateQueued {
 		resp.Queue = &QueueState{Position: s.Allocator.QueueLength(), ETASec: 30}
 	}
 	return resp
 }
+
+// reachSlack is how far past what an open HLS transcode has written a position
+// may be for the session to serve it: its transcode gets there soon.
+const reachSlack = time.Minute
+
+// reaches reports whether the open session's stream serves a viewer at start
+// (seconds): an HLS transcode from its own start to what it has written (its
+// first variant playlist), and a little more; the rest, anywhere.
+func (s *Server) reaches(row *session.Row, start int) bool {
+	if row.Mode != session.ModeTranscode || row.Format != session.FormatHLS || s.ResolveDir == nil {
+		return true
+	}
+	if start < row.StartSec {
+		return false
+	}
+	if row.TranscodeFinished() {
+		return true
+	}
+	data, err := os.ReadFile(filepath.Join(s.ResolveDir(row.ID.String()), "v0", "index.m3u8"))
+	if err != nil {
+		data = nil // nothing written yet
+	}
+	written := 0.0
+	for _, m := range extinf.FindAllSubmatch(data, -1) {
+		if d, err := strconv.ParseFloat(string(m[1]), 64); err == nil {
+			written += d
+		}
+	}
+	return float64(start) <= float64(row.StartSec)+written+reachSlack.Seconds()
+}
+
+// extinf is a media playlist's segment duration.
+var extinf = regexp.MustCompile(`#EXTINF:([0-9.]+)`)
 
 func manifestExt(f session.Format) string {
 	if f == session.FormatDASH {
