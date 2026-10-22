@@ -38,6 +38,7 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/videos/:videoId", { topic: "videos", anchor: "video-page" }],
   ["/videos/:videoId/watch", { topic: "videos", anchor: "play" }],
   ["/search", { topic: "search" }],
+  ["/search/video/:videoId", { topic: "search", anchor: "matches-page" }],
   ["/guide", { topic: "watch-tv", anchor: "guide" }],
   ["/live/:number", { topic: "watch-tv", anchor: "player" }],
   ["/queue", { topic: "processing" }],

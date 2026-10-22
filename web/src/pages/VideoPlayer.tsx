@@ -85,7 +85,19 @@ export function nearEnd(position: number, duration: number): boolean {
   return position >= duration - Math.max(5, duration * 0.02);
 }
 
-export function VideoPlayer() {
+export interface VideoPlayerProps {
+  /**
+   * Times (seconds) marked on the progress bar, like the chapter ticks —
+   * the search matches page marks every match.
+   */
+  markers?: number[];
+  /** The <video> element once it is on the page (null when it goes), so a parent can seek it. */
+  onVideoElement?: (el: HTMLVideoElement | null) => void;
+  /** Leaves out the Back button (a parent page has its own). */
+  hideBack?: boolean;
+}
+
+export function VideoPlayer({ markers, onVideoElement, hideBack = false }: VideoPlayerProps = {}) {
   const { videoId } = useParams();
   const [params] = useSearchParams();
   const nav = useNavigate();
@@ -100,7 +112,13 @@ export function VideoPlayer() {
   const [duration, setDuration] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [captionScale, setCaptionScale] = useState(1);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const onVideoElementRef = useRef(onVideoElement);
+  onVideoElementRef.current = onVideoElement;
+  const setVideoEl = useCallback((el: HTMLVideoElement | null) => {
+    videoRef.current = el;
+    onVideoElementRef.current?.(el);
+  }, []);
   const sessionIdRef = useRef<string | null>(null);
   // Where the next attachment starts: the ?t= deep link first, then the
   // position playback had reached when a signed URL had to be refreshed.
@@ -431,7 +449,7 @@ export function VideoPlayer() {
     if (location.key === "default") nav(videoId ? `/videos/${videoId}` : "/library");
     else nav(-1);
   };
-  const backButton = (
+  const backButton = hideBack ? null : (
     <Button variant="ghost" onClick={goBack}>
       {dir === "rtl" ? "→" : "←"} {t("player.back")}
     </Button>
@@ -524,7 +542,7 @@ export function VideoPlayer() {
         style={{ ["--mkt-caption-scale" as string]: String(captionScale) }}
       >
         <video
-          ref={videoRef}
+          ref={setVideoEl}
           data-testid="mkt-video"
           className="mkt-player__video"
           controls
@@ -550,6 +568,19 @@ export function VideoPlayer() {
                 title={c.title}
                 style={{
                   insetInlineStart: `${Math.min(100, Math.max(0, (c.start_sec / duration) * 100))}%`,
+                }}
+              />
+            ))}
+          </div>
+        )}
+        {duration > 0 && markers && markers.length > 0 && (
+          <div className="mkt-player__marks" aria-hidden="true" data-testid="mkt-player-marks">
+            {markers.map((at, i) => (
+              <span
+                key={`${i}:${at}`}
+                className="mkt-player__mark"
+                style={{
+                  insetInlineStart: `${Math.min(100, Math.max(0, (at / duration) * 100))}%`,
                 }}
               />
             ))}

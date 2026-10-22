@@ -12,6 +12,23 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Search results per video.** The Search page shows two lists, "In titles" and "In
+  transcripts", one entry per video with no repeats. A transcript match shows the video's
+  poster, title, library and duration, its true number of matching passages in the active
+  transcript (no longer capped at 50 passages), its best passages with timestamps that open
+  the player there, "Show all" for the rest, and an "Also in title" badge. Videos are ordered
+  by their best match, then by how many passages match. Both lists have a List / Grid view
+  (remembered), their own page numbers in the URL, and a video's matches page
+  (`/search/video/{id}`) plays the video with a mark on the progress bar at every match,
+  Previous / Next match, and every match in time order. A search's ordered results are kept
+  under a `search_id` (slot 0148 `search_runs`) for 15 minutes after their last use, so pages
+  never reorder; after that the search runs again with a notice. **Recent searches** lists
+  each user's last 20 searches (live or expired, remove one or all). New API:
+  `GET /api/search/results/{sid}`, `GET /api/search/passages`, `GET/DELETE /api/search/recent`;
+  `POST /api/search` returns `transcript_videos` and the first pages (its flat `hits` stay one
+  release, deprecated). Rules `rules.search` (passages per video, page sizes, how long results
+  are kept, recent searches kept, most videos per list, the meaning search's top K).
+
 - **Every full machine keeps a live copy of its home's database, and runs on it while the
   home is away** (Epic 37, `specs/epics/37-node-replica`). Nothing to set up: a machine that
   joins, or one joined before (at its first start on this version), makes its own Postgres
