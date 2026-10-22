@@ -290,7 +290,10 @@ B the machine taking over, C the other machines.
    (`dbfence`: INSERT, UPDATE, DELETE, TRUNCATE on every public table from every role but the
    superusers, recorded in the same transaction in a schema no app role may use, `maktaba_fence`,
    so a thaw gives back exactly those; a session's own `BEGIN READ WRITE`, which lib/pq sends,
-   overrides the database's `default_transaction_read_only`, which is set too); the app's open
+   overrides the database's `default_transaction_read_only`, which is set too; while they are
+   taken, an event trigger of the database, `maktaba_fence`, refuses every DDL command, GRANT and
+   REVOKE of a role but the superusers: the tables' owner could give its rights back to itself,
+   and a migration's DDL, in a transaction or not, would stick); the app's open
    sessions are ended, waiting for each to go, and only then does its last write set the switch's
    row (`cluster_switchovers`) to `frozen`: nothing the app wrote commits after it. That row is the
    marker: a copy holding it has everything A wrote. This machine's own superuser writes despite a
@@ -310,7 +313,8 @@ B the machine taking over, C the other machines.
    the CA the machines will verify it by, then loads the kit's machines (each machine's copy has
    its own row already: their load is not published to it), then makes every machine's
    publication and slot before anything else is written, so every copy can follow it without
-   copying again; then, **in one transaction**, stops its subscription, loads the rest of the kit
+   copying again; then, **in one transaction**, stops its subscription, reads the switch's row
+   in its copy (`cancelled` or `failed`: A called it off, and it is not promoted), loads the rest of the kit
    with triggers off, sets each sequence past A's value, makes the machines' roles, registers A
    and starts term N+1 (`cluster_terms`). A promotion that fails leaves B's copy as it was (the
    transaction undone, the machines' rows and the slots and publications it made removed), calls
@@ -324,7 +328,9 @@ B the machine taking over, C the other machines.
    it is the home (with what it answered), that the promotion runs, or that it called the switch
    off, which it does when it was not promoted, so it never is after; or A reads, at B's address,
    the notice B sealed to A's identity once it is the home. Only "called off" undoes the switch;
-   B, calling it off (or failing its promotion), drops the kit it was sent.
+   B, calling it off (or failing its promotion), drops the kit it was sent, and never finishes a
+   promotion once it is called off there. Whether B promoted is read from its copy; a copy that
+   does not answer says "not known", never "called off".
 
    **An admin can call a switch off** ("Call the switch off" on the tab, `POST
    /api/cluster/switchover/{id}/cancel`): before the promotion is asked it is undone at its next
@@ -332,7 +338,11 @@ B the machine taking over, C the other machines.
    asked, and calls it off when it has not promoted (a B that is, or is becoming, the home is not
    called off). A B that does not answer is called off only with its name typed: should it be the
    home after all, A hears its newer term when it is back and fences itself (what it wrote
-   meanwhile is kept aside, as after an emergency). The switch ends `cancelled`.
+   meanwhile is kept aside, as after an emergency): for a day after, A keeps asking B
+   (`switch.status`) and its supervisor looks every minute for a notice of a newer term
+   (`check-term`) under each identity one may be sealed to, its planned switches' old-home
+   identity among them once their promotion was asked. The switch ends `cancelled`. A machine
+   starting with no switch open removes the kit chunks of one called off or done.
 6. **Move the machines.** A waits for B to answer as the home, then tells each machine where it
    is, with B's CA: a copy holding the marker follows B from its slot (nothing copied), one
    without it copies anew; one told again follows already. A machine that was off asks its home
@@ -433,8 +443,13 @@ machine whose home does not answer asks the standbys for its notice too (`GET
 /api/cluster/moved/{node}`) and follows the new home, copying it anew.
 
 **The old home's return.** Every minute a home asks the standbys it knows, then its other
-machines, for a notice sealed to its identity in their kits. One of a newer term means it is not
-the home: it fences its database (its machines' roles kept out, the app's rights to write taken,
+machines, for a notice sealed to any identity it may be known by: a standby's, the old home's of
+a planned switch whose promotion it asked, the machine it was before it took over (its
+`node.json` put aside). One of a newer term means it is not the home; so does one of its own term
+from another home whose machine id is higher (the term claim is best effort: two standbys cut off
+from each other may each take one term, and the one whose id is lower gives way, as each machine
+decides alike; every home keeps the machine it was when it began its term, `cluster_terms.home_node`,
+a machine's `node.json` home `node`). Then it fences its database (its machines' roles kept out, the app's rights to write taken,
 read-only for every session) and stops its cloud relay agent (the new home runs it),
 reads what it wrote after the cut from the slot the new home's copy had on it (`KeptAside`:
 peeked, never consumed), keeps it in its state directory and reports it to the new home sealed
@@ -443,8 +458,10 @@ taken), wipes the home's keys, then becomes one of the new home's machines: its 
 aside, never emptied, and the new home's copied. Its slot gone, cut by the cap, or not read, it
 says so (all of it stays in the database it set aside) and steps down all the same. A report
 carries up to 100,000 changes (more are counted, and said to be in that database). The new home
-takes it only from the old home its term's emergency registered (who and which term in the
-address, checked before the body is read).
+takes it only from the old home its term's emergency registered, or from a standby of that term
+that is not its home (one that gave way to it), who and which term in the address, checked before
+the body is read. Giving way to a home of its own term, a home reports all it wrote since it took
+over (its slot was made at its own promotion).
 
 **Applying it** (the new home's Machines tab, "Changes kept aside"): download the report, set it
 aside, or review what would apply. Each of the old home's transactions applies **whole or not
@@ -519,7 +536,9 @@ applies on its own: what this home changed since is not known any more).
 - **A standby home** holds the home's secrets and keys, sealed to it alone, in its keys directory
   (this account's only), and only while the admin keeps the mark: unmarked or revoked, the kit is
   removed. It can take over only with the home not answering, a whole and current copy, its admin's
-  typed confirmation and the term claimed at the other machines (no two standbys take one term).
+  typed confirmation and the term claimed at the other machines (no two standbys that reach each
+  other take one term; two cut off from each other may, and the one whose machine id is lower
+  gives way).
   An old home's report is taken only from the machine that term's emergency registered, sealed by
   that identity to the cluster key; it is never applied on its own, and what touches the secrets,
   the cluster's rows or a credential never applies.
@@ -527,7 +546,9 @@ applies on its own: what this home changed since is not known any more).
   answered for it by the home), at most 4096, handed over in batches the home takes; the home ends
   only the sessions made through that machine (`web_sessions.origin_node_id`), and "everywhere"
   only for a person who signed in through it. The revocations the home pushes are kept on the
-  machine's disk while they matter.
+  machine's disk while they matter. A sign-out everywhere is kept with its session or not at
+  all; a person whose sessions on the machine are all node-local (the home cannot tell such a
+  sign-in from the machine's word) is told it waits for the home, and stays signed in.
 - **Known limits.** A pipeline write of a job is guarded by its worker's claim, not by a claim
   generation: a machine stops its jobs before their lease lapses, so its worker never holds a job
   again while a run of it from before is alive. On an operator's own Postgres, the output
@@ -610,11 +631,16 @@ applies on its own: what this home changed since is not known any more).
   before it receives the new home's changes, the fork published the copy's tables only.
   `api/internal/cluster/switchover`: the steps in order, the undo, the refusals, two starts at
   once, a lost promotion answer (never thawed: asked, or the new home's notice read), a switch
-  called off, a restart mid-switch taken up, Plex, dizqueTV and Cloudflare's notifications
-  checked from the new home, Plex Live TV's move, the notices (`MAKTABA_TEST_PG_URL`). The
-  supervisor's side (`serve_switchover_test.go`): a switch called off is never promoted, the
-  record of a switch, the old home keeping none of the home's keys; a machine finding the new
-  home at a peer (`serve_standby_test.go`).
+  called off (and, called off without B's word, B asked and the term watched for a day), a
+  restart mid-switch taken up, Plex, dizqueTV and Cloudflare's notifications checked from the new
+  home, Plex Live TV's move, the notices, the report of a home that gave way to another of its
+  term (`MAKTABA_TEST_PG_URL`). The supervisor's side (`serve_switchover_test.go`): a switch
+  called off is never promoted, nor by a copy that does not answer, the record of a switch, the
+  kits of switches over removed at a start, the term watched under every identity, the old home
+  keeping none of the home's keys; a machine finding the new home at a peer, the home of two of
+  one term that a machine follows, a promoted standby watching as the machine it was
+  (`serve_standby_test.go`). A fenced database refusing the app's writes, its owner's DDL and
+  grants, and giving every right back (`internal/dbfence`, `MAKTABA_TEST_PG_BIN`).
   `api/switchover_e2e_test.go` (`MAKTABA_E2E_SWITCHOVER=1`): three `maktaba-server serve`
   machines on the pinned Postgres 16.15: A the home, B and C its machines; C is switched off, the
   admin switches the home to B; B takes over without copying again, A follows it as a machine,

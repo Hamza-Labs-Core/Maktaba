@@ -49,14 +49,17 @@ don't append a line here; docs-only PRs are exempt.
   Two homes never write: once the promotion is asked the old home stays read-only until the new
   home says it is the home or called the switch off, also when its answer is lost (its app's
   database roles lose their rights to write its tables, which no session's own "read write"
-  overrides, and the machines' roles are kept out); that the promotion was asked is on disk
+  overrides, nor may they change its schema or give those rights back, and the machines' roles
+  are kept out); that the promotion was asked is on disk
   before it leaves; one switch runs at a time; a switch is taken up after a restart of the old
   home, a thaw that failed is asked again; the promotion is one transaction (a failed one leaves
   the copy following the old home), and takes only a copy that has every table; the old home
   gives up its data only once it receives the new home's changes, and then keeps none of the
   home's keys (nor its database's certificate). An admin can call a switch off from the tab:
   before the promotion at once, after it only if the machine taking over has not promoted (or,
-  when it does not answer, with its name typed). Plex Live TV moves too (the tuner and its guide pointed at the
+  when it does not answer, with its name typed: the old home then keeps asking it, and watches for
+  its notice, and should it be the home after all, stops writing; a promotion called off is never
+  finished, and its kit is removed when the machine next starts). Plex Live TV moves too (the tuner and its guide pointed at the
   new home, Plex's DVR, its recording schedules and channels kept), Plex and dizqueTV are checked
   from the new home (an address that was the old home's own is moved to its network address),
   Cloudflare's notifications move with the cloud relay, and the tab shows each machine and each
@@ -70,7 +73,9 @@ don't append a line here; docs-only PRs are exempt.
   standby's admin makes it the home from that machine's own Machines page, after a warning and
   the home's name typed to confirm: only from a whole copy that was within 10 minutes of the home
   when the home last answered, and only once the standby has claimed the term at the other
-  machines, so two standbys never both take over. The other machines find the new home at the
+  machines, so two standbys never both take over (should two cut off from each other both take
+  the same term, the one whose machine id is lower gives way, as an old home does, and every
+  machine follows the other). The other machines find the new home at the
   standbys by themselves and follow it. If the old home comes back, it stops writing within a minute and
   becomes one of the new home's machines. What it wrote after the switch is kept aside and
   reported to the new home, where the admin downloads it or reviews and applies what does not
@@ -104,8 +109,10 @@ don't append a line here; docs-only PRs are exempt.
   `rules.cluster.copies_on_operator_postgres`; until then the machines are told why. A sign-in on
   a machine while its home is away refuses a user who must change their password. The sessions it
   opens are written to the home's history, with their closing, also after a restart of the
-  machine. A sign-out there is kept only for a session the machine knows, handed over in batches
-  the home takes, and the home ends only sessions made through that machine; the home's
+  machine. A sign-out there is kept only for a session the machine knows, whole (a sign-out
+  everywhere is kept with its session or not at all), handed over in batches the home takes, and
+  the home ends only sessions made through that machine; a person signed in on the machine only
+  while the home was away is told that signing out everywhere waits for the home; the home's
   revocations survive a restart of the machine during an outage, and a person signed out
   everywhere can sign in there again once its copy has it.
 - **The desktop app's setup works end to end** (Epic 38, story 38.6; the Mac, Windows and Linux
