@@ -76,12 +76,16 @@ const SECONDARY = [
 
 // Admin nav is sidebar-only and rendered only for admins. The pages
 // re-check the principal server-side, so this is purely a UX affordance.
+// Live TV's own page only: TV changes (/admin/live-tv/changes) has its own entry
+const LIVE_TV_PATH = "/admin/live-tv";
+
 const ADMIN = [
   { to: "/admin/users", key: "nav.admin.users", icon: "◉" },
   { to: "/admin/library-acl", key: "nav.admin.libraryAcl", icon: "▦" },
   { to: "/admin/channels", key: "nav.admin.channels", icon: "▥" },
   { to: "/admin/filler", key: "nav.admin.filler", icon: "◫" },
   { to: "/admin/live-tv", key: "nav.admin.liveTv", icon: "▶" },
+  { to: "/admin/live-tv/changes", key: "nav.admin.tvChanges", icon: "⇄" },
   { to: "/admin/analytics", key: "nav.admin.analytics", icon: "▰" },
   { to: "/admin/audit", key: "nav.admin.audit", icon: "❑" },
   { to: "/admin/health", key: "nav.admin.health", icon: "♥" },
@@ -261,6 +265,7 @@ export function AppShell() {
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  end={item.to === LIVE_TV_PATH}
                   className="mkt-nav-link"
                   title={t(item.key)}
                   aria-label={t(item.key)}

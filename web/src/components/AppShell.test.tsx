@@ -23,9 +23,9 @@ import type { SwUpdateDetail } from "../lib/pwa";
 import { resetUpdateStatusCache } from "../lib/updates";
 import { STATUS_PATH, resetStatusStore } from "../lib/systemStatus";
 
-function renderShell() {
+function renderShell(path = "/") {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <I18nProvider>
         <ToastProvider>
           <AuthProvider>
@@ -86,6 +86,18 @@ describe("AppShell admin navigation", () => {
     renderShell();
     const link = await screen.findByRole("link", { name: en["nav.admin.extensions"] });
     expect(link).toHaveAttribute("href", "/admin/extensions");
+  });
+
+  it("links TV changes, and only it is current on the Changes page", async () => {
+    get.mockResolvedValue({
+      user: { id: "u1", username: "root", is_admin: true, roles: [] },
+    });
+    renderShell("/admin/live-tv/changes");
+    const changes = await screen.findByRole("link", { name: en["nav.admin.tvChanges"] });
+    expect(changes).toHaveAttribute("href", "/admin/live-tv/changes");
+    expect(changes).toHaveAttribute("aria-current", "page");
+    const liveTv = screen.getByRole("link", { name: en["nav.admin.liveTv"] });
+    expect(liveTv).not.toHaveAttribute("aria-current");
   });
 });
 
