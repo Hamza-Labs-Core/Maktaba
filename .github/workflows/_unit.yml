@@ -150,18 +150,14 @@ jobs:
   # StatusNotifier host. No other PR job builds the Linux shell.
   desktop-shell-linux:
     runs-on: ubuntu-22.04
-    # the apt step may take up to 35 minutes on a slow mirror (below), then the build
-    timeout-minutes: 55
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6.0.2
 
       - name: Install the WebKitGTK and AppIndicator libraries
-        # a stalled mirror fails fast and is tried again (apt-install.sh); WebKitGTK's dev
-        # packages are a few hundred MB, so a slow one that still moves gets 15 minutes
-        timeout-minutes: 35
-        env:
-          APT_NET_TIMEOUT: "900"
-        run: tools/ci/apt-install.sh libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
