@@ -14,7 +14,14 @@ import pytest
 
 from maktaba_pipeline.cluster import config
 from maktaba_pipeline.cluster.config import NodeConfig
-from tests.cluster.test_config import _JOINED, _NEW, _icacls, _leftover, _windows_profile
+from tests.cluster.test_config import (
+    _JOINED,
+    _NEW,
+    _icacls,
+    _leftover,
+    _named,
+    _windows_profile,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.skipif(os.name != "nt", reason="Windows ACLs")]
 
@@ -45,30 +52,41 @@ def test_windows_claim_keeps_the_files_acl(tmp_path: Path, monkeypatch: pytest.M
 def test_windows_the_temp_file_is_the_users_before_the_secret_is_in_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The temp file a node config is written through is limited to the user while it is
-    still empty, before a byte of the database credential is in it (its folder's ACL may
-    let others read: Authenticated Users on a second drive)."""
+    """The temp file a node config is written through is the user's alone from the moment
+    it exists, before a byte of the database credential is in it (its folder's ACL may let
+    others read: Authenticated Users on a second drive): it is created with that DACL
+    (never set afterwards) and with no sharing, so no other handle to it can be opened
+    while it is written."""
     folder = tmp_path / "Maktaba"
     folder.mkdir()
     subprocess.run(
         ["icacls", str(folder), "/grant", "*S-1-5-11:(OI)(CI)(M)"], check=True, capture_output=True
     )
-    seen: list[tuple[int, list[str]]] = []
+    seen: list[tuple[int, list[str], bool]] = []
     fdopen = os.fdopen
 
     def spy(fd: int, *args: Any, **kw: Any) -> Any:
         (tmp,) = folder.glob(".node.json-*.tmp")
-        seen.append((tmp.stat().st_size, _icacls(tmp)))
+        try:
+            tmp.open("rb").close()
+            opened = True
+        except PermissionError:
+            opened = False
+        seen.append((tmp.stat().st_size, _icacls(tmp), opened))
         return fdopen(fd, *args, **kw)
 
+    def afterwards(path: str) -> None:
+        raise AssertionError(f"the DACL of {path} was set after it was created")
+
     monkeypatch.setattr(os, "fdopen", spy)
+    monkeypatch.setattr(config, "_set_user_only_dacl", afterwards)
     config.save(
         NodeConfig(node_id="n1", name="pc", private_key="k1", database_url="postgres://a"),
         folder / "node.json",
     )
     assert len(seen) == 1
-    size, aces = seen[0]
-    assert size == 0 and _users_only(aces), aces
+    size, aces, opened = seen[0]
+    assert size == 0 and _users_only(aces) and not opened, seen
     assert _users_only(_icacls(folder / "node.json"))
 
 
@@ -76,13 +94,17 @@ def test_windows_the_temp_file_is_the_users_before_the_secret_is_in_it(
 def test_windows_recovered_leftovers_are_the_users_only(
     tmp_path: Path, bak: dict[str, str] | None, want: dict[str, str]
 ) -> None:
-    """A node.json put back from a write's leftovers (its backup, else its temp file) is
-    the user's alone."""
+    """A node.json put back from a write's leftovers is the user's alone: the backup, the
+    old node.json, as it was; else the temp file, even one an older write left open to
+    the folder's ACL (Authenticated Users here)."""
     folder = tmp_path / "Maktaba"
     folder.mkdir()
+    subprocess.run(
+        ["icacls", str(folder), "/grant", "*S-1-5-11:(OI)(CI)(M)"], check=True, capture_output=True
+    )
     if bak is not None:
-        _leftover(folder, ".node.json-123-abcd1234.bak", json.dumps(bak))
-    _leftover(folder, ".node-x1y2z3w4.tmp", json.dumps(_NEW))
+        _leftover(folder, _named(".bak", age=120), json.dumps(bak), age=3600)
+    _leftover(folder, ".node-x1y2z3w4.tmp", json.dumps(_NEW), restrict=False)
     cfg = config.load(folder / "node.json")
     assert (
         cfg is not None and json.loads((folder / "node.json").read_text(encoding="utf-8")) == want

@@ -155,6 +155,22 @@ func TestNodeModeConfigFromNodeJSON(t *testing.T) {
 	if _, ok := NodeMode(empty, "linux", t.TempDir(), os.ReadFile); ok {
 		t.Error("a machine without a node config is not a node")
 	}
+	// the roaming node.json under its backup name (a claim's ReplaceFileW failed with
+	// 1177, and putting it back too): still this node, with its database
+	roaming := filepath.Join(dir, "Roaming", "Maktaba")
+	if err := os.MkdirAll(roaming, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(roaming, ".node.json-1792600000-4242-0badf00d.bak"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	winEnv := map[string]string{"APPDATA": filepath.Join(dir, "Roaming"), "LOCALAPPDATA": filepath.Join(dir, "Local"),
+		"MAKTABA_MACHINE_ID": "this-pc"}
+	ns, ok = NodeMode(func(k string) string { return winEnv[k] }, "windows", dir, os.ReadFile)
+	if !ok || ns.NodeID != cfg["node_id"] || ns.DatabaseURL != cfg["database_url"] ||
+		ns.ConfigPath != filepath.Join(roaming, "node.json") {
+		t.Fatalf("node mode from the roaming config's backup = %+v %v", ns, ok)
+	}
 	pm, err := pathmap.FromJSON([]byte(`{"Y:/": "/Volumes/Y/"}`))
 	if err != nil || pm.Apply("Y:/Shows/a.mp4") != "/Volumes/Y/Shows/a.mp4" {
 		t.Errorf("path map: %v %q", err, pm.Apply("Y:/Shows/a.mp4"))

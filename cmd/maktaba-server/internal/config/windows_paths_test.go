@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -420,6 +422,94 @@ func TestNodeConfigClaimedByAnotherPC(t *testing.T) {
 	// a PC whose id cannot be known never skips a config (no working node goes down)
 	if claimedElsewhere(original, func() string { return "" }) {
 		t.Fatal("an unknown machine id must not skip a node config")
+	}
+}
+
+// A claim whose ReplaceFileW failed with 1177 and whose putting back failed too
+// (cluster/config.py) leaves the roaming node.json under its backup name and the
+// claimed copy as a temp file. That is still this PC's roaming config: the default path
+// resolves it (no local one is taken), and it is read as the pipeline's next load puts
+// it back (the backup, else the temp file; never a cut one), so the node stays joined.
+// Another PC's leftovers stay that PC's, and another node config's are never
+// node.json's.
+func TestNodeConfigLeftByAFailedClaim(t *testing.T) {
+	t.Parallel()
+	_, cur, env := winLayout(t)
+	getenv := func(k string) string { return env[k] }
+	base := filepath.Dir(filepath.Dir(cur.Config))
+	dir := filepath.Join(env["APPDATA"], "Maktaba")
+	original, local := filepath.Join(dir, "node.json"), filepath.Join(cur.Config, "node.json")
+	bak := filepath.Join(dir, ".node.json-1792600000-4242-0badf00d.bak")
+	tmp := filepath.Join(dir, ".node.json-1792600000-4242-0badf00d.tmp")
+	unclaimed := `{"node_id":"n1","private_key":"k","database_url":"postgres://h"}`
+	writeAt(t, bak, unclaimed)
+	writeAt(t, tmp, `{"node_id":"n1","private_key":"k","database_url":"postgres://h","machine_id":"this-pc"}`)
+	hourAgo := time.Now().Add(-time.Hour) // ReplaceFileW's backup keeps the old file's mtime
+	if err := os.Chtimes(bak, hourAgo, hourAgo); err != nil {
+		t.Fatal(err)
+	}
+	read := func() NodeConfig { return ReadNodeConfig(getenv, "windows", base, os.ReadFile) }
+
+	if got := NodeConfigPath(getenv, "windows", base); got != original {
+		t.Fatalf("left by a failed claim: %s, want the roaming config %s", got, original)
+	}
+	if n := read(); n.Err != nil || !n.Joined() || n.NodeID != "n1" || n.MachineID != "" {
+		t.Fatalf("the old file, as the pipeline puts it back: %+v (err %v)", n, n.Err)
+	}
+	if p, _ := ForeignNodeConfig(getenv, "windows", base); p != "" {
+		t.Fatalf("this PC's own leftovers are not another PC's: %s", p)
+	}
+
+	if err := os.Remove(bak); err != nil {
+		t.Fatal(err)
+	}
+	if n := read(); !n.Joined() || n.MachineID != "this-pc" {
+		t.Fatalf("only the new copy: it is the config: %+v (err %v)", n, n.Err)
+	}
+
+	writeAt(t, tmp, `{"node_id":"n1","private_key":"k","data`)
+	if got := NodeConfigPath(getenv, "windows", base); got != local {
+		t.Fatalf("a cut temp file is no config: %s, want %s", got, local)
+	}
+	if n := read(); n.Joined() || n.Err != nil {
+		t.Fatalf("a cut temp file is no config: %+v (err %v)", n, n.Err)
+	}
+
+	writeAt(t, original, "{not json")
+	writeAt(t, bak, unclaimed)
+	if n := read(); n.Err != nil || !n.Joined() || n.NodeID != "n1" {
+		t.Fatalf("node.json broken, a whole backup: the backup: %+v (err %v)", n, n.Err)
+	}
+	held := func(p string) ([]byte, error) { // another program holds node.json
+		if p == original {
+			return nil, fs.ErrPermission
+		}
+		return os.ReadFile(p) //nolint:gosec // the test's temp files
+	}
+	if n := ReadNodeConfig(getenv, "windows", base, held); !errors.Is(n.Err, fs.ErrPermission) {
+		t.Fatalf("a node.json that cannot be read is never read past: %+v (err %v)", n, n.Err)
+	}
+
+	if err := os.Remove(original); err != nil {
+		t.Fatal(err)
+	}
+	writeAt(t, bak, `{"node_id":"n9","private_key":"k","database_url":"postgres://h","machine_id":"other-pc"}`)
+	if got := NodeConfigPath(getenv, "windows", base); got != local {
+		t.Fatalf("another PC's leftovers: %s, want this PC's own place %s", got, local)
+	}
+	if p, owner := ForeignNodeConfig(getenv, "windows", base); p != bak || owner != "other-pc" {
+		t.Fatalf("another PC's leftovers are named: %q %q", p, owner)
+	}
+
+	other := filepath.Join(t.TempDir(), "node-b.json")
+	writeAt(t, filepath.Join(filepath.Dir(other), ".node-a.json-1792600000-4242-0badf00d.bak"), unclaimed)
+	if n := ReadNodeConfig(func(k string) string {
+		if k == "MAKTABA_NODE_CONFIG" {
+			return other
+		}
+		return ""
+	}, "windows", base, os.ReadFile); n.Joined() || n.Err != nil {
+		t.Fatalf("another node config's leftovers are not this one's: %+v (err %v)", n, n.Err)
 	}
 }
 
