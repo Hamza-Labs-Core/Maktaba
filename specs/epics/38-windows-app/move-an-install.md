@@ -33,7 +33,9 @@ An install on the default paths from before Epic 38 is one install whether or no
 copied its `server.toml` and keys from `%APPDATA%\Maktaba` into `%LOCALAPPDATA%\Maktaba` (story
 38.1): the copy is read when there is one, the original otherwise. Its node config is the machine's
 one file, which the app reads where it is, unless another PC has claimed it (a roaming profile,
-38.1's `machine_id`): this PC is then not that node, and the plan says so. Its large state is read where it keeps it
+38.1's `machine_id`): this PC is then not that node, and until it joins as its own machine (a
+joined `%LOCALAPPDATA%\Maktaba\node.json`) the plan says so, as serve and setup's check do. Its
+large state is read where it keeps it
 (`Config.StateDirOutsideApp`).
 
 ## The setup screen
@@ -53,8 +55,8 @@ fails shows its error with Try again; it never falls through to a fresh setup. A
 way is offered to go on, or to restore the old install. A Windows service install is named, and its
 plan refuses it: only an administrator can stop it.
 
-A joined node config that no install here runs (one removed, or a move undone, left it) is not in
-the way: check warns `node_config_unused`, the welcome screen says a fresh setup makes a new home
+A joined node config that no install here runs (an install removed left it; a `node.json` is never
+copied, so an undone move leaves none behind) is not in the way: check warns `node_config_unused`, the welcome screen says a fresh setup makes a new home
 and leaves it unused, and finish writes `[server] role = "home"`, so no role of the app ever runs as
 that node. A move done can be undone from the welcome screen too. While an install outside the app
 is a node of a home, or reads the app's own `server.toml`, setup's status does not count the app as

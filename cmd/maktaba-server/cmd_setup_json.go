@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -161,13 +160,7 @@ func stepLLM(s *setupRun, in json.RawMessage) (any, error) {
 }
 
 // openLLMLog appends to the model server's log in the logs directory.
-func openLLMLog() (*os.File, error) {
-	p := filepath.Join(config.LogsDir(), llmserver.LogName)
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return nil, err
-	}
-	return os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-}
+func openLLMLog() (*os.File, error) { return config.OpenLog(llmserver.LogName) }
 
 // runSetupJSON runs one step and returns the exit code.
 func runSetupJSON(step string, in io.Reader, out io.Writer) int {

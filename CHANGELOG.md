@@ -57,7 +57,8 @@ don't append a line here; docs-only PRs are exempt.
   it names but cannot move) and offers to move it in: the plan shows what is carried and copied,
   and refuses, before anything stops, a key the app holds already and different, or a node whose
   node config is not the one the app reads; it says so when the roaming profile's node config is
-  another PC's (the app on this PC is not that node).
+  another PC's and this PC has not joined as its own machine (the app on this PC is not that
+  node), the one rule serve and setup's check follow too.
   The move builds the venv while the old install still runs, keeps its task's definition, stops it
   (its script's restart loop too, and nothing of it may come back for longer than the loop's delay;
   never the app's own programs, wherever the old folder is) and disables its task, and carries its
@@ -167,6 +168,25 @@ don't append a line here; docs-only PRs are exempt.
   now turns the bundled Postgres on inside any desktop app's payload, not only on a Mac (a
   `[database] url` or a SQLite database in use still wins). The app's roles find the payload's
   `ffmpeg.exe`. Loopback TCP only on Windows, the nightly dumps as on the Mac.
+- **Maktaba on a Linux machine without a desktop** (Epic 39, story 39.6). `install.sh --app`
+  verifies the release first (with the machine's cosign when it is 2.4.3 or newer, else a pinned
+  cosign it fetches), then `maktaba-server setup` asks the desktop app's questions in the terminal,
+  in English or Arabic: the server is copied into `~/.local/share/maktaba/runtime`, then runs as
+  the user's systemd service, started at boot through linger. The check also reports glibc, the
+  systemd user manager, linger and a Maktaba service another install owns; where the second listen
+  cannot run, no Hugging Face sign-in is asked. When the distribution's ffmpeg is missing or falls
+  short, the terminal offers to run the command check names (sudo asks for the password), then
+  checks again; from an answers file it only shows it. A Plex code that expires (plex.tv out of
+  reach is asked again until then) or a Ctrl+C while it waits leaves Plex to Settings, and the
+  setup goes on. `--answers` (or `--answers-fd`) gives every answer without questions.
+- **The Linux app's downloads** (Epic 39, story 39.10). Each release builds the app as an
+  AppImage, a `.deb` and an `.rpm` for x86_64 and aarch64, each with the whole server inside
+  (its own Postgres and Python; ffmpeg is the distribution's, which the `.deb` and the `.rpm`
+  depend on), checked before anything is published; the `.deb` and `.rpm` stop the app's server
+  when they are removed. For machines without a desktop the release carries the server payload
+  (`maktaba-linux-payload-<version>-<arch>.tar.gz`) and `install.sh` among its assets, both in the
+  signed `checksums.txt`: the notes say to verify the script and run it, no longer to pipe it from
+  a branch.
 - **The desktop app runs the server on Linux** (Epic 39, story 39.8). When setup finishes, the
   app copies its server into `~/.local/share/maktaba/runtime` and runs it as the user's systemd
   service, started at boot through linger; after an app update it moves the server to the new
@@ -260,6 +280,15 @@ don't append a line here; docs-only PRs are exempt.
   (`MAKTABA_FFMPEG_BIN`). Each rung of an HLS transcode is now its own variant (`v1`, `v2` were
   never written, so the master playlist's lower rungs 404'd), a source without audio transcodes,
   and a session asking for software (`force_software`) gets it.
+- **The second listen's tries count from the end of each try, and a stopped transcript comes
+  back (follow-up of #221).** The wait between tries counted from when the try was queued, so a
+  job that waited hours used it up; it now counts from the end of the try. A transcript the
+  second listen stopped on gets its tries again by itself, once, when the home sees a
+  second-listen model, or a machine's GPU, driver or packages, for the first time, and Settings,
+  Transcription has the number of tries, the waits and a round to raise to try them all again
+  (new table `relisten_seen` and columns on `relisten_attempts`, slot 0146). A try that found no
+  room on the GPU no longer counts (follow-up of story 38.9). Deleted and missing
+  videos are no longer tried, and the stop note keeps its reason on long Windows paths.
 - **The Linux runtime copy orders versions as everything else does.** It kept its own reading of
   `git describe` builds, so a dirty build of a tag ranked above the next commit's build and a dirty
   build equalled the clean one: it now uses the one order (`v0.2.0` < `v0.2.0-dirty` <

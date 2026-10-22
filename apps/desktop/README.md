@@ -58,7 +58,8 @@ pnpm tauri dev                  # dev window pointed at the Vite dev server
 ./scripts/build.sh macos        # .app + .dmg          (on macOS)
 ./scripts/build.sh windows      # .msi + NSIS .exe     (on Windows; the client alone)
 make win-app                    # the Windows app with the server inside: NSIS only (tools/release/win-app)
-./scripts/build.sh linux        # .deb + .AppImage     (on Linux)
+./scripts/build.sh linux        # .AppImage + .deb + .rpm, the shell only (on Linux;
+                                #   `make linux-app` builds them with the server inside)
 ./scripts/build.sh debug        # fast unsigned debug build
 ```
 
@@ -74,12 +75,16 @@ runners in parallel, attaching them to the GitHub Release for the tag:
 
 | Runner | Bundles |
 |---|---|
-| `macos-latest` | `.dmg` — **universal** (arm64 + x86_64 via `--target universal-apple-darwin`) |
+| `macos-15` (arm64) | `.dmg` of Maktaba.app **with the server inside** (`--target aarch64-apple-darwin`, `tools/release/mac-app/payload.sh`) |
+| `macos-15` (x86_64) | `.dmg` of the client alone (`--target x86_64-apple-darwin`) |
 | `windows-latest` | the NSIS `-setup.exe` with the server inside (`tools/release/win-app/payload.sh`; current user, `%LOCALAPPDATA%\Maktaba`, no `.msi`), plus a portable `.zip` of the raw `Maktaba.exe` (the client) |
-| `ubuntu-22.04` | `.deb` + `.AppImage` (installs `libwebkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2`, `patchelf` first) |
+| `ubuntu-22.04`, `ubuntu-22.04-arm` | `.AppImage` + `.deb` + `.rpm` with the server inside (Epic 39; no ffmpeg: the `.deb` and `.rpm` depend on the distribution's; installs `libwebkit2gtk-4.1`, `libayatana-appindicator3`, `librsvg2`, `patchelf`, `rpm`, and `ffmpeg` for the payload's check, first) |
 
-The build uses the official
-[`tauri-apps/tauri-action@v0`](https://github.com/tauri-apps/tauri-action).
+Each runner builds with `tauri build` and checks its bundles; nothing is
+published from there. The workflow's `publish` job, after every runner,
+attaches the checked bundles to the release and then writes `latest.json`
+(the updater feed, `tools/release/cmd/updater-feed`) over all of them, so
+an updater is never pointed at a bundle that failed its checks.
 Because the repo has **no pnpm workspace**, the config's
 `beforeBuildCommand` (`pnpm --filter maktaba-web build`) can't resolve in
 CI — so the workflow builds `web/dist` itself (install → design tokens →
@@ -88,7 +93,7 @@ CI — so the workflow builds `web/dist` itself (install → design tokens →
 bundles the already-built frontend.
 
 **Signing is deferred.** These bundles are unsigned. When certificates are
-provisioned, wire them into `tauri-action` via the secrets documented at
+provisioned, wire them into the `tauri build` step via the secrets documented at
 the top of the workflow (`APPLE_*` for Developer ID + notarisation,
 `WINDOWS_CERTIFICATE*` for Authenticode, `TAURI_SIGNING_PRIVATE_KEY*` for
 the auto-updater).

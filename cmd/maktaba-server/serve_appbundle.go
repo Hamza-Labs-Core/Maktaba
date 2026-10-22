@@ -559,14 +559,11 @@ var venvRun = appvenv.Run
 
 func (g *venvGate) run(ctx context.Context, report func(supervisor.Detail)) error {
 	spec := g.spec
-	logDir := config.LogsDir()
-	if err := os.MkdirAll(logDir, 0o755); err == nil {
-		if f, err := os.OpenFile(filepath.Join(logDir, "venv.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
-			defer f.Close()
-			spec.Log = f
-		}
+	if f, err := config.OpenLog("venv.log"); err == nil { // the user's only, as every log
+		defer f.Close()
+		spec.Log = f
 	}
-	logPath := filepath.Join(logDir, "venv.log")
+	logPath := filepath.Join(config.LogsDir(), "venv.log")
 	res, err := venvRun(ctx, spec, func(p appvenv.Progress) {
 		pct := int(p.Fraction * 100)
 		report(detail("venv_building", fmt.Sprintf("Installing the transcription tools: %s (%d%%)", p.Message, pct),

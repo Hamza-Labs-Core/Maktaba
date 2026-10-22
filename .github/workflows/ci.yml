@@ -103,10 +103,11 @@ jobs:
               - '.github/workflows/_win-app.yml'
               - '.github/workflows/desktop-release.yml'
               - 'Makefile'
-            # The Linux payload gate (x86_64 + aarch64, ~15 min each): what goes into the
-            # payload or how it is built.
+            # The Linux app gate (x86_64 + aarch64, ~25 min each): what goes into the
+            # payload or the app, or how they are built.
             linux_app:
               - 'tools/release/linux-app/**'
+              - 'apps/desktop/**'
               - 'cmd/maktaba-launcher/**'
               - 'deploy/packaging/node/build-release.sh'
               - 'pipeline/pyproject.toml'

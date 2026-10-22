@@ -360,8 +360,8 @@ async def test_a_relisten_job_runs_on_a_transcript_recorded_before_the_mark(
 
 async def _tries(db: Database, vid: Any) -> Any:
     return await db.fetchrow(
-        "SELECT attempts, last_job_id, last_at, next_at, stopped_at FROM relisten_attempts"
-        " WHERE video_id = $1",
+        "SELECT attempts, last_job_id, last_at, next_at, ended_at, wait_s, stopped_at, model,"
+        " relisten_round FROM relisten_attempts WHERE video_id = $1",
         str(vid),
     )
 
@@ -373,18 +373,24 @@ async def _sweep(db: Database, monkeypatch: pytest.MonkeyPatch) -> int:
 
 
 async def _wait_over(db: Database, vid: Any) -> None:
+    """The try is over and so is its wait."""
+    past = to_ts(db, now() - timedelta(seconds=1))
     await db.execute(
-        "UPDATE relisten_attempts SET next_at = $2 WHERE video_id = $1",
+        "UPDATE relisten_attempts SET ended_at = COALESCE(ended_at, $2), next_at = $2"
+        " WHERE video_id = $1",
         str(vid),
-        to_ts(db, now() - timedelta(seconds=1)),
+        past,
     )
 
 
-def _cannot_read(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The worker that runs the second listen cannot read the video's file."""
+def _cannot_read(monkeypatch: pytest.MonkeyPatch, share: str = "") -> None:
+    """The worker that runs the second listen cannot read the video's file (on ``share``,
+    a folder its path starts with)."""
 
     async def decode(path: str, timeout: float = 0) -> np.ndarray:
-        raise StageFailure("permission_denied", f"{path}: permission denied", retryable=False)
+        raise StageFailure(
+            "permission_denied", f"{share}{path}: permission denied", retryable=False
+        )
 
     monkeypatch.setattr(tr, "decode_audio", decode)
 
@@ -398,9 +404,16 @@ async def _notes(db: Database) -> list[Any]:
     )
 
 
-def _here(monkeypatch: pytest.MonkeyPatch) -> None:
+def _here(monkeypatch: pytest.MonkeyPatch, capability: str = "this machine") -> None:
+    """This worker runs the second listen, has its model, and its capability is
+    ``capability``."""
     _capable(monkeypatch, True)
     monkeypatch.setattr(tr, "_has_second_listen_model", lambda model: True)
+    monkeypatch.setattr(tr, "second_listen_capability", lambda: (capability, {"host": capability}))
+
+
+def _rules(monkeypatch: pytest.MonkeyPatch, **values: Any) -> None:
+    monkeypatch.setattr(tr, "_RULES", TranscriptionConfig(**values))
 
 
 @pytest.mark.integration
@@ -412,26 +425,29 @@ async def test_a_file_that_keeps_failing_backs_off_and_stops(
     vid = await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=3)
     _here(monkeypatch)
     _cannot_read(monkeypatch)
-    for n in range(1, tr.RELISTEN_TRIES + 1):
+    rules = tr._RULES
+    for n in range(1, rules.relisten_tries + 1):
         assert await _sweep(db, monkeypatch) == 1
+        assert (await _tries(db, vid))["ended_at"] is None  # its job is still to run
         await drain_core(db, rt, only={"transcribe"})
         job = await _last_job(db, vid)
         assert job["state"] == "failed"
+        assert await _sweep(db, monkeypatch) == 0  # it waits, from the end of the try
         tries = await _tries(db, vid)
         assert tries["attempts"] == n and tries["last_job_id"] == job["id"]
-        # each wait twice the last (within the engine's jitter), at most a day
-        step = min(tr.RELISTEN_BACKOFF_S * 2 ** (n - 1), tr.RELISTEN_BACKOFF_MAX_S)
-        wait = (parse_ts(tries["next_at"]) - parse_ts(tries["last_at"])).total_seconds()  # type: ignore[operator]
+        assert parse_ts(tries["ended_at"]) == parse_ts(job_end := await _finished(db, job["id"]))
+        # each wait twice the last (within the engine's jitter), at most the rule's longest
+        step = min(rules.relisten_wait_hours * 2 ** (n - 1), rules.relisten_wait_max_hours) * 3600
+        wait = (parse_ts(tries["next_at"]) - parse_ts(job_end)).total_seconds()  # type: ignore[operator]
         assert 0.74 * step <= wait <= 1.26 * step
-        assert await _sweep(db, monkeypatch) == 0  # it waits
         await _wait_over(db, vid)
     # out of tries: no more jobs, said once, on the last one
     assert await _sweep(db, monkeypatch) == 0
     assert (await _tries(db, vid))["stopped_at"] is not None
     notes = await _notes(db)
     assert len(notes) == 1 and notes[0]["job_id"] == job["id"]
-    assert f"{tr.RELISTEN_TRIES} tries" in notes[0]["message"]
-    assert "permission denied" in notes[0]["message"]
+    assert f"{rules.relisten_tries} tries" in notes[0]["message"]
+    assert "(permission_denied): permission denied" in notes[0]["message"]
     assert await _sweep(db, monkeypatch) == 0
     assert len(await _notes(db)) == 1
     assert fake.calls == 1  # Whisper never ran again
@@ -511,14 +527,8 @@ async def test_an_ordinary_run_starts_the_tries_over(
     old one, even stopped ones, go with it."""
     rt = await core_runtime(db)
     vid = await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=3)
-    await db.execute(
-        "INSERT INTO relisten_attempts (video_id, attempts, last_at, next_at, stopped_at)"
-        " VALUES ($1, $2, $3, $3, $3)",
-        str(vid),
-        tr.RELISTEN_TRIES,
-        to_ts(db, now()),
-    )
     _here(monkeypatch)
+    await _stopped(db, vid)
     assert await _sweep(db, monkeypatch) == 0  # stopped
 
     def no_model(result: Any, audio: Any, model: str, *_rest: Any) -> dict[str, Any]:
@@ -536,6 +546,438 @@ async def test_an_ordinary_run_starts_the_tries_over(
     )
     assert await _sweep(db, monkeypatch) == 1  # tried again, from the first try
     assert (await _tries(db, vid))["attempts"] == 1
+
+
+async def _finished(db: Database, job_id: int) -> Any:
+    return await db.fetchval("SELECT finished_at FROM processing_jobs WHERE id = $1", job_id)
+
+
+async def _seen(db: Database, kind: str, key: str) -> None:
+    """The home has seen this ``kind`` (model, capability) of second listen before."""
+    await db.execute(
+        "INSERT INTO relisten_seen (kind, key, detail, first_seen) VALUES ($1, $2, '{}', $3)"
+        " ON CONFLICT (kind, key) DO NOTHING",
+        kind,
+        key,
+        to_ts(db, now()),
+    )
+
+
+async def _stopped(
+    db: Database, vid: Any, capability: str = "this machine", attempts: int | None = None
+) -> None:
+    """``vid``'s tries ran out (the default number; or ``attempts`` made, not stopped), and
+    this machine's capability and model are ones the home knows."""
+    await _seen(db, "capability", capability)
+    await _seen(db, "model", str(tr.refine_model()))
+    at = to_ts(db, now())
+    stopped = attempts is None
+    await db.execute(
+        "INSERT INTO relisten_attempts (video_id, attempts, last_at, next_at, ended_at,"
+        " stopped_at, model) VALUES ($1, $2, $3, $3, $3, $4, $5)"
+        " ON CONFLICT (video_id) DO UPDATE SET attempts = EXCLUDED.attempts,"
+        " stopped_at = EXCLUDED.stopped_at, ended_at = EXCLUDED.ended_at,"
+        " next_at = EXCLUDED.next_at",
+        str(vid),
+        TranscriptionConfig().relisten_tries if stopped else attempts,
+        at,
+        at if stopped else None,
+        tr.refine_model(),
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_the_stop_note_keeps_the_reason_under_a_long_path(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Follow-up of #221: the note cut the reason when the path came first (a share on
+    Windows, a long temp folder): the reason comes first now, the path last."""
+    rt = await core_runtime(db)
+    await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=3)
+    _here(monkeypatch)
+    _cannot_read(monkeypatch, share="\\\\nas\\library\\" + "a long folder name\\" * 12)
+    _rules(monkeypatch, relisten_tries=1)
+    assert await _sweep(db, monkeypatch) == 1
+    await drain_core(db, rt, only={"transcribe"})
+    assert await _sweep(db, monkeypatch) == 0
+    notes = await _notes(db)
+    assert len(notes) == 1
+    message = notes[0]["message"]
+    assert "1 tries" in message and "no more tries" in message
+    assert "its last job failed (permission_denied): permission denied (\\\\nas" in message
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_the_wait_counts_from_the_end_of_the_try(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Follow-up of #221: a try whose job waited hours in the queue had its wait used up
+    by then."""
+    rt = await core_runtime(db)
+    vid = await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=8)
+    _here(monkeypatch)
+    _cannot_read(monkeypatch)
+    assert await _sweep(db, monkeypatch) == 1
+    # queued five hours ago, it ran ten minutes ago
+    await db.execute(
+        "UPDATE relisten_attempts SET last_at = $2 WHERE video_id = $1",
+        str(vid),
+        to_ts(db, now() - timedelta(hours=5)),
+    )
+    await drain_core(db, rt, only={"transcribe"})
+    job = await _last_job(db, vid)
+    ran = now() - timedelta(minutes=10)
+    await db.execute(
+        "UPDATE processing_jobs SET finished_at = $2 WHERE id = $1", job["id"], to_ts(db, ran)
+    )
+    assert await _sweep(db, monkeypatch) == 0  # an hour from its end, not from its queueing
+    tries = await _tries(db, vid)
+    assert abs((parse_ts(tries["ended_at"]) - ran).total_seconds()) < 1  # type: ignore[operator]
+    assert parse_ts(tries["next_at"]) > now() + timedelta(minutes=30)  # type: ignore[operator]
+    assert 0.74 * 3600 <= float(tries["wait_s"]) <= 1.26 * 3600
+    # the rules set the wait
+    await _wait_over(db, vid)
+    _rules(monkeypatch, relisten_wait_hours=0.5, relisten_wait_max_hours=0.5)
+    assert await _sweep(db, monkeypatch) == 1
+    assert 0.74 * 1800 <= float((await _tries(db, vid))["wait_s"]) <= 1.26 * 1800
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_stopped_transcripts_get_their_tries_again_when_something_changes(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Follow-up of #221: a stopped video came back only with an ordinary run. Now a
+    second-listen model or a capability (a new machine, GPU, driver, packages) the home has
+    not seen before, or the operator's next round, give it its tries again: once each."""
+    rt = await core_runtime(db)
+    vid = await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=3)
+    _here(monkeypatch, capability="pc-a")
+    await _stopped(db, vid, capability="pc-a")
+    assert await _sweep(db, monkeypatch) == 0  # nothing changed
+
+    async def queued_again(why: str) -> None:
+        tries = await _tries(db, vid)
+        assert tries["stopped_at"] is None and tries["attempts"] == 1, why
+        await db.execute("DELETE FROM processing_jobs WHERE subject_id = $1", str(vid))
+        await _stopped(db, vid, capability="pc-a")
+
+    # another machine, or this one with a new GPU or new packages
+    _here(monkeypatch, capability="pc-b")
+    assert await _sweep(db, monkeypatch) == 1
+    await queued_again("a capability the home had not seen")
+    _here(monkeypatch, capability="pc-a")
+    assert await _sweep(db, monkeypatch) == 0  # seen before: no ping-pong between machines
+    _here(monkeypatch, capability="pc-b")
+    assert await _sweep(db, monkeypatch) == 0
+
+    # a model the home has not seen
+    monkeypatch.setenv("MAKTABA_STT_REFINE_MODEL", "someone/a-better-model")
+    assert await _sweep(db, monkeypatch) == 1
+    assert (await _tries(db, vid))["model"] == "someone/a-better-model"
+    await queued_again("a new model")
+    assert await _sweep(db, monkeypatch) == 0
+
+    # the operator's next round (Settings, Transcription)
+    _rules(monkeypatch, relisten_round=1)
+    assert await _sweep(db, monkeypatch) == 1
+    assert (await _tries(db, vid))["relisten_round"] == 1
+    await queued_again("the operator's round")
+    assert await _sweep(db, monkeypatch) == 0  # once a round
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_machines_with_different_models_never_reset_each_other(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #228, N1: a worker reset every video, tries in progress too, to its own
+    MAKTABA_STT_REFINE_MODEL, so two machines that name the model differently (a folder,
+    the repo id) reset each other every sweep, and the tries never ran out. A model resets
+    the stopped tries once, the first time the home sees it, and only those."""
+    rt = await core_runtime(db)
+    (tmp_path / "stopped").mkdir()
+    (tmp_path / "trying").mkdir()
+    stopped = await _skipped_transcript(db, rt, tmp_path / "stopped", monkeypatch, 3)
+    trying = await _skipped_transcript(db, rt, tmp_path / "trying", monkeypatch, 3)
+    _here(monkeypatch, capability="pc-a")
+    await _seen(db, "capability", "pc-b")
+    names = {"pc-a": "CohereLabs/cohere-transcribe-arabic-07-2026", "pc-b": "D:/models/cohere"}
+    for name in names.values():
+        await _seen(db, "model", name)
+    monkeypatch.setenv("MAKTABA_STT_REFINE_MODEL", names["pc-a"])
+    await _stopped(db, stopped, capability="pc-a")
+    await _stopped(db, trying, capability="pc-a", attempts=3)
+    await db.execute(
+        "UPDATE relisten_attempts SET next_at = $2 WHERE video_id = $1",
+        str(trying),
+        to_ts(db, now() + timedelta(hours=4)),  # it waits
+    )
+    for _ in range(3):  # the two machines' sweeps, by turns
+        for machine, name in names.items():
+            _here(monkeypatch, capability=machine)
+            monkeypatch.setenv("MAKTABA_STT_REFINE_MODEL", name)
+            assert await _sweep(db, monkeypatch) == 0, machine
+    assert (await _tries(db, stopped))["stopped_at"] is not None
+    assert (await _tries(db, trying))["attempts"] == 3  # its count stands
+    # a model no machine has used before: the stopped ones, once
+    monkeypatch.setenv("MAKTABA_STT_REFINE_MODEL", "CohereLabs/cohere-transcribe-arabic-11-2026")
+    assert await _sweep(db, monkeypatch) == 1
+    assert (await _tries(db, stopped))["attempts"] == 1
+    assert (await _tries(db, trying))["attempts"] == 3
+    _here(monkeypatch, capability="pc-b")
+    monkeypatch.setenv("MAKTABA_STT_REFINE_MODEL", names["pc-b"])
+    assert await _sweep(db, monkeypatch) == 0
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_reset_between_the_choice_and_the_stop_stands(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #228, N3: the stop checked only stopped_at IS NULL, so a reset made while
+    a worker was stopping the video (another worker's, the operator's round) was undone."""
+    rt = await core_runtime(db)
+    vid = await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=3)
+    _here(monkeypatch)
+    await _stopped(db, vid, attempts=TranscriptionConfig().relisten_tries)  # out of tries
+    real = tr._last_try
+
+    async def meanwhile(db_: Any, job_id: Any, metadata: Any) -> str:
+        # another worker's reset, between this one's choice and its stop
+        await db.execute(
+            "UPDATE relisten_attempts SET attempts = 0, stopped_at = NULL WHERE video_id = $1",
+            str(vid),
+        )
+        return await real(db_, job_id, metadata)
+
+    monkeypatch.setattr(tr, "_last_try", meanwhile)
+    await _sweep(db, monkeypatch)
+    tries = await _tries(db, vid)
+    assert tries["stopped_at"] is None and await _notes(db) == []
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_worker_from_before_slot_0146_waits_too(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #228, N4: a try was recorded with next_at = its queueing, which a worker
+    from before this change (it knows no ended_at) took as "due" the moment the job ended.
+    next_at is the wait from now meanwhile; the end of the try moves it on."""
+    rt = await core_runtime(db)
+    vid = await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=3)
+    _here(monkeypatch)
+    _cannot_read(monkeypatch)
+    assert await _sweep(db, monkeypatch) == 1
+    tries = await _tries(db, vid)
+    ahead = (parse_ts(tries["next_at"]) - parse_ts(tries["last_at"])).total_seconds()  # type: ignore[operator]
+    assert ahead == pytest.approx(float(tries["wait_s"]), abs=1)
+    await drain_core(db, rt, only={"transcribe"})
+    # the sweep of #221 (slot 0145): its choice of the videos due
+    old = await db.fetch(
+        "SELECT t.video_id FROM transcripts t"
+        " LEFT JOIN relisten_attempts r ON r.video_id = t.video_id"
+        f" WHERE t.is_active AND {tr._skipped_sql(db)}"
+        " AND (r.video_id IS NULL OR (r.stopped_at IS NULL AND r.attempts < $1"
+        " AND r.next_at <= $2))",
+        6,
+        to_ts(db, now()),
+    )
+    assert old == []  # not due for it either
+    assert await _sweep(db, monkeypatch) == 0  # nor for this one, its wait from the end
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_try_without_room_on_the_gpu_is_no_try(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#209's follow-up: a relisten job whose worker had no room for the second listen
+    counted as one of its video's tries. The job now goes back (paused, its transcript as
+    it was), and a job that ended without running (given back until it was a day old) is
+    no try either."""
+    rt = await core_runtime(db)
+    vid = await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=3)
+    _here(monkeypatch)
+    before = await db.fetchval(
+        "SELECT id FROM transcripts WHERE video_id = $1 AND is_active", str(vid)
+    )
+
+    def no_room(result: Any, audio: Any, model: str, *_rest: Any) -> dict[str, Any]:
+        return {"model": model, "source": "skipped", "skipped": "NoRoom: full", "no_room": True}
+
+    monkeypatch.setattr(tr, "_refine", no_room)
+    assert await _sweep(db, monkeypatch) == 1
+    await drain_core(db, rt, only={"transcribe"})
+    job = await _last_job(db, vid)
+    assert job["state"] == "paused" and "second listen" in str(job["paused_reason"])
+    assert (
+        await db.fetchval("SELECT id FROM transcripts WHERE video_id = $1 AND is_active", str(vid))
+        == before
+    )
+    # nobody with room took it within a day: it ends without running, and is no try
+    _capable(monkeypatch, False)
+    await db.execute(
+        "UPDATE processing_jobs SET state = 'pending', not_before = NULL, created_at = $2"
+        " WHERE id = $1",
+        job["id"],
+        to_ts(db, now() - timedelta(seconds=tr.RELISTEN_WAIT_S + 60)),
+    )
+    await drain_core(db, rt, only={"transcribe"})
+    assert (await _last_job(db, vid))["outcome"] == "skipped_unchanged"
+    _here(monkeypatch)
+    await _sweep(db, monkeypatch)
+    assert (await _tries(db, vid))["attempts"] == 0
+
+
+class _ReadBeforeAReset:
+    """The database as a worker's sweep saw it a moment ago: the tries it reads still say 1
+    (another worker has reset them to 0 since)."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._db, name)
+
+    async def fetch(self, sql: str, *args: Any) -> list[Any]:
+        rows = await self._db.fetch(sql, *args)
+        if "FROM relisten_attempts r" not in sql:
+            return rows
+        return [{**dict(zip(r.keys(), r, strict=True)), "attempts": 1} for r in rows]
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_try_that_was_no_try_never_takes_the_count_below_zero(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #228 (round 2): the uncounting of a try that never ran used the count read
+    earlier in the sweep; a reset in between made it -1, against the table's CHECK."""
+    rt = await core_runtime(db)
+    vid = await _skipped_transcript(db, rt, tmp_path, monkeypatch, hours_ago=3)
+    _here(monkeypatch)
+    assert await _sweep(db, monkeypatch) == 1  # a try, its job still to run
+    job = await _last_job(db, vid)
+    # it ended without running, and another worker reset the video's tries meanwhile
+    await db.execute(
+        "UPDATE processing_jobs SET state = 'done', outcome = 'skipped_unchanged',"
+        " finished_at = $2 WHERE id = $1",
+        job["id"],
+        to_ts(db, now()),
+    )
+    await db.execute("UPDATE relisten_attempts SET attempts = 0 WHERE video_id = $1", str(vid))
+    assert await tr._settle_tries(_ReadBeforeAReset(db), tr._RULES) == 1
+    tries = await _tries(db, vid)
+    assert tries["attempts"] == 0 and tries["ended_at"] is not None
+
+
+@pytest.mark.unit
+def test_the_capability_names_the_gpu_and_a_steady_machine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review of #228, N2: the key had no GPU, while the help promises that a new GPU brings
+    the stopped transcripts back; and on a Mac (no MachineGuid) a new host name was a new
+    machine."""
+    from maktaba_pipeline.stt import ct2
+    from maktaba_pipeline.stt.ct2 import GpuInfo
+
+    monkeypatch.setattr(engine, "current", lambda: engine.CT2)
+    monkeypatch.setattr(tr, "stable_machine_id", lambda: "4C4C4544-0042-3510-8051-B4C04F4E3732")
+    gpus = {0: GpuInfo("NVIDIA GeForce RTX 3080 Ti", 12.0, 9.0, (8, 6), "591.44")}
+    monkeypatch.setattr(ct2, "gpu_info", lambda index: gpus.get(index))
+    key, detail = tr.second_listen_capability()
+    assert detail["gpu"] == {
+        "name": "NVIDIA GeForce RTX 3080 Ti", "memory_gb": 12, "compute": "8.6", "driver": 591
+    }  # fmt: skip
+    assert "4C4C4544" not in str(detail)  # the id itself is not stored
+    monkeypatch.setattr("socket.gethostname", lambda: "renamed-pc")
+    assert tr.second_listen_capability()[0] == key  # a rename is no new machine
+    gpus[0] = GpuInfo("NVIDIA GeForce RTX 4090", 24.0, 20.0, (8, 9), "591.44")
+    assert tr.second_listen_capability()[0] != key  # a new GPU is
+    gpus[0] = GpuInfo("NVIDIA GeForce RTX 3080 Ti", 12.0, 9.0, (8, 6), "600.10")
+    assert tr.second_listen_capability()[0] != key  # and so is a new driver
+    monkeypatch.setenv("MAKTABA_STT_DEVICE", "cuda:1")
+    assert tr.second_listen_capability()[1]["gpu"] is None  # Whisper's GPU: none at 1
+
+
+@pytest.mark.unit
+def test_a_mac_s_id_is_its_platform_uuid(monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    import sys
+
+    calls: list[list[str]] = []
+
+    def ioreg(args: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        assert kw.get("shell") is not True
+        out = '  | |   "IOPlatformUUID" = "564D8E6A-2E7B-4C1A-9F5E-1B2C3D4E5F60"\n'
+        return subprocess.CompletedProcess(args, 0, out, "")
+
+    monkeypatch.delenv("MAKTABA_MACHINE_ID", raising=False)
+    monkeypatch.setattr(sys, "platform", "darwin")  # the module the stage reads it from
+    monkeypatch.setattr(subprocess, "run", ioreg)
+    tr.stable_machine_id.cache_clear()
+    try:
+        assert tr.stable_machine_id() == "564D8E6A-2E7B-4C1A-9F5E-1B2C3D4E5F60"
+        assert calls == [["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"]]
+    finally:
+        tr.stable_machine_id.cache_clear()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_deleted_and_missing_videos_are_not_tried(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Follow-up of #221: the sweep queued deleted and missing videos too, and kept their
+    records."""
+    rt = await core_runtime(db)
+    vids = {}
+    for name in ("deleted", "confirmed missing", "missing", "superseded", "here"):
+        (tmp_path / name).mkdir()
+        vids[name] = await _skipped_transcript(db, rt, tmp_path / name, monkeypatch, 3)
+    _here(monkeypatch)
+    for vid in vids.values():
+        await db.execute(
+            "INSERT INTO relisten_attempts (video_id, attempts, last_at, next_at, ended_at)"
+            " VALUES ($1, 1, $2, $2, $2)",
+            str(vid),
+            to_ts(db, now() - timedelta(hours=2)),
+        )
+    at = to_ts(db, now())
+    await db.execute("UPDATE videos SET deleted_at = $2 WHERE id = $1", str(vids["deleted"]), at)
+    await db.execute(
+        "UPDATE videos SET missing_confirmed_at = $2 WHERE id = $1",
+        str(vids["confirmed missing"]),
+        at,
+    )
+    for state in ("missing", "superseded"):
+        await db.execute("UPDATE videos SET state = $2 WHERE id = $1", str(vids[state]), state)
+    assert await _sweep(db, monkeypatch) == 1
+    for name, vid in vids.items():
+        if name == "here":
+            assert (await _tries(db, vid))["attempts"] == 2
+            assert (await _last_job(db, vid))["state"] == "pending"
+        else:
+            assert await _tries(db, vid) is None, name  # its record goes
+            assert (await _last_job(db, vid))["state"] == "done", name  # not queued
+
+
+@pytest.mark.unit
+def test_the_relisten_rules_have_their_limits() -> None:
+    from maktaba_pipeline import settings
+
+    fields = {f["name"]: f for f in settings.describe(TranscriptionConfig())}
+    assert fields["relisten_tries"]["default"] == 6 and fields["relisten_tries"]["minimum"] == 1
+    assert fields["relisten_wait_hours"]["default"] == 1.0
+    assert fields["relisten_wait_max_hours"]["default"] == 24.0
+    assert fields["relisten_round"]["minimum"] == 0
+    for f in fields.values():
+        assert f["group"] == "Transcription" and f["help"], f["name"]
 
 
 @pytest.mark.unit
