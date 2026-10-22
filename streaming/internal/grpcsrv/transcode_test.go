@@ -255,7 +255,7 @@ func TestOpenSession_ReopenAfterADeadTranscode(t *testing.T) {
 // A viewer at a position (a resume, a reopen): an HLS transcode starts there
 // and the session says so; a DASH one starts at 0. An open session is handed
 // back only when its stream reaches the position (from its start to a minute
-// past what it has written); otherwise a new one starts there.
+// past what it has written); otherwise a new one starts there, beside it.
 func TestOpenSession_StartsAtThePosition(t *testing.T) {
 	ctx := context.Background()
 	srv, row, root := transcodeSetup(t)
@@ -291,16 +291,59 @@ func TestOpenSession_StartsAtThePosition(t *testing.T) {
 		t.Fatalf("at 1400: %+v", moved)
 	}
 	id, _ := uuid.Parse(first.SessionID)
-	if old, _, _ := srv.Sessions.Get(ctx, id); old.ClosedReason != session.ReasonMoved {
-		t.Errorf("the session moved from: %q", old.ClosedReason)
+	if old, _, _ := srv.Sessions.Get(ctx, id); old.ClosedAt != nil {
+		t.Errorf("the session at 1213 closed (%q): another device may be playing it", old.ClosedReason)
 	}
-	if back := open(0, ""); back.SessionID == moved.SessionID || back.StartSec != 0 { // before its start
+	back := open(0, "")
+	if back.SessionID == moved.SessionID || back.SessionID == first.SessionID || back.StartSec != 0 { // before both starts
 		t.Errorf("at 0: %+v", back)
+	}
+	// their slots back for the DASH one (the setup has two)
+	for _, sid := range []string{first.SessionID, moved.SessionID, back.SessionID} {
+		_ = srv.CloseSession(ctx, sid)
 	}
 	other := OpenSessionRequest{VideoID: row.VideoID.String(), UserID: uuid.New().String(), ClientProfile: "generic",
 		StartSec: 1213, Format: "dash"}
 	if dash, err := srv.OpenSession(ctx, other); err != nil || dash.StartSec != 0 || orch.lastJob.StartSec != 0 {
 		t.Errorf("dash: %v, %+v, job %d", err, dash, orch.lastJob.StartSec)
+	}
+}
+
+// Two devices of one user at different places in the video: each gets its
+// own session and keeps it; reopening (a fresh signed URL, a 410) hands each
+// back its own, never closing the other's.
+func TestOpenSession_TwoDevicesAtTwoPlaces(t *testing.T) {
+	ctx := context.Background()
+	srv, row, _ := transcodeSetup(t)
+	srv.Transcode = &fakeOrchestrator{}
+	user := uuid.New().String()
+	open := func(start int) string {
+		t.Helper()
+		resp, err := srv.OpenSession(ctx, OpenSessionRequest{VideoID: row.VideoID.String(), UserID: user,
+			ClientProfile: "generic", StartSec: start})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.SessionID
+	}
+	a := open(600)
+	b := open(3600)
+	if b == a {
+		t.Fatal("device B at 3600 got device A's stream from 600")
+	}
+	for i := 0; i < 3; i++ {
+		if again := open(630); again != a {
+			t.Fatalf("device A reopening at 630 got %s, want its own %s", again, a)
+		}
+		if again := open(3610); again != b {
+			t.Fatalf("device B reopening at 3610 got %s, want its own %s", again, b)
+		}
+	}
+	for _, sid := range []string{a, b} {
+		id, _ := uuid.Parse(sid)
+		if r, _, _ := srv.Sessions.Get(ctx, id); r.ClosedAt != nil {
+			t.Errorf("%s closed (%q)", sid, r.ClosedReason)
+		}
 	}
 }
 

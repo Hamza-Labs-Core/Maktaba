@@ -183,20 +183,25 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		return OpenSessionResponse{}, ErrNotFound
 	}
 
-	// Dedupe: existing open session for the same (user, video). One whose
-	// transcode ended short of the end (it failed) is closed instead: the
-	// player opening the video again (its playlist answered 410) gets a new
-	// transcode, not the same dead one. So is one whose stream does not reach
-	// the position asked for: a new one starts there.
-	if existing, ok, _ := s.Sessions.ActiveByUserVideo(ctx, userUUID, videoUUID); ok && existing != nil {
+	// Dedupe: the user's open sessions of the video. One whose transcode ended
+	// short of the end (it failed) is closed: the player opening the video
+	// again (its playlist answered 410) gets a new transcode, not the same dead
+	// one. One whose stream reaches the position asked for is handed back (the
+	// latest to start before it). None: a new one starts there, beside the
+	// others — the user's other device plays on in its own, which the reaper
+	// closes once nothing fetches from it.
+	open, _ := s.Sessions.OpenByUserVideo(ctx, userUUID, videoUUID)
+	var reuse *session.Row
+	for _, existing := range open {
 		switch {
 		case existing.TranscodeCut():
 			_ = s.Sessions.Close(ctx, existing.ID, session.ReasonTranscodeFailed, s.Now().UTC())
-		case !s.reaches(existing, req.StartSec):
-			_ = s.Sessions.Close(ctx, existing.ID, session.ReasonMoved, s.Now().UTC())
-		default:
-			return s.respFor(existing, ladderFor(row, req)), nil
+		case s.reaches(existing, req.StartSec) && (reuse == nil || existing.StartSec >= reuse.StartSec):
+			reuse = existing
 		}
+	}
+	if reuse != nil {
+		return s.respFor(reuse, ladderFor(row, req)), nil
 	}
 
 	profile, _ := s.Profiles.Get(req.ClientProfile)

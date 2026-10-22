@@ -207,20 +207,25 @@ func TestStore_CountActive(t *testing.T) {
 	}
 }
 
-func TestStore_ActiveByUserVideo(t *testing.T) {
+func TestStore_OpenByUserVideo(t *testing.T) {
 	s := NewMemoryStore(time.Second)
 	user, video := uuid.New(), uuid.New()
-	row := &Row{UserID: user, VideoID: video, Mode: ModeTranscode, Format: FormatHLS}
-	_ = s.Insert(context.Background(), row)
-
-	r, ok, err := s.ActiveByUserVideo(context.Background(), user, video)
-	if err != nil || !ok || r.ID != row.ID {
-		t.Fatalf("not found: ok=%v err=%v", ok, err)
+	now := time.Now()
+	second := &Row{UserID: user, VideoID: video, Mode: ModeTranscode, Format: FormatHLS, StartedAt: now}
+	first := &Row{UserID: user, VideoID: video, Mode: ModeTranscode, Format: FormatHLS, StartedAt: now.Add(-time.Minute)}
+	other := &Row{UserID: uuid.New(), VideoID: video, Mode: ModeTranscode, Format: FormatHLS}
+	for _, r := range []*Row{second, first, other} {
+		_ = s.Insert(context.Background(), r)
 	}
 
-	_ = s.Close(context.Background(), row.ID, ReasonAPI, time.Now())
-	_, ok, _ = s.ActiveByUserVideo(context.Background(), user, video)
-	if ok {
-		t.Fatal("closed session should not appear")
+	rows, err := s.OpenByUserVideo(context.Background(), user, video)
+	if err != nil || len(rows) != 2 || rows[0].ID != first.ID || rows[1].ID != second.ID {
+		t.Fatalf("open: %v %v", rows, err)
+	}
+
+	_ = s.Close(context.Background(), first.ID, ReasonAPI, time.Now())
+	rows, _ = s.OpenByUserVideo(context.Background(), user, video)
+	if len(rows) != 1 || rows[0].ID != second.ID {
+		t.Fatalf("a closed session listed: %v", rows)
 	}
 }

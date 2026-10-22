@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -63,10 +64,6 @@ const (
 	// ReasonTranscodeFailed: its transcode ended short of the video's end
 	// while it was open; the player's reopen gets a new one.
 	ReasonTranscodeFailed CloseReason = "transcode-failed"
-	// ReasonMoved: its viewer opened the video at a position its stream does
-	// not reach (before its start, or far past what was transcoded): a new
-	// stream starts there.
-	ReasonMoved CloseReason = "moved"
 )
 
 // Row is the in-memory shape mirroring the streaming_sessions row.
@@ -140,7 +137,7 @@ type Store interface {
 	ListIdle(ctx context.Context, before time.Time) ([]*Row, error)
 	List(ctx context.Context) ([]*Row, error)
 	CountActive(ctx context.Context, mode Mode) (int, error)
-	ActiveByUserVideo(ctx context.Context, userID, videoID uuid.UUID) (*Row, bool, error)
+	OpenByUserVideo(ctx context.Context, userID, videoID uuid.UUID) ([]*Row, error)
 }
 
 // MemoryStore is a thread-safe in-memory Store. Suitable for tests
@@ -288,20 +285,20 @@ func (m *MemoryStore) CountActive(_ context.Context, mode Mode) (int, error) {
 	return n, nil
 }
 
-// ActiveByUserVideo finds an open session for the (user, video) tuple.
-// Used to dedupe — re-opening the same session within the TTL returns
-// the existing row instead of churning FFmpeg.
-func (m *MemoryStore) ActiveByUserVideo(_ context.Context, userID, videoID uuid.UUID) (*Row, bool, error) {
+// OpenByUserVideo lists the open sessions of the (user, video) tuple, the
+// oldest first: one device's each, or one stream's. Used to dedupe —
+// re-opening a session whose stream serves the viewer returns the existing
+// row instead of churning FFmpeg.
+func (m *MemoryStore) OpenByUserVideo(_ context.Context, userID, videoID uuid.UUID) ([]*Row, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	var out []*Row
 	for _, r := range m.rows {
-		if r.ClosedAt != nil {
-			continue
-		}
-		if r.UserID == userID && r.VideoID == videoID {
+		if r.ClosedAt == nil && r.UserID == userID && r.VideoID == videoID {
 			cp := *r
-			return &cp, true, nil
+			out = append(out, &cp)
 		}
 	}
-	return nil, false, nil
+	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt.Before(out[j].StartedAt) })
+	return out, nil
 }
