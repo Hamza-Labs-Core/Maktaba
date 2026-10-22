@@ -265,6 +265,13 @@ func TestCompareVersions(t *testing.T) {
 		{"1.5", "1.5.0", 0},
 		{"1.5.0+build.7", "1.5.0", 0},
 		{"2.0.0", "10.0.0", -1},
+		// a version that is no release ranks below every release, as the verifier says
+		{"dev", "0.0.1", -1},
+		{"0.0.1", "dev", 1},
+		{"dev", "dev", 0},
+		// prerelease names compare whatever their case
+		{"1.5.0-RC.2", "1.5.0-rc.2", 0},
+		{"1.5.0-RC.10", "1.5.0-rc.9", 1},
 		// a git describe build: after the tag it was built from, before the next
 		{"v0.2.0-12-gabc1234", "v0.2.0", 1},
 		{"v0.2.0-12-gabc1234", "v0.2.1", -1},
