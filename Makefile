@@ -34,6 +34,14 @@ UNIT_PACKAGE_BUDGET     ?= 30s
 # either sharing keypairs in jwt/streaming-auth too (parallel to
 # what we did for auth/keys) or pulling the slow ops out of the
 # hot path. See HLB-251 follow-up notes.
+# The module's packages run in parallel under -race on a 4-vCPU
+# runner, so a test's time is partly the others' load: tests whose
+# own work is a fraction of the cap (7 SQLite migrations and a few
+# queries) took 1.21-1.24s, a different one each failing run. So
+# tools/test-budget.sh re-runs a test past the hard cap once, alone,
+# and fails only if it is past the hard cap alone too (or fails); a
+# breach that does not repeat is a ::warning:: naming both timings.
+# More than 10 such tests in a module fail without re-runs.
 UNIT_PER_TEST_SOFT_CAP  ?= 400ms
 # Integration wall budget: 2m held at ~1m45 on main; story 35.1 links
 # sigstore-go into api and cmd/maktaba-server (in-process release

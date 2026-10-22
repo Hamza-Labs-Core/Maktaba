@@ -5,21 +5,23 @@
 //  1. JSON mode (--mode=json):
 //     Reads `go test -json` output from stdin, aggregates per-package
 //     elapsed times, and fails if any package exceeds the unit
-//     per-package budget (Story 20.1 — 30 s/pkg).
+//     per-package budget (Story 20.1 — 30 s/pkg). It also fails on a
+//     test past 3× the per-test soft cap (the hard cap, AC4), so a
+//     single slow test surfaces even when its package is under budget.
+//     Given the go test command after `--`, it first re-runs such a
+//     test once, alone, and fails only if it is past the hard cap
+//     there too (rerun.go): a breach that does not repeat was the
+//     runner's load, and is a warning.
 //
 //  2. Wall mode (--mode=wall):
 //     Times an arbitrary command and fails if its wall-clock exceeds
 //     --budget. Used for the integration / e2e / perf-ci tiers where
 //     the per-package model doesn't apply.
 //
-// Both modes also report soft-cap breaches (>3× the per-test cap)
-// individually so a single slow test surfaces clearly even when the
-// tier total is under budget.
-//
 // Exit codes:
 //
-//	0 — under budget, no soft-cap breaches
-//	1 — over budget OR a hard-cap breach detected
+//	0 — under budget, no hard-cap breach that stands
+//	1 — over budget OR a hard-cap breach that stands
 //	2 — usage / parse error
 package main
 
@@ -60,12 +62,21 @@ type config struct {
 	perPackageBudget time.Duration
 	perTestSoftCap   time.Duration
 	tier             string
+
+	// Re-runs of hard-cap breaches (json mode, rerun.go). rerunCmd is
+	// the go test command of the run being read, without its package
+	// list; empty, a breach fails without a re-run.
+	rerunCmd []string
+	rerunDir string // where rerunCmd runs: the module
+	rerunMax int    // more tests to re-run than this: none is re-run
+	run      runner // nil runs the command (execRunner)
 }
 
 func main() {
 	cfg := parseFlags()
 	switch cfg.mode {
 	case "json":
+		cfg.rerunCmd = flag.Args()
 		os.Exit(runJSON(cfg, os.Stdin, os.Stdout))
 	case "wall":
 		os.Exit(runWall(cfg, flag.Args(), os.Stdout))
@@ -84,9 +95,14 @@ func parseFlags() *config {
 		"per-package wall-clock budget (json mode)")
 	flag.DurationVar(&cfg.perTestSoftCap, "per-test-soft-cap", 100*time.Millisecond,
 		"per-test soft cap; >3x is a hard fail (json mode)")
+	flag.StringVar(&cfg.rerunDir, "rerun-dir", "",
+		"directory the go test command after -- runs in to re-run a hard-cap breach alone (json mode)")
+	flag.IntVar(&cfg.rerunMax, "rerun-max", defaultRerunMax,
+		"with more tests than this to re-run, re-run none: every breach fails (json mode)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr,
 			"usage: %s --mode=json [--per-package-budget=30s] [--per-test-soft-cap=100ms] [--tier=NAME]\n"+
+				"           [--rerun-dir=DIR [--rerun-max=10] -- go test FLAG...]\n"+
 				"       %s --mode=wall --budget=2m [--tier=NAME] -- CMD [ARG...]\n",
 			os.Args[0], os.Args[0])
 	}
@@ -107,8 +123,8 @@ func runJSON(cfg *config, in io.Reader, out io.Writer) int {
 	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
 
 	pkgs := map[string]*pkgStat{}
-	hardCap := time.Duration(3) * cfg.perTestSoftCap
-	hardBreaches := []string{}
+	hardCap := time.Duration(hardCapFactor) * cfg.perTestSoftCap
+	breaches := []breach{}
 	// Output is buffered per test (and per package and build) until it
 	// ends: dropped on pass/skip, kept on fail so the failing test and
 	// what it printed are replayed at the end. Without this the JSON
@@ -204,9 +220,9 @@ func runJSON(cfg *config, in io.Reader, out io.Writer) int {
 			} else if ev.Action != "skip" {
 				dur := time.Duration(ev.Elapsed * float64(time.Second))
 				if dur > hardCap {
-					hardBreaches = append(hardBreaches,
-						fmt.Sprintf("%s::%s took %s > %dx soft cap %s",
-							ev.Package, ev.Test, dur, 3, cfg.perTestSoftCap))
+					breaches = append(breaches, breach{
+						pkg: ev.Package, test: ev.Test, elapsed: dur, failed: ev.Action == "fail",
+					})
 				}
 			}
 		}
@@ -240,17 +256,19 @@ func runJSON(cfg *config, in io.Reader, out io.Writer) int {
 		_, _ = fmt.Fprintf(out, "::error::test-budget [%s] %d failing test(s)/package(s):\n", cfg.tier, len(failures))
 		for _, f := range failures {
 			_, _ = fmt.Fprintf(out, "--- FAIL %s\n", f.name)
-			lines := f.output
-			if len(lines) > maxFailureLines {
-				_, _ = fmt.Fprintf(out, "    ... %d earlier line(s) omitted\n", len(lines)-maxFailureLines)
-				lines = lines[len(lines)-maxFailureLines:]
-			}
-			for _, l := range lines {
-				_, _ = fmt.Fprint(out, l)
-				if !strings.HasSuffix(l, "\n") {
-					_, _ = fmt.Fprintln(out)
-				}
-			}
+			replay(out, f.output)
+		}
+	}
+
+	// Each breach by a passing test is re-run alone (when the go test
+	// command was given): one that does not repeat is a warning.
+	verdicts := judgeBreaches(cfg, hardCap, breaches, out)
+	standing := []verdict{}
+	for _, v := range verdicts {
+		if v.stands {
+			standing = append(standing, v)
+		} else {
+			_, _ = fmt.Fprintf(out, "::warning::test-budget [%s] %s\n", cfg.tier, v.line)
 		}
 	}
 
@@ -266,15 +284,30 @@ func runJSON(cfg *config, in io.Reader, out io.Writer) int {
 			_, _ = fmt.Fprintf(out, "  %s: %s\n", ps.pkg, ps.elapsed.Round(time.Millisecond))
 		}
 	}
-	if len(hardBreaches) > 0 {
+	if len(standing) > 0 {
 		rc = 1
 		_, _ = fmt.Fprintf(out, "::error::test-budget [%s] %d hard soft-cap breach(es):\n",
-			cfg.tier, len(hardBreaches))
-		for _, b := range hardBreaches {
-			_, _ = fmt.Fprintf(out, "  %s\n", b)
+			cfg.tier, len(standing))
+		for _, v := range standing {
+			_, _ = fmt.Fprintf(out, "  %s\n", v.line)
+			replay(out, v.output)
 		}
 	}
 	return rc
+}
+
+// replay writes a test's output lines, at most the last maxFailureLines.
+func replay(out io.Writer, lines []string) {
+	if len(lines) > maxFailureLines {
+		_, _ = fmt.Fprintf(out, "    ... %d earlier line(s) omitted\n", len(lines)-maxFailureLines)
+		lines = lines[len(lines)-maxFailureLines:]
+	}
+	for _, l := range lines {
+		_, _ = fmt.Fprint(out, l)
+		if !strings.HasSuffix(l, "\n") {
+			_, _ = fmt.Fprintln(out)
+		}
+	}
 }
 
 // without returns tests minus name, in order.

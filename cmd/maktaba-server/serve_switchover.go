@@ -114,6 +114,9 @@ type switching struct {
 
 	// claimMu keeps the emergencies' term claims one at a time (serve_termclaim.go)
 	claimMu sync.Mutex
+	// freezeMu keeps a freeze and a thaw one at a time: a thaw's look for a later switch and
+	// the thaw are one step against the next switch's freeze
+	freezeMu sync.Mutex
 }
 
 func newSwitching(cfg config.Config) *switching {
@@ -227,17 +230,32 @@ func (s *switching) adminHandler(base http.Handler) http.Handler {
 		case "freeze":
 			// the machines' roles kept out first (a session may set itself read-write: a role
 			// not let in has none), then every session read-only and the marker
+			s.freezeMu.Lock()
 			err = s.frozen(ctx, true)
 			if err == nil {
 				err = s.withSuper(func(db *sql.DB) error { return switchover.Freeze(ctx, db, req.ID) })
 			}
+			s.freezeMu.Unlock()
 		case "thaw":
-			// the switch is over here (undone): the kit made for it goes, and another may start
-			if err = s.withSuper(func(db *sql.DB) error { return switchover.Thaw(ctx, db) }); err == nil {
-				err = s.frozen(ctx, false)
+			// the switch is over here (undone): the kit made for it goes, and another may start.
+			// One another switch came after (a thaw owed, asked again while the next runs)
+			// changes nothing: the freeze is the later switch's now
+			s.freezeMu.Lock()
+			var later string
+			if err = s.withSuper(func(db *sql.DB) error {
+				var e error
+				later, e = switchover.ThawUnlessSuperseded(ctx, db, req.ID)
+				return e
+			}); err == nil {
+				if later == "" {
+					err = s.frozen(ctx, false)
+					s.release(req.ID)
+				} else {
+					out = map[string]any{"thawed": false, "superseded_by": later}
+				}
 				_ = wipeFile(filepath.Join(s.dir(req.ID), "kit.chunks"))
-				s.release(req.ID)
 			}
+			s.freezeMu.Unlock()
 		case "record":
 			// the switch as this home's API runs it, kept where a restart finds it
 			err = s.record(req.ID, req.Progress)

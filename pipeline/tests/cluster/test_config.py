@@ -281,7 +281,7 @@ def test_windows_a_claim_nothing_could_be_put_back_from_is_recovered_at_the_next
     its backup name and the claimed copy a temp file. The next start, through the default
     path, still finds the roaming config and runs joined; one after the minute puts
     node.json back and claims it, and no %LOCALAPPDATA% config ever appears."""
-    replace, replace_file = os.replace, config._replace_file
+    replace, rename, replace_file = os.replace, os.rename, config._replace_file
 
     def aside(path: Path, tmp: Path, backup: Path) -> None:
         replace(path, backup)
@@ -289,12 +289,16 @@ def test_windows_a_claim_nothing_could_be_put_back_from_is_recovered_at_the_next
 
     roaming, warnings = _claim_seam(tmp_path, monkeypatch, aside)
 
-    def stuck(src: Any, dst: Any) -> None:
-        if Path(dst) == roaming:
-            raise PermissionError(13, "in use", str(dst))
-        replace(src, dst)
+    def stuck(real: Any) -> Any:
+        def move(src: Any, dst: Any) -> None:
+            if Path(dst) == roaming:
+                raise PermissionError(13, "in use", str(dst))
+            real(src, dst)
 
-    monkeypatch.setattr(os, "replace", stuck)
+        return move
+
+    monkeypatch.setattr(os, "replace", stuck(replace))  # the new file taking the name
+    monkeypatch.setattr(os, "rename", stuck(rename))  # the old one put back
     cfg = config.load()
     assert cfg is not None and cfg.joined and not roaming.exists()
     assert sorted(p.suffix for p in roaming.parent.iterdir()) == [".bak", ".tmp"]
@@ -302,6 +306,7 @@ def test_windows_a_claim_nothing_could_be_put_back_from_is_recovered_at_the_next
 
     # the next start: nothing in the way any more
     monkeypatch.setattr(os, "replace", replace)
+    monkeypatch.setattr(os, "rename", rename)
     monkeypatch.setattr(config, "_replace_file", replace_file)
     monkeypatch.setattr(config, "_claim_failed", set())
     monkeypatch.setattr(config, "_leftovers_said", set())
@@ -412,11 +417,17 @@ def test_leftovers_are_recovered_at_the_next_load(
 
     cfg = config.load(path)
     assert cfg is not None and json.loads(path.read_text(encoding="utf-8")) == want
-    assert sorted(p.name for p in folder.iterdir()) == ["node.json"]
+    kept = sorted(folder.glob("node.json.broken-*"))
+    assert sorted(p.name for p in folder.iterdir() if p not in kept) == ["node.json"]
     said = warnings.fields[warnings.events.index("node_config_leftovers")]
     removed = said["removed"]
     assert isinstance(removed, list)
     assert {str(said["restored"]), *map(str, removed)} - {""} == set(names), said
+    if isinstance(there, str):  # a broken node.json is kept aside, never removed
+        assert [p.read_text(encoding="utf-8") for p in kept] == [there]
+        assert said["broken_kept"] == kept[0].name
+    else:
+        assert kept == [] and said["broken_kept"] == ""
     assert config.load(path) == cfg  # a second load finds nothing left to do
 
 
@@ -527,13 +538,13 @@ def test_a_load_never_puts_a_backup_over_a_file_a_write_put_there(
         path.write_text(json.dumps(landed), encoding="utf-8")
 
     if broken:
-        name = config._leftover_name
+        name = config._broken_name
 
-        def land_then_name(p: Path, ext: str) -> Path:
-            land()  # just before the broken file is moved aside
-            return name(p, ext)
+        def land_then_name(p: Path) -> Path:
+            land()  # after the last look at it, just before the broken file is moved aside
+            return name(p)
 
-        monkeypatch.setattr(config, "_leftover_name", land_then_name)
+        monkeypatch.setattr(config, "_broken_name", land_then_name)
     else:
         rename = config._rename_no_replace
 
@@ -547,6 +558,174 @@ def test_a_load_never_puts_a_backup_over_a_file_a_write_put_there(
     assert cfg is not None and cfg.node_id == "n2"
     assert json.loads(path.read_text(encoding="utf-8")) == landed
     assert sorted(p.name for p in folder.iterdir()) == ["node.json"]  # the old backup goes
+
+
+def test_a_whole_node_json_another_load_put_back_is_never_moved_aside(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Several loads start at once after a failed write: each found node.json gone, and
+    one puts the backup back first. The others see the whole file there when they come to
+    it and leave it, so readers never find node.json gone again and fall to a leftover
+    (nor a third load put an older one back into that gap)."""
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    _leftover(folder, _named(".bak", age=120), json.dumps(_JOINED), age=3600)
+    candidate = config._candidate
+
+    def another_load_first(left: list[Path], **kw: Any) -> Path | None:
+        chosen = candidate(left, **kw)
+        path.write_text(json.dumps(_JOINED), encoding="utf-8")  # the other load's restore
+        return chosen
+
+    moved: list[Path] = []
+    rename, link = os.rename, os.link
+
+    def watch_rename(src: Any, dst: Any) -> None:
+        moved.append(Path(src))
+        rename(src, dst)
+
+    def watch_link(src: Any, dst: Any) -> None:
+        moved.append(Path(src))
+        link(src, dst)
+
+    monkeypatch.setattr(config, "_candidate", another_load_first)
+    monkeypatch.setattr(os, "rename", watch_rename)
+    monkeypatch.setattr(os, "link", watch_link)
+    cfg = config.load(path)
+    assert cfg is not None and cfg.node_id == "n1"
+    assert path not in moved  # node.json was never moved aside
+    assert sorted(p.name for p in folder.iterdir()) == ["node.json"]
+
+
+def test_a_write_that_failed_never_puts_its_backup_over_another_writes_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B's ReplaceFileW failed half way (node.json under B's backup name); A's found
+    node.json gone and put its new file there and succeeded. B putting its old file back
+    must not undo A's write: it never replaces, and B's write fails instead."""
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    backup = _leftover(folder, _named(".bak", age=0), json.dumps(_JOINED))  # node.json, aside
+    tmp = _leftover(folder, _named(".tmp", age=0), json.dumps({**_JOINED, "name": "B"}))
+    a_wrote = {**_JOINED, "name": "A"}
+    exists = Path.exists
+    landed: list[bool] = []
+
+    def a_lands_after_b_looks(self: Path, *args: Any, **kw: Any) -> bool:
+        there = exists(self, *args, **kw)
+        if self == path and not landed:
+            landed.append(True)
+            path.write_text(json.dumps(a_wrote), encoding="utf-8")  # A's settle, just after
+        return there
+
+    monkeypatch.setattr(Path, "exists", a_lands_after_b_looks)
+    assert config._settle(path, tmp, backup) is False  # B's write did not take the name
+    monkeypatch.setattr(Path, "exists", exists)
+    assert json.loads(path.read_text(encoding="utf-8")) == a_wrote
+    assert sorted(p.name for p in folder.iterdir()) == ["node.json"]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the lock beside a node config is Windows'")
+def test_windows_writes_of_one_node_config_run_one_at_a_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two ReplaceFileW calls on one file at once can undo each other, so writes (and
+    recoveries) of a node config hold its lock: while another process holds it, a claim
+    fails as any failed claim, a save fails after waiting, and a recovery leaves the
+    leftovers to a later load. The lock file goes once nobody holds it."""
+    roaming, warnings = _claim_seam(tmp_path, monkeypatch, config._replace_file)
+    before = roaming.read_bytes()
+    monkeypatch.setattr(config, "_LOCK_WAIT_SEC", 0.01)
+    monkeypatch.setattr(config, "_RECOVER_WAIT_SEC", 0.0)
+    stale = _leftover(roaming.parent, _named(".bak", age=120), json.dumps(_JOINED), age=3600)
+    lock = roaming.with_name(".node.json.lock")
+    with config._one_at_a_time(roaming, wait=0.0) as held:  # another process's write
+        assert held and lock.exists()
+        cfg = config.load()
+        assert cfg is not None and cfg.joined and cfg.machine_id == ""
+        with pytest.raises(TimeoutError):
+            config.save(NodeConfig(node_id="n2", name="pc", private_key="k2"), roaming)
+        assert roaming.read_bytes() == before and stale.exists()
+    assert warnings.events == ["node_config_claim_failed"]
+    assert not lock.exists()
+    monkeypatch.setattr(config, "_claim_failed", set())
+    cfg = config.load()  # the lock is free: the stale backup goes, and the claim is written
+    assert cfg is not None and cfg.machine_id == "pc-a"
+    assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
+
+
+class _NoLock:
+    """``_one_at_a_time`` where the lock file cannot be made: a folder this user may not
+    write, another user's lock file, a full disk."""
+
+    def __init__(self, path: Path, *, wait: float) -> None:
+        self.path = path
+
+    def __enter__(self) -> bool:
+        raise PermissionError(13, "Permission denied", str(self.path.with_name(".node.json.lock")))
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+@pytest.mark.parametrize("how", ["no lock file can be made", "a read-only lock file"])
+def test_a_load_that_cannot_take_the_lock_reads_past_the_leftovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, how: str
+) -> None:
+    """A load whose recovery cannot take the lock moves nothing, still reads the node
+    config from what a failed write left (the node stays joined) and says why once."""
+    if how == "a read-only lock file" and os.name != "nt":
+        pytest.skip("the lock file is Windows'")
+    from maktaba_pipeline import log
+
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    bak = _leftover(folder, _named(".bak", age=120), json.dumps(_JOINED), age=3600)
+    lock = folder / ".node.json.lock"
+    if how == "a read-only lock file":
+        lock.write_text("", encoding="utf-8")
+        os.chmod(lock, stat.S_IREAD)
+        monkeypatch.setattr(config, "_BUSY_TRIES", 2)  # its open is denied for good
+    else:
+        monkeypatch.setattr(config, "_one_at_a_time", _NoLock)
+    warnings = _Warnings()
+    monkeypatch.setattr(log, "get_logger", lambda: warnings)
+    monkeypatch.setattr(config, "_leftovers_said", set())
+    try:
+        for _ in range(2):
+            cfg = config.load(path)
+            assert cfg is not None and cfg.joined and cfg.node_id == "n1"
+        assert bak.exists() and not path.exists()
+        assert warnings.events == ["node_config_leftovers"]  # said once
+        assert warnings.fields[0]["left"] == [bak.name] and warnings.fields[0]["error"]
+    finally:
+        if lock.exists():
+            os.chmod(lock, stat.S_IREAD | stat.S_IWRITE)
+
+
+def test_a_node_json_saved_with_a_bom_is_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A node.json an editor saved with a UTF-8 BOM (Notepad, PowerShell 5.1) is read past
+    the BOM, as maktaba-server, streaming and the installer read it: it is the node config
+    (never taken for broken and replaced from a backup), and its owner is read too."""
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    mine = {**_JOINED, "node_id": "n2"}
+    path.write_bytes(b"\xef\xbb\xbf" + json.dumps(mine).encode())
+    _leftover(folder, _named(".bak", age=120), json.dumps(_JOINED), age=3600)
+    cfg = config.load(path)
+    assert cfg is not None and cfg.node_id == "n2" and cfg.joined
+    assert json.loads(path.read_bytes().decode("utf-8-sig")) == mine
+    assert sorted(p.name for p in folder.iterdir()) == ["node.json"]  # the stale backup goes
+
+    roaming = _windows_profile(tmp_path / "pc", monkeypatch, "pc-a")
+    roaming.write_bytes(b"\xef\xbb\xbf" + json.dumps({**_JOINED, "machine_id": "pc-b"}).encode())
+    assert config.config_path() == tmp_path / "pc" / "Local" / "Maktaba" / "node.json"
 
 
 def test_windows_a_roaming_config_a_failed_claim_left_is_still_this_pcs(

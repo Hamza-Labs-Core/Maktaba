@@ -520,6 +520,40 @@ func TestAFrozenHomeThaws(t *testing.T) {
 	}
 }
 
+// A thaw owed by a switch called off, asked again while a later switch runs, changes
+// nothing: the home stays as the later one froze it; that one's own thaw makes it writable.
+func TestAThawOfASupersededSwitchChangesNothing(t *testing.T) {
+	c := newCluster(t)
+	ctx := c.ctx
+	first, next := uuid.NewString(), uuid.NewString()
+	c.exec(c.app, `INSERT INTO cluster_switchovers (id, term, kind, to_node, to_name, from_name, state, requested_at)
+	    VALUES ($1, 2, 'planned', $2, 'b', 'a', 'cancelled', now() - interval '1 hour')`, first, uuid.NewString())
+	c.exec(c.app, `INSERT INTO cluster_switchovers (id, term, kind, to_node, to_name, from_name, state)
+	    VALUES ($1, 3, 'planned', $2, 'b', 'a', 'freezing')`, next, uuid.NewString())
+	if err := Freeze(ctx, super(t, c.home), next); err != nil {
+		t.Fatal(err)
+	}
+	appURL, err := c.home.URL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := `INSERT INTO app_settings (key, value) VALUES ('test.superseded', '"x"')
+	    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
+	later, err := ThawUnlessSuperseded(ctx, super(t, c.home), first)
+	if err != nil || later != next {
+		t.Fatalf("the earlier switch's thaw: %q %v, want superseded by %s", later, err, next)
+	}
+	if err := writeTx(ctx, t, open(t, appURL), write); err == nil {
+		t.Fatal("the earlier switch's thaw undid the later one's freeze")
+	}
+	if later, err := ThawUnlessSuperseded(ctx, super(t, c.home), next); err != nil || later != "" {
+		t.Fatalf("the later switch's own thaw: %q %v", later, err)
+	}
+	if err := writeTx(ctx, t, open(t, appURL), write); err != nil {
+		t.Fatalf("the home after the later switch's thaw: %v", err)
+	}
+}
+
 // writeTx writes in a transaction begun as the app's code begins one: lib/pq says BEGIN
 // READ WRITE, which overrides the database's default_transaction_read_only.
 func writeTx(ctx context.Context, t *testing.T, db *sql.DB, q string) error {

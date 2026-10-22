@@ -111,14 +111,27 @@ function Get-NodeConfigPath {
     return (Join-Path $env:LOCALAPPDATA 'Maktaba\node.json')
 }
 
+# Get-NodeConfigKeptBroken: the broken node.json a load kept beside Path when a leftover
+# took its name (cluster/config.py _broken_name: <name>.broken-<time>-<hex>). It is no
+# node config and never read as one; it may still hold part of the credential.
+function Get-NodeConfigKeptBroken {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $dir = Split-Path -Parent $Path
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return }
+    Get-ChildItem -LiteralPath $dir -Force -File -Filter ((Split-Path -Leaf $Path) + '.broken-*') -ErrorAction SilentlyContinue |
+        Sort-Object -Property Name
+}
+
 # Get-NodeConfigFiles: every file of a node config that is this PC's (both places on
-# Windows, or MAKTABA_NODE_CONFIG; never another PC's roaming one): its node.json and
-# what a write that could not finish left beside it. To forget the home, all of them go,
-# or the second would take the first one's place (and a leftover would be put back).
+# Windows, or MAKTABA_NODE_CONFIG; never another PC's roaming one): its node.json, what a
+# write that could not finish left beside it, and a broken node.json kept there. To
+# forget the home, all of them go, or the second would take the first one's place (and a
+# leftover would be put back).
 function Get-NodeConfigFiles {
     if ($env:MAKTABA_NODE_CONFIG) {
         $env:MAKTABA_NODE_CONFIG
         Get-NodeConfigLeftovers -Path $env:MAKTABA_NODE_CONFIG | ForEach-Object { $_.FullName }
+        Get-NodeConfigKeptBroken -Path $env:MAKTABA_NODE_CONFIG | ForEach-Object { $_.FullName }
         return
     }
     foreach ($path in @((Join-Path $script:NodeConfDir 'node.json'), (Join-Path $env:LOCALAPPDATA 'Maktaba\node.json'))) {
@@ -126,6 +139,7 @@ function Get-NodeConfigFiles {
         if (-not (Test-Path -LiteralPath $held -PathType Leaf) -or (Test-NodeConfigOfAnotherPC -Path $held)) { continue }
         if (Test-Path -LiteralPath $path -PathType Leaf) { $path }
         Get-NodeConfigLeftovers -Path $path | ForEach-Object { $_.FullName }
+        Get-NodeConfigKeptBroken -Path $path | ForEach-Object { $_.FullName }
     }
 }
 

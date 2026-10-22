@@ -52,9 +52,11 @@ export interface AuthState {
   /**
    * Throws (and keeps the user) when this machine cannot reach its home. "here": this
    * machine ended only its own sessions of the user (they signed in on it only while its
-   * home was away, so the home would not take it from it); the others stay.
+   * home was away, so the home would not take it from it); the others stay. "unchecked":
+   * this machine's ended, and the home was told, but whether it takes it (whether the
+   * user signed in through this machine) could not be checked.
    */
-  logoutAll: () => Promise<"everywhere" | "here">;
+  logoutAll: () => Promise<"everywhere" | "here" | "unchecked">;
   /** Probe the session again (the home is back: a session may hold). */
   refresh: () => Promise<void>;
   /** The required password change is done: lift the gate. */
@@ -151,10 +153,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
       },
       async logoutAll() {
-        let scope: "everywhere" | "here" = "everywhere";
+        let scope: "everywhere" | "here" | "unchecked" = "everywhere";
         try {
-          const ans = await api.post<{ signed_out?: string } | undefined>("/api/auth/logout-all");
-          if (ans?.signed_out === "here") scope = "here";
+          const ans = await api.post<{ signed_out?: string; code?: string } | undefined>(
+            "/api/auth/logout-all"
+          );
+          if (ans?.signed_out === "here")
+            scope = ans.code === "signed_out_home_unchecked" ? "unchecked" : "here";
         } catch (e) {
           if (isHomeUnreachable(e) || isHomeTimeout(e)) throw e;
           console.warn("auth: logout-all call failed", e);

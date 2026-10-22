@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -148,13 +149,20 @@ func isNodeConfigLeftover(base, name string) bool {
 	return base == "node.json" && legacyNodeLeftover.MatchString(name)
 }
 
+// utf8BOM is what a node.json saved by an editor can start with (Notepad, PowerShell 5.1's
+// Set-Content -Encoding UTF8): every reader reads past it, as the pipeline does (utf-8-sig).
+var utf8BOM = []byte("\xef\xbb\xbf")
+
+// WithoutBOM is a node config's bytes without a leading UTF-8 BOM.
+func WithoutBOM(b []byte) []byte { return bytes.TrimPrefix(b, utf8BOM) }
+
 // wholeNodeConfig: b is a node config with its identity (not a cut file).
 func wholeNodeConfig(b []byte) bool {
 	var v struct {
 		NodeID     string `json:"node_id"`
 		PrivateKey string `json:"private_key"`
 	}
-	return json.Unmarshal(b, &v) == nil && strings.TrimSpace(v.NodeID) != "" && strings.TrimSpace(v.PrivateKey) != ""
+	return json.Unmarshal(WithoutBOM(b), &v) == nil && strings.TrimSpace(v.NodeID) != "" && strings.TrimSpace(v.PrivateKey) != ""
 }
 
 // claimedElsewhere: the node config at path records another PC (its machine_id)
@@ -168,7 +176,7 @@ func claimedElsewhere(path string, getenv func(string) string) bool {
 	var v struct {
 		MachineID string `json:"machine_id"`
 	}
-	if json.Unmarshal(b, &v) != nil || strings.TrimSpace(v.MachineID) == "" {
+	if json.Unmarshal(WithoutBOM(b), &v) != nil || strings.TrimSpace(v.MachineID) == "" {
 		return false
 	}
 	this := strings.TrimSpace(getenv("MAKTABA_MACHINE_ID"))
@@ -187,7 +195,7 @@ func DetectRole(getenv func(string) string, goos, userHome string, readFile func
 	joined := false
 	if b, err := readFile(NodeConfigFile(NodeConfigPath(getenv, goos, userHome), readFile)); err == nil {
 		var nc nodeConfig
-		if json.Unmarshal(b, &nc) == nil {
+		if json.Unmarshal(WithoutBOM(b), &nc) == nil {
 			nodeID = strings.TrimSpace(nc.NodeID)
 			joined = strings.TrimSpace(nc.DatabaseURL) != ""
 		}
