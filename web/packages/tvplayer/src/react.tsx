@@ -99,7 +99,7 @@ export function useTvSwitcher<C extends RingChannel>(o: TvSwitcherOptions<C>): T
       onActive: setActive,
       onMode: setMode,
       onReconnecting: setReconnecting,
-      onMutedByPolicy: () => setMutedByPolicy(true),
+      onMutedByPolicy: (m) => setMutedByPolicy(m),
       onFatal: () => {
         setReconnecting(false);
         opts.current.onFatal?.();
@@ -246,6 +246,17 @@ export function useTvSwitcher<C extends RingChannel>(o: TvSwitcherOptions<C>): T
     },
     [surf]
   );
+
+  // the viewer unmuted (the tap-for-sound button, the native controls): sound is back
+  useEffect(() => {
+    const el = els[activeIndex];
+    if (!el || !mutedByPolicy) return;
+    const onVolume = () => {
+      if (!el.muted) setMutedByPolicy(false);
+    };
+    el.addEventListener("volumechange", onVolume);
+    return () => el.removeEventListener("volumechange", onVolume);
+  }, [els, activeIndex, mutedByPolicy]);
 
   return {
     state,

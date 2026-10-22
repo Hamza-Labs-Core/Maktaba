@@ -683,13 +683,15 @@ describe("Guide (test-cases/guide.md)", () => {
       .querySelectorAll(".mkt-guide__nowline, .mkt-guide__cellprogress")
       .forEach((el) => expect(el).toHaveAttribute("aria-hidden", "true"));
 
-    // tab order: select → toggle → cells
+    // tab order: select → toggle → the row's channel (it tunes) → its cells
     await user.tab();
     while (document.activeElement !== screen.getByRole("combobox", { name: "Category" })) {
       await user.tab();
     }
     await user.tab();
     expect(screen.getByRole("button", { name: "What's on now" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getAllByRole("link", { name: /^Watch channel / })[0]).toHaveFocus();
     await user.tab();
     expect(cellNamed("Now Playing")).toHaveFocus();
     await user.tab();
