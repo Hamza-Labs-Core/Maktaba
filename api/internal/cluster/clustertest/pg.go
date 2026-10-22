@@ -48,7 +48,7 @@ func ScratchDB(t *testing.T) (*sql.DB, string) {
 	// one per test (every slot again took ~2 s a test and kept the integration
 	// tier near its budget)
 	var cerr error
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 300; i++ {
 		_, cerr = admin.Exec(`CREATE DATABASE ` + pq.QuoteIdentifier(name) + ` TEMPLATE ` + pq.QuoteIdentifier(tmpl))
 		if cerr == nil || !strings.Contains(cerr.Error(), "being accessed by other users") {
 			break
@@ -221,6 +221,12 @@ func MigrateTo(t *testing.T, db *sql.DB, version int64) {
 	goose.SetLogger(goose.NopLogger())
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
+	// one run at a time in the cluster: the migrations make cluster-wide roles
+	// (maktaba_worker and the rest), which two runs in two of its databases (the packages
+	// of a module test in parallel processes) would each try to create
+	if base := os.Getenv("MAKTABA_TEST_PG_URL"); base != "" {
+		defer lockCluster(ctx, t, base, "clustertest_migrate")()
+	}
 	if version > 0 {
 		err = goose.UpToContext(ctx, db, stage, version)
 	} else {
@@ -228,6 +234,32 @@ func MigrateTo(t *testing.T, db *sql.DB, version int64) {
 	}
 	if err != nil {
 		t.Fatalf("goose up: %v", err)
+	}
+}
+
+// lockCluster takes the advisory lock key in base's database (an advisory lock is a
+// database's: every process of the tests reaches the cluster through base), and returns
+// its release.
+func lockCluster(ctx context.Context, t *testing.T, base, key string) func() {
+	t.Helper()
+	admin, err := sql.Open("postgres", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := admin.Conn(ctx)
+	if err != nil {
+		_ = admin.Close()
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(hashtext($1))`, key); err != nil {
+		_ = conn.Close()
+		_ = admin.Close()
+		t.Fatal(err)
+	}
+	return func() {
+		_, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock(hashtext($1))`, key)
+		_ = conn.Close()
+		_ = admin.Close()
 	}
 }
 

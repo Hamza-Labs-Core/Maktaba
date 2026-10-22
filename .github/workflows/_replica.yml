@@ -72,10 +72,11 @@ jobs:
 
       - name: The switch's orchestration, the standby homes, a machine's sign-ins (api)
         working-directory: api
-        # the rest of the cluster's Postgres tests too (the two above need a cluster of their own)
+        # the rest of the cluster's Postgres tests too (the two above need a cluster of their own);
+        # one package at a time: they share the cluster, whose roles are cluster-wide
         run: |
           set -euo pipefail
-          go test -count=1 -v -timeout 30m ./internal/cluster/switchover/ ./internal/cluster/nodeauth/ ./internal/cluster/agent/ \
+          go test -count=1 -p 1 -v -timeout 30m ./internal/cluster/switchover/ ./internal/cluster/nodeauth/ ./internal/cluster/agent/ \
             ./internal/handlers/clusterauth/ | tee "$RUNNER_TEMP/api-pg.out"
           go test -count=1 -v -timeout 15m -skip 'TestAMachineGetsItsCopy|TestWorkerGroupMadeLateGetsTheSamePrivileges' \
             ./internal/cluster/ | tee -a "$RUNNER_TEMP/api-pg.out"
