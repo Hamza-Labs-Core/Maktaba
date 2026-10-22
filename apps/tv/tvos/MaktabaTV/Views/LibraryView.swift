@@ -33,6 +33,7 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("Libraries")
+            .background(Theme.background.ignoresSafeArea())
         }
         .task { await load() }
     }
@@ -59,24 +60,27 @@ struct LibraryCard: View {
         VStack(spacing: 16) {
             Image(systemName: "books.vertical.fill")
                 .font(.system(size: 72))
+                .foregroundStyle(Theme.goldText)
             Text(library.name)
-                .font(.title3.weight(.semibold))
+                .font(Theme.heading(40, relativeTo: .title3))
+                .foregroundStyle(Theme.text)
                 .lineLimit(1)
             if let count = library.totalVideos {
                 Text("\(count) items")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(Theme.body(29, relativeTo: .callout))
+                    .foregroundStyle(Theme.muted)
             }
         }
         .frame(width: 340, height: 240)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(.white, lineWidth: isFocused ? 6 : 0)
+        .background(
+            isFocused ? Theme.raised : Theme.surface,
+            in: RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
         )
-        .scaleEffect(isFocused ? 1.08 : 1.0)
-        .shadow(radius: isFocused ? 20 : 0)
-        .animation(.easeOut(duration: 0.18), value: isFocused)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
+                .strokeBorder(Theme.border, lineWidth: 1)
+        )
+        .goldFocus(isFocused)
         .focusable()
         .focused($isFocused)
     }

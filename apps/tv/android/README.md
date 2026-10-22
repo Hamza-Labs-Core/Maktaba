@@ -19,7 +19,8 @@ android/
     └── src/
         ├── main/
         │   ├── AndroidManifest.xml  # LEANBACK_LAUNCHER + leanback feature
-        │   ├── res/                 # banner, theme, strings, colors
+        │   ├── res/                 # banner, theme, strings, colors, font/, drawable-nodpi/library_dark.jpg
+        │   ├── assets/licenses/     # OFL licence texts for the bundled fonts
         │   └── java/com/hamzalabs/maktaba/tv/
         │       ├── MaktabaTVApp.kt          # Application + AppContainer
         │       ├── MainActivity.kt          # single activity, sets Compose content
@@ -34,7 +35,7 @@ android/
         │       │   ├── models/               # Media, Library, User, SearchResult
         │       │   └── repository/MediaRepository.kt
         │       └── ui/
-        │           ├── theme/                # dark TV theme + colors
+        │           ├── theme/                # MaktabaPalette (Color.kt), fonts (Type.kt), Theme.kt
         │           ├── components/           # MediaCard (focusable), TopBar
         │           ├── screens/              # Home, Library, MediaGrid, Player, Search, Settings
         │           └── navigation/NavGraph.kt
@@ -47,9 +48,15 @@ android/
   focus) and `androidx.tv:tv-foundation` (`TvLazyRow` /
   `TvLazyVerticalGrid`). The phone `androidx.compose.material3` is
   deliberately avoided — its components have no D-pad focus visuals.
-- **Focus.** Cards are `tv-material` `Card`s, which apply the focused
-  scale/border/glow automatically; `MediaCard` tracks focus only to
-  brighten the title label.
+- **Theme.** Dark-only "Ink & Brass": `ui/theme/Color.kt`
+  (`MaktabaPalette`) is the single colour source; `Type.kt` sets Amiri
+  Bold headings and IBM Plex Sans Arabic body text. Home draws the
+  library scene (`LibraryBackdrop`) with gradient fades; text over it sits
+  on a `ReadingPanel` (78% background, no blur — Compose can't blur what
+  is behind a view).
+- **Focus.** Cards are `tv-material` `Card`s with the theme's 3dp gold
+  focus ring (`goldFocusBorder()`) and scale; buttons turn gold when
+  focused (`MaktabaButton`).
 - **Leanback launcher.** `CATEGORY_LEANBACK_LAUNCHER` +
   `uses-feature android.software.leanback` put the app on the TV home
   row; `touchscreen required="false"` keeps it in the TV catalog.

@@ -22,11 +22,12 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 
 /**
  * A focus-aware text field. `tv-material` ships no `TextField` (TV text
  * entry goes through the system IME), so this wraps foundation's
- * [BasicTextField] with a label and a border that brightens on focus —
+ * [BasicTextField] with a label and a border that turns into a gold ring on focus —
  * essential on a D-pad, where you can't tap to see which field is active.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -41,13 +42,14 @@ fun TvTextField(
     keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val border = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+    val border = if (focused) MaktabaPalette.Gold else MaktabaPalette.Border
+    val borderWidth = if (focused) FocusRingWidth else 1.dp
 
     Column(modifier) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            color = if (focused) MaktabaPalette.Gold else MaktabaPalette.Muted,
             modifier = Modifier.padding(bottom = 6.dp),
         )
         BasicTextField(
@@ -55,17 +57,17 @@ fun TvTextField(
             onValueChange = onValueChange,
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyLarge.copy(
-                color = MaterialTheme.colorScheme.onSurface,
+                color = MaktabaPalette.Text,
             ),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            cursorBrush = SolidColor(MaktabaPalette.Gold),
             visualTransformation = visualTransformation,
             keyboardOptions = keyboardOptions,
             keyboardActions = keyboardActions,
             modifier = Modifier
                 .fillMaxWidth()
                 .onFocusChanged { focused = it.isFocused }
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-                .border(2.dp, border, RoundedCornerShape(8.dp))
+                .background(MaktabaPalette.Surface, RoundedCornerShape(8.dp))
+                .border(borderWidth, border, RoundedCornerShape(8.dp))
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         )
     }
