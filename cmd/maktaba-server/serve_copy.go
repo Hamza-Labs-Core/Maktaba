@@ -35,9 +35,15 @@ type nodeCopy struct {
 // the pinned build, fetched once. Nil for a machine that is not a full node, or a
 // platform with neither.
 func resolveNodeCopy(cfg *config.Config, wholeMachine bool) (*nodeCopy, error) {
-	n := supervisor.NodeConfig()
+	if !wholeMachine {
+		return nil, nil
+	}
+	n, err := supervisor.NodeOf(*cfg)
+	if err != nil {
+		return nil, err
+	}
 	// MAKTABA_NODE_COPY=off: none (the tests that run a node without Postgres programs)
-	if !wholeMachine || !supervisor.NodeMode(*cfg, n) || strings.EqualFold(os.Getenv("MAKTABA_NODE_COPY"), "off") {
+	if !supervisor.NodeMode(*cfg, n) || strings.EqualFold(os.Getenv("MAKTABA_NODE_COPY"), "off") {
 		return nil, nil
 	}
 	port := cfg.Postgres.CopyPort

@@ -159,14 +159,12 @@ func homeIdentitiesOf(cfg config.Config) []oldHome {
 		out = append(out, me)
 	}
 	add(filepath.Join(cfg.StateDir(), "switchover", "standby-identity.json"))
-	// the machine this home was, before it took over (its node.json put aside): another
-	// home of the same term seals its notice to that identity
-	asides, _ := filepath.Glob(config.LocalNodeConfigPath() + ".was-node-*")
-	sort.Strings(asides)
-	for _, p := range asides {
-		var n config.NodeConfig
-		b, err := os.ReadFile(p)
-		if err != nil || json.Unmarshal(b, &n) != nil || n.NodeID == "" || seen[n.NodeID] {
+	// the machine this home was, before it took over (its node.json put aside, beside the
+	// roaming node.json or the local one): another home of the same term seals its notice
+	// to that identity
+	for _, p := range config.LocalSetAsideNodeConfigs() {
+		n, err := config.ReadNodeConfigAt(p)
+		if err != nil || n.NodeID == "" || seen[n.NodeID] {
 			continue
 		}
 		var pw string
@@ -505,6 +503,7 @@ func readIdentity(path string) (oldHome, error) {
 	if err := json.Unmarshal(b, &me); err != nil || me.NodeID == "" {
 		return me, fmt.Errorf("%s: not an identity", path)
 	}
+	_ = config.MakeUserOnly(path) // one an older version kept with its folder's ACL
 	return me, nil
 }
 
@@ -715,8 +714,7 @@ func (s *switching) homeStandbys(args json.RawMessage) (bool, any) {
 	if strings.Join(keep, " ") == strings.Join(n.StandbyHomes, " ") && strings.Join(peers, " ") == strings.Join(n.Peers, " ") {
 		return true, map[string]any{"changed": false}
 	}
-	n.StandbyHomes, n.Peers = keep, peers
-	if err := writeNodeConfig(n); err != nil {
+	if err := updateNodeConfig(n.NodeID, func(n *config.NodeConfig) { n.StandbyHomes, n.Peers = keep, peers }); err != nil {
 		return false, err.Error()
 	}
 	return true, map[string]any{"changed": true}

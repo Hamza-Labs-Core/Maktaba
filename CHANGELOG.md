@@ -589,6 +589,50 @@ don't append a line here; docs-only PRs are exempt.
   Möbius' curve, and a transcode whose tone-mapping fails plays untoned instead of not at all.
   Every rung has a key frame on each 6 s boundary, so its segments align with the other rungs'
   (DASH, one AdaptationSet, says so).
+- **maktaba-server writes node.json the way the pipeline does, every node.json is its user's
+  alone, and no reader takes a write under way for "not joined"** (story 38.1, follow-up of #178
+  and #239). maktaba-server's own writes of the node config (a switch of the home, a standby
+  taking over, the home's database CA) gave the file its folder's ACL, so on a second drive every
+  signed-in user could read and change the node's private key; they ignored the pipeline's write
+  lock, so the two could undo each other; they wrote back a whole copy read earlier, undoing what
+  another write put in meanwhile; and a `node.json` saved with a BOM lost what only the pipeline
+  writes (when the machine joined). They now go through one writer that follows the pipeline's:
+  its lock, a fresh read under it that changes only the fields the write is about (and stops,
+  leaving the file as it is, when the machine joined again meanwhile), a temp file the user's
+  alone from the moment it exists, ReplaceFileW, and the pipeline's names for what a write that
+  could not finish leaves. What is guaranteed now: after any write by either writer, and after
+  the pipeline's first load in a process, `node.json` is its user's alone. One #178 left with its
+  folder's ACL, or any wider one, gets a protected DACL that grants its user and no one else, and
+  on Linux and macOS one others may read is set to mode 0600; a write that cannot make it so
+  fails rather than keep the wider ACL. A broken `node.json` kept aside (`node.json.broken-…`),
+  and the identity a home's switch or a re-join sets aside (`node.json.was-node-…`,
+  `node.json.bak`: the old private key), are made the user's alone too, whatever ACL the file
+  they were had. A switch's records and the machine identity kept for it are written the same
+  way, an identity an older version kept is made the user's alone when it is read, and the temp
+  files a write of them left when its process stopped go with the next write. And no reader (the
+  pipeline's load, maktaba-server's, streaming's role and node checks) takes a `node.json` that
+  is being replaced, or that another process holds open for a moment, for a missing one: while
+  the write lock was taken in the last minute, or a write's leftovers of the last minute are
+  beside it, it waits up to 2 s for the write to end, and a write still under way after that is
+  an error, as is a node config it cannot read or decode: never "not joined" and never the home,
+  and the path stays the roaming one rather than falling back to `%LOCALAPPDATA%`. Streaming
+  refuses to start on one, and serve starts nothing of a home on a node config it cannot read: no
+  role (the api, streaming, the pipeline), no bundled Postgres cluster, no machine agent, rather
+  than start them as the home against this machine's own database. So a machine that never
+  joined, beside a node config lock file made in the last minute (a write that stopped half way),
+  now gets that error for up to that minute rather than starting at once: serve says so and
+  checks again every 5 s, and starts once the write ended or the lock is a minute old. A file
+  another program holds open for a moment (an antivirus, a backup tool) is waited out the same
+  way. A home's switch that moves `node.json` aside first removes every leftover of a write, and
+  fails before leaving a whole node config readable, so the machine that is now the home is never
+  read as a node again; a broken `node.json` there is kept aside as `node.json.broken-…`. Every
+  reader decodes alike: UTF-8 with or without a BOM, UTF-16 or UTF-32 with one (PowerShell 5.1's
+  `Out-File` and `>`), and text that does not decode strictly (an ANSI file) is broken for all of
+  them. A broken `node.json` kept aside goes after 30 days and at a re-join (it may hold part of
+  a credential), the write lock and an identity a switch set aside are among the files the
+  uninstall script lists to forget the home, a write and a re-join try again for a moment while a
+  reader has `node.json` open, and the identity a switch set aside is found beside the roaming
+  `node.json` as well as the local one.
 - **A live page's yt-dlp lookup runs once for the channels that share it.** A channel that found
   no URL cached just as the shared lookup ended started yt-dlp again for the same page; it now
   takes the URL that lookup cached. (CI saw it as the test's fake yt-dlp running twice and

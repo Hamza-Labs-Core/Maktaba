@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 // TestNodeConfigIsolated: runServe's node-mode check sees no node config here
 // (TestServeIntegration used to read %APPDATA%\Maktaba\node.json on a joined PC).
 func TestNodeConfigIsolated(t *testing.T) {
-	if _, node := cluster.NodeModeFromOS(runtime.GOOS); node {
+	if _, node, _ := cluster.NodeModeFromOS(runtime.GOOS); node {
 		t.Fatal("a test sees a node config: MAKTABA_NODE_CONFIG must point at a temp path")
 	}
 	if p := os.Getenv("MAKTABA_NODE_CONFIG"); !strings.HasPrefix(filepath.Clean(p), filepath.Clean(os.TempDir())) {

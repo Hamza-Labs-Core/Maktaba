@@ -255,8 +255,12 @@ func (s *setupRun) apiSub(dbURL string, stdin io.Reader, args ...string) ([]byte
 	if err != nil {
 		return nil, -1, failStep("server_missing", "", "the API program is missing: %v", err)
 	}
+	base, err := supervisor.ChildEnv(supervisor.RoleAPI, s.cfg)
+	if err != nil {
+		return nil, -1, failStep("internal", "", "%v", err)
+	}
 	cmd := exec.CommandContext(s.ctx, bin, args...)
-	env := append(supervisor.ChildEnv(supervisor.RoleAPI, s.cfg), os.Environ()...)
+	env := append(base, os.Environ()...)
 	if dbURL != "" {
 		env = append(env, "DATABASE_URL="+dbURL)
 	}

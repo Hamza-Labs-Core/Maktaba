@@ -101,8 +101,10 @@ type serveOptions struct {
 
 func runServe(cfg config.Config, opts serveOptions) error {
 	// Epic 35 story 35.8: a half-written node.json stops here, once, with its path,
-	// rather than as every node role's crash loop.
-	if err := supervisor.CheckNodeConfig(cfg); err != nil {
+	// rather than as every node role's crash loop; one a write is still under way on is
+	// waited for first (nodeConfigSettles).
+	if err := nodeConfigSettles(func() error { return supervisor.CheckNodeConfig(cfg) },
+		5*time.Second, nodeConfigSettleLimit, os.Stderr); err != nil {
 		return err
 	}
 	// Epic 38 story 38.1: the roaming profile's node config is another PC's (its
@@ -142,7 +144,10 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	// machine agent; the api in node mode; the web port's TV to the home).
 	var node *nodeServices
 	if containsRole(roles, supervisor.RoleAPI) {
-		node = startNodeServices(ctx, cfg, sw.command)
+		node, err = startNodeServices(ctx, cfg, sw.command)
+		if err != nil {
+			return err
+		}
 		if node != nil {
 			// a switch of the home while this machine was off (serve_switchover.go)
 			go sw.watchMoved(ctx)

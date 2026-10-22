@@ -38,6 +38,7 @@ each other.
 
 from __future__ import annotations
 
+import codecs
 import contextlib
 import errno
 import json
@@ -46,7 +47,7 @@ import platform
 import re
 import sys
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -178,8 +179,8 @@ def config_path(
         # place (where a new join writes; another PC's roaming config is not this PC's).
         # What a write that could not finish left of it counts as it (_source).
         old = _roaming_config(env, home)
-        held = _source(old)
-        if held.is_file() and not _claimed_elsewhere(held, env):
+        held = _held(old)
+        if held is not None and not _claimed_elsewhere(held, env):
             return old
         local = env.get("LOCALAPPDATA")
         return (Path(local) if local else home / "AppData" / "Local") / "Maktaba" / "node.json"
@@ -194,11 +195,36 @@ def _roaming_config(env: Mapping[str, str], home: Path) -> Path:
     return (Path(appdata) if appdata else home / "AppData" / "Roaming") / "Maktaba" / "node.json"
 
 
+#: the byte order marks a node config is read past, in the encoding each names (UTF-32's
+#: before UTF-16's: they begin alike)
+_BOMS = (
+    (codecs.BOM_UTF32_LE, "utf-32"),
+    (codecs.BOM_UTF32_BE, "utf-32"),
+    (codecs.BOM_UTF8, "utf-8-sig"),
+    (codecs.BOM_UTF16_LE, "utf-16"),
+    (codecs.BOM_UTF16_BE, "utf-16"),
+)
+
+
+def _text(path: Path) -> str:
+    """A node config's text, read the way every reader reads it (maktaba-server's and
+    streaming's ``withoutBOM``, the installer's ``Get-Content``): a node.json an editor
+    saved with a byte order mark in that encoding (Notepad and PowerShell 5.1's
+    ``Set-Content -Encoding UTF8`` write UTF-8 with one, its ``Out-File`` and ``>``
+    UTF-16), one without as UTF-8. Raises OSError, and ValueError for text that does not
+    decode (a broken file)."""
+    raw = path.read_bytes()
+    for bom, codec in _BOMS:
+        if raw.startswith(bom):
+            return raw.decode(codec)
+    return raw.decode("utf-8")
+
+
 def _owner(path: Path) -> str:
     """The machine_id a node config records: "" when it has none or cannot be read (a
     broken file is never skipped: ``load`` says what is wrong with it)."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        data = json.loads(_text(path))
     except (OSError, ValueError):
         return ""
     return str(data.get("machine_id") or "").strip() if isinstance(data, dict) else ""
@@ -232,9 +258,12 @@ def load(path: Path | None = None) -> NodeConfig | None:
     could not be put back yet is read where it is (``_source``)."""
     path = path or config_path()
     _recover(path)
-    src = _source(path)
+    _prune_broken(path)
+    _secure_once(path)
+    src = path
     try:
-        data = json.loads(src.read_text(encoding="utf-8-sig"))
+        src, text = _read_steady(path)
+        data = json.loads(text)
     except FileNotFoundError:
         return None
     except ValueError as exc:
@@ -250,9 +279,17 @@ def load(path: Path | None = None) -> NodeConfig | None:
     if src == path and not cfg.machine_id and _is_roaming_config(path):
         this = machine_id()
         if this:
+            claimed: dict[str, str] = {}
+
+            def claim(now: dict[str, Any]) -> dict[str, Any] | None:
+                # the file as it is with the lock held (a write may have changed it since
+                # it was read here): only a config no PC has claimed is claimed
+                claimed["by"] = str(now.get("machine_id") or "").strip() or this
+                return None if now.get("machine_id") else {**now, "machine_id": this}
+
             try:
-                _write(path, {**data, "machine_id": this})
-            except OSError as exc:
+                _update(path, claim)
+            except (OSError, ValueError) as exc:
                 # the file stays as it was (_write never loses it) and the node runs on;
                 # the next start tries again (and recovers what it left, _recover)
                 if str(path) not in _claim_failed:
@@ -266,7 +303,7 @@ def load(path: Path | None = None) -> NodeConfig | None:
                         left=[p.name for p in _leftovers(path)],
                     )
             else:
-                cfg = replace(cfg, machine_id=this)
+                cfg = replace(cfg, machine_id=claimed.get("by", this))
     return cfg
 
 
@@ -327,12 +364,10 @@ def _in_progress(path: Path, leftover: Path, now: float) -> bool:
 def _whole_state(path: Path) -> bool | None:
     """True when ``path`` holds a node config with its identity (a whole file, not a cut
     one); False when it is gone, or not one (not JSON, cut, without its identity); None
-    when it cannot be read now (another process holds it: a rename, ReplaceFileW). A UTF-8
-    BOM (Notepad, PowerShell 5.1's ``-Encoding UTF8``) is read past, as every node config
-    read here does (``utf-8-sig``), and as maktaba-server, streaming and the node
-    installer do."""
+    when it cannot be read now (another process holds it: a rename, ReplaceFileW). Read
+    as every reader reads it (``_text``: past a byte order mark)."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        data = json.loads(_text(path))
     except FileNotFoundError:
         return False
     except OSError:
@@ -398,6 +433,151 @@ def _source(path: Path) -> Path:
     return _candidate(_leftovers(path)) or path
 
 
+def _lock_path(path: Path) -> Path:
+    """The write lock beside the node config at ``path`` (``_one_at_a_time``)."""
+    return path.with_name(f".{path.name}.lock")
+
+
+def _write_under_way(path: Path, exc: OSError) -> bool:
+    """Reading the node config at ``path`` failed with ``exc`` while a write of it may be
+    under way: the file is held by another process (a sharing violation: ReplaceFileW, a
+    rename), or it is missing, or denied for a moment (a backup being removed), while its
+    lock is held (``_locked_lately``) or a write's leftovers of the last minute are beside
+    it (ReplaceFileW renames node.json aside before the new one takes its name; a stale
+    leftover is no write under way). A reader waits that out rather than take
+    "missing" for "not joined", as maktaba-server's and streaming's readers do."""
+    if getattr(exc, "winerror", None) == 32 or _held_open(exc):
+        return True
+    if isinstance(exc, (FileNotFoundError, PermissionError)):
+        now = _now()
+        return _locked_lately(path, now) or any(
+            _in_progress(path, p, now) for p in _leftovers(path)
+        )
+    return False
+
+
+def _held_open(exc: OSError) -> bool:
+    """Windows: ``open()`` failed with EACCES and no Windows error code, which is how the C
+    runtime reports a sharing violation (another program, an antivirus or a backup tool,
+    holds the file open without sharing it). A file this user may not read says the same:
+    the bounded wait (``_read_steady``) then ends in the PermissionError it would raise."""
+    return (
+        sys.platform == "win32"
+        and isinstance(exc, PermissionError)
+        and exc.errno == errno.EACCES
+        and getattr(exc, "winerror", None) is None
+    )
+
+
+def _locked_lately(path: Path, now: float) -> bool:
+    """The node config at ``path`` has a lock file made in the last minute: a write
+    removes it when it is done, and one a process that stopped mid-write left long ago is
+    no write under way."""
+    try:
+        return abs(now - _lock_path(path).stat().st_mtime) < _LEFTOVER_GRACE_SEC
+    except OSError:
+        return False
+
+
+def _read_steady(path: Path) -> tuple[Path, str]:
+    """The node config's text from the file that holds it (``_source``), waiting out a
+    write under way (``_write_under_way``) for up to ``_READ_WAIT_SEC``; the file and its
+    text. Raises the last OSError (FileNotFoundError when there is none), ValueError for
+    text that does not decode. A write still under way at the end is an OSError that is
+    not FileNotFoundError (EBUSY): never "not joined"."""
+    deadline = time.monotonic() + _READ_WAIT_SEC
+    while True:
+        src = _source(path)
+        try:
+            return src, _text(src)
+        except OSError as exc:
+            # a leftover it picked that is gone already: the write ended, look again
+            vanished = src != path and isinstance(exc, (FileNotFoundError, PermissionError))
+            if not vanished and not _write_under_way(path, exc):
+                raise
+            if time.monotonic() >= deadline:
+                if isinstance(exc, FileNotFoundError) or getattr(exc, "winerror", None) == 32:
+                    raise OSError(
+                        errno.EBUSY,
+                        f"being written (a write of it still under way after {_READ_WAIT_SEC} s):"
+                        f" {exc}",
+                        str(src),
+                    ) from exc
+                raise
+        time.sleep(_BUSY_SLEEP)
+
+
+def _held(path: Path) -> Path | None:
+    """The file that holds the node config at ``path`` (``_source``) when there is one,
+    waiting out a write under way (a leftover it picked can be gone a moment later, and
+    a resolver must not take the local place for it then) for up to ``_READ_WAIT_SEC``;
+    None when there is none. A write still under way at the end keeps ``path`` (its
+    reader then says it is being written)."""
+    deadline = time.monotonic() + _READ_WAIT_SEC
+    while True:
+        held = _source(path)
+        if held.is_file():
+            return held
+        # a leftover it picked that is gone already (the write ended): look again
+        under_way = _write_under_way(path, FileNotFoundError(str(held)))
+        if held == path and not under_way:
+            return None
+        if time.monotonic() >= deadline:
+            return path if under_way else None
+        time.sleep(_BUSY_SLEEP)
+
+
+#: the node configs this process could not make their user's alone (said once each)
+_secure_failed: set[str] = set()
+
+
+def _secure_once(path: Path) -> None:
+    """At load: node.json that is not its user's alone is made so (``_secure``; one that
+    maktaba-server's writer of #178 left with its folder's ACL), and the warning says so;
+    one that cannot be is said once. It runs with the write lock, so a write replacing
+    the file meanwhile is no failure (a write running now leaves it the user's alone);
+    and before it says one, it looks again."""
+    if not path.is_file():
+        return
+    from ..log import get_logger
+
+    try:
+        made = _secure_held(path)
+    except OSError as exc:
+        if _user_only_now(path):
+            return  # replaced or gone meanwhile: nothing to say
+        if str(path) not in _secure_failed:
+            _secure_failed.add(str(path))
+            get_logger().warning("node_config_not_private", path=str(path), error=str(exc))
+        return
+    if made:
+        get_logger().warning("node_config_made_private", path=str(path))
+
+
+def _secure_held(path: Path) -> bool:
+    """``_secure`` with the write lock held (``_one_at_a_time``, the recovery's wait):
+    False when another write holds it (that write leaves the file the user's alone), and
+    without the lock when there is none to be had (a folder this user may not write)."""
+    with contextlib.ExitStack() as stack:
+        try:
+            held = stack.enter_context(_one_at_a_time(path, wait=_RECOVER_WAIT_SEC))
+        except OSError:
+            held = True
+        return held and path.is_file() and _secure(path)
+
+
+def _user_only_now(path: Path) -> bool:
+    """The node config at ``path`` is gone, or its user's alone now (looked at again)."""
+    try:
+        if not path.exists():
+            return True
+        if sys.platform == "win32":
+            return _is_user_only(path)
+        return not path.stat().st_mode & 0o077
+    except OSError:
+        return False
+
+
 def _rename_no_replace(src: Path, dst: Path) -> None:
     """``src`` takes the name ``dst``, never replacing a file there (FileExistsError):
     MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows (``os.rename``), a hard link
@@ -411,9 +591,27 @@ def _rename_no_replace(src: Path, dst: Path) -> None:
 
 def _broken_name(path: Path) -> Path:
     """Where a broken node config is kept when a leftover takes its name: beside it,
-    ``<name>.broken-<time>-<4 hex>`` (no leftover's name: it is never put back, and never
-    removed; a person may want what is in it)."""
+    ``<name>.broken-<time>-<4 hex>`` (no leftover's name: it is never put back; a person
+    may want what is in it, for ``_BROKEN_KEEP_DAYS``)."""
     return path.with_name(f"{path.name}.broken-{int(_now())}-{os.urandom(2).hex()}")
+
+
+#: how long a broken node.json kept aside stays (housekeeping, not a setting: long enough
+#: to look into what broke it; it may hold part of a credential, so not forever). A
+#: re-join removes them at once.
+_BROKEN_KEEP_DAYS = 30
+
+
+def _prune_broken(path: Path, *, all_of_them: bool = False) -> None:
+    """Remove the broken node configs kept beside ``path`` (``_broken_name``) that are
+    older than ``_BROKEN_KEEP_DAYS`` by the time in their names, or all of them."""
+    named = re.compile(rf"{re.escape(path.name)}\.broken-(\d+)-[0-9a-f]{{4}}")
+    now = _now()
+    for p in path.parent.glob(f"{path.name}.broken-*"):
+        m = named.fullmatch(p.name)
+        if m and (all_of_them or now - float(m.group(1)) > _BROKEN_KEEP_DAYS * 86400):
+            with contextlib.suppress(OSError):
+                p.unlink()
 
 
 def _put_in_place(path: Path, leftover: Path) -> tuple[bool, Path | None]:
@@ -436,6 +634,10 @@ def _put_in_place(path: Path, leftover: Path) -> tuple[bool, Path | None]:
                 with contextlib.suppress(OSError):
                     _when_free(_rename_no_replace, kept, path)
                 return False, None
+            # it may hold part of a credential, and it stays for a while: the user's
+            # alone, whatever ACL it had (best effort: it is never read as a node config)
+            with contextlib.suppress(OSError):
+                _secure(kept)
     try:
         _when_free(_rename_no_replace, leftover, path)
     except FileExistsError:
@@ -446,6 +648,10 @@ def _put_in_place(path: Path, leftover: Path) -> tuple[bool, Path | None]:
 #: a file another process has open (a reader: Python, Go, PowerShell) cannot be renamed or
 #: read for a moment (ERROR_SHARING_VIOLATION): a recovery tries again this often
 _BUSY_TRIES, _BUSY_SLEEP = 20, 0.005
+
+#: how long a reader waits out a write under way (``_write_under_way``): a write holds
+#: the lock for all of it, which takes milliseconds, and more on a busy machine
+_READ_WAIT_SEC = 2.0
 
 
 def _when_free(move: Any, src: Path, dst: Path) -> None:
@@ -523,7 +729,7 @@ def _recover_held(path: Path) -> None:
         for p in left:
             if p != used:
                 with contextlib.suppress(OSError):
-                    p.unlink()
+                    _unlink_when_free(p)
                     removed.append(p.name)
     _tell_leftovers(
         path,
@@ -715,6 +921,112 @@ def _set_user_only_dacl(path: str) -> None:
             raise ctypes.WinError(err)
 
 
+def _is_user_only(path: Path) -> bool:
+    """Windows: the file's DACL is protected and grants this process's user full control
+    and no one anything (what ``_create_user_only`` and ``_set_user_only_dacl`` give it).
+    Raises OSError when it cannot be read."""
+    if sys.platform != "win32":
+        raise OSError("a Windows call")
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32, kernel32 = _win32()
+    advapi32.GetNamedSecurityInfoW.argtypes = [
+        wintypes.LPCWSTR,
+        ctypes.c_int,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW.argtypes = [
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.LPWSTR),
+        ctypes.c_void_p,
+    ]
+    se_file_object, dacl_info = 1, 0x00000004
+    dacl, descriptor = ctypes.c_void_p(), ctypes.c_void_p()
+    err = advapi32.GetNamedSecurityInfoW(
+        str(path),
+        se_file_object,
+        dacl_info,
+        None,
+        None,
+        ctypes.byref(dacl),
+        None,
+        ctypes.byref(descriptor),
+    )
+    if err:
+        raise ctypes.WinError(err)
+    try:
+        sddl = _dacl_sddl(descriptor)
+    finally:
+        kernel32.LocalFree(descriptor)
+    # the user as SDDL writes it: an alias for a well-known account ("LA" for the built-in
+    # Administrator, a CI runner's user), not always its S-1-5-... string
+    with _user_only_descriptor() as wanted:
+        want = _USER_ONLY_DACL.fullmatch(_dacl_sddl(wanted))
+    m = _USER_ONLY_DACL.fullmatch(sddl)
+    return (
+        m is not None
+        and want is not None
+        and "P" in m.group(1)
+        and m.group(3).upper() == want.group(3).upper()
+    )
+
+
+#: a protected DACL (as SDDL) that grants one SID full control and no one anything else
+_USER_ONLY_DACL = re.compile(r"D:([A-Z]*)\(A;;(FA|GA|0x1f01ff);;;([^)]+)\)")
+
+
+def _dacl_sddl(descriptor: Any) -> str:
+    """The DACL of a security descriptor as SDDL."""
+    if sys.platform != "win32":
+        raise OSError("a Windows call")
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32, kernel32 = _win32()
+    advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW.argtypes = [
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.LPWSTR),
+        ctypes.c_void_p,
+    ]
+    text = wintypes.LPWSTR()
+    if not advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW(
+        descriptor, 1, 0x00000004, ctypes.byref(text), None
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return text.value or ""
+    finally:
+        kernel32.LocalFree(text)
+
+
+def _secure(path: Path) -> bool:
+    """Make the node config at ``path`` its user's alone when it is not: on Windows the
+    user-only DACL (a node.json maktaba-server's writer of #178 left with its folder's
+    ACL, Authenticated Users on a second drive, keeps none of it); elsewhere mode 0600.
+    True when it changed something. Raises OSError when it cannot be done."""
+    if sys.platform == "win32":
+        if _is_user_only(path):
+            return False
+        _set_user_only_dacl(str(path))
+        return True
+    mode = path.stat().st_mode
+    if not mode & 0o077:
+        return False
+    os.chmod(path, 0o600)
+    return True
+
+
 def _create_user_only(path: Path) -> int:
     """Windows: create ``path`` (CREATE_NEW: FileExistsError when the name is taken) with
     the user-only DACL from the start and open it for writing with no sharing, so it never
@@ -796,16 +1108,25 @@ def _replace_keeping_acl(path: Path, tmp: Path) -> None:
     failure is settled before it is raised: the old file is put back, or, when it is gone,
     the new one takes its name (the user's alone from its creation). The only copy of a
     node's identity is never removed. Raises when ``path`` holds the old file again;
-    returns when it holds the new one."""
+    returns when it holds the new one. A sharing violation (another process has node.json
+    open; nothing moved) is tried again for a moment, as a recovery's renames are."""
     backup = _leftover_name(path, ".bak")
-    try:
-        _replace_file(path, tmp, backup)
-    except OSError:
-        if not _settle(path, tmp, backup):
-            raise
-        return
+    for left in range(_BUSY_TRIES - 1, -1, -1):
+        try:
+            _replace_file(path, tmp, backup)
+            break
+        except OSError as exc:
+            busy = getattr(exc, "winerror", None) == 32
+            if busy and left and path.exists() and tmp.exists() and not backup.exists():
+                time.sleep(_BUSY_SLEEP)
+                continue
+            if not _settle(path, tmp, backup):
+                raise
+            return
+    # the old file under its backup name: a reader may have it open for a moment, and one
+    # left whole would be read as the node config were node.json ever missing
     with contextlib.suppress(OSError):
-        backup.unlink()
+        _unlink_when_free(backup)
 
 
 def _settle(path: Path, tmp: Path, backup: Path) -> bool:
@@ -821,13 +1142,29 @@ def _settle(path: Path, tmp: Path, backup: Path) -> bool:
     if not path.exists() and tmp.exists():
         os.replace(tmp, path)
         with contextlib.suppress(OSError):
-            backup.unlink()
+            _unlink_when_free(backup)
         return True
     if path.exists():
         for left in (tmp, backup):
             with contextlib.suppress(OSError):
-                left.unlink()
+                _unlink_when_free(left)
     return False
+
+
+def _unlink_when_free(path: Path) -> None:
+    """Remove ``path``, trying again for a moment while another process has it open (a
+    reader: ERROR_SHARING_VIOLATION); gone already is no error. Raises OSError when it
+    stays."""
+    for left in range(_BUSY_TRIES - 1, -1, -1):
+        try:
+            path.unlink()
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError as exc:
+            if getattr(exc, "winerror", None) != 32 or not left:
+                raise
+        time.sleep(_BUSY_SLEEP)
 
 
 #: how long a write waits for another process's write of the same node config, and a
@@ -850,7 +1187,7 @@ def _one_at_a_time(path: Path, *, wait: float) -> Iterator[bool]:
         return
     import msvcrt
 
-    lock = path.with_name(f".{path.name}.lock")
+    lock = _lock_path(path)
     for left in range(_BUSY_TRIES - 1, -1, -1):
         try:  # access is denied for a moment while another process removes it
             fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_BINARY | os.O_NOINHERIT, 0o600)
@@ -888,8 +1225,9 @@ def _write(path: Path, data: Mapping[str, Any]) -> Path:
     The temp file is the user's alone from the moment it exists (``_new_temp``; the
     folder's ACL may let others read, ``Authenticated Users`` on a second drive); when it
     cannot be, nothing is written and the error is raised (a claim then fails as any
-    failed claim: the file stays as it was). On Windows a file already there is replaced
-    with ReplaceFileW, which keeps that file's ACL."""
+    failed claim: the file stays as it was). On Windows a file already there is made the
+    user's alone first when it is not (``_secure``) and replaced with ReplaceFileW, which
+    keeps that ACL."""
     path.parent.mkdir(parents=True, exist_ok=True)
     if os.name != "nt":
         with contextlib.suppress(OSError):
@@ -904,6 +1242,8 @@ def _write(path: Path, data: Mapping[str, Any]) -> Path:
 def _write_held(path: Path, body: str) -> Path:
     """``_write`` with the lock held."""
     existed = path.exists()
+    if sys.platform == "win32" and existed:
+        _secure(path)  # raises: the secret is never written into a file others may read
     fd, tmp = _new_temp(path)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -924,6 +1264,25 @@ def _write_held(path: Path, body: str) -> Path:
     return path
 
 
+def _update(path: Path, edit: Callable[[dict[str, Any]], dict[str, Any] | None]) -> bool:
+    """Change the node config at ``path`` as it is with the write lock held (never a
+    copy read before it, which another write may have changed meanwhile): ``edit`` gets
+    its fields and gives the new ones, or None for no write. True when it wrote. Raises
+    OSError (and ValueError for a node config that is not one now)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _one_at_a_time(path, wait=_LOCK_WAIT_SEC) as held:
+        if not held:
+            raise TimeoutError(errno.ETIMEDOUT, "another write of the node config runs", str(path))
+        data = json.loads(_text(path))
+        if not isinstance(data, dict):
+            raise ValueError(f"{path}: not a node config")
+        new = edit(data)
+        if new is None:
+            return False
+        _write_held(path, json.dumps(new, indent=2, sort_keys=True) + "\n")
+        return True
+
+
 def save(cfg: NodeConfig, path: Path | None = None) -> Path:
     """Write the node config where this PC keeps it (``config_path``), through ``_write``."""
     return _write(path or config_path(), cfg.to_json())
@@ -932,13 +1291,35 @@ def save(cfg: NodeConfig, path: Path | None = None) -> Path:
 def set_aside(path: Path) -> Path:
     """``join --rejoin``: the node config at ``path`` (the file that holds it, ``_source``)
     is kept as ``<name>.bak`` and forgotten, with everything a write that could not finish
-    left of it: the next load would put that back. Returns the kept file."""
+    left of it (the next load would put that back) and the broken ones kept aside (they
+    may hold part of the old credential). The kept file is the user's alone. Returns it."""
     backup = path.with_name(path.name + ".bak")
     with _one_at_a_time(path, wait=_LOCK_WAIT_SEC) as held:
         if not held:
             raise TimeoutError(errno.ETIMEDOUT, "another write of the node config runs", str(path))
-        os.replace(_source(path), backup)
+        # in an order that leaves nothing read as this node config once it is kept,
+        # wherever it stops: the other leftovers first (one that is whole and stays is an
+        # error, before anything moves), a broken node.json next (the config is in a
+        # leftover then), the file that holds it last
+        src = _source(path)
         for p in _leftovers(path):
-            with contextlib.suppress(OSError):
-                p.unlink()
+            if p == src:
+                continue
+            try:
+                _unlink_when_free(p)
+            except OSError as exc:
+                if _whole_state(p) is not False:
+                    raise OSError(
+                        f"{p}, which every reader would take as the node config after a"
+                        f" re-join, cannot be removed: {exc}"
+                    ) from exc
+        if src != path and path.exists():
+            _unlink_when_free(path)
+        _when_free(os.replace, src, backup)
+        # the old identity (its private key) keeps the ACL of the file it was: the
+        # user's alone, whatever that was (a leftover an older writer left with its
+        # folder's ACL; best effort)
+        with contextlib.suppress(OSError):
+            _secure(backup)
+        _prune_broken(path, all_of_them=True)
     return backup

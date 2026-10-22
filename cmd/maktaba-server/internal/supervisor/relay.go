@@ -37,10 +37,13 @@ func RelayCredPath() string { return filepath.Join(config.KeysDir(), RelayCredFi
 func RelayKeyPath() string  { return filepath.Join(config.KeysDir(), RelayKeyFile) }
 
 // RelayWanted reports whether this machine runs the relay agent: the home (never a
-// machine joined to one), with [cloud] enabled and the agent's credentials, or a claim
-// code and slug to get them.
-func RelayWanted(cfg config.Config) bool {
-	if !cfg.Cloud.Enabled || (nodeConfig().Joined() && !forcedHome(cfg)) {
+// machine joined to one, nor one whose node config cannot be read), with [cloud] enabled
+// and the agent's credentials, or a claim code and slug to get them.
+func RelayWanted(cfg config.Config) bool { return relayWanted(cfg, nodeConfig()) }
+
+// relayWanted is RelayWanted with the node config n read.
+func relayWanted(cfg config.Config, n config.NodeConfig) bool {
+	if !cfg.Cloud.Enabled || ((n.Joined() || n.Err != nil) && !forcedHome(cfg)) {
 		return false
 	}
 	if _, err := os.Stat(RelayCredPath()); err == nil {

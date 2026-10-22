@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import platform
 import stat
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -158,13 +160,17 @@ def _icacls(path: Path) -> list[str]:
 
 
 class _Warnings:
-    """A logger that keeps what it was told to warn."""
+    """A logger that keeps what it was told to warn (the warnings that a node.json was
+    made its user's alone only when ``private``: the tests' files have the folder's ACL)."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, private: bool = False) -> None:
         self.events: list[str] = []
         self.fields: list[dict[str, object]] = []
+        self.private = private
 
     def warning(self, event: str, **kw: object) -> None:
+        if not self.private and event in ("node_config_made_private", "node_config_not_private"):
+            return
         self.events.append(event)
         self.fields.append(kw)
 
@@ -239,17 +245,20 @@ def test_windows_claim_failing_with_the_old_file_moved_aside(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """ERROR_UNABLE_TO_MOVE_REPLACEMENT_2 (1177): the old file is under the backup name;
-    it is put back, the same file with the same ACL, and nothing is left over."""
+    it is put back, the same file (the user's alone, as every node.json after a load),
+    and nothing is left over."""
 
     def aside(path: Path, tmp: Path, backup: Path) -> None:
         os.replace(path, backup)
         raise _windows_error(1177)
 
     roaming, warnings = _claim_seam(tmp_path, monkeypatch, aside)
-    before, acl = roaming.read_bytes(), _icacls(roaming)
+    before = roaming.read_bytes()
     cfg = config.load()
     assert cfg is not None and cfg.joined
-    assert roaming.read_bytes() == before and _icacls(roaming) == acl
+    aces = _icacls(roaming)
+    user = os.environ.get("USERNAME", "")
+    assert roaming.read_bytes() == before and len(aces) == 1 and user.lower() in aces[0].lower()
     assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
     assert warnings.events == ["node_config_claim_failed"]
 
@@ -271,6 +280,30 @@ def test_windows_claim_failing_before_the_replace(
     assert roaming.read_bytes() == before
     assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
     assert warnings.events == ["node_config_claim_failed"]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="ReplaceFileW")
+def test_windows_a_replace_another_process_holds_up_is_tried_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ReplaceFileW that fails with a sharing violation (a reader has node.json open:
+    nothing moved) is tried again for a moment: the claim is written, nothing is left
+    over, and nothing is said."""
+    real = config._replace_file
+    calls: list[int] = []
+
+    def busy_twice(path: Path, tmp: Path, backup: Path) -> None:
+        calls.append(1)
+        if len(calls) <= 2:
+            raise OSError(0, "the file is in use", None, 32)
+        real(path, tmp, backup)
+
+    roaming, warnings = _claim_seam(tmp_path, monkeypatch, busy_twice)
+    cfg = config.load()
+    assert cfg is not None and cfg.machine_id == "pc-a" and len(calls) == 3
+    assert json.loads(roaming.read_text(encoding="utf-8")) == _NEW
+    assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
+    assert warnings.events == []
 
 
 @pytest.mark.skipif(os.name != "nt", reason="ReplaceFileW")
@@ -504,17 +537,19 @@ def test_a_node_json_that_cannot_be_read_is_never_moved_or_read_past(
     path = folder / "node.json"
     path.write_text(json.dumps(_JOINED), encoding="utf-8")
     older = _leftover(folder, _named(".bak", age=120), json.dumps({**_JOINED, "node_id": "n0"}))
-    read_text = Path.read_text
+    read_bytes = Path.read_bytes
 
-    def held(self: Path, *args: Any, **kw: Any) -> str:
+    def held(self: Path) -> bytes:
         if self == path:
             raise PermissionError(13, "in use by another process", str(self))
-        return read_text(self, *args, **kw)
+        return read_bytes(self)
 
-    monkeypatch.setattr(Path, "read_text", held)
+    monkeypatch.setattr(Path, "read_bytes", held)
+    # on Windows EACCES may be a sharing violation, waited out for a moment
+    monkeypatch.setattr(config, "_READ_WAIT_SEC", 0.02)
     with pytest.raises(PermissionError):
         config.load(path)
-    monkeypatch.setattr(Path, "read_text", read_text)
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
     assert json.loads(path.read_text(encoding="utf-8")) == _JOINED
     assert sorted(p.name for p in folder.iterdir()) == sorted(["node.json", older.name])
 
@@ -706,26 +741,67 @@ def test_a_load_that_cannot_take_the_lock_reads_past_the_leftovers(
             os.chmod(lock, stat.S_IREAD | stat.S_IWRITE)
 
 
-def test_a_node_json_saved_with_a_bom_is_whole(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+#: what an editor saves a node.json as (Notepad and PowerShell 5.1's Set-Content -Encoding
+#: UTF8: UTF-8 with a BOM; its Out-File and >: UTF-16 little-endian with one)
+_SAVED_AS: dict[str, Callable[[str], bytes]] = {
+    "UTF-8 with a BOM": lambda text: codecs.BOM_UTF8 + text.encode("utf-8"),
+    "UTF-16 LE": lambda text: codecs.BOM_UTF16_LE + text.encode("utf-16-le"),
+    "UTF-16 BE": lambda text: codecs.BOM_UTF16_BE + text.encode("utf-16-be"),
+    "UTF-32": lambda text: text.encode("utf-32"),
+}
+
+
+@pytest.mark.parametrize("saved_as", list(_SAVED_AS))
+def test_a_node_json_an_editor_saved_is_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, saved_as: str
 ) -> None:
-    """A node.json an editor saved with a UTF-8 BOM (Notepad, PowerShell 5.1) is read past
-    the BOM, as maktaba-server, streaming and the installer read it: it is the node config
-    (never taken for broken and replaced from a backup), and its owner is read too."""
+    """A node.json an editor saved with a byte order mark is read in that encoding, as
+    maktaba-server, streaming and the installer read it: it is the node config (never
+    taken for broken and replaced from a backup), and its owner is read too."""
+    encode = _SAVED_AS[saved_as]
     folder = tmp_path / "Maktaba"
     folder.mkdir()
     path = folder / "node.json"
-    mine = {**_JOINED, "node_id": "n2"}
-    path.write_bytes(b"\xef\xbb\xbf" + json.dumps(mine).encode())
+    mine = {**_JOINED, "node_id": "n2", "name": "Ḥamza"}
+    path.write_bytes(encode(json.dumps(mine, ensure_ascii=False)))
+    before = path.read_bytes()
     _leftover(folder, _named(".bak", age=120), json.dumps(_JOINED), age=3600)
     cfg = config.load(path)
-    assert cfg is not None and cfg.node_id == "n2" and cfg.joined
-    assert json.loads(path.read_bytes().decode("utf-8-sig")) == mine
+    assert cfg is not None and cfg.node_id == "n2" and cfg.name == "Ḥamza" and cfg.joined
+    assert path.read_bytes() == before
     assert sorted(p.name for p in folder.iterdir()) == ["node.json"]  # the stale backup goes
 
     roaming = _windows_profile(tmp_path / "pc", monkeypatch, "pc-a")
-    roaming.write_bytes(b"\xef\xbb\xbf" + json.dumps({**_JOINED, "machine_id": "pc-b"}).encode())
+    roaming.write_bytes(encode(json.dumps({**_JOINED, "machine_id": "pc-b"})))
     assert config.config_path() == tmp_path / "pc" / "Local" / "Maktaba" / "node.json"
+
+
+def test_a_node_json_that_does_not_decode_is_broken(tmp_path: Path) -> None:
+    """A cut UTF-16 file (an odd byte) is broken for every reader: the load says what is
+    wrong, as for any broken file."""
+    path = tmp_path / "node.json"
+    path.write_bytes(codecs.BOM_UTF16_LE + json.dumps(_JOINED).encode("utf-16-le")[:-1])
+    with pytest.raises(ValueError, match="not a node config"):
+        config.load(path)
+
+
+def test_broken_node_configs_kept_aside_go_after_a_while(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A broken node.json kept aside may hold part of a credential: a load removes those
+    older than the kept days (housekeeping, by the time in their names), and leaves the
+    newer ones and anything else."""
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    config.save(NodeConfig(node_id="n1", name="pc", private_key="k1"), folder / "node.json")
+    days = config._BROKEN_KEEP_DAYS
+    old = folder / f"node.json.broken-{int(time.time() - (days + 1) * 86400)}-0bad"
+    new = folder / f"node.json.broken-{int(time.time() - (days - 1) * 86400)}-0bad"
+    other = folder / "node.json.broken-by-hand"
+    for p in (old, new, other):
+        p.write_text("{cut", encoding="utf-8")
+    assert config.load(folder / "node.json") is not None
+    assert sorted(p.name for p in folder.iterdir()) == sorted(["node.json", new.name, other.name])
 
 
 def test_windows_a_roaming_config_a_failed_claim_left_is_still_this_pcs(
@@ -829,3 +905,303 @@ def test_a_config_without_its_identity_is_an_error(tmp_path: Path) -> None:
     path.write_text('{"database_url": "postgres://u:p@h/db"}', encoding="utf-8")
     with pytest.raises(ValueError, match="no node_id or private_key"):
         config.load(path)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="file modes")
+def test_a_node_json_others_may_read_is_made_the_users_at_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Off Windows, a node.json with a wider mode than 0600 (one copied in by hand) is
+    0600 after a load, and the warning says so once; one already 0600 is left alone."""
+    from maktaba_pipeline import log
+
+    path = tmp_path / "node.json"
+    path.write_text(json.dumps(_JOINED), encoding="utf-8")
+    os.chmod(path, 0o644)
+    warnings = _Warnings(private=True)
+    monkeypatch.setattr(log, "get_logger", lambda: warnings)
+    assert config.load(path) is not None
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert config.load(path) is not None
+    assert warnings.events == ["node_config_made_private"]
+
+
+def test_a_rejoin_leaves_nothing_read_as_the_old_node_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A re-join sets the node config aside in an order that leaves nothing read as it
+    after: a whole leftover that cannot be removed stops it before anything moves; with
+    node.json broken and the config in a leftover, the leftover is what is kept and the
+    broken file goes too."""
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    path.write_text(json.dumps(_JOINED), encoding="utf-8")
+    stale = _leftover(folder, _named(".bak", age=120), json.dumps({**_JOINED, "node_id": "n0"}))
+    unlink = config._unlink_when_free
+
+    def held(p: Path) -> None:
+        if p == stale:
+            raise PermissionError(13, "a reader has it open", str(p))
+        unlink(p)
+
+    monkeypatch.setattr(config, "_unlink_when_free", held)
+    with pytest.raises(OSError, match="cannot be removed"):
+        config.set_aside(path)
+    assert json.loads(path.read_text(encoding="utf-8")) == _JOINED and stale.exists()
+    monkeypatch.setattr(config, "_unlink_when_free", unlink)
+    config.set_aside(path)
+    assert sorted(p.name for p in folder.iterdir()) == ["node.json.bak"]
+
+    path.write_text('{"node_id": "n1", "priv', encoding="utf-8")
+    _leftover(folder, _named(".bak", age=120), json.dumps({**_JOINED, "node_id": "n2"}))
+    _leftover(folder, _named(".tmp", age=120), json.dumps({**_JOINED, "node_id": "n3"}))
+    kept = config.set_aside(path)
+    assert json.loads(kept.read_text(encoding="utf-8"))["node_id"] == "n2"
+    assert sorted(p.name for p in folder.iterdir()) == ["node.json.bak"]
+    assert config.load(path) is None
+
+
+def test_the_roaming_config_is_not_lost_to_a_write_under_way(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The resolver never takes the local place for the roaming config while a write of
+    it is under way (its lock held): a leftover it picked that is gone a moment later is
+    looked for again."""
+    roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
+    roaming.write_text(json.dumps({**_JOINED, "machine_id": "pc-a"}), encoding="utf-8")
+    (roaming.parent / ".node.json.lock").write_text("", encoding="utf-8")
+    source = config._source
+    calls: list[Path] = []
+
+    def a_moment_gone(path: Path) -> Path:
+        calls.append(path)
+        if len(calls) == 1:
+            return path.with_name(_named(".bak", age=1))  # picked, and gone at once
+        return source(path)
+
+    monkeypatch.setattr(config, "_source", a_moment_gone)
+    assert config.config_path() == roaming and len(calls) == 2
+
+
+def test_a_load_waits_out_a_write_under_way(tmp_path: Path) -> None:
+    """node.json missing for a moment while a write holds its lock (ReplaceFileW between
+    its renames) is not "not joined": the load waits for it."""
+    import threading
+
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    lock = folder / ".node.json.lock"
+    lock.write_text("", encoding="utf-8")
+
+    def lands() -> None:
+        path.write_text(json.dumps(_JOINED), encoding="utf-8")
+        lock.unlink()
+
+    timer = threading.Timer(0.03, lands)
+    timer.start()
+    try:
+        cfg = config.load(path)
+    finally:
+        timer.join()
+    assert cfg is not None and cfg.node_id == "n1"
+
+
+def test_the_claim_keeps_what_another_write_put_in_meanwhile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The claim writes machine_id into node.json as it is with the lock held: a field
+    another writer (maktaba-server: the home's database CA) put in after this load read
+    the file is kept, and a config another PC claimed meanwhile is not claimed again."""
+    roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
+    roaming.write_text(json.dumps(_JOINED), encoding="utf-8")
+    read = config._read_steady
+
+    def then_another_write(path: Path) -> tuple[Path, str]:
+        got = read(path)
+        roaming.write_text(json.dumps({**_JOINED, "database_ca": "PEM"}), encoding="utf-8")
+        return got
+
+    monkeypatch.setattr(config, "_read_steady", then_another_write)
+    cfg = config.load()
+    assert cfg is not None and cfg.machine_id == "pc-a"
+    assert json.loads(roaming.read_text(encoding="utf-8")) == {
+        **_JOINED,
+        "database_ca": "PEM",
+        "machine_id": "pc-a",
+    }
+
+    def then_another_pc(path: Path) -> tuple[Path, str]:
+        got = read(path)
+        roaming.write_text(json.dumps({**_JOINED, "machine_id": "pc-b"}), encoding="utf-8")
+        return got
+
+    roaming.write_text(json.dumps(_JOINED), encoding="utf-8")
+    monkeypatch.setattr(config, "_read_steady", then_another_pc)
+    cfg = config.load()
+    assert cfg is not None and cfg.machine_id == "pc-b"
+    assert json.loads(roaming.read_text(encoding="utf-8"))["machine_id"] == "pc-b"
+
+
+def test_a_write_that_does_not_end_is_an_error_never_not_joined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A write of the roaming node.json that does not end within the readers' wait (its
+    lock taken a moment ago, node.json missing) is never "not joined": the path stays the
+    roaming one and the load raises (EBUSY), never None. A lock a process that stopped
+    left long ago is no write under way: not joined."""
+    import errno
+
+    roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
+    monkeypatch.setattr(config, "_READ_WAIT_SEC", 0.02)
+    lock = config._lock_path(roaming)
+    lock.write_bytes(b"")
+    assert config.config_path() == roaming
+    with pytest.raises(OSError) as raised:
+        config.load(roaming)
+    assert not isinstance(raised.value, FileNotFoundError)
+    assert raised.value.errno == errno.EBUSY
+    then = time.time() - 120
+    os.utime(lock, (then, then))
+    assert config.load(roaming) is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="files held without sharing")
+def test_windows_leftovers_held_open_are_never_not_joined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review's case: a write's backup and temp file held open without sharing, its
+    lock taken a moment ago, node.json missing. The path stays the roaming one and the
+    load raises, never None."""
+    roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
+    monkeypatch.setattr(config, "_READ_WAIT_SEC", 0.02)
+    config._lock_path(roaming).write_bytes(b"")
+    fds = []
+    try:
+        for ext in (".bak", ".tmp"):
+            fd = config._create_user_only(roaming.with_name(_named(ext, age=0)))
+            os.write(fd, json.dumps(_JOINED).encode())
+            fds.append(fd)
+        assert config.config_path() == roaming
+        with pytest.raises(OSError) as raised:
+            config.load(roaming)
+        assert not isinstance(raised.value, FileNotFoundError)
+    finally:
+        for fd in fds:
+            os.close(fd)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a sharing violation")
+def test_windows_a_read_held_up_by_another_program_is_waited_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """open() reports a sharing violation (an antivirus or a backup tool holding
+    node.json) as EACCES without a Windows error code: the load waits it out for a
+    moment, with no lock or leftover beside it, rather than raise at once."""
+    import errno
+
+    path = tmp_path / "Maktaba" / "node.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps(_JOINED), encoding="utf-8")
+    text = config._text
+    held = {"left": 3}
+
+    def busy(p: Path) -> str:
+        if held["left"]:
+            held["left"] -= 1
+            raise PermissionError(errno.EACCES, "Permission denied", str(p))
+        return text(p)
+
+    monkeypatch.setattr(config, "_text", busy)
+    cfg = config.load(path)
+    assert cfg is not None and cfg.node_id == "n1" and held["left"] == 0
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a reader holding the file open")
+def test_windows_a_rejoin_waits_for_a_reader_holding_node_json(tmp_path: Path) -> None:
+    """``join --rejoin`` while a reader has node.json open for a moment (a sharing
+    violation on the rename, as maktaba-server's renameWhenFree waits out): it waits."""
+    import threading
+
+    path = tmp_path / "Maktaba" / "node.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps(_JOINED), encoding="utf-8")
+    reader = path.open("rb")
+    timer = threading.Timer(0.03, reader.close)
+    timer.start()
+    try:
+        kept = config.set_aside(path)
+    finally:
+        timer.join()
+        reader.close()
+    assert kept.name == "node.json.bak" and not path.exists()
+    assert json.loads(kept.read_text(encoding="utf-8")) == _JOINED
+
+
+def test_a_broken_node_json_kept_aside_is_the_users(tmp_path: Path) -> None:
+    """A broken node.json a load keeps aside (``.broken-*``, kept for a while: it may hold
+    part of a credential) is the user's alone, whatever its folder lets others do."""
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    path.write_text('{"node_id": "n1", "priv', encoding="utf-8")
+    if os.name != "nt":
+        os.chmod(path, 0o644)
+    assert not config._user_only_now(path)
+    _leftover(folder, _named(".bak", age=120), json.dumps(_JOINED))
+    cfg = config.load(path)
+    assert cfg is not None and cfg.node_id == "n1"
+    kept = list(folder.glob("node.json.broken-*"))
+    assert len(kept) == 1 and config._user_only_now(kept[0])
+
+
+def test_securing_at_load_says_nothing_of_a_file_replaced_meanwhile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The load's check that node.json is its user's alone races a write replacing it:
+    a failure for a file that is gone or the user's alone when looked at again says
+    nothing; one that stays wider is said once."""
+    from maktaba_pipeline import log
+
+    path = tmp_path / "Maktaba" / "node.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps(_JOINED), encoding="utf-8")
+    warnings = _Warnings(private=True)
+    monkeypatch.setattr(log, "get_logger", lambda: warnings)
+    monkeypatch.setattr(config, "_secure_failed", set())
+
+    def replaced(p: Path) -> bool:
+        raise FileNotFoundError(2, "replaced meanwhile", str(p))
+
+    monkeypatch.setattr(config, "_secure", replaced)
+    monkeypatch.setattr(config, "_user_only_now", lambda p: True)
+    config._secure_once(path)
+    assert warnings.events == []
+
+    def denied(p: Path) -> bool:
+        raise PermissionError(13, "access denied", str(p))
+
+    monkeypatch.setattr(config, "_secure", denied)
+    monkeypatch.setattr(config, "_user_only_now", lambda p: False)
+    config._secure_once(path)
+    config._secure_once(path)
+    assert warnings.events == ["node_config_not_private"]
+
+
+@pytest.mark.parametrize("source", ["node.json", "a leftover"])
+def test_a_rejoins_kept_identity_is_the_users(tmp_path: Path, source: str) -> None:
+    """The node config ``join --rejoin`` keeps (``node.json.bak``: the old private key)
+    is the user's alone, whatever ACL the file it was had: a node.json, or a leftover of
+    a write, saved with its folder's ACL (mode 0644 elsewhere)."""
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    src = path if source == "node.json" else folder / _named(".bak", age=120)
+    src.write_text(json.dumps(_JOINED), encoding="utf-8")
+    if os.name != "nt":
+        os.chmod(src, 0o644)
+    assert not config._user_only_now(src)
+    kept = config.set_aside(path)
+    assert json.loads(kept.read_text(encoding="utf-8")) == _JOINED
+    assert config._user_only_now(kept)
