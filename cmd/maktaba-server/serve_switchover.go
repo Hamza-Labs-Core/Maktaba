@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -132,16 +133,21 @@ func (s *switching) set(pg *pgbundle.Bundle, cp *nodeCopy, stopCopy func(), toke
 	close(s.ready)
 }
 
-// dir is switchover id's folder, named by the id's last element alone; an id that names
-// no folder of its own there ("", ".", "..", a reserved name on Windows) gets "_", which
-// no switch is called: an id from a request never reaches past the switchover folder.
+// dir is switchover id's folder, named by the id's last element alone (a uuid): one that
+// is not a plain name of letters, digits, ".", "_" and "-" starting with a letter or
+// digit, or names no folder of its own there ("..", a reserved name on Windows), gets
+// "_", which no switch is called. An id from a request never reaches past the switchover
+// folder.
 func (s *switching) dir(id string) string {
-	name := filepath.Base(id)
-	if name == "." || !filepath.IsLocal(name) {
-		name = "_"
+	name := "_"
+	if b := filepath.Base(id); switchFolderName.MatchString(b) && filepath.IsLocal(b) {
+		name = b
 	}
 	return filepath.Join(s.cfg.StateDir(), "switchover", name)
 }
+
+// switchFolderName is a switch's folder name (dir): a plain name, never "." or "..".
+var switchFolderName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 func superDB(b pgbundle.Bundle) (*sql.DB, error) {
 	dsn, err := b.SuperURL()
