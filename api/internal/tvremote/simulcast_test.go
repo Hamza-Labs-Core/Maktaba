@@ -616,7 +616,12 @@ func TestSimulcastCapAndBudget(t *testing.T) {
 			t.Errorf("estimate simulcast minutes %.1f", e.SimulcastMinutes)
 		}
 	})
+}
 
+// TC6 (continued): split from TestSimulcastCapAndBudget so no single test runs past the
+// unit tier's per-test cap under -race (each sim fixture is an in-memory SQLite and a
+// fake Cloudflare server: ~0.3 s with the race detector).
+func TestSimulcastCapScheduledWindow(t *testing.T) {
 	t.Run("a scheduled output finishes its window at the cap", func(t *testing.T) {
 		fx := newSim(t)
 		fx.simRules(map[string]any{"enabled": true, "max_hours_per_month": 1, "lead_seconds": 0, "tail_seconds": 0})
@@ -645,7 +650,10 @@ func TestSimulcastCapAndBudget(t *testing.T) {
 			t.Fatal("a new window started at the cap")
 		}
 	})
+}
 
+// TC6 (continued): the budget.
+func TestSimulcastBudgetBlocksNew(t *testing.T) {
 	t.Run("budget block_new: no new output, running ones finish", func(t *testing.T) {
 		fx := newSim(t)
 		fx.simRules(map[string]any{"enabled": true, "lead_seconds": 0, "tail_seconds": 0})
