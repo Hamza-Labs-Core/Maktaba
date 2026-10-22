@@ -125,7 +125,7 @@ func newSwitching(cfg config.Config) *switching {
 func (s *switching) set(pg *pgbundle.Bundle, cp *nodeCopy, stopCopy func(), token string,
 	want func(role supervisor.Role, on bool) error) {
 	s.pg, s.cp, s.stopCopy, s.token, s.want = pg, cp, stopCopy, token, want
-	s.sweepKits()
+	s.sweepKitsWith(func(string) string { return "" }) // its markers; the copy (up later) every minute
 	close(s.ready)
 }
 
@@ -1170,16 +1170,57 @@ func openSealed(path, id string, n config.NodeConfig) (*switchover.Kit, error) {
 func (s *switching) calledOff(id string) string   { return filepath.Join(s.dir(id), "called-off") }
 func (s *switching) newHomeFile(id string) string { return filepath.Join(s.dir(id), "new-home.json") }
 
-// sweepKits removes, at a start, the kits of switches over here: called off (this machine
-// was to take over, and told the old home it would not), or promoted and answered. A kit
-// whose switch this machine never heard more of is dropped when the old home asks again
-// (it does, after an admin called it off: switch.status).
+// sweepKits removes the kits of switches over here: called off, or this machine the new
+// home, and one its copy shows over at the old home (failed, called off or done while
+// this machine did not answer, so it never heard; the claim it held is let go). The
+// home's keys and secrets stay on no machine but a standby home's. A promotion running
+// here keeps its kit (its failure removes it), and so does a switch the copy shows open,
+// or does not have yet. Every minute (watchMoved); at the start, by its markers only.
 func (s *switching) sweepKits() {
+	var db *sql.DB
+	defer func() {
+		if db != nil {
+			_ = db.Close()
+		}
+	}()
+	s.sweepKitsWith(func(id string) string {
+		if s.cp == nil {
+			return ""
+		}
+		if db == nil {
+			d, err := s.copyDB()
+			if err != nil {
+				return ""
+			}
+			db = d
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var state string
+		_ = db.QueryRowContext(ctx, `SELECT state FROM cluster_switchovers WHERE id::text = $1`, id).Scan(&state)
+		return state
+	})
+}
+
+// sweepKitsWith is sweepKits with the switch's state in the copy from stateOf ("": not
+// known).
+func (s *switching) sweepKitsWith(stateOf func(id string) string) {
 	kits, _ := filepath.Glob(filepath.Join(s.cfg.StateDir(), "switchover", "*", "kit.chunks"))
 	for _, k := range kits {
 		id := filepath.Base(filepath.Dir(k))
-		if fileExists(s.calledOff(id)) || fileExists(s.newHomeFile(id)) {
+		s.mu.Lock()
+		promoting := s.promoting == id
+		s.mu.Unlock()
+		switch {
+		case promoting:
+		case fileExists(s.calledOff(id)) || fileExists(s.newHomeFile(id)):
 			_ = wipeFile(k)
+		default:
+			switch stateOf(id) {
+			case "cancelled", "failed", "done":
+				_ = wipeFile(k)
+				s.release(id)
+			}
 		}
 	}
 }
@@ -1568,6 +1609,7 @@ func (s *switching) watchMoved(ctx context.Context) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
+		s.sweepKits()
 		s.checkMoved(ctx, client)
 		select {
 		case <-ctx.Done():

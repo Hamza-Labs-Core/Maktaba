@@ -256,6 +256,24 @@ func TestAStartSweepsTheKitsOfSwitchesOver(t *testing.T) {
 	if fileExists(off) || fileExists(done) || !fileExists(open) {
 		t.Fatalf("after the sweep: called off %v, done %v, open %v", fileExists(off), fileExists(done), fileExists(open))
 	}
+	// one the old home undid while this machine did not answer: its copy shows it over,
+	// and the claim it held goes; one the copy shows open, or does not have, stays, and so
+	// does the one whose promotion runs here
+	failed, undone, running, unknown := put("b1"), put("b2"), put("b3"), put("b4")
+	promoting := put("b5")
+	s.busy, s.promoting = "b1", "b5"
+	states := map[string]string{"a3": "promoting", "b1": "failed", "b2": "cancelled", "b3": "frozen", "b5": "cancelled"}
+	s.sweepKitsWith(func(id string) string { return states[id] })
+	if fileExists(failed) || fileExists(undone) {
+		t.Fatalf("kits of switches over at the old home: failed %v, called off %v", fileExists(failed), fileExists(undone))
+	}
+	if !fileExists(running) || !fileExists(unknown) || !fileExists(open) || !fileExists(promoting) {
+		t.Fatalf("kits kept: open %v, not known %v, a3 %v, promoting %v", fileExists(running), fileExists(unknown),
+			fileExists(open), fileExists(promoting))
+	}
+	if s.busy != "" {
+		t.Fatalf("the claim of a switch over is held: %q", s.busy)
+	}
 }
 
 // The term watch looks for a newer home under the standbys' identity and each planned
