@@ -381,7 +381,8 @@ describe("Player (live channel)", () => {
     firstFrame(standby());
     await waitFor(() => expect(active().getAttribute("src")).toBe("/stream/channel/c2/index.m3u8"));
     expect(oldEl.getAttribute("src")).toBeNull();
-    expect(screen.getByTestId("where")).toHaveTextContent("/live/2");
+    // the URL follows in onSettled, a tick after the swap
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/live/2"));
     expect(screen.queryByTestId("tuning-card")).toBeNull();
   });
 
