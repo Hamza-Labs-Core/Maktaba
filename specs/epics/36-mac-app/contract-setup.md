@@ -322,8 +322,10 @@ install here runs (an install removed left it) is not in the way: `check` warns
 `node_config_unused` (`home`, `path`), the welcome screen says a fresh setup makes a new home and
 leaves it unused, and `finish` writes `[server] role = "home"`, so no role of the app ever runs as
 that node. A roaming original another PC claimed is skipped: while this PC has not joined as its
-own machine, `check` warns `node_config_other_pc` (`path`, `owner`) and so does the move's plan;
-once it has (a joined local node config), neither says so.
+own machine, `check` warns `node_config_other_pc` (`path`, `owner`), and so does the move's plan
+for an install that moves; for a node installer's worker with no node config of its own the plan
+refuses it with the same code (a problem: that worker is no node at all, so nothing moves). Once
+this PC has joined (a joined local node config), neither says so.
 
 Undo (the step's `undo`, or `maktaba-server adopt --undo` in a terminal) runs the old install again:
 the pause flag, the app's server stopped, this user's app tasks disabled (`\Maktaba Server <SID>`,
