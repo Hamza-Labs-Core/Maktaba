@@ -252,6 +252,13 @@ export const clusterApi = {
   switchover: () => api.get<SwitchStatus>("/api/cluster/switchover"),
   startSwitch: (to_node: string) =>
     api.post<{ id: string }>("/api/cluster/switchover", { to_node }),
+  /** Calls a switch under way off; `force` with the machine's name typed when it does
+   * not answer (409 switchover-no-answer). */
+  cancelSwitch: (id: string, force = false, confirm = "") =>
+    api.post<{ state: "calling_off" | "called_off" }>(`/api/cluster/switchover/${q(id)}/cancel`, {
+      force,
+      confirm,
+    }),
   setStandby: (node_id: string, standby: boolean) =>
     api.put<{ standbys: StandbyHome[] }>("/api/cluster/switchover/standby", { node_id, standby }),
   checklistDone: (id: string, item: string, done: boolean) =>
@@ -307,6 +314,10 @@ export interface SwitchProgress {
   machines?: Record<string, SwitchMachine> | null;
   integrations?: Record<string, SwitchIntegration> | null;
   started?: string;
+  /** the promotion was asked: from then only the machine taking over can call it off */
+  promote_sent?: boolean;
+  /** where the new home answers, once it is the home */
+  new_home?: { api_url: string; web_url: string; name: string } | null;
 }
 
 /** A machine that could take over as the home, and why it cannot now. */

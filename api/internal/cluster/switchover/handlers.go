@@ -18,15 +18,57 @@ import (
 //	                                      the machines that could take over and why not,
 //	                                      the standby homes, the old homes' reports
 //	POST /api/cluster/switchover          {to_node}: start a planned switch
+//	POST /api/cluster/switchover/{id}/cancel  {force, confirm}: call a switch under way off
 //	PUT  /api/cluster/switchover/standby  {node_id, standby}: mark a standby home
 //
 // and the old homes' reports (mountKept).
 func (o *Orchestrator) Mount(r chi.Router) {
 	r.Get("/api/cluster/switchover", o.getStatus)
 	r.Post("/api/cluster/switchover", o.postStart)
+	r.Post("/api/cluster/switchover/{id}/cancel", o.postCancel)
 	r.Put("/api/cluster/switchover/standby", o.putStandby)
 	r.Post("/api/cluster/switchover/{id}/checklist", o.postChecklist)
 	o.mountKept(r)
+}
+
+// postCancel is POST /api/cluster/switchover/{id}/cancel {force, confirm} (Cancel): 200
+// {state}; 409 when the machine taking over is (becoming) the home, or does not answer
+// (then force with its name typed in confirm calls it off all the same; its name comes
+// back in "machine").
+func (o *Orchestrator) postCancel(w http.ResponseWriter, r *http.Request) {
+	if _, ok := admin(w, r); !ok {
+		return
+	}
+	var req struct {
+		Force   bool   `json:"force"`
+		Confirm string `json:"confirm"`
+	}
+	if e := common.ReadJSON(r, &req, 4<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	state, err := o.Cancel(r.Context(), id, req.Force, req.Confirm)
+	var name string
+	if p := o.Progress(id); p != nil {
+		name = p.ToName
+	}
+	switch {
+	case errors.Is(err, ErrNoSwitch):
+		httperror.Write(w, r, httperror.NotFound("switch under way"))
+	case errors.Is(err, ErrTakingOver):
+		httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/switchover-taking-over", err.Error()).
+			With("machine", name))
+	case errors.Is(err, ErrNoAnswer):
+		httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/switchover-no-answer", err.Error()).
+			With("machine", name))
+	case errors.Is(err, ErrConfirmName):
+		httperror.Write(w, r, httperror.BadRequest(err.Error()).With("machine", name))
+	case err != nil:
+		httperror.Write(w, r, httperror.Internal("switchover"))
+	default:
+		common.WriteJSON(w, r, http.StatusOK, map[string]any{"state": state})
+	}
 }
 
 // postChecklist is POST /api/cluster/switchover/{id}/checklist {item, done}: a person

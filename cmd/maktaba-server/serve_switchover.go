@@ -678,10 +678,40 @@ func writePrivate(path string, b []byte) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	// on disk before the rename, and the rename itself kept (the folder synced where the
+	// system allows it): a switch's record must outlive a power cut that follows its answer
+	if _, err := f.Write(b); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	syncDir(filepath.Dir(path))
+	return nil
+}
+
+// syncDir flushes a folder's entries (a rename in it) to disk. Windows cannot open a
+// folder to sync it, and keeps a rename's entry on its own (NTFS's log): nothing to do.
+func syncDir(dir string) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
 }
 
 // startDemote runs this home's demotion (demote) unless one runs: what it answers the
@@ -1126,6 +1156,8 @@ func (s *switching) promote(ctx context.Context, id string, term int64) (any, er
 	}()
 	fail := func(err error) (any, error) {
 		_ = writePrivate(s.calledOff(id), nil)
+		// the kit (the home's keys and secrets) stays on no machine but a standby home's
+		_ = wipeFile(filepath.Join(s.dir(id), "kit.chunks"))
 		s.release(id)
 		go func() {
 			time.Sleep(answerFirst) // the answer goes out first
@@ -1244,6 +1276,7 @@ func (s *switching) status(ctx context.Context, id string, term int64, abort boo
 		if err := writePrivate(s.calledOff(id), nil); err != nil {
 			return nil, err
 		}
+		_ = wipeFile(filepath.Join(s.dir(id), "kit.chunks"))
 		if s.busy == id {
 			s.busy = ""
 		}

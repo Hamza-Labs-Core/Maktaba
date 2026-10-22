@@ -10,14 +10,18 @@ import (
 
 // Commands a process accepts (design-agent.md §3), and the ones a machine agent takes
 // for a switch of the home (specs/epics/37-node-replica: its copy's marker, the kit's
-// chunks, the promotion, the new home's address).
+// chunks, the promotion, whether it promoted, the new home's address).
 var commandNames = map[string]bool{
 	"drain": true, "undrain": true, "reload_stages": true, "log_level": true, "disconnect": true,
-	"switch.prepare": true, "switch.kit": true, "switch.promote": true, "home.moved": true,
-	"home.database": true,
+	"switch.prepare": true, "switch.kit": true, "switch.promote": true, "switch.status": true,
+	"home.moved": true, "home.database": true,
 	// a standby home's kit, and where the standbys are (Epic 37, "Emergency promotion")
 	"standby.kit": true, "standby.commit": true, "standby.forget": true, "home.standbys": true,
 }
+
+// Accepts reports whether the hub sends a command of this name at all (CommandWithin
+// refuses any other with ErrBadCommand): the switch's tests ask it of their fake hub.
+func Accepts(name string) bool { return commandNames[name] }
 
 // sealedChunks are the commands that carry a sealed kit's chunk: its bytes stay out of the
 // event log (their size is noted instead).

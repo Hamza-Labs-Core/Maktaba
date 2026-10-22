@@ -40,6 +40,9 @@ func (h *fakeHub) MachineAgents() map[string]string {
 	return out
 }
 func (h *fakeHub) CommandWithin(_ context.Context, sid, name string, args json.RawMessage, _ string, _ time.Duration) (agent.CmdResult, error) {
+	if !agent.Accepts(name) { // as the real hub: a command it does not know never leaves
+		return agent.CmdResult{}, agent.ErrBadCommand
+	}
 	h.mu.Lock()
 	h.calls = append(h.calls, name+"@"+sid)
 	fn := h.answers[name]
@@ -70,6 +73,8 @@ type fakeSupervisor struct {
 	// records are the switches' records by id; newHome what the new home's notice says
 	records map[string]json.RawMessage
 	newHome *NewHome
+	// failPromoted: a record that says the promotion was asked cannot be kept
+	failPromoted bool
 }
 
 func (s *fakeSupervisor) Call(_ context.Context, step string, req, out any) error {
@@ -81,6 +86,11 @@ func (s *fakeSupervisor) Call(_ context.Context, step string, req, out any) erro
 			s.records = map[string]json.RawMessage{}
 		}
 		raw, _ := m["progress"].(json.RawMessage)
+		var p Progress
+		if s.failPromoted && json.Unmarshal(raw, &p) == nil && p.PromoteSent {
+			s.mu.Unlock()
+			return errors.New("the disk is full")
+		}
 		s.records[m["id"].(string)] = append(json.RawMessage(nil), raw...)
 		s.mu.Unlock()
 		return nil
@@ -88,7 +98,8 @@ func (s *fakeSupervisor) Call(_ context.Context, step string, req, out any) erro
 		var open []json.RawMessage
 		for _, r := range s.records {
 			var p Progress
-			if json.Unmarshal(r, &p) == nil && p.State != "handed_over" && p.State != "failed" && p.State != "done" {
+			if json.Unmarshal(r, &p) == nil && p.State != "handed_over" && p.State != "failed" && p.State != "done" &&
+				p.State != "cancelled" {
 				open = append(open, r)
 			}
 		}

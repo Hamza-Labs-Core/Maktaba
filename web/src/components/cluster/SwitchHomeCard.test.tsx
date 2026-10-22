@@ -174,6 +174,56 @@ describe("Switching the home", () => {
     );
   });
 
+  it("calls a switch under way off, after asking", async () => {
+    get.mockResolvedValue(status({ current: progress() }));
+    post.mockResolvedValue({ state: "calling_off" });
+    renderCard();
+    fireEvent.click(await screen.findByRole("button", { name: "Call the switch off" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent(/Living Room PC.* takes changes again and stays the home/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Call it off" }));
+    expect(post).toHaveBeenCalledWith("/api/cluster/switchover/sw1/cancel", {
+      force: false,
+      confirm: "",
+    });
+    expect(await screen.findByText(/being called off/)).toBeInTheDocument();
+  });
+
+  it("calls off a switch whose machine does not answer only with its name typed", async () => {
+    get.mockResolvedValue(
+      status({ current: progress({ state: "waiting_new_home", promote_sent: true }) })
+    );
+    post.mockRejectedValueOnce(
+      new ApiError({
+        type: "https://maktaba.dev/problems/switchover-no-answer",
+        title: "conflict",
+        status: 409,
+      })
+    );
+    post.mockResolvedValueOnce({ state: "called_off" });
+    renderCard();
+    expect(await screen.findByText("waiting for the new home's answer")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Call the switch off" }));
+    let dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("it is asked first");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Call it off" }));
+    dialog = await screen.findByRole("dialog", { name: /Studio Mac.* does not answer/ });
+    const go = within(dialog).getByRole("button", { name: "Call it off anyway" });
+    expect(go).toBeDisabled();
+    fireEvent.change(
+      within(dialog).getByLabelText(/Type .*Studio Mac.* to call the switch off anyway/),
+      {
+        target: { value: "studio mac " },
+      }
+    );
+    fireEvent.click(go);
+    expect(post).toHaveBeenLastCalledWith("/api/cluster/switchover/sw1/cancel", {
+      force: true,
+      confirm: "studio mac ",
+    });
+    expect(await screen.findByText(/being called off/)).toBeInTheDocument();
+  });
+
   it("ticks off what needs a person on the new home after a switch", async () => {
     get.mockResolvedValue(
       status({

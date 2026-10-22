@@ -8,12 +8,15 @@
 //
 //   GET  /api/cluster/switchover                  every 5 s while the tab is shown
 //   POST /api/cluster/switchover                  {to_node}
+//   POST /api/cluster/switchover/{id}/cancel      {force, confirm}
 //   POST /api/cluster/switchover/{id}/checklist   {item, done}
 import { memo, useEffect, useRef, useState } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
+import { Input } from "@ds/components/Input/Input";
 import { Modal } from "@ds/components/Modal/Modal";
 import { useToast } from "@ds/components/Toast/Toast";
+import { ApiError } from "../../lib/api";
 import {
   clusterApi,
   type SwitchCandidate,
@@ -154,6 +157,7 @@ export const SwitchHomeView = memo(function SwitchHomeView({
       )}
 
       {current && <Progress p={current} />}
+      {current && !current.new_home && <CancelSwitch p={current} onDone={onRefresh} />}
 
       {!current && candidates.length > 0 && (
         <ul className="mkt-cl-switch__candidates">
@@ -210,6 +214,121 @@ export const SwitchHomeView = memo(function SwitchHomeView({
     </section>
   );
 });
+
+/** Calling a switch under way off. Before the promotion it is undone; after, the machine
+ * taking over is asked, and one that does not answer is called off only with its name
+ * typed (should it be the home after all, the old home stops taking changes once it hears
+ * from it, and keeps aside what it took meanwhile). */
+function CancelSwitch({ p, onDone }: { p: SwitchProgress; onDone?: () => void }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [asking, setAsking] = useState(false);
+  const [forcing, setForcing] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const name = bidiIsolate(p.to_name);
+  const home = bidiIsolate(p.from_name);
+  const close = () => {
+    setAsking(false);
+    setForcing(false);
+    setTyped("");
+  };
+  const send = (force: boolean) => {
+    setBusy(true);
+    clusterApi
+      .cancelSwitch(p.id, force, force ? typed : "")
+      .then(() => {
+        close();
+        toast.show({
+          id: "switch-cancel",
+          tone: "info",
+          message: t("machines.switch.cancel.done", { name }),
+        });
+        onDone?.();
+      })
+      .catch((e: unknown) => {
+        const type = e instanceof ApiError ? e.problem.type : "";
+        if (type.endsWith("/switchover-no-answer")) {
+          setAsking(false);
+          setForcing(true);
+          return;
+        }
+        close();
+        toast.show({
+          id: "switch-cancel",
+          tone: "error",
+          message: t(
+            type.endsWith("/switchover-taking-over")
+              ? "machines.switch.cancel.takingOver"
+              : "machines.switch.cancel.refused",
+            { name }
+          ),
+        });
+      })
+      .finally(() => setBusy(false));
+  };
+  return (
+    <>
+      <Button variant="secondary" disabled={busy} onClick={() => setAsking(true)}>
+        {t("machines.switch.cancel.go")}
+      </Button>
+      {asking && (
+        <Modal
+          open
+          dismissable={false}
+          onClose={close}
+          title={t("machines.switch.cancel.title")}
+          footer={
+            <>
+              <Button variant="secondary" onClick={close}>
+                {t("machines.switch.cancel.keep")}
+              </Button>
+              <Button variant="destructive" disabled={busy} onClick={() => send(false)}>
+                {t("machines.switch.cancel.confirm")}
+              </Button>
+            </>
+          }
+        >
+          <p>
+            {p.promote_sent
+              ? t("machines.switch.cancel.bodyAsked", { name })
+              : t("machines.switch.cancel.body", { name, home })}
+          </p>
+        </Modal>
+      )}
+      {forcing && (
+        <Modal
+          open
+          dismissable={false}
+          onClose={close}
+          title={t("machines.switch.cancel.force.title", { name })}
+          footer={
+            <>
+              <Button variant="secondary" onClick={close}>
+                {t("machines.switch.cancel.keep")}
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={busy || typed.trim().toLowerCase() !== p.to_name.trim().toLowerCase()}
+                onClick={() => send(true)}
+              >
+                {t("machines.switch.cancel.force.go")}
+              </Button>
+            </>
+          }
+        >
+          <p>{t("machines.switch.cancel.force.body", { name, home })}</p>
+          <Input
+            label={t("machines.switch.cancel.force.label", { name })}
+            value={typed}
+            autoComplete="off"
+            onChange={(e) => setTyped(e.currentTarget.value)}
+          />
+        </Modal>
+      )}
+    </>
+  );
+}
 
 function Progress({ p }: { p: SwitchProgress }) {
   const { t } = useI18n();

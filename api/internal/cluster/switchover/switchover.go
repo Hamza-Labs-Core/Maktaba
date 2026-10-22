@@ -143,6 +143,11 @@ type Orchestrator struct {
 	mu          sync.Mutex
 	progress    map[string]*Progress
 	standbyWake chan struct{}
+	// cancels are the switches an admin called off (Cancel); promoteWaits end the wait for
+	// a promotion's answer once one is
+	cancels      map[string]*cancelReq
+	promoteWaits map[string]context.CancelFunc
+	wakes        map[string]chan struct{}
 	// checks are the outside services' checks (Finish's), run again for the checklist
 	checks Integrations
 }
@@ -366,14 +371,12 @@ func (o *Orchestrator) persist(ctx context.Context, id string) {
 		return
 	}
 	if o.Supervisor != nil {
-		if b, err := json.Marshal(p); err == nil {
-			if err := o.Supervisor.Call(ctx, "record", map[string]any{"id": id, "progress": json.RawMessage(b)}, nil); err != nil {
-				o.log().Warn("switchover: the switch's record could not be kept", "id", id, "err", err,
-					"event", "switchover_record_failed")
-			}
+		if err := o.record(ctx, id); err != nil {
+			o.log().Warn("switchover: the switch's record could not be kept", "id", id, "err", err,
+				"event", "switchover_record_failed")
 		}
 	}
-	if p.PromoteSent && p.State != "failed" {
+	if p.PromoteSent && p.State != "failed" && p.State != "cancelled" {
 		return
 	}
 	steps, _ := json.Marshal(p.Steps)
@@ -393,6 +396,23 @@ func (o *Orchestrator) persist(ctx context.Context, id string) {
 		return
 	}
 	_ = tx.Commit()
+}
+
+// record keeps switch id where this home finds it after a restart: the supervisor's
+// record, on disk and synced once it answers.
+func (o *Orchestrator) record(ctx context.Context, id string) error {
+	p := o.Progress(id)
+	if p == nil {
+		return nil
+	}
+	if o.Supervisor == nil {
+		return errors.New("no supervisor keeps the switch's record")
+	}
+	b, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	return o.Supervisor.Call(ctx, "record", map[string]any{"id": id, "progress": json.RawMessage(b)}, nil)
 }
 
 // command sends a command to a machine's agent and returns its detail.
@@ -423,12 +443,21 @@ func (o *Orchestrator) command(ctx context.Context, node, name string, args any,
 // (the database writable, the machines' jobs back), which only happens before the
 // promotion is asked or once the machine taking over said it called the switch off.
 func (o *Orchestrator) fail(ctx context.Context, id, step string, err error, undo bool) {
+	o.end(ctx, id, step, err, undo, "failed")
+}
+
+// end ends a switch at step in state: "failed", or "cancelled" (an admin called it off).
+func (o *Orchestrator) end(ctx context.Context, id, step string, err error, undo bool, state string) {
 	o.step(id, step, "failed", err.Error())
-	o.log().Warn("switchover: failed", "id", id, "step", step, "err", err, "event", "switchover_failed")
+	if state == "cancelled" {
+		o.log().Warn("switchover: called off", "id", id, "step", step, "err", err, "event", "switchover_cancelled")
+	} else {
+		o.log().Warn("switchover: failed", "id", id, "step", step, "err", err, "event", "switchover_failed")
+	}
 	if undo {
 		o.undo(ctx, id)
 	}
-	o.update(id, func(p *Progress) { p.State, p.Detail = "failed", step+": "+err.Error() })
+	o.update(id, func(p *Progress) { p.State, p.Detail = state, step+": "+err.Error() })
 }
 
 // run runs a planned switch: each step, and on a failure before the promotion
@@ -472,6 +501,9 @@ func (o *Orchestrator) run(id string) {
 	}
 	o.update(id, func(p *Progress) { p.Machines, p.ToURLs = machines, urls })
 	o.step(id, StepCheck, "done", "")
+	if o.cancelled(ctx, id, StepDrain) {
+		return
+	}
 
 	// ---- every machine's jobs drained ----
 	o.update(id, func(p *Progress) { p.State = "freezing" })
@@ -492,7 +524,7 @@ func (o *Orchestrator) run(id string) {
 		var running int
 		_ = o.DB.QueryRowContext(ctx, `SELECT count(*) FROM processing_jobs WHERE state IN ('claimed', 'running', 'resuming')`).
 			Scan(&running)
-		if running == 0 {
+		if running == 0 || o.cancelOf(id) != nil {
 			break
 		}
 		if time.Now().After(end) {
@@ -504,6 +536,9 @@ func (o *Orchestrator) run(id string) {
 		time.Sleep(2 * time.Second)
 	}
 	o.step(id, StepDrain, "done", "")
+	if o.cancelled(ctx, id, StepFreeze) {
+		return
+	}
 
 	// ---- the database frozen; the marker on the machine taking over ----
 	o.step(id, StepFreeze, "running", "")
@@ -513,6 +548,9 @@ func (o *Orchestrator) run(id string) {
 	}
 	o.update(id, func(p *Progress) { p.State = "frozen" })
 	o.step(id, StepFreeze, "done", "")
+	if o.cancelled(ctx, id, StepMarker) {
+		return
+	}
 	o.step(id, StepMarker, "running", "")
 	raw, err := o.command(ctx, p.ToNode, "switch.prepare", map[string]any{"id": id}, 90*time.Second)
 	var prep struct {
@@ -529,6 +567,9 @@ func (o *Orchestrator) run(id string) {
 		return
 	}
 	o.step(id, StepMarker, "done", "")
+	if o.cancelled(ctx, id, StepKit) {
+		return
+	}
 
 	// ---- the kit, sealed for the machine taking over, sent over the channel ----
 	o.update(id, func(p *Progress) { p.State = "handing_over" })
@@ -547,6 +588,9 @@ func (o *Orchestrator) run(id string) {
 		return
 	}
 	o.step(id, StepKit, "done", fmt.Sprintf("%d chunks", kit.Chunks))
+	if o.cancelled(ctx, id, StepPromote) {
+		return
+	}
 
 	// ---- the promotion: from here the machine taking over is the home ----
 	o.update(id, func(p *Progress) { p.State = "promoting" })
@@ -557,9 +601,40 @@ func (o *Orchestrator) run(id string) {
 		o.fail(ctx, id, StepPromote, fmt.Errorf("stopping this home's cloud relay agent: %w", err), true)
 		return
 	}
-	// asked: this home is not made writable again but on the machine's word
-	o.update(id, func(p *Progress) { p.PromoteSent = true })
-	raw, err = o.command(ctx, p.ToNode, "switch.promote", map[string]any{"id": id, "term": p.Term}, 10*time.Minute)
+	// asked: this home is not made writable again but on the machine's word. That is
+	// recorded (written and synced) before the promotion leaves, or it does not leave: a
+	// restart without the record would undo a switch the machine may have gone through
+	// with. An admin's call to stop it comes before, or after (then the machine is asked).
+	pctx, stop := context.WithCancel(ctx)
+	defer stop()
+	sent := false
+	o.mu.Lock()
+	if cur := o.progress[id]; cur != nil && o.cancels[id] == nil {
+		cur.PromoteSent, sent = true, true
+		if o.promoteWaits == nil {
+			o.promoteWaits = map[string]context.CancelFunc{}
+		}
+		o.promoteWaits[id] = stop
+	}
+	o.mu.Unlock()
+	if !sent {
+		o.end(ctx, id, StepPromote, errors.New("called off by an admin: everything is as it was"), true, "cancelled")
+		return
+	}
+	if err := o.record(ctx, id); err != nil {
+		o.mu.Lock()
+		if cur := o.progress[id]; cur != nil {
+			cur.PromoteSent = false
+		}
+		delete(o.promoteWaits, id)
+		o.mu.Unlock()
+		o.fail(ctx, id, StepPromote, fmt.Errorf("the switch could not be recorded, so the promotion was not asked: %w", err), true)
+		return
+	}
+	raw, err = o.command(pctx, p.ToNode, "switch.promote", map[string]any{"id": id, "term": p.Term}, 10*time.Minute)
+	o.mu.Lock()
+	delete(o.promoteWaits, id)
+	o.mu.Unlock()
 	var home NewHome
 	if err == nil {
 		err = json.Unmarshal(raw, &home)
@@ -574,6 +649,110 @@ func (o *Orchestrator) run(id string) {
 		}
 	}
 	o.afterPromote(ctx, id, home)
+}
+
+// cancelReq is an admin's call to stop a switch under way: run sees it between its
+// steps, and once the promotion was asked waitNewHome does. force: undone although the
+// machine taking over did not answer.
+type cancelReq struct {
+	force bool
+}
+
+// Cancel's refusals.
+var (
+	ErrNoSwitch    = errors.New("no such switch under way")
+	ErrTakingOver  = errors.New("the machine taking over is the home, or is becoming it: the switch goes on")
+	ErrNoAnswer    = errors.New("the machine taking over does not answer")
+	ErrConfirmName = errors.New("the name typed is not the name of the machine taking over")
+)
+
+// Cancel calls a switch under way off (POST /api/cluster/switchover/{id}/cancel). Before
+// the promotion is asked it is undone at its next step. After, only the machine taking
+// over can say it will not be the home: it is asked, and calls the switch off where it has
+// not promoted. When it does not answer, the switch is undone only with force and that
+// machine's name typed: should it be the home after all, this home learns its newer term
+// when it is back and stops writing (what it wrote meanwhile is kept aside, as after an
+// emergency). The answer is "calling_off" (at the next step) or "called_off".
+func (o *Orchestrator) Cancel(ctx context.Context, id string, force bool, confirm string) (string, error) {
+	o.mu.Lock()
+	p, ok := o.progress[id]
+	if !ok || p.State == "done" || p.State == "failed" || p.State == "cancelled" {
+		o.mu.Unlock()
+		return "", ErrNoSwitch
+	}
+	if p.NewHome != nil {
+		o.mu.Unlock()
+		return "", ErrTakingOver
+	}
+	if !p.PromoteSent {
+		o.cancelLocked(id, false)
+		o.mu.Unlock()
+		return "calling_off", nil
+	}
+	toNode, toName, term := p.ToNode, p.ToName, p.Term
+	o.mu.Unlock()
+	raw, err := o.command(ctx, toNode, "switch.status", map[string]any{"id": id, "term": term, "abort": true}, 30*time.Second)
+	if err == nil {
+		var st struct {
+			State string `json:"state"`
+		}
+		if json.Unmarshal(raw, &st) != nil || st.State != "called_off" {
+			return "", ErrTakingOver
+		}
+		o.mu.Lock()
+		o.cancelLocked(id, false)
+		o.mu.Unlock()
+		return "called_off", nil
+	}
+	if !force {
+		return "", fmt.Errorf("%w: %v", ErrNoAnswer, err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(confirm), strings.TrimSpace(toName)) {
+		return "", ErrConfirmName
+	}
+	o.log().Warn("switchover: called off by an admin although the machine taking over does not answer",
+		"id", id, "to", toName, "err", err, "event", "switchover_forced_cancel")
+	o.mu.Lock()
+	o.cancelLocked(id, true)
+	o.mu.Unlock()
+	return "called_off", nil
+}
+
+// cancelLocked marks switch id called off (o.mu held) and ends its waits.
+func (o *Orchestrator) cancelLocked(id string, force bool) {
+	if o.cancels == nil {
+		o.cancels = map[string]*cancelReq{}
+	}
+	c := o.cancels[id]
+	if c == nil {
+		c = &cancelReq{}
+		o.cancels[id] = c
+	}
+	c.force = c.force || force
+	if w := o.wakes[id]; w != nil {
+		close(w)
+		delete(o.wakes, id)
+	}
+	if stop := o.promoteWaits[id]; stop != nil {
+		stop()
+	}
+}
+
+// cancelOf is switch id's cancel, nil when none was asked.
+func (o *Orchestrator) cancelOf(id string) *cancelReq {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.cancels[id]
+}
+
+// cancelled ends a switch an admin called off before its promotion was asked (true):
+// everything as it was, its state "cancelled".
+func (o *Orchestrator) cancelled(ctx context.Context, id, step string) bool {
+	if o.cancelOf(id) == nil {
+		return false
+	}
+	o.end(ctx, id, step, errors.New("called off by an admin: everything is as it was"), true, "cancelled")
+	return true
 }
 
 // RetryEvery is how often a switch whose promotion's answer did not come asks the
@@ -611,8 +790,11 @@ func (o *Orchestrator) waitNewHome(ctx context.Context, id string, why error) (N
 				case st.State == "home" && st.Home != nil && st.Home.APIURL != "":
 					return *st.Home, true
 				case st.State == "called_off":
-					o.fail(ctx, id, StepPromote, errors.New("the machine taking over called the switch off: "+
-						"everything is as it was"), true)
+					state, why := "failed", "the machine taking over called the switch off: everything is as it was"
+					if o.cancelOf(id) != nil {
+						state, why = "cancelled", "called off by an admin, and by the machine taking over: everything is as it was"
+					}
+					o.end(ctx, id, StepPromote, errors.New(why), true, state)
 					return NewHome{}, false
 				}
 			}
@@ -624,12 +806,34 @@ func (o *Orchestrator) waitNewHome(ctx context.Context, id string, why error) (N
 			&seen); err == nil && seen.Home != nil && seen.Home.APIURL != "" {
 			return *seen.Home, true
 		}
+		// called off by an admin without the machine's word (it did not answer): undone
+		if c := o.cancelOf(id); c != nil && c.force {
+			o.end(ctx, id, StepPromote, errors.New("called off by an admin although the machine taking over did not "+
+				"answer: should it be the home after all, this home stops writing once it hears of it"), true, "cancelled")
+			return NewHome{}, false
+		}
 		select {
 		case <-ctx.Done():
 			return NewHome{}, false
+		case <-o.wakeOf(id):
 		case <-time.After(o.retryEvery()):
 		}
 	}
+}
+
+// wakeOf is a channel an admin's call to stop switch id closes (Cancel).
+func (o *Orchestrator) wakeOf(id string) <-chan struct{} {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.wakes == nil {
+		o.wakes = map[string]chan struct{}{}
+	}
+	w := o.wakes[id]
+	if w == nil {
+		w = make(chan struct{})
+		o.wakes[id] = w
+	}
+	return w
 }
 
 // afterPromote finishes a switch on this home once the machine taking over is the home:
@@ -808,6 +1012,13 @@ func (o *Orchestrator) undo(ctx context.Context, id string) {
 	p := o.Progress(id)
 	if p == nil {
 		return
+	}
+	// the machine that was to take over calls the switch off too, and drops the kit it
+	// was sent (the home's keys stay on no machine but a standby home's); one that does
+	// not answer now drops it when it is asked again (Cancel), or calls the switch off
+	// itself when its promotion fails
+	if p.ToNode != "" {
+		_, _ = o.command(ctx, p.ToNode, "switch.status", map[string]any{"id": id, "term": p.Term, "abort": true}, 30*time.Second)
 	}
 	for node, m := range p.Machines {
 		_, _ = o.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = $2, updated_at = now() WHERE id = $1`, node, m.PriorDrain)
