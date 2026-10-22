@@ -3,9 +3,11 @@ package ffmpeg
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -31,8 +33,10 @@ const (
 //
 // Prefer (MAKTABA_HWACCEL_PREFER) narrows it: "auto" (default) tries them
 // all, "software" (or "off", "none") none, "nvenc", "qsv" or "videotoolbox"
-// only that one. Detection is one-shot at boot; per-session overrides
-// (force_software) happen later in the FFmpeg arg builder.
+// only that one; any other value is software, with an error saying so.
+// Detection runs at boot and again later while it found software although
+// this ffmpeg lists a GPU encoder (WatchChoice); a session asking for
+// software (force_software) gets it in OpenSession.
 type Detector struct {
 	Bin    Binary
 	Prefer string
@@ -58,18 +62,29 @@ func Default(bin Binary) *Detector {
 
 // Detect runs the probe and returns the chosen hwaccel.
 func (d *Detector) Detect(ctx context.Context) (HWAccel, error) {
+	hw, _, err := d.detect(ctx)
+	return hw, err
+}
+
+// detect is Detect, and again: whether a later try may find more (software
+// although this ffmpeg lists a GPU encoder the preference allows: its device
+// was busy or not ready).
+func (d *Detector) detect(ctx context.Context) (hw HWAccel, again bool, err error) {
 	prefer := strings.ToLower(strings.TrimSpace(d.Prefer))
 	switch prefer {
 	case "software", "off", "none", "libx264":
-		return HWAccelSoftware, nil
+		return HWAccelSoftware, false, nil
 	case "", "auto":
 		prefer = ""
+	case string(HWAccelNVENC), string(HWAccelQSV), string(HWAccelVideoToolbox):
+	default:
+		return HWAccelSoftware, false, fmt.Errorf("MAKTABA_HWACCEL_PREFER=%q is none of auto, software, nvenc, qsv, videotoolbox: software", d.Prefer)
 	}
 	encs, err := d.Encoders(ctx, d.Bin.FFmpeg)
 	if err != nil {
 		// FFmpeg unavailable → fall back to software so tests on a
 		// host without ffmpeg still get a meaningful answer.
-		return HWAccelSoftware, err
+		return HWAccelSoftware, false, err
 	}
 	have := func(name string) bool {
 		for _, e := range encs {
@@ -92,11 +107,63 @@ func (d *Detector) Detect(ctx context.Context) (HWAccel, error) {
 			continue
 		}
 		enc := encoderForHWAccel(string(hw))
-		if have(enc) && d.Works(ctx, d.Bin.FFmpeg, enc) {
-			return hw, nil
+		if !have(enc) {
+			continue
 		}
+		if d.Works(ctx, d.Bin.FFmpeg, enc) {
+			return hw, false, nil
+		}
+		again = true
 	}
-	return HWAccelSoftware, nil
+	return HWAccelSoftware, again, nil
+}
+
+// Choice is the transcodes' encoder verdict, kept current (WatchChoice).
+type Choice struct{ v atomic.Value }
+
+// Get is the verdict now ("" software).
+func (c *Choice) Get() HWAccel {
+	if c == nil {
+		return HWAccelSoftware
+	}
+	hw, _ := c.v.Load().(HWAccel)
+	return hw
+}
+
+// WatchChoice detects at once (within timeout), then again every interval
+// while the verdict is software although this ffmpeg lists a GPU encoder:
+// one whose test encode failed at boot (another program held the sessions,
+// the driver was still loading) is taken up when it works. report hears every
+// verdict that changes, and the first.
+func WatchChoice(ctx context.Context, d *Detector, timeout, interval time.Duration, report func(HWAccel, error)) *Choice {
+	c := &Choice{}
+	try := func() bool {
+		tctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		hw, again, err := d.detect(tctx)
+		if old, seen := c.v.Load().(HWAccel); !seen || old != hw || err != nil {
+			report(hw, err)
+		}
+		c.v.Store(hw)
+		return again
+	}
+	if try() {
+		go func() {
+			t := time.NewTicker(interval)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					if !try() {
+						return
+					}
+				}
+			}
+		}()
+	}
+	return c
 }
 
 // listEncoders shells out `ffmpeg -hide_banner -encoders` and pulls

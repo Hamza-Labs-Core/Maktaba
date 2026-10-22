@@ -34,6 +34,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/auth"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
@@ -262,7 +263,7 @@ func runServe() error {
 	var grpcLis net.Listener
 	grpcErr := errors.New("node mode")
 	if !nodeMode || fullNode {
-		grpcServer = grpcsrv.NewGRPCServer(buildGRPCServer(logger, probeBackend, sessions))
+		grpcServer = grpcsrv.NewGRPCServer(buildGRPCServer(bg, logger, probeBackend, sessions))
 		grpcLis, grpcErr = listenTCP("tcp", grpcAddr)
 	}
 	if nodeMode && !fullNode {
@@ -338,7 +339,7 @@ func serveOn(srv *http.Server) error {
 // on their own; until then sessions live in-process (lost on restart,
 // not shared across replicas), which is acceptable for the v1
 // single-replica deploy.
-func buildGRPCServer(logger *slog.Logger, backend probe.Backend, store session.Store) *grpcsrv.Server {
+func buildGRPCServer(bg *background, logger *slog.Logger, backend probe.Backend, store session.Store) *grpcsrv.Server {
 	cfg := config.Load()
 	allocator := slots.NewAllocator(slots.AllocatorConfig{
 		MaxTranscode: cfg.Transcode.MaxConcurrent,
@@ -346,16 +347,8 @@ func buildGRPCServer(logger *slog.Logger, backend probe.Backend, store session.S
 	})
 	probeCache := probe.NewCache(backend, 4096)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	hw, err := detectHWAccel(ctx, cfg)
-	if err != nil {
-		logger.Info("hwaccel probe failed; using software",
-			"err", err.Error(), "event", "hwaccel_software_fallback")
-	}
-
 	srv := grpcsrv.New(probeCache, store, allocator, capability.NewRegistry())
-	srv.HWAccel = hw
+	srv.HWAccelNow = watchHWAccel(bg, logger, cfg).Get
 
 	// HLB-328: wire the real ffmpeg-spawning orchestrator so
 	// OpenSession actually transcodes. The output dir must match the
@@ -365,7 +358,11 @@ func buildGRPCServer(logger *slog.Logger, backend probe.Backend, store session.S
 	if lerr := layout.EnsureTiers(); lerr != nil {
 		logger.Warn("cache layout init failed", "err", lerr.Error(), "event", "cache_init_warn")
 	}
-	srv.Transcode = ffmpeg.DefaultOrchestrator(vodBinary(cfg))
+	// VOD's GPU sessions count with the TV's playout here (channel.EncoderGate)
+	srv.Transcode = ffmpeg.DefaultOrchestrator(vodBinary(cfg), map[ffmpeg.HWAccel]ffmpeg.SessionGate{
+		ffmpeg.HWAccelNVENC:        channel.DefaultEncoderGate(),
+		ffmpeg.HWAccelVideoToolbox: channel.DefaultVTGate(),
+	})
 	srv.ResolveDir = layout.HLSDir
 	return srv
 }
@@ -377,12 +374,28 @@ func vodBinary(cfg config.Config) ffmpeg.Binary {
 	return ffmpeg.Binary{FFmpeg: cfg.FFmpeg.Binary, FFprobe: cfg.FFmpeg.ProbeBinary}
 }
 
-// detectHWAccel picks the transcodes' encoder (Story 8.7), narrowed by
-// MAKTABA_HWACCEL_PREFER.
-func detectHWAccel(ctx context.Context, cfg config.Config) (ffmpeg.HWAccel, error) {
+// hwaccelRetry is how often the transcodes' encoder is detected again while
+// it is software although ffmpeg lists a GPU encoder (busy or not ready at
+// the last try).
+const hwaccelRetry = 5 * time.Minute
+
+// watchHWAccel picks the transcodes' encoder (Story 8.7), narrowed by
+// MAKTABA_HWACCEL_PREFER: once at start (within 10 s), then again while a
+// listed GPU encoder did not work, logging each verdict.
+func watchHWAccel(bg *background, logger *slog.Logger, cfg config.Config) *ffmpeg.Choice {
 	d := ffmpeg.Default(vodBinary(cfg))
 	d.Prefer = cfg.HWAccel.Prefer
-	return d.Detect(ctx)
+	return ffmpeg.WatchChoice(bg.ctx, d, 10*time.Second, hwaccelRetry, func(hw ffmpeg.HWAccel, err error) {
+		if err != nil {
+			logger.Warn("hwaccel: software", "err", err.Error(), "event", "hwaccel_software_fallback")
+			return
+		}
+		name := string(hw)
+		if name == "" {
+			name = "software"
+		}
+		logger.Info("hwaccel detected", "encoder", name, "event", "hwaccel_selected")
+	})
 }
 
 // buildChecks assembles the readiness check set for streaming. The
@@ -453,15 +466,6 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 	})
 
 	probeCache := probe.NewCache(backend, 4096)
-
-	// Hwaccel detection — non-fatal on failure; we fall through to
-	// software encoding (Story 8.7 AC-1 fallback path).
-	hw, err := detectHWAccel(ctx, cfg)
-	if err != nil {
-		logger.Info("hwaccel probe failed; using software", "err", err.Error(), "event", "hwaccel_software_fallback")
-	} else {
-		logger.Info("hwaccel detected", "encoder", string(hw), "event", "hwaccel_selected")
-	}
 
 	gc := cache.NewGC(layout, cache.GCConfig{
 		MaxBytes: cfg.CacheMaxBytes(), Interval: cfg.GCInterval(),

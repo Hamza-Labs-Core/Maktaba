@@ -56,6 +56,9 @@ type Process struct {
 	wg      sync.WaitGroup
 	exitErr error
 	tail    *tailBuf
+	// copied closes once stderr's copy into tail has ended (its writers
+	// gone): Wait does not wait for it (see Spawn), stderrAfterExit does.
+	copied chan struct{}
 }
 
 // Spawn starts a new FFmpeg process with args. Stdout goes to the null
@@ -67,7 +70,7 @@ func Spawn(ctx context.Context, bin Binary, args Args) (*Process, error) {
 	}
 	cmd := exec.CommandContext(ctx, bin.FFmpeg, args...)
 	procattr.Tie(cmd) // dies with this process, however it dies (Story 22.9)
-	p := &Process{cmd: cmd, tail: &tailBuf{max: 8 << 10}}
+	p := &Process{cmd: cmd, tail: &tailBuf{max: 8 << 10}, copied: make(chan struct{})}
 	// stderr through our own pipe (an *os.File is handed to the child as
 	// is), read here into the tail: Wait never waits on the copy, so a
 	// child that outlives ffmpeg (a wrapper script's) cannot hold Stop up.
@@ -85,6 +88,7 @@ func Spawn(ctx context.Context, bin Binary, args Args) (*Process, error) {
 	go func() {
 		_, _ = io.Copy(p.tail, pr)
 		_ = pr.Close()
+		close(p.copied)
 	}()
 	p.wg.Add(1)
 	go func() {
@@ -104,6 +108,17 @@ func (p *Process) Stdout() io.Reader { return strings.NewReader("") }
 
 // Stderr returns the last 8 KiB ffmpeg wrote to stderr so far.
 func (p *Process) Stderr() io.Reader { return strings.NewReader(p.tail.String()) }
+
+// stderrAfterExit is the last of stderr once the process has exited: what it
+// wrote just before exiting is read in, waiting up to wait for that (a child
+// it left behind may hold the pipe open).
+func (p *Process) stderrAfterExit(wait time.Duration) string {
+	select {
+	case <-p.copied:
+	case <-time.After(wait):
+	}
+	return p.tail.String()
+}
 
 // tailBuf keeps the last max bytes written to it.
 type tailBuf struct {
@@ -208,41 +223,106 @@ func RemuxArgs(input, output string) Args {
 	}
 }
 
-// HLSArgs builds the FFmpeg ladder for Story 8.5. We emit a master
-// playlist and N variant playlists; segments live in the session's
-// per-rendition folder. Hwaccel is applied if present.
-func HLSArgs(input, outputDir, masterName string, ladder []Rendition, hwaccel string) Args {
-	args := Args{
-		"-y",
-		"-hide_banner",
-		"-loglevel", "warning",
-	}
-	if dec := decodeHWAccel(hwaccel); dec != "" {
-		args = append(args, "-hwaccel", dec)
-	}
-	args = append(args, "-i", input)
+// EncodePlan is how a transcode encodes (PlanFor): the -hwaccel that decodes the
+// input ("" on the CPU), each rung's encoder, and whether the source has an
+// audio stream to carry.
+type EncodePlan struct {
+	Decode   string
+	Encoders []string
+	Audio    bool
+}
 
-	// Map streams: one video output per ladder rung, one audio.
+// SoftwarePlan encodes every rung with libx264, decoding on the CPU.
+func SoftwarePlan(rungs int, audio bool) EncodePlan {
+	p := EncodePlan{Audio: audio}
+	for i := 0; i < rungs; i++ {
+		p.Encoders = append(p.Encoders, "libx264")
+	}
+	return p
+}
+
+// PlanFor is the plan for an encoder verdict (hwaccel, "" software) and the
+// source's video codec: the first hwRungs rungs (the highest) on the verdict's
+// encoder, the rest on libx264, and the GPU decoding the input only when it is
+// H.264 or HEVC (every NVDEC and VideoToolbox decodes those; AV1, VP9 and the
+// rest are decoded on the CPU, as FFmpeg 7's native AV1 decoder does not fall
+// back to software from a GPU that lacks it).
+func PlanFor(hwaccel string, hwRungs, rungs int, sourceCodec string, audio bool) EncodePlan {
+	p := SoftwarePlan(rungs, audio)
 	enc := encoderForHWAccel(hwaccel)
+	if enc == "libx264" || hwRungs <= 0 {
+		return p
+	}
+	for i := 0; i < rungs && i < hwRungs; i++ {
+		p.Encoders[i] = enc
+	}
+	switch strings.ToLower(sourceCodec) {
+	case "h264", "avc", "avc1", "hevc", "h265", "hev1", "hvc1":
+		p.Decode = decodeHWAccel(hwaccel)
+	}
+	return p
+}
+
+// rungArgs are one ladder rung's video output options: its encoder, bitrate,
+// size, 8-bit 4:2:0 (a 10-bit or 4:2:2 source becomes what NVENC's H.264 and
+// browsers take: libx264 would otherwise keep High 10, which few play) and the
+// encoder's own preset.
+func rungArgs(i int, rung Rendition, enc string) Args {
+	n := itoa(i)
+	a := Args{
+		"-map", "0:v:0",
+		"-c:v:" + n, enc,
+		"-b:v:" + n, itoa(rung.BitrateKbps) + "k",
+		"-s:v:" + n, fmt.Sprintf("%dx%d", rung.Width, rung.Height),
+		"-pix_fmt:v:" + n, "yuv420p",
+	}
+	if p := presetForEncoder(enc); p != "" {
+		a = append(a, "-preset:v:"+n, p)
+	}
+	return a
+}
+
+func inputArgs(input string, p EncodePlan) Args {
+	args := Args{"-y", "-hide_banner", "-loglevel", "warning"}
+	if p.Decode != "" {
+		args = append(args, "-hwaccel", p.Decode)
+	}
+	return append(args, "-i", input)
+}
+
+func encoderAt(p EncodePlan, i int) string {
+	if i < len(p.Encoders) && p.Encoders[i] != "" {
+		return p.Encoders[i]
+	}
+	return "libx264"
+}
+
+// HLSArgs builds the FFmpeg ladder for Story 8.5: one variant per rung
+// (-var_stream_map: <out>/v0, v1, … each with its index.m3u8 and segments,
+// as the master playlist lists them), each with the source's audio when it
+// has one.
+func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePlan) Args {
+	args := inputArgs(input, p)
+	variants := make([]string, len(ladder))
 	for i, rung := range ladder {
-		args = append(args,
-			"-map", "0:v:0",
-			"-c:v:"+itoa(i), enc,
-			"-b:v:"+itoa(i), itoa(rung.BitrateKbps)+"k",
-			"-s:v:"+itoa(i), fmt.Sprintf("%dx%d", rung.Width, rung.Height),
-		)
-		if p := presetForEncoder(enc); p != "" {
-			args = append(args, "-preset:v:"+itoa(i), p)
+		args = append(args, rungArgs(i, rung, encoderAt(p, i))...)
+		variants[i] = "v:" + itoa(i)
+		if p.Audio {
+			variants[i] += ",a:" + itoa(i)
 		}
 	}
+	if p.Audio {
+		for range ladder {
+			args = append(args, "-map", "0:a:0")
+		}
+		args = append(args, "-c:a", "aac", "-b:a", "128k")
+	}
 	args = append(args,
-		"-map", "0:a:0",
-		"-c:a", "aac",
-		"-b:a", "128k",
 		"-f", "hls",
 		"-hls_time", "6",
 		"-hls_list_size", "6",
 		"-hls_flags", "delete_segments+independent_segments",
+		"-var_stream_map", strings.Join(variants, " "),
 		"-hls_segment_filename", outputDir+"/v%v/seg-%d.ts",
 		"-master_pl_name", masterName,
 		outputDir+"/v%v/index.m3u8",
@@ -253,29 +333,15 @@ func HLSArgs(input, outputDir, masterName string, ladder []Rendition, hwaccel st
 // DASHArgs builds Story 8.6's DASH-only invocation. Note the §4.3
 // callout: emitting both HLS and DASH from one encode isn't supported,
 // so DASH is opt-in per session.
-func DASHArgs(input, outputDir string, ladder []Rendition, hwaccel string) Args {
-	args := Args{
-		"-y",
-		"-hide_banner",
-		"-loglevel", "warning",
-	}
-	if dec := decodeHWAccel(hwaccel); dec != "" {
-		args = append(args, "-hwaccel", dec)
-	}
-	args = append(args, "-i", input)
-
+func DASHArgs(input, outputDir string, ladder []Rendition, p EncodePlan) Args {
+	args := inputArgs(input, p)
 	for i, rung := range ladder {
-		args = append(args,
-			"-map", "0:v:0",
-			"-c:v:"+itoa(i), encoderForHWAccel(hwaccel),
-			"-b:v:"+itoa(i), itoa(rung.BitrateKbps)+"k",
-			"-s:v:"+itoa(i), fmt.Sprintf("%dx%d", rung.Width, rung.Height),
-		)
+		args = append(args, rungArgs(i, rung, encoderAt(p, i))...)
+	}
+	if p.Audio {
+		args = append(args, "-map", "0:a:0", "-c:a", "aac", "-b:a", "128k")
 	}
 	args = append(args,
-		"-map", "0:a:0",
-		"-c:a", "aac",
-		"-b:a", "128k",
 		"-f", "dash",
 		"-seg_duration", "6",
 		"-window_size", "10",
@@ -327,8 +393,8 @@ func DefaultLadder(maxBitrateKbps int) []Rendition {
 // transcode fail at once. None for QuickSync (its decoding wants the qsv
 // decoders and a device; the encoder takes frames from memory) or software.
 // The decoded frames come back to memory (no -hwaccel_output_format), so the
-// ladder's scaling works as in software, and an input the GPU cannot decode
-// falls back to the software decoder.
+// ladder's scaling works as in software. PlanFor asks for it only for H.264
+// and HEVC sources.
 func decodeHWAccel(hwaccel string) string {
 	switch strings.ToLower(hwaccel) {
 	case "videotoolbox":

@@ -121,7 +121,7 @@ func TestRemuxArgs_CopyOnly(t *testing.T) {
 
 func TestHLSArgs_HasLadderRungs(t *testing.T) {
 	ladder := DefaultLadder(0)
-	args := HLSArgs("/in.mp4", "/out", "master.m3u8", ladder, "")
+	args := HLSArgs("/in.mp4", "/out", "master.m3u8", ladder, SoftwarePlan(len(ladder), true))
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "-f hls") {
 		t.Fatalf("missing -f hls")
@@ -131,10 +131,23 @@ func TestHLSArgs_HasLadderRungs(t *testing.T) {
 			t.Fatalf("missing video output for rung %d", i)
 		}
 	}
+	// one variant per rung (v0, v1, v2 as the master playlist lists them), each with
+	// the audio: without the map every rung went into v0/ and v1/, v2/ 404'd
+	if got := argAfter(args, "-var_stream_map"); got != "v:0,a:0 v:1,a:1 v:2,a:2" {
+		t.Errorf("-var_stream_map %q", got)
+	}
+	if n := strings.Count(joined, "-map 0:a:0"); n != len(ladder) {
+		t.Errorf("audio mapped %d times, want once per rung", n)
+	}
+	// a source without audio maps none
+	silent := HLSArgs("/in.mp4", "/out", "master.m3u8", ladder, SoftwarePlan(len(ladder), false))
+	if got := argAfter(silent, "-var_stream_map"); got != "v:0 v:1 v:2" || strings.Contains(strings.Join(silent, " "), "0:a:0") {
+		t.Errorf("silent source: %v", silent)
+	}
 }
 
 func TestHLSArgs_HWAccelEncoder(t *testing.T) {
-	args := HLSArgs("/in.mp4", "/out", "master.m3u8", DefaultLadder(0), "videotoolbox")
+	args := HLSArgs("/in.mp4", "/out", "master.m3u8", DefaultLadder(0), PlanFor("videotoolbox", 3, 3, "h264", true))
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "h264_videotoolbox") {
 		t.Fatalf("expected h264_videotoolbox encoder: %s", joined)
@@ -142,7 +155,7 @@ func TestHLSArgs_HWAccelEncoder(t *testing.T) {
 }
 
 func TestDASHArgs_OutputsMPD(t *testing.T) {
-	args := DASHArgs("/in.mp4", "/out", DefaultLadder(0), "")
+	args := DASHArgs("/in.mp4", "/out", DefaultLadder(0), SoftwarePlan(3, true))
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "-f dash") {
 		t.Fatalf("missing -f dash")
@@ -201,11 +214,13 @@ func TestDetector(t *testing.T) {
 		{"prefer software", "linux", "software", all, map[string]bool{"h264_nvenc": true}, HWAccelSoftware},
 		{"prefer qsv", "linux", "qsv", all, map[string]bool{"h264_nvenc": true, "h264_qsv": true}, HWAccelQSV},
 		{"prefer one that does not work", "linux", "qsv", all, map[string]bool{"h264_nvenc": true}, HWAccelSoftware},
+		{"prefer something unknown", "linux", "cuda", all, map[string]bool{"h264_nvenc": true}, HWAccelSoftware},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			d := detector(c.goos, c.encs, c.works)
 			d.Prefer = c.prefer
-			if got, err := d.Detect(context.Background()); err != nil || got != c.want {
+			got, err := d.Detect(context.Background())
+			if got != c.want || (err != nil) != (c.prefer == "cuda") {
 				t.Fatalf("got %q, %v; want %q", got, err, c.want)
 			}
 		})
@@ -227,7 +242,8 @@ func TestDetector_NoFFmpegFallsBackToSoftware(t *testing.T) {
 }
 
 // Each verdict's arguments: FFmpeg has no "nvenc" hwaccel (NVENC decodes with
-// cuda), NVENC refuses libx264's "veryfast", VideoToolbox has no -preset.
+// cuda), NVENC refuses libx264's "veryfast", VideoToolbox has no -preset; every
+// rung is 8-bit 4:2:0 (NVENC's H.264 encodes no 10-bit source otherwise).
 func TestTranscodeArgs_PerHWAccel(t *testing.T) {
 	for _, c := range []struct {
 		hw, decode, encoder, preset string
@@ -237,9 +253,10 @@ func TestTranscodeArgs_PerHWAccel(t *testing.T) {
 		{"qsv", "", "h264_qsv", "veryfast"},
 		{"videotoolbox", "videotoolbox", "h264_videotoolbox", ""},
 	} {
+		plan := PlanFor(c.hw, 3, 3, "hevc", true)
 		for name, args := range map[string]Args{
-			"hls":  HLSArgs("/in.mp4", "/out", "master.m3u8", DefaultLadder(0), c.hw),
-			"dash": DASHArgs("/in.mp4", "/out", DefaultLadder(0), c.hw),
+			"hls":  HLSArgs("/in.mp4", "/out", "master.m3u8", DefaultLadder(0), plan),
+			"dash": DASHArgs("/in.mp4", "/out", DefaultLadder(0), plan),
 		} {
 			joined := " " + strings.Join(args, " ") + " "
 			if got := argAfter(args, "-hwaccel"); got != c.decode {
@@ -248,11 +265,44 @@ func TestTranscodeArgs_PerHWAccel(t *testing.T) {
 			if !strings.Contains(joined, " -c:v:0 "+c.encoder+" ") {
 				t.Errorf("%s %q: no %s: %s", name, c.hw, c.encoder, joined)
 			}
-			if name == "hls" {
-				if got := argAfter(args, "-preset:v:0"); got != c.preset {
-					t.Errorf("hls %q: preset %q, want %q", c.hw, got, c.preset)
+			if got := argAfter(args, "-preset:v:0"); got != c.preset {
+				t.Errorf("%s %q: preset %q, want %q", name, c.hw, got, c.preset)
+			}
+			for i := 0; i < 3; i++ {
+				if got := argAfter(args, "-pix_fmt:v:"+itoa(i)); got != "yuv420p" {
+					t.Errorf("%s %q: rung %d pix_fmt %q", name, c.hw, i, got)
 				}
 			}
+		}
+	}
+}
+
+// The GPU decodes only what every NVDEC and VideoToolbox decodes (H.264, HEVC):
+// AV1 on an NVIDIA GPU without AV1 decode failed outright (FFmpeg 7's native AV1
+// decoder has no software fallback). The rungs the gate gave no session for are
+// libx264's.
+func TestPlanFor(t *testing.T) {
+	for _, c := range []struct {
+		hw     string
+		hwRung int
+		codec  string
+		decode string
+		encs   string
+	}{
+		{"nvenc", 3, "h264", "cuda", "h264_nvenc h264_nvenc h264_nvenc"},
+		{"nvenc", 3, "hevc", "cuda", "h264_nvenc h264_nvenc h264_nvenc"},
+		{"nvenc", 3, "av1", "", "h264_nvenc h264_nvenc h264_nvenc"},
+		{"nvenc", 3, "vp9", "", "h264_nvenc h264_nvenc h264_nvenc"},
+		{"nvenc", 3, "", "", "h264_nvenc h264_nvenc h264_nvenc"},
+		{"nvenc", 1, "h264", "cuda", "h264_nvenc libx264 libx264"},
+		{"nvenc", 0, "h264", "", "libx264 libx264 libx264"},
+		{"videotoolbox", 3, "av1", "", "h264_videotoolbox h264_videotoolbox h264_videotoolbox"},
+		{"qsv", 3, "h264", "", "h264_qsv h264_qsv h264_qsv"},
+		{"", 3, "h264", "", "libx264 libx264 libx264"},
+	} {
+		p := PlanFor(c.hw, c.hwRung, 3, c.codec, true)
+		if p.Decode != c.decode || strings.Join(p.Encoders, " ") != c.encs || !p.Audio {
+			t.Errorf("PlanFor(%q, %d, %q) = %+v, want decode %q, %s", c.hw, c.hwRung, c.codec, p, c.decode, c.encs)
 		}
 	}
 }
