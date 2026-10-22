@@ -410,6 +410,11 @@ don't append a line here; docs-only PRs are exempt.
   indexer, or a program of the venv still exiting (WinError 5 / 32, Errno 13). Each is now tried
   again for up to 5 s, as the status file already was, and a read-only file is made writable
   before it is removed.
+- **A pre-release no longer moves the images' `:latest`.** A tag with a suffix (`v0.3.0-rc.1`)
+  pushed every server image, and the relay's, as `:latest` too, so a Docker install following
+  `:latest` would have taken a release candidate. `:latest` now moves only with a plain `vX.Y.Z`,
+  as the GitHub release's latest does, and a pre-release tag no longer rolls the relay out to the
+  VPS by itself (a dispatch with its tag still does).
 
 ## [0.2.0] - 2026-10-19
 
