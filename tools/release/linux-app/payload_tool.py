@@ -40,8 +40,9 @@ from pathlib import Path
 MANIFEST = "files.sha256"
 PAYLOAD_JSON = "payload.json"
 
-#: what every supported Linux has: glibc's own libraries and GCC's runtime (the ffmpeg
-#: builds need libstdc++ of GCC 12, so it is part of the baseline, not of the payload)
+#: what every supported Linux has: glibc's own libraries and GCC's runtime (the ICU
+#: copied in beside Postgres needs libstdc++, so it is part of the baseline, not of the
+#: payload)
 BASELINE = frozenset(
     {
         "ld-linux-x86-64.so.2",

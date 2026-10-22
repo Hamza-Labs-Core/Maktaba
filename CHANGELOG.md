@@ -177,6 +177,17 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Changed
 
+- **The Linux app runs the distribution's ffmpeg** (Epic 39). The Linux server payload carries no
+  ffmpeg any more (the builds it pinned were configured `--enable-nonfree`), and `payload.sh` drops
+  every download `pins.env` no longer pins from its cache. The ffmpeg every role runs is
+  `[media] ffmpeg` / `ffprobe` in `server.toml` (new), else `MAKTABA_FFMPEG` / `MAKTABA_FFPROBE`,
+  else the Mac's or Windows' app's own, else the PATH's, and all roles get that one. Setup's check
+  (Linux), the new `maktaba-server ffmpeg` and the System health page say whether it does what
+  Maktaba needs (FFmpeg 4.4 or later with libx264, AAC and the filters and formats the TV and the
+  pipeline use, ffprobe beside it, and an H.264/AAC encode through `speechnorm` that works) and,
+  when not, the command that installs the right one for the distribution: apt, dnf with RPM
+  Fusion (Fedora's and EPEL's `ffmpeg-free` has no libx264), zypper with Packman, pacman. It also
+  warns when chromaprint (the audio fingerprints) or https:// sources are missing.
 - **Every role stops cleanly on Windows.** The supervisor starts each child in a process group of
   its own and asks it to stop with CTRL_BREAK (the Go roles drain on it as they do on SIGTERM, the
   pipeline on `SIGBREAK`); a child is killed with its process tree only once the shutdown grace
@@ -235,12 +246,25 @@ don't append a line here; docs-only PRs are exempt.
 - **Video transcodes work on an NVIDIA GPU (and are found on Windows).** The VOD transcodes
   (HLS and DASH, Story 8.5) passed `-hwaccel nvenc`, which FFmpeg does not have (NVENC is an
   encoder; NVIDIA decoding is `cuda`), and libx264's `-preset veryfast` to every encoder, which
-  NVENC refuses: on a machine with an NVIDIA GPU every transcode failed at once. They now decode
-  with `cuda` beside NVENC (VideoToolbox on a Mac, in software for QuickSync) and give each
-  encoder its own preset (`p4` for NVENC, none for VideoToolbox). The encoder is chosen by a short
-  test encode instead of `nvidia-smi` or `vainfo`, on Windows too (it was always software there),
-  `MAKTABA_HWACCEL_PREFER` (`auto`, `software`, `nvenc`, `qsv`, `videotoolbox`) narrows it, and
-  the transcodes run the ffmpeg the channels run (`MAKTABA_FFMPEG_BIN`), not the PATH's first.
+  NVENC refuses: on a machine with an NVIDIA GPU every transcode failed at once. Now the GPU
+  decodes H.264 and HEVC sources (`cuda`, VideoToolbox on a Mac; AV1 and the rest on the CPU, as
+  a GPU without AV1 decode cannot fall back), every rung is 8-bit 4:2:0 (a 10-bit source too:
+  NVENC's H.264 refuses 10-bit, and browsers rarely play High 10), and each encoder gets its own
+  preset (`p4` for NVENC). NVENC sessions come from the gate the TV's playout uses in the same
+  process, one per rung; the rungs it gives none for are encoded by libx264. A hardware run that
+  fails within 30 s is run again in software. The encoder is chosen by a short test encode, on
+  Windows too (it was always software there), detected again every 5 minutes while a listed GPU
+  encoder failed, and `MAKTABA_HWACCEL_PREFER` (`auto`, `software`, `nvenc`, `qsv`,
+  `videotoolbox`) narrows it; the transcodes run the ffmpeg the channels run
+  (`MAKTABA_FFMPEG_BIN`). Each rung of an HLS transcode is now its own variant (`v1`, `v2` were
+  never written, so the master playlist's lower rungs 404'd), a source without audio transcodes,
+  and a session asking for software (`force_software`) gets it.
+- **The Linux runtime copy orders versions as everything else does.** It kept its own reading of
+  `git describe` builds, so a dirty build of a tag ranked above the next commit's build and a dirty
+  build equalled the clean one: it now uses the one order (`v0.2.0` < `v0.2.0-dirty` <
+  `v0.2.0-1-g…` < `v0.2.0-1-g…-dirty`). The self-managed layout's order also puts a version that is
+  no release (`dev`) below every release, as the release verifier does, and compares prerelease
+  names whatever their case.
 - **`[server] role = "home"` (or `MAKTABA_ROLE=home`) runs no role as a node.** The supervisor
   only left the node's variables out, while streaming and the pipeline read the node config
   themselves: beside a joined `node.json` (on Windows another install's, through the roaming
