@@ -150,7 +150,14 @@ func runSlot(args []string) error {
 	srv := &slot.Server{State: state, HostID: ident.ID, BaseURL: "http://" + *listen, Version: version.Version,
 		Engine: engine, Pool: pool, Logger: logger, Bind: bindTo,
 		Channels:     (&channel.HTTPHandler{Engine: engine}).Mount,
-		EncodersUsed: func() int { return channel.DefaultEncoderGate().Active() + channel.DefaultVTGate().Active() }}
+		EncodersUsed: func() int { return channel.DefaultEncoderGate().Active() + channel.DefaultVTGate().Active() },
+		// the gates follow the budget at once: the front door lowers it by the
+		// sessions VOD is taking (the settings' caps under the budget, as at a start)
+		OnBudget: func(ctx context.Context, _ slot.Budget) {
+			out := settings.Output(ctx)
+			channel.DefaultEncoderGate().SetMax(out.NVENCMax)
+			channel.DefaultVTGate().SetMax(out.VTMax)
+		}}
 	bg.Go(srv.Run)
 
 	checks := []health.Check{procWatchdog.ReadyCheck("db"), procWatchdog.ReadyCheck("channel_engine")}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -36,6 +37,9 @@ type Job struct {
 	SourceCodec string
 	// NoAudio: the source has no audio stream (none is mapped).
 	NoAudio bool
+
+	// toneMap: the runner's tone-mapping for an HDR source (toneMapFor)
+	toneMap string
 }
 
 // Handle is the live transcode controller pinned to a session. It
@@ -273,6 +277,81 @@ var fallbackWindow = 30 * time.Second
 type execRunner struct {
 	Bin   Binary
 	Gates map[HWAccel]SessionGate
+
+	// what tests replace: whether the source is HDR (PQ or HLG), and the
+	// filters this ffmpeg has (once)
+	hdr          func(ctx context.Context, ffprobe, input string) bool
+	filters      func(ctx context.Context, ffmpeg string) map[string]bool
+	toneMapOnce  sync.Once
+	canToneMapTo bool
+}
+
+// toneMapFor is the tone-mapping an HDR source gets (toneMapFilters), when this
+// ffmpeg has zscale and tonemap; "" for SDR, or without them (the 8-bit cut as
+// before).
+func (e *execRunner) toneMapFor(ctx context.Context, job Job) string {
+	hdr := e.hdr
+	if hdr == nil {
+		hdr = isHDR
+	}
+	ffprobe := e.Bin.FFprobe
+	if ffprobe == "" {
+		ffprobe = "ffprobe"
+	}
+	if !hdr(ctx, ffprobe, job.InputPath) {
+		return ""
+	}
+	e.toneMapOnce.Do(func() {
+		list := e.filters
+		if list == nil {
+			list = listFilters
+		}
+		have := list(ctx, e.ffmpeg())
+		e.canToneMapTo = have["zscale"] && have["tonemap"]
+	})
+	if !e.canToneMapTo {
+		return ""
+	}
+	return toneMapFilters
+}
+
+func (e *execRunner) ffmpeg() string {
+	if e.Bin.FFmpeg == "" {
+		return "ffmpeg"
+	}
+	return e.Bin.FFmpeg
+}
+
+// isHDR: the source's first video stream is PQ (HDR10, Dolby Vision's base
+// layer) or HLG, as ffprobe reads its transfer characteristics.
+func isHDR(ctx context.Context, ffprobe, input string) bool {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, ffprobe, "-v", "error", "-select_streams", "v:0",
+		"-show_entries", "stream=color_transfer", "-of", "default=nw=1:nk=1", input).Output()
+	if err != nil {
+		return false
+	}
+	switch strings.TrimSpace(string(out)) {
+	case "smpte2084", "arib-std-b67":
+		return true
+	}
+	return false
+}
+
+// listFilters is the filters `ffmpeg -filters` names.
+func listFilters(ctx context.Context, ffmpeg string) map[string]bool {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	out, _ := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-filters").Output()
+	have := map[string]bool{}
+	for _, l := range strings.Split(string(out), "\n") {
+		// " TS. zscale  V->V  Apply resizing, colorspace and bit depth conversion."
+		if f := strings.Fields(l); len(f) >= 3 && strings.Contains(f[2], "->") {
+			have[f[1]] = true
+		}
+	}
+	return have
 }
 
 func (e *execRunner) Start(ctx context.Context, job Job) (*Handle, error) {
@@ -283,10 +362,11 @@ func (e *execRunner) Start(ctx context.Context, job Job) (*Handle, error) {
 	// or segments would ever be produced and the client would poll
 	// forever. The encoder's lifetime is owned by the Handle and torn
 	// down only via Handle.Stop (reaper / CloseSession / store Close).
-	// The request ctx is intentionally unused here (request-scoped
-	// validation happens upstream in Orchestrator.Start).
-	_ = ctx
+	// The request ctx bounds only what runs before the spawn (the source's
+	// HDR probe); request-scoped validation happens upstream in
+	// Orchestrator.Start.
 	h := &Handle{}
+	job.toneMap = e.toneMapFor(ctx, job)
 	if err := e.run(h, job, job.HWAccel); err != nil {
 		return nil, err
 	}
@@ -321,6 +401,7 @@ func (e *execRunner) run(h *Handle, job Job, hw string) error {
 		}
 	}
 	plan := PlanFor(hw, hwRungs, rungs, job.SourceCodec, !job.NoAudio)
+	plan.ToneMap = job.toneMap
 	var args Args
 	if strings.EqualFold(job.Format, "dash") {
 		args = DASHArgs(job.InputPath, job.OutputDir, job.Ladder, plan)

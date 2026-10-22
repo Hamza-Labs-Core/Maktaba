@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -191,7 +192,55 @@ func detector(goos string, encs []string, works map[string]bool) *Detector {
 		Bin:      DefaultBinary(),
 		GOOS:     goos,
 		Encoders: func(context.Context, string) ([]string, error) { return encs, nil },
-		Works:    func(_ context.Context, _, enc string) bool { return works[enc] },
+		Works:    func(_ context.Context, _, enc string) (bool, bool) { return works[enc], false },
+	}
+}
+
+// After a failed detection: a busy device (its sessions all taken) is tried
+// again until it works, the waits doubling; one that failed without a sign of
+// its device a few times more, then never (Windows' builds list h264_nvenc on
+// any PC); one that works, or none listed (no test encode at all), not again.
+func TestWatchChoiceRetries(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		encs       []string
+		busy       bool
+		worksAfter int // the try that works (0: never)
+		want       int // tries
+		hw         HWAccel
+	}{
+		{"busy, then free", []string{"h264_nvenc"}, true, 6, 6, HWAccelNVENC},
+		{"no device", []string{"h264_nvenc"}, false, 0, 1 + maybeTries, HWAccelSoftware},
+		{"none listed", []string{"libx264"}, false, 0, 0, HWAccelSoftware},
+		{"works at once", []string{"h264_nvenc"}, false, 1, 1, HWAccelNVENC},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var mu sync.Mutex
+			tries := 0
+			d := &Detector{Bin: DefaultBinary(), GOOS: "linux",
+				Encoders: func(context.Context, string) ([]string, error) { return c.encs, nil },
+				Works: func(context.Context, string, string) (bool, bool) {
+					mu.Lock()
+					defer mu.Unlock()
+					tries++
+					return c.worksAfter > 0 && tries >= c.worksAfter, c.busy
+				}}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			choice := WatchChoice(ctx, d, time.Second, time.Millisecond, func(HWAccel, error) {})
+			count := func() int {
+				mu.Lock()
+				defer mu.Unlock()
+				return tries
+			}
+			if !waitUntil(5*time.Second, func() bool { return count() >= c.want && choice.Get() == c.hw }) {
+				t.Fatalf("tries %d, verdict %q; want %d, %q", count(), choice.Get(), c.want, c.hw)
+			}
+			time.Sleep(100 * time.Millisecond) // waits double from 1 ms: well past the next try
+			if n := count(); n != c.want {
+				t.Errorf("tries %d, want %d", n, c.want)
+			}
+		})
 	}
 }
 
@@ -274,6 +323,74 @@ func TestTranscodeArgs_PerHWAccel(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// The DASH ladder is one AdaptationSet (its rungs a player's Representations),
+// the audio another; without audio only the video's.
+func TestDASHArgs_OneAdaptationSet(t *testing.T) {
+	if got := argAfter(DASHArgs("/in.mp4", "/out", DefaultLadder(0), SoftwarePlan(3, true)), "-adaptation_sets"); got != "id=0,streams=v id=1,streams=a" {
+		t.Errorf("with audio: %q", got)
+	}
+	if got := argAfter(DASHArgs("/in.mp4", "/out", DefaultLadder(0), SoftwarePlan(3, false)), "-adaptation_sets"); got != "id=0,streams=v" {
+		t.Errorf("without audio: %q", got)
+	}
+}
+
+// An HDR source is tone-mapped once, its result split to the rungs: each maps
+// its own [vN] instead of the source's video.
+func TestTranscodeArgs_ToneMap(t *testing.T) {
+	p := PlanFor("nvenc", 3, 3, "hevc", true)
+	p.ToneMap = toneMapFilters
+	for name, args := range map[string]Args{
+		"hls":  HLSArgs("/in.mkv", "/out", "master.m3u8", DefaultLadder(0), p),
+		"dash": DASHArgs("/in.mkv", "/out", DefaultLadder(0), p),
+	} {
+		graph := argAfter(args, "-filter_complex")
+		if graph != "[0:v:0]"+toneMapFilters+",split=3[v0][v1][v2]" {
+			t.Errorf("%s: graph %q", name, graph)
+		}
+		joined := " " + strings.Join(args, " ") + " "
+		for _, v := range []string{"[v0]", "[v1]", "[v2]"} {
+			if !strings.Contains(joined, " -map "+v+" ") {
+				t.Errorf("%s: no -map %s", name, v)
+			}
+		}
+		if strings.Contains(joined, " -map 0:v:0 ") {
+			t.Errorf("%s: a rung maps the source's video past the tone-mapping", name)
+		}
+	}
+	// SDR: no graph
+	if g := argAfter(HLSArgs("/in.mkv", "/out", "master.m3u8", DefaultLadder(0), SoftwarePlan(3, true)), "-filter_complex"); g != "" {
+		t.Errorf("SDR graph %q", g)
+	}
+}
+
+// toneMapFor: an HDR source, when this ffmpeg has zscale and tonemap (asked
+// once); SDR, or an ffmpeg without them, none.
+func TestToneMapFor(t *testing.T) {
+	var lists int
+	for _, c := range []struct {
+		hdr     bool
+		filters map[string]bool
+		want    string
+	}{
+		{true, map[string]bool{"zscale": true, "tonemap": true}, toneMapFilters},
+		{false, map[string]bool{"zscale": true, "tonemap": true}, ""},
+		{true, map[string]bool{"tonemap": true}, ""},
+	} {
+		e := &execRunner{
+			hdr:     func(context.Context, string, string) bool { return c.hdr },
+			filters: func(context.Context, string) map[string]bool { lists++; return c.filters },
+		}
+		for i := 0; i < 2; i++ {
+			if got := e.toneMapFor(context.Background(), Job{InputPath: "/in.mkv"}); got != c.want {
+				t.Errorf("hdr %v filters %v: %q", c.hdr, c.filters, got)
+			}
+		}
+	}
+	if lists != 2 {
+		t.Errorf("the filters were listed %d times, want once a runner that met an HDR source", lists)
 	}
 }
 

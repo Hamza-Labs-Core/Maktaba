@@ -131,6 +131,10 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 		{"h264-10bit", "h264", true, []string{"-c:v", "libx264", "-pix_fmt", "yuv420p10le"}},
 		{"av1", "av1", true, []string{"-c:v", "libaom-av1", "-cpu-used", "8", "-row-mt", "1", "-pix_fmt", "yuv420p"}},
 		{"silent", "h264", false, []string{"-c:v", "libx264", "-pix_fmt", "yuv420p"}},
+		// HDR10: PQ in BT.2020, tone-mapped to SDR when this ffmpeg can
+		{"hdr10", "hevc", true, []string{"-c:v", "libx265", "-pix_fmt", "yuv420p10le",
+			"-x265-params", "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc",
+			"-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc"}},
 	} {
 		p := filepath.Join(srcDir, s.name+".mkv")
 		args := []string{"-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=25:d=3"}
@@ -146,6 +150,22 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 	}
 	if len(sources) == 0 || sources[0].name != "h264" {
 		t.Fatal("not even the 8-bit H.264 source could be made")
+	}
+	// the HDR source is found HDR, and tone-mapped when this ffmpeg has the filters
+	have := listFilters(ctx, "ffmpeg")
+	for _, src := range sources {
+		hdr := isHDR(ctx, "ffprobe", src.path)
+		if hdr != (src.name == "hdr10") {
+			t.Errorf("%s: isHDR %v", src.name, hdr)
+		}
+		if src.name == "hdr10" {
+			got := (&execRunner{}).toneMapFor(ctx, Job{InputPath: src.path})
+			if want := have["zscale"] && have["tonemap"]; (got != "") != want {
+				t.Errorf("hdr10: tone-mapping %q, this ffmpeg has zscale %v, tonemap %v", got, have["zscale"], have["tonemap"])
+			} else if !want {
+				t.Logf("hdr10: this ffmpeg has no zscale/tonemap: cut to 8 bits untoned")
+			}
+		}
 	}
 
 	picked, err := Default(DefaultBinary()).Detect(ctx)
@@ -189,6 +209,16 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 					}
 				} else {
 					want = []string{"manifest.mpd"}
+					// the ladder is one AdaptationSet, the audio another
+					if mpd, err := os.ReadFile(filepath.Join(dir, "manifest.mpd")); err == nil {
+						sets := 1
+						if src.audio {
+							sets = 2
+						}
+						if n := strings.Count(string(mpd), "<AdaptationSet"); n != sets {
+							t.Errorf("%q %s dash: %d AdaptationSets, want %d", hw, src.name, n, sets)
+						}
+					}
 				}
 				for _, f := range want {
 					if _, err := os.Stat(filepath.Join(dir, f)); err != nil {

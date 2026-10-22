@@ -107,6 +107,7 @@ type fakeSlot struct {
 	warm     []slot.WarmRequest
 	segs     atomic.Int32
 	pid      int // the process id the status reports (0: none)
+	used     int // the encoder sessions the status reports
 }
 
 func newFakeSlot(t *testing.T, name string, first int64, stations ...string) *fakeSlot {
@@ -180,7 +181,8 @@ func newFakeSlot(t *testing.T, name string, first int64, stations ...string) *fa
 func (f *fakeSlot) status() slot.Status {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return slot.Status{Slot: f.name, Role: f.role, Epoch: f.epoch, PID: f.pid, Stations: append([]string{}, f.stations...)}
+	return slot.Status{Slot: f.name, Role: f.role, Epoch: f.epoch, PID: f.pid, Stations: append([]string{}, f.stations...),
+		EncodersUsed: f.used}
 }
 
 func (f *fakeSlot) addr() string { return strings.TrimPrefix(f.srv.URL, "http://") }
@@ -237,6 +239,46 @@ func (g *slotRig) get(t *testing.T, path string) (int, string) {
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, string(b)
+}
+
+// SyncNow: Run sends the slots their warm sets and budgets at once (VOD's gate
+// lowers the NVENC budget by the session it is taking before it takes it) and
+// their reports come back; without Run nothing serves it.
+func TestSyncNowSendsTheBudget(t *testing.T) {
+	g := newSlotRig(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if g.slots.SyncNow(ctx, 50*time.Millisecond) {
+		t.Fatal("SyncNow served without Run")
+	}
+	var nv atomic.Int64
+	nv.Store(6)
+	g.slots.Budget = func(context.Context) (int, int, int) { return 8, int(nv.Load()), 0 }
+	for _, f := range []*fakeSlot{g.blue, g.green} {
+		f.mu.Lock()
+		f.used = 2
+		f.mu.Unlock()
+	}
+	go g.slots.Run(ctx)
+	nv.Store(4)
+	if !g.slots.SyncNow(ctx, 3*time.Second) {
+		t.Fatal("SyncNow not served")
+	}
+	var live *slot.WarmRequest
+	for _, f := range []*fakeSlot{g.blue, g.green} {
+		f.mu.Lock()
+		if n := len(f.warm); n > 0 && f.warm[n-1].Role == slot.RoleLive {
+			w := f.warm[n-1]
+			live = &w
+		}
+		f.mu.Unlock()
+	}
+	if live == nil || live.Budget.NVENCMax != 4 {
+		t.Fatalf("the live slot's last warm: %+v", live)
+	}
+	if used := g.slots.EncodersUsed(); used < 2 {
+		t.Errorf("EncodersUsed %d after the sync, want the slots' reports (2 each)", used)
+	}
 }
 
 // TC3: the routing decides which slot serves a channel placed on this host:

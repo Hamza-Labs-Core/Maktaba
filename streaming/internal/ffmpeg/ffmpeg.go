@@ -224,13 +224,23 @@ func RemuxArgs(input, output string) Args {
 }
 
 // EncodePlan is how a transcode encodes (PlanFor): the -hwaccel that decodes the
-// input ("" on the CPU), each rung's encoder, and whether the source has an
-// audio stream to carry.
+// input ("" on the CPU), each rung's encoder, whether the source has an audio
+// stream to carry, and ToneMap: the filters that bring an HDR source to SDR
+// BT.709 before the ladder (toneMapFilters; "" for SDR, or an ffmpeg without
+// them).
 type EncodePlan struct {
 	Decode   string
 	Encoders []string
 	Audio    bool
+	ToneMap  string
 }
+
+// toneMapFilters bring a PQ (HDR10) or HLG source to SDR BT.709: linear light
+// (zscale, at 100 nits), Hable's curve (tonemap), then BT.709 limited range
+// 4:2:0. Without it an HDR source came out washed out: its 10-bit samples
+// only cut to 8 bits.
+const toneMapFilters = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709," +
+	"tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
 
 // SoftwarePlan encodes every rung with libx264, decoding on the CPU.
 func SoftwarePlan(rungs int, audio bool) EncodePlan {
@@ -267,10 +277,14 @@ func PlanFor(hwaccel string, hwRungs, rungs int, sourceCodec string, audio bool)
 // size, 8-bit 4:2:0 (a 10-bit or 4:2:2 source becomes what NVENC's H.264 and
 // browsers take: libx264 would otherwise keep High 10, which few play) and the
 // encoder's own preset.
-func rungArgs(i int, rung Rendition, enc string) Args {
+func rungArgs(i int, rung Rendition, enc string, p EncodePlan) Args {
 	n := itoa(i)
+	video := "0:v:0"
+	if p.ToneMap != "" {
+		video = "[v" + n + "]" // one of the tone-mapped split's outputs (videoGraph)
+	}
 	a := Args{
-		"-map", "0:v:0",
+		"-map", video,
 		"-c:v:" + n, enc,
 		"-b:v:" + n, itoa(rung.BitrateKbps) + "k",
 		"-s:v:" + n, fmt.Sprintf("%dx%d", rung.Width, rung.Height),
@@ -290,6 +304,19 @@ func inputArgs(input string, p EncodePlan) Args {
 	return append(args, "-i", input)
 }
 
+// videoGraph is the HDR source's tone-mapping, once, split into one output a
+// rung ([v0], [v1], …): nothing for SDR.
+func videoGraph(rungs int, p EncodePlan) Args {
+	if p.ToneMap == "" || rungs == 0 {
+		return nil
+	}
+	outs := ""
+	for i := 0; i < rungs; i++ {
+		outs += "[v" + itoa(i) + "]"
+	}
+	return Args{"-filter_complex", "[0:v:0]" + p.ToneMap + ",split=" + itoa(rungs) + outs}
+}
+
 func encoderAt(p EncodePlan, i int) string {
 	if i < len(p.Encoders) && p.Encoders[i] != "" {
 		return p.Encoders[i]
@@ -302,10 +329,10 @@ func encoderAt(p EncodePlan, i int) string {
 // as the master playlist lists them), each with the source's audio when it
 // has one.
 func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePlan) Args {
-	args := inputArgs(input, p)
+	args := append(inputArgs(input, p), videoGraph(len(ladder), p)...)
 	variants := make([]string, len(ladder))
 	for i, rung := range ladder {
-		args = append(args, rungArgs(i, rung, encoderAt(p, i))...)
+		args = append(args, rungArgs(i, rung, encoderAt(p, i), p)...)
 		variants[i] = "v:" + itoa(i)
 		if p.Audio {
 			variants[i] += ",a:" + itoa(i)
@@ -334,15 +361,20 @@ func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePl
 // callout: emitting both HLS and DASH from one encode isn't supported,
 // so DASH is opt-in per session.
 func DASHArgs(input, outputDir string, ladder []Rendition, p EncodePlan) Args {
-	args := inputArgs(input, p)
+	args := append(inputArgs(input, p), videoGraph(len(ladder), p)...)
 	for i, rung := range ladder {
-		args = append(args, rungArgs(i, rung, encoderAt(p, i))...)
+		args = append(args, rungArgs(i, rung, encoderAt(p, i), p)...)
 	}
+	// the ladder is one AdaptationSet (a player switches between its
+	// Representations), the audio another; by default each stream was its own
+	sets := "id=0,streams=v"
 	if p.Audio {
 		args = append(args, "-map", "0:a:0", "-c:a", "aac", "-b:a", "128k")
+		sets += " id=1,streams=a"
 	}
 	args = append(args,
 		"-f", "dash",
+		"-adaptation_sets", sets,
 		"-seg_duration", "6",
 		"-window_size", "10",
 		"-extra_window_size", "5",

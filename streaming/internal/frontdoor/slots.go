@@ -88,6 +88,9 @@ type Slots struct {
 	rolesDirty bool
 	stage      *stagingRun
 	lastSample time.Time
+	// syncs: SyncNow's requests, served by Run (one warm sync at a time)
+	syncsOnce sync.Once
+	syncs     chan chan struct{}
 }
 
 // slotHealth is what the last probes of a slot said.
@@ -450,7 +453,40 @@ func (s *Slots) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case done := <-s.syncRequests():
+			s.SyncWarm(ctx)
+			close(done)
 		}
+	}
+}
+
+func (s *Slots) syncRequests() chan chan struct{} {
+	s.syncsOnce.Do(func() { s.syncs = make(chan chan struct{}) })
+	return s.syncs
+}
+
+// SyncNow has Run send the slots their warm sets and budgets now and read their
+// reports back (EncodersUsed), and waits for it, at most wait: VOD's gate lowers
+// the slots' NVENC budget by the session it is taking before it takes it. False
+// when Run did not serve it in time (not running yet, or busy).
+func (s *Slots) SyncNow(ctx context.Context, wait time.Duration) bool {
+	t := time.NewTimer(wait)
+	defer t.Stop()
+	done := make(chan struct{})
+	select {
+	case s.syncRequests() <- done:
+	case <-t.C:
+		return false
+	case <-ctx.Done():
+		return false
+	}
+	select {
+	case <-done:
+		return true
+	case <-t.C:
+		return false
+	case <-ctx.Done():
+		return false
 	}
 }
 

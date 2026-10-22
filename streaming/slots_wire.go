@@ -30,6 +30,22 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 )
 
+// frontdoorSlotsLink is VOD's view of the TV slots (vodGate): their reported
+// sessions, the channels' caps, and a warm sync on demand.
+type frontdoorSlotsLink struct {
+	slots *frontdoor.Slots
+	b     *tvBase
+}
+
+func (l frontdoorSlotsLink) Sessions(ctx context.Context) (int, int, int) {
+	out := l.b.settings.Output(ctx)
+	return l.slots.EncodersUsed(), out.NVENCMax, out.VTMax
+}
+
+func (l frontdoorSlotsLink) Sync(ctx context.Context) bool {
+	return l.slots.SyncNow(ctx, 3*time.Second)
+}
+
 func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, ident channel.HostIdentity,
 	chRepo *channel.PGRepo, publicBase string) []func(chi.Router) {
 	logger := b.logger
@@ -63,6 +79,8 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 			case channel.EncoderVideoToolbox:
 				vt = out.VTMax
 			}
+			// less the sessions VOD holds or is taking (vodGate)
+			nv, vt = slotBudget(nv, vt)
 			return c, nv, vt
 		},
 		RemoteViewers: remoteViewers(b),
@@ -75,9 +93,7 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 			}
 		}}
 	// VOD's GPU sessions count with the slots' (vodGate)
-	tvSessions.Store(func(ctx context.Context) (int, int) {
-		return slots.EncodersUsed(), b.settings.Output(ctx).NVENCMax
-	})
+	tvSlots.Store(linkBox{frontdoorSlotsLink{slots: slots, b: b}})
 	for {
 		err := slots.Bootstrap(ctx)
 		if err == nil {
