@@ -25,31 +25,41 @@ tar -xzf "$asset" && server/bin/maktaba-server setup
 - **The payload tarball** (39.10) is `maktaba-linux-payload-<v>-<x86_64|aarch64>.tar.gz`: the same
   `server/` tree as the desktop app's `usr/share/maktaba/server`, listed in the release's
   `checksums.txt` like every asset.
-- **cosign** is the verifier. It comes from the distro (`apt install cosign` on Debian 13+ and
-  Ubuntu 24.04+, `dnf install cosign` on Fedora) or from its own release, checked against that
-  release's checksums. A failed signature or checksum stops the install before anything is
-  unpacked.
+- **cosign** is the verifier, 2.4.3 or newer (the first whose `verify-blob` reads the release's
+  new-format Sigstore bundle). It comes from the distro where the distro has one that new
+  (`apt install cosign` on Debian 13, which has 2.5.0, and Ubuntu from 26.04, 2.6.2; Ubuntu
+  24.04 has none; `dnf install cosign` on Fedora) or from its own release, checked against that
+  release's `cosign_checksums.txt`. A failed signature or checksum stops the install before
+  anything is unpacked. `install.sh --app` uses a cosign on the PATH only from 2.4.3 on and
+  otherwise fetches cosign's release build itself, pinned by its SHA-256.
 - **`install.sh --app`** scripts the same steps. The release publishes `install.sh` as an asset
   listed in `checksums.txt` (39.10), so the script is verified the same way before it runs (download
   it with the two files above, `cosign verify-blob`, `sha256sum --check`, then `bash install.sh
   --app`); it is never piped from `main`. With `--app` it refuses to unpack anything it could not
-  verify: `MAKTABA_REQUIRE_COSIGN` is on.
+  verify (`MAKTABA_REQUIRE_COSIGN` is on, `MAKTABA_NO_VERIFY` is refused), refuses root, and
+  removes the download and the unpacked tree on any exit.
 - **The unpacked tree is only a source.** `setup` copies it into the runtime (below) and the server
   never runs from it. It can be deleted after setup.
 
 `maktaba-server setup` (on a machine that has a payload and no server.toml) runs the steps in screen
-order. It shows each step's `progress` as a line and each `error` with its help text, and asks for
-the input fields:
+order, in English or Arabic (`--lang`, else the locale). It shows each step's `progress` as a line
+and each `error` in the screens' words (by its code), and asks for the input fields:
 
 | Step | In the terminal |
 |---|---|
-| `check` | what will run, the disk, RAM and GPU, the distribution's ffmpeg, the warnings; stops when `ok` is false (a system-wide `maktaba-server.service` is one: see below). When the ffmpeg is what blocks, check names the command that installs it (`ffmpeg_install`) and the terminal offers to run it (sudo asks for the password there; never from an answers file), then runs check again |
+| `check` | from the payload: what will run, the disk, RAM and GPU, the distribution's ffmpeg, the problems and the warnings (on Linux also glibc, the systemd user manager, linger and a `maktaba-server.service` another install owns: see below); stops when `ok` is false, before anything is copied. When the ffmpeg is all that blocks, check names the command that installs it (`ffmpeg_install`) and the terminal offers to run it (sudo asks for the password there; never from an answers file), then runs check again |
+| *the runtime* | `runtime install --owner headless` copies the payload into the runtime (the first runtime becomes `current` by itself); every step after this runs from `runtime/current` with `MAKTABA_APP_BUNDLE` pointing there, so the venv is built against the runtime's Python |
 | `admin` | user name and password (asked twice, not echoed) |
 | `libraries` | library folders, then the NAS path map (`/mnt/media => /srv/media`), each checked |
-| `models` | Hugging Face token (not echoed), or the path of the home's copy on the share |
-| `plex` | optional: the PIN to enter at plex.tv/link, polled until linked |
-| `venv` | installs the runtime (`runtime install --owner headless`: the first runtime becomes `current` by itself), then builds the venv with a progress bar |
-| `finish` | writes server.toml, makes the database, then `service install` and `service linger` (polkit asks for the admin password over SSH) |
+| `models` | Hugging Face token (not echoed), or the path of the home's copy on the share. Where the second listen cannot run (on Linux it needs an NVIDIA GPU with 7.5 GiB, compute capability 7.5 or newer and driver R580 or newer: `check`'s `second_listen`), no token: the share's path, or nothing for Hugging Face without a sign-in, as the screens ask it |
+| `plex` | optional: the PIN to enter at plex.tv/link, polled until linked; plex.tv out of reach is said once and polled again; an expired code or a Ctrl+C while it waits leaves it to Settings, and setup goes on |
+| `venv` | builds the venv with a progress bar |
+| `models` (download) | downloads what the workers load, with progress (`{"action": "download"}`) |
+| `llm` | downloads the language model; only too little disk stops the setup, anything else is left to the server, which downloads it in the background |
+| `finish` | writes server.toml, makes the database, then `service install` and `service linger` (polkit asks for the admin password over SSH; skipped when linger is on already) |
+
+The desktop app (39.8) runs the same order: `check` from its payload, the runtime copy only once
+`check` allows it, then every later step from `runtime/current`.
 
 Non-interactive (automation, CI): `maktaba-server setup --answers answers.json` gives each step its
 input from the file (`{"admin": {...}, "libraries": {...}, ...}`). Secrets can come from
