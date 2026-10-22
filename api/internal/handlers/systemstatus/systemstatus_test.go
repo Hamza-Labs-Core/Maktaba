@@ -653,7 +653,7 @@ func TestRulesDefaultsMatchTheSchema(t *testing.T) {
 		Sections []struct {
 			Key    string `json:"key"`
 			Fields []struct {
-				Name    string  `json:"name"`
+				Name    string          `json:"name"`
 				Default json.RawMessage `json:"default"`
 			} `json:"fields"`
 		} `json:"sections"`
