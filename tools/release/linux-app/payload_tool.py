@@ -3,8 +3,9 @@
 payload.sh and check.sh run it with the payload's own Python (``python/bin/python3 -I``), so
 it works inside a minimal container that has no Python of its own.
 
-  manifest DIR              write DIR/files.sha256 (every file and symlink but itself and
-                            payload.json) and print {"count", "bytes", "sha256"} as JSON
+  manifest DIR              write DIR/files.sha256 (every file and symlink but itself,
+                            payload.json and a runtime copy's .installed) and print
+                            {"count", "bytes", "sha256"} as JSON
   verify DIR                DIR matches its files.sha256: nothing missing, changed or added
   elf DIR [--max-glibc V]   every ELF file: the newest GLIBC_ symbol version it needs (none
                             above V), and each library it needs found in the payload (through
@@ -39,6 +40,8 @@ from pathlib import Path
 
 MANIFEST = "files.sha256"
 PAYLOAD_JSON = "payload.json"
+#: what the runtime copy (story 39.3) adds to an installed payload
+INSTALLED = ".installed"
 
 #: what every supported Linux has: glibc's own libraries and GCC's runtime (the ICU
 #: copied in beside Postgres needs libstdc++, so it is part of the baseline, not of the
@@ -82,7 +85,7 @@ def _entries(root: Path) -> list[str]:
         for name in names:
             p = base / name
             rel = p.relative_to(root).as_posix()
-            if rel in (MANIFEST, PAYLOAD_JSON):
+            if rel in (MANIFEST, PAYLOAD_JSON, INSTALLED):
                 continue
             if any(c in rel for c in "\t\n\r"):
                 _die(f"{rel!r}: a path with a tab or newline cannot be listed")

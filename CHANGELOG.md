@@ -168,6 +168,14 @@ don't append a line here; docs-only PRs are exempt.
   now turns the bundled Postgres on inside any desktop app's payload, not only on a Mac (a
   `[database] url` or a SQLite database in use still wins). The app's roles find the payload's
   `ffmpeg.exe`. Loopback TCP only on Windows, the nightly dumps as on the Mac.
+- **The Linux app's downloads** (Epic 39, story 39.10). Each release builds the app as an
+  AppImage, a `.deb` and an `.rpm` for x86_64 and aarch64, each with the whole server inside
+  (its own Postgres and Python; ffmpeg is the distribution's, which the `.deb` and the `.rpm`
+  depend on), checked before anything is published; the `.deb` and `.rpm` stop the app's server
+  when they are removed. For machines without a desktop the release carries the server payload
+  (`maktaba-linux-payload-<version>-<arch>.tar.gz`) and `install.sh` among its assets, both in the
+  signed `checksums.txt`: the notes say to verify the script and run it, no longer to pipe it from
+  a branch.
 - **The desktop app runs the server on Linux** (Epic 39, story 39.8). When setup finishes, the
   app copies its server into `~/.local/share/maktaba/runtime` and runs it as the user's systemd
   service, started at boot through linger; after an app update it moves the server to the new

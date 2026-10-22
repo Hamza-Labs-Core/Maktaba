@@ -11,7 +11,8 @@
 #   ./scripts/build.sh            # build for the current host OS
 #   ./scripts/build.sh macos      # .app + .dmg          (run on macOS)
 #   ./scripts/build.sh windows    # .msi + .exe (NSIS)   (run on Windows)
-#   ./scripts/build.sh linux      # .deb + .AppImage     (run on Linux)
+#   ./scripts/build.sh linux      # .AppImage + .deb + .rpm, the shell only (run on Linux;
+#                                 #   `make linux-app` builds them with the server inside)
 #   ./scripts/build.sh debug      # fast unsigned debug build for the host
 #
 # Requires the Rust toolchain (https://rustup.rs) and the platform build
@@ -60,8 +61,8 @@ case "${TARGET}" in
     ;;
   linux)
     require_host linux
-    log "Building Linux .deb + .AppImage"
-    pnpm exec tauri build --bundles deb,appimage
+    log "Building Linux .AppImage + .deb + .rpm"
+    pnpm exec tauri build --bundles appimage,deb,rpm
     ;;
   debug)
     log "Building unsigned debug bundle for ${HOST}"
