@@ -173,9 +173,12 @@ func thisMachine(getenv func(string) string) func() string {
 }
 
 // ForeignNodeConfig is the roaming profile's node config when another PC claimed it
-// (NodeConfigPath skips it), with that PC's id: this PC runs unjoined until it joins
-// as its own machine. "" when there is none (off Windows, with $MAKTABA_NODE_CONFIG
-// set, or a config that is this PC's or no PC's).
+// (NodeConfigPath skips it), with that PC's id, while this PC runs unjoined because
+// of it: until it joins as its own machine. "" when there is none (off Windows, with
+// $MAKTABA_NODE_CONFIG set, a config that is this PC's or no PC's), and once this PC
+// joined as its own (its local node config): the other PC's is then nothing to it.
+// It is the one rule for every place that says so (serve, setup's check, the move's
+// plan).
 func ForeignNodeConfig(getenv func(string) string, goos, userHome string) (path, owner string) {
 	if goos != "windows" || strings.TrimSpace(getenv("MAKTABA_NODE_CONFIG")) != "" {
 		return "", ""
@@ -183,6 +186,9 @@ func ForeignNodeConfig(getenv func(string) string, goos, userHome string) (path,
 	old := roamingNodeConfig(getenv, userHome)
 	if !isFile(old) || !claimedElsewhere(old, thisMachine(getenv)) {
 		return "", ""
+	}
+	if ReadNodeConfig(getenv, goos, userHome, os.ReadFile).Joined() {
+		return "", "" // this PC's own join (NodeConfigPath reads the local file)
 	}
 	return old, nodeConfigOwner(old)
 }

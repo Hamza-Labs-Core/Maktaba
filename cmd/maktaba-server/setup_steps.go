@@ -241,6 +241,10 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 	for _, check := range platformChecks {
 		check(s.ctx, &res)
 	}
+	// Epic 39: on Linux the distribution's ffmpeg (the app carries none there)
+	if ffmpegInCheck {
+		checkFFmpeg(s.ctx, s.cfg, &res)
+	}
 	// a node of a home already runs here outside the app: a fresh setup would be
 	// a second copy of it (Epic 38 story 38.13; the welcome screen offers its move)
 	if code, msg, kv := nodeHere(); code != "" {
@@ -252,7 +256,7 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 	}
 	// Epic 38 story 38.1: the roaming profile's node settings are another PC's (their
 	// machine_id), so this machine runs as no home's machine until it joins as its own
-	if p, owner := foreignNodeConfig(); p != "" && !config.LocalNodeConfig().Joined() {
+	if p, owner := foreignNodeConfig(); p != "" {
 		res.Warn("node_config_other_pc", config.ForeignNodeLine(p, owner), "path", p, "owner", owner)
 	}
 

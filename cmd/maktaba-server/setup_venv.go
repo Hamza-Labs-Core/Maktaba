@@ -40,12 +40,7 @@ func stepVenv(s *setupRun, _ json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	logDir := config.LogsDir()
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
-		return nil, err
-	}
-	logPath := filepath.Join(logDir, "venv.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	logFile, err := config.OpenLog("venv.log") // the user's only, as every log
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +62,7 @@ func stepVenv(s *setupRun, _ json.RawMessage) (any, error) {
 	case errors.Is(err, appvenv.ErrInterrupted):
 		return nil, failStep("interrupted", "", "The install stopped; it goes on from where it was next time.")
 	case errors.As(err, &ve):
-		return nil, failStep("venv_failed", "", "%s (the full log: %s)", ve.Message, logPath)
+		return nil, failStep("venv_failed", "", "%s (the full log: %s)", ve.Message, logFile.Name())
 	}
 	return nil, failStep("venv_failed", "", "%v", err)
 }

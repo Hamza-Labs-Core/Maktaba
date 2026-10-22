@@ -2,7 +2,7 @@
 # Builds Maktaba.app for macOS arm64 with the server payload inside (Epic 36, story 36.7):
 # payload.sh, then `tauri build` with the overlay it writes, then check.sh on the app.
 # `make mac-app` runs it; so does CI's mac-app gate. desktop-release.yml runs the same three
-# steps around tauri-action (which also publishes the updater feed).
+# steps, then its publish job attaches what passed and writes the updater feed.
 #
 # Signing: with APPLE_SIGNING_IDENTITY set (a Developer ID Application identity in the
 # keychain) the payload and the app are signed with the hardened runtime; without it the

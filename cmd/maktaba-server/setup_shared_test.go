@@ -43,7 +43,7 @@ func TestStatusBesideAnInstallThatReadsTheAppsConfig(t *testing.T) {
 
 // TestALeftoverNodeConfigCopiedIsOne: on Windows the node config of an install
 // from before Epic 38 is in %APPDATA%\Maktaba, and another may be in
-// %LOCALAPPDATA%\Maktaba (a move undone left the app's): one node config nothing
+// %LOCALAPPDATA%\Maktaba (a copy an earlier build made): one node config nothing
 // runs, said once, the one the roles read (config.LocalNodeConfigPath decides).
 func TestALeftoverNodeConfigCopiedIsOne(t *testing.T) {
 	if runtime.GOOS != "windows" {
@@ -78,5 +78,55 @@ func TestALeftoverNodeConfigCopiedIsOne(t *testing.T) {
 	// whichever of the two the roles read (config.LocalNodeConfigPath), said once
 	if want := config.LocalNodeConfigPath(); len(unused) != 1 || unused[0] != want {
 		t.Fatalf("node configs nothing runs %q, want the one the roles read alone %q", unused, want)
+	}
+}
+
+// TestNoOtherPCsNoteOnceThisPCJoined: the roaming profile's node config is
+// another PC's (its machine_id). While this PC has not joined, setup's check and
+// the move's side say so (node_config_other_pc); once it joined as its own
+// machine (a joined %LOCALAPPDATA%\Maktaba\node.json), neither does: one rule,
+// config.LocalForeignNodeConfig.
+func TestNoOtherPCsNoteOnceThisPCJoined(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the roaming profile and its machine_id are Windows's")
+	}
+	e := newSetupEnv(t)
+	local, roaming := filepath.Join(e.dir, "Local"), filepath.Join(e.dir, "Roaming")
+	t.Setenv("LOCALAPPDATA", local)
+	t.Setenv("APPDATA", roaming)
+	t.Setenv("USERPROFILE", e.dir)
+	t.Setenv("MAKTABA_NODE_CONFIG", "")
+	t.Setenv("MAKTABA_MACHINE_ID", "this-pc")
+	theirs := filepath.Join(roaming, "Maktaba", "node.json")
+	mine := filepath.Join(local, "Maktaba", "node.json")
+	writeNode := func(p, id string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		node := `{"node_id":"n-1","private_key":"AQID","database_url":"postgres://node@home/maktaba","home":{"name":"Home"},"machine_id":"` + id + `"}`
+		if err := os.WriteFile(p, []byte(node), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeNode(theirs, "other-pc")
+	prevFacts, prevGPUs := hostFacts, hostGPUs
+	t.Cleanup(func() { hostFacts, hostGPUs = prevFacts, prevGPUs })
+	hostFacts = func(string) (uint64, uint64) { return 32 << 30, 500 << 30 }
+	hostGPUs = func() []hostinfo.GPU { return nil }
+	otherPC := func() (check bool, move string) {
+		t.Helper()
+		_, _, ev := runStep(t, "check", map[string]any{})
+		for _, w := range data(t, ev)["warnings"].([]any) {
+			check = check || w.(map[string]any)["code"] == "node_config_other_pc"
+		}
+		return check, adoptTarget(config.Defaults()).ForeignNode
+	}
+	if check, move := otherPC(); !check || move != theirs {
+		t.Fatalf("not joined here: check %v, the move's %q, want %q", check, move, theirs)
+	}
+	writeNode(mine, "this-pc")
+	if check, move := otherPC(); check || move != "" {
+		t.Fatalf("joined here as its own machine: check %v, the move's %q", check, move)
 	}
 }

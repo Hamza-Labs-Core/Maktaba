@@ -12,7 +12,7 @@ import (
 )
 
 // TestAFreshSetupBesideALeftoverNodeConfig: a joined node config that no
-// install here runs (one removed, or a move undone, left it). A fresh setup is
+// install here runs (one removed left it). A fresh setup is
 // a new home beside it: check says so (a warning: nothing is in the way),
 // the welcome's find names it, and finish pins [server] role = "home", so no
 // role ever runs as that node (supervisor: a forced home).
