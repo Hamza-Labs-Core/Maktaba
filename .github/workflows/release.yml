@@ -307,6 +307,21 @@ jobs:
         id: sde
         run: echo "epoch=$(git log -1 --pretty=%ct)" >> "$GITHUB_OUTPUT"
 
+      # `:latest` moves only with a plain vX.Y.Z, as the GitHub release's
+      # latest does; a tag with a suffix (v0.3.0-rc.1) is pushed as itself.
+      - name: Image tags
+        id: tags
+        env:
+          IMAGE: ${{ env.REGISTRY }}/maktaba-${{ matrix.svc }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          {
+            echo "list<<EOF"
+            echo "${IMAGE}:${TAG}"
+            case "${TAG}" in *-*) ;; *) echo "${IMAGE}:latest" ;; esac
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push ${{ matrix.svc }}
         id: build
         uses: docker/build-push-action@v7.2.0
@@ -322,9 +337,7 @@ jobs:
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
             SOURCE_DATE_EPOCH=${{ steps.sde.outputs.epoch }}
-          tags: |
-            ${{ env.REGISTRY }}/maktaba-${{ matrix.svc }}:${{ github.ref_name }}
-            ${{ env.REGISTRY }}/maktaba-${{ matrix.svc }}:latest
+          tags: ${{ steps.tags.outputs.list }}
           labels: |
             org.opencontainers.image.version=${{ github.ref_name }}
             org.opencontainers.image.revision=${{ github.sha }}

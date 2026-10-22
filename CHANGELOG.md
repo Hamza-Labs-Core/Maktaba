@@ -263,6 +263,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A pre-release no longer moves the images' `:latest`.** A tag with a suffix (`v0.3.0-rc.1`)
+  pushed every server image, and the relay's, as `:latest` too, so a Docker install following
+  `:latest` would have taken a release candidate. `:latest` now moves only with a plain `vX.Y.Z`,
+  as the GitHub release's latest does, and a pre-release tag no longer rolls the relay out to the
+  VPS by itself (a dispatch with its tag still does).
+
 - **The second listen's tries count from the end of each try, and a stopped transcript comes
   back (follow-up of #221).** The wait between tries counted from when the try was queued, so a
   job that waited hours used it up; it now counts from the end of the try. A transcript the
