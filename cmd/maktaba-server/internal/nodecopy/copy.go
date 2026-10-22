@@ -162,6 +162,9 @@ func (c Copy) Ask(ctx context.Context, fresh bool) (Grant, error) {
 	defer db.Close()
 	var raw []byte
 	if err := db.QueryRowContext(actx, `SELECT cluster_node_replica_grant($1, $2, $3)`, c.NodeID, verifier, fresh).Scan(&raw); err != nil {
+		if copiesOff(err) {
+			return Grant{}, fmt.Errorf("%w: %w", ErrCopiesOff, err)
+		}
 		return Grant{}, err
 	}
 	var g Grant
@@ -186,6 +189,20 @@ func (c Copy) openHome(_ context.Context) (*sql.DB, error) {
 		return nil, err
 	}
 	return openBounded(c.HomeDSN)
+}
+
+// ErrCopiesOff: the home lets no machine ask for a copy (the grant is not the machines' to
+// call): its database is not Maktaba's own Postgres, where it keeps copies only once its
+// admin allows them (rules.cluster.copies_on_operator_postgres).
+var ErrCopiesOff = errors.New("its database is not Maktaba's own Postgres, and copies on it are off " +
+	"(an admin turns them on with rules.cluster.copies_on_operator_postgres)")
+
+// copiesOff reports whether the grant's call was refused as the home refuses it while
+// copies are off: permission denied for the grant itself (any other permission error is
+// not that).
+func copiesOff(err error) bool {
+	var pe *pq.Error
+	return errors.As(err, &pe) && pe.Code == "42501" && strings.Contains(pe.Message, "cluster_node_replica_grant")
 }
 
 // ErrNotVerified: this machine cannot verify its home's database yet (a node.json from
@@ -933,8 +950,12 @@ func scramVerifier(password string) (string, error) {
 
 // kindOf sorts a call's error. Refused is the home saying this machine may have no copy
 // (MK403: not approved, or not a full machine) or its role may no longer sign in (a
-// revocation): not a permission error elsewhere, a password or a pg_hba rule.
+// revocation): not a permission error elsewhere, a password or a pg_hba rule. A home that
+// keeps no copies on its database (ErrCopiesOff) is unsupported, as one that cannot.
 func kindOf(err error) int {
+	if errors.Is(err, ErrCopiesOff) || copiesOff(err) {
+		return kindUnsupported
+	}
 	var pe *pq.Error
 	if errors.As(err, &pe) {
 		switch {

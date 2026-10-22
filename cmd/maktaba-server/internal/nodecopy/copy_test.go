@@ -3,6 +3,7 @@ package nodecopy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"os"
@@ -233,6 +234,10 @@ func TestKindOf(t *testing.T) {
 		{&pq.Error{Code: "28000", Message: `no pg_hba.conf entry for host "10.0.0.5"`}, kindOther},
 		{&pq.Error{Code: "28P01"}, kindOther},
 		{&pq.Error{Code: "42501"}, kindOther},
+		// the grant itself denied: the home keeps no copies on its database (not Maktaba's
+		// own Postgres, the rule off), as Ask names it
+		{&pq.Error{Code: "42501", Message: "permission denied for function cluster_node_replica_grant"}, kindUnsupported},
+		{fmt.Errorf("%w: %w", ErrCopiesOff, &pq.Error{Code: "42501"}), kindUnsupported},
 		{&pq.Error{Code: "42883"}, kindUnsupported},
 		{&pq.Error{Code: "0A000"}, kindUnsupported},
 		{&pq.Error{Code: "55006"}, kindBusy},
