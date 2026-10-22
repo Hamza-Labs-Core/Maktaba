@@ -61,3 +61,13 @@ def test_soft_cap_scales_on_windows_only() -> None:
     assert _platform_scale("win32") == WINDOWS_SOFT_CAP_SCALE > 1
     assert _platform_scale("linux") == 1.0
     assert _platform_scale("darwin") == 1.0
+
+
+@pytest.mark.unit
+def test_soft_cap_scales_under_coverage() -> None:
+    """Coverage measurement slows every test; the caps make room for it."""
+    from maktaba_testtier.softcap import _coverage_scale
+    from maktaba_testtier.tiers import COVERAGE_SOFT_CAP_SCALE
+
+    assert _coverage_scale(True) == COVERAGE_SOFT_CAP_SCALE > 1
+    assert _coverage_scale(False) == 1.0

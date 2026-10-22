@@ -21,17 +21,28 @@ import sys
 import warnings
 from typing import Any
 
-from .tiers import TIER_HARD_CAP_MULTIPLIER, TIER_SOFT_CAPS, WINDOWS_SOFT_CAP_SCALE
+from .tiers import (
+    COVERAGE_SOFT_CAP_SCALE,
+    TIER_HARD_CAP_MULTIPLIER,
+    TIER_SOFT_CAPS,
+    WINDOWS_SOFT_CAP_SCALE,
+)
 
 
 def _platform_scale(platform: str = sys.platform) -> float:
     return WINDOWS_SOFT_CAP_SCALE if platform == "win32" else 1.0
 
 
+def _coverage_scale(measuring: bool | None = None) -> float:
+    if measuring is None:
+        measuring = "coverage" in sys.modules
+    return COVERAGE_SOFT_CAP_SCALE if measuring else 1.0
+
+
 def _cap_for_item(item: Any) -> float | None:
     for tier, cap in TIER_SOFT_CAPS.items():
         if item.get_closest_marker(tier) is not None:
-            return cap * _platform_scale()
+            return cap * _platform_scale() * _coverage_scale()
     return None
 
 

@@ -28,6 +28,11 @@ TIER_HARD_CAP_MULTIPLIER = 3
 # test. The per-test caps scale by this on Windows only.
 WINDOWS_SOFT_CAP_SCALE = 3.0
 
+# Coverage measurement slows every test; under it (the lint job's coverage
+# gate) a 0.305 s run tripped the 0.3 s hard cap. The caps scale by this
+# while coverage is loaded.
+COVERAGE_SOFT_CAP_SCALE = 2.0
+
 # Per-tier wall-clock budgets (the tools/test-budget enforcer reads
 # these via the bash wrapper). Units: seconds.
 UNIT_TOTAL_BUDGET_S = 60
