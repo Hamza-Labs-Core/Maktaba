@@ -255,7 +255,17 @@ mod tests {
     fn stub(dir: &Path, sh: &str, _cmd: &str) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt;
         let p = dir.join("maktaba-server");
-        std::fs::write(&p, format!("#!/bin/sh\n{sh}\n")).unwrap();
+        // Written by a child process, never through a file this process holds
+        // open: a test on another thread that forks while this one writes
+        // would carry the open file into its child, and running the stub
+        // then fails with ETXTBSY ("Text file busy") until that child execs.
+        let wrote = std::process::Command::new("/bin/sh")
+            .args(["-c", r#"printf '%s' "$1" > "$2""#, "sh"])
+            .arg(format!("#!/bin/sh\n{sh}\n"))
+            .arg(&p)
+            .status()
+            .unwrap();
+        assert!(wrote.success(), "writing {}", p.display());
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         p
     }
