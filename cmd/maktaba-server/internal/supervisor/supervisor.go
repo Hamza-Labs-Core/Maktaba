@@ -154,7 +154,11 @@ var ErrBinaryNotFound = errors.New("service binary not found")
 // variables layered on top, so an operator can still override any single
 // var from the shell without editing server.toml.
 func Build(role Role, opts Options) (Process, error) {
-	env := append(os.Environ(), ChildEnv(role, opts.Config)...)
+	roleEnv, err := ChildEnv(role, opts.Config)
+	if err != nil {
+		return Process{}, err
+	}
+	env := append(os.Environ(), roleEnv...)
 
 	var cmd *exec.Cmd
 	switch role {

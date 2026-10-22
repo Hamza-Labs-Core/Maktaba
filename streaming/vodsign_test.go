@@ -114,7 +114,10 @@ func TestVODSignedPlaybackThroughSharedStore(t *testing.T) {
 	bg := newBackground(context.Background())
 	t.Cleanup(func() { bg.Stop(time.Second) })
 	grpcSrv := buildGRPCServer(bg, logger, backend, sessions)
-	public := buildPublicHandler(bg, logger, backend, nil, nil, sessions)
+	public, err := buildPublicHandler(bg, logger, backend, nil, nil, sessions)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		ids, _ := sessions.List(context.Background())
 		for _, r := range ids {
