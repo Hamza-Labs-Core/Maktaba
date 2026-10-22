@@ -96,7 +96,9 @@ don't append a line here; docs-only PRs are exempt.
   in English or Arabic: the server is copied into `~/.local/share/maktaba/runtime`, then runs as
   the user's systemd service, started at boot through linger. The check also reports glibc, the
   systemd user manager, linger and a Maktaba service another install owns; where the second listen
-  cannot run, no Hugging Face sign-in is asked. A Plex code that expires (plex.tv out of reach is
+  cannot run, no Hugging Face sign-in is asked. When the distribution's ffmpeg is missing or falls
+  short, the terminal offers to run the command check names (sudo asks for the password), then
+  checks again; from an answers file it only shows it. A Plex code that expires (plex.tv out of reach is
   asked again until then) or a Ctrl+C while it waits leaves Plex to Settings, and the setup goes
   on. `--answers` (or `--answers-fd`) gives every answer without questions.
 - **The desktop app runs the server on Linux** (Epic 39, story 39.8). When setup finishes, the

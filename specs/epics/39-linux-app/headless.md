@@ -43,7 +43,7 @@ the input fields:
 
 | Step | In the terminal |
 |---|---|
-| `check` | what will run, the disk, RAM and GPU, the warnings; stops when `ok` is false (a system-wide `maktaba-server.service` is one: see below) |
+| `check` | what will run, the disk, RAM and GPU, the distribution's ffmpeg, the warnings; stops when `ok` is false (a system-wide `maktaba-server.service` is one: see below). When the ffmpeg is what blocks, check names the command that installs it (`ffmpeg_install`) and the terminal offers to run it (sudo asks for the password there; never from an answers file), then runs check again |
 | `admin` | user name and password (asked twice, not echoed) |
 | `libraries` | library folders, then the NAS path map (`/mnt/media => /srv/media`), each checked |
 | `models` | Hugging Face token (not echoed), or the path of the home's copy on the share |
