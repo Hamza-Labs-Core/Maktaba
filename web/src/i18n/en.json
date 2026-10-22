@@ -2258,6 +2258,7 @@
   "queue.coll.show": "Show",
   "queue.coll.evidence": "Why linked",
   "nav.admin.liveTv": "Live TV access",
+  "nav.admin.tvChanges": "TV changes",
   "nav.history": "History",
   "livetv.title": "Live TV access",
   "livetv.intro": "Watch Maktaba's channels in Plex (or Jellyfin, Emby, VLC) by adding Maktaba as an HDHomeRun tuner with its XMLTV guide.",
