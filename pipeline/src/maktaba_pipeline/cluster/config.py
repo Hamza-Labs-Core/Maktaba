@@ -217,12 +217,20 @@ def load(path: Path | None = None) -> NodeConfig | None:
             try:
                 _write(path, {**data, "machine_id": this})
             except OSError as exc:
-                from ..log import get_logger
+                # the file stays as it was (_write never loses it) and the node runs on;
+                # the next start tries again
+                if str(path) not in _claim_failed:
+                    _claim_failed.add(str(path))
+                    from ..log import get_logger
 
-                get_logger().warning("node_config_claim_failed", path=str(path), error=str(exc))
+                    get_logger().warning("node_config_claim_failed", path=str(path), error=str(exc))
             else:
                 cfg = replace(cfg, machine_id=this)
     return cfg
+
+
+#: the node configs whose claim this process could not write (said once each)
+_claim_failed: set[str] = set()
 
 
 def _restrict_to_user(path: Path) -> None:
@@ -245,9 +253,9 @@ def _restrict_to_user(path: Path) -> None:
         get_logger().warning("node_config_acl_failed", path=str(path), error=str(exc))
 
 
-def _replace_keeping_acl(path: Path, tmp: Path) -> None:
-    """Windows: put ``tmp`` in place of ``path`` with ReplaceFileW, which keeps the
-    replaced file's ACL (and its other attributes)."""
+def _replace_file(path: Path, tmp: Path, backup: Path) -> None:
+    """ReplaceFileW: ``tmp`` takes the place (and the ACL) of ``path``, whose old file is
+    kept under ``backup``. Raises the Windows error (tests replace this call)."""
     if sys.platform != "win32":
         raise OSError("ReplaceFileW is a Windows call")
     import ctypes
@@ -263,8 +271,49 @@ def _replace_keeping_acl(path: Path, tmp: Path) -> None:
         wintypes.LPVOID,
     ]
     replace_file.restype = wintypes.BOOL
-    if not replace_file(str(path), str(tmp), None, 0, None, None):
+    if not replace_file(str(path), str(tmp), str(backup), 0, None, None):
         raise ctypes.WinError()
+
+
+def _replace_keeping_acl(path: Path, tmp: Path) -> None:
+    """Windows: put ``tmp`` in place of ``path`` keeping the replaced file's ACL (and its
+    other attributes), through ReplaceFileW with a backup name. ReplaceFileW can fail half
+    way (ERROR_UNABLE_TO_MOVE_REPLACEMENT_2: the old file under the backup name;
+    ERROR_UNABLE_TO_MOVE_REPLACEMENT without a backup name: the old file gone), so a
+    failure is settled before it is raised: the old file is put back, or, when it is gone,
+    the new one takes its name (limited to the user first). The only copy of a node's
+    identity is never removed. Raises when ``path`` holds the old file again; returns when
+    it holds the new one."""
+    backup = path.with_name(f".node-{os.getpid()}-{os.urandom(4).hex()}.bak")
+    try:
+        _replace_file(path, tmp, backup)
+    except OSError:
+        if not _settle(path, tmp, backup):
+            raise
+        return
+    with contextlib.suppress(OSError):
+        backup.unlink()
+
+
+def _settle(path: Path, tmp: Path, backup: Path) -> bool:
+    """After a failed ReplaceFileW: ``path`` holds the old file (put back from ``backup``
+    when the call left it there) or, when the old file is gone, the new one (``tmp``,
+    limited to the user before it gets the name). What is left over goes only once
+    ``path`` holds a whole file. True when the new file took the name."""
+    if not path.exists() and backup.exists():
+        with contextlib.suppress(OSError):
+            os.replace(backup, path)
+    if not path.exists() and tmp.exists():
+        _restrict_to_user(tmp)
+        os.replace(tmp, path)
+        with contextlib.suppress(OSError):
+            backup.unlink()
+        return True
+    if path.exists():
+        for left in (tmp, backup):
+            with contextlib.suppress(OSError):
+                left.unlink()
+    return False
 
 
 def _write(path: Path, data: Mapping[str, Any]) -> Path:
@@ -277,6 +326,7 @@ def _write(path: Path, data: Mapping[str, Any]) -> Path:
         with contextlib.suppress(OSError):
             os.chmod(path.parent, 0o700)
     body = json.dumps(dict(data), indent=2, sort_keys=True) + "\n"
+    existed = path.exists()
     fd, tmp = tempfile.mkstemp(prefix=".node-", suffix=".tmp", dir=path.parent)
     try:
         if os.name != "nt":
@@ -285,15 +335,18 @@ def _write(path: Path, data: Mapping[str, Any]) -> Path:
             fh.write(body)
             fh.flush()
             os.fsync(fh.fileno())
-        if sys.platform == "win32" and path.exists():
+        if sys.platform == "win32" and existed:
             _replace_keeping_acl(path, Path(tmp))
         else:
             if sys.platform == "win32":
                 _restrict_to_user(Path(tmp))
             os.replace(tmp, path)
     except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
+        # the temp file goes unless it is the only copy left (a node config that was
+        # there and is gone): then it stays for the next start
+        if path.exists() or not existed:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
         raise
     return path
 
