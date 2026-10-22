@@ -25,6 +25,7 @@ from maktaba_pipeline.engine.loader import build_full_graph
 from maktaba_pipeline.engine.reconcile import reconcile_once
 from maktaba_pipeline.engine.sql import dumps, loads, now, to_ts
 from maktaba_pipeline.extensions.plex import PlexExtension
+from maktaba_pipeline.extensions.plex import livetv as livetv_mod
 from maktaba_pipeline.extensions.plex.livetv import (
     DRIFT_NOT_RESTORED,
     DRIFT_RESTORED,
@@ -83,6 +84,9 @@ class FakeLiveTV:
     ignore_channelmap: bool = False
     #: a DVR whose last tuner leaves it: ``kept`` (it waits for another) or ``dropped``
     empty_dvr: str = "kept"
+    #: adding a tuner fails this many times once one was deleted (Plex slow to read it)
+    readd_failures: int = 0
+    _deleted: bool = False
     _next: int = 10
 
     def add_device(self, uri: str, device_id: str, title: str = "HDHomeRun") -> str:
@@ -158,6 +162,9 @@ class FakeLiveTV:
         if method == "GET" and path == "/media/grabbers/devices":
             return {"MediaContainer": {"Device": [self._device_json(k) for k in self.devices]}}
         if method == "POST" and path == "/media/grabbers/devices":
+            if self._deleted and self.readd_failures > 0:
+                self.readd_failures -= 1
+                raise TransportError("timed out")
             uri = q.get("uri", "")
             if uri not in self.reachable:
                 return 400
@@ -223,6 +230,7 @@ class FakeLiveTV:
             if any(parts[3] in d["devices"] for d in self.dvrs.values()):
                 return 400  # a DVR's channel source: taken out of the DVR first
             del self.devices[parts[3]]
+            self._deleted = True
             return {}
         if method == "PUT" and parts[:2] == ["livetv", "dvrs"] and parts[3:4] == ["devices"]:
             if parts[4] not in self.devices or not self.devices[parts[4]].get("ChannelMapping"):
@@ -955,6 +963,23 @@ async def test_a_dvr_of_maktabas_own_follows_the_tuner(db: Database, same_device
     s = await status(db)
     assert s["actions"]["register"] == "moved" and s["maktaba"]["registered"]
     assert not any("schedules" in x for x in s["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_a_tuner_plex_is_slow_to_take_again_is_added_once_it_does(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # the old tuner left Plex (it keeps one per DeviceID): the add after it is tried
+    # again, so Plex is not left without Maktaba's tuner
+    monkeypatch.setattr(livetv_mod, "ADD_AGAIN_PAUSE", 0.0)
+    w = await make_world(db, dizquetv=False)
+    await registered_at_the_old_home(db, w)
+    (before,) = w.fake.dvrs
+    w.fake.same_device, w.fake.readd_failures = "keep", 2
+    row = await livetv(db, w, force=True)
+    assert row["state"] == "done", error_of(row)
+    (device,) = w.fake.devices.values()
+    assert device["uri"] == TUNER and w.fake.dvrs[before]["devices"] == [device["key"]]
 
 
 @pytest.mark.asyncio

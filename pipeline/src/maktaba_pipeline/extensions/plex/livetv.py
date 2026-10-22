@@ -380,11 +380,15 @@ async def _move(
     Plex reads ``discover.json`` at the new address; a tuner with the same DeviceID is the
     same device to Plex, which takes the address in place (its DVR, channels and name kept:
     ``in_place``). When Plex keeps the old address, the old tuner leaves its DVR and Plex,
-    and is added again here (``re_added``). A DVR is never deleted (its recording schedules
-    are Plex's DVR's): one that carried only Maktaba's tuner takes the new one in its place
-    (its channels mapped first); one Plex dropped with its last tuner is said (the caller
-    makes a new one, as a registration does), as is one shared with other tuners, which the
-    caller joins. Returns the tuner at the new address."""
+    and is added again here (``re_added``). Plex holds one tuner per DeviceID, so that is
+    the only order it allows: before it, Plex has read ``discover.json`` here (the first
+    add), and the add after it is tried again before it fails. Where Plex holds a tuner here
+    beside the old one, the new one joins the old one's DVR first, so the DVR is never
+    without a tuner. A DVR is never deleted (its recording schedules are Plex's DVR's): one
+    that carried only Maktaba's tuner takes the new one in its place (its channels mapped
+    first); one Plex dropped with its last tuner is said (the caller makes a new one, as a
+    registration does), as is one shared with other tuners, which the caller joins. Returns
+    the tuner at the new address."""
     old = run.ours
     added = await asyncio.to_thread(client.add_grabber_device, target.tuner_url)
     await _relist(client, run, device_id, target)
@@ -395,7 +399,18 @@ async def _move(
         run.ours, run.ours_dvr = here, _dvr_of(run.dvrs, here)
         return here
     left: str = ""  # a DVR of Maktaba's own, left without its tuner
+    if here is not None and _dvr_of(run.dvrs, here) is None:
+        # the tuner here takes its place in the old one's DVR before the old one leaves
+        for t in mine:
+            dvr = _dvr_of(run.dvrs, t)
+            if t.key != here.key and dvr is not None:
+                await asyncio.to_thread(client.put_channel_map, here.key, lineup)
+                await asyncio.to_thread(client.add_dvr_device, dvr.key, here.key)
+                await _relist(client, run, device_id, target)
+                break
     for t in mine:
+        if here is not None and t.key == here.key:
+            continue
         if same_host(t.uri, target.tuner_url):
             continue
         dvr = _dvr_of(run.dvrs, t)
@@ -405,7 +420,7 @@ async def _move(
             await asyncio.to_thread(client.remove_dvr_device, dvr.key, t.key)
         await asyncio.to_thread(client.delete_grabber_device, t.key)
     if here is None:
-        added = await asyncio.to_thread(client.add_grabber_device, target.tuner_url)
+        added = await _add_again(client, target.tuner_url)
     await _relist(client, run, device_id, target)
     run.move = "re_added"
     tuner = find_tuner([*run.tuners, *([added] if added else [])], device_id, target.tuner_url)
@@ -421,6 +436,23 @@ async def _move(
                 "not move with it"
             )
     return find_tuner(run.tuners, device_id, target.tuner_url) or tuner
+
+
+#: how often, and how far apart, a tuner is added again after the old one left Plex
+ADD_AGAIN_TRIES, ADD_AGAIN_PAUSE = 3, 2.0
+
+
+async def _add_again(client: PlexClient, uri: str) -> PlexTuner | None:
+    """The tuner added again at ``uri`` once the old one left Plex: tried again a moment
+    later (Plex read it there a moment before), as Plex would otherwise have no tuner."""
+    for attempt in range(ADD_AGAIN_TRIES):
+        try:
+            return await asyncio.to_thread(client.add_grabber_device, uri)
+        except (PlexError, TransportError):
+            if attempt == ADD_AGAIN_TRIES - 1:
+                raise
+            await asyncio.sleep(ADD_AGAIN_PAUSE)
+    return None
 
 
 async def _move_guide(client: PlexClient, run: _Run, target: Target, cfg: Any) -> None:
