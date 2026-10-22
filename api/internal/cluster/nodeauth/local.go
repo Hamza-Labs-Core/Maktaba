@@ -467,8 +467,8 @@ func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 	r.setCookies(w, "", "", time.Time{})
 	if all && live && !known {
 		if r.Logger != nil {
-			r.Logger.Warn("node: signed out everywhere on this machine; whether the home takes it was not known (the copy "+
-				"did not answer): handed to it all the same", "user_id", user, "event", "node_local_sign_out_all_unchecked")
+			r.Logger.Warn("node: signed out everywhere on this machine; the copy did not say whether the home takes it, so it is handed over",
+				"user_id", user, "event", "node_local_sign_out_all_unchecked")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
