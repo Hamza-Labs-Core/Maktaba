@@ -132,8 +132,15 @@ func (s *switching) set(pg *pgbundle.Bundle, cp *nodeCopy, stopCopy func(), toke
 	close(s.ready)
 }
 
+// dir is switchover id's folder, named by the id's last element alone; an id that names
+// no folder of its own there ("", ".", "..", a reserved name on Windows) gets "_", which
+// no switch is called: an id from a request never reaches past the switchover folder.
 func (s *switching) dir(id string) string {
-	return filepath.Join(s.cfg.StateDir(), "switchover", filepath.Base(id))
+	name := filepath.Base(id)
+	if name == "." || !filepath.IsLocal(name) {
+		name = "_"
+	}
+	return filepath.Join(s.cfg.StateDir(), "switchover", name)
 }
 
 func superDB(b pgbundle.Bundle) (*sql.DB, error) {

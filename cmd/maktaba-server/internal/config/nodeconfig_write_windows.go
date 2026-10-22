@@ -145,7 +145,9 @@ func replaceNodeConfig(path string, body []byte) error {
 var userOnlyDACL = regexp.MustCompile(`^D:([A-Z]*)\(A;;(FA|GA|0x1f01ff);;;([^)]+)\)$`)
 
 // nodeConfigIsUsers: the node config at path is this user's alone (userOnlyDACL with
-// this process's user).
+// this process's user). The user is compared as SDDL writes it, which is an alias for a
+// well-known account ("LA" for the built-in Administrator, a CI runner's user), not
+// always its S-1-5-... string.
 func nodeConfigIsUsers(path string) (bool, error) {
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
@@ -155,8 +157,12 @@ func nodeConfigIsUsers(path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	m := userOnlyDACL.FindStringSubmatch(sd.String())
-	return m != nil && strings.Contains(m[1], "P") && strings.EqualFold(m[3], user.User.Sid.String()), nil
+	want, err := windows.SecurityDescriptorFromString("D:P(A;;FA;;;" + user.User.Sid.String() + ")")
+	if err != nil {
+		return false, err
+	}
+	m, w := userOnlyDACL.FindStringSubmatch(sd.String()), userOnlyDACL.FindStringSubmatch(want.String())
+	return m != nil && w != nil && strings.Contains(m[1], "P") && strings.EqualFold(m[3], w[3]), nil
 }
 
 // secureNodeConfig makes the node config at path the user's alone when it is not (a

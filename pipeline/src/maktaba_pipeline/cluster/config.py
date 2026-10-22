@@ -904,18 +904,48 @@ def _is_user_only(path: Path) -> bool:
     if err:
         raise ctypes.WinError(err)
     try:
-        text = wintypes.LPWSTR()
-        if not advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW(
-            descriptor, 1, dacl_info, ctypes.byref(text), None
-        ):
-            raise ctypes.WinError(ctypes.get_last_error())
-        sddl = text.value or ""
-        kernel32.LocalFree(text)
+        sddl = _dacl_sddl(descriptor)
     finally:
         kernel32.LocalFree(descriptor)
-    mine = _user_only_sddl().rsplit(";", 1)[1].rstrip(")")
-    m = re.fullmatch(r"D:([A-Z]*)\(A;;(FA|GA|0x1f01ff);;;([^)]+)\)", sddl)
-    return m is not None and "P" in m.group(1) and m.group(3).upper() == mine.upper()
+    # the user as SDDL writes it: an alias for a well-known account ("LA" for the built-in
+    # Administrator, a CI runner's user), not always its S-1-5-... string
+    with _user_only_descriptor() as wanted:
+        want = _USER_ONLY_DACL.fullmatch(_dacl_sddl(wanted))
+    m = _USER_ONLY_DACL.fullmatch(sddl)
+    return (
+        m is not None
+        and want is not None
+        and "P" in m.group(1)
+        and m.group(3).upper() == want.group(3).upper()
+    )
+
+
+#: a protected DACL (as SDDL) that grants one SID full control and no one anything else
+_USER_ONLY_DACL = re.compile(r"D:([A-Z]*)\(A;;(FA|GA|0x1f01ff);;;([^)]+)\)")
+
+
+def _dacl_sddl(descriptor: Any) -> str:
+    """The DACL of a security descriptor as SDDL."""
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32, kernel32 = _win32()
+    advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW.argtypes = [
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.LPWSTR),
+        ctypes.c_void_p,
+    ]
+    text = wintypes.LPWSTR()
+    if not advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW(
+        descriptor, 1, 0x00000004, ctypes.byref(text), None
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return text.value or ""
+    finally:
+        kernel32.LocalFree(text)
 
 
 def _secure(path: Path) -> bool:

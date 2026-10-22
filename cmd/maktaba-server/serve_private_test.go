@@ -81,3 +81,25 @@ func TestPrivateFilesAreTheUsersAlone(t *testing.T) {
 		}
 	}
 }
+
+// A switch's folder is named by its id's last element, and an id that names no folder of
+// its own there gets "_": a request never reaches past the switchover folder.
+func TestASwitchFolderStaysInTheSwitchoverFolder(t *testing.T) {
+	s := &switching{}
+	s.cfg.Server.DataDir = filepath.Join(t.TempDir(), "data")
+	root := filepath.Join(s.cfg.StateDir(), "switchover")
+	for id, want := range map[string]string{
+		"sw-1":                            "sw-1",
+		"../../keys":                      "keys",
+		"..":                              "_",
+		filepath.Join("..", ".."):         "_",
+		filepath.Join("a", ".."):          "_",
+		"":                                "_",
+		".":                               "_",
+		"sw-2" + string(os.PathSeparator): "sw-2",
+	} {
+		if got := s.dir(id); got != filepath.Join(root, want) {
+			t.Errorf("dir(%q) = %s, want %s", id, got, filepath.Join(root, want))
+		}
+	}
+}
