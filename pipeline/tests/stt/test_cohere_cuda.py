@@ -646,7 +646,8 @@ def test_the_transcript_records_why_there_was_no_second_listen(
     t = transcript()
     out = stage._refine(t, np.zeros(3 * SAMPLE_RATE, np.float32), MODEL, None, WhisperSettings())
     assert out["source"] == "skipped" and out["model"] == MODEL
-    assert out["skipped"].startswith("RuntimeError: too little free GPU memory")
+    assert out["skipped"].startswith("NoRoom: too little free GPU memory")
+    assert out["no_room"] is True  # a relisten job gives itself back on it
     assert t.sentences[0].text == "قال الشيخ رحمه الله"
 
 

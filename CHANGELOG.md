@@ -37,7 +37,7 @@ don't append a line here; docs-only PRs are exempt.
   pipeline stops claiming jobs while the home's database does not answer, stops the jobs in
   flight before their claim lease lapses (from the last beat the home answered), and resumes on
   its own; a job the home handed to another machine meanwhile is never ended by the first.
-  Migration 0146.
+  Migration 0147.
 - **The home can be switched to another machine** (Epic 37, "Switching the home"): "Make B the
   home" on the Machines tab, then nothing to do by hand. The home pauses the jobs and its
   database's changes, hands the machine what replication leaves out (the secrets and their key,
@@ -83,7 +83,7 @@ don't append a line here; docs-only PRs are exempt.
   new home changed since, the secrets or the cluster's own data, a credential (a session, a
   token, a reset link, a pairing, a changed password), or one that would fail. A report carries
   up to 100,000 changes (more stay in the old home's database, which it keeps aside). What was
-  applied is recorded. Each seal of a standby's kit has a key of its own. Migration 0146.
+  applied is recorded. Each seal of a standby's kit has a key of its own. Migration 0147.
 - **The cloud relay agent moves with the home.** The home's supervisor runs `maktaba-cloudlink`
   while `[cloud]` is enabled. A switch stops it on the old home, carries its credentials, and
   starts it on the new one. It ships with the Mac and Linux apps.
@@ -160,7 +160,8 @@ don't append a line here; docs-only PRs are exempt.
   it names but cannot move) and offers to move it in: the plan shows what is carried and copied,
   and refuses, before anything stops, a key the app holds already and different, or a node whose
   node config is not the one the app reads; it says so when the roaming profile's node config is
-  another PC's (the app on this PC is not that node).
+  another PC's and this PC has not joined as its own machine (the app on this PC is not that
+  node), the one rule serve and setup's check follow too.
   The move builds the venv while the old install still runs, keeps its task's definition, stops it
   (its script's restart loop too, and nothing of it may come back for longer than the loop's delay;
   never the app's own programs, wherever the old folder is) and disables its task, and carries its
@@ -287,6 +288,17 @@ don't append a line here; docs-only PRs are exempt.
   gone.
 - The Postgres bundled with Maktaba.app keeps its TLS certificate and key in the keys folder
   (never in the database folder a machine's copy is made of).
+- **The Linux app runs the distribution's ffmpeg** (Epic 39). The Linux server payload carries no
+  ffmpeg any more (the builds it pinned were configured `--enable-nonfree`), and `payload.sh` drops
+  every download `pins.env` no longer pins from its cache. The ffmpeg every role runs is
+  `[media] ffmpeg` / `ffprobe` in `server.toml` (new), else `MAKTABA_FFMPEG` / `MAKTABA_FFPROBE`,
+  else the Mac's or Windows' app's own, else the PATH's, and all roles get that one. Setup's check
+  (Linux), the new `maktaba-server ffmpeg` and the System health page say whether it does what
+  Maktaba needs (FFmpeg 4.4 or later with libx264, AAC and the filters and formats the TV and the
+  pipeline use, ffprobe beside it, and an H.264/AAC encode through `speechnorm` that works) and,
+  when not, the command that installs the right one for the distribution: apt, dnf with RPM
+  Fusion (Fedora's and EPEL's `ffmpeg-free` has no libx264), zypper with Packman, pacman. It also
+  warns when chromaprint (the audio fingerprints) or https:// sources are missing.
 - **Every role stops cleanly on Windows.** The supervisor starts each child in a process group of
   its own and asks it to stop with CTRL_BREAK (the Go roles drain on it as they do on SIGTERM, the
   pipeline on `SIGBREAK`); a child is killed with its process tree only once the shutdown grace
@@ -342,6 +354,21 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The second listen's tries count from the end of each try, and a stopped transcript comes
+  back (follow-up of #221).** The wait between tries counted from when the try was queued, so a
+  job that waited hours used it up; it now counts from the end of the try. A transcript the
+  second listen stopped on gets its tries again by itself, once, when the home sees a
+  second-listen model, or a machine's GPU, driver or packages, for the first time, and Settings,
+  Transcription has the number of tries, the waits and a round to raise to try them all again
+  (new table `relisten_seen` and columns on `relisten_attempts`, slot 0146). A try that found no
+  room on the GPU no longer counts (follow-up of story 38.9). Deleted and missing
+  videos are no longer tried, and the stop note keeps its reason on long Windows paths.
+- **The Linux runtime copy orders versions as everything else does.** It kept its own reading of
+  `git describe` builds, so a dirty build of a tag ranked above the next commit's build and a dirty
+  build equalled the clean one: it now uses the one order (`v0.2.0` < `v0.2.0-dirty` <
+  `v0.2.0-1-g…` < `v0.2.0-1-g…-dirty`). The self-managed layout's order also puts a version that is
+  no release (`dev`) below every release, as the release verifier does, and compares prerelease
+  names whatever their case.
 - **`[server] role = "home"` (or `MAKTABA_ROLE=home`) runs no role as a node.** The supervisor
   only left the node's variables out, while streaming and the pipeline read the node config
   themselves: beside a joined `node.json` (on Windows another install's, through the roaming

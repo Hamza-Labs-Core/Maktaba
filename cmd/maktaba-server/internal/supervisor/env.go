@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 )
 
 // ChildEnv translates a Config into the environment variables a given
@@ -70,8 +71,11 @@ func ChildEnv(role Role, cfg config.Config) []string {
 		add("MAKTABA_CHROMA_DIR", filepath.Join(cfg.StateDir(), "chroma"))
 	}
 
-	// Maktaba.app (Epic 36): the payload's ffmpeg for every role.
-	env = append(env, bundleEnv(config.AppBundle())...)
+	// One ffmpeg for every role, the one setup's check and the status check
+	// ([media] ffmpeg, the operator's MAKTABA_FFMPEG, the desktop app's own on a
+	// Mac or Windows, else the PATH's: on Linux the distribution's, Epic 39).
+	exe, _ := os.Executable()
+	env = append(env, ffmpeg.Find(cfg.Media, config.AppPayload(exe)).Env()...)
 
 	// The language model server every LLM stage uses (the bundled Ollama at the
 	// port serve claimed, or [llm] url): the pipeline takes it as the model server of its

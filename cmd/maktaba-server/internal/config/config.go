@@ -232,6 +232,13 @@ type MediaSection struct {
 	// separated): MAKTABA_PATH_MAP for every role, MAKTABA_WORKER_PATH_MAP for
 	// the pipeline.
 	PathMap string `toml:"path_map"`
+	// FFmpeg and FFprobe are the programs every role runs (a path, or a name on
+	// the PATH); empty: $MAKTABA_FFMPEG / $MAKTABA_FFPROBE, else the desktop app's
+	// own (Mac, Windows), else the PATH's (Linux: the distribution's, Epic 39). An
+	// empty FFprobe is the one beside FFmpeg first. Setup's check, `maktaba-server
+	// ffmpeg` and the System health page say whether they do what Maktaba needs.
+	FFmpeg  string `toml:"ffmpeg"`
+	FFprobe string `toml:"ffprobe"`
 }
 
 // TranscriptionSection is the [transcription] table: what the pipeline's

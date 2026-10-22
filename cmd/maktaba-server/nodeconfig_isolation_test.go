@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 )
 
 // TestMain points MAKTABA_NODE_CONFIG at a file that never exists, so no test
@@ -34,6 +36,10 @@ func TestMain(m *testing.M) {
 	}
 	// a step that starts the machine again waits for no API here
 	answerFirst = 50 * time.Millisecond
+	// nor on whether this machine has an ffmpeg (cmd_ffmpeg_test.go fakes its own)
+	ffmpegCheck = func(_ context.Context, t ffmpeg.Tools) ffmpeg.Report {
+		return ffmpeg.Report{Tools: t, Version: "6.1.2", OK: true}
+	}
 	// nor its scheduled tasks and processes: setup's check and finish look for an
 	// install outside the app (Epic 38 story 38.13); here there is none unless a
 	// test gives its own

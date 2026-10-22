@@ -58,7 +58,7 @@ const BeatEvery = 5 * time.Second
 // copySlots matches the machines' slots (LIKE).
 const copySlots = `maktaba\_copy\_%`
 
-// grantFunc is what a machine calls, as its own role, to ask for its copy (slot 0146).
+// grantFunc is what a machine calls, as its own role, to ask for its copy (slot 0147).
 const grantFunc = `cluster_node_replica_grant(uuid, text, boolean)`
 
 // Why the machines keep no copy of a database that is not Maktaba's own Postgres, and
@@ -323,7 +323,7 @@ func (c *Copies) dropSlot(ctx context.Context, s slotRow) slotDrop {
 	return d
 }
 
-// holdDoor lets the machines' group call the grant (slot 0146) while the machines may keep
+// holdDoor lets the machines' group call the grant (slot 0147) while the machines may keep
 // copies, and not while they may not (refused): a machine refused asks in vain (permission
 // denied for the grant), so no replication role of its is made or let in again. Who calls
 // the grant is its owner's to change (the user that ran the migrations: this home's own,

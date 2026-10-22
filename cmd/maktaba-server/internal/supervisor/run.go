@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 )
 
@@ -44,6 +45,8 @@ type Supervisor struct {
 	noConsole sync.Once
 	// llm, when set, is the model server's state (WithLLM).
 	llm func() llmserver.Status
+	// ffmpeg, when set, is the last check of the roles' ffmpeg (WithFFmpeg).
+	ffmpeg func() *ffmpeg.Report
 }
 
 // child is one supervised role. Everything but proc is guarded by s.mu.

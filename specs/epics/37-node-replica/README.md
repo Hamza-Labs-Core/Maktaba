@@ -127,7 +127,7 @@ behaves as a node did before #145: its own routes answer, anything else is 503 w
   operator's own) tells its machines it has no TLS when it has none at all (`ssl` off: every
   connection to it is plain); one with TLS of its own has the operator's CA, which the home does
   not hold, and its machines' copies wait (below, follow-ups).
-- Slot 0146 (`shared/db/migrations/0146_node_replicas.sql`):
+- Slot 0147 (`shared/db/migrations/0147_node_replicas.sql`):
   - `cluster_node_replica_grant(node, verifier, fresh)` — a machine asks for its copy **over its
     own database connection**, for its own role only (`cluster_node_guard`), and only an approved
     full machine (its row read `FOR SHARE`, so a revocation waits for the grant or follows it;

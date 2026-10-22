@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
@@ -107,7 +108,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	// Epic 38 story 38.1: the roaming profile's node config is another PC's (its
 	// machine_id), so this PC runs as no home's machine until it joins as its own:
 	// said once, at the start.
-	if p, owner := config.LocalForeignNodeConfig(); p != "" && !config.LocalNodeConfig().Joined() {
+	if p, owner := config.LocalForeignNodeConfig(); p != "" {
 		fmt.Fprintln(os.Stderr, "[serve]", config.ForeignNodeLine(p, owner))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -297,6 +298,11 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	if llmOpt != nil {
 		supOpts = append(supOpts, llmOpt)
 	}
+	// the ffmpeg every role runs, checked now and every ten minutes: the System
+	// health page shows the verdict (Epic 39: on Linux the distribution's)
+	exe, _ := os.Executable()
+	supOpts = append(supOpts, supervisor.WithFFmpeg(ffmpeg.Watch(ctx,
+		func() ffmpeg.Tools { return ffmpeg.Find(cfg.Media, config.AppPayload(exe)) }, ffmpeg.WatchInterval, os.Stderr)))
 	sup := supervisor.New(procs, policy, supOpts...)
 	if pg != nil {
 		// what the cluster's machines may reach of it follows the cluster: it listens

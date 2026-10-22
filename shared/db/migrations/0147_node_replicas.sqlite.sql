@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0146 (node replicas). A SQLite home has no machines
+-- SQLite parity sibling for slot 0147 (node replicas). A SQLite home has no machines
 -- and no roles; the columns exist so the same code runs on both (the reporting
 -- function is Postgres only: no machine reaches a SQLite home's database).
 --
