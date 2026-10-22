@@ -143,7 +143,11 @@ func (s *switching) watchTerm(ctx context.Context) {
 // ran whose promotion was asked (<id>/old-home.json, its record saying so; a switch
 // through, the identity is wiped with the home's keys; one undone before, no machine
 // sealed anything to).
-func (s *switching) homeIdentities() []oldHome {
+func (s *switching) homeIdentities() []oldHome { return homeIdentitiesOf(s.cfg) }
+
+// homeIdentitiesOf is homeIdentities for cfg's state directory (uploadKept's too: a
+// report is sealed by the identity it was made under).
+func homeIdentitiesOf(cfg config.Config) []oldHome {
 	var out []oldHome
 	seen := map[string]bool{}
 	add := func(path string) {
@@ -154,7 +158,7 @@ func (s *switching) homeIdentities() []oldHome {
 		seen[me.NodeID] = true
 		out = append(out, me)
 	}
-	add(s.standbyIdentityPath())
+	add(filepath.Join(cfg.StateDir(), "switchover", "standby-identity.json"))
 	// the machine this home was, before it took over (its node.json put aside): another
 	// home of the same term seals its notice to that identity
 	asides, _ := filepath.Glob(config.LocalNodeConfigPath() + ".was-node-*")
@@ -172,7 +176,7 @@ func (s *switching) homeIdentities() []oldHome {
 		seen[n.NodeID] = true
 		out = append(out, oldHome{NodeID: n.NodeID, PrivateKey: n.PrivateKey, RolePassword: pw, Name: n.Name})
 	}
-	planned, _ := filepath.Glob(filepath.Join(s.cfg.StateDir(), "switchover", "*", "old-home.json"))
+	planned, _ := filepath.Glob(filepath.Join(cfg.StateDir(), "switchover", "*", "old-home.json"))
 	sort.Strings(planned)
 	for _, p := range planned {
 		var rec struct {
@@ -411,12 +415,18 @@ func uploadKept(ctx context.Context, cfg config.Config, term int64) error {
 	n := supervisor.NodeConfig()
 	ident := n
 	if ident.NodeID != r.FromNode {
-		// not a machine yet: the identity this home's kits gave it
-		me, err := readIdentity(filepath.Join(cfg.StateDir(), "switchover", "standby-identity.json"))
-		if err != nil {
-			return err
+		// not that machine yet: the identity the report was made under (a standby's, a
+		// planned switch's old home's, the machine this home was before it took over)
+		found := false
+		for _, me := range homeIdentitiesOf(cfg) {
+			if me.NodeID == r.FromNode {
+				ident, found = config.NodeConfig{NodeID: me.NodeID, PrivateKey: me.PrivateKey}, true
+				break
+			}
 		}
-		ident = config.NodeConfig{NodeID: me.NodeID, PrivateKey: me.PrivateKey}
+		if !found {
+			return fmt.Errorf("the identity the report is from (%s) is not on this machine", r.FromNode)
+		}
 	}
 	priv, err := base64.StdEncoding.DecodeString(ident.PrivateKey)
 	if err != nil {

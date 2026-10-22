@@ -260,6 +260,17 @@ func TestTheOldHomeReportsWhatItKeptAside(t *testing.T) {
 		t.Fatal(err)
 	}
 	mePub, _ := base64.StdEncoding.DecodeString(me.PublicKey)
+	// a planned switch's old-home identity, its promotion asked (a report made under it)
+	planned, err := identityAt(filepath.Join(cfg.StateDir(), "switchover", "sw-p", "old-home.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.StateDir(), "switchover", "sw-p", "progress.json"),
+		[]byte(`{"promote_sent":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plannedPub, _ := base64.StdEncoding.DecodeString(planned.PublicKey)
+	pubs := map[string][]byte{me.NodeID: mePub, planned.NodeID: plannedPub}
 	var got keptReport
 	home := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/cluster/kept-aside/report" {
@@ -272,8 +283,13 @@ func TestTheOldHomeReportsWhatItKeptAside(t *testing.T) {
 			Sealed string `json:"sealed"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		plain, err := switchover.OpenReport(clusterPriv, mePub, req.Term, req.Sealed)
-		if err != nil || req.NodeID != me.NodeID || json.Unmarshal(plain, &got) != nil {
+		pub, ok := pubs[req.NodeID]
+		if !ok {
+			http.Error(w, "not a machine of this term", http.StatusForbidden)
+			return
+		}
+		plain, err := switchover.OpenReport(clusterPriv, pub, req.Term, req.Sealed)
+		if err != nil || json.Unmarshal(plain, &got) != nil {
 			http.Error(w, "does not open", http.StatusForbidden)
 			return
 		}
@@ -295,6 +311,18 @@ func TestTheOldHomeReportsWhatItKeptAside(t *testing.T) {
 	var after keptReport
 	if json.Unmarshal(b, &after) != nil || !after.Uploaded {
 		t.Fatalf("the report is not marked sent: %s", b)
+	}
+	// one made under the planned switch's identity is sealed by it
+	r3 := keptReport{ID: "r3", Term: 3, FromNode: planned.NodeID, FromName: "a", Cut: "0/1", HomeAPI: home.URL,
+		Aside: switchover.Aside{Counts: map[string]int{"public.app_settings": 2}}}
+	if err := saveKept(cfg, r3); err != nil {
+		t.Fatal(err)
+	}
+	if err := uploadKept(t.Context(), cfg, 3); err != nil {
+		t.Fatalf("a report made under a planned switch's identity: %v", err)
+	}
+	if got.ID != "r3" {
+		t.Fatalf("the new home got %+v", got)
 	}
 	// sent: not sent again
 	home.Close()
