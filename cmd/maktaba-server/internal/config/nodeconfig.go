@@ -471,12 +471,14 @@ func ReadNodeConfig(getenv func(string) string, goos, userHome string, readFile 
 }
 
 // ReadNodeConfigAt reads the node config kept in the file at path (a set-aside identity,
-// SetAsideNodeConfigs), in any encoding a reader reads (withoutBOM).
+// SetAsideNodeConfigs), in any encoding a reader reads (withoutBOM); one an older version
+// kept with a wider ACL is made the user's alone (MakeUserOnly, best effort).
 func ReadNodeConfigAt(path string) (NodeConfig, error) {
 	b, err := os.ReadFile(path) //nolint:gosec // this machine's node configs
 	if err != nil {
 		return NodeConfig{}, err
 	}
+	_ = MakeUserOnly(path)
 	var n NodeConfig
 	if err := json.Unmarshal(withoutBOM(b), &n); err != nil {
 		return NodeConfig{}, fmt.Errorf("node config %s: %w", path, err)

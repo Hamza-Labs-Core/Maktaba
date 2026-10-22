@@ -26,7 +26,13 @@ const backupCheckInterval = 15 * time.Minute
 // postgres role; otherwise (a single role, migrate, adduser) only the URL of an
 // existing cluster is used, and none yet is an error. A machine that joined a home uses the home's database.
 func bundledPostgres(ctx context.Context, cfg *config.Config, prepare bool) (*pgbundle.Bundle, error) {
-	if supervisor.NodeJoined(*cfg) { // a forced home runs its own, whatever node.json holds
+	// a forced home runs its own, whatever node.json holds; one that cannot be read
+	// starts none (it may be a node's: never a home's cluster made beside it)
+	n, err := supervisor.NodeOf(*cfg)
+	if err != nil {
+		return nil, err
+	}
+	if n.Joined() {
 		return nil, nil
 	}
 	exe, _ := os.Executable()

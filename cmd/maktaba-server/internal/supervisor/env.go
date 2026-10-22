@@ -23,7 +23,7 @@ import (
 // lives) is applied to every role; role-specific bind addresses are
 // only set for the role that owns them.
 //
-// The node config is read once for it (nodeOf): one that cannot be read is an error, never
+// The node config is read once for it (NodeOf): one that cannot be read is an error, never
 // "not joined", which would start a node's role as the home's against this machine's own
 // database.
 func ChildEnv(role Role, cfg config.Config) ([]string, error) {
@@ -31,7 +31,7 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	switch role {
 	case RoleAPI, RoleStreaming, RolePipeline:
 		var err error
-		if n, err = nodeOf(cfg); err != nil {
+		if n, err = NodeOf(cfg); err != nil {
 			return nil, err
 		}
 	}
@@ -291,11 +291,12 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	return env, nil
 }
 
-// nodeOf is this machine's node config as a role's environment is made from it: none for
-// a forced home ([server] role = "home"), and an error for one that cannot be read (a
-// write that does not end, a broken file, a file another program keeps locked), so the
-// role does not start rather than start as the home.
-func nodeOf(cfg config.Config) (config.NodeConfig, error) {
+// NodeOf is this machine's node config as a role's environment, and serve's start (its
+// Postgres, the machine agent, its copy of the home's database), are made from it: none
+// for a forced home ([server] role = "home"), and an error for one that cannot be read
+// (a write that does not end, a broken file, a file another program keeps locked), so
+// nothing starts rather than start as the home.
+func NodeOf(cfg config.Config) (config.NodeConfig, error) {
 	if forcedHome(cfg) {
 		return config.NodeConfig{}, nil
 	}
@@ -368,9 +369,16 @@ func NoNodeConfigPath(cfg config.Config) string {
 }
 
 // NodeJoined reports whether this machine counts as a joined node: a joined
-// node config, unless [server] role = "home" (or MAKTABA_ROLE=home) says it is
-// the home whatever the node config holds.
-func NodeJoined(cfg config.Config) bool { return !forcedHome(cfg) && nodeConfig().Joined() }
+// node config, or one that cannot be read (it may be a node's: nothing of the
+// home's is started beside it), unless [server] role = "home" (or
+// MAKTABA_ROLE=home) says it is the home whatever the node config holds.
+func NodeJoined(cfg config.Config) bool {
+	if forcedHome(cfg) {
+		return false
+	}
+	n := nodeConfig()
+	return n.Joined() || n.Err != nil
+}
 
 // forcedHome: [server] role = "home" or MAKTABA_ROLE=home.
 func forcedHome(cfg config.Config) bool {

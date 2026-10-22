@@ -164,12 +164,16 @@ func readNodeConfigSteady(path string, readFile func(string) ([]byte, error)) (s
 	}
 }
 
+// ErrBeingWritten is in the error of a read of the node config that waited readWait for
+// a write still under way (errStillWritten): one serve waits out before it starts.
+var ErrBeingWritten = errors.New("a write of it still under way")
+
 // errStillWritten is the error of a read that waited readWait for a write under way:
 // what the last read said, but never fs.ErrNotExist (a reader would take that for "not
 // joined", and a node for the home).
 func errStillWritten(path string, err error) error {
 	if errors.Is(err, fs.ErrNotExist) || isBusy(err) {
-		return fmt.Errorf("%s is being written (a write of it still under way after %s): %v", path, readWait, err)
+		return fmt.Errorf("%s is being written (%w after %s): %v", path, ErrBeingWritten, readWait, err)
 	}
 	return err
 }
@@ -328,7 +332,8 @@ func nodeConfigFields(n NodeConfig) (map[string]json.RawMessage, error) {
 //     that is whole and stays is an error, and nothing has moved yet;
 //   - a broken node.json, when the config is in a leftover, is kept aside as
 //     node.json.broken-<time>-<hex> (never read as a node config), the user's alone;
-//   - then the one file that holds the config takes the name aside.
+//   - then the one file that holds the config takes the name aside, and is made the
+//     user's alone.
 //
 // A node config already moved there is no error.
 func SetNodeConfigAside(path, aside string) error {
@@ -361,6 +366,10 @@ func SetNodeConfigAside(path, aside string) error {
 	if err := renameWhenFree(held, aside); err != nil && (!errors.Is(err, fs.ErrNotExist) || !isFile(aside)) {
 		return err
 	}
+	// the identity it holds (a private key) keeps the ACL of the file it was: the user's
+	// alone, whatever that was (a leftover an older writer left with its folder's ACL;
+	// best effort, and again when it is read, ReadNodeConfigAt)
+	_ = MakeUserOnly(aside)
 	return nil
 }
 

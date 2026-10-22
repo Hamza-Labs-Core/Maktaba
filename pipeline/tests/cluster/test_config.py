@@ -1187,3 +1187,21 @@ def test_securing_at_load_says_nothing_of_a_file_replaced_meanwhile(
     config._secure_once(path)
     config._secure_once(path)
     assert warnings.events == ["node_config_not_private"]
+
+
+@pytest.mark.parametrize("source", ["node.json", "a leftover"])
+def test_a_rejoins_kept_identity_is_the_users(tmp_path: Path, source: str) -> None:
+    """The node config ``join --rejoin`` keeps (``node.json.bak``: the old private key)
+    is the user's alone, whatever ACL the file it was had: a node.json, or a leftover of
+    a write, saved with its folder's ACL (mode 0644 elsewhere)."""
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    path = folder / "node.json"
+    src = path if source == "node.json" else folder / _named(".bak", age=120)
+    src.write_text(json.dumps(_JOINED), encoding="utf-8")
+    if os.name != "nt":
+        os.chmod(src, 0o644)
+    assert not config._user_only_now(src)
+    kept = config.set_aside(path)
+    assert json.loads(kept.read_text(encoding="utf-8")) == _JOINED
+    assert config._user_only_now(kept)

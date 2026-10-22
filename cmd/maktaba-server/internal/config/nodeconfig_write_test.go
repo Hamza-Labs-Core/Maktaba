@@ -423,3 +423,34 @@ func TestSetAsideNodeConfigsAreFoundInEveryPlace(t *testing.T) {
 		t.Fatalf("with MAKTABA_NODE_CONFIG: %v, want %v", got, []string{local})
 	}
 }
+
+// The identity a home's switch sets aside (a private key) is the user's alone, whatever
+// ACL the file it was had: a node.json, or a leftover of a write, saved with its
+// folder's ACL (mode 0644 elsewhere).
+func TestASetAsideIdentityIsTheUsersAlone(t *testing.T) {
+	for _, from := range []string{"node.json", ".node.json-1792600000-4242-0badf00d.bak"} {
+		t.Run(from, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "Maktaba")
+			path, aside := filepath.Join(dir, "node.json"), filepath.Join(dir, "node.json.was-node-1")
+			src := filepath.Join(dir, from)
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(src, []byte(`{"node_id":"n1","private_key":"k"}`), 0o644); err != nil { //nolint:gosec // the test's own
+				t.Fatal(err)
+			}
+			if ok, _ := IsUserOnly(src); ok {
+				t.Log("this temp folder gives a new file to its user alone (umask 077?): no repair seen here")
+			}
+			if err := SetNodeConfigAside(path, aside); err != nil {
+				t.Fatal(err)
+			}
+			if got := readFields(t, aside); got["node_id"] != "n1" {
+				t.Fatalf("moved aside: %v", got)
+			}
+			if ok, err := IsUserOnly(aside); err != nil || !ok {
+				t.Fatalf("the identity set aside is not the user's alone: %v", err)
+			}
+		})
+	}
+}

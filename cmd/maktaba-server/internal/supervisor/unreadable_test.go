@@ -45,3 +45,26 @@ func TestAnUnreadableNodeConfigStartsNoRoleAsTheHome(t *testing.T) {
 		}
 	}
 }
+
+// A node config that cannot be read counts as a node's for what only a home starts
+// beside it (its TV slots; the bundled Postgres, serve_postgres.go): NodeJoined; NodeOf
+// says why, and a forced home is the home whatever it holds.
+func TestAnUnreadableNodeConfigCountsAsANodes(t *testing.T) {
+	t.Setenv("MAKTABA_ROLE", "")
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	unreadable := errors.New("node config C:/x/node.json: being written")
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{Err: unreadable} }
+	var cfg config.Config
+	cfg.Database.URL = "postgres://maktaba@127.0.0.1:54329/maktaba"
+	if !NodeJoined(cfg) || SlotsEnabled(cfg) {
+		t.Errorf("NodeJoined %v, SlotsEnabled %v: want a node's, no TV slots", NodeJoined(cfg), SlotsEnabled(cfg))
+	}
+	if _, err := NodeOf(cfg); !errors.Is(err, unreadable) {
+		t.Errorf("NodeOf = %v, want the node config's error", err)
+	}
+	cfg.Server.Role = "home"
+	if n, err := NodeOf(cfg); err != nil || n.Joined() || NodeJoined(cfg) {
+		t.Errorf("a forced home: %+v %v %v", n, err, NodeJoined(cfg))
+	}
+}

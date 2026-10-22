@@ -1292,7 +1292,7 @@ def set_aside(path: Path) -> Path:
     """``join --rejoin``: the node config at ``path`` (the file that holds it, ``_source``)
     is kept as ``<name>.bak`` and forgotten, with everything a write that could not finish
     left of it (the next load would put that back) and the broken ones kept aside (they
-    may hold part of the old credential). Returns the kept file."""
+    may hold part of the old credential). The kept file is the user's alone. Returns it."""
     backup = path.with_name(path.name + ".bak")
     with _one_at_a_time(path, wait=_LOCK_WAIT_SEC) as held:
         if not held:
@@ -1316,5 +1316,10 @@ def set_aside(path: Path) -> Path:
         if src != path and path.exists():
             _unlink_when_free(path)
         _when_free(os.replace, src, backup)
+        # the old identity (its private key) keeps the ACL of the file it was: the
+        # user's alone, whatever that was (a leftover an older writer left with its
+        # folder's ACL; best effort)
+        with contextlib.suppress(OSError):
+            _secure(backup)
         _prune_broken(path, all_of_them=True)
     return backup
