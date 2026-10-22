@@ -93,12 +93,20 @@ behaves as a node did before #145: its own routes answer, anything else is 503 w
   - **The home drops every 5 s any slot on its database that is not Maktaba's** (`cluster.Copies`):
     one made with another plugin, one named for a machine that may not have a copy, one of a
     name Maktaba does not make (a machine's, an emergency's fork, a table's first copy), and on
-    Maktaba's own Postgres an idle physical one; one in use has its connection ended first. It
-    also reclaims what such a slot would hold.
-  - A home on an operator's own Postgres with other plugins is warned at each start (the
-    plugins named); its slots are dropped all the same, within one beat of being made: what a
-    role could decode in those seconds is the residual risk of such a server, which its
-    operator removes with the plugins.
+    Maktaba's own Postgres an idle physical one; one in use has its connection ended first
+    (`pg_terminate_backend`) and is dropped once free, and one it cannot end or drop is said
+    once, with what to do. It also reclaims what such a slot would hold.
+  - **A home on an operator's own Postgres** may carry output plugins besides `pgoutput`
+    (test_decoding, wal2json), and its user may lack `pg_signal_backend`: it keeps **no copies**
+    unless the admin turns on `rules.cluster.copies_on_operator_postgres` (off by default, read at
+    every beat; a beat that cannot read it changes nothing). Until then the machines' group may
+    not call `cluster_node_replica_grant` (its owner revokes EXECUTE, and gives it back with the
+    rule on or on Maktaba's own Postgres), a machine that asks is told why (its copy shows as
+    unavailable), the copies the machines have end as a removal ends them (role, connections,
+    slot, publication), each refusal is logged once, and serve warns at each start of such a
+    home. With the rule on, the sweep is the only guard: what a role could decode in the seconds
+    before it is the residual risk of such a server, which its operator removes with the
+    plugins.
 - **What the machines reach of it follows the cluster** (`pgbundle.WatchReach`, every 30 s): it
   listens beyond this machine, and its `pg_hba.conf` lets anyone in from off it, only while a
   machine may connect (one is approved, or joins are open). Then it lets in only the machines'
@@ -278,19 +286,28 @@ B the machine taking over, C the other machines.
    home's own pipeline too.
 3. **Freeze.** The machines' database roles are kept out of A's Postgres (`pg_hba.conf`, a
    reload: a session may set itself read-write, a role not let in has none; their copies'
-   replication roles stay in), then A's database is read-only for every session of the app's
-   roles (`default_transaction_read_only` on the database, the open sessions ended); its last
-   write sets the switch's row (`cluster_switchovers`) to `frozen`. That row is the marker: a copy
-   holding it has everything A wrote. This machine's own superuser connects read-write despite a
-   freeze (`pgbundle.Bundle.SuperURL`): the thaw and the demotion need it.
+   replication roles stay in), then A's app roles lose their rights to write its tables
+   (`dbfence`: INSERT, UPDATE, DELETE, TRUNCATE on every public table from every role but the
+   superusers, recorded in the same transaction in a schema no app role may use, `maktaba_fence`,
+   so a thaw gives back exactly those; a session's own `BEGIN READ WRITE`, which lib/pq sends,
+   overrides the database's `default_transaction_read_only`, which is set too); the app's open
+   sessions are ended, waiting for each to go, and only then does its last write set the switch's
+   row (`cluster_switchovers`) to `frozen`: nothing the app wrote commits after it. That row is the
+   marker: a copy holding it has everything A wrote. This machine's own superuser writes despite a
+   freeze (`pgbundle.Bundle.SuperURL`): the thaw and the demotion need it, and a copy's
+   subscription applies as its owner, the superuser (`run_as_owner` on Postgres 16).
 4. **Kit.** What replication leaves out, gathered on A: the home-only tables as rows (secrets,
    machines, tokens, devices, audit, …), the sequences, the machines' database roles with their
    SCRAM verifiers (their passwords stay), and the key files (the secrets key, the cluster key,
    the database CA and its key, the Hugging Face token, an operator's JWT keys). It is sealed for
-   B alone: X25519 between A's cluster key and B's machine key, HKDF-SHA256 with the switch's id,
-   ChaCha20-Poly1305 per 1 MiB chunk under its index, the last one marked (a chunk dropped, moved
-   or added is refused). It travels over the machine-agent channel, never through the replica.
-5. **Promote.** B checks it holds the marker and loads the kit's machines (each machine's copy has
+   B alone: X25519 between A's cluster key and B's machine key, HKDF-SHA256 with the switch's id;
+   each seal draws a random salt (its first chunk carries it) and seals under a key derived from
+   the kit's key and it, ChaCha20-Poly1305 per 1 MiB chunk under its index, the last one marked
+   (a chunk dropped, moved or added is refused; no two seals share a key). It travels over the
+   machine-agent channel, never through the replica.
+5. **Promote.** That the promotion is asked is recorded first (on disk, synced), or it is not
+   asked. B checks it holds the marker, that every table of its copy has its first copy done, and
+   the CA the machines will verify it by, then loads the kit's machines (each machine's copy has
    its own row already: their load is not published to it), then makes every machine's
    publication and slot before anything else is written, so every copy can follow it without
    copying again; then, **in one transaction**, stops its subscription, loads the rest of the kit
@@ -306,7 +323,16 @@ B the machine taking over, C the other machines.
    answer lost (a timeout, the channel gone), A stays frozen and asks B (`switch.status`): B says
    it is the home (with what it answered), that the promotion runs, or that it called the switch
    off, which it does when it was not promoted, so it never is after; or A reads, at B's address,
-   the notice B sealed to A's identity once it is the home. Only "called off" undoes the switch.
+   the notice B sealed to A's identity once it is the home. Only "called off" undoes the switch;
+   B, calling it off (or failing its promotion), drops the kit it was sent.
+
+   **An admin can call a switch off** ("Call the switch off" on the tab, `POST
+   /api/cluster/switchover/{id}/cancel`): before the promotion is asked it is undone at its next
+   step (the promotion's start and the call share a lock, so it never leaves after); after, B is
+   asked, and calls it off when it has not promoted (a B that is, or is becoming, the home is not
+   called off). A B that does not answer is called off only with its name typed: should it be the
+   home after all, A hears its newer term when it is back and fences itself (what it wrote
+   meanwhile is kept aside, as after an emergency). The switch ends `cancelled`.
 6. **Move the machines.** A waits for B to answer as the home, then tells each machine where it
    is, with B's CA: a copy holding the marker follows B from its slot (nothing copied), one
    without it copies anew; one told again follows already. A machine that was off asks its home
@@ -324,13 +350,15 @@ B the machine taking over, C the other machines.
    as a machine. With B unreachable it stays as it was, frozen, and is asked again. Until then
    its database stays frozen for its app's roles (the subscription applies all the same), so its
    home processes, still running, write nothing that would collide with B's changes; its copy
-   ends the freeze when it starts.
+   ends the freeze when it starts, giving back the app's rights to write.
 8. **Finish, on B.** B marks each machine as it follows (on its own clock: from the term's start),
    moves and checks each outside service, and once every machine follows and no service is still
    moving (or after an hour) gives the machines their jobs back and calls the switch done.
 
 A switch that fails before the promotion is asked is undone: A writable, the drains as they
-were, the home's jobs back, the reason on the tab. Past it nothing goes back but on B's word; the
+were, the home's jobs back, B told to call it off and drop the kit, the reason on the tab. A thaw
+that fails is asked again until A is writable, also after a restart (the record says it is
+owed). Past it nothing goes back but on B's word; the
 old home and the machines keep trying to follow B until it answers. **A restart of A's API or
 supervisor mid-switch** takes it up: A's steps are recorded through its supervisor at each one
 (`<state>/switchover/<id>/progress.json`, and the switch's row while A writes it); at the next
@@ -352,11 +380,11 @@ off by hand (`POST /api/cluster/switchover/{id}/checklist`), or by itself where 
 | Secrets (Cloudflare Stream, simulcast and web-search keys, …) | They move with the secrets key; each is checked to open on B. |
 | Plex, dizqueTV | Checked from B: each must answer at the address the pipeline has for it (Plex with its token). An address that was A's own (its loopback: the service runs on A) is moved to A's network address when the service answers there (the extension's setting changed); one set only in A's environment (`MAKTABA_PLEX_URL`, `MAKTABA_DIZQUETV_URL`) or answering nowhere needs a person, with the extension's settings one click away. |
 | Plex Live TV | The `plex_livetv` stage moves Maktaba's tuner to B's address. Plex keeps the device (the same DeviceID) and takes the new address in place, or else the old tuner leaves its DVR and Plex and B's is added; **a DVR is never deleted** (its recording schedules are the DVR's): one that carried only Maktaba's tuner takes B's in its place, one shared is joined as a registration does, and one Plex itself dropped with its last tuner is made again and said (its schedules did not move). The guide at A's address gives way to B's, the channel map is pushed and the guide reloaded. Being moved until the stage answers. A tuner address set by hand at another machine (`rules.plexlive.tuner_url`) needs a person. |
-| Cloudflare notifications (`/api/tv/remote/webhook`) | Cloudflare sends Live input notifications to the address set in its dashboard. Moved once one reaches B since the switch (its own test notification will do); until then the checklist gives the address to set. |
+| Cloudflare notifications (`/api/tv/remote/webhook`) | Cloudflare sends Live input notifications to the public address set in its dashboard. Moved once one reaches B since the switch (its own test notification will do), or when the cloud relay moved (the only public address of a Maktaba home Cloudflare can call); else the checklist gives the path to set at B's public address. |
 | Hugging Face | The token moves with the kit. |
 | JWT keys | An operator's `MAKTABA_JWT_*_PEM` move with the kit; B's supervisor hands them to its API. |
 | YouTube (yt-dlp `cookies_from_browser`) | A browser profile is its machine's: someone signs in to YouTube in a browser on B; the checklist opens the browser's setting. |
-| Model runtime (Ollama) | A model server of another machine (`[llm] url`) moves with the kit (B keeps its own when it names one); one bundled on A stays there and B runs its own when it has one. Checked on B: moved once one answers; else the checklist opens the model server's setting, and ticks itself once one answers. |
+| Model runtime (Ollama) | A model server of another machine (`[llm] url`) moves with the kit (B keeps its own when it names one); one bundled on A stays there and B runs its own when it has one. Checked on B: moved once one answers; not used while the library holds no answer of a model's; else the checklist opens the model server's setting, and ticks itself once one answers. |
 | The machines' database TLS | B serves it from the same CA (it came in the kit); every machine pins the CA B sends. |
 | Cloud relay (`maktaba-cloudlink`, Epic 25) | The home's supervisor runs the relay agent (`[cloud] enabled`, its credentials in the keys directory). A stops its agent before B is promoted (two agents of one server take the tunnel from each other) and starts it again if the switch is undone; the credentials, their key and the `[cloud]` section move with the kit; B runs the agent from its next start; A puts its copies aside. Moved once B's tunnel is up. |
 
@@ -368,7 +396,8 @@ with a one-click apply of what does not conflict**.
 **Standby homes.** The admin marks an approved full machine a standby home on the Machines tab
 (`PUT /api/cluster/switchover/standby`). The home keeps a kit sealed to it, as a planned switch's
 (X25519 between the cluster key and the machine's key, `HKDF` with `standby:<machine>`,
-ChaCha20-Poly1305 per chunk), gathered without a freeze: the secrets and their key, the cluster
+ChaCha20-Poly1305 per chunk, each seal with a salt and a key of its own: the kit is sealed
+again under the same kit key at every change), gathered without a freeze: the secrets and their key, the cluster
 key, the database CA and its key, the Hugging Face token, the JWT keys, the relay's credentials,
 the machines and their roles' verifiers, the sessions, refresh tokens and devices, and this
 home's own identity as a machine of the standby. It leaves out the history and the tokens that
@@ -377,14 +406,22 @@ home looks every two minutes (at once when a mark changes) and sends it again wh
 part changed (`Kit.StableHash`: the term, the key files, the roles, the secrets' and the
 machines' rows; not the sessions) or it is six hours old. The standby keeps it sealed in its keys
 directory (`standby-kit.chunks`, with what it is beside it) and takes only a kit that opens for
-it. The mark removed, the home tells it to forget the kit; a revoked machine's copy is wiped
+it, and never one older than it holds (an old seal sent again). The mark removed, the home tells it to forget the kit; a revoked machine's copy is wiped
 with it. Every machine is told where the standbys are (`home.standbys`, node.json
 `standby_homes`).
 
 **Taking over.** On a standby's own Machines page (its admin, signed in on it while the home is
-away) a card offers it, only while it holds the kit, has a copy and the home does not answer
-(two homes never write); the home's name is typed to confirm (`POST /api/cluster/emergency`, the
-standby's supervisor checks again). Then, as a planned promotion: its copy promoted with the kit,
+away) a card offers it, only while it holds the kit, has a whole copy (every table's first copy
+done) whose last change was at most 10 minutes older than the home's last answer (on the home's
+clock), and the home does not answer (two homes never write); the home's name is typed to
+confirm (`POST /api/cluster/emergency`, the standby's supervisor checks again). **Two standbys
+never both take over:** before it promotes, the standby claims the term at every other standby
+and every machine it knows (`POST /api/cluster/term-claim` on each, the claim sealed from its key
+to that machine's and the answer sealed back): a machine keeps the first standby that claimed a
+term for ten minutes and refuses another, or a claim for a term no newer than its own home's,
+and one that answers as the home of that term or newer refuses it outright. It takes over only
+if no machine it reached refused; two at once refuse each other and withdraw their claims, to be
+asked again. One cut off from every other machine is the partition the warning names. Then, as a planned promotion: its copy promoted with the kit,
 the sequences a million past the copy's highest values (the old home's late writes keep their
 ids), the old home registered as one of its machines with the identity its kit gave it, a **fork
 slot** kept from the promotion on of the tables a machine's copy holds (what this home changes
@@ -397,13 +434,17 @@ machine whose home does not answer asks the standbys for its notice too (`GET
 
 **The old home's return.** Every minute a home asks the standbys it knows, then its other
 machines, for a notice sealed to its identity in their kits. One of a newer term means it is not
-the home: it fences its database (its machines' roles kept out, read-only for every session),
+the home: it fences its database (its machines' roles kept out, the app's rights to write taken,
+read-only for every session) and stops its cloud relay agent (the new home runs it),
 reads what it wrote after the cut from the slot the new home's copy had on it (`KeptAside`:
 peeked, never consumed), keeps it in its state directory and reports it to the new home sealed
 from its identity to the cluster's key (`POST /api/cluster/kept-aside/report`, again until
 taken), wipes the home's keys, then becomes one of the new home's machines: its database is set
-aside, never emptied, and the new home's copied. Its slot gone (the cap), it says so: nothing to
-apply.
+aside, never emptied, and the new home's copied. Its slot gone, cut by the cap, or not read, it
+says so (all of it stays in the database it set aside) and steps down all the same. A report
+carries up to 100,000 changes (more are counted, and said to be in that database). The new home
+takes it only from the old home its term's emergency registered (who and which term in the
+address, checked before the body is read).
 
 **Applying it** (the new home's Machines tab, "Changes kept aside"): download the report, set it
 aside, or review what would apply. Each of the old home's transactions applies **whole or not
@@ -411,6 +452,8 @@ at all**, in its commit order, and not when it:
 
 - touches the secrets or the cluster's own rows (the home-only tables, `cluster_*`,
   `instance_identity`, `workers`);
+- makes or changes a credential (a session, a refresh or personal token, a reset link, a pairing
+  ticket, a user's password other than the one this home has): the person sets it again here;
 - empties a table;
 - touches a table without a primary key here (its rows cannot be matched), or one this home lacks;
 - touches a row this home inserted, changed or deleted since the fork (from the fork slot), or a
@@ -435,6 +478,7 @@ applies on its own: what this home changed since is not known any more).
 | `offline_session_hours` | 12 | A sign-in made on a node while the home is away lasts this long. |
 | `offline_session_grace_minutes` | 30 | …and ends this long after the home answers again. |
 | `replica_wal_keep_gb` | 20 | The home keeps this much of its changes for a machine behind; past it the machine subscribes anew. |
+| `copies_on_operator_postgres` | off | A home whose database is not Maktaba's own Postgres keeps the machines' copies only with this on (such a server may carry other decoding plugins; above). Maktaba's own Postgres needs no rule. |
 
 ## Security
 
@@ -467,17 +511,24 @@ applies on its own: what this home changed since is not known any more).
   (overwritten, then removed). A machine follows a new home only on the home's own command over
   that channel, or on a notice sealed to it by the cluster key; the copy pins the CA that came
   with it. **Two homes never write**: the old home stays frozen from the promotion's request
-  until the new home says it called the switch off; a home that learns of a newer term stops
-  writing (its machines' roles kept out, its database read-only) and becomes a machine.
+  until the new home says it called the switch off (or an admin calls it off with that machine's
+  name typed, while it does not answer); a home that learns of a newer term stops writing (its
+  machines' roles kept out, the app's rights to write taken, which no session's own "read write"
+  overrides) and becomes a machine. It gives up the server certificate its database had too: one
+  the home's CA signed passes as the home's database (`verify-ca`).
 - **A standby home** holds the home's secrets and keys, sealed to it alone, in its keys directory
   (this account's only), and only while the admin keeps the mark: unmarked or revoked, the kit is
-  removed. It can take over only with the home not answering and its admin's typed confirmation.
-  An old home's report is taken only sealed by the identity the standby's kit registered it with,
-  to the cluster key; it is never applied on its own, and what touches the secrets or the
-  cluster's rows never applies.
-- **Known limits.** A machine is a trusted member: it may hand the home a sign-out of any user's
-  session (it reads every session's hash in its copy), a nuisance the home logs and a revocation
-  of the machine ends. A pipeline write of a job is guarded by its worker's claim, not by a claim
+  removed. It can take over only with the home not answering, a whole and current copy, its admin's
+  typed confirmation and the term claimed at the other machines (no two standbys take one term).
+  An old home's report is taken only from the machine that term's emergency registered, sealed by
+  that identity to the cluster key; it is never applied on its own, and what touches the secrets,
+  the cluster's rows or a credential never applies.
+- **Sign-outs a machine hands over.** It keeps one only for a session it knows (in its copy, or
+  answered for it by the home), at most 4096, handed over in batches the home takes; the home ends
+  only the sessions made through that machine (`web_sessions.origin_node_id`), and "everywhere"
+  only for a person who signed in through it. The revocations the home pushes are kept on the
+  machine's disk while they matter.
+- **Known limits.** A pipeline write of a job is guarded by its worker's claim, not by a claim
   generation: a machine stops its jobs before their lease lapses, so its worker never holds a job
   again while a run of it from before is alive. On an operator's own Postgres, the output
   plugins it carries (above).

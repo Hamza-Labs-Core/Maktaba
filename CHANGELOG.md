@@ -46,37 +46,47 @@ don't append a line here; docs-only PRs are exempt.
   channel, and the machine takes over without copying the database again: every other machine
   follows it from where its copy is, the old home becomes one of its machines, and a machine that
   was off follows when it is back (any machine of the cluster hands it a notice sealed to it).
-  Two homes never write: once the promotion is asked the old home stays read-only (the machines'
-  database roles kept out too) until the new home says it is the home or called the switch off,
-  also when its answer is lost; one switch runs at a time; a switch is taken up after a restart of
-  the old home; the promotion is one transaction (a failed one leaves the copy following the old
-  home); the old home gives up its data only once it receives the new home's changes, and then
-  keeps none of the home's keys. Plex Live TV moves too (the tuner and its guide pointed at the
+  Two homes never write: once the promotion is asked the old home stays read-only until the new
+  home says it is the home or called the switch off, also when its answer is lost (its app's
+  database roles lose their rights to write its tables, which no session's own "read write"
+  overrides, and the machines' roles are kept out); that the promotion was asked is on disk
+  before it leaves; one switch runs at a time; a switch is taken up after a restart of the old
+  home, a thaw that failed is asked again; the promotion is one transaction (a failed one leaves
+  the copy following the old home), and takes only a copy that has every table; the old home
+  gives up its data only once it receives the new home's changes, and then keeps none of the
+  home's keys (nor its database's certificate). An admin can call a switch off from the tab:
+  before the promotion at once, after it only if the machine taking over has not promoted (or,
+  when it does not answer, with its name typed). Plex Live TV moves too (the tuner and its guide pointed at the
   new home, Plex's DVR, its recording schedules and channels kept), Plex and dizqueTV are checked
-  from the new home (an address that was the old home's own is moved to its network address), as
-  are Cloudflare's notifications, and the tab shows each machine and each outside service as
-  moved, being moved, failed, or what a person must do (signing in to YouTube in a browser on the
-  new home; a model runtime there). A switch that cannot go through is undone. `GET
+  from the new home (an address that was the old home's own is moved to its network address),
+  Cloudflare's notifications move with the cloud relay, and the tab shows each machine and each
+  outside service as moved, being moved, failed, or what a person must do (signing in to YouTube
+  in a browser on the new home; a model runtime there, where the library used one). A switch that cannot go through is undone. `GET
   /api/cluster/self` carries the cluster's term.
 - **A standby home can take over when the home is gone for good** (Epic 37, "Emergency
   promotion"). On the Machines tab the admin marks full machines as standby homes. Each one
   keeps the home's secrets and keys sealed to it alone. The home sends them again within two
   minutes of a change and removes them when the mark goes. With the home not answering, a
   standby's admin makes it the home from that machine's own Machines page, after a warning and
-  the home's name typed to confirm. The other machines find the new home at the standbys by
-  themselves and follow it. If the old home comes back, it stops writing within a minute and
+  the home's name typed to confirm: only from a whole copy that was within 10 minutes of the home
+  when the home last answered, and only once the standby has claimed the term at the other
+  machines, so two standbys never both take over. The other machines find the new home at the
+  standbys by themselves and follow it. If the old home comes back, it stops writing within a minute and
   becomes one of the new home's machines. What it wrote after the switch is kept aside and
   reported to the new home, where the admin downloads it or reviews and applies what does not
   conflict, in one transaction. Never applied automatically: a transaction touching a row the
-  new home changed since, the secrets or the cluster's own data, or one that would fail. What was
-  applied is recorded. Migration 0146.
+  new home changed since, the secrets or the cluster's own data, a credential (a session, a
+  token, a reset link, a pairing, a changed password), or one that would fail. A report carries
+  up to 100,000 changes (more stay in the old home's database, which it keeps aside). What was
+  applied is recorded. Each seal of a standby's kit has a key of its own. Migration 0146.
 - **The cloud relay agent moves with the home.** The home's supervisor runs `maktaba-cloudlink`
   while `[cloud]` is enabled. A switch stops it on the old home, carries its credentials, and
   starts it on the new one. It ships with the Mac and Linux apps.
 - **After a switch, a checklist on the new home**: what needs a person there (YouTube in a
-  browser, a model runtime, a Live TV tuner set by hand, Cloudflare's notification address) is
-  one click from where it is done in the control centre, and ticked off by hand, or by itself
-  where Maktaba can tell (a model runtime that answers, a notification that arrives).
+  browser, a model runtime where the library used one, a Live TV tuner set by hand, Cloudflare's
+  notification address on a home without the cloud relay) is one click from where it is done in
+  the control centre, and ticked off by hand, or by itself where Maktaba can tell (a model runtime
+  that answers, a notification that arrives).
 - **The machines reach only what they need of the home's database** (Epic 37). The bundled
   Postgres listens beyond its own machine, and lets anyone in from off it, only while a machine
   may connect (one is approved, or joins are open). It starts again by itself when that
@@ -88,11 +98,16 @@ don't append a line here; docs-only PRs are exempt.
   never leaves it (the home gets its SCRAM verifier), only full machines get a copy, and a copy
   holds web sessions by their hash only. A machine's replication role reads only what is
   published to it: Maktaba's Postgres builds have no logical decoding plugin but `pgoutput`, the
-  slot functions are the home's alone, and the home drops any slot that is not Maktaba's within
-  seconds. A sign-in on a machine while its home is away refuses a user who must change their
-  password. The sessions it opens are written to the home's history, with their closing, also
-  after a restart of the machine; a sign-out there of a session newer than the copy reaches the
-  home too.
+  slot functions are the home's alone, and the home ends and drops any slot that is not
+  Maktaba's within seconds (saying once what to do about one it cannot). A home on an operator's
+  own Postgres, which may carry other plugins, keeps no copies unless the admin turns on
+  `rules.cluster.copies_on_operator_postgres`; until then the machines are told why. A sign-in on
+  a machine while its home is away refuses a user who must change their password. The sessions it
+  opens are written to the home's history, with their closing, also after a restart of the
+  machine. A sign-out there is kept only for a session the machine knows, handed over in batches
+  the home takes, and the home ends only sessions made through that machine; the home's
+  revocations survive a restart of the machine during an outage, and a person signed out
+  everywhere can sign in there again once its copy has it.
 - **The desktop app's setup works end to end** (Epic 38, story 38.6; the Mac, Windows and Linux
   alike). `maktaba-server setup --json` gains every step the setup screens run: `check` (what will
   run, memory and disk), `admin` (the password is hashed as it is typed, by the new
