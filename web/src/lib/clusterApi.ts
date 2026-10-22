@@ -364,6 +364,9 @@ export interface KeptReport {
   transactions: number;
   counts?: Record<string, number> | null;
   applied_transactions?: number | null;
+  /** the old home wrote more than a report carries: `total` changes, `changes` of them here */
+  truncated?: boolean;
+  total?: number;
 }
 
 /** One of the old home's transactions: applied whole, or not, with why. */

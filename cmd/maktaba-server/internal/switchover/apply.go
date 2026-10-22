@@ -22,6 +22,8 @@ import (
 //
 //   - touches the secrets or the cluster's own rows (cluster_copy_excluded(), cluster_*,
 //     instance_identity, workers): ReasonClusterRows;
+//   - makes or changes a credential (a session, a token, a reset link, a pairing, a
+//     password other than the one this home has): ReasonCredentials;
 //   - empties a table: ReasonTruncate;
 //   - touches a table without a primary key here (its rows cannot be matched), or one
 //     this home does not have: ReasonNoKey;
@@ -38,6 +40,7 @@ import (
 // Reasons a transaction is not applied.
 const (
 	ReasonClusterRows = "cluster_rows"
+	ReasonCredentials = "credentials"
 	ReasonTruncate    = "truncate"
 	ReasonNoKey       = "no_key"
 	ReasonChangedHere = "changed_here"
@@ -258,6 +261,16 @@ func (s *schema) queryExcluded(ctx context.Context, q interface {
 	return rows.Err()
 }
 
+// credentialTables hold credentials, which an old home's change never sets here: a
+// person signs in, makes a token, asks for a reset or pairs a device again on this home.
+var credentialTables = map[string]bool{"public.web_sessions": true, "public.web_session_keys": true,
+	"public.refresh_tokens": true, "public.personal_access_tokens": true, "public.password_reset_tokens": true,
+	"public.pairing_tickets": true}
+
+// passwordColumn is the users' password hash: an old home's change of a user applies only
+// with the hash this home has (a change of anything else carries it as it was).
+const passwordColumn = "pw_hash"
+
 // neverApplied: a change of name is never applied on its own (the secrets, the cluster's
 // rows).
 func (s *schema) neverApplied(name string) bool {
@@ -399,6 +412,9 @@ func check(s *schema, seen map[string]map[string]bool, known bool, tracked map[s
 		if s.neverApplied(c.Table) {
 			return ReasonClusterRows, c.Table
 		}
+		if credentialTables[c.Table] {
+			return ReasonCredentials, c.Table
+		}
 	}
 	for _, c := range kt.Changes {
 		if c.Kind == "truncate" {
@@ -433,6 +449,17 @@ func apply(ctx context.Context, tx *sql.Tx, s *schema, kt Transaction, i int) (r
 	undo := func() { _, _ = tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT `+sp) }
 	for _, c := range kt.Changes {
 		t := s.tables[c.Table]
+		if c.Table == "public.users" && c.Kind != "delete" && c.Row[passwordColumn] != nil {
+			// a user made, or a password set, on the old home: the person's to set here
+			var have sql.NullString
+			if id := c.Row["id"]; id != nil {
+				_ = tx.QueryRowContext(ctx, `SELECT `+passwordColumn+` FROM users WHERE id::text = $1`, *id).Scan(&have)
+			}
+			if !have.Valid || have.String != *c.Row[passwordColumn] {
+				undo()
+				return ReasonCredentials, c.Table + "." + passwordColumn
+			}
+		}
 		n, err := applyChange(ctx, tx, t, c)
 		switch {
 		case err != nil:

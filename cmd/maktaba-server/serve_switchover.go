@@ -107,6 +107,9 @@ type switching struct {
 	demoting  bool
 	demoteErr string
 	demoted   string // the switchover whose demotion went through (this machine starts again)
+
+	// claimMu keeps the emergencies' term claims one at a time (serve_termclaim.go)
+	claimMu sync.Mutex
 }
 
 func newSwitching(cfg config.Config) *switching {
@@ -196,8 +199,9 @@ func (s *switching) adminHandler(base http.Handler) http.Handler {
 				http.Error(w, "this machine keeps no copy of its home's database", http.StatusConflict)
 				return
 			}
-		case step == "record" || step == "recorded":
-			// the API's own records: kept on any home (one that cannot be switched has none)
+		case step == "record" || step == "recorded" || step == "term-claim":
+			// the API's own records: kept on any home (one that cannot be switched has none);
+			// another standby's claim on a term: answered by every machine and the home
 		case s.pg == nil:
 			http.Error(w, "this home's database is not Maktaba's own Postgres: it cannot be switched", http.StatusConflict)
 			return
@@ -250,6 +254,8 @@ func (s *switching) adminHandler(base http.Handler) http.Handler {
 			out = s.emergencyStatus(ctx)
 		case "emergency":
 			out, err = s.emergency(ctx, req)
+		case "term-claim":
+			out, err = s.termClaim(ctx, req)
 		case "kept-plan":
 			out, err = s.keptPlan(ctx, req)
 		case "kept-apply":
@@ -441,6 +447,9 @@ type homeRequest struct {
 	// the API's record of a switch (record), and where the new home answers (new-home)
 	Progress json.RawMessage `json:"progress"`
 	URLs     []string        `json:"urls"`
+	// another standby's claim on an emergency's term (term-claim): who, sealed by it
+	From   string `json:"from"`
+	Sealed string `json:"sealed"`
 }
 
 // relay starts or stops this home's cloud relay agent (none here: nothing to do).

@@ -335,6 +335,31 @@ describe("Switching the home", () => {
     });
   });
 
+  it("says when an old home wrote more than its report holds", async () => {
+    get.mockResolvedValue(
+      status({
+        reports: [
+          {
+            id: "r2",
+            term: 3,
+            from_name: "Living Room PC",
+            state: "reported",
+            lost: false,
+            received_at: "2026-10-21T09:30:00Z",
+            changes: 100000,
+            transactions: 900,
+            truncated: true,
+            total: 250000,
+          },
+        ],
+      })
+    );
+    renderCard();
+    expect(
+      await screen.findByText(/holds the first 100000 of the 250000 changes .*Living Room PC/)
+    ).toBeInTheDocument();
+  });
+
   it("shows what an old home kept aside, what would apply and why not, and applies it", async () => {
     const plan: KeptPlan = {
       report: "r1",

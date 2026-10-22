@@ -117,8 +117,25 @@ const ReportInfo = "maktaba-kept-aside"
 // it, and only the old home can have made it. base64 of a random nonce and the sealed
 // report, the term its associated data.
 func SealReport(oldPriv, clusterPub []byte, term int64, report []byte) (string, error) {
-	salt := fmt.Sprintf("term-%d", term)
-	aead, err := pairAEAD(oldPriv, clusterPub, salt, ReportInfo)
+	return SealPair(oldPriv, clusterPub, fmt.Sprintf("term-%d", term), ReportInfo, report)
+}
+
+// OpenReport opens SealReport's report with the cluster key's private half and the old
+// home's public key.
+func OpenReport(clusterPriv, oldPub []byte, term int64, sealed string) ([]byte, error) {
+	out, err := OpenPair(clusterPriv, oldPub, fmt.Sprintf("term-%d", term), ReportInfo, sealed)
+	if err != nil {
+		return nil, errors.New("switchover: a report that does not open (not sealed by that machine for this cluster)")
+	}
+	return out, nil
+}
+
+// SealPair seals msg from one end's X25519 private key (priv) to the other end's public
+// key (peer), for salt and purpose (info): base64 of a random nonce and the sealed
+// message, salt its associated data. Only the two ends can open it, so it also says which
+// end made it.
+func SealPair(priv, peer []byte, salt, info string, msg []byte) (string, error) {
+	aead, err := pairAEAD(priv, peer, salt, info)
 	if err != nil {
 		return "", err
 	}
@@ -126,24 +143,23 @@ func SealReport(oldPriv, clusterPub []byte, term int64, report []byte) (string, 
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
-	return base64.StdEncoding.EncodeToString(aead.Seal(nonce, nonce, report, []byte(salt))), nil
+	return base64.StdEncoding.EncodeToString(aead.Seal(nonce, nonce, msg, []byte(salt))), nil
 }
 
-// OpenReport opens SealReport's report with the cluster key's private half and the old
-// home's public key.
-func OpenReport(clusterPriv, oldPub []byte, term int64, sealed string) ([]byte, error) {
-	salt := fmt.Sprintf("term-%d", term)
-	aead, err := pairAEAD(clusterPriv, oldPub, salt, ReportInfo)
+// OpenPair opens SealPair's message at the other end (its private key, the sender's
+// public key).
+func OpenPair(priv, peer []byte, salt, info, sealed string) ([]byte, error) {
+	aead, err := pairAEAD(priv, peer, salt, info)
 	if err != nil {
 		return nil, err
 	}
 	raw, err := base64.StdEncoding.DecodeString(sealed)
 	if err != nil || len(raw) < aead.NonceSize() {
-		return nil, errors.New("switchover: a report that is not one")
+		return nil, errors.New("switchover: a sealed message that is not one")
 	}
 	out, err := aead.Open(nil, raw[:aead.NonceSize()], raw[aead.NonceSize():], []byte(salt))
 	if err != nil {
-		return nil, errors.New("switchover: a report that does not open (not sealed by that machine for this cluster)")
+		return nil, errors.New("switchover: a sealed message that does not open (not from that machine for this one)")
 	}
 	return out, nil
 }

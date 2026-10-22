@@ -363,7 +363,8 @@ func Promote(ctx context.Context, super *sql.DB, p Promotion) (out Promoted, err
 		        approved_at, approved_by, full_node, web_url)
 		    VALUES ($1, $2, 'approved', NULLIF($3, ''), NULLIF($4, ''), $5, $6, now(), 'switchover', true, NULLIF($7, ''))
 		    ON CONFLICT (id) DO UPDATE SET state = 'approved', node_pubkey = excluded.node_pubkey,
-		        db_role = excluded.db_role, full_node = true, web_url = excluded.web_url, updated_at = now()`,
+		        db_role = excluded.db_role, full_node = true, web_url = excluded.web_url, updated_at = now(),
+		        approved_at = now(), approved_by = 'switchover'`,
 			m.ID, m.Name, m.OS, m.Arch, m.PublicKey, m.Role(), m.WebURL); err != nil {
 			return out, fmt.Errorf("switchover: the old home's registration: %w", err)
 		}

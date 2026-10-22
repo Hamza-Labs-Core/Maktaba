@@ -513,11 +513,14 @@ func TestAnEmergencyPromotion(t *testing.T) {
 	for _, k := range []string{"test.shared", "test.untouched", "test.gone"} {
 		c.exec(c.app, `INSERT INTO app_settings (key, value, updated_at) VALUES ($1, '"before"', now())`, k)
 	}
+	kim := uuid.NewString()
+	c.exec(c.app, `INSERT INTO users (id, username, pw_hash) VALUES ($1, 'kim', 'kim-hash')`, kim)
 	c.following(b, "the first copy")
 	bdb := b.super(t)
 	pgtest.WaitFor(t, "the copy has the events and settings", time.Minute, func() bool {
 		return count(ctx, bdb, `SELECT count(*) FROM events WHERE channel = 'test'`) == 3 &&
-			count(ctx, bdb, `SELECT count(*) FROM app_settings WHERE key LIKE 'test.%'`) == 3
+			count(ctx, bdb, `SELECT count(*) FROM app_settings WHERE key LIKE 'test.%'`) == 3 &&
+			count(ctx, bdb, `SELECT count(*) FROM users WHERE id = $1`, kim) == 1
 	})
 	// the home is cut off: what it writes never reaches B (its beat goes on too)
 	b.halt()
@@ -530,6 +533,8 @@ func TestAnEmergencyPromotion(t *testing.T) {
 	c.exec(c.app, `UPDATE cluster_replica_beat SET at = now()`)
 	userA := uuid.NewString()
 	c.exec(c.app, `INSERT INTO users (id, username, pw_hash) VALUES ($1, 'zed', 'x')`, userA)
+	// a person renamed (the password as it was): applies; a person made there: a credential
+	c.exec(c.app, `UPDATE users SET username = 'kim-renamed' WHERE id = $1`, kim)
 	var oldMax int64
 	_ = c.app.QueryRowContext(ctx, `SELECT max(id) FROM events`).Scan(&oldMax)
 	c.homeSrv.Stop(c.home.StopCommand())
@@ -620,6 +625,14 @@ func TestAnEmergencyPromotion(t *testing.T) {
 	if !found || aside.Counts["public.app_settings"] < 1 {
 		t.Fatalf("the change kept aside: %+v", aside)
 	}
+	// more than a report carries: the first of it, and the counts of all of it
+	maxKeptChanges = 1
+	short, err := KeptAside(ctx, adb, slot, slot, done.CutLSN)
+	maxKeptChanges = 100_000
+	if err != nil || !short.Truncated || len(short.Transactions) > 1 || short.Total != aside.Total ||
+		short.Counts["public.app_settings"] != aside.Counts["public.app_settings"] || aside.Truncated {
+		t.Fatalf("a report past its size: %+v (all of it: %+v) %v", short, aside, err)
+	}
 	for _, tx := range aside.Transactions {
 		for _, ch := range tx.Changes {
 			if ch.Table == "public.events" && ch.Row["type"] != nil && *ch.Row["type"] == "before" {
@@ -660,7 +673,8 @@ func TestAnEmergencyPromotion(t *testing.T) {
 		{"public.app_settings", "test.untouched", "", true},
 		{"public.app_settings", "test.shared", ReasonChangedHere, false},
 		{"public.events", "on the old home", "", true},
-		{"public.users", "zed", ReasonFails, false},
+		{"public.users", "zed", ReasonCredentials, false},
+		{"public.users", "kim-renamed", "", true},
 	} {
 		pt, ok := reasonOf(want.table, want.key)
 		if !ok {
@@ -702,7 +716,8 @@ func TestAnEmergencyPromotion(t *testing.T) {
 	if value(ctx, bdb, "test.lost") != `"only on the old home"` || value(ctx, bdb, "test.untouched") != `"a"` ||
 		value(ctx, bdb, "test.shared") != `"b"` || value(ctx, bdb, "test.gone") != "" ||
 		count(ctx, bdb, `SELECT count(*) FROM events WHERE type = 'on the old home'`) != 1 ||
-		count(ctx, bdb, `SELECT count(*) FROM users WHERE username = 'zed' AND id = $1`, userB) != 1 {
+		count(ctx, bdb, `SELECT count(*) FROM users WHERE username = 'zed' AND id = $1`, userB) != 1 ||
+		count(ctx, bdb, `SELECT count(*) FROM users WHERE username = 'kim-renamed' AND pw_hash = 'kim-hash'`) != 1 {
 		t.Fatal("the new home after applying: not what the plan said")
 	}
 	var state string

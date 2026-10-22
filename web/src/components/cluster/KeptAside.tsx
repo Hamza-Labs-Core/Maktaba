@@ -100,6 +100,11 @@ function Report({ r, onDone }: { r: KeptReport; onDone: () => void }) {
               ago: f.ago(r.received_at),
             })}
       </p>
+      {r.truncated && !r.lost && (
+        <p className="mkt-mc-warn">
+          {t("machines.kept.truncated", { changes: r.changes, total: r.total ?? 0, name })}
+        </p>
+      )}
       {r.state === "applied" && r.applied_at && (
         <p>
           <Badge tone="success">{t("machines.kept.state.applied")}</Badge>{" "}

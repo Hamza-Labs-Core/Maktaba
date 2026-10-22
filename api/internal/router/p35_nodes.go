@@ -60,6 +60,9 @@ type NodeLocalDeps struct {
 	// EmergencyStatus and Emergency serve GET and POST /api/cluster/emergency on a full
 	// node: a standby home taking over when its home is gone (Epic 37); nil: not mounted.
 	EmergencyStatus, Emergency http.HandlerFunc
+	// TermClaim serves POST /api/cluster/term-claim: another standby home's claim on an
+	// emergency's term (Epic 37); nil: not mounted.
+	TermClaim http.HandlerFunc
 }
 
 // MountNodeLocal mounts GET /api/cluster/self, the sign-in's start and callback, and a
@@ -73,5 +76,8 @@ func MountNodeLocal(r chi.Router, d NodeLocalDeps) {
 	if d.EmergencyStatus != nil && d.Emergency != nil {
 		r.Get("/api/cluster/emergency", d.EmergencyStatus)
 		r.Post("/api/cluster/emergency", d.Emergency)
+	}
+	if d.TermClaim != nil {
+		r.Post("/api/cluster/term-claim", d.TermClaim)
 	}
 }

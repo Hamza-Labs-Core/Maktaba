@@ -218,6 +218,12 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		if p, err := supervisor.BuildRelay(sopts); err != nil {
 			fmt.Fprintf(os.Stderr, "[serve] the cloud relay agent does not run: %v\n", err)
 		} else {
+			if pg != nil && pg.Frozen() {
+				// a switch under way (or this home fenced): the machine taking over may run
+				// it already with the same credentials; it starts when the switch is undone
+				p.OnDemand = true
+				fmt.Fprintln(os.Stderr, "[serve] this home is frozen for a switch: the cloud relay agent waits")
+			}
 			procs = append(procs, p)
 		}
 	}

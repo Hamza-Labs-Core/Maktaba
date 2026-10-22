@@ -39,6 +39,37 @@ func (e *Emergency) Status(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(st)
 }
 
+// Claim is POST /api/cluster/term-claim {from, term, sealed} (public, on every machine):
+// another standby home's claim on an emergency's term, sealed from its key to this
+// machine's. This machine's supervisor opens it and answers, sealed back: whether the
+// term is that standby's now, or another's, or older than this machine's home's. 404 on a
+// machine without a supervisor; 409 when it does not open here.
+func (e *Emergency) Claim(w http.ResponseWriter, r *http.Request) {
+	if e.Supervisor == nil {
+		httperror.Write(w, r, httperror.NotFound("no supervisor here"))
+		return
+	}
+	var req struct {
+		From   string `json:"from"`
+		Term   int64  `json:"term"`
+		Sealed string `json:"sealed"`
+	}
+	if er := common.ReadJSON(r, &req, 16<<10); er != nil {
+		httperror.Write(w, r, er)
+		return
+	}
+	var out json.RawMessage
+	if err := e.Supervisor.Call(r.Context(), "term-claim", map[string]any{"from": req.From, "term": req.Term,
+		"sealed": req.Sealed}, &out); err != nil {
+		httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/term-claim-refused",
+			"the claim does not open on this machine"))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(out)
+}
+
 // Start is POST /api/cluster/emergency.
 func (e *Emergency) Start(w http.ResponseWriter, r *http.Request) {
 	p, ok := admin(w, r)

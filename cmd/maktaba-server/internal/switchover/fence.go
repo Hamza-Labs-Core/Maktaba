@@ -43,7 +43,16 @@ type Aside struct {
 	Cut          string         `json:"cut_lsn"`
 	Transactions []Transaction  `json:"transactions"`
 	Counts       map[string]int `json:"counts"` // changes by table
+	// Truncated: more was written than a report carries (maxKeptChanges): Transactions
+	// hold the first of them, Counts and Total all of them; the rest is in the old home's
+	// database, set aside on it
+	Truncated bool `json:"truncated,omitempty"`
+	Total     int  `json:"total,omitempty"`
 }
+
+// maxKeptChanges is how many changes a report carries at most: what an old home that ran
+// on its own for long wrote may not fit in memory or in one sealed report.
+var maxKeptChanges = 100_000
 
 // KeptAside reads what the old home wrote after cut (the new home's position in its
 // WAL): from the slot of the machine that took over, which still holds every change
@@ -67,6 +76,10 @@ func KeptAside(ctx context.Context, super *sql.DB, slot, pub, cut string) (Aside
 	defer rows.Close()
 	d := decoder{rels: map[uint32]relation{}}
 	var tx *Transaction
+	// kept: the changes the report carries; a transaction's changes are counted as they
+	// come (counts), and held only while the report has room for them (over: it has not)
+	kept, over := 0, false
+	counts := map[string]int{}
 	for rows.Next() {
 		var data []byte
 		if err := rows.Scan(&data); err != nil {
@@ -78,21 +91,33 @@ func KeptAside(ctx context.Context, super *sql.DB, slot, pub, cut string) (Aside
 		}
 		switch m.kind {
 		case 'B':
-			tx = &Transaction{}
+			tx, over, counts = &Transaction{}, out.Truncated, map[string]int{}
 		case 'C':
-			if tx != nil && m.end > cutN {
+			if tx != nil && m.end > cutN && len(counts) > 0 {
 				tx.CommitLSN = formatLSN(m.commit)
 				tx.CommittedAt = pgTime(m.ts)
-				if len(tx.Changes) > 0 {
+				if over {
+					out.Truncated = true
+				} else {
 					out.Transactions = append(out.Transactions, *tx)
-					for _, c := range tx.Changes {
-						out.Counts[c.Table]++
-					}
+					kept += len(tx.Changes)
+				}
+				for t, n := range counts {
+					out.Counts[t] += n
+					out.Total += n
 				}
 			}
 			tx = nil
 		case 'I', 'U', 'D', 'T':
-			if tx != nil {
+			if tx == nil {
+				continue
+			}
+			for _, c := range m.changes {
+				counts[c.Table]++
+			}
+			if over = over || kept+len(tx.Changes)+len(m.changes) > maxKeptChanges; over {
+				tx.Changes = nil
+			} else {
 				tx.Changes = append(tx.Changes, m.changes...)
 			}
 		}

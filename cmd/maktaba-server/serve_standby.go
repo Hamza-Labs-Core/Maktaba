@@ -214,6 +214,7 @@ type keptReport struct {
 	FromName string           `json:"from_name"`
 	Cut      string           `json:"cut_lsn"`
 	Lost     bool             `json:"lost"`
+	Detail   string           `json:"detail,omitempty"` // why it is lost, when it is
 	Aside    switchover.Aside `json:"aside"`
 	HomeAPI  string           `json:"home_api"`
 	Uploaded bool             `json:"uploaded"`
@@ -223,11 +224,17 @@ type keptReport struct {
 // database stops taking writes (Fence), what it wrote after the cut is read from the
 // slot the new home's copy had here and kept (and reported, sealed, to the new home),
 // and this machine becomes one of the new home's with the identity its kit gave it: its
-// database is moved aside (never emptied) and it copies the new home's anew.
-func (s *switching) stepDown(ctx context.Context, me oldHome, id string, notice movedNotice) error {
+// database is moved aside (never emptied) and it copies the new home's anew. One that
+// does not get as far gives its claim up (it is asked again at the next look).
+func (s *switching) stepDown(ctx context.Context, me oldHome, id string, notice movedNotice) (err error) {
 	if err := s.claim(id); err != nil {
 		return err
 	}
+	defer func() {
+		if err != nil {
+			s.release(id)
+		}
+	}()
 	logf := func(format string, args ...any) { fmt.Fprintf(os.Stderr, "[switchover] "+format+"\n", args...) }
 	logf("another machine took over as the home (%s, term %d) while this one was away: keeping aside what it "+
 		"wrote since, and becoming one of its machines", notice.Home.APIURL, notice.Term)
@@ -236,23 +243,33 @@ func (s *switching) stepDown(ctx context.Context, me oldHome, id string, notice 
 	if err := s.frozen(ctx, true); err != nil {
 		return err
 	}
-	err := s.withSuper(func(db *sql.DB) error {
+	err = s.withSuper(func(db *sql.DB) error {
 		if err := switchover.Fence(ctx, db); err != nil {
 			return err
 		}
-		slot := switchover.Machine{ID: notice.HomeNode}.Slot()
-		var exists bool
-		if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1)`,
-			slot).Scan(&exists); err != nil {
-			return err
+		// the new home runs the cloud relay agent now, with the same credentials
+		if s.want != nil {
+			_ = s.want(supervisor.RoleRelay, false)
 		}
-		if !exists || notice.HomeNode == "" {
-			report.Lost = true
+		slot := switchover.Machine{ID: notice.HomeNode}.Slot()
+		var status sql.NullString
+		err := db.QueryRowContext(ctx, `SELECT wal_status FROM pg_replication_slots WHERE slot_name = $1`, slot).Scan(&status)
+		switch {
+		case errors.Is(err, sql.ErrNoRows) || notice.HomeNode == "":
+			report.Lost, report.Detail = true, "the new home's slot here is gone"
+			return nil
+		case err != nil:
+			return err
+		case status.String == "lost":
+			report.Lost, report.Detail = true, "the new home's slot here was cut by the cap on what a slot holds"
 			return nil
 		}
 		aside, err := switchover.KeptAside(ctx, db, slot, slot, notice.Cut)
 		if err != nil {
-			return err
+			// what it wrote is not reported, but it is all in this home's database, which
+			// is set aside below (never emptied)
+			report.Lost, report.Detail = true, err.Error()
+			return nil
 		}
 		report.Aside = aside
 		return nil
@@ -358,8 +375,11 @@ func uploadKept(ctx context.Context, cfg config.Config, term int64) error {
 		return err
 	}
 	body, _ := json.Marshal(map[string]any{"node_id": r.FromNode, "term": r.Term, "sealed": sealed})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.HomeAPI, "/")+"/api/cluster/kept-aside/report",
-		bytes.NewReader(body))
+	// who sends it, and of which term, in the address too: the new home refuses another
+	// machine's before it reads the body
+	q := url.Values{"node": {r.FromNode}, "term": {strconv.FormatInt(r.Term, 10)}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		strings.TrimRight(r.HomeAPI, "/")+"/api/cluster/kept-aside/report?"+q.Encode(), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -743,40 +763,62 @@ func (s *switching) emergency(ctx context.Context, req homeRequest) (any, error)
 	if err := s.claim(id); err != nil {
 		return nil, err
 	}
+	n := supervisor.NodeConfig()
+	kit, err := openSealed(standbyKitPath(nodecopy.StandbyKitFile), switchover.StandbyKitID(n.NodeID), n)
+	if err != nil {
+		s.release(id)
+		return nil, fmt.Errorf("the standby kit: %w", err)
+	}
+	term, err := s.emergencyTerm(ctx, kit)
+	if err != nil {
+		s.release(id)
+		return nil, err
+	}
+	// the term is this standby's alone, or no machine it reaches says it is another's
+	if err := s.claimEverywhere(ctx, term); err != nil {
+		s.release(id)
+		return nil, err
+	}
 	go func() {
 		pctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		if err := s.promoteEmergency(pctx, id, req.By); err != nil {
+		if err := s.promoteEmergency(pctx, id, req.By, kit, term); err != nil {
 			fmt.Fprintf(os.Stderr, "[switchover] taking over as the home: %v\n", err)
-			s.mu.Lock()
-			s.busy = ""
-			s.mu.Unlock()
+			s.withdrawClaim(term, n.NodeID)
+			s.release(id)
 		}
 	}()
-	return map[string]any{"accepted": true, "id": id}, nil
+	return map[string]any{"accepted": true, "id": id, "term": term}, nil
 }
 
-// promoteEmergency promotes this standby's copy with its kit: the sequences moved past
+// emergencyTerm is the term an emergency begins: the next after the newest this machine
+// knows of (its copy's, its kit's).
+func (s *switching) emergencyTerm(ctx context.Context, kit *switchover.Kit) (int64, error) {
+	db, err := s.copyDB()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+	var term int64
+	if err := db.QueryRowContext(ctx, `SELECT COALESCE(max(term), 1) FROM cluster_terms`).Scan(&term); err != nil {
+		return 0, err
+	}
+	return max(term, kit.Term) + 1, nil
+}
+
+// promoteEmergency promotes this standby's copy with its kit to term (claimed for it:
+// claimEverywhere): the sequences moved past
 // what the old home may have written since the cut (EmergencyGap), the fork kept (what
 // the old home kept aside applies only where this home changed nothing), the old home
 // registered as a machine with the identity its kit gave it; the switch recorded with
 // every machine's notice (the old home's with the cut).
-func (s *switching) promoteEmergency(ctx context.Context, id, by string) error {
+func (s *switching) promoteEmergency(ctx context.Context, id, by string, kit *switchover.Kit, term int64) error {
 	n := supervisor.NodeConfig()
-	kit, err := openSealed(standbyKitPath(nodecopy.StandbyKitFile), switchover.StandbyKitID(n.NodeID), n)
-	if err != nil {
-		return fmt.Errorf("the standby kit: %w", err)
-	}
 	db, err := s.copyDB()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	var term int64
-	if err := db.QueryRowContext(ctx, `SELECT COALESCE(max(term), 1) FROM cluster_terms`).Scan(&term); err != nil {
-		return err
-	}
-	term = max(term, kit.Term) + 1
 	oldName := n.Home.Name
 	if s.stopCopy != nil {
 		s.stopCopy()

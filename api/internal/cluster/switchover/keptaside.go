@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -31,8 +32,9 @@ import (
 // reportInfo is the purpose the report is sealed for (switchover.ReportInfo).
 const reportInfo = "maktaba-kept-aside"
 
-// maxReport bounds a sealed report.
-const maxReport = 256 << 20
+// maxReport bounds a sealed report (an old home's carries at most 100,000 changes, its
+// switchover.maxKeptChanges).
+const maxReport = 64 << 20
 
 // openReport opens an old home's sealed report of term with the cluster key's private
 // half and the old home's public key.
@@ -70,11 +72,15 @@ type KeptReport struct {
 	Txs        int            `json:"transactions"`
 	Counts     map[string]int `json:"counts"`
 	AppliedTxs *int           `json:"applied_transactions,omitempty"`
+	// Truncated: the old home wrote more than a report carries; Total is how much (Changes
+	// is what the report holds; the rest is in the old home's database, set aside on it)
+	Truncated bool `json:"truncated,omitempty"`
+	Total     int  `json:"total,omitempty"`
 }
 
 // mountKept wires the reports' routes:
 //
-//	POST /api/cluster/kept-aside/report        the old home's sealed report (public)
+//	POST /api/cluster/kept-aside/report?node=&term=  the old home's sealed report (public)
 //	GET  /api/cluster/kept-aside               the reports (admins)
 //	GET  /api/cluster/kept-aside/{id}/download the report itself (JSON)
 //	GET  /api/cluster/kept-aside/{id}/plan     what applying it would do now
@@ -89,31 +95,42 @@ func (o *Orchestrator) mountKept(r chi.Router) {
 	r.Post("/api/cluster/kept-aside/{id}/dismiss", o.postDismiss)
 }
 
+// postReport takes an old home's sealed report: who sends it, and of which term, are in
+// the address, so a machine that is not the old home that term's emergency replaced is
+// refused before its body is read.
 func (o *Orchestrator) postReport(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		NodeID string `json:"node_id"`
-		Term   int64  `json:"term"`
-		Sealed string `json:"sealed"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, maxReport)).Decode(&req); err != nil || req.NodeID == "" {
-		httperror.Write(w, r, httperror.BadRequest("a sealed report"))
-		return
-	}
-	if _, err := uuid.Parse(req.NodeID); err != nil {
-		httperror.Write(w, r, httperror.BadRequest("node_id"))
+	node := r.URL.Query().Get("node")
+	term, terr := strconv.ParseInt(r.URL.Query().Get("term"), 10, 64)
+	if _, err := uuid.Parse(node); err != nil || terr != nil || term < 1 {
+		httperror.Write(w, r, httperror.BadRequest("node and term"))
 		return
 	}
 	ctx := r.Context()
-	// the old home: registered by the emergency that took the home from it
+	// the old home: registered by the emergency that began term (with the term, in one
+	// transaction), not by an earlier or a later one
 	var pubB64, name string
-	err := o.DB.QueryRowContext(ctx, `SELECT node_pubkey, name FROM cluster_nodes WHERE id = $1
-	    AND approved_by = 'switchover' AND state = 'approved'`, req.NodeID).Scan(&pubB64, &name)
+	err := o.DB.QueryRowContext(ctx, `SELECT n.node_pubkey, n.name FROM cluster_nodes n
+	    JOIN cluster_terms t ON t.term = $2 AND t.reason = 'emergency'
+	    WHERE n.id = $1 AND n.approved_by = 'switchover' AND n.state = 'approved'
+	      AND n.approved_at >= t.started_at
+	      AND n.approved_at < COALESCE((SELECT min(started_at) FROM cluster_terms WHERE term > t.term), 'infinity')`,
+		node, term).Scan(&pubB64, &name)
 	if errors.Is(err, sql.ErrNoRows) {
 		httperror.Write(w, r, httperror.Forbidden("", "not an old home of this cluster"))
 		return
 	}
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("kept aside"))
+		return
+	}
+	var req struct {
+		NodeID string `json:"node_id"`
+		Term   int64  `json:"term"`
+		Sealed string `json:"sealed"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxReport)).Decode(&req); err != nil ||
+		req.NodeID != node || req.Term != term {
+		httperror.Write(w, r, httperror.BadRequest("a sealed report"))
 		return
 	}
 	pub, err := base64.StdEncoding.DecodeString(pubB64)
@@ -184,10 +201,12 @@ func (o *Orchestrator) Reports(r *http.Request) ([]KeptReport, error) {
 			Transactions []struct {
 				Changes []json.RawMessage `json:"changes"`
 			} `json:"transactions"`
-			Counts map[string]int `json:"counts"`
+			Counts    map[string]int `json:"counts"`
+			Truncated bool           `json:"truncated"`
+			Total     int            `json:"total"`
 		}
 		_ = json.Unmarshal(report, &a)
-		k.Txs, k.Counts = len(a.Transactions), a.Counts
+		k.Txs, k.Counts, k.Truncated, k.Total = len(a.Transactions), a.Counts, a.Truncated, a.Total
 		for _, t := range a.Transactions {
 			k.Changes += len(t.Changes)
 		}

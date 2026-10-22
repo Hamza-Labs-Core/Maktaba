@@ -57,7 +57,15 @@ func (c *SupervisorClient) Call(ctx context.Context, step string, req, out any) 
 		return err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	// this machine's own supervisor, on loopback: its answers (a kept-aside report's plan
+	// of thousands of transactions) are taken whole, or refused as too large, never cut
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAnswer+1))
+	if err != nil {
+		return fmt.Errorf("the supervisor's answer: %w", err)
+	}
+	if len(body) > maxAnswer {
+		return fmt.Errorf("the supervisor's answer to %s is over %d MiB", step, maxAnswer>>20)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("the supervisor: %s", strings.TrimSpace(string(body)))
 	}
@@ -67,9 +75,13 @@ func (c *SupervisorClient) Call(ctx context.Context, step string, req, out any) 
 	return json.Unmarshal(body, out)
 }
 
-// maxChunk bounds a sealed chunk (cmd/maktaba-server/internal/switchover: 1 MiB and its
-// tag).
-const maxChunk = 1<<20 + 16
+// maxAnswer bounds an answer of the supervisor's (a plan is smaller than the report it
+// plans, maxReport).
+const maxAnswer = 2 * maxReport
+
+// maxChunk bounds a sealed chunk (cmd/maktaba-server/internal/switchover: 1 MiB, its tag,
+// and the first chunk's salt).
+const maxChunk = 1<<20 + 16 + 32
 
 // readChunks reads the sealed kit's records (index, last, length, the sealed bytes:
 // switchover.WriteChunk in the supervisor).

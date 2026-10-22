@@ -136,7 +136,8 @@ func newKey(t *testing.T) (priv, pub []byte) {
 }
 
 // The old home's report is taken sealed by it to the cluster only: once, from the
-// machine the emergency registered it as; listed with its counts.
+// machine the emergency of its term registered it as (not one of another term, nor one
+// whose address says another than its body); listed with its counts.
 func TestTheOldHomesReportIsTakenSealedOnly(t *testing.T) {
 	o, _, _, _, _ := setup(t)
 	ctx := context.Background()
@@ -147,6 +148,11 @@ func TestTheOldHomesReportIsTakenSealedOnly(t *testing.T) {
 	}
 	oldPriv, oldPub := newKey(t)
 	old := uuid.NewString()
+	// term 3's emergency registered the old home; term 5's came later
+	if _, err := o.DB.ExecContext(ctx, `INSERT INTO cluster_terms (term, home_name, reason, started_at)
+	    VALUES (3, 'b', 'emergency', now() - interval '1 minute'), (5, 'c', 'emergency', now() + interval '1 hour')`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := o.DB.ExecContext(ctx, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, approved_at,
 	        approved_by, full_node) VALUES ($1, 'a', 'approved', 'linux', 'amd64', $2, now(), 'switchover', true)`,
 		old, base64.StdEncoding.EncodeToString(oldPub)); err != nil {
@@ -156,12 +162,14 @@ func TestTheOldHomesReportIsTakenSealedOnly(t *testing.T) {
 		"cut_lsn": "0/16B3748", "aside": map[string]any{"transactions": []any{
 			map[string]any{"commit_lsn": "0/16B4000", "changes": []any{map[string]any{"table": "public.app_settings",
 				"kind": "insert"}}}}, "counts": map[string]int{"public.app_settings": 1}}})
-	post := func(node string, term int64, sealed string) int {
+	postAs := func(asNode string, asTerm int64, node string, term int64, sealed string) int {
 		body, _ := json.Marshal(map[string]any{"node_id": node, "term": term, "sealed": sealed})
 		rec := httptest.NewRecorder()
-		o.postReport(rec, httptest.NewRequest(http.MethodPost, "/api/cluster/kept-aside/report", bytes.NewReader(body)))
+		u := fmt.Sprintf("/api/cluster/kept-aside/report?node=%s&term=%d", asNode, asTerm)
+		o.postReport(rec, httptest.NewRequest(http.MethodPost, u, bytes.NewReader(body)))
 		return rec.Code
 	}
+	post := func(node string, term int64, sealed string) int { return postAs(node, term, node, term, sealed) }
 	if code := post(old, 3, sealReport(t, oldPriv, clusterPub, 3, report)); code != http.StatusOK {
 		t.Fatalf("the old home's report: %d", code)
 	}
@@ -175,8 +183,14 @@ func TestTheOldHomesReportIsTakenSealedOnly(t *testing.T) {
 	if code := post(uuid.NewString(), 3, sealReport(t, oldPriv, clusterPub, 3, report)); code != http.StatusForbidden {
 		t.Fatalf("a report of a machine that was never an old home: %d", code)
 	}
-	if code := post(old, 4, sealReport(t, oldPriv, clusterPub, 4, report)); code != http.StatusBadRequest {
-		t.Fatalf("a report of another term than it says: %d", code)
+	if code := post(old, 5, sealReport(t, oldPriv, clusterPub, 5, report)); code != http.StatusForbidden {
+		t.Fatalf("a report for a term whose emergency did not register it: %d", code)
+	}
+	if code := post(old, 4, sealReport(t, oldPriv, clusterPub, 4, report)); code != http.StatusForbidden {
+		t.Fatalf("a report for a term that was no emergency: %d", code)
+	}
+	if code := postAs(old, 3, old, 4, sealReport(t, oldPriv, clusterPub, 4, report)); code != http.StatusBadRequest {
+		t.Fatalf("a report whose body says another term than its address: %d", code)
 	}
 	rs, err := o.Reports(httptest.NewRequest(http.MethodGet, "/", nil))
 	if err != nil {
