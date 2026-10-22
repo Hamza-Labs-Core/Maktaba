@@ -39,18 +39,23 @@ A video whose relisten jobs keep leaving it without the second listen (a file th
 cannot read, a model that does not load) waits longer after each (from the end of the
 try), the untried ones first, and after ``rules.transcription.relisten_tries`` is left as
 it is, said once in its job log (``relisten_attempts``, slots 0145 and 0146). It gets its
-tries again with a new second-listen model, a machine that runs it with a new capability
-(:func:`second_listen_capability`), or the operator's next ``relisten_round``. Deleted and
-missing videos are not tried, and their records go.
+tries again with a second-listen model or a capability (:func:`second_listen_capability`)
+the home has not seen before (``relisten_seen``), or with the operator's next
+``relisten_round``. A try that found no room on the GPU is no try: the job goes back.
+Deleted and missing videos are not tried, and their records go.
 """
 
 from __future__ import annotations
 
 import asyncio
+import functools
 import importlib.util
 import math
 import os
 import platform
+import re
+import subprocess
+import sys
 import time
 from datetime import UTC, timedelta
 from pathlib import Path
@@ -432,7 +437,8 @@ async def relisten(db: Any) -> int:
             continue
         tries = int(r["attempts"]) + 1
         # the wait is counted from the end of the try (_settle_tries), not from now: a job
-        # can wait in the queue for hours
+        # can wait in the queue for hours. next_at = now + the wait meanwhile, which a
+        # worker from before slot 0146 (no ended_at) respects too
         wait = compute_backoff(
             tries,
             base=rules.relisten_wait_hours * 3600,
@@ -441,7 +447,7 @@ async def relisten(db: Any) -> int:
         await db.execute(
             "INSERT INTO relisten_attempts (video_id, attempts, last_job_id, last_at, next_at,"
             " ended_at, wait_s, model, relisten_round)"
-            " VALUES ($1, $2, $3, $4, $4, NULL, $5, $6, $7)"
+            " VALUES ($1, $2, $3, $4, $8, NULL, $5, $6, $7)"
             " ON CONFLICT (video_id) DO UPDATE SET"
             " attempts = EXCLUDED.attempts, last_job_id = EXCLUDED.last_job_id,"
             " last_at = EXCLUDED.last_at, next_at = EXCLUDED.next_at, ended_at = NULL,"
@@ -455,6 +461,7 @@ async def relisten(db: Any) -> int:
             wait,
             model,
             rules.relisten_round,
+            to_ts(db, at + timedelta(seconds=wait)),
         )
         queued += 1
     if queued:
@@ -482,10 +489,12 @@ async def _forget_gone(db: Any) -> int:
 async def _settle_tries(db: Any, rules: TranscriptionConfig) -> int:
     """The tries whose job is over: their wait starts when the job ended (its
     ``finished_at``; now when the job is gone), so a job that waited in the queue does not
-    use up the wait. Returns how many."""
+    use up the wait. A job that ended without running (``skipped_unchanged``: workers
+    without the second listen, or without room for it, gave it back until it was a day
+    old) was no try, and does not count. Returns how many."""
     rows = await db.fetch(
-        "SELECT r.video_id, r.attempts, r.wait_s, j.finished_at FROM relisten_attempts r"
-        " LEFT JOIN processing_jobs j ON j.id = r.last_job_id"
+        "SELECT r.video_id, r.attempts, r.wait_s, j.finished_at, j.outcome"
+        " FROM relisten_attempts r LEFT JOIN processing_jobs j ON j.id = r.last_job_id"
         f" WHERE r.ended_at IS NULL AND NOT {_open_job('r.video_id')}"
     )
     from ...pipeline.backoff import compute_backoff
@@ -500,61 +509,63 @@ async def _settle_tries(db: Any, rules: TranscriptionConfig) -> int:
                 cap=max(rules.relisten_wait_hours, rules.relisten_wait_max_hours) * 3600,
             )
         await db.execute(
-            "UPDATE relisten_attempts SET ended_at = $2, next_at = $3"
+            "UPDATE relisten_attempts SET ended_at = $2, next_at = $3, attempts = attempts - $4"
             " WHERE video_id = $1 AND ended_at IS NULL",
             uid(r["video_id"]),
             to_ts(db, ended),
             to_ts(db, ended + timedelta(seconds=float(wait))),
+            1 if r["outcome"] == "skipped_unchanged" and int(r["attempts"]) > 0 else 0,
         )
     return len(rows)
 
 
 async def _reset_relistens(db: Any, model: str, round_: int) -> int:
-    """Tries start over (none made, nothing stopped) for every video: when this worker's
-    second listen runs with a capability the home has not seen (:func:`second_listen_
-    capability`: a new machine, a new GPU, new packages), those that stopped; with another
-    model than its tries were made with, or tried in a round before the operator's
-    ``relisten_round``, those too. Returns how many."""
+    """Tries start over (none made, nothing stopped). For the videos that stopped: when
+    this worker's second-listen model, or its capability (:func:`second_listen_capability`:
+    a new machine, GPU, driver or packages), is one the home has not seen before
+    (``relisten_seen``), once, whoever sees it first; a model or capability seen before
+    changes nothing, so machines that differ do not reset each other. For every video tried
+    in a round before the operator's ``relisten_round``: once a round. Returns how many."""
     capability, detail = second_listen_capability()
     at = to_ts(db, now())
-    reset = "attempts = 0, stopped_at = NULL, next_at = $1, ended_at = $1"
     n = 0
-    seen = await db.fetchrow(
-        "INSERT INTO relisten_capabilities (capability, detail, first_seen) VALUES ($1, $2, $3)"
-        " ON CONFLICT (capability) DO NOTHING RETURNING capability",
-        capability,
-        dumps(detail),
-        at,
-    )
-    if seen is not None:
+    for kind, key, what in (("model", model, {"model": model}), ("capability", capability, detail)):
+        seen = await db.fetchrow(
+            "INSERT INTO relisten_seen (kind, key, detail, first_seen) VALUES ($1, $2, $3, $4)"
+            " ON CONFLICT (kind, key) DO NOTHING RETURNING key",
+            kind,
+            key,
+            dumps(what),
+            at,
+        )
+        if seen is None:
+            continue
         rows = await db.fetch(
-            f"UPDATE relisten_attempts SET {reset} WHERE stopped_at IS NOT NULL RETURNING video_id",
+            "UPDATE relisten_attempts SET attempts = 0, stopped_at = NULL, next_at = $1"
+            " WHERE stopped_at IS NOT NULL RETURNING video_id",
             at,
         )
         n += len(rows)
         if rows:
-            _log.info("transcribe.relisten_reset", why="new capability", videos=len(rows), **detail)
+            _log.info("transcribe.relisten_reset", why=f"new {kind}", videos=len(rows), **what)
     rows = await db.fetch(
-        f"UPDATE relisten_attempts SET {reset}, model = $2, relisten_round = $3"
-        " WHERE (model IS NOT NULL AND model <> $2) OR relisten_round < $3 RETURNING video_id",
+        "UPDATE relisten_attempts SET attempts = 0, stopped_at = NULL, next_at = $1,"
+        " relisten_round = $2 WHERE relisten_round < $2 RETURNING video_id",
         at,
-        model,
         round_,
     )
     if rows:
-        _log.info("transcribe.relisten_reset", why="model or round", videos=len(rows), model=model)
+        _log.info("transcribe.relisten_reset", why="round", videos=len(rows), round=round_)
     return n + len(rows)
 
 
 def second_listen_capability() -> tuple[str, dict[str, Any]]:
-    """What this worker's second listen runs on, as a key and its parts: the machine (host
-    name, machine id), its engine, processor and memory, and the versions of the packages
-    it runs with. A key the home has not seen gives the stopped transcripts their tries
-    again (:func:`_reset_relistens`)."""
-    import socket
+    """What this worker's second listen runs on, as a key and its parts: the machine
+    (:func:`_machine_key`), its engine and processor, on Apple Silicon its memory, on an
+    NVIDIA GPU that GPU (name, memory, compute capability, driver), and the versions of
+    the packages it runs with. A key the home has not seen gives the stopped transcripts
+    their tries again (:func:`_reset_relistens`)."""
     from importlib import metadata
-
-    from ...cluster.config import machine_id
 
     packages: dict[str, str] = {}
     for name in ("mlx", "mlx-audio", "torch", "transformers"):
@@ -562,16 +573,83 @@ def second_listen_capability() -> tuple[str, dict[str, Any]]:
             packages[name] = metadata.version(name)
         except metadata.PackageNotFoundError:
             continue
-    mem = system_memory()
     detail: dict[str, Any] = {
-        "host": socket.gethostname(),
-        "machine": machine_id(),
+        "machine": _machine_key(),
         "engine": engine.current(),
         "arch": platform.machine(),
-        "memory_gb": None if mem is None else round(mem[0] / (1 << 30)),
         "packages": packages,
     }
+    if engine.current() == engine.MLX:
+        mem = system_memory()
+        detail["memory_gb"] = None if mem is None else round(mem[0] / (1 << 30))
+    else:
+        detail["gpu"] = _gpu_key()
     return canonical_hash(detail), detail
+
+
+def _gpu_key() -> dict[str, Any] | None:
+    """The NVIDIA GPU the second listen runs on (Whisper's, ``MAKTABA_STT_DEVICE``), as its
+    driver names it, or None without one."""
+    from ...stt import cohere_cuda, ct2
+
+    index = cohere_cuda.device_index(os.environ.get("MAKTABA_STT_DEVICE") or "auto")
+    gpu = None if index is None else ct2.gpu_info(index)
+    if gpu is None:
+        return None
+    return {
+        "name": gpu.name,
+        "memory_gb": round(gpu.total_gb),
+        "compute": None if gpu.compute is None else f"{gpu.compute[0]}.{gpu.compute[1]}",
+        "driver": gpu.driver_major,
+    }
+
+
+def _machine_key() -> str:
+    """This machine, steady across renames: a hash of its own id (Windows' MachineGuid,
+    macOS' IOPlatformUUID, Linux's machine-id; :func:`stable_machine_id`), else of its host
+    name."""
+    import socket
+
+    mid = stable_machine_id()
+    return canonical_hash({"id": mid} if mid else {"host": socket.gethostname()})[:16]
+
+
+@functools.cache
+def stable_machine_id() -> str:
+    """This machine's own id, "" when it cannot be read: ``MAKTABA_MACHINE_ID`` or Windows'
+    MachineGuid (:func:`~maktaba_pipeline.cluster.config.machine_id`), macOS' IOPlatformUUID
+    (``ioreg``, run without a shell, its answer matched by a pattern), Linux's machine-id."""
+    from ...cluster.config import machine_id
+
+    mid = machine_id()
+    if mid or sys.platform == "win32":
+        return mid
+    if sys.platform == "darwin":
+        return _io_platform_uuid()
+    for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+        try:
+            text = Path(path).read_text(encoding="ascii").strip()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if re.fullmatch(r"[0-9a-fA-F]{32}", text):
+            return text
+    return ""
+
+
+def _io_platform_uuid() -> str:
+    """The Mac's IOPlatformUUID (its hardware UUID), "" when ``ioreg`` cannot say."""
+    try:
+        out = subprocess.run(
+            ["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    m = re.search(r'"IOPlatformUUID"\s*=\s*"([0-9A-Fa-f-]{36})"', out)
+    return m.group(1) if m else ""
 
 
 async def _stop_relistens(db: Any, skipped: str, rules: TranscriptionConfig) -> int:
@@ -601,11 +679,15 @@ async def _stop_relistens(db: Any, skipped: str, rules: TranscriptionConfig) -> 
         )
         async with db.transaction():
             # set once: another worker's sweep at the same time finds it set
+            # ...and still out of tries, its last one over: a reset between the choice
+            # and here (another worker's, or the operator's round) stands
             won = await db.fetchrow(
                 "UPDATE relisten_attempts SET stopped_at = $2"
-                " WHERE video_id = $1 AND stopped_at IS NULL RETURNING video_id",
+                " WHERE video_id = $1 AND stopped_at IS NULL AND attempts >= $3"
+                " AND ended_at IS NOT NULL RETURNING video_id",
                 video_id,
                 to_ts(db, now()),
+                rules.relisten_tries,
             )
             if won is None:
                 continue
@@ -684,7 +766,7 @@ def _refine(
     cannot run it (no mlx-audio; no NVIDIA GPU, or one with
     no room for it beside Whisper, whose ``settings`` say its device and batch; no copy of
     the model) keeps Whisper's words and says why."""
-    from ...stt.cohere import dictionary, recogniser
+    from ...stt.cohere import NoRoom, dictionary, recogniser
     from ...stt.refine import refine
 
     try:
@@ -695,6 +777,7 @@ def _refine(
             "model": model,
             "source": "skipped",
             "skipped": f"{type(exc).__name__}: {exc}"[:300],
+            **({"no_room": True} if isinstance(exc, NoRoom) else {}),
         }
     source = str(getattr(rec, "source", "hf"))
     runtime = getattr(rec, "runtime", None)
@@ -973,8 +1056,12 @@ async def _transcribe_file(
         result = _remap(result, tmap, total_sec)
 
     skipped = refined is not None and refined.get("source") == "skipped"
-    # a relisten job that again went without the second listen: its tries go on counting
     relisten = bool((ctx.job.payload or {}).get(RELISTEN))
+    if relisten and refined is not None and refined.get("no_room"):
+        # no room on this GPU for the second listen now: no try. The job goes back for a
+        # worker with room (this one waits out its backoff, stt/cohere.py)
+        raise JobDeferred(f"the second listen: {refined.get('skipped')}", RELISTEN_DEFER_S)
+    # a relisten job that again went without the second listen: its tries go on counting
     transcript_id = await _store(
         db, v.id, result, settings, refined, keep_tries=skipped and relisten
     )

@@ -5740,7 +5740,7 @@
      "kind": "int",
      "group": "Transcription",
      "label": "Try the stopped transcripts again (round)",
-     "help": "Raise this by one to give every transcript the second listen stopped on its tries again, for example once its share or its model is reachable again. A new second-listen model, or a machine that runs it with a new GPU or new packages, does the same by itself.",
+     "help": "Raise this by one to give every transcript the second listen stopped on its tries again, for example once its share or its model is reachable again. A second-listen model, or a machine's GPU, driver or packages, the home has not seen before does the same for them by itself.",
      "default": 0,
      "minimum": 0
     }

@@ -8,8 +8,9 @@ it leaves ``transcribe`` to the machines that can, so every transcript gets it. 
 rules let such a machine transcribe too: its transcripts then keep Whisper's words and
 say why, and a machine that runs the second listen transcribes them again later
 (:mod:`maktaba_pipeline.engine.stages.transcribe`, ``relisten``): a few tries each,
-further apart each time, then left as they are until something changes (the model, a
-machine that runs it) or the operator asks again (``relisten_round``).
+further apart each time, then left as they are until the home sees a second-listen
+model or a machine's capability (its GPU, driver, packages) it has not seen before, or the
+operator asks again (``relisten_round``).
 """
 
 from __future__ import annotations
@@ -63,9 +64,9 @@ settings.register(TranscriptionConfig, {
     "relisten_round": settings.Help(
         _T, "Try the stopped transcripts again (round)",
         "Raise this by one to give every transcript the second listen stopped on its "
-        "tries again, for example once its share or its model is reachable again. A new "
-        "second-listen model, or a machine that runs it with a new GPU or new packages, "
-        "does the same by itself.",
+        "tries again, for example once its share or its model is reachable again. A "
+        "second-listen model, or a machine's GPU, driver or packages, the home has not "
+        "seen before does the same for them by itself.",
         minimum=0),
     "without_second_listen": settings.Help(
         _T, "Transcribe without the second listen",

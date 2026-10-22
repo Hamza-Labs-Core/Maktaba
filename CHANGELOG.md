@@ -235,10 +235,11 @@ don't append a line here; docs-only PRs are exempt.
 - **The second listen's tries count from the end of each try, and a stopped transcript comes
   back (follow-up of #221).** The wait between tries counted from when the try was queued, so a
   job that waited hours used it up; it now counts from the end of the try. A transcript the
-  second listen stopped on gets its tries again by itself with a new second-listen model, or when
-  a machine runs it with a new GPU or new packages, and Settings, Transcription has the number of
-  tries, the waits and a round to raise to try them all again (new table
-  `relisten_capabilities` and columns on `relisten_attempts`, slot 0146). Deleted and missing
+  second listen stopped on gets its tries again by itself, once, when the home sees a
+  second-listen model, or a machine's GPU, driver or packages, for the first time, and Settings,
+  Transcription has the number of tries, the waits and a round to raise to try them all again
+  (new table `relisten_seen` and columns on `relisten_attempts`, slot 0146). A try that found no
+  room on the GPU no longer counts (follow-up of story 38.9). Deleted and missing
   videos are no longer tried, and the stop note keeps its reason on long Windows paths.
 - **`[server] role = "home"` (or `MAKTABA_ROLE=home`) runs no role as a node.** The supervisor
   only left the node's variables out, while streaming and the pipeline read the node config
