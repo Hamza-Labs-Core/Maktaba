@@ -30,7 +30,7 @@ var copyReviewed = []string{
 	"media_metadata_enrichment", "media_parsed_titles", "notification_cursors",
 	"notification_reads", "notifications", "personal_access_tokens", "playback_state",
 	"plex_items", "plex_livetv_state", "processing_jobs", "promo_links", "purge_log",
-	"queue_control", "recommendation_dismissals", "release_catalog", "relisten_attempts", "relisten_seen",
+	"queue_control", "recommendation_dismissals", "release_catalog", "relisten_attempts", "relisten_seen", "search_runs",
 	"saved_searches",
 	"search_history", "season_style", "season_tags", "segment_speakers", "series", "series_books",
 	"series_episodes", "series_seasons", "speakers", "storage_canonicalize",

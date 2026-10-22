@@ -1337,7 +1337,12 @@ function ImportModal({
     }
     setFinding(true);
     try {
-      const res = await api.post<SearchResponse>("/api/search", { q, mode: "fts", view: "list" });
+      const res = await api.post<SearchResponse>("/api/search", {
+        q,
+        mode: "fts",
+        view: "list",
+        save: false,
+      });
       setFound(listOf(res?.videos));
     } catch (err) {
       setFound([]);

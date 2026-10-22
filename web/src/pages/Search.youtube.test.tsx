@@ -173,7 +173,12 @@ describe("Search — From YouTube", () => {
     const dialog = await screen.findByRole("dialog");
     await user.type(within(dialog).getByRole("searchbox"), "other");
     await user.click(within(dialog).getByRole("button", { name: "Search" }));
-    expect(post).toHaveBeenLastCalledWith("/api/search", { q: "other", mode: "fts", view: "list" });
+    expect(post).toHaveBeenLastCalledWith("/api/search", {
+      q: "other",
+      mode: "fts",
+      view: "list",
+      save: false,
+    });
     await user.click(await within(dialog).findByLabelText(/Another lesson/));
     await user.click(within(dialog).getByRole("button", { name: "Import" }));
     await waitFor(() =>
