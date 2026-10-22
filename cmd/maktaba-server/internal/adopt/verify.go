@@ -64,10 +64,15 @@ func Verify(ctx context.Context, sys Sys, tgt Target, cfg config.Config, wait ti
 var reachedOn = []string{"web", "api", "stream"}
 
 // checkReach: every address other devices reached the old install on (one of
-// reachedOn, bound beyond loopback, as 0.0.0.0:8780) is the app's server's now:
-// a program of the app listens on its port, bound beyond loopback too (the
-// address itself or every one). /healthz on loopback proves nothing of that.
+// reachedOn, bound beyond loopback, as 0.0.0.0:8780), carried from its
+// server.toml into the app's, is the app's server's now: a program of the app
+// listens on its port, bound beyond loopback too (the address itself or every
+// one). /healthz on loopback proves nothing of that. An install without a
+// server.toml carried none: the app's own addresses are its settings.
 func checkReach(sys Sys, src Source, tgt Target) error {
+	if !src.ConfigFound {
+		return nil
+	}
 	var procs []Proc
 	for _, key := range reachedOn {
 		host, port, err := net.SplitHostPort(src.Ports[key])

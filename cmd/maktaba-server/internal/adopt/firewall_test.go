@@ -435,3 +435,27 @@ func TestRulesMeet(t *testing.T) {
 		t.Error("profiles")
 	}
 }
+
+// TestReachIsCheckedWhereItWasCarried: the addresses other devices reached the
+// old install on are checked when its server.toml carried them into the app's;
+// an install without one carried none.
+func TestReachIsCheckedWhereItWasCarried(t *testing.T) {
+	sys := newFakeSys(nil)
+	src := Source{Ports: map[string]string{"web": "0.0.0.0:8780", "api": "127.0.0.1:8781"}}
+	if err := checkReach(sys, src, Target{}); err != nil {
+		t.Errorf("nothing carried: %v", err)
+	}
+	src.ConfigFound = true
+	if err := checkReach(sys, src, Target{}); err == nil || !strings.Contains(err.Error(), "0.0.0.0:8780") {
+		t.Errorf("carried, nothing listens: %v", err)
+	}
+	sys.procs = append(sys.procs, Proc{PID: 7, Name: "maktaba-server.exe", Exe: filepath.Join(t.TempDir(), "maktaba-server.exe")})
+	sys.ports["8780"] = 7
+	if err := checkReach(sys, src, Target{}); err != nil {
+		t.Errorf("the app listens on every address: %v", err)
+	}
+	sys.bind = map[string]string{"8780": "::1"}
+	if err := checkReach(sys, src, Target{}); err == nil {
+		t.Error("loopback only passed")
+	}
+}

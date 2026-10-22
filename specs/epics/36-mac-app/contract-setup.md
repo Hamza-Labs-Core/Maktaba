@@ -290,8 +290,8 @@ Instead of `check` … `finish` when the PC already runs Maktaba outside the app
   progress event comes before Windows asks to remove the move's rules.
 - `{"action": "verify", "wait_sec": n}` → `{"move": <record>}`: the app's API answers and every
   process runs, a program of the app listens beyond loopback on each of the old install's web, API
-  and streaming addresses that other devices reached (`0.0.0.0:8780`, say: read from Windows' TCP
-  table), and the firewall rules the move made are there, on, inbound, allowing the app's
+  and streaming addresses that other devices reached, as its `server.toml` carried them
+  (`0.0.0.0:8780`, say: read from Windows' TCP table), and the firewall rules the move made are there, on, inbound, allowing the app's
   programs, on the network profile in use, with no block rule of those programs beating them
   there (a connection from this PC to its own LAN address never
   passes the inbound filter, so the rules themselves are read); then the old task is removed. The
