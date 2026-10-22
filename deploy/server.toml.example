@@ -79,6 +79,15 @@ roots = ["/mnt/videos", "/mnt/movies"]
 # ("<stored prefix>=<local prefix>", comma separated): MAKTABA_PATH_MAP for
 # every role, MAKTABA_WORKER_PATH_MAP for the pipeline.
 # path_map = "/Volumes/Originals/=/Users/me/nas-nfs/"
+# The ffmpeg and ffprobe every role runs: a full path, or a name on the PATH.
+# Empty (default): $MAKTABA_FFMPEG / $MAKTABA_FFPROBE, else the app's own (the Mac
+# and Windows apps carry one), else the PATH's: on Linux the distribution's
+# (FFmpeg 4.4 or later with libx264: Fedora's and openSUSE's own lack it, RPM
+# Fusion's and Packman's have it). An empty ffprobe is the one beside ffmpeg.
+# Setup's check, `maktaba-server ffmpeg` and the System health page say whether
+# the one found does what Maktaba needs, and on Linux the command that installs it.
+# ffmpeg = "/usr/bin/ffmpeg"
+# ffprobe = "/usr/bin/ffprobe"
 
 [transcription]
 # The Whisper model (a Hugging Face repo or a folder): MAKTABA_STT_MODEL. Empty,
