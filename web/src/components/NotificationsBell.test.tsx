@@ -1,7 +1,7 @@
 // Story 33.13 TC3: the bell - the unread count, the list (localised from key + params),
 // opening a notice marks it read and follows its link, mark all read, Escape closes.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { I18nProvider } from "../lib/i18n";
@@ -75,7 +75,11 @@ describe("NotificationsBell", () => {
     post.mockResolvedValueOnce({ unread: 1 });
     await user.click(screen.getByText(/needs your approval/));
     expect(post).toHaveBeenCalledWith(`/api/notifications/${notifications.items[0]!.id}/read`);
-    expect(screen.getByTestId("where")).toHaveTextContent(notifications.items[0]!.link);
+    // the bell follows the link once the read has answered, and the router's
+    // location update is a transition: it can land after the click resolves
+    await waitFor(() =>
+      expect(screen.getByTestId("where")).toHaveTextContent(notifications.items[0]!.link)
+    );
     expect(screen.getByTestId("notifications-bell")).toHaveAccessibleName(
       "Notifications, 1 unread"
     );
