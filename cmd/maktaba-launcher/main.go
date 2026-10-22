@@ -14,8 +14,8 @@
 // It never downloads, verifies signatures or touches the database; it uses
 // only the standard library and golang.org/x/sys.
 //
-//	maktaba-launcher [--root DIR] serve [-- server args]
-//	maktaba-launcher [--app-bundle DIR] [--root DIR] serve [-- server args]
+//	maktaba-launcher [--root DIR] [--log-file FILE] serve [-- server args]
+//	maktaba-launcher [--app-bundle DIR] [--root DIR] [--log-file FILE] serve [-- server args]
 //	maktaba-launcher --version
 //	maktaba-launcher --status [--json]
 //	maktaba-launcher --verify <release dir>
@@ -69,9 +69,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		pendingTO   = fs.Duration("pending-timeout", 15*time.Minute, "roll back a pending release not confirmed within this")
 		stopGrace   = fs.Duration("stop-grace", time.Minute, "how long the server may take to stop before it is killed")
 		appBundle   = fs.String("app-bundle", "", "run the server payload in DIR (default: detected when the launcher is inside Maktaba.app, or in <install>\\server\\bin beside Maktaba.exe)")
+		logPath     = fs.String("log-file", "", "serve: append the launcher's and the server's output to FILE (renamed to FILE.1 past 50 MB)")
 	)
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
+	}
+	// the Linux app's systemd unit has no terminal to write to (Epic 39 story 39.5)
+	if *logPath != "" && len(fs.Args()) > 0 && fs.Args()[0] == "serve" {
+		w, done, err := logPipe(*logPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "maktaba-launcher: --log-file: %v\n", err)
+			return exitFailure
+		}
+		defer done()
+		stdout, stderr = w, w
 	}
 	if *showVersion {
 		fmt.Fprintf(stdout, "maktaba-launcher %s (launcher_protocol %d)\n", Version, LauncherProtocol)
@@ -82,7 +93,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		bundle, _ = bundlePayload(selfDir())
 	}
 	if bundle != "" {
-		return runBundle(fs.Args(), stdout, stderr, bundle, appStateRoot(*root), *status, *asJSON,
+		return runBundle(fs.Args(), stdout, stderr, bundle, "", appStateRoot(*root), *status, *asJSON,
+			*replaceSelf != "", *stopGrace)
+	}
+	// the Linux app's runtime copy (Epic 39 story 39.3): app-bundle mode too
+	if payload, ok := runtimePayload(selfDir()); ok {
+		return runBundle(fs.Args(), stdout, stderr, payload, filepath.Dir(payload), runtimeStateRoot(*root), *status, *asJSON,
 			*replaceSelf != "", *stopGrace)
 	}
 	l := layout.New(resolveRoot(*root))
@@ -144,15 +160,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 // nothing here): on Windows the app's agent starts it with CREATE_NO_WINDOW,
 // a console without a window that the server and every role share, so
 // CTRL_BREAK reaches them and nothing flashes; allocating or showing one
-// would. The agent asks it to stop through StopEventName.
-func runBundle(rest []string, stdout, stderr io.Writer, bundle, root string, status, asJSON, replaceSelf bool,
+// would. The agent asks it to stop through StopEventName. runtimeRoot is the
+// Linux runtime bundle is a copy in ("" for the Mac and Windows apps).
+func runBundle(rest []string, stdout, stderr io.Writer, bundle, runtimeRoot, root string, status, asJSON, replaceSelf bool,
 	stopGrace time.Duration) int {
 	switch {
 	case replaceSelf:
 		fmt.Fprintln(stderr, "maktaba-launcher: replace-self: this launcher is part of the Maktaba app; it is updated with the app")
 		return exitFailure
 	case status:
-		return printBundleStatus(stdout, bundle, root, asJSON)
+		return printBundleStatus(stdout, bundle, runtimeRoot, root, asJSON)
 	}
 	if len(rest) == 0 || rest[0] != "serve" {
 		fmt.Fprintln(stderr, "usage: maktaba-launcher [--app-bundle DIR] [--root DIR] serve [-- server args] | --version | --status")
@@ -171,8 +188,8 @@ func runBundle(rest []string, stdout, stderr io.Writer, bundle, root string, sta
 		fmt.Fprintf(stderr, "maktaba-launcher: state directory: %v\n", err)
 		return exitFailure
 	}
-	cfg := Config{Root: root, Bundle: bundle, Args: serverArgs, StopEvent: stopEventName, StopGrace: stopGrace,
-		Stdout: stdout, Stderr: stderr}
+	cfg := Config{Root: root, Bundle: bundle, RuntimeRoot: runtimeRoot, Args: serverArgs, StopEvent: stopEventName,
+		StopGrace: stopGrace, Stdout: stdout, Stderr: stderr}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := Run(ctx, cfg); err != nil {

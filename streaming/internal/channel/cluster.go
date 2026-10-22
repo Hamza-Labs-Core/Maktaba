@@ -49,9 +49,10 @@ type nodeConfig struct {
 // NodeConfigPath is where the pipeline keeps this machine's node config
 // (cluster/config.py config_path): MAKTABA_NODE_CONFIG, else per OS. On Windows the
 // machine's one node config stays where it is: the roaming profile's
-// %APPDATA%\Maktaba\node.json of a machine that joined before Epic 38, else
-// %LOCALAPPDATA%\Maktaba\node.json (the same rule as maktaba-server and the
-// pipeline).
+// %APPDATA%\Maktaba\node.json of a machine that joined before Epic 38, while it is
+// this PC's (its machine_id is this PC's MachineGuid) or no PC's yet; else
+// %LOCALAPPDATA%\Maktaba\node.json. One another PC claimed is skipped: this PC is not
+// that machine (the same rule as maktaba-server and the pipeline).
 func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 	if p := strings.TrimSpace(getenv("MAKTABA_NODE_CONFIG")); p != "" {
 		if strings.HasPrefix(p, "~") {
@@ -67,7 +68,7 @@ func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 		if roaming == "" {
 			roaming = filepath.Join(userHome, "AppData", "Roaming")
 		}
-		if old := filepath.Join(roaming, "Maktaba", "node.json"); isFile(old) {
+		if old := filepath.Join(roaming, "Maktaba", "node.json"); isFile(old) && !claimedElsewhere(old, getenv) {
 			return old
 		}
 		local := getenv("LOCALAPPDATA")
@@ -86,6 +87,27 @@ func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 func isFile(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && !info.IsDir()
+}
+
+// claimedElsewhere: the node config at path records another PC (its machine_id)
+// than this one ($MAKTABA_MACHINE_ID, else Windows' MachineGuid). One with no
+// machine_id, an unreadable one, or a PC whose id cannot be known is never skipped.
+func claimedElsewhere(path string, getenv func(string) string) bool {
+	b, err := os.ReadFile(path) //nolint:gosec // this machine's node config
+	if err != nil {
+		return false
+	}
+	var v struct {
+		MachineID string `json:"machine_id"`
+	}
+	if json.Unmarshal(b, &v) != nil || strings.TrimSpace(v.MachineID) == "" {
+		return false
+	}
+	this := strings.TrimSpace(getenv("MAKTABA_MACHINE_ID"))
+	if this == "" {
+		this = machineGUID()
+	}
+	return this != "" && !strings.EqualFold(strings.TrimSpace(v.MachineID), this)
 }
 
 // DetectRole decides home or node the way the pipeline does: a machine

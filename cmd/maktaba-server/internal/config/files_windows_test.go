@@ -54,10 +54,13 @@ func TestCopiedKeysAreTheUsersOnly(t *testing.T) {
 	}
 }
 
-// AppData on a server (a redirected folder) roams.
-func TestProfileRoamsOnAServer(t *testing.T) {
+// Windows has an id for every PC (MachineGuid), which a node config is claimed with.
+func TestMachineGUID(t *testing.T) {
 	t.Parallel()
-	if !profileRoams(`\\server\profiles\me\AppData\Roaming`) {
-		t.Fatal("AppData on a server roams")
+	if machineGUID() == "" {
+		t.Fatal("no MachineGuid in HKLM\\SOFTWARE\\Microsoft\\Cryptography")
+	}
+	if got := ThisMachineID(func(k string) string { return map[string]string{machineIDEnv: "fake"}[k] }); got != "fake" {
+		t.Fatalf("$MAKTABA_MACHINE_ID wins: %q", got)
 	}
 }

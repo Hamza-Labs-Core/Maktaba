@@ -34,6 +34,13 @@
 // named event the launcher watches; Resume runs the task again. The
 // installer's hooks call `--server-start`, `--server-stop` and
 // `--server-remove`.
+//
+// Linux (agent_linux.rs, specs/epics/39-linux-app/contract-runtime.md). A
+// systemd user unit runs a copy of the payload (<prefix>/share/maktaba/server)
+// in ~/.local/share/maktaba/runtime (never this app's files: an AppImage's
+// mount moves every run), written and controlled through the payload's own
+// `maktaba-server runtime` and `maktaba-server service`; linger starts it at
+// boot.
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -44,6 +51,11 @@ use std::process::Command;
 #[cfg(windows)]
 #[path = "agent_windows.rs"]
 mod win;
+
+// compiled in every test build too: its decisions are tested on every OS
+#[cfg(any(target_os = "linux", test))]
+#[path = "agent_linux.rs"]
+pub mod linux;
 
 pub const LABEL: &str = "com.hamzalabs.maktaba.server";
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -66,7 +78,8 @@ const LOG_TAIL_BYTES: u64 = 64 << 10;
 
 /// Where the server payload is, from the app executable's path:
 /// …/Maktaba.app/Contents/MacOS/Maktaba on a Mac, <install>\Maktaba.exe on
-/// Windows (the payload is <install>\server beside it).
+/// Windows (the payload is <install>\server beside it), <prefix>/bin/Maktaba
+/// on Linux (the payload is <prefix>/share/maktaba/server).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundlePaths {
     /// Contents/Resources/server, or <install>\server
@@ -77,9 +90,27 @@ impl BundlePaths {
     pub fn from_exe(exe: &Path) -> Option<Self> {
         if cfg!(windows) {
             Self::from_install_exe(exe)
+        } else if cfg!(target_os = "linux") {
+            Self::from_linux_exe(exe)
         } else {
             Self::from_app_exe(exe)
         }
+    }
+
+    /// <prefix>/bin/Maktaba → <prefix>/share/maktaba/server, where the Linux
+    /// bundles put the payload (tools/release/linux-app/payload.sh's overlay):
+    /// /usr in a .deb or an .rpm, $APPDIR/usr in the AppImage (mounted at a new
+    /// /tmp/.mount_* every run). Not among the resources in <prefix>/lib:
+    /// linuxdeploy rewrites the ELF files it finds there.
+    fn from_linux_exe(exe: &Path) -> Option<Self> {
+        Some(Self {
+            server_dir: exe
+                .parent()?
+                .parent()?
+                .join("share")
+                .join("maktaba")
+                .join("server"),
+        })
     }
 
     /// Maktaba.app/Contents/MacOS/Maktaba → Contents/Resources/server.
@@ -129,7 +160,14 @@ fn exe_name(name: &str) -> String {
 
 /// The install's state folder (server.toml, keys, the database, logs on
 /// Windows): %LOCALAPPDATA%\Maktaba on Windows (Epic 38), ~/Library/
-/// Application Support/Maktaba on a Mac (Epic 36).
+/// Application Support/Maktaba on a Mac (Epic 36), $XDG_DATA_HOME/maktaba on
+/// Linux (Epic 39).
+#[cfg(target_os = "linux")]
+pub fn state_root() -> Option<PathBuf> {
+    home().map(|h| linux::data_dir(env_var, &h))
+}
+
+#[cfg(not(target_os = "linux"))]
 pub fn state_root() -> Option<PathBuf> {
     if cfg!(windows) {
         let local = std::env::var_os("LOCALAPPDATA")
@@ -146,7 +184,20 @@ pub fn state_root() -> Option<PathBuf> {
 }
 
 /// Where the server's log goes: ~/Library/Logs/Maktaba on a Mac,
-/// %LOCALAPPDATA%\Maktaba\logs on Windows (maktaba-server's own logs dir).
+/// %LOCALAPPDATA%\Maktaba\logs on Windows, $XDG_STATE_HOME/maktaba/logs on
+/// Linux (maktaba-server's own logs dir).
+#[cfg(target_os = "linux")]
+pub fn logs_dir() -> Option<PathBuf> {
+    home().map(|h| linux::logs_dir(env_var, &h))
+}
+
+/// A set, non-empty environment variable.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn env_var(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|v| !v.is_empty())
+}
+
+#[cfg(not(target_os = "linux"))]
 pub fn logs_dir() -> Option<PathBuf> {
     if cfg!(windows) {
         return state_root().map(|r| r.join("logs"));
@@ -155,6 +206,7 @@ pub fn logs_dir() -> Option<PathBuf> {
 }
 
 /// ~/Library/Logs/Maktaba
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn mac_logs_dir(home: &Path) -> PathBuf {
     home.join("Library").join("Logs").join("Maktaba")
 }
@@ -366,24 +418,30 @@ pub use win::{
     replace_old_task, stop_for_install, unregister,
 };
 
-#[cfg(not(any(target_os = "macos", windows)))]
+// Linux: the systemd user unit, through `maktaba-server service`.
+#[cfg(target_os = "linux")]
+pub use linux::{
+    agent_alive, control, login_item, open_login_items_settings, register, unregister,
+};
+
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 pub fn login_item() -> LoginItem {
     LoginItem::Unsupported
 }
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 pub fn register() -> Result<(), String> {
-    Err("the server login item is macOS and Windows only".into())
+    Err("the server login item is macOS, Windows and Linux only".into())
 }
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 pub fn unregister() -> Result<(), String> {
-    Err("the server login item is macOS and Windows only".into())
+    Err("the server login item is macOS, Windows and Linux only".into())
 }
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 pub fn open_login_items_settings() {}
 
 /// Whether the server agent runs in this session, when the OS can tell (the
-/// Windows agent's mutex); None on a Mac, where launchd knows.
-#[cfg(not(windows))]
+/// Windows agent's mutex, the Linux unit); None on a Mac, where launchd knows.
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn agent_alive() -> Option<bool> {
     None
 }
@@ -407,13 +465,14 @@ pub enum Action {
 }
 
 #[cfg(unix)]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn uid() -> u32 {
     // SAFETY: getuid cannot fail.
     unsafe { libc::getuid() }
 }
 
 /// Pause, resume or restart the server through launchd.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn control(action: Action) -> Result<(), String> {
     let out = Command::new("/bin/launchctl")
         .args(launchctl_args(action, uid()))
@@ -479,6 +538,23 @@ mod tests {
         assert_eq!(
             BundlePaths::from_app_exe(Path::new("/src/target/debug/maktaba-desktop")),
             None
+        );
+    }
+
+    #[test]
+    fn bundle_paths_from_the_linux_executable() {
+        let deb = BundlePaths::from_linux_exe(Path::new("/usr/bin/Maktaba")).unwrap();
+        assert_eq!(
+            deb.server_dir,
+            Path::new("/usr/share").join("maktaba").join("server")
+        );
+        let appimage =
+            BundlePaths::from_linux_exe(Path::new("/tmp/.mount_MakX1/usr/bin/Maktaba")).unwrap();
+        assert_eq!(
+            appimage.server_dir,
+            Path::new("/tmp/.mount_MakX1/usr/share")
+                .join("maktaba")
+                .join("server")
         );
     }
 

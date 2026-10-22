@@ -33,9 +33,15 @@ const STDERR_TAIL: usize = 50;
 /// The app's main window, for a step (Windows, Epic 38 story 38.13): a move
 /// that asks Windows for an administrator's consent (the firewall rules of the
 /// app's programs) gives it this window as its owner, so the prompt opens in
-/// front of the app instead of waiting in the taskbar. Without it (the CLI) a
-/// step runs as it always did.
+/// front of the app instead of waiting in the taskbar. The shell passes it in a
+/// step's `envs` (owner_env); without it (the CLI) a step runs as it always did.
 pub const OWNER_WINDOW_ENV: &str = "MAKTABA_SETUP_HWND";
+
+/// The `envs` entry that hands `owner` (the main window's handle, as a number)
+/// to a step; none without a window.
+pub fn owner_env(owner: Option<isize>) -> Option<(String, String)> {
+    owner.map(|hwnd| (OWNER_WINDOW_ENV.to_string(), hwnd.to_string()))
+}
 
 /// One NDJSON line from a step.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -87,7 +93,7 @@ pub struct StepError {
 }
 
 impl StepError {
-    fn new(code: &str, message: impl Into<String>) -> Self {
+    pub fn new(code: &str, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             message: message.into(),
@@ -108,16 +114,15 @@ pub fn parse_line(line: &str) -> Option<Event> {
     serde_json::from_str(line).ok()
 }
 
-/// Run one step with `bin` (the bundled maktaba-server) and return its
-/// result data. `owner` is the app's main window (its handle, as a number),
-/// passed in OWNER_WINDOW_ENV. `on_progress` gets every progress line as it
-/// arrives.
+/// Run one step with `bin` (the bundled maktaba-server, or on Linux the
+/// runtime's) and return its result data. `envs` are set for it;
+/// `on_progress` gets every progress line as it arrives.
 pub fn run_step(
     bin: &Path,
+    envs: &[(String, String)],
     step: &str,
     input: &Value,
-    owner: Option<isize>,
-    mut on_progress: impl FnMut(Progress),
+    on_progress: impl FnMut(Progress),
 ) -> Result<Value, StepError> {
     if !STEPS.contains(&step) {
         return Err(StepError::new(
@@ -131,16 +136,43 @@ pub fn run_step(
             "a step's input is a JSON object",
         ));
     }
+    run_ndjson(
+        bin,
+        &["setup", "--json", "--step", step],
+        envs,
+        Some(input),
+        on_progress,
+        &format!("setup step {step}"),
+    )
+}
+
+/// Run `bin args…`, a maktaba-server command that speaks the setup contract
+/// (`progress` lines, then one `result` or `error`), and return its result
+/// data. `input` (when given) is its stdin; `what` names it in an error.
+pub fn run_ndjson(
+    bin: &Path,
+    args: &[&str],
+    envs: &[(String, String)],
+    input: Option<&Value>,
+    mut on_progress: impl FnMut(Progress),
+    what: &str,
+) -> Result<Value, StepError> {
     let mut cmd = Command::new(bin);
-    cmd.args(["setup", "--json", "--step", step])
-        .stdin(Stdio::piped())
+    cmd.args(args)
+        .envs(envs.iter().map(|(k, v)| (k, v)))
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    // only this app's own window: never one the app itself was started with
-    match owner {
-        Some(hwnd) => cmd.env(OWNER_WINDOW_ENV, hwnd.to_string()),
-        None => cmd.env_remove(OWNER_WINDOW_ENV),
-    };
+    // the owner of a consent prompt is only ever this app's own window (in
+    // envs): never one the app itself was started with
+    let owner = envs.iter().any(|(k, _)| k == OWNER_WINDOW_ENV);
+    if !owner {
+        cmd.env_remove(OWNER_WINDOW_ENV);
+    }
     // Windows (Epic 38): maktaba-server is a console program; started from
     // the GUI shell without this, each step would flash a console window.
     #[cfg(windows)]
@@ -157,7 +189,7 @@ pub fn run_step(
     // the app is in front (its screen started the step): the step may bring
     // what it opens (the consent prompt) to the front too
     #[cfg(windows)]
-    if owner.is_some() {
+    if owner {
         // SAFETY: a plain call with a process id; a refusal only leaves the
         // prompt in the taskbar
         unsafe {
@@ -167,7 +199,7 @@ pub fn run_step(
 
     // stdin: the input, then EOF. A step that exits without reading it
     // closes the pipe; the exit code and events tell what happened.
-    if let Some(mut stdin) = child.stdin.take() {
+    if let (Some(mut stdin), Some(input)) = (child.stdin.take(), input) {
         let _ = stdin.write_all(input.to_string().as_bytes());
     }
 
@@ -235,10 +267,7 @@ pub fn run_step(
                 }),
                 Err(e) => format!("could not be waited for: {e}"),
             };
-            let mut e = StepError::new(
-                "no_result",
-                format!("setup step {step} {how} without a result"),
-            );
+            let mut e = StepError::new("no_result", format!("{what} {how} without a result"));
             e.details = details;
             Err(e)
         }
@@ -334,9 +363,9 @@ echo {"type":"result","data":{"argv":"%*","input":%input%}}"#,
         let mut seen = Vec::new();
         let out = run_step(
             &bin,
+            &[],
             "admin",
             &json!({"username": "admin", "password": "s3cret"}),
-            None,
             |p| seen.push(p.stage),
         )
         .unwrap();
@@ -357,16 +386,11 @@ echo {"type":"result","data":{"argv":"%*","input":%input%}}"#,
             r#"printf '{"type":"result","data":{"owner":"%s"}}\n' "$MAKTABA_SETUP_HWND""#,
             r#"echo {"type":"result","data":{"owner":"%MAKTABA_SETUP_HWND%"}}"#,
         );
-        let out = run_step(
-            &bin,
-            "adopt",
-            &json!({"action": "move"}),
-            Some(4242),
-            |_| {},
-        )
-        .unwrap();
+        let envs: Vec<_> = owner_env(Some(4242)).into_iter().collect();
+        let out = run_step(&bin, &envs, "adopt", &json!({"action": "move"}), |_| {}).unwrap();
         assert_eq!(out["owner"], "4242");
-        let out = run_step(&bin, "adopt", &json!({"action": "move"}), None, |_| {}).unwrap();
+        assert_eq!(owner_env(None), None);
+        let out = run_step(&bin, &[], "adopt", &json!({"action": "move"}), |_| {}).unwrap();
         assert_eq!(out["owner"], "");
     }
 
@@ -382,7 +406,7 @@ exit 1"#,
 echo {"type":"error","code":"hf_gated","message":"Accept the terms","field":"hf_token"}
 exit /b 1"#,
         );
-        let e = run_step(&bin, "models", &json!({}), None, |_| {}).unwrap_err();
+        let e = run_step(&bin, &[], "models", &json!({}), |_| {}).unwrap_err();
         assert_eq!(e.code, "hf_gated");
         assert_eq!(e.field.as_deref(), Some("hf_token"));
         assert_eq!(e.details, ["checking token"]);
@@ -396,7 +420,7 @@ exit /b 1"#,
             "echo boom >&2; exit 3",
             ">&2 echo boom\nexit /b 3",
         );
-        let e = run_step(&bin, "check", &json!({}), None, |_| {}).unwrap_err();
+        let e = run_step(&bin, &[], "check", &json!({}), |_| {}).unwrap_err();
         assert_eq!(e.code, "no_result");
         assert!(e.message.contains("exited with code 3"), "{}", e.message);
         assert_eq!(e.details, ["boom"]);
@@ -407,7 +431,7 @@ exit /b 1"#,
             "echo {\"type\":\"result\",\"data\":{}}\nexit /b 1",
         );
         assert_eq!(
-            run_step(&bin, "check", &json!({}), None, |_| {})
+            run_step(&bin, &[], "check", &json!({}), |_| {})
                 .unwrap_err()
                 .code,
             "no_result"
@@ -418,19 +442,19 @@ exit /b 1"#,
     fn unknown_steps_bad_input_and_a_missing_binary_are_refused() {
         let missing = Path::new("/nonexistent/maktaba-server");
         assert_eq!(
-            run_step(missing, "rm -rf", &json!({}), None, |_| {})
+            run_step(missing, &[], "rm -rf", &json!({}), |_| {})
                 .unwrap_err()
                 .code,
             "unknown_step"
         );
         assert_eq!(
-            run_step(missing, "check", &json!([1]), None, |_| {})
+            run_step(missing, &[], "check", &json!([1]), |_| {})
                 .unwrap_err()
                 .code,
             "bad_input"
         );
         assert_eq!(
-            run_step(missing, "check", &json!({}), None, |_| {})
+            run_step(missing, &[], "check", &json!({}), |_| {})
                 .unwrap_err()
                 .code,
             "server_missing"
@@ -447,12 +471,52 @@ exit /b 1"#,
         );
         let out = run_step(
             &bin,
+            &[],
             "status",
             &json!({"big": "x".repeat(1 << 17)}),
-            None,
             |_| {},
         )
         .unwrap();
         assert_eq!(out, json!({"configured": false}));
+    }
+
+    #[test]
+    fn a_command_gets_its_environment_and_no_stdin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = stub(
+            tmp.path(),
+            r#"printf '{"type":"progress","stage":"copy","message":"Copying","done":5,"total":10}\n'
+printf '{"type":"result","data":{"bundle":"%s","argv":"%s"}}\n' "$MAKTABA_APP_BUNDLE" "$*""#,
+            r#"echo {"type":"progress","stage":"copy","message":"Copying","done":5,"total":10}
+echo {"type":"result","data":{"bundle":"%MAKTABA_APP_BUNDLE%","argv":"%*"}}"#,
+        );
+        let mut seen = Vec::new();
+        let out = run_ndjson(
+            &bin,
+            &["runtime", "install", "--json"],
+            &[("MAKTABA_APP_BUNDLE".into(), "rt-current".into())],
+            None,
+            |p| seen.push((p.stage, p.done, p.total)),
+            "runtime install",
+        )
+        .unwrap();
+        assert_eq!(out["bundle"], "rt-current");
+        assert_eq!(out["argv"], "runtime install --json");
+        assert_eq!(seen, [("copy".to_string(), Some(5), Some(10))]);
+        let bin = stub(tmp.path(), "exit 4", "exit /b 4");
+        let e = run_ndjson(
+            &bin,
+            &["runtime", "install"],
+            &[],
+            None,
+            |_| {},
+            "runtime install",
+        )
+        .unwrap_err();
+        assert!(
+            e.message.starts_with("runtime install exited with code 4"),
+            "{}",
+            e.message
+        );
     }
 }

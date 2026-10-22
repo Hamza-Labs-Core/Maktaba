@@ -82,6 +82,85 @@ def test_windows_rejoin_and_hand_edit_land_in_the_one_node_config(
     assert not (tmp_path / "Local" / "Maktaba" / "node.json").exists()
 
 
+def _windows_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, this_pc: str) -> Path:
+    """A Windows profile under tmp_path, this PC's id faked; the roaming node config."""
+    monkeypatch.delenv(config.ENV_VAR, raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    monkeypatch.setenv(config.MACHINE_ID_ENV, this_pc)
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    roaming = tmp_path / "Roaming" / "Maktaba" / "node.json"
+    roaming.parent.mkdir(parents=True)
+    return roaming
+
+
+_JOINED = {"node_id": "n1", "name": "pc", "private_key": "k1", "database_url": "postgres://a"}
+
+
+def test_windows_an_unclaimed_roaming_config_is_claimed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first new Maktaba that loads a node config from before Epic 38 claims it for
+    its PC: machine_id written in, every other key kept, and no second file."""
+    roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
+    roaming.write_text(json.dumps({**_JOINED, "extra": 1}), encoding="utf-8")
+    cfg = config.load()
+    assert cfg is not None and cfg.node_id == "n1" and cfg.machine_id == "pc-a"
+    data = json.loads(roaming.read_text(encoding="utf-8"))
+    assert data == {**_JOINED, "extra": 1, "machine_id": "pc-a"}
+    assert config.config_path() == roaming
+    assert not (tmp_path / "Local" / "Maktaba" / "node.json").exists()
+
+
+def test_windows_this_pcs_roaming_config_wins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
+    roaming.write_text(json.dumps({**_JOINED, "machine_id": "PC-A"}), encoding="utf-8")
+    assert config.config_path() == roaming
+    cfg = config.load()
+    assert cfg is not None and cfg.joined
+
+
+def test_windows_another_pcs_roaming_config_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A roaming node config another PC claimed is not this PC's: it is not joined, its
+    own join writes %LOCALAPPDATA%, and the other PC's identity stays as it was."""
+    roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
+    theirs = json.dumps({**_JOINED, "machine_id": "pc-b"})
+    roaming.write_text(theirs, encoding="utf-8")
+    local = tmp_path / "Local" / "Maktaba" / "node.json"
+    assert config.config_path() == local
+    assert config.load() is None
+    mine = NodeConfig(node_id="n2", name="pc", private_key="k2", machine_id="pc-a")
+    assert config.save(mine) == local  # a join on this PC
+    loaded = config.load()
+    assert loaded is not None and loaded.node_id == "n2"
+    assert roaming.read_text(encoding="utf-8") == theirs
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows ACLs")
+def test_windows_claim_keeps_the_files_acl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The claim replaces the file with ReplaceFileW, which keeps its ACL as it was."""
+    import subprocess
+
+    roaming = _windows_profile(tmp_path, monkeypatch, "pc-a")
+    roaming.write_text(json.dumps(_JOINED), encoding="utf-8")
+    user = os.environ["USERNAME"]
+    for args in (["/inheritance:r", "/grant:r", f"{user}:F"], ["/grant", "*S-1-5-32-545:(R)"]):
+        subprocess.run(["icacls", str(roaming), *args], check=True, capture_output=True)
+
+    def acl() -> str:
+        out = subprocess.run(["icacls", str(roaming)], check=True, capture_output=True, text=True)
+        return out.stdout
+
+    before = acl()
+    cfg = config.load()
+    assert cfg is not None and cfg.machine_id == "pc-a"
+    assert acl() == before
+
+
 def test_the_override_wins_on_every_os() -> None:
     env = {config.ENV_VAR: "/elsewhere/n.json", "APPDATA": "C:/a", "XDG_CONFIG_HOME": "/x"}
     for system in ("Darwin", "Linux", "Windows"):

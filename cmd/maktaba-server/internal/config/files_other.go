@@ -30,5 +30,5 @@ func renameNoReplace(from, to string) error {
 // what limits it to its user here.
 func restrictToUser(string) error { return nil }
 
-// profileRoams: a Windows roaming profile (RoamingNodeConfig); none here.
-func profileRoams(string) bool { return false }
+// machineGUID: Windows' id of this PC (ThisMachineID); none here.
+func machineGUID() string { return "" }

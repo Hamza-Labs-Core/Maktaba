@@ -89,4 +89,65 @@ describe("localizeSections", () => {
       }
     }
   });
+
+  // Every rule shows in Arabic on the Settings page: its section's title and summary, and
+  // each field's label, help and group. The sections below came before this check and still
+  // show their English; one leaves the list once translated, and a new one never joins it.
+  const NOT_YET_IN_ARABIC = new Set([
+    "planner",
+    "groups",
+    "detect",
+    "tag",
+    "tagcheck",
+    "books",
+    "dizquetv",
+    "tv",
+    "tv_simulcast",
+    "exactdates",
+    "audit",
+    "plexlive",
+    "repair",
+    "relay",
+    "storage",
+    "updates",
+    "queue_health",
+    "cluster",
+  ]);
+  const withoutArabic = (sec: RuleSection): string[] => {
+    const arC = ar as Record<string, string>;
+    const keys = [`rules.${sec.key}.title`, `rules.${sec.key}.what`];
+    for (const f of sec.fields) {
+      keys.push(`rules.${sec.key}.${f.name}.label`, `rules.group.${f.group}`);
+      if (f.help) keys.push(`rules.${sec.key}.${f.name}.help`);
+    }
+    return keys.filter((k) => !arC[k]);
+  };
+
+  it("describes every rule in Arabic, but the sections not yet translated", () => {
+    for (const sec of sections()) {
+      if (NOT_YET_IN_ARABIC.has(sec.key)) continue;
+      expect(withoutArabic(sec), `rules ${sec.key}: no Arabic text`).toEqual([]);
+    }
+  });
+
+  it("lists only sections that are still without their Arabic", () => {
+    const keys = new Set(sections().map((s) => s.key));
+    for (const key of NOT_YET_IN_ARABIC) {
+      expect(keys.has(key), `${key}: no such rules section`).toBe(true);
+      const sec = sections().find((s) => s.key === key)!;
+      expect(
+        withoutArabic(sec).length,
+        `${key} is in Arabic now: take it off the list`
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it("shows the transcription rules in Arabic", () => {
+    const sec = localizeSections(sections(), "ar").find((s) => s.key === "transcription")!;
+    expect(sec.title).toBe("التفريغ النصي");
+    const f = sec.fields.find((x) => x.name === "without_second_listen")!;
+    expect(f.label).toBe("التفريغ دون الاستماع الثاني");
+    expect(f.help).toContain("الاستماع الثاني");
+    expect(f.group).toBe("التفريغ النصي");
+  });
 });
