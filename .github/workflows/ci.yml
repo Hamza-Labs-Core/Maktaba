@@ -114,7 +114,6 @@ jobs:
               - 'pipeline/uv.lock'
               - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
               - '.github/workflows/_linux-app.yml'
-              - 'tools/ci/apt-install.sh'
               - 'Makefile'
 
   lint:

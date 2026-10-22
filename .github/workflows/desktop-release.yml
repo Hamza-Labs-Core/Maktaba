@@ -121,13 +121,14 @@ jobs:
 
       # Linux GUI build deps for Tauri 2 (webkit2gtk 4.1, appindicator,
       # rsvg, patchelf for AppImage). No-op on macOS/Windows.
-      # apt-install.sh: apt once more if it fails; timeout-minutes cuts off a stalled mirror
       - name: Install Linux build deps
         if: runner.os == 'Linux'
-        timeout-minutes: 35
+        # a stalled apt mirror fails the step here, not at the job's limit
+        timeout-minutes: 20
         run: |
           set -euo pipefail
-          tools/ci/apt-install.sh --no-install-recommends \
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \

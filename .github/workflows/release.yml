@@ -589,12 +589,13 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      # apt-install.sh: apt once more if it fails; timeout-minutes cuts off a stalled mirror
       - name: Install web deps and the build tools
-        timeout-minutes: 15
+        # a stalled apt mirror fails the step here, not at the job's limit
+        timeout-minutes: 20
         run: |
           pnpm -C web install --frozen-lockfile
-          tools/ci/apt-install.sh patchelf zip ffmpeg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq patchelf zip ffmpeg
 
       # check.sh: no ffmpeg in the payload, and the server takes the runner's
       # (Ubuntu 22.04's, as the app's users get theirs from their distribution)

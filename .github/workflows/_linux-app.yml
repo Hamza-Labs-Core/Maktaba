@@ -61,13 +61,14 @@ jobs:
             web/pnpm-lock.yaml
             apps/desktop/pnpm-lock.yaml
 
-      # apt-install.sh: apt once more if it fails; timeout-minutes cuts off a stalled mirror
       - name: Install web + desktop deps and the build tools
-        timeout-minutes: 40
+        # a stalled apt mirror fails the step here, not at the job's limit
+        timeout-minutes: 30
         run: |
           pnpm -C web install --frozen-lockfile
           pnpm -C apps/desktop install --frozen-lockfile
-          tools/ci/apt-install.sh patchelf zip shellcheck libarchive-tools rpm ffmpeg \
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq patchelf zip shellcheck libarchive-tools rpm ffmpeg \
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 
       - uses: dtolnay/rust-toolchain@stable
@@ -109,11 +110,8 @@ jobs:
       # runner's uid so the read-only checkout is theirs; coreutils' chroot
       # --userspec drops root in every image (minimal Ubuntu has no runuser).
       # Each image installs its distribution's ffmpeg first, and check.sh is told
-      # what the server must say of it. apt-install.sh gives apt's network part 15 minutes
-      # here, not its usual 5: ubuntu:22.04's own mirror (archive.ubuntu.com, not the
-      # runner's) often takes 10 on x86_64, and a slow download is not a stall.
+      # what the server must say of it.
       - name: Check it in minimal containers
-        timeout-minutes: 45
         run: |
           set -euo pipefail
           for spec in "ubuntu:22.04 ok" "debian:12-slim ok" "fedora:40 lacks"; do
@@ -122,7 +120,7 @@ jobs:
             docker run --rm -v "$PWD:$PWD:ro" -w "$PWD" -e UID_GID="$(id -u):$(id -g)" -e WANT="$want" "$image" bash -c '
               set -e
               if command -v apt-get >/dev/null; then
-                tools/ci/apt-install.sh --no-install-recommends ffmpeg >/dev/null
+                apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ffmpeg >/dev/null
               else
                 dnf install -y -q ffmpeg-free >/dev/null
               fi
