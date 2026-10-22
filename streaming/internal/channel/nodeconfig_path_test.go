@@ -79,3 +79,49 @@ func TestNodeConfigClaimedByAnotherPC(t *testing.T) {
 		t.Fatalf("another PC's node config: %s %s", role, id)
 	}
 }
+
+// A claim whose ReplaceFileW failed with 1177 and whose putting back failed too leaves
+// the roaming node.json under its backup name and the claimed copy as a temp file: it
+// is still this PC's roaming config, read as the pipeline's next load puts it back, and
+// this host stays a node (the same rule as maktaba-server and the pipeline). Another
+// PC's leftovers are that PC's.
+func TestNodeConfigLeftByAFailedClaim(t *testing.T) {
+	base := t.TempDir()
+	env := map[string]string{"APPDATA": filepath.Join(base, "Roaming"), "LOCALAPPDATA": filepath.Join(base, "Local"),
+		"MAKTABA_MACHINE_ID": "this-pc"} // never this PC's real MachineGuid
+	getenv := func(k string) string { return env[k] }
+	dir := filepath.Join(base, "Roaming", "Maktaba")
+	oldPath, newPath := filepath.Join(dir, "node.json"), filepath.Join(base, "Local", "Maktaba", "node.json")
+	bak := filepath.Join(dir, ".node.json-1792600000-4242-0badf00d.bak")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write := func(p, body string) {
+		t.Helper()
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(bak, `{"node_id":"n1","private_key":"k","database_url":"postgres://h"}`)
+	write(filepath.Join(dir, ".node.json-1792600000-4242-0badf00d.tmp"),
+		`{"node_id":"n1","private_key":"k","database_url":"postgres://h","machine_id":"this-pc"}`)
+	if got := NodeConfigPath(getenv, "windows", base); got != oldPath {
+		t.Fatalf("left by a failed claim: %s, want the roaming config %s", got, oldPath)
+	}
+	if got := NodeConfigFile(oldPath, os.ReadFile); got != bak {
+		t.Fatalf("read from %s, want the backup %s (the old file first)", got, bak)
+	}
+	if role, id := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleNode || id != "n1" {
+		t.Fatalf("still a node: %s %s", role, id)
+	}
+	if err := os.Remove(filepath.Join(dir, ".node.json-1792600000-4242-0badf00d.tmp")); err != nil {
+		t.Fatal(err)
+	}
+	write(bak, `{"node_id":"n9","private_key":"k","database_url":"postgres://h","machine_id":"other-pc"}`)
+	if got := NodeConfigPath(getenv, "windows", base); got != newPath {
+		t.Fatalf("another PC's leftovers: %s, want %s", got, newPath)
+	}
+	if role, _ := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleHome {
+		t.Fatalf("another PC's leftovers: %s", role)
+	}
+}

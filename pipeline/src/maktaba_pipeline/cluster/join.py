@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import json
-import os
 import platform
 import sys
 import time
@@ -173,8 +172,7 @@ def _start_over(
             raise JoinError("re-joining needs a confirmation: run it again with --yes")
         if ask(question).strip().lower() not in ("y", "yes"):
             raise JoinError("re-join cancelled; nothing changed")
-    backup = path.with_name(path.name + ".bak")
-    os.replace(path, backup)
+    backup = node_config.set_aside(path)
     out.write(
         f"Kept the old settings as {backup}.\n"
         "The home will see this machine as a new one: remove the old record"

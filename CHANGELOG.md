@@ -357,11 +357,17 @@ don't append a line here; docs-only PRs are exempt.
   installer) and a re-join use it. That profile can roam, so the file records the PC it belongs
   to (`machine_id`, Windows' MachineGuid). The first new Maktaba that runs with it on a PC claims
   it, keeping its ACL; the pipeline is its one writer. A replace that fails half way never loses
-  the file: the old one is put back, or the new copy takes its place, and a claim that cannot be
-  written leaves the file as it was and says so once. A PC it does not belong to skips it: it
-  is no home's machine, and its own join writes `%LOCALAPPDATA%\Maktaba\node.json`, never the
-  other PC's identity. `maktaba-server` says so once at its start, and the app's setup check
-  shows it (`node_config_other_pc`).
+  the file: the old one is put back, or the new copy takes its place. What even that could not
+  finish (the old file under a backup name, the new one as a temp file) is still the node
+  config for every reader, so a roaming one stays this PC's and the node stays joined; the next
+  start puts it back without ever replacing a file a write put there meanwhile. A re-join keeps
+  it as `node.json.bak` and removes the rest, and the node's uninstall script names it among
+  the files to delete to forget the home. A claim that cannot be written leaves the file as it
+  was and says so once. The temp file a node config is written through is created the user's
+  alone, with no other handle open on it, and when that cannot be done the credential is never
+  written. A PC it does not belong to skips it: it is no home's machine, and its own join
+  writes `%LOCALAPPDATA%\Maktaba\node.json`, never the other PC's identity. `maktaba-server`
+  says so once at its start, and the app's setup check shows it (`node_config_other_pc`).
 - **The large state stays where it is.** The install's models, caches and Postgres stay in
   `data\`. It is decided once whether `data\` or the folder beside it is the state root, and the
   answer is kept (`state-root.json`), so a folder an older version makes later never moves it.
@@ -377,6 +383,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The first video played right after Maktaba first starts is no longer refused.** The API makes
+  the machine's stream signing key as it starts, and the streaming role looked for it every two
+  seconds: a signed stream URL in between was refused ("bad signature"), and so was every one
+  after the key file was replaced. A URL naming a key the streaming role has not read yet now
+  reads the key file again at once (at most every 100 ms; a request that finds that read under
+  way waits for it), and the key a replaced file held still verifies the URLs it signed, for a
+  day.
 - **The second listen's tries count from the end of each try, and a stopped transcript comes
   back (follow-up of #221).** The wait between tries counted from when the try was queued, so a
   job that waited hours used it up; it now counts from the end of the try. A transcript the

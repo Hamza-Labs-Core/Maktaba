@@ -140,9 +140,11 @@ views, and it cannot use LLMs on other machines.
 3. On the machine, delete its settings file (`node.json`; where it is:
    [Join a machine, Step 5](join-a-machine.md#step-5--on-the-home-approve-with-the-code)).
    On Windows, delete every `node.json` that is this PC's: `%APPDATA%\Maktaba\node.json` (a
-   machine that joined before Epic 38) and `%LOCALAPPDATA%\Maktaba\node.json`. Maktaba reads
-   the first and, without it, the second, so one left behind brings the old identity back. The
-   node's uninstall script names them, and never names another PC's (see the next section).
+   machine that joined before Epic 38) and `%LOCALAPPDATA%\Maktaba\node.json`, and any
+   `.node.json-….bak` or `.node.json-….tmp` beside them (what a write that could not finish
+   left; the next start puts one back). Maktaba reads the first and, without it, the second,
+   so one left behind brings the old identity back. The node's uninstall script names them,
+   and never names another PC's (see the next section).
 4. On the home, turn on **Accept new machines**; on the machine run
    `maktaba-pipeline join` and approve the new code.
 5. Start the worker again (or its service).
