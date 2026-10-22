@@ -9,12 +9,17 @@ from typing import Any
 
 import pytest
 
-from maktaba_pipeline.engine.stages._plan_json import build_plan_json
+from maktaba_pipeline.engine.stages._plan_json import PLAN_FORMAT, build_plan_json, pool_items
 from maktaba_pipeline.extensions.dizquetv import extension as dz_extension
 from maktaba_pipeline.extensions.dizquetv.channels import plan_actions
 from maktaba_pipeline.integrations.dizquetv import PREFIX, State
 from maktaba_pipeline.schedule import PLANNER_VERSION, plan_catalog
-from maktaba_pipeline.schedule.channel_planner import EpisodeRef, PlannerConfig, SeasonCandidate
+from maktaba_pipeline.schedule.channel_planner import (
+    EpisodeRef,
+    LooseVideo,
+    PlannerConfig,
+    SeasonCandidate,
+)
 
 #: a test catalog has hours, not the month a channel needs by default
 SMALL = PlannerConfig(channel_min_days=1.0, channel_day_hours=10.0)
@@ -53,16 +58,26 @@ def catalog() -> list[SeasonCandidate]:
     return shows + quran
 
 
-def plan_json() -> dict[str, Any]:
-    result = plan_catalog(catalog(), config=SMALL)
+def clips() -> list[LooseVideo]:
+    return [
+        LooseVideo(path=f"Y:/a/clip{i}.mp4", duration_s=120 + i, title=f"مقطع {i}", folder="Y:/a",
+                   presenter="أحمد", tags={f"topic:{g}": 0.9}, genre=g, is_short=True)
+        for i, g in enumerate(["seerah", "fiqh", "tafsir"] * 20)
+    ]  # fmt: skip
+
+
+@pytest.fixture(scope="module")
+def plan() -> dict[str, Any]:
+    """The catalog and its clips, planned and exported once: every test here only reads
+    the plan (planning and simulating each channel's week was most of each test's time)."""
+    result = plan_catalog(catalog(), clips(), SMALL)
     assert result.version == PLANNER_VERSION
     return build_plan_json(
         result, source="catalog", notes=[], exporters=dz_extension.plan_exporters()
     )
 
 
-def test_every_slot_queue_is_one_ordered_show() -> None:
-    plan = plan_json()
+def test_every_slot_queue_is_one_ordered_show(plan: dict[str, Any]) -> None:
     actions = plan_actions(plan, State(server="PlexServer"))
     shows = [a for a in actions if a.kind == "show"]
     assert shows and all(a.name.startswith(PREFIX) for a in shows)
@@ -83,8 +98,7 @@ def test_every_slot_queue_is_one_ordered_show() -> None:
         assert ln["pattern"] or ln["special"]  # a slot queue, or the dawn Quran / khutbah lane
 
 
-def test_the_quran_channel_has_a_lane_per_reciter() -> None:
-    plan = plan_json()
+def test_the_quran_channel_has_a_lane_per_reciter(plan: dict[str, Any]) -> None:
     quran = [c for c in plan["channels"] if c["kind"] == "quran"]
     assert len(quran) == 1
     lanes = [plan["lanes"][k] for k in quran[0]["lanes"]]
@@ -95,29 +109,16 @@ def test_the_quran_channel_has_a_lane_per_reciter() -> None:
     assert set(quran[0]["lanes"]) <= shows
 
 
-def test_a_show_the_user_made_is_still_never_overwritten() -> None:
-    plan = plan_json()
+def test_a_show_the_user_made_is_still_never_overwritten(plan: dict[str, Any]) -> None:
     first = next(a for a in plan_actions(plan, State(server="PlexServer")) if a.kind == "show")
     state = State(server="PlexServer", shows={first.name: {"id": "u1", "keys": None}})
     again = next(a for a in plan_actions(plan, state) if a.kind == "show" and a.ref == first.ref)
     assert again.verb == "conflict" and again.body is None
 
 
-def test_filler_clips_are_stored_once_and_pools_index_them() -> None:
+def test_filler_clips_are_stored_once_and_pools_index_them(plan: dict[str, Any]) -> None:
     """Plan format 3: a clip in many pools is one record in ``clips``; pools hold indexes
     (format 2 repeated every record per pool: 3.7 GB on the real catalog)."""
-    from maktaba_pipeline.engine.stages._plan_json import PLAN_FORMAT, pool_items
-    from maktaba_pipeline.schedule.channel_planner import LooseVideo
-
-    clips = [
-        LooseVideo(path=f"Y:/a/clip{i}.mp4", duration_s=120 + i, title=f"مقطع {i}", folder="Y:/a",
-                   presenter="أحمد", tags={f"topic:{g}": 0.9}, genre=g, is_short=True)
-        for i, g in enumerate(["seerah", "fiqh", "tafsir"] * 20)
-    ]  # fmt: skip
-    plan = build_plan_json(
-        plan_catalog(catalog(), clips, SMALL), source="catalog", notes=[],
-        exporters=dz_extension.plan_exporters(),
-    )  # fmt: skip
     assert plan["format"] == PLAN_FORMAT == 3
     pools = [p for p in plan["filler_pools"].values() if p["items"]]
     assert pools and all(isinstance(p["items"], str) for p in pools)  # hex indexes, one string

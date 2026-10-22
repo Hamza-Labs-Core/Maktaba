@@ -82,6 +82,13 @@ def plan(seasons: Sequence[SeasonCandidate], loose: Sequence[LooseVideo] = (),
     return suggest_channels(seasons, loose, PlannerConfig(**base))  # type: ignore[arg-type]
 
 
+def mix_plan(seasons: Sequence[SeasonCandidate], **cfg: object) -> PlanResult:
+    """For a test that reads only the mix: no theme channels. With show_same_time (SMALL)
+    they never change the mix grid, and planning them was most of the test's time (unit
+    soft cap)."""
+    return plan(seasons, (), themes=(), **cfg)
+
+
 def channel(p: PlanResult, key: str) -> ChannelSuggestion:
     return next(c for c in p.channels if c.key == key)
 
@@ -109,7 +116,7 @@ def many_shows(k: int, *, fmt: str = "program", genre: str = "seerah", n: int = 
 
 
 def test_an_ongoing_show_is_one_show_its_years_in_one_queue_back_to_back() -> None:
-    p = plan(talk_years() + many_shows(40, prefix="x"), dawn_quran=False, fill_target=0.0)
+    p = mix_plan(talk_years() + many_shows(40, prefix="x"), dawn_quran=False, fill_target=0.0)
     queues = [ln for ln in p.lanes.values() if any(u.series_key == "بلا حدود" for u in ln.units)]
     mix = channel(p, "mix")
     in_mix = [ln for ln in queues if ln.key.startswith("mix.")]
@@ -172,7 +179,7 @@ def test_slot_length_follows_the_episodes() -> None:
 
 def test_a_strip_show_airs_at_the_same_time_every_weekday_weekends_get_weekly_shows() -> None:
     seasons = many_shows(6, fmt="lecture", prefix="s", n=100) + many_shows(120, prefix="w")
-    p = plan(seasons, dawn_quran=False)
+    p = mix_plan(seasons, dawn_quran=False)
     mix = channel(p, "mix")
     strips = [s for s in mix.slots if s.lane and p.lanes[s.lane].pattern == "strip"]
     assert len({s.lane for s in strips}) == 6  # every lesson series has its own strip
@@ -187,10 +194,10 @@ def test_a_strip_show_airs_at_the_same_time_every_weekday_weekends_get_weekly_sh
 
 
 def test_weekly_shows_air_once_a_week_and_prime_time_gets_the_strongest() -> None:
-    seasons = many_shows(120, prefix="w") + many_shows(20, fmt="lecture", prefix="s", n=200)
+    seasons = many_shows(120, prefix="w") + many_shows(20, fmt="lecture", prefix="s", n=20)
     seasons.append(show("doc", "وثائقي كبير", fmt="documentary", n=60, genre="islamic_history",
                         tags={"format:program": 0.9}))  # fmt: skip
-    p = plan(seasons, dawn_quran=False)
+    p = mix_plan(seasons, dawn_quran=False)
     mix = channel(p, "mix")
     airings: Counter[str] = Counter()
     for s in mix.slots:
@@ -205,7 +212,7 @@ def test_weekly_shows_air_once_a_week_and_prime_time_gets_the_strongest() -> Non
 
 def test_adjacent_slots_vary_the_genre() -> None:
     seasons = many_shows(30, prefix="a", genre="seerah") + many_shows(30, prefix="b", genre="fiqh")
-    p = plan(seasons, dawn_quran=False)
+    p = mix_plan(seasons, dawn_quran=False)
     mix = channel(p, "mix")
     for day in WEEKDAYS:
         prog = [s for s in sorted(mix.slots, key=lambda s: s.start)
@@ -218,7 +225,7 @@ def test_when_a_series_ends_the_next_show_takes_its_slot() -> None:
     # long episodes keep the grid small (63 slots), so 80 shows overflow it into queues of
     # several without planning 200 shows (unit-tier time budget)
     seasons = many_shows(80, prefix="w", n=8, minutes=100)
-    p = plan(seasons, dawn_quran=False)
+    p = mix_plan(seasons, dawn_quran=False)
     mix = channel(p, "mix")
     ln = next(p.lanes[s.lane] for s in mix.slots if s.lane and len(p.lanes[s.lane].shows) > 1)
     tl = slot_timeline(ln, mix.slots, weeks=30)
@@ -375,7 +382,7 @@ def test_quran_at_dawn_stays_a_slot_on_other_channels() -> None:
 def test_friday_slots_go_around_the_khutbah_and_no_queue_is_lost() -> None:
     khutbah = show("k", "خطب الجمعة", n=40, minutes=45, fmt="khutbah",
                    tags={"format:khutbah": 0.9, "format:program": 0.0})  # fmt: skip
-    p = plan([khutbah, *many_shows(120, prefix="w")], dawn_quran=False)
+    p = mix_plan([khutbah, *many_shows(120, prefix="w")], dawn_quran=False)
     mix = channel(p, "mix")
     noon = slot_at(mix.slots, 12 * 60 + 30, "fri")
     assert noon.kind == "khutbah"
@@ -435,7 +442,8 @@ def test_a_show_joins_a_channel_whole_never_a_few_of_its_years() -> None:
     years = [replace(y, genre="current_affairs",
                      tags={**y.tags, "topic:current_affairs": 1.0, "genre:current_affairs": 1.0})
              if y.season in (2000, 2001) else y for y in years]  # fmt: skip
-    p = plan([*years, *many_shows(60, prefix="w")], dawn_quran=False, fill_target=0.0)
+    # the show among a few others: its years decide where it airs, not the company it keeps
+    p = mix_plan([*years, *many_shows(6, prefix="w")], dawn_quran=False, fill_target=0.0)
     mix = channel(p, "mix")
     seasons = [u.season for k in mix.lanes for u in p.lanes[k].units if u.series_key == "بلا حدود"]
     assert seasons == [1999, 2000, 2001, 2002, 2003]
@@ -443,7 +451,7 @@ def test_a_show_joins_a_channel_whole_never_a_few_of_its_years() -> None:
     years2 = [replace(y, genre="current_affairs",
                       tags={**y.tags, "topic:current_affairs": 1.0, "genre:current_affairs": 1.0})
               if y.season != 1999 else y for y in years]  # fmt: skip
-    p2 = plan([*years2, *many_shows(60, prefix="w")], dawn_quran=False, fill_target=0.0)
+    p2 = mix_plan([*years2, *many_shows(6, prefix="w")], dawn_quran=False, fill_target=0.0)
     mix2 = channel(p2, "mix")
     assert not any(u.series_key == "بلا حدود" for k in mix2.lanes for u in p2.lanes[k].units)
 

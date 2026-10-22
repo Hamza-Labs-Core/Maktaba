@@ -130,11 +130,13 @@ def schema_at_87() -> sqlite3.Connection:
     return conn
 
 
-@pytest.mark.unit
-def test_sqlite_rebuild_preserves_existing_rows(schema_at_87: sqlite3.Connection) -> None:
-    """Upgrade path: rows written under the old schema survive the 0088 rebuild."""
+@pytest.fixture(scope="module")
+def upgraded_from_87(schema_at_87: sqlite3.Connection) -> sqlite3.Connection:
+    """Rows written under the slot-0087 schema, then every slot from 0088 to the head
+    applied, once: that replay (58 slots and one more with every migration; each ALTER
+    TABLE makes SQLite re-read the whole schema) is past the unit soft cap on its own."""
     conn = sqlite3.connect(":memory:")
-    schema_at_87.backup(conn)  # a private copy per test; the template stays untouched
+    schema_at_87.backup(conn)  # a private copy; the template stays untouched
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("INSERT INTO libraries (id, name, roots) VALUES ('L1','a','[]')")
     conn.execute(
@@ -150,9 +152,16 @@ def test_sqlite_rebuild_preserves_existing_rows(schema_at_87: sqlite3.Connection
         if int(p.name[:4]) >= 88:
             for stmt in up_statements(p.read_text(encoding="utf-8")):
                 apply_statement(conn, stmt)  # ADD COLUMN IF NOT EXISTS as the Go migrator does
+    return conn
+
+
+@pytest.mark.unit
+def test_sqlite_rebuild_preserves_existing_rows(upgraded_from_87: sqlite3.Connection) -> None:
+    """Upgrade path: rows written under the old schema survive the 0088 rebuild (and every
+    slot after it)."""
     rows = {
         r[0]: r
-        for r in conn.execute(
+        for r in upgraded_from_87.execute(
             "SELECT stage, subject_kind, subject_id, outcome, library_id FROM processing_jobs"
         )
     }

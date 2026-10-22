@@ -102,7 +102,7 @@ def test_a_hung_listing_is_unavailable_not_a_hang(
         release.wait(30)
         return list(real(d))
 
-    monkeypatch.setenv("MAKTABA_SHARE_LIST_TIMEOUT_SEC", "0.05")
+    monkeypatch.setenv("MAKTABA_SHARE_LIST_TIMEOUT_SEC", "0.01")  # the shortest it allows
     monkeypatch.setattr(os, "listdir", hung)
     paths.forget_listings()
     start = time.monotonic()
@@ -111,12 +111,14 @@ def test_a_hung_listing_is_unavailable_not_a_hang(
     start = time.monotonic()
     assert paths._listing(str(folder)) == ({}, {})  # the unavailable listing is cached
     assert time.monotonic() - start < 0.5
-    # the share answers again: once the cache is dropped the folder lists
+    # the share answers again: once the cache is dropped the folder lists (a real listing
+    # returns as soon as it is done: the long timeout only spares a slow runner a miss)
     release.set()
     monkeypatch.setattr(os, "listdir", real)
+    monkeypatch.setenv("MAKTABA_SHARE_LIST_TIMEOUT_SEC", "5")
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline and paths._listing_now:
-        time.sleep(0.05)
+        time.sleep(0.001)
     paths.forget_listings()
     exact, _ = paths._listing(str(folder))
     assert _nfc(NAMES[0]) in {_nfc(n) for n in exact.values()}
