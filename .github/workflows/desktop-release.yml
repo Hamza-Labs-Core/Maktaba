@@ -22,6 +22,7 @@
 #                per-user app. Plus a portable .zip of the raw exe (the client).
 #   Linux     →  .AppImage + .deb + .rpm, x86_64 and aarch64, each WITH the server inside
 #                (Epic 39): usr/share/maktaba/server built by tools/release/linux-app/payload.sh
+#                (no ffmpeg: the distribution's; the .deb and the .rpm depend on it)
 #
 # NOTHING IS PUBLIC BEFORE IT IS CHECKED
 # --------------------------------------
@@ -129,7 +130,8 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
-            zip libarchive-tools rpm
+            zip libarchive-tools rpm \
+            ffmpeg
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
