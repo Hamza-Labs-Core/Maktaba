@@ -103,11 +103,14 @@ type TranscodeOrchestrator interface {
 // calls methods directly; production replaces it with a thin grpc
 // handler that delegates to the same struct.
 type Server struct {
-	Probe      *probe.Cache
-	Profiles   *capability.Registry
-	Sessions   session.Store
-	Allocator  *slots.Allocator
-	HWAccel    ffmpeg.HWAccel
+	Probe     *probe.Cache
+	Profiles  *capability.Registry
+	Sessions  session.Store
+	Allocator *slots.Allocator
+	HWAccel   ffmpeg.HWAccel
+	// HWAccelNow, when set, is the verdict now (ffmpeg.WatchChoice keeps it
+	// current) and wins over HWAccel.
+	HWAccelNow func() ffmpeg.HWAccel
 	Host       string // hostname, recorded in row.Host
 	Now        func() time.Time
 	SessionTTL time.Duration // expires_at = now + TTL (default 30 min)
@@ -227,14 +230,20 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		if format == session.FormatDASH {
 			fmtStr = "dash"
 		}
+		hw := s.hwaccel()
+		if req.ForceSoftware {
+			hw = ffmpeg.HWAccelSoftware
+		}
 		handle, terr := s.Transcode.Start(ctx, ffmpeg.Job{
-			SessionID:  sessID.String(),
-			InputPath:  pathmap.Resolve(row.Path), // story 31.3: canonical -> local
-			OutputDir:  s.ResolveDir(sessID.String()),
-			Ladder:     ladder,
-			HWAccel:    string(s.HWAccel),
-			Format:     fmtStr,
-			MasterName: "master.m3u8",
+			SessionID:   sessID.String(),
+			InputPath:   pathmap.Resolve(row.Path), // story 31.3: canonical -> local
+			OutputDir:   s.ResolveDir(sessID.String()),
+			Ladder:      ladder,
+			HWAccel:     string(hw),
+			Format:      fmtStr,
+			MasterName:  "master.m3u8",
+			SourceCodec: row.VideoCodec,
+			NoAudio:     row.AudioCodec == "" && row.AudioChannels == 0,
 		})
 		if terr != nil {
 			return OpenSessionResponse{}, ErrFailedPrecondition
@@ -347,16 +356,24 @@ func (s *Server) EvictHashCache(_ context.Context, hash string) (int, error) {
 func (s *Server) GetCapabilities(_ context.Context) (Capabilities, error) {
 	c := Capabilities{
 		Codecs:              []string{"h264", "aac"},
-		HWAccel:             string(s.HWAccel),
+		HWAccel:             string(s.hwaccel()),
 		MaxBitrateKbps:      40000,
 		SupportedContainers: []string{"mp4", "mkv", "webm", "mov", "ts"},
 		TranscodeUsed:       s.Allocator.Used(),
 		TranscodeCapacity:   s.Allocator.MaxConcurrent(),
 	}
-	if s.HWAccel == "" {
+	if c.HWAccel == "" {
 		c.HWAccel = "software"
 	}
 	return c, nil
+}
+
+// hwaccel is the transcodes' encoder verdict now.
+func (s *Server) hwaccel() ffmpeg.HWAccel {
+	if s.HWAccelNow != nil {
+		return s.HWAccelNow()
+	}
+	return s.HWAccel
 }
 
 // HealthCheck reports overall service status.

@@ -292,6 +292,23 @@ don't append a line here; docs-only PRs are exempt.
   reads the key file again at once (at most every 100 ms; a request that finds that read under
   way waits for it), and the key a replaced file held still verifies the URLs it signed, for a
   day.
+- **Video transcodes work on an NVIDIA GPU (and are found on Windows).** The VOD transcodes
+  (HLS and DASH, Story 8.5) passed `-hwaccel nvenc`, which FFmpeg does not have (NVENC is an
+  encoder; NVIDIA decoding is `cuda`), and libx264's `-preset veryfast` to every encoder, which
+  NVENC refuses: on a machine with an NVIDIA GPU every transcode failed at once. Now the GPU
+  decodes H.264 and HEVC sources (`cuda`, VideoToolbox on a Mac; AV1 and the rest on the CPU, as
+  a GPU without AV1 decode cannot fall back), every rung is 8-bit 4:2:0 (a 10-bit source too:
+  NVENC's H.264 refuses 10-bit, and browsers rarely play High 10), and each encoder gets its own
+  preset (`p4` for NVENC). NVENC sessions are counted with the TV's channels', one per rung:
+  together they stay within the channels' NVENC cap (with what the TV slots hold), VOD holds at
+  most half of it, and the rungs it gets none for are encoded by libx264. A hardware run that
+  fails within 30 s is run again in software. The encoder is chosen by a short test encode, on
+  Windows too (it was always software there), detected again every 5 minutes while a listed GPU
+  encoder failed, and `MAKTABA_HWACCEL_PREFER` (`auto`, `software`, `nvenc`, `qsv`,
+  `videotoolbox`) narrows it; the transcodes run the ffmpeg the channels run
+  (`MAKTABA_FFMPEG_BIN`). Each rung of an HLS transcode is now its own variant (`v1`, `v2` were
+  never written, so the master playlist's lower rungs 404'd), a source without audio transcodes,
+  and a session asking for software (`force_software`) gets it.
 - **The second listen's tries count from the end of each try, and a stopped transcript comes
   back (follow-up of #221).** The wait between tries counted from when the try was queued, so a
   job that waited hours used it up; it now counts from the end of the try. A transcript the

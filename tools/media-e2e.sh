@@ -31,6 +31,7 @@ suites=(
   "api|./internal/tvremote/rtmptest/|TestFFmpegPublishes TestTapRepublishes"
   "api|./internal/tvremote/|TestSwapRollbackEndToEnd"
   "streaming|.|TestTwoHostsOneMachine"
+  "streaming|./internal/ffmpeg/|TestTranscodeArgs_RealFFmpeg"
   "streaming|./internal/channel/|TestStation_RealFFmpeg_ContinuousWallClock TestEngine_RealFFmpeg_LazyHLSAndSharedTS TestStation_RealFFmpeg_MuxerRestart TestBlockArgs_RealFFmpegVariants TestStripRendersArabic TestStripRendersPages"
 )
 
