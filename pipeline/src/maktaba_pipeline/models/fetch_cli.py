@@ -15,10 +15,14 @@ The items are exactly what the workers load, from the same settings:
                 (:data:`~..stt.engine.CT2_FILES`)
 ``cohere``      the second listen, ``MAKTABA_STT_REFINE_MODEL`` (gated: the account
                 must have accepted its licence; ``HF_TOKEN`` or ``hf auth login``), with
-                mlx-audio's file patterns; skipped with ``MAKTABA_STT_REFINE=0``, and on a
-                machine with no second listen (the CTranslate2 engine). When
-                Hugging Face refuses, the home's published copy on ``--share`` (default
-                ``$MAKTABA_MODELS_DIR``) is copied here instead (:mod:`~..stt.model_share`)
+                mlx-audio's file patterns on Apple Silicon, the files transformers loads
+                elsewhere (:data:`~..stt.cohere_cuda.ALLOW_PATTERNS`); skipped with
+                ``MAKTABA_STT_REFINE=0``, and on a machine that cannot run it (Windows,
+                Linux: no NVIDIA GPU, a torch without CUDA, transcription on the CPU, or a
+                GPU too small to hold it beside Whisper, :func:`~..stt.cohere.unavailable`),
+                saying why. When Hugging Face refuses, the home's published copy on
+                ``--share`` (default ``$MAKTABA_MODELS_DIR``) is copied here instead
+                (:mod:`~..stt.model_share`)
 ``dictionary``  CAMeL Tools' ``morphology-db-msa-r13`` (the second listen's spelling;
                 skipped with it)
 ``embedder``    ``MAKTABA_EMBED_MODEL`` (default ``intfloat/multilingual-e5-small``),
@@ -99,7 +103,14 @@ class Item:
 
 
 def _cohere_patterns() -> list[str] | None:
-    """mlx-audio's own download patterns (what its loader fetches), when installed."""
+    """What the second listen loads: on CUDA the files transformers reads; on Apple
+    Silicon mlx-audio's own download patterns (what its loader fetches), when installed."""
+    from ..stt import engine
+
+    if engine.current() != engine.MLX:
+        from ..stt.cohere_cuda import ALLOW_PATTERNS
+
+        return list(ALLOW_PATTERNS)
     if importlib.util.find_spec("mlx_audio") is None:
         return None
     try:
@@ -120,7 +131,9 @@ def items(only: set[str] | None = None) -> list[Item]:
     whisper = settings_from_env().model
     refine = refine_model()
     no_refine = None if refine else "the second listen is off (MAKTABA_STT_REFINE=0)"
-    no_refine = no_refine or cohere.unavailable()
+    if no_refine is None and (not only or only & {"cohere", "dictionary"}):
+        # (on Windows and Linux it asks the NVIDIA driver: only when asked about)
+        no_refine = cohere.unavailable()
     ct2 = engine.current() == engine.CT2
     repo = engine.ct2_repo(whisper) if ct2 else whisper
     out = [
@@ -138,6 +151,8 @@ def items(only: set[str] | None = None) -> list[Item]:
             gated=True,
             allow_patterns=_cohere_patterns(),
             skip=no_refine,
+            # transformers' files at their pinned commit (on Apple Silicon mlx-audio's)
+            pin=engine.pin_for(refine or "") if ct2 else None,
         ),
         Item("dictionary", CAMEL_PACKAGE, "camel", skip=no_refine),
         Item("embedder", embed_model(), "hf", ignore_patterns=_EMBEDDER_IGNORE),
@@ -198,6 +213,9 @@ def hf_download(item: Item, on_bytes: Callable[[int, int], None], local_only: bo
 def camel_installed() -> bool:
     if importlib.util.find_spec("camel_tools") is None:
         return False
+    from ..model_dirs import ensure_camel_data
+
+    ensure_camel_data()
     from camel_tools.data.catalogue import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
         CT_VERSIONS_PATH,
     )
@@ -211,6 +229,9 @@ def camel_installed() -> bool:
 def camel_download() -> None:
     if importlib.util.find_spec("camel_tools") is None:
         raise RuntimeError("CAMeL Tools is not installed (the stt extra)")
+    from ..model_dirs import ensure_camel_data
+
+    ensure_camel_data()
     from camel_tools.data import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
         CATALOGUE,
     )

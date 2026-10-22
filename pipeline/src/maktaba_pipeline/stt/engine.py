@@ -15,7 +15,7 @@ from __future__ import annotations
 import hashlib
 import platform
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..log import get_logger
@@ -28,6 +28,7 @@ __all__ = [
     "DEFAULT_BATCH",
     "DEFAULT_MODEL",
     "MLX",
+    "SECOND_LISTEN_PINS",
     "Pin",
     "PinMismatch",
     "ct2_repo",
@@ -35,6 +36,7 @@ __all__ = [
     "fingerprint_model",
     "for_machine",
     "model_for",
+    "pin_for",
     "verify",
 ]
 
@@ -83,10 +85,13 @@ CT2_FILES = [
 
 @dataclass(frozen=True)
 class Pin:
-    """A model repo at one commit, and the SHA-256 of each file Maktaba loads from it."""
+    """A model repo at one commit, and the hash of each file Maktaba loads from it: its
+    SHA-256, or (a small file of a gated repo, which Hugging Face describes without a
+    sign-in only by its git blob id) the SHA-1 of its git blob."""
 
     revision: str
     sha256: Mapping[str, str]
+    git_sha1: Mapping[str, str] = field(default_factory=dict)
 
 
 #: the CTranslate2 conversions Maktaba downloads (the default, and the one an MLX large-v3
@@ -122,6 +127,37 @@ CT2_PINS: dict[str, Pin] = {
     ),
 }
 
+#: the second listen's model as Windows and Linux fetch it (transformers' files,
+#: stt/cohere_cuda.py ALLOW_PATTERNS; story 38.9): the commit of 2026-07-13, the weights and
+#: the tokenizer's model by Hugging Face's LFS record, the small files by their git blob ids
+#: (the repo is gated: their content is not to be had without a sign-in). On Apple Silicon
+#: mlx-audio fetches the repo itself, as it always has.
+SECOND_LISTEN_PINS: dict[str, Pin] = {
+    "CohereLabs/cohere-transcribe-arabic-07-2026": Pin(
+        "c3e911b42149bf7a1e53d5cef9878aee87515a23",
+        {
+            "model.safetensors": "404ff5dccd66b1985a06059b9d5ed970a676761c0821f9c10756db6e4a1910a5",
+            "tokenizer.model": "6d21e6a83b2d0d3e1241a7817e4bef8eb63bcb7cfe4a2675af9a35ff3bbf0e14",
+        },
+        {
+            "config.json": "accb69f98a8f47eae1619ccee7414aac8fe4328e",
+            "generation_config.json": "85204c3c9045ec9585d6c1d2a7e1357557f983f1",
+            "normalizer.json": "dd6ae819ad738ac1a546e9f9282ef325c33b9ea0",
+            "preprocessor_config.json": "fc14ee1e20351f89d07da5e15897444ee4c12818",
+            "processor_config.json": "84095bb3753423c38a58fcefad2612c09be5461c",
+            "special_tokens_map.json": "c4a109a3143a087ca7ca8c122cb48ab73b5547a2",
+            "tokenizer.json": "87cef32848a773931b2ae42003d4dea25c7e4e38",
+            "tokenizer_config.json": "6072d9b482dfe704f52a8f61d7b24172097013ea",
+        },
+    ),
+}
+
+
+def pin_for(repo: str) -> Pin | None:
+    """The pin of a repo Maktaba fetches at a fixed commit, or None."""
+    return CT2_PINS.get(repo) or SECOND_LISTEN_PINS.get(repo)
+
+
 #: written into a snapshot once its files matched their pin: checked once, not each load
 VERIFIED = ".maktaba-sha256"
 
@@ -142,18 +178,17 @@ def verify(folder: Path, pin: Pin) -> None:
     except OSError:
         pass
     bad: list[str] = []
-    for name, want in sorted(pin.sha256.items()):
+    wanted = [(n, h, "SHA-256") for n, h in pin.sha256.items()]
+    wanted += [(n, h, "git blob") for n, h in pin.git_sha1.items()]
+    for name, want, kind in sorted(wanted):
         path = folder / name
-        h = hashlib.sha256()
         try:
-            with path.open("rb") as f:
-                for block in iter(lambda: f.read(1 << 20), b""):
-                    h.update(block)
+            got = _git_blob_sha1(path) if kind == "git blob" else _sha256(path)
         except OSError:
             bad.append(f"{name} is missing")
             continue
-        if h.hexdigest() != want:
-            bad.append(f"{name} has SHA-256 {h.hexdigest()}, not {want}")
+        if got != want:
+            bad.append(f"{name} has {kind} {got}, not {want}")
             for p in {path.resolve(), path}:  # the cache's blob and the snapshot's link
                 p.unlink(missing_ok=True)
     if bad:
@@ -161,6 +196,23 @@ def verify(folder: Path, pin: Pin) -> None:
         # (a model's state, a log line) keeps the hashes, and a long Windows path goes
         raise PinMismatch("; ".join(bad) + f" (removed: it is fetched again), in {folder}")
     marker.write_text(pin.revision + "\n", encoding="utf-8")
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def _git_blob_sha1(path: Path) -> str:
+    """The file's git blob id: the SHA-1 of ``blob <size>``, a NUL byte and its bytes."""
+    h = hashlib.sha1(f"blob {path.stat().st_size}\0".encode(), usedforsecurity=False)
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 #: a repo that moved: its old name only redirects

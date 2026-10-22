@@ -245,6 +245,15 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 	if ffmpegInCheck {
 		checkFFmpeg(s.ctx, s.cfg, &res)
 	}
+	// a node of a home already runs here outside the app: a fresh setup would be
+	// a second copy of it (Epic 38 story 38.13; the welcome screen offers its move)
+	if code, msg, kv := nodeHere(); code != "" {
+		res.Problem(code, msg, kv...)
+	} else if home, path, ok := nodeLeftover(); ok && !strings.EqualFold(strings.TrimSpace(s.cfg.Server.Role), "node") {
+		// a node config nothing here runs: this setup makes a new home beside it
+		res.Warn("node_config_unused", fmt.Sprintf("This machine holds the node config of the home %s (%s), which nothing here runs: setting up fresh makes a new home and leaves it unused.",
+			home, path), "home", home, "path", path)
+	}
 	// Epic 38 story 38.1: the roaming profile's node settings are another PC's (their
 	// machine_id), so this machine runs as no home's machine until it joins as its own
 	if p, owner := foreignNodeConfig(); p != "" && !config.LocalNodeConfig().Joined() {

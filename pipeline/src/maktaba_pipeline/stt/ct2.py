@@ -60,7 +60,9 @@ __all__ = [
     "cuda_libraries",
     "cuda_problem",
     "get_transcriber",
+    "GpuInfo",
     "gpu_free_gb",
+    "gpu_info",
     "gpu_need_gb",
     "gpu_short",
     "load",
@@ -289,9 +291,27 @@ def _nvml() -> Any | None:
     return None
 
 
-def gpu_free_gb(index: int) -> float | None:
-    """The free memory (GiB) of NVIDIA GPU ``index`` as its driver counts it (every
-    process's allocations, the display's included), or None when it cannot say."""
+@dataclass(frozen=True)
+class GpuInfo:
+    """An NVIDIA GPU as its driver reports it (NVML), without starting CUDA."""
+
+    name: str
+    total_gb: float
+    free_gb: float
+    #: CUDA compute capability (major, minor), None when this NVML cannot say
+    compute: tuple[int, int] | None
+    #: the driver's version ("580.88"), None when this NVML cannot say
+    driver: str | None
+
+    @property
+    def driver_major(self) -> int | None:
+        head = (self.driver or "").split(".", 1)[0]
+        return int(head) if head.isdigit() else None
+
+
+def gpu_info(index: int) -> GpuInfo | None:
+    """NVIDIA GPU ``index`` (numbered as nvidia-smi numbers them), or None when there is
+    no NVIDIA driver or no such GPU. Asks the driver only: quick, and nothing on the GPU."""
     lib = _nvml()
     if lib is None:
         return None
@@ -305,11 +325,36 @@ def gpu_free_gb(index: int) -> float | None:
                 return None
             if lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem)):
                 return None
-            return float(mem.free) / (1 << 30)
+            name = ctypes.create_string_buffer(96)
+            if lib.nvmlDeviceGetName(handle, name, ctypes.c_uint(len(name))):
+                name.value = b"NVIDIA GPU"
+            major, minor = ctypes.c_int(), ctypes.c_int()
+            compute = None
+            cc = getattr(lib, "nvmlDeviceGetCudaComputeCapability", None)
+            if cc is not None and not cc(handle, ctypes.byref(major), ctypes.byref(minor)):
+                compute = (major.value, minor.value)
+            version = ctypes.create_string_buffer(80)
+            driver = None
+            if not lib.nvmlSystemGetDriverVersion(version, ctypes.c_uint(len(version))):
+                driver = version.value.decode("ascii", "replace")
+            return GpuInfo(
+                name=name.value.decode("utf-8", "replace"),
+                total_gb=float(mem.total) / (1 << 30),
+                free_gb=float(mem.free) / (1 << 30),
+                compute=compute,
+                driver=driver,
+            )
         finally:
             lib.nvmlShutdown()
     except (OSError, AttributeError):  # an NVML without these entry points
         return None
+
+
+def gpu_free_gb(index: int) -> float | None:
+    """The free memory (GiB) of NVIDIA GPU ``index`` as its driver counts it (every
+    process's allocations, the display's included), or None when it cannot say."""
+    info = gpu_info(index)
+    return None if info is None else info.free_gb
 
 
 def gpu_need_gb(compute_type: str, batch: int, model_bin_gb: float | None = None) -> float:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import threading
 import urllib.parse
 from collections.abc import Iterator
@@ -232,20 +233,23 @@ def test_a_request_waiting_with_another_key_is_explained(
         _join(url, tmp_path / "node.json", io.StringIO())
 
 
-def test_windows_cuts_the_config_acl_to_the_user(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.skipif(os.name != "nt", reason="Windows ACLs")
+def test_windows_cuts_the_config_acl_to_the_user(tmp_path: Path) -> None:
+    """The node config's DACL is the user's alone, inheritance off: explicit entries a
+    temp file may have been made with (here Users, read) go too."""
     import subprocess
 
-    calls: list[list[str]] = []
-    monkeypatch.setenv("USERNAME", "mahmoud")
-
-    def run(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[bytes]:
-        calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0)
-
-    monkeypatch.setattr(subprocess, "run", run)
     path = tmp_path / "node.json"
     path.write_text("{}")
+    subprocess.run(
+        ["icacls", str(path), "/grant", "*S-1-5-32-545:(R)"], check=True, capture_output=True
+    )
     node_config._restrict_to_user(path)
-    assert calls == [["icacls", str(path), "/inheritance:r", "/grant:r", "mahmoud:F"]]
+    out = subprocess.run(["icacls", str(path)], check=True, capture_output=True, text=True).stdout
+    aces = [
+        line.replace(str(path), "", 1).strip()
+        for line in out.splitlines()
+        if line.strip() and not line.startswith("Successfully processed")
+    ]
+    assert len(aces) == 1 and os.environ["USERNAME"].lower() in aces[0].lower(), aces
+    assert "(I)" not in aces[0]

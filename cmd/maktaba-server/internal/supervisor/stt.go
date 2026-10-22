@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ import (
 // Story 38.8, Windows and Linux (CTranslate2): workers, Batch and ComputeType sized
 // from the NVIDIA GPU's memory, or on the CPU no workers (the main worker
 // transcribes) with a CPU batch and CPUThreads; the host's audio budget from the RAM.
+// Story 38.9: with the second listen on and a GPU it fits on, the tiers leave it room.
 type STTPlan struct {
 	Workers    int
 	AudioHours float64
@@ -43,6 +45,8 @@ type STTPlan struct {
 	// ct2: a plan for the CTranslate2 engine (not Apple Silicon): its knobs reach the
 	// main worker too when it transcribes itself
 	ct2 bool
+	// refine: a plan from refineGPUTiers, each worker also holding the second listen
+	refine bool
 }
 
 // sttTiers size the plan from the RAM, largest first. The top tier is what the
@@ -110,7 +114,8 @@ const (
 
 var ct2ModelGB = map[string]float64{"": 2.3, "float16": 2.3, "int8_float16": 1.2}
 
-// PlanForGPU is the tier for a GPU with gb GiB of memory; false below gpuMinGB.
+// PlanForGPU is the tier for a GPU with gb GiB of memory, Whisper alone on it; false
+// below gpuMinGB.
 func PlanForGPU(gb float64) (STTPlan, bool) {
 	for _, t := range gpuTiers {
 		if gb >= t.minGB {
@@ -125,10 +130,16 @@ func PlanForGPU(gb float64) (STTPlan, bool) {
 // shareGPU sizes each of n workers on a GPU of gb GiB, the plan p sized for fewer:
 // the batch that keeps the n of them within the tiers' share of the GPU (at most
 // p's own), in int8_float16 when float16 leaves no room for a batch of one (unless
-// the operator named the precision). At least one file each: workers that still do
-// not fit find the GPU full when they load, and the pipeline puts them on the CPU.
+// the operator named the precision). Beside the second listen (p.refine) each worker
+// loads Cohere too: its part of what the card gives a process, less cohereGB, as the
+// refine tiers are sized. At least one file each: workers that still do not fit find
+// the GPU full when they load, and the pipeline puts Whisper on the CPU and the second
+// listen off for a while.
 func shareGPU(p STTPlan, gb float64, n int, ownPrecision bool) STTPlan {
 	per := gb * gpuShare / float64(n)
+	if p.refine {
+		per = (gb-processLossGB)/float64(n) - cohereGB
+	}
 	fit := func(ct string) int {
 		model, ok := ct2ModelGB[ct]
 		if !ok {
@@ -143,6 +154,101 @@ func shareGPU(p STTPlan, gb float64, n int, ownPrecision bool) STTPlan {
 	}
 	p.Batch = max(1, min(p.Batch, batch))
 	return p
+}
+
+// refineMinGB is the smallest NVIDIA GPU (GiB) the second listen (Cohere Transcribe
+// through torch, story 38.9) fits on beside Whisper: the pipeline's own threshold
+// (MIN_GPU_GB in stt/cohere_cuda.py), from what it took on the RTX 2080 SUPER. On
+// Windows the driver's budget (WDDM) leaves a process about 1 GiB short of the card,
+// and loading the model beside Whisper takes 1.6 GiB more than its 3.85 GiB of
+// weights: an 8 GB card has 5.8 GiB left once Whisper is loaded, short of the 6.4 the
+// model, a batch of its stretches and Whisper's room need. Elsewhere an 8 GB card
+// holds both. Tests replace it.
+var refineMinGB = func() float64 {
+	if runtime.GOOS == "windows" {
+		return 9.5
+	}
+	return 7.5
+}()
+
+// SecondListenFits reports whether the second listen fits beside Whisper on an
+// NVIDIA GPU of gb GiB (on a smaller one the pipeline keeps Whisper's words and says
+// why, and does not download its model).
+func SecondListenFits(gb float64) bool { return gb >= refineMinGB }
+
+// cohereGB is what the second listen holds on the GPU in each worker that loads it
+// (GiB): Cohere's weights, what loading them adds (more on Windows) and its smallest
+// batch of stretches, the pipeline's WEIGHTS_GB + LOAD_EXTRA_GB + MIN_BATCH x
+// STRETCH_GB (stt/cohere_cuda.py, kept equal by a test). processLossGB is what
+// Windows' driver budget (WDDM) keeps of a card from a process. Tests replace them.
+var cohereGB, processLossGB = func() (float64, float64) {
+	if runtime.GOOS == "windows" {
+		return 3.85 + 1.6 + 4*0.09, 1.0
+	}
+	return 3.85 + 0.5 + 4*0.09, 0
+}()
+
+// What else the second listen needs of an NVIDIA GPU, as the pipeline checks it
+// (MIN_COMPUTE, MIN_DRIVER in stt/cohere_cuda.py, kept equal by a test): torch's CUDA
+// 13.0 build runs on Turing (compute capability 7.5) and newer, with driver R580 or
+// later. Setup's check (#213, cmd/maktaba-server/second_listen.go) reads the same.
+const (
+	refineMinComputeMajor = 7
+	refineMinComputeMinor = 5
+	refineMinDriver       = 580
+)
+
+// SecondListenGPU reports why the second listen cannot run on gpu, or "": its
+// memory (SecondListenFits), its compute capability and its driver; one its
+// nvidia-smi does not report is not held against it.
+func SecondListenGPU(gpu GPU) string {
+	switch {
+	case !SecondListenFits(gpu.MemoryGB()):
+		return "memory"
+	case gpu.ComputeMajor > 0 && (gpu.ComputeMajor < refineMinComputeMajor ||
+		gpu.ComputeMajor == refineMinComputeMajor && gpu.ComputeMinor < refineMinComputeMinor):
+		return "compute_capability"
+	case gpu.DriverMajor() > 0 && gpu.DriverMajor() < refineMinDriver:
+		return "driver"
+	}
+	return ""
+}
+
+// refineGPUTiers size a CTranslate2 plan when the second listen runs on the same GPU
+// (refine on, SecondListenFits): each worker then holds Cohere's weights, what
+// loading them takes besides, a batch of its stretches (0.09 GiB each) and Whisper,
+// whose batch the pipeline leaves room for (0.14 GiB a file). Each tier passes the
+// pipeline's check (free memory before the model loads >= 3.85 + 1.6 + 0.36 +
+// 0.14 x batch GiB) on an otherwise idle GPU, Windows' budget counted: so Whisper's
+// batch is smaller than alone. The last tier is reached only where an 8 GB card
+// fits (not Windows): Whisper in int8_float16, four files.
+var refineGPUTiers = []struct {
+	minGB float64
+	plan  STTPlan
+}{
+	{40, STTPlan{Workers: 2, Batch: 24}},
+	{20, STTPlan{Workers: 1, Batch: 32}},
+	{14, STTPlan{Workers: 1, Batch: 16}},
+	{11, STTPlan{Workers: 1, Batch: 8}},
+	{9.5, STTPlan{Workers: 1, Batch: 4}},
+	{0, STTPlan{Workers: 1, Batch: 4, ComputeType: "int8_float16"}},
+}
+
+// PlanForGPUWithRefine is the tier for a GPU with gb GiB of memory that Whisper
+// shares with the second listen; false when the second listen does not fit on it
+// (Whisper then has the GPU to itself: PlanForGPU).
+func PlanForGPUWithRefine(gb float64) (STTPlan, bool) {
+	if !SecondListenFits(gb) {
+		return STTPlan{}, false
+	}
+	for _, t := range refineGPUTiers {
+		if gb >= t.minGB {
+			p := t.plan
+			p.ct2, p.refine = true, true
+			return p, true
+		}
+	}
+	return STTPlan{}, false
 }
 
 // cpuBatch is the CPU plan's batch: a pass of four windows keeps CTranslate2's
@@ -187,8 +293,20 @@ var numCPU = runtime.NumCPU
 // threads, the audio hours). The other [transcription] knobs override the plan's.
 // The operator's own stage selection always stands: with transcribe excluded
 // (operatorKeepsTranscribeOff) there are no workers.
-func PlanSTT(cfg config.Config) STTPlan {
+func PlanSTT(cfg config.Config) STTPlan { return planSTT(cfg, nil) }
+
+// planSTT is PlanSTT, the second listen planned only where venvTorchRuns (when given)
+// says the pipeline's torch can run it: PlanFor asks the pipeline's Python.
+func planSTT(cfg config.Config, venvTorchRuns func() bool) STTPlan {
 	t := cfg.Transcription
+	var here *bool
+	secondListenHere := func() bool {
+		if here == nil {
+			v := secondListenRuns(cfg) && (appleSilicon() || venvTorchRuns == nil || venvTorchRuns())
+			here = &v
+		}
+		return *here
+	}
 	device := strings.ToLower(strings.TrimSpace(t.Device))
 	ownPrecision := false
 	var plan STTPlan
@@ -202,6 +320,9 @@ func PlanSTT(cfg config.Config) STTPlan {
 			if plan, fits = PlanForGPU(gpuGB); !fits && strings.HasPrefix(device, "cuda") {
 				// asked for: the smallest tier (the pipeline checks the free memory)
 				plan, fits = PlanForGPU(gpuMinGB)
+			}
+			if p, ok := PlanForGPUWithRefine(gpuGB); ok && fits && refineOn(t) && secondListenHere() {
+				plan = p // story 38.9: room for the second listen
 			}
 		}
 		if !fits {
@@ -224,7 +345,7 @@ func PlanSTT(cfg config.Config) STTPlan {
 	}
 	// the budget is the plan's own workers' (the main worker's, without any)
 	base := max(1, plan.Workers)
-	if refineOn(t) && !secondListenRuns() {
+	if refineOn(t) && !secondListenHere() {
 		plan.Workers = 0
 	}
 	switch {
@@ -278,8 +399,90 @@ func shareBudget(p STTPlan, base, n int, gpuGB float64, ownPrecision, ownThreads
 }
 
 // secondListenRuns reports whether this machine runs the second listen (Cohere
-// Transcribe Arabic): on Apple Silicon (MLX, Epic 36 story 36.4). Tests replace it.
-var secondListenRuns = func() bool { return appleSilicon() }
+// Transcribe Arabic): on Apple Silicon (MLX, Epic 36 story 36.4); on Windows and
+// Linux x86_64 (story 38.9) where transcription is not set to the CPU, the NVIDIA GPU
+// can run it beside Whisper (SecondListenGPU), and its model can be had
+// (secondListenModel). Tests replace it.
+var secondListenRuns = func(cfg config.Config) bool {
+	if appleSilicon() {
+		return true
+	}
+	device := os.Getenv("MAKTABA_STT_DEVICE")
+	if strings.TrimSpace(device) == "" {
+		device = cfg.Transcription.Device
+	}
+	if strings.EqualFold(strings.TrimSpace(device), "cpu") || !cudaWhisper() {
+		return false
+	}
+	gpu, ok := NvidiaGPU()
+	return ok && SecondListenGPU(gpu) == "" && secondListenModel(cfg)
+}
+
+// defaultRefineModel is the second listen's model when [transcription] refine_model
+// and MAKTABA_STT_REFINE_MODEL are unset (the pipeline's DEFAULT_MODEL in
+// stt/cohere.py, kept equal by a test).
+const defaultRefineModel = "CohereLabs/cohere-transcribe-arabic-07-2026"
+
+// secondListenModel reports whether the second listen's model can be had on this
+// machine, as the pipeline looks for it: a folder of it, a Hugging Face token for the
+// pipeline (HF_TOKEN, or the token file of its HF_HOME: the gated repo needs an
+// accepted licence), the model already in that cache, a copy of the home's on this
+// machine (<model cache>/share-copies) or in MAKTABA_MODELS_DIR, or a home to copy it
+// from (a node: the home publishes its copy on the share). Elsewhere the pipeline
+// would keep Whisper's words anyway, so Whisper keeps its own tiers. Tests replace it.
+var secondListenModel = func(cfg config.Config) bool {
+	model := strings.TrimSpace(os.Getenv("MAKTABA_STT_REFINE_MODEL"))
+	if model == "" {
+		model = strings.TrimSpace(cfg.Transcription.RefineModel)
+	}
+	if model == "" {
+		model = defaultRefineModel
+	}
+	if isDir(model) {
+		return true
+	}
+	if strings.TrimSpace(os.Getenv("HF_TOKEN")) != "" || strings.TrimSpace(os.Getenv("HUGGING_FACE_HUB_TOKEN")) != "" {
+		return true
+	}
+	cache := strings.TrimSpace(os.Getenv("MAKTABA_MODEL_CACHE_DIR"))
+	if cache == "" {
+		cache = filepath.Join(cfg.StateDir(), "models") // as ChildEnv sets it
+	}
+	hfHome := strings.TrimSpace(os.Getenv("HF_HOME"))
+	if hfHome == "" {
+		hfHome = filepath.Join(cache, "huggingface")
+	}
+	token := strings.TrimSpace(os.Getenv("HF_TOKEN_PATH"))
+	if token == "" {
+		token = filepath.Join(hfHome, "token")
+	}
+	if st, err := os.Stat(token); err == nil && st.Mode().IsRegular() && st.Size() > 0 {
+		return true
+	}
+	org, name, ok := strings.Cut(model, "/")
+	if !ok {
+		return false
+	}
+	if snaps, err := os.ReadDir(filepath.Join(hfHome, "hub", "models--"+org+"--"+name, "snapshots")); err == nil && len(snaps) > 0 {
+		return true
+	}
+	copies := []string{filepath.Join(cache, "share-copies", org+"__"+name)}
+	if shared := strings.TrimSpace(os.Getenv("MAKTABA_MODELS_DIR")); shared != "" {
+		copies = append(copies, filepath.Join(shared, org+"__"+name))
+	}
+	for _, c := range copies {
+		if isDir(c) {
+			return true
+		}
+	}
+	return NodeMode(cfg, nodeConfig())
+}
+
+// isDir reports whether path is a folder.
+func isDir(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
+}
 
 // refineOn reports whether the workers run the second listen: the operator's own
 // MAKTABA_STT_REFINE when set (the pipeline's "0" is off), else [transcription]
@@ -320,10 +523,16 @@ func hasStage(list, stage string) bool {
 
 // PlanFor is PlanSTT for the pipeline that opts starts: no workers when its Python
 // does not have this machine's Whisper engine (a venv without the stt extra), where
-// they would sit idle.
+// they would sit idle. The second listen is planned only where the venv's torch is a
+// CUDA build (venvTorch; a probe that cannot say is not held against it): the
+// default pin set installs PyPI's CPU torch on Windows (story 38.9).
 func PlanFor(opts Options) STTPlan {
-	plan := PlanSTT(opts.Config)
-	if plan.Workers > 0 && !sttInstalled(pythonFor(opts)) {
+	python := pythonFor(opts)
+	plan := planSTT(opts.Config, func() bool {
+		build := venvTorch(python)
+		return build != torchCPU && build != torchAbsent
+	})
+	if plan.Workers > 0 && !sttInstalled(python) {
 		plan.Workers = 0
 	}
 	return plan
@@ -331,47 +540,87 @@ func PlanFor(opts Options) STTPlan {
 
 // sttProbe asks the pipeline's Python whether it has this machine's Whisper engine
 // (the stt extra: MLX-Whisper on Apple Silicon, CTranslate2 and faster-whisper
-// elsewhere), without importing it: exit 3 when it has not.
-const sttProbe = `import importlib.util as u, platform, sys
+// elsewhere), without importing it: exit 3 when it has not. Off Apple Silicon it
+// prints torch's build too ("torch cuda", "torch cpu", "torch absent", "torch
+// unknown"), read from torch's version.py as the pipeline does (torch_build in
+// stt/cohere_cuda.py): importing torch takes seconds.
+const sttProbe = `import importlib.util as u, pathlib, platform, re, sys
 mlx = platform.system() == "Darwin" and platform.machine() == "arm64"
 mods = ("numpy", "mlx_whisper") if mlx else ("numpy", "ctranslate2", "faster_whisper")
+if not mlx:
+    t = u.find_spec("torch")
+    build = "absent"
+    if t is not None:
+        build = "unknown"
+        try:
+            v = (pathlib.Path(t.origin).parent / "version.py").read_text(encoding="utf-8")
+            m = re.search(r"^cuda\s*(?::[^=]*)?=\s*(\S+)", v, re.M)
+            if m:
+                build = "cpu" if m.group(1).strip("'\"") == "None" else "cuda"
+        except Exception:
+            pass
+    print("torch", build)
 sys.exit(0 if all(u.find_spec(m) for m in mods) else 3)`
+
+// What the probe says of the venv's torch ("": it could not say).
+const (
+	torchCUDA   = "cuda"
+	torchCPU    = "cpu"
+	torchAbsent = "absent"
+)
 
 // sttProbeTimeout bounds the probe: an interpreter's first start can be slow (a
 // virus scanner reading it), and the supervisor starts anyway.
 const sttProbeTimeout = 30 * time.Second
 
+// sttAnswer is what the probe found in an interpreter.
+type sttAnswer struct {
+	installed bool
+	torch     string // torchCUDA, torchCPU, torchAbsent, or "" (not said)
+}
+
 var sttProbes struct {
 	sync.Mutex
-	seen map[string]bool
+	seen map[string]sttAnswer
 }
 
 // sttInstalled reports whether python has the Whisper engine (probeSTT); tests
 // replace it.
-var sttInstalled = probeSTT
+var sttInstalled = func(python string) bool { return probeSTT(python).installed }
 
-// probeSTT asks python whether it has the Whisper engine, once per interpreter. Only
-// its answer "not installed" counts: a probe that cannot run (a timeout, an
-// interpreter that fails) leaves the plan as it is, and the pipeline says why it
-// cannot transcribe.
-func probeSTT(python string) bool {
+// venvTorch is the build of python's torch (probeSTT); tests replace it.
+var venvTorch = func(python string) string { return probeSTT(python).torch }
+
+// probeSTT asks python whether it has the Whisper engine, and torch's build, once per
+// interpreter. Only its answer "not installed" counts: a probe that cannot run (a
+// timeout, an interpreter that fails) leaves the plan as it is, and the pipeline says
+// why it cannot transcribe.
+func probeSTT(python string) sttAnswer {
 	sttProbes.Lock()
 	defer sttProbes.Unlock()
-	if ok, done := sttProbes.seen[python]; done {
-		return ok
+	if a, done := sttProbes.seen[python]; done {
+		return a
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), sttProbeTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, python, "-c", sttProbe)
 	hideWindow(cmd)
-	err := cmd.Run()
+	out, err := cmd.Output()
 	var exit *exec.ExitError
-	ok := !errors.As(err, &exit) || exit.ExitCode() != 3
-	if sttProbes.seen == nil {
-		sttProbes.seen = map[string]bool{}
+	a := sttAnswer{installed: !errors.As(err, &exit) || exit.ExitCode() != 3}
+	for _, line := range strings.Split(string(out), "\n") {
+		if build, ok := strings.CutPrefix(strings.TrimSpace(line), "torch "); ok {
+			switch build {
+			case torchCUDA, torchCPU, torchAbsent:
+				a.torch = build
+			}
+		}
 	}
-	sttProbes.seen[python] = ok
-	return ok
+	if sttProbes.seen == nil {
+		sttProbes.seen = map[string]sttAnswer{}
+	}
+	sttProbes.seen[python] = a
+	return a
 }
 
 // mainEnv is the main worker's share of the plan: with transcription workers it
