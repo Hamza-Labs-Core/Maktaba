@@ -28,13 +28,39 @@ function Get-MachineId {
     return ''
 }
 
+# Read-NodeConfigText: the node config's text at Path, read the way every reader reads it
+# (cluster/config.py _text, maktaba-server's and streaming's withoutBOM): with a byte
+# order mark in that encoding (UTF-8, UTF-16, UTF-32), without one as UTF-8, and strictly:
+# text that does not decode (an ANSI file with a byte that is not UTF-8, a UTF-16 lone
+# surrogate) throws, so it is broken here as there (Get-Content would read an ANSI file
+# as ANSI and replace what does not decode).
+function Read-NodeConfigText {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $n = $bytes.Length
+    if ($n -ge 4 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE -and $bytes[2] -eq 0 -and $bytes[3] -eq 0) {
+        $enc = New-Object System.Text.UTF32Encoding($false, $true, $true); $skip = 4
+    } elseif ($n -ge 4 -and $bytes[0] -eq 0 -and $bytes[1] -eq 0 -and $bytes[2] -eq 0xFE -and $bytes[3] -eq 0xFF) {
+        $enc = New-Object System.Text.UTF32Encoding($true, $true, $true); $skip = 4
+    } elseif ($n -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        $enc = New-Object System.Text.UTF8Encoding($true, $true); $skip = 3
+    } elseif ($n -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+        $enc = New-Object System.Text.UnicodeEncoding($false, $true, $true); $skip = 2
+    } elseif ($n -ge 2 -and $bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF) {
+        $enc = New-Object System.Text.UnicodeEncoding($true, $true, $true); $skip = 2
+    } else {
+        $enc = New-Object System.Text.UTF8Encoding($false, $true); $skip = 0
+    }
+    return $enc.GetString($bytes, $skip, $n - $skip)
+}
+
 # Test-NodeConfigOfAnotherPC: the node config at Path records another PC (its
 # machine_id) than this one. One no PC has claimed, one that cannot be read, or a PC
 # whose id cannot be known is never another PC's.
 function Test-NodeConfigOfAnotherPC {
     param([Parameter(Mandatory = $true)][string]$Path)
     try {
-        $config = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $config = Read-NodeConfigText -Path $Path | ConvertFrom-Json -ErrorAction Stop
     } catch { return $false }
     $field = $config.PSObject.Properties['machine_id']
     $owner = if ($field) { ([string]$field.Value).Trim() } else { '' }
@@ -48,7 +74,7 @@ function Test-NodeConfigOfAnotherPC {
 function Test-NodeConfigWhole {
     param([Parameter(Mandatory = $true)][string]$Path)
     try {
-        $config = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $config = Read-NodeConfigText -Path $Path | ConvertFrom-Json -ErrorAction Stop
     } catch { return $false }
     if ($config -isnot [System.Management.Automation.PSCustomObject]) { return $false }
     foreach ($key in @('node_id', 'private_key')) {
@@ -122,24 +148,50 @@ function Get-NodeConfigKeptBroken {
         Sort-Object -Property Name
 }
 
+# Get-NodeConfigSetAside: the node configs a home's switch set aside beside Path
+# (<name>.was-node-<term>: the identity the machine had as a node, its private key in it).
+function Get-NodeConfigSetAside {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $dir = Split-Path -Parent $Path
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return }
+    Get-ChildItem -LiteralPath $dir -Force -File -Filter ((Split-Path -Leaf $Path) + '.was-node-*') -ErrorAction SilentlyContinue |
+        Sort-Object -Property Name
+}
+
+# Get-NodeConfigLock: the write lock beside the node config at Path (.<name>.lock, which
+# the pipeline and maktaba-server hold while they write it; gone when nobody holds it, but
+# a process that stopped mid-write leaves it), when it is there.
+function Get-NodeConfigLock {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $lock = Join-Path (Split-Path -Parent $Path) ('.' + (Split-Path -Leaf $Path) + '.lock')
+    if (Test-Path -LiteralPath $lock -PathType Leaf) { $lock }
+}
+
 # Get-NodeConfigFiles: every file of a node config that is this PC's (both places on
 # Windows, or MAKTABA_NODE_CONFIG; never another PC's roaming one): its node.json, what a
-# write that could not finish left beside it, and a broken node.json kept there. To
-# forget the home, all of them go, or the second would take the first one's place (and a
+# write that could not finish left beside it, a broken node.json kept there, what a
+# home's switch set aside (the identity it had as a node), and its write lock. To forget
+# the home, all of them go, or the second would take the first one's place (and a
 # leftover would be put back).
 function Get-NodeConfigFiles {
     if ($env:MAKTABA_NODE_CONFIG) {
         $env:MAKTABA_NODE_CONFIG
         Get-NodeConfigLeftovers -Path $env:MAKTABA_NODE_CONFIG | ForEach-Object { $_.FullName }
         Get-NodeConfigKeptBroken -Path $env:MAKTABA_NODE_CONFIG | ForEach-Object { $_.FullName }
+        Get-NodeConfigSetAside -Path $env:MAKTABA_NODE_CONFIG | ForEach-Object { $_.FullName }
+        Get-NodeConfigLock -Path $env:MAKTABA_NODE_CONFIG
         return
     }
     foreach ($path in @((Join-Path $script:NodeConfDir 'node.json'), (Join-Path $env:LOCALAPPDATA 'Maktaba\node.json'))) {
+        # what a home's switch set aside, unless another PC's (its machine_id)
+        Get-NodeConfigSetAside -Path $path | Where-Object { -not (Test-NodeConfigOfAnotherPC -Path $_.FullName) } |
+            ForEach-Object { $_.FullName }
         $held = Get-NodeConfigSource -Path $path
         if (-not (Test-Path -LiteralPath $held -PathType Leaf) -or (Test-NodeConfigOfAnotherPC -Path $held)) { continue }
         if (Test-Path -LiteralPath $path -PathType Leaf) { $path }
         Get-NodeConfigLeftovers -Path $path | ForEach-Object { $_.FullName }
         Get-NodeConfigKeptBroken -Path $path | ForEach-Object { $_.FullName }
+        Get-NodeConfigLock -Path $path
     }
 }
 

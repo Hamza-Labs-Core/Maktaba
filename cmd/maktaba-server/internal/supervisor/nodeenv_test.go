@@ -31,19 +31,19 @@ func TestStreamingNodeEnvFromNodeConfig(t *testing.T) {
 	var cfg config.Config
 	cfg.Database.URL = "postgresql://local/ignored"
 	cfg.Server.StreamAddr = ":8081"
-	m := envMap(ChildEnv(RoleStreaming, cfg))
+	m := envMap(childEnvOK(RoleStreaming, cfg))
 	if m["DATABASE_URL"] != "postgresql://node_6f1c9a2e@home:5432/maktaba" || m["MAKTABA_TV_HOST_ROLE"] != "node" ||
 		m["MAKTABA_NODE_ID"] != "6f1c9a2e-0000-4000-8000-000000000001" {
 		t.Fatalf("node env not applied: %v", m)
 	}
 	// the api keeps the home's own database and learns the streaming loopback URL
-	a := envMap(ChildEnv(RoleAPI, cfg))
+	a := envMap(childEnvOK(RoleAPI, cfg))
 	if a["DATABASE_URL"] != "postgresql://local/ignored" || a["MAKTABA_STREAMING_HTTP_URL"] != "http://127.0.0.1:8081" {
 		t.Fatalf("api env: %v", a)
 	}
 	// not joined: nothing changes
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{NodeID: "x"} }
-	if m := envMap(ChildEnv(RoleStreaming, cfg)); m["MAKTABA_TV_HOST_ROLE"] != "" || m["DATABASE_URL"] != "postgresql://local/ignored" {
+	if m := envMap(childEnvOK(RoleStreaming, cfg)); m["MAKTABA_TV_HOST_ROLE"] != "" || m["DATABASE_URL"] != "postgresql://local/ignored" {
 		t.Fatalf("unjoined machine got node env: %v", m)
 	}
 }
@@ -63,7 +63,7 @@ func TestPipelineFullNodeEnv(t *testing.T) {
 	var cfg config.Config
 	cfg.Database.URL = "postgresql://local/ignored"
 	cfg.Pipeline.Instances = 1
-	m := envMap(ChildEnv(RolePipeline, cfg))
+	m := envMap(childEnvOK(RolePipeline, cfg))
 	if m["MAKTABA_DATABASE_URL"] != "postgres://node_6f1c9a2e@home:5432/maktaba?sslmode=prefer" ||
 		m["DATABASE_URL"] != m["MAKTABA_DATABASE_URL"] || m["MAKTABA_NODE"] != "1" {
 		t.Fatalf("pipeline node env not applied: %v", m)
@@ -79,7 +79,7 @@ func TestPipelineFullNodeEnv(t *testing.T) {
 	}
 	// [server] role = "home" keeps a joined machine a home worker
 	cfg.Server.Role = "home"
-	if m := envMap(ChildEnv(RolePipeline, cfg)); m["MAKTABA_NODE"] != "" || m["MAKTABA_DATABASE_URL"] != "postgresql://local/ignored" {
+	if m := envMap(childEnvOK(RolePipeline, cfg)); m["MAKTABA_NODE"] != "" || m["MAKTABA_DATABASE_URL"] != "postgresql://local/ignored" {
 		t.Fatalf("forced home got node env: %v", m)
 	}
 }
@@ -146,16 +146,16 @@ func TestStreamingCacheUnderDataDir(t *testing.T) {
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
 	var cfg config.Config
 	cfg.Server.DataDir = filepath.Join("C:", "Users", "x", "AppData", "Local", "Maktaba")
-	m := envMap(ChildEnv(RoleStreaming, cfg))
+	m := envMap(childEnvOK(RoleStreaming, cfg))
 	if want := filepath.Join(cfg.Server.DataDir, "cache", "streaming"); m["MAKTABA_CACHE_ROOT"] != want {
 		t.Fatalf("MAKTABA_CACHE_ROOT = %q, want %q", m["MAKTABA_CACHE_ROOT"], want)
 	}
 	// an operator's own (inherited with the rest of the environment) is not overridden
 	t.Setenv("MAKTABA_CACHE_ROOT", "/srv/own")
-	if v, ok := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_CACHE_ROOT"]; ok {
+	if v, ok := envMap(childEnvOK(RoleStreaming, cfg))["MAKTABA_CACHE_ROOT"]; ok {
 		t.Fatalf("overrode the operator's cache root with %q", v)
 	}
-	if _, ok := envMap(ChildEnv(RoleAPI, cfg))["MAKTABA_CACHE_ROOT"]; ok {
+	if _, ok := envMap(childEnvOK(RoleAPI, cfg))["MAKTABA_CACHE_ROOT"]; ok {
 		t.Fatalf("only streaming gets the streaming cache root")
 	}
 }
@@ -169,22 +169,22 @@ func TestStreamingTranscodeFloor(t *testing.T) {
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
 	var cfg config.Config
 	cfg.Server.DataDir = t.TempDir()
-	if v, ok := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; ok {
+	if v, ok := envMap(childEnvOK(RoleStreaming, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; ok {
 		t.Fatalf("unset: %q", v)
 	}
 	cfg.Media.TranscodeMinFreeGiB = 8
-	if v := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; v != "8" {
+	if v := envMap(childEnvOK(RoleStreaming, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; v != "8" {
 		t.Fatalf("8 GiB: %q", v)
 	}
-	if _, ok := envMap(ChildEnv(RoleAPI, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; ok {
+	if _, ok := envMap(childEnvOK(RoleAPI, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; ok {
 		t.Fatal("only streaming gets the transcode floor")
 	}
 	cfg.Media.TranscodeMinFreeGiB = -1
-	if v := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; v != "-1" {
+	if v := envMap(childEnvOK(RoleStreaming, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; v != "-1" {
 		t.Fatalf("none: %q", v)
 	}
 	t.Setenv("MAKTABA_TRANSCODE_MIN_FREE_GIB", "50")
-	if v, ok := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; ok {
+	if v, ok := envMap(childEnvOK(RoleStreaming, cfg))["MAKTABA_TRANSCODE_MIN_FREE_GIB"]; ok {
 		t.Fatalf("overrode the operator's floor with %q", v)
 	}
 }
@@ -206,7 +206,7 @@ func TestChildEnvStateDirs(t *testing.T) {
 	if runtime.GOOS == "darwin" && root != filepath.Dir(cfg.Server.DataDir) {
 		t.Fatalf("StateDir = %s on a Mac, want the parent of data/", root)
 	}
-	m := envMap(ChildEnv(RolePipeline, cfg))
+	m := envMap(childEnvOK(RolePipeline, cfg))
 	if m["MAKTABA_MODEL_CACHE_DIR"] != filepath.Join(root, "models") || m["MAKTABA_CHROMA_DIR"] != filepath.Join(root, "chroma") {
 		t.Fatalf("models/chroma = %q / %q, want under %s", m["MAKTABA_MODEL_CACHE_DIR"], m["MAKTABA_CHROMA_DIR"], root)
 	}
@@ -215,11 +215,11 @@ func TestChildEnvStateDirs(t *testing.T) {
 	if v, ok := m["MAKTABA_MODELS_DIR"]; ok {
 		t.Fatalf("MAKTABA_MODELS_DIR = %q", v)
 	}
-	if got := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_CACHE_ROOT"]; got != filepath.Join(root, "cache", "streaming") {
+	if got := envMap(childEnvOK(RoleStreaming, cfg))["MAKTABA_CACHE_ROOT"]; got != filepath.Join(root, "cache", "streaming") {
 		t.Fatalf("MAKTABA_CACHE_ROOT = %q", got)
 	}
 	t.Setenv("MAKTABA_CHROMA_DIR", "/own/chroma")
-	if v, ok := envMap(ChildEnv(RolePipeline, cfg))["MAKTABA_CHROMA_DIR"]; ok {
+	if v, ok := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_CHROMA_DIR"]; ok {
 		t.Fatalf("overrode the operator's chroma dir with %q", v)
 	}
 }
@@ -237,13 +237,13 @@ func TestFullNodeStateDir(t *testing.T) {
 	cfg.Server.DataDir = filepath.Join("C:", "Users", "x", "AppData", "Local", "Maktaba")
 	want := filepath.Join(cfg.Server.DataDir, "node")
 	for _, role := range []Role{RoleAPI, RoleStreaming} {
-		if got := envMap(ChildEnv(role, cfg))["MAKTABA_NODE_STATE_DIR"]; got != want {
+		if got := envMap(childEnvOK(role, cfg))["MAKTABA_NODE_STATE_DIR"]; got != want {
 			t.Fatalf("%s: MAKTABA_NODE_STATE_DIR = %q, want %q", role, got, want)
 		}
 	}
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
 	for _, role := range []Role{RoleAPI, RoleStreaming} {
-		if got, ok := envMap(ChildEnv(role, cfg))["MAKTABA_NODE_STATE_DIR"]; ok {
+		if got, ok := envMap(childEnvOK(role, cfg))["MAKTABA_NODE_STATE_DIR"]; ok {
 			t.Fatalf("%s off a node: MAKTABA_NODE_STATE_DIR = %q", role, got)
 		}
 	}
@@ -257,15 +257,15 @@ func TestClusterDBEnv(t *testing.T) {
 	t.Cleanup(func() { nodeConfig = prev })
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
 	var cfg config.Config
-	if _, ok := envMap(ChildEnv(RoleAPI, cfg))["MAKTABA_CLUSTER_PG_PORT"]; ok {
+	if _, ok := envMap(childEnvOK(RoleAPI, cfg))["MAKTABA_CLUSTER_PG_PORT"]; ok {
 		t.Fatal("a port without the bundled Postgres serving the machines")
 	}
 	cfg.ClusterDB = config.ClusterDB{Port: 54329, CA: filepath.Join("keys", "postgres-ca.crt")}
-	m := envMap(ChildEnv(RoleAPI, cfg))
+	m := envMap(childEnvOK(RoleAPI, cfg))
 	if m["MAKTABA_CLUSTER_PG_PORT"] != "54329" || m["MAKTABA_CLUSTER_PG_CA"] != cfg.ClusterDB.CA {
 		t.Fatalf("api env: port %q ca %q", m["MAKTABA_CLUSTER_PG_PORT"], m["MAKTABA_CLUSTER_PG_CA"])
 	}
-	if _, ok := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_CLUSTER_PG_PORT"]; ok {
+	if _, ok := envMap(childEnvOK(RoleStreaming, cfg))["MAKTABA_CLUSTER_PG_PORT"]; ok {
 		t.Fatal("only the api provisions the machines")
 	}
 }
@@ -280,12 +280,12 @@ func TestChildEnvDataDir(t *testing.T) {
 	var cfg config.Config
 	cfg.Server.DataDir = filepath.Join(t.TempDir(), "data")
 	for _, role := range []Role{RoleAPI, RoleStreaming, RolePipeline} {
-		if got := envMap(ChildEnv(role, cfg))["MAKTABA_DATA_DIR"]; got != cfg.Server.DataDir {
+		if got := envMap(childEnvOK(role, cfg))["MAKTABA_DATA_DIR"]; got != cfg.Server.DataDir {
 			t.Errorf("%s: MAKTABA_DATA_DIR = %q, want %s", role, got, cfg.Server.DataDir)
 		}
 	}
 	t.Setenv("MAKTABA_DATA_DIR", "/own/data")
-	if v, ok := envMap(ChildEnv(RoleAPI, cfg))["MAKTABA_DATA_DIR"]; ok {
+	if v, ok := envMap(childEnvOK(RoleAPI, cfg))["MAKTABA_DATA_DIR"]; ok {
 		t.Fatalf("overrode the operator's data dir with %q", v)
 	}
 }

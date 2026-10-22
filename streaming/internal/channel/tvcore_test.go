@@ -373,19 +373,19 @@ func TestDetectRole_HomeUnlessJoined(t *testing.T) {
 	if want := filepath.Join("/Users/m", "Library", "Application Support", "Maktaba", "node.json"); macPath != want {
 		t.Fatalf("mac path %s", macPath)
 	}
-	if role, _ := DetectRole(getenv, "darwin", "/Users/m", read); role != RoleHome {
+	if role, _, _ := DetectRole(getenv, "darwin", "/Users/m", read); role != RoleHome {
 		t.Errorf("no node config: %s", role)
 	}
 	files[macPath] = `{"node_id":"n-1","private_key":"k","database_url":""}`
-	if role, _ := DetectRole(getenv, "darwin", "/Users/m", read); role != RoleHome {
+	if role, _, _ := DetectRole(getenv, "darwin", "/Users/m", read); role != RoleHome {
 		t.Errorf("asked to join but not approved: %s", role)
 	}
 	files[macPath] = `{"node_id":"n-1","private_key":"k","database_url":"postgres://x"}`
-	if role, id := DetectRole(getenv, "darwin", "/Users/m", read); role != RoleNode || id != "n-1" {
+	if role, id, _ := DetectRole(getenv, "darwin", "/Users/m", read); role != RoleNode || id != "n-1" {
 		t.Errorf("joined: %s %s", role, id)
 	}
 	env["MAKTABA_CLUSTER_ROLE"] = "home"
-	if role, _ := DetectRole(getenv, "darwin", "/Users/m", read); role != RoleHome {
+	if role, _, _ := DetectRole(getenv, "darwin", "/Users/m", read); role != RoleHome {
 		t.Errorf("override: %s", role)
 	}
 	env["MAKTABA_NODE_CONFIG"] = "/tmp/n.json"

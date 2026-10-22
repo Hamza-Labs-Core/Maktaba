@@ -89,11 +89,15 @@ func homeAway(client *http.Client, api *url.URL) (away, ok bool) {
 	return !s.Home.Reachable, true
 }
 
-// startNodeServices starts the machine agent when this machine is a full node.
-func startNodeServices(ctx context.Context, cfg config.Config, commands machineagent.Command) *nodeServices {
-	n := supervisor.NodeConfig()
+// startNodeServices starts the machine agent when this machine is a full node; a node
+// config that cannot be read is an error (supervisor.NodeOf), never a home's start.
+func startNodeServices(ctx context.Context, cfg config.Config, commands machineagent.Command) (*nodeServices, error) {
+	n, err := supervisor.NodeOf(cfg)
+	if err != nil {
+		return nil, err
+	}
 	if !supervisor.NodeMode(cfg, n) {
-		return nil
+		return nil, nil
 	}
 	ns := &nodeServices{node: n}
 	tok, err := machineagent.WriteToken(supervisor.LocalTokenPath(cfg))
@@ -119,7 +123,7 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 	go ns.agent.Run(ctx)
 	go ns.watchHome(ctx, apiOrigin(cfg.Server.Listen))
 	fmt.Fprintf(os.Stderr, "[serve] full node of %s (node %s): api, web, pipeline, streaming\n", n.HomeURL(), n.Node8())
-	return ns
+	return ns, nil
 }
 
 // adminHandler adds the machine agent's /agent/* to the supervisor's loopback admin.

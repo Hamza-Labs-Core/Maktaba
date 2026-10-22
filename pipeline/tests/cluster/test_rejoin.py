@@ -54,7 +54,8 @@ def test_rejoin_forgets_what_a_failed_write_left(
 ) -> None:
     """A re-join starts over even beside what a write that could not finish left of the
     old identity (a load would put it back): it goes with node.json, and the old config
-    is kept as node.json.bak from the file that held it."""
+    is kept as node.json.bak from the file that held it. A broken node.json kept aside
+    goes too (it may hold part of the old credential)."""
     _, url = fake
     path = tmp_path / "node.json"
     first = _join(url, path, io.StringIO())
@@ -62,6 +63,7 @@ def test_rejoin_forgets_what_a_failed_write_left(
     stale = path.with_name(f".node.json-{stamp}.bak")
     os.replace(path, stale)  # node.json under a backup name, a write still in its minute
     path.with_name(f".node.json-{stamp}.tmp").write_text(stale.read_text())
+    path.with_name(f"node.json.broken-{int(time.time())}-0bad").write_text('{"private_key": "k')
     again = _join(url, path, io.StringIO(), rejoin=True, assume_yes=True)
     assert again.node_id != first.node_id
     assert node_config.load(path.with_name("node.json.bak")) == first

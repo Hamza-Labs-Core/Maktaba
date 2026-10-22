@@ -100,7 +100,11 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 	// which only the home migrates and dumps; no step, no record here (one would
 	// later judge an app on a machine that has no database of its own)
 	var dbStep *sharedStep
-	if n := supervisor.NodeConfig(); supervisor.NodeMode(cfg, n) {
+	if n, err := supervisor.NodeOf(cfg); err != nil {
+		// it may be a node's: no update of a database of its own here (the roles do not
+		// start on it either, supervisor.ChildEnv)
+		fmt.Fprintf(log, "[serve] no library database update: %v\n", err)
+	} else if supervisor.NodeMode(cfg, n) {
 		fmt.Fprintf(log, "[serve] this machine is a full node of %s: the home updates the library database\n", n.HomeURL())
 	} else {
 		db := &migrationGate{stateDir: cfg.StateDir(), version: cur.Version, pg: pg,

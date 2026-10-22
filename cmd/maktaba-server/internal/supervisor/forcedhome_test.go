@@ -30,7 +30,7 @@ func TestAForcedHomeRunsNoRoleAsANode(t *testing.T) {
 	check := func(how string) {
 		t.Helper()
 		for _, role := range []Role{RoleAPI, RoleStreaming, RolePipeline, RoleTVSlot} {
-			m := envMap(ChildEnv(role, cfg))
+			m := envMap(childEnvOK(role, cfg))
 			if m["MAKTABA_CLUSTER_ROLE"] != "home" || m["MAKTABA_TV_HOST_ROLE"] != "home" || m["MAKTABA_NODE_CONFIG"] != NoNodeConfigPath(cfg) {
 				t.Errorf("%s, %s: not told it is the home: %v", how, role, m)
 			}
@@ -69,7 +69,7 @@ func TestAForcedHomeRunsNoRoleAsANode(t *testing.T) {
 
 	// not forced: the joined machine is the node, as before
 	t.Setenv("MAKTABA_ROLE", "")
-	m := envMap(ChildEnv(RoleStreaming, cfg))
+	m := envMap(childEnvOK(RoleStreaming, cfg))
 	if m["MAKTABA_CLUSTER_ROLE"] != "" || m["MAKTABA_TV_HOST_ROLE"] != "node" || m["MAKTABA_NODE_CONFIG"] != "" {
 		t.Errorf("a joined node: %v", m)
 	}
