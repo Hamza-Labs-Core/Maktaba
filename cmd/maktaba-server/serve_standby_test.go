@@ -458,3 +458,17 @@ func TestAPromotedStandbyKeepsItsMachineIdentityForTheTermWatch(t *testing.T) {
 		t.Fatalf("identities: %+v", ids)
 	}
 }
+
+// One step-down at a time: the term watch and check-term finding one notice at once run
+// it once (claim lets one switch's steps in again).
+func TestOneStepDownAtATime(t *testing.T) {
+	s := newSwitching(config.Config{})
+	s.stepping = true // another runs
+	err := s.stepDown(t.Context(), oldHome{NodeID: "6f1c2a3b-4d5e-4f60-8a71-92b3c4d5e6f7"}, "sw-1", movedNotice{Term: 3})
+	if err == nil || !strings.Contains(err.Error(), "under way") {
+		t.Fatalf("a second step-down: %v", err)
+	}
+	if s.busy != "" {
+		t.Fatalf("the second claimed the switch: %q", s.busy)
+	}
+}

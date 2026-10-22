@@ -107,6 +107,10 @@ type switching struct {
 	demoting  bool
 	demoteErr string
 	demoted   string // the switchover whose demotion went through (this machine starts again)
+	// stepping: a step-down runs here (stepDown), or went through and this machine starts
+	// again; claim lets one switch's steps in again, so the term watch and check-term
+	// would otherwise each run one
+	stepping bool
 
 	// claimMu keeps the emergencies' term claims one at a time (serve_termclaim.go)
 	claimMu sync.Mutex

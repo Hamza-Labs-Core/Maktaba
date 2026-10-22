@@ -294,12 +294,25 @@ type keptReport struct {
 // database is moved aside (never emptied) and it copies the new home's anew. One that
 // does not get as far gives its claim up (it is asked again at the next look).
 func (s *switching) stepDown(ctx context.Context, me oldHome, id string, notice movedNotice) (err error) {
+	s.mu.Lock()
+	if s.stepping {
+		s.mu.Unlock()
+		return errors.New("a step-down is under way here")
+	}
+	s.stepping = true
+	s.mu.Unlock()
 	if err := s.claim(id); err != nil {
+		s.mu.Lock()
+		s.stepping = false
+		s.mu.Unlock()
 		return err
 	}
 	defer func() {
 		if err != nil {
 			s.release(id)
+			s.mu.Lock()
+			s.stepping = false
+			s.mu.Unlock()
 		}
 	}()
 	logf := func(format string, args ...any) { fmt.Fprintf(os.Stderr, "[switchover] "+format+"\n", args...) }
