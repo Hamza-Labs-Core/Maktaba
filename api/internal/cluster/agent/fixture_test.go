@@ -173,6 +173,8 @@ type helloOpts struct {
 	badProof   bool
 	version    int
 	ip         string
+	// process is the hello's process ("supervisor": a machine's own agent)
+	process string
 }
 
 // dialAgent runs the v2 handshake as a process does (and checks the hub's
@@ -206,6 +208,9 @@ func (f *fixture) dialAgent(o helloOpts) (*testAgent, error) {
 	}
 	if o.ip != "" {
 		hello["ip"] = o.ip
+	}
+	if o.process != "" {
+		hello["process"] = o.process
 	}
 	helloBytes, err := writeText(ctx, c, hello)
 	if err != nil {

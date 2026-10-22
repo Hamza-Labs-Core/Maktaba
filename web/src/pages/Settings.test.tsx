@@ -235,6 +235,7 @@ function StatefulAuth({ onLogoutAll, children }: { onLogoutAll: () => void; chil
     logoutAll: async () => {
       onLogoutAll();
       setUser(null);
+      return "everywhere" as const;
     },
   });
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

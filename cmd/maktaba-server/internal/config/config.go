@@ -48,6 +48,25 @@ type Config struct {
 	// chose a count to keep (setup --node); Save writes a 0 only then (0 there
 	// means no transcription workers, even on Apple Silicon).
 	PipelineInstancesSet bool `toml:"-"`
+	// ClusterDB is how the cluster's machines reach this home's bundled Postgres
+	// (serve fills it in; zero: they are not served by it).
+	ClusterDB ClusterDB `toml:"-"`
+	// NodeCopy is a full node's copy of its home's database (Epic 37, nodecopy), as
+	// serve resolved it ("": none).
+	NodeCopy NodeCopy `toml:"-"`
+}
+
+// NodeCopy: the address this machine's programs reach its copy of the home's database
+// at (MAKTABA_COPY_DATABASE_URL).
+type NodeCopy struct {
+	DSN string
+}
+
+// ClusterDB: the bundled Postgres's port on the LAN and the CA certificate its
+// clients verify it with ("" with TLS off).
+type ClusterDB struct {
+	Port int
+	CA   string
 }
 
 // PostgresSection is the [postgres] table (Epic 36 story 36.1): the Postgres
@@ -61,8 +80,26 @@ type PostgresSection struct {
 	// Home is the Postgres install (bin/postgres, bin/initdb, …); empty:
 	// $MAKTABA_POSTGRES_HOME, else the payload's postgres/ beside bin/.
 	Home string `toml:"home"`
-	// Port is its loopback port (default 54329).
+	// Port is its port (default 54329).
 	Port int `toml:"port"`
+	// Listen: "lan" (default) also listens on this machine's network for the
+	// cluster's machines while one may connect (one approved, or joins open:
+	// pgbundle.WatchReach), and only their roles get in, over TLS; "loopback": this
+	// machine only (no machine can join).
+	Listen string `toml:"listen"`
+	// TLS: "on" (default) encrypts the machines' connections with the cluster
+	// database CA's certificate (made automatically); "off" sends them in the clear,
+	// passwords and every replicated row readable on the network.
+	TLS string `toml:"tls"`
+	// MachinesFrom: where the cluster's machines may connect from: "samenet" (default:
+	// the networks this machine is on, and each approved machine's own address, so a
+	// machine over a VPN gets in too), "all" (any address), or networks, comma-separated
+	// CIDR ("192.168.1.0/24, 10.8.0.0/16": those only).
+	MachinesFrom string `toml:"machines_from"`
+	// CopyPort is the loopback port of a full node's copy of its home's database
+	// (default: Port; a node runs no bundled home, and its copy is the database it
+	// would run as the home).
+	CopyPort int `toml:"copy_port"`
 	// UpdateDumps is how many dumps taken before an update's migrations
 	// (backups/pre-<old>-to-<new>.dump, Epic 38 story 38.12) stay in backups/:
 	// the newest ones, the last update's always; 0 (default): 3. The nightly
@@ -274,10 +311,22 @@ type TranscriptionSection struct {
 	CPUThreads int `toml:"cpu_threads"`
 }
 
-// CloudSection holds optional cloud-link enrolment.
+// CloudSection is the cloud relay (Epic 25): while enabled, the home's supervisor runs
+// the relay agent (maktaba-cloudlink), which keeps a tunnel from the cloud to this home's
+// API. Its credentials come from a claim once (ClaimCode and Slug, used on the first run
+// only) and are kept in the keys directory; a switch of the home moves them, and the
+// agent with them (specs/epics/37-node-replica).
 type CloudSection struct {
-	Enabled   bool   `toml:"enabled"`
-	ClaimCode string `toml:"claim_code"`
+	Enabled   bool   `toml:"enabled" json:"enabled"`
+	ClaimCode string `toml:"claim_code" json:"-"`
+	// Slug is the subdomain asked for at the claim; Name the server's label there.
+	Slug string `toml:"slug" json:"slug,omitempty"`
+	Name string `toml:"name" json:"name,omitempty"`
+	// API and RelayWS override the cloud's addresses (default: maktaba.app's).
+	API     string `toml:"api" json:"api,omitempty"`
+	RelayWS string `toml:"relay_ws" json:"relay_ws,omitempty"`
+	// AdminAddr is the agent's loopback status address (default 127.0.0.1:8765).
+	AdminAddr string `toml:"admin_addr" json:"admin_addr,omitempty"`
 }
 
 // Defaults returns a Config populated with the documented defaults for

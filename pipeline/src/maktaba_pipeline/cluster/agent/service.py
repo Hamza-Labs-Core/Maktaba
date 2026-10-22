@@ -191,6 +191,8 @@ async def run_agent(
     health: Callable[[bool], Mapping[str, Any]] | None = None,
     check_membership: Callable[[], Awaitable[None]] | None = None,
     job_tracker: JobTracker | None = None,
+    paused: Callable[[], str | None] | None = None,
+    pause_listeners: list[Callable[[], None]] | None = None,
 ) -> None:
     files: ClusterFiles | None = None
     shipper: LogShipper | None = None
@@ -259,7 +261,11 @@ async def run_agent(
             ),
             on_settings=_settings_hook(files, locator),
             status_path=status_dir() / f"{safe_name(worker_id)}.json",
+            paused=paused,
         )
+        if pause_listeners is not None:
+            # the status file follows the pause (the channel's state may not change)
+            pause_listeners.append(agent.write_status)
         jobs_sink = JobsFileSink(files)
         jt.add_sink(jobs_sink)
         jt.add_sink(agent.job_sink)
@@ -284,6 +290,8 @@ async def run_agent(
         relay_door.detach()
         if agent is not None:
             jt.remove_sink(agent.job_sink)
+            if pause_listeners is not None and agent.write_status in pause_listeners:
+                pause_listeners.remove(agent.write_status)
         if jobs_sink is not None:
             jt.remove_sink(jobs_sink)
         if shipper is not None:
@@ -332,4 +340,7 @@ async def run_for_worker(
         health=None if health is None else (lambda final: health_frame(health, final=final)),
         # a node's heartbeat reads its cluster row: revoked or removed -> stop (exit 77)
         check_membership=worker.beat,
+        # the local status file says so while the home is gone (nothing reaches it)
+        paused=lambda: selector.paused or selector.unreachable,
+        pause_listeners=worker.pause_listeners,
     )

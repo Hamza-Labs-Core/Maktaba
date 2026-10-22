@@ -33,7 +33,7 @@ Run `check.sh` as an ordinary user: Postgres refuses root.
 server/
   bin/       maktaba-server (web UI embedded) maktaba-api maktaba-streaming maktaba-launcher
   postgres/  bin/{postgres,initdb,pg_ctl,pg_dump,pg_dumpall,pg_restore,psql,pg_isready,
-                  pg_upgrade,pg_controldata,pg_resetwal,pg_basebackup}
+                  pg_upgrade,pg_controldata,pg_resetwal}
              lib/   libpq, the extensions, and the libraries copied in from the build machine
              share/
   python/    CPython 3.12 (bin/python3), stdlib precompiled
@@ -90,7 +90,7 @@ which must pass, and Fedora's `ffmpeg-free`, which must be refused with RPM Fusi
 | Piece | Source | Why | Licence |
 |---|---|---|---|
 | Go binaries | this repo, `make server build-go` (linux/amd64 or arm64, `-tags embed_web`, release ldflags) + the launcher | the same envelope as `release.yml` | this repo's |
-| PostgreSQL 16.15 | [theseus-rs/postgresql-binaries](https://github.com/theseus-rs/postgresql-binaries) `<arch>-unknown-linux-gnu` | the build Maktaba.app bundles and `pgbin` fetches for a node (Epic 37), with the same SHA-256s; relocatable (`$ORIGIN/../lib`), every contrib extension, pg_dump/psql/pg_basebackup | PostgreSQL Licence |
+| PostgreSQL 16.15 | [theseus-rs/postgresql-binaries](https://github.com/theseus-rs/postgresql-binaries) `<arch>-unknown-linux-gnu` | the build Maktaba.app bundles and `pgbin` fetches for a node (Epic 37), with the same SHA-256s; relocatable (`$ORIGIN/../lib`), every contrib extension but the output plugins other than pgoutput, pg_dump/psql | PostgreSQL Licence |
 | Postgres's libraries | the build machine's OpenSSL 3, libxml2 (and the ICU it links), lz4, zstd, zlib, MIT Kerberos, readline | the theseus-rs Linux build links them from the system. A minimal Debian lacks some of them (OpenSSL 3, libxml2, Kerberos), so they are copied in with an `$ORIGIN` rpath, and the modules' `/opt/postgresql/lib` rpath is replaced | each its own (`licenses/postgresql-libraries.txt`) |
 | CPython 3.12.15 | [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone) `install_only_stripped`, SHA-256 from the release's `SHA256SUMS` | relocatable, glibc 2.17, OpenSSL built in; the Mac's release | PSF; others in `python/lib/python3.12/LICENSE.txt` |
 | pipeline wheel + constraints | `deploy/packaging/node/build-release.sh` | one build of the pipeline for every install | this repo's |

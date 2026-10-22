@@ -11,7 +11,7 @@ vi.mock("../lib/api", async () => {
   return { ...actual, api: { ...actual.api, get } };
 });
 
-import { PAUSED_POLL_MS, Paused } from "./Paused";
+import { PAUSED_POLL_MS, PAUSED_RELOAD_EVERY_MS, Paused } from "./Paused";
 
 const WHY = "paused: home database at 0130, this machine needs 0134 — update the home";
 
@@ -41,6 +41,7 @@ function renderPaused(props: Parameters<typeof Paused>[0]) {
 describe("Paused page", () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     get.mockReset();
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
@@ -100,6 +101,31 @@ describe("Paused page", () => {
     get.mockResolvedValue(self({ paused: "", home: { reachable: true } }));
     await act(() => vi.advanceTimersByTimeAsync(PAUSED_POLL_MS));
     expect(onReload).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads a page a moment's blip sent here, but never in a loop", async () => {
+    // the page came of an answer while the home answered all along: two looks that find
+    // it answering reload it
+    const onReload = vi.fn();
+    get.mockResolvedValue(self({ paused: "", home: { reachable: true } }));
+    const first = renderPaused({ code: "home_unreachable", onReload });
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(onReload).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(PAUSED_POLL_MS));
+    expect(onReload).toHaveBeenCalledTimes(1);
+    first.unmount();
+    // shown again right after (the app sent it here again): it waits, rather than loop
+    const again = vi.fn();
+    const second = renderPaused({ code: "home_unreachable", onReload: again });
+    await act(() => vi.advanceTimersByTimeAsync(PAUSED_POLL_MS * 3));
+    expect(again).not.toHaveBeenCalled();
+    second.unmount();
+    // a while later it may again
+    const later = vi.fn();
+    vi.setSystemTime(Date.now() + PAUSED_RELOAD_EVERY_MS);
+    renderPaused({ code: "home_unreachable", onReload: later });
+    await act(() => vi.advanceTimersByTimeAsync(PAUSED_POLL_MS * 2));
+    expect(later).toHaveBeenCalledTimes(1);
   });
 
   it("keeps waiting while the machine restarts", async () => {

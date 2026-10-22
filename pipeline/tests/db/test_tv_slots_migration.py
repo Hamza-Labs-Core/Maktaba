@@ -26,9 +26,17 @@ def _cols(conn: sqlite3.Connection, table: str) -> set[str]:
     return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
 
 
-def test_0129_up_down() -> None:
+@pytest.fixture(scope="module")
+def schema_at_128() -> sqlite3.Connection:
+    """The schema as of slot 0128, built once: applying ~130 twins is the slow part."""
     conn = sqlite3.connect(":memory:")
     apply_sqlite(conn, upto=128)
+    return conn
+
+
+def test_0129_up_down(schema_at_128: sqlite3.Connection) -> None:
+    conn = sqlite3.connect(":memory:")
+    schema_at_128.backup(conn)  # a private copy; the template stays untouched
     for stmt in up_statements(_MIG.read_text("utf-8")):
         apply_statement(conn, stmt)
     assert {

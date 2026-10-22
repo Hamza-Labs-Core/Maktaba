@@ -11,6 +11,7 @@
 // stay.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Tabs } from "@ds/components/Tabs/Tabs";
@@ -233,10 +234,14 @@ export function RulesSection() {
     [rawSections, locale]
   );
   const [loadError, setLoadError] = useState<string | null>(null);
+  // a link may open one section, found by a field's name (?section=…&q=…: a switch of
+  // the home's checklist does)
+  const [params] = useSearchParams();
+  const wanted = params.get("section") ?? "";
   const [tab, setTab] = useState("");
   const [edits, setEdits] = useState<Edits>({});
   const [errors, setErrors] = useState<Errors>({});
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => params.get("q") ?? "");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string; link?: string } | null>(null);
   // bumped on Discard so every editor drops its typed text
@@ -261,7 +266,11 @@ export function RulesSection() {
     }));
     setSections(read);
     setLoadError(null);
-    setTab((cur) => (read.some((s) => s.key === cur) ? cur : (read[0]?.key ?? "")));
+    setTab((cur) =>
+      read.some((s) => s.key === cur)
+        ? cur
+        : (read.find((s) => s.key === wanted)?.key ?? read[0]?.key ?? "")
+    );
     // an edit that now equals the saved value is no longer an edit
     setEdits((prev) => {
       const next: Edits = {};
@@ -276,7 +285,7 @@ export function RulesSection() {
       }
       return next;
     });
-  }, []);
+  }, [wanted]);
 
   useEffect(() => {
     load().catch((e) => setLoadError(rulesError(e).message));

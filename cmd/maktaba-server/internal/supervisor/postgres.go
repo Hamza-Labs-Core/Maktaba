@@ -39,6 +39,9 @@ func BuildPostgres(b pgbundle.Bundle) (Process, error) {
 		},
 		StopSignal: os.Interrupt, // fast shutdown: ends sessions, checkpoints, exits
 		First:      true,
+		// whether it listens beyond this machine, at each start (pgbundle.WatchReach)
+		Args:        b.ServerArgs,
+		BeforeStart: b.ClearStaleLock,
 	}
 	if runtime.GOOS == "windows" {
 		// no SIGINT for another process there: pg_ctl's fast shutdown, not a kill

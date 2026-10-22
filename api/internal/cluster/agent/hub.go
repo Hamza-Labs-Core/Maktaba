@@ -133,9 +133,12 @@ type Hub struct {
 	gone      []Process // left in the last 5 minutes
 	loc       Location
 	jobs      []json.RawMessage // recent job messages (data of type "job")
-	queues    json.RawMessage
-	workers   json.RawMessage
-	library   json.RawMessage
+	// recentRevoked are the revocations of the last revokedReplay, sent again to a
+	// machine agent that connects (it missed them while it was away)
+	recentRevoked []revokedFrame
+	queues        json.RawMessage
+	workers       json.RawMessage
+	library       json.RawMessage
 
 	queuesDirty  chan struct{}
 	workersDirty chan struct{}

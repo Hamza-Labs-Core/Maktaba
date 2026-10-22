@@ -6,21 +6,34 @@
 // there with a full navigation. Any other relative path is an app route.
 // Only a path on this site is followed, never an absolute URL. On a node, the
 // cluster sign-in prompt offers to sign in through the home instead.
+//
+// A node that cannot reach its home checks a sign-in against its own copy of the
+// home's database (Epic 37): the page says the sign-in holds on this machine only.
+// A node that cannot (no copy, or one too far behind) refuses it: the page then
+// says sign-in waits for the home, and once the home answers it probes the
+// session again, so a user a reload landed here goes back in.
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { ClusterSignIn } from "../components/ClusterSignIn";
+import { useHomeUnreachable } from "../components/HomeOffline";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
-import { ApiError, apiUrl } from "../lib/api";
+import { ApiError, apiUrl, isHomeUnreachable } from "../lib/api";
 import { SSO_AUTHORIZE_PATH, assignLocation, safeRelativePath } from "../lib/navigation";
 
 interface LocationState {
   from?: string;
+  /** a sign-out everywhere ended this machine's sessions only (Settings) */
+  signedOutHere?: boolean;
 }
 
 export function Login() {
-  const { login, user } = useAuth();
+  const { login, user, refresh, signInAgain } = useAuth();
   const { t } = useI18n();
+  const homeOut = useHomeUnreachable();
+  const wasOut = useRef(false);
+  // this machine refused a sign-in: it cannot check one until the home answers
+  const [refused, setRefused] = useState(false);
   const nav = useNavigate();
   const location = useLocation();
   const [username, setUsername] = useState("");
@@ -35,6 +48,7 @@ export function Login() {
     (toAuthorize ? null : next) ??
     safeRelativePath((location.state as LocationState | null)?.from) ??
     "/library";
+  const signedOutHere = (location.state as LocationState | null)?.signedOutHere === true;
 
   const leave = useCallback(() => {
     if (left.current) return;
@@ -48,7 +62,28 @@ export function Login() {
     if (user) leave();
   }, [user, leave]);
 
+  // the home is back: a session it could not check may hold
+  useEffect(() => {
+    if (homeOut) wasOut.current = true;
+    else if (wasOut.current) {
+      wasOut.current = false;
+      setRefused(false);
+      void refresh();
+    }
+  }, [homeOut, refresh]);
+
   if (user) return null;
+
+  if (homeOut && refused)
+    return (
+      <main className="mkt-login">
+        <section className="mkt-login__form" aria-labelledby="mkt-login-offline">
+          <h1 className="mkt-login__title">{t("app.title")}</h1>
+          <h2 id="mkt-login-offline">{t("homeOffline.signInTitle")}</h2>
+          <p>{t("homeOffline.signIn")}</p>
+        </section>
+      </main>
+    );
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -58,7 +93,11 @@ export function Login() {
       await login(username, password);
       leave();
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
+      if (isHomeUnreachable(err)) {
+        setRefused(true);
+      } else if (err instanceof ApiError && err.problem.code === "password_change_waits") {
+        setError(t("login.passwordChangeWaits"));
+      } else if (err instanceof ApiError && err.status === 401) {
         setError(t("login.error"));
       } else {
         setError(t("common.error"));
@@ -72,7 +111,22 @@ export function Login() {
     <main className="mkt-login">
       <form className="mkt-login__form" onSubmit={onSubmit} aria-label={t("login.submit")}>
         <h1 className="mkt-login__title">{t("app.title")}</h1>
-        {!toAuthorize && <ClusterSignIn returnTo={dest} />}
+        {!toAuthorize && !homeOut && <ClusterSignIn returnTo={dest} />}
+        {homeOut && (
+          <p className="mkt-login__hint" role="note">
+            {t("homeOffline.signInHere")}
+          </p>
+        )}
+        {signedOutHere && (
+          <p className="mkt-login__hint" role="note">
+            {t("login.signedOutHere")}
+          </p>
+        )}
+        {!homeOut && signInAgain && (
+          <p className="mkt-login__hint" role="note">
+            {t("login.signInAgain")}
+          </p>
+        )}
         <label className="mkt-field">
           <span className="mkt-field__label">{t("login.username")}</span>
           <input

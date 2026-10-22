@@ -157,6 +157,27 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
     }
   );
 
+  it("VPL-07b: a video this machine cannot read while the home is unreachable says so", async () => {
+    servePost(() =>
+      Promise.reject(
+        new ApiError({
+          type: "https://maktaba.dev/problems/video-unavailable-offline",
+          title: "this video isn't available while the home is unreachable",
+          status: 503,
+          code: "video_unavailable_offline",
+        })
+      )
+    );
+    renderPlayer("/videos/vid-1/watch", { history: ["/library"] });
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "This video isn't available while this machine can't reach its home"
+    );
+    expect(screen.queryByTestId("mkt-video")).toBeNull();
+    // the home may come back: trying again stays offered
+    expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
   it("VPL-08: signed-out user is sent to /login; no session is opened", () => {
     servePost();
     renderPlayer("/videos/vid-1/watch?t=120", { user: null });

@@ -71,6 +71,13 @@ type Process struct {
 	// check answered), and stopped after them (Epic 36 story 36.1: the bundled
 	// postgres).
 	First bool
+	// Args, when set, are the command's arguments at each start, read afresh (the
+	// bundled postgres: whether it listens beyond this machine follows the cluster,
+	// pgbundle.Bundle.WatchReach).
+	Args func() []string
+	// BeforeStart, when set, runs before each start (the bundled postgres: a lock file a
+	// postmaster that did not end cleanly left, pgbundle.Bundle.ClearStaleLock).
+	BeforeStart func()
 	// Prepare, when set, runs before the process's first start and must succeed
 	// before it starts (prepare.go, Epic 38 story 38.12: the desktop app builds
 	// the pipeline's venv, or takes the database's dump before an update's

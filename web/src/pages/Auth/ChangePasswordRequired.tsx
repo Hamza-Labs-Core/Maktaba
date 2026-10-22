@@ -112,7 +112,12 @@ export function ChangePasswordRequired() {
         <button type="submit" className="mkt-btn mkt-btn--primary" disabled={submitting || !valid}>
           {submitting ? t("common.loading") : t("mustChange.submit")}
         </button>
-        <button type="button" className="mkt-btn mkt-btn--ghost" onClick={() => void logout()}>
+        <button
+          type="button"
+          className="mkt-btn mkt-btn--ghost"
+          // refused: this machine cannot reach its home (lib/auth)
+          onClick={() => void logout().catch(() => setError(t("homeOffline.signOut")))}
+        >
           {t("mustChange.signOut")}
         </button>
       </form>

@@ -593,9 +593,33 @@ flood the home). The cache is keyed by `sha256(sid)`, never the raw id.
 **Revocation.** Every place on the home that revokes a session (sign-out, password change, user
 disabled, admin revoke, session expiry sweep) calls `cluster.NotifyRevoked(sessionIDs | userID)`; the
 hub sends `auth.revoked` to every machine agent, which forwards it to its API; the API evicts. With
-the channel down the TTL bounds staleness; after `delegate_unreachable_grace_seconds` (30 s) of failed
-introspection the node answers 503 `home_unreachable` to authenticated routes (fail closed), and
-`local` routes keep working for admins already in cache.
+the channel down the TTL bounds staleness.
+
+**A home outage** degrades a node to read-only instead of taking it down, on the node's own live
+copy of the home's database (Epic 37, `specs/epics/37-node-replica`, which replaced PR #145's
+last answers): a credential the home cannot be asked about is looked up on the copy, by the home's
+own code; a sign-in is checked there too and makes a session valid on that machine only. Reads
+(GET, HEAD) and `local` routes (this machine's status, VOD playback, its own TV) are served, marked
+`X-Maktaba-Home: unreachable`, and the web app shows a notice over the pages; a change through the
+home's database gets 503 `home_unreachable`. With no usable copy, a `local` route answers anonymously
+and anything else is a 503 with `readable: false` (the full "cannot reach its home" page). After
+`delegate_unreachable_grace_seconds` (30 s) the node stops asking the home per request and refuses
+`home` routes at once, except the session probe and the sign-in, which it answers from its copy. A
+video the node cannot read is "not available while the home is unreachable" (503
+`video_unavailable_offline`). The node's pipeline pauses on its own signal,
+the home's database not answering its beat (two in a row): it claims nothing (the schema guard's
+gate), lets jobs in flight finish unless the outage nears the 90 s claim lease (then stops them:
+the home would hand them to another machine), and at the first beat answered releases what its ended
+jobs left claimed and resumes; the pause shows in its log and its local agent status
+(`maktaba-pipeline cluster status`).
+
+**The home's database down too.** The node reads its own copy of the home's database (Epic 37):
+the library, playback (a video's library, path and length; the probe rows; the share map) and its
+own TV channels, for as long as the home's database does not answer; a session opened meanwhile is
+recorded on the node (the copy is read only), so its owner can close it. Both roles start with the
+home's database down: the API's role check waits for it (a role that can run DDL then stops the API,
+as at start), the streaming role's pool connects when it answers. A node with no copy plays nothing
+and serves its own routes only meanwhile.
 
 ### 10.4 Signing in on a node
 
@@ -828,7 +852,7 @@ or when `catch_up = window`). A node paused by the schema guard is caught up imm
 | Node offline during rollout | `offline` target; catch-up on reconnect. |
 | Node fails | Rolls back, drained, reported; policy decides the rest. |
 | Node loses the home mid-apply | Its own journal: finish the restart and checks it can; schema guard and agent check need the home → after `node_health_timeout` it rolls back. |
-| Home unreachable for a node's API | Fails closed for authenticated routes after 30 s; paused page. |
+| Home unreachable for a node's API | Past the grace (30 s) the node runs read-only on its own copy of the home's database (Epic 37): sign-ins, reads, playback and TV go on, a sign-out is made here and handed to the home later, changes get 503 `home_unreachable`; with no current copy only its own routes answer. |
 | Supervisor handover fails (Windows job) | Degrades to an ordered restart in the window (TV interruption only if allowed by viewers ≤ max). |
 | Launcher crash-loops (corrupt launcher) | The service manager restarts it; the launcher is replaced only after a run committed, its previous file kept as `.old` until the next good start; the runbook covers restoring it by hand. |
 | Two runs at once | The supervisor's lock (`updates/lock`, flock / `LockFileEx`) and `update_runs` partial unique index on active states. |
@@ -838,7 +862,8 @@ or when `catch_up = window`). A node paused by the schema guard is caught up imm
 Trust anchors: the embedded Sigstore root and the pinned workflow identity (releases); the home's
 cluster key (channel, Epic 31 v2); per-node delegation keys (HTTP). A node installs only what it
 verified itself; the home cannot make it install an unsigned or older build. The home resolves every
-user session; nodes cache short and fail closed. Backups stay on the home's disk. Nothing in an API
+user session; nodes cache short and, with the home gone, act on its last answer only within a
+bounded window, read-only (§10.3). Backups stay on the home's disk. Nothing in an API
 request names a file path or URL to install from. The update flow's admin actions are audited.
 Residual risks: the legacy plain-HTTP paths while `cluster.link.mode` is `prefer` (closed by
 `require`, §18), browsers on plain HTTP to each machine's web UI (unchanged; HTTPS optional), and a

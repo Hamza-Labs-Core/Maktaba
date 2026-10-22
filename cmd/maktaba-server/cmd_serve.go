@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -18,7 +20,9 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
@@ -53,21 +57,28 @@ In container/orchestrated deployments, start one role per container:
   maktaba-server serve --role pipeline
   maktaba-server serve --role web`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			cfg, found, err := config.Load()
-			if err != nil {
-				return err
+			for {
+				cfg, found, err := config.Load()
+				if err != nil {
+					return err
+				}
+				if err := servePorts(&cfg, found, strings.TrimSpace(strings.ToLower(role)), noWeb); err != nil {
+					return err
+				}
+				err = runServe(cfg, serveOptions{
+					role:   strings.TrimSpace(strings.ToLower(role)),
+					slot:   strings.TrimSpace(strings.ToLower(slot)),
+					noMDNS: noMDNS,
+					noWeb:  noWeb,
+					binDir: binDir,
+					grace:  time.Duration(graceS) * time.Second,
+				})
+				if !errors.Is(err, errReload) {
+					return err
+				}
+				// a switch of the home changed this machine's part: start again in it
+				fmt.Fprintln(os.Stderr, "[serve] starting again: this machine's part in the cluster changed")
 			}
-			if err := servePorts(&cfg, found, strings.TrimSpace(strings.ToLower(role)), noWeb); err != nil {
-				return err
-			}
-			return runServe(cfg, serveOptions{
-				role:   strings.TrimSpace(strings.ToLower(role)),
-				slot:   strings.TrimSpace(strings.ToLower(slot)),
-				noMDNS: noMDNS,
-				noWeb:  noWeb,
-				binDir: binDir,
-				grace:  time.Duration(graceS) * time.Second,
-			})
 		},
 	}
 	cmd.Flags().StringVar(&role, "role", "", "run a single role: api|streaming|pipeline|web|tv-slot (default: all)")
@@ -111,6 +122,17 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	restart := watchLauncher(ctx, cancel, releaseDir)
+	// a switch of the home asks serve to start again (serve_switchover.go)
+	reloaded := new(atomic.Bool)
+	go func() {
+		select {
+		case <-reloadCh:
+			reloaded.Store(true)
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	sw := newSwitching(cfg)
 
 	// The `web` role is served in-process; every other role is a
 	// supervised subprocess. Decide which we're running.
@@ -120,7 +142,17 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	// machine agent; the api in node mode; the web port's TV to the home).
 	var node *nodeServices
 	if containsRole(roles, supervisor.RoleAPI) {
-		node = startNodeServices(ctx, cfg)
+		node = startNodeServices(ctx, cfg, sw.command)
+		if node != nil {
+			// a switch of the home while this machine was off (serve_switchover.go)
+			go sw.watchMoved(ctx)
+		} else {
+			// a home: an emergency that took the home from it while it was away
+			// (serve_standby.go)
+			go sw.watchTerm(ctx)
+		}
+		// what this machine kept aside as a home, until the new home has it
+		go sw.watchKept(ctx)
 	}
 
 	// Start the in-process web server (and mDNS) when web is in scope.
@@ -146,9 +178,17 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		return err
 	}
 
+	// Epic 37: a full node keeps a live copy of its home's database (its address is
+	// in the api's and streaming's environment, so it is resolved before them).
+	wholeMachine := opts.role == "" || opts.role == "all"
+	cp, err := resolveNodeCopy(&cfg, wholeMachine)
+	if err != nil {
+		return err
+	}
+
 	// The language model server (Maktaba.app's bundled Ollama, or [llm] url):
 	// its URL goes to every child through cfg.
-	llmProc, llmOpt, err := serveLLM(ctx, &cfg, opts.role == "" || opts.role == "all")
+	llmProc, llmOpt, err := serveLLM(ctx, &cfg, wholeMachine)
 	if err != nil {
 		return err
 	}
@@ -163,10 +203,31 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		procs = append(procs, p)
 		go pg.RunBackups(ctx, backupCheckInterval, os.Stderr)
 	}
+	if cp != nil {
+		p, err := supervisor.BuildCopy(cp.copy)
+		if err != nil {
+			return err
+		}
+		procs = append(procs, p)
+	}
 	if llmProc != nil {
 		procs = append(procs, *llmProc)
 	}
 	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir, ReleaseDir: releaseDir}
+	// the cloud relay agent runs on the home (its credentials moved with it, Epic 37)
+	if wholeMachine && supervisor.RelayWanted(cfg) {
+		if p, err := supervisor.BuildRelay(sopts); err != nil {
+			fmt.Fprintf(os.Stderr, "[serve] the cloud relay agent does not run: %v\n", err)
+		} else {
+			if pg != nil && pg.Frozen() {
+				// a switch under way (or this home fenced): the machine taking over may run
+				// it already with the same credentials; it starts when the switch is undone
+				p.OnDemand = true
+				fmt.Fprintln(os.Stderr, "[serve] this home is frozen for a switch: the cloud relay agent waits")
+			}
+			procs = append(procs, p)
+		}
+	}
 	for _, r := range roles {
 		if r == supervisor.RoleTVSlot {
 			// a single slot instance (--role tv-slot --slot blue)
@@ -243,7 +304,26 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	supOpts = append(supOpts, supervisor.WithFFmpeg(ffmpeg.Watch(ctx,
 		func() ffmpeg.Tools { return ffmpeg.Find(cfg.Media, config.AppPayload(exe)) }, ffmpeg.WatchInterval, os.Stderr)))
 	sup := supervisor.New(procs, policy, supOpts...)
-	if adminSrv := startSupervisorAdmin(policy.AdminAddr, node.adminHandler(sup.Handler())); adminSrv != nil {
+	if pg != nil {
+		// what the cluster's machines may reach of it follows the cluster: it listens
+		// beyond this machine only while one may connect (a start again to change that)
+		go pg.WatchReach(ctx, pgbundle.ReachEvery, func() error { return sup.Restart(supervisor.RolePostgres, "") }, os.Stderr)
+	}
+	var stopCopy func()
+	if cp != nil {
+		stopCopy = runNodeCopy(ctx, cfg, cp, procs, sup)
+	}
+	token := ""
+	if node != nil {
+		token = node.token
+	} else if containsRole(roles, supervisor.RoleAPI) {
+		// the home's API calls the supervisor's switchover endpoints with it
+		if t, err := machineagent.WriteToken(supervisor.LocalTokenPath(cfg)); err == nil {
+			token = t
+		}
+	}
+	sw.set(pg, cp, stopCopy, token, func(r supervisor.Role, on bool) error { return sup.Want(r, "", on) })
+	if adminSrv := startSupervisorAdmin(policy.AdminAddr, sw.adminHandler(node.adminHandler(sup.Handler()))); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
 	confirmPending(ctx, sup, releaseDir)
@@ -257,6 +337,9 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	}
 	if restart.Load() {
 		os.Exit(exitRestart) // drained: the launcher starts current again
+	}
+	if reloaded.Load() {
+		return errReload
 	}
 	return runErr
 }
@@ -416,7 +499,7 @@ func webHandler(cfg config.Config, node *nodeServices) http.Handler {
 	if node != nil {
 		home := homeStreamProxy(supervisor.HomeStreamURL(node.node))
 		publicProxy = home
-		gated = nodeStreamRouter(streamProxy, home)
+		gated = nodeStreamRouter(streamProxy, home, node.HomeAway)
 		allow = allowedNodeStreamPath
 	}
 	for _, p := range publicStreamPaths {

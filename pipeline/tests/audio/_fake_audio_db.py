@@ -744,6 +744,9 @@ class FakeAudioDB:
             job = self.processing_jobs.get(int(args[0]))
             if job is None:
                 return None
+            # (? IS NULL OR claimed_by = ?): the job's worker only
+            if len(args) > 1 and args[1] is not None and job.claimed_by != args[1]:
+                return None
             return _Row(
                 {
                     "last_segment_end_sec": job.last_segment_end_sec,
@@ -1085,8 +1088,12 @@ class FakeAudioDB:
             wall_sec_in_seg,
             total_duration_sec,
             ewma_alpha,
+            *rest,
         ) = args
         job = self.processing_jobs.get(int(job_id))
+        worker = rest[0] if rest else None
+        if job is not None and worker is not None and job.claimed_by != worker:
+            return _Row({"id": None})  # another worker's job: nothing written
         if job is None:
             return _Row({"id": None})
         existing = next(

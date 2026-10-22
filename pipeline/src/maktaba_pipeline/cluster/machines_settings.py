@@ -1,6 +1,7 @@
 """``rules.cluster``: how the machines of a cluster share sign-ins and serve pages (Epic 35
-stories 35.9, 35.10). Read by the APIs (the home's and every full node's); the pipeline
-only declares the section so the settings page shows it."""
+stories 35.9, 35.10), and how a full machine runs on its own copy of the home's database
+while the home is away (Epic 37). Read by the APIs (the home's and every full node's); the
+pipeline only declares the section so the settings page shows it."""
 
 from __future__ import annotations
 
@@ -17,8 +18,25 @@ class ClusterMachinesConfig:
 
     #: a signed-in user who opens another machine is offered "Continue with <home>"
     sso: bool = True
-    #: after this long without an answer from the home, a node refuses signed-in requests
+    #: after this long without an answer from the home, a node stops asking it per request
+    #: (it signs people in and answers them from its own copy of the home's database)
     delegate_unreachable_grace_seconds: int = 30
+    #: a node's copy answers for sign-ins with the home away only if it had followed the
+    #: home up to this close to when the home was last heard
+    offline_copy_max_lag_minutes: int = 10
+    #: with the home there, a node reads from its copy only while the copy is this close
+    #: behind it (else from the home's database: rights, removals, new videos at once)
+    copy_reads_max_lag_seconds: int = 30
+    #: a sign-in made on a node while the home is away lasts this long
+    offline_session_hours: int = 12
+    #: and ends this long after the home answers again
+    offline_session_grace_minutes: int = 30
+    #: the home keeps this much of its changes for a machine that fell behind; past it the
+    #: machine copies the home's database anew
+    replica_wal_keep_gb: int = 20
+    #: on a home whose database is not Maktaba's own Postgres the machines keep a copy of it
+    #: only with this on (such a server may have other decoding plugins than pgoutput)
+    copies_on_operator_postgres: bool = False
     #: a node's disk cache for the pictures it fetches from the home (posters, sprites)
     proxy_cache_mb: int = 2048
 
@@ -31,8 +49,50 @@ settings.register(ClusterMachinesConfig, {
                          "sign-in (still against the home's accounts)."),
     "delegate_unreachable_grace_seconds": settings.Help(
         _C, "Home unreachable after (s)",
-        "A machine that cannot reach the home this long refuses signed-in pages until it can "
-        "again; its own status pages keep working.", minimum=5, maximum=600),
+        "A machine that cannot reach the home this long stops asking it for every request: "
+        "it answers from its own copy of the home's database instead (sign-in, reading, "
+        "playback, TV), and changes wait for the home.",
+        minimum=5, maximum=600),
+    "offline_copy_max_lag_minutes": settings.Help(
+        _C, "Copy current enough to sign in (min)",
+        "Every full machine keeps a live, read-only copy of the home's database and runs on it "
+        "while the home is away. Its copy answers sign-ins only if it had followed the home up "
+        "to this close to when the home was last heard: a copy further behind might not have a "
+        "sign-out or a password change made since.",
+        minimum=1, maximum=1440),
+    "copy_reads_max_lag_seconds": settings.Help(
+        _C, "Copy current enough to read from (s)",
+        "A full machine reads the library from its own copy of the home's database. While its "
+        "copy is further behind the home than this, it reads from the home's database instead "
+        "(as long as the home answers), so a change of rights, a removal or a new video shows "
+        "at once.",
+        minimum=5, maximum=3600),
+    "offline_session_hours": settings.Help(
+        _C, "Sign-in without the home lasts (h)",
+        "Signing in on a machine while the home is away checks the password against the "
+        "machine's copy and is valid on that machine only, this long.",
+        minimum=1, maximum=720),
+    "offline_session_grace_minutes": settings.Help(
+        _C, "Then ends after the home is back (min)",
+        "Once the home answers again such a sign-in keeps reading and playing this long; a "
+        "change asks for a sign-in with the home at once.",
+        minimum=0, maximum=1440),
+    "replica_wal_keep_gb": settings.Help(
+        _C, "Changes kept for a machine behind (GB)",
+        "The home keeps this much of its recent changes for a machine whose copy fell behind "
+        "(it was off, or away). A machine further behind copies the home's database anew, on "
+        "its own.",
+        minimum=1, maximum=1024),
+    "copies_on_operator_postgres": settings.Help(
+        _C, "Copies on a Postgres you run",
+        "Off (the default): when the home's database is a Postgres you run yourself, not the "
+        "one Maktaba installs, the machines keep no copy of it. On: they do, and a machine's "
+        "replication role may then make a slot with any decoding plugin that Postgres has "
+        "besides pgoutput (test_decoding, wal2json and the like), which reads every table, "
+        "past what is published to that machine: only the home's sweep guards against it, "
+        "dropping such a slot within 5 s (its database user needs pg_signal_backend and "
+        "REPLICATION for that). Remove those plugins from that Postgres first. Maktaba's own "
+        "Postgres has only pgoutput and needs no such rule: there this changes nothing."),
     "proxy_cache_mb": settings.Help(_C, "Picture cache per machine (MB)",
                                     "Posters and sprites a machine fetched from the home.",
                                     minimum=0, maximum=1_048_576),

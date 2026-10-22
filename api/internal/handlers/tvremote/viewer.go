@@ -206,6 +206,12 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Forbidden("", "bad webhook secret"))
 		return
 	}
+	// Cloudflare reaches this home (a switch of the home checks it moved with it)
+	if h.Integration.DB != nil {
+		_, _ = h.Integration.DB.ExecContext(r.Context(), `INSERT INTO app_settings (key, value, updated_at)
+		    VALUES ('tv_remote.webhook_seen', to_jsonb(now()), now())
+		    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`)
+	}
 	raw, _ := io.ReadAll(io.LimitReader(r.Body, 64<<10))
 	var ev struct {
 		Data struct {

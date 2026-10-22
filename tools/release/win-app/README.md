@@ -33,7 +33,7 @@ Output: `<target>/release/bundle/nsis/Maktaba_<version>_x64-setup.exe`, with `<t
   Maktaba.exe  uninstall.exe
   server\
     bin\       maktaba-server.exe (web UI embedded) maktaba-api.exe maktaba-streaming.exe
-               maktaba-launcher.exe
+               maktaba-launcher.exe maktaba-cloudlink.exe
     postgres\  bin\{postgres,initdb,pg_ctl,pg_dump,pg_dumpall,pg_restore,psql,pg_isready,
                     pg_upgrade,pg_controldata,pg_resetwal,pg_basebackup}.exe
                    + the DLLs they and the extensions load + the Visual C++ runtime

@@ -14,11 +14,23 @@ package main
 //   - VOD on the node is opened on the node itself (no request reaches the home); a
 //     video this node cannot read falls back to the home, and the Machines page says so;
 //   - the Machines page lists every machine's web address;
-//   - with the home gone, the node fails closed for signed-in requests while its local
-//     routes answer.
+//   - the node's supervisor makes its own database, subscribes it to the home's
+//     publication and follows it (Epic 37, logical replication); with the home gone
+//     (as a Mac that is switched off: its connections hang, nothing refuses them) the node runs on that copy: a signed-in user stays
+//     in (marked X-Maktaba-Home: unreachable, a reload's /api/auth/me answered by the
+//     node), plays a video it can read and is told one it cannot is unavailable, signs
+//     in (a node-local session), signs out (ended on the node at once), and changes
+//     are refused; its local routes answer;
+//   - with the home's database gone too (the node's connections, and its copy's
+//     subscription, hang through a proxy), the node reads and plays from its copy, even
+//     after a restart in the outage;
+//   - a node with no copy serves no one but its own routes with the home gone.
 //
 // Opt-in (it builds three binaries): MAKTABA_TEST_PG_URL (a Postgres whose user may
-// create databases and roles) and MAKTABA_E2E_TWO_MACHINE=1. MAKTABA_E2E_HOLD=<seconds>
+// create databases and roles, run with wal_level=logical and taking connections from
+// 127.0.0.1: initdb --locale=C, as the bundled one is) and MAKTABA_E2E_TWO_MACHINE=1;
+// MAKTABA_TEST_PG_BIN (a Postgres 16 install: initdb, postgres, pg_ctl) gives the node
+// its copy. MAKTABA_E2E_HOLD=<seconds>
 // keeps both machines up at the end (manual checks, screenshots). It never reads this
 // machine's own node config, keys or installs: every path is under t.TempDir().
 
@@ -29,6 +41,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -53,10 +66,22 @@ import (
 // TestMain doubles as the stand-in pipeline of the two machines: with
 // MAKTABA_E2E_SLEEPER=1 the binary only serves /healthz on its logs port and waits.
 func TestMain(m *testing.M) {
+	// ...and of a home's cloud relay agent (switch_e2e_helpers_test.go): online on its
+	// status address (only the relay's process has its credentials' key)
+	if os.Getenv("MAKTABA_E2E_FAKE_CLOUDLINK") == "1" && os.Getenv("MAKTABA_CRED_KEY_HEX") != "" {
+		if addr := os.Getenv("MAKTABA_ADMIN_ADDR"); addr != "" {
+			http.HandleFunc("/admin/cloud-link", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"online","slug":"e2e","attempts":0}`))
+			})
+			standInServe("the cloud relay agent", addr)
+		}
+		select {}
+	}
 	if os.Getenv("MAKTABA_E2E_SLEEPER") == "1" {
 		if addr := os.Getenv("MAKTABA_PIPELINE_LOGS_ADDR"); addr != "" {
 			http.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
-			_ = http.ListenAndServe(addr, nil)
+			standInServe("the pipeline", addr)
 		}
 		select {}
 	}
@@ -72,14 +97,43 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// standInServe serves a stand-in's address, or says why it cannot and ends (its
+// supervisor starts it again, and the machine's log has the reason).
+func standInServe(what, addr string) {
+	err := http.ListenAndServe(addr, nil)
+	fmt.Fprintln(os.Stderr, "e2e stand-in for "+what+": "+addr+":", err)
+	os.Exit(1)
+}
+
+// handedPorts are the ports freePort handed out (each once).
+var handedPorts = struct {
+	sync.Mutex
+	m map[int]bool
+}{m: map[int]bool{}}
+
+// freePort is a free loopback port for a process a test starts, below the systems'
+// ephemeral ranges (Linux from 32768, Windows from 49152): a port the system picks for
+// :0 is in that range, where an outgoing connection of any process may take it before
+// the process binds it.
 func freePort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	handedPorts.Lock()
+	defer handedPorts.Unlock()
+	for range 500 {
+		p := 20000 + rand.IntN(12000)
+		if handedPorts.m[p] {
+			continue
+		}
+		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
+		if err != nil {
+			continue
+		}
+		_ = l.Close()
+		handedPorts.m[p] = true
+		return p
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	t.Fatal("no free port below the ephemeral range")
+	return 0
 }
 
 func exeName(n string) string {
@@ -151,7 +205,9 @@ func startMachine(t *testing.T, name, bin string, env []string) *machine {
 	t.Helper()
 	m := &machine{name: name, log: &lockedBuf{}}
 	m.cmd = exec.Command(filepath.Join(bin, exeName("maktaba-server")), "serve", "--no-mdns", "--bin-dir", bin)
-	m.cmd.Env = append(os.Environ(), env...)
+	// the runs play several videos at once: room for them on any runner (the cap is a
+	// quarter of the CPUs: one on a 4-vCPU runner)
+	m.cmd.Env = append(append(os.Environ(), "MAKTABA_TRANSCODE_MAX_CONCURRENT=8"), env...)
 	m.cmd.Stdout, m.cmd.Stderr = m.log, m.log
 	if err := m.cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -160,6 +216,10 @@ func startMachine(t *testing.T, name, bin string, env []string) *machine {
 		m.stop()
 		if t.Failed() {
 			t.Logf("---- %s log (tail) ----\n%s", name, tail(m.log.String(), 6000))
+			// MAKTABA_E2E_LOG_DIR keeps each machine's whole log of a failed run
+			if dir := os.Getenv("MAKTABA_E2E_LOG_DIR"); dir != "" {
+				_ = os.WriteFile(filepath.Join(dir, t.Name()+"-"+name+".log"), []byte(m.log.String()), 0o600)
+			}
 		}
 	})
 	return m
@@ -236,6 +296,8 @@ func TestTwoMachinesOnePC(t *testing.T) {
 		t.Skip("set MAKTABA_E2E_TWO_MACHINE=1 (and MAKTABA_TEST_PG_URL) to run the two-machine test")
 	}
 	db, dsn := clustertest.ScratchDB(t)
+	pgPrograms := os.Getenv("MAKTABA_TEST_PG_BIN")
+	withCopy := pgPrograms != ""
 	ctx := context.Background()
 	tmp := t.TempDir()
 	bin := filepath.Join(tmp, "bin")
@@ -275,8 +337,10 @@ func TestTwoMachinesOnePC(t *testing.T) {
 	       VALUES ($1, 'mp4', 'h264', 640, 360, 1000), ($2, 'mp4', 'h264', 640, 360, 1000), ($3, 'mp4', 'h264', 640, 360, 1000)`, v1, v2, v3)
 	// v3 is plain h264/aac mp4: a browser plays it directly (aud=streaming-direct)
 	exec1(`INSERT INTO audio_tracks (video_id, track_index, codec, channels, is_default) VALUES ($1, 0, 'aac', 2, true)`, v3)
-	// a short grace so the home-gone check is quick (rules.cluster)
-	exec1(`INSERT INTO app_settings (key, value, updated_at) VALUES ('rules.cluster', '{"delegate_unreachable_grace_seconds": 5}', now())`)
+	// a short grace so the home-gone check is quick (rules.cluster); this home runs on the
+	// test's own Postgres, not Maktaba's, which keeps copies only with the admin's rule
+	exec1(`INSERT INTO app_settings (key, value, updated_at) VALUES ('rules.cluster',
+	       '{"delegate_unreachable_grace_seconds": 5, "copies_on_operator_postgres": true}', now())`)
 
 	homePriv, homePub, _ := cluster.GenerateKey()
 	nodePriv, nodePub, _ := cluster.GenerateKey()
@@ -288,7 +352,12 @@ func TestTwoMachinesOnePC(t *testing.T) {
 	t.Cleanup(func() { _ = (&cluster.PGRoles{DB: db}).Drop(context.Background(), role) })
 	exec1(`INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at, approved_by)
 	       VALUES ($1, 'studio-node', 'approved', 'linux', 'amd64', $2, $3, now(), 'test')`, nodeID, cluster.EncodeKey(nodePub), role)
-	nodeDSN := clustertest.WithUser(t, dsn, role, "node-pass-xyz")
+	// sslmode=prefer, as the join hands it (lib/pq takes no prefer: pgdsn, nodecopy)
+	nodeDSN := strings.Replace(clustertest.WithUser(t, dsn, role, "node-pass-xyz"), "sslmode=disable", "sslmode=prefer", 1)
+	// the node reaches the database through a proxy the test can cut (the home's
+	// database gone, while the test's own connection stays)
+	pgProxy := newTCPProxy(t, nodeDSN)
+	nodeDSN = pgProxy.dsn
 
 	// ---- the two machines ----
 	homeDir, nodeDir := filepath.Join(tmp, "home"), filepath.Join(tmp, "node")
@@ -297,6 +366,9 @@ func TestTwoMachinesOnePC(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(homeDir, "cluster.key"), homePriv, 0o600)
 	p := func() int { return freePort(t) }
 	hAPI, hWeb, hStream, nAPI, nWeb, nStream := p(), p(), p(), p(), p(), p()
+	// the node reaches the home's API through a proxy too: a home switched off is one
+	// whose connections hang
+	apiProxy := newTCPProxy(t, fmt.Sprintf("http://127.0.0.1:%d", hAPI))
 	toml := func(dir string, api, web, stream int, extra string) string {
 		path := filepath.Join(dir, "server.toml")
 		body := fmt.Sprintf(`[server]
@@ -322,9 +394,9 @@ slots = "off"
 	// the node is opened as localhost: another host, so the browser keeps its cookies apart
 	nodeWebURL := fmt.Sprintf("http://localhost:%d", nWeb)
 	homeToml := toml(homeDir, hAPI, hWeb, hStream, fmt.Sprintf("web_public_url = %q\nrole = \"home\"\n[database]\nurl = %q", homeWebURL, dsn))
-	nodeToml := toml(nodeDir, nAPI, nWeb, nStream, fmt.Sprintf("web_public_url = %q\n[database]\nurl = \"sqlite://unused.db\"", nodeWebURL))
+	nodeToml := toml(nodeDir, nAPI, nWeb, nStream, fmt.Sprintf("web_public_url = %q\n[database]\nurl = \"sqlite://unused.db\"\n[postgres]\ncopy_port = %d", nodeWebURL, p()))
 	nodeCfg, _ := json.Marshal(map[string]any{"node_id": nodeID, "name": "studio-node", "private_key": cluster.EncodeKey(nodePriv),
-		"home":         map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d", hAPI), "cluster_pub": cluster.EncodeKey(homePub)},
+		"home":         map[string]any{"url": apiProxy.dsn, "cluster_pub": cluster.EncodeKey(homePub)},
 		"database_url": nodeDSN})
 	_ = os.WriteFile(filepath.Join(nodeDir, "node.json"), nodeCfg, 0o600)
 	self, _ := os.Executable()
@@ -347,11 +419,18 @@ slots = "off"
 		r.Body.Close()
 		return r.StatusCode == 200
 	})
-	node := startMachine(t, "node", bin, append(common, "MAKTABA_CONFIG="+nodeToml,
+	nodeEnv := append(common, "MAKTABA_CONFIG="+nodeToml,
 		"MAKTABA_NODE_CONFIG="+filepath.Join(nodeDir, "node.json"), "MAKTABA_DATA_DIR="+filepath.Join(nodeDir, "data"),
 		fmt.Sprintf("MAKTABA_HOME_STREAM_URL=http://127.0.0.1:%d", hStream),
 		// this machine's mount of the share is missing: the home-only video falls back
-		"MAKTABA_STREAM_PATH_MAP=E2ESHARE:/=>"+filepath.ToSlash(filepath.Join(tmp, "no-such-share"))+"/"))
+		"MAKTABA_STREAM_PATH_MAP=E2ESHARE:/=>"+filepath.ToSlash(filepath.Join(tmp, "no-such-share"))+"/")
+	// its copy of the home's database (Epic 37) runs on the test's Postgres programs
+	if withCopy {
+		nodeEnv = append(nodeEnv, "MAKTABA_POSTGRES_HOME="+pgPrograms)
+	} else {
+		nodeEnv = append(nodeEnv, "MAKTABA_NODE_COPY=off")
+	}
+	node := startMachine(t, "node", bin, nodeEnv)
 	node.web = nodeWebURL
 	type selfInfo struct {
 		Role           string `json:"role"`
@@ -587,8 +666,10 @@ slots = "off"
 		u, _ := url.Parse(homeSess.ManifestURL)
 		good := u.Query().Get("sig")
 		bare := homeWebURL + u.Path
+		// the first character: the last one of a 32-byte value carries two bits a decoder
+		// ignores, so changing it may leave the same signature
 		flip := "A"
-		if strings.HasSuffix(good, "A") {
+		if strings.HasPrefix(good, "A") {
 			flip = "B"
 		}
 		k, err := signedurl.ParseKey(hk)
@@ -604,7 +685,7 @@ slots = "off"
 		nu, _ := url.Parse(nodeSess.ManifestURL)
 		for name, target := range map[string]string{
 			"no signature":            bare,
-			"tampered":                bare + "?sig=" + good[:len(good)-1] + flip,
+			"tampered":                bare + "?sig=" + flip + good[1:],
 			"expired":                 homeWebURL + expired,
 			"the node's key":          homeWebURL + nu.Path + "?sig=" + nu.Query().Get("sig"),
 			"segment without its sig": homeWebURL + strings.SplitN(homeSeg, "?", 2)[0],
@@ -664,30 +745,271 @@ slots = "off"
 		t.Logf("the node refused the revoked session %s after the home's sign-out", time.Since(start).Round(time.Millisecond))
 	})
 
-	t.Run("home gone: the node fails closed, its local routes answer", func(t *testing.T) {
-		// a fresh sign-in on the node (through the home), cached on the node
+	t.Run("home gone: the node runs on its copy of the home's database", func(t *testing.T) {
+		if !withCopy {
+			t.Skip("MAKTABA_TEST_PG_BIN unset: the node keeps no copy of the home's database")
+		}
+		// the node's supervisor copied the home's database on its own, and follows it
+		waitFor(t, "the node's copy following the home", 4*time.Minute, func() bool {
+			r, b := newBrowser(t).do("GET", nodeWebURL+"/api/cluster/self", nil, nil)
+			var s struct {
+				Copy struct {
+					State string `json:"state"`
+				} `json:"copy"`
+			}
+			return r.StatusCode == 200 && json.Unmarshal(b, &s) == nil && s.Copy.State == "following"
+		})
+		// and the home's Machines page says so
+		if r, b := user.do("GET", homeWebURL+"/api/cluster/nodes", nil, nil); r.StatusCode == 200 &&
+			!strings.Contains(string(b), `"state":"following"`) {
+			t.Logf("the home's view of the copy: %s", tail(string(b), 400))
+		}
+		// sign-ins on the node through the home, before it goes away
+		u2, leaver := newBrowser(t), newBrowser(t)
+		for _, b := range []*browser{u2, leaver} {
+			resp, _ := b.do("POST", nodeWebURL+"/api/auth/login", map[string]string{"username": "owner", "password": "owner-pass-123"}, nil)
+			if resp.StatusCode != 200 || resp.Header.Get("X-Maktaba-Placement") != "home" {
+				t.Fatalf("sign-in through the node: %d", resp.StatusCode)
+			}
+		}
+		// the home is switched off: what the node sends it hangs
+		apiProxy.hang()
+		// past the grace the node answers from its copy, marked
+		waitFor(t, "a read served from the copy (X-Maktaba-Home: unreachable)", 90*time.Second, func() bool {
+			r, _ := u2.do("GET", nodeWebURL+"/api/videos", nil, nil)
+			return r.StatusCode == 200 && r.Header.Get("X-Maktaba-Home") == "unreachable"
+		})
+		// a reload keeps the user signed in: the node answers the session probe
+		if r, b := u2.do("GET", nodeWebURL+"/api/auth/me", nil, nil); r.StatusCode != 200 ||
+			r.Header.Get("X-Maktaba-Home") != "unreachable" || !strings.Contains(string(b), `"username":"owner"`) {
+			t.Fatalf("/api/auth/me with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		// playback: a video this node reads opens and closes here; one it cannot is unavailable
+		csrf := map[string]string{"X-Maktaba-CSRF": u2.cookie(nodeWebURL, "mkt_csrf")}
+		r, b := u2.do("POST", nodeWebURL+"/api/stream/sessions", map[string]string{"video_id": v1}, csrf)
+		var s openSession
+		if r.StatusCode != 201 || r.Header.Get("X-Maktaba-VOD") != "local" || json.Unmarshal(b, &s) != nil || s.SessionID == "" {
+			t.Fatalf("playback with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		if r, b := u2.do("DELETE", nodeWebURL+"/api/stream/sessions/"+s.SessionID, nil, csrf); r.StatusCode != 204 {
+			t.Fatalf("closing the session with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		if r, b := u2.do("POST", nodeWebURL+"/api/stream/sessions", map[string]string{"video_id": v2}, csrf); r.StatusCode != 503 ||
+			!strings.Contains(string(b), "video_unavailable_offline") {
+			t.Fatalf("a video this node cannot read, with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		// a sign-in is checked on the copy: valid on this machine only
+		u3 := newBrowser(t)
+		if r, b := u3.do("POST", nodeWebURL+"/api/auth/login",
+			map[string]string{"username": "owner", "password": "owner-pass-123"}, nil); r.StatusCode != 200 ||
+			!strings.Contains(string(b), `"session":"node"`) || !strings.HasPrefix(u3.cookie(nodeWebURL, "mkt_sess"), "nls_") {
+			t.Fatalf("a sign-in with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		if r, _ := u3.do("GET", nodeWebURL+"/api/videos", nil, nil); r.StatusCode != 200 {
+			t.Fatalf("a read on the node-local sign-in: %d", r.StatusCode)
+		}
+		if r, _ := newBrowser(t).do("POST", nodeWebURL+"/api/auth/login",
+			map[string]string{"username": "owner", "password": "wrong"}, nil); r.StatusCode != 401 {
+			t.Fatalf("a wrong password with the home gone: %d", r.StatusCode)
+		}
+		// a change through the home waits for it
+		if r, b := u2.do("PATCH", nodeWebURL+"/api/me", map[string]string{"display_name": "x"}, csrf); r.StatusCode != 503 ||
+			!strings.Contains(string(b), "home_unreachable") {
+			t.Fatalf("a change with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		// a sign-out is the node's own: the session ends here at once (the home is told
+		// when it is back)
+		leaverCSRF := map[string]string{"X-Maktaba-CSRF": leaver.cookie(nodeWebURL, "mkt_csrf")}
+		if r, b := leaver.do("POST", nodeWebURL+"/api/auth/logout", nil, leaverCSRF); r.StatusCode != 204 {
+			t.Fatalf("a sign-out with the home gone: %d %s", r.StatusCode, tail(string(b), 300))
+		}
+		if r, _ := leaver.do("GET", nodeWebURL+"/api/videos", nil, nil); r.StatusCode != 401 {
+			t.Fatalf("a read after the sign-out: %d, want 401", r.StatusCode)
+		}
+		// a credential the copy does not know is no one
+		if r, _ := newBrowser(t).do("GET", nodeWebURL+"/api/videos", nil, map[string]string{
+			"Cookie": "mkt_sess=6f1d2c3b-0000-4000-8000-00000000dead"}); r.StatusCode != 401 {
+			t.Fatalf("an unknown session with the home gone: %d", r.StatusCode)
+		}
+		if r, _ := u2.do("GET", nodeWebURL+"/api/system/version", nil, nil); r.StatusCode != 200 {
+			t.Fatalf("a local route with the home gone: %d", r.StatusCode)
+		}
+
+		t.Run("its database gone too: the node plays and reads from its copy, even after a restart", func(t *testing.T) {
+			pgProxy.hang() // the node's connections and its copy's subscription: the home's database is gone
+			csrf := map[string]string{"X-Maktaba-CSRF": u2.cookie(nodeWebURL, "mkt_csrf")}
+			play := func(who string) {
+				t.Helper()
+				r, b := u2.do("POST", nodeWebURL+"/api/stream/sessions", map[string]any{"video_id": v1, "force_transcode": true}, csrf)
+				var s openSession
+				if r.StatusCode != 201 || json.Unmarshal(b, &s) != nil || s.SessionID == "" {
+					t.Fatalf("%s: open with the home's database gone: %d %s", who, r.StatusCode, tail(string(b), 400))
+				}
+				playHLS(t, u2, nodeWebURL, s.ManifestURL, "local")
+				if r, b := u2.do("DELETE", nodeWebURL+"/api/stream/sessions/"+s.SessionID, nil, csrf); r.StatusCode != 204 {
+					t.Fatalf("%s: close with the home's database gone: %d %s", who, r.StatusCode, tail(string(b), 300))
+				}
+			}
+			play("running node")
+			waitFor(t, "a library read from the copy with the home's database gone", 30*time.Second, func() bool {
+				r, _ := u2.do("GET", nodeWebURL+"/api/videos", nil, nil)
+				return r.StatusCode == 200
+			})
+
+			// the node restarts in the outage: it starts without the home's database and plays
+			node.stop()
+			restartedNode := startMachine(t, "node (restarted)", bin, nodeEnv)
+			restartedNode.web = nodeWebURL
+			waitFor(t, "the restarted node's API", 90*time.Second, func() bool {
+				r, err := http.Get(nodeWebURL + "/api/cluster/self")
+				if err != nil {
+					return false
+				}
+				r.Body.Close()
+				return r.StatusCode == 200
+			})
+			// its copy and its streaming role may still be starting
+			waitFor(t, "the restarted node's copy and streaming role", 90*time.Second, func() bool {
+				r, b := u2.do("POST", nodeWebURL+"/api/stream/sessions", map[string]any{"video_id": v1, "force_transcode": true}, csrf)
+				if r.StatusCode == 201 {
+					var s openSession
+					if json.Unmarshal(b, &s) == nil && s.SessionID != "" {
+						_, _ = u2.do("DELETE", nodeWebURL+"/api/stream/sessions/"+s.SessionID, nil, csrf)
+					}
+					return true
+				}
+				return false
+			})
+			play("restarted node")
+			if r, b := u2.do("GET", nodeWebURL+"/api/auth/me", nil, nil); r.StatusCode != 200 || !strings.Contains(string(b), `"username":"owner"`) {
+				t.Fatalf("/api/auth/me on the restarted node: %d %s", r.StatusCode, tail(string(b), 300))
+			}
+			if r, b := newBrowser(t).do("POST", nodeWebURL+"/api/auth/login",
+				map[string]string{"username": "owner", "password": "owner-pass-123"}, nil); r.StatusCode != 200 {
+				t.Fatalf("a sign-in on the restarted node: %d %s", r.StatusCode, tail(string(b), 300))
+			}
+		})
+	})
+
+	t.Run("home gone, no copy: the node serves no one but its own routes", func(t *testing.T) {
+		if withCopy {
+			t.Skip("this node keeps a copy (the case above)")
+		}
 		u2 := newBrowser(t)
 		resp, _ := u2.do("POST", nodeWebURL+"/api/auth/login", map[string]string{"username": "owner", "password": "owner-pass-123"}, nil)
-		if resp.StatusCode != 200 || resp.Header.Get("X-Maktaba-Placement") != "home" {
+		if resp.StatusCode != 200 {
 			t.Fatalf("sign-in through the node: %d", resp.StatusCode)
 		}
-		var origin sql.NullString
-		_ = db.QueryRowContext(ctx, `SELECT CAST(origin_node_id AS TEXT) FROM web_sessions WHERE id = $1`, u2.cookie(nodeWebURL, "mkt_sess")).Scan(&origin)
-		if origin.String != nodeID {
-			t.Fatalf("a sign-in through the node is tagged with it: %v", origin)
-		}
-		if r, _ := u2.do("GET", nodeWebURL+"/api/videos", nil, nil); r.StatusCode != 200 {
-			t.Fatalf("signed in through the node: %d", r.StatusCode)
-		}
 		home.stop()
-		waitFor(t, "503 home_unreachable on a signed-in request", 60*time.Second, func() bool {
+		waitFor(t, "a read refused (503 readable false)", 90*time.Second, func() bool {
 			r, b := u2.do("GET", nodeWebURL+"/api/videos", nil, nil)
-			return r.StatusCode == 503 && strings.Contains(string(b), "home_unreachable")
+			return r.StatusCode == 503 && strings.Contains(string(b), `"readable":false`)
 		})
+		if r, b := newBrowser(t).do("POST", nodeWebURL+"/api/auth/login",
+			map[string]string{"username": "owner", "password": "owner-pass-123"}, nil); r.StatusCode != 503 ||
+			!strings.Contains(string(b), "home_unreachable") {
+			t.Fatalf("a sign-in with the home gone and no copy: %d %s", r.StatusCode, tail(string(b), 300))
+		}
 		if r, _ := u2.do("GET", nodeWebURL+"/api/system/version", nil, nil); r.StatusCode != 200 {
 			t.Fatalf("a local route with the home gone: %d", r.StatusCode)
 		}
 	})
+}
+
+// tcpProxy forwards the node's connections to the home (its database, its API); cut
+// makes it a home that is gone (open connections dropped, new ones closed at once),
+// hang one switched off (nothing answers, nothing is refused: open connections go
+// silent, new ones are taken and never answered).
+type tcpProxy struct {
+	dsn     string
+	ln      net.Listener
+	target  string
+	mu      sync.Mutex
+	down    bool
+	hanging bool
+	conns   map[net.Conn]struct{}
+	ups     map[net.Conn]struct{}
+}
+
+func newTCPProxy(t *testing.T, dsn string) *tcpProxy {
+	t.Helper()
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &tcpProxy{ln: ln, target: u.Host, conns: map[net.Conn]struct{}{}, ups: map[net.Conn]struct{}{}}
+	u.Host = ln.Addr().String()
+	p.dsn = u.String()
+	t.Cleanup(func() { _ = ln.Close(); p.cut() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go p.serve(c)
+		}
+	}()
+	return p
+}
+
+func (p *tcpProxy) serve(c net.Conn) {
+	p.mu.Lock()
+	switch {
+	case p.down:
+		p.mu.Unlock()
+		_ = c.Close()
+		return
+	case p.hanging:
+		p.conns[c] = struct{}{}
+		p.mu.Unlock()
+		_, _ = io.Copy(io.Discard, c) // taken, never answered
+		return
+	}
+	up, err := net.Dial("tcp", p.target)
+	if err != nil {
+		p.mu.Unlock()
+		_ = c.Close()
+		return
+	}
+	p.conns[c], p.conns[up], p.ups[up] = struct{}{}, struct{}{}, struct{}{}
+	p.mu.Unlock()
+	go func() { _, _ = io.Copy(up, c); _ = up.Close() }()
+	_, _ = io.Copy(c, up)
+	p.mu.Lock()
+	hanging := p.hanging
+	p.mu.Unlock()
+	if hanging {
+		_, _ = io.Copy(io.Discard, c) // the client's side stays open and silent
+		return
+	}
+	_ = c.Close()
+}
+
+func (p *tcpProxy) cut() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.down = true
+	for c := range p.conns {
+		_ = c.Close()
+	}
+	p.conns = map[net.Conn]struct{}{}
+}
+
+// hang: the far side is switched off. The connections to it end on this side only, so
+// the node's connections go silent instead of being closed.
+func (p *tcpProxy) hang() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.hanging = true
+	for c := range p.ups {
+		_ = c.Close()
+	}
+	p.ups = map[net.Conn]struct{}{}
 }
 
 type openSession struct {

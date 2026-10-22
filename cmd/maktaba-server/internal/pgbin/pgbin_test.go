@@ -52,7 +52,7 @@ func TestPinsMatchTheMacApp(t *testing.T) {
 	}
 }
 
-var programs = []string{"postgres", "initdb", "pg_ctl", "pg_basebackup", "psql"}
+var programs = []string{"postgres", "initdb", "pg_ctl", "psql"}
 
 // archive builds an install's archive of the theseus-rs layout.
 func archive(t *testing.T, pin Pin, extra map[string]string) []byte {
@@ -122,6 +122,74 @@ func TestEnsureUnpacksOnce(t *testing.T) {
 		if len(left) != 0 {
 			t.Fatalf("zip=%v: leftovers %v", zipped, left)
 		}
+	}
+}
+
+// No output plugin but pgoutput is left: a machine's replication role could decode every
+// table with another one (test_decoding), past what is published to it. Other modules,
+// and libraries that only name the symbol's neighbours, stay.
+func TestEnsureKeepsNoOutputPluginButPgoutput(t *testing.T) {
+	for _, zipped := range []bool{true, false} {
+		root := t.TempDir()
+		probe := Pin{Triple: "test-triple", Zip: zipped}
+		raw := archive(t, probe, map[string]string{
+			probe.Dir() + "/lib/pgoutput.dll":                  "\x00_PG_output_plugin_init\x00",
+			probe.Dir() + "/lib/postgresql/test_decoding.so":   "\x00_PG_output_plugin_init\x00",
+			probe.Dir() + "/lib/wal2json.dylib":                "\x7fELF_PG_output_plugin_init",
+			probe.Dir() + "/lib/pg_trgm.so":                    "\x00_PG_init\x00",
+			probe.Dir() + "/lib/libpqwalreceiver.dll":          "\x00_PG_init\x00",
+			probe.Dir() + "/share/extension/test_decoding.txt": "_PG_output_plugin_init",
+		})
+		pin := pinFor(raw, zipped)
+		calls := 0
+		home, err := Ensure(context.Background(), root, pin, serve(raw, &calls), io.Discard)
+		if err != nil {
+			t.Fatalf("zip=%v: %v", zipped, err)
+		}
+		left, err := OutputPlugins(home)
+		if err != nil || len(left) != 0 {
+			t.Fatalf("zip=%v: output plugins left %v (%v)", zipped, left, err)
+		}
+		for _, keep := range []string{"lib/pgoutput.dll", "lib/pg_trgm.so", "lib/libpqwalreceiver.dll",
+			"share/extension/test_decoding.txt"} {
+			if _, err := os.Stat(filepath.Join(home, keep)); err != nil {
+				t.Fatalf("zip=%v: %s went: %v", zipped, keep, err)
+			}
+		}
+		for _, gone := range []string{"lib/postgresql/test_decoding.so", "lib/wal2json.dylib"} {
+			if _, err := os.Stat(filepath.Join(home, gone)); !os.IsNotExist(err) {
+				t.Fatalf("zip=%v: %s is still there: %v", zipped, gone, err)
+			}
+		}
+	}
+}
+
+// An install unpacked before the plugins were stripped loses them at its next use.
+func TestEnsureStripsAnInstallFromBefore(t *testing.T) {
+	root := t.TempDir()
+	pin := Pin{Triple: "test-triple", Zip: true}
+	home := filepath.Join(root, pin.Dir())
+	for _, b := range programs {
+		if err := os.MkdirAll(filepath.Join(home, "bin"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, "bin", Exe(b)), []byte("#"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plugin := filepath.Join(home, "lib", "test_decoding.dll")
+	if err := os.MkdirAll(filepath.Dir(plugin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plugin, []byte("_PG_output_plugin_init"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	if _, err := Ensure(context.Background(), root, pin, serve(nil, &calls), io.Discard); err != nil || calls != 0 {
+		t.Fatalf("%v (downloads %d)", err, calls)
+	}
+	if _, err := os.Stat(plugin); !os.IsNotExist(err) {
+		t.Fatalf("test_decoding is still there: %v", err)
 	}
 }
 

@@ -195,6 +195,52 @@ func TestChildEnvStateDirs(t *testing.T) {
 	}
 }
 
+// TestFullNodeStateDir: a full node's api and streaming roles keep their playback
+// catalog under the install's data directory (PR #145), so it outlives a restart in a
+// home outage; a machine that joined no home gets none.
+func TestFullNodeStateDir(t *testing.T) {
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	n := config.NodeConfig{NodeID: "6f1c9a2e-0000-4000-8000-000000000001", DatabaseURL: "postgresql://node@home/maktaba"}
+	n.Home.URL = "http://home.lan:8080"
+	nodeConfig = func() config.NodeConfig { return n }
+	var cfg config.Config
+	cfg.Server.DataDir = filepath.Join("C:", "Users", "x", "AppData", "Local", "Maktaba")
+	want := filepath.Join(cfg.Server.DataDir, "node")
+	for _, role := range []Role{RoleAPI, RoleStreaming} {
+		if got := envMap(ChildEnv(role, cfg))["MAKTABA_NODE_STATE_DIR"]; got != want {
+			t.Fatalf("%s: MAKTABA_NODE_STATE_DIR = %q, want %q", role, got, want)
+		}
+	}
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	for _, role := range []Role{RoleAPI, RoleStreaming} {
+		if got, ok := envMap(ChildEnv(role, cfg))["MAKTABA_NODE_STATE_DIR"]; ok {
+			t.Fatalf("%s off a node: MAKTABA_NODE_STATE_DIR = %q", role, got)
+		}
+	}
+}
+
+// TestClusterDBEnv: a home serving its machines from the bundled Postgres tells its
+// api the port they reach it on and the CA they verify it with (the api hands both
+// out at a join); without it the api keeps its default.
+func TestClusterDBEnv(t *testing.T) {
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	var cfg config.Config
+	if _, ok := envMap(ChildEnv(RoleAPI, cfg))["MAKTABA_CLUSTER_PG_PORT"]; ok {
+		t.Fatal("a port without the bundled Postgres serving the machines")
+	}
+	cfg.ClusterDB = config.ClusterDB{Port: 54329, CA: filepath.Join("keys", "postgres-ca.crt")}
+	m := envMap(ChildEnv(RoleAPI, cfg))
+	if m["MAKTABA_CLUSTER_PG_PORT"] != "54329" || m["MAKTABA_CLUSTER_PG_CA"] != cfg.ClusterDB.CA {
+		t.Fatalf("api env: port %q ca %q", m["MAKTABA_CLUSTER_PG_PORT"], m["MAKTABA_CLUSTER_PG_CA"])
+	}
+	if _, ok := envMap(ChildEnv(RoleStreaming, cfg))["MAKTABA_CLUSTER_PG_PORT"]; ok {
+		t.Fatal("only the api provisions the machines")
+	}
+}
+
 // The api and streaming keep their data (the Sigstore root, channel art) in
 // data_dir, not in /var/lib/maktaba, which a user's server cannot write.
 func TestChildEnvDataDir(t *testing.T) {

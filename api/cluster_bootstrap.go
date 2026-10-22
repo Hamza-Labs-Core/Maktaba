@@ -18,6 +18,8 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/relay"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/switchover"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	clusterh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
@@ -71,6 +73,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		return func() {}, nil
 	}
 	h.WebURL, h.Version = os.Getenv("MAKTABA_WEB_URL"), version.Version
+	h.PGBundled, h.PGCA = os.Getenv("MAKTABA_CLUSTER_PG_PORT") != "", os.Getenv("MAKTABA_CLUSTER_PG_CA")
 	ctx, cancel := context.WithCancel(context.Background())
 	bctx, bcancel := context.WithTimeout(ctx, 10*time.Second)
 	id, err := h.Bootstrap(bctx, cluster.StableHostName())
@@ -92,6 +95,19 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		keys.DB = nil
 	}
 	hub := mountClusterHub(r, h, db, driver, store, keys, logger)
+	// the machines verify this home's bundled Postgres with its CA, handed over the
+	// machine channel (and sealed in a join's credentials); another database is said to
+	// have no TLS when it has none
+	if h.PGBundled {
+		go hub.PushDatabase(ctx, h.PGCA, 30*time.Second, logger)
+	} else if driver == "postgres" {
+		go func() {
+			if plainDatabase(ctx, db, 30*time.Second) {
+				h.PGPlain.Store(true)
+				hub.PushDatabase(ctx, "", 30*time.Second, logger)
+			}
+		}()
+	}
 	// every revocation on the home reaches the full nodes within the second (story
 	// 35.9 AC4): the session store reports it, the hub pushes auth.revoked
 	sessions.SetRevokeHook(func(rv sessions.Revocation) {
@@ -106,6 +122,22 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		defer close(hubDone)
 		hub.Run(ctx)
 	}()
+	// switching the home to another machine (Epic 37): run here, finished on the new home
+	if driver == "postgres" {
+		sw := &switchover.Orchestrator{DB: db, Hub: hub, Logger: logger, HomeName: cluster.StableHostName(),
+			SchemaRev: schemaguard.SchemaRev, ClusterKeyFile: agent.ClusterKeyPath(os.Getenv("MAKTABA_HOME_CLUSTER_KEY"))}
+		if sc := switchover.SupervisorFromEnv(); sc != nil {
+			sw.Supervisor = sc
+		}
+		sw.Mount(r)
+		// a switch this home was running when it stopped, taken up (Epic 37)
+		go sw.Resume(ctx)
+		// the standby homes' kits of this home's secrets, kept current (Epic 37)
+		go sw.KeepStandbys(ctx)
+		stream := os.Getenv("MAKTABA_PUBLIC_BASE_URL")
+		go sw.Finish(ctx, switchover.HomeIntegrations(db, store,
+			switchover.HFTokenPath(os.Getenv("MAKTABA_DATA_DIR")), func() string { return stream }))
+	}
 	return func() {
 		cancel()
 		select {
@@ -183,6 +215,26 @@ func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver strin
 func mdnsEnabled() bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv("MAKTABA_DISCOVERY_MDNS")))
 	return v != "0" && v != "false" && v != "off"
+}
+
+// plainDatabase reports whether this home's database has no TLS at all (`ssl` off):
+// every machine's connection to it is plain then, whatever it asks for. It asks until
+// the database answers, every interval; false once ctx ends.
+func plainDatabase(ctx context.Context, db *sql.DB, every time.Duration) bool {
+	for {
+		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		var ssl string
+		err := db.QueryRowContext(qctx, `SHOW ssl`).Scan(&ssl)
+		cancel()
+		if err == nil {
+			return ssl == "off"
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(every):
+		}
+	}
 }
 
 // portOf extracts the port of a listen address (":8080", "0.0.0.0:8080").

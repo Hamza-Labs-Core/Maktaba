@@ -282,6 +282,8 @@ def join(
     joined = replace(
         cfg,
         database_url=str(payload["database_url"]),
+        database_ca=str(payload.get("database_ca") or ""),
+        database_tls=str(payload.get("database_tls") or ""),
         home=HomeRef(
             url=str(sealed_home.get("api_url") or base),
             instance_id=str(sealed_home.get("instance_id") or home_info.get("instance_id") or ""),

@@ -59,6 +59,7 @@ echo "binaries"
 for b in maktaba-server maktaba-api maktaba-streaming maktaba-launcher; do
     run "$b" "$PAYLOAD/bin/$b" --version
 done
+run "maktaba-cloudlink" "$PAYLOAD/bin/maktaba-cloudlink" version
 for b in postgres initdb pg_ctl pg_dump pg_restore psql; do
     run "$b" "$PAYLOAD/postgres/bin/$b" --version
 done
@@ -86,6 +87,10 @@ done < <(find "$PAYLOAD" -type f -print0 | xargs -0 file | awk -F': ' '/Mach-O/ 
 [ "$bad" -eq 0 ] && ok "$n Mach-O files, all arm64, self-contained"
 
 echo "PostgreSQL"
+# the only logical decoding output plugin is pgoutput: another one (test_decoding) would let a
+# machine's replication role decode every table, past what is published to it (Epic 37)
+plugins="$(find "$PAYLOAD/postgres/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_output_plugin_init {} + 2>/dev/null || true)"
+if [ -z "$plugins" ]; then ok "no output plugin but pgoutput"; else fail "output plugins besides pgoutput: $(printf '%s\n' "$plugins" | tr '\n' ' ')"; fi
 pg="$PAYLOAD/postgres/bin"
 port=$((54000 + RANDOM % 900))
 if "$pg/initdb" -D "$SCRATCH/pgdata" -U maktaba --auth=trust -E UTF8 >"$SCRATCH/initdb.log" 2>&1 &&

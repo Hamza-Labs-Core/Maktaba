@@ -46,6 +46,13 @@ type Bundle struct {
 	Keys    string // the password files
 	Backups string // the nightly dumps
 	Port    int
+	// LAN: it may listen beyond this machine for the cluster's machines, while one may
+	// connect (reach.go);
+	// TLS: their connections are encrypted with the cluster database CA's certificate;
+	// MachinesFrom: the networks they may connect from (Bundle.machinesFrom).
+	LAN          bool
+	TLS          bool
+	MachinesFrom string
 }
 
 // Resolve reports whether this install runs the bundled Postgres, and where.
@@ -88,8 +95,17 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 		Keys:    config.KeysDir(),
 		Backups: filepath.Join(root, "backups"),
 		Port:    port,
+		LAN:     !strings.EqualFold(strings.TrimSpace(cfg.Postgres.Listen), "loopback"),
+		TLS:     !strings.EqualFold(strings.TrimSpace(cfg.Postgres.TLS), "off"),
+		// the networks the machines connect from
+		MachinesFrom: cfg.Postgres.MachinesFrom,
 	}, true, nil
 }
+
+// FindHome is the Postgres install this machine has for Maktaba (findHome), "" for
+// none: a full node's copy of its home's database runs on it rather than on programs
+// it fetches.
+func FindHome(cfg config.Config, exe string) string { return findHome(cfg, exe) }
 
 // findHome: $MAKTABA_POSTGRES_HOME, [postgres] home, else the payload's postgres/
 // ($MAKTABA_APP_BUNDLE, or beside the bin/ of this executable).
@@ -179,16 +195,33 @@ func (b Bundle) stop(p *os.Process) {
 // Addr is the loopback TCP address.
 func (b Bundle) Addr() string { return "127.0.0.1:" + strconv.Itoa(b.Port) }
 
-// ServerArgs are the arguments of the foreground `postgres`: this cluster,
-// loopback only, the unix socket in the data directory (none when that path
-// is too long for a socket: every role connects over loopback TCP anyway).
-func (b Bundle) ServerArgs() []string {
+// ServerArgs are the arguments of the foreground `postgres`: this cluster, on
+// loopback (and the LAN while a machine of the cluster may connect, TLS on: LastReach),
+// the unix socket in the data directory (none when that path is too long for a socket:
+// every role connects over loopback TCP anyway).
+func (b Bundle) ServerArgs() []string { return b.serverArgs(b.listensOut()) }
+
+// serverArgs: lan false for the short-lived servers of Prepare (never on the LAN).
+func (b Bundle) serverArgs(lan bool) []string {
 	sock := b.Data
 	if len(filepath.Join(sock, ".s.PGSQL."+strconv.Itoa(b.Port))) > maxSocketPath || runtime.GOOS == "windows" {
 		sock = ""
 	}
-	return []string{"-D", b.Data, "-p", strconv.Itoa(b.Port),
-		"-c", "listen_addresses=127.0.0.1", "-c", "unix_socket_directories=" + sock}
+	listen := "127.0.0.1"
+	if lan {
+		listen = "*"
+	}
+	// wal_level=logical: a home publishes its database to its machines' copies, and a
+	// machine's copy may become the home (specs/epics/37-node-replica). Room for every
+	// machine's slot and sender, the first copy's tables in parallel on each side.
+	args := []string{"-D", b.Data, "-p", strconv.Itoa(b.Port),
+		"-c", "listen_addresses=" + listen, "-c", "unix_socket_directories=" + sock, "-c", "wal_level=logical",
+		"-c", "max_replication_slots=40", "-c", "max_wal_senders=40", "-c", "max_worker_processes=24",
+		"-c", "max_logical_replication_workers=12", "-c", "max_sync_workers_per_subscription=8"}
+	if b.TLS && b.TLSReady() {
+		args = append(args, "-c", "ssl=on", "-c", "ssl_cert_file="+b.serverCert(), "-c", "ssl_key_file="+b.serverKey())
+	}
+	return args
 }
 
 // ServerCommand is the foreground `postgres` of this cluster (ServerArgs). On
@@ -220,6 +253,19 @@ func (b Bundle) URL() (string, error) {
 		return "", err
 	}
 	return "postgres://" + AppRole + ":" + pw + "@" + b.Addr() + "/" + AppDatabase + "?sslmode=disable", nil
+}
+
+// SuperURL is the superuser's database URL (the copy's subscription, its roles; a
+// switch of the home). It writes when the database is frozen too (a switch sets
+// default_transaction_read_only on it for the app's roles): only this machine's own
+// copy and switch work connects as the superuser. It needs Prepare to have run.
+func (b Bundle) SuperURL() (string, error) {
+	pw, err := readPassword(b.passwordFile(SuperUser))
+	if err != nil {
+		return "", err
+	}
+	return "postgres://" + SuperUser + ":" + pw + "@" + b.Addr() + "/" + AppDatabase +
+		"?sslmode=disable&default_transaction_read_only=off", nil
 }
 
 func (b Bundle) passwordFile(role string) string {
@@ -256,18 +302,43 @@ func (b Bundle) Prepare(ctx context.Context, log io.Writer) error {
 			return err
 		}
 	}
+	// what the cluster's machines connect through, made again at every start
+	if err := b.writeHBA(); err != nil {
+		return fmt.Errorf("bundled postgres: pg_hba.conf: %w", err)
+	}
+	if b.TLS {
+		if err := b.ensureTLS(time.Now()); err != nil {
+			return err
+		}
+	}
+	// the app role, its database and extensions (once, or when its password file is
+	// gone), then what lets it provision the machines (once, also on a cluster made
+	// before that), in one session of a server of its own
 	_, statErr := os.Stat(b.passwordFile(AppRole))
-	if _, err := os.Stat(filepath.Join(b.Data, bootstrapMarker)); err == nil && statErr == nil {
+	_, appErr := os.Stat(filepath.Join(b.Data, bootstrapMarker))
+	needApp, needCluster := appErr != nil || statErr != nil, !b.clusterDone()
+	if !needApp && !needCluster {
 		return nil
 	}
-	appPW, err := ensurePassword(b.passwordFile(AppRole))
-	if err != nil {
-		return err
+	sql := ""
+	if needApp {
+		appPW, err := ensurePassword(b.passwordFile(AppRole))
+		if err != nil {
+			return err
+		}
+		sql = bootstrapSQL(appPW)
 	}
-	if err := b.bootstrap(ctx, superPW, appPW, log); err != nil {
+	if needCluster {
+		sql += clusterSQL
+	}
+	if err := b.bootstrap(ctx, superPW, sql, log); err != nil {
 		return fmt.Errorf("bundled postgres: create the %s role and database: %w", AppRole, err)
 	}
-	return os.WriteFile(filepath.Join(b.Data, bootstrapMarker), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600)
+	stamp := time.Now().UTC().Format(time.RFC3339) + "\n"
+	if err := os.WriteFile(filepath.Join(b.Data, bootstrapMarker), []byte(stamp), 0o600); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(b.Data, clusterMarker), []byte(stamp+"rev "+strconv.Itoa(clusterRev)+"\n"), 0o600)
 }
 
 func (b Bundle) initdb(ctx context.Context, superPW string, log io.Writer) error {
@@ -330,12 +401,12 @@ var readyTimeout = 2 * time.Minute
 
 // bootstrap runs a server of its own (the supervisor's has not started yet),
 // feeds psql the bootstrap SQL and stops it again.
-func (b Bundle) bootstrap(ctx context.Context, superPW, appPW string, log io.Writer) error {
+func (b Bundle) bootstrap(ctx context.Context, superPW, sql string, log io.Writer) error {
 	return b.withServer(ctx, log, func() error {
 		psql := exec.CommandContext(ctx, b.Bin("psql"), "-X", "-q", "-h", "127.0.0.1", "-p", strconv.Itoa(b.Port),
 			"-U", SuperUser, "-d", "postgres")
 		psql.Env = append(os.Environ(), "PGPASSWORD="+superPW)
-		psql.Stdin = strings.NewReader(bootstrapSQL(appPW))
+		psql.Stdin = strings.NewReader(sql)
 		psql.Stdout, psql.Stderr = log, log
 		return psql.Run()
 	})
@@ -344,7 +415,7 @@ func (b Bundle) bootstrap(ctx context.Context, superPW, appPW string, log io.Wri
 // withServer runs fn with a server of its own up (the supervisor's is not
 // running), then stops it.
 func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) error {
-	srv, err := b.serverCommand(b.ServerArgs())
+	srv, err := b.serverCommand(b.serverArgs(false))
 	if err != nil {
 		return err
 	}

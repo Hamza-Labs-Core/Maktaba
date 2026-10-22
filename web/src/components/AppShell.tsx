@@ -204,7 +204,13 @@ export function AppShell() {
               type="button"
               className="mkt-btn mkt-btn--ghost"
               onClick={async () => {
-                await logout();
+                try {
+                  await logout();
+                } catch {
+                  // refused: this machine cannot reach its home (lib/auth)
+                  toast.show({ id: "sign-out", tone: "warn", message: t("homeOffline.signOut") });
+                  return;
+                }
                 nav("/login", { replace: true });
               }}
               aria-label={t("nav.signOut")}
@@ -320,6 +326,7 @@ export function MoreMenu() {
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const nav = useNavigate();
+  const [signOutRefused, setSignOutRefused] = useState(false);
   const hasUpdate = updateAvailable(useUpdateStatus());
   const healthDown = useSystemStatus(!!user?.is_admin) === "down";
   const groups: Array<{
@@ -374,12 +381,23 @@ export function MoreMenu() {
         type="button"
         className="mkt-btn mkt-btn--ghost mkt-more__signout"
         onClick={async () => {
-          await logout();
+          try {
+            await logout();
+          } catch {
+            // refused: this machine cannot reach its home (lib/auth)
+            setSignOutRefused(true);
+            return;
+          }
           nav("/login", { replace: true });
         }}
       >
         {t("nav.signOut")}
       </button>
+      {signOutRefused && (
+        <p className="mkt-alert" role="alert">
+          {t("homeOffline.signOut")}
+        </p>
+      )}
     </section>
   );
 }

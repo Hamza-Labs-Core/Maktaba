@@ -162,6 +162,21 @@ describe("RulesSection", { timeout: 20_000 }, () => {
     authState.user = { id: "u1", username: "admin", is_admin: true };
   });
 
+  it("opens the section a link names, its search set to a field (?section=…&q=…)", async () => {
+    routeGet(get, {
+      "/api/rules": () => fixture(),
+      "/api/reports/channel-plan/preview": () => idleStatus,
+    });
+    renderAt(<RulesSection />, "/settings/rules?section=groups&q=min_topic", "/settings/rules");
+    expect(await screen.findByRole("tab", { name: /Grouping/ })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    expect(screen.getByRole("searchbox")).toHaveValue("min_topic");
+    expect(await rule("Topic group from (videos)")).toBeInTheDocument();
+    expect(screen.queryByText("Clip up to (min)")).not.toBeInTheDocument();
+  });
+
   it("renders a tab per section and the fields grouped, with label, name, help and default", async () => {
     setup();
     expect(await screen.findByRole("tab", { name: /Channels/ })).toHaveAttribute(

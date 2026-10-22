@@ -2577,6 +2577,17 @@ mark {
   text-align: center;
 }
 
+/* A node that cannot reach its home: readable, changes refused */
+.mkt-home-offline {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 50;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-bg);
+  border-block-end: 1px solid var(--color-border);
+  border-inline-start: 4px solid var(--color-warn);
+  font-size: var(--font-size-sm);
+}
 /* Epic 35 (story 35.10): the paused page on a node */
 .mkt-paused {
   display: flex;

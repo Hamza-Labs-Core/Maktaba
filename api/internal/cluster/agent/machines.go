@@ -39,20 +39,62 @@ func keysFrame(k delegation.Key) map[string]any {
 
 // afterWelcome sends a machine agent its delegation key.
 func (h *Hub) afterWelcome(s *Session) {
-	if !s.machineAgent() || h.cfg.Delegation == nil {
+	if !s.machineAgent() {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	k, _, err := h.cfg.Delegation.Issue(ctx, s.NodeID)
-	if err != nil {
-		h.log().Warn("cluster: no delegation key for a machine", "node_id", s.NodeID, "err", err,
-			"event", "cluster_delegation_issue_failed")
-		return
+	if h.cfg.Delegation != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		k, _, err := h.cfg.Delegation.Issue(ctx, s.NodeID)
+		cancel()
+		switch {
+		case err != nil:
+			h.log().Warn("cluster: no delegation key for a machine", "node_id", s.NodeID, "err", err,
+				"event", "cluster_delegation_issue_failed")
+		case s.send(keysFrame(k)):
+			h.event(map[string]any{"event": "keys", "session": s.ID, "node_id": s.NodeID, "key_id": k.ID})
+		}
 	}
-	if s.send(keysFrame(k)) {
-		h.event(map[string]any{"event": "keys", "session": s.ID, "node_id": s.NodeID, "key_id": k.ID})
+	// what was revoked while it was away (its copy may not have it yet)
+	for _, f := range h.recentRevocations() {
+		s.send(f)
 	}
+}
+
+// revokedReplay is how long the home keeps a revocation to send again to a machine agent
+// that connects: past the most a copy is allowed to lag (nodeauth's copy reads) and the
+// time a machine honours a pushed one.
+const revokedReplay = 15 * time.Minute
+
+type revokedFrame struct {
+	at    time.Time
+	frame map[string]any
+}
+
+// keepRevoked keeps a revocation's frame for the agents that connect later.
+func (h *Hub) keepRevoked(frame map[string]any) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	now := h.cfg.Now()
+	kept := h.recentRevoked[:0]
+	for _, f := range h.recentRevoked {
+		if now.Sub(f.at) <= revokedReplay {
+			kept = append(kept, f)
+		}
+	}
+	h.recentRevoked = append(kept, revokedFrame{at: now, frame: frame})
+}
+
+func (h *Hub) recentRevocations() []map[string]any {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	now := h.cfg.Now()
+	var out []map[string]any
+	for _, f := range h.recentRevoked {
+		if now.Sub(f.at) <= revokedReplay {
+			out = append(out, f.frame)
+		}
+	}
+	return out
 }
 
 func (h *Hub) machineAgents() []*Session {
@@ -116,6 +158,7 @@ func (h *Hub) BroadcastRevoked(r RevokedSessions) int {
 	if r.UserID != "" {
 		frame["user_id"] = r.UserID
 	}
+	h.keepRevoked(frame)
 	n := 0
 	for _, s := range h.machineAgents() {
 		if s.send(frame) {

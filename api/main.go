@@ -381,6 +381,7 @@ func runServe() error {
 	// nodeRT is a full node's runtime (nil on the home); nodeVerifier checks the
 	// nodes' signed requests on the home (Epic 35 stories 35.8-35.10).
 	var nodeRT *nodeRuntime
+	var nodeFatal <-chan error // nil on the home: never ready
 	var nodeVerifier *delegation.Verifier
 	if nodeCfg.Enabled {
 		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, logger)
@@ -389,6 +390,7 @@ func runServe() error {
 		}
 		defer closeNode()
 		nodeRT = rt
+		nodeFatal = rt.fatal
 	} else if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		appDB, dbErr := pgdsn.Open(dsn)
 		if dbErr != nil {
@@ -494,6 +496,7 @@ func runServe() error {
 				SearchSemanticBudget: semanticBudget,
 				BusCtx:               busCtx,
 				BusDSN:               pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
+				BusResettle:          func(ctx context.Context) string { return pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping) },
 				EnrichAutoAcceptCtx:  busCtx,
 				PerfRegistry:         perfRegistry,
 				URLSigner:            streamURLSigner(auth.keys, logger),
@@ -695,6 +698,16 @@ func runServe() error {
 			return err
 		}
 		return nil
+	case err := <-nodeFatal:
+		// a full node started with the home's database down found its role able to
+		// run DDL once the database answered: it stops, as it would have at start
+		logger.Error("node: stopping", "err", err, "event", "node_role_refused")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = publicSrv.Shutdown(shutdownCtx)
+		_ = adminSrv.Shutdown(shutdownCtx)
+		_ = traceShutdown(shutdownCtx)
+		return err
 	}
 }
 

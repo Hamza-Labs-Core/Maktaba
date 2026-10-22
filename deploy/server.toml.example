@@ -76,6 +76,15 @@ url = "sqlite:///var/lib/maktaba/maktaba.db"
 # default $MAKTABA_POSTGRES_HOME, else the app's Resources/server/postgres.
 # home = ""
 # port = 54329
+# "lan" (default): it listens on this machine's network too, while a machine of
+# the cluster may connect (one is approved, or joins are open; it starts again when
+# that changes), and lets in only the machines' roles, over TLS; "loopback": this
+# machine only (no machine can join).
+# listen = "lan"
+# Where the cluster's machines may connect to it from: "samenet" (default: the
+# networks this machine is on, and each approved machine's own address), "all"
+# (any address), or networks, comma-separated CIDR (those only).
+# machines_from = "samenet"
 # The desktop app dumps the database before an update's migrations
 # (backups/pre-<old>-to-<new>.dump: the way back to the old version; restored by
 # itself when the migrations fail). The newest update_dumps of them stay, the
@@ -155,9 +164,16 @@ roots = ["/mnt/videos", "/mnt/movies"]
 backend = "mlx-whisper"
 
 [cloud]
-# Optional cloud-link enrolment.
+# The cloud relay (Epic 25): while enabled, the home runs the relay agent
+# (maktaba-cloudlink), which keeps a tunnel from the cloud to this home's API. The
+# claim code and slug are used once, on its first run; its credentials are kept in
+# the keys folder (cloudlink.cred, cloudlink.key), and a switch of the home moves
+# them, and the agent with them, to the new home.
 enabled = false
 # claim_code = "ABCD1234"
+# slug = "my-library"
+# name = "Maktaba"
+# admin_addr = "127.0.0.1:8765"
 
 [supervisor]
 # How `serve` keeps its child processes (api, streaming, pipeline) running.
