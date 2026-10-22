@@ -250,8 +250,9 @@ don't append a line here; docs-only PRs are exempt.
   decodes H.264 and HEVC sources (`cuda`, VideoToolbox on a Mac; AV1 and the rest on the CPU, as
   a GPU without AV1 decode cannot fall back), every rung is 8-bit 4:2:0 (a 10-bit source too:
   NVENC's H.264 refuses 10-bit, and browsers rarely play High 10), and each encoder gets its own
-  preset (`p4` for NVENC). NVENC sessions come from the gate the TV's playout uses in the same
-  process, one per rung; the rungs it gives none for are encoded by libx264. A hardware run that
+  preset (`p4` for NVENC). NVENC sessions are counted with the TV's channels', one per rung:
+  together they stay within the channels' NVENC cap (with what the TV slots hold), VOD holds at
+  most half of it, and the rungs it gets none for are encoded by libx264. A hardware run that
   fails within 30 s is run again in software. The encoder is chosen by a short test encode, on
   Windows too (it was always software there), detected again every 5 minutes while a listed GPU
   encoder failed, and `MAKTABA_HWACCEL_PREFER` (`auto`, `software`, `nvenc`, `qsv`,
