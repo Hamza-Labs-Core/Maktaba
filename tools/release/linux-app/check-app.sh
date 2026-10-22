@@ -108,9 +108,12 @@ for bundle in "$@"; do
     fi
     # No ffmpeg anywhere in the bundle: not in the payload, not among what the AppImage
     # brings along (its GStreamer plugins: gst-libav links libavcodec). The list goes to a
-    # file (find | head under pipefail ended the script on SIGPIPE).
-    find "$root" \( -iname 'ffmpeg' -o -iname 'ffprobe' -o -name 'libav[cfru]*.so*' -o -name 'libavdevice*.so*' \
-        -o -name 'libpostproc*.so*' -o -name 'libsw[rs]*.so*' -o -name 'libx264*.so*' -o -name 'libgstlibav*.so' \) \
+    # file (find | head under pipefail ended the script on SIGPIPE). Exact names: libavc1394, a
+    # FireWire library the AppImage's GStreamer plugins bring, is no ffmpeg.
+    find "$root" \( -iname 'ffmpeg' -o -iname 'ffprobe' -o -name 'libavcodec.so*' -o -name 'libavformat.so*' \
+        -o -name 'libavfilter.so*' -o -name 'libavutil.so*' -o -name 'libavdevice.so*' -o -name 'libavresample.so*' \
+        -o -name 'libpostproc.so*' -o -name 'libswscale.so*' -o -name 'libswresample.so*' -o -name 'libx264.so*' \
+        -o -name 'libgstlibav*.so' \) \
         -printf '%P\n' >"$SCRATCH/ffmpeg-files" 2>/dev/null || true
     if [ ! -s "$SCRATCH/ffmpeg-files" ]; then
         ok "no ffmpeg in the bundle (the distribution's is used)"
