@@ -4,10 +4,13 @@
 # payload installs as the server runs it: `maktaba-server runtime install` from the
 # unpacked bundle into a scratch data directory checks every file against files.sha256
 # (and makes again the links a bundler copied as files). check.sh then runs on that
-# runtime copy (Postgres, ffmpeg, Python, the venv plan), once, on the first bundle.
+# runtime copy (Postgres, Python, the venv plan, no ffmpeg in it and the system's taken),
+# once, on the first bundle.
 #
-# The .deb's Depends and the .rpm's Requires name the libraries the shell links, and both
-# packages carry package-remove.sh as their removal script (prerm / %preun).
+# The .deb's Depends and the .rpm's Requires name the libraries the shell links and the
+# distribution's ffmpeg (the .rpm's is RPM Fusion's on Fedora and RHEL: their ffmpeg-free
+# provides no "ffmpeg"), and both packages carry package-remove.sh as their removal script
+# (prerm / %preun).
 #
 # Usage: check-app.sh BUNDLE...   (*.AppImage, *.deb, *.rpm)
 # Needs: bash, coreutils, dpkg-deb for a .deb; rpm (its headers) and bsdtar (or rpm2cpio
@@ -50,6 +53,8 @@ for bundle in "$@"; do
             for want in libwebkit2gtk-4.1 libgtk-3 libayatana-appindicator3; do
                 case "$deps" in *"$want"*) ok "Depends: $want" ;; *) fail "Depends lacks $want ($deps)" ;; esac
             done
+            # the package itself, not a library of it
+            case ", $deps," in *", ffmpeg,"* | *", ffmpeg ("*) ok "Depends: ffmpeg" ;; *) fail "Depends lacks ffmpeg ($deps)" ;; esac
             if dpkg-deb -I "$abs" prerm 2>/dev/null | cmp -s - "$SCRIPT_DIR/package-remove.sh"; then
                 ok "prerm: package-remove.sh"
             else
@@ -63,7 +68,7 @@ for bundle in "$@"; do
                 fail "$name: rpm is needed to read the .rpm's Requires and scriptlets"
             else
                 reqs="$(rpm -qp --requires "$abs" 2>/dev/null)"
-                for want in 'libwebkit2gtk-4.1.so.0()(64bit)' 'libgtk-3.so.0()(64bit)' 'libayatana-appindicator3.so.1()(64bit)'; do
+                for want in 'libwebkit2gtk-4.1.so.0()(64bit)' 'libgtk-3.so.0()(64bit)' 'libayatana-appindicator3.so.1()(64bit)' ffmpeg; do
                     if printf '%s\n' "$reqs" | grep -qxF "$want"; then ok "Requires: $want"; else fail "Requires lacks $want ($(printf '%s' "$reqs" | tr '\n' ' '))"; fi
                 done
                 # rpm prints the scriptlet's body after its header line: it must hold the
@@ -122,7 +127,7 @@ for bundle in "$@"; do
             fi
             ;;
     esac
-    find "$payload/bin" "$payload/postgres/bin" "$payload/ffmpeg" -maxdepth 1 -type f ! -perm "$runnable" -printf '%m %p\n' >"$SCRATCH/modes" 2>&1 || true
+    find "$payload/bin" "$payload/postgres/bin" -maxdepth 1 -type f ! -perm "$runnable" -printf '%m %p\n' >"$SCRATCH/modes" 2>&1 || true
     if [ ! -s "$SCRATCH/modes" ]; then
         ok "executables runnable by $who"
     else

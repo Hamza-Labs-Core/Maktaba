@@ -24,7 +24,7 @@ names the root, so moving the data must not break it. The data directory and the
 
 ```
 ~/.local/share/maktaba/runtime/                 ($XDG_DATA_HOME/maktaba/runtime)
-  v0.3.0_1a2b3c4d/      a payload: bin/ postgres/ ffmpeg/ python/ pipeline/ licenses/
+  v0.3.0_1a2b3c4d/      a payload: bin/ postgres/ python/ pipeline/ licenses/
                         payload.json  files.sha256   (the bytes the install verified)
                         .installed   {"version","platform","files_sha256","from","installed_at"}
   v0.2.1_9f8e7d6c/      the one that ran before (kept: a rollback goes back to it, and its

@@ -1,13 +1,16 @@
 # Reusable Linux app gate (Epic 39, stories 39.2 and 39.10): on an x86_64 and an aarch64
-# runner, build the server payload (Go binaries with the web UI, pinned Postgres / ffmpeg /
-# Python checked against tools/release/linux-app/pins.env, Postgres's library closure from
-# the runner, the pipeline wheel + constraints) and the app around it (AppImage, .deb,
-# .rpm: `make linux-app`). check-app.sh installs each bundle's payload the way the app
-# does (`maktaba-server runtime install`, every file checked) and runs check.sh on the
-# copy; check.sh also runs in minimal containers of the distributions the app supports
-# (the payload mounted read-only, an ordinary user), so a library the payload assumes but
-# a system lacks fails here. Then e2e.sh runs the server the way the app installs it, as the
-# runner's systemd user unit. Unsigned: the updater signature comes with desktop-release.yml.
+# runner, build the server payload (Go binaries with the web UI, pinned Postgres / Python
+# checked against tools/release/linux-app/pins.env, Postgres's library closure from the
+# runner, the pipeline wheel + constraints) and the app around it (AppImage, .deb, .rpm:
+# `make linux-app`). check-app.sh installs each bundle's payload the way the app does
+# (`maktaba-server runtime install`, every file checked) and runs check.sh on the copy;
+# check.sh also runs in minimal containers of the distributions the app supports (the
+# payload mounted read-only, an ordinary user), so a library the payload assumes but a
+# system lacks fails here. ffmpeg is the distribution's: the runner and each container
+# install their own, and `maktaba-server ffmpeg` must take Ubuntu's and Debian's and refuse
+# Fedora's ffmpeg-free (no libx264) with the RPM Fusion command. Then e2e.sh runs the server
+# the way the app installs it, as the runner's systemd user unit, on the runner's ffmpeg.
+# Unsigned: the updater signature comes with desktop-release.yml.
 
 name: Linux app
 
@@ -63,7 +66,7 @@ jobs:
           pnpm -C web install --frozen-lockfile
           pnpm -C apps/desktop install --frozen-lockfile
           sudo apt-get update -qq
-          sudo apt-get install -y -qq patchelf zip shellcheck libarchive-tools rpm \
+          sudo apt-get install -y -qq patchelf zip shellcheck libarchive-tools rpm ffmpeg \
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 
       - uses: dtolnay/rust-toolchain@stable
@@ -102,18 +105,26 @@ jobs:
 
       # an ordinary user with a passwd entry (initdb looks the user up), the
       # runner's uid so the read-only checkout is theirs; coreutils' chroot
-      # --userspec drops root in every image (minimal Ubuntu has no runuser)
+      # --userspec drops root in every image (minimal Ubuntu has no runuser).
+      # Each image installs its distribution's ffmpeg first, and check.sh is told
+      # what the server must say of it.
       - name: Check it in minimal containers
         run: |
           set -euo pipefail
-          for image in ubuntu:22.04 debian:12-slim fedora:40; do
-            echo "::group::$image"
-            docker run --rm -v "$PWD:$PWD:ro" -w "$PWD" -e UID_GID="$(id -u):$(id -g)" "$image" bash -c '
+          for spec in "ubuntu:22.04 ok" "debian:12-slim ok" "fedora:40 lacks"; do
+            image="${spec% *}" want="${spec#* }"
+            echo "::group::$image (its ffmpeg: $want)"
+            docker run --rm -v "$PWD:$PWD:ro" -w "$PWD" -e UID_GID="$(id -u):$(id -g)" -e WANT="$want" "$image" bash -c '
               set -e
+              if command -v apt-get >/dev/null; then
+                apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ffmpeg >/dev/null
+              else
+                dnf install -y -q ffmpeg-free >/dev/null
+              fi
               groupadd -g "${UID_GID#*:}" ci 2>/dev/null || true
               useradd -m -u "${UID_GID%%:*}" -g "${UID_GID#*:}" ci
               exec chroot --skip-chdir --userspec="$UID_GID" / env HOME=/home/ci USER=ci \
-                bash tools/release/linux-app/check.sh --payload build/linux-app/server'
+                bash tools/release/linux-app/check.sh --payload build/linux-app/server --ffmpeg "$WANT"'
             echo "::endgroup::"
           done
 

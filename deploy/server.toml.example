@@ -9,10 +9,14 @@
 #   Linux   : $XDG_CONFIG_HOME/maktaba/server.toml (default
 #             ~/.config/maktaba/server.toml)
 #   Windows : %LOCALAPPDATA%\Maktaba\server.toml (keys in keys\, data in data\,
-#             models, chroma and caches beside data\; logs in logs\). An install
-#             from before (in %APPDATA%\Maktaba) moves there once, on the next
-#             command, unless it runs inside the Windows app (whose setup moves
-#             an earlier install in instead).
+#             models, chroma and caches beside data\; logs in logs\). For an
+#             install from before, the next command copies its server.toml and keys
+#             there from %APPDATA%\Maktaba and keeps the originals (older versions
+#             still read them; the copies are used from then on); its node.json
+#             stays in %APPDATA%\Maktaba (one per machine, never copied), and its
+#             models, caches and Postgres stay in data\, where they were.
+#             Inside the Windows app nothing is copied: its setup moves an earlier
+#             install in instead, and keeps the old one for going back.
 # Override with the MAKTABA_CONFIG environment variable.
 
 [server]
@@ -75,6 +79,15 @@ roots = ["/mnt/videos", "/mnt/movies"]
 # ("<stored prefix>=<local prefix>", comma separated): MAKTABA_PATH_MAP for
 # every role, MAKTABA_WORKER_PATH_MAP for the pipeline.
 # path_map = "/Volumes/Originals/=/Users/me/nas-nfs/"
+# The ffmpeg and ffprobe every role runs: a full path, or a name on the PATH.
+# Empty (default): $MAKTABA_FFMPEG / $MAKTABA_FFPROBE, else the app's own (the Mac
+# and Windows apps carry one), else the PATH's: on Linux the distribution's
+# (FFmpeg 4.4 or later with libx264: Fedora's and openSUSE's own lack it, RPM
+# Fusion's and Packman's have it). An empty ffprobe is the one beside ffmpeg.
+# Setup's check, `maktaba-server ffmpeg` and the System health page say whether
+# the one found does what Maktaba needs, and on Linux the command that installs it.
+# ffmpeg = "/usr/bin/ffmpeg"
+# ffprobe = "/usr/bin/ffprobe"
 
 [transcription]
 # The Whisper model (a Hugging Face repo or a folder): MAKTABA_STT_MODEL. Empty,

@@ -37,15 +37,25 @@ func AppBundle() string {
 // executable with its links resolved (the app runs its setup steps with the
 // payload's server directly, without the launcher).
 func InAppPayload(exe string) bool {
-	if AppBundle() != "" {
-		return true
+	return AppPayload(exe) != ""
+}
+
+// AppPayload is the desktop app's server payload this maktaba-server runs from
+// (InAppPayload), "" outside one: AppBundle, else the folder above the bin of
+// exe when payload.json is there.
+func AppPayload(exe string) string {
+	if p := AppBundle(); p != "" {
+		return p
 	}
 	if exe == "" {
-		return false
+		return ""
 	}
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
-	_, err := os.Stat(filepath.Join(filepath.Dir(filepath.Dir(exe)), "payload.json"))
-	return err == nil
+	dir := filepath.Dir(filepath.Dir(exe))
+	if _, err := os.Stat(filepath.Join(dir, "payload.json")); err != nil {
+		return ""
+	}
+	return dir
 }

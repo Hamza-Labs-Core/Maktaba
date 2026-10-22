@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -163,6 +164,10 @@ func (r *checkResult) Warn(code, message string, kv ...any) {
 // records its problems and warnings.
 var platformChecks []func(ctx context.Context, res *checkResult)
 
+// foreignNodeConfig is the roaming profile's node config when another PC claimed
+// it (config.LocalForeignNodeConfig; tests replace it).
+var foreignNodeConfig = config.LocalForeignNodeConfig
+
 // hostFacts are what check reads about this machine (tests replace it).
 var hostFacts = func(dir string) (ram, disk uint64) {
 	return hostinfo.TotalMemory(), hostinfo.FreeDisk(dir)
@@ -235,6 +240,15 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 	}
 	for _, check := range platformChecks {
 		check(s.ctx, &res)
+	}
+	// Epic 39: on Linux the distribution's ffmpeg (the app carries none there)
+	if ffmpegInCheck {
+		checkFFmpeg(s.ctx, s.cfg, &res)
+	}
+	// Epic 38 story 38.1: the roaming profile's node settings are another PC's (their
+	// machine_id), so this machine runs as no home's machine until it joins as its own
+	if p, owner := foreignNodeConfig(); p != "" && !config.LocalNodeConfig().Joined() {
+		res.Warn("node_config_other_pc", config.ForeignNodeLine(p, owner), "path", p, "owner", owner)
 	}
 
 	exe, _ := os.Executable()
