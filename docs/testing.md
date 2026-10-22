@@ -31,7 +31,8 @@ run every test for ad-hoc debugging.
 
 ## Per-test soft caps (AC4)
 
-A test that exceeds its tier's soft cap **warns**; >3× the cap **fails**:
+A test that exceeds its tier's soft cap **warns**; >3× the cap (the
+hard cap) **fails**:
 
 | Tier | Soft cap | Hard cap |
 |---|---|---|
@@ -103,7 +104,25 @@ pytest's auto-cleanup.
 
 `tools/test-budget/` is a small Go program that consumes
 `go test -json` and asserts both the per-package budget and the
-per-test hard cap. Wrapped by `tools/test-budget.sh`:
+per-test hard cap (3× `UNIT_PER_TEST_SOFT_CAP`, the Makefile's
+400 ms, so 1.2 s: the Go unit tier runs under `-race`).
+
+The unit tier runs each module's packages in parallel under `-race`,
+so a test's elapsed time is partly the runner's load, not its own
+work. A test that passed but took longer than the hard cap is
+therefore re-run once, alone: the same `go test` flags, `-p 1`, and
+`-run` anchored to exactly that test (each `/`-separated level of a
+subtest name quoted and anchored) in its package. The build fails only
+if the test is past the hard cap alone too, fails alone, or is not
+reported. A breach that does not repeat becomes a `::warning::` naming
+the test and both timings, so a test drifting toward the cap stays
+visible. A serial subtest that breaches with its parent is settled by
+the parent's re-run. More than 10 tests to re-run in one module is a
+slowdown, not the runner: every breach fails and none is re-run. A
+test that failed is not re-run; `go test` fails the build, as always.
+This re-times a passing test; it never retries a failing one.
+
+Wrapped by `tools/test-budget.sh`:
 
 ```bash
 # Unit tier — per-package budget + per-test hard cap.
@@ -126,7 +145,8 @@ visible failure.
 
 The GitHub Actions matrix at `.github/workflows/ci.yml` runs the
 four tiers in parallel jobs. The test-budget enforcer fails the job
-on a soft-cap or wall-clock breach, so a regression doesn't silently
+on a hard-cap breach that repeats when re-run alone, or a wall-clock
+breach, so a regression doesn't silently
 push the merge gate over its 20-minute budget.
 
 ## See also
