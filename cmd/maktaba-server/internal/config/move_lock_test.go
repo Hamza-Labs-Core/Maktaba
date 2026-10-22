@@ -16,9 +16,10 @@ import (
 //
 //	hold - take the move lock in MAKTABA_TEST_MOVE_ROOT, write <root>/held, and keep
 //	       the lock until <root>/release appears
-//	move - write <base>/ready-<pid>; once <base>/go appears, move the Windows install under
-//	       MAKTABA_TEST_MOVE_BASE (winLayoutAt), every rename between its folders
-//	       failing as between volumes, and print the lines
+//	move - write <base>/ready-<pid>; once <base>/go appears, copy the Windows install
+//	       under MAKTABA_TEST_MOVE_BASE (winLayoutAt) into its new place, every
+//	       rename between its folders failing as between volumes, and print the
+//	       lines
 func moveChild(mode string) int {
 	switch mode {
 	case "hold":
@@ -53,7 +54,7 @@ func moveChild(mode string) int {
 			time.Sleep(5 * time.Millisecond)
 		}
 		old, cur, env := winLayoutAt(base)
-		lines, err := migrateWindows(volumes(old.Config, cur.Config, cur.Data), old, cur,
+		lines, err := migrateWindows(volumes(old.Config, cur.Config), old, cur,
 			func(k string) string { return env[k] }, 20*time.Second)
 		for _, l := range lines {
 			fmt.Println(l)
@@ -119,20 +120,19 @@ func TestMoveLockAcrossProcesses(t *testing.T) {
 	}
 }
 
-// Two starts at once (a serve and a setup step after an update) move an install
-// once between them: every piece is moved by one of them, whole, and neither fails.
-func TestTwoStartsMoveOnce(t *testing.T) {
+// Two starts at once (a serve and a setup step after an update) copy an install
+// once between them: every piece is copied by one of them, whole, the originals
+// stay, and neither fails.
+func TestTwoStartsCopyOnce(t *testing.T) {
 	base := t.TempDir()
 	old, cur, _ := winLayoutAt(base)
-	writeAt(t, filepath.Join(old.Config, "server.toml"), "[server]\n")
-	writeAt(t, filepath.Join(old.Config, "secrets.key"), "S")
-	writeAt(t, filepath.Join(old.Config, "stream-signing.key"), "K")
-	writeAt(t, filepath.Join(old.Config, "node.json"), "{}")
-	models := map[string]string{}
-	for i := range 20 {
-		models[fmt.Sprintf("hub/m%02d.bin", i)] = strings.Repeat(fmt.Sprint(i%10), 64<<10)
+	originals := map[string]string{
+		"server.toml":        "[server]\n" + strings.Repeat("# a long comment\n", 64<<10), // a copy that takes a while
+		"secrets.key":        "S",
+		"stream-signing.key": "K",
+		"node.json":          "{}",
 	}
-	plant(t, filepath.Join(old.Data, "models"), models)
+	plant(t, old.Config, originals)
 
 	type run struct {
 		cmd            *exec.Cmd
@@ -163,22 +163,18 @@ func TestTwoStartsMoveOnce(t *testing.T) {
 			}
 		}
 	}
-	moved := 0
+	copied := 0
 	for _, l := range lines {
-		if strings.HasPrefix(l, "Moved ") {
-			moved++
+		if strings.HasPrefix(l, "Copied ") {
+			copied++
 		}
 	}
-	if moved != 5 || len(lines) != 5 {
-		t.Fatalf("want each of the 5 pieces moved once:\n%s", strings.Join(lines, "\n"))
+	if copied != 3 || len(lines) != 3 {
+		t.Fatalf("want each of the 3 pieces copied once:\n%s", strings.Join(lines, "\n"))
 	}
-	root := filepath.Dir(cur.Data)
-	holds(t, filepath.Join(root, "models"), models)
 	holds(t, cur.Keys, map[string]string{"secrets.key": "S", "stream-signing.key": "K"})
-	if readAt(t, filepath.Join(cur.Config, "node.json")) != "{}" || readAt(t, filepath.Join(cur.Config, "server.toml")) != "[server]\n" {
-		t.Fatal("server.toml and node.json must be in the new place")
+	if readAt(t, filepath.Join(cur.Config, "server.toml")) != originals["server.toml"] || exists(filepath.Join(cur.Config, "node.json")) {
+		t.Fatal("server.toml must be whole in the new place, and node.json never copied")
 	}
-	if exists(filepath.Join(old.Data, "models")) || exists(filepath.Join(root, "models"+movingSuffix)) {
-		t.Fatal("the old models folder and the note must be gone")
-	}
+	holds(t, old.Config, originals)
 }

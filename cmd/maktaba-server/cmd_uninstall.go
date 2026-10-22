@@ -57,26 +57,26 @@ func runUninstall(purge bool) error {
 		removeIfExists(f, "service file")
 	}
 
+	exe, _ := os.Executable()
 	if removeConfig {
-		path := config.Path()
-		removeIfExists(path, "config")
-		// a Mac keeps the key files in keys/ beside it (Epic 36 story 36.2)
-		if keys := config.KeysDir(); keys != filepath.Dir(path) {
-			removeTreeIfExists(keys, "keys dir")
-		}
-		// Remove the now-(maybe)-empty config dir.
-		_ = os.Remove(filepath.Dir(path))
+		purgeConfig(config.Path(), config.KeysDir(), config.WindowsOriginals(exe))
 	}
 
 	if removeData {
+		// read before the data goes: on Windows the state root is recorded (StateDir)
+		root := cfg.StateDir()
 		if cfg.Server.DataDir != "" {
 			removeTreeIfExists(cfg.Server.DataDir, "data dir")
 		}
-		// on a Mac the large state sits beside data/ (config.StateDir)
-		if root := cfg.StateDir(); root != cfg.Server.DataDir {
+		// on a Mac, and a Windows install of Epic 38 on, the large state sits beside
+		// data/ (config.StateDir)
+		if root != cfg.Server.DataDir {
 			for _, d := range []string{"models", "chroma", "cache", "postgres", "backups"} {
 				removeTreeIfExists(filepath.Join(root, d), d)
 			}
+		}
+		if rec := config.StateRecordPath(exe); rec != "" {
+			removeIfExists(rec, "state root record")
 		}
 	}
 
@@ -150,6 +150,25 @@ func serviceFiles() []string {
 		return out
 	default:
 		return nil
+	}
+}
+
+// purgeConfig removes server.toml (path), the keys directory when it is not the
+// config's own folder (a Mac's and Windows' keys/), the folder when that leaves it
+// empty, and on Windows the originals of an install from before Epic 38 that the
+// first command copied (config.WindowsOriginals): left behind, the next install's
+// first command would copy them back.
+func purgeConfig(path, keys string, originals []string) {
+	removeIfExists(path, "config")
+	if keys != filepath.Dir(path) {
+		removeTreeIfExists(keys, "keys dir")
+	}
+	for _, p := range originals {
+		removeIfExists(p, "config from before Epic 38")
+	}
+	_ = os.Remove(filepath.Dir(path))
+	for _, p := range originals {
+		_ = os.Remove(filepath.Dir(p)) // %APPDATA%\Maktaba, once nothing is left in it
 	}
 }
 

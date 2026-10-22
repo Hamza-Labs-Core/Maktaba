@@ -208,6 +208,19 @@ def test_a_file_that_is_not_the_pinned_one_is_removed_and_refused(tmp_path: Path
     assert not (snap / engine.VERIFIED).exists()
 
 
+def test_a_mismatch_names_the_hashes_before_the_folder(tmp_path: Path) -> None:
+    """A model's state and the logs cut a message at 300 characters: the hashes come
+    first, so a long folder path (on Windows) cuts only itself."""
+    snap, pin = _pinned(tmp_path, {"model.bin": b"weights"})
+    (snap / "model.bin").write_bytes(b"something else")
+    with pytest.raises(engine.PinMismatch) as e:
+        engine.verify(snap, pin)
+    got = hashlib.sha256(b"something else").hexdigest()
+    message = str(e.value)
+    assert message.startswith(f"model.bin has SHA-256 {got}, not {pin.sha256['model.bin']}")
+    assert message.endswith(f"in {snap}")
+
+
 def test_the_model_is_fetched_at_its_pin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import huggingface_hub
 
@@ -259,5 +272,5 @@ def test_models_download_fetches_whisper_at_its_pin_and_checks_it(
     (snap / "model.bin").write_bytes(b"tampered")
     whisper = fetch_cli.items({"whisper"})[0]
     fetch_cli._download(whisper, out, None)
-    assert whisper.state == "failed" and "not" in whisper.message
+    assert whisper.state == "failed" and pin.sha256["model.bin"] in whisper.message
     assert not (snap / fetch_cli.COMPLETE).exists()
