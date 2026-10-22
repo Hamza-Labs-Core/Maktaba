@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 )
 
@@ -61,6 +62,12 @@ func LLMURL(cfg config.Config) string {
 // (its "llm" field) and at GET /llm.
 func WithLLM(status func() llmserver.Status) Option {
 	return func(s *Supervisor) { s.llm = status }
+}
+
+// WithFFmpeg serves the last check of the ffmpeg every role runs
+// (ffmpeg.Watch) in the snapshot (its "ffmpeg" field).
+func WithFFmpeg(report func() *ffmpeg.Report) Option {
+	return func(s *Supervisor) { s.ffmpeg = report }
 }
 
 // llmHandler: GET /llm, the model server's state; 200 when it is ready (up,

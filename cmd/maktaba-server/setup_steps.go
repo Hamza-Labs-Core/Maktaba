@@ -241,6 +241,10 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 	for _, check := range platformChecks {
 		check(s.ctx, &res)
 	}
+	// Epic 39: on Linux the distribution's ffmpeg (the app carries none there)
+	if ffmpegInCheck {
+		checkFFmpeg(s.ctx, s.cfg, &res)
+	}
 	// a node of a home already runs here outside the app: a fresh setup would be
 	// a second copy of it (Epic 38 story 38.13; the welcome screen offers its move)
 	if code, msg, kv := nodeHere(); code != "" {

@@ -177,6 +177,17 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Changed
 
+- **The Linux app runs the distribution's ffmpeg** (Epic 39). The Linux server payload carries no
+  ffmpeg any more (the builds it pinned were configured `--enable-nonfree`), and `payload.sh` drops
+  every download `pins.env` no longer pins from its cache. The ffmpeg every role runs is
+  `[media] ffmpeg` / `ffprobe` in `server.toml` (new), else `MAKTABA_FFMPEG` / `MAKTABA_FFPROBE`,
+  else the Mac's or Windows' app's own, else the PATH's, and all roles get that one. Setup's check
+  (Linux), the new `maktaba-server ffmpeg` and the System health page say whether it does what
+  Maktaba needs (FFmpeg 4.4 or later with libx264, AAC and the filters and formats the TV and the
+  pipeline use, ffprobe beside it, and an H.264/AAC encode through `speechnorm` that works) and,
+  when not, the command that installs the right one for the distribution: apt, dnf with RPM
+  Fusion (Fedora's and EPEL's `ffmpeg-free` has no libx264), zypper with Packman, pacman. It also
+  warns when chromaprint (the audio fingerprints) or https:// sources are missing.
 - **Every role stops cleanly on Windows.** The supervisor starts each child in a process group of
   its own and asks it to stop with CTRL_BREAK (the Go roles drain on it as they do on SIGTERM, the
   pipeline on `SIGBREAK`); a child is killed with its process tree only once the shutdown grace
@@ -241,6 +252,12 @@ don't append a line here; docs-only PRs are exempt.
   (new table `relisten_seen` and columns on `relisten_attempts`, slot 0146). A try that found no
   room on the GPU no longer counts (follow-up of story 38.9). Deleted and missing
   videos are no longer tried, and the stop note keeps its reason on long Windows paths.
+- **The Linux runtime copy orders versions as everything else does.** It kept its own reading of
+  `git describe` builds, so a dirty build of a tag ranked above the next commit's build and a dirty
+  build equalled the clean one: it now uses the one order (`v0.2.0` < `v0.2.0-dirty` <
+  `v0.2.0-1-g…` < `v0.2.0-1-g…-dirty`). The self-managed layout's order also puts a version that is
+  no release (`dev`) below every release, as the release verifier does, and compares prerelease
+  names whatever their case.
 - **`[server] role = "home"` (or `MAKTABA_ROLE=home`) runs no role as a node.** The supervisor
   only left the node's variables out, while streaming and the pipeline read the node config
   themselves: beside a joined `node.json` (on Windows another install's, through the roaming
