@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"time"
 )
 
@@ -71,14 +72,16 @@ func ReadKeyFile(path string) (string, *rsa.PublicKey, error) {
 }
 
 // NewKeyFileCache is a key cache holding the machine's stream key. The API
-// creates the file on its first start, which may come after this process
-// starts: until the file reads, every signed URL is refused and the file is
-// retried every interval (until ctx ends).
+// creates the file as it starts, which may come after this process starts: a
+// signed URL naming a key not read yet reads the file again at once (at most
+// every reloadEvery), so the first playback after a start is not refused, and
+// until the file reads it is also retried every interval (until ctx ends).
 func NewKeyFileCache(ctx context.Context, path string, interval time.Duration, onLoad func(kid string)) *JWKSCache {
 	c := &JWKSCache{keys: map[string]*rsa.PublicKey{}, refresh: interval}
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
+	var loaded atomic.Value // the kid read last (said once each)
 	load := func() bool {
 		kid, pub, err := ReadKeyFile(path)
 		if err != nil {
@@ -86,11 +89,13 @@ func NewKeyFileCache(ctx context.Context, path string, interval time.Duration, o
 			return false
 		}
 		c.Set(map[string]*rsa.PublicKey{kid: pub})
-		if onLoad != nil {
+		if prev, _ := loaded.Swap(kid).(string); prev != kid && onLoad != nil {
 			onLoad(kid)
 		}
 		return true
 	}
+	// a token naming a key not read yet reads the file again at once (Lookup)
+	c.reload = load
 	if load() {
 		return c
 	}
