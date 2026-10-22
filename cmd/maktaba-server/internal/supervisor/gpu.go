@@ -3,6 +3,7 @@ package supervisor
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -11,18 +12,38 @@ import (
 )
 
 // GPU is the NVIDIA GPU a CTranslate2 transcription worker runs on (story 38.8):
-// the first one nvidia-smi lists, which is CUDA device 0, the one the pipeline
-// uses unless [transcription] device names another.
+// the first one nvidia-smi lists, which is CUDA device 0 (the pipeline numbers them
+// as nvidia-smi does), the one the pipeline uses unless [transcription] device names
+// another. Story 38.9: its compute capability and driver, which the second listen
+// needs (0 and "": an older nvidia-smi that does not say).
 type GPU struct {
-	Name      string
-	MemoryMiB int
+	Name         string
+	MemoryMiB    int
+	ComputeMajor int
+	ComputeMinor int
+	Driver       string
+}
+
+// DriverMajor is the driver's branch (580 of "580.88"); 0 when unknown.
+func (g GPU) DriverMajor() int {
+	head, _, _ := strings.Cut(g.Driver, ".")
+	n, err := strconv.Atoi(strings.TrimSpace(head))
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // MemoryGB is the GPU's memory in GiB.
 func (g GPU) MemoryGB() float64 { return float64(g.MemoryMiB) / 1024 }
 
-// nvidiaSMIQuery is what PlanSTT asks nvidia-smi: one "name, MiB" line per GPU.
-var nvidiaSMIQuery = []string{"--query-gpu=name,memory.total", "--format=csv,noheader,nounits"}
+// nvidiaSMIQuery is what PlanSTT asks nvidia-smi: one "name, MiB, compute
+// capability, driver" line per GPU; nvidiaSMIFallback what it asks an nvidia-smi too
+// old for compute_cap (before R510), which knows the driver_version field.
+var (
+	nvidiaSMIQuery    = []string{"--query-gpu=name,memory.total,compute_cap,driver_version", "--format=csv,noheader,nounits"}
+	nvidiaSMIFallback = []string{"--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"}
+)
 
 // nvidiaSMITimeout bounds the query: a wedged driver can leave nvidia-smi hanging,
 // and the supervisor must start anyway (on the CPU plan).
@@ -35,16 +56,27 @@ var nvidiaSMI = func() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), nvidiaSMITimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, nvidiaSMIQuery...)
-	hideWindow(cmd)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
+	ask := func(query []string) ([]byte, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), nvidiaSMITimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, bin, query...)
+		hideWindow(cmd)
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		err := cmd.Run()
+		if ctx.Err() != nil {
+			return nil, ctx.Err() // wedged: no second try
+		}
+		return out.Bytes(), err
+	}
+	out, err := ask(nvidiaSMIQuery)
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		out, err = ask(nvidiaSMIFallback)
+	}
+	if err != nil {
 		return nil, err
 	}
-	return out.Bytes(), nil
+	return out, nil
 }
 
 // nvidiaSMIPath finds nvidia-smi on PATH, else where the driver installs it
@@ -63,18 +95,40 @@ func nvidiaSMIPath() (string, error) {
 }
 
 // parseNvidiaSMI reads the query's first line ("NVIDIA GeForce RTX 2080 SUPER,
-// 8192"); false when there is no GPU in it.
+// 8192, 7.5, 616.64", or the fallback's "name, MiB, driver", or just "name, MiB");
+// false when there is no GPU in it. A field it cannot read stays unknown.
 func parseNvidiaSMI(out []byte) (GPU, bool) {
 	for _, line := range strings.Split(string(out), "\n") {
-		name, mem, ok := strings.Cut(strings.TrimSpace(line), ",")
-		if !ok {
+		f := strings.Split(strings.TrimSpace(line), ",")
+		if len(f) < 2 {
 			continue
 		}
-		mib, err := strconv.Atoi(strings.TrimSpace(mem))
+		for i := range f {
+			f[i] = strings.TrimSpace(f[i])
+		}
+		mib, err := strconv.Atoi(f[1])
 		if err != nil || mib <= 0 {
 			continue
 		}
-		return GPU{Name: strings.TrimSpace(name), MemoryMiB: mib}, true
+		g := GPU{Name: f[0], MemoryMiB: mib}
+		driver := ""
+		switch len(f) {
+		case 3:
+			driver = f[2]
+		case 4:
+			if major, minor, ok := strings.Cut(f[2], "."); ok {
+				a, errA := strconv.Atoi(major)
+				b, errB := strconv.Atoi(minor)
+				if errA == nil && errB == nil {
+					g.ComputeMajor, g.ComputeMinor = a, b
+				}
+			}
+			driver = f[3]
+		}
+		if driver != "" && driver != "[N/A]" {
+			g.Driver = driver
+		}
+		return g, true
 	}
 	return GPU{}, false
 }

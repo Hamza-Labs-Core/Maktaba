@@ -70,6 +70,10 @@ def _fake_hub(
 ) -> list[tuple[str, bool]]:
     calls: list[tuple[str, bool]] = []
     cached = set() if cached is None else cached
+    # its snapshots hold no files: the pinned check is test_ct2_gpu_memory.py's
+    from maktaba_pipeline.stt import engine
+
+    monkeypatch.setattr(engine, "verify", lambda snap, pin: None)
 
     def download(
         item: fetch_cli.Item, on_bytes: Callable[[int, int], None], local_only: bool
@@ -278,12 +282,13 @@ def test_items_on_ctranslate2_are_what_its_workers_load(
     on_ct2: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from maktaba_pipeline.stt import engine
+    from tests.conftest import NO_TEST_GPU
 
     its = {i.name: i for i in fetch_cli.items()}
     assert its["whisper"].model == "dropbox-dash/faster-whisper-large-v3-turbo"
     assert its["whisper"].allow_patterns == engine.CT2_FILES
-    # no second listen on this engine: neither its model nor its dictionary
-    assert its["cohere"].skip and "Apple Silicon" in its["cohere"].skip
+    # no GPU for the second listen here: neither its model nor its dictionary, and why
+    assert its["cohere"].skip == NO_TEST_GPU
     assert its["dictionary"].skip == its["cohere"].skip
     assert its["embedder"].skip is None
     # an MLX model in server.toml: the CTranslate2 conversion the worker loads instead
@@ -332,3 +337,84 @@ def test_download_on_ctranslate2_fetches_the_engine_s_files_and_skips_the_rest(
     code, events = _run(capsys, "status")
     assert code == fetch_cli.EXIT_OK
     assert _final(events)["whisper"]["source"] == "cache"
+
+
+@pytest.fixture
+def gpu_for_the_second_listen(on_ct2: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Windows or Linux machine whose NVIDIA GPU holds the second listen (story 38.9)."""
+    from maktaba_pipeline.stt import cohere_cuda
+
+    monkeypatch.setattr(cohere_cuda, "_gpu_problem", lambda _index: None)
+
+
+def test_items_with_a_gpu_for_the_second_listen(gpu_for_the_second_listen: None) -> None:
+    from maktaba_pipeline.stt import cohere_cuda
+
+    its = {i.name: i for i in fetch_cli.items()}
+    assert its["cohere"].skip is None and its["cohere"].gated
+    # the files transformers loads, not the repo's code or its example recordings
+    assert its["cohere"].allow_patterns == cohere_cuda.ALLOW_PATTERNS
+    assert its["dictionary"].skip is None
+
+
+def test_items_ask_the_gpu_only_for_the_second_listen(
+    on_ct2: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maktaba_pipeline.stt import cohere
+
+    monkeypatch.setattr(cohere, "unavailable", lambda *_a: pytest.fail("asked the GPU"))
+    assert [i.name for i in fetch_cli.items({"whisper", "embedder"})] == ["whisper", "embedder"]
+
+
+def test_download_with_a_gpu_fetches_the_second_listen_too(
+    gpu_for_the_second_listen: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from maktaba_pipeline.stt import cohere_cuda
+
+    patterns: dict[str, list[str] | None] = {}
+    _fake_hub(monkeypatch, tmp_path)
+    fake = fetch_cli.hf_download
+
+    def download(
+        item: fetch_cli.Item, on_bytes: Callable[[int, int], None], local_only: bool
+    ) -> Path:
+        patterns[item.name] = item.allow_patterns
+        return fake(item, on_bytes, local_only)
+
+    monkeypatch.setattr(fetch_cli, "hf_download", download)
+    code, events = _run(capsys, "download")
+    assert code == fetch_cli.EXIT_OK
+    assert {n: e["state"] for n, e in _final(events).items()} == dict.fromkeys(
+        fetch_cli.NAMES, "ready"
+    )
+    assert patterns["cohere"] == cohere_cuda.ALLOW_PATTERNS
+
+
+def test_a_gpu_without_access_to_the_gated_model_asks_for_a_login(
+    gpu_for_the_second_listen: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _fake_hub(monkeypatch, tmp_path, refuse={COHERE})
+    code, events = _run(capsys, "download")
+    assert code == fetch_cli.EXIT_NEEDS_LOGIN
+    assert _final(events)["cohere"]["state"] == "needs_login"
+
+
+def test_no_gpu_for_the_second_listen_never_asks_for_a_login(
+    on_ct2: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A model that will never run here is not the gated sign-in's business."""
+    _fake_hub(monkeypatch, tmp_path, refuse={COHERE})
+    code, events = _run(capsys, "download")
+    assert code == fetch_cli.EXIT_OK
+    final = _final(events)
+    assert final["cohere"]["state"] == "skipped" and final["cohere"]["message"]
+    assert final["dictionary"]["state"] == "skipped"

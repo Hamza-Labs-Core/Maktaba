@@ -73,6 +73,9 @@ func fakeChild(mode string) {
 		if err != nil {
 			code = 7
 		}
+		if out := os.Getenv("FAKE_STDOUT"); out != "" {
+			fmt.Println(out)
+		}
 		os.Exit(code)
 	case "exit0":
 		os.Exit(0)

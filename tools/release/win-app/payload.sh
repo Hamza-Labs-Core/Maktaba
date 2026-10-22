@@ -8,7 +8,9 @@
 #                                         the Visual C++ runtime beside postgres.exe
 #   ffmpeg\    ffmpeg.exe ffprobe.exe     static
 #   python\    CPython 3.12               python-build-standalone, stdlib precompiled
-#   pipeline\  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt
+#   pipeline\  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt constraints-cuda.txt
+#              (the two pin sets: torch's CPU build, PyPI's; its CUDA build, which the first
+#              run's venv bootstrap takes when the NVIDIA GPU runs the second listen)
 #   migrations\                          the database's schema (shared/db/migrations):
 #                                         maktaba-api finds them beside its bin\
 #   licenses\  the third-party licences and where their sources are
@@ -275,9 +277,14 @@ fi
 "$REPO_ROOT/deploy/packaging/node/build-release.sh" --version "$pyver" --out "$WORK/node" >/dev/null
 whl=("$WORK"/node/maktaba_pipeline-*-py3-none-any.whl)
 cons=("$WORK"/node/maktaba-pipeline-*-constraints.txt)
+cons_cuda=("$WORK"/node/maktaba-pipeline-*-constraints-cuda.txt)
 if [ "${#whl[@]}" -ne 1 ] || [ ! -f "${whl[0]}" ]; then die "expected one pipeline wheel"; fi
+[ -f "${cons_cuda[0]}" ] || die "expected the cuda constraints (build-release.sh)"
 cp "${whl[0]}" "$OUT/pipeline/"
 cp "${cons[0]}" "$OUT/pipeline/constraints.txt"
+# story 38.9: torch's CUDA build, for a PC whose NVIDIA GPU runs the second listen (the
+# bootstrap picks it from the payload by itself)
+cp "${cons_cuda[0]}" "$OUT/pipeline/constraints-cuda.txt"
 
 # --- the database's migrations: setup's finish and the api's auto-migrate run in the user's
 # data (%LOCALAPPDATA%\Maktaba), never a checkout, so the payload carries them (maktaba-api:
@@ -296,6 +303,7 @@ P_FF_VERSION="$FFMPEG_VERSION" P_FF_URL="$FFMPEG_URL" P_FF_SHA="$FFMPEG_SHA256" 
 P_PY_VERSION="$PYTHON_VERSION" P_PY_URL="$PYTHON_URL" P_PY_SHA="$PYTHON_SHA256" \
 P_WHEEL="$WHEEL_NAME" P_WHEEL_SHA="$(sha256 "$OUT/pipeline/$WHEEL_NAME")" \
 P_CONS_SHA="$(sha256 "$OUT/pipeline/constraints.txt")" \
+P_CONS_CUDA_SHA="$(sha256 "$OUT/pipeline/constraints-cuda.txt")" \
 "$PY" -I - "$(win "$OUT/payload.json")" <<'EOF'
 import json, os, sys
 e = os.environ
@@ -310,7 +318,8 @@ doc = {
     "ffmpeg": {"version": e["P_FF_VERSION"], "source": e["P_FF_URL"], "sha256": e["P_FF_SHA"],
                "ffprobe_source": e["P_FF_URL"], "ffprobe_sha256": e["P_FF_SHA"]},
     "python": {"version": e["P_PY_VERSION"], "source": e["P_PY_URL"], "sha256": e["P_PY_SHA"]},
-    "pipeline": {"wheel": e["P_WHEEL"], "sha256": e["P_WHEEL_SHA"], "constraints_sha256": e["P_CONS_SHA"]},
+    "pipeline": {"wheel": e["P_WHEEL"], "sha256": e["P_WHEEL_SHA"], "constraints_sha256": e["P_CONS_SHA"],
+                 "constraints_cuda_sha256": e["P_CONS_CUDA_SHA"]},
 }
 with open(sys.argv[1], "w", encoding="utf-8", newline="\n") as f:
     json.dump(doc, f, indent=2)

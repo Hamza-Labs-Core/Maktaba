@@ -217,37 +217,137 @@ def load(path: Path | None = None) -> NodeConfig | None:
             try:
                 _write(path, {**data, "machine_id": this})
             except OSError as exc:
-                from ..log import get_logger
+                # the file stays as it was (_write never loses it) and the node runs on;
+                # the next start tries again
+                if str(path) not in _claim_failed:
+                    _claim_failed.add(str(path))
+                    from ..log import get_logger
 
-                get_logger().warning("node_config_claim_failed", path=str(path), error=str(exc))
+                    get_logger().warning("node_config_claim_failed", path=str(path), error=str(exc))
             else:
                 cfg = replace(cfg, machine_id=this)
     return cfg
 
 
+#: the node configs whose claim this process could not write (said once each)
+_claim_failed: set[str] = set()
+
+
 def _restrict_to_user(path: Path) -> None:
     """Windows: the file holds the home's database password; chmod means nothing there,
-    so its ACL is cut to the current user (inheritance off). Best effort: a failure is
-    logged, the file stays where the OS put it (the profile directory is per user)."""
-    import subprocess
-
-    user = os.environ.get("USERNAME")
-    if not user:
+    so its DACL is set to the user this process runs as and nothing else, inheritance
+    off (as maktaba-server's restrictToUser sets the keys'). The whole DACL is replaced:
+    removing inherited entries is not enough, since Python can create a temp file with
+    explicit ones (SYSTEM, Administrators). Best effort: a failure is logged, the file
+    stays where the OS put it (the profile directory is per user)."""
+    if sys.platform != "win32":
         return
     try:
-        subprocess.run(
-            ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
-            check=True, capture_output=True, timeout=15,
-        )  # fmt: skip
-    except (OSError, subprocess.SubprocessError) as exc:
+        _set_user_only_dacl(str(path))
+    except OSError as exc:
         from ..log import get_logger
 
         get_logger().warning("node_config_acl_failed", path=str(path), error=str(exc))
 
 
-def _replace_keeping_acl(path: Path, tmp: Path) -> None:
-    """Windows: put ``tmp`` in place of ``path`` with ReplaceFileW, which keeps the
-    replaced file's ACL (and its other attributes)."""
+def _set_user_only_dacl(path: str) -> None:
+    """SetNamedSecurityInfoW with a protected DACL that grants the process's user, by
+    its SID, full control, and no one else."""
+    if sys.platform != "win32":
+        raise OSError("a Windows call")
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    advapi32.OpenProcessToken.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.HANDLE),
+    ]
+    advapi32.GetTokenInformation.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.c_void_p,
+    ]
+    advapi32.GetSecurityDescriptorDacl.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(wintypes.BOOL),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.BOOL),
+    ]
+    advapi32.SetNamedSecurityInfoW.argtypes = [
+        wintypes.LPWSTR,
+        ctypes.c_int,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    ]
+    advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
+
+    def failed() -> OSError:
+        return ctypes.WinError(ctypes.get_last_error())
+
+    token_query, token_user = 0x0008, 1
+    token = wintypes.HANDLE()
+    if not advapi32.OpenProcessToken(
+        kernel32.GetCurrentProcess(), token_query, ctypes.byref(token)
+    ):
+        raise failed()
+    try:
+        size = wintypes.DWORD()
+        advapi32.GetTokenInformation(token, token_user, None, 0, ctypes.byref(size))
+        info = ctypes.create_string_buffer(size.value)
+        if not advapi32.GetTokenInformation(token, token_user, info, size, ctypes.byref(size)):
+            raise failed()
+        user_sid = ctypes.cast(info, ctypes.POINTER(ctypes.c_void_p))[0]  # TOKEN_USER.User.Sid
+        sid_text = wintypes.LPWSTR()
+        if not advapi32.ConvertSidToStringSidW(user_sid, ctypes.byref(sid_text)):
+            raise failed()
+        sid = sid_text.value
+        kernel32.LocalFree(sid_text)
+    finally:
+        kernel32.CloseHandle(token)
+
+    descriptor = ctypes.c_void_p()
+    if not advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        f"D:P(A;;FA;;;{sid})", 1, ctypes.byref(descriptor), None
+    ):
+        raise failed()
+    try:
+        present, defaulted, dacl = wintypes.BOOL(), wintypes.BOOL(), ctypes.c_void_p()
+        if not advapi32.GetSecurityDescriptorDacl(
+            descriptor, ctypes.byref(present), ctypes.byref(dacl), ctypes.byref(defaulted)
+        ):
+            raise failed()
+        se_file_object, dacl_info, protected_dacl_info = 1, 0x00000004, 0x80000000
+        err = advapi32.SetNamedSecurityInfoW(
+            path, se_file_object, dacl_info | protected_dacl_info, None, None, dacl, None
+        )
+        if err:
+            raise ctypes.WinError(err)
+    finally:
+        kernel32.LocalFree(descriptor)
+
+
+def _replace_file(path: Path, tmp: Path, backup: Path) -> None:
+    """ReplaceFileW: ``tmp`` takes the place (and the ACL) of ``path``, whose old file is
+    kept under ``backup``. Raises the Windows error (tests replace this call)."""
     if sys.platform != "win32":
         raise OSError("ReplaceFileW is a Windows call")
     import ctypes
@@ -263,8 +363,49 @@ def _replace_keeping_acl(path: Path, tmp: Path) -> None:
         wintypes.LPVOID,
     ]
     replace_file.restype = wintypes.BOOL
-    if not replace_file(str(path), str(tmp), None, 0, None, None):
+    if not replace_file(str(path), str(tmp), str(backup), 0, None, None):
         raise ctypes.WinError()
+
+
+def _replace_keeping_acl(path: Path, tmp: Path) -> None:
+    """Windows: put ``tmp`` in place of ``path`` keeping the replaced file's ACL (and its
+    other attributes), through ReplaceFileW with a backup name. ReplaceFileW can fail half
+    way (ERROR_UNABLE_TO_MOVE_REPLACEMENT_2: the old file under the backup name;
+    ERROR_UNABLE_TO_MOVE_REPLACEMENT without a backup name: the old file gone), so a
+    failure is settled before it is raised: the old file is put back, or, when it is gone,
+    the new one takes its name (limited to the user first). The only copy of a node's
+    identity is never removed. Raises when ``path`` holds the old file again; returns when
+    it holds the new one."""
+    backup = path.with_name(f".node-{os.getpid()}-{os.urandom(4).hex()}.bak")
+    try:
+        _replace_file(path, tmp, backup)
+    except OSError:
+        if not _settle(path, tmp, backup):
+            raise
+        return
+    with contextlib.suppress(OSError):
+        backup.unlink()
+
+
+def _settle(path: Path, tmp: Path, backup: Path) -> bool:
+    """After a failed ReplaceFileW: ``path`` holds the old file (put back from ``backup``
+    when the call left it there) or, when the old file is gone, the new one (``tmp``,
+    limited to the user before it gets the name). What is left over goes only once
+    ``path`` holds a whole file. True when the new file took the name."""
+    if not path.exists() and backup.exists():
+        with contextlib.suppress(OSError):
+            os.replace(backup, path)
+    if not path.exists() and tmp.exists():
+        _restrict_to_user(tmp)
+        os.replace(tmp, path)
+        with contextlib.suppress(OSError):
+            backup.unlink()
+        return True
+    if path.exists():
+        for left in (tmp, backup):
+            with contextlib.suppress(OSError):
+                left.unlink()
+    return False
 
 
 def _write(path: Path, data: Mapping[str, Any]) -> Path:
@@ -277,6 +418,7 @@ def _write(path: Path, data: Mapping[str, Any]) -> Path:
         with contextlib.suppress(OSError):
             os.chmod(path.parent, 0o700)
     body = json.dumps(dict(data), indent=2, sort_keys=True) + "\n"
+    existed = path.exists()
     fd, tmp = tempfile.mkstemp(prefix=".node-", suffix=".tmp", dir=path.parent)
     try:
         if os.name != "nt":
@@ -285,15 +427,18 @@ def _write(path: Path, data: Mapping[str, Any]) -> Path:
             fh.write(body)
             fh.flush()
             os.fsync(fh.fileno())
-        if sys.platform == "win32" and path.exists():
+        if sys.platform == "win32" and existed:
             _replace_keeping_acl(path, Path(tmp))
         else:
             if sys.platform == "win32":
                 _restrict_to_user(Path(tmp))
             os.replace(tmp, path)
     except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
+        # the temp file goes unless it is the only copy left (a node config that was
+        # there and is gone): then it stays for the next start
+        if path.exists() or not existed:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
         raise
     return path
 

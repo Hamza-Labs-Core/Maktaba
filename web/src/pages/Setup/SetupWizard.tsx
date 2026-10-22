@@ -5,7 +5,10 @@
 // check → admin account → library folders / NAS path map → models (Hugging
 // Face token for the gated Cohere model, or the NAS copy) → optional
 // Plex sign-in → install (pipeline venv, the models download, finish) →
-// the server starts.
+// the server starts. On a PC that already runs Maktaba outside the app
+// (Epic 38 story 38.13) welcome offers to move it in instead: its plan →
+// the move (venv, the old install stopped, its settings, keys and files
+// carried) → the models download → the server starts with them.
 //
 // Every screen runs one `maktaba-server setup --json` step through the
 // SetupApi (lib/desktopSetup.ts). Passwords and tokens are typed by the
@@ -27,13 +30,18 @@ import {
   formatBytes,
   isStepError,
   progressPercent,
+  type AdoptPlan,
+  type AdoptRecord,
+  type AdoptSource,
   type CheckNote,
+  type LoginItem,
   type Platform,
   type SetupApi,
   type StepError,
   type StepProgress,
 } from "../../lib/desktopSetup";
 import { ServerStarting } from "./ServerStarting";
+import { codedText, type Translate } from "./codedText";
 import { platformWords } from "./platform";
 
 export const PLEX_POLL_MS = 3000;
@@ -66,6 +74,7 @@ export type Screen =
   | "models"
   | "plex"
   | "install"
+  | "move"
   | "starting";
 const ORDER: Screen[] = ["check", "admin", "libraries", "models", "plex", "install"];
 
@@ -86,29 +95,6 @@ interface CheckResult {
 
 /** The platform's words ({machine}, {tray}) for every coded text. */
 const WordsContext = createContext<Record<string, string>>({});
-
-type Translate = (key: string, vars?: Record<string, string | number>) => string;
-
-/** The text of a step's code (`${prefix}.${code}`), its params in it (sizes
- * formatted) with the platform's words; the step's English when the app has
- * no text for the code. */
-export function codedText(
-  t: Translate,
-  prefix: string,
-  code: string,
-  params: Record<string, unknown> | undefined,
-  words: Record<string, string>,
-  english: string
-): string {
-  const key = `${prefix}.${code}`;
-  const vars: Record<string, string | number> = { ...words };
-  for (const [k, v] of Object.entries(params ?? {})) {
-    if (typeof v === "number") vars[k] = k.endsWith("_bytes") ? formatBytes(v) : v;
-    else if (v !== null && v !== undefined) vars[k] = String(v);
-  }
-  const text = t(key, vars);
-  return text === key ? english : text;
-}
 
 /** What will run, in the app's words: the pipeline by its number of
  * transcription workers and the GPU it transcribes on. */
@@ -218,6 +204,8 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
   const [screen, setScreen] = useState<Screen>(initial);
   const [serverAvailable, setServerAvailable] = useState(true);
   const [platform, setPlatform] = useState<Platform>("macos");
+  const [moveSource, setMoveSource] = useState("");
+  const [restored, setRestored] = useState(false);
   useEffect(() => {
     api
       .appState()
@@ -253,7 +241,27 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
             api={api}
             platform={platform}
             serverAvailable={serverAvailable}
+            restored={restored}
             onThisMachine={() => setScreen("check")}
+            onMove={(id) => {
+              setMoveSource(id);
+              setRestored(false);
+              setScreen("move");
+            }}
+          />
+        );
+      case "move":
+        return (
+          <Move
+            api={api}
+            platform={platform}
+            source={moveSource}
+            back={() => setScreen("welcome")}
+            restored={() => {
+              setRestored(true);
+              setScreen("welcome");
+            }}
+            done={() => setScreen("starting")}
           />
         );
       case "check":
@@ -276,28 +284,87 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
 
 interface StepProps {
   api: SetupApi;
-  step: number;
+  /** the step counter's place (none in the move) */
+  step?: number;
   platform: Platform;
   next: () => void;
   back: () => void;
+}
+
+/** A finding's row key: its code and what it is about (two key_differs are
+ * two paths). */
+function findingKey(n: CheckNote, i: number): string {
+  const about = n.params?.path ?? n.params?.name ?? n.params?.where;
+  return `${n.code}-${typeof about === "string" ? about : i}`;
+}
+
+/** How the setup screens name a found install: its task, its service, or the
+ * server started by hand. */
+function sourceName(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  s: AdoptSource
+) {
+  if (s.kind === "service") return t("setup.move.service", { name: s.service ?? "" });
+  return s.task ? s.task.replace(/^\\/, "") : t("setup.move.byHand", { pid: s.pids?.[0] ?? "" });
 }
 
 function Welcome({
   api,
   platform,
   serverAvailable,
+  restored,
   onThisMachine,
+  onMove,
 }: {
   api: SetupApi;
   platform: Platform;
   serverAvailable: boolean;
+  /** the old install was just restored (a move undone) */
+  restored: boolean;
   onThisMachine: () => void;
+  onMove: (source: string) => void;
 }) {
   const { t } = useI18n();
   const words = platformWords(t, platform);
   const [url, setUrl] = useState("");
   const [error, setError] = useState<StepError | null>(null);
   const [busy, setBusy] = useState(false);
+  // a Maktaba this PC runs already (its scheduled task, a server started by
+  // hand, a service) moves into the app rather than starting over beside it
+  const looks = serverAvailable && platform === "windows";
+  const [found, setFound] = useState<AdoptSource[] | null>(looks ? null : []);
+  const [record, setRecord] = useState<AdoptRecord | null>(null);
+  const [leftover, setLeftover] = useState<{ home: string; path: string } | null>(null);
+  const [findError, setFindError] = useState<StepError | null>(null);
+  const [findAttempt, setFindAttempt] = useState(0);
+  const [chosen, setChosen] = useState("");
+  const [restoring, setRestoring] = useState(false);
+  const [restoredNow, setRestoredNow] = useState(restored);
+  useEffect(() => {
+    if (!looks) return;
+    let alive = true;
+    setFound(null);
+    setFindError(null);
+    api
+      .runStep<{
+        sources: AdoptSource[];
+        move?: AdoptRecord;
+        leftover_node?: { home: string; path: string };
+      }>("adopt", { action: "find" })
+      .then((r) => {
+        if (!alive) return;
+        setFound(r.sources ?? []);
+        setRecord(r.move ?? null);
+        setLeftover(r.leftover_node ?? null);
+        setChosen(r.sources?.[0]?.id ?? "");
+      })
+      // not knowing what this PC runs is not "nothing runs": no fresh setup
+      // on a guess (it could be a second copy of a node), but Try again
+      .catch((e) => alive && setFindError(asError(e)));
+    return () => {
+      alive = false;
+    };
+  }, [api, looks, findAttempt]);
   const connect = (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -307,15 +374,138 @@ function Welcome({
       .catch((err) => setError(asError(err)))
       .finally(() => setBusy(false));
   };
+  // a move that stopped part way (the app closed, a failure): go on, or put
+  // the old install back as it was
+  const underWay =
+    record && (record.stage === "found" || record.stage === "stopped") ? record : null;
+  // a move done: the old install can be put back from here too (the app's
+  // server stops, the old one runs again)
+  const moved =
+    record &&
+    (record.stage === "moved" || record.stage === "verified" || record.stage === "finished")
+      ? record
+      : null;
+  const restore = () => {
+    setRestoring(true);
+    setError(null);
+    api
+      .runStep("adopt", { action: "undo" })
+      .then(() => {
+        setRestoredNow(true);
+        setFindAttempt((n) => n + 1);
+      })
+      .catch((e) => setError(asError(e)))
+      .finally(() => setRestoring(false));
+  };
+  // a node of a home runs here: a fresh setup would be its second copy
+  const node = found?.find((s) => s.db === "node");
+  const freshBlocked = looks && (found === null || findError !== null || node !== undefined);
   return (
     <Frame title={t("setup.welcome.title")} error={error}>
       <p>{t("setup.welcome.intro", words)}</p>
+      {restoredNow && (
+        <p className="mkt-setup__note" role="status">
+          {t("setup.move.restored")}
+        </p>
+      )}
+      {looks && found === null && !findError && (
+        <p role="status">{t("setup.move.reading", words)}</p>
+      )}
+      {findError && (
+        <div className="mkt-setup__choice">
+          <ErrorBox error={findError} />
+          <Button type="button" onClick={() => setFindAttempt((n) => n + 1)}>
+            {t("common.retry")}
+          </Button>
+        </div>
+      )}
+      {serverAvailable && underWay && (
+        <div className="mkt-setup__choice">
+          <h2>{t("setup.move.underWay")}</h2>
+          <p dir="ltr">
+            {sourceName(t, underWay.source)}{" "}
+            <span className="mkt-setup__note">{underWay.source.dir}</span>
+          </p>
+          <p className="mkt-setup__note">{t("setup.move.underWayNote", words)}</p>
+          <div className="mkt-setup__actions">
+            <Button type="button" variant="secondary" loading={restoring} onClick={restore}>
+              {t("setup.move.restore")}
+            </Button>
+            <Button type="button" onClick={() => onMove(underWay.source.id)}>
+              {t("setup.move.goOn")}
+            </Button>
+          </div>
+        </div>
+      )}
+      {serverAvailable && moved && (
+        <div className="mkt-setup__choice">
+          <h2>{t("setup.move.moved", words)}</h2>
+          <p dir="ltr">
+            {sourceName(t, moved.source)}{" "}
+            <span className="mkt-setup__note">{moved.source.dir}</span>
+          </p>
+          <p className="mkt-setup__note">{t("setup.move.movedNote", words)}</p>
+          <Button type="button" variant="secondary" loading={restoring} onClick={restore}>
+            {t("setup.move.restore")}
+          </Button>
+        </div>
+      )}
+      {serverAvailable && !underWay && !moved && found && found.length > 0 && (
+        <div className="mkt-setup__choice">
+          <h2>{t("setup.move.choice", words)}</h2>
+          <p className="mkt-setup__note">{t("setup.move.choiceNote", words)}</p>
+          {found.length === 1 ? (
+            <p dir="ltr">
+              {sourceName(t, found[0])} <span className="mkt-setup__note">{found[0].dir}</span>
+            </p>
+          ) : (
+            <fieldset className="mkt-setup__radios">
+              <legend className="mk-field__label">{t("setup.move.which")}</legend>
+              {found.map((s) => (
+                <label key={s.id} dir="ltr">
+                  <input
+                    type="radio"
+                    name="adopt-source"
+                    checked={chosen === s.id}
+                    onChange={() => setChosen(s.id)}
+                  />{" "}
+                  {sourceName(t, s)} <span className="mkt-setup__note">{s.dir}</span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          <Button type="button" onClick={() => onMove(chosen)}>
+            {t("setup.move.choiceGo")}
+          </Button>
+        </div>
+      )}
       {serverAvailable && (
         <div className="mkt-setup__choice">
           <h2>{t("setup.welcome.thisMachine", words)}</h2>
           <p className="mkt-setup__note">{t("setup.welcome.thisMachineNote", words)}</p>
-          <Button type="button" onClick={onThisMachine}>
-            {t("setup.welcome.thisMachineGo", words)}
+          {node && (
+            <p className="mkt-setup__warn">
+              {t("setup.move.freshNode", { ...words, home: node.home ?? "" })}
+            </p>
+          )}
+          {!node && leftover && (
+            <p className="mkt-setup__note">
+              {t("setup.move.freshLeftover", {
+                ...words,
+                home: leftover.home,
+                path: leftover.path,
+              })}
+            </p>
+          )}
+          <Button
+            type="button"
+            variant={found && found.length > 0 ? "secondary" : "primary"}
+            disabled={freshBlocked}
+            onClick={onThisMachine}
+          >
+            {found && found.length > 0
+              ? t("setup.move.fresh")
+              : t("setup.welcome.thisMachineGo", words)}
           </Button>
         </div>
       )}
@@ -795,6 +985,47 @@ function Plex({ api, step, next, back }: StepProps) {
   );
 }
 
+/** The background item the OS turned off: on a Mac the user turns it on in
+ * System Settings and comes back; elsewhere the app turns its sign-in task on. */
+function Approval({
+  api,
+  step,
+  platform,
+  done,
+}: {
+  api: SetupApi;
+  step?: number;
+  platform: Platform;
+  done: () => void;
+}) {
+  const { t } = useI18n();
+  const mac = platform === "macos";
+  const turnOn = () =>
+    void api.openLoginItems().then(() => {
+      if (!mac) done();
+    });
+  return (
+    <Frame
+      title={t("setup.install.approvalTitle")}
+      step={step}
+      next={
+        <>
+          <Button type="button" variant={mac ? "secondary" : "primary"} onClick={turnOn}>
+            {t(`setup.install.openLoginItems.${platform}`)}
+          </Button>
+          {mac && (
+            <Button type="button" onClick={done}>
+              {t("setup.install.approved")}
+            </Button>
+          )}
+        </>
+      }
+    >
+      <p>{t(`setup.install.approval.${platform}`)}</p>
+    </Frame>
+  );
+}
+
 function Install({ api, step, platform, next, back }: StepProps) {
   const { t } = useI18n();
   const [phase, setPhase] = useState<"venv" | "models" | "llm" | "finish" | "approval" | "failed">(
@@ -859,35 +1090,8 @@ function Install({ api, step, platform, next, back }: StepProps) {
     })();
   }, [api, attempt]);
 
-  if (phase === "approval") {
-    // a Mac's user turns the login item on in System Settings, then comes back;
-    // elsewhere the app turns its sign-in task on itself
-    const mac = platform === "macos";
-    const turnOn = () =>
-      void api.openLoginItems().then(() => {
-        if (!mac) next();
-      });
-    return (
-      <Frame
-        title={t("setup.install.approvalTitle")}
-        step={step}
-        next={
-          <>
-            <Button type="button" variant={mac ? "secondary" : "primary"} onClick={turnOn}>
-              {t(`setup.install.openLoginItems.${platform}`)}
-            </Button>
-            {mac && (
-              <Button type="button" onClick={next}>
-                {t("setup.install.approved")}
-              </Button>
-            )}
-          </>
-        }
-      >
-        <p>{t(`setup.install.approval.${platform}`)}</p>
-      </Frame>
-    );
-  }
+  if (phase === "approval")
+    return <Approval api={api} step={step} platform={platform} done={next} />;
   const label =
     phase === "finish"
       ? t("setup.install.finishing")
@@ -912,6 +1116,263 @@ function Install({ api, step, platform, next, back }: StepProps) {
     >
       <p>{label}</p>
       {phase !== "failed" && <Progress p={progress} label={label} />}
+    </Frame>
+  );
+}
+
+type MovePhase = "moving" | "models" | "signin" | "llm" | "finish" | "approval" | "failed";
+
+/** Moving the Maktaba this PC runs into the app (Epic 38 story 38.13,
+ * move-an-install.md): its plan, then the move with progress, the models
+ * download (a Hugging Face sign-in when the move brought none), and the
+ * app's server started with what was carried. The server finishes the move
+ * itself once it ran healthy (the old task is removed then). */
+function Move({
+  api,
+  platform,
+  source,
+  back,
+  restored,
+  done,
+}: {
+  api: SetupApi;
+  platform: Platform;
+  source: string;
+  back: () => void;
+  /** the old install runs again (the move undone): back to the welcome screen */
+  restored: () => void;
+  done: () => void;
+}) {
+  const { t } = useI18n();
+  const words = platformWords(t, platform);
+  const [plan, setPlan] = useState<AdoptPlan | null>(null);
+  const [phase, setPhase] = useState<MovePhase | null>(null);
+  const [progress, setProgress] = useState<StepProgress | null>(null);
+  const [error, setError] = useState<StepError | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [restoring, setRestoring] = useState(false);
+  // where a failed run goes on from: the move itself is safe to run again
+  const resume = useRef<"move" | "models">("move");
+  const urls = useRef<{ web_url: string; supervisor_url?: string } | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    setError(null);
+    api
+      .runStep<AdoptPlan>("adopt", { action: "plan", source })
+      .then((p) => alive && setPlan(p))
+      .catch((e) => alive && setError(asError(e)));
+    return () => {
+      alive = false;
+    };
+  }, [api, source, attempt]);
+
+  const onProgress = (p: StepProgress) => mounted.current && setProgress(p);
+  const run = async (from: "move" | "models") => {
+    setError(null);
+    resume.current = from;
+    try {
+      if (from === "move") {
+        setPhase("moving");
+        setProgress(null);
+        urls.current = await api.runStep<{ web_url: string; supervisor_url?: string }>(
+          "adopt",
+          { action: "move", source },
+          onProgress
+        );
+        if (!mounted.current) return;
+        resume.current = "models";
+      }
+      setPhase("models");
+      setProgress(null);
+      try {
+        await api.runStep("models", { action: "download" }, onProgress);
+      } catch (e) {
+        if (asError(e).code !== "hf_gated") throw e;
+        if (mounted.current) setPhase("signin");
+        return;
+      }
+      if (!mounted.current) return;
+      // the language model, as a fresh install gets it: only too little disk
+      // stops here, the server downloads a missing one itself
+      setPhase("llm");
+      setProgress(null);
+      try {
+        await api.runStep("llm", {}, onProgress);
+      } catch (e) {
+        if (asError(e).code === "disk_full") throw e;
+      }
+      if (!mounted.current) return;
+      setPhase("finish");
+      setProgress(null);
+      const u = urls.current;
+      if (!u) throw new Error("the move gave no server address");
+      const item: LoginItem = await api.finishSetup(u.web_url, u.supervisor_url);
+      if (!mounted.current) return;
+      if (item === "requires_approval") setPhase("approval");
+      else done();
+    } catch (e) {
+      if (!mounted.current) return;
+      setPhase("failed");
+      setError(asError(e));
+    }
+  };
+
+  if (phase === "signin") {
+    return <Models api={api} platform={platform} next={() => void run("models")} back={back} />;
+  }
+  if (phase === "approval") return <Approval api={api} platform={platform} done={done} />;
+  // the old install back as it was before the move: its task on again and run
+  const restore = () => {
+    setRestoring(true);
+    api
+      .runStep("adopt", { action: "undo" })
+      .then(() => mounted.current && restored())
+      .catch((e) => mounted.current && setError(asError(e)))
+      .finally(() => mounted.current && setRestoring(false));
+  };
+  if (phase) {
+    const label =
+      phase === "models"
+        ? t("setup.install.models")
+        : phase === "llm"
+          ? t("setup.install.llm")
+          : phase === "finish"
+            ? t("setup.move.starting")
+            : t("setup.move.moving");
+    // the line under the bar in the app's words, by the step's stage (the
+    // venv bootstrap's and the downloads' own lines are English)
+    const shown = progress && {
+      ...progress,
+      message: codedText(t, "setup.move.progress", progress.stage, undefined, words, ""),
+    };
+    return (
+      <Frame
+        title={t("setup.move.moving")}
+        error={error}
+        next={
+          phase === "failed" ? (
+            <>
+              <Button type="button" variant="secondary" loading={restoring} onClick={restore}>
+                {t("setup.move.restore")}
+              </Button>
+              <Button type="button" onClick={() => void run(resume.current)}>
+                {t("common.retry")}
+              </Button>
+            </>
+          ) : undefined
+        }
+      >
+        {phase !== "failed" && <Progress p={shown} label={label} />}
+        {phase === "failed" && <p className="mkt-setup__note">{t("setup.move.restoreNote")}</p>}
+      </Frame>
+    );
+  }
+
+  const src = plan?.source;
+  const role =
+    src?.kind === "service"
+      ? t("setup.move.roleService")
+      : src?.db === "node"
+        ? t("setup.move.roleNode", { home: src.home ?? "" })
+        : src?.db === "sqlite"
+          ? t("setup.move.roleSqlite")
+          : t("setup.move.rolePostgres", { where: src?.db_where ?? "" });
+  const ports = src?.ports
+    ? ["web", "api", "stream"]
+        .filter((k) => src.ports?.[k])
+        .map((k) => `${k} ${src.ports?.[k]}`)
+        .join(", ")
+    : "";
+  return (
+    <Frame
+      title={t("setup.move.title")}
+      error={error}
+      onBack={back}
+      next={
+        error && !plan ? (
+          <Button type="button" onClick={() => setAttempt((n) => n + 1)}>
+            {t("common.retry")}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            onClick={() => void run("move")}
+            disabled={!plan || plan.problems.length > 0}
+          >
+            {t("setup.move.go")}
+          </Button>
+        )
+      }
+    >
+      {!plan && !error && <p role="status">{t("setup.move.reading", words)}</p>}
+      {plan && src && (
+        <>
+          <p>{t("setup.move.intro", words)}</p>
+          <dl className="mkt-setup__facts">
+            <dt>{t("setup.move.what")}</dt>
+            <dd dir="ltr">{sourceName(t, src)}</dd>
+            <dt>{t("setup.move.folder")}</dt>
+            <dd dir="ltr">{src.dir}</dd>
+            <dt>{t("setup.move.role")}</dt>
+            <dd>{role}</dd>
+            {ports && (
+              <>
+                <dt>{t("setup.move.ports")}</dt>
+                <dd dir="ltr">{ports}</dd>
+              </>
+            )}
+          </dl>
+          {plan.items.length > 0 && (
+            <>
+              <h2>{t("setup.move.copied", { size: formatBytes(plan.need) })}</h2>
+              <ul className="mkt-setup__list">
+                {plan.items.map((it) => (
+                  <li key={it.to}>
+                    {codedText(t, "setup.move.item", it.code, it.params, words, it.what)}{" "}
+                    <span className="mkt-setup__note" dir="ltr">
+                      {formatBytes(it.size)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {plan.carried.length > 0 && (
+            <p className="mkt-setup__note">
+              {t("setup.move.carried", {
+                list: plan.carried
+                  .map((n) => codedText(t, "setup.move.carry", n.code, n.params, words, n.message))
+                  .join(", "),
+              })}
+            </p>
+          )}
+          {plan.not_carried.map((n, i) => (
+            <p key={`${n.code}-${i}`} className="mkt-setup__warn">
+              {t("setup.move.notCarried", {
+                what: codedText(t, "setup.move.nocarry", n.code, n.params, words, n.message),
+              })}
+            </p>
+          ))}
+          {plan.warnings.map((n, i) => (
+            <p key={findingKey(n, i)} className="mkt-setup__warn">
+              {codedText(t, "setup.move.note", n.code, n.params, words, n.message)}
+            </p>
+          ))}
+          {plan.problems.map((n, i) => (
+            <p key={findingKey(n, i)} className="mkt-setup__warn" role="alert">
+              {codedText(t, "setup.move.note", n.code, n.params, words, n.message)}
+            </p>
+          ))}
+          <p className="mkt-setup__note">{t("setup.move.kept")}</p>
+        </>
+      )}
     </Frame>
   );
 }

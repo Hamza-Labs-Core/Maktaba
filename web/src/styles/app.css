@@ -2830,6 +2830,15 @@ mark {
   overflow: auto;
   font-size: var(--font-size-sm);
 }
+.mkt-setup__details {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-setup__details pre {
+  margin: var(--space-1) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .mkt-setup__radios {
   display: flex;
   flex-direction: column;
