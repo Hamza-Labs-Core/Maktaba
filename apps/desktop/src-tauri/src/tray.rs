@@ -57,7 +57,7 @@ pub fn status_line(lang: Lang, status: &ServerStatus, detail: Option<&str>) -> S
             _ => w.starting.into(),
         },
         ServerStatus::Problem { roles } => {
-            let roles = roles.join(", ");
+            let roles = roles.join(w.list_sep);
             match (detail, w.cannot_start) {
                 (Some(d), Some(line)) => fill(line, &[("roles", &roles), ("detail", d)]),
                 (Some(_), None) => fill(w.cannot_start_plain, &[("roles", &roles)]),
@@ -239,6 +239,59 @@ pub fn entries_with_model(
     out
 }
 
+/// The window menu's Server submenu (Linux without a tray, Epic 39 story
+/// 39.8; lib.rs builds it, shell.rs keeps it in step): the tray's server
+/// items under ids prefixed with WINDOW_PREFIX. Every menu's events reach
+/// both the tray's and the app's handler, so the ids must differ.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const WINDOW_PREFIX: &str = "window-";
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const WINDOW_MENU_ID: &str = "window-server";
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const WINDOW_STATUS_ID: &str = "window-status";
+
+/// The submenu's items, in order: a tray item's id (its label is
+/// window_label's), or None for a separator.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const WINDOW_ITEMS: &[Option<&str>] = &[
+    Some("update"),
+    None,
+    Some("server-pause"),
+    Some("server-resume"),
+    Some("open-logs"),
+    None,
+    Some("stop-and-quit"),
+];
+
+/// The submenu's title in `lang`.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn window_menu_title(lang: Lang) -> &'static str {
+    lang.words().window_menu
+}
+
+/// A window item's label in `lang`: the tray item's, the update said as what
+/// it does from a menu.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn window_label(lang: Lang, id: &str) -> Option<&'static str> {
+    let w = lang.words();
+    Some(match id {
+        "update" => w.install_update,
+        "server-pause" => w.pause,
+        "server-resume" => w.resume,
+        "open-logs" => w.open_logs,
+        "stop-and-quit" => w.stop_and_quit,
+        _ => return None,
+    })
+}
+
+/// A window item is enabled when the tray menu would offer it.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn window_enabled(entries: &[Entry], id: &str) -> bool {
+    entries
+        .iter()
+        .any(|e| matches!(e, Entry::Item { id: i, enabled: true, .. } if *i == id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,6 +422,44 @@ mod tests {
     fn update_ready_adds_the_install_item_under_the_status() {
         let e = entries(Lang::En, true, &ServerStatus::Running, true);
         assert_eq!(ids(&e)[..2], ["status", "update"]);
+    }
+
+    #[test]
+    fn the_window_menu_speaks_both_languages() {
+        for lang in [Lang::En, Lang::Ar] {
+            for id in WINDOW_ITEMS.iter().flatten() {
+                let label = window_label(lang, id).unwrap_or_default();
+                assert!(!label.is_empty(), "{lang:?} {id}");
+            }
+            assert!(!window_menu_title(lang).is_empty());
+        }
+        assert_eq!(window_menu_title(Lang::Ar), "الخادم");
+        assert_eq!(
+            window_label(Lang::En, "update"),
+            Some("Install update and restart")
+        );
+        assert_eq!(
+            window_label(Lang::Ar, "server-resume"),
+            Some("استئناف الخادم")
+        );
+        assert_eq!(window_label(Lang::En, "show"), None);
+        // the status line lists the roles with Arabic's comma
+        assert!(status_line(
+            Lang::Ar,
+            &ServerStatus::Problem {
+                roles: vec!["pipeline".into(), "streaming".into()]
+            },
+            None
+        )
+        .contains("pipeline، streaming"));
+        assert!(status_line(
+            Lang::Ar,
+            &ServerStatus::NotAnswering {
+                reason: "another launcher runs this install".into()
+            },
+            None
+        )
+        .ends_with("another launcher runs this install"));
     }
 
     #[test]
@@ -657,8 +748,8 @@ mod tests {
                 "تشغيل",
                 "إيقاف التشغيل مؤقتًا",
                 "الإعدادات",
-                "إنهاء (يبقى الخادم يعمل)",
-                "إيقاف الخادم والإنهاء",
+                "خروج (يبقى الخادم عاملًا)",
+                "إيقاف الخادم والخروج",
             ]
         );
         // the same ids as in English: lib.rs and the web shell match them
@@ -668,7 +759,7 @@ mod tests {
         );
         let client = entries(ar, false, &ServerStatus::Stopped, false);
         assert!(client.contains(&item("change-server", "الاتصال بمكتبة أخرى…")));
-        assert!(client.contains(&item("quit", "إنهاء")));
+        assert!(client.contains(&item("quit", "خروج")));
     }
 
     #[test]
@@ -743,5 +834,37 @@ mod tests {
         let i = ((c * w + c) * 4) as usize;
         assert_eq!(&out[i..i + 4], &[0, 0, 200, 255]);
         assert_eq!(&out[..4], &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn the_window_menu_offers_what_the_tray_offers() {
+        let window_ids: Vec<&str> = WINDOW_ITEMS.iter().flatten().copied().collect();
+        assert_eq!(
+            window_ids,
+            [
+                "update",
+                "server-pause",
+                "server-resume",
+                "open-logs",
+                "stop-and-quit"
+            ]
+        );
+        let running = entries(Lang::En, true, &ServerStatus::Running, false);
+        assert!(
+            window_enabled(&running, "server-pause") && window_enabled(&running, "stop-and-quit")
+        );
+        assert!(!window_enabled(&running, "server-resume") && !window_enabled(&running, "update"));
+        let paused = entries(Lang::En, true, &ServerStatus::Paused, true);
+        assert!(window_enabled(&paused, "server-resume") && window_enabled(&paused, "update"));
+        assert!(!window_enabled(&paused, "server-pause"));
+        // client mode: no server items at all
+        let client = entries(Lang::En, false, &ServerStatus::SetupNeeded, false);
+        assert!(window_ids.iter().all(|id| !window_enabled(&client, id)));
+        // the disabled status line is never "offered"
+        assert!(!window_enabled(&running, "status"));
+        // the window's ids never collide with the tray's (both handlers see every event)
+        for id in &window_ids {
+            assert!(!ids(&running).contains(&format!("{WINDOW_PREFIX}{id}").as_str()));
+        }
     }
 }

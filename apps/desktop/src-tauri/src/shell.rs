@@ -1,8 +1,9 @@
 // The app around the server (Epic 36 stories 36.5 / 36.6 on a Mac, Epic 38
-// story 38.3 on Windows): the menu-bar / tray item, the status poller, and
-// the commands the setup screens (web/src/pages/Setup/) call. Pure
-// decisions live in status.rs, tray.rs, mode.rs and setup.rs; this file is
-// the glue to tauri. The OS side (launchd / the sign-in task) is agent.rs.
+// story 38.3 on Windows, Epic 39 story 39.8 on Linux): the menu-bar / tray
+// item, the status poller, and the commands the setup screens
+// (web/src/pages/Setup/) call. Pure decisions live in status.rs, tray.rs,
+// mode.rs and setup.rs; this file is the glue to tauri. The OS side
+// (launchd / the sign-in task / the systemd user unit) is agent.rs.
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -150,6 +151,12 @@ impl Shell {
     fn mark_started(&self) {
         self.paused.store(false, Ordering::SeqCst);
         agent::set_paused_flag(false);
+        self.restart_grace();
+    }
+
+    /// "Unreachable" reads as starting again for a while (the server was
+    /// switched to a new runtime), without touching a pause.
+    fn restart_grace(&self) {
         *self.started_at.lock().unwrap() = Instant::now();
     }
 
@@ -244,6 +251,15 @@ fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
         .show(|_| {});
 }
 
+#[cfg(target_os = "linux")]
+fn show_info(app: &AppHandle, msg: impl Into<String>) {
+    app.dialog()
+        .message(msg)
+        .title(shell(app).lang.words().brand)
+        .kind(MessageDialogKind::Info)
+        .show(|_| {});
+}
+
 fn build_tray_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry>> {
     let menu = Menu::new(app)?;
     for e in entries {
@@ -313,8 +329,17 @@ fn refresh(app: &AppHandle) {
     } else {
         None
     };
+    // the window's Server menu says what the tray says (Linux)
+    #[cfg(target_os = "linux")]
+    let window_line = if server {
+        tray::status_line(lang, status, detail)
+    } else {
+        lang.words().brand.to_string()
+    };
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
+        #[cfg(target_os = "linux")]
+        sync_window_menu(&handle, &entries, &window_line);
         if let (Some(t), Ok(menu)) = (
             handle.tray_by_id(TRAY_ID),
             build_tray_menu(&handle, &entries),
@@ -326,6 +351,41 @@ fn refresh(app: &AppHandle) {
             }
         }
     });
+}
+
+/// The window menu's Server items (lib.rs adds them on Linux when no tray
+/// shows) follow the tray's: the status line, and each item enabled when the
+/// tray would offer it.
+#[cfg(target_os = "linux")]
+fn sync_window_menu(app: &AppHandle, entries: &[Entry], status_line: &str) {
+    let Some(sub) = app
+        .menu()
+        .and_then(|m| m.get(tray::WINDOW_MENU_ID))
+        .and_then(|k| k.as_submenu().cloned())
+    else {
+        return;
+    };
+    if let Some(item) = sub
+        .get(tray::WINDOW_STATUS_ID)
+        .and_then(|k| k.as_menuitem().cloned())
+    {
+        let _ = item.set_text(status_line);
+    }
+    for (id, _, _) in tray::WINDOW_ITEMS.iter().flatten() {
+        let window_id = format!("{}{id}", tray::WINDOW_PREFIX);
+        if let Some(item) = sub
+            .get(window_id.as_str())
+            .and_then(|k| k.as_menuitem().cloned())
+        {
+            let _ = item.set_enabled(tray::window_enabled(entries, id));
+        }
+    }
+}
+
+/// A click on one of the window menu's Server items: the tray item's action.
+#[cfg(target_os = "linux")]
+pub fn on_window_menu(app: &AppHandle, tray_id: &str) {
+    on_tray_event(app, tray_id);
 }
 
 /// Tray clicks arrive on the main thread; the work (launchctl,
@@ -438,8 +498,11 @@ fn install_update(app: AppHandle) {
         match run.await {
             Ok(true) => {
                 let sh = shell(&app);
-                // a paused server stays paused; it runs the new payload on Resume
-                if matches!(sh.mode(), Some(AppMode::Server { .. }))
+                // a paused server stays paused; it runs the new payload on Resume.
+                // Linux: the server runs a copy of the payload, which the new
+                // app switches to when it starts (agent::linux::sync_runtime).
+                if cfg!(not(target_os = "linux"))
+                    && matches!(sh.mode(), Some(AppMode::Server { .. }))
                     && !sh.paused.load(Ordering::SeqCst)
                 {
                     let _ = agent::control(Action::Restart);
@@ -560,6 +623,65 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         });
     }
 
+    // Linux: the server runs a copy of the payload (the runtime). After an app
+    // update this app's payload is newer: copy it in and switch the unit to it
+    // (stopped while `current` moves). A paused server stays paused across
+    // the switch: only Resume (or the next boot) starts it. An app older than
+    // the server installs nothing and says so. Then a unit that is not running
+    // starts again, unless paused; and the tray's autostart entry follows the
+    // AppImage if it moved (never to an older app, never back after the user
+    // removed it).
+    #[cfg(target_os = "linux")]
+    {
+        use crate::agent::linux::{self, Synced};
+
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            let sh = shell(&handle);
+            if !matches!(sh.mode(), Some(AppMode::Server { .. })) {
+                return;
+            }
+            let alive = agent::agent_alive();
+            // the unit runs although the app paused it: started at boot (linger)
+            // or by hand, which ends the pause
+            if sh.paused.load(Ordering::SeqCst) && alive == Some(true) {
+                sh.mark_started();
+            }
+            // Some(older) once the runtime is known to hold this app's payload
+            // (or a newer one); None when that could not be told, and then the
+            // autostart entry is left as it is
+            let known: Option<bool> = match linux::sync_runtime() {
+                Ok(Synced::Switched) => {
+                    sh.restart_grace();
+                    Some(false)
+                }
+                Ok(Synced::Current) => Some(false),
+                Ok(Synced::Older { app, server }) => {
+                    show_info(&handle, linux::older_message(&app, &server));
+                    Some(true)
+                }
+                Err(e) => {
+                    show_error(&handle, sh.lang.words().switch_failed, &[&e]);
+                    None
+                }
+            };
+            if !sh.paused.load(Ordering::SeqCst)
+                && agent::agent_alive() == Some(false)
+                && agent::login_item() != LoginItem::NotRegistered
+            {
+                sh.mark_started();
+                if let Err(e) = agent::control(Action::Resume) {
+                    show_error(&handle, sh.lang.words().server_start_failed, &[&e]);
+                }
+            }
+            if let Some(older) = known {
+                if linux::tray_available() {
+                    let _ = linux::sync_autostart(older);
+                }
+            }
+        });
+    }
+
     let handle = app.clone();
     std::thread::spawn(move || loop {
         refresh(&handle);
@@ -628,9 +750,21 @@ pub async fn setup_step(
         details: Vec::new(),
     })?;
     tauri::async_runtime::spawn_blocking(move || {
-        setup::run_step(&bin, &step, &input, |p| {
+        let send = |p: Progress| {
             let _ = on_progress.send(p);
-        })
+        };
+        // Linux: status and check from this app's payload; a check that
+        // passed installs the runtime, and every later step runs from its
+        // copy (the venv must not be built against this app's AppImage mount
+        // or package files)
+        #[cfg(target_os = "linux")]
+        let (bin, envs) = agent::linux::setup_server(&step, &bin, send)?;
+        #[cfg(not(target_os = "linux"))]
+        let envs: Vec<(String, String)> = Vec::new();
+        let result = setup::run_step(&bin, &envs, &step, &input, send)?;
+        #[cfg(target_os = "linux")]
+        agent::linux::after_step(&step, &result, send)?;
+        Ok(result)
     })
     .await
     .unwrap_or_else(|e| {

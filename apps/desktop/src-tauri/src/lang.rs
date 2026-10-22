@@ -1,11 +1,15 @@
-// The tray's words, in English and Arabic (Epic 38 story 38.4).
+// The shell's own words, in English and Arabic (Epic 38 story 38.4, Epic 39
+// story 39.8): the tray, the error and information dialogs, and on Linux the
+// window's Server menu and the message for an app older than the server.
 //
 // The shell keeps no language of its own: the window's web app keeps the
-// user's choice in its own storage, which the tray cannot read before the
-// window opens (or at all, in client mode). So the tray follows the system's
-// UI language, read once when the app starts: Windows' display language, the
-// Mac's preferred languages, gettext's LANGUAGE / LC_ALL / LC_MESSAGES / LANG
-// on Linux. The first of those the tray has words for wins; English when none.
+// user's choice in its own storage, which the shell cannot read before the
+// window opens (or at all, in client mode, or for a dialog without a window).
+// So the shell follows the system's UI language, read once when the app
+// starts: Windows' display language, the Mac's preferred languages, gettext's
+// LANGUAGE / LC_ALL / LC_MESSAGES / LANG on Linux. The first of those the
+// shell has words for wins; English when none. (The desktop entries the Linux
+// shell writes carry both languages, Name[ar]=, whatever the locale.)
 
 /// A language the tray speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -177,8 +181,15 @@ pub struct Words {
     #[cfg(windows)]
     pub task_move_failed: &'static str,
     /// The server could not start when the window opened.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     pub server_start_failed: &'static str,
+    /// Linux: the server could not be switched to this app's payload.
+    #[cfg(target_os = "linux")]
+    pub switch_failed: &'static str,
+    /// Linux: this app (`{app}`) is older than the server (`{server}`), which
+    /// keeps running (agent::linux::older_message; its tests run everywhere).
+    #[cfg(any(target_os = "linux", test))]
+    pub older_app: &'static str,
     /// Pause server failed.
     pub pause_failed: &'static str,
     /// Resume server failed.
@@ -191,6 +202,13 @@ pub struct Words {
     pub setup_failed: &'static str,
     /// Any other tray item failed.
     pub action_failed: &'static str,
+    // Linux without a tray: the window's Server menu (tray::WINDOW_ITEMS).
+    /// The menu's title.
+    pub window_menu: &'static str,
+    /// Its update item: what it does from a menu.
+    pub install_update: &'static str,
+    /// Between the names in a list (the roles in a status line).
+    pub list_sep: &'static str,
 }
 
 pub static EN: Words = Words {
@@ -235,14 +253,21 @@ pub static EN: Words = Words {
     open_failed: "Cannot open {url}.",
     #[cfg(windows)]
     task_move_failed: "Maktaba could not move its sign-in task to this user's name.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     server_start_failed: "The Maktaba server could not start.",
+    #[cfg(target_os = "linux")]
+    switch_failed: "Maktaba could not switch the server to this version.",
+    #[cfg(any(target_os = "linux", test))]
+    older_app: "This Maktaba app ({app}) is older than the Maktaba this computer already runs ({server}). The server keeps running {server}; to manage it from here, install Maktaba {server} or newer.",
     pause_failed: "The server could not be paused.",
     resume_failed: "The server could not be resumed.",
     stop_failed: "The server could not be stopped.",
     logs_failed: "The logs could not be opened.",
     setup_failed: "The setup screens could not be opened.",
     action_failed: "That did not work.",
+    window_menu: "Server",
+    install_update: "Install update and restart",
+    list_sep: ", ",
 };
 
 pub static AR: Words = Words {
@@ -267,9 +292,9 @@ pub static AR: Words = Words {
     play: "تشغيل",
     pause_playback: "إيقاف التشغيل مؤقتًا",
     settings: "الإعدادات",
-    quit_server_runs: "إنهاء (يبقى الخادم يعمل)",
-    stop_and_quit: "إيقاف الخادم والإنهاء",
-    quit: "إنهاء",
+    quit_server_runs: "خروج (يبقى الخادم عاملًا)",
+    stop_and_quit: "إيقاف الخادم والخروج",
+    quit: "خروج",
     model_downloading: "النموذج اللغوي: جارٍ تنزيل {name}",
     model_downloading_pct: "النموذج اللغوي: جارٍ تنزيل {name} ({pct}%)",
     model_ready: "النموذج اللغوي: جاهز",
@@ -287,14 +312,21 @@ pub static AR: Words = Words {
     open_failed: "يتعذّر فتح {url}.",
     #[cfg(windows)]
     task_move_failed: "تعذّر على مكتبة نقل مهمة تسجيل الدخول إلى اسم هذا المستخدم.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     server_start_failed: "تعذّر تشغيل خادم مكتبة.",
+    #[cfg(target_os = "linux")]
+    switch_failed: "تعذّر على مكتبة نقل الخادم إلى هذا الإصدار.",
+    #[cfg(any(target_os = "linux", test))]
+    older_app: "تطبيق مكتبة هذا ({app}) أقدم من إصدار مكتبة الذي يعمل على هذا الحاسوب ({server}). يواصل الخادم العمل بالإصدار {server}؛ ولإدارته من هنا ثبّت مكتبة {server} أو أحدث.",
     pause_failed: "تعذّر إيقاف الخادم مؤقتًا.",
     resume_failed: "تعذّر استئناف الخادم.",
     stop_failed: "تعذّر إيقاف الخادم.",
     logs_failed: "تعذّر فتح السجلات.",
     setup_failed: "تعذّر فتح شاشات الإعداد.",
     action_failed: "لم ينجح ذلك.",
+    window_menu: "الخادم",
+    install_update: "تثبيت التحديث وإعادة التشغيل",
+    list_sep: "، ",
 };
 
 /// An error dialog's text: the sentence in the tray's language, then the
@@ -390,6 +422,9 @@ mod tests {
             ("logs_failed", Some(w.logs_failed)),
             ("setup_failed", Some(w.setup_failed)),
             ("action_failed", Some(w.action_failed)),
+            ("window_menu", Some(w.window_menu)),
+            ("install_update", Some(w.install_update)),
+            ("older_app", Some(w.older_app)),
         ];
         // the lines only Windows reads
         #[cfg(windows)]
@@ -400,10 +435,19 @@ mod tests {
                 ("update_starting_again", Some(w.update_starting_again)),
                 ("update_start_failed", Some(w.update_start_failed)),
                 ("task_move_failed", Some(w.task_move_failed)),
-                ("server_start_failed", Some(w.server_start_failed)),
             ],
         ]
         .concat();
+        // the lines Windows and Linux read
+        #[cfg(any(windows, target_os = "linux"))]
+        let out = [
+            out,
+            vec![("server_start_failed", Some(w.server_start_failed))],
+        ]
+        .concat();
+        // the lines only Linux reads
+        #[cfg(target_os = "linux")]
+        let out = [out, vec![("switch_failed", Some(w.switch_failed))]].concat();
         out
     }
 
@@ -435,6 +479,7 @@ mod tests {
             assert!(ar.chars().any(arabic), "{name} is not in Arabic: {ar}");
         }
         assert_eq!(EN.no_answer, crate::status::NO_ANSWER);
+        assert_eq!((EN.list_sep, AR.list_sep), (", ", "، "));
     }
 
     #[test]
@@ -484,6 +529,19 @@ mod tests {
         assert_eq!(
             posix_tags(env(&[("LANGUAGE", "ar:en"), ("LANG", "fr_FR.UTF-8")])),
             ["ar", "en", "fr_FR.UTF-8"]
+        );
+        // an empty variable is not set; C over a later Arabic LANG
+        assert_eq!(
+            pick(posix_tags(env(&[
+                ("LC_ALL", ""),
+                ("LC_MESSAGES", "ar_JO.UTF-8"),
+                ("LANG", "en_GB")
+            ]))),
+            Lang::Ar
+        );
+        assert_eq!(
+            pick(posix_tags(env(&[("LC_ALL", "C"), ("LANG", "ar_EG.UTF-8")]))),
+            Lang::En
         );
         // gettext ignores LANGUAGE under the C locale
         assert_eq!(posix_tags(env(&[("LANGUAGE", "ar"), ("LANG", "C")])), ["C"]);

@@ -213,6 +213,17 @@ func TestSetupCheck(t *testing.T) {
 	if d["ok"] != false || codes("problems")["test_platform"]["why"] != "a test" {
 		t.Fatalf("a platform's problem: %v", d)
 	}
+
+	// the roaming profile's node settings are another PC's (story 38.1): this machine
+	// runs unjoined, and check says why (a warning: nothing blocks)
+	foreignNodeConfig = func() (string, string) { return `C:\Users\me\AppData\Roaming\Maktaba\node.json`, "other-pc" }
+	t.Cleanup(func() { foreignNodeConfig = config.LocalForeignNodeConfig })
+	_, _, ev = runStep(t, "check", map[string]any{})
+	d = data(t, ev)
+	other := codes("warnings")["node_config_other_pc"]
+	if other == nil || other["owner"] != "other-pc" || other["path"] != `C:\Users\me\AppData\Roaming\Maktaba\node.json` {
+		t.Fatalf("another PC's node settings: %v", d["warnings"])
+	}
 }
 
 // setupPlatformOK: this test machine is one the app runs the server on.
