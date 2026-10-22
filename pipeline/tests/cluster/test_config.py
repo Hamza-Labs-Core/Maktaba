@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import platform
 import stat
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -274,6 +276,30 @@ def test_windows_claim_failing_before_the_replace(
 
 
 @pytest.mark.skipif(os.name != "nt", reason="ReplaceFileW")
+def test_windows_a_replace_another_process_holds_up_is_tried_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ReplaceFileW that fails with a sharing violation (a reader has node.json open:
+    nothing moved) is tried again for a moment: the claim is written, nothing is left
+    over, and nothing is said."""
+    real = config._replace_file
+    calls: list[int] = []
+
+    def busy_twice(path: Path, tmp: Path, backup: Path) -> None:
+        calls.append(1)
+        if len(calls) <= 2:
+            raise OSError(0, "the file is in use", None, 32)
+        real(path, tmp, backup)
+
+    roaming, warnings = _claim_seam(tmp_path, monkeypatch, busy_twice)
+    cfg = config.load()
+    assert cfg is not None and cfg.machine_id == "pc-a" and len(calls) == 3
+    assert json.loads(roaming.read_text(encoding="utf-8")) == _NEW
+    assert sorted(p.name for p in roaming.parent.iterdir()) == ["node.json"]
+    assert warnings.events == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="ReplaceFileW")
 def test_windows_a_claim_nothing_could_be_put_back_from_is_recovered_at_the_next_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -504,17 +530,17 @@ def test_a_node_json_that_cannot_be_read_is_never_moved_or_read_past(
     path = folder / "node.json"
     path.write_text(json.dumps(_JOINED), encoding="utf-8")
     older = _leftover(folder, _named(".bak", age=120), json.dumps({**_JOINED, "node_id": "n0"}))
-    read_text = Path.read_text
+    read_bytes = Path.read_bytes
 
-    def held(self: Path, *args: Any, **kw: Any) -> str:
+    def held(self: Path) -> bytes:
         if self == path:
             raise PermissionError(13, "in use by another process", str(self))
-        return read_text(self, *args, **kw)
+        return read_bytes(self)
 
-    monkeypatch.setattr(Path, "read_text", held)
+    monkeypatch.setattr(Path, "read_bytes", held)
     with pytest.raises(PermissionError):
         config.load(path)
-    monkeypatch.setattr(Path, "read_text", read_text)
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
     assert json.loads(path.read_text(encoding="utf-8")) == _JOINED
     assert sorted(p.name for p in folder.iterdir()) == sorted(["node.json", older.name])
 
@@ -706,26 +732,67 @@ def test_a_load_that_cannot_take_the_lock_reads_past_the_leftovers(
             os.chmod(lock, stat.S_IREAD | stat.S_IWRITE)
 
 
-def test_a_node_json_saved_with_a_bom_is_whole(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+#: what an editor saves a node.json as (Notepad and PowerShell 5.1's Set-Content -Encoding
+#: UTF8: UTF-8 with a BOM; its Out-File and >: UTF-16 little-endian with one)
+_SAVED_AS: dict[str, Callable[[str], bytes]] = {
+    "UTF-8 with a BOM": lambda text: codecs.BOM_UTF8 + text.encode("utf-8"),
+    "UTF-16 LE": lambda text: codecs.BOM_UTF16_LE + text.encode("utf-16-le"),
+    "UTF-16 BE": lambda text: codecs.BOM_UTF16_BE + text.encode("utf-16-be"),
+    "UTF-32": lambda text: text.encode("utf-32"),
+}
+
+
+@pytest.mark.parametrize("saved_as", list(_SAVED_AS))
+def test_a_node_json_an_editor_saved_is_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, saved_as: str
 ) -> None:
-    """A node.json an editor saved with a UTF-8 BOM (Notepad, PowerShell 5.1) is read past
-    the BOM, as maktaba-server, streaming and the installer read it: it is the node config
-    (never taken for broken and replaced from a backup), and its owner is read too."""
+    """A node.json an editor saved with a byte order mark is read in that encoding, as
+    maktaba-server, streaming and the installer read it: it is the node config (never
+    taken for broken and replaced from a backup), and its owner is read too."""
+    encode = _SAVED_AS[saved_as]
     folder = tmp_path / "Maktaba"
     folder.mkdir()
     path = folder / "node.json"
-    mine = {**_JOINED, "node_id": "n2"}
-    path.write_bytes(b"\xef\xbb\xbf" + json.dumps(mine).encode())
+    mine = {**_JOINED, "node_id": "n2", "name": "Ḥamza"}
+    path.write_bytes(encode(json.dumps(mine, ensure_ascii=False)))
+    before = path.read_bytes()
     _leftover(folder, _named(".bak", age=120), json.dumps(_JOINED), age=3600)
     cfg = config.load(path)
-    assert cfg is not None and cfg.node_id == "n2" and cfg.joined
-    assert json.loads(path.read_bytes().decode("utf-8-sig")) == mine
+    assert cfg is not None and cfg.node_id == "n2" and cfg.name == "Ḥamza" and cfg.joined
+    assert path.read_bytes() == before
     assert sorted(p.name for p in folder.iterdir()) == ["node.json"]  # the stale backup goes
 
     roaming = _windows_profile(tmp_path / "pc", monkeypatch, "pc-a")
-    roaming.write_bytes(b"\xef\xbb\xbf" + json.dumps({**_JOINED, "machine_id": "pc-b"}).encode())
+    roaming.write_bytes(encode(json.dumps({**_JOINED, "machine_id": "pc-b"})))
     assert config.config_path() == tmp_path / "pc" / "Local" / "Maktaba" / "node.json"
+
+
+def test_a_node_json_that_does_not_decode_is_broken(tmp_path: Path) -> None:
+    """A cut UTF-16 file (an odd byte) is broken for every reader: the load says what is
+    wrong, as for any broken file."""
+    path = tmp_path / "node.json"
+    path.write_bytes(codecs.BOM_UTF16_LE + json.dumps(_JOINED).encode("utf-16-le")[:-1])
+    with pytest.raises(ValueError, match="not a node config"):
+        config.load(path)
+
+
+def test_broken_node_configs_kept_aside_go_after_a_while(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A broken node.json kept aside may hold part of a credential: a load removes those
+    older than the kept days (housekeeping, by the time in their names), and leaves the
+    newer ones and anything else."""
+    folder = tmp_path / "Maktaba"
+    folder.mkdir()
+    config.save(NodeConfig(node_id="n1", name="pc", private_key="k1"), folder / "node.json")
+    days = config._BROKEN_KEEP_DAYS
+    old = folder / f"node.json.broken-{int(time.time() - (days + 1) * 86400)}-0bad"
+    new = folder / f"node.json.broken-{int(time.time() - (days - 1) * 86400)}-0bad"
+    other = folder / "node.json.broken-by-hand"
+    for p in (old, new, other):
+        p.write_text("{cut", encoding="utf-8")
+    assert config.load(folder / "node.json") is not None
+    assert sorted(p.name for p in folder.iterdir()) == sorted(["node.json", new.name, other.name])
 
 
 def test_windows_a_roaming_config_a_failed_claim_left_is_still_this_pcs(

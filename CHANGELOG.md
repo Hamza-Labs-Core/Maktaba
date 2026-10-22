@@ -548,6 +548,20 @@ don't append a line here; docs-only PRs are exempt.
   reader, and a broken one a backup replaces is kept beside it (`node.json.broken-…`), never
   removed. A start that cannot make the lock (a folder it may not write, a full disk) leaves the
   leftovers and reads past them, as before.
+- **maktaba-server writes node.json the way the pipeline does** (story 38.1, follow-up of #178
+  and #239). Its own writes of the node config (a switch of the home, a standby taking over, the
+  home's database CA) gave the file its folder's ACL, so on a second drive every signed-in user
+  could read and change the node's private key; they ignored the pipeline's write lock, so the
+  two could undo each other; and a `node.json` saved with a BOM lost what only the pipeline
+  writes (when the machine joined). They now go through one writer that follows the pipeline's:
+  its lock, a temp file the user's alone from the moment it exists, ReplaceFileW keeping the
+  file's ACL, and its names for what a write that could not finish leaves. A home's switch that
+  moves `node.json` aside takes those with it, so the machine that is now the home is never read
+  as a node again. Every reader reads a `node.json` saved as UTF-16 or UTF-32 with a byte order
+  mark (PowerShell 5.1's `Out-File` and `>`) the same way. A broken `node.json` kept aside goes
+  after 30 days and at a re-join (it may hold part of a credential), the write lock is among the
+  files the uninstall script lists to forget the home, and a write tries again for a moment while
+  a reader has `node.json` open.
 
 ## [0.2.0] - 2026-10-19
 

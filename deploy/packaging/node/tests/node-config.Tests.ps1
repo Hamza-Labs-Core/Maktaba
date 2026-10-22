@@ -88,6 +88,19 @@ try {
     Assert-Equal $new (Get-NodeConfigPath) 'a kept broken node.json is no node config'
     Set-Content -LiteralPath $old -Value '{"node_id":"n1","private_key":"k","machine_id":"pc-a"}'
     Assert-Equal "$old;$kept" ((@(Get-NodeConfigFiles)) -join ';') 'to forget the home, a kept broken node.json goes too'
+
+    # the write lock a process that stopped mid-write left goes too
+    $lock = Join-Path $roaming 'Maktaba\.node.json.lock'
+    Set-Content -LiteralPath $lock -Value ''
+    Assert-Equal "$old;$kept;$lock" ((@(Get-NodeConfigFiles)) -join ';') 'to forget the home, the write lock goes too'
+    Remove-Item -LiteralPath $kept, $lock -Force
+
+    # PowerShell 5.1's Out-File and > save UTF-16: a node.json saved so is whole for every
+    # reader (the pipeline and maktaba-server read it the same way)
+    [System.IO.File]::WriteAllText($old, '{"node_id":"n4","private_key":"k","database_url":"postgres://four"}', [System.Text.Encoding]::Unicode)
+    Set-Content -LiteralPath $bak -Value '{"node_id":"n1","private_key":"k","database_url":"postgres://one"}'
+    Assert-Equal 255 ([System.IO.File]::ReadAllBytes($old)[0]) 'the test''s node.json is UTF-16 (FF FE)'
+    Assert-Equal $old (Get-NodeConfigSource -Path $old) 'a UTF-16 node.json is the node config, not a backup beside it'
 } finally {
     Remove-Item -LiteralPath $T -Recurse -Force -ErrorAction SilentlyContinue
 }

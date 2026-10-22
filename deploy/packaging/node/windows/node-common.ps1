@@ -122,16 +122,26 @@ function Get-NodeConfigKeptBroken {
         Sort-Object -Property Name
 }
 
+# Get-NodeConfigLock: the write lock beside the node config at Path (.<name>.lock, which
+# the pipeline and maktaba-server hold while they write it; gone when nobody holds it, but
+# a process that stopped mid-write leaves it), when it is there.
+function Get-NodeConfigLock {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $lock = Join-Path (Split-Path -Parent $Path) ('.' + (Split-Path -Leaf $Path) + '.lock')
+    if (Test-Path -LiteralPath $lock -PathType Leaf) { $lock }
+}
+
 # Get-NodeConfigFiles: every file of a node config that is this PC's (both places on
 # Windows, or MAKTABA_NODE_CONFIG; never another PC's roaming one): its node.json, what a
-# write that could not finish left beside it, and a broken node.json kept there. To
-# forget the home, all of them go, or the second would take the first one's place (and a
-# leftover would be put back).
+# write that could not finish left beside it, a broken node.json kept there, and its
+# write lock. To forget the home, all of them go, or the second would take the first
+# one's place (and a leftover would be put back).
 function Get-NodeConfigFiles {
     if ($env:MAKTABA_NODE_CONFIG) {
         $env:MAKTABA_NODE_CONFIG
         Get-NodeConfigLeftovers -Path $env:MAKTABA_NODE_CONFIG | ForEach-Object { $_.FullName }
         Get-NodeConfigKeptBroken -Path $env:MAKTABA_NODE_CONFIG | ForEach-Object { $_.FullName }
+        Get-NodeConfigLock -Path $env:MAKTABA_NODE_CONFIG
         return
     }
     foreach ($path in @((Join-Path $script:NodeConfDir 'node.json'), (Join-Path $env:LOCALAPPDATA 'Maktaba\node.json'))) {
@@ -140,6 +150,7 @@ function Get-NodeConfigFiles {
         if (Test-Path -LiteralPath $path -PathType Leaf) { $path }
         Get-NodeConfigLeftovers -Path $path | ForEach-Object { $_.FullName }
         Get-NodeConfigKeptBroken -Path $path | ForEach-Object { $_.FullName }
+        Get-NodeConfigLock -Path $path
     }
 }
 

@@ -3,6 +3,7 @@ package channel
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -149,12 +152,70 @@ func isNodeConfigLeftover(base, name string) bool {
 	return base == "node.json" && legacyNodeLeftover.MatchString(name)
 }
 
-// utf8BOM is what a node.json saved by an editor can start with (Notepad, PowerShell 5.1's
-// Set-Content -Encoding UTF8): every reader reads past it, as the pipeline does (utf-8-sig).
-var utf8BOM = []byte("\xef\xbb\xbf")
+// WithoutBOM is a node config's bytes as UTF-8, the way every reader reads them (the
+// pipeline's _text, maktaba-server's withoutBOM, the installer's Get-Content): a
+// node.json an editor saved with a byte order mark is read in that encoding (Notepad and
+// PowerShell 5.1's Set-Content -Encoding UTF8 write UTF-8 with one, its Out-File and >
+// UTF-16; UTF-32 too), and one without is UTF-8. A UTF-16 or UTF-32 one that does not
+// decode gives no bytes (broken).
+func WithoutBOM(b []byte) []byte {
+	switch {
+	case bytes.HasPrefix(b, []byte("\xef\xbb\xbf")):
+		return b[3:]
+	case bytes.HasPrefix(b, []byte("\xff\xfe\x00\x00")):
+		return decodeUTF32(b[4:], binary.LittleEndian)
+	case bytes.HasPrefix(b, []byte("\x00\x00\xfe\xff")):
+		return decodeUTF32(b[4:], binary.BigEndian)
+	case bytes.HasPrefix(b, []byte("\xff\xfe")):
+		return decodeUTF16(b[2:], binary.LittleEndian)
+	case bytes.HasPrefix(b, []byte("\xfe\xff")):
+		return decodeUTF16(b[2:], binary.BigEndian)
+	}
+	return b
+}
 
-// WithoutBOM is a node config's bytes without a leading UTF-8 BOM.
-func WithoutBOM(b []byte) []byte { return bytes.TrimPrefix(b, utf8BOM) }
+// decodeUTF16 is UTF-16 text (after its BOM) as UTF-8; nil when it is not whole.
+func decodeUTF16(b []byte, order binary.ByteOrder) []byte {
+	if len(b)%2 != 0 {
+		return nil
+	}
+	units := make([]uint16, len(b)/2)
+	for i := range units {
+		units[i] = order.Uint16(b[2*i:])
+	}
+	var out []byte
+	for i := 0; i < len(units); i++ {
+		r := rune(units[i])
+		switch {
+		case utf16.IsSurrogate(r) && i+1 < len(units):
+			r = utf16.DecodeRune(r, rune(units[i+1]))
+			i++
+			if r == utf8.RuneError {
+				return nil
+			}
+		case utf16.IsSurrogate(r):
+			return nil
+		}
+		out = utf8.AppendRune(out, r)
+	}
+	return out
+}
+
+// decodeUTF32 is UTF-32 text (after its BOM) as UTF-8; nil when it is not whole.
+func decodeUTF32(b []byte, order binary.ByteOrder) []byte {
+	if len(b)%4 != 0 {
+		return nil
+	}
+	var out []byte
+	for i := 0; i < len(b); i += 4 {
+		r := rune(order.Uint32(b[i:]))
+		if !utf8.ValidRune(r) {
+			return nil
+		}
+		out = utf8.AppendRune(out, r)
+	}
+	return out
+}
 
 // wholeNodeConfig: b is a node config with its identity (not a cut file).
 func wholeNodeConfig(b []byte) bool {

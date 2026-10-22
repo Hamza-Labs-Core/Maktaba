@@ -966,13 +966,9 @@ func editConfig(fn func(*config.Config)) error {
 }
 
 // writeNodeConfig writes node.json with n's fields, keeping the others the file has
-// (the pipeline's own, such as when the machine joined).
+// (the pipeline's own, such as when the machine joined), the way the pipeline writes it
+// (config.WriteNodeConfig: its lock, a temp file the user's alone, ReplaceFileW).
 func writeNodeConfig(n config.NodeConfig) error {
-	path := config.LocalNodeConfigPath()
-	merged := map[string]json.RawMessage{}
-	if b, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(b, &merged)
-	}
 	fields, err := json.Marshal(n)
 	if err != nil {
 		return err
@@ -981,19 +977,17 @@ func writeNodeConfig(n config.NodeConfig) error {
 	if err := json.Unmarshal(fields, &ours); err != nil {
 		return err
 	}
-	for k, v := range ours {
-		merged[k] = v
-	}
-	for _, k := range []string{"database_ca", "database_tls", "standby_homes", "peers"} {
-		if _, set := ours[k]; !set {
-			delete(merged, k) // omitted: none now
+	return config.WriteNodeConfig(config.LocalNodeConfigPath(), func(merged map[string]json.RawMessage) error {
+		for k, v := range ours {
+			merged[k] = v
 		}
-	}
-	b, err := json.MarshalIndent(merged, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writePrivate(path, b)
+		for _, k := range []string{"database_ca", "database_tls", "standby_homes", "peers"} {
+			if _, set := ours[k]; !set {
+				delete(merged, k) // omitted: none now
+			}
+		}
+		return nil
+	})
 }
 
 // homeDatabase takes the home's database CA (or its word that the database has no
@@ -1510,7 +1504,7 @@ func (s *switching) becomeHome(ctx context.Context, db *sql.DB, kit *switchover.
 	}
 	path := config.LocalNodeConfigPath()
 	aside := path + ".was-node-" + strconv.FormatInt(term-1, 10)
-	if err := os.Rename(path, aside); err != nil && (!os.IsNotExist(err) || !fileExists(aside)) {
+	if err := config.SetNodeConfigAside(path, aside); err != nil {
 		return newHome{}, fmt.Errorf("node.json: %w", err)
 	}
 	home := newHome{Node: n.NodeID, APIURL: s.cfg.PublicAPIURL(), WebURL: s.cfg.PublicWebURL(), DBPort: db2.Port,

@@ -156,6 +156,15 @@ func TestNodeConfigWithABOMAndAKeptBrokenOne(t *testing.T) {
 	if role, id := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleNode || id != "n2" {
 		t.Fatalf("a BOM'd node.json: %s %s", role, id)
 	}
+	// PowerShell 5.1's Out-File and > save UTF-16 (little-endian, with its BOM)
+	utf16le := "\xff\xfe"
+	for _, c := range `{"node_id":"n3","private_key":"k","database_url":"postgres://three"}` {
+		utf16le += string([]byte{byte(c), 0})
+	}
+	write(oldPath, utf16le)
+	if role, id := DetectRole(getenv, "windows", base, os.ReadFile); role != RoleNode || id != "n3" {
+		t.Fatalf("a UTF-16 node.json: %s %s", role, id)
+	}
 	write(oldPath, bom+`{"node_id":"n2","private_key":"k","database_url":"postgres://two","machine_id":"other-pc"}`)
 	if got := NodeConfigPath(getenv, "windows", base); got != newPath {
 		t.Fatalf("another PC's, past its BOM: %s, want %s", got, newPath)

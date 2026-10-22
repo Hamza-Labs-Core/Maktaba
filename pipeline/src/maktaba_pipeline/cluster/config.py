@@ -38,6 +38,7 @@ each other.
 
 from __future__ import annotations
 
+import codecs
 import contextlib
 import errno
 import json
@@ -194,11 +195,36 @@ def _roaming_config(env: Mapping[str, str], home: Path) -> Path:
     return (Path(appdata) if appdata else home / "AppData" / "Roaming") / "Maktaba" / "node.json"
 
 
+#: the byte order marks a node config is read past, in the encoding each names (UTF-32's
+#: before UTF-16's: they begin alike)
+_BOMS = (
+    (codecs.BOM_UTF32_LE, "utf-32"),
+    (codecs.BOM_UTF32_BE, "utf-32"),
+    (codecs.BOM_UTF8, "utf-8-sig"),
+    (codecs.BOM_UTF16_LE, "utf-16"),
+    (codecs.BOM_UTF16_BE, "utf-16"),
+)
+
+
+def _text(path: Path) -> str:
+    """A node config's text, read the way every reader reads it (maktaba-server's and
+    streaming's ``withoutBOM``, the installer's ``Get-Content``): a node.json an editor
+    saved with a byte order mark in that encoding (Notepad and PowerShell 5.1's
+    ``Set-Content -Encoding UTF8`` write UTF-8 with one, its ``Out-File`` and ``>``
+    UTF-16), one without as UTF-8. Raises OSError, and ValueError for text that does not
+    decode (a broken file)."""
+    raw = path.read_bytes()
+    for bom, codec in _BOMS:
+        if raw.startswith(bom):
+            return raw.decode(codec)
+    return raw.decode("utf-8")
+
+
 def _owner(path: Path) -> str:
     """The machine_id a node config records: "" when it has none or cannot be read (a
     broken file is never skipped: ``load`` says what is wrong with it)."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        data = json.loads(_text(path))
     except (OSError, ValueError):
         return ""
     return str(data.get("machine_id") or "").strip() if isinstance(data, dict) else ""
@@ -232,9 +258,10 @@ def load(path: Path | None = None) -> NodeConfig | None:
     could not be put back yet is read where it is (``_source``)."""
     path = path or config_path()
     _recover(path)
+    _prune_broken(path)
     src = _source(path)
     try:
-        data = json.loads(src.read_text(encoding="utf-8-sig"))
+        data = json.loads(_text(src))
     except FileNotFoundError:
         return None
     except ValueError as exc:
@@ -327,12 +354,10 @@ def _in_progress(path: Path, leftover: Path, now: float) -> bool:
 def _whole_state(path: Path) -> bool | None:
     """True when ``path`` holds a node config with its identity (a whole file, not a cut
     one); False when it is gone, or not one (not JSON, cut, without its identity); None
-    when it cannot be read now (another process holds it: a rename, ReplaceFileW). A UTF-8
-    BOM (Notepad, PowerShell 5.1's ``-Encoding UTF8``) is read past, as every node config
-    read here does (``utf-8-sig``), and as maktaba-server, streaming and the node
-    installer do."""
+    when it cannot be read now (another process holds it: a rename, ReplaceFileW). Read
+    as every reader reads it (``_text``: past a byte order mark)."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        data = json.loads(_text(path))
     except FileNotFoundError:
         return False
     except OSError:
@@ -411,9 +436,27 @@ def _rename_no_replace(src: Path, dst: Path) -> None:
 
 def _broken_name(path: Path) -> Path:
     """Where a broken node config is kept when a leftover takes its name: beside it,
-    ``<name>.broken-<time>-<4 hex>`` (no leftover's name: it is never put back, and never
-    removed; a person may want what is in it)."""
+    ``<name>.broken-<time>-<4 hex>`` (no leftover's name: it is never put back; a person
+    may want what is in it, for ``_BROKEN_KEEP_DAYS``)."""
     return path.with_name(f"{path.name}.broken-{int(_now())}-{os.urandom(2).hex()}")
+
+
+#: how long a broken node.json kept aside stays (housekeeping, not a setting: long enough
+#: to look into what broke it; it may hold part of a credential, so not forever). A
+#: re-join removes them at once.
+_BROKEN_KEEP_DAYS = 30
+
+
+def _prune_broken(path: Path, *, all_of_them: bool = False) -> None:
+    """Remove the broken node configs kept beside ``path`` (``_broken_name``) that are
+    older than ``_BROKEN_KEEP_DAYS`` by the time in their names, or all of them."""
+    named = re.compile(rf"{re.escape(path.name)}\.broken-(\d+)-[0-9a-f]{{4}}")
+    now = _now()
+    for p in path.parent.glob(f"{path.name}.broken-*"):
+        m = named.fullmatch(p.name)
+        if m and (all_of_them or now - float(m.group(1)) > _BROKEN_KEEP_DAYS * 86400):
+            with contextlib.suppress(OSError):
+                p.unlink()
 
 
 def _put_in_place(path: Path, leftover: Path) -> tuple[bool, Path | None]:
@@ -796,14 +839,21 @@ def _replace_keeping_acl(path: Path, tmp: Path) -> None:
     failure is settled before it is raised: the old file is put back, or, when it is gone,
     the new one takes its name (the user's alone from its creation). The only copy of a
     node's identity is never removed. Raises when ``path`` holds the old file again;
-    returns when it holds the new one."""
+    returns when it holds the new one. A sharing violation (another process has node.json
+    open; nothing moved) is tried again for a moment, as a recovery's renames are."""
     backup = _leftover_name(path, ".bak")
-    try:
-        _replace_file(path, tmp, backup)
-    except OSError:
-        if not _settle(path, tmp, backup):
-            raise
-        return
+    for left in range(_BUSY_TRIES - 1, -1, -1):
+        try:
+            _replace_file(path, tmp, backup)
+            break
+        except OSError as exc:
+            busy = getattr(exc, "winerror", None) == 32
+            if busy and left and path.exists() and tmp.exists() and not backup.exists():
+                time.sleep(_BUSY_SLEEP)
+                continue
+            if not _settle(path, tmp, backup):
+                raise
+            return
     with contextlib.suppress(OSError):
         backup.unlink()
 
@@ -932,7 +982,8 @@ def save(cfg: NodeConfig, path: Path | None = None) -> Path:
 def set_aside(path: Path) -> Path:
     """``join --rejoin``: the node config at ``path`` (the file that holds it, ``_source``)
     is kept as ``<name>.bak`` and forgotten, with everything a write that could not finish
-    left of it: the next load would put that back. Returns the kept file."""
+    left of it (the next load would put that back) and the broken ones kept aside (they
+    may hold part of the old credential). Returns the kept file."""
     backup = path.with_name(path.name + ".bak")
     with _one_at_a_time(path, wait=_LOCK_WAIT_SEC) as held:
         if not held:
@@ -941,4 +992,5 @@ def set_aside(path: Path) -> Path:
         for p in _leftovers(path):
             with contextlib.suppress(OSError):
                 p.unlink()
+        _prune_broken(path, all_of_them=True)
     return backup
