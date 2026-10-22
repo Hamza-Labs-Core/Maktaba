@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,19 +27,17 @@ func volumes(roots ...string) mover {
 			return &os.LinkError{Op: "rename", Old: from, New: to, Err: errCrossDevice}
 		}
 		return os.Rename(from, to)
-	}}
+	}, place: renameNoReplace}
 }
 
-// cutAt fails m's nth rename of a finished copy into place (a power cut half way).
+// cutAt fails m's nth placing of a finished copy at its name (a power cut half way).
 func cutAt(m mover, n int) mover {
 	count := 0
-	return mover{rename: func(from, to string) error {
-		if strings.HasSuffix(from, partSuffix) {
-			if count++; count == n {
-				return errors.New("power cut")
-			}
+	return mover{rename: m.rename, place: func(part, to string) error {
+		if count++; count == n {
+			return errors.New("power cut")
 		}
-		return m.rename(from, to)
+		return m.place(part, to)
 	}}
 }
 
@@ -231,5 +230,23 @@ func TestMoveAcrossRealVolumes(t *testing.T) {
 	holds(t, filepath.Join(local, "models"), files)
 	if exists(filepath.Join(other, "models")) || exists(filepath.Join(local, "models"+movingSuffix)) {
 		t.Fatal("the old folder and the note must be gone")
+	}
+}
+
+// A copy is never put over a file another process made meanwhile (MoveFileEx
+// without MOVEFILE_REPLACE_EXISTING on Windows, a hard link elsewhere).
+func TestRenameNoReplace(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeAt(t, filepath.Join(dir, "part"), "NEW")
+	writeAt(t, filepath.Join(dir, "to"), "THERE")
+	if err := renameNoReplace(filepath.Join(dir, "part"), filepath.Join(dir, "to")); !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("over an existing file: %v, want fs.ErrExist", err)
+	}
+	if readAt(t, filepath.Join(dir, "to")) != "THERE" {
+		t.Fatal("the existing file must stay")
+	}
+	if err := renameNoReplace(filepath.Join(dir, "part"), filepath.Join(dir, "free")); err != nil || readAt(t, filepath.Join(dir, "free")) != "NEW" {
+		t.Fatalf("to a free name: %v", err)
 	}
 }
