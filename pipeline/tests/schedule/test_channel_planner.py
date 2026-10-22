@@ -191,6 +191,13 @@ def plan(
     return suggest_channels(library() if seasons is None else seasons, loose, config)
 
 
+@pytest.fixture(scope="module")
+def library_plan() -> PlanResult:
+    """``plan()``, planned once for the tests that only read it: every call re-runs the
+    whole planner (unit soft cap)."""
+    return plan()
+
+
 def channel(p: PlanResult, key: str) -> ChannelSuggestion:
     return next(c for c in p.channels if c.key == key)
 
@@ -209,8 +216,8 @@ def slot_at(slots: Sequence[Slot], minute: int, day: str = "mon") -> Slot:
 # ----------------------------------------------------------------- channel suggestions
 
 
-def test_themed_channels_need_enough_hours() -> None:
-    p = plan()
+def test_themed_channels_need_enough_hours(library_plan: PlanResult) -> None:
+    p = library_plan
     keys = {c.key for c in p.channels}
     assert {"seerah", "prophets", "quran", "mix"} <= keys
     # raqaiq has 13.3 h of lectures + the khutbahs → a channel; history has nothing
@@ -220,8 +227,8 @@ def test_themed_channels_need_enough_hours() -> None:
     assert any(w[0] == "theme seerah" and "needs 60 h" in w[1] for w in p2.unplaced)
 
 
-def test_every_suggestion_has_reasons() -> None:
-    p = plan()
+def test_every_suggestion_has_reasons(library_plan: PlanResult) -> None:
+    p = library_plan
     for c in p.channels:
         assert c.reasons, c.key
         for s in c.slots:
@@ -229,16 +236,16 @@ def test_every_suggestion_has_reasons() -> None:
     assert all(ln.reasons for ln in p.lanes.values())
 
 
-def test_channel_numbers_are_stable_per_theme() -> None:
-    p = plan()
+def test_channel_numbers_are_stable_per_theme(library_plan: PlanResult) -> None:
+    p = library_plan
     assert channel(p, "quran").number == 101
     assert channel(p, "seerah").number == 103
     assert channel(p, "mix").number == 100
     assert [c.number for c in p.channels] == sorted(c.number for c in p.channels)
 
 
-def test_current_affairs_stays_off_mix_and_themes() -> None:
-    p = plan()
+def test_current_affairs_stays_off_mix_and_themes(library_plan: PlanResult) -> None:
+    p = library_plan
     for c in p.channels:
         if c.kind == "presenter" or c.key in ("news", "talk"):  # news; talk shows by format
             continue
@@ -258,8 +265,8 @@ def test_presenter_channel_threshold() -> None:
 # ----------------------------------------------------------------- order
 
 
-def test_seasons_and_episodes_stay_in_order() -> None:
-    p = plan()
+def test_seasons_and_episodes_stay_in_order(library_plan: PlanResult) -> None:
+    p = library_plan
     hab = [
         ln
         for ln in p.lanes.values()
@@ -320,8 +327,8 @@ def test_max_lanes_per_daypart_caps_the_shows_of_a_daypart() -> None:
             assert covered[0][0] == 0 and covered[-1][1] == DAY_MINUTES
 
 
-def test_max_lanes_per_daypart_default_keeps_the_plan() -> None:
-    a = plan()
+def test_max_lanes_per_daypart_default_keeps_the_plan(library_plan: PlanResult) -> None:
+    a = library_plan
     b = plan(max_lanes_per_daypart=0)
     assert [(c.key, c.slots) for c in a.channels] == [(c.key, c.slots) for c in b.channels]
     assert PlannerConfig().max_lanes_per_daypart == 0
@@ -339,8 +346,8 @@ def test_group_series_orders_seasons() -> None:
 # ----------------------------------------------------------------- grid shape
 
 
-def test_grid_covers_every_minute_once_on_every_day() -> None:
-    p = plan()
+def test_grid_covers_every_minute_once_on_every_day(library_plan: PlanResult) -> None:
+    p = library_plan
     for c in p.channels:
         for slots in (c.slots, c.ramadan_slots):
             if not slots:
@@ -382,8 +389,8 @@ def test_quran_channel_plays_recitation_all_day() -> None:
         assert all(u.genre == "quran_recitation" for u in lane.units)
 
 
-def test_friday_khutbah_slot_only_on_friday() -> None:
-    p = plan()
+def test_friday_khutbah_slot_only_on_friday(library_plan: PlanResult) -> None:
+    p = library_plan
     mix = channel(p, "mix")
     fri = slot_at(mix.slots, 12 * 60 + 30, "fri")
     assert fri.kind == "khutbah" and fri.days == ("fri",)
@@ -396,14 +403,14 @@ def test_friday_khutbah_slot_only_on_friday() -> None:
             assert all(u.series_id != "k-1" for u in p.lanes[k].units)
 
 
-def test_khutbah_only_where_it_belongs() -> None:
-    p = plan()
+def test_khutbah_only_where_it_belongs(library_plan: PlanResult) -> None:
+    p = library_plan
     seerah = channel(p, "seerah")
     assert all(s.kind != "khutbah" for s in seerah.slots)
 
 
-def test_ramadan_seasons_flagged_and_moved_after_iftar() -> None:
-    p = plan()
+def test_ramadan_seasons_flagged_and_moved_after_iftar(library_plan: PlanResult) -> None:
+    p = library_plan
     ch = channel(p, "seerah")
     assert ch.ramadan_slots
     iftar = slot_at(ch.ramadan_slots, 19 * 60)  # the first block after iftar
@@ -438,8 +445,8 @@ def test_slot_longer_than_episode_or_warned() -> None:
 # ----------------------------------------------------------------- filler
 
 
-def test_short_series_and_clips_become_filler_not_lanes() -> None:
-    p = plan()
+def test_short_series_and_clips_become_filler_not_lanes(library_plan: PlanResult) -> None:
+    p = library_plan
     in_lanes = {u.series_id for ln in p.lanes.values() for u in ln.units}
     assert "short-1" not in in_lanes and "clips-1" not in in_lanes
     pool = p.filler_pools["seerah.topic"]
@@ -494,8 +501,8 @@ def test_simulated_day_pads_every_slot_to_its_boundary() -> None:
     assert progs / (DAY_MINUTES * 60) > 0.8
 
 
-def test_simulation_keeps_episode_order_across_slots() -> None:
-    p = plan()
+def test_simulation_keeps_episode_order_across_slots(library_plan: PlanResult) -> None:
+    p = library_plan
     ch = channel(p, "seerah")
     week = simulate(ch, p, weekday="mon", days=7)
     by_lane: dict[str, list[str]] = {}
@@ -535,8 +542,8 @@ def test_long_loose_videos_group_into_a_programme_lane() -> None:
 # ----------------------------------------------------------------- mappings
 
 
-def test_maktaba_definition_matches_the_slot_0081_schema() -> None:
-    p = plan()
+def test_maktaba_definition_matches_the_slot_0081_schema(library_plan: PlanResult) -> None:
+    p = library_plan
     for ch in p.channels:
         body = maktaba_channel_definition(ch, p)
         assert body["mode"] == "schedule"
@@ -559,8 +566,10 @@ def test_maktaba_definition_matches_the_slot_0081_schema() -> None:
             assert body["mode_config"]["ramadan"]["activate"] == {"hijri_month": 9}
 
 
-def test_dizquetv_weekly_schedule_for_a_grid_of_strips_and_weekly_shows() -> None:
-    p = plan()
+def test_dizquetv_weekly_schedule_for_a_grid_of_strips_and_weekly_shows(
+    library_plan: PlanResult,
+) -> None:
+    p = library_plan
     ch = channel(p, "seerah")
     dz = dizquetv_time_slots(ch, p)
     assert dz["period"] == 7 * 86_400_000  # strips and weekly slots: a weekly period
@@ -574,8 +583,8 @@ def test_dizquetv_weekly_schedule_for_a_grid_of_strips_and_weekly_shows() -> Non
     assert {"lateness", "maxDays", "pad", "flexPreference"} <= set(dz)
 
 
-def test_dizquetv_weekly_schedule_puts_khutbah_on_friday() -> None:
-    p = plan()
+def test_dizquetv_weekly_schedule_puts_khutbah_on_friday(library_plan: PlanResult) -> None:
+    p = library_plan
     mix = channel(p, "mix")
     dz = dizquetv_time_slots(mix, p)
     day = 86_400_000
