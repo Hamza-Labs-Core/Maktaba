@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -92,5 +93,58 @@ func TestDetectRoleWaitsOutAWrite(t *testing.T) {
 	wg.Wait()
 	if wrong != 0 {
 		t.Fatalf("%d of %d reads during writes were not the node", wrong, reads)
+	}
+}
+
+// While a write replaces the roaming node.json of a machine that joined before Epic 38,
+// the path resolves to it every time: never to %LOCALAPPDATA%, where nothing is joined.
+func TestNodeConfigPathWaitsOutAWrite(t *testing.T) {
+	root := t.TempDir()
+	env := map[string]string{
+		"APPDATA":            filepath.Join(root, "Roaming"),
+		"LOCALAPPDATA":       filepath.Join(root, "Local"),
+		"MAKTABA_MACHINE_ID": "pc-a",
+	}
+	getenv := func(k string) string { return env[k] }
+	dir := filepath.Join(root, "Roaming", "Maktaba")
+	path := filepath.Join(dir, "node.json")
+	body := []byte(`{"node_id":"n1","private_key":"k","database_url":"postgres://h","machine_id":"pc-a"}`)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stop atomic.Bool
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { // the writer: lock, node.json aside, the new one in, the backup gone
+		defer wg.Done()
+		lock := filepath.Join(dir, ".node.json.lock")
+		stamp := strconv.FormatInt(time.Now().Unix(), 10)
+		for i := 0; !stop.Load(); i++ {
+			_ = os.WriteFile(lock, nil, 0o600)
+			name := filepath.Join(dir, ".node.json-"+stamp+"-4242-0000000"+string(rune('0'+i%10)))
+			_ = os.WriteFile(name+".tmp", body, 0o600)
+			_ = os.Rename(path, name+".bak")
+			time.Sleep(200 * time.Microsecond) // the gap
+			_ = os.Rename(name+".tmp", path)
+			_ = os.Remove(name + ".bak")
+			_ = os.Remove(lock)
+		}
+	}()
+	deadline := time.Now().Add(time.Second)
+	reads, elsewhere := 0, 0
+	for time.Now().Before(deadline) {
+		reads++
+		if got := NodeConfigPath(getenv, "windows", root); got != path {
+			elsewhere++
+			t.Logf("read %d: %s", reads, got)
+		}
+	}
+	stop.Store(true)
+	wg.Wait()
+	if elsewhere != 0 {
+		t.Fatalf("%d of %d resolutions during writes were not the roaming node config", elsewhere, reads)
 	}
 }

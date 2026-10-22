@@ -284,3 +284,56 @@ func TestSetNodeConfigAsideWithABrokenNodeJSON(t *testing.T) {
 		t.Fatalf("%s is still read as the node config", held)
 	}
 }
+
+// While a write replaces the roaming node.json of a machine that joined before Epic 38
+// (its lock taken, node.json under its backup name for a moment, as ReplaceFileW does),
+// the path resolves to it every time: never to %LOCALAPPDATA%, where nothing is joined.
+func TestNodeConfigPathWaitsOutAWrite(t *testing.T) {
+	root := t.TempDir()
+	env := map[string]string{
+		"APPDATA":            filepath.Join(root, "Roaming"),
+		"LOCALAPPDATA":       filepath.Join(root, "Local"),
+		"MAKTABA_MACHINE_ID": "pc-a",
+	}
+	getenv := func(k string) string { return env[k] }
+	dir := filepath.Join(root, "Roaming", "Maktaba")
+	path := filepath.Join(dir, "node.json")
+	body := `{"node_id":"n1","private_key":"k","database_url":"postgres://h","machine_id":"pc-a"}`
+	writeAt(t, path, body)
+	stop := make(chan struct{})
+	done := make(chan int)
+	go func() { // the writer: lock, node.json aside, the new one in, the backup gone
+		writes := 0
+		lock := nodeConfigLockPath(path)
+		for {
+			select {
+			case <-stop:
+				done <- writes
+				return
+			default:
+			}
+			_ = os.WriteFile(lock, nil, 0o600)
+			tmp, bak := nodeConfigLeftoverName(path, ".tmp"), nodeConfigLeftoverName(path, ".bak")
+			_ = os.WriteFile(tmp, []byte(body), 0o600)
+			_ = os.Rename(path, bak)
+			time.Sleep(200 * time.Microsecond) // the gap
+			_ = os.Rename(tmp, path)
+			_ = os.Remove(bak)
+			_ = os.Remove(lock)
+			writes++
+		}
+	}()
+	end := time.Now().Add(time.Second)
+	reads, elsewhere := 0, 0
+	for time.Now().Before(end) {
+		reads++
+		if got := NodeConfigPath(getenv, "windows", root); got != path {
+			elsewhere++
+			t.Logf("read %d: %s", reads, got)
+		}
+	}
+	close(stop)
+	if writes := <-done; elsewhere != 0 || writes == 0 {
+		t.Fatalf("%d of %d resolutions during %d writes were not the roaming node config", elsewhere, reads, writes)
+	}
+}
