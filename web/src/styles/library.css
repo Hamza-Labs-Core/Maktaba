@@ -32,8 +32,11 @@ h2,
   inset: 0;
   z-index: -1;
   background: var(--color-bg) var(--art-wide) center / cover no-repeat;
-  filter: var(--art-filter);
   pointer-events: none;
+  /* its own compositing layer: the frosted panels above re-blur it without
+     repainting it (a filter here made Chrome flicker) */
+  transform: translateZ(0);
+  will-change: transform;
 }
 @media (max-width: 768px), (orientation: portrait) and (max-width: 1024px) {
   .mkt-shell::before,
