@@ -20,7 +20,11 @@ Codify the layers and what each layer is and is not allowed to do.
   independently.
 - AC4. A new test that exceeds its tier's per-test soft cap (unit 100
   ms, integration 5 s, e2e 30 s) emits a warning; > 3× the soft cap
-  fails the build.
+  fails the build. In the Go unit tier, whose packages run in
+  parallel under `-race`, a passing test past 3× is re-run once,
+  alone, and fails the build only if it is past 3× alone too; a
+  breach that does not repeat is a warning with both timings
+  (`tools/test-budget`, [docs/testing.md](../../../docs/testing.md#budget-enforcer)).
 
 ## Test cases
 

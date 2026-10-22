@@ -10,7 +10,7 @@
 |---|---|
 | Tagging | Go `//go:build unit`, `//go:build integration`, `//go:build e2e`. Python `pytest.mark.unit/integration/e2e`. TS `*.unit.spec.ts`, `*.int.spec.ts`, `*.e2e.spec.ts`. |
 | Per-tier runner | Make targets `make test-unit`, `make test-integration`, `make test-e2e`; CI matrix runs them in parallel. |
-| Soft cap warning | Custom test reporter emits `WARN` at 100 ms unit / 5 s int / 30 s e2e. Hard fail at 3×. |
+| Soft cap warning | Custom test reporter emits `WARN` at 100 ms unit / 5 s int / 30 s e2e. Hard fail at 3×; the Go unit tier's budget checker re-runs a passing breach once, alone, and fails only if it repeats (else a warning). |
 | I/O isolation | Go: net dialer hook in unit tier rejects all dials; Python: `socket.socket = forbidden`; TS: vitest `setupFiles` patches `fetch`/`net`. |
 | Out of scope | Specific test content (per-feature stories own that). |
 

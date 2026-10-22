@@ -28,7 +28,7 @@ Every layer of Maktaba has a test posture proportional to its risk. The test pyr
 | Integration | `//go:build integration` | `@pytest.mark.integration` | `*.int.spec.ts` | 5 s | ≤8 m total |
 | E2E | `//go:build e2e` | `@pytest.mark.e2e` | `*.e2e.spec.ts` | 30 s | ≤12 m total |
 
-Hard fail at 3× soft cap. Unit/Integration: no retries. E2E: retry once.
+Hard fail at 3× soft cap. In the Go unit tier a passing test past the hard cap is first re-timed once, alone (its packages run in parallel under `-race`): it fails only if it is past the cap alone too; otherwise it is a warning. Unit/Integration: no retries of failing tests. E2E: retry once.
 
 ## Coverage floors
 
@@ -47,7 +47,7 @@ Generated code (sqlc, gqlgen, protobuf) excluded.
 - **Test pyramid tiers** with build tags / pytest marks / TS file suffixes — discoverability and CI parallelization without test-name conventions alone.
 - **Fixture corpus.** ~5 media samples (Arabic lecture, English clip, mixed-language, multi-track mkv, RTL filename) plus 4K HDR (download on demand). Seeded DB: 1 k videos, 10 k segments, load ≤5 s.
 - **Contract single sources of truth:** `shared/graphql/schema.graphql`, `shared/proto/*.proto`, `shared/openapi/maktaba.yaml`, `shared/ws/events.ts`. Drift fails CI.
-- **Retry policy.** Unit / Integration: zero retries. E2E: retry once. Flake policy: ≥3 in a 7-day window auto-quarantines and files a P2.
+- **Retry policy.** Unit / Integration: zero retries of a failing test (the Go unit tier re-times a passing test past the hard cap once, alone; see [docs/testing.md](../../testing.md#budget-enforcer)). E2E: retry once. Flake policy: ≥3 in a 7-day window auto-quarantines and files a P2.
 - **Perf CI.** Subset of endpoints with `ci_pr=true`, warm-only, reduced trial count. Full suite nightly. PR comment with deltas vs main baseline. >10 % regression blocks merge.
 
 ## Files & code paths introduced
