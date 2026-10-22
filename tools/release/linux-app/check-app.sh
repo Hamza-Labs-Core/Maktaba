@@ -5,7 +5,8 @@
 # unpacked bundle into a scratch data directory checks every file against files.sha256
 # (and makes again the links a bundler copied as files). check.sh then runs on that
 # runtime copy (Postgres, Python, the venv plan, no ffmpeg in it and the system's taken),
-# once, on the first bundle.
+# once, on the first bundle. No bundle may carry ffmpeg or its libraries anywhere (the
+# AppImage's GStreamer plugins included).
 #
 # The .deb's Depends and the .rpm's Requires name the libraries the shell links and the
 # distribution's ffmpeg (the .rpm's is RPM Fusion's on Fedora and RHEL: their ffmpeg-free
@@ -104,6 +105,17 @@ for bundle in "$@"; do
     fi
     if find "$root/usr/lib" -path '*/server/payload.json' 2>/dev/null | grep -q .; then
         fail "a payload among the resources in usr/lib (linuxdeploy rewrites ELF files there)"
+    fi
+    # No ffmpeg anywhere in the bundle: not in the payload, not among what the AppImage
+    # brings along (its GStreamer plugins: gst-libav links libavcodec). The list goes to a
+    # file (find | head under pipefail ended the script on SIGPIPE).
+    find "$root" \( -iname 'ffmpeg' -o -iname 'ffprobe' -o -name 'libav[cfru]*.so*' -o -name 'libavdevice*.so*' \
+        -o -name 'libpostproc*.so*' -o -name 'libsw[rs]*.so*' -o -name 'libx264*.so*' -o -name 'libgstlibav*.so' \) \
+        -printf '%P\n' >"$SCRATCH/ffmpeg-files" 2>/dev/null || true
+    if [ ! -s "$SCRATCH/ffmpeg-files" ]; then
+        ok "no ffmpeg in the bundle (the distribution's is used)"
+    else
+        fail "$name carries ffmpeg (the distribution's is used): $(sed -n '1,10p' "$SCRATCH/ffmpeg-files" | tr '\n' ' ')"
     fi
     # The payload's modes. A .deb or .rpm is installed as root and each user's setup copies
     # the tree: every file readable by others, every folder open to them, every executable

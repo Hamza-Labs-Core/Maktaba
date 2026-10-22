@@ -79,10 +79,18 @@ func diskSize(p string) int64 {
 	return n
 }
 
+// DiffersError is a key already at To that is another one than From: it is
+// never replaced.
+type DiffersError struct{ To, From string }
+
+func (e *DiffersError) Error() string {
+	return fmt.Sprintf("%s exists and differs from %s: move it away first (it is never replaced)", e.To, e.From)
+}
+
 // Copy copies it.From to it.To (a clone where the volume can), beside and
-// renamed into place. A key already there must be the same; anything else
-// there stays, unless replace (a move made again: the copy there is older
-// than the database it now goes with).
+// renamed into place. A key already there must be the same (a *DiffersError
+// otherwise); anything else there stays, unless replace (a move made again:
+// the copy there is older than the database it now goes with).
 func (it Item) Copy(replace bool) error {
 	if !it.Exists {
 		return nil
@@ -106,7 +114,7 @@ func (it Item) Copy(replace bool) error {
 	if _, err := os.Lstat(it.To); err == nil {
 		if it.Key {
 			if !sameFile(from, it.To) {
-				return fmt.Errorf("%s exists and differs from %s: move it away first (it is never replaced)", it.To, it.From)
+				return &DiffersError{To: it.To, From: it.From}
 			}
 			return nil
 		}

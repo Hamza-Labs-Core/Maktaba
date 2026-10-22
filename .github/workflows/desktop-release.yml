@@ -179,6 +179,9 @@ jobs:
       - uses: astral-sh/setup-uv@v8.1.0
         if: matrix.payload || matrix.linux_payload
         with:
+          # the constraints name PyTorch's index: uv export --emit-index-url needs uv 0.12+
+          # (build-release.sh checks), and one uv version writes them the same every run
+          version: "0.13.4"
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
 

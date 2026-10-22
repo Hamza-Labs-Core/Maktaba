@@ -233,8 +233,9 @@ func TestCheckProblems(t *testing.T) {
 			fakeFFmpeg{}, "ffmpeg_not_found", map[string]any{"setting": "MAKTABA_FFPROBE", "path": "/x/ffprobe"}, ""},
 		{"no ffprobe", Tools{FFmpeg: "/usr/bin/ffmpeg", Source: FromPath}, fakeFFmpeg{}, "ffprobe_missing",
 			map[string]any{"path": "/usr/bin/ffmpeg"}, "ffmpeg_install"},
+		// apt would install the same one again: a newer release, or another ffmpeg
 		{"Ubuntu 20.04's", both, fakeFFmpeg{version: "4.2.7-0ubuntu0.1"}, "ffmpeg_old",
-			map[string]any{"have": "4.2.7-0ubuntu0.1", "need": "4.4", "path": "/usr/bin/ffmpeg"}, "ffmpeg_install"},
+			map[string]any{"have": "4.2.7-0ubuntu0.1", "need": "4.4", "path": "/usr/bin/ffmpeg"}, "ffmpeg_old_distro"},
 		{"no speechnorm, no lavfi", both, fakeFFmpeg{edit: func(arg, out string) string {
 			return without("-formats", "lavfi")(arg, without("-filters", "speechnorm")(arg, out))
 		}}, "ffmpeg_lacks", map[string]any{"missing": "filter speechnorm, demuxer lavfi", "have": "6.1.2", "path": "/usr/bin/ffmpeg"}, "ffmpeg_install"},
@@ -258,7 +259,10 @@ func TestCheckProblems(t *testing.T) {
 			switch {
 			case c.advice == "" && r.Install != nil:
 				t.Errorf("install %+v", r.Install)
-			case c.advice != "" && (r.Install == nil || r.Install.Code != c.advice || r.Install.Params["command"] != "sudo apt install ffmpeg"):
+			case c.advice != "" && (r.Install == nil || r.Install.Code != c.advice):
+				t.Errorf("install %+v", r.Install)
+			case c.advice == "ffmpeg_install" && r.Install.Params["command"] != "sudo apt install ffmpeg",
+				c.advice == "ffmpeg_old_distro" && (r.Install.Params["need"] != "4.4" || r.Install.Params["distro"] != ubuntu.PrettyName):
 				t.Errorf("install %+v", r.Install)
 			}
 		})
@@ -324,6 +328,8 @@ func TestInstallCommand(t *testing.T) {
 		{OSRelease{ID: "manjaro", IDLike: "arch"}, pacman},
 		{OSRelease{ID: "endeavouros", IDLike: "arch"}, pacman},
 		{OSRelease{ID: "gentoo"}, ""},
+		// Amazon Linux says "fedora" with its year: RPM Fusion has nothing for it
+		{OSRelease{ID: "amzn", IDLike: "fedora", VersionID: "2023"}, ""},
 		{OSRelease{ID: "sles", IDLike: "suse", VersionID: "15.6"}, ""},
 		{OSRelease{}, ""},
 	} {
@@ -423,6 +429,13 @@ func TestEnv(t *testing.T) {
 	}
 	if got := (Tools{FFmpeg: ff, FFprobe: fp, Source: FromPath}).Env(); slices.ContainsFunc(got, func(s string) bool { return strings.HasPrefix(s, "PATH=") }) {
 		t.Errorf("the PATH's own changes no PATH: %q", got)
+	}
+	// [media] ffmpeg = the PATH's own ("/usr/bin/ffmpeg"): the PATH stays as it is, so
+	// /usr/local/bin's yt-dlp is still found before /usr/bin's
+	sys := exe(t, filepath.Join(t.TempDir(), "usr", "bin"), "ffmpeg")
+	fakeEnv(t, map[string]string{"PATH": "/usr/local/bin" + string(os.PathListSeparator) + filepath.Dir(sys)}, map[string]string{"ffmpeg": sys})
+	if got := (Tools{FFmpeg: sys, Source: FromConfig}).Env(); slices.ContainsFunc(got, func(s string) bool { return strings.HasPrefix(s, "PATH=") }) {
+		t.Errorf("the setting names the PATH's own: %q", got)
 	}
 	if got := (Tools{Source: FromPath}).Env(); got != nil {
 		t.Errorf("none found: %q", got)

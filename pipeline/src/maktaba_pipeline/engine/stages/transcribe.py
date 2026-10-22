@@ -19,7 +19,8 @@ conversion of an MLX model it is given), ``MAKTABA_STT_LANGUAGE`` (``ar``),
 ``MAKTABA_STT_REFINE`` (``1``: a second listen corrects Whisper's words,
 :mod:`maktaba_pipeline.stt.refine`; ``0`` stores Whisper's as they are) with
 ``MAKTABA_STT_REFINE_MODEL`` (default ``CohereLabs/cohere-transcribe-arabic-07-2026``;
-MLX only: on CTranslate2 the transcript keeps Whisper's words and says why),
+on Windows and Linux on the NVIDIA GPU Whisper uses, when it has room for it beside
+Whisper: else the transcript keeps Whisper's words and says why),
 ``MAKTABA_STT_BATCH`` (files decoded together: 32 on MLX, 8 on CTranslate2). MLX's GPU
 memory: ``MAKTABA_STT_GPU_GB`` / ``_GPU_CACHE_GB``; CTranslate2's device and precision:
 ``MAKTABA_STT_DEVICE`` (``auto``), ``MAKTABA_STT_COMPUTE_TYPE`` (``auto``),
@@ -27,7 +28,8 @@ memory: ``MAKTABA_STT_GPU_GB`` / ``_GPU_CACHE_GB``; CTranslate2's device and pre
 every window's decoding.
 
 Where (review of story 38.8): while the second listen is on, a worker that cannot run it
-(Windows, Linux: :func:`second_listen_problem`) leaves the stage to those that can,
+(:func:`second_listen_problem`: a Windows or Linux machine without an NVIDIA GPU that runs
+it, a Mac without mlx-audio) leaves the stage to those that can,
 unless the home's rules let it transcribe too (``rules.transcription``,
 :mod:`maktaba_pipeline.stt.placement`). A transcript made without its second listen
 records that in its job's input hash (:func:`skipped_fingerprint`): a worker that runs
@@ -254,17 +256,30 @@ def second_listen_problem() -> str | None:
 
 
 def runs_second_listen() -> bool:
-    """This worker gives its transcripts their second listen: it is on, and runs here."""
-    return refine_model() is not None and second_listen_problem() is None
+    """This worker gives its transcripts their second listen: it is on, runs here, and its
+    model did not just fail to load (``cohere.load_failure``: then, until the next try, a
+    transcript without it stands, and none is queued again)."""
+    model = refine_model()
+    if model is None or second_listen_problem() is not None:
+        return False
+    from ...stt.cohere import load_failure
+
+    return load_failure(model) is None
 
 
 def waits_for_second_listen() -> str | None:
     """Why this worker leaves transcribe to the machines that run the second listen, or
-    None: it is on (``MAKTABA_STT_REFINE``), it cannot run here, and the home's rules do
-    not let a machine without it transcribe (``without_second_listen``)."""
-    if refine_model() is None or _RULES.without_second_listen:
+    None: it is on (``MAKTABA_STT_REFINE``), it cannot run here (or its model just failed
+    to load: until the next try, ``cohere.load_failure``), and the home's rules do not let
+    a machine without it transcribe (``without_second_listen``)."""
+    model = refine_model()
+    if model is None or _RULES.without_second_listen:
         return None
     why = second_listen_problem()
+    if why is None:
+        from ...stt.cohere import load_failure
+
+        why = load_failure(model)
     if why is None:
         return None
     return (
@@ -509,17 +524,24 @@ def _has_second_listen_model(model: str) -> bool:
 
 
 def _refine(
-    result: Transcript, audio: Any, model: str, share: Path | None = None
+    result: Transcript,
+    audio: Any,
+    model: str,
+    share: Path | None = None,
+    settings: WhisperSettings | None = None,
 ) -> dict[str, Any]:
     """The second listen (in a thread: it decodes on the GPU). The model comes from
     Hugging Face or, on a machine without the licence, from the home's copy on the share
-    (``share``: the share's models folder); ``source`` says which. A worker that cannot
-    run it (no mlx-audio, no copy of the model) keeps Whisper's words and says why."""
+    (``share``: the share's models folder); ``source`` says which, ``runtime`` what heard
+    it on CUDA, and ``dictionary`` when the respelling had no dictionary. A worker that
+    cannot run it (no mlx-audio; no NVIDIA GPU, or one with
+    no room for it beside Whisper, whose ``settings`` say its device and batch; no copy of
+    the model) keeps Whisper's words and says why."""
     from ...stt.cohere import dictionary, recogniser
     from ...stt.refine import refine
 
     try:
-        rec = recogniser(model, share)
+        rec = recogniser(model, share, settings)
     except Exception as exc:  # noqa: BLE001 - Whisper's transcript is still a transcript
         _log.warning("transcribe.refine_unavailable", model=model, error=str(exc))
         return {
@@ -528,11 +550,16 @@ def _refine(
             "skipped": f"{type(exc).__name__}: {exc}"[:300],
         }
     source = str(getattr(rec, "source", "hf"))
+    runtime = getattr(rec, "runtime", None)
+    extra = {"source": source, **({"runtime": str(runtime)} if runtime else {})}
     try:
-        return {**refine(result, audio, rec, dictionary(), model).as_dict(), "source": source}
+        spelling = dictionary()
+        stats = refine(result, audio, rec, spelling, model).as_dict()
     except Exception as exc:  # noqa: BLE001 - each stretch is merged whole: what is done stands
         _log.warning("transcribe.refine_failed", model=model, exc_info=True)
-        return {"model": model, "source": source, "failed": f"{type(exc).__name__}: {exc}"[:300]}
+        return {"model": model, **extra, "failed": f"{type(exc).__name__}: {exc}"[:300]}
+    # without CAMeL Tools or its data, Cohere's words not seen in Whisper's are spelt as heard
+    return {**stats, **extra, **({"dictionary": "unavailable"} if spelling is None else {})}
 
 
 async def wait_for_memory(ctx: StageContext) -> None:
@@ -793,7 +820,7 @@ async def _transcribe_file(
         # the share is looked for until the model is loaded (a stale mount can be slow),
         # and not at all where there is no second listen (it then says why)
         share = None if loaded(model) or no_second_listen() else await resolve_models_dir(db)
-        refined = await asyncio.to_thread(_refine, result, audio, model, share)
+        refined = await asyncio.to_thread(_refine, result, audio, model, share, settings)
     del audio
     if tmap is not None:
         result = _remap(result, tmap, total_sec)

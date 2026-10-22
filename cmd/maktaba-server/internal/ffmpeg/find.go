@@ -111,14 +111,16 @@ func (t *Tools) resolve(setting, v string) string {
 
 // Env is what the roles get so each runs these tools: MAKTABA_FFMPEG and
 // MAKTABA_FFMPEG_BIN (the pipeline's and the api's name, the streaming
-// role's), MAKTABA_FFPROBE and MAKTABA_FFPROBE_BIN, and the folder of an
-// ffmpeg that is not the PATH's own first on the PATH (what runs a bare
-// "ffmpeg", yt-dlp too, gets it). Nothing for a tool not found: the roles then
-// look for it on the PATH themselves, and the check says what is missing.
+// role's), MAKTABA_FFPROBE and MAKTABA_FFPROBE_BIN, and, when a bare "ffmpeg"
+// on the PATH is another one, its folder first on the PATH (what runs a bare
+// "ffmpeg", yt-dlp too, gets it). Not when the PATH finds this one already:
+// [media] ffmpeg = "/usr/bin/ffmpeg" leaves /usr/local/bin and ~/.local/bin
+// (a newer yt-dlp) ahead of /usr/bin. Nothing for a tool not found: the roles
+// then look for it on the PATH themselves, and the check says what is missing.
 func (t Tools) Env() []string {
 	var env []string
 	if t.FFmpeg != "" {
-		if t.Source != FromPath {
+		if t.Source != FromPath && !t.onPath() {
 			env = append(env, "PATH="+filepath.Dir(t.FFmpeg)+string(os.PathListSeparator)+getenv("PATH"))
 		}
 		env = append(env, "MAKTABA_FFMPEG="+t.FFmpeg, "MAKTABA_FFMPEG_BIN="+t.FFmpeg)
@@ -127,6 +129,29 @@ func (t Tools) Env() []string {
 		env = append(env, "MAKTABA_FFPROBE="+t.FFprobe, "MAKTABA_FFPROBE_BIN="+t.FFprobe)
 	}
 	return env
+}
+
+// onPath: a bare "ffmpeg" on the PATH is t.FFmpeg (the same file, links
+// resolved).
+func (t Tools) onPath() bool {
+	p, err := lookPath("ffmpeg")
+	if err != nil {
+		return false
+	}
+	return sameFile(p, t.FFmpeg)
+}
+
+func sameFile(a, b string) bool {
+	for _, p := range []*string{&a, &b} {
+		if r, err := filepath.EvalSymlinks(*p); err == nil {
+			*p = r
+		}
+		*p = absolute(*p)
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 // env is the first of the variables that is set.
