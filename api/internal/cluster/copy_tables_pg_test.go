@@ -11,7 +11,7 @@ import (
 
 // copyReviewed are the tables a machine's copy holds, each looked at for what it holds
 // (specs/epics/37-node-replica): no secret, no other machine's state. A new table is
-// copied unless cluster_copy_excluded() (slot 0145) leaves it out, so a migration that
+// copied unless cluster_copy_excluded() (slot 0146) leaves it out, so a migration that
 // adds one must decide: add it here, or to the exclusion (a secret, a machine's own).
 var copyReviewed = []string{
 	"app_settings", "audio_cache", "audio_tracks", "books", "channel_art_overrides",
@@ -30,7 +30,7 @@ var copyReviewed = []string{
 	"media_metadata_enrichment", "media_parsed_titles", "notification_cursors",
 	"notification_reads", "notifications", "personal_access_tokens", "playback_state",
 	"plex_items", "plex_livetv_state", "processing_jobs", "promo_links", "purge_log",
-	"queue_control", "recommendation_dismissals", "release_catalog", "saved_searches",
+	"queue_control", "recommendation_dismissals", "release_catalog", "relisten_attempts", "saved_searches",
 	"search_history", "season_style", "season_tags", "segment_speakers", "series", "series_books",
 	"series_episodes", "series_seasons", "speakers", "storage_canonicalize",
 	"storage_path_backups", "storage_path_migrations", "storage_servers", "streaming_hosts",

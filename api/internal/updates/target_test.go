@@ -87,10 +87,19 @@ func TestCompareVersions(t *testing.T) {
 	}{
 		{"1.10.0", "1.9.0", 1}, {"v1.5.0", "1.5.0", 0}, {"1.5.0-rc.1", "1.5.0", -1},
 		{"1.5.0-rc.10", "1.5.0-rc.9", 1}, {"1.5.0-beta", "1.5.0-rc", -1}, {"", "0.0.1", -1},
+		// a checkout's build is after the release it was built from, as the verifier says
+		{"0.2.0", "0.2.0-12-gabc1234", -1}, {"0.2.1", "0.2.0-12-gabc1234", 1},
 	} {
 		if got := CompareVersions(c.a, c.b); got != c.want {
 			t.Errorf("CompareVersions(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
 		}
+	}
+	// so the catalog never offers a checkout's own release as newer
+	if got := maxVersion("0.2.0-12-gabc1234", "0.2.0"); got != "0.2.0-12-gabc1234" {
+		t.Errorf("maxVersion = %q", got)
+	}
+	if IsPrerelease("0.2.0-12-gabc1234") || !IsPrerelease("1.0.0-rc.1") {
+		t.Error("IsPrerelease: a build off a release tag is not a prerelease, an rc is")
 	}
 }
 

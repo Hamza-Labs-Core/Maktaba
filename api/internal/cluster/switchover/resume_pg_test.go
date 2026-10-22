@@ -40,7 +40,7 @@ func TestTwoSwitchesStartedAtOnceRunOne(t *testing.T) {
 		t.Fatalf("started %d, refused %d", started.Load(), refused.Load())
 	}
 	// another process of this home (its own orchestrator, the same database)
-	other := &Orchestrator{DB: o.DB, Hub: o.Hub, Supervisor: &fakeSupervisor{kit: "x"}, HomeName: "a", SchemaRev: 145}
+	other := &Orchestrator{DB: o.DB, Hub: o.Hub, Supervisor: &fakeSupervisor{kit: "x"}, HomeName: "a", SchemaRev: 146}
 	if _, err := other.Start(ctx, c, "system"); !errors.Is(err, ErrNotReady) {
 		t.Fatalf("a second process started a switch too: %v", err)
 	}

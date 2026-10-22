@@ -51,9 +51,10 @@ jobs:
           go test -count=1 . ./internal/service ./internal/selfmanaged
           ./internal/supervisor -run "ReleaseDir|ReleaseBinRoot|Launcher|StopFile|HealthyFor|Render|Plan|Deploy|Install|SelfManaged|Package|Convert|Homebrew"
 
-      # Epic 38 story 38.1: where an install keeps its files on each OS, the one-time
-      # move of an older layout (the Windows roaming profile, the Mac's XDG paths),
-      # and the node config's path, on the OS itself.
+      # Epic 38 story 38.1: where an install keeps its files on each OS, how an older
+      # layout comes in (Windows copies its config and keys out of the roaming profile
+      # and keeps the originals; a Mac moves its XDG paths), the state root and the
+      # node config's path, on the OS itself.
       - name: maktaba-server (paths per OS)
         working-directory: cmd/maktaba-server
         run: go test -count=1 ./internal/config
@@ -69,7 +70,7 @@ jobs:
         shell: bash # stops at the first failing command (pwsh would report only the last)
         run: |
           go test -count=1 -v ./internal/ctrlbreak ./internal/supervisor ./internal/appvenv
-          go test -count=1 -v . -run "StopGently"
+          go test -count=1 -v . -run "StopGently|SetupVenvStopsGently"
 
       # The bundled Postgres on Windows, against the pinned build pgbin fetches (kept
       # between runs): postgres.exe under a restricted token (the runner is an

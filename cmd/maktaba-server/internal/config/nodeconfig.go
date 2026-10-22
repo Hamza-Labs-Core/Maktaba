@@ -43,6 +43,10 @@ type NodeConfig struct {
 	// machine): one that was off during a switch, its old home gone, asks them for its
 	// notice of the new home (every copy has the notices).
 	Peers []string `json:"peers,omitempty"`
+	// MachineID is the PC the node config belongs to (Windows' MachineGuid), written by
+	// the pipeline when it joins or first runs with a config that has none
+	// (cluster/config.py); "" in a config no new Maktaba has run with yet.
+	MachineID string `json:"machine_id"`
 	// Err is why node.json, which exists, could not be read (bad JSON, a truncated
 	// file): such a machine is not "not joined", which would start it as a home.
 	Err error `json:"-"`
@@ -177,10 +181,15 @@ func (n NodeConfig) Missing() []string {
 }
 
 // NodeConfigPath is where the pipeline keeps the node config (cluster/config.py
-// config_path): MAKTABA_NODE_CONFIG, else per OS. On Windows it is
-// %LOCALAPPDATA%\Maktaba\node.json (Epic 38 story 38.1); a machine that joined
-// before keeps the one in its roaming profile (%APPDATA%\Maktaba\node.json) while
-// there is none in the new place.
+// config_path): MAKTABA_NODE_CONFIG, else per OS. On Windows a machine has one node
+// config and it stays where it is (it is never copied or moved, story 38.1):
+// %APPDATA%\Maktaba\node.json of a machine that joined before Epic 38, while it is
+// this PC's (its machine_id is this PC's MachineGuid) or no PC's yet (the pipeline
+// claims it the first time it runs with it); else %LOCALAPPDATA%\Maktaba\node.json,
+// where a new join writes. One in a roaming profile that another PC claimed is
+// skipped (ForeignNodeConfig): this PC is not that machine, and its own join then
+// writes the local file, never the other PC's identity. Streaming, the pipeline and
+// the node installer's scripts resolve it the same way.
 func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 	if p := strings.TrimSpace(getenv("MAKTABA_NODE_CONFIG")); p != "" {
 		if strings.HasPrefix(p, "~") {
@@ -192,24 +201,99 @@ func NodeConfigPath(getenv func(string) string, goos, userHome string) string {
 	case "darwin":
 		return filepath.Join(userHome, "Library", "Application Support", "Maktaba", "node.json")
 	case "windows":
-		cur := filepath.Join(WindowsRoot(getenv, userHome), "node.json")
-		if isFile(cur) {
-			return cur
-		}
-		roaming := getenv("APPDATA")
-		if roaming == "" {
-			roaming = filepath.Join(userHome, "AppData", "Roaming")
-		}
-		if old := filepath.Join(roaming, "Maktaba", "node.json"); isFile(old) {
+		if old := roamingNodeConfig(getenv, userHome); isFile(old) && !claimedElsewhere(old, thisMachine(getenv)) {
 			return old
 		}
-		return cur
+		return filepath.Join(WindowsRoot(getenv, userHome), "node.json")
 	}
 	base := getenv("XDG_CONFIG_HOME")
 	if base == "" {
 		base = filepath.Join(userHome, ".config")
 	}
 	return filepath.Join(base, "maktaba", "node.json")
+}
+
+// machineIDEnv names this PC's id in place of Windows' MachineGuid: tests, and a PC
+// whose registry cannot be read.
+const machineIDEnv = "MAKTABA_MACHINE_ID"
+
+// ThisMachineID is this PC's id: $MAKTABA_MACHINE_ID, else Windows' MachineGuid
+// (HKLM\SOFTWARE\Microsoft\Cryptography); "" when it cannot be known (off Windows).
+func ThisMachineID(getenv func(string) string) string {
+	if v := strings.TrimSpace(getenv(machineIDEnv)); v != "" {
+		return v
+	}
+	return machineGUID()
+}
+
+// roamingNodeConfig is %APPDATA%\Maktaba\node.json, a node config from before Epic 38.
+func roamingNodeConfig(getenv func(string) string, userHome string) string {
+	roaming := getenv("APPDATA")
+	if roaming == "" {
+		roaming = filepath.Join(userHome, "AppData", "Roaming")
+	}
+	return filepath.Join(roaming, "Maktaba", "node.json")
+}
+
+// nodeConfigOwner is the machine_id a node config records: "" when it has none or
+// cannot be read (a broken file is never skipped: its reader says what is wrong).
+func nodeConfigOwner(path string) string {
+	b, err := os.ReadFile(path) //nolint:gosec // this machine's node config
+	if err != nil {
+		return ""
+	}
+	var v struct {
+		MachineID string `json:"machine_id"`
+	}
+	if json.Unmarshal(b, &v) != nil {
+		return ""
+	}
+	return strings.TrimSpace(v.MachineID)
+}
+
+// claimedElsewhere: the node config at path records another PC than this one. A
+// config no PC has claimed, or a PC whose id cannot be known, is never skipped: a
+// working node is never taken down on a guess.
+func claimedElsewhere(path string, thisID func() string) bool {
+	owner := nodeConfigOwner(path)
+	if owner == "" {
+		return false
+	}
+	this := thisID()
+	return this != "" && !strings.EqualFold(owner, this)
+}
+
+// thisMachine is ThisMachineID, asked only when a claimed config needs it.
+func thisMachine(getenv func(string) string) func() string {
+	return func() string { return ThisMachineID(getenv) }
+}
+
+// ForeignNodeConfig is the roaming profile's node config when another PC claimed it
+// (NodeConfigPath skips it), with that PC's id: this PC runs unjoined until it joins
+// as its own machine. "" when there is none (off Windows, with $MAKTABA_NODE_CONFIG
+// set, or a config that is this PC's or no PC's).
+func ForeignNodeConfig(getenv func(string) string, goos, userHome string) (path, owner string) {
+	if goos != "windows" || strings.TrimSpace(getenv("MAKTABA_NODE_CONFIG")) != "" {
+		return "", ""
+	}
+	old := roamingNodeConfig(getenv, userHome)
+	if !isFile(old) || !claimedElsewhere(old, thisMachine(getenv)) {
+		return "", ""
+	}
+	return old, nodeConfigOwner(old)
+}
+
+// LocalForeignNodeConfig is ForeignNodeConfig for this process.
+func LocalForeignNodeConfig() (path, owner string) {
+	home, _ := os.UserHomeDir()
+	return ForeignNodeConfig(os.Getenv, runtime.GOOS, home)
+}
+
+// ForeignNodeLine says why this PC runs unjoined beside another PC's node config.
+func ForeignNodeLine(path, owner string) string {
+	return "The machine settings " + path + " in this PC's roaming profile belong to another PC (" + owner +
+		"): this PC is not that machine, so it works for no home yet. To have it work for a home, join it as its own " +
+		"machine (Help: Machines, Add a machine); its settings are then kept on this PC only."
 }
 
 func isFile(p string) bool {

@@ -835,7 +835,7 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 			"only an approved machine can be revoked").With("state", n.State))
 		return
 	}
-	// the state first: a copy's grant reads it under a lock (slot 0145), so one under way
+	// the state first: a copy's grant reads it under a lock (slot 0146), so one under way
 	// ends before and one after is refused; then its roles, which no grant re-enables now
 	// (a revoked one again: its roles, if disabling them failed the first time)
 	if n.State == cluster.StateApproved {

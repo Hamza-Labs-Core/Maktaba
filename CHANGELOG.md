@@ -37,7 +37,7 @@ don't append a line here; docs-only PRs are exempt.
   pipeline stops claiming jobs while the home's database does not answer, stops the jobs in
   flight before their claim lease lapses (from the last beat the home answered), and resumes on
   its own; a job the home handed to another machine meanwhile is never ended by the first.
-  Migration 0145.
+  Migration 0146.
 - **The home can be switched to another machine** (Epic 37, "Switching the home"): "Make B the
   home" on the Machines tab, then nothing to do by hand. The home pauses the jobs and its
   database's changes, hands the machine what replication leaves out (the secrets and their key,
@@ -69,7 +69,7 @@ don't append a line here; docs-only PRs are exempt.
   reported to the new home, where the admin downloads it or reviews and applies what does not
   conflict, in one transaction. Never applied automatically: a transaction touching a row the
   new home changed since, the secrets or the cluster's own data, or one that would fail. What was
-  applied is recorded. Migration 0145.
+  applied is recorded. Migration 0146.
 - **The cloud relay agent moves with the home.** The home's supervisor runs `maktaba-cloudlink`
   while `[cloud]` is enabled. A switch stops it on the old home, carries its credentials, and
   starts it on the new one. It ships with the Mac and Linux apps.
@@ -171,6 +171,13 @@ don't append a line here; docs-only PRs are exempt.
   now turns the bundled Postgres on inside any desktop app's payload, not only on a Mac (a
   `[database] url` or a SQLite database in use still wins). The app's roles find the payload's
   `ffmpeg.exe`. Loopback TCP only on Windows, the nightly dumps as on the Mac.
+- **The desktop app runs the server on Linux** (Epic 39, story 39.8). When setup finishes, the
+  app copies its server into `~/.local/share/maktaba/runtime` and runs it as the user's systemd
+  service, started at boot through linger; after an app update it moves the server to the new
+  version at its next start (an app older than the server leaves it alone and says so). Pause,
+  Resume and Stop server work from the tray, or from the window's Server menu where the desktop
+  shows no tray; the tray starts at login when it can be shown. The tray, the Server menu and the
+  app's dialogs follow the session's language (English or Arabic).
 
 ### Changed
 
@@ -189,29 +196,56 @@ don't append a line here; docs-only PRs are exempt.
   so once in its log; its children then open no console window on the desktop. A child is held
   still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself; so are the
   venv bootstrap the server and setup start, and setup's model download, when they are asked.
-- **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1): `server.toml`,
-  `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches and the bundled
-  Postgres beside `data\`. Nothing is in the roaming profile any more, so the keys and a node's
-  identity never follow the user to another PC. An install from before moves at its next
-  `maktaba-server` command, with or without a `server.toml`:
-  `server.toml`, the keys and `node.json` out of `%APPDATA%\Maktaba`, and `models\`, `chroma\`,
-  `cache\`, `postgres\` and `backups\` out of `data\` to beside it (when `data_dir` is the
-  default, `MAKTABA_CONFIG` or not). Each piece moves on its own and only while its new place is
-  empty: nothing is replaced and no two folders are merged, and a piece that finds something
-  there stays put and says so once. Across drives (a roaming profile on another drive or on a
-  server) a file is copied, flushed to disk and compared before the old one is removed, a folder
-  file by file, and a move cut short is finished by the next command, so no key is lost. One
-  command at a time moves (a lock in `%LOCALAPPDATA%\Maktaba`; a second one waits for it). A
-  `maktaba-server` inside the desktop app's payload, on Windows or a Mac, never moves an older
-  install: that comes into the app only through the app's own move, which copies it and keeps
-  the old one for going back. The node installer's `node.env` stays where
-  its scripts read it, and a machine that joined before reads its old `node.json` until it has
-  moved; the api and the pipeline, run on their own, read `keys\secrets.key` the same way. On
-  Windows the pipeline also writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
+- **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1), for a new install:
+  `server.toml`, `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches
+  and the bundled Postgres beside `data\`. A new install puts nothing in the roaming profile.
+- **An install from before keeps its originals.** Its next `maktaba-server` command copies
+  `server.toml` and the keys there from `%APPDATA%\Maktaba` (with or without a `server.toml`;
+  nothing with `MAKTABA_CONFIG` set), and the copies are used from then on.
+  - The originals stay in `%APPDATA%\Maktaba`, which roams with a roaming profile: older
+    versions of the install, a node's pipeline run from a checkout and the node installer still
+    read them. `uninstall --purge` removes them with their copies.
+  - The copied keys and passwords are limited to the user, as `node.json` is.
+  - A copy is never replaced. One that differs from its original stays, and the command says so
+    once.
+  - Each copy is written beside its new name, flushed, compared and put in place without
+    replacing anything, so a roaming profile on another drive or on a server works, and a copy
+    cut short is made again by the next command.
+  - One command at a time copies: a lock in `%LOCALAPPDATA%\Maktaba`, and a second command
+    waits for it.
+- **`node.json` is never copied.** A machine has one node config: one that joined before keeps
+  it in `%APPDATA%\Maktaba`, where every reader (Maktaba, streaming, the pipeline, the node
+  installer) and a re-join use it. That profile can roam, so the file records the PC it belongs
+  to (`machine_id`, Windows' MachineGuid). The first new Maktaba that runs with it on a PC claims
+  it, keeping its ACL; the pipeline is its one writer. A PC it does not belong to skips it: it
+  is no home's machine, and its own join writes `%LOCALAPPDATA%\Maktaba\node.json`, never the
+  other PC's identity. `maktaba-server` says so once at its start, and the app's setup check
+  shows it (`node_config_other_pc`).
+- **The large state stays where it is.** The install's models, caches and Postgres stay in
+  `data\`. It is decided once whether `data\` or the folder beside it is the state root, and the
+  answer is kept (`state-root.json`), so a folder an older version makes later never moves it.
+  Nothing moves or copies a folder that a running Postgres or an older version may hold.
+- **Inside the desktop app nothing is copied or moved.** A `maktaba-server` inside the app's
+  payload, on Windows or a Mac, never copies or moves an older install: that comes into the app
+  only through the app's own move, which copies it and keeps the old one for going back.
+- The node installer's `node.env` stays where its scripts read it.
+- The api and the pipeline, run on their own, read `keys\secrets.key`, or the old one until it has
+  been copied.
+- On Windows the pipeline writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
   longer raise `UnicodeEncodeError`.
 
 ### Fixed
 
+- **The second listen's retries back off and stop (follow-up of story 38.8).** A machine that
+  runs the second listen queued the same 20 oldest transcripts made without it every 10 minutes,
+  forever, when it could not give them theirs (a file it cannot read, a model that does not load),
+  so newer ones never got their turn. Each video's tries are now recorded (new table
+  `relisten_attempts`, slot 0145): after a try it waits 1 hour, doubling up to a day, the untried
+  videos go first, and after 6 tries it stops and says so once, as a warning in Processing,
+  Activity. A transcript with the second listen, or a new transcribe run, starts over. The
+  model download's hash mismatch names the hashes before the folder, so a long Windows path no
+  longer cuts them off. The Settings page shows the Transcription rules in Arabic, and a check
+  keeps every rules section in Arabic but those not yet translated.
 - **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
   `--username`/`--password` flags the api does not have; it now passes the username and a
   password file.
@@ -242,6 +276,16 @@ don't append a line here; docs-only PRs are exempt.
   Uploaded channel art had the same problem. The supervisor now passes its `data_dir`
   (`MAKTABA_DATA_DIR`), and an api or streaming server run on its own uses `/var/lib/maktaba`
   only as root, else the user's `$XDG_DATA_HOME/maktaba`.
+- **A build made from a checkout is never "older" than the release it was built from.** A
+  `git describe` version (`v0.2.0-12-gabc1234`, the version of a build off a tag) ranked before
+  `v0.2.0`, as a prerelease does: `maktaba-server update`, the API's "update available", the
+  Updates page and the scheduler offered `v0.2.0` as an update to it, the verifier refused
+  updating from it as a downgrade, and the self-managed layout's watermark and setup's conversion
+  took it for a downgrade. It now ranks after its tag (by its number of commits, a dirty tree
+  after a clean one: `v0.2.0` < `v0.2.0-dirty` < `v0.2.0-1-g…`) and before the next release, and
+  is not a prerelease when its tag is not. One order everywhere: the release verifier's, which
+  the update catalog, the API's update check and the self-managed layout follow, and the Updates
+  page's pin check matches.
 - **The launcher never sends CTRL_BREAK to a server that has exited** (Windows, Epic 38 story
   38.2). It holds a handle to the server until it is reaped and asks it to stop only while it
   still runs, holding the server suspended from that check to the send so it cannot exit in
