@@ -1,31 +1,34 @@
-// Package search implements Stories 7.8 and 7.9:
+// Package search implements Stories 7.8 and 7.9 and the per-video results:
 //
-//	POST /api/search           — hybrid / FTS / semantic search
-//	GET  /api/search/suggest   — typeahead (Story 7.8 AC-4)
-//	POST /api/search/save      — Story 7.9 save
-//	GET  /api/search/saved     — Story 7.9 list
-//	DEL  /api/search/saved/{id}— Story 7.9 delete
+//	POST /api/search                 — hybrid / FTS / semantic search, saved as a search_id
+//	GET  /api/search/results/{sid}   — a page of the saved "In titles" / "In transcripts" list
+//	GET  /api/search/passages        — every matching passage of one video of a saved search
+//	GET  /api/search/recent          — the caller's recent searches (DELETE: one, or all)
+//	GET  /api/search/suggest         — typeahead (Story 7.8 AC-4)
+//	POST /api/search/save            — Story 7.9 save
+//	GET  /api/search/saved           — Story 7.9 list
+//	DEL  /api/search/saved/{id}      — Story 7.9 delete
 //
-// The hybrid implementation runs FTS against transcript_segments and
-// optionally a semantic top-K via the gRPC SemanticClient, then fuses
-// results with Reciprocal-Rank-Fusion (RRF, k=60). When SemanticClient
-// is nil the API still serves the FTS path so single-binary deployments
-// without Pipeline are usable.
+// A search finds the videos whose title matches and the videos whose active
+// transcript matches, one entry per video with its true match count (FTS: every
+// matching segment, counted in SQL; semantic: the gRPC SemanticClient's top-K
+// passages grouped per video; hybrid: the two video rankings fused with
+// Reciprocal-Rank-Fusion, k=60). The ordered result is kept in search_runs under
+// an opaque search_id, so paging never reorders it (results.go, runs.go). When
+// SemanticClient is nil the API still serves the FTS path so single-binary
+// deployments without Pipeline are usable.
 package search
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -85,7 +88,18 @@ type Request struct {
 	// value is "youtube"; absent ⇒ the response is byte-identical to the
 	// pre-26.8 shape (no YouTube key, no `youtube` field).
 	Include []string `json:"include,omitempty"`
+
+	// View is the Search page's view, "grid" or "list": it picks the page
+	// size (rules.search.page_size_grid / page_size_list).
+	View string `json:"view,omitempty"`
+
+	// Save false runs the search without keeping it (no search_id, not in
+	// Recent searches): a lookup such as the YouTube import dialog's.
+	Save *bool `json:"save,omitempty"`
 }
+
+// save reports whether the search is kept under a search_id.
+func (r Request) save() bool { return r.Save == nil || *r.Save }
 
 // includes reports whether the request opted into the named block.
 func (r Request) includes(name string) bool {
@@ -98,7 +112,9 @@ func (r Request) includes(name string) bool {
 }
 
 // Hit is a single segment-level result; the API maps unit→segment per
-// Story 7.8 AC-6.
+// Story 7.8 AC-6. It is also a search's deprecated flat `hits` list (kept
+// one release for the GraphQL bridge and older clients; the Search page
+// reads transcript_videos).
 type Hit struct {
 	SegmentID int64   `json:"segment_id"`
 	VideoID   string  `json:"video_id"`
@@ -106,40 +122,6 @@ type Hit struct {
 	EndSec    float64 `json:"end_sec"`
 	Snippet   string  `json:"snippet"`
 	Score     float64 `json:"score"`
-}
-
-// Response is the AC-1 envelope.
-type Response struct {
-	Hits    []Hit     `json:"hits"`
-	Total   int       `json:"total"`
-	TookMs  ResponseT `json:"took_ms"`
-	Mode    string    `json:"mode"`
-	Filters Filters   `json:"filters"`
-
-	// Degraded is true when the semantic leg was abandoned (deadline
-	// breach or backend error) and the request was served FTS-only
-	// (Story 18.2 AC4 / HLB-333). Clients surface a "results may be
-	// incomplete" banner. Omitted on the happy path.
-	Degraded bool `json:"degraded,omitempty"`
-
-	// YouTube is the optional "From YouTube" augmentation block (Story
-	// 26.8). Present only when the caller passed include=["youtube"];
-	// omitted otherwise so the default response is byte-identical to the
-	// pre-26.8 shape.
-	YouTube *YTBlock `json:"youtube,omitempty"`
-
-	// Videos are the title matches, apart from the segment hits: a video is
-	// not a timestamped passage, so it is not fused into the ranked list.
-	Videos []VideoHit `json:"videos"`
-}
-
-// VideoHit is a whole-video match on its title. Titles exist from the first
-// scan (or import); transcripts only once Whisper has run, so without this a
-// fresh library finds nothing at all.
-type VideoHit struct {
-	VideoID     string   `json:"video_id"`
-	Title       string   `json:"title"`
-	DurationSec *float64 `json:"duration_sec,omitempty"`
 }
 
 // ResponseT carries the per-source latency breakdown.
@@ -255,6 +237,11 @@ func (h *Handler) runSemantic(ctx context.Context, q string, k int, f Filters) (
 // Mount wires the search routes.
 func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/search", h.Search)
+	r.Get("/api/search/results/{sid}", h.Results)
+	r.Get("/api/search/passages", h.Passages)
+	r.Get("/api/search/recent", h.Recent)
+	r.Delete("/api/search/recent", h.ClearRecent)
+	r.Delete("/api/search/recent/{sid}", h.DeleteRecent)
 	r.Get("/api/search/suggest", h.Suggest)
 	r.Post("/api/search/save", h.SaveSearch)
 	r.Get("/api/search/saved", h.ListSaved)
@@ -264,289 +251,6 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/search/youtube", h.SearchYouTube)
 	r.Get("/api/search/youtube/status", h.YouTubeStatus)
 	r.Post("/api/videos/{id}/import-youtube", h.ImportYouTube)
-}
-
-// Search implements POST /api/search.
-func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
-	var req Request
-	if e := common.ReadJSON(r, &req, 32<<10); e != nil {
-		httperror.Write(w, r, e)
-		return
-	}
-	req.Q = strings.TrimSpace(req.Q)
-	if req.Q == "" {
-		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/invalid-query",
-			Title:  "invalid query",
-			Status: http.StatusBadRequest,
-			Detail: "q must be non-empty",
-		})
-		return
-	}
-	if len(req.Q) > 1024 {
-		req.Q = req.Q[:1024]
-	}
-	if req.Mode == "" {
-		req.Mode = "hybrid"
-	}
-	if req.Limit <= 0 || req.Limit > 200 {
-		req.Limit = 50
-	}
-
-	// Authz scope: non-admin restricted to their library set.
-	p := principal.FromContext(r.Context())
-	if p == nil {
-		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
-		return
-	}
-	if !p.AccessAllLibraries {
-		// Intersect requested library filter with principal's libraries.
-		allowed := map[string]bool{}
-		for _, l := range p.Libraries {
-			allowed[l] = true
-		}
-		if len(req.Filters.LibraryID) == 0 {
-			req.Filters.LibraryID = p.Libraries
-		} else {
-			intersected := []string{}
-			for _, lid := range req.Filters.LibraryID {
-				if allowed[lid] {
-					intersected = append(intersected, lid)
-				}
-			}
-			req.Filters.LibraryID = intersected
-		}
-		if len(req.Filters.LibraryID) == 0 {
-			common.WriteJSON(w, r, http.StatusOK, Response{
-				Hits: []Hit{}, Videos: []VideoHit{}, Mode: req.Mode, Filters: req.Filters,
-			})
-			return
-		}
-	}
-
-	var (
-		ftsHits  []Hit
-		semHits  []Hit
-		took     ResponseT
-		errFTS   error
-		degraded bool
-	)
-	t0 := time.Now()
-	if req.Mode == "fts" || req.Mode == "hybrid" {
-		ftsHits, errFTS = h.runFTS(r.Context(), req.Q, req.Limit, req.Filters)
-		took.FTS = time.Since(t0).Milliseconds()
-		if errFTS != nil {
-			httperror.Write(w, r, httperror.Internal("fts: "+errFTS.Error()))
-			return
-		}
-	}
-	if (req.Mode == "semantic" || req.Mode == "hybrid") && h.Semantic != nil {
-		t1 := time.Now()
-		semHits, degraded = h.runSemantic(r.Context(), req.Q, req.Limit, req.Filters)
-		took.Semantic = time.Since(t1).Milliseconds()
-	}
-
-	videos := []VideoHit{}
-	if h.DB != nil {
-		var err error
-		if videos, err = h.runTitles(r.Context(), req.Q, 20, req.Filters); err != nil {
-			httperror.Write(w, r, httperror.Internal("titles: "+err.Error()))
-			return
-		}
-	}
-
-	t2 := time.Now()
-	var fused []Hit
-	switch req.Mode {
-	case "fts":
-		fused = ftsHits
-	case "semantic":
-		fused = semHits
-	default:
-		fused = h.fuse(r.Context(), ftsHits, semHits)
-	}
-	if len(fused) > req.Limit {
-		fused = fused[:req.Limit]
-	}
-	for i := range fused {
-		fused[i].Snippet = highlightSnippet(fused[i].Snippet, req.Q, 240)
-	}
-	took.Fusion = time.Since(t2).Milliseconds()
-
-	resp := Response{
-		Hits: fused, Total: len(fused), TookMs: took, Mode: req.Mode,
-		Filters: req.Filters, Degraded: degraded, Videos: videos,
-	}
-	// Story 26.8: the YouTube augmentation is purely additive and never
-	// blocks or mutates the local results computed above. It runs only
-	// when the caller opted in via include=["youtube"]; otherwise the
-	// response is byte-identical to the pre-26.8 shape.
-	if req.includes("youtube") {
-		resp.YouTube = h.fetchYouTube(r.Context(), req.Q, youtubeInlineTimeout)
-	}
-	common.WriteJSON(w, r, http.StatusOK, resp)
-}
-
-// runFTS issues a single FTS query against transcript_segments using
-// “search_tsv @@ plainto_tsquery“ (Postgres) — SQLite stays as a LIKE
-// fallback when run under the test driver. Filters are pushed into the
-// SQL.
-func (h *Handler) runFTS(ctx context.Context, q string, limit int, f Filters) ([]Hit, error) {
-	args := []any{q}
-	where := []string{}
-	if len(f.LibraryID) > 0 {
-		placeholders := make([]string, len(f.LibraryID))
-		for i, lid := range f.LibraryID {
-			placeholders[i] = "$" + strconv.Itoa(len(args)+1)
-			args = append(args, lid)
-		}
-		where = append(where, "v.library_id IN ("+strings.Join(placeholders, ",")+")")
-	}
-	if len(f.Language) > 0 {
-		placeholders := make([]string, len(f.Language))
-		for i, l := range f.Language {
-			placeholders[i] = "$" + strconv.Itoa(len(args)+1)
-			args = append(args, l)
-		}
-		where = append(where, "v.detected_language IN ("+strings.Join(placeholders, ",")+")")
-	}
-	whereSQL := ""
-	if len(where) > 0 {
-		whereSQL = " AND " + strings.Join(where, " AND ")
-	}
-	args = append(args, limit)
-
-	// Try Postgres first; fall back to LIKE on error (sqlite test path).
-	pgQuery := `
-		SELECT s.id, t.video_id, s.start_sec, s.end_sec, s.text,
-		       ts_rank(s.search_tsv, plainto_tsquery('maktaba_search', $1)) AS score
-		FROM transcript_segments s
-		JOIN transcripts t ON t.id = s.transcript_id
-		JOIN videos v ON v.id = t.video_id
-		WHERE s.search_tsv @@ plainto_tsquery('maktaba_search', $1)
-		` + whereSQL + `
-		ORDER BY score DESC LIMIT $` + strconv.Itoa(len(args))
-	rows, err := h.DB.QueryContext(ctx, pgQuery, args...)
-	if err != nil {
-		// Likely SQLite (no tsvector). Fall back.
-		return h.runFTSFallback(ctx, q, limit, f)
-	}
-	defer rows.Close()
-	hits := []Hit{}
-	for rows.Next() {
-		var h Hit
-		if err := rows.Scan(&h.SegmentID, &h.VideoID, &h.StartSec, &h.EndSec, &h.Snippet, &h.Score); err != nil {
-			continue
-		}
-		hits = append(hits, h)
-	}
-	return hits, nil
-}
-
-// runTitles matches video titles by substring (case-insensitive), most similar
-// first. On Postgres the trigram index (0098) serves both the ILIKE and the
-// ordering; SQLite scans with LIKE.
-func (h *Handler) runTitles(ctx context.Context, q string, limit int, f Filters) ([]VideoHit, error) {
-	like := "%" + escapeLike(q) + "%"
-	args := []any{like, q}
-	where := []string{"v.title ILIKE $1 ESCAPE '\\'", "v.deleted_at IS NULL"}
-	if len(f.LibraryID) > 0 {
-		ph := make([]string, len(f.LibraryID))
-		for i, lid := range f.LibraryID {
-			args = append(args, lid)
-			ph[i] = "$" + strconv.Itoa(len(args))
-		}
-		where = append(where, "v.library_id IN ("+strings.Join(ph, ",")+")")
-	}
-	if len(f.Language) > 0 {
-		ph := make([]string, len(f.Language))
-		for i, l := range f.Language {
-			args = append(args, l)
-			ph[i] = "$" + strconv.Itoa(len(args))
-		}
-		where = append(where, "v.detected_language IN ("+strings.Join(ph, ",")+")")
-	}
-	args = append(args, limit)
-	tail := " WHERE " + strings.Join(where, " AND ") + " %s LIMIT $" + strconv.Itoa(len(args))
-	pg := "SELECT v.id, v.title, v.duration_sec FROM videos v" +
-		fmt.Sprintf(tail, "ORDER BY similarity(v.title, $2) DESC, v.title")
-	rows, err := h.DB.QueryContext(ctx, pg, args...)
-	if err != nil {
-		// SQLite: no ILIKE / similarity(); LIKE is case-insensitive for ASCII there.
-		// Shortest title first; $2 stays bound so the argument list is unchanged.
-		lite := strings.Replace(pg, "ILIKE", "LIKE", 1)
-		lite = strings.Replace(lite, "similarity(v.title, $2) DESC, ", "length(v.title) + 0 * length($2), ", 1)
-		if rows, err = h.DB.QueryContext(ctx, lite, args...); err != nil {
-			return nil, err
-		}
-	}
-	defer rows.Close()
-	out := []VideoHit{}
-	for rows.Next() {
-		var v VideoHit
-		var title sql.NullString
-		var dur sql.NullFloat64
-		if err := rows.Scan(&v.VideoID, &title, &dur); err != nil {
-			continue
-		}
-		v.Title = title.String
-		if dur.Valid {
-			d := dur.Float64
-			v.DurationSec = &d
-		}
-		out = append(out, v)
-	}
-	return out, rows.Err()
-}
-
-// escapeLike makes q literal inside a LIKE pattern (ESCAPE '\\').
-func escapeLike(q string) string {
-	return strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(q)
-}
-
-// runFTSFallback runs a LIKE-based query for SQLite test environments
-// that don't have the Postgres-only tsvector column.
-func (h *Handler) runFTSFallback(ctx context.Context, q string, limit int, f Filters) ([]Hit, error) {
-	args := []any{"%" + q + "%"}
-	where := []string{"s.text LIKE $1"}
-	if len(f.LibraryID) > 0 {
-		placeholders := make([]string, len(f.LibraryID))
-		for i, lid := range f.LibraryID {
-			placeholders[i] = "$" + strconv.Itoa(len(args)+1)
-			args = append(args, lid)
-		}
-		where = append(where, "v.library_id IN ("+strings.Join(placeholders, ",")+")")
-	}
-	if len(f.Language) > 0 {
-		placeholders := make([]string, len(f.Language))
-		for i, l := range f.Language {
-			placeholders[i] = "$" + strconv.Itoa(len(args)+1)
-			args = append(args, l)
-		}
-		where = append(where, "v.detected_language IN ("+strings.Join(placeholders, ",")+")")
-	}
-	args = append(args, limit)
-	query := `
-		SELECT s.id, t.video_id, s.start_sec, s.end_sec, s.text, 1.0
-		FROM transcript_segments s
-		JOIN transcripts t ON t.id = s.transcript_id
-		JOIN videos v ON v.id = t.video_id
-		WHERE ` + strings.Join(where, " AND ") + `
-		LIMIT $` + strconv.Itoa(len(args))
-	rows, err := h.DB.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	hits := []Hit{}
-	for rows.Next() {
-		var h Hit
-		if err := rows.Scan(&h.SegmentID, &h.VideoID, &h.StartSec, &h.EndSec, &h.Snippet, &h.Score); err != nil {
-			continue
-		}
-		hits = append(hits, h)
-	}
-	return hits, nil
 }
 
 // Suggest implements AC-4: prefix lookup on the search_history corpus,
@@ -762,109 +466,4 @@ func RRFuseWeighted(a, b []Hit, k int, wa, wb float64) []Hit {
 		return out[i].Score > out[j].Score
 	})
 	return out
-}
-
-// highlightSnippet wraps each occurrence of q in s with “<mark>...</mark>“
-// and trims to maxLen with an ellipsis around the first match. Search is
-// case-insensitive.
-//
-// All windowing and truncation are performed on a []rune view so the
-// snippet is never cut mid-rune — Arabic code points are multi-byte in
-// UTF-8 and a byte-offset slice would split a rune and emit invalid
-// UTF-8 (Story 5.4 "Arabic grapheme-aware" highlighting AC). Match
-// wrapping reuses byte offsets, but only inside an already rune-aligned
-// excerpt against a (lower-cased) needle, so it stays UTF-8-safe.
-func highlightSnippet(s, q string, maxLen int) string {
-	if s == "" || q == "" {
-		return s
-	}
-	runes := []rune(s)
-	lower := strings.ToLower(s)
-	ql := strings.ToLower(q)
-	byteIdx := strings.Index(lower, ql)
-	if byteIdx == -1 {
-		if len(runes) > maxLen {
-			return string(runes[:maxLen]) + "…"
-		}
-		return s
-	}
-	// Translate the byte offset of the first match to a rune offset so
-	// the surrounding window is computed in runes, not bytes.
-	matchRuneStart := utf8.RuneCountInString(lower[:byteIdx])
-	matchRuneLen := utf8.RuneCountInString(ql)
-
-	start := matchRuneStart - 60
-	if start < 0 {
-		start = 0
-	}
-	end := matchRuneStart + matchRuneLen + maxLen - (matchRuneStart - start)
-	if end > len(runes) {
-		end = len(runes)
-	}
-	excerpt := string(runes[start:end])
-	// Replace each (case-insensitive) occurrence with <mark>...</mark>.
-	// The needle is matched in *folded* space (excerptLower vs ql), but
-	// the marked text must be sliced from the *original-case* excerpt.
-	// For case-folds that change byte length (Turkish dotted-İ U+0130
-	// 2B→1B, uppercase-ẞ U+1E9E 3B→2B) the folded match-span byte length
-	// (len(ql)) is NOT the original-case span length, so wrapping/advancing
-	// with len(ql) against `excerpt` mis-places <mark> (e.g. trailing
-	// "L" left outside the mark for "İSTANBUL"). Instead the loop walks
-	// `excerpt` and `excerptLower` rune-by-rune in lockstep, keeping the
-	// two byte cursors (orig / fold) aligned at rune boundaries. The
-	// folded match offsets returned by strings.Index are translated to
-	// original-case byte offsets via that lockstep walk, so the mark
-	// wraps EXACTLY the original-case matched text. This makes NO
-	// rune-count-preserving assumption about strings.ToLower: even a
-	// hypothetical length- or rune-count-changing fold cannot mis-place
-	// the mark or split a rune, because every boundary is rune-aligned
-	// by construction.
-	var out strings.Builder
-	excerptLower := strings.ToLower(excerpt)
-	orig, fold := 0, 0 // byte cursors into excerpt / excerptLower (rune-aligned)
-	for fold < len(excerptLower) {
-		j := strings.Index(excerptLower[fold:], ql)
-		if j < 0 {
-			out.WriteString(excerpt[orig:])
-			orig = len(excerpt) // tail emitted; suppress the post-loop guard
-			break
-		}
-		foldMatchStart := fold + j
-		foldMatchEnd := foldMatchStart + len(ql)
-		// Advance the lockstep cursors to the folded match start,
-		// emitting the un-marked original-case prefix.
-		origMatchStart := orig
-		for fold < foldMatchStart {
-			_, fw := utf8.DecodeRuneInString(excerptLower[fold:])
-			_, ow := utf8.DecodeRuneInString(excerpt[origMatchStart:])
-			fold += fw
-			origMatchStart += ow
-		}
-		out.WriteString(excerpt[orig:origMatchStart])
-		// Advance to the folded match end, capturing the original-case
-		// span [origMatchStart, origMatchEnd).
-		origMatchEnd := origMatchStart
-		for fold < foldMatchEnd {
-			_, fw := utf8.DecodeRuneInString(excerptLower[fold:])
-			_, ow := utf8.DecodeRuneInString(excerpt[origMatchEnd:])
-			fold += fw
-			origMatchEnd += ow
-		}
-		out.WriteString("<mark>")
-		out.WriteString(excerpt[origMatchStart:origMatchEnd])
-		out.WriteString("</mark>")
-		orig = origMatchEnd
-	}
-	if orig < len(excerpt) {
-		out.WriteString(excerpt[orig:])
-	}
-	prefix := ""
-	if start > 0 {
-		prefix = "…"
-	}
-	suffix := ""
-	if end < len(runes) {
-		suffix = "…"
-	}
-	return prefix + out.String() + suffix
 }

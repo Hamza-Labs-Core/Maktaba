@@ -14,8 +14,38 @@ You only find videos from the libraries you may see.
 
 1. Type in the box at the top of any page, or on the [Search](/search) page. Suggestions appear as you type.
 2. Press Enter or **Search**.
-3. **Videos** lists videos whose title matches. **In transcripts** lists the passages where your words are said, each with its time range, for example [12:40 → 13:05].
-4. Click a passage to play the video from that moment, or a video to open its page.
+3. The results come in two lists (see below). Click a passage's time to play the video from that moment, or a video's title or picture to open its matches page.
+
+### The two lists {#results-lists}
+
+- **In titles** lists the videos whose title matches, best match first.
+- **In transcripts** lists each video whose words match, once, with its library, its length, how many times it matches (**12 matches**) and its best passages, each with its time range, for example [12:40 → 13:05]. **Also in title** means the video's title matches too.
+- **Show all 12** under a video opens every matching passage of that video, best first; **Load more** brings the next ones and **Show fewer** folds them again.
+
+### List or grid {#list-grid}
+
+**List** shows a row per video with its library and passages. **Grid** shows a card per video with its picture, title and length; on a transcript card, **Show passages** opens its passages. Your choice applies to both lists and is kept in this browser.
+
+### Pages {#pages}
+
+Each list has its own pages. Under a list you see **Page 2 of 5 · 93 videos** and the page buttons. The pages are kept in the address, so Back, Forward, a reload or a shared link show the same page in the same order.
+
+### The matches page of a video {#matches-page}
+
+Click a video's title or picture to open its matches page. It shows:
+
+- the player, with a mark on the progress bar for every match;
+- **Previous match** and **Next match**, which jump from where the video is playing;
+- your search words, with **Back to results** to return to the same pages;
+- **All matches**, every match in time order with its time and the matching words. A **Title** row means the title matches; **Transcript** rows are passages. Click one to play from there. A video that matches only by its title says **No matches in the transcript**.
+
+### Recent searches {#recent-searches}
+
+**Recent searches** on the side lists your last searches, newest first, with their mode, when you ran them and how many videos they found in titles and in transcripts. **Results kept** opens the same results in the same order; **Expired, runs again** runs the search again. Remove one with the button next to it, or all of them with **Clear all**. Running the same words and mode again replaces the older entry.
+
+### How long results are kept {#kept-results}
+
+Maktaba keeps each search's results for 15 minutes after you last used them (opening a page counts as use). After that, opening them runs the search again: you stay on the same pages if they still exist, and a note says **These results were refreshed; the order may have changed.** with **Back to page 1**.
 
 ### Choose a mode {#modes}
 
@@ -27,7 +57,7 @@ The **Mode** list next to the box changes how Maktaba matches your words. Your c
 
 ### Save a search {#saved-searches}
 
-Press **Save** to keep the current search and its mode. It appears under **Saved searches** on the side. Click it to run it again, or delete it with the button next to it.
+Press **Save** to keep the current search and its mode. It appears under **Saved searches** on the side, apart from **Recent searches**. Click it to run it again, or delete it with the button next to it.
 
 ### Also search YouTube {#youtube}
 
@@ -49,6 +79,11 @@ The YouTube title, channel, description and thumbnail are added as a suggestion 
 ## What the states and messages mean {#states}
 
 - **No results. Check spelling or try a different mode.**: nothing matched. Try other words, or **Semantic** for ideas rather than exact words.
+- **12 matches**: how many passages of the video's transcript match.
+- **Also in title**: the video is in **In titles** too.
+- **These results were refreshed; the order may have changed.**: the results were older than 15 minutes, so the search ran again. **Back to page 1** goes to the first pages.
+- **Results kept** / **Expired, runs again**: whether a recent search opens its kept results or runs again.
+- **No matches in the transcript**: on a matches page, the video matches by its title only.
 - **Searching YouTube…**: the YouTube part is still loading; your own results are already shown.
 - **No YouTube results.**: YouTube found nothing for these words.
 - **YouTube search is off.**: this server cannot search YouTube right now.
@@ -61,6 +96,10 @@ The YouTube title, channel, description and thumbnail are added as a suggestion 
 ### Why can I not find a video I know is there? {#faq-not-found}
 
 A new video can be found by its title right away, but its words only after it is transcribed. Check [Transcription](/help/transcription). Also try **Hybrid** or **Semantic** mode.
+
+### Why did the order of my results change? {#faq-order-changed}
+
+The results were kept for 15 minutes after you last used them, then run again. New transcripts or titles since then can move videos up or down.
 
 ### Can I search in Arabic? {#faq-arabic}
 

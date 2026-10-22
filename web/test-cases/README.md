@@ -4,7 +4,7 @@ Test cases for every page in the web app (every route in `src/App.tsx`). These a
 not test code: each one says what to mock, what to do and what to expect, so it can be turned
 into a vitest + Testing Library test (or a browser e2e test) later.
 
-**47 pages, 1191 cases** (465 P1, 536 P2, 190 P3). 956 cases are covered by a test and 33
+**48 pages, 1207 cases** (476 P1, 541 P2, 190 P3). 972 cases are covered by a test and 34
 partly. Almost every P1 and P2 case has a test; most P3 cases (theme, minor layout) do not.
 Cases a unit test can't check (true phone layout, real theme colours, real playback) say
 `No (e2e-only)`. Cases that show a bug not fixed yet have an `it.fails` / `it.todo` test that
@@ -80,7 +80,7 @@ open are `it.fails` / `it.todo` tests.
 | [series-detail.md](series-detail.md)   | `/series/:id`                                         | SED    | 25    | 9   | 21 / 0                  |
 | [video-detail.md](video-detail.md)     | `/videos/:videoId`, `/videos/:videoId?tab=enrichment` | VID    | 29    | 9   | 25 / 0                  |
 | [video-player.md](video-player.md)     | `/videos/:videoId/watch`                              | VPL    | 29    | 15  | 26 / 0                  |
-| [search.md](search.md)                 | `/search`, `/search?q=<encoded term>`                 | SRC    | 27    | 12  | 22 / 0                  |
+| [search.md](search.md)                 | `/search`, `/search/video/:videoId`                   | SRC    | 43    | 23  | 38 / 1                  |
 
 ## Live TV
 

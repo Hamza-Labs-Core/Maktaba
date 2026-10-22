@@ -28,8 +28,8 @@ import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { WhatsOnNow } from "../components/WhatsOnNow";
 import { TitleRow } from "../help/HelpLink";
+import { VideoPoster, ViewToggle, formatDuration, useStoredView } from "../components/VideoViews";
 
-type View = "grid" | "list";
 type SortField = "updated_at" | "title" | "duration_sec";
 const VIEW_KEY = "mkt:lib:view";
 
@@ -177,23 +177,13 @@ export function ScanNow({ libraryId, onDone }: { libraryId: string; onDone: () =
   );
 }
 
-function readView(): View {
-  try {
-    const v = localStorage.getItem(VIEW_KEY);
-    if (v === "grid" || v === "list") return v;
-  } catch {
-    /* ignored */
-  }
-  return "grid";
-}
-
 export function LibraryBrowser() {
   const { libraryId } = useParams();
   const { t, n, locale } = useI18n();
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
 
-  const [view, setView] = useState<View>(readView);
+  const [view, setView] = useStoredView(VIEW_KEY, "grid");
   const rawSort = params.get("sort");
   // An unknown ?sort= (a stale or hand-typed link) falls back to the default.
   const sort: SortField =
@@ -215,14 +205,6 @@ export function LibraryBrowser() {
   // retry): a Load more answer for an older list is dropped.
   const listGen = useRef(0);
   const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(VIEW_KEY, view);
-    } catch {
-      /* ignored */
-    }
-  }, [view]);
 
   const buildQuery = useCallback(
     (after?: string | null) => {
@@ -352,24 +334,7 @@ export function LibraryBrowser() {
           >
             {order === "desc" ? "↓" : "↑"}
           </button>
-          <div className="mkt-segmented" role="radiogroup" aria-label={t("library.view")}>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={view === "grid"}
-              onClick={() => setView("grid")}
-            >
-              {t("library.view.grid")}
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={view === "list"}
-              onClick={() => setView("list")}
-            >
-              {t("library.view.list")}
-            </button>
-          </div>
+          <ViewToggle view={view} onChange={setView} />
         </div>
       </header>
 
@@ -434,7 +399,7 @@ export function LibraryBrowser() {
           {sorted.map((v) => (
             <li key={v.id} className="mkt-card">
               <Link to={`/videos/${v.id}`}>
-                <Poster video={v} />
+                <VideoPoster videoId={v.id} />
                 <div className="mkt-card__title" dir="auto">
                   {v.title || v.filename}
                 </div>
@@ -485,30 +450,4 @@ export function LibraryBrowser() {
       )}
     </section>
   );
-}
-
-function Poster({ video }: { video: Video }) {
-  const [broken, setBroken] = useState(false);
-  const url = `/api/videos/${video.id}/poster`;
-  if (broken) {
-    return <div className="mkt-card__poster mkt-card__poster--fallback" aria-hidden />;
-  }
-  return (
-    <img
-      className="mkt-card__poster"
-      src={url}
-      alt=""
-      loading="lazy"
-      onError={() => setBroken(true)}
-    />
-  );
-}
-
-function formatDuration(sec: number): string {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = Math.floor(sec % 60);
-  const mm = m.toString().padStart(2, "0");
-  const ss = s.toString().padStart(2, "0");
-  return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
 }

@@ -200,7 +200,9 @@ describe("ServerStatus (test-cases/cloud-status.md)", () => {
     serve([problem(403, "Forbidden")]);
     open();
     await waitFor(() => expect(calls("/api/system/health")).toBe(1));
-    await act(async () => {});
+    // the page has taken the answer in: Loading… shows until health answers,
+    // whatever the answer (checking before then passes for the wrong reason)
+    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
     expect(screen.queryByText("Down")).toBeNull();
   });
 
