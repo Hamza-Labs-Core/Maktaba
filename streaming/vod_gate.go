@@ -14,12 +14,18 @@ import (
 // tvSlotsLink is the front door's view of the TV slots that VOD's gates count
 // with (buildHomeSlots wires frontdoorSlotsLink).
 type tvSlotsLink interface {
-	// Sessions are the hardware encoder sessions the slots hold (their last
-	// reports) and the channels' NVENC and VideoToolbox caps from the settings.
-	Sessions(ctx context.Context) (used, nvencMax, vtMax int)
+	// Ready: the front door's slots are up (its Bootstrap succeeded); before,
+	// VOD encodes in software.
+	Ready() bool
+	// Room is the channels' cap of the kind (the settings' NVENCMax, or VTMax
+	// for VideoToolbox; 0: none), what the channels need of it to stay as they
+	// are (those on the live slot and those the hot standby keeps warm), and the
+	// sessions the slots hold (their last reports).
+	Room(ctx context.Context, vt bool) (limit, need, used int)
 	// Sync sends the slots their budgets now, the channels' caps less what VOD
 	// holds or is taking (vodGate.Held), and reads their reports back: a slot
-	// applies its budget to its gate as it gets it. False: not done in time.
+	// applies its budget to its gates as it gets it. True only when the live
+	// slot (and the standby, when it was sent its set) took theirs.
 	Sync(ctx context.Context) bool
 }
 
@@ -34,66 +40,108 @@ func slotsLink() tvSlotsLink {
 	return b.link
 }
 
-// vodGate is VOD's share of a hardware encoder's sessions (ffmpeg.SessionGate).
-// The TV's channels come first: VOD's sessions and the channels' together stay
-// within the channels' cap (the settings' NVENC sessions, or VideoToolbox's
-// for that gate), and VOD holds at most half of it, so a channel that starts
-// while a video transcodes still finds a session. With TV slots on, the
-// channels run in other processes, each with its own gate: VOD reserves a
-// session, the slots' budgets drop by it at once (Sync), and only when their
-// fresh reports and this process's gate leave room is the session taken. One
-// Acquire at a time, so the check and the take are one step. A cap of 0 limits
-// nothing (VideoToolbox's default).
+// vodGate is VOD's share of a hardware encoder's sessions
+// (ffmpeg.SessionBatch). The TV's channels come first:
+//
+//   - VOD holds at most half the channels' cap, and never what the channels
+//     on the live slot and those the hot standby keeps warm need (two each): a
+//     transcode never turns the standby cold, and a channel that starts during
+//     one still finds a session.
+//   - With TV slots on (the channels in other processes, each with its own
+//     gate): a transcode's sessions are reserved, the slots' budgets drop by
+//     them (one Sync, every slot answering), and they are kept only as far as
+//     the slots' fresh reports leave room: VOD's sessions and the live and
+//     standby slots' then stay within the cap. A TV release's staging slot,
+//     during a swap, adds its own (two a staged channel) on top.
+//   - With TV slots off this process's gate counts the channels and VOD.
+//
+// What it cannot have is libx264's. A cap of 0 limits nothing (VideoToolbox's
+// default).
 type vodGate struct {
 	gate *channel.EncoderGate
-	vt   bool // VideoToolbox's: capped by the settings' VTMax, not NVENCMax
+	vt   bool // VideoToolbox's: the settings' VTMax, not NVENCMax
 
-	mu   sync.Mutex
-	held atomic.Int64 // VOD's sessions, held or being taken
+	mu   sync.Mutex   // reservations, one at a time
+	held atomic.Int64 // VOD's sessions, held or reserved
 }
 
-// Held is VOD's sessions, held or being taken (the slots' budgets leave them out).
+// Held is VOD's sessions, held or reserved (the slots' budgets leave them out).
 func (g *vodGate) Held() int { return int(g.held.Load()) }
 
-func (g *vodGate) Acquire(ctx context.Context, owner uuid.UUID, wait time.Duration) (func(refused bool), bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+// Acquire is one session (AcquireN's).
+func (g *vodGate) Acquire(ctx context.Context, owner uuid.UUID, _ time.Duration) (func(refused bool), bool) {
+	if got := g.AcquireN(ctx, owner, 1); len(got) == 1 {
+		return got[0], true
+	}
+	return nil, false
+}
+
+// AcquireN gives a transcode up to n sessions (its highest rungs').
+func (g *vodGate) AcquireN(ctx context.Context, owner uuid.UUID, n int) []func(refused bool) {
 	link := slotsLink()
-	limit := g.gate.Max()
+	if link != nil && !link.Ready() {
+		return nil
+	}
+	// reserve what the rules leave, under the lock: no two reservations look at
+	// the same room
+	g.mu.Lock()
+	limit, need := g.gate.Max(), 0
 	if link != nil {
-		_, nvencMax, vtMax := link.Sessions(ctx)
-		limit = nvencMax
-		if g.vt {
-			limit = vtMax
+		limit, need, _ = link.Room(ctx, g.vt)
+	}
+	k := n
+	if limit > 0 {
+		allowed := limit / 2
+		if free := limit - need; free < allowed {
+			allowed = free
+		}
+		if room := allowed - g.Held(); room < k {
+			k = room
 		}
 	}
-	if limit > 0 && g.Held() >= limit/2 {
-		return nil, false
+	if k <= 0 {
+		g.mu.Unlock()
+		return nil
 	}
-	g.held.Add(1) // reserved: the slots' budgets leave it out from the next Sync
+	g.held.Add(int64(k))
+	g.mu.Unlock()
+
+	// one sync for them all, outside the lock: the slots' budgets drop by them,
+	// then what the slots hold beside all of VOD's must fit (else fewer, or none)
 	if link != nil && limit > 0 {
-		// no fresh word from the slots, or no room beside them: software
 		if !link.Sync(ctx) {
-			g.held.Add(-1)
-			return nil, false
+			g.held.Add(int64(-k))
+			return nil
 		}
-		if used, _, _ := link.Sessions(ctx); g.gate.Active()+used+1 > limit {
-			g.held.Add(-1)
-			return nil, false
+		if _, _, used := link.Room(ctx, g.vt); used+g.Held() > limit {
+			over := used + g.Held() - limit
+			if over > k {
+				over = k
+			}
+			g.held.Add(int64(-over))
+			if k -= over; k == 0 {
+				return nil
+			}
 		}
 	}
-	release, ok := g.gate.Acquire(ctx, owner, wait)
-	if !ok {
-		g.held.Add(-1)
-		return nil, false
-	}
-	var once sync.Once
-	return func(refused bool) {
-		once.Do(func() {
-			g.held.Add(-1)
-			release(refused)
+	// taken from this process's gate (which, with TV slots off, counts the
+	// channels too)
+	var got []func(refused bool)
+	for i := 0; i < k; i++ {
+		release, ok := g.gate.Acquire(ctx, owner, 0)
+		if !ok {
+			break
+		}
+		var once sync.Once
+		got = append(got, func(refused bool) {
+			once.Do(func() {
+				g.held.Add(-1)
+				release(refused)
+			})
 		})
-	}, true
+	}
+	g.held.Add(int64(len(got) - k)) // the reservations the gate had no session for
+	return got
 }
 
 // vodNVENC and vodVT are VOD's gates (buildGRPCServer), whose holds the slots'
@@ -104,7 +152,9 @@ var (
 )
 
 // slotBudget is the channels' caps for the slots: the settings' less what VOD
-// holds (0 stays "no cap").
+// holds (0 stays "no cap"). It never drops below what the channels need
+// (AcquireN reserves only beyond it), so the floor of 1 is never reached
+// with a cap of 2 or more.
 func slotBudget(nvencMax, vtMax int) (int, int) {
 	if nvencMax > 0 {
 		nvencMax -= vodNVENC.Held()

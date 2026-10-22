@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -341,13 +342,13 @@ func TestDASHArgs_OneAdaptationSet(t *testing.T) {
 // its own [vN] instead of the source's video.
 func TestTranscodeArgs_ToneMap(t *testing.T) {
 	p := PlanFor("nvenc", 3, 3, "hevc", true)
-	p.ToneMap = toneMapFilters
+	p.ToneMap = ToneMapFilters(Colour{Transfer: "smpte2084"}, 1920, 1080)
 	for name, args := range map[string]Args{
 		"hls":  HLSArgs("/in.mkv", "/out", "master.m3u8", DefaultLadder(0), p),
 		"dash": DASHArgs("/in.mkv", "/out", DefaultLadder(0), p),
 	} {
 		graph := argAfter(args, "-filter_complex")
-		if graph != "[0:v:0]"+toneMapFilters+",split=3[v0][v1][v2]" {
+		if graph != "[0:v:0]"+p.ToneMap+",split=3[v0][v1][v2]" {
 			t.Errorf("%s: graph %q", name, graph)
 		}
 		joined := " " + strings.Join(args, " ") + " "
@@ -366,31 +367,113 @@ func TestTranscodeArgs_ToneMap(t *testing.T) {
 	}
 }
 
-// toneMapFor: an HDR source, when this ffmpeg has zscale and tonemap (asked
-// once); SDR, or an ffmpeg without them, none.
+// The tone-mapping scales down to the top rung first (4K on the CPU was slower
+// than real time), names the source's colour to zscale (BT.2020 where it names
+// none: "no path between colorspaces" otherwise), and uses Möbius' curve.
+func TestToneMapFilters(t *testing.T) {
+	got := ToneMapFilters(Colour{Transfer: "smpte2084"}, 1920, 1080)
+	want := `scale=w=min(iw\,1920):h=min(ih\,1080):force_original_aspect_ratio=decrease:force_divisible_by=2,` +
+		"zscale=tin=smpte2084:min=2020_ncl:pin=2020:rin=limited:t=linear:npl=100:p=2020,format=gbrpf32le,zscale=p=709," +
+		"tonemap=tonemap=mobius:param=0.3:desat=0,zscale=t=709:m=709:r=limited,format=yuv420p"
+	if got != want {
+		t.Errorf("PQ without matrix or primaries:\n got %s\nwant %s", got, want)
+	}
+	hlg := ToneMapFilters(Colour{Transfer: "arib-std-b67", Matrix: "bt2020c", Primaries: "bt709", Range: "pc"}, 1280, 720)
+	for _, part := range []string{"min(iw\\,1280)", "tin=arib-std-b67:min=2020_cl:pin=709:rin=full"} {
+		if !strings.Contains(hlg, part) {
+			t.Errorf("HLG: no %s in %s", part, hlg)
+		}
+	}
+}
+
+// The colour is the first frame's (MPEG-TS: ffprobe prints the stream's twice;
+// FFmpeg 8.1 calls an MKV's transfer unknown when its Colour element names only
+// the matrix), the stream's where the frame names none.
+func TestParseColour(t *testing.T) {
+	for name, c := range map[string]struct {
+		json string
+		want Colour
+	}{
+		"frame": {`{"frames":[{"color_transfer":"smpte2084","color_space":"bt2020nc","color_primaries":"bt2020","color_range":"tv"}],
+			"streams":[{"color_transfer":"unknown"}]}`, Colour{"smpte2084", "bt2020nc", "bt2020", "tv"}},
+		"stream where the frame has none": {`{"frames":[{"color_range":"tv"}],"streams":[{"color_transfer":"arib-std-b67"}]}`,
+			Colour{Transfer: "arib-std-b67", Range: "tv"}},
+		"ts, the stream twice": {`{"frames":[{"color_transfer":"smpte2084"}],"programs":[],"streams":[{"color_transfer":"smpte2084"},{"color_transfer":"smpte2084"}]}`,
+			Colour{Transfer: "smpte2084"}},
+		"sdr":     {`{"frames":[{"color_transfer":"bt709"}],"streams":[{}]}`, Colour{Transfer: "bt709"}},
+		"garbage": {`not json`, Colour{}},
+	} {
+		if got := parseColour([]byte(c.json)); got != c.want {
+			t.Errorf("%s: %+v, want %+v", name, got, c.want)
+		}
+	}
+}
+
+// toneMapFor: an HDR source, when this ffmpeg has zscale and tonemap, in the
+// ladder's top rung; SDR, or an ffmpeg without them, none. The filters are
+// listed until a look succeeds (a failed one does not turn tone-mapping off).
 func TestToneMapFor(t *testing.T) {
-	var lists int
+	ladder := DefaultLadder(0)
+	hdr10 := Colour{Transfer: "smpte2084"}
 	for _, c := range []struct {
-		hdr     bool
+		colour  Colour
 		filters map[string]bool
 		want    string
 	}{
-		{true, map[string]bool{"zscale": true, "tonemap": true}, toneMapFilters},
-		{false, map[string]bool{"zscale": true, "tonemap": true}, ""},
-		{true, map[string]bool{"tonemap": true}, ""},
+		{hdr10, map[string]bool{"zscale": true, "tonemap": true}, ToneMapFilters(hdr10, 1920, 1080)},
+		{Colour{Transfer: "bt709"}, map[string]bool{"zscale": true, "tonemap": true}, ""},
+		{hdr10, map[string]bool{"tonemap": true}, ""},
 	} {
+		lists := 0
 		e := &execRunner{
-			hdr:     func(context.Context, string, string) bool { return c.hdr },
-			filters: func(context.Context, string) map[string]bool { lists++; return c.filters },
+			colour: func(context.Context, string, string) Colour { return c.colour },
+			filters: func(context.Context, string) (map[string]bool, error) {
+				lists++
+				if lists == 1 {
+					return nil, errors.New("timed out")
+				}
+				return c.filters, nil
+			},
 		}
-		for i := 0; i < 2; i++ {
-			if got := e.toneMapFor(context.Background(), Job{InputPath: "/in.mkv"}); got != c.want {
-				t.Errorf("hdr %v filters %v: %q", c.hdr, c.filters, got)
-			}
+		var got string
+		for i := 0; i < 3; i++ {
+			got = e.toneMapFor(context.Background(), Job{InputPath: "/in.mkv", Ladder: ladder})
+		}
+		if got != c.want {
+			t.Errorf("%+v %v: %q", c.colour, c.filters, got)
+		}
+		if c.colour.HDR() && lists != 2 {
+			t.Errorf("%+v: the filters were listed %d times, want 2 (one failed, then one kept)", c.colour, lists)
 		}
 	}
-	if lists != 2 {
-		t.Errorf("the filters were listed %d times, want once a runner that met an HDR source", lists)
+}
+
+// Every rung has a key frame at each segment boundary (IDR on NVENC), so the
+// rungs' segments align as the DASH manifest says.
+func TestRungKeyFrames(t *testing.T) {
+	args := HLSArgs("/in.mp4", "/out", "master.m3u8", DefaultLadder(0), PlanFor("nvenc", 2, 3, "h264", true))
+	for i := 0; i < 3; i++ {
+		if got := argAfter(args, "-force_key_frames:v:"+itoa(i)); got != "expr:gte(t,n_forced*6)" {
+			t.Errorf("rung %d: key frames %q", i, got)
+		}
+	}
+	if argAfter(args, "-forced-idr:v:0") != "1" || argAfter(args, "-forced-idr:v:2") != "" {
+		t.Errorf("forced IDR on the NVENC rungs only: %v", args)
+	}
+}
+
+// A card without NVENC ("unsupported device") is no busy one: not retried
+// hourly, and the gate is not paused for it.
+func TestRefusedSession(t *testing.T) {
+	for msg, want := range map[string]bool{
+		"OpenEncodeSessionEx failed: out of memory (10): (no details)": true,
+		"OpenEncodeSessionEx failed: incompatible client key (21)":     true,
+		"OpenEncodeSessionEx failed: unsupported device (2)":           false,
+		"Cannot load nvcuda.dll":                                       false,
+	} {
+		if got := refusedSession(msg); got != want {
+			t.Errorf("%q: %v", msg, got)
+		}
 	}
 }
 

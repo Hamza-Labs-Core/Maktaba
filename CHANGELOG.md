@@ -529,16 +529,20 @@ don't append a line here; docs-only PRs are exempt.
   `:latest` would have taken a release candidate. `:latest` now moves only with a plain `vX.Y.Z`,
   as the GitHub release's latest does, and a pre-release tag no longer rolls the relay out to the
   VPS by itself (a dispatch with its tag still does).
-- **Video transcodes share the GPU fairly, and look right** (follow-up of the NVIDIA transcode
-  fix). With TV slots on, a transcode's NVENC sessions are now counted live with the channels':
-  before it takes one, the front door lowers the slots' NVENC budget by it and they apply it at
-  once, so the card is never asked for more than the channels' cap (a channel block no longer
-  falls to software for 30 s). VideoToolbox transcodes keep to VideoToolbox's own cap, not
-  NVENC's. A GPU encoder that failed its test encode is detected again with growing waits: a busy
-  one until it works, one the machine does not have (Windows' ffmpeg lists NVENC on any PC) only
-  a few times. A DASH transcode's rungs are one AdaptationSet (a player switches between them),
-  and an HDR (PQ or HLG) source is tone-mapped to SDR when ffmpeg has `zscale` and `tonemap`,
-  instead of coming out washed out.
+- **Video transcodes share the GPU with the TV, and HDR plays right** (follow-up of the NVIDIA
+  transcode fix). The TV comes first: a transcode takes NVENC sessions only beyond what the
+  channels on air and the hot standby's warm channels need (two each), and at most half the
+  channels' cap; the rest of its rungs are encoded by libx264, so a failover during a transcode is
+  still warm. With TV slots on, those sessions are counted live: the front door lowers the slots'
+  budgets by them before they are taken, keeps them only when every slot took its new budget and
+  their fresh reports leave room, and a slot that has just started holds to half its cap until it
+  hears its budget. VideoToolbox keeps to its own cap. A GPU encoder that failed its test encode is
+  detected again with growing waits (a busy one until it works, one the machine does not have a
+  few times). HDR (PQ or HLG, MPEG-TS too, and sources that name only their transfer) is
+  tone-mapped to SDR when ffmpeg has `zscale` and `tonemap`, after scaling to the top rung (4K
+  HDR transcodes at twice real time instead of below it), with Möbius' curve, and a transcode
+  whose tone-mapping fails plays untoned instead of not at all. Every rung has a key frame on each
+  6 s boundary, so its segments align with the other rungs' (DASH, one AdaptationSet, says so).
 
 ## [0.2.0] - 2026-10-19
 

@@ -121,25 +121,38 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 		path        string
 	}
 	var sources []source
+	hdr10 := []string{"-c:v", "libx265", "-pix_fmt", "yuv420p10le",
+		"-x265-params", "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc",
+		"-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc"}
 	for _, s := range []struct {
 		name, codec string
 		audio       bool
 		args        []string
 	}{
-		{"h264", "h264", true, []string{"-c:v", "libx264", "-pix_fmt", "yuv420p"}},
+		// 13 s: its HLS segments show the rungs' key frames aligned on 6 s
+		{"h264", "h264", true, []string{"-c:v", "libx264", "-pix_fmt", "yuv420p", "-t", "13"}},
 		{"hevc-10bit", "hevc", true, []string{"-c:v", "libx265", "-pix_fmt", "yuv420p10le", "-x265-params", "log-level=error"}},
 		{"h264-10bit", "h264", true, []string{"-c:v", "libx264", "-pix_fmt", "yuv420p10le"}},
 		{"av1", "av1", true, []string{"-c:v", "libaom-av1", "-cpu-used", "8", "-row-mt", "1", "-pix_fmt", "yuv420p"}},
 		{"silent", "h264", false, []string{"-c:v", "libx264", "-pix_fmt", "yuv420p"}},
-		// HDR10: PQ in BT.2020, tone-mapped to SDR when this ffmpeg can
-		{"hdr10", "hevc", true, []string{"-c:v", "libx265", "-pix_fmt", "yuv420p10le",
-			"-x265-params", "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc",
-			"-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc"}},
+		// HDR10: PQ in BT.2020, tone-mapped to SDR when this ffmpeg can; in
+		// MPEG-TS too (ffprobe prints its stream values twice), and tagged PQ
+		// only (zscale found no conversion without the matrix and primaries)
+		{"hdr10", "hevc", true, hdr10},
+		{"hdr10.ts", "hevc", true, hdr10},
+		{"hdr10-pq-only", "hevc", true, []string{"-c:v", "libx265", "-pix_fmt", "yuv420p10le",
+			"-x265-params", "log-level=error:transfer=smpte2084", "-color_trc", "smpte2084"}},
 	} {
-		p := filepath.Join(srcDir, s.name+".mkv")
-		args := []string{"-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=25:d=3"}
+		p := filepath.Join(srcDir, s.name)
+		if filepath.Ext(s.name) == "" {
+			p += ".mkv"
+		}
+		args := []string{"-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1280x720:r=25:d=13"}
 		if s.audio {
-			args = append(args, "-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-c:a", "aac", "-shortest")
+			args = append(args, "-f", "lavfi", "-i", "sine=frequency=440:duration=13", "-c:a", "aac", "-shortest")
+		}
+		if s.name != "h264" {
+			args = append(args, "-t", "3")
 		}
 		args = append(append(args, s.args...), p)
 		if out, err := exec.CommandContext(ctx, "ffmpeg", args...).CombinedOutput(); err != nil {
@@ -151,19 +164,27 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 	if len(sources) == 0 || sources[0].name != "h264" {
 		t.Fatal("not even the 8-bit H.264 source could be made")
 	}
-	// the HDR source is found HDR, and tone-mapped when this ffmpeg has the filters
-	have := listFilters(ctx, "ffmpeg")
+	// the HDR sources are found HDR (by their first frame), and tone-mapped when
+	// this ffmpeg has the filters
+	have, err := listFilters(ctx, "ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, src := range sources {
-		hdr := isHDR(ctx, "ffprobe", src.path)
-		if hdr != (src.name == "hdr10") {
-			t.Errorf("%s: isHDR %v", src.name, hdr)
+		isHDR := strings.HasPrefix(src.name, "hdr10")
+		if c := sourceColour(ctx, "ffprobe", src.path); c.HDR() != isHDR {
+			t.Errorf("%s: colour %+v", src.name, c)
 		}
-		if src.name == "hdr10" {
-			got := (&execRunner{}).toneMapFor(ctx, Job{InputPath: src.path})
+		if isHDR {
+			got := (&execRunner{}).toneMapFor(ctx, Job{InputPath: src.path, Ladder: DefaultLadder(0)})
 			if want := have["zscale"] && have["tonemap"]; (got != "") != want {
-				t.Errorf("hdr10: tone-mapping %q, this ffmpeg has zscale %v, tonemap %v", got, have["zscale"], have["tonemap"])
+				t.Errorf("%s: tone-mapping %q, this ffmpeg has zscale %v, tonemap %v", src.name, got, have["zscale"], have["tonemap"])
 			} else if !want {
-				t.Logf("hdr10: this ffmpeg has no zscale/tonemap: cut to 8 bits untoned")
+				t.Logf("%s: this ffmpeg has no zscale/tonemap: cut to 8 bits untoned", src.name)
+			} else if out, err := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-i", src.path,
+				"-vf", got, "-f", "null", "-").CombinedOutput(); err != nil {
+				// the chain itself (the transcode would fall back to an untoned run)
+				t.Errorf("%s: the tone-mapping fails: %v %s", src.name, err, lastLines(string(out)))
 			}
 		}
 	}
@@ -206,6 +227,18 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 				if format == "hls" {
 					for _, v := range []string{"v0", "v1", "v2"} {
 						want = append(want, filepath.Join(v, "index.m3u8"), filepath.Join(v, "seg-0.ts"))
+						if src.name != "h264" {
+							continue
+						}
+						// every rung cut on the same 6 s boundaries (its key frames)
+						if pl, err := os.ReadFile(filepath.Join(dir, v, "index.m3u8")); err == nil {
+							durs := regexp.MustCompile(`#EXTINF:([0-9.]+)`).FindAllStringSubmatch(string(pl), -1)
+							for i, d := range durs {
+								if i < len(durs)-1 && d[1] != "6.000000" {
+									t.Errorf("%q h264 hls %s: segment %d is %s s, want 6", hw, v, i, d[1])
+								}
+							}
+						}
 					}
 				} else {
 					want = []string{"manifest.mpd"}

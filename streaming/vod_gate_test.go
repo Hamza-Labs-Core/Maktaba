@@ -10,39 +10,50 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 )
 
-// fakeSlots is the TV slots as the front door sees them: each Sync the slots
-// take the budget slotBudget gives them, and report what they hold, at most
-// that budget (their gates cap new blocks at it; held ones stay).
+// fakeSlots is the TV slots as the front door sees them: each Sync they take
+// the budget slotBudget gives them (unless nack) and report what they hold.
 type fakeSlots struct {
-	mu                    sync.Mutex
-	want                  int // sessions the slots' channels would hold
-	used, nvencMax, vtMax int
-	budget                int // the last NVENC budget sent
-	syncs                 int
-	syncFails             bool
-	gate                  *vodGate // whose holds the budget leaves out
+	mu                sync.Mutex
+	ready             bool
+	nack              bool // a slot does not take its set (refused, restarting)
+	want              int  // sessions the slots' channels hold
+	used, limit, need int
+	vtLimit           int
+	budget, syncs     int
+	gate              *vodGate // whose holds the budget leaves out
 }
 
-func (f *fakeSlots) Sessions(context.Context) (int, int, int) {
+func (f *fakeSlots) Ready() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.used, f.nvencMax, f.vtMax
+	return f.ready
+}
+
+func (f *fakeSlots) Room(_ context.Context, vt bool) (int, int, int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if vt {
+		return f.vtLimit, 0, f.used
+	}
+	return f.limit, f.need, f.used
 }
 
 func (f *fakeSlots) Sync(context.Context) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.syncs++
-	if f.syncFails {
+	if f.nack {
 		return false
 	}
-	f.budget = f.nvencMax
-	if f.budget > 0 {
-		f.budget -= f.gate.Held()
-	}
-	// what the channels hold stays (a gate keeps sessions held over a lower cap)
+	f.budget = f.limit - f.gate.Held()
 	f.used = f.want
 	return true
+}
+
+func (f *fakeSlots) set(fn func(f *fakeSlots)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	fn(f)
 }
 
 func withSlots(t *testing.T, link tvSlotsLink) {
@@ -58,93 +69,88 @@ func withSlots(t *testing.T, link tvSlotsLink) {
 	})
 }
 
-// take asks g for n sessions and returns the releases of those it got.
-func take(g *vodGate, n int) []func(bool) {
-	var got []func(bool)
-	for i := 0; i < n; i++ {
-		if r, ok := g.Acquire(context.Background(), uuid.New(), 0); ok {
-			got = append(got, r)
-		}
-	}
-	return got
-}
-
 func giveAll(rs []func(bool)) {
 	for _, r := range rs {
 		r(false)
 	}
 }
 
-// With TV slots: VOD's NVENC sessions and the slots' stay within the channels'
-// cap, counted live (each session taken after a sync whose budget leaves VOD's
-// reservation out, and the slots' fresh report), VOD holding at most half.
+// With TV slots: a transcode's sessions are reserved at once, the slots' budget
+// drops by them in one sync, and VOD keeps them only within half the cap, what
+// the live and standby channels need, and what the slots' fresh report leaves.
 func TestVODGateCountsTheSlotsLive(t *testing.T) {
 	g := &vodGate{gate: channel.NewEncoderGate(6)}
-	slots := &fakeSlots{nvencMax: 6, gate: g}
+	slots := &fakeSlots{ready: true, limit: 6, gate: g}
 	withSlots(t, slots)
+	ctx := context.Background()
 
-	got := take(g, 4)
-	if len(got) != 3 || g.Held() != 3 {
-		t.Fatalf("VOD alone got %d (held %d), want 3: half the cap", len(got), g.Held())
-	}
-	if slots.syncs != 3 || slots.budget != 3 {
-		t.Errorf("syncs %d, the slots' budget %d; want a sync a session, budget 6-3", slots.syncs, slots.budget)
-	}
-	giveAll(got)
-	if g.Held() != 0 {
-		t.Fatalf("held %d after the releases", g.Held())
-	}
-
-	// the slots' channels hold 4: VOD gets the 2 left
-	slots.want = 4
-	if got = take(g, 3); len(got) != 2 {
-		t.Errorf("beside 4 slot sessions VOD got %d, want 2", len(got))
+	got := g.AcquireN(ctx, uuid.New(), 4)
+	if len(got) != 3 || g.Held() != 3 || slots.syncs != 1 || slots.budget != 3 {
+		t.Fatalf("got %d (held %d), %d syncs, slots' budget %d; want 3, 1 sync, 3", len(got), g.Held(), slots.syncs, slots.budget)
 	}
 	giveAll(got)
 
-	// no word from the slots: software (nothing reserved stays)
-	slots.want, slots.syncFails = 0, true
-	if got = take(g, 2); len(got) != 0 || g.Held() != 0 {
-		t.Errorf("without a sync VOD got %d (held %d)", len(got), g.Held())
+	// one channel live and one the standby keeps warm: 4 of the 6 are theirs
+	slots.set(func(f *fakeSlots) { f.need = 4 })
+	if got = g.AcquireN(ctx, uuid.New(), 3); len(got) != 2 {
+		t.Errorf("beside the channels' 4 VOD got %d, want 2", len(got))
 	}
-	slots.syncFails = false
+	giveAll(got)
 
-	// VideoToolbox has its own cap: the settings' VTMax (0: none), not NVENCMax
+	// the slots hold 5 by their fresh report: 1 left
+	slots.set(func(f *fakeSlots) { f.need, f.want = 0, 5 })
+	if got = g.AcquireN(ctx, uuid.New(), 3); len(got) != 1 || g.Held() != 1 {
+		t.Errorf("beside 5 slot sessions VOD got %d (held %d), want 1", len(got), g.Held())
+	}
+	giveAll(got)
+
+	// a slot that did not take its budget, or slots not read yet: software
+	slots.set(func(f *fakeSlots) { f.want, f.used, f.nack = 0, 0, true })
+	if got = g.AcquireN(ctx, uuid.New(), 3); len(got) != 0 || g.Held() != 0 {
+		t.Errorf("without every slot's word VOD got %d (held %d)", len(got), g.Held())
+	}
+	slots.set(func(f *fakeSlots) { f.nack, f.ready = false, false })
+	if got = g.AcquireN(ctx, uuid.New(), 3); len(got) != 0 {
+		t.Errorf("before the slots were read VOD got %d", len(got))
+	}
+	slots.set(func(f *fakeSlots) { f.ready = true })
+
+	// VideoToolbox: its own cap (0: none), not NVENC's
 	vt := &vodGate{gate: channel.NewEncoderGate(0), vt: true}
-	slots.nvencMax, slots.vtMax = 2, 0
-	if got = take(vt, 8); len(got) != 8 {
+	if got = vt.AcquireN(ctx, uuid.New(), 8); len(got) != 8 {
 		t.Errorf("VideoToolbox without a cap: VOD got %d of 8", len(got))
 	}
 	giveAll(got)
-	slots.vtMax = 4
-	if got = take(vt, 4); len(got) != 2 {
+	slots.set(func(f *fakeSlots) { f.vtLimit = 4 })
+	if got = vt.AcquireN(ctx, uuid.New(), 4); len(got) != 2 {
 		t.Errorf("VideoToolbox capped at 4: VOD got %d, want 2", len(got))
 	}
 	giveAll(got)
+	if g.Held() != 0 || vt.Held() != 0 {
+		t.Errorf("held after the releases: %d, %d", g.Held(), vt.Held())
+	}
 }
 
-// Many sessions at once take no more than the rule allows: the check and the
-// take are one step.
+// Transcodes opening at once take no more than the rules allow.
 func TestVODGateConcurrent(t *testing.T) {
 	g := &vodGate{gate: channel.NewEncoderGate(8)}
-	withSlots(t, &fakeSlots{nvencMax: 8, gate: g})
+	withSlots(t, &fakeSlots{ready: true, limit: 8, gate: g})
 	var mu sync.Mutex
 	var got []func(bool)
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if r, ok := g.Acquire(context.Background(), uuid.New(), 0); ok {
-				mu.Lock()
-				got = append(got, r)
-				mu.Unlock()
-			}
+			r := g.AcquireN(context.Background(), uuid.New(), 3)
+			mu.Lock()
+			got = append(got, r...)
+			mu.Unlock()
 		}()
 	}
 	wg.Wait()
 	if len(got) != 4 || g.Held() != 4 {
-		t.Errorf("20 at once got %d (held %d), want 4: half of 8", len(got), g.Held())
+		t.Errorf("10 transcodes at once got %d (held %d), want 4: half of 8", len(got), g.Held())
 	}
 	giveAll(got)
 }
@@ -164,16 +170,21 @@ func TestVODGateSharesTheProcessGate(t *testing.T) {
 		}
 		channels = append(channels, r)
 	}
-	got := take(g, 3)
-	if len(got) != 1 {
-		t.Errorf("beside 5 channel sessions VOD got %d, want 1", len(got))
+	got := g.AcquireN(context.Background(), uuid.New(), 3)
+	if len(got) != 1 || g.Held() != 1 {
+		t.Errorf("beside 5 channel sessions VOD got %d (held %d), want 1", len(got), g.Held())
 	}
 	giveAll(got)
 	giveAll(channels)
-	if got = take(g, 4); len(got) != 3 {
+	if got = g.AcquireN(context.Background(), uuid.New(), 4); len(got) != 3 {
 		t.Errorf("alone VOD got %d, want 3", len(got))
 	}
 	giveAll(got)
+	if r, ok := g.Acquire(context.Background(), uuid.New(), 0); !ok {
+		t.Error("Acquire: none")
+	} else {
+		r(false)
+	}
 	if gate.Active() != 0 || g.Held() != 0 {
 		t.Errorf("after the releases the gate holds %d, VOD %d", gate.Active(), g.Held())
 	}

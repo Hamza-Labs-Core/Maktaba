@@ -217,6 +217,22 @@ func TestSlotReadsItsRelease(t *testing.T) {
 	if rs.TV(context.Background()).HorizonDays != 3 {
 		t.Fatal("release tv rules")
 	}
+	// before the front door's first budget (a slot just restarted) the hardware
+	// caps are the share VOD can never take: at most half of them is VOD's
+	capped := ReleaseSettings{Raw: func(sec string) json.RawMessage {
+		if sec == "tv_output" {
+			return json.RawMessage(`{"nvenc_max_sessions":7,"videotoolbox_max_sessions":4}`)
+		}
+		return json.RawMessage(`{}`)
+	}}
+	cold := NewState(Green, "r1")
+	if o := (Settings{Settings: capped, State: cold}).Output(context.Background()); o.NVENCMax != 4 || o.VTMax != 2 {
+		t.Fatalf("before the first budget: NVENC %d, VT %d; want 4, 2", o.NVENCMax, o.VTMax)
+	}
+	cold.SetBudget(Budget{})
+	if o := (Settings{Settings: capped, State: cold}).Output(context.Background()); o.NVENCMax != 7 || o.VTMax != 4 {
+		t.Fatalf("after a budget without caps: NVENC %d, VT %d; want the settings' 7, 4", o.NVENCMax, o.VTMax)
+	}
 	// the budget applies over the release's settings
 	st := NewState(Green, "r1")
 	st.SetBudget(Budget{MaxActive: 3})

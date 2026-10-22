@@ -95,3 +95,53 @@ func TestExecRunner_FullGateEncodesInSoftware(t *testing.T) {
 		t.Errorf("refused %d, active %v", refused, h.Active())
 	}
 }
+
+// A tone-mapped run that fails at once (a colour space zscale cannot convert)
+// is run again without the tone-mapping: the video plays, untoned, instead of
+// not at all; a hardware one first in software, then without it.
+func TestExecRunner_ToneMapFailureRunsAgainWithout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a shell script stands in for ffmpeg")
+	}
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	script := filepath.Join(dir, "ffmpeg")
+	body := "#!/bin/sh\necho \"$*\" >> '" + log + "'\n" +
+		"case \"$*\" in *zscale*) echo 'code 3074: no path between colorspaces' >&2; exit 1;; esac\n" +
+		"exec sleep 30\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	calls := func() []string {
+		b, _ := os.ReadFile(log)
+		return strings.Split(strings.TrimSpace(string(b)), "\n")
+	}
+	r := &execRunner{Bin: Binary{FFmpeg: script},
+		colour: func(context.Context, string, string) Colour { return Colour{Transfer: "smpte2084"} },
+		filters: func(context.Context, string) (map[string]bool, error) {
+			return map[string]bool{"zscale": true, "tonemap": true}, nil
+		},
+	}
+	h, err := r.Start(context.Background(), Job{SessionID: uuid.NewString(), InputPath: "/in.mkv", OutputDir: t.TempDir(),
+		Ladder: DefaultLadder(0), HWAccel: "nvenc", Format: "hls", SourceCodec: "hevc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = h.Stop(context.Background()) })
+	if !waitUntil(20*time.Second, func() bool { return len(calls()) == 3 && h.PID() > 0 }) {
+		t.Fatalf("calls %q", calls())
+	}
+	c := calls()
+	if !strings.Contains(c[0], "h264_nvenc") || !strings.Contains(c[0], "zscale") {
+		t.Errorf("first run %q", c[0])
+	}
+	if strings.Contains(c[1], "nvenc") || !strings.Contains(c[1], "zscale") {
+		t.Errorf("second run (software, tone-mapped) %q", c[1])
+	}
+	if strings.Contains(c[2], "zscale") || strings.Contains(c[2], "filter_complex") || !strings.Contains(c[2], "-map 0:v:0") {
+		t.Errorf("third run (software, untoned) %q", c[2])
+	}
+	if !h.Active() {
+		t.Error("the untoned run is not running")
+	}
+}
