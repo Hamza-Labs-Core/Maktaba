@@ -43,8 +43,10 @@ type Detector struct {
 
 	// Hooks let tests substitute the runtime probes without faking exec.
 	Encoders func(ctx context.Context, ffmpeg string) ([]string, error)
-	Works    func(ctx context.Context, ffmpeg, encoder string) bool
-	GOOS     string // tests pin to "linux" / "darwin" / "windows"
+	// Works test-encodes with encoder; busy: it failed as a device that is there
+	// but has no session to give does (another program holds them).
+	Works func(ctx context.Context, ffmpeg, encoder string) (ok, busy bool)
+	GOOS  string // tests pin to "linux" / "darwin" / "windows"
 }
 
 // Default returns a Detector with default probes wired, running bin.
@@ -66,25 +68,37 @@ func (d *Detector) Detect(ctx context.Context) (HWAccel, error) {
 	return hw, err
 }
 
-// detect is Detect, and again: whether a later try may find more (software
-// although this ffmpeg lists a GPU encoder the preference allows: its device
-// was busy or not ready).
-func (d *Detector) detect(ctx context.Context) (hw HWAccel, again bool, err error) {
+// retry says whether a later detection may find more.
+type retry int
+
+const (
+	retryNo retry = iota
+	// retryMaybe: a listed GPU encoder failed its test encode without a sign of
+	// its device (Windows' builds list h264_nvenc on any PC; a driver that loads
+	// after the server does fails so too): a few tries more, then none.
+	retryMaybe
+	// retryBusy: its device is there but had no session to give.
+	retryBusy
+)
+
+// detect is Detect, and whether a later try may find more (software although
+// this ffmpeg lists a GPU encoder the preference allows).
+func (d *Detector) detect(ctx context.Context) (hw HWAccel, again retry, err error) {
 	prefer := strings.ToLower(strings.TrimSpace(d.Prefer))
 	switch prefer {
 	case "software", "off", "none", "libx264":
-		return HWAccelSoftware, false, nil
+		return HWAccelSoftware, retryNo, nil
 	case "", "auto":
 		prefer = ""
 	case string(HWAccelNVENC), string(HWAccelQSV), string(HWAccelVideoToolbox):
 	default:
-		return HWAccelSoftware, false, fmt.Errorf("MAKTABA_HWACCEL_PREFER=%q is none of auto, software, nvenc, qsv, videotoolbox: software", d.Prefer)
+		return HWAccelSoftware, retryNo, fmt.Errorf("MAKTABA_HWACCEL_PREFER=%q is none of auto, software, nvenc, qsv, videotoolbox: software", d.Prefer)
 	}
 	encs, err := d.Encoders(ctx, d.Bin.FFmpeg)
 	if err != nil {
 		// FFmpeg unavailable → fall back to software so tests on a
 		// host without ffmpeg still get a meaningful answer.
-		return HWAccelSoftware, false, err
+		return HWAccelSoftware, retryNo, err
 	}
 	have := func(name string) bool {
 		for _, e := range encs {
@@ -110,13 +124,26 @@ func (d *Detector) detect(ctx context.Context) (hw HWAccel, again bool, err erro
 		if !have(enc) {
 			continue
 		}
-		if d.Works(ctx, d.Bin.FFmpeg, enc) {
-			return hw, false, nil
+		ok, busy := d.Works(ctx, d.Bin.FFmpeg, enc)
+		if ok {
+			return hw, retryNo, nil
 		}
-		again = true
+		if busy {
+			again = retryBusy
+		} else if again == retryNo {
+			again = retryMaybe
+		}
 	}
 	return HWAccelSoftware, again, nil
 }
+
+// maybeTries: how many more detections a GPU encoder that failed without a
+// sign of its device gets (at interval, 2×, 4×: within the first hour);
+// busyBackoffMax: the longest wait between the tries of a busy one.
+const (
+	maybeTries     = 3
+	busyBackoffMax = time.Hour
+)
 
 // Choice is the transcodes' encoder verdict, kept current (WatchChoice).
 type Choice struct{ v atomic.Value }
@@ -130,14 +157,16 @@ func (c *Choice) Get() HWAccel {
 	return hw
 }
 
-// WatchChoice detects at once (within timeout), then again every interval
-// while the verdict is software although this ffmpeg lists a GPU encoder:
-// one whose test encode failed at boot (another program held the sessions,
-// the driver was still loading) is taken up when it works. report hears every
-// verdict that changes, and the first.
+// WatchChoice detects at once (within timeout), then again while the verdict
+// is software although this ffmpeg lists a GPU encoder: after interval, each
+// wait twice the last. A busy device (another program held its sessions) is
+// tried until it works, at least once an hour; one that failed without a sign
+// of its device (Windows' builds list h264_nvenc on any PC, a driver may load
+// after the server) gets maybeTries tries more. report hears every verdict
+// that changes, and the first.
 func WatchChoice(ctx context.Context, d *Detector, timeout, interval time.Duration, report func(HWAccel, error)) *Choice {
 	c := &Choice{}
-	try := func() bool {
+	try := func() retry {
 		tctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		hw, again, err := d.detect(tctx)
@@ -147,22 +176,31 @@ func WatchChoice(ctx context.Context, d *Detector, timeout, interval time.Durati
 		c.v.Store(hw)
 		return again
 	}
-	if try() {
-		go func() {
-			t := time.NewTicker(interval)
-			defer t.Stop()
-			for {
-				select {
-				case <-ctx.Done():
+	again := try()
+	if again == retryNo {
+		return c
+	}
+	go func() {
+		wait, maybe := interval, 0
+		for {
+			if again == retryMaybe {
+				if maybe++; maybe > maybeTries {
 					return
-				case <-t.C:
-					if !try() {
-						return
-					}
 				}
 			}
-		}()
-	}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+			if again = try(); again == retryNo {
+				return
+			}
+			if wait *= 2; wait > busyBackoffMax {
+				wait = busyBackoffMax
+			}
+		}
+	}()
 	return c
 }
 
@@ -198,7 +236,7 @@ func listEncoders(ctx context.Context, ffmpeg string) ([]string, error) {
 // with encoder, with the preset the transcodes give it: a GPU encoder works
 // only where its device and driver are (Windows' builds list h264_nvenc on
 // any PC).
-func encodes(ctx context.Context, ffmpeg, encoder string) bool {
+func encodes(ctx context.Context, ffmpeg, encoder string) (ok, busy bool) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	args := []string{"-hide_banner", "-nostdin", "-loglevel", "error",
@@ -206,5 +244,9 @@ func encodes(ctx context.Context, ffmpeg, encoder string) bool {
 	if p := presetForEncoder(encoder); p != "" {
 		args = append(args, "-preset", p)
 	}
-	return exec.CommandContext(ctx, ffmpeg, append(args, "-f", "null", "-")...).Run() == nil
+	out, err := exec.CommandContext(ctx, ffmpeg, append(args, "-f", "null", "-")...).CombinedOutput()
+	if err == nil {
+		return true, false
+	}
+	return false, refusedSession(string(out))
 }

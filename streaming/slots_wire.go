@@ -14,6 +14,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -29,6 +30,39 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 )
+
+// frontdoorSlotsLink is VOD's view of the TV slots (vodGate): the channels'
+// caps and needs, their reported sessions, and a warm sync on demand; ready
+// once the front door has read the slots' roles (Bootstrap).
+type frontdoorSlotsLink struct {
+	slots *frontdoor.Slots
+	b     *tvBase
+	ready atomic.Bool
+}
+
+func (l *frontdoorSlotsLink) Ready() bool { return l.ready.Load() }
+
+func (l *frontdoorSlotsLink) Room(ctx context.Context, vt bool) (limit, need, used int) {
+	out := l.b.settings.Output(ctx)
+	capacity, enc := l.b.capacity(ctx)
+	nvencMax, vtMax := 0, 0
+	switch enc {
+	case channel.EncoderNVENC:
+		nvencMax = out.NVENCMax
+	case channel.EncoderVideoToolbox:
+		vtMax = out.VTMax
+	}
+	nvNeed, vtNeed := l.slots.ChannelsNeed(ctx, capacity, nvencMax, vtMax)
+	if vt {
+		return out.VTMax, vtNeed, l.slots.EncodersUsed()
+	}
+	return out.NVENCMax, nvNeed, l.slots.EncodersUsed()
+}
+
+// Sync waits 2 s at most: a session's open has 5 s in all.
+func (l *frontdoorSlotsLink) Sync(ctx context.Context) bool {
+	return l.slots.SyncNow(ctx, 2*time.Second)
+}
 
 func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, ident channel.HostIdentity,
 	chRepo *channel.PGRepo, publicBase string) []func(chi.Router) {
@@ -63,6 +97,8 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 			case channel.EncoderVideoToolbox:
 				vt = out.VTMax
 			}
+			// less the sessions VOD holds or is taking (vodGate)
+			nv, vt = slotBudget(nv, vt)
 			return c, nv, vt
 		},
 		RemoteViewers: remoteViewers(b),
@@ -74,13 +110,13 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 				ctl.KickAll()
 			}
 		}}
-	// VOD's GPU sessions count with the slots' (vodGate)
-	tvSessions.Store(func(ctx context.Context) (int, int) {
-		return slots.EncodersUsed(), b.settings.Output(ctx).NVENCMax
-	})
+	// VOD's GPU sessions count with the slots' (vodGate), once their roles are read
+	link := &frontdoorSlotsLink{slots: slots, b: b}
+	tvSlots.Store(linkBox{link})
 	for {
 		err := slots.Bootstrap(ctx)
 		if err == nil {
+			link.ready.Store(true)
 			break
 		}
 		logger.Warn("tv: reading the slot roles failed; retrying", "err", err.Error(), "event", "tv_slot_bootstrap_failed")

@@ -124,6 +124,7 @@ type State struct {
 	epoch    int64
 	mismatch bool
 	budget   Budget
+	warmed   bool // a budget came from the front door
 	holds    map[uuid.UUID]time.Time
 	draining bool
 }
@@ -220,11 +221,18 @@ func (s *State) Budget() Budget {
 	return s.budget
 }
 
-// SetBudget sets the encoder budget.
+// SetBudget sets the encoder budget (the front door's: the slot is warmed).
 func (s *State) SetBudget(b Budget) {
 	s.mu.Lock()
-	s.budget = b
+	s.budget, s.warmed = b, true
 	s.mu.Unlock()
+}
+
+// Warmed: the front door has sent this slot a budget since it started.
+func (s *State) Warmed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.warmed
 }
 
 // SetHolds replaces the warm set (now: when they were asked for).

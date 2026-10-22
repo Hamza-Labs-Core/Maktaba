@@ -77,7 +77,11 @@ func TestSlotWarm(t *testing.T) {
 	a, b, c := uuid.New(), uuid.New(), uuid.New()
 	eng := &fakeEngine{active: []uuid.UUID{a, c}}
 	st := NewState(Green, "")
-	srv := &Server{State: st, HostID: "home", Engine: eng}
+	// the budget reaches the encoder gates at once (the front door lowers it by
+	// the sessions VOD is taking)
+	var applied []Budget
+	srv := &Server{State: st, HostID: "home", Engine: eng,
+		OnBudget: func(_ context.Context, b Budget) { applied = append(applied, b) }}
 	h := srv.Handler()
 	body, _ := json.Marshal(WarmRequest{Role: RoleStandby, Epoch: 3, Channels: []string{a.String(), b.String()},
 		Budget: Budget{MaxActive: 2, NVENCMax: 4}, Exclusive: true})
@@ -95,6 +99,9 @@ func TestSlotWarm(t *testing.T) {
 	}
 	if st.Budget() != (Budget{MaxActive: 2, NVENCMax: 4}) || len(st.Holds(time.Now())) != 2 {
 		t.Fatalf("budget %+v holds %v", st.Budget(), st.Holds(time.Now()))
+	}
+	if len(applied) != 1 || applied[0] != (Budget{MaxActive: 2, NVENCMax: 4}) {
+		t.Fatalf("OnBudget got %+v", applied)
 	}
 	if len(eng.stopped) != 1 || eng.stopped[0] != c {
 		t.Fatalf("stopped %v, want only %v", eng.stopped, c)
@@ -209,6 +216,22 @@ func TestSlotReadsItsRelease(t *testing.T) {
 	}
 	if rs.TV(context.Background()).HorizonDays != 3 {
 		t.Fatal("release tv rules")
+	}
+	// before the front door's first budget (a slot just restarted) the hardware
+	// caps are the share VOD can never take: at most half of them is VOD's
+	capped := ReleaseSettings{Raw: func(sec string) json.RawMessage {
+		if sec == "tv_output" {
+			return json.RawMessage(`{"nvenc_max_sessions":7,"videotoolbox_max_sessions":4}`)
+		}
+		return json.RawMessage(`{}`)
+	}}
+	cold := NewState(Green, "r1")
+	if o := (Settings{Settings: capped, State: cold}).Output(context.Background()); o.NVENCMax != 4 || o.VTMax != 2 {
+		t.Fatalf("before the first budget: NVENC %d, VT %d; want 4, 2", o.NVENCMax, o.VTMax)
+	}
+	cold.SetBudget(Budget{})
+	if o := (Settings{Settings: capped, State: cold}).Output(context.Background()); o.NVENCMax != 7 || o.VTMax != 4 {
+		t.Fatalf("after a budget without caps: NVENC %d, VT %d; want the settings' 7, 4", o.NVENCMax, o.VTMax)
 	}
 	// the budget applies over the release's settings
 	st := NewState(Green, "r1")

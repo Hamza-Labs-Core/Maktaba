@@ -88,6 +88,10 @@ type Slots struct {
 	rolesDirty bool
 	stage      *stagingRun
 	lastSample time.Time
+	// syncs: SyncNow's requests, served by Run (one warm sync at a time); each
+	// gets whether the slots took their sets
+	syncsOnce sync.Once
+	syncs     chan chan bool
 }
 
 // slotHealth is what the last probes of a slot said.
@@ -450,7 +454,40 @@ func (s *Slots) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case req := <-s.syncRequests():
+			req <- s.syncWarm(ctx)
 		}
+	}
+}
+
+func (s *Slots) syncRequests() chan chan bool {
+	s.syncsOnce.Do(func() { s.syncs = make(chan chan bool) })
+	return s.syncs
+}
+
+// SyncNow has Run send the slots their warm sets and budgets now and read their
+// reports back (EncodersUsed), and waits for it, at most wait: VOD's gate lowers
+// the slots' NVENC budget by the sessions it is taking before it takes them.
+// True only when the live slot took its set; false too when Run did not serve
+// it in time (not running yet, busy).
+func (s *Slots) SyncNow(ctx context.Context, wait time.Duration) bool {
+	t := time.NewTimer(wait)
+	defer t.Stop()
+	done := make(chan bool, 1)
+	select {
+	case s.syncRequests() <- done:
+	case <-t.C:
+		return false
+	case <-ctx.Done():
+		return false
+	}
+	select {
+	case acked := <-done:
+		return acked
+	case <-t.C:
+		return false
+	case <-ctx.Done():
+		return false
 	}
 }
 
@@ -882,24 +919,25 @@ func minInt(a, b int) int {
 }
 
 // SyncWarm sends each slot its role, budget and warm set.
-func (s *Slots) SyncWarm(ctx context.Context) {
-	s.mu.Lock()
-	s.lastWarm = time.Now()
-	live, standby, staging, epoch := s.live, s.standby, s.staging, s.epoch
-	var liveOnAir []uuid.UUID
+func (s *Slots) SyncWarm(ctx context.Context) { s.syncWarm(ctx) }
+
+// onAirLocked is the channels the live slot reported on air (s.mu held).
+func (s *Slots) onAirLocked(live string) []uuid.UUID {
+	var on []uuid.UUID
 	if h := s.health[live]; h != nil && h.ok {
 		for _, c := range h.status.Stations {
 			if id, err := uuid.Parse(c); err == nil {
-				liveOnAir = append(liveOnAir, id)
+				on = append(on, id)
 			}
 		}
 	}
-	s.mu.Unlock()
+	return on
+}
+
+// warmInputs are what planWarm plans from: the staging settings, the demands
+// and the remote viewers.
+func (s *Slots) warmInputs(ctx context.Context) (StagingSettings, []ChannelDemand, map[uuid.UUID]int) {
 	set := s.settings(ctx)
-	capacity, nvencMax, vtMax := 8, 0, 0
-	if s.Budget != nil {
-		capacity, nvencMax, vtMax = s.Budget(ctx)
-	}
 	var demands []ChannelDemand
 	if s.Demand != nil {
 		demands = s.Demand()
@@ -907,6 +945,54 @@ func (s *Slots) SyncWarm(ctx context.Context) {
 	var remote map[uuid.UUID]int
 	if s.RemoteViewers != nil && set.StandbyWarm == StandbyWarmViewers {
 		remote = s.RemoteViewers(ctx)
+	}
+	return set, demands, remote
+}
+
+// ChannelsNeed is the hardware encoder sessions the TV's channels need under
+// these caps (the settings', not lowered for VOD): two for each channel on the
+// live slot and, with the hot standby on, for each one it keeps warm (a block's
+// pre-start holds two for a moment), as planWarm counts them, and as much again
+// for one more channel to start warm while the host has room for one. VOD
+// takes only sessions beyond it.
+func (s *Slots) ChannelsNeed(ctx context.Context, capacity, nvencMax, vtMax int) (nvenc, vt int) {
+	s.mu.Lock()
+	liveOnAir := s.onAirLocked(s.live)
+	s.mu.Unlock()
+	set, demands, remote := s.warmInputs(ctx)
+	plan := planWarm(set, demands, remote, liveOnAir, capacity, nvencMax, vtMax)
+	n := 2 * len(liveOnAir)
+	if set.HotStandby {
+		n += 2 * len(plan.standby)
+	}
+	if capacity <= 0 || len(liveOnAir) < capacity {
+		n += 2
+		if set.HotStandby {
+			n += 2
+		}
+	}
+	if nvencMax > 0 {
+		nvenc = n
+	}
+	if vtMax > 0 {
+		vt = n
+	}
+	return nvenc, vt
+}
+
+// syncWarm is SyncWarm; true when the live slot took its set (VOD's gate counts
+// on its budget being in force; a standby that is down is cold, and one that
+// starts holds to cap - cap/2 until its first budget).
+func (s *Slots) syncWarm(ctx context.Context) bool {
+	s.mu.Lock()
+	s.lastWarm = time.Now()
+	live, standby, staging, epoch := s.live, s.standby, s.staging, s.epoch
+	liveOnAir := s.onAirLocked(live)
+	s.mu.Unlock()
+	set, demands, remote := s.warmInputs(ctx)
+	capacity, nvencMax, vtMax := 8, 0, 0
+	if s.Budget != nil {
+		capacity, nvencMax, vtMax = s.Budget(ctx)
 	}
 	plan := planWarm(set, demands, remote, liveOnAir, capacity, nvencMax, vtMax)
 	if gone := s.rollingSwitched(); len(gone) > 0 {
@@ -920,9 +1006,12 @@ func (s *Slots) SyncWarm(ctx context.Context) {
 		}
 		plan.live = kept
 	}
+	acked := true
 	if st := s.sendWarm(ctx, live, slot.WarmRequest{Role: slot.RoleLive, Epoch: epoch,
 		Channels: ids(plan.live), Budget: plan.liveBudget}); st != nil {
 		s.remember(live, *st)
+	} else {
+		acked = false
 	}
 	s.ensureStandby(ctx, set.HotStandby, standby)
 	if standby != "" && set.HotStandby {
@@ -960,6 +1049,7 @@ func (s *Slots) SyncWarm(ctx context.Context) {
 			s.remember(prev, *st)
 		}
 	}
+	return acked
 }
 
 // extraBudget is the encoder budget of a slot that warms n channels besides

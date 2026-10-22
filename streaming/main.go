@@ -34,7 +34,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/auth"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
-	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
@@ -387,9 +386,9 @@ func buildGRPCServer(bg *background, logger *slog.Logger, backend probe.Backend,
 	}
 	// VOD's GPU sessions count with the TV's channels' (vodGate)
 	srv.Transcode = ffmpeg.DefaultOrchestrator(vodBinary(cfg), map[ffmpeg.HWAccel]ffmpeg.SessionGate{
-		ffmpeg.HWAccelNVENC:        &vodGate{gate: channel.DefaultEncoderGate()},
-		ffmpeg.HWAccelVideoToolbox: &vodGate{gate: channel.DefaultVTGate()},
-	})
+		ffmpeg.HWAccelNVENC:        vodNVENC,
+		ffmpeg.HWAccelVideoToolbox: vodVT,
+	}, logger)
 	srv.ResolveDir = layout.HLSDir
 	return srv
 }

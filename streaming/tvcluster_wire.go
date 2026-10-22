@@ -181,6 +181,9 @@ func (b *tvBase) newEngine(repo *channel.PGRepo, start channel.StartFunc, ident 
 			VTFree:    channel.DefaultVTGate().Free(),
 		}
 	}
+	// VOD's gates leave this engine's channels their sessions (with TV slots
+	// off; with them on, the slots' link counts the channels)
+	tvLocal.add(func() int { return len(engine.ActiveIDs()) })
 	if b.readOnly {
 		return engine
 	}
