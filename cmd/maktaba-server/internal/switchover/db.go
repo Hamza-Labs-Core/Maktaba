@@ -53,13 +53,24 @@ func Freeze(ctx context.Context, super *sql.DB, id string) error {
 }
 
 // Thaw lets the old home write again (a switchover that did not go through): the rights
-// a freeze took given back, the database's default read-write.
+// a freeze took given back, the database's default read-write, and the app's sessions
+// ended: one opened while it was frozen keeps the read-only default for its life (an
+// app's pool holds it), and connects again read-write. The superusers' sessions stay
+// (their writes say READ WRITE: the supervisor's own pool, this one).
 func Thaw(ctx context.Context, super *sql.DB) error {
 	if err := dbfence.Release(ctx, super); err != nil {
 		return fmt.Errorf("switchover: thaw: the app's rights: %w", err)
 	}
-	_, err := super.ExecContext(ctx, `ALTER DATABASE `+database+` RESET default_transaction_read_only`)
-	return err
+	if _, err := super.ExecContext(ctx, `ALTER DATABASE `+database+` RESET default_transaction_read_only`); err != nil {
+		return err
+	}
+	if _, err := super.ExecContext(ctx, `SELECT pg_terminate_backend(a.pid, 5000) FROM pg_stat_activity a
+	    JOIN pg_roles r ON r.oid = a.usesysid
+	    WHERE a.datname = current_database() AND a.pid <> pg_backend_pid() AND a.backend_type = 'client backend'
+	      AND NOT r.rolsuper`); err != nil {
+		return fmt.Errorf("switchover: thaw: end the sessions opened while frozen: %w", err)
+	}
+	return nil
 }
 
 // stopWrites stops the app's roles writing (Freeze, Fence): the database read-only by

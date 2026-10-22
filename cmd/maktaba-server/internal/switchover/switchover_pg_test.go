@@ -489,8 +489,28 @@ func TestAFrozenHomeThaws(t *testing.T) {
 	if ok, err := HasMarker(ctx, super(t, c.home), id); !ok || err != nil {
 		t.Fatalf("no marker on the frozen home: %v", err)
 	}
+	// the app's pool, its one session opened while frozen (its default read-only)
+	pooled := open(t, appURL)
+	pooled.SetMaxOpenConns(1)
+	var ro string
+	if err := pooled.QueryRowContext(ctx, `SHOW default_transaction_read_only`).Scan(&ro); err != nil || ro != "on" {
+		t.Fatalf("a session opened while frozen: %q %v", ro, err)
+	}
 	if err := Thaw(ctx, super(t, c.home)); err != nil {
 		t.Fatalf("thaw from a session opened after the freeze: %v", err)
+	}
+	// the pool writes again: its session opened frozen was ended, a new one is read-write
+	var werr error
+	for range 2 { // the ended session's error at most, once
+		if _, werr = pooled.ExecContext(ctx, write); werr == nil {
+			break
+		}
+	}
+	if werr != nil {
+		t.Fatalf("a pool of the app's from while frozen refuses writes after the thaw: %v", werr)
+	}
+	if err := pooled.QueryRowContext(ctx, `SHOW default_transaction_read_only`).Scan(&ro); err != nil || ro != "off" {
+		t.Fatalf("the pool's session after the thaw: %q %v", ro, err)
 	}
 	if _, err := open(t, appURL).ExecContext(ctx, write); err != nil {
 		t.Fatalf("the thawed home refuses writes: %v", err)
