@@ -62,9 +62,9 @@ def key_path(env: Mapping[str, str] | None = None) -> Path:
     platform's (what ``secrets.KeyPath`` resolves in Go): on Windows maktaba-server's
     keys directory, ``%LOCALAPPDATA%\\Maktaba\\keys`` (Epic 38), or the
     ``%APPDATA%\\Maktaba\\secrets.key`` of an install from before while there is none in
-    the new place (maktaba-server moves it); elsewhere, macOS too, the XDG config
-    directory (the developer stack's key, which migrate-from-dev moves into
-    Maktaba.app)."""
+    the new place (maktaba-server copies it there and keeps the original); elsewhere,
+    macOS too, the XDG config directory (the developer stack's key, which
+    migrate-from-dev moves into Maktaba.app)."""
     env = os.environ if env is None else env
     explicit = env.get("MAKTABA_SECRETS_KEY", "").strip()
     if explicit:

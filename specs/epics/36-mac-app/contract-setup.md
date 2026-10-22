@@ -83,7 +83,9 @@ Each finding is `{"code", "params"?, "message"}`, shown as `setup.check.note.<co
 there is one): `platform_intel_mac`, `platform_unsupported` (`os`, `arch`), `disk_low` (`free_bytes`,
 `need_bytes`, `dir`), `ram_low` (`have_bytes`, `need_bytes`). `warnings` do not: `disk_tight`
 (`free_bytes`, `comfortable_bytes`), `ram_tight` (`need_bytes`), `transcribe_cpu` (Windows and Linux
-without an NVIDIA GPU: transcription runs on the processor). `gpus` lists the NVIDIA GPUs
+without an NVIDIA GPU: transcription runs on the processor), `node_config_other_pc` (`path`, `owner`;
+Windows: the roaming profile's node settings belong to another PC, so this machine is no home's
+machine until it is added as its own, Epic 38 story 38.1). `gpus` lists the NVIDIA GPUs
 (`nvidia-smi`; `name`, `memory_mb`, and where nvidia-smi says them `compute_cap` and `driver`), and
 the pipeline's run line names the one it transcribes on (`params.gpu`).
 

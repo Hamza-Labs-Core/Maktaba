@@ -142,6 +142,7 @@ def _identity(name: str | None, path: Path | None) -> NodeConfig:
         node_id=str(uuid.uuid4()),
         name=name or stable_hostname(),
         private_key=kp.private_b64,
+        machine_id=node_config.machine_id(),  # the PC it belongs to (Windows)
     )
     node_config.save(cfg, path)
     return cfg

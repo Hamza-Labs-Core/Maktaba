@@ -98,8 +98,10 @@ def _node_config_in_tmp(
 ) -> None:
     """cluster.config.config_path() (role detection, the agent, join) reads the file
     named here: never this machine's real node.json (a joined machine's holds a
-    database credential). A test that needs a node config sets its own."""
+    database credential). A test that needs a node config sets its own. This PC's id
+    is a fake one too: never the real MachineGuid a node config is claimed with."""
     monkeypatch.setenv("MAKTABA_NODE_CONFIG", str(tmp_path_factory.mktemp("node") / "node.json"))
+    monkeypatch.setenv("MAKTABA_MACHINE_ID", "test-pc")
 
 
 @pytest.fixture(autouse=True)

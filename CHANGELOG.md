@@ -115,29 +115,56 @@ don't append a line here; docs-only PRs are exempt.
   so once in its log; its children then open no console window on the desktop. A child is held
   still while it is asked, so the CTRL_BREAK never goes astray to `serve` itself; so are the
   venv bootstrap the server and setup start, and setup's model download, when they are asked.
-- **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1): `server.toml`,
-  `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches and the bundled
-  Postgres beside `data\`. Nothing is in the roaming profile any more, so the keys and a node's
-  identity never follow the user to another PC. An install from before moves at its next
-  `maktaba-server` command, with or without a `server.toml`:
-  `server.toml`, the keys and `node.json` out of `%APPDATA%\Maktaba`, and `models\`, `chroma\`,
-  `cache\`, `postgres\` and `backups\` out of `data\` to beside it (when `data_dir` is the
-  default, `MAKTABA_CONFIG` or not). Each piece moves on its own and only while its new place is
-  empty: nothing is replaced and no two folders are merged, and a piece that finds something
-  there stays put and says so once. Across drives (a roaming profile on another drive or on a
-  server) a file is copied, flushed to disk and compared before the old one is removed, a folder
-  file by file, and a move cut short is finished by the next command, so no key is lost. One
-  command at a time moves (a lock in `%LOCALAPPDATA%\Maktaba`; a second one waits for it). A
-  `maktaba-server` inside the desktop app's payload, on Windows or a Mac, never moves an older
-  install: that comes into the app only through the app's own move, which copies it and keeps
-  the old one for going back. The node installer's `node.env` stays where
-  its scripts read it, and a machine that joined before reads its old `node.json` until it has
-  moved; the api and the pipeline, run on their own, read `keys\secrets.key` the same way. On
-  Windows the pipeline also writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
+- **Windows keeps everything in `%LOCALAPPDATA%\Maktaba`** (Epic 38, story 38.1), for a new install:
+  `server.toml`, `keys\`, `data\`, `logs\` and the node's `node.json`, with the models, caches
+  and the bundled Postgres beside `data\`. A new install puts nothing in the roaming profile.
+- **An install from before keeps its originals.** Its next `maktaba-server` command copies
+  `server.toml` and the keys there from `%APPDATA%\Maktaba` (with or without a `server.toml`;
+  nothing with `MAKTABA_CONFIG` set), and the copies are used from then on.
+  - The originals stay in `%APPDATA%\Maktaba`, which roams with a roaming profile: older
+    versions of the install, a node's pipeline run from a checkout and the node installer still
+    read them. `uninstall --purge` removes them with their copies.
+  - The copied keys and passwords are limited to the user, as `node.json` is.
+  - A copy is never replaced. One that differs from its original stays, and the command says so
+    once.
+  - Each copy is written beside its new name, flushed, compared and put in place without
+    replacing anything, so a roaming profile on another drive or on a server works, and a copy
+    cut short is made again by the next command.
+  - One command at a time copies: a lock in `%LOCALAPPDATA%\Maktaba`, and a second command
+    waits for it.
+- **`node.json` is never copied.** A machine has one node config: one that joined before keeps
+  it in `%APPDATA%\Maktaba`, where every reader (Maktaba, streaming, the pipeline, the node
+  installer) and a re-join use it. That profile can roam, so the file records the PC it belongs
+  to (`machine_id`, Windows' MachineGuid). The first new Maktaba that runs with it on a PC claims
+  it, keeping its ACL; the pipeline is its one writer. A PC it does not belong to skips it: it
+  is no home's machine, and its own join writes `%LOCALAPPDATA%\Maktaba\node.json`, never the
+  other PC's identity. `maktaba-server` says so once at its start, and the app's setup check
+  shows it (`node_config_other_pc`).
+- **The large state stays where it is.** The install's models, caches and Postgres stay in
+  `data\`. It is decided once whether `data\` or the folder beside it is the state root, and the
+  answer is kept (`state-root.json`), so a folder an older version makes later never moves it.
+  Nothing moves or copies a folder that a running Postgres or an older version may hold.
+- **Inside the desktop app nothing is copied or moved.** A `maktaba-server` inside the app's
+  payload, on Windows or a Mac, never copies or moves an older install: that comes into the app
+  only through the app's own move, which copies it and keeps the old one for going back.
+- The node installer's `node.env` stays where its scripts read it.
+- The api and the pipeline, run on their own, read `keys\secrets.key`, or the old one until it has
+  been copied.
+- On Windows the pipeline writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
   longer raise `UnicodeEncodeError`.
 
 ### Fixed
 
+- **The second listen's retries back off and stop (follow-up of story 38.8).** A machine that
+  runs the second listen queued the same 20 oldest transcripts made without it every 10 minutes,
+  forever, when it could not give them theirs (a file it cannot read, a model that does not load),
+  so newer ones never got their turn. Each video's tries are now recorded (new table
+  `relisten_attempts`, slot 0145): after a try it waits 1 hour, doubling up to a day, the untried
+  videos go first, and after 6 tries it stops and says so once, as a warning in Processing,
+  Activity. A transcript with the second listen, or a new transcribe run, starts over. The
+  model download's hash mismatch names the hashes before the folder, so a long Windows path no
+  longer cuts them off. The Settings page shows the Transcription rules in Arabic, and a check
+  keeps every rules section in Arabic but those not yet translated.
 - **`maktaba-server setup` (the CLI wizard) seeds the admin again.** It called `adduser` with
   `--username`/`--password` flags the api does not have; it now passes the username and a
   password file.

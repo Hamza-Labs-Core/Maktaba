@@ -9,7 +9,7 @@
 //	Linux   : $XDG_CONFIG_HOME/maktaba/server.toml
 //	          (fallback ~/.config/maktaba/server.toml)
 //	Windows : %LOCALAPPDATA%\Maktaba\server.toml (Epic 38; before it %APPDATA%,
-//	          moved once by MigrateWindowsDirs)
+//	          copied by MigrateWindowsDirs, the original kept)
 //
 // $MAKTABA_CONFIG overrides the resolved path everywhere (tests, custom
 // installs, container bind-mounts).

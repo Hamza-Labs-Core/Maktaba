@@ -73,7 +73,8 @@ func (k *Key) String() string { return "secrets.Key(" + k.ID + ")" }
 // MAKTABA_CONFIG (server.toml), else the platform's: on Windows
 // maktaba-server's keys directory (%LOCALAPPDATA%\Maktaba\keys, Epic 38), or
 // the %APPDATA%\Maktaba\secrets.key of an install from before while there is
-// none in the new place (maktaba-server moves it); elsewhere, macOS too,
+// none in the new place (maktaba-server copies it there and keeps the
+// original); elsewhere, macOS too,
 // $XDG_CONFIG_HOME/maktaba or ~/.config/maktaba (the developer stack's key,
 // which migrate-from-dev moves into Maktaba.app). The pipeline
 // (maktaba_pipeline.home_secrets) resolves it the same way. Under

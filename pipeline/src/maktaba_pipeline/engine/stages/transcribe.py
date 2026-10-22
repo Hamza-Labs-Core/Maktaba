@@ -33,6 +33,10 @@ unless the home's rules let it transcribe too (``rules.transcription``,
 records that in its job's input hash (:func:`skipped_fingerprint`): a worker that runs
 the second listen does not take it as done, and queues such transcripts again, a few at
 a time (:func:`relisten`), while one that cannot lets them stand (:func:`still_current`).
+A video whose relisten jobs keep leaving it without the second listen (a file that worker
+cannot read, a model that does not load) waits longer after each, the untried ones first,
+and after ``RELISTEN_TRIES`` is left as it is, said once in its job log
+(``relisten_attempts``, slot 0145).
 """
 
 from __future__ import annotations
@@ -56,6 +60,7 @@ from ...stt.cohere import DEFAULT_MODEL as REFINE_MODEL
 from ...stt.placement import TranscriptionConfig
 from ...stt.settings import SAMPLE_RATE, Checkpoint, FileProgress, Transcript, WhisperSettings
 from ..context import JobDeferred, StageContext, StageFailure
+from ..events import log_event
 from ..graph import TRANSCRIBE_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
 from ..health import system_memory
@@ -320,6 +325,19 @@ RELISTEN_BATCH = 20
 RELISTEN_AFTER_S = 3600.0
 RELISTEN_PRIORITY = 500
 _LAST_RELISTEN: list[float] = []
+#: a video whose relisten job left it without the second listen waits this long before the
+#: next (doubling after each, at most ``RELISTEN_BACKOFF_MAX_S``; the engine's backoff,
+#: with its jitter), and after ``RELISTEN_TRIES`` of them gets no more (``relisten_attempts``)
+RELISTEN_BACKOFF_S = 3600.0
+RELISTEN_BACKOFF_MAX_S = 86_400.0
+RELISTEN_TRIES = 6
+
+#: a transcribe job of the video ``t.video_id`` that is still to run or running
+_OPEN_JOB = (
+    "EXISTS (SELECT 1 FROM processing_jobs j WHERE j.subject_kind = 'video'"
+    " AND j.subject_id = t.video_id AND j.stage = 'transcribe'"
+    " AND j.state IN ('pending','claimed','running','resuming','paused'))"
+)
 
 
 async def refresh(db: Any, serving: bool) -> None:
@@ -335,10 +353,13 @@ async def refresh(db: Any, serving: bool) -> None:
 
 async def relisten(db: Any) -> int:
     """Queue transcribe again for the videos whose transcript was made without its second
-    listen (``metadata.refine.source = skipped``), oldest first, as relisten jobs (a
-    worker without the second listen gives them back). Once per ``RELISTEN_EVERY_S``,
-    and only once this worker has the model (loaded, or on its disk: a machine without
-    it would make the same transcript again). Returns the jobs queued."""
+    listen (``metadata.refine.source = skipped``) as relisten jobs (a worker without the
+    second listen gives them back). Once per ``RELISTEN_EVERY_S``, and only once this
+    worker has the model (loaded, or on its disk: a machine without it would make the same
+    transcript again). The videos tried least come first, the oldest among them; one
+    tried already waits out its backoff, and one tried ``RELISTEN_TRIES`` times gets no
+    more (:func:`_stop_relistens`). Returns the jobs queued."""
+    from ...pipeline.backoff import compute_backoff
     from ..enqueue import enqueue_job
 
     t = time.monotonic()
@@ -348,20 +369,21 @@ async def relisten(db: Any) -> int:
     if model is None or not await asyncio.to_thread(_has_second_listen_model, model):
         return 0
     _LAST_RELISTEN[:] = [t]
-    skipped = (
-        "t.metadata -> 'refine' ->> 'source' = 'skipped'"
-        if is_pg(db)
-        else "json_extract(t.metadata, '$.refine.source') = 'skipped'"
-    )
+    at = now()
+    skipped = _skipped_sql(db)
+    await _stop_relistens(db, skipped)
     rows = await db.fetch(
-        "SELECT t.video_id FROM transcripts t"
+        "SELECT t.video_id, COALESCE(r.attempts, 0) AS attempts FROM transcripts t"
+        " LEFT JOIN relisten_attempts r ON r.video_id = t.video_id"
         f" WHERE t.is_active AND {skipped} AND t.created_at < $1"
-        " AND NOT EXISTS (SELECT 1 FROM processing_jobs j WHERE j.subject_kind = 'video'"
-        "  AND j.subject_id = t.video_id AND j.stage = 'transcribe'"
-        "  AND j.state IN ('pending','claimed','running','resuming','paused'))"
-        " ORDER BY t.created_at LIMIT $2",
-        to_ts(db, now() - timedelta(seconds=RELISTEN_AFTER_S)),
+        " AND (r.video_id IS NULL"
+        "  OR (r.stopped_at IS NULL AND r.attempts < $3 AND r.next_at <= $4))"
+        f" AND NOT {_OPEN_JOB}"
+        " ORDER BY COALESCE(r.attempts, 0), t.created_at LIMIT $2",
+        to_ts(db, at - timedelta(seconds=RELISTEN_AFTER_S)),
         RELISTEN_BATCH,
+        RELISTEN_TRIES,
+        to_ts(db, at),
     )
     queued = 0
     for r in rows:
@@ -374,10 +396,106 @@ async def relisten(db: Any) -> int:
             reason={"why": "transcribed without the second listen", "by": "system"},
             payload={RELISTEN: True},
         )
-        queued += res.job_id is not None
+        if res.job_id is None:
+            continue
+        tries = int(r["attempts"]) + 1
+        wait = compute_backoff(tries, base=RELISTEN_BACKOFF_S, cap=RELISTEN_BACKOFF_MAX_S)
+        await db.execute(
+            "INSERT INTO relisten_attempts (video_id, attempts, last_job_id, last_at, next_at)"
+            " VALUES ($1, $2, $3, $4, $5) ON CONFLICT (video_id) DO UPDATE SET"
+            " attempts = EXCLUDED.attempts, last_job_id = EXCLUDED.last_job_id,"
+            " last_at = EXCLUDED.last_at, next_at = EXCLUDED.next_at, stopped_at = NULL",
+            uid(r["video_id"]),
+            tries,
+            res.job_id,
+            to_ts(db, at),
+            to_ts(db, at + timedelta(seconds=wait)),
+        )
+        queued += 1
     if queued:
         _log.info("transcribe.relisten_queued", jobs=queued, model=model)
     return queued
+
+
+def _skipped_sql(db: Any) -> str:
+    """The transcript ``t`` was made without its second listen."""
+    if is_pg(db):
+        return "t.metadata -> 'refine' ->> 'source' = 'skipped'"
+    return "json_extract(t.metadata, '$.refine.source') = 'skipped'"
+
+
+async def _stop_relistens(db: Any, skipped: str) -> int:
+    """The videos tried ``RELISTEN_TRIES`` times, their last job over and their transcript
+    still without the second listen, get no more tries. Each is said once, as a warning
+    in its last relisten job's log (Processing, Activity), and in this worker's log.
+    Returns how many stopped."""
+    rows = await db.fetch(
+        "SELECT r.video_id, r.attempts, r.last_job_id, t.metadata, v.library_id"
+        " FROM relisten_attempts r"
+        " JOIN transcripts t ON t.video_id = r.video_id AND t.is_active"
+        " JOIN videos v ON v.id = r.video_id"
+        f" WHERE r.stopped_at IS NULL AND r.attempts >= $1 AND {skipped}"
+        f" AND NOT {_OPEN_JOB}"
+        " LIMIT $2",
+        RELISTEN_TRIES,
+        RELISTEN_BATCH,
+    )
+    stopped = 0
+    for r in rows:
+        video_id, tries = str(r["video_id"]), int(r["attempts"])
+        why = await _last_try(db, r["last_job_id"], loads(r["metadata"]))
+        message = (
+            f"the second listen: {tries} tries did not give this transcript its second"
+            f" listen ({why}); no more tries. Running transcribe on this video again starts"
+            " them over."
+        )
+        async with db.transaction():
+            # set once: another worker's sweep at the same time finds it set
+            won = await db.fetchrow(
+                "UPDATE relisten_attempts SET stopped_at = $2"
+                " WHERE video_id = $1 AND stopped_at IS NULL RETURNING video_id",
+                video_id,
+                to_ts(db, now()),
+            )
+            if won is None:
+                continue
+            if r["last_job_id"] is not None:
+                await log_event(
+                    db,
+                    job_id=int(r["last_job_id"]),
+                    subject_kind="video",
+                    subject_id=video_id,
+                    library_id=r["library_id"],
+                    stage="transcribe",
+                    level="warn",
+                    kind="step",
+                    message=message,
+                    data={"relisten": {"tries": tries, "stopped": True, "why": why}},
+                )
+        _log.warning("transcribe.relisten_stopped", video_id=video_id, tries=tries, why=why)
+        stopped += 1
+    return stopped
+
+
+async def _last_try(db: Any, job_id: Any, metadata: Any) -> str:
+    """Why the last relisten job left the transcript without its second listen: the job's
+    failure, else what the transcript says."""
+    if job_id is not None:
+        job = await db.fetchrow(
+            "SELECT state, error_cause, error FROM processing_jobs WHERE id = $1", int(job_id)
+        )
+        if job is not None and job["state"] not in ("done", "skipped"):
+            try:
+                error = loads(job["error"]) or {}
+            except ValueError:
+                error = {"message": str(job["error"])}
+            if not isinstance(error, dict):
+                error = {"message": str(error)}
+            detail = error.get("message") or job["error_cause"] or "no reason given"
+            return f"its last job {job['state']}: {detail}"[:200]
+    refine = (metadata or {}).get("refine") or {}
+    reason = refine.get("skipped")
+    return f"it did not run: {reason}"[:200] if reason else "it did not run"
 
 
 def _has_second_listen_model(model: str) -> bool:
@@ -680,10 +798,14 @@ async def _transcribe_file(
     if tmap is not None:
         result = _remap(result, tmap, total_sec)
 
-    transcript_id = await _store(db, v.id, result, settings, refined)
+    skipped = refined is not None and refined.get("source") == "skipped"
+    # a relisten job that again went without the second listen: its tries go on counting
+    relisten = bool((ctx.job.payload or {}).get(RELISTEN))
+    transcript_id = await _store(
+        db, v.id, result, settings, refined, keep_tries=skipped and relisten
+    )
     texts = [(s.start, s.end, s.text) for s in result.sentences]
     rtf = result.audio_sec / result.gpu_sec if result.gpu_sec > 0 else None
-    skipped = refined is not None and refined.get("source") == "skipped"
     return StageResult(
         output_hash=canonical_hash(texts),
         # without its second listen: so recorded, for a worker that runs it
@@ -707,8 +829,11 @@ async def _store(
     result: Transcript,
     settings: WhisperSettings,
     refined: dict[str, Any] | None = None,
+    keep_tries: bool = False,
 ) -> str:
-    """The transcript replaces the video's active one, atomically."""
+    """The transcript replaces the video's active one, atomically. The video's relisten
+    tries (``relisten_attempts``) go with the old one, unless ``keep_tries``: a relisten
+    job that again went without the second listen."""
     store_words = os.environ.get("MAKTABA_STT_STORE_WORDS", "0") == "1"
     async with db.transaction():
         # the stream ffmpeg decoded (-map 0:a:0), recorded as the probe would have: the
@@ -778,6 +903,8 @@ async def _store(
         )
         await db.execute("UPDATE transcripts SET is_active = true WHERE id = $1", tid)
         await db.execute("DELETE FROM transcribe_checkpoints WHERE video_id = $1", uid(video_id))
+        if not keep_tries:
+            await db.execute("DELETE FROM relisten_attempts WHERE video_id = $1", uid(video_id))
         if result.detected_language:
             await db.execute(
                 "UPDATE videos SET detected_language = $2"
