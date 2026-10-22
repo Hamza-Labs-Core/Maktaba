@@ -17,7 +17,7 @@
   gap: var(--space-2);
 }
 .mkt-cb-link {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-weight: 600;
 }
 .mkt-cb-filters {
@@ -60,7 +60,7 @@
   line-height: 1;
 }
 .mkt-cb-handle:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
 }
 .mkt-cb-handle:disabled {
   cursor: not-allowed;
@@ -221,7 +221,7 @@
   cursor: pointer;
 }
 .mkt-cb-seg__btn--on {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   font-weight: 600;
 }
 .mkt-cb-days {

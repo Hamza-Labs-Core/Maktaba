@@ -23,7 +23,7 @@
 }
 .mkt-helpicon:hover,
 .mkt-helpicon:focus-visible {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   border-color: var(--color-accent);
 }
 .mkt-helplink {
@@ -81,7 +81,7 @@
 }
 .mkt-help__topic-title,
 .mkt-help__result-title {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-weight: 600;
 }
 .mkt-help__topic-summary,

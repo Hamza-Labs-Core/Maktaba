@@ -5,7 +5,7 @@
   overflow: hidden;
   border-radius: var(--radius-full, 9999px);
   background-color: var(--color-semantic-accent, #1e5ad8);
-  color: var(--color-neutral-0, #ffffff);
+  color: var(--color-semantic-accent-fg, var(--color-neutral-0, #ffffff));
   font-family: var(--type-body-family, system-ui, sans-serif);
   font-weight: 600;
   user-select: none;

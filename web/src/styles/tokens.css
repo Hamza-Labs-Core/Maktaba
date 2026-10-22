@@ -6,12 +6,14 @@
  * No component should ever hard-code a color, font, or spacing token.
  */
 :root {
-  /* color — brand */
-  --color-brand-50: #f5f8ff;
-  --color-brand-100: #e5ecff;
-  --color-brand-500: #1e5ad8;
-  --color-brand-600: #1748b0;
-  --color-brand-700: #103686;
+  /* color — brand: the Islamic library theme's brass gold. Gold is a fill
+     colour (buttons, active marks, progress); as text on a light surface it
+     uses the deeper --color-accent-text (AA). */
+  --color-brand-50: #fff9ea;
+  --color-brand-100: #fbefd3;
+  --color-brand-500: #e3b252;
+  --color-brand-600: #c8952c;
+  --color-brand-700: #8a6212;
 
   /* color — neutral (light) */
   --color-neutral-0: #ffffff;
@@ -23,17 +25,31 @@
   --color-neutral-700: #3f3f46;
   --color-neutral-900: #18181b;
 
-  /* semantic */
-  --color-bg: var(--color-neutral-50);
-  --color-fg: var(--color-neutral-900);
-  --color-muted: var(--color-neutral-500);
-  --color-subtle: var(--color-neutral-100);
+  /* semantic — light: gold on white */
+  --color-bg: #ffffff;
+  --color-fg: #1c1810;
+  --color-muted: #5a5040;
+  --color-subtle: #fbf5e8;
   --color-accent: var(--color-brand-500);
-  --color-accent-fg: var(--color-neutral-0);
+  --color-accent-fg: #1a1408;
+  --color-accent-text: var(--color-brand-700);
+  --color-accent-soft: rgba(227, 178, 82, 0.2);
   --color-success: #0b6e3f;
   --color-warn: #8f5600;
   --color-error: #b6253a;
-  --color-border: var(--color-neutral-200);
+  --color-border: #efe3c8;
+
+  /* the library art behind the app, and the frosted layers that keep text
+     off it: glass for the header and side nav, a denser panel for content */
+  --art-wide: url("/art/library/light-wide-1.jpg");
+  --art-tall: url("/art/library/light-phone-1.jpg");
+  --color-glass: rgba(255, 255, 255, 0.58);
+  --color-panel: rgba(255, 253, 248, 0.64);
+  --color-content: rgba(255, 253, 248, 0.76);
+  --color-card: rgba(255, 255, 255, 0.62);
+  --color-panel-line: rgba(200, 149, 44, 0.28);
+  --blur-glass: blur(14px) saturate(1.2);
+  --blur-panel: blur(22px) saturate(1.15);
 
   /* queue states (plan 06-11 §9.1): running = saffron, done = blue.
      Waiting is --color-muted, failing is --color-error. */
@@ -47,12 +63,16 @@
   --color-semantic-muted: var(--color-muted);
   --color-semantic-subtle: var(--color-subtle);
   --color-semantic-accent: var(--color-accent);
+  --color-semantic-accent-fg: var(--color-accent-fg);
+  --color-semantic-accent-text: var(--color-accent-text);
   --color-semantic-success: var(--color-success);
   --color-semantic-warn: var(--color-warn);
   --color-semantic-error: var(--color-error);
 
-  /* type */
-  --font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* type: IBM Plex Sans Arabic for text, Amiri for headings (both bundled,
+     SIL OFL; main.tsx imports them) */
+  --font-family: "IBM Plex Sans Arabic", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-heading: "Amiri", "IBM Plex Sans Arabic", serif;
   --font-size-sm: 14px;
   --font-size-base: 16px;
   --font-size-lg: 18px;
@@ -72,21 +92,37 @@
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --shadow-sm: 0 1px 2px rgba(60, 45, 15, 0.08);
+  --shadow-md: 0 4px 12px rgba(60, 45, 15, 0.12);
+  --shadow-panel: 0 12px 36px rgba(120, 90, 30, 0.14);
   color-scheme: light;
 }
 
 [data-theme="dark"],
 :root:not([data-theme]) {
   color-scheme: dark;
-  --color-bg: #09090b;
-  --color-fg: #fafafa;
-  --color-muted: #a1a1aa;
-  --color-subtle: #1c1c20;
-  --color-accent: #5478e5;
-  --color-accent-fg: #ffffff;
-  --color-border: #27272a;
+  /* Ink & Brass */
+  --color-bg: #0b111c;
+  --color-fg: #e8ecf3;
+  --color-muted: #a9b3c4;
+  --color-subtle: #131d2e;
+  --color-accent: #e3b252;
+  --color-accent-fg: #1a1408;
+  --color-accent-text: #e3b252;
+  --color-accent-soft: rgba(227, 178, 82, 0.14);
+  --color-border: #22304a;
+  --art-wide: url("/art/library/dark-wide-1.jpg");
+  --art-tall: url("/art/library/dark-phone-1.jpg");
+  /* the dark art is dark already (its files are brightened): thinner layers
+     and a lighter blur, or it flattens to black behind them */
+  --color-glass: rgba(14, 21, 34, 0.4);
+  --color-panel: rgba(11, 17, 28, 0.38);
+  --color-content: rgba(11, 17, 28, 0.56);
+  --color-card: rgba(19, 29, 46, 0.55);
+  --blur-glass: blur(10px) saturate(1.3);
+  --blur-panel: blur(12px) saturate(1.3);
+  --color-panel-line: rgba(227, 178, 82, 0.2);
+  --shadow-panel: 0 12px 40px rgba(0, 0, 0, 0.45);
   /* AA (>= 4.5:1) on --color-bg and on --color-subtle (F23). */
   --color-success: #4cc38a;
   --color-warn: #e0a53a;

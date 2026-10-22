@@ -1,5 +1,5 @@
 .mk-link {
-  color: var(--color-semantic-accent, #1e5ad8);
+  color: var(--color-semantic-accent-text, var(--color-semantic-accent, #1e5ad8));
   text-decoration: underline;
   text-underline-offset: 2px;
   border-radius: var(--radius-sm, 4px);
@@ -8,10 +8,10 @@
 }
 
 .mk-link:hover {
-  color: var(--color-brand-600, #1748b0);
+  text-decoration-thickness: 2px;
 }
 
 .mk-link:focus-visible {
-  outline: 2px solid var(--color-semantic-accent, #1e5ad8);
+  outline: 2px solid var(--color-semantic-accent-text, var(--color-semantic-accent, #1e5ad8));
   outline-offset: 2px;
 }

@@ -248,7 +248,7 @@
   text-align: end;
 }
 .mkt-mc-jobs__link {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 .mkt-mc-skeleton {
   display: flex;
@@ -296,5 +296,5 @@
 }
 .mkt-mc-weblink:hover,
 .mkt-mc-weblink:focus-visible {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }

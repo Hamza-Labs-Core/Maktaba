@@ -34,7 +34,7 @@
   background-color: var(--color-semantic-subtle, #f4f4f5);
 }
 .mk-overlay__close:focus-visible {
-  outline: 2px solid var(--color-semantic-accent, #1e5ad8);
+  outline: 2px solid var(--color-semantic-accent-text, var(--color-semantic-accent, #1e5ad8));
   outline-offset: 2px;
 }
 

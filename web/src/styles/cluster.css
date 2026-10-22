@@ -49,7 +49,7 @@
   display: block;
   inline-size: 100%;
   max-inline-size: 8rem;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 .mkt-cl-spark .mkt-q-spark {
   block-size: 24px;
@@ -137,14 +137,14 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font: inherit;
   font-size: var(--font-size-sm);
   text-decoration: underline;
   cursor: pointer;
 }
 .mkt-cl-link:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 2px;
 }
 
@@ -180,7 +180,7 @@
   text-align: start;
 }
 .mkt-cl-logbox:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
 }
 .mkt-cl-loglist {
   margin: 0;
@@ -247,7 +247,7 @@
 }
 .mkt-cl-outcome--running,
 .mkt-cl-outcome--started {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 .mkt-cl-outcome--skipped,
 .mkt-cl-outcome--other {

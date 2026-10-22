@@ -216,7 +216,7 @@
   white-space: nowrap;
 }
 .mkt-tr-sortbtn:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 2px;
 }
 .mkt-tr-libbar {

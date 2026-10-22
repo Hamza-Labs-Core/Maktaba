@@ -209,7 +209,7 @@
 }
 .mkt-tvx-filter:focus-visible,
 .mkt-tvx-sched__head:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 2px;
 }
 .mkt-tvx-table {
@@ -361,7 +361,7 @@
   border-radius: var(--radius-md);
 }
 .mkt-tvx-tipwrap:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 2px;
 }
 
@@ -608,7 +608,7 @@
   min-inline-size: 0;
 }
 .mkt-tvx-preview__pane:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 2px;
 }
 .mkt-tvx-preview__badge {
