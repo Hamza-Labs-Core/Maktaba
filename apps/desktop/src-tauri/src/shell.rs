@@ -260,15 +260,6 @@ fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
         .show(|_| {});
 }
 
-#[cfg(target_os = "linux")]
-fn show_info(app: &AppHandle, msg: impl Into<String>) {
-    app.dialog()
-        .message(msg)
-        .title(shell(app).lang.words().brand)
-        .kind(MessageDialogKind::Info)
-        .show(|_| {});
-}
-
 fn build_tray_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry>> {
     let menu = Menu::new(app)?;
     for e in entries {

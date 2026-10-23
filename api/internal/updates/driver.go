@@ -387,11 +387,11 @@ func (d *Driver) tvBusy(ctx context.Context) (bool, int) {
 			n = int(v.Int64)
 		}
 	}
-	max := 0
+	quiet := 0
 	if d.QuietMaxViewers != nil {
-		max = d.QuietMaxViewers(ctx)
+		quiet = d.QuietMaxViewers(ctx)
 	}
-	return n > max, n
+	return n > quiet, n
 }
 
 // homeGates waits for the window and the TV (an automatic run restarts the home only

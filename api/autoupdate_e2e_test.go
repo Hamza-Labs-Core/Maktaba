@@ -473,7 +473,7 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 				break
 			}
 			if resp.StatusCode != http.StatusConflict || time.Now().After(deadline) ||
-				!(strings.Contains(string(body), "role_not_running") || strings.Contains(string(body), "recent_crash")) {
+				!strings.Contains(string(body), "role_not_running") && !strings.Contains(string(body), "recent_crash") {
 				_, procs := admin.do("GET", homeWeb+"/api/system/processes", nil, nil)
 				t.Fatalf("update now %s: %d %s\nprocesses: %s", version, resp.StatusCode, body, tail(string(procs), 4000))
 			}
