@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -167,8 +169,23 @@ func (b Bundle) WatchReach(ctx context.Context, interval time.Duration, restart 
 	}
 }
 
+// maintenance counts the runs a restart of Postgres would break (the update's dump, its
+// migrations, a restore: Hold); WatchReach leaves the server as it is while one runs.
+var maintenance atomic.Int32
+
+// Hold marks a maintenance run until the returned release is called: a change of
+// what the machines may reach waits for it (the next look after it ends).
+func Hold() (release func()) {
+	maintenance.Add(1)
+	var once sync.Once
+	return func() { once.Do(func() { maintenance.Add(-1) }) }
+}
+
 // followReach is one look of WatchReach.
 func (b Bundle) followReach(ctx context.Context, restart func() error, log io.Writer) error {
+	if maintenance.Load() > 0 {
+		return nil
+	}
 	q, err := b.NewQuerier()
 	if err != nil {
 		return err

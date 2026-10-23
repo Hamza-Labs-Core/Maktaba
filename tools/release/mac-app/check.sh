@@ -137,6 +137,10 @@ fi
 for heavy in mlx torch; do
     if find "$PAYLOAD" -iname "${heavy}*" -print -quit | grep -q .; then fail "$heavy is in the payload (it downloads on first run)"; fi
 done
+echo "database migrations"
+# maktaba-api migrates from <payload>/migrations (the app runs from the user's data, never a checkout)
+nsql=$(find "$PAYLOAD/migrations" -maxdepth 1 -name '*.sql' 2>/dev/null | wc -l | tr -d ' ')
+if [ "$nsql" -gt 0 ]; then ok "migrations/ ($nsql files)"; else fail "no migrations/ beside bin/: the api cannot migrate the database"; fi
 run "payload.json" "$PAYLOAD/python/bin/python3" -I -c \
     'import json,sys; d=json.load(open(sys.argv[1])); print("version", d["version"])' "$PAYLOAD/payload.json"
 
