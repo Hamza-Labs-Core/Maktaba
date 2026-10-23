@@ -226,3 +226,28 @@ def test_commit_probe_inactive_transcript_still_extracts() -> None:
     asyncio.run(commit_probe(db, video_id=vid, result=_make_result(tracks)))
 
     assert any(j.stage == "extract" for j in db.processing_jobs.values())
+
+
+def test_commit_probe_skips_extract_when_a_transcribe_job_is_queued() -> None:
+    """The engine's transcribe decodes its own audio: extract would only cache a WAV."""
+    from tests.audio._fake_audio_db import _ProcessingJobRow
+
+    db = FakeAudioDB()
+    vid = db.add_video()
+    db.processing_jobs[9999] = _ProcessingJobRow(id=9999, video_id=vid, stage="transcribe")
+    tracks = [
+        AudioTrack(
+            index=0,
+            codec="aac",
+            channels=2,
+            sample_rate=48000,
+            language="ara",
+            title=None,
+            is_default=True,
+        ),
+    ]
+
+    asyncio.run(commit_probe(db, video_id=vid, result=_make_result(tracks)))
+
+    assert db.videos[vid].state == "probed"
+    assert all(j.stage != "extract" for j in db.processing_jobs.values())
