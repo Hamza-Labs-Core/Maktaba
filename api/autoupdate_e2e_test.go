@@ -330,7 +330,7 @@ enabled = "on"
 home = %q
 port = %d
 listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
-	nodeToml := writeToml(nodeDir, nAPI, nWeb, nAdmin, nodeWeb, "\n[database]\nurl = \"sqlite://unused.db\"")
+	nodeToml := writeToml(nodeDir, nAPI, nWeb, nAdmin, nodeWeb, fmt.Sprintf("\n[database]\nurl = \"sqlite://unused.db\"\n[postgres]\ncopy_port = %d", p()))
 	self, _ := os.Executable()
 	common := []string{"MAKTABA_PYTHON=" + self, "MAKTABA_E2E_SLEEPER=1", "MAKTABA_DISCOVERY_MDNS=0", "MAKTABA_HSTS=0",
 		"MAKTABA_HEALTH_WARM=0s", "MAKTABA_CLUSTER_DIR=" + filepath.Join(tmp, "clusterfiles"),
@@ -408,7 +408,8 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 	_ = os.WriteFile(filepath.Join(nodeDir, "node.json"), nodeCfg, 0o600)
 	node := startLauncher(t, "node", nodeRoot, append(common, "MAKTABA_CONFIG="+nodeToml,
 		"MAKTABA_NODE_CONFIG="+filepath.Join(nodeDir, "node.json"), "MAKTABA_DATA_DIR="+filepath.Join(nodeDir, "data"),
-		"MAKTABA_NODE_COPY=off", "HF_HOME="+filepath.Join(nodeDir, "hf")))
+		// its copy of the home's database (Epic 37) runs on the test's Postgres programs
+		"MAKTABA_POSTGRES_HOME="+pgBin, "HF_HOME="+filepath.Join(nodeDir, "hf")))
 	node.web = nodeWeb
 	waitFor(t, "the node on 0.9.0 with its machine agent", 3*time.Minute, func() bool {
 		r, err := http.Get(nodeWeb + "/api/cluster/self")
@@ -422,6 +423,35 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 		}
 		return json.NewDecoder(r.Body).Decode(&s) == nil && s.Version == "0.9.0" && s.AgentConnected
 	})
+	// copyFollows waits for the node's copy to follow the home at schema rev, subscribed
+	// after since (a copy made anew)
+	type copyStatus struct {
+		State       string     `json:"state"`
+		Detail      string     `json:"detail"`
+		LocalSchema int64      `json:"local_schema"`
+		Subscribed  *time.Time `json:"subscribed"`
+	}
+	copyFollows := func(what string, rev int64, since time.Time) copyStatus {
+		t.Helper()
+		var c copyStatus
+		waitFor(t, what, 5*time.Minute, func() bool {
+			r, err := http.Get(nodeWeb + "/api/cluster/self")
+			if err != nil {
+				return false
+			}
+			defer r.Body.Close()
+			var s struct {
+				Copy *copyStatus `json:"copy"`
+			}
+			if json.NewDecoder(r.Body).Decode(&s) != nil || s.Copy == nil {
+				return false
+			}
+			c = *s.Copy
+			return c.State == "following" && c.LocalSchema == rev && c.Subscribed != nil && c.Subscribed.After(since)
+		})
+		return c
+	}
+	copyFollows("the node's copy following the home", 149, time.Time{})
 
 	// ---- Update now, as the owner ----
 	var admin *browser
@@ -521,8 +551,11 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 	if _, err := os.Stat(filepath.Join(homeDir, "data", "backups", "pre-0.9.0-to-0.9.1.dump")); err != nil {
 		t.Fatalf("no pre-update dump: %v", err)
 	}
+	// the node's copy waited for the node's update, then copied the migrated home anew
+	copyFollows("the node's copy following the migrated home", 150, time.Time{})
 
 	// ---- a release that cannot run on what it migrated: rolled back on the home alone ----
+	beforeRollback := time.Now()
 	gh.publish(r092)
 	run = follow(updateNow("0.9.2"), 15*time.Minute)
 	if run.State != "rolled_back" || len(run.Targets) != 0 {
@@ -540,6 +573,8 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 	if probe.Valid || !nextTable.Valid {
 		t.Fatalf("the dump taken before 0.9.2's migration was not put back: e2e_probe %v, e2e_next %v", probe, nextTable)
 	}
+	// the dump put back took the node's slot with it: its copy is made anew from it
+	copyFollows("the node's copy made anew from the database put back", 150, beforeRollback)
 	resp, body := admin.do("GET", homeWeb+"/api/cluster/updates", nil, nil)
 	if resp.StatusCode == 200 && !strings.Contains(string(body), `"blocked_reason":"rolled_back"`) {
 		t.Fatalf("0.9.2 is not blocked: %s", tail(string(body), 2000))

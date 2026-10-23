@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	_ "github.com/lib/pq" // the postgres driver
 )
 
@@ -403,10 +404,12 @@ var identRe = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 
 func validIdent(s string) bool { return identRe.MatchString(s) }
 
-// Restore puts a dump back into the database, in place: the other sessions on it are
-// ended, the public schema is made afresh, and the dump restored (--exit-on-error, one
-// transaction). For a Postgres the home does not bundle (the bundled one is restored by
-// pgbundle.RestoreRunning).
+// Restore puts a dump back into the database, in place: the machines' copy slots are
+// dropped (each machine copies the restored database anew), the other sessions on it
+// are ended, the public schema is made afresh, and the dump restored (--exit-on-error,
+// one transaction; not its publications, which outlive the schema and are brought up to
+// date with the restored tables at a machine's next grant). For a Postgres the home does
+// not bundle (the bundled one is restored by pgbundle.RestoreRunning).
 func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 	if _, err := os.Stat(dump); err != nil {
 		return err
@@ -416,12 +419,18 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 		return err
 	}
 	defer d.Close()
+	if _, err := d.ExecContext(ctx, pgbundle.DropSlotsSQL("")); err != nil {
+		// a database user without REPLICATION made no copies; one whose sessions it may
+		// not end keeps the copies streaming what is about to go
+		_, _ = fmt.Fprintf(orDiscard(log), "[database] the machines' copies keep their slots (%v): drop them "+
+			"(pg_drop_replication_slot) so each machine copies the restored database anew\n", err)
+	}
 	_, _ = d.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
 		WHERE datname = current_database() AND pid <> pg_backend_pid()`)
 	if _, err := d.ExecContext(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
 		return fmt.Errorf("make the public schema afresh: %w", err)
 	}
-	cmd, err := t.command(ctx, "pg_restore", "", "--no-owner", "--exit-on-error", "--single-transaction", dump)
+	cmd, err := t.command(ctx, "pg_restore", "", "--no-owner", "--no-publications", "--exit-on-error", "--single-transaction", dump)
 	if err != nil {
 		return err
 	}

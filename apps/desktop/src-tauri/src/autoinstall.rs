@@ -94,8 +94,7 @@ pub fn valid_version(v: &str) -> bool {
             .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
         && pre.map_or(true, |p| {
             !p.is_empty()
-                && p
-                    .chars()
+                && p.chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
         })
 }
@@ -156,7 +155,10 @@ mod tests {
         assert_eq!(decide(Some(&r), true, false, true), Action::Nothing); // one at a time
         assert_eq!(decide(None, true, false, false), Action::Nothing);
         for state in ["installing", "failed"] {
-            assert_eq!(decide(Some(&req(state, "1.5.0", FEED)), true, false, false), Action::Nothing);
+            assert_eq!(
+                decide(Some(&req(state, "1.5.0", FEED)), true, false, false),
+                Action::Nothing
+            );
         }
     }
 

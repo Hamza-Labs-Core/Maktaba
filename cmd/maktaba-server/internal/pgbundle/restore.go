@@ -79,6 +79,11 @@ func (b Bundle) Restore(ctx context.Context, dump string, opts RestoreOptions, l
 // restoreInto makes the app database afresh on q's running server and restores
 // dump into it (Restore's work, and RestoreRunning's).
 func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts RestoreOptions, log io.Writer) error {
+	// the machines' copies decode the database through logical slots, which DROP
+	// DATABASE refuses to outlive
+	if err := q.Exec(ctx, "postgres", DropSlotsSQL(AppDatabase)); err != nil {
+		return fmt.Errorf("drop the machines' copy slots on %s: %w", AppDatabase, err)
+	}
 	if err := q.Exec(ctx, "postgres", recreateSQL(opts)+clusterSQL); err != nil {
 		return fmt.Errorf("make a fresh %s database: %w", AppDatabase, err)
 	}
@@ -100,6 +105,41 @@ func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts Re
 		return fmt.Errorf("pg_restore %s: %w", dump, err)
 	}
 	return q.Exec(ctx, AppDatabase, "ANALYZE;")
+}
+
+// DropSlotsSQL drops every logical replication slot of database db ("": the one it
+// runs in), ending the sessions that stream from them first: the machines' copies
+// (Epic 37) of a database about to be put back from a dump, or dropped. What they
+// decoded is gone; each machine copies the database anew once its grant says its slot
+// is (nodecopy, "the home gave up on this copy"). Fails when a slot stays in use.
+func DropSlotsSQL(db string) string {
+	which := "current_database()"
+	if db != "" {
+		which = "'" + strings.ReplaceAll(db, "'", "''") + "'"
+	}
+	where := "database = " + which + " AND slot_type = 'logical'"
+	return `DO $$
+DECLARE n int;
+BEGIN
+    FOR i IN 1..100 LOOP
+        BEGIN
+            PERFORM pg_terminate_backend(active_pid) FROM pg_replication_slots WHERE ` + where + ` AND active_pid IS NOT NULL;
+        EXCEPTION WHEN insufficient_privilege THEN NULL;
+        END;
+        BEGIN
+            PERFORM pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE ` + where + ` AND NOT active;
+        EXCEPTION WHEN object_in_use THEN NULL; -- taken again meanwhile: the next round
+        END;
+        SELECT count(*) INTO n FROM pg_replication_slots WHERE ` + where + `;
+        EXIT WHEN n = 0;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF n > 0 THEN
+        RAISE EXCEPTION '% logical replication slot(s) still in use', n;
+    END IF;
+END
+$$;
+`
 }
 
 var roleName = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)

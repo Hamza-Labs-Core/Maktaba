@@ -9,6 +9,15 @@ Inside `Maktaba.app` there is exactly one updater: the app's (the Tauri updater,
 `latest.json` on the GitHub release, each `.app.tar.gz` signed with the Tauri updater key).
 It replaces the whole bundle — shell **and** `Contents/Resources/server` — in one swap.
 
+> **Epic 35 (install-kinds.md):** the server now decides *when* and *what*: the home's
+> automatic update (its window, channel, home first, then each machine) asks the app to
+> install the release it verified (`<state>/updates/app-install.json`, the release's own feed
+> `releases/download/v<version>/latest.json`), and the app installs it without a click and
+> says how it went in the same file. The app's updater still does the swap. Before it, the
+> server keeps a copy of the payload it ran (`<state>/updates/payloads/<version>`); the
+> launcher runs that copy (`<state>/updates/payload-override`) when the new server cannot stay
+> up, and the API's update discovery is no longer turned off inside the app.
+
 Everything else that can update is off inside the app (done in 36.7):
 
 | What | Off how |

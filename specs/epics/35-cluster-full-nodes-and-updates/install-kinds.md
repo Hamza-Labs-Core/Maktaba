@@ -41,10 +41,24 @@ run.**
 | **Linux app and headless** (`install.sh --app`, Epic 39) | the launcher runs from a runtime copy (`MAKTABA_RUNTIME_OWNER`) | download the release's `maktaba-linux-payload-<v>-<arch>.tar.gz`, verified against the signed `checksums.txt`, installed as a new runtime directory; rehearse (home) | `runtime/current` → the new directory, `previous` → the old; exit 75 (the launcher starts `runtime/current` again) | `current` → `previous`; exit 75 |
 | **Plain server** (`setup --self-managed`, `.deb`/`.rpm` in the layout) | `MAKTABA_LAUNCHER=1`, `bin/releases/<v>` | `releaseverify/install.Stage` into `bin/releases/<v>` with the release's migrations; rehearse (home) | `current` = `<v>` under the launcher's guard (`pending`); exit 75 | `current` = `previous`; exit 75 |
 
-A **flat** install (binaries copied by hand, no launcher) is converted to the plain server layout
-on its first run when the supervisor can write its own folder (`selfmanaged.Convert`, the launcher
-put beside it) and the service starts the launcher; one it cannot convert is reported
-(`not_self_managed`) with the one command that converts it. Docker keeps Epic 28.3's answer.
+A **flat** install (binaries copied by hand, no launcher) has nothing to fall back with: its run
+fails its preflight with `not_self_managed` and the one command that converts it
+(`maktaba-server setup --service`, which writes the layout and points the service at the
+launcher); from then on it updates itself. Docker keeps Epic 28.3's answer.
+
+### Where each piece lives
+
+| Piece | Code |
+|---|---|
+| The run: home prepare, gates (window, TV), drain, apply, commit, rollout, catch-up, admin actions | `api/internal/updates/driver.go`, `run_handlers.go`, `runs.go` (slot 0149: `update_runs.install_kind`, `detail`; `update_targets.name`, `kind`, `detail`, `updated_at`) |
+| A machine's part: journal, prepare, apply, watch, commit, rollback, resume | `cmd/maktaba-server/internal/updater` (`machine.go`, `journal.go`), served on the supervisor's loopback (`/update/*`) and as `update.*` commands to a node's machine agent (`serve_update.go`) |
+| Installers | `updater/layout.go`, `updater/runtime.go`, `updater/appbundle.go` |
+| Health of the release that came up | `serve_update.go` (`machineHealth`: every role running, none crash-looping or halted by the database step, the api's `/readyz` and its version, on a node the schema guard and the machine agent) |
+| The database | `cmd/maktaba-server/internal/dbsafe` (dump checked with `pg_restore --list`, rehearsal, restore in place), the database step in `serve_appbundle.go` (now also `layoutHomeGates` for a plain server home) |
+| The launcher's guard for the app and the runtime copy | `cmd/maktaba-launcher/run.go` (`bundleGuard`, `bundleRollback`), `shared/go/layout/guard.go` (`pending.json`, `payload-override`, `MarkRecordRestoring`) |
+| The app installing what the server orders | `apps/desktop/src-tauri/src/autoinstall.rs`, `shell.rs` (`install_requested`) |
+| The release's migrations | `release.yml` (`maktaba-migrations-<v>.tar.gz`), `release.json` `migrations`, `releaseverify/install.Stage` (beside the binaries), `api/migrate.go` (found beside `maktaba-api`) |
+| The page | `web/src/pages/Admin/Updates.tsx` (`/admin/updates`) |
 
 ### The app shell installs without a click (owner decision)
 
@@ -90,8 +104,9 @@ that comes back behind the watermark gets a `catch_up` run of its own.
   update", `install.sh`, `maktaba-server update`); every release after it installs itself.
 - A Mac app in `/Applications` the user cannot write without an admin password: the app reports
   the install failed (the run fails, nothing changed) — move the app or update it once by hand.
-- A flat install that cannot convert itself (its folder is not writable by the service's user, or
-  its service runs the binary itself): one `maktaba-server setup --service`.
+- A flat install (binaries copied by hand, no launcher): one `maktaba-server setup --service`.
+- A Linux app installed as a `.deb`/`.rpm`: its server updates itself (its runtime copy); the app's
+  own window and tray update with the package manager or the app's "Install update".
 - A release whose migrations break the previous release (`breaks_previous_home`): held for an
   admin's approval (unchanged).
 - A failed run blocks that version; the next release installs by itself, or an admin retries.

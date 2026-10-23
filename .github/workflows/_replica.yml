@@ -116,3 +116,67 @@ jobs:
         run: |
           for f in "$RUNNER_TEMP"/pg*.log; do echo "== $f"; tail -100 "$f"; done || true
           ls -la "$RUNNER_TEMP/e2e-logs" 2>/dev/null || true
+
+  updates:
+    # Epic 35 phase B and D (specs/epics/35-cluster-full-nodes-and-updates/install-kinds.md):
+    # the home's database safety around an update (a verified dump, the rehearsal on a
+    # scratch copy, putting a dump back) against real Postgres 16, and the automatic update
+    # end to end: three releases built from this tree, signed by a local fake Sigstore, a
+    # home and a full node from 0.9.0 to 0.9.1, then a 0.9.2 rolled back on the home.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PG16: /usr/lib/postgresql/16
+      MAKTABA_TEST_PG_BIN: /usr/lib/postgresql/16
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            api/go.sum
+            streaming/go.sum
+            cmd/maktaba-server/go.sum
+            cmd/maktaba-launcher/go.sum
+
+      - name: Postgres 16 programs
+        run: |
+          set -euo pipefail
+          for p in postgres initdb pg_ctl pg_dump pg_restore; do
+            test -x "$PG16/bin/$p" || { echo "::error::no $p at $PG16/bin"; exit 1; }
+          done
+          "$PG16/bin/pg_dump" --version
+
+      - name: The home's dump, rehearsal and restore (server)
+        working-directory: cmd/maktaba-server
+        run: |
+          set -euo pipefail
+          go test -count=1 -v -timeout 20m ./internal/dbsafe/ | tee "$RUNNER_TEMP/dbsafe.out"
+          ../../tools/ci/no-pg-skips.sh "$RUNNER_TEMP/dbsafe.out"
+          for t in TestDumpVerifiedAndRestoredInPlace TestRehearsalOnAScratchCopy TestRehearsalSkipsAndLeftovers; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/dbsafe.out" || { echo "::error::$t did not run"; exit 1; }
+          done
+
+      - name: A home and a node update themselves (e2e)
+        working-directory: api
+        env:
+          MAKTABA_E2E_UPDATE: "1"
+          MAKTABA_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
+        run: |
+          set -euo pipefail
+          mkdir -p "$MAKTABA_E2E_LOG_DIR"
+          go test -count=1 -timeout 40m -run TestAutoUpdateHomeAndNode -v . | tee "$RUNNER_TEMP/e2e-update.out"
+          grep -q -- "--- PASS: TestAutoUpdateHomeAndNode " "$RUNNER_TEMP/e2e-update.out" || { echo "::error::TestAutoUpdateHomeAndNode did not run"; exit 1; }
+
+      - name: The machines' logs (on failure)
+        if: failure()
+        run: ls -la "$RUNNER_TEMP/e2e-logs" 2>/dev/null || true
+
+      - name: Keep the machines' logs
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: e2e-update-logs
+          path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: ignore

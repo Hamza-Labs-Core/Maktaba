@@ -18,6 +18,7 @@ import (
 // pgRig is a bundled Postgres migrated by this tree's maktaba-api (MAKTABA_TEST_PG_BIN).
 type pgRig struct {
 	t      Target
+	b      pgbundle.Bundle
 	db     *sql.DB
 	api    string
 	repoMg string
@@ -41,7 +42,7 @@ func newPGRig(t *testing.T) *pgRig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &pgRig{t: Target{URL: super, Bin: b.Bin, Backups: filepath.Join(dir, "backups")},
+	r := &pgRig{t: Target{URL: super, Bin: b.Bin, Backups: filepath.Join(dir, "backups")}, b: b,
 		api: filepath.Join(dir, "maktaba-api"), repoMg: filepath.Join(pgtest.RepoRoot(t), "shared", "db", "migrations")}
 	if runtime.GOOS == "windows" {
 		r.api += ".exe"
@@ -155,6 +156,83 @@ func TestDumpVerifiedAndRestoredInPlace(t *testing.T) {
 	if n2 != 0 {
 		t.Fatal("a row written after the dump survived the restore")
 	}
+}
+
+// Story 35.5 with Epic 37: a home whose machines keep copies of its database is put back
+// from a dump, in place and bundled. Their slots go (DROP DATABASE refuses to outlive
+// them, and they would stream what the dump replaced), so each machine copies the
+// restored database anew; the dump's publications do not collide with those still there.
+func TestRestoreWithMachineCopies(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	const node = "6f1c2a4e-0b7d-4c55-9e3a-1d2f3a4b5c6d"
+	reopen := func() {
+		t.Helper()
+		d, err := r.t.open(ctx, "") // a restore ends every other session
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = d.Close() })
+		r.db = d
+	}
+	copyOf := func() {
+		t.Helper()
+		var pub string
+		if err := r.db.QueryRow(`SELECT cluster_copy_publication($1::uuid)`, node).Scan(&pub); err != nil {
+			t.Fatalf("the machine's publication: %v", err)
+		}
+		if _, err := r.db.Exec(`SELECT pg_create_logical_replication_slot($1, 'pgoutput')`, pub); err != nil {
+			t.Fatalf("the machine's slot: %v", err)
+		}
+	}
+	slots := func() int {
+		t.Helper()
+		var n int
+		if err := r.db.QueryRow(`SELECT count(*) FROM pg_replication_slots WHERE database = current_database()`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	copyOf()
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('after.update', '1')`); err != nil {
+		t.Fatal(err)
+	}
+
+	// in place: a Postgres the home does not bundle
+	var log bytes.Buffer
+	if err := r.t.Restore(ctx, dump, &log); err != nil {
+		t.Fatalf("restore in place: %v\n%s", err, log.String())
+	}
+	reopen()
+	if n := slots(); n != 0 {
+		t.Fatalf("%d slot(s) left after the restore in place", n)
+	}
+	var after, tables int
+	_ = r.db.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&after)
+	if after != 0 || !r.has(t, "videos") {
+		t.Fatal("the database is not as the dump left it")
+	}
+	// the machine's next grant brings its publication up to date with the restored tables
+	copyOf()
+	if err := r.db.QueryRow(`SELECT count(*) FROM pg_publication_tables WHERE pubname = 'maktaba_copy_' || replace($1, '-', '')`,
+		node).Scan(&tables); err != nil || tables < 100 {
+		t.Fatalf("the publication after the restore: %d tables, %v", tables, err)
+	}
+
+	// bundled: the database is made afresh (DROP DATABASE)
+	log.Reset()
+	if err := r.b.RestoreRunning(ctx, dump, &log); err != nil {
+		t.Fatalf("restore bundled: %v\n%s", err, log.String())
+	}
+	reopen()
+	if n := slots(); n != 0 || !r.has(t, "videos") {
+		t.Fatalf("after the bundled restore: %d slot(s), videos %v", n, r.has(t, "videos"))
+	}
+	copyOf()
 }
 
 // TC3 (story 35.5): a release's migrations run on a scratch copy; the real database is

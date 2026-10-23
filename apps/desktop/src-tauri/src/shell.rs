@@ -545,7 +545,10 @@ fn install_update_from(app: AppHandle, ordered: Option<Ordered>) {
             let update = updater.check().await.map_err(|e| failed(e.to_string()))?;
             let Some(update) = update else {
                 if let Some(o) = &ordered {
-                    return Err(failed(format!("no app update for {} in its feed", o.version)));
+                    return Err(failed(format!(
+                        "no app update for {} in its feed",
+                        o.version
+                    )));
                 }
                 return Ok(false);
             };
