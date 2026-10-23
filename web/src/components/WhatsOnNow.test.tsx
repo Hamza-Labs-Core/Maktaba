@@ -3,7 +3,7 @@
 // itself when there are no accessible channels, and Tune In navigates to
 // the live player.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
@@ -90,5 +90,24 @@ describe("WhatsOnNow rail", () => {
     const card = await screen.findByRole("button", { name: /tune in to movies/i });
     card.click();
     expect(await screen.findByText("LIVE PLAYER")).toBeInTheDocument();
+  });
+
+  // The guide sends the programme video's poster; one that fails to load
+  // (no thumbnail yet) gives way to the channel's logo layout.
+  it("shows the programme's picture and falls back when it fails", async () => {
+    const withPoster = structuredClone(payload);
+    (withPoster.channels[0].current as Record<string, unknown>).poster = "/api/videos/v1/poster";
+    get.mockResolvedValue(withPoster);
+    const { container } = renderRail();
+    await screen.findByText("Now Airing");
+    const img = container.querySelector<HTMLImageElement>(
+      ".mkt-won__poster img:not(.mkt-won__logo)"
+    );
+    expect(img?.getAttribute("src")).toBe("/api/videos/v1/poster");
+    fireEvent.error(img!);
+    await waitFor(() =>
+      expect(container.querySelector(".mkt-won__poster img:not(.mkt-won__logo)")).toBeNull()
+    );
+    expect(container.querySelector(".mkt-won__poster-empty")).not.toBeNull();
   });
 });

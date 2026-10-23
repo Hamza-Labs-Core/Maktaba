@@ -277,3 +277,20 @@ func TestToBlock_CarriesTheStripLine(t *testing.T) {
 		t.Fatal("source_title not decoded")
 	}
 }
+
+// A programme with a video and no picture in its snapshot shows the video's
+// own poster; a snapshot picture wins, and a block without a video has none.
+func TestToBlock_PosterFallsBackToTheVideo(t *testing.T) {
+	now := time.Now()
+	row := ProgramRow{Kind: "program", StartAt: now, EndAt: now.Add(time.Hour), VideoID: "6f1c2b9e-0000-4000-8000-000000000001"}
+	if b := toBlock(row, now); b.Poster != "/api/videos/6f1c2b9e-0000-4000-8000-000000000001/poster" {
+		t.Fatalf("fallback poster %q", b.Poster)
+	}
+	row.Snapshot.Poster = "/api/videos/other/poster"
+	if b := toBlock(row, now); b.Poster != "/api/videos/other/poster" {
+		t.Fatalf("snapshot poster replaced: %q", b.Poster)
+	}
+	if b := toBlock(ProgramRow{Kind: "slate", StartAt: now, EndAt: now.Add(time.Hour)}, now); b.Poster != "" {
+		t.Fatalf("no video, poster %q", b.Poster)
+	}
+}

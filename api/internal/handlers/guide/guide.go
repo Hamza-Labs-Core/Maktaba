@@ -290,6 +290,11 @@ func toBlock(p ProgramRow, now time.Time) Block {
 		StripEpisode: p.Snapshot.StripEpisode,
 		StripRef:     p.Snapshot.StripRef,
 	}
+	// the planner keeps no picture in the snapshot; the programme's video has
+	// one (its poster or the pipeline's thumbnail), served by the videos API
+	if b.Poster == "" && p.VideoID != "" {
+		b.Poster = "/api/videos/" + url.PathEscape(p.VideoID) + "/poster"
+	}
 	if !now.Before(p.StartAt) && now.Before(p.EndAt) {
 		b.IsLive = true
 		b.Progress = progress(p.StartAt, p.EndAt, now)

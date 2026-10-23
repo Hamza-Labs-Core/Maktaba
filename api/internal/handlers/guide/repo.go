@@ -133,7 +133,7 @@ func (rp *repo) programsOverlapping(ctx context.Context, channelIDs []string, st
 // immediately following block for one channel. Either may be nil.
 func (rp *repo) currentAndNext(ctx context.Context, channelID string, now time.Time) (cur, next *ProgramRow, err error) {
 	curRow := rp.db.QueryRowContext(ctx, `
-		SELECT channel_id, seq, kind, start_at, end_at, title_snapshot
+		SELECT channel_id, seq, kind, start_at, end_at, title_snapshot, video_id
 		FROM channel_programs_live
 		WHERE channel_id = $1 AND start_at <= $2 AND end_at > $2
 		ORDER BY start_at DESC LIMIT 1`, channelID, now)
@@ -142,7 +142,7 @@ func (rp *repo) currentAndNext(ctx context.Context, channelID string, now time.T
 		return nil, nil, err
 	}
 	nextRow := rp.db.QueryRowContext(ctx, `
-		SELECT channel_id, seq, kind, start_at, end_at, title_snapshot
+		SELECT channel_id, seq, kind, start_at, end_at, title_snapshot, video_id
 		FROM channel_programs_live
 		WHERE channel_id = $1 AND start_at >= $2
 		ORDER BY start_at ASC LIMIT 1`, channelID, now)
@@ -170,13 +170,15 @@ func (rp *repo) horizonUntil(ctx context.Context, channelID string) (time.Time, 
 func scanProgram(row *sql.Row) (*ProgramRow, error) {
 	var p ProgramRow
 	var snap []byte
-	if err := row.Scan(&p.ChannelID, &p.Seq, &p.Kind, &p.StartAt, &p.EndAt, &snap); err != nil {
+	var vid sql.NullString
+	if err := row.Scan(&p.ChannelID, &p.Seq, &p.Kind, &p.StartAt, &p.EndAt, &snap, &vid); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, err
 	}
 	p.Snapshot = parseSnapshot(snap)
+	p.VideoID = vid.String
 	return &p, nil
 }
 
