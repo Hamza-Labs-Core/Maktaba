@@ -1,6 +1,6 @@
 // Series detail cases from web/test-cases/series-detail.md.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router-dom";
 import { ToastProvider } from "@ds/components/Toast/Toast";
@@ -142,6 +142,30 @@ describe("SeriesDetail (test-cases/series-detail.md)", () => {
     ).toEqual(["E01", "E02", "E01"]);
     expect(screen.getByRole("button", { name: "Accept all episode matches" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Continue watching/ })).toBeNull();
+  });
+
+  it("SED-01: without its own art the series shows its first episode's picture", async () => {
+    serve({
+      header: { ...HEADER, poster_path: "/srv/media/bb/poster.jpg", poster_video_id: "e1" },
+    });
+    renderDetail("/series/s1", { user: adminUser });
+    await screen.findByRole("heading", { level: 1, name: "Breaking Bad" });
+    // a server path is never put in the page
+    expect(document.querySelector("img.mkt-series-detail__poster")).toHaveAttribute(
+      "src",
+      "/api/videos/e1/poster"
+    );
+  });
+
+  it("SED-01: an episode picture that fails shows the placeholder", async () => {
+    serve();
+    renderDetail("/series/s1", { user: adminUser });
+    const pilot = await screen.findByRole("link", { name: /Pilot/ });
+    const img = pilot.querySelector("img")!;
+    expect(img).toHaveAttribute("src", "/api/videos/e1/poster");
+    fireEvent.error(img);
+    await waitFor(() => expect(pilot.querySelector("img")).toBeNull());
+    expect(pilot.querySelector(".mkt-episode__thumb")?.textContent).toContain("▤");
   });
 
   it("SED-02: Continue watching links to the next episode's player", async () => {

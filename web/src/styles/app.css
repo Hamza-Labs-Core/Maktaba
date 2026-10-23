@@ -2117,8 +2117,20 @@ a.mkt-guide__chanhead:hover {
   align-items: flex-start;
 }
 .mkt-series-detail__poster {
-  width: 140px;
-  border-radius: var(--radius-md);
+  flex: 0 0 auto;
+  width: min(320px, 40%);
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+@media (max-width: 768px) {
+  .mkt-series-detail__header {
+    flex-direction: column;
+  }
+  .mkt-series-detail__poster {
+    width: 100%;
+  }
 }
 .mkt-series-detail__actions {
   display: flex;
@@ -3346,4 +3358,25 @@ a.mkt-guide__chanhead:hover {
   width: 100%;
   aspect-ratio: 16 / 9;
   margin-block-end: var(--space-2);
+/* small pictures beside a video's title in tables and admin lists */
+.mkt-history__video,
+.mkt-thumb-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.mkt-history__video .mkt-card__poster,
+.mkt-thumb-row .mkt-card__poster {
+  flex: 0 0 auto;
+  width: 96px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+}
+.mkt-chan-logo {
+  width: 1.5rem;
+  height: 1.5rem;
+  object-fit: contain;
+  vertical-align: middle;
+  margin-inline-end: var(--space-2);
+  border-radius: var(--radius-sm);
 }
