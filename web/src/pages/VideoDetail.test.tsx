@@ -143,6 +143,29 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
     );
   });
 
+  it("VID-01: the video's picture leads the header and plays it", async () => {
+    serve();
+    const { container } = renderVideo();
+    const hero = await screen.findByRole("link", { name: "Play: Lecture 1" });
+    expect(hero).toHaveAttribute("href", "/videos/v1/watch");
+    expect(hero.querySelector("img")?.getAttribute("src")).toBe("/api/videos/v1/poster");
+    // a video with no picture yet shows a plain box, not a broken image
+    fireEvent.error(hero.querySelector("img")!);
+    expect(container.querySelector(".mkt-video__hero .mkt-card__poster--fallback")).not.toBeNull();
+  });
+
+  it("VID-01: related videos show their pictures", async () => {
+    serve({
+      "/api/videos/v1/context": {
+        related_in_library: [{ video_id: "v2", title: "Lecture 2", reason: "same_series" }],
+        more_like_this: [],
+      },
+    });
+    renderVideo();
+    const rel = await screen.findByRole("link", { name: /Lecture 2/ });
+    expect(rel.querySelector("img")?.getAttribute("src")).toBe("/api/videos/v2/poster");
+  });
+
   it("VID-01: with title null the h1 shows the filename", async () => {
     serve({ "/api/videos/v1": { ...V1, title: null } });
     renderVideo();

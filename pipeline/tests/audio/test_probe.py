@@ -180,3 +180,74 @@ def test_commit_probe_idempotent_on_replay() -> None:
 
     assert db.videos[vid].state == "probed"
     assert len(db.audio_tracks) == 1  # ON CONFLICT DO NOTHING swallowed the duplicate
+
+
+def test_commit_probe_skips_extract_when_already_transcribed() -> None:
+    """An imported (already transcribed) video is probed for streaming only."""
+    db = FakeAudioDB()
+    vid = db.add_video()
+    db.seed_transcript(video_id=vid)
+    tracks = [
+        AudioTrack(
+            index=0,
+            codec="aac",
+            channels=2,
+            sample_rate=48000,
+            language="ara",
+            title=None,
+            is_default=True,
+        ),
+    ]
+
+    asyncio.run(commit_probe(db, video_id=vid, result=_make_result(tracks)))
+
+    assert db.videos[vid].state == "probed"
+    assert all(j.stage != "extract" for j in db.processing_jobs.values())
+    assert len(db.audio_tracks) == 1  # media facts are still recorded
+
+
+def test_commit_probe_inactive_transcript_still_extracts() -> None:
+    """Only an active transcript counts: a superseded one does not stop extract."""
+    db = FakeAudioDB()
+    vid = db.add_video()
+    db.seed_transcript(video_id=vid, is_active=False)
+    tracks = [
+        AudioTrack(
+            index=0,
+            codec="aac",
+            channels=2,
+            sample_rate=48000,
+            language="ara",
+            title=None,
+            is_default=True,
+        ),
+    ]
+
+    asyncio.run(commit_probe(db, video_id=vid, result=_make_result(tracks)))
+
+    assert any(j.stage == "extract" for j in db.processing_jobs.values())
+
+
+def test_commit_probe_skips_extract_when_a_transcribe_job_is_queued() -> None:
+    """The engine's transcribe decodes its own audio: extract would only cache a WAV."""
+    from tests.audio._fake_audio_db import _ProcessingJobRow
+
+    db = FakeAudioDB()
+    vid = db.add_video()
+    db.processing_jobs[9999] = _ProcessingJobRow(id=9999, video_id=vid, stage="transcribe")
+    tracks = [
+        AudioTrack(
+            index=0,
+            codec="aac",
+            channels=2,
+            sample_rate=48000,
+            language="ara",
+            title=None,
+            is_default=True,
+        ),
+    ]
+
+    asyncio.run(commit_probe(db, video_id=vid, result=_make_result(tracks)))
+
+    assert db.videos[vid].state == "probed"
+    assert all(j.stage != "extract" for j in db.processing_jobs.values())

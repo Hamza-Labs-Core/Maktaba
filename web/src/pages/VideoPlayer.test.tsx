@@ -72,6 +72,8 @@ describe("VideoPlayer", () => {
     // the src is set by an effect that runs after the element is committed
     const video = await screen.findByTestId("mkt-video");
     await waitFor(() => expect(video).toHaveAttribute("src", "/stream/sess-abc/manifest.m3u8"));
+    // the video's picture shows until it plays
+    expect(video.getAttribute("poster")).toMatch(/^\/api\/videos\/vid-uuid-1\/poster/);
   });
 
   it("uses direct_url when the server picks direct mode", async () => {

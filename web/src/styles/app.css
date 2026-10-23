@@ -2117,8 +2117,20 @@ a.mkt-guide__chanhead:hover {
   align-items: flex-start;
 }
 .mkt-series-detail__poster {
-  width: 140px;
-  border-radius: var(--radius-md);
+  flex: 0 0 auto;
+  width: min(320px, 40%);
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+@media (max-width: 768px) {
+  .mkt-series-detail__header {
+    flex-direction: column;
+  }
+  .mkt-series-detail__poster {
+    width: 100%;
+  }
 }
 .mkt-series-detail__actions {
   display: flex;
@@ -3278,4 +3290,86 @@ a.mkt-guide__chanhead:hover {
 .mkt-health-history > summary {
   cursor: pointer;
   margin-block-end: var(--space-2);
+}
+
+/* the video page: its picture on top (it plays the video), the title under it */
+.mkt-video__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "hero" "title" "flags" "display";
+  row-gap: var(--space-3);
+  align-items: start;
+}
+.mkt-video__header > :nth-child(2) {
+  grid-area: title;
+}
+.mkt-video__header > .mkt-video__flags {
+  grid-area: flags;
+}
+.mkt-video__header > :last-child {
+  grid-area: display;
+}
+.mkt-video__hero {
+  grid-area: hero;
+  position: relative;
+  display: block;
+  width: 100%;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+.mkt-video__hero .mkt-card__poster {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 0;
+}
+.mkt-video__hero-play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 3.5rem;
+  height: 3.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  font-size: 1.4rem;
+  padding-inline-start: 0.2rem;
+  opacity: 0.92;
+  transition: transform 120ms ease;
+}
+.mkt-video__hero:hover .mkt-video__hero-play,
+.mkt-video__hero:focus-visible .mkt-video__hero-play {
+  transform: scale(1.08);
+  opacity: 1;
+}
+/* related videos: a thumbnail over each title */
+.mkt-context-rail__item .mkt-card__poster {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-block-end: var(--space-2);
+}
+/* small pictures beside a video's title in tables and admin lists */
+.mkt-history__video,
+.mkt-thumb-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.mkt-history__video .mkt-card__poster,
+.mkt-thumb-row .mkt-card__poster {
+  flex: 0 0 auto;
+  width: 96px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+}
+.mkt-chan-logo {
+  width: 1.5rem;
+  height: 1.5rem;
+  object-fit: contain;
+  vertical-align: middle;
+  margin-inline-end: var(--space-2);
+  border-radius: var(--radius-sm);
 }

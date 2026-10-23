@@ -591,6 +591,20 @@ class FakeAudioDB:
                 return None
             return _Row({"state": v.state, "library_id": v.library_id})
 
+        # commit_probe — is the video's transcription already handled (an active
+        # transcript, or an open transcribe job)?
+        if s.startswith("SELECT 1 WHERE EXISTS (SELECT 1 FROM transcripts"):
+            vid = args[0]
+            hit = any(
+                tr.video_id == vid and tr.is_active for tr in self.transcripts.values()
+            ) or any(
+                j.video_id == vid
+                and j.stage == "transcribe"
+                and j.state in {"pending", "claimed", "running", "resuming", "paused"}
+                for j in self.processing_jobs.values()
+            )
+            return _Row({"?column?": 1}) if hit else None
+
         # commit_probe — current-state probe for idempotency.
         if s.startswith("SELECT state FROM videos"):
             v = self.videos.get(args[0])

@@ -32,6 +32,7 @@ import {
   type VideoStats,
 } from "../lib/analytics";
 import { TitleRow } from "../help/HelpLink";
+import { VideoPoster } from "../components/VideoViews";
 
 interface Video extends DisplayTitleVideo {
   id: string;
@@ -224,7 +225,18 @@ export function VideoDetail() {
 
   return (
     <section className="mkt-page mkt-video">
-      <header className="mkt-page__header">
+      <header className="mkt-page__header mkt-video__header">
+        {/* the video's picture; it plays the video, like the Play button */}
+        <Link
+          to={`/videos/${video.id}/watch`}
+          className="mkt-video__hero"
+          aria-label={`${t("video.play")}: ${video.title || video.filename}`}
+        >
+          <VideoPoster videoId={video.id} />
+          <span className="mkt-video__hero-play" aria-hidden="true">
+            ▶
+          </span>
+        </Link>
         <TitleRow>
           <h1 dir="auto">{video.title || video.filename}</h1>
         </TitleRow>

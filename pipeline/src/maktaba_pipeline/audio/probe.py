@@ -272,6 +272,17 @@ ON CONFLICT (video_id, track_index) DO NOTHING
 """
 
 _SELECT_STATE_SQL = "SELECT state FROM videos WHERE id = $1"
+# A video whose transcription is already handled is probed for streaming only:
+# it has an active transcript (an imported library, or a re-probe that kept its
+# words), or a transcribe job is queued, and the engine's transcribe stage decodes
+# the audio off the share itself (no extract, no audio cache). Extracting would
+# only leave an unused WAV in the audio cache.
+_TRANSCRIPTION_HANDLED_SQL = (
+    "SELECT 1 WHERE EXISTS (SELECT 1 FROM transcripts WHERE video_id = $1 AND is_active)"
+    " OR EXISTS (SELECT 1 FROM processing_jobs WHERE subject_kind = 'video'"
+    " AND subject_id = $1 AND stage = 'transcribe'"
+    " AND state IN ('pending', 'claimed', 'running', 'resuming', 'paused'))"
+)
 
 
 async def commit_probe(
@@ -288,7 +299,8 @@ async def commit_probe(
     terminal-drop guard handles double calls.
 
     The ``extract`` job is enqueued only when at least one audio track
-    was found. AC: a video with zero audio tracks transitions to
+    was found and its transcription is not already handled. AC: a video with
+    zero audio tracks transitions to
     ``READY_NO_AUDIO`` and skips the extract enqueue.
     """
     raw_json = json.dumps(result.media.raw_ffprobe)
@@ -348,6 +360,14 @@ async def commit_probe(
         new_state = await advance_after_stage(db, video_id, Trigger.PROBE, Outcome.OK, log=_log)
     else:
         new_state = current_state
+    if await db.fetchrow(_TRANSCRIPTION_HANDLED_SQL, video_id) is not None:
+        _log.info(
+            "probe_committed_transcription_handled",
+            video_id=str(video_id),
+            audio_tracks=len(result.audio),
+            new_state=str(new_state),
+        )
+        return str(new_state)
     # The job-queue helpers expect a connection that satisfies their own
     # Protocol; the probe DB shape is a strict superset, so the cast is
     # type-safe at runtime.
