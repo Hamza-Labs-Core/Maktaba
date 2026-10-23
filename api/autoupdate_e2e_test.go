@@ -403,7 +403,7 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 	nodeDSN := (&url.URL{Scheme: "postgres", User: url.UserPassword(role, "node-pass-0123456789"),
 		Host: fmt.Sprintf("127.0.0.1:%d", hPG), Path: "/maktaba", RawQuery: "sslmode=prefer"}).String()
 	nodeCfg, _ := json.Marshal(map[string]any{"node_id": nodeID, "name": "studio-node", "private_key": cluster.EncodeKey(nodePriv),
-		"home": map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d", hAPI), "cluster_pub": cluster.EncodeKey(homePub)},
+		"home":         map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d", hAPI), "cluster_pub": cluster.EncodeKey(homePub)},
 		"database_url": nodeDSN})
 	_ = os.WriteFile(filepath.Join(nodeDir, "node.json"), nodeCfg, 0o600)
 	node := startLauncher(t, "node", nodeRoot, append(common, "MAKTABA_CONFIG="+nodeToml,
