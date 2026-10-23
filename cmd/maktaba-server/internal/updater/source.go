@@ -12,6 +12,7 @@ import (
 
 	"github.com/sigstore/sigstore-go/pkg/root"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
@@ -86,6 +87,26 @@ func (s Source) verify(ctx context.Context, j *Journal) (*releaseverify.Result, 
 		return nil, Fail("version_mismatch", "release.json is %s, the home asked for %s", res.Manifest.Version, j.Job.Version)
 	}
 	return res, nil
+}
+
+// freeDisk is hostinfo.FreeDisk (tests replace it).
+var freeDisk = hostinfo.FreeDisk
+
+// Room a release needs on its disk: its programs (with the archive beside them while
+// they are unpacked), and on a plain server install its pipeline environment too.
+const (
+	roomRelease = 2 << 30
+	roomVenv    = 6 << 30
+)
+
+// checkRoom fails the preflight (disk_space) when the disk holding dir has less than
+// need free (an unknown free space passes).
+func checkRoom(dir string, need uint64) error {
+	if have := freeDisk(dir); have > 0 && have < need {
+		return Fail("disk_space", "%s has %.1f GiB free; the release needs %.1f GiB: free some space and the update goes on",
+			dir, float64(have)/(1<<30), float64(need)/(1<<30))
+	}
+	return nil
 }
 
 // verifyFailure maps a releaseverify error to the run's failure code (the Updates page

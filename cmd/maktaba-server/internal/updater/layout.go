@@ -27,7 +27,10 @@ type LayoutInstaller struct {
 	// Record is the home's database record (state/database.json) the launcher's guard
 	// marks on a fallback ("" on a node).
 	Record string
-	Now    func() time.Time
+	// PipelinePython is the configured [pipeline] python ("" none): the interpreter its
+	// environment was made from builds the release's.
+	PipelinePython string
+	Now            func() time.Time
 }
 
 func (li *LayoutInstaller) now() time.Time {
@@ -48,6 +51,9 @@ func (li *LayoutInstaller) Preflight(_ context.Context, _ *Journal) error {
 	if err := os.MkdirAll(li.Layout.UpdatesDir(), 0o755); err != nil {
 		return Fail("not_writable", "%v", err)
 	}
+	if err := checkRoom(li.Layout.ReleasesDir(), roomRelease+roomVenv); err != nil {
+		return err
+	}
 	probe := filepath.Join(li.Layout.ReleasesDir(), ".write-probe")
 	if err := os.MkdirAll(li.Layout.ReleasesDir(), 0o755); err != nil {
 		return Fail("not_writable", "%v", err)
@@ -65,7 +71,7 @@ func (li *LayoutInstaller) Preflight(_ context.Context, _ *Journal) error {
 
 // Stage implements Installer: install.Stage (download, verify, extract, re-verify, the
 // migrations beside the binaries, .verified).
-func (li *LayoutInstaller) Stage(ctx context.Context, j *Journal, _ io.Writer) error {
+func (li *LayoutInstaller) Stage(ctx context.Context, j *Journal, log io.Writer) error {
 	in, err := li.Source.input(ctx, j.Job.Tag)
 	if err != nil {
 		return err
@@ -78,7 +84,15 @@ func (li *LayoutInstaller) Stage(ctx context.Context, j *Journal, _ io.Writer) e
 		return Fail("version_mismatch", "release.json is %s, the home asked for %s", st.Version, j.Job.Version)
 	}
 	j.Staged, j.FromRef = st.Dir, li.Running()
-	return nil
+	if st.Result == nil {
+		return nil
+	}
+	j.LauncherProtocol = st.Result.Manifest.LauncherProtocol
+	ok, why := li.launcherReplaceable()
+	if err := checkLauncher(j, ok, why); err != nil {
+		return err
+	}
+	return li.buildVenv(ctx, j, st.Result, st.Dir, log)
 }
 
 // Smoke implements Installer.
@@ -88,7 +102,7 @@ func (li *LayoutInstaller) Smoke(ctx context.Context, j *Journal) error {
 			return err
 		}
 	}
-	return nil
+	return smokePipeline(ctx, filepath.Join(j.Staged, "venv"), j.Job.Version)
 }
 
 // Tools implements Installer.

@@ -3583,6 +3583,7 @@
   "machines.switch.reason.schema_differs": "it runs another version of Maktaba",
   "machines.switch.reason.agent_offline": "not connected",
   "machines.switch.reason.switch_under_way": "a switch is under way",
+  "machines.switch.reason.update_under_way": "an update is under way",
   "machines.switch.confirm.title": "Make {name} the home?",
   "machines.switch.confirm.body": "{name} takes over as the home, with the library, sign-ins, machines, secrets and keys, and {home} becomes one of its machines. For a minute or two changes are refused and jobs pause. Playback goes on.",
   "machines.switch.confirm.after": "Afterwards this page lists anything that needs you, such as signing in to YouTube in a browser on the new home.",

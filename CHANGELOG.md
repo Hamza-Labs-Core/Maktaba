@@ -686,8 +686,9 @@ don't append a line here; docs-only PRs are exempt.
   database; at the switch it dumps the database (checked to read back), migrates it, and watches
   the new release for ten minutes. A release that does not stay healthy is rolled back on its
   own: the previous release runs again and, when the database had been migrated, the dump is put
-  back first. A power cut at any step is finished at the next start. Headless and plain server
-  installs do all of it by themselves; a desktop app that runs the server (Mac, Windows, Linux)
+  back first. A power cut at any step is finished at the next start. A plain server's update
+  brings its pipeline's own Python environment too. Headless and plain server installs do all
+  of it by themselves; a desktop app that runs the server (Mac, Windows, Linux)
   downloads and checks the release the home orders and shows "Install Maktaba <version>" (on a
   machine: the cluster's update waits for it), and installs it when someone clicks there — the
   rollout goes on with the others meanwhile, and a newer release replaces an order nobody

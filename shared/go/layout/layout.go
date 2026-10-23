@@ -47,6 +47,11 @@ const (
 	EnvLauncher    = "MAKTABA_LAUNCHER"     // "1" when started by maktaba-launcher
 	EnvReleaseDir  = "MAKTABA_RELEASE_DIR"  // <install>/bin/releases/<current>
 	EnvInstallRoot = "MAKTABA_INSTALL_ROOT" // <install>
+	// EnvLauncherProtocol and EnvLauncherExe: the launcher that started the server, its
+	// launcher_protocol and its executable (story 35.7 AC6: a release that needs a newer
+	// launcher puts one in place)
+	EnvLauncherProtocol = "MAKTABA_LAUNCHER_PROTOCOL"
+	EnvLauncherExe      = "MAKTABA_LAUNCHER_EXE"
 )
 
 // Errors.
@@ -480,6 +485,10 @@ func (l Layout) Versions() ([]string, error) {
 	SortVersions(out)
 	return out, nil
 }
+
+// ReplaceLauncherFile is the server's request, in a launcher root's updates directory,
+// to hand over to a new launcher (its path, put in place already) at the next exit 75.
+const ReplaceLauncherFile = "replace-launcher"
 
 // RestartRequestPath is <install>/updates/restart: a file asking the running
 // server to exit 75 so the launcher starts the (new) current release. The API

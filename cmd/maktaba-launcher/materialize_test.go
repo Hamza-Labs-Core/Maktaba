@@ -96,3 +96,30 @@ func TestKeptPayloadPutBackInPlace(t *testing.T) {
 		t.Fatal("the failed release's wheel is left")
 	}
 }
+
+// Story 35.7 AC6: the server's request to hand over to a new launcher is taken once,
+// and only when it names a launcher that exists.
+func TestReplaceRequestTakenOnce(t *testing.T) {
+	root := t.TempDir()
+	ln := &launcher{cfg: Config{Root: root}}
+	updates := layout.New(root).UpdatesDir()
+	_ = os.MkdirAll(updates, 0o755)
+	next := filepath.Join(t.TempDir(), "maktaba-launcher")
+	_ = os.WriteFile(next, []byte("launcher 2"), 0o755)
+	req := filepath.Join(updates, layout.ReplaceLauncherFile)
+	_ = os.WriteFile(req, []byte(next+"\n"), 0o644)
+	if got := ln.takeReplaceRequest(); got != next {
+		t.Fatalf("request %q, want %q", got, next)
+	}
+	if got := ln.takeReplaceRequest(); got != "" {
+		t.Fatalf("taken twice: %q", got)
+	}
+	_ = os.WriteFile(req, []byte(filepath.Join(t.TempDir(), "gone")+"\n"), 0o644)
+	if got := ln.takeReplaceRequest(); got != "" {
+		t.Fatalf("a launcher that is not there: %q", got)
+	}
+	_ = os.WriteFile(req, []byte("relative/maktaba-launcher\n"), 0o644)
+	if got := ln.takeReplaceRequest(); got != "" {
+		t.Fatalf("a relative path: %q", got)
+	}
+}

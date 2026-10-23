@@ -3596,6 +3596,7 @@
   "machines.switch.reason.schema_differs": "يعمل بإصدار آخر من مكتبة",
   "machines.switch.reason.agent_offline": "غير متصل",
   "machines.switch.reason.switch_under_way": "هناك تبديل جارٍ",
+  "machines.switch.reason.update_under_way": "هناك تحديث جارٍ",
   "machines.switch.confirm.title": "هل تجعل {name} الجهاز الرئيسي؟",
   "machines.switch.confirm.body": "يتولّى {name} مهمة الجهاز الرئيسي ومعه المكتبة وجلسات الدخول والأجهزة والأسرار والمفاتيح، ويصبح {home} أحد أجهزته. لمدة دقيقة أو دقيقتين تُرفض التغييرات وتتوقف المهام مؤقتًا، ويستمر التشغيل.",
   "machines.switch.confirm.after": "بعد ذلك تعرض هذه الصفحة ما يحتاج إليك، مثل تسجيل الدخول إلى يوتيوب في متصفح على الجهاز الرئيسي الجديد.",

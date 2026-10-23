@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -346,7 +347,7 @@ func TestWindowsAppDetectedStatus(t *testing.T) {
 	wantRoot := filepath.Join(local, "Maktaba")
 	if st.AppBundle != wantPayload || st.Server != filepath.Join(wantPayload, "bin", "maktaba-server.exe") ||
 		st.Root != wantRoot || st.LauncherLog != filepath.Join(wantRoot, "updates", "launcher.log") ||
-		st.StopEvent != StopEventName || st.Updates != "with the app" {
+		st.StopEvent != StopEventName || !strings.HasPrefix(st.Updates, "the cluster's update: staged here") {
 		t.Fatalf("--status --json = %+v\nwant app_bundle %q, root %q", st, wantPayload, wantRoot)
 	}
 

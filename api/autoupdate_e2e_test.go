@@ -169,7 +169,7 @@ func (g *fakeGitHub) publish(r *releaseverifytest.FakeRelease) {
 
 // installRelease installs r as the first release of the layout at root (as an install
 // script would): staged and verified, current, the launcher beside it.
-func installRelease(t *testing.T, root string, r *releaseverifytest.FakeRelease, tm *releaseverifytest.Sigstore) {
+func installRelease(t *testing.T, root string, r *releaseverifytest.FakeRelease, tm *releaseverifytest.Sigstore, python string) {
 	t.Helper()
 	trust, err := tm.TrustedRoot()
 	if err != nil {
@@ -192,6 +192,7 @@ func installRelease(t *testing.T, root string, r *releaseverifytest.FakeRelease,
 	if err != nil {
 		t.Fatalf("stage %s: %v", r.Tag, err)
 	}
+	makeVenv(t, python, r.Files[r.Wheel], filepath.Join(st.Dir, "venv"))
 	if err := l.WritePointer(layout.CurrentFile, st.Version); err != nil {
 		t.Fatal(err)
 	}
@@ -252,6 +253,7 @@ func TestAutoUpdateHomeAndNode(t *testing.T) {
 
 	// ---- three releases, signed by the fake Sigstore ----
 	ss := releaseverifytest.MustNew()
+	python := pipelinePython(t)
 	trustJSON, err := ss.TrustedRootJSON()
 	if err != nil {
 		t.Fatal(err)
@@ -265,7 +267,7 @@ func TestAutoUpdateHomeAndNode(t *testing.T) {
 			rev = 149
 		}
 		r, err := ss.NewReleaseWith(updateRepo, "v"+version, platform, releaseverifytest.ReleaseOptions{Binaries: bins,
-			Migrations: mig, MinUpgradeFrom: "0.9.0", SchemaRev: rev})
+			Migrations: mig, MinUpgradeFrom: "0.9.0", SchemaRev: rev, Wheel: fakeWheel(t, version)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -289,8 +291,8 @@ func TestAutoUpdateHomeAndNode(t *testing.T) {
 
 	// ---- the two installs ----
 	homeRoot, nodeRoot := filepath.Join(tmp, "home-install"), filepath.Join(tmp, "node-install")
-	installRelease(t, homeRoot, r090, ss)
-	installRelease(t, nodeRoot, r090, ss)
+	installRelease(t, homeRoot, r090, ss, python)
+	installRelease(t, nodeRoot, r090, ss, python)
 	homeDir, nodeDir := filepath.Join(tmp, "home"), filepath.Join(tmp, "node")
 	_ = os.MkdirAll(homeDir, 0o700)
 	_ = os.MkdirAll(nodeDir, 0o700)
@@ -331,8 +333,8 @@ home = %q
 port = %d
 listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 	nodeToml := writeToml(nodeDir, nAPI, nWeb, nAdmin, nodeWeb, fmt.Sprintf("\n[database]\nurl = \"sqlite://unused.db\"\n[postgres]\ncopy_port = %d", p()))
-	self, _ := os.Executable()
-	common := []string{"MAKTABA_PYTHON=" + self, "MAKTABA_E2E_SLEEPER=1", "MAKTABA_DISCOVERY_MDNS=0", "MAKTABA_HSTS=0",
+	// the pipeline runs from each release's own venv (built by the update's stage)
+	common := []string{"MAKTABA_PIPELINE_PYTHON=" + python, "MAKTABA_PYTHON=", "MAKTABA_DISCOVERY_MDNS=0", "MAKTABA_HSTS=0",
 		"MAKTABA_HEALTH_WARM=0s", "MAKTABA_CLUSTER_DIR=" + filepath.Join(tmp, "clusterfiles"),
 		"MAKTABA_ARCHIVE_DIR=" + filepath.Join(tmp, "archive"),
 		"MAKTABA_E2E_TRUSTED_ROOT=" + trustFile, "MAKTABA_E2E_GITHUB_API=" + gh.srv.URL,
@@ -532,6 +534,10 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 	for name, root := range map[string]string{"home": homeRoot, "node": nodeRoot} {
 		if cur, _ := layout.New(root).Current(); cur != "0.9.1" {
 			t.Fatalf("the %s's current release is %q", name, cur)
+		}
+		// the update built the release's pipeline environment, and the pipeline runs it
+		if !releaseVenvBuilt(layout.New(root).ReleaseDir("0.9.1")) {
+			t.Fatalf("the %s's 0.9.1 has no pipeline environment", name)
 		}
 		if p, _ := layout.New(root).ReadPending(); p != nil {
 			t.Fatalf("the %s's release is still pending: %+v", name, p)

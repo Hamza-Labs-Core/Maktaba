@@ -66,6 +66,8 @@ type fakeInst struct {
 	once              sync.Once
 	// asks: a desktop app's install (Asker)
 	asks bool
+	// replaces: its launcher is replaced when a release needs a newer one
+	replaces bool
 }
 
 func (f *fakeInst) die(where string) {
@@ -132,6 +134,12 @@ func (f *fakeInst) Discard(_ context.Context, j *Journal) error {
 	return f.step("discard", func() { delete(f.w.staged, j.Job.Version); f.w.order, f.w.answer = "", "" })
 }
 func (f *fakeInst) Asks() bool { return f.asks }
+func (f *fakeInst) ReplaceLauncher(*Journal) (bool, error) {
+	if !f.replaces {
+		return false, nil
+	}
+	return true, f.step("launcher", nil)
+}
 func (f *fakeInst) Ask(j *Journal) error {
 	return f.step(StepAsk, func() {
 		if f.w.order != j.Job.RunID {
@@ -186,7 +194,7 @@ func (r *fakeRehearser) Rehearse(context.Context, string, string, int, io.Writer
 func (r *fakeRehearser) DumpAside(context.Context, string) (string, error) {
 	return "/fake/failed.dump", nil
 }
-func (r *fakeRehearser) Check(context.Context) error { return nil }
+func (r *fakeRehearser) Check(context.Context, bool, int) error { return nil }
 
 type fakeHealth struct {
 	mu sync.Mutex

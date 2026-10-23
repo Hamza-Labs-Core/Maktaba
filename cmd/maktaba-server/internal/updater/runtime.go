@@ -84,6 +84,9 @@ func (ri *RuntimeInstaller) Preflight(_ context.Context, _ *Journal) error {
 	if err != nil || cur == "" {
 		return Fail("no_runtime", "%s has no current runtime (%v)", ri.Runtime.Root, err)
 	}
+	if err := checkRoom(ri.Runtime.Root, roomRelease); err != nil {
+		return err
+	}
 	probe := filepath.Join(ri.Runtime.Root, ".write-probe")
 	if err := os.WriteFile(probe, nil, 0o600); err != nil {
 		return Fail("not_writable", "%s: %v", ri.Runtime.Root, err)
@@ -134,6 +137,7 @@ func (ri *RuntimeInstaller) Stage(ctx context.Context, j *Journal, _ io.Writer) 
 	if layout.CompareVersions(p.Version, j.Job.Version) != 0 {
 		return Fail("version_mismatch", "%s holds the payload of %s, not of %s", asset, p.Version, j.Job.Version)
 	}
+	j.LauncherProtocol = res.Manifest.LauncherProtocol // the new runtime brings its launcher
 	r, err := ri.Runtime.Install(ctx, payload, nil, appruntime.Options{})
 	if err != nil {
 		return Fail("install_failed", "%v", err)

@@ -80,7 +80,7 @@ How each kind of install takes a release
 | **Windows app** | The same; the installer stops and starts the server. | The click. The first update from a release before automatic updates. |
 | **Linux app** (AppImage, `.deb`, `.rpm`) | The server installs the release's signed Linux payload as a new runtime directory, and switches to it after the click in the app (no root needed); `previous` is kept for the rollback. | The click. The first update from a release before automatic updates. The app's own window updates with its updater. |
 | **Headless** (`install.sh --app`) | The same runtime switch, by itself in the window. | The first update from a release before automatic updates. |
-| **Plain server** on the side-by-side layout (`setup --self-managed`, `.deb`/`.rpm` in the layout) | Staged in `bin/releases/<v>` with its migrations, switched to under the launcher's guard. | — |
+| **Plain server** on the side-by-side layout (`setup --self-managed`, `.deb`/`.rpm` in the layout) | Staged in `bin/releases/<v>` with its migrations and its own pipeline environment (`venv`, built from the release's wheel with the machine's Python 3.12), switched to under the launcher's guard; the pipeline runs the new environment. A release that needs a newer launcher replaces it after its commit. | A Python 3.12 for the pipeline (or `MAKTABA_PIPELINE_PYTHON`). |
 | Plain binary copied by hand (no launcher) | — (reported: `not_self_managed`) | One `maktaba-server setup --service`, then automatic. |
 | **Docker** | — | `docker compose pull && docker compose up -d` (Epic 28.3's `409`). |
 

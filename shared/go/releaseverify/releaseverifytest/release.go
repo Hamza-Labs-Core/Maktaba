@@ -58,6 +58,10 @@ type ReleaseOptions struct {
 	// MinUpgradeFrom is release.json's min_upgrade_from ("": the release's own
 	// version, as the stub always had).
 	MinUpgradeFrom string
+	// Wheel is the pipeline wheel's content (nil: a stub).
+	Wheel []byte
+	// LauncherProtocol is release.json's launcher_protocol (0: 1).
+	LauncherProtocol int
 	// SchemaRev is release.json's schema_rev and min_node_schema (0: 128).
 	SchemaRev int
 }
@@ -96,6 +100,9 @@ func (s *Sigstore) NewReleaseWith(repo, tag, platform string, o ReleaseOptions) 
 	r.Files[r.Archive] = archive
 	r.Wheel = "maktaba_pipeline-" + ver + "-py3-none-any.whl"
 	r.Files[r.Wheel] = []byte("fake wheel " + tag)
+	if o.Wheel != nil {
+		r.Files[r.Wheel] = o.Wheel
+	}
 	r.Cons = "maktaba-pipeline-" + ver + "-constraints.txt"
 	r.Files[r.Cons] = []byte("# uv export\nanyio==4.4.0 \\\n    --hash=sha256:" + strings.Repeat("ab", 32) + "\n    # via maktaba-pipeline\nidna==3.7 ; python_version >= \"3.12\" \\\n    --hash=sha256:" + strings.Repeat("cd", 32) + " \\\n    --hash=sha256:" + strings.Repeat("ef", 32) + "\n")
 
@@ -103,7 +110,10 @@ func (s *Sigstore) NewReleaseWith(repo, tag, platform string, o ReleaseOptions) 
 	for n, b := range r.Binaries {
 		files[n] = hexsum(b)
 	}
-	minFrom, rev := ver, 128
+	minFrom, rev, launcher := ver, 128, 1
+	if o.LauncherProtocol > 0 {
+		launcher = o.LauncherProtocol
+	}
 	if o.MinUpgradeFrom != "" {
 		minFrom = o.MinUpgradeFrom
 	}
@@ -114,7 +124,7 @@ func (s *Sigstore) NewReleaseWith(repo, tag, platform string, o ReleaseOptions) 
 		"v": 1, "version": ver, "tag": tag, "commit": fakeCommit, "channel": "stable",
 		"published": time.Now().UTC().Format(time.RFC3339), "schema_rev": rev, "min_node_schema": rev,
 		"breaks_previous_home": false, "min_upgrade_from": minFrom,
-		"edge_protocol": 1, "launcher_protocol": 1, "agent_protocol": 2,
+		"edge_protocol": 1, "launcher_protocol": launcher, "agent_protocol": 2,
 		"assets": map[string]any{platform: map[string]any{"archive": r.Archive, "sha256": hexsum(archive), "files": files}},
 		"pipeline": map[string]any{
 			"wheel": r.Wheel, "wheel_sha256": hexsum(r.Files[r.Wheel]),

@@ -94,7 +94,7 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 	if releaseDir != "" {
 		l := layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir)))))
 		return &updater.LayoutInstaller{Layout: l, Source: src, Version: filepath.Base(filepath.Clean(releaseDir)),
-			Record: record}, l.UpdatesDir()
+			Record: record, PipelinePython: strings.TrimSpace(cfg.Pipeline.Python)}, l.UpdatesDir()
 	}
 	return flatInstaller{}, filepath.Join(cfg.StateDir(), "updates")
 }
@@ -169,7 +169,7 @@ func homeDatabase(cfg config.Config, pg *pgbundle.Bundle) *dbsafe.Target {
 		if err != nil {
 			return nil
 		}
-		return &dbsafe.Target{URL: u, Bin: pg.Bin, Backups: pg.Backups}
+		return &dbsafe.Target{URL: u, Bin: pg.Bin, Backups: pg.Backups, Data: pg.Data}
 	}
 	u := strings.TrimSpace(cfg.Database.URL)
 	if u == "" || (!strings.HasPrefix(u, "postgres://") && !strings.HasPrefix(u, "postgresql://")) {
@@ -189,7 +189,12 @@ func pgProgram(name string) string {
 // rehearser is updater.Rehearser over a dbsafe.Target.
 type rehearser struct{ t dbsafe.Target }
 
-func (r rehearser) Check(ctx context.Context) error { return codedFailure(r.t.Check(ctx)) }
+func (r rehearser) Check(ctx context.Context, rehearse bool, maxGB int) error {
+	if err := r.t.Check(ctx); err != nil {
+		return codedFailure(err)
+	}
+	return codedFailure(r.t.Space(ctx, rehearse, maxGB))
+}
 
 func (r rehearser) Rehearse(ctx context.Context, api, migrations string, maxGB int, log io.Writer) (updater.Rehearsal, error) {
 	res, err := r.t.Rehearse(ctx, api, migrations, maxGB, log)

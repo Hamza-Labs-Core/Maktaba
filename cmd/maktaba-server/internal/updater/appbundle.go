@@ -159,6 +159,9 @@ func (ai *AppInstaller) Preflight(ctx context.Context, j *Journal) error {
 	if _, err := os.Stat(ai.App); err != nil {
 		return Fail("no_app", "the app is not at %s: %v", ai.App, err)
 	}
+	if err := checkRoom(ai.updatesDir(), roomRelease); err != nil {
+		return err
+	}
 	if ai.holds(j) {
 		return nil // the app holds the release: nothing to fetch for it
 	}

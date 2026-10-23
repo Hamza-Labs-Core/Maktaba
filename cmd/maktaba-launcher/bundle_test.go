@@ -199,7 +199,7 @@ func TestBundleCLI(t *testing.T) {
 	}
 	out.Reset()
 	if code := run([]string{"--app-bundle", bundle, "--root", root, "--status", "--json"}, &out, &errb); code != exitOK ||
-		!strings.Contains(out.String(), `"updates": "with the app"`) {
+		!strings.Contains(out.String(), `"updates": "the cluster's update: staged here`) {
 		t.Fatalf("--status: code %d, out %q", code, out.String())
 	}
 	var st BundleStatus
@@ -213,7 +213,7 @@ func TestBundleCLI(t *testing.T) {
 	}
 	out.Reset()
 	if code := run([]string{"--app-bundle", bundle, "--root", root, "--status"}, &out, &errb); code != exitOK ||
-		!strings.Contains(out.String(), "server:     "+st.Server+"\n") || !strings.Contains(out.String(), "state:      "+root+"\n") {
+		!strings.Contains(out.String(), "server:     "+st.Server+" (") || !strings.Contains(out.String(), "state:      "+root+"\n") {
 		t.Fatalf("--status: code %d, out %q", code, out.String())
 	}
 	errb.Reset()
@@ -248,7 +248,7 @@ func TestRuntimeOwnerSaysWhoUpdates(t *testing.T) {
 		}
 	}
 	var out bytes.Buffer
-	if code := printBundleStatus(&out, bundle, rt, root, true); code != exitOK || !strings.Contains(out.String(), "by this machine") {
+	if code := printBundleStatus(&out, bundle, rt, root, true); code != exitOK || !strings.Contains(out.String(), "by itself in the window") {
 		t.Fatalf("--status of a headless runtime: %q", out.String())
 	}
 }

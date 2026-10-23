@@ -1255,7 +1255,8 @@ func (d *Driver) targetFailed(ctx context.Context, run Run, pol Policy, t Target
 // needsPersonCodes are failures of a machine's install, not of the release: an install
 // that cannot update itself, an app or launcher too old for it, no room for it.
 var needsPersonCodes = map[string]bool{"not_self_managed": true, "old_launcher": true, "no_app": true,
-	"no_app_update": true, "launcher_protocol": true, "disk_space": true, "not_writable": true, "no_runtime": true}
+	"no_app_update": true, "launcher_protocol": true, "disk_space": true, "not_writable": true, "no_runtime": true,
+	"no_python": true}
 
 func needsPerson(doc map[string]any) bool {
 	code, _ := doc["code"].(string)

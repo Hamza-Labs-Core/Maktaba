@@ -222,12 +222,7 @@ func (s *Service) Plan(ctx context.Context) (Plan, Policy, string, error) {
 	return MakePlan(s.now(), s.loc(), pol, cat, s.Current, wm), pol, wm, nil
 }
 
-// blocked runs the blockers; the first reason wins.
-func (s *Service) blocked(ctx context.Context) (string, error) {
-	return s.blockedFor(ctx, "")
-}
-
-// blockedFor is blocked for a run of version: an active run that only waits for clicks
+// blockedFor runs the blockers for a run of version; the first reason wins: an active run that only waits for clicks
 // and that version supersedes does not block it (start supersedes it, once the release's
 // re-check passed).
 func (s *Service) blockedFor(ctx context.Context, version string) (string, error) {

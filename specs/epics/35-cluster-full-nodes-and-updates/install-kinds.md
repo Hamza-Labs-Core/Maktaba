@@ -1,7 +1,10 @@
 # Epic 35 phase B + D, reconciled with the one-app installs (Epics 36, 38, 39)
 
-> **Status:** built with stories 35.4–35.7, 35.12 and the parts of 35.13 that show, pause and
-> retry a run. **Why this page:** the Epic 35 design (2026-10-19) predates the desktop apps that
+> **Status:** built with stories 35.4, 35.5, 35.6 (the restart fallback), 35.12 and the parts of
+> 35.13 that show, pause and retry a run; of 35.7, AC5–AC7 (resume from the journal, the
+> launcher's guard, launcher replacement, `--status`): **the handover of surviving TV children
+> across a supervisor restart (AC1–AC4) is not built**, so a machine restarts whole, under the
+> TV gate (story 35.6's fallback, the spec's own degradation). **Why this page:** the Epic 35 design (2026-10-19) predates the desktop apps that
 > carry the server (Epic 36 Mac, 38 Windows, 39 Linux) and the database step they run at every
 > start (Epic 38 story 38.12). This page says what changed, and what each kind of install does
 > now. Where it and [design.md](design.md) disagree, this page wins.
@@ -14,7 +17,7 @@
 | The app's updater is the only updater inside an app; the server's own is off (Epic 36 contract-update). | The server decides **what** and the order of the machines (policy, home first, one node at a time); a desktop app that runs the server stages what the home orders and installs it **when someone clicks there** (owner decision D1, "Ask first" below); the app's updater still does the swap for Mac and Windows. Headless and plain server installs update by themselves in the window. |
 | Rollback replaces binaries; the schema stays (migrations are additive). | Every installed release (38.12) refuses a database a newer release migrated (`migrate up` exits 3, `serve` refuses). So a rollback after a migration also **puts back the dump taken before it**. |
 | The orchestrator backs up and migrates before restarting the roles (§5.3 steps 6–9). | Every home migrates at the new release's start, through the 38.12 database step (dump, migrate, put back on failure), whatever the install kind. The orchestrator rehearses the migrations on a scratch copy before anything is installed. |
-| TV: Epic 33 hot swap, or a restart when nobody watches (§7.2). | The fallback: the machine restarts in the window only while `tv_staging.quiet_max_viewers` (0) are watching; at the window's end it is `tv_busy` and tried again next window. The Epic 33 binary swap and the TV handover across a supervisor restart (§8.1) are not used yet. |
+| TV: Epic 33 hot swap, or a restart when nobody watches (§7.2). | The fallback: the home restarts in the window only while `tv_staging.quiet_max_viewers` (0) are watching (checked before the drain and again right before its apply); a machine only while its own streams have no more watchers (`channel_runtime.host_id`), and the machines keeping streams on air go last; at the window's end the home is `tv_busy` and tried again next window. The Epic 33 binary swap and the TV handover across a supervisor restart (§8.1, story 35.7 AC1–AC4) are not built. |
 
 ## One run, four installers
 
@@ -40,7 +43,7 @@ run.**
 | **Windows app** (Epic 38) | `MAKTABA_APP_BUNDLE` in `<install>\server` beside `Maktaba.exe` | same (a plain copy) | same; the NSIS installer's hooks stop and start the server | same |
 | **Linux app** (Epic 39; `MAKTABA_RUNTIME_OWNER=app`) | the launcher runs from a runtime copy | download the release's `maktaba-linux-payload-<v>-<arch>.tar.gz`, verified against the signed `checksums.txt`, installed as a new runtime directory; rehearse (home) | order it from the app (nothing for it to fetch: it shows it); after a click there and the home's go, `runtime/current` → the new directory, `previous` → the old; exit 75 (the launcher starts `runtime/current` again) | `current` → `previous`; exit 75 |
 | **Headless** (`install.sh --app`; `MAKTABA_RUNTIME_OWNER=headless`) | the same runtime copy | the same | by itself, in the window: the switch above, no order | the same |
-| **Plain server** (`setup --self-managed`, `.deb`/`.rpm` in the layout) | `MAKTABA_LAUNCHER=1`, `bin/releases/<v>` | `releaseverify/install.Stage` into `bin/releases/<v>` with the release's migrations; rehearse (home) | `current` = `<v>` under the launcher's guard (`pending`); exit 75 | `current` = `previous`; exit 75 |
+| **Plain server** (`setup --self-managed`, `.deb`/`.rpm` in the layout) | `MAKTABA_LAUNCHER=1`, `bin/releases/<v>` | `releaseverify/install.Stage` into `bin/releases/<v>` with the release's migrations; **the pipeline's environment** `bin/releases/<v>/venv` built from the release's wheel and hash-checked constraints (verified like every file) with the machine's Python (§3.4); smoke (`python -m maktaba_pipeline --version`); rehearse (home) | `current` = `<v>` under the launcher's guard (`pending`); exit 75; the pipeline runs the release's venv | `current` = `previous`; exit 75 |
 
 A **flat** install (binaries copied by hand, no launcher) has nothing to fall back with: its run
 fails its preflight with `not_self_managed` and the one command that converts it
@@ -80,7 +83,13 @@ Maktaba <v>: the cluster's update waits for this machine". A click answers `clic
 supervisor waits for the home's `go` and then switches (kind app: `go`, and the app installs
 what it staged, checked again; kind runtime: the runtime switch). The supervisor's journal
 says `awaiting_click`, then `clicked`; a restart takes it up where it waited; a newer run
-replaces an order still waiting; Abort withdraws it (the app forgets what it staged).
+replaces an order still waiting; Abort withdraws it (the app forgets what it staged). A retry of
+a release the app already holds (its own update went through, the new server did not stay up,
+the launcher runs the copy kept before it) is a show-only order (`kind: server`): at the go the
+server starts the app's own payload again, under the guard. The app stages and installs only
+the exact ordered version (its updater's version comparator), only from that release's feed in
+the pinned repository, signed with the version (`requireSignedVersion`), re-reads the order
+right before it installs, and shows one OS notification per order.
 
 **The run** (`driver.go`):
 
@@ -139,6 +148,37 @@ updated its runtime) offers its own update for its window and tray.
    go to the home), while the copy's subscription keeps applying the home's changes; the copy
    is taken up again when the machine takes the release.
 
+### What the run guards against
+
+- **A home that never finishes**: from its switch, the home has 6 hours to commit or roll back;
+  then the run ends (`home_timeout`), the cluster is undrained and a person told. A watch has a
+  bound of its own (3 × the watch + the health limit, outside the start steps): a release whose
+  health keeps flapping is rolled back (`watch_timeout`). While the start steps work (the
+  database step's dump and migrations, the Python environment) nothing is counted and the
+  launcher's guard is pushed on, however large the database.
+- **A switch of the home** (Epic 37): no run starts while one is open, and no switch starts
+  while a run is past its plan (`update_under_way`); a home already drained waits to switch.
+- **No room**: the preflight wants room for the release (2 GiB; 8 GiB with a plain server's
+  pipeline environment), and on the home for the dump and the rehearsal's scratch copy, with
+  1 GiB to spare (`disk_space`).
+- **A withdrawn release**: before the home switches the run ends; a rollout orders no more
+  machines; a catch-up or a retry never spreads it.
+- **A machine's install, not the release** (`not_self_managed`, `old_launcher`, `no_app_update`,
+  `launcher_protocol`, `disk_space`, `no_python`, an agent from before automatic updates): the
+  machine needs a person (`needs_person`, a notice), and node_failure_policy holds nobody for it.
+- **A machine that comes back**: a rollout takes back a machine that was offline or joined since
+  (as a catch-up would, inside the window); a catch-up never re-applies a release that failed or
+  was rolled back on a machine (by itself or an admin), nor one an admin skipped.
+- **A kept copy on Windows**: the launcher puts it back into the app's own folder before it runs
+  (the firewall's rules name each program by path); a revert always names a whole kept copy (an
+  install cut short may have replaced the programs before payload.json); a second switch back
+  that does not take fails (`rollback_loop`) instead of looping.
+- **Story 35.7 AC6, the launcher**: a release whose `launcher_protocol` is above the running
+  launcher's (`MAKTABA_LAUNCHER_PROTOCOL`) puts its launcher in place after its commit
+  (`--replace-self`; a runtime's is the new runtime's) and the running one hands over at the
+  next exit 75 (`updates/replace-launcher`, re-executed in place). One this install cannot
+  replace (a package's, a Windows service's) refuses the release before it installs.
+
 ### Nodes
 
 Nodes never migrate the home's database (their own copy of it, Epic 37, is migrated by their
@@ -165,3 +205,7 @@ that comes back behind the watermark gets a `catch_up` run of its own.
 - A release whose migrations break the previous release (`breaks_previous_home`): held for an
   admin's approval (unchanged).
 - A failed run blocks that version; the next release installs by itself, or an admin retries.
+- A machine that needs a person (`needs_person` on the Updates page, with the fix): a plain
+  server without a Python 3.12 for its pipeline (`no_python`: install it, or name one in
+  `MAKTABA_PIPELINE_PYTHON`), no room (`disk_space`), a launcher a package manager or a Windows
+  service owns when a release needs a newer one (`launcher_protocol`), the cases above.

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
@@ -119,27 +120,48 @@ func removeOldSelf(l layout.Layout) {
 // BundleStatus is --status in app-bundle mode: no releases to list. Paths
 // are the platform's (backslashes and .exe names on Windows).
 type BundleStatus struct {
-	AppBundle       string `json:"app_bundle"`
-	Server          string `json:"server"` // the maktaba-server the launcher starts
-	Root            string `json:"root"`
-	LauncherLog     string `json:"launcher_log"`
-	StopEvent       string `json:"stop_event,omitempty"` // Windows: the event that stops it
-	Updates         string `json:"updates"`
-	LauncherVersion string `json:"launcher_version"`
+	AppBundle string `json:"app_bundle"`
+	Server    string `json:"server"` // the maktaba-server the launcher starts
+	// Running is the version of the payload it starts; Kept the kept copy it starts in
+	// the app's place after a rolled-back update ("" none)
+	Running          string        `json:"running,omitempty"`
+	Kept             string        `json:"kept,omitempty"`
+	Pending          *layout.Guard `json:"pending,omitempty"` // an update being tried, under the guard
+	Root             string        `json:"root"`
+	LauncherLog      string        `json:"launcher_log"`
+	StopEvent        string        `json:"stop_event,omitempty"` // Windows: the event that stops it
+	Updates          string        `json:"updates"`
+	LauncherVersion  string        `json:"launcher_version"`
+	LauncherProtocol int           `json:"launcher_protocol"`
 }
 
 func printBundleStatus(w io.Writer, bundle, runtimeRoot, root string, asJSON bool) int {
+	run := bundle
+	if o := layout.ReadOverride(root); o != "" && runtimeRoot == "" {
+		g, _ := layout.ReadGuard(root)
+		if g == nil || payloadVersion(bundle) != layout.NormalizeVersion(g.Version) {
+			run = o
+		}
+	}
 	s := BundleStatus{
-		AppBundle:       bundle,
-		Server:          filepath.Join(bundle, "bin", layout.Exe("maktaba-server")),
-		Root:            root,
-		LauncherLog:     layout.New(root).LauncherLog(),
-		StopEvent:       stopEventName,
-		Updates:         "with the app",
-		LauncherVersion: Version,
+		AppBundle:        bundle,
+		Server:           filepath.Join(run, "bin", layout.Exe("maktaba-server")),
+		Running:          payloadVersion(run),
+		Root:             root,
+		LauncherLog:      layout.New(root).LauncherLog(),
+		StopEvent:        stopEventName,
+		Updates:          "the cluster's update: staged here, installed when someone clicks Install in the app",
+		LauncherVersion:  Version,
+		LauncherProtocol: LauncherProtocol,
+	}
+	if run != bundle {
+		s.Kept = run
+	}
+	if g, err := layout.ReadGuard(root); err == nil && g != nil {
+		s.Pending = g
 	}
 	if runtimeRoot != "" && runtimeOwner(runtimeRoot) == runtimeOwnerHeadless {
-		s.Updates = "by this machine (maktaba-server update)"
+		s.Updates = "the cluster's update, by itself in the window"
 	}
 	if asJSON {
 		b, _ := json.MarshalIndent(s, "", "  ")
@@ -147,13 +169,26 @@ func printBundleStatus(w io.Writer, bundle, runtimeRoot, root string, asJSON boo
 		return exitOK
 	}
 	fmt.Fprintf(w, "app bundle: %s\n", s.AppBundle)
-	fmt.Fprintf(w, "server:     %s\n", s.Server)
+	fmt.Fprintf(w, "server:     %s (%s)\n", s.Server, orDash(s.Running))
+	if s.Kept != "" {
+		fmt.Fprintf(w, "kept copy:  %s (an update was rolled back)\n", s.Kept)
+	}
+	if s.Pending != nil {
+		fmt.Fprintf(w, "pending:    %s (until %s)\n", s.Pending.Version, s.Pending.Deadline.Format(time.RFC3339))
+	}
 	fmt.Fprintf(w, "state:      %s\n", s.Root)
 	fmt.Fprintf(w, "log:        %s\n", s.LauncherLog)
 	if s.StopEvent != "" {
 		fmt.Fprintf(w, "stop event: %s\n", s.StopEvent)
 	}
 	fmt.Fprintf(w, "updates:    %s\n", s.Updates)
-	fmt.Fprintf(w, "launcher:   %s\n", s.LauncherVersion)
+	fmt.Fprintf(w, "launcher:   %s (protocol %d)\n", s.LauncherVersion, s.LauncherProtocol)
 	return exitOK
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }

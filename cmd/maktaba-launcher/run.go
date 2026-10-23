@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
@@ -169,6 +170,14 @@ func (ln *launcher) loop(ctx context.Context) error {
 		case res.code == ExitRestart:
 			ln.log.Event("launcher_restart", ver, map[string]any{"exit": ExitRestart})
 			backoff = ln.cfg.BackoffInitial
+			if next := ln.takeReplaceRequest(); next != "" {
+				// story 35.7 AC6: a release that needs a newer launcher put it in place;
+				// it takes over now (the same process, so the service manager sees nothing)
+				ln.log.Event("launcher_replace", ver, map[string]any{"launcher": next})
+				if err := reexec(next); err != nil {
+					ln.log.Event("launcher_replace_later", ver, map[string]any{"launcher": next, "err": err.Error()})
+				}
+			}
 			continue
 		}
 
@@ -457,6 +466,8 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 		layout.EnvReleaseDir + "=" + ln.l.ReleaseDir(ver),
 		layout.EnvInstallRoot + "=" + ln.l.Root,
 		EnvStopFile + "=" + stopFile,
+		layout.EnvLauncherProtocol + "=" + strconv.Itoa(LauncherProtocol),
+		layout.EnvLauncherExe + "=" + selfPath(),
 	}
 	if ln.cfg.Bundle != "" {
 		// Not MAKTABA_LAUNCHER/RELEASE_DIR/INSTALL_ROOT: the server must not
@@ -470,6 +481,8 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 			EnvAppBundled + "=" + ln.cfg.Bundle,
 			EnvLauncherRoot + "=" + ln.cfg.Root,
 			EnvStopFile + "=" + stopFile,
+			layout.EnvLauncherProtocol + "=" + strconv.Itoa(LauncherProtocol),
+			layout.EnvLauncherExe + "=" + selfPath(),
 		}, updateEnv(ln.cfg.RuntimeRoot)...)
 	}
 	cmd := exec.Command(server, append([]string{"serve"}, ln.cfg.Args...)...)

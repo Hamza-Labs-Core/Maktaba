@@ -20,6 +20,7 @@ import (
 	"github.com/sigstore/sigstore-go/pkg/root"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appruntime"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	rv "github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/install"
@@ -117,8 +118,26 @@ func TestLayoutInstaller(t *testing.T) {
 	if err := li.Preflight(ctx, j); err != nil {
 		t.Fatal(err)
 	}
+	// review A12: the release's pipeline environment is built from its verified wheel and
+	// constraints, with the machine's Python
+	t.Setenv(envPipelinePython, "/opt/python3.12/bin/python3")
+	var built appvenv.Spec
+	prevBuild := venvBuild
+	venvBuild = func(_ context.Context, spec appvenv.Spec, _ func(appvenv.Progress)) (appvenv.Result, error) {
+		built = spec
+		return appvenv.Result{}, os.MkdirAll(spec.Venv, 0o755)
+	}
+	t.Cleanup(func() { venvBuild = prevBuild })
 	if err := li.Stage(ctx, j, nil); err != nil {
 		t.Fatal(err)
+	}
+	if built.Python != "/opt/python3.12/bin/python3" || built.Venv != filepath.Join(l.ReleaseDir("1.5.0"), "venv") {
+		t.Fatalf("venv built %+v", built)
+	}
+	for _, f := range []string{"maktaba_pipeline-1.5.0-py3-none-any.whl", "maktaba-pipeline-1.5.0-constraints.txt"} {
+		if _, err := os.Stat(filepath.Join(built.Pipeline, f)); err != nil {
+			t.Fatalf("the pipeline folder lacks %s: %v", f, err)
+		}
 	}
 	if j.Staged != l.ReleaseDir("1.5.0") || j.FromRef != "1.4.0" {
 		t.Fatalf("staged %q from %q", j.Staged, j.FromRef)
@@ -468,5 +487,23 @@ func TestAppOrderProtocol(t *testing.T) {
 	b, _ = os.ReadFile(path)
 	if err := json.Unmarshal(b, &rq); err != nil || rq.Kind != RequestKindRuntime || rq.Feed != "" || rq.State != RequestOrdered {
 		t.Fatalf("runtime order %+v", rq)
+	}
+}
+
+// Review A11: an install without room for the release fails its preflight (disk_space,
+// which the home reports as needing a person), before anything is fetched.
+func TestPreflightNeedsRoom(t *testing.T) {
+	prev := freeDisk
+	defer func() { freeDisk = prev }()
+	freeDisk = func(string) uint64 { return 1 << 30 }
+	l := layout.New(t.TempDir())
+	li := &LayoutInstaller{Layout: l, Version: "1.4.0"}
+	var f *Failure
+	if err := li.Preflight(context.Background(), nil); !errors.As(err, &f) || f.Code != "disk_space" {
+		t.Fatalf("1 GiB free: %v", err)
+	}
+	freeDisk = func(string) uint64 { return 0 } // unknown: passes this check
+	if err := checkRoom(t.TempDir(), roomRelease); err != nil {
+		t.Fatal(err)
 	}
 }

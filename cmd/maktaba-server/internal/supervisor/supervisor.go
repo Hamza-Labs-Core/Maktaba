@@ -313,8 +313,19 @@ func PythonOverride(cfg config.Config) string {
 	return strings.TrimSpace(cfg.Pipeline.Python)
 }
 
-// pythonFor is pythonExecutable with PythonOverride first.
+// pythonFor is pythonExecutable with PythonOverride first, except that a plain server
+// release's own environment (<release>/venv, built when the release was staged: Epic 35
+// design §3.4) wins over a configured [pipeline] python: an update updates the pipeline
+// too. MAKTABA_PYTHON still wins over everything.
 func pythonFor(opts Options) string {
+	if p := os.Getenv("MAKTABA_PYTHON"); p != "" {
+		return p
+	}
+	if config.AppBundle() == "" && opts.ReleaseDir != "" {
+		if venvPy := venvPython(filepath.Join(opts.ReleaseDir, "venv")); isExecutable(venvPy) {
+			return venvPy
+		}
+	}
 	if p := PythonOverride(opts.Config); p != "" {
 		return p
 	}

@@ -56,6 +56,7 @@ const (
 	StepRestart   = "restart"
 	StepWatch     = "watch"
 	StepCommit    = "commit"
+	StepLauncher  = "launcher" // the launcher replaced (story 35.7 AC6)
 	StepRollback  = "rollback"
 )
 
@@ -199,6 +200,8 @@ type Journal struct {
 	Rehearsal *Rehearsal `json:"rehearsal,omitempty"`
 	// App is the app's last answer to the order (ordered, staged, clicked).
 	App string `json:"app,omitempty"`
+	// LauncherProtocol is the release's launcher_protocol (its verified release.json).
+	LauncherProtocol int `json:"launcher_protocol,omitempty"`
 	// WatchSince is when the new release first came up; Starts how often it started
 	// while watched (a supervisor that keeps dying rolls back).
 	WatchSince *time.Time `json:"watch_since,omitempty"`

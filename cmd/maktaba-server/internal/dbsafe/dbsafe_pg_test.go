@@ -235,6 +235,36 @@ func TestRestoreWithMachineCopies(t *testing.T) {
 	copyOf()
 }
 
+// Review A11: the dump and the rehearsal's scratch copy need room before they start (a
+// full disk takes the live Postgres down); an unknown free space passes.
+func TestSpaceForTheDatabaseWork(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	tgt := r.t
+	tgt.Data = r.b.Data
+	tgt.Free = func(string) uint64 { return 1 << 40 }
+	if err := tgt.Space(ctx, true, 20); err != nil {
+		t.Fatalf("a roomy disk: %v", err)
+	}
+	tgt.Free = func(string) uint64 { return 1 << 20 }
+	if err := tgt.Space(ctx, false, 20); err == nil || !strings.HasPrefix(err.Error(), "disk_space:") {
+		t.Fatalf("no room for the dump: %v", err)
+	}
+	tgt.Free = func(string) uint64 { return 0 }
+	if err := tgt.Space(ctx, true, 20); err != nil {
+		t.Fatalf("an unknown free space: %v", err)
+	}
+	// room for the dump, not for the dump and the scratch copy on the same disk
+	size, _ := tgt.Size(ctx)
+	tgt.Free = func(string) uint64 { return uint64(size) + headroom + 1<<20 }
+	if err := tgt.Space(ctx, false, 20); err != nil {
+		t.Fatalf("the dump alone: %v", err)
+	}
+	if err := tgt.Space(ctx, true, 20); err == nil {
+		t.Fatal("the scratch copy too passed")
+	}
+}
+
 // TC3 (story 35.5): a release's migrations run on a scratch copy; the real database is
 // untouched and the copy is dropped; one that fails on the data fails the rehearsal.
 func TestRehearsalOnAScratchCopy(t *testing.T) {

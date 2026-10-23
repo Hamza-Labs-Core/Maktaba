@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	_ "github.com/lib/pq" // the postgres driver
 )
@@ -40,7 +41,71 @@ type Target struct {
 	Bin func(name string) string
 	// Backups is the directory dumps are written to (mode 0700, never the share).
 	Backups string
+	// Data is the Postgres server's data directory when it is this machine's (the
+	// bundled one): a rehearsal's scratch copy lands there. "": another server's.
+	Data string
+	// Free is the free space of the disk holding a path (tests replace it).
+	Free func(path string) uint64
 }
+
+// headroom is what the dump and the rehearsal leave free on a disk.
+const headroom = 1 << 30
+
+// Space checks there is room for the update's database work before it starts (design
+// §5.3 step 1): the dump (as large as the database at most) beside the backups, and
+// for a rehearsal (rehearse, a database up to maxGB) its scratch copy on the server's
+// disk, each with 1 GiB to spare; running a disk full takes the live Postgres down. A
+// server that is not this machine's is not judged for the scratch copy.
+func (t Target) Space(ctx context.Context, rehearse bool, maxGB int) error {
+	size, err := t.Size(ctx)
+	if err != nil {
+		return fmt.Errorf("db_unreachable: %w", err)
+	}
+	free := t.Free
+	if free == nil {
+		free = hostinfo.FreeDisk
+	}
+	need := map[string]uint64{}
+	disk := func(path string) string { return strings.ToLower(filepath.VolumeName(path) + "|" + mountOf(path)) }
+	need[disk(t.Backups)] += uint64(size) + headroom
+	scratch := rehearse && t.Data != "" && (maxGB <= 0 || size <= int64(maxGB)<<30)
+	if scratch {
+		need[disk(t.Data)] += uint64(size) + headroom
+	}
+	check := func(path string) error {
+		have := free(path)
+		want := need[disk(path)]
+		if have > 0 && have < want {
+			return fmt.Errorf("disk_space: %s has %s free; the update's database work needs %s (the database is %s): "+
+				"free some space and the update goes on", path, gib(have), gib(want), gib(uint64(size)))
+		}
+		return nil
+	}
+	if err := check(t.Backups); err != nil {
+		return err
+	}
+	if scratch {
+		return check(t.Data)
+	}
+	return nil
+}
+
+// mountOf is the nearest existing folder of path (disks are told apart by their free
+// space only where the OS says nothing more; the same folder chain means the same disk).
+func mountOf(path string) string {
+	for p := filepath.Clean(path); ; {
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			return deviceOf(p, info)
+		}
+		up := filepath.Dir(p)
+		if up == p {
+			return p
+		}
+		p = up
+	}
+}
+
+func gib(n uint64) string { return fmt.Sprintf("%.1f GiB", float64(n)/(1<<30)) }
 
 func (t Target) bin(name string) string {
 	if t.Bin != nil {

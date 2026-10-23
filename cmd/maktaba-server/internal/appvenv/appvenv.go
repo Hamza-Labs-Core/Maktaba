@@ -30,6 +30,25 @@ type Spec struct {
 	Payload string    // the app's server payload (python/, pipeline/, payload.json)
 	Venv    string    // the venv to build (<state>/venv)
 	Log     io.Writer // the bootstrap's stderr (the app's venv.log)
+	// Python and Pipeline replace the payload's Python and its pipeline folder (the wheel
+	// and its constraints): a plain server install's release, which carries no Python,
+	// builds its venv with the machine's own (Epic 35 design §3.4).
+	Python   string
+	Pipeline string
+}
+
+func (s Spec) python() string {
+	if s.Python != "" {
+		return s.Python
+	}
+	return Python(s.Payload)
+}
+
+func (s Spec) pipeline() string {
+	if s.Pipeline != "" {
+		return s.Pipeline
+	}
+	return filepath.Join(s.Payload, "pipeline")
 }
 
 // Progress is one line of the bootstrap: its share of the whole run (0..1,
@@ -80,10 +99,12 @@ func Python(payload string) string {
 }
 
 // Wheel is the payload's pipeline wheel (there is exactly one).
-func Wheel(payload string) (string, error) {
-	wheels, _ := filepath.Glob(filepath.Join(payload, "pipeline", "maktaba_pipeline-*.whl"))
+func Wheel(payload string) (string, error) { return wheelIn(filepath.Join(payload, "pipeline")) }
+
+func wheelIn(dir string) (string, error) {
+	wheels, _ := filepath.Glob(filepath.Join(dir, "maktaba_pipeline-*.whl"))
 	if len(wheels) != 1 {
-		return "", fmt.Errorf("the app's pipeline folder must hold one maktaba_pipeline wheel (found %d)", len(wheels))
+		return "", fmt.Errorf("the pipeline folder %s must hold one maktaba_pipeline wheel (found %d)", dir, len(wheels))
 	}
 	return wheels[0], nil
 }
@@ -166,8 +187,8 @@ func bootstrapEnv(environ []string, wheel string) []string {
 // stop (SIGTERM; CTRL_BREAK on Windows), which it does at once, stopping pip
 // first; Run then returns ErrInterrupted.
 func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error) {
-	py := Python(spec.Payload)
-	wheel, err := Wheel(spec.Payload)
+	py := spec.python()
+	wheel, err := wheelIn(spec.pipeline())
 	if err != nil {
 		return Result{}, err
 	}
@@ -183,7 +204,7 @@ func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error
 	// be asked is killed after stopWait, and the next run resumes the build.
 	bootstrap := func(extra ...string) (*exec.Cmd, *ctrlbreak.Stopper) {
 		args := append([]string{"-m", "maktaba_pipeline.venv_bootstrap", "--python", py,
-			"--payload", filepath.Join(spec.Payload, "pipeline"), "--venv", spec.Venv}, extra...)
+			"--payload", spec.pipeline(), "--venv", spec.Venv}, extra...)
 		cmd := exec.CommandContext(ctx, py, args...)
 		cmd.Env = env
 		cmd.Stderr = logw

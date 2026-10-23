@@ -106,9 +106,10 @@ type Records interface {
 
 // Rehearser rehearses migrations on a scratch copy of the home's database.
 type Rehearser interface {
-	// Check answers whether the database can be dumped here (the program, its version):
+	// Check answers whether the database can be dumped here (the program, its version,
+	// room for the dump, and for a rehearsal of a database up to maxGB its scratch copy):
 	// a home that could not take its pre-update dump fails its preflight, not its start.
-	Check(ctx context.Context) error
+	Check(ctx context.Context, rehearse bool, maxGB int) error
 	Rehearse(ctx context.Context, api, migrations string, maxGB int, log io.Writer) (Rehearsal, error)
 	// DumpAside dumps the database as it is (a failed release's state) beside the
 	// backups; best effort.
@@ -402,7 +403,7 @@ func (m *Machine) prepare(ctx context.Context) {
 				return "", err
 			}
 			if j.Job.Home && m.Rehearser != nil {
-				return "", m.Rehearser.Check(ctx)
+				return "", m.Rehearser.Check(ctx, j.Job.Rehearse, j.Job.RehearseMaxGB)
 			}
 			return "", nil
 		}},
@@ -1021,7 +1022,39 @@ func (m *Machine) commit() bool {
 	_ = m.endStep(StepCommit, "done", "")
 	_ = m.mutate(func(j *Journal) { j.State, j.Step = StateCommitted, "" })
 	m.logf("committed %s", j.Job.Version)
+	m.replaceLauncher()
 	return true
+}
+
+// replaceLauncher hands over to the release's launcher when it needs a newer one (story
+// 35.7 AC6): put in place, then a restart (exit 75) the running launcher answers by
+// running the new one. A failure leaves the release committed (the launcher it runs
+// under speaks the protocol it was installed with; the preflight refused the others).
+func (m *Machine) replaceLauncher() {
+	r, ok := m.Installer.(LauncherReplacer)
+	if !ok {
+		return
+	}
+	j := m.Status().Journal
+	if j == nil || !needsNewLauncher(j) {
+		return
+	}
+	_ = m.beginStep(StepLauncher)
+	replaced, err := r.ReplaceLauncher(j)
+	if err != nil {
+		_ = m.endStep(StepLauncher, "failed", err.Error())
+		m.logf("the launcher could not be replaced: %v", err)
+		return
+	}
+	if !replaced {
+		_ = m.endStep(StepLauncher, "skipped", "")
+		return
+	}
+	_ = m.endStep(StepLauncher, "done", fmt.Sprintf("launcher protocol %d", j.LauncherProtocol))
+	m.logf("the launcher of %s (protocol %d) takes over: restarting", j.Job.Version, j.LauncherProtocol)
+	if m.Exit != nil {
+		m.Exit(75)
+	}
 }
 
 // rollback switches back to the release that ran before and restarts on it; where the
