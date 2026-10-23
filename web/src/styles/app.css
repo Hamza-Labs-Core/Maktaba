@@ -3358,6 +3358,7 @@ a.mkt-guide__chanhead:hover {
   width: 100%;
   aspect-ratio: 16 / 9;
   margin-block-end: var(--space-2);
+}
 /* small pictures beside a video's title in tables and admin lists */
 .mkt-history__video,
 .mkt-thumb-row {
