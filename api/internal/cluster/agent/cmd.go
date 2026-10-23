@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -17,7 +18,12 @@ var commandNames = map[string]bool{
 	"home.moved": true, "home.database": true,
 	// a standby home's kit, and where the standbys are (Epic 37, "Emergency promotion")
 	"standby.kit": true, "standby.commit": true, "standby.forget": true, "home.standbys": true,
+	// a machine's part of an automatic update (Epic 35 story 35.12): machine agents only
+	"update.prepare": true, "update.apply": true, "update.status": true, "update.abort": true, "update.rollback": true,
 }
+
+// machineOnly are the commands only a machine's own agent (its supervisor) takes.
+func machineOnly(name string) bool { return strings.HasPrefix(name, "update.") }
 
 // Accepts reports whether the hub sends a command of this name at all (CommandWithin
 // refuses any other with ErrBadCommand): the switch's tests ask it of their fake hub.
@@ -74,7 +80,7 @@ func (h *Hub) CommandWithin(ctx context.Context, sessionID, name string, args js
 	if s == nil {
 		return CmdResult{}, ErrNoSession
 	}
-	if !commandNames[name] {
+	if !commandNames[name] || (machineOnly(name) && !s.machineAgent()) {
 		return CmdResult{}, ErrBadCommand
 	}
 	if len(args) == 0 || string(args) == "null" {

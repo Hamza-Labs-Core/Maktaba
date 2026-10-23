@@ -11,8 +11,9 @@
 //   - the system-tray icon + menu (Story 13.4) with Show / Hide / Quit
 //     and a window-close interception so closing hides to tray instead
 //     of quitting (Story 13.4 AC-5).
-//   - window-state persistence (Story 13.1 AC-2) and the auto-update
-//     plugin (Story 13.8).
+//   - window-state persistence (Story 13.1 AC-2), the auto-update
+//     plugin (Story 13.8) and the notification plugin (Epic 35: a release
+//     the home ordered is ready to install here).
 //   - `discover_servers` — passive mDNS browse for `_maktaba._tcp.local.`
 //     (Story 13.5) and `app_version` for the Settings→About skew check
 //     (Story 13.8), both exposed via the invoke handler.
@@ -29,6 +30,7 @@ use tauri::{
 use tauri_plugin_deep_link::DeepLinkExt;
 
 mod agent;
+mod autoinstall;
 mod lang;
 mod mode;
 mod setup;
@@ -123,7 +125,12 @@ pub fn run() {
     // on_open_url.
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // the server asking for an app update it ordered (Epic 35): no window
+            if argv.iter().any(|a| a.starts_with(autoinstall::INSTALL_URL)) {
+                shell::install_requested(app);
+                return;
+            }
             focus_main(app);
         }));
     }
@@ -135,6 +142,8 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // the OS notification of a release the home ordered, ready here (shell.rs)
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Deep links (`maktaba://…`, Story 13.x). At runtime we
             // register the scheme (no-op when the bundle already owns it
@@ -152,6 +161,10 @@ pub fn run() {
                 let _ = app.deep_link().register_all();
                 app.deep_link().on_open_url(move |event| {
                     let urls: Vec<String> = event.urls().iter().map(|u| u.to_string()).collect();
+                    if urls.iter().any(|u| u.starts_with(autoinstall::INSTALL_URL)) {
+                        shell::install_requested(&handle);
+                        return;
+                    }
                     if !urls.is_empty() {
                         focus_main(&handle);
                         let _ = handle.emit("deep-link", urls);

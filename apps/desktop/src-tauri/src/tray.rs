@@ -9,6 +9,7 @@
 // `media-pause` and `preferences` are also forwarded to the web shell
 // (web/src/lib/desktop.ts KNOWN_MENU_IDS). The words are the system's UI
 // language's, English or Arabic (lang.rs).
+use crate::autoinstall::Shown;
 use crate::lang::{fill, Lang};
 use crate::status::{ServerStatus, NO_ANSWER};
 
@@ -192,6 +193,21 @@ pub fn entries_with_model(
     model: Option<&str>,
     detail: Option<&str>,
 ) -> Vec<Entry> {
+    entries_with_order(lang, server, status, update_ready, None, model, detail)
+}
+
+/// entries_with_model with the release the home ordered (owner decision D1): its item
+/// in the update's place, saying who waits (this home, or the cluster's update), and
+/// once clicked that it installs when the cluster is ready.
+pub fn entries_with_order(
+    lang: Lang,
+    server: bool,
+    status: &ServerStatus,
+    update_ready: bool,
+    order: Option<&Shown>,
+    model: Option<&str>,
+    detail: Option<&str>,
+) -> Vec<Entry> {
     let w = lang.words();
     let mut out = Vec::new();
     if server {
@@ -203,8 +219,15 @@ pub fn entries_with_model(
                 enabled: false,
             });
         }
-        if update_ready {
-            out.push(item("update", w.update_ready));
+        match order {
+            Some(o @ Shown::Ready { .. }) => out.push(item("update", order_label(lang, o))),
+            Some(o @ Shown::Clicked { .. }) => out.push(Entry::Item {
+                id: "update",
+                label: order_label(lang, o),
+                enabled: false,
+            }),
+            None if update_ready => out.push(item("update", w.update_ready)),
+            None => {}
         }
         out.push(Entry::Separator);
     }
@@ -237,6 +260,31 @@ pub fn entries_with_model(
         out.push(item("quit", w.quit));
     }
     out
+}
+
+/// The update item's words for the home's order (the tray's, and the window menu's on
+/// Linux): ready, saying who waits (this home, or the cluster's update), or clicked.
+fn order_label(lang: Lang, order: &Shown) -> String {
+    let w = lang.words();
+    match order {
+        Shown::Ready { version, home } => {
+            let line = if *home { w.order_home } else { w.order_node };
+            fill(line, &[("version", version)])
+        }
+        Shown::Clicked { version } => fill(w.order_clicked, &[("version", version)]),
+    }
+}
+
+/// The OS notification's text once the home's order of `version` is ready here (once
+/// per order; the Mac's menu-bar item has no badge to show it).
+pub fn order_notice(lang: Lang, version: &str, home: bool) -> String {
+    let w = lang.words();
+    let line = if home {
+        w.order_ready_home
+    } else {
+        w.order_ready_node
+    };
+    fill(line, &[("version", version)])
 }
 
 /// The window menu's Server submenu (Linux without a tray, Epic 39 story
@@ -282,6 +330,16 @@ pub fn window_label(lang: Lang, id: &str) -> Option<&'static str> {
         "stop-and-quit" => w.stop_and_quit,
         _ => return None,
     })
+}
+
+/// The window menu's update item: the home's order said as the tray says it, else
+/// window_label's (what the update does from a menu).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn window_update_label(lang: Lang, order: Option<&Shown>) -> String {
+    match order {
+        Some(o) => order_label(lang, o),
+        None => lang.words().install_update.to_string(),
+    }
 }
 
 /// A window item is enabled when the tray menu would offer it.
@@ -422,6 +480,135 @@ mod tests {
     fn update_ready_adds_the_install_item_under_the_status() {
         let e = entries(Lang::En, true, &ServerStatus::Running, true);
         assert_eq!(ids(&e)[..2], ["status", "update"]);
+    }
+
+    #[test]
+    fn the_home_s_order_says_who_waits_and_is_clicked_once() {
+        let label = |e: &[Entry]| match &e[1] {
+            Entry::Item { label, enabled, .. } => (label.clone(), *enabled),
+            Entry::Separator => panic!("no item"),
+        };
+        let on = |order: Shown| {
+            entries_with_order(
+                Lang::En,
+                true,
+                &ServerStatus::Running,
+                false,
+                Some(&order),
+                None,
+                None,
+            )
+        };
+        let home = on(Shown::Ready {
+            version: "1.5.0".into(),
+            home: true,
+        });
+        assert_eq!(ids(&home)[..2], ["status", "update"]);
+        assert_eq!(
+            label(&home),
+            (
+                "Install Maktaba 1.5.0 (this home's update) and restart".into(),
+                true
+            )
+        );
+        let node = on(Shown::Ready {
+            version: "1.5.0".into(),
+            home: false,
+        });
+        assert_eq!(
+            label(&node),
+            (
+                "Install Maktaba 1.5.0: the cluster's update waits for this machine".into(),
+                true
+            )
+        );
+        let clicked = on(Shown::Clicked {
+            version: "1.5.0".into(),
+        });
+        assert_eq!(
+            label(&clicked),
+            (
+                "Installing Maktaba 1.5.0 when the cluster is ready…".into(),
+                false
+            )
+        );
+    }
+
+    #[test]
+    fn the_window_menu_says_the_order_as_the_tray_does() {
+        for lang in [Lang::En, Lang::Ar] {
+            for order in [
+                Shown::Ready {
+                    version: "1.5.0".into(),
+                    home: true,
+                },
+                Shown::Ready {
+                    version: "1.5.0".into(),
+                    home: false,
+                },
+                Shown::Clicked {
+                    version: "1.5.0".into(),
+                },
+            ] {
+                let tray = entries_with_order(
+                    lang,
+                    true,
+                    &ServerStatus::Running,
+                    true,
+                    Some(&order),
+                    None,
+                    None,
+                );
+                let tray_label = tray.iter().find_map(|e| match e {
+                    Entry::Item {
+                        id: "update",
+                        label,
+                        ..
+                    } => Some(label.clone()),
+                    _ => None,
+                });
+                assert_eq!(
+                    Some(window_update_label(lang, Some(&order))),
+                    tray_label,
+                    "{lang:?} {order:?}"
+                );
+            }
+            // no order: what the update does from a menu
+            assert_eq!(
+                window_update_label(lang, None),
+                window_label(lang, "update").unwrap()
+            );
+        }
+        assert_eq!(
+            window_update_label(
+                Lang::En,
+                Some(&Shown::Ready {
+                    version: "1.5.0".into(),
+                    home: false
+                })
+            ),
+            "Install Maktaba 1.5.0: the cluster's update waits for this machine"
+        );
+    }
+
+    #[test]
+    fn the_notification_says_who_waits() {
+        assert_eq!(
+            order_notice(Lang::En, "1.5.0", true),
+            "Maktaba 1.5.0 is ready to install on this home"
+        );
+        assert_eq!(
+            order_notice(Lang::En, "1.5.0", false),
+            "Maktaba 1.5.0 is ready: the cluster's update waits for this machine"
+        );
+        for home in [true, false] {
+            let ar = order_notice(Lang::Ar, "1.5.0", home);
+            assert!(ar.contains("1.5.0") && ar.contains("مكتبة"), "{ar}");
+        }
+        assert_ne!(
+            order_notice(Lang::Ar, "1.5.0", true),
+            order_notice(Lang::Ar, "1.5.0", false)
+        );
     }
 
     #[test]

@@ -6,6 +6,8 @@
 //   POST /api/cluster/updates/skip       {version}
 //   POST /api/cluster/updates/defer      {until}
 //   POST /api/cluster/updates/check      check GitHub now
+//   GET  /api/cluster/updates/runs[/{id}] history, a run with its steps and machines (35.4, 35.12)
+//   POST /api/cluster/updates/runs/{id}/cancel|resume, /targets/{node}/retry|skip|rollback
 import { api } from "./api";
 
 export interface UpdatesPolicy {
@@ -49,18 +51,143 @@ export interface UpdatesPlan {
   waiting?: string;
 }
 
+/** One machine of the Updates page: the home, then every joined machine (story 35.12). */
+export interface UpdateMachine {
+  id: string;
+  name: string;
+  role: "home" | "node";
+  version: string;
+  /** up_to_date, behind, updating (the home during a run), ahead_of_home, offline, worker_only,
+   * or a run's target state */
+  state: string;
+  platform?: string;
+  /** the install kind: layout, runtime, appbundle, flat */
+  kind?: string;
+  /** the release the active run brings it to (its desktop app shows it while it waits for a click) */
+  target?: string;
+}
+
+/** An update run (update_runs). */
+export interface UpdateRun {
+  id: string;
+  version: string;
+  from_version: string;
+  trigger: "auto" | "manual" | "catch_up" | "retry";
+  state: string;
+  step: string;
+  started_at: string;
+  finished_at?: string;
+  error?: { code?: string; step?: string; detail?: string; reason?: string; [k: string]: unknown };
+}
+
+export interface UpdateRunStep {
+  seq: number;
+  host: string;
+  step: string;
+  state: string;
+  started_at: string;
+  finished_at?: string;
+  detail?: { detail?: string };
+}
+
+export interface UpdateTarget {
+  node_id: string;
+  name: string;
+  ord: number;
+  platform: string;
+  kind: string;
+  /** pending, preparing, prepared, waiting_click, clicked, applying, healthy, failed_prepare, failed,
+   * rolled_back, held, skipped, offline, worker_only, needs_person (an install that cannot update
+   * itself as it is: its error's detail says what to do) */
+  state: string;
+  from_version: string;
+  to_version: string;
+  attempts: number;
+  /** code (updates.code.<code>), detail: the server's words, which can carry the fix */
+  error?: { code?: string; detail?: string; held_by?: string; [k: string]: unknown };
+  applied_at?: string;
+  healthy_at?: string;
+}
+
+/** GET /api/cluster/updates/runs/{id}. */
+export interface UpdateRunView extends UpdateRun {
+  install_kind: string;
+  detail: { waiting?: string; no_home?: boolean; home?: { state?: string } };
+  steps: UpdateRunStep[];
+  targets: UpdateTarget[];
+}
+
 export interface UpdatesOverview {
   current_version: string;
   watermark: string;
   policy: UpdatesPolicy;
   auto_install_available: boolean;
   plan: UpdatesPlan;
-  run?: { id: string; version: string; state: string; step: string };
+  run?: UpdateRun;
+  last_run?: UpdateRun;
   catalog: CatalogRelease[];
   last_check_ok?: string;
   last_check_error?: string;
   check_stale: boolean;
   time_zone: string;
+  machines?: UpdateMachine[];
+}
+
+/** The states of a run that are over. */
+export const RUN_ENDED = new Set([
+  "done",
+  "done_with_failures",
+  "held",
+  "failed",
+  "rolled_back",
+  "failed_rollback",
+  "cancelled",
+  "superseded",
+]);
+
+/** A run may be cancelled until the home begins switching (the API answers 409 past_switch after), and
+ * during its rollout (the machines not yet updating are left as they are). */
+export const RUN_CANCELLABLE = new Set([
+  "planned",
+  "home_preparing",
+  "home_prepared",
+  "draining",
+  "home_committed",
+  "rolling_out",
+]);
+
+/** The states of a desktop app that runs the server and waits for a click there (owner decision D1). */
+export const WAITING_CLICK = new Set(["waiting_click", "clicked", "awaiting_click"]);
+
+/** A machine of a run that is over may be retried in these states (a new run for it): it failed,
+ * was held or offline, or needs a person (an install that cannot update itself as it is: the
+ * fix is in its error's detail). */
+export const TARGET_RETRYABLE = new Set([
+  "failed",
+  "failed_prepare",
+  "rolled_back",
+  "held",
+  "offline",
+  "needs_person",
+]);
+
+/** A machine of a run under way may be skipped in these states: not yet updating (a desktop app
+ * waiting for its click, or clicked, has its order withdrawn), or needing a person. */
+export const TARGET_SKIPPABLE = new Set([
+  "pending",
+  "preparing",
+  "prepared",
+  "held",
+  "waiting_click",
+  "clicked",
+  "needs_person",
+]);
+
+/** Whether a run may be cancelled now: before the home switches (its desktop app's order is withdrawn
+ * until its go), or during the rollout. */
+export function runCancellable(view: Pick<UpdateRunView, "state" | "detail">): boolean {
+  if (RUN_CANCELLABLE.has(view.state)) return true;
+  return view.state === "home_applying" && WAITING_CLICK.has(view.detail?.home?.state ?? "");
 }
 
 export const updatesApi = {
@@ -75,6 +202,19 @@ export const updatesApi = {
   skip: (version: string) => api.post("/api/cluster/updates/skip", { version }),
   defer: (until: string) => api.post("/api/cluster/updates/defer", { until }),
   check: () => api.post("/api/cluster/updates/check", {}),
+  runs: (limit = 20) => api.get<{ items: UpdateRun[] }>(`/api/cluster/updates/runs?limit=${limit}`),
+  run: (id: string) =>
+    api.get<UpdateRunView>(`/api/cluster/updates/runs/${encodeURIComponent(id)}`),
+  cancel: (id: string) =>
+    api.post(`/api/cluster/updates/runs/${encodeURIComponent(id)}/cancel`, {}),
+  resume: (id: string) =>
+    api.post<{ run_id: string }>(`/api/cluster/updates/runs/${encodeURIComponent(id)}/resume`, {}),
+  targetAction: (id: string, node: string, action: "retry" | "skip" | "rollback") =>
+    api.post(
+      `/api/cluster/updates/runs/${encodeURIComponent(id)}/targets/${encodeURIComponent(node)}/${action}`,
+      {}
+    ),
+  logURL: (id: string) => `/api/cluster/updates/runs/${encodeURIComponent(id)}/log`,
 };
 
 /** A quiet window "HH:MM-HH:MM" (may cross midnight), longer than 30 minutes. */

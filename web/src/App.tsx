@@ -36,6 +36,7 @@ import { AdminUsers } from "./pages/Admin/Users";
 import { AdminAuditLog } from "./pages/Admin/AuditLog";
 import { SystemHealth } from "./pages/Admin/SystemHealth";
 import { Machines } from "./pages/Admin/Machines";
+import { AdminUpdates } from "./pages/Admin/Updates";
 import { AdminLogs } from "./pages/Admin/Logs";
 import { CloudDevices } from "./pages/Cloud/Devices";
 import { Billing } from "./pages/Cloud/Billing";
@@ -151,6 +152,7 @@ export function App() {
                         <Route path="/admin/audit" element={<AdminAuditLog />} />
                         <Route path="/admin/health" element={<SystemHealth />} />
                         <Route path="/admin/machines" element={<Machines />} />
+                        <Route path="/admin/updates" element={<AdminUpdates />} />
                         <Route path="/admin/logs" element={<AdminLogs />} />
                         <Route path="/admin/devices" element={<CloudDevices />} />
                         <Route path="*" element={<NotFound />} />

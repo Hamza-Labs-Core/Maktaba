@@ -34,6 +34,9 @@ func (b Bundle) Backup(ctx context.Context, now time.Time) (string, error) {
 	return path, b.prune()
 }
 
+// DumpTo is dumpTo (the database step's dump of a failed update's state, set aside).
+func (b Bundle) DumpTo(ctx context.Context, path string) error { return b.dumpTo(ctx, path) }
+
 // dumpTo writes a pg_dump custom-format dump of the app database to path
 // (written beside, path.partial, and renamed into place: a dump cut short is
 // never taken for one).

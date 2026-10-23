@@ -266,6 +266,20 @@ func Build(o Options) (*rv.Manifest, error) {
 				return nil, fmt.Errorf("two cuda constraints files: %s, %s", consCUDA, name)
 			}
 			consCUDA = name
+		case strings.HasPrefix(name, "maktaba-migrations-") && strings.HasSuffix(name, ".tar.gz"):
+			// the release's migrations (Epic 35 phase B): what a home's update rehearses and
+			// a plain server install migrates with
+			if v := strings.TrimSuffix(strings.TrimPrefix(name, "maktaba-migrations-"), ".tar.gz"); v != version {
+				return nil, fmt.Errorf("%s: migrations version %s, tag %s", name, v, o.Tag)
+			}
+			if m.Migrations != nil {
+				return nil, fmt.Errorf("two migrations archives: %s, %s", m.Migrations.Archive, name)
+			}
+			d, err := fileSHA(filepath.Join(o.Dist, name))
+			if err != nil {
+				return nil, err
+			}
+			m.Migrations = &rv.Migrations{Archive: name, SHA256: d}
 		}
 	}
 	if len(m.Assets) == 0 {

@@ -124,6 +124,9 @@ func cachePaths(dir string) (rootPath, metaPath string) {
 // TrustedMaterial returns the newest good trusted root, failing closed with
 // ErrRootExpired when it is older than MaxAge.
 func (s *RootStore) TrustedMaterial() (root.TrustedMaterial, RootInfo, error) {
+	if tm, ok := e2eTrustedRoot(); ok { // a test build's own (root_e2e.go); never in a release
+		return tm, RootInfo{FetchedAt: s.now()}, nil
+	}
 	tr, info, err := s.load()
 	if err != nil {
 		return nil, RootInfo{}, err

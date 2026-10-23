@@ -121,6 +121,7 @@ func TestPinBelowWatermark400(t *testing.T) {
 // Skip and defer are stored in rules.updates and audited (AC8); Update now returns
 // 202 {run_id} (AC7); GET shows the plan.
 func TestSkipDeferRunAndOverview(t *testing.T) {
+	disableAutoInstall(t)
 	ctx := context.Background()
 	f := newFixture(t, sqliteDB(t))
 	seed(t, f.store, rel("1.5.0"), rel("1.6.0"))
@@ -183,14 +184,14 @@ func TestSkipDeferRunAndOverview(t *testing.T) {
 	}
 }
 
-// The orchestrator is story 35.4: a supervisor that does not know /update/start makes
+// The orchestrator is story 35.4: a supervisor that does not know /update/* makes
 // Update now 503 orchestrator_unavailable and the run failed.
 func TestUpdateNowWithoutOrchestrator(t *testing.T) {
 	enableAutoInstall(t)
 	sup := httptest.NewServer(http.NotFoundHandler())
 	defer sup.Close()
 	f := newFixture(t, sqliteDB(t))
-	f.svc.Starter = &SupervisorClient{BaseURL: sup.URL}
+	f.svc.Starter = &Driver{Store: f.store, Svc: f.svc, Home: &SupervisorClient{BaseURL: sup.URL}}
 	seed(t, f.store, rel("1.5.0"))
 	code, body := do(t, newRouter(t, f), "POST", "/api/cluster/updates/run", map[string]any{"confirm": true}, true)
 	if code != http.StatusServiceUnavailable || body["code"] != "orchestrator_unavailable" || body["run_id"] == "" {

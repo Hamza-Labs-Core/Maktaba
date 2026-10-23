@@ -179,7 +179,7 @@ func TestBundleRestartsOn75WithUpdatesOff(t *testing.T) {
 	}
 	b, _ := os.ReadFile(filepath.Join(root, "env"))
 	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
-		if line != "update_disable=1 runtime_owner= launcher= release_dir=" {
+		if line != "update_disable= runtime_owner= launcher= release_dir=" {
 			t.Fatalf("server env %q: want updates off and no release layout", line)
 		}
 	}
@@ -199,7 +199,7 @@ func TestBundleCLI(t *testing.T) {
 	}
 	out.Reset()
 	if code := run([]string{"--app-bundle", bundle, "--root", root, "--status", "--json"}, &out, &errb); code != exitOK ||
-		!strings.Contains(out.String(), `"updates": "with the app"`) {
+		!strings.Contains(out.String(), `"updates": "with the app (the cluster's update: staged here`) {
 		t.Fatalf("--status: code %d, out %q", code, out.String())
 	}
 	var st BundleStatus
@@ -213,7 +213,7 @@ func TestBundleCLI(t *testing.T) {
 	}
 	out.Reset()
 	if code := run([]string{"--app-bundle", bundle, "--root", root, "--status"}, &out, &errb); code != exitOK ||
-		!strings.Contains(out.String(), "server:     "+st.Server+"\n") || !strings.Contains(out.String(), "state:      "+root+"\n") {
+		!strings.Contains(out.String(), "server:     "+st.Server+" (") || !strings.Contains(out.String(), "state:      "+root+"\n") {
 		t.Fatalf("--status: code %d, out %q", code, out.String())
 	}
 	errb.Reset()
@@ -248,7 +248,7 @@ func TestRuntimeOwnerSaysWhoUpdates(t *testing.T) {
 		}
 	}
 	var out bytes.Buffer
-	if code := printBundleStatus(&out, bundle, rt, root, true); code != exitOK || !strings.Contains(out.String(), "by this machine") {
+	if code := printBundleStatus(&out, bundle, rt, root, true); code != exitOK || !strings.Contains(out.String(), "by itself in the window") {
 		t.Fatalf("--status of a headless runtime: %q", out.String())
 	}
 }
@@ -260,10 +260,10 @@ func TestUpdateEnv(t *testing.T) {
 		owner, root string
 		want        string
 	}{
-		{"", "", "MAKTABA_UPDATE_DISABLE=1"}, // Maktaba.app
-		{"", rt, "MAKTABA_RUNTIME_OWNER=app MAKTABA_UPDATE_DISABLE=1"},
-		{`{"owner": "app"}`, rt, "MAKTABA_RUNTIME_OWNER=app MAKTABA_UPDATE_DISABLE=1"},
-		{`{"owner": "someone"}`, rt, "MAKTABA_RUNTIME_OWNER=app MAKTABA_UPDATE_DISABLE=1"},
+		{"", "", ""}, // Maktaba.app: the server updates itself through the app (Epic 35)
+		{"", rt, "MAKTABA_RUNTIME_OWNER=app"},
+		{`{"owner": "app"}`, rt, "MAKTABA_RUNTIME_OWNER=app"},
+		{`{"owner": "someone"}`, rt, "MAKTABA_RUNTIME_OWNER=app"},
 		{`{"owner": "headless"}`, rt, "MAKTABA_RUNTIME_OWNER=headless"},
 	} {
 		_ = os.Remove(filepath.Join(rt, runtimeOwnerFile))

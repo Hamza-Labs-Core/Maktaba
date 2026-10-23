@@ -171,10 +171,30 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def named_wheel(payload: Path) -> Path | None:
+    """The wheel the ``payload.json`` beside ``payload`` names (``pipeline.wheel``), when it
+    names one: an app installed over an older one may keep the older wheel too (the
+    Windows installer's update deletes nothing)."""
+    try:
+        doc = json.loads((payload.parent / "payload.json").read_text(encoding="utf-8"))
+        name = doc["pipeline"]["wheel"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(name, str) or not name:
+        return None
+    return payload / Path(name).name
+
+
 def find_payload(payload: Path, torch: str = "cpu") -> tuple[Path, Path]:
-    """The one ``maktaba_pipeline-*.whl`` and the one ``*constraints.txt`` in ``payload``,
-    or with ``torch="cuda"`` its ``*constraints-cuda.txt`` (torch's CUDA build)."""
-    wheels = sorted(payload.glob("maktaba_pipeline-*.whl"))
+    """The ``maktaba_pipeline-*.whl`` the payload.json beside ``payload`` names, else the
+    one in ``payload``, and the one ``*constraints.txt``, or with ``torch="cuda"`` its
+    ``*constraints-cuda.txt`` (torch's CUDA build)."""
+    named = named_wheel(payload)
+    if named is not None and not named.is_file():
+        raise BootstrapError(
+            f"payload.json names the wheel {named.name}, which {payload} does not hold"
+        )
+    wheels = [named] if named is not None else sorted(payload.glob("maktaba_pipeline-*.whl"))
     cons = sorted(payload.glob("*constraints.txt"))
     if len(wheels) != 1 or len(cons) != 1:
         raise BootstrapError(

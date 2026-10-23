@@ -19,6 +19,7 @@ const (
 	BlockRoleNotRunning        = "role_not_running"
 	BlockRecentCrash           = "recent_crash"
 	BlockSupervisorUnreachable = "supervisor_unreachable"
+	BlockSwitchover            = "switchover_open" // a switch of the home (Epic 37) is under way
 )
 
 // Waiting reasons (Plan.Waiting): why the target does not install now.
@@ -44,6 +45,24 @@ func (f BlockerFunc) Blocked(ctx context.Context) (string, error) { return f(ctx
 // tvInFlight are the TV change states "staged…swapping" (Epic 33 R9.4): a binary change
 // would queue behind them anyway.
 var tvInFlight = []string{"staged", "verifying", "ready", "approved", "swapping"}
+
+// SwitchoverBlocker holds runs while a switch of the home (Epic 37) is under way: both
+// drain the machines and touch the home's database (a migration during its fence fails,
+// a dump put back drops the new home's copy).
+type SwitchoverBlocker struct{ DB *sql.DB }
+
+// Blocked implements Blocker. A database without cluster_switchovers is not blocked.
+func (b SwitchoverBlocker) Blocked(ctx context.Context) (string, error) {
+	var open bool
+	if err := b.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cluster_switchovers
+	    WHERE state NOT IN ('done', 'failed', 'cancelled', 'handed_over'))`).Scan(&open); err != nil {
+		return "", nil
+	}
+	if open {
+		return BlockSwitchover, nil
+	}
+	return "", nil
+}
 
 // TVChangeBlocker holds runs while a TV change is in staged…swapping (story 35.3 AC5).
 type TVChangeBlocker struct{ DB *sql.DB }
@@ -203,12 +222,17 @@ func (s *Service) Plan(ctx context.Context) (Plan, Policy, string, error) {
 	return MakePlan(s.now(), s.loc(), pol, cat, s.Current, wm), pol, wm, nil
 }
 
-// blocked runs the blockers; the first reason wins.
-func (s *Service) blocked(ctx context.Context) (string, error) {
+// blockedFor runs the blockers for a run of version; the first reason wins: an active run that only waits for clicks
+// and that version supersedes does not block it (start supersedes it, once the release's
+// re-check passed).
+func (s *Service) blockedFor(ctx context.Context, version string) (string, error) {
 	if a, err := s.Store.ActiveRun(ctx); err != nil {
 		return "", err
 	} else if a != nil {
-		return BlockActiveRun, nil
+		sp, ok := s.Starter.(superseder)
+		if version == "" || !ok || !sp.Supersedable(ctx, version) {
+			return BlockActiveRun, nil
+		}
 	}
 	for _, b := range s.Blockers {
 		why, err := b.Blocked(ctx)
@@ -250,7 +274,7 @@ func (s *Service) Tick(ctx context.Context) (Decision, error) {
 		}
 		return Decision{Action: "none", Reason: pl.Waiting}, nil
 	}
-	why, err := s.blocked(ctx)
+	why, err := s.blockedFor(ctx, pl.Target.Version)
 	if err != nil {
 		return Decision{Action: "none"}, err
 	}
@@ -318,6 +342,8 @@ func (s *Service) start(ctx context.Context, r Release, pol Policy, trigger, act
 			return Run{}, &withdrawnError{reason: reason}
 		}
 	}
+	// the release can start: a run that only waits for clicks gives way to it
+	s.supersede(ctx, r.Version)
 	run, err := s.Store.InsertRun(ctx, r.Version, NormalizeVersion(s.Current), trigger, actor)
 	if err != nil {
 		return run, err
@@ -329,7 +355,7 @@ func (s *Service) start(ctx context.Context, r Release, pol Policy, trigger, act
 	s.Store.Audit(ctx, actor, src, "run_planned", r.Version, map[string]any{"run_id": run.ID, "trigger": trigger})
 	starter := s.Starter
 	if starter == nil {
-		starter = &SupervisorClient{}
+		starter = noOrchestrator{}
 	}
 	if err := starter.Start(ctx, run.ID); err != nil {
 		code := "start_failed"
@@ -346,6 +372,32 @@ func (s *Service) start(ctx context.Context, r Release, pol Policy, trigger, act
 	}
 	return run, nil
 }
+
+// superseder is a Starter that ends a run waiting only for clicks on desktop apps when
+// a newer release is due (the Driver).
+type superseder interface {
+	Supersedable(ctx context.Context, version string) bool
+	Supersede(ctx context.Context, version string) (bool, error)
+}
+
+// supersede lets a newer release take the place of a run that only waits for clicks
+// (owner decision D1: nothing else waits for ever on a machine nobody clicks).
+func (s *Service) supersede(ctx context.Context, version string) {
+	sp, ok := s.Starter.(superseder)
+	if !ok {
+		return
+	}
+	if done, err := sp.Supersede(ctx, version); err != nil {
+		s.log().Warn("update run not superseded", "event", "update_supersede_failed", "version", version, "err", err.Error())
+	} else if done {
+		s.log().Info("update run superseded", "event", "update_superseded", "version", version)
+	}
+}
+
+// noOrchestrator is the Starter of an API that runs under no supervisor that updates.
+type noOrchestrator struct{}
+
+func (noOrchestrator) Start(context.Context, string) error { return ErrOrchestratorUnavailable }
 
 // RunNow is "Update now" (story 35.3 AC7): the same run at once, ignoring only the
 // window and the release age, never the checks. version "" is the planned target; a
@@ -384,7 +436,7 @@ func (s *Service) RunNow(ctx context.Context, actor, version string) (Run, error
 	if target == nil {
 		return Run{}, ErrNoTarget
 	}
-	why, err := s.blocked(ctx)
+	why, err := s.blockedFor(ctx, target.Version)
 	if err != nil {
 		return Run{}, err
 	}

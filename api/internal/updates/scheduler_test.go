@@ -180,7 +180,7 @@ func TestSchedulerBlockers(t *testing.T) {
 	t.Run("supervisor without an orchestrator fails the run", func(t *testing.T) {
 		f := newFixture(t, sqliteDB(t))
 		seed(t, f.store, rel("1.5.0"))
-		f.svc.Starter = &SupervisorClient{BaseURL: ""}
+		f.svc.Starter = &Driver{Store: f.store, Svc: f.svc, Home: &SupervisorClient{BaseURL: ""}}
 		d, err := f.svc.Tick(ctx)
 		if !errors.Is(err, ErrOrchestratorUnavailable) || d.Action != "failed" {
 			t.Fatalf("tick: %+v %v", d, err)

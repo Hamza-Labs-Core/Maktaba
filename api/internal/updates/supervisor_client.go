@@ -1,72 +1,13 @@
 package updates
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 )
-
-// ErrOrchestratorUnavailable: the supervisor has no update orchestrator (story 35.4 not
-// in this build, or the API is not running under maktaba-server).
-var ErrOrchestratorUnavailable = errors.New("orchestrator_unavailable")
-
-// Starter hands a planned run to the executor.
-type Starter interface {
-	Start(ctx context.Context, runID string) error
-}
-
-// SupervisorClient is the supervisor's loopback admin (MAKTABA_SUPERVISOR_URL):
-// POST /update/start {run_id} (design "APIs", supervisor loopback; the server side is
-// story 35.4).
-type SupervisorClient struct {
-	BaseURL string
-	// Token is the supervisor's local token (MAKTABA_SUPERVISOR_TOKEN), sent as a bearer
-	// when set.
-	Token string
-	HTTP  *http.Client
-}
-
-// Start asks the supervisor to execute runID. A missing supervisor, or one that does not
-// know /update/start (404, 405, 501), is ErrOrchestratorUnavailable.
-func (c *SupervisorClient) Start(ctx context.Context, runID string) error {
-	base := strings.TrimRight(strings.TrimSpace(c.BaseURL), "/")
-	if base == "" {
-		return fmt.Errorf("%w: not running under the maktaba-server supervisor", ErrOrchestratorUnavailable)
-	}
-	body, _ := json.Marshal(map[string]string{"run_id": runID})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/update/start", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
-	}
-	hc := c.HTTP
-	if hc == nil {
-		hc = &http.Client{Timeout: 10 * time.Second}
-	}
-	resp, err := hc.Do(req)
-	if err != nil {
-		return fmt.Errorf("supervisor unreachable: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	switch {
-	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		return nil
-	case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed ||
-		resp.StatusCode == http.StatusNotImplemented:
-		return fmt.Errorf("%w: supervisor answered %d", ErrOrchestratorUnavailable, resp.StatusCode)
-	}
-	return fmt.Errorf("supervisor answered %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
-}
 
 // HomeHealth is the "home is healthy" blocker (story 35.3 AC5): every supervised role
 // running and no crash in the last 10 minutes, read from the supervisor's GET

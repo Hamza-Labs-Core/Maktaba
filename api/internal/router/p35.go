@@ -11,6 +11,7 @@ package router
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,11 +21,70 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/rules"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
 )
+
+// HubRef is the cluster channel as the update driver reaches it: the hub is mounted
+// after the update routes (mountCluster), so the driver reads it through this reference
+// (nil until then: a run waits for its machines).
+type HubRef struct {
+	h atomic.Pointer[agent.Hub]
+}
+
+// Set fills the reference.
+func (r *HubRef) Set(h *agent.Hub) {
+	if r != nil {
+		r.h.Store(h)
+	}
+}
+
+// hubCluster is updates.Cluster over the hub.
+type hubCluster struct{ ref *HubRef }
+
+func (c hubCluster) hub() *agent.Hub {
+	if c.ref == nil {
+		return nil
+	}
+	return c.ref.h.Load()
+}
+
+func (c hubCluster) MachineAgents() map[string]string {
+	if h := c.hub(); h != nil {
+		return h.MachineAgents()
+	}
+	return map[string]string{}
+}
+
+func (c hubCluster) MachineStates() map[string]json.RawMessage {
+	if h := c.hub(); h != nil {
+		return h.MachineStates()
+	}
+	return map[string]json.RawMessage{}
+}
+
+func (c hubCluster) HomeProcesses() []string {
+	if h := c.hub(); h != nil {
+		return h.HomeProcesses()
+	}
+	return nil
+}
+
+func (c hubCluster) Command(ctx context.Context, sid, name string, args any, wait time.Duration) (bool, json.RawMessage, error) {
+	h := c.hub()
+	if h == nil {
+		return false, nil, agent.ErrNoSession
+	}
+	b, err := json.Marshal(args)
+	if err != nil {
+		return false, nil, err
+	}
+	res, err := h.CommandWithin(ctx, sid, name, b, "updates", wait)
+	return res.OK, res.Detail, err
+}
 
 // UpdatesRef is the Epic 35 update handler as the Epic 28 routes see it: p28 mounts
 // before the application database is open, so it reads the handler through this
@@ -64,6 +124,10 @@ type P35Deps struct {
 	GitHubBaseURL string
 	// HTTPClient for GitHub and the supervisor (nil: defaults).
 	HTTPClient *http.Client
+	// Hub is the cluster channel, filled once mounted (nil: a run updates the home only).
+	Hub *HubRef
+	// Home is the home's supervisor (nil: MAKTABA_SUPERVISOR_URL and its token file).
+	Home updates.HomeSupervisor
 }
 
 // MountP35 attaches the update routes and starts the loops.
@@ -92,13 +156,28 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 			Token: getenv("MAKTABA_GITHUB_TOKEN"), Policy: svc.Policy, Current: d.Current}
 	}
 	sup := getenv("MAKTABA_SUPERVISOR_URL")
-	svc.Starter = &updates.SupervisorClient{BaseURL: sup, Token: getenv("MAKTABA_SUPERVISOR_TOKEN"), HTTP: d.HTTPClient}
+	home := d.Home
+	if home == nil {
+		home = &updates.SupervisorClient{BaseURL: sup, TokenFile: getenv("MAKTABA_SUPERVISOR_TOKEN_FILE"), HTTP: d.HTTPClient}
+	}
+	// the cluster's runs (stories 35.4, 35.12): the home's supervisor, then the machines
+	drv := &updates.Driver{Store: store, Svc: svc, Home: home, Cluster: hubCluster{ref: d.Hub}, Log: d.Logger,
+		Getenv: getenv,
+		QuietMaxViewers: func(ctx context.Context) int {
+			cfg, err := tvchange.LoadConfig(ctx, d.DB)
+			if err != nil {
+				return 0
+			}
+			return cfg.QuietMaxViewers
+		}}
+	svc.Starter = drv
 	svc.Blockers = []updates.Blocker{
 		updates.TVChangeBlocker{DB: d.DB},
+		updates.SwitchoverBlocker{DB: d.DB},
 		&updates.HomeHealth{BaseURL: sup, HTTP: d.HTTPClient},
 	}
 	rulesHandler := &rules.Handler{DB: d.DB, Staging: tvchange.NewDrafts(d.DB)}
-	h := &updates.Handler{Svc: svc, RulesPatch: rulesHandler.Patch}
+	h := &updates.Handler{Svc: svc, Driver: drv, RulesPatch: rulesHandler.Patch}
 	h.Mount(r)
 	if d.Ref != nil {
 		d.Ref.h.Store(h)
@@ -118,6 +197,7 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 			go svc.Discoverer.Run(ctx, interval)
 		}
 		go svc.RunScheduler(ctx)
+		go drv.Run(ctx)
 	}
 	return h
 }

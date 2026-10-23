@@ -29,9 +29,13 @@ import (
 // updates arrive with the app, not on their own.
 const EnvAppBundle = "MAKTABA_APP_BUNDLE"
 
-// envUpdateDisable is the API's no-network update kill switch (Epic 28/35):
-// inside the app there is one updater, the app's.
-const envUpdateDisable = "MAKTABA_UPDATE_DISABLE"
+// EnvAppBundled is the app's own payload, set beside MAKTABA_APP_BUNDLE when a kept
+// copy of an earlier payload runs in its place (a rolled-back app update, Epic 35).
+const EnvAppBundled = "MAKTABA_APP_BUNDLED"
+
+// EnvLauncherRoot is the launcher's state root: where the server's update leaves this
+// launcher's guard (updates/pending.json) and the payload override (Epic 35).
+const EnvLauncherRoot = "MAKTABA_LAUNCHER_ROOT"
 
 // The Windows app's files that mark <install> (contract-agent of Epic 38):
 // the shell beside the payload, and the payload's manifest.

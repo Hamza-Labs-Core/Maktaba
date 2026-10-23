@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -304,8 +305,8 @@ func TestWindowsAppServeStopEvent(t *testing.T) {
 	}
 	checkAskedToStop(t, l)
 	b, _ := os.ReadFile(filepath.Join(root, "env"))
-	if got := string(b); got != "update_disable=1 runtime_owner= launcher= release_dir=\n" {
-		t.Fatalf("server env %q: want updates off and no release layout", got)
+	if got := string(b); got != "update_disable= runtime_owner= launcher= release_dir=\n" {
+		t.Fatalf("server env %q: want no release layout", got)
 	}
 }
 
@@ -346,7 +347,7 @@ func TestWindowsAppDetectedStatus(t *testing.T) {
 	wantRoot := filepath.Join(local, "Maktaba")
 	if st.AppBundle != wantPayload || st.Server != filepath.Join(wantPayload, "bin", "maktaba-server.exe") ||
 		st.Root != wantRoot || st.LauncherLog != filepath.Join(wantRoot, "updates", "launcher.log") ||
-		st.StopEvent != StopEventName || st.Updates != "with the app" {
+		st.StopEvent != StopEventName || !strings.HasPrefix(st.Updates, "with the app (the cluster's update: staged here") {
 		t.Fatalf("--status --json = %+v\nwant app_bundle %q, root %q", st, wantPayload, wantRoot)
 	}
 

@@ -35,7 +35,26 @@ func backends(t *testing.T) []backend {
 func sqliteDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db := tvchangetest.SQLite(t)
-	for _, s := range slotStatements(t, "0132_update_runs.sqlite.sql") {
+	for _, slot := range []string{"0132_update_runs.sqlite.sql", "0149_update_run_detail.sqlite.sql"} {
+		for _, s := range slotStatements(t, slot) {
+			// the API's SQLite applier takes ADD COLUMN IF NOT EXISTS (api/migrate_sqlite.go);
+			// a fresh test database has none of them yet
+			s = strings.Replace(s, "ADD COLUMN IF NOT EXISTS", "ADD COLUMN", 1)
+			if _, err := db.Exec(s); err != nil {
+				t.Fatalf("%s: %v", s, err)
+			}
+		}
+	}
+	// what the update driver reads of the cluster and the jobs (slots 0103, 0135; 0002;
+	// Epic 33's channel_runtime): the columns it uses
+	for _, s := range []string{
+		`CREATE TABLE IF NOT EXISTS cluster_nodes (id TEXT PRIMARY KEY, name TEXT NOT NULL, state TEXT NOT NULL,
+			platform TEXT, version TEXT, full_node INTEGER NOT NULL DEFAULT 0, drain INTEGER NOT NULL DEFAULT 0)`,
+		`CREATE TABLE IF NOT EXISTS processing_jobs (id TEXT PRIMARY KEY, state TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS channel_runtime (channel_id TEXT PRIMARY KEY, viewer_count INTEGER NOT NULL DEFAULT 0,
+			host_id TEXT, state TEXT NOT NULL DEFAULT 'idle')`,
+		`CREATE TABLE IF NOT EXISTS cluster_switchovers (id TEXT PRIMARY KEY, state TEXT NOT NULL)`,
+	} {
 		if _, err := db.Exec(s); err != nil {
 			t.Fatalf("%s: %v", s, err)
 		}
@@ -115,6 +134,15 @@ func (r *recNotifier) find(kind string) *recNotice {
 }
 
 // enableAutoInstall turns the phase-A build switch on for one test.
+// disableAutoInstall is a build that turned automatic installs off at link time
+// (the phase-A behaviour: check, catalog and notify only).
+func disableAutoInstall(t *testing.T) {
+	t.Helper()
+	old := autoInstallEnabled
+	autoInstallEnabled = "false"
+	t.Cleanup(func() { autoInstallEnabled = old })
+}
+
 func enableAutoInstall(t *testing.T) {
 	t.Helper()
 	old := autoInstallEnabled

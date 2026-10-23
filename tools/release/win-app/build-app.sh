@@ -3,8 +3,8 @@
 # and <install>\server as one NSIS installer (current user, %LOCALAPPDATA%\Maktaba, no
 # administrator): payload.sh, then `tauri build` with the overlay it writes, then the hooks'
 # test (test-hooks.sh) and check.sh on the installer (a silent install over a client-only
-# app, a reinstall and an uninstall, in a temporary folder). `make win-app` runs
-# it; so does CI's win-app gate. desktop-release.yml runs the same three steps around
+# app, a reinstall, an update (/UPDATE) and an uninstall, in a temporary folder). `make
+# win-app` runs it; so does CI's win-app gate. desktop-release.yml runs the same three steps around
 # tauri-action (which also publishes the updater feed).
 #
 # Unsigned: SmartScreen warns on the first run of a downloaded installer. Authenticode

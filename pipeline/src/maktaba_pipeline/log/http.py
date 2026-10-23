@@ -22,6 +22,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from .. import __version__
 from .liveness import LoopHeartbeat, get_heartbeat
 from .ring import LogRingBuffer, get_ring
 
@@ -32,14 +33,18 @@ def build_health_response(hb: LoopHeartbeat | None) -> tuple[int, str, bytes]:
     """``/healthz``: 200 while the event loop beats, 503 once it is stale.
 
     Without a heartbeat installed (the loop task not started) the process
-    is reported alive, like a plain liveness endpoint.
+    is reported alive, like a plain liveness endpoint. Both say the
+    pipeline's version: an update's watch checks that the pipeline runs the
+    new release (Epic 35 story 35.4 AC7).
     """
     if hb is None or hb.healthy():
-        return 200, "application/json", b'{"status":"ok","service":"pipeline"}'
+        ok = {"status": "ok", "service": "pipeline", "version": __version__}
+        return 200, "application/json", json.dumps(ok).encode("utf-8")
     body = json.dumps(
         {
             "status": "fail",
             "service": "pipeline",
+            "version": __version__,
             "checks": {
                 "event_loop": {
                     "status": "fail",

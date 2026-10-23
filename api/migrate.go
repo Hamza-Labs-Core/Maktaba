@@ -41,12 +41,15 @@ func runMigrate(argv []string) error {
 		dsn      string
 		dialect  string
 		timeout  time.Duration
+		lockWait time.Duration
 		showHelp bool
 	)
 	fs.StringVar(&dir, "dir", defaultMigrationsDir(), "Migrations directory")
 	fs.StringVar(&dsn, "dsn", os.Getenv("DATABASE_URL"), "Database DSN (default: $DATABASE_URL)")
 	fs.StringVar(&dialect, "dialect", "postgres", "SQL dialect: postgres, or sqlite (chosen automatically for sqlite:// DSNs)")
 	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "Overall migration timeout (0: none)")
+	fs.DurationVar(&lockWait, "lock-timeout", 0, "How long one statement waits for a lock another session holds "+
+		"before it fails (Postgres lock_timeout; 0: as long as it takes)")
 	fs.BoolVar(&showHelp, "help", false, "Show help")
 
 	fs.Usage = func() {
@@ -142,6 +145,11 @@ Flags:`)
 	defer cancel()
 
 	dsn = pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping)
+	if lockWait > 0 {
+		// every session goose opens: a migration never waits forever on another's lock
+		// (an update's database step ends the other sessions and tries again)
+		dsn = pgdsn.WithParam(dsn, "lock_timeout", strconv.FormatInt(lockWait.Milliseconds(), 10))
+	}
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
@@ -364,7 +372,8 @@ func validateDir(dir string) error {
 }
 
 // defaultMigrationsDir resolves the migrations directory: MAKTABA_MIGRATIONS_DIR,
-// else the migrations/ of the app payload this binary is in
+// else the migrations/ beside this binary (a release of the side-by-side layout,
+// bin/releases/<v>/migrations), else the migrations/ of the app payload this binary is in
 // (<payload>/bin/maktaba-api beside <payload>/migrations: the desktop apps and
 // the Linux runtime copy, whose working directory is the user's data, never a
 // checkout), else shared/db/migrations found by walking up from the working
@@ -384,9 +393,13 @@ func migrationsDirFor(env, exe, cwd string) string {
 		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = resolved
 		}
-		candidate := filepath.Join(filepath.Dir(filepath.Dir(exe)), "migrations")
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
+		// a plain server release (Epic 35: bin/releases/<v>/maktaba-api beside its
+		// migrations), then an app payload's
+		for _, candidate := range []string{filepath.Join(filepath.Dir(exe), "migrations"),
+			filepath.Join(filepath.Dir(filepath.Dir(exe)), "migrations")} {
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				return candidate
+			}
 		}
 	}
 	if cwd == "" {

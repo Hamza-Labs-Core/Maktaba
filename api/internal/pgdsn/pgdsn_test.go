@@ -236,3 +236,18 @@ func TestPreferConnector(t *testing.T) {
 		t.Fatalf("want two settled lines (disable, then require), got:\n%s", logs.String())
 	}
 }
+
+// WithParam sets a session setting lib/pq sends to the server (migrate --lock-timeout),
+// in a URL or a key=value dsn.
+func TestWithParam(t *testing.T) {
+	for in, want := range map[string]string{
+		"postgres://u@h:5432/db?sslmode=disable": "postgres://u@h:5432/db?lock_timeout=120000&sslmode=disable",
+		"postgresql://u@h/db":                    "postgresql://u@h/db?lock_timeout=120000",
+		"host=h dbname=db":                       "lock_timeout=120000 host=h dbname=db",
+		"host=h lock_timeout=5 dbname=db":        "host=h lock_timeout=120000 dbname=db",
+	} {
+		if got := WithParam(in, "lock_timeout", "120000"); got != want {
+			t.Errorf("WithParam(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

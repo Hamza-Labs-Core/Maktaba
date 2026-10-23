@@ -170,6 +170,7 @@ func TestMakePlanAgeDeferralWindow(t *testing.T) {
 }
 
 func TestMakePlanPhaseA(t *testing.T) {
+	disableAutoInstall(t)
 	ny := mustLoc(t, "America/New_York")
 	cat := []Release{rel("1.5.0")}
 	pl := MakePlan(at(ny, 2026, 10, 22, 3, 5), ny, DefaultPolicy(), cat, "1.4.0", "")

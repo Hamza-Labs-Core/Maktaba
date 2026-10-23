@@ -91,7 +91,7 @@ func homeAway(client *http.Client, api *url.URL) (away, ok bool) {
 
 // startNodeServices starts the machine agent when this machine is a full node; a node
 // config that cannot be read is an error (supervisor.NodeOf), never a home's start.
-func startNodeServices(ctx context.Context, cfg config.Config, commands machineagent.Command) (*nodeServices, error) {
+func startNodeServices(ctx context.Context, cfg config.Config, commands machineagent.Command, upd func() *updates) (*nodeServices, error) {
 	n, err := supervisor.NodeOf(cfg)
 	if err != nil {
 		return nil, err
@@ -110,12 +110,15 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 		ID: machineagent.Identity{NodeID: n.NodeID, Node8: n.Node8(), PrivateKey: n.PrivateKey,
 			ClusterPub: n.Home.ClusterPub, HomeURL: n.HomeURL(), Host: host},
 		State: func() machineagent.UpdateState {
-			layout := "flat"
+			st := machineagent.UpdateState{Version: version.Version, Platform: runtime.GOOS + "-" + runtime.GOARCH,
+				Layout: "flat"}
 			if os.Getenv("MAKTABA_RELEASE_DIR") != "" {
-				layout = "side_by_side"
+				st.Layout = "layout"
 			}
-			return machineagent.UpdateState{Version: version.Version, Platform: runtime.GOOS + "-" + runtime.GOARCH,
-				Layout: layout}
+			if u := upd(); u != nil {
+				u.agentState(&st)
+			}
+			return st
 		},
 		// the home's switch to another machine (serve_switchover.go)
 		Commands: commands,

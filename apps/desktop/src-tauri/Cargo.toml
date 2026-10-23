@@ -24,6 +24,9 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
+# Epic 35 (ask first): the OS notification when the home's order is ready to
+# install (the Mac's menu-bar item has no badge to show it).
+tauri-plugin-notification = "2"
 tauri-plugin-window-state = "2"
 # Story 13.x — `maktaba://` deep links (custom scheme registration +
 # runtime on_open_url handler). On Linux/Windows the scheme is owned by

@@ -30,6 +30,28 @@ type Spec struct {
 	Payload string    // the app's server payload (python/, pipeline/, payload.json)
 	Venv    string    // the venv to build (<state>/venv)
 	Log     io.Writer // the bootstrap's stderr (the app's venv.log)
+	// Python and Pipeline replace the payload's Python and its pipeline folder (the wheel
+	// and its constraints): a plain server install's release, which carries no Python,
+	// builds its venv with the machine's own (Epic 35 design §3.4).
+	Python   string
+	Pipeline string
+	// Extras are the pipeline's extras the venv must have ("": the bootstrap's own
+	// default): a plain server's release keeps the ones the environment it replaces has.
+	Extras string
+}
+
+func (s Spec) python() string {
+	if s.Python != "" {
+		return s.Python
+	}
+	return Python(s.Payload)
+}
+
+func (s Spec) pipeline() string {
+	if s.Pipeline != "" {
+		return s.Pipeline
+	}
+	return filepath.Join(s.Payload, "pipeline")
 }
 
 // Progress is one line of the bootstrap: its share of the whole run (0..1,
@@ -79,11 +101,29 @@ func Python(payload string) string {
 	return filepath.Join(payload, "python", "bin", "python3")
 }
 
-// Wheel is the payload's pipeline wheel (there is exactly one).
-func Wheel(payload string) (string, error) {
-	wheels, _ := filepath.Glob(filepath.Join(payload, "pipeline", "maktaba_pipeline-*.whl"))
+// Wheel is the payload's pipeline wheel.
+func Wheel(payload string) (string, error) { return wheelIn(filepath.Join(payload, "pipeline")) }
+
+// wheelIn is a pipeline folder's wheel: the one the payload.json beside the folder names
+// (an app installed over an older one may keep the older wheel too: the Windows
+// installer's update deletes nothing), else the only one there.
+func wheelIn(dir string) (string, error) {
+	var pl struct {
+		Pipeline struct {
+			Wheel string `json:"wheel"`
+		} `json:"pipeline"`
+	}
+	if raw, err := os.ReadFile(filepath.Join(filepath.Dir(dir), "payload.json")); err == nil &&
+		json.Unmarshal(raw, &pl) == nil && pl.Pipeline.Wheel != "" {
+		named := filepath.Join(dir, filepath.Base(pl.Pipeline.Wheel))
+		if _, err := os.Stat(named); err != nil {
+			return "", fmt.Errorf("payload.json names the pipeline wheel %s, which %s does not hold", pl.Pipeline.Wheel, dir)
+		}
+		return named, nil
+	}
+	wheels, _ := filepath.Glob(filepath.Join(dir, "maktaba_pipeline-*.whl"))
 	if len(wheels) != 1 {
-		return "", fmt.Errorf("the app's pipeline folder must hold one maktaba_pipeline wheel (found %d)", len(wheels))
+		return "", fmt.Errorf("the pipeline folder %s must hold one maktaba_pipeline wheel (found %d)", dir, len(wheels))
 	}
 	return wheels[0], nil
 }
@@ -166,8 +206,8 @@ func bootstrapEnv(environ []string, wheel string) []string {
 // stop (SIGTERM; CTRL_BREAK on Windows), which it does at once, stopping pip
 // first; Run then returns ErrInterrupted.
 func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error) {
-	py := Python(spec.Payload)
-	wheel, err := Wheel(spec.Payload)
+	py := spec.python()
+	wheel, err := wheelIn(spec.pipeline())
 	if err != nil {
 		return Result{}, err
 	}
@@ -183,7 +223,10 @@ func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error
 	// be asked is killed after stopWait, and the next run resumes the build.
 	bootstrap := func(extra ...string) (*exec.Cmd, *ctrlbreak.Stopper) {
 		args := append([]string{"-m", "maktaba_pipeline.venv_bootstrap", "--python", py,
-			"--payload", filepath.Join(spec.Payload, "pipeline"), "--venv", spec.Venv}, extra...)
+			"--payload", spec.pipeline(), "--venv", spec.Venv}, extra...)
+		if spec.Extras != "" {
+			args = append(args, "--extras", spec.Extras)
+		}
 		cmd := exec.CommandContext(ctx, py, args...)
 		cmd.Env = env
 		cmd.Stderr = logw
@@ -273,8 +316,13 @@ func result(payload, wheel string, reused bool) Result {
 	if raw, err := os.ReadFile(filepath.Join(payload, "payload.json")); err == nil {
 		_ = json.Unmarshal(raw, &pl)
 	}
-	// maktaba_pipeline-<version>-py3-none-any.whl
+	return Result{Reused: reused, Python: pl.Python.Version, Pipeline: WheelVersion(wheel)}
+}
+
+// WheelVersion is the version a pipeline wheel's name carries
+// (maktaba_pipeline-<version>-py3-none-any.whl): the one its `--version` says.
+func WheelVersion(wheel string) string {
 	ver := strings.TrimPrefix(filepath.Base(wheel), "maktaba_pipeline-")
 	ver, _, _ = strings.Cut(ver, "-")
-	return Result{Reused: reused, Python: pl.Python.Version, Pipeline: ver}
+	return ver
 }

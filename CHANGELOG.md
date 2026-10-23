@@ -678,6 +678,25 @@ don't append a line here; docs-only PRs are exempt.
   no URL cached just as the shared lookup ended started yt-dlp again for the same page; it now
   takes the URL that lookup cached. (CI saw it as the test's fake yt-dlp running twice and
   closing its channel twice.)
+- **The cluster updates itself** (Epic 35, stories 35.4–35.7, 35.12, 35.13). In its quiet window
+  (default 03:00–05:00) and with nobody watching TV, the home installs a new verified release
+  of its channel, then every joined machine, one at a time, each watched before the next; a
+  machine that was off is caught up when it comes back, and none runs ahead of the home.
+  Before anything changes the home rehearses the release's migrations on a scratch copy of its
+  database; at the switch it dumps the database (checked to read back), migrates it, and watches
+  the new release for ten minutes. A release that does not stay healthy is rolled back on its
+  own: the previous release runs again and, when the database had been migrated, the dump is put
+  back first. A power cut at any step is finished at the next start. A plain server's update
+  brings its pipeline's own Python environment too, with the extras the machine had. Headless
+  and plain server installs do all
+  of it by themselves; a desktop app that runs the server (Mac, Windows, Linux)
+  downloads and checks the release the home orders and shows "Install Maktaba <version>" (on a
+  machine: the cluster's update waits for it), and installs it when someone clicks there — the
+  rollout goes on with the others meanwhile, and a newer release replaces an order nobody
+  clicked. Admin → Updates shows each run's steps on the home and on every machine, the machines
+  waiting for a click with their version, and Cancel, Retry, Skip, Roll back and Resume;
+  automatic installs are now on by default (Pause turns them off). Releases carry their
+  migrations (`maktaba-migrations-<version>.tar.gz`, listed in the signed `release.json`).
 
 ## [0.2.0] - 2026-10-19
 

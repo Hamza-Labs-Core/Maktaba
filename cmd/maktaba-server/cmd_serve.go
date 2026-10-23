@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -143,8 +144,17 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	// Epic 35 story 35.8: a joined node config makes this machine a full node (the
 	// machine agent; the api in node mode; the web port's TV to the home).
 	var node *nodeServices
+	// Epic 35 (stories 35.4–35.7, 35.12): this machine's part of automatic updates;
+	// a node takes the home's update.* commands on the channel (serve_update.go)
+	var upd atomic.Pointer[updates]
+	commands := func(ctx context.Context, name string, args json.RawMessage) (bool, bool, any) {
+		if h, ok, detail := upd.Load().command(ctx, name, args); h {
+			return h, ok, detail
+		}
+		return sw.command(ctx, name, args)
+	}
 	if containsRole(roles, supervisor.RoleAPI) {
-		node, err = startNodeServices(ctx, cfg, sw.command)
+		node, err = startNodeServices(ctx, cfg, commands, func() *updates { return upd.Load() })
 		if err != nil {
 			return err
 		}
@@ -196,6 +206,20 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	llmProc, llmOpt, err := serveLLM(ctx, &cfg, wholeMachine)
 	if err != nil {
 		return err
+	}
+
+	// Automatic updates: the whole machine's supervisor takes up the run its last start
+	// left (the new release watches and commits, or the previous one records the
+	// rollback) before any role starts
+	if wholeMachine && containsRole(roles, supervisor.RoleAPI) {
+		u := startUpdates(ctx, cfg, releaseDir, node == nil, pg, node, func(int) {
+			restart.Store(true)
+			cancel()
+		})
+		upd.Store(u)
+		if node != nil && node.agent != nil {
+			u.m.OnChange = node.agent.Nudge
+		}
 	}
 
 	// Build the supervised processes.
@@ -286,6 +310,15 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	bundle := config.AppBundle()
 	if bundle != "" {
 		procs = appBundleGates(cfg, bundle, pg, procs, os.Stderr)
+	} else if releaseDir != "" && wholeMachine && node == nil && containsRole(roles, supervisor.RoleAPI) {
+		// Epic 35: a plain server home dumps and migrates at a new release's start too
+		if t := homeDatabase(cfg, pg); t != nil {
+			ext := t
+			if pg != nil {
+				ext = nil
+			}
+			procs = layoutHomeGates(cfg, filepath.Base(filepath.Clean(releaseDir)), pg, ext, procs, os.Stderr)
+		}
 	}
 
 	// Run children. Each one is restarted on its own when it crashes or
@@ -328,7 +361,14 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		}
 	}
 	sw.set(pg, cp, stopCopy, token, func(r supervisor.Role, on bool) error { return sup.Want(r, "", on) })
-	if adminSrv := startSupervisorAdmin(policy.AdminAddr, sw.adminHandler(node.adminHandler(sup.Handler()))); adminSrv != nil {
+	if u := upd.Load(); u != nil {
+		u.setSupervisor(sup)
+	}
+	admin := sw.adminHandler(node.adminHandler(sup.Handler()))
+	if u := upd.Load(); u != nil {
+		admin = u.adminHandler(admin, token)
+	}
+	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
 	confirmPending(ctx, sup, releaseDir)

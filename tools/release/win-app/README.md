@@ -6,7 +6,7 @@ so one Windows install runs everything. This directory builds the payload and th
 | File | What it does |
 |---|---|
 | `payload.sh` | builds `build/win-app/server` (layout below), writes the tauri overlay `build/win-app/tauri.win-app.conf.json` |
-| `check.sh` | smoke test of the payload and, with `--installer`, a silent install over a client-only app, a reinstall and an uninstall of the installer |
+| `check.sh` | smoke test of the payload and, with `--installer`, a silent install over a client-only app, a reinstall, an update (`/UPDATE`) and an uninstall of the installer |
 | `test-hooks.sh` | the installer hooks on both kinds of `Maktaba.exe`, with stand-ins (no app build needed, only makensis) |
 | `run-watched.ps1` | runs an installer for `check.sh` in a job object and reports every process it starts |
 | `build-app.sh` | payload → `tauri build --bundles nsis` → check. `make win-app` runs it |
@@ -103,7 +103,7 @@ administrator), puts the payload in `server\` and includes `installer-hooks.nsh`
 
 | Hook | Runs | Why |
 |---|---|---|
-| `NSIS_HOOK_PREINSTALL` | `"$INSTDIR\Maktaba.exe" --server-stop`, when the installed one takes the flags | the payload's files are in use while the server runs |
+| `NSIS_HOOK_PREINSTALL` | `"$INSTDIR\Maktaba.exe" --server-stop`, when the installed one takes the flags; then deletes `server\pipeline\maktaba_pipeline-*.whl` | the payload's files are in use while the server runs; the wheel's name carries its version, and an update (`/UPDATE`, the app's updater) installs over the old files without uninstalling them, while the server builds the pipeline's venv from exactly one wheel |
 | `NSIS_HOOK_POSTINSTALL` | `"$INSTDIR\Maktaba.exe" --server-start`, when the new one takes them | starts the server from the new payload (nothing on a first install: setup registers the task) |
 | `NSIS_HOOK_PREUNINSTALL` | `--server-stop`, then `--server-remove`, when the installed one takes them; not during an update (`$UpdateMode` 1) | no sign-in task is left pointing at a removed program |
 
@@ -142,7 +142,8 @@ does, from this tree's source, and checks that against the program: the installe
 `Maktaba.exe --server-start` must exit by itself when the source takes the flags and keep
 running (its window) when it does not. It installs over a client-only app (a stand-in
 `Maktaba.exe` that takes no flag and never exits, with its registration and a stale record),
-reinstalls and uninstalls, and fails on any hook still running after 20 s; where the shell
+reinstalls, updates as the app's updater does (`/S /UPDATE`, over an older release's pipeline
+wheel: one wheel must be left, the one `payload.json` names) and uninstalls, and fails on any hook still running after 20 s; where the shell
 takes the flags, on a missing record or when the hooks did not run `Maktaba.exe` with exactly
 the flags each step calls for (`run-watched.ps1` runs each installer in a job object, which
 tells of every process it starts, so even a hook run of a few milliseconds is seen with its

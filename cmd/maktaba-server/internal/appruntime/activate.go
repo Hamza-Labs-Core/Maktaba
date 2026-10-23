@@ -347,3 +347,50 @@ func (r Runtime) Status(from string) (Status, error) {
 	}
 	return st, nil
 }
+
+// Point moves `current` to an installed directory and records the one it named as
+// `previous`, without the service: the update orchestrator runs inside the service and
+// restarts it itself (exit 75: the launcher starts `current` again). A version older
+// than the watermark is refused unless opt allows it (a rollback does). It returns the
+// directory that was current.
+func (r Runtime) Point(ctx context.Context, name string, opt Options) (previous string, err error) {
+	name = filepath.Base(name)
+	inst, err := readInstalled(filepath.Join(r.Root, name))
+	if err != nil {
+		return "", fmt.Errorf("%w: %s is not an installed runtime (%v)", ErrNotInstalled, filepath.Join(r.Root, name), err)
+	}
+	if inst.Platform != Platform() {
+		return "", fmt.Errorf("%w: %s is for %s", ErrInvalid, name, inst.Platform)
+	}
+	unlock, err := r.lock(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	previous, err = r.Current()
+	if err != nil || previous == name {
+		return previous, err
+	}
+	if err := r.checkVersion(inst.Version, opt); err != nil {
+		return previous, err
+	}
+	if previous != "" {
+		if err := r.setLink(PreviousLink, previous); err != nil {
+			return previous, err
+		}
+	}
+	return previous, r.setLink(CurrentLink, name)
+}
+
+// RaiseWatermark sets the watermark to v when it is newer (an update's commit).
+func (r Runtime) RaiseWatermark(v string) error { return r.raiseWatermark(v) }
+
+// InstalledVersion is the version of an installed runtime directory ("" when it is
+// not one).
+func (r Runtime) InstalledVersion(name string) string {
+	inst, err := readInstalled(filepath.Join(r.Root, filepath.Base(name)))
+	if err != nil {
+		return ""
+	}
+	return inst.Version
+}

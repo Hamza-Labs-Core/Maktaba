@@ -174,6 +174,11 @@ const (
 	ReasonSchema       = "schema_differs"
 	ReasonAgentOffline = "agent_offline"
 	ReasonBusy         = "switch_under_way"
+	// ReasonUpdating: an update run is past its plan (Epic 35): the home's database and
+	// the machines' drain are the update's until it ends. A run that only waits for
+	// clicks on desktop apps (step waiting_click: nothing drained, nothing switching) does
+	// not hold a switch: the update ends it when the switch starts.
+	ReasonUpdating = "update_under_way"
 )
 
 // Candidate is a machine that could take over, and why it cannot now.
@@ -222,6 +227,9 @@ func (o *Orchestrator) Candidates(ctx context.Context) ([]Candidate, error) {
 		_ = o.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cluster_switchovers
 		    WHERE state NOT IN ('done', 'failed', 'cancelled'))`).Scan(&busy)
 	}
+	var updating bool
+	_ = o.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM update_runs
+	    WHERE finished_at IS NULL AND state <> 'planned' AND COALESCE(step, '') <> 'waiting_click')`).Scan(&updating)
 	var out []Candidate
 	for _, n := range ns {
 		if n.state == "revoked" || n.state == "rejected" {
@@ -255,6 +263,9 @@ func (o *Orchestrator) Candidates(ctx context.Context) ([]Candidate, error) {
 		}
 		if busy {
 			c.Reasons = append(c.Reasons, ReasonBusy)
+		}
+		if updating {
+			c.Reasons = append(c.Reasons, ReasonUpdating)
 		}
 		c.Ready = len(c.Reasons) == 0
 		out = append(out, c)

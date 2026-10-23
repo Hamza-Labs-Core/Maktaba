@@ -45,6 +45,29 @@ func hexsum(b []byte) string {
 
 // NewRelease builds and signs a release of repo at tag for platform ("os/arch").
 func (s *Sigstore) NewRelease(repo, tag, platform string) (*FakeRelease, error) {
+	return s.NewReleaseWith(repo, tag, platform, ReleaseOptions{})
+}
+
+// ReleaseOptions shape a fake release beyond the stub one.
+type ReleaseOptions struct {
+	// Binaries are the platform archive's entries (nil: four stub binaries).
+	Binaries map[string][]byte
+	// Migrations, when set, are published as the release's migrations archive
+	// (name -> content) and named in release.json.
+	Migrations map[string][]byte
+	// MinUpgradeFrom is release.json's min_upgrade_from ("": the release's own
+	// version, as the stub always had).
+	MinUpgradeFrom string
+	// Wheel is the pipeline wheel's content (nil: a stub).
+	Wheel []byte
+	// LauncherProtocol is release.json's launcher_protocol (0: 1).
+	LauncherProtocol int
+	// SchemaRev is release.json's schema_rev and min_node_schema (0: 128).
+	SchemaRev int
+}
+
+// NewReleaseWith builds and signs a release of repo at tag for platform with o.
+func (s *Sigstore) NewReleaseWith(repo, tag, platform string, o ReleaseOptions) (*FakeRelease, error) {
 	ver := strings.TrimPrefix(tag, "v")
 	goos, goarch, _ := strings.Cut(platform, "/")
 	exe := ""
@@ -52,8 +75,14 @@ func (s *Sigstore) NewRelease(repo, tag, platform string) (*FakeRelease, error) 
 		exe = ".exe"
 	}
 	r := &FakeRelease{Tag: tag, Repo: repo, Platform: platform, Files: map[string][]byte{}, Binaries: map[string][]byte{}}
-	for _, b := range []string{"maktaba-server", "maktaba-api", "maktaba-streaming", "maktaba-launcher"} {
-		r.Binaries[b+exe] = []byte(fmt.Sprintf("#!fake %s %s %s\n", b, tag, platform))
+	if o.Binaries != nil {
+		for n, b := range o.Binaries {
+			r.Binaries[n] = b
+		}
+	} else {
+		for _, b := range []string{"maktaba-server", "maktaba-api", "maktaba-streaming", "maktaba-launcher"} {
+			r.Binaries[b+exe] = []byte(fmt.Sprintf("#!fake %s %s %s\n", b, tag, platform))
+		}
 	}
 	base := fmt.Sprintf("maktaba-server-%s-%s-%s", ver, goos, goarch)
 	var archive []byte
@@ -71,6 +100,9 @@ func (s *Sigstore) NewRelease(repo, tag, platform string) (*FakeRelease, error) 
 	r.Files[r.Archive] = archive
 	r.Wheel = "maktaba_pipeline-" + ver + "-py3-none-any.whl"
 	r.Files[r.Wheel] = []byte("fake wheel " + tag)
+	if o.Wheel != nil {
+		r.Files[r.Wheel] = o.Wheel
+	}
 	r.Cons = "maktaba-pipeline-" + ver + "-constraints.txt"
 	r.Files[r.Cons] = []byte("# uv export\nanyio==4.4.0 \\\n    --hash=sha256:" + strings.Repeat("ab", 32) + "\n    # via maktaba-pipeline\nidna==3.7 ; python_version >= \"3.12\" \\\n    --hash=sha256:" + strings.Repeat("cd", 32) + " \\\n    --hash=sha256:" + strings.Repeat("ef", 32) + "\n")
 
@@ -78,16 +110,35 @@ func (s *Sigstore) NewRelease(repo, tag, platform string) (*FakeRelease, error) 
 	for n, b := range r.Binaries {
 		files[n] = hexsum(b)
 	}
+	minFrom, rev, launcher := ver, 128, 1
+	if o.LauncherProtocol > 0 {
+		launcher = o.LauncherProtocol
+	}
+	if o.MinUpgradeFrom != "" {
+		minFrom = o.MinUpgradeFrom
+	}
+	if o.SchemaRev > 0 {
+		rev = o.SchemaRev
+	}
 	r.Manifest = map[string]any{
 		"v": 1, "version": ver, "tag": tag, "commit": fakeCommit, "channel": "stable",
-		"published": time.Now().UTC().Format(time.RFC3339), "schema_rev": 128, "min_node_schema": 128,
-		"breaks_previous_home": false, "min_upgrade_from": ver,
-		"edge_protocol": 1, "launcher_protocol": 1, "agent_protocol": 2,
+		"published": time.Now().UTC().Format(time.RFC3339), "schema_rev": rev, "min_node_schema": rev,
+		"breaks_previous_home": false, "min_upgrade_from": minFrom,
+		"edge_protocol": 1, "launcher_protocol": launcher, "agent_protocol": 2,
 		"assets": map[string]any{platform: map[string]any{"archive": r.Archive, "sha256": hexsum(archive), "files": files}},
 		"pipeline": map[string]any{
 			"wheel": r.Wheel, "wheel_sha256": hexsum(r.Files[r.Wheel]),
 			"constraints": r.Cons, "constraints_sha256": hexsum(r.Files[r.Cons]), "python": "3.12",
 		},
+	}
+	if o.Migrations != nil {
+		mig, err := tarGzOf(o.Migrations)
+		if err != nil {
+			return nil, err
+		}
+		name := "maktaba-migrations-" + ver + ".tar.gz"
+		r.Files[name] = mig
+		r.Manifest["migrations"] = map[string]any{"archive": name, "sha256": hexsum(mig)}
 	}
 	if err := r.Rebuild(s, GitHubRelease(repo, tag)); err != nil {
 		return nil, err

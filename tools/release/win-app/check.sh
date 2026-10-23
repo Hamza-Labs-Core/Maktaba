@@ -16,7 +16,10 @@
 #   --server-* flag and never exits, as the real one opens its window, and its registration)
 #   and a state (server.toml, keys\, data\); every check above on the installed payload; the
 #   app's files and the launcher beside the real Maktaba.exe; the same installer again (a
-#   reinstall of the same build); then a silent uninstall: the program is gone, the state is
+#   reinstall of the same build); the same installer the way the app's updater runs it (/S
+#   /UPDATE: over the old files, uninstalling nothing) over an older release's pipeline
+#   wheel: server\pipeline must then hold one wheel, the one payload.json names (Epic 35
+#   review round 2, B-H1); then a silent uninstall: the program is gone, the state is
 #   untouched. It refuses to run where Maktaba is installed for this user or its sign-in task
 #   exists: the installer would replace that install's registration and the uninstall hook
 #   would remove the task. What the installer writes to the registry for the test install is
@@ -31,8 +34,8 @@
 #   source takes the flags, and keep running (its window) when it does not. Where it takes
 #   none, no hook may run it at all and the installer keeps no record; where it does, the
 #   record (MaktabaServerFlags in the uninstall key) must be there and the hooks must have run
-#   it with exactly the flags each step calls for (install --server-start; reinstall
-#   --server-stop, --server-start; uninstall --server-stop, --server-remove). Each run is
+#   it with exactly the flags each step calls for (install --server-start; reinstall and
+#   update --server-stop, --server-start; uninstall --server-stop, --server-remove). Each run is
 #   watched in a job object (run-watched.ps1), which tells of every process it starts.
 #
 # Usage: check.sh [--payload DIR] [--installer SETUP.exe]
@@ -545,6 +548,33 @@ if [ -n "$SETUP" ]; then
     hooks "reinstall" --server-stop --server-start
     record_check "reinstall"
     if [ "$(state_sums)" = "$STATE_BEFORE" ]; then ok "the state is untouched by the reinstall"; else fail "the reinstall changed the state: $(state_sums)"; fi
+
+    # An update as the app's updater runs it (tauri-plugin-updater: the installer with
+    # /UPDATE, which installs over the old files and uninstalls nothing) from an older
+    # release, whose pipeline wheel (its name carries its version) is still there. The server
+    # builds the pipeline's venv from one wheel; two would roll every update back.
+    echo "update (/UPDATE, over an older release's pipeline wheel)"
+    printf 'an older release wheel\n' >"$INST/server/pipeline/maktaba_pipeline-0.0.0a1-py3-none-any.whl"
+    watched "$SETUP" "/S /UPDATE /NS /D=$(win "$INST")"
+    if [ "$WATCHED_EXIT" = 0 ] && [ -f "$INST/Maktaba.exe" ] && [ -f "$INST/server/payload.json" ]; then
+        ok "silent update (/UPDATE)"
+    else
+        fail "silent update /UPDATE (exit $WATCHED_EXIT)"
+    fi
+    hooks "update" --server-stop --server-start
+    record_check "update"
+    named="$("$INST/server/python/python.exe" -I -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["pipeline"]["wheel"])' \
+        "$(win "$INST/server/payload.json")" 2>&1 | tr -d '\r' || true)"
+    wheels=()
+    for w in "$INST"/server/pipeline/maktaba_pipeline-*.whl; do
+        if [ -f "$w" ]; then wheels+=("${w##*/}"); fi
+    done
+    if [ "${#wheels[@]}" -eq 1 ] && [ -n "$named" ] && [ "${wheels[0]}" = "$named" ]; then
+        ok "server\\pipeline holds one wheel, the one payload.json names ($named)"
+    else
+        fail "server\\pipeline after the update: ${wheels[*]:-no wheel} (payload.json names '$named')"
+    fi
+    if [ "$(state_sums)" = "$STATE_BEFORE" ]; then ok "the state is untouched by the update"; else fail "the update changed the state: $(state_sums)"; fi
 
     echo "uninstall"
     watched "$INST/uninstall.exe" "/S"

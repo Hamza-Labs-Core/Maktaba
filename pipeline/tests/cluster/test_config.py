@@ -1025,7 +1025,11 @@ def test_a_load_waits_out_a_write_under_way(
     lock.write_text("", encoding="utf-8")
 
     def lands() -> None:
-        path.write_text(json.dumps(_JOINED), encoding="utf-8")
+        # as the writers do: whole, by a rename (a plain write_text could be read half
+        # written by the load polling meanwhile)
+        tmp = folder / ".node.json.tmp"
+        tmp.write_text(json.dumps(_JOINED), encoding="utf-8")
+        os.replace(tmp, path)
         lock.unlink()
 
     monkeypatch.setattr(config, "_BUSY_SLEEP", 0.0005)

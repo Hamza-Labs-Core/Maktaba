@@ -34,6 +34,9 @@ import (
 // small-file download limit (checksums.txt, bundle, release.json)
 const maxSmall = 4 << 20
 
+// MigrationsDir is a staged release's migrations directory, beside its binaries.
+const MigrationsDir = "migrations"
+
 // WatermarkPath is the layout's watermark: one line, "<v>\n" (design §2.1),
 // with releaseverify's full record (checksums digest, signed time) beside it
 // in watermark.json.
@@ -151,6 +154,18 @@ func Stage(ctx context.Context, l layout.Layout, get releaseverify.Downloader, i
 	}
 	if _, err := os.Stat(filepath.Join(tmp, layout.Exe("maktaba-server"))); err != nil {
 		return nil, fmt.Errorf("the %s archive has no %s", platform, layout.Exe("maktaba-server"))
+	}
+	// the release's migrations beside maktaba-api (bin/releases/<v>/migrations), which
+	// finds them there: what the home's database step migrates with
+	mig, err := releaseverify.FetchMigrations(func(u string, limit int64) ([]byte, error) { return get(ctx, u, limit) },
+		up.Result, assets)
+	if err != nil {
+		return nil, err
+	}
+	if mig != nil {
+		if _, err := releaseverify.ExtractMigrations(mig, filepath.Join(tmp, MigrationsDir)); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := releaseverify.VerifyDir(tmp, in.Tag, in.Identity, releaseverify.InstalledRelease, platform, in.TrustedMaterial); err != nil {
 		return nil, err

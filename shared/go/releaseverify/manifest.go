@@ -40,6 +40,16 @@ type Manifest struct {
 	AgentProtocol      int              `json:"agent_protocol"`
 	Assets             map[string]Asset `json:"assets"`
 	Pipeline           *Pipeline        `json:"pipeline,omitempty"`
+	// Migrations is the release's database migrations (Epic 35 phase B; absent
+	// before): what a home's update rehearses on a scratch copy and what a plain
+	// server install migrates with.
+	Migrations *Migrations `json:"migrations,omitempty"`
+}
+
+// Migrations is one .tar.gz of the release's shared/db/migrations/*.sql files.
+type Migrations struct {
+	Archive string `json:"archive"`
+	SHA256  string `json:"sha256"`
 }
 
 // Asset is one platform's server archive and the digests of the binaries in it.
@@ -188,6 +198,14 @@ func (m *Manifest) Validate(tag string, sums Checksums) error {
 			if !validFileName(name) || !hexRe.MatchString(d) {
 				return bad("assets[%s].files: bad entry %q", platform, name)
 			}
+		}
+	}
+	if mg := m.Migrations; mg != nil {
+		if !validFileName(mg.Archive) || !hexRe.MatchString(mg.SHA256) {
+			return bad("migrations: bad archive name or digest")
+		}
+		if got, ok := sums[mg.Archive]; !ok || got != mg.SHA256 {
+			return bad("migrations: %s digest differs from checksums.txt", mg.Archive)
 		}
 	}
 	if p := m.Pipeline; p != nil {

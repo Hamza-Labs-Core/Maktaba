@@ -190,3 +190,35 @@ func TestBuildRejectsWrongArchiveVersion(t *testing.T) {
 		t.Fatal("archive of another version accepted")
 	}
 }
+
+// A release's migrations archive is named in release.json with its digest (Epic 35
+// phase B); one of another version is refused.
+func TestBuildNamesTheMigrations(t *testing.T) {
+	repo := fakeRepo(t, 8, 8)
+	ss := releaseverifytest.MustNew()
+	dist := t.TempDir()
+	rel := ss.MustRelease("Hamza-Labs-Core/Maktaba", "v1.5.0", "linux/amd64")
+	if err := os.WriteFile(filepath.Join(dist, rel.Archive), rel.Files[rel.Archive], 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("not really a tarball, digested all the same")
+	if err := os.WriteFile(filepath.Join(dist, "maktaba-migrations-1.5.0.tar.gz"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{Tag: "v1.5.0", Commit: strings.Repeat("ab", 20), Dist: dist, Repo: repo}
+	m, err := Build(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	if m.Migrations == nil || m.Migrations.Archive != "maktaba-migrations-1.5.0.tar.gz" ||
+		m.Migrations.SHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("migrations = %+v", m.Migrations)
+	}
+	if err := os.WriteFile(filepath.Join(dist, "maktaba-migrations-1.4.0.tar.gz"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(opts); err == nil {
+		t.Fatal("a migrations archive of another version was taken")
+	}
+}

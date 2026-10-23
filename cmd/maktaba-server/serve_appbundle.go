@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
@@ -140,6 +142,35 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 			}
 		case dbStep != nil:
 			p.Prepare = dbStep.prepare
+		}
+	}
+	return procs
+}
+
+// layoutHomeGates gives a plain server home (the side-by-side layout: Epic 35 story
+// 35.2) the app's database step (Epic 38 story 38.12): at the start of a release other
+// than the one whose migrations the database holds, every role waits while the database
+// is dumped (the bundled Postgres, or an operator's with the pg programs), migrated, and
+// put back when the migrations fail; a rollback of an automatic update marks the record
+// for the next start to put the dump back (internal/updater). version is the release
+// running; a SQLite home has no step (its migrations run as before).
+func layoutHomeGates(cfg config.Config, version string, pg *pgbundle.Bundle, ext *dbsafe.Target, procs []supervisor.Process, log io.Writer) []supervisor.Process {
+	db := &migrationGate{stateDir: cfg.StateDir(), version: version, pg: pg, ext: ext,
+		keep: cfg.Postgres.KeepUpdateDumps(), log: log}
+	for _, p := range procs {
+		if p.Role == supervisor.RoleAPI && p.Cmd != nil {
+			db.api = p.Cmd
+		}
+	}
+	if db.api == nil {
+		return procs
+	}
+	step := &sharedStep{wait: detail("db_waiting", "Waiting for the library database"), run: db.run}
+	for i := range procs {
+		switch procs[i].Role {
+		case supervisor.RolePostgres, supervisor.RoleOllama:
+		default:
+			procs[i].Prepare = step.prepare
 		}
 	}
 	return procs
@@ -279,10 +310,14 @@ func (s *sharedStep) broadcast(d supervisor.Detail) {
 type migrationGate struct {
 	stateDir string
 	version  string           // the payload's
-	pg       *pgbundle.Bundle // the bundled Postgres; nil: a database of the user's own (no dump, no restore)
-	api      *exec.Cmd        // the api's command: its binary and environment run the migrations; nil: no api here
-	keep     int              // pre-update dumps kept ([postgres] update_dumps)
-	log      io.Writer
+	pg       *pgbundle.Bundle // the bundled Postgres; nil: a database of the user's own
+	// ext is a database of the user's own that a plain server install dumps and puts back
+	// with the pg programs (Epic 35: every home's update has its dump); nil with pg nil:
+	// no dump, no restore
+	ext  *dbsafe.Target
+	api  *exec.Cmd // the api's command: its binary and environment run the migrations; nil: no api here
+	keep int       // pre-update dumps kept ([postgres] update_dumps)
+	log  io.Writer
 }
 
 // The database step's programs (tests replace them).
@@ -294,7 +329,229 @@ var (
 		return b.RestoreRunning(ctx, dump, log)
 	}
 	migrateUp = runMigrateUp
+	// a database of the user's own (a plain server install's): its dump beside the
+	// data, and putting it back in place
+	dumpExternal = func(ctx context.Context, t dbsafe.Target, from, to string, keep int) (string, error) {
+		path := filepath.Join(t.Backups, pgbundle.UpdateDumpName(from, to))
+		if err := t.Dump(ctx, path); err != nil {
+			return "", err
+		}
+		return path, pruneDumps(t.Backups, path, keep)
+	}
+	restoreExternal = func(ctx context.Context, t dbsafe.Target, dump string, log io.Writer) error {
+		return t.Restore(ctx, dump, log)
+	}
+	// the state a failed update left, set aside before the dump is put back over it
+	dumpAsideBundled  = func(ctx context.Context, b pgbundle.Bundle, path string) error { return b.DumpTo(ctx, path) }
+	dumpAsideExternal = func(ctx context.Context, t dbsafe.Target, path string) error { return t.Dump(ctx, path) }
+	// the other sessions on the database, ended before an update's migrations
+	endSessionsBundled  = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.EndSessions(ctx) }
+	endSessionsExternal = func(ctx context.Context, t dbsafe.Target) (int, error) { return t.EndSessions(ctx) }
+	// how often the dump's size is said while it is taken
+	dumpReportEvery = time.Minute
 )
+
+// backups is where the gate's dumps go.
+func (g *migrationGate) backups() string {
+	if g.pg != nil {
+		return g.pg.Backups
+	}
+	return g.ext.Backups
+}
+
+// dumpAside dumps the database as a failed update left it (failed-<version>-<utc>.dump
+// beside the backups), unless that was done already for this failure (the update's own
+// rollback does it before it switches back; a launcher's fallback, a boot loop or a
+// refusal does not). Best effort: the putting back goes on either way (D2).
+func (g *migrationGate) dumpAside(ctx context.Context, rec apppayload.Database) {
+	dir := g.backups()
+	since := time.Time{}
+	if st, err := os.Stat(rec.Dump); err == nil {
+		since = st.ModTime()
+	}
+	prefix := "failed-" + rec.Failed + "-"
+	if ents, err := os.ReadDir(dir); err == nil {
+		for _, e := range ents {
+			if info, err := e.Info(); err == nil && strings.HasPrefix(e.Name(), prefix) &&
+				strings.HasSuffix(e.Name(), ".dump") && !info.ModTime().Before(since) {
+				return // set aside already
+			}
+		}
+	}
+	path := filepath.Join(dir, prefix+time.Now().UTC().Format("20060102T150405")+".dump")
+	var err error
+	if g.pg != nil {
+		err = dumpAsideBundled(ctx, *g.pg, path)
+	} else {
+		err = dumpAsideExternal(ctx, *g.ext, path)
+	}
+	if err != nil {
+		fmt.Fprintf(g.log, "[serve] could not set the library database aside as %s left it: %v\n", rec.Failed, err)
+		return
+	}
+	fmt.Fprintf(g.log, "[serve] the library database as %s left it is in %s\n", rec.Failed, path)
+}
+
+// keeps reports whether the gate dumps and puts back (a bundled or an external one).
+func (g *migrationGate) keeps() bool { return g.pg != nil || g.ext != nil }
+
+func (g *migrationGate) dump(ctx context.Context, from, to string) (string, error) {
+	if g.pg != nil {
+		return dumpBeforeUpdate(ctx, *g.pg, from, to, g.keep)
+	}
+	return dumpExternal(ctx, *g.ext, from, to, g.keep)
+}
+
+// reportDumpSize says how much of the dump is written, every dumpReportEvery while it
+// is taken: the update's watch sees the step make progress (a dump that stops growing is
+// stuck). The func it returns stops it.
+func (g *migrationGate) reportDumpSize(ctx context.Context, from, to string, report func(supervisor.Detail)) func() {
+	part := filepath.Join(g.backups(), pgbundle.UpdateDumpName(from, to)) + ".partial"
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTicker(dumpReportEvery)
+		defer t.Stop()
+		said := int64(-1)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			st, err := os.Stat(part)
+			if err != nil || st.Size() == said {
+				continue
+			}
+			said = st.Size()
+			report(detail("db_dumping", fmt.Sprintf("Saving the library database before the update to %s (%d MB so far)",
+				to, said>>20), from, to))
+		}
+	}()
+	return func() { cancel(); <-done }
+}
+
+// endSessions ends the other client sessions on the database before an update's
+// migrations (the machines' api sessions, anything left holding a lock): a migration
+// never waits on them. Best effort, and the migrations' lock timeout bounds the rest.
+func (g *migrationGate) endSessions(ctx context.Context) {
+	var n int
+	var err error
+	switch {
+	case g.pg != nil:
+		n, err = endSessionsBundled(ctx, *g.pg)
+	case g.ext != nil:
+		n, err = endSessionsExternal(ctx, *g.ext)
+	default:
+		return
+	}
+	switch {
+	case err != nil:
+		fmt.Fprintf(g.log, "[serve] the other sessions on the library database could not be ended before the migrations: %v\n", err)
+	case n > 0:
+		fmt.Fprintf(g.log, "[serve] ended %d other sessions on the library database before the migrations\n", n)
+	}
+}
+
+// migrateTries is how often an update's migrations are tried when one waited longer
+// than the lock timeout for a lock another session holds; the other sessions are ended
+// before each try.
+const migrateTries = 3
+
+// migrate runs the migrations (an update's, when update: the other sessions ended first,
+// each migration done said for the watch to see the step move).
+func (g *migrationGate) migrate(ctx context.Context, cur string, update bool, report func(supervisor.Detail)) error {
+	log := g.log
+	if update {
+		log = &migrationsDone{w: g.log, done: func(n int) {
+			report(detail("db_migrating", fmt.Sprintf("Updating the library database for %s (%d migrations done)", cur, n), cur))
+		}}
+	}
+	for try := 1; ; try++ {
+		if update {
+			g.endSessions(ctx)
+		}
+		err := migrateUp(ctx, g.api, log)
+		if err == nil || ctx.Err() != nil || !lockTimedOut(err) || try == migrateTries {
+			return err
+		}
+		fmt.Fprintf(g.log, "[serve] a migration for %s waited too long for a lock another session holds (try %d of %d): "+
+			"trying again\n", cur, try, migrateTries)
+	}
+}
+
+// lockTimedOut says a migration gave up waiting for a lock (lock_timeout, 55P03).
+func lockTimedOut(err error) bool {
+	return strings.Contains(err.Error(), "lock timeout") || strings.Contains(err.Error(), "55P03")
+}
+
+// migrationsDone passes the migrations' output on and counts the migrations goose says
+// it applied: its "OK   <file> (<time>)", which the api's logger writes with no line
+// end of its own (so they are counted in the stream, not by line).
+type migrationsDone struct {
+	w    io.Writer
+	done func(n int)
+	tail []byte // the last bytes of the output (a mark cut between two writes)
+	n    int
+}
+
+// gooseOK is what goose writes for each migration it applied.
+const gooseOK = "OK   "
+
+func (m *migrationsDone) Write(p []byte) (int, error) {
+	buf := append(append([]byte(nil), m.tail...), p...)
+	// tail is shorter than the mark: every mark found ends in p, none is counted twice
+	if found := strings.Count(string(buf), gooseOK); found > 0 {
+		m.n += found
+		m.done(m.n)
+	}
+	if keep := len(gooseOK) - 1; len(buf) > keep {
+		buf = buf[len(buf)-keep:]
+	}
+	m.tail = append([]byte(nil), buf...)
+	return m.w.Write(p)
+}
+
+func (g *migrationGate) putBack(ctx context.Context, dump string) error {
+	if g.pg != nil {
+		return restoreDump(ctx, *g.pg, dump, g.log)
+	}
+	return restoreExternal(ctx, *g.ext, dump, g.log)
+}
+
+// pruneDumps keeps the newest keep pre-update dumps in dir (and keep always).
+func pruneDumps(dir, keepPath string, keep int) error {
+	keep = max(keep, 1)
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	type dumpFile struct {
+		path string
+		mod  int64
+	}
+	var dumps []dumpFile
+	for _, e := range ents {
+		n := e.Name()
+		if e.IsDir() || !strings.HasPrefix(n, "pre-") || !strings.HasSuffix(n, ".dump") {
+			continue
+		}
+		if info, err := e.Info(); err == nil {
+			dumps = append(dumps, dumpFile{filepath.Join(dir, n), info.ModTime().UnixNano()})
+		}
+	}
+	sort.SliceStable(dumps, func(i, j int) bool {
+		if dumps[i].path == keepPath || dumps[j].path == keepPath {
+			return dumps[i].path == keepPath
+		}
+		return dumps[i].mod > dumps[j].mod
+	})
+	for _, d := range dumps[min(keep, len(dumps)):] {
+		_ = os.Remove(d.path)
+	}
+	return nil
+}
 
 // apiExitSchemaAhead is maktaba-api migrate's exit when the database holds
 // migrations newer than the ones it has (api/main.go): a newer Maktaba ran here.
@@ -303,12 +560,17 @@ const apiExitSchemaAhead = 3
 // errSchemaAhead: the database is newer than this payload's migrations.
 var errSchemaAhead = errors.New("the database holds migrations newer than this Maktaba's")
 
+// migrateLockTimeout is how long one migration waits for a lock another session holds
+// before it fails (and is tried again, migrationGate.migrate).
+const migrateLockTimeout = "2m"
+
 // runMigrateUp runs the api's migrations with its binary and environment, with
-// no time limit of their own (nothing else uses the database meanwhile, and a
-// stop of the server ends them). Their output goes to the server's log; an
-// error carries their last lines.
+// no time limit of their own (a stop of the server ends them, and the update's watch
+// bounds an update's: updater.pendingCap), but none waits on another session's lock
+// longer than migrateLockTimeout. Their output goes to the server's log; an error
+// carries their last lines.
 func runMigrateUp(ctx context.Context, api *exec.Cmd, log io.Writer) error {
-	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "up")
+	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout, "up")
 	cmd.Env, cmd.Dir = api.Env, api.Dir
 	tail := &tailWriter{max: 4 << 10}
 	cmd.Stdout = io.MultiWriter(log, tail)
@@ -398,9 +660,11 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		update.From, update.Dump = rec.From, rec.Dump
 	case held == "" || held != cur:
 		update.From = held
-		if g.pg != nil {
+		if g.keeps() {
 			report(detail("db_dumping", fmt.Sprintf("Saving the library database before the update to %s", cur), held, cur))
-			dump, err := dumpBeforeUpdate(ctx, *g.pg, held, cur, g.keep)
+			stop := g.reportDumpSize(ctx, held, cur, report)
+			dump, err := g.dump(ctx, held, cur)
+			stop()
 			if err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
@@ -424,9 +688,15 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	} else {
 		report(detail("db_checking", "Checking the library database", cur))
 	}
-	err = migrateUp(ctx, g.api, g.log)
+	err = g.migrate(ctx, cur, update.State != "", report)
 	if ctx.Err() != nil {
 		return ctx.Err() // stopped: the next start goes on (the record says migrating)
+	}
+	if now, rerr := g.record(); rerr == nil && now.State == apppayload.DatabaseRestoring && now.Failed == cur {
+		// the update's watch gave up on this start meanwhile (start_timeout) and marked the
+		// dump to be put back: the start it restarts does that; nothing is recorded over it
+		return detailErr("db_restoring", fmt.Sprintf("The update to %s gave up: the library database is put back "+
+			"as it was at the next start", cur), cur, now.Dump)
 	}
 	switch {
 	case err == nil:
@@ -470,15 +740,16 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 // restore puts the dump of a failed update back (rec is restoring) and records
 // it; the database is then as it was before that update.
 func (g *migrationGate) restore(ctx context.Context, rec apppayload.Database, report func(supervisor.Detail)) (apppayload.Database, error) {
-	if g.pg == nil {
+	if !g.keeps() {
 		return rec, supervisor.Halt(detailErr("db_no_cluster", fmt.Sprintf("the update to %s could not change the "+
 			"library database (%s), and this Maktaba runs no database of its own to put %s back into",
 			rec.Failed, rec.Error, rec.Dump), rec.Failed, rec.Error, rec.Dump))
 	}
 	report(detail("db_restoring", fmt.Sprintf("The update to %s could not change the library database: putting it "+
 		"back as it was", rec.Failed), rec.Failed, rec.Dump))
+	g.dumpAside(ctx, rec)
 	fmt.Fprintf(g.log, "[serve] the update to %s failed (%s): restoring %s\n", rec.Failed, rec.Error, rec.Dump)
-	err := restoreDump(ctx, *g.pg, rec.Dump, g.log)
+	err := g.putBack(ctx, rec.Dump)
 	if ctx.Err() != nil {
 		return rec, ctx.Err() // the record still says restoring: the next start finishes it
 	}

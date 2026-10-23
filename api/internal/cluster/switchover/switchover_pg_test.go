@@ -452,3 +452,36 @@ func TestTheMovedNoticeIsServedPerMachine(t *testing.T) {
 		t.Fatalf("the term: %d", n)
 	}
 }
+
+// Epic 35 review round 2 (A-N1): an update run past its plan holds a switch of the home
+// (update_under_way), unless it only waits for clicks on desktop apps (nothing drained,
+// nothing switching): the update ends that run when the switch starts.
+func TestAnUpdateHoldsTheSwitchUnlessItWaitsForClicks(t *testing.T) {
+	o, _, _, _, _ := setup(t)
+	ctx := context.Background()
+	if _, err := o.DB.ExecContext(ctx, `INSERT INTO update_runs (id, version, from_version, trigger, state, step, detail)
+	    VALUES ($1, '1.5.0', '1.4.0', 'auto', 'home_applying', 'drain', '{}')`, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	held := func() bool {
+		cs, err := o.Candidates(ctx)
+		if err != nil || len(cs) == 0 {
+			t.Fatalf("candidates %+v %v", cs, err)
+		}
+		for _, r := range cs[0].Reasons {
+			if r == ReasonUpdating {
+				return true
+			}
+		}
+		return false
+	}
+	if !held() {
+		t.Fatal("a run draining the cluster does not hold the switch")
+	}
+	if _, err := o.DB.ExecContext(ctx, `UPDATE update_runs SET step = 'waiting_click'`); err != nil {
+		t.Fatal(err)
+	}
+	if held() {
+		t.Fatal("a run waiting for clicks holds the switch")
+	}
+}

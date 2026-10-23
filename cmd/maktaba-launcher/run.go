@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
@@ -103,6 +105,9 @@ type launcher struct {
 	guardVersion string
 	firstStart   time.Time
 	failures     []time.Time
+	// oldSelf: the launcher a replacement left (maktaba-launcher.old) is kept until this
+	// one's first good start (story 35.7 AC6), then removed
+	oldSelf bool
 }
 
 // Run starts the current release and keeps it running until ctx ends or
@@ -123,9 +128,7 @@ func Run(ctx context.Context, cfg Config) error {
 	becomeSubreaper() // Linux: what a crashed server leaves behind comes back to us
 	ln := &launcher{cfg: cfg, l: l, log: newEventLog(l.LauncherLog(), cfg.Stderr, cfg.Now)}
 	defer ln.log.Close()
-	if cfg.Bundle == "" {
-		removeOldSelf(l)
-	}
+	ln.oldSelf = cfg.Bundle == ""
 	if cfg.StopEvent != "" {
 		var release func()
 		ctx, release, err = watchStopEvent(ctx, cfg.StopEvent, ln.log)
@@ -168,6 +171,14 @@ func (ln *launcher) loop(ctx context.Context) error {
 		case res.code == ExitRestart:
 			ln.log.Event("launcher_restart", ver, map[string]any{"exit": ExitRestart})
 			backoff = ln.cfg.BackoffInitial
+			if next := ln.takeReplaceRequest(); next != "" {
+				// story 35.7 AC6: a release that needs a newer launcher put it in place;
+				// it takes over now (the same process, so the service manager sees nothing)
+				ln.log.Event("launcher_replace", ver, map[string]any{"launcher": next})
+				if err := reexec(next); err != nil {
+					ln.log.Event("launcher_replace_later", ver, map[string]any{"launcher": next, "err": err.Error()})
+				}
+			}
 			continue
 		}
 
@@ -249,16 +260,41 @@ func (ln *launcher) choose() string {
 
 func (ln *launcher) isPending(ver string) bool {
 	if ln.cfg.Bundle != "" {
-		return false
+		return ln.bundleGuard() != nil
 	}
 	p, err := ln.l.ReadPending()
 	return err == nil && p != nil && p.Version == ver
 }
 
+// deadline is when a pending release that has not confirmed is given up: the
+// update orchestrator's deadline when it set one (its database step and watch take
+// their time), else the first start plus PendingTimeout.
+func (ln *launcher) deadline(ver string) time.Time {
+	d := ln.firstStart.Add(ln.cfg.PendingTimeout)
+	var set time.Time
+	if ln.cfg.Bundle != "" {
+		if g := ln.bundleGuard(); g != nil {
+			set = g.Deadline
+		}
+	} else if p, err := ln.l.ReadPending(); err == nil && p != nil && p.Version == ver {
+		set = p.Deadline
+	}
+	if !set.IsZero() && set.After(d) {
+		return set
+	}
+	return d
+}
+
 // rollback is the boot-loop guard firing: current = previous, pending
 // removed, launcher_rollback logged (design §2.2 step 5). false when there
-// is no previous to go back to (EC1: keep retrying, log no_previous).
+// is no previous to go back to (EC1: keep retrying, log no_previous). When the
+// release's migrations ran, the database record is marked for the previous
+// release to put back the dump taken before them (layout.MarkRecordRestoring).
 func (ln *launcher) rollback(ver, reason string) bool {
+	if ln.cfg.Bundle != "" {
+		return ln.bundleRollback(reason)
+	}
+	p, _ := ln.l.ReadPending()
 	to, err := ln.l.Rollback()
 	ln.failures = nil
 	ln.guardVersion = ""
@@ -266,8 +302,141 @@ func (ln *launcher) rollback(ver, reason string) bool {
 		ln.log.Event("no_previous", ver, map[string]any{"reason": reason, "err": err.Error()})
 		return false
 	}
+	if p != nil && p.Version == ver {
+		ln.markRecord(ver, p.Record, reason)
+	}
 	ln.log.Event("launcher_rollback", ver, map[string]any{"reason": reason, "to": to})
 	return true
+}
+
+// markRecord marks the database record of a release the guard gave up on.
+func (ln *launcher) markRecord(ver, record, reason string) {
+	if record == "" {
+		return
+	}
+	marked, err := layout.MarkRecordRestoring(record, ver, "launcher_"+reason)
+	switch {
+	case err != nil:
+		ln.log.Event("launcher_record_error", ver, map[string]any{"record": record, "err": err.Error()})
+	case marked:
+		ln.log.Event("launcher_record_restore", ver, map[string]any{"record": record})
+	}
+}
+
+// bundlePayload is the payload the next start runs (app-bundle mode): the kept copy
+// the update orchestrator (or this guard) named in payload-override - a rolled-back
+// app update - when it is a payload, else the app's own. The app's own runs, under the
+// guard, once it is the release the guard tries (the app's install happened); until
+// then the kept copy goes on running.
+func (ln *launcher) bundlePayload() string {
+	if o := layout.ReadOverride(ln.cfg.Root); o != "" && ln.cfg.RuntimeRoot == "" {
+		if g, err := layout.ReadGuard(ln.cfg.Root); err == nil && g != nil {
+			if v := payloadVersion(ln.cfg.Bundle); v != "" && v == layout.NormalizeVersion(g.Version) {
+				return ln.cfg.Bundle
+			}
+		}
+		if materializeOnWindows {
+			// the kept copy goes back into the app's own folder, where the firewall's
+			// rules name its programs (the server is stopped here)
+			self, _ := os.Executable()
+			if err := materialize(ln.cfg.Bundle, o, self); err != nil {
+				ln.log.Event("launcher_materialize_error", "", map[string]any{"payload": o, "err": err.Error()})
+			} else if err := layout.WriteOverride(ln.cfg.Root, ""); err == nil {
+				ln.log.Event("launcher_materialized", payloadVersion(ln.cfg.Bundle), map[string]any{"payload": o})
+				return ln.cfg.Bundle
+			}
+		}
+		if _, err := os.Stat(filepath.Join(o, "bin", layout.Exe("maktaba-server"))); err == nil {
+			return o
+		}
+		ln.log.Event("launcher_override_missing", "", map[string]any{"payload": o})
+	}
+	return ln.cfg.Bundle
+}
+
+// payloadVersion is a payload's payload.json version ("" when unreadable).
+func payloadVersion(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, payloadJSON))
+	if err != nil {
+		return ""
+	}
+	var p struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(b, &p) != nil {
+		return ""
+	}
+	return layout.NormalizeVersion(p.Version)
+}
+
+// bundleGuard is the update guard of the payload the next start runs (nil: none, or
+// one naming another release).
+func (ln *launcher) bundleGuard() *layout.Guard {
+	g, err := layout.ReadGuard(ln.cfg.Root)
+	if err != nil || g == nil {
+		return nil
+	}
+	if v := payloadVersion(ln.bundlePayload()); v == "" || v != layout.NormalizeVersion(g.Version) {
+		return nil
+	}
+	return g
+}
+
+// bundleRollback is the guard of an app bundle or a runtime copy firing: the kept copy
+// of the payload that ran before runs (payload-override), or the runtime's `current`
+// goes back to the directory that did; the guard is removed and the database record
+// marked. false when there is nothing to go back to.
+func (ln *launcher) bundleRollback(reason string) bool {
+	g := ln.bundleGuard()
+	ln.failures, ln.guardVersion = nil, ""
+	if g == nil {
+		return false
+	}
+	to := ""
+	switch {
+	case ln.cfg.RuntimeRoot != "" && g.PreviousRuntime != "":
+		if err := setRuntimeCurrent(ln.cfg.RuntimeRoot, g.PreviousRuntime); err != nil {
+			ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason, "err": err.Error()})
+			return false
+		}
+		to = g.PreviousRuntime
+	case ln.cfg.RuntimeRoot == "" && g.PreviousPayload != "":
+		if _, err := os.Stat(filepath.Join(g.PreviousPayload, "bin", layout.Exe("maktaba-server"))); err != nil {
+			ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason, "err": err.Error()})
+			return false
+		}
+		if err := layout.WriteOverride(ln.cfg.Root, g.PreviousPayload); err != nil {
+			ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason, "err": err.Error()})
+			return false
+		}
+		to = g.PreviousPayload
+	default:
+		ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason})
+		return false
+	}
+	ln.markRecord(g.Version, g.Record, reason)
+	_ = layout.ClearGuard(ln.cfg.Root)
+	ln.log.Event("launcher_rollback", g.Version, map[string]any{"reason": reason, "to": to})
+	return true
+}
+
+// setRuntimeCurrent points the runtime's `current` link at dir (a new link renamed
+// over the old: atomic).
+func setRuntimeCurrent(runtimeRoot, dir string) error {
+	dir = filepath.Base(dir)
+	if _, err := os.Stat(filepath.Join(runtimeRoot, dir, payloadJSON)); err != nil {
+		return err
+	}
+	tmp := filepath.Join(runtimeRoot, runtimeCurrent+".new")
+	_ = os.Remove(tmp)
+	if err := os.Symlink(dir, tmp); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, filepath.Join(runtimeRoot, runtimeCurrent)); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 type runResult struct {
@@ -298,14 +467,23 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 		layout.EnvReleaseDir + "=" + ln.l.ReleaseDir(ver),
 		layout.EnvInstallRoot + "=" + ln.l.Root,
 		EnvStopFile + "=" + stopFile,
+		layout.EnvLauncherProtocol + "=" + strconv.Itoa(LauncherProtocol),
+		layout.EnvLauncherExe + "=" + selfPath(),
 	}
 	if ln.cfg.Bundle != "" {
 		// Not MAKTABA_LAUNCHER/RELEASE_DIR/INSTALL_ROOT: the server must not
 		// treat the read-only payload as a release layout it can confirm,
-		// stage into or roll back.
-		server, env = filepath.Join(ln.cfg.Bundle, "bin", layout.Exe("maktaba-server")), append([]string{
-			EnvAppBundle + "=" + ln.cfg.Bundle,
+		// stage into or roll back. MAKTABA_LAUNCHER_ROOT is where it leaves this
+		// launcher's update guard (Epic 35, layout.Guard); MAKTABA_APP_BUNDLED the
+		// app's own payload when a kept copy runs in its place.
+		payload := ln.bundlePayload()
+		server, env = filepath.Join(payload, "bin", layout.Exe("maktaba-server")), append([]string{
+			EnvAppBundle + "=" + payload,
+			EnvAppBundled + "=" + ln.cfg.Bundle,
+			EnvLauncherRoot + "=" + ln.cfg.Root,
 			EnvStopFile + "=" + stopFile,
+			layout.EnvLauncherProtocol + "=" + strconv.Itoa(LauncherProtocol),
+			layout.EnvLauncherExe + "=" + selfPath(),
 		}, updateEnv(ln.cfg.RuntimeRoot)...)
 	}
 	cmd := exec.Command(server, append([]string{"serve"}, ln.cfg.Args...)...)
@@ -346,9 +524,14 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 			return finish(ln.stop(cmd, child, done, stopFile), runResult{stopped: true})
 		case <-tick.C:
 			child.reap()
-			if ln.guardVersion == ver && ln.isPending(ver) &&
-				ln.cfg.Now().Sub(ln.firstStart) >= ln.cfg.PendingTimeout {
-				ln.log.Event("launcher_pending_timeout", ver, map[string]any{"after_s": int(ln.cfg.PendingTimeout.Seconds())})
+			if ln.oldSelf && !ln.isPending(ver) && ln.cfg.Now().Sub(start) >= ln.cfg.StableAfter {
+				// a good start: the server this launcher started stays up, nothing pending;
+				// the launcher it replaced is not needed to go back to any more
+				ln.oldSelf = false
+				removeOldSelf(ln.l)
+			}
+			if ln.guardVersion == ver && ln.isPending(ver) && !ln.cfg.Now().Before(ln.deadline(ver)) {
+				ln.log.Event("launcher_pending_timeout", ver, map[string]any{"after_s": int(ln.cfg.Now().Sub(ln.firstStart).Seconds())})
 				return finish(ln.stop(cmd, child, done, stopFile), runResult{timedOut: true})
 			}
 		}
