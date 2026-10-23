@@ -148,10 +148,11 @@ func (c *realClient) OpenSession(ctx context.Context, req OpenSessionRequest) (O
 		ManifestURL: asString(resp["manifest_path"]),
 		StartSec:    float64(asInt(resp["start_sec"])),
 	}
-	// A direct play answers with the file's own URL, not a playlist: the player
-	// plays it on the element (direct_url), not through an HLS player.
+	// A direct play answers with the file's own URL, not a playlist: direct_url
+	// says so (the web player plays it on the element, not through an HLS
+	// player). manifest_url keeps it too, for the apps that play either kind.
 	if strings.HasPrefix(out.ManifestURL, "/stream/direct/") {
-		out.DirectURL, out.ManifestURL = out.ManifestURL, ""
+		out.DirectURL = out.ManifestURL
 	}
 	if ts := asString(resp["expires_at"]); ts != "" {
 		if t, err := time.Parse(time.RFC3339, ts); err == nil {

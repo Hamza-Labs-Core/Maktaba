@@ -624,8 +624,8 @@ slots = "off"
 			if wantVOD != "" && resp.Header.Get("X-Maktaba-VOD") != wantVOD {
 				t.Fatalf("open %s on %s: served %q, want %q", video, base, resp.Header.Get("X-Maktaba-VOD"), wantVOD)
 			}
-			if !strings.Contains(s.ManifestURL, "sig=") {
-				t.Fatalf("the session's stream URL is not signed: %s", s.ManifestURL)
+			if !strings.Contains(s.ManifestURL+s.DirectURL, "sig=") {
+				t.Fatalf("the session's stream URL is not signed: %q %q", s.ManifestURL, s.DirectURL)
 			}
 			return s
 		}
@@ -647,10 +647,10 @@ slots = "off"
 		playHLS(t, user, nodeWebURL, viaSess.ManifestURL, "home-vod-fallback")
 		// 4. direct play (aud=streaming-direct), ranged, on the home
 		direct := open(homeWebURL, v3, false, "")
-		if !strings.HasPrefix(direct.ManifestURL, "/stream/direct/"+v3+"?sig=") {
-			t.Fatalf("direct play URL: %s (mode %s)", direct.ManifestURL, direct.Mode)
+		if !strings.HasPrefix(direct.DirectURL, "/stream/direct/"+v3+"?sig=") || direct.ManifestURL != direct.DirectURL {
+			t.Fatalf("direct play URL: %q %q (mode %s)", direct.ManifestURL, direct.DirectURL, direct.Mode)
 		}
-		resp, body := user.do("GET", homeWebURL+direct.ManifestURL, nil, map[string]string{"Range": "bytes=0-1023"})
+		resp, body := user.do("GET", homeWebURL+direct.DirectURL, nil, map[string]string{"Range": "bytes=0-1023"})
 		if resp.StatusCode != http.StatusPartialContent || len(body) != 1024 {
 			t.Fatalf("direct play: %d, %d bytes", resp.StatusCode, len(body))
 		}
@@ -1016,6 +1016,7 @@ type openSession struct {
 	SessionID   string `json:"session_id"`
 	Mode        string `json:"mode"`
 	ManifestURL string `json:"manifest_url"`
+	DirectURL   string `json:"direct_url"`
 }
 
 // makeVideo writes a short real h264/aac mp4 (14 s) with ffmpeg.

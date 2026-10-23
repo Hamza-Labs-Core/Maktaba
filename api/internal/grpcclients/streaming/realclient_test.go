@@ -96,7 +96,8 @@ func TestStreamingClient_OpenSession(t *testing.T) {
 	}
 }
 
-// A direct play's path is the file, not a playlist: it comes back as DirectURL.
+// A direct play's path is the file, not a playlist: it comes back as DirectURL
+// (and still as ManifestURL, for the apps that read only that).
 func TestStreamingClient_OpenSession_DirectPlay(t *testing.T) {
 	c := newFakeStreamingClient(t, map[string]func(map[string]any) map[string]any{
 		"OpenSession": func(map[string]any) map[string]any {
@@ -107,7 +108,7 @@ func TestStreamingClient_OpenSession_DirectPlay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenSession: %v", err)
 	}
-	if resp.DirectURL != "/stream/direct/vid" || resp.ManifestURL != "" {
+	if resp.DirectURL != "/stream/direct/vid" || resp.ManifestURL != "/stream/direct/vid" {
 		t.Fatalf("direct play: got manifest %q direct %q", resp.ManifestURL, resp.DirectURL)
 	}
 }
