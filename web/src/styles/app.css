@@ -1815,7 +1815,9 @@ a.mkt-guide__chanhead:hover {
   overflow: hidden;
   background: var(--color-subtle);
 }
-.mkt-won__poster img {
+/* the programme's poster fills the 16:9 box; the channel logo (square,
+   often with the channel's name under its emblem) is never cropped */
+.mkt-won__poster img:not(.mkt-won__logo) {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -1825,10 +1827,32 @@ a.mkt-guide__chanhead:hover {
   width: 100%;
   height: 100%;
 }
+/* over a poster: a small square badge in the corner */
 .mkt-won__poster .mkt-won__logo {
   position: absolute;
-  inset-block-start: var(--space-1);
-  inset-inline-start: var(--space-1);
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  width: 3rem;
+  height: 3rem;
+  padding: 3px;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg) 70%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+/* no poster: a squarer box and the whole logo, centred at its own shape */
+.mkt-won__poster:has(.mkt-won__poster-empty) {
+  aspect-ratio: 4 / 3;
+}
+/* no poster: the whole logo, centred at its own shape */
+.mkt-won__poster .mkt-won__poster-empty + .mkt-won__logo {
+  inset: var(--space-2);
+  width: calc(100% - 2 * var(--space-2));
+  height: calc(100% - 2 * var(--space-2));
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
 }
 .mkt-won__meta {
   display: flex;
