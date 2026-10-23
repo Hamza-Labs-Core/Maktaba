@@ -11,10 +11,10 @@ needs.
 |---|---|
 | All binaries | Version/commit/build-date stamped at compile time; reported at `GET /api/system/version` (`{version, commit, build_date, channel}`). |
 | Server | Background poller hits the GitHub Releases API, caches the result, serves `GET /api/system/updates`. |
-| Server (automatic) | The home installs a new signed release by itself in its quiet window, then every joined machine, one at a time (Epic 35: [the whole cluster](#automatic-updates-of-the-whole-cluster-epic-35), below). |
+| Server (automatic) | The home installs a new signed release in its quiet window, then every joined machine, one at a time (Epic 35: [the whole cluster](#automatic-updates-of-the-whole-cluster-epic-35), below); a desktop app that runs the server stages it and installs it when someone clicks there. |
 | Server (admin) | Admin -> Updates (`/admin/updates`): Update now, Check now, Skip, pause; a run's steps on the home and on each machine, Cancel (before the home switches), Retry, Skip and Roll back a machine, Resume a held rollout. `POST /api/admin/system/update {"confirm":true}` is Update now. |
 | CLI | `maktaba-server update` reads the same GitHub Releases feed and verifies with the same code (`--check`, `--version vX.Y.Z`, `--rollback`). |
-| Desktop (Tauri) | Built-in updater reads the Release's `latest.json`, applies on relaunch (signature-verified). An app that runs the server installs the release the home's update orders, without a click (below); a client-only app keeps the "restart to install" badge. |
+| Desktop (Tauri) | Built-in updater reads the Release's `latest.json`, applies on relaunch (signature-verified). An app that runs the server stages the release the home's update orders and installs it on a click there (below); a client-only app keeps its own "restart to install" badge. |
 | Mobile | In-app banner → App Store / Play Store / `.apk` (apps can't self-update). |
 
 ## Channels
@@ -41,7 +41,10 @@ suffix ⇒ `beta`), overridable with `MAKTABA_UPDATE_CHANNEL`. Switching
 
 The home checks GitHub every 6 hours. A verified release newer than the cluster's
 (`rules.updates`: channel, pin, skipped versions, deferral, release age, the quiet window,
-default `03:00-05:00`) is installed with no one at a keyboard:
+default `03:00-05:00`) is installed with no one at a keyboard on headless and plain server
+installs; a desktop app that runs the server (Maktaba.app, the Windows or Linux app) gets it
+staged and installs it when someone clicks "Install" there (the steps below wait for that
+click):
 
 1. **The home prepares** it: downloads and verifies it (the signature, every file),
    stages it, runs it once (`--version`), and rehearses its migrations on a scratch copy
@@ -56,7 +59,9 @@ default `03:00-05:00`) is installed with no one at a keyboard:
 4. **Every machine follows**, after the home: they download and verify in parallel, then
    switch one at a time, each watched before the next (`node_failure_policy`, default
    `hold_platform`: one that fails holds the others of its platform). A machine offline
-   meanwhile is caught up when it comes back.
+   meanwhile is caught up when it comes back, in the next window. A desktop app's machine
+   waits for its click while the others go; its click takes the next turn. A run that waits
+   only for clicks gives way to a newer release.
 
 A release that does not stay healthy is **rolled back**: the previous release runs again.
 When it had already migrated the database, the dump taken before its migrations is put
@@ -71,9 +76,10 @@ How each kind of install takes a release
 
 | Install | Automatically | Still needs a person |
 |---|---|---|
-| **Maktaba.app** (Mac) | The server asks the app (`updates/app-install.json`, or starts it with `maktaba://install-update`); the app installs exactly that release from its own updater feed, without a click, and restarts the server. Before, the server keeps a copy of the payload it ran, which the launcher runs if the new one cannot stay up. | The first update from a release before automatic updates (the app's "Install update"). An app in `/Applications` that needs an admin password to replace. |
-| **Windows app** | The same; the installer stops and starts the server. | The first update from a release before automatic updates. |
-| **Linux app** (AppImage, `.deb`, `.rpm`) and **headless** (`install.sh --app`) | The server installs the release's signed Linux payload as a new runtime directory and restarts on it; `previous` is kept for the rollback. | The first update from a release before automatic updates. The app's own window updates with its updater (the server does not wait for it). |
+| **Maktaba.app** (Mac) | The server orders the release from the app (`updates/app-install.json`, or starts it with `maktaba://install-update`); the app downloads and checks exactly that release from its own updater feed and shows it ("Install Maktaba <v>"). After the click, the home's go: the app installs what it staged and restarts the server. Before, the server keeps a copy of the payload it ran, which the launcher runs if the new one cannot stay up. | **The click** in the app (owner decision D1). The first update from a release before automatic updates (the app's "Install update"). An app in `/Applications` that needs an admin password to replace. |
+| **Windows app** | The same; the installer stops and starts the server. | The click. The first update from a release before automatic updates. |
+| **Linux app** (AppImage, `.deb`, `.rpm`) | The server installs the release's signed Linux payload as a new runtime directory, and switches to it after the click in the app (no root needed); `previous` is kept for the rollback. | The click. The first update from a release before automatic updates. The app's own window updates with its updater. |
+| **Headless** (`install.sh --app`) | The same runtime switch, by itself in the window. | The first update from a release before automatic updates. |
 | **Plain server** on the side-by-side layout (`setup --self-managed`, `.deb`/`.rpm` in the layout) | Staged in `bin/releases/<v>` with its migrations, switched to under the launcher's guard. | — |
 | Plain binary copied by hand (no launcher) | — (reported: `not_self_managed`) | One `maktaba-server setup --service`, then automatic. |
 | **Docker** | — | `docker compose pull && docker compose up -d` (Epic 28.3's `409`). |

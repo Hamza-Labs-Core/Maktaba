@@ -11,7 +11,7 @@
 | design.md | Now |
 |---|---|
 | Every machine runs a launcher over `bin/releases/<v>` (§2). | Four kinds of install (below). Only plain server installs use `bin/releases`. The apps run a payload inside the app (Mac, Windows) or a runtime copy of it (Linux). |
-| The app's updater is the only updater inside an app; the server's own is off (Epic 36 contract-update). | The server decides **when** and **what** (policy, window, home first, one node at a time); the app's updater still does the swap for Mac and Windows, ordered by the server, without a click. |
+| The app's updater is the only updater inside an app; the server's own is off (Epic 36 contract-update). | The server decides **what** and the order of the machines (policy, home first, one node at a time); a desktop app that runs the server stages what the home orders and installs it **when someone clicks there** (owner decision D1, "Ask first" below); the app's updater still does the swap for Mac and Windows. Headless and plain server installs update by themselves in the window. |
 | Rollback replaces binaries; the schema stays (migrations are additive). | Every installed release (38.12) refuses a database a newer release migrated (`migrate up` exits 3, `serve` refuses). So a rollback after a migration also **puts back the dump taken before it**. |
 | The orchestrator backs up and migrates before restarting the roles (§5.3 steps 6–9). | Every home migrates at the new release's start, through the 38.12 database step (dump, migrate, put back on failure), whatever the install kind. The orchestrator rehearses the migrations on a scratch copy before anything is installed. |
 | TV: Epic 33 hot swap, or a restart when nobody watches (§7.2). | The fallback: the machine restarts in the window only while `tv_staging.quiet_max_viewers` (0) are watching; at the window's end it is `tv_busy` and tried again next window. The Epic 33 binary swap and the TV handover across a supervisor restart (§8.1) are not used yet. |
@@ -36,9 +36,10 @@ run.**
 
 | Install kind | How the supervisor tells | Prepare (nothing changes) | Apply | Roll back |
 |---|---|---|---|---|
-| **Maktaba.app** (Mac, Epic 36) | `MAKTABA_APP_BUNDLE` inside `*.app/Contents/Resources/server` | verify `release.json`; check the app feed (`latest.json`) of that release lists this platform; keep a copy of the running payload (`<state>/updates/payloads/<v>`, an APFS clone); rehearse (home) | ask the app (`<state>/updates/app-install.json`; start it with `--install-update` when it is not running); the app's updater downloads the app, checks its signature, swaps the bundle and restarts the server | `<state>/updates/payload-override` names the kept payload; the launcher runs it |
+| **Maktaba.app** (Mac, Epic 36) | `MAKTABA_APP_BUNDLE` inside `*.app/Contents/Resources/server` | verify `release.json`; check the app feed (`latest.json`) of that release lists this platform; keep a copy of the running payload (`<state>/updates/payloads/<v>`, an APFS clone); rehearse (home) | **order** the release from the app (`<state>/updates/app-install.json`; start it with `maktaba://install-update` when it does not answer): it downloads and checks its update and shows it; **after a click there and the home's go**, the app's updater swaps the bundle (from what it staged, checked again) and restarts the server | `<state>/updates/payload-override` names the kept payload; the launcher runs it |
 | **Windows app** (Epic 38) | `MAKTABA_APP_BUNDLE` in `<install>\server` beside `Maktaba.exe` | same (a plain copy) | same; the NSIS installer's hooks stop and start the server | same |
-| **Linux app and headless** (`install.sh --app`, Epic 39) | the launcher runs from a runtime copy (`MAKTABA_RUNTIME_OWNER`) | download the release's `maktaba-linux-payload-<v>-<arch>.tar.gz`, verified against the signed `checksums.txt`, installed as a new runtime directory; rehearse (home) | `runtime/current` → the new directory, `previous` → the old; exit 75 (the launcher starts `runtime/current` again) | `current` → `previous`; exit 75 |
+| **Linux app** (Epic 39; `MAKTABA_RUNTIME_OWNER=app`) | the launcher runs from a runtime copy | download the release's `maktaba-linux-payload-<v>-<arch>.tar.gz`, verified against the signed `checksums.txt`, installed as a new runtime directory; rehearse (home) | order it from the app (nothing for it to fetch: it shows it); after a click there and the home's go, `runtime/current` → the new directory, `previous` → the old; exit 75 (the launcher starts `runtime/current` again) | `current` → `previous`; exit 75 |
+| **Headless** (`install.sh --app`; `MAKTABA_RUNTIME_OWNER=headless`) | the same runtime copy | the same | by itself, in the window: the switch above, no order | the same |
 | **Plain server** (`setup --self-managed`, `.deb`/`.rpm` in the layout) | `MAKTABA_LAUNCHER=1`, `bin/releases/<v>` | `releaseverify/install.Stage` into `bin/releases/<v>` with the release's migrations; rehearse (home) | `current` = `<v>` under the launcher's guard (`pending`); exit 75 | `current` = `previous`; exit 75 |
 
 A **flat** install (binaries copied by hand, no launcher) has nothing to fall back with: its run
@@ -56,19 +57,54 @@ launcher); from then on it updates itself. Docker keeps Epic 28.3's answer.
 | Health of the release that came up | `serve_update.go` (`machineHealth`: every role running, none crash-looping or halted by the database step, the api's `/readyz` and its version, on a node the schema guard and the machine agent) |
 | The database | `cmd/maktaba-server/internal/dbsafe` (dump checked with `pg_restore --list`, rehearsal, restore in place), the database step in `serve_appbundle.go` (now also `layoutHomeGates` for a plain server home), the copies' slots dropped before a dump is put back (`pgbundle.DropSlotsSQL`) |
 | The launcher's guard for the app and the runtime copy | `cmd/maktaba-launcher/run.go` (`bundleGuard`, `bundleRollback`), `shared/go/layout/guard.go` (`pending.json`, `payload-override`, `MarkRecordRestoring`) |
-| The app installing what the server orders | `apps/desktop/src-tauri/src/autoinstall.rs`, `shell.rs` (`install_requested`) |
+| The order, its staging and its click (ask first) | `cmd/maktaba-server/internal/updater/request.go`, `apps/desktop/src-tauri/src/autoinstall.rs`, `shell.rs` (`install_requested`, `stage_order`), `tray.rs` (`entries_with_order`) |
 | The release's migrations | `release.yml` (`maktaba-migrations-<v>.tar.gz`), `release.json` `migrations`, `releaseverify/install.Stage` (beside the binaries), `api/migrate.go` (found beside `maktaba-api`) |
 | The page | `web/src/pages/Admin/Updates.tsx` (`/admin/updates`) |
 
-### The app shell installs without a click (owner decision)
+### Ask first: a desktop app installs on a click (owner decision D1, 2026-10-23)
 
-A desktop app that runs the server (the home, or a full node) installs the update the server
-orders, in the window, without a click; its window, if open, relaunches. The server names the
-exact release (`releases/download/v<v>/latest.json`), so the channel, pin and skip rules hold and
-the app installs nothing the server did not verify. A client-only app keeps the "restart to
-install" badge. The Linux app's server updates its own runtime (a `.deb` update needs root at
-03:00); the app catches up with its own updater later and no longer says it is older than the
-server.
+A desktop app that runs the server — the home's, or a full node's: Maktaba.app, the Windows
+app, the Linux app — keeps its "restart to install". What the home orders is downloaded,
+verified and staged by itself; it is installed only when someone clicks on that machine.
+Headless installs and plain server installs update fully by themselves within the policy's
+window.
+
+**The order** (`<launcher root>/updates/app-install.json`, the app's own state folder;
+`updater/request.go`, `autoinstall.rs`): the supervisor writes `ordered` with the release's
+own feed (`releases/download/v<v>/latest.json`: the channel, pin and skip rules hold) and its
+`kind` (`app`: the app's updater installs it; `runtime`: the server installs its own runtime,
+D3) and `home`. The app stages it (kind app: downloads its update from that feed, checks it
+with its key, keeps it in `updates/app-update-<v>.bin`) and answers `staged`; the tray shows
+it — on the home "Install Maktaba <v> (this home's update) and restart", on a node "Install
+Maktaba <v>: the cluster's update waits for this machine". A click answers `clicked`; the
+supervisor waits for the home's `go` and then switches (kind app: `go`, and the app installs
+what it staged, checked again; kind runtime: the runtime switch). The supervisor's journal
+says `awaiting_click`, then `clicked`; a restart takes it up where it waited; a newer run
+replaces an order still waiting; Abort withdraws it (the app forgets what it staged).
+
+**The run** (`driver.go`):
+
+- **The home** asks: its release is ordered as soon as it is prepared, without the window's or
+  the TV's gate (the click is the person's moment) and with nothing drained while it waits.
+  Its click drains the cluster's workers (as before an automatic apply), then the home goes.
+  The machines are ordered only once the home committed.
+- **A machine** asks: it is ordered as soon as it is prepared and waits for its click while the
+  rollout goes on with the others (target `waiting_click`); its click takes the next turn
+  (`clicked`, then the go: still one machine at a time).
+- Nothing else waits for ever: a run left waiting only for clicks stays open (step
+  `waiting_click`, the Updates page names the machines with the release each waits for, and a
+  notice `update.waiting_click` says where), and a newer release takes its place (`superseded`:
+  the orders withdrawn, the newer one ordered instead). Cancel withdraws the home's order
+  before its go, and stops a rollout; Skip withdraws one machine's.
+- **A machine behind the home stays safe**: the schema guard pauses a node only when the home's
+  schema is one its code cannot run against (a breaking release, `maktaba_min_node_schema`);
+  additive releases leave it working behind the home. Its copy of the home's database (Epic 37)
+  pauses while the home's schema is ahead (`incompatible`) and its reads go to the home's
+  database meanwhile; after its update it copies the home anew.
+
+An app that runs the server no longer offers its own feed's updates (the home decides what);
+a client-only app keeps them. The Linux app older than the server it runs (D3: the server
+updated its runtime) offers its own update for its window and tray.
 
 ### The database (home only)
 
@@ -81,7 +117,9 @@ server.
 2. **Apply: the 38.12 database step**, now for every home (it ran only inside the apps): at the
    new release's start, before any role, the dump (`backups/pre-<old>-to-<new>.dump`, verified
    with `pg_restore --list`), the migrations, the record `state/database.json`; a failed
-   migration puts the dump back and the run is `rolled_back` with nothing changed.
+   migration puts the dump back and the run is `rolled_back` with nothing changed. The watch
+   neither commits nor counts the release unhealthy while the step works (or the app's Python
+   environment is built), however long it takes; the launcher's guard bounds it.
 3. **Rolling back after the migrations ran** (a check failed in the watch, or the launcher's guard
    fired): the record is set to `restoring` (failed = the new release, dump = the one above)
    before the previous release starts, and that release's database step puts the dump back
@@ -111,14 +149,19 @@ that comes back behind the watermark gets a `catch_up` run of its own.
 
 ## What still needs a person
 
+- **A click on each desktop app that runs the server** (owner decision D1): the home's first,
+  then each machine's; the release is staged and waiting. The rollout goes on with the others
+  meanwhile, and a newer release replaces an order nobody clicked.
 - **Installs from before this release** have automatic installs compiled off (and, in the apps,
   discovery off): they take this release once by the way they update today (the app's "Install
-  update", `install.sh`, `maktaba-server update`); every release after it installs itself.
+  update", `install.sh`, `maktaba-server update`); every release after it comes by itself (in
+  a desktop app, staged and waiting for its click).
 - A Mac app in `/Applications` the user cannot write without an admin password: the app reports
   the install failed (the run fails, nothing changed) — move the app or update it once by hand.
 - A flat install (binaries copied by hand, no launcher): one `maktaba-server setup --service`.
-- A Linux app installed as a `.deb`/`.rpm`: its server updates itself (its runtime copy); the app's
-  own window and tray update with the package manager or the app's "Install update".
+- A Linux app installed as a `.deb`/`.rpm`: its server's runtime switches on the click (no root
+  needed, D3); the app's own window and tray update with the package manager or the app's
+  "Install update".
 - A release whose migrations break the previous release (`breaks_previous_home`): held for an
   admin's approval (unchanged).
 - A failed run blocks that version; the next release installs by itself, or an admin retries.
