@@ -289,7 +289,8 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
       if (Number.isFinite(d) && d > 0 && el.currentTime > d - 1)
         el.currentTime = Math.max(0, d - 1);
     };
-    if (!session.manifest_url) {
+    // direct_url: the file itself (the API keeps it in manifest_url too, for the apps)
+    if (session.direct_url || !session.manifest_url) {
       const onMeta = () => {
         if (at > 0) el.currentTime = at;
         clampStart();

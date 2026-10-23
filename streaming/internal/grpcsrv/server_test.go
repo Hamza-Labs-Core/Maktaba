@@ -67,6 +67,28 @@ func TestOpenSession_Transcode(t *testing.T) {
 	}
 }
 
+// Nothing serves a remux, so a container the profile does not play goes to an HLS
+// transcode, whose playlist ffmpeg writes.
+func TestOpenSession_RemuxPlaysAsTranscode(t *testing.T) {
+	srv, fb, _ := setupServer(t)
+	row := &probe.Row{
+		VideoID: uuid.New(), LibraryID: uuid.New(), ContentHash: "h2",
+		Path: "/v/x.mkv", Container: "matroska,webm", VideoCodec: "h264", AudioCodec: "aac",
+		Height: 720, BitrateKbps: 2000, Probed: true,
+	}
+	fb.Set(row)
+	resp, err := srv.OpenSession(context.Background(), OpenSessionRequest{
+		VideoID: row.VideoID.String(), UserID: uuid.New().String(),
+		ClientProfile: "ios-native", // plays mp4 and mov, not mkv
+	})
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if resp.Mode != "transcode" {
+		t.Fatalf("mode=%s want transcode", resp.Mode)
+	}
+}
+
 func TestOpenSession_DASHFormat(t *testing.T) {
 	srv, _, row := setupServer(t)
 	resp, err := srv.OpenSession(context.Background(), OpenSessionRequest{

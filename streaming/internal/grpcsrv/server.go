@@ -216,6 +216,12 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	})
 
 	mode := session.Mode(verdict.Mode)
+	if mode == session.ModeRemux {
+		// Nothing serves a remux yet (Story 8.4's cache-then-stream Remuxer has no
+		// runtime caller), so a remux session's playlist would never be written: the
+		// player waits on a 404 for ever. An HLS transcode plays it.
+		mode = session.ModeTranscode
+	}
 	state := session.StateActive
 
 	// the transcode slot taken (""; none), given back when the transcode
