@@ -28,6 +28,9 @@ export function WhatsOnNow() {
   const [entries, setEntries] = useState<NowEntry[] | null>(null);
   const offsetRef = useRef(0);
   const [, tick] = useState(0);
+  // pictures that failed to load (a video without a thumbnail yet): the tile
+  // shows the channel logo instead of a broken image
+  const [badPosters, setBadPosters] = useState<ReadonlySet<string>>(() => new Set());
 
   const load = useCallback(() => {
     channelsApi
@@ -87,8 +90,15 @@ export function WhatsOnNow() {
                   aria-label={t("won.tuneIn", { name: e.channel.name })}
                 >
                   <div className="mkt-won__poster">
-                    {cur?.poster_url ? (
-                      <img src={cur.poster_url} alt="" />
+                    {cur?.poster_url && !badPosters.has(cur.poster_url) ? (
+                      <img
+                        src={cur.poster_url}
+                        alt=""
+                        onError={() => {
+                          const url = cur.poster_url;
+                          if (url) setBadPosters((s) => new Set(s).add(url));
+                        }}
+                      />
                     ) : (
                       <span className="mkt-won__poster-empty" aria-hidden="true" />
                     )}
