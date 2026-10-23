@@ -3292,6 +3292,73 @@ a.mkt-guide__chanhead:hover {
   margin-block-end: var(--space-2);
 }
 
+/* the video page: its picture leads the header and plays the video */
+.mkt-video__header {
+  display: grid;
+  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+  grid-template-areas:
+    "hero title"
+    "hero flags"
+    "hero display";
+  column-gap: var(--space-5);
+  align-items: start;
+}
+.mkt-video__header > :nth-child(2) {
+  grid-area: title;
+}
+.mkt-video__header > .mkt-video__flags {
+  grid-area: flags;
+}
+.mkt-video__header > :last-child {
+  grid-area: display;
+}
+.mkt-video__hero {
+  grid-area: hero;
+  position: relative;
+  display: block;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+.mkt-video__hero .mkt-card__poster {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 0;
+}
+.mkt-video__hero-play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 3.5rem;
+  height: 3.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  font-size: 1.4rem;
+  padding-inline-start: 0.2rem;
+  opacity: 0.92;
+  transition: transform 120ms ease;
+}
+.mkt-video__hero:hover .mkt-video__hero-play,
+.mkt-video__hero:focus-visible .mkt-video__hero-play {
+  transform: scale(1.08);
+  opacity: 1;
+}
+@media (max-width: 768px) {
+  .mkt-video__header {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "hero" "title" "flags" "display";
+  }
+}
+/* related videos: a thumbnail over each title */
+.mkt-context-rail__item .mkt-card__poster {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-block-end: var(--space-2);
+}
 /* small pictures beside a video's title in tables and admin lists */
 .mkt-history__video,
 .mkt-thumb-row {

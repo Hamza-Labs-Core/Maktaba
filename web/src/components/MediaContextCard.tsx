@@ -21,6 +21,7 @@ import { Chip } from "@ds/components/Chip/Chip";
 import { Badge } from "@ds/components/Badge/Badge";
 import { api } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { VideoPoster } from "./VideoViews";
 
 interface CastMember {
   entity_id?: string;
@@ -207,6 +208,7 @@ function RelatedRail({
         {items.map((rel) => (
           <li key={`${rel.reason}-${rel.video_id}`}>
             <Link to={`/videos/${rel.video_id}`} className="mkt-context-rail__item">
+              <VideoPoster videoId={rel.video_id} />
               <span dir="auto">{rel.title}</span>
               {reasonKey && reasonKey[rel.reason] && (
                 <span className="mkt-context-rail__reason mkt-muted">
