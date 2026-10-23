@@ -1,6 +1,7 @@
 package series
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -154,4 +155,29 @@ func interiorGaps(rows []epRow) []Gap {
 		}
 	}
 	return gaps
+}
+
+// An episode's picture is a URL on the videos API, never videos.poster_path
+// (a path on the server).
+func TestToEpisode_ThumbnailIsTheVideoPosterURL(t *testing.T) {
+	e := epRow{videoID: "v1", title: "Ep", poster: sql.NullString{String: "/srv/media/show/poster.jpg", Valid: true}}
+	if got := toEpisode(e).Thumbnail; got != "/api/videos/v1/poster" {
+		t.Fatalf("thumbnail %q", got)
+	}
+}
+
+// The series page's picture comes from its first episode in the series' numbering.
+func TestFirstEpisode(t *testing.T) {
+	n := func(v int64) sql.NullInt64 { return sql.NullInt64{Int64: v, Valid: true} }
+	group := []epRow{
+		{videoID: "s1e3", season: n(1), episode: n(3)},
+		{videoID: "s2e1", season: n(2), episode: n(1)},
+		{videoID: "s1e1", season: n(1), episode: n(1)},
+	}
+	if f := firstEpisode(group, "season"); f == nil || f.videoID != "s1e1" {
+		t.Fatalf("first %+v", f)
+	}
+	if firstEpisode(nil, "season") != nil {
+		t.Fatal("no episodes: no first")
+	}
 }

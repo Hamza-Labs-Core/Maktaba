@@ -16,6 +16,7 @@ import {
 } from "../../../lib/tvClusterApi";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { MoveDialog } from "./MoveDialog";
+import { ChannelLogo } from "../../../components/ChannelLogo";
 
 const STATE_TONE: Record<OnAirState, "success" | "warn" | "neutral" | "accent"> = {
   live: "success",
@@ -83,7 +84,10 @@ export function OnAir({
               {rows.map((c) => (
                 <tr key={c.channel_id}>
                   <td>{n(c.number, { useGrouping: false })}</td>
-                  <td>{c.name}</td>
+                  <td>
+                    <ChannelLogo id={c.channel_id} />
+                    {c.name}
+                  </td>
                   <td>{c.host_name || "—"}</td>
                   <td>
                     <Badge tone={STATE_TONE[c.state] ?? "neutral"}>

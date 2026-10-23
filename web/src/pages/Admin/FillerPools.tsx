@@ -26,6 +26,7 @@ import {
 import { SourceSearch, useDuration } from "./channels/pickers";
 import { TitleRow } from "../../help/HelpLink";
 import "./channels/channels.css";
+import { VideoPoster } from "../../components/VideoViews";
 
 const FILLER_KINDS: FillerKind[] = ["filler", "bumper", "station_id"];
 
@@ -230,8 +231,12 @@ function FillerPoolsInner() {
                             {it.pending && (
                               <Badge tone="warn">{t("fillerPools.pendingItem")}</Badge>
                             )}
-                            <a href={`/videos/${encodeURIComponent(it.video_id)}/watch?t=0`}>
-                              {it.title || it.video_id}
+                            <a
+                              href={`/videos/${encodeURIComponent(it.video_id)}/watch?t=0`}
+                              className="mkt-thumb-row"
+                            >
+                              <VideoPoster videoId={it.video_id} />
+                              <span>{it.title || it.video_id}</span>
                             </a>
                             <span className="mkt-muted">{dur(it.duration_ms ?? 0)}</span>
                             <button

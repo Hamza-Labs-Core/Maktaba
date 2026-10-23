@@ -578,6 +578,8 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
           controls
           playsInline
           preload="metadata"
+          // the video's picture until it plays (a missing one leaves the frame)
+          poster={videoId ? carrySig(`/api/videos/${videoId}/poster`, sigSource) : undefined}
         >
           {tracks.map((tr) => (
             <track

@@ -22,6 +22,7 @@ import { api, ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { TitleRow } from "../../help/HelpLink";
+import { seriesPictureUrl } from "./SeriesBrowser";
 
 interface Episode {
   video_id: string;
@@ -51,6 +52,7 @@ interface SeriesHeader {
   id: string;
   name: string;
   poster_path?: string;
+  poster_video_id?: string;
   year?: number;
   numbering: string;
 }
@@ -71,6 +73,7 @@ export function SeriesDetail() {
   const [err, setErr] = useState<{ message: string; status?: number } | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [reload, setReload] = useState(0);
+  const [headerBroken, setHeaderBroken] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -179,12 +182,18 @@ export function SeriesDetail() {
   if (!data || !id) return <p className="mkt-loading">{t("common.loading")}</p>;
 
   const title = header?.name ?? t("series.title");
+  const headerPicture = header ? seriesPictureUrl(header) : null;
 
   return (
     <section className="mkt-page mkt-series-detail">
       <header className="mkt-page__header mkt-series-detail__header">
-        {header?.poster_path && (
-          <img className="mkt-series-detail__poster" src={header.poster_path} alt="" />
+        {headerPicture && !headerBroken && (
+          <img
+            className="mkt-series-detail__poster"
+            src={headerPicture}
+            alt=""
+            onError={() => setHeaderBroken(true)}
+          />
         )}
         <div>
           <TitleRow>
@@ -229,11 +238,7 @@ export function SeriesDetail() {
                   <li key={c.ep.video_id}>
                     <Link to={`/videos/${c.ep.video_id}`} className="mkt-episode">
                       <div className="mkt-episode__thumb">
-                        {c.ep.thumbnail ? (
-                          <img src={c.ep.thumbnail} alt="" loading="lazy" />
-                        ) : (
-                          <span aria-hidden="true">▤</span>
-                        )}
+                        <EpisodePicture src={c.ep.thumbnail} />
                         {c.ep.watched && (
                           <span className="mkt-episode__watched" aria-hidden="true">
                             ✓
@@ -281,4 +286,11 @@ export function SeriesDetail() {
       )}
     </section>
   );
+}
+
+/** An episode's picture; none yet (404) shows the placeholder. */
+function EpisodePicture({ src }: { src?: string }) {
+  const [broken, setBroken] = useState(false);
+  if (!src || broken) return <span aria-hidden="true">▤</span>;
+  return <img src={src} alt="" loading="lazy" onError={() => setBroken(true)} />;
 }

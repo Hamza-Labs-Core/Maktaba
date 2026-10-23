@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useI18n } from "../../../../lib/i18n";
 import { useTk } from "../changeBits";
 import type { ChannelRef, LineupDiff as Lineup, PendingSummary } from "../../../../lib/tvChanges";
+import { ChannelLogo } from "../../../../components/ChannelLogo";
 
 function chan(t: (k: string, v?: Record<string, string | number>) => string, c: ChannelRef) {
   if (c.number != null && c.name)
@@ -47,6 +48,7 @@ export function LineupDiff({
               <span className={`mkt-tvx-op mkt-tvx-op--${c.op}`}>
                 {tk(`tvchanges.op.${c.op}`, c.op)}
               </span>{" "}
+              <ChannelLogo id={c.id} />
               {c.number
                 ? t("tvchanges.lineup.channel", { n: n(c.number), name: c.name ?? "" })
                 : c.name || c.id.slice(0, 8)}
@@ -91,14 +93,16 @@ export function LineupDiff({
       <Group title={t("tvchanges.lineup.added")} empty={added.length === 0}>
         {added.map((c) => (
           <li key={c.id} className="mkt-tvx-add">
-            + {chan(t, c)}
+            + <ChannelLogo id={c.id} />
+            {chan(t, c)}
           </li>
         ))}
       </Group>
       <Group title={t("tvchanges.lineup.removed")} empty={removed.length === 0}>
         {removed.map((c) => (
           <li key={c.id} className="mkt-tvx-del">
-            − {chan(t, c)}
+            − <ChannelLogo id={c.id} />
+            {chan(t, c)}
           </li>
         ))}
       </Group>
@@ -123,6 +127,7 @@ export function LineupDiff({
       <Group title={t("tvchanges.lineup.changed")} empty={changed.length === 0}>
         {changed.map((c) => (
           <li key={c.id}>
+            <ChannelLogo id={c.id} />
             {chan(t, c)}:{" "}
             {(c.fields ?? []).map((f) => (
               <span key={f} className="mkt-tvx-kind">
