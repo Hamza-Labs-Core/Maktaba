@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -146,6 +147,11 @@ func (c *realClient) OpenSession(ctx context.Context, req OpenSessionRequest) (O
 		Mode:        asString(resp["mode"]),
 		ManifestURL: asString(resp["manifest_path"]),
 		StartSec:    float64(asInt(resp["start_sec"])),
+	}
+	// A direct play answers with the file's own URL, not a playlist: the player
+	// plays it on the element (direct_url), not through an HLS player.
+	if strings.HasPrefix(out.ManifestURL, "/stream/direct/") {
+		out.DirectURL, out.ManifestURL = out.ManifestURL, ""
 	}
 	if ts := asString(resp["expires_at"]); ts != "" {
 		if t, err := time.Parse(time.RFC3339, ts); err == nil {

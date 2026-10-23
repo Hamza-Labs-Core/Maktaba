@@ -148,7 +148,7 @@ func (r *Registry) Decide(profile *Profile, src Source, ov Override) Verdict {
 			BitrateCapKbps: effectiveBitrate(profile, ov),
 			HeightCap:      effectiveHeight(profile, ov)}
 	}
-	containerOK := contains(profile.Containers, src.Container)
+	containerOK := containsContainer(profile.Containers, src.Container)
 	if !containerOK {
 		return Verdict{Mode: ModeRemux, Reason: "container not in profile, codecs OK"}
 	}
@@ -167,6 +167,25 @@ func effectiveHeight(p *Profile, ov Override) int {
 		return ov.MaxHeight
 	}
 	return p.MaxHeight
+}
+
+// containerAliases maps ffprobe's demuxer names onto the profiles' container names.
+var containerAliases = map[string]string{"matroska": "mkv"}
+
+// containsContainer reports whether the profile plays the source's container. The
+// probe stores ffprobe's format_name, a list of the names its demuxer answers to
+// ("mov,mp4,m4a,3gp,3g2,mj2", "matroska,webm"): any one of them in the profile is enough.
+func containsContainer(profile []string, container string) bool {
+	for _, name := range strings.Split(container, ",") {
+		name = strings.TrimSpace(name)
+		if alias, ok := containerAliases[strings.ToLower(name)]; ok {
+			name = alias
+		}
+		if contains(profile, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func contains(haystack []string, needle string) bool {

@@ -135,3 +135,24 @@ func TestRegistry_Register(t *testing.T) {
 		t.Fatalf("custom profile not registered: %+v ok=%v", p, ok)
 	}
 }
+
+// The probe stores ffprobe's format_name: a list of names, matroska for mkv.
+func TestDecide_ProbeContainerNames(t *testing.T) {
+	r := NewRegistry()
+	cases := []struct {
+		profile, container string
+		want               Mode
+	}{
+		{"browser-chrome", "mov,mp4,m4a,3gp,3g2,mj2", ModeDirect},
+		{"ios-native", "mov,mp4,m4a,3gp,3g2,mj2", ModeDirect},
+		{"androidtv", "matroska,webm", ModeDirect},
+		{"ios-native", "matroska,webm", ModeRemux},
+	}
+	for _, c := range cases {
+		p, _ := r.Get(c.profile)
+		src := Source{Container: c.container, VideoCodec: "h264", AudioCodec: "aac", Height: 720, BitrateKbps: 2000}
+		if v := r.Decide(p, src, Override{}); v.Mode != c.want {
+			t.Errorf("%s %q: got %s (%s), want %s", c.profile, c.container, v.Mode, v.Reason, c.want)
+		}
+	}
+}
