@@ -98,6 +98,9 @@ type Machine struct {
 	Platform string `json:"platform,omitempty"`
 	// Kind is the machine's install kind (layout, runtime, appbundle, flat).
 	Kind string `json:"kind,omitempty"`
+	// Target is the release the active run brings it to (the one its app shows while it
+	// waits for a click).
+	Target string `json:"target,omitempty"`
 }
 
 // Overview builds GET /api/cluster/updates.
@@ -147,8 +150,20 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.Driver != nil && len(o.Machines) > 0 {
 		if o.Run != nil {
-			if kind, _, err := h.Svc.Store.RunDetailOf(r.Context(), o.Run.ID); err == nil {
+			if kind, det, err := h.Svc.Store.RunDetailOf(r.Context(), o.Run.ID); err == nil {
 				o.Machines[0].Kind = kind
+				if !det.NoHome {
+					o.Machines[0].Target = NormalizeVersion(o.Run.Version)
+				}
+				// the home's desktop app waits for a click there (owner decision D1)
+				if o.Run.State == RunHomeApplying && det.Home != nil {
+					switch det.Home.State {
+					case MAwaitingClick:
+						o.Machines[0].State = TargetWaitingClick
+					case MClicked:
+						o.Machines[0].State = TargetClicked
+					}
+				}
 			}
 		}
 		o.Machines = h.Driver.Machines(r.Context(), o.Machines[0])

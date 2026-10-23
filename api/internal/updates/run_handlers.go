@@ -24,7 +24,9 @@ var (
 )
 
 // Cancel stops a run before the home switches (story 35.4 AC1: before migrate; here
-// before the apply, the moment the home's database step may begin).
+// before the apply, the moment the home's database step may begin; for a home's
+// desktop app, before its go), or stops a rollout: the machines not yet applying are
+// left as they are (their orders withdrawn), the one applying finishes on its own.
 func (d *Driver) Cancel(ctx context.Context, id, actor string) error {
 	d.stepMu.Lock()
 	defer d.stepMu.Unlock()
@@ -38,17 +40,35 @@ func (d *Driver) Cancel(ctx context.Context, id, actor string) error {
 	if run.FinishedAt != nil {
 		return nil
 	}
-	switch run.State {
-	case RunPlanned, RunHomePreparing, RunHomePrepared, RunDraining:
-	default:
-		return fmt.Errorf("%w: the run is %s", ErrPastSwitch, run.State)
-	}
 	_, det, err := d.Store.RunDetailOf(ctx, id)
 	if err != nil {
 		return err
 	}
-	if run.State != RunPlanned && !det.NoHome {
-		_ = d.abortHome(ctx, run)
+	switch run.State {
+	case RunPlanned, RunHomePreparing, RunHomePrepared, RunDraining:
+		if run.State != RunPlanned && !det.NoHome {
+			_ = d.abortHome(ctx, run)
+		}
+	case RunHomeApplying:
+		// the home's app waits for its click (or its go): the order is withdrawn; once
+		// the home switched, the abort is refused
+		if err := d.abortHome(ctx, run); err != nil {
+			return fmt.Errorf("%w: the run is %s", ErrPastSwitch, run.State)
+		}
+	case RunHomeCommitted, RunRollingOut:
+		if targets, err := d.Store.Targets(ctx, id); err == nil {
+			for _, t := range targets {
+				if !targetEnded(t.State) && t.State != TargetApplying {
+					if t.State == TargetPreparing || t.State == TargetPrepared {
+						d.withdraw(ctx, run, t)
+					}
+					_ = d.Store.UpdateTarget(ctx, id, t.NodeID, TargetChange{State: TargetSkipped,
+						Detail: map[string]any{"why": "cancelled", "by": actor}})
+				}
+			}
+		}
+	default:
+		return fmt.Errorf("%w: the run is %s", ErrPastSwitch, run.State)
 	}
 	d.Store.Audit(ctx, actor, "admin", "run_cancel", run.Version, map[string]any{"run_id": id})
 	return d.finish(ctx, run, det, RunCancelled, map[string]any{"code": "cancelled", "by": actor})
@@ -120,6 +140,12 @@ func (d *Driver) TargetAction(ctx context.Context, id, node, action, actor strin
 		return d.Retry(ctx, id, []string{node}, actor)
 	case "skip":
 		if !targetEnded(t.State) && t.State != TargetApplying {
+			if t.State == TargetWaitingClick || t.State == TargetClicked || t.State == TargetPreparing ||
+				t.State == TargetPrepared {
+				if run, err := d.Store.GetRun(ctx, id); err == nil {
+					d.withdraw(ctx, run, *t) // its app forgets the order
+				}
+			}
 			if err := d.Store.UpdateTarget(ctx, id, node, TargetChange{State: TargetSkipped,
 				Detail: map[string]any{"why": "skipped", "by": actor}}); err != nil {
 				return nil, err
@@ -197,7 +223,7 @@ func (d *Driver) Machines(ctx context.Context, home Machine) []Machine {
 			m.State = "up_to_date"
 		}
 		if t, ok := targets[n.id]; ok && !targetEnded(t.State) {
-			m.State = t.State
+			m.State, m.Target = t.State, t.ToVersion
 		}
 		out = append(out, m)
 	}

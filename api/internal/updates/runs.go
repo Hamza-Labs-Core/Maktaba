@@ -16,7 +16,7 @@ const (
 	RunHomePreparing  = "home_preparing"
 	RunHomePrepared   = "home_prepared" // waits for its gates (window, TV) and the drain
 	RunDraining       = "draining"
-	RunHomeApplying   = "home_applying" // switched, restarting, watching
+	RunHomeApplying   = "home_applying" // ordered (an app: waits for a click), switched, restarting, watching
 	RunHomeCommitted  = "home_committed"
 	RunRollingOut     = "rolling_out"
 	RunDone           = "done"
@@ -26,7 +26,12 @@ const (
 	RunRolledBack     = "rolled_back"     // the home went back to the release before
 	RunFailedRollback = "failed_rollback" // the home could not go back: needs a person
 	RunCancelled      = "cancelled"
+	RunSuperseded     = "superseded" // a newer release took the place of a run that waited for clicks
 )
+
+// StepWaitingClick is a run's step while all it waits for is a click on a desktop app
+// (the home's, or the machines' still to go): a newer release may take its place.
+const StepWaitingClick = "waiting_click"
 
 // Target states (README "Machine target").
 const (
@@ -42,6 +47,10 @@ const (
 	TargetHeld          = "held"
 	TargetSkipped       = "skipped"
 	TargetWorkerOnly    = "worker_only"
+	// A desktop app that runs the server (owner decision D1): ordered, it waits for a
+	// click there (the rollout goes on with the others), then for its turn.
+	TargetWaitingClick = "waiting_click"
+	TargetClicked      = "clicked"
 )
 
 // targetEnded reports whether a target's part is over in this run.
@@ -280,6 +289,18 @@ func (s *Store) Targets(ctx context.Context, runID string) ([]Target, error) {
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// LastTargetState is a machine's target state in the latest run of version that had it
+// ("" none).
+func (s *Store) LastTargetState(ctx context.Context, nodeID, version string) (string, error) {
+	var state string
+	err := s.DB.QueryRowContext(ctx, `SELECT t.state FROM update_targets t JOIN update_runs r ON r.id = t.run_id
+		WHERE t.node_id = $1 AND t.to_version = $2 ORDER BY r.started_at DESC LIMIT 1`, nodeID, NormalizeVersion(version)).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return state, err
 }
 
 // InsertTarget adds a machine to a run (once).

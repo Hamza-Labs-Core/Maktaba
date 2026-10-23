@@ -56,6 +56,10 @@ type MachineStatus struct {
 	Reason    string          `json:"reason,omitempty"`
 	Running   string          `json:"running,omitempty"`
 	Installer string          `json:"installer,omitempty"`
+	// Asks: a desktop app that runs the server, which installs only once someone clicks
+	// on it (owner decision D1); App is its answer to the order (ordered, staged, clicked).
+	Asks bool   `json:"asks,omitempty"`
+	App  string `json:"app,omitempty"`
 }
 
 // RunID is the run the report is of ("" none).
@@ -72,6 +76,8 @@ const (
 	MPrepared      = "prepared"
 	MPrepareFailed = "prepare_failed"
 	MAborted       = "aborted"
+	MAwaitingClick = "awaiting_click" // ordered from the app: it waits for a click there
+	MClicked       = "clicked"        // someone clicked: it waits for the home's go
 	MApplying      = "applying"
 	MRestarting    = "restarting"
 	MWatching      = "watching"

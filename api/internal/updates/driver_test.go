@@ -23,6 +23,26 @@ type fakeMachine struct {
 	applies   int
 	onApply   func()
 	installer string
+	// asks: a desktop app (owner decision D1): apply orders, a click, then apply again
+	asks bool
+}
+
+// click is someone choosing to install on the machine's desktop app.
+func (m *fakeMachine) click() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.st != nil && m.st.State == MAwaitingClick {
+		m.st.State, m.st.App = MClicked, "clicked"
+	}
+}
+
+func (m *fakeMachine) state() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.st == nil {
+		return ""
+	}
+	return m.st.State
 }
 
 func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
@@ -36,10 +56,17 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 		if m.st != nil && m.st.RunID() == j.RunID {
 			return m.copy(), nil
 		}
-		m.st = &MachineStatus{Job: &j, State: MPreparing, From: m.version, Installer: m.installer,
+		m.st = &MachineStatus{Job: &j, State: MPreparing, From: m.version, Installer: m.installer, Asks: m.asks,
 			Steps: []MachineStep{{Step: "preflight", State: "done"}}}
 	case "apply":
-		if m.st == nil || m.st.State != MPrepared {
+		if m.st != nil && m.st.State == MAwaitingClick {
+			return m.copy(), nil // asked again: waits for its click
+		}
+		if m.st != nil && m.st.State == MPrepared && m.asks {
+			m.st.State, m.st.App = MAwaitingClick, "ordered"
+			return m.copy(), nil
+		}
+		if m.st == nil || (m.st.State != MPrepared && m.st.State != MClicked) {
 			return m.copy(), errors.New("update_not_ready")
 		}
 		m.st.State = MApplying
@@ -48,8 +75,14 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 			m.onApply()
 		}
 	case "abort":
-		if m.st != nil && (m.st.State == MPreparing || m.st.State == MPrepared) {
-			m.st.State = MAborted
+		if m.st != nil {
+			switch m.st.State {
+			case MPreparing, MPrepared, MAwaitingClick, MClicked:
+				m.st.State = MAborted
+			case MAborted, MPrepareFailed:
+			default:
+				return m.copy(), errors.New("past_switch")
+			}
 		}
 	case "rollback":
 		if m.st != nil {
@@ -176,7 +209,8 @@ func (c *clusterFake) Command(_ context.Context, sid, name string, args any, _ t
 	}
 	c.mu.Unlock()
 	st, err := m.do(strings.TrimPrefix(name, "update."), args)
-	if st != nil && (st.State == MCommitted || st.State == MRolledBack || st.State == MApplyFailed) {
+	if st != nil && (st.State == MCommitted || st.State == MRolledBack || st.State == MApplyFailed ||
+		st.State == MAwaitingClick || st.State == MClicked || st.State == MAborted) {
 		c.mu.Lock()
 		c.applying[id] = false
 		c.mu.Unlock()

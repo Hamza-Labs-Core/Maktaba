@@ -250,6 +250,7 @@ func (s *Service) Tick(ctx context.Context) (Decision, error) {
 		}
 		return Decision{Action: "none", Reason: pl.Waiting}, nil
 	}
+	s.supersede(ctx, pl.Target.Version)
 	why, err := s.blocked(ctx)
 	if err != nil {
 		return Decision{Action: "none"}, err
@@ -347,6 +348,26 @@ func (s *Service) start(ctx context.Context, r Release, pol Policy, trigger, act
 	return run, nil
 }
 
+// superseder is a Starter that ends a run waiting only for clicks on desktop apps when
+// a newer release is due (the Driver).
+type superseder interface {
+	Supersede(ctx context.Context, version string) (bool, error)
+}
+
+// supersede lets a newer release take the place of a run that only waits for clicks
+// (owner decision D1: nothing else waits for ever on a machine nobody clicks).
+func (s *Service) supersede(ctx context.Context, version string) {
+	sp, ok := s.Starter.(superseder)
+	if !ok {
+		return
+	}
+	if done, err := sp.Supersede(ctx, version); err != nil {
+		s.log().Warn("update run not superseded", "event", "update_supersede_failed", "version", version, "err", err.Error())
+	} else if done {
+		s.log().Info("update run superseded", "event", "update_superseded", "version", version)
+	}
+}
+
 // noOrchestrator is the Starter of an API that runs under no supervisor that updates.
 type noOrchestrator struct{}
 
@@ -389,6 +410,7 @@ func (s *Service) RunNow(ctx context.Context, actor, version string) (Run, error
 	if target == nil {
 		return Run{}, ErrNoTarget
 	}
+	s.supersede(ctx, target.Version)
 	why, err := s.blocked(ctx)
 	if err != nil {
 		return Run{}, err
