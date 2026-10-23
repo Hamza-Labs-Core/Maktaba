@@ -224,7 +224,7 @@ advisory.
   signing keys, generated native projects all ignored. No build artifacts tracked in git.
 
 ### 5. Infrastructure
-- Dockerfiles: all `golang:` base images use `ARG GO_VERSION=1.25`, matching `go 1.25.0`
+- Dockerfiles: `golang:` base images follow their module's `go` directive: `ARG GO_VERSION=1.26` for api and cloud (`go 1.26.0`), 1.25 for streaming
   in every `go.mod`. ✅
 - `docker-compose.yml` (deploy/compose + cloud installer): valid YAML. ✅
 - CI workflow YAML: all 10 workflows parse; added cloud lint step parses. ✅

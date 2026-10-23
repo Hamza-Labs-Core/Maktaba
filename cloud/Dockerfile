@@ -5,7 +5,7 @@
 # leg, see deploy/cloud-relay/), but the same image serves every role.
 #
 # Two-stage build mirroring api/Dockerfile (Story 22.3):
-#   1. golang:1.25 builder produces a static binary using the Story 22.2
+#   1. golang:1.26 builder produces a static binary using the Story 22.2
 #      reproducibility envelope (-trimpath, -buildid=, -s -w, -X main.*).
 #   2. gcr.io/distroless/static runtime — just the binary + a tiny Go
 #      healthcheck probe (distroless has no shell/curl for HEALTHCHECK).
@@ -23,7 +23,7 @@
 #     --build-arg SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
 #     -t ghcr.io/hamza-labs-core/maktaba-cloud:dev .
 
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
 
 FROM golang:${GO_VERSION}-bookworm AS builder
 WORKDIR /src
