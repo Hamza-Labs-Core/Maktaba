@@ -54,7 +54,7 @@ launcher); from then on it updates itself. Docker keeps Epic 28.3's answer.
 | A machine's part: journal, prepare, apply, watch, commit, rollback, resume | `cmd/maktaba-server/internal/updater` (`machine.go`, `journal.go`), served on the supervisor's loopback (`/update/*`) and as `update.*` commands to a node's machine agent (`serve_update.go`) |
 | Installers | `updater/layout.go`, `updater/runtime.go`, `updater/appbundle.go` |
 | Health of the release that came up | `serve_update.go` (`machineHealth`: every role running, none crash-looping or halted by the database step, the api's `/readyz` and its version, on a node the schema guard and the machine agent) |
-| The database | `cmd/maktaba-server/internal/dbsafe` (dump checked with `pg_restore --list`, rehearsal, restore in place), the database step in `serve_appbundle.go` (now also `layoutHomeGates` for a plain server home) |
+| The database | `cmd/maktaba-server/internal/dbsafe` (dump checked with `pg_restore --list`, rehearsal, restore in place), the database step in `serve_appbundle.go` (now also `layoutHomeGates` for a plain server home), the copies' slots dropped before a dump is put back (`pgbundle.DropSlotsSQL`) |
 | The launcher's guard for the app and the runtime copy | `cmd/maktaba-launcher/run.go` (`bundleGuard`, `bundleRollback`), `shared/go/layout/guard.go` (`pending.json`, `payload-override`, `MarkRecordRestoring`) |
 | The app installing what the server orders | `apps/desktop/src-tauri/src/autoinstall.rs`, `shell.rs` (`install_requested`) |
 | The release's migrations | `release.yml` (`maktaba-migrations-<v>.tar.gz`), `release.json` `migrations`, `releaseverify/install.Stage` (beside the binaries), `api/migrate.go` (found beside `maktaba-api`) |
@@ -89,12 +89,24 @@ server.
    the dump and the rollback — minutes, inside the window, with every pipeline worker of the
    cluster drained from the home's apply until it commits. The failed state is dumped aside
    first (`backups/failed-<new>-<utc>.dump`) for anyone who wants it back.
+4. **The machines' copies (Epic 37) across it.** A machine's copy follows only a home whose
+   schema is not ahead of its own: from the home's migration until that machine's update, it
+   pauses (`incompatible`; its reads go to the home), and the machine's new release migrates
+   its own database and copies the home anew. A dump put back takes the copies' logical slots
+   with it (`pgbundle.DropSlotsSQL`, before the bundled `DROP DATABASE`, which refuses a
+   database with slots, and before the in-place restore, which skips the dump's
+   publications): what they streamed is gone, and each machine copies the restored database
+   anew when its grant says its slot is. A machine rolled back after its new release migrated
+   its copy: the previous release refuses that database (reported as the copy's error, reads
+   go to the home), while the copy's subscription keeps applying the home's changes; the copy
+   is taken up again when the machine takes the release.
 
 ### Nodes
 
-Nodes never migrate. Apply = switch, restart, watch (schema guard fits, api `/readyz` with the
-new version, the machine agent back on the channel), commit; a failed check switches back
-(binaries only). A node is never ordered to a version the home has not committed, and a node
+Nodes never migrate the home's database (their own copy of it, Epic 37, is migrated by their
+new release; "The database" step 4). Apply = switch, restart, watch (schema guard fits, api
+`/readyz` with the new version, the machine agent back on the channel), commit; a failed check
+switches back (binaries only). A node is never ordered to a version the home has not committed, and a node
 that comes back behind the watermark gets a `catch_up` run of its own.
 
 ## What still needs a person
