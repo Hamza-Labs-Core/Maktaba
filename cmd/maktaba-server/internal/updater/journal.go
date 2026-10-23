@@ -35,14 +35,14 @@ const (
 	// takes its place.
 	StateAwaitingClick = "awaiting_click"
 	StateClicked       = "clicked"
-	StateApplying      = "applying" // switching to the staged release
-	StateRestarting    = "restarting"     // switched; the machine restarts on it
-	StateWatching      = "watching"       // the new release runs; its health is watched
-	StateCommitted     = "committed"      // the new release stays
-	StateRollingBack   = "rolling_back"   // switched back; the previous release finishes
-	StateRolledBack    = "rolled_back"    // the previous release runs again
-	StateApplyFailed   = "apply_failed"   // failed before the restart; the previous release runs
-	StateFailed        = "failed"         // a rollback that could not be made: needs a person
+	StateApplying      = "applying"     // switching to the staged release
+	StateRestarting    = "restarting"   // switched; the machine restarts on it
+	StateWatching      = "watching"     // the new release runs; its health is watched
+	StateCommitted     = "committed"    // the new release stays
+	StateRollingBack   = "rolling_back" // switched back; the previous release finishes
+	StateRolledBack    = "rolled_back"  // the previous release runs again
+	StateApplyFailed   = "apply_failed" // failed before the restart; the previous release runs
+	StateFailed        = "failed"       // a rollback that could not be made: needs a person
 )
 
 // Steps of a run (Journal.Step, StepRecord.Step).

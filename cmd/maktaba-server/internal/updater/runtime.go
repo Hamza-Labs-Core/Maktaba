@@ -42,7 +42,9 @@ func (ri *RuntimeInstaller) requests() requests {
 func (ri *RuntimeInstaller) Asks() bool { return ri.Owner == "app" && ri.LauncherRoot != "" }
 
 // Ask implements Asker: the order (nothing for the app to fetch).
-func (ri *RuntimeInstaller) Ask(j *Journal) error { return ri.requests().order(j, RequestKindRuntime, "") }
+func (ri *RuntimeInstaller) Ask(j *Journal) error {
+	return ri.requests().order(j, RequestKindRuntime, "")
+}
 
 // Answer implements Asker.
 func (ri *RuntimeInstaller) Answer(j *Journal) (string, error) { return ri.requests().answer(j) }
