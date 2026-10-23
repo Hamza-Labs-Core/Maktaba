@@ -4,23 +4,36 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // PGBackend is the production Backend: it reads the videos→media_info
 // join Pipeline writes (Story 8.15). Streaming never probes a file
-// itself (AC-3) — a video with no media_info row surfaces as
-// ErrNotProbed so the caller returns 412 rather than blocking on a
-// probe the read path is not allowed to run.
+// itself (AC-3): for a video with no media_info row it puts the
+// Pipeline's probe job at the front of the queue and waits a short
+// while for the row (ProbeWait), so pressing play on a video nobody
+// probed yet plays instead of failing. Past the wait it surfaces
+// ErrNotProbed and the caller returns 412.
 //
 // The pool is owned by the caller (main.go) so its lifetime matches
 // the process; Close releases it on shutdown.
 type PGBackend struct {
 	pool *pgxpool.Pool
+	// ProbeWait bounds the wait for a probe requested on play; 0 = do not ask.
+	ProbeWait time.Duration
 }
+
+// DefaultProbeWait is how long a play waits for its video's probe: a probe reads
+// the file's header, about a second once a worker takes it.
+const DefaultProbeWait = 15 * time.Second
+
+// probePollEvery is how often the wait looks for the media_info row.
+const probePollEvery = 250 * time.Millisecond
 
 // pgQuerier is the slice of *pgxpool.Pool the backend needs. Narrowing
 // to this interface lets the test suite inject a fake without a live
@@ -29,9 +42,15 @@ type pgQuerier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
+// pgExecQuerier adds Exec, for queueing the probe.
+type pgExecQuerier interface {
+	pgQuerier
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
 // NewPGBackend wraps an already-open pgx pool.
 func NewPGBackend(pool *pgxpool.Pool) *PGBackend {
-	return &PGBackend{pool: pool}
+	return &PGBackend{pool: pool, ProbeWait: DefaultProbeWait}
 }
 
 // ConnectPG dials Postgres with the given DSN and returns a backend
@@ -47,7 +66,7 @@ func ConnectPG(ctx context.Context, dsn string) (*PGBackend, *pgxpool.Pool, erro
 		pool.Close()
 		return nil, nil, fmt.Errorf("probe: ping: %w", err)
 	}
-	return &PGBackend{pool: pool}, pool, nil
+	return &PGBackend{pool: pool, ProbeWait: DefaultProbeWait}, pool, nil
 }
 
 // Close releases the pool.
@@ -100,7 +119,62 @@ WHERE v.id = $1`
 // exists and ErrNotProbed when the video exists but Pipeline has not
 // written its media_info row yet.
 func (b *PGBackend) Lookup(ctx context.Context, videoID uuid.UUID) (*Row, error) {
-	return lookupOn(ctx, b.pool, videoID)
+	row, err := lookupOn(ctx, b.pool, videoID)
+	if !errors.Is(err, ErrNotProbed) || b.ProbeWait <= 0 {
+		return row, err
+	}
+	return probeOnPlay(ctx, b.pool, videoID, b.ProbeWait, probePollEvery)
+}
+
+// bumpProbeSQL moves the video's open probe job to the front of the queue (priority 0,
+// claimable now); insertProbeSQL queues one when there is none. The partial unique
+// index on open jobs turns a racing insert into a unique violation, which is fine:
+// some job is queued either way.
+const bumpProbeSQL = `
+UPDATE processing_jobs SET priority = 0, not_before = NULL, updated_at = now()
+ WHERE subject_kind = 'video' AND subject_id = $1 AND stage = 'probe'
+   AND state IN ('pending', 'claimed', 'running', 'resuming', 'paused')`
+
+const insertProbeSQL = `
+INSERT INTO processing_jobs (subject_kind, subject_id, video_id, library_id, stage, state,
+                             priority, max_attempts, reasons)
+SELECT 'video', v.id, v.id, v.library_id, 'probe', 'pending', 0, 3,
+       '[{"why": "played before it was probed", "by": "system", "from_stage": "streaming"}]'::jsonb
+  FROM videos v WHERE v.id = $1`
+
+// probeOnPlay queues the video's probe at the front and waits up to wait for its
+// media_info row. ErrNotProbed when the wait runs out (no worker free, the probe
+// failed) or the queueing itself fails.
+func probeOnPlay(ctx context.Context, q pgExecQuerier, videoID uuid.UUID, wait, every time.Duration) (*Row, error) {
+	tag, err := q.Exec(ctx, bumpProbeSQL, videoID)
+	if err == nil && tag.RowsAffected() == 0 {
+		_, err = q.Exec(ctx, insertProbeSQL, videoID)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			err = nil
+		}
+	}
+	if err != nil {
+		return nil, ErrNotProbed
+	}
+	ctx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	tick := time.NewTicker(every)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ErrNotProbed
+		case <-tick.C:
+		}
+		row, err := lookupOn(ctx, q, videoID)
+		if ctx.Err() != nil {
+			return nil, ErrNotProbed
+		}
+		if !errors.Is(err, ErrNotProbed) {
+			return row, err
+		}
+	}
 }
 
 // lookupOn is the queryable-agnostic core so the test suite can drive

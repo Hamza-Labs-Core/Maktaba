@@ -3,11 +3,13 @@ package probe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // fakeRow scans a fixed column slice (or returns a fixed error) into
@@ -141,5 +143,80 @@ func TestPGBackend_ScanErrorWrapped(t *testing.T) {
 	}
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("expected wrapped sentinel, got %v", err)
+	}
+}
+
+// seqQuerier answers each lookup with the next row (the last repeats) and records Exec.
+type seqQuerier struct {
+	rows     []fakeRow
+	n        int
+	execSQL  []string
+	affected int64
+	execErr  error
+}
+
+func (q *seqQuerier) QueryRow(context.Context, string, ...any) pgx.Row {
+	r := q.rows[min(q.n, len(q.rows)-1)]
+	q.n++
+	return r
+}
+
+func (q *seqQuerier) Exec(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
+	q.execSQL = append(q.execSQL, sql)
+	if q.execErr != nil {
+		return pgconn.CommandTag{}, q.execErr
+	}
+	if sql == bumpProbeSQL {
+		return pgconn.NewCommandTag(fmt.Sprintf("UPDATE %d", q.affected)), nil
+	}
+	return pgconn.NewCommandTag("INSERT 0 1"), nil
+}
+
+func TestProbeOnPlay_QueuesAndWaitsForTheRow(t *testing.T) {
+	vid, lib := uuid.New(), uuid.New()
+	q := &seqQuerier{rows: []fakeRow{
+		{cols: okCols(vid, lib, false)},
+		{cols: okCols(vid, lib, true)},
+	}}
+	row, err := probeOnPlay(context.Background(), q, vid, time.Second, time.Millisecond)
+	if err != nil || row == nil || row.VideoCodec != "h264" {
+		t.Fatalf("got %+v, %v", row, err)
+	}
+	if len(q.execSQL) != 2 || q.execSQL[1] != insertProbeSQL {
+		t.Fatalf("no open job: bump, then insert; got %d statements", len(q.execSQL))
+	}
+}
+
+func TestProbeOnPlay_BumpsAnOpenJobWithoutInserting(t *testing.T) {
+	vid, lib := uuid.New(), uuid.New()
+	q := &seqQuerier{affected: 1, rows: []fakeRow{{cols: okCols(vid, lib, true)}}}
+	if _, err := probeOnPlay(context.Background(), q, vid, time.Second, time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if len(q.execSQL) != 1 || q.execSQL[0] != bumpProbeSQL {
+		t.Fatalf("an open job is moved to the front, not duplicated: %v", q.execSQL)
+	}
+}
+
+func TestProbeOnPlay_GivesUpAfterTheWait(t *testing.T) {
+	vid, lib := uuid.New(), uuid.New()
+	q := &seqQuerier{rows: []fakeRow{{cols: okCols(vid, lib, false)}}}
+	start := time.Now()
+	_, err := probeOnPlay(context.Background(), q, vid, 30*time.Millisecond, time.Millisecond)
+	if !errors.Is(err, ErrNotProbed) {
+		t.Fatalf("err = %v, want ErrNotProbed", err)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatal("waited past the bound")
+	}
+}
+
+func TestProbeOnPlay_QueueFailureIsNotProbed(t *testing.T) {
+	q := &seqQuerier{execErr: errors.New("db down"), rows: []fakeRow{{}}}
+	if _, err := probeOnPlay(context.Background(), q, uuid.New(), time.Second, time.Millisecond); !errors.Is(err, ErrNotProbed) {
+		t.Fatalf("err = %v", err)
+	}
+	if q.n != 0 {
+		t.Fatal("no wait when the probe could not be queued")
 	}
 }

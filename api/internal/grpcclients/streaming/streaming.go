@@ -86,7 +86,7 @@ type Config struct {
 // DefaultConfig is the canonical knob set.
 func DefaultConfig() Config {
 	return Config{
-		OpenTimeout:      5 * time.Second,
+		OpenTimeout:      20 * time.Second, // a play may wait for its probe (streaming waits 15 s)
 		CloseTimeout:     2 * time.Second,
 		MaxRetries:       3,
 		CircuitWindow:    30 * time.Second,
