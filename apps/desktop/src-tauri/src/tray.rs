@@ -9,6 +9,7 @@
 // `media-pause` and `preferences` are also forwarded to the web shell
 // (web/src/lib/desktop.ts KNOWN_MENU_IDS). The words are the system's UI
 // language's, English or Arabic (lang.rs).
+use crate::autoinstall::Shown;
 use crate::lang::{fill, Lang};
 use crate::status::{ServerStatus, NO_ANSWER};
 
@@ -192,6 +193,21 @@ pub fn entries_with_model(
     model: Option<&str>,
     detail: Option<&str>,
 ) -> Vec<Entry> {
+    entries_with_order(lang, server, status, update_ready, None, model, detail)
+}
+
+/// entries_with_model with the release the home ordered (owner decision D1): its item
+/// in the update's place, saying who waits (this home, or the cluster's update), and
+/// once clicked that it installs when the cluster is ready.
+pub fn entries_with_order(
+    lang: Lang,
+    server: bool,
+    status: &ServerStatus,
+    update_ready: bool,
+    order: Option<&Shown>,
+    model: Option<&str>,
+    detail: Option<&str>,
+) -> Vec<Entry> {
     let w = lang.words();
     let mut out = Vec::new();
     if server {
@@ -203,8 +219,18 @@ pub fn entries_with_model(
                 enabled: false,
             });
         }
-        if update_ready {
-            out.push(item("update", w.update_ready));
+        match order {
+            Some(Shown::Ready { version, home }) => {
+                let line = if *home { w.order_home } else { w.order_node };
+                out.push(item("update", fill(line, &[("version", version)])));
+            }
+            Some(Shown::Clicked { version }) => out.push(Entry::Item {
+                id: "update",
+                label: fill(w.order_clicked, &[("version", version)]),
+                enabled: false,
+            }),
+            None if update_ready => out.push(item("update", w.update_ready)),
+            None => {}
         }
         out.push(Entry::Separator);
     }
@@ -422,6 +448,58 @@ mod tests {
     fn update_ready_adds_the_install_item_under_the_status() {
         let e = entries(Lang::En, true, &ServerStatus::Running, true);
         assert_eq!(ids(&e)[..2], ["status", "update"]);
+    }
+
+    #[test]
+    fn the_home_s_order_says_who_waits_and_is_clicked_once() {
+        let label = |e: &[Entry]| match &e[1] {
+            Entry::Item { label, enabled, .. } => (label.clone(), *enabled),
+            Entry::Separator => panic!("no item"),
+        };
+        let on = |order: Shown| {
+            entries_with_order(
+                Lang::En,
+                true,
+                &ServerStatus::Running,
+                false,
+                Some(&order),
+                None,
+                None,
+            )
+        };
+        let home = on(Shown::Ready {
+            version: "1.5.0".into(),
+            home: true,
+        });
+        assert_eq!(ids(&home)[..2], ["status", "update"]);
+        assert_eq!(
+            label(&home),
+            (
+                "Install Maktaba 1.5.0 (this home's update) and restart".into(),
+                true
+            )
+        );
+        let node = on(Shown::Ready {
+            version: "1.5.0".into(),
+            home: false,
+        });
+        assert_eq!(
+            label(&node),
+            (
+                "Install Maktaba 1.5.0: the cluster's update waits for this machine".into(),
+                true
+            )
+        );
+        let clicked = on(Shown::Clicked {
+            version: "1.5.0".into(),
+        });
+        assert_eq!(
+            label(&clicked),
+            (
+                "Installing Maktaba 1.5.0 when the cluster is ready…".into(),
+                false
+            )
+        );
     }
 
     #[test]
