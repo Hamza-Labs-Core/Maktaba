@@ -17,17 +17,35 @@ import (
 // signed Linux payload is installed as a new runtime directory, `current` moves to it
 // (`previous` keeps the one that ran) and the supervisor exits 75; the launcher starts
 // <runtime>/current again, and falls back to `previous` when it cannot stay up (its
-// guard, <launcher root>/updates/pending.json).
+// guard, <launcher root>/updates/pending.json). The Linux app's runtime switches only
+// once someone clicks in the app (owner decision D1, request.go); a headless one by
+// itself (D3: the server updates its runtime either way, no root needed).
 type RuntimeInstaller struct {
 	Runtime appruntime.Runtime
 	Source  Source
 	Version string
-	// LauncherRoot is where the launcher keeps its lock and guard (MAKTABA_LAUNCHER_ROOT).
+	// LauncherRoot is where the launcher keeps its lock and guard (MAKTABA_LAUNCHER_ROOT);
+	// the order to the app is in its updates directory (the app's state folder).
 	LauncherRoot string
+	// Owner is who owns the runtime (MAKTABA_RUNTIME_OWNER): "app" asks, "headless" not.
+	Owner string
 	// Record is the home's database record ("" on a node).
 	Record string
 	Now    func() time.Time
 }
+
+func (ri *RuntimeInstaller) requests() requests {
+	return requests{dir: filepath.Join(ri.LauncherRoot, "updates"), now: ri.now}
+}
+
+// Asks implements Asker: the Linux app's runtime does.
+func (ri *RuntimeInstaller) Asks() bool { return ri.Owner == "app" && ri.LauncherRoot != "" }
+
+// Ask implements Asker: the order (nothing for the app to fetch).
+func (ri *RuntimeInstaller) Ask(j *Journal) error { return ri.requests().order(j, RequestKindRuntime, "") }
+
+// Answer implements Asker.
+func (ri *RuntimeInstaller) Answer(j *Journal) (string, error) { return ri.requests().answer(j) }
 
 func (ri *RuntimeInstaller) now() time.Time {
 	if ri.Now != nil {
@@ -142,14 +160,18 @@ func (ri *RuntimeInstaller) Switch(ctx context.Context, j *Journal) error {
 	return nil
 }
 
-// Restart implements Installer.
-func (ri *RuntimeInstaller) Restart(_ context.Context, _ *Journal, exit func(int)) error {
+// Restart implements Installer (the app's order, when there is one, says installing).
+func (ri *RuntimeInstaller) Restart(_ context.Context, j *Journal, exit func(int)) error {
+	if ri.Asks() {
+		_ = ri.requests().set(j, RequestKindRuntime, "", RequestInstalling)
+	}
 	exit(75)
 	return nil
 }
 
 // Revert implements Installer: `current` back to the runtime that ran before.
 func (ri *RuntimeInstaller) Revert(ctx context.Context, j *Journal) error {
+	ri.requests().remove()
 	if j.FromRef == "" {
 		return Fail("no_previous", "no runtime ran before")
 	}
@@ -164,17 +186,20 @@ func (ri *RuntimeInstaller) Commit(ctx context.Context, j *Journal) error {
 	if err := layout.ClearGuard(ri.LauncherRoot); err != nil {
 		return err
 	}
+	ri.requests().remove()
 	_ = ri.Runtime.RaiseWatermark(layout.NormalizeVersion(j.Job.Version))
 	keep := j.Job.KeepVersions
 	if keep < 2 {
 		keep = 2
 	}
-	_, err := ri.Runtime.Prune(ctx, keep)
-	return err
+	// what a prune leaves is pruned by the next commit; the release is kept either way
+	_, _ = ri.Runtime.Prune(ctx, keep)
+	return nil
 }
 
 // Discard implements Installer.
 func (ri *RuntimeInstaller) Discard(_ context.Context, j *Journal) error {
+	ri.requests().remove()
 	if j.Staged == "" || j.Staged == "running" {
 		return nil
 	}

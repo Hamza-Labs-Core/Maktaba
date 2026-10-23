@@ -315,9 +315,16 @@ func (ln *launcher) markRecord(ver, record, reason string) {
 
 // bundlePayload is the payload the next start runs (app-bundle mode): the kept copy
 // the update orchestrator (or this guard) named in payload-override - a rolled-back
-// app update - when it is a payload, else the app's own.
+// app update - when it is a payload, else the app's own. The app's own runs, under the
+// guard, once it is the release the guard tries (the app's install happened); until
+// then the kept copy goes on running.
 func (ln *launcher) bundlePayload() string {
 	if o := layout.ReadOverride(ln.cfg.Root); o != "" && ln.cfg.RuntimeRoot == "" {
+		if g, err := layout.ReadGuard(ln.cfg.Root); err == nil && g != nil {
+			if v := payloadVersion(ln.cfg.Bundle); v != "" && v == layout.NormalizeVersion(g.Version) {
+				return ln.cfg.Bundle
+			}
+		}
 		if _, err := os.Stat(filepath.Join(o, "bin", layout.Exe("maktaba-server"))); err == nil {
 			return o
 		}

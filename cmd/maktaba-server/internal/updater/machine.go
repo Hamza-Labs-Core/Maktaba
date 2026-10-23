@@ -52,7 +52,11 @@ type Verdict struct {
 	Healthy bool
 	// Fatal: waiting will not help (a role crash-loops, another version answers).
 	Fatal bool
-	Why   string
+	// Pending: the release is busy starting (the home's database step dumps and
+	// migrates): neither healthy nor unhealthy, however long it takes (the launcher's
+	// guard bounds it).
+	Pending bool
+	Why     string
 }
 
 // Health judges the running release.
@@ -67,6 +71,8 @@ type Records interface {
 	// MarkRestore marks the record restoring when it says version's migrations ran over
 	// from's database with a dump; it reports whether it did.
 	MarkRestore(version, from, reason string) (bool, error)
+	// Unmark undoes MarkRestore (the switch back failed: version stays, and its database).
+	Unmark(version string) error
 	// Migrated reports whether the database holds version's migrations.
 	Migrated(version string) bool
 }
@@ -208,14 +214,27 @@ type Status struct {
 	*Journal
 	Running string `json:"running"`
 	Kind    string `json:"installer"`
+	// Asks: this machine installs only once someone clicks on it (Asker).
+	Asks bool `json:"asks,omitempty"`
 }
 
 // Status reports this machine's run.
 func (m *Machine) Status() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return Status{Journal: m.j.clone(), Running: m.Installer.Running(), Kind: m.Installer.Kind()}
+	return Status{Journal: m.j.clone(), Running: m.Installer.Running(), Kind: m.Installer.Kind(), Asks: m.asker() != nil}
 }
+
+// asker is the installer when it waits for a click.
+func (m *Machine) asker() Asker {
+	if a, ok := m.Installer.(Asker); ok && a.Asks() {
+		return a
+	}
+	return nil
+}
+
+// waitsForClick reports whether state is an order waiting for its click or its go.
+func waitsForClick(state string) bool { return state == StateAwaitingClick || state == StateClicked }
 
 // Start makes the machine ready: ctx bounds every goroutine it starts (the supervisor's
 // life). Resume reads the journal of a run the last start left.
@@ -244,16 +263,25 @@ func (m *Machine) beginStep(step string) error {
 
 // endStep records the step's end (after its side effects); err nil: done.
 func (m *Machine) endStep(step, state, detail string) error {
-	return m.mutate(func(j *Journal) {
-		now := m.now()
-		for i := len(j.Steps) - 1; i >= 0; i-- {
-			if j.Steps[i].Step == step && j.Steps[i].FinishedAt == nil {
-				j.Steps[i].State, j.Steps[i].FinishedAt, j.Steps[i].Detail = state, &now, detail
-				return
-			}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.j == nil {
+		return ErrNoRun
+	}
+	m.endStepLocked(step, state, detail)
+	return m.saveLocked()
+}
+
+// endStepLocked is endStep's change (the caller holds m.mu and saves).
+func (m *Machine) endStepLocked(step, state, detail string) {
+	j, now := m.j, m.now()
+	for i := len(j.Steps) - 1; i >= 0; i-- {
+		if j.Steps[i].Step == step && j.Steps[i].FinishedAt == nil {
+			j.Steps[i].State, j.Steps[i].FinishedAt, j.Steps[i].Detail = state, &now, detail
+			return
 		}
-		j.Steps = append(j.Steps, StepRecord{Step: step, State: state, StartedAt: now, FinishedAt: &now, Detail: detail})
-	})
+	}
+	j.Steps = append(j.Steps, StepRecord{Step: step, State: state, StartedAt: now, FinishedAt: &now, Detail: detail})
 }
 
 // failure is err as a Failure of step.
@@ -293,6 +321,14 @@ func (m *Machine) Prepare(job Job) error {
 	if c := layout.CompareVersions(running, job.Version); layout.ValidVersion(layout.NormalizeVersion(running)) && c > 0 {
 		m.mu.Unlock()
 		return fmt.Errorf("%w: this machine runs %s, newer than %s", ErrAhead, running, job.Version)
+	}
+	if old := m.j; old != nil {
+		switch old.State {
+		case StatePrepared, StateAwaitingClick, StateClicked, StateAborted, StatePrepareFailed:
+			// what the run it replaces staged goes (an order waiting for its click gives
+			// way to the newer run: the app forgets it)
+			_ = m.Installer.Discard(context.Background(), old.clone())
+		}
 	}
 	now := m.now()
 	m.j = &Journal{Job: job, Kind: m.Installer.Kind(), From: layout.NormalizeVersion(running), State: StatePreparing,
@@ -375,7 +411,19 @@ func (m *Machine) prepare(ctx context.Context) {
 		}
 		_ = m.endStep(s.name, state, detail)
 	}
-	_ = m.mutate(func(j *Journal) { j.State, j.Step = StatePrepared, "" })
+	stopped := false
+	_ = m.mutate(func(j *Journal) {
+		if j.State != StatePreparing {
+			stopped = true // an abort that came after the last step
+			return
+		}
+		j.State, j.Step = StatePrepared, ""
+	})
+	if stopped {
+		_ = m.withJournal(func(j *Journal) error { return m.Installer.Discard(context.Background(), j) })
+		m.logf("prepare aborted")
+		return
+	}
 	m.logf("prepared %s", j.Job.Version)
 }
 
@@ -477,10 +525,14 @@ func (m *Machine) Abort(runID string) error {
 		}
 		m.mu.Unlock()
 		return nil
-	case StatePrepared:
+	case StatePrepared, StateAwaitingClick, StateClicked:
+		if m.j.State != StatePrepared {
+			m.endStepLocked(StepAsk, "failed", "aborted")
+		}
 		m.j.State = StateAborted
 		err := m.saveLocked()
 		m.mu.Unlock()
+		// the order withdrawn too: the app forgets what it staged
 		_ = m.withJournal(func(j *Journal) error { return m.Installer.Discard(context.Background(), j) })
 		return err
 	case StatePrepareFailed, StateAborted:
@@ -495,7 +547,9 @@ func (m *Machine) Abort(runID string) error {
 // ---------- apply ----------
 
 // Apply switches to the prepared release and restarts on it (in the background); the
-// release that comes up finishes the run (Resume).
+// release that comes up finishes the run (Resume). An install a person updates is
+// ordered from the app instead (awaiting_click); once someone clicked there, Apply again
+// is the home's go.
 func (m *Machine) Apply(runID string) error {
 	m.mu.Lock()
 	if m.j == nil || m.j.Job.RunID != runID {
@@ -503,14 +557,32 @@ func (m *Machine) Apply(runID string) error {
 		return ErrNoRun
 	}
 	switch m.j.State {
-	case StateApplying, StateRestarting, StateWatching, StateCommitted, StateRollingBack, StateRolledBack, StateApplyFailed:
+	case StateApplying, StateRestarting, StateWatching, StateCommitted, StateRollingBack, StateRolledBack, StateApplyFailed,
+		StateAwaitingClick:
 		m.mu.Unlock()
-		return nil // asked again: under way or done
-	case StatePrepared:
+		return nil // asked again: under way, done, or waiting for its click
+	case StatePrepared, StateClicked:
 	default:
 		state := m.j.State
 		m.mu.Unlock()
 		return fmt.Errorf("%w: the run is %s", ErrNotReady, state)
+	}
+	if m.j.State == StatePrepared && m.j.Staged != "running" && m.asker() != nil {
+		now := m.now()
+		m.j.State, m.j.Step, m.j.App = StateAwaitingClick, StepAsk, ""
+		m.j.Steps = append(m.j.Steps, StepRecord{Step: StepAsk, State: "running", StartedAt: now})
+		if err := m.saveLocked(); err != nil {
+			m.mu.Unlock()
+			return err
+		}
+		ctx := m.ctxLocked()
+		m.running.Add(1)
+		m.mu.Unlock()
+		go func() {
+			defer m.running.Done()
+			m.await(ctx, runID)
+		}()
+		return nil
 	}
 	if m.j.Staged == "running" {
 		// the machine already runs the release: nothing to switch
@@ -572,6 +644,78 @@ func (m *Machine) apply(ctx context.Context) {
 	}
 }
 
+// await orders the release from the app and follows its answer until someone clicks
+// (clicked: the home's go switches) or it fails (nothing changed).
+func (m *Machine) await(ctx context.Context, runID string) {
+	a := m.asker()
+	j := m.Status().Journal
+	if a == nil || j == nil || j.Job.RunID != runID {
+		return
+	}
+	if err := a.Ask(j); err != nil {
+		m.askFailed(runID, err)
+		return
+	}
+	m.logf("ordered %s from the app: it installs once someone clicks on this machine", j.Job.Version)
+	t := time.NewTicker(m.checkEvery())
+	defer t.Stop()
+	for {
+		cur := m.Status().Journal
+		if cur == nil || cur.Job.RunID != runID || cur.State != StateAwaitingClick {
+			return // withdrawn, replaced, or answered
+		}
+		state, err := a.Answer(cur)
+		if err != nil {
+			m.askFailed(runID, err)
+			return
+		}
+		switch {
+		case state == RequestClicked:
+			m.mu.Lock()
+			if m.j != nil && m.j.Job.RunID == runID && m.j.State == StateAwaitingClick {
+				m.j.State, m.j.Step, m.j.App = StateClicked, "", RequestClicked
+				m.endStepLocked(StepAsk, "done", "clicked")
+				_ = m.saveLocked()
+			}
+			m.mu.Unlock()
+			m.logf("someone chose to install %s here: it waits for the home's go", cur.Job.Version)
+			return
+		case state != cur.App && (state == RequestOrdered || state == RequestStaged):
+			_ = m.mutate(func(j *Journal) {
+				if j.Job.RunID == runID {
+					j.App = state
+				}
+			})
+			if state == RequestStaged {
+				m.logf("the app staged %s and shows it: it waits for a click", cur.Job.Version)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return // the supervisor stops: the next start goes on waiting
+		case <-t.C:
+		}
+	}
+}
+
+// askFailed ends an order the app could not take (nothing changed).
+func (m *Machine) askFailed(runID string, err error) {
+	f := failure(StepAsk, err)
+	var withdraw *Journal
+	m.mu.Lock()
+	if m.j != nil && m.j.Job.RunID == runID && waitsForClick(m.j.State) {
+		m.endStepLocked(StepAsk, "failed", f.Error())
+		m.j.State, m.j.Error = StateApplyFailed, f
+		_ = m.saveLocked()
+		withdraw = m.j.clone()
+	}
+	m.mu.Unlock()
+	if withdraw != nil {
+		_ = m.Installer.Discard(context.Background(), withdraw)
+		m.logf("the app could not take the order: %s", f.Error())
+	}
+}
+
 // ---------- resume, watch, commit, rollback ----------
 
 // Resume takes up the run the last start left (call once, before the roles start
@@ -593,6 +737,21 @@ func (m *Machine) Resume() {
 	m.j = j
 	m.mu.Unlock()
 	switch j.State {
+	case StateAwaitingClick, StateClicked:
+		if newRel {
+			// installed while it waited (the app's own way): watched like a switch
+			m.beginWatch("installed while the order waited for its click")
+			return
+		}
+		if j.State == StateAwaitingClick {
+			ctx := m.ctx()
+			m.running.Add(1)
+			go func() {
+				defer m.running.Done()
+				m.await(ctx, j.Job.RunID)
+			}()
+		}
+		// clicked: it waits for the home's go
 	case StatePreparing:
 		// cut short: prepared again (every step is idempotent)
 		m.mu.Lock()
@@ -647,8 +806,13 @@ func (m *Machine) Resume() {
 // cameBackOld records a run whose new release did not stay running: the launcher's
 // guard (or the app) brought back the previous one, and the record was marked for the
 // dump to be put back where the migrations ran (by the launcher, or here when it could
-// not: the database step runs after this).
+// not: the database step runs after this). The switch is undone too (the guard, the
+// order, the override): nothing is left that would take the new release for one being
+// tried, should it come later (the app's install finishing after all).
 func (m *Machine) cameBackOld(running, why string) {
+	if err := m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) }); err != nil {
+		m.logf("undoing the switch: %v", err)
+	}
 	j := m.Status().Journal
 	if m.Records != nil && j.Job.Home {
 		if marked, err := m.Records.MarkRestore(j.Job.Version, j.From, why); err != nil {
@@ -697,6 +861,7 @@ func (m *Machine) watch(ctx context.Context) {
 	watch, limit := j.Job.Watch(), j.Job.HealthLimit()
 	m.logf("watching %s: healthy for %s commits it", j.Job.Version, watch)
 	var healthySince, unhealthySince time.Time
+	pendingSaid := ""
 	t := time.NewTicker(m.checkEvery())
 	defer t.Stop()
 	for {
@@ -713,13 +878,20 @@ func (m *Machine) watch(ctx context.Context) {
 			m.logf("the new release fails: %s", v.Why)
 			m.rollback(v.Why)
 			return
+		case v.Pending:
+			// starting (the database step): no clock runs, and nothing is rolled back
+			// under the step's feet
+			healthySince, unhealthySince = time.Time{}, time.Time{}
+			if v.Why != pendingSaid {
+				pendingSaid = v.Why
+				m.logf("starting: %s", v.Why)
+			}
 		case v.Healthy:
 			unhealthySince = time.Time{}
 			if healthySince.IsZero() {
 				healthySince = now
 			}
-			if now.Sub(healthySince) >= watch {
-				m.commit()
+			if now.Sub(healthySince) >= watch && m.commit() {
 				return
 			}
 		default:
@@ -742,20 +914,20 @@ func (m *Machine) watch(ctx context.Context) {
 	}
 }
 
-// commit keeps the new release.
-func (m *Machine) commit() {
-	_ = m.endStep(StepWatch, "done", "")
-	_ = m.beginStep(StepCommit)
-	if err := m.withJournal(func(j *Journal) error { return m.Installer.Commit(context.Background(), j) }); err != nil {
-		// the release runs and stays; what is left (a prune, the guard file) is retried
-		// by the next run
-		_ = m.endStep(StepCommit, "done", "kept; "+err.Error())
-	} else {
-		_ = m.endStep(StepCommit, "done", "")
-	}
-	_ = m.mutate(func(j *Journal) { j.State, j.Step = StateCommitted, "" })
+// commit keeps the new release; false when the installer could not (the launcher's
+// guard still stands, and would take the release back at its deadline): the watch goes
+// on and commits again at its next check.
+func (m *Machine) commit() bool {
 	j := m.Status().Journal
+	if err := m.withJournal(func(j *Journal) error { return m.Installer.Commit(context.Background(), j) }); err != nil {
+		m.logf("cannot keep %s yet (tried again): %v", j.Job.Version, err)
+		return false
+	}
+	_ = m.endStep(StepWatch, "done", "")
+	_ = m.endStep(StepCommit, "done", "")
+	_ = m.mutate(func(j *Journal) { j.State, j.Step = StateCommitted, "" })
 	m.logf("committed %s", j.Job.Version)
+	return true
 }
 
 // rollback switches back to the release that ran before and restarts on it; where the
@@ -775,7 +947,8 @@ func (m *Machine) rollback(reason string) {
 	_ = m.mutate(func(j *Journal) { j.State, j.Reason = StateRollingBack, reason })
 	_ = m.beginStep(StepRollback)
 	m.logf("rolling back %s to %s: %s", j.Job.Version, orNone(j.From), reason)
-	if j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version) {
+	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)
+	if migrated {
 		if m.Rehearser != nil {
 			if p, err := m.Rehearser.DumpAside(context.Background(), "failed-"+j.Job.Version); err == nil {
 				m.logf("the database as %s left it is in %s", j.Job.Version, p)
@@ -788,6 +961,13 @@ func (m *Machine) rollback(reason string) {
 		}
 	}
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) }); err != nil {
+		if migrated {
+			// the new release stays, and so does its database: no start may put the dump
+			// back under it
+			if uerr := m.Records.Unmark(j.Job.Version); uerr != nil {
+				m.logf("cannot take the restore mark back: %v", uerr)
+			}
+		}
 		f := failure(StepRollback, err)
 		_ = m.endStep(StepRollback, "failed", f.Error())
 		_ = m.mutate(func(j *Journal) { j.State, j.Error = StateFailed, f })

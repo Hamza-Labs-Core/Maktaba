@@ -30,7 +30,12 @@ const (
 	StatePrepared      = "prepared"       // staged and checked; waits for apply
 	StatePrepareFailed = "prepare_failed" // nothing changed
 	StateAborted       = "aborted"        // stopped before the switch; nothing changed
-	StateApplying      = "applying"       // switching to the staged release
+	// An install a person updates (Asker): ordered from the app, it waits for a click
+	// on this machine, then for the home's go. Nothing changed yet, and a newer run
+	// takes its place.
+	StateAwaitingClick = "awaiting_click"
+	StateClicked       = "clicked"
+	StateApplying      = "applying" // switching to the staged release
 	StateRestarting    = "restarting"     // switched; the machine restarts on it
 	StateWatching      = "watching"       // the new release runs; its health is watched
 	StateCommitted     = "committed"      // the new release stays
@@ -46,6 +51,7 @@ const (
 	StepStage     = "stage"
 	StepSmoke     = "smoke"
 	StepRehearse  = "rehearse"
+	StepAsk       = "ask" // the app's order, until its click
 	StepSwitch    = "switch"
 	StepRestart   = "restart"
 	StepWatch     = "watch"
@@ -187,6 +193,8 @@ type Journal struct {
 	Staged    string     `json:"staged,omitempty"`
 	FromRef   string     `json:"from_ref,omitempty"`
 	Rehearsal *Rehearsal `json:"rehearsal,omitempty"`
+	// App is the app's last answer to the order (ordered, staged, clicked).
+	App string `json:"app,omitempty"`
 	// WatchSince is when the new release first came up; Starts how often it started
 	// while watched (a supervisor that keeps dying rolls back).
 	WatchSince *time.Time `json:"watch_since,omitempty"`

@@ -19,11 +19,12 @@ import (
 )
 
 // AppInstaller is a desktop app that carries the server (Maktaba.app on a Mac, the
-// Windows app; Epics 36, 38): the app's own updater replaces the whole app, so the
-// server asks it to (app-install.json, which the app's status poller reads; the app is
-// started with maktaba://install-update when it does not answer), and the app installs
-// the exact release the server verified, without a click (owner decision D1). Tauri keeps
-// no previous app, so before the install the server keeps a copy of the payload it runs
+// Windows app; Epics 36, 38): the app's own updater replaces the whole app. The server
+// orders the exact release it verified (app-install.json, which the app's status poller
+// reads; the app is started with maktaba://install-update when it does not answer); the
+// app stages it and shows it, and installs it once someone clicks there and the home
+// says go (owner decision D1: ask first; request.go). Tauri keeps no previous app, so
+// before the install the server keeps a copy of the payload it runs
 // (<launcher root>/updates/payloads/<v>); a rollback makes the launcher run that copy
 // (payload-override), and the launcher's guard does the same when the new server cannot
 // stay up.
@@ -47,28 +48,16 @@ type AppInstaller struct {
 	// Open opens a URL with the system (the app's deep link); tests replace it.
 	Open func(ctx context.Context, url string) error
 	// NudgeAfter and WaitApp: how long the app may take to answer before it is
-	// started, and to install before the run fails (90 s, 30 min).
+	// started, and to install once told to go before the run fails (90 s, 30 min).
 	NudgeAfter time.Duration
 	WaitApp    time.Duration
 	// PollEvery is how often the app's answer is read (1 s).
 	PollEvery time.Duration
 	Now       func() time.Time
-}
 
-// AppRequestFile is the server's request to the app, in the launcher root's updates
-// directory: {run_id, version, feed, state requested|installing|failed, error}.
-const AppRequestFile = "app-install.json"
-
-// AppRequest is app-install.json.
-type AppRequest struct {
-	RunID   string `json:"run_id"`
-	Version string `json:"version"`
-	// Feed is the release's own updater feed (releases/download/v<v>/latest.json): the
-	// app installs exactly this release.
-	Feed  string    `json:"feed"`
-	State string    `json:"state"` // requested | installing | failed
-	Error string    `json:"error,omitempty"`
-	At    time.Time `json:"at"`
+	// the order the app was last started for, and when (Answer, from one goroutine)
+	nudgedRun string
+	nudgedAt  time.Time
 }
 
 func (ai *AppInstaller) now() time.Time {
@@ -86,6 +75,43 @@ func (ai *AppInstaller) bundled() string {
 }
 
 func (ai *AppInstaller) updatesDir() string { return filepath.Join(ai.LauncherRoot, "updates") }
+
+func (ai *AppInstaller) requests() requests { return requests{dir: ai.updatesDir(), now: ai.now} }
+
+func (ai *AppInstaller) nudgeAfter() time.Duration {
+	if ai.NudgeAfter > 0 {
+		return ai.NudgeAfter
+	}
+	return 90 * time.Second
+}
+
+// Asks implements Asker: a desktop app always asks.
+func (ai *AppInstaller) Asks() bool { return true }
+
+// Ask implements Asker: the order, the release's own feed named.
+func (ai *AppInstaller) Ask(j *Journal) error {
+	return ai.requests().order(j, RequestKindApp, j.Job.Assets["latest.json"])
+}
+
+// Answer implements Asker; an app that has not answered within NudgeAfter is started
+// with the order's deep link (once per NudgeAfter: a running app takes it too).
+func (ai *AppInstaller) Answer(j *Journal) (string, error) {
+	state, err := ai.requests().answer(j)
+	if err != nil || state != RequestOrdered || ai.Open == nil {
+		return state, err
+	}
+	if ai.nudgedRun != j.Job.RunID {
+		ai.nudgedRun, ai.nudgedAt = j.Job.RunID, ai.now()
+		if q, rerr := ai.requests().read(); rerr == nil && !q.At.IsZero() {
+			ai.nudgedAt = q.At
+		}
+	}
+	if ai.now().Sub(ai.nudgedAt) >= ai.nudgeAfter() {
+		ai.nudgedAt = ai.now()
+		_ = ai.Open(context.Background(), AppInstallURL+"?run="+j.Job.RunID)
+	}
+	return state, nil
+}
 
 // keptDir is where the payload of version is kept.
 func (ai *AppInstaller) keptDir(version string) string {
@@ -295,53 +321,35 @@ func (ai *AppInstaller) Tools(j *Journal) (string, string) {
 	return api, mig
 }
 
-// Switch implements Installer: the next start runs the app's own payload (no override),
-// under the launcher's guard naming the kept copy to fall back to.
+// Switch implements Installer: the launcher's guard naming the kept copy to fall back
+// to. The override (a kept copy running after an earlier rollback) stays until the app
+// holds the new release: the launcher runs the app's own payload once it is the guarded
+// release, and the kept copy while the app's install has not happened (Commit clears it).
 func (ai *AppInstaller) Switch(_ context.Context, j *Journal) error {
 	if err := layout.WriteGuard(ai.LauncherRoot, layout.Guard{Version: layout.NormalizeVersion(j.Job.Version),
 		RunID: j.Job.RunID, Since: ai.now().UTC(), Deadline: guardDeadline(ai.now(), j).UTC(),
 		PreviousPayload: j.FromRef, Record: ai.Record}); err != nil {
 		return Fail("switch_failed", "%v", err)
 	}
-	if err := layout.WriteOverride(ai.LauncherRoot, ""); err != nil {
-		return Fail("switch_failed", "%v", err)
-	}
 	return nil
-}
-
-func (ai *AppInstaller) requestPath() string { return filepath.Join(ai.updatesDir(), AppRequestFile) }
-
-func (ai *AppInstaller) readRequest() (AppRequest, error) {
-	var r AppRequest
-	b, err := os.ReadFile(ai.requestPath())
-	if err != nil {
-		return r, err
-	}
-	return r, json.Unmarshal(b, &r)
 }
 
 // AppInstallURL is the app's deep link that starts it to install what app-install.json
 // asks (a running app takes it too).
 const AppInstallURL = "maktaba://install-update"
 
-// Restart implements Installer: asks the app to install and waits. The app's install
-// restarts the server (this process ends); a failure it reports, or no install within
-// WaitApp, is an error (nothing was installed).
+// Restart implements Installer: tells the app to go (it installs what it staged) and
+// waits. The app's install restarts the server (this process ends); a failure it
+// reports, or no install within WaitApp, is an error (nothing was installed).
 func (ai *AppInstaller) Restart(ctx context.Context, j *Journal, _ func(int)) error {
-	req := AppRequest{RunID: j.Job.RunID, Version: layout.NormalizeVersion(j.Job.Version),
-		Feed: j.Job.Assets["latest.json"], State: "requested", At: ai.now().UTC()}
-	b, _ := json.MarshalIndent(req, "", "  ")
-	if err := layout.WriteFileAtomic(ai.requestPath(), append(b, '\n'), 0o600); err != nil {
+	if err := ai.requests().set(j, RequestKindApp, j.Job.Assets["latest.json"], RequestGo); err != nil {
 		return Fail("app_request_failed", "%v", err)
 	}
-	nudge, wait := ai.NudgeAfter, ai.WaitApp
-	if nudge <= 0 {
-		nudge = 90 * time.Second
-	}
+	nudge, wait := ai.nudgeAfter(), ai.WaitApp
 	if wait <= 0 {
 		wait = 30 * time.Minute
 	}
-	start, nudged := ai.now(), false
+	start, nudged, installing := ai.now(), false, false
 	poll := ai.PollEvery
 	if poll <= 0 {
 		poll = time.Second
@@ -354,14 +362,17 @@ func (ai *AppInstaller) Restart(ctx context.Context, j *Journal, _ func(int)) er
 			return ctx.Err() // stopped for the install: the next start goes on
 		case <-t.C:
 		}
-		r, err := ai.readRequest()
+		r, err := ai.requests().read()
 		if err == nil && r.RunID == j.Job.RunID {
 			switch r.State {
-			case "failed":
+			case RequestFailed:
 				return Fail("app_install_failed", "%s", r.Error)
-			case "installing":
-				start = ai.now() // it works on it: the wait starts again
-				nudged = true
+			case RequestInstalling:
+				if !installing {
+					// it took the go: the install has WaitApp from now (once: an app that
+					// dies installing must not hold the run for ever)
+					start, nudged, installing = ai.now(), true, true
+				}
 			}
 		}
 		if !nudged && ai.now().Sub(start) >= nudge && ai.Open != nil {
@@ -376,10 +387,10 @@ func (ai *AppInstaller) Restart(ctx context.Context, j *Journal, _ func(int)) er
 	}
 }
 
-// Revert implements Installer: the request withdrawn; when the app holds the new
+// Revert implements Installer: the order withdrawn; when the app holds the new
 // release already, the launcher runs the kept copy of the one before.
 func (ai *AppInstaller) Revert(_ context.Context, j *Journal) error {
-	_ = os.Remove(ai.requestPath())
+	ai.requests().remove()
 	from := layout.NormalizeVersion(j.From)
 	bundled := ""
 	if p, err := apppayload.Read(filepath.Join(ai.bundled(), "payload.json")); err == nil {
@@ -408,7 +419,7 @@ func (ai *AppInstaller) Revert(_ context.Context, j *Journal) error {
 // runs (no override), the kept copy of the release before stays (the one to go back
 // to), older kept copies go.
 func (ai *AppInstaller) Commit(_ context.Context, j *Journal) error {
-	_ = os.Remove(ai.requestPath())
+	ai.requests().remove()
 	if err := layout.ClearGuard(ai.LauncherRoot); err != nil {
 		return err
 	}
@@ -428,7 +439,7 @@ func (ai *AppInstaller) Commit(_ context.Context, j *Journal) error {
 
 // Discard implements Installer.
 func (ai *AppInstaller) Discard(_ context.Context, j *Journal) error {
-	_ = os.Remove(ai.requestPath())
+	ai.requests().remove()
 	if j.Staged == "" || j.Staged == "running" {
 		return nil
 	}

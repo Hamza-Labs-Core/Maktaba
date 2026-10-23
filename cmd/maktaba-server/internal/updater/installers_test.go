@@ -331,3 +331,104 @@ func TestAppInstaller(t *testing.T) {
 }
 
 func appOfForTest(payload string) string { return filepath.Dir(filepath.Dir(filepath.Dir(payload))) }
+
+// The order the server and the desktop app share (D1, request.go): ordered with the
+// release's own feed, the app's answers read back (staged, clicked), the app started
+// when it does not answer, go at the home's word, withdrawn by a revert.
+func TestAppOrderProtocol(t *testing.T) {
+	lroot := t.TempDir()
+	var opened int
+	ai := &AppInstaller{LauncherRoot: lroot, Version: "1.4.0", NudgeAfter: 20 * time.Millisecond, WaitApp: time.Second,
+		PollEvery: 2 * time.Millisecond, Open: func(context.Context, string) error { opened++; return nil }}
+	feed := "https://github.com/o/r/releases/download/v1.5.0/latest.json"
+	j := &Journal{Job: jobFor("v1.5.0", map[string]string{"latest.json": feed}), From: "1.4.0"}
+	j.Job.Home = true
+	path := filepath.Join(lroot, "updates", AppRequestFile)
+	appSays := func(state, why string) {
+		t.Helper()
+		var q AppRequest
+		b, _ := os.ReadFile(path)
+		_ = json.Unmarshal(b, &q)
+		q.State, q.Error = state, why
+		b, _ = json.Marshal(q)
+		if err := os.WriteFile(path, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !ai.Asks() {
+		t.Fatal("a desktop app does not ask")
+	}
+	if err := ai.Ask(j); err != nil {
+		t.Fatal(err)
+	}
+	var q AppRequest
+	b, _ := os.ReadFile(path)
+	if err := json.Unmarshal(b, &q); err != nil || q.State != RequestOrdered || q.Kind != RequestKindApp || !q.Home ||
+		q.Feed != feed || q.RunID != j.Job.RunID {
+		t.Fatalf("order %+v (%v)", q, err)
+	}
+	if s, err := ai.Answer(j); err != nil || s != RequestOrdered || opened != 0 {
+		t.Fatalf("answer %q %v opened %d", s, err, opened)
+	}
+	time.Sleep(30 * time.Millisecond)
+	if s, _ := ai.Answer(j); s != RequestOrdered || opened != 1 {
+		t.Fatalf("no answer for a while: %q opened %d", s, opened)
+	}
+	appSays(RequestStaged, "")
+	_ = ai.Ask(j) // asked again (a restart): the app's answer stays
+	if s, _ := ai.Answer(j); s != RequestStaged {
+		t.Fatalf("answer %q", s)
+	}
+	appSays(RequestClicked, "")
+	if s, _ := ai.Answer(j); s != RequestClicked {
+		t.Fatalf("answer %q", s)
+	}
+	// the home's go: the app takes it (installing), then cannot install
+	done := make(chan error, 1)
+	go func() { done <- ai.Restart(context.Background(), j, nil) }()
+	deadline := time.Now().Add(time.Second)
+	for {
+		b, _ := os.ReadFile(path)
+		_ = json.Unmarshal(b, &q)
+		if q.State == RequestGo || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if q.State != RequestGo {
+		t.Fatalf("no go: %+v", q)
+	}
+	appSays(RequestInstalling, "")
+	time.Sleep(10 * time.Millisecond)
+	appSays(RequestFailed, "no room")
+	var f *Failure
+	if err := <-done; !errors.As(err, &f) || f.Code != "app_install_failed" {
+		t.Fatalf("restart: %v", err)
+	}
+	// an app that failed to stage: the answer is the failure
+	_ = ai.Discard(context.Background(), j)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("the order outlived its discard")
+	}
+	if _, err := ai.Answer(j); !errors.As(err, &f) || f.Code != "app_order_gone" {
+		t.Fatalf("answer without an order: %v", err)
+	}
+
+	// the Linux runtime: only the app's asks, and its order names nothing to fetch
+	ri := &RuntimeInstaller{LauncherRoot: lroot, Owner: "headless"}
+	if ri.Asks() {
+		t.Fatal("a headless runtime asks")
+	}
+	ri.Owner = "app"
+	if !ri.Asks() {
+		t.Fatal("the app's runtime does not ask")
+	}
+	if err := ri.Ask(j); err != nil {
+		t.Fatal(err)
+	}
+	var rq AppRequest
+	b, _ = os.ReadFile(path)
+	if err := json.Unmarshal(b, &rq); err != nil || rq.Kind != RequestKindRuntime || rq.Feed != "" || rq.State != RequestOrdered {
+		t.Fatalf("runtime order %+v", rq)
+	}
+}

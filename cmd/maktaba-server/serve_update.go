@@ -40,6 +40,18 @@ import (
 // update guard (app bundle, runtime copy): where pending.json and payload-override go.
 const envLauncherRoot = "MAKTABA_LAUNCHER_ROOT"
 
+// envRuntimeOwner is who owns a Linux runtime copy, set by its launcher: "app" (the
+// desktop app's: it asks first) or "headless".
+const envRuntimeOwner = "MAKTABA_RUNTIME_OWNER"
+
+// runtimeOwner is the runtime's owner ("app" unless the launcher says headless).
+func runtimeOwner() string {
+	if strings.TrimSpace(os.Getenv(envRuntimeOwner)) == "headless" {
+		return "headless"
+	}
+	return "app"
+}
+
 // envAppBundled is the app's own payload, set by a launcher that runs a kept copy in
 // its place (a rolled-back app update).
 const envAppBundled = "MAKTABA_APP_BUNDLED"
@@ -68,7 +80,7 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 				rt = appruntime.New(filepath.Dir(bundle))
 			}
 			return &updater.RuntimeInstaller{Runtime: rt, Source: src, Version: version.Version, LauncherRoot: lroot,
-				Record: record}, filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
+				Owner: runtimeOwner(), Record: record}, filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
 		}
 		bundled := strings.TrimSpace(os.Getenv(envAppBundled))
 		if bundled == "" {
@@ -208,6 +220,10 @@ func (r recordFile) MarkRestore(version, _, reason string) (bool, error) {
 	return layout.MarkRecordRestoring(string(r), version, reason)
 }
 func (r recordFile) Migrated(version string) bool { return layout.RecordMigrated(string(r), version) }
+func (r recordFile) Unmark(version string) error {
+	_, err := layout.UnmarkRecordRestoring(string(r), version)
+	return err
+}
 
 // startUpdates makes the machine and takes up the run the last start left. exit stops
 // serve with a code (75).
@@ -410,6 +426,12 @@ type machineHealth struct {
 var haltCodes = map[string]bool{"db_restored": true, "db_restore_failed": true, "db_ahead": true,
 	"db_refused_older": true, "db_no_cluster": true, "pg_major": true}
 
+// startingCodes are the start steps at work (detail_codes.json): the database step's
+// dump and migrations, the Python environment being built. However long they take, the
+// release is starting, not unhealthy (the launcher's guard bounds them).
+var startingCodes = map[string]bool{"db_waiting": true, "db_dumping": true, "db_migrating": true,
+	"db_checking": true, "db_restoring": true, "venv_waiting": true, "venv_building": true}
+
 func (h *machineHealth) client() *http.Client {
 	if h.http != nil {
 		return h.http
@@ -424,6 +446,7 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		return updater.Verdict{Why: "the supervisor is starting"}
 	}
 	hasAPI := false
+	var procs []supervisor.ChildStatus
 	for _, p := range snap.Processes {
 		if p.Role == supervisor.RoleAPI {
 			hasAPI = true
@@ -437,6 +460,14 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		if p.CrashLoop {
 			return updater.Verdict{Fatal: true, Why: childName(p) + " crash-loops"}
 		}
+		procs = append(procs, p)
+	}
+	for _, p := range procs {
+		if p.State != supervisor.StateRunning && startingCodes[p.DetailCode] {
+			return updater.Verdict{Pending: true, Why: fmt.Sprintf("%s: %s", childName(p), p.Detail)}
+		}
+	}
+	for _, p := range procs {
 		if p.State != supervisor.StateRunning {
 			return updater.Verdict{Why: fmt.Sprintf("%s is %s %s", childName(p), p.State, p.Detail)}
 		}

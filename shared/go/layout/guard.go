@@ -159,6 +159,40 @@ func MarkRecordRestoring(path, failed, reason string) (bool, error) {
 	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
 }
 
+// UnmarkRecordRestoring takes back MarkRecordRestoring when the switch back to the
+// release before failed: failed (still running) keeps the database its migrations made,
+// so the record says migrated again and no start puts the dump back. It reports whether
+// it changed the record.
+func UnmarkRecordRestoring(path, failed string) (bool, error) {
+	if path == "" {
+		return false, nil
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return false, fmt.Errorf("%s: %w", path, err)
+	}
+	str := func(k string) string { s, _ := rec[k].(string); return s }
+	if str("state") != "restoring" || NormalizeVersion(str("failed")) != NormalizeVersion(failed) {
+		return false, nil
+	}
+	rec["state"] = "migrated"
+	delete(rec, "failed")
+	delete(rec, "error")
+	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
+	out, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
+}
+
 // RecordMigrated reports whether the record says version's migrations ran (or were
 // running: a database that may hold some of them).
 func RecordMigrated(path, version string) bool {

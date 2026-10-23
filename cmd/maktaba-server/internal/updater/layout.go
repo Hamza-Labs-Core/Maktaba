@@ -164,8 +164,9 @@ func (li *LayoutInstaller) Commit(ctx context.Context, j *Journal) error {
 	if keep < 2 {
 		keep = 3
 	}
-	_, err := li.Layout.Prune(keep, layout.NormalizeVersion(j.From))
-	return err
+	// what a prune leaves is pruned by the next commit; the release is kept either way
+	_, _ = li.Layout.Prune(keep, layout.NormalizeVersion(j.From))
+	return nil
 }
 
 // Discard implements Installer: the staged release goes unless something runs it.

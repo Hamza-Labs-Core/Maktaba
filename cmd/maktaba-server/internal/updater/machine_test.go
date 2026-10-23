@@ -21,6 +21,17 @@ type world struct {
 	marked    bool // the record says: put the dump back
 	committed string
 	exits     []int
+	// the desktop app's side of an order (an installer that asks)
+	order     string // the run ordered ("" withdrawn)
+	answer    string // ordered, staged, clicked
+	answerErr error
+}
+
+// app answers the order like the desktop app.
+func (w *world) app(answer string) {
+	w.mu.Lock()
+	w.answer = answer
+	w.mu.Unlock()
 }
 
 func newWorld(running string) *world { return &world{next: running, staged: map[string]bool{}} }
@@ -48,9 +59,13 @@ type fakeInst struct {
 	w       *world
 	running string
 	failAt  string
-	dieAt   string
-	died    chan struct{}
-	once    sync.Once
+	// failTimes > 0: failAt fails only its first failTimes calls
+	failTimes, failed int
+	dieAt             string
+	died              chan struct{}
+	once              sync.Once
+	// asks: a desktop app's install (Asker)
+	asks bool
 }
 
 func (f *fakeInst) die(where string) {
@@ -63,7 +78,13 @@ func (f *fakeInst) die(where string) {
 func (f *fakeInst) step(name string, effect func()) error {
 	f.die("before:" + name)
 	if f.failAt == name {
-		return Fail(name+"_broken", "the fake fails %s", name)
+		f.w.mu.Lock()
+		fail := f.failTimes == 0 || f.failed < f.failTimes
+		f.failed++
+		f.w.mu.Unlock()
+		if fail {
+			return Fail(name+"_broken", "the fake fails %s", name)
+		}
 	}
 	f.w.call(name)
 	if effect != nil {
@@ -108,7 +129,26 @@ func (f *fakeInst) Commit(_ context.Context, j *Journal) error {
 	return f.step(StepCommit, func() { f.w.committed = j.Job.Version })
 }
 func (f *fakeInst) Discard(_ context.Context, j *Journal) error {
-	return f.step("discard", func() { delete(f.w.staged, j.Job.Version) })
+	return f.step("discard", func() { delete(f.w.staged, j.Job.Version); f.w.order, f.w.answer = "", "" })
+}
+func (f *fakeInst) Asks() bool { return f.asks }
+func (f *fakeInst) Ask(j *Journal) error {
+	return f.step(StepAsk, func() {
+		if f.w.order != j.Job.RunID {
+			f.w.order, f.w.answer = j.Job.RunID, RequestOrdered
+		}
+	})
+}
+func (f *fakeInst) Answer(j *Journal) (string, error) {
+	f.w.mu.Lock()
+	defer f.w.mu.Unlock()
+	if f.w.answerErr != nil {
+		return "", f.w.answerErr
+	}
+	if f.w.order != j.Job.RunID {
+		return "", Fail("app_order_gone", "gone")
+	}
+	return f.w.answer, nil
 }
 
 type fakeRecords struct{ w *world }
@@ -121,6 +161,12 @@ func (r fakeRecords) MarkRestore(version, from, reason string) (bool, error) {
 	}
 	r.w.marked = true
 	return true, nil
+}
+func (r fakeRecords) Unmark(string) error {
+	r.w.mu.Lock()
+	defer r.w.mu.Unlock()
+	r.w.marked = false
+	return nil
 }
 func (r fakeRecords) Migrated(string) bool {
 	r.w.mu.Lock()
@@ -597,7 +643,7 @@ func TestResumeComesBackOnTheOldRelease(t *testing.T) {
 		r := startRig(t, dir, w, healthy)
 		r.m.Resume()
 		got := r.waitState(StateRolledBack)
-		if !w.marked || got.Error == nil {
+		if !w.marked || got.Error == nil || !w.called("revert") { // the guard and the order undone too
 			t.Fatalf("%s: marked %v error %+v", state, w.marked, got.Error)
 		}
 	}

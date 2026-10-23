@@ -110,9 +110,16 @@ func TestBundleOverrideEnvironment(t *testing.T) {
 	if p := ln.bundlePayload(); p != kept {
 		t.Fatalf("with an override: %q", p)
 	}
+	// an update to 3.0.0 the app has not installed (its install failed, the app started
+	// the server again): the kept copy goes on running, and the guard is not its own
+	_ = layout.WriteGuard(root, layout.Guard{Version: "3.0.0", Since: time.Now()})
+	if p := ln.bundlePayload(); p != kept || ln.isPending(bundleRelease) {
+		t.Fatalf("a guard of 3.0.0 with the app on 2.0.0: runs %q, pending %v", p, ln.isPending(bundleRelease))
+	}
+	// the app holds the guarded release: it runs, under the guard, over the override
 	_ = layout.WriteGuard(root, layout.Guard{Version: "2.0.0", Since: time.Now()})
-	if ln.isPending(bundleRelease) {
-		t.Fatal("a guard of 2.0.0 is not the kept 1.0.0's")
+	if p := ln.bundlePayload(); p != bundle || !ln.isPending(bundleRelease) {
+		t.Fatalf("a guard of the app's 2.0.0: runs %q, pending %v", p, ln.isPending(bundleRelease))
 	}
 	_ = layout.WriteOverride(root, "")
 	if !ln.isPending(bundleRelease) {
