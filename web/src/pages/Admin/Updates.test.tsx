@@ -165,6 +165,52 @@ describe("Admin Updates", () => {
     expect(screen.queryByRole("button", { name: "Cancel this update" })).toBeNull();
   });
 
+  it("desktop apps that wait for a click: each with its version, the run naming them, Cancel before the go", async () => {
+    const waiting = { ...liveRun, state: "home_applying", step: "waiting_click" };
+    const machines = [
+      {
+        id: "home",
+        name: "home",
+        role: "home",
+        version: "1.4.0",
+        state: "waiting_click",
+        kind: "appbundle",
+        target: "1.5.0",
+      },
+      {
+        id: "n1",
+        name: "studio-pc",
+        role: "node",
+        version: "1.4.0",
+        state: "clicked",
+        kind: "appbundle",
+        target: "1.5.0",
+      },
+    ];
+    routes(overview({ run: waiting, machines }), {
+      ...runView,
+      ...waiting,
+      detail: { home: { state: "awaiting_click" } },
+    });
+    post.mockResolvedValue({ cancelled: true });
+    const user = userEvent.setup();
+    renderPage();
+    expect(await screen.findByTestId("updates-machine-home-click")).toHaveTextContent(
+      "Maktaba 1.5.0 is ready on this machine: it installs when someone clicks Install in Maktaba there"
+    );
+    expect(screen.getByTestId("updates-machine-home")).toHaveTextContent("waiting for a click");
+    expect(screen.getByTestId("updates-machine-n1-click")).toHaveTextContent(
+      "Someone chose to install 1.5.0 there"
+    );
+    expect(await screen.findByTestId("updates-run-waiting-click")).toHaveTextContent(
+      "Waiting for a click in Maktaba on: The home"
+    );
+    await user.click(screen.getByRole("button", { name: "Cancel this update" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/runs/run-1/cancel", {})
+    );
+  });
+
   it("a held rollout: the failed machine and the held one, Retry and Resume", async () => {
     const held = {
       ...runView,

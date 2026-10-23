@@ -62,6 +62,8 @@ export interface UpdateMachine {
   platform?: string;
   /** the install kind: layout, runtime, appbundle, flat */
   kind?: string;
+  /** the release the active run brings it to (its desktop app shows it while it waits for a click) */
+  target?: string;
 }
 
 /** An update run (update_runs). */
@@ -105,7 +107,7 @@ export interface UpdateTarget {
 /** GET /api/cluster/updates/runs/{id}. */
 export interface UpdateRunView extends UpdateRun {
   install_kind: string;
-  detail: { waiting?: string; no_home?: boolean };
+  detail: { waiting?: string; no_home?: boolean; home?: { state?: string } };
   steps: UpdateRunStep[];
   targets: UpdateTarget[];
 }
@@ -135,10 +137,29 @@ export const RUN_ENDED = new Set([
   "rolled_back",
   "failed_rollback",
   "cancelled",
+  "superseded",
 ]);
 
-/** A run may be cancelled until the home begins switching (the API answers 409 past_switch after). */
-export const RUN_CANCELLABLE = new Set(["planned", "home_preparing", "home_prepared", "draining"]);
+/** A run may be cancelled until the home begins switching (the API answers 409 past_switch after), and
+ * during its rollout (the machines not yet updating are left as they are). */
+export const RUN_CANCELLABLE = new Set([
+  "planned",
+  "home_preparing",
+  "home_prepared",
+  "draining",
+  "home_committed",
+  "rolling_out",
+]);
+
+/** The states of a desktop app that runs the server and waits for a click there (owner decision D1). */
+export const WAITING_CLICK = new Set(["waiting_click", "clicked", "awaiting_click"]);
+
+/** Whether a run may be cancelled now: before the home switches (its desktop app's order is withdrawn
+ * until its go), or during the rollout. */
+export function runCancellable(view: Pick<UpdateRunView, "state" | "detail">): boolean {
+  if (RUN_CANCELLABLE.has(view.state)) return true;
+  return view.state === "home_applying" && WAITING_CLICK.has(view.detail?.home?.state ?? "");
+}
 
 export const updatesApi = {
   overview: () => api.get<UpdatesOverview>("/api/cluster/updates"),

@@ -13,8 +13,9 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import {
-  RUN_CANCELLABLE,
   RUN_ENDED,
+  runCancellable,
+  WAITING_CLICK,
   updatesApi,
   type UpdateMachine,
   type UpdateRun,
@@ -46,7 +47,10 @@ export function stateTone(state: string): Tone {
     case "ahead_of_home":
     case "done_with_failures":
     case "cancelled":
+    case "waiting_click":
       return "warn";
+    case "superseded":
+      return "neutral";
     default:
       return "accent";
   }
@@ -237,6 +241,16 @@ export function AdminUpdates() {
               <td>{m.kind ? t(`updates.kind.${m.kind}`) : "-"}</td>
               <td>
                 <Badge tone={stateTone(m.state)}>{label(m.state)}</Badge>
+                {m.target && WAITING_CLICK.has(m.state) && (
+                  <div className="mkt-muted" data-testid={`updates-machine-${m.id}-click`}>
+                    {t(
+                      m.state === "clicked" ? "updates.page.clicked" : "updates.page.waitingClick",
+                      {
+                        version: m.target,
+                      }
+                    )}
+                  </div>
+                )}
               </td>
             </tr>
           ))}
@@ -351,6 +365,16 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
         {view.detail?.waiting && (
           <span className="mkt-muted">{t(`updates.waiting.${view.detail.waiting}`)}</span>
         )}
+        {!ended && view.step === "waiting_click" && (
+          <span className="mkt-muted" data-testid="updates-run-waiting-click">
+            {t("updates.page.runWaitingClick", {
+              machines: [
+                ...(view.state === "home_applying" ? [t("updates.page.home")] : []),
+                ...view.targets.filter((x) => WAITING_CLICK.has(x.state)).map((x) => x.name),
+              ].join(", "),
+            })}
+          </span>
+        )}
       </p>
       {view.error?.code && (
         <p
@@ -362,7 +386,7 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
         </p>
       )}
       <div className="mkt-updates__actions">
-        {!ended && RUN_CANCELLABLE.has(view.state) && (
+        {!ended && runCancellable(view) && (
           <Button variant="secondary" disabled={busy} onClick={onCancel}>
             {t("updates.page.cancel")}
           </Button>
