@@ -30,7 +30,7 @@ func TestServeStartsNothingOfAHomeOnAnUnreadableNodeConfig(t *testing.T) {
 	if pg, err := bundledPostgres(ctx, &cfg, true); err == nil || pg != nil {
 		t.Errorf("bundledPostgres = %v, %v; want the node config's error", pg, err)
 	}
-	if ns, err := startNodeServices(ctx, cfg, nil); err == nil || ns != nil {
+	if ns, err := startNodeServices(ctx, cfg, nil, func() *updates { return nil }); err == nil || ns != nil {
 		t.Errorf("startNodeServices = %v, %v; want the node config's error", ns, err)
 	}
 	if cp, err := resolveNodeCopy(&cfg, true); err == nil || cp != nil {

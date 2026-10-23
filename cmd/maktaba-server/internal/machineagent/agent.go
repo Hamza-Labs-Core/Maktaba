@@ -72,12 +72,23 @@ type Event struct {
 	Revoked *Revoked
 }
 
-// UpdateState is the agent's update.state (story 35.8 AC5).
+// UpdateState is the agent's update.state (story 35.8 AC5, 35.12 AC1).
 type UpdateState struct {
 	Version         string `json:"version"`
 	PreparedVersion string `json:"prepared_version,omitempty"`
 	Platform        string `json:"platform"`
-	Layout          string `json:"layout"` // side_by_side | flat
+	Layout          string `json:"layout"` // the install kind: layout | runtime | appbundle | flat
+	// Run is this machine's update run, when it has one (its state and step).
+	Run *RunState `json:"run,omitempty"`
+}
+
+// RunState is a machine's update run as update.state reports it.
+type RunState struct {
+	RunID   string `json:"run_id"`
+	Version string `json:"version"`
+	State   string `json:"state"`
+	Step    string `json:"step,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // Command runs a command the home sent this machine (nil: none but disconnect): its
@@ -94,11 +105,29 @@ type Agent struct {
 	Commands Command
 
 	mu        sync.Mutex
+	nudge     chan struct{}
 	key       *Key
 	subs      map[chan Event]struct{}
 	lastErr   string
 	connected atomic.Bool
 	since     time.Time
+}
+
+// Nudge sends a fresh update.state when connected (this machine's run moved on).
+func (a *Agent) Nudge() {
+	select {
+	case a.nudgeCh() <- struct{}{}:
+	default:
+	}
+}
+
+func (a *Agent) nudgeCh() chan struct{} {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.nudge == nil {
+		a.nudge = make(chan struct{}, 1)
+	}
+	return a.nudge
 }
 
 func (a *Agent) log() *slog.Logger {
@@ -395,11 +424,20 @@ func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher) (
 			}
 		}
 	}
-	if a.State != nil {
+	sendState := func() {
+		if a.State == nil {
+			return
+		}
 		st := a.State()
-		send(map[string]any{"t": "update.state", "version": st.Version, "prepared_version": st.PreparedVersion,
-			"platform": st.Platform, "layout": st.Layout})
+		f := map[string]any{"t": "update.state", "version": st.Version, "prepared_version": st.PreparedVersion,
+			"platform": st.Platform, "layout": st.Layout}
+		if st.Run != nil {
+			f["run"] = st.Run
+		}
+		send(f)
 	}
+	sendState()
+	nudge := a.nudgeCh()
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	recv := make(chan struct{}, 1)
@@ -451,6 +489,8 @@ func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher) (
 			if err := write(b); err != nil {
 				return 0, err
 			}
+		case <-nudge:
+			sendState()
 		case <-recv:
 			if !silence.Stop() {
 				select {

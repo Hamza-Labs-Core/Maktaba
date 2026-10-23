@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
@@ -140,6 +142,35 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 			}
 		case dbStep != nil:
 			p.Prepare = dbStep.prepare
+		}
+	}
+	return procs
+}
+
+// layoutHomeGates gives a plain server home (the side-by-side layout: Epic 35 story
+// 35.2) the app's database step (Epic 38 story 38.12): at the start of a release other
+// than the one whose migrations the database holds, every role waits while the database
+// is dumped (the bundled Postgres, or an operator's with the pg programs), migrated, and
+// put back when the migrations fail; a rollback of an automatic update marks the record
+// for the next start to put the dump back (internal/updater). version is the release
+// running; a SQLite home has no step (its migrations run as before).
+func layoutHomeGates(cfg config.Config, version string, pg *pgbundle.Bundle, ext *dbsafe.Target, procs []supervisor.Process, log io.Writer) []supervisor.Process {
+	db := &migrationGate{stateDir: cfg.StateDir(), version: version, pg: pg, ext: ext,
+		keep: cfg.Postgres.KeepUpdateDumps(), log: log}
+	for _, p := range procs {
+		if p.Role == supervisor.RoleAPI && p.Cmd != nil {
+			db.api = p.Cmd
+		}
+	}
+	if db.api == nil {
+		return procs
+	}
+	step := &sharedStep{wait: detail("db_waiting", "Waiting for the library database"), run: db.run}
+	for i := range procs {
+		switch procs[i].Role {
+		case supervisor.RolePostgres, supervisor.RoleOllama:
+		default:
+			procs[i].Prepare = step.prepare
 		}
 	}
 	return procs
@@ -279,10 +310,14 @@ func (s *sharedStep) broadcast(d supervisor.Detail) {
 type migrationGate struct {
 	stateDir string
 	version  string           // the payload's
-	pg       *pgbundle.Bundle // the bundled Postgres; nil: a database of the user's own (no dump, no restore)
-	api      *exec.Cmd        // the api's command: its binary and environment run the migrations; nil: no api here
-	keep     int              // pre-update dumps kept ([postgres] update_dumps)
-	log      io.Writer
+	pg       *pgbundle.Bundle // the bundled Postgres; nil: a database of the user's own
+	// ext is a database of the user's own that a plain server install dumps and puts back
+	// with the pg programs (Epic 35: every home's update has its dump); nil with pg nil:
+	// no dump, no restore
+	ext  *dbsafe.Target
+	api  *exec.Cmd // the api's command: its binary and environment run the migrations; nil: no api here
+	keep int       // pre-update dumps kept ([postgres] update_dumps)
+	log  io.Writer
 }
 
 // The database step's programs (tests replace them).
@@ -294,7 +329,69 @@ var (
 		return b.RestoreRunning(ctx, dump, log)
 	}
 	migrateUp = runMigrateUp
+	// a database of the user's own (a plain server install's): its dump beside the
+	// data, and putting it back in place
+	dumpExternal = func(ctx context.Context, t dbsafe.Target, from, to string, keep int) (string, error) {
+		path := filepath.Join(t.Backups, pgbundle.UpdateDumpName(from, to))
+		if err := t.Dump(ctx, path); err != nil {
+			return "", err
+		}
+		return path, pruneDumps(t.Backups, path, keep)
+	}
+	restoreExternal = func(ctx context.Context, t dbsafe.Target, dump string, log io.Writer) error {
+		return t.Restore(ctx, dump, log)
+	}
 )
+
+// keeps reports whether the gate dumps and puts back (a bundled or an external one).
+func (g *migrationGate) keeps() bool { return g.pg != nil || g.ext != nil }
+
+func (g *migrationGate) dump(ctx context.Context, from, to string) (string, error) {
+	if g.pg != nil {
+		return dumpBeforeUpdate(ctx, *g.pg, from, to, g.keep)
+	}
+	return dumpExternal(ctx, *g.ext, from, to, g.keep)
+}
+
+func (g *migrationGate) putBack(ctx context.Context, dump string) error {
+	if g.pg != nil {
+		return restoreDump(ctx, *g.pg, dump, g.log)
+	}
+	return restoreExternal(ctx, *g.ext, dump, g.log)
+}
+
+// pruneDumps keeps the newest keep pre-update dumps in dir (and keep always).
+func pruneDumps(dir, keepPath string, keep int) error {
+	keep = max(keep, 1)
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	type dumpFile struct {
+		path string
+		mod  int64
+	}
+	var dumps []dumpFile
+	for _, e := range ents {
+		n := e.Name()
+		if e.IsDir() || !strings.HasPrefix(n, "pre-") || !strings.HasSuffix(n, ".dump") {
+			continue
+		}
+		if info, err := e.Info(); err == nil {
+			dumps = append(dumps, dumpFile{filepath.Join(dir, n), info.ModTime().UnixNano()})
+		}
+	}
+	sort.SliceStable(dumps, func(i, j int) bool {
+		if dumps[i].path == keepPath || dumps[j].path == keepPath {
+			return dumps[i].path == keepPath
+		}
+		return dumps[i].mod > dumps[j].mod
+	})
+	for _, d := range dumps[min(keep, len(dumps)):] {
+		_ = os.Remove(d.path)
+	}
+	return nil
+}
 
 // apiExitSchemaAhead is maktaba-api migrate's exit when the database holds
 // migrations newer than the ones it has (api/main.go): a newer Maktaba ran here.
@@ -395,9 +492,9 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		update.From, update.Dump = rec.From, rec.Dump
 	case held == "" || held != cur:
 		update.From = held
-		if g.pg != nil {
+		if g.keeps() {
 			report(detail("db_dumping", fmt.Sprintf("Saving the library database before the update to %s", cur), held, cur))
-			dump, err := dumpBeforeUpdate(ctx, *g.pg, held, cur, g.keep)
+			dump, err := g.dump(ctx, held, cur)
 			if err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
@@ -467,7 +564,7 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 // restore puts the dump of a failed update back (rec is restoring) and records
 // it; the database is then as it was before that update.
 func (g *migrationGate) restore(ctx context.Context, rec apppayload.Database, report func(supervisor.Detail)) (apppayload.Database, error) {
-	if g.pg == nil {
+	if !g.keeps() {
 		return rec, supervisor.Halt(detailErr("db_no_cluster", fmt.Sprintf("the update to %s could not change the "+
 			"library database (%s), and this Maktaba runs no database of its own to put %s back into",
 			rec.Failed, rec.Error, rec.Dump), rec.Failed, rec.Error, rec.Dump))
@@ -475,7 +572,7 @@ func (g *migrationGate) restore(ctx context.Context, rec apppayload.Database, re
 	report(detail("db_restoring", fmt.Sprintf("The update to %s could not change the library database: putting it "+
 		"back as it was", rec.Failed), rec.Failed, rec.Dump))
 	fmt.Fprintf(g.log, "[serve] the update to %s failed (%s): restoring %s\n", rec.Failed, rec.Error, rec.Dump)
-	err := restoreDump(ctx, *g.pg, rec.Dump, g.log)
+	err := g.putBack(ctx, rec.Dump)
 	if ctx.Err() != nil {
 		return rec, ctx.Err() // the record still says restoring: the next start finishes it
 	}

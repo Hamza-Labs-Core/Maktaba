@@ -191,6 +191,12 @@ type Pending struct {
 	Previous string    `json:"previous,omitempty"`
 	RunID    string    `json:"run_id,omitempty"`
 	Since    time.Time `json:"since"`
+	// Deadline (the update orchestrator's): not confirmed by then, the launcher
+	// falls back; zero: its own pending timeout.
+	Deadline time.Time `json:"deadline,omitzero"`
+	// Record is the database's record the fallback marks for the dump taken
+	// before Version's migrations to be put back (MarkRecordRestoring).
+	Record string `json:"record,omitempty"`
 }
 
 // ReadPending returns the pending marker, or nil when there is none. A
@@ -211,6 +217,24 @@ func (l Layout) ReadPending() (*Pending, error) {
 		return nil, fmt.Errorf("pending: %w: %q", ErrBadVersion, p.Version)
 	}
 	return &p, nil
+}
+
+// GuardPending adds the orchestrator's deadline and database record to the pending
+// marker of version (a marker of another version is left alone).
+func (l Layout) GuardPending(version string, deadline time.Time, record string) error {
+	p, err := l.ReadPending()
+	if err != nil {
+		return err
+	}
+	if p == nil || p.Version != version {
+		return fmt.Errorf("no pending marker for %s", version)
+	}
+	p.Deadline, p.Record = deadline.UTC(), record
+	b, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	return WriteFileAtomic(filepath.Join(l.Root, PendingFile), b, 0o644)
 }
 
 // ClearPending removes the pending marker (the supervisor's confirmation).

@@ -1,0 +1,494 @@
+package main
+
+// Automatic updates in the supervisor (Epic 35 stories 35.4–35.7, 35.12;
+// specs/epics/35-cluster-full-nodes-and-updates/install-kinds.md): this machine's part
+// of a run the home's API drives. The home's API orders the home's own supervisor on its
+// loopback admin (/update/prepare, /update/apply, /update/status, /update/abort,
+// /update/rollback, with the per-boot local token); a node's machine agent takes the same
+// as update.* commands on the cluster channel. internal/updater runs them over the
+// install kind this server runs as.
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/sigstore/sigstore-go/pkg/root"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appruntime"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
+)
+
+// envLauncherRoot is the launcher's state root, set by a launcher that keeps the
+// update guard (app bundle, runtime copy): where pending.json and payload-override go.
+const envLauncherRoot = "MAKTABA_LAUNCHER_ROOT"
+
+// envAppBundled is the app's own payload, set by a launcher that runs a kept copy in
+// its place (a rolled-back app update).
+const envAppBundled = "MAKTABA_APP_BUNDLED"
+
+// updates is serve's update machinery.
+type updates struct {
+	m     *updater.Machine
+	token string
+	// health's view of this machine, set once the supervisor exists
+	mu   sync.Mutex
+	snap func() supervisor.Snapshot
+}
+
+// installKind picks this server's installer (install-kinds.md): the desktop app's
+// bundle, the Linux runtime copy, the side-by-side layout, or a flat install that
+// cannot update itself.
+func installKind(cfg config.Config, releaseDir string, home bool, src updater.Source) (updater.Installer, string) {
+	record := ""
+	if home {
+		record = apppayload.DatabasePath(cfg.StateDir())
+	}
+	lroot := strings.TrimSpace(os.Getenv(envLauncherRoot))
+	if bundle := config.AppBundle(); bundle != "" {
+		if rt, ok := appruntime.Of(bundle); ok || filepath.Base(bundle) == appruntime.CurrentLink {
+			if !ok {
+				rt = appruntime.New(filepath.Dir(bundle))
+			}
+			return &updater.RuntimeInstaller{Runtime: rt, Source: src, Version: version.Version, LauncherRoot: lroot,
+				Record: record}, filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
+		}
+		bundled := strings.TrimSpace(os.Getenv(envAppBundled))
+		if bundled == "" {
+			bundled = bundle
+		}
+		return &updater.AppInstaller{Payload: bundle, Bundled: bundled, App: appOf(bundled), LauncherRoot: lroot,
+				Source: src, Version: version.Version, Record: record, Rehearse: home, Open: updater.OpenURL},
+			filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
+	}
+	if releaseDir != "" {
+		l := layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir)))))
+		return &updater.LayoutInstaller{Layout: l, Source: src, Version: filepath.Base(filepath.Clean(releaseDir)),
+			Record: record}, l.UpdatesDir()
+	}
+	return flatInstaller{}, filepath.Join(cfg.StateDir(), "updates")
+}
+
+func orDir(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// appOf is the app a payload is the bundle's of: …/Maktaba.app (from
+// Contents/Resources/server), or <install>\Maktaba.exe.
+func appOf(payload string) string {
+	up := filepath.Dir(filepath.Clean(payload)) // Resources, or <install>
+	if filepath.Base(up) == "Resources" {
+		return filepath.Dir(filepath.Dir(up))
+	}
+	return filepath.Join(up, "Maktaba.exe")
+}
+
+// flatInstaller is an install the supervisor cannot update by itself: binaries copied
+// by hand with no launcher (one command converts it: `maktaba-server setup --service`).
+type flatInstaller struct{}
+
+var errNotSelfManaged = updater.Fail("not_self_managed", "this install has no launcher to fall back with: "+
+	"run `maktaba-server setup --service` once, and it updates itself from then on")
+
+func (flatInstaller) Kind() string    { return "flat" }
+func (flatInstaller) Running() string { return layout.NormalizeVersion(version.Version) }
+func (flatInstaller) Preflight(context.Context, *updater.Journal) error {
+	return errNotSelfManaged
+}
+func (flatInstaller) Stage(context.Context, *updater.Journal, io.Writer) error {
+	return errNotSelfManaged
+}
+func (flatInstaller) Smoke(context.Context, *updater.Journal) error  { return errNotSelfManaged }
+func (flatInstaller) Tools(*updater.Journal) (string, string)        { return "", "" }
+func (flatInstaller) Switch(context.Context, *updater.Journal) error { return errNotSelfManaged }
+func (flatInstaller) Restart(context.Context, *updater.Journal, func(int)) error {
+	return errNotSelfManaged
+}
+func (flatInstaller) Revert(context.Context, *updater.Journal) error  { return nil }
+func (flatInstaller) Commit(context.Context, *updater.Journal) error  { return nil }
+func (flatInstaller) Discard(context.Context, *updater.Journal) error { return nil }
+
+// updateSource is the pinned repository and the trusted root (refreshed through TUF
+// into <data_dir>/sigstore, as the API's).
+func updateSource(cfg config.Config) updater.Source {
+	id, err := releaseverify.IdentityFromEnv()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[serve] update: %v: the default repository is used\n", err)
+		id, _ = releaseverify.NewIdentity("")
+	}
+	store := &releaseverify.RootStore{Dir: filepath.Join(cfg.Server.DataDir, "sigstore")}
+	return updater.Source{Identity: id, HTTP: &http.Client{Timeout: 30 * time.Minute},
+		Trusted: func(ctx context.Context) (root.TrustedMaterial, error) {
+			if err := store.Refresh(ctx); err != nil {
+				fmt.Fprintf(os.Stderr, "[serve] update: the Sigstore trusted root was not refreshed (%v): the last good one\n", err)
+			}
+			tm, _, err := store.TrustedMaterial()
+			return tm, err
+		}}
+}
+
+// homeDatabase is the home's database for the rehearsal and the failed state's dump:
+// the bundled Postgres (its superuser and programs), or the operator's (its URL, the
+// pg programs on PATH or in [postgres] bin_dir); nil on a node or a SQLite home.
+func homeDatabase(cfg config.Config, pg *pgbundle.Bundle) *dbsafe.Target {
+	if pg != nil {
+		u, err := pg.SuperURL()
+		if err != nil {
+			return nil
+		}
+		return &dbsafe.Target{URL: u, Bin: pg.Bin, Backups: pg.Backups}
+	}
+	u := strings.TrimSpace(cfg.Database.URL)
+	if u == "" || !(strings.HasPrefix(u, "postgres://") || strings.HasPrefix(u, "postgresql://")) {
+		return nil
+	}
+	return &dbsafe.Target{URL: u, Bin: pgProgram, Backups: filepath.Join(cfg.Server.DataDir, "backups")}
+}
+
+// pgProgram finds a PostgreSQL client program: MAKTABA_PG_BIN (a directory), else PATH.
+func pgProgram(name string) string {
+	if dir := strings.TrimSpace(os.Getenv("MAKTABA_PG_BIN")); dir != "" {
+		return filepath.Join(dir, layout.Exe(name))
+	}
+	return ""
+}
+
+// rehearser is updater.Rehearser over a dbsafe.Target.
+type rehearser struct{ t dbsafe.Target }
+
+func (r rehearser) Check(ctx context.Context) error { return codedFailure(r.t.Check(ctx)) }
+
+func (r rehearser) Rehearse(ctx context.Context, api, migrations string, maxGB int, log io.Writer) (updater.Rehearsal, error) {
+	res, err := r.t.Rehearse(ctx, api, migrations, maxGB, log)
+	return updater.Rehearsal{Skipped: res.Skipped, DBBytes: res.DBBytes, MigrateSec: res.MigrateSec, Pending: res.Pending},
+		codedFailure(err)
+}
+
+func (r rehearser) DumpAside(ctx context.Context, label string) (string, error) {
+	p := filepath.Join(r.t.Backups, label+"-"+time.Now().UTC().Format("20060102T150405")+".dump")
+	return p, r.t.Dump(ctx, p)
+}
+
+// codedFailure turns dbsafe's "code: detail" errors into the run's failures.
+func codedFailure(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	if code, detail, ok := strings.Cut(msg, ": "); ok && code != "" && strings.Trim(code, "abcdefghijklmnopqrstuvwxyz_") == "" {
+		return &updater.Failure{Code: code, Detail: detail}
+	}
+	return &updater.Failure{Code: "database", Detail: msg}
+}
+
+// recordFile is updater.Records over the database step's record.
+type recordFile string
+
+func (r recordFile) MarkRestore(version, _, reason string) (bool, error) {
+	return layout.MarkRecordRestoring(string(r), version, reason)
+}
+func (r recordFile) Migrated(version string) bool { return layout.RecordMigrated(string(r), version) }
+
+// startUpdates makes the machine and takes up the run the last start left. exit stops
+// serve with a code (75).
+func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, home bool, pg *pgbundle.Bundle,
+	node *nodeServices, exit func(int)) *updates {
+	src := updateSource(cfg)
+	inst, dir := installKind(cfg, releaseDir, home, src)
+	u := &updates{}
+	m := &updater.Machine{Dir: dir, Installer: inst, Exit: exit, Log: os.Stderr}
+	if home {
+		m.Records = recordFile(apppayload.DatabasePath(cfg.StateDir()))
+		if t := homeDatabase(cfg, pg); t != nil {
+			m.Rehearser = rehearser{*t}
+			go func() { // a crash during a rehearsal left its scratch database
+				dctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+				defer cancel()
+				_ = t.DropScratch(dctx)
+			}()
+		}
+	}
+	m.Health = &machineHealth{cfg: cfg, home: home, node: node, snap: u.snapshot}
+	u.m = m
+	m.Start(ctx)
+	m.Resume()
+	fmt.Fprintf(os.Stderr, "[serve] updates: %s install (%s)\n", inst.Kind(), dir)
+	return u
+}
+
+func (u *updates) setSupervisor(sup *supervisor.Supervisor) {
+	u.mu.Lock()
+	u.snap = sup.Snapshot
+	u.mu.Unlock()
+}
+
+func (u *updates) snapshot() (supervisor.Snapshot, bool) {
+	u.mu.Lock()
+	f := u.snap
+	u.mu.Unlock()
+	if f == nil {
+		return supervisor.Snapshot{}, false
+	}
+	return f(), true
+}
+
+// agentState adds this machine's run to the machine agent's update.state.
+func (u *updates) agentState(st *machineagent.UpdateState) {
+	s := u.m.Status()
+	st.Layout = s.Kind
+	if s.Journal == nil {
+		return
+	}
+	j := s.Journal
+	if j.State == updater.StatePrepared {
+		st.PreparedVersion = j.Job.Version
+	}
+	rs := &machineagent.RunState{RunID: j.Job.RunID, Version: j.Job.Version, State: j.State, Step: j.Step}
+	if j.Error != nil {
+		rs.Error = j.Error.Error()
+	}
+	st.Run = rs
+}
+
+// ---------- requests ----------
+
+// updateRequest is a request of the home's (loopback or update.* command).
+type updateRequest struct {
+	RunID string `json:"run_id"`
+	updater.Job
+}
+
+// handle runs a request of the home's; the answer is the machine's status.
+func (u *updates) handle(name string, body json.RawMessage) (any, int, error) {
+	var req updateRequest
+	if len(body) > 0 && string(body) != "null" {
+		if err := json.Unmarshal(body, &req); err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("bad request: %w", err)
+		}
+	}
+	if req.Job.RunID == "" {
+		req.Job.RunID = req.RunID
+	}
+	var err error
+	switch name {
+	case "prepare":
+		err = u.m.Prepare(req.Job)
+	case "apply":
+		err = u.m.Apply(req.Job.RunID)
+	case "abort":
+		err = u.m.Abort(req.Job.RunID)
+	case "rollback":
+		err = u.m.RollbackCommitted(req.Job.RunID)
+	case "status":
+	default:
+		return nil, http.StatusNotFound, fmt.Errorf("no such request %q", name)
+	}
+	if err != nil {
+		code := http.StatusConflict
+		var f *updater.Failure
+		if errors.As(err, &f) && f.Code == "bad_job" {
+			code = http.StatusBadRequest
+		}
+		return u.m.Status(), code, err
+	}
+	return u.m.Status(), http.StatusOK, nil
+}
+
+// adminHandler adds /update/* to the supervisor's loopback admin (the per-boot local
+// token as a bearer; GET for status).
+func (u *updates) adminHandler(base http.Handler, token string) http.Handler {
+	if u == nil {
+		return base
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/", base)
+	mux.HandleFunc("/update/", func(w http.ResponseWriter, r *http.Request) {
+		if token == "" || r.Header.Get("Authorization") != "Bearer "+token {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		name := strings.TrimPrefix(r.URL.Path, "/update/")
+		if name == "status" && r.Method != http.MethodGet && r.Method != http.MethodPost {
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+			return
+		}
+		if name == "log" {
+			u.serveLog(w, r)
+			return
+		}
+		if name != "status" && r.Method != http.MethodPost {
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+			return
+		}
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+		if err != nil {
+			http.Error(w, "bad body", http.StatusBadRequest)
+			return
+		}
+		out, code, err := u.handle(name, body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+		doc := map[string]any{"status": out}
+		if err != nil {
+			doc["error"] = err.Error()
+		}
+		_ = json.NewEncoder(w).Encode(doc)
+	})
+	return mux
+}
+
+// serveLog serves a run's log (logs/<run>.log; ?run=).
+func (u *updates) serveLog(w http.ResponseWriter, r *http.Request) {
+	run := r.URL.Query().Get("run")
+	clean := strings.Map(func(c rune) rune {
+		if c == '-' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+			return c
+		}
+		return -1
+	}, run)
+	if clean == "" || clean != run {
+		http.Error(w, "bad run", http.StatusBadRequest)
+		return
+	}
+	f, err := os.Open(filepath.Join(u.m.Dir, "logs", clean+".log"))
+	if err != nil {
+		http.Error(w, "no log", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.Copy(w, io.LimitReader(f, 8<<20))
+}
+
+// command answers the home's update.* commands on the cluster channel (a node's).
+func (u *updates) command(_ context.Context, name string, args json.RawMessage) (handled, ok bool, detail any) {
+	op, isUpdate := strings.CutPrefix(name, "update.")
+	if !isUpdate || u == nil {
+		return false, false, nil
+	}
+	out, _, err := u.handle(op, args)
+	if err != nil {
+		return true, false, map[string]any{"error": err.Error(), "status": out}
+	}
+	return true, true, map[string]any{"status": out}
+}
+
+// ---------- health ----------
+
+// machineHealth judges the release that came up (design §5.4): every supervised role
+// running and none crash-looping or halted, the api ready and answering with the new
+// version, and on a node its schema guard content and its machine agent on the channel.
+type machineHealth struct {
+	cfg  config.Config
+	home bool
+	node *nodeServices
+	snap func() (supervisor.Snapshot, bool)
+	http *http.Client
+}
+
+// haltCodes are database-step details no retry mends: the release cannot run here.
+var haltCodes = map[string]bool{"db_restored": true, "db_restore_failed": true, "db_ahead": true,
+	"db_refused_older": true, "db_no_cluster": true, "pg_major": true}
+
+func (h *machineHealth) client() *http.Client {
+	if h.http != nil {
+		return h.http
+	}
+	return &http.Client{Timeout: 3 * time.Second}
+}
+
+// Check implements updater.Health.
+func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict {
+	snap, ok := h.snap()
+	if !ok {
+		return updater.Verdict{Why: "the supervisor is starting"}
+	}
+	hasAPI := false
+	for _, p := range snap.Processes {
+		if p.Role == supervisor.RoleAPI {
+			hasAPI = true
+		}
+		if p.Instance != "" && !p.Wanted {
+			continue // an on-demand process nobody asked for
+		}
+		if haltCodes[p.DetailCode] {
+			return updater.Verdict{Fatal: true, Why: fmt.Sprintf("%s: %s", childName(p), p.Detail)}
+		}
+		if p.CrashLoop {
+			return updater.Verdict{Fatal: true, Why: childName(p) + " crash-loops"}
+		}
+		if p.State != supervisor.StateRunning {
+			return updater.Verdict{Why: fmt.Sprintf("%s is %s %s", childName(p), p.State, p.Detail)}
+		}
+	}
+	if !hasAPI {
+		return updater.Verdict{Healthy: true}
+	}
+	admin := "http://" + supervisor.LocalAddr(h.cfg.Server.AdminAddr, "9100")
+	if code := h.get(ctx, admin+"/readyz", nil); code != http.StatusOK {
+		return updater.Verdict{Why: fmt.Sprintf("api /readyz answers %d", code)}
+	}
+	var self struct {
+		Version string `json:"version"`
+		Paused  string `json:"paused"`
+	}
+	api := "http://" + supervisor.LocalAddr(h.cfg.Server.Listen, "8080")
+	if code := h.get(ctx, api+"/api/cluster/self", &self); code != http.StatusOK {
+		return updater.Verdict{Why: fmt.Sprintf("api /api/cluster/self answers %d", code)}
+	}
+	if self.Version != "" && layout.CompareVersions(self.Version, want) != 0 {
+		return updater.Verdict{Fatal: true, Why: fmt.Sprintf("the api answers as %s, not %s", self.Version, want)}
+	}
+	if h.node != nil {
+		if self.Paused != "" {
+			return updater.Verdict{Why: "the node is paused: " + self.Paused}
+		}
+		if h.node.agent != nil && !h.node.agent.Status().Connected {
+			return updater.Verdict{Why: "the machine agent is not on the channel yet"}
+		}
+	}
+	return updater.Verdict{Healthy: true}
+}
+
+func (h *machineHealth) get(ctx context.Context, url string, out any) int {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0
+	}
+	resp, err := h.client().Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	if out != nil && resp.StatusCode == http.StatusOK {
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
+	}
+	return resp.StatusCode
+}
+
+func childName(p supervisor.ChildStatus) string {
+	if p.Instance != "" {
+		return string(p.Role) + "/" + p.Instance
+	}
+	return string(p.Role)
+}

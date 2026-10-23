@@ -39,3 +39,15 @@ func TestMigrationsDirFor(t *testing.T) {
 		t.Errorf("nothing known: %s", got)
 	}
 }
+
+// A plain server release keeps its migrations beside its binaries (Epic 35:
+// bin/releases/<v>/migrations), and its maktaba-api finds them there.
+func TestMigrationsDirForARelease(t *testing.T) {
+	rel := filepath.Join(t.TempDir(), "bin", "releases", "1.5.0")
+	if err := os.MkdirAll(filepath.Join(rel, "migrations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := migrationsDirFor("", filepath.Join(rel, "maktaba-api"), t.TempDir()); got != filepath.Join(rel, "migrations") {
+		t.Errorf("release: %s", got)
+	}
+}

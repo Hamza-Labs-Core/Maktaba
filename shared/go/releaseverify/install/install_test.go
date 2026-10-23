@@ -170,3 +170,51 @@ func TestRootFindsLayout(t *testing.T) {
 		t.Fatal("MAKTABA_INSTALL_ROOT not honoured")
 	}
 }
+
+// A release's migrations go beside its binaries (bin/releases/<v>/migrations), checked
+// against checksums.txt; a tampered archive stages nothing.
+func TestStageCarriesTheMigrations(t *testing.T) {
+	w := newWorld(t)
+	l := layout.New(t.TempDir())
+	rel, err := w.ss.NewReleaseWith(repo, "v1.5.0", platform, releaseverifytest.ReleaseOptions{
+		Migrations: map[string][]byte{
+			"0001_init.sql": []byte("-- +goose Up\nCREATE TABLE a (id int);\n"), "0001_init.sqlite.sql": []byte("-- +goose Up\n"),
+			"MANIFEST.md": []byte("# slots\n"),
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := w.stage(t, l, rel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"0001_init.sql", "0001_init.sqlite.sql"} {
+		if _, err := os.Stat(filepath.Join(st.Dir, MigrationsDir, n)); err != nil {
+			t.Errorf("%s not staged: %v", n, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(st.Dir, MigrationsDir, "MANIFEST.md")); err == nil {
+		t.Error("MANIFEST.md staged among the migrations")
+	}
+
+	// the archive swapped for another after signing: refused, nothing staged
+	l2 := layout.New(t.TempDir())
+	name := "maktaba-migrations-1.5.0.tar.gz"
+	rel.Files[name] = append([]byte(nil), rel.Files[name]...)
+	rel.Files[name][len(rel.Files[name])-1] ^= 0xff
+	if _, err := w.stage(t, l2, rel); !errors.Is(err, rv.ErrChecksum) {
+		t.Fatalf("tampered migrations: %v", err)
+	}
+	if vs, _ := l2.Versions(); len(vs) != 0 {
+		t.Fatalf("staged %v", vs)
+	}
+}
+
+func TestExtractMigrationsRefusesOtherFiles(t *testing.T) {
+	for name, entry := range map[string]string{"a path": "x/0001_a.sql", "a program": "evil.sh", "a climb": "../0001_a.sql"} {
+		arch := tarGz(t, map[string]string{entry: "x"})
+		if _, err := rv.ExtractMigrations(arch, t.TempDir()); err == nil {
+			t.Errorf("%s: extracted", name)
+		}
+	}
+}

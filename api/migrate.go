@@ -364,7 +364,8 @@ func validateDir(dir string) error {
 }
 
 // defaultMigrationsDir resolves the migrations directory: MAKTABA_MIGRATIONS_DIR,
-// else the migrations/ of the app payload this binary is in
+// else the migrations/ beside this binary (a release of the side-by-side layout,
+// bin/releases/<v>/migrations), else the migrations/ of the app payload this binary is in
 // (<payload>/bin/maktaba-api beside <payload>/migrations: the desktop apps and
 // the Linux runtime copy, whose working directory is the user's data, never a
 // checkout), else shared/db/migrations found by walking up from the working
@@ -384,9 +385,13 @@ func migrationsDirFor(env, exe, cwd string) string {
 		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = resolved
 		}
-		candidate := filepath.Join(filepath.Dir(filepath.Dir(exe)), "migrations")
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
+		// a plain server release (Epic 35: bin/releases/<v>/maktaba-api beside its
+		// migrations), then an app payload's
+		for _, candidate := range []string{filepath.Join(filepath.Dir(exe), "migrations"),
+			filepath.Join(filepath.Dir(filepath.Dir(exe)), "migrations")} {
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				return candidate
+			}
 		}
 	}
 	if cwd == "" {
