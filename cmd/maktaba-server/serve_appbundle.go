@@ -494,6 +494,9 @@ func (g *migrationGate) save(rec apppayload.Database) error {
 // run is the database step (the package comment); a failure that no retry in
 // this run can mend is a supervisor.Halt.
 func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail)) error {
+	// a restart of Postgres (the machines' reach changed) would cut the dump, the
+	// migrations or a restore short: it waits until this step is done
+	defer pgbundle.Hold()()
 	cur := g.version
 	rec, err := g.record()
 	if err != nil {

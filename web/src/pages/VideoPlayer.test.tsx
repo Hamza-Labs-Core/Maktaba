@@ -90,6 +90,20 @@ describe("VideoPlayer", () => {
     await waitFor(() => expect(video).toHaveAttribute("src", "/files/original.mp4"));
   });
 
+  it("plays direct_url on the element even when manifest_url carries it too", async () => {
+    post.mockResolvedValue({
+      session_id: "sess-direct2",
+      mode: "direct",
+      manifest_url: "/stream/direct/v?sig=a",
+      direct_url: "/stream/direct/v?sig=a",
+      expires_at: "2026-05-17T12:00:00Z",
+    });
+
+    renderPlayer();
+    const video = await screen.findByTestId("mkt-video");
+    await waitFor(() => expect(video).toHaveAttribute("src", "/stream/direct/v?sig=a"));
+  });
+
   it("posts progress to /api/stream/sessions/{id}/progress", async () => {
     post.mockResolvedValue({
       session_id: "sess-prog",

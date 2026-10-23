@@ -101,8 +101,16 @@ func TestWatchReachFollowsTheCluster(t *testing.T) {
 	if b.LastReach().Open || restarts != 0 || strings.Contains(hba(), "maktaba_worker") {
 		t.Fatalf("no machine: %+v, %d restarts:\n%s", b.LastReach(), restarts, hba())
 	}
-	// joins open, their hour not up: it opens (a start again)
+	// joins open, their hour not up: it opens (a start again), but not while a maintenance
+	// run (the update's dump, its migrations) holds the server: the look after it does
 	sql(`UPDATE instance_identity SET accept_joins = true, accept_joins_until = now() + interval '1 hour'`)
+	release := Hold()
+	look()
+	if b.LastReach().Open || restarts != 0 {
+		t.Fatalf("held: %+v, %d restarts", b.LastReach(), restarts)
+	}
+	release()
+	release() // once only
 	look()
 	if !b.LastReach().Open || restarts != 1 || !strings.Contains(hba(), "+maktaba_worker  samenet") {
 		t.Fatalf("joins open: %+v, %d restarts:\n%s", b.LastReach(), restarts, hba())
