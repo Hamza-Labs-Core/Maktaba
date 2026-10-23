@@ -27,6 +27,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appruntime"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
@@ -250,7 +251,7 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 			}()
 		}
 	}
-	m.Health = &machineHealth{cfg: cfg, home: home, node: node, snap: u.snapshot}
+	m.Health = &machineHealth{cfg: cfg, home: home, node: node, releaseDir: releaseDir, snap: u.snapshot}
 	u.m = m
 	m.Start(ctx)
 	m.Resume()
@@ -415,14 +416,16 @@ func (u *updates) command(_ context.Context, name string, args json.RawMessage) 
 // ---------- health ----------
 
 // machineHealth judges the release that came up (design §5.4): every supervised role
-// running and none crash-looping or halted, the api ready and answering with the new
-// version, and on a node its schema guard content and its machine agent on the channel.
+// running and none crash-looping or halted, the pipeline and the api answering with the
+// new version, the api ready, and on a node its schema guard content and its machine
+// agent on the channel.
 type machineHealth struct {
-	cfg  config.Config
-	home bool
-	node *nodeServices
-	snap func() (supervisor.Snapshot, bool)
-	http *http.Client
+	cfg        config.Config
+	home       bool
+	node       *nodeServices
+	releaseDir string // the running release's (a plain server's bin/releases/<v>)
+	snap       func() (supervisor.Snapshot, bool)
+	http       *http.Client
 }
 
 // haltCodes are database-step details no retry mends: the release cannot run here.
@@ -475,6 +478,9 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 			return updater.Verdict{Why: fmt.Sprintf("%s is %s %s", childName(p), p.State, p.Detail)}
 		}
 	}
+	if v := h.pipelineVersion(ctx, procs); v.Why != "" {
+		return v
+	}
 	if !hasAPI {
 		return updater.Verdict{Healthy: true}
 	}
@@ -502,6 +508,53 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		}
 	}
 	return updater.Verdict{Healthy: true}
+}
+
+// pipelineVersion checks that every pipeline process runs this release's pipeline (story
+// 35.4 AC7): its /healthz says the version of the release's wheel (PEP 440's spelling,
+// as its `--version`). Only where the pipeline runs the release's own environment
+// (supervisor.PipelineOwnEnv); a pipeline from before it said its version says none.
+func (h *machineHealth) pipelineVersion(ctx context.Context, procs []supervisor.ChildStatus) updater.Verdict {
+	want := h.pipelineWant()
+	if want == "" {
+		return updater.Verdict{}
+	}
+	for _, p := range procs {
+		if p.Role != supervisor.RolePipeline || p.ProbeURL == "" {
+			continue
+		}
+		var hz struct {
+			Version string `json:"version"`
+		}
+		if code := h.get(ctx, p.ProbeURL, &hz); code != http.StatusOK {
+			return updater.Verdict{Why: fmt.Sprintf("%s /healthz answers %d", childName(p), code)}
+		}
+		if hz.Version != "" && hz.Version != want {
+			return updater.Verdict{Fatal: true, Why: fmt.Sprintf("%s runs the pipeline %s, not %s", childName(p), hz.Version, want)}
+		}
+	}
+	return updater.Verdict{}
+}
+
+// pipelineWant is the version this release's pipeline says: its wheel's (the payload's
+// for a desktop app, bin/releases/<v>/pipeline's for a plain server); "" when the
+// pipeline runs another environment or no wheel says.
+func (h *machineHealth) pipelineWant() string {
+	if !supervisor.PipelineOwnEnv(supervisor.Options{Config: h.cfg, ReleaseDir: h.releaseDir}) {
+		return ""
+	}
+	dir := h.releaseDir
+	if b := config.AppBundle(); b != "" {
+		dir = b
+	}
+	if dir == "" {
+		return ""
+	}
+	wheel, err := appvenv.Wheel(dir)
+	if err != nil {
+		return ""
+	}
+	return appvenv.WheelVersion(wheel)
 }
 
 func (h *machineHealth) get(ctx context.Context, url string, out any) int {

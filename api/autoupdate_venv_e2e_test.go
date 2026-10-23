@@ -14,9 +14,9 @@ import (
 // The end-to-end update's pipeline (review A12: an update updates the pipeline too):
 // every release carries a small maktaba_pipeline wheel whose venv_bootstrap makes a venv
 // of the machine's Python offline (python -m venv, the wheel unpacked into it) and whose
-// module answers --version and the supervisor's /healthz probe. The update's stage builds
-// <release>/venv from that wheel, verified, with the real Go side; the pipeline then runs
-// from the release's venv.
+// module answers --version and the supervisor's /healthz probe (with its version, which
+// the update's watch checks). The update's stage builds <release>/venv from that wheel,
+// verified, with the real Go side; the pipeline then runs from the release's venv.
 
 const fakeBootstrap = `import argparse, glob, json, os, subprocess, sys, zipfile
 p = argparse.ArgumentParser()
@@ -35,7 +35,7 @@ open(ok, "w").close()
 print(json.dumps({"event": "status", "state": "ready", "step": "done", "progress": 1.0, "message": "ready"}))
 `
 
-const fakePipelineMain = `import os, sys, time
+const fakePipelineMain = `import json, os, sys, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from . import __version__
 if "--version" in sys.argv[1:] or "-V" in sys.argv[1:]:
@@ -43,9 +43,11 @@ if "--version" in sys.argv[1:] or "-V" in sys.argv[1:]:
     sys.exit(0)
 class Health(BaseHTTPRequestHandler):
     def do_GET(self):
+        body = json.dumps({"status": "ok", "service": "pipeline", "version": __version__}).encode()
         self.send_response(200)
+        self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(b"ok")
+        self.wfile.write(body)
     def log_message(self, *args):
         pass
 addr = os.environ.get("MAKTABA_PIPELINE_LOGS_ADDR", "")

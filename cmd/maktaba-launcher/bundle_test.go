@@ -199,7 +199,7 @@ func TestBundleCLI(t *testing.T) {
 	}
 	out.Reset()
 	if code := run([]string{"--app-bundle", bundle, "--root", root, "--status", "--json"}, &out, &errb); code != exitOK ||
-		!strings.Contains(out.String(), `"updates": "the cluster's update: staged here`) {
+		!strings.Contains(out.String(), `"updates": "with the app (the cluster's update: staged here`) {
 		t.Fatalf("--status: code %d, out %q", code, out.String())
 	}
 	var st BundleStatus

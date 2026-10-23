@@ -102,7 +102,7 @@ func (li *LayoutInstaller) Smoke(ctx context.Context, j *Journal) error {
 			return err
 		}
 	}
-	return smokePipeline(ctx, filepath.Join(j.Staged, "venv"), j.Job.Version)
+	return smokePipeline(ctx, j.Staged, j.Job.Version)
 }
 
 // Tools implements Installer.

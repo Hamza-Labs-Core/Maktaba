@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
@@ -155,21 +157,40 @@ func pyName() string {
 	return "python"
 }
 
-// smokePipeline runs the release's pipeline once (`python -m maktaba_pipeline
-// --version`): its environment holds the release's pipeline (story 35.4 AC7).
-func smokePipeline(ctx context.Context, venv, version string) error {
-	py := venvPython(venv)
+// pipelineVersionOf runs `python -m maktaba_pipeline --version` (tests replace it).
+var pipelineVersionOf = func(ctx context.Context, py string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	return exec.CommandContext(ctx, py, "-m", "maktaba_pipeline", "--version").CombinedOutput()
+}
+
+// smokePipeline runs the staged release's pipeline once (story 35.4 AC5): its
+// environment holds the release's pipeline, which says the version of its wheel. That
+// is the release's in PEP 440's spelling (1.2.3-rc.1 is 1.2.3rc1: the release build
+// stamps the wheel's), so the wheel's name is what it is compared with.
+func smokePipeline(ctx context.Context, staged, version string) error {
+	py := venvPython(filepath.Join(staged, "venv"))
 	if _, err := os.Stat(py); err != nil {
 		return nil // a release without its own environment
 	}
-	out, err := exec.CommandContext(ctx, py, "-m", "maktaba_pipeline", "--version").CombinedOutput()
+	want := layout.NormalizeVersion(version)
+	if wheel, err := appvenv.Wheel(staged); err == nil {
+		want = appvenv.WheelVersion(wheel)
+	}
+	out, err := pipelineVersionOf(ctx, py)
 	if err != nil {
 		return Fail("smoke_failed", "the pipeline (%s) did not run: %v: %s", py, err, tailBytes(out, 400))
 	}
-	if !strings.Contains(string(out), strings.TrimPrefix(version, "v")) {
-		return Fail("smoke_failed", "the pipeline says %q, not %s", strings.TrimSpace(tailBytes(out, 200)), version)
+	if got := lastLine(out); got != want {
+		return Fail("smoke_version", "the pipeline says %q, not %s", tailBytes([]byte(got), 200), want)
 	}
 	return nil
+}
+
+// lastLine is the last non-empty line of out, trimmed.
+func lastLine(out []byte) string {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
 }
 
 func tailBytes(b []byte, n int) string {

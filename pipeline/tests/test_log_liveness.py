@@ -9,6 +9,7 @@ import urllib.request
 
 import pytest
 
+from maktaba_pipeline import __version__
 from maktaba_pipeline.log.http import build_health_response, start_log_server
 from maktaba_pipeline.log.liveness import (
     DEFAULT_STALE_SEC,
@@ -47,6 +48,21 @@ def test_healthy_while_beating_and_503_once_stale() -> None:
 @pytest.mark.unit
 def test_no_heartbeat_installed_is_alive() -> None:
     assert build_health_response(None)[0] == 200
+
+
+@pytest.mark.unit
+def test_healthz_says_the_pipeline_version() -> None:
+    # an update's watch checks the pipeline runs the new release (Epic 35 story 35.4 AC7)
+    clock = _Clock()
+    hb = LoopHeartbeat(stale_sec=60, clock=clock)
+    assert json.loads(build_health_response(hb)[2])["version"] == __version__
+    assert json.loads(build_health_response(None)[2]) == {
+        "status": "ok",
+        "service": "pipeline",
+        "version": __version__,
+    }
+    clock.t += 61
+    assert json.loads(build_health_response(hb)[2])["version"] == __version__
 
 
 @pytest.mark.unit

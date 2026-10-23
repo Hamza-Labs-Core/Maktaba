@@ -294,8 +294,13 @@ func result(payload, wheel string, reused bool) Result {
 	if raw, err := os.ReadFile(filepath.Join(payload, "payload.json")); err == nil {
 		_ = json.Unmarshal(raw, &pl)
 	}
-	// maktaba_pipeline-<version>-py3-none-any.whl
+	return Result{Reused: reused, Python: pl.Python.Version, Pipeline: WheelVersion(wheel)}
+}
+
+// WheelVersion is the version a pipeline wheel's name carries
+// (maktaba_pipeline-<version>-py3-none-any.whl): the one its `--version` says.
+func WheelVersion(wheel string) string {
 	ver := strings.TrimPrefix(filepath.Base(wheel), "maktaba_pipeline-")
 	ver, _, _ = strings.Cut(ver, "-")
-	return Result{Reused: reused, Python: pl.Python.Version, Pipeline: ver}
+	return ver
 }

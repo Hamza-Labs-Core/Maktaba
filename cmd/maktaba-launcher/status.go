@@ -144,13 +144,14 @@ func printBundleStatus(w io.Writer, bundle, runtimeRoot, root string, asJSON boo
 		}
 	}
 	s := BundleStatus{
-		AppBundle:        bundle,
-		Server:           filepath.Join(run, "bin", layout.Exe("maktaba-server")),
-		Running:          payloadVersion(run),
-		Root:             root,
-		LauncherLog:      layout.New(root).LauncherLog(),
-		StopEvent:        stopEventName,
-		Updates:          "the cluster's update: staged here, installed when someone clicks Install in the app",
+		AppBundle:   bundle,
+		Server:      filepath.Join(run, "bin", layout.Exe("maktaba-server")),
+		Running:     payloadVersion(run),
+		Root:        root,
+		LauncherLog: layout.New(root).LauncherLog(),
+		StopEvent:   stopEventName,
+		// "with the app" / "by this machine" first: the app checks (tools/release) read them
+		Updates:          "with the app (the cluster's update: staged here, installed when someone clicks Install in the app)",
 		LauncherVersion:  Version,
 		LauncherProtocol: LauncherProtocol,
 	}
@@ -161,7 +162,7 @@ func printBundleStatus(w io.Writer, bundle, runtimeRoot, root string, asJSON boo
 		s.Pending = g
 	}
 	if runtimeRoot != "" && runtimeOwner(runtimeRoot) == runtimeOwnerHeadless {
-		s.Updates = "the cluster's update, by itself in the window"
+		s.Updates = "by this machine (the cluster's update, by itself in the window)"
 	}
 	if asJSON {
 		b, _ := json.MarshalIndent(s, "", "  ")

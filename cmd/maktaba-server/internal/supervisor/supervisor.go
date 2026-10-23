@@ -338,6 +338,20 @@ func pythonFor(opts Options) string {
 	return pythonExecutable(opts.ReleaseDir)
 }
 
+// PipelineOwnEnv says whether the pipeline runs the environment built from this
+// release's own wheel (a plain server's <release>/venv, the desktop app's venv from its
+// payload), and so answers with the release's version (Epic 35 story 35.4 AC7): not
+// under MAKTABA_PYTHON, nor a desktop app's configured [pipeline] python.
+func PipelineOwnEnv(opts Options) bool {
+	if os.Getenv("MAKTABA_PYTHON") != "" {
+		return false
+	}
+	if config.AppBundle() != "" {
+		return PythonOverride(opts.Config) == ""
+	}
+	return opts.ReleaseDir != "" && isExecutable(venvPython(filepath.Join(opts.ReleaseDir, "venv")))
+}
+
 // pythonExecutable honours $MAKTABA_PYTHON, then the release's pipeline
 // environment (<release>/venv, design §2.1), then falls back to python3.
 func pythonExecutable(releaseDir string) string {
