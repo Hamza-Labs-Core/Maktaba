@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -374,19 +375,16 @@ func (u *updates) adminHandler(base http.Handler, token string) http.Handler {
 }
 
 // serveLog serves a run's log (logs/<run>.log; ?run=).
+// runIDRe is a run id as the log endpoint takes it (a UUID's characters: no path).
+var runIDRe = regexp.MustCompile(`^[0-9A-Za-z-]{1,64}$`)
+
 func (u *updates) serveLog(w http.ResponseWriter, r *http.Request) {
 	run := r.URL.Query().Get("run")
-	clean := strings.Map(func(c rune) rune {
-		if c == '-' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
-			return c
-		}
-		return -1
-	}, run)
-	if clean == "" || clean != run {
+	if !runIDRe.MatchString(run) {
 		http.Error(w, "bad run", http.StatusBadRequest)
 		return
 	}
-	f, err := os.Open(filepath.Join(u.m.Dir, "logs", clean+".log"))
+	f, err := os.Open(filepath.Join(u.m.Dir, "logs", run+".log"))
 	if err != nil {
 		http.Error(w, "no log", http.StatusNotFound)
 		return
