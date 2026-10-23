@@ -150,14 +150,20 @@ export function SeriesBrowser() {
 
 // The series' own art when it is a URL, else its first episode's poster
 // (videos/{id}/poster resolves the thumbnail cache), else a placeholder.
-function SeriesPoster({ series }: { series: SeriesItem }) {
-  const [broken, setBroken] = useState(false);
+export function seriesPictureUrl(series: {
+  poster_path?: string | null;
+  poster_video_id?: string | null;
+}): string | null {
   const own =
     series.poster_path && /^(https?:\/\/|\/api\/)/.test(series.poster_path)
       ? series.poster_path
       : null;
-  const src =
-    own ?? (series.poster_video_id ? `/api/videos/${series.poster_video_id}/poster` : null);
+  return own ?? (series.poster_video_id ? `/api/videos/${series.poster_video_id}/poster` : null);
+}
+
+function SeriesPoster({ series }: { series: SeriesItem }) {
+  const [broken, setBroken] = useState(false);
+  const src = seriesPictureUrl(series);
   if (!src || broken) {
     return (
       <div className="mkt-series-card__poster--ph" aria-hidden="true">

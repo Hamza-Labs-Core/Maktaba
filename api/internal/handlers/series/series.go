@@ -19,6 +19,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -197,7 +198,22 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.NotFound("series "+id))
 		return
 	}
+	// the page's picture, as on the series card: its first visible episode
+	if first := firstEpisode(h.loadEpisodes(r, p, id, "")[id], hd.Numbering); first != nil {
+		hd.PosterVideoID = first.videoID
+	}
 	common.WriteJSON(w, r, http.StatusOK, hd)
+}
+
+// firstEpisode is the series' first episode in its numbering, nil for none.
+func firstEpisode(group []epRow, numbering string) *epRow {
+	var first *epRow
+	for i, e := range group {
+		if first == nil || lessEpisode(e, *first, numbering) {
+			first = &group[i]
+		}
+	}
+	return first
 }
 
 // visibleSeries loads series id and reports whether p may see it: the
@@ -522,7 +538,9 @@ func (h *Handler) numbering(r *http.Request, seriesID string) string {
 }
 
 func toEpisode(e epRow) Episode {
-	ep := Episode{VideoID: e.videoID, Title: e.title, Thumbnail: e.poster.String}
+	// the episode's picture by URL (the videos API serves its poster or the
+	// pipeline's thumbnail), never videos.poster_path: a path on the server
+	ep := Episode{VideoID: e.videoID, Title: e.title, Thumbnail: "/api/videos/" + url.PathEscape(e.videoID) + "/poster"}
 	if s, ok := e.effSeason(); ok {
 		ep.Season = &s
 	}

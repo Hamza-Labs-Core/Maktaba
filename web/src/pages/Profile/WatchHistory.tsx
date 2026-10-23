@@ -27,6 +27,7 @@ import {
   type HistoryItem,
 } from "../../lib/analytics";
 import { TitleRow } from "../../help/HelpLink";
+import { VideoPoster } from "../../components/VideoViews";
 
 export const HISTORY_PAGE = 50;
 export const ACTIVITY_PAGE = 50;
@@ -141,7 +142,10 @@ function HistoryList() {
                 {items.map((h) => (
                   <tr key={h.video_id}>
                     <td dir="auto">
-                      <Link to={`/videos/${h.video_id}`}>{h.title}</Link>
+                      <Link to={`/videos/${h.video_id}`} className="mkt-history__video">
+                        <VideoPoster videoId={h.video_id} />
+                        <span>{h.title}</span>
+                      </Link>
                     </td>
                     <td>{formatDate(h.last_watched_at)}</td>
                     <td>{h.times_watched}</td>
