@@ -105,6 +105,9 @@ type launcher struct {
 	guardVersion string
 	firstStart   time.Time
 	failures     []time.Time
+	// oldSelf: the launcher a replacement left (maktaba-launcher.old) is kept until this
+	// one's first good start (story 35.7 AC6), then removed
+	oldSelf bool
 }
 
 // Run starts the current release and keeps it running until ctx ends or
@@ -125,9 +128,7 @@ func Run(ctx context.Context, cfg Config) error {
 	becomeSubreaper() // Linux: what a crashed server leaves behind comes back to us
 	ln := &launcher{cfg: cfg, l: l, log: newEventLog(l.LauncherLog(), cfg.Stderr, cfg.Now)}
 	defer ln.log.Close()
-	if cfg.Bundle == "" {
-		removeOldSelf(l)
-	}
+	ln.oldSelf = cfg.Bundle == ""
 	if cfg.StopEvent != "" {
 		var release func()
 		ctx, release, err = watchStopEvent(ctx, cfg.StopEvent, ln.log)
@@ -523,6 +524,12 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 			return finish(ln.stop(cmd, child, done, stopFile), runResult{stopped: true})
 		case <-tick.C:
 			child.reap()
+			if ln.oldSelf && !ln.isPending(ver) && ln.cfg.Now().Sub(start) >= ln.cfg.StableAfter {
+				// a good start: the server this launcher started stays up, nothing pending;
+				// the launcher it replaced is not needed to go back to any more
+				ln.oldSelf = false
+				removeOldSelf(ln.l)
+			}
 			if ln.guardVersion == ver && ln.isPending(ver) && !ln.cfg.Now().Before(ln.deadline(ver)) {
 				ln.log.Event("launcher_pending_timeout", ver, map[string]any{"after_s": int(ln.cfg.Now().Sub(ln.firstStart).Seconds())})
 				return finish(ln.stop(cmd, child, done, stopFile), runResult{timedOut: true})

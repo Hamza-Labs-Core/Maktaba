@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -345,4 +346,71 @@ func TestRehearsalSkipsAndLeftovers(t *testing.T) {
 	if left := r.scratchLeft(t); len(left) != 0 {
 		t.Fatalf("left: %v", left)
 	}
+}
+
+// Review round 2 (A-P): an update's migrations never wait on another session's lock for
+// ever: with --lock-timeout a migration behind a held lock fails fast (and the database
+// step tries again), and EndSessions ends the session holding it, as the bundled path
+// (psql as the superuser) and as the target's role.
+func TestEndSessionsAndTheLockTimeout(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	appURL, err := r.b.URL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder, err := sql.Open("postgres", appURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close()
+	hold := func() *sql.Tx {
+		t.Helper()
+		tx, err := holder.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(`LOCK TABLE users IN ACCESS EXCLUSIVE MODE`); err != nil {
+			t.Fatal(err)
+		}
+		return tx
+	}
+	dir := r.migrationsWith(t, map[string]string{"9003_lock_probe.sql": "-- +goose Up\n" +
+		"ALTER TABLE users ADD COLUMN lock_probe integer;\n-- +goose Down\nALTER TABLE users DROP COLUMN lock_probe;\n"})
+	migrate := func() (string, error) {
+		out, err := runAPI(ctx, r.api, "migrate", "--dir", dir, "--dsn", appURL, "--timeout", "1m", "--lock-timeout", "1s", "up")
+		return out, err
+	}
+
+	tx := hold()
+	if out, err := migrate(); err == nil || !strings.Contains(out, "lock timeout") {
+		t.Fatalf("a migration behind a held lock: %v\n%s", err, out)
+	}
+	n, err := r.b.EndSessions(ctx)
+	if err != nil || n < 1 {
+		t.Fatalf("bundled: ended %d (%v)", n, err)
+	}
+	_ = tx.Rollback()
+	if out, err := migrate(); err != nil {
+		t.Fatalf("with the session ended: %v\n%s", err, out)
+	}
+	if !r.has(t, "users") {
+		t.Fatal("users gone")
+	}
+
+	// the target's role (the superuser here) ends them too; replication is left alone
+	tx = hold()
+	if n, err := r.t.EndSessions(ctx); err != nil || n < 1 {
+		t.Fatalf("target: ended %d (%v)", n, err)
+	}
+	if _, err := tx.Exec(`SELECT 1`); err == nil {
+		t.Fatal("the ended session still answers")
+	}
+	_ = tx.Rollback()
+}
+
+// runAPI runs the api binary and returns its output.
+func runAPI(ctx context.Context, api string, args ...string) (string, error) {
+	out, err := exec.CommandContext(ctx, api, args...).CombinedOutput()
+	return string(out), err
 }

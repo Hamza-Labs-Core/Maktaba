@@ -107,6 +107,39 @@ func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts Re
 	return q.Exec(ctx, AppDatabase, "ANALYZE;")
 }
 
+// EndSessionsSQL ends every other client session on database db ("": the one it runs
+// in) that its role may end, and selects how many it ended: the machines' api sessions
+// and anything else that could hold a lock an update's migrations would wait for, right
+// before they run. Replication (the machines' copies) goes on.
+func EndSessionsSQL(db string) string {
+	which := "current_database()"
+	if db != "" {
+		which = "'" + strings.ReplaceAll(db, "'", "''") + "'"
+	}
+	return `SELECT count(*) FROM (
+    SELECT pg_terminate_backend(a.pid) AS ended
+    FROM pg_stat_activity a LEFT JOIN pg_roles r ON r.oid = a.usesysid
+    WHERE a.datname = ` + which + ` AND a.pid <> pg_backend_pid() AND a.backend_type = 'client backend'
+      AND ((SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
+           OR (pg_has_role(current_user, 'pg_signal_backend', 'MEMBER') AND NOT coalesce(r.rolsuper, false))
+           OR pg_has_role(current_user, a.usesysid, 'MEMBER'))
+) e WHERE e.ended`
+}
+
+// EndSessions ends the other client sessions on the app database (EndSessionsSQL); it
+// returns how many it ended.
+func (b Bundle) EndSessions(ctx context.Context) (int, error) {
+	q, err := b.NewQuerier()
+	if err != nil {
+		return 0, err
+	}
+	rows, err := q.Query(ctx, "postgres", EndSessionsSQL(AppDatabase))
+	if err != nil || len(rows) == 0 {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(rows[0]))
+}
+
 // DropSlotsSQL drops every logical replication slot of database db ("": the one it
 // runs in), ending the sessions that stream from them first: the machines' copies
 // (Epic 37) of a database about to be put back from a dump, or dropped. What they

@@ -305,3 +305,39 @@ func TestBootstrapEnvKeepsOnlyItsList(t *testing.T) {
 		}
 	}
 }
+
+// Review round 2 (B-H1): the Windows installer's update deletes nothing, so an app
+// installed over an older one may hold the older wheel too; the one payload.json names is
+// the payload's. A folder with no payload.json beside it (a plain server's release) has
+// its only wheel.
+func TestWheelIsTheOnePayloadJSONNames(t *testing.T) {
+	payload := t.TempDir()
+	pipe := filepath.Join(payload, "pipeline")
+	if err := os.MkdirAll(pipe, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{"maktaba_pipeline-1.4.0-py3-none-any.whl", "maktaba_pipeline-1.5.0rc1-py3-none-any.whl"} {
+		if err := os.WriteFile(filepath.Join(pipe, w), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Wheel(payload); err == nil {
+		t.Fatal("two wheels and no payload.json: one picked")
+	}
+	pj := `{"version": "v1.5.0-rc.1", "pipeline": {"wheel": "maktaba_pipeline-1.5.0rc1-py3-none-any.whl"}}`
+	if err := os.WriteFile(filepath.Join(payload, "payload.json"), []byte(pj), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w, err := Wheel(payload)
+	if err != nil || filepath.Base(w) != "maktaba_pipeline-1.5.0rc1-py3-none-any.whl" || WheelVersion(w) != "1.5.0rc1" {
+		t.Fatalf("wheel %q (%v)", w, err)
+	}
+	_ = os.Remove(filepath.Join(pipe, "maktaba_pipeline-1.5.0rc1-py3-none-any.whl"))
+	if _, err := Wheel(payload); err == nil || !strings.Contains(err.Error(), "does not hold") {
+		t.Fatalf("the named wheel is gone: %v", err)
+	}
+	_ = os.Remove(filepath.Join(payload, "payload.json"))
+	if w, err := Wheel(payload); err != nil || filepath.Base(w) != "maktaba_pipeline-1.4.0-py3-none-any.whl" {
+		t.Fatalf("the only wheel: %q (%v)", w, err)
+	}
+}

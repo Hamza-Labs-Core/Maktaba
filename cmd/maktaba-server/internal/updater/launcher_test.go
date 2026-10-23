@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
@@ -32,7 +33,7 @@ func TestLauncherReplacement(t *testing.T) {
 	if replaced, err := li.ReplaceLauncher(j); replaced || err != nil {
 		t.Fatalf("protocol 1 under 1: %v %v", replaced, err)
 	}
-	ok, why := li.launcherReplaceable()
+	ok, why := li.launcherReplaceable(j.Job.Version)
 	if err := checkLauncher(j, ok, why); err != nil {
 		t.Fatal(err)
 	}
@@ -42,6 +43,11 @@ func TestLauncherReplacement(t *testing.T) {
 		var f *Failure
 		if err := checkLauncher(j, ok, why); !errors.As(err, &f) || f.Code != "launcher_protocol" {
 			t.Fatalf("Windows cannot hand over in place: %v", err)
+		}
+		// the refusal names the command that does it by hand (review round 2)
+		next := filepath.Join(l.ReleaseDir(layout.NormalizeVersion(j.Job.Version)), layout.Exe("maktaba-launcher"))
+		if !strings.Contains(f.Detail, `"`+next+`" --replace-self "`+exe+`"`) || !strings.Contains(f.Detail, "Restart-Service Maktaba") {
+			t.Fatalf("the refusal names no command: %s", f.Detail)
 		}
 		return
 	}
@@ -94,4 +100,35 @@ func TestCommitHandsOverToANewLauncher(t *testing.T) {
 	if !found || !w.called("launcher") {
 		t.Fatalf("steps %+v", j.Steps)
 	}
+}
+
+// Review round 2: the handover's restart passes no TV gate, so a machine keeping TV on
+// air does not restart for it: the new launcher takes over at the next restart.
+func TestHandoverWaitsWhileTVIsOnAir(t *testing.T) {
+	w := newWorld("1.4.0")
+	r := startRig(t, t.TempDir(), w, healthy)
+	_ = r.m.Prepare(homeJob())
+	r.waitState(StatePrepared)
+	_ = r.m.mutate(func(j *Journal) { j.LauncherProtocol = 3 })
+	_ = r.m.Apply("run-1")
+	r.waitExit()
+	n := startRig(t, r.dir, w, healthy)
+	n.inst.replaces = true
+	n.m.TVOnAir = func() bool { return true }
+	r.cancel()
+	n.m.Resume()
+	n.waitState(StateCommitted)
+	deadline := time.Now().Add(5 * time.Second)
+	for !w.called("launcher") && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond)
+	n.noExit()
+	j := n.m.Status().Journal
+	for _, s := range j.Steps {
+		if s.Step == StepLauncher && s.State == "done" && strings.Contains(s.Detail, "next restart") {
+			return
+		}
+	}
+	t.Fatalf("steps %+v", j.Steps)
 }

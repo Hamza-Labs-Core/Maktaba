@@ -88,7 +88,7 @@ func (li *LayoutInstaller) Stage(ctx context.Context, j *Journal, log io.Writer)
 		return nil
 	}
 	j.LauncherProtocol = st.Result.Manifest.LauncherProtocol
-	ok, why := li.launcherReplaceable()
+	ok, why := li.launcherReplaceable(j.Job.Version)
 	if err := checkLauncher(j, ok, why); err != nil {
 		return err
 	}

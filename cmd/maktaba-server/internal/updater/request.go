@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
@@ -130,9 +131,20 @@ func (r requests) answer(j *Journal) (string, error) {
 		return "", Fail("app_order_gone", "the order of %s was replaced", j.Job.Version)
 	}
 	if q.State == RequestFailed {
-		return "", Fail("app_install_failed", "%s", q.Error)
+		code, detail := appFailure(q.Error)
+		return "", Fail(code, "%s", detail)
 	}
 	return q.State, nil
+}
+
+// appFailure is the code and detail of the app's error: needs_admin (an app this user
+// cannot replace: a person moves it or an administrator installs it), else
+// app_install_failed.
+func appFailure(msg string) (string, string) {
+	if rest, ok := strings.CutPrefix(msg, "needs_admin:"); ok {
+		return "needs_admin", strings.TrimSpace(rest)
+	}
+	return "app_install_failed", msg
 }
 
 // set moves the run's order to state (written afresh when it is gone).
@@ -152,7 +164,8 @@ func (r requests) failure(j *Journal) *Failure {
 	if err != nil || q.RunID != j.Job.RunID || q.State != RequestFailed {
 		return nil
 	}
-	return &Failure{Step: StepRestart, Code: "app_install_failed", Detail: q.Error}
+	code, detail := appFailure(q.Error)
+	return &Failure{Step: StepRestart, Code: code, Detail: detail}
 }
 
 // nudger starts the app with the order's deep link when it has not answered for a

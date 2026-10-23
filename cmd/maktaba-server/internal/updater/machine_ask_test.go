@@ -193,14 +193,75 @@ func TestWatchWaitsForTheStartSteps(t *testing.T) {
 	r.waitExit()
 	w.migrated = true
 	n := r.restart(Verdict{Pending: true, Why: "api: Updating the library database"})
+	n.health.setMoving()
 	n.waitState(StateWatching)
 	// the fake clock moves a minute a read: far past the 3-minute health limit
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 	if j := n.m.Status().Journal; j.State != StateWatching || w.marked {
 		t.Fatalf("while the database step works: %s marked %v", j.State, w.marked)
 	}
 	n.health.set(healthy)
 	n.waitState(StateCommitted)
+}
+
+// review A-P: a start step that shows no progress for stallLimit (a dump that stopped
+// growing, a migration that does not end) rolls back, and the dump is put back.
+func TestWatchGivesUpOnAStalledStartStep(t *testing.T) {
+	w := newWorld("1.4.0")
+	r := startRig(t, t.TempDir(), w, healthy)
+	_ = r.m.Prepare(homeJob())
+	r.waitState(StatePrepared)
+	_ = r.m.Apply("run-1")
+	r.waitExit()
+	w.migrated = true
+	n := r.restart(Verdict{Pending: true, Why: "api: Saving the library database (100 MB so far)", Progress: "100 MB"})
+	n.waitExit()
+	j := n.waitState(StateRollingBack)
+	if j.Reason != "start_timeout" || !w.marked || w.next != "1.4.0" {
+		t.Fatalf("reason %q marked %v next %s", j.Reason, w.marked, w.next)
+	}
+}
+
+// review A-P: a start step that makes progress is still bounded (pendingCap: two hours
+// plus the database's share), and the time it took is on the journal.
+func TestWatchBoundsTheStartSteps(t *testing.T) {
+	w := newWorld("1.4.0")
+	r := startRig(t, t.TempDir(), w, healthy)
+	_ = r.m.Prepare(homeJob())
+	r.waitState(StatePrepared)
+	_ = r.m.Apply("run-1")
+	r.waitExit()
+	w.migrated = true
+	n := r.restart(Verdict{Pending: true, Why: "api: Updating the library database"})
+	n.health.setMoving()
+	n.waitExit()
+	j := n.waitState(StateRollingBack)
+	if j.Reason != "start_timeout" || !w.marked {
+		t.Fatalf("reason %q marked %v", j.Reason, w.marked)
+	}
+	if capped := pendingCap(j); time.Duration(j.PendingSec)*time.Second < capped-time.Minute {
+		t.Fatalf("gave up after %d s, the cap is %s", j.PendingSec, capped)
+	}
+}
+
+// review A-G1: the launcher's guard is kept ahead for the whole watch, not only while
+// the start steps work: it catches a supervisor that died, not a slow commit.
+func TestGuardKeptAheadThroughTheWatch(t *testing.T) {
+	w := newWorld("1.4.0")
+	r := startRig(t, t.TempDir(), w, healthy)
+	_ = r.m.Prepare(homeJob())
+	r.waitState(StatePrepared)
+	_ = r.m.Apply("run-1")
+	r.waitExit()
+	n := r.restart(healthy)
+	n.waitState(StateCommitted)
+	w.mu.Lock()
+	pushed := w.extends
+	w.mu.Unlock()
+	// the 10-minute watch at a minute a check: about one push a minute, beside beginWatch's
+	if pushed < 5 {
+		t.Fatalf("the guard was pushed on %d times in a healthy 10-minute watch", pushed)
+	}
 }
 
 // review 5: a commit that cannot clear the launcher's guard is not a commit: the watch

@@ -51,11 +51,60 @@ type Driver struct {
 	Tick time.Duration
 	// Getenv reads the watch overrides (tests; nil: os.Getenv).
 	Getenv func(string) string
+	// Recheck re-reads a release from GitHub and marks it withdrawn when it is (nil: the
+	// Service's Discoverer's Recheck, none without one).
+	Recheck func(ctx context.Context, r Release, channel string) (string, error)
 
-	mu      sync.Mutex
-	wake    chan struct{}
-	stepMu  sync.Mutex
-	pending map[string]time.Time // catch-ups recently tried, by node
+	mu        sync.Mutex
+	wake      chan struct{}
+	stepMu    sync.Mutex
+	pending   map[string]time.Time // catch-ups recently tried, by node
+	rechecked map[string]time.Time // releases last re-read from GitHub, by version
+	lateLook  time.Time            // when reconcileHome last asked the home
+}
+
+// Withdrawn releases are noticed while a run goes on (review A-W: a release deleted
+// upstream while the home waits days for its click): the run's release is re-read every
+// recheckEvery, and right before each go and each catch-up (at most every recheckSoon).
+const (
+	recheckEvery = time.Hour
+	recheckSoon  = 5 * time.Minute
+)
+
+// withdrawn re-reads version's release when it was not re-read for recheckEvery (soon:
+// recheckSoon) and reports whether it is withdrawn. GitHub out of reach is no
+// withdrawal: the run goes on, and the next look asks again.
+func (d *Driver) withdrawn(ctx context.Context, version string, soon bool) bool {
+	rel, err := d.Store.Get(ctx, version)
+	if err != nil {
+		return false
+	}
+	if rel.WithdrawnAt != nil {
+		return true
+	}
+	recheck := d.Recheck
+	if recheck == nil && d.Svc != nil && d.Svc.Discoverer != nil {
+		recheck = d.Svc.Discoverer.Recheck
+	}
+	if recheck == nil {
+		return false
+	}
+	every := recheckEvery
+	if soon {
+		every = recheckSoon
+	}
+	d.mu.Lock()
+	if last, ok := d.rechecked[version]; ok && d.now().Sub(last) < every {
+		d.mu.Unlock()
+		return false
+	}
+	if d.rechecked == nil {
+		d.rechecked = map[string]time.Time{}
+	}
+	d.rechecked[version] = d.now()
+	d.mu.Unlock()
+	reason, err := recheck(ctx, rel, d.policy(ctx).Channel)
+	return err == nil && reason != ""
 }
 
 func (d *Driver) now() time.Time {
@@ -145,9 +194,46 @@ func (d *Driver) Step(ctx context.Context) error {
 		return err
 	}
 	if run == nil {
+		d.reconcileHome(ctx)
 		return d.catchUp(ctx)
 	}
 	return d.advance(ctx, *run)
+}
+
+// reconcileHome takes up a home that committed after its run gave up on it (home_timeout:
+// a watch that ended past homeCeiling): the watermark is raised to its release, so the
+// machines catch up to it (review A-N2). It asks the home at most once a minute, while the
+// last run is such a run and the watermark is below its release.
+func (d *Driver) reconcileHome(ctx context.Context) {
+	if d.Home == nil || d.now().Sub(d.lateLook) < time.Minute {
+		return
+	}
+	runs, err := d.Store.Runs(ctx, 1)
+	if err != nil || len(runs) == 0 {
+		return
+	}
+	run := runs[0]
+	var doc struct {
+		Code string `json:"code"`
+	}
+	if run.State != RunFailed || json.Unmarshal(run.Error, &doc) != nil || doc.Code != "home_timeout" {
+		return
+	}
+	if wm, err := d.Store.Watermark(ctx); err != nil || (wm != "" && CompareVersions(wm, run.Version) >= 0) {
+		return
+	}
+	d.lateLook = d.now()
+	st, err := d.Home.Do(ctx, "status", nil)
+	if err != nil || st == nil || st.RunID() != run.ID || st.State != MCommitted {
+		return
+	}
+	if err := d.Store.RaiseWatermark(ctx, run.Version); err != nil {
+		return
+	}
+	d.audit(ctx, run, "home_committed_late", nil)
+	d.notify(ctx, NoticeInstalledHome, notify.SeverityInfo, run, nil)
+	d.log().Info("the home committed after its run gave up: the machines catch up", "event", "update_home_committed_late",
+		"run_id", run.ID, "version", run.Version)
 }
 
 func (d *Driver) policy(ctx context.Context) Policy {
@@ -237,8 +323,19 @@ func (d *Driver) advance(ctx context.Context, run Run) error {
 	if err != nil {
 		return err
 	}
+	d.withdrawn(ctx, run.Version, false) // every recheckEvery: stopWithdrawn sees what it found
 	if done, err := d.stopWithdrawn(ctx, run, det); done || err != nil {
 		return err
+	}
+	if run.Step == StepWaitingClick && d.switchoverOpen(ctx) {
+		// a switch of the home began while the run only waits for clicks (nothing drained,
+		// nothing switching; the switch let it through): the orders are withdrawn and the
+		// run ends, and the new home's next run orders them again (review A-N1)
+		if run.State == RunHomeApplying && !det.NoHome {
+			_ = d.abortHome(ctx, run)
+		}
+		d.audit(ctx, run, "run_ended_for_switchover", nil)
+		return d.finish(ctx, run, det, RunCancelled, map[string]any{"code": "switchover"})
 	}
 	switch run.State {
 	case RunPlanned:
@@ -381,7 +478,7 @@ func (d *Driver) homePreparing(ctx context.Context, run Run, det RunDetail) erro
 	case MPrepareFailed:
 		doc := machineErr(st, "prepare_failed")
 		d.blockFor(ctx, run, doc)
-		d.notify(ctx, NoticeRunFailed, notify.SeverityError, run, map[string]any{"code": doc["code"]})
+		d.notifyFailure(ctx, run, doc)
 		return d.finish(ctx, run, det, RunFailed, doc)
 	case MAborted:
 		return d.finish(ctx, run, det, RunCancelled, nil)
@@ -390,10 +487,14 @@ func (d *Driver) homePreparing(ctx context.Context, run Run, det RunDetail) erro
 }
 
 // blockFor blocks the release when a failure says it must not be tried again by itself
-// (a verification or a rehearsal failure), and counts the attempt otherwise.
+// (a verification or a rehearsal failure), and counts the attempt otherwise; a failure of
+// the machine's install, not of the release (no room, no Python, no PyPI: needsPerson)
+// counts nothing, so the next window goes once a person mended it.
 func (d *Driver) blockFor(ctx context.Context, run Run, doc map[string]any) {
 	code, _ := doc["code"].(string)
 	switch {
+	case needsPerson(doc):
+		// a person mends the machine: no attempt counted
 	case strings.HasPrefix(code, "verify_"):
 		_ = d.Store.Block(ctx, run.Version, "verify")
 	case strings.HasPrefix(code, "rehearsal"):
@@ -403,6 +504,16 @@ func (d *Driver) blockFor(ctx context.Context, run Run, doc map[string]any) {
 			d.audit(ctx, run, "release_blocked", map[string]any{"reason": "attempts"})
 		}
 	}
+}
+
+// notifyFailure tells of the home's failed run: a person must mend the machine's install
+// (needsPerson), or the release failed.
+func (d *Driver) notifyFailure(ctx context.Context, run Run, doc map[string]any) {
+	if needsPerson(doc) {
+		d.notify(ctx, NoticeNeedsPerson, notify.SeverityWarn, run, map[string]any{"machine": "home", "code": doc["code"]})
+		return
+	}
+	d.notify(ctx, NoticeRunFailed, notify.SeverityError, run, map[string]any{"code": doc["code"]})
 }
 
 // windowDeadline is when an automatic run's apply must have begun: the end of the
@@ -581,6 +692,9 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 		}
 		return nil
 	}
+	if d.withdrawn(ctx, run.Version, true) {
+		return nil // the next step ends the run (stopWithdrawn)
+	}
 	if _, err := d.Home.Do(ctx, "apply", map[string]any{"run_id": run.ID}); err != nil {
 		if strings.Contains(err.Error(), "update_no_run") || strings.Contains(err.Error(), "update_not_ready") {
 			return d.finish(ctx, run, det, RunFailed, map[string]any{"code": "home_not_prepared", "detail": err.Error()})
@@ -627,6 +741,9 @@ func (d *Driver) homeClicked(ctx context.Context, run Run, det RunDetail) error 
 	}
 	if d.switchoverOpen(ctx) {
 		return nil // the home switches release once the switch of the home is over
+	}
+	if d.withdrawn(ctx, run.Version, true) {
+		return nil // the next step ends the run and takes the order back (stopWithdrawn)
 	}
 	if _, err := d.Home.Do(ctx, "apply", map[string]any{"run_id": run.ID}); err != nil {
 		return err // the next tick asks again
@@ -679,7 +796,7 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 	case MApplyFailed:
 		doc := machineErr(st, "apply_failed")
 		d.blockFor(ctx, run, doc)
-		d.notify(ctx, NoticeRunFailed, notify.SeverityError, run, map[string]any{"code": doc["code"]})
+		d.notifyFailure(ctx, run, doc)
 		return d.finish(ctx, run, det, RunFailed, doc)
 	case MFailed:
 		doc := machineErr(st, "rollback_failed")
@@ -957,7 +1074,9 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 	}
 	pol := d.policy(ctx)
 	agents, states := d.agentStates()
-	if d.mayRestartMachines(run, det, pol) {
+	// a run for named machines (a Retry, a Resume, a catch-up) touches only those; the
+	// others wait for a catch-up of their own (inside the window)
+	if len(det.Targets) == 0 && d.mayRestartMachines(run, det, pol) {
 		d.adoptBehind(ctx, run, targets, agents, states)
 		targets, _ = d.Store.Targets(ctx, run.ID)
 	}
@@ -1073,6 +1192,12 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 				d.targetFailed(ctx, run, pol, t, TargetFailed, machineErr(st, st.State))
 			}
 		}
+	}
+	if !busy && d.withdrawn(ctx, run.Version, true) {
+		return nil // no machine goes: the next step ends the run (stopWithdrawn)
+	}
+	if !busy && d.switchoverOpen(ctx) {
+		return nil // no machine restarts while the home switches
 	}
 	if !busy && len(clicked) > 0 && (run.Trigger == TriggerManual || !d.machineTVBusy(ctx, clicked[0].NodeID)) {
 		// someone clicked on a machine: its turn comes first (it ignores the window: the
@@ -1253,20 +1378,24 @@ func (d *Driver) targetFailed(ctx context.Context, run Run, pol Policy, t Target
 }
 
 // needsPersonCodes are failures of a machine's install, not of the release: an install
-// that cannot update itself, an app or launcher too old for it, no room for it.
+// that cannot update itself, an app or launcher too old for it, an app this user cannot
+// replace, no room for it, no Python or no PyPI for its pipeline's environment.
 var needsPersonCodes = map[string]bool{"not_self_managed": true, "old_launcher": true, "no_app": true,
 	"no_app_update": true, "launcher_protocol": true, "disk_space": true, "not_writable": true, "no_runtime": true,
-	"no_python": true}
+	"no_python": true, "venv_network": true, "needs_admin": true}
 
 func needsPerson(doc map[string]any) bool {
 	code, _ := doc["code"].(string)
 	if needsPersonCodes[code] {
 		return true
 	}
-	// a machine agent from before automatic updates answers no update.* command
+	// a machine agent from before automatic updates, or one whose server does not update
+	// itself, answers no update.* command ("the machine agent does not run update.prepare",
+	// " yet" before agents had command handlers)
 	detail, _ := doc["detail"].(string)
-	return code == "prepare_refused" && (strings.Contains(detail, "unknown command") ||
-		strings.Contains(detail, "not supported") || strings.Contains(detail, "machine_agent_only"))
+	return code == "prepare_refused" && (strings.Contains(detail, "does not run update.") ||
+		strings.Contains(detail, "unknown command") || strings.Contains(detail, "not supported") ||
+		strings.Contains(detail, "machine_agent_only"))
 }
 
 // maybeFinishRollout ends the run once every target's part is over. A run left waiting
@@ -1474,7 +1603,7 @@ func (d *Driver) catchUp(ctx context.Context) error {
 		}
 		ids = append(ids, n.id)
 	}
-	if len(ids) == 0 {
+	if len(ids) == 0 || d.withdrawn(ctx, wm, true) {
 		return nil
 	}
 	sort.Strings(ids)

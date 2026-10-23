@@ -344,6 +344,11 @@ var (
 	// the state a failed update left, set aside before the dump is put back over it
 	dumpAsideBundled  = func(ctx context.Context, b pgbundle.Bundle, path string) error { return b.DumpTo(ctx, path) }
 	dumpAsideExternal = func(ctx context.Context, t dbsafe.Target, path string) error { return t.Dump(ctx, path) }
+	// the other sessions on the database, ended before an update's migrations
+	endSessionsBundled  = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.EndSessions(ctx) }
+	endSessionsExternal = func(ctx context.Context, t dbsafe.Target) (int, error) { return t.EndSessions(ctx) }
+	// how often the dump's size is said while it is taken
+	dumpReportEvery = time.Minute
 )
 
 // backups is where the gate's dumps go.
@@ -397,6 +402,117 @@ func (g *migrationGate) dump(ctx context.Context, from, to string) (string, erro
 	return dumpExternal(ctx, *g.ext, from, to, g.keep)
 }
 
+// reportDumpSize says how much of the dump is written, every dumpReportEvery while it
+// is taken: the update's watch sees the step make progress (a dump that stops growing is
+// stuck). The func it returns stops it.
+func (g *migrationGate) reportDumpSize(ctx context.Context, from, to string, report func(supervisor.Detail)) func() {
+	part := filepath.Join(g.backups(), pgbundle.UpdateDumpName(from, to)) + ".partial"
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTicker(dumpReportEvery)
+		defer t.Stop()
+		said := int64(-1)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			st, err := os.Stat(part)
+			if err != nil || st.Size() == said {
+				continue
+			}
+			said = st.Size()
+			report(detail("db_dumping", fmt.Sprintf("Saving the library database before the update to %s (%d MB so far)",
+				to, said>>20), from, to))
+		}
+	}()
+	return func() { cancel(); <-done }
+}
+
+// endSessions ends the other client sessions on the database before an update's
+// migrations (the machines' api sessions, anything left holding a lock): a migration
+// never waits on them. Best effort, and the migrations' lock timeout bounds the rest.
+func (g *migrationGate) endSessions(ctx context.Context) {
+	var n int
+	var err error
+	switch {
+	case g.pg != nil:
+		n, err = endSessionsBundled(ctx, *g.pg)
+	case g.ext != nil:
+		n, err = endSessionsExternal(ctx, *g.ext)
+	default:
+		return
+	}
+	switch {
+	case err != nil:
+		fmt.Fprintf(g.log, "[serve] the other sessions on the library database could not be ended before the migrations: %v\n", err)
+	case n > 0:
+		fmt.Fprintf(g.log, "[serve] ended %d other sessions on the library database before the migrations\n", n)
+	}
+}
+
+// migrateTries is how often an update's migrations are tried when one waited longer
+// than the lock timeout for a lock another session holds; the other sessions are ended
+// before each try.
+const migrateTries = 3
+
+// migrate runs the migrations (an update's, when update: the other sessions ended first,
+// each migration done said for the watch to see the step move).
+func (g *migrationGate) migrate(ctx context.Context, cur string, update bool, report func(supervisor.Detail)) error {
+	log := g.log
+	if update {
+		log = &migrationsDone{w: g.log, done: func(n int) {
+			report(detail("db_migrating", fmt.Sprintf("Updating the library database for %s (%d migrations done)", cur, n), cur))
+		}}
+	}
+	for try := 1; ; try++ {
+		if update {
+			g.endSessions(ctx)
+		}
+		err := migrateUp(ctx, g.api, log)
+		if err == nil || ctx.Err() != nil || !lockTimedOut(err) || try == migrateTries {
+			return err
+		}
+		fmt.Fprintf(g.log, "[serve] a migration for %s waited too long for a lock another session holds (try %d of %d): "+
+			"trying again\n", cur, try, migrateTries)
+	}
+}
+
+// lockTimedOut says a migration gave up waiting for a lock (lock_timeout, 55P03).
+func lockTimedOut(err error) bool {
+	return strings.Contains(err.Error(), "lock timeout") || strings.Contains(err.Error(), "55P03")
+}
+
+// migrationsDone passes the migrations' output on and counts the migrations goose says
+// it applied: its "OK   <file> (<time>)", which the api's logger writes with no line
+// end of its own (so they are counted in the stream, not by line).
+type migrationsDone struct {
+	w    io.Writer
+	done func(n int)
+	tail []byte // the last bytes of the output (a mark cut between two writes)
+	n    int
+}
+
+// gooseOK is what goose writes for each migration it applied.
+const gooseOK = "OK   "
+
+func (m *migrationsDone) Write(p []byte) (int, error) {
+	buf := append(append([]byte(nil), m.tail...), p...)
+	// tail is shorter than the mark: every mark found ends in p, none is counted twice
+	if found := strings.Count(string(buf), gooseOK); found > 0 {
+		m.n += found
+		m.done(m.n)
+	}
+	if keep := len(gooseOK) - 1; len(buf) > keep {
+		buf = buf[len(buf)-keep:]
+	}
+	m.tail = append([]byte(nil), buf...)
+	return m.w.Write(p)
+}
+
 func (g *migrationGate) putBack(ctx context.Context, dump string) error {
 	if g.pg != nil {
 		return restoreDump(ctx, *g.pg, dump, g.log)
@@ -444,12 +560,17 @@ const apiExitSchemaAhead = 3
 // errSchemaAhead: the database is newer than this payload's migrations.
 var errSchemaAhead = errors.New("the database holds migrations newer than this Maktaba's")
 
+// migrateLockTimeout is how long one migration waits for a lock another session holds
+// before it fails (and is tried again, migrationGate.migrate).
+const migrateLockTimeout = "2m"
+
 // runMigrateUp runs the api's migrations with its binary and environment, with
-// no time limit of their own (nothing else uses the database meanwhile, and a
-// stop of the server ends them). Their output goes to the server's log; an
-// error carries their last lines.
+// no time limit of their own (a stop of the server ends them, and the update's watch
+// bounds an update's: updater.pendingCap), but none waits on another session's lock
+// longer than migrateLockTimeout. Their output goes to the server's log; an error
+// carries their last lines.
 func runMigrateUp(ctx context.Context, api *exec.Cmd, log io.Writer) error {
-	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "up")
+	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout, "up")
 	cmd.Env, cmd.Dir = api.Env, api.Dir
 	tail := &tailWriter{max: 4 << 10}
 	cmd.Stdout = io.MultiWriter(log, tail)
@@ -541,7 +662,9 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		update.From = held
 		if g.keeps() {
 			report(detail("db_dumping", fmt.Sprintf("Saving the library database before the update to %s", cur), held, cur))
+			stop := g.reportDumpSize(ctx, held, cur, report)
 			dump, err := g.dump(ctx, held, cur)
+			stop()
 			if err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
@@ -565,9 +688,15 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	} else {
 		report(detail("db_checking", "Checking the library database", cur))
 	}
-	err = migrateUp(ctx, g.api, g.log)
+	err = g.migrate(ctx, cur, update.State != "", report)
 	if ctx.Err() != nil {
 		return ctx.Err() // stopped: the next start goes on (the record says migrating)
+	}
+	if now, rerr := g.record(); rerr == nil && now.State == apppayload.DatabaseRestoring && now.Failed == cur {
+		// the update's watch gave up on this start meanwhile (start_timeout) and marked the
+		// dump to be put back: the start it restarts does that; nothing is recorded over it
+		return detailErr("db_restoring", fmt.Sprintf("The update to %s gave up: the library database is put back "+
+			"as it was at the next start", cur), cur, now.Dump)
 	}
 	switch {
 	case err == nil:

@@ -398,6 +398,59 @@ pub fn write_state(path: &Path, req: &Request, state: &str, error: &str) -> std:
     Err(last.unwrap_or_else(|| std::io::Error::other("the order could not be written")))
 }
 
+/// The code an ordered install's error starts with when this app cannot be replaced
+/// without an administrator's password (macOS: Maktaba.app in a folder this user cannot
+/// change, such as /Applications for a standard user). The updater's prompt for the
+/// password and its replacing of the app are one step, so an ordered install never asks:
+/// a password typed after the server stopped waiting would install a release no run
+/// watches (Epic 35 review round 2). The machine then needs a person.
+#[cfg(any(target_os = "macos", test))]
+pub const NEEDS_ADMIN: &str = "needs_admin";
+
+/// The app bundle (Maktaba.app) of its executable (Contents/MacOS/<name>); None outside
+/// one (a development build in target/).
+#[cfg(any(target_os = "macos", test))]
+pub fn app_bundle_of(exe: &Path) -> Option<PathBuf> {
+    let contents = exe.parent()?.parent()?;
+    if contents.file_name()? != "Contents" {
+        return None;
+    }
+    let bundle = contents.parent()?;
+    let is_app = bundle
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("app"));
+    is_app.then(|| bundle.to_path_buf())
+}
+
+/// Why replacing the app bundle at `bundle` would need an administrator's password (an
+/// error starting with NEEDS_ADMIN, for the order): the updater moves the bundle, which
+/// takes changing the folder that holds it and the bundle itself (its `..`). None when
+/// this user can (`writable` says whether this user can change a folder).
+#[cfg(any(target_os = "macos", test))]
+pub fn needs_admin(bundle: &Path, writable: impl Fn(&Path) -> bool) -> Option<String> {
+    let parent = bundle.parent()?;
+    let locked = [parent, bundle].into_iter().find(|d| !writable(d))?;
+    Some(format!(
+        "{NEEDS_ADMIN}: {} cannot be replaced without an administrator's password ({} is not \
+         this user's to change): move Maktaba.app to a folder this user can change (such as \
+         Applications in the home folder), or have an administrator install this update",
+        bundle.display(),
+        locked.display()
+    ))
+}
+
+/// Whether this user can change the folder `dir` (create and remove its entries); a
+/// read-only volume cannot be.
+#[cfg(all(unix, any(target_os = "macos", test)))]
+pub fn writable(dir: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(c) = std::ffi::CString::new(dir.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: c is a NUL-terminated path that outlives the call; access only reads it
+    unsafe { libc::access(c.as_ptr(), libc::W_OK) == 0 }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -826,6 +879,61 @@ mod tests {
             "{:?}",
             leftovers(dir.path())
         );
+    }
+
+    #[test]
+    fn app_bundle_of_its_executable() {
+        assert_eq!(
+            app_bundle_of(Path::new(
+                "/Applications/Maktaba.app/Contents/MacOS/Maktaba"
+            )),
+            Some(PathBuf::from("/Applications/Maktaba.app"))
+        );
+        assert_eq!(
+            app_bundle_of(Path::new("/src/target/debug/maktaba-desktop")),
+            None
+        );
+        assert_eq!(
+            app_bundle_of(Path::new("/x/NotAnApp/Contents/MacOS/Maktaba")),
+            None
+        );
+    }
+
+    // An ordered install never meets the updater's password prompt (review round 2):
+    // a bundle this user cannot move says why, with the code the server knows.
+    #[test]
+    fn an_app_that_needs_an_admin_password_says_so() {
+        let bundle = Path::new("/Applications/Maktaba.app");
+        assert_eq!(needs_admin(bundle, |_| true), None);
+        let apps = bundle.parent().unwrap();
+        let why = needs_admin(bundle, |d| d != apps).unwrap();
+        assert!(why.starts_with("needs_admin: "), "{why}");
+        assert!(
+            why.contains(&format!("({} is not this user's", apps.display())),
+            "{why}"
+        );
+        let why = needs_admin(bundle, |d| d != bundle).unwrap();
+        assert!(
+            why.contains(&format!("({} is not this user's", bundle.display())),
+            "{why}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn writable_follows_the_folder_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        assert!(writable(dir.path()));
+        // root may write anywhere: only an ordinary user sees the folder locked
+        if unsafe { libc::geteuid() } != 0 {
+            let locked = dir.path().join("locked");
+            std::fs::create_dir(&locked).unwrap();
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+            assert!(!writable(&locked));
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert!(!writable(&dir.path().join("missing")));
     }
 
     #[test]

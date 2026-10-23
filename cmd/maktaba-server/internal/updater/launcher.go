@@ -64,8 +64,9 @@ func askHandover(root, next string) error {
 }
 
 // layoutLauncherReplaceable: the plain server install's launcher is the layout's own
-// file, not a package's, and the OS can hand over in place.
-func (li *LayoutInstaller) launcherReplaceable() (bool, string) {
+// file, not a package's, and the OS can hand over in place. version is the release that
+// needs it (the refusal names the command that puts its launcher in place by hand).
+func (li *LayoutInstaller) launcherReplaceable(version string) (bool, string) {
 	exe := strings.TrimSpace(os.Getenv(layout.EnvLauncherExe))
 	switch {
 	case exe == "":
@@ -73,10 +74,18 @@ func (li *LayoutInstaller) launcherReplaceable() (bool, string) {
 	case launcherPackaged(exe):
 		return false, "a package manager owns it: update the package"
 	case runtime.GOOS == "windows":
-		return false, "on Windows it takes over at the service's next start: restart the service after updating by hand"
+		next := filepath.Join(li.Layout.ReleaseDir(layout.NormalizeVersion(version)), layout.Exe("maktaba-launcher"))
+		return false, fmt.Sprintf("on Windows the running launcher cannot hand over in place: put the release's in place "+
+			"and restart Maktaba, in an administrator PowerShell: `& \"%s\" --replace-self \"%s\"; Restart-Service %s` "+
+			"(for the sign-in task instead of the service: sign out and in again), then retry the update",
+			next, exe, windowsServiceName)
 	}
 	return true, ""
 }
+
+// windowsServiceName is the Windows service (and sign-in task) a plain server runs as
+// (internal/service.WindowsName).
+const windowsServiceName = "Maktaba"
 
 // ReplaceLauncher implements LauncherReplacer: the release's launcher copied beside the
 // running one and moved into place by itself (--replace-self keeps the old as .old,
@@ -85,7 +94,7 @@ func (li *LayoutInstaller) ReplaceLauncher(j *Journal) (bool, error) {
 	if !needsNewLauncher(j) {
 		return false, nil
 	}
-	if ok, why := li.launcherReplaceable(); !ok {
+	if ok, why := li.launcherReplaceable(j.Job.Version); !ok {
 		return false, fmt.Errorf("%s", why)
 	}
 	exe := strings.TrimSpace(os.Getenv(layout.EnvLauncherExe))

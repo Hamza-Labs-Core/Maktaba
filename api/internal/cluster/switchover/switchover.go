@@ -175,7 +175,9 @@ const (
 	ReasonAgentOffline = "agent_offline"
 	ReasonBusy         = "switch_under_way"
 	// ReasonUpdating: an update run is past its plan (Epic 35): the home's database and
-	// the machines' drain are the update's until it ends
+	// the machines' drain are the update's until it ends. A run that only waits for
+	// clicks on desktop apps (step waiting_click: nothing drained, nothing switching) does
+	// not hold a switch: the update ends it when the switch starts.
 	ReasonUpdating = "update_under_way"
 )
 
@@ -227,7 +229,7 @@ func (o *Orchestrator) Candidates(ctx context.Context) ([]Candidate, error) {
 	}
 	var updating bool
 	_ = o.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM update_runs
-	    WHERE finished_at IS NULL AND state <> 'planned')`).Scan(&updating)
+	    WHERE finished_at IS NULL AND state <> 'planned' AND COALESCE(step, '') <> 'waiting_click')`).Scan(&updating)
 	var out []Candidate
 	for _, n := range ns {
 		if n.state == "revoked" || n.state == "rejected" {

@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -119,8 +121,15 @@ func TestLayoutInstaller(t *testing.T) {
 		t.Fatal(err)
 	}
 	// review A12: the release's pipeline environment is built from its verified wheel and
-	// constraints, with the machine's Python
+	// constraints, with the machine's Python, and keeps the extras of the environment it
+	// replaces (review round 2: a worker's extras are not dropped)
 	t.Setenv(envPipelinePython, "/opt/python3.12/bin/python3")
+	curVenv := filepath.Join(l.ReleaseDir("1.4.0"), "venv")
+	if err := os.MkdirAll(filepath.Dir(venvPython(curVenv)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(venvPython(curVenv), nil, 0o755)
+	_ = os.WriteFile(filepath.Join(curVenv, venvStamp), []byte(`{"extras": ["stt", "search", "mediaintel", "dev"]}`), 0o644)
 	var built appvenv.Spec
 	prevBuild := venvBuild
 	venvBuild = func(_ context.Context, spec appvenv.Spec, _ func(appvenv.Progress)) (appvenv.Result, error) {
@@ -131,7 +140,8 @@ func TestLayoutInstaller(t *testing.T) {
 	if err := li.Stage(ctx, j, nil); err != nil {
 		t.Fatal(err)
 	}
-	if built.Python != "/opt/python3.12/bin/python3" || built.Venv != filepath.Join(l.ReleaseDir("1.5.0"), "venv") {
+	if built.Python != "/opt/python3.12/bin/python3" || built.Venv != filepath.Join(l.ReleaseDir("1.5.0"), "venv") ||
+		built.Extras != "mediaintel,search,stt" {
 		t.Fatalf("venv built %+v", built)
 	}
 	for _, f := range []string{"maktaba_pipeline-1.5.0-py3-none-any.whl", "maktaba-pipeline-1.5.0-constraints.txt"} {
@@ -394,9 +404,15 @@ func appOfForTest(payload string) string { return filepath.Dir(filepath.Dir(file
 // when it does not answer, go at the home's word, withdrawn by a revert.
 func TestAppOrderProtocol(t *testing.T) {
 	lroot := t.TempDir()
-	var opened int
-	ai := &AppInstaller{LauncherRoot: lroot, Version: "1.4.0", NudgeAfter: 20 * time.Millisecond, WaitApp: time.Second,
-		PollEvery: 2 * time.Millisecond, Open: func(context.Context, string) error { opened++; return nil }}
+	// the installer's clock is the test's (review round 2: no real-time window to miss
+	// under load); only waiting for the go polls in real time, with room to spare
+	var opened atomic.Int32
+	var mu sync.Mutex
+	clock := time.Date(2026, 10, 23, 4, 0, 0, 0, time.UTC)
+	now := func() time.Time { mu.Lock(); defer mu.Unlock(); return clock }
+	advance := func(d time.Duration) { mu.Lock(); clock = clock.Add(d); mu.Unlock() }
+	ai := &AppInstaller{LauncherRoot: lroot, Version: "1.4.0", NudgeAfter: time.Minute, WaitApp: time.Hour,
+		PollEvery: 2 * time.Millisecond, Now: now, Open: func(context.Context, string) error { opened.Add(1); return nil }}
 	feed := "https://github.com/o/r/releases/download/v1.5.0/latest.json"
 	j := &Journal{Job: jobFor("v1.5.0", map[string]string{"latest.json": feed}), From: "1.4.0"}
 	j.Job.Home = true
@@ -408,7 +424,7 @@ func TestAppOrderProtocol(t *testing.T) {
 		_ = json.Unmarshal(b, &q)
 		q.State, q.Error = state, why
 		b, _ = json.Marshal(q)
-		if err := os.WriteFile(path, b, 0o600); err != nil {
+		if err := layout.WriteFileAtomic(path, b, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -424,12 +440,12 @@ func TestAppOrderProtocol(t *testing.T) {
 		q.Feed != feed || q.RunID != j.Job.RunID {
 		t.Fatalf("order %+v (%v)", q, err)
 	}
-	if s, err := ai.Answer(j); err != nil || s != RequestOrdered || opened != 0 {
-		t.Fatalf("answer %q %v opened %d", s, err, opened)
+	if s, err := ai.Answer(j); err != nil || s != RequestOrdered || opened.Load() != 0 {
+		t.Fatalf("answer %q %v opened %d", s, err, opened.Load())
 	}
-	time.Sleep(30 * time.Millisecond)
-	if s, _ := ai.Answer(j); s != RequestOrdered || opened != 1 {
-		t.Fatalf("no answer for a while: %q opened %d", s, opened)
+	advance(2 * time.Minute)
+	if s, _ := ai.Answer(j); s != RequestOrdered || opened.Load() != 1 {
+		t.Fatalf("no answer for a while: %q opened %d", s, opened.Load())
 	}
 	appSays(RequestStaged, "")
 	_ = ai.Ask(j) // asked again (a restart): the app's answer stays
@@ -443,7 +459,7 @@ func TestAppOrderProtocol(t *testing.T) {
 	// the home's go: the app takes it (installing), then cannot install
 	done := make(chan error, 1)
 	go func() { done <- ai.Restart(context.Background(), j, nil) }()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		b, _ := os.ReadFile(path)
 		_ = json.Unmarshal(b, &q)
@@ -456,11 +472,19 @@ func TestAppOrderProtocol(t *testing.T) {
 		t.Fatalf("no go: %+v", q)
 	}
 	appSays(RequestInstalling, "")
-	time.Sleep(10 * time.Millisecond)
 	appSays(RequestFailed, "no room")
 	var f *Failure
 	if err := <-done; !errors.As(err, &f) || f.Code != "app_install_failed" {
 		t.Fatalf("restart: %v", err)
+	}
+	if opened.Load() != 1 {
+		t.Fatalf("the app was started again while it answered: %d", opened.Load())
+	}
+	// an app this user cannot replace (macOS, no admin prompt for an ordered install):
+	// needs_admin, a person's
+	appSays(RequestFailed, "needs_admin: /Applications is not writable by this user")
+	if _, err := ai.Answer(j); !errors.As(err, &f) || f.Code != "needs_admin" || strings.HasPrefix(f.Detail, "needs_admin") {
+		t.Fatalf("needs_admin: %v", err)
 	}
 	// an app that failed to stage: the answer is the failure
 	_ = ai.Discard(context.Background(), j)
@@ -487,6 +511,45 @@ func TestAppOrderProtocol(t *testing.T) {
 	b, _ = os.ReadFile(path)
 	if err := json.Unmarshal(b, &rq); err != nil || rq.Kind != RequestKindRuntime || rq.Feed != "" || rq.State != RequestOrdered {
 		t.Fatalf("runtime order %+v", rq)
+	}
+}
+
+// Review round 2 (A12): without a bootstrap's record the environment is asked which
+// extras it has; a pip that cannot reach PyPI is the machine's (venv_network, a person's),
+// not the release's.
+func TestReleaseVenvExtrasAndNetwork(t *testing.T) {
+	l := layout.New(t.TempDir())
+	if err := l.WritePointer(layout.CurrentFile, "1.4.0"); err != nil {
+		t.Fatal(err)
+	}
+	li := &LayoutInstaller{Layout: l, Version: "1.4.0"}
+	if got := li.extras(context.Background()); got != "" {
+		t.Fatalf("no environment: extras %q", got)
+	}
+	py := venvPython(filepath.Join(l.ReleaseDir("1.4.0"), "venv"))
+	_ = os.MkdirAll(filepath.Dir(py), 0o755)
+	_ = os.WriteFile(py, nil, 0o755)
+	prev := probeExtras
+	defer func() { probeExtras = prev }()
+	probeExtras = func(_ context.Context, asked string) []string {
+		if asked != py {
+			t.Errorf("asked %s, want %s", asked, py)
+		}
+		return []string{"stt", "dev"}
+	}
+	if got := li.extras(context.Background()); got != "stt" {
+		t.Fatalf("probed extras %q", got)
+	}
+	for msg, want := range map[string]bool{
+		"pip: Could not find a version that satisfies the requirement numpy==2.1.0":                         true,
+		"HTTPSConnectionPool(host='pypi.org'): Max retries exceeded (Failed to establish a new connection)": true,
+		"[Errno 11001] getaddrinfo failed":                        true,
+		"verify failed: the constraints do not cover torch":       false,
+		"error: Microsoft Visual C++ 14.0 or greater is required": false,
+	} {
+		if networkFailure(msg) != want {
+			t.Errorf("networkFailure(%q) = %v", msg, !want)
+		}
 	}
 }
 

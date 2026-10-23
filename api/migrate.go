@@ -41,12 +41,15 @@ func runMigrate(argv []string) error {
 		dsn      string
 		dialect  string
 		timeout  time.Duration
+		lockWait time.Duration
 		showHelp bool
 	)
 	fs.StringVar(&dir, "dir", defaultMigrationsDir(), "Migrations directory")
 	fs.StringVar(&dsn, "dsn", os.Getenv("DATABASE_URL"), "Database DSN (default: $DATABASE_URL)")
 	fs.StringVar(&dialect, "dialect", "postgres", "SQL dialect: postgres, or sqlite (chosen automatically for sqlite:// DSNs)")
 	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "Overall migration timeout (0: none)")
+	fs.DurationVar(&lockWait, "lock-timeout", 0, "How long one statement waits for a lock another session holds "+
+		"before it fails (Postgres lock_timeout; 0: as long as it takes)")
 	fs.BoolVar(&showHelp, "help", false, "Show help")
 
 	fs.Usage = func() {
@@ -142,6 +145,11 @@ Flags:`)
 	defer cancel()
 
 	dsn = pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping)
+	if lockWait > 0 {
+		// every session goose opens: a migration never waits forever on another's lock
+		// (an update's database step ends the other sessions and tries again)
+		dsn = pgdsn.WithParam(dsn, "lock_timeout", strconv.FormatInt(lockWait.Milliseconds(), 10))
+	}
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)

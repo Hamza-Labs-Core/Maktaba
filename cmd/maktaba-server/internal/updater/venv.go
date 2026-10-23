@@ -3,12 +3,14 @@ package updater
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -64,9 +66,11 @@ func (li *LayoutInstaller) buildVenv(ctx context.Context, j *Journal, res *relea
 		return Fail("no_python", "no Python for the pipeline's environment: install Python 3.12 (or uv), or name one "+
 			"in %s", envPipelinePython)
 	}
-	_, _ = fmt.Fprintf(log, "[update] building the pipeline's environment with %s\n", py)
+	extras := li.extras(ctx)
+	_, _ = fmt.Fprintf(log, "[update] building the pipeline's environment with %s (extras: %s)\n", py, orDefault(extras))
 	said := -1
-	_, err := venvBuild(ctx, appvenv.Spec{Python: py, Pipeline: pipe, Venv: filepath.Join(dir, "venv"), Log: log},
+	_, err := venvBuild(ctx, appvenv.Spec{Python: py, Pipeline: pipe, Venv: filepath.Join(dir, "venv"), Log: log,
+		Extras: extras},
 		func(pr appvenv.Progress) {
 			if pct := int(pr.Fraction * 10); pct != said {
 				said = pct
@@ -77,10 +81,128 @@ func (li *LayoutInstaller) buildVenv(ctx context.Context, j *Journal, res *relea
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if networkFailure(err.Error()) {
+			// the machine's, not the release's: a person gives it PyPI (or a mirror)
+			return Fail("venv_network", "the pipeline's Python packages could not be downloaded: this machine cannot "+
+				"reach PyPI (or the mirror or proxy it is given: PIP_INDEX_URL, HTTPS_PROXY): %v", err)
+		}
 		return Fail("venv_failed", "%v", err)
 	}
 	return nil
 }
+
+// networkFailure says pip could not download the packages (no route to PyPI, a name
+// that does not resolve, a proxy or a certificate in the way), not that they failed.
+func networkFailure(msg string) bool {
+	msg = strings.ToLower(msg)
+	for _, s := range []string{"could not find a version that satisfies", "no matching distribution found",
+		"failed to establish a new connection", "max retries exceeded", "name or service not known",
+		"temporary failure in name resolution", "getaddrinfo failed", "nodename nor servname",
+		"network is unreachable", "connection refused", "connection timed out", "read timed out",
+		"connectionerror", "connection reset", "proxyerror", "sslerror", "certificate verify failed"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+func orDefault(extras string) string {
+	if extras == "" {
+		return "the default"
+	}
+	return extras
+}
+
+// extras are the pipeline's extras the environment the release replaces has (review
+// A12: a converted worker keeps what it was given): those its bootstrap recorded
+// (maktaba-venv.json), else those whose requirements it has installed; "" (the
+// bootstrap's default) with no environment to ask. The release's constraints cover every
+// extra but dev.
+func (li *LayoutInstaller) extras(ctx context.Context) string {
+	py := li.currentPython()
+	if py == "" {
+		return ""
+	}
+	var names []string
+	if raw, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(py)), venvStamp)); err == nil {
+		var st struct {
+			Extras []string `json:"extras"`
+		}
+		if json.Unmarshal(raw, &st) == nil {
+			names = st.Extras
+		}
+	}
+	if names == nil {
+		names = probeExtras(ctx, py)
+	}
+	var keep []string
+	for _, n := range names {
+		if n = strings.TrimSpace(n); n != "" && n != "dev" && strings.Trim(n, "abcdefghijklmnopqrstuvwxyz0123456789-_.") == "" {
+			keep = append(keep, n)
+		}
+	}
+	sort.Strings(keep)
+	return strings.Join(keep, ",")
+}
+
+// venvStamp is the pipeline bootstrap's record of a venv it built (its extras).
+const venvStamp = "maktaba-venv.json"
+
+// currentPython is the interpreter of the pipeline's environment now: the running
+// release's own, else the configured [pipeline] python; "" when neither is there.
+func (li *LayoutInstaller) currentPython() string {
+	for _, py := range []string{venvPython(filepath.Join(li.Layout.ReleaseDir(li.Running()), "venv")), li.PipelinePython} {
+		if py == "" {
+			continue
+		}
+		if _, err := os.Stat(py); err == nil {
+			return py
+		}
+	}
+	return ""
+}
+
+// probeExtras asks an environment which of the pipeline's extras it has every
+// requirement of (tests replace it).
+var probeExtras = func(ctx context.Context, py string) []string {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, py, "-I", "-c", extrasProbe).Output()
+	if err != nil {
+		return nil
+	}
+	var names []string
+	if json.Unmarshal([]byte(lastLine(out)), &names) != nil {
+		return nil
+	}
+	return names
+}
+
+// extrasProbe prints the extras of maktaba-pipeline whose requirements (for this
+// platform) are all installed.
+const extrasProbe = `
+import json
+from importlib import metadata
+try:
+    from packaging.requirements import Requirement
+except ImportError:
+    from pip._vendor.packaging.requirements import Requirement
+dist = metadata.distribution("maktaba-pipeline")
+def installed(r):
+    try:
+        metadata.version(r.name)
+        return True
+    except metadata.PackageNotFoundError:
+        return False
+have = []
+for extra in dist.metadata.get_all("Provides-Extra") or []:
+    reqs = [r for r in map(Requirement, dist.requires or [])
+            if r.marker is not None and r.marker.evaluate({"extra": extra}) and not r.marker.evaluate({"extra": ""})]
+    if reqs and all(installed(r) for r in reqs):
+        have.append(extra)
+print(json.dumps(have))
+`
 
 // python is the interpreter the pipeline's environment is built with: the one named in
 // MAKTABA_PIPELINE_PYTHON; the one the running release's environment (or the configured

@@ -209,8 +209,10 @@ type Journal struct {
 	// Pending is the start step the release that came up is busy with (its watch waits,
 	// and so does the home's timeout of a node).
 	Pending string `json:"pending,omitempty"`
-	// WatchedSec is how long the watch has gone on outside the start steps (its bound).
+	// WatchedSec is how long the watch has gone on outside the start steps (its bound);
+	// PendingSec how long inside them (pendingCap).
 	WatchedSec int `json:"watched_sec,omitempty"`
+	PendingSec int `json:"pending_sec,omitempty"`
 	// Rollbacks counts the switches back tried (a second one that does not take fails).
 	Rollbacks int `json:"rollbacks,omitempty"`
 	// Reason is why the run rolled back.

@@ -40,7 +40,7 @@ func init() {
 	if mode == "" {
 		return
 	}
-	if strings.Join(os.Args[1:], " ") != "migrate --timeout 0 up" {
+	if strings.Join(os.Args[1:], " ") != "migrate --timeout 0 --lock-timeout "+migrateLockTimeout+" up" {
 		fmt.Fprintf(os.Stderr, "unexpected %q\n", os.Args[1:])
 		os.Exit(2)
 	}
@@ -1041,5 +1041,119 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 			t.Fatalf("timed out waiting for %s", what)
 		}
 		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// Review round 2 (A-P): an update's migrations never wait on another session's lock for
+// ever: the other sessions are ended before each try, and a migration that waited past
+// the lock timeout is tried again (at most migrateTries). Each migration goose says it
+// applied moves the step on for the update's watch.
+func TestAppBundleMigrationsEndSessionsAndRetryALockTimeout(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	cfg.Postgres.UpdateDumps = 5
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	installFakeDB(t, cfg)
+	prevE, prevM := endSessionsBundled, migrateUp
+	t.Cleanup(func() { endSessionsBundled, migrateUp = prevE, prevM })
+	var mu sync.Mutex
+	ended, tries := 0, 0
+	endSessionsBundled = func(context.Context, pgbundle.Bundle) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		ended++
+		return 2, nil
+	}
+	migrateUp = func(_ context.Context, _ *exec.Cmd, log io.Writer) error {
+		mu.Lock()
+		tries++
+		n := tries
+		mu.Unlock()
+		if n == 1 {
+			_, _ = io.WriteString(log, "OK   0150_a.sql (1.2ms)")
+			return errors.New("migrate: ERROR 0151_b.sql: pq: canceling statement due to lock timeout")
+		}
+		_, _ = io.WriteString(log, "OK   0151_b.sql (3ms)OK   0152_c.sql (2ms)goose: successfully migrated")
+		return nil
+	}
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	var said []string
+	err := checkedStep(t, prepareOf(t, ps, supervisor.RoleAPI))(context.Background(), func(d supervisor.Detail) {
+		mu.Lock()
+		said = append(said, d.Text)
+		mu.Unlock()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ended != 2 || tries != 2 {
+		t.Fatalf("sessions ended %d times, migrations tried %d times", ended, tries)
+	}
+	if !contains(said, "Updating the library database for v0.3.0 (3 migrations done)") {
+		t.Fatalf("details %q", said)
+	}
+	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseMigrated || rec.Version != "v0.3.0" {
+		t.Fatalf("record %+v", rec)
+	}
+	// the same release starting again: nothing to migrate, no session ended
+	if err := prepareOf(t, appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard),
+		supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if ended != 2 {
+		t.Fatalf("a start of the same release ended sessions (%d)", ended)
+	}
+}
+
+// Review round 2 (A-P): the dump says how much it has written while it is taken (the
+// update's watch sees it grow), and a start the watch gave up on meanwhile records
+// nothing over the restore it marked.
+func TestAppBundleDumpProgressAndAGivenUpStart(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	cfg.Postgres.UpdateDumps = 5
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	installFakeDB(t, cfg)
+	prevD, prevM, prevEvery, prevE := dumpBeforeUpdate, migrateUp, dumpReportEvery, endSessionsBundled
+	t.Cleanup(func() {
+		dumpBeforeUpdate, migrateUp, dumpReportEvery, endSessionsBundled = prevD, prevM, prevEvery, prevE
+	})
+	endSessionsBundled = func(context.Context, pgbundle.Bundle) (int, error) { return 0, nil }
+	dumpReportEvery = 2 * time.Millisecond
+	dumpBeforeUpdate = func(_ context.Context, b pgbundle.Bundle, from, to string, _ int) (string, error) {
+		path := filepath.Join(b.Backups, pgbundle.UpdateDumpName(from, to))
+		_ = os.MkdirAll(b.Backups, 0o700)
+		for i := 1; i <= 5; i++ {
+			_ = os.WriteFile(path+".partial", make([]byte, i<<20), 0o600)
+			time.Sleep(10 * time.Millisecond)
+		}
+		return path, os.Rename(path+".partial", path)
+	}
+	migrateUp = func(context.Context, *exec.Cmd, io.Writer) error {
+		// the watch gave up on this start meanwhile (start_timeout): the restore is marked
+		rec, _, _ := apppayload.ReadDatabase(cfg.StateDir())
+		rec.State, rec.Failed = apppayload.DatabaseRestoring, rec.Version
+		return apppayload.WriteDatabase(cfg.StateDir(), rec)
+	}
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	var mu sync.Mutex
+	var said []string
+	err := checkedStep(t, prepareOf(t, ps, supervisor.RoleAPI))(context.Background(), func(d supervisor.Detail) {
+		mu.Lock()
+		said = append(said, d.Text)
+		mu.Unlock()
+	})
+	if d := supervisor.DetailOf(err); err == nil || d.Code != "db_restoring" {
+		t.Fatalf("a start given up on: %v", err)
+	}
+	grew := false
+	for _, s := range said {
+		if strings.Contains(s, "MB so far") {
+			grew = true
+		}
+	}
+	if !grew {
+		t.Fatalf("the dump never said its size: %q", said)
+	}
+	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseRestoring || rec.Failed != "v0.3.0" {
+		t.Fatalf("recorded over the restore: %+v", rec)
 	}
 }

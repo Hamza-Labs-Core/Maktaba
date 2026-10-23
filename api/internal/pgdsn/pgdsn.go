@@ -184,6 +184,23 @@ func SSLMode(dsn string) string {
 	return ""
 }
 
+// WithParam sets one connection parameter of a URL or key=value dsn; lib/pq sends a
+// parameter it does not know itself to the server as a setting of the session
+// (lock_timeout, statement_timeout).
+func WithParam(dsn, key, val string) string {
+	if isURL(dsn) {
+		u, err := url.Parse(dsn)
+		if err != nil {
+			return dsn
+		}
+		q := u.Query()
+		q.Set(key, val)
+		u.RawQuery = q.Encode()
+		return u.String()
+	}
+	return kvSet(dsn, key, val)
+}
+
 func withSSLMode(dsn, mode string) string {
 	if isURL(dsn) {
 		u, err := url.Parse(dsn)

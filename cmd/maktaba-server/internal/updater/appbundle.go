@@ -408,7 +408,8 @@ func (ai *AppInstaller) Restart(ctx context.Context, j *Journal, exit func(int))
 		if err == nil && r.RunID == j.Job.RunID {
 			switch r.State {
 			case RequestFailed:
-				return Fail("app_install_failed", "%s", r.Error)
+				code, detail := appFailure(r.Error)
+				return Fail(code, "%s", detail)
 			case RequestInstalling:
 				if !installing {
 					// it took the go: the install has WaitApp from now (once: an app that
@@ -432,17 +433,20 @@ func (ai *AppInstaller) Restart(ctx context.Context, j *Journal, exit func(int))
 // Revert implements Installer: the order withdrawn; when the app holds the new
 // release already, the launcher runs the kept copy of the one before.
 func (ai *AppInstaller) Revert(_ context.Context, j *Journal) error {
+	touched := ai.appTouched(j)
 	ai.requests().remove()
 	from := layout.NormalizeVersion(j.From)
 	bundled := ""
 	if p, err := apppayload.Read(filepath.Join(ai.bundled(), "payload.json")); err == nil {
 		bundled = layout.NormalizeVersion(p.Version)
 	}
-	// with a whole kept copy, it is the one that runs, whatever the app's payload.json
+	// once the app may have changed its bundle (it began installing, or it holds another
+	// release), a whole kept copy is the one that runs, whatever the app's payload.json
 	// says: an install cut short may have replaced the programs and not payload.json yet
-	// (review B-M1); on Windows the launcher puts the copy back into the app's folder
+	// (review B-M1); on Windows the launcher puts the copy back into the app's folder. An
+	// app that never began installing keeps running its own untouched payload.
 	kept := false
-	if j.FromRef != "" {
+	if j.FromRef != "" && (touched || bundled != from) {
 		_, err := os.Stat(filepath.Join(j.FromRef, keptMarker))
 		kept = err == nil || sameDir(j.FromRef, ai.Payload)
 	}
@@ -462,6 +466,16 @@ func (ai *AppInstaller) Revert(_ context.Context, j *Journal) error {
 		return Fail("no_previous", "no copy of %s was kept", from)
 	}
 	return layout.ClearGuard(ai.LauncherRoot)
+}
+
+// appTouched says the app may have changed its bundle for j's run: its order says it
+// began installing (or failed doing it).
+func (ai *AppInstaller) appTouched(j *Journal) bool {
+	q, err := ai.requests().read()
+	if err != nil || q.RunID != j.Job.RunID {
+		return false
+	}
+	return q.State == RequestInstalling || q.State == RequestFailed
 }
 
 // Commit implements Installer: the guard and the request gone, the app's own payload

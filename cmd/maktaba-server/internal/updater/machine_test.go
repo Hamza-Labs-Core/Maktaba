@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -25,6 +26,7 @@ type world struct {
 	order     string // the run ordered ("" withdrawn)
 	answer    string // ordered, staged, clicked
 	answerErr error
+	extends   int // the launcher's guard pushed on (Extender)
 }
 
 // app answers the order like the desktop app.
@@ -68,6 +70,14 @@ type fakeInst struct {
 	asks bool
 	// replaces: its launcher is replaced when a release needs a newer one
 	replaces bool
+}
+
+// Extend implements Extender.
+func (f *fakeInst) Extend(*Journal, time.Time) error {
+	f.w.mu.Lock()
+	f.w.extends++
+	f.w.mu.Unlock()
+	return nil
 }
 
 func (f *fakeInst) die(where string) {
@@ -199,13 +209,22 @@ func (r *fakeRehearser) Check(context.Context, bool, int) error { return nil }
 type fakeHealth struct {
 	mu sync.Mutex
 	v  Verdict
+	// moving: a start step that makes progress (its Progress changes every check)
+	moving bool
+	n      int
 }
 
 func (h *fakeHealth) set(v Verdict) { h.mu.Lock(); h.v = v; h.mu.Unlock() }
+func (h *fakeHealth) setMoving()    { h.mu.Lock(); h.moving = true; h.mu.Unlock() }
 func (h *fakeHealth) Check(context.Context, string) Verdict {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.v
+	v := h.v
+	if h.moving && v.Pending {
+		h.n++
+		v.Progress = strconv.Itoa(h.n)
+	}
+	return v
 }
 
 // rig is one machine's process over a world.

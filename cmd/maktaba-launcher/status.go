@@ -79,7 +79,7 @@ func printStatus(w io.Writer, l layout.Layout, asJSON bool) int {
 // installed launcher is renamed to target.old (allowed for a running .exe on
 // Windows) and this file is renamed into its place. Asking the service manager
 // for the restart is the caller's job (story 35.7); target.old is removed at
-// the next start (removeOldSelf).
+// the next good start (removeOldSelf: a server started that stayed up).
 func ReplaceSelf(target string) error {
 	self, err := os.Executable()
 	if err != nil {

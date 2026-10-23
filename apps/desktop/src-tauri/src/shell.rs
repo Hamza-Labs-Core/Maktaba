@@ -410,6 +410,10 @@ fn exact_updater(app: &AppHandle, feed: &str, version: &str) -> Result<Updater, 
 fn stage_order(app: AppHandle, path: PathBuf, req: autoinstall::Request, staged: PathBuf) {
     tauri::async_runtime::spawn(async move {
         let run = async {
+            #[cfg(target_os = "macos")]
+            if let Some(why) = needs_admin() {
+                return Err(why);
+            }
             let update = exact_updater(&app, &req.feed, &req.version)?
                 .check()
                 .await
@@ -438,6 +442,16 @@ fn stage_order(app: AppHandle, path: PathBuf, req: autoinstall::Request, staged:
         shell(&app).staging.store(false, Ordering::SeqCst);
         refresh(&app);
     });
+}
+
+/// macOS: why replacing this Maktaba.app would need an administrator's password (an
+/// error for the order, autoinstall::NEEDS_ADMIN); None when this user can replace it, or
+/// outside a bundle.
+#[cfg(target_os = "macos")]
+fn needs_admin() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let bundle = autoinstall::app_bundle_of(&exe)?;
+    autoinstall::needs_admin(&bundle, autoinstall::writable)
 }
 
 /// An install the home ordered: where to say how it went, what to install, and where
@@ -788,6 +802,16 @@ fn install_update_from(app: AppHandle, source: Source) {
             }
             if !source.still_go() {
                 return Ok(Done::Withdrawn);
+            }
+            // macOS: the updater's password prompt and its replacing of the app are one
+            // step, so an ordered install that would prompt is not tried (checked at the
+            // staging, and again now): answered after the server stopped waiting, it would
+            // install a release no run watches
+            #[cfg(target_os = "macos")]
+            if source.ordered().is_some() {
+                if let Some(why) = needs_admin() {
+                    return Err(failed(why));
+                }
             }
             // Windows: this runs the installer and exits the app
             update.install(bytes).map_err(|e| failed(e.to_string()))?;

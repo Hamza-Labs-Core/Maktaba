@@ -55,9 +55,33 @@ type Extender interface {
 	Extend(j *Journal, until time.Time) error
 }
 
-// guardMargin is how far the watch keeps the launcher's guard ahead of now while the
-// release starts.
+// guardMargin is how far the watch keeps the launcher's guard ahead of now, every minute
+// for as long as it goes on: the guard catches only a supervisor that died or hangs (no
+// watch pushes it then); the watch's own limits decide everything else.
 const guardMargin = 15 * time.Minute
+
+// pendingCap bounds the start steps of a release that came up (the database step's dump
+// and migrations, the pipeline's environment): two hours, and on a home a quarter of an
+// hour more per GiB of its database plus three times the rehearsed migrations' time.
+func pendingCap(j *Journal) time.Duration {
+	d := 2 * time.Hour
+	if r := j.Rehearsal; r != nil {
+		d += time.Duration(r.DBBytes>>30) * 15 * time.Minute
+		d += 3 * time.Duration(r.MigrateSec*float64(time.Second))
+	}
+	return d
+}
+
+// stallLimit is how long a start step may show no progress (a dump that stopped
+// growing, a migration that does not finish): an hour, or three times the rehearsed
+// migrations' time when that is longer.
+func stallLimit(j *Journal) time.Duration {
+	d := time.Hour
+	if r := j.Rehearsal; r != nil {
+		d = max(d, 3*time.Duration(r.MigrateSec*float64(time.Second)))
+	}
+	return d
+}
 
 // extendGuard pushes the launcher's guard to until (best effort).
 func (m *Machine) extendGuard(until time.Time) {
@@ -80,10 +104,12 @@ type Verdict struct {
 	// Fatal: waiting will not help (a role crash-loops, another version answers).
 	Fatal bool
 	// Pending: the release is busy starting (the home's database step dumps and
-	// migrates): neither healthy nor unhealthy, however long it takes (the launcher's
-	// guard bounds it).
+	// migrates): neither healthy nor unhealthy while it makes progress, within pendingCap.
 	Pending bool
-	Why     string
+	// Progress is what the start step has done so far (it changes while the step works:
+	// the dump's size, the migrations done, the environment's install).
+	Progress string
+	Why      string
 }
 
 // Health judges the running release.
@@ -147,6 +173,9 @@ type Machine struct {
 	// OnChange is called after every change of the journal (a node's machine agent
 	// sends its update.state again).
 	OnChange func()
+	// TVOnAir reports whether this machine keeps TV streams on air now (its tv-slot
+	// processes run): a launcher's handover then waits for the next restart (nil: none).
+	TVOnAir func() bool
 
 	mu      sync.Mutex
 	j       *Journal
@@ -930,10 +959,12 @@ func (m *Machine) watch(ctx context.Context) {
 	j := m.Status().Journal
 	watch, limit, bound := j.Job.Watch(), j.Job.HealthLimit(), j.Job.WatchBound()
 	m.logf("watching %s: healthy for %s commits it", j.Job.Version, watch)
-	var healthySince, unhealthySince, extended time.Time
+	var healthySince, unhealthySince, extended, progressAt time.Time
 	watched := time.Duration(j.WatchedSec) * time.Second
-	last, saved := m.now(), watched
-	pendingSaid := ""
+	pending := time.Duration(j.PendingSec) * time.Second
+	last, saved, savedPending := m.now(), watched, pending
+	pendingSaid, progress := "", ""
+	capped, stall := pendingCap(j), stallLimit(j)
 	t := time.NewTicker(m.checkEvery())
 	defer t.Stop()
 	for {
@@ -945,17 +976,22 @@ func (m *Machine) watch(ctx context.Context) {
 			return // the supervisor stops: the next start goes on watching
 		}
 		now := m.now()
-		if !v.Pending {
+		if v.Pending {
+			pending += now.Sub(last)
+		} else {
 			watched += now.Sub(last)
+			progressAt = time.Time{}
 			if pendingSaid != "" {
 				pendingSaid = ""
 				_ = m.mutate(func(j *Journal) { j.Pending = "" })
 			}
 		}
 		last = now
-		if watched-saved >= 30*time.Second {
-			saved = watched
-			_ = m.mutate(func(j *Journal) { j.WatchedSec = int(watched / time.Second) })
+		if watched-saved >= 30*time.Second || pending-savedPending >= 30*time.Second {
+			saved, savedPending = watched, pending
+			_ = m.mutate(func(j *Journal) {
+				j.WatchedSec, j.PendingSec = int(watched/time.Second), int(pending/time.Second)
+			})
 		}
 		switch {
 		case v.Fatal:
@@ -963,8 +999,8 @@ func (m *Machine) watch(ctx context.Context) {
 			m.rollback(v.Why)
 			return
 		case v.Pending:
-			// starting (the database step): no clock runs, nothing is rolled back under
-			// the step's feet, and the launcher's guard is kept ahead of it
+			// starting (the database step): the watch's clock does not run while the step
+			// makes progress, within pendingCap; one that stalls or runs past it rolls back
 			healthySince, unhealthySince = time.Time{}, time.Time{}
 			if v.Why != pendingSaid {
 				pendingSaid = v.Why
@@ -972,9 +1008,18 @@ func (m *Machine) watch(ctx context.Context) {
 				_ = m.mutate(func(j *Journal) { j.Pending = why })
 				m.logf("starting: %s", v.Why)
 			}
-			if now.Sub(extended) >= time.Minute {
-				extended = now
-				m.extendGuard(now.Add(guardMargin))
+			if progressAt.IsZero() || v.Progress != progress {
+				progress, progressAt = v.Progress, now
+			}
+			if pending >= capped {
+				m.logf("still starting after %s (at most %s): %s", pending.Round(time.Second), capped, v.Why)
+				m.rollback("start_timeout")
+				return
+			}
+			if now.Sub(progressAt) >= stall {
+				m.logf("no progress for %s: %s", stall, v.Why)
+				m.rollback("start_timeout")
+				return
 			}
 		case watched >= bound:
 			// neither healthy long enough nor unhealthy long enough: a flapping release
@@ -1000,6 +1045,11 @@ func (m *Machine) watch(ctx context.Context) {
 				m.rollback(v.Why)
 				return
 			}
+		}
+		// the watch goes on (within its bound): the launcher's guard is kept ahead of it
+		if now.Sub(extended) >= time.Minute {
+			extended = now
+			m.extendGuard(now.Add(guardMargin))
 		}
 		select {
 		case <-ctx.Done():
@@ -1048,6 +1098,15 @@ func (m *Machine) replaceLauncher() {
 	}
 	if !replaced {
 		_ = m.endStep(StepLauncher, "skipped", "")
+		return
+	}
+	if m.TVOnAir != nil && m.TVOnAir() {
+		// a restart now would cut the TV this machine keeps on air, outside the gates the
+		// run's restarts pass: the new launcher takes over at the next restart instead
+		_ = m.endStep(StepLauncher, "done", fmt.Sprintf("launcher protocol %d: takes over at the next restart "+
+			"(TV on air here)", j.LauncherProtocol))
+		m.logf("the launcher of %s (protocol %d) takes over at the next restart: this machine keeps TV on air",
+			j.Job.Version, j.LauncherProtocol)
 		return
 	}
 	_ = m.endStep(StepLauncher, "done", fmt.Sprintf("launcher protocol %d", j.LauncherProtocol))

@@ -268,6 +268,19 @@ func (t Target) Dump(ctx context.Context, path string) error {
 	return os.Rename(part, path)
 }
 
+// EndSessions ends the other client sessions on the database that its role may end
+// (pgbundle.EndSessionsSQL): the machines' api sessions an update's migrations would
+// wait for. It returns how many it ended.
+func (t Target) EndSessions(ctx context.Context) (int, error) {
+	d, err := t.open(ctx, "")
+	if err != nil {
+		return 0, err
+	}
+	defer d.Close()
+	var n int
+	return n, d.QueryRowContext(ctx, pgbundle.EndSessionsSQL("")).Scan(&n)
+}
+
 // VerifyDump checks a dump reads back: pg_restore --list parses it and names every
 // table the database has now in public (a dump of an empty database lists none). It
 // returns how many tables the dump holds.

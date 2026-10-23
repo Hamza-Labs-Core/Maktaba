@@ -252,6 +252,18 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 		}
 	}
 	m.Health = &machineHealth{cfg: cfg, home: home, node: node, releaseDir: releaseDir, snap: u.snapshot}
+	m.TVOnAir = func() bool {
+		snap, ok := u.snapshot()
+		if !ok {
+			return true // not known: not now
+		}
+		for _, p := range snap.Processes {
+			if p.Role == supervisor.RoleTVSlot && p.State == supervisor.StateRunning {
+				return true
+			}
+		}
+		return false
+	}
 	u.m = m
 	m.Start(ctx)
 	m.Resume()
@@ -433,8 +445,8 @@ var haltCodes = map[string]bool{"db_restored": true, "db_restore_failed": true, 
 	"db_refused_older": true, "db_no_cluster": true, "pg_major": true}
 
 // startingCodes are the start steps at work (detail_codes.json): the database step's
-// dump and migrations, the Python environment being built. However long they take, the
-// release is starting, not unhealthy (the launcher's guard bounds them).
+// dump and migrations, the Python environment being built. While they make progress the
+// release is starting, not unhealthy (the watch bounds them: updater.pendingCap).
 var startingCodes = map[string]bool{"db_waiting": true, "db_dumping": true, "db_migrating": true,
 	"db_checking": true, "db_restoring": true, "venv_waiting": true, "venv_building": true}
 
@@ -470,7 +482,8 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 	}
 	for _, p := range procs {
 		if p.State != supervisor.StateRunning && startingCodes[p.DetailCode] {
-			return updater.Verdict{Pending: true, Why: fmt.Sprintf("%s: %s", childName(p), p.Detail)}
+			// the detail moves while the step works (the dump's size, the migrations done)
+			return updater.Verdict{Pending: true, Why: fmt.Sprintf("%s: %s", childName(p), p.Detail), Progress: p.Detail}
 		}
 	}
 	for _, p := range procs {

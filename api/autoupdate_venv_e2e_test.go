@@ -21,7 +21,7 @@ import (
 const fakeBootstrap = `import argparse, glob, json, os, subprocess, sys, zipfile
 p = argparse.ArgumentParser()
 p.add_argument("--python"); p.add_argument("--payload"); p.add_argument("--venv")
-p.add_argument("--check", action="store_true")
+p.add_argument("--check", action="store_true"); p.add_argument("--extras")
 a = p.parse_args()
 py = os.path.join(a.venv, "Scripts", "python.exe") if os.name == "nt" else os.path.join(a.venv, "bin", "python")
 ok = os.path.join(a.venv, ".e2e-ok")

@@ -35,6 +35,9 @@ type Spec struct {
 	// builds its venv with the machine's own (Epic 35 design §3.4).
 	Python   string
 	Pipeline string
+	// Extras are the pipeline's extras the venv must have ("": the bootstrap's own
+	// default): a plain server's release keeps the ones the environment it replaces has.
+	Extras string
 }
 
 func (s Spec) python() string {
@@ -98,10 +101,26 @@ func Python(payload string) string {
 	return filepath.Join(payload, "python", "bin", "python3")
 }
 
-// Wheel is the payload's pipeline wheel (there is exactly one).
+// Wheel is the payload's pipeline wheel.
 func Wheel(payload string) (string, error) { return wheelIn(filepath.Join(payload, "pipeline")) }
 
+// wheelIn is a pipeline folder's wheel: the one the payload.json beside the folder names
+// (an app installed over an older one may keep the older wheel too: the Windows
+// installer's update deletes nothing), else the only one there.
 func wheelIn(dir string) (string, error) {
+	var pl struct {
+		Pipeline struct {
+			Wheel string `json:"wheel"`
+		} `json:"pipeline"`
+	}
+	if raw, err := os.ReadFile(filepath.Join(filepath.Dir(dir), "payload.json")); err == nil &&
+		json.Unmarshal(raw, &pl) == nil && pl.Pipeline.Wheel != "" {
+		named := filepath.Join(dir, filepath.Base(pl.Pipeline.Wheel))
+		if _, err := os.Stat(named); err != nil {
+			return "", fmt.Errorf("payload.json names the pipeline wheel %s, which %s does not hold", pl.Pipeline.Wheel, dir)
+		}
+		return named, nil
+	}
 	wheels, _ := filepath.Glob(filepath.Join(dir, "maktaba_pipeline-*.whl"))
 	if len(wheels) != 1 {
 		return "", fmt.Errorf("the pipeline folder %s must hold one maktaba_pipeline wheel (found %d)", dir, len(wheels))
@@ -205,6 +224,9 @@ func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error
 	bootstrap := func(extra ...string) (*exec.Cmd, *ctrlbreak.Stopper) {
 		args := append([]string{"-m", "maktaba_pipeline.venv_bootstrap", "--python", py,
 			"--payload", spec.pipeline(), "--venv", spec.Venv}, extra...)
+		if spec.Extras != "" {
+			args = append(args, "--extras", spec.Extras)
+		}
 		cmd := exec.CommandContext(ctx, py, args...)
 		cmd.Env = env
 		cmd.Stderr = logw

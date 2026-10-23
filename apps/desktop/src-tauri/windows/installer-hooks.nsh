@@ -80,6 +80,11 @@
   ${EndIf}
   Pop $R9
   Pop $R8
+  ; The pipeline wheel's name carries its version, and an update (/UPDATE: the app's own
+  ; updater) installs over the old files without uninstalling them: the old release's wheel
+  ; would stay beside the new one, and the server builds the pipeline's venv from exactly one
+  ; (Epic 35 review round 2, B-H1). The new one is copied in after this.
+  Delete "$INSTDIR\server\pipeline\maktaba_pipeline-*.whl"
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
