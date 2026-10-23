@@ -181,3 +181,15 @@ func TestFirstEpisode(t *testing.T) {
 		t.Fatal("no episodes: no first")
 	}
 }
+
+// loadEpisodes binds no user as NULL: "" is not a uuid and failed the whole
+// query, leaving the series page without its picture and hiding series a
+// viewer reaches only through their episodes.
+func TestNullIfEmpty(t *testing.T) {
+	if nullIfEmpty("") != nil {
+		t.Fatal(`"" must bind as NULL`)
+	}
+	if nullIfEmpty("u1") != "u1" {
+		t.Fatal("a user id binds as itself")
+	}
+}

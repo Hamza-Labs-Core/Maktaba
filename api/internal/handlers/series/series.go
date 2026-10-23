@@ -205,6 +205,13 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, hd)
 }
 
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 // firstEpisode is the series' first episode in its numbering, nil for none.
 func firstEpisode(group []epRow, numbering string) *epRow {
 	var first *epRow
@@ -501,7 +508,9 @@ func (h *Handler) loadEpisodes(r *http.Request, p *principal.Principal, seriesID
 		FROM series_episodes se
 		JOIN videos v ON v.id = se.video_id
 		LEFT JOIN playback_state ps ON ps.video_id = se.video_id AND ps.user_id = $1`
-	args := []any{userID}
+	// no user (visibility checks): NULL joins no playback row; an empty
+	// string is not a uuid and Postgres would fail the whole query
+	args := []any{nullIfEmpty(userID)}
 	if seriesID != "" {
 		q += ` WHERE se.series_id = $2`
 		args = append(args, seriesID)
