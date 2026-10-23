@@ -1193,13 +1193,10 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 			}
 		}
 	}
-	if !busy && d.withdrawn(ctx, run.Version, true) {
-		return nil // no machine goes: the next step ends the run (stopWithdrawn)
-	}
-	if !busy && d.switchoverOpen(ctx) {
-		return nil // no machine restarts while the home switches
-	}
-	if !busy && len(clicked) > 0 && (run.Trigger == TriggerManual || !d.machineTVBusy(ctx, clicked[0].NodeID)) {
+	// no machine goes while one applies, while the home switches, nor for a release found
+	// withdrawn (the next step ends the run: stopWithdrawn); the run may still finish
+	held := busy || d.switchoverOpen(ctx) || d.withdrawn(ctx, run.Version, true)
+	if !held && len(clicked) > 0 && (run.Trigger == TriggerManual || !d.machineTVBusy(ctx, clicked[0].NodeID)) {
 		// someone clicked on a machine: its turn comes first (it ignores the window: the
 		// person there chose the moment; not the TV it keeps on air for others)
 		t := clicked[0]
@@ -1211,9 +1208,9 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 			d.audit(ctx, run, "node_go", map[string]any{"node_id": t.NodeID})
 			_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetApplying, Applied: true})
 		}
-		busy = true
+		held = true
 	}
-	if !busy {
+	if !held {
 		targets, _ = d.Store.Targets(ctx, run.ID)
 		for _, t := range targets {
 			if t.State != TargetPrepared {
