@@ -424,7 +424,8 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 		return json.NewDecoder(r.Body).Decode(&s) == nil && s.Version == "0.9.0" && s.AgentConnected
 	})
 	// copyFollows waits for the node's copy to follow the home at schema rev, subscribed
-	// after since (a copy made anew)
+	// after since (a copy made anew): the supervisor's status of it (<data>/node/copy.json;
+	// the public /api/cluster/self leaves the schema out)
 	type copyStatus struct {
 		State       string     `json:"state"`
 		Detail      string     `json:"detail"`
@@ -435,18 +436,10 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 		t.Helper()
 		var c copyStatus
 		waitFor(t, what, 5*time.Minute, func() bool {
-			r, err := http.Get(nodeWeb + "/api/cluster/self")
-			if err != nil {
+			b, err := os.ReadFile(filepath.Join(nodeDir, "data", "node", "copy.json"))
+			if err != nil || json.Unmarshal(b, &c) != nil {
 				return false
 			}
-			defer r.Body.Close()
-			var s struct {
-				Copy *copyStatus `json:"copy"`
-			}
-			if json.NewDecoder(r.Body).Decode(&s) != nil || s.Copy == nil {
-				return false
-			}
-			c = *s.Copy
 			return c.State == "following" && c.LocalSchema == rev && c.Subscribed != nil && c.Subscribed.After(since)
 		})
 		return c
