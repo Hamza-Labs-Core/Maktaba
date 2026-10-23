@@ -168,3 +168,18 @@ func TestDriverRetryOfOneMachineTouchesOnlyIt(t *testing.T) {
 		t.Fatalf("bravo was taken in: %+v on %s", ts["bravo"], b.version)
 	}
 }
+
+// Review round 3: the driver never gives up on a home still within its own limits (a
+// large database's start steps can take longer than homeCeiling).
+func TestHomeCeilingCoversTheHomesOwnBound(t *testing.T) {
+	if got := homeCeilingFor(nil); got != homeCeiling {
+		t.Fatalf("no report: %s", got)
+	}
+	if got := homeCeilingFor(&MachineStatus{BoundSec: 3600}); got != homeCeiling {
+		t.Fatalf("a small bound: %s", got)
+	}
+	twelve := 12 * time.Hour
+	if got := homeCeilingFor(&MachineStatus{BoundSec: int(twelve.Seconds())}); got != twelve+time.Hour {
+		t.Fatalf("a large home's bound: %s", got)
+	}
+}

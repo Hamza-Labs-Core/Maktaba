@@ -132,10 +132,13 @@ updated its runtime) offers its own update for its window and tray.
    another session holds (`maktaba-api migrate --lock-timeout`, lib/pq's `lock_timeout`): it
    is tried again, the sessions ended again, at most 3 times. The watch neither commits nor
    counts the release unhealthy while the step works (or the app's Python environment is
-   built) and makes progress: the dump says its size every minute, each migration done moves
-   it on. A step that shows no progress for an hour (or three times the rehearsed migrations,
-   when longer), or runs past 2 hours plus a quarter of an hour per GiB of the database plus
-   three times the rehearsed migrations, rolls back (`start_timeout`).
+   built) and makes progress: the dump says its size every minute, the environment's install
+   its share; a step that shows no progress for an hour (or three times the rehearsed
+   migrations, when longer) rolls back (`start_timeout`). A migration's statement and a dump
+   put back show none while they work (an index built for an hour on a large home), so only
+   the cap bounds them (their lock waits are bounded by the lock timeout): 2 hours plus a
+   quarter of an hour per GiB of the database plus three times the rehearsed migrations, past
+   which any start step rolls back (`start_timeout`).
 3. **Rolling back after the migrations ran** (a check failed in the watch, or the launcher's guard
    fired): the record is set to `restoring` (failed = the new release, dump = the one above)
    before the previous release starts, and that release's database step puts the dump back
@@ -157,8 +160,10 @@ updated its runtime) offers its own update for its window and tray.
 
 ### What the run guards against
 
-- **A home that never finishes**: from its switch, the home has 6 hours to commit or roll back;
-  then the run ends (`home_timeout`), the cluster is undrained and a person told; a home that
+- **A home that never finishes**: from its switch, the home has 6 hours to commit or roll back
+  (or, when its own limits allow longer: its start steps' cap, from its database's size, and
+  its watch's bound, `bound_sec` in its status, those and an hour more); then the
+  run ends (`home_timeout`), the cluster is undrained and a person told; a home that
   commits after that raises the watermark all the same (the driver asks it), so the machines
   catch up to its release. A watch has a bound of its own (3 × the watch + the health limit,
   outside the start steps): a release whose health keeps flapping is rolled back
@@ -179,7 +184,8 @@ updated its runtime) offers its own update for its window and tray.
   the home switches the run ends (a waiting order withdrawn); a rollout orders no more
   machines; a catch-up or a retry never spreads it.
 - **A machine's install, not the release** (`not_self_managed`, `old_launcher`, `no_app_update`,
-  `launcher_protocol`, `disk_space`, `no_python`, `venv_network`, `needs_admin`, an agent from
+  `launcher_protocol`, `disk_space`, `no_python`, `venv_network`, `venv_python_unsupported`,
+  `needs_admin`, an agent from
   before automatic updates or one whose server does not update itself: "does not run
   update.prepare"): the machine needs a person (`needs_person`, a notice), node_failure_policy
   holds nobody for it, and on the home it counts no attempt (mended, the next window goes).
@@ -211,7 +217,9 @@ updated its runtime) offers its own update for its window and tray.
   installed; `dev` never), so a worker given the STT extras keeps them; packages added by hand
   outside the extras are not carried (`MAKTABA_PYTHON` still wins over the release's
   environment). Packages come from PyPI (or `PIP_INDEX_URL`, a proxy): a machine that cannot
-  reach them needs a person (`venv_network`).
+  reach them needs a person (`venv_network`); one whose Python is not the one the release's
+  pins are made for (`pipeline.python` in `release.json`), where pip finds no build of a
+  pinned package, needs a person too (`venv_python_unsupported`, naming both versions).
 
 ### Nodes
 
@@ -244,7 +252,8 @@ that comes back behind the watermark gets a `catch_up` run of its own.
 - A failed run blocks that version; the next release installs by itself, or an admin retries.
 - A machine that needs a person (`needs_person` on the Updates page, with the fix): a plain
   server without a Python 3.12 for its pipeline (`no_python`: install it, or name one in
-  `MAKTABA_PIPELINE_PYTHON`), or without PyPI (`venv_network`: give it access, a mirror in
+  `MAKTABA_PIPELINE_PYTHON`), or with another Python than the release's pins are made for
+  (`venv_python_unsupported`: install that one), or without PyPI (`venv_network`: give it access, a mirror in
   `PIP_INDEX_URL`, or a proxy), no room (`disk_space`), a launcher a package manager or a
   Windows service owns when a release needs a newer one (`launcher_protocol`), a Mac app that
   needs an administrator (`needs_admin`), the cases above.

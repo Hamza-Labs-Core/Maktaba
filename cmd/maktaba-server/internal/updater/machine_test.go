@@ -212,13 +212,25 @@ type fakeHealth struct {
 	// moving: a start step that makes progress (its Progress changes every check)
 	moving bool
 	n      int
+	// turnAt > 0: the verdict becomes turn at that check
+	checks, turnAt int
+	turn           Verdict
 }
 
 func (h *fakeHealth) set(v Verdict) { h.mu.Lock(); h.v = v; h.mu.Unlock() }
 func (h *fakeHealth) setMoving()    { h.mu.Lock(); h.moving = true; h.mu.Unlock() }
+func (h *fakeHealth) turnAfter(n int, v Verdict) {
+	h.mu.Lock()
+	h.turnAt, h.turn = h.checks+n, v
+	h.mu.Unlock()
+}
 func (h *fakeHealth) Check(context.Context, string) Verdict {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.checks++
+	if h.turnAt > 0 && h.checks >= h.turnAt {
+		h.v, h.turnAt = h.turn, 0
+	}
 	v := h.v
 	if h.moving && v.Pending {
 		h.n++

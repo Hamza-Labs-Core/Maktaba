@@ -450,6 +450,12 @@ var haltCodes = map[string]bool{"db_restored": true, "db_restore_failed": true, 
 var startingCodes = map[string]bool{"db_waiting": true, "db_dumping": true, "db_migrating": true,
 	"db_checking": true, "db_restoring": true, "venv_waiting": true, "venv_building": true}
 
+// unmeasuredCodes are the start steps whose progress cannot be seen while they work: a
+// migration's statement (an index built for an hour on a large home), a dump put back.
+// Only the watch's cap bounds them (updater.Verdict.Unmeasured); a migration's lock wait is
+// bounded by its lock timeout.
+var unmeasuredCodes = map[string]bool{"db_migrating": true, "db_checking": true, "db_restoring": true}
+
 func (h *machineHealth) client() *http.Client {
 	if h.http != nil {
 		return h.http
@@ -480,11 +486,23 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		}
 		procs = append(procs, p)
 	}
+	var pending []supervisor.ChildStatus
 	for _, p := range procs {
 		if p.State != supervisor.StateRunning && startingCodes[p.DetailCode] {
-			// the detail moves while the step works (the dump's size, the migrations done)
-			return updater.Verdict{Pending: true, Why: fmt.Sprintf("%s: %s", childName(p), p.Detail), Progress: p.Detail}
+			pending = append(pending, p)
 		}
+	}
+	if len(pending) > 0 {
+		// every waiting process's detail: it moves while the step works (the dump's size,
+		// the migrations done, the environment's install), in whichever process runs it
+		v := updater.Verdict{Pending: true, Why: fmt.Sprintf("%s: %s", childName(pending[0]), pending[0].Detail)}
+		var progress strings.Builder
+		for _, p := range pending {
+			progress.WriteString(childName(p) + ": " + p.Detail + "\n")
+			v.Unmeasured = v.Unmeasured || unmeasuredCodes[p.DetailCode]
+		}
+		v.Progress = progress.String()
+		return v
 	}
 	for _, p := range procs {
 		if p.State != supervisor.StateRunning {

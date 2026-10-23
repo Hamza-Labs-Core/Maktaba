@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -65,5 +66,24 @@ func TestMachineHealthChecksThePipelineVersion(t *testing.T) {
 	status, body = 200, `{"status":"ok","version":"0.0.1"}`
 	if v := h.Check(context.Background(), "v1.5.0-rc.1"); !v.Healthy {
 		t.Fatalf("under MAKTABA_PYTHON: %+v", v)
+	}
+}
+
+// Review round 3: the start step's progress is every waiting process's detail (whichever
+// runs the step), and a migration's statement or a dump put back is unmeasured (no stall
+// limit: only the watch's cap bounds it).
+func TestMachineHealthStartSteps(t *testing.T) {
+	procs := []supervisor.ChildStatus{
+		{Role: supervisor.RoleStreaming, State: supervisor.StateStarting, DetailCode: "db_waiting", Detail: "Waiting for the library database"},
+		{Role: supervisor.RoleAPI, State: supervisor.StateStarting, DetailCode: "db_dumping", Detail: "Saving (100 MB so far)"},
+	}
+	h := &machineHealth{snap: func() (supervisor.Snapshot, bool) { return supervisor.Snapshot{Processes: procs}, true }}
+	v := h.Check(context.Background(), "v1.5.0")
+	if !v.Pending || v.Unmeasured || !strings.Contains(v.Progress, "100 MB so far") {
+		t.Fatalf("dumping: %+v", v)
+	}
+	procs[1].DetailCode, procs[1].Detail = "db_migrating", "Updating the library database for v1.5.0 (2 migrations done)"
+	if v := h.Check(context.Background(), "v1.5.0"); !v.Pending || !v.Unmeasured {
+		t.Fatalf("migrating: %+v", v)
 	}
 }

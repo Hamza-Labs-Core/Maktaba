@@ -469,10 +469,14 @@ func (ai *AppInstaller) Revert(_ context.Context, j *Journal) error {
 }
 
 // appTouched says the app may have changed its bundle for j's run: its order says it
-// began installing (or failed doing it).
+// began installing (or failed doing it). An app that refused because it cannot replace
+// itself without an administrator (needs_admin) changed nothing.
 func (ai *AppInstaller) appTouched(j *Journal) bool {
 	q, err := ai.requests().read()
 	if err != nil || q.RunID != j.Job.RunID {
+		return false
+	}
+	if code, _ := appFailure(q.Error); q.State == RequestFailed && code == "needs_admin" {
 		return false
 	}
 	return q.State == RequestInstalling || q.State == RequestFailed

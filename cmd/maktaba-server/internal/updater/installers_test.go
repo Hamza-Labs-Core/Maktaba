@@ -570,3 +570,65 @@ func TestPreflightNeedsRoom(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Review round 3: pip's "no matching distribution" on a machine whose Python is not the
+// one the release's pins were made for (release.json's pipeline.python) is that Python's
+// (venv_python_unsupported, naming both), not PyPI out of reach; on the right Python it is
+// the package source's (venv_network). The second stage is a prepare tried again: what the
+// first fetched into the release's pipeline folder is kept, not refused.
+func TestReleaseVenvOnAnotherPython(t *testing.T) {
+	rs := newReleases(t)
+	ctx := context.Background()
+	l := layout.New(t.TempDir())
+	_, assets := rs.publish(t, "v1.5.0", releaseverifytest.ReleaseOptions{MinUpgradeFrom: "1.4.0"}, nil)
+	if err := l.WritePointer(layout.CurrentFile, "1.4.0"); err != nil {
+		t.Fatal(err)
+	}
+	li := &LayoutInstaller{Layout: l, Source: rs.source(), Version: "1.4.0"}
+	t.Setenv(envPipelinePython, "/opt/python3.13/bin/python3")
+	prevBuild, prevVersion := venvBuild, pythonVersion
+	t.Cleanup(func() { venvBuild, pythonVersion = prevBuild, prevVersion })
+	venvBuild = func(context.Context, appvenv.Spec, func(appvenv.Progress)) (appvenv.Result, error) {
+		return appvenv.Result{}, &appvenv.Error{Message: "ERROR: Could not find a version that satisfies the requirement " +
+			"torch==2.5.1 (from versions: none)\nERROR: No matching distribution found for torch==2.5.1"}
+	}
+	for have, want := range map[string]string{"3.13.1": "venv_python_unsupported", "3.12.4": "venv_network"} {
+		pythonVersion = func(context.Context, string) string { return have }
+		j := &Journal{Job: jobFor("v1.5.0", assets), From: "1.4.0"}
+		var f *Failure
+		if err := li.Stage(ctx, j, nil); !errors.As(err, &f) || f.Code != want {
+			t.Fatalf("Python %s: %v, want %s", have, err, want)
+		}
+		if want == "venv_python_unsupported" && (!strings.Contains(f.Detail, "Python 3.12") || !strings.Contains(f.Detail, "3.13.1")) {
+			t.Fatalf("the detail names no versions: %s", f.Detail)
+		}
+	}
+}
+
+// Review round 3: a Mac app that refused the order because it cannot replace itself
+// without an administrator (needs_admin) changed nothing: a switch back runs its own
+// untouched payload, not the kept copy.
+func TestAppRefusalNeedsAdminTouchedNothing(t *testing.T) {
+	lroot := t.TempDir()
+	ai := &AppInstaller{LauncherRoot: lroot, Version: "1.4.0"}
+	j := &Journal{Job: jobFor("v1.5.0", nil), From: "1.4.0"}
+	path := filepath.Join(lroot, "updates", AppRequestFile)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for state, touched := range map[string]bool{
+		RequestFailed + "|needs_admin: /Applications is not this user's to change": false,
+		RequestFailed + "|the installer exited 2":                                  true,
+		RequestInstalling + "|":                                                    true,
+		RequestClicked + "|":                                                       false,
+	} {
+		st, why, _ := strings.Cut(state, "|")
+		b, _ := json.Marshal(AppRequest{RunID: j.Job.RunID, Version: "1.5.0", State: st, Error: why})
+		if err := layout.WriteFileAtomic(path, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := ai.appTouched(j); got != touched {
+			t.Errorf("%s %q: touched %v", st, why, got)
+		}
+	}
+}

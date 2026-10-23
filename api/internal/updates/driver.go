@@ -357,8 +357,20 @@ func (d *Driver) advance(ctx context.Context, run Run) error {
 }
 
 // homeCeiling is how long the home may take from its switch to its commit (or its
-// rollback) before the run gives up on it: the cluster is undrained and a person told.
+// rollback) before the run gives up on it: the cluster is undrained and a person told. A
+// home whose own limits allow longer (a large database's start steps) gets those and an
+// hour more (homeCeilingFor).
 const homeCeiling = 6 * time.Hour
+
+// homeCeilingFor is homeCeiling, or the home's own bound (MachineStatus.BoundSec) and an
+// hour more when that is longer: the driver never gives up on a home still within it.
+func homeCeilingFor(st *MachineStatus) time.Duration {
+	c := homeCeiling
+	if st != nil && st.BoundSec > 0 {
+		c = max(c, time.Duration(st.BoundSec)*time.Second+time.Hour)
+	}
+	return c
+}
 
 // stopWithdrawn ends a run whose release was withdrawn meanwhile (the GitHub release
 // gone, turned prerelease, re-published with other files), as far as it can: before the
@@ -756,12 +768,12 @@ func (d *Driver) homeClicked(ctx context.Context, run Run, det RunDetail) error 
 }
 
 func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error {
-	if det.ApplySince != nil && d.now().Sub(*det.ApplySince) > homeCeiling {
+	if ceiling := homeCeilingFor(det.Home); det.ApplySince != nil && d.now().Sub(*det.ApplySince) > ceiling {
 		// neither committed nor rolled back in hours (a supervisor that does not answer, a
 		// watch that never ends): the cluster is undrained and a person told
 		d.notify(ctx, NoticeNeedsPerson, notify.SeverityError, run, map[string]any{"code": "home_timeout"})
 		return d.finish(ctx, run, det, RunFailed, map[string]any{"code": "home_timeout",
-			"detail": fmt.Sprintf("the home did not finish the update within %s of its switch", homeCeiling)})
+			"detail": fmt.Sprintf("the home did not finish the update within %s of its switch", ceiling)})
 	}
 	st, err := d.homeStatus(ctx, run, &det)
 	if err != nil || st == nil {
@@ -1376,10 +1388,11 @@ func (d *Driver) targetFailed(ctx context.Context, run Run, pol Policy, t Target
 
 // needsPersonCodes are failures of a machine's install, not of the release: an install
 // that cannot update itself, an app or launcher too old for it, an app this user cannot
-// replace, no room for it, no Python or no PyPI for its pipeline's environment.
+// replace, no room for it, no Python (or not one the release's pins were made for) or no
+// PyPI for its pipeline's environment.
 var needsPersonCodes = map[string]bool{"not_self_managed": true, "old_launcher": true, "no_app": true,
 	"no_app_update": true, "launcher_protocol": true, "disk_space": true, "not_writable": true, "no_runtime": true,
-	"no_python": true, "venv_network": true, "needs_admin": true}
+	"no_python": true, "venv_network": true, "venv_python_unsupported": true, "needs_admin": true}
 
 func needsPerson(doc map[string]any) bool {
 	code, _ := doc["code"].(string)

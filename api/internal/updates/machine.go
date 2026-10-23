@@ -63,6 +63,9 @@ type MachineStatus struct {
 	// Pending: the release that came up is busy with a start step (the database step, the
 	// Python environment): its watch waits, and so does the run's timeout.
 	Pending string `json:"pending,omitempty"`
+	// BoundSec is how long the machine's own limits let the run go on from its switch (its
+	// start steps' cap, from its database's size, and its watch's bound).
+	BoundSec int `json:"bound_sec,omitempty"`
 }
 
 // RunID is the run the report is of ("" none).

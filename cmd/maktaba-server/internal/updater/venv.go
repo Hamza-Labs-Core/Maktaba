@@ -54,6 +54,14 @@ func (li *LayoutInstaller) buildVenv(ctx context.Context, j *Journal, res *relea
 			return Fail("release_incomplete", "%s has no %s", j.Job.Tag, n)
 		}
 		path := filepath.Join(pipe, n)
+		if _, err := os.Stat(path); err == nil {
+			// a prepare tried again (its environment failed the last time): what verifies
+			// is kept, anything else fetched anew
+			if res.VerifyArtifact(releaseverify.Artifact{Name: n, Path: path}) == nil {
+				continue
+			}
+			_ = os.Remove(path)
+		}
 		if err := li.Source.downloadTo(ctx, u, path, 512<<20); err != nil {
 			return Fail("download_failed", "%s: %v", n, err)
 		}
@@ -81,6 +89,14 @@ func (li *LayoutInstaller) buildVenv(ctx context.Context, j *Journal, res *relea
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if have := pythonVersion(ctx, py); pipFoundNoBuild(err.Error()) && p.Python != "" && have != "" &&
+			!sameMinor(have, p.Python) {
+			// pip's "no matching distribution" for a Python the release's pins were not made
+			// for (a 3.13 machine): the machine's Python, a person's (not PyPI out of reach)
+			return Fail("venv_python_unsupported", "the release's pipeline packages are pinned for Python %s, and "+
+				"this machine's Python is %s (%s): install Python %s, or name one in %s: %v",
+				p.Python, have, py, p.Python, envPipelinePython, err)
+		}
 		if networkFailure(err.Error()) {
 			// the machine's, not the release's: a person gives it PyPI (or a mirror)
 			return Fail("venv_network", "the pipeline's Python packages could not be downloaded: this machine cannot "+
@@ -89,6 +105,38 @@ func (li *LayoutInstaller) buildVenv(ctx context.Context, j *Journal, res *relea
 		return Fail("venv_failed", "%v", err)
 	}
 	return nil
+}
+
+// pipFoundNoBuild says pip found no build of a pinned package: for a Python the pins were
+// not made for, or from an index it could not reach (it says the same then).
+func pipFoundNoBuild(msg string) bool {
+	msg = strings.ToLower(msg)
+	return strings.Contains(msg, "could not find a version that satisfies") ||
+		strings.Contains(msg, "no matching distribution found")
+}
+
+// sameMinor says two Python versions are the same major.minor ("3.12.4" and "3.12").
+func sameMinor(a, b string) bool {
+	minor := func(v string) string {
+		parts := strings.SplitN(strings.TrimSpace(v), ".", 3)
+		if len(parts) < 2 {
+			return v
+		}
+		return parts[0] + "." + parts[1]
+	}
+	return minor(a) == minor(b)
+}
+
+// pythonVersion is an interpreter's version ("3.12.4"; "" when it does not say). Tests
+// replace it.
+var pythonVersion = func(ctx context.Context, py string) string {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, py, "-I", "-c", "import sys; print('%d.%d.%d' % sys.version_info[:3])").Output()
+	if err != nil {
+		return ""
+	}
+	return lastLine(out)
 }
 
 // networkFailure says pip could not download the packages (no route to PyPI, a name

@@ -307,3 +307,28 @@ func TestRollbackThatCannotSwitchBackKeepsTheDatabase(t *testing.T) {
 	default:
 	}
 }
+
+// Review round 3: a start step whose progress cannot be seen (one long migration
+// statement, an index built for more than an hour on a large home) is not stalled: only
+// pendingCap bounds it.
+func TestWatchLetsAnUnmeasuredStepRunPastTheStallLimit(t *testing.T) {
+	w := newWorld("1.4.0")
+	r := startRig(t, t.TempDir(), w, healthy)
+	_ = r.m.Prepare(homeJob())
+	r.waitState(StatePrepared)
+	// a large home: its cap is hours past the stall limit
+	_ = r.m.mutate(func(j *Journal) { j.Rehearsal = &Rehearsal{Skipped: "large", DBBytes: 40 << 30} })
+	_ = r.m.Apply("run-1")
+	r.waitExit()
+	w.migrated = true
+	n := r.restart(Verdict{Pending: true, Unmeasured: true, Why: "api: Updating the library database (2 migrations done)",
+		Progress: "2 migrations done"})
+	n.health.turnAfter(150, healthy) // 150 checks: hours on the fake clock
+	j := n.waitState(StateCommitted)
+	if time.Duration(j.PendingSec)*time.Second < stallLimit(j) || j.Reason != "" || w.marked {
+		t.Fatalf("pending %d s (stall limit %s), reason %q, marked %v", j.PendingSec, stallLimit(j), j.Reason, w.marked)
+	}
+	if want := int((pendingCap(j) + j.Job.WatchBound()).Seconds()); n.m.Status().BoundSec != want {
+		t.Fatalf("bound %d, want %d", n.m.Status().BoundSec, want)
+	}
+}

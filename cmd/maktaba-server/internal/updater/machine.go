@@ -109,7 +109,11 @@ type Verdict struct {
 	// Progress is what the start step has done so far (it changes while the step works:
 	// the dump's size, the migrations done, the environment's install).
 	Progress string
-	Why      string
+	// Unmeasured: the step's progress cannot be seen (one migration's statement, an index
+	// built for an hour on a large home; a dump put back): no stall limit, only pendingCap
+	// (lock waits are bounded by the migrations' lock timeout).
+	Unmeasured bool
+	Why        string
 }
 
 // Health judges the running release.
@@ -273,13 +277,21 @@ type Status struct {
 	Kind    string `json:"installer"`
 	// Asks: this machine installs only once someone clicks on it (Asker).
 	Asks bool `json:"asks,omitempty"`
+	// BoundSec is how long this machine's own limits let the run go on from its switch
+	// (its start steps' cap and its watch's bound): the home's driver waits at least that
+	// long before it gives up on the home.
+	BoundSec int `json:"bound_sec,omitempty"`
 }
 
 // Status reports this machine's run.
 func (m *Machine) Status() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return Status{Journal: m.j.clone(), Running: m.Installer.Running(), Kind: m.Installer.Kind(), Asks: m.asker() != nil}
+	st := Status{Journal: m.j.clone(), Running: m.Installer.Running(), Kind: m.Installer.Kind(), Asks: m.asker() != nil}
+	if st.Journal != nil {
+		st.BoundSec = int((pendingCap(st.Journal) + st.Journal.Job.WatchBound()).Seconds())
+	}
+	return st
 }
 
 // asker is the installer when it waits for a click.
@@ -1008,7 +1020,7 @@ func (m *Machine) watch(ctx context.Context) {
 				_ = m.mutate(func(j *Journal) { j.Pending = why })
 				m.logf("starting: %s", v.Why)
 			}
-			if progressAt.IsZero() || v.Progress != progress {
+			if progressAt.IsZero() || v.Progress != progress || v.Unmeasured {
 				progress, progressAt = v.Progress, now
 			}
 			if pending >= capped {
