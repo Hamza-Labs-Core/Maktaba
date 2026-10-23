@@ -325,6 +325,17 @@ func (ln *launcher) bundlePayload() string {
 				return ln.cfg.Bundle
 			}
 		}
+		if materializeOnWindows {
+			// the kept copy goes back into the app's own folder, where the firewall's
+			// rules name its programs (the server is stopped here)
+			self, _ := os.Executable()
+			if err := materialize(ln.cfg.Bundle, o, self); err != nil {
+				ln.log.Event("launcher_materialize_error", "", map[string]any{"payload": o, "err": err.Error()})
+			} else if err := layout.WriteOverride(ln.cfg.Root, ""); err == nil {
+				ln.log.Event("launcher_materialized", payloadVersion(ln.cfg.Bundle), map[string]any{"payload": o})
+				return ln.cfg.Bundle
+			}
+		}
 		if _, err := os.Stat(filepath.Join(o, "bin", layout.Exe("maktaba-server"))); err == nil {
 			return o
 		}

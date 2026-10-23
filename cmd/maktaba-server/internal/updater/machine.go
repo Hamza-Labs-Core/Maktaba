@@ -47,6 +47,33 @@ type Installer interface {
 	Discard(ctx context.Context, j *Journal) error
 }
 
+// Extender is an installer whose launcher's guard has a deadline: the watch pushes it
+// on while the new release is busy starting (the home's database step dumps and
+// migrates for as long as the database takes), and when it first comes up (an app's
+// install may have taken a while since the switch).
+type Extender interface {
+	Extend(j *Journal, until time.Time) error
+}
+
+// guardMargin is how far the watch keeps the launcher's guard ahead of now while the
+// release starts.
+const guardMargin = 15 * time.Minute
+
+// extendGuard pushes the launcher's guard to until (best effort).
+func (m *Machine) extendGuard(until time.Time) {
+	e, ok := m.Installer.(Extender)
+	if !ok {
+		return
+	}
+	j := m.Status().Journal
+	if j == nil {
+		return
+	}
+	if err := e.Extend(j, until); err != nil {
+		m.logf("cannot push the launcher's guard on: %v", err)
+	}
+}
+
 // Verdict is the watch's view of the release that came up.
 type Verdict struct {
 	Healthy bool
@@ -723,9 +750,14 @@ func (m *Machine) askFailed(runID string, err error) {
 // runs; a watch goes on in the background.
 func (m *Machine) Resume() {
 	j, err := LoadJournal(m.Dir)
-	if err != nil {
+	if errors.Is(err, ErrJournalUnreadable) {
 		m.logf("the journal cannot be read (%v): set aside", err)
 		_ = setAside(m.Dir, m.now())
+		return
+	}
+	if err != nil {
+		// the file's, not the journal's: left as it is for the next start
+		m.logf("the journal cannot be opened now (%v): the next start takes the run up", err)
 		return
 	}
 	if j == nil {
@@ -776,21 +808,41 @@ func (m *Machine) Resume() {
 				Detail: "the machine stopped during the switch; it runs " + orNone(running) + " again"}
 		})
 		m.logf("the apply of %s was interrupted: %s runs", j.Job.Version, orNone(running))
-	case StateRestarting:
+	case StateRestarting, StateWatching:
 		if newRel {
-			_ = m.endStep(StepRestart, "done", "")
+			if j.State == StateRestarting {
+				_ = m.endStep(StepRestart, "done", "")
+			}
 			m.beginWatch("")
+			return
+		}
+		if running != "" && layout.CompareVersions(running, j.Job.Version) > 0 {
+			// a newer release runs (installed by hand meanwhile): the run is over, and
+			// nothing is switched back under it (its database is the newer one's)
+			_ = m.mutate(func(j *Journal) {
+				j.State, j.Step = StateApplyFailed, ""
+				j.Error = &Failure{Step: StepWatch, Code: "replaced_by_newer",
+					Detail: fmt.Sprintf("%s runs now, newer than %s", running, j.Job.Version)}
+			})
+			m.logf("%s runs now, newer than %s: the run is over", running, j.Job.Version)
+			return
+		}
+		if f := m.installFailure(j); f != nil && j.State == StateRestarting {
+			// the app said its install failed (after it had stopped the server for it):
+			// nothing was installed, and that is what the run says
+			_ = m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) })
+			_ = m.endStep(StepRestart, "failed", f.Error())
+			_ = m.mutate(func(j *Journal) { j.State, j.Error = StateApplyFailed, f })
+			m.logf("the install of %s failed: %s", j.Job.Version, f.Error())
 			return
 		}
 		// it came back on the previous release: the launcher's guard, or the app's
 		// install did not happen
-		m.cameBackOld(running, "did_not_start")
-	case StateWatching:
-		if newRel {
-			m.beginWatch("")
-			return
+		why := "did_not_start"
+		if j.State == StateWatching {
+			why = "did_not_stay_up"
 		}
-		m.cameBackOld(running, "did_not_stay_up")
+		m.cameBackOld(running, why)
 	case StateRollingBack:
 		if newRel {
 			// the switch back did not take: again
@@ -801,6 +853,19 @@ func (m *Machine) Resume() {
 		_ = m.mutate(func(j *Journal) { j.State, j.Step = StateRolledBack, "" })
 		m.logf("rolled back to %s (%s)", orNone(running), j.Reason)
 	}
+}
+
+// InstallReporter is an installer whose install is someone else's (the desktop app's):
+// the failure it reported, if any.
+type InstallReporter interface {
+	InstallFailure(j *Journal) *Failure
+}
+
+func (m *Machine) installFailure(j *Journal) *Failure {
+	if r, ok := m.Installer.(InstallReporter); ok {
+		return r.InstallFailure(j)
+	}
+	return nil
 }
 
 // cameBackOld records a run whose new release did not stay running: the launcher's
@@ -846,6 +911,10 @@ func (m *Machine) beginWatch(note string) {
 		m.rollback("restarts")
 		return
 	}
+	// the guard's deadline ran from the switch; the watch begins now
+	if j := m.Status().Journal; j != nil {
+		m.extendGuard(m.now().Add(j.Job.Watch() + j.Job.HealthLimit() + guardMargin))
+	}
 	ctx := m.ctx()
 	m.running.Add(1)
 	go func() {
@@ -858,9 +927,11 @@ func (m *Machine) beginWatch(note string) {
 // stayed unhealthy for its health limit, or failed fatally (roll back).
 func (m *Machine) watch(ctx context.Context) {
 	j := m.Status().Journal
-	watch, limit := j.Job.Watch(), j.Job.HealthLimit()
+	watch, limit, bound := j.Job.Watch(), j.Job.HealthLimit(), j.Job.WatchBound()
 	m.logf("watching %s: healthy for %s commits it", j.Job.Version, watch)
-	var healthySince, unhealthySince time.Time
+	var healthySince, unhealthySince, extended time.Time
+	watched := time.Duration(j.WatchedSec) * time.Second
+	last, saved := m.now(), watched
 	pendingSaid := ""
 	t := time.NewTicker(m.checkEvery())
 	defer t.Stop()
@@ -873,19 +944,42 @@ func (m *Machine) watch(ctx context.Context) {
 			return // the supervisor stops: the next start goes on watching
 		}
 		now := m.now()
+		if !v.Pending {
+			watched += now.Sub(last)
+			if pendingSaid != "" {
+				pendingSaid = ""
+				_ = m.mutate(func(j *Journal) { j.Pending = "" })
+			}
+		}
+		last = now
+		if watched-saved >= 30*time.Second {
+			saved = watched
+			_ = m.mutate(func(j *Journal) { j.WatchedSec = int(watched / time.Second) })
+		}
 		switch {
 		case v.Fatal:
 			m.logf("the new release fails: %s", v.Why)
 			m.rollback(v.Why)
 			return
 		case v.Pending:
-			// starting (the database step): no clock runs, and nothing is rolled back
-			// under the step's feet
+			// starting (the database step): no clock runs, nothing is rolled back under
+			// the step's feet, and the launcher's guard is kept ahead of it
 			healthySince, unhealthySince = time.Time{}, time.Time{}
 			if v.Why != pendingSaid {
 				pendingSaid = v.Why
+				why := v.Why
+				_ = m.mutate(func(j *Journal) { j.Pending = why })
 				m.logf("starting: %s", v.Why)
 			}
+			if now.Sub(extended) >= time.Minute {
+				extended = now
+				m.extendGuard(now.Add(guardMargin))
+			}
+		case watched >= bound:
+			// neither healthy long enough nor unhealthy long enough: a flapping release
+			m.logf("no verdict within %s of watching: %s", bound, v.Why)
+			m.rollback("watch_timeout")
+			return
 		case v.Healthy:
 			unhealthySince = time.Time{}
 			if healthySince.IsZero() {
@@ -943,8 +1037,19 @@ func (m *Machine) rollback(reason string) {
 		m.logf("cannot roll back (no previous release): %s", reason)
 		return
 	}
+	if j.Rollbacks >= 2 {
+		// switched back twice and the new release came up again both times (an install
+		// cut short that the switch back cannot undo): a person decides, no more loops
+		_ = m.mutate(func(j *Journal) {
+			j.State, j.Reason = StateFailed, reason
+			j.Error = &Failure{Step: StepRollback, Code: "rollback_loop",
+				Detail: fmt.Sprintf("the switch back to %s did not take twice: %s", orNone(j.From), reason)}
+		})
+		m.logf("the switch back to %s did not take twice: a person is needed", orNone(j.From))
+		return
+	}
 	_ = m.endStep(StepWatch, "failed", reason)
-	_ = m.mutate(func(j *Journal) { j.State, j.Reason = StateRollingBack, reason })
+	_ = m.mutate(func(j *Journal) { j.State, j.Reason, j.Rollbacks = StateRollingBack, reason, j.Rollbacks+1 })
 	_ = m.beginStep(StepRollback)
 	m.logf("rolling back %s to %s: %s", j.Job.Version, orNone(j.From), reason)
 	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)

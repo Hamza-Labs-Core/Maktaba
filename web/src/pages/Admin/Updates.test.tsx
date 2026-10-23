@@ -14,6 +14,8 @@ vi.mock("../../lib/api", async () => {
 
 import { I18nProvider } from "../../lib/i18n";
 import { ToastProvider } from "@ds/components/Toast/Toast";
+import en from "../../i18n/en.json";
+import ar from "../../i18n/ar.json";
 import { AdminUpdates, stateTone } from "./Updates";
 
 const target = { version: "1.5.0", tag: "v1.5.0", channel: "stable", verify_state: "verified" };
@@ -94,6 +96,35 @@ const runView = {
   ],
   targets: [],
 };
+
+/** One machine of a run. */
+function machine(node_id: string, name: string, state: string, over: Record<string, unknown> = {}) {
+  return {
+    node_id,
+    name,
+    ord: 0,
+    platform: "windows-amd64",
+    kind: "appbundle",
+    state,
+    from_version: "1.4.0",
+    to_version: "1.5.0",
+    attempts: 0,
+    ...over,
+  };
+}
+
+const finishedAt = "2026-10-23T03:40:00Z";
+
+/** A flat install the run cannot update: it needs a person, its detail says what to do. */
+const needsPerson = machine("n2", "nas-box", "needs_person", {
+  platform: "linux-amd64",
+  kind: "flat",
+  error: {
+    code: "not_self_managed",
+    detail:
+      "this install has no launcher to fall back with: run `maktaba-server setup --service` once, and it updates itself from then on",
+  },
+});
 
 function routes(ov: unknown, view: unknown, runs: unknown[] = []) {
   get.mockImplementation((path: string) => {
@@ -254,7 +285,7 @@ describe("Admin Updates", () => {
     renderPage();
     const failed = await screen.findByTestId("updates-target-n1");
     expect(failed).toHaveTextContent("rolled back");
-    expect(failed).toHaveTextContent("app_install_failed");
+    expect(failed).toHaveTextContent("The desktop app could not install the update");
     expect(screen.getByTestId("updates-target-n3")).toHaveTextContent(
       "studio-pc failed on the same platform"
     );
@@ -267,6 +298,176 @@ describe("Admin Updates", () => {
       expect(post).toHaveBeenCalledWith("/api/cluster/updates/runs/run-1/resume", {})
     );
     expect(screen.getByTestId("updates-history")).toHaveTextContent("1.4.0 → 1.5.0");
+  });
+
+  it("a desktop app waiting for its click, or clicked, may be skipped (its order is withdrawn)", async () => {
+    const rolling = { ...liveRun, state: "rolling_out", step: "waiting_click" };
+    routes(overview({ run: rolling }), {
+      ...runView,
+      ...rolling,
+      detail: {},
+      targets: [
+        machine("n1", "studio-pc", "waiting_click"),
+        machine("n3", "office-pc", "clicked", { ord: 1 }),
+        machine("n4", "den-pc", "applying", { ord: 2 }),
+      ],
+    });
+    post.mockResolvedValue({ skipped: "n1" });
+    const user = userEvent.setup();
+    renderPage();
+    const waiting = await screen.findByTestId("updates-target-n1");
+    expect(waiting).toHaveTextContent("waiting for a click");
+    const clicked = screen.getByTestId("updates-target-n3");
+    expect(within(clicked).getByRole("button", { name: "Skip" })).toBeEnabled();
+    // one already installing finishes on its own
+    expect(
+      within(screen.getByTestId("updates-target-n4")).queryByRole("button", { name: "Skip" })
+    ).toBeNull();
+    await user.click(within(waiting).getByRole("button", { name: "Skip" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/runs/run-1/targets/n1/skip", {})
+    );
+  });
+
+  it("a machine that needs a person: what to do (the command), and Skip while the run goes on", async () => {
+    const rolling = { ...liveRun, state: "rolling_out", step: "" };
+    routes(overview({ run: rolling }), {
+      ...runView,
+      ...rolling,
+      detail: {},
+      targets: [needsPerson],
+    });
+    post.mockResolvedValue({ skipped: "n2" });
+    const user = userEvent.setup();
+    renderPage();
+    const row = await screen.findByTestId("updates-target-n2");
+    expect(row).toHaveTextContent("needs you");
+    expect(within(row).getByTestId("updates-target-n2-error")).toHaveTextContent(
+      "This install cannot update itself yet"
+    );
+    const fix = within(row).getByTestId("updates-target-n2-error-detail");
+    expect(fix).toHaveTextContent("it updates itself from then on");
+    expect(within(fix).getByText("maktaba-server setup --service").tagName).toBe("CODE");
+    expect(within(row).queryByRole("button", { name: "Retry" })).toBeNull();
+    await user.click(within(row).getByRole("button", { name: "Skip" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/runs/run-1/targets/n2/skip", {})
+    );
+  });
+
+  it("a machine that needs a person may be retried once the run is over", async () => {
+    const over = {
+      ...runView,
+      state: "done_with_failures",
+      finished_at: finishedAt,
+      detail: {},
+      targets: [needsPerson],
+    };
+    routes(
+      overview({
+        last_run: { ...liveRun, state: "done_with_failures", finished_at: finishedAt },
+      }),
+      over,
+      [over]
+    );
+    post.mockResolvedValue({ run_id: "run-2" });
+    const user = userEvent.setup();
+    renderPage();
+    const row = await screen.findByTestId("updates-target-n2");
+    expect(within(row).getByText("maktaba-server setup --service")).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Skip" })).toBeNull();
+    await user.click(within(row).getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/runs/run-1/targets/n2/retry", {})
+    );
+  });
+
+  const applying = { ...liveRun, state: "home_applying", step: "applying" };
+  const applyingView = {
+    ...runView,
+    ...applying,
+    detail: { home: { state: "applying" } },
+    steps: [
+      ...runView.steps,
+      { seq: 3, host: "home", step: "ask", state: "done", started_at: "2026-10-23T03:02:00Z" },
+      {
+        seq: 4,
+        host: "home",
+        step: "switch",
+        state: "running",
+        started_at: "2026-10-23T03:09:00Z",
+      },
+    ],
+    targets: [needsPerson],
+  };
+  const updatingHome = [
+    { id: "home", name: "home", role: "home", version: "1.4.0", state: "updating", kind: "layout" },
+  ];
+
+  it("names the home's click step and its updating state", async () => {
+    routes(overview({ run: applying, machines: updatingHome }), applyingView);
+    renderPage();
+    expect(await screen.findByTestId("updates-home-steps")).toHaveTextContent(
+      "Wait for a click in Maktaba on this machine"
+    );
+    expect(screen.getByTestId("updates-machine-home")).toHaveTextContent("updating");
+  });
+
+  it("reads a run under way in Arabic: no raw key, no English", async () => {
+    routes(overview({ run: applying, machines: updatingHome }), applyingView);
+    renderPage("ar");
+    const steps = await screen.findByTestId("updates-home-steps");
+    expect(steps).toHaveTextContent("انتظار نقرة في مكتبة على هذا الجهاز");
+    expect(screen.getByTestId("updates-machine-home")).toHaveTextContent("قيد التحديث");
+    const row = screen.getByTestId("updates-target-n2");
+    expect(row).toHaveTextContent("يحتاجك");
+    expect(row).toHaveTextContent("لا يستطيع هذا التثبيت تحديث نفسه بعد");
+    expect(screen.getByTestId("updates-run")).not.toHaveTextContent(/updates\.|needs you|ask\b/);
+  });
+
+  it("a stop it has words for reads as them with its detail; one it has none for, as its code", async () => {
+    const failed = {
+      ...runView,
+      state: "failed",
+      finished_at: finishedAt,
+      detail: {},
+      error: { code: "home_timeout", detail: "the home did not finish updating within 45 min" },
+      targets: [
+        machine("n1", "studio-pc", "some_new_state", { error: { code: "something_new" } }),
+        machine("n3", "office-pc", "failed_prepare", { ord: 1, error: { code: "stage_failed" } }),
+        machine("n4", "den-pc", "failed_prepare", { ord: 2, error: { code: "verify_new_check" } }),
+      ],
+    };
+    routes(
+      overview({ last_run: { ...liveRun, state: "failed", finished_at: finishedAt } }),
+      failed,
+      [failed]
+    );
+    renderPage();
+    const stop = await screen.findByTestId("updates-run-error");
+    expect(stop).toHaveTextContent("The home took too long to update");
+    expect(screen.getByTestId("updates-run-error-detail")).toHaveTextContent("within 45 min");
+    const unknown = screen.getByTestId("updates-target-n1");
+    expect(unknown).toHaveTextContent("some new state");
+    expect(unknown).toHaveTextContent("Stopped at: something_new");
+    expect(screen.getByTestId("updates-target-n3-error")).toHaveTextContent(
+      "Download and verify: failed"
+    );
+    expect(screen.getByTestId("updates-target-n4-error")).toHaveTextContent(
+      "The release could not be verified"
+    );
+  });
+
+  it("has every word of the Updates page in Arabic", () => {
+    const enCat = en as Record<string, string>;
+    const arCat = ar as Record<string, string>;
+    const keys = Object.keys(enCat).filter(
+      (k) => k.startsWith("updates.") || k.startsWith("notify.update.")
+    );
+    expect(keys.length).toBeGreaterThan(150);
+    for (const k of keys) expect(arCat[k] ?? "", k).toMatch(/[؀-ۿ]/);
+    for (const k of Object.keys(arCat).filter((x) => x.startsWith("updates.")))
+      expect(enCat[k], k).toBeTruthy();
   });
 
   it("Update now asks first, names the version, then starts it", async () => {
@@ -321,5 +522,7 @@ describe("Admin Updates", () => {
     expect(stateTone("rolled_back")).toBe("error");
     expect(stateTone("held")).toBe("warn");
     expect(stateTone("preparing")).toBe("accent");
+    expect(stateTone("needs_person")).toBe("warn");
+    expect(stateTone("superseded")).toBe("neutral");
   });
 });

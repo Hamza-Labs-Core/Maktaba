@@ -109,13 +109,13 @@ func (f *fakeInst) Stage(_ context.Context, j *Journal, _ io.Writer) error {
 	return err
 }
 func (f *fakeInst) Smoke(context.Context, *Journal) error { return f.step(StepSmoke, nil) }
-func (f *fakeInst) Tools(j *Journal) (string, string) {
+func (f *fakeInst) Tools(*Journal) (string, string) {
 	return "/fake/maktaba-api", "/fake/migrations"
 }
 func (f *fakeInst) Switch(_ context.Context, j *Journal) error {
 	return f.step(StepSwitch, func() { f.w.next = j.Job.Version })
 }
-func (f *fakeInst) Restart(_ context.Context, j *Journal, exit func(int)) error {
+func (f *fakeInst) Restart(_ context.Context, _ *Journal, exit func(int)) error {
 	err := f.step(StepRestart, nil)
 	if err == nil {
 		exit(75)
@@ -153,7 +153,7 @@ func (f *fakeInst) Answer(j *Journal) (string, error) {
 
 type fakeRecords struct{ w *world }
 
-func (r fakeRecords) MarkRestore(version, from, reason string) (bool, error) {
+func (r fakeRecords) MarkRestore(_, _, _ string) (bool, error) {
 	r.w.mu.Lock()
 	defer r.w.mu.Unlock()
 	if !r.w.migrated {

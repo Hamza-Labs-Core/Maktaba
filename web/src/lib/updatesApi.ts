@@ -57,7 +57,8 @@ export interface UpdateMachine {
   name: string;
   role: "home" | "node";
   version: string;
-  /** up_to_date, behind, ahead_of_home, offline, worker_only, or a run's target state */
+  /** up_to_date, behind, updating (the home during a run), ahead_of_home, offline, worker_only,
+   * or a run's target state */
   state: string;
   platform?: string;
   /** the install kind: layout, runtime, appbundle, flat */
@@ -95,10 +96,14 @@ export interface UpdateTarget {
   ord: number;
   platform: string;
   kind: string;
+  /** pending, preparing, prepared, waiting_click, clicked, applying, healthy, failed_prepare, failed,
+   * rolled_back, held, skipped, offline, worker_only, needs_person (an install that cannot update
+   * itself as it is: its error's detail says what to do) */
   state: string;
   from_version: string;
   to_version: string;
   attempts: number;
+  /** code (updates.code.<code>), detail: the server's words, which can carry the fix */
   error?: { code?: string; detail?: string; held_by?: string; [k: string]: unknown };
   applied_at?: string;
   healthy_at?: string;
@@ -153,6 +158,30 @@ export const RUN_CANCELLABLE = new Set([
 
 /** The states of a desktop app that runs the server and waits for a click there (owner decision D1). */
 export const WAITING_CLICK = new Set(["waiting_click", "clicked", "awaiting_click"]);
+
+/** A machine of a run that is over may be retried in these states (a new run for it): it failed,
+ * was held or offline, or needs a person (an install that cannot update itself as it is: the
+ * fix is in its error's detail). */
+export const TARGET_RETRYABLE = new Set([
+  "failed",
+  "failed_prepare",
+  "rolled_back",
+  "held",
+  "offline",
+  "needs_person",
+]);
+
+/** A machine of a run under way may be skipped in these states: not yet updating (a desktop app
+ * waiting for its click, or clicked, has its order withdrawn), or needing a person. */
+export const TARGET_SKIPPABLE = new Set([
+  "pending",
+  "preparing",
+  "prepared",
+  "held",
+  "waiting_click",
+  "clicked",
+  "needs_person",
+]);
 
 /** Whether a run may be cancelled now: before the home switches (its desktop app's order is withdrawn
  * until its go), or during the rollout. */

@@ -8,6 +8,10 @@ import (
 	"path/filepath"
 )
 
+// ReplaceFile renames from over to atomically (on Windows retried briefly while
+// another process holds to a moment).
+func ReplaceFile(from, to string) error { return replaceFile(from, to) }
+
 // WriteFileAtomic writes data to path so a reader (or a power cut) sees
 // either the old file or the new one: a temp file next to it, fsync, rename
 // over path (Windows: MoveFileExW with REPLACE_EXISTING | WRITE_THROUGH),

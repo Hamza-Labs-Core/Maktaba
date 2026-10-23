@@ -341,7 +341,51 @@ var (
 	restoreExternal = func(ctx context.Context, t dbsafe.Target, dump string, log io.Writer) error {
 		return t.Restore(ctx, dump, log)
 	}
+	// the state a failed update left, set aside before the dump is put back over it
+	dumpAsideBundled  = func(ctx context.Context, b pgbundle.Bundle, path string) error { return b.DumpTo(ctx, path) }
+	dumpAsideExternal = func(ctx context.Context, t dbsafe.Target, path string) error { return t.Dump(ctx, path) }
 )
+
+// backups is where the gate's dumps go.
+func (g *migrationGate) backups() string {
+	if g.pg != nil {
+		return g.pg.Backups
+	}
+	return g.ext.Backups
+}
+
+// dumpAside dumps the database as a failed update left it (failed-<version>-<utc>.dump
+// beside the backups), unless that was done already for this failure (the update's own
+// rollback does it before it switches back; a launcher's fallback, a boot loop or a
+// refusal does not). Best effort: the putting back goes on either way (D2).
+func (g *migrationGate) dumpAside(ctx context.Context, rec apppayload.Database) {
+	dir := g.backups()
+	since := time.Time{}
+	if st, err := os.Stat(rec.Dump); err == nil {
+		since = st.ModTime()
+	}
+	prefix := "failed-" + rec.Failed + "-"
+	if ents, err := os.ReadDir(dir); err == nil {
+		for _, e := range ents {
+			if info, err := e.Info(); err == nil && strings.HasPrefix(e.Name(), prefix) &&
+				strings.HasSuffix(e.Name(), ".dump") && !info.ModTime().Before(since) {
+				return // set aside already
+			}
+		}
+	}
+	path := filepath.Join(dir, prefix+time.Now().UTC().Format("20060102T150405")+".dump")
+	var err error
+	if g.pg != nil {
+		err = dumpAsideBundled(ctx, *g.pg, path)
+	} else {
+		err = dumpAsideExternal(ctx, *g.ext, path)
+	}
+	if err != nil {
+		fmt.Fprintf(g.log, "[serve] could not set the library database aside as %s left it: %v\n", rec.Failed, err)
+		return
+	}
+	fmt.Fprintf(g.log, "[serve] the library database as %s left it is in %s\n", rec.Failed, path)
+}
 
 // keeps reports whether the gate dumps and puts back (a bundled or an external one).
 func (g *migrationGate) keeps() bool { return g.pg != nil || g.ext != nil }
@@ -571,6 +615,7 @@ func (g *migrationGate) restore(ctx context.Context, rec apppayload.Database, re
 	}
 	report(detail("db_restoring", fmt.Sprintf("The update to %s could not change the library database: putting it "+
 		"back as it was", rec.Failed), rec.Failed, rec.Dump))
+	g.dumpAside(ctx, rec)
 	fmt.Fprintf(g.log, "[serve] the update to %s failed (%s): restoring %s\n", rec.Failed, rec.Error, rec.Dump)
 	err := g.putBack(ctx, rec.Dump)
 	if ctx.Err() != nil {

@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -56,6 +57,10 @@ const (
 const (
 	RequestKindApp     = "app"     // the app's own updater installs it (Mac, Windows)
 	RequestKindRuntime = "runtime" // the server installs it in its runtime (Linux app)
+	// RequestKindServer: the app holds the release already (a retry after its rollback:
+	// the launcher ran the copy of the release before); the app shows it, and at the go
+	// the server starts it (the launcher runs the app's own payload again)
+	RequestKindServer = "server"
 )
 
 // AppRequest is app-install.json.
@@ -139,6 +144,38 @@ func (r requests) set(j *Journal, kind, feed, state string) error {
 	}
 	q.State, q.Error = state, ""
 	return r.write(q)
+}
+
+// failure is the failure the app reported for the run's order (nil: none).
+func (r requests) failure(j *Journal) *Failure {
+	q, err := r.read()
+	if err != nil || q.RunID != j.Job.RunID || q.State != RequestFailed {
+		return nil
+	}
+	return &Failure{Step: StepRestart, Code: "app_install_failed", Detail: q.Error}
+}
+
+// nudger starts the app with the order's deep link when it has not answered for a
+// while (once per after: a running app takes the link too). Used from one goroutine.
+type nudger struct {
+	run string
+	at  time.Time
+}
+
+func (n *nudger) nudge(r requests, j *Journal, now time.Time, after time.Duration, open func(context.Context, string) error) {
+	if open == nil {
+		return
+	}
+	if n.run != j.Job.RunID {
+		n.run, n.at = j.Job.RunID, now
+		if q, err := r.read(); err == nil && !q.At.IsZero() {
+			n.at = q.At
+		}
+	}
+	if now.Sub(n.at) >= after {
+		n.at = now
+		_ = open(context.Background(), AppInstallURL+"?run="+j.Job.RunID)
+	}
 }
 
 // remove withdraws any order (the app forgets what it staged).

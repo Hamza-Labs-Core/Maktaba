@@ -25,6 +25,9 @@ type fakeMachine struct {
 	installer string
 	// asks: a desktop app (owner decision D1): apply orders, a click, then apply again
 	asks bool
+	// pendingFor: status reports a start step (watching, pending) this many times after
+	// the apply before the outcome
+	pendingFor int
 }
 
 // click is someone choosing to install on the machine's desktop app.
@@ -99,7 +102,13 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 			} else {
 				m.st.State = MPrepared
 			}
-		case MApplying:
+		case MApplying, MWatching:
+			if m.pendingFor > 0 {
+				m.pendingFor--
+				m.st.State, m.st.Pending = MWatching, "pipeline: Building the Python environment"
+				return m.copy(), nil
+			}
+			m.st.Pending = ""
 			switch m.outcome {
 			case "silent":
 				return nil, errors.New("restarting")

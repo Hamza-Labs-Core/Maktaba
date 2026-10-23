@@ -150,7 +150,7 @@ func (t Target) Check(ctx context.Context) error {
 	out, err := exec.CommandContext(ctx, t.bin("pg_dump"), "--version").Output()
 	if err != nil {
 		return fmt.Errorf("pg_dump_missing: no pg_dump to back up the database with (%v): install the PostgreSQL client "+
-			"programs of the server's version, or set [postgres] bin_dir", err)
+			"programs of the server's version, or set MAKTABA_PG_BIN to their folder", err)
 	}
 	have := majorOf(string(out))
 	d, err := t.open(ctx, "")

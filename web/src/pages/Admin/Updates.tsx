@@ -11,10 +11,12 @@ import { Button } from "@ds/components/Button/Button";
 import { Modal } from "@ds/components/Modal/Modal";
 import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
-import { useI18n } from "../../lib/i18n";
+import { lookupMessage, useI18n } from "../../lib/i18n";
 import {
   RUN_ENDED,
   runCancellable,
+  TARGET_RETRYABLE,
+  TARGET_SKIPPABLE,
   WAITING_CLICK,
   updatesApi,
   type UpdateMachine,
@@ -39,6 +41,8 @@ export function stateTone(state: string): Tone {
     case "failed_prepare":
     case "failed_rollback":
     case "rolled_back":
+    case "prepare_failed":
+    case "apply_failed":
       return "error";
     case "held":
     case "behind":
@@ -48,22 +52,59 @@ export function stateTone(state: string): Tone {
     case "done_with_failures":
     case "cancelled":
     case "waiting_click":
+    case "awaiting_click":
+    case "needs_person":
       return "warn";
     case "superseded":
+    case "aborted":
       return "neutral";
     default:
       return "accent";
   }
 }
 
-/** The page's words for a state, falling back to the raw state for one it has none for. */
-function useStateLabel() {
-  const { t } = useI18n();
-  return (state: string) => {
-    const key = `updates.state.${state}`;
-    const s = t(key);
-    return s === key ? state.replace(/_/g, " ") : s;
+/** The page's words for what the API sends (states, steps, install kinds, triggers, error
+ * codes), falling back gracefully for a value it has none for (a newer server): the value
+ * itself, its underscores as spaces. */
+function useWords() {
+  const { t, locale } = useI18n();
+  const has = (key: string) => lookupMessage(locale, key) !== undefined;
+  const word = (group: string, value: string) => {
+    const key = `updates.${group}.${value}`;
+    return has(key) ? t(key) : value.replace(/_/g, " ");
   };
+  const state = (s: string) => word("state", s);
+  const step = (s: string) => word("step", s);
+  /** An error code's words: a check of the release the verification's, a step's failure
+   * ("stage_failed") the step's; any other "Stopped at: <code>". */
+  const code = (c: string) => {
+    if (has(`updates.code.${c}`)) return t(`updates.code.${c}`);
+    if (c.startsWith("verify_")) return t("updates.code.verify_failed");
+    const failedStep = /^([a-z]+)_failed$/.exec(c)?.[1];
+    if (failedStep && has(`updates.step.${failedStep}`)) {
+      return `${step(failedStep)}: ${state("failed")}`;
+    }
+    return t("updates.page.failedCheck", { code: c });
+  };
+  return {
+    t,
+    state,
+    step,
+    code,
+    kind: (k: string) => word("kind", k),
+    trigger: (s: string) => word("trigger", s),
+    waiting: (s: string) => word("waiting", s),
+  };
+}
+
+/** An error's detail as the server words it (English): it can carry the fix, a `command`
+ * in it set as code to copy. */
+function ErrorDetail({ text, testId }: { text: string; testId?: string }) {
+  return (
+    <div className="mkt-muted" dir="ltr" data-testid={testId}>
+      {text.split("`").map((part, i) => (i % 2 === 1 ? <code key={i}>{part}</code> : part))}
+    </div>
+  );
 }
 
 function when(iso?: string): string {
@@ -77,9 +118,9 @@ function duration(run: UpdateRun): string {
 }
 
 export function AdminUpdates() {
-  const { t } = useI18n();
   const toast = useToast();
-  const label = useStateLabel();
+  const w = useWords();
+  const { t } = w;
   const [ov, setOv] = useState<UpdatesOverview | null>(null);
   const [view, setView] = useState<UpdateRunView | null>(null);
   const [history, setHistory] = useState<UpdateRun[]>([]);
@@ -238,9 +279,9 @@ export function AdminUpdates() {
                 {m.platform ? <span className="mkt-muted"> · {m.platform}</span> : null}
               </td>
               <td dir="ltr">{m.version || "-"}</td>
-              <td>{m.kind ? t(`updates.kind.${m.kind}`) : "-"}</td>
+              <td>{m.kind ? w.kind(m.kind) : "-"}</td>
               <td>
-                <Badge tone={stateTone(m.state)}>{label(m.state)}</Badge>
+                <Badge tone={stateTone(m.state)}>{w.state(m.state)}</Badge>
                 {m.target && WAITING_CLICK.has(m.state) && (
                   <div className="mkt-muted" data-testid={`updates-machine-${m.id}-click`}>
                     {t(
@@ -294,9 +335,9 @@ export function AdminUpdates() {
                   {r.from_version ? `${r.from_version} → ` : ""}
                   {r.version}
                 </td>
-                <td>{t(`updates.trigger.${r.trigger}`)}</td>
+                <td>{w.trigger(r.trigger)}</td>
                 <td>
-                  <Badge tone={stateTone(r.state)}>{label(r.state)}</Badge>
+                  <Badge tone={stateTone(r.state)}>{w.state(r.state)}</Badge>
                 </td>
                 <td>{when(r.started_at)}</td>
                 <td>{duration(r)}</td>
@@ -348,11 +389,13 @@ interface RunPanelProps {
 }
 
 function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelProps) {
-  const { t } = useI18n();
-  const label = useStateLabel();
+  const w = useWords();
+  const { t } = w;
   const homeSteps = view.steps.filter((s) => s.host === "home");
   const ended = RUN_ENDED.has(view.state);
   const held = view.targets.some((x) => x.state === "held");
+  // a run an admin cancelled, or a newer release replaced, did not fail
+  const failedRun = ended && !["done", "cancelled", "superseded"].includes(view.state);
   return (
     <section aria-labelledby="updates-run-title" data-testid="updates-run">
       <h2 id="updates-run-title">
@@ -361,9 +404,9 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
           : t("updates.page.runLast", { version: view.version })}
       </h2>
       <p>
-        <Badge tone={stateTone(view.state)}>{label(view.state)}</Badge>{" "}
+        <Badge tone={stateTone(view.state)}>{w.state(view.state)}</Badge>{" "}
         {view.detail?.waiting && (
-          <span className="mkt-muted">{t(`updates.waiting.${view.detail.waiting}`)}</span>
+          <span className="mkt-muted">{w.waiting(view.detail.waiting)}</span>
         )}
         {!ended && view.step === "waiting_click" && (
           <span className="mkt-muted" data-testid="updates-run-waiting-click">
@@ -377,13 +420,12 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
         )}
       </p>
       {view.error?.code && (
-        <p
-          className={ended && view.state !== "done" ? "mkt-error" : "mkt-muted"}
-          data-testid="updates-run-error"
-        >
-          {t("updates.page.failedCheck", { code: String(view.error.code) })}
-          {view.error.detail ? `: ${String(view.error.detail)}` : ""}
-        </p>
+        <div className={failedRun ? "mkt-error" : "mkt-muted"} data-testid="updates-run-error">
+          {w.code(String(view.error.code))}
+          {view.error.detail ? (
+            <ErrorDetail text={String(view.error.detail)} testId="updates-run-error-detail" />
+          ) : null}
+        </div>
       )}
       <div className="mkt-updates__actions">
         {!ended && runCancellable(view) && (
@@ -404,17 +446,15 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
         <>
           <h3>
             {t("updates.page.homeSteps", {
-              kind: view.install_kind ? t(`updates.kind.${view.install_kind}`) : "",
+              kind: view.install_kind ? w.kind(view.install_kind) : "",
             })}
           </h3>
           <ol className="mkt-updates__steps" data-testid="updates-home-steps">
             {homeSteps.map((s) => (
               <li key={s.seq}>
-                <Badge tone={stateTone(s.state === "done" ? "done" : s.state)}>
-                  {t(`updates.step.${s.step}`)}
-                </Badge>{" "}
+                <Badge tone={stateTone(s.state)}>{w.step(s.step)}</Badge>{" "}
                 <span className="mkt-muted">
-                  {label(s.state)}
+                  {w.state(s.state)}
                   {s.detail?.detail ? ` · ${s.detail.detail}` : ""}
                 </span>
               </li>
@@ -455,13 +495,11 @@ function TargetRow({
   busy: boolean;
   onTarget: (node: string, action: "retry" | "skip" | "rollback") => void;
 }) {
-  const { t } = useI18n();
-  const label = useStateLabel();
-  const failed = ["failed", "failed_prepare", "rolled_back", "held", "offline"].includes(
-    target.state
-  );
+  const w = useWords();
+  const { t } = w;
+  const id = target.node_id;
   return (
-    <tr data-testid={`updates-target-${target.node_id}`}>
+    <tr data-testid={`updates-target-${id}`}>
       <td>
         {target.name}
         {target.platform ? <span className="mkt-muted"> · {target.platform}</span> : null}
@@ -470,21 +508,27 @@ function TargetRow({
         {target.from_version} → {target.to_version}
       </td>
       <td>
-        <Badge tone={stateTone(target.state)}>{label(target.state)}</Badge>
+        <Badge tone={stateTone(target.state)}>{w.state(target.state)}</Badge>
         {target.error?.held_by ? (
           <span className="mkt-muted">
             {" "}
             {t("updates.page.heldBy", { machine: String(target.error.held_by) })}
           </span>
         ) : target.error?.code ? (
-          <span className="mkt-muted">
+          <span className="mkt-muted" data-testid={`updates-target-${id}-error`}>
             {" "}
-            {t("updates.page.failedCheck", { code: String(target.error.code) })}
+            {w.code(String(target.error.code))}
           </span>
+        ) : null}
+        {target.error?.detail ? (
+          <ErrorDetail
+            text={String(target.error.detail)}
+            testId={`updates-target-${id}-error-detail`}
+          />
         ) : null}
       </td>
       <td>
-        {failed && ended && (
+        {ended && TARGET_RETRYABLE.has(target.state) && (
           <Button
             variant="secondary"
             size="sm"
@@ -494,7 +538,7 @@ function TargetRow({
             {t("updates.page.target.retry")}
           </Button>
         )}
-        {!ended && ["pending", "preparing", "prepared", "held"].includes(target.state) && (
+        {!ended && TARGET_SKIPPABLE.has(target.state) && (
           <Button
             variant="secondary"
             size="sm"

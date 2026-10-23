@@ -4,6 +4,7 @@
 // (web/src/pages/Setup/) call. Pure decisions live in status.rs, tray.rs,
 // mode.rs and setup.rs; this file is the glue to tauri. The OS side
 // (launchd / the sign-in task / the systemd user unit) is agent.rs.
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -19,7 +20,8 @@ use tauri::{
     AppHandle, Emitter, Manager, Wry,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-use tauri_plugin_updater::UpdaterExt;
+use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_updater::{Updater, UpdaterExt};
 
 use crate::agent::{self, Action, BundlePaths, LoginItem};
 use crate::autoinstall;
@@ -66,6 +68,15 @@ pub struct Shell {
     staging: AtomicBool,
     /// The home's order as last read (the tray's item for it).
     order: Mutex<Option<autoinstall::Request>>,
+    /// The orders an OS notification was shown for (one per order, by run).
+    notified: Mutex<HashSet<String>>,
+    /// The release the Linux app older than its server catches up with
+    /// (autoinstall::catch_up): the only update an app that runs the server
+    /// installs of its own.
+    catch_up: Mutex<Option<String>>,
+    /// The app's own repository (its updater endpoint's): only its release feeds are
+    /// trusted (autoinstall::own_repo).
+    repo: String,
     status: Mutex<StatusView>,
     menu: Mutex<Vec<Entry>>,
     /// The badge the tray icon shows now (tray::badge_color), and the plain
@@ -104,6 +115,9 @@ impl Shell {
             installing: AtomicBool::new(false),
             staging: AtomicBool::new(false),
             order: Mutex::new(None),
+            notified: Mutex::new(HashSet::new()),
+            catch_up: Mutex::new(None),
+            repo: own_repo(app),
             status: Mutex::new(StatusView {
                 status: ServerStatus::Starting,
                 detail: None,
@@ -221,6 +235,25 @@ fn shell(app: &AppHandle) -> tauri::State<'_, Shell> {
     app.state::<Shell>()
 }
 
+/// The app's own repository: the one its updater endpoints (tauri.conf.json, as built)
+/// point at, else autoinstall::OWN_REPO.
+fn own_repo(app: &AppHandle) -> String {
+    let endpoints: Vec<String> = app
+        .config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|u| u.get("endpoints"))
+        .and_then(|e| e.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    autoinstall::own_repo(endpoints.iter().map(String::as_str))
+}
+
 pub fn focus_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -292,6 +325,9 @@ pub fn install_requested(app: &AppHandle) {
     };
     let staged = autoinstall::staged_path(&root, &r.version);
     let server_side = matches!(sh.mode(), Some(AppMode::Server { .. }));
+    if server_side {
+        notify_ready(app, &r);
+    }
     let busy = sh.staging.load(Ordering::SeqCst) || sh.installing.load(Ordering::SeqCst);
     match autoinstall::decide(
         Some(&r),
@@ -299,6 +335,7 @@ pub fn install_requested(app: &AppHandle) {
         sh.paused.load(Ordering::SeqCst),
         staged.exists(),
         busy,
+        &sh.repo,
     ) {
         autoinstall::Action::Nothing => {}
         autoinstall::Action::Refuse(why) => {
@@ -321,16 +358,51 @@ pub fn install_requested(app: &AppHandle) {
             let _ = autoinstall::write_state(&path, &r, autoinstall::INSTALLING, "");
             install_update_from(
                 app.clone(),
-                Some(Ordered {
+                Source::Ordered(Box::new(Ordered {
                     path,
                     req: r,
                     version,
                     feed,
                     staged,
-                }),
+                })),
             );
         }
     }
+}
+
+/// One OS notification per order once it is ready here (staged): the Mac's menu-bar item
+/// has no badge, and no tray says it unasked. Best effort: an error is only logged.
+fn notify_ready(app: &AppHandle, req: &autoinstall::Request) {
+    let sh = shell(app);
+    let ready = autoinstall::to_notify(Some(req), &mut sh.notified.lock().unwrap());
+    let Some(autoinstall::Shown::Ready { version, home }) = ready else {
+        return;
+    };
+    let shown = app
+        .notification()
+        .builder()
+        .title(sh.lang.words().brand)
+        .body(tray::order_notice(sh.lang, &version, home))
+        .show();
+    if let Err(e) = shown {
+        eprintln!("maktaba: no notification for Maktaba {version}: {e}");
+    }
+}
+
+/// An updater that takes exactly `version` from `feed` (the release's own), whatever
+/// this app's own version is: the same one (an app rolled back that holds it already) or
+/// a newer one; any other version the feed offers is no update (autoinstall::exactly).
+fn exact_updater(app: &AppHandle, feed: &str, version: &str) -> Result<Updater, String> {
+    let url: tauri::Url = feed.parse().map_err(|e| format!("{e}"))?;
+    let wanted = version.to_string();
+    app.updater_builder()
+        .endpoints(vec![url])
+        .map_err(|e| e.to_string())?
+        .version_comparator(move |_, release| {
+            autoinstall::exactly(&wanted, &release.version.to_string())
+        })
+        .build()
+        .map_err(|e| e.to_string())
 }
 
 /// stage_order downloads the ordered release's app update from its own feed (checked
@@ -338,13 +410,7 @@ pub fn install_requested(app: &AppHandle) {
 fn stage_order(app: AppHandle, path: PathBuf, req: autoinstall::Request, staged: PathBuf) {
     tauri::async_runtime::spawn(async move {
         let run = async {
-            let url: tauri::Url = req.feed.parse().map_err(|e| format!("{e}"))?;
-            let update = app
-                .updater_builder()
-                .endpoints(vec![url])
-                .map_err(|e| e.to_string())?
-                .build()
-                .map_err(|e| e.to_string())?
+            let update = exact_updater(&app, &req.feed, &req.version)?
                 .check()
                 .await
                 .map_err(|e| e.to_string())?
@@ -382,6 +448,51 @@ struct Ordered {
     version: String,
     feed: String,
     staged: PathBuf,
+}
+
+/// What an install installs.
+enum Source {
+    /// The newest release the app's own feed offers (an app in client mode).
+    Own,
+    /// Exactly this release, from its own feed (the Linux app older than its server).
+    Release { version: String, feed: String },
+    /// The release the home ordered (no dialog: the server's run reports how it went).
+    Ordered(Box<Ordered>),
+}
+
+impl Source {
+    /// The one version this install takes (None: the newest its feed offers).
+    fn version(&self) -> Option<&str> {
+        match self {
+            Source::Own => None,
+            Source::Release { version, .. } => Some(version),
+            Source::Ordered(o) => Some(&o.version),
+        }
+    }
+
+    fn ordered(&self) -> Option<&Ordered> {
+        match self {
+            Source::Ordered(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    /// The install may go on: the home's order still says go for its run (read again
+    /// now: a cancel, a newer run or a skip stops it); any other install may.
+    fn still_go(&self) -> bool {
+        self.ordered()
+            .map_or(true, |o| autoinstall::still_go(&o.path, &o.req.run_id))
+    }
+}
+
+/// How an install ended without an error.
+enum Done {
+    /// Installed: the app restarts on it.
+    Installed,
+    /// The app's own feed offers nothing newer.
+    NoUpdate,
+    /// The home's order no longer says go: nothing was installed.
+    Withdrawn,
 }
 
 /// Recompute the status; rebuild the tray menu only when it changed.
@@ -462,10 +573,12 @@ fn refresh(app: &AppHandle) {
     } else {
         lang.words().brand.to_string()
     };
+    #[cfg(target_os = "linux")]
+    let window_update = tray::window_update_label(lang, order.as_ref());
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         #[cfg(target_os = "linux")]
-        sync_window_menu(&handle, &entries, &window_line);
+        sync_window_menu(&handle, &entries, &window_line, &window_update);
         if let (Some(t), Ok(menu)) = (
             handle.tray_by_id(TRAY_ID),
             build_tray_menu(&handle, &entries),
@@ -480,10 +593,11 @@ fn refresh(app: &AppHandle) {
 }
 
 /// The window menu's Server items (lib.rs adds them on Linux when no tray
-/// shows) follow the tray's: the status line, and each item enabled when the
-/// tray would offer it.
+/// shows) follow the tray's: the status line, the update item's words (the
+/// home's order as the tray says it), and each item enabled when the tray
+/// would offer it.
 #[cfg(target_os = "linux")]
-fn sync_window_menu(app: &AppHandle, entries: &[Entry], status_line: &str) {
+fn sync_window_menu(app: &AppHandle, entries: &[Entry], status_line: &str, update_label: &str) {
     let Some(sub) = app
         .menu()
         .and_then(|m| m.get(tray::WINDOW_MENU_ID))
@@ -503,6 +617,9 @@ fn sync_window_menu(app: &AppHandle, entries: &[Entry], status_line: &str) {
             .get(window_id.as_str())
             .and_then(|k| k.as_menuitem().cloned())
         {
+            if *id == "update" {
+                let _ = item.set_text(update_label);
+            }
             let _ = item.set_enabled(tray::window_enabled(entries, id));
         }
     }
@@ -554,28 +671,7 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
             focus_main(app);
             navigate_main(app, &bundled_url(app))
         }),
-        "update" => {
-            // the home's order, staged here: the click (it installs at the home's go)
-            let staged = sh
-                .order
-                .lock()
-                .unwrap()
-                .clone()
-                .filter(|r| r.state == autoinstall::STAGED);
-            match (staged, agent::state_root()) {
-                (Some(r), Some(root)) => autoinstall::write_state(
-                    &autoinstall::request_path(&root),
-                    &r,
-                    autoinstall::CLICKED,
-                    "",
-                )
-                .map_err(|e| e.to_string()),
-                _ => {
-                    install_update(app.clone());
-                    Ok(())
-                }
-            }
-        }
+        "update" => update_clicked(app),
         "quit" => {
             app.exit(0);
             Ok(())
@@ -596,57 +692,80 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
     refresh(app);
 }
 
+/// The tray's update item (autoinstall::click): the home's order, staged here, is
+/// clicked (it installs at the home's go). An app that runs the server installs
+/// nothing else of its own, but the Linux app older than its server, which catches up
+/// with exactly the server's release; a client installs its own feed's update.
+fn update_clicked(app: &AppHandle) -> Result<(), String> {
+    let sh = shell(app);
+    let order = sh.order.lock().unwrap().clone();
+    let catch_up = sh.catch_up.lock().unwrap().clone();
+    match autoinstall::click(order.as_ref(), sh.server_side(), catch_up.as_deref()) {
+        autoinstall::Click::Order(r) => {
+            let root = agent::state_root().ok_or("no state folder")?;
+            autoinstall::write_state(
+                &autoinstall::request_path(&root),
+                &r,
+                autoinstall::CLICKED,
+                "",
+            )
+            .map_err(|e| e.to_string())
+        }
+        autoinstall::Click::OwnFeed => {
+            install_update_from(app.clone(), Source::Own);
+            Ok(())
+        }
+        autoinstall::Click::Release(version) => {
+            let feed = autoinstall::release_feed(&sh.repo, &version);
+            install_update_from(app.clone(), Source::Release { version, feed });
+            Ok(())
+        }
+        // the order moved on since the menu was drawn: the next refresh redraws it
+        autoinstall::Click::Nothing => Ok(()),
+    }
+}
+
 /// Story 36.8 replaces the whole app (shell + server payload): install,
 /// restart the server so it runs the new payload, then relaunch. On Windows
 /// (Epic 38 contract-update) the payload's files are in use while the server
 /// runs, so the server stops first; the installer replaces them, its
 /// POSTINSTALL hook starts the server again and it relaunches this window.
 /// When the stop times out or the install fails, the server is started again
-/// (unless it was paused): asked to stop, it would stay down.
-fn install_update(app: AppHandle) {
-    install_update_from(app, None)
-}
-
-/// install_update, of the release the server ordered when `ordered` (from that
-/// release's own feed, and with no dialog: the server's run reports how it went).
-fn install_update_from(app: AppHandle, ordered: Option<Ordered>) {
+/// (unless it was paused): asked to stop, it would stay down. Of the release
+/// the home ordered (Source::Ordered: from that release's own feed, only while
+/// the order still says go, and with no dialog: the server's run reports how it
+/// went), exactly a release (Source::Release), or the newest of the app's own
+/// feed (Source::Own).
+fn install_update_from(app: AppHandle, source: Source) {
     tauri::async_runtime::spawn(async move {
         // the server was asked to stop for the install
         #[cfg(windows)]
         let stopped = AtomicBool::new(false);
         let failed = |e: String| (false, e);
         let run = async {
-            let updater = match &ordered {
-                Some(o) => {
-                    let url: tauri::Url = o.feed.parse().map_err(|e| failed(format!("{e}")))?;
-                    app.updater_builder()
-                        .endpoints(vec![url])
-                        .map_err(|e| failed(e.to_string()))?
-                        .build()
-                        .map_err(|e| failed(e.to_string()))?
-                }
-                None => app.updater().map_err(|e| failed(e.to_string()))?,
-            };
+            let updater = match &source {
+                Source::Own => app.updater().map_err(|e| e.to_string()),
+                Source::Release { version, feed } => exact_updater(&app, feed, version),
+                Source::Ordered(o) => exact_updater(&app, &o.feed, &o.version),
+            }
+            .map_err(failed)?;
             let update = updater.check().await.map_err(|e| failed(e.to_string()))?;
             let Some(update) = update else {
-                if let Some(o) = &ordered {
-                    return Err(failed(format!(
-                        "no app update for {} in its feed",
-                        o.version
-                    )));
-                }
-                return Ok(false);
+                return match source.version() {
+                    Some(v) => Err(failed(format!("no app update for {v} in its feed"))),
+                    None => Ok(Done::NoUpdate),
+                };
             };
-            if let Some(o) = &ordered {
-                if !autoinstall::same_version(&update.version, &o.version) {
+            if let Some(v) = source.version() {
+                if !autoinstall::same_version(&update.version, v) {
                     return Err(failed(format!(
-                        "the feed offers {}, not {}",
-                        update.version, o.version
+                        "the feed offers {}, not {v}",
+                        update.version
                     )));
                 }
             }
             // what was staged at the order (install checks it again), else downloaded now
-            let bytes = match ordered.as_ref().and_then(|o| std::fs::read(&o.staged).ok()) {
+            let bytes = match source.ordered().and_then(|o| std::fs::read(&o.staged).ok()) {
                 Some(b) => b,
                 None => update
                     .download(|_, _| {}, || {})
@@ -655,6 +774,9 @@ fn install_update_from(app: AppHandle, ordered: Option<Ordered>) {
             };
             #[cfg(windows)]
             if matches!(shell(&app).mode(), Some(AppMode::Server { .. })) {
+                if !source.still_go() {
+                    return Ok(Done::Withdrawn);
+                }
                 // stop the server and wait for it (the install hold keeps the
                 // task's watchdog from starting it meanwhile); the update is
                 // not installed when it does not stop in time
@@ -664,14 +786,17 @@ fn install_update_from(app: AppHandle, ordered: Option<Ordered>) {
                     .map_err(|e| (true, e.to_string()))?
                     .map_err(|e| (true, e))?;
             }
+            if !source.still_go() {
+                return Ok(Done::Withdrawn);
+            }
             // Windows: this runs the installer and exits the app
             update.install(bytes).map_err(|e| failed(e.to_string()))?;
             // the error: whether the server would not stop for it, and why
-            Ok::<bool, (bool, String)>(true)
+            Ok::<Done, (bool, String)>(Done::Installed)
         };
         match run.await {
-            Ok(true) => {
-                if let Some(o) = &ordered {
+            Ok(Done::Installed) => {
+                if let Some(o) = source.ordered() {
                     let _ = std::fs::remove_file(&o.staged);
                 }
                 let sh = shell(&app);
@@ -686,11 +811,24 @@ fn install_update_from(app: AppHandle, ordered: Option<Ordered>) {
                 }
                 app.restart();
             }
-            Ok(false) => shell(&app).update_ready.store(false, Ordering::SeqCst),
+            Ok(Done::NoUpdate) => shell(&app).update_ready.store(false, Ordering::SeqCst),
+            Ok(Done::Withdrawn) => {
+                // cancelled, replaced or skipped before the install: nothing to say in an
+                // order that is not this run's any more; a server stopped for it starts
+                shell(&app).installing.store(false, Ordering::SeqCst);
+                #[cfg(windows)]
+                if stopped.load(Ordering::SeqCst) {
+                    let handle = app.clone();
+                    let _ = tauri::async_runtime::spawn_blocking(move || {
+                        start_after_failed_update(&handle)
+                    })
+                    .await;
+                }
+            }
             Err((at_stop, e)) => {
-                if let Some(o) = &ordered {
+                if let Some(o) = source.ordered() {
                     // the server's run says it; no dialog at the update's hour
-                    let _ = autoinstall::write_state(&o.path, &o.req, "failed", &e);
+                    let _ = autoinstall::write_state(&o.path, &o.req, autoinstall::FAILED, &e);
                     shell(&app).installing.store(false, Ordering::SeqCst);
                     #[cfg(windows)]
                     if stopped.load(Ordering::SeqCst) {
@@ -848,11 +986,19 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                     Some(false)
                 }
                 Ok(Synced::Current) => Some(false),
-                Ok(Synced::Older { app, server }) => {
+                Ok(Synced::Older {
+                    app,
+                    server,
+                    running,
+                }) => {
                     // the server updates its own runtime (Epic 35, owner decision D3):
-                    // this app catches up with its own update, offered in the tray
-                    eprintln!("maktaba: the server runs {server}, newer than this app ({app})");
-                    sh.update_ready.store(true, Ordering::SeqCst);
+                    // this app catches up with exactly the release the server runs,
+                    // offered in the tray (never the channel's newest, which can be
+                    // newer than the server)
+                    eprintln!("maktaba: the server ran {server}, newer than this app ({app})");
+                    let release = autoinstall::catch_up(&app, &running, &server);
+                    sh.update_ready.store(release.is_some(), Ordering::SeqCst);
+                    *sh.catch_up.lock().unwrap() = release;
                     Some(true)
                 }
                 Err(e) => {

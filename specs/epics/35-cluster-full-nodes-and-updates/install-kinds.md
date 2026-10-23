@@ -109,7 +109,7 @@ updated its runtime) offers its own update for its window and tray.
 ### The database (home only)
 
 1. **Prepare: rehearsal.** A dump of the home's database (bundled Postgres: its own `pg_dump`;
-   another Postgres: `pg_dump` of the server's major on `PATH` or `[postgres] bin_dir`) is
+   another Postgres: `pg_dump` of the server's major on `PATH` or in `MAKTABA_PG_BIN`) is
    restored into `maktaba_rehearse_<run8>` and the new release's `maktaba-api migrate up` runs on
    it (the release's `migrations` archive, verified like everything else). A failure blocks the
    version; the real database was never touched. Skipped above `rehearse_max_db_gb`, without

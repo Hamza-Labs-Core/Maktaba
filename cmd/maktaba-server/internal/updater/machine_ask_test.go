@@ -74,7 +74,7 @@ func TestAskFirstWaitsForTheClickAndTheGo(t *testing.T) {
 	r.waitOrder("run-1")
 	w.app(RequestStaged)
 	deadline := time.Now().Add(5 * time.Second)
-	for r.m.Status().Journal.App != RequestStaged && time.Now().Before(deadline) {
+	for r.m.Status().App != RequestStaged && time.Now().Before(deadline) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	// asked again before the click: still waiting

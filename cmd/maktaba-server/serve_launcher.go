@@ -145,6 +145,11 @@ func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir 
 			if err != nil || p == nil || p.Version != ver {
 				return // nothing to confirm (or another version is pending)
 			}
+			if p.RunID != "" {
+				// an update run's switch: its watch confirms it (or rolls it back), not a
+				// few healthy minutes here
+				return
+			}
 			if healthyFor(sup.Snapshot(), after) {
 				if err := l.Confirm(); err != nil {
 					fmt.Fprintf(os.Stderr, "[serve] confirming release %s failed: %v\n", ver, err)

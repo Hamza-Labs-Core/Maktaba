@@ -247,7 +247,8 @@ func TestAppInstaller(t *testing.T) {
 	rs := newReleases(t)
 	ctx := context.Background()
 	key := strings.Replace(feedPlatform(), "/", "-", 1)
-	feed, _ := json.Marshal(map[string]any{"version": "1.5.0", "platforms": map[string]any{key + "-app": map[string]any{}}})
+	appURL := rs.srv.URL + "/v1.5.0/Maktaba.app.tar.gz"
+	feed, _ := json.Marshal(map[string]any{"version": "1.5.0", "platforms": map[string]any{key + "-app": map[string]any{"url": appURL}}})
 	_, assets := rs.publish(t, "v1.5.0", releaseverifytest.ReleaseOptions{MinUpgradeFrom: "1.4.0"},
 		map[string][]byte{"latest.json": feed})
 	bundled := filepath.Join(t.TempDir(), "Maktaba.app", "Contents", "Resources", "server")
@@ -290,8 +291,18 @@ func TestAppInstaller(t *testing.T) {
 	if !errors.As(err, &f) || f.Code != "app_install_failed" || len(opened) != 1 || !strings.HasPrefix(opened[0], AppInstallURL) {
 		t.Fatalf("restart: %v opened %v", err, opened)
 	}
-	// the app was not replaced: a revert leaves it running its own payload
+	// the app's payload.json still says 1.4.0, but an install cut short may have replaced
+	// its programs already: the kept copy runs (review B-M1)
 	if err := ai.Revert(ctx, j); err != nil {
+		t.Fatal(err)
+	}
+	if o := layout.ReadOverride(lroot); o != j.FromRef {
+		t.Fatalf("override %q, want the kept copy", o)
+	}
+	// no copy kept, the app not replaced: it runs its own payload
+	noCopy := *j
+	noCopy.FromRef = ""
+	if err := ai.Revert(ctx, &noCopy); err != nil {
 		t.Fatal(err)
 	}
 	if o := layout.ReadOverride(lroot); o != "" {
@@ -322,11 +333,38 @@ func TestAppInstaller(t *testing.T) {
 	if _, err := os.Stat(j.FromRef); err != nil {
 		t.Fatal("the copy to go back to was removed")
 	}
-	// a release without an app for this platform is refused before anything changes
+	// a release without an app for this platform is refused before anything changes (the
+	// app on 1.4.0 again)
+	_ = os.WriteFile(filepath.Join(bundled, "payload.json"), []byte(`{"schema":1,"version":"1.4.0"}`), 0o644)
 	other, _ := json.Marshal(map[string]any{"version": "1.5.0", "platforms": map[string]any{"plan9-mips": map[string]any{}}})
 	rs.files["v1.5.0/latest.json"] = other
 	if err := ai.Preflight(ctx, j); err == nil {
 		t.Fatal("a feed without this platform passed")
+	}
+	// review B-M6: an app of another release, or a feed not beside this release.json
+	elsewhere, _ := json.Marshal(map[string]any{"version": "1.5.0", "platforms": map[string]any{key + "-app": map[string]any{
+		"url": rs.srv.URL + "/v1.4.0/Maktaba.app.tar.gz"}}})
+	rs.files["v1.5.0/latest.json"] = elsewhere
+	if err := ai.Preflight(ctx, j); err == nil || !strings.Contains(err.Error(), "not a file of") {
+		t.Fatalf("an app of another release passed: %v", err)
+	}
+	moved := *j
+	moved.Job.Assets = map[string]string{"release.json": j.Job.Assets["release.json"], "latest.json": rs.srv.URL + "/v1.4.0/latest.json"}
+	if err := ai.Preflight(ctx, &moved); err == nil || !strings.Contains(err.Error(), "not this release's") {
+		t.Fatalf("a feed of another tag passed: %v", err)
+	}
+	// review B-M2: the app holds the release (a retry after its rollback): nothing to fetch,
+	// the order only shows it, and at the go the server starts it itself
+	_ = os.WriteFile(filepath.Join(bundled, "payload.json"), []byte(`{"schema":1,"version":"1.5.0"}`), 0o644)
+	if err := ai.Preflight(ctx, &moved); err != nil {
+		t.Fatalf("a held release: %v", err)
+	}
+	if kind, feed := ai.orderKind(j); kind != RequestKindServer || feed != "" {
+		t.Fatalf("order kind %q feed %q", kind, feed)
+	}
+	exited := 0
+	if err := ai.Restart(ctx, j, func(code int) { exited = code }); err != nil || exited != 75 {
+		t.Fatalf("restart of a held release: %v exit %d", err, exited)
 	}
 }
 

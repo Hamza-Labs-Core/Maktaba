@@ -51,7 +51,9 @@ func sqliteDB(t *testing.T) *sql.DB {
 		`CREATE TABLE IF NOT EXISTS cluster_nodes (id TEXT PRIMARY KEY, name TEXT NOT NULL, state TEXT NOT NULL,
 			platform TEXT, version TEXT, full_node INTEGER NOT NULL DEFAULT 0, drain INTEGER NOT NULL DEFAULT 0)`,
 		`CREATE TABLE IF NOT EXISTS processing_jobs (id TEXT PRIMARY KEY, state TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS channel_runtime (channel_id TEXT PRIMARY KEY, viewer_count INTEGER NOT NULL DEFAULT 0)`,
+		`CREATE TABLE IF NOT EXISTS channel_runtime (channel_id TEXT PRIMARY KEY, viewer_count INTEGER NOT NULL DEFAULT 0,
+			host_id TEXT, state TEXT NOT NULL DEFAULT 'idle')`,
+		`CREATE TABLE IF NOT EXISTS cluster_switchovers (id TEXT PRIMARY KEY, state TEXT NOT NULL)`,
 	} {
 		if _, err := db.Exec(s); err != nil {
 			t.Fatalf("%s: %v", s, err)

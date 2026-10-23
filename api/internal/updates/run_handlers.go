@@ -59,8 +59,9 @@ func (d *Driver) Cancel(ctx context.Context, id, actor string) error {
 		if targets, err := d.Store.Targets(ctx, id); err == nil {
 			for _, t := range targets {
 				if !targetEnded(t.State) && t.State != TargetApplying {
-					if t.State == TargetPreparing || t.State == TargetPrepared {
-						d.withdraw(ctx, run, t)
+					if t.State == TargetPreparing || t.State == TargetPrepared || t.State == TargetWaitingClick ||
+						t.State == TargetClicked {
+						d.withdraw(ctx, run, t) // its app forgets the order
 					}
 					_ = d.Store.UpdateTarget(ctx, id, t.NodeID, TargetChange{State: TargetSkipped,
 						Detail: map[string]any{"why": "cancelled", "by": actor}})
@@ -93,6 +94,9 @@ func (d *Driver) Retry(ctx context.Context, id string, nodes []string, actor str
 	}
 	if wm == "" || CompareVersions(wm, run.Version) < 0 {
 		return Run{}, fmt.Errorf("%w: the home does not run %s", ErrNoTarget, run.Version)
+	}
+	if rel, err := d.Store.Get(ctx, run.Version); err == nil && rel.WithdrawnAt != nil {
+		return Run{}, fmt.Errorf("%w: %s was withdrawn (%s)", ErrNoTarget, run.Version, rel.BlockedReason)
 	}
 	nr, err := d.Store.InsertRunWith(ctx, run.Version, run.Version, TriggerRetry, actor,
 		RunDetail{NoHome: true, Targets: nodes})
@@ -139,7 +143,7 @@ func (d *Driver) TargetAction(ctx context.Context, id, node, action, actor strin
 	case "retry":
 		return d.Retry(ctx, id, []string{node}, actor)
 	case "skip":
-		if !targetEnded(t.State) && t.State != TargetApplying {
+		if (!targetEnded(t.State) && t.State != TargetApplying) || t.State == TargetNeedsPerson {
 			if t.State == TargetWaitingClick || t.State == TargetClicked || t.State == TargetPreparing ||
 				t.State == TargetPrepared {
 				if run, err := d.Store.GetRun(ctx, id); err == nil {

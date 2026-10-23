@@ -31,7 +31,13 @@ type RuntimeInstaller struct {
 	Owner string
 	// Record is the home's database record ("" on a node).
 	Record string
-	Now    func() time.Time
+	// Open starts the Linux app with the order's deep link when it does not answer
+	// within NudgeAfter (90 s); tests replace it.
+	Open       func(ctx context.Context, url string) error
+	NudgeAfter time.Duration
+	Now        func() time.Time
+
+	nudge nudger
 }
 
 func (ri *RuntimeInstaller) requests() requests {
@@ -46,8 +52,18 @@ func (ri *RuntimeInstaller) Ask(j *Journal) error {
 	return ri.requests().order(j, RequestKindRuntime, "")
 }
 
-// Answer implements Asker.
-func (ri *RuntimeInstaller) Answer(j *Journal) (string, error) { return ri.requests().answer(j) }
+// Answer implements Asker (the app started when it does not answer).
+func (ri *RuntimeInstaller) Answer(j *Journal) (string, error) {
+	state, err := ri.requests().answer(j)
+	if err == nil && state == RequestOrdered {
+		after := ri.NudgeAfter
+		if after <= 0 {
+			after = 90 * time.Second
+		}
+		ri.nudge.nudge(ri.requests(), j, ri.now(), after, ri.Open)
+	}
+	return state, err
+}
 
 func (ri *RuntimeInstaller) now() time.Time {
 	if ri.Now != nil {
@@ -160,6 +176,12 @@ func (ri *RuntimeInstaller) Switch(ctx context.Context, j *Journal) error {
 		return Fail("switch_failed", "%v", err)
 	}
 	return nil
+}
+
+// Extend implements Extender: the launcher's guard deadline.
+func (ri *RuntimeInstaller) Extend(j *Journal, until time.Time) error {
+	_, err := layout.ExtendGuard(ri.LauncherRoot, j.Job.RunID, until)
+	return err
 }
 
 // Restart implements Installer (the app's order, when there is one, says installing).

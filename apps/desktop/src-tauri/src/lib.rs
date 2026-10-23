@@ -11,8 +11,9 @@
 //   - the system-tray icon + menu (Story 13.4) with Show / Hide / Quit
 //     and a window-close interception so closing hides to tray instead
 //     of quitting (Story 13.4 AC-5).
-//   - window-state persistence (Story 13.1 AC-2) and the auto-update
-//     plugin (Story 13.8).
+//   - window-state persistence (Story 13.1 AC-2), the auto-update
+//     plugin (Story 13.8) and the notification plugin (Epic 35: a release
+//     the home ordered is ready to install here).
 //   - `discover_servers` — passive mDNS browse for `_maktaba._tcp.local.`
 //     (Story 13.5) and `app_version` for the Settings→About skew check
 //     (Story 13.8), both exposed via the invoke handler.
@@ -141,6 +142,8 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // the OS notification of a release the home ordered, ready here (shell.rs)
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Deep links (`maktaba://…`, Story 13.x). At runtime we
             // register the scheme (no-op when the bundle already owns it

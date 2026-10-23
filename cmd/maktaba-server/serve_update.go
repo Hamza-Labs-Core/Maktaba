@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,8 +60,7 @@ const envAppBundled = "MAKTABA_APP_BUNDLED"
 
 // updates is serve's update machinery.
 type updates struct {
-	m     *updater.Machine
-	token string
+	m *updater.Machine
 	// health's view of this machine, set once the supervisor exists
 	mu   sync.Mutex
 	snap func() supervisor.Snapshot
@@ -81,7 +81,7 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 				rt = appruntime.New(filepath.Dir(bundle))
 			}
 			return &updater.RuntimeInstaller{Runtime: rt, Source: src, Version: version.Version, LauncherRoot: lroot,
-				Owner: runtimeOwner(), Record: record}, filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
+				Owner: runtimeOwner(), Record: record, Open: updater.OpenURL}, filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
 		}
 		bundled := strings.TrimSpace(os.Getenv(envAppBundled))
 		if bundled == "" {
@@ -172,7 +172,7 @@ func homeDatabase(cfg config.Config, pg *pgbundle.Bundle) *dbsafe.Target {
 		return &dbsafe.Target{URL: u, Bin: pg.Bin, Backups: pg.Backups}
 	}
 	u := strings.TrimSpace(cfg.Database.URL)
-	if u == "" || !(strings.HasPrefix(u, "postgres://") || strings.HasPrefix(u, "postgresql://")) {
+	if u == "" || (!strings.HasPrefix(u, "postgres://") && !strings.HasPrefix(u, "postgresql://")) {
 		return nil
 	}
 	return &dbsafe.Target{URL: u, Bin: pgProgram, Backups: filepath.Join(cfg.Server.DataDir, "backups")}
@@ -340,7 +340,7 @@ func (u *updates) adminHandler(base http.Handler, token string) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", base)
 	mux.HandleFunc("/update/", func(w http.ResponseWriter, r *http.Request) {
-		if token == "" || r.Header.Get("Authorization") != "Bearer "+token {
+		if token == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}

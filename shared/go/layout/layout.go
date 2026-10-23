@@ -237,6 +237,22 @@ func (l Layout) GuardPending(version string, deadline time.Time, record string) 
 	return WriteFileAtomic(filepath.Join(l.Root, PendingFile), b, 0o644)
 }
 
+// ExtendPending pushes the pending marker's deadline to until when the marker is runID's
+// and its deadline is earlier (the new release is busy starting: its database step dumps
+// and migrates); it reports whether it did.
+func (l Layout) ExtendPending(runID string, until time.Time) (bool, error) {
+	p, err := l.ReadPending()
+	if err != nil || p == nil || runID == "" || p.RunID != runID || !p.Deadline.Before(until) {
+		return false, err
+	}
+	p.Deadline = until.UTC()
+	b, err := json.Marshal(p)
+	if err != nil {
+		return false, err
+	}
+	return true, WriteFileAtomic(filepath.Join(l.Root, PendingFile), b, 0o644)
+}
+
 // ClearPending removes the pending marker (the supervisor's confirmation).
 func (l Layout) ClearPending() error {
 	err := os.Remove(filepath.Join(l.Root, PendingFile))

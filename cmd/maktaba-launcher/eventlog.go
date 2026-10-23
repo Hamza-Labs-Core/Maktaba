@@ -48,7 +48,9 @@ func (e *eventLog) Event(event, version string, detail map[string]any) {
 		_, _ = e.f.Write(append(b, '\n'))
 		_ = e.f.Sync()
 	}
-	fmt.Fprintf(e.echo, "[launcher] %s\n", b)
+	if e.echo != nil {
+		fmt.Fprintf(e.echo, "[launcher] %s\n", b)
+	}
 }
 
 func (e *eventLog) Close() {

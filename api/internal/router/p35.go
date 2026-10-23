@@ -173,6 +173,7 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 	svc.Starter = drv
 	svc.Blockers = []updates.Blocker{
 		updates.TVChangeBlocker{DB: d.DB},
+		updates.SwitchoverBlocker{DB: d.DB},
 		&updates.HomeHealth{BaseURL: sup, HTTP: d.HTTPClient},
 	}
 	rulesHandler := &rules.Handler{DB: d.DB, Staging: tvchange.NewDrafts(d.DB)}

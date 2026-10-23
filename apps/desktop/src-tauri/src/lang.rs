@@ -213,6 +213,10 @@ pub struct Words {
     pub order_node: &'static str,
     /// Someone clicked: it installs when the cluster is ready.
     pub order_clicked: &'static str,
+    /// The OS notification once the home's order is ready to install (one per order):
+    /// on the home itself, and on a machine the cluster's update waits for.
+    pub order_ready_home: &'static str,
+    pub order_ready_node: &'static str,
     /// Between the names in a list (the roles in a status line).
     pub list_sep: &'static str,
 }
@@ -276,6 +280,8 @@ pub static EN: Words = Words {
     order_home: "Install Maktaba {version} (this home's update) and restart",
     order_node: "Install Maktaba {version}: the cluster's update waits for this machine",
     order_clicked: "Installing Maktaba {version} when the cluster is ready…",
+    order_ready_home: "Maktaba {version} is ready to install on this home",
+    order_ready_node: "Maktaba {version} is ready: the cluster's update waits for this machine",
     list_sep: ", ",
 };
 
@@ -338,6 +344,8 @@ pub static AR: Words = Words {
     order_home: "ثبّت الإصدار {version} من مكتبة (تحديث هذا الخادم الرئيسي) وأعد التشغيل",
     order_node: "ثبّت الإصدار {version} من مكتبة: تحديث المجموعة ينتظر هذا الجهاز",
     order_clicked: "يُثبَّت الإصدار {version} من مكتبة حين تصبح المجموعة جاهزة…",
+    order_ready_home: "الإصدار {version} من مكتبة جاهز للتثبيت على هذا الخادم الرئيسي",
+    order_ready_node: "الإصدار {version} من مكتبة جاهز: تحديث المجموعة ينتظر هذا الجهاز",
     list_sep: "، ",
 };
 
@@ -439,6 +447,8 @@ mod tests {
             ("order_home", Some(w.order_home)),
             ("order_node", Some(w.order_node)),
             ("order_clicked", Some(w.order_clicked)),
+            ("order_ready_home", Some(w.order_ready_home)),
+            ("order_ready_node", Some(w.order_ready_node)),
             ("older_app", Some(w.older_app)),
         ];
         // the lines only Windows reads

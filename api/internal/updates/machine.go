@@ -60,6 +60,9 @@ type MachineStatus struct {
 	// on it (owner decision D1); App is its answer to the order (ordered, staged, clicked).
 	Asks bool   `json:"asks,omitempty"`
 	App  string `json:"app,omitempty"`
+	// Pending: the release that came up is busy with a start step (the database step, the
+	// Python environment): its watch waits, and so does the run's timeout.
+	Pending string `json:"pending,omitempty"`
 }
 
 // RunID is the run the report is of ("" none).

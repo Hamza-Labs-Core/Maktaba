@@ -44,7 +44,7 @@ func (li *LayoutInstaller) Kind() string { return "layout" }
 func (li *LayoutInstaller) Running() string { return layout.NormalizeVersion(li.Version) }
 
 // Preflight implements Installer: the layout is writable and its running release kept.
-func (li *LayoutInstaller) Preflight(_ context.Context, j *Journal) error {
+func (li *LayoutInstaller) Preflight(_ context.Context, _ *Journal) error {
 	if err := os.MkdirAll(li.Layout.UpdatesDir(), 0o755); err != nil {
 		return Fail("not_writable", "%v", err)
 	}
@@ -120,6 +120,12 @@ func (li *LayoutInstaller) Switch(_ context.Context, j *Journal) error {
 		return Fail("switch_failed", "%v", err)
 	}
 	return nil
+}
+
+// Extend implements Extender: the pending marker's deadline.
+func (li *LayoutInstaller) Extend(j *Journal, until time.Time) error {
+	_, err := li.Layout.ExtendPending(j.Job.RunID, until)
+	return err
 }
 
 // Restart implements Installer: exit 75 (the launcher starts current).

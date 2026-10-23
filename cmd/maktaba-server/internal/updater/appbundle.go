@@ -55,9 +55,7 @@ type AppInstaller struct {
 	PollEvery time.Duration
 	Now       func() time.Time
 
-	// the order the app was last started for, and when (Answer, from one goroutine)
-	nudgedRun string
-	nudgedAt  time.Time
+	nudge nudger
 }
 
 func (ai *AppInstaller) now() time.Time {
@@ -76,6 +74,12 @@ func (ai *AppInstaller) bundled() string {
 
 func (ai *AppInstaller) updatesDir() string { return filepath.Join(ai.LauncherRoot, "updates") }
 
+// Extend implements Extender: the launcher's guard deadline.
+func (ai *AppInstaller) Extend(j *Journal, until time.Time) error {
+	_, err := layout.ExtendGuard(ai.LauncherRoot, j.Job.RunID, until)
+	return err
+}
+
 func (ai *AppInstaller) requests() requests { return requests{dir: ai.updatesDir(), now: ai.now} }
 
 func (ai *AppInstaller) nudgeAfter() time.Duration {
@@ -88,30 +92,40 @@ func (ai *AppInstaller) nudgeAfter() time.Duration {
 // Asks implements Asker: a desktop app always asks.
 func (ai *AppInstaller) Asks() bool { return true }
 
+// holds reports whether the app's own payload is the job's release already (a retry
+// after a rollback of it: the launcher runs the kept copy of the release before).
+func (ai *AppInstaller) holds(j *Journal) bool {
+	p, err := apppayload.Read(filepath.Join(ai.bundled(), "payload.json"))
+	return err == nil && layout.CompareVersions(p.Version, j.Job.Version) == 0
+}
+
+// orderKind is what the app does with the order: install its update, or only show it
+// (it holds the release already).
+func (ai *AppInstaller) orderKind(j *Journal) (kind, feed string) {
+	if ai.holds(j) {
+		return RequestKindServer, ""
+	}
+	return RequestKindApp, j.Job.Assets["latest.json"]
+}
+
 // Ask implements Asker: the order, the release's own feed named.
 func (ai *AppInstaller) Ask(j *Journal) error {
-	return ai.requests().order(j, RequestKindApp, j.Job.Assets["latest.json"])
+	kind, feed := ai.orderKind(j)
+	return ai.requests().order(j, kind, feed)
 }
 
 // Answer implements Asker; an app that has not answered within NudgeAfter is started
 // with the order's deep link (once per NudgeAfter: a running app takes it too).
 func (ai *AppInstaller) Answer(j *Journal) (string, error) {
 	state, err := ai.requests().answer(j)
-	if err != nil || state != RequestOrdered || ai.Open == nil {
-		return state, err
+	if err == nil && state == RequestOrdered {
+		ai.nudge.nudge(ai.requests(), j, ai.now(), ai.nudgeAfter(), ai.Open)
 	}
-	if ai.nudgedRun != j.Job.RunID {
-		ai.nudgedRun, ai.nudgedAt = j.Job.RunID, ai.now()
-		if q, rerr := ai.requests().read(); rerr == nil && !q.At.IsZero() {
-			ai.nudgedAt = q.At
-		}
-	}
-	if ai.now().Sub(ai.nudgedAt) >= ai.nudgeAfter() {
-		ai.nudgedAt = ai.now()
-		_ = ai.Open(context.Background(), AppInstallURL+"?run="+j.Job.RunID)
-	}
-	return state, nil
+	return state, err
 }
+
+// InstallFailure implements InstallReporter: the failure the app reported.
+func (ai *AppInstaller) InstallFailure(j *Journal) *Failure { return ai.requests().failure(j) }
 
 // keptDir is where the payload of version is kept.
 func (ai *AppInstaller) keptDir(version string) string {
@@ -145,17 +159,30 @@ func (ai *AppInstaller) Preflight(ctx context.Context, j *Journal) error {
 	if _, err := os.Stat(ai.App); err != nil {
 		return Fail("no_app", "the app is not at %s: %v", ai.App, err)
 	}
+	if ai.holds(j) {
+		return nil // the app holds the release: nothing to fetch for it
+	}
 	feed, ok := j.Job.Assets["latest.json"]
 	if !ok {
 		return Fail("no_app_update", "%s publishes no app update (latest.json)", j.Job.Tag)
+	}
+	// the feed and every app it names are files of this very release, beside its verified
+	// release.json (the pinned repository's assets, of this tag); the app checks the
+	// update's signature and its signed version too
+	base := strings.TrimSuffix(j.Job.Assets["release.json"], "release.json")
+	if base == "" || base == j.Job.Assets["release.json"] || !strings.HasSuffix(base, "/"+j.Job.Tag+"/") ||
+		feed != base+"latest.json" {
+		return Fail("no_app_update", "the app feed %s is not this release's (%slatest.json)", feed, base)
 	}
 	b, err := ai.Source.get()(ctx, feed, 1<<20)
 	if err != nil {
 		return Fail("no_app_update", "latest.json: %v", err)
 	}
 	var f struct {
-		Version   string                     `json:"version"`
-		Platforms map[string]json.RawMessage `json:"platforms"`
+		Version   string `json:"version"`
+		Platforms map[string]struct {
+			URL string `json:"url"`
+		} `json:"platforms"`
 	}
 	if err := json.Unmarshal(b, &f); err != nil {
 		return Fail("no_app_update", "latest.json: %v", err)
@@ -163,8 +190,11 @@ func (ai *AppInstaller) Preflight(ctx context.Context, j *Journal) error {
 	if layout.CompareVersions(f.Version, j.Job.Version) != 0 {
 		return Fail("no_app_update", "latest.json is %s, not %s", f.Version, j.Job.Version)
 	}
-	for k := range f.Platforms {
+	for k, p := range f.Platforms {
 		if k == feedPlatform() || strings.HasPrefix(k, feedPlatform()+"-") {
+			if !strings.HasPrefix(p.URL, base) {
+				return Fail("no_app_update", "latest.json names %s for %s, not a file of %s", p.URL, k, base)
+			}
 			return nil
 		}
 	}
@@ -341,8 +371,17 @@ const AppInstallURL = "maktaba://install-update"
 // Restart implements Installer: tells the app to go (it installs what it staged) and
 // waits. The app's install restarts the server (this process ends); a failure it
 // reports, or no install within WaitApp, is an error (nothing was installed).
-func (ai *AppInstaller) Restart(ctx context.Context, j *Journal, _ func(int)) error {
-	if err := ai.requests().set(j, RequestKindApp, j.Job.Assets["latest.json"], RequestGo); err != nil {
+func (ai *AppInstaller) Restart(ctx context.Context, j *Journal, exit func(int)) error {
+	kind, feed := ai.orderKind(j)
+	if kind == RequestKindServer {
+		// the app holds the release: the launcher runs its own payload under the guard
+		_ = ai.requests().set(j, kind, feed, RequestInstalling)
+		if exit != nil {
+			exit(75)
+		}
+		return nil
+	}
+	if err := ai.requests().set(j, kind, feed, RequestGo); err != nil {
 		return Fail("app_request_failed", "%v", err)
 	}
 	nudge, wait := ai.nudgeAfter(), ai.WaitApp
@@ -396,19 +435,26 @@ func (ai *AppInstaller) Revert(_ context.Context, j *Journal) error {
 	if p, err := apppayload.Read(filepath.Join(ai.bundled(), "payload.json")); err == nil {
 		bundled = layout.NormalizeVersion(p.Version)
 	}
+	// with a whole kept copy, it is the one that runs, whatever the app's payload.json
+	// says: an install cut short may have replaced the programs and not payload.json yet
+	// (review B-M1); on Windows the launcher puts the copy back into the app's folder
+	kept := false
+	if j.FromRef != "" {
+		_, err := os.Stat(filepath.Join(j.FromRef, keptMarker))
+		kept = err == nil || sameDir(j.FromRef, ai.Payload)
+	}
 	switch {
+	case kept:
+		if err := layout.WriteOverride(ai.LauncherRoot, j.FromRef); err != nil {
+			return err
+		}
 	case bundled != "" && bundled == from:
-		// the app was not replaced: it runs as before
+		// no copy, and the app was not replaced: it runs as before
 		if err := layout.WriteOverride(ai.LauncherRoot, ""); err != nil {
 			return err
 		}
 	case j.FromRef != "":
-		if _, err := os.Stat(filepath.Join(j.FromRef, keptMarker)); err != nil && !sameDir(j.FromRef, ai.Payload) {
-			return Fail("no_previous", "the kept copy of %s is gone: %v", from, err)
-		}
-		if err := layout.WriteOverride(ai.LauncherRoot, j.FromRef); err != nil {
-			return err
-		}
+		return Fail("no_previous", "the kept copy of %s is gone", from)
 	default:
 		return Fail("no_previous", "no copy of %s was kept", from)
 	}
@@ -446,9 +492,10 @@ func (ai *AppInstaller) Discard(_ context.Context, j *Journal) error {
 	return os.RemoveAll(j.Staged)
 }
 
-// OpenURL opens a URL with the system: LaunchServices on a Mac, the shell on Windows
-// (a process the shell starts is outside the supervisor's job, so the app it starts
-// outlives the server it is about to restart).
+// OpenURL opens a URL with the system: LaunchServices on a Mac, the shell on Windows.
+// The app it starts must outlive the server it is about to restart: on Windows the
+// opener breaks away from the launcher's kill-on-close job (detach), and nothing of
+// the server's environment (MAKTABA_*) reaches the app.
 func OpenURL(ctx context.Context, url string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -459,9 +506,23 @@ func OpenURL(ctx context.Context, url string) error {
 	default:
 		cmd = exec.CommandContext(ctx, "xdg-open", url)
 	}
+	cmd.Env = withoutServerEnv(os.Environ())
+	detach(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return errf("%v: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// withoutServerEnv is environ without the server's own variables (MAKTABA_*): an app
+// started from here is the user's, not one of the server's children.
+func withoutServerEnv(environ []string) []string {
+	out := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		if !strings.HasPrefix(strings.ToUpper(kv), "MAKTABA_") {
+			out = append(out, kv)
+		}
+	}
+	return out
 }

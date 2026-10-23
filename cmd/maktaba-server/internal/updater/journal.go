@@ -132,6 +132,10 @@ func (j Job) Watch() time.Duration {
 	return DefaultWatchNode
 }
 
+// WatchBound is how long a watch may go on without a verdict (outside the start
+// steps): a release whose health keeps flapping is rolled back after it.
+func (j Job) WatchBound() time.Duration { return 3*j.Watch() + j.HealthLimit() }
+
 // HealthLimit is how long it may stay unhealthy.
 func (j Job) HealthLimit() time.Duration {
 	if j.HealthSeconds > 0 {
@@ -199,6 +203,13 @@ type Journal struct {
 	// while watched (a supervisor that keeps dying rolls back).
 	WatchSince *time.Time `json:"watch_since,omitempty"`
 	Starts     int        `json:"starts,omitempty"`
+	// Pending is the start step the release that came up is busy with (its watch waits,
+	// and so does the home's timeout of a node).
+	Pending string `json:"pending,omitempty"`
+	// WatchedSec is how long the watch has gone on outside the start steps (its bound).
+	WatchedSec int `json:"watched_sec,omitempty"`
+	// Rollbacks counts the switches back tried (a second one that does not take fails).
+	Rollbacks int `json:"rollbacks,omitempty"`
 	// Reason is why the run rolled back.
 	Reason    string    `json:"reason,omitempty"`
 	StartedAt time.Time `json:"started_at"`
@@ -233,10 +244,23 @@ func (j *Journal) clone() *Journal {
 	return &c
 }
 
-// LoadJournal reads dir/journal.json; nil when there is none. A journal that cannot be
-// parsed is an error (the caller sets it aside: it is never guessed at).
+// ErrJournalUnreadable: the journal is there but is no journal this release reads (it is
+// set aside, never guessed at); any other error of LoadJournal is the file's (being
+// replaced a moment, a reader holding it on Windows) and passes.
+var ErrJournalUnreadable = errors.New("journal unreadable")
+
+// LoadJournal reads dir/journal.json; nil when there is none. A read that fails is tried
+// again a few times; a journal that cannot be parsed is ErrJournalUnreadable.
 func LoadJournal(dir string) (*Journal, error) {
-	b, err := os.ReadFile(filepath.Join(dir, JournalFile))
+	path := filepath.Join(dir, JournalFile)
+	var b []byte
+	var err error
+	for i, wait := 0, 10*time.Millisecond; ; i, wait = i+1, 2*wait {
+		if b, err = os.ReadFile(path); err == nil || errors.Is(err, fs.ErrNotExist) || i == 6 {
+			break
+		}
+		time.Sleep(wait)
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -245,10 +269,10 @@ func LoadJournal(dir string) (*Journal, error) {
 	}
 	var j Journal
 	if err := json.Unmarshal(b, &j); err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.Join(dir, JournalFile), err)
+		return nil, fmt.Errorf("%w: %s: %v", ErrJournalUnreadable, path, err)
 	}
 	if j.V != journalVersion {
-		return nil, fmt.Errorf("%s: journal version %d, this release reads %d", filepath.Join(dir, JournalFile), j.V, journalVersion)
+		return nil, fmt.Errorf("%w: %s: journal version %d, this release reads %d", ErrJournalUnreadable, path, j.V, journalVersion)
 	}
 	return &j, nil
 }

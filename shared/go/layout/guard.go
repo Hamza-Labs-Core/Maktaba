@@ -159,6 +159,17 @@ func MarkRecordRestoring(path, failed, reason string) (bool, error) {
 	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
 }
 
+// ExtendGuard pushes the guard's deadline to until when the guard is runID's and its
+// deadline is earlier (the new release is busy starting); it reports whether it did.
+func ExtendGuard(root, runID string, until time.Time) (bool, error) {
+	g, err := ReadGuard(root)
+	if err != nil || g == nil || runID == "" || g.RunID != runID || !g.Deadline.Before(until) {
+		return false, err
+	}
+	g.Deadline = until.UTC()
+	return true, WriteGuard(root, *g)
+}
+
 // UnmarkRecordRestoring takes back MarkRecordRestoring when the switch back to the
 // release before failed: failed (still running) keeps the database its migrations made,
 // so the record says migrated again and no start puts the dump back. It reports whether

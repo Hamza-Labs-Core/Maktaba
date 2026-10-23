@@ -188,6 +188,7 @@ type fakeDB struct {
 	keep       int
 	migrates   []string // the record's state as each began
 	restores   []string // the dumps put back
+	asides     []string // the failed states set aside
 	migrateErr error
 	restoreErr error
 	block      chan struct{} // when set, the migrations wait on it (or the context)
@@ -196,8 +197,14 @@ type fakeDB struct {
 func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 	t.Helper()
 	f := &fakeDB{cfg: cfg}
-	prevD, prevR, prevM := dumpBeforeUpdate, restoreDump, migrateUp
-	t.Cleanup(func() { dumpBeforeUpdate, restoreDump, migrateUp = prevD, prevR, prevM })
+	prevD, prevR, prevM, prevA := dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled
+	t.Cleanup(func() { dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled = prevD, prevR, prevM, prevA })
+	dumpAsideBundled = func(_ context.Context, _ pgbundle.Bundle, path string) error {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.asides = append(f.asides, filepath.Base(path))
+		return os.WriteFile(path, []byte("aside"), 0o600)
+	}
 	dumpBeforeUpdate = func(_ context.Context, b pgbundle.Bundle, from, to string, keep int) (string, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -481,6 +488,37 @@ func TestAppBundleFailedRestoreIsFinishedNextStart(t *testing.T) {
 	}
 	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseRestored || rec.Version != "v0.2.0" {
 		t.Fatalf("record = %+v", rec)
+	}
+}
+
+// D2 (review A7): a putting back the launcher's fallback asked for (its deadline, a boot
+// loop) sets the failed state aside first, once; one the update's own rollback already
+// set aside is not dumped again.
+func TestAppBundleRestoreSetsTheFailedStateAside(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.2.0", "")
+	backups := filepath.Join(cfg.StateDir(), "backups")
+	_ = os.MkdirAll(backups, 0o700)
+	dump := filepath.Join(backups, "pre-v0.2.0-to-v0.3.0.dump")
+	_ = os.WriteFile(dump, []byte("dump"), 0o600)
+	restoring := apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
+		Dump: dump, Failed: "v0.3.0", Error: "launcher_deadline"}
+	record(t, cfg, restoring)
+	f := installFakeDB(t, cfg)
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("= %v", err)
+	}
+	if len(f.asides) != 1 || !strings.HasPrefix(f.asides[0], "failed-v0.3.0-") || len(f.restores) != 1 {
+		t.Fatalf("asides %v restores %v", f.asides, f.restores)
+	}
+	// set aside already (the update's rollback did it): not again
+	record(t, cfg, restoring)
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("= %v", err)
+	}
+	if len(f.asides) != 1 || len(f.restores) != 2 {
+		t.Fatalf("asides %v restores %v", f.asides, f.restores)
 	}
 }
 

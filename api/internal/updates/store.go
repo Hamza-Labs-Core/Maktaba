@@ -318,6 +318,10 @@ var ErrRunActive = errors.New("update_run_active")
 
 // InsertRun inserts a planned run; ErrRunActive when one is active.
 func (s *Store) InsertRun(ctx context.Context, version, from, trigger, actor string) (Run, error) {
+	return s.insertRun(ctx, version, from, trigger, actor, nil)
+}
+
+func (s *Store) insertRun(ctx context.Context, version, from, trigger, actor string, d *RunDetail) (Run, error) {
 	if a, err := s.ActiveRun(ctx); err != nil {
 		return Run{}, err
 	} else if a != nil {
@@ -326,11 +330,20 @@ func (s *Store) InsertRun(ctx context.Context, version, from, trigger, actor str
 	r := Run{ID: uuid.NewString(), Version: version, FromVersion: from, Trigger: trigger, State: "planned",
 		StartedAt: s.now(), ActorUserID: actor}
 	var act any
+	det := "{}"
 	if actor != "" {
 		act = actor
 	}
+	if d != nil {
+		b, err := json.Marshal(d)
+		if err != nil {
+			return Run{}, err
+		}
+		det = string(b)
+	}
 	if _, err := s.DB.ExecContext(ctx, `INSERT INTO update_runs (id, version, from_version, trigger, state, started_at,
-		actor_user_id) VALUES ($1, $2, $3, $4, 'planned', $5, $6)`, r.ID, version, from, trigger, s.ts(r.StartedAt), act); err != nil {
+		actor_user_id, detail) VALUES ($1, $2, $3, $4, 'planned', $5, $6, $7)`, r.ID, version, from, trigger,
+		s.ts(r.StartedAt), act, det); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(err.Error(), "update_runs_one_active_idx") {
 			return Run{}, ErrRunActive
 		}

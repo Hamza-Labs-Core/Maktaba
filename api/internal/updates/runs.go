@@ -51,13 +51,17 @@ const (
 	// click there (the rollout goes on with the others), then for its turn.
 	TargetWaitingClick = "waiting_click"
 	TargetClicked      = "clicked"
+	// TargetNeedsPerson: something on that machine only a person mends (an install that
+	// cannot update itself, a launcher too old, no room): reported, outside
+	// node_failure_policy (it holds no other machine)
+	TargetNeedsPerson = "needs_person"
 )
 
 // targetEnded reports whether a target's part is over in this run.
 func targetEnded(s string) bool {
 	switch s {
 	case TargetHealthy, TargetRolledBack, TargetFailed, TargetFailedPrepare, TargetSkipped, TargetWorkerOnly, TargetHeld,
-		TargetOffline:
+		TargetOffline, TargetNeedsPerson:
 		return true
 	}
 	return false
@@ -78,8 +82,11 @@ type RunDetail struct {
 	Targets []string `json:"targets,omitempty"`
 	// NoHome: the home already runs the version (catch_up, retry): the run is a rollout.
 	NoHome bool `json:"no_home,omitempty"`
-	// HomeSince is when the home phase began moving (its timeout).
+	// HomeSince is when the home phase began moving.
 	HomeSince *time.Time `json:"home_since,omitempty"`
+	// ApplySince is when the home was told to switch (its apply, or its app's go): the
+	// home phase's ceiling runs from it.
+	ApplySince *time.Time `json:"apply_since,omitempty"`
 }
 
 // Target is one update_targets row.
@@ -178,12 +185,10 @@ func (s *Store) LastFinishedOf(ctx context.Context, version string) (*Run, error
 }
 
 // InsertRunWith inserts a planned run of a given trigger with a detail.
+// The run and its detail are one statement: a driver tick in between must not take a
+// one-machine Retry for a whole run.
 func (s *Store) InsertRunWith(ctx context.Context, version, from, trigger, actor string, d RunDetail) (Run, error) {
-	r, err := s.InsertRun(ctx, version, from, trigger, actor)
-	if err != nil {
-		return r, err
-	}
-	return r, s.SetRunDetail(ctx, r.ID, "", d)
+	return s.insertRun(ctx, version, from, trigger, actor, &d)
 }
 
 // ---------- steps ----------
@@ -292,15 +297,30 @@ func (s *Store) Targets(ctx context.Context, runID string) ([]Target, error) {
 }
 
 // LastTargetState is a machine's target state in the latest run of version that had it
-// ("" none).
-func (s *Store) LastTargetState(ctx context.Context, nodeID, version string) (string, error) {
-	var state string
-	err := s.DB.QueryRowContext(ctx, `SELECT t.state FROM update_targets t JOIN update_runs r ON r.id = t.run_id
-		WHERE t.node_id = $1 AND t.to_version = $2 ORDER BY r.started_at DESC LIMIT 1`, nodeID, NormalizeVersion(version)).Scan(&state)
+// ("" none), and why it was skipped when an admin skipped it ("skipped").
+func (s *Store) LastTargetState(ctx context.Context, nodeID, version string) (state, why string, err error) {
+	var detail nullJSON
+	err = s.DB.QueryRowContext(ctx, `SELECT t.state, t.detail FROM update_targets t JOIN update_runs r ON r.id = t.run_id
+		WHERE t.node_id = $1 AND t.to_version = $2 ORDER BY r.started_at DESC LIMIT 1`, nodeID, NormalizeVersion(version)).
+		Scan(&state, &detail)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
+		return "", "", nil
 	}
-	return state, err
+	if len(detail.b) > 0 {
+		var d struct {
+			Why string `json:"why"`
+		}
+		_ = json.Unmarshal(detail.b, &d)
+		why = d.Why
+	}
+	return state, why, err
+}
+
+// TargetState is one target's state now ("" none).
+func (s *Store) TargetState(ctx context.Context, runID, nodeID string) string {
+	var state string
+	_ = s.DB.QueryRowContext(ctx, `SELECT state FROM update_targets WHERE run_id = $1 AND node_id = $2`, runID, nodeID).Scan(&state)
+	return state
 }
 
 // InsertTarget adds a machine to a run (once).

@@ -271,9 +271,14 @@ pub enum Plan {
     Install,
     /// What runs already.
     Keep,
-    /// Older than the newest version this machine ran: never installed; the
-    /// newer runtime keeps running.
-    Older { app: String, server: String },
+    /// Older than the newest version this machine ran (server): never
+    /// installed; the newer runtime keeps running. running: the version the
+    /// runtime runs now ("" when not known), which this app may catch up with.
+    Older {
+        app: String,
+        server: String,
+        running: String,
+    },
 }
 
 pub fn plan(st: &RuntimeStatus) -> Plan {
@@ -286,6 +291,7 @@ pub fn plan(st: &RuntimeStatus) -> Plan {
         return Plan::Older {
             app: st.from_version.clone(),
             server: server.clone(),
+            running: st.version.clone(),
         };
     }
     if st.update_pending {
@@ -309,8 +315,12 @@ pub enum Synced {
     Switched,
     /// The runtime runs this payload already (or the build carries none).
     Current,
-    /// This app is older than the server: nothing changed.
-    Older { app: String, server: String },
+    /// This app is older than the server: nothing changed (Plan::Older).
+    Older {
+        app: String,
+        server: String,
+        running: String,
+    },
 }
 
 /// Whether the runtime was found to hold this app's payload (or a newer one)
@@ -335,7 +345,7 @@ pub fn sync_runtime() -> Result<Synced, String> {
 /// stops here with `downgrade`.
 pub fn ensure_runtime(on_progress: impl FnMut(Progress)) -> Result<(), StepError> {
     match sync_with(on_progress)? {
-        Synced::Older { app, server } => {
+        Synced::Older { app, server, .. } => {
             Err(StepError::new("downgrade", older_message(&app, &server)))
         }
         Synced::Switched | Synced::Current => Ok(()),
@@ -358,7 +368,17 @@ fn sync_with(on_progress: impl FnMut(Progress)) -> Result<Synced, StepError> {
         .and_then(|v| serde_json::from_value(v).map_err(|e| e.to_string()))
         .map_err(|e| StepError::new("runtime", e))?;
     let synced = match plan(&st) {
-        Plan::Older { app, server } => return Ok(Synced::Older { app, server }),
+        Plan::Older {
+            app,
+            server,
+            running,
+        } => {
+            return Ok(Synced::Older {
+                app,
+                server,
+                running,
+            })
+        }
         Plan::Keep => {
             // this payload runs already; a machine set up by install.sh --app
             // (owner headless) that this app now manages gets one updater, the
@@ -798,7 +818,8 @@ mod tests {
             )),
             Plan::Older {
                 app: "v1.4.0".into(),
-                server: "v1.5.0".into()
+                server: "v1.5.0".into(),
+                running: "v1.5.0".into()
             }
         );
         // the newest this machine ran is what an older app is compared with
@@ -808,7 +829,8 @@ mod tests {
             )),
             Plan::Older {
                 app: "v1.4.0".into(),
-                server: "v1.5.0".into()
+                server: "v1.5.0".into(),
+                running: "v1.3.0".into()
             }
         );
     }
