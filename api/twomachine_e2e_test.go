@@ -647,7 +647,9 @@ slots = "off"
 		playHLS(t, user, nodeWebURL, viaSess.ManifestURL, "home-vod-fallback")
 		// 4. direct play (aud=streaming-direct), ranged, on the home
 		direct := open(homeWebURL, v3, false, "")
-		if !strings.HasPrefix(direct.DirectURL, "/stream/direct/"+v3+"?sig=") || direct.ManifestURL != direct.DirectURL {
+		// manifest_url keeps the direct path too (the apps read only it), signed on its own
+		if !strings.HasPrefix(direct.DirectURL, "/stream/direct/"+v3+"?sig=") ||
+			!strings.HasPrefix(direct.ManifestURL, "/stream/direct/"+v3+"?sig=") {
 			t.Fatalf("direct play URL: %q %q (mode %s)", direct.ManifestURL, direct.DirectURL, direct.Mode)
 		}
 		resp, body := user.do("GET", homeWebURL+direct.DirectURL, nil, map[string]string{"Range": "bytes=0-1023"})
