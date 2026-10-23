@@ -187,3 +187,18 @@ func (h *Hub) onUpdateState(s *Session, raw []byte) {
 	h.event(map[string]any{"event": "update_state", "session": s.ID, "node_id": nullable(s.NodeID),
 		"version": f.Version, "platform": f.Platform})
 }
+
+// MachineStates are the connected machine agents' last update.state (their release,
+// platform, install kind and update run), by node id (Epic 35 story 35.12).
+func (h *Hub) MachineStates() map[string]json.RawMessage {
+	out := map[string]json.RawMessage{}
+	for _, s := range h.machineAgents() {
+		s.mu.Lock()
+		st := s.updateState
+		s.mu.Unlock()
+		if s.NodeID != "" && len(st) > 0 {
+			out[s.NodeID] = append(json.RawMessage(nil), st...)
+		}
+	}
+	return out
+}

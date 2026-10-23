@@ -32,6 +32,8 @@ const maxBody = 64 << 10
 //	GET  /api/cluster/updates/runs       history (?limit=)
 type Handler struct {
 	Svc *Service
+	// Driver runs the runs (nil: an API that cannot install; the run actions answer 503).
+	Driver *Driver
 	// RulesPatch is the rules handler's PATCH /api/rules/{section}: settings are stored
 	// where every other rule is (app_settings rules.updates), with its validation.
 	RulesPatch http.HandlerFunc
@@ -46,6 +48,11 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/cluster/updates/defer", h.Defer)
 	r.Post("/api/cluster/updates/check", h.Check)
 	r.Get("/api/cluster/updates/runs", h.Runs)
+	r.Get("/api/cluster/updates/runs/{id}", h.RunView)
+	r.Get("/api/cluster/updates/runs/{id}/log", h.RunLog)
+	r.Post("/api/cluster/updates/runs/{id}/cancel", h.Cancel)
+	r.Post("/api/cluster/updates/runs/{id}/resume", h.Resume)
+	r.Post("/api/cluster/updates/runs/{id}/targets/{node}/{action}", h.TargetAction)
 }
 
 func admin(w http.ResponseWriter, r *http.Request) *principal.Principal {
@@ -75,17 +82,22 @@ type Overview struct {
 	LastCheckError       string     `json:"last_check_error,omitempty"`
 	CheckStale           bool       `json:"check_stale"`
 	TimeZone             string     `json:"time_zone"`
-	// Machines is the home now; story 35.12 adds the joined machines.
+	// Machines are the home and every joined machine (story 35.12).
 	Machines []Machine `json:"machines"`
+	// Last is the newest finished run (nil: none yet).
+	Last *Run `json:"last_run,omitempty"`
 }
 
 // Machine is one row of the Updates page's machines table.
 type Machine struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Role    string `json:"role"`
-	Version string `json:"version"`
-	State   string `json:"state"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Role     string `json:"role"`
+	Version  string `json:"version"`
+	State    string `json:"state"`
+	Platform string `json:"platform,omitempty"`
+	// Kind is the machine's install kind (layout, runtime, appbundle, flat).
+	Kind string `json:"kind,omitempty"`
 }
 
 // Overview builds GET /api/cluster/updates.
@@ -132,6 +144,22 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("updates: "+err.Error()))
 		return
+	}
+	if h.Driver != nil && len(o.Machines) > 0 {
+		if o.Run != nil {
+			if kind, _, err := h.Svc.Store.RunDetailOf(r.Context(), o.Run.ID); err == nil {
+				o.Machines[0].Kind = kind
+			}
+		}
+		o.Machines = h.Driver.Machines(r.Context(), o.Machines[0])
+	}
+	if runs, err := h.Svc.Store.Runs(r.Context(), 5); err == nil {
+		for i := range runs {
+			if runs[i].FinishedAt != nil {
+				o.Last = &runs[i]
+				break
+			}
+		}
 	}
 	common.WriteJSON(w, r, http.StatusOK, o)
 }

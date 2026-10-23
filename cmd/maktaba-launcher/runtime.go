@@ -111,14 +111,13 @@ func runtimeOwner(root string) string {
 
 // updateEnv is the server's update environment in app-bundle mode, read at
 // every start so a change of owner applies at the next one. runtimeRoot is
-// the Linux runtime the payload is a copy in ("" for Maktaba.app).
+// the Linux runtime the payload is a copy in ("" for Maktaba.app). The server
+// updates itself in every case now (Epic 35, install-kinds.md): the home's update
+// orders the app to install (Mac, Windows) or installs a new runtime (Linux), so
+// MAKTABA_UPDATE_DISABLE is no longer set here.
 func updateEnv(runtimeRoot string) []string {
 	if runtimeRoot == "" {
-		return []string{envUpdateDisable + "=1"}
+		return nil
 	}
-	owner := runtimeOwner(runtimeRoot)
-	if owner == runtimeOwnerHeadless {
-		return []string{envRuntimeOwner + "=" + owner}
-	}
-	return []string{envRuntimeOwner + "=" + owner, envUpdateDisable + "=1"}
+	return []string{envRuntimeOwner + "=" + runtimeOwner(runtimeRoot)}
 }

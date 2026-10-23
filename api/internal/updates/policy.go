@@ -18,15 +18,13 @@ const SettingsKey = "rules.updates"
 // Section is the rules section name.
 const Section = "updates"
 
-// autoInstallEnabled is the phase-A build switch (plan 35.3 §4 Rollout): until the
-// home's update orchestrator (stories 35.4-35.7) ships, automatic installs stay off
-// whatever rules.updates.auto_install says, and the home only checks, catalogs and
-// notifies. Set at link time with
+// autoInstallEnabled is the build switch of plan 35.3 §4: phase B (the home's update
+// orchestrator, stories 35.4-35.7, and the rollout, 35.12) has shipped, so automatic
+// installs follow rules.updates.auto_install (default on). A build can still turn them
+// off at link time with
 //
-//	-ldflags "-X github.com/Hamza-Labs-Core/Maktaba/api/internal/updates.autoInstallEnabled=true"
-//
-// (phase B), or flipped to "true" in the source when 35.4 lands.
-var autoInstallEnabled = "false"
+//	-ldflags "-X github.com/Hamza-Labs-Core/Maktaba/api/internal/updates.autoInstallEnabled=false"
+var autoInstallEnabled = "true"
 
 // AutoInstallPendingMessage is what Update now answers while AutoInstallAvailable is
 // false (the web shows the same text from updates.settings.notBuilt).

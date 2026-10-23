@@ -68,7 +68,7 @@ func fakeServerMain() {
 		rel = filepath.Join(b, "bin")
 		root, _ = os.Getwd()
 		appendLine(filepath.Join(root, "env"), fmt.Sprintf("update_disable=%s runtime_owner=%s launcher=%s release_dir=%s",
-			os.Getenv(envUpdateDisable), os.Getenv(envRuntimeOwner), os.Getenv(layout.EnvLauncher), os.Getenv(layout.EnvReleaseDir)))
+			os.Getenv("MAKTABA_UPDATE_DISABLE"), os.Getenv(envRuntimeOwner), os.Getenv(layout.EnvLauncher), os.Getenv(layout.EnvReleaseDir)))
 	}
 	b, _ := os.ReadFile(filepath.Join(rel, "behavior"))
 	acts := strings.Split(strings.TrimSpace(string(b)), ",")
@@ -78,6 +78,9 @@ func fakeServerMain() {
 		act = acts[n-1]
 	}
 	ver := filepath.Base(rel)
+	if lb, err := os.ReadFile(filepath.Join(rel, "label")); err == nil { // a payload's own name (guard tests)
+		ver = strings.TrimSpace(string(lb))
+	}
 	appendLine(filepath.Join(root, "trace"), fmt.Sprintf("%d %s %s", time.Now().UnixMilli(), ver, act))
 	switch {
 	case strings.HasPrefix(act, "exit:"):

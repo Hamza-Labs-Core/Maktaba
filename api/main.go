@@ -355,6 +355,7 @@ func runServe() error {
 	// A full node checks nothing itself: the home updates the cluster (these routes
 	// are home class there, proxied).
 	updatesRef := &router.UpdatesRef{} // Epic 35: filled once the app database is open
+	hubRef := &router.HubRef{}         // Epic 35: the update driver's cluster channel
 	var updater *system.Updater
 	if !nodeCfg.Enabled {
 		updater = buildUpdater(logger)
@@ -575,7 +576,7 @@ func runServe() error {
 			// Epic 35 story 35.3: update policy, release catalog and the quiet-window
 			// scheduler (/api/cluster/updates). Verification is story 35.1's.
 			router.MountP35(r, router.P35Deps{DB: appDB, Logger: logger, Current: version.Version, Notifier: notifyHub,
-				BaseChannel: version.Channel(), Ref: updatesRef, RunLoops: true,
+				BaseChannel: version.Channel(), Ref: updatesRef, RunLoops: true, Hub: hubRef,
 				Verifier: updates.ReleaseVerifier{Trust: updater}})
 			logger.Info("p27: live-channel + guide handlers mounted",
 				"event", "p27_mounted")
@@ -597,7 +598,7 @@ func runServe() error {
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the
 			// machine join/approve/revoke surface and its housekeeping.
-			clusterClose, verifier := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, logger)
+			clusterClose, verifier := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, hubRef, logger)
 			defer clusterClose()
 			nodeVerifier = verifier
 			// Epic 35 stories 35.9, 35.11: the nodes' delegation and cluster sign-in,

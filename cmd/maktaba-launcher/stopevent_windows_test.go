@@ -304,8 +304,8 @@ func TestWindowsAppServeStopEvent(t *testing.T) {
 	}
 	checkAskedToStop(t, l)
 	b, _ := os.ReadFile(filepath.Join(root, "env"))
-	if got := string(b); got != "update_disable=1 runtime_owner= launcher= release_dir=\n" {
-		t.Fatalf("server env %q: want updates off and no release layout", got)
+	if got := string(b); got != "update_disable= runtime_owner= launcher= release_dir=\n" {
+		t.Fatalf("server env %q: want no release layout", got)
 	}
 }
 

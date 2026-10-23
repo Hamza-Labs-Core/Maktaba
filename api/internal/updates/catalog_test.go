@@ -122,6 +122,7 @@ func newDiscoverer(g *fakeGitHub, store *Store, v Verifier, n notify.Notifier, c
 // TC4 (story 35.3): every release of the channel newer than the watermark is cataloged;
 // new entries are verified on sight; a failure is a critical notification at once.
 func TestCatalogVerifiesNewEntries(t *testing.T) {
+	disableAutoInstall(t) // the "available" notice is a build's that does not install by itself
 	for _, be := range backends(t) {
 		t.Run(be.name, func(t *testing.T) {
 			ctx := context.Background()

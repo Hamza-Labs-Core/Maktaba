@@ -42,7 +42,8 @@ const clusterTick = 30 * time.Second
 //
 // It also returns the verifier of the full nodes' signed requests (Epic 35 story 35.9:
 // their delegation keys are issued on the channel and sealed in store).
-func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secrets.Store, logger *slog.Logger) (func(), *delegation.Verifier) {
+func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secrets.Store, hubRef *router.HubRef,
+	logger *slog.Logger) (func(), *delegation.Verifier) {
 	driver := "postgres"
 	if isSQLiteDSN(dsn) {
 		driver = "sqlite"
@@ -95,6 +96,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		keys.DB = nil
 	}
 	hub := mountClusterHub(r, h, db, driver, store, keys, logger)
+	hubRef.Set(hub) // the update driver's machines (Epic 35 story 35.12)
 	// the machines verify this home's bundled Postgres with its CA, handed over the
 	// machine channel (and sealed in a join's credentials); another database is said to
 	// have no TLS when it has none

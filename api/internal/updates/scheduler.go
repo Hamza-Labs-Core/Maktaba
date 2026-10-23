@@ -329,7 +329,7 @@ func (s *Service) start(ctx context.Context, r Release, pol Policy, trigger, act
 	s.Store.Audit(ctx, actor, src, "run_planned", r.Version, map[string]any{"run_id": run.ID, "trigger": trigger})
 	starter := s.Starter
 	if starter == nil {
-		starter = &SupervisorClient{}
+		starter = noOrchestrator{}
 	}
 	if err := starter.Start(ctx, run.ID); err != nil {
 		code := "start_failed"
@@ -346,6 +346,11 @@ func (s *Service) start(ctx context.Context, r Release, pol Policy, trigger, act
 	}
 	return run, nil
 }
+
+// noOrchestrator is the Starter of an API that runs under no supervisor that updates.
+type noOrchestrator struct{}
+
+func (noOrchestrator) Start(context.Context, string) error { return ErrOrchestratorUnavailable }
 
 // RunNow is "Update now" (story 35.3 AC7): the same run at once, ignoring only the
 // window and the release age, never the checks. version "" is the planned target; a

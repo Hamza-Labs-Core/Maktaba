@@ -146,9 +146,13 @@ func TestPolicyEnvBaseSettingsOverride(t *testing.T) {
 		d.ProxyCacheMB != 2048 || d.CatchUp != "immediate" || !d.RehearseMigrations || d.RehearseMaxDBGB != 20 {
 		t.Fatalf("defaults differ from the README: %+v", d)
 	}
-	// phase A: the owner default is recorded, but this build does not install by itself
+	// phase B: this build installs by itself (rules.updates.auto_install, default on)
+	if !d.EffectiveAutoInstall() {
+		t.Fatal("this build does not install automatically")
+	}
+	disableAutoInstall(t)
 	if d.EffectiveAutoInstall() {
-		t.Fatal("phase A build installs automatically")
+		t.Fatal("a build with automatic installs turned off installs automatically")
 	}
 }
 
