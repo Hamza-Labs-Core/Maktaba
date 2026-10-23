@@ -721,6 +721,14 @@ jobs:
           done
           echo "LINUX_PAYLOAD_MISSING=${missing}" >>"$GITHUB_ENV"
           [ -z "$missing" ] || echo "::warning::no Linux payload for ${missing}: published without it"
+          # The release's migrations (Epic 35 phase B), signed with the rest and named in
+          # release.json: a home's update rehearses them on a scratch copy of its
+          # database, and a plain server install migrates with them.
+          sde="$(git log -1 --pretty=%ct)"
+          ( cd shared/db/migrations && ls -1 *.sql ) > migrations.list
+          tar --sort=name --mtime="@${sde}" --owner=0 --group=0 --numeric-owner \
+              -C shared/db/migrations -czf "dist/maktaba-migrations-${ver}.tar.gz" -T migrations.list
+          rm -f migrations.list
           # The installer itself, listed in checksums.txt and so signed with the rest:
           # a machine fetches it from the release and verifies it like the payload
           # (specs/epics/39-linux-app/headless.md) before running it.

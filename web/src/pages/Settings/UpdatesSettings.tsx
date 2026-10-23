@@ -122,6 +122,9 @@ export function UpdatesSettings() {
       <p className="mkt-muted" data-testid="updates-next">
         {next}
       </p>
+      <p>
+        <a href="/admin/updates">{t("updates.settings.page")}</a>
+      </p>
       {!ov.auto_install_available && (
         <p className="mkt-muted" data-testid="updates-phase-a">
           {t("updates.settings.notBuilt")}

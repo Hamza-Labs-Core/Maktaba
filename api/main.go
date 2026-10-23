@@ -224,7 +224,7 @@ func runServe() error {
 	// Epic 38 story 38.12: never serve on a schema a newer Maktaba migrated (a
 	// node's database is the home's, which its schema guard judges)
 	if !nodeCfg.Enabled {
-		if err := checkSchemaNotAhead(logger, os.Getenv("DATABASE_URL"), schemaguard.SchemaRev); err != nil {
+		if err := checkSchemaNotAhead(logger, os.Getenv("DATABASE_URL"), knownSchemaRev()); err != nil {
 			return err
 		}
 	}
@@ -576,7 +576,7 @@ func runServe() error {
 			// Epic 35 story 35.3: update policy, release catalog and the quiet-window
 			// scheduler (/api/cluster/updates). Verification is story 35.1's.
 			router.MountP35(r, router.P35Deps{DB: appDB, Logger: logger, Current: version.Version, Notifier: notifyHub,
-				BaseChannel: version.Channel(), Ref: updatesRef, RunLoops: true, Hub: hubRef,
+				BaseChannel: version.Channel(), Ref: updatesRef, RunLoops: true, Hub: hubRef, GitHubBaseURL: e2eGitHubAPI(),
 				Verifier: updates.ReleaseVerifier{Trust: updater}})
 			logger.Info("p27: live-channel + guide handlers mounted",
 				"event", "p27_mounted")

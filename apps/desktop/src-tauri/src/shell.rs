@@ -22,6 +22,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::agent::{self, Action, BundlePaths, LoginItem};
+use crate::autoinstall;
 use crate::lang::{self, Lang};
 use crate::mode::{self, AppMode, Target};
 use crate::setup::{self, Progress, StepError};
@@ -60,6 +61,8 @@ pub struct Shell {
     /// Since when the server has not answered (status::Quiet).
     quiet: Mutex<Quiet>,
     update_ready: AtomicBool,
+    /// An install the server asked for is under way (autoinstall.rs).
+    installing: AtomicBool,
     status: Mutex<StatusView>,
     menu: Mutex<Vec<Entry>>,
     /// The badge the tray icon shows now (tray::badge_color), and the plain
@@ -95,6 +98,7 @@ impl Shell {
             started_at: Mutex::new(Instant::now()),
             quiet: Mutex::new(Quiet::new(Instant::now())),
             update_ready: AtomicBool::new(false),
+            installing: AtomicBool::new(false),
             status: Mutex::new(StatusView {
                 status: ServerStatus::Starting,
                 detail: None,
@@ -273,6 +277,58 @@ fn build_tray_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry
     Ok(menu)
 }
 
+/// The server's request to install an app update (Epic 35, autoinstall.rs): an app
+/// that runs the server installs the release the home ordered, without a click. Read on
+/// every status poll and when the server opens the app with maktaba://install-update.
+pub fn install_requested(app: &AppHandle) {
+    let sh = shell(app);
+    let Some(root) = agent::state_root() else {
+        return;
+    };
+    let path = autoinstall::request_path(&root);
+    let req = autoinstall::read(&path);
+    let server_side = matches!(sh.mode(), Some(AppMode::Server { .. }));
+    match autoinstall::decide(
+        req.as_ref(),
+        server_side,
+        sh.paused.load(Ordering::SeqCst),
+        sh.installing.load(Ordering::SeqCst),
+    ) {
+        autoinstall::Action::Nothing => {}
+        autoinstall::Action::Refuse(why) => {
+            if let Some(r) = req.as_ref() {
+                let _ = autoinstall::write_state(&path, r, "failed", &why);
+            }
+        }
+        autoinstall::Action::Install { version, feed } => {
+            if sh.installing.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            let Some(r) = req else {
+                return;
+            };
+            let _ = autoinstall::write_state(&path, &r, "installing", "");
+            install_update_from(
+                app.clone(),
+                Some(Ordered {
+                    path,
+                    req: r,
+                    version,
+                    feed,
+                }),
+            );
+        }
+    }
+}
+
+/// An install the server ordered: where to say how it went, and what to install.
+struct Ordered {
+    path: PathBuf,
+    req: autoinstall::Request,
+    version: String,
+    feed: String,
+}
+
 /// Recompute the status; rebuild the tray menu only when it changed.
 fn refresh(app: &AppHandle) {
     let sh = shell(app);
@@ -289,6 +345,9 @@ fn refresh(app: &AppHandle) {
         };
         (view, None)
     };
+    if server {
+        install_requested(app);
+    }
     let update_ready = sh.update_ready.load(Ordering::SeqCst);
     // the server's English detail, for a tray that shows it (lang.rs)
     let detail = view
@@ -460,21 +519,44 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
 /// When the stop times out or the install fails, the server is started again
 /// (unless it was paused): asked to stop, it would stay down.
 fn install_update(app: AppHandle) {
+    install_update_from(app, None)
+}
+
+/// install_update, of the release the server ordered when `ordered` (from that
+/// release's own feed, and with no dialog: the server's run reports how it went).
+fn install_update_from(app: AppHandle, ordered: Option<Ordered>) {
     tauri::async_runtime::spawn(async move {
         // the server was asked to stop for the install
         #[cfg(windows)]
         let stopped = AtomicBool::new(false);
         let failed = |e: String| (false, e);
         let run = async {
-            let update = app
-                .updater()
-                .map_err(|e| failed(e.to_string()))?
-                .check()
-                .await
-                .map_err(|e| failed(e.to_string()))?;
+            let updater = match &ordered {
+                Some(o) => {
+                    let url: tauri::Url = o.feed.parse().map_err(|e| failed(format!("{e}")))?;
+                    app.updater_builder()
+                        .endpoints(vec![url])
+                        .map_err(|e| failed(e.to_string()))?
+                        .build()
+                        .map_err(|e| failed(e.to_string()))?
+                }
+                None => app.updater().map_err(|e| failed(e.to_string()))?,
+            };
+            let update = updater.check().await.map_err(|e| failed(e.to_string()))?;
             let Some(update) = update else {
+                if let Some(o) = &ordered {
+                    return Err(failed(format!("no app update for {} in its feed", o.version)));
+                }
                 return Ok(false);
             };
+            if let Some(o) = &ordered {
+                if !autoinstall::same_version(&update.version, &o.version) {
+                    return Err(failed(format!(
+                        "the feed offers {}, not {}",
+                        update.version, o.version
+                    )));
+                }
+            }
             let bytes = update
                 .download(|_, _| {}, || {})
                 .await
@@ -511,6 +593,21 @@ fn install_update(app: AppHandle) {
             }
             Ok(false) => shell(&app).update_ready.store(false, Ordering::SeqCst),
             Err((at_stop, e)) => {
+                if let Some(o) = &ordered {
+                    // the server's run says it; no dialog at the update's hour
+                    let _ = autoinstall::write_state(&o.path, &o.req, "failed", &e);
+                    shell(&app).installing.store(false, Ordering::SeqCst);
+                    #[cfg(windows)]
+                    if stopped.load(Ordering::SeqCst) {
+                        let handle = app.clone();
+                        let _ = tauri::async_runtime::spawn_blocking(move || {
+                            start_after_failed_update(&handle)
+                        })
+                        .await;
+                    }
+                    let _ = at_stop;
+                    return;
+                }
                 let w = shell(&app).lang.words();
                 let sentence = if at_stop {
                     w.update_stop_failed
@@ -657,7 +754,10 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                 }
                 Ok(Synced::Current) => Some(false),
                 Ok(Synced::Older { app, server }) => {
-                    show_info(&handle, linux::older_message(&app, &server));
+                    // the server updates its own runtime (Epic 35, owner decision D3):
+                    // this app catches up with its own update, offered in the tray
+                    eprintln!("maktaba: the server runs {server}, newer than this app ({app})");
+                    sh.update_ready.store(true, Ordering::SeqCst);
                     Some(true)
                 }
                 Err(e) => {

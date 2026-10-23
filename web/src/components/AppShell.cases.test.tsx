@@ -138,6 +138,7 @@ const PAGES = [
   "/admin/audit",
   "/admin/health",
   "/admin/machines",
+  "/admin/updates",
   "/admin/devices",
   "/admin/extensions",
 ];
@@ -286,6 +287,7 @@ const ADMIN_LINKS = [
   ["nav.admin.audit", "/admin/audit"],
   ["nav.admin.health", "/admin/health"],
   ["nav.admin.machines", "/admin/machines"],
+  ["nav.admin.updates", "/admin/updates"],
   ["nav.admin.logs", "/admin/logs"],
   ["nav.admin.devices", "/admin/devices"],
   ["nav.admin.extensions", "/admin/extensions"],

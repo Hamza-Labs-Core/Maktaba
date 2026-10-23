@@ -136,7 +136,9 @@ func (t Target) command(ctx context.Context, name, db string, args ...string) (*
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, t.bin(name), append(args, "--dbname="+conn)...)
+	// the connection first: a dump file is a positional argument, and without GNU
+	// getopt's reordering (Windows builds) an option after it is refused
+	cmd := exec.CommandContext(ctx, t.bin(name), append([]string{"--dbname=" + conn}, args...)...)
 	cmd.Env = append(os.Environ(), "PGPASSWORD="+pw, "PGCONNECT_TIMEOUT=15")
 	return cmd, nil
 }
@@ -274,14 +276,18 @@ type Result struct {
 // here, before anything is installed. Skipped (Result.Skipped) above maxGB, or when the
 // role cannot create databases.
 func (t Target) Rehearse(ctx context.Context, api, dir string, maxGB int, log io.Writer) (Result, error) {
+	return t.rehearse(ctx, api, dir, int64(maxGB)<<30, log)
+}
+
+func (t Target) rehearse(ctx context.Context, api, dir string, maxBytes int64, log io.Writer) (Result, error) {
 	var r Result
 	size, err := t.Size(ctx)
 	if err != nil {
 		return r, fmt.Errorf("db_unreachable: %w", err)
 	}
 	r.DBBytes = size
-	if maxGB > 0 && size > int64(maxGB)<<30 {
-		r.Skipped = fmt.Sprintf("the database is %d GB, above rehearse_max_db_gb (%d)", size>>30, maxGB)
+	if maxBytes > 0 && size > maxBytes {
+		r.Skipped = fmt.Sprintf("the database is %d MB, above rehearse_max_db_gb (%d MB)", size>>20, maxBytes>>20)
 		return r, nil
 	}
 	d, err := t.open(ctx, "")

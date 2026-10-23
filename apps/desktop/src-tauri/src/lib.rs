@@ -29,6 +29,7 @@ use tauri::{
 use tauri_plugin_deep_link::DeepLinkExt;
 
 mod agent;
+mod autoinstall;
 mod lang;
 mod mode;
 mod setup;
@@ -123,7 +124,12 @@ pub fn run() {
     // on_open_url.
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // the server asking for an app update it ordered (Epic 35): no window
+            if argv.iter().any(|a| a.starts_with(autoinstall::INSTALL_URL)) {
+                shell::install_requested(app);
+                return;
+            }
             focus_main(app);
         }));
     }
@@ -152,6 +158,10 @@ pub fn run() {
                 let _ = app.deep_link().register_all();
                 app.deep_link().on_open_url(move |event| {
                     let urls: Vec<String> = event.urls().iter().map(|u| u.to_string()).collect();
+                    if urls.iter().any(|u| u.starts_with(autoinstall::INSTALL_URL)) {
+                        shell::install_requested(&handle);
+                        return;
+                    }
                     if !urls.is_empty() {
                         focus_main(&handle);
                         let _ = handle.emit("deep-link", urls);

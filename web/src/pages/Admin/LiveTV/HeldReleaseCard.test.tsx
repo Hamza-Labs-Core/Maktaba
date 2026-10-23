@@ -73,11 +73,11 @@ describe("HeldReleaseCard", () => {
     );
   });
 
-  it("offers no Update now on a build without the update orchestrator", async () => {
+  it("offers no Update now on a build that does not install by itself", async () => {
     get.mockResolvedValue({ ...heldOverview, auto_install_available: false });
     renderCard();
     expect(await screen.findByTestId("held-not-built")).toHaveTextContent(
-      "Automatic install arrives with the update orchestrator."
+      "This build does not install updates by itself: it checks for them and tells you."
     );
     expect(screen.queryByRole("button", { name: "Approve and update now" })).toBeNull();
     expect(screen.getByRole("button", { name: "Skip this version" })).toBeInTheDocument();

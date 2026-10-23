@@ -50,7 +50,9 @@ type AppInstaller struct {
 	// started, and to install before the run fails (90 s, 30 min).
 	NudgeAfter time.Duration
 	WaitApp    time.Duration
-	Now        func() time.Time
+	// PollEvery is how often the app's answer is read (1 s).
+	PollEvery time.Duration
+	Now       func() time.Time
 }
 
 // AppRequestFile is the server's request to the app, in the launcher root's updates
@@ -340,7 +342,11 @@ func (ai *AppInstaller) Restart(ctx context.Context, j *Journal, _ func(int)) er
 		wait = 30 * time.Minute
 	}
 	start, nudged := ai.now(), false
-	t := time.NewTicker(time.Second)
+	poll := ai.PollEvery
+	if poll <= 0 {
+		poll = time.Second
+	}
+	t := time.NewTicker(poll)
 	defer t.Stop()
 	for {
 		select {

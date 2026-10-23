@@ -6,6 +6,8 @@
 //   POST /api/cluster/updates/skip       {version}
 //   POST /api/cluster/updates/defer      {until}
 //   POST /api/cluster/updates/check      check GitHub now
+//   GET  /api/cluster/updates/runs[/{id}] history, a run with its steps and machines (35.4, 35.12)
+//   POST /api/cluster/updates/runs/{id}/cancel|resume, /targets/{node}/retry|skip|rollback
 import { api } from "./api";
 
 export interface UpdatesPolicy {
@@ -49,19 +51,94 @@ export interface UpdatesPlan {
   waiting?: string;
 }
 
+/** One machine of the Updates page: the home, then every joined machine (story 35.12). */
+export interface UpdateMachine {
+  id: string;
+  name: string;
+  role: "home" | "node";
+  version: string;
+  /** up_to_date, behind, ahead_of_home, offline, worker_only, or a run's target state */
+  state: string;
+  platform?: string;
+  /** the install kind: layout, runtime, appbundle, flat */
+  kind?: string;
+}
+
+/** An update run (update_runs). */
+export interface UpdateRun {
+  id: string;
+  version: string;
+  from_version: string;
+  trigger: "auto" | "manual" | "catch_up" | "retry";
+  state: string;
+  step: string;
+  started_at: string;
+  finished_at?: string;
+  error?: { code?: string; step?: string; detail?: string; reason?: string; [k: string]: unknown };
+}
+
+export interface UpdateRunStep {
+  seq: number;
+  host: string;
+  step: string;
+  state: string;
+  started_at: string;
+  finished_at?: string;
+  detail?: { detail?: string };
+}
+
+export interface UpdateTarget {
+  node_id: string;
+  name: string;
+  ord: number;
+  platform: string;
+  kind: string;
+  state: string;
+  from_version: string;
+  to_version: string;
+  attempts: number;
+  error?: { code?: string; detail?: string; held_by?: string; [k: string]: unknown };
+  applied_at?: string;
+  healthy_at?: string;
+}
+
+/** GET /api/cluster/updates/runs/{id}. */
+export interface UpdateRunView extends UpdateRun {
+  install_kind: string;
+  detail: { waiting?: string; no_home?: boolean };
+  steps: UpdateRunStep[];
+  targets: UpdateTarget[];
+}
+
 export interface UpdatesOverview {
   current_version: string;
   watermark: string;
   policy: UpdatesPolicy;
   auto_install_available: boolean;
   plan: UpdatesPlan;
-  run?: { id: string; version: string; state: string; step: string };
+  run?: UpdateRun;
+  last_run?: UpdateRun;
   catalog: CatalogRelease[];
   last_check_ok?: string;
   last_check_error?: string;
   check_stale: boolean;
   time_zone: string;
+  machines?: UpdateMachine[];
 }
+
+/** The states of a run that are over. */
+export const RUN_ENDED = new Set([
+  "done",
+  "done_with_failures",
+  "held",
+  "failed",
+  "rolled_back",
+  "failed_rollback",
+  "cancelled",
+]);
+
+/** A run may be cancelled until the home begins switching (the API answers 409 past_switch after). */
+export const RUN_CANCELLABLE = new Set(["planned", "home_preparing", "home_prepared", "draining"]);
 
 export const updatesApi = {
   overview: () => api.get<UpdatesOverview>("/api/cluster/updates"),
@@ -75,6 +152,19 @@ export const updatesApi = {
   skip: (version: string) => api.post("/api/cluster/updates/skip", { version }),
   defer: (until: string) => api.post("/api/cluster/updates/defer", { until }),
   check: () => api.post("/api/cluster/updates/check", {}),
+  runs: (limit = 20) => api.get<{ items: UpdateRun[] }>(`/api/cluster/updates/runs?limit=${limit}`),
+  run: (id: string) =>
+    api.get<UpdateRunView>(`/api/cluster/updates/runs/${encodeURIComponent(id)}`),
+  cancel: (id: string) =>
+    api.post(`/api/cluster/updates/runs/${encodeURIComponent(id)}/cancel`, {}),
+  resume: (id: string) =>
+    api.post<{ run_id: string }>(`/api/cluster/updates/runs/${encodeURIComponent(id)}/resume`, {}),
+  targetAction: (id: string, node: string, action: "retry" | "skip" | "rollback") =>
+    api.post(
+      `/api/cluster/updates/runs/${encodeURIComponent(id)}/targets/${encodeURIComponent(node)}/${action}`,
+      {}
+    ),
+  logURL: (id: string) => `/api/cluster/updates/runs/${encodeURIComponent(id)}/log`,
 };
 
 /** A quiet window "HH:MM-HH:MM" (may cross midnight), longer than 30 minutes. */
