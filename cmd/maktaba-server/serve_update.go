@@ -452,6 +452,69 @@ type machineHealth struct {
 	releaseDir string // the running release's (a plain server's bin/releases/<v>)
 	snap       func() (supervisor.Snapshot, bool)
 	http       *http.Client
+	// offSince is when the home's machines first said they cannot log in to its database
+	// in this watch (zero: none does); offTold: the wait for them ended and was logged
+	offSince time.Time
+	offTold  bool
+	now      func() time.Time
+}
+
+// machinesWait is how long a home's watch waits for its machines to follow its database
+// (the home re-makes their access as soon as they say they cannot log in): an update that
+// moved the database carries them along before it commits, and a machine that still
+// cannot after this is shown as needing a person rather than holding the home's update.
+const machinesWait = 10 * time.Minute
+
+func (h *machineHealth) clock() time.Time {
+	if h.now != nil {
+		return h.now()
+	}
+	return time.Now()
+}
+
+// machinesOff is the home's watch waiting for its machines that cannot log in to its
+// database (pending, while their access is re-made and they follow it), within
+// machinesWait.
+func (h *machineHealth) machinesOff(off []selfMachineDB) (updater.Verdict, bool) {
+	if len(off) == 0 {
+		h.offSince, h.offTold = time.Time{}, false
+		return updater.Verdict{}, false
+	}
+	if h.offSince.IsZero() {
+		h.offSince = h.clock()
+	}
+	parts := make([]string, 0, len(off))
+	for _, m := range off {
+		name := m.Name
+		if name == "" {
+			name = m.ID
+		}
+		state := m.Code
+		if m.Healing {
+			state += ", following its new access"
+		}
+		parts = append(parts, name+" ("+state+")")
+	}
+	list := strings.Join(parts, ", ")
+	if h.clock().Sub(h.offSince) >= machinesWait {
+		if !h.offTold {
+			h.offTold = true
+			fmt.Fprintf(os.Stderr, "[update] machines still cannot log in to this home's database after %s: %s; "+
+				"the update goes on, the Updates page shows them\n", machinesWait, list)
+		}
+		return updater.Verdict{}, false
+	}
+	why := "the machines follow this home's database: " + list
+	return updater.Verdict{Pending: true, Why: why, Progress: why}, true
+}
+
+// selfMachineDB is a machine the home's /api/cluster/self says cannot log in to its
+// database.
+type selfMachineDB struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Code    string `json:"code"`
+	Healing bool   `json:"healing"`
 }
 
 // haltCodes are database-step details no retry mends: the release cannot run here.
@@ -534,8 +597,9 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		return updater.Verdict{Why: fmt.Sprintf("api /readyz answers %d", code)}
 	}
 	var self struct {
-		Version string `json:"version"`
-		Paused  string `json:"paused"`
+		Version    string          `json:"version"`
+		Paused     string          `json:"paused"`
+		MachinesDB []selfMachineDB `json:"machines_db"`
 	}
 	api := "http://" + supervisor.LocalAddr(h.cfg.Server.Listen, "8080")
 	if code := h.get(ctx, api+"/api/cluster/self", &self); code != http.StatusOK {
@@ -543,6 +607,11 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 	}
 	if self.Version != "" && layout.CompareVersions(self.Version, want) != 0 {
 		return updater.Verdict{Fatal: true, Why: fmt.Sprintf("the api answers as %s, not %s", self.Version, want)}
+	}
+	if h.home {
+		if v, wait := h.machinesOff(self.MachinesDB); wait {
+			return v
+		}
 	}
 	if h.node != nil {
 		if self.Paused != "" {

@@ -169,7 +169,7 @@ pub fn action_failed(lang: Lang, id: &str) -> &'static str {
         "server-pause" => w.pause_failed,
         "server-resume" => w.resume_failed,
         "stop-and-quit" => w.stop_failed,
-        "open-logs" => w.logs_failed,
+        "open-logs" | "update-logs" | "update-log-folder" => w.logs_failed,
         "change-server" => w.setup_failed,
         _ => w.action_failed,
     }
@@ -312,23 +312,33 @@ pub fn failed_notice(lang: Lang, version: &str, code: &str) -> String {
 }
 
 /// The menu with the failed update's line (failed_line) under the status line (on top in
-/// client mode, which has none).
-pub fn with_failed_update(mut entries: Vec<Entry>, line: Option<String>) -> Vec<Entry> {
+/// client mode, which has none), and under it the way to its details: "See the logs" (the
+/// web logs page of this machine's server at the attempt's time; `see_logs`: there is a
+/// server here to show them) and "Open the log folder" (app.log and server.log).
+pub fn with_failed_update(
+    mut entries: Vec<Entry>,
+    line: Option<String>,
+    lang: Lang,
+    see_logs: bool,
+) -> Vec<Entry> {
     let Some(label) = line else {
         return entries;
     };
+    let w = lang.words();
     let at = usize::from(matches!(
         entries.first(),
         Some(Entry::Item { id: "status", .. })
     ));
-    entries.insert(
-        at,
-        Entry::Item {
-            id: "update-failed",
-            label,
-            enabled: false,
-        },
-    );
+    let mut add = vec![Entry::Item {
+        id: "update-failed",
+        label,
+        enabled: false,
+    }];
+    if see_logs {
+        add.push(item("update-logs", w.see_logs));
+    }
+    add.push(item("update-log-folder", w.open_log_folder));
+    entries.splice(at..at, add);
     entries
 }
 
@@ -413,16 +423,46 @@ mod tests {
             Some("Update to 0.3.0 failed: replacing the app needs an administrator's password")
         );
         let server = entries(Lang::En, true, &ServerStatus::Running, false);
-        let with = with_failed_update(server.clone(), line.clone());
-        assert_eq!(ids(&with)[..2], ["status", "update-failed"]);
+        let with = with_failed_update(server.clone(), line.clone(), Lang::En, true);
+        assert_eq!(
+            ids(&with)[..4],
+            [
+                "status",
+                "update-failed",
+                "update-logs",
+                "update-log-folder"
+            ]
+        );
         assert!(!window_enabled(&with, "update-failed"));
-        let client = entries(Lang::En, false, &ServerStatus::SetupNeeded, false);
-        assert_eq!(ids(&with_failed_update(client, line))[0], "update-failed");
-        // the next attempt (running, or installed) takes the line away
+        assert!(window_enabled(&with, "update-logs") && window_enabled(&with, "update-log-folder"));
+        let labels: Vec<&str> = with
+            .iter()
+            .filter_map(|e| match e {
+                Entry::Item {
+                    id: "update-logs" | "update-log-folder",
+                    label,
+                    ..
+                } => Some(label.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(labels, ["See the logs", "Open the log folder"]);
+        // client mode: no server here to show the logs page, the folder still
+        let client = entries(Lang::Ar, false, &ServerStatus::SetupNeeded, false);
+        let with = with_failed_update(client, line.clone(), Lang::Ar, false);
+        assert_eq!(ids(&with)[..2], ["update-failed", "update-log-folder"]);
+        assert!(!ids(&with).contains(&"update-logs"));
+        // the next attempt (running, or installed) takes the line and its items away
         let mut next = failed.clone();
         next.outcome = attempts::RUNNING.into();
         assert_eq!(failed_line(Lang::En, Some(&next)), None);
-        assert_eq!(with_failed_update(server.clone(), None), server);
+        let none = with_failed_update(server.clone(), None, Lang::En, true);
+        assert_eq!(none, server);
+        assert!(!ids(&none).iter().any(|id| id.starts_with("update-")));
+        assert_eq!(
+            action_failed(Lang::En, "update-logs"),
+            Lang::En.words().logs_failed
+        );
         assert!(failed_notice(Lang::Ar, "0.3.0", attempts::DISK_FULL).contains("0.3.0"));
         assert_eq!(
             failed_notice(Lang::En, "", attempts::NO_NETWORK),

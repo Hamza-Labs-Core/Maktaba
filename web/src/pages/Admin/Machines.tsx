@@ -14,6 +14,10 @@
 // anything, and the hub's frames reach React at most once a second
 // (clusterStream). Per-job progress is not drawn here: each machine says how
 // many jobs it runs and links to the Processing page filtered by it.
+//
+// A full machine that cannot reach the home's database says so on its card, with why and
+// a way to its logs (update-attempts.md); /admin/machines?logs=<node>&since=<time> opens
+// that machine's logs (the Logs tab) from elsewhere (the Updates page).
 import {
   memo,
   useCallback,
@@ -54,9 +58,9 @@ import { QueuesPanel } from "../../components/cluster/QueuesPanel";
 import { RelayDoorCard } from "../../components/cluster/RelayDoorCard";
 import { RelayPanel } from "../../components/cluster/RelayPanel";
 import { SwitchHomeCard } from "../../components/cluster/SwitchHomeCard";
-import { useClusterFiles } from "../../components/cluster/useClusterFiles";
+import { nodeDays, useClusterFiles } from "../../components/cluster/useClusterFiles";
 import { useFmt } from "../../components/queue/format";
-import { useClusterStream, type ClusterStream } from "../../lib/clusterStream";
+import { groupByMachine, useClusterStream, type ClusterStream } from "../../lib/clusterStream";
 import type { SocketStatus } from "../../lib/clusterSocket";
 import { ApiError } from "../../lib/api";
 import {
@@ -71,8 +75,10 @@ import {
   type NodeUpdate,
   type StorageServer,
 } from "../../lib/clusterApi";
-import { bidiIsolate, useI18n } from "../../lib/i18n";
+import { bidiIsolate, lookupMessage, useI18n } from "../../lib/i18n";
 import { safeHttpUrl } from "../../lib/navigation";
+import { logWindow } from "../../lib/logLinks";
+import { homeDbOf, type HomeDb } from "../../lib/homeDb";
 import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
 import "../../styles/machines.css";
@@ -114,6 +120,50 @@ function MachinesPage() {
     setLogTarget(target);
     setTab("logs");
   }, []);
+
+  // a joined machine's logs: its folder (IP) when the hub or the share knows it, else the
+  // machine itself (the hub's logs topic takes a node id); on the day of `since` when its
+  // files hold that day, else live
+  const nodeLogTarget = useCallback(
+    (id: string, name: string, since?: string): LogTarget | null => {
+      const group = groupByMachine(stream.processes).find((g) => g.nodeId === id);
+      const nodes = files.files?.nodes ?? [];
+      const fileNode =
+        nodes.find((nd) => (nd.processes ?? []).some((p) => p.node_id === id)) ??
+        (group ? nodes.find((nd) => nd.ip === group.ip) : undefined);
+      const ip = group?.ip ?? fileNode?.ip;
+      if (!ip) return null;
+      const label = group?.name ?? fileNode?.processes?.find((p) => p.name)?.name ?? name;
+      const day = since?.slice(0, 10);
+      const onRecord = day && fileNode ? nodeDays(fileNode, "logs").includes(day) : false;
+      return { ip, label, ...(onRecord ? { date: day } : {}) };
+    },
+    [stream.processes, files.files]
+  );
+  const openNodeLogs = useCallback(
+    (id: string, name: string, since?: string) =>
+      openLogs(nodeLogTarget(id, name, since) ?? { ip: id, label: name }),
+    [openLogs, nodeLogTarget]
+  );
+
+  // ?logs=<node>&since=<time>: that machine's logs, at once by its id, then by its folder
+  // (and day) once the hub or the share names it
+  const [linked] = useState(() => {
+    const p = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
+    const node = p.get("logs");
+    return node ? { node, since: p.get("since") ?? undefined } : null;
+  });
+  const linkSettled = useRef(false);
+  useEffect(() => {
+    if (linked) openLogs({ ip: linked.node, label: linked.node });
+  }, [linked, openLogs]);
+  useEffect(() => {
+    if (!linked || linkSettled.current) return;
+    const target = nodeLogTarget(linked.node, linked.node, linked.since);
+    if (!target) return;
+    linkSettled.current = true;
+    setLogTarget(target);
+  }, [linked, nodeLogTarget]);
 
   return (
     <section className="mkt-page mkt-mc" aria-labelledby="mkt-mc-h">
@@ -157,6 +207,7 @@ function MachinesPage() {
                 stream={stream}
                 queueLabel={queueLabel}
                 onOpenLogs={openLogs}
+                onOpenNodeLogs={openNodeLogs}
                 extra={
                   <>
                     <EmergencyCard />
@@ -215,11 +266,13 @@ function MachinesOverview({
   stream,
   queueLabel,
   onOpenLogs,
+  onOpenNodeLogs,
   extra,
 }: {
   stream: ClusterStream;
   queueLabel: (stage: string) => string;
   onOpenLogs: (target: LogTarget) => void;
+  onOpenNodeLogs: OpenNodeLogs;
   extra?: ReactNode;
 }) {
   // jobs per machine from the hub; the same counts keep the same object
@@ -227,11 +280,26 @@ function MachinesOverview({
   const key = countsKey(counts);
   const live = stream.ready && stream.status === "open";
   const jobs = useMemo(() => (live ? counts : null), [key, live]);
+  // the machines that cannot reach the home's database (from the cluster view): their live
+  // card is not green either
+  const [dbDown, setDbDown] = useState("");
+  const noHomeDb = useMemo(() => new Set(dbDown ? dbDown.split("\n") : []), [dbDown]);
   return (
     <div className="mkt-mc-tab">
-      <Approvals queueLabel={queueLabel} jobs={jobs} />
+      <Approvals
+        queueLabel={queueLabel}
+        jobs={jobs}
+        onOpenNodeLogs={onOpenNodeLogs}
+        onHomeDbDown={setDbDown}
+      />
       {extra}
-      <LiveMachines stream={stream} queueLabel={queueLabel} onOpenLogs={onOpenLogs} jobs={jobs} />
+      <LiveMachines
+        stream={stream}
+        queueLabel={queueLabel}
+        onOpenLogs={onOpenLogs}
+        jobs={jobs}
+        noHomeDb={noHomeDb}
+      />
     </div>
   );
 }
@@ -275,13 +343,21 @@ function useErrorToast() {
 
 type JobCounts = Record<string, number> | null;
 
+/** Opens a joined machine's logs (the Logs tab), from `since` when given. */
+type OpenNodeLogs = (id: string, name: string, since?: string) => void;
+
 const Approvals = memo(function Approvals({
   queueLabel,
   jobs,
+  onOpenNodeLogs,
+  onHomeDbDown,
 }: {
   queueLabel: (stage: string) => string;
   /** jobs running per machine (node id / "home"); null while the hub is not connected */
   jobs: JobCounts;
+  onOpenNodeLogs?: OpenNodeLogs;
+  /** the machines that cannot reach the home's database, as their node ids one per line */
+  onHomeDbDown?: (ids: string) => void;
 }) {
   const { t } = useI18n();
   const [view, setView] = useState<ClusterView | null>(null);
@@ -294,13 +370,20 @@ const Approvals = memo(function Approvals({
         .getCluster()
         .then((v) => {
           if (!alive.current) return;
-          setView((prev) => reconcileView(prev, safeView(v)));
+          const safe = safeView(v);
+          setView((prev) => reconcileView(prev, safe));
           setError(false);
+          onHomeDbDown?.(
+            safe.nodes
+              .filter((n) => n.online && homeDbOf(n.update_state)?.ok === false)
+              .map((n) => n.id)
+              .join("\n")
+          );
         })
         .catch(() => {
           if (alive.current) setError(true);
         }),
-    []
+    [onHomeDbDown]
   );
 
   useEffect(() => {
@@ -384,6 +467,7 @@ const Approvals = memo(function Approvals({
                 onChanged={reload}
                 queueLabel={queueLabel}
                 jobs={jobs ? (jobs[n.id] ?? 0) : null}
+                onOpenLogs={onOpenNodeLogs}
               />
             ))}
           </ul>
@@ -751,11 +835,13 @@ function PendingRow({ node, onChanged }: { node: ClusterNode; onChanged: () => v
 
 // ---------------------------------------------------------------- machines
 
-type Status = "online" | "offline" | "draining" | "paused" | "revoked" | "rejected";
+type Status = "online" | "offline" | "draining" | "paused" | "revoked" | "rejected" | "no_home_db";
 
 function nodeStatus(node: ClusterNode): Status {
   if (node.state === "revoked") return "revoked";
   if (node.state === "rejected") return "rejected";
+  // it answers, but cannot reach the home's database: not healthy, whatever else it says
+  if (node.online && homeDbOf(node.update_state)?.ok === false) return "no_home_db";
   if (node.drain) return "draining";
   // its code needs a database schema the home does not have (or the other way round)
   if (node.online && pausedOf(node.workers)) return "paused";
@@ -769,6 +855,7 @@ const STATUS_TONE: Record<Status, "success" | "neutral" | "warn" | "error"> = {
   paused: "warn",
   revoked: "error",
   rejected: "error",
+  no_home_db: "error",
 };
 
 function num(v: unknown): number | null {
@@ -802,6 +889,40 @@ function useCapabilityChips(node: ClusterNode): string[] {
   }
   if (c.apple_silicon === true) chips.push(t("machines.cap.appleSilicon"));
   return chips;
+}
+
+/** A full machine that cannot reach the home's database: why (in the reader's words), the
+ * home re-provisioning its access when it does, what it said, and a way to its logs. */
+function HomeDbNotice({ homeDb, onLogs }: { homeDb: HomeDb; onLogs?: (since?: string) => void }) {
+  const { t, has } = useHomeDbWords();
+  const code = homeDb.code ?? "other";
+  const reason = has(`machines.homeDb.code.${code}`)
+    ? t(`machines.homeDb.code.${code}`)
+    : t("machines.homeDb.code.other");
+  return (
+    <div className="mkt-mc-note mkt-mc-note--warn" role="alert" data-testid="machine-home-db">
+      <p>{t("machines.homeDb.unreachable", { reason })}</p>
+      {homeDb.healing && <p>{t("machines.homeDb.healing")}</p>}
+      {homeDb.detail && (
+        <details>
+          <summary>{t("machines.homeDb.detail")}</summary>
+          <p className="mkt-mc-muted" dir="ltr">
+            {homeDb.detail}
+          </p>
+        </details>
+      )}
+      {onLogs && (
+        <Button variant="secondary" size="sm" onClick={() => onLogs(logWindow(homeDb.at).since)}>
+          {t("machines.homeDb.logs")}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function useHomeDbWords() {
+  const { t, locale } = useI18n();
+  return { t, has: (key: string) => lookupMessage(locale, key) !== undefined };
 }
 
 /** Why a machine claims nothing: its code and the home's database schema do not fit. */
@@ -845,11 +966,13 @@ const MachineCard = memo(function MachineCard({
   onChanged,
   queueLabel,
   jobs,
+  onOpenLogs,
 }: {
   node: ClusterNode;
   onChanged: () => void;
   queueLabel: (stage: string) => string;
   jobs: number | null;
+  onOpenLogs?: OpenNodeLogs;
 }) {
   const { t } = useI18n();
   const fmt = useFmt();
@@ -865,6 +988,7 @@ const MachineCard = memo(function MachineCard({
   const vod = node.vod?.fallback ? node.vod : null;
   const copyNote = useCopyNote(node.copy);
   const webUrl = safeHttpUrl(node.web_url);
+  const homeDb = homeDbOf(node.update_state);
 
   const run = (p: Promise<unknown>) => {
     setBusy(true);
@@ -895,6 +1019,12 @@ const MachineCard = memo(function MachineCard({
           {active && <JobsSummary host={node.id} count={jobs} name={node.name} />}
         </header>
         {paused && <PausedNotice reason={paused} />}
+        {active && homeDb && homeDb.ok === false && (
+          <HomeDbNotice
+            homeDb={homeDb}
+            onLogs={onOpenLogs ? (since) => onOpenLogs(node.id, node.name, since) : undefined}
+          />
+        )}
         {active && copyNote && (
           <p className={`mkt-mc-note${copyNote.warn ? " mkt-mc-note--warn" : ""}`} role="note">
             {copyNote.text}

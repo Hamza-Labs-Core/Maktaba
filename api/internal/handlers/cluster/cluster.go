@@ -91,6 +91,10 @@ type Handler struct {
 	// OnRevoke is called after a machine is revoked or removed: the
 	// cluster channel closes its sessions at once (design-agent.md §2).
 	OnRevoke func(nodeID string)
+	// LiveStates are the connected machine agents' last update.state, by node id (the
+	// hub's): a node's view carries its own (its release, its run, its login to this
+	// home's database); nil: the stored one.
+	LiveStates func() map[string]json.RawMessage
 	// OnNodeChanged is called after an admin changes a machine's stage
 	// switches or drain: its processes reload their stages at once.
 	OnNodeChanged func(nodeID string)

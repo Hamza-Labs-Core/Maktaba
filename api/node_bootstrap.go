@@ -34,6 +34,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homeproxy"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodeauth"
@@ -470,7 +471,8 @@ const copyStatusFile = "copy.json"
 
 // homeSelf is the home's GET /api/cluster/self: its identity, web address and the
 // machines' addresses (the apps learn the cluster from any machine, story 35.11 EC2).
-func homeSelf(store cluster.Store, webURL string, term func(context.Context) int64) clusterauth.SelfFunc {
+func homeSelf(store cluster.Store, webURL string, term func(context.Context) int64,
+	offDB func() []agent.OffDatabase) clusterauth.SelfFunc {
 	return func(ctx context.Context) clusterauth.SelfInfo {
 		info := clusterauth.SelfInfo{Role: "home", Version: version.Version, SchemaRev: schemaguard.SchemaRev,
 			WebURL: webURL, SSO: true}
@@ -496,6 +498,16 @@ func homeSelf(store cluster.Store, webURL string, term func(context.Context) int
 					row.WebURL = *n.WebURL
 				}
 				info.Machines = append(info.Machines, row)
+			}
+		}
+		if offDB != nil {
+			names := map[string]string{}
+			for _, m := range info.Machines {
+				names[m.ID] = m.Name
+			}
+			for _, o := range offDB() {
+				info.MachinesDB = append(info.MachinesDB, clusterauth.SelfMachineDB{ID: o.NodeID, Name: names[o.NodeID],
+					Code: o.Code, Healing: o.Healing})
 			}
 		}
 		return info
@@ -696,11 +708,17 @@ func warnUnclassified(r chi.Router, logger *slog.Logger) {
 // mountHomeClusterAuth mounts the home's delegation and cluster sign-in endpoints and
 // its /api/cluster/self (stories 35.9, 35.11), and runs its side of the machines'
 // copies of its database (Epic 37).
-func mountHomeClusterAuth(r chi.Router, db *sql.DB, logger *slog.Logger) {
+func mountHomeClusterAuth(r chi.Router, db *sql.DB, hubRef *router.HubRef, logger *slog.Logger) {
 	webURL := os.Getenv("MAKTABA_WEB_URL")
 	router.MountClusterAuth(r, router.ClusterAuthDeps{DB: db, WebURL: webURL, Logger: logger})
+	offDB := func() []agent.OffDatabase {
+		if h := hubRef.Get(); h != nil {
+			return h.MachinesOffDatabase()
+		}
+		return nil
+	}
 	router.MountNodeLocal(r, router.NodeLocalDeps{Self: homeSelf(&cluster.PGStore{DB: db}, webURL,
-		func(ctx context.Context) int64 { return switchover.TermOf(ctx, db) }), Moved: switchover.MovedHandler(db)})
+		func(ctx context.Context) int64 { return switchover.TermOf(ctx, db) }, offDB), Moved: switchover.MovedHandler(db)})
 	// the machines' copies of this database (Epic 37): the beat, the CA, the cap, the
 	// slots guarded; on a database that is not Maktaba's own Postgres, none without the rule
 	// (read at each beat, its errors told apart: a rule not read ends no copy)

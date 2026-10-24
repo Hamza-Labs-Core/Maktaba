@@ -99,6 +99,8 @@ type switching struct {
 	want func(role supervisor.Role, on bool) error
 	// ready is closed once the above are known (a command waits for it)
 	ready chan struct{}
+	// homeDB is a node's login to its home's database (serve_homeaccess.go; nil: a home)
+	homeDB *homeDBWatch
 
 	mu   sync.Mutex
 	busy string // the switchover under way here
@@ -1091,6 +1093,9 @@ func (s *switching) command(ctx context.Context, name string, args json.RawMessa
 	switch name {
 	case "home.database":
 		ok, detail := s.homeDatabase(args)
+		return true, ok, detail
+	case "home.access":
+		ok, detail := s.homeAccess(args)
 		return true, ok, detail
 	case "home.standbys":
 		ok, detail := s.homeStandbys(args)

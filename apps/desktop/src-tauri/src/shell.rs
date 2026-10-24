@@ -20,7 +20,7 @@ use tauri::{
     AppHandle, Emitter, Manager, Wry,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_notification::{Action as NoticeAction, ActionType, NotificationExt};
 use tauri_plugin_updater::{Updater, UpdaterExt};
 
 use crate::agent::{self, Action, BundlePaths, LoginItem};
@@ -309,9 +309,12 @@ fn own_version(app: &AppHandle) -> String {
 /// from the record, until the next attempt). Best effort: an error is only logged.
 fn notify_failed(app: &AppHandle, version: &str, code: &str) {
     let sh = shell(app);
+    // a click on it, or its button, sees the logs (notice_action)
     let shown = app
         .notification()
         .builder()
+        .id(FAILED_NOTICE_ID)
+        .action_type_id(FAILED_NOTICE_ACTIONS)
         .title(sh.lang.words().brand)
         .body(tray::failed_notice(sh.lang, version, code))
         .show();
@@ -329,6 +332,59 @@ fn order_error(f: &Failure) -> String {
         format!("needs_admin: {}", f.detail)
     } else {
         f.detail.clone()
+    }
+}
+
+/// The failed update's notification: its id, its action type and its button ("See the
+/// logs"), which a click on the notification itself does too.
+const FAILED_NOTICE_ID: i32 = 3501;
+const FAILED_NOTICE_ACTIONS: &str = "update-failed";
+const SEE_LOGS_ACTION: &str = "logs";
+
+/// The local server's web address, when this app runs the server (None in client mode:
+/// no server here to show its logs).
+fn local_web_url(app: &AppHandle) -> Option<String> {
+    match shell(app).mode() {
+        Some(AppMode::Server { web_url, .. }) => Some(web_url),
+        _ => None,
+    }
+}
+
+/// "See the logs": the web logs page of this machine's server at the newest attempt's
+/// time, in the app's window (where it shows the server's pages); the log folder in
+/// client mode, which has no server here.
+fn see_logs(app: &AppHandle) -> Result<(), String> {
+    let Some(web_url) = local_web_url(app) else {
+        return agent::open_logs();
+    };
+    let last = attempts_path()
+        .and_then(|p| attempts::newest(&p))
+        .unwrap_or_default();
+    let url = attempts::logs_url(&web_url, &last);
+    attempts::log(&format!("see the logs: {url}"));
+    focus_main(app);
+    navigate_main(app, &url)
+}
+
+/// A click on one of this app's notifications (the plugin reports desktop clicks once a
+/// handler exists): on the failed update's, or its "See the logs" button, the logs. Where
+/// the platform does not say which notification was clicked, a click sees the logs while
+/// the newest attempt is failed.
+fn notice_action(app: &AppHandle, action: &str, notice: Option<i32>) {
+    let failed_notice = notice == Some(FAILED_NOTICE_ID)
+        || action == SEE_LOGS_ACTION
+        || (notice.is_none()
+            && attempts_path()
+                .and_then(|p| attempts::newest(&p))
+                .is_some_and(|a| a.outcome == attempts::FAILED));
+    let result = if failed_notice {
+        see_logs(app)
+    } else {
+        focus_main(app);
+        Ok(())
+    };
+    if let Err(e) = result {
+        attempts::log(&format!("the notification's logs could not be opened: {e}"));
     }
 }
 
@@ -626,7 +682,12 @@ fn refresh(app: &AppHandle) {
     );
     // the last update attempt, when it failed: its reason until the next attempt
     let last = attempts_path().and_then(|p| attempts::newest(&p));
-    let entries = tray::with_failed_update(entries, tray::failed_line(lang, last.as_ref()));
+    let entries = tray::with_failed_update(
+        entries,
+        tray::failed_line(lang, last.as_ref()),
+        lang,
+        server && matches!(sh.mode(), Some(AppMode::Server { .. })),
+    );
     let badge = if server && cfg!(not(target_os = "macos")) {
         tray::badge_color(status, update_ready || order.is_some())
     } else {
@@ -757,7 +818,8 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
                 agent::register()
             }
         }
-        "open-logs" => agent::open_logs(),
+        "open-logs" | "update-log-folder" => agent::open_logs(),
+        "update-logs" => see_logs(app),
         "change-server" => sh.clear_mode().and_then(|()| {
             focus_main(app);
             navigate_main(app, &bundled_url(app))
@@ -1090,6 +1152,21 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(Shell::new(app));
 
     let sh = shell(app);
+    // the failed update's notification: its button and a click on it see the logs (the
+    // plugin reports desktop clicks once a handler exists, before any notification shows)
+    let notices = app.notification();
+    let _ = notices.register_action_types(vec![ActionType::builder(FAILED_NOTICE_ACTIONS)
+        .actions(vec![NoticeAction::builder(
+            SEE_LOGS_ACTION,
+            sh.lang.words().see_logs,
+        )
+        .build()])
+        .build()]);
+    let handle = app.clone();
+    let _ = notices.on_action(move |performed| {
+        let notice = performed.notification().map(|n| n.id());
+        notice_action(&handle, performed.action_id(), notice);
+    });
     let entries = tray::entries(sh.lang, sh.server_side(), &ServerStatus::Starting, false);
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&build_tray_menu(app, &entries)?)

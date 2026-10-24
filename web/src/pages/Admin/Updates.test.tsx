@@ -726,3 +726,106 @@ describe("Admin Updates: the last update attempt", () => {
     );
   });
 });
+
+// update-attempts.md: a failure links to its logs (a node's own on the Machines page, the
+// home's on the log page) for its time, and a node that cannot reach the home's database
+// says why on its row.
+describe("Admin Updates: logs links and the home's database", () => {
+  const at = "2026-10-24T05:30:00Z";
+  const ended = "2026-10-24T05:31:00Z";
+
+  function machinesWith(home: Record<string, unknown>, node: Record<string, unknown>) {
+    const ov = overview();
+    return {
+      ...ov,
+      machines: (ov.machines as Record<string, unknown>[]).map((m) =>
+        m.id === "home" ? { ...m, ...home } : m.id === "n1" ? { ...m, ...node } : m
+      ),
+    };
+  }
+
+  const failed = {
+    id: "app-1",
+    at,
+    ended_at: ended,
+    source: "app",
+    trigger: "badge",
+    from: "1.4.0",
+    to: "1.5.0",
+    outcome: "failed",
+    code: "no_network",
+  };
+
+  it("links a failure to its logs for its time: the home's log page, a node's own logs", async () => {
+    routes(machinesWith({ attempts: [failed] }, { attempts: [{ ...failed, id: "app-2" }] }), null);
+    renderPage();
+    const home = await screen.findByTestId("updates-machine-home-attempt-logs-link");
+    expect(home).toHaveTextContent("See the logs");
+    expect(home).toHaveAttribute(
+      "href",
+      "/admin/logs?since=2026-10-24T05%3A28%3A00.000Z&until=2026-10-24T05%3A33%3A00.000Z"
+    );
+    expect(screen.getByTestId("updates-machine-n1-attempt-logs-link")).toHaveAttribute(
+      "href",
+      "/admin/machines?logs=n1&since=2026-10-24T05%3A28%3A00.000Z&until=2026-10-24T05%3A33%3A00.000Z"
+    );
+    // the reason stays the main thing; the bundle download is still there
+    expect(screen.getByTestId("updates-machine-home-attempt-headline")).toHaveTextContent(
+      "The update to 1.5.0 failed: The update could not be reached"
+    );
+    expect(screen.getAllByRole("button", { name: "Download the logs" })).toHaveLength(2);
+  });
+
+  it("says why a node cannot reach the home's database, the healing, the detail and its logs", async () => {
+    routes(
+      machinesWith(
+        {},
+        {
+          state: "up_to_date",
+          home_db: {
+            ok: false,
+            code: "auth_failed",
+            detail: 'pq: password authentication failed for user "maktaba_node_n1"',
+            at,
+            healing: true,
+          },
+        }
+      ),
+      null
+    );
+    renderPage();
+    const note = await screen.findByTestId("updates-machine-n1-home-db");
+    expect(note).toHaveTextContent(
+      "This machine can't reach the home's database: the home's database refused its password"
+    );
+    expect(note).toHaveTextContent("The home gave it new access; it is following it.");
+    expect(note).toHaveTextContent("password authentication failed");
+    expect(screen.getByTestId("updates-machine-n1-home-db-logs")).toHaveAttribute(
+      "href",
+      "/admin/machines?logs=n1&since=2026-10-24T05%3A28%3A00.000Z"
+    );
+    expect(screen.queryByTestId("updates-machine-home-home-db")).toBeNull();
+  });
+
+  it("a node that reaches it, or an unknown reason, reads as such (en + ar)", async () => {
+    routes(machinesWith({}, { home_db: { ok: false, code: "something_new" } }), null);
+    const first = renderPage();
+    expect(await screen.findByTestId("updates-machine-n1-home-db")).toHaveTextContent(
+      "an error the details say"
+    );
+    first.unmount();
+
+    routes(machinesWith({}, { home_db: { ok: false, code: "no_hba" } }), null);
+    renderPage("ar");
+    expect(await screen.findByTestId("updates-machine-n1-home-db")).toHaveTextContent(
+      "لا يستطيع هذا الجهاز الوصول إلى قاعدة بيانات الخادم الرئيسي"
+    );
+  });
+
+  it("shows nothing for a node that reaches the home's database", async () => {
+    routes(machinesWith({}, { home_db: { ok: true, at } }), null);
+    renderPage();
+    await screen.findByTestId("updates-machine-n1");
+    expect(screen.queryByTestId("updates-machine-n1-home-db")).toBeNull();
+  });
+});

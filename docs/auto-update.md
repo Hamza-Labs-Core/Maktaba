@@ -96,7 +96,11 @@ the desktop app's own updater (its badge, its menu, the home's order), a release
 (the database step, the pipeline's environment), and the cluster's runs. **Admin → Updates**
 shows, for the home and each machine, the last attempt: when, from and to, the step it stopped
 at, the reason in plain words, the raw error, and what to do next (Retry, the fix's command, or
-the logs). The desktop app says the same in its menu and an OS notification.
+the logs: "See the logs" opens the logs page on that update's time window, a node's own logs
+for a node). The desktop app says the same in its menu and an OS notification, which open the
+logs page or the folder with `app.log` and `server.log`. A machine that cannot log in to the
+home's database says so on the Updates and Machines pages; the home re-makes its access by
+itself ([machine-database-access.md](../specs/epics/37-node-replica/machine-database-access.md)).
 
 Where the evidence is on each machine:
 

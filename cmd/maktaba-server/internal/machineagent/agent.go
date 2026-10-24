@@ -85,6 +85,22 @@ type UpdateState struct {
 	// Attempts are this machine's update attempts, every failure with its reason
 	// (update-attempts.md), newest first: the home's Updates page shows them.
 	Attempts []attempts.Attempt `json:"attempts,omitempty"`
+	// HomeDB is whether this machine logs in to its home's database: the home re-makes
+	// its access when it cannot (its role refused, the database moved), and shows why.
+	HomeDB *HomeDB `json:"home_db,omitempty"`
+}
+
+// HomeDB is a machine's login to its home's database, as it last tried it.
+type HomeDB struct {
+	OK bool `json:"ok"`
+	// Code is why it cannot: auth_failed, no_hba, refused, unreachable, no_database, tls,
+	// other.
+	Code   string    `json:"code,omitempty"`
+	Detail string    `json:"detail,omitempty"`
+	At     time.Time `json:"at"`
+	// Healing: the home gave this machine new access to its database, which it follows
+	// (it starts again with it).
+	Healing bool `json:"healing,omitempty"`
 }
 
 // RunState is a machine's update run as update.state reports it.
@@ -441,6 +457,9 @@ func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher) (
 		}
 		if len(st.Attempts) > 0 {
 			f["attempts"] = st.Attempts
+		}
+		if st.HomeDB != nil {
+			f["home_db"] = st.HomeDB
 		}
 		send(f)
 	}

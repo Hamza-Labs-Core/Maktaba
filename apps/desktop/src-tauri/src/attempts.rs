@@ -719,6 +719,110 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
+/// A time of the record (RFC 3339: ours is "2026-10-24T05:30:00Z"; a fraction, or an offset
+/// like +03:00, is read too). None when it is not one.
+pub fn parse_rfc3339(s: &str) -> Option<SystemTime> {
+    let s = s.trim();
+    let num = |a: usize, b: usize| -> Option<i64> {
+        let part = s.get(a..b)?;
+        part.bytes()
+            .all(|c| c.is_ascii_digit())
+            .then(|| part.parse().ok())?
+    };
+    let (y, mo, d) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
+    let (h, mi, sec) = (num(11, 13)?, num(14, 16)?, num(17, 19)?);
+    if s.get(4..5)? != "-" || s.get(7..8)? != "-" || !matches!(s.get(10..11)?, "T" | "t" | " ") {
+        return None;
+    }
+    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || sec > 60 {
+        return None;
+    }
+    let mut rest = s.get(19..)?;
+    if let Some(frac) = rest.strip_prefix('.') {
+        let digits = frac.bytes().take_while(u8::is_ascii_digit).count();
+        rest = &frac[digits..];
+    }
+    let offset = match rest {
+        "Z" | "z" => 0,
+        _ => {
+            let sign = match rest.get(0..1)? {
+                "+" => 1,
+                "-" => -1,
+                _ => return None,
+            };
+            let (oh, om) = (
+                rest.get(1..3)?.parse::<i64>().ok()?,
+                rest.get(4..6)?.parse::<i64>().ok()?,
+            );
+            if rest.len() != 6 || rest.get(3..4)? != ":" {
+                return None;
+            }
+            sign * (oh * 3600 + om * 60)
+        }
+    };
+    let secs = days_from_civil(y, mo as u32, d as u32) * 86_400 + h * 3600 + mi * 60 + sec - offset;
+    u64::try_from(secs)
+        .ok()
+        .map(|s| UNIX_EPOCH + Duration::from_secs(s))
+}
+
+/// The day count since 1970-01-01 of a date (Howard Hinnant's days_from_civil).
+fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400);
+    let mp = i64::from(if m > 2 { m - 3 } else { m + 9 });
+    let doy = (153 * mp + 2) / 5 + i64::from(d) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// How far before and after an attempt the logs page shows.
+pub const LOGS_MARGIN: Duration = Duration::from_secs(120);
+
+/// The web logs page of this machine's server for an attempt ("See the logs"): its time,
+/// two minutes on either side (since the attempt began, until it ended, or began when it
+/// has not), and the release it tried as the search when known.
+/// <web_url>/admin/logs?since=<ISO>&until=<ISO>&q=<to>
+pub fn logs_url(web_url: &str, a: &Attempt) -> String {
+    let base = web_url.trim_end_matches('/');
+    let mut query: Vec<(&str, String)> = Vec::new();
+    if let Some(at) = parse_rfc3339(&a.at) {
+        query.push((
+            "since",
+            rfc3339(at.checked_sub(LOGS_MARGIN).unwrap_or(UNIX_EPOCH)),
+        ));
+        let end = parse_rfc3339(&a.ended_at).unwrap_or(at);
+        query.push(("until", rfc3339(end + LOGS_MARGIN)));
+    }
+    if !a.to.is_empty() {
+        query.push(("q", a.to.clone()));
+    }
+    let query: Vec<String> = query
+        .iter()
+        .map(|(k, v)| format!("{k}={}", percent_encode(v)))
+        .collect();
+    if query.is_empty() {
+        format!("{base}/admin/logs")
+    } else {
+        format!("{base}/admin/logs?{}", query.join("&"))
+    }
+}
+
+/// A query value with everything but RFC 3986's unreserved characters percent-encoded.
+fn percent_encode(v: &str) -> String {
+    let mut out = String::with_capacity(v.len());
+    for b in v.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 /// app.log rotates past this size (one old copy, app.log.1).
 const LOG_ROTATE_BYTES: u64 = 1 << 20;
 
@@ -1235,6 +1339,69 @@ mod tests {
         assert_eq!(
             rfc3339(UNIX_EPOCH + Duration::from_secs(951_868_799)),
             "2000-02-29T23:59:59Z"
+        );
+    }
+
+    #[test]
+    fn the_records_times_read_back() {
+        let t = UNIX_EPOCH + Duration::from_secs(1_792_819_800);
+        assert_eq!(parse_rfc3339("2026-10-24T05:30:00Z"), Some(t));
+        assert_eq!(parse_rfc3339("2026-10-24T05:30:00.123456Z"), Some(t));
+        assert_eq!(parse_rfc3339("2026-10-24T08:30:00+03:00"), Some(t));
+        assert_eq!(parse_rfc3339("2026-10-24T00:30:00-05:00"), Some(t));
+        assert_eq!(
+            parse_rfc3339("2000-02-29T23:59:59Z")
+                .map(rfc3339)
+                .as_deref(),
+            Some("2000-02-29T23:59:59Z")
+        );
+        for bad in [
+            "",
+            "yesterday",
+            "2026-13-24T05:30:00Z",
+            "2026-10-24 05:30",
+            "2026-10-24T05:30:00",
+        ] {
+            assert_eq!(parse_rfc3339(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn see_the_logs_opens_the_attempts_time_on_the_logs_page() {
+        let failed = Attempt {
+            at: "2026-10-24T05:30:00Z".into(),
+            ended_at: "2026-10-24T05:31:12Z".into(),
+            to: "0.3.0-rc.6".into(),
+            outcome: FAILED.into(),
+            ..Attempt::default()
+        };
+        assert_eq!(
+            logs_url("http://127.0.0.1:8080/", &failed),
+            "http://127.0.0.1:8080/admin/logs?since=2026-10-24T05%3A28%3A00Z&until=2026-10-24T05%3A33%3A12Z&q=0.3.0-rc.6"
+        );
+        // not ended (or its end unreadable): two minutes after it began; no release known:
+        // no search
+        let early = Attempt {
+            at: "2026-10-24T05:30:00Z".into(),
+            ..Attempt::default()
+        };
+        assert_eq!(
+            logs_url("http://localhost:8080", &early),
+            "http://localhost:8080/admin/logs?since=2026-10-24T05%3A28%3A00Z&until=2026-10-24T05%3A32%3A00Z"
+        );
+        // a time that does not read: the page as it is, with the search
+        let odd = Attempt {
+            at: "soon".into(),
+            to: "1.0.0 beta&x=1".into(),
+            ..Attempt::default()
+        };
+        assert_eq!(
+            logs_url("http://h/", &odd),
+            "http://h/admin/logs?q=1.0.0%20beta%26x%3D1"
+        );
+        assert_eq!(
+            logs_url("http://h", &Attempt::default()),
+            "http://h/admin/logs"
         );
     }
 

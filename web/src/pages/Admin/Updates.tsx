@@ -15,6 +15,8 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError, downloadBlob } from "../../lib/api";
 import { lookupMessage, useI18n } from "../../lib/i18n";
 import { CopyField } from "../../components/CopyField";
+import type { HomeDb } from "../../lib/homeDb";
+import { logsLink, logWindow, machineLogsLink } from "../../lib/logLinks";
 import {
   ATTEMPT_FAILED,
   RUN_ENDED,
@@ -341,6 +343,9 @@ export function AdminUpdates() {
                       )}
                     </div>
                   )}
+                  {m.role === "node" && m.home_db && m.home_db.ok === false && (
+                    <HomeDbNote machineId={m.id} homeDb={m.home_db} />
+                  )}
                 </td>
               </tr>
               {(m.attempts?.length ?? 0) > 0 && (
@@ -446,6 +451,40 @@ export function AdminUpdates() {
   );
 }
 
+/** Where a machine's logs around a time are: a joined machine's own (the Machines page's
+ * Logs tab), the home's on the admin log page. */
+function logsHref(machine: UpdateMachine, since?: string, until?: string): string {
+  return machine.role === "node"
+    ? machineLogsLink(machine.id, { since, until })
+    : logsLink({ since, until });
+}
+
+/** A node that cannot reach the home's database: why, the home re-provisioning its access
+ * when it does, what it said, and its logs. */
+function HomeDbNote({ machineId, homeDb }: { machineId: string; homeDb: HomeDb }) {
+  const { t, locale } = useI18n();
+  const code = homeDb.code ?? "other";
+  const key = `machines.homeDb.code.${code}`;
+  const reason =
+    lookupMessage(locale, key) !== undefined ? t(key) : t("machines.homeDb.code.other");
+  const id = `updates-machine-${machineId}-home-db`;
+  return (
+    <div className="mkt-error" role="alert" data-testid={id}>
+      <div>{t("machines.homeDb.unreachable", { reason })}</div>
+      {homeDb.healing && <div className="mkt-muted">{t("machines.homeDb.healing")}</div>}
+      {homeDb.detail && (
+        <details>
+          <summary>{t("machines.homeDb.detail")}</summary>
+          <ErrorDetail text={homeDb.detail} />
+        </details>
+      )}
+      <a href={machineLogsLink(machineId, logWindow(homeDb.at))} data-testid={`${id}-logs`}>
+        {t("machines.homeDb.logs")}
+      </a>
+    </div>
+  );
+}
+
 /** A machine's last update attempt, then its earlier ones (update-attempts.md). */
 function AttemptBlock({
   machine,
@@ -502,6 +541,8 @@ function AttemptBlock({
   // a run's machine is retried as the run page's Retry does (the home has Update now)
   const retry =
     failed && last.source === "run" && last.run_id && machine.role === "node" ? last.run_id : "";
+  // its logs: from two minutes before it began to two after it ended
+  const win = logWindow(last.at, last.ended_at);
   return (
     <div className="mkt-updates__attempt" data-testid={id}>
       <div>
@@ -548,6 +589,9 @@ function AttemptBlock({
               {t("updates.page.target.retry")}
             </Button>
           )}
+          <a href={logsHref(machine, win.since, win.until)} data-testid={`${id}-logs-link`}>
+            {t("updates.attempt.seeLogs")}
+          </a>
           <Button variant="secondary" size="sm" disabled={busy} onClick={onLogs}>
             {t("updates.attempt.logs")}
           </Button>

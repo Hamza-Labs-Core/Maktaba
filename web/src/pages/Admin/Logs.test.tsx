@@ -41,6 +41,52 @@ describe("AdminLogs", () => {
   });
   afterEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState({}, "", "/");
+  });
+
+  // a failure elsewhere links here with its machine and its time (update-attempts.md)
+  it("opens with the filters its address gives, the time window client-side", async () => {
+    get.mockResolvedValue({
+      entries: [
+        { ts: "2026-10-24T05:20:00Z", level: "error", service: "api", msg: "before it" },
+        { ts: "2026-10-24T05:30:00Z", level: "error", service: "api", msg: "the failure" },
+        { ts: "2026-10-24T05:40:00Z", level: "error", service: "api", msg: "after it" },
+      ],
+      count: 3,
+    });
+    window.history.replaceState(
+      {},
+      "",
+      "/admin/logs?q=studio&services=api&level=warn&since=2026-10-24T05:28:00Z&until=2026-10-24T05:33:00Z"
+    );
+    const user = userEvent.setup();
+    renderLogs();
+    await waitFor(() => expect(get).toHaveBeenCalled());
+    const url = String(get.mock.calls[0][0]);
+    expect(url).toContain("level=warn");
+    expect(url).toContain("services=api");
+    expect(url).toContain("q=studio");
+    expect(await screen.findByText("the failure")).toBeInTheDocument();
+    expect(screen.queryByText("before it")).toBeNull();
+    expect(screen.queryByText("after it")).toBeNull();
+    expect(screen.getByTestId("logs-window")).toHaveTextContent("Showing the lines from");
+    expect(screen.getByDisplayValue("studio")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show all" }));
+    expect(await screen.findByText("before it")).toBeInTheDocument();
+    expect(screen.getByText("after it")).toBeInTheDocument();
+    expect(screen.queryByTestId("logs-window")).toBeNull();
+  });
+
+  it("says when the window's lines are no longer in the live logs", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/admin/logs?since=2020-01-01T00:00:00Z&until=2020-01-01T00:05:00Z"
+    );
+    renderLogs();
+    expect(
+      await screen.findByText(/None of the lines of this time are left in the live logs/)
+    ).toBeInTheDocument();
   });
 
   it("polls the stream endpoint and renders entries", async () => {

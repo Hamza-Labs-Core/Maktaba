@@ -603,7 +603,7 @@ func runServe() error {
 			nodeVerifier = verifier
 			// Epic 35 stories 35.9, 35.11: the nodes' delegation and cluster sign-in,
 			// and this machine's /api/cluster/self
-			mountHomeClusterAuth(r, appDB, logger)
+			mountHomeClusterAuth(r, appDB, hubRef, logger)
 
 			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper
 			// (go idemSweep()): a boot goroutine expires stale tickets and

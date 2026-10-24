@@ -16,6 +16,9 @@ var commandNames = map[string]bool{
 	"drain": true, "undrain": true, "reload_stages": true, "log_level": true, "disconnect": true,
 	"switch.prepare": true, "switch.kit": true, "switch.promote": true, "switch.status": true,
 	"home.moved": true, "home.database": true,
+	// a machine's database access, made again on the home's current database (the home
+	// owns it): machine agents only, its password never logged
+	"home.access": true,
 	// a standby home's kit, and where the standbys are (Epic 37, "Emergency promotion")
 	"standby.kit": true, "standby.commit": true, "standby.forget": true, "home.standbys": true,
 	// a machine's part of an automatic update (Epic 35 story 35.12): machine agents only
@@ -23,7 +26,12 @@ var commandNames = map[string]bool{
 }
 
 // machineOnly are the commands only a machine's own agent (its supervisor) takes.
-func machineOnly(name string) bool { return strings.HasPrefix(name, "update.") }
+func machineOnly(name string) bool {
+	return strings.HasPrefix(name, "update.") || name == "home.access"
+}
+
+// secretArgs are the commands' arguments the event log never shows.
+var secretArgs = map[string][]string{"home.access": {"password"}}
 
 // Accepts reports whether the hub sends a command of this name at all (CommandWithin
 // refuses any other with ErrBadCommand): the switch's tests ask it of their fake hub.
@@ -103,6 +111,17 @@ func (h *Hub) CommandWithin(ctx context.Context, sessionID, name string, args js
 	s.cmds[id] = ch
 	s.mu.Unlock()
 	logged := argMap
+	if keys := secretArgs[name]; len(keys) > 0 {
+		logged = map[string]any{}
+		for k, v := range argMap {
+			logged[k] = v
+		}
+		for _, k := range keys {
+			if _, set := logged[k]; set {
+				logged[k] = "(set, not logged)"
+			}
+		}
+	}
 	if sealedChunks[name] {
 		logged = map[string]any{}
 		for k, v := range argMap {

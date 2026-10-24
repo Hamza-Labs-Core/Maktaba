@@ -221,6 +221,10 @@ pub struct Words {
     /// and the OS notification; {reason} is update_reason's.
     pub update_failed_line: &'static str,
     pub update_failed_notice: &'static str,
+    /// Under the failed line, and the notification's button: the web logs page of this
+    /// machine's server at the attempt's time, and the folder of app.log and server.log.
+    pub see_logs: &'static str,
+    pub open_log_folder: &'static str,
     /// Between the names in a list (the roles in a status line).
     pub list_sep: &'static str,
 }
@@ -288,6 +292,8 @@ pub static EN: Words = Words {
     order_ready_node: "Maktaba {version} is ready: the cluster's update waits for this machine",
     update_failed_line: "Update to {version} failed: {reason}",
     update_failed_notice: "Maktaba could not update to {version}: {reason}",
+    see_logs: "See the logs",
+    open_log_folder: "Open the log folder",
     list_sep: ", ",
 };
 
@@ -354,6 +360,8 @@ pub static AR: Words = Words {
     order_ready_node: "الإصدار {version} من مكتبة جاهز: تحديث المجموعة ينتظر هذا الجهاز",
     update_failed_line: "فشل التحديث إلى {version}: {reason}",
     update_failed_notice: "تعذّر تحديث مكتبة إلى {version}: {reason}",
+    see_logs: "عرض السجلات",
+    open_log_folder: "فتح مجلد السجلات",
     list_sep: "، ",
 };
 
@@ -510,6 +518,8 @@ mod tests {
             ("order_ready_node", Some(w.order_ready_node)),
             ("update_failed_line", Some(w.update_failed_line)),
             ("update_failed_notice", Some(w.update_failed_notice)),
+            ("see_logs", Some(w.see_logs)),
+            ("open_log_folder", Some(w.open_log_folder)),
             ("older_app", Some(w.older_app)),
         ];
         // the lines only Windows reads

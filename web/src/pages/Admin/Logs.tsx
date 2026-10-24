@@ -11,6 +11,9 @@
 // structured JSON line from the service ring buffers, so we parse the
 // common contract fields (ts/level/service/msg) for display and keep
 // the rest as an expandable detail blob.
+//
+// Its filters can come in the address (a failure elsewhere links here: update-attempts.md):
+// ?q=, ?services=, ?level=, and ?since= / ?until= (ISO times: lines outside are hidden).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@ds/components/Card/Card";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -22,6 +25,7 @@ import { api, downloadBlob, ApiError } from "../../lib/api";
 import { useToast } from "@ds/components/Toast/Toast";
 import { AdminGate } from "../../components/AdminGate";
 import { TitleRow } from "../../help/HelpLink";
+import { inWindow, readLogFilters, type LogFilters } from "../../lib/logLinks";
 
 interface StreamResponse {
   entries?: unknown[] | null;
@@ -51,14 +55,28 @@ export function AdminLogs() {
   );
 }
 
+/** The filters the page opened with (its address). */
+function initialFilters(): LogFilters {
+  return readLogFilters(typeof window === "undefined" ? "" : window.location.search);
+}
+
 function LogsInner() {
   const { t, formatDate } = useI18n();
   const toast = useToast();
 
+  const [initial] = useState(initialFilters);
   const [lines, setLines] = useState<LogLine[]>([]);
-  const [level, setLevel] = useState<string>("debug");
-  const [service, setService] = useState<string>("");
-  const [search, setSearch] = useState<string>("");
+  const [level, setLevel] = useState<string>(
+    LEVELS.includes(initial.level as (typeof LEVELS)[number]) ? (initial.level as string) : "debug"
+  );
+  const [service, setService] = useState<string>(initial.services ?? "");
+  const [search, setSearch] = useState<string>(initial.q ?? "");
+  // a failure's time window (from the address); "Show all" lets it go
+  const [range, setRange] = useState<Pick<LogFilters, "since" | "until">>({
+    since: initial.since,
+    until: initial.until,
+  });
+  const windowed = Boolean(range.since || range.until);
   const [paused, setPaused] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -109,6 +127,7 @@ function LogsInner() {
       const p = new URLSearchParams();
       if (level) p.set("level", level);
       if (service) p.set("services", service);
+      if (range.since) p.set("since", range.since);
       await downloadBlob(`/api/admin/logs/export?${p.toString()}`, "maktaba-diagnostics.tar.gz");
       toast.show({ tone: "success", message: t("logs.export.success") });
     } catch (e) {
@@ -117,15 +136,22 @@ function LogsInner() {
     } finally {
       setExporting(false);
     }
-  }, [level, service, toast, t]);
+  }, [level, service, range.since, toast, t]);
 
   // Service options are derived from whatever services appear in the
   // current window, so a single-service deploy shows just its own.
   const services = useMemo(() => {
     const set = new Set<string>();
     lines.forEach((l) => l.service && set.add(l.service));
+    if (service) set.add(service); // one the address asked for, before its lines come
     return Array.from(set).sort();
-  }, [lines]);
+  }, [lines, service]);
+
+  // the lines of the window (all of them without one)
+  const shown = useMemo(
+    () => (windowed ? lines.filter((l) => inWindow(l.ts, range)) : lines),
+    [lines, range, windowed]
+  );
 
   return (
     <section className="mkt-page mkt-logs">
@@ -189,13 +215,31 @@ function LogsInner() {
 
       {err && <p className="mkt-muted">{t("logs.error")}</p>}
 
+      {windowed && (
+        <p className="mkt-logs__window" role="status" data-testid="logs-window">
+          {range.since && range.until
+            ? t("logs.window.between", {
+                since: formatDate(range.since),
+                until: formatDate(range.until),
+              })
+            : range.since
+              ? t("logs.window.since", { since: formatDate(range.since) })
+              : t("logs.window.until", { until: formatDate(range.until as string) })}{" "}
+          <Button variant="secondary" size="sm" onClick={() => setRange({})}>
+            {t("logs.window.all")}
+          </Button>
+        </p>
+      )}
+
       <Card className="mkt-logs__viewport">
         <div className="mkt-logs__scroll" ref={scrollRef}>
-          {lines.length === 0 ? (
-            <p className="mkt-muted mkt-logs__empty">{t("logs.empty")}</p>
+          {shown.length === 0 ? (
+            <p className="mkt-muted mkt-logs__empty">
+              {windowed && lines.length > 0 ? t("logs.window.empty") : t("logs.empty")}
+            </p>
           ) : (
             <ul className="mkt-logs__list">
-              {lines.map((l, i) => (
+              {shown.map((l, i) => (
                 <LogRow key={i} line={l} formatDate={formatDate} />
               ))}
             </ul>

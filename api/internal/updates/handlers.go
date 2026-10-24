@@ -105,6 +105,9 @@ type Machine struct {
 	// desktop app's updater, its releases' starts) and its last part in a run, newest
 	// first (update-attempts.md).
 	Attempts []Attempt `json:"attempts,omitempty"`
+	// HomeDB is a node's login to the home's database (nil: it has not said): "this
+	// machine can't reach the home's database: <reason>" when not ok.
+	HomeDB *HomeDB `json:"home_db,omitempty"`
 }
 
 // Overview builds GET /api/cluster/updates.

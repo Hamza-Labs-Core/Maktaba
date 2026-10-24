@@ -49,6 +49,17 @@ type SelfInfo struct {
 	Machines []SelfRow       `json:"machines,omitempty"`
 	// AcceptJoins: the home's "accept new machines" switch (its mDNS join=1).
 	AcceptJoins bool `json:"accept_joins,omitempty"`
+	// MachinesDB are the home's machines that say they cannot log in to its database (the
+	// home re-makes their access): an update's watch waits for them to follow it.
+	MachinesDB []SelfMachineDB `json:"machines_db,omitempty"`
+}
+
+// SelfMachineDB is a machine that cannot log in to its home's database.
+type SelfMachineDB struct {
+	ID      string `json:"id"`
+	Name    string `json:"name,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Healing bool   `json:"healing,omitempty"`
 }
 
 // SelfHome is a node's view of its home.

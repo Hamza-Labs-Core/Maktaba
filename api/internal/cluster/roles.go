@@ -175,3 +175,22 @@ func (p *PGRoles) Drop(ctx context.Context, role string) error {
 	_, err := p.DB.ExecContext(ctx, `DROP ROLE IF EXISTS `+pq.QuoteIdentifier(role))
 	return err
 }
+
+// Usable reports whether role exists and may log in on this database's cluster now.
+func (p *PGRoles) Usable(ctx context.Context, role string) (bool, error) {
+	var can sql.NullBool
+	err := p.DB.QueryRowContext(ctx, `SELECT rolcanlogin FROM pg_roles WHERE rolname = $1`, role).Scan(&can)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return can.Valid && can.Bool, err
+}
+
+// ServerPort is the port the database says it listens on (0 over a Unix socket).
+func (p *PGRoles) ServerPort(ctx context.Context) (int, error) {
+	var port sql.NullInt64
+	if err := p.DB.QueryRowContext(ctx, `SELECT inet_server_port()`).Scan(&port); err != nil {
+		return 0, err
+	}
+	return int(port.Int64), nil
+}

@@ -877,6 +877,18 @@ type agentState struct {
 	} `json:"run"`
 	// Attempts are the machine's own update attempts (update-attempts.md)
 	Attempts []Attempt `json:"attempts"`
+	// HomeDB is the machine's login to the home's database (the home re-makes its
+	// access when it cannot)
+	HomeDB *HomeDB `json:"home_db"`
+}
+
+// HomeDB is a machine's login to the home's database, as its update.state says it.
+type HomeDB struct {
+	OK      bool       `json:"ok"`
+	Code    string     `json:"code,omitempty"`
+	Detail  string     `json:"detail,omitempty"`
+	At      *time.Time `json:"at,omitempty"`
+	Healing bool       `json:"healing,omitempty"`
 }
 
 func (d *Driver) agentStates() (map[string]string, map[string]agentState) {

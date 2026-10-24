@@ -9,6 +9,7 @@
 //   GET  /api/cluster/updates/runs[/{id}] history, a run with its steps and machines (35.4, 35.12)
 //   POST /api/cluster/updates/runs/{id}/cancel|resume, /targets/{node}/retry|skip|rollback
 import { api } from "./api";
+import type { HomeDb } from "./homeDb";
 
 export interface UpdatesPolicy {
   auto_install: boolean;
@@ -67,6 +68,8 @@ export interface UpdateMachine {
   target?: string;
   /** its last update attempts, newest first (at most 5): see UpdateAttempt */
   attempts?: UpdateAttempt[];
+  /** a node: whether it reaches the home's database (its machine agent's report) */
+  home_db?: HomeDb;
 }
 
 /** One try at bringing a machine to a release, whoever made it (update-attempts.md): the

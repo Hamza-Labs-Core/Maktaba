@@ -159,6 +159,9 @@ func runServe(cfg config.Config, opts serveOptions) error {
 			return err
 		}
 		if node != nil {
+			// the home re-makes this machine's database access when it cannot log in
+			// (serve_homeaccess.go): the node marks itself healing as it follows it
+			sw.homeDB = node.homeDB
 			// a switch of the home while this machine was off (serve_switchover.go)
 			go sw.watchMoved(ctx)
 		} else {
