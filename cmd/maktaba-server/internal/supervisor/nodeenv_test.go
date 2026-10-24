@@ -292,3 +292,30 @@ func TestChildEnvDataDir(t *testing.T) {
 		t.Fatalf("overrode the operator's data dir with %q", v)
 	}
 }
+
+// The streaming roles read MAKTABA_STREAM_PATH_MAP ("from=>to;..."), not the workers'
+// MAKTABA_PATH_MAP: without it a channel opened "/Volumes/Originals/..." as the database
+// keeps it and aired filler on the Mac app.
+func TestStreamingGetsThePathMapInItsForm(t *testing.T) {
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	var cfg config.Config
+	cfg.Media.PathMap = "/Volumes/Originals/=/Users/me/nas/, /Volumes/More/=/Users/me/more/"
+	want := "/Volumes/Originals/=>/Users/me/nas/;/Volumes/More/=>/Users/me/more/"
+	for _, role := range []Role{RoleStreaming, RoleTVSlot} {
+		if got := envMap(childEnvOK(role, cfg))["MAKTABA_STREAM_PATH_MAP"]; got != want {
+			t.Fatalf("%s: MAKTABA_STREAM_PATH_MAP = %q, want %q", role, got, want)
+		}
+	}
+	if _, ok := envMap(childEnvOK(RoleAPI, cfg))["MAKTABA_STREAM_PATH_MAP"]; ok {
+		t.Fatal("only the streaming roles get the stream path map")
+	}
+	t.Setenv("MAKTABA_STREAM_PATH_MAP", "/own=>/mine")
+	if _, ok := envMap(childEnvOK(RoleStreaming, cfg))["MAKTABA_STREAM_PATH_MAP"]; ok {
+		t.Fatal("overrode the operator's stream path map")
+	}
+	if got := StreamPathMap("bad, =/x, /a=/b"); got != "/a=>/b" {
+		t.Fatalf("StreamPathMap = %q", got)
+	}
+}
