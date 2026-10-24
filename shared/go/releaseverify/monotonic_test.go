@@ -59,8 +59,16 @@ func TestReplayOlderIntegratedTime(t *testing.T) {
 	if time.Since(res.SignedAt) < 6*24*time.Hour {
 		t.Fatalf("signed at %v, want a week ago (Rekor integrated time)", res.SignedAt)
 	}
-	w := rv.Watermark{Version: "1.4.9", SignedAt: time.Now().Add(-time.Hour)}
-	wantKind(t, rv.CheckMonotonic(w, res), rv.ErrReplay)
+	hourAgo := time.Now().Add(-time.Hour)
+	// an rc of this release, signed after it (tagged after the release): 1.5.0 is the
+	// older build, passed by quietly
+	wantKind(t, rv.CheckMonotonic(rv.Watermark{Version: "1.5.0-rc.7", SignedAt: hourAgo}, res), rv.ErrOlderBuild)
+	// the same version signed again earlier: other content, a replay
+	wantKind(t, rv.CheckMonotonic(rv.Watermark{Version: "1.5.0", SignedAt: hourAgo}, res), rv.ErrReplay)
+	// a hotfix on an older minor signed after this one: 1.5.0 is a move up (story 22.5 EC1)
+	if err := rv.CheckMonotonic(rv.Watermark{Version: "1.4.9", SignedAt: hourAgo}, res); err != nil {
+		t.Fatalf("a hotfix line moving up to the next minor: %v", err)
+	}
 }
 
 func TestWatermarkFile(t *testing.T) {

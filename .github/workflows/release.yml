@@ -27,15 +27,25 @@
 #                        dependency constraints from uv.lock, and the node
 #                        installer archives (maktaba-node-<ver>.tar.gz /
 #                        .zip) that install that wheel with no checkout.
+#   0. guard             the tag-order guard (_tag-guard.yml: above every
+#                        published release, on main, CI passed), which
+#                        also opens the tag's release as a DRAFT.
 #   6. sign-and-release  write release.json (Epic 35 story 35.1) and check
 #                        it against the migrations / SCHEMA_REV, checksum
-#                        every artifact, keyless-cosign-sign the checksums
-#                        file (Sigstore bundle + legacy .sig/.pem) AND each
-#                        pushed image digest, verify the result with the
-#                        same in-process verifier every machine installs
-#                        through, generate the Homebrew formula, then
-#                        attach archives + packages + checksums +
-#                        signatures to a GitHub Release.
+#                        every artifact (release-manifest.json among them),
+#                        keyless-cosign-sign the checksums file (Sigstore
+#                        bundle + legacy .sig/.pem) AND each pushed image
+#                        digest, verify the result with the same in-process
+#                        verifier every machine installs through, generate
+#                        the Homebrew formula, then attach archives +
+#                        packages + checksums + signatures to the draft and
+#                        publish it once complete (tools/release/
+#                        release-assets.sh: release.yml's signed set and
+#                        the server-carrying apps in latest.json; the last
+#                        workflow to finish publishes). A published release
+#                        is never rewritten: a re-run only adds missing
+#                        files, and every output is deterministic (the
+#                        commit's time, sorted archives).
 #
 # Signing identity: keyless cosign via the workflow's OIDC token
 # (`id-token: write`). No long-lived private key, no repo secret to
@@ -70,12 +80,27 @@ on:
 permissions:
   contents: read
 
+# One run per tag at a time, never cancelled (rc.1 ran twice, 3 s apart): a second run
+# waits, then finds the release's files there and adds only what is missing.
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ${{ vars.MAKTABA_REGISTRY || 'ghcr.io/hamza-labs-core' }}
 
 jobs:
+  guard:
+    uses: ./.github/workflows/_tag-guard.yml
+    permissions:
+      contents: write
+      actions: read
+    with:
+      create_draft: true
+
   build-artifacts:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: [guard]
     strategy:
       fail-fast: false
       matrix:
@@ -322,15 +347,19 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      # rewrite-timestamp: every layer's files carry the commit's time (SOURCE_DATE_EPOCH),
+      # so a re-run builds the same layers (the attestations still record their build).
       - name: Build and push ${{ matrix.svc }}
         id: build
         uses: docker/build-push-action@v7.2.0
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.sde.outputs.epoch }}
         with:
           # All Dockerfiles take the repo root as build context.
           context: .
           file: ${{ matrix.svc }}/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
+          outputs: type=image,push=true,rewrite-timestamp=true
           provenance: true
           sbom: true
           build-args: |
@@ -425,7 +454,10 @@ jobs:
             fi
             base="maktaba-server-${ver}-${os}-${arch}"
             if [ "${os}" = windows ]; then
-              ( cd "${stage}" && zip -qr - . ) > "out/${base}.zip"
+              # Deterministic zip: sorted names, the commit's time on every file (UTC: zip
+              # keeps local times), no extra attributes (-X).
+              find "${stage}" -exec touch -h -d "@${sde}" {} +
+              ( cd "${stage}" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | TZ=UTC zip -qX -@ - ) > "out/${base}.zip"
             else
               # Deterministic tar: sorted names, pinned mtime, no uid/gid.
               tar --sort=name --mtime="@${sde}" \
@@ -485,6 +517,10 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          # the packages' file times and build time are the commit's: a re-run builds the
+          # same bytes
+          SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
+          export SOURCE_DATE_EPOCH
           mkdir -p out pkgroot
           for arch in amd64 arm64; do
             # nfpm doesn't env-expand contents[].src, so stage this arch's
@@ -520,6 +556,7 @@ jobs:
   # gate builds and installs the same assets on every PR).
   package-node:
     name: package node (wheel + installer)
+    needs: [guard]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
@@ -554,6 +591,7 @@ jobs:
   # architecture: its Postgres libraries come from the runner.
   package-linux-payload:
     name: package Linux payload (${{ matrix.arch }})
+    needs: [guard]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
@@ -577,6 +615,11 @@ jobs:
             cmd/maktaba-launcher/go.sum
 
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # the uv every other release job uses (desktop-release.yml's too): another
+          # version wrote other constraints, so the Linux payload tarball and the app's
+          # own payload of one release differed (v0.3.0: 0.13.5 here, 0.13.4 there)
+          version: "0.13.4"
 
       - uses: pnpm/action-setup@v6.0.8
         with:
@@ -741,8 +784,10 @@ jobs:
           # the +x bit dropped by artifact download.
           find staged -maxdepth 1 -type f -name 'maktaba-cloud-*' -exec cp {} dist/ \;
           chmod 0755 dist/maktaba-cloud-* 2>/dev/null || true
-          # Tar the web bundle so the Release has one downloadable asset.
-          tar -C staged/web-dist -czf "dist/maktaba-web-${TAG}.tar.gz" .
+          # Tar the web bundle so the Release has one downloadable asset (deterministic:
+          # sorted names, the commit's time, no owner; gzip without a name or time).
+          tar --sort=name --mtime="@${sde}" --owner=0 --group=0 --numeric-owner \
+              -C staged/web-dist -cf - . | gzip -n > "dist/maktaba-web-${TAG}.tar.gz"
           ls -l dist
 
       # Fill the Homebrew formula template with this release's version and
@@ -756,9 +801,10 @@ jobs:
           ver="${TAG#v}"
           sha_arm="$(sha256sum "dist/maktaba-server-${ver}-darwin-arm64.tar.gz" | awk '{print $1}')"
           sha_amd="$(sha256sum "dist/maktaba-server-${ver}-darwin-amd64.tar.gz" | awk '{print $1}')"
-          sed -e "s/__VERSION__/${ver}/g" \
-              -e "s/__SHA256_DARWIN_ARM64__/${sha_arm}/g" \
-              -e "s/__SHA256_DARWIN_AMD64__/${sha_amd}/g" \
+          # only the formula's own lines: its header comment names the placeholders
+          sed -e "/^[[:space:]]*#/!s/__VERSION__/${ver}/g" \
+              -e "/^[[:space:]]*#/!s/__SHA256_DARWIN_ARM64__/${sha_arm}/g" \
+              -e "/^[[:space:]]*#/!s/__SHA256_DARWIN_AMD64__/${sha_amd}/g" \
               deploy/packaging/homebrew/maktaba.rb > dist/maktaba.rb
           echo "----- generated dist/maktaba.rb -----"
           cat dist/maktaba.rb
@@ -768,8 +814,9 @@ jobs:
       # HOMEBREW_TAP_REPO repo variable (e.g. "owner/homebrew-tap") and a
       # HOMEBREW_TAP_TOKEN secret (a PAT with `contents:write` on the tap)
       # are set — so the default repo's release still succeeds without it.
+      # never for a pre-release: the tap's formula is the stable one
       - name: Publish formula to tap
-        if: ${{ vars.HOMEBREW_TAP_REPO != '' }}
+        if: ${{ vars.HOMEBREW_TAP_REPO != '' && !contains(github.ref_name, '-') }}
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
@@ -794,20 +841,26 @@ jobs:
             git -C "${tmp}" push origin HEAD
           fi
 
-      # The previous release's release.json (if it has one) bounds
-      # breaks_previous_home and carries min_upgrade_from forward.
+      # The previous release's release.json bounds breaks_previous_home and carries
+      # min_upgrade_from forward: the highest published version below this tag, the
+      # highest stable one for a stable tag (not the newest created: v0.4.0 after
+      # v0.4.0-rc.3 compares with v0.3.x, where stable homes come from). Older releases
+      # without a release.json are passed over, highest first.
       - name: Fetch the previous release manifest
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          published="$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName')"
           prev=""
-          for t in $(gh release list --exclude-drafts --limit 30 --json tagName --jq '.[].tagName'); do
-            [ "$t" = "$TAG" ] && continue
-            if gh release download "$t" --pattern release.json --output prev-release.json --clobber 2>/dev/null; then
-              prev="$t"; break
+          while :; do
+            cand="$(printf '%s\n' "${published}" | (cd tools/release && go run ./cmd/release-order previous --tag "${TAG}"))"
+            [ -n "${cand}" ] || break
+            if gh release download "${cand}" --pattern release.json --output prev-release.json --clobber 2>/dev/null; then
+              prev="${cand}"; break
             fi
+            published="$(printf '%s\n' "${published}" | grep -vx "${cand}")"
           done
           echo "previous release with release.json: ${prev:-none}"
 
@@ -824,7 +877,11 @@ jobs:
           set -euo pipefail
           prev=()
           if [ -f ../../prev-release.json ]; then prev=(--previous ../../prev-release.json); fi
-          go run ./cmd/gen-release-json --tag "${TAG}" --commit "${SHA}" \
+          # "published" is the tag's own time (an annotated tag's, else its commit's): a
+          # re-run writes the same release.json, so the signed checksums do not change
+          published="$(git for-each-ref "refs/tags/${TAG}" --format='%(taggerdate:iso-strict)')"
+          [ -n "${published}" ] || published="$(git log -1 --format=%cI "${SHA}")"
+          go run ./cmd/gen-release-json --tag "${TAG}" --commit "${SHA}" --published "${published}" \
             --dist ../../dist --repo ../.. "${prev[@]}" > ../../dist/release.json
           cat ../../dist/release.json
 
@@ -838,6 +895,58 @@ jobs:
           if [ -f prev-release.json ]; then prev=(--previous ../../prev-release.json); fi
           ( cd tools/release && go run ./cmd/gen-release-json --check ../../dist/release.json --repo ../.. "${prev[@]}" )
           ( cd shared/go/releaseverify && MAKTABA_RELEASE_BUILD=1 go test -run TestEmbeddedRootAge -count=1 . )
+
+      # Before the checksums: release-manifest.json (the images' digests) is signed with the rest.
+      - name: Write release manifest
+        env:
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          # the commit's time: a re-run writes the same file (it is in checksums.txt)
+          built_at="$(date -u -d "@$(git log -1 --pretty=%ct)" +%Y-%m-%dT%H:%M:%SZ)"
+          # Each digests/<svc> file holds "<svc> sha256:<64hex>" written by
+          # the matching build-images matrix leg. Read all four (fail loud
+          # if any leg's digest is missing) so the manifest records the
+          # real, distinct, immutable digest per component.
+          digest_of() {
+            local svc="$1" f="digests/$1" d
+            test -f "$f" || { echo "missing digest artifact for ${svc}" >&2; exit 1; }
+            d="$(awk -v s="$svc" '$1==s {print $2}' "$f")"
+            case "$d" in
+              sha256:*) ;;
+              *) echo "bad digest for ${svc}: '${d}'" >&2; exit 1 ;;
+            esac
+            printf '%s' "$d"
+          }
+          DIGEST_API="$(digest_of api)"
+          DIGEST_STREAMING="$(digest_of streaming)"
+          DIGEST_PIPELINE="$(digest_of pipeline)"
+          DIGEST_WEB="$(digest_of web)"
+          DIGEST_CLOUD="$(digest_of cloud)"
+          # schema_rev comes from release.json (derived from the migration
+          # set, checked against SCHEMA_REV/SchemaRev). rollback_* stay
+          # empty/0 until the rollback-tracking story lands.
+          SCHEMA_REV="$(jq -r .schema_rev dist/release.json)"
+          cat > dist/release-manifest.json <<EOF
+          {
+            "version": "${ver}",
+            "git_sha": "${SHA}",
+            "built_at": "${built_at}",
+            "schema_rev": ${SCHEMA_REV},
+            "components": {
+              "api":       {"image": "${REGISTRY}/maktaba-api:${TAG}",       "sha256": "${DIGEST_API}"},
+              "streaming": {"image": "${REGISTRY}/maktaba-streaming:${TAG}", "sha256": "${DIGEST_STREAMING}"},
+              "pipeline":  {"image": "${REGISTRY}/maktaba-pipeline:${TAG}",  "sha256": "${DIGEST_PIPELINE}"},
+              "web":       {"image": "${REGISTRY}/maktaba-web:${TAG}",       "sha256": "${DIGEST_WEB}"},
+              "cloud":     {"image": "${REGISTRY}/maktaba-cloud:${TAG}",     "sha256": "${DIGEST_CLOUD}"}
+            },
+            "rollback_to": "",
+            "rollback_schema_rev": 0
+          }
+          EOF
+          cat dist/release-manifest.json
 
       - name: Generate checksums
         working-directory: dist
@@ -881,60 +990,12 @@ jobs:
         working-directory: shared/go/releaseverify
         run: go run ./cmd/releaseverify --tag "${TAG}" --dir ../../../dist --repo "${GITHUB_REPOSITORY}"
 
-      - name: Write release manifest
-        env:
-          TAG: ${{ github.ref_name }}
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          ver="${TAG#v}"
-          built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          # Each digests/<svc> file holds "<svc> sha256:<64hex>" written by
-          # the matching build-images matrix leg. Read all four (fail loud
-          # if any leg's digest is missing) so the manifest records the
-          # real, distinct, immutable digest per component.
-          digest_of() {
-            local svc="$1" f="digests/$1" d
-            test -f "$f" || { echo "missing digest artifact for ${svc}" >&2; exit 1; }
-            d="$(awk -v s="$svc" '$1==s {print $2}' "$f")"
-            case "$d" in
-              sha256:*) ;;
-              *) echo "bad digest for ${svc}: '${d}'" >&2; exit 1 ;;
-            esac
-            printf '%s' "$d"
-          }
-          DIGEST_API="$(digest_of api)"
-          DIGEST_STREAMING="$(digest_of streaming)"
-          DIGEST_PIPELINE="$(digest_of pipeline)"
-          DIGEST_WEB="$(digest_of web)"
-          DIGEST_CLOUD="$(digest_of cloud)"
-          # schema_rev comes from release.json (derived from the migration
-          # set, checked against SCHEMA_REV/SchemaRev). rollback_* stay
-          # empty/0 until the rollback-tracking story lands.
-          SCHEMA_REV="$(jq -r .schema_rev dist/release.json)"
-          cat > dist/release-manifest.json <<EOF
-          {
-            "version": "${ver}",
-            "git_sha": "${SHA}",
-            "built_at": "${built_at}",
-            "schema_rev": ${SCHEMA_REV},
-            "components": {
-              "api":       {"image": "${REGISTRY}/maktaba-api:${TAG}",       "sha256": "${DIGEST_API}"},
-              "streaming": {"image": "${REGISTRY}/maktaba-streaming:${TAG}", "sha256": "${DIGEST_STREAMING}"},
-              "pipeline":  {"image": "${REGISTRY}/maktaba-pipeline:${TAG}",  "sha256": "${DIGEST_PIPELINE}"},
-              "web":       {"image": "${REGISTRY}/maktaba-web:${TAG}",       "sha256": "${DIGEST_WEB}"},
-              "cloud":     {"image": "${REGISTRY}/maktaba-cloud:${TAG}",     "sha256": "${DIGEST_CLOUD}"}
-            },
-            "rollback_to": "",
-            "rollback_schema_rev": 0
-          }
-          EOF
-          cat dist/release-manifest.json
-
-      - name: Create GitHub Release
+      - name: Attach the files to the release, publish it once complete
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+          # the apps' feed is required before publishing when the apps can update
+          REQUIRE_FEED: ${{ vars.TAURI_UPDATER_PUBKEY != '' }}
         run: |
           set -euo pipefail
           notes="Automated release for ${TAG}.
@@ -975,27 +1036,13 @@ jobs:
 
           **Not in this release:** the Linux payload for ${LINUX_PAYLOAD_MISSING} (its build failed). Machines on that architecture keep the version they run until the next release."
           fi
-          # A tag with a suffix (v0.1.0-rc.1) is a pre-release, never the
-          # latest; a plain vX.Y.Z is published as the latest release. The
-          # client workflows (desktop, mobile, tv) may have created the
-          # release first, so the flags are set on edit too.
-          case "${TAG}" in
-            *-*) kind=(--prerelease --latest=false) ;;
-            *)   kind=(--prerelease=false --latest) ;;
-          esac
-          # Idempotent: a re-run of the same tag after images pushed but a
-          # prior publish failed must update the existing release with the
-          # (re-pushed, digest-stable) assets rather than hard-failing.
-          if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release edit "${TAG}" \
-              --title "${TAG}" \
-              --notes "${notes}" \
-              --verify-tag "${kind[@]}"
-            gh release upload "${TAG}" dist/* --clobber
-          else
-            gh release create "${TAG}" \
-              --title "${TAG}" \
-              --notes "${notes}" \
-              --verify-tag "${kind[@]}" \
-              dist/*
-          fi
+          # The guard opened the release as a draft; the notes go on it (a published
+          # release keeps its own). The files are attached (a published release only gains
+          # missing ones, and a re-run whose checksums.txt differs is refused), then the
+          # release is published once complete: this signed set, and the apps that carry
+          # the server in latest.json (desktop-release.yml); whichever workflow finishes
+          # last publishes. It becomes the latest only as the highest stable version with
+          # every desktop platform in its feed (never a pre-release or a maintenance one).
+          NOTES="${notes}" tools/release/release-assets.sh ensure "${TAG}"
+          tools/release/release-assets.sh upload "${TAG}" dist/*
+          tools/release/release-assets.sh publish "${TAG}"

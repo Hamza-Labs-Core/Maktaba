@@ -97,6 +97,9 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	}
 	hub := mountClusterHub(r, h, db, driver, store, keys, logger)
 	hubRef.Set(hub) // the update driver's machines (Epic 35 story 35.12)
+	// a node's view on the Machines page carries its agent's last update.state (its login
+	// to this home's database among it)
+	h.LiveStates = hub.MachineStates
 	// the machines verify this home's bundled Postgres with its CA, handed over the
 	// machine channel (and sealed in a join's credentials); another database is said to
 	// have no TLS when it has none
@@ -109,6 +112,12 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 				hub.PushDatabase(ctx, "", 30*time.Second, logger)
 			}
 		}()
+	}
+	// the home owns its machines' database access: a machine that cannot log in to it
+	// (its role missing or refused, the database moved to another cluster or port) gets
+	// its access made again and pushed over the machine channel
+	if driver == "postgres" {
+		go hub.EnsureAccess(ctx, h, 10*time.Second, logger)
 	}
 	// every revocation on the home reaches the full nodes within the second (story
 	// 35.9 AC4): the session store reports it, the hub pushes auth.revoked

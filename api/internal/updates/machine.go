@@ -23,6 +23,7 @@ type MachineJob struct {
 	Rehearse      bool              `json:"rehearse,omitempty"`
 	RehearseMaxGB int               `json:"rehearse_max_db_gb,omitempty"`
 	KeepVersions  int               `json:"keep_versions,omitempty"`
+	BackupsKeep   int               `json:"backups_keep,omitempty"`
 	WatchSeconds  int               `json:"watch_seconds,omitempty"`
 	HealthSeconds int               `json:"health_seconds,omitempty"`
 }
@@ -66,6 +67,9 @@ type MachineStatus struct {
 	// BoundSec is how long the machine's own limits let the run go on from its switch (its
 	// start steps' cap, from its database's size, and its watch's bound).
 	BoundSec int `json:"bound_sec,omitempty"`
+	// Attempts are the machine's update attempts (the desktop app's own, its releases'
+	// starts), every failure with its reason, newest first.
+	Attempts []Attempt `json:"attempts,omitempty"`
 }
 
 // RunID is the run the report is of ("" none).

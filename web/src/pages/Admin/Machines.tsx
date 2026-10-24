@@ -14,6 +14,9 @@
 // anything, and the hub's frames reach React at most once a second
 // (clusterStream). Per-job progress is not drawn here: each machine says how
 // many jobs it runs and links to the Processing page filtered by it.
+//
+// A full machine that cannot reach the home's database says so on its card, with why and
+// a link to its own log files on the admin log page (update-attempts.md).
 import {
   memo,
   useCallback,
@@ -71,8 +74,10 @@ import {
   type NodeUpdate,
   type StorageServer,
 } from "../../lib/clusterApi";
-import { bidiIsolate, useI18n } from "../../lib/i18n";
+import { bidiIsolate, lookupMessage, useI18n } from "../../lib/i18n";
 import { safeHttpUrl } from "../../lib/navigation";
+import { logWindow, nodeLogsLink } from "../../lib/logLinks";
+import { homeDbOf, type HomeDb } from "../../lib/homeDb";
 import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
 import "../../styles/machines.css";
@@ -227,11 +232,21 @@ function MachinesOverview({
   const key = countsKey(counts);
   const live = stream.ready && stream.status === "open";
   const jobs = useMemo(() => (live ? counts : null), [key, live]);
+  // the machines that cannot reach the home's database (from the cluster view): their live
+  // card is not green either
+  const [dbDown, setDbDown] = useState("");
+  const noHomeDb = useMemo(() => new Set(dbDown ? dbDown.split("\n") : []), [dbDown]);
   return (
     <div className="mkt-mc-tab">
-      <Approvals queueLabel={queueLabel} jobs={jobs} />
+      <Approvals queueLabel={queueLabel} jobs={jobs} onHomeDbDown={setDbDown} />
       {extra}
-      <LiveMachines stream={stream} queueLabel={queueLabel} onOpenLogs={onOpenLogs} jobs={jobs} />
+      <LiveMachines
+        stream={stream}
+        queueLabel={queueLabel}
+        onOpenLogs={onOpenLogs}
+        jobs={jobs}
+        noHomeDb={noHomeDb}
+      />
     </div>
   );
 }
@@ -278,10 +293,13 @@ type JobCounts = Record<string, number> | null;
 const Approvals = memo(function Approvals({
   queueLabel,
   jobs,
+  onHomeDbDown,
 }: {
   queueLabel: (stage: string) => string;
   /** jobs running per machine (node id / "home"); null while the hub is not connected */
   jobs: JobCounts;
+  /** the machines that cannot reach the home's database, as their node ids one per line */
+  onHomeDbDown?: (ids: string) => void;
 }) {
   const { t } = useI18n();
   const [view, setView] = useState<ClusterView | null>(null);
@@ -294,13 +312,20 @@ const Approvals = memo(function Approvals({
         .getCluster()
         .then((v) => {
           if (!alive.current) return;
-          setView((prev) => reconcileView(prev, safeView(v)));
+          const safe = safeView(v);
+          setView((prev) => reconcileView(prev, safe));
           setError(false);
+          onHomeDbDown?.(
+            safe.nodes
+              .filter((n) => n.online && homeDbOf(n.update_state)?.ok === false)
+              .map((n) => n.id)
+              .join("\n")
+          );
         })
         .catch(() => {
           if (alive.current) setError(true);
         }),
-    []
+    [onHomeDbDown]
   );
 
   useEffect(() => {
@@ -751,11 +776,13 @@ function PendingRow({ node, onChanged }: { node: ClusterNode; onChanged: () => v
 
 // ---------------------------------------------------------------- machines
 
-type Status = "online" | "offline" | "draining" | "paused" | "revoked" | "rejected";
+type Status = "online" | "offline" | "draining" | "paused" | "revoked" | "rejected" | "no_home_db";
 
 function nodeStatus(node: ClusterNode): Status {
   if (node.state === "revoked") return "revoked";
   if (node.state === "rejected") return "rejected";
+  // it answers, but cannot reach the home's database: not healthy, whatever else it says
+  if (node.online && homeDbOf(node.update_state)?.ok === false) return "no_home_db";
   if (node.drain) return "draining";
   // its code needs a database schema the home does not have (or the other way round)
   if (node.online && pausedOf(node.workers)) return "paused";
@@ -769,6 +796,7 @@ const STATUS_TONE: Record<Status, "success" | "neutral" | "warn" | "error"> = {
   paused: "warn",
   revoked: "error",
   rejected: "error",
+  no_home_db: "error",
 };
 
 function num(v: unknown): number | null {
@@ -802,6 +830,39 @@ function useCapabilityChips(node: ClusterNode): string[] {
   }
   if (c.apple_silicon === true) chips.push(t("machines.cap.appleSilicon"));
   return chips;
+}
+
+/** A full machine that cannot reach the home's database: why (in the reader's words), the
+ * home re-provisioning its access when it does, what it said, and its own log files around
+ * the last try (the admin log page, over its channel). */
+function HomeDbNotice({ homeDb, nodeId }: { homeDb: HomeDb; nodeId: string }) {
+  const { t, has } = useHomeDbWords();
+  const code = homeDb.code ?? "other";
+  const reason = has(`machines.homeDb.code.${code}`)
+    ? t(`machines.homeDb.code.${code}`)
+    : t("machines.homeDb.code.other");
+  return (
+    <div className="mkt-mc-note mkt-mc-note--warn" role="alert" data-testid="machine-home-db">
+      <p>{t("machines.homeDb.unreachable", { reason })}</p>
+      {homeDb.healing && <p>{t("machines.homeDb.healing")}</p>}
+      {homeDb.detail && (
+        <details>
+          <summary>{t("machines.homeDb.detail")}</summary>
+          <p className="mkt-mc-muted" dir="ltr">
+            {homeDb.detail}
+          </p>
+        </details>
+      )}
+      <a href={nodeLogsLink(nodeId, logWindow(homeDb.at))} data-testid="machine-home-db-logs">
+        {t("machines.homeDb.logs")}
+      </a>
+    </div>
+  );
+}
+
+function useHomeDbWords() {
+  const { t, locale } = useI18n();
+  return { t, has: (key: string) => lookupMessage(locale, key) !== undefined };
 }
 
 /** Why a machine claims nothing: its code and the home's database schema do not fit. */
@@ -865,6 +926,7 @@ const MachineCard = memo(function MachineCard({
   const vod = node.vod?.fallback ? node.vod : null;
   const copyNote = useCopyNote(node.copy);
   const webUrl = safeHttpUrl(node.web_url);
+  const homeDb = homeDbOf(node.update_state);
 
   const run = (p: Promise<unknown>) => {
     setBusy(true);
@@ -895,6 +957,9 @@ const MachineCard = memo(function MachineCard({
           {active && <JobsSummary host={node.id} count={jobs} name={node.name} />}
         </header>
         {paused && <PausedNotice reason={paused} />}
+        {active && homeDb && homeDb.ok === false && (
+          <HomeDbNotice homeDb={homeDb} nodeId={node.id} />
+        )}
         {active && copyNote && (
           <p className={`mkt-mc-note${copyNote.warn ? " mkt-mc-note--warn" : ""}`} role="note">
             {copyNote.text}

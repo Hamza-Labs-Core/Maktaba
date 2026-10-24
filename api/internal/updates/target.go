@@ -3,6 +3,8 @@ package updates
 import (
 	"sort"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
 // Verify states (release_catalog.verify_state).
@@ -66,6 +68,30 @@ func (r Release) Published() time.Time {
 	return r.FirstSeenAt
 }
 
+// signedTime is when the release was signed, as its verified release.json says (zero for a
+// release this home has not verified): the time the one "never go back" rule compares.
+func (r Release) signedTime() time.Time {
+	if r.Manifest == nil || r.VerifyState != VerifyVerified {
+		return time.Time{}
+	}
+	return r.Manifest.Published
+}
+
+// olderBuildThan reports whether candidate r is an older build than the installed release
+// version installed (releaseverify.OlderBuild: newer in version, signed before it on its
+// major.minor line), as the catalog knows both (false when it does not know installed).
+func olderBuildThan(catalog []Release, r Release, installed string) bool {
+	if installed == "" {
+		return false
+	}
+	for _, c := range catalog {
+		if CompareVersions(c.Version, installed) == 0 {
+			return releaseverify.OlderBuild(r.Version, r.signedTime(), c.Version, c.signedTime())
+		}
+	}
+	return false
+}
+
 // IsPrerelease is a beta-channel release (GitHub's flag or a suffix in the version).
 func (r Release) IsPrerelease() bool {
 	return r.Prerelease || r.Channel == ChannelBeta || IsPrerelease(r.Version)
@@ -97,7 +123,9 @@ type Choice struct {
 // ChooseTarget picks the release to install (design §4; pure, table-tested):
 //
 //	candidates = verified, not withdrawn, not blocked, channel allowed,
-//	             > watermark (and > current), not skipped, <= pinned_version when set
+//	             > watermark (and > current), not skipped, <= pinned_version when set,
+//	             not an older build than the running release (releaseverify.OlderBuild:
+//	             an rc of a version already released, tagged after it, is passed by)
 //	target     = the highest candidate (numeric semver) whose min_upgrade_from <= current
 //	held       = target.breaks_previous_home and not approved by an admin
 //
@@ -119,6 +147,8 @@ func ChooseTarget(catalog []Release, p Policy, current, watermark string) Choice
 		case p.Skipped(r.Version):
 			continue
 		case p.PinnedVersion != "" && CompareVersions(r.Version, p.PinnedVersion) > 0:
+			continue
+		case olderBuildThan(catalog, r, floor):
 			continue
 		}
 		cands = append(cands, r)

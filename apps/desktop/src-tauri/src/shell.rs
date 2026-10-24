@@ -20,10 +20,11 @@ use tauri::{
     AppHandle, Emitter, Manager, Wry,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_notification::{Action as NoticeAction, ActionType, NotificationExt};
 use tauri_plugin_updater::{Updater, UpdaterExt};
 
 use crate::agent::{self, Action, BundlePaths, LoginItem};
+use crate::attempts::{self, Failure};
 use crate::autoinstall;
 use crate::lang::{self, Lang};
 use crate::mode::{self, AppMode, Target};
@@ -34,6 +35,13 @@ use crate::tray::{self, Entry};
 const TRAY_ID: &str = "main";
 const POLL_EVERY: Duration = Duration::from_secs(3);
 const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+/// The longest an update's check or download may take (the updater's request timeout).
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(45 * 60);
+/// A download that gets no byte for this long has stalled: it stops with the reason.
+const DOWNLOAD_STALL: Duration = Duration::from_secs(120);
+/// How often the Linux app asks whether its server runs a newer release than it (catch-up).
+#[cfg(target_os = "linux")]
+const CATCH_UP_EVERY: Duration = Duration::from_secs(10 * 60);
 
 /// Where mode.json is kept: the app's config folder; on Windows its local
 /// data folder (%LOCALAPPDATA%\com.hamzalabs.maktaba), not the roaming one,
@@ -77,6 +85,18 @@ pub struct Shell {
     /// The app's own repository (its updater endpoint's): only its release feeds are
     /// trusted (autoinstall::own_repo).
     repo: String,
+    /// The release the app's own feed offers (an app that runs no server): its update
+    /// item's words and its one notification.
+    update_version: Mutex<Option<String>>,
+    /// The download under way: its release, the bytes so far, and the size when known
+    /// (the update item shows its progress).
+    downloading: Mutex<Option<(String, u64, Option<u64>)>>,
+    /// The Windows portable app (no installer of its own): its update opens the release
+    /// page; the setup it would run installs another Maktaba beside it.
+    portable: bool,
+    /// When the Linux app last asked whether its server runs a newer release (catch-up).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    catch_up_at: Mutex<Option<Instant>>,
     status: Mutex<StatusView>,
     menu: Mutex<Vec<Entry>>,
     /// The badge the tray icon shows now (tray::badge_color), and the plain
@@ -96,6 +116,11 @@ impl Shell {
         let mode_path = mode_path(app);
         // MAKTABA_SERVER_BIN points a dev build (`tauri dev`, outside
         // Maktaba.app) at a maktaba-server to run setup against.
+        // a locally built app (the placeholder updater key) can verify no release: every
+        // update it is offered or ordered says so (attempts::LOCAL_BUILD)
+        if attempts::set_local_build_from(updater_pubkey(app).as_deref()) {
+            attempts::log("this app was built locally (no release key): it updates nothing itself");
+        }
         let server_bin = std::env::var_os("MAKTABA_SERVER_BIN")
             .map(PathBuf::from)
             .or_else(|| {
@@ -118,6 +143,10 @@ impl Shell {
             notified: Mutex::new(HashSet::new()),
             catch_up: Mutex::new(None),
             repo: own_repo(app),
+            update_version: Mutex::new(None),
+            downloading: Mutex::new(None),
+            portable: portable_app(),
+            catch_up_at: Mutex::new(None),
             status: Mutex::new(StatusView {
                 status: ServerStatus::Starting,
                 detail: None,
@@ -254,6 +283,30 @@ fn own_repo(app: &AppHandle) -> String {
     autoinstall::own_repo(endpoints.iter().map(String::as_str))
 }
 
+/// The updater's public key (tauri.conf.json plugins.updater.pubkey; the release build
+/// stamps the real one, a local build keeps the placeholder).
+fn updater_pubkey(app: &AppHandle) -> Option<String> {
+    app.config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|u| u.get("pubkey"))
+        .and_then(|k| k.as_str())
+        .map(String::from)
+}
+
+/// The Windows portable app: run from a folder no installer made (no uninstall.exe beside
+/// it, which tauri's NSIS installer writes). Never on the Mac or Linux.
+fn portable_app() -> bool {
+    if !cfg!(windows) {
+        return false;
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|d| !d.join("uninstall.exe").exists()))
+        .unwrap_or(false)
+}
+
 pub fn focus_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -293,6 +346,172 @@ fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
         .show(|_| {});
 }
 
+/// The record of this app's update attempts (attempts.rs: app-attempts.json beside the
+/// home's order), where the server reads them for the Updates page.
+fn attempts_path() -> Option<PathBuf> {
+    agent::state_root().map(|r| attempts::path(&r))
+}
+
+/// The release this app is.
+fn own_version(app: &AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// An OS notification that the update to `version` failed, and why (the menu says it too,
+/// from the record, until the next attempt). Best effort: an error is only logged.
+fn notify_failed(app: &AppHandle, version: &str, code: &str) {
+    let sh = shell(app);
+    // a click on it, or its button, sees the logs (notice_action)
+    let shown = app
+        .notification()
+        .builder()
+        .id(FAILED_NOTICE_ID)
+        .action_type_id(FAILED_NOTICE_ACTIONS)
+        .title(sh.lang.words().brand)
+        .body(tray::failed_notice(sh.lang, version, code))
+        .show();
+    if let Err(e) = shown {
+        attempts::log(&format!(
+            "no notification for the failed update to {version}: {e}"
+        ));
+    }
+}
+
+/// The error the home's order says for a failure (autoinstall::order_error: a failure a
+/// person must mend starts with its code, which the server reads).
+fn order_error(f: &Failure) -> String {
+    autoinstall::order_error(f.code, &f.detail)
+}
+
+/// The failed update's notification: its id, its action type and its button ("See the
+/// logs"), which a click on the notification itself does too.
+const FAILED_NOTICE_ID: i32 = 3501;
+const FAILED_NOTICE_ACTIONS: &str = "update-failed";
+const SEE_LOGS_ACTION: &str = "logs";
+
+/// The local server's web address, when this app runs the server (None in client mode:
+/// no server here to show its logs).
+fn local_web_url(app: &AppHandle) -> Option<String> {
+    match shell(app).mode() {
+        Some(AppMode::Server { web_url, .. }) => Some(web_url),
+        _ => None,
+    }
+}
+
+/// "See the logs": the web logs page of this machine's server at the newest attempt's
+/// time, in the app's window (where it shows the server's pages); the log folder in
+/// client mode, which has no server here, and when the server does not answer (its page
+/// could not open: app.log and server.log say why).
+fn see_logs(app: &AppHandle) -> Result<(), String> {
+    let Some(web_url) = local_web_url(app) else {
+        return agent::open_logs();
+    };
+    if status::server_version(&web_url).is_none() {
+        attempts::log("see the logs: the server does not answer; the log folder");
+        return agent::open_logs();
+    }
+    let last = attempts_path()
+        .and_then(|p| attempts::newest(&p))
+        .unwrap_or_default();
+    let url = attempts::logs_url(&web_url, &last);
+    attempts::log(&format!("see the logs: {url}"));
+    focus_main(app);
+    navigate_main(app, &url)
+}
+
+/// What the local server shows (attempts::wait_for_server): the release its api answers
+/// on, its supervisor answering while its api does not yet (starting), or nothing.
+fn server_seen(web_url: &str, supervisor_url: &str) -> attempts::Seen {
+    if let Some(v) = status::server_version(web_url) {
+        return attempts::Seen::On(v);
+    }
+    let busy = status::addr_of(supervisor_url)
+        .is_some_and(|a| !matches!(status::probe(&a), status::Probe::Unreachable));
+    if busy {
+        attempts::Seen::Busy
+    } else {
+        attempts::Seen::Silent
+    }
+}
+
+/// Why the server did not come back on `to` after the app's own update: what it showed
+/// last; on a Mac where nothing answered, what its login item says (macOS refuses it for an
+/// app without its code signature: login_item_unsigned); else the line of server.log that
+/// says why, when one does.
+fn server_not_back(to: &str, last: &attempts::Seen) -> Failure {
+    let said = match last {
+        attempts::Seen::On(v) => format!("the server still runs {v}, not {to}"),
+        attempts::Seen::Busy => format!(
+            "the server did not finish starting on {to} in {} minutes",
+            attempts::SERVER_BUSY.as_secs() / 60
+        ),
+        attempts::Seen::Silent => format!("the server did not answer after the update to {to}"),
+    };
+    #[cfg(target_os = "macos")]
+    if *last == attempts::Seen::Silent {
+        if let Some(f) = login_item_failure(&said) {
+            return f;
+        }
+    }
+    let detail = match agent::server_log_tail().and_then(|t| status::failure_in_log(&t)) {
+        Some(why) => format!("{said}: {why}"),
+        None => said,
+    };
+    Failure::new(attempts::STEP_RELAUNCH, attempts::RELAUNCH_FAILED, detail)
+}
+
+/// The server's login item, when the server stays silent after the app's update (macOS):
+/// registering it again says why macOS will not load it; a login item turned off in System
+/// Settings says that.
+#[cfg(target_os = "macos")]
+fn login_item_failure(said: &str) -> Option<Failure> {
+    let before = agent::login_item();
+    match agent::register() {
+        Err(e) => {
+            let code = if e.starts_with(attempts::LOGIN_ITEM_UNSIGNED) {
+                attempts::LOGIN_ITEM_UNSIGNED
+            } else {
+                attempts::RELAUNCH_FAILED
+            };
+            Some(Failure::new(
+                attempts::STEP_RELAUNCH,
+                code,
+                format!("{said}; the server's login item ({before:?}): {e}"),
+            ))
+        }
+        Ok(()) if agent::login_item() == LoginItem::RequiresApproval => Some(Failure::new(
+            attempts::STEP_RELAUNCH,
+            attempts::RELAUNCH_FAILED,
+            format!(
+                "{said}; the server's login item is turned off in System Settings, Login Items"
+            ),
+        )),
+        Ok(()) => None,
+    }
+}
+
+/// A click on one of this app's notifications (the plugin reports desktop clicks once a
+/// handler exists): on the failed update's, or its "See the logs" button, the logs. Where
+/// the platform does not say which notification was clicked, a click sees the logs while
+/// the newest attempt is failed.
+fn notice_action(app: &AppHandle, action: &str, notice: Option<i32>) {
+    let failed_notice = notice == Some(FAILED_NOTICE_ID)
+        || action == SEE_LOGS_ACTION
+        || (notice.is_none()
+            && attempts_path()
+                .and_then(|p| attempts::newest(&p))
+                .is_some_and(|a| a.outcome == attempts::FAILED));
+    let result = if failed_notice {
+        see_logs(app)
+    } else {
+        focus_main(app);
+        Ok(())
+    };
+    if let Err(e) = result {
+        attempts::log(&format!("the notification's logs could not be opened: {e}"));
+    }
+}
+
 fn build_tray_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry>> {
     let menu = Menu::new(app)?;
     for e in entries {
@@ -325,6 +544,37 @@ pub fn install_requested(app: &AppHandle) {
     };
     let staged = autoinstall::staged_path(&root, &r.version);
     let server_side = matches!(sh.mode(), Some(AppMode::Server { .. }));
+    // a locally built app can take no release: the order says so at once (a machine that
+    // needs a person: its release installed by hand once), recorded once per order
+    if server_side
+        && attempts::local_build()
+        && r.by_app()
+        && matches!(
+            r.state.as_str(),
+            autoinstall::ORDERED | autoinstall::STAGED | autoinstall::GO
+        )
+    {
+        let f = attempts::local_build_failure(attempts::STEP_CHECK, &own_version(app));
+        let _ = autoinstall::write_state(&path, &r, autoinstall::FAILED, &order_error(&f));
+        if sh
+            .notified
+            .lock()
+            .unwrap()
+            .insert(format!("local:{}", r.run_id))
+        {
+            if let Some(rec) = attempts_path() {
+                attempts::record_failed(
+                    &rec,
+                    attempts::TRIGGER_ORDER,
+                    &own_version(app),
+                    &r.version,
+                    &f,
+                );
+            }
+            notify_failed(app, &r.version, f.code);
+        }
+        return;
+    }
     if server_side {
         notify_ready(app, &r);
     }
@@ -398,6 +648,7 @@ fn exact_updater(app: &AppHandle, feed: &str, version: &str) -> Result<Updater, 
     app.updater_builder()
         .endpoints(vec![url])
         .map_err(|e| e.to_string())?
+        .timeout(DOWNLOAD_TIMEOUT)
         .version_comparator(move |_, release| {
             autoinstall::exactly(&wanted, &release.version.to_string())
         })
@@ -407,51 +658,141 @@ fn exact_updater(app: &AppHandle, feed: &str, version: &str) -> Result<Updater, 
 
 /// stage_order downloads the ordered release's app update from its own feed (checked
 /// with this app's key), keeps it, and says staged (the tray shows it); or failed.
+/// A failure of the staging is recorded as a failed attempt of the order (attempts.rs),
+/// told in an OS notification and in the menu, and said in the order for the server.
 fn stage_order(app: AppHandle, path: PathBuf, req: autoinstall::Request, staged: PathBuf) {
     tauri::async_runtime::spawn(async move {
+        let ctx = attempts::Ctx::here();
         let run = async {
+            // what would keep the install from going in without a person, said now: the
+            // updater's password prompt never comes at the home's go
             #[cfg(target_os = "macos")]
-            if let Some(why) = needs_admin() {
-                return Err(why);
+            if let Some(f) = swap_blocker() {
+                return Err(f);
             }
-            let update = exact_updater(&app, &req.feed, &req.version)?
+            let update = exact_updater(&app, &req.feed, &req.version)
+                .map_err(|e| attempts::of_text(attempts::STEP_CHECK, e, &ctx))?
                 .check()
                 .await
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("no app update for {} in its feed", req.version))?;
+                .map_err(|e| attempts::of_updater(attempts::STEP_CHECK, &e, &ctx))?
+                .ok_or_else(|| {
+                    Failure::new(
+                        attempts::STEP_CHECK,
+                        attempts::FEED_INVALID,
+                        format!("no app update for {} in its feed", req.version),
+                    )
+                })?;
             if !autoinstall::same_version(&update.version, &req.version) {
-                return Err(format!(
-                    "the feed offers {}, not {}",
-                    update.version, req.version
+                return Err(Failure::new(
+                    attempts::STEP_CHECK,
+                    attempts::FEED_INVALID,
+                    format!("the feed offers {}, not {}", update.version, req.version),
                 ));
             }
-            let bytes = update
-                .download(|_, _| {}, || {})
+            let bytes = download_watched(&app, &update)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| attempts::of_updater(attempts::STEP_DOWNLOAD, &e, &ctx))?;
+            let io = |e: std::io::Error| {
+                let mut f = attempts::of_text(attempts::STEP_DOWNLOAD, e.to_string(), &ctx);
+                f.code = attempts::classify_io(attempts::STEP_DOWNLOAD, &e, &ctx);
+                f.fix = attempts::fix_for(f.code);
+                f
+            };
             let part = staged.with_extension("part");
-            std::fs::write(&part, &bytes).map_err(|e| e.to_string())?;
-            std::fs::rename(&part, &staged).map_err(|e| e.to_string())?;
-            Ok::<(), String>(())
+            std::fs::write(&part, &bytes).map_err(io)?;
+            std::fs::rename(&part, &staged).map_err(io)?;
+            Ok::<(), Failure>(())
         };
-        let (state, error) = match run.await {
-            Ok(()) => (autoinstall::STAGED, String::new()),
-            Err(e) => (autoinstall::FAILED, e),
-        };
-        let _ = autoinstall::write_state(&path, &req, state, &error);
+        match run.await {
+            Ok(()) => {
+                let _ = autoinstall::write_state(&path, &req, autoinstall::STAGED, "");
+            }
+            Err(f) => {
+                let _ =
+                    autoinstall::write_state(&path, &req, autoinstall::FAILED, &order_error(&f));
+                if let Some(rec) = attempts_path() {
+                    attempts::record_failed(
+                        &rec,
+                        attempts::TRIGGER_ORDER,
+                        &own_version(&app),
+                        &req.version,
+                        &f,
+                    );
+                }
+                notify_failed(&app, &req.version, f.code);
+            }
+        }
         shell(&app).staging.store(false, Ordering::SeqCst);
         refresh(&app);
     });
 }
 
-/// macOS: why replacing this Maktaba.app would need an administrator's password (an
-/// error for the order, autoinstall::NEEDS_ADMIN); None when this user can replace it, or
-/// outside a bundle.
+/// macOS: what keeps this Maktaba.app from being replaced without a person
+/// (autoinstall::swap_blocker: translocated, a read-only volume, a folder that needs an
+/// administrator, App Management or a lock), as the install's failure; None when this user
+/// can replace it, or outside a bundle.
 #[cfg(target_os = "macos")]
-fn needs_admin() -> Option<String> {
+fn swap_blocker() -> Option<Failure> {
     let exe = std::env::current_exe().ok()?;
     let bundle = autoinstall::app_bundle_of(&exe)?;
-    autoinstall::needs_admin(&bundle, autoinstall::writable)
+    let (code, why) = autoinstall::swap_blocker(&bundle, &autoinstall::Probe::here())?;
+    Some(Failure::new(attempts::STEP_INSTALL, code, why))
+}
+
+/// Downloads `update` with its progress in the tray's update item. A download that gets no
+/// byte for DOWNLOAD_STALL stops, with words the reasons read as no network (the updater's
+/// own timeout, DOWNLOAD_TIMEOUT, bounds the whole of it).
+async fn download_watched(
+    app: &AppHandle,
+    update: &tauri_plugin_updater::Update,
+) -> Result<Vec<u8>, tauri_plugin_updater::Error> {
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+    let now = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    };
+    let last = Arc::new(AtomicU64::new(now()));
+    let version = update.version.clone();
+    *shell(app).downloading.lock().unwrap() = Some((version.clone(), 0, None));
+    let (task_app, task_last, task_update) = (app.clone(), last.clone(), update.clone());
+    let task = tauri::async_runtime::spawn(async move {
+        let mut got = 0u64;
+        task_update
+            .download(
+                move |n, total| {
+                    got += n as u64;
+                    task_last.store(now(), Ordering::SeqCst);
+                    *shell(&task_app).downloading.lock().unwrap() =
+                        Some((version.clone(), got, total));
+                },
+                || {},
+            )
+            .await
+    });
+    let stalled = loop {
+        if task.inner().is_finished() {
+            break false;
+        }
+        if now().saturating_sub(last.load(Ordering::SeqCst)) >= DOWNLOAD_STALL.as_secs() {
+            task.abort();
+            break true;
+        }
+        // a second, off the async runtime's threads
+        let _ = tauri::async_runtime::spawn_blocking(|| std::thread::sleep(Duration::from_secs(1)))
+            .await;
+    };
+    *shell(app).downloading.lock().unwrap() = None;
+    if stalled {
+        return Err(tauri_plugin_updater::Error::Network(format!(
+            "the download stalled: no data for {} s (timed out)",
+            DOWNLOAD_STALL.as_secs()
+        )));
+    }
+    task.await
+        .map_err(|e| tauri_plugin_updater::Error::Network(e.to_string()))?
 }
 
 /// An install the home ordered: where to say how it went, what to install, and where
@@ -550,10 +891,42 @@ fn refresh(app: &AppHandle) {
         model.as_deref(),
         detail,
     );
-    let badge = if server && cfg!(not(target_os = "macos")) {
+    // the last update attempt, when it failed: its reason until the next attempt
+    let last = attempts_path().and_then(|p| attempts::newest(&p));
+    let entries = tray::with_failed_update(
+        entries,
+        tray::failed_line(lang, last.as_ref(), &own_version(app)),
+        lang,
+        server && matches!(sh.mode(), Some(AppMode::Server { .. })),
+    );
+    // the portable app's update is a new zip, not the setup beside it
+    let entries = match sh.update_version.lock().unwrap().clone() {
+        Some(v) if !server && sh.portable => tray::with_label(
+            entries,
+            "update",
+            &lang::fill(lang.words().update_out_portable, &[("version", &v)]),
+            true,
+        ),
+        _ => entries,
+    };
+    // a download under way: its progress in the update item
+    let entries = match sh.downloading.lock().unwrap().clone() {
+        Some((v, got, total)) => tray::with_label(
+            entries,
+            "update",
+            &tray::download_label(lang, &v, got, total),
+            false,
+        ),
+        None => entries,
+    };
+    // the Mac's menu-bar item keeps its plain icon; an app that runs no server shows only
+    // its own update
+    let badge = if cfg!(target_os = "macos") {
+        None
+    } else if server {
         tray::badge_color(status, update_ready || order.is_some())
     } else {
-        None
+        tray::client_badge(update_ready)
     };
     let tooltip = if server {
         tray::tooltip(&tray::status_line(lang, status, detail))
@@ -680,7 +1053,8 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
                 agent::register()
             }
         }
-        "open-logs" => agent::open_logs(),
+        "open-logs" | "update-log-folder" => agent::open_logs(),
+        "update-logs" => see_logs(app),
         "change-server" => sh.clear_mode().and_then(|()| {
             focus_main(app);
             navigate_main(app, &bundled_url(app))
@@ -725,13 +1099,23 @@ fn update_clicked(app: &AppHandle) -> Result<(), String> {
             )
             .map_err(|e| e.to_string())
         }
+        // the portable app installs nothing: the release page has its new zip
+        autoinstall::Click::OwnFeed if sh.portable => agent::open_path(std::ffi::OsStr::new(
+            &format!("{}/releases/latest", sh.repo),
+        )),
+        // one install at a time (a second click while one runs does nothing)
+        _ if sh.installing.load(Ordering::SeqCst) || sh.staging.load(Ordering::SeqCst) => Ok(()),
         autoinstall::Click::OwnFeed => {
-            install_update_from(app.clone(), Source::Own);
+            if !sh.installing.swap(true, Ordering::SeqCst) {
+                install_update_from(app.clone(), Source::Own);
+            }
             Ok(())
         }
         autoinstall::Click::Release(version) => {
-            let feed = autoinstall::release_feed(&sh.repo, &version);
-            install_update_from(app.clone(), Source::Release { version, feed });
+            if !sh.installing.swap(true, Ordering::SeqCst) {
+                let feed = autoinstall::release_feed(&sh.repo, &version);
+                install_update_from(app.clone(), Source::Release { version, feed });
+            }
             Ok(())
         }
         // the order moved on since the menu was drawn: the next refresh redraws it
@@ -755,37 +1139,94 @@ fn install_update_from(app: AppHandle, source: Source) {
         // the server was asked to stop for the install
         #[cfg(windows)]
         let stopped = AtomicBool::new(false);
-        let failed = |e: String| (false, e);
+        let ctx = attempts::Ctx::here();
+        // the attempt's record (attempts.rs): every step, and why it failed
+        let rec = attempts_path();
+        let trigger = if source.ordered().is_some() {
+            attempts::TRIGGER_ORDER
+        } else {
+            attempts::TRIGGER_BADGE
+        };
+        let id = rec.as_deref().map(|p| {
+            attempts::begin(
+                p,
+                trigger,
+                &own_version(&app),
+                source.version().unwrap_or(""),
+            )
+        });
+        let step = |name: &str| {
+            if let (Some(p), Some(id)) = (rec.as_deref(), id.as_deref()) {
+                attempts::set_step(p, id, name);
+            }
+        };
+        let failed = |f: Failure| (false, f);
+        let mut to = source.version().unwrap_or("").to_string();
         let run = async {
+            // a locally built app can verify no release
+            if attempts::local_build() {
+                return Err(failed(attempts::local_build_failure(
+                    attempts::STEP_CHECK,
+                    &own_version(&app),
+                )));
+            }
             let updater = match &source {
-                Source::Own => app.updater().map_err(|e| e.to_string()),
-                Source::Release { version, feed } => exact_updater(&app, feed, version),
-                Source::Ordered(o) => exact_updater(&app, &o.feed, &o.version),
+                Source::Own => app
+                    .updater_builder()
+                    .timeout(DOWNLOAD_TIMEOUT)
+                    .build()
+                    .map_err(|e| attempts::of_updater(attempts::STEP_CHECK, &e, &ctx)),
+                Source::Release { version, feed } => exact_updater(&app, feed, version)
+                    .map_err(|e| attempts::of_text(attempts::STEP_CHECK, e, &ctx)),
+                Source::Ordered(o) => exact_updater(&app, &o.feed, &o.version)
+                    .map_err(|e| attempts::of_text(attempts::STEP_CHECK, e, &ctx)),
             }
             .map_err(failed)?;
-            let update = updater.check().await.map_err(|e| failed(e.to_string()))?;
+            let update = updater
+                .check()
+                .await
+                .map_err(|e| failed(attempts::of_updater(attempts::STEP_CHECK, &e, &ctx)))?;
             let Some(update) = update else {
                 return match source.version() {
-                    Some(v) => Err(failed(format!("no app update for {v} in its feed"))),
+                    Some(v) => Err(failed(Failure::new(
+                        attempts::STEP_CHECK,
+                        attempts::FEED_INVALID,
+                        format!("no app update for {v} in its feed"),
+                    ))),
                     None => Ok(Done::NoUpdate),
                 };
             };
             if let Some(v) = source.version() {
                 if !autoinstall::same_version(&update.version, v) {
-                    return Err(failed(format!(
-                        "the feed offers {}, not {v}",
-                        update.version
+                    return Err(failed(Failure::new(
+                        attempts::STEP_CHECK,
+                        attempts::FEED_INVALID,
+                        format!("the feed offers {}, not {v}", update.version),
                     )));
+                }
+            }
+            if to.is_empty() {
+                to = update.version.clone();
+                if let (Some(p), Some(id)) = (rec.as_deref(), id.as_deref()) {
+                    attempts::set_to(p, id, &to);
                 }
             }
             // what was staged at the order (install checks it again), else downloaded now
             let bytes = match source.ordered().and_then(|o| std::fs::read(&o.staged).ok()) {
                 Some(b) => b,
-                None => update
-                    .download(|_, _| {}, || {})
-                    .await
-                    .map_err(|e| failed(e.to_string()))?,
+                None => {
+                    step(attempts::STEP_DOWNLOAD);
+                    download_watched(&app, &update).await.map_err(|e| {
+                        failed(attempts::of_updater(attempts::STEP_DOWNLOAD, &e, &ctx))
+                    })?
+                }
             };
+            // checked before anything stops: a staged file that does not verify is no
+            // reason to take the server down (install checks it again)
+            step(attempts::STEP_VERIFY);
+            update
+                .verify(&bytes)
+                .map_err(|e| failed(attempts::of_updater(attempts::STEP_VERIFY, &e, &ctx)))?;
             #[cfg(windows)]
             if matches!(shell(&app).mode(), Some(AppMode::Server { .. })) {
                 if !source.still_go() {
@@ -794,11 +1235,18 @@ fn install_update_from(app: AppHandle, source: Source) {
                 // stop the server and wait for it (the install hold keeps the
                 // task's watchdog from starting it meanwhile); the update is
                 // not installed when it does not stop in time
+                step(attempts::STEP_INSTALL);
                 stopped.store(true, Ordering::SeqCst);
+                let stop_failed = |e: String| {
+                    (
+                        true,
+                        Failure::new(attempts::STEP_INSTALL, attempts::SERVER_STOP_FAILED, e),
+                    )
+                };
                 tauri::async_runtime::spawn_blocking(agent::stop_for_install)
                     .await
-                    .map_err(|e| (true, e.to_string()))?
-                    .map_err(|e| (true, e))?;
+                    .map_err(|e| stop_failed(e.to_string()))?
+                    .map_err(stop_failed)?;
             }
             if !source.still_go() {
                 return Ok(Done::Withdrawn);
@@ -809,16 +1257,21 @@ fn install_update_from(app: AppHandle, source: Source) {
             // install a release no run watches
             #[cfg(target_os = "macos")]
             if source.ordered().is_some() {
-                if let Some(why) = needs_admin() {
-                    return Err(failed(why));
+                if let Some(f) = swap_blocker() {
+                    return Err(failed(f));
                 }
             }
-            // Windows: this runs the installer and exits the app
-            update.install(bytes).map_err(|e| failed(e.to_string()))?;
+            // recorded before: on Windows the installer ends this app; the next start
+            // settles the attempt (installed, or relaunch_failed)
+            step(attempts::STEP_INSTALL);
+            update
+                .install(bytes)
+                .map_err(|e| failed(attempts::of_updater(attempts::STEP_INSTALL, &e, &ctx)))?;
             // the error: whether the server would not stop for it, and why
-            Ok::<Done, (bool, String)>(Done::Installed)
+            Ok::<Done, (bool, Failure)>(Done::Installed)
         };
-        match run.await {
+        let outcome = run.await;
+        match outcome {
             Ok(Done::Installed) => {
                 if let Some(o) = source.ordered() {
                     let _ = std::fs::remove_file(&o.staged);
@@ -827,16 +1280,40 @@ fn install_update_from(app: AppHandle, source: Source) {
                 // a paused server stays paused; it runs the new payload on Resume.
                 // Linux: the server runs a copy of the payload, which the new
                 // app switches to when it starts (agent::linux::sync_runtime).
+                // A restart that fails is noted in the attempt: the new app waits for its
+                // server on the release, and says it when the server does not come back.
                 if cfg!(not(target_os = "linux"))
                     && matches!(sh.mode(), Some(AppMode::Server { .. }))
                     && !sh.paused.load(Ordering::SeqCst)
                 {
-                    let _ = agent::control(Action::Restart);
+                    if let (Err(e), Some(p), Some(id)) = (
+                        agent::control(Action::Restart),
+                        rec.as_deref(),
+                        id.as_deref(),
+                    ) {
+                        attempts::note(
+                            p,
+                            id,
+                            &format!("the server's restart after the install failed: {e}"),
+                        );
+                    }
                 }
+                // the new app settles the attempt when it starts (attempts::settle_newest)
+                step(attempts::STEP_RELAUNCH);
                 app.restart();
             }
-            Ok(Done::NoUpdate) => shell(&app).update_ready.store(false, Ordering::SeqCst),
+            Ok(Done::NoUpdate) => {
+                if let (Some(p), Some(id)) = (rec.as_deref(), id.as_deref()) {
+                    attempts::discard(p, id);
+                }
+                let sh = shell(&app);
+                sh.update_ready.store(false, Ordering::SeqCst);
+                sh.installing.store(false, Ordering::SeqCst);
+            }
             Ok(Done::Withdrawn) => {
+                if let (Some(p), Some(id)) = (rec.as_deref(), id.as_deref()) {
+                    attempts::cancel(p, id);
+                }
                 // cancelled, replaced or skipped before the install: nothing to say in an
                 // order that is not this run's any more; a server stopped for it starts
                 shell(&app).installing.store(false, Ordering::SeqCst);
@@ -849,10 +1326,20 @@ fn install_update_from(app: AppHandle, source: Source) {
                     .await;
                 }
             }
-            Err((at_stop, e)) => {
+            Err((at_stop, f)) => {
+                if let (Some(p), Some(id)) = (rec.as_deref(), id.as_deref()) {
+                    attempts::fail(p, id, &f);
+                }
+                notify_failed(&app, &to, f.code);
                 if let Some(o) = source.ordered() {
-                    // the server's run says it; no dialog at the update's hour
-                    let _ = autoinstall::write_state(&o.path, &o.req, autoinstall::FAILED, &e);
+                    // the server's run says it; no dialog at the update's hour (the
+                    // notification and the menu say why)
+                    let _ = autoinstall::write_state(
+                        &o.path,
+                        &o.req,
+                        autoinstall::FAILED,
+                        &order_error(&f),
+                    );
                     shell(&app).installing.store(false, Ordering::SeqCst);
                     #[cfg(windows)]
                     if stopped.load(Ordering::SeqCst) {
@@ -863,30 +1350,187 @@ fn install_update_from(app: AppHandle, source: Source) {
                         .await;
                     }
                     let _ = at_stop;
+                    refresh(&app);
                     return;
                 }
-                let w = shell(&app).lang.words();
-                let sentence = if at_stop {
-                    w.update_stop_failed
+                shell(&app).installing.store(false, Ordering::SeqCst);
+                let lang = shell(&app).lang;
+                // what happened and why, in the tray's language, then the updater's own
+                // words and the fix
+                let head = if at_stop {
+                    lang.words().update_stop_failed
                 } else {
-                    w.update_failed
+                    lang.words().update_failed
                 };
+                let why = tray::failed_line(
+                    lang,
+                    Some(&attempts::Attempt {
+                        to: to.clone(),
+                        outcome: attempts::FAILED.into(),
+                        code: f.code.into(),
+                        ..attempts::Attempt::default()
+                    }),
+                    &own_version(&app),
+                )
+                .unwrap_or_default();
+                let sentence = format!(
+                    "{head}
+{why}"
+                );
                 #[cfg(windows)]
                 if stopped.load(Ordering::SeqCst) {
+                    let w = lang.words();
                     let handle = app.clone();
                     let (again, why) = tauri::async_runtime::spawn_blocking(move || {
                         start_after_failed_update(&handle)
                     })
                     .await
                     .unwrap_or_else(|e| (w.update_start_failed, Some(e.to_string())));
-                    let sentence = format!("{sentence} {again}");
+                    let sentence = format!(
+                        "{sentence}
+{again}"
+                    );
                     let why = why.unwrap_or_default();
-                    return show_error(&app, &sentence, &[&e, &why]);
+                    refresh(&app);
+                    return show_error(&app, &sentence, &[&f.detail, &f.fix, &why]);
                 }
-                show_error(&app, sentence, &[&e])
+                refresh(&app);
+                show_error(&app, &sentence, &[&f.detail, &f.fix])
             }
         }
     });
+}
+
+/// The client's own feed offers `version`: the update item and badge show it, and the Mac
+/// (whose menu-bar item has no badge) says it once per release in an OS notification.
+fn client_update_found(app: &AppHandle, version: &str) {
+    let sh = shell(app);
+    sh.update_ready.store(true, Ordering::SeqCst);
+    let new = sh
+        .update_version
+        .lock()
+        .unwrap()
+        .replace(version.to_string())
+        != Some(version.to_string());
+    if new && cfg!(target_os = "macos") {
+        let shown = app
+            .notification()
+            .builder()
+            .title(sh.lang.words().brand)
+            .body(lang::fill(
+                sh.lang.words().update_ready_notice,
+                &[("version", version)],
+            ))
+            .show();
+        if let Err(e) = shown {
+            attempts::log(&format!("no notification for Maktaba {version}: {e}"));
+        }
+    }
+}
+
+/// An update the home ordered that failed after the app's relaunch (its server did not come
+/// back on the release): the order says so now, so the home's run fails at once with the
+/// reason instead of waiting for it.
+fn tell_the_order(failed: &attempts::Attempt) {
+    if failed.trigger != attempts::TRIGGER_ORDER {
+        return;
+    }
+    let Some(root) = agent::state_root() else {
+        return;
+    };
+    let path = autoinstall::request_path(&root);
+    let Some(r) = autoinstall::read(&path) else {
+        return;
+    };
+    if autoinstall::same_version(&r.version, &failed.to)
+        && matches!(r.state.as_str(), autoinstall::GO | autoinstall::INSTALLING)
+    {
+        let _ = autoinstall::write_state(
+            &path,
+            &r,
+            autoinstall::FAILED,
+            &autoinstall::order_error(&failed.code, &failed.detail),
+        );
+    }
+}
+
+/// macOS: how long the server may stay silent after the app's update before its login item
+/// is registered again (the plist or the signature it was registered with changed).
+#[cfg(target_os = "macos")]
+const LOGIN_ITEM_RECHECK: Duration = Duration::from_secs(30);
+
+/// macOS: the server's login item registered for the app that is now `to` (the contract's
+/// "plist changed: unregister + register", agent::register_login_item): for this build when
+/// another build registered it, or again with `force`; why not, as the attempt's failure
+/// (login_item_unsigned when macOS refuses an app without its signature).
+#[cfg(target_os = "macos")]
+fn register_again(to: &str, force: bool) -> Result<(), Failure> {
+    let before = agent::login_item();
+    match agent::register_login_item(force) {
+        Err(e) => {
+            let code = if e.starts_with(attempts::LOGIN_ITEM_UNSIGNED) {
+                attempts::LOGIN_ITEM_UNSIGNED
+            } else {
+                attempts::RELAUNCH_FAILED
+            };
+            Err(Failure::new(
+                attempts::STEP_RELAUNCH,
+                code,
+                format!(
+                    "after the update to {to}, macOS would not register the server's login item \
+                     again (it was {before:?}): {e}"
+                ),
+            ))
+        }
+        // this build registered it already (at the app's start)
+        Ok(false) => Ok(()),
+        Ok(true) if agent::login_item() == LoginItem::RequiresApproval => Err(Failure::new(
+            attempts::STEP_RELAUNCH,
+            attempts::RELAUNCH_FAILED,
+            format!(
+                "after the update to {to}, the server's login item is turned off in System \
+                 Settings › Login Items"
+            ),
+        )),
+        Ok(true) => {
+            attempts::log(&format!(
+                "update to {to}: the server's login item registered again (it was {before:?})"
+            ));
+            Ok(())
+        }
+    }
+}
+
+/// Linux: every CATCH_UP_EVERY, whether the server runs a newer release than this app (the
+/// server updates its own runtime, owner decision D3): the tray offers the catch-up, or
+/// stops offering it once this app is that release. Never at start (sync_runtime does it).
+#[cfg(target_os = "linux")]
+fn recheck_catch_up(app: &AppHandle) {
+    let sh = shell(app);
+    if !matches!(sh.mode(), Some(AppMode::Server { .. })) {
+        return;
+    }
+    {
+        let mut at = sh.catch_up_at.lock().unwrap();
+        match *at {
+            None => {
+                *at = Some(Instant::now());
+                return;
+            }
+            Some(t) if t.elapsed() < CATCH_UP_EVERY => return,
+            Some(_) => *at = Some(Instant::now()),
+        }
+    }
+    if sh.installing.load(Ordering::SeqCst) {
+        return;
+    }
+    let release = match crate::agent::linux::runtime_older() {
+        Ok(Some((app_v, server, running))) => autoinstall::catch_up(&app_v, &running, &server),
+        Ok(None) => None,
+        Err(_) => return,
+    };
+    sh.update_ready.store(release.is_some(), Ordering::SeqCst);
+    *sh.catch_up.lock().unwrap() = release;
 }
 
 /// After an update that failed once the server was asked to stop (Windows):
@@ -912,6 +1556,21 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(Shell::new(app));
 
     let sh = shell(app);
+    // the failed update's notification: its button and a click on it see the logs (the
+    // plugin reports desktop clicks once a handler exists, before any notification shows)
+    let notices = app.notification();
+    let _ = notices.register_action_types(vec![ActionType::builder(FAILED_NOTICE_ACTIONS)
+        .actions(vec![NoticeAction::builder(
+            SEE_LOGS_ACTION,
+            sh.lang.words().see_logs,
+        )
+        .build()])
+        .build()]);
+    let handle = app.clone();
+    let _ = notices.on_action(move |performed| {
+        let notice = performed.notification().map(|n| n.id());
+        notice_action(&handle, performed.action_id(), notice);
+    });
     let entries = tray::entries(sh.lang, sh.server_side(), &ServerStatus::Starting, false);
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&build_tray_menu(app, &entries)?)
@@ -1061,9 +1720,87 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         });
     }
 
+    // the update attempt this app's last run ended with its restart (or left when it
+    // quit): installed when the app now is its release (and, for an app that runs the
+    // server, once its server is back on it), failed otherwise (attempts.rs)
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let Some(rec) = attempts_path() else {
+            return;
+        };
+        let sh = shell(&handle);
+        let server = match sh.mode() {
+            Some(AppMode::Server {
+                web_url,
+                supervisor_url,
+            }) if !sh.paused.load(Ordering::SeqCst) => Some((web_url, supervisor_url)),
+            _ => None,
+        };
+        let mut back = |a: &attempts::Attempt| -> Result<(), Failure> {
+            let Some((web_url, supervisor_url)) = server.as_ref() else {
+                return Ok(());
+            };
+            // macOS: the login item is bound to the build that registered it (an app signed
+            // ad hoc is its code hash): this build's is made at once when another build's is
+            // there (agent::register_login_item, as the app's start does), and once more if
+            // the server stays silent LOGIN_ITEM_RECHECK into the wait; what macOS says then
+            // is the failure
+            #[cfg(target_os = "macos")]
+            let login: std::cell::RefCell<(bool, Option<Failure>)> =
+                std::cell::RefCell::new((false, register_again(&a.to, false).err()));
+            #[cfg(target_os = "macos")]
+            if let Some(f) = login.borrow().1.clone() {
+                return Err(f);
+            }
+            let began = std::time::Instant::now();
+            #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+            let mut silent_since: Option<Instant> = None;
+            let res = attempts::wait_for_server(
+                &a.to,
+                || {
+                    let seen = server_seen(web_url, supervisor_url);
+                    #[cfg(target_os = "macos")]
+                    {
+                        let since = *silent_since.get_or_insert_with(Instant::now);
+                        if seen != attempts::Seen::Silent {
+                            silent_since = None;
+                        } else if since.elapsed() >= LOGIN_ITEM_RECHECK && !login.borrow().0 {
+                            let out = register_again(&a.to, true).err();
+                            *login.borrow_mut() = (true, out);
+                        }
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    let _ = &mut silent_since;
+                    seen
+                },
+                || began.elapsed(),
+                std::thread::sleep,
+            );
+            #[cfg(target_os = "macos")]
+            if let (Err(_), Some(f)) = (&res, login.borrow().1.clone()) {
+                return Err(f);
+            }
+            res.map_err(|last| server_not_back(&a.to, &last))
+        };
+        let back: Option<attempts::ServerBack<'_>> = if server.is_some() {
+            Some(&mut back)
+        } else {
+            None
+        };
+        if let Some(failed) =
+            attempts::settle_newest(&rec, &own_version(&handle), &attempts::Ctx::here(), back)
+        {
+            tell_the_order(&failed);
+            notify_failed(&handle, &failed.to, &failed.code);
+            refresh(&handle);
+        }
+    });
+
     let handle = app.clone();
     std::thread::spawn(move || loop {
         refresh(&handle);
+        #[cfg(target_os = "linux")]
+        recheck_catch_up(&handle);
         std::thread::sleep(POLL_EVERY);
     });
 
@@ -1072,10 +1809,12 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     // older than the server, set above)
     let handle = app.clone();
     std::thread::spawn(move || loop {
-        if !shell(&handle).server_side() {
-            if let Ok(updater) = handle.updater() {
-                if let Ok(Some(_)) = tauri::async_runtime::block_on(updater.check()) {
-                    shell(&handle).update_ready.store(true, Ordering::SeqCst);
+        // a locally built app can verify no release: it offers none
+        if !shell(&handle).server_side() && !attempts::local_build() {
+            let updater = handle.updater_builder().timeout(DOWNLOAD_TIMEOUT).build();
+            if let Ok(updater) = updater {
+                if let Ok(Some(u)) = tauri::async_runtime::block_on(updater.check()) {
+                    client_update_found(&handle, &u.version);
                 }
             }
         }

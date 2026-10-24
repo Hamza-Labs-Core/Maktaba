@@ -43,11 +43,9 @@ func Handler(apiPrefixes ...string) http.Handler {
 			clean = "index.html"
 		}
 		if _, err := fs.Stat(sub, clean); err != nil {
-			for _, p := range apiPrefixes {
-				if strings.HasPrefix(r.URL.Path, p) {
-					pagetheme.NotFound(w, r)
-					return
-				}
+			if !FallsBack(r.URL.Path, apiPrefixes...) {
+				pagetheme.NotFound(w, r)
+				return
 			}
 			// SPA fallback.
 			r2 := r.Clone(r.Context())

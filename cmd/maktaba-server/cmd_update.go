@@ -134,6 +134,9 @@ func runUpdate(ctx context.Context, cmd *cobra.Command, c *selfupdate.Client, se
 		return runLayoutUpdate(ctx, out, c, rel, l, check)
 	}
 	p, err := c.Prepare(ctx, rel, self)
+	if olderBuild(out, rel.Tag, current, err) {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("refusing %s: %w", rel.Tag, err)
 	}
@@ -150,11 +153,29 @@ func runUpdate(ctx context.Context, cmd *cobra.Command, c *selfupdate.Client, se
 	return nil
 }
 
+// olderBuild says, for a release that is an older build of the installed release's line
+// (releaseverify.OlderBuild: an rc tagged after its release), that there is nothing to
+// install: it is passed by, not refused as a replay.
+func olderBuild(out io.Writer, tag, current string, err error) bool {
+	if !errors.Is(err, releaseverify.ErrOlderBuild) {
+		return false
+	}
+	if current != "" {
+		fmt.Fprintf(out, "You are up to date: %s is newer in version but an older build than %s (signed before it).\n", tag, current)
+	} else {
+		fmt.Fprintf(out, "You are up to date: %s is newer in version but an older build than the release installed here.\n", tag)
+	}
+	return true
+}
+
 // runLayoutUpdate installs into a self-managed install (story 35.2): the
 // verified release is staged in bin/releases/<v>/ and becomes current under
 // the launcher's boot-loop guard; the running binaries are never replaced.
 func runLayoutUpdate(ctx context.Context, out io.Writer, c *selfupdate.Client, rel *selfupdate.Release, l layout.Layout, check bool) error {
 	st, err := c.Stage(ctx, rel, l)
+	if olderBuild(out, rel.Tag, "", err) {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("refusing %s: %w", rel.Tag, err)
 	}

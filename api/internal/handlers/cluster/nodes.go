@@ -67,6 +67,22 @@ type Node struct {
 	CopyReportedAt *time.Time      `json:"copy_reported_at"`
 }
 
+// liveStates are the machine agents' last update.state (nil without the hub).
+func (h *Handler) liveStates() map[string]json.RawMessage {
+	if h.LiveStates == nil {
+		return nil
+	}
+	return h.LiveStates()
+}
+
+// live is a node's view with its machine agent's last update.state, when it is connected.
+func (h *Handler) live(v Node, states map[string]json.RawMessage) Node {
+	if st, ok := states[v.ID]; ok && len(st) > 0 {
+		v.UpdateState = st
+	}
+	return v
+}
+
 func view(n cluster.Node, workers []cluster.NodeWorker, stages map[string]bool, now time.Time) Node {
 	out := Node{
 		ID: n.ID, Name: n.Name, State: n.State, Expired: expired(n, now),
@@ -141,8 +157,9 @@ func (h *Handler) views(ctx context.Context, now time.Time) ([]Node, error) {
 		byNode[w.NodeID] = append(byNode[w.NodeID], w)
 	}
 	out := make([]Node, 0, len(nodes))
+	live := h.liveStates()
 	for _, n := range nodes {
-		out = append(out, view(n, byNode[n.ID], stages[n.ID], now))
+		out = append(out, h.live(view(n, byNode[n.ID], stages[n.ID], now), live))
 	}
 	return out, nil
 }
@@ -175,5 +192,5 @@ func (h *Handler) writeNode(w http.ResponseWriter, r *http.Request, id string) {
 			mine = append(mine, wk)
 		}
 	}
-	common.WriteJSON(w, r, http.StatusOK, view(n, mine, stages[id], now))
+	common.WriteJSON(w, r, http.StatusOK, h.live(view(n, mine, stages[id], now), h.liveStates()))
 }

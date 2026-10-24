@@ -20,6 +20,7 @@ import {
   type SeriesKey,
 } from "../../lib/clusterStream";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
+import { nodeLogsLink } from "../../lib/logLinks";
 import { Sparkline } from "../queue/Sparkline";
 import { useFmt } from "../queue/format";
 import { useClusterFmt } from "./format";
@@ -34,9 +35,12 @@ interface Props {
   onOpenLogs: (target: LogTarget) => void;
   /** jobs running per machine (node id / "home"); null while not known */
   jobs?: Record<string, number> | null;
+  /** the machines (node ids) that cannot reach the home's database: connected to the hub,
+   * but not healthy */
+  noHomeDb?: ReadonlySet<string>;
 }
 
-export function LiveMachines({ stream, queueLabel, onOpenLogs, jobs = null }: Props) {
+export function LiveMachines({ stream, queueLabel, onOpenLogs, jobs = null, noHomeDb }: Props) {
   const { t } = useI18n();
   const groups = groupByMachine(stream.processes);
   return (
@@ -61,6 +65,7 @@ export function LiveMachines({ stream, queueLabel, onOpenLogs, jobs = null }: Pr
                 onOpenLogs={onOpenLogs}
                 host={host}
                 jobs={jobs && host ? (jobs[host] ?? 0) : null}
+                noHomeDb={Boolean(g.nodeId && noHomeDb?.has(g.nodeId))}
               />
             );
           })}
@@ -121,6 +126,7 @@ const MachineLive = memo(function MachineLive({
   onOpenLogs,
   host,
   jobs,
+  noHomeDb = false,
 }: {
   group: MachineGroup;
   history: Record<string, MetricSample[]>;
@@ -128,6 +134,7 @@ const MachineLive = memo(function MachineLive({
   onOpenLogs: (target: LogTarget) => void;
   host: string | null;
   jobs: number | null;
+  noHomeDb?: boolean;
 }) {
   const { t, n } = useI18n();
   const f = useClusterFmt();
@@ -189,9 +196,18 @@ const MachineLive = memo(function MachineLive({
           <Badge tone={group.kind === "home" ? "accent" : "neutral"}>
             {t(group.kind === "home" ? "cluster.live.home" : "cluster.live.node")}
           </Badge>
-          <Badge tone={online ? "success" : "neutral"}>
-            {t(online ? "cluster.live.connected" : "cluster.live.disconnected")}
-          </Badge>
+          {online && noHomeDb && group.nodeId ? (
+            <>
+              <Badge tone="error">{t("machines.status.no_home_db")}</Badge>
+              <a className="mkt-cl-link" href={nodeLogsLink(group.nodeId)}>
+                {t("machines.homeDb.logs")}
+              </a>
+            </>
+          ) : (
+            <Badge tone={online ? "success" : "neutral"}>
+              {t(online ? "cluster.live.connected" : "cluster.live.disconnected")}
+            </Badge>
+          )}
           <span className="mkt-mc-muted" dir="ltr">
             {group.ip}
           </span>
@@ -266,6 +282,7 @@ const MachineLive = memo(function MachineLive({
               samples={history[p.session]}
               queueLabel={queueLabel}
               onOpenLogs={onOpenLogs}
+              noHomeDb={noHomeDb}
             />
           ))}
         </ul>
@@ -279,11 +296,14 @@ const ProcessLive = memo(function ProcessLive({
   samples,
   queueLabel,
   onOpenLogs,
+  noHomeDb = false,
 }: {
   p: LiveProcess;
   samples: MetricSample[] | undefined;
   queueLabel: (stage: string) => string;
   onOpenLogs: (target: LogTarget) => void;
+  /** its machine cannot reach the home's database: connected, but not green */
+  noHomeDb?: boolean;
 }) {
   const { t, n } = useI18n();
   const f = useClusterFmt();
@@ -312,7 +332,7 @@ const ProcessLive = memo(function ProcessLive({
           {t("cluster.live.pid", { pid: n(p.pid, { useGrouping: false }) })}
           {pipe?.role && ` · ${pipe.role}`}
         </span>
-        <Badge tone={p.online ? "success" : "neutral"}>
+        <Badge tone={p.online ? (noHomeDb ? "warn" : "success") : "neutral"}>
           {t(p.online ? "cluster.live.connected" : "cluster.live.disconnected")}
         </Badge>
         <span className="mkt-mc-muted mkt-cl-proc__jobs">

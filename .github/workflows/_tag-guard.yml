@@ -1,0 +1,64 @@
+# Reusable tag-order guard: the first job of every tag workflow (release.yml,
+# desktop-release.yml, mobile-release.yml, tv-release.yml). A tag is released only above
+# every published release, from a commit on main that CI passed (tools/release/tag-guard.sh):
+# v0.3.0-rc.7, tagged after v0.3.0, was an orphan no updater offered. A deliberate
+# maintenance release of an older line is named in the repository variable
+# MAKTABA_RELEASE_ALLOW_TAG (story 22.5 EC1) and never becomes the latest.
+#
+# create_draft (release.yml only): the tag's release is opened as a draft here, before any
+# workflow uploads to it, so two workflows never make two drafts of one tag, and nothing is
+# public before release.json is (tools/release/release-assets.sh publishes it once complete).
+
+name: Tag guard
+
+on:
+  workflow_call:
+    inputs:
+      create_draft:
+        type: boolean
+        default: false
+    outputs:
+      maintenance:
+        description: "true for a deliberate maintenance release (MAKTABA_RELEASE_ALLOW_TAG)"
+        value: ${{ jobs.guard.outputs.maintenance }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  guard:
+    name: tag guard
+    runs-on: ubuntu-22.04
+    # waits for CI on the tagged commit when it still runs
+    timeout-minutes: 75
+    permissions:
+      contents: write # create_draft: open the tag's release as a draft
+      actions: read # CI's runs on the tagged commit
+    outputs:
+      maintenance: ${{ steps.guard.outputs.maintenance }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: tools/release/go.mod
+          cache-dependency-path: tools/release/go.sum
+
+      - name: The tag's place, main, CI
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          ALLOW_TAG: ${{ vars.MAKTABA_RELEASE_ALLOW_TAG }}
+        run: tools/release/tag-guard.sh
+
+      - name: Open the release as a draft
+        if: inputs.create_draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: "Release ${{ github.ref_name }}: in the making (published once its signed files and apps are in)."
+        run: tools/release/release-assets.sh ensure "${{ github.ref_name }}"

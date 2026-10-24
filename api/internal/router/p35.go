@@ -42,6 +42,14 @@ func (r *HubRef) Set(h *agent.Hub) {
 	}
 }
 
+// Get is the hub (nil before it is set).
+func (r *HubRef) Get() *agent.Hub {
+	if r == nil {
+		return nil
+	}
+	return r.h.Load()
+}
+
 // hubCluster is updates.Cluster over the hub.
 type hubCluster struct{ ref *HubRef }
 

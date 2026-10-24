@@ -444,9 +444,10 @@ func TestPendingTimeoutFallsBack(t *testing.T) {
 	cfg.PendingTimeout = 400 * time.Millisecond
 	startLauncher(t, cfg)
 	waitFor(t, "previous started", func() bool { return countAct(readTrace(l), "1.0.0", "run") == 1 })
-	if countAct(readTrace(l), "2.0.0", "stopped") != 1 {
-		t.Fatal("the unconfirmed release was not stopped before the fallback")
-	}
+	// the stop's trace line and the event are written by other processes and goroutines:
+	// waited for, not read once (review L3: the order of two writes is no promise)
+	waitFor(t, "the unconfirmed release stopped", func() bool { return countAct(readTrace(l), "2.0.0", "stopped") == 1 })
+	waitFor(t, "the rollback logged", func() bool { return len(events(l, "launcher_rollback")) == 1 })
 	rb := events(l, "launcher_rollback")
 	if len(rb) != 1 || rb[0].Detail["reason"] != "pending_timeout" {
 		t.Fatalf("launcher_rollback = %+v", rb)
@@ -463,11 +464,15 @@ func TestConfirmedPendingStays(t *testing.T) {
 	if err := l.Switch("2.0.0", "run-1", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	cfg := testConfig(l.Root)
-	cfg.PendingTimeout = 400 * time.Millisecond
-	startLauncher(t, cfg)
+	// the pending timeout is long enough for a crash and a start again on a slow machine
+	// (testConfig's): the release confirms, its pending mark goes, and no timeout can
+	// take it back after that (review L3: a 400 ms timeout raced the second start)
+	startLauncher(t, testConfig(l.Root))
 	waitFor(t, "confirmed", func() bool { return countAct(readTrace(l), "2.0.0", "confirm-run") == 1 })
-	time.Sleep(800 * time.Millisecond) // past the pending timeout
+	waitFor(t, "no longer pending", func() bool {
+		p, err := l.ReadPending()
+		return err == nil && p == nil
+	})
 	if cur, _ := l.Current(); cur != "2.0.0" {
 		t.Fatalf("current = %q", cur)
 	}

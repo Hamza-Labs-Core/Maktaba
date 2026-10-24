@@ -60,6 +60,13 @@ jobs:
           done < <(git diff --name-only --diff-filter=AM "$base" HEAD)
           exit $bad
 
+      # The Sigstore trusted root releases are verified with: a release build refuses one
+      # older than 90 days. A warning 30 days before (merge trusted-root.yml's pull request),
+      # a failure at the limit, so a stale root is never found by a release.
+      - name: Sigstore trusted root freshness
+        shell: bash
+        run: tools/release/trusted-root-age.sh
+
       - name: Set up Go
         uses: actions/setup-go@v6.4.0
         with:

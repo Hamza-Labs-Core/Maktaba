@@ -9,9 +9,11 @@
 #
 #   a fresh install, a reinstall of the same build, an update to a build from before the
 #   flags, the client-only app installed there (without a record, or with a stale one), an
-#   uninstall, and the uninstall an update runs (nothing asked). Before an install the
-#   previous release's pipeline wheel is removed (its name carries its version, and an
-#   update installs over the old files), and nothing else of the payload.
+#   uninstall, and the uninstall an update runs (nothing asked). Before an install over a
+#   flag-taking build the whole previous payload (server\, ours: its payload.json) is
+#   removed once its server stopped, as an update installs over the old files and a file the
+#   new payload dropped would stay; the state beside it stays. A payload not ours loses only
+#   its old pipeline wheel.
 #
 # Needs makensis (tauri's copy in %LOCALAPPDATA%\tauri\NSIS after a build, or one on PATH)
 # and PowerShell's Add-Type for the stand-ins. Runs in Git Bash. The records go to
@@ -144,18 +146,31 @@ step() {
 
 echo "installer hooks: $HOOKS"
 step "a fresh install of a flag-taking build" install-knows-0 "--server-start" present
-# the previous release's pipeline wheel, beside the rest of its payload: an update would keep
-# it next to the new one (installs over the old files), and the server builds from exactly one
+# a payload not ours (no payload.json): only its old pipeline wheel goes
 mkdir -p "$INST/server/pipeline"
 printf 'old wheel\n' >"$INST/server/pipeline/maktaba_pipeline-0.0.1-py3-none-any.whl"
 printf 'constraints\n' >"$INST/server/pipeline/constraints.txt"
-step "a reinstall of the same build" install-knows-0 "--server-stop|--server-start" present
+step "a reinstall over a payload not ours" install-knows-0 "--server-stop|--server-start" present
 if [ -e "$INST/server/pipeline/maktaba_pipeline-0.0.1-py3-none-any.whl" ]; then
     fail "the previous release's pipeline wheel was left in server\\pipeline"
 elif [ ! -f "$INST/server/pipeline/constraints.txt" ]; then
-    fail "the install removed more of server\\pipeline than the old wheel"
+    fail "the install removed more of a payload not ours than the old wheel"
 else
     ok "the previous release's pipeline wheel removed before the install, the rest left"
+fi
+# the previous release's payload (ours): it goes whole, the state beside it stays
+mkdir -p "$INST/server/migrations" "$INST/data"
+printf '{}\n' >"$INST/server/payload.json"
+printf 'old\n' >"$INST/server/migrations/0001_dropped_since.sql"
+printf 'state\n' >"$INST/data/library.txt"
+printf 'toml\n' >"$INST/server.toml"
+step "a reinstall of the same build" install-knows-0 "--server-stop|--server-start" present
+if [ -e "$INST/server" ]; then
+    fail "the previous payload (server\\) was left: a file it dropped would stay"
+elif [ ! -f "$INST/data/library.txt" ] || [ ! -f "$INST/server.toml" ]; then
+    fail "the install removed the state beside the payload"
+else
+    ok "the previous payload removed before the install, the state left"
 fi
 step "an update to a build from before the flags" install-old-0 "--server-stop" absent
 step "the uninstall of that" uninstall-knows-0 "" absent

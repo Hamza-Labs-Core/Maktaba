@@ -5,7 +5,18 @@
 # It is sh (not bash) and avoids distro-specific tooling so the one
 # script works under dpkg (Debian/Ubuntu) and rpm (Fedora/RHEL/CentOS).
 # Every step is idempotent — a re-run or an upgrade must be a no-op.
+#
+# The package managers say which it is:
+#   dpkg  postinst: "configure" ""       (fresh) | "configure" "<old version>" (upgrade)
+#   rpm   %post:    "1"                  (fresh) | "2" or more                 (upgrade)
 set -eu
+
+upgrade=0
+case "${1:-}" in
+    configure) [ -n "${2:-}" ] && upgrade=1 ;;
+    1) ;;
+    [2-9]|[1-9][0-9]*) upgrade=1 ;;
+esac
 
 MAKTABA_USER=maktaba
 MAKTABA_GROUP=maktaba
@@ -59,24 +70,25 @@ if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload >/dev/null 2>&1 || true
 fi
 
-# 4. Apply database migrations. Non-fatal: a host that points the config
-#    at a not-yet-reachable Postgres should still finish installing and
-#    can run `maktaba-server migrate up` once the DB is up. The default
-#    config uses SQLite under ${DATA_DIR}, so this just works out of box.
-if command -v maktaba-server >/dev/null 2>&1; then
-    echo "maktaba-server: applying database migrations ..."
-    if ! runuser -u "${MAKTABA_USER}" -- \
-            env MAKTABA_CONFIG="${CONFIG}" maktaba-server migrate up >/dev/null 2>&1; then
-        echo "maktaba-server: migrations did not complete; run" \
-             "'sudo -u ${MAKTABA_USER} MAKTABA_CONFIG=${CONFIG} maktaba-server migrate up'" \
-             "after configuring the database." >&2
-    fi
-fi
+# 4. No migrations here: the release's own start migrates, in its database step (a dump
+#    first, put back if they fail, and the record a rollback needs: Epic 35 phase B).
+#    Migrating from the package skipped all of that, and left a database a rollback to the
+#    release before would refuse, with no dump to put back.
 
-# 5. Enable (but do not start) the service so it survives a reboot. The
-#    operator edits ${CONFIG} (media roots!) then `systemctl start`.
+# 5. A fresh install: enable (but do not start) the service so it survives a reboot; the
+#    operator edits ${CONFIG} (media roots!) then `systemctl start`. An upgrade: the
+#    service starts again if it was running (try-restart), on the release `current` names
+#    now; the operator's choice to enable or disable it stays as it was.
 if command -v systemctl >/dev/null 2>&1; then
+    if [ "${upgrade}" -eq 1 ]; then
+        systemctl try-restart maktaba-server.service >/dev/null 2>&1 || true
+        echo "maktaba-server: upgraded; the service started again if it was running."
+        exit 0
+    fi
     systemctl enable maktaba-server.service >/dev/null 2>&1 || true
+fi
+if [ "${upgrade}" -eq 1 ]; then
+    exit 0
 fi
 
 cat <<EOF

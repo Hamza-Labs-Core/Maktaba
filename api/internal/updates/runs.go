@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -87,6 +88,15 @@ type RunDetail struct {
 	// ApplySince is when the home was told to switch (its apply, or its app's go): the
 	// home phase's ceiling runs from it.
 	ApplySince *time.Time `json:"apply_since,omitempty"`
+	// NodeDrains are the machines drained for their own apply (story 35.12 AC6: drain,
+	// switch, restart, check, undrain), each with its drain flag before.
+	NodeDrains map[string]NodeDrain `json:"node_drains,omitempty"`
+}
+
+// NodeDrain is a machine drained for its own apply.
+type NodeDrain struct {
+	Prior bool      `json:"prior"`
+	Since time.Time `json:"since"`
 }
 
 // Target is one update_targets row.
@@ -182,6 +192,28 @@ func (s *Store) LastFinishedOf(ctx context.Context, version string) (*Run, error
 		return nil, err
 	}
 	return &r, nil
+}
+
+// FailedAutoRuns are version's automatic runs that failed (nothing changed: state
+// failed) and began at or after since, newest first.
+func (s *Store) FailedAutoRuns(ctx context.Context, version string, since time.Time) ([]Run, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT `+runCols+` FROM update_runs WHERE version = $1 AND trigger = $2
+		AND state = $3 AND finished_at IS NOT NULL ORDER BY started_at DESC LIMIT 50`, version, TriggerAuto, RunFailed)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Run
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		if !r.StartedAt.Before(since) {
+			out = append(out, r)
+		}
+	}
+	return out, rows.Err()
 }
 
 // InsertRunWith inserts a planned run of a given trigger with a detail.
@@ -314,6 +346,30 @@ func (s *Store) LastTargetState(ctx context.Context, nodeID, version string) (st
 		why = d.Why
 	}
 	return state, why, err
+}
+
+// LastTargetOf is a machine's target in the latest run of version that had it (ok false:
+// none).
+func (s *Store) LastTargetOf(ctx context.Context, nodeID, version string) (Target, bool, error) {
+	t, err := scanTarget(s.DB.QueryRowContext(ctx, `SELECT `+prefixed("t.", targetCols)+` FROM update_targets t
+		JOIN update_runs r ON r.id = t.run_id WHERE t.node_id = $1 AND t.to_version = $2
+		ORDER BY r.started_at DESC LIMIT 1`, nodeID, NormalizeVersion(version)))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Target{}, false, nil
+	}
+	if err != nil {
+		return Target{}, false, err
+	}
+	return t, true, nil
+}
+
+// prefixed qualifies a column list with a table alias.
+func prefixed(alias, cols string) string {
+	parts := strings.Split(cols, ",")
+	for i, p := range parts {
+		parts[i] = alias + strings.TrimSpace(p)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // TargetState is one target's state now ("" none).

@@ -148,13 +148,20 @@ jobs:
         run: |
           shellcheck deploy/packaging/node/install-node.sh deploy/packaging/node/uninstall-node.sh \
             deploy/packaging/node/build-release.sh deploy/packaging/node/tests/install-node-dry-run.sh
-          shellcheck -x deploy/packaging/install.sh deploy/packaging/tests/install-sh-verify.sh
+          shellcheck -x deploy/packaging/install.sh deploy/packaging/tests/install-sh-verify.sh \
+            deploy/packaging/tests/install-sh-systemd.sh deploy/packaging/scripts/postinstall.sh \
+            deploy/packaging/scripts/preremove.sh tools/release/tag-guard.sh tools/release/release-assets.sh \
+            tools/release/trusted-root-age.sh
       - name: install-node.sh dry runs
         run: deploy/packaging/node/tests/install-node-dry-run.sh
       # The home-server install.sh refuses a release missing checksums.txt,
       # its Sigstore bundle or the archive's entry (verification fails closed).
       - name: install.sh verification cases
         run: bash deploy/packaging/tests/install-sh-verify.sh
+      # Its systemd choice sets up the self-updating service (setup --self-managed), never
+      # the archive's unit over the binaries alone (B6: it started nothing).
+      - name: install.sh systemd service
+        run: bash deploy/packaging/tests/install-sh-systemd.sh
 
   install-linux:
     name: install from the archive (linux, --system)

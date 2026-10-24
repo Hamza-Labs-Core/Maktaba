@@ -244,9 +244,13 @@ the tray menu are the Mac's. What differs is where the server runs and how it st
   session, and where it is refused, setup's *Allow* button asks again. Pause and Resume are
   `service stop` and `service start`. The shell never writes the unit itself.
 - **After an update.** The Tauri updater replaces the AppImage, or installs the .deb / .rpm
-  through the system's admin prompt. The new app then sees (`runtime status`) that its payload
-  is newer than `runtime/current` and switches the unit to it. The server stops while `current`
-  moves; a paused server stays paused until Resume or the next boot.
+  through the system's admin prompt. Switching the server to the new payload is the server's own
+  (D3: the home's run, or its catch-up), not the app's: the app activates its payload only when
+  it is newer than `runtime/current` and the server has not taken it yet, never the same release
+  built again. The server stops while `current` moves; a paused server stays paused until
+  Resume or the next boot. The app reads `XDG_DATA_HOME` from the unit's own `Environment=`, so
+  it finds the update order and attempts where the server keeps them, and asks every 10 minutes
+  whether its server runs a newer release (the catch-up offer).
 - **An older app** (an old AppImage opened again, a package downgraded) never installs its
   payload: the server's database may be migrated past it. `runtime status` says `downgrade`,
   the newer runtime keeps running, and the app tells the user it is older than the server.

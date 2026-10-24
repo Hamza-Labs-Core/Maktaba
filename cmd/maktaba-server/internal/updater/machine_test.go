@@ -195,6 +195,16 @@ func (r fakeRecords) Migrated(string) bool {
 type fakeRehearser struct {
 	err error
 	n   int
+	// pruned are the backups_keep a commit pruned the dumps to (BackupPruner)
+	mu     sync.Mutex
+	pruned []int
+}
+
+func (r *fakeRehearser) PruneBackups(keep int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pruned = append(r.pruned, keep)
+	return nil
 }
 
 func (r *fakeRehearser) Rehearse(context.Context, string, string, int, io.Writer) (Rehearsal, error) {

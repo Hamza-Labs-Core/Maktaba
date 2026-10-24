@@ -528,3 +528,76 @@ describe("WorkersStrip", () => {
     expect(screen.getByRole("link", { name: "Manage machines" })).toBeInTheDocument();
   });
 });
+
+// A full machine that cannot reach the home's database (its machine agent's home_db):
+// not "Online", why on its card, and its logs one click away (update-attempts.md).
+describe("Machines admin page: the home's database", () => {
+  const at = "2026-10-24T05:30:00Z";
+
+  function routesWith(nodes: ClusterNode[]) {
+    get.mockImplementation((url: string) =>
+      url.startsWith("/api/cluster/files")
+        ? Promise.resolve({ files: null, nodes: [] })
+        : Promise.resolve({ ...fixture(), nodes } satisfies ClusterView)
+    );
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    get.mockReset();
+    authState.user = { username: "admin", is_admin: true };
+  });
+  afterEach(() => {
+    window.history.replaceState({}, "", "/");
+  });
+
+  const unreachable: ClusterNode = {
+    ...baseNode,
+    full_node: true,
+    update_state: {
+      home_db: {
+        ok: false,
+        code: "no_hba",
+        detail: 'pq: no pg_hba.conf entry for host "192.168.1.20", user "maktaba_node_n1"',
+        at,
+        healing: true,
+      },
+    },
+  };
+
+  it("does not show it as healthy, says why, and opens its logs", async () => {
+    routesWith([unreachable]);
+    renderPage();
+    const card = await screen.findByRole("article", { name: "Studio Mac" });
+    expect(within(card).queryByText("Online")).toBeNull();
+    expect(within(card).getByText("Can't reach the home's database")).toBeInTheDocument();
+    const note = within(card).getByTestId("machine-home-db");
+    expect(note).toHaveTextContent(
+      "This machine can't reach the home's database: the home's database does not let this machine in"
+    );
+    expect(note).toHaveTextContent("The home gave it new access; it is following it.");
+    expect(note).toHaveTextContent("no pg_hba.conf entry");
+    // its own log files around the last try, on the log page (over its channel)
+    expect(within(note).getByRole("link", { name: "See the logs" })).toHaveAttribute(
+      "href",
+      `/admin/logs?node=${unreachable.id}&since=2026-10-24T05%3A28%3A00.000Z`
+    );
+  });
+
+  it("a machine that reaches it stays Online, with no note (and reads in Arabic)", async () => {
+    routesWith([{ ...baseNode, update_state: { home_db: { ok: true, at } } }]);
+    const first = renderPage();
+    const card = await screen.findByRole("article", { name: "Studio Mac" });
+    expect(within(card).getByText("Online")).toBeInTheDocument();
+    expect(within(card).queryByTestId("machine-home-db")).toBeNull();
+    first.unmount();
+
+    routesWith([unreachable]);
+    localStorage.setItem("mkt:locale", "ar");
+    renderPage();
+    const ar = await screen.findByRole("article", { name: "Studio Mac" });
+    expect(within(ar).getByTestId("machine-home-db")).toHaveTextContent(
+      "لا يستطيع هذا الجهاز الوصول إلى قاعدة بيانات الخادم الرئيسي"
+    );
+  });
+});

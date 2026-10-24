@@ -592,7 +592,8 @@ func (s *SelfUpdater) stageLayout(ctx context.Context, l layout.Layout, status U
 	if err != nil {
 		var rvErr *releaseverify.Error
 		switch {
-		case errors.As(err, &rvErr) && (errors.Is(rvErr.Kind, releaseverify.ErrDowngrade) || errors.Is(rvErr.Kind, releaseverify.ErrReplay)):
+		case errors.As(err, &rvErr) && (errors.Is(rvErr.Kind, releaseverify.ErrDowngrade) ||
+			errors.Is(rvErr.Kind, releaseverify.ErrReplay) || errors.Is(rvErr.Kind, releaseverify.ErrOlderBuild)):
 			return nil, fmt.Errorf("%w: %v", errDowngrade, err)
 		case errors.Is(err, releaseverify.ErrNotFound):
 			return nil, fmt.Errorf("%w: %v", errNoAsset, err)

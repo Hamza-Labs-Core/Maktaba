@@ -484,10 +484,13 @@ func validIdent(s string) bool { return identRe.MatchString(s) }
 
 // Restore puts a dump back into the database, in place: the machines' copy slots are
 // dropped (each machine copies the restored database anew), the other sessions on it
-// are ended, the public schema is made afresh, and the dump restored (--exit-on-error,
-// one transaction; not its publications, which outlive the schema and are brought up to
-// date with the restored tables at a machine's next grant). For a Postgres the home does
-// not bundle (the bundled one is restored by pgbundle.RestoreRunning).
+// are ended, and the public schema made afresh with the dump restored in it, all in one
+// transaction (psql over pg_restore's script): a restore that fails leaves the database
+// as it was, never empty. Not its publications, which outlive the schema and are brought
+// up to date with the restored tables at a machine's next grant. Without psql, the schema
+// is made afresh and the dump restored in a transaction of its own (as before). For a
+// Postgres the home does not bundle (the bundled one is restored by
+// pgbundle.RestoreRunning).
 func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 	if _, err := os.Stat(dump); err != nil {
 		return err
@@ -505,6 +508,13 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 	}
 	_, _ = d.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
 		WHERE datname = current_database() AND pid <> pg_backend_pid()`)
+	if havePSQL(t.bin("psql")) {
+		if err := t.restoreAtomic(ctx, dump, log); err != nil {
+			return err
+		}
+		_, _ = d.ExecContext(ctx, `ANALYZE`)
+		return nil
+	}
 	if _, err := d.ExecContext(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
 		return fmt.Errorf("make the public schema afresh: %w", err)
 	}
@@ -519,6 +529,44 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 		return fmt.Errorf("pg_restore %s: %v: %s", dump, err, tail(out.Bytes()))
 	}
 	_, _ = d.ExecContext(ctx, `ANALYZE`)
+	return nil
+}
+
+// havePSQL reports whether psql runs.
+var havePSQL = func(psql string) bool {
+	return exec.Command(psql, "--version").Run() == nil
+}
+
+// restoreAtomic makes the public schema afresh and restores the dump in it in one
+// transaction: pg_restore writes the dump's script (no publications, no owners), and
+// psql runs it after the schema's drop and creation with --single-transaction, stopping
+// at the first error (the transaction rolls back: the database stays as it was).
+func (t Target) restoreAtomic(ctx context.Context, dump string, log io.Writer) error {
+	tmp, err := os.MkdirTemp(filepath.Dir(dump), ".restore-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	script := filepath.Join(tmp, "restore.sql")
+	gen := exec.CommandContext(ctx, t.bin("pg_restore"), "--no-owner", "--no-publications", "--file="+script, dump)
+	if out, err := gen.CombinedOutput(); err != nil {
+		return fmt.Errorf("pg_restore %s: %v: %s", dump, err, tail(out))
+	}
+	prelude := filepath.Join(tmp, "prelude.sql")
+	if err := os.WriteFile(prelude, []byte("DROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n"), 0o600); err != nil {
+		return err
+	}
+	cmd, err := t.command(ctx, "psql", "", "--no-psqlrc", "--quiet", "--set=ON_ERROR_STOP=1", "--single-transaction",
+		"--file="+prelude, "--file="+script)
+	if err != nil {
+		return err
+	}
+	var out bytes.Buffer
+	cmd.Stdout = io.MultiWriter(&out, orDiscard(log))
+	cmd.Stderr = cmd.Stdout
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(out.Bytes()))
+	}
 	return nil
 }
 

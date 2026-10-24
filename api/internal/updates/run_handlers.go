@@ -184,6 +184,7 @@ func (d *Driver) TargetAction(ctx context.Context, id, node, action, actor strin
 // Machines are the Updates page's machines table: the home, then every approved machine
 // with its version, install kind and update state.
 func (d *Driver) Machines(ctx context.Context, home Machine) []Machine {
+	home.Attempts = d.homeAttempts(ctx)
 	out := []Machine{home}
 	nodes, err := d.nodes(ctx)
 	if err != nil {
@@ -191,6 +192,9 @@ func (d *Driver) Machines(ctx context.Context, home Machine) []Machine {
 	}
 	agents, states := d.agentStates()
 	wm, _ := d.Store.Watermark(ctx)
+	if home.Version != "" && ValidVersion(home.Version) && (wm == "" || CompareVersions(home.Version, wm) > 0) {
+		wm = NormalizeVersion(home.Version) // the home installed by hand: the cluster's release is the home's
+	}
 	run, _ := d.Store.ActiveRun(ctx)
 	var targets map[string]Target
 	if run != nil {
@@ -211,7 +215,7 @@ func (d *Driver) Machines(ctx context.Context, home Machine) []Machine {
 			if s.Platform != "" {
 				m.Platform = s.Platform
 			}
-			m.Kind = s.Layout
+			m.Kind, m.HomeDB = s.Layout, s.HomeDB.shown()
 		}
 		_, online := agents[n.id]
 		switch {
@@ -229,9 +233,32 @@ func (d *Driver) Machines(ctx context.Context, home Machine) []Machine {
 		if t, ok := targets[n.id]; ok && !targetEnded(t.State) {
 			m.State, m.Target = t.State, t.ToVersion
 		}
+		var runs []Attempt
+		if a, ok, err := d.Store.LastTargetAttempt(ctx, n.id); err == nil && ok {
+			runs = append(runs, a)
+		}
+		m.Attempts = mergeAttempts(s.Attempts, runs...)
 		out = append(out, m)
 	}
 	return out
+}
+
+// homeAttempts are the home's last update attempts: its own (its supervisor's status: the
+// desktop app's updater, its releases' starts) and its last run.
+func (d *Driver) homeAttempts(ctx context.Context) []Attempt {
+	var own []Attempt
+	if d.Home != nil {
+		sctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		if st, err := d.Home.Do(sctx, "status", nil); err == nil && st != nil {
+			own = st.Attempts
+		}
+		cancel()
+	}
+	var runs []Attempt
+	if a, ok := d.Store.homeRunAttempt(ctx); ok {
+		runs = append(runs, a)
+	}
+	return mergeAttempts(own, runs...)
 }
 
 // ---------- handlers ----------

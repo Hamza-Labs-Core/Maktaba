@@ -190,9 +190,9 @@ function logsRoute(url: string) {
   };
 }
 
-function setup() {
+function setup(v: unknown = view) {
   routeGet(get, {
-    "/api/cluster": view,
+    "/api/cluster": v,
     "/api/cluster/files": files,
     "/api/cluster/files/10.0.0.5/logs": logsRoute,
     "/api/cluster/files/10.0.0.5/queues": { samples: [] },
@@ -220,8 +220,8 @@ function setup() {
 }
 
 /** Renders, opens the socket and sends the processes snapshot. */
-async function live() {
-  const utils = setup();
+async function live(v: unknown = view) {
+  const utils = setup(v);
   await screen.findByText(/Home NAS box/);
   const ws = FakeSocket.last;
   ws.open();
@@ -249,6 +249,47 @@ describe("Cluster views", () => {
     vi.useRealTimers();
     clusterStreamConfig.flushMs = 1_000;
     document.documentElement.dir = "ltr";
+  });
+
+  // update-attempts.md: connected to the hub, but not reaching the home's database, is
+  // not healthy: its live card is not green
+  it("a machine that cannot reach the home's database is not green on its live card", async () => {
+    const studio = {
+      id: "n1",
+      name: "Studio Mac",
+      state: "approved",
+      os: "macOS",
+      arch: "arm64",
+      versions: {},
+      capabilities: {},
+      storage: null,
+      path_map: null,
+      path_map_source: null,
+      drain: false,
+      expires_at: null,
+      created_at: NOW,
+      approved_at: NOW,
+      revoked_at: null,
+      last_seen_at: NOW,
+      online: true,
+      workers: [],
+      stage_overrides: {},
+      update_state: { home_db: { ok: false, code: "auth_failed", at: NOW } },
+    };
+    await live({ ...view, nodes: [studio] });
+    await waitFor(() =>
+      expect(
+        within(machine("Studio Mac")).getByText("Can't reach the home's database")
+      ).toBeInTheDocument()
+    );
+    // and its own log files are a click away (the log page, over its channel)
+    expect(
+      within(machine("Studio Mac")).getByRole("link", { name: "See the logs" })
+    ).toHaveAttribute("href", "/admin/logs?node=n1");
+    // its processes are connected to the hub, and say so, but not in green
+    for (const badge of within(machine("Studio Mac")).getAllByText("Connected"))
+      expect(badge.className).not.toMatch(/success/);
+    expect(within(machine("nas")).getAllByText("Connected")[0]!.className).toMatch(/success/);
   });
 
   it("subscribes to the cluster topics and renders machines and processes from the snapshot", async () => {

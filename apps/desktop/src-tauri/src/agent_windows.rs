@@ -365,6 +365,67 @@ fn clear_hold() {
     }
 }
 
+/// An install hold older than this is an install that did not finish: the installer the
+/// app started as it closed failed or was cancelled, so its POSTINSTALL hook
+/// (`--server-start`) never ended the hold. The watchdog's next start ends it itself.
+const HOLD_STALE: Duration = Duration::from_secs(15 * 60);
+
+/// Whether an install hold that holds in this sign-in, written `age` ago, is stale.
+fn hold_stale(holds: bool, age: Option<Duration>) -> bool {
+    holds && age.is_some_and(|a| a >= HOLD_STALE)
+}
+
+/// The watchdog's start of a server an install left held for longer than HOLD_STALE (the
+/// home would stay down until someone opened the window or signed in again): the hold
+/// ends, the app's update attempt is recorded failed (installer_not_finished), the home's
+/// order says so, and the server starts again on the release it had. Best effort.
+fn release_stale_hold() {
+    let Some(p) = hold_path() else { return };
+    let age = std::fs::metadata(&p)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| SystemTime::now().duration_since(t).ok());
+    if !hold_stale(flag_holds(&p), age) || std::fs::remove_file(&p).is_err() {
+        return;
+    }
+    let detail = format!(
+        "the installer the app started as it closed did not finish within {} minutes (it \
+         failed, or was cancelled): the server starts again on the release it had",
+        HOLD_STALE.as_secs() / 60
+    );
+    crate::attempts::log(&format!("install hold ended: {detail}"));
+    let Some(root) = super::state_root() else {
+        return;
+    };
+    let rec = crate::attempts::path(&root);
+    if let Some(a) = crate::attempts::newest(&rec).filter(|a| a.outcome == crate::attempts::RUNNING)
+    {
+        crate::attempts::fail(
+            &rec,
+            &a.id,
+            &crate::attempts::Failure::new(
+                crate::attempts::STEP_INSTALL,
+                crate::attempts::INSTALLER_NOT_FINISHED,
+                detail.clone(),
+            ),
+        );
+    }
+    let order = crate::autoinstall::request_path(&root);
+    if let Some(r) = crate::autoinstall::read(&order).filter(|r| {
+        matches!(
+            r.state.as_str(),
+            crate::autoinstall::GO | crate::autoinstall::INSTALLING
+        )
+    }) {
+        let _ = crate::autoinstall::write_state(
+            &order,
+            &r,
+            crate::autoinstall::FAILED,
+            &crate::autoinstall::order_error(crate::attempts::INSTALLER_NOT_FINISHED, &detail),
+        );
+    }
+}
+
 // --- the task ------------------------------------------------------------------
 
 fn xml_escape(s: &str) -> String {
@@ -986,6 +1047,8 @@ fn stop_set_within(stop: HANDLE, d: Duration) -> bool {
 /// Scheduler): 0 after a clean stop, when another agent runs already, or when
 /// the server is paused (or held for an install) in this sign-in.
 pub fn run_server_agent() -> Result<i32, String> {
+    // an install that never finished ended (and said so): the server starts again
+    release_stale_hold();
     let exe = current_exe()?;
     let paths = BundlePaths::from_exe(&exe)
         .filter(BundlePaths::payload_present)
@@ -1357,6 +1420,17 @@ mod tests {
         // a clock behind the sign-in: the whole delay
         assert_eq!(signin_wait(Some(s), Some(s - 1), d), d);
         assert_eq!(signin_wait(None, Some(s), d), Duration::ZERO);
+    }
+
+    /// An install hold ends by itself once it is older than HOLD_STALE (the installer
+    /// failed or was cancelled after the app closed); one that does not hold, or is young,
+    /// stays.
+    #[test]
+    fn a_stale_install_hold_ends() {
+        assert!(hold_stale(true, Some(HOLD_STALE)));
+        assert!(!hold_stale(true, Some(HOLD_STALE - Duration::from_secs(1))));
+        assert!(!hold_stale(false, Some(HOLD_STALE * 2)));
+        assert!(!hold_stale(true, None));
     }
 
     #[test]

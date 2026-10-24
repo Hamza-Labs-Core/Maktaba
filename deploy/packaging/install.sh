@@ -10,8 +10,10 @@
 # from GitHub, verifies the release's Sigstore signature (when cosign is
 # installed) and its SHA-256 against the release checksums, and
 # installs the maktaba-server binary (plus the api/streaming siblings it
-# supervises) into a bin directory on your PATH. On Linux it can also
-# drop in and enable the systemd unit.
+# supervises) into a bin directory on your PATH. On Linux it can also set the
+# server up as a systemd service that updates itself: `maktaba-server setup
+# --self-managed` installs the release under /var/lib/maktaba/bin/releases/<v>/
+# with maktaba-launcher, and the unit runs the launcher (Epic 35 story 35.2).
 #
 # With --app (Linux, Epic 39): the whole server instead, for a machine without a
 # desktop: the release's maktaba-linux-payload-<ver>-<arch>.tar.gz (the server,
@@ -29,7 +31,8 @@
 # Tunables (env vars):
 #   MAKTABA_VERSION   release tag to install            (default: latest)
 #   MAKTABA_PREFIX    install dir for binaries          (default: /usr/local/bin)
-#   MAKTABA_SYSTEMD   1=install+enable unit, 0=skip     (default: prompt; 0 when non-interactive)
+#   MAKTABA_SYSTEMD   1=set up the self-updating systemd service, 0=skip
+#                     (default: prompt; 0 when non-interactive)
 #   MAKTABA_NO_VERIFY 1=skip checksum + signature verification (default: 0;
 #                     refused with --app)
 #   MAKTABA_REQUIRE_COSIGN 1=refuse to install without cosign  (default: 0;
@@ -378,10 +381,22 @@ install_binaries() {
         || die "maktaba-server binary not found in archive"
 }
 
-# Offer to install the systemd unit + default config on Linux.
+# Where the system service lives (deploy/packaging/tests point them at a scratch tree).
+SYS_ROOT="${MAKTABA_TEST_SYS_ROOT:-/var/lib/maktaba}"
+SYS_ETC="${MAKTABA_TEST_SYS_ETC:-/etc/maktaba}"
+SYS_LOG="${MAKTABA_TEST_SYS_LOG:-/var/log/maktaba}"
+SYSTEMD_RUN="${MAKTABA_TEST_SYSTEMD_RUN:-/run/systemd/system}"
+
+# Offer to set the server up as a systemd service on Linux: the maktaba system user and
+# its directories, the default config, then the release's own `maktaba-server setup
+# --self-managed --system`. That installs the release under ${SYS_ROOT}/bin/releases/<v>/
+# with maktaba-launcher beside it, and writes and enables the unit that runs the launcher:
+# the service starts, and updates itself. (The unit in the archive runs
+# /usr/bin/maktaba-launcher over that layout, which only the .deb/.rpm and setup make:
+# installing it over the binaries alone started nothing, 203/EXEC.)
 maybe_install_systemd() {
-    local dir="$1" choice="${MAKTABA_SYSTEMD:-}"
-    [ -d /run/systemd/system ] || { warn "systemd not detected — skipping unit install"; return 0; }
+    local dir="$1" choice="${MAKTABA_SYSTEMD:-}" stage b
+    [ -d "${SYSTEMD_RUN}" ] || { warn "systemd not detected — skipping the service"; return 0; }
 
     if [ -z "${choice}" ]; then
         if [ -t 0 ]; then
@@ -395,26 +410,44 @@ maybe_install_systemd() {
     [ "${choice}" = "1" ] || { info "Skipping systemd setup (run with MAKTABA_SYSTEMD=1 to enable)."; return 0; }
 
     need sudo
+    [ -x "${dir}/maktaba-launcher" ] || die "the archive has no maktaba-launcher: take an archive of a release from 0.3 on"
     info "Creating maktaba system user + state dirs"
     if ! getent group maktaba >/dev/null 2>&1; then sudo groupadd --system maktaba; fi
     if ! getent passwd maktaba >/dev/null 2>&1; then
-        sudo useradd --system --gid maktaba --home-dir /var/lib/maktaba \
+        sudo useradd --system --gid maktaba --home-dir "${SYS_ROOT}" \
             --no-create-home --shell /usr/sbin/nologin --comment "Maktaba home server" maktaba
     fi
-    sudo mkdir -p /var/lib/maktaba/media /var/log/maktaba /etc/maktaba
-    sudo chown -R maktaba:maktaba /var/lib/maktaba /var/log/maktaba
+    sudo mkdir -p "${SYS_ROOT}/media" "${SYS_LOG}" "${SYS_ETC}"
+    sudo chown -R maktaba:maktaba "${SYS_ROOT}" "${SYS_LOG}"
 
-    # Config + unit ship inside the archive next to the binaries.
-    if [ -f "${dir}/server.toml.example" ] && [ ! -f /etc/maktaba/server.toml ]; then
-        sudo install -m 0644 "${dir}/server.toml.example" /etc/maktaba/server.toml
+    # The config ships inside the archive next to the binaries.
+    if [ -f "${dir}/server.toml.example" ] && [ ! -f "${SYS_ETC}/server.toml" ]; then
+        sudo install -m 0644 "${dir}/server.toml.example" "${SYS_ETC}/server.toml"
     fi
-    if [ -f "${dir}/maktaba-server.service" ]; then
-        sudo install -m 0644 "${dir}/maktaba-server.service" \
-            /usr/lib/systemd/system/maktaba-server.service
-        sudo systemctl daemon-reload
-        sudo systemctl enable maktaba-server.service
-        info "Service enabled. Edit /etc/maktaba/server.toml, then: sudo systemctl start maktaba-server"
+
+    # The release, as the maktaba user (the updater, which runs as it, owns the releases),
+    # from a copy it can read; then the unit that runs the launcher, as root.
+    stage="${SYS_ROOT}/.install-$$"
+    sudo install -d -o maktaba -g maktaba -m 0755 "${stage}"
+    for b in maktaba-server maktaba-launcher maktaba-api maktaba-streaming; do
+        if [ -f "${dir}/${b}" ]; then
+            sudo install -o maktaba -g maktaba -m 0755 "${dir}/${b}" "${stage}/${b}"
+        fi
+    done
+    info "Installing the release under ${SYS_ROOT}/bin/releases (self-managed: it updates itself)"
+    if ! sudo -u maktaba env MAKTABA_CONFIG="${SYS_ETC}/server.toml" "${stage}/maktaba-server" setup \
+            --self-managed --system --no-service --root "${SYS_ROOT}" --from "${stage}"; then
+        sudo rm -rf "${stage}"
+        die "setting up the release under ${SYS_ROOT} failed (see above)"
     fi
+    info "Writing and enabling the systemd service"
+    if ! sudo env MAKTABA_CONFIG="${SYS_ETC}/server.toml" "${stage}/maktaba-server" setup \
+            --service --system --root "${SYS_ROOT}" --config "${SYS_ETC}/server.toml"; then
+        sudo rm -rf "${stage}"
+        die "writing the systemd service failed (see above)"
+    fi
+    sudo rm -rf "${stage}"
+    info "Service enabled. Edit ${SYS_ETC}/server.toml (set [media].roots), then: sudo systemctl start maktaba-server"
 }
 
 # MAKTABA_INSTALL_LIB=1 only defines the functions (deploy/packaging/tests).

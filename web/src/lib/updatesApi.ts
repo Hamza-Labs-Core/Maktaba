@@ -9,6 +9,7 @@
 //   GET  /api/cluster/updates/runs[/{id}] history, a run with its steps and machines (35.4, 35.12)
 //   POST /api/cluster/updates/runs/{id}/cancel|resume, /targets/{node}/retry|skip|rollback
 import { api } from "./api";
+import type { HomeDb } from "./homeDb";
 
 export interface UpdatesPolicy {
   auto_install: boolean;
@@ -35,7 +36,28 @@ export interface CatalogRelease {
   withdrawn_at?: string;
   held_at?: string;
   approved_at?: string;
+  /** why automatic runs no longer install it (attempts, rolled_back, verify, rehearsal): an
+   * admin tries it again (unblock) or installs it now */
+  blocked_reason?: string;
+  attempts?: number;
   manifest?: { breaks_previous_home?: boolean; min_upgrade_from?: string };
+}
+
+/** The scheduler's last decision: why a due release does not start now. */
+export interface UpdatesTick {
+  action: "none" | "held" | "blocked" | "withdrawn" | "started" | "failed";
+  reason?: string;
+  version?: string;
+  run_id?: string;
+  at: string;
+}
+
+/** A release a gate (the TV watched, the window's end) held for several windows in a row. */
+export interface UpdatesStuck {
+  version: string;
+  code: string;
+  windows: number;
+  since: string;
 }
 
 export interface UpdatesPlan {
@@ -65,7 +87,43 @@ export interface UpdateMachine {
   kind?: string;
   /** the release the active run brings it to (its desktop app shows it while it waits for a click) */
   target?: string;
+  /** its last update attempts, newest first (at most 5): see UpdateAttempt */
+  attempts?: UpdateAttempt[];
+  /** a node: whether it reaches the home's database (its machine agent's report) */
+  home_db?: HomeDb;
 }
+
+/** One try at bringing a machine to a release, whoever made it (update-attempts.md): the
+ * desktop app's own updater (its badge, its menu, the home's order), a release's first start
+ * on the machine (its database step, its pipeline environment), or a run of the cluster. */
+export interface UpdateAttempt {
+  id: string;
+  /** when it began, and when it ended (absent while it runs) */
+  at: string;
+  ended_at?: string;
+  source: "app" | "server" | "run";
+  /** badge, menu, order (app); start (server); a run's trigger (run) */
+  trigger?: string;
+  from?: string;
+  to: string;
+  /** running, installed, failed, put_back (the release failed to start; the database and the
+   * release before are back), rolled_back, cancelled */
+  outcome: string;
+  /** the step it is at, or stopped at (updates.step.<step>) */
+  step?: string;
+  /** the reason (updates.code.<code>) */
+  code?: string;
+  /** the updater's or the server's own words (English) */
+  detail?: string;
+  /** the machine's own suggestion (English): the page shows its own words for the reason's
+   * fix (updates.fix.<code>), and this only as what the machine said, never to copy */
+  fix?: string;
+  /** a run's attempt: the run */
+  run_id?: string;
+}
+
+/** The outcomes of an attempt that did not bring the machine to its release. */
+export const ATTEMPT_FAILED = new Set(["failed", "put_back", "rolled_back"]);
 
 /** An update run (update_runs). */
 export interface UpdateRun {
@@ -131,6 +189,8 @@ export interface UpdatesOverview {
   check_stale: boolean;
   time_zone: string;
   machines?: UpdateMachine[];
+  last_tick?: UpdatesTick;
+  stuck?: UpdatesStuck;
 }
 
 /** The states of a run that are over. */
@@ -200,6 +260,8 @@ export const updatesApi = {
       confirm: true,
     }),
   skip: (version: string) => api.post("/api/cluster/updates/skip", { version }),
+  unblock: (version: string) =>
+    api.post<{ unblocked: boolean; version: string }>("/api/cluster/updates/unblock", { version }),
   defer: (until: string) => api.post("/api/cluster/updates/defer", { until }),
   check: () => api.post("/api/cluster/updates/check", {}),
   runs: (limit = 20) => api.get<{ items: UpdateRun[] }>(`/api/cluster/updates/runs?limit=${limit}`),

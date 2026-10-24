@@ -1,8 +1,13 @@
 package updater
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/attempts"
 )
 
 // askRig is a machine whose install asks first (a desktop app that runs the server,
@@ -330,5 +335,39 @@ func TestWatchLetsAnUnmeasuredStepRunPastTheStallLimit(t *testing.T) {
 	}
 	if want := int((pendingCap(j) + j.Job.WatchBound()).Seconds()); n.m.Status().BoundSec != want {
 		t.Fatalf("bound %d, want %d", n.m.Status().BoundSec, want)
+	}
+}
+
+// update-attempts.md: the machine's status carries its attempts (the desktop app's file
+// and the server's), and a change of either calls OnChange (a node's agent sends them).
+func TestStatusCarriesTheAttempts(t *testing.T) {
+	w := newWorld("1.4.0")
+	r := startRig(t, t.TempDir(), w, healthy)
+	if got := r.m.Status().Attempts; len(got) != 0 {
+		t.Fatalf("none yet: %+v", got)
+	}
+	changed := make(chan struct{}, 1)
+	r.m.OnChange = func() {
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go r.m.WatchAttempts(ctx, 5*time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
+	app := `{"attempts": [{"id": "app-1", "at": "2026-10-24T05:30:00Z", "source": "app", "to": "1.5.0",
+	  "outcome": "failed", "step": "verify", "code": "signature_mismatch"}]}`
+	if err := os.WriteFile(filepath.Join(r.dir, attempts.AppFile), []byte(app), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-changed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no OnChange after the app wrote its attempts")
+	}
+	if got := r.m.Status().Attempts; len(got) != 1 || got[0].Code != "signature_mismatch" {
+		t.Fatalf("status attempts %+v", got)
 	}
 }

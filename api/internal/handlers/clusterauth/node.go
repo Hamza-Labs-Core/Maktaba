@@ -10,11 +10,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
@@ -49,6 +52,17 @@ type SelfInfo struct {
 	Machines []SelfRow       `json:"machines,omitempty"`
 	// AcceptJoins: the home's "accept new machines" switch (its mDNS join=1).
 	AcceptJoins bool `json:"accept_joins,omitempty"`
+	// MachinesDB are the home's machines that say they cannot log in to its database (the
+	// home re-makes their access): an update's watch waits for them to follow it.
+	MachinesDB []SelfMachineDB `json:"machines_db,omitempty"`
+}
+
+// SelfMachineDB is a machine that cannot log in to its home's database.
+type SelfMachineDB struct {
+	ID      string `json:"id"`
+	Name    string `json:"name,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Healing bool   `json:"healing,omitempty"`
 }
 
 // SelfHome is a node's view of its home.
@@ -86,12 +100,37 @@ type Node struct {
 	Logger     *slog.Logger
 }
 
-// MountSelf mounts GET /api/cluster/self alone (the home serves it too).
+// LocalTokenHeader carries the supervisor's per-boot local token
+// (MAKTABA_SUPERVISOR_TOKEN_FILE): the home's own update watch reads which machines cannot
+// log in to its database from /api/cluster/self with it.
+const LocalTokenHeader = "X-Maktaba-Local-Token"
+
+// trusted reports whether a request may see the home's machines (an admin, or this
+// machine's own supervisor): /api/cluster/self is public otherwise.
+func trusted(r *http.Request) bool {
+	if p := principal.FromContext(r.Context()); p != nil && p.IsAdmin {
+		return true
+	}
+	got, file := r.Header.Get(LocalTokenHeader), strings.TrimSpace(os.Getenv("MAKTABA_SUPERVISOR_TOKEN_FILE"))
+	if got == "" || file == "" {
+		return false
+	}
+	b, err := os.ReadFile(file)
+	want := strings.TrimSpace(string(b))
+	return err == nil && want != "" && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+// MountSelf mounts GET /api/cluster/self alone (the home serves it too). Its machines
+// that cannot log in to the home's database (names and why) go to an admin or this
+// machine's supervisor only.
 func MountSelf(r chi.Router, self SelfFunc) {
 	r.Get("/api/cluster/self", func(w http.ResponseWriter, r *http.Request) {
 		info := SelfInfo{Role: "home"}
 		if self != nil {
 			info = self(r.Context())
+		}
+		if !trusted(r) {
+			info.MachinesDB = nil
 		}
 		info.ServedAt = time.Now().UTC()
 		w.Header().Set("Cache-Control", "no-store")

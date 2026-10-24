@@ -26,12 +26,15 @@
 #
 # NOTHING IS PUBLIC BEFORE IT IS CHECKED
 # --------------------------------------
-# Each leg builds (`tauri build`: signing, notarization, the updater signatures) and
-# checks its bundles, then hands the checked files to the `publish` job as an
-# artifact. `publish` runs once, after every leg: it attaches the files to the tag's
-# release and only then writes latest.json, the updater feed, over all of them
+# The tag-order guard runs first (_tag-guard.yml). Each leg builds (`tauri build`:
+# signing, notarization, the updater signatures) and checks its bundles, then hands the
+# checked files to the `publish` job as an artifact. `publish` runs once, after every
+# leg: it attaches the files to the tag's release (a draft until it is complete) and only
+# then writes latest.json, the updater feed, over all of them
 # (tools/release/cmd/updater-feed). A leg that fails attaches nothing, so no updater is
-# ever pointed at a bundle that failed its checks; the other platforms still publish.
+# ever pointed at a bundle that failed its checks. The release is published once
+# release.yml's signed files and the apps that carry the server are in (whichever
+# workflow finishes last publishes: tools/release/release-assets.sh).
 #
 # WEB FRONTEND
 # ------------
@@ -70,9 +73,21 @@ on:
 permissions:
   contents: read
 
+# One run per tag at a time, never cancelled.
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  guard:
+    uses: ./.github/workflows/_tag-guard.yml
+    permissions:
+      contents: write
+      actions: read
+
   desktop:
     name: desktop (${{ matrix.label }})
+    needs: [guard]
     # builds and checks only; the publish job attaches what passed
     strategy:
       fail-fast: false
@@ -322,8 +337,15 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # tauri signs with the imported identity (empty: unsigned) and, with
-          # the Apple ID trio, notarizes and staples the .app.
+          # tauri signs with the imported identity (none: ad hoc, the overlay's "-") and,
+          # with the Apple ID trio, notarizes and staples the .app. Without the secrets
+          # these are set but empty, which tauri takes as a request to notarize (and fails:
+          # "Team ID must be at least 3 characters", v0.3.0-rc.7 and v0.3.1). Only the Mac
+          # legs notarize, and they build through tools/release/mac-app/tauri-build.sh, the
+          # one place that decides: it unsets them unless the app can be notarized (a
+          # Developer ID and a complete set). CI's mac-app gate builds through it with these
+          # same empty values, and tauri-build-check.sh dry-runs it. (This replaces #277's
+          # unset of the empty trio in this step: the same case, now covered and tested.)
           APPLE_ID: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_ID || '' }}
           APPLE_PASSWORD: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_TEAM_ID || '' }}
@@ -331,19 +353,14 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          # without the Apple secrets the trio is empty, and tauri treats a set (even
-          # empty) APPLE_ID as "notarize": since the app is signed ad hoc as a bundle
-          # (payload.sh, for its login item) that failed the build ("Team ID must be at
-          # least 3 characters"). Unset, an ad-hoc signed app is not notarized.
-          for v in APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-            [ -n "${!v:-}" ] || unset "$v"
-          done
           # ARGS is a list of words (the targets, the bundles, the payload overlay)
           read -r -a words <<<"$ARGS"
           if [ "$RUNNER_OS" = Linux ]; then
             # the AppImage, the .deb and the .rpm at the tag's version (a pre-release's
             # packages in their own forms, the app still the tag's semver)
             ../../tools/release/linux-app/bundle.sh "$TAG" "${words[@]}"
+          elif [ "$RUNNER_OS" = macOS ]; then
+            ../../tools/release/mac-app/tauri-build.sh "${words[@]}"
           else
             pnpm tauri build "${words[@]}"
           fi
@@ -479,12 +496,20 @@ jobs:
   # Only now is anything public: every leg's checked files are attached to the
   # tag's release, then latest.json is written once, over all of them (no two legs
   # race on it, and it is made from the files, not from a listing of the release).
-  # A leg that failed staged nothing: the other platforms publish, and the failed
-  # one's apps stay on the version they run.
+  # Every signature is checked against the apps' key (TAURI_UPDATER_PUBKEY) first: a
+  # rotation slip or a re-sign with the wrong key would strand every app silently.
+  # A leg that failed staged nothing: the other platforms' files are attached and the
+  # feed is written without it, but a plain tag becomes GitHub's "latest" (the release
+  # every app's own feed follows, releases/latest/download/latest.json) only once the
+  # feed has every desktop platform, and the job fails meanwhile. v0.3.1 went out as the
+  # latest with no darwin-aarch64, and the Apple-silicon apps could take no update.
+  # Recovery: `gh run rerun <this run> --failed` builds the failed leg again, and this
+  # job writes the feed again from every leg's kept files and marks the release then.
   publish:
     name: publish the checked bundles
-    needs: desktop
-    if: ${{ !cancelled() }}
+    needs: [guard, desktop]
+    # not for a tag the guard refused (no leg ran)
+    if: ${{ !cancelled() && needs.guard.result == 'success' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     permissions:
@@ -508,23 +533,33 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+          UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          REQUIRE_FEED: ${{ vars.TAURI_UPDATER_PUBKEY != '' }}
         run: |
           set -euo pipefail
           if [ ! -d staged ] || [ -z "$(ls -A staged)" ]; then
             echo "::error::no leg staged a bundle"
             exit 1
           fi
-          # release.yml may not have made the release yet; it sets the final flags
-          # (a pre-release for a tag with a suffix, the latest for a plain one)
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            case "$TAG" in *-*) kind=(--prerelease --latest=false) ;; *) kind=(--latest=false) ;; esac
-            gh release create "$TAG" --verify-tag --title "$TAG" --notes "" "${kind[@]}" ||
-              gh release view "$TAG" >/dev/null # made meanwhile by release.yml
-          fi
-          gh release upload "$TAG" staged/* --clobber
+          # release.yml's guard opened the release as a draft; a published release only
+          # gains the bundles it lacks (a re-run of the failed legs after it was published)
+          tools/release/release-assets.sh upload "$TAG" staged/*
+          check=()
+          [ -z "$UPDATER_PUBKEY" ] || check=(--pubkey "$UPDATER_PUBKEY")
+          # exit 3: written, but a desktop platform is missing (a failed leg)
+          feed=0
           (cd tools/release && go run ./cmd/updater-feed --dir ../../staged --repo "$GITHUB_REPOSITORY" \
-            --tag "$TAG" --out ../../latest.json)
+            --tag "$TAG" --out ../../latest.json --require desktop "${check[@]}") || feed=$?
+          [ "$feed" = 0 ] || [ "$feed" = 3 ] || exit "$feed"
           if [ -f latest.json ]; then
             cat latest.json
-            gh release upload "$TAG" latest.json --clobber
+            # the feed may change on a published release, as late platforms land
+            tools/release/release-assets.sh upload "$TAG" --replace latest.json latest.json
+          fi
+          # published once complete (release.yml's signed set, the server apps in the feed);
+          # the latest only as the highest stable version with every desktop platform
+          tools/release/release-assets.sh publish "$TAG"
+          if [ "$feed" = 3 ]; then
+            echo "::error::not every desktop leg published: $TAG is not marked the latest release (rerun the failed legs: gh run rerun $GITHUB_RUN_ID --failed)"
+            exit 1
           fi

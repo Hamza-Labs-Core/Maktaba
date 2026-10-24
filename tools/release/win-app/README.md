@@ -103,7 +103,7 @@ administrator), puts the payload in `server\` and includes `installer-hooks.nsh`
 
 | Hook | Runs | Why |
 |---|---|---|
-| `NSIS_HOOK_PREINSTALL` | `"$INSTDIR\Maktaba.exe" --server-stop`, when the installed one takes the flags; then deletes `server\pipeline\maktaba_pipeline-*.whl` | the payload's files are in use while the server runs; the wheel's name carries its version, and an update (`/UPDATE`, the app's updater) installs over the old files without uninstalling them, while the server builds the pipeline's venv from exactly one wheel |
+| `NSIS_HOOK_PREINSTALL` | `"$INSTDIR\Maktaba.exe" --server-stop`, when the installed one takes the flags, then removes the whole old payload (`server\`, when its `payload.json` says it is ours); else deletes only `server\pipeline\maktaba_pipeline-*.whl` | the payload's files are in use while the server runs; an update (`/UPDATE`, the app's updater) installs over the old files without uninstalling them, so a file the new payload renamed or dropped (a migration, a library) would stay and be found; the state beside `server\` stays. The wheel's name carries its version, and the server builds the pipeline's venv from exactly one wheel |
 | `NSIS_HOOK_POSTINSTALL` | `"$INSTDIR\Maktaba.exe" --server-start`, when the new one takes them | starts the server from the new payload (nothing on a first install: setup registers the task) |
 | `NSIS_HOOK_PREUNINSTALL` | `--server-stop`, then `--server-remove`, when the installed one takes them; not during an update (`$UpdateMode` 1) | no sign-in task is left pointing at a removed program |
 

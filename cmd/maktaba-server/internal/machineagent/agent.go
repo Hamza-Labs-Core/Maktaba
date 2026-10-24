@@ -20,6 +20,8 @@ import (
 
 	"github.com/coder/websocket"
 	"golang.org/x/crypto/curve25519"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/attempts"
 )
 
 // Close codes the agent treats as "wait the longest delay" (design-agent §4.6).
@@ -80,7 +82,36 @@ type UpdateState struct {
 	Layout          string `json:"layout"` // the install kind: layout | runtime | appbundle | flat
 	// Run is this machine's update run, when it has one (its state and step).
 	Run *RunState `json:"run,omitempty"`
+	// Attempts are this machine's update attempts, every failure with its reason
+	// (update-attempts.md), newest first: the home's Updates page shows them.
+	Attempts []attempts.Attempt `json:"attempts,omitempty"`
+	// HomeDB is whether this machine logs in to its home's database: the home re-makes
+	// its access when it cannot (its role refused, the database moved), and shows why.
+	HomeDB *HomeDB `json:"home_db,omitempty"`
 }
+
+// HomeDB is a machine's login to its home's database, as it last tried it.
+type HomeDB struct {
+	OK bool `json:"ok"`
+	// Code is why it cannot: auth_failed, no_hba, refused, unreachable, no_database, tls,
+	// other.
+	Code   string    `json:"code,omitempty"`
+	Detail string    `json:"detail,omitempty"`
+	At     time.Time `json:"at"`
+	// Healing: the home gave this machine new access to its database, which it follows
+	// (it starts again with it).
+	Healing bool `json:"healing,omitempty"`
+	// Fails is how many logins in a row failed (0 when it logs in): the home re-makes the
+	// access only for a failure seen twice (ConfirmFails), not for one try that met a home
+	// in the middle of a switch.
+	Fails int `json:"fails,omitempty"`
+	// Target is where the machine logs in: host:port/database (never its password), which
+	// the home compares with the access it would hand out.
+	Target string `json:"target,omitempty"`
+}
+
+// ConfirmFails is how many failed logins in a row make a failure the home acts on.
+const ConfirmFails = 2
 
 // RunState is a machine's update run as update.state reports it.
 type RunState struct {
@@ -98,9 +129,13 @@ type Command func(ctx context.Context, name string, args json.RawMessage) (handl
 
 // Agent is the machine agent.
 type Agent struct {
-	ID     Identity
-	State  func() UpdateState
-	Logger *slog.Logger
+	ID    Identity
+	State func() UpdateState
+	// OnConnect is called each time the agent is connected to the home, before it sends
+	// its state (a node checks its login to the home's database again: its last check may
+	// predate the home's start).
+	OnConnect func()
+	Logger    *slog.Logger
 	// Commands answers the home's commands besides disconnect (the switchover's).
 	Commands Command
 
@@ -303,6 +338,9 @@ func (a *Agent) session(ctx context.Context) (websocket.StatusCode, error) {
 	a.mu.Unlock()
 	a.connected.Store(true)
 	a.log().Info("node: machine agent connected to the home", "event", "node_agent_connected")
+	if a.OnConnect != nil {
+		a.OnConnect()
+	}
 	return a.pump(ctx, c, c2s, s2c)
 }
 
@@ -433,6 +471,12 @@ func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher) (
 			"platform": st.Platform, "layout": st.Layout}
 		if st.Run != nil {
 			f["run"] = st.Run
+		}
+		if len(st.Attempts) > 0 {
+			f["attempts"] = st.Attempts
+		}
+		if st.HomeDB != nil {
+			f["home_db"] = st.HomeDB
 		}
 		send(f)
 	}

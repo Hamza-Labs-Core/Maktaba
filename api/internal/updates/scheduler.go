@@ -3,10 +3,12 @@ package updates
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
@@ -29,6 +31,20 @@ const (
 	WaitDeferred       = "deferred"
 	WaitReleaseAge     = "release_age"
 	WaitWindow         = "outside_window"
+	// a release whose automatic run failed in this window (story 35.4 AC9: retried, at
+	// most one counted attempt a window): tried again at once, then after retryBackoff,
+	// then in the next window; one a person must mend waits for the next window (or an
+	// admin's Update now)
+	WaitRetryBackoff = "retry_backoff"
+	WaitRetryWindow  = "retry_next_window"
+	WaitNeedsPerson  = "needs_person"
+)
+
+// retryBackoff is the pause before a release's third automatic run in one window;
+// triesPerWindow how many automatic runs of one release a window takes.
+const (
+	retryBackoff   = 15 * time.Minute
+	triesPerWindow = 3
 )
 
 // Blocker answers whether a run may start now ("" = yes, else the reason).
@@ -168,6 +184,42 @@ type Service struct {
 	Getenv      func(string) string
 	Loc         *time.Location
 	Now         func() time.Time
+
+	// lastTick is the scheduler's last decision (the Updates page shows why nothing
+	// starts: a blocker, a retry's pause)
+	tickMu   sync.Mutex
+	lastTick *TickInfo
+}
+
+// TickInfo is the scheduler's last decision and when it was made.
+type TickInfo struct {
+	Decision
+	At time.Time `json:"at"`
+}
+
+// LastTick is the scheduler's last decision (nil before the first tick, or where the
+// scheduler does not run).
+func (s *Service) LastTick() *TickInfo {
+	s.tickMu.Lock()
+	defer s.tickMu.Unlock()
+	if s.lastTick == nil {
+		return nil
+	}
+	c := *s.lastTick
+	return &c
+}
+
+// noteTick keeps a tick's decision; a new reason a run waits for is logged once.
+func (s *Service) noteTick(d Decision) {
+	s.tickMu.Lock()
+	prev := s.lastTick
+	s.lastTick = &TickInfo{Decision: d, At: s.now()}
+	s.tickMu.Unlock()
+	if (d.Action == "blocked" || (d.Action == "none" && d.Version != "")) &&
+		(prev == nil || prev.Action != d.Action || prev.Reason != d.Reason || prev.Version != d.Version) {
+		s.log().Info("update run waits", "event", "update_scheduler_waits", "action", d.Action, "reason", d.Reason,
+			"version", d.Version)
+	}
 }
 
 func (s *Service) now() time.Time {
@@ -257,6 +309,12 @@ type Decision struct {
 // Tick is one scheduler step (every minute): start the planned run when it is due and
 // nothing blocks it.
 func (s *Service) Tick(ctx context.Context) (Decision, error) {
+	d, err := s.tick(ctx)
+	s.noteTick(d)
+	return d, err
+}
+
+func (s *Service) tick(ctx context.Context) (Decision, error) {
 	pl, pol, _, err := s.Plan(ctx)
 	if err != nil {
 		return Decision{Action: "none"}, err
@@ -273,6 +331,9 @@ func (s *Service) Tick(ctx context.Context) (Decision, error) {
 				Subject: "release:" + pl.Target.Version, Every: notifyOnce})
 		}
 		return Decision{Action: "none", Reason: pl.Waiting}, nil
+	}
+	if wait := s.retryWait(ctx, pol, pl.Target.Version); wait != "" {
+		return Decision{Action: "none", Reason: wait, Version: pl.Target.Version}, nil
 	}
 	why, err := s.blockedFor(ctx, pl.Target.Version)
 	if err != nil {
@@ -293,6 +354,47 @@ func (s *Service) Tick(ctx context.Context) (Decision, error) {
 		return Decision{Action: "failed", Reason: err.Error(), Version: pl.Target.Version, RunID: run.ID}, err
 	}
 	return Decision{Action: "started", Version: run.Version, RunID: run.ID}, nil
+}
+
+// retryWait says why a due automatic run of version waits for an earlier one that failed
+// in this window ("" when it may start): one that failed for a person to mend (no room,
+// an install that cannot update itself, an app built locally) waits for the next window
+// or an admin's Update now; one that failed otherwise is tried again at once, then after
+// retryBackoff, then in the next window. A run a GitHub call, a notice and an
+// update_runs row each, so nothing starts every minute (story 35.4 AC9).
+func (s *Service) retryWait(ctx context.Context, pol Policy, version string) string {
+	w, err := ParseWindow(pol.Window)
+	if err != nil {
+		return ""
+	}
+	start, _, ok := w.Containing(s.now(), s.loc())
+	if !ok {
+		return ""
+	}
+	failed, err := s.Store.FailedAutoRuns(ctx, version, start)
+	if err != nil || len(failed) == 0 {
+		return ""
+	}
+	if needsPerson(runErrDoc(failed[0])) {
+		return WaitNeedsPerson
+	}
+	switch {
+	case len(failed) >= triesPerWindow:
+		return WaitRetryWindow
+	case len(failed) == triesPerWindow-1 && failed[0].FinishedAt != nil &&
+		s.now().Before(failed[0].FinishedAt.Add(retryBackoff)):
+		return WaitRetryBackoff
+	}
+	return ""
+}
+
+// runErrDoc is a run's error document (empty when it has none).
+func runErrDoc(r Run) map[string]any {
+	doc := map[string]any{}
+	if len(r.Error) > 0 {
+		_ = json.Unmarshal(r.Error, &doc)
+	}
+	return doc
 }
 
 // hold records and notifies a contract release once: it waits for an admin on the
@@ -420,7 +522,16 @@ func (s *Service) RunNow(ctx context.Context, actor, version string) (Run, error
 	}
 	var target *Release
 	if v := NormalizeVersion(version); v != "" {
-		// an explicit version: the admin's choice overrides skip and pin, not the checks
+		// an explicit version: the admin's choice overrides skip, pin and a block (a
+		// retry of a release that failed or rolled back), not the checks: a withdrawn or
+		// unverified release stays refused
+		if unblocked, err := s.unblock(ctx, actor, v); err != nil {
+			return Run{}, err
+		} else if unblocked {
+			if cat, err = s.Store.Catalog(ctx); err != nil {
+				return Run{}, err
+			}
+		}
 		p := pol
 		p.SkippedVersions, p.PinnedVersion = nil, ""
 		var only []Release
@@ -450,6 +561,35 @@ func (s *Service) RunNow(ctx context.Context, actor, version string) (Run, error
 		s.Store.Audit(ctx, actor, "admin", "release_approved", target.Version, map[string]any{"reason": "breaks_previous_home"})
 	}
 	return s.start(ctx, *target, pol, TriggerManual, actor)
+}
+
+// Unblock is an admin's retry of a blocked release without installing it now: its block
+// and its counted attempts are cleared, and the next window installs it (a withdrawn or
+// unverified release is not unblocked). It reports whether there was a block to clear.
+func (s *Service) Unblock(ctx context.Context, actor, version string) (bool, error) {
+	return s.unblock(ctx, actor, NormalizeVersion(version))
+}
+
+func (s *Service) unblock(ctx context.Context, actor, version string) (bool, error) {
+	rel, err := s.Store.Get(ctx, version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if rel.BlockedReason == "" && rel.Attempts == 0 {
+		return false, nil
+	}
+	if rel.WithdrawnAt != nil || rel.VerifyState != VerifyVerified {
+		return false, nil
+	}
+	if err := s.Store.Unblock(ctx, version); err != nil {
+		return false, err
+	}
+	s.Store.Audit(ctx, actor, "admin", "release_unblocked", version, map[string]any{"reason": rel.BlockedReason,
+		"attempts": rel.Attempts})
+	return true, nil
 }
 
 // RunScheduler ticks every minute until ctx ends.

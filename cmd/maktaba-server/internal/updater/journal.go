@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
 // States of a machine's run (Journal.State).
@@ -95,6 +96,9 @@ type Job struct {
 	RehearseMaxGB int  `json:"rehearse_max_db_gb,omitempty"`
 	// KeepVersions releases stay installed after a commit (never fewer than 2).
 	KeepVersions int `json:"keep_versions,omitempty"`
+	// BackupsKeep pre-update dumps (and as many dumps of failed updates) stay after a
+	// commit (rules.updates.backups_keep; 0: the machine's own setting).
+	BackupsKeep int `json:"backups_keep,omitempty"`
 	// WatchSeconds: how long the new release must stay healthy before it is
 	// committed; HealthSeconds: how long it may stay unhealthy before it is rolled
 	// back (0: the defaults).
@@ -202,6 +206,10 @@ type Journal struct {
 	App string `json:"app,omitempty"`
 	// LauncherProtocol is the release's launcher_protocol (its verified release.json).
 	LauncherProtocol int `json:"launcher_protocol,omitempty"`
+	// Signed is the staged release's signed record (version, checksums digest, signing
+	// time), kept at the commit for the next update's rules (an app bundle's, a runtime's:
+	// a layout keeps its watermark)
+	Signed *releaseverify.Watermark `json:"signed,omitempty"`
 	// WatchSince is when the new release first came up; Starts how often it started
 	// while watched (a supervisor that keeps dying rolls back).
 	WatchSince *time.Time `json:"watch_since,omitempty"`

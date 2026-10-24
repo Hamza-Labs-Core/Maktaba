@@ -47,6 +47,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/cluster/updates/skip", h.Skip)
 	r.Post("/api/cluster/updates/defer", h.Defer)
 	r.Post("/api/cluster/updates/check", h.Check)
+	r.Post("/api/cluster/updates/unblock", h.Unblock)
 	r.Get("/api/cluster/updates/runs", h.Runs)
 	r.Get("/api/cluster/updates/runs/{id}", h.RunView)
 	r.Get("/api/cluster/updates/runs/{id}/log", h.RunLog)
@@ -86,6 +87,13 @@ type Overview struct {
 	Machines []Machine `json:"machines"`
 	// Last is the newest finished run (nil: none yet).
 	Last *Run `json:"last_run,omitempty"`
+	// LastTick is the scheduler's last decision: why a due release does not start (a
+	// blocker, a retry's pause, a failure a person must mend). nil: no tick yet here.
+	LastTick *TickInfo `json:"last_tick,omitempty"`
+	// Stuck is a release the home has not managed to install for several windows in a
+	// row for the same reason (the TV watched every night, say): an admin may install it
+	// now (nil: none).
+	Stuck *Stuck `json:"stuck,omitempty"`
 }
 
 // Machine is one row of the Updates page's machines table.
@@ -101,6 +109,13 @@ type Machine struct {
 	// Target is the release the active run brings it to (the one its app shows while it
 	// waits for a click).
 	Target string `json:"target,omitempty"`
+	// Attempts are its last update attempts, every failure with its reason: its own (the
+	// desktop app's updater, its releases' starts) and its last part in a run, newest
+	// first (update-attempts.md).
+	Attempts []Attempt `json:"attempts,omitempty"`
+	// HomeDB is a node's login to the home's database (nil: it has not said): "this
+	// machine can't reach the home's database: <reason>" when not ok.
+	HomeDB *HomeDB `json:"home_db,omitempty"`
 }
 
 // Overview builds GET /api/cluster/updates.
@@ -123,7 +138,11 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 	}
 	o := Overview{Current: NormalizeVersion(s.Current), Watermark: wm, Policy: pol,
 		AutoInstallAvailable: AutoInstallAvailable(), Plan: pl, Run: run, Catalog: cat,
-		LastCheckOK: st.LastCheckOK, LastCheckError: st.LastCheckErr, TimeZone: s.loc().String()}
+		LastCheckOK: st.LastCheckOK, LastCheckError: st.LastCheckErr, TimeZone: s.loc().String(),
+		LastTick: s.LastTick()}
+	if pl.Target != nil && run == nil {
+		o.Stuck = s.stuck(ctx, pl.Target.Version)
+	}
 	if st.LastCheckOK != nil {
 		o.CheckStale = s.now().Sub(*st.LastCheckOK) >= StaleAfter
 	}
@@ -331,6 +350,39 @@ func (h *Handler) runNow(w http.ResponseWriter, r *http.Request, p *principal.Pr
 	default:
 		httperror.Write(w, r, httperror.Internal("update now: "+err.Error()))
 	}
+}
+
+// Unblock serves POST /api/cluster/updates/unblock {version}: an admin's retry of a
+// release blocked after its failures (or a rollback): the next window installs it, or
+// Update now naming it does at once.
+func (h *Handler) Unblock(w http.ResponseWriter, r *http.Request) {
+	p := admin(w, r)
+	if p == nil {
+		return
+	}
+	var req struct {
+		Version string `json:"version"`
+	}
+	if e := common.ReadJSON(r, &req, maxBody); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	v := NormalizeVersion(req.Version)
+	if !ValidVersion(v) {
+		bad(w, r, "bad_version", "version: want 1.2.3")
+		return
+	}
+	done, err := h.Svc.Unblock(r.Context(), p.UserID, v)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("unblock: "+err.Error()))
+		return
+	}
+	if !done {
+		httperror.Write(w, r, httperror.Conflict("about:blank#not_blocked",
+			"the release is not blocked, or it is withdrawn or unverified").With("code", "not_blocked"))
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"unblocked": true, "version": v})
 }
 
 // Skip serves POST /api/cluster/updates/skip {version}.

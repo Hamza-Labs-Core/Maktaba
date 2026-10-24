@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/attempts"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
@@ -144,6 +145,12 @@ type Rehearser interface {
 	// DumpAside dumps the database as it is (a failed release's state) beside the
 	// backups; best effort.
 	DumpAside(ctx context.Context, label string) (string, error)
+}
+
+// BackupPruner is a Rehearser that also keeps the home's dumps to
+// rules.updates.backups_keep once an update commits (design §5, the commit step).
+type BackupPruner interface {
+	PruneBackups(keep int) error
 }
 
 // Errors of the machine's requests.
@@ -281,17 +288,42 @@ type Status struct {
 	// (its start steps' cap and its watch's bound): the home's driver waits at least that
 	// long before it gives up on the home.
 	BoundSec int `json:"bound_sec,omitempty"`
+	// Attempts are this machine's update attempts, every failure with its reason (the
+	// desktop app's own and its releases' starts: update-attempts.md), newest first.
+	Attempts []attempts.Attempt `json:"attempts,omitempty"`
 }
 
 // Status reports this machine's run.
 func (m *Machine) Status() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	st := Status{Journal: m.j.clone(), Running: m.Installer.Running(), Kind: m.Installer.Kind(), Asks: m.asker() != nil}
+	st := Status{Journal: m.j.clone(), Running: m.Installer.Running(), Kind: m.Installer.Kind(), Asks: m.asker() != nil,
+		Attempts: attempts.Read(m.Dir)}
 	if st.Journal != nil {
 		st.BoundSec = int((pendingCap(st.Journal) + st.Journal.Job.WatchBound()).Seconds())
 	}
 	return st
+}
+
+// WatchAttempts calls OnChange when the attempts files change (the desktop app writes its
+// own: a node's machine agent then sends them to the home), every interval until ctx ends.
+func (m *Machine) WatchAttempts(ctx context.Context, interval time.Duration) {
+	last := attempts.Stamp(m.Dir)
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if now := attempts.Stamp(m.Dir); now != last {
+			last = now
+			if m.OnChange != nil {
+				m.OnChange()
+			}
+		}
+	}
 }
 
 // asker is the installer when it waits for a click.
@@ -1079,6 +1111,13 @@ func (m *Machine) commit() bool {
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Commit(context.Background(), j) }); err != nil {
 		m.logf("cannot keep %s yet (tried again): %v", j.Job.Version, err)
 		return false
+	}
+	// the release is kept: the dumps go to rules.updates.backups_keep before the run says
+	// it is committed (whoever waits for that sees them pruned)
+	if p, ok := m.Rehearser.(BackupPruner); ok && j.Job.Home && j.Job.BackupsKeep > 0 {
+		if err := p.PruneBackups(j.Job.BackupsKeep); err != nil {
+			m.logf("the dumps could not be pruned to %d: %v", j.Job.BackupsKeep, err)
+		}
 	}
 	_ = m.endStep(StepWatch, "done", "")
 	_ = m.endStep(StepCommit, "done", "")

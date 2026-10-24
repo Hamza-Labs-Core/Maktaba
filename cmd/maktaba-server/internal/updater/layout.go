@@ -76,9 +76,15 @@ func (li *LayoutInstaller) Stage(ctx context.Context, j *Journal, log io.Writer)
 	if err != nil {
 		return err
 	}
-	st, err := install.Stage(ctx, li.Layout, li.Source.get(), in, j.Job.Assets, li.Source.platform())
-	if err != nil {
-		return verifyFailure(err)
+	var st *install.Staged
+	if err := retryFetch(ctx, func() error {
+		var err error
+		if st, err = install.Stage(ctx, li.Layout, li.Source.get(), in, j.Job.Assets, li.Source.platform()); err != nil {
+			return verifyFailure(err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	if layout.CompareVersions(st.Version, j.Job.Version) != 0 {
 		return Fail("version_mismatch", "release.json is %s, the home asked for %s", st.Version, j.Job.Version)

@@ -1,0 +1,205 @@
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"net"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// AccessGranter is the home's side of its machines' database access (the home owns it).
+type AccessGranter interface {
+	// AccessUsable reports whether a machine's role logs in on this home's database now.
+	AccessUsable(ctx context.Context, nodeID string) (bool, error)
+	// GrantAccess makes a machine's role again on this home's database, with a new
+	// password, and returns its access as the machine's home.access command takes it.
+	GrantAccess(ctx context.Context, nodeID string) (json.RawMessage, error)
+	// AccessTarget is where a re-made access points: the database's host ("": the host
+	// the machine reaches the home at), port and name.
+	AccessTarget(ctx context.Context, nodeID string) (host string, port int, db string, err error)
+}
+
+// accessRetry is how soon a machine's access is re-made again when it still cannot log
+// in; each time after that waits twice as long, up to accessRetryMax (a machine that
+// fails for its own reasons, or a database that cannot take a login now, is not rotated
+// in a loop).
+const (
+	accessRetry    = time.Minute
+	accessRetryMax = time.Hour
+)
+
+// homeDBState is a machine's update.state's home_db.
+type homeDBState struct {
+	OK      bool   `json:"ok"`
+	Code    string `json:"code"`
+	Healing bool   `json:"healing"`
+	// Fails is how many logins in a row failed on the machine
+	Fails int `json:"fails"`
+	// Target is where it logs in: host:port/database
+	Target string `json:"target"`
+}
+
+// remakeWhy is why a machine's re-made access would mend its failed login ("": it would
+// not): a refused password or a role the database does not know (auth_failed); a database
+// it cannot reach, or that refuses its address, only when it logs in somewhere else than
+// the access this home hands out (the database moved: another port, another database).
+// TLS and anything else are not the access's to mend.
+func remakeWhy(db homeDBState, host string, port int, name string) string {
+	switch db.Code {
+	case "auth_failed":
+		return db.Code
+	case "refused", "unreachable", "no_database", "no_hba":
+		if moved(db.Target, host, port, name) {
+			return db.Code + "_moved"
+		}
+	}
+	return ""
+}
+
+// moved reports whether a machine's target (host:port/database) is not the access this
+// home hands out: its port or database differs, or its host when the home names one.
+func moved(target, host string, port int, name string) bool {
+	addr, db, _ := strings.Cut(target, "/")
+	h, p, err := net.SplitHostPort(addr)
+	if target == "" || err != nil {
+		return false // a machine that does not say where it logs in: not this check's
+	}
+	n, _ := strconv.Atoi(p)
+	return n != port || (name != "" && db != name) || (host != "" && !strings.EqualFold(h, host))
+}
+
+// confirmFails is how many failed logins in a row make a machine's failure one the home
+// acts on and shows: one try can meet a home in the middle of a switch (the machine still
+// on the old home's database, about to follow the new one by itself).
+const confirmFails = 2
+
+// off reports whether the machine says, confirmed, that it cannot log in.
+func (d homeDBState) off() bool { return !d.OK && d.Fails >= confirmFails }
+
+// homeDBOf is a machine agent's last word on its login to this home's database (ok false
+// before it says).
+func homeDBOf(s *Session) (homeDBState, bool) {
+	s.mu.Lock()
+	raw := s.updateState
+	s.mu.Unlock()
+	var st struct {
+		HomeDB *homeDBState `json:"home_db"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &st) != nil || st.HomeDB == nil {
+		return homeDBState{}, false
+	}
+	return *st.HomeDB, true
+}
+
+// OffDatabase is a connected machine that says it cannot log in to this home's database.
+type OffDatabase struct {
+	NodeID  string
+	Code    string
+	Healing bool
+}
+
+// MachinesOffDatabase are the connected machines that say they cannot log in to this
+// home's database (their update.state's home_db), with why and whether they follow their
+// re-made access already.
+func (h *Hub) MachinesOffDatabase() []OffDatabase {
+	var out []OffDatabase
+	for _, s := range h.machineAgents() {
+		if db, said := homeDBOf(s); said && db.off() && s.NodeID != "" {
+			out = append(out, OffDatabase{NodeID: s.NodeID, Code: db.Code, Healing: db.Healing})
+		}
+	}
+	return out
+}
+
+// EnsureAccess keeps every connected machine able to log in to this home's database: a
+// machine that says it cannot, twice in a row, for a reason a re-made access mends
+// (remakeWhy: its role refused, or the database moved to another port or database), or
+// whose role does not log in on the home's current database (checked once per agent
+// session: a move carried no roles) gets its access re-made and pushed (home.access); again
+// after accessRetry, then twice as long each time up to accessRetryMax, until it logs in.
+// It runs every interval until ctx ends.
+func (h *Hub) EnsureAccess(ctx context.Context, g AccessGranter, every time.Duration, logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	granted := map[string]time.Time{} // node -> when its access was last re-made
+	tries := map[string]int{}         // node -> re-makes since it last logged in
+	checked := map[string]bool{}      // agent sessions whose role was checked
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		live := map[string]bool{}
+		for _, s := range h.machineAgents() {
+			if s.NodeID == "" {
+				continue
+			}
+			live[s.ID] = true
+			why := ""
+			db, said := homeDBOf(s)
+			if said && db.OK {
+				delete(tries, s.NodeID) // it logs in: a later failure starts the backoff afresh
+			}
+			if said && db.off() && !db.Healing {
+				if host, port, name, err := g.AccessTarget(ctx, s.NodeID); err == nil {
+					why = remakeWhy(db, host, port, name)
+				}
+			} else if !checked[s.ID] {
+				usable, err := g.AccessUsable(ctx, s.NodeID)
+				if err == nil {
+					checked[s.ID] = true
+					if !usable {
+						why = "role_unusable"
+					}
+				}
+			}
+			if why == "" || (!granted[s.NodeID].IsZero() && h.now().Sub(granted[s.NodeID]) < retryAfter(tries[s.NodeID])) {
+				continue
+			}
+			granted[s.NodeID] = h.now()
+			tries[s.NodeID]++
+			args, err := g.GrantAccess(ctx, s.NodeID)
+			if err != nil {
+				logger.Warn("cluster: a machine's database access cannot be made again", "node_id", s.NodeID, "why", why,
+					"err", err, "event", "cluster_access_failed")
+				continue
+			}
+			res, err := h.CommandWithin(ctx, s.ID, "home.access", args, "system", 30*time.Second)
+			if err != nil || !res.OK {
+				detail := ""
+				if err != nil {
+					detail = err.Error()
+				} else {
+					detail = string(res.Detail)
+				}
+				logger.Warn("cluster: a machine did not take its re-made database access", "node_id", s.NodeID,
+					"why", why, "detail", detail, "event", "cluster_access_not_taken")
+				continue
+			}
+			logger.Info("cluster: a machine could not log in to this home's database: its access was made again",
+				"node_id", s.NodeID, "why", why, "event", "cluster_access_remade")
+		}
+		for sid := range checked {
+			if !live[sid] {
+				delete(checked, sid)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// retryAfter is how long after its last re-made access a machine waits for the next:
+// accessRetry after the first, twice as long after each one more, up to accessRetryMax.
+func retryAfter(tries int) time.Duration {
+	d := accessRetry
+	for i := 1; i < tries && d < accessRetryMax; i++ {
+		d *= 2
+	}
+	return min(d, accessRetryMax)
+}

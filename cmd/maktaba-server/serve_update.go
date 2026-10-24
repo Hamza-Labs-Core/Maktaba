@@ -100,6 +100,20 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 	return flatInstaller{}, filepath.Join(cfg.StateDir(), "updates")
 }
 
+// updatesDirOf is this install's updates folder (installKind's: the journal, the app's
+// order, the update attempts): the launcher root's (or the state root's) for the desktop
+// app and the runtime copy, the layout's for a plain server, the state root's for a flat
+// install.
+func updatesDirOf(cfg config.Config, releaseDir string) string {
+	if config.AppBundle() != "" {
+		return filepath.Join(orDir(strings.TrimSpace(os.Getenv(envLauncherRoot)), cfg.StateDir()), "updates")
+	}
+	if releaseDir != "" {
+		return layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir))))).UpdatesDir()
+	}
+	return filepath.Join(cfg.StateDir(), "updates")
+}
+
 func orDir(a, b string) string {
 	if a != "" {
 		return a
@@ -208,6 +222,15 @@ func (r rehearser) DumpAside(ctx context.Context, label string) (string, error) 
 	return p, r.t.Dump(ctx, p)
 }
 
+// PruneBackups keeps rules.updates.backups_keep dumps of each kind once an update
+// committed, and records it for the dump pruning at the next start (updater.BackupPruner).
+func (r rehearser) PruneBackups(keep int) error {
+	if err := pgbundle.SetBackupsKeep(r.t.Backups, keep); err != nil {
+		return err
+	}
+	return pgbundle.PruneBackups(r.t.Backups, "", keep)
+}
+
 // codedFailure turns dbsafe's "code: detail" errors into the run's failures.
 func codedFailure(err error) error {
 	if err == nil {
@@ -290,7 +313,7 @@ func (u *updates) snapshot() (supervisor.Snapshot, bool) {
 // agentState adds this machine's run to the machine agent's update.state.
 func (u *updates) agentState(st *machineagent.UpdateState) {
 	s := u.m.Status()
-	st.Layout = s.Kind
+	st.Layout, st.Attempts = s.Kind, s.Attempts
 	if s.Journal == nil {
 		return
 	}
@@ -438,6 +461,79 @@ type machineHealth struct {
 	releaseDir string // the running release's (a plain server's bin/releases/<v>)
 	snap       func() (supervisor.Snapshot, bool)
 	http       *http.Client
+	// offSince is when each machine first said it cannot log in to this home's database
+	// in this watch (kept when it is back meanwhile: a machine that starts again, or
+	// flaps, does not wait anew); offTold: its wait ended and was logged
+	offSince map[string]time.Time
+	offTold  map[string]bool
+	now      func() time.Time
+}
+
+// machinesWait is how long a home's watch waits for its machines to follow its database
+// (the home re-makes their access as soon as they say they cannot log in): an update that
+// moved the database carries them along before it commits, and a machine that still
+// cannot after this is shown as needing a person rather than holding the home's update.
+const machinesWait = 10 * time.Minute
+
+func (h *machineHealth) clock() time.Time {
+	if h.now != nil {
+		return h.now()
+	}
+	return time.Now()
+}
+
+// machinesOff is the home's watch waiting for its machines that cannot log in to its
+// database (pending, while their access is re-made and they follow it): each machine
+// holds it for machinesWait at most from the first time it said so in this watch, however
+// often it starts again or comes and goes meanwhile; after that it is shown as needing a
+// person and no longer holds the home's update.
+func (h *machineHealth) machinesOff(off []selfMachineDB) (updater.Verdict, bool) {
+	if h.offSince == nil {
+		h.offSince, h.offTold = map[string]time.Time{}, map[string]bool{}
+	}
+	now := h.clock()
+	var waiting, gone []string
+	for _, m := range off {
+		name := m.Name
+		if name == "" {
+			name = m.ID
+		}
+		state := m.Code
+		if m.Healing {
+			state += ", following its new access"
+		}
+		first, seen := h.offSince[m.ID]
+		if !seen {
+			first = now
+			h.offSince[m.ID] = now
+		}
+		if now.Sub(first) >= machinesWait {
+			if !h.offTold[m.ID] {
+				h.offTold[m.ID] = true
+				gone = append(gone, name+" ("+state+")")
+			}
+			continue
+		}
+		waiting = append(waiting, name+" ("+state+")")
+	}
+	if len(gone) > 0 {
+		fmt.Fprintf(os.Stderr, "[update] machines still cannot log in to this home's database after %s: %s; "+
+			"the update goes on, the Updates page shows them\n", machinesWait, strings.Join(gone, ", "))
+	}
+	if len(waiting) == 0 {
+		return updater.Verdict{}, false
+	}
+	why := "the machines follow this home's database: " + strings.Join(waiting, ", ")
+	return updater.Verdict{Pending: true, Why: why, Progress: why}, true
+}
+
+// selfMachineDB is a machine the home's /api/cluster/self says cannot log in to its
+// database.
+type selfMachineDB struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Code    string `json:"code"`
+	Healing bool   `json:"healing"`
 }
 
 // haltCodes are database-step details no retry mends: the release cannot run here.
@@ -520,15 +616,21 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		return updater.Verdict{Why: fmt.Sprintf("api /readyz answers %d", code)}
 	}
 	var self struct {
-		Version string `json:"version"`
-		Paused  string `json:"paused"`
+		Version    string          `json:"version"`
+		Paused     string          `json:"paused"`
+		MachinesDB []selfMachineDB `json:"machines_db"`
 	}
 	api := "http://" + supervisor.LocalAddr(h.cfg.Server.Listen, "8080")
-	if code := h.get(ctx, api+"/api/cluster/self", &self); code != http.StatusOK {
+	if code := h.getSelf(ctx, api+"/api/cluster/self", &self); code != http.StatusOK {
 		return updater.Verdict{Why: fmt.Sprintf("api /api/cluster/self answers %d", code)}
 	}
 	if self.Version != "" && layout.CompareVersions(self.Version, want) != 0 {
 		return updater.Verdict{Fatal: true, Why: fmt.Sprintf("the api answers as %s, not %s", self.Version, want)}
+	}
+	if h.home {
+		if v, wait := h.machinesOff(self.MachinesDB); wait {
+			return v
+		}
 	}
 	if h.node != nil {
 		if self.Paused != "" {
@@ -589,9 +691,23 @@ func (h *machineHealth) pipelineWant() string {
 }
 
 func (h *machineHealth) get(ctx context.Context, url string, out any) int {
+	return h.getAs(ctx, url, out, "")
+}
+
+// getSelf is get of the api's /api/cluster/self as this machine's supervisor (its local
+// token): the home's machines that cannot log in to its database are told to it alone.
+func (h *machineHealth) getSelf(ctx context.Context, url string, out any) int {
+	tok, _ := os.ReadFile(supervisor.LocalTokenPath(h.cfg))
+	return h.getAs(ctx, url, out, strings.TrimSpace(string(tok)))
+}
+
+func (h *machineHealth) getAs(ctx context.Context, url string, out any, localToken string) int {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return 0
+	}
+	if localToken != "" {
+		req.Header.Set("X-Maktaba-Local-Token", localToken)
 	}
 	resp, err := h.client().Do(req)
 	if err != nil {
