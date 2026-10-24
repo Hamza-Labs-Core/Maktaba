@@ -210,13 +210,7 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// The streaming binary binds MAKTABA_HTTP_ADDR; the older
 		// MAKTABA_STREAMING_HTTP_ADDR is kept for anything reading it.
 		add("MAKTABA_HTTP_ADDR", cfg.Server.StreamAddr)
-		// its cache (channel segments, transcodes) in this install's cache
-		// directory (config.CacheDir: <state>/cache, ~/.cache/maktaba in the Linux
-		// app): the binary's default, /var/maktaba, is the containers' path, which a
-		// user cannot create on macOS or Windows. An operator's own is kept.
-		if os.Getenv("MAKTABA_CACHE_ROOT") == "" {
-			add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.CacheDir(), "streaming"))
-		}
+		addStreamingCache(cfg, add)
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
 		// [media] transcode_min_free_gib: what the video transcodes leave free on
 		// that disk (0: the streaming role's automatic floor; an operator's own
@@ -252,7 +246,10 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		}
 	case RoleTVSlot:
 		// a slot's own addresses are set by BuildSlot; it never joins as a node
-		// and serves no gRPC
+		// and serves no gRPC. It encodes the channels, so it writes their segments:
+		// the same cache as the streaming role (without it every channel failed,
+		// "mkdir /var/maktaba: permission denied", on the Mac app)
+		addStreamingCache(cfg, add)
 	case RolePipeline:
 		// The pipeline exposes its gRPC server so the api can call it.
 		add("MAKTABA_PIPELINE_GRPC_ADDR", pipelineGRPC(cfg))
@@ -505,4 +502,15 @@ func withStage(list, stage string) string {
 		}
 	}
 	return strings.Join(append(out, stage), ",")
+}
+
+// addStreamingCache gives a streaming process (the front door and the TV slots) its cache
+// (channel segments, transcodes) in this install's cache directory (config.CacheDir:
+// <state>/cache, ~/.cache/maktaba in the Linux app): the binary's default, /var/maktaba,
+// is the containers' path, which a user cannot create on macOS or Windows. An operator's
+// own is kept.
+func addStreamingCache(cfg config.Config, add func(k, v string)) {
+	if os.Getenv("MAKTABA_CACHE_ROOT") == "" {
+		add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.CacheDir(), "streaming"))
+	}
 }

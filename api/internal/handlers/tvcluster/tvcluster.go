@@ -41,7 +41,7 @@ import (
 )
 
 // ProtocolVersion mirrors the streaming cluster protocol (streaming/internal/cluster).
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 
 // Handler bundles deps.
 type Handler struct {

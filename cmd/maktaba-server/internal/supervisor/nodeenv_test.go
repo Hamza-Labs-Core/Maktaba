@@ -146,9 +146,12 @@ func TestStreamingCacheUnderDataDir(t *testing.T) {
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
 	var cfg config.Config
 	cfg.Server.DataDir = filepath.Join("C:", "Users", "x", "AppData", "Local", "Maktaba")
-	m := envMap(childEnvOK(RoleStreaming, cfg))
-	if want := filepath.Join(cfg.Server.DataDir, "cache", "streaming"); m["MAKTABA_CACHE_ROOT"] != want {
-		t.Fatalf("MAKTABA_CACHE_ROOT = %q, want %q", m["MAKTABA_CACHE_ROOT"], want)
+	// the TV slots encode the channels (Epic 33): they write the segments too
+	for _, role := range []Role{RoleStreaming, RoleTVSlot} {
+		m := envMap(childEnvOK(role, cfg))
+		if want := filepath.Join(cfg.Server.DataDir, "cache", "streaming"); m["MAKTABA_CACHE_ROOT"] != want {
+			t.Fatalf("%s: MAKTABA_CACHE_ROOT = %q, want %q", role, m["MAKTABA_CACHE_ROOT"], want)
+		}
 	}
 	// an operator's own (inherited with the rest of the environment) is not overridden
 	t.Setenv("MAKTABA_CACHE_ROOT", "/srv/own")
