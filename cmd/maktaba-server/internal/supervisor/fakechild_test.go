@@ -26,7 +26,8 @@ import (
 // Modes:
 //
 //	serve  - serve FAKE_ADDR: /healthz answers 200; /crash?code=N exits N;
-//	         /exit exits 0; /hang makes /healthz block (a wedged process)
+//	         /exit exits 0; /hang makes /healthz block (a wedged process);
+//	         FAKE_HEALTHZ_DELAY (a duration) makes /healthz that slow
 //	crash  - exit FAKE_CODE (default 7) at once (a crash loop)
 //	exit0  - exit 0 at once
 //	sleep  - sleep (a grandchild standing in for ffmpeg); with FAKE_PIDFILE
@@ -101,10 +102,12 @@ func fakeChild(mode string) {
 		}
 		var hung atomic.Bool
 		mux := http.NewServeMux()
+		slow, _ := time.ParseDuration(os.Getenv("FAKE_HEALTHZ_DELAY"))
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 			if hung.Load() {
 				select {} // never answer
 			}
+			time.Sleep(slow) // a busy process (a worker whose GIL a native call holds)
 			_, _ = io.WriteString(w, "ok")
 		})
 		mux.HandleFunc("/hang", func(w http.ResponseWriter, _ *http.Request) {

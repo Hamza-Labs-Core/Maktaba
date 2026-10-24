@@ -46,7 +46,7 @@ func BuildPipelineInstances(opts Options) ([]Process, error) {
 		cmd.Env = env
 		wire(cmd)
 		out = append(out, Process{Role: RolePipeline, Instance: "stt-" + strconv.Itoa(i), Cmd: cmd,
-			Probe: "http://" + logs + "/healthz"})
+			Probe: "http://" + logs + "/healthz", ProbeTimeout: PythonProbeTimeout})
 	}
 	return out, nil
 }

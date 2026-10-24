@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
 
 // syncBuffer is a goroutine-safe log sink.
@@ -102,6 +104,64 @@ func TestHangIsKilledAndRestarted(t *testing.T) {
 	if !hasEvent(snap, RoleStreaming, EventHung) {
 		t.Errorf("no %q event: %+v", EventHung, snap.Events)
 	}
+}
+
+// A hung child is asked to stop first: one that drains (exits 0) is not killed, so a
+// write it was busy with is not cut short.
+func TestHangIsAskedToStopBeforeAKill(t *testing.T) {
+	streaming, addr := fakeProc(t, RoleStreaming, "serve", "FAKE_ON_STOP=exit")
+	logs := &syncBuffer{}
+	s := New([]Process{streaming}, testPolicy(), WithLog(logs))
+	running(t, s)
+	waitFor(t, s, "running", runningPID(RoleStreaming))
+	get(t, "http://"+addr+"/hang")
+	snap := waitFor(t, s, "restart after hang", func(s Snapshot) bool { return proc(s, RoleStreaming).Restarts >= 1 })
+	st := proc(snap, RoleStreaming)
+	if st.LastExit == nil || st.LastExit.Reason != ReasonHang || st.LastExit.Signal != "" || st.LastExit.Code != 0 {
+		t.Fatalf("last exit = %+v, want a clean exit (code 0, no signal) for a hang", st.LastExit)
+	}
+	if !strings.Contains(logs.String(), "asking it to stop") || strings.Contains(logs.String(), "killing it") {
+		t.Errorf("want an ask and no kill:\n%s", logs.String())
+	}
+}
+
+// A hung child that does not stop when asked is killed after HangGrace.
+func TestHangIgnoringTheAskIsKilled(t *testing.T) {
+	old := HangGrace
+	HangGrace = 300 * time.Millisecond
+	t.Cleanup(func() { HangGrace = old })
+	streaming, addr := fakeProc(t, RoleStreaming, "serve", "FAKE_ON_STOP=hold")
+	logs := &syncBuffer{}
+	s := New([]Process{streaming}, testPolicy(), WithLog(logs))
+	running(t, s)
+	waitFor(t, s, "running", runningPID(RoleStreaming))
+	get(t, "http://"+addr+"/hang")
+	snap := waitFor(t, s, "restart after hang", func(s Snapshot) bool { return proc(s, RoleStreaming).Restarts >= 1 })
+	if st := proc(snap, RoleStreaming); st.LastExit == nil || st.LastExit.Reason != ReasonHang {
+		t.Fatalf("last exit = %+v, want reason hang", proc(snap, RoleStreaming).LastExit)
+	}
+	if !strings.Contains(logs.String(), "did not stop within") {
+		t.Errorf("no kill after the grace:\n%s", logs.String())
+	}
+}
+
+// A child's own ProbeTimeout covers a /healthz slower than the policy's timeout (a busy
+// Python worker): it is not taken for a hang. Without it, the same child is.
+func TestAProcessProbeTimeoutCoversASlowHealthz(t *testing.T) {
+	slow, _ := fakeProc(t, RoleStreaming, "serve", "FAKE_HEALTHZ_DELAY=500ms") // policy: 300ms
+	slow.ProbeTimeout = 2 * time.Second
+	s := New([]Process{slow}, testPolicy(), WithLog(&syncBuffer{}))
+	running(t, s)
+	waitFor(t, s, "running", runningPID(RoleStreaming))
+	time.Sleep(2 * time.Second)
+	if p := proc(s.Snapshot(), RoleStreaming); p.Restarts != 0 || p.State != StateRunning {
+		t.Fatalf("a slow but answering child was restarted: %+v", p)
+	}
+
+	strict, _ := fakeProc(t, RoleAPI, "serve", "FAKE_HEALTHZ_DELAY=500ms")
+	s2 := New([]Process{strict}, testPolicy(), WithLog(&syncBuffer{}))
+	running(t, s2)
+	waitFor(t, s2, "taken for a hang", func(s Snapshot) bool { return proc(s, RoleAPI).Restarts >= 1 })
 }
 
 // TC3: a crash loop backs off, then marks the child failed, and the
@@ -326,4 +386,18 @@ func countEvents(s Snapshot, role Role, kind string) int {
 		}
 	}
 	return n
+}
+
+// The pipeline's Python workers, main and transcription, get PythonProbeTimeout.
+func TestPythonWorkersGetTheLongProbeTimeout(t *testing.T) {
+	var cfg config.Config
+	cfg.Database.URL = "postgresql://local/ignored"
+	cfg.Pipeline.Instances = 1
+	if p := mainProcess(t, cfg); p.ProbeTimeout != PythonProbeTimeout {
+		t.Errorf("main worker probe timeout = %v", p.ProbeTimeout)
+	}
+	procs, err := BuildPipelineInstances(Options{Config: cfg})
+	if err != nil || len(procs) != 1 || procs[0].ProbeTimeout != PythonProbeTimeout {
+		t.Fatalf("transcription worker: %v, %+v", err, procs)
+	}
 }

@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
@@ -56,6 +57,10 @@ type Process struct {
 	Instance string
 	// OnDemand: not started until asked for (Supervisor.Want).
 	OnDemand bool
+	// ProbeTimeout, when longer than the policy's, is how long one liveness check of
+	// this child may take (the Python workers: Chroma's native calls hold the GIL,
+	// so /healthz can wait seconds behind a write without the worker being stuck).
+	ProbeTimeout time.Duration
 	// Check, when set, is the liveness check in place of an HTTP GET of Probe
 	// (postgres speaks its own protocol); Probe then only labels it.
 	Check func(ctx context.Context) error
@@ -189,8 +194,17 @@ func Build(role Role, opts Options) (Process, error) {
 	}
 	cmd.Env = env
 	wire(cmd)
-	return Process{Role: role, Cmd: cmd, Probe: ProbeURL(role, opts.Config)}, nil
+	p := Process{Role: role, Cmd: cmd, Probe: ProbeURL(role, opts.Config)}
+	if role == RolePipeline {
+		p.ProbeTimeout = PythonProbeTimeout
+	}
+	return p, nil
 }
+
+// PythonProbeTimeout bounds one liveness check of a pipeline worker: its /healthz
+// answers once the GIL is free, which a Chroma write into a large index can hold for
+// tens of seconds. A worker killed then, mid-write, leaves the search index unusable.
+const PythonProbeTimeout = 30 * time.Second
 
 // ProbeURL is the liveness endpoint the supervisor polls for a role:
 // the api and streaming admin ports' /healthz, and the pipeline's
