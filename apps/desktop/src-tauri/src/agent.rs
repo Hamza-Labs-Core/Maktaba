@@ -408,6 +408,46 @@ pub use sm::{
     open_settings as open_login_items_settings, register, status as login_item, unregister,
 };
 
+/// macOS: the server's login item is bound to the build of the app that registered it.
+/// An app signed ad hoc is identified by its code hash, so after an update or a
+/// reinstall launchd refuses to start the agent ("OS_REASON_CODESIGNING | Launch
+/// Constraint Violation", exit 78) and the window waits on a server that never starts.
+/// Registered again once per build (the stamp in <state>/state/login-item-build):
+/// true when it was.
+#[cfg(target_os = "macos")]
+pub fn register_for_this_build() -> Result<bool, String> {
+    let stamp = build_stamp().ok_or("cannot read this app's executable")?;
+    let path = state_root()
+        .ok_or("cannot find the home folder")?
+        .join("state")
+        .join("login-item-build");
+    if std::fs::read_to_string(&path).ok().as_deref() == Some(stamp.as_str()) {
+        return Ok(false);
+    }
+    // an older build's registration (or none): replaced by this build's
+    let _ = unregister();
+    register()?;
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(&path, &stamp);
+    Ok(true)
+}
+
+/// This build of the app: its executable's path, size and modification time.
+#[cfg(target_os = "macos")]
+fn build_stamp() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let meta = std::fs::metadata(&exe).ok()?;
+    let at = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    Some(format!("{}:{}:{at}", exe.display(), meta.len()))
+}
+
 // Windows: the sign-in task. Turning it on again needs no settings screen:
 // open_login_items_settings enables and runs it. Windows only: stopping the
 // server for an install (its files are in use while it runs), moving a task
@@ -474,6 +514,11 @@ fn uid() -> u32 {
 /// Pause, resume or restart the server through launchd.
 #[cfg(not(any(windows, target_os = "linux")))]
 pub fn control(action: Action) -> Result<(), String> {
+    // a login item another build registered cannot start: this build's first
+    #[cfg(target_os = "macos")]
+    if action != Action::Pause {
+        register_for_this_build()?;
+    }
     let out = Command::new("/bin/launchctl")
         .args(launchctl_args(action, uid()))
         .output()
