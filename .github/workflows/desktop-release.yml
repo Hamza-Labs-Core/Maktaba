@@ -331,6 +331,13 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          # without the Apple secrets the trio is empty, and tauri treats a set (even
+          # empty) APPLE_ID as "notarize": since the app is signed ad hoc as a bundle
+          # (payload.sh, for its login item) that failed the build ("Team ID must be at
+          # least 3 characters"). Unset, an ad-hoc signed app is not notarized.
+          for v in APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!v:-}" ] || unset "$v"
+          done
           # ARGS is a list of words (the targets, the bundles, the payload overlay)
           read -r -a words <<<"$ARGS"
           if [ "$RUNNER_OS" = Linux ]; then
