@@ -104,6 +104,11 @@ type Job struct {
 	// back (0: the defaults).
 	WatchSeconds  int `json:"watch_seconds,omitempty"`
 	HealthSeconds int `json:"health_seconds,omitempty"`
+	// AppPostgresMajor is the release's app payloads' PostgreSQL majors, from the home's
+	// verified catalog (release.json's app_postgres_major): another major than this
+	// machine's is refused in preflight, before any download (and again from the verified
+	// release.json at the stage)
+	AppPostgresMajor map[string]int `json:"app_postgres_major,omitempty"`
 }
 
 // Validate checks the job's shape.

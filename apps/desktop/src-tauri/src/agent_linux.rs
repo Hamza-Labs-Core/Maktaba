@@ -344,13 +344,16 @@ pub enum Plan {
     },
 }
 
-/// Whether a home orders this server's updates: it is a machine of a home (its node.json,
-/// in the config folder the server's unit pins), or the server's own updater (Epic 35) has
-/// run a release here (its journal in the updates folder). Then a newer payload of this app
-/// (a newer AppImage, a package upgraded) is kept, not switched to: the home's run installs
-/// that release as a new runtime, in its window and after its checks (owner decision D3).
-/// A server no home manages (no node.json, no update run yet) takes it as before.
-pub fn home_manages() -> bool {
+/// Whether an updater orders this server's updates: it is a machine of a home (its
+/// node.json, in the config folder the server's unit pins), or the server's own automatic
+/// updates are on (its public /api/cluster/self says `updates_auto`, at `web_url`). Then a
+/// newer payload of this app (a newer AppImage, a package upgraded) is kept, not switched
+/// to: the home's run installs that release as a new runtime, in its window and after its
+/// checks (owner decision D3). Otherwise (a standalone server whose automatic updates are
+/// off, an older server that does not say, one that does not answer) it is taken as before:
+/// a machine that once ran an update, or follows an apt mirror with updates off, still
+/// follows its package.
+pub fn home_manages(web_url: Option<&str>) -> bool {
     let Some(h) = home() else {
         return false;
     };
@@ -361,15 +364,14 @@ pub fn home_manages() -> bool {
         .map(PathBuf::from)
         .unwrap_or_else(|| h.join(".config"));
     let node = std::fs::read_to_string(config.join("maktaba").join("node.json")).ok();
-    let journal =
-        super::state_root().is_some_and(|r| r.join("updates").join("journal.json").is_file());
-    managed_by_home(node.as_deref(), journal)
+    let auto = web_url.and_then(crate::status::updates_auto) == Some(true);
+    managed_by_home(node.as_deref(), auto)
 }
 
-/// home_manages of what the machine holds: a node.json of a joined machine (its id and its
-/// home's address), or the server updater's journal.
-pub fn managed_by_home(node_json: Option<&str>, journal: bool) -> bool {
-    if journal {
+/// home_manages of what the machine holds and says: a node.json of a joined machine (its
+/// id and its home's address), or its own automatic updates on (`auto_updates`).
+pub fn managed_by_home(node_json: Option<&str>, auto_updates: bool) -> bool {
+    if auto_updates {
         return true;
     }
     let Some(v) = node_json.and_then(|t| serde_json::from_str::<Value>(t).ok()) else {
@@ -383,8 +385,8 @@ pub fn managed_by_home(node_json: Option<&str>, journal: bool) -> bool {
     set("/node_id") && (set("/home/url") || set("/home/api_url"))
 }
 
-/// What to do with this app's payload (`home_orders`: a home orders this server's updates,
-/// home_manages).
+/// What to do with this app's payload (`home_orders`: an updater orders this server's
+/// updates, home_manages).
 pub fn plan(st: &RuntimeStatus, home_orders: bool) -> Plan {
     if st.downgrade {
         let server = if st.watermark.is_empty() {
@@ -464,12 +466,14 @@ static RUNTIME_READY: Mutex<bool> = Mutex::new(false);
 /// newer than what the unit runs, install it and switch the unit to it (the
 /// server stops while `current` moves; a paused, stopped unit stays stopped;
 /// the supervisor's next start backs up, migrates and rebuilds the venv as
-/// the payload needs). An older app changes nothing.
-pub fn sync_runtime() -> Result<Synced, String> {
+/// the payload needs), unless an updater orders this server's updates
+/// (home_manages, asked at `web_url`: the server's own address). An older app
+/// changes nothing.
+pub fn sync_runtime(web_url: Option<&str>) -> Result<Synced, String> {
     if payload().is_none() {
         return Ok(Synced::Current); // a client-only build carries none
     }
-    sync_with(|_| {}).map_err(|e| e.message)
+    sync_with(|_| {}, web_url).map_err(|e| e.message)
 }
 
 /// Before a setup step (and the service's registration): the runtime holds
@@ -477,7 +481,8 @@ pub fn sync_runtime() -> Result<Synced, String> {
 /// first. Progress lines of the copy go to on_progress. An older app's setup
 /// stops here with `downgrade`.
 pub fn ensure_runtime(on_progress: impl FnMut(Progress)) -> Result<(), StepError> {
-    match sync_with(on_progress)? {
+    // a setup step: no server answers yet to say whether its updates are automatic
+    match sync_with(on_progress, None)? {
         Synced::Older { app, server, .. } => {
             Err(StepError::new("downgrade", older_message(&app, &server)))
         }
@@ -485,7 +490,10 @@ pub fn ensure_runtime(on_progress: impl FnMut(Progress)) -> Result<(), StepError
     }
 }
 
-fn sync_with(on_progress: impl FnMut(Progress)) -> Result<Synced, StepError> {
+fn sync_with(
+    on_progress: impl FnMut(Progress),
+    web_url: Option<&str>,
+) -> Result<Synced, StepError> {
     let mut ready = RUNTIME_READY.lock().unwrap_or_else(|e| e.into_inner());
     if *ready {
         return Ok(Synced::Current);
@@ -500,7 +508,7 @@ fn sync_with(on_progress: impl FnMut(Progress)) -> Result<Synced, StepError> {
     let st: RuntimeStatus = run_json(&["runtime", "status", "--from", &from])
         .and_then(|v| serde_json::from_value(v).map_err(|e| e.to_string()))
         .map_err(|e| StepError::new("runtime", e))?;
-    let home_orders = home_manages();
+    let home_orders = home_manages(web_url);
     if home_orders
         && st.update_pending
         && !st.version.is_empty()
@@ -508,7 +516,7 @@ fn sync_with(on_progress: impl FnMut(Progress)) -> Result<Synced, StepError> {
     {
         crate::attempts::log(&format!(
             "this app's server payload ({}) is newer than the release the server runs ({}): \
-             a home manages this server, so its update run switches to it",
+             a home, or this server's own automatic updates, switch to it",
             st.from_version, st.version
         ));
     }
@@ -962,7 +970,8 @@ mod tests {
         );
         assert!(matches!(plan(&older, true), Plan::Older { .. }));
 
-        // what tells it: a joined machine's node.json, or the server updater's journal
+        // what tells it: a joined machine's node.json, or the server's own automatic
+        // updates on; a journal of an update once run does not (it is no longer asked)
         let joined = r#"{"node_id":"n1","name":"studio","private_key":"k","home":{"url":"http://192.168.50.177:8080"}}"#;
         assert!(managed_by_home(Some(joined), false));
         let older_key = r#"{"node_id":"n1","home":{"api_url":"http://home:8080"}}"#;
@@ -976,8 +985,11 @@ mod tests {
             false
         ));
         assert!(!managed_by_home(Some("not json"), false));
+        // a standalone server: its automatic updates on keep the payload; off, not said, or
+        // no answer (all false here) take it
         assert!(!managed_by_home(None, false));
         assert!(managed_by_home(None, true));
+        assert!(managed_by_home(Some(joined), true));
     }
 
     /// The server's unit is found in $XDG_CONFIG_HOME/systemd/user, else ~/.config's.

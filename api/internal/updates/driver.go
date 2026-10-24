@@ -284,6 +284,9 @@ func (d *Driver) job(ctx context.Context, run Run, home bool) (MachineJob, error
 	if j.Tag == "" {
 		j.Tag = "v" + j.Version
 	}
+	if rel.Manifest != nil {
+		j.AppPostgresMajor = rel.Manifest.AppPostgresMajor
+	}
 	// the watch's length (tests and the end-to-end run shorten it)
 	key := "MAKTABA_UPDATE_NODE_WATCH_SECONDS"
 	if home {
@@ -1147,7 +1150,7 @@ func (d *Driver) adoptBehind(ctx context.Context, run Run, targets []Target, age
 			continue
 		}
 		s := states[n.id]
-		if d.heldBack(ctx, n.id, run.Version, ver, s.Layout) {
+		if d.heldBack(ctx, n.id, run.Version, ver, s.Layout, s.Attempts) {
 			continue
 		}
 		if err := d.Store.InsertTarget(ctx, Target{RunID: run.ID, NodeID: n.id, Name: n.name, Ord: ord,
@@ -1754,7 +1757,7 @@ func (d *Driver) catchUp(ctx context.Context) error {
 		// the release failed or was rolled back on it (by itself, or by an admin): it waits
 		// for a newer release or an admin's Retry (a part a person mends is tried again once
 		// the machine changed, or after catchUpRetry: heldBack)
-		if d.heldBack(ctx, n.id, wm, ver, s.Layout) {
+		if d.heldBack(ctx, n.id, wm, ver, s.Layout, s.Attempts) {
 			continue
 		}
 		d.mu.Lock()

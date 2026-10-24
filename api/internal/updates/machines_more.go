@@ -2,6 +2,7 @@ package updates
 
 import (
 	"context"
+	"net"
 	"strings"
 	"time"
 
@@ -46,7 +47,7 @@ func (d *Driver) clusterRelease(ctx context.Context) (string, error) {
 // download, a refusal) is tried again once the machine changed (another release running,
 // another install kind), else catchUpRetry after it (catchUpPersonRetry, a day, for one a
 // person must mend: its reason has not changed).
-func (d *Driver) heldBack(ctx context.Context, nodeID, version, curVersion, curKind string) bool {
+func (d *Driver) heldBack(ctx context.Context, nodeID, version, curVersion, curKind string, curAttempts []Attempt) bool {
 	t, ok, err := d.Store.LastTargetOf(ctx, nodeID, version)
 	if err != nil || !ok {
 		return false
@@ -64,6 +65,9 @@ func (d *Driver) heldBack(ctx context.Context, nodeID, version, curVersion, curK
 		if curVersion != "" && t.FromVersion != "" && CompareVersions(curVersion, t.FromVersion) != 0 {
 			return false
 		}
+		if reasonChanged(t, curAttempts) {
+			return false // the machine says something else since (its own newer attempt)
+		}
 		wait := catchUpRetry
 		if t.State == TargetNeedsPerson {
 			wait = catchUpPersonRetry
@@ -71,6 +75,22 @@ func (d *Driver) heldBack(ctx context.Context, nodeID, version, curVersion, curK
 		return t.UpdatedAt != nil && d.now().Sub(*t.UpdatedAt) < wait
 	}
 	return false
+}
+
+// reasonChanged reports whether a machine's own newest attempt, made after its held part
+// (t), gives another reason than that part's: what held it may be mended (a permission
+// given, a folder unlocked), so it is caught up at once rather than after the wait.
+func reasonChanged(t Target, attempts []Attempt) bool {
+	if len(attempts) == 0 || t.UpdatedAt == nil {
+		return false
+	}
+	newest := attempts[0]
+	for _, a := range attempts[1:] {
+		if a.At.After(newest.At) {
+			newest = a
+		}
+	}
+	return newest.At.After(*t.UpdatedAt) && newest.Code != readErr(t.Error).Code
 }
 
 // schemaPaused reports whether rel's schema pauses a machine on version: rel names a
@@ -139,14 +159,24 @@ type nodeHoster interface {
 	NodeHosts() map[string][]string
 }
 
-// sameHost reports whether two host names name one machine: equal (case aside), or equal
-// before their first dot (a Mac's "Studio.local" and "Studio").
+// sameHost reports whether two host names name one machine: equal (case aside), or one
+// a bare name and the other that name with a domain (a Mac's "Studio.local" and "Studio").
+// Two names that both have a domain must be equal ("localhost.lan" is not
+// "localhost.localdomain"), and an address is never shortened ("10.0.0.5" is not
+// "10.0.0.7").
 func sameHost(a, b string) bool {
 	if a == "" || b == "" {
 		return false
 	}
 	if strings.EqualFold(a, b) {
 		return true
+	}
+	if net.ParseIP(a) != nil || net.ParseIP(b) != nil {
+		return false
+	}
+	da, db := strings.Contains(a, "."), strings.Contains(b, ".")
+	if da == db {
+		return false // both bare (and not equal), or both with a domain (and not equal)
 	}
 	sa, _, _ := strings.Cut(a, ".")
 	sb, _, _ := strings.Cut(b, ".")

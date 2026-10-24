@@ -46,6 +46,10 @@ type Manifest struct {
 	// time: not release.json's (the catalog writes it at the verification), the time the
 	// machines' "never go back" rule compares
 	SignedAt time.Time `json:"signed_at,omitzero"`
+	// AppPostgresMajor is each app payload's bundled PostgreSQL major (release.json's,
+	// absent before): the machines' jobs carry it, so one whose database another major
+	// made refuses the release before it downloads anything
+	AppPostgresMajor map[string]int `json:"app_postgres_major,omitempty"`
 }
 
 // ReleaseFiles are the three small signed files of a release, as downloaded.

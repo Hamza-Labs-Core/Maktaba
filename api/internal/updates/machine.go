@@ -26,6 +26,9 @@ type MachineJob struct {
 	BackupsKeep   int               `json:"backups_keep,omitempty"`
 	WatchSeconds  int               `json:"watch_seconds,omitempty"`
 	HealthSeconds int               `json:"health_seconds,omitempty"`
+	// AppPostgresMajor is the release's app payloads' PostgreSQL majors (its verified
+	// release.json's): a machine refuses another major than its own before downloading
+	AppPostgresMajor map[string]int `json:"app_postgres_major,omitempty"`
 }
 
 // MachineStep is one step of a machine's run.

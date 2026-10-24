@@ -467,7 +467,8 @@ func TestBootLoopGuardFallsBack(t *testing.T) {
 }
 
 func TestPendingTimeoutFallsBack(t *testing.T) {
-	t.Parallel()
+	// not parallel: it runs alone, before the parallel tests start their processes, so a
+	// loaded machine (a scanner reading every new copy at once on Windows) does not stretch it
 	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "run"}, "1.0.0")
 	if err := l.Switch("2.0.0", "run-1", time.Now()); err != nil {
@@ -507,7 +508,8 @@ func TestPendingTimeoutFallsBack(t *testing.T) {
 }
 
 func TestConfirmedPendingStays(t *testing.T) {
-	t.Parallel()
+	// not parallel: it runs alone, before the parallel tests start their processes, so a
+	// loaded machine (a scanner reading every new copy at once on Windows) does not stretch it
 	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "crash,confirm-run"}, "1.0.0")
 	if err := l.Switch("2.0.0", "run-1", time.Now()); err != nil {

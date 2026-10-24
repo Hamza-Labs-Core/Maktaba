@@ -162,6 +162,11 @@ func (ai *AppInstaller) Preflight(ctx context.Context, j *Journal) error {
 	if err := checkRoom(ai.updatesDir(), roomRelease); err != nil {
 		return err
 	}
+	// a release whose PostgreSQL would not open this machine's database: refused before
+	// anything is downloaded (the job carries the release's word)
+	if err := jobPGMajorChange(payloadAt(ai.Payload), j.Job.AppPostgresMajor, j.Job.Version); err != nil {
+		return err
+	}
 	if ai.holds(j) {
 		return nil // the app holds the release: nothing to fetch for it
 	}

@@ -140,18 +140,23 @@ func TestRuntimeSwitchStopsPythonForAnotherMinor(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(root, name, "payload.json"),
 			[]byte(`{"schema":1,"version":"x","python":{"version":"`+py+`"},"postgres":{"version":"16.15.0"}}`), 0o644)
 	}
-	stops := 0
+	stops, starts := 0, 0
 	ri := &RuntimeInstaller{Runtime: appruntime.New(root), LauncherRoot: t.TempDir(),
-		StopPython: func(context.Context) error { stops++; return nil }}
+		StopPython:  func(context.Context) error { stops++; return nil },
+		StartPython: func(context.Context) error { starts++; return nil }}
 	j := &Journal{Job: Job{RunID: "run-1", Version: "1.5.0"}, FromRef: "r-1.4.0", Staged: "r-1.5.0"}
 	_ = ri.Switch(context.Background(), j) // the directories are no installed runtimes: Point refuses them
 	if stops != 1 {
 		t.Fatalf("a Python minor change: %d stops", stops)
 	}
+	// the switch went no further (Point refused): the pipeline is back on
+	if starts != 1 {
+		t.Fatalf("the pipeline not turned back on after a failed switch: %d starts", starts)
+	}
 	j.Staged = "r-1.5.1"
 	_ = ri.Switch(context.Background(), j)
-	if stops != 1 {
-		t.Fatalf("the same minor stopped the pipeline: %d stops", stops)
+	if stops != 1 || starts != 1 {
+		t.Fatalf("the same minor stopped or started the pipeline: %d stops, %d starts", stops, starts)
 	}
 }
 
@@ -180,5 +185,23 @@ func TestAppPGMajorChange(t *testing.T) {
 	}
 	if err := appPGMajorChange(have, nil, "0.4.0"); err != nil {
 		t.Fatalf("no result: %v", err)
+	}
+}
+
+// The job carries the release's app PostgreSQL majors (the home's verified catalog): a
+// preflight refuses another major than the running payload's before any download.
+func TestJobPGMajorChange(t *testing.T) {
+	var have apppayload.Payload
+	have.Postgres.Version = "16.15.0"
+	err := jobPGMajorChange(have, map[string]int{appPayloadKind(): 17}, "0.4.0")
+	var f *Failure
+	if !errors.As(err, &f) || f.Code != "pg_major_change" {
+		t.Fatalf("another major: %v", err)
+	}
+	if err := jobPGMajorChange(have, map[string]int{appPayloadKind(): 16}, "0.4.0"); err != nil {
+		t.Fatalf("the same major: %v", err)
+	}
+	if err := jobPGMajorChange(have, nil, "0.4.0"); err != nil {
+		t.Fatalf("a job that does not say: %v", err)
 	}
 }

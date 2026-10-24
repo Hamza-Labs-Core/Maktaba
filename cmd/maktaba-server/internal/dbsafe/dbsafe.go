@@ -544,17 +544,19 @@ var havePSQL = func(psql string) bool {
 // written to disk (a plain script is several times the dump's size, which the space check
 // does not count). psql commits only at the end of its input: its input is closed once
 // pg_restore wrote the whole script; a pg_restore that fails part way (a cut dump) ends
-// psql before that, so the server rolls the transaction back.
+// psql before that, so the server rolls the transaction back. A psql that stops first (an
+// SQL error, ON_ERROR_STOP) stops pg_restore too (it would write into a pipe nobody reads
+// for ever), and its own words are the error.
 func (t Target) restoreAtomic(ctx context.Context, dump string, log io.Writer) error {
-	gen := exec.CommandContext(ctx, t.bin("pg_restore"), "--no-owner", "--no-publications", "--file=-", dump)
+	pctx, kill := context.WithCancel(ctx)
+	defer kill()
+	gen := exec.CommandContext(pctx, t.bin("pg_restore"), "--no-owner", "--no-publications", "--file=-", dump)
 	script, err := gen.StdoutPipe()
 	if err != nil {
 		return err
 	}
 	var genErr bytes.Buffer
 	gen.Stderr = &genErr
-	pctx, kill := context.WithCancel(ctx)
-	defer kill()
 	cmd, err := t.command(pctx, "psql", "", "--no-psqlrc", "--quiet", "--set=ON_ERROR_STOP=1", "--single-transaction",
 		"--command=DROP SCHEMA public CASCADE; CREATE SCHEMA public;", "--file=-")
 	if err != nil {
@@ -576,13 +578,21 @@ func (t Target) restoreAtomic(ctx context.Context, dump string, log io.Writer) e
 		return fmt.Errorf("pg_restore: %w", err)
 	}
 	_, copyErr := io.Copy(in, script)
-	if err := gen.Wait(); err != nil || copyErr != nil {
+	if copyErr != nil {
+		// psql stopped reading (its own error says why, its transaction rolled back): stop
+		// pg_restore, which would wait on the pipe for ever, then say what psql said
+		kill()
+		_ = gen.Wait()
+		werr := cmd.Wait()
+		if werr == nil {
+			werr = copyErr
+		}
+		return fmt.Errorf("restore %s (nothing changed: one transaction): psql stopped: %v: %s", dump, werr, tail(out.Bytes()))
+	}
+	if err := gen.Wait(); err != nil {
 		// the script is not whole: psql ends before its input does, with no commit
 		kill()
 		_ = cmd.Wait()
-		if err == nil {
-			err = copyErr
-		}
 		return fmt.Errorf("pg_restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(genErr.Bytes()))
 	}
 	_ = in.Close() // the whole script: psql commits at its end

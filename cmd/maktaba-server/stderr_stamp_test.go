@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
@@ -26,13 +27,13 @@ func TestStampStderr(t *testing.T) {
 	defer func() { os.Stderr = saved }()
 
 	stop := stampStderr()
-	if supervisor.ChildStderr != f {
-		t.Fatal("the roles do not keep serve's stderr")
+	if supervisor.ChildStderr != f || pgbundle.ChildOutput != f {
+		t.Fatal("the roles and the Postgres programs do not keep serve's stderr")
 	}
 	fmt.Fprintf(os.Stderr, "[serve] dumping the database before 0.3.2's migrations\n")
 	fmt.Fprintf(os.Stderr, "[update] the last line, without its newline")
 	stop()
-	if os.Stderr != f || supervisor.ChildStderr != nil {
+	if os.Stderr != f || supervisor.ChildStderr != nil || pgbundle.ChildOutput != nil {
 		t.Fatal("stderr not put back")
 	}
 	b, _ := os.ReadFile(out)

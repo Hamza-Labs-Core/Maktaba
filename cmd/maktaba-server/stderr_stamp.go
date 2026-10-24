@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
@@ -15,7 +16,8 @@ import (
 // with their time, RFC 3339 UTC, the way the app's agent writes server.log's: the logs page
 // and the bundle place them in an update's window (internal/logfiles), where a line with
 // no time could only take the one before it. The supervised roles keep the stderr serve
-// was given (supervisor.ChildStderr): their lines carry their own times. stop puts it back
+// was given (supervisor.ChildStderr), as do the Postgres programs pgbundle runs
+// (pgbundle.ChildOutput): their lines carry their own times. stop puts it back
 // once every line written so far is out (it runs before serve returns or exits).
 func stampStderr() (stop func()) {
 	orig := os.Stderr
@@ -24,6 +26,7 @@ func stampStderr() (stop func()) {
 		return func() {}
 	}
 	supervisor.ChildStderr = orig
+	pgbundle.ChildOutput = orig
 	os.Stderr = w
 	done := make(chan struct{})
 	go func() {
@@ -44,6 +47,7 @@ func stampStderr() (stop func()) {
 		once.Do(func() {
 			os.Stderr = orig
 			supervisor.ChildStderr = nil
+			pgbundle.ChildOutput = nil
 			_ = w.Close()
 			select {
 			case <-done:

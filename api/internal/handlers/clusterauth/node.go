@@ -53,6 +53,10 @@ type SelfInfo struct {
 	// MachinesDB are the home's machines that say they cannot log in to its database (the
 	// home re-makes their access): an update's watch waits for them to follow it.
 	MachinesDB []SelfMachineDB `json:"machines_db,omitempty"`
+	// UpdatesAuto is whether the home installs releases by itself (rules.updates
+	// auto_install as this build applies it; absent on a node): the Linux app leaves a
+	// newer payload to the home's run when it does.
+	UpdatesAuto *bool `json:"updates_auto,omitempty"`
 }
 
 // SelfMachineDB is a machine that cannot log in to its home's database.

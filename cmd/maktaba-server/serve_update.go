@@ -109,6 +109,26 @@ func (u *updates) stopPython(ctx context.Context) error {
 	}
 }
 
+// startPython turns every pipeline process back on (a runtime switch that went no further
+// after stopPython: the release before runs on, its pipeline with it).
+func (u *updates) startPython(_ context.Context) error {
+	u.mu.Lock()
+	snap, want := u.snap, u.want
+	u.mu.Unlock()
+	if snap == nil || want == nil {
+		return nil
+	}
+	var first error
+	for _, p := range snap().Processes {
+		if p.Role == supervisor.RolePipeline {
+			if err := want(p.Role, p.Instance, true); err != nil && first == nil {
+				first = err
+			}
+		}
+	}
+	return first
+}
+
 // installKind picks this server's installer (install-kinds.md): the desktop app's
 // bundle, the Linux runtime copy, the side-by-side layout, or a flat install that
 // cannot update itself.
@@ -322,7 +342,8 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	inst, dir := installKind(cfg, releaseDir, home, src)
 	u := &updates{}
 	if ri, ok := inst.(*updater.RuntimeInstaller); ok {
-		ri.StopPython = u.stopPython // a runtime of another Python minor: the pipeline stops first
+		ri.StopPython = u.stopPython   // a runtime of another Python minor: the pipeline stops first
+		ri.StartPython = u.startPython // and starts again when the switch goes no further
 	}
 	m := &updater.Machine{Dir: dir, Installer: inst, Exit: exit, Log: os.Stderr}
 	if home {

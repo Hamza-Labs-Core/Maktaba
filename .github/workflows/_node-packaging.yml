@@ -151,7 +151,7 @@ jobs:
           shellcheck -x deploy/packaging/install.sh deploy/packaging/tests/install-sh-verify.sh \
             deploy/packaging/tests/install-sh-systemd.sh deploy/packaging/scripts/postinstall.sh \
             deploy/packaging/scripts/preremove.sh tools/release/tag-guard.sh tools/release/release-assets.sh \
-            tools/release/trusted-root-age.sh tools/release/tag-guard-test.sh
+            tools/release/trusted-root-age.sh tools/release/tag-guard-test.sh tools/release/release-assets-test.sh
       - name: install-node.sh dry runs
         run: deploy/packaging/node/tests/install-node-dry-run.sh
       # The home-server install.sh refuses a release missing checksums.txt,
@@ -172,6 +172,9 @@ jobs:
       - name: tag guard
         if: runner.os == 'Linux'
         run: bash tools/release/tag-guard-test.sh
+      - name: release assets adopt (a bundle and its signature together)
+        if: runner.os == 'Linux'
+        run: bash tools/release/release-assets-test.sh
 
   install-linux:
     name: install from the archive (linux, --system)

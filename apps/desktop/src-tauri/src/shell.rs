@@ -1725,7 +1725,13 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             // Some(older) once the runtime is known to hold this app's payload
             // (or a newer one); None when that could not be told, and then the
             // autostart entry is left as it is
-            let known: Option<bool> = match linux::sync_runtime() {
+            // the server's own address: whether its automatic updates are on (an updater
+            // then switches it to a newer payload, not this app)
+            let web_url = match sh.mode() {
+                Some(AppMode::Server { web_url, .. }) => Some(web_url),
+                _ => None,
+            };
+            let known: Option<bool> = match linux::sync_runtime(web_url.as_deref()) {
                 Ok(Synced::Switched) => {
                     sh.restart_grace();
                     Some(false)

@@ -438,3 +438,51 @@ func TestHomeCommitRecordsTheBackup(t *testing.T) {
 		t.Fatalf("backup %s (%v)", run.Backup, err)
 	}
 }
+
+// A host is the same machine only by its full name, or a bare name against that name with a
+// domain; addresses and two names with domains are never shortened.
+func TestSameHost(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want bool
+	}{
+		{"Studio.local", "studio", true},
+		{"studio", "Studio.local", true},
+		{"studio.local", "STUDIO.LOCAL", true},
+		{"10.0.0.5", "10.0.0.7", false},
+		{"10.0.0.5", "10.0.0.5", true},
+		{"localhost.localdomain", "localhost.lan", false},
+		{"studio", "attic", false},
+		{"", "studio", false},
+		{"fe80::1", "fe80::2", false},
+	} {
+		if got := sameHost(c.a, c.b); got != c.want {
+			t.Errorf("sameHost(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+}
+
+// A held part a person mends is tried again at once when the machine's own newer attempt
+// gives another reason; the same reason, or an attempt from before the part, waits.
+func TestReasonChangedCatchesUpAtOnce(t *testing.T) {
+	held := time.Date(2026, 10, 24, 10, 0, 0, 0, time.UTC)
+	tg := Target{State: TargetNeedsPerson, UpdatedAt: &held, Error: json.RawMessage(`{"code":"app_management"}`)}
+	at := func(minutes int, code string) Attempt {
+		return Attempt{At: held.Add(time.Duration(minutes) * time.Minute), Code: code}
+	}
+	for _, c := range []struct {
+		attempts []Attempt
+		want     bool
+	}{
+		{[]Attempt{at(30, "local_build")}, true},
+		{[]Attempt{at(30, "")}, true},
+		{[]Attempt{at(30, "app_management")}, false},
+		{[]Attempt{at(-30, "local_build")}, false},
+		{nil, false},
+		{[]Attempt{at(-5, "app_management"), at(40, "translocated")}, true},
+	} {
+		if got := reasonChanged(tg, c.attempts); got != c.want {
+			t.Errorf("%+v: %v, want %v", c.attempts, got, c.want)
+		}
+	}
+}

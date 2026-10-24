@@ -44,6 +44,10 @@ type RuntimeInstaller struct {
 	// moves to a runtime of another Python minor: they would load the new runtime's files
 	// by path while they drain (nil: nothing stopped).
 	StopPython func(ctx context.Context) error
+	// StartPython turns the Python processes back on when the switch goes no further after
+	// StopPython (the guard or the pointer could not be written): the release before keeps
+	// running, its pipeline with it (nil: nothing to turn on).
+	StartPython func(ctx context.Context) error
 
 	nudge nudger
 }
@@ -87,7 +91,7 @@ func (ri *RuntimeInstaller) Kind() string { return "runtime" }
 func (ri *RuntimeInstaller) Running() string { return layout.NormalizeVersion(ri.Version) }
 
 // Preflight implements Installer.
-func (ri *RuntimeInstaller) Preflight(_ context.Context, _ *Journal) error {
+func (ri *RuntimeInstaller) Preflight(_ context.Context, j *Journal) error {
 	cur, err := ri.Runtime.Current()
 	if err != nil || cur == "" {
 		return Fail("no_runtime", "%s has no current runtime (%v)", ri.Runtime.Root, err)
@@ -103,7 +107,9 @@ func (ri *RuntimeInstaller) Preflight(_ context.Context, _ *Journal) error {
 	if ri.LauncherRoot == "" {
 		return Fail("old_launcher", "the launcher that runs this server is from before automatic updates: it updates once by hand")
 	}
-	return nil
+	// a release whose PostgreSQL would not open this machine's database: refused before
+	// anything is downloaded (the job carries the release's word)
+	return jobPGMajorChange(ri.payloadOf(""), j.Job.AppPostgresMajor, j.Job.Version)
 }
 
 // Stage implements Installer: the payload tarball, verified against the signed
@@ -236,6 +242,19 @@ func appPayloadKind() string {
 	return "linux-app"
 }
 
+// jobPGMajorChange is pgMajorChange from the job's word (the home's verified catalog:
+// release.json's app_postgres_major for this platform's app payload), in preflight,
+// before anything is downloaded. A job that does not say decides nothing.
+func jobPGMajorChange(have apppayload.Payload, majors map[string]int, version string) error {
+	want := majors[appPayloadKind()]
+	if want == 0 {
+		return nil
+	}
+	var p apppayload.Payload
+	p.Postgres.Version = strconv.Itoa(want)
+	return pgMajorChange(have, p, version)
+}
+
 // appPGMajorChange is pgMajorChange for an app bundle, before the app installs it: the
 // running payload's Postgres against the one the release's signed release.json says this
 // platform's app bundles (pg_major_change, a person's). A release that does not say, or a
@@ -266,10 +285,19 @@ func pythonMinor(v string) string {
 // When the new runtime's Python is another minor, the Python processes stop first (they
 // would load the new runtime's files by path while they drain).
 func (ri *RuntimeInstaller) Switch(ctx context.Context, j *Journal) error {
+	stopped := false
+	// the pipeline back on when the switch goes no further (the release before runs on)
+	backOn := func() {
+		if stopped && ri.StartPython != nil {
+			_ = ri.StartPython(context.Background())
+		}
+	}
 	if ri.StopPython != nil {
 		have, want := pythonMinor(ri.payloadOf(j.FromRef).Python.Version), pythonMinor(ri.payloadOf(j.Staged).Python.Version)
 		if have != "" && want != "" && have != want {
+			stopped = true // even a stop that failed may have stopped some
 			if err := ri.StopPython(ctx); err != nil {
+				backOn()
 				return Fail("switch_failed", "stopping the pipeline before its Python changes (%s to %s): %v", have, want, err)
 			}
 		}
@@ -277,10 +305,12 @@ func (ri *RuntimeInstaller) Switch(ctx context.Context, j *Journal) error {
 	if err := layout.WriteGuard(ri.LauncherRoot, layout.Guard{Version: layout.NormalizeVersion(j.Job.Version),
 		RunID: j.Job.RunID, Since: ri.now().UTC(), Deadline: guardDeadline(ri.now(), j).UTC(),
 		PreviousRuntime: j.FromRef, Record: ri.Record}); err != nil {
+		backOn()
 		return Fail("switch_failed", "%v", err)
 	}
 	if _, err := ri.Runtime.Point(ctx, j.Staged, appruntime.Options{}); err != nil {
 		_ = layout.ClearGuard(ri.LauncherRoot)
+		backOn()
 		return Fail("switch_failed", "%v", err)
 	}
 	return nil

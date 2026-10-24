@@ -187,8 +187,10 @@ or client), `sfltool dumpbtm` (the login items macOS knows),
   start (`installer_not_finished`); an unattended home's server is started again on the release
   it had once the installer is gone (15 minutes at the soonest, 2 hours at most), and the home's
   run is told at once. The installer removes the old payload only when the server stopped.
-- **On Linux**, an app whose server a home manages (a node, or a server the home's run updated)
-  never switches the server to its own newer payload: the home orders it.
+- **On Linux**, an app whose server an updater will order never switches the server to its own
+  newer payload (a newer AppImage, an apt upgrade): a node's home orders it, and so does a home
+  whose automatic updates are on (its `/api/cluster/self` says `updates_auto`). A standalone
+  server with automatic updates off takes the app's newer payload as before.
 - **A release becomes latest** only once every desktop platform is in its verified update feed
   (`updater-feed --require desktop`, each signature checked against the public key): a release
   missing one is published but not offered as latest.

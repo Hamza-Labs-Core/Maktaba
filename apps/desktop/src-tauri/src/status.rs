@@ -401,6 +401,27 @@ pub fn server_version(web_url: &str) -> Option<String> {
     version_of_response(&raw)
 }
 
+/// Whether the local server's own automatic updates are on (its public /api/cluster/self's
+/// `updates_auto`), at its web address on this machine; None when it does not say (an older
+/// server, a node) or does not answer.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn updates_auto(web_url: &str) -> Option<bool> {
+    let raw = get_loopback(&addr_of(web_url)?, "/api/cluster/self")?;
+    updates_auto_of_response(&raw)
+}
+
+/// `updates_auto` in a raw HTTP/1.x response carrying /api/cluster/self's JSON.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn updates_auto_of_response(raw: &[u8]) -> Option<bool> {
+    let text = std::str::from_utf8(raw).ok()?;
+    let (head, body) = text.split_once("\r\n\r\n")?;
+    if head.lines().next()?.split_whitespace().nth(1)? != "200" {
+        return None;
+    }
+    let v: Value = serde_json::from_str(body).ok()?;
+    v.get("updates_auto")?.as_bool()
+}
+
 /// The version in a raw HTTP/1.x response carrying /api/system/version's JSON.
 pub fn version_of_response(raw: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(raw).ok()?;
@@ -1163,5 +1184,32 @@ mod tests {
             None
         );
         assert_eq!(server_version("http://10.255.255.1:8080"), None);
+    }
+
+    /// Whether the local server's own automatic updates are on: its /api/cluster/self says,
+    /// or nothing is known (an older server, a node, an error, no answer).
+    #[test]
+    fn whether_the_servers_updates_are_automatic() {
+        assert_eq!(
+            updates_auto_of_response(
+                b"HTTP/1.1 200 OK\r\n\r\n{\"role\":\"home\",\"updates_auto\":true}"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            updates_auto_of_response(
+                b"HTTP/1.1 200 OK\r\n\r\n{\"role\":\"home\",\"updates_auto\":false}"
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            updates_auto_of_response(b"HTTP/1.1 200 OK\r\n\r\n{\"role\":\"home\"}"),
+            None
+        );
+        assert_eq!(
+            updates_auto_of_response(b"HTTP/1.1 500 Oops\r\n\r\n{\"updates_auto\":true}"),
+            None
+        );
+        assert_eq!(updates_auto("http://10.255.255.1:8080"), None);
     }
 }

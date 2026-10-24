@@ -7,9 +7,10 @@
 #   release-assets.sh upload  TAG [--replace NAME]... FILE...
 #   release-assets.sh publish TAG              publish the draft once complete; mark the latest
 #   release-assets.sh adopt   TAG DIR          a published release: each file of DIR it has is
-#                                              replaced by the published one (desktop's feed is
-#                                              then written from the bundles and signatures apps
-#                                              download, never from a re-run's own build of them)
+#                                              replaced by the published one, a bundle and its
+#                                              .sig only as a pair (desktop's feed is then written
+#                                              from the bundles and signatures apps download,
+#                                              never from a re-run's own build of them)
 #
 # A release is public only when it is complete (H2/B2: a home that looked at a release
 # before its release.json existed never verified it again):
@@ -173,9 +174,12 @@ publish() {
 # adopt DIR: a published release's own copy of each file of DIR it has (a re-run of a
 # published tag rebuilds the bundles, whose signatures differ: a feed written from them would
 # name signatures the published bundles do not have, and every app's update would fail its
-# check). A draft's files are this run's (nothing public yet).
+# check). A bundle and its signature (NAME and NAME.sig) go together: both published, both are
+# taken; neither, this run's stay (a leg the release never had); one without the other (a leg
+# cut between its two uploads) is refused, since a feed must never pair a published bundle with
+# another build's signature. A draft's files are this run's (nothing public yet).
 adopt() {
-    local dir="${1:?DIR}" id names f base tmp
+    local dir="${1:?DIR}" id names f base sig tmp
     id="$(release_id)"
     [ -n "${id}" ] || return 0
     if is_draft "${id}"; then
@@ -183,19 +187,57 @@ adopt() {
     fi
     names="$(asset_names "${id}")"
     tmp="$(mktemp -d)"
+    published() { grep -qxF "$1" <<<"${names}"; }
+    # fetch NAME: the published copy, into tmp
+    fetch() {
+        gh release download "${tag}" --pattern "$1" --dir "${tmp}" --clobber
+        [ -f "${tmp}/$1" ] || { echo "::error::${tag}: $1 is listed but could not be downloaded" >&2; exit 1; }
+    }
+    # take NAME: the fetched copy replaces this run's
+    take() {
+        if cmp -s "${tmp}/$1" "${dir}/$1"; then
+            rm -f "${tmp}/$1"
+        else
+            echo "release ${tag} is published: its $1 is kept (this run built another)"
+            mv -f "${tmp}/$1" "${dir}/$1"
+        fi
+    }
     for f in "${dir}"/*; do
         [ -f "${f}" ] || continue
         base="$(basename "${f}")"
-        [ "${base}" != latest.json ] || continue
-        grep -qxF "${base}" <<<"${names}" || continue
-        gh release download "${tag}" --pattern "${base}" --dir "${tmp}" --clobber
-        [ -f "${tmp}/${base}" ] || { echo "::error::${tag}: ${base} is listed but could not be downloaded" >&2; exit 1; }
-        if cmp -s "${tmp}/${base}" "${f}"; then
-            rm -f "${tmp}/${base}"
-        else
-            echo "release ${tag} is published: its ${base} is kept (this run built another)"
-            mv -f "${tmp}/${base}" "${f}"
+        case "${base}" in latest.json) continue ;; esac
+        case "${base}" in
+            *.sig)
+                # a signature whose bundle is here goes with it (below); one alone, as before
+                [ -f "${dir}/${base%.sig}" ] && continue
+                published "${base}" || continue
+                fetch "${base}"
+                take "${base}"
+                continue
+                ;;
+        esac
+        sig="${base}.sig"
+        if [ -f "${dir}/${sig}" ] || published "${sig}"; then
+            if published "${base}" && published "${sig}"; then
+                # both downloaded before either replaces this run's: never half a pair
+                fetch "${base}"
+                fetch "${sig}"
+                take "${base}"
+                take "${sig}"
+            elif published "${base}" || published "${sig}"; then
+                local has="${base}" lacks="${sig}"
+                published "${base}" || { has="${sig}"; lacks="${base}"; }
+                echo "::error::release ${tag} is published with ${has} but not ${lacks}: a bundle and its" \
+                    "signature are adopted together or not at all (upload the missing one from the same build," \
+                    "or delete the other, then run again)" >&2
+                rm -rf "${tmp}"
+                exit 1
+            fi
+            continue
         fi
+        published "${base}" || continue
+        fetch "${base}"
+        take "${base}"
     done
     rm -rf "${tmp}"
 }

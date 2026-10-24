@@ -667,6 +667,29 @@ describe("Admin Updates: the last update attempt", () => {
     expect(screen.queryByTestId("updates-machine-home-attempt-fix")).toBeNull();
   });
 
+  it("a run that failed before its release ran (at stage) is history once the machine runs it", async () => {
+    const ov = withAttempts([
+      attempt({
+        source: "run",
+        trigger: "run",
+        step: "stage",
+        code: "download_failed",
+        run_id: "run-9",
+      }),
+    ]);
+    ov.machines = (ov.machines as Record<string, unknown>[]).map((m) =>
+      m.id === "home" ? { ...m, version: "1.5.0" } : m
+    );
+    routes(ov, null);
+    renderPage();
+    expect(
+      await screen.findByTestId("updates-machine-home-attempt-superseded")
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("updates-machine-home-attempt-headline")).not.toHaveClass(
+      "mkt-error"
+    );
+  });
+
   it("a failure at the release it runs, after it ran (the pipeline's environment), still holds", async () => {
     const ov = withAttempts([
       attempt({ source: "server", trigger: "start", step: "venv", code: "venv_failed" }),

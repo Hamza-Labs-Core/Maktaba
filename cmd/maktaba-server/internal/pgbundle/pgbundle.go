@@ -369,7 +369,7 @@ func (b Bundle) initdb(ctx context.Context, superPW string, log io.Writer) error
 	fmt.Fprintf(log, "[postgres] creating the database cluster in %s\n", b.Data)
 	cmd := exec.CommandContext(ctx, b.Bin("initdb"), "-D", tmp, "-U", SuperUser, "--pwfile="+pwfile.Name(),
 		"--auth=scram-sha-256", "--encoding=UTF8", "--locale=C")
-	cmd.Stdout, cmd.Stderr = log, log
+	cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)
 	if err := cmd.Run(); err != nil {
 		_ = os.RemoveAll(tmp)
 		return fmt.Errorf("bundled postgres: initdb %s: %w", b.Data, err)
@@ -410,7 +410,7 @@ func (b Bundle) bootstrap(ctx context.Context, superPW, sql string, log io.Write
 			"-U", SuperUser, "-d", "postgres")
 		psql.Env = append(os.Environ(), "PGPASSWORD="+superPW)
 		psql.Stdin = strings.NewReader(sql)
-		psql.Stdout, psql.Stderr = log, log
+		psql.Stdout, psql.Stderr = childLog(log), childLog(log)
 		return psql.Run()
 	})
 }
@@ -422,7 +422,7 @@ func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) 
 	if err != nil {
 		return err
 	}
-	srv.Stdout, srv.Stderr = log, log
+	srv.Stdout, srv.Stderr = childLog(log), childLog(log)
 	if err := srv.Start(); err != nil {
 		return err
 	}

@@ -267,8 +267,12 @@ jobs:
       !contains(github.ref, '-') && vars.RELAY_DEPLOY == 'true' &&
       needs.lint.result == 'success' && needs.test.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-22.04
-    # the release is published once release.yml and the desktop apps are in (about 90 min)
+    # the release is published once release.yml and the desktop apps are in (about 90 min);
+    # a tag the guard refused, or whose release.yml failed, is told at once, not waited for
     timeout-minutes: 240
+    permissions:
+      contents: read
+      actions: read # release.yml's run for the tag: its guard's outcome and its own
     outputs:
       deploy: ${{ steps.gate.outputs.deploy }}
     steps:
@@ -286,10 +290,37 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          # release.yml's newest run for this tag: "<id> <status> <conclusion>" ("" while none)
+          release_run() {
+            gh run list --repo "${GITHUB_REPOSITORY}" --workflow release.yml --event push --limit 50 \
+              --json databaseId,headBranch,status,conclusion \
+              --jq "[.[] | select(.headBranch == \"${TAG}\")][0] // empty | \"\(.databaseId) \(.status) \(.conclusion)\"" \
+              2>/dev/null || true
+          }
+          started="$(date +%s)"
+          draft=missing
           for _ in $(seq 1 220); do
             draft="$(gh release view "${TAG}" --json isDraft --jq .isDraft 2>/dev/null || echo missing)"
             if [ "${draft}" = false ]; then
               break
+            fi
+            run="" status="" conclusion=""
+            read -r run status conclusion <<<"$(release_run)" || true
+            if [ -n "${run}" ]; then
+              guard="$(gh run view "${run}" --repo "${GITHUB_REPOSITORY}" --json jobs \
+                --jq '.jobs[] | select(.name | startswith("guard")) | .conclusion' 2>/dev/null | head -1 || true)"
+              if [ "${guard}" = failure ]; then
+                echo "::error::the tag guard refused ${TAG} (release.yml run ${run}): it is never published; nothing deployed"
+                exit 1
+              fi
+              if [ "${status}" = completed ] && [ "${conclusion}" != success ]; then
+                echo "::error::release.yml's run ${run} for ${TAG} ended ${conclusion}: the release is not published unless it is run again; nothing deployed (run this job again once it is)"
+                exit 1
+              fi
+            fi
+            if [ "${draft}" = missing ] && [ $(( $(date +%s) - started )) -ge 600 ]; then
+              echo "::error::no draft or release for ${TAG} after 10 minutes (the tag guard opens one: it refused the tag, or release.yml never ran); nothing deployed"
+              exit 1
             fi
             echo "release ${TAG}: not published yet (${draft})"
             sleep 60

@@ -151,8 +151,22 @@ func (q query) get(k string) string { return q[k] }
 // UTC time; a time with no zone is local time; an offset is honoured; a stamped JSON record
 // keeps its own time.
 func TestReadStampedAndZonedLines(t *testing.T) {
+	// whatever this machine's zone (a zone-less time is read as local): run under several
+	for _, zone := range []*time.Location{time.UTC, time.FixedZone("JST", 9*3600),
+		time.FixedZone("EDT", -4*3600), time.FixedZone("CHAST", 13*3600+45*60)} {
+		t.Run(zone.String(), func(t *testing.T) {
+			saved := time.Local
+			time.Local = zone
+			defer func() { time.Local = saved }()
+			readStampedAndZonedLines(t)
+		})
+	}
+}
+
+func readStampedAndZonedLines(t *testing.T) {
 	d := Dirs{Logs: t.TempDir()}
-	local := time.Date(2026, 10, 24, 5, 30, 0, 0, time.Local)
+	// 09:30 UTC as this machine writes it without a zone (the reader takes it as local)
+	local := time.Date(2026, 10, 24, 9, 30, 0, 0, time.UTC).In(time.Local)
 	write(t, filepath.Join(d.Logs, "server.log"), "2026-10-24T09:30:00.000Z [serve] app: dumping the database\n"+
 		"2026-10-24T09:30:01.000Z [update] migrating 0150\n"+
 		"2026-10-24 09:30:02.500 UTC [23576] LOG:  database system is ready\n"+
@@ -168,7 +182,7 @@ func TestReadStampedAndZonedLines(t *testing.T) {
 		"2026-10-24T09:30:00Z|server|app: dumping the database",
 		"2026-10-24T09:30:01Z|server|migrating 0150",
 		"2026-10-24T09:30:02.5Z|postgres|[23576] LOG:  database system is ready",
-		local.Add(3*time.Second).UTC().Format(time.RFC3339Nano) + "|server|local without a zone",
+		"2026-10-24T09:30:03Z|server|local without a zone",
 		"2026-10-24T09:30:04Z|server|an offset after the time",
 		"2026-10-24T09:30:05Z|launcher|boot_loop 0.3.2",
 	}
