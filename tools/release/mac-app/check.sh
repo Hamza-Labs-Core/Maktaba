@@ -169,6 +169,13 @@ if [ -n "$APP" ]; then
         *'updates:    with the app'*) ok "launcher: updates come with the app" ;;
         *) fail "the launcher did not detect the app bundle" ;;
     esac
+    # signed as a bundle (ad hoc at least): the server's login item registers only for one
+    ident="$(codesign -dv "$APP" 2>&1 | sed -n 's/^Identifier=//p')"
+    if [ "$ident" = "com.hamzalabs.maktaba" ]; then
+        ok "the bundle is signed (com.hamzalabs.maktaba)"
+    else
+        fail "the bundle is not signed as com.hamzalabs.maktaba ('$ident'): its server login item cannot register"
+    fi
     if [ "$SIGNED" -eq 1 ]; then
         run "codesign --verify --deep --strict" codesign --verify --deep --strict "$APP"
     fi
