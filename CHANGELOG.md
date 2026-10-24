@@ -720,6 +720,13 @@ don't append a line here; docs-only PRs are exempt.
   starts again with it, within a minute, with no one doing anything. Until then the Updates
   and Machines pages say "this machine can't reach the home's database" and why, and a home's
   update waits for its machines to follow it before it commits.
+- **The Apple-Silicon Mac app is released again.** Every release since the app was signed ad
+  hoc (v0.3.0-rc.7, v0.3.1) failed its macos-arm64 build, so their update feeds had no
+  Apple-Silicon entry and a Mac home could not update. Without the Apple secrets the release
+  handed tauri empty notarization settings, which it took as a request to notarize ("Team ID
+  must be at least 3 characters"). The Mac builds now get them only for a Developer ID app with
+  a complete set, and CI's mac-app gate builds the way the release does, with those settings
+  set but empty.
 
 ## [0.2.0] - 2026-10-19
 
