@@ -941,6 +941,20 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     }
     tray.build(app)?;
 
+    // macOS: after an update or a reinstall the server's login item is still the old
+    // build's, which launchd refuses to start (agent::register_for_this_build); this
+    // build registers it. Not while paused: registering starts the server.
+    #[cfg(target_os = "macos")]
+    if matches!(sh.mode(), Some(AppMode::Server { .. })) && !agent::paused_flag() {
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = agent::register_for_this_build() {
+                let sh = shell(&handle);
+                show_error(&handle, sh.lang.words().server_start_failed, &[&e]);
+            }
+        });
+    }
+
     if let Target::Remote(url) = sh.target() {
         if let Err(e) = navigate_main(app, &url) {
             let sentence = lang::fill(sh.lang.words().open_failed, &[("url", &url)]);
