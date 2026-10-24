@@ -210,12 +210,10 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// The streaming binary binds MAKTABA_HTTP_ADDR; the older
 		// MAKTABA_STREAMING_HTTP_ADDR is kept for anything reading it.
 		add("MAKTABA_HTTP_ADDR", cfg.Server.StreamAddr)
-		// its cache (channel segments, transcodes) in this install's cache
-		// directory (config.CacheDir: <state>/cache, ~/.cache/maktaba in the Linux
-		// app): the binary's default, /var/maktaba, is the containers' path, which a
-		// user cannot create on macOS or Windows. An operator's own is kept.
-		if os.Getenv("MAKTABA_CACHE_ROOT") == "" {
-			add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.CacheDir(), "streaming"))
+		addStreamingCache(cfg, add)
+		// a joined node's streaming takes the cluster's map for it (Epic 31)
+		if !n.Joined() || forcedHome(cfg) {
+			addStreamPathMap(cfg, add)
 		}
 		add("MAKTABA_STREAMING_HTTP_ADDR", cfg.Server.StreamAddr)
 		// [media] transcode_min_free_gib: what the video transcodes leave free on
@@ -252,7 +250,11 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		}
 	case RoleTVSlot:
 		// a slot's own addresses are set by BuildSlot; it never joins as a node
-		// and serves no gRPC
+		// and serves no gRPC. It encodes the channels, so it writes their segments:
+		// the same cache as the streaming role (without it every channel failed,
+		// "mkdir /var/maktaba: permission denied", on the Mac app)
+		addStreamingCache(cfg, add)
+		addStreamPathMap(cfg, add) // slots run on a home only (SlotsEnabled)
 	case RolePipeline:
 		// The pipeline exposes its gRPC server so the api can call it.
 		add("MAKTABA_PIPELINE_GRPC_ADDR", pipelineGRPC(cfg))
@@ -505,4 +507,45 @@ func withStage(list, stage string) string {
 		}
 	}
 	return strings.Join(append(out, stage), ",")
+}
+
+// addStreamingCache gives a streaming process (the front door and the TV slots) its cache
+// (channel segments, transcodes) in this install's cache directory (config.CacheDir:
+// <state>/cache, ~/.cache/maktaba in the Linux app): the binary's default, /var/maktaba,
+// is the containers' path, which a user cannot create on macOS or Windows. An operator's
+// own is kept.
+func addStreamingCache(cfg config.Config, add func(k, v string)) {
+	if os.Getenv("MAKTABA_CACHE_ROOT") == "" {
+		add("MAKTABA_CACHE_ROOT", filepath.Join(cfg.CacheDir(), "streaming"))
+	}
+}
+
+// addStreamPathMap gives a streaming process [media] path_map in the form it reads:
+// MAKTABA_STREAM_PATH_MAP, "from=>to;from2=>to2" (streaming/internal/pathmap). Without
+// it the files are opened at the paths the database keeps ("/Volumes/Originals/..."),
+// which on the Mac app is a share mounted elsewhere (or a stale mount that hangs), and
+// every channel aired filler. MAKTABA_PATH_MAP, which every role gets, is the workers'
+// "from=to,from2=to2" form, which streaming does not read. An operator's own is kept.
+func addStreamPathMap(cfg config.Config, add func(k, v string)) {
+	if os.Getenv("MAKTABA_STREAM_PATH_MAP") != "" {
+		return
+	}
+	if m := StreamPathMap(cfg.Media.PathMap); m != "" {
+		add("MAKTABA_STREAM_PATH_MAP", m)
+	}
+}
+
+// StreamPathMap turns the workers' path map ("from=to,from2=to2") into streaming's
+// ("from=>to;from2=>to2"); an entry without "=" or without a from is left out.
+func StreamPathMap(workers string) string {
+	var out []string
+	for _, part := range strings.Split(workers, ",") {
+		from, to, ok := strings.Cut(strings.TrimSpace(part), "=")
+		from, to = strings.TrimSpace(from), strings.TrimSpace(to)
+		if !ok || from == "" {
+			continue
+		}
+		out = append(out, from+"=>"+to)
+	}
+	return strings.Join(out, ";")
 }

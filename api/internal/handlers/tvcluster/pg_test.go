@@ -20,8 +20,8 @@ func TestClusterPostgres(t *testing.T) {
 		}
 	}
 	exec(`INSERT INTO channels (id, number, name, slug, mode) VALUES ('6f1c9a2e-0000-4000-8000-000000000001', 101, 'One', 'one', 'shuffle')`)
-	exec(`SELECT tv_host_beat('h', '{"host":"mac","role":"home","capacity":16,"encoders":["videotoolbox"],"load":{"protocol":1,"viewers":{"6f1c9a2e-0000-4000-8000-000000000001":{"hls":1,"tuners":0}}},"can_push":{"rtmps":true}}'::jsonb)`)
-	exec(`SELECT tv_host_beat('n', '{"host":"pc","role":"node","capacity":3,"load":{"protocol":1}}'::jsonb)`)
+	exec(`SELECT tv_host_beat('h', '{"host":"mac","role":"home","capacity":16,"encoders":["videotoolbox"],"load":{"protocol":2,"viewers":{"6f1c9a2e-0000-4000-8000-000000000001":{"hls":1,"tuners":0}}},"can_push":{"rtmps":true}}'::jsonb)`)
+	exec(`SELECT tv_host_beat('n', '{"host":"pc","role":"node","capacity":3,"load":{"protocol":2}}'::jsonb)`)
 	exec(`INSERT INTO channel_placements (channel_id, host_id, generation, state, reason)
 		VALUES ('6f1c9a2e-0000-4000-8000-000000000001', 'h', nextval('tv_placement_generation_seq'), 'live', 'first_request')`)
 	h := New(db)

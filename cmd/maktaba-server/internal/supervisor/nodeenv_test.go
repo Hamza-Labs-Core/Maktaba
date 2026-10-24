@@ -146,9 +146,12 @@ func TestStreamingCacheUnderDataDir(t *testing.T) {
 	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
 	var cfg config.Config
 	cfg.Server.DataDir = filepath.Join("C:", "Users", "x", "AppData", "Local", "Maktaba")
-	m := envMap(childEnvOK(RoleStreaming, cfg))
-	if want := filepath.Join(cfg.Server.DataDir, "cache", "streaming"); m["MAKTABA_CACHE_ROOT"] != want {
-		t.Fatalf("MAKTABA_CACHE_ROOT = %q, want %q", m["MAKTABA_CACHE_ROOT"], want)
+	// the TV slots encode the channels (Epic 33): they write the segments too
+	for _, role := range []Role{RoleStreaming, RoleTVSlot} {
+		m := envMap(childEnvOK(role, cfg))
+		if want := filepath.Join(cfg.Server.DataDir, "cache", "streaming"); m["MAKTABA_CACHE_ROOT"] != want {
+			t.Fatalf("%s: MAKTABA_CACHE_ROOT = %q, want %q", role, m["MAKTABA_CACHE_ROOT"], want)
+		}
 	}
 	// an operator's own (inherited with the rest of the environment) is not overridden
 	t.Setenv("MAKTABA_CACHE_ROOT", "/srv/own")
@@ -287,5 +290,32 @@ func TestChildEnvDataDir(t *testing.T) {
 	t.Setenv("MAKTABA_DATA_DIR", "/own/data")
 	if v, ok := envMap(childEnvOK(RoleAPI, cfg))["MAKTABA_DATA_DIR"]; ok {
 		t.Fatalf("overrode the operator's data dir with %q", v)
+	}
+}
+
+// The streaming roles read MAKTABA_STREAM_PATH_MAP ("from=>to;..."), not the workers'
+// MAKTABA_PATH_MAP: without it a channel opened "/Volumes/Originals/..." as the database
+// keeps it and aired filler on the Mac app.
+func TestStreamingGetsThePathMapInItsForm(t *testing.T) {
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	var cfg config.Config
+	cfg.Media.PathMap = "/Volumes/Originals/=/Users/me/nas/, /Volumes/More/=/Users/me/more/"
+	want := "/Volumes/Originals/=>/Users/me/nas/;/Volumes/More/=>/Users/me/more/"
+	for _, role := range []Role{RoleStreaming, RoleTVSlot} {
+		if got := envMap(childEnvOK(role, cfg))["MAKTABA_STREAM_PATH_MAP"]; got != want {
+			t.Fatalf("%s: MAKTABA_STREAM_PATH_MAP = %q, want %q", role, got, want)
+		}
+	}
+	if _, ok := envMap(childEnvOK(RoleAPI, cfg))["MAKTABA_STREAM_PATH_MAP"]; ok {
+		t.Fatal("only the streaming roles get the stream path map")
+	}
+	t.Setenv("MAKTABA_STREAM_PATH_MAP", "/own=>/mine")
+	if _, ok := envMap(childEnvOK(RoleStreaming, cfg))["MAKTABA_STREAM_PATH_MAP"]; ok {
+		t.Fatal("overrode the operator's stream path map")
+	}
+	if got := StreamPathMap("bad, =/x, /a=/b"); got != "/a=>/b" {
+		t.Fatalf("StreamPathMap = %q", got)
 	}
 }
