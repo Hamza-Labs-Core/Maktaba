@@ -247,6 +247,14 @@ if [ -f "$PLIST" ]; then
 else
     log "no LaunchAgent plist yet at ${PLIST#"$REPO_ROOT"/}: bundled without it"
 fi
+# Signing the app: with an identity, that identity and the hardened runtime. Without one the
+# app is still signed ad hoc as a bundle ("-"): macOS registers the server's login item
+# (SMAppService) only for a signed bundle, and the linker's signature of the executable alone
+# fails it ("Codesigning failure loading plist", -67056), leaving the app on its welcome screen.
+signing='"signingIdentity": "-", "hardenedRuntime": false'
+if [ -n "$IDENTITY" ] && [ "$IDENTITY" != "-" ]; then
+    signing='"hardenedRuntime": true'
+fi
 # web/dist is built above (make server), so tauri does not rebuild it.
 cat >"$BUILD/tauri.mac-app.conf.json" <<EOF
 {
@@ -255,7 +263,7 @@ cat >"$BUILD/tauri.mac-app.conf.json" <<EOF
     "resources": {"$OUT/": "server/"},
     "macOS": {
       "minimumSystemVersion": "15.0",
-      "hardenedRuntime": true,
+      $signing,
       "files": $files
     }
   }
