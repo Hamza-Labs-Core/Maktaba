@@ -93,7 +93,8 @@ func New(procs []Process, policy Policy, opts ...Option) *Supervisor {
 	for _, o := range opts {
 		o(s)
 	}
-	s.client = &http.Client{Timeout: policy.ProbeTimeout}
+	// each check bounds itself (checkChild): a child may take longer than the policy's
+	s.client = &http.Client{}
 	s.started = s.now()
 	for _, p := range procs {
 		st := StateStarting
@@ -543,13 +544,24 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 		}
 		s.mu.Unlock()
 		if kill {
-			s.logf("%s (pid %d) failed %d liveness probes in a row (%v); killing it",
+			s.logf("%s (pid %d) failed %d liveness probes in a row (%v); asking it to stop",
 				c.proc.Name(), cmd.Process.Pid, failures, err)
 			s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventHung, PID: cmd.Process.Pid, Reason: ReasonHang,
 				Message: err.Error()})
 			s.mu.Lock()
 			tree := c.tree
 			s.mu.Unlock()
+			// asked first, like a shutdown: a child busy in a long write (a worker in a
+			// native call holding its GIL) finishes it and exits, where a kill mid-write
+			// can leave its store broken (the Chroma index). Killed after HangGrace.
+			if c.proc.askStop(cmd.Process, tree) == nil {
+				select {
+				case <-ctx.Done():
+					return // it stopped
+				case <-time.After(HangGrace):
+				}
+				s.logf("%s (pid %d) did not stop within %s; killing it", c.proc.Name(), cmd.Process.Pid, HangGrace)
+			}
 			tree.kill()
 			_ = cmd.Process.Kill()
 			return
@@ -557,14 +569,22 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 	}
 }
 
+// HangGrace is how long a child that failed its liveness probes has to stop once asked,
+// before it is killed (a var: the tests shorten it).
+var HangGrace = 60 * time.Second
+
 // checkChild runs a child's liveness check: its Check, else a GET of its Probe.
 func (s *Supervisor) checkChild(ctx context.Context, p Process) error {
+	timeout := s.policy.ProbeTimeout
+	if p.ProbeTimeout > timeout {
+		timeout = p.ProbeTimeout
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	if p.Check != nil {
-		cctx, cancel := context.WithTimeout(ctx, s.policy.ProbeTimeout)
-		defer cancel()
 		return p.Check(cctx)
 	}
-	return s.check(ctx, p.Probe)
+	return s.check(cctx, p.Probe)
 }
 
 // check GETs a liveness URL; any 2xx is alive.
