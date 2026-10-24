@@ -452,12 +452,26 @@ pub use sm::{
 /// true when it was.
 #[cfg(target_os = "macos")]
 pub fn register_for_this_build() -> Result<bool, String> {
+    register_login_item(false)
+}
+
+/// One registration of the server's login item at a time (the app's start and the
+/// settling of its update may both ask).
+#[cfg(target_os = "macos")]
+static LOGIN_ITEM_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The server's login item registered again for this build (unregister, then register)
+/// when another build registered it, or always with `force` (the server stays silent after
+/// an update: its plist or signature changed); true when it was.
+#[cfg(target_os = "macos")]
+pub fn register_login_item(force: bool) -> Result<bool, String> {
+    let _one = LOGIN_ITEM_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let stamp = build_stamp().ok_or("cannot read this app's executable")?;
     let path = state_root()
         .ok_or("cannot find the home folder")?
         .join("state")
         .join("login-item-build");
-    if std::fs::read_to_string(&path).ok().as_deref() == Some(stamp.as_str()) {
+    if !force && std::fs::read_to_string(&path).ok().as_deref() == Some(stamp.as_str()) {
         return Ok(false);
     }
     // an older build's registration (or none): replaced by this build's

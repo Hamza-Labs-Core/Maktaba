@@ -174,8 +174,8 @@ or client), `sfltool dumpbtm` (the login items macOS knows),
 - **On a Mac**, an ordered install checks, without prompting, that the app can change itself:
   `translocated` first, then a read-only volume (`not_writable`), `needs_admin`, and
   `app_management` (App Management refused, or the bundle locked). It never reaches a password
-  prompt. The server's login item needs a signed bundle (ad hoc is enough); after an update the
-  app registers it again when it is not enabled.
+  prompt. The server's login item needs a signed bundle (ad hoc is enough) and is bound to the
+  build that registered it, so each new build registers it again at its first start.
 - **On Windows**, an installer that does not finish after the app closed is recorded at the next
   start (`installer_not_finished`); an unattended home's server is started again on the release
   it had after 15 minutes, and the home's run is told at once.

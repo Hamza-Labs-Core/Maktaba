@@ -42,10 +42,13 @@ read-only payload as a release layout to stage into, confirm or roll back. Its l
 2. The running server is still the **old** one (its files are open; the old inodes live on).
    The shell restarts it from the new bundle: `launchctl kickstart -k gui/<uid>/com.hamzalabs.maktaba.server`
    (if the LaunchAgent plist changed, `SMAppService` unregister + register instead). Built:
-   after an app update the new app registers the server's login item again (unregister, then
-   register) when it is not enabled, and again if the server stays silent for 30 s while the
-   app waits for it on the new release; a refusal fails the update's attempt
-   (`login_item_unsigned`, else `relaunch_failed`, with the login item's state).
+   the login item is bound to the build that registered it (an app signed ad hoc is its code
+   hash), so each new build registers it again (unregister, then register) at its first start,
+   and on Resume and Restart (a stamp of the executable in `state/login-item-build`); after an
+   app update the settling of its attempt does the same, and once more if the server stays
+   silent for 30 s while the app waits for it on the new release. One registration at a time.
+   A refusal fails the update's attempt (`login_item_unsigned`, else `relaunch_failed`, with
+   the login item's state).
    `-k` sends SIGTERM: the launcher asks `maktaba-server` to stop, which drains the roles and
    stops Postgres cleanly (36.1). The plist's `ExitTimeOut` must cover the launcher's
    `--stop-grace` (60 s): **90 s**. Only then launchd kills.

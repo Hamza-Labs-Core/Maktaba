@@ -1459,14 +1459,14 @@ fn tell_the_order(failed: &attempts::Attempt) {
 #[cfg(target_os = "macos")]
 const LOGIN_ITEM_RECHECK: Duration = Duration::from_secs(30);
 
-/// macOS: the server's login item registered again for the app that is now `to` (the
-/// contract's "plist changed: unregister + register"); why not, as the attempt's failure
+/// macOS: the server's login item registered for the app that is now `to` (the contract's
+/// "plist changed: unregister + register", agent::register_login_item): for this build when
+/// another build registered it, or again with `force`; why not, as the attempt's failure
 /// (login_item_unsigned when macOS refuses an app without its signature).
 #[cfg(target_os = "macos")]
-fn register_again(to: &str) -> Result<(), Failure> {
+fn register_again(to: &str, force: bool) -> Result<(), Failure> {
     let before = agent::login_item();
-    let _ = agent::unregister();
-    match agent::register() {
+    match agent::register_login_item(force) {
         Err(e) => {
             let code = if e.starts_with(attempts::LOGIN_ITEM_UNSIGNED) {
                 attempts::LOGIN_ITEM_UNSIGNED
@@ -1482,7 +1482,9 @@ fn register_again(to: &str) -> Result<(), Failure> {
                 ),
             ))
         }
-        Ok(()) if agent::login_item() == LoginItem::RequiresApproval => Err(Failure::new(
+        // this build registered it already (at the app's start)
+        Ok(false) => Ok(()),
+        Ok(true) if agent::login_item() == LoginItem::RequiresApproval => Err(Failure::new(
             attempts::STEP_RELAUNCH,
             attempts::RELAUNCH_FAILED,
             format!(
@@ -1490,7 +1492,7 @@ fn register_again(to: &str) -> Result<(), Failure> {
                  Settings › Login Items"
             ),
         )),
-        Ok(()) => {
+        Ok(true) => {
             attempts::log(&format!(
                 "update to {to}: the server's login item registered again (it was {before:?})"
             ));
@@ -1738,19 +1740,17 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             let Some((web_url, supervisor_url)) = server.as_ref() else {
                 return Ok(());
             };
-            // macOS: the new bundle's login item may not be the one launchd runs (its plist
-            // or signature changed): one that is not enabled is registered again at once,
-            // and one whose server stays silent LOGIN_ITEM_RECHECK into the wait too; what
-            // macOS says then is the failure
+            // macOS: the login item is bound to the build that registered it (an app signed
+            // ad hoc is its code hash): this build's is made at once when another build's is
+            // there (agent::register_login_item, as the app's start does), and once more if
+            // the server stays silent LOGIN_ITEM_RECHECK into the wait; what macOS says then
+            // is the failure
             #[cfg(target_os = "macos")]
             let login: std::cell::RefCell<(bool, Option<Failure>)> =
-                std::cell::RefCell::new((agent::login_item() != LoginItem::Enabled, None));
+                std::cell::RefCell::new((false, register_again(&a.to, false).err()));
             #[cfg(target_os = "macos")]
-            if login.borrow().0 {
-                login.borrow_mut().1 = register_again(&a.to).err();
-                if let Some(f) = login.borrow().1.clone() {
-                    return Err(f);
-                }
+            if let Some(f) = login.borrow().1.clone() {
+                return Err(f);
             }
             let began = std::time::Instant::now();
             #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
@@ -1765,7 +1765,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                         if seen != attempts::Seen::Silent {
                             silent_since = None;
                         } else if since.elapsed() >= LOGIN_ITEM_RECHECK && !login.borrow().0 {
-                            let out = register_again(&a.to).err();
+                            let out = register_again(&a.to, true).err();
                             *login.borrow_mut() = (true, out);
                         }
                     }
