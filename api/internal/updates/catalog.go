@@ -276,8 +276,11 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 			d.retagCheck(ctx, cur, r, wm)
 			continue
 		}
-		if cur.VerifyError != nil && cur.VerifyError.Kind == KindNoManifest && !created {
-			continue // a pre-35.1 release: looked at once
+		if cur.VerifyError != nil && cur.VerifyError.Kind == KindNoManifest && !created && !hasSignedFiles(r) {
+			// still without its signed files: a release from before story 35.1, or one seen
+			// before its workflow attached them (the release exists minutes earlier): it is
+			// verified once they are there
+			continue
 		}
 		switch ok, ve := d.verify(ctx, r); {
 		case ok:
@@ -314,6 +317,12 @@ func (d *Discoverer) staleHint(ctx context.Context, st State) {
 		Params:  map[string]any{"days": int(d.now().Sub(last).Hours() / 24), "error": st.LastCheckErr},
 		Link:    "/settings#updates",
 		Subject: "update_check", Every: 24 * time.Hour})
+}
+
+// hasSignedFiles reports whether a release (as GitHub lists it now) carries its three
+// small signed files: checksums.txt, its Sigstore bundle and release.json.
+func hasSignedFiles(r Release) bool {
+	return assetURL(r, ChecksumsFile) != "" && assetURL(r, BundleFile) != "" && assetURL(r, ManifestFile) != ""
 }
 
 func assetURL(r Release, name string) string {

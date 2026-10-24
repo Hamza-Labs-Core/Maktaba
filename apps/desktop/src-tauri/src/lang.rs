@@ -225,6 +225,15 @@ pub struct Words {
     /// machine's server at the attempt's time, and the folder of app.log and server.log.
     pub see_logs: &'static str,
     pub open_log_folder: &'static str,
+    /// An app that runs no server (client mode, the Intel Mac app): the OS notification once
+    /// per release its own feed offers (the Mac's menu-bar item has no badge).
+    pub update_ready_notice: &'static str,
+    /// The Windows portable app (no installer of its own): its update item, which opens the
+    /// release page; it cannot install the setup beside itself.
+    pub update_out_portable: &'static str,
+    /// The update item while the update downloads: {version}, and {progress} (45%, or the
+    /// megabytes so far when the size is not known).
+    pub update_downloading: &'static str,
     /// Between the names in a list (the roles in a status line).
     pub list_sep: &'static str,
 }
@@ -294,6 +303,9 @@ pub static EN: Words = Words {
     update_failed_notice: "Maktaba could not update to {version}: {reason}",
     see_logs: "See the logs",
     open_log_folder: "Open the log folder",
+    update_ready_notice: "Maktaba {version} is ready: choose Update ready in the menu to install it",
+    update_out_portable: "Maktaba {version} is out: download the new zip",
+    update_downloading: "Downloading Maktaba {version}: {progress}",
     list_sep: ", ",
 };
 
@@ -362,6 +374,9 @@ pub static AR: Words = Words {
     update_failed_notice: "تعذّر تحديث مكتبة إلى {version}: {reason}",
     see_logs: "عرض السجلات",
     open_log_folder: "فتح مجلد السجلات",
+    update_ready_notice: "الإصدار {version} من مكتبة جاهز: اختر «التحديث جاهز» من القائمة لتثبيته",
+    update_out_portable: "صدر الإصدار {version} من مكتبة: نزّل ملف zip الجديد",
+    update_downloading: "تنزيل الإصدار {version} من مكتبة: {progress}",
     list_sep: "، ",
 };
 
@@ -391,6 +406,13 @@ pub fn update_reason(lang: Lang, code: &str) -> &'static str {
             "login_item_unsigned" => {
                 "the app is not code-signed, so macOS will not start its server"
             }
+            "app_management" => {
+                "macOS does not let this app replace itself (App Management, or the app is locked)"
+            }
+            "local_build" => {
+                "this app was built locally and can't update itself: install the release by hand once"
+            }
+            "installer_not_finished" => "the installer did not finish, so the update did not go in",
             "check_failed" => "checking for the update failed",
             "download_failed" => "the download failed",
             _ => "the install failed",
@@ -413,6 +435,13 @@ pub fn update_reason(lang: Lang, code: &str) -> &'static str {
             "server_stop_failed" => "تعذّر إيقاف الخادم من أجل التثبيت",
             "relaunch_failed" => "لم يعد التطبيق إلى العمل على الإصدار الجديد",
             "login_item_unsigned" => "التطبيق غير موقَّع، لذا لن يشغّل macOS خادمه",
+            "app_management" => {
+                "لا يسمح macOS لهذا التطبيق باستبدال نفسه (إدارة التطبيقات، أو أن التطبيق مقفل)"
+            }
+            "local_build" => {
+                "بُني هذا التطبيق محليًا ولا يستطيع تحديث نفسه: ثبّت الإصدار يدويًا مرة واحدة"
+            }
+            "installer_not_finished" => "لم يكتمل المثبِّت، فلم يُثبَّت التحديث",
             "check_failed" => "فشل التحقق من وجود التحديث",
             "download_failed" => "فشل التنزيل",
             _ => "فشل التثبيت",
@@ -524,6 +553,9 @@ mod tests {
             ("update_failed_notice", Some(w.update_failed_notice)),
             ("see_logs", Some(w.see_logs)),
             ("open_log_folder", Some(w.open_log_folder)),
+            ("update_ready_notice", Some(w.update_ready_notice)),
+            ("update_out_portable", Some(w.update_out_portable)),
+            ("update_downloading", Some(w.update_downloading)),
             ("older_app", Some(w.older_app)),
         ];
         // the lines only Windows reads

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
@@ -18,6 +19,7 @@ type usableRoles struct {
 
 func (u *usableRoles) Usable(context.Context, string) (bool, error) { return u.usable, nil }
 func (u *usableRoles) ServerPort(context.Context) (int, error)      { return u.port, nil }
+func (u *usableRoles) Term(context.Context) int64                   { return 4 }
 
 // The home owns its machines' database access: an approved machine whose role does not log
 // in on the home's current database is said to be so, and its access is made again (its
@@ -44,16 +46,40 @@ func TestMachineAccessRemade(t *testing.T) {
 		t.Fatal(err)
 	}
 	if a.Role != cluster.RoleName(nodeID) || a.Password == "" || a.Password == joinPW || f.roles.created[a.Role] != a.Password ||
-		a.DBName != "maktaba" || a.DBPort != 55432 || a.DBHost != "" {
+		a.DBName != "maktaba" || a.DBPort != 55432 || a.DBHost != "" || a.Term != 4 {
 		t.Fatalf("access %+v (created %v)", a, f.roles.created)
 	}
-	// the bundled Postgres: its port, as joins hand it
+	// the host from the home's own database url is never handed out (compose's "postgres");
+	// a setting names one, and the port the machines reach (a published port)
+	t.Setenv("DATABASE_URL", "postgres://maktaba:x@postgres:5432/maktaba")
+	raw, _ = f.h.GrantAccess(ctx, nodeID)
+	_ = json.Unmarshal(raw, &a)
+	if a.DBHost != "" {
+		t.Fatalf("the home's own database host handed out: %q", a.DBHost)
+	}
+	t.Setenv("MAKTABA_CLUSTER_DB_HOST", "db.lan")
+	t.Setenv("MAKTABA_CLUSTER_DB_PORT", "15432")
+	raw, _ = f.h.GrantAccess(ctx, nodeID)
+	_ = json.Unmarshal(raw, &a)
+	if host, port, name, err := f.h.AccessTarget(ctx, nodeID); a.DBHost != "db.lan" || a.DBPort != 15432 ||
+		host != "db.lan" || port != 15432 || name != "maktaba" || err != nil {
+		t.Fatalf("named host and port: %+v; target %s %d %s %v", a, host, port, name, err)
+	}
+	t.Setenv("MAKTABA_CLUSTER_DB_HOST", "")
+	t.Setenv("MAKTABA_CLUSTER_DB_PORT", "")
+	// the bundled Postgres: its port, as joins hand it; its CA unreadable: no access
+	// without it (the machines would be left a connection they cannot verify)
 	f.h.PGBundled = true
 	raw, _ = f.h.GrantAccess(ctx, nodeID)
 	_ = json.Unmarshal(raw, &a)
 	if a.DBPort != 6543 {
 		t.Fatalf("bundled port %d", a.DBPort)
 	}
+	f.h.PGCA = filepath.Join(t.TempDir(), "no-ca.pem")
+	if _, err := f.h.GrantAccess(ctx, nodeID); err == nil {
+		t.Fatal("an access without the bundled database's CA")
+	}
+	f.h.PGCA = ""
 	roles.usable = true
 	if ok, _ := f.h.AccessUsable(ctx, nodeID); !ok {
 		t.Fatal("a role that logs in")

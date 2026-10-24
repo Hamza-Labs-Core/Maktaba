@@ -100,7 +100,10 @@ The desktop app (`source: app`):
 | `needs_admin` | the app's folder needs an administrator's password to change (macOS `/Applications` for a standard user) |
 | `not_writable` | the app's files cannot be replaced (permissions) |
 | `disk_full` | no room to download or unpack the update |
-| `translocated` | macOS runs this copy of the app from a temporary read-only place (opened from Downloads or the disk image): move it to Applications |
+| `translocated` | macOS runs this copy of the app from a temporary read-only place (opened from Downloads or the disk image): move it to Applications. Checked first, before `needs_admin` |
+| `app_management` | macOS refused the app changing its own bundle (System Settings › Privacy & Security › App Management), or the bundle is locked: an ordered install stops here, never at a password prompt |
+| `local_build` | the app was built locally (the placeholder updater key): it can verify no release and updates nothing itself; install the release by hand once. No attempt counts against the release and nothing is blocked |
+| `installer_not_finished` | Windows: the installer did not finish after the app closed (found at the next start; an unattended home's server is started again on the release it had after 15 minutes) |
 | `quarantined` | macOS still marks the app as downloaded from the internet and unchecked |
 | `installer_exit` | the Linux package installer (`.deb`, `.rpm`) failed. On Windows the updater starts the installer and exits, so an install that did not take shows at the next start as `relaunch_failed` |
 | `server_stop_failed` | the server could not be stopped for the install (Windows) |
@@ -119,7 +122,12 @@ more than 30 minutes later. A first install that installs is no update and is no
 Its step is `dump`, `migrate`, `venv`, or `start` (the release before put the database back).
 
 A cluster run (`source: run`) carries its error's code, else the target's state
-(`failed_prepare`, `needs_person`).
+(`failed_prepare`, `needs_person`). Among its codes: `download_failed` (a download that failed:
+HTTP, a timeout, the disk; retried, never a verification failure), `verify_*` (only a real
+verification failure blocks the release), `older_build` (a release numbered higher but built
+before the one running here, on the same major.minor line: passed by, nothing changed, no
+notice) and `python_store_stub` (Windows: only the Microsoft Store's `python3` alias where the
+pipeline needs a real Python 3.12).
 
 ## The desktop app
 

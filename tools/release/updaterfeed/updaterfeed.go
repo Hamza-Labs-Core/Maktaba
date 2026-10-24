@@ -133,9 +133,16 @@ func Build(dir, repo, tag, notes string, now time.Time) (Feed, error) {
 // errUsage is a usage error (exit 2).
 var errUsage = errors.New("usage")
 
+// ExitIncomplete is Main's exit code when the feed was written but lacks a platform
+// --require names: the release must not become the latest (desktop-release.yml).
+const ExitIncomplete = 3
+
 // Main is the updater-feed command: it writes latest.json for the signed
 // bundles in --dir, or nothing (and says so) when there are none, which is a
-// release built without the updater key. It returns the exit code.
+// release built without the updater key. With --pubkey every bundle's signature is
+// checked against the apps' key first (none written when one fails); with --require
+// (a comma list of platform keys, or "desktop": Required) a feed that lacks one is
+// still written, and the exit code is ExitIncomplete. It returns the exit code.
 func Main(args []string, stdout, stderr io.Writer, now time.Time) int {
 	fs := flag.NewFlagSet("updater-feed", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -144,8 +151,14 @@ func Main(args []string, stdout, stderr io.Writer, now time.Time) int {
 	tag := fs.String("tag", "", "the release tag (vX.Y.Z)")
 	notes := fs.String("notes", "", "the notes the updater shows")
 	out := fs.String("out", "latest.json", "where to write the feed")
+	pubkey := fs.String("pubkey", "", "the apps' updater public key (TAURI_UPDATER_PUBKEY): every signature is checked against it")
+	require := fs.String("require", "", `platform keys the feed must have (comma list, "desktop" or "server-apps")`)
+	check := fs.String("check", "", "check this feed (a release's latest.json) has the --require platforms; write nothing")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *check != "" {
+		return checkFeed(*check, *require, stdout, stderr)
 	}
 	if *dir == "" || *repo == "" || *tag == "" || fs.NArg() != 0 {
 		_, _ = fmt.Fprintf(stderr, "updater-feed: %v: --dir DIR --repo OWNER/NAME --tag vX.Y.Z [--notes TEXT] [--out FILE]\n", errUsage)
@@ -160,6 +173,12 @@ func Main(args []string, stdout, stderr io.Writer, now time.Time) int {
 		_, _ = fmt.Fprintln(stdout, "no signed bundles (no updater key): no latest.json")
 		return 0
 	}
+	if *pubkey != "" {
+		if err := VerifyDir(*dir, *pubkey, f.Version); err != nil {
+			_, _ = fmt.Fprintln(stderr, "updater-feed: a signature the apps would refuse:", err)
+			return 1
+		}
+	}
 	b, _ := json.MarshalIndent(f, "", "  ")
 	if err := os.WriteFile(*out, append(b, '\n'), 0o644); err != nil {
 		_, _ = fmt.Fprintln(stderr, "updater-feed:", err)
@@ -171,5 +190,30 @@ func Main(args []string, stdout, stderr io.Writer, now time.Time) int {
 	}
 	sort.Strings(keys)
 	_, _ = fmt.Fprintf(stdout, "%s: %s %s\n", *out, f.Version, strings.Join(keys, " "))
+	if miss := Missing(f, Wanted(*require)); len(miss) > 0 {
+		_, _ = fmt.Fprintf(stderr, "updater-feed: the feed has no %s: not every platform published\n", strings.Join(miss, ", "))
+		return ExitIncomplete
+	}
+	return 0
+}
+
+// checkFeed reads a written feed and reports whether it has the required platforms: 0,
+// ExitIncomplete (one is missing), 1 (it cannot be read).
+func checkFeed(path, require string, stdout, stderr io.Writer) int {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "updater-feed:", err)
+		return 1
+	}
+	var f Feed
+	if err := json.Unmarshal(b, &f); err != nil {
+		_, _ = fmt.Fprintf(stderr, "updater-feed: %s: %v\n", path, err)
+		return 1
+	}
+	if miss := Missing(f, Wanted(require)); len(miss) > 0 {
+		_, _ = fmt.Fprintf(stderr, "updater-feed: %s has no %s\n", path, strings.Join(miss, ", "))
+		return ExitIncomplete
+	}
+	_, _ = fmt.Fprintf(stdout, "%s: %s has every platform asked for\n", path, f.Version)
 	return 0
 }

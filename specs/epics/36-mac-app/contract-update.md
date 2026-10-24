@@ -41,7 +41,11 @@ read-only payload as a release layout to stage into, confirm or roll back. Its l
    `/Applications/Maktaba.app` is always either the old or the new app, never half of each.
 2. The running server is still the **old** one (its files are open; the old inodes live on).
    The shell restarts it from the new bundle: `launchctl kickstart -k gui/<uid>/com.hamzalabs.maktaba.server`
-   (if the LaunchAgent plist changed, `SMAppService` unregister + register instead).
+   (if the LaunchAgent plist changed, `SMAppService` unregister + register instead). Built:
+   after an app update the new app registers the server's login item again (unregister, then
+   register) when it is not enabled, and again if the server stays silent for 30 s while the
+   app waits for it on the new release; a refusal fails the update's attempt
+   (`login_item_unsigned`, else `relaunch_failed`, with the login item's state).
    `-k` sends SIGTERM: the launcher asks `maktaba-server` to stop, which drains the roles and
    stops Postgres cleanly (36.1). The plist's `ExitTimeOut` must cover the launcher's
    `--stop-grace` (60 s): **90 s**. Only then launchd kills.
@@ -189,7 +193,8 @@ compares with).
 
 ## Going back
 
-There is no in-app rollback: Tauri does not keep the previous app. To go back, the owner
+There is no in-app rollback of the app itself: Tauri does not keep the previous app (the server's
+payload keeps its own copies). To go back, the owner
 installs the previous `.dmg`:
 
 - after an update whose migrations **failed**, the database is already back as the previous

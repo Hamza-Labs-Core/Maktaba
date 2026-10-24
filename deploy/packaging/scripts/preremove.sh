@@ -16,13 +16,14 @@ case "${1:-}" in
     0|remove|purge|"") is_uninstall=1 ;;
 esac
 
-if command -v systemctl >/dev/null 2>&1; then
-    # Stop on every path so files aren't deleted under a running process;
-    # the upgrade's postinstall re-enables and the operator restarts.
+# Only an uninstall stops the service. An upgrade leaves it running: it runs the release
+# under /var/lib/maktaba/bin/releases, not the package's files (a replaced
+# /usr/bin/maktaba-launcher keeps running from its old inode), and the new package's
+# postinstall restarts it. Stopping it here left it stopped: rpm runs the old package's
+# %preun after the new one's %post.
+if command -v systemctl >/dev/null 2>&1 && [ "${is_uninstall}" -eq 1 ]; then
     systemctl stop maktaba-server.service >/dev/null 2>&1 || true
-    if [ "${is_uninstall}" -eq 1 ]; then
-        systemctl disable maktaba-server.service >/dev/null 2>&1 || true
-    fi
+    systemctl disable maktaba-server.service >/dev/null 2>&1 || true
 fi
 
 exit 0

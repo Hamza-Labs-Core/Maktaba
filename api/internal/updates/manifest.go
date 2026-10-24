@@ -85,6 +85,9 @@ const (
 	KindReplay      = "replay"
 	KindDowngrade   = "downgrade"
 	KindRootExpired = "root_expired"
+	// KindOlderBuild: newer in version than a release installed here but signed before it
+	// on its major.minor line (releaseverify.OlderBuild): passed by, never an incident.
+	KindOlderBuild = "older_build"
 	// KindNoManifest: a release published before story 35.1 (no release.json or no
 	// bundle). Never an automatic target (design §3.2), and not an incident.
 	KindNoManifest = "no_manifest"

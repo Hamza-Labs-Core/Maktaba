@@ -100,8 +100,8 @@ install wrote.
 | `nfpm.yaml` | [nfpm](https://nfpm.goreleaser.com) config → `.deb` + `.rpm` |
 | `systemd/maktaba-server.service` | hardened systemd unit (`/usr/lib/systemd/system`) |
 | `etc/maktaba-server.toml` | default config installed by the packages → `/etc/maktaba/server.toml` |
-| `scripts/postinstall.sh` | create `maktaba` user, dirs, run migrations, enable service |
-| `scripts/preremove.sh` | stop (and on uninstall, disable) the service |
+| `scripts/postinstall.sh` | create `maktaba` user, dirs, enable the service on a first install; on an upgrade restart it if it was running (migrations are the release's own start's: its database step) |
+| `scripts/preremove.sh` | on uninstall, stop and disable the service (an upgrade leaves it to postinstall) |
 | `scripts/postremove.sh` | `systemctl daemon-reload` after removal |
 | `homebrew/maktaba.rb` | Homebrew formula **template** (`__VERSION__` / `__SHA256_*__` filled at release) |
 | `launchd/com.maktaba.*.plist` | macOS launchd units |
@@ -177,13 +177,18 @@ brew install hamza-labs-core/tap/maktaba
 curl -fsSLO https://github.com/Hamza-Labs-Core/Maktaba/releases/latest/download/install.sh
 bash install.sh --app
 
-# Any Linux/macOS (script)
-curl -fsSL https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/packaging/install.sh | bash
+# Any Linux/macOS (script), from a release (verified), with the system service: the
+# side-by-side layout, the launcher and the unit (`setup --self-managed --system`),
+# so the install updates itself
+curl -fsSLO https://github.com/Hamza-Labs-Core/Maktaba/releases/latest/download/install.sh
+sudo MAKTABA_SYSTEMD=1 bash install.sh
 ```
 
 After installing a package: edit `/etc/maktaba/server.toml` (set your
 `[media].roots`), then `sudo systemctl start maktaba-server`. The web UI is
-on port `8088`.
+on port `8088`. An upgrade of the package restarts a running service; the new
+release's start dumps and migrates the database (the database step), as an
+automatic update does.
 
 ## Local validation
 
@@ -202,15 +207,34 @@ shellcheck deploy/packaging/install.sh deploy/packaging/scripts/*.sh
 
 ## Release flow (Story 22.5 + 22.6)
 
-1. Tag main with `v{MAJOR}.{MINOR}.{PATCH}` (annotated, signed).
-2. The release workflow rebuilds artifacts from the tag commit. The
-   image's `org.opencontainers.image.revision` label must match the
-   tag's sha (CI gate).
-3. The release manifest (`release-manifest.json`) records the version,
-   sha, build time, and the sha256 of every published image.
-4. Upgrade: clients pull the new image / package; `maktaba-server migrate
-   up` runs forward migrations. Rollback: revert image + run the down
-   migration to a known schema revision (see `upgrade.md`).
+1. Tag main with `v{MAJOR}.{MINOR}.{PATCH}` (annotated, signed), or `-rc.N` for a release
+   candidate.
+2. **The tag guard** (`_tag-guard.yml`, `tools/release/tag-guard.sh`) runs first in every
+   tag workflow (release, desktop, mobile, tv): it refuses a tag at or below a published
+   release (an rc of a version already released among them), a commit that is not on
+   `main`, and one without a passing CI run (it waits for CI up to an hour). A deliberate
+   maintenance line (a hotfix on an older minor) passes with the repository variable
+   `MAKTABA_RELEASE_ALLOW_TAG` naming the tag, and never becomes the latest.
+3. **Draft first.** The guard opens the tag's release as a draft; every workflow uploads to
+   it, and whichever finishes last publishes it, once `release.json`, `checksums.txt` and its
+   signature are in and the apps' update feed has every server-carrying app. It becomes
+   GitHub's *latest* only when it is the highest stable release and every desktop platform is
+   in the feed. Each workflow runs once per tag at a time (a per-tag concurrency group).
+4. **A published release is never rewritten**: a re-run adds what is missing and fails when
+   its `checksums.txt` differs. The artifacts are reproducible (`published` and `built_at`
+   from the tag's time, sorted fixed-time archives, `SOURCE_DATE_EPOCH`, buildx
+   `rewrite-timestamp`). A failed leg is recovered with `gh run rerun <run> --failed`.
+5. The release manifest (`release-manifest.json`, inside the signed checksums) records the
+   version, sha, build time, and the sha256 of every published image (release.yml alone
+   publishes the images of a tag, `maktaba-cloud` among them).
+6. `release.json`'s previous release is the highest published version below the tag (for a
+   stable tag, the previous stable): it decides `breaks_previous_home` and
+   `min_upgrade_from`.
+7. The embedded Sigstore trusted root is refreshed by `trusted-root.yml` every week (a PR
+   when it changed or is 45 days old; set `MAKTABA_BOT_TOKEN` so that PR runs CI). Lint warns
+   from day 60 and fails at day 90 (`tools/release/trusted-root-age.sh`).
+8. Upgrade: an automatic update (docs/auto-update.md), or the package / image by hand.
+   Rollback: the updater's own; by hand, see `upgrade.md`.
 
 ### Optional: Homebrew tap auto-publish
 

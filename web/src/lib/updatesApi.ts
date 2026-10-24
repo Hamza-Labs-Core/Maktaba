@@ -36,7 +36,28 @@ export interface CatalogRelease {
   withdrawn_at?: string;
   held_at?: string;
   approved_at?: string;
+  /** why automatic runs no longer install it (attempts, rolled_back, verify, rehearsal): an
+   * admin tries it again (unblock) or installs it now */
+  blocked_reason?: string;
+  attempts?: number;
   manifest?: { breaks_previous_home?: boolean; min_upgrade_from?: string };
+}
+
+/** The scheduler's last decision: why a due release does not start now. */
+export interface UpdatesTick {
+  action: "none" | "held" | "blocked" | "withdrawn" | "started" | "failed";
+  reason?: string;
+  version?: string;
+  run_id?: string;
+  at: string;
+}
+
+/** A release a gate (the TV watched, the window's end) held for several windows in a row. */
+export interface UpdatesStuck {
+  version: string;
+  code: string;
+  windows: number;
+  since: string;
 }
 
 export interface UpdatesPlan {
@@ -168,6 +189,8 @@ export interface UpdatesOverview {
   check_stale: boolean;
   time_zone: string;
   machines?: UpdateMachine[];
+  last_tick?: UpdatesTick;
+  stuck?: UpdatesStuck;
 }
 
 /** The states of a run that are over. */
@@ -237,6 +260,8 @@ export const updatesApi = {
       confirm: true,
     }),
   skip: (version: string) => api.post("/api/cluster/updates/skip", { version }),
+  unblock: (version: string) =>
+    api.post<{ unblocked: boolean; version: string }>("/api/cluster/updates/unblock", { version }),
   defer: (until: string) => api.post("/api/cluster/updates/defer", { until }),
   check: () => api.post("/api/cluster/updates/check", {}),
   runs: (limit = 20) => api.get<{ items: UpdateRun[] }>(`/api/cluster/updates/runs?limit=${limit}`),

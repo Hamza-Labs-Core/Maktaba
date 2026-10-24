@@ -67,3 +67,38 @@ export function registerServiceWorker(): void {
       });
   });
 }
+
+/** Where the last reload for a missing chunk is remembered (one per minute at most). */
+const STALE_RELOAD_KEY = "mkt:stale-chunk-reload";
+
+/**
+ * A page an older release left open asks for its own hashed chunks, which the updated
+ * server no longer has (a 404): Vite reports `vite:preloadError`. The page reloads once
+ * to take the new release's page and chunks; a second failure within a minute is left to
+ * show (no reload loop).
+ */
+export function reloadOnStaleChunks(
+  win: Pick<Window, "addEventListener" | "location"> = window,
+  store: Pick<Storage, "getItem" | "setItem"> | null = safeSession(),
+  now: () => number = Date.now
+): void {
+  win.addEventListener("vite:preloadError", (event: Event) => {
+    const last = Number(store?.getItem(STALE_RELOAD_KEY) ?? 0);
+    if (now() - last < 60_000) return;
+    try {
+      store?.setItem(STALE_RELOAD_KEY, String(now()));
+    } catch {
+      // storage refused (a private window): reload anyway, once per page
+    }
+    event.preventDefault();
+    win.location.reload();
+  });
+}
+
+function safeSession(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}

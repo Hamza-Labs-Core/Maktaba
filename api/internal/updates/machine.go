@@ -23,6 +23,7 @@ type MachineJob struct {
 	Rehearse      bool              `json:"rehearse,omitempty"`
 	RehearseMaxGB int               `json:"rehearse_max_db_gb,omitempty"`
 	KeepVersions  int               `json:"keep_versions,omitempty"`
+	BackupsKeep   int               `json:"backups_keep,omitempty"`
 	WatchSeconds  int               `json:"watch_seconds,omitempty"`
 	HealthSeconds int               `json:"health_seconds,omitempty"`
 }

@@ -8,7 +8,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { applyResolvedTheme, readMode } from "./lib/theme";
 import { bootNative } from "./lib/native";
-import { registerServiceWorker } from "./lib/pwa";
+import { registerServiceWorker, reloadOnStaleChunks } from "./lib/pwa";
 import { App } from "./App";
 // the theme's fonts, bundled (SIL OFL): Plex for text, Amiri for headings
 import "@fontsource/ibm-plex-sans-arabic/400.css";
@@ -40,3 +40,5 @@ ReactDOM.createRoot(rootEl).render(
 );
 
 registerServiceWorker();
+// a page an older release left open: its chunks are gone after an update
+reloadOnStaleChunks();

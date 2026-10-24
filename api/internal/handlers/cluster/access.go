@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
-	"net/url"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
@@ -24,6 +24,11 @@ type accessRoles interface {
 	ServerPort(ctx context.Context) (int, error)
 }
 
+// termRoles are the Roles that can say the cluster's term.
+type termRoles interface {
+	Term(ctx context.Context) int64
+}
+
 // machineAccess is a machine's re-made access, as its home.access command takes it.
 type machineAccess struct {
 	Role     string `json:"role"`
@@ -33,6 +38,8 @@ type machineAccess struct {
 	DBName   string `json:"db_name"`
 	CA       string `json:"database_ca,omitempty"`
 	TLS      string `json:"database_tls,omitempty"`
+	// Term is this home's: a machine that follows a home of a later term refuses it
+	Term int64 `json:"term,omitempty"`
 }
 
 // roleOf is a machine's database role (the one its join recorded, else its name).
@@ -77,6 +84,13 @@ func (h *Handler) GrantAccess(ctx context.Context, nodeID string) (json.RawMessa
 	if err != nil {
 		return nil, err
 	}
+	if h.PGBundled && h.PGCA != "" {
+		// the machines verify the bundled database with its CA: an access without it
+		// would leave them a connection they cannot verify
+		if _, err := os.ReadFile(h.PGCA); err != nil {
+			return nil, fmt.Errorf("this home's database CA cannot be read: %w", err)
+		}
+	}
 	password, err := cluster.NewPassword()
 	if err != nil {
 		return nil, err
@@ -86,16 +100,36 @@ func (h *Handler) GrantAccess(ctx context.Context, nodeID string) (json.RawMessa
 		return nil, err
 	}
 	ca, tls := h.pgTLS()
-	return json.Marshal(machineAccess{Role: role, Password: password, DBHost: h.accessHost(), DBPort: h.accessPort(ctx),
-		DBName: dbName, CA: ca, TLS: tls})
+	var term int64
+	if r, ok := h.Roles.(termRoles); ok {
+		term = r.Term(ctx)
+	}
+	return json.Marshal(machineAccess{Role: role, Password: password, DBHost: h.machineHost(), DBPort: h.machinePort(ctx),
+		DBName: dbName, CA: ca, TLS: tls, Term: term})
 }
 
-// accessPort is the database's port as the machines reach it: the bundled Postgres's,
-// else the port the database itself says it listens on (an operator's Postgres on a port
-// other than 5432), else PGPort.
-func (h *Handler) accessPort(ctx context.Context) int {
+// AccessTarget is where a re-made access points (agent.AccessGranter): the host the
+// machines are handed ("": the one they reach the home at), the port and the database.
+func (h *Handler) AccessTarget(ctx context.Context, _ string) (string, int, string, error) {
+	dbName, err := h.Roles.DatabaseName(ctx)
+	if err != nil {
+		return "", 0, "", err
+	}
+	return h.machineHost(), h.machinePort(ctx), dbName, nil
+}
+
+// machinePort is the database's port as the machines reach it, the join's and a re-made
+// access's alike: the bundled Postgres's (MAKTABA_CLUSTER_PG_PORT); else
+// MAKTABA_CLUSTER_DB_PORT, when the port the machines reach differs from the database's
+// own (a container's published port: the compose files pass MAKTABA_PG_PORT through it);
+// else the port the database says it listens on (an operator's Postgres on another port
+// than 5432); else PGPort.
+func (h *Handler) machinePort(ctx context.Context) int {
 	if h.PGBundled {
 		return h.pgPort()
+	}
+	if p, err := strconv.Atoi(strings.TrimSpace(os.Getenv("MAKTABA_CLUSTER_DB_PORT"))); err == nil && p > 0 && p < 65536 {
+		return p
 	}
 	if r, ok := h.Roles.(accessRoles); ok {
 		if p, err := r.ServerPort(ctx); err == nil && p > 0 {
@@ -105,22 +139,19 @@ func (h *Handler) accessPort(ctx context.Context) int {
 	return h.pgPort()
 }
 
-// accessHost is the database's host when it is not on the home's own machine (an
-// operator's Postgres elsewhere); "": the machines reach it at the home's address.
-func (h *Handler) accessHost() string {
+// hostRe is a host name or address as a setting may give it.
+var hostRe = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,253}$`)
+
+// machineHost is the database's host as the machines are handed it: "" (they reach it at
+// the host they reach the home at, as at their join) unless MAKTABA_CLUSTER_DB_HOST names
+// another (a database on another machine than the home). The home's own address for its
+// database (compose's "postgres", a loopback) is never one the machines can reach.
+func (h *Handler) machineHost() string {
 	if h.PGBundled {
 		return ""
 	}
-	for _, k := range []string{"MAKTABA_DATABASE_URL", "DATABASE_URL"} {
-		u, err := url.Parse(strings.TrimSpace(os.Getenv(k)))
-		if err != nil || u.Hostname() == "" {
-			continue
-		}
-		host := u.Hostname()
-		if ip := net.ParseIP(host); host == "localhost" || (ip != nil && ip.IsLoopback()) {
-			return ""
-		}
-		return host
+	if v := strings.TrimSpace(os.Getenv("MAKTABA_CLUSTER_DB_HOST")); hostRe.MatchString(v) {
+		return v
 	}
 	return ""
 }

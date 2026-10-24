@@ -164,7 +164,18 @@ fn exe_name(name: &str) -> String {
 /// Linux (Epic 39).
 #[cfg(target_os = "linux")]
 pub fn state_root() -> Option<PathBuf> {
-    home().map(|h| linux::data_dir(env_var, &h))
+    // the server's unit pins its XDG directories: where it keeps the home's order and the
+    // attempts is where that environment says (this app's own may differ)
+    home().map(|h| {
+        let unit = linux::unit_env(&h, "XDG_DATA_HOME");
+        linux::data_dir(
+            |k| match k {
+                "XDG_DATA_HOME" => unit.clone().or_else(|| env_var(k)),
+                _ => env_var(k),
+            },
+            &h,
+        )
+    })
 }
 
 #[cfg(not(target_os = "linux"))]

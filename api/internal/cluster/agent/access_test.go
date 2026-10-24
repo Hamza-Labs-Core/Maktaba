@@ -29,6 +29,10 @@ func (g *fakeGranter) GrantAccess(_ context.Context, node string) (json.RawMessa
 	return json.RawMessage(`{"role":"maktaba_node_x","password":"fresh","db_port":54329,"db_name":"maktaba"}`), nil
 }
 
+func (g *fakeGranter) AccessTarget(context.Context, string) (string, int, string, error) {
+	return "", 54329, "maktaba", nil
+}
+
 func (g *fakeGranter) grants() int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -115,6 +119,7 @@ func TestHomeAccessPasswordNotLogged(t *testing.T) {
 	// the hub writes its events in the background
 	logged := ""
 	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		f.hub.files.Flush()
 		if logged = strings.Join(readLines(t, eventsPath(f)), "\n"); strings.Contains(logged, "home.access") {
 			break
 		}
@@ -144,6 +149,7 @@ func TestLogFilesAnswerNotLogged(t *testing.T) {
 	}
 	logged := ""
 	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		f.hub.files.Flush()
 		if logged = strings.Join(readLines(t, eventsPath(f)), "\n"); strings.Contains(logged, `"cmd.result"`) {
 			break
 		}
@@ -151,4 +157,65 @@ func TestLogFilesAnswerNotLogged(t *testing.T) {
 	if strings.Contains(logged, "a-private-log-line") || !strings.Contains(logged, "bytes)") {
 		t.Fatalf("the event log: %s", logged)
 	}
+}
+
+// A re-made access only where it mends the login: a refused password, or a database the
+// machine reaches somewhere else than the access the home hands out (it moved); not TLS,
+// not a database that refuses or cannot take a login at the right address. Each one more
+// waits twice as long, up to an hour.
+func TestEnsureAccessOnlyWhenItMends(t *testing.T) {
+	for _, c := range []struct {
+		db   homeDBState
+		want string
+	}{
+		{homeDBState{Code: "auth_failed", Fails: 2, Target: "h:54329/maktaba"}, "auth_failed"},
+		{homeDBState{Code: "refused", Fails: 2, Target: "192.168.50.177:5432/maktaba"}, "refused_moved"},
+		{homeDBState{Code: "no_database", Fails: 2, Target: "h:54329/maktaba_old"}, "no_database_moved"},
+		{homeDBState{Code: "refused", Fails: 2, Target: "h:54329/maktaba"}, ""},
+		{homeDBState{Code: "no_hba", Fails: 2, Target: "h:54329/maktaba"}, ""},
+		{homeDBState{Code: "tls", Fails: 2, Target: "h:5432/maktaba"}, ""},
+		{homeDBState{Code: "other", Fails: 2, Target: "h:5432/maktaba"}, ""},
+		{homeDBState{Code: "unreachable", Fails: 2}, ""},
+	} {
+		if got := remakeWhy(c.db, "", 54329, "maktaba"); got != c.want {
+			t.Errorf("%+v: %q, want %q", c.db, got, c.want)
+		}
+	}
+	if !moved("db.lan:54329/maktaba", "db2.lan", 54329, "maktaba") || moved("DB.lan:54329/maktaba", "db.lan", 54329, "maktaba") {
+		t.Error("the host the home names")
+	}
+	for tries, want := range map[int]time.Duration{0: time.Minute, 1: time.Minute, 2: 2 * time.Minute, 3: 4 * time.Minute,
+		7: time.Hour, 50: time.Hour} {
+		if got := retryAfter(tries); got != want {
+			t.Errorf("retryAfter(%d) = %s, want %s", tries, got, want)
+		}
+	}
+
+	// over the channel: TLS and a refusal at the right address are left alone
+	f := newFixture(t)
+	id, priv := f.approvedNode("studio-gpu")
+	a, err := f.dialAgent(helloOpts{kind: "node", nodeID: id, nodePriv: priv, process: "supervisor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &fakeGranter{usable: true}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go f.hub.EnsureAccess(ctx, g, 20*time.Millisecond, nil)
+	a.send(map[string]any{"t": "update.state", "version": "1.5.0",
+		"home_db": map[string]any{"ok": false, "code": "tls", "fails": 3, "target": "h:54329/maktaba"}})
+	waitUntil(t, func() bool { return len(f.hub.MachinesOffDatabase()) == 1 })
+	time.Sleep(150 * time.Millisecond)
+	if g.grants() != 0 {
+		t.Fatalf("a TLS failure rotated the access: %d", g.grants())
+	}
+	// the database moved (its old port refuses): re-made
+	a.send(map[string]any{"t": "update.state", "version": "1.5.0",
+		"home_db": map[string]any{"ok": false, "code": "refused", "fails": 2, "target": "h:5432/maktaba"}})
+	cmd := a.recvType("cmd")
+	if cmd["name"] != "home.access" {
+		t.Fatalf("cmd = %v", cmd)
+	}
+	a.send(map[string]any{"t": "cmd.result", "id": cmd["id"], "ok": true})
+	waitUntil(t, func() bool { return g.grants() == 1 })
 }

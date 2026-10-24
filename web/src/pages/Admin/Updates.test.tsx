@@ -975,3 +975,107 @@ describe("Admin Updates: logs links and the home's database", () => {
     expect(screen.queryByTestId("updates-machine-n1-home-db")).toBeNull();
   });
 });
+
+// The server audit (H1, H2, M6, L5): why a due release does not start, a blocked release
+// tried again or installed now, a release the TV held for several windows installed now,
+// and the last failed update retried.
+describe("Admin Updates: blocked, stuck and waiting releases", () => {
+  it("says why a due release does not start now", async () => {
+    routes(
+      overview({
+        last_tick: { action: "blocked", reason: "recent_crash", version: "1.5.0", at: finishedAt },
+      }),
+      null
+    );
+    renderPage();
+    expect(await screen.findByTestId("updates-tick")).toHaveTextContent(
+      "Not started now: a part of the home's server crashed in the last ten minutes"
+    );
+  });
+
+  it("a release that waits for a person after its last try says so", async () => {
+    routes(
+      overview({
+        last_tick: { action: "none", reason: "needs_person", version: "1.5.0", at: finishedAt },
+      }),
+      null
+    );
+    renderPage();
+    expect(await screen.findByTestId("updates-tick")).toHaveTextContent("The last try needs you");
+  });
+
+  it("a blocked release is tried again, or installed now", async () => {
+    routes(
+      overview({
+        catalog: [{ ...target, version: "1.4.5", blocked_reason: "rolled_back", attempts: 1 }],
+      }),
+      null
+    );
+    post.mockResolvedValue({ unblocked: true, version: "1.4.5" });
+    const user = userEvent.setup();
+    renderPage();
+    const box = await screen.findByTestId("updates-blocked-1.4.5");
+    expect(box).toHaveTextContent("1.4.5 is blocked: it was rolled back on the home");
+    await user.click(within(box).getByRole("button", { name: "Try it again" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/unblock", { version: "1.4.5" })
+    );
+    post.mockResolvedValue({ run_id: "run-9", version: "1.4.5" });
+    await user.click(within(box).getByRole("button", { name: "Install now" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/run", {
+        version: "1.4.5",
+        confirm: true,
+      })
+    );
+  });
+
+  it("a release the TV held for several windows is offered to install now", async () => {
+    routes(
+      overview({ stuck: { version: "1.5.0", code: "tv_busy", windows: 3, since: finishedAt } }),
+      null
+    );
+    post.mockResolvedValue({ run_id: "run-9", version: "1.5.0" });
+    const user = userEvent.setup();
+    renderPage();
+    const box = await screen.findByTestId("updates-stuck");
+    expect(box).toHaveTextContent("1.5.0 has not installed in 3 windows");
+    await user.click(within(box).getByRole("button", { name: "Install now" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/run", {
+        version: "1.5.0",
+        confirm: true,
+      })
+    );
+  });
+
+  it("the last failed update is tried again now", async () => {
+    const failed = {
+      ...liveRun,
+      id: "run-7",
+      state: "failed",
+      finished_at: finishedAt,
+      error: { code: "local_build" },
+    };
+    routes(overview({ last_run: failed }), null, [failed]);
+    renderPage();
+    const box = await screen.findByTestId("updates-last-failed");
+    expect(box).toHaveTextContent("This app was built locally and can't update itself");
+    expect(within(box).getByRole("button", { name: "Try 1.5.0 again now" })).toBeInTheDocument();
+  });
+
+  it("reads in Arabic", async () => {
+    routes(
+      overview({
+        stuck: { version: "1.5.0", code: "tv_busy", windows: 3, since: finishedAt },
+        catalog: [{ ...target, version: "1.4.5", blocked_reason: "attempts" }],
+        last_tick: { action: "blocked", reason: "run_active", version: "1.5.0", at: finishedAt },
+      }),
+      null
+    );
+    renderPage("ar");
+    expect(await screen.findByTestId("updates-stuck")).toHaveTextContent("ثبّته الآن");
+    expect(screen.getByTestId("updates-blocked-1.4.5")).toHaveTextContent("فشل في ثلاث نوافذ");
+    expect(screen.getByTestId("updates-tick")).toHaveTextContent("يجري تحديث بالفعل");
+  });
+});

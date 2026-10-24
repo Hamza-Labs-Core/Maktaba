@@ -187,10 +187,15 @@ jobs:
   docker:
     name: docker build + push
     needs: [lint, test, build]
-    # Publish only on main pushes and tags — never on PRs (no secrets,
-    # no registry write) and never on manual dispatch (deploy uses an
-    # already-published image).
-    if: github.event_name == 'push'
+    # Publish only on main pushes — never on PRs (no secrets, no registry
+    # write), never on manual dispatch (deploy uses an already-published
+    # image), and never on a tag: a release's maktaba-cloud:<tag> (and
+    # :latest, for a plain tag) is release.yml's alone, signed by its
+    # identity with the other images and recorded in its signed
+    # release-manifest.json. Two publishers of one tag (different build
+    # args and signers, the last writer winning) left the deployed image
+    # unknown.
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     permissions:
@@ -212,20 +217,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
 
-      # Tag policy:
-      #   main push  -> :edge + :sha-<short>
-      #   v* tag      -> :vX.Y.Z + :latest (a tag with a suffix, v0.3.0-rc.1,
-      #                  gets only its own name: :latest is a plain release's)
+      # Tag policy (main pushes only): :edge + :sha-<short>. latest=false: the
+      # action's default (latest=auto) also moved :latest, on an rc tag too.
       - name: Derive image tags
         uses: docker/metadata-action@v5.7.0
         id: meta
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
           tags: |
             type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=tag
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
 
       # The relay runs on whatever the operator's VPS is (x86 droplets,
       # arm64 Ampere/Graviton), so the image is multi-arch — unlike
@@ -242,38 +245,10 @@ jobs:
           provenance: true
           sbom: true
           build-args: |
-            VERSION=${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.sha }}
+            VERSION=${{ github.sha }}
             COMMIT=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-  sign:
-    name: sign image (cosign)
-    needs: [docker]
-    # Sign release images only — keyless cosign over the immutable digest
-    # via the workflow's OIDC identity (no key to provision).
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-22.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    steps:
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3.10.0
-
-      - name: Registry login
-        uses: docker/login-action@v4.2.0
-        with:
-          registry: ${{ env.REGISTRY == 'ghcr.io/hamza-labs-core' && 'ghcr.io' || env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Sign image (keyless)
-        env:
-          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.docker.outputs.digest }}
-        run: cosign sign --yes "$IMAGE_REF"
 
   deploy:
     name: deploy to VPS
@@ -287,16 +262,22 @@ jobs:
     # workflow_dispatch run (where `docker` is skipped) reach deploy, but
     # not a cancelled run (`always()` would); a tag needs docker to have
     # succeeded, not been skipped because lint, test or build failed.
+    # A tag's image is release.yml's (docker skips tags): the deploy waits for it below
+    # (it exists only once release.yml's guard let the tag through and it was signed).
     if: >-
       !cancelled() &&
       (
         (github.event_name == 'workflow_dispatch' && needs.docker.result == 'skipped') ||
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
           !contains(github.ref, '-') &&
-          needs.docker.result == 'success' && vars.RELAY_DEPLOY == 'true')
+          needs.docker.result == 'skipped' && vars.RELAY_DEPLOY == 'true')
       )
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    # a tag waits up to an hour for release.yml's image
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      packages: read # the release's image in the registry
     # The `production` environment has no protection rules yet, so a
     # deploy does not wait for approval. To add a gate, add required
     # reviewers under Settings → Environments → production.
@@ -321,6 +302,32 @@ jobs:
           else
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi
+
+      # A pushed tag: wait for release.yml's image of it (pushed, then signed, in its
+      # build-images job), up to an hour.
+      - name: Registry login
+        if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+        uses: docker/login-action@v4.2.0
+        with:
+          registry: ${{ env.REGISTRY == 'ghcr.io/hamza-labs-core' && 'ghcr.io' || env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Wait for the release's image
+        if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 120); do
+            if docker buildx imagetools inspect "${IMAGE}" >/dev/null 2>&1; then
+              echo "release image ${IMAGE} is published"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::${IMAGE} was not published within an hour (release.yml's build-images, or its tag guard)"
+          exit 1
 
       - name: Deploy
         env:

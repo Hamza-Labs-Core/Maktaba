@@ -105,6 +105,9 @@ type HomeDB struct {
 	// access only for a failure seen twice (ConfirmFails), not for one try that met a home
 	// in the middle of a switch.
 	Fails int `json:"fails,omitempty"`
+	// Target is where the machine logs in: host:port/database (never its password), which
+	// the home compares with the access it would hand out.
+	Target string `json:"target,omitempty"`
 }
 
 // ConfirmFails is how many failed logins in a row make a failure the home acts on.
@@ -126,9 +129,13 @@ type Command func(ctx context.Context, name string, args json.RawMessage) (handl
 
 // Agent is the machine agent.
 type Agent struct {
-	ID     Identity
-	State  func() UpdateState
-	Logger *slog.Logger
+	ID    Identity
+	State func() UpdateState
+	// OnConnect is called each time the agent is connected to the home, before it sends
+	// its state (a node checks its login to the home's database again: its last check may
+	// predate the home's start).
+	OnConnect func()
+	Logger    *slog.Logger
 	// Commands answers the home's commands besides disconnect (the switchover's).
 	Commands Command
 
@@ -331,6 +338,9 @@ func (a *Agent) session(ctx context.Context) (websocket.StatusCode, error) {
 	a.mu.Unlock()
 	a.connected.Store(true)
 	a.log().Info("node: machine agent connected to the home", "event", "node_agent_connected")
+	if a.OnConnect != nil {
+		a.OnConnect()
+	}
 	return a.pump(ctx, c, c2s, s2c)
 }
 

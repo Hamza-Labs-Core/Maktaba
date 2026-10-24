@@ -179,7 +179,9 @@ func (ai *AppInstaller) Preflight(ctx context.Context, j *Journal) error {
 	}
 	b, err := ai.Source.get()(ctx, feed, 1<<20)
 	if err != nil {
-		return Fail("no_app_update", "latest.json: %v", err)
+		// a download that failed (the feed is there: its asset is listed) is tried again,
+		// never a person's to mend
+		return Fail("download_failed", "latest.json: %v", err)
 	}
 	var f struct {
 		Version   string `json:"version"`
@@ -219,9 +221,15 @@ func (ai *AppInstaller) Stage(ctx context.Context, j *Journal, log io.Writer) er
 		if err != nil {
 			return err
 		}
-		up, err := releaseverify.FetchServer(ctx, ai.Source.get(), in, j.Job.Assets, ai.Source.platform())
-		if err != nil {
-			return verifyFailure(err)
+		var up *releaseverify.ServerUpdate
+		if err := retryFetch(ctx, func() error {
+			var err error
+			if up, err = releaseverify.FetchServer(ctx, ai.Source.get(), in, j.Job.Assets, ai.Source.platform()); err != nil {
+				return verifyFailure(err)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 		res = up.Result
 		entry, api, err := releaseverify.ExtractBinary(up.Asset.Archive, up.Archive, "maktaba-api")
@@ -245,13 +253,18 @@ func (ai *AppInstaller) Stage(ctx context.Context, j *Journal, log io.Writer) er
 				return Fail("release_incomplete", "%v", err)
 			}
 		}
-	} else {
+	} else if err := retryFetch(ctx, func() error {
 		var err error
-		if res, err = ai.Source.verify(ctx, j); err != nil {
-			return err
-		}
+		res, err = ai.Source.verify(ctx, j)
+		return err
+	}); err != nil {
+		return err
 	}
-	_ = res
+	// the one "never go back" rule against the release this app committed last
+	if err := checkNotBack(ai.updatesDir(), ai.Running(), res); err != nil {
+		return err
+	}
+	j.Signed = signedOf(res)
 	kept, err := ai.keep(ai.Running(), log)
 	if err != nil {
 		return Fail("keep_failed", "keep a copy of the running payload: %v", err)
@@ -469,14 +482,15 @@ func (ai *AppInstaller) Revert(_ context.Context, j *Journal) error {
 }
 
 // appTouched says the app may have changed its bundle for j's run: its order says it
-// began installing (or failed doing it). An app that refused because it cannot replace
-// itself without an administrator (needs_admin) changed nothing.
+// began installing (or failed doing it). An app that refused before it began (it cannot
+// replace itself without an administrator or macOS's App Management, or it was built
+// locally: refusedCodes) changed nothing.
 func (ai *AppInstaller) appTouched(j *Journal) bool {
 	q, err := ai.requests().read()
 	if err != nil || q.RunID != j.Job.RunID {
 		return false
 	}
-	if code, _ := appFailure(q.Error); q.State == RequestFailed && code == "needs_admin" {
+	if code, _ := appFailure(q.Error); q.State == RequestFailed && refusedCodes[code] {
 		return false
 	}
 	return q.State == RequestInstalling || q.State == RequestFailed
@@ -493,6 +507,7 @@ func (ai *AppInstaller) Commit(_ context.Context, j *Journal) error {
 	if err := layout.WriteOverride(ai.LauncherRoot, ""); err != nil {
 		return err
 	}
+	_ = keepSigned(ai.updatesDir(), j.Signed)
 	_ = os.RemoveAll(j.Staged)
 	ents, _ := os.ReadDir(filepath.Join(ai.updatesDir(), "payloads"))
 	for _, e := range ents {

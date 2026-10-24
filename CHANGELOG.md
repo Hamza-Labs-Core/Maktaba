@@ -722,7 +722,11 @@ don't append a line here; docs-only PRs are exempt.
   new password and hands it the database's address over the machine channel, and the machine
   starts again with it, within a minute, with no one doing anything. Until then the Updates
   and Machines pages say "this machine can't reach the home's database" and why, and a home's
-  update waits for its machines to follow it before it commits.
+  update waits for its machines to follow it before it commits (each for ten minutes at most).
+  The home re-makes the access only where that mends the login (a refused password, a database
+  that moved), with a growing pause between tries, never during a switch of the home or from
+  a home that has not learned of one; the machine keeps its pinned CA, and no password shows in
+  the database's logs (SCRAM verifiers) or in a failure's text.
 - **The Apple-Silicon Mac app is released again.** Every release since the app was signed ad
   hoc (v0.3.0-rc.7, v0.3.1) failed its macos-arm64 build, so their update feeds had no
   Apple-Silicon entry and a Mac home could not update. Without the Apple secrets the release
@@ -730,6 +734,39 @@ don't append a line here; docs-only PRs are exempt.
   must be at least 3 characters"). The Mac builds now get them only for a Developer ID app with
   a complete set, and CI's mac-app gate builds the way the release does, with those settings
   set but empty.
+- **Every desktop app updates, and a Mac update says why when its server does not come back.**
+  Apps that run no server (the Intel Mac app, an app connected to another Maktaba, the Windows
+  portable) now show their update. After an app update the Mac registers the server's login item
+  again and waits for the server on the new release before counting it installed; an ordered
+  install checks, without prompting, whether macOS lets the app change itself (translocated,
+  read-only, an administrator's, App Management, a locked bundle) and never reaches a password
+  prompt. An app built locally says it cannot update itself (`local_build`: install the release
+  by hand once) and blocks nothing. A Windows installer that does not finish is recorded and an
+  unattended home's server comes back. One install at a time, with a download timeout and
+  progress.
+- **Cluster updates retry sensibly and can be unblocked.** A failure that may pass is retried at
+  once, after 15 minutes, then in the next window (one attempt per window); one that needs a
+  person starts no new runs and is told once. An admin can try a blocked release again or install
+  it now. `catch_up` is honoured, a machine whose failure was mended is caught up, each node is
+  drained for its own switch, only a verification or a rehearsal on the real data blocks a
+  release, and a home whose window always has a viewer is told after three windows, with
+  "Install now". Old dumps are pruned to `backups_keep`; a failed restore into an operator's own
+  Postgres leaves it as it was.
+- **One rule for which release is newer.** A release numbered higher but built before the one
+  running (an rc tagged after its release) is passed by on every updater, instead of being
+  offered, refused as a replay, or installed as a downgrade; a hotfix on an older minor still
+  moves up. A release seen before its signed files were attached is verified once they are; a
+  failed download is retried, never a verification failure that blocks the release.
+- **Releases are guarded and never rewritten.** A tag at or below a published release, off
+  `main` or without a passing CI run is refused; each release stays a draft until it is complete
+  and becomes the latest only when it is the highest stable with every desktop platform in its
+  verified feed; a re-run never rewrites a published release, and its files are reproducible.
+  `install.sh` with systemd sets up the self-updating service; a .deb/.rpm upgrade restarts the
+  service and leaves the migrations to the database step; the Sigstore trusted root is refreshed
+  by a weekly PR.
+- **No stale page after an update.** The service worker carries each build's stamp, pages load
+  from the network first, and a page an older release left open reloads once instead of going
+  blank.
 
 ## [0.2.0] - 2026-10-19
 

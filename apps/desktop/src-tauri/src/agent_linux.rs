@@ -85,6 +85,57 @@ pub fn data_dir(getenv: impl Fn(&str) -> Option<String>, home: &Path) -> PathBuf
     xdg(&getenv, "XDG_DATA_HOME", home, &[".local", "share"]).join("maktaba")
 }
 
+/// The server's unit file (`maktaba-server service install` writes it there, whatever
+/// $XDG_CONFIG_HOME says).
+const UNIT_FILE: &str = "maktaba-server.service";
+
+/// The value of `name` the server's unit was written with: `service install` pins the XDG
+/// directories in its Environment= lines, so the server's state folder (where the home's
+/// order and the attempts are) is where that environment says, not where this app's own
+/// environment would put it. None when there is no unit, or it pins none.
+pub fn unit_env(home: &Path, name: &str) -> Option<String> {
+    let path = home
+        .join(".config")
+        .join("systemd")
+        .join("user")
+        .join(UNIT_FILE);
+    unit_env_in(&std::fs::read_to_string(path).ok()?, name)
+}
+
+/// unit_env of a unit's text: its `Environment="NAME=value"` lines (backslash and quote
+/// escaped, % doubled, as service/appunit.go writes them), the last one that sets name.
+pub fn unit_env_in(unit: &str, name: &str) -> Option<String> {
+    let mut out = None;
+    for line in unit.lines() {
+        let Some(rest) = line.trim().strip_prefix("Environment=") else {
+            continue;
+        };
+        let quoted = rest.strip_prefix('"').and_then(|r| r.strip_suffix('"'));
+        let kv = match quoted {
+            Some(q) => {
+                let mut s = String::with_capacity(q.len());
+                let mut chars = q.chars().peekable();
+                while let Some(c) = chars.next() {
+                    match c {
+                        '\\' => s.extend(chars.next()),
+                        '%' if chars.peek() == Some(&'%') => {
+                            chars.next();
+                            s.push('%');
+                        }
+                        c => s.push(c),
+                    }
+                }
+                s
+            }
+            None => rest.to_string(),
+        };
+        if let Some(v) = kv.strip_prefix(name).and_then(|r| r.strip_prefix('=')) {
+            out = Some(v.to_string());
+        }
+    }
+    out
+}
+
 /// $XDG_STATE_HOME/maktaba/logs (maktaba-server's logs directory on Linux).
 pub fn logs_dir(getenv: impl Fn(&str) -> Option<String>, home: &Path) -> PathBuf {
     xdg(&getenv, "XDG_STATE_HOME", home, &[".local", "state"])
@@ -294,11 +345,37 @@ pub fn plan(st: &RuntimeStatus) -> Plan {
             running: st.version.clone(),
         };
     }
-    if st.update_pending {
+    // the same release built again (another build of its payload: v0.3.0's Linux payload
+    // tarball and its app's differed) is what runs already: the server switches releases
+    // itself (owner decision D3), never this app behind the home's back
+    let runs_it =
+        !st.version.is_empty() && crate::attempts::at_least(&st.version, &st.from_version);
+    if st.update_pending && !runs_it {
         Plan::Install
     } else {
         Plan::Keep
     }
+}
+
+/// Whether this app is older than the release its server runs (Plan::Older's versions: the
+/// app's, the newest the machine ran, what runs), asked without changing anything: the
+/// tray's catch-up, asked again while the app runs (the server updates its own runtime).
+/// None when it is not, or when this build carries no payload.
+pub fn runtime_older() -> Result<Option<(String, String, String)>, String> {
+    let Some(p) = payload() else {
+        return Ok(None);
+    };
+    let from = p.server_dir.to_string_lossy().to_string();
+    let st: RuntimeStatus = run_json(&["runtime", "status", "--from", &from])
+        .and_then(|v| serde_json::from_value(v).map_err(|e| e.to_string()))?;
+    Ok(match plan(&st) {
+        Plan::Older {
+            app,
+            server,
+            running,
+        } => Some((app, server, running)),
+        _ => None,
+    })
 }
 
 /// The user's message for an app older than this machine's server, in the
@@ -822,6 +899,22 @@ mod tests {
                 running: "v1.5.0".into()
             }
         );
+        // the same release built again (another build of its payload): what runs already
+        assert_eq!(
+            plan(&rt(
+                r#"{"current":"v1.5.0_1a2b3c4d","version":"v1.5.0","watermark":"v1.5.0",
+                       "from":"v1.5.0_9f8e7d6c","from_version":"v1.5.0","update_pending":true,"downgrade":false}"#
+            )),
+            Plan::Keep
+        );
+        // a newer one: installed
+        assert_eq!(
+            plan(&rt(
+                r#"{"current":"v1.5.0_1a2b3c4d","version":"v1.5.0","watermark":"v1.5.0",
+                       "from_version":"v1.6.0","update_pending":true,"downgrade":false}"#
+            )),
+            Plan::Install
+        );
         // the newest this machine ran is what an older app is compared with
         assert_eq!(
             plan(&rt(
@@ -833,6 +926,25 @@ mod tests {
                 running: "v1.3.0".into()
             }
         );
+    }
+
+    /// The unit's pinned environment, as service/appunit.go writes it: quoted, escaped, %
+    /// doubled; the last line that sets a name wins; none without a unit line for it.
+    #[test]
+    fn the_unit_s_environment_is_read() {
+        let unit = "[Service]\nEnvironment=\"XDG_CONFIG_HOME=/home/me/.config\"\n\
+                    Environment=\"XDG_DATA_HOME=/srv/me/100%% \\\"data\\\"\"\n\
+                    ExecStart=/x\n";
+        assert_eq!(
+            unit_env_in(unit, "XDG_DATA_HOME").as_deref(),
+            Some("/srv/me/100% \"data\"")
+        );
+        assert_eq!(
+            unit_env_in(unit, "XDG_CONFIG_HOME").as_deref(),
+            Some("/home/me/.config")
+        );
+        assert_eq!(unit_env_in(unit, "XDG_STATE_HOME"), None);
+        assert_eq!(unit_env_in(unit, "XDG_DATA"), None);
     }
 
     #[test]

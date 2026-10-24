@@ -1,8 +1,11 @@
 // PWA service worker (Story 11.10).
 //
-//   - App shell: cache-first. The cache name carries a build stamp so a
-//     new deploy busts the old shell (the registration in src/lib/pwa.ts
-//     fires `mkt:sw-update` so the UI can offer a reload).
+//   - App shell: the page itself (a navigation) network-first, the cached
+//     shell only offline; hashed assets cache-first. The cache name carries
+//     a build stamp that vite.config.ts writes into dist/sw.js at every
+//     build (src/lib/swStamp.ts), so a new release is a new worker: it busts
+//     the old shell, and the registration in src/lib/pwa.ts fires
+//     `mkt:sw-update` so the UI can offer a reload.
 //   - /api/*: NETWORK-ONLY. The API authenticates via the HttpOnly
 //     `mkt_sess` cookie (web/src/lib/api.ts sends credentials:"include").
 //     Cache Storage is keyed by URL only — it cannot tell user A's
@@ -17,7 +20,7 @@
 // on the reload action). This guarantees a mid-session SW swap cannot
 // silently activate and resurrect any legacy poisoned API cache while
 // the page is still showing the previous user's data.
-const BUILD = "v2";
+const BUILD = "dev";
 const SHELL_CACHE = "mkt-shell-" + BUILD;
 // theme-boot.js runs before first paint (no theme flash), so it is shell too.
 const SHELL = ["/", "/index.html", "/theme-boot.js"];
@@ -84,10 +87,14 @@ self.addEventListener("fetch", (event) => {
   // /api/* is network-only: do not consult or populate any cache.
   if (url.pathname.startsWith("/api/")) return;
 
-  // App shell: cache-first with a network fallback to the SPA entry.
-  event.respondWith(
-    caches
-      .match(req)
-      .then((cached) => cached || fetch(req).catch(() => caches.match("/index.html")))
-  );
+  // The page itself: network-first, so an updated server's page (and its new
+  // hashed assets) shows at once; the cached shell only when offline.
+  if (req.mode === "navigate") {
+    event.respondWith(fetch(req).catch(() => caches.match("/index.html")));
+    return;
+  }
+
+  // Hashed assets and the rest of the shell: cache-first with a network
+  // fallback (a missing asset is a 404 from the server, never the SPA page).
+  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
 });

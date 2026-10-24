@@ -163,3 +163,45 @@ func rawMap(m map[string]string) map[string]json.RawMessage {
 	}
 	return out
 }
+
+// One "never go back" rule (releaseverify.OlderBuild): rc.7 was tagged after v0.3.0, so a
+// home on rc.7 does not take 0.3.0 (newer in version, the older build) but takes 0.3.1; a
+// hotfix on an older minor signed after the next minor still moves up to it (22.5 EC1).
+func TestChooseTargetPassesAnOlderBuild(t *testing.T) {
+	at := func(s string) func(*Release) {
+		return func(r *Release) {
+			p, _ := time.Parse(time.RFC3339, s)
+			r.Manifest.Published = p
+		}
+	}
+	beta := DefaultPolicy()
+	beta.Channel = ChannelBeta
+	cat := []Release{rel("0.3.0-rc.6", at("2026-10-24T05:16:46Z")), rel("0.3.0", at("2026-10-24T05:43:50Z")),
+		rel("0.3.0-rc.7", at("2026-10-24T06:17:21Z"))}
+	for _, pol := range []Policy{DefaultPolicy(), beta} {
+		if c := ChooseTarget(cat, pol, "0.3.0-rc.7", ""); c.Target != nil || c.Reason != ReasonUpToDate {
+			t.Fatalf("%s: a home on rc.7 took the older build: %+v", pol.Channel, c.Target)
+		}
+	}
+	// a machine on rc.6 (signed before 0.3.0) still takes 0.3.0
+	if c := ChooseTarget(cat, DefaultPolicy(), "0.3.0-rc.6", ""); c.Target == nil || c.Target.Version != "0.3.0" {
+		t.Fatalf("rc.6: %+v", c.Target)
+	}
+	cat = append(cat, rel("0.3.1", at("2026-10-24T17:56:46Z")))
+	if c := ChooseTarget(cat, DefaultPolicy(), "0.3.0-rc.7", ""); c.Target == nil || c.Target.Version != "0.3.1" {
+		t.Fatalf("0.3.1: %+v", c.Target)
+	}
+	// the floor is the watermark when it is higher: an rc.7 watermark passes 0.3.0 by
+	if c := ChooseTarget(cat[:3], DefaultPolicy(), "0.3.0-rc.6", "0.3.0-rc.7"); c.Target != nil {
+		t.Fatalf("watermark rc.7: %+v", c.Target)
+	}
+	// a hotfix on 0.2 signed after 0.3.0 moves up to it
+	hot := []Release{rel("0.2.5", at("2026-10-25T00:00:00Z")), rel("0.3.0", at("2026-10-24T05:43:50Z"))}
+	if c := ChooseTarget(hot, DefaultPolicy(), "0.2.5", ""); c.Target == nil || c.Target.Version != "0.3.0" {
+		t.Fatalf("hotfix line: %+v", c.Target)
+	}
+	// a running release the catalog does not know (or has not verified): no time rule
+	if c := ChooseTarget(cat[1:2], DefaultPolicy(), "0.3.0-rc.7", ""); c.Target == nil || c.Target.Version != "0.3.0" {
+		t.Fatalf("unknown running release: %+v", c.Target)
+	}
+}

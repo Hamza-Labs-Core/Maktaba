@@ -101,8 +101,16 @@ func (ri *RuntimeInstaller) Preflight(_ context.Context, _ *Journal) error {
 // Stage implements Installer: the payload tarball, verified against the signed
 // checksums.txt, unpacked and installed as a runtime directory (current unchanged).
 func (ri *RuntimeInstaller) Stage(ctx context.Context, j *Journal, _ io.Writer) error {
-	res, err := ri.Source.verify(ctx, j)
-	if err != nil {
+	var res *releaseverify.Result
+	if err := retryFetch(ctx, func() error {
+		var err error
+		res, err = ri.Source.verify(ctx, j)
+		return err
+	}); err != nil {
+		return err
+	}
+	// the one "never go back" rule against the release this runtime committed last
+	if err := checkNotBack(ri.Runtime.Root, ri.Running(), res); err != nil {
 		return err
 	}
 	asset := appruntime.ReleaseAsset(j.Job.Tag)
@@ -119,11 +127,16 @@ func (ri *RuntimeInstaller) Stage(ctx context.Context, j *Journal, _ io.Writer) 
 	}
 	defer func() { _ = os.RemoveAll(dl) }()
 	tarball := filepath.Join(dl, asset)
-	if err := ri.Source.downloadTo(ctx, u, tarball, 2<<30); err != nil {
-		return Fail("download_failed", "%s: %v", asset, err)
-	}
-	if err := res.VerifyArtifact(releaseverify.Artifact{Name: asset, Path: tarball}); err != nil {
-		return verifyFailure(err)
+	if err := retryFetch(ctx, func() error {
+		if err := ri.Source.downloadTo(ctx, u, tarball, 2<<30); err != nil {
+			return Fail("download_failed", "%s: %v", asset, err)
+		}
+		if err := res.VerifyArtifact(releaseverify.Artifact{Name: asset, Path: tarball}); err != nil {
+			return verifyFailure(err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	payload, err := appruntime.Unpack(tarball, filepath.Join(dl, "payload"))
 	if err != nil {
@@ -143,7 +156,7 @@ func (ri *RuntimeInstaller) Stage(ctx context.Context, j *Journal, _ io.Writer) 
 		return Fail("install_failed", "%v", err)
 	}
 	cur, _ := ri.Runtime.Current()
-	j.Staged, j.FromRef = filepath.Base(r.Dir), cur
+	j.Staged, j.FromRef, j.Signed = filepath.Base(r.Dir), cur, signedOf(res)
 	return nil
 }
 
@@ -216,6 +229,7 @@ func (ri *RuntimeInstaller) Commit(ctx context.Context, j *Journal) error {
 	}
 	ri.requests().remove()
 	_ = ri.Runtime.RaiseWatermark(layout.NormalizeVersion(j.Job.Version))
+	_ = keepSigned(ri.Runtime.Root, j.Signed)
 	keep := j.Job.KeepVersions
 	if keep < 2 {
 		keep = 2

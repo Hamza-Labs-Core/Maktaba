@@ -192,6 +192,9 @@ func (d *Driver) Machines(ctx context.Context, home Machine) []Machine {
 	}
 	agents, states := d.agentStates()
 	wm, _ := d.Store.Watermark(ctx)
+	if home.Version != "" && ValidVersion(home.Version) && (wm == "" || CompareVersions(home.Version, wm) > 0) {
+		wm = NormalizeVersion(home.Version) // the home installed by hand: the cluster's release is the home's
+	}
 	run, _ := d.Store.ActiveRun(ctx)
 	var targets map[string]Target
 	if run != nil {

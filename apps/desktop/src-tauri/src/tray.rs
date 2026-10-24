@@ -129,6 +129,44 @@ pub fn badge_color(status: &ServerStatus, update_ready: bool) -> Option<[u8; 3]>
     }
 }
 
+/// The badge of an app that runs no server (Windows and Linux): violet while its own feed
+/// offers an update, else none (it has no server status to show).
+pub fn client_badge(update_ready: bool) -> Option<[u8; 3]> {
+    update_ready.then_some(BADGE_UPDATE)
+}
+
+/// The entries with item `id`'s label (and whether it can be clicked) replaced: the update
+/// item while its download runs, or the portable app's. Entries without it stay as they are.
+pub fn with_label(mut entries: Vec<Entry>, id: &str, label: &str, clickable: bool) -> Vec<Entry> {
+    for e in &mut entries {
+        if let Entry::Item {
+            id: this,
+            label: l,
+            enabled,
+        } = e
+        {
+            if *this == id {
+                *l = label.to_string();
+                *enabled = clickable;
+            }
+        }
+    }
+    entries
+}
+
+/// The update item while `version` downloads: the share of `total` when it is known, else
+/// the megabytes so far.
+pub fn download_label(lang: Lang, version: &str, got: u64, total: Option<u64>) -> String {
+    let progress = match total.filter(|t| *t > 0) {
+        Some(t) => format!("{}%", (got.saturating_mul(100) / t).min(100)),
+        None => format!("{} MB", got / (1 << 20)),
+    };
+    fill(
+        lang.words().update_downloading,
+        &[("version", version), ("progress", &progress)],
+    )
+}
+
 /// The icon (RGBA, `width` × `height`) with a round badge of `color` in its
 /// bottom-right corner, ringed in white so it reads on a dark or light
 /// taskbar, its edge anti-aliased. Drawn at run time: no icon file per state.
@@ -230,6 +268,11 @@ pub fn entries_with_order(
             None if update_ready => out.push(item("update", w.update_ready)),
             None => {}
         }
+        out.push(Entry::Separator);
+    } else if update_ready {
+        // an app that runs no server updates from its own feed (the Intel Mac app, an app
+        // connected to another Maktaba, the Windows portable: owner decision D1)
+        out.push(item("update", w.update_ready));
         out.push(Entry::Separator);
     }
     out.push(item("show", w.open));
@@ -498,7 +541,7 @@ mod tests {
 
     #[test]
     fn client_mode_has_no_server_items() {
-        let e = entries(Lang::En, false, &ServerStatus::Stopped, true);
+        let e = entries(Lang::En, false, &ServerStatus::Stopped, false);
         assert_eq!(
             ids(&e),
             [
@@ -509,6 +552,35 @@ mod tests {
                 "tray-settings",
                 "quit"
             ]
+        );
+    }
+
+    /// An app that runs no server shows its own feed's update (the Intel Mac app, an app
+    /// connected to another Maktaba, the Windows portable), with its badge on Windows and
+    /// Linux; the update item's label follows its download, or the portable's words.
+    #[test]
+    fn a_client_shows_its_update() {
+        let e = entries(Lang::En, false, &ServerStatus::SetupNeeded, true);
+        assert_eq!(ids(&e)[..2], ["update", "show"]);
+        assert_eq!(client_badge(true), Some(BADGE_UPDATE));
+        assert_eq!(client_badge(false), None);
+        let e = with_label(e, "update", "Downloading Maktaba 1.5.0: 45%", false);
+        assert!(
+            matches!(&e[0], Entry::Item { label, enabled: false, .. } if label.ends_with("45%"))
+        );
+        assert_eq!(
+            download_label(Lang::En, "1.5.0", 45, Some(100)),
+            "Downloading Maktaba 1.5.0: 45%"
+        );
+        assert_eq!(
+            download_label(Lang::En, "1.5.0", 3 << 20, None),
+            "Downloading Maktaba 1.5.0: 3 MB"
+        );
+        // no update item: nothing changes
+        let plain = entries(Lang::En, false, &ServerStatus::SetupNeeded, false);
+        assert_eq!(
+            ids(&with_label(plain.clone(), "update", "x", true)),
+            ids(&plain)
         );
     }
 

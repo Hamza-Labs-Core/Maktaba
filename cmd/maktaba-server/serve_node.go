@@ -131,6 +131,8 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 		},
 		// the home's switch to another machine (serve_switchover.go)
 		Commands: commands,
+		// a check of the home's database made after the home heard from this machine again
+		OnConnect: ns.homeDB.reconnected,
 	}
 	go ns.agent.Run(ctx)
 	go ns.watchHome(ctx, apiOrigin(cfg.Server.Listen))

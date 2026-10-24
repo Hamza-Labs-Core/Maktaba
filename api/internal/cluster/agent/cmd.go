@@ -27,6 +27,11 @@ var commandNames = map[string]bool{
 	"logs.files": true,
 }
 
+// adminCommands are the commands an admin may send a process from the processes page
+// (POST /api/cluster/processes/{session}/cmd); every other is the home's own to send.
+var adminCommands = map[string]bool{"drain": true, "undrain": true, "reload_stages": true, "log_level": true,
+	"disconnect": true}
+
 // machineOnly are the commands only a machine's own agent (its supervisor) takes.
 func machineOnly(name string) bool {
 	return strings.HasPrefix(name, "update.") || name == "home.access" || name == "logs.files"

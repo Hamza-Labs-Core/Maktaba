@@ -187,6 +187,51 @@ func TestCatalogVerifiesNewEntries(t *testing.T) {
 	}
 }
 
+// A release a home looks at before its workflow attached release.json and the bundle (the
+// release exists minutes earlier) is verified once they are there, not passed by forever;
+// one that still has none is not downloaded again.
+func TestCatalogVerifiesALateManifest(t *testing.T) {
+	for _, be := range backends(t) {
+		t.Run(be.name, func(t *testing.T) {
+			ctx := context.Background()
+			g := newFakeGitHub(t)
+			g.add("v1.5.0", false, false, "good\n") // checksums.txt only, so far
+			store := &Store{DB: be.db}
+			v := &fakeVerifier{}
+			d := newDiscoverer(g, store, v, &recNotifier{}, "1.4.0")
+			if _, err := d.Check(ctx); err != nil {
+				t.Fatal(err)
+			}
+			r, _ := store.Get(ctx, "1.5.0")
+			if r.VerifyState != VerifyUnverified || r.VerifyError == nil || r.VerifyError.Kind != KindNoManifest {
+				t.Fatalf("first look: %+v %+v", r.VerifyState, r.VerifyError)
+			}
+			if _, err := d.Check(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if len(v.calls) != 0 {
+				t.Fatalf("verified without its files: %v", v.calls)
+			}
+			// the workflow attaches release.json and the bundle
+			g.set(func() {
+				g.releases = nil
+			})
+			g.add("v1.5.0", false, true, "good\n")
+			res, err := d.Check(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Verified) != 1 || res.Verified[0] != "1.5.0" {
+				t.Fatalf("not verified once its files are there: %+v (calls %v)", res, v.calls)
+			}
+			cat, _ := store.Catalog(ctx)
+			if c := ChooseTarget(cat, DefaultPolicy(), "1.4.0", ""); c.Target == nil || c.Target.Version != "1.5.0" {
+				t.Fatalf("not a candidate: %+v", c)
+			}
+		})
+	}
+}
+
 // EC4: the same version re-published with another checksums.txt is re-verified (not
 // installed) or, once installed, refused as a replay.
 func TestCatalogRetag(t *testing.T) {

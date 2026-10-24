@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -587,37 +586,11 @@ func (g *migrationGate) putBack(ctx context.Context, dump string) error {
 	return restoreExternal(ctx, *g.ext, dump, g.log)
 }
 
-// pruneDumps keeps the newest keep pre-update dumps in dir (and keep always).
+// pruneDumps keeps the newest keep pre-update dumps in dir (keepPath always) and as many
+// dumps of failed updates, and removes rehearsals a crash left (pgbundle.PruneBackups);
+// keep is rules.updates.backups_keep when the last committed update recorded it.
 func pruneDumps(dir, keepPath string, keep int) error {
-	keep = max(keep, 1)
-	ents, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-	type dumpFile struct {
-		path string
-		mod  int64
-	}
-	var dumps []dumpFile
-	for _, e := range ents {
-		n := e.Name()
-		if e.IsDir() || !strings.HasPrefix(n, "pre-") || !strings.HasSuffix(n, ".dump") {
-			continue
-		}
-		if info, err := e.Info(); err == nil {
-			dumps = append(dumps, dumpFile{filepath.Join(dir, n), info.ModTime().UnixNano()})
-		}
-	}
-	sort.SliceStable(dumps, func(i, j int) bool {
-		if dumps[i].path == keepPath || dumps[j].path == keepPath {
-			return dumps[i].path == keepPath
-		}
-		return dumps[i].mod > dumps[j].mod
-	})
-	for _, d := range dumps[min(keep, len(dumps)):] {
-		_ = os.Remove(d.path)
-	}
-	return nil
+	return pgbundle.PruneBackups(dir, keepPath, pgbundle.BackupsKeep(dir, keep))
 }
 
 // apiExitSchemaAhead is maktaba-api migrate's exit when the database holds

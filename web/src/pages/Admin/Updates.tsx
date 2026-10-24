@@ -118,6 +118,7 @@ function useWords() {
     kind: (k: string) => word("kind", k),
     trigger: (s: string) => word("trigger", s),
     waiting: (s: string) => word("waiting", s),
+    word,
   };
 }
 
@@ -255,6 +256,28 @@ export function AdminUpdates() {
   }
   const machines: UpdateMachine[] = ov.machines ?? [];
   const paused = !ov.policy.auto_install;
+  // why a due release does not start now: a blocker, a retry's pause, a person's failure
+  const tick = ov.last_tick;
+  const tickWhy =
+    tick && !running && tick.reason && (tick.action === "blocked" || tick.action === "none")
+      ? tick.action === "blocked"
+        ? w.word("blocker", tick.reason)
+        : w.waiting(tick.reason)
+      : "";
+  const blocked = ov.catalog.filter((r) => r.blocked_reason && !r.withdrawn_at);
+  const last = ov.last_run;
+  const lastFailed =
+    !running &&
+    last &&
+    (last.state === "failed" || last.state === "rolled_back") &&
+    !blocked.some((r) => r.version === last.version) &&
+    (last.trigger === "auto" || last.trigger === "manual");
+  const lastCode = (() => {
+    const e = last?.error as { code?: string } | undefined;
+    return e?.code ?? last?.state ?? "";
+  })();
+  const installNow = (version: string) =>
+    act(() => updatesApi.runNow(version), t("updates.held.started", { version }));
 
   return (
     <section className="mkt-page mkt-updates" aria-labelledby="updates-page-title">
@@ -265,10 +288,69 @@ export function AdminUpdates() {
       <p className="mkt-muted" data-testid="updates-next">
         {next}
       </p>
+      {tickWhy && target && (
+        <p className="mkt-muted" data-testid="updates-tick">
+          {t("updates.tick.notStarted", { reason: tickWhy })}
+        </p>
+      )}
       {paused && (
         <p className="mkt-muted" data-testid="updates-paused">
           {t("updates.page.paused")}
         </p>
+      )}
+      {ov.stuck && !running && (
+        <div className="mkt-callout" role="alert" data-testid="updates-stuck">
+          <p>
+            {t("updates.stuck.title", {
+              version: ov.stuck.version,
+              windows: ov.stuck.windows,
+              reason: w.reason(ov.stuck.code),
+            })}
+          </p>
+          <p className="mkt-muted">{t("updates.stuck.body")}</p>
+          <Button variant="primary" disabled={busy} onClick={() => installNow(ov.stuck!.version)}>
+            {t("updates.blocked.install")}
+          </Button>
+        </div>
+      )}
+      {blocked.map((r) => (
+        <div className="mkt-callout" key={r.version} data-testid={`updates-blocked-${r.version}`}>
+          <p>
+            {t("updates.blocked.title", {
+              version: r.version,
+              reason: w.word("blocked.reason", r.blocked_reason ?? ""),
+            })}
+          </p>
+          <Button
+            variant="secondary"
+            disabled={busy || running}
+            onClick={() =>
+              act(
+                () => updatesApi.unblock(r.version),
+                t("updates.blocked.unblocked", { version: r.version })
+              )
+            }
+          >
+            {t("updates.blocked.unblock")}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={busy || running}
+            onClick={() => installNow(r.version)}
+          >
+            {t("updates.blocked.install")}
+          </Button>
+        </div>
+      ))}
+      {lastFailed && last && (
+        <div className="mkt-callout" data-testid="updates-last-failed">
+          <p>
+            {t("updates.lastRun.failed", { version: last.version, reason: w.reason(lastCode) })}
+          </p>
+          <Button variant="secondary" disabled={busy} onClick={() => installNow(last.version)}>
+            {t("updates.lastRun.retry", { version: last.version })}
+          </Button>
+        </div>
       )}
       {ov.check_stale && (
         <p className="mkt-error" role="alert">

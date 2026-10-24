@@ -8,7 +8,7 @@
 // in the tray's language. app.log beside server.log keeps one line per event.
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -61,6 +61,20 @@ pub const PREVIOUS_APP_NOT_RESTORED: &str = "previous_app_not_restored";
 pub const SERVER_STOP_FAILED: &str = "server_stop_failed";
 pub const RELAUNCH_FAILED: &str = "relaunch_failed";
 pub const LOGIN_ITEM_UNSIGNED: &str = "login_item_unsigned";
+/// macOS: the app may not replace itself without a person: System Settings' App Management
+/// refuses this app changing another app's bundle (an app not signed by a Developer ID), or
+/// the bundle is locked (its flags, an ACL). The updater would ask for an administrator's
+/// password instead, which an install the home ordered never lets it do.
+pub const APP_MANAGEMENT: &str = "app_management";
+/// This app was built locally (its updater has the placeholder key, REPLACE_WITH_PUBKEY):
+/// it can verify no release, so it updates nothing itself; a person installs a release
+/// once, by hand, and from then on it updates.
+pub const LOCAL_BUILD: &str = "local_build";
+/// Windows: the installer the updater started once this app closed did not finish (it
+/// failed, or was cancelled): the server it stopped was left held down until the next start
+/// (or the agent's watchdog) started it again on the release it had.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub const INSTALLER_NOT_FINISHED: &str = "installer_not_finished";
 pub const CHECK_FAILED: &str = "check_failed";
 pub const DOWNLOAD_FAILED: &str = "download_failed";
 pub const INSTALL_FAILED: &str = "install_failed";
@@ -83,10 +97,53 @@ pub const CODES: &[&str] = &[
     SERVER_STOP_FAILED,
     RELAUNCH_FAILED,
     LOGIN_ITEM_UNSIGNED,
+    APP_MANAGEMENT,
+    LOCAL_BUILD,
+    INSTALLER_NOT_FINISHED,
     CHECK_FAILED,
     DOWNLOAD_FAILED,
     INSTALL_FAILED,
 ];
+
+/// The updater key a build without the release's key carries (tauri.conf.json's
+/// placeholder: desktop-release.yml stamps the real one).
+pub const PLACEHOLDER_PUBKEY: &str = "REPLACE_WITH_PUBKEY";
+
+/// This app was built locally: set once at its start from its updater key (lib.rs/shell.rs).
+static LOCAL_BUILT: AtomicBool = AtomicBool::new(false);
+
+/// Says whether this app was built locally (its updater key, `pubkey`, is the placeholder or
+/// none); kept for every later Ctx::here().
+pub fn set_local_build_from(pubkey: Option<&str>) -> bool {
+    let local = is_local_build(pubkey);
+    LOCAL_BUILT.store(local, Ordering::SeqCst);
+    local
+}
+
+/// Whether an updater key is no release's: none, empty, or the placeholder.
+pub fn is_local_build(pubkey: Option<&str>) -> bool {
+    !matches!(pubkey.map(str::trim), Some(k) if !k.is_empty() && k != PLACEHOLDER_PUBKEY)
+}
+
+/// Whether this app was built locally (set_local_build_from).
+pub fn local_build() -> bool {
+    LOCAL_BUILT.load(Ordering::SeqCst)
+}
+
+/// The failure of an update this locally built app cannot take (at `step`): no release
+/// verifies against its placeholder key. Its app version (`own`) is the build's.
+pub fn local_build_failure(step: &'static str, own: &str) -> Failure {
+    Failure::new(
+        step,
+        LOCAL_BUILD,
+        format!(
+            "this app ({}) was built locally: its updater carries no release key, so it can \
+             verify no update and updates nothing itself; install the release by hand once \
+             (its .dmg, setup .exe or Linux package), and it updates from then on",
+            or_dash(&plain(own))
+        ),
+    )
+}
 
 /// One attempt, exactly as the spec's record has it (the server and the page read it).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -495,14 +552,18 @@ fn settle_on(a: &Attempt, own: &str, ctx: &Ctx, now: &str, windows: bool) -> Opt
                 TRANSLOCATED
             } else if ctx.quarantined {
                 QUARANTINED
+            } else if windows && a.step == STEP_INSTALL {
+                // the installer this app started as it closed failed, or was cancelled
+                INSTALLER_NOT_FINISHED
             } else {
                 RELAUNCH_FAILED
             }
             .into();
             out.detail = if windows && a.step == STEP_INSTALL {
+                out.step = STEP_INSTALL.into();
                 format!(
                     "the installer, which runs once the app has closed, did not install {}: \
-                     the app started again on {}",
+                     the app started again on {}, and the server it had stopped starts again on it",
                     or_dash(&a.to),
                     or_dash(&own)
                 )
@@ -653,6 +714,10 @@ pub struct Ctx {
     pub translocated: bool,
     pub quarantined: bool,
     pub needs_admin: bool,
+    /// App Management (or a lock) keeps this app from replacing its bundle (macOS)
+    pub app_management: bool,
+    /// this app was built locally (no release key: local_build)
+    pub local_build: bool,
 }
 
 impl Ctx {
@@ -664,18 +729,23 @@ impl Ctx {
             let translocated = exe.as_deref().is_some_and(is_translocated);
             let bundle = exe.as_deref().and_then(crate::autoinstall::app_bundle_of);
             let quarantined = bundle.as_deref().is_some_and(has_quarantine);
-            let needs_admin = bundle
-                .as_deref()
-                .and_then(|b| crate::autoinstall::needs_admin(b, crate::autoinstall::writable))
-                .is_some();
+            let blocker = bundle.as_deref().and_then(|b| {
+                crate::autoinstall::swap_blocker(b, &crate::autoinstall::Probe::here())
+            });
+            let code = blocker.as_ref().map(|(c, _)| *c);
             Ctx {
                 translocated,
                 quarantined,
-                needs_admin,
+                needs_admin: code == Some(NEEDS_ADMIN),
+                app_management: code == Some(APP_MANAGEMENT),
+                local_build: local_build(),
             }
         }
         #[cfg(not(target_os = "macos"))]
-        Ctx::default()
+        Ctx {
+            local_build: local_build(),
+            ..Ctx::default()
+        }
     }
 }
 
@@ -743,6 +813,8 @@ pub fn classify_updater(
         | E::InsecureTransportProtocol => FEED_INVALID,
         // the feed names no download for this machine
         E::TargetNotFound(_) | E::TargetsNotFound(_) => ASSET_NOT_FOUND,
+        // no release verifies against a local build's placeholder key
+        E::Minisign(_) | E::Base64(_) | E::SignatureUtf8(_) if ctx.local_build => LOCAL_BUILD,
         E::Minisign(_)
         | E::Base64(_)
         | E::SignatureUtf8(_)
@@ -803,6 +875,8 @@ fn denied(ctx: &Ctx) -> &'static str {
         TRANSLOCATED
     } else if ctx.needs_admin {
         NEEDS_ADMIN
+    } else if ctx.app_management {
+        APP_MANAGEMENT
     } else {
         NOT_WRITABLE
     }
@@ -818,6 +892,12 @@ pub fn classify_text(step: &'static str, msg: &str, ctx: &Ctx) -> &'static str {
     }
     if m.starts_with("login_item_unsigned:") {
         return LOGIN_ITEM_UNSIGNED;
+    }
+    if m.starts_with("app_management:") {
+        return APP_MANAGEMENT;
+    }
+    if m.starts_with("local_build:") {
+        return LOCAL_BUILD;
     }
     if has(&["apptranslocation"]) {
         return TRANSLOCATED;
@@ -852,7 +932,11 @@ pub fn classify_text(step: &'static str, msg: &str, ctx: &Ctx) -> &'static str {
         return denied(ctx);
     }
     if has(&["signature", "minisign", "public key", "pubkey"]) {
-        return SIGNATURE_MISMATCH;
+        return if ctx.local_build {
+            LOCAL_BUILD
+        } else {
+            SIGNATURE_MISMATCH
+        };
     }
     if has(&["status: 404", "404 not found"]) {
         return if step == STEP_CHECK {
@@ -907,6 +991,17 @@ pub fn fix_for(code: &str) -> String {
         PREVIOUS_APP_NOT_RESTORED => {
             "install Maktaba again from the release's disk image (.dmg); the previous app was kept \
              at the place the error names"
+        }
+        APP_MANAGEMENT => {
+            "allow Maktaba in System Settings › Privacy & Security › App Management (or unlock \
+             Maktaba.app: Finder › Get Info › Locked), then update again"
+        }
+        LOCAL_BUILD => {
+            "install the release by hand once (its .dmg, setup .exe or Linux package): a release \
+             updates itself from then on"
+        }
+        INSTALLER_NOT_FINISHED => {
+            "run the release's setup .exe by hand, or let the home try the update again"
         }
         _ => "",
     }
@@ -1054,6 +1149,11 @@ const LOG_ROTATE_BYTES: u64 = 1 << 20;
 /// One line in app.log beside server.log (best effort: a log that cannot be written is
 /// not an error of the update's).
 pub fn log(line: &str) {
+    // the tests' attempts are not this machine's: never in the real app.log (append_log
+    // has tests of its own, in a folder of theirs)
+    if cfg!(test) {
+        return;
+    }
     let Some(dir) = crate::agent::logs_dir() else {
         return;
     };
@@ -1318,10 +1418,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            (win.code.as_str(), win.detail.as_str()),
+            (win.step.as_str(), win.code.as_str(), win.detail.as_str()),
             (
-                "relaunch_failed",
-                "the installer, which runs once the app has closed, did not install 0.3.0: the app started again on 0.3.0-rc.5"
+                STEP_INSTALL,
+                INSTALLER_NOT_FINISHED,
+                "the installer, which runs once the app has closed, did not install 0.3.0: the app started again on 0.3.0-rc.5, and the server it had stopped \
+                 starts again on it"
             )
         );
         // what the attempt noted follows its failure

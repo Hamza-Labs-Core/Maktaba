@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,10 +37,19 @@ type homeAccess struct {
 	DBPort int    `json:"db_port"`
 	DBName string `json:"db_name"`
 	// CA and TLS are the database's CA (PEM) and "off" when it has no TLS, as a join's
-	// credentials carry them.
+	// credentials carry them; neither: the machine keeps how it verifies the database now
+	// (never a downgrade to an unverified connection).
 	CA  string `json:"database_ca,omitempty"`
 	TLS string `json:"database_tls,omitempty"`
+	// Term is the home's term: an access from a home of an earlier term than the one
+	// node.json follows (a home that has not learned of a switch yet) is refused.
+	Term int64 `json:"term,omitempty"`
 }
+
+var (
+	dbHostRe = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,253}$`)
+	dbNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,63}$`)
+)
 
 func (a homeAccess) check() error {
 	switch {
@@ -49,6 +59,10 @@ func (a homeAccess) check() error {
 		return fmt.Errorf("no password")
 	case a.DBPort <= 0 || a.DBPort > 65535:
 		return fmt.Errorf("bad port %d", a.DBPort)
+	case a.DBHost != "" && !dbHostRe.MatchString(a.DBHost):
+		return fmt.Errorf("bad database host %q", a.DBHost)
+	case a.DBName != "" && !dbNameRe.MatchString(a.DBName):
+		return fmt.Errorf("bad database name %q", a.DBName)
 	case a.CA != "":
 		return config.CheckCA(a.CA)
 	}
@@ -56,8 +70,8 @@ func (a homeAccess) check() error {
 }
 
 // apply points n's database at the access: its host (the home's, else the host n reaches
-// the home's API at), port, role, password and database, and its CA; the url's other
-// settings are kept.
+// the home's API at), port, role, password and database, and its CA (or TLS off; neither:
+// n's own kept); the url's other settings are kept.
 func (a homeAccess) apply(n *config.NodeConfig) error {
 	u, err := url.Parse(n.DatabaseURL)
 	if err != nil || u.Scheme == "" {
@@ -77,11 +91,38 @@ func (a homeAccess) apply(n *config.NodeConfig) error {
 		u.Path = "/" + a.DBName
 	}
 	n.DatabaseURL = u.String()
-	n.DatabaseCA, n.DatabaseTLS = a.CA, a.TLS
-	if strings.EqualFold(a.TLS, "off") {
-		n.DatabaseCA = ""
+	switch {
+	case a.CA != "":
+		n.DatabaseCA, n.DatabaseTLS = a.CA, ""
+	case strings.EqualFold(a.TLS, "off"):
+		n.DatabaseCA, n.DatabaseTLS = "", "off"
 	}
 	return nil
+}
+
+// homeDBTarget is where n logs in to the home's database: host:port/database as role
+// (never its password), as the home compares it with what it hands out.
+func homeDBTarget(n config.NodeConfig) string {
+	u, err := url.Parse(n.DatabaseURL)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Host + u.Path
+}
+
+// credsRe are a login's secrets as a driver's error may quote them (a url's user and
+// password, a key=value password).
+var credsRe = regexp.MustCompile(`(?i)(postgres(?:ql)?://)[^@\s/]*@|(password=)\S+`)
+
+// noCreds is an error's text without any login's secrets in it (it goes to the log, the
+// home and its pages).
+func noCreds(s string) string {
+	return credsRe.ReplaceAllStringFunc(s, func(m string) string {
+		if i := strings.Index(m, "://"); i >= 0 && strings.HasSuffix(m, "@") {
+			return m[:i+3] + "…@"
+		}
+		return m[:len("password=")] + "…"
+	})
 }
 
 // homeAccessAddr is where an access points (host:port and role: never its password), for
@@ -112,6 +153,14 @@ func (s *switching) homeAccess(args json.RawMessage) (ok bool, detail any) {
 	if !n.Joined() {
 		return false, "this machine has not joined a home"
 	}
+	// a switch of the home runs here, or this machine follows a new home already (it
+	// starts again with it): the access of the home it leaves is not taken
+	if why := s.switchingNow(); why != "" {
+		return false, "not now: " + why
+	}
+	if a.Term < n.Home.Term {
+		return false, fmt.Sprintf("from a home of term %d; this machine follows the home of term %d", a.Term, n.Home.Term)
+	}
 	before := n.DatabaseURL + "\x00" + n.DatabaseCA + "\x00" + n.DatabaseTLS
 	if err := a.apply(&n); err != nil {
 		return false, err.Error()
@@ -124,11 +173,12 @@ func (s *switching) homeAccess(args json.RawMessage) (ok bool, detail any) {
 	}
 	fmt.Fprintf(os.Stderr, "[serve] node: the home's database moved, or this machine's access to it was re-made: "+
 		"following it at %s, starting again\n", homeAccessAddr(n))
-	if s.homeDB != nil {
-		s.homeDB.healing()
+	if w := s.homeDBWatch(); w != nil {
+		w.healing()
 	}
+	after := homeAccessReloadAfter // read here: a test changes it only between commands
 	go func() {
-		time.Sleep(homeAccessReloadAfter) // the answer goes out first
+		time.Sleep(after) // the answer goes out first
 		requestReload()
 	}()
 	return true, map[string]any{"changed": true}
@@ -148,15 +198,41 @@ var (
 type homeDBWatch struct {
 	// probe logs in to the home's database once (tests replace it)
 	probe func(ctx context.Context) error
+	// target is where it logs in (host:port/database: never the password; tests replace it)
+	target func() string
 	// onChange is called when the state changes (the machine agent sends it again)
 	onChange func()
+	// kick asks run for a check now (the machine agent connected again)
+	kick chan struct{}
+	// first, every and recheck are run's pauses (0: homeDBFirst, homeDBEvery, homeDBRecheck;
+	// tests shorten them here, never in the package's)
+	first, every, recheck time.Duration
 
 	mu sync.Mutex
 	st *machineagent.HomeDB
 }
 
 func newHomeDBWatch(onChange func()) *homeDBWatch {
-	return &homeDBWatch{probe: probeHomeDB, onChange: onChange}
+	return &homeDBWatch{probe: probeHomeDB, target: func() string { return homeDBTarget(supervisor.NodeConfig()) },
+		onChange: onChange, kick: make(chan struct{}, 1)}
+}
+
+// reconnected forgets the last check (it may predate the home's start: a failure while
+// the home was away) and asks for one now: the home hears from a check made after it
+// heard from this machine again.
+func (w *homeDBWatch) reconnected() {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	if w.st != nil && !w.st.Healing {
+		w.st = nil
+	}
+	w.mu.Unlock()
+	select {
+	case w.kick <- struct{}{}:
+	default:
+	}
 }
 
 // State is the last check (nil before the first).
@@ -193,8 +269,11 @@ func (w *homeDBWatch) healing() {
 func (w *homeDBWatch) check(ctx context.Context) {
 	err := w.probe(ctx)
 	next := &machineagent.HomeDB{OK: err == nil, At: time.Now().UTC()}
+	if w.target != nil {
+		next.Target = w.target()
+	}
 	if err != nil {
-		next.Code, next.Detail = classifyHomeDB(err), err.Error()
+		next.Code, next.Detail = classifyHomeDB(err), noCreds(err.Error())
 	}
 	w.mu.Lock()
 	prev := w.st
@@ -216,8 +295,8 @@ func (w *homeDBWatch) check(ctx context.Context) {
 	}
 	switch {
 	case err != nil && !next.Healing && confirmed:
-		fmt.Fprintf(os.Stderr, "[serve] node: cannot log in to the home's database (%s): %v; the home re-makes "+
-			"this machine's access\n", next.Code, err)
+		fmt.Fprintf(os.Stderr, "[serve] node: cannot log in to the home's database at %s (%s): %s; the home "+
+			"re-makes this machine's access when it is its to mend\n", next.Target, next.Code, next.Detail)
 	case err == nil && prev != nil && !prev.OK:
 		fmt.Fprintln(os.Stderr, "[serve] node: the home's database is reachable again")
 	}
@@ -229,18 +308,32 @@ func (w *homeDBWatch) check(ctx context.Context) {
 // run checks soon after the start, then every homeDBEvery (homeDBRecheck after a
 // failure), until ctx ends.
 func (w *homeDBWatch) run(ctx context.Context) {
-	t := time.NewTimer(homeDBFirst)
+	pause := func(d, def time.Duration) time.Duration {
+		if d > 0 {
+			return d
+		}
+		return def
+	}
+	first, every, recheck := pause(w.first, homeDBFirst), pause(w.every, homeDBEvery), pause(w.recheck, homeDBRecheck)
+	t := time.NewTimer(first)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-w.kick:
+			if !t.Stop() {
+				select {
+				case <-t.C:
+				default:
+				}
+			}
 		}
 		w.check(ctx)
-		next := homeDBEvery
+		next := every
 		if st := w.State(); st != nil && !st.OK {
-			next = homeDBRecheck
+			next = recheck
 		}
 		t.Reset(next)
 	}
@@ -255,7 +348,7 @@ func probeHomeDB(ctx context.Context) error {
 	}
 	dsn, err := n.HomeDSN(config.KeysDir())
 	if err != nil {
-		return err
+		return fmt.Errorf("%s", noCreds(err.Error()))
 	}
 	return pingDSN(ctx, dsn)
 }
@@ -281,12 +374,17 @@ func pingDSN(ctx context.Context, dsn string) error {
 			c.RawQuery = q.Encode()
 			d = c.String()
 		}
-		last = pingOnce(ctx, d)
-		if last == nil {
+		err := pingOnce(ctx, d)
+		if err == nil {
 			return nil
 		}
-		if m == "require" && strings.Contains(strings.ToLower(last.Error()), "ssl is not enabled") {
-			continue // the server has no TLS: as the dsn allows, without
+		if last == nil || classifyHomeDB(last) != "auth_failed" {
+			last = err // a refused password on the TLS try stays the reason over a plain try's
+		}
+		low := strings.ToLower(err.Error())
+		if m == "require" && (strings.Contains(low, "ssl is not enabled") || classifyHomeDB(err) == "auth_failed" ||
+			strings.Contains(low, "pg_hba")) {
+			continue // the server has no TLS, or refused this try: as the dsn allows, without
 		}
 		return last
 	}

@@ -147,6 +147,12 @@ type Rehearser interface {
 	DumpAside(ctx context.Context, label string) (string, error)
 }
 
+// BackupPruner is a Rehearser that also keeps the home's dumps to
+// rules.updates.backups_keep once an update commits (design §5, the commit step).
+type BackupPruner interface {
+	PruneBackups(keep int) error
+}
+
 // Errors of the machine's requests.
 var (
 	ErrBusy       = errors.New("update_busy")      // another run is under way here
@@ -1105,6 +1111,13 @@ func (m *Machine) commit() bool {
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Commit(context.Background(), j) }); err != nil {
 		m.logf("cannot keep %s yet (tried again): %v", j.Job.Version, err)
 		return false
+	}
+	// the release is kept: the dumps go to rules.updates.backups_keep before the run says
+	// it is committed (whoever waits for that sees them pruned)
+	if p, ok := m.Rehearser.(BackupPruner); ok && j.Job.Home && j.Job.BackupsKeep > 0 {
+		if err := p.PruneBackups(j.Job.BackupsKeep); err != nil {
+			m.logf("the dumps could not be pruned to %d: %v", j.Job.BackupsKeep, err)
+		}
 	}
 	_ = m.endStep(StepWatch, "done", "")
 	_ = m.endStep(StepCommit, "done", "")

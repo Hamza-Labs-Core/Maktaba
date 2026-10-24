@@ -765,6 +765,9 @@ func (h *Handler) provision(ctx context.Context, r *http.Request, n cluster.Node
 	if u, err := url.Parse(apiURL); err == nil && u.Hostname() != "" {
 		host = u.Hostname()
 	}
+	if dbHost := h.machineHost(); dbHost != "" {
+		host = dbHost // the database is on another machine than the home
+	}
 	password, err := cluster.NewPassword()
 	if err != nil {
 		return nil, "", err
@@ -774,7 +777,7 @@ func (h *Handler) provision(ctx context.Context, r *http.Request, n cluster.Node
 	payload, err := cluster.MarshalPayload(cluster.Payload{
 		DatabaseCA:  dbCA,
 		DatabaseTLS: dbTLS,
-		DatabaseURL: cluster.DatabaseURL(role, password, host, h.pgPort(), dbName),
+		DatabaseURL: cluster.DatabaseURL(role, password, host, h.machinePort(ctx), dbName),
 		Home:        cluster.PayloadHome{APIURL: apiURL, ClusterPub: h.ClusterPub, InstanceID: id.InstanceID, Name: id.Name},
 		NodeID:      n.ID,
 		V:           cluster.PayloadVersion,
