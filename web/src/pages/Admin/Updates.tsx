@@ -4,21 +4,26 @@
 // none), the run under way step by step (the home's steps, then one row per machine),
 // and what happened before. The few actions are here too: Update now, Check now, pause
 // (automatic installs off), Cancel a run before the home switches, Retry, Skip or Roll
-// back a machine, Resume a held rollout.
-import { useCallback, useEffect, useState } from "react";
+// back a machine, Resume a held rollout. Under each machine, its last update attempt
+// (update-attempts.md): whoever made it (the desktop app's own updater, a release's first
+// start, a run), what happened, why, and what to do next.
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Modal } from "@ds/components/Modal/Modal";
 import { useToast } from "@ds/components/Toast/Toast";
-import { ApiError } from "../../lib/api";
+import { ApiError, downloadBlob } from "../../lib/api";
 import { lookupMessage, useI18n } from "../../lib/i18n";
+import { CopyField } from "../../components/CopyField";
 import {
+  ATTEMPT_FAILED,
   RUN_ENDED,
   runCancellable,
   TARGET_RETRYABLE,
   TARGET_SKIPPABLE,
   WAITING_CLICK,
   updatesApi,
+  type UpdateAttempt,
   type UpdateMachine,
   type UpdateRun,
   type UpdateRunView,
@@ -86,11 +91,20 @@ function useWords() {
     }
     return t("updates.page.failedCheck", { code: c });
   };
+  /** An attempt's reason: the code's words as code() has them, else the code itself, its
+   * underscores as spaces (the detail beside it says the rest). */
+  const reason = (c: string) => {
+    const words = code(c);
+    return words === t("updates.page.failedCheck", { code: c }) ? c.replace(/_/g, " ") : words;
+  };
   return {
     t,
     state,
     step,
     code,
+    reason,
+    outcome: (o: string) => word("outcome", o),
+    source: (src: string) => word("source", src),
     kind: (k: string) => word("kind", k),
     trigger: (s: string) => word("trigger", s),
     waiting: (s: string) => word("waiting", s),
@@ -109,6 +123,26 @@ function ErrorDetail({ text, testId }: { text: string; testId?: string }) {
 
 function when(iso?: string): string {
   return iso ? new Date(iso).toLocaleString() : "";
+}
+
+/** How long ago, in the reader's language ("5 minutes ago"). */
+function ago(iso: string, locale: string): string {
+  const s = (Date.parse(iso) - Date.now()) / 1000;
+  if (!Number.isFinite(s)) return "";
+  const rtf = new Intl.RelativeTimeFormat(locale === "ar" ? "ar-EG" : "en", { numeric: "auto" });
+  const a = Math.abs(s);
+  if (a < 60) return rtf.format(Math.round(s), "second");
+  if (a < 3600) return rtf.format(Math.round(s / 60), "minute");
+  if (a < 86400) return rtf.format(Math.round(s / 3600), "hour");
+  return rtf.format(Math.round(s / 86400), "day");
+}
+
+/** An attempt's badge tone. */
+function outcomeTone(outcome: string): Tone {
+  if (outcome === "installed") return "success";
+  if (ATTEMPT_FAILED.has(outcome)) return "error";
+  if (outcome === "cancelled") return "neutral";
+  return "accent";
 }
 
 function duration(run: UpdateRun): string {
@@ -153,6 +187,18 @@ export function AdminUpdates() {
     const id = setInterval(() => void load(), 5000);
     return () => clearInterval(id);
   }, [running, load]);
+
+  const downloadLogs = async () => {
+    setBusy(true);
+    try {
+      await downloadBlob("/api/diagnostics/export", "maktaba-diagnostics.tar.gz");
+    } catch (e) {
+      const detail = e instanceof ApiError ? e.message : t("common.error");
+      toast.show({ tone: "error", message: `${t("updates.attempt.logsFailed")}: ${detail}` });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const act = async (fn: () => Promise<unknown>, done: string) => {
     setBusy(true);
@@ -273,27 +319,48 @@ export function AdminUpdates() {
         </thead>
         <tbody>
           {machines.map((m) => (
-            <tr key={m.id} data-testid={`updates-machine-${m.id}`}>
-              <td>
-                {m.role === "home" ? t("updates.page.home") : m.name}
-                {m.platform ? <span className="mkt-muted"> · {m.platform}</span> : null}
-              </td>
-              <td dir="ltr">{m.version || "-"}</td>
-              <td>{m.kind ? w.kind(m.kind) : "-"}</td>
-              <td>
-                <Badge tone={stateTone(m.state)}>{w.state(m.state)}</Badge>
-                {m.target && WAITING_CLICK.has(m.state) && (
-                  <div className="mkt-muted" data-testid={`updates-machine-${m.id}-click`}>
-                    {t(
-                      m.state === "clicked" ? "updates.page.clicked" : "updates.page.waitingClick",
-                      {
-                        version: m.target,
+            <Fragment key={m.id}>
+              <tr data-testid={`updates-machine-${m.id}`}>
+                <td>
+                  {m.role === "home" ? t("updates.page.home") : m.name}
+                  {m.platform ? <span className="mkt-muted"> · {m.platform}</span> : null}
+                </td>
+                <td dir="ltr">{m.version || "-"}</td>
+                <td>{m.kind ? w.kind(m.kind) : "-"}</td>
+                <td>
+                  <Badge tone={stateTone(m.state)}>{w.state(m.state)}</Badge>
+                  {m.target && WAITING_CLICK.has(m.state) && (
+                    <div className="mkt-muted" data-testid={`updates-machine-${m.id}-click`}>
+                      {t(
+                        m.state === "clicked"
+                          ? "updates.page.clicked"
+                          : "updates.page.waitingClick",
+                        {
+                          version: m.target,
+                        }
+                      )}
+                    </div>
+                  )}
+                </td>
+              </tr>
+              {(m.attempts?.length ?? 0) > 0 && (
+                <tr className="mkt-updates__attempt-row">
+                  <td colSpan={4}>
+                    <AttemptBlock
+                      machine={m}
+                      busy={busy}
+                      onRetry={(runId) =>
+                        act(
+                          () => updatesApi.targetAction(runId, m.id, "retry"),
+                          t("updates.page.target.retryDone")
+                        )
                       }
-                    )}
-                  </div>
-                )}
-              </td>
-            </tr>
+                      onLogs={() => void downloadLogs()}
+                    />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -376,6 +443,130 @@ export function AdminUpdates() {
         <p>{t("updates.page.confirmBody")}</p>
       </Modal>
     </section>
+  );
+}
+
+/** A machine's last update attempt, then its earlier ones (update-attempts.md). */
+function AttemptBlock({
+  machine,
+  busy,
+  onRetry,
+  onLogs,
+}: {
+  machine: UpdateMachine;
+  busy: boolean;
+  onRetry: (runId: string) => void;
+  onLogs: () => void;
+}) {
+  const w = useWords();
+  const { t } = w;
+  const { locale } = useI18n();
+  const attempts = machine.attempts ?? [];
+  const last = attempts[0];
+  if (!last) return null;
+  const id = `updates-machine-${machine.id}-attempt`;
+  const failed = ATTEMPT_FAILED.has(last.outcome);
+  const reasonOf = (a: UpdateAttempt) =>
+    a.code
+      ? w.reason(a.code)
+      : a.detail
+        ? (a.detail.split("\n")[0] ?? a.detail)
+        : t("updates.attempt.noReason");
+  const headline = (a: UpdateAttempt) => {
+    // a check that failed before the feed named a release has no `to`
+    const to = a.to || t("updates.attempt.newRelease");
+    const vars = { to, reason: reasonOf(a) };
+    switch (a.outcome) {
+      case "installed":
+        return t("updates.attempt.installed", vars);
+      case "running":
+        return t("updates.attempt.running", vars);
+      case "failed":
+        return t("updates.attempt.failed", vars);
+      case "put_back":
+        return t("updates.attempt.putBack", vars);
+      case "rolled_back":
+        return t("updates.attempt.rolledBack", vars);
+      case "cancelled":
+        return t("updates.attempt.cancelled", vars);
+      default:
+        return t("updates.attempt.other", { to, outcome: w.outcome(a.outcome) });
+    }
+  };
+  const who = last.trigger
+    ? t("updates.attempt.byTrigger", {
+        who: w.source(last.source),
+        how: w.trigger(last.trigger),
+      })
+    : t("updates.attempt.by", { who: w.source(last.source) });
+  // a run's machine is retried as the run page's Retry does (the home has Update now)
+  const retry =
+    failed && last.source === "run" && last.run_id && machine.role === "node" ? last.run_id : "";
+  return (
+    <div className="mkt-updates__attempt" data-testid={id}>
+      <div>
+        <strong>{t("updates.attempt.title")}</strong>{" "}
+        <Badge tone={outcomeTone(last.outcome)}>{w.outcome(last.outcome)}</Badge>
+      </div>
+      <p className={failed ? "mkt-error" : undefined} data-testid={`${id}-headline`}>
+        {headline(last)}
+      </p>
+      <p className="mkt-muted" data-testid={`${id}-meta`}>
+        {t("updates.attempt.when", { ago: ago(last.at, locale), at: when(last.at) })}
+        {" · "}
+        {last.from || last.to ? (
+          <>
+            <span dir="ltr">
+              {last.from ? `${last.from} → ` : ""}
+              {last.to || "?"}
+            </span>
+            {" · "}
+          </>
+        ) : null}
+        {who}
+        {last.step ? (
+          <>
+            {" · "}
+            {t(
+              last.outcome === "running" ? "updates.attempt.atStep" : "updates.attempt.stoppedAt",
+              { step: w.step(last.step) }
+            )}
+          </>
+        ) : null}
+      </p>
+      {last.detail ? (
+        <details data-testid={`${id}-detail`}>
+          <summary>{t("updates.attempt.detail")}</summary>
+          <ErrorDetail text={last.detail} />
+        </details>
+      ) : null}
+      {last.fix ? <CopyField label={t("updates.attempt.fix")} value={last.fix} /> : null}
+      {failed && (
+        <div className="mkt-updates__actions">
+          {retry && (
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => onRetry(retry)}>
+              {t("updates.page.target.retry")}
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" disabled={busy} onClick={onLogs}>
+            {t("updates.attempt.logs")}
+          </Button>
+        </div>
+      )}
+      {attempts.length > 1 && (
+        <details data-testid={`${id}-earlier`}>
+          <summary>{t("updates.attempt.earlier", { count: attempts.length - 1 })}</summary>
+          <ul>
+            {attempts.slice(1).map((a) => (
+              <li key={a.id}>
+                <span className="mkt-muted">{when(a.at)}</span>{" "}
+                <Badge tone={outcomeTone(a.outcome)}>{w.outcome(a.outcome)}</Badge> {headline(a)}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }
 

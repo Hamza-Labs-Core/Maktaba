@@ -9,8 +9,9 @@
 // `media-pause` and `preferences` are also forwarded to the web shell
 // (web/src/lib/desktop.ts KNOWN_MENU_IDS). The words are the system's UI
 // language's, English or Arabic (lang.rs).
+use crate::attempts::{self, Attempt};
 use crate::autoinstall::Shown;
-use crate::lang::{fill, Lang};
+use crate::lang::{fill, update_reason, Lang};
 use crate::status::{ServerStatus, NO_ANSWER};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -287,6 +288,50 @@ pub fn order_notice(lang: Lang, version: &str, home: bool) -> String {
     fill(line, &[("version", version)])
 }
 
+/// The menu's line about the last update attempt when it failed (update-attempts.md: until
+/// the next attempt): "Update to <v> failed: <reason>". None when it did not fail.
+pub fn failed_line(lang: Lang, last: Option<&Attempt>) -> Option<String> {
+    let a = last.filter(|a| a.outcome == attempts::FAILED)?;
+    let version = if a.to.is_empty() { "?" } else { a.to.as_str() };
+    Some(fill(
+        lang.words().update_failed_line,
+        &[
+            ("version", version),
+            ("reason", update_reason(lang, &a.code)),
+        ],
+    ))
+}
+
+/// The OS notification's text for an update to `version` that failed with `code`.
+pub fn failed_notice(lang: Lang, version: &str, code: &str) -> String {
+    let version = if version.is_empty() { "?" } else { version };
+    fill(
+        lang.words().update_failed_notice,
+        &[("version", version), ("reason", update_reason(lang, code))],
+    )
+}
+
+/// The menu with the failed update's line (failed_line) under the status line (on top in
+/// client mode, which has none).
+pub fn with_failed_update(mut entries: Vec<Entry>, line: Option<String>) -> Vec<Entry> {
+    let Some(label) = line else {
+        return entries;
+    };
+    let at = usize::from(matches!(
+        entries.first(),
+        Some(Entry::Item { id: "status", .. })
+    ));
+    entries.insert(
+        at,
+        Entry::Item {
+            id: "update-failed",
+            label,
+            enabled: false,
+        },
+    );
+    entries
+}
+
 /// The window menu's Server submenu (Linux without a tray, Epic 39 story
 /// 39.8; lib.rs builds it, shell.rs keeps it in step): the tray's server
 /// items under ids prefixed with WINDOW_PREFIX. Every menu's events reach
@@ -353,6 +398,37 @@ pub fn window_enabled(entries: &[Entry], id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_update_says_why_under_the_status_until_the_next_attempt() {
+        let failed = Attempt {
+            to: "0.3.0".into(),
+            outcome: attempts::FAILED.into(),
+            code: attempts::NEEDS_ADMIN.into(),
+            ..Attempt::default()
+        };
+        let line = failed_line(Lang::En, Some(&failed));
+        assert_eq!(
+            line.as_deref(),
+            Some("Update to 0.3.0 failed: replacing the app needs an administrator's password")
+        );
+        let server = entries(Lang::En, true, &ServerStatus::Running, false);
+        let with = with_failed_update(server.clone(), line.clone());
+        assert_eq!(ids(&with)[..2], ["status", "update-failed"]);
+        assert!(!window_enabled(&with, "update-failed"));
+        let client = entries(Lang::En, false, &ServerStatus::SetupNeeded, false);
+        assert_eq!(ids(&with_failed_update(client, line))[0], "update-failed");
+        // the next attempt (running, or installed) takes the line away
+        let mut next = failed.clone();
+        next.outcome = attempts::RUNNING.into();
+        assert_eq!(failed_line(Lang::En, Some(&next)), None);
+        assert_eq!(with_failed_update(server.clone(), None), server);
+        assert!(failed_notice(Lang::Ar, "0.3.0", attempts::DISK_FULL).contains("0.3.0"));
+        assert_eq!(
+            failed_notice(Lang::En, "", attempts::NO_NETWORK),
+            "Maktaba could not update to ?: this machine could not reach the internet"
+        );
+    }
 
     fn ids(e: &[Entry]) -> Vec<&'static str> {
         e.iter()

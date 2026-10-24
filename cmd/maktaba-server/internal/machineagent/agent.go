@@ -20,6 +20,8 @@ import (
 
 	"github.com/coder/websocket"
 	"golang.org/x/crypto/curve25519"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/attempts"
 )
 
 // Close codes the agent treats as "wait the longest delay" (design-agent §4.6).
@@ -80,6 +82,9 @@ type UpdateState struct {
 	Layout          string `json:"layout"` // the install kind: layout | runtime | appbundle | flat
 	// Run is this machine's update run, when it has one (its state and step).
 	Run *RunState `json:"run,omitempty"`
+	// Attempts are this machine's update attempts, every failure with its reason
+	// (update-attempts.md), newest first: the home's Updates page shows them.
+	Attempts []attempts.Attempt `json:"attempts,omitempty"`
 }
 
 // RunState is a machine's update run as update.state reports it.
@@ -433,6 +438,9 @@ func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher) (
 			"platform": st.Platform, "layout": st.Layout}
 		if st.Run != nil {
 			f["run"] = st.Run
+		}
+		if len(st.Attempts) > 0 {
+			f["attempts"] = st.Attempts
 		}
 		send(f)
 	}

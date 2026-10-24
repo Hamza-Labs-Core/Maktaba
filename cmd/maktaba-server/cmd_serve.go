@@ -219,6 +219,8 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		upd.Store(u)
 		if node != nil && node.agent != nil {
 			u.m.OnChange = node.agent.Nudge
+			// the desktop app writes its own attempts: the home hears of them
+			go u.m.WatchAttempts(ctx, 15*time.Second)
 		}
 	}
 
@@ -317,7 +319,8 @@ func runServe(cfg config.Config, opts serveOptions) error {
 			if pg != nil {
 				ext = nil
 			}
-			procs = layoutHomeGates(cfg, filepath.Base(filepath.Clean(releaseDir)), pg, ext, procs, os.Stderr)
+			procs = layoutHomeGates(cfg, filepath.Base(filepath.Clean(releaseDir)), pg, ext, procs,
+				updatesDirOf(cfg, releaseDir), os.Stderr)
 		}
 	}
 

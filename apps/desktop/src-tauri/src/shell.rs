@@ -24,6 +24,7 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::{Updater, UpdaterExt};
 
 use crate::agent::{self, Action, BundlePaths, LoginItem};
+use crate::attempts::{self, Failure};
 use crate::autoinstall;
 use crate::lang::{self, Lang};
 use crate::mode::{self, AppMode, Target};
@@ -293,6 +294,44 @@ fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
         .show(|_| {});
 }
 
+/// The record of this app's update attempts (attempts.rs: app-attempts.json beside the
+/// home's order), where the server reads them for the Updates page.
+fn attempts_path() -> Option<PathBuf> {
+    agent::state_root().map(|r| attempts::path(&r))
+}
+
+/// The release this app is.
+fn own_version(app: &AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// An OS notification that the update to `version` failed, and why (the menu says it too,
+/// from the record, until the next attempt). Best effort: an error is only logged.
+fn notify_failed(app: &AppHandle, version: &str, code: &str) {
+    let sh = shell(app);
+    let shown = app
+        .notification()
+        .builder()
+        .title(sh.lang.words().brand)
+        .body(tray::failed_notice(sh.lang, version, code))
+        .show();
+    if let Err(e) = shown {
+        attempts::log(&format!(
+            "no notification for the failed update to {version}: {e}"
+        ));
+    }
+}
+
+/// The error the home's order says for a failure: needs_admin keeps the code first, which
+/// the server reads as a machine that needs a person (updater/request.go appFailure).
+fn order_error(f: &Failure) -> String {
+    if f.code == attempts::NEEDS_ADMIN && !f.detail.starts_with("needs_admin:") {
+        format!("needs_admin: {}", f.detail)
+    } else {
+        f.detail.clone()
+    }
+}
+
 fn build_tray_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry>> {
     let menu = Menu::new(app)?;
     for e in entries {
@@ -407,38 +446,73 @@ fn exact_updater(app: &AppHandle, feed: &str, version: &str) -> Result<Updater, 
 
 /// stage_order downloads the ordered release's app update from its own feed (checked
 /// with this app's key), keeps it, and says staged (the tray shows it); or failed.
+/// A failure of the staging is recorded as a failed attempt of the order (attempts.rs),
+/// told in an OS notification and in the menu, and said in the order for the server.
 fn stage_order(app: AppHandle, path: PathBuf, req: autoinstall::Request, staged: PathBuf) {
     tauri::async_runtime::spawn(async move {
+        let ctx = attempts::Ctx::here();
         let run = async {
             #[cfg(target_os = "macos")]
             if let Some(why) = needs_admin() {
-                return Err(why);
+                return Err(Failure::new(
+                    attempts::STEP_INSTALL,
+                    attempts::NEEDS_ADMIN,
+                    why,
+                ));
             }
-            let update = exact_updater(&app, &req.feed, &req.version)?
+            let update = exact_updater(&app, &req.feed, &req.version)
+                .map_err(|e| attempts::of_text(attempts::STEP_CHECK, e, &ctx))?
                 .check()
                 .await
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("no app update for {} in its feed", req.version))?;
+                .map_err(|e| attempts::of_updater(attempts::STEP_CHECK, &e, &ctx))?
+                .ok_or_else(|| {
+                    Failure::new(
+                        attempts::STEP_CHECK,
+                        attempts::FEED_INVALID,
+                        format!("no app update for {} in its feed", req.version),
+                    )
+                })?;
             if !autoinstall::same_version(&update.version, &req.version) {
-                return Err(format!(
-                    "the feed offers {}, not {}",
-                    update.version, req.version
+                return Err(Failure::new(
+                    attempts::STEP_CHECK,
+                    attempts::FEED_INVALID,
+                    format!("the feed offers {}, not {}", update.version, req.version),
                 ));
             }
             let bytes = update
                 .download(|_, _| {}, || {})
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| attempts::of_updater(attempts::STEP_DOWNLOAD, &e, &ctx))?;
+            let io = |e: std::io::Error| {
+                let mut f = attempts::of_text(attempts::STEP_DOWNLOAD, e.to_string(), &ctx);
+                f.code = attempts::classify_io(attempts::STEP_DOWNLOAD, &e, &ctx);
+                f.fix = attempts::fix_for(f.code);
+                f
+            };
             let part = staged.with_extension("part");
-            std::fs::write(&part, &bytes).map_err(|e| e.to_string())?;
-            std::fs::rename(&part, &staged).map_err(|e| e.to_string())?;
-            Ok::<(), String>(())
+            std::fs::write(&part, &bytes).map_err(io)?;
+            std::fs::rename(&part, &staged).map_err(io)?;
+            Ok::<(), Failure>(())
         };
-        let (state, error) = match run.await {
-            Ok(()) => (autoinstall::STAGED, String::new()),
-            Err(e) => (autoinstall::FAILED, e),
-        };
-        let _ = autoinstall::write_state(&path, &req, state, &error);
+        match run.await {
+            Ok(()) => {
+                let _ = autoinstall::write_state(&path, &req, autoinstall::STAGED, "");
+            }
+            Err(f) => {
+                let _ =
+                    autoinstall::write_state(&path, &req, autoinstall::FAILED, &order_error(&f));
+                if let Some(rec) = attempts_path() {
+                    attempts::record_failed(
+                        &rec,
+                        attempts::TRIGGER_ORDER,
+                        &own_version(&app),
+                        &req.version,
+                        &f,
+                    );
+                }
+                notify_failed(&app, &req.version, f.code);
+            }
+        }
         shell(&app).staging.store(false, Ordering::SeqCst);
         refresh(&app);
     });
@@ -550,6 +624,9 @@ fn refresh(app: &AppHandle) {
         model.as_deref(),
         detail,
     );
+    // the last update attempt, when it failed: its reason until the next attempt
+    let last = attempts_path().and_then(|p| attempts::newest(&p));
+    let entries = tray::with_failed_update(entries, tray::failed_line(lang, last.as_ref()));
     let badge = if server && cfg!(not(target_os = "macos")) {
         tray::badge_color(status, update_ready || order.is_some())
     } else {
@@ -755,36 +832,78 @@ fn install_update_from(app: AppHandle, source: Source) {
         // the server was asked to stop for the install
         #[cfg(windows)]
         let stopped = AtomicBool::new(false);
-        let failed = |e: String| (false, e);
+        let ctx = attempts::Ctx::here();
+        // the attempt's record (attempts.rs): every step, and why it failed
+        let rec = attempts_path();
+        let trigger = if source.ordered().is_some() {
+            attempts::TRIGGER_ORDER
+        } else {
+            attempts::TRIGGER_BADGE
+        };
+        let id = rec.as_deref().map(|p| {
+            attempts::begin(
+                p,
+                trigger,
+                &own_version(&app),
+                source.version().unwrap_or(""),
+            )
+        });
+        let step = |name: &str| {
+            if let (Some(p), Some(id)) = (rec.as_deref(), id.as_deref()) {
+                attempts::set_step(p, id, name);
+            }
+        };
+        let failed = |f: Failure| (false, f);
+        let mut to = source.version().unwrap_or("").to_string();
         let run = async {
             let updater = match &source {
-                Source::Own => app.updater().map_err(|e| e.to_string()),
-                Source::Release { version, feed } => exact_updater(&app, feed, version),
-                Source::Ordered(o) => exact_updater(&app, &o.feed, &o.version),
+                Source::Own => app
+                    .updater()
+                    .map_err(|e| attempts::of_updater(attempts::STEP_CHECK, &e, &ctx)),
+                Source::Release { version, feed } => exact_updater(&app, feed, version)
+                    .map_err(|e| attempts::of_text(attempts::STEP_CHECK, e, &ctx)),
+                Source::Ordered(o) => exact_updater(&app, &o.feed, &o.version)
+                    .map_err(|e| attempts::of_text(attempts::STEP_CHECK, e, &ctx)),
             }
             .map_err(failed)?;
-            let update = updater.check().await.map_err(|e| failed(e.to_string()))?;
+            let update = updater
+                .check()
+                .await
+                .map_err(|e| failed(attempts::of_updater(attempts::STEP_CHECK, &e, &ctx)))?;
             let Some(update) = update else {
                 return match source.version() {
-                    Some(v) => Err(failed(format!("no app update for {v} in its feed"))),
+                    Some(v) => Err(failed(Failure::new(
+                        attempts::STEP_CHECK,
+                        attempts::FEED_INVALID,
+                        format!("no app update for {v} in its feed"),
+                    ))),
                     None => Ok(Done::NoUpdate),
                 };
             };
             if let Some(v) = source.version() {
                 if !autoinstall::same_version(&update.version, v) {
-                    return Err(failed(format!(
-                        "the feed offers {}, not {v}",
-                        update.version
+                    return Err(failed(Failure::new(
+                        attempts::STEP_CHECK,
+                        attempts::FEED_INVALID,
+                        format!("the feed offers {}, not {v}", update.version),
                     )));
+                }
+            }
+            if to.is_empty() {
+                to = update.version.clone();
+                if let (Some(p), Some(id)) = (rec.as_deref(), id.as_deref()) {
+                    attempts::set_to(p, id, &to);
                 }
             }
             // what was staged at the order (install checks it again), else downloaded now
             let bytes = match source.ordered().and_then(|o| std::fs::read(&o.staged).ok()) {
                 Some(b) => b,
-                None => update
-                    .download(|_, _| {}, || {})
-                    .await
-                    .map_err(|e| failed(e.to_string()))?,
+                None => {
+                    step(attempts::STEP_DOWNLOAD);
+                    update.download(|_, _| {}, || {}).await.map_err(|e| {
+                        failed(attempts::of_updater(attempts::STEP_DOWNLOAD, &e, &ctx))
+                    })?
+                }
             };
             #[cfg(windows)]
             if matches!(shell(&app).mode(), Some(AppMode::Server { .. })) {
@@ -794,11 +913,18 @@ fn install_update_from(app: AppHandle, source: Source) {
                 // stop the server and wait for it (the install hold keeps the
                 // task's watchdog from starting it meanwhile); the update is
                 // not installed when it does not stop in time
+                step(attempts::STEP_INSTALL);
                 stopped.store(true, Ordering::SeqCst);
+                let stop_failed = |e: String| {
+                    (
+                        true,
+                        Failure::new(attempts::STEP_INSTALL, attempts::SERVER_STOP_FAILED, e),
+                    )
+                };
                 tauri::async_runtime::spawn_blocking(agent::stop_for_install)
                     .await
-                    .map_err(|e| (true, e.to_string()))?
-                    .map_err(|e| (true, e))?;
+                    .map_err(|e| stop_failed(e.to_string()))?
+                    .map_err(stop_failed)?;
             }
             if !source.still_go() {
                 return Ok(Done::Withdrawn);
@@ -810,15 +936,24 @@ fn install_update_from(app: AppHandle, source: Source) {
             #[cfg(target_os = "macos")]
             if source.ordered().is_some() {
                 if let Some(why) = needs_admin() {
-                    return Err(failed(why));
+                    return Err(failed(Failure::new(
+                        attempts::STEP_INSTALL,
+                        attempts::NEEDS_ADMIN,
+                        why,
+                    )));
                 }
             }
-            // Windows: this runs the installer and exits the app
-            update.install(bytes).map_err(|e| failed(e.to_string()))?;
+            // recorded before: on Windows the installer ends this app; the next start
+            // settles the attempt (installed, or relaunch_failed)
+            step(attempts::STEP_INSTALL);
+            update
+                .install(bytes)
+                .map_err(|e| failed(attempts::of_updater(attempts::STEP_INSTALL, &e, &ctx)))?;
             // the error: whether the server would not stop for it, and why
-            Ok::<Done, (bool, String)>(Done::Installed)
+            Ok::<Done, (bool, Failure)>(Done::Installed)
         };
-        match run.await {
+        let outcome = run.await;
+        match outcome {
             Ok(Done::Installed) => {
                 if let Some(o) = source.ordered() {
                     let _ = std::fs::remove_file(&o.staged);
@@ -833,10 +968,20 @@ fn install_update_from(app: AppHandle, source: Source) {
                 {
                     let _ = agent::control(Action::Restart);
                 }
+                // the new app settles the attempt when it starts (attempts::settle)
+                step(attempts::STEP_RELAUNCH);
                 app.restart();
             }
-            Ok(Done::NoUpdate) => shell(&app).update_ready.store(false, Ordering::SeqCst),
+            Ok(Done::NoUpdate) => {
+                if let (Some(p), Some(id)) = (rec.as_deref(), id.as_deref()) {
+                    attempts::discard(p, id);
+                }
+                shell(&app).update_ready.store(false, Ordering::SeqCst)
+            }
             Ok(Done::Withdrawn) => {
+                if let (Some(p), Some(id)) = (rec.as_deref(), id.as_deref()) {
+                    attempts::cancel(p, id);
+                }
                 // cancelled, replaced or skipped before the install: nothing to say in an
                 // order that is not this run's any more; a server stopped for it starts
                 shell(&app).installing.store(false, Ordering::SeqCst);
@@ -849,10 +994,20 @@ fn install_update_from(app: AppHandle, source: Source) {
                     .await;
                 }
             }
-            Err((at_stop, e)) => {
+            Err((at_stop, f)) => {
+                if let (Some(p), Some(id)) = (rec.as_deref(), id.as_deref()) {
+                    attempts::fail(p, id, &f);
+                }
+                notify_failed(&app, &to, f.code);
                 if let Some(o) = source.ordered() {
-                    // the server's run says it; no dialog at the update's hour
-                    let _ = autoinstall::write_state(&o.path, &o.req, autoinstall::FAILED, &e);
+                    // the server's run says it; no dialog at the update's hour (the
+                    // notification and the menu say why)
+                    let _ = autoinstall::write_state(
+                        &o.path,
+                        &o.req,
+                        autoinstall::FAILED,
+                        &order_error(&f),
+                    );
                     shell(&app).installing.store(false, Ordering::SeqCst);
                     #[cfg(windows)]
                     if stopped.load(Ordering::SeqCst) {
@@ -863,27 +1018,50 @@ fn install_update_from(app: AppHandle, source: Source) {
                         .await;
                     }
                     let _ = at_stop;
+                    refresh(&app);
                     return;
                 }
-                let w = shell(&app).lang.words();
-                let sentence = if at_stop {
-                    w.update_stop_failed
+                let lang = shell(&app).lang;
+                // what happened and why, in the tray's language, then the updater's own
+                // words and the fix
+                let head = if at_stop {
+                    lang.words().update_stop_failed
                 } else {
-                    w.update_failed
+                    lang.words().update_failed
                 };
+                let why = tray::failed_line(
+                    lang,
+                    Some(&attempts::Attempt {
+                        to: to.clone(),
+                        outcome: attempts::FAILED.into(),
+                        code: f.code.into(),
+                        ..attempts::Attempt::default()
+                    }),
+                )
+                .unwrap_or_default();
+                let sentence = format!(
+                    "{head}
+{why}"
+                );
                 #[cfg(windows)]
                 if stopped.load(Ordering::SeqCst) {
+                    let w = lang.words();
                     let handle = app.clone();
                     let (again, why) = tauri::async_runtime::spawn_blocking(move || {
                         start_after_failed_update(&handle)
                     })
                     .await
                     .unwrap_or_else(|e| (w.update_start_failed, Some(e.to_string())));
-                    let sentence = format!("{sentence} {again}");
+                    let sentence = format!(
+                        "{sentence}
+{again}"
+                    );
                     let why = why.unwrap_or_default();
-                    return show_error(&app, &sentence, &[&e, &why]);
+                    refresh(&app);
+                    return show_error(&app, &sentence, &[&f.detail, &f.fix, &why]);
                 }
-                show_error(&app, sentence, &[&e])
+                refresh(&app);
+                show_error(&app, &sentence, &[&f.detail, &f.fix])
             }
         }
     });
@@ -1046,6 +1224,20 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             }
         });
     }
+
+    // the update attempt this app's last run ended with its restart (or left when it
+    // quit): installed when the app now is its release, failed otherwise (attempts.rs)
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let Some(rec) = attempts_path() else {
+            return;
+        };
+        if let Some(failed) =
+            attempts::settle_newest(&rec, &own_version(&handle), &attempts::Ctx::here())
+        {
+            notify_failed(&handle, &failed.to, &failed.code);
+        }
+    });
 
     let handle = app.clone();
     std::thread::spawn(move || loop {

@@ -88,6 +88,35 @@ Automatic installs are on by default (`rules.updates.auto_install`); with them o
 Updates -> Pause) the home only checks and notifies. `MAKTABA_UPDATE_DISABLE=1` turns the
 checks off altogether.
 
+## When an update fails: where it says why
+
+Every update attempt is kept with its reason
+([update-attempts.md](../specs/epics/35-cluster-full-nodes-and-updates/update-attempts.md)):
+the desktop app's own updater (its badge, its menu, the home's order), a release's first start
+(the database step, the pipeline's environment), and the cluster's runs. **Admin → Updates**
+shows, for the home and each machine, the last attempt: when, from and to, the step it stopped
+at, the reason in plain words, the raw error, and what to do next (Retry, the fix's command, or
+the logs). The desktop app says the same in its menu and an OS notification.
+
+Where the evidence is on each machine:
+
+| | macOS | Windows | Linux app |
+|---|---|---|---|
+| the attempts | `~/Library/Application Support/Maktaba/updates/app-attempts.json`, `server-attempts.json` | `%LOCALAPPDATA%\Maktaba\updates\` (the same two) | the app's data folder, `updates/` |
+| the app's log | `~/Library/Logs/Maktaba/app.log` | `%LOCALAPPDATA%\Maktaba\logs\app.log` | the app's logs folder, `app.log` |
+| the server's log | `~/Library/Logs/Maktaba/server.log` | `%LOCALAPPDATA%\Maktaba\logs\` | the app's logs folder |
+| the database step | `~/Library/Application Support/Maktaba/state/database.json`; the dump before the update: `backups/pre-<from>-to-<to>.dump`; a failed state set aside: `backups/failed-*.dump` | the same under `%LOCALAPPDATA%\Maktaba` | the same under the data folder |
+| the launcher | `~/Library/Application Support/Maktaba/updates/launcher.log` | `%LOCALAPPDATA%\Maktaba\updates\launcher.log` | the runtime's `updates/launcher.log` |
+
+On a Mac, the server's login item and code signing show in the system log:
+`log show --last 2d --style compact --predicate 'process == "Maktaba" OR eventMessage CONTAINS[c] "com.hamzalabs.maktaba"'`,
+`launchctl print gui/$(id -u)/com.hamzalabs.maktaba.server`, and
+`codesign -dv --verbose=2 /Applications/Maktaba.app`. An app with no code signature at all
+cannot start its server's login item (`login_item_unsigned`): 0.3.0's Mac app is such an app
+(built from the 0.3.0-rc.6 commit, before the ad-hoc signing of the bundle); a later release, or
+`codesign --force --deep -s - --identifier com.hamzalabs.maktaba /Applications/Maktaba.app`,
+mends it.
+
 ## Install-type behaviour for the manual self-update (Epic 28)
 
 - **Plain binary / Homebrew / manual archive** — binary swap + re-exec,

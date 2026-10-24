@@ -697,6 +697,19 @@ don't append a line here; docs-only PRs are exempt.
   waiting for a click with their version, and Cancel, Retry, Skip, Roll back and Resume;
   automatic installs are now on by default (Pause turns them off). Releases carry their
   migrations (`maktaba-migrations-<version>.tar.gz`, listed in the signed `release.json`).
+- **Every update failure says why.** Admin → Updates shows, for the home and each machine, its
+  last update attempt: when, from which release to which, the step it stopped at, the reason in
+  plain words (English and Arabic), the raw error, and what to do next (Retry, the command that
+  fixes it, or the logs). It covers the desktop app's own updates as well as the cluster's
+  runs: the app records each try (no network, a missing download, a signature that does not
+  match, a folder that needs an administrator, a full disk, an app macOS runs from a temporary
+  place or still marks as downloaded, an installer error, a relaunch that did not take) and
+  says why in its menu and an OS notification, and keeps its own log (`app.log` beside
+  `server.log`). A release that fails to start (the dump before its migrations, a migration, a
+  database newer than it, the pipeline's environment) is recorded too, and the release before,
+  back running, reads "0.3.0 failed to start: <reason>. The previous release runs again." The
+  Mac app's setup screen no longer hides why it could not start the server (a login item
+  macOS refuses for an app with no code signature says so, with the fix).
 
 ## [0.2.0] - 2026-10-19
 

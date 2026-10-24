@@ -217,6 +217,10 @@ pub struct Words {
     /// on the home itself, and on a machine the cluster's update waits for.
     pub order_ready_home: &'static str,
     pub order_ready_node: &'static str,
+    /// An update that failed (update-attempts.md): the menu's line until the next attempt,
+    /// and the OS notification; {reason} is update_reason's.
+    pub update_failed_line: &'static str,
+    pub update_failed_notice: &'static str,
     /// Between the names in a list (the roles in a status line).
     pub list_sep: &'static str,
 }
@@ -282,6 +286,8 @@ pub static EN: Words = Words {
     order_clicked: "Installing Maktaba {version} when the cluster is ready…",
     order_ready_home: "Maktaba {version} is ready to install on this home",
     order_ready_node: "Maktaba {version} is ready: the cluster's update waits for this machine",
+    update_failed_line: "Update to {version} failed: {reason}",
+    update_failed_notice: "Maktaba could not update to {version}: {reason}",
     list_sep: ", ",
 };
 
@@ -346,8 +352,61 @@ pub static AR: Words = Words {
     order_clicked: "يُثبَّت الإصدار {version} من مكتبة حين تصبح المجموعة جاهزة…",
     order_ready_home: "الإصدار {version} من مكتبة جاهز للتثبيت على هذا الخادم الرئيسي",
     order_ready_node: "الإصدار {version} من مكتبة جاهز: تحديث المجموعة ينتظر هذا الجهاز",
+    update_failed_line: "فشل التحديث إلى {version}: {reason}",
+    update_failed_notice: "تعذّر تحديث مكتبة إلى {version}: {reason}",
     list_sep: "، ",
 };
+
+/// Why an update failed, in `lang`: the reason of each code of attempts.rs (update-
+/// attempts.md), plain words for the menu, the notification and the dialog.
+pub fn update_reason(lang: Lang, code: &str) -> &'static str {
+    match lang {
+        Lang::En => match code {
+            "no_network" => "this machine could not reach the internet",
+            "feed_not_found" => "the release's update information is missing",
+            "feed_invalid" => "the release's update information could not be read",
+            "asset_not_found" => "the download for this machine is missing",
+            "signature_mismatch" => "the download's signature does not match this app's key",
+            "needs_admin" => "replacing the app needs an administrator's password",
+            "not_writable" => "the app's files cannot be replaced",
+            "disk_full" => "the disk is full",
+            "translocated" => {
+                "macOS runs this copy of the app from a temporary place: move it to Applications"
+            }
+            "quarantined" => "macOS still marks the app as downloaded and unchecked",
+            "installer_exit" => "the installer stopped with an error",
+            "server_stop_failed" => "the server could not be stopped for the install",
+            "relaunch_failed" => "the app did not come back on the new release",
+            "login_item_unsigned" => {
+                "the app is not code-signed, so macOS will not start its server"
+            }
+            "check_failed" => "checking for the update failed",
+            "download_failed" => "the download failed",
+            _ => "the install failed",
+        },
+        Lang::Ar => match code {
+            "no_network" => "تعذّر على هذا الجهاز الوصول إلى الإنترنت",
+            "feed_not_found" => "معلومات التحديث الخاصة بالإصدار مفقودة",
+            "feed_invalid" => "تعذّرت قراءة معلومات التحديث الخاصة بالإصدار",
+            "asset_not_found" => "ملف التنزيل الخاص بهذا الجهاز مفقود",
+            "signature_mismatch" => "توقيع الملف المنزَّل لا يطابق مفتاح هذا التطبيق",
+            "needs_admin" => "استبدال التطبيق يحتاج إلى كلمة مرور المسؤول",
+            "not_writable" => "تعذّر استبدال ملفات التطبيق",
+            "disk_full" => "القرص ممتلئ",
+            "translocated" => {
+                "يشغّل macOS هذه النسخة من التطبيق من مكان مؤقت: انقلها إلى مجلد التطبيقات"
+            }
+            "quarantined" => "ما زال macOS يَسِم التطبيق بأنه منزَّل ولم يُفحص",
+            "installer_exit" => "توقّف المثبِّت بخطأ",
+            "server_stop_failed" => "تعذّر إيقاف الخادم من أجل التثبيت",
+            "relaunch_failed" => "لم يعد التطبيق إلى العمل على الإصدار الجديد",
+            "login_item_unsigned" => "التطبيق غير موقَّع، لذا لن يشغّل macOS خادمه",
+            "check_failed" => "فشل التحقق من وجود التحديث",
+            "download_failed" => "فشل التنزيل",
+            _ => "فشل التثبيت",
+        },
+    }
+}
 
 /// An error dialog's text: the sentence in the tray's language, then the
 /// programs' own errors (their English), each on its own line, as they are.
@@ -449,6 +508,8 @@ mod tests {
             ("order_clicked", Some(w.order_clicked)),
             ("order_ready_home", Some(w.order_ready_home)),
             ("order_ready_node", Some(w.order_ready_node)),
+            ("update_failed_line", Some(w.update_failed_line)),
+            ("update_failed_notice", Some(w.update_failed_notice)),
             ("older_app", Some(w.older_app)),
         ];
         // the lines only Windows reads
@@ -505,6 +566,28 @@ mod tests {
         }
         assert_eq!(EN.no_answer, crate::status::NO_ANSWER);
         assert_eq!((EN.list_sep, AR.list_sep), (", ", "، "));
+    }
+
+    #[test]
+    fn every_update_failure_has_its_reason_in_both_languages() {
+        let arabic = |c: char| ('\u{0600}'..='\u{06ff}').contains(&c);
+        let mut seen = std::collections::HashSet::new();
+        for code in crate::attempts::CODES {
+            let (en, ar) = (update_reason(Lang::En, code), update_reason(Lang::Ar, code));
+            assert!(!en.trim().is_empty(), "{code}");
+            assert!(ar.chars().any(arabic), "{code} is not in Arabic: {ar}");
+            assert!(seen.insert(en), "{code} says what another code says: {en}");
+        }
+        assert_eq!(
+            fill(
+                EN.update_failed_line,
+                &[
+                    ("version", "0.3.0"),
+                    ("reason", update_reason(Lang::En, "needs_admin"))
+                ]
+            ),
+            "Update to 0.3.0 failed: replacing the app needs an administrator's password"
+        );
     }
 
     #[test]

@@ -66,6 +66,9 @@ type MachineStatus struct {
 	// BoundSec is how long the machine's own limits let the run go on from its switch (its
 	// start steps' cap, from its database's size, and its watch's bound).
 	BoundSec int `json:"bound_sec,omitempty"`
+	// Attempts are the machine's update attempts (the desktop app's own, its releases'
+	// starts), every failure with its reason, newest first.
+	Attempts []Attempt `json:"attempts,omitempty"`
 }
 
 // RunID is the run the report is of ("" none).

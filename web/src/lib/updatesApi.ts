@@ -65,7 +65,40 @@ export interface UpdateMachine {
   kind?: string;
   /** the release the active run brings it to (its desktop app shows it while it waits for a click) */
   target?: string;
+  /** its last update attempts, newest first (at most 5): see UpdateAttempt */
+  attempts?: UpdateAttempt[];
 }
+
+/** One try at bringing a machine to a release, whoever made it (update-attempts.md): the
+ * desktop app's own updater (its badge, its menu, the home's order), a release's first start
+ * on the machine (its database step, its pipeline environment), or a run of the cluster. */
+export interface UpdateAttempt {
+  id: string;
+  /** when it began, and when it ended (absent while it runs) */
+  at: string;
+  ended_at?: string;
+  source: "app" | "server" | "run";
+  /** badge, menu, order (app); start (server); a run's trigger (run) */
+  trigger?: string;
+  from?: string;
+  to: string;
+  /** running, installed, failed, put_back (the release failed to start; the database and the
+   * release before are back), rolled_back, cancelled */
+  outcome: string;
+  /** the step it is at, or stopped at (updates.step.<step>) */
+  step?: string;
+  /** the reason (updates.code.<code>) */
+  code?: string;
+  /** the updater's or the server's own words (English) */
+  detail?: string;
+  /** a command (or an action) that mends it */
+  fix?: string;
+  /** a run's attempt: the run */
+  run_id?: string;
+}
+
+/** The outcomes of an attempt that did not bring the machine to its release. */
+export const ATTEMPT_FAILED = new Set(["failed", "put_back", "rolled_back"]);
 
 /** An update run (update_runs). */
 export interface UpdateRun {

@@ -101,6 +101,10 @@ type Machine struct {
 	// Target is the release the active run brings it to (the one its app shows while it
 	// waits for a click).
 	Target string `json:"target,omitempty"`
+	// Attempts are its last update attempts, every failure with its reason: its own (the
+	// desktop app's updater, its releases' starts) and its last part in a run, newest
+	// first (update-attempts.md).
+	Attempts []Attempt `json:"attempts,omitempty"`
 }
 
 // Overview builds GET /api/cluster/updates.

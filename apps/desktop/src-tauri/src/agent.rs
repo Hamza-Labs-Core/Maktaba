@@ -361,6 +361,27 @@ pub enum LoginItem {
     Unsupported,
 }
 
+/// The login item's registration error as the app says it: one macOS refused for the app's
+/// code signature (SMAppService's "Codesigning failure loading plist", code -67056,
+/// SMAppServiceErrorDomain 3: an app bundle that is not signed, as the Mac's 0.3.0 was,
+/// #273) starts with "login_item_unsigned: " and says what mends it (the setup screens say
+/// it in the reader's language by that code); any other is as macOS said it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn login_item_error(raw: &str) -> String {
+    let unsigned = raw.contains("Codesigning failure")
+        || raw.contains("-67056")
+        || raw.contains("SMAppServiceErrorDomain 3)");
+    if !unsigned {
+        return raw.to_string();
+    }
+    format!(
+        "{}: this app is not code-signed, so macOS will not load the server's login item. \
+         Install a signed release of Maktaba, or sign this copy: {} ({raw})",
+        crate::attempts::LOGIN_ITEM_UNSIGNED,
+        crate::attempts::fix_for(crate::attempts::LOGIN_ITEM_UNSIGNED)
+    )
+}
+
 #[cfg(target_os = "macos")]
 mod sm {
     use objc2_foundation::NSString;
@@ -387,8 +408,12 @@ mod sm {
     pub fn register() -> Result<(), String> {
         // SAFETY: SMAppService register/unregister are thread-safe calls
         // on a live object; the error is an owned NSError.
-        unsafe { service().registerAndReturnError() }
-            .map_err(|e| e.localizedDescription().to_string())
+        unsafe { service().registerAndReturnError() }.map_err(|e| {
+            let raw = format!("{} ({} {})", e.localizedDescription(), e.domain(), e.code());
+            let said = super::login_item_error(&raw);
+            crate::attempts::log(&format!("login item: {said}"));
+            said
+        })
     }
 
     pub fn unregister() -> Result<(), String> {
@@ -523,6 +548,21 @@ pub fn open_path(target: &OsStr) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_login_item_refused_for_the_signature_says_so() {
+        for raw in [
+            "Codesigning failure loading plist: com.hamzalabs.maktaba.server code: -67056 (SMAppServiceErrorDomain 3)",
+            "The operation couldn\u{2019}t be completed. (SMAppServiceErrorDomain 3)",
+        ] {
+            let said = login_item_error(raw);
+            assert!(said.starts_with("login_item_unsigned: "), "{said}");
+            assert!(said.contains("codesign --force --deep -s - --identifier com.hamzalabs.maktaba"), "{said}");
+            assert!(said.ends_with(&format!("({raw})")), "the raw error is kept: {said}");
+        }
+        let other = "Operation not permitted (SMAppServiceErrorDomain 1)";
+        assert_eq!(login_item_error(other), other);
+    }
 
     #[test]
     fn bundle_paths_from_the_mac_app_executable() {

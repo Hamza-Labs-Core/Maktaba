@@ -17,10 +17,12 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/attempts"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // The server's start inside the desktop app (Epic 38 story 38.12, for the Mac,
@@ -110,7 +112,7 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 		fmt.Fprintf(log, "[serve] this machine is a full node of %s: the home updates the library database\n", n.HomeURL())
 	} else {
 		db := &migrationGate{stateDir: cfg.StateDir(), version: cur.Version, pg: pg,
-			keep: cfg.Postgres.KeepUpdateDumps(), log: log}
+			keep: cfg.Postgres.KeepUpdateDumps(), log: log, updates: updatesDirOf(cfg, "")}
 		for _, p := range procs {
 			if p.Role == supervisor.RoleAPI && p.Cmd != nil {
 				db.api = p.Cmd
@@ -120,7 +122,8 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 	}
 	var venvStep *sharedStep
 	if py := supervisor.PythonOverride(cfg); py == "" {
-		venv := &venvGate{spec: appvenv.Spec{Payload: dir, Venv: filepath.Join(cfg.StateDir(), "venv")}}
+		venv := &venvGate{spec: appvenv.Spec{Payload: dir, Venv: filepath.Join(cfg.StateDir(), "venv")},
+			updates: updatesDirOf(cfg, ""), version: cur.Version}
 		venvStep = &sharedStep{wait: detail("venv_waiting", "Waiting for the transcription tools"), run: venv.run}
 	} else {
 		fmt.Fprintf(log, "[serve] the pipeline runs %s (MAKTABA_PYTHON or [pipeline] python): the app's venv is not built\n", py)
@@ -154,9 +157,10 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 // put back when the migrations fail; a rollback of an automatic update marks the record
 // for the next start to put the dump back (internal/updater). version is the release
 // running; a SQLite home has no step (its migrations run as before).
-func layoutHomeGates(cfg config.Config, version string, pg *pgbundle.Bundle, ext *dbsafe.Target, procs []supervisor.Process, log io.Writer) []supervisor.Process {
+func layoutHomeGates(cfg config.Config, version string, pg *pgbundle.Bundle, ext *dbsafe.Target, procs []supervisor.Process,
+	updates string, log io.Writer) []supervisor.Process {
 	db := &migrationGate{stateDir: cfg.StateDir(), version: version, pg: pg, ext: ext,
-		keep: cfg.Postgres.KeepUpdateDumps(), log: log}
+		keep: cfg.Postgres.KeepUpdateDumps(), log: log, updates: updates}
 	for _, p := range procs {
 		if p.Role == supervisor.RoleAPI && p.Cmd != nil {
 			db.api = p.Cmd
@@ -318,6 +322,52 @@ type migrationGate struct {
 	api  *exec.Cmd // the api's command: its binary and environment run the migrations; nil: no api here
 	keep int       // pre-update dumps kept ([postgres] update_dumps)
 	log  io.Writer
+	// updates is the machine's updates folder: a release's start is recorded there
+	// (server-attempts.json), so the Updates page says why it failed ("": not recorded)
+	updates string
+}
+
+// attempt records what this start does with the update to g.version (update-attempts.md),
+// on the attempt the start goes on with (settleAttempt's new try). Best effort: a failure
+// to record is logged, nothing else.
+func (g *migrationGate) attempt(from string, fn func(a *attempts.Attempt)) {
+	settleAttempt(g.updates, g.version, from, true, g.log, fn)
+}
+
+// retryWithin is how long after a failure a start of the same release goes on with that
+// attempt (a step tried again) instead of beginning another.
+const retryWithin = 30 * time.Minute
+
+// settleAttempt changes the newest attempt at release to in the updates folder dir, or a
+// new one from from: when there is none, or for a new try when the newest ended (put back,
+// installed, or failed longer than retryWithin ago). Not a new try (a restore, which
+// settles the start that failed): the newest, whatever its end.
+func settleAttempt(dir, to, from string, newTry bool, log io.Writer, fn func(a *attempts.Attempt)) {
+	if dir == "" {
+		return
+	}
+	a, ok := attempts.Find(dir, to)
+	ended := ok && a.EndedAt != nil &&
+		(a.Outcome != attempts.Failed || attempts.Now().Sub(*a.EndedAt) > retryWithin)
+	if !ok || (newTry && ended) {
+		a = attempts.Attempt{ID: attempts.NewStartID(to), At: attempts.Now(), Source: attempts.SourceServer,
+			Trigger: "start", From: layout.NormalizeVersion(from), To: layout.NormalizeVersion(to)}
+	}
+	if newTry {
+		a.Outcome, a.EndedAt = attempts.Running, nil // going on with it
+	}
+	fn(&a)
+	if err := attempts.Record(dir, a); err != nil {
+		fmt.Fprintf(log, "[serve] the update's attempt cannot be recorded in %s: %v\n", dir, err)
+	}
+}
+
+// failAttempt ends the start's attempt failed at step, with the reason.
+func (g *migrationGate) failAttempt(from, step, code string, err error) {
+	g.attempt(from, func(a *attempts.Attempt) {
+		a.Step, a.Code, a.Detail = step, code, err.Error()
+		a.Ended(attempts.Failed)
+	})
 }
 
 // The database step's programs (tests replace them).
@@ -649,7 +699,9 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		held = rec.Version
 	}
 	if held != "" && held != cur && apppayload.Older(cur, held) {
-		return supervisor.Halt(downgrade(cur, rec))
+		err := downgrade(cur, rec)
+		g.failAttempt(held, "start", "db_refused_older", err)
+		return supervisor.Halt(err)
 	}
 
 	update := apppayload.Database{Version: cur, State: apppayload.DatabaseMigrating}
@@ -660,6 +712,7 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		update.From, update.Dump = rec.From, rec.Dump
 	case held == "" || held != cur:
 		update.From = held
+		g.attempt(held, func(a *attempts.Attempt) { a.Step = "dump" })
 		if g.keeps() {
 			report(detail("db_dumping", fmt.Sprintf("Saving the library database before the update to %s", cur), held, cur))
 			stop := g.reportDumpSize(ctx, held, cur, report)
@@ -669,6 +722,7 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
+				g.failAttempt(held, "dump", "db_dump_failed", err)
 				return detailErr("db_dump_failed", fmt.Sprintf("the library database could not be saved before the "+
 					"update to %s, so the update waits (nothing was changed): %v", cur, err), cur, err.Error())
 			}
@@ -685,6 +739,7 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	}
 	if update.State != "" {
 		report(detail("db_migrating", fmt.Sprintf("Updating the library database for %s", cur), cur))
+		g.attempt(update.From, func(a *attempts.Attempt) { a.Step = "migrate" })
 	} else {
 		report(detail("db_checking", "Checking the library database", cur))
 	}
@@ -705,6 +760,8 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 				return nil
 			}
 			update = apppayload.Database{Version: cur} // restored, and this is the release from before
+		} else {
+			g.attempt(update.From, func(a *attempts.Attempt) { a.Step, a.Code, a.Detail = "migrate", "", ""; a.Ended(attempts.Installed) })
 		}
 		update.State = apppayload.DatabaseMigrated
 		return g.save(update)
@@ -716,12 +773,16 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 				return err
 			}
 		}
+		g.failAttempt(held, "migrate", "db_ahead", err)
 		return supervisor.Halt(detailErr("db_ahead", fmt.Sprintf("the library database was changed by a newer "+
 			"Maktaba than this one (%s), whose code would not know those changes: install that newer version again (%v)",
 			cur, err), cur, err.Error()))
 	case update.Dump == "":
 		// nothing to put back (the same release, or a database of the user's
 		// own): tried again like any start step
+		if update.State != "" {
+			g.failAttempt(update.From, "migrate", "db_migrate_failed", err)
+		}
 		return detailErr("db_migrate_failed", fmt.Sprintf("the library database could not be brought up to date "+
 			"for %s: %v", cur, err), cur, err.Error())
 	}
@@ -753,6 +814,27 @@ func (g *migrationGate) restore(ctx context.Context, rec apppayload.Database, re
 	if ctx.Err() != nil {
 		return rec, ctx.Err() // the record still says restoring: the next start finishes it
 	}
+	// the attempt at the failed release: put back (its database and the release before
+	// run again), or failed when even the dump could not be put back
+	code := "db_migrate_failed" // its own migrations failed (this start is the failed release's)
+	if layout.NormalizeVersion(rec.Failed) != layout.NormalizeVersion(g.version) {
+		code = reasonCode(rec.Error) // the release before puts it back (a rollback marked it)
+	}
+	settleAttempt(g.updates, rec.Failed, rec.From, false, g.log, func(a *attempts.Attempt) {
+		if a.From == "" {
+			a.From = layout.NormalizeVersion(rec.From)
+		}
+		if a.Step == "" || a.Step == "dump" {
+			a.Step = "start"
+		}
+		a.Code, a.Detail = code, rec.Error
+		if err != nil {
+			a.Code, a.Detail = "db_restore_failed", fmt.Sprintf("%s; putting %s back failed: %v", rec.Error, rec.Dump, err)
+			a.Ended(attempts.Failed)
+			return
+		}
+		a.Ended(attempts.PutBack)
+	})
 	if err != nil {
 		return rec, supervisor.Halt(detailErr("db_restore_failed", fmt.Sprintf("the update to %s could not change "+
 			"the library database (%s), and putting the database back from %s failed too: %v. Maktaba stays stopped; "+
@@ -826,10 +908,21 @@ func (w *tailWriter) lastLines(n int) string {
 	return strings.Join(out, "; ")
 }
 
+// reasonCode is a rollback's reason as an attempt's code: the reason itself when it is
+// one (start_timeout, boot_loop), else start_failed (the detail says the rest).
+func reasonCode(reason string) string {
+	if reason != "" && strings.Trim(reason, "abcdefghijklmnopqrstuvwxyz0123456789_") == "" {
+		return reason
+	}
+	return "start_failed"
+}
+
 // venvGate builds the app's venv for every pipeline process (the main worker
 // and the transcription workers) through a sharedStep.
 type venvGate struct {
-	spec appvenv.Spec
+	// updates and version: the start's attempt (update-attempts.md) a failure is recorded on
+	updates, version string
+	spec             appvenv.Spec
 }
 
 // venvRun is appvenv.Run (tests replace it).
@@ -855,6 +948,7 @@ func (g *venvGate) run(ctx context.Context, report func(supervisor.Detail)) erro
 		return detailErr("venv_interrupted", fmt.Sprintf("the transcription tools' install was stopped; it goes on "+
 			"from where it was next time (log: %s)", logPath), logPath)
 	default:
+		g.failAttempt("venv_failed", err)
 		return detailErr("venv_failed", fmt.Sprintf("the transcription tools could not be installed: %v (log: %s)",
 			err, logPath), err.Error(), logPath)
 	}
@@ -862,6 +956,22 @@ func (g *venvGate) run(ctx context.Context, report func(supervisor.Detail)) erro
 		fmt.Fprintf(os.Stderr, "[serve] the pipeline's venv is ready (pipeline %s, Python %s)\n", res.Pipeline, res.Python)
 	}
 	return nil
+}
+
+// failAttempt ends this release's start attempt failed at the pipeline's environment,
+// when the start is an update's (an attempt at this release that runs, or ended within
+// the last two hours): the release came up, its pipeline did not.
+func (g *venvGate) failAttempt(code string, err error) {
+	if g.updates == "" || g.version == "" {
+		return
+	}
+	a, ok := attempts.Find(g.updates, g.version)
+	if !ok || (a.EndedAt != nil && attempts.Now().Sub(*a.EndedAt) > 2*time.Hour) {
+		return
+	}
+	a.Step, a.Code, a.Detail = "venv", code, err.Error()
+	a.Ended(attempts.Failed)
+	_ = attempts.Record(g.updates, a)
 }
 
 // confirmAppPayload saves the payload as the last one that ran once every

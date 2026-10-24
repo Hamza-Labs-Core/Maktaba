@@ -17,6 +17,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/attempts"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -1155,5 +1156,95 @@ func TestAppBundleDumpProgressAndAGivenUpStart(t *testing.T) {
 	}
 	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseRestoring || rec.Failed != "v0.3.0" {
 		t.Fatalf("recorded over the restore: %+v", rec)
+	}
+}
+
+// The owner's request (update-attempts.md): a release's start says what it did with the
+// update where the Updates page reads it. A failed migration reads put back, with the
+// migration's error; the release before, back, keeps it; the update tried again and
+// installed is a new attempt; a dump that cannot be taken reads failed at the dump.
+func TestAppBundleStartAttempts(t *testing.T) {
+	t.Setenv(envLauncherRoot, "")
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	dir := filepath.Join(cfg.StateDir(), "updates")
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.migrateErr = errors.New(`ERROR 0149_x.sql: relation "videos" does not exist`)
+	ctx := context.Background()
+	if err := prepareOf(t, appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard),
+		supervisor.RoleAPI)(ctx, noReport); !supervisor.Halted(err) {
+		t.Fatalf("a failed update = %v", err)
+	}
+	got := attempts.Read(dir)
+	if len(got) != 1 || got[0].To != "0.3.0" || got[0].From != "0.2.0" || got[0].Outcome != attempts.PutBack ||
+		got[0].Code != "db_migrate_failed" || got[0].Step != "migrate" || !strings.Contains(got[0].Detail, "videos") ||
+		got[0].EndedAt == nil || got[0].Source != attempts.SourceServer {
+		t.Fatalf("after the failed update: %+v", got)
+	}
+
+	// the release before, back: the attempt says what happened to the one that failed
+	newPayload(t, payload, "v0.2.0")
+	f.migrateErr = nil
+	if err := prepareOf(t, appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard),
+		supervisor.RoleAPI)(ctx, noReport); err != nil {
+		t.Fatal(err)
+	}
+	if got := attempts.Read(dir); len(got) != 1 || got[0].Outcome != attempts.PutBack {
+		t.Fatalf("the release before: %+v", got)
+	}
+
+	// tried again, installed: a new attempt, the failed one kept
+	newPayload(t, payload, "v0.3.0")
+	if err := prepareOf(t, appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard),
+		supervisor.RoleAPI)(ctx, noReport); err != nil {
+		t.Fatal(err)
+	}
+	got = attempts.Read(dir)
+	if len(got) != 2 || got[0].Outcome != attempts.Installed || got[0].Code != "" || got[1].Outcome != attempts.PutBack ||
+		got[0].ID == got[1].ID {
+		t.Fatalf("installed: %+v", got)
+	}
+
+	// a dump that cannot be taken: failed at the dump, the database untouched
+	prev := dumpBeforeUpdate
+	t.Cleanup(func() { dumpBeforeUpdate = prev })
+	dumpBeforeUpdate = func(context.Context, pgbundle.Bundle, string, string, int) (string, error) {
+		return "", errors.New("pg_dump: No space left on device")
+	}
+	newPayload(t, payload, "v0.4.0")
+	if err := prepareOf(t, appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard),
+		supervisor.RoleAPI)(ctx, noReport); err == nil {
+		t.Fatal("a dump that failed went on")
+	}
+	got = attempts.Read(dir)
+	if got[0].To != "0.4.0" || got[0].Outcome != attempts.Failed || got[0].Code != "db_dump_failed" ||
+		got[0].Step != "dump" || !strings.Contains(got[0].Detail, "No space left") {
+		t.Fatalf("a failed dump: %+v", got[0])
+	}
+}
+
+// A rollback that marked the dump to be put back (the watch gave up: start_timeout):
+// the release before puts it back at its start, and the attempt at the failed release
+// reads put back, with the rollback's reason as its code.
+func TestAppBundleRollbackRestoreAttempt(t *testing.T) {
+	t.Setenv(envLauncherRoot, "")
+	cfg, payload := appEnv(t, "v0.2.0", "")
+	dir := filepath.Join(cfg.StateDir(), "updates")
+	dump := filepath.Join(cfg.StateDir(), "backups", "pre-v0.2.0-to-v0.3.0.dump")
+	if err := os.MkdirAll(filepath.Dir(dump), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(dump, []byte("dump"), 0o600)
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
+		Dump: dump, Failed: "v0.3.0", Error: "start_timeout"})
+	installFakeDB(t, cfg)
+	if err := prepareOf(t, appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard),
+		supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("the release before puts the dump back and starts: %v", err)
+	}
+	got := attempts.Read(dir)
+	if len(got) != 1 || got[0].To != "0.3.0" || got[0].From != "0.2.0" || got[0].Outcome != attempts.PutBack ||
+		got[0].Code != "start_timeout" {
+		t.Fatalf("attempts %+v", got)
 	}
 }

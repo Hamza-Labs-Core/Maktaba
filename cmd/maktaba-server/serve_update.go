@@ -100,6 +100,20 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 	return flatInstaller{}, filepath.Join(cfg.StateDir(), "updates")
 }
 
+// updatesDirOf is this install's updates folder (installKind's: the journal, the app's
+// order, the update attempts): the launcher root's (or the state root's) for the desktop
+// app and the runtime copy, the layout's for a plain server, the state root's for a flat
+// install.
+func updatesDirOf(cfg config.Config, releaseDir string) string {
+	if config.AppBundle() != "" {
+		return filepath.Join(orDir(strings.TrimSpace(os.Getenv(envLauncherRoot)), cfg.StateDir()), "updates")
+	}
+	if releaseDir != "" {
+		return layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir))))).UpdatesDir()
+	}
+	return filepath.Join(cfg.StateDir(), "updates")
+}
+
 func orDir(a, b string) string {
 	if a != "" {
 		return a
@@ -290,7 +304,7 @@ func (u *updates) snapshot() (supervisor.Snapshot, bool) {
 // agentState adds this machine's run to the machine agent's update.state.
 func (u *updates) agentState(st *machineagent.UpdateState) {
 	s := u.m.Status()
-	st.Layout = s.Kind
+	st.Layout, st.Attempts = s.Kind, s.Attempts
 	if s.Journal == nil {
 		return
 	}

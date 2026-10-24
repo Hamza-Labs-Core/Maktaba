@@ -875,6 +875,8 @@ type agentState struct {
 		RunID string `json:"run_id"`
 		State string `json:"state"`
 	} `json:"run"`
+	// Attempts are the machine's own update attempts (update-attempts.md)
+	Attempts []Attempt `json:"attempts"`
 }
 
 func (d *Driver) agentStates() (map[string]string, map[string]agentState) {

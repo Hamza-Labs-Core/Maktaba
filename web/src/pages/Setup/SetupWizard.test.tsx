@@ -1048,6 +1048,32 @@ describe("DesktopGate", () => {
     expect(api.finishSetup).not.toHaveBeenCalled();
   });
 
+  it("says why a set-up server could not be started again, then offers setup", async () => {
+    const configured = () => ({ configured: true, web_url: "http://127.0.0.1:8088" });
+    const api = fakeApi({ status: configured });
+    api.finishSetup.mockRejectedValue(
+      "login_item_unsigned: SMAppServiceErrorDomain 3: Codesigning failure loading plist (code -67056)"
+    );
+    const unsigned = gate(api, true);
+    expect(await screen.findByRole("heading", { name: "Welcome to Maktaba" })).toBeInTheDocument();
+    const banner = screen.getByTestId("desktop-adopt-error");
+    expect(banner).toHaveTextContent(
+      "macOS would not start the server's login item because this copy of Maktaba is not code-signed"
+    );
+    expect(banner).toHaveTextContent("Codesigning failure loading plist (code -67056)");
+    expect(banner).not.toHaveTextContent("login_item_unsigned");
+    unsigned.unmount();
+
+    const other = fakeApi({ status: configured });
+    other.finishSetup.mockRejectedValue(new Error("launchctl bootstrap failed: 5"));
+    gate(other, true);
+    const raw = await screen.findByTestId("desktop-adopt-error");
+    expect(raw).toHaveTextContent(
+      "This computer's server is set up, but Maktaba could not start it again"
+    );
+    expect(raw).toHaveTextContent("launchctl bootstrap failed: 5");
+  });
+
   it("falls back to the app if the shell does not answer", async () => {
     const api = fakeApi();
     api.appState.mockRejectedValue(new Error("no ipc"));
