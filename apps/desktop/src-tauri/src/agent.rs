@@ -474,8 +474,22 @@ pub fn register_login_item(force: bool) -> Result<bool, String> {
     if !force && std::fs::read_to_string(&path).ok().as_deref() == Some(stamp.as_str()) {
         return Ok(false);
     }
-    // an older build's registration (or none): replaced by this build's
-    let _ = unregister();
+    // an older build's registration (or none): replaced by this build's. The
+    // unregister finishes in the background; a register that comes first leaves the
+    // job unable to find its program ("Could not find and/or execute program
+    // specified by service: Contents/MacOS/Maktaba"), so wait until it is gone.
+    if unregister().is_ok() {
+        for _ in 0..50 {
+            if !matches!(
+                login_item(),
+                LoginItem::Enabled | LoginItem::RequiresApproval
+            ) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
     register()?;
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
