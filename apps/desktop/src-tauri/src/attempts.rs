@@ -50,7 +50,13 @@ pub const NOT_WRITABLE: &str = "not_writable";
 pub const DISK_FULL: &str = "disk_full";
 pub const TRANSLOCATED: &str = "translocated";
 pub const QUARANTINED: &str = "quarantined";
+/// The system's package installer (the Linux .deb or .rpm) failed. Not on Windows: the
+/// updater starts the NSIS installer and this app exits, so an install that did not take
+/// is seen at the next start (settle: relaunch_failed, its detail says the installer).
 pub const INSTALLER_EXIT: &str = "installer_exit";
+/// macOS: the install failed and the updater could not move the previous app back either
+/// (it was kept elsewhere, in the detail): Maktaba is gone from its folder.
+pub const PREVIOUS_APP_NOT_RESTORED: &str = "previous_app_not_restored";
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const SERVER_STOP_FAILED: &str = "server_stop_failed";
 pub const RELAUNCH_FAILED: &str = "relaunch_failed";
@@ -73,6 +79,7 @@ pub const CODES: &[&str] = &[
     TRANSLOCATED,
     QUARANTINED,
     INSTALLER_EXIT,
+    PREVIOUS_APP_NOT_RESTORED,
     SERVER_STOP_FAILED,
     RELAUNCH_FAILED,
     LOGIN_ITEM_UNSIGNED,
@@ -119,13 +126,110 @@ pub fn path(state_root: &Path) -> PathBuf {
     state_root.join("updates").join(FILE)
 }
 
-/// The record's attempts, newest first (none when there is no record, or it cannot be read).
+/// The record's attempts, newest first (none when there is no record, or it cannot be read),
+/// each detail cleaned (clean_detail: a record written by an older app, or by hand).
 pub fn read(path: &Path) -> Vec<Attempt> {
-    std::fs::read(path)
+    let mut all = std::fs::read(path)
         .ok()
         .and_then(|raw| serde_json::from_slice::<Record>(&raw).ok())
         .map(|r| r.attempts)
-        .unwrap_or_default()
+        .unwrap_or_default();
+    for a in &mut all {
+        a.detail = clean_detail(&a.detail);
+    }
+    all
+}
+
+/// How long a detail (and an app.log line) may be.
+pub const DETAIL_MAX: usize = 2048;
+
+/// A detail as the record keeps it: every URL without its query (a signed download's
+/// redirect carries its signature there: `…?X-Amz-Signature=…`), and at most DETAIL_MAX
+/// bytes, cut on a character with an ellipsis.
+pub fn clean_detail(s: &str) -> String {
+    let mut out = String::with_capacity(s.len().min(DETAIL_MAX + 4));
+    let mut rest = s;
+    while let Some(at) = find_url(rest) {
+        let (before, url) = rest.split_at(at);
+        out.push_str(before);
+        let end = url
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ')' | '>' | ']' | '`'))
+            .unwrap_or(url.len());
+        let (token, after) = url.split_at(end);
+        out.push_str(token.split('?').next().unwrap_or(token));
+        rest = after;
+    }
+    out.push_str(rest);
+    if out.len() <= DETAIL_MAX {
+        return out;
+    }
+    let mut cut = DETAIL_MAX;
+    while !out.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    out.truncate(cut);
+    out.push('…');
+    out
+}
+
+/// Where the first http(s) URL in s starts.
+fn find_url(s: &str) -> Option<usize> {
+    match (s.find("https://"), s.find("http://")) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// Whether release `have` is `want` or newer (semver's order: a pre-release before its
+/// release, its identifiers number by number or by their letters). Two versions that do
+/// not read as releases are only the same one.
+pub fn at_least(have: &str, want: &str) -> bool {
+    match (semver_of(have), semver_of(want)) {
+        (Some(h), Some(w)) => compare(&h, &w) != std::cmp::Ordering::Less,
+        _ => plain(have) == plain(want),
+    }
+}
+
+/// A release's numbers and pre-release identifiers (1.2.3-rc.1: [1, 2, 3], ["rc", "1"]).
+fn semver_of(v: &str) -> Option<([u64; 3], Vec<String>)> {
+    let v = v.strip_prefix('v').unwrap_or(v);
+    let v = v.split('+').next()?;
+    let (core, pre) = match v.split_once('-') {
+        Some((c, p)) => (c, p.split('.').map(str::to_string).collect()),
+        None => (v, Vec::new()),
+    };
+    let mut nums = [0u64; 3];
+    let mut parts = core.split('.');
+    for n in &mut nums {
+        *n = parts.next()?.parse().ok()?;
+    }
+    parts.next().is_none().then_some((nums, pre))
+}
+
+fn compare(a: &([u64; 3], Vec<String>), b: &([u64; 3], Vec<String>)) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match a.0.cmp(&b.0) {
+        Ordering::Equal => {}
+        o => return o,
+    }
+    match (a.1.is_empty(), b.1.is_empty()) {
+        (true, true) => return Ordering::Equal,
+        (true, false) => return Ordering::Greater,
+        (false, true) => return Ordering::Less,
+        _ => {}
+    }
+    for (x, y) in a.1.iter().zip(&b.1) {
+        let o = match (x.parse::<u64>(), y.parse::<u64>()) {
+            (Ok(x), Ok(y)) => x.cmp(&y),
+            (Ok(_), Err(_)) => Ordering::Less,
+            (Err(_), Ok(_)) => Ordering::Greater,
+            _ => x.cmp(y),
+        };
+        if o != Ordering::Equal {
+            return o;
+        }
+    }
+    a.1.len().cmp(&b.1.len())
 }
 
 /// The newest attempt.
@@ -271,7 +375,7 @@ impl Failure {
         Failure {
             step,
             code,
-            detail: detail.into(),
+            detail: clean_detail(&detail.into()),
             fix: fix_for(code),
         }
     }
@@ -279,19 +383,28 @@ impl Failure {
 
 /// The attempt failed.
 pub fn fail(path: &Path, id: &str, f: &Failure) {
+    let detail = clean_detail(&f.detail);
     log(&format!(
-        "update {id}: failed at {} ({}): {}",
-        f.step, f.code, f.detail
+        "update {id}: failed at {} ({}): {detail}",
+        f.step, f.code
     ));
     let now = rfc3339(SystemTime::now());
     update(path, id, |a| {
         a.outcome = FAILED.into();
         a.step = f.step.into();
         a.code = f.code.into();
-        a.detail = f.detail.clone();
+        a.detail = detail;
         a.fix = f.fix.clone();
         a.ended_at = now;
     });
+}
+
+/// Something the running attempt met that its end may need to say (the server's restart
+/// after the install failed): kept in its detail while it runs.
+pub fn note(path: &Path, id: &str, what: &str) {
+    log(&format!("update {id}: {what}"));
+    let what = clean_detail(what);
+    update(path, id, |a| a.detail = what);
 }
 
 /// The attempt was called off before anything was installed (the home's order withdrawn).
@@ -350,10 +463,17 @@ pub fn of_text(step: &'static str, msg: impl Into<String>, ctx: &Ctx) -> Failure
 
 /// An attempt this app's last run left running, settled now that the app runs again as
 /// `own` (None: nothing to settle). One at the install or the relaunch installed its
-/// release when the app now is it, and failed (relaunch_failed) otherwise: the swap did
-/// not take, or a restart brought the old app back. One at an earlier step ended with the
-/// app (it quit, or crashed, mid-download): failed at that step.
+/// release when the app now is it or newer, and failed (relaunch_failed) otherwise: the
+/// swap did not take, a restart brought the old app back, or on Windows the installer (it
+/// runs once this app has exited) did not install it. One at an earlier step ended with the
+/// app (it quit, or crashed, mid-download): failed at that step. What the attempt noted
+/// while it ran (note) follows the failure's own detail. An app that runs the server is
+/// installed only once its server is back too: settle_newest.
 pub fn settle(a: &Attempt, own: &str, ctx: &Ctx, now: &str) -> Option<Attempt> {
+    settle_on(a, own, ctx, now, cfg!(windows))
+}
+
+fn settle_on(a: &Attempt, own: &str, ctx: &Ctx, now: &str, windows: bool) -> Option<Attempt> {
     if a.outcome != RUNNING {
         return None;
     }
@@ -362,9 +482,10 @@ pub fn settle(a: &Attempt, own: &str, ctx: &Ctx, now: &str) -> Option<Attempt> {
     let own = plain(own);
     match a.step.as_str() {
         STEP_INSTALL | STEP_RELAUNCH => {
-            if !a.to.is_empty() && own == a.to {
+            if !a.to.is_empty() && at_least(&own, &a.to) {
                 out.outcome = INSTALLED.into();
                 out.code.clear();
+                out.detail.clear();
                 return Some(out);
             }
             out.outcome = FAILED.into();
@@ -378,11 +499,20 @@ pub fn settle(a: &Attempt, own: &str, ctx: &Ctx, now: &str) -> Option<Attempt> {
                 RELAUNCH_FAILED
             }
             .into();
-            out.detail = format!(
-                "the app started on {}, not {}",
-                or_dash(&own),
-                or_dash(&a.to)
-            );
+            out.detail = if windows && a.step == STEP_INSTALL {
+                format!(
+                    "the installer, which runs once the app has closed, did not install {}: \
+                     the app started again on {}",
+                    or_dash(&a.to),
+                    or_dash(&own)
+                )
+            } else {
+                format!(
+                    "the app started on {}, not {}",
+                    or_dash(&own),
+                    or_dash(&a.to)
+                )
+            };
         }
         step => {
             out.outcome = FAILED.into();
@@ -390,15 +520,105 @@ pub fn settle(a: &Attempt, own: &str, ctx: &Ctx, now: &str) -> Option<Attempt> {
             out.detail = format!("the app stopped during the {step} (it quit or crashed)");
         }
     }
+    out.detail = with_note(&out.detail, &a.detail);
     out.fix = fix_for(&out.code);
     Some(out)
 }
 
+/// A failure's detail, then what the attempt noted while it ran.
+fn with_note(detail: &str, noted: &str) -> String {
+    if noted.is_empty() || detail.contains(noted) {
+        clean_detail(detail)
+    } else {
+        clean_detail(&format!("{detail}; {noted}"))
+    }
+}
+
+/// What the local server shows while the app waits for it on the release it installed.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Seen {
+    /// Its api answers, on this release.
+    On(String),
+    /// Its supervisor answers, its api not yet (starting: the dump, the migrations).
+    Busy,
+    /// Nothing answers.
+    Silent,
+}
+
+/// How long an app that runs the server waits for it after its own update: SERVER_QUIET of
+/// silence, or of an older release answering, fails the update; a server still starting (its
+/// supervisor answers) gets up to SERVER_BUSY in all; it asks every SERVER_POLL.
+pub const SERVER_QUIET: Duration = Duration::from_secs(180);
+pub const SERVER_BUSY: Duration = Duration::from_secs(30 * 60);
+pub const SERVER_POLL: Duration = Duration::from_secs(5);
+
+/// Waits until the local server answers on `to` or newer (Ok); else what it showed last
+/// (Err), after SERVER_QUIET of silence or of an older release, or SERVER_BUSY in all.
+/// `elapsed` is the time since the wait began.
+pub fn wait_for_server(
+    to: &str,
+    mut ask: impl FnMut() -> Seen,
+    mut elapsed: impl FnMut() -> Duration,
+    mut sleep: impl FnMut(Duration),
+) -> Result<(), Seen> {
+    // since when nothing answers, or an older release
+    let mut quiet_since: Option<Duration> = None;
+    loop {
+        let now = elapsed();
+        let seen = ask();
+        match &seen {
+            Seen::On(v) if at_least(v, to) => return Ok(()),
+            Seen::Busy => quiet_since = None,
+            _ => {
+                let since = *quiet_since.get_or_insert(now);
+                if now.saturating_sub(since) >= SERVER_QUIET {
+                    return Err(seen);
+                }
+            }
+        }
+        if now >= SERVER_BUSY {
+            return Err(seen);
+        }
+        sleep(SERVER_POLL);
+    }
+}
+
+/// The wait for the server an app that runs it gives settle_newest: Ok once the server is
+/// back on the attempt's release, else why not.
+pub type ServerBack<'a> = &'a mut dyn FnMut(&Attempt) -> Result<(), Failure>;
+
 /// Settles the newest attempt (settle) in the record; the attempt when it now failed.
-pub fn settle_newest(path: &Path, own: &str, ctx: &Ctx) -> Option<Attempt> {
+/// `server_back`, for an app that runs the server: an attempt the app reached is installed
+/// only once the server is back on its release (it waits: wait_for_server), and fails with
+/// the server's reason otherwise; meanwhile the record keeps it running at the relaunch.
+pub fn settle_newest(
+    path: &Path,
+    own: &str,
+    ctx: &Ctx,
+    server_back: Option<ServerBack<'_>>,
+) -> Option<Attempt> {
     let newest = newest(path)?;
-    let settled = settle(&newest, own, ctx, &rfc3339(SystemTime::now()))?;
+    let mut settled = settle(&newest, own, ctx, &rfc3339(SystemTime::now()))?;
     let id = settled.id.clone();
+    if settled.outcome == INSTALLED {
+        if let Some(back) = server_back {
+            log(&format!(
+                "update {id}: the app runs {}; waiting for its server on {}",
+                plain(own),
+                newest.to
+            ));
+            update(path, &id, |a| a.step = STEP_RELAUNCH.into());
+            let res = back(&newest);
+            settled.ended_at = rfc3339(SystemTime::now());
+            if let Err(f) = res {
+                settled.outcome = FAILED.into();
+                settled.step = f.step.into();
+                settled.code = f.code.into();
+                settled.detail = with_note(&f.detail, &newest.detail);
+                settled.fix = f.fix;
+            }
+        }
+    }
     let put = settled.clone();
     if let Err(e) = change(path, |all| {
         if let Some(a) = all.iter_mut().find(|a| a.id == id) {
@@ -533,6 +753,10 @@ pub fn classify_updater(
         E::TempDirNotOnSameMountPoint => NOT_WRITABLE,
         // the Linux package's password prompt, dismissed or failed
         E::AuthenticationFailed => NEEDS_ADMIN,
+        // the Linux package manager (dpkg, rpm) did not install the package
+        E::DebInstallFailed | E::PackageInstallFailed => INSTALLER_EXIT,
+        // macOS: the new app did not go in, and the old one did not go back
+        E::PreviousAppNotRestored(_) => PREVIOUS_APP_NOT_RESTORED,
         E::Network(msg) => classify_text(step, msg, ctx),
         other => classify_text(step, &other.to_string(), ctx),
     }
@@ -680,6 +904,10 @@ pub fn fix_for(code: &str) -> String {
         SIGNATURE_MISMATCH => "install the update by hand from the release page; tell the Maktaba team",
         FEED_NOT_FOUND | ASSET_NOT_FOUND => "try again later, or install the update by hand from the release page",
         RELAUNCH_FAILED => "open Maktaba again; if it still runs the old release, install the update by hand",
+        PREVIOUS_APP_NOT_RESTORED => {
+            "install Maktaba again from the release's disk image (.dmg); the previous app was kept \
+             at the place the error names"
+        }
         _ => "",
     }
     .to_string()
@@ -782,8 +1010,8 @@ pub const LOGS_MARGIN: Duration = Duration::from_secs(120);
 
 /// The web logs page of this machine's server for an attempt ("See the logs"): its time,
 /// two minutes on either side (since the attempt began, until it ended, or began when it
-/// has not), and the release it tried as the search when known.
-/// <web_url>/admin/logs?since=<ISO>&until=<ISO>&q=<to>
+/// has not). No search: most of an update's lines do not name its release.
+/// <web_url>/admin/logs?since=<ISO>&until=<ISO>
 pub fn logs_url(web_url: &str, a: &Attempt) -> String {
     let base = web_url.trim_end_matches('/');
     let mut query: Vec<(&str, String)> = Vec::new();
@@ -794,9 +1022,6 @@ pub fn logs_url(web_url: &str, a: &Attempt) -> String {
         ));
         let end = parse_rfc3339(&a.ended_at).unwrap_or(at);
         query.push(("until", rfc3339(end + LOGS_MARGIN)));
-    }
-    if !a.to.is_empty() {
-        query.push(("q", a.to.clone()));
     }
     let query: Vec<String> = query
         .iter()
@@ -845,7 +1070,12 @@ fn append_log(dir: &Path, line: &str, now: SystemTime) -> std::io::Result<()> {
         .create(true)
         .append(true)
         .open(&path)?;
-    writeln!(f, "{} {}", rfc3339(now), line.replace('\n', " "))
+    writeln!(
+        f,
+        "{} {}",
+        rfc3339(now),
+        clean_detail(&line.replace('\n', " "))
+    )
 }
 
 /// A version without its v.
@@ -1068,6 +1298,44 @@ mod tests {
             (quit.outcome.as_str(), quit.code.as_str()),
             ("failed", "download_failed")
         );
+        // a newer app than the attempt's release: reached (another way), not a failure
+        let newer = settle(
+            &running(STEP_RELAUNCH, "0.3.0"),
+            "0.3.1",
+            &Ctx::default(),
+            now,
+        )
+        .unwrap();
+        assert_eq!(newer.outcome, "installed");
+        // Windows: the installer runs once the app has closed; one that did not install
+        // is seen here, and its detail says so
+        let win = settle_on(
+            &running(STEP_INSTALL, "0.3.0"),
+            "0.3.0-rc.5",
+            &Ctx::default(),
+            now,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            (win.code.as_str(), win.detail.as_str()),
+            (
+                "relaunch_failed",
+                "the installer, which runs once the app has closed, did not install 0.3.0: the app started again on 0.3.0-rc.5"
+            )
+        );
+        // what the attempt noted follows its failure
+        let mut noted = running(STEP_RELAUNCH, "0.3.0");
+        noted.detail = "the server's restart failed: x".into();
+        let bad = settle(&noted, "0.3.0-rc.5", &Ctx::default(), now).unwrap();
+        assert_eq!(
+            bad.detail,
+            "the app started on 0.3.0-rc.5, not 0.3.0; the server's restart failed: x"
+        );
+        assert!(settle(&noted, "0.3.0", &Ctx::default(), now)
+            .unwrap()
+            .detail
+            .is_empty());
         // over already: nothing to settle
         let mut done = running(STEP_INSTALL, "0.3.0");
         done.outcome = FAILED.into();
@@ -1080,15 +1348,186 @@ mod tests {
         let p = path(dir.path());
         let id = begin(&p, TRIGGER_BADGE, "0.3.0-rc.5", "0.3.0");
         set_step(&p, &id, STEP_RELAUNCH);
-        let failed = settle_newest(&p, "0.3.0-rc.5", &Ctx::default()).unwrap();
+        let failed = settle_newest(&p, "0.3.0-rc.5", &Ctx::default(), None).unwrap();
         assert_eq!(failed.code, "relaunch_failed");
         assert_eq!(newest(&p).unwrap().outcome, "failed");
         // settled once: nothing the next time
-        assert!(settle_newest(&p, "0.3.0-rc.5", &Ctx::default()).is_none());
+        assert!(settle_newest(&p, "0.3.0-rc.5", &Ctx::default(), None).is_none());
         let id = begin(&p, TRIGGER_BADGE, "0.3.0-rc.5", "0.3.0");
         set_step(&p, &id, STEP_RELAUNCH);
-        assert!(settle_newest(&p, "0.3.0", &Ctx::default()).is_none());
+        assert!(settle_newest(&p, "0.3.0", &Ctx::default(), None).is_none());
         assert_eq!(newest(&p).unwrap().outcome, "installed");
+    }
+
+    // An app that runs the server: the attempt it reached is installed once its server is
+    // back on the release, and fails with the server's reason (and what the attempt noted:
+    // the server's restart that failed) when it is not; the record keeps it running at the
+    // relaunch meanwhile.
+    #[test]
+    fn the_update_is_installed_once_the_server_is_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = path(dir.path());
+        let id = begin(&p, TRIGGER_BADGE, "0.3.0-rc.5", "0.3.0");
+        set_step(&p, &id, STEP_INSTALL);
+        let mut back = |a: &Attempt| -> Result<(), Failure> {
+            assert_eq!(a.to, "0.3.0");
+            let during = newest(&path(dir.path())).unwrap();
+            assert_eq!(
+                (during.outcome.as_str(), during.step.as_str()),
+                ("running", "relaunch")
+            );
+            Ok(())
+        };
+        assert!(settle_newest(&p, "0.3.0", &Ctx::default(), Some(&mut back)).is_none());
+        assert_eq!(newest(&p).unwrap().outcome, "installed");
+
+        let id = begin(&p, TRIGGER_BADGE, "0.3.0", "0.3.1");
+        set_step(&p, &id, STEP_RELAUNCH);
+        note(
+            &p,
+            &id,
+            "the server's restart after the install failed: launchctl: no such service",
+        );
+        let mut refused = |_: &Attempt| -> Result<(), Failure> {
+            Err(Failure::new(
+                STEP_RELAUNCH,
+                LOGIN_ITEM_UNSIGNED,
+                "the server did not answer after the update to 0.3.1; login_item_unsigned: x",
+            ))
+        };
+        let failed = settle_newest(&p, "0.3.1", &Ctx::default(), Some(&mut refused)).unwrap();
+        assert_eq!(
+            (
+                failed.outcome.as_str(),
+                failed.step.as_str(),
+                failed.code.as_str()
+            ),
+            ("failed", "relaunch", "login_item_unsigned")
+        );
+        assert!(
+            failed.detail.contains("login_item_unsigned")
+                && failed.detail.contains("launchctl: no such service"),
+            "{}",
+            failed.detail
+        );
+        assert!(failed.fix.contains("codesign"));
+        assert_eq!(newest(&p).unwrap(), failed);
+        // the app itself did not come back on its release: no wait for the server
+        let id = begin(&p, TRIGGER_BADGE, "0.3.1", "0.3.2");
+        set_step(&p, &id, STEP_RELAUNCH);
+        let mut never = |_: &Attempt| -> Result<(), Failure> { panic!("no wait") };
+        let failed = settle_newest(&p, "0.3.1", &Ctx::default(), Some(&mut never)).unwrap();
+        assert_eq!(failed.code, "relaunch_failed");
+    }
+
+    // The wait for the server: its release (or a newer one) ends it; silence, or an older
+    // release, for SERVER_QUIET fails it; a server still starting (its supervisor answers)
+    // holds the quiet clock, up to SERVER_BUSY in all.
+    #[test]
+    fn the_wait_for_the_server() {
+        let run = |answers: &[Seen]| {
+            let clock = std::cell::Cell::new(Duration::ZERO);
+            let mut i = 0;
+            let res = wait_for_server(
+                "0.3.0",
+                || {
+                    let s = answers[i.min(answers.len() - 1)].clone();
+                    i += 1;
+                    s
+                },
+                || clock.get(),
+                |d| clock.set(clock.get() + d),
+            );
+            (res, clock.get())
+        };
+        let on = |v: &str| Seen::On(v.into());
+        assert_eq!(run(&[Seen::Silent, Seen::Busy, on("0.3.0")]).0, Ok(()));
+        assert_eq!(run(&[on("0.3.1")]).0, Ok(()));
+        let (res, took) = run(&[Seen::Silent]);
+        assert_eq!(res, Err(Seen::Silent));
+        assert_eq!(took, SERVER_QUIET);
+        let (res, took) = run(&[on("0.3.0-rc.5")]);
+        assert_eq!(res, Err(on("0.3.0-rc.5")));
+        assert_eq!(took, SERVER_QUIET);
+        let (res, took) = run(&[Seen::Busy]);
+        assert_eq!(res, Err(Seen::Busy));
+        assert_eq!(took, SERVER_BUSY);
+        // busy, then quiet: the quiet clock starts when it goes quiet
+        let mut answers = vec![Seen::Busy; 10];
+        answers.push(Seen::Silent);
+        let (res, took) = run(&answers);
+        assert_eq!(res, Err(Seen::Silent));
+        assert_eq!(took, SERVER_POLL * 10 + SERVER_QUIET);
+    }
+
+    #[test]
+    fn releases_in_order() {
+        for (have, want, ok) in [
+            ("0.3.0", "0.3.0", true),
+            ("v0.3.0", "0.3.0", true),
+            ("0.3.1", "0.3.0", true),
+            ("0.3.0", "0.3.0-rc.7", true),
+            ("0.3.0-rc.10", "0.3.0-rc.7", true),
+            ("0.3.0-rc.5", "0.3.0", false),
+            ("0.3.0-rc.5", "0.3.0-rc.6", false),
+            ("0.2.9", "0.3.0", false),
+            ("1.0.0-beta", "1.0.0-alpha.1", true),
+            ("1.0.0-alpha", "1.0.0-alpha.1", false),
+            ("dev", "dev", true),
+            ("dev", "0.3.0", false),
+        ] {
+            assert_eq!(at_least(have, want), ok, "{have} >= {want}");
+        }
+    }
+
+    #[test]
+    fn a_detail_without_signed_queries_and_capped() {
+        let raw = "error sending request for url (https://objects.githubusercontent.com/x/y.tar.gz?X-Amz-Algorithm=AWS4&X-Amz-Signature=abc123&sig=zzz): connection reset; see http://h/p?q=1 and \"https://e.com/a?b=c\"";
+        assert_eq!(
+            clean_detail(raw),
+            "error sending request for url (https://objects.githubusercontent.com/x/y.tar.gz): connection reset; see http://h/p and \"https://e.com/a\""
+        );
+        let c = clean_detail(&"é".repeat(DETAIL_MAX));
+        assert!(
+            c.len() <= DETAIL_MAX + '…'.len_utf8() && c.ends_with('…'),
+            "{}",
+            c.len()
+        );
+        assert_eq!(clean_detail("short"), "short");
+        // on write, on read, and in app.log
+        let dir = tempfile::tempdir().unwrap();
+        let p = path(dir.path());
+        let id = begin(&p, TRIGGER_BADGE, "1.0.0", "1.1.0");
+        fail(
+            &p,
+            &id,
+            &Failure::new(STEP_DOWNLOAD, DOWNLOAD_FAILED, "x".repeat(100_000)),
+        );
+        assert!(newest(&p).unwrap().detail.len() <= DETAIL_MAX + 3);
+        let mut big = newest(&p).unwrap();
+        big.detail = format!("https://a/b?sig=1 {}", "y".repeat(10_000));
+        std::fs::write(
+            &p,
+            serde_json::to_vec(&Record {
+                attempts: vec![big],
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        let back = newest(&p).unwrap();
+        assert!(back.detail.starts_with("https://a/b y") && back.detail.len() <= DETAIL_MAX + 3);
+        let now = UNIX_EPOCH + Duration::from_secs(1_792_819_800);
+        append_log(
+            dir.path(),
+            &format!("fetch https://a/b?sig=1 {}", "z".repeat(5000)),
+            now,
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(dir.path().join("app.log")).unwrap();
+        assert!(
+            text.starts_with("2026-10-24T05:30:00Z fetch https://a/b z")
+                && text.len() < DETAIL_MAX + 40
+        );
     }
 
     #[test]
@@ -1221,6 +1660,14 @@ mod tests {
                 NOT_WRITABLE,
             ),
             (STEP_INSTALL, E::AuthenticationFailed, none, NEEDS_ADMIN),
+            (STEP_INSTALL, E::DebInstallFailed, none, INSTALLER_EXIT),
+            (STEP_INSTALL, E::PackageInstallFailed, none, INSTALLER_EXIT),
+            (
+                STEP_INSTALL,
+                E::PreviousAppNotRestored("/private/var/folders/x/T/Maktaba.app".into()),
+                none,
+                PREVIOUS_APP_NOT_RESTORED,
+            ),
             (
                 STEP_INSTALL,
                 E::BinaryNotFoundInArchive,
@@ -1321,6 +1768,7 @@ mod tests {
             TRANSLOCATED,
             QUARANTINED,
             LOGIN_ITEM_UNSIGNED,
+            PREVIOUS_APP_NOT_RESTORED,
         ] {
             assert!(!fix_for(code).is_empty(), "{code}");
         }
@@ -1377,10 +1825,9 @@ mod tests {
         };
         assert_eq!(
             logs_url("http://127.0.0.1:8080/", &failed),
-            "http://127.0.0.1:8080/admin/logs?since=2026-10-24T05%3A28%3A00Z&until=2026-10-24T05%3A33%3A12Z&q=0.3.0-rc.6"
+            "http://127.0.0.1:8080/admin/logs?since=2026-10-24T05%3A28%3A00Z&until=2026-10-24T05%3A33%3A12Z"
         );
-        // not ended (or its end unreadable): two minutes after it began; no release known:
-        // no search
+        // not ended (or its end unreadable): two minutes after it began
         let early = Attempt {
             at: "2026-10-24T05:30:00Z".into(),
             ..Attempt::default()
@@ -1389,16 +1836,14 @@ mod tests {
             logs_url("http://localhost:8080", &early),
             "http://localhost:8080/admin/logs?since=2026-10-24T05%3A28%3A00Z&until=2026-10-24T05%3A32%3A00Z"
         );
-        // a time that does not read: the page as it is, with the search
+        // a time that does not read: the page as it is (never a search: most of an
+        // update's lines do not name its release)
         let odd = Attempt {
             at: "soon".into(),
             to: "1.0.0 beta&x=1".into(),
             ..Attempt::default()
         };
-        assert_eq!(
-            logs_url("http://h/", &odd),
-            "http://h/admin/logs?q=1.0.0%20beta%26x%3D1"
-        );
+        assert_eq!(logs_url("http://h/", &odd), "http://h/admin/logs");
         assert_eq!(
             logs_url("http://h", &Attempt::default()),
             "http://h/admin/logs"

@@ -8,11 +8,14 @@ package attempts
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
@@ -80,10 +83,36 @@ func readFile(path string) []Attempt {
 	for _, raw := range f.Attempts {
 		var a Attempt
 		if json.Unmarshal(raw, &a) == nil {
+			a.clean() // a file another build (or the app) wrote
 			out = append(out, a)
 		}
 	}
 	return out
+}
+
+// MaxDetail is the longest detail or fix an attempt keeps (a program's whole output is
+// the logs' to keep).
+const MaxDetail = 2048
+
+// queryRe is a URL's query: a signed download's redirect carries its signature there.
+var queryRe = regexp.MustCompile(`(https?://[^\s?#"'<>]+)\?[^\s#"'<>]*`)
+
+// Clean is a detail as an attempt keeps it: URLs without their query, at most MaxDetail
+// bytes (cut on a character, with an ellipsis).
+func Clean(s string) string {
+	s = queryRe.ReplaceAllString(s, "$1")
+	if len(s) <= MaxDetail {
+		return s
+	}
+	cut := MaxDetail - len("…")
+	for cut > 0 && (s[cut]&0xC0) == 0x80 {
+		cut--
+	}
+	return s[:cut] + "…"
+}
+
+func (a *Attempt) clean() {
+	a.Detail, a.Fix = Clean(a.Detail), Clean(a.Fix)
 }
 
 // Read is the machine's attempts, both files, newest first, at most Show.
@@ -152,10 +181,16 @@ func Find(dir, to string) (Attempt, bool) {
 	return Attempt{}, false
 }
 
+// mu serialises this process's changes to the server's file (the database step and the
+// pipeline's environment may record at once).
+var mu sync.Mutex
+
 func change(dir string, fn func([]Attempt) []Attempt) error {
 	if dir == "" {
 		return errors.New("no updates folder")
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -164,11 +199,41 @@ func change(dir string, fn func([]Attempt) []Attempt) error {
 	if len(list) > Keep {
 		list = list[:Keep]
 	}
+	for i := range list {
+		list[i].clean()
+	}
 	b, err := json.MarshalIndent(file{Attempts: list}, "", "  ")
 	if err != nil {
 		return err
 	}
 	return layout.WriteFileAtomic(path, append(b, '\n'), 0o644)
+}
+
+// Interrupted is the code of a start that never finished: the machine or the server
+// stopped meanwhile, or the launcher stopped it (it took too long) and went back.
+const Interrupted = "start_interrupted"
+
+// SettleStale ends, failed, every server attempt still running at another release than
+// current: this start is current's, so that start did not finish. It reports how many.
+func SettleStale(dir, current string) (int, error) {
+	if dir == "" {
+		return 0, nil
+	}
+	current = layout.NormalizeVersion(current)
+	n := 0
+	err := change(dir, func(list []Attempt) []Attempt {
+		for i := range list {
+			if list[i].Outcome == Running && layout.NormalizeVersion(list[i].To) != current {
+				list[i].Code = Interrupted
+				list[i].Detail = fmt.Sprintf("the start of %s did not finish (the server or the machine stopped, or "+
+					"it took too long and was stopped); %s runs now", list[i].To, current)
+				list[i].Ended(Failed)
+				n++
+			}
+		}
+		return list
+	})
+	return n, err
 }
 
 // NewStartID is the id of a release's start on this machine, begun now.

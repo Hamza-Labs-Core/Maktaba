@@ -94,7 +94,8 @@ export interface UpdateAttempt {
   code?: string;
   /** the updater's or the server's own words (English) */
   detail?: string;
-  /** a command (or an action) that mends it */
+  /** the machine's own suggestion (English): the page shows its own words for the reason's
+   * fix (updates.fix.<code>), and this only as what the machine said, never to copy */
   fix?: string;
   /** a run's attempt: the run */
   run_id?: string;

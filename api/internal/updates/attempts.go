@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"sort"
 	"time"
 )
@@ -120,14 +121,39 @@ func targetAttempt(r Run, t Target) Attempt {
 }
 
 // mergeAttempts is a machine's own attempts and its runs', newest first, at most
-// ShowAttempts.
+// ShowAttempts, each detail and fix clean (cleanDetail: a machine's text).
 func mergeAttempts(own []Attempt, runs ...Attempt) []Attempt {
 	all := append(append([]Attempt(nil), own...), runs...)
 	sort.SliceStable(all, func(i, j int) bool { return all[i].At.After(all[j].At) })
 	if len(all) > ShowAttempts {
 		all = all[:ShowAttempts]
 	}
+	for i := range all {
+		all[i].Detail, all[i].Fix = cleanDetail(all[i].Detail), cleanDetail(all[i].Fix)
+	}
 	return all
+}
+
+// maxDetail is the longest detail or fix the page gets (the machine's own record keeps
+// as much; its logs keep the rest).
+const maxDetail = 2048
+
+// urlQueryRe is a URL's query: a signed download's redirect carries its signature there.
+var urlQueryRe = regexp.MustCompile(`(https?://[^\s?#"'<>]+)\?[^\s#"'<>]*`)
+
+// cleanDetail is a detail without URLs' queries, at most maxDetail bytes (cut on a
+// character, with an ellipsis), as the machines record it (a machine of an older build
+// may not).
+func cleanDetail(s string) string {
+	s = urlQueryRe.ReplaceAllString(s, "$1")
+	if len(s) <= maxDetail {
+		return s
+	}
+	cut := maxDetail - len("…")
+	for cut > 0 && (s[cut]&0xC0) == 0x80 {
+		cut--
+	}
+	return s[:cut] + "…"
 }
 
 // LastTargetAttempt is a machine's attempt in the newest run that ended its part (ok

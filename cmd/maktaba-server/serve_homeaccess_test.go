@@ -31,6 +31,9 @@ func TestHomeAccessOverTheChannel(t *testing.T) {
 	  "database_tls":"off","joined_at":"2026-10-01T10:00:00Z"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	old := homeAccessReloadAfter
+	homeAccessReloadAfter = 0
+	t.Cleanup(func() { homeAccessReloadAfter = old })
 	for len(reloadCh) > 0 {
 		<-reloadCh
 	}
@@ -117,8 +120,10 @@ func TestClassifyHomeDB(t *testing.T) {
 	}
 }
 
-// The watch says each change once (the machine agent sends its state again), keeps a
-// healing machine healing until a login works, and says when the database is back.
+// The watch says each change once (the machine agent sends its state again), counts the
+// failures in a row (the home acts on the second: one try may meet a home in the middle
+// of a switch), keeps a healing machine healing until a login works, and says when the
+// database is back.
 func TestHomeDBWatch(t *testing.T) {
 	var fail error // the probe runs in check, on this goroutine
 	changes := 0
@@ -134,8 +139,16 @@ func TestHomeDBWatch(t *testing.T) {
 	}
 	fail = errors.New(`pq: password authentication failed for user "r"`)
 	w.check(ctx)
-	if st := w.State(); st.OK || st.Code != "auth_failed" || st.Healing || changes != 2 {
+	if st := w.State(); st.OK || st.Code != "auth_failed" || st.Healing || st.Fails != 1 || changes != 2 {
 		t.Fatalf("refused: %+v (%d)", st, changes)
+	}
+	w.check(ctx) // the second in a row: the home acts on it
+	if st := w.State(); st.Fails != 2 || changes != 3 {
+		t.Fatalf("refused again: %+v (%d)", st, changes)
+	}
+	w.check(ctx)
+	if st := w.State(); st.Fails != 3 || changes != 3 {
+		t.Fatalf("a third: told again (%d) %+v", changes, st)
 	}
 	w.healing()
 	w.check(ctx) // the new access not taken yet (the machine starts again with it)
@@ -144,9 +157,30 @@ func TestHomeDBWatch(t *testing.T) {
 	}
 	fail = nil
 	w.check(ctx)
-	if st := w.State(); !st.OK || st.Healing {
+	if st := w.State(); !st.OK || st.Healing || st.Fails != 0 {
 		t.Fatalf("back: %+v", st)
 	}
+}
+
+// After a failure the watch tries again soon (homeDBRecheck), so a failure the home acts on
+// is known within seconds, not two of homeDBEvery.
+func TestHomeDBWatchRechecksSoon(t *testing.T) {
+	oldFirst, oldEvery, oldRecheck := homeDBFirst, homeDBEvery, homeDBRecheck
+	homeDBFirst, homeDBEvery, homeDBRecheck = time.Millisecond, time.Hour, 10*time.Millisecond
+	t.Cleanup(func() { homeDBFirst, homeDBEvery, homeDBRecheck = oldFirst, oldEvery, oldRecheck })
+	tries := atomic.Int32{}
+	w := &homeDBWatch{probe: func(context.Context) error { tries.Add(1); return errors.New("connection refused") }}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.run(ctx)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if st := w.State(); st != nil && st.Fails >= 2 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("no second try soon after a failure: %d tries", tries.Load())
 }
 
 // A home's watch waits for its machines to follow its database (their access re-made),

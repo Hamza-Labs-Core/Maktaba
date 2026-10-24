@@ -117,6 +117,17 @@ func TestFilterSinceAndLimit(t *testing.T) {
 	if got := rb.Entries(Filter{Since: future}); len(got) != 0 {
 		t.Fatalf("since-future should drop all, got %d", len(got))
 	}
+	past := time.Now().Add(-time.Hour)
+	if got := rb.Entries(Filter{Until: past}); len(got) != 0 {
+		t.Fatalf("until-past should drop all, got %d", len(got))
+	}
+	if got := rb.Entries(Filter{Since: past, Until: future}); len(got) != 5 {
+		t.Fatalf("a window around them keeps all: want 5, got %d", len(got))
+	}
+	req := httptest.NewRequest(http.MethodGet, "/?since="+past.UTC().Format(time.RFC3339)+"&until="+past.UTC().Format(time.RFC3339), nil)
+	if f := FilterFromQuery(req); f.Until.IsZero() || f.Since.IsZero() {
+		t.Fatalf("since and until from the query: %+v", f)
+	}
 }
 
 func TestRecentHandlerJSONL(t *testing.T) {

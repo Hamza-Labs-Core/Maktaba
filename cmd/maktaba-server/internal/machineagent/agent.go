@@ -101,7 +101,14 @@ type HomeDB struct {
 	// Healing: the home gave this machine new access to its database, which it follows
 	// (it starts again with it).
 	Healing bool `json:"healing,omitempty"`
+	// Fails is how many logins in a row failed (0 when it logs in): the home re-makes the
+	// access only for a failure seen twice (ConfirmFails), not for one try that met a home
+	// in the middle of a switch.
+	Fails int `json:"fails,omitempty"`
 }
+
+// ConfirmFails is how many failed logins in a row make a failure the home acts on.
+const ConfirmFails = 2
 
 // RunState is a machine's update run as update.state reports it.
 type RunState struct {

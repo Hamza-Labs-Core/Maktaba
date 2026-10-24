@@ -22,11 +22,17 @@ export interface HomeDb {
   at?: string;
   /** the home gave the machine new access to its database, and the machine is following it */
   healing?: boolean;
+  /** how many logins in a row failed (a failure counts once seen twice: one try can meet a
+   * home in the middle of a switch) */
+  fails?: number;
 }
 
 /** The `home_db` of a node's raw update_state, when it reports one. */
 export function homeDbOf(updateState: Record<string, unknown> | undefined | null): HomeDb | null {
   const v = updateState?.home_db;
   if (!v || typeof v !== "object" || typeof (v as { ok?: unknown }).ok !== "boolean") return null;
-  return v as HomeDb;
+  const db = v as HomeDb;
+  // one failed try is not shown: the machine tries again within seconds
+  if (!db.ok && typeof db.fails === "number" && db.fails < 2) return null;
+  return db;
 }

@@ -576,7 +576,7 @@ describe("Admin Updates: the last update attempt", () => {
     expect(within(block).queryByRole("button", { name: "Download the logs" })).toBeNull();
   });
 
-  it("a failed attempt says why, its step, the app's own words, the fix, and offers the logs", async () => {
+  it("a failed attempt says why, its step, the app's own words, what to do, and offers the logs", async () => {
     routes(
       withAttempts([
         attempt({
@@ -601,16 +601,152 @@ describe("Admin Updates: the last update attempt", () => {
     expect(screen.getByTestId("updates-machine-home-attempt-detail")).toHaveTextContent(
       "Permission denied (os error 13)"
     );
-    expect(
-      screen.getByDisplayValue("sudo chown -R $(whoami) /Applications/Maktaba.app")
-    ).toBeInTheDocument();
+    // what to do, in the reader's words; the machine's own text is not offered to copy
+    expect(screen.getByTestId("updates-machine-home-attempt-fix")).toHaveTextContent(
+      "What to do: move Maktaba to a folder this user can change"
+    );
+    expect(screen.queryByDisplayValue(/sudo chown/)).toBeNull();
+    expect(screen.queryByText(/sudo chown/)).toBeNull();
+    // the logs of the attempt's window (the admin bundle, with the log files)
     await user.click(screen.getByRole("button", { name: "Download the logs" }));
     await waitFor(() =>
       expect(downloadBlob).toHaveBeenCalledWith(
-        "/api/diagnostics/export",
+        expect.stringMatching(/^\/api\/admin\/logs\/export\?since=/),
         "maktaba-diagnostics.tar.gz"
       )
     );
+    expect(String(downloadBlob.mock.calls[0]?.[0])).not.toContain("node=");
+  });
+
+  it("a command to copy is the web's own for the reason, never the machine's text", async () => {
+    routes(
+      withAttempts([
+        attempt({ step: "install", code: "quarantined", fix: "rm -rf ~ # not this" }),
+        attempt({ id: "app-0", code: "something_brand_new", fix: "rm -rf ~" }),
+      ]),
+      null
+    );
+    renderPage();
+    const fix = await screen.findByTestId("updates-machine-home-attempt-fix");
+    expect(fix).toHaveTextContent("What to do: run this in Terminal, then open Maktaba again");
+    expect(
+      within(fix).getByDisplayValue("xattr -dr com.apple.quarantine /Applications/Maktaba.app")
+    ).toBeInTheDocument();
+    expect(screen.queryByDisplayValue(/rm -rf/)).toBeNull();
+    expect(screen.queryByText(/rm -rf/)).toBeNull();
+  });
+
+  it("a reason with no words of what to do shows the machine's text as what it said", async () => {
+    routes(
+      withAttempts([attempt({ code: "something_brand_new", fix: "restart the frobnicator" })]),
+      null
+    );
+    renderPage();
+    const said = await screen.findByTestId("updates-machine-home-attempt-machine-fix");
+    expect(said).toHaveTextContent("The machine suggests: restart the frobnicator");
+    expect(screen.queryByDisplayValue("restart the frobnicator")).toBeNull();
+    expect(screen.queryByTestId("updates-machine-home-attempt-fix")).toBeNull();
+  });
+
+  it("a failure the machine got past (it runs that release now) is history, not red", async () => {
+    const ov = withAttempts([attempt({ code: "relaunch_failed", step: "relaunch" })]);
+    ov.machines = (ov.machines as Record<string, unknown>[]).map((m) =>
+      m.id === "home" ? { ...m, version: "1.5.0" } : m
+    );
+    routes(ov, null);
+    renderPage();
+    const block = await screen.findByTestId("updates-machine-home-attempt");
+    expect(block).toHaveTextContent("reached later");
+    expect(screen.getByTestId("updates-machine-home-attempt-superseded")).toHaveTextContent(
+      "This machine runs 1.5.0 now, so this failure no longer holds it back."
+    );
+    expect(screen.getByTestId("updates-machine-home-attempt-headline")).not.toHaveClass(
+      "mkt-error"
+    );
+    expect(within(block).queryByRole("button", { name: "Download the logs" })).toBeNull();
+    expect(screen.queryByTestId("updates-machine-home-attempt-fix")).toBeNull();
+  });
+
+  it("a desktop app's server halted on the release it could not start says it stays stopped", async () => {
+    const ov = withAttempts([
+      attempt({
+        id: "start-1.5.0",
+        source: "server",
+        trigger: "start",
+        outcome: "put_back",
+        step: "migrate",
+        code: "db_migrate_failed",
+      }),
+    ]);
+    ov.machines = (ov.machines as Record<string, unknown>[]).map((m) =>
+      m.id === "home" ? { ...m, version: "1.5.0" } : m
+    );
+    routes(ov, null);
+    renderPage();
+    const headline = await screen.findByTestId("updates-machine-home-attempt-headline");
+    expect(headline).toHaveTextContent(
+      "1.5.0 failed to start: The library database could not be brought up to date for the new release. Its library database is back as it was before the update, and the server stays stopped: install 1.4.0 again, or an update that fixes this."
+    );
+    expect(headline).not.toHaveTextContent("previous release runs again");
+    expect(headline).toHaveClass("mkt-error");
+  });
+
+  it("a reason that already says the release before runs again is not told twice", async () => {
+    routes(
+      withAttempts([
+        attempt({ source: "server", trigger: "start", outcome: "put_back", code: "start_failed" }),
+      ]),
+      null
+    );
+    renderPage();
+    const headline = await screen.findByTestId("updates-machine-home-attempt-headline");
+    expect(headline.textContent?.match(/runs again/g)).toHaveLength(1);
+  });
+
+  it("the launcher's reasons, a run's states and the start step have words", async () => {
+    routes(
+      withAttempts(
+        [
+          attempt({
+            source: "server",
+            trigger: "start",
+            outcome: "rolled_back",
+            step: "start",
+            code: "launcher_boot_loop",
+          }),
+          attempt({ id: "a2", outcome: "failed", code: "launcher_refused" }),
+          attempt({ id: "a3", outcome: "failed", code: "launcher_pending_timeout" }),
+          attempt({ id: "a4", outcome: "failed", code: "previous_app_not_restored" }),
+          attempt({ id: "a5", source: "server", outcome: "failed", code: "start_interrupted" }),
+        ],
+        [
+          attempt({ id: "run-1", source: "run", code: "failed_prepare", run_id: "run-1" }),
+          attempt({ id: "run-0", source: "run", code: "needs_person", run_id: "run-0" }),
+        ]
+      ),
+      null
+    );
+    renderPage();
+    const headline = await screen.findByTestId("updates-machine-home-attempt-headline");
+    expect(headline).toHaveTextContent(
+      "1.5.0 did not hold: The new release kept stopping as it started"
+    );
+    expect(headline.textContent?.match(/runs again/g)).toHaveLength(1);
+    expect(screen.getByTestId("updates-machine-home-attempt-meta")).toHaveTextContent(
+      "Stopped at: Start the new release"
+    );
+    const earlier = screen.getByTestId("updates-machine-home-attempt-earlier");
+    expect(earlier).toHaveTextContent("The launcher refused the new release");
+    expect(earlier).toHaveTextContent("did not confirm it was running in time");
+    expect(earlier).toHaveTextContent("could not be put back in its folder");
+    expect(earlier).toHaveTextContent("start never finished");
+    expect(screen.getByTestId("updates-machine-n1-attempt-headline")).toHaveTextContent(
+      "The machine could not get the release ready"
+    );
+    expect(screen.getByTestId("updates-machine-n1-attempt-earlier")).toHaveTextContent(
+      "it needs a person"
+    );
+    expect(document.body).not.toHaveTextContent(/launcher_|failed_prepare|needs_person|: start\b/);
   });
 
   it("a release that failed to start and was put back says so; the previous release runs", async () => {
@@ -765,15 +901,25 @@ describe("Admin Updates: logs links and the home's database", () => {
       "href",
       "/admin/logs?since=2026-10-24T05%3A28%3A00.000Z&until=2026-10-24T05%3A33%3A00.000Z"
     );
+    // a node's: its own log files on the log page, over its channel
     expect(screen.getByTestId("updates-machine-n1-attempt-logs-link")).toHaveAttribute(
       "href",
-      "/admin/machines?logs=n1&since=2026-10-24T05%3A28%3A00.000Z&until=2026-10-24T05%3A33%3A00.000Z"
+      "/admin/logs?node=n1&since=2026-10-24T05%3A28%3A00.000Z&until=2026-10-24T05%3A33%3A00.000Z"
     );
     // the reason stays the main thing; the bundle download is still there
     expect(screen.getByTestId("updates-machine-home-attempt-headline")).toHaveTextContent(
       "The update to 1.5.0 failed: The update could not be reached"
     );
-    expect(screen.getAllByRole("button", { name: "Download the logs" })).toHaveLength(2);
+    const downloads = screen.getAllByRole("button", { name: "Download the logs" });
+    expect(downloads).toHaveLength(2);
+    downloadBlob.mockResolvedValue(undefined);
+    await userEvent.setup().click(downloads[1] as HTMLElement);
+    await waitFor(() =>
+      expect(downloadBlob).toHaveBeenCalledWith(
+        "/api/admin/logs/export?since=2026-10-24T05%3A28%3A00.000Z&until=2026-10-24T05%3A33%3A00.000Z&node=n1",
+        "maktaba-diagnostics.tar.gz"
+      )
+    );
   });
 
   it("says why a node cannot reach the home's database, the healing, the detail and its logs", async () => {
@@ -802,7 +948,7 @@ describe("Admin Updates: logs links and the home's database", () => {
     expect(note).toHaveTextContent("password authentication failed");
     expect(screen.getByTestId("updates-machine-n1-home-db-logs")).toHaveAttribute(
       "href",
-      "/admin/machines?logs=n1&since=2026-10-24T05%3A28%3A00.000Z"
+      "/admin/logs?node=n1&since=2026-10-24T05%3A28%3A00.000Z"
     );
     expect(screen.queryByTestId("updates-machine-home-home-db")).toBeNull();
   });

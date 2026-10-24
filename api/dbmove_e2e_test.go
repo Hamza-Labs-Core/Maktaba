@@ -23,7 +23,9 @@ import (
 // "moves" the same way for its node: the address the node had refuses, and its role is
 // gone from the database. The node says it cannot log in, the home makes its role again
 // with a new password and pushes it with the database's real address, and the node
-// follows it by itself, within a minute or so, and logs in again.
+// follows it by itself, within a minute or so, and logs in again. The logs page reads
+// both machines' own log files (the home's from its supervisor, the node's over the
+// machine channel).
 func TestNodeFollowsTheHomeDatabase(t *testing.T) {
 	if os.Getenv("MAKTABA_E2E_TWO_MACHINE") != "1" || testing.Short() {
 		t.Skip("set MAKTABA_E2E_TWO_MACHINE=1 (and MAKTABA_TEST_PG_URL) to run the two-machine test")
@@ -102,6 +104,7 @@ slots = "off"
 		"MAKTABA_NODE_CONFIG="+filepath.Join(homeDir, "no-node.json"),
 		"MAKTABA_HOME_CLUSTER_KEY="+filepath.Join(homeDir, "cluster.key"), "MAKTABA_HOME_AGENT_KEY="+filepath.Join(homeDir, "agent.key"),
 		"MAKTABA_SECRETS_KEY="+filepath.Join(homeDir, "secrets.key"), "MAKTABA_DATA_DIR="+filepath.Join(homeDir, "data"),
+		"MAKTABA_LOG_DIR="+filepath.Join(homeDir, "logs"),
 		"MAKTABA_MIGRATIONS_DIR="+filepath.Join(repo, "shared", "db", "migrations")))
 	home.web = homeWebURL
 	waitFor(t, "the home's API", 90*time.Second, func() bool {
@@ -113,7 +116,8 @@ slots = "off"
 		return r.StatusCode == 200
 	})
 	node := startMachine(t, "node", bin, append(common, "MAKTABA_CONFIG="+nodeToml, "MAKTABA_NODE_CONFIG="+nodeCfgPath,
-		"MAKTABA_DATA_DIR="+filepath.Join(nodeDir, "data"), "MAKTABA_NODE_COPY=off"))
+		"MAKTABA_DATA_DIR="+filepath.Join(nodeDir, "data"), "MAKTABA_LOG_DIR="+filepath.Join(nodeDir, "logs"),
+		"MAKTABA_NODE_COPY=off"))
 	admin := newBrowser(t)
 	if r, b := admin.do("POST", homeWebURL+"/api/auth/login", map[string]string{"username": "owner", "password": "owner-pass-123"}, nil); r.StatusCode != 200 {
 		t.Fatalf("sign-in on the home: %d %s", r.StatusCode, b)
@@ -184,5 +188,25 @@ slots = "off"
 	}
 	if !strings.Contains(home.log.String(), "cluster_access_remade") {
 		t.Errorf("the home's log does not say it made the access again:\n%s", tail(home.log.String(), 3000))
+	}
+
+	// the logs page: each machine's app.log over a window, the node's over the channel
+	stamp := time.Now().UTC().Truncate(time.Second)
+	for dir, line := range map[string]string{homeDir: "the home's update line", nodeDir: "the node's update line"} {
+		_ = os.MkdirAll(filepath.Join(dir, "logs"), 0o700)
+		body := stamp.Add(-time.Hour).Format(time.RFC3339) + " before the window\n" + stamp.Format(time.RFC3339) + " " + line + "\n"
+		if err := os.WriteFile(filepath.Join(dir, "logs", "app.log"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	since := url.QueryEscape(stamp.Add(-time.Minute).Format(time.RFC3339))
+	for q, want := range map[string]string{
+		"files=app&since=" + since:                     "the home's update line",
+		"files=app&since=" + since + "&node=" + nodeID: "the node's update line",
+	} {
+		r, b := admin.do("GET", homeWebURL+"/api/admin/logs/files?"+q, nil, nil)
+		if r == nil || r.StatusCode != 200 || !strings.Contains(string(b), want) || strings.Contains(string(b), "before the window") {
+			t.Errorf("the logs page's files (%s): %v %s", q, r, b)
+		}
 	}
 }

@@ -289,9 +289,17 @@ pub fn order_notice(lang: Lang, version: &str, home: bool) -> String {
 }
 
 /// The menu's line about the last update attempt when it failed (update-attempts.md: until
-/// the next attempt): "Update to <v> failed: <reason>". None when it did not fail.
-pub fn failed_line(lang: Lang, last: Option<&Attempt>) -> Option<String> {
+/// the next attempt): "Update to <v> failed: <reason>". None when it did not fail, or when
+/// this app (`own`) reached its release another way since (a newer release, or that one
+/// installed by hand); a failure at the relaunch on the release the app runs stays: the app
+/// came back on it, its server did not.
+pub fn failed_line(lang: Lang, last: Option<&Attempt>, own: &str) -> Option<String> {
     let a = last.filter(|a| a.outcome == attempts::FAILED)?;
+    let reached = !a.to.is_empty() && attempts::at_least(own, &a.to);
+    let its_server = a.step == attempts::STEP_RELAUNCH && attempts::at_least(&a.to, own);
+    if reached && !its_server {
+        return None;
+    }
     let version = if a.to.is_empty() { "?" } else { a.to.as_str() };
     Some(fill(
         lang.words().update_failed_line,
@@ -417,7 +425,7 @@ mod tests {
             code: attempts::NEEDS_ADMIN.into(),
             ..Attempt::default()
         };
-        let line = failed_line(Lang::En, Some(&failed));
+        let line = failed_line(Lang::En, Some(&failed), "0.3.0-rc.5");
         assert_eq!(
             line.as_deref(),
             Some("Update to 0.3.0 failed: replacing the app needs an administrator's password")
@@ -455,7 +463,16 @@ mod tests {
         // the next attempt (running, or installed) takes the line and its items away
         let mut next = failed.clone();
         next.outcome = attempts::RUNNING.into();
-        assert_eq!(failed_line(Lang::En, Some(&next)), None);
+        assert_eq!(failed_line(Lang::En, Some(&next), "0.3.0-rc.5"), None);
+        // reached another way since (a newer app, or the release installed by hand): gone;
+        // the app on the release while its server did not come back: it stays
+        assert_eq!(failed_line(Lang::En, Some(&failed), "0.3.1"), None);
+        assert_eq!(failed_line(Lang::En, Some(&failed), "0.3.0"), None);
+        let mut server_down = failed.clone();
+        server_down.step = attempts::STEP_RELAUNCH.into();
+        server_down.code = attempts::LOGIN_ITEM_UNSIGNED.into();
+        assert!(failed_line(Lang::En, Some(&server_down), "0.3.0").is_some());
+        assert_eq!(failed_line(Lang::En, Some(&server_down), "0.3.1"), None);
         let none = with_failed_update(server.clone(), None, Lang::En, true);
         assert_eq!(none, server);
         assert!(!ids(&none).iter().any(|id| id.starts_with("update-")));

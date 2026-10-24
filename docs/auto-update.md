@@ -95,10 +95,14 @@ Every update attempt is kept with its reason
 the desktop app's own updater (its badge, its menu, the home's order), a release's first start
 (the database step, the pipeline's environment), and the cluster's runs. **Admin → Updates**
 shows, for the home and each machine, the last attempt: when, from and to, the step it stopped
-at, the reason in plain words, the raw error, and what to do next (Retry, the fix's command, or
-the logs: "See the logs" opens the logs page on that update's time window, a node's own logs
-for a node). The desktop app says the same in its menu and an OS notification, which open the
-logs page or the folder with `app.log` and `server.log`. A machine that cannot log in to the
+at, the reason in plain words, the raw error, and what to do next (Retry, the fix, or the logs).
+"See the logs" opens the logs page on that update's time window with the machine's own files
+beside the api's lines: `server.log` (the database step, every role), `app.log` (the desktop
+app's updater) and `launcher.log`, a node's fetched over the machine channel
+(`GET /api/admin/logs/files`). "Download the logs" is the diagnostics bundle of the same window
+with those files in it (`files/*.log`, a node's under `node-<id>/`). The desktop app says the
+same in its menu and an OS notification, which open the logs page, or the folder with `app.log`
+and `server.log` when the server does not answer. A machine that cannot log in to the
 home's database says so on the Updates and Machines pages; the home re-makes its access by
 itself ([machine-database-access.md](../specs/epics/37-node-replica/machine-database-access.md)).
 
@@ -117,9 +121,17 @@ On a Mac, the server's login item and code signing show in the system log:
 `launchctl print gui/$(id -u)/com.hamzalabs.maktaba.server`, and
 `codesign -dv --verbose=2 /Applications/Maktaba.app`. An app with no code signature at all
 cannot start its server's login item (`login_item_unsigned`): 0.3.0's Mac app is such an app
-(built from the 0.3.0-rc.6 commit, before the ad-hoc signing of the bundle); a later release, or
-`codesign --force --deep -s - --identifier com.hamzalabs.maktaba /Applications/Maktaba.app`,
-mends it.
+(built from the 0.3.0-rc.6 commit, before the ad-hoc signing of the bundle). 0.3.0-rc.7 and
+0.3.1 have no Apple-Silicon app at all (their release could not build it: tauri tried to notarize
+the ad-hoc app with empty Apple settings), so their update feeds offer a Mac nothing. Until the
+next release, only
+`codesign --force --deep -s - --identifier com.hamzalabs.maktaba /Applications/Maktaba.app`
+mends an installed 0.3.0; the next release's app is signed ad hoc and updates as usual. Also
+worth a look on the Mac: `~/Library/Application Support/com.hamzalabs.maktaba/mode.json` (server
+or client), `sfltool dumpbtm` (the login items macOS knows),
+`log show --last 2d --predicate 'eventMessage CONTAINS "Codesigning failure"'`,
+`xattr -l /Applications/Maktaba.app`, and a leftover `$TMPDIR/tauri_current_app*` or
+`tauri_updated_app*` (an update the updater left half done).
 
 ## Install-type behaviour for the manual self-update (Epic 28)
 

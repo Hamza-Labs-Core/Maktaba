@@ -30,6 +30,8 @@ type LogsDeps struct {
 	// Peers are downstream services whose /logs/recent the API proxies
 	// into the bundle (streaming, pipeline).
 	Peers []logs.PeerLog
+	// Files reads a machine's own log files (LogFiles). nil: none are there.
+	Files logs.FileSource
 }
 
 // MountLogs wires the troubleshooting log-collection routes
@@ -41,12 +43,13 @@ func MountLogs(r chi.Router, d LogsDeps) {
 		DB:      d.StatsDB,
 	})
 	(&logs.Handler{
-		Ring:      mlog.Ring(),
-		DB:        d.DB,
-		DataDir:   d.DataDir,
-		SchemaRev: d.SchemaRev,
-		StartTime: d.StartTime,
-		Health:    health,
-		Peers:     d.Peers,
+		Ring:       mlog.Ring(),
+		DB:         d.DB,
+		DataDir:    d.DataDir,
+		SchemaRev:  d.SchemaRev,
+		StartTime:  d.StartTime,
+		Health:     health,
+		Peers:      d.Peers,
+		FileSource: d.Files,
 	}).Mount(r)
 }

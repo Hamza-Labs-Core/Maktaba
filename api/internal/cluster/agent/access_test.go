@@ -57,14 +57,23 @@ func TestEnsureAccess(t *testing.T) {
 	}
 	a.send(map[string]any{"t": "cmd.result", "id": cmd["id"], "ok": true})
 
+	// one failed try (a home in the middle of a switch): neither re-made nor shown
+	before := g.grants()
+	a.send(map[string]any{"t": "update.state", "version": "1.5.0",
+		"home_db": map[string]any{"ok": false, "code": "refused", "fails": 1}})
+	time.Sleep(150 * time.Millisecond)
+	if g.grants() != before || len(f.hub.MachinesOffDatabase()) != 0 {
+		t.Fatalf("one failed try acted on: %d grants, off %+v", g.grants()-before, f.hub.MachinesOffDatabase())
+	}
+
 	// it says it follows its new access: left alone, but listed as off the database
 	a.send(map[string]any{"t": "update.state", "version": "1.5.0",
-		"home_db": map[string]any{"ok": false, "code": "auth_failed", "healing": true}})
+		"home_db": map[string]any{"ok": false, "code": "auth_failed", "healing": true, "fails": 2}})
 	waitUntil(t, func() bool { return len(f.hub.MachinesOffDatabase()) == 1 })
 	if off := f.hub.MachinesOffDatabase(); off[0].NodeID != id || off[0].Code != "auth_failed" || !off[0].Healing {
 		t.Fatalf("off the database: %+v", off)
 	}
-	before := g.grants()
+	before = g.grants()
 	time.Sleep(150 * time.Millisecond)
 	if g.grants() != before {
 		t.Fatal("a machine following its new access had it re-made again")
@@ -111,6 +120,35 @@ func TestHomeAccessPasswordNotLogged(t *testing.T) {
 		}
 	}
 	if strings.Contains(logged, "s3cret-pass") || !strings.Contains(logged, "not logged") {
+		t.Fatalf("the event log: %s", logged)
+	}
+}
+
+// A machine's log lines (logs.files) go to the admin who asked, not into the hub's event
+// log: the answer is noted by its size; a worker's session does not take the command.
+func TestLogFilesAnswerNotLogged(t *testing.T) {
+	f := newFixture(t)
+	id, priv := f.approvedNode("studio-gpu")
+	a, err := f.dialAgent(helloOpts{kind: "node", nodeID: id, nodePriv: priv, process: "supervisor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		cmd := a.recvType("cmd")
+		a.send(map[string]any{"t": "cmd.result", "id": cmd["id"], "ok": true,
+			"detail": map[string]any{"entries": []map[string]string{{"msg": "a-private-log-line"}}}})
+	}()
+	res, err := f.hub.CommandWithin(context.Background(), a.Session, "logs.files", json.RawMessage(`{"files":"server"}`), "admin", 5*time.Second)
+	if err != nil || !res.OK || !strings.Contains(string(res.Detail), "a-private-log-line") {
+		t.Fatalf("logs.files: %+v %v", res, err)
+	}
+	logged := ""
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		if logged = strings.Join(readLines(t, eventsPath(f)), "\n"); strings.Contains(logged, `"cmd.result"`) {
+			break
+		}
+	}
+	if strings.Contains(logged, "a-private-log-line") || !strings.Contains(logged, "bytes)") {
 		t.Fatalf("the event log: %s", logged)
 	}
 }

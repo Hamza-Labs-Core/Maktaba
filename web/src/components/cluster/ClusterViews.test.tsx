@@ -282,6 +282,10 @@ describe("Cluster views", () => {
         within(machine("Studio Mac")).getByText("Can't reach the home's database")
       ).toBeInTheDocument()
     );
+    // and its own log files are a click away (the log page, over its channel)
+    expect(
+      within(machine("Studio Mac")).getByRole("link", { name: "See the logs" })
+    ).toHaveAttribute("href", "/admin/logs?node=n1");
     // its processes are connected to the hub, and say so, but not in green
     for (const badge of within(machine("Studio Mac")).getAllByText("Connected"))
       expect(badge.className).not.toMatch(/success/);

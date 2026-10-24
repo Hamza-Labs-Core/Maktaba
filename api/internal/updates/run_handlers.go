@@ -212,7 +212,7 @@ func (d *Driver) Machines(ctx context.Context, home Machine) []Machine {
 			if s.Platform != "" {
 				m.Platform = s.Platform
 			}
-			m.Kind, m.HomeDB = s.Layout, s.HomeDB
+			m.Kind, m.HomeDB = s.Layout, s.HomeDB.shown()
 		}
 		_, online := agents[n.id]
 		switch {

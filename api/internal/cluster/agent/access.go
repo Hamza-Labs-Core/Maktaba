@@ -24,7 +24,17 @@ type homeDBState struct {
 	OK      bool   `json:"ok"`
 	Code    string `json:"code"`
 	Healing bool   `json:"healing"`
+	// Fails is how many logins in a row failed on the machine
+	Fails int `json:"fails"`
 }
+
+// confirmFails is how many failed logins in a row make a machine's failure one the home
+// acts on and shows: one try can meet a home in the middle of a switch (the machine still
+// on the old home's database, about to follow the new one by itself).
+const confirmFails = 2
+
+// off reports whether the machine says, confirmed, that it cannot log in.
+func (d homeDBState) off() bool { return !d.OK && d.Fails >= confirmFails }
 
 // homeDBOf is a machine agent's last word on its login to this home's database (ok false
 // before it says).
@@ -54,7 +64,7 @@ type OffDatabase struct {
 func (h *Hub) MachinesOffDatabase() []OffDatabase {
 	var out []OffDatabase
 	for _, s := range h.machineAgents() {
-		if db, said := homeDBOf(s); said && !db.OK && s.NodeID != "" {
+		if db, said := homeDBOf(s); said && db.off() && s.NodeID != "" {
 			out = append(out, OffDatabase{NodeID: s.NodeID, Code: db.Code, Healing: db.Healing})
 		}
 	}
@@ -83,7 +93,7 @@ func (h *Hub) EnsureAccess(ctx context.Context, g AccessGranter, every time.Dura
 			}
 			live[s.ID] = true
 			why := ""
-			if db, said := homeDBOf(s); said && !db.OK && !db.Healing {
+			if db, said := homeDBOf(s); said && db.off() && !db.Healing {
 				why = db.Code
 			} else if !checked[s.ID] {
 				usable, err := g.AccessUsable(ctx, s.NodeID)

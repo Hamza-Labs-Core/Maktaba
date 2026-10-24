@@ -340,8 +340,10 @@ const retryWithin = 30 * time.Minute
 
 // settleAttempt changes the newest attempt at release to in the updates folder dir, or a
 // new one from from: when there is none, or for a new try when the newest ended (put back,
-// installed, or failed longer than retryWithin ago). Not a new try (a restore, which
-// settles the start that failed): the newest, whatever its end.
+// installed, or failed longer than retryWithin ago) or began longer than retryWithin ago
+// and never ended (that start was cut short: it ends failed, start_interrupted). Not a new
+// try (a restore, which settles the start that failed): the newest, whatever its end. A
+// first install (no release before) that installs is no update: nothing is recorded.
 func settleAttempt(dir, to, from string, newTry bool, log io.Writer, fn func(a *attempts.Attempt)) {
 	if dir == "" {
 		return
@@ -349,14 +351,29 @@ func settleAttempt(dir, to, from string, newTry bool, log io.Writer, fn func(a *
 	a, ok := attempts.Find(dir, to)
 	ended := ok && a.EndedAt != nil &&
 		(a.Outcome != attempts.Failed || attempts.Now().Sub(*a.EndedAt) > retryWithin)
+	if newTry && ok && a.EndedAt == nil && attempts.Now().Sub(a.At) > retryWithin {
+		a.Code = attempts.Interrupted
+		a.Detail = fmt.Sprintf("the start of %s that began %s did not finish (the server or the machine stopped)",
+			a.To, a.At.Format(time.RFC3339))
+		a.Ended(attempts.Failed)
+		if err := attempts.Record(dir, a); err != nil {
+			fmt.Fprintf(log, "[serve] the update's attempt cannot be recorded in %s: %v\n", dir, err)
+		}
+		ended = true
+	}
+	fresh := false
 	if !ok || (newTry && ended) {
 		a = attempts.Attempt{ID: attempts.NewStartID(to), At: attempts.Now(), Source: attempts.SourceServer,
 			Trigger: "start", From: layout.NormalizeVersion(from), To: layout.NormalizeVersion(to)}
+		fresh = a.From == ""
 	}
 	if newTry {
 		a.Outcome, a.EndedAt = attempts.Running, nil // going on with it
 	}
 	fn(&a)
+	if fresh && a.Outcome != attempts.Failed && a.Outcome != attempts.PutBack {
+		return // a first install's start: no update to record (its failure is still one)
+	}
 	if err := attempts.Record(dir, a); err != nil {
 		fmt.Fprintf(log, "[serve] the update's attempt cannot be recorded in %s: %v\n", dir, err)
 	}
@@ -687,6 +704,13 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 			return supervisor.Halt(downgrade(cur, rec))
 		}
 		return nil
+	}
+	// a start of another release that never finished (stopped during its dump, or the
+	// launcher went back from it) ends failed: this start is cur's
+	if n, err := attempts.SettleStale(g.updates, cur); err != nil {
+		fmt.Fprintf(g.log, "[serve] the update's attempts cannot be settled in %s: %v\n", g.updates, err)
+	} else if n > 0 {
+		fmt.Fprintf(g.log, "[serve] %d update attempt(s) that never finished are recorded failed\n", n)
 	}
 	// a putting back cut short (the server stopped meanwhile): finish it first
 	if rec.State == apppayload.DatabaseRestoring {

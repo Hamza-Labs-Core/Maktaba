@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -64,5 +66,51 @@ func TestAttemptsFiles(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(bad, AppFile), []byte(mixed), 0o644)
 	if got := Read(bad); len(got) != 1 || got[0].ID != "b" {
 		t.Fatalf("mixed %+v", got)
+	}
+}
+
+// A detail keeps no URL's query (a signed download's signature) and at most MaxDetail
+// bytes, on write and on read; changes from two goroutines both land.
+func TestCleanAndConcurrentRecords(t *testing.T) {
+	dir := t.TempDir()
+	long := strings.Repeat("é", 3000)
+	if err := Record(dir, Attempt{ID: "a", At: time.Now(), To: "0.3.1", Outcome: Failed,
+		Detail: `GET https://objects.githubusercontent.com/x/y.tar.gz?X-Amz-Signature=abc&sig=def: 403 ` + long}); err != nil {
+		t.Fatal(err)
+	}
+	got := Read(dir)[0].Detail
+	if strings.Contains(got, "Signature") || strings.Contains(got, "sig=") || !strings.Contains(got, "https://objects.githubusercontent.com/x/y.tar.gz 403") ||
+		len(got) > MaxDetail || !strings.HasSuffix(got, "…") {
+		t.Fatalf("the detail: %d %q", len(got), got[:120])
+	}
+	// a file the app wrote with a long detail is cut when read
+	app := `{"attempts":[{"id":"app-1","at":"2026-10-24T05:30:00Z","source":"app","to":"0.3.1","outcome":"failed","detail":"` +
+		strings.Repeat("x", 5000) + `"}]}`
+	if err := os.WriteFile(filepath.Join(dir, AppFile), []byte(app), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range Read(dir) {
+		if len(a.Detail) > MaxDetail {
+			t.Fatalf("read uncut: %s %d", a.ID, len(a.Detail))
+		}
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_ = Record(dir, Attempt{ID: "c" + strconv.Itoa(i), At: time.Now(), To: "0.3.1", Outcome: Running})
+		}(i)
+	}
+	wg.Wait()
+	if n := len(readFile(filepath.Join(dir, ServerFile))); n != 9 {
+		t.Fatalf("concurrent records: %d of 9", n)
+	}
+	// the running ones at another release than the one that runs now end failed
+	if n, err := SettleStale(dir, "v0.3.2"); err != nil || n != 8 {
+		t.Fatalf("settled %d %v", n, err)
+	}
+	if n, _ := SettleStale(dir, "0.3.2"); n != 0 {
+		t.Fatalf("settled twice: %d", n)
 	}
 }

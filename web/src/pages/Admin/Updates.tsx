@@ -16,15 +16,23 @@ import { ApiError, downloadBlob } from "../../lib/api";
 import { lookupMessage, useI18n } from "../../lib/i18n";
 import { CopyField } from "../../components/CopyField";
 import type { HomeDb } from "../../lib/homeDb";
-import { logsLink, logWindow, machineLogsLink } from "../../lib/logLinks";
+import {
+  logsExportURL,
+  logsLink,
+  logWindow,
+  nodeLogsLink,
+  type LogFilters,
+} from "../../lib/logLinks";
 import {
   ATTEMPT_FAILED,
+  compareVersions,
   RUN_ENDED,
   runCancellable,
   TARGET_RETRYABLE,
   TARGET_SKIPPABLE,
   WAITING_CLICK,
   updatesApi,
+  validVersion,
   type UpdateAttempt,
   type UpdateMachine,
   type UpdateRun,
@@ -190,10 +198,11 @@ export function AdminUpdates() {
     return () => clearInterval(id);
   }, [running, load]);
 
-  const downloadLogs = async () => {
+  // the logs of an attempt's window (a node's: its own log files, over its channel)
+  const downloadLogs = async (f: LogFilters) => {
     setBusy(true);
     try {
-      await downloadBlob("/api/diagnostics/export", "maktaba-diagnostics.tar.gz");
+      await downloadBlob(logsExportURL(f), "maktaba-diagnostics.tar.gz");
     } catch (e) {
       const detail = e instanceof ApiError ? e.message : t("common.error");
       toast.show({ tone: "error", message: `${t("updates.attempt.logsFailed")}: ${detail}` });
@@ -360,7 +369,7 @@ export function AdminUpdates() {
                           t("updates.page.target.retryDone")
                         )
                       }
-                      onLogs={() => void downloadLogs()}
+                      onLogs={(f) => void downloadLogs(f)}
                     />
                   </td>
                 </tr>
@@ -451,12 +460,36 @@ export function AdminUpdates() {
   );
 }
 
-/** Where a machine's logs around a time are: a joined machine's own (the Machines page's
- * Logs tab), the home's on the admin log page. */
+/** Where a machine's logs around a time are, on the admin log page: a joined machine's own
+ * log files (over its channel), the home's live logs and log files. */
 function logsHref(machine: UpdateMachine, since?: string, until?: string): string {
   return machine.role === "node"
-    ? machineLogsLink(machine.id, { since, until })
+    ? nodeLogsLink(machine.id, { since, until })
     : logsLink({ since, until });
+}
+
+/** The commands that mend a reason, as the web holds them (a machine's own text is never
+ * offered to copy). */
+const FIX_COMMANDS: Record<string, string> = {
+  quarantined: "xattr -dr com.apple.quarantine /Applications/Maktaba.app",
+  login_item_unsigned:
+    "codesign --force --deep -s - --identifier com.hamzalabs.maktaba /Applications/Maktaba.app",
+};
+
+/** The reasons whose words already say the release before runs again. */
+const SAYS_PREVIOUS = new Set([
+  "start_failed",
+  "boot_loop",
+  "pending_timeout",
+  "launcher_boot_loop",
+  "launcher_pending_timeout",
+  "launcher_refused",
+]);
+
+/** How two versions compare (above 0: a is later), null when either is not a version. */
+function versionCmp(a: string, b: string): number | null {
+  if (!a || !b || !validVersion(a.trim()) || !validVersion(b.trim())) return null;
+  return compareVersions(a, b);
 }
 
 /** A node that cannot reach the home's database: why, the home re-provisioning its access
@@ -478,7 +511,7 @@ function HomeDbNote({ machineId, homeDb }: { machineId: string; homeDb: HomeDb }
           <ErrorDetail text={homeDb.detail} />
         </details>
       )}
-      <a href={machineLogsLink(machineId, logWindow(homeDb.at))} data-testid={`${id}-logs`}>
+      <a href={nodeLogsLink(machineId, logWindow(homeDb.at))} data-testid={`${id}-logs`}>
         {t("machines.homeDb.logs")}
       </a>
     </div>
@@ -495,16 +528,27 @@ function AttemptBlock({
   machine: UpdateMachine;
   busy: boolean;
   onRetry: (runId: string) => void;
-  onLogs: () => void;
+  onLogs: (f: LogFilters) => void;
 }) {
   const w = useWords();
   const { t } = w;
   const { locale } = useI18n();
+  const has = (key: string) => lookupMessage(locale, key) !== undefined;
   const attempts = machine.attempts ?? [];
   const last = attempts[0];
   if (!last) return null;
   const id = `updates-machine-${machine.id}-attempt`;
-  const failed = ATTEMPT_FAILED.has(last.outcome);
+  // a desktop app's server that a failed start halted on that release: it cannot go back
+  // by itself (the gate put its database back and stopped it)
+  const haltedOn = (a: UpdateAttempt) =>
+    a.outcome === "put_back" &&
+    machine.kind === "appbundle" &&
+    versionCmp(machine.version, a.to) === 0;
+  // the machine reached that release (or a later one) another way: the failure is history
+  const cmp = versionCmp(machine.version, last.to);
+  const superseded =
+    ATTEMPT_FAILED.has(last.outcome) && cmp !== null && (cmp > 0 || (cmp === 0 && !haltedOn(last)));
+  const failed = ATTEMPT_FAILED.has(last.outcome) && !superseded;
   const reasonOf = (a: UpdateAttempt) =>
     a.code
       ? w.reason(a.code)
@@ -523,9 +567,25 @@ function AttemptBlock({
       case "failed":
         return t("updates.attempt.failed", vars);
       case "put_back":
-        return t("updates.attempt.putBack", vars);
+        if (haltedOn(a)) {
+          return t("updates.attempt.putBackStopped", {
+            ...vars,
+            from: a.from || t("updates.attempt.before"),
+          });
+        }
+        return t(
+          SAYS_PREVIOUS.has(a.code ?? "")
+            ? "updates.attempt.putBackSaid"
+            : "updates.attempt.putBack",
+          vars
+        );
       case "rolled_back":
-        return t("updates.attempt.rolledBack", vars);
+        return t(
+          SAYS_PREVIOUS.has(a.code ?? "")
+            ? "updates.attempt.rolledBackSaid"
+            : "updates.attempt.rolledBack",
+          vars
+        );
       case "cancelled":
         return t("updates.attempt.cancelled", vars);
       default:
@@ -543,15 +603,29 @@ function AttemptBlock({
     failed && last.source === "run" && last.run_id && machine.role === "node" ? last.run_id : "";
   // its logs: from two minutes before it began to two after it ended
   const win = logWindow(last.at, last.ended_at);
+  // what to do next: the reason's words (and the command the web holds for it), else the
+  // machine's own text, shown as what it said
+  const fixKey = last.code ? `updates.fix.${last.code}` : "";
+  const fixWords = fixKey && has(fixKey) ? t(fixKey) : "";
+  const command = last.code ? FIX_COMMANDS[last.code] : undefined;
   return (
     <div className="mkt-updates__attempt" data-testid={id}>
       <div>
         <strong>{t("updates.attempt.title")}</strong>{" "}
-        <Badge tone={outcomeTone(last.outcome)}>{w.outcome(last.outcome)}</Badge>
+        {superseded ? (
+          <Badge tone="neutral">{t("updates.attempt.reached")}</Badge>
+        ) : (
+          <Badge tone={outcomeTone(last.outcome)}>{w.outcome(last.outcome)}</Badge>
+        )}
       </div>
       <p className={failed ? "mkt-error" : undefined} data-testid={`${id}-headline`}>
         {headline(last)}
       </p>
+      {superseded && (
+        <p className="mkt-muted" data-testid={`${id}-superseded`}>
+          {t("updates.attempt.reachedLater", { version: machine.version })}
+        </p>
+      )}
       <p className="mkt-muted" data-testid={`${id}-meta`}>
         {t("updates.attempt.when", { ago: ago(last.at, locale), at: when(last.at) })}
         {" · "}
@@ -581,7 +655,17 @@ function AttemptBlock({
           <ErrorDetail text={last.detail} />
         </details>
       ) : null}
-      {last.fix ? <CopyField label={t("updates.attempt.fix")} value={last.fix} /> : null}
+      {failed && (fixWords || command) ? (
+        <div data-testid={`${id}-fix`}>
+          {fixWords && <p>{t("updates.attempt.next", { fix: fixWords })}</p>}
+          {command && <CopyField label={t("updates.attempt.fix")} value={command} />}
+        </div>
+      ) : null}
+      {failed && !fixWords && !command && last.fix ? (
+        <p className="mkt-muted" data-testid={`${id}-machine-fix`}>
+          {t("updates.attempt.machineSays")} <span dir="ltr">{last.fix}</span>
+        </p>
+      ) : null}
       {failed && (
         <div className="mkt-updates__actions">
           {retry && (
@@ -592,7 +676,14 @@ function AttemptBlock({
           <a href={logsHref(machine, win.since, win.until)} data-testid={`${id}-logs-link`}>
             {t("updates.attempt.seeLogs")}
           </a>
-          <Button variant="secondary" size="sm" disabled={busy} onClick={onLogs}>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              onLogs({ ...win, node: machine.role === "node" ? machine.id : undefined })
+            }
+          >
             {t("updates.attempt.logs")}
           </Button>
         </div>

@@ -3,6 +3,7 @@ package updates
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -92,5 +93,33 @@ func TestRunAttemptReadsTheError(t *testing.T) {
 		Error: json.RawMessage(`{"code": "disk_space", "step": "prepare", "detail": "4 GB free, 8 GB needed"}`)})
 	if f.Outcome != OutcomeFailed || f.Step != "prepare" || f.Code != "disk_space" || f.Detail == "" {
 		t.Fatalf("%+v", f)
+	}
+}
+
+// A machine's detail reaches the page without URLs' queries and cut to maxDetail (a node of
+// an older build sends them whole).
+func TestMergedAttemptsAreClean(t *testing.T) {
+	long := strings.Repeat("é", 2000)
+	got := mergeAttempts([]Attempt{{ID: "app-1", At: time.Now(), Detail: "GET https://cdn.example/a.tar.gz?sig=s3cret: 403 " + long,
+		Fix: "see https://x.example/p?token=t"}})
+	if strings.Contains(got[0].Detail, "s3cret") || len(got[0].Detail) > maxDetail || !strings.HasSuffix(got[0].Detail, "…") ||
+		got[0].Fix != "see https://x.example/p" {
+		t.Fatalf("%d %q", len(got[0].Detail), got[0].Fix)
+	}
+}
+
+// A machine's failed login to the home's database reaches the page once it saw it twice.
+func TestHomeDBShown(t *testing.T) {
+	if (&HomeDB{OK: false, Code: "refused", Fails: 1}).shown() != nil {
+		t.Fatal("one failed try shown")
+	}
+	if h := (&HomeDB{OK: false, Code: "refused", Fails: 2}).shown(); h == nil || h.Code != "refused" {
+		t.Fatalf("a confirmed failure: %+v", h)
+	}
+	if h := (&HomeDB{OK: true}).shown(); h == nil || !h.OK {
+		t.Fatal("ok")
+	}
+	if (*HomeDB)(nil).shown() != nil {
+		t.Fatal("nil")
 	}
 }

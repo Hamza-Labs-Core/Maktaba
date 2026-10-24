@@ -567,7 +567,6 @@ describe("Machines admin page: the home's database", () => {
 
   it("does not show it as healthy, says why, and opens its logs", async () => {
     routesWith([unreachable]);
-    const user = userEvent.setup();
     renderPage();
     const card = await screen.findByRole("article", { name: "Studio Mac" });
     expect(within(card).queryByText("Online")).toBeNull();
@@ -578,8 +577,11 @@ describe("Machines admin page: the home's database", () => {
     );
     expect(note).toHaveTextContent("The home gave it new access; it is following it.");
     expect(note).toHaveTextContent("no pg_hba.conf entry");
-    await user.click(within(note).getByRole("button", { name: "See the logs" }));
-    expect(await screen.findByRole("tab", { name: "Logs", selected: true })).toBeInTheDocument();
+    // its own log files around the last try, on the log page (over its channel)
+    expect(within(note).getByRole("link", { name: "See the logs" })).toHaveAttribute(
+      "href",
+      `/admin/logs?node=${unreachable.id}&since=2026-10-24T05%3A28%3A00.000Z`
+    );
   });
 
   it("a machine that reaches it stays Online, with no note (and reads in Arabic)", async () => {
@@ -597,12 +599,5 @@ describe("Machines admin page: the home's database", () => {
     expect(within(ar).getByTestId("machine-home-db")).toHaveTextContent(
       "لا يستطيع هذا الجهاز الوصول إلى قاعدة بيانات الخادم الرئيسي"
     );
-  });
-
-  it("opens a machine's logs from its address (a link from the Updates page)", async () => {
-    routesWith([baseNode]);
-    window.history.replaceState({}, "", "/admin/machines?logs=n1&since=2026-10-24T05:28:00Z");
-    renderPage();
-    expect(await screen.findByRole("tab", { name: "Logs", selected: true })).toBeInTheDocument();
   });
 });

@@ -1,19 +1,21 @@
 // Links from a failure to the logs that tell its whole story (update-attempts.md): the
-// admin's log page (/admin/logs) filtered to the failure's time, or a joined machine's own
-// logs on the Machines page (/admin/machines?logs=<node>), open on the failure's day.
+// admin's log page (/admin/logs) on the failure's time window, with the machine's own log
+// files (server.log, app.log, launcher.log; a joined machine's over its channel: ?node=),
+// and the bundle of those logs (/api/admin/logs/export) for the same window and machine.
 
 /** How far around a failure the logs are shown: two minutes before it began, two after it ended. */
 export const LOG_MARGIN_MS = 2 * 60_000;
 
 /** The filters /admin/logs reads from its address. */
 export interface LogFilters {
-  q?: string;
   services?: string;
   level?: string;
   /** ISO time: older lines are hidden */
   since?: string;
   /** ISO time: newer lines are hidden */
   until?: string;
+  /** a joined machine's id: its own log files (empty: this machine's, the home's) */
+  node?: string;
 }
 
 /** The time window around something that began at `at` and ended at `endedAt` (still
@@ -39,13 +41,28 @@ export function logsLink(f: LogFilters = {}): string {
   return `/admin/logs${query({ ...f })}`;
 }
 
-/** A joined machine's own logs on the Machines page (its Logs tab), from `since` (the day
- * of its files that holds it, when they have it). */
-export function machineLogsLink(
-  nodeId: string,
-  f: Pick<LogFilters, "since" | "until"> = {}
+/** A joined machine's own log files on /admin/logs, in the window. */
+export function nodeLogsLink(nodeId: string, f: Pick<LogFilters, "since" | "until"> = {}): string {
+  return logsLink({ node: nodeId, since: f.since, until: f.until });
+}
+
+/** The logs bundle (the live logs and the log files) of the window, a joined machine's
+ * files with `node`. */
+export function logsExportURL(f: LogFilters = {}): string {
+  return `/api/admin/logs/export${query({ ...f })}`;
+}
+
+/** A machine's log files (server.log, app.log, launcher.log) in the window: this machine's,
+ * or a joined machine's over its channel. */
+export function logFilesURL(
+  f: Pick<LogFilters, "since" | "until" | "node"> & { limit?: number }
 ): string {
-  return `/admin/machines${query({ logs: nodeId, since: f.since, until: f.until })}`;
+  return `/api/admin/logs/files${query({
+    since: f.since,
+    until: f.until,
+    node: f.node,
+    limit: f.limit ? String(f.limit) : undefined,
+  })}`;
 }
 
 /** The filters in an address's query string (window.location.search). A time that does
@@ -57,11 +74,11 @@ export function readLogFilters(search: string): LogFilters {
     return v && Number.isFinite(Date.parse(v)) ? v : undefined;
   };
   return {
-    q: p.get("q") || undefined,
     services: p.get("services") || undefined,
     level: p.get("level") || undefined,
     since: time("since"),
     until: time("until"),
+    node: p.get("node") || undefined,
   };
 }
 

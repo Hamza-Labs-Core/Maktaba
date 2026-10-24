@@ -709,10 +709,13 @@ don't append a line here; docs-only PRs are exempt.
   database newer than it, the pipeline's environment) is recorded too, and the release before,
   back running, reads "0.3.0 failed to start: <reason>. The previous release runs again." The
   Mac app's setup screen no longer hides why it could not start the server (a login item
-  macOS refuses for an app with no code signature says so, with the fix). Every failure also
-  links to its logs: the logs page opens on that update's time window (a machine's own logs
-  for a node), and the desktop app's menu and notification open the logs page or the folder
-  with `app.log` and `server.log`.
+  macOS refuses for an app with no code signature says so, with the fix). An update counts as
+  installed only once the server is back on the new release. Every failure also links to its
+  logs: the logs page opens on that update's time window with the machine's own `server.log`,
+  `app.log` and `launcher.log` beside the api's lines (a node's fetched over the machine
+  channel), "Download the logs" bundles the same window with those files, and the desktop app's
+  menu and notification open the logs page, or the folder with `app.log` and `server.log` when
+  the server does not answer.
 - **A machine follows its home's database by itself.** When the home's database moves (an
   app's move from an operator Postgres to its own, a new port, a restore) or a machine's role
   is missing on it, the machine says it cannot log in, the home makes its role again with a

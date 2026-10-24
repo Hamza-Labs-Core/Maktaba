@@ -1,12 +1,14 @@
 // Links from a failure to its logs (update-attempts.md): the window around it, the
-// filters /admin/logs reads from its address, and the per-machine link.
+// filters /admin/logs reads from its address, a machine's own log files, and the bundle.
 import { describe, expect, it } from "vitest";
 import {
   LOG_MARGIN_MS,
   inWindow,
   logWindow,
+  logFilesURL,
+  logsExportURL,
   logsLink,
-  machineLogsLink,
+  nodeLogsLink,
   readLogFilters,
 } from "./logLinks";
 
@@ -22,34 +24,45 @@ describe("logLinks", () => {
     expect(logWindow()).toEqual({});
   });
 
-  it("builds the log page's and a machine's links", () => {
+  it("builds the log page's, a machine's, its files' and the bundle's links", () => {
     expect(logsLink()).toBe("/admin/logs");
-    expect(logsLink({ q: "studio pc", level: "error", since: "2026-10-24T05:28:00.000Z" })).toBe(
-      "/admin/logs?q=studio+pc&level=error&since=2026-10-24T05%3A28%3A00.000Z"
+    expect(logsLink({ level: "error", since: "2026-10-24T05:28:00.000Z" })).toBe(
+      "/admin/logs?level=error&since=2026-10-24T05%3A28%3A00.000Z"
     );
-    expect(machineLogsLink("n 1", { since: "2026-10-24T05:28:00.000Z" })).toBe(
-      "/admin/machines?logs=n+1&since=2026-10-24T05%3A28%3A00.000Z"
+    // a joined machine's own log files, on the same page, in the window
+    expect(
+      nodeLogsLink("n 1", { since: "2026-10-24T05:28:00.000Z", until: "2026-10-24T05:33:00.000Z" })
+    ).toBe(
+      "/admin/logs?node=n+1&since=2026-10-24T05%3A28%3A00.000Z&until=2026-10-24T05%3A33%3A00.000Z"
     );
+    expect(logsExportURL({ since: "2026-10-24T05:28:00.000Z", node: "n1" })).toBe(
+      "/api/admin/logs/export?since=2026-10-24T05%3A28%3A00.000Z&node=n1"
+    );
+    expect(logFilesURL({ until: "2026-10-24T05:33:00.000Z", node: "n1", limit: 2000 })).toBe(
+      "/api/admin/logs/files?until=2026-10-24T05%3A33%3A00.000Z&node=n1&limit=2000"
+    );
+    expect(logFilesURL({})).toBe("/api/admin/logs/files");
   });
 
   it("reads the filters from an address, leaving out a time that does not parse", () => {
     expect(
       readLogFilters(
-        "?q=boom&services=api&level=warn&since=2026-10-24T05:28:00Z&until=2026-10-24T05:33:00Z"
+        "?services=api&level=warn&since=2026-10-24T05:28:00Z&until=2026-10-24T05:33:00Z&node=n1"
       )
     ).toEqual({
-      q: "boom",
       services: "api",
       level: "warn",
       since: "2026-10-24T05:28:00Z",
       until: "2026-10-24T05:33:00Z",
+      node: "n1",
     });
-    expect(readLogFilters("?since=yesterday")).toEqual({
-      q: undefined,
+    // an old desktop app's link searched for its version (q), which hid the failure's lines
+    expect(readLogFilters("?q=0.3.0&since=yesterday")).toEqual({
       services: undefined,
       level: undefined,
       since: undefined,
       until: undefined,
+      node: undefined,
     });
   });
 

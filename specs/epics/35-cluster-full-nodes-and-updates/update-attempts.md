@@ -64,9 +64,27 @@ rename).
 - `GET /api/cluster/updates` gives each machine (the home and every node) `attempts`: its own,
   merged with its last finished run (`source: run`), newest first, at most 5.
 - The Updates page shows, for each machine, its last attempt: when, from and to, the step it
-  stopped at, the reason, the raw detail, and what to do next (Retry for a run, the fix's
-  command, or the logs: the diagnostics export). A release that failed to start and was put
-  back reads "0.3.0 failed to start: <reason>. The previous release runs again."
+  stopped at, the reason, the raw detail, and what to do next: Retry for a run, the command for
+  a code that has one (`quarantined`, `login_item_unsigned`, held in the page, never a
+  machine's text), the fix in the page's words, and the logs. A release that failed to start
+  and was put back reads "0.3.0 failed to start: <reason>", then what runs now: the previous
+  release again, or, in the desktop app (no release before it to run), its database put back
+  as it was and its server stopped until a fix. An attempt at a release the machine has since
+  reached (by any way: a later try, a disk image) no longer shows as its current failure.
+- Every detail and fix is kept without URLs' queries (a signed download's signature) and cut to
+  2 KB, on write and on read, by the server, the app and the home's api alike.
+- **The logs.** "See the logs" opens the logs page on the attempt's window (`since`, `until`;
+  a node's attempt with `node=<id>`). Beside the api's own lines it shows the machine's files,
+  where an update's story is: `server.log` (the supervisor's database step and every role),
+  `app.log` (the desktop app's updater) and `launcher.log` (the launcher's events).
+  - The supervisor serves them over a window on its loopback admin (`GET /logs/files?files=&since=&until=&limit=`,
+    the local token); the api at `GET /api/admin/logs/files` (admin), and a node's over the
+    machine channel (`logs.files`, its own agent only, the answer bounded to fit a frame and
+    noted in the hub's event log by its size only).
+  - A line takes its time from itself (a JSON line's `ts`, an RFC 3339 time at its start,
+    slog's `time=`) or from the line before it (the supervisor's `[serve]` lines carry none).
+  - "Download the logs" is the admin diagnostics bundle (`/api/admin/logs/export`) of the same
+    window, with those files (`files/*.log`; a node's under `node-<id>/`).
 
 ## Codes
 
@@ -84,14 +102,24 @@ The desktop app (`source: app`):
 | `disk_full` | no room to download or unpack the update |
 | `translocated` | macOS runs this copy of the app from a temporary read-only place (opened from Downloads or the disk image): move it to Applications |
 | `quarantined` | macOS still marks the app as downloaded from the internet and unchecked |
-| `installer_exit` | the Windows installer stopped with an error code |
+| `installer_exit` | the Linux package installer (`.deb`, `.rpm`) failed. On Windows the updater starts the installer and exits, so an install that did not take shows at the next start as `relaunch_failed` |
 | `server_stop_failed` | the server could not be stopped for the install (Windows) |
-| `relaunch_failed` | the app came back on the old release, or did not come back |
-| `login_item_unsigned` | macOS would not load the server's login item from an app that is not code-signed |
+| `relaunch_failed` | the app came back on an older release, or did not come back, or (with the server on this machine) the server did not come back on the new release: 3 minutes with no answer or an older one, 30 while it is still starting |
+| `login_item_unsigned` | macOS would not load the server's login item from an app that is not code-signed (found when the server does not come back after the relaunch) |
+| `previous_app_not_restored` | the update failed and the updater could not put the previous app back in its folder: install again from the release's disk image |
 | `check_failed`, `download_failed`, `install_failed` | anything else at that step (the detail says what) |
 
 A release's start (`source: server`): `db_dump_failed`, `db_migrate_failed`, `db_restore_failed`,
-`db_ahead`, `db_refused_older`, `venv_failed`, `venv_interrupted`.
+`db_ahead`, `db_refused_older`, `venv_failed`, `venv_interrupted`; a rollback's reason when the
+release before puts the database back (`start_timeout`, `boot_loop`, the launcher's
+`launcher_boot_loop`, `launcher_pending_timeout`, `launcher_refused`, else `start_failed`); and
+`start_interrupted`, a start that never finished (the server or the machine stopped, or the
+launcher went back from it), settled at the next start: of another release, or of the same one
+more than 30 minutes later. A first install that installs is no update and is not recorded.
+Its step is `dump`, `migrate`, `venv`, or `start` (the release before put the database back).
+
+A cluster run (`source: run`) carries its error's code, else the target's state
+(`failed_prepare`, `needs_person`).
 
 ## The desktop app
 
@@ -103,6 +131,9 @@ nobody, the notification and the menu say it). The order's own `error` keeps its
 prefix (the server's run reads it); every code is in `app-attempts.json`. A check that finds
 nothing newer leaves no attempt; a successful staging of an order neither (the attempt begins at
 the home's go). Before it installs, the app records the attempt as running;
-when it starts again it settles it: installed when it now is that release, `relaunch_failed`
-otherwise. Its own log, `app.log`, sits beside the server's `server.log` (macOS
+when it starts again it settles it: installed when it now is that release or a newer one and,
+with the server on this machine, once that server answers on it (until then the attempt runs at
+step `relaunch`); `relaunch_failed` or `login_item_unsigned` otherwise. The result of its
+restart of the server after an install is noted on the attempt. The menu's failed line goes
+once the app runs a newer release (or the same one, reached another way). Its own log, `app.log`, sits beside the server's `server.log` (macOS
 `~/Library/Logs/Maktaba`, Windows `%LOCALAPPDATA%\Maktaba\logs`, Linux the app's logs folder).

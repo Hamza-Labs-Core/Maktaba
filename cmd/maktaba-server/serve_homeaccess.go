@@ -94,6 +94,10 @@ func homeAccessAddr(n config.NodeConfig) string {
 	return u.Host + " as " + u.User.Username()
 }
 
+// homeAccessReloadAfter is how long this machine waits, once it has kept the new access,
+// before it starts again (its answer to the home goes out first); the tests shorten it.
+var homeAccessReloadAfter = time.Second
+
 // homeAccess takes the access the home re-made over the machine channel: node.json keeps
 // it, and this machine starts again with it. The same access changes nothing.
 func (s *switching) homeAccess(args json.RawMessage) (ok bool, detail any) {
@@ -124,14 +128,20 @@ func (s *switching) homeAccess(args json.RawMessage) (ok bool, detail any) {
 		s.homeDB.healing()
 	}
 	go func() {
-		time.Sleep(time.Second) // the answer goes out first
+		time.Sleep(homeAccessReloadAfter) // the answer goes out first
 		requestReload()
 	}()
 	return true, map[string]any{"changed": true}
 }
 
-// homeDBEvery is how often this machine checks that it logs in to its home's database.
-var homeDBEvery = 30 * time.Second
+// homeDBEvery is how often this machine checks that it logs in to its home's database;
+// homeDBRecheck how soon it tries again after a failure (one failure is not told to the
+// home as one to act on: machineagent.ConfirmFails).
+var (
+	homeDBFirst   = 5 * time.Second // after the start
+	homeDBEvery   = 30 * time.Second
+	homeDBRecheck = 10 * time.Second
+)
 
 // homeDBWatch keeps this machine's last login to its home's database (update.state's
 // home_db).
@@ -191,14 +201,21 @@ func (w *homeDBWatch) check(ctx context.Context) {
 	if prev != nil && prev.Healing && err != nil {
 		next.Healing = true // following the new access: the next start logs in with it
 	}
-	changed := prev == nil || prev.OK != next.OK || prev.Code != next.Code || prev.Healing != next.Healing
+	if err != nil {
+		next.Fails = 1
+		if prev != nil && !prev.OK {
+			next.Fails = prev.Fails + 1
+		}
+	}
+	confirmed := next.Fails >= machineagent.ConfirmFails && (prev == nil || prev.Fails < machineagent.ConfirmFails)
+	changed := prev == nil || prev.OK != next.OK || prev.Code != next.Code || prev.Healing != next.Healing || confirmed
 	w.st = next
 	w.mu.Unlock()
 	if !changed {
 		return
 	}
 	switch {
-	case err != nil && !next.Healing:
+	case err != nil && !next.Healing && confirmed:
 		fmt.Fprintf(os.Stderr, "[serve] node: cannot log in to the home's database (%s): %v; the home re-makes "+
 			"this machine's access\n", next.Code, err)
 	case err == nil && prev != nil && !prev.OK:
@@ -209,24 +226,23 @@ func (w *homeDBWatch) check(ctx context.Context) {
 	}
 }
 
-// run checks soon after the start, then every homeDBEvery, until ctx ends.
+// run checks soon after the start, then every homeDBEvery (homeDBRecheck after a
+// failure), until ctx ends.
 func (w *homeDBWatch) run(ctx context.Context) {
-	first := time.NewTimer(5 * time.Second)
-	defer first.Stop()
-	select {
-	case <-ctx.Done():
-		return
-	case <-first.C:
-	}
-	t := time.NewTicker(homeDBEvery)
+	t := time.NewTimer(homeDBFirst)
 	defer t.Stop()
 	for {
-		w.check(ctx)
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 		}
+		w.check(ctx)
+		next := homeDBEvery
+		if st := w.State(); st != nil && !st.OK {
+			next = homeDBRecheck
+		}
+		t.Reset(next)
 	}
 }
 

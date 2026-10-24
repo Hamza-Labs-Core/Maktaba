@@ -21,6 +21,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logfiles"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
@@ -147,7 +148,13 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	// Epic 35 (stories 35.4–35.7, 35.12): this machine's part of automatic updates;
 	// a node takes the home's update.* commands on the channel (serve_update.go)
 	var upd atomic.Pointer[updates]
+	// this machine's own log files, for the logs page and the bundle (serve_logfiles.go)
+	logDirs := logfiles.Dirs{Logs: config.LogsDir(), Updates: updatesDirOf(cfg, releaseDir)}
 	commands := func(ctx context.Context, name string, args json.RawMessage) (bool, bool, any) {
+		if name == "logs.files" {
+			ok, detail := logFilesCommand(ctx, logDirs, args)
+			return true, ok, detail
+		}
 		if h, ok, detail := upd.Load().command(ctx, name, args); h {
 			return h, ok, detail
 		}
@@ -374,6 +381,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	if u := upd.Load(); u != nil {
 		admin = u.adminHandler(admin, token)
 	}
+	admin = logFilesAdmin(admin, token, logDirs)
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}

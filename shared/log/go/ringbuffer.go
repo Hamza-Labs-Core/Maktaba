@@ -118,6 +118,7 @@ type Entry struct {
 // "no constraint" (any time, any service, all levels, no search).
 type Filter struct {
 	Since    time.Time           // drop entries strictly before this
+	Until    time.Time           // drop entries strictly after this (zero: none)
 	MinLevel slog.Level          // drop entries below this level
 	Services map[string]struct{} // empty == all services
 	Search   string              // case-insensitive substring match on the raw line
@@ -159,6 +160,9 @@ func (rb *RingBuffer) Entries(f Filter) []Entry {
 			ts, _ = time.Parse(time.RFC3339Nano, h.Ts)
 		}
 		if !f.Since.IsZero() && ts.Before(f.Since) {
+			continue
+		}
+		if !f.Until.IsZero() && ts.After(f.Until) {
 			continue
 		}
 		if len(f.Services) > 0 {
@@ -332,6 +336,11 @@ func FilterFromQuery(r *http.Request) Filter {
 	if v := strings.TrimSpace(q.Get("since")); v != "" {
 		if ts, err := time.Parse(time.RFC3339, v); err == nil {
 			f.Since = ts
+		}
+	}
+	if v := strings.TrimSpace(q.Get("until")); v != "" {
+		if ts, err := time.Parse(time.RFC3339, v); err == nil {
+			f.Until = ts
 		}
 	}
 	if v := strings.TrimSpace(q.Get("services")); v != "" {

@@ -20,6 +20,7 @@ import {
   type SeriesKey,
 } from "../../lib/clusterStream";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
+import { nodeLogsLink } from "../../lib/logLinks";
 import { Sparkline } from "../queue/Sparkline";
 import { useFmt } from "../queue/format";
 import { useClusterFmt } from "./format";
@@ -195,8 +196,13 @@ const MachineLive = memo(function MachineLive({
           <Badge tone={group.kind === "home" ? "accent" : "neutral"}>
             {t(group.kind === "home" ? "cluster.live.home" : "cluster.live.node")}
           </Badge>
-          {online && noHomeDb ? (
-            <Badge tone="error">{t("machines.status.no_home_db")}</Badge>
+          {online && noHomeDb && group.nodeId ? (
+            <>
+              <Badge tone="error">{t("machines.status.no_home_db")}</Badge>
+              <a className="mkt-cl-link" href={nodeLogsLink(group.nodeId)}>
+                {t("machines.homeDb.logs")}
+              </a>
+            </>
           ) : (
             <Badge tone={online ? "success" : "neutral"}>
               {t(online ? "cluster.live.connected" : "cluster.live.disconnected")}

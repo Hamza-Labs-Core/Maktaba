@@ -352,11 +352,16 @@ fn local_web_url(app: &AppHandle) -> Option<String> {
 
 /// "See the logs": the web logs page of this machine's server at the newest attempt's
 /// time, in the app's window (where it shows the server's pages); the log folder in
-/// client mode, which has no server here.
+/// client mode, which has no server here, and when the server does not answer (its page
+/// could not open: app.log and server.log say why).
 fn see_logs(app: &AppHandle) -> Result<(), String> {
     let Some(web_url) = local_web_url(app) else {
         return agent::open_logs();
     };
+    if status::server_version(&web_url).is_none() {
+        attempts::log("see the logs: the server does not answer; the log folder");
+        return agent::open_logs();
+    }
     let last = attempts_path()
         .and_then(|p| attempts::newest(&p))
         .unwrap_or_default();
@@ -364,6 +369,77 @@ fn see_logs(app: &AppHandle) -> Result<(), String> {
     attempts::log(&format!("see the logs: {url}"));
     focus_main(app);
     navigate_main(app, &url)
+}
+
+/// What the local server shows (attempts::wait_for_server): the release its api answers
+/// on, its supervisor answering while its api does not yet (starting), or nothing.
+fn server_seen(web_url: &str, supervisor_url: &str) -> attempts::Seen {
+    if let Some(v) = status::server_version(web_url) {
+        return attempts::Seen::On(v);
+    }
+    let busy = status::addr_of(supervisor_url)
+        .is_some_and(|a| !matches!(status::probe(&a), status::Probe::Unreachable));
+    if busy {
+        attempts::Seen::Busy
+    } else {
+        attempts::Seen::Silent
+    }
+}
+
+/// Why the server did not come back on `to` after the app's own update: what it showed
+/// last; on a Mac where nothing answered, what its login item says (macOS refuses it for an
+/// app without its code signature: login_item_unsigned); else the line of server.log that
+/// says why, when one does.
+fn server_not_back(to: &str, last: &attempts::Seen) -> Failure {
+    let said = match last {
+        attempts::Seen::On(v) => format!("the server still runs {v}, not {to}"),
+        attempts::Seen::Busy => format!(
+            "the server did not finish starting on {to} in {} minutes",
+            attempts::SERVER_BUSY.as_secs() / 60
+        ),
+        attempts::Seen::Silent => format!("the server did not answer after the update to {to}"),
+    };
+    #[cfg(target_os = "macos")]
+    if *last == attempts::Seen::Silent {
+        if let Some(f) = login_item_failure(&said) {
+            return f;
+        }
+    }
+    let detail = match agent::server_log_tail().and_then(|t| status::failure_in_log(&t)) {
+        Some(why) => format!("{said}: {why}"),
+        None => said,
+    };
+    Failure::new(attempts::STEP_RELAUNCH, attempts::RELAUNCH_FAILED, detail)
+}
+
+/// The server's login item, when the server stays silent after the app's update (macOS):
+/// registering it again says why macOS will not load it; a login item turned off in System
+/// Settings says that.
+#[cfg(target_os = "macos")]
+fn login_item_failure(said: &str) -> Option<Failure> {
+    let before = agent::login_item();
+    match agent::register() {
+        Err(e) => {
+            let code = if e.starts_with(attempts::LOGIN_ITEM_UNSIGNED) {
+                attempts::LOGIN_ITEM_UNSIGNED
+            } else {
+                attempts::RELAUNCH_FAILED
+            };
+            Some(Failure::new(
+                attempts::STEP_RELAUNCH,
+                code,
+                format!("{said}; the server's login item ({before:?}): {e}"),
+            ))
+        }
+        Ok(()) if agent::login_item() == LoginItem::RequiresApproval => Some(Failure::new(
+            attempts::STEP_RELAUNCH,
+            attempts::RELAUNCH_FAILED,
+            format!(
+                "{said}; the server's login item is turned off in System Settings, Login Items"
+            ),
+        )),
+        Ok(()) => None,
+    }
 }
 
 /// A click on one of this app's notifications (the plugin reports desktop clicks once a
@@ -684,7 +760,7 @@ fn refresh(app: &AppHandle) {
     let last = attempts_path().and_then(|p| attempts::newest(&p));
     let entries = tray::with_failed_update(
         entries,
-        tray::failed_line(lang, last.as_ref()),
+        tray::failed_line(lang, last.as_ref(), &own_version(app)),
         lang,
         server && matches!(sh.mode(), Some(AppMode::Server { .. })),
     );
@@ -1024,13 +1100,25 @@ fn install_update_from(app: AppHandle, source: Source) {
                 // a paused server stays paused; it runs the new payload on Resume.
                 // Linux: the server runs a copy of the payload, which the new
                 // app switches to when it starts (agent::linux::sync_runtime).
+                // A restart that fails is noted in the attempt: the new app waits for its
+                // server on the release, and says it when the server does not come back.
                 if cfg!(not(target_os = "linux"))
                     && matches!(sh.mode(), Some(AppMode::Server { .. }))
                     && !sh.paused.load(Ordering::SeqCst)
                 {
-                    let _ = agent::control(Action::Restart);
+                    if let (Err(e), Some(p), Some(id)) = (
+                        agent::control(Action::Restart),
+                        rec.as_deref(),
+                        id.as_deref(),
+                    ) {
+                        attempts::note(
+                            p,
+                            id,
+                            &format!("the server's restart after the install failed: {e}"),
+                        );
+                    }
                 }
-                // the new app settles the attempt when it starts (attempts::settle)
+                // the new app settles the attempt when it starts (attempts::settle_newest)
                 step(attempts::STEP_RELAUNCH);
                 app.restart();
             }
@@ -1099,6 +1187,7 @@ fn install_update_from(app: AppHandle, source: Source) {
                         code: f.code.into(),
                         ..attempts::Attempt::default()
                     }),
+                    &own_version(&app),
                 )
                 .unwrap_or_default();
                 let sentence = format!(
@@ -1303,16 +1392,44 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     }
 
     // the update attempt this app's last run ended with its restart (or left when it
-    // quit): installed when the app now is its release, failed otherwise (attempts.rs)
+    // quit): installed when the app now is its release (and, for an app that runs the
+    // server, once its server is back on it), failed otherwise (attempts.rs)
     let handle = app.clone();
     std::thread::spawn(move || {
         let Some(rec) = attempts_path() else {
             return;
         };
+        let sh = shell(&handle);
+        let server = match sh.mode() {
+            Some(AppMode::Server {
+                web_url,
+                supervisor_url,
+            }) if !sh.paused.load(Ordering::SeqCst) => Some((web_url, supervisor_url)),
+            _ => None,
+        };
+        let mut back = |a: &attempts::Attempt| -> Result<(), Failure> {
+            let Some((web_url, supervisor_url)) = server.as_ref() else {
+                return Ok(());
+            };
+            let began = std::time::Instant::now();
+            attempts::wait_for_server(
+                &a.to,
+                || server_seen(web_url, supervisor_url),
+                || began.elapsed(),
+                std::thread::sleep,
+            )
+            .map_err(|last| server_not_back(&a.to, &last))
+        };
+        let back: Option<attempts::ServerBack<'_>> = if server.is_some() {
+            Some(&mut back)
+        } else {
+            None
+        };
         if let Some(failed) =
-            attempts::settle_newest(&rec, &own_version(&handle), &attempts::Ctx::here())
+            attempts::settle_newest(&rec, &own_version(&handle), &attempts::Ctx::here(), back)
         {
             notify_failed(&handle, &failed.to, &failed.code);
+            refresh(&handle);
         }
     });
 

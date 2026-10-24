@@ -12,12 +12,17 @@
 
 1. **The machine checks.** Every 30 s, and 5 s after it starts, a full node logs in to its
    home's database with `node.json`'s access, as its programs do. Its machine agent's
-   `update.state` says how it went: `home_db: {ok, code, detail, at, healing}`.
+   `update.state` says how it went: `home_db: {ok, code, detail, at, healing, fails}`.
    - `code` is one of `auth_failed` (password, role missing, `NOLOGIN`), `no_hba`, `refused`,
      `unreachable`, `no_database`, `tls` or `other`.
+   - `fails` counts the failed logins in a row. After a failure the machine tries again in
+     10 s, and a failure counts once it is seen twice: one try can meet a home in the middle of
+     a switch (the machine still on the old home's database, about to follow the new home by
+     itself), and the new home must not re-make its access then.
    - A change is sent at once.
 2. **The home re-makes the access.** Every 10 s the home (`agent.Hub.EnsureAccess`) looks at its
-   connected machines. A machine gets its access re-made when it says it cannot log in, or when
+   connected machines. A machine gets its access re-made when it says it cannot log in (twice in
+   a row), or when
    its role does not log in on the home's current database (checked once per agent session: a
    move that carried no roles).
    - The machine's role is made again with a new password (`PGRoles.Create`: made, or

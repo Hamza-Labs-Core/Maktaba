@@ -23,12 +23,18 @@ var commandNames = map[string]bool{
 	"standby.kit": true, "standby.commit": true, "standby.forget": true, "home.standbys": true,
 	// a machine's part of an automatic update (Epic 35 story 35.12): machine agents only
 	"update.prepare": true, "update.apply": true, "update.status": true, "update.abort": true, "update.rollback": true,
+	// a machine's own log files over a window, for the logs page and the bundle
+	"logs.files": true,
 }
 
 // machineOnly are the commands only a machine's own agent (its supervisor) takes.
 func machineOnly(name string) bool {
-	return strings.HasPrefix(name, "update.") || name == "home.access"
+	return strings.HasPrefix(name, "update.") || name == "home.access" || name == "logs.files"
 }
+
+// bulkyResults are the commands whose answers the event log notes by size only (a
+// machine's log lines are not the hub's events).
+var bulkyResults = map[string]bool{"logs.files": true}
 
 // secretArgs are the commands' arguments the event log never shows.
 var secretArgs = map[string][]string{"home.access": {"password"}}
@@ -178,8 +184,12 @@ func (h *Hub) CommandWithin(ctx context.Context, sessionID, name string, args js
 		s.logLevel, _ = argMap["level"].(string)
 		s.mu.Unlock()
 	}
+	var logDetail any = res.Detail
+	if bulkyResults[name] {
+		logDetail = fmt.Sprintf("(%d bytes)", len(res.Detail))
+	}
 	h.event(map[string]any{"event": "cmd.result", "session": s.ID, "ip": s.IP, "id": id, "name": name, "ok": res.OK,
-		"detail": res.Detail})
+		"detail": logDetail})
 	return res, nil
 }
 

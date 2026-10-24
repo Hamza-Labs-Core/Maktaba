@@ -382,7 +382,10 @@ pub fn update_reason(lang: Lang, code: &str) -> &'static str {
                 "macOS runs this copy of the app from a temporary place: move it to Applications"
             }
             "quarantined" => "macOS still marks the app as downloaded and unchecked",
-            "installer_exit" => "the installer stopped with an error",
+            "installer_exit" => "the system's package installer failed",
+            "previous_app_not_restored" => {
+                "the update failed and the app could not be put back in its folder"
+            }
             "server_stop_failed" => "the server could not be stopped for the install",
             "relaunch_failed" => "the app did not come back on the new release",
             "login_item_unsigned" => {
@@ -405,7 +408,8 @@ pub fn update_reason(lang: Lang, code: &str) -> &'static str {
                 "يشغّل macOS هذه النسخة من التطبيق من مكان مؤقت: انقلها إلى مجلد التطبيقات"
             }
             "quarantined" => "ما زال macOS يَسِم التطبيق بأنه منزَّل ولم يُفحص",
-            "installer_exit" => "توقّف المثبِّت بخطأ",
+            "installer_exit" => "فشل مثبِّت الحزم في النظام",
+            "previous_app_not_restored" => "فشل التحديث وتعذّرت إعادة التطبيق إلى مجلده",
             "server_stop_failed" => "تعذّر إيقاف الخادم من أجل التثبيت",
             "relaunch_failed" => "لم يعد التطبيق إلى العمل على الإصدار الجديد",
             "login_item_unsigned" => "التطبيق غير موقَّع، لذا لن يشغّل macOS خادمه",

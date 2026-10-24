@@ -16,8 +16,7 @@
 // many jobs it runs and links to the Processing page filtered by it.
 //
 // A full machine that cannot reach the home's database says so on its card, with why and
-// a way to its logs (update-attempts.md); /admin/machines?logs=<node>&since=<time> opens
-// that machine's logs (the Logs tab) from elsewhere (the Updates page).
+// a link to its own log files on the admin log page (update-attempts.md).
 import {
   memo,
   useCallback,
@@ -58,9 +57,9 @@ import { QueuesPanel } from "../../components/cluster/QueuesPanel";
 import { RelayDoorCard } from "../../components/cluster/RelayDoorCard";
 import { RelayPanel } from "../../components/cluster/RelayPanel";
 import { SwitchHomeCard } from "../../components/cluster/SwitchHomeCard";
-import { nodeDays, useClusterFiles } from "../../components/cluster/useClusterFiles";
+import { useClusterFiles } from "../../components/cluster/useClusterFiles";
 import { useFmt } from "../../components/queue/format";
-import { groupByMachine, useClusterStream, type ClusterStream } from "../../lib/clusterStream";
+import { useClusterStream, type ClusterStream } from "../../lib/clusterStream";
 import type { SocketStatus } from "../../lib/clusterSocket";
 import { ApiError } from "../../lib/api";
 import {
@@ -77,7 +76,7 @@ import {
 } from "../../lib/clusterApi";
 import { bidiIsolate, lookupMessage, useI18n } from "../../lib/i18n";
 import { safeHttpUrl } from "../../lib/navigation";
-import { logWindow } from "../../lib/logLinks";
+import { logWindow, nodeLogsLink } from "../../lib/logLinks";
 import { homeDbOf, type HomeDb } from "../../lib/homeDb";
 import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
@@ -121,50 +120,6 @@ function MachinesPage() {
     setTab("logs");
   }, []);
 
-  // a joined machine's logs: its folder (IP) when the hub or the share knows it, else the
-  // machine itself (the hub's logs topic takes a node id); on the day of `since` when its
-  // files hold that day, else live
-  const nodeLogTarget = useCallback(
-    (id: string, name: string, since?: string): LogTarget | null => {
-      const group = groupByMachine(stream.processes).find((g) => g.nodeId === id);
-      const nodes = files.files?.nodes ?? [];
-      const fileNode =
-        nodes.find((nd) => (nd.processes ?? []).some((p) => p.node_id === id)) ??
-        (group ? nodes.find((nd) => nd.ip === group.ip) : undefined);
-      const ip = group?.ip ?? fileNode?.ip;
-      if (!ip) return null;
-      const label = group?.name ?? fileNode?.processes?.find((p) => p.name)?.name ?? name;
-      const day = since?.slice(0, 10);
-      const onRecord = day && fileNode ? nodeDays(fileNode, "logs").includes(day) : false;
-      return { ip, label, ...(onRecord ? { date: day } : {}) };
-    },
-    [stream.processes, files.files]
-  );
-  const openNodeLogs = useCallback(
-    (id: string, name: string, since?: string) =>
-      openLogs(nodeLogTarget(id, name, since) ?? { ip: id, label: name }),
-    [openLogs, nodeLogTarget]
-  );
-
-  // ?logs=<node>&since=<time>: that machine's logs, at once by its id, then by its folder
-  // (and day) once the hub or the share names it
-  const [linked] = useState(() => {
-    const p = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
-    const node = p.get("logs");
-    return node ? { node, since: p.get("since") ?? undefined } : null;
-  });
-  const linkSettled = useRef(false);
-  useEffect(() => {
-    if (linked) openLogs({ ip: linked.node, label: linked.node });
-  }, [linked, openLogs]);
-  useEffect(() => {
-    if (!linked || linkSettled.current) return;
-    const target = nodeLogTarget(linked.node, linked.node, linked.since);
-    if (!target) return;
-    linkSettled.current = true;
-    setLogTarget(target);
-  }, [linked, nodeLogTarget]);
-
   return (
     <section className="mkt-page mkt-mc" aria-labelledby="mkt-mc-h">
       <header className="mkt-mc__head">
@@ -207,7 +162,6 @@ function MachinesPage() {
                 stream={stream}
                 queueLabel={queueLabel}
                 onOpenLogs={openLogs}
-                onOpenNodeLogs={openNodeLogs}
                 extra={
                   <>
                     <EmergencyCard />
@@ -266,13 +220,11 @@ function MachinesOverview({
   stream,
   queueLabel,
   onOpenLogs,
-  onOpenNodeLogs,
   extra,
 }: {
   stream: ClusterStream;
   queueLabel: (stage: string) => string;
   onOpenLogs: (target: LogTarget) => void;
-  onOpenNodeLogs: OpenNodeLogs;
   extra?: ReactNode;
 }) {
   // jobs per machine from the hub; the same counts keep the same object
@@ -286,12 +238,7 @@ function MachinesOverview({
   const noHomeDb = useMemo(() => new Set(dbDown ? dbDown.split("\n") : []), [dbDown]);
   return (
     <div className="mkt-mc-tab">
-      <Approvals
-        queueLabel={queueLabel}
-        jobs={jobs}
-        onOpenNodeLogs={onOpenNodeLogs}
-        onHomeDbDown={setDbDown}
-      />
+      <Approvals queueLabel={queueLabel} jobs={jobs} onHomeDbDown={setDbDown} />
       {extra}
       <LiveMachines
         stream={stream}
@@ -343,19 +290,14 @@ function useErrorToast() {
 
 type JobCounts = Record<string, number> | null;
 
-/** Opens a joined machine's logs (the Logs tab), from `since` when given. */
-type OpenNodeLogs = (id: string, name: string, since?: string) => void;
-
 const Approvals = memo(function Approvals({
   queueLabel,
   jobs,
-  onOpenNodeLogs,
   onHomeDbDown,
 }: {
   queueLabel: (stage: string) => string;
   /** jobs running per machine (node id / "home"); null while the hub is not connected */
   jobs: JobCounts;
-  onOpenNodeLogs?: OpenNodeLogs;
   /** the machines that cannot reach the home's database, as their node ids one per line */
   onHomeDbDown?: (ids: string) => void;
 }) {
@@ -467,7 +409,6 @@ const Approvals = memo(function Approvals({
                 onChanged={reload}
                 queueLabel={queueLabel}
                 jobs={jobs ? (jobs[n.id] ?? 0) : null}
-                onOpenLogs={onOpenNodeLogs}
               />
             ))}
           </ul>
@@ -892,8 +833,9 @@ function useCapabilityChips(node: ClusterNode): string[] {
 }
 
 /** A full machine that cannot reach the home's database: why (in the reader's words), the
- * home re-provisioning its access when it does, what it said, and a way to its logs. */
-function HomeDbNotice({ homeDb, onLogs }: { homeDb: HomeDb; onLogs?: (since?: string) => void }) {
+ * home re-provisioning its access when it does, what it said, and its own log files around
+ * the last try (the admin log page, over its channel). */
+function HomeDbNotice({ homeDb, nodeId }: { homeDb: HomeDb; nodeId: string }) {
   const { t, has } = useHomeDbWords();
   const code = homeDb.code ?? "other";
   const reason = has(`machines.homeDb.code.${code}`)
@@ -911,11 +853,9 @@ function HomeDbNotice({ homeDb, onLogs }: { homeDb: HomeDb; onLogs?: (since?: st
           </p>
         </details>
       )}
-      {onLogs && (
-        <Button variant="secondary" size="sm" onClick={() => onLogs(logWindow(homeDb.at).since)}>
-          {t("machines.homeDb.logs")}
-        </Button>
-      )}
+      <a href={nodeLogsLink(nodeId, logWindow(homeDb.at))} data-testid="machine-home-db-logs">
+        {t("machines.homeDb.logs")}
+      </a>
     </div>
   );
 }
@@ -966,13 +906,11 @@ const MachineCard = memo(function MachineCard({
   onChanged,
   queueLabel,
   jobs,
-  onOpenLogs,
 }: {
   node: ClusterNode;
   onChanged: () => void;
   queueLabel: (stage: string) => string;
   jobs: number | null;
-  onOpenLogs?: OpenNodeLogs;
 }) {
   const { t } = useI18n();
   const fmt = useFmt();
@@ -1020,10 +958,7 @@ const MachineCard = memo(function MachineCard({
         </header>
         {paused && <PausedNotice reason={paused} />}
         {active && homeDb && homeDb.ok === false && (
-          <HomeDbNotice
-            homeDb={homeDb}
-            onLogs={onOpenLogs ? (since) => onOpenLogs(node.id, node.name, since) : undefined}
-          />
+          <HomeDbNotice homeDb={homeDb} nodeId={node.id} />
         )}
         {active && copyNote && (
           <p className={`mkt-mc-note${copyNote.warn ? " mkt-mc-note--warn" : ""}`} role="note">

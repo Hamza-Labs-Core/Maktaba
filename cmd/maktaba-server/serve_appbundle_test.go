@@ -1248,3 +1248,52 @@ func TestAppBundleRollbackRestoreAttempt(t *testing.T) {
 		t.Fatalf("attempts %+v", got)
 	}
 }
+
+// A first install is no update (nothing recorded); a start of another release that never
+// finished (stopped during its dump, the launcher back on the release before) ends
+// failed; and a start of the same release that began hours ago and never ended is not
+// gone on with: it ends failed and the new start is a new attempt.
+func TestAppBundleStaleAndFirstInstallAttempts(t *testing.T) {
+	t.Setenv(envLauncherRoot, "")
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	dir := filepath.Join(cfg.StateDir(), "updates")
+	installFakeDB(t, cfg)
+	ctx := context.Background()
+	start := func() {
+		t.Helper()
+		if err := prepareOf(t, appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard),
+			supervisor.RoleAPI)(ctx, noReport); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start()
+	if got := attempts.Read(dir); len(got) != 0 {
+		t.Fatalf("a first install recorded an update: %+v", got)
+	}
+
+	// 0.4.0's start was stopped during its dump; the launcher runs 0.3.0 again
+	if err := attempts.Record(dir, attempts.Attempt{ID: "start-0.4.0-1", At: time.Now().UTC(), Source: attempts.SourceServer,
+		From: "0.3.0", To: "0.4.0", Outcome: attempts.Running, Step: "dump"}); err != nil {
+		t.Fatal(err)
+	}
+	start()
+	got := attempts.Read(dir)
+	if len(got) != 1 || got[0].Outcome != attempts.Failed || got[0].Code != attempts.Interrupted || got[0].Step != "dump" ||
+		got[0].EndedAt == nil || !strings.Contains(got[0].Detail, "0.3.0 runs now") {
+		t.Fatalf("a start that never finished: %+v", got)
+	}
+
+	// 0.5.0's start began hours ago and never ended; this start of 0.5.0 is a new try
+	if err := attempts.Record(dir, attempts.Attempt{ID: "start-0.5.0-1", At: time.Now().UTC().Add(-3 * time.Hour),
+		Source: attempts.SourceServer, From: "0.3.0", To: "0.5.0", Outcome: attempts.Running, Step: "migrate"}); err != nil {
+		t.Fatal(err)
+	}
+	newPayload(t, payload, "v0.5.0")
+	start()
+	got = attempts.Read(dir)
+	old := got[len(got)-1] // the oldest: it began three hours ago
+	if len(got) != 3 || got[0].To != "0.5.0" || got[0].Outcome != attempts.Installed || got[0].ID == "start-0.5.0-1" ||
+		old.ID != "start-0.5.0-1" || old.Outcome != attempts.Failed || old.Code != attempts.Interrupted {
+		t.Fatalf("an old start of the same release: %+v", got)
+	}
+}

@@ -1,6 +1,7 @@
 // Package logs implements the troubleshooting log-collection surface:
 //
 //	GET /api/admin/logs/stream   — admin: recent structured logs (JSON) for the live viewer
+//	GET /api/admin/logs/files    — admin: a machine's server.log, app.log, launcher.log over a window
 //	GET /api/admin/logs/export   — admin: full diagnostics bundle (.tar.gz or JSON)
 //	GET /api/diagnostics/export  — any authenticated user: reduced-scope bundle for support
 //
@@ -12,6 +13,8 @@
 //	pipeline-logs.jsonl  proxied from the pipeline's /logs/recent
 //	error-summary.json   deduplicated error counts (last N unique errors)
 //	health-check.json    current cross-service health snapshot
+//	files/*.log          admin: this machine's server.log, app.log, launcher.log over
+//	                     ?since/until (node-<id>/files/*.log: that machine's, ?node=)
 //
 // Admin export sees every line; the user-facing diagnostics export is
 // scoped to the requesting user's own log lines (plus un-attributed
@@ -75,6 +78,8 @@ type Handler struct {
 	// Client is the HTTP client used to proxy peer logs. nil uses a
 	// short-timeout default.
 	Client *http.Client
+	// FileSource reads a machine's own log files (files.go). nil: none are there.
+	FileSource FileSource
 }
 
 // Mount wires the routes. Admin routes are gated with RequireAdmin; the
@@ -82,6 +87,7 @@ type Handler struct {
 // security chain populates it) and self-scopes its contents.
 func (h *Handler) Mount(r chi.Router) {
 	r.With(authmw.RequireAdmin).Get("/api/admin/logs/stream", h.Stream)
+	r.With(authmw.RequireAdmin).Get("/api/admin/logs/files", h.Files)
 	r.With(authmw.RequireAdmin).Get("/api/admin/logs/export", h.AdminExport)
 	r.With(authmw.RequireAuth).Get("/api/diagnostics/export", h.UserExport)
 }
@@ -173,10 +179,19 @@ func (h *Handler) export(w http.ResponseWriter, r *http.Request, scopeUserID str
 	for svc, data := range peerLogs {
 		files[svc+"-logs.jsonl"] = data
 	}
-	// Admin export also includes active-job status; the user export
-	// omits it (cross-user data).
+	// Admin export also includes active-job status and the machine's own
+	// log files over the window (and a machine's, ?node=); the user export
+	// omits them (cross-user data).
 	if scopeUserID == "" {
 		files["jobs.json"] = mustJSON(h.activeJobs(ctx))
+		for k, v := range h.bundleFiles(ctx, "", "", r.URL.Query()) {
+			files[k] = v
+		}
+		if node := strings.TrimSpace(r.URL.Query().Get("node")); node != "" && nodeIDRe.MatchString(node) {
+			for k, v := range h.bundleFiles(ctx, node, "node-"+node+"/", r.URL.Query()) {
+				files[k] = v
+			}
+		}
 	}
 
 	if r.URL.Query().Get("format") == "json" {
@@ -394,9 +409,10 @@ func (h *Handler) writeJSONBundle(w http.ResponseWriter, r *http.Request, files 
 	out := map[string]json.RawMessage{}
 	for name, data := range files {
 		// .json files are embedded verbatim; .jsonl files are
-		// newline-delimited (not a single JSON value) so they are
-		// embedded as a JSON string to keep the envelope valid.
-		if strings.HasSuffix(name, ".jsonl") {
+		// newline-delimited (not a single JSON value), and the log files
+		// and notes are text, so they are embedded as a JSON string to
+		// keep the envelope valid.
+		if !strings.HasSuffix(name, ".json") {
 			out[name] = mustJSON(string(data))
 		} else {
 			out[name] = json.RawMessage(data)

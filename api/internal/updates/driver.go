@@ -889,6 +889,17 @@ type HomeDB struct {
 	Detail  string     `json:"detail,omitempty"`
 	At      *time.Time `json:"at,omitempty"`
 	Healing bool       `json:"healing,omitempty"`
+	// Fails is how many logins in a row failed on the machine
+	Fails int `json:"fails,omitempty"`
+}
+
+// shown is the machine's word as the page shows it: a failure only once the machine saw
+// it twice in a row (one try can meet a home in the middle of a switch), else nil.
+func (h *HomeDB) shown() *HomeDB {
+	if h == nil || (!h.OK && h.Fails < 2) {
+		return nil
+	}
+	return h
 }
 
 func (d *Driver) agentStates() (map[string]string, map[string]agentState) {
