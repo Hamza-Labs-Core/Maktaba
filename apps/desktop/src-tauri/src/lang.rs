@@ -180,8 +180,9 @@ pub struct Words {
     /// The sign-in task of the old shared name could not become this user's.
     #[cfg(windows)]
     pub task_move_failed: &'static str,
-    /// The server could not start when the window opened.
-    #[cfg(any(windows, target_os = "linux"))]
+    /// The server could not start when the window opened (macOS: its login item
+    /// could not be registered for this build).
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     pub server_start_failed: &'static str,
     /// Linux: the server could not be switched to this app's payload.
     #[cfg(target_os = "linux")]
@@ -280,7 +281,7 @@ pub static EN: Words = Words {
     open_failed: "Cannot open {url}.",
     #[cfg(windows)]
     task_move_failed: "Maktaba could not move its sign-in task to this user's name.",
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     server_start_failed: "The Maktaba server could not start.",
     #[cfg(target_os = "linux")]
     switch_failed: "Maktaba could not switch the server to this version.",
@@ -351,7 +352,7 @@ pub static AR: Words = Words {
     open_failed: "يتعذّر فتح {url}.",
     #[cfg(windows)]
     task_move_failed: "تعذّر على مكتبة نقل مهمة تسجيل الدخول إلى اسم هذا المستخدم.",
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     server_start_failed: "تعذّر تشغيل خادم مكتبة.",
     #[cfg(target_os = "linux")]
     switch_failed: "تعذّر على مكتبة نقل الخادم إلى هذا الإصدار.",
@@ -570,8 +571,8 @@ mod tests {
             ],
         ]
         .concat();
-        // the lines Windows and Linux read
-        #[cfg(any(windows, target_os = "linux"))]
+        // the lines Windows, Linux and macOS read
+        #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
         let out = [
             out,
             vec![("server_start_failed", Some(w.server_start_failed))],
