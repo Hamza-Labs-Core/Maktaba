@@ -76,9 +76,9 @@ func seed(t *testing.T, db *sql.DB, now time.Time) {
 	exec(`INSERT INTO app_settings VALUES ('rules.tv_cluster', '{"nodes_stream": true, "pins": {"two": ["pc"]}}', '')`)
 	exec(`INSERT INTO streaming_hosts (host_id, host, role, stream_base_url, enabled, encoders, max_active, load, can_push, can_live, version, heartbeat_at)
 		VALUES ('h', 'mac', 'home', 'http://10.0.0.1:8081', 1, '["videotoolbox","software"]', 16,
-		        '{"cpu":0.2,"protocol":1,"viewers":{"c1":{"hls":2,"tuners":1}},"no_room":{"channel_id":"c3","reason":"all_full","at":"`+ts(now)+`"}}',
+		        '{"cpu":0.2,"protocol":2,"viewers":{"c1":{"hls":2,"tuners":1}},"no_room":{"channel_id":"c3","reason":"all_full","at":"`+ts(now)+`"}}',
 		        '{"rtmps":true,"srt":false}', 1, 'v1', ?),
-		       ('n', 'pc', 'node', 'http://10.0.0.2:8081', 1, '["nvenc","software"]', 3, '{"protocol":1}', '{}', 0, 'v1', ?),
+		       ('n', 'pc', 'node', 'http://10.0.0.2:8081', 1, '["nvenc","software"]', 3, '{"protocol":2}', '{}', 0, 'v1', ?),
 		       ('old', 'laptop', 'node', '', 0, '[]', 8, '{}', '{}', 0, 'v1', ?)`,
 		ts(now.Add(-2*time.Second)), ts(now.Add(-3*time.Second)), ts(now.Add(-time.Hour)))
 	exec(`INSERT INTO channel_placements VALUES ('c1', 'h', 7, 'live', 'first_request', ?, ?, NULL),
