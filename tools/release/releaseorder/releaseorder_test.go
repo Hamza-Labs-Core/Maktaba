@@ -64,3 +64,29 @@ func TestLatest(t *testing.T) {
 		}
 	}
 }
+
+// The guard's whole answer: a re-run of a published tag is published (nothing signed is
+// built again), the newest release other than the tag is named (its commit must be in the
+// tag's history), and only the highest stable is the latest (a maintenance release never).
+func TestLocate(t *testing.T) {
+	for _, c := range []struct {
+		tag, allow string
+		want       Place
+	}{
+		{tag: "v0.3.2", want: Place{Newest: "v0.3.1", Latest: true}},
+		{tag: "v0.4.0-rc.1", want: Place{Newest: "v0.3.1"}},
+		{tag: "v0.3.1", want: Place{Published: true, Newest: "v0.3.0", Latest: true}},
+		{tag: "v0.2.5", allow: "v0.2.5", want: Place{Maintenance: true, Newest: "v0.3.1"}},
+	} {
+		got, err := Locate(c.tag, published, c.allow)
+		if err != nil || got != c.want {
+			t.Errorf("Locate(%s, allow %q) = %+v, %v; want %+v", c.tag, c.allow, got, err, c.want)
+		}
+	}
+	if _, err := Locate("v0.3.0-rc.7", published, ""); err == nil {
+		t.Fatal("refused as Guard refuses it")
+	}
+	if p, err := Locate("v0.1.0", nil, ""); err != nil || p.Newest != "" || !p.Latest {
+		t.Fatalf("the first release: %+v %v", p, err)
+	}
+}

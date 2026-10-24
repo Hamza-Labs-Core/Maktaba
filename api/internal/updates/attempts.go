@@ -139,7 +139,9 @@ func mergeAttempts(own []Attempt, runs ...Attempt) []Attempt {
 const maxDetail = 2048
 
 // urlQueryRe is a URL's query: a signed download's redirect carries its signature there.
-var urlQueryRe = regexp.MustCompile(`(https?://[^\s?#"'<>]+)\?[^\s#"'<>]*`)
+// The query ends before the punctuation that follows the URL in a sentence (a "):" or a
+// full stop), which stays.
+var urlQueryRe = regexp.MustCompile(`(https?://[^\s?#"'<>]+)\?(?:[^\s#"'<>()]*[^\s#"'<>().,:;])?`)
 
 // cleanDetail is a detail without URLs' queries, at most maxDetail bytes (cut on a
 // character, with an ellipsis), as the machines record it (a machine of an older build

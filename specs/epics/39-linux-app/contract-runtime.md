@@ -102,8 +102,10 @@ the new version. Then the supervisor's next start runs [36.8's contract](../36-m
   uses it.
 - **Updates** follow the runtime's owner, read from `owner.json` at every server start (a change
   applies at the next one). The launcher sets `MAKTABA_RUNTIME_OWNER` for the server and every role.
-  - `owner: app`: also `MAKTABA_UPDATE_DISABLE=1` (one updater, the app's). `maktaba-server update`
-    refuses and says the app updates it.
+  - `owner: app`: the server takes part in the cluster's automatic updates like any machine (Epic
+    35: the home orders the release, the server installs the payload as a new runtime after the
+    click in the app); the launcher no longer sets `MAKTABA_UPDATE_DISABLE`. `maktaba-server
+    update` by hand still refuses and says the app updates it.
   - `owner: headless`: no `MAKTABA_UPDATE_DISABLE`, so the API's update check runs. `maktaba-server
     update` verifies the release (Epic 35: the Sigstore bundle over `checksums.txt` from the release
     workflow of that tag, Rekor, `release.json`), downloads `maktaba-linux-payload-<v>-<arch>.tar.gz`

@@ -98,9 +98,14 @@ jobs:
     with:
       create_draft: true
 
+  # A re-run of a published tag (the guard's published) builds, pushes and signs nothing:
+  # its signed files and its images stay as they were published (a re-run moved the images'
+  # tags, :latest among them, before its upload was refused). Only a draft is rebuilt. Every
+  # job below needs build-artifacts, package-node or package-linux-payload, so all skip.
   build-artifacts:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }})
     needs: [guard]
+    if: needs.guard.outputs.published != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -285,7 +290,7 @@ jobs:
 
   build-images:
     name: image (${{ matrix.svc }})
-    needs: [build-artifacts]
+    needs: [guard, build-artifacts]
     runs-on: ubuntu-22.04
     # Multi-arch raises the ceiling: the Go images cross-compile via
     # TARGETARCH (cheap), but the web (node) and pipeline (python) images
@@ -332,18 +337,20 @@ jobs:
         id: sde
         run: echo "epoch=$(git log -1 --pretty=%ct)" >> "$GITHUB_OUTPUT"
 
-      # `:latest` moves only with a plain vX.Y.Z, as the GitHub release's
-      # latest does; a tag with a suffix (v0.3.0-rc.1) is pushed as itself.
+      # `:latest` moves only with the tag the guard says is the latest (the highest stable
+      # version, as GitHub's latest release: releaseorder.Latest); a pre-release
+      # (v0.3.0-rc.1) or a maintenance release of an older line is pushed as itself.
       - name: Image tags
         id: tags
         env:
           IMAGE: ${{ env.REGISTRY }}/maktaba-${{ matrix.svc }}
           TAG: ${{ github.ref_name }}
+          LATEST: ${{ needs.guard.outputs.latest }}
         run: |
           {
             echo "list<<EOF"
             echo "${IMAGE}:${TAG}"
-            case "${TAG}" in *-*) ;; *) echo "${IMAGE}:latest" ;; esac
+            if [ "${LATEST}" = true ]; then echo "${IMAGE}:latest"; fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -557,6 +564,7 @@ jobs:
   package-node:
     name: package node (wheel + installer)
     needs: [guard]
+    if: needs.guard.outputs.published != 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
@@ -592,6 +600,7 @@ jobs:
   package-linux-payload:
     name: package Linux payload (${{ matrix.arch }})
     needs: [guard]
+    if: needs.guard.outputs.published != 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:

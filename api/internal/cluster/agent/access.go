@@ -40,35 +40,45 @@ type homeDBState struct {
 	Fails int `json:"fails"`
 	// Target is where it logs in: host:port/database
 	Target string `json:"target"`
+	// HomeHost is the host the machine reaches this home's API at (where an access with no
+	// database host points it)
+	HomeHost string `json:"home_host"`
 }
 
 // remakeWhy is why a machine's re-made access would mend its failed login ("": it would
-// not): a refused password or a role the database does not know (auth_failed); a database
-// it cannot reach, or that refuses its address, only when it logs in somewhere else than
-// the access this home hands out (the database moved: another port, another database).
-// TLS and anything else are not the access's to mend.
+// not): a refused password or a role the database does not know (auth_failed); any other
+// failure only when the machine logs in somewhere else than the access this home hands out
+// (the database moved: another port, database or host, whatever the old address does now:
+// refuse, close the connection, fail TLS). At the right address, nothing else is the
+// access's to mend (TLS, a busy or starting database, an operator's pg_hba).
 func remakeWhy(db homeDBState, host string, port int, name string) string {
-	switch db.Code {
-	case "auth_failed":
+	if db.Code == "auth_failed" {
 		return db.Code
-	case "refused", "unreachable", "no_database", "no_hba":
-		if moved(db.Target, host, port, name) {
-			return db.Code + "_moved"
+	}
+	if moved(db.Target, host, port, name, db.HomeHost) {
+		if db.Code == "" {
+			return "moved"
 		}
+		return db.Code + "_moved"
 	}
 	return ""
 }
 
 // moved reports whether a machine's target (host:port/database) is not the access this
-// home hands out: its port or database differs, or its host when the home names one.
-func moved(target, host string, port int, name string) bool {
+// home hands out: its port or database differs, or its host: the one the home names, else
+// the one the machine reaches the home's API at (homeHost, when it says).
+func moved(target, host string, port int, name, homeHost string) bool {
 	addr, db, _ := strings.Cut(target, "/")
 	h, p, err := net.SplitHostPort(addr)
 	if target == "" || err != nil {
 		return false // a machine that does not say where it logs in: not this check's
 	}
 	n, _ := strconv.Atoi(p)
-	return n != port || (name != "" && db != name) || (host != "" && !strings.EqualFold(h, host))
+	want := host
+	if want == "" {
+		want = homeHost
+	}
+	return n != port || (name != "" && db != name) || (want != "" && !strings.EqualFold(h, want))
 }
 
 // confirmFails is how many failed logins in a row make a machine's failure one the home

@@ -400,14 +400,23 @@ pub fn write_state(path: &Path, req: &Request, state: &str, error: &str) -> std:
 
 /// The error an ordered install answers with (the order's `error`): its code first, then
 /// what happened (`needs_admin: …`), as the server reads it (updater/request.go appFailure:
-/// needs_admin, app_management, translocated, not_writable and local_build are a machine
-/// that needs a person, not a failure of the release).
+/// needs_admin, app_management, translocated, not_writable, local_build and
+/// login_item_unsigned are a machine that needs a person, not a failure of the release).
+/// A code whose mending is a command (login_item_unsigned's codesign) carries it.
 pub fn order_error(code: &str, detail: &str) -> String {
-    if code.is_empty() || detail.starts_with(&format!("{code}:")) {
+    let mut out = if code.is_empty() || detail.starts_with(&format!("{code}:")) {
         detail.to_string()
     } else {
         format!("{code}: {detail}")
+    };
+    if code == crate::attempts::LOGIN_ITEM_UNSIGNED {
+        let fix = crate::attempts::fix_for(code);
+        if !fix.is_empty() && !out.contains(&fix) {
+            out.push_str("; to mend it: ");
+            out.push_str(&fix);
+        }
     }
+    out
 }
 
 /// The code an ordered install's error starts with when this app cannot be replaced
@@ -633,6 +642,25 @@ mod tests {
             "needs_admin: /Applications"
         );
         assert_eq!(order_error("", "x"), "x");
+        // the server reads login_item_unsigned as a machine that needs a person: the
+        // order says what mends it
+        let unsigned = order_error(
+            crate::attempts::LOGIN_ITEM_UNSIGNED,
+            "after the update to 0.3.2, macOS would not register the server's login item",
+        );
+        assert!(
+            unsigned.starts_with("login_item_unsigned: after the update to 0.3.2")
+                && unsigned.contains("codesign --force --deep -s -"),
+            "{unsigned}"
+        );
+        let said = order_error(
+            crate::attempts::LOGIN_ITEM_UNSIGNED,
+            &format!(
+                "login_item_unsigned: not signed: {}",
+                crate::attempts::fix_for("login_item_unsigned")
+            ),
+        );
+        assert_eq!(said.matches("codesign").count(), 1, "{said}");
     }
 
     #[test]

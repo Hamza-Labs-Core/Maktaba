@@ -264,6 +264,12 @@ func (ai *AppInstaller) Stage(ctx context.Context, j *Journal, log io.Writer) er
 	if err := checkNotBack(ai.updatesDir(), ai.Running(), res); err != nil {
 		return err
 	}
+	// a release whose bundled Postgres would not open this machine's database is refused
+	// before the app is asked to install it (its signed release.json says; one that does
+	// not leaves it to the start's database step, which halts)
+	if err := appPGMajorChange(payloadAt(ai.Payload), res, j.Job.Version); err != nil {
+		return err
+	}
 	j.Signed = signedOf(res)
 	kept, err := ai.keep(ai.Running(), log)
 	if err != nil {

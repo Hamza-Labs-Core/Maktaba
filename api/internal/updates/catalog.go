@@ -11,6 +11,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -189,6 +191,38 @@ func (d *Discoverer) base() string {
 	return b
 }
 
+// pinnedAssets are r's assets whose download is the pinned repository's own: GitHub's
+// /<repo>/releases/download/<tag>/<name> on github.com (or the host of the GitHub this
+// home asks, an Enterprise one or a test's), or its API's asset URL. Any other is dropped
+// (logged): a release's listing names no file elsewhere, and a machine downloads only
+// what the catalog keeps.
+func (d *Discoverer) pinnedAssets(r Release) []Asset {
+	apiHost := ""
+	if u, err := url.Parse(d.base()); err == nil {
+		apiHost = strings.ToLower(u.Host)
+	}
+	repo := strings.ToLower(d.repo())
+	var out []Asset
+	for _, a := range r.Assets {
+		u, err := url.Parse(a.URL)
+		ok := err == nil && (u.Scheme == "https" || (u.Scheme == "http" && strings.ToLower(u.Host) == apiHost))
+		if ok {
+			host, p := strings.ToLower(u.Host), strings.ToLower(u.EscapedPath())
+			// no dot segments: the path is the repository's as written, not one that climbs out
+			ok = path.Clean(p) == p
+			ok = ok && (((host == "github.com" || host == apiHost) && strings.HasPrefix(p, "/"+repo+"/releases/download/")) ||
+				(host == apiHost && strings.HasPrefix(p, "/repos/"+repo+"/releases/assets/")))
+		}
+		if !ok {
+			d.log().Warn("updates: a release asset outside the pinned repository is ignored", "tag", r.Tag,
+				"asset", a.Name, "url", a.URL, "repo", d.repo(), "event", "update_asset_foreign")
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
 func (d *Discoverer) repo() string {
 	if r := strings.TrimSpace(d.Repo); r != "" {
 		return r
@@ -256,6 +290,7 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 		if floor != "" && CompareVersions(r.Version, floor) < 0 {
 			continue
 		}
+		r.Assets = d.pinnedAssets(r)
 		res.Seen++
 		created, err := d.Store.Seen(ctx, r)
 		if err != nil {

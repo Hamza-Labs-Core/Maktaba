@@ -213,11 +213,14 @@ func (b Bundle) serverArgs(lan bool) []string {
 	}
 	// wal_level=logical: a home publishes its database to its machines' copies, and a
 	// machine's copy may become the home (specs/epics/37-node-replica). Room for every
-	// machine's slot and sender, the first copy's tables in parallel on each side.
+	// machine's slot and sender, the first copy's tables in parallel on each side. Its log
+	// lines' times are UTC (log_timezone), as every other line of server.log: the logs page
+	// puts them in one window.
 	args := []string{"-D", b.Data, "-p", strconv.Itoa(b.Port),
 		"-c", "listen_addresses=" + listen, "-c", "unix_socket_directories=" + sock, "-c", "wal_level=logical",
 		"-c", "max_replication_slots=40", "-c", "max_wal_senders=40", "-c", "max_worker_processes=24",
-		"-c", "max_logical_replication_workers=12", "-c", "max_sync_workers_per_subscription=8"}
+		"-c", "max_logical_replication_workers=12", "-c", "max_sync_workers_per_subscription=8",
+		"-c", "log_timezone=UTC"}
 	if b.TLS && b.TLSReady() {
 		args = append(args, "-c", "ssl=on", "-c", "ssl_cert_file="+b.serverCert(), "-c", "ssl_key_file="+b.serverKey())
 	}

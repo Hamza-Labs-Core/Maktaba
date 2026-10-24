@@ -5,8 +5,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appruntime"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
@@ -36,6 +40,10 @@ type RuntimeInstaller struct {
 	Open       func(ctx context.Context, url string) error
 	NudgeAfter time.Duration
 	Now        func() time.Time
+	// StopPython stops this machine's Python processes (the pipeline) before `current`
+	// moves to a runtime of another Python minor: they would load the new runtime's files
+	// by path while they drain (nil: nothing stopped).
+	StopPython func(ctx context.Context) error
 
 	nudge nudger
 }
@@ -150,6 +158,12 @@ func (ri *RuntimeInstaller) Stage(ctx context.Context, j *Journal, _ io.Writer) 
 	if layout.CompareVersions(p.Version, j.Job.Version) != 0 {
 		return Fail("version_mismatch", "%s holds the payload of %s, not of %s", asset, p.Version, j.Job.Version)
 	}
+	// a release whose Postgres is another major than the one this machine's database was
+	// made by needs an upgrade between the two, which no update does: refused before it is
+	// installed (a person's: the release never starts on the old data directory)
+	if err := pgMajorChange(ri.payloadOf(""), payloadAt(payload), j.Job.Version); err != nil {
+		return err
+	}
 	j.LauncherProtocol = res.Manifest.LauncherProtocol // the new runtime brings its launcher
 	r, err := ri.Runtime.Install(ctx, payload, nil, appruntime.Options{})
 	if err != nil {
@@ -181,8 +195,85 @@ func (ri *RuntimeInstaller) Tools(j *Journal) (string, string) {
 	return filepath.Join(dir, "bin", layout.Exe("maktaba-api")), mig
 }
 
+// payloadOf is the payload.json of the runtime directory name ("": current); empty when
+// it cannot be read.
+func (ri *RuntimeInstaller) payloadOf(name string) apppayload.Payload {
+	if name == "" {
+		name, _ = ri.Runtime.Current()
+	}
+	if name == "" {
+		return apppayload.Payload{}
+	}
+	return payloadAt(filepath.Join(ri.Runtime.Root, filepath.Base(name)))
+}
+
+// payloadAt is dir's payload.json (empty when it cannot be read).
+func payloadAt(dir string) apppayload.Payload {
+	p, _ := apppayload.Read(filepath.Join(dir, "payload.json"))
+	return p
+}
+
+// pgMajorChange refuses a release whose bundled Postgres is another major than the
+// running payload's (pg_major_change, a person's): its data directory would not open,
+// and no update upgrades it yet. Unknown majors decide nothing.
+func pgMajorChange(have, want apppayload.Payload, version string) error {
+	h, w := have.PostgresMajor(), want.PostgresMajor()
+	if h == "" || w == "" || h == w {
+		return nil
+	}
+	return Fail("pg_major_change", "%s carries PostgreSQL %s and this machine's database was made by PostgreSQL %s: "+
+		"the database needs an upgrade between the two, which no update does yet", version, w, h)
+}
+
+// appPayloadKind is this machine's app payload as release.json names it.
+func appPayloadKind() string {
+	switch goruntime.GOOS {
+	case "darwin":
+		return "mac-app"
+	case "windows":
+		return "win-app"
+	}
+	return "linux-app"
+}
+
+// appPGMajorChange is pgMajorChange for an app bundle, before the app installs it: the
+// running payload's Postgres against the one the release's signed release.json says this
+// platform's app bundles (pg_major_change, a person's). A release that does not say, or a
+// payload that does not, decides nothing (the start's database step still halts).
+func appPGMajorChange(have apppayload.Payload, res *releaseverify.Result, version string) error {
+	if res == nil {
+		return nil
+	}
+	want := res.Manifest.PostgresMajor(appPayloadKind())
+	if want == 0 {
+		return nil
+	}
+	var p apppayload.Payload
+	p.Postgres.Version = strconv.Itoa(want)
+	return pgMajorChange(have, p, version)
+}
+
+// pythonMinor is "3.12" of "3.12.7" ("" when not known).
+func pythonMinor(v string) string {
+	parts := strings.SplitN(strings.TrimSpace(v), ".", 3)
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[0] + "." + parts[1]
+}
+
 // Switch implements Installer: the launcher's guard, then `current` to the new runtime.
+// When the new runtime's Python is another minor, the Python processes stop first (they
+// would load the new runtime's files by path while they drain).
 func (ri *RuntimeInstaller) Switch(ctx context.Context, j *Journal) error {
+	if ri.StopPython != nil {
+		have, want := pythonMinor(ri.payloadOf(j.FromRef).Python.Version), pythonMinor(ri.payloadOf(j.Staged).Python.Version)
+		if have != "" && want != "" && have != want {
+			if err := ri.StopPython(ctx); err != nil {
+				return Fail("switch_failed", "stopping the pipeline before its Python changes (%s to %s): %v", have, want, err)
+			}
+		}
+	}
 	if err := layout.WriteGuard(ri.LauncherRoot, layout.Guard{Version: layout.NormalizeVersion(j.Job.Version),
 		RunID: j.Job.RunID, Since: ri.now().UTC(), Deadline: guardDeadline(ri.now(), j).UTC(),
 		PreviousRuntime: j.FromRef, Record: ri.Record}); err != nil {

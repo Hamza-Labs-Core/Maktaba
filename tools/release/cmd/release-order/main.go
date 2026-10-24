@@ -2,7 +2,8 @@
 // releaseorder), for the release workflows. The published tags come on stdin, one per
 // line (`gh release list --exclude-drafts --json tagName --jq '.[].tagName'`).
 //
-//	release-order guard    --tag vX.Y.Z [--allow vA.B.C]   exit 1 (with why) when refused; prints maintenance=true|false
+//	release-order guard    --tag vX.Y.Z [--allow vA.B.C]   exit 1 (with why) when refused; prints maintenance=,
+//	                                                        published=, latest= (true|false) and newest= (a tag)
 //	release-order previous --tag vX.Y.Z                     prints the previous release's tag (or nothing)
 //	release-order latest   --tag vX.Y.Z                     prints true|false
 package main
@@ -47,12 +48,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	switch args[0] {
 	case "guard":
-		maint, err := releaseorder.Guard(*tag, published, *allow)
+		p, err := releaseorder.Locate(*tag, published, *allow)
 		if err != nil {
 			_, _ = fmt.Fprintln(stderr, "release-order: refused:", err)
 			return 1
 		}
-		_, _ = fmt.Fprintf(stdout, "maintenance=%v\n", maint)
+		_, _ = fmt.Fprintf(stdout, "maintenance=%v\npublished=%v\nlatest=%v\nnewest=%s\n", p.Maintenance, p.Published,
+			p.Latest, p.Newest)
 	case "previous":
 		_, _ = fmt.Fprintln(stdout, releaseorder.Previous(*tag, published))
 	case "latest":

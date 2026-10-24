@@ -74,6 +74,15 @@ func (c hubCluster) MachineStates() map[string]json.RawMessage {
 	return map[string]json.RawMessage{}
 }
 
+// NodeHosts implements the updates driver's nodeHoster: the hosts a machine's sessions
+// report, to find its running jobs.
+func (c hubCluster) NodeHosts() map[string][]string {
+	if h := c.hub(); h != nil {
+		return h.NodeHosts()
+	}
+	return map[string][]string{}
+}
+
 func (c hubCluster) HomeProcesses() []string {
 	if h := c.hub(); h != nil {
 		return h.HomeProcesses()

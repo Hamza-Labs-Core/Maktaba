@@ -667,6 +667,20 @@ describe("Admin Updates: the last update attempt", () => {
     expect(screen.queryByTestId("updates-machine-home-attempt-fix")).toBeNull();
   });
 
+  it("a failure at the release it runs, after it ran (the pipeline's environment), still holds", async () => {
+    const ov = withAttempts([
+      attempt({ source: "server", trigger: "start", step: "venv", code: "venv_failed" }),
+    ]);
+    ov.machines = (ov.machines as Record<string, unknown>[]).map((m) =>
+      m.id === "home" ? { ...m, version: "1.5.0" } : m
+    );
+    routes(ov, null);
+    renderPage();
+    const headline = await screen.findByTestId("updates-machine-home-attempt-headline");
+    expect(headline).toHaveClass("mkt-error");
+    expect(screen.queryByTestId("updates-machine-home-attempt-superseded")).toBeNull();
+  });
+
   it("a desktop app's server halted on the release it could not start says it stays stopped", async () => {
     const ov = withAttempts([
       attempt({

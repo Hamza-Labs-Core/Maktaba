@@ -210,7 +210,12 @@ func (s *Store) Seen(ctx context.Context, r Release) (bool, error) {
 
 // SetVerified stores a verified manifest.
 func (s *Store) SetVerified(ctx context.Context, version string, v Verified) error {
-	man, _ := json.Marshal(v.Manifest)
+	m := v.Manifest
+	m.SignedAt = v.SignedAt // the verified signing time, never one release.json names
+	if !m.SignedAt.IsZero() {
+		m.SignedAt = m.SignedAt.UTC()
+	}
+	man, _ := json.Marshal(m)
 	_, err := s.DB.ExecContext(ctx, `UPDATE release_catalog SET verify_state = 'verified', verify_error = NULL,
 		manifest = $2, checksums_sha256 = $3, verified_at = $4 WHERE version = $1`,
 		version, string(man), v.ChecksumsSHA256, s.ts(s.now()))
@@ -303,6 +308,8 @@ type Run struct {
 	FinishedAt  *time.Time      `json:"finished_at,omitempty"`
 	Error       json.RawMessage `json:"error,omitempty"`
 	ActorUserID string          `json:"actor_user_id,omitempty"`
+	// Backup is the dump the home's update took before its migrations: {path, bytes}
+	Backup json.RawMessage `json:"backup,omitempty"`
 }
 
 // Triggers.
@@ -364,15 +371,18 @@ func (s *Store) FinishRun(ctx context.Context, id, state string, errDoc map[stri
 	return err
 }
 
-const runCols = `id, version, from_version, trigger, state, step, started_at, finished_at, error, COALESCE(actor_user_id, '')`
+const runCols = `id, version, from_version, trigger, state, step, started_at, finished_at, error, COALESCE(actor_user_id, ''), backup`
 
 func scanRun(sc interface{ Scan(...any) error }) (Run, error) {
 	var r Run
 	var started, fin nullTime
-	var e nullJSON
+	var e, backup nullJSON
 	if err := sc.Scan(&r.ID, &r.Version, &r.FromVersion, &r.Trigger, &r.State, &r.Step, &started, &fin, &e,
-		&r.ActorUserID); err != nil {
+		&r.ActorUserID, &backup); err != nil {
 		return r, err
+	}
+	if len(backup.b) > 0 {
+		r.Backup = json.RawMessage(backup.b)
 	}
 	if started.t != nil {
 		r.StartedAt = *started.t

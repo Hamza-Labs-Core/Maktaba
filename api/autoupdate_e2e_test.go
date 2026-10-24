@@ -138,8 +138,8 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 				}
 			}
 			http.NotFound(w, r)
-		case strings.HasPrefix(p, "/dl/"):
-			b, ok := g.files[strings.TrimPrefix(p, "/dl/")]
+		case strings.HasPrefix(p, "/"+updateRepo+"/releases/download/"):
+			b, ok := g.files[strings.TrimPrefix(p, "/"+updateRepo+"/releases/download/")]
 			if !ok {
 				http.NotFound(w, r)
 				return
@@ -159,7 +159,7 @@ func (g *fakeGitHub) publish(r *releaseverifytest.FakeRelease) {
 	var assets []map[string]any
 	for n, b := range r.Files {
 		g.files[r.Tag+"/"+n] = b
-		assets = append(assets, map[string]any{"name": n, "browser_download_url": g.srv.URL + "/dl/" + r.Tag + "/" + n,
+		assets = append(assets, map[string]any{"name": n, "browser_download_url": g.srv.URL + "/" + updateRepo + "/releases/download/" + r.Tag + "/" + n,
 			"size": len(b)})
 	}
 	g.releases = append([]map[string]any{{"tag_name": r.Tag, "html_url": "https://github.test/" + r.Tag,

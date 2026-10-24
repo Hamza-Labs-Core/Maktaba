@@ -62,9 +62,51 @@ const envAppBundled = "MAKTABA_APP_BUNDLED"
 // updates is serve's update machinery.
 type updates struct {
 	m *updater.Machine
-	// health's view of this machine, set once the supervisor exists
+	// health's view of this machine, and its processes' stop, set once the supervisor
+	// exists
 	mu   sync.Mutex
 	snap func() supervisor.Snapshot
+	want func(role supervisor.Role, instance string, on bool) error
+}
+
+// pythonStopWait is how long stopPython waits for the pipeline's processes to be gone.
+var pythonStopWait = time.Minute
+
+// stopPython stops every pipeline process (the Python ones) and waits for them to be gone
+// (pythonStopWait at most): a runtime of another Python minor takes their place
+// (updater.RuntimeInstaller.StopPython). Nothing to stop before the supervisor exists.
+func (u *updates) stopPython(ctx context.Context) error {
+	u.mu.Lock()
+	snap, want := u.snap, u.want
+	u.mu.Unlock()
+	if snap == nil || want == nil {
+		return nil
+	}
+	for _, p := range snap().Processes {
+		if p.Role == supervisor.RolePipeline {
+			if err := want(p.Role, p.Instance, false); err != nil {
+				return err
+			}
+		}
+	}
+	deadline := time.Now().Add(pythonStopWait)
+	for {
+		running := false
+		for _, p := range snap().Processes {
+			running = running || (p.Role == supervisor.RolePipeline && p.PID != 0)
+		}
+		if !running {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the pipeline still runs after %s", pythonStopWait)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 }
 
 // installKind picks this server's installer (install-kinds.md): the desktop app's
@@ -222,6 +264,23 @@ func (r rehearser) DumpAside(ctx context.Context, label string) (string, error) 
 	return p, r.t.Dump(ctx, p)
 }
 
+// UpdateDump is the dump a release's start took before its migrations
+// (backups/pre-<from>-to-<to>.dump, the versions as the start named them: with or without
+// their v), the newest when several match (updater.BackupFinder).
+func (r rehearser) UpdateDump(from, to string) *updater.Backup {
+	var best *updater.Backup
+	var at time.Time
+	for _, f := range []string{from, "v" + strings.TrimPrefix(from, "v"), strings.TrimPrefix(from, "v")} {
+		for _, t := range []string{to, "v" + strings.TrimPrefix(to, "v"), strings.TrimPrefix(to, "v")} {
+			p := filepath.Join(r.t.Backups, pgbundle.UpdateDumpName(f, t))
+			if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && (best == nil || st.ModTime().After(at)) {
+				best, at = &updater.Backup{Path: p, Bytes: st.Size()}, st.ModTime()
+			}
+		}
+	}
+	return best
+}
+
 // PruneBackups keeps rules.updates.backups_keep dumps of each kind once an update
 // committed, and records it for the dump pruning at the next start (updater.BackupPruner).
 func (r rehearser) PruneBackups(keep int) error {
@@ -262,6 +321,9 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	src := updateSource(cfg)
 	inst, dir := installKind(cfg, releaseDir, home, src)
 	u := &updates{}
+	if ri, ok := inst.(*updater.RuntimeInstaller); ok {
+		ri.StopPython = u.stopPython // a runtime of another Python minor: the pipeline stops first
+	}
 	m := &updater.Machine{Dir: dir, Installer: inst, Exit: exit, Log: os.Stderr}
 	if home {
 		m.Records = recordFile(apppayload.DatabasePath(cfg.StateDir()))
@@ -296,7 +358,7 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 
 func (u *updates) setSupervisor(sup *supervisor.Supervisor) {
 	u.mu.Lock()
-	u.snap = sup.Snapshot
+	u.snap, u.want = sup.Snapshot, sup.Want
 	u.mu.Unlock()
 }
 

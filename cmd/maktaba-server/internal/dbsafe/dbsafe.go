@@ -538,33 +538,55 @@ var havePSQL = func(psql string) bool {
 }
 
 // restoreAtomic makes the public schema afresh and restores the dump in it in one
-// transaction: pg_restore writes the dump's script (no publications, no owners), and
-// psql runs it after the schema's drop and creation with --single-transaction, stopping
-// at the first error (the transaction rolls back: the database stays as it was).
+// transaction: pg_restore's script (no publications, no owners) streams into psql, which
+// runs it after the schema's drop and creation with --single-transaction, stopping at the
+// first error (the transaction rolls back: the database stays as it was). Nothing is
+// written to disk (a plain script is several times the dump's size, which the space check
+// does not count). psql commits only at the end of its input: its input is closed once
+// pg_restore wrote the whole script; a pg_restore that fails part way (a cut dump) ends
+// psql before that, so the server rolls the transaction back.
 func (t Target) restoreAtomic(ctx context.Context, dump string, log io.Writer) error {
-	tmp, err := os.MkdirTemp(filepath.Dir(dump), ".restore-")
+	gen := exec.CommandContext(ctx, t.bin("pg_restore"), "--no-owner", "--no-publications", "--file=-", dump)
+	script, err := gen.StdoutPipe()
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.RemoveAll(tmp) }()
-	script := filepath.Join(tmp, "restore.sql")
-	gen := exec.CommandContext(ctx, t.bin("pg_restore"), "--no-owner", "--no-publications", "--file="+script, dump)
-	if out, err := gen.CombinedOutput(); err != nil {
-		return fmt.Errorf("pg_restore %s: %v: %s", dump, err, tail(out))
-	}
-	prelude := filepath.Join(tmp, "prelude.sql")
-	if err := os.WriteFile(prelude, []byte("DROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n"), 0o600); err != nil {
+	var genErr bytes.Buffer
+	gen.Stderr = &genErr
+	pctx, kill := context.WithCancel(ctx)
+	defer kill()
+	cmd, err := t.command(pctx, "psql", "", "--no-psqlrc", "--quiet", "--set=ON_ERROR_STOP=1", "--single-transaction",
+		"--command=DROP SCHEMA public CASCADE; CREATE SCHEMA public;", "--file=-")
+	if err != nil {
 		return err
 	}
-	cmd, err := t.command(ctx, "psql", "", "--no-psqlrc", "--quiet", "--set=ON_ERROR_STOP=1", "--single-transaction",
-		"--file="+prelude, "--file="+script)
+	in, err := cmd.StdinPipe()
 	if err != nil {
 		return err
 	}
 	var out bytes.Buffer
 	cmd.Stdout = io.MultiWriter(&out, orDiscard(log))
 	cmd.Stderr = cmd.Stdout
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("psql: %w", err)
+	}
+	if err := gen.Start(); err != nil {
+		kill()
+		_ = cmd.Wait()
+		return fmt.Errorf("pg_restore: %w", err)
+	}
+	_, copyErr := io.Copy(in, script)
+	if err := gen.Wait(); err != nil || copyErr != nil {
+		// the script is not whole: psql ends before its input does, with no commit
+		kill()
+		_ = cmd.Wait()
+		if err == nil {
+			err = copyErr
+		}
+		return fmt.Errorf("pg_restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(genErr.Bytes()))
+	}
+	_ = in.Close() // the whole script: psql commits at its end
+	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(out.Bytes()))
 	}
 	return nil

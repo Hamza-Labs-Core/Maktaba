@@ -79,7 +79,7 @@ func TestCleanAndConcurrentRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := Read(dir)[0].Detail
-	if strings.Contains(got, "Signature") || strings.Contains(got, "sig=") || !strings.Contains(got, "https://objects.githubusercontent.com/x/y.tar.gz 403") ||
+	if strings.Contains(got, "Signature") || strings.Contains(got, "sig=") || !strings.Contains(got, "https://objects.githubusercontent.com/x/y.tar.gz: 403") ||
 		len(got) > MaxDetail || !strings.HasSuffix(got, "…") {
 		t.Fatalf("the detail: %d %q", len(got), got[:120])
 	}
@@ -112,5 +112,19 @@ func TestCleanAndConcurrentRecords(t *testing.T) {
 	}
 	if n, _ := SettleStale(dir, "0.3.2"); n != 0 {
 		t.Fatalf("settled twice: %d", n)
+	}
+}
+
+// A URL's query goes, the punctuation around it stays.
+func TestCleanKeepsPunctuation(t *testing.T) {
+	for in, want := range map[string]string{
+		"GET https://x/a.tar.gz?sig=s3cret): 403":            "GET https://x/a.tar.gz): 403",
+		"(see https://x/p?token=t.)":                         "(see https://x/p.)",
+		"fetching https://x/a?X-Amz-Signature=abc&s=1, then": "fetching https://x/a, then",
+		"https://x/plain: no query":                          "https://x/plain: no query",
+	} {
+		if got := Clean(in); got != want {
+			t.Errorf("%q -> %q, want %q", in, got, want)
+		}
 	}
 }

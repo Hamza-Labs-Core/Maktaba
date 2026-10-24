@@ -456,6 +456,8 @@ pub fn failure_in_log(tail: &str) -> Option<String> {
             }
             continue;
         }
+        // maktaba-server stamps its own lines ("<RFC 3339 time> [serve] …", "… Error: …")
+        let line = untimed(line);
         if line.starts_with("[serve] supervisor state on") {
             break;
         }
@@ -479,6 +481,16 @@ pub fn failure_in_log(tail: &str) -> Option<String> {
         }
     }
     exited.map(|e| cut(&e))
+}
+
+/// A server.log line without its leading time: maktaba-server starts its own lines with one
+/// ("2026-10-24T19:03:27.208Z [serve] …", "… [update] …", "… Error: …"); a line without
+/// one (an older server, a role's JSON, the launcher's) is as it is.
+fn untimed(line: &str) -> &str {
+    match line.split_once(' ') {
+        Some((at, rest)) if crate::attempts::parse_rfc3339(at).is_some() => rest.trim_start(),
+        _ => line,
+    }
 }
 
 /// A launcher event line's reason when it could not start the server
@@ -797,6 +809,29 @@ mod tests {
         let served = "Error: an old problem\n[serve] supervisor state on http://127.0.0.1:9103/processes\nsome role's line";
         assert_eq!(failure_in_log(served), None);
         assert_eq!(failure_in_log(""), None);
+        // maktaba-server's stamped lines read the same as the unstamped ones
+        let stamped_port =
+            "2026-10-24T19:03:27.208Z Error: web UI cannot listen on 127.0.0.1:8088: bind";
+        assert_eq!(
+            failure_in_log(stamped_port).as_deref(),
+            Some("web UI cannot listen on 127.0.0.1:8088: bind")
+        );
+        let stamped_admin = "2026-10-24T19:03:27.208Z [serve] supervisor state on http://127.0.0.1:9103/processes\n\
+                             2026-10-24T19:03:28Z [serve] supervisor admin endpoint on 127.0.0.1:9103 failed (continuing): bind";
+        assert_eq!(
+            failure_in_log(stamped_admin).as_deref(),
+            Some("supervisor admin endpoint on 127.0.0.1:9103 failed (continuing): bind")
+        );
+        let stamped_served = "2026-10-24T19:03:26Z Error: an old problem\n\
+                              2026-10-24T19:03:27.208Z [serve] supervisor state on http://127.0.0.1:9103/processes\n\
+                              some role's line";
+        assert_eq!(failure_in_log(stamped_served), None);
+        // a line that only starts with a word like a time is not stripped
+        assert_eq!(
+            untimed("2026-13-99T00:00:00Z [serve] x"),
+            "2026-13-99T00:00:00Z [serve] x"
+        );
+        assert_eq!(untimed("[serve] x"), "[serve] x");
         // long reasons are cut for the tooltip
         let long = format!("Error: {}", "x".repeat(300));
         let got = failure_in_log(&long).unwrap();

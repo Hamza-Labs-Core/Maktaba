@@ -94,8 +94,9 @@ func readFile(path string) []Attempt {
 // the logs' to keep).
 const MaxDetail = 2048
 
-// queryRe is a URL's query: a signed download's redirect carries its signature there.
-var queryRe = regexp.MustCompile(`(https?://[^\s?#"'<>]+)\?[^\s#"'<>]*`)
+// queryRe is a URL's query: a signed download's redirect carries its signature there. The
+// query ends on a character that is not punctuation around it ("…?sig=x): 403" keeps "):").
+var queryRe = regexp.MustCompile(`(https?://[^\s?#"'<>]+)\?(?:[^\s#"'<>()]*[^\s#"'<>().,:;])?`)
 
 // Clean is a detail as an attempt keeps it: URLs without their query, at most MaxDetail
 // bytes (cut on a character, with an ellipsis).

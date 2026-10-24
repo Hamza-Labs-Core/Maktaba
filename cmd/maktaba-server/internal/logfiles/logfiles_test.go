@@ -146,3 +146,33 @@ func TestParseQuery(t *testing.T) {
 type query map[string]string
 
 func (q query) get(k string) string { return q[k] }
+
+// serve's stamped lines keep their "[serve]"/"[update]" names; Postgres's lines take their
+// UTC time; a time with no zone is local time; an offset is honoured; a stamped JSON record
+// keeps its own time.
+func TestReadStampedAndZonedLines(t *testing.T) {
+	d := Dirs{Logs: t.TempDir()}
+	local := time.Date(2026, 10, 24, 5, 30, 0, 0, time.Local)
+	write(t, filepath.Join(d.Logs, "server.log"), "2026-10-24T09:30:00.000Z [serve] app: dumping the database\n"+
+		"2026-10-24T09:30:01.000Z [update] migrating 0150\n"+
+		"2026-10-24 09:30:02.500 UTC [23576] LOG:  database system is ready\n"+
+		local.Add(3*time.Second).Format("2006-01-02 15:04:05")+" local without a zone\n"+
+		"2026-10-24 05:30:04 -04:00 an offset after the time\n"+
+		`2026-10-24T09:31:00.000Z [launcher] {"ts":"2026-10-24T09:30:05Z","event":"boot_loop","version":"0.3.2"}`+"\n")
+	r := Read(d, Query{Files: []string{"server"}})
+	var got []string
+	for _, e := range r.Entries {
+		got = append(got, e.TS+"|"+e.Service+"|"+e.Msg)
+	}
+	want := []string{
+		"2026-10-24T09:30:00Z|server|app: dumping the database",
+		"2026-10-24T09:30:01Z|server|migrating 0150",
+		"2026-10-24T09:30:02.5Z|postgres|[23576] LOG:  database system is ready",
+		local.Add(3*time.Second).UTC().Format(time.RFC3339Nano) + "|server|local without a zone",
+		"2026-10-24T09:30:04Z|server|an offset after the time",
+		"2026-10-24T09:30:05Z|launcher|boot_loop 0.3.2",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("entries:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}

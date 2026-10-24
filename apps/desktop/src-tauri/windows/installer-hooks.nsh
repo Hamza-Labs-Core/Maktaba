@@ -70,25 +70,35 @@
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
+  ; While this installer runs, its mutex says so: the app's watchdog keeps the install hold
+  ; of a long install (a slow disk, an antivirus) instead of starting the server under it
+  ; (agent_windows.rs, INSTALLER_MUTEX). Its handle closes with the installer.
+  Push $R7
+  System::Call 'kernel32::CreateMutex(p 0, i 0, t "MaktabaInstallerRunning") p .R7'
+  Pop $R7
   ; Every file of the payload is in use while the server runs (server\bin, postgres, python,
   ; ffmpeg): stop it before they are replaced. A first install has no Maktaba.exe yet.
+  Push $R7
   Push $R8
   Push $R9
   !insertmacro MAKTABA_INSTALLED_TAKES_FLAGS
   ${If} $R8 = 1
-    ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --server-stop'
+    ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --server-stop' $R7
     ; server\ is wholly the payload (the state is beside it: server.toml, keys\, data\,
     ; postgres\, venv\, logs\), and an update (/UPDATE: the app's own updater) installs over
     ; the old files without uninstalling them: a file the new payload renamed or dropped (a
     ; migration, an Ollama or Python library) would stay and be found. The whole old payload
     ; goes, once its server stopped; the new one is copied in after this. Only a payload of
-    ; ours (its payload.json there).
-    ${If} ${FileExists} "$INSTDIR\server\payload.json"
+    ; ours (its payload.json there), and only when the server stopped: one that did not
+    ; still runs from those files, which then stay (the new ones are copied over them).
+    ${If} $R7 == 0
+    ${AndIf} ${FileExists} "$INSTDIR\server\payload.json"
       RMDir /r "$INSTDIR\server"
     ${EndIf}
   ${EndIf}
   Pop $R9
   Pop $R8
+  Pop $R7
   ; The pipeline wheel's name carries its version (Epic 35 review round 2, B-H1): a payload
   ; the removal above left (no payload.json, a server not stopped) loses at least its old
   ; wheel, as the server builds the pipeline's venv from exactly one.

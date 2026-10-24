@@ -140,7 +140,7 @@ describe("AdminLogs", () => {
             },
           ],
           files: [
-            { name: "server.log" },
+            { name: "server.log", truncated: true },
             { name: "app.log" },
             { name: "launcher.log", missing: true },
           ],
@@ -175,6 +175,10 @@ describe("AdminLogs", () => {
     const rows = Array.from(document.querySelectorAll("li.mkt-logs__row"));
     expect(rows[0]).toHaveTextContent("app · app.log");
     expect(rows[2]).toHaveTextContent("server · server.log");
+    // a file the machine cut to the window's newest lines says so
+    expect(screen.getByTestId("logs-files-cut")).toHaveTextContent(
+      "Only the newest lines of server.log in this window are shown"
+    );
   });
 
   it("shows a joined machine's own log files with ?node=, and says when it is away", async () => {

@@ -68,11 +68,15 @@ func (r Release) Published() time.Time {
 	return r.FirstSeenAt
 }
 
-// signedTime is when the release was signed, as its verified release.json says (zero for a
-// release this home has not verified): the time the one "never go back" rule compares.
+// signedTime is when the release was signed: its verified transparency-log time, as the
+// machines' own rule compares it (else, for a release verified before the catalog kept
+// that time, its verified release.json's); zero for a release this home has not verified.
 func (r Release) signedTime() time.Time {
 	if r.Manifest == nil || r.VerifyState != VerifyVerified {
 		return time.Time{}
+	}
+	if !r.Manifest.SignedAt.IsZero() {
+		return r.Manifest.SignedAt
 	}
 	return r.Manifest.Published
 }

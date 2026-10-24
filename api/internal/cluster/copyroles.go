@@ -39,7 +39,9 @@ func (p *PGRoles) endCopy(ctx context.Context, role string, drop bool) {
 	_ = p.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, copyRole).Scan(&exists)
 	if exists {
 		if pw, err := NewPassword(); err == nil {
-			_, _ = p.DB.ExecContext(ctx, `ALTER ROLE `+pq.QuoteIdentifier(copyRole)+` NOLOGIN PASSWORD `+pq.QuoteLiteral(pw))
+			if verifier, err := ScramVerifier(pw); err == nil { // never the password itself in a statement
+				_, _ = p.DB.ExecContext(ctx, `ALTER ROLE `+pq.QuoteIdentifier(copyRole)+` NOLOGIN PASSWORD `+pq.QuoteLiteral(verifier))
+			}
 		}
 		_, _ = p.DB.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1`, copyRole)
 	}

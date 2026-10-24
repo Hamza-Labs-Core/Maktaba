@@ -61,9 +61,12 @@ fail() { printf '  FAIL  %s\n' "$*"; fails=$((fails + 1)); }
 cat >"$T/standin.cs" <<'CS'
 using System; using System.IO;
 static class StandIn {
-    static void Main(string[] args) {
-        File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "standin.log"),
-            string.Join(" ", args) + Environment.NewLine);
+    static int Main(string[] args) {
+        string dir = AppDomain.CurrentDomain.BaseDirectory;
+        File.AppendAllText(Path.Combine(dir, "standin.log"), string.Join(" ", args) + Environment.NewLine);
+        // a server that does not stop: --server-stop fails while stop-fails is beside it
+        if (args.Length > 0 && args[0] == "--server-stop" && File.Exists(Path.Combine(dir, "stop-fails"))) return 1;
+        return 0;
     }
 }
 CS
@@ -172,6 +175,18 @@ elif [ ! -f "$INST/data/library.txt" ] || [ ! -f "$INST/server.toml" ]; then
 else
     ok "the previous payload removed before the install, the state left"
 fi
+# a server that did not stop for the install: its payload stays (it still runs from it)
+mkdir -p "$INST/server/migrations"
+printf '{}\n' >"$INST/server/payload.json"
+printf 'running\n' >"$INST/server/migrations/0001_in_use.sql"
+: >"$INST/stop-fails"
+step "a reinstall whose server does not stop" install-knows-0 "--server-stop|--server-start" present
+if [ ! -f "$INST/server/migrations/0001_in_use.sql" ]; then
+    fail "the payload of a server that did not stop was removed under it"
+else
+    ok "the payload of a server that did not stop is left"
+fi
+rm -f "$INST/stop-fails"
 step "an update to a build from before the flags" install-old-0 "--server-stop" absent
 step "the uninstall of that" uninstall-knows-0 "" absent
 cp "$T/old.exe" "$INST/Maktaba.exe"

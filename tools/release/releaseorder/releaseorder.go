@@ -67,6 +67,41 @@ func Guard(tag string, published []string, allow string) (maintenance bool, err 
 		newest, tag)
 }
 
+// Place is a tag's place among the published releases, as the guard reports it.
+type Place struct {
+	// Maintenance: a deliberate maintenance release (MAKTABA_RELEASE_ALLOW_TAG).
+	Maintenance bool
+	// Published: the tag is a published release already (this run is a re-run of it: its
+	// signed files are not built again, only a draft is).
+	Published bool
+	// Newest is the newest published release other than the tag ("" when there is none):
+	// its commit must be in the tag's history (the guard checks it with git).
+	Newest string
+	// Latest: the tag would be GitHub's latest (the highest stable version): its images'
+	// :latest moves and the relay deploys only then.
+	Latest bool
+}
+
+// Locate is Guard's answer with the rest of the tag's place.
+func Locate(tag string, published []string, allow string) (Place, error) {
+	maint, err := Guard(tag, published, allow)
+	if err != nil {
+		return Place{}, err
+	}
+	p := Place{Maintenance: maint, Latest: !maint && Latest(tag, published)}
+	for _, t := range published {
+		if strings.TrimSpace(t) == tag {
+			p.Published = true
+		}
+	}
+	for _, t := range others(tag, published) {
+		if p.Newest == "" || rv.CompareVersions(ver(t), ver(p.Newest)) > 0 {
+			p.Newest = t
+		}
+	}
+	return p, nil
+}
+
 // Previous is the release tag's release.json builds on: the highest published version
 // below it; for a stable tag, the highest stable one (a release candidate of the same
 // version is not what a stable home comes from). "" when there is none.

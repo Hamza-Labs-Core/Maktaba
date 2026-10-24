@@ -13,9 +13,12 @@
 #   test   go test ./... against a Postgres service container
 #   build  cross-compile the relay binary for linux/{amd64,arm64}
 #   docker build cloud/Dockerfile + push to GHCR  (main + tags only)
-#   sign   keyless cosign over the pushed image digest  (tags only)
-#   deploy SSH to the VPS + roll the stack          (dispatch, or plain
-#          vX.Y.Z tags when vars.RELAY_DEPLOY == 'true')
+#   gate   a tag: waits for release.yml to publish the release (its images signed),
+#          then deploys only the latest release (releaseorder.Latest: never a
+#          pre-release or a maintenance release of an older line)
+#   deploy SSH to the VPS + roll the stack          (dispatch, or the latest
+#          release's tag when vars.RELAY_DEPLOY == 'true'; never when this
+#          run's lint, test or build failed)
 #
 # The reusable `make relay-ci` target runs lint+test+build locally so a
 # developer reproduces this workflow's PR gates without GitHub.
@@ -250,27 +253,70 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+  # A tag deploys only once release.yml has published its release (published means its
+  # signed set is in: build-images pushed and signed every image, sign-and-release signed the
+  # checksums), and only the latest release: a maintenance release of an older line (story
+  # 22.5 EC1), or a pre-release, never replaces what runs. Only after this run's lint, test
+  # and build passed (each checked: docker is skipped on a tag either way, so its result
+  # cannot tell a failure from a skip).
+  gate:
+    name: the release, published and the latest
+    needs: [lint, test, build]
+    if: >-
+      !cancelled() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
+      !contains(github.ref, '-') && vars.RELAY_DEPLOY == 'true' &&
+      needs.lint.result == 'success' && needs.test.result == 'success' && needs.build.result == 'success'
+    runs-on: ubuntu-22.04
+    # the release is published once release.yml and the desktop apps are in (about 90 min)
+    timeout-minutes: 240
+    outputs:
+      deploy: ${{ steps.gate.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: tools/release/go.mod
+          cache-dependency-path: tools/release/go.sum
+
+      - name: Wait for the published release, then ask whether it is the latest
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 220); do
+            draft="$(gh release view "${TAG}" --json isDraft --jq .isDraft 2>/dev/null || echo missing)"
+            if [ "${draft}" = false ]; then
+              break
+            fi
+            echo "release ${TAG}: not published yet (${draft})"
+            sleep 60
+          done
+          [ "${draft}" = false ] || { echo "::error::${TAG} was not published in time: nothing deployed"; exit 1; }
+          latest="$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName' |
+            (cd tools/release && go run ./cmd/release-order latest --tag "${TAG}"))"
+          echo "release ${TAG} is published; the latest: ${latest}"
+          echo "deploy=${latest}" >> "$GITHUB_OUTPUT"
+
   deploy:
     name: deploy to VPS
-    needs: [docker]
-    # Manual rollout, or automatically once a tag's image is published,
-    # but only in a repo that has a VPS: set the RELAY_DEPLOY repo
-    # variable to 'true'. Without it a tag skips this job, so no
-    # deployment is recorded on `production`. A pre-release tag
-    # (v0.3.0-rc.1) never deploys by itself; dispatch it with its tag
-    # to roll it out. `!cancelled()` lets a
-    # workflow_dispatch run (where `docker` is skipped) reach deploy, but
-    # not a cancelled run (`always()` would); a tag needs docker to have
-    # succeeded, not been skipped because lint, test or build failed.
-    # A tag's image is release.yml's (docker skips tags): the deploy waits for it below
-    # (it exists only once release.yml's guard let the tag through and it was signed).
+    needs: [lint, test, build, docker, gate]
+    # Manual rollout, or automatically for the latest release's tag (the gate), but only in
+    # a repo that has a VPS: set the RELAY_DEPLOY repo variable to 'true'. Without it a tag
+    # skips this job, so no deployment is recorded on `production`. A pre-release tag
+    # (v0.3.0-rc.1) or a maintenance release never deploys by itself; dispatch it with its
+    # tag to roll it out. Never when this run's lint, test or build failed, each checked
+    # (`docker` is skipped on a dispatch and on a tag, after a failure too). `!cancelled()`
+    # lets the skipped jobs' dependents run, but not a cancelled run (`always()` would).
     if: >-
       !cancelled() &&
+      needs.lint.result == 'success' && needs.test.result == 'success' && needs.build.result == 'success' &&
       (
         (github.event_name == 'workflow_dispatch' && needs.docker.result == 'skipped') ||
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
-          !contains(github.ref, '-') &&
-          needs.docker.result == 'skipped' && vars.RELAY_DEPLOY == 'true')
+          needs.gate.result == 'success' && needs.gate.outputs.deploy == 'true')
       )
     runs-on: ubuntu-22.04
     # a tag waits up to an hour for release.yml's image
@@ -303,8 +349,8 @@ jobs:
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi
 
-      # A pushed tag: wait for release.yml's image of it (pushed, then signed, in its
-      # build-images job), up to an hour.
+      # A pushed tag: its release is published (the gate), so release.yml's image of it is
+      # pushed and signed; checked here once more before the rollout.
       - name: Registry login
         if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
         uses: docker/login-action@v4.2.0

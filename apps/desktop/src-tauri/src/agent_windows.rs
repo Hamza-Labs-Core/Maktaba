@@ -33,8 +33,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use windows_sys::core::PWSTR;
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GetLastError, LocalFree, ERROR_ALREADY_EXISTS, HANDLE, WAIT_ABANDONED_0,
-    WAIT_OBJECT_0,
+    CloseHandle, GetLastError, LocalFree, ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, HANDLE,
+    WAIT_ABANDONED_0, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::Security::Authentication::Identity::{
     LsaFreeReturnBuffer, LsaGetLogonSessionData, SECURITY_LOGON_SESSION_DATA,
@@ -160,6 +160,20 @@ fn mutex_held(name: &str) -> bool {
     let h = unsafe { OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, 0, n.as_ptr()) };
     if h.is_null() {
         return false;
+    }
+    drop(Owned(h));
+    true
+}
+
+/// Whether a mutex of this name exists in this session, even one this process may not open
+/// (an installer run as an administrator made it).
+fn mutex_exists(name: &str) -> bool {
+    let n = wide(OsStr::new(name));
+    // SAFETY: as in open_event.
+    let h = unsafe { OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, 0, n.as_ptr()) };
+    if h.is_null() {
+        // SAFETY: reads this thread's last error, right after the call that set it.
+        return unsafe { GetLastError() } == ERROR_ACCESS_DENIED;
     }
     drop(Owned(h));
     true
@@ -365,14 +379,24 @@ fn clear_hold() {
     }
 }
 
-/// An install hold older than this is an install that did not finish: the installer the
-/// app started as it closed failed or was cancelled, so its POSTINSTALL hook
-/// (`--server-start`) never ended the hold. The watchdog's next start ends it itself.
+/// An install hold older than this, with no installer running, is an install that did not
+/// finish: the installer the app started as it closed failed or was cancelled, so its
+/// POSTINSTALL hook (`--server-start`) never ended the hold. The watchdog's next start
+/// ends it itself.
 const HOLD_STALE: Duration = Duration::from_secs(15 * 60);
 
-/// Whether an install hold that holds in this sign-in, written `age` ago, is stale.
-fn hold_stale(holds: bool, age: Option<Duration>) -> bool {
-    holds && age.is_some_and(|a| a >= HOLD_STALE)
+/// An install hold this old ends even while an installer still runs (one that hangs).
+const HOLD_MAX: Duration = Duration::from_secs(2 * 60 * 60);
+
+/// The installer's mutex: installer-hooks.nsh's PREINSTALL makes it, and it lives as long
+/// as the installer runs (its handle closes with the installer). A long install (a slow
+/// disk, an antivirus scanning every file) keeps its hold while it runs.
+const INSTALLER_MUTEX: &str = "MaktabaInstallerRunning";
+
+/// Whether an install hold that holds in this sign-in, written `age` ago, is stale: older
+/// than HOLD_STALE with no installer running, or older than HOLD_MAX whatever runs.
+fn hold_stale(holds: bool, age: Option<Duration>, installer_runs: bool) -> bool {
+    holds && age.is_some_and(|a| a >= HOLD_MAX || (a >= HOLD_STALE && !installer_runs))
 }
 
 /// The watchdog's start of a server an install left held for longer than HOLD_STALE (the
@@ -385,7 +409,9 @@ fn release_stale_hold() {
         .and_then(|m| m.modified())
         .ok()
         .and_then(|t| SystemTime::now().duration_since(t).ok());
-    if !hold_stale(flag_holds(&p), age) || std::fs::remove_file(&p).is_err() {
+    if !hold_stale(flag_holds(&p), age, mutex_exists(INSTALLER_MUTEX))
+        || std::fs::remove_file(&p).is_err()
+    {
         return;
     }
     let detail = format!(
@@ -1422,15 +1448,36 @@ mod tests {
         assert_eq!(signin_wait(None, Some(s), d), Duration::ZERO);
     }
 
-    /// An install hold ends by itself once it is older than HOLD_STALE (the installer
-    /// failed or was cancelled after the app closed); one that does not hold, or is young,
-    /// stays.
+    /// An install hold ends by itself once it is older than HOLD_STALE with no installer
+    /// running (it failed or was cancelled after the app closed), or HOLD_MAX whatever runs;
+    /// one that does not hold, or is young, or whose installer still runs, stays.
     #[test]
     fn a_stale_install_hold_ends() {
-        assert!(hold_stale(true, Some(HOLD_STALE)));
-        assert!(!hold_stale(true, Some(HOLD_STALE - Duration::from_secs(1))));
-        assert!(!hold_stale(false, Some(HOLD_STALE * 2)));
-        assert!(!hold_stale(true, None));
+        assert!(hold_stale(true, Some(HOLD_STALE), false));
+        assert!(!hold_stale(
+            true,
+            Some(HOLD_STALE - Duration::from_secs(1)),
+            false
+        ));
+        assert!(!hold_stale(false, Some(HOLD_STALE * 2), false));
+        assert!(!hold_stale(true, None, false));
+        // a long install: its installer still runs
+        assert!(!hold_stale(true, Some(HOLD_STALE * 3), true));
+        assert!(hold_stale(true, Some(HOLD_MAX), true));
+    }
+
+    /// The installer's mutex is seen while it exists, as the installer's hook makes it.
+    #[test]
+    fn the_installer_s_mutex_is_seen() {
+        let name = format!("MaktabaTestInstaller{}", std::process::id());
+        assert!(!mutex_exists(&name));
+        let n = wide(OsStr::new(&name));
+        // SAFETY: a NUL-terminated name; default security, not owned.
+        let h = unsafe { CreateMutexW(std::ptr::null(), 0, n.as_ptr()) };
+        assert!(!h.is_null());
+        assert!(mutex_exists(&name));
+        drop(Owned(h));
+        assert!(!mutex_exists(&name));
     }
 
     #[test]

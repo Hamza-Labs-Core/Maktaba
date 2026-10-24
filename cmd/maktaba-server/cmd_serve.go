@@ -102,6 +102,9 @@ type serveOptions struct {
 }
 
 func runServe(cfg config.Config, opts serveOptions) error {
+	// serve's own lines carry their time (stderr_stamp.go): the logs page places them
+	stopStamp := stampStderr()
+	defer stopStamp()
 	// Epic 35 story 35.8: a half-written node.json stops here, once, with its path,
 	// rather than as every node role's crash loop; one a write is still under way on is
 	// waited for first (nodeConfigSettles).
@@ -395,6 +398,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		_ = shutdownWeb(webSrv)
 	}
 	if restart.Load() {
+		stopStamp()
 		os.Exit(exitRestart) // drained: the launcher starts current again
 	}
 	if reloaded.Load() {

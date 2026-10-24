@@ -10,12 +10,10 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
 // /api/cluster/self is public: the home's machines that cannot log in to its database go
-// to an admin or this machine's supervisor (its local token) only.
+// to this machine's supervisor (its local token) only.
 func TestSelfMachinesDBNotPublic(t *testing.T) {
 	tok := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(tok, []byte("t0k\n"), 0o600); err != nil {
@@ -41,11 +39,5 @@ func TestSelfMachinesDBNotPublic(t *testing.T) {
 	}
 	if b := get(func(r *http.Request) *http.Request { r.Header.Set(LocalTokenHeader, "t0k"); return r }); !strings.Contains(b, "studio-gpu") {
 		t.Fatalf("the supervisor: %s", b)
-	}
-	admin := func(r *http.Request) *http.Request {
-		return r.WithContext(principal.WithPrincipal(r.Context(), &principal.Principal{UserID: "a", IsAdmin: true}))
-	}
-	if b := get(admin); !strings.Contains(b, "studio-gpu") {
-		t.Fatalf("an admin: %s", b)
 	}
 }

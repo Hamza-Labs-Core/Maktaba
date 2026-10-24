@@ -81,8 +81,11 @@ rename).
     the local token); the api at `GET /api/admin/logs/files` (admin), and a node's over the
     machine channel (`logs.files`, its own agent only, the answer bounded to fit a frame and
     noted in the hub's event log by its size only).
-  - A line takes its time from itself (a JSON line's `ts`, an RFC 3339 time at its start,
-    slog's `time=`) or from the line before it (the supervisor's `[serve]` lines carry none).
+  - A line takes its time from itself: serve stamps its own lines (`[serve]`, `[update]`, the
+    database step's relayed migrate output) with an RFC 3339 UTC time, the roles' JSON lines carry
+    `ts`, the bundled Postgres logs in UTC (`log_timezone=UTC`), slog's `time=`; a time with no
+    zone is local time. A line with none (a program's continuation lines) takes the time of the
+    line before it.
   - "Download the logs" is the admin diagnostics bundle (`/api/admin/logs/export`) of the same
     window, with those files (`files/*.log`; a node's under `node-<id>/`).
 
@@ -126,8 +129,13 @@ A cluster run (`source: run`) carries its error's code, else the target's state
 HTTP, a timeout, the disk; retried, never a verification failure), `verify_*` (only a real
 verification failure blocks the release), `older_build` (a release numbered higher but built
 before the one running here, on the same major.minor line: passed by, nothing changed, no
-notice) and `python_store_stub` (Windows: only the Microsoft Store's `python3` alias where the
-pipeline needs a real Python 3.12).
+notice), `python_store_stub` (Windows: only the Microsoft Store's `python3` alias where the
+pipeline needs a real Python 3.12) and `pg_major_change` (a release whose payload bundles
+another PostgreSQL major than the running one: refused before anything is installed, by a
+runtime install from its payload and by an app's install from the signed `release.json`'s
+`app_postgres_major`; needs a person, the release not blocked; a release from before that field
+is refused by the start's database step, `pg_major`). The app's
+`login_item_unsigned` needs a person too.
 
 ## The desktop app
 

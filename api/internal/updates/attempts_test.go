@@ -123,3 +123,18 @@ func TestHomeDBShown(t *testing.T) {
 		t.Fatal("nil")
 	}
 }
+
+// The query goes, the sentence's punctuation after the URL stays.
+func TestCleanDetailKeepsThePunctuation(t *testing.T) {
+	for in, want := range map[string]string{
+		"GET https://x/a.tar.gz?sig=s3cret): 403":            "GET https://x/a.tar.gz): 403",
+		"see https://x/p?token=t.":                           "see https://x/p.",
+		"fetch (https://x/a?X-Amz-Signature=abc&x=1) failed": "fetch (https://x/a) failed",
+		"https://x/a?b=c":                                    "https://x/a",
+		"no url here: 403":                                   "no url here: 403",
+	} {
+		if got := cleanDetail(in); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
+		}
+	}
+}

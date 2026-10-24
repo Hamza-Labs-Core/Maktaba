@@ -1137,7 +1137,7 @@ fn update_clicked(app: &AppHandle) -> Result<(), String> {
 fn install_update_from(app: AppHandle, source: Source) {
     tauri::async_runtime::spawn(async move {
         // the server was asked to stop for the install
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         let stopped = AtomicBool::new(false);
         let ctx = attempts::Ctx::here();
         // the attempt's record (attempts.rs): every step, and why it failed
@@ -1261,6 +1261,25 @@ fn install_update_from(app: AppHandle, source: Source) {
                     return Err(failed(f));
                 }
             }
+            // macOS: the server stops before the bundle is swapped (stop_before_swap); the
+            // restart after the install starts it on the new one, a failure starts it again
+            #[cfg(target_os = "macos")]
+            if let Some(AppMode::Server { supervisor_url, .. }) = shell(&app).mode() {
+                if !shell(&app).paused.load(Ordering::SeqCst) {
+                    step(attempts::STEP_INSTALL);
+                    stopped.store(true, Ordering::SeqCst);
+                    let stop_failed = |e: String| {
+                        (
+                            true,
+                            Failure::new(attempts::STEP_INSTALL, attempts::SERVER_STOP_FAILED, e),
+                        )
+                    };
+                    tauri::async_runtime::spawn_blocking(move || stop_before_swap(&supervisor_url))
+                        .await
+                        .map_err(|e| stop_failed(e.to_string()))?
+                        .map_err(stop_failed)?;
+                }
+            }
             // recorded before: on Windows the installer ends this app; the next start
             // settles the attempt (installed, or relaunch_failed)
             step(attempts::STEP_INSTALL);
@@ -1317,7 +1336,7 @@ fn install_update_from(app: AppHandle, source: Source) {
                 // cancelled, replaced or skipped before the install: nothing to say in an
                 // order that is not this run's any more; a server stopped for it starts
                 shell(&app).installing.store(false, Ordering::SeqCst);
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 if stopped.load(Ordering::SeqCst) {
                     let handle = app.clone();
                     let _ = tauri::async_runtime::spawn_blocking(move || {
@@ -1341,7 +1360,7 @@ fn install_update_from(app: AppHandle, source: Source) {
                         &order_error(&f),
                     );
                     shell(&app).installing.store(false, Ordering::SeqCst);
-                    #[cfg(windows)]
+                    #[cfg(any(windows, target_os = "macos"))]
                     if stopped.load(Ordering::SeqCst) {
                         let handle = app.clone();
                         let _ = tauri::async_runtime::spawn_blocking(move || {
@@ -1377,7 +1396,7 @@ fn install_update_from(app: AppHandle, source: Source) {
                     "{head}
 {why}"
                 );
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 if stopped.load(Ordering::SeqCst) {
                     let w = lang.words();
                     let handle = app.clone();
@@ -1452,6 +1471,35 @@ fn tell_the_order(failed: &attempts::Attempt) {
             &autoinstall::order_error(&failed.code, &failed.detail),
         );
     }
+}
+
+/// macOS: how long the server may take to stop for an install (the launcher's 60 s grace to
+/// drain its roles, and a little more).
+#[cfg(target_os = "macos")]
+const SWAP_STOP_WAIT: Duration = Duration::from_secs(75);
+
+/// macOS: the server stopped before the app's bundle is swapped (B6). Its processes open the
+/// payload's files by path, so a swap under them would mix two payloads: a Python minor or a
+/// Postgres major of another release loaded half from each. Stopping costs only the swap's
+/// seconds (the server restarts after any update). A server that does not stop in time
+/// leaves the app as it is (server_stop_failed).
+#[cfg(target_os = "macos")]
+fn stop_before_swap(supervisor_url: &str) -> Result<(), String> {
+    agent::control(Action::Pause)?;
+    let Some(addr) = status::addr_of(supervisor_url) else {
+        return Ok(());
+    };
+    let began = Instant::now();
+    while began.elapsed() < SWAP_STOP_WAIT {
+        if matches!(status::probe(&addr), Probe::Unreachable) {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    Err(format!(
+        "the server did not stop within {} s for the install",
+        SWAP_STOP_WAIT.as_secs()
+    ))
 }
 
 /// macOS: how long the server may stay silent after the app's update before its login item
@@ -1536,7 +1584,7 @@ fn recheck_catch_up(app: &AppHandle) {
 /// After an update that failed once the server was asked to stop (Windows):
 /// start it again unless it was paused. The sentence for the message, and the
 /// error when it could not start.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn start_after_failed_update(app: &AppHandle) -> (&'static str, Option<String>) {
     let sh = shell(app);
     let w = sh.lang.words();

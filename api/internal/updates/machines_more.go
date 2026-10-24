@@ -44,7 +44,8 @@ func (d *Driver) clusterRelease(ctx context.Context) (string, error) {
 // apply) or an admin skipped it, until a newer release or an admin's Retry. A part that
 // failed for a person to mend (needs_person) or before its switch (failed_prepare: a
 // download, a refusal) is tried again once the machine changed (another release running,
-// another install kind) or catchUpRetry after it.
+// another install kind), else catchUpRetry after it (catchUpPersonRetry, a day, for one a
+// person must mend: its reason has not changed).
 func (d *Driver) heldBack(ctx context.Context, nodeID, version, curVersion, curKind string) bool {
 	t, ok, err := d.Store.LastTargetOf(ctx, nodeID, version)
 	if err != nil || !ok {
@@ -63,7 +64,11 @@ func (d *Driver) heldBack(ctx context.Context, nodeID, version, curVersion, curK
 		if curVersion != "" && t.FromVersion != "" && CompareVersions(curVersion, t.FromVersion) != 0 {
 			return false
 		}
-		return t.UpdatedAt != nil && d.now().Sub(*t.UpdatedAt) < catchUpRetry
+		wait := catchUpRetry
+		if t.State == TargetNeedsPerson {
+			wait = catchUpPersonRetry
+		}
+		return t.UpdatedAt != nil && d.now().Sub(*t.UpdatedAt) < wait
 	}
 	return false
 }
@@ -126,12 +131,36 @@ func (d *Driver) nodeDrained(ctx context.Context, run Run, det *RunDetail, pol P
 		_, _ = d.Store.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = true WHERE id = $1`, t.NodeID)
 		d.audit(ctx, run, "node_drain", map[string]any{"node_id": t.NodeID})
 	}
-	return d.nodeJobs(ctx, t.Name) == 0 || d.now().Sub(nd.Since) >= time.Duration(pol.DrainTimeoutMinutes)*time.Minute
+	return d.nodeJobs(ctx, t.NodeID, t.Name) == 0 || d.now().Sub(nd.Since) >= time.Duration(pol.DrainTimeoutMinutes)*time.Minute
 }
 
-// nodeJobs is how many jobs a machine's workers run now (claimed_by is "host/pid/id";
-// the machine's name is its host's).
-func (d *Driver) nodeJobs(ctx context.Context, name string) int {
+// nodeHoster is a Cluster that knows the host names a machine's sessions report.
+type nodeHoster interface {
+	NodeHosts() map[string][]string
+}
+
+// sameHost reports whether two host names name one machine: equal (case aside), or equal
+// before their first dot (a Mac's "Studio.local" and "Studio").
+func sameHost(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if strings.EqualFold(a, b) {
+		return true
+	}
+	sa, _, _ := strings.Cut(a, ".")
+	sb, _, _ := strings.Cut(b, ".")
+	return strings.EqualFold(sa, sb)
+}
+
+// nodeJobs is how many jobs a machine's workers run now. A job's claimer is "host/pid/id"
+// with its worker's host name: the hosts the machine's sessions report to the hub (its
+// machine agent and its workers), else its cluster name (a name that is its host's).
+func (d *Driver) nodeJobs(ctx context.Context, nodeID, name string) int {
+	hosts := []string{name}
+	if c, ok := d.Cluster.(nodeHoster); ok {
+		hosts = append(hosts, c.NodeHosts()[nodeID]...)
+	}
 	rows, err := d.Store.DB.QueryContext(ctx, `SELECT claimed_by FROM processing_jobs
 		WHERE state IN ('claimed', 'running', 'resuming') AND claimed_by IS NOT NULL`)
 	if err != nil {
@@ -145,8 +174,11 @@ func (d *Driver) nodeJobs(ctx context.Context, name string) int {
 			continue
 		}
 		host, _, _ := strings.Cut(by, "/")
-		if strings.EqualFold(host, name) {
-			n++
+		for _, h := range hosts {
+			if sameHost(host, h) {
+				n++
+				break
+			}
 		}
 	}
 	return n

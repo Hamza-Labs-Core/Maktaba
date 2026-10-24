@@ -223,6 +223,28 @@ func (h *Hub) MachineAgents() map[string]string {
 	return out
 }
 
+// NodeHosts are the host names each connected machine's sessions report (its machine
+// agent and its workers), by node id: a job's claimer ("host/pid/id") is one of them,
+// whatever the machine is named in the cluster.
+func (h *Hub) NodeHosts() map[string][]string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := map[string][]string{}
+	for _, s := range h.sessions {
+		if s.NodeID == "" || s.Kind == "home" || s.Host == "" {
+			continue
+		}
+		seen := false
+		for _, x := range out[s.NodeID] {
+			seen = seen || x == s.Host
+		}
+		if !seen {
+			out[s.NodeID] = append(out[s.NodeID], s.Host)
+		}
+	}
+	return out
+}
+
 // HomeProcesses are the sessions of the home's own processes (its workers).
 func (h *Hub) HomeProcesses() []string {
 	h.mu.RLock()

@@ -568,6 +568,12 @@ const SAYS_PREVIOUS = new Set([
   "launcher_refused",
 ]);
 
+/** The steps an attempt fails at before its release runs (the app's check, download,
+ * signature, install and relaunch): a machine that runs that release now reached it
+ * another way. A failure at a later step (the pipeline's environment, the database step)
+ * happened to the release it runs: it still holds. */
+const BEFORE_IT_RUNS = new Set(["check", "download", "verify", "install", "relaunch"]);
+
 /** How two versions compare (above 0: a is later), null when either is not a version. */
 function versionCmp(a: string, b: string): number | null {
   if (!a || !b || !validVersion(a.trim()) || !validVersion(b.trim())) return null;
@@ -626,10 +632,14 @@ function AttemptBlock({
     a.outcome === "put_back" &&
     machine.kind === "appbundle" &&
     versionCmp(machine.version, a.to) === 0;
-  // the machine reached that release (or a later one) another way: the failure is history
+  // the machine reached a later release, or that one another way (it failed before the
+  // release ran): the failure is history; one at the release it runs, after it ran (its
+  // pipeline's environment, its database step), still holds
   const cmp = versionCmp(machine.version, last.to);
   const superseded =
-    ATTEMPT_FAILED.has(last.outcome) && cmp !== null && (cmp > 0 || (cmp === 0 && !haltedOn(last)));
+    ATTEMPT_FAILED.has(last.outcome) &&
+    cmp !== null &&
+    (cmp > 0 || (cmp === 0 && BEFORE_IT_RUNS.has(last.step ?? "") && !haltedOn(last)));
   const failed = ATTEMPT_FAILED.has(last.outcome) && !superseded;
   const reasonOf = (a: UpdateAttempt) =>
     a.code

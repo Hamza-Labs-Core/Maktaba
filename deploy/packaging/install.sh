@@ -13,7 +13,9 @@
 # supervises) into a bin directory on your PATH. On Linux it can also set the
 # server up as a systemd service that updates itself: `maktaba-server setup
 # --self-managed` installs the release under /var/lib/maktaba/bin/releases/<v>/
-# with maktaba-launcher, and the unit runs the launcher (Epic 35 story 35.2).
+# with maktaba-launcher, and the unit runs the launcher (Epic 35 story 35.2). The
+# maktaba-server on your PATH then runs the service's current release (it follows the
+# updates), as the packages' does; the archive's copy stays as its fallback.
 #
 # With --app (Linux, Epic 39): the whole server instead, for a machine without a
 # desktop: the release's maktaba-linux-payload-<ver>-<arch>.tar.gz (the server,
@@ -31,6 +33,8 @@
 # Tunables (env vars):
 #   MAKTABA_VERSION   release tag to install            (default: latest)
 #   MAKTABA_PREFIX    install dir for binaries          (default: /usr/local/bin)
+#   MAKTABA_LIBDIR    with the service: where the archive's binaries go, the PATH
+#                     wrapper's fallback               (default: <prefix>/../lib/maktaba)
 #   MAKTABA_SYSTEMD   1=set up the self-updating systemd service, 0=skip
 #                     (default: prompt; 0 when non-interactive)
 #   MAKTABA_NO_VERIFY 1=skip checksum + signature verification (default: 0;
@@ -447,7 +451,52 @@ maybe_install_systemd() {
         die "writing the systemd service failed (see above)"
     fi
     sudo rm -rf "${stage}"
+    install_cli_wrapper
     info "Service enabled. Edit ${SYS_ETC}/server.toml (set [media].roots), then: sudo systemctl start maktaba-server"
+}
+
+# The PATH's maktaba-server, once the service runs the self-managed layout: a wrapper that
+# runs the release the service runs (${SYS_ROOT}/current, which the updater moves on), as the
+# .deb/.rpm's /usr/bin/maktaba-server does (scripts/maktaba-server-cli.sh). The archive's
+# binaries install_binaries put on the PATH would stay at this version after every update:
+# they go to ${CLI_LIB} as the fallback for a user who cannot read the layout.
+CLI_LIB="${MAKTABA_LIBDIR:-$(dirname "${PREFIX}")/lib/maktaba}"
+install_cli_wrapper() {
+    local b tmp
+    sudo mkdir -p "${CLI_LIB}"
+    for b in maktaba-server maktaba-api maktaba-streaming; do
+        [ -f "${PREFIX}/${b}" ] || continue
+        # a wrapper from an earlier run is replaced below, never kept as the fallback
+        if [ "$(head -c 2 "${PREFIX}/${b}")" = '#!' ]; then
+            continue
+        fi
+        sudo mv -f "${PREFIX}/${b}" "${CLI_LIB}/${b}"
+    done
+    tmp="$(mktemp)"
+    cat >"${tmp}" <<EOF
+#!/bin/sh
+# maktaba-server (install.sh, the self-updating service): runs the release the service runs,
+# under ${SYS_ROOT}/bin/releases/<version>/ (the updater installs new ones there), so
+# \`maktaba-server migrate\`, \`adduser\`, ... match the running server; when that release is
+# not readable (a user outside the maktaba group) or not set up, the one install.sh installed.
+ROOT=${SYS_ROOT}
+FALLBACK=${CLI_LIB}/maktaba-server
+
+cur=""
+if [ -r "\${ROOT}/current" ]; then
+    cur=\$(tr -d '[:space:]' <"\${ROOT}/current" 2>/dev/null)
+fi
+case "\${cur}" in
+    ""|*[!0-9A-Za-z.+_-]*) cur="" ;;   # never a path
+esac
+if [ -n "\${cur}" ] && [ -x "\${ROOT}/bin/releases/\${cur}/maktaba-server" ]; then
+    exec "\${ROOT}/bin/releases/\${cur}/maktaba-server" "\$@"
+fi
+exec "\${FALLBACK}" "\$@"
+EOF
+    sudo install -m 0755 "${tmp}" "${PREFIX}/maktaba-server"
+    rm -f "${tmp}"
+    info "${PREFIX}/maktaba-server runs the service's release (it follows the updates)"
 }
 
 # MAKTABA_INSTALL_LIB=1 only defines the functions (deploy/packaging/tests).

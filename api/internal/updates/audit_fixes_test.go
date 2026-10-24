@@ -75,63 +75,79 @@ func TestFailedRunRetriedWithBackoff(t *testing.T) {
 // an app built locally) starts no new run in its window and counts nothing; its notice
 // is one per release and reason; the next window tries once more.
 func TestNeedsPersonRunsOncePerWindow(t *testing.T) {
-	for _, code := range []string{"no_app_update", "local_build", "app_management", "translocated", "not_writable"} {
-		t.Run(code, func(t *testing.T) {
-			r := newDriverRig(t)
-			ctx := context.Background()
-			r.home.prepFail = code
-			r.minutes(t, 10)
-			if n := len(runsOf(t, r.f.store, "1.5.0", TriggerAuto)); n != 1 {
-				t.Fatalf("runs in one window: %d", n)
-			}
-			if lt := r.f.svc.LastTick(); lt == nil || lt.Reason != WaitNeedsPerson {
-				t.Fatalf("last tick: %+v", lt)
-			}
-			n := r.f.notes.find(NoticeNeedsPerson)
-			if n == nil || n.p.Subject != "release:1.5.0:home:"+code || n.p.Every != notifyOnce {
-				t.Fatalf("notice: %+v", n)
-			}
-			r.f.now = time.Date(2026, 10, 23, 3, 10, 0, 0, r.f.loc)
-			r.minutes(t, 5)
-			if n := len(runsOf(t, r.f.store, "1.5.0", TriggerAuto)); n != 2 {
-				t.Fatalf("runs after the next window: %d", n)
-			}
-			if rel, _ := r.f.store.Get(ctx, "1.5.0"); rel.Attempts != 0 || rel.BlockedReason != "" {
-				t.Fatalf("a person's failure counted: %+v", rel)
-			}
-		})
+	// every person's code is told apart by failureClass (TestFailureClasses); one of them
+	// walks the windows here: one run in a window, its notice once, no attempt, and one run
+	// again in the next window
+	const code = "local_build"
+	r := newDriverRig(t)
+	ctx := context.Background()
+	r.home.prepFail = code
+	r.minutes(t, 4)
+	if n := len(runsOf(t, r.f.store, "1.5.0", TriggerAuto)); n != 1 {
+		t.Fatalf("runs in one window: %d", n)
+	}
+	if lt := r.f.svc.LastTick(); lt == nil || lt.Reason != WaitNeedsPerson {
+		t.Fatalf("last tick: %+v", lt)
+	}
+	n := r.f.notes.find(NoticeNeedsPerson)
+	if n == nil || n.p.Subject != "release:1.5.0:home:"+code || n.p.Every != notifyOnce {
+		t.Fatalf("notice: %+v", n)
+	}
+	r.f.now = time.Date(2026, 10, 23, 3, 10, 0, 0, r.f.loc)
+	r.minutes(t, 2)
+	if n := len(runsOf(t, r.f.store, "1.5.0", TriggerAuto)); n != 2 {
+		t.Fatalf("runs after the next window: %d", n)
+	}
+	if rel, _ := r.f.store.Get(ctx, "1.5.0"); rel.Attempts != 0 || rel.BlockedReason != "" {
+		t.Fatalf("a person's failure counted: %+v", rel)
 	}
 }
 
 // M5 (audit): only a refused signature or identity and migrations that fail on the copy
 // block a release; a rehearsal that could not run is an attempt, an expired trust root a
-// person's.
-func TestWhatBlocksARelease(t *testing.T) {
-	for code, want := range map[string]struct {
-		blocked  string
-		attempts int
-	}{
-		"rehearsal_failed":          {"rehearsal", 0},
-		"verify_signature":          {"verify", 0},
-		"rehearsal_dump":            {"", 1},
-		"rehearsal_scratch":         {"", 1},
-		"rehearsal_restore":         {"", 1},
-		"verify_trust_root_expired": {"", 0},
-		// a download that failed is an attempt, never a verification block
-		"download_failed": {"", 1},
-		// an older build than the home's release (an rc tagged after its release): set
-		// aside quietly, no attempt
-		"older_build": {"older_build", 0},
+// person's; an older build is set aside quietly.
+func TestFailureClasses(t *testing.T) {
+	for code, want := range map[string]string{
+		"rehearsal_failed": classRehearsal, "verify_signature": classVerify, "verify_checksum": classVerify,
+		"rehearsal_dump": classAttempt, "rehearsal_scratch": classAttempt, "rehearsal_restore": classAttempt,
+		"download_failed": classAttempt, "app_install_failed": classAttempt, "installer_not_finished": classAttempt,
+		"verify_trust_root_expired": classPerson, "no_app_update": classPerson, "local_build": classPerson,
+		"app_management": classPerson, "translocated": classPerson, "not_writable": classPerson,
+		"needs_admin": classPerson, "login_item_unsigned": classPerson, "pg_major_change": classPerson,
+		"python_store_stub": classPerson, KindOlderBuild: classOlderBuild,
 	} {
-		t.Run(code, func(t *testing.T) {
-			r := newDriverRig(t)
-			r.home.prepFail = code
-			r.minutes(t, 3)
-			rel, _ := r.f.store.Get(context.Background(), "1.5.0")
-			if rel.BlockedReason != want.blocked || rel.Attempts != want.attempts {
-				t.Fatalf("%s: blocked %q attempts %d", code, rel.BlockedReason, rel.Attempts)
-			}
-		})
+		if got := failureClass(map[string]any{"code": code}); got != want {
+			t.Errorf("%s: %s, want %s", code, got, want)
+		}
+	}
+}
+
+// What blockFor does to the release, one rig per kind of failure: blocked, set aside,
+// counted.
+func TestARehearsalOnTheDataBlocks(t *testing.T) {
+	r := newDriverRig(t)
+	r.home.prepFail = "rehearsal_failed"
+	r.minutes(t, 2)
+	if rel, _ := r.f.store.Get(context.Background(), "1.5.0"); rel.BlockedReason != "rehearsal" || rel.Attempts != 0 {
+		t.Fatalf("blocked %q attempts %d", rel.BlockedReason, rel.Attempts)
+	}
+}
+
+func TestAFailedDownloadIsAnAttempt(t *testing.T) {
+	r := newDriverRig(t)
+	r.home.prepFail = "download_failed"
+	r.minutes(t, 2)
+	if rel, _ := r.f.store.Get(context.Background(), "1.5.0"); rel.BlockedReason != "" || rel.Attempts != 1 {
+		t.Fatalf("blocked %q attempts %d", rel.BlockedReason, rel.Attempts)
+	}
+}
+
+func TestAnOlderBuildIsSetAside(t *testing.T) {
+	r := newDriverRig(t)
+	r.home.prepFail = KindOlderBuild
+	r.minutes(t, 2)
+	if rel, _ := r.f.store.Get(context.Background(), "1.5.0"); rel.BlockedReason != KindOlderBuild || rel.Attempts != 0 {
+		t.Fatalf("blocked %q attempts %d", rel.BlockedReason, rel.Attempts)
 	}
 }
 
@@ -345,5 +361,80 @@ func TestLastTickAndPausedMachines(t *testing.T) {
 	n := r.f.notes.find(NoticeNodePausedSchema)
 	if n == nil || n.p.Params["machine"] != "alpha" || n.p.Params["min_node_schema"] != 150 {
 		t.Fatalf("paused notice: %+v (%v)", n, r.f.notes.kinds())
+	}
+}
+
+// hostedCluster is the cluster fake with the hosts its machines' sessions report.
+type hostedCluster struct {
+	*clusterFake
+	hosts map[string][]string
+}
+
+func (c hostedCluster) NodeHosts() map[string][]string { return c.hosts }
+
+// M3 (audit, second check): a machine's running jobs are found by the host its sessions
+// report (a Mac's "Studio.local", a machine renamed in the cluster), not only by its
+// cluster name; another machine's jobs are not its own.
+func TestNodeJobsByTheHostItReports(t *testing.T) {
+	r := newDriverRig(t)
+	ctx := context.Background()
+	if _, err := r.f.db.Exec(`ALTER TABLE processing_jobs ADD COLUMN claimed_by TEXT`); err != nil {
+		t.Fatal(err)
+	}
+	for id, by := range map[string]string{"j1": "Studio.local/412/w1", "j2": "studio/413/w2", "j3": "attic/9/w1"} {
+		if _, err := r.f.db.Exec(`INSERT INTO processing_jobs (id, state, claimed_by) VALUES ($1, 'running', $2)`, id, by); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := r.d.nodeJobs(ctx, "n1", "studio-gpu"); n != 0 {
+		t.Fatalf("by its cluster name alone: %d", n)
+	}
+	r.d.Cluster = hostedCluster{clusterFake: r.cluster, hosts: map[string][]string{"n1": {"Studio"}}}
+	if n := r.d.nodeJobs(ctx, "n1", "studio-gpu"); n != 2 {
+		t.Fatalf("by the host it reports: %d, want 2", n)
+	}
+	if n := r.d.nodeJobs(ctx, "n2", "attic"); n != 1 {
+		t.Fatalf("a name that is its host's: %d", n)
+	}
+}
+
+// N2 (audit, second check): a machine a person must mend, unchanged, is caught up at most
+// once a day (not every few hours, each run failing the same way).
+func TestNeedsPersonCaughtUpOncePerDay(t *testing.T) {
+	r := newDriverRig(t)
+	ctx := context.Background()
+	n := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
+	n.prepFail = "not_self_managed"
+	_, _ = r.f.svc.Tick(ctx)
+	run := r.drive(t, 40)
+	if ts := targetsByName(t, r.f.store, run.ID); ts["alpha"].State != TargetNeedsPerson {
+		t.Fatalf("alpha %s", ts["alpha"].State)
+	}
+	r.f.now = r.f.now.Add(7 * time.Hour)
+	_ = r.d.Step(ctx)
+	if cu, _ := r.f.store.ActiveRun(ctx); cu != nil {
+		t.Fatalf("caught up again after 7 h, nothing changed: %+v", cu)
+	}
+	r.f.now = r.f.now.Add(18 * time.Hour)
+	_ = r.d.Step(ctx)
+	if cu, _ := r.f.store.ActiveRun(ctx); cu == nil || cu.Trigger != TriggerCatchUp {
+		t.Fatalf("not tried again after a day: %+v", cu)
+	}
+}
+
+// L1 (audit, second check): the dump the home's new release took before its migrations is
+// recorded on the run (update_runs.backup).
+func TestHomeCommitRecordsTheBackup(t *testing.T) {
+	r := newDriverRig(t)
+	ctx := context.Background()
+	r.home.backup = &RunBackup{Path: "/srv/maktaba/backups/pre-1.4.0-to-1.5.0.dump", Bytes: 9000}
+	_, _ = r.f.svc.Tick(ctx)
+	run := r.drive(t, 40)
+	if run.State != RunDone {
+		t.Fatalf("run %s %s", run.State, run.Error)
+	}
+	var b RunBackup
+	if err := json.Unmarshal(run.Backup, &b); err != nil || b.Path != r.home.backup.Path || b.Bytes != 9000 {
+		t.Fatalf("backup %s (%v)", run.Backup, err)
 	}
 }

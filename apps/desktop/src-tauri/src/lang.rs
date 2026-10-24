@@ -167,13 +167,13 @@ pub struct Words {
     /// The server did not stop for the update.
     pub update_stop_failed: &'static str,
     /// After a failed update: a paused server.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     pub update_stays_paused: &'static str,
     /// After a failed update: the server starts again.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     pub update_starting_again: &'static str,
     /// After a failed update: it could not start again.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     pub update_start_failed: &'static str,
     /// `{url}` could not be opened in the window.
     pub open_failed: &'static str,
@@ -272,11 +272,11 @@ pub static EN: Words = Words {
     model_missing: "Language model: {name} not downloaded",
     update_failed: "The update could not be installed.",
     update_stop_failed: "The update was not installed: the server could not be stopped for it.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     update_stays_paused: "The server stays paused.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     update_starting_again: "The server is starting again.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     update_start_failed: "The server could not start again.",
     open_failed: "Cannot open {url}.",
     #[cfg(windows)]
@@ -343,11 +343,11 @@ pub static AR: Words = Words {
     model_missing: "النموذج اللغوي: {name} غير مُنزَّل",
     update_failed: "تعذّر تثبيت التحديث.",
     update_stop_failed: "لم يُثبَّت التحديث: تعذّر إيقاف الخادم من أجله.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     update_stays_paused: "يبقى الخادم متوقفًا مؤقتًا.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     update_starting_again: "يبدأ الخادم من جديد.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     update_start_failed: "تعذّر تشغيل الخادم من جديد.",
     open_failed: "يتعذّر فتح {url}.",
     #[cfg(windows)]

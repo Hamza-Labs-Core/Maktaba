@@ -144,7 +144,8 @@ it, unless it is `previous`.
   },
   "pipeline": {"wheel": "maktaba_pipeline-1.5.0-py3-none-any.whl", "wheel_sha256": "…",
                "constraints": "maktaba-pipeline-1.5.0-constraints.txt", "constraints_sha256": "…",
-               "python": "3.12"}
+               "python": "3.12"},
+  "app_postgres_major": {"mac-app": 16, "win-app": 16, "linux-app": 16}
 }
 ```
 
@@ -154,7 +155,11 @@ it, unless it is `previous`.
    Epic 31 §5.1); `breaks_previous_home` is set when any migration since the previous release's
    `schema_rev` carries the MANIFEST marker "Breaking for the previous release" (a new rule, §6.3).
    `files` are the digests of the binaries inside the archive, so an extracted directory can be
-   re-verified without the archive.
+   re-verified without the archive. `app_postgres_major` (absent before v0.3.2) is each app
+   payload's bundled PostgreSQL major, from its pins (`tools/release/<payload>/pins.env`): a
+   machine whose bundled database was made by another major refuses the release before its app
+   installs it (`pg_major_change`, a person's; the release is not blocked). Without the field,
+   the release's start halts at its database step and goes back.
 
 2. `checksums.txt.sigstore.json` — `cosign sign-blob --bundle checksums.txt.sigstore.json
    --new-bundle-format` (in addition to today's `.sig` / `.pem`, kept for humans). The bundle holds

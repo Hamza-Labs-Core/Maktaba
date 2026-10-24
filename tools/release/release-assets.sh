@@ -6,6 +6,10 @@
 #                                              (NOTES set: the draft's notes)
 #   release-assets.sh upload  TAG [--replace NAME]... FILE...
 #   release-assets.sh publish TAG              publish the draft once complete; mark the latest
+#   release-assets.sh adopt   TAG DIR          a published release: each file of DIR it has is
+#                                              replaced by the published one (desktop's feed is
+#                                              then written from the bundles and signatures apps
+#                                              download, never from a re-run's own build of them)
 #
 # A release is public only when it is complete (H2/B2: a home that looked at a release
 # before its release.json existed never verified it again):
@@ -166,9 +170,40 @@ publish() {
     fi
 }
 
+# adopt DIR: a published release's own copy of each file of DIR it has (a re-run of a
+# published tag rebuilds the bundles, whose signatures differ: a feed written from them would
+# name signatures the published bundles do not have, and every app's update would fail its
+# check). A draft's files are this run's (nothing public yet).
+adopt() {
+    local dir="${1:?DIR}" id names f base tmp
+    id="$(release_id)"
+    [ -n "${id}" ] || return 0
+    if is_draft "${id}"; then
+        return 0
+    fi
+    names="$(asset_names "${id}")"
+    tmp="$(mktemp -d)"
+    for f in "${dir}"/*; do
+        [ -f "${f}" ] || continue
+        base="$(basename "${f}")"
+        [ "${base}" != latest.json ] || continue
+        grep -qxF "${base}" <<<"${names}" || continue
+        gh release download "${tag}" --pattern "${base}" --dir "${tmp}" --clobber
+        [ -f "${tmp}/${base}" ] || { echo "::error::${tag}: ${base} is listed but could not be downloaded" >&2; exit 1; }
+        if cmp -s "${tmp}/${base}" "${f}"; then
+            rm -f "${tmp}/${base}"
+        else
+            echo "release ${tag} is published: its ${base} is kept (this run built another)"
+            mv -f "${tmp}/${base}" "${f}"
+        fi
+    done
+    rm -rf "${tmp}"
+}
+
 case "${cmd}" in
     ensure) ensure ;;
     upload) upload "$@" ;;
     publish) publish ;;
-    *) echo "release-assets.sh: unknown command ${cmd}" >&2; exit 2 ;;
+    adopt) adopt "$@" ;;
+    *) echo "release-assets.sh: unknown command ${cmd} (ensure|upload|publish|adopt)" >&2; exit 2 ;;
 esac

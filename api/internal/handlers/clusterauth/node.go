@@ -17,8 +17,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
-
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
@@ -105,12 +103,10 @@ type Node struct {
 // log in to its database from /api/cluster/self with it.
 const LocalTokenHeader = "X-Maktaba-Local-Token"
 
-// trusted reports whether a request may see the home's machines (an admin, or this
-// machine's own supervisor): /api/cluster/self is public otherwise.
+// trusted reports whether a request may see the home's machines: this machine's own
+// supervisor, with its local token (/api/cluster/self is public, and carries no session:
+// the pages read the machines' database logins from /api/cluster and /api/cluster/updates).
 func trusted(r *http.Request) bool {
-	if p := principal.FromContext(r.Context()); p != nil && p.IsAdmin {
-		return true
-	}
 	got, file := r.Header.Get(LocalTokenHeader), strings.TrimSpace(os.Getenv("MAKTABA_SUPERVISOR_TOKEN_FILE"))
 	if got == "" || file == "" {
 		return false
@@ -121,8 +117,8 @@ func trusted(r *http.Request) bool {
 }
 
 // MountSelf mounts GET /api/cluster/self alone (the home serves it too). Its machines
-// that cannot log in to the home's database (names and why) go to an admin or this
-// machine's supervisor only.
+// that cannot log in to the home's database (names and why) go to this machine's
+// supervisor only.
 func MountSelf(r chi.Router, self SelfFunc) {
 	r.Get("/api/cluster/self", func(w http.ResponseWriter, r *http.Request) {
 		info := SelfInfo{Role: "home"}

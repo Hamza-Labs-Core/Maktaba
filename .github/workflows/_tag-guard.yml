@@ -21,6 +21,12 @@ on:
       maintenance:
         description: "true for a deliberate maintenance release (MAKTABA_RELEASE_ALLOW_TAG)"
         value: ${{ jobs.guard.outputs.maintenance }}
+      published:
+        description: "true when the tag is a published release already: this run is a re-run, which builds and signs nothing again (only a draft is rebuilt)"
+        value: ${{ jobs.guard.outputs.published }}
+      latest:
+        description: "true when the tag would be GitHub's latest (the highest stable version; never a pre-release or a maintenance release): its images' :latest moves only then"
+        value: ${{ jobs.guard.outputs.latest }}
 
 permissions:
   contents: read
@@ -37,6 +43,8 @@ jobs:
       actions: read # CI's runs on the tagged commit
     outputs:
       maintenance: ${{ steps.guard.outputs.maintenance }}
+      published: ${{ steps.guard.outputs.published }}
+      latest: ${{ steps.guard.outputs.latest }}
     steps:
       - uses: actions/checkout@v6.0.2
         with:
@@ -57,7 +65,7 @@ jobs:
         run: tools/release/tag-guard.sh
 
       - name: Open the release as a draft
-        if: inputs.create_draft
+        if: inputs.create_draft && steps.guard.outputs.published != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           NOTES: "Release ${{ github.ref_name }}: in the making (published once its signed files and apps are in)."

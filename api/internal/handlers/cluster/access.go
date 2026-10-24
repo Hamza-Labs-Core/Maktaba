@@ -26,7 +26,7 @@ type accessRoles interface {
 
 // termRoles are the Roles that can say the cluster's term.
 type termRoles interface {
-	Term(ctx context.Context) int64
+	Term(ctx context.Context) (int64, error)
 }
 
 // machineAccess is a machine's re-made access, as its home.access command takes it.
@@ -91,6 +91,13 @@ func (h *Handler) GrantAccess(ctx context.Context, nodeID string) (json.RawMessa
 			return nil, fmt.Errorf("this home's database CA cannot be read: %w", err)
 		}
 	}
+	// the term first: an access a machine would refuse (no term) changes no password
+	var term int64
+	if r, ok := h.Roles.(termRoles); ok {
+		if term, err = r.Term(ctx); err != nil {
+			return nil, err
+		}
+	}
 	password, err := cluster.NewPassword()
 	if err != nil {
 		return nil, err
@@ -100,10 +107,6 @@ func (h *Handler) GrantAccess(ctx context.Context, nodeID string) (json.RawMessa
 		return nil, err
 	}
 	ca, tls := h.pgTLS()
-	var term int64
-	if r, ok := h.Roles.(termRoles); ok {
-		term = r.Term(ctx)
-	}
 	return json.Marshal(machineAccess{Role: role, Password: password, DBHost: h.machineHost(), DBPort: h.machinePort(ctx),
 		DBName: dbName, CA: ca, TLS: tls, Term: term})
 }

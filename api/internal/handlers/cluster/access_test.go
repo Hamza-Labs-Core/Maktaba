@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -13,13 +14,19 @@ import (
 // usableRoles are fake Roles that also say whether a role logs in, and the server's port.
 type usableRoles struct {
 	*fakeRoles
-	usable bool
-	port   int
+	usable  bool
+	port    int
+	termErr error
 }
 
 func (u *usableRoles) Usable(context.Context, string) (bool, error) { return u.usable, nil }
 func (u *usableRoles) ServerPort(context.Context) (int, error)      { return u.port, nil }
-func (u *usableRoles) Term(context.Context) int64                   { return 4 }
+func (u *usableRoles) Term(context.Context) (int64, error) {
+	if u.termErr != nil {
+		return 0, u.termErr
+	}
+	return 4, nil
+}
 
 // The home owns its machines' database access: an approved machine whose role does not log
 // in on the home's current database is said to be so, and its access is made again (its
@@ -67,6 +74,13 @@ func TestMachineAccessRemade(t *testing.T) {
 	}
 	t.Setenv("MAKTABA_CLUSTER_DB_HOST", "")
 	t.Setenv("MAKTABA_CLUSTER_DB_PORT", "")
+	// a term the database cannot say: no access, and the password left as it was
+	before := f.roles.created[a.Role]
+	roles.termErr = errors.New("the database went away")
+	if _, err := f.h.GrantAccess(ctx, nodeID); err == nil || f.roles.created[a.Role] != before {
+		t.Fatalf("an access with no term: %v (password changed: %v)", err, f.roles.created[a.Role] != before)
+	}
+	roles.termErr = nil
 	// the bundled Postgres: its port, as joins hand it; its CA unreadable: no access
 	// without it (the machines would be left a connection they cannot verify)
 	f.h.PGBundled = true

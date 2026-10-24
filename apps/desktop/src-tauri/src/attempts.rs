@@ -213,7 +213,12 @@ pub fn clean_detail(s: &str) -> String {
             .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ')' | '>' | ']' | '`'))
             .unwrap_or(url.len());
         let (token, after) = url.split_at(end);
-        out.push_str(token.split('?').next().unwrap_or(token));
+        // punctuation that ends the sentence, not the URL ("…tar.gz?sig=…): 403", "…?q=1.")
+        // stays: the query is what goes
+        let kept = token.trim_end_matches(['(', ')', '.', ',', ':', ';']);
+        let (core, tail) = token.split_at(kept.len());
+        out.push_str(core.split('?').next().unwrap_or(core));
+        out.push_str(tail);
         rest = after;
     }
     out.push_str(rest);
@@ -963,7 +968,9 @@ pub fn classify_text(step: &'static str, msg: &str, ctx: &Ctx) -> &'static str {
     ]) {
         return NO_NETWORK;
     }
-    if has(&["exit code", "exited with"]) {
+    // the system's package installer (.deb, .rpm) is the only installer whose exit the
+    // updater reports: on Windows it starts NSIS and exits, a Mac swaps the bundle itself
+    if cfg!(target_os = "linux") && has(&["exit code", "exited with"]) {
         return INSTALLER_EXIT;
     }
     fallback(step)
@@ -1104,10 +1111,15 @@ fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
 pub const LOGS_MARGIN: Duration = Duration::from_secs(120);
 
 /// The web logs page of this machine's server for an attempt ("See the logs"): its time,
-/// two minutes on either side (since the attempt began, until it ended, or began when it
-/// has not). No search: most of an update's lines do not name its release.
-/// <web_url>/admin/logs?since=<ISO>&until=<ISO>
+/// two minutes on either side (since the attempt began, until it ended; now while it still
+/// runs; when it began when its end is not known). No search: most of an update's lines do
+/// not name its release. <web_url>/admin/logs?since=<ISO>&until=<ISO> (RFC 3339, UTC).
 pub fn logs_url(web_url: &str, a: &Attempt) -> String {
+    logs_url_at(web_url, a, SystemTime::now())
+}
+
+/// logs_url at `now`.
+pub fn logs_url_at(web_url: &str, a: &Attempt, now: SystemTime) -> String {
     let base = web_url.trim_end_matches('/');
     let mut query: Vec<(&str, String)> = Vec::new();
     if let Some(at) = parse_rfc3339(&a.at) {
@@ -1115,8 +1127,12 @@ pub fn logs_url(web_url: &str, a: &Attempt) -> String {
             "since",
             rfc3339(at.checked_sub(LOGS_MARGIN).unwrap_or(UNIX_EPOCH)),
         ));
-        let end = parse_rfc3339(&a.ended_at).unwrap_or(at);
-        query.push(("until", rfc3339(end + LOGS_MARGIN)));
+        let end = match parse_rfc3339(&a.ended_at) {
+            Some(end) => end,
+            None if a.outcome == RUNNING => now,
+            None => at,
+        };
+        query.push(("until", rfc3339(end.max(at) + LOGS_MARGIN)));
     }
     let query: Vec<String> = query
         .iter()
@@ -1596,6 +1612,15 @@ mod tests {
             c.len()
         );
         assert_eq!(clean_detail("short"), "short");
+        // the punctuation after a query is the sentence's, and stays
+        assert_eq!(
+            clean_detail("GET https://x/a.tar.gz?sig=s3cret): 403"),
+            "GET https://x/a.tar.gz): 403"
+        );
+        assert_eq!(
+            clean_detail("GET https://x/a.tar.gz?sig=s3cret: 403; then https://y/b?t=1."),
+            "GET https://x/a.tar.gz: 403; then https://y/b."
+        );
         // on write, on read, and in app.log
         let dir = tempfile::tempdir().unwrap();
         let p = path(dir.path());
@@ -1652,7 +1677,16 @@ mod tests {
             (STEP_RELAUNCH, "the bundle carries com.apple.quarantine", none, QUARANTINED),
             (STEP_DOWNLOAD, "No space left on device", none, DISK_FULL),
             (STEP_DOWNLOAD, "There is not enough space on the disk.", none, DISK_FULL),
-            (STEP_INSTALL, "the installer exited with code 2", none, INSTALLER_EXIT),
+            (
+                STEP_INSTALL,
+                "the installer exited with code 2",
+                none,
+                if cfg!(target_os = "linux") {
+                    INSTALLER_EXIT
+                } else {
+                    INSTALL_FAILED
+                },
+            ),
             (STEP_INSTALL, "login_item_unsigned: the app is not code-signed", none, LOGIN_ITEM_UNSIGNED),
             (STEP_CHECK, "something new", none, CHECK_FAILED),
             (STEP_DOWNLOAD, "something new", none, DOWNLOAD_FAILED),
@@ -1929,7 +1963,7 @@ mod tests {
             logs_url("http://127.0.0.1:8080/", &failed),
             "http://127.0.0.1:8080/admin/logs?since=2026-10-24T05%3A28%3A00Z&until=2026-10-24T05%3A33%3A12Z"
         );
-        // not ended (or its end unreadable): two minutes after it began
+        // its end not known: two minutes after it began
         let early = Attempt {
             at: "2026-10-24T05:30:00Z".into(),
             ..Attempt::default()
@@ -1937,6 +1971,16 @@ mod tests {
         assert_eq!(
             logs_url("http://localhost:8080", &early),
             "http://localhost:8080/admin/logs?since=2026-10-24T05%3A28%3A00Z&until=2026-10-24T05%3A32%3A00Z"
+        );
+        // still running: until now, and two minutes on
+        let running = Attempt {
+            outcome: RUNNING.into(),
+            ..early.clone()
+        };
+        let now = parse_rfc3339("2026-10-24T05:41:30Z").unwrap();
+        assert_eq!(
+            logs_url_at("http://localhost:8080", &running, now),
+            "http://localhost:8080/admin/logs?since=2026-10-24T05%3A28%3A00Z&until=2026-10-24T05%3A43%3A30Z"
         );
         // a time that does not read: the page as it is (never a search: most of an
         // update's lines do not name its release)

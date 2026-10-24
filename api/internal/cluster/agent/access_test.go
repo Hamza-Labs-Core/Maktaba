@@ -173,15 +173,21 @@ func TestEnsureAccessOnlyWhenItMends(t *testing.T) {
 		{homeDBState{Code: "no_database", Fails: 2, Target: "h:54329/maktaba_old"}, "no_database_moved"},
 		{homeDBState{Code: "refused", Fails: 2, Target: "h:54329/maktaba"}, ""},
 		{homeDBState{Code: "no_hba", Fails: 2, Target: "h:54329/maktaba"}, ""},
-		{homeDBState{Code: "tls", Fails: 2, Target: "h:5432/maktaba"}, ""},
-		{homeDBState{Code: "other", Fails: 2, Target: "h:5432/maktaba"}, ""},
+		{homeDBState{Code: "tls", Fails: 2, Target: "h:54329/maktaba"}, ""},
+		{homeDBState{Code: "other", Fails: 2, Target: "h:54329/maktaba"}, ""},
+		// the database moved, whatever the old address does now (closes, fails TLS)
+		{homeDBState{Code: "tls", Fails: 2, Target: "h:5432/maktaba"}, "tls_moved"},
+		{homeDBState{Code: "other", Fails: 2, Target: "h:5432/maktaba"}, "other_moved"},
+		// the same port and database on another machine than the one it reaches the home at
+		{homeDBState{Code: "other", Fails: 2, Target: "old-home:54329/maktaba", HomeHost: "new-home"}, "other_moved"},
+		{homeDBState{Code: "other", Fails: 2, Target: "NEW-home:54329/maktaba", HomeHost: "new-home"}, ""},
 		{homeDBState{Code: "unreachable", Fails: 2}, ""},
 	} {
 		if got := remakeWhy(c.db, "", 54329, "maktaba"); got != c.want {
 			t.Errorf("%+v: %q, want %q", c.db, got, c.want)
 		}
 	}
-	if !moved("db.lan:54329/maktaba", "db2.lan", 54329, "maktaba") || moved("DB.lan:54329/maktaba", "db.lan", 54329, "maktaba") {
+	if !moved("db.lan:54329/maktaba", "db2.lan", 54329, "maktaba", "home") || moved("DB.lan:54329/maktaba", "db.lan", 54329, "maktaba", "home") {
 		t.Error("the host the home names")
 	}
 	for tries, want := range map[int]time.Duration{0: time.Minute, 1: time.Minute, 2: 2 * time.Minute, 3: 4 * time.Minute,
@@ -218,4 +224,17 @@ func TestEnsureAccessOnlyWhenItMends(t *testing.T) {
 	}
 	a.send(map[string]any{"t": "cmd.result", "id": cmd["id"], "ok": true})
 	waitUntil(t, func() bool { return g.grants() == 1 })
+}
+
+// A machine's sessions say its host (the drain finds its running jobs by it).
+func TestNodeHosts(t *testing.T) {
+	f := newFixture(t)
+	id, priv := f.approvedNode("studio-gpu")
+	if _, err := f.dialAgent(helloOpts{kind: "node", nodeID: id, nodePriv: priv, process: "supervisor"}); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, func() bool { return len(f.hub.NodeHosts()[id]) == 1 })
+	if got := f.hub.NodeHosts()[id]; got[0] != "test-host" {
+		t.Fatalf("hosts: %v", got)
+	}
 }

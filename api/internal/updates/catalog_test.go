@@ -52,8 +52,8 @@ func (g *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		http.NotFound(w, r)
-	case strings.HasPrefix(p, "/dl/"):
-		b, ok := g.files[strings.TrimPrefix(p, "/dl/")]
+	case strings.HasPrefix(p, "/o/r/releases/download/"):
+		b, ok := g.files[strings.TrimPrefix(p, "/o/r/releases/download/")]
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -75,7 +75,7 @@ func (g *fakeGitHub) add(tag string, prerelease, manifest bool, checksums string
 	}
 	var assets []map[string]any
 	for _, n := range names {
-		assets = append(assets, map[string]any{"name": n, "browser_download_url": g.srv.URL + "/dl/" + tag + "/" + n, "size": 10})
+		assets = append(assets, map[string]any{"name": n, "browser_download_url": g.srv.URL + "/o/r/releases/download/" + tag + "/" + n, "size": 10})
 	}
 	g.files[tag+"/"+ChecksumsFile] = []byte(checksums)
 	g.files[tag+"/"+BundleFile] = []byte(`{"bundle":"` + tag + `"}`)
@@ -338,5 +338,27 @@ func TestCheckStaleWarns(t *testing.T) {
 	_, _ = d.Check(ctx)
 	if w := n.find(NoticeCheckStale); w == nil || w.p.Severity != notify.SeverityWarn {
 		t.Fatalf("no stale warning: %v", n.kinds())
+	}
+}
+
+// A release's assets are the pinned repository's own: a download named elsewhere (another
+// host, another repository) is dropped at discovery, so no machine ever fetches it.
+func TestPinnedAssets(t *testing.T) {
+	d := &Discoverer{BaseURL: "https://api.github.com", Repo: "Hamza-Labs-Core/Maktaba"}
+	r := Release{Tag: "v1.5.0", Assets: []Asset{
+		{Name: "release.json", URL: "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v1.5.0/release.json"},
+		{Name: "checksums.txt", URL: "https://github.com/hamza-labs-core/maktaba/releases/download/v1.5.0/checksums.txt"},
+		{Name: "api.json", URL: "https://api.github.com/repos/Hamza-Labs-Core/Maktaba/releases/assets/42"},
+		{Name: "evil.tar.gz", URL: "https://evil.example/Hamza-Labs-Core/Maktaba/releases/download/v1.5.0/evil.tar.gz"},
+		{Name: "fork.tar.gz", URL: "https://github.com/someone/Maktaba/releases/download/v1.5.0/fork.tar.gz"},
+		{Name: "plain.tar.gz", URL: "http://github.com/Hamza-Labs-Core/Maktaba/releases/download/v1.5.0/plain.tar.gz"},
+		{Name: "climb.tar.gz", URL: "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/../../../evil/x"},
+	}}
+	var kept []string
+	for _, a := range d.pinnedAssets(r) {
+		kept = append(kept, a.Name)
+	}
+	if strings.Join(kept, ",") != "release.json,checksums.txt,api.json" {
+		t.Fatalf("kept %v", kept)
 	}
 }

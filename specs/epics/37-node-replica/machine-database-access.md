@@ -13,12 +13,13 @@
 1. **The machine checks.** Every 30 s, 5 s after it starts, and each time its machine agent
    connects to the home again, a full node logs in to its home's database with `node.json`'s
    access, as its programs do. Its machine agent's `update.state` says how it went:
-   `home_db: {ok, code, detail, at, healing, fails, target}`.
+   `home_db: {ok, code, detail, at, healing, fails, target, home_host}`.
    - `code` is one of `auth_failed` (password, role missing, `NOLOGIN`), `no_hba`, `refused`,
      `unreachable`, `no_database`, `tls` or `other`. A refused password on the TLS try stays
      the reason over a plain try's missing `pg_hba` line.
-   - `target` is where it logs in: `host:port/database`, never the password. `detail` never
-     carries a login's secrets either (a url's user and password, a `password=`).
+   - `target` is where it logs in: `host:port/database`, never the password; `home_host` the
+     host it reaches the home's API at. `detail` never carries a login's secrets either (a url's
+     user and password, a `password=`).
    - `fails` counts the failed logins in a row. After a failure the machine tries again in
      10 s, and a failure counts once it is seen twice: one try can meet a home in the middle of
      a switch (the machine still on the old home's database, about to follow the new home by
@@ -30,21 +31,24 @@
    (`agent.Hub.EnsureAccess`) looks at its connected machines. A machine gets its access re-made
    when, twice in a row:
    - its password is refused or its role is unknown (`auth_failed`);
-   - or it cannot reach the database, or the database refuses its address or has no such
-     database (`refused`, `unreachable`, `no_hba`, `no_database`), *and* its `target` is not the
-     access the home hands out (another port, another database, or another host when the home
-     names one): the database moved;
+   - or its `target` is not the access the home hands out, whatever the old address does now
+     (refuses, closes the connection, fails TLS): the database moved. Another port, another
+     database, or another host: the one the home names, else the one the machine reaches the
+     home's API at (`home_host`), so a move to another machine on the same port and database
+     name is seen too (a machine that reaches the home by another name than its database's gets
+     one re-made access, then points at the home's name);
    - or its role does not log in on the home's current database (checked once per agent
      session: a move that carried no roles).
 
-   TLS failures and anything else are not the access's to mend, and a database that refuses or
-   cannot take a login at the right address (too many clients, starting up, a `pg_hba` of the
-   operator's) is not rotated. A re-made access that did not help is tried again after a
+   At the right address, TLS failures and anything else are not the access's to mend, and a
+   database that refuses or cannot take a login there (too many clients, starting up, a
+   `pg_hba` of the operator's) is not rotated. A home whose database cannot say the cluster's
+   term re-makes nothing (an access with no term would be refused, its password changed). A re-made access that did not help is tried again after a
    minute, then two, four, … up to an hour, until the machine logs in.
    - The machine's role is made again with a new password (`PGRoles.Create`: made, or
      re-enabled with `LOGIN`, in the worker group). The statement carries the password's SCRAM
-     verifier, never the password: no DDL log or `pg_stat_activity` shows it. No password is
-     kept anywhere to recover.
+     verifier, never the password: no DDL log or `pg_stat_activity` shows it (nor when a role
+     or a copy's replication role is turned off). No password is kept anywhere to recover.
    - The access is pushed over the machine channel, which the cluster key authenticates:
      `home.access {role, password, db_host?, db_port, db_name, database_ca?, database_tls?,
      term}`. The command goes to the machine's own agent only (the processes page's command
@@ -78,7 +82,7 @@
    a link to its logs. It is not shown as connected and healthy meanwhile.
 5. **An update carries its machines along.** A home's update that moves its database waits in
    its watch for its machines to follow it (the home's `/api/cluster/self` lists them,
-   `machines_db`, to an admin or the home's own supervisor only: its local token). Each machine
+   `machines_db`, to the home's own supervisor only: its local token). Each machine
    holds the home's update for 10 minutes at most from the first time it said so in that watch,
    however often it starts again meanwhile; a machine still unable after that no longer holds
    it, and the pages show it as needing a person.
@@ -95,9 +99,11 @@ fine just because its machine agent is connected.
 ## Tested
 
 - **End to end, on real Postgres** (`api/dbmove_e2e_test.go`), with SCRAM for the machines'
-  roles (the replica job's `pg_hba`): the node's address refuses and its role is dropped. The
-  node says so, the home makes its role again and pushes the real address, and the node logs in
-  again with the pushed password, all by itself.
+  roles (the replica job's `pg_hba`), both halves of the outage in turn: the node's address
+  refuses (nothing listens there): the home re-makes its access because it points elsewhere
+  (`refused_moved`) and the node follows the real address (51 s on Windows); then its role is
+  dropped: its password refused (`auth_failed`), its role made again, and it logs in with the
+  pushed password (70 s), all by itself.
 - **The node:** the access taken (the host the home is reached at, the port, the role, the CA;
   the other fields and the url's settings kept), refused when bad, and the same access
   changing nothing; the classification of every login failure; the watch.

@@ -144,9 +144,12 @@ func (r requests) answer(j *Journal) (string, error) {
 // once), app_management (macOS does not let it replace itself: App Management, locked
 // files), translocated (macOS runs it from a temporary read-only place: it is moved to
 // Applications), not_writable (its files cannot be replaced), installer_not_finished
-// (the Windows installer did not finish once the app closed: tried again).
+// (the Windows installer did not finish once the app closed: tried again),
+// login_item_unsigned (macOS refused the new app's server login item, an app without its
+// code signature: a person signs it, or installs a signed release; the home's driver
+// counts no attempt).
 var appCodes = []string{"needs_admin", "local_build", "app_management", "translocated", "not_writable",
-	"installer_not_finished"}
+	"installer_not_finished", "login_item_unsigned"}
 
 // refusedCodes are the app's codes for an order it refused before it touched its bundle
 // (a person's to mend; the release before needs no copy put back).

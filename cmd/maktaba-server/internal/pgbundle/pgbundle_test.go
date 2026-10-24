@@ -514,3 +514,11 @@ func TestDumpBeforeUpdate(t *testing.T) {
 		t.Fatalf("pg_dump ran %d times, want 5", n)
 	}
 }
+
+// The bundled Postgres logs in UTC, as every other line of server.log.
+func TestServerArgsLogInUTC(t *testing.T) {
+	b := Bundle{Data: t.TempDir(), Port: 54329}
+	if args := strings.Join(b.ServerArgs(), " "); !strings.Contains(args, "-c log_timezone=UTC") {
+		t.Fatalf("args: %s", args)
+	}
+}

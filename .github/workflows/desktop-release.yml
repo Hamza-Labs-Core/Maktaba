@@ -541,6 +541,10 @@ jobs:
             echo "::error::no leg staged a bundle"
             exit 1
           fi
+          # a published release keeps its own bundles and signatures: a re-run's are swapped
+          # for them first, so the feed below names the signatures apps download (a full
+          # re-run's new signatures made every app's update fail its check)
+          tools/release/release-assets.sh adopt "$TAG" staged
           # release.yml's guard opened the release as a draft; a published release only
           # gains the bundles it lacks (a re-run of the failed legs after it was published)
           tools/release/release-assets.sh upload "$TAG" staged/*

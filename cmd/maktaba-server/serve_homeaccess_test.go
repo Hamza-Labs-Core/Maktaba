@@ -289,10 +289,12 @@ func TestHomeDBWatchTargetAndSecrets(t *testing.T) {
 	}
 	w := &homeDBWatch{probe: func(context.Context) error {
 		return errors.New(`pq: password authentication failed for user "maktaba_node_1" (postgres://maktaba_node_1:s3cret@h:5432/m)`)
-	}, target: func() string { return "192.168.50.177:54329/maktaba" }, kick: make(chan struct{}, 1)}
+	}, target: func() string { return "192.168.50.177:54329/maktaba" }, homeHost: func() string { return "192.168.50.177" },
+		kick: make(chan struct{}, 1)}
 	w.check(context.Background())
 	st := w.State()
-	if st.Target != "192.168.50.177:54329/maktaba" || strings.Contains(st.Detail, "s3cret") || st.Code != "auth_failed" {
+	if st.Target != "192.168.50.177:54329/maktaba" || st.HomeHost != "192.168.50.177" || strings.Contains(st.Detail, "s3cret") ||
+		st.Code != "auth_failed" {
 		t.Fatalf("%+v", st)
 	}
 	w.reconnected()

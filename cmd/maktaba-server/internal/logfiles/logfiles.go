@@ -264,51 +264,108 @@ func readFile(path, name string, last time.Time) (_ []Entry, cut bool, end time.
 }
 
 var (
-	prefixRe = regexp.MustCompile(`^\[([A-Za-z0-9_.-]{1,32})\] ?`)
+	prefixRe = regexp.MustCompile(`^\[([A-Za-z][A-Za-z0-9_.-]{0,31})\] ?`)
+	// pgRe is a Postgres log line after its time: its process id and its severity
+	pgRe     = regexp.MustCompile(`^\[\d+\] (LOG|INFO|NOTICE|WARNING|ERROR|FATAL|PANIC|STATEMENT|DETAIL|HINT|CONTEXT):`)
 	slogTime = regexp.MustCompile(`(?:^|\s)time=("?)([0-9T:.+\-Z]+)("?)`)
 	slogLvl  = regexp.MustCompile(`(?:^|\s)level=([A-Za-z]+)`)
 	slogMsg  = regexp.MustCompile(`(?:^|\s)msg=("(?:[^"\\]|\\.)*"|\S+)`)
 )
 
-// timeLayouts are the times a line may start with or carry.
-var timeLayouts = []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999", "2006-01-02 15:04:05.999999999Z07:00",
-	"2006-01-02 15:04:05,000", "2006-01-02 15:04:05.999999999", "2006/01/02 15:04:05.999999", "2006/01/02 15:04:05"}
+// zonedLayouts are the times a line may carry with their zone; localLayouts the ones with
+// none, which are this machine's local time (a program that logs in local time).
+var (
+	zonedLayouts = []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999Z07:00"}
+	localLayouts = []string{"2006-01-02T15:04:05.999999999", "2006-01-02 15:04:05,000", "2006-01-02 15:04:05.999999999",
+		"2006/01/02 15:04:05.999999", "2006/01/02 15:04:05"}
+	// offsetRe is a zone given as an offset after a time ("+02:00", "-0400")
+	offsetRe = regexp.MustCompile(`^[+-]\d\d:?\d\d$`)
+)
 
+// parseTime reads a time a line carries; one without a zone is local time.
 func parseTime(s string) time.Time {
 	s = strings.TrimSpace(s)
-	for _, l := range timeLayouts {
+	for _, l := range zonedLayouts {
 		if t, err := time.Parse(l, s); err == nil {
+			return t
+		}
+	}
+	for _, l := range localLayouts {
+		if t, err := time.ParseInLocation(l, s, time.Local); err == nil {
 			return t
 		}
 	}
 	return time.Time{}
 }
 
-// parse reads one line: its time, level, service and message.
+// leadingTime is the time a line starts with and the rest of it: one token (RFC 3339, as
+// serve and the app's agent stamp their lines), or a date and a time, then maybe their zone
+// (Postgres: "2026-10-24 18:36:37.428 UTC [23576] LOG: …"; without one, local time).
+func leadingTime(line string) (time.Time, string) {
+	f := strings.SplitN(line, " ", 4)
+	if len(f) >= 2 {
+		if t := parseTime(f[0]); !t.IsZero() {
+			return t, strings.Join(f[1:], " ")
+		}
+	}
+	if len(f) >= 3 {
+		if t := parseTime(f[0] + " " + f[1]); !t.IsZero() {
+			rest := strings.Join(f[2:], " ")
+			zone := f[2]
+			switch {
+			case zone == "UTC" || zone == "GMT" || zone == "Z":
+				t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC)
+				rest = strings.Join(f[3:], " ")
+			case offsetRe.MatchString(zone):
+				if z, err := time.Parse("-07:00", zone[:3]+":"+zone[len(zone)-2:]); err == nil {
+					_, off := z.Zone()
+					t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(),
+						time.FixedZone(zone, off))
+					rest = strings.Join(f[3:], " ")
+				}
+			}
+			return t, rest
+		}
+	}
+	return time.Time{}, line
+}
+
+// parse reads one line: its time, level, service and message. A line may start with its
+// time (serve's and the agent's stamps, the app's log, Postgres), then a "[name] " prefix
+// (serve's "[serve]", "[update]", the launcher's events relayed), then a JSON record, slog's
+// text, or plain words.
 func parse(line, name string) Entry {
 	e := Entry{Service: name, Raw: clip(line)}
 	rest := line
+	if t, r := leadingTime(rest); !t.IsZero() {
+		e.t, rest = t, r
+	}
+	if m := pgRe.FindStringSubmatch(rest); m != nil {
+		e.Service = "postgres"
+		switch m[1] {
+		case "ERROR", "FATAL", "PANIC":
+			e.Level = "error"
+		case "WARNING":
+			e.Level = "warn"
+		}
+		e.Msg = clip(rest)
+		return e
+	}
 	if m := prefixRe.FindStringSubmatch(rest); m != nil {
 		e.Service = m[1]
-		if e.Service == "serve" {
+		if e.Service == "serve" || e.Service == "update" {
 			e.Service = "server"
 		}
 		rest = rest[len(m[0]):]
 	}
 	if strings.HasPrefix(strings.TrimSpace(rest), "{") && json.Valid([]byte(strings.TrimSpace(rest))) {
+		stamped := e.t
 		jsonLine(&e, strings.TrimSpace(rest))
+		if e.t.IsZero() {
+			e.t = stamped // the record's own time first, else the stamp before it
+		}
 		e.Msg = clip(e.Msg)
 		return e
-	}
-	// an RFC 3339 time at the start (app.log, Go's log package)
-	if sp := strings.IndexByte(rest, ' '); sp > 0 {
-		if t := parseTime(rest[:sp]); !t.IsZero() {
-			e.t, rest = t, rest[sp+1:]
-		} else if sp2 := strings.IndexByte(rest[sp+1:], ' '); sp2 > 0 {
-			if t := parseTime(rest[:sp+1+sp2]); !t.IsZero() {
-				e.t, rest = t, rest[sp+1+sp2+1:]
-			}
-		}
 	}
 	if e.t.IsZero() {
 		if m := slogTime.FindStringSubmatch(rest); m != nil {

@@ -70,6 +70,14 @@ type MachineStatus struct {
 	// Attempts are the machine's update attempts (the desktop app's own, its releases'
 	// starts), every failure with its reason, newest first.
 	Attempts []Attempt `json:"attempts,omitempty"`
+	// Backup is the dump the home's new release took before its migrations (at its commit).
+	Backup *RunBackup `json:"backup,omitempty"`
+}
+
+// RunBackup is a dump of the home's database a run took (update_runs.backup).
+type RunBackup struct {
+	Path  string `json:"path"`
+	Bytes int64  `json:"bytes"`
 }
 
 // RunID is the run the report is of ("" none).

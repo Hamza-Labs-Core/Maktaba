@@ -18,6 +18,7 @@ export MAKTABA_TEST_SYS_ROOT="${work}/var/lib/maktaba"
 export MAKTABA_TEST_SYS_ETC="${work}/etc/maktaba"
 export MAKTABA_TEST_SYS_LOG="${work}/var/log/maktaba"
 export MAKTABA_TEST_SYSTEMD_RUN="${work}/run/systemd/system"
+export MAKTABA_PREFIX="${work}/usr/local/bin"
 log="${work}/calls.log"
 
 # shellcheck source=SCRIPTDIR/../install.sh
@@ -82,7 +83,13 @@ mkdir -p "${MAKTABA_TEST_SYSTEMD_RUN}"
 ( MAKTABA_SYSTEMD=0 maybe_install_systemd "${work}/a" ) >/dev/null 2>&1
 check "declined: nothing done" test ! -s "${log}"
 
-# chosen: the user, the config, the release as maktaba, the unit as root
+# chosen: the user, the config, the release as maktaba, the unit as root; the PATH's
+# maktaba-server runs the service's release (install_binaries put the archive's there)
+mkdir -p "${MAKTABA_PREFIX}"
+# the archive's binaries as install_binaries left them (ELF stand-ins: no shebang)
+for b in maktaba-server maktaba-api maktaba-streaming; do
+    printf 'ELF %s\n' "${b}" >"${MAKTABA_PREFIX}/${b}"
+done
 ( MAKTABA_SYSTEMD=1 maybe_install_systemd "${work}/a" ) >"${work}/out.txt" 2>&1
 status=$?
 check "chosen: it succeeds" test "${status}" = 0
@@ -98,6 +105,25 @@ check "the release is set up before the unit" \
 check "the archive's unit is not installed" bash -c "! grep -q 'maktaba-server.service' '${log}'"
 check "the copy is removed" bash -c "! ls -d '${MAKTABA_TEST_SYS_ROOT}'/.install-* >/dev/null 2>&1"
 check "it says how to start it" grep -q "sudo systemctl start maktaba-server" "${work}/out.txt"
+check "the PATH's maktaba-server is the wrapper" grep -q "^ROOT=${MAKTABA_TEST_SYS_ROOT}$" "${MAKTABA_PREFIX}/maktaba-server"
+check "the archive's binaries are the fallback, off the PATH" \
+    bash -c "grep -q 'ELF maktaba-server' '${work}/usr/local/lib/maktaba/maktaba-server' &&
+        test ! -e '${MAKTABA_PREFIX}/maktaba-api' && test ! -e '${MAKTABA_PREFIX}/maktaba-streaming'"
+# the wrapper runs the release current names, else the fallback
+mkdir -p "${MAKTABA_TEST_SYS_ROOT}/bin/releases/0.9.1"
+printf '#!/bin/sh\necho "release 0.9.1 $*"\n' >"${MAKTABA_TEST_SYS_ROOT}/bin/releases/0.9.1/maktaba-server"
+chmod +x "${MAKTABA_TEST_SYS_ROOT}/bin/releases/0.9.1/maktaba-server" "${MAKTABA_PREFIX}/maktaba-server"
+echo 0.9.1 >"${MAKTABA_TEST_SYS_ROOT}/current"
+check "the wrapper runs the current release" test "$("${MAKTABA_PREFIX}/maktaba-server" migrate up)" = "release 0.9.1 migrate up"
+printf '#!/bin/sh\necho "fallback $*"\n' >"${work}/usr/local/lib/maktaba/maktaba-server"
+chmod +x "${work}/usr/local/lib/maktaba/maktaba-server"
+echo "../../etc" >"${MAKTABA_TEST_SYS_ROOT}/current"
+check "a current that is a path is never followed" test "$("${MAKTABA_PREFIX}/maktaba-server" x)" = "fallback x"
+rm -f "${MAKTABA_TEST_SYS_ROOT}/current"
+check "no current: the installed release" test "$("${MAKTABA_PREFIX}/maktaba-server" x)" = "fallback x"
+# a second run keeps the fallback (the wrapper is never moved over it)
+( MAKTABA_SYSTEMD=1 maybe_install_systemd "${work}/a" ) >/dev/null 2>&1
+check "a second run keeps the fallback" grep -q "fallback" "${work}/usr/local/lib/maktaba/maktaba-server"
 
 # an archive without the launcher (an old release): refused, nothing set up
 rm -f "${log}"

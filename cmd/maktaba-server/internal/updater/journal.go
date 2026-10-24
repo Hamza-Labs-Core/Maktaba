@@ -210,6 +210,9 @@ type Journal struct {
 	// time), kept at the commit for the next update's rules (an app bundle's, a runtime's:
 	// a layout keeps its watermark)
 	Signed *releaseverify.Watermark `json:"signed,omitempty"`
+	// Backup is the dump the new release's start took before its migrations (a home's, at
+	// its commit): the run records it (update_runs.backup)
+	Backup *Backup `json:"backup,omitempty"`
 	// WatchSince is when the new release first came up; Starts how often it started
 	// while watched (a supervisor that keeps dying rolls back).
 	WatchSince *time.Time `json:"watch_since,omitempty"`
@@ -308,4 +311,10 @@ func SaveJournal(dir string, j *Journal) error {
 func setAside(dir string, now time.Time) error {
 	from := filepath.Join(dir, JournalFile)
 	return os.Rename(from, from+".unreadable-"+now.UTC().Format("20060102T150405"))
+}
+
+// Backup is a dump of the database: where it is and how large.
+type Backup struct {
+	Path  string `json:"path"`
+	Bytes int64  `json:"bytes"`
 }

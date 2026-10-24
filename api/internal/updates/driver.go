@@ -511,27 +511,54 @@ func (d *Driver) homePreparing(ctx context.Context, run Run, det RunDetail) erro
 // machine, not the release) is an attempt like any other.
 func (d *Driver) blockFor(ctx context.Context, run Run, doc map[string]any) {
 	code, _ := doc["code"].(string)
-	switch {
-	case code == KindOlderBuild:
+	switch failureClass(doc) {
+	case classOlderBuild:
 		// an older build of the running release's line (an rc tagged after its release),
 		// which the catalog could not tell (its running release unknown to it): never a
 		// candidate here, so set aside quietly (blocked "older_build": no attempt counted,
 		// no verification alarm, no notice), and passed by from now on
 		_ = d.Store.Block(ctx, run.Version, KindOlderBuild)
 		d.audit(ctx, run, "older_build_passed", map[string]any{"detail": doc["detail"]})
-	case needsPerson(doc):
+	case classPerson:
 		// a person mends the machine: no attempt counted
-	case strings.HasPrefix(code, "verify_"):
+	case classVerify:
 		_ = d.Store.Block(ctx, run.Version, "verify")
-	case code == "rehearsal_failed":
+	case classRehearsal:
 		_ = d.Store.Block(ctx, run.Version, "rehearsal")
-	case d.countedInWindow(ctx, run):
-		d.audit(ctx, run, "attempt_counted_already", map[string]any{"code": code})
 	default:
+		if d.countedInWindow(ctx, run) {
+			d.audit(ctx, run, "attempt_counted_already", map[string]any{"code": code})
+			return
+		}
 		if blocked, _ := d.Store.CountAttempt(ctx, run.Version); blocked {
 			d.audit(ctx, run, "release_blocked", map[string]any{"reason": "attempts"})
 		}
 	}
+}
+
+// What a failed run's error is to its release (blockFor).
+const (
+	classOlderBuild = "older_build" // an older build of the running release's line: set aside quietly
+	classPerson     = "person"      // the machine's install needs a person: nothing counted
+	classVerify     = "verify"      // the release's signature or identity refused: blocked
+	classRehearsal  = "rehearsal"   // its migrations failed on a copy of the data: blocked
+	classAttempt    = "attempt"     // anything else (a download, a rehearsal that could not run): one attempt
+)
+
+// failureClass is what a run's error document is to its release.
+func failureClass(doc map[string]any) string {
+	code, _ := doc["code"].(string)
+	switch {
+	case code == KindOlderBuild:
+		return classOlderBuild
+	case needsPerson(doc):
+		return classPerson
+	case strings.HasPrefix(code, "verify_"):
+		return classVerify
+	case code == "rehearsal_failed":
+		return classRehearsal
+	}
+	return classAttempt
 }
 
 // countedInWindow reports whether an earlier automatic run of the release failed (and
@@ -556,9 +583,7 @@ func (d *Driver) countedInWindow(ctx context.Context, run Run) bool {
 		if r.ID == run.ID {
 			continue
 		}
-		doc := runErrDoc(r)
-		code, _ := doc["code"].(string)
-		if !needsPerson(doc) && !strings.HasPrefix(code, "verify_") && code != "rehearsal_failed" {
+		if failureClass(runErrDoc(r)) == classAttempt {
 			return true
 		}
 	}
@@ -847,6 +872,9 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 		_ = d.Store.SetRunState(ctx, run.ID, RunHomeApplying, st.State)
 		return nil
 	case MCommitted:
+		if st.Backup != nil && st.Backup.Path != "" {
+			_ = d.Store.SetRunBackup(ctx, run.ID, map[string]any{"path": st.Backup.Path, "bytes": st.Backup.Bytes})
+		}
 		return d.homeCommitted(ctx, run, det)
 	case MRolledBack:
 		doc := machineErr(st, "rolled_back")
@@ -1496,7 +1524,11 @@ var needsPersonCodes = map[string]bool{"not_self_managed": true, "old_launcher":
 	"no_python": true, "venv_network": true, "venv_python_unsupported": true, "needs_admin": true,
 	"local_build": true, "app_management": true, "translocated": true, "verify_trust_root_expired": true,
 	"no_trust_root": true,
-	"trust_root":    true, "python_store_stub": true}
+	"trust_root":    true, "python_store_stub": true,
+	// macOS refused the server's login item of the new app (not code-signed): its fix is a
+	// signed app, or codesign; a release whose bundled Postgres major is not this one's (no
+	// upgrade path: its data directory would not open)
+	"login_item_unsigned": true, "pg_major_change": true}
 
 func needsPerson(doc map[string]any) bool {
 	code, _ := doc["code"].(string)
@@ -1653,8 +1685,14 @@ func (d *Driver) Supersede(ctx context.Context, version string) (bool, error) {
 
 // ---------- catch-up ----------
 
-// catchUpRetry is how long a machine whose catch-up failed waits before the next one.
-const catchUpRetry = 6 * time.Hour
+// catchUpRetry is how long a machine whose catch-up failed before its switch (a download,
+// a refusal) waits before the next one; catchUpPersonRetry how long one that needs a
+// person waits, unchanged (its release, its install kind): a day, not a run every few hours
+// that can only fail the same way.
+const (
+	catchUpRetry       = 6 * time.Hour
+	catchUpPersonRetry = 24 * time.Hour
+)
 
 // catchUp gives a machine behind the watermark (offline during the rollout, or joined
 // since) a run of its own: the release the cluster runs, the home's phase skipped

@@ -108,6 +108,9 @@ type HomeDB struct {
 	// Target is where the machine logs in: host:port/database (never its password), which
 	// the home compares with the access it would hand out.
 	Target string `json:"target,omitempty"`
+	// HomeHost is the host the machine reaches its home's API at (where an access with no
+	// database host points it).
+	HomeHost string `json:"home_host,omitempty"`
 }
 
 // ConfirmFails is how many failed logins in a row make a failure the home acts on.

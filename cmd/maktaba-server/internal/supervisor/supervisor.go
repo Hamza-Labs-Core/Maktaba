@@ -221,9 +221,17 @@ func ProbeURL(role Role, cfg config.Config) string {
 	return ""
 }
 
+// ChildStderr is the stderr the supervised roles write to when set (serve stamps its own
+// stderr lines with their time: the roles' lines carry their own, so they keep the stderr
+// serve was given); nil: os.Stderr.
+var ChildStderr *os.File
+
 func wire(cmd *exec.Cmd) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	if ChildStderr != nil {
+		cmd.Stderr = ChildStderr
+	}
 	cmd.Stdin = nil
 }
 

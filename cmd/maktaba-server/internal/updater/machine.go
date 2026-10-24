@@ -153,6 +153,12 @@ type BackupPruner interface {
 	PruneBackups(keep int) error
 }
 
+// BackupFinder is a Rehearser that finds the dump a release's start took before its
+// migrations (backups/pre-<from>-to-<to>.dump): nil when there is none.
+type BackupFinder interface {
+	UpdateDump(from, to string) *Backup
+}
+
 // Errors of the machine's requests.
 var (
 	ErrBusy       = errors.New("update_busy")      // another run is under way here
@@ -1111,6 +1117,12 @@ func (m *Machine) commit() bool {
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Commit(context.Background(), j) }); err != nil {
 		m.logf("cannot keep %s yet (tried again): %v", j.Job.Version, err)
 		return false
+	}
+	// the dump the new release's start took before its migrations is the run's backup
+	if f, ok := m.Rehearser.(BackupFinder); ok && j.Job.Home {
+		if b := f.UpdateDump(j.From, j.Job.Version); b != nil {
+			_ = m.mutate(func(j *Journal) { j.Backup = b })
+		}
 	}
 	// the release is kept: the dumps go to rules.updates.backups_keep before the run says
 	// it is committed (whoever waits for that sees them pruned)

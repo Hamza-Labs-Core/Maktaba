@@ -12,10 +12,12 @@
 name: CI
 
 on:
+  # main, and a maintenance line's release/* branch: the tag guard (tools/release/tag-guard.sh)
+  # waits for this workflow's run on a tag's commit, a maintenance release's included
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**']
   push:
-    branches: [main]
+    branches: [main, 'release/**']
 
 permissions:
   contents: read

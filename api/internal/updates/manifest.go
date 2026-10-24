@@ -42,6 +42,10 @@ type Manifest struct {
 	EdgeProtocol       int       `json:"edge_protocol,omitempty"`
 	LauncherProtocol   int       `json:"launcher_protocol,omitempty"`
 	AgentProtocol      int       `json:"agent_protocol,omitempty"`
+	// SignedAt is when the release was signed, its earliest verified transparency-log
+	// time: not release.json's (the catalog writes it at the verification), the time the
+	// machines' "never go back" rule compares
+	SignedAt time.Time `json:"signed_at,omitzero"`
 }
 
 // ReleaseFiles are the three small signed files of a release, as downloaded.

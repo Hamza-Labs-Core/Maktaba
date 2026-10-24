@@ -110,6 +110,15 @@ func homeDBTarget(n config.NodeConfig) string {
 	return u.Host + u.Path
 }
 
+// homeHostOf is the host n reaches its home's API at ("" when unknown).
+func homeHostOf(n config.NodeConfig) string {
+	u, err := url.Parse(n.HomeURL())
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
 // credsRe are a login's secrets as a driver's error may quote them (a url's user and
 // password, a key=value password).
 var credsRe = regexp.MustCompile(`(?i)(postgres(?:ql)?://)[^@\s/]*@|(password=)\S+`)
@@ -200,6 +209,8 @@ type homeDBWatch struct {
 	probe func(ctx context.Context) error
 	// target is where it logs in (host:port/database: never the password; tests replace it)
 	target func() string
+	// homeHost is the host this machine reaches its home's API at (tests replace it)
+	homeHost func() string
 	// onChange is called when the state changes (the machine agent sends it again)
 	onChange func()
 	// kick asks run for a check now (the machine agent connected again)
@@ -214,6 +225,7 @@ type homeDBWatch struct {
 
 func newHomeDBWatch(onChange func()) *homeDBWatch {
 	return &homeDBWatch{probe: probeHomeDB, target: func() string { return homeDBTarget(supervisor.NodeConfig()) },
+		homeHost: func() string { return homeHostOf(supervisor.NodeConfig()) },
 		onChange: onChange, kick: make(chan struct{}, 1)}
 }
 
@@ -271,6 +283,9 @@ func (w *homeDBWatch) check(ctx context.Context) {
 	next := &machineagent.HomeDB{OK: err == nil, At: time.Now().UTC()}
 	if w.target != nil {
 		next.Target = w.target()
+	}
+	if w.homeHost != nil {
+		next.HomeHost = w.homeHost()
 	}
 	if err != nil {
 		next.Code, next.Detail = classifyHomeDB(err), noCreds(err.Error())

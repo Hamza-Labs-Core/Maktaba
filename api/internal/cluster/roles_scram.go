@@ -8,7 +8,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
+
+	"github.com/lib/pq"
 )
 
 // ScramVerifier is Postgres's SCRAM-SHA-256 verifier of password (RFC 5802 / 7677: a
@@ -37,11 +40,18 @@ func ScramVerifier(password string) (string, error) {
 }
 
 // Term is the cluster's current term (0 before its first, or on a database without the
-// terms: a home from before Epic 37).
-func (p *PGRoles) Term(ctx context.Context) int64 {
+// terms: a home from before Epic 37); an error when the database cannot say (a machine's
+// access is then not re-made: one with no term would be refused by a machine that follows
+// a later one, its password already changed).
+func (p *PGRoles) Term(ctx context.Context) (int64, error) {
 	var t sql.NullInt64
-	if err := p.DB.QueryRowContext(ctx, `SELECT max(term) FROM cluster_terms`).Scan(&t); err != nil {
-		return 0
+	err := p.DB.QueryRowContext(ctx, `SELECT max(term) FROM cluster_terms`).Scan(&t)
+	var pe *pq.Error
+	if errors.As(err, &pe) && pe.Code == "42P01" { // undefined_table: a home from before the terms
+		return 0, nil
 	}
-	return t.Int64
+	if err != nil {
+		return 0, fmt.Errorf("the cluster's term: %w", err)
+	}
+	return t.Int64, nil
 }

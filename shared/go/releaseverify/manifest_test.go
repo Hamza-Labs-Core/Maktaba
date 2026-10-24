@@ -131,3 +131,22 @@ func TestIsPrerelease(t *testing.T) {
 		}
 	}
 }
+
+// release.json says each app payload's bundled PostgreSQL major; one from before says none.
+func TestManifestAppPostgresMajor(t *testing.T) {
+	m, err := rv.ParseManifest([]byte(`{"v":1,"version":"0.3.2","tag":"v0.3.2","app_postgres_major":{"mac-app":16,"win-app":16}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.PostgresMajor("mac-app") != 16 || m.PostgresMajor("linux-app") != 0 {
+		t.Fatalf("%v", m.AppPostgresMajor)
+	}
+	old, err := rv.ParseManifest([]byte(`{"v":1,"version":"0.3.1","tag":"v0.3.1"}`))
+	if err != nil || old.PostgresMajor("mac-app") != 0 {
+		t.Fatalf("an older release.json: %v %v", old, err)
+	}
+	var none *rv.Manifest
+	if none.PostgresMajor("mac-app") != 0 {
+		t.Fatal("nil")
+	}
+}

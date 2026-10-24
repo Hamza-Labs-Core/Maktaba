@@ -19,13 +19,13 @@ import (
 
 // The home owns its machines' database access (the outage of 2026-10-24: the home's
 // database moved from an operator Postgres on :5432 to the app's own on :54329, no role
-// came along, and a node lost the home's database for good). Here the home's database
-// "moves" the same way for its node: the address the node had refuses, and its role is
-// gone from the database. The node says it cannot log in, the home makes its role again
-// with a new password and pushes it with the database's real address, and the node
-// follows it by itself, within a minute or so, and logs in again. The logs page reads
-// both machines' own log files (the home's from its supervisor, the node's over the
-// machine channel).
+// came along, and a node lost the home's database for good). Both halves, one after the
+// other: the home's database "moves" for its node (the address the node had refuses: the
+// home re-makes its access because it points elsewhere, refused_moved, and pushes the
+// database's real address); then the node's role is gone from the database (its password
+// refused: auth_failed, its role made again). Each time the node follows by itself and
+// logs in again, within a minute or so. The logs page reads both machines' own log files
+// (the home's from its supervisor, the node's over the machine channel).
 func TestNodeFollowsTheHomeDatabase(t *testing.T) {
 	if os.Getenv("MAKTABA_E2E_TWO_MACHINE") != "1" || testing.Short() {
 		t.Skip("set MAKTABA_E2E_TWO_MACHINE=1 (and MAKTABA_TEST_PG_URL) to run the two-machine test")
@@ -151,13 +151,11 @@ slots = "off"
 		return said && ok
 	})
 
-	// the move: the address the node had refuses, and its role is not on the database
+	// the move: the address the node had refuses (nothing listens there now)
 	oldAddr.cut()
+	_ = oldAddr.ln.Close()
 	if _, err := db.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1`, role); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, `DROP ROLE `+role); err != nil {
-		t.Fatalf("drop the node's role: %v", err)
 	}
 	moved := time.Now()
 
@@ -167,7 +165,7 @@ slots = "off"
 		u, _ := url.Parse(dsn)
 		return u.Port()
 	}()
-	waitFor(t, "the node following the home's database", 3*time.Minute, func() bool {
+	loggedIn := func() bool {
 		var can bool
 		if err := db.QueryRowContext(ctx, `SELECT rolcanlogin FROM pg_roles WHERE rolname = $1`, role).Scan(&can); err != nil || !can {
 			return false
@@ -180,9 +178,28 @@ slots = "off"
 		_ = db.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_activity WHERE usename = $1`, role).Scan(&sessions)
 		said, ok, _ := homeDB()
 		return sessions > 0 && said && ok
-	})
-	took := time.Since(moved)
-	t.Logf("the node followed the home's database in %s", took.Round(time.Second))
+	}
+	waitFor(t, "the node following the home's moved database", 3*time.Minute, loggedIn)
+	t.Logf("the node followed the home's moved database in %s", time.Since(moved).Round(time.Second))
+	// re-made because the database moved (the node's address refuses), not by luck
+	if !strings.Contains(home.log.String(), "why=refused_moved") {
+		t.Errorf("the home did not re-make the access for the moved database:\n%s", tail(home.log.String(), 3000))
+	}
+
+	// then its role is gone from the database (a move that carried no roles): its password
+	// is refused, and its role is made again
+	if _, err := db.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1`, role); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `DROP ROLE `+role); err != nil {
+		t.Fatalf("drop the node's role: %v", err)
+	}
+	dropped := time.Now()
+	waitFor(t, "the node logging in with its role made again", 3*time.Minute, loggedIn)
+	t.Logf("the node logged in with its role made again in %s", time.Since(dropped).Round(time.Second))
+	if !strings.Contains(home.log.String(), "why=auth_failed") {
+		t.Errorf("the home did not re-make the access for the refused password:\n%s", tail(home.log.String(), 3000))
+	}
 	if !strings.Contains(node.log.String(), "following it at") {
 		t.Errorf("the node's log does not say it follows the home's database:\n%s", tail(node.log.String(), 3000))
 	}

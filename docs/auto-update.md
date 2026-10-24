@@ -93,6 +93,11 @@ verification failure that blocks the release.
   install that is not self-managed, an app that cannot change itself or was built locally, a
   trust root that expired, the Microsoft Store's `python3` alias where the pipeline needs a real
   Python) starts no new run until the next window or an admin acts, and is told once.
+- **A release that bundles another PostgreSQL major** than the one a machine runs is never started
+  on its data: the release says each app's major (`release.json`'s `app_postgres_major`, signed),
+  so a runtime install and an app's install refuse it before anything is installed
+  (`pg_major_change`, needs a person, the release not blocked). A release from before that field
+  is refused by the start's database step, which halts and goes back.
 - **Only a verification failure or a rehearsal that failed on the real data** blocks a release;
   a rehearsal that could not run (its dump, scratch database or restore) is an attempt.
 - **A home whose window always has a viewer** (or that is always outside it) is told after three
@@ -176,9 +181,14 @@ or client), `sfltool dumpbtm` (the login items macOS knows),
   `app_management` (App Management refused, or the bundle locked). It never reaches a password
   prompt. The server's login item needs a signed bundle (ad hoc is enough) and is bound to the
   build that registered it, so each new build registers it again at its first start.
+- **On a Mac**, the server is stopped before the app's bundle is swapped (no old process reads
+  the new files), and started again on the release it had when the install fails.
 - **On Windows**, an installer that does not finish after the app closed is recorded at the next
   start (`installer_not_finished`); an unattended home's server is started again on the release
-  it had after 15 minutes, and the home's run is told at once.
+  it had once the installer is gone (15 minutes at the soonest, 2 hours at most), and the home's
+  run is told at once. The installer removes the old payload only when the server stopped.
+- **On Linux**, an app whose server a home manages (a node, or a server the home's run updated)
+  never switches the server to its own newer payload: the home orders it.
 - **A release becomes latest** only once every desktop platform is in its verified update feed
   (`updater-feed --require desktop`, each signature checked against the public key): a release
   missing one is published but not offered as latest.

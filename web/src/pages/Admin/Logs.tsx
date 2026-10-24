@@ -117,6 +117,8 @@ function LogsInner() {
   const [nodeName, setNodeName] = useState("");
   const [fileLines, setFileLines] = useState<LogLine[]>([]);
   const [filesErr, setFilesErr] = useState("");
+  // the files the machine cut to the window's newest lines (it has older ones)
+  const [filesCut, setFilesCut] = useState<string[]>([]);
   const [paused, setPaused] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -169,6 +171,9 @@ function LogsInner() {
       .then((r) => {
         const entries = Array.isArray(r?.entries) ? r.entries : [];
         setFileLines(entries.flatMap((e) => fileLine(e) ?? []));
+        setFilesCut(
+          (Array.isArray(r?.files) ? r.files : []).filter((f) => f?.truncated).map((f) => f.name)
+        );
         setFilesErr("");
       })
       .catch((e) => {
@@ -179,6 +184,7 @@ function LogsInner() {
   useEffect(() => {
     if (!files) {
       setFileLines([]);
+      setFilesCut([]);
       setFilesErr("");
       return;
     }
@@ -336,6 +342,11 @@ function LogsInner() {
       {filesErr && (
         <p className="mkt-muted" role="status" data-testid="logs-files-error">
           {t(`logs.files.${filesErr}`)}
+        </p>
+      )}
+      {!filesErr && filesCut.length > 0 && (
+        <p className="mkt-muted" role="status" data-testid="logs-files-cut">
+          {t("logs.files.truncated", { files: filesCut.join(", ") })}
         </p>
       )}
 

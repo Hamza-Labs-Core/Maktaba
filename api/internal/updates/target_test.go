@@ -1,6 +1,7 @@
 package updates
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -203,5 +204,39 @@ func TestChooseTargetPassesAnOlderBuild(t *testing.T) {
 	// a running release the catalog does not know (or has not verified): no time rule
 	if c := ChooseTarget(cat[1:2], DefaultPolicy(), "0.3.0-rc.7", ""); c.Target == nil || c.Target.Version != "0.3.0" {
 		t.Fatalf("unknown running release: %+v", c.Target)
+	}
+}
+
+// R4 (audit): the rule compares the verified signing times (the transparency log's, as the
+// machines do), not release.json's "published": a release.json that says otherwise does
+// not decide; the verification keeps that time in the catalog.
+func TestChooseTargetComparesTheSigningTime(t *testing.T) {
+	ts := func(s string) time.Time { p, _ := time.Parse(time.RFC3339, s); return p }
+	signed := func(published, signedAt string) func(*Release) {
+		return func(r *Release) {
+			r.Manifest.Published = ts(published)
+			r.Manifest.SignedAt = ts(signedAt)
+		}
+	}
+	// release.json's times say rc.7 came first; the signing times say 0.3.0 did
+	cat := []Release{rel("0.3.0", signed("2026-10-24T07:00:00Z", "2026-10-24T05:44:07Z")),
+		rel("0.3.0-rc.7", signed("2026-10-24T05:00:00Z", "2026-10-24T06:17:37Z"))}
+	if c := ChooseTarget(cat, DefaultPolicy(), "0.3.0-rc.7", ""); c.Target != nil {
+		t.Fatalf("an older build by its signing time was taken: %+v", c.Target)
+	}
+
+	store := &Store{DB: sqliteDB(t)}
+	ctx := context.Background()
+	seed(t, store, rel("0.3.1"))
+	m := Manifest{V: 1, Version: "0.3.1", Tag: "v0.3.1", Published: ts("2026-10-24T17:56:46Z"),
+		SignedAt: ts("2000-01-01T00:00:00Z")} // a release.json naming a time is overridden
+	if err := store.SetVerified(ctx, "0.3.1", Verified{Manifest: m, ChecksumsSHA256: "c",
+		SignedAt: ts("2026-10-24T17:57:06Z")}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Get(ctx, "0.3.1")
+	if err != nil || got.Manifest == nil || !got.Manifest.SignedAt.Equal(ts("2026-10-24T17:57:06Z")) ||
+		!got.signedTime().Equal(ts("2026-10-24T17:57:06Z")) {
+		t.Fatalf("the verified signing time: %+v %v", got.Manifest, err)
 	}
 }
