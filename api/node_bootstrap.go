@@ -470,8 +470,6 @@ func publicCopy(raw []byte) json.RawMessage {
 // copyStatusFile is the supervisor's status of this machine's copy (nodecopy.StatusFile).
 const copyStatusFile = "copy.json"
 
-// homeSelf is the home's GET /api/cluster/self: its identity, web address and the
-// machines' addresses (the apps learn the cluster from any machine, story 35.11 EC2).
 // homeAutoUpdates is whether this home installs releases by itself (rules.updates
 // auto_install as this build applies it, off with MAKTABA_UPDATE_DISABLE), read at most
 // every 30 s (/api/cluster/self is asked often).
@@ -498,6 +496,10 @@ func homeAutoUpdates(db *sql.DB) func(context.Context) bool {
 	}
 }
 
+// homeSelf is the home's GET /api/cluster/self: its identity, web address and the
+// machines' addresses (the apps learn the cluster from any machine, story 35.11 EC2), and
+// whether it installs releases by itself (autoUpdates; MountSelf says it to this machine
+// only).
 func homeSelf(store cluster.Store, webURL string, term func(context.Context) int64,
 	offDB func() []agent.OffDatabase, autoUpdates func(context.Context) bool) clusterauth.SelfFunc {
 	return func(ctx context.Context) clusterauth.SelfInfo {

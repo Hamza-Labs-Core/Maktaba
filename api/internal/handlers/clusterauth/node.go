@@ -21,6 +21,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 )
 
 // CookieSSO holds a cluster sign-in in progress on the node: "<state>.<verifier>".
@@ -55,7 +56,8 @@ type SelfInfo struct {
 	MachinesDB []SelfMachineDB `json:"machines_db,omitempty"`
 	// UpdatesAuto is whether the home installs releases by itself (rules.updates
 	// auto_install as this build applies it; absent on a node): the Linux app leaves a
-	// newer payload to the home's run when it does.
+	// newer payload to the home's run when it does. Said to a program on this machine (the
+	// app asks over loopback) or its supervisor only, never to the LAN.
 	UpdatesAuto *bool `json:"updates_auto,omitempty"`
 }
 
@@ -122,15 +124,20 @@ func trusted(r *http.Request) bool {
 
 // MountSelf mounts GET /api/cluster/self alone (the home serves it too). Its machines
 // that cannot log in to the home's database (names and why) go to this machine's
-// supervisor only.
+// supervisor only; whether it installs releases by itself, to a program on this machine
+// too (middleware.LocalCaller: the router's chain marks it).
 func MountSelf(r chi.Router, self SelfFunc) {
 	r.Get("/api/cluster/self", func(w http.ResponseWriter, r *http.Request) {
 		info := SelfInfo{Role: "home"}
 		if self != nil {
 			info = self(r.Context())
 		}
-		if !trusted(r) {
+		sup := trusted(r)
+		if !sup {
 			info.MachinesDB = nil
+		}
+		if !sup && !mw.LocalCaller(r) {
+			info.UpdatesAuto = nil
 		}
 		info.ServedAt = time.Now().UTC()
 		w.Header().Set("Cache-Control", "no-store")

@@ -346,13 +346,15 @@ pub enum Plan {
 
 /// Whether an updater orders this server's updates: it is a machine of a home (its
 /// node.json, in the config folder the server's unit pins), or the server's own automatic
-/// updates are on (its public /api/cluster/self says `updates_auto`, at `web_url`). Then a
-/// newer payload of this app (a newer AppImage, a package upgraded) is kept, not switched
-/// to: the home's run installs that release as a new runtime, in its window and after its
-/// checks (owner decision D3). Otherwise (a standalone server whose automatic updates are
-/// off, an older server that does not say, one that does not answer) it is taken as before:
-/// a machine that once ran an update, or follows an apt mirror with updates off, still
-/// follows its package.
+/// updates are on (its /api/cluster/self says `updates_auto` to this machine, at
+/// `web_url`). Then a newer payload of this app (a newer AppImage, a package upgraded) is
+/// kept, not switched to: the home's run installs that release as a new runtime, in its
+/// window and after its checks (owner decision D3). A standalone server whose automatic
+/// updates are off takes it as before: a machine that once ran an update, or follows an
+/// apt mirror with updates off, still follows its package. A server that does not say (the
+/// app's start often asks before the server's unit answers; an older server) is taken by
+/// its last word here (AUTO_FILE), else by whether its updater ever ran a release here (its
+/// journal in the updates folder).
 pub fn home_manages(web_url: Option<&str>) -> bool {
     let Some(h) = home() else {
         return false;
@@ -364,25 +366,67 @@ pub fn home_manages(web_url: Option<&str>) -> bool {
         .map(PathBuf::from)
         .unwrap_or_else(|| h.join(".config"));
     let node = std::fs::read_to_string(config.join("maktaba").join("node.json")).ok();
-    let auto = web_url.and_then(crate::status::updates_auto) == Some(true);
-    managed_by_home(node.as_deref(), auto)
+    let updates = super::state_root().map(|r| r.join("updates"));
+    let auto = match web_url.and_then(crate::status::updates_auto) {
+        Some(on) => {
+            if let Some(dir) = &updates {
+                remember_auto(dir, on);
+            }
+            Some(on)
+        }
+        None => updates.as_deref().and_then(remembered_auto),
+    };
+    let journal = updates
+        .as_deref()
+        .is_some_and(|d| d.join("journal.json").is_file());
+    managed_by_home(node.as_deref(), auto, journal)
+}
+
+/// The server's last word on its automatic updates (/api/cluster/self's `updates_auto`),
+/// kept in the updates folder beside app-attempts.json: the app's next start goes by it
+/// while the server does not answer yet.
+const AUTO_FILE: &str = "app-updates-auto.json";
+
+/// The last word kept (AUTO_FILE in `updates`); None when there is none, or it cannot be
+/// read.
+fn remembered_auto(updates: &Path) -> Option<bool> {
+    let raw = std::fs::read(updates.join(AUTO_FILE)).ok()?;
+    serde_json::from_slice::<Value>(&raw)
+        .ok()?
+        .get("updates_auto")?
+        .as_bool()
+}
+
+/// Keeps the server's word (AUTO_FILE in `updates`), written when it changed. Best-effort:
+/// without it the next start goes by the updater's journal.
+fn remember_auto(updates: &Path, on: bool) {
+    if remembered_auto(updates) == Some(on) {
+        return;
+    }
+    let _ = std::fs::create_dir_all(updates);
+    let _ = std::fs::write(
+        updates.join(AUTO_FILE),
+        serde_json::json!({ "updates_auto": on }).to_string(),
+    );
 }
 
 /// home_manages of what the machine holds and says: a node.json of a joined machine (its
-/// id and its home's address), or its own automatic updates on (`auto_updates`).
-pub fn managed_by_home(node_json: Option<&str>, auto_updates: bool) -> bool {
-    if auto_updates {
-        return true;
-    }
-    let Some(v) = node_json.and_then(|t| serde_json::from_str::<Value>(t).ok()) else {
-        return false;
-    };
-    let set = |p: &str| {
-        v.pointer(p)
-            .and_then(Value::as_str)
-            .is_some_and(|x| !x.trim().is_empty())
-    };
-    set("/node_id") && (set("/home/url") || set("/home/api_url"))
+/// id and its home's address) is ordered by its home. Else the server's word on its own
+/// automatic updates decides (`auto_updates`: said now, or the last word kept); a server
+/// with no word is ordered by its updater when that updater ran a release here (its
+/// `journal`).
+pub fn managed_by_home(node_json: Option<&str>, auto_updates: Option<bool>, journal: bool) -> bool {
+    let joined = node_json
+        .and_then(|t| serde_json::from_str::<Value>(t).ok())
+        .is_some_and(|v| {
+            let set = |p: &str| {
+                v.pointer(p)
+                    .and_then(Value::as_str)
+                    .is_some_and(|x| !x.trim().is_empty())
+            };
+            set("/node_id") && (set("/home/url") || set("/home/api_url"))
+        });
+    joined || auto_updates.unwrap_or(journal)
 }
 
 /// What to do with this app's payload (`home_orders`: an updater orders this server's
@@ -970,26 +1014,49 @@ mod tests {
         );
         assert!(matches!(plan(&older, true), Plan::Older { .. }));
 
-        // what tells it: a joined machine's node.json, or the server's own automatic
-        // updates on; a journal of an update once run does not (it is no longer asked)
+        // what tells it: a joined machine's node.json, whatever its server says
         let joined = r#"{"node_id":"n1","name":"studio","private_key":"k","home":{"url":"http://192.168.50.177:8080"}}"#;
-        assert!(managed_by_home(Some(joined), false));
+        assert!(managed_by_home(Some(joined), None, false));
+        assert!(managed_by_home(Some(joined), Some(false), false));
+        assert!(managed_by_home(Some(joined), Some(true), false));
         let older_key = r#"{"node_id":"n1","home":{"api_url":"http://home:8080"}}"#;
-        assert!(managed_by_home(Some(older_key), false));
+        assert!(managed_by_home(Some(older_key), None, false));
         assert!(!managed_by_home(
             Some(r#"{"node_id":"","home":{"url":"http://h"}}"#),
+            None,
             false
         ));
         assert!(!managed_by_home(
             Some(r#"{"node_id":"n1","home":{}}"#),
+            None,
             false
         ));
-        assert!(!managed_by_home(Some("not json"), false));
-        // a standalone server: its automatic updates on keep the payload; off, not said, or
-        // no answer (all false here) take it
-        assert!(!managed_by_home(None, false));
-        assert!(managed_by_home(None, true));
-        assert!(managed_by_home(Some(joined), true));
+        assert!(!managed_by_home(Some("not json"), None, false));
+        // a standalone server: its automatic updates on keep the payload, off take it,
+        // whatever its updater ran before
+        assert!(managed_by_home(None, Some(true), false));
+        assert!(managed_by_home(None, Some(true), true));
+        assert!(!managed_by_home(None, Some(false), false));
+        assert!(!managed_by_home(None, Some(false), true));
+        // one that does not say (not answering yet at the app's start, an older server):
+        // its updater's journal of a release it ran keeps the payload; none takes it
+        assert!(managed_by_home(None, None, true));
+        assert!(!managed_by_home(None, None, false));
+    }
+
+    /// The server's last word on its automatic updates is kept for the next start, which
+    /// often asks before the server answers; rewritten only when it changes.
+    #[test]
+    fn the_servers_last_word_on_its_updates_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let updates = dir.path().join("updates");
+        assert_eq!(remembered_auto(&updates), None);
+        remember_auto(&updates, true);
+        assert_eq!(remembered_auto(&updates), Some(true));
+        remember_auto(&updates, false);
+        assert_eq!(remembered_auto(&updates), Some(false));
+        std::fs::write(updates.join(AUTO_FILE), "not json").unwrap();
+        assert_eq!(remembered_auto(&updates), None);
     }
 
     /// The server's unit is found in $XDG_CONFIG_HOME/systemd/user, else ~/.config's.

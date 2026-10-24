@@ -401,9 +401,9 @@ pub fn server_version(web_url: &str) -> Option<String> {
     version_of_response(&raw)
 }
 
-/// Whether the local server's own automatic updates are on (its public /api/cluster/self's
-/// `updates_auto`), at its web address on this machine; None when it does not say (an older
-/// server, a node) or does not answer.
+/// Whether the local server's own automatic updates are on (its /api/cluster/self's
+/// `updates_auto`, said to callers on this machine only), at its web address on this
+/// machine; None when it does not say (an older server, a node) or does not answer.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn updates_auto(web_url: &str) -> Option<bool> {
     let raw = get_loopback(&addr_of(web_url)?, "/api/cluster/self")?;

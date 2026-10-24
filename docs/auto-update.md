@@ -189,8 +189,12 @@ or client), `sfltool dumpbtm` (the login items macOS knows),
   run is told at once. The installer removes the old payload only when the server stopped.
 - **On Linux**, an app whose server an updater will order never switches the server to its own
   newer payload (a newer AppImage, an apt upgrade): a node's home orders it, and so does a home
-  whose automatic updates are on (its `/api/cluster/self` says `updates_auto`). A standalone
-  server with automatic updates off takes the app's newer payload as before.
+  whose automatic updates are on (its `/api/cluster/self` says `updates_auto`, to callers on
+  the same machine only). A standalone server with automatic updates off takes the app's newer
+  payload as before. A server that does not say (it is not answering yet when the app starts,
+  or it is older) goes by its last word, kept in `updates/app-updates-auto.json`; with none
+  kept, the payload is left to the server's updater when it has run a release there
+  (`updates/journal.json`).
 - **A release becomes latest** only once every desktop platform is in its verified update feed
   (`updater-feed --require desktop`, each signature checked against the public key): a release
   missing one is published but not offered as latest.
