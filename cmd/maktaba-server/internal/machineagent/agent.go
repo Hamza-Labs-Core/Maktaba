@@ -170,6 +170,8 @@ type Agent struct {
 	// member (4003: a machine it does not know, or pending, rejected, revoked) or revoked
 	// (4010).
 	OnRefused func(code int)
+	// RejoinState is this machine's request to be taken again, for Status (nil: none).
+	RejoinState func() *RejoinState
 
 	mu        sync.Mutex
 	send      func(any) // the session's, while connected
@@ -213,6 +215,19 @@ type Status struct {
 	HasKey    bool      `json:"has_key"`
 	KeyID     string    `json:"key_id,omitempty"`
 	LastError string    `json:"last_error,omitempty"`
+	// Rejoin is this machine asking its home to take it again (its sessions refused)
+	Rejoin *RejoinState `json:"rejoin,omitempty"`
+}
+
+// RejoinState is a machine's request to its home to take it again: waiting (its pairing
+// code, for the home's admin), held (the home still holds it, revoked: an admin removes it
+// there first), refused (the home's answer in Reason), joined.
+type RejoinState struct {
+	State  string    `json:"state"`
+	Code   string    `json:"code,omitempty"`
+	Home   string    `json:"home,omitempty"`
+	Reason string    `json:"reason,omitempty"`
+	At     time.Time `json:"at"`
 }
 
 // Status reports the agent's state.
@@ -220,6 +235,9 @@ func (a *Agent) Status() Status {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	s := Status{Connected: a.connected.Load(), LastError: a.lastErr, HasKey: a.key != nil}
+	if a.RejoinState != nil {
+		s.Rejoin = a.RejoinState()
+	}
 	if s.Connected {
 		s.Since = a.since
 	}
