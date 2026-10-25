@@ -135,7 +135,7 @@ func TestChildEnvSharesTheSecretsKey(t *testing.T) {
 // switch of the home handed it over) is kept, and an operator's own keys win.
 func TestChildEnvGivesTheAPIAJWTPair(t *testing.T) {
 	jwtKeyBits = 1024
-	t.Cleanup(func() { jwtKeyBits = 4096 })
+	t.Cleanup(func() { jwtKeyBits = 2048 })
 	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", "")
 	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", "")
 	t.Setenv("MAKTABA_CONFIG", filepath.Join(t.TempDir(), "server.toml"))

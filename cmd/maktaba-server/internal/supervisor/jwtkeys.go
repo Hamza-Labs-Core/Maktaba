@@ -11,9 +11,10 @@ import (
 	"path/filepath"
 )
 
-// jwtKeyBits is the size of the home's JWT key (the api's `keys init` makes 4096 too; the
-// tests make smaller ones, faster).
-var jwtKeyBits = 4096
+// jwtKeyBits is the size of the home's JWT key: 2048, the usual RS256 key (4096 took
+// seconds to make on every start of a test that builds the api's environment, past the
+// unit tests' time cap; the tests make smaller ones still).
+var jwtKeyBits = 2048
 
 // EnsureJWTKeys makes the home's JWT key pair (JWTKeyPaths) when it has none. The api signs
 // a native app's tokens with it (the TV apps, the native Player and Remote: sign-in sends
