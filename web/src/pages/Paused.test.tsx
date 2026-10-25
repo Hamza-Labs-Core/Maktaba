@@ -61,6 +61,11 @@ describe("Paused page", () => {
     expect(link).toHaveAttribute("href", "http://home.local:8780");
     expect(screen.getByText(/Use Maktaba on .*Home NAS/)).toBeInTheDocument();
     expect(get).toHaveBeenCalledWith("/api/cluster/self");
+    // what it means, in the help on the home (this machine's own pages are paused)
+    expect(screen.getByTestId("paused-help")).toHaveAttribute(
+      "href",
+      "http://home.local:8780/help/machines#paused-page"
+    );
   });
 
   it("says when the machine cannot reach its home", async () => {
@@ -76,6 +81,10 @@ describe("Paused page", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/This machine cannot reach its home/);
     expect(await screen.findByRole("link", { name: "http://home.local" })).toBeInTheDocument();
+    expect(screen.getByTestId("paused-help")).toHaveAttribute(
+      "href",
+      "http://home.local/help/machines#home-unreachable"
+    );
   });
 
   it("reloads when the node's version changes", async () => {

@@ -21,6 +21,8 @@ import {
   SYSTEM_HEALTH_KINDS,
   systemHealthHelp,
   tileHealthHelp,
+  UPDATE_CODE_HELP,
+  updateCodeHelp,
   waitingHelp,
   type HelpRef,
 } from "./registry";
@@ -195,6 +197,26 @@ describe("help links from the app", () => {
     const api = [...types.matchAll(/^\s+Kind\w+\s+=\s+"([a-z_]+)"$/gm)].map((m) => m[1]!);
     expect(api.length).toBeGreaterThan(10);
     expect([...SYSTEM_HEALTH_KINDS].sort()).toEqual([...api].sort());
+  });
+
+  it("every reason an update stops with has its entry, listed by name", () => {
+    const codes = Object.keys(en)
+      .filter((k) => k.startsWith("updates.code."))
+      .map((k) => k.slice("updates.code.".length));
+    expect(codes.length).toBeGreaterThan(100);
+    for (const c of codes) {
+      expectRef(updateCodeHelp(c), `update code ${c}`);
+      // a new reason gets its entry on purpose, not the general one by default
+      const listed = UPDATE_CODE_HELP.has(c) || c.startsWith("verify_");
+      expect(listed, `update code ${c} is not in UPDATE_CODE_HELP`).toBe(true);
+    }
+    for (const [c, anchor] of UPDATE_CODE_HELP)
+      expectRef({ topic: "updates", anchor }, `update code ${c}`);
+    expect(updateCodeHelp("something_new")).toEqual({ topic: "updates", anchor: "run-failed" });
+    expect(updateCodeHelp("verify_something_new")).toEqual({
+      topic: "updates",
+      anchor: "verify-failed",
+    });
   });
 
   it("the Live TV page's guide links point at entries that exist", () => {

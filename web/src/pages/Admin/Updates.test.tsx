@@ -650,6 +650,11 @@ describe("Admin Updates: the last update attempt", () => {
     );
     expect(screen.queryByDisplayValue(/sudo chown/)).toBeNull();
     expect(screen.queryByText(/sudo chown/)).toBeNull();
+    // the reason's entry in the help (Epic 35 story 35.15 AC8)
+    expect(screen.getByTestId("updates-machine-home-attempt-help")).toHaveAttribute(
+      "href",
+      "/help/updates#code-desktop-app"
+    );
     // the logs of the attempt's window (the admin bundle, with the log files)
     await user.click(screen.getByRole("button", { name: "Download the logs" }));
     await waitFor(() =>

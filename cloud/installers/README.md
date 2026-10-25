@@ -51,7 +51,7 @@ Each installer registers an update channel:
 - macOS → Sparkle XML feed at `https://releases.maktaba.app/macos/appcast.xml`
 - Windows → Squirrel feed
 - Linux → distro package repo
-- Docker → none: the container updates the runtime on its volume itself, from the verified releases (docs/auto-update.md)
+- Docker → none: the container updates the runtime on its volume itself, from the verified releases (docs/updates.md)
 - RPi → `apt-get upgrade` against our hosted repo
 
 The auto-update mechanism never bypasses signature checks. A failed

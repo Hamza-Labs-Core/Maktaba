@@ -3571,6 +3571,7 @@
   "paused.theHome": "الجهاز الرئيسي",
   "paused.homeUnknown": "عنوان الجهاز الرئيسي غير معروف بعد.",
   "paused.autoReload": "ستُعاد تحميل هذه الصفحة تلقائيًا عندما يصبح الجهاز جاهزًا.",
+  "paused.whatItMeans": "ماذا يعني هذا (في المساعدة، على الجهاز الرئيسي)",
   "paused.retry": "إعادة المحاولة",
   "machines.home.web": "عنوان الويب:",
   "machines.version": "الإصدار {version}",

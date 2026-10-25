@@ -3571,6 +3571,7 @@
   "paused.theHome": "the home",
   "paused.homeUnknown": "The home's address is not known yet.",
   "paused.autoReload": "This page reloads by itself when the machine is ready.",
+  "paused.whatItMeans": "What this means (in the help, on the home)",
   "paused.retry": "Try again",
   "machines.home.web": "Web address:",
   "machines.version": "Version {version}",

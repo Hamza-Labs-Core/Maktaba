@@ -1,20 +1,39 @@
-# Upgrade and rollback (Story 22.6)
+# Upgrade and rollback
 
-Two paths supported: in-place container upgrade, and packaged
-upgrade via Homebrew / dpkg / rpm. Both follow the same invariants:
+Every install that updates itself — the `.deb`/`.rpm`, the Homebrew formula,
+`setup --self-managed`, the Linux app and `install.sh --app`, the Docker image, the desktop apps,
+a full node — installs each release by itself and goes back by itself when one does not hold
+([docs/updates.md](../../docs/updates.md); the layout and the launcher:
+[README](README.md#the-layout-and-the-launcher-epic-35)). This page is for doing it by hand, and
+for the multi-service stack built from source (`deploy/compose`), which does not update itself.
 
-1. Forward migrations run **before** the new binary starts serving.
-2. The new binary is **schema-rev–pinned** at build time. If the DB
-   schema_rev does not match the binary's expected SCHEMA_REV, the
-   binary refuses to start.
-3. Backward compatibility: every release is guaranteed compatible
-   with `schema_rev - 1` for the duration of one minor release.
-4. Rollback is **always** to the immediately preceding release. We
-   do not support `goose down` across more than one minor version.
+The rules every path follows:
+
+1. Forward migrations run **before** a new release serves: its start's database step dumps the
+   database first and puts the dump back if a migration fails.
+2. A release refuses a database whose schema it does not fit (the schema guard), and a machine
+   whose code does not fit the home's database pauses until its update lands.
+3. Migrations are additive: a release keeps working on the next release's schema (`make
+   compat-prev` checks it). A migration that breaks the previous release says so in
+   `shared/db/migrations/MANIFEST.md`, and such a release waits for an admin's approval.
+4. The updater never runs a down migration. Going back further than the previous release is a
+   [restore of a backup](#automatic-updates-the-database-only-moves-forward-epic-35-story-355).
+
+## Rolling back by hand
+
+- **A machine of the cluster**: Admin → Updates → the run → **Roll back** on its row.
+- **Any self-managed install**, on that machine: `maktaba-server update --rollback` makes the
+  previous release current again (the layout's `previous`; the Linux runtime copy's previous
+  runtime; a plain binary's `<binary>.bak`), then restart the service. It does not lower the
+  watermark: an automatic update will not install the release you left until you unblock it
+  (Admin → Updates → **Try it again**), and the next release moves past it.
+- **The database**: the release before runs on the newer schema (rule 3). When it cannot, restore
+  the backup taken before the update (below).
+- **A desktop app**: install the release you want from its GitHub release by hand.
 
 ## Container upgrade
 
-The Docker install (one container, `ghcr.io/hamza-labs-core/maktaba-server`, [cloud/installers/docker](../../cloud/installers/docker/docker-compose.yml)) needs none of this: it updates the runtime on its volume by itself, as a headless install does (docs/auto-update.md). The steps below are for the multi-service stack built from source (`deploy/compose`).
+The Docker install (one container, `ghcr.io/hamza-labs-core/maktaba-server`, [cloud/installers/docker](../../cloud/installers/docker/docker-compose.yml)) needs none of this: it updates the runtime on its volume by itself, as a headless install does ([docs/updates.md](../../docs/updates.md)). The steps below are for the multi-service stack built from source (`deploy/compose`).
 
 ```sh
 # 1. Stage: pull the new images, do not switch traffic yet.
@@ -51,7 +70,7 @@ MAKTABA_DISABLE_DOWN= docker compose run --rm -e MAKTABA_DISABLE_DOWN= \
 The release manifest (`release-manifest.json`) records the
 `schema_rev` for every release so the rollback target is unambiguous.
 Only roll back within one minor version; for anything wider, restore
-from a database backup (see invariant 4 above).
+from a database backup (rule 4 above).
 
 > NOTE (Story 22.6, deferred): the broader upgrade runtime —
 > `tools/upgrade.sh` / `rollback.sh` / `version-jump-guard.sh`,

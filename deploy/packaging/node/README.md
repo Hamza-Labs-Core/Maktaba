@@ -314,7 +314,8 @@ the machine's web address and press **Continue with <home>**.
 Worker-only nodes are converted automatically on their next update (story 35.8 AC8):
 on the machine's turn in the home's rollout (inside the update window, after its jobs
 finish), the home sends its worker `update.convert`. The worker downloads the release the
-home runs (the home's mirror first, GitHub Releases otherwise) and verifies it itself
+home runs from the home's mirror (with the download token the command carries: that
+machine, that release, for 4 hours), GitHub Releases otherwise, and verifies it itself
 before anything runs: the Sigstore bundle of `checksums.txt` against the pinned
 release-workflow identity, with the same Sigstore root the server compiles in, then every
 file against `checksums.txt` and the server binary against `release.json`. Then it runs
@@ -359,8 +360,8 @@ keeps this worker's Python environment for the pipeline (`--python`, written to
 `--mode service` for a Windows service; Linux: a systemd user unit; macOS: a
 LaunchAgent), waits until the new service answers as a node, and only then removes the
 old worker units (`maktaba-node`, `maktaba-node@N`). `--dry-run` prints the plan.
-Without `--from` it fetches the home's version itself (the home's mirror, else GitHub
-Releases). A machine joined before the cluster channel's handshake v2 (no
+Without `--from` it fetches the home's version itself from GitHub Releases (the home's
+mirror answers a worker only with the token of the home's own `update.convert`). A machine joined before the cluster channel's handshake v2 (no
 `home.cluster_pub` in `node.json`) must re-join first.
 
 A worker started by hand (a script or a shortcut running `maktaba-pipeline run`) is not
