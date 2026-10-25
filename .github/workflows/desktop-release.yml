@@ -130,6 +130,7 @@ jobs:
     timeout-minutes: 90
     env:
       APPLE_SIGN: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_CERTIFICATE != '' }}
+      MAC_CODESIGN: ${{ secrets.MAC_CODESIGN_P12 != '' }}
       APPLE_NOTARIZE: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
     steps:
       - uses: actions/checkout@v6.0.2
@@ -242,6 +243,29 @@ jobs:
           fi
           [ -n "$IDENTITY" ] || { echo "::error::no Developer ID Application identity in APPLE_CERTIFICATE"; exit 1; }
           echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >>"$GITHUB_ENV"
+
+      # Without the Apple secrets: Maktaba's own code-signing certificate (self-signed), so
+      # the app keeps one identity across updates and macOS keeps its privacy grants
+      # (payload.sh, MAKTABA_MAC_SIGN_IDENTITY). Ad hoc only when this is missing too.
+      - name: Import Maktaba's code-signing certificate
+        if: startsWith(matrix.os, 'macos') && env.APPLE_SIGN != 'true' && env.MAC_CODESIGN == 'true'
+        env:
+          MAC_CODESIGN_P12: ${{ secrets.MAC_CODESIGN_P12 }}
+          MAC_CODESIGN_P12_PASSWORD: ${{ secrets.MAC_CODESIGN_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          kc="$RUNNER_TEMP/maktaba-signing.keychain-db"
+          kcpw="$(openssl rand -hex 16)"
+          printf '%s' "$MAC_CODESIGN_P12" | base64 --decode >"$RUNNER_TEMP/maktaba.p12"
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          security import "$RUNNER_TEMP/maktaba.p12" -k "$kc" -P "$MAC_CODESIGN_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpw" "$kc" >/dev/null
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/maktaba.p12"
+          echo "MAKTABA_MAC_SIGN_IDENTITY=Maktaba Code Signing" >>"$GITHUB_ENV"
 
       # The server payload (on a Mac signed when the identity is there) and the
       # tauri overlay that bundles it, then a smoke test of the payload alone.

@@ -176,6 +176,15 @@ if [ -n "$APP" ]; then
     else
         fail "the bundle is not signed as com.hamzalabs.maktaba ('$ident'): its server login item cannot register"
     fi
+    # a stable identity (MAKTABA_MAC_SIGN_IDENTITY): the designated requirement names
+    # the certificate, not this build's hash, so macOS keeps its grants across updates
+    if [ -n "${MAKTABA_MAC_SIGN_IDENTITY:-}" ]; then
+        dr="$(codesign -d -r- "$APP" 2>&1 | sed -n 's/^designated => //p')"
+        case "$dr" in
+            *certificate*) ok "designated requirement: $dr" ;;
+            *) fail "not signed with $MAKTABA_MAC_SIGN_IDENTITY (designated requirement: '$dr')" ;;
+        esac
+    fi
     if [ "$SIGNED" -eq 1 ]; then
         run "codesign --verify --deep --strict" codesign --verify --deep --strict "$APP"
     fi
