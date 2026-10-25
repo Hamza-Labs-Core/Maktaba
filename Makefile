@@ -53,8 +53,10 @@ UNIT_PER_TEST_SOFT_CAP  ?= 400ms
 # modules one after another, then pytest). 2m30s failed PRs whose every
 # test passed (2m30.5s, 2m31.9s). 3m30s is the slowest of those runs plus
 # ~40%, for runner noise and the next tests; a test that hangs, or a
-# slowdown that takes the tier past it, still fails.
-INTEGRATION_TIER_BUDGET ?= 3m30s
+# slowdown that takes the tier past it, still fails. By 2026-10-25 main's
+# last nine runs took 2m41s-3m37s, every test passing, and main went red on
+# the budget alone: 5m is again the slowest (3m40s, a PR's) plus ~40%.
+INTEGRATION_TIER_BUDGET ?= 5m
 E2E_TIER_BUDGET         ?= 5m
 MEDIA_E2E_TIER_BUDGET   ?= 9m
 PERF_CI_TIER_BUDGET     ?= 2m
