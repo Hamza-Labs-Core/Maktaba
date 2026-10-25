@@ -16,6 +16,7 @@ struct LibraryBrowser: View {
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.system
     @State private var playback: Playback
     @State private var halfFolded = false
+    @Environment(\.horizontalSizeClass) private var width
     @State private var libraries: [Library] = []
     @State private var library: String? = Self.all
     @State private var videos: [Video] = []
@@ -224,6 +225,11 @@ struct LibraryBrowser: View {
             videos = page.items
             next = page.next
             problem = nil
+            // a wide screen (open flat, iPad, Mac) shows a page, not an empty column; folded
+            // (one column) and half folded (the libraries beside the videos) keep the list
+            if width != .compact, !halfFolded, video == nil || !videos.contains(where: { $0.id == video?.id }) {
+                video = videos.first
+            }
         } catch APIError.signedOut {
             session.signedOut()
         } catch {
