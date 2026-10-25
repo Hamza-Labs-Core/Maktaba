@@ -3,9 +3,8 @@
 // changed, so a browser kept the first shell it saw for ever: after an update that
 // shell named the old bundle's script, the server answered the missing script with
 // the page, and the app (the Mac app's window above all) stayed blank.
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, it, expect, vi } from "vitest";
+import src from "../../public/sw.js?raw";
 
 type Listener = (event: Record<string, unknown>) => void;
 
@@ -42,7 +41,6 @@ function loadWorker(network: (url: string) => Promise<Response>) {
   const fetchFn = vi.fn((req: Request | string) =>
     network(typeof req === "string" ? req : new URL(req.url).pathname)
   );
-  const src = readFileSync(resolve(__dirname, "../../public/sw.js"), "utf8");
   new Function("self", "caches", "fetch", src)(self, caches, fetchFn);
   return { listeners, stores, caches, self, fetchFn };
 }
