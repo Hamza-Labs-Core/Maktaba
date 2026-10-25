@@ -84,7 +84,7 @@ cp "$REPO_ROOT/cmd/maktaba-server/bin/darwin-arm64/maktaba-server" \
    "$REPO_ROOT/cloud/bin/darwin-arm64/maktaba-cloudlink" "$OUT/bin/"
 (cd "$REPO_ROOT/cmd/maktaba-launcher" && \
     GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
-    go build -trimpath -ldflags "-buildid= -s -w -X main.Version=$VERSION" -o "$OUT/bin/maktaba-launcher" .)
+    go build -trimpath -ldflags "-s -w -X main.Version=$VERSION" -o "$OUT/bin/maktaba-launcher" .)
 
 # --- PostgreSQL ----------------------------------------------------------------------------------
 log "PostgreSQL $POSTGRES_VERSION"
