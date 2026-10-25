@@ -169,10 +169,20 @@ async def _execute(
             job.id, "deferred", outcome=job_events.failure("deferred", exc.reason, retryable=True)
         )
     except StageFailure as exc:
-        await mark_failed_or_retry(
-            db,
+        _log.warning(
+            "stage_failed",
             job_id=job.id,
-            error=StageError(
+            stage=stage.name,
+            subject_id=job.subject.id,
+            kind=exc.kind,
+            retryable=exc.retryable,
+            error=exc.message,
+        )
+        await _fail(
+            db,
+            job,
+            stage,
+            StageError(
                 kind=exc.kind,
                 message=exc.message,
                 traceback=traceback.format_exc(),
@@ -185,10 +195,17 @@ async def _execute(
             outcome=job_events.failure(exc.kind, exc.message, retryable=exc.retryable),
         )
     except GraphViolation as exc:
-        await mark_failed_or_retry(
-            db,
+        _log.warning(
+            "stage_failed",
             job_id=job.id,
-            error=StageError(kind="graph_violation", message=str(exc), retryable=False),
+            stage=stage.name,
+            subject_id=job.subject.id,
+            kind="graph_violation",
+            retryable=False,
+            error=str(exc),
+        )
+        await _fail(
+            db, job, stage, StageError(kind="graph_violation", message=str(exc), retryable=False)
         )
         job_events.finished(
             job.id,
@@ -197,10 +214,11 @@ async def _execute(
         )
     except Exception as exc:  # noqa: BLE001 - every handler failure becomes a classified job failure
         _log.exception("stage_handler_failed", job_id=job.id, stage=stage.name)
-        await mark_failed_or_retry(
+        await _fail(
             db,
-            job_id=job.id,
-            error=StageError(
+            job,
+            stage,
+            StageError(
                 kind=type(exc).__name__,
                 message=str(exc),
                 traceback=traceback.format_exc(),
@@ -212,6 +230,29 @@ async def _execute(
             "failed",
             outcome=job_events.failure(type(exc).__name__, str(exc), retryable=True),
         )
+
+
+async def _fail(db: Any, job: Job, stage: StageDef, error: StageError) -> None:
+    """``mark_failed_or_retry``, then one line saying what became of the job: retried
+    (``pending``), parked, failed for good, or ``noop`` (the row had already left the
+    live states: force-paused, cancelled, reaped)."""
+    outcome = await mark_failed_or_retry(db, job_id=job.id, error=error)
+    if outcome.state == "noop":
+        _log.info("stage_failure_noop", job_id=job.id, stage=stage.name, kind=error.kind)
+        return
+    _log.warning(
+        "stage_failure_outcome",
+        job_id=job.id,
+        stage=stage.name,
+        kind=error.kind,
+        state=outcome.state,
+        outcome=(
+            "parked" if outcome.parked_on else "retry" if outcome.state == "pending" else "terminal"
+        ),
+        not_before=outcome.not_before.isoformat() if outcome.not_before else None,
+        failure_class=outcome.failure_class,
+        parked_on=outcome.parked_on,
+    )
 
 
 async def _defer(db: Any, job: Job, stage: StageDef, exc: JobDeferred) -> None:

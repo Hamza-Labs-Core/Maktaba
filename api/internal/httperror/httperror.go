@@ -15,6 +15,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
 // Error is the canonical API error type. It serialises to the RFC 9457
@@ -33,6 +34,9 @@ type Error struct {
 	Instance string         `json:"instance,omitempty"`
 	Errors   []FieldError   `json:"errors,omitempty"`
 	Extras   map[string]any `json:"-"`
+	// Cause is the underlying error (Wrap): logged by Write for a 5xx, never
+	// sent to the client.
+	Cause error `json:"-"`
 }
 
 // FieldError is one entry in a 422 envelope.
@@ -61,6 +65,17 @@ func (e *Error) With(key string, value any) *Error {
 	e.Extras[key] = value
 	return e
 }
+
+// Wrap records err as the cause of the error and returns the receiver:
+// `httperror.Internal("load library").Wrap(err)`. Write logs the cause of a
+// 5xx with the request; the client sees only the title and detail.
+func (e *Error) Wrap(err error) *Error {
+	e.Cause = err
+	return e
+}
+
+// Unwrap exposes the cause to errors.Is / errors.As.
+func (e *Error) Unwrap() error { return e.Cause }
 
 // Constructors — the canonical way for handlers to mint an Error. Each
 // returns a fresh value so callers can attach additional context with
@@ -119,16 +134,21 @@ func Unavailable(retryAfterSec int) *Error {
 // idempotent against double-write attempts when paired with the
 // SingleWriteGuard middleware.
 //
-// If err is not (or does not wrap) an *Error, it's logged at error
-// level and rendered as a generic 500 with no detail — never leak the
-// underlying message to the client.
+// If err is not (or does not wrap) an *Error, it's rendered as a generic
+// 500 with no detail — never leak the underlying message to the client.
+//
+// Every 5xx is logged (`http_error`, Error level) with the request's method,
+// path, status, problem type, detail and cause (Wrap), so a failure the client
+// only sees as "internal error" has its reason in the server's log.
 func Write(w http.ResponseWriter, r *http.Request, err error) {
 	var e *Error
 	if !errors.As(err, &e) {
-		slog.ErrorContext(r.Context(), "unhandled_error", "err", err.Error())
-		e = Internal("")
+		e = Internal("").Wrap(err)
 	}
 	e.Instance = r.URL.Path
+	if e.Status >= http.StatusInternalServerError {
+		logServerError(r, e)
+	}
 
 	body := map[string]any{
 		"type":      e.Type,
@@ -158,6 +178,22 @@ func Write(w http.ResponseWriter, r *http.Request, err error) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(e.Status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// logServerError writes a 5xx answer's reason to the log.
+func logServerError(r *http.Request, e *Error) {
+	attrs := []any{
+		"method", r.Method,
+		"path", r.URL.Path,
+		"status", e.Status,
+		"type", e.Type,
+		"detail", e.Detail,
+	}
+	if e.Cause != nil {
+		attrs = append(attrs, "err", e.Cause.Error())
+	}
+	attrs = append(attrs, "event", "http_error")
+	mlog.From(r.Context()).Log(r.Context(), slog.LevelError, "http_error", attrs...)
 }
 
 func writePage(w http.ResponseWriter, e *Error, requestID string) {

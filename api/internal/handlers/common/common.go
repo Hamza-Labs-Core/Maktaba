@@ -31,7 +31,7 @@ const MaxBodyBytes = 1 << 20 // 1 MiB
 func WriteJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("encode response"))
+		httperror.Write(w, r, httperror.Internal("encode response").Wrap(err))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

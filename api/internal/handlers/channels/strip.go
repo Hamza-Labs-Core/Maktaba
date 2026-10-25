@@ -245,7 +245,7 @@ func (h *Handler) loadStripChannel(w http.ResponseWriter, r *http.Request) (Chan
 			httperror.Write(w, r, httperror.NotFound("channel "+id))
 			return Channel{}, false
 		}
-		httperror.Write(w, r, httperror.Internal("load channel"))
+		httperror.Write(w, r, httperror.Internal("load channel").Wrap(err))
 		return Channel{}, false
 	}
 	return c, true

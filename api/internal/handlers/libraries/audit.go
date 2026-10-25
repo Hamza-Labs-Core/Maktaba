@@ -83,7 +83,7 @@ func (h *Handler) Audit(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("library "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load library"))
+		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
 		return
 	}
 

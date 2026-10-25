@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -56,6 +58,34 @@ type DirectHandler struct {
 	// any video as direct. Used by the remux handler after the file has
 	// already been transcoded into a direct-playable container.
 	AllowAllProfiles bool
+	// Logger receives the file's open and read failures (nil: slog's default).
+	Logger *slog.Logger
+}
+
+func (h *DirectHandler) log() *slog.Logger {
+	if h.Logger == nil {
+		return slog.Default()
+	}
+	return h.Logger
+}
+
+// errSourceRead marks a failed read of the source file (not of the client's
+// connection): copyReader wraps it.
+type errSourceRead struct{ err error }
+
+func (e errSourceRead) Error() string { return "read source: " + e.err.Error() }
+func (e errSourceRead) Unwrap() error { return e.err }
+
+// copyFailed logs a copy that stopped on the source file (a NAS read error);
+// one the client went away from is not the server's failure.
+func (h *DirectHandler) copyFailed(videoID uuid.UUID, path string, offset, written int64, err error) {
+	var src errSourceRead
+	if err == nil || !errors.As(err, &src) {
+		return
+	}
+	h.log().Error("direct play: the video file could not be read", "video_id", videoID.String(),
+		"path", path, "offset", offset, "written", written, "err", src.err.Error(),
+		"event", "vod_direct_read_failed")
 }
 
 // ServeHTTP handles GET and HEAD on /stream/direct/{video_id}. The
@@ -122,12 +152,22 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	f, err := h.Files.Open(mediaPath)
 	if err != nil {
+		// a missing file is a Warn; another failure (macOS privacy denial, NAS
+		// unmounted, EIO) an Error: the file is there and cannot be read
+		level := slog.LevelError
+		if errors.Is(err, fs.ErrNotExist) {
+			level = slog.LevelWarn
+		}
+		h.log().Log(r.Context(), level, "direct play: the video file could not be opened",
+			"video_id", videoID.String(), "path", mediaPath, "err", err.Error(), "event", "vod_direct_open_failed")
 		httpx.Write(w, http.StatusNotFound, "video-bytes-missing", "video file not on disk", err.Error())
 		return
 	}
 	defer f.Close()
 	stat, err := f.Stat()
 	if err != nil {
+		h.log().Error("direct play: the video file could not be read", "video_id", videoID.String(),
+			"path", mediaPath, "err", err.Error(), "event", "vod_direct_read_failed")
 		httpx.Write(w, http.StatusInternalServerError, "stat-failed", "stat failed", err.Error())
 		return
 	}
@@ -145,7 +185,8 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = copyReader(w, f, 0, stat.Size())
+		n, cerr := copyReader(w, f, 0, stat.Size())
+		h.copyFailed(videoID, mediaPath, 0, n, cerr)
 		return
 	}
 
@@ -172,10 +213,9 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusPartialContent)
-	if _, err := copyReader(w, f, start, length); err != nil {
-		// Client disconnect — silently swallow.
-		_ = err
-	}
+	// a client that went away ends the copy too: only a source failure is logged
+	n, cerr := copyReader(w, f, start, length)
+	h.copyFailed(videoID, mediaPath, start, n, cerr)
 }
 
 // pathHasTraversal reports whether p still contains a "." or ".."
@@ -238,11 +278,12 @@ func parseRange(value string, size int64) (start, end int64, multi bool, err err
 }
 
 // copyReader copies length bytes starting at offset from r to w.
-// Uses Seek + io.CopyN-style loop so we don't need ReadAt.
+// Uses Seek + io.CopyN-style loop so we don't need ReadAt. A failure of the
+// source (seek, read) comes back as errSourceRead; one of w as itself.
 func copyReader(w http.ResponseWriter, r FileReader, offset, length int64) (int64, error) {
 	if offset > 0 {
 		if _, err := r.Seek(offset, 0); err != nil {
-			return 0, err
+			return 0, errSourceRead{err}
 		}
 	}
 	buf := make([]byte, 32*1024)
@@ -265,7 +306,7 @@ func copyReader(w http.ResponseWriter, r FileReader, offset, length int64) (int6
 			if errors.Is(rerr, io.EOF) {
 				return written, nil
 			}
-			return written, rerr
+			return written, errSourceRead{rerr}
 		}
 	}
 	return written, nil

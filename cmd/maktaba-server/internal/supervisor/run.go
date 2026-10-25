@@ -279,7 +279,7 @@ func (s *Supervisor) cannotAsk(p Process, err error) {
 		})
 		return
 	}
-	s.logf("%s could not be asked to stop (%v); killing it instead", p.Name(), err)
+	s.warnf("%s could not be asked to stop (%v); killing it instead", p.Name(), err)
 }
 
 // loop runs one child until shutdown, restarting it per the policy.
@@ -337,7 +337,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			c.status.StartedAt = nil
 			s.mu.Unlock()
 			s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventExited, Reason: ReasonStartFailed, Message: err.Error()})
-			s.logf("%s could not start: %v", c.proc.Name(), err)
+			s.errorf("%s could not start: %v", c.proc.Name(), err)
 		} else {
 			pid := cmd.Process.Pid
 			tree, treeErr := attachTree(cmd)
@@ -410,7 +410,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		// Decide what happens next.
 		switch {
 		case s.policy.Restart == RestartNever:
-			s.logf("%s exited (pid %d, %s); restart = never, stopping the stack", c.proc.Name(), info.PID, describeExit(info))
+			s.errorf("%s exited (pid %d, %s); restart = never, stopping the stack", c.proc.Name(), info.PID, describeExit(info))
 			s.setState(c, StateExited)
 			s.fatalOnce.Do(func() { s.fatal <- fmt.Errorf("%s exited: %s", c.proc.Name(), describeExit(info)) })
 			return
@@ -432,6 +432,8 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		c.exits = append(c.recentExits(now, s.policy.Window), now)
 		delay, state := backoff, StateBackoff
 		wasFailed := c.failed
+		// for the line below: the restart this wait leads to, and the window's exits so far
+		restartN, exitsN := c.status.Restarts+1, len(c.exits)
 		if len(c.exits) >= s.policy.MaxRestarts {
 			delay, state = s.policy.FailedRetry, StateFailed
 			c.failed = true
@@ -449,10 +451,11 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 				s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: info.Reason, DelaySec: delay.Seconds(),
 					Message: fmt.Sprintf("%d exits in %s", s.policy.MaxRestarts, s.policy.Window)})
 			}
-			s.logf("%s exited (pid %d, %s); crash loop: %d exits in %s, marked failed, retrying in %s",
+			s.errorf("%s exited (pid %d, %s); crash loop: %d exits in %s, marked failed, retrying in %s",
 				c.proc.Name(), info.PID, describeExit(info), s.policy.MaxRestarts, s.policy.Window, delay)
 		} else {
-			s.logf("%s exited (pid %d, %s); restarting in %s", c.proc.Name(), info.PID, describeExit(info), delay)
+			s.warnf("%s exited (pid %d, %s); restarting in %s (restart #%d, %d/%d exits in %s)", c.proc.Name(), info.PID,
+				describeExit(info), delay, restartN, exitsN, s.policy.MaxRestarts, s.policy.Window)
 		}
 
 		timer := time.NewTimer(delay)
@@ -544,7 +547,7 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 		}
 		s.mu.Unlock()
 		if kill {
-			s.logf("%s (pid %d) failed %d liveness probes in a row (%v); asking it to stop",
+			s.warnf("%s (pid %d) failed %d liveness probes in a row (%v); asking it to stop",
 				c.proc.Name(), cmd.Process.Pid, failures, err)
 			s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventHung, PID: cmd.Process.Pid, Reason: ReasonHang,
 				Message: err.Error()})
@@ -560,7 +563,7 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 					return // it stopped
 				case <-time.After(HangGrace):
 				}
-				s.logf("%s (pid %d) did not stop within %s; killing it", c.proc.Name(), cmd.Process.Pid, HangGrace)
+				s.warnf("%s (pid %d) did not stop within %s; killing it", c.proc.Name(), cmd.Process.Pid, HangGrace)
 			}
 			tree.kill()
 			_ = cmd.Process.Kill()
@@ -644,7 +647,7 @@ func (s *Supervisor) emit(e Event) {
 	s.mu.Unlock()
 	if sink != nil {
 		if err := sink.Append(e); err != nil {
-			s.logf("event log write failed: %v", err)
+			s.warnf("event log write failed: %v", err)
 		}
 	}
 }
@@ -652,6 +655,11 @@ func (s *Supervisor) emit(e Event) {
 func (s *Supervisor) logf(format string, args ...any) {
 	fmt.Fprintf(s.log, "[supervisor] "+format+"\n", args...)
 }
+
+// errorf and warnf are logf for a failure: the leading level=… is what the logs page
+// (internal/logfiles) reads a plain line's level from.
+func (s *Supervisor) errorf(format string, args ...any) { s.logf("level=error "+format, args...) }
+func (s *Supervisor) warnf(format string, args ...any)  { s.logf("level=warn "+format, args...) }
 
 func describeExit(info ExitInfo) string {
 	out := fmt.Sprintf("code %d", info.Code)
@@ -695,12 +703,12 @@ func (s *Supervisor) Restart(role Role, instance string) error {
 	s.logf("%s: starting it again (pid %d)", c.proc.Name(), cmd.Process.Pid)
 	if err := c.proc.askStop(cmd.Process, tree); err != nil {
 		s.cannotAsk(c.proc, err)
-		s.killRun(c, cmd)
+		s.killRun(c, cmd, 0)
 		return nil
 	}
 	go func() {
 		time.Sleep(restartGrace)
-		s.killRun(c, cmd)
+		s.killRun(c, cmd, restartGrace)
 	}()
 	return nil
 }
@@ -743,25 +751,32 @@ func (s *Supervisor) Want(role Role, instance string, on bool) error {
 		s.logf("%s not wanted: stopping it (pid %d)", c.proc.Name(), cmd.Process.Pid)
 		if err := c.proc.askStop(cmd.Process, tree); err != nil {
 			s.cannotAsk(c.proc, err)
-			s.killRun(c, cmd)
+			s.killRun(c, cmd, 0)
 			return nil
 		}
 		go func() {
-			time.Sleep(10 * time.Second)
-			s.killRun(c, cmd)
+			time.Sleep(wantStopGrace)
+			s.killRun(c, cmd, wantStopGrace)
 		}()
 	}
 	return nil
 }
 
+// wantStopGrace is how long Want(off) waits for the instance to stop before it kills it.
+const wantStopGrace = 10 * time.Second
+
 // killRun kills c's process tree while cmd is still its running process (not
-// a later run).
-func (s *Supervisor) killRun(c *child, cmd *exec.Cmd) {
+// a later run). waited is how long it was given to stop once asked (0: it was not
+// asked, cannotAsk said so): a child that ignored the ask is logged.
+func (s *Supervisor) killRun(c *child, cmd *exec.Cmd, waited time.Duration) {
 	s.mu.Lock()
 	still := c.cmd == cmd
 	tree := c.tree
 	s.mu.Unlock()
 	if still {
+		if waited > 0 {
+			s.warnf("%s (pid %d) did not stop within %s; killing it", c.proc.Name(), cmd.Process.Pid, waited)
+		}
 		tree.kill()
 		_ = cmd.Process.Kill()
 	}

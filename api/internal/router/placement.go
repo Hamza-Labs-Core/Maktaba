@@ -49,6 +49,8 @@ func buildPlacement() placement.Table {
 		"/api/stream/capabilities",
 		"/api/stream/sessions",
 		"/api/stream/sessions/{id}",
+		// a player's playback failure is logged where its stream is served
+		"/api/stream/sessions/{id}/errors",
 	))
 
 	// ---- any: database reads through the node's role ----

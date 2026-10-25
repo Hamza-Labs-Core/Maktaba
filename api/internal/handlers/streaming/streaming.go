@@ -4,6 +4,7 @@
 //	GET    /api/stream/sessions/{id}
 //	DELETE /api/stream/sessions/{id}
 //	POST   /api/stream/sessions/{id}/progress
+//	POST   /api/stream/sessions/{id}/errors   (playback_report.go)
 //	GET    /api/stream/capabilities
 //
 // The session lifecycle is a thin REST surface over an injected
@@ -41,6 +42,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
 // SessionService is the gRPC-backed surface for OpenSession / CloseSession
@@ -162,6 +164,9 @@ type Handler struct {
 	ledgerOnce   sync.Once
 	// reconcileOnce starts the retry of the sessions not written yet (Mount)
 	reconcileOnce sync.Once
+	// reportLimit bounds the playback error reports per session (reports)
+	reportLimit *sessionDebouncer
+	reportOnce  sync.Once
 }
 
 // dbCtx bounds a database call on a node (Offline set); the home waits as before.
@@ -324,6 +329,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/stream/sessions/{id}", h.GetSession)
 	r.Delete("/api/stream/sessions/{id}", h.CloseSession)
 	r.Post("/api/stream/sessions/{id}/progress", h.PostProgress)
+	r.Post("/api/stream/sessions/{id}/errors", h.PostPlaybackError)
 }
 
 // OpenSession implements AC-1.
@@ -353,7 +359,7 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, errNotInCatalog):
 			writeUnavailableOffline(w, r)
 		default:
-			httperror.Write(w, r, httperror.Internal("load video"))
+			httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		}
 		return
 	}
@@ -396,6 +402,9 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err != nil {
+			mlog.From(r.Context()).Error("stream session not opened",
+				"video_id", req.VideoID, "user_id", p.UserID, "client_profile", req.ClientProfile,
+				"start_sec", req.StartSec, "err", err.Error(), "event", "stream_open_failed")
 			w.Header().Set("Retry-After", "5")
 			httperror.Write(w, r, &httperror.Error{
 				Type:   "https://maktaba.dev/problems/streaming-unavailable",
@@ -488,6 +497,11 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 	if duration.Valid {
 		resp.DurationSec = duration.Float64
 	}
+	// the session's id next to its video and mode: a later playback_failed,
+	// stream_request_failed or vod_transcode_exited line names the session only
+	mlog.From(r.Context()).Info("stream session opened",
+		"session_id", resp.SessionID, "video_id", req.VideoID, "user_id", p.UserID,
+		"mode", resp.Mode, "start_sec", req.StartSec, "event", "stream_session_opened")
 	common.WriteJSON(w, r, http.StatusCreated, resp)
 }
 
@@ -526,7 +540,7 @@ func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if !asked || err != nil {
 		if asked && !errors.Is(err, sql.ErrNoRows) && !h.failed(r.Context(), err) {
-			httperror.Write(w, r, httperror.Internal("load session"))
+			httperror.Write(w, r, httperror.Internal("load session").Wrap(err))
 			return
 		}
 		// not asked, no row (opened here while the database was down), or a
@@ -576,7 +590,7 @@ func (h *Handler) CloseSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if !asked || err != nil {
 		if asked && !errors.Is(err, sql.ErrNoRows) && !h.failed(r.Context(), err) {
-			httperror.Write(w, r, httperror.Internal("load session"))
+			httperror.Write(w, r, httperror.Internal("load session").Wrap(err))
 			return
 		}
 		// a session opened here while the database was down has no row: the
@@ -593,7 +607,11 @@ func (h *Handler) CloseSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.Service != nil {
-		_ = h.Service.Close(r.Context(), id) // best-effort
+		// best-effort: the streaming service reaps an idle session anyway
+		if err := h.Service.Close(r.Context(), id); err != nil {
+			mlog.From(r.Context()).Warn("stream session not closed on the streaming service",
+				"session_id", id, "err", err.Error(), "event", "stream_close_failed")
+		}
 	}
 	h.led().close(id, h.now())
 	if h.dbUp() {
@@ -603,7 +621,7 @@ func (h *Handler) CloseSession(w http.ResponseWriter, r *http.Request) {
 	`, h.now(), id)
 		cancel()
 		if err != nil && !h.failed(r.Context(), err) {
-			httperror.Write(w, r, httperror.Internal("close session"))
+			httperror.Write(w, r, httperror.Internal("close session").Wrap(err))
 			return
 		}
 		if err == nil {
@@ -674,7 +692,7 @@ func (h *Handler) PostProgress(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("session "+sessionID))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load session"))
+		httperror.Write(w, r, httperror.Internal("load session").Wrap(err))
 		return
 	}
 	// Only the owner (or an admin) may report progress on a session; the

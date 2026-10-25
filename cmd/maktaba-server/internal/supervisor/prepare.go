@@ -106,13 +106,13 @@ func (s *Supervisor) prepare(ctx context.Context, c *child) bool {
 		ev := Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: ReasonStartFailed, Message: err.Error()}
 		if halted {
 			s.emit(ev)
-			s.logf("%s cannot start: %v; it stays stopped until the server starts again", c.proc.Name(), err)
+			s.errorf("%s cannot start: %v; it stays stopped until the server starts again", c.proc.Name(), err)
 			<-ctx.Done()
 			return false
 		}
 		ev.DelaySec = delay.Seconds()
 		s.emit(ev)
-		s.logf("%s cannot start yet: %v; trying again in %s", c.proc.Name(), err, delay)
+		s.warnf("%s cannot start yet: %v; trying again in %s", c.proc.Name(), err, delay)
 		t := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():

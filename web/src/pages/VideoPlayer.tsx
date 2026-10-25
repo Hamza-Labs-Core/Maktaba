@@ -17,6 +17,11 @@
 // 401/403 under hls.js; under native HLS a media error or stall past
 // expires_at, or a manifest probe answering 401/403) the session is reopened
 // for a fresh signed URL and playback resumes at the current position.
+// Playback failures after the session opened (lib/playbackReport) are posted
+// to POST /api/stream/sessions/{id}/errors, which logs them as
+// `playback_failed`: the element's error on a direct file, hls.js / native
+// HLS failures that end in a reopen or the error screen, and a stream that
+// stops making progress while it should be playing (STALL_REPORT_MS).
 // The rich control surface (speed, PiP, keyboard map, chapter ticks,
 // caption sizing, resume) works on top of the <video> either way.
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -32,6 +37,7 @@ import {
 import { useI18n } from "../lib/i18n";
 import { createWatchSession } from "../lib/watchSession";
 import { attachVod, carrySig } from "@maktaba/tvplayer";
+import { mediaError, reportPlaybackFailure, type PlaybackFailure } from "../lib/playbackReport";
 
 interface OpenSessionResponse {
   session_id: string;
@@ -83,6 +89,9 @@ function isControlTarget(el: EventTarget | null): boolean {
 /** Reopens of a stream gone within GONE_WINDOW_MS before the error screen. */
 const GONE_REOPENS = 3;
 const GONE_WINDOW_MS = 2 * 60_000;
+
+/** Playing but no progress this long: the stall is reported (once per stream). */
+export const STALL_REPORT_MS = 15_000;
 
 /** At the video's end: within 2% of its length, 5 s at least. */
 export function nearEnd(position: number, duration: number): boolean {
@@ -136,6 +145,23 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
   // not the viewer's yet, so no progress is posted (it would move the resume
   // point back).
   const startingRef = useRef(false);
+
+  // Posts a playback failure of the stream now attached to the server's log.
+  const report = useCallback(
+    (s: OpenSessionResponse, f: PlaybackFailure) => {
+      if (!videoId) return;
+      reportPlaybackFailure(
+        {
+          sessionId: s.session_id,
+          videoId,
+          mode: s.mode,
+          positionSec: videoRef.current?.currentTime ?? 0,
+        },
+        f
+      );
+    },
+    [videoId]
+  );
 
   const tParam = Number(params.get("t"));
   const startAt = Number.isFinite(tParam) && tParam > 0 ? tParam : 0;
@@ -296,7 +322,15 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
         clampStart();
         resumePlay();
       };
-      const onError = () => setPlayError(true);
+      const onError = () => {
+        report(session, {
+          engine: "direct",
+          outcome: "fatal",
+          ...mediaError(el),
+          url: el.currentSrc || session.direct_url,
+        });
+        setPlayError(true);
+      };
       el.addEventListener("loadedmetadata", onMeta, { once: true });
       el.addEventListener("error", onError);
       el.src = session.direct_url || "";
@@ -346,7 +380,15 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
       const now = Date.now();
       const recent = goneRef.current.filter((t) => now - t < GONE_WINDOW_MS);
       if (recent.length >= GONE_REOPENS) {
-        if (!cancelled) setPlayError(true);
+        if (!cancelled) {
+          report(session, {
+            engine: h.mode === "native" ? "native" : "hls.js",
+            outcome: "fatal",
+            code: "reopen_limit",
+            message: `stream gone ${recent.length + 1} times in ${GONE_WINDOW_MS / 1000}s`,
+          });
+          setPlayError(true);
+        }
         return;
       }
       goneRef.current = [...recent, now];
@@ -359,6 +401,9 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
       onGone: gone,
       onFatal: () => {
         if (!cancelled) setPlayError(true);
+      },
+      onError: (e) => {
+        if (!cancelled) report(session, e);
       },
       isExpired: () => Number.isFinite(expiresAt) && Date.now() >= expiresAt - EXPIRY_SKEW_MS,
     });
@@ -380,7 +425,53 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
       h.detach();
     };
     // speed is applied on attach only; the controls set it live.
-  }, [session, videoId, startAt, t, failure]);
+  }, [session, videoId, startAt, t, failure, report]);
+
+  // A stream that stops arriving while it should play (a direct file whose
+  // reads stall on the NAS, segments that never come) raises no error of its
+  // own: past STALL_REPORT_MS without progress it is reported, once a stream.
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !session) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let reported = false;
+    const clear = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+    const arm = () => {
+      clear();
+      if (reported || el.paused || el.ended) return;
+      const at = el.currentTime;
+      timer = setTimeout(() => {
+        timer = null;
+        if (reported || el.paused || el.ended || el.currentTime !== at) return;
+        reported = true;
+        report(session, {
+          engine: session.direct_url || !session.manifest_url ? "direct" : "hls.js",
+          outcome: "stalled",
+          code: "stalled",
+          message: `no progress for ${STALL_REPORT_MS / 1000}s (readyState ${el.readyState}, networkState ${el.networkState})`,
+          url: session.direct_url || session.manifest_url,
+        });
+      }, STALL_REPORT_MS);
+    };
+    // progress re-arms the timer; a pause or the end stops it
+    const onProgress = () => arm();
+    el.addEventListener("play", arm);
+    el.addEventListener("waiting", arm);
+    el.addEventListener("timeupdate", onProgress);
+    el.addEventListener("pause", clear);
+    el.addEventListener("ended", clear);
+    return () => {
+      clear();
+      el.removeEventListener("play", arm);
+      el.removeEventListener("waiting", arm);
+      el.removeEventListener("timeupdate", onProgress);
+      el.removeEventListener("pause", clear);
+      el.removeEventListener("ended", clear);
+    };
+  }, [session, report]);
 
   // Watch-analytics lifecycle (Story 29.1). Independent of the streaming
   // session above: keyed on the video itself, it opens a watch session on

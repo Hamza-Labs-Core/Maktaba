@@ -128,7 +128,7 @@ func (h *Handler) AdminResetPassword(w http.ResponseWriter, r *http.Request) {
 		}
 		tmp, err := temporaryPassword()
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("generate password"))
+			httperror.Write(w, r, httperror.Internal("generate password").Wrap(err))
 			return
 		}
 		password, mustChange = tmp, true
@@ -162,7 +162,7 @@ func (h *Handler) AdminResetPassword(w http.ResponseWriter, r *http.Request) {
 	// Whoever held the old password (or a session made with it) is out.
 	revoked, err := revoker.RevokeAllCredentials(r.Context(), id)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("revoke sessions"))
+		httperror.Write(w, r, httperror.Internal("revoke sessions").Wrap(err))
 		return
 	}
 	// nodes drop their cached copy of this user's sessions (story 35.9 AC4)

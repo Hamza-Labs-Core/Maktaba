@@ -400,7 +400,7 @@ func (h *Handler) ImportYouTube(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 
@@ -414,7 +414,7 @@ func (h *Handler) ImportYouTube(w http.ResponseWriter, r *http.Request) {
 		ON CONFLICT (video_id, provider, external_id) DO UPDATE
 		  SET mapped = EXCLUDED.mapped, is_dismissed = false, fetched_at = EXCLUDED.fetched_at
 	`, uuid.NewString(), id, externalID, mapped, now); err != nil {
-		httperror.Write(w, r, httperror.Internal("stage candidate"))
+		httperror.Write(w, r, httperror.Internal("stage candidate").Wrap(err))
 		return
 	}
 	// Idempotent audit row (last-write-wins; no duplicate spam).
@@ -423,7 +423,7 @@ func (h *Handler) ImportYouTube(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1,$2,$3,$4,$5)
 		ON CONFLICT (video_id, youtube_id) DO UPDATE SET imported_at = EXCLUDED.imported_at
 	`, uuid.NewString(), id, req.YouTubeID, importActor(p), now); err != nil {
-		httperror.Write(w, r, httperror.Internal("audit import"))
+		httperror.Write(w, r, httperror.Internal("audit import").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{

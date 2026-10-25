@@ -125,7 +125,7 @@ func (h *Handler) load(w http.ResponseWriter, r *http.Request) (*core.Change, bo
 func (h *Handler) reply(w http.ResponseWriter, r *http.Request, status int, id string) {
 	c, err := h.Store.Get(r.Context(), h.DB, id)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("reload tv change"))
+		httperror.Write(w, r, httperror.Internal("reload tv change").Wrap(err))
 		return
 	}
 	c.Events, _ = h.Store.Events(r.Context(), id)

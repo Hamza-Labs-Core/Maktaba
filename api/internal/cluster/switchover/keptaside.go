@@ -124,7 +124,7 @@ func (o *Orchestrator) postReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("kept aside"))
+		httperror.Write(w, r, httperror.Internal("kept aside").Wrap(err))
 		return
 	}
 	var req struct {
@@ -140,7 +140,7 @@ func (o *Orchestrator) postReport(w http.ResponseWriter, r *http.Request) {
 	pub, err := base64.StdEncoding.DecodeString(pubB64)
 	priv, perr := os.ReadFile(o.ClusterKeyFile)
 	if err != nil || perr != nil || len(pub) != 32 || len(priv) != 32 {
-		httperror.Write(w, r, httperror.Internal("kept aside"))
+		httperror.Write(w, r, httperror.Internal("kept aside").Wrap(err))
 		return
 	}
 	plain, err := openReport(priv, pub, req.Term, req.Sealed)
@@ -173,7 +173,7 @@ func (o *Orchestrator) postReport(w http.ResponseWriter, r *http.Request) {
 	if _, err := o.DB.ExecContext(ctx, `INSERT INTO cluster_kept_aside (id, term, from_node, from_name, cut_lsn, report, lost)
 	    VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6::jsonb, $7) ON CONFLICT (term, from_node) DO NOTHING`,
 		rep.ID, rep.Term, rep.FromNode, rep.FromName, rep.Cut, string(rep.Aside), rep.Lost); err != nil {
-		httperror.Write(w, r, httperror.Internal("kept aside"))
+		httperror.Write(w, r, httperror.Internal("kept aside").Wrap(err))
 		return
 	}
 	o.log().Info("switchover: the old home reported what it wrote after the cut", "from", rep.FromName,
@@ -233,7 +233,7 @@ func (o *Orchestrator) getReports(w http.ResponseWriter, r *http.Request) {
 	}
 	rs, err := o.Reports(r)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("kept aside"))
+		httperror.Write(w, r, httperror.Internal("kept aside").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"reports": rs})
@@ -266,7 +266,7 @@ func (o *Orchestrator) getReportFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("kept aside"))
+		httperror.Write(w, r, httperror.Internal("kept aside").Wrap(err))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

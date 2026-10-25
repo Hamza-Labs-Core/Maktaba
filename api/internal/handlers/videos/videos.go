@@ -319,7 +319,7 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if err := h.canRead(r.Context(), v.LibraryID); err != nil {
@@ -388,7 +388,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if err := h.canWrite(r.Context(), v.LibraryID); err != nil {
@@ -437,7 +437,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		args = append(args, id)
 		q := "UPDATE videos SET " + strings.Join(sets, ", ") + " WHERE id = " + pidx(len(args))
 		if _, err := h.DB.ExecContext(r.Context(), q, args...); err != nil {
-			httperror.Write(w, r, httperror.Internal("update video"))
+			httperror.Write(w, r, httperror.Internal("update video").Wrap(err))
 			return
 		}
 		h.recordUserProvenance(r.Context(), id, edited, now)
@@ -454,7 +454,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		var tags []string
 		if err := json.Unmarshal(raw["tags"], &tags); err == nil {
 			if err := h.replaceTags(r.Context(), id, tags); err != nil {
-				httperror.Write(w, r, httperror.Internal("update tags"))
+				httperror.Write(w, r, httperror.Internal("update tags").Wrap(err))
 				return
 			}
 		}
@@ -486,7 +486,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if err := h.canWrite(r.Context(), v.LibraryID); err != nil {
@@ -512,7 +512,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM videos WHERE id=$1`, id); err != nil {
-		httperror.Write(w, r, httperror.Internal("delete video"))
+		httperror.Write(w, r, httperror.Internal("delete video").Wrap(err))
 		return
 	}
 	warn := ""
@@ -550,7 +550,7 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if err := h.canWrite(r.Context(), v.LibraryID); err != nil {
@@ -598,7 +598,7 @@ func (h *Handler) Reprocess(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if err := h.canWrite(r.Context(), v.LibraryID); err != nil {

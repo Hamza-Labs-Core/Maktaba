@@ -113,7 +113,7 @@ func (h *Hub) CmdHTTP(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/cmd-timeout", Title: "no answer",
 			Status: http.StatusGatewayTimeout, Detail: "the process did not answer within 10 s"})
 	case err != nil:
-		httperror.Write(w, r, httperror.Internal("command failed"))
+		httperror.Write(w, r, httperror.Internal("command failed").Wrap(err))
 	default:
 		common.WriteJSON(w, r, http.StatusOK, res)
 	}

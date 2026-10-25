@@ -147,6 +147,20 @@ def _forget_refusals() -> object:
 
 
 @pytest.fixture(autouse=True)
+def _no_leftover_log_setup() -> object:
+    """A test that ran the entry point in-process installed the process-wide log hooks
+    (stdlib forwarder, excepthooks) and pointed structlog at that test's captured
+    stdout, closed once it ends; later tests start without either."""
+    import structlog
+
+    from maktaba_pipeline.log import hooks
+
+    yield
+    hooks.uninstall()
+    structlog.reset_defaults()
+
+
+@pytest.fixture(autouse=True)
 def _unit_tests_skip_disk_syncs(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:

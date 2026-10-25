@@ -98,7 +98,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		FROM collections ORDER BY created_at DESC
 	`)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list collections"))
+		httperror.Write(w, r, httperror.Internal("list collections").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -143,7 +143,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "library_id", Message: "unknown library"}}))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load library"))
+		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
 		return
 	}
 	id := uuid.NewString()
@@ -282,7 +282,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tx"))
+		httperror.Write(w, r, httperror.Internal("tx").Wrap(err))
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -335,7 +335,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		httperror.Write(w, r, httperror.Internal("commit"))
+		httperror.Write(w, r, httperror.Internal("commit").Wrap(err))
 		return
 	}
 	h.audit(r, p, "collection-patched", c0.LibraryID, map[string]any{
@@ -354,7 +354,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM collections WHERE id=$1`, id); err != nil {
-		httperror.Write(w, r, httperror.Internal("delete"))
+		httperror.Write(w, r, httperror.Internal("delete").Wrap(err))
 		return
 	}
 	h.audit(r, p, "collection-deleted", c.LibraryID, map[string]any{"collection_id": id, "name": c.Name})
@@ -482,7 +482,7 @@ func (h *Handler) RemoveItem(w http.ResponseWriter, r *http.Request) {
 		DELETE FROM collection_items WHERE collection_id=$1 AND video_id=$2
 	`, id, vid)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("remove item"))
+		httperror.Write(w, r, httperror.Internal("remove item").Wrap(err))
 		return
 	}
 	h.audit(r, p, "collection-item-removed", c.LibraryID, map[string]any{"collection_id": id, "video_id": vid})

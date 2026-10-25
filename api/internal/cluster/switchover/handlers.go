@@ -65,7 +65,7 @@ func (o *Orchestrator) postCancel(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, ErrConfirmName):
 		httperror.Write(w, r, httperror.BadRequest(err.Error()).With("machine", name))
 	case err != nil:
-		httperror.Write(w, r, httperror.Internal("switchover"))
+		httperror.Write(w, r, httperror.Internal("switchover").Wrap(err))
 	default:
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"state": state})
 	}
@@ -91,7 +91,7 @@ func (o *Orchestrator) postChecklist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("switchover"))
+		httperror.Write(w, r, httperror.Internal("switchover").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"done": req.Done})
@@ -150,16 +150,16 @@ func (o *Orchestrator) getStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	cs, err := o.Candidates(ctx)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("switchover"))
+		httperror.Write(w, r, httperror.Internal("switchover").Wrap(err))
 		return
 	}
 	s.Candidates = cs
 	if s.Standbys, err = o.Standbys(ctx); err != nil {
-		httperror.Write(w, r, httperror.Internal("switchover"))
+		httperror.Write(w, r, httperror.Internal("switchover").Wrap(err))
 		return
 	}
 	if s.Reports, err = o.Reports(r); err != nil {
-		httperror.Write(w, r, httperror.Internal("switchover"))
+		httperror.Write(w, r, httperror.Internal("switchover").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, s)
@@ -184,12 +184,12 @@ func (o *Orchestrator) putStandby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("switchover"))
+		httperror.Write(w, r, httperror.Internal("switchover").Wrap(err))
 		return
 	}
 	ss, err := o.Standbys(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("switchover"))
+		httperror.Write(w, r, httperror.Internal("switchover").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"standbys": ss})
@@ -220,7 +220,7 @@ func (o *Orchestrator) postStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("switchover"))
+		httperror.Write(w, r, httperror.Internal("switchover").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"id": id})

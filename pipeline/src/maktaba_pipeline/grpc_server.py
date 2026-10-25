@@ -436,16 +436,32 @@ async def _dispatch(
     request: bytes,
     handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
 ) -> bytes:
+    method = getattr(handler, "__name__", "unknown")
     try:
         payload: dict[str, Any] = json.loads(request.decode("utf-8")) if request else {}
     except json.JSONDecodeError as exc:
+        _log.warning(
+            "grpc_call_failed", method=method, error_type="invalid_request", error=str(exc)
+        )
         return json.dumps({"error": f"invalid request: {exc}"}).encode("utf-8")
     try:
         result = await handler(payload)
     except (ValueError, RuntimeError, KeyError) as exc:
         # KeyError covers the model registry/job lookups (UnknownModel,
         # UnknownJob), whose __str__ is already clean (no extra quoting).
+        # The error goes back in-band; the log keeps it on this side too (a
+        # RuntimeError is a backend failing, so it carries the traceback).
+        _log.warning(
+            "grpc_call_failed",
+            method=method,
+            error_type=type(exc).__name__,
+            error=str(exc),
+            exc_info=isinstance(exc, RuntimeError),
+        )
         return json.dumps({"error": str(exc)}).encode("utf-8")
+    except Exception:
+        _log.exception("grpc_call_raised", method=method)
+        raise
     return json.dumps(result).encode("utf-8")
 
 

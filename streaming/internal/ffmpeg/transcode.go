@@ -159,6 +159,13 @@ func (h *Handle) OnEnd(f func()) {
 	f()
 }
 
+// isStopped reports whether Stop ran (the encoder's exit was asked for).
+func (h *Handle) isStopped() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.stopped
+}
+
 // Stderr is the encoder's recent stderr (empty for a test handle).
 func (h *Handle) Stderr() string {
 	if h == nil {
@@ -583,7 +590,9 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 	started := time.Now()
 	go func() {
 		werr := proc.Wait()
-		giveBack(hwRungs > 0 && refusedSession(proc.stderrAfterExit(2*time.Second)))
+		stderr := proc.stderrAfterExit(2 * time.Second)
+		giveBack(hwRungs > 0 && refusedSession(stderr))
+		e.logExit(job, hw, werr, stderr, time.Since(started), h.isStopped())
 		if werr == nil || time.Since(started) >= fallbackWindow {
 			h.exited(werr)
 			return
@@ -603,7 +612,12 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 			h.exited(werr)
 			return
 		}
+		e.logger().Warn("vod transcode failed early: running it again in software",
+			"session_id", job.SessionID, "from_hwaccel", hw, "tone_map", next.toneMap,
+			"event", "vod_transcode_fallback")
 		if err := e.run(context.Background(), h, next, ""); err != nil {
+			e.logger().Error("vod transcode fallback did not start",
+				"session_id", job.SessionID, "err", err.Error(), "event", "vod_transcode_fallback_failed")
 			h.mu.Lock()
 			h.restarting = false
 			h.mu.Unlock()
@@ -611,6 +625,59 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 		}
 	}()
 	return nil
+}
+
+// logExit writes how a session's encoder ended: `vod_transcode_exited`, Info
+// when it finished or was stopped, Warn with its exit status and the last of
+// its stderr when it failed (the reason a player's playlist stopped growing).
+func (e *execRunner) logExit(job Job, hw string, werr error, stderr string, ran time.Duration, stopped bool) {
+	outcome := "failed"
+	switch {
+	case stopped:
+		outcome = "stopped"
+	case werr == nil:
+		outcome = "finished"
+	}
+	attrs := []any{
+		"session_id", job.SessionID,
+		"input", job.InputPath,
+		"hwaccel", hw,
+		"start_sec", job.StartSec,
+		"outcome", outcome,
+		"ran_ms", ran.Milliseconds(),
+	}
+	if outcome != "failed" {
+		e.logger().Info("vod transcode exited", append(attrs, "event", "vod_transcode_exited")...)
+		return
+	}
+	code := -1
+	var xe *exec.ExitError
+	if errors.As(werr, &xe) {
+		code = xe.ExitCode()
+	}
+	e.logger().Warn("vod transcode failed", append(attrs,
+		"exit_code", code,
+		"err", werr.Error(),
+		"stderr", tailLines(stderr, stderrLogLines),
+		"event", "vod_transcode_exited")...)
+}
+
+// stderrLogLines is how much of a failed encoder's stderr the log keeps.
+const stderrLogLines = 15
+
+// tailLines is the last n non-empty lines of s.
+func tailLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	out := lines[:0]
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			out = append(out, l)
+		}
+	}
+	if len(out) > n {
+		out = out[len(out)-n:]
+	}
+	return strings.Join(out, "\n")
 }
 
 // refusedSession: ffmpeg's stderr says the driver would not open an NVENC

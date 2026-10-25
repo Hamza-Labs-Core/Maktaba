@@ -11,6 +11,7 @@ entries cover both forms.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -115,6 +116,33 @@ _listings_lock = threading.Lock()
 #: directories whose listing has not returned yet (a hung share): never listed twice at once
 _listing_now: set[str] = set()
 _log = get_logger()
+#: (directory, errno) -> when its listing failure was last logged; a failing share is
+#: listed again and again, so each kind of failure is logged once per window
+_LIST_FAIL_LOG_SEC = 300.0
+_list_fail_logged: dict[tuple[str, int | None], float] = {}
+#: "not there" is an answer, not a share failing
+_LIST_FAIL_QUIET = frozenset({errno.ENOENT, errno.ENOTDIR})
+
+
+def _log_listing_failed(directory: str, exc: OSError | ValueError) -> None:
+    code = exc.errno if isinstance(exc, OSError) else None
+    if code in _LIST_FAIL_QUIET:
+        return
+    key = (directory, code)
+    now = time.monotonic()
+    with _listings_lock:
+        last = _list_fail_logged.get(key)
+        if last is not None and now - last < _LIST_FAIL_LOG_SEC:
+            return
+        if len(_list_fail_logged) >= _LISTING_MAX:
+            _list_fail_logged.clear()
+        _list_fail_logged[key] = now
+    _log.warning(
+        "share_listing_failed",
+        directory=directory,
+        errno=errno.errorcode.get(code, code) if code is not None else None,
+        error=str(exc),
+    )
 
 
 def _list_timeout() -> float:
@@ -141,7 +169,8 @@ def _bounded_listdir(directory: str) -> list[str] | None:
     def run() -> None:
         try:
             box.append(os.listdir(directory))
-        except (OSError, ValueError):
+        except (OSError, ValueError) as exc:
+            _log_listing_failed(directory, exc)
             box.append([])
         finally:
             with _listings_lock:

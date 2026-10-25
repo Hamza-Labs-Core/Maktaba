@@ -73,7 +73,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	// open-registration setting must be on.
 	hasUser, err := h.Users.HasAnyUser(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("registration check"))
+		httperror.Write(w, r, httperror.Internal("registration check").Wrap(err))
 		return
 	}
 	bootstrap := !hasUser
@@ -174,7 +174,7 @@ func (h *Handler) MeSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.Sessions.ListActive(r.Context(), p.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list sessions"))
+		httperror.Write(w, r, httperror.Internal("list sessions").Wrap(err))
 		return
 	}
 	currentID := ""
@@ -219,7 +219,7 @@ func (h *Handler) RevokeMeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Sessions.Revoke(r.Context(), id); err != nil {
-		httperror.Write(w, r, httperror.Internal("revoke session"))
+		httperror.Write(w, r, httperror.Internal("revoke session").Wrap(err))
 		return
 	}
 	common.WriteNoContent(w)
@@ -325,7 +325,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := h.Users.GetByID(r.Context(), p.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load user"))
+		httperror.Write(w, r, httperror.Internal("load user").Wrap(err))
 		return
 	}
 	if verr := u.VerifyPassword(req.CurrentPassword); verr != nil {
@@ -348,7 +348,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		Password:           &req.NewPassword,
 		MustChangePassword: &cleared,
 	}); err != nil {
-		httperror.Write(w, r, httperror.Internal("update password"))
+		httperror.Write(w, r, httperror.Internal("update password").Wrap(err))
 		return
 	}
 	sessions.NotifyRevoked(sessions.Revocation{UserID: p.UserID, Reason: "password_changed"})
@@ -365,7 +365,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) writeProfile(w http.ResponseWriter, r *http.Request, userID string) {
 	pr, err := h.Users.GetProfile(r.Context(), userID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load profile"))
+		httperror.Write(w, r, httperror.Internal("load profile").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, profileResponse{

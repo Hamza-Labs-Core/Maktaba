@@ -20,6 +20,11 @@
 // session was cleaned up) — tells it `onGone(position, playing)`: open the
 // video again there. Other fatal errors get bounded network retries and
 // media-error recovery before `onFatal`.
+//
+// Every failure that ends in a reopen or in `onFatal` is also described to
+// `onError` (the engine, hls.js's error details or the element's MediaError,
+// the HTTP status and URL of the failing load): the browser is the only place
+// these show, so the owner can report them to the server's log.
 import type HlsType from "hls.js";
 import { hasNativeHls } from "./live";
 
@@ -41,6 +46,21 @@ export const VOD_HLS_CONFIG = {
 
 export type VodMode = "idle" | "native" | "hls" | "unsupported";
 
+/** A playback failure, as `onError` hears of it. */
+export interface VodError {
+  /** What plays the stream: hls.js over MSE, or the element's native HLS. */
+  engine: "hls.js" | "native";
+  /** What came of it: the stream is opened again (`onGone`), or `onFatal`. */
+  outcome: "reopen" | "fatal";
+  /** hls.js's error details (fragLoadError…), or media_err_<code> natively. */
+  code: string;
+  message: string;
+  /** HTTP status of the failing load (0: none known). */
+  httpStatus: number;
+  /** The failing load's URL, when known (it carries the signature). */
+  url?: string;
+}
+
 export interface VodOptions {
   /** Position (s) to start at; 0 / undefined = the beginning. */
   startAt?: number;
@@ -55,6 +75,8 @@ export interface VodOptions {
   onGone?: (position: number, playing: boolean) => void;
   /** The stream cannot be recovered. */
   onFatal?: () => void;
+  /** Called with the failure before each reopen (`onGone`) or `onFatal`. */
+  onError?: (e: VodError) => void;
   /**
    * Native HLS reports no HTTP status: a media error while this says the
    * signed URL has expired is treated as an auth error. Otherwise the
@@ -121,6 +143,33 @@ function splitHash(url: string): [string, string] {
   return i < 0 ? [url, ""] : [url.slice(0, i), url.slice(i)];
 }
 
+/** A MediaError's description, for `onError`. */
+function mediaErrorOf(video: HTMLVideoElement): { code: string; message: string } {
+  const e = video.error;
+  if (!e) return { code: "media_err_unknown", message: "" };
+  return { code: `media_err_${e.code}`, message: e.message || "" };
+}
+
+/** The `onError` description of an hls.js error event. */
+export function hlsErrorOf(data: {
+  details?: string;
+  type?: string;
+  error?: { message?: string };
+  reason?: string;
+  url?: string;
+  frag?: { url?: string };
+  context?: { url?: string };
+  response?: { code?: number; text?: string };
+  networkDetails?: { status?: number };
+}): Omit<VodError, "engine" | "outcome"> {
+  return {
+    code: data.details || data.type || "hls_error",
+    message: data.error?.message || data.reason || data.response?.text || "",
+    httpStatus: httpStatusOf(data),
+    url: data.url || data.frag?.url || data.context?.url,
+  };
+}
+
 /** HTTP status of an hls.js error, when it has one. */
 export function httpStatusOf(data: {
   response?: { code?: number };
@@ -170,6 +219,19 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
     const t = video.currentTime;
     return Number.isFinite(t) && t > 0 ? t : startAt;
   };
+  type Detail = Omit<VodError, "engine" | "outcome">;
+  const report = (outcome: VodError["outcome"], d: Detail | undefined) => {
+    if (!d || !opts.onError) return;
+    try {
+      opts.onError({ engine: mode === "hls" ? "hls.js" : "native", outcome, ...d });
+    } catch {
+      /* a reporter's failure is not the stream's */
+    }
+  };
+  const fatal = (d?: Detail) => {
+    report("fatal", d);
+    opts.onFatal?.();
+  };
   const authError = (at = position(), playing = !video.paused) => {
     if (authReported || disposed) return;
     authReported = true;
@@ -177,14 +239,15 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
     opts.onAuthError?.(at, playing);
   };
   // reported once, like an auth error: the owner re-attaches a new stream
-  const gone = (at = position(), playing = !video.paused) => {
+  const gone = (d?: Detail, at = position(), playing = !video.paused) => {
     if (authReported || disposed) return;
     if (!opts.onGone) {
-      opts.onFatal?.();
+      fatal(d);
       return;
     }
     authReported = true;
     clearNet();
+    report("reopen", d);
     opts.onGone(at, playing);
   };
 
@@ -210,7 +273,7 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
     if (stallTimer) clearTimeout(stallTimer);
     stallTimer = null;
   };
-  const checkNative = (onOther?: () => void) => {
+  const checkNative = (onOther?: (status: number) => void) => {
     if (disposed || authReported || probing) return;
     // Native HLS pauses on an error (the flag can flip before the pause event
     // is dispatched): keep what the viewer was doing.
@@ -225,11 +288,16 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
       .then((status) => {
         if (disposed) return;
         if (status === 401 || status === 403) authError(at, playing);
-        else if (status === 404 || status === 410) gone(at, playing);
-        else onOther?.();
+        else if (status === 404 || status === 410)
+          gone(
+            { ...mediaErrorOf(video), code: "manifest_gone", httpStatus: status, url: src },
+            at,
+            playing
+          );
+        else onOther?.(status);
       })
       .catch(() => {
-        if (!disposed) onOther?.();
+        if (!disposed) onOther?.(0);
       })
       .finally(() => {
         probing = false;
@@ -237,7 +305,7 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
   };
   const onNativeError = () => {
     clearStall();
-    checkNative(() => opts.onFatal?.());
+    checkNative((status) => fatal({ ...mediaErrorOf(video), httpStatus: status, url: src }));
   };
   const armStall = () => {
     clearStall();
@@ -284,7 +352,7 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
         return;
       }
       if (status === 410) {
-        gone();
+        gone(hlsErrorOf(data));
         return;
       }
       if (!data.fatal) return;
@@ -304,11 +372,11 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
       }
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
         // the loads still fail: the stream is gone (cleaned up, stopped)
-        gone();
+        gone(hlsErrorOf(data));
         return;
       }
       clearNet();
-      opts.onFatal?.();
+      fatal(hlsErrorOf(data));
     });
     inst.attachMedia(video);
     inst.loadSource(src);

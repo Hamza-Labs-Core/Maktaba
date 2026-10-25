@@ -27,7 +27,9 @@ Python services emerge this module is the obvious thing to lift into
 
 from __future__ import annotations
 
+import functools
 import logging
+import re
 import sys
 from collections.abc import Callable, Iterator, Mapping, MutableMapping
 from contextlib import contextmanager, suppress
@@ -42,7 +44,9 @@ __all__ = [
     "remove_sink",
     "set_sink_level",
     "MAX_MSG_BYTES",
+    "REDACTED_KEY_PARTS",
     "REDACTED_VALUE",
+    "SCRUBBED_VALUE",
     "TRUNCATION_SUFFIX",
     "bind_job_id",
     "bind_request_id",
@@ -52,6 +56,7 @@ __all__ = [
     "get_logger",
     "init",
     "redact_processor",
+    "scrub_secrets",
     "set_level",
     "truncate_msg",
 ]
@@ -84,6 +89,33 @@ DEFAULT_REDACTED_FIELDS: tuple[str, ...] = (
 )
 
 REDACTED_VALUE = "***REDACTED***"
+
+#: A string-valued key *containing* one of these is masked too (``plex_token``,
+#: ``x_plex_token``, ``db_password``, ``database_url``). Only string values: a numeric
+#: ``max_tokens`` / ``tokens_used`` is a count, not a secret.
+REDACTED_KEY_PARTS: tuple[str, ...] = (
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "dsn",
+    "database_url",
+    "api_key",
+    "apikey",
+    "private_key",
+)
+
+#: What a secret inside a string value is replaced with (the key-level mask keeps
+#: :data:`REDACTED_VALUE`).
+SCRUBBED_VALUE = "***"
+
+# ``X-Plex-Token=abc``, ``?token=abc``, ``&sig=abc``, ``access_token=abc``,
+# ``password=abc`` in a URL query, a header dump or an exception text
+_SECRET_PARAM_RE = re.compile(
+    r"(?i)(?<![\w-])([\w-]*token|sig|signature|password|passwd|secret|api_?key)=([^&\s\"'<>,;]+)"
+)
+# ``scheme://user:pass@host`` (a DSN, an authenticated share URL): the password goes
+_URL_USERINFO_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^/\s:@]*):([^/\s@]+)@")
 
 #: Upper bound on the ``msg`` (a.k.a. structlog ``event``) field. The OS
 #: pipe buffer is 64 KiB on Linux; we leave ~4 KiB for the surrounding
@@ -125,6 +157,7 @@ def init(
         truncate_msg,
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
+        _scrub_exception,
         _sinks_processor,
     ]
 
@@ -264,9 +297,46 @@ def _redact_in_place(
     event_dict: MutableMapping[str, Any],
     redact_set: frozenset[str],
 ) -> MutableMapping[str, Any]:
-    for key in list(event_dict.keys()):
-        if key.lower() in redact_set:
+    for key, value in list(event_dict.items()):
+        lowered = key.lower()
+        if lowered in redact_set or (isinstance(value, str) and _key_looks_secret(lowered)):
             event_dict[key] = REDACTED_VALUE
+        elif isinstance(value, str):
+            scrubbed = scrub_secrets(value)
+            if scrubbed is not value:
+                event_dict[key] = scrubbed
+    return event_dict
+
+
+@functools.lru_cache(maxsize=1024)
+def _key_looks_secret(lowered: str) -> bool:
+    return any(part in lowered for part in REDACTED_KEY_PARTS)
+
+
+def scrub_secrets(text: str) -> str:
+    """``text`` with secret query/header parameters and URL passwords replaced by
+    :data:`SCRUBBED_VALUE`; the very same object when there is nothing to scrub (the
+    common case costs two ``in`` checks)."""
+    if "=" not in text and "@" not in text:
+        return text
+    out = text
+    if "=" in out:
+        out = _SECRET_PARAM_RE.sub(lambda m: f"{m.group(1)}={SCRUBBED_VALUE}", out)
+    if "@" in out:
+        out = _URL_USERINFO_RE.sub(lambda m: f"{m.group(1)}:{SCRUBBED_VALUE}@", out)
+    return text if out == text else out
+
+
+def _scrub_exception(
+    _logger: Any,
+    _name: str,
+    event_dict: MutableMapping[str, Any],
+) -> MutableMapping[str, Any]:
+    """The rendered traceback (``format_exc_info`` runs after the redaction) can quote a
+    DSN or a tokenised URL too."""
+    exc = event_dict.get("exception")
+    if isinstance(exc, str):
+        event_dict["exception"] = scrub_secrets(exc)
     return event_dict
 
 

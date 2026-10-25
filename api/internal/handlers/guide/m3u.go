@@ -20,7 +20,7 @@ func (h *Handler) M3U(w http.ResponseWriter, r *http.Request) {
 	}
 	chans, err := h.visibleChannels(r, p, r.URL.Query().Get("category"))
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list channels"))
+		httperror.Write(w, r, httperror.Internal("list channels").Wrap(err))
 		return
 	}
 	base := baseURL(r)

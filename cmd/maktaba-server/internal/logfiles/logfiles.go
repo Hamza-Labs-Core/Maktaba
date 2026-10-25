@@ -270,6 +270,9 @@ var (
 	slogTime = regexp.MustCompile(`(?:^|\s)time=("?)([0-9T:.+\-Z]+)("?)`)
 	slogLvl  = regexp.MustCompile(`(?:^|\s)level=([A-Za-z]+)`)
 	slogMsg  = regexp.MustCompile(`(?:^|\s)msg=("(?:[^"\\]|\\.)*"|\S+)`)
+	// leadLvl is the level a plain "[serve] level=error …" line names first (serve's,
+	// the supervisor's and the updater's failure lines): read, then dropped from its words
+	leadLvl = regexp.MustCompile(`^level=(error|warn|info|debug) `)
 )
 
 // zonedLayouts are the times a line may carry with their zone; localLayouts the ones with
@@ -356,6 +359,10 @@ func parse(line, name string) Entry {
 		if e.Service == "serve" || e.Service == "update" {
 			e.Service = "server"
 		}
+		rest = rest[len(m[0]):]
+	}
+	if m := leadLvl.FindStringSubmatch(rest); m != nil {
+		e.Level = m[1]
 		rest = rest[len(m[0]):]
 	}
 	if strings.HasPrefix(strings.TrimSpace(rest), "{") && json.Valid([]byte(strings.TrimSpace(rest))) {

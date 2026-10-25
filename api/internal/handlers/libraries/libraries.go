@@ -167,7 +167,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		ORDER BY created_at DESC
 	`)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("query libraries"))
+		httperror.Write(w, r, httperror.Internal("query libraries").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -178,7 +178,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		var rootsArr stringArray
 		var settings []byte
 		if err := rows.Scan(&lib.ID, &lib.Name, &rootsArr, &settings, &lib.CreatedAt, &lib.UpdatedAt); err != nil {
-			httperror.Write(w, r, httperror.Internal("scan libraries row"))
+			httperror.Write(w, r, httperror.Internal("scan libraries row").Wrap(err))
 			return
 		}
 		lib.Roots = rootsArr
@@ -297,7 +297,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("library "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load library"))
+		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
 		return
 	}
 	p := principal.FromContext(r.Context())
@@ -329,7 +329,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tx begin"))
+		httperror.Write(w, r, httperror.Internal("tx begin").Wrap(err))
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -345,7 +345,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("library "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load library"))
+		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
 		return
 	}
 	cur.Roots = rootsArr
@@ -426,7 +426,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		httperror.Write(w, r, httperror.Internal("commit"))
+		httperror.Write(w, r, httperror.Internal("commit").Wrap(err))
 		return
 	}
 	changed := []string{}
@@ -469,7 +469,7 @@ func (h *Handler) deleteLibrary(w http.ResponseWriter, r *http.Request) int {
 		if errors.Is(err, sql.ErrNoRows) {
 			return writeErr(w, r, httperror.NotFound("library "+id))
 		}
-		return writeErr(w, r, httperror.Internal("load library"))
+		return writeErr(w, r, httperror.Internal("load library").Wrap(err))
 	}
 
 	purge, e := common.QueryBool(r, "purge", false)
@@ -489,7 +489,7 @@ func (h *Handler) deleteLibrary(w http.ResponseWriter, r *http.Request) int {
 	}
 
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM libraries WHERE id=$1`, id); err != nil {
-		return writeErr(w, r, httperror.Internal("delete library"))
+		return writeErr(w, r, httperror.Internal("delete library").Wrap(err))
 	}
 	if purge {
 		failed := []string{}
@@ -528,7 +528,7 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("library "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load library"))
+		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
 		return
 	}
 	if h.JobEnqueuer == nil {
@@ -576,7 +576,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("library "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load library"))
+		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
 		return
 	}
 
@@ -588,7 +588,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		GROUP BY state
 	`, id)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("stats by_state"))
+		httperror.Write(w, r, httperror.Internal("stats by_state").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -598,7 +598,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		var cnt int
 		var dur float64
 		if err := rows.Scan(&state, &cnt, &dur); err != nil {
-			httperror.Write(w, r, httperror.Internal("stats by_state scan"))
+			httperror.Write(w, r, httperror.Internal("stats by_state scan").Wrap(err))
 			return
 		}
 		resp.ByState[state] = cnt
@@ -618,7 +618,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		GROUP BY detected_language
 	`, id)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("stats by_language"))
+		httperror.Write(w, r, httperror.Internal("stats by_language").Wrap(err))
 		return
 	}
 	defer rows2.Close()
@@ -626,7 +626,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		var lang string
 		var cnt int
 		if err := rows2.Scan(&lang, &cnt); err != nil {
-			httperror.Write(w, r, httperror.Internal("stats by_language scan"))
+			httperror.Write(w, r, httperror.Internal("stats by_language scan").Wrap(err))
 			return
 		}
 		if lang == "" {

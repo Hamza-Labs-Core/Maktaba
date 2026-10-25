@@ -42,7 +42,7 @@ func runAddUser(argv []string) error {
 		hashFile     string
 		showHelp     bool
 	)
-	fs.StringVar(&dsn, "dsn", os.Getenv("DATABASE_URL"), "Database DSN (default: $DATABASE_URL)")
+	fs.StringVar(&dsn, "dsn", "", "Database DSN (default: $DATABASE_URL)")
 	fs.BoolVar(&isAdmin, "admin", true, "Create as admin")
 	fs.StringVar(&passwordFile, "password-file", "", "Read password from file (one line). Useful for non-interactive seeding.")
 	fs.StringVar(&hashFile, "password-hash-file", "", "Read the password's argon2id hash from file (one line, from 'maktaba-api hash-password'): the first-run setup of the desktop app.")
@@ -74,6 +74,11 @@ Flags:`)
 		return errors.New("adduser: expected exactly one positional <username>")
 	}
 	username := fs.Arg(0)
+	if dsn == "" {
+		// read after parsing, not as the flag's default: --help and a flag
+		// error print defaults, and this one carries the password
+		dsn = os.Getenv("DATABASE_URL")
+	}
 	if dsn == "" {
 		return errors.New("DSN is empty: pass --dsn or set DATABASE_URL")
 	}

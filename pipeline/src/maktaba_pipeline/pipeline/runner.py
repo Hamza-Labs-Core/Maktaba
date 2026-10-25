@@ -40,16 +40,19 @@ import asyncio
 import os
 import signal
 import socket
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
+
+import structlog
 
 from ..db import claim_owner
 from ..db.jobs import Job, Stage
 from ..db.jobs_claim import claim_one
 from ..engine.claim import PoolConfig, claim_for_pool, load_pools
-from ..log import bind_job_id, get_logger
+from ..log import bind_job_id, bind_video_id, get_logger
 from .signals import install_shutdown_handlers
 from .wakeup import PgListenWakeup, PubsubWakeup, WakeupSource
 
@@ -62,6 +65,24 @@ __all__ = [
 
 
 _log = get_logger()
+
+
+@contextmanager
+def _job_log_context(job: Job) -> Iterator[None]:
+    """Bind the job's id, stage and subject onto every log line its dispatch writes
+    (the handlers, the engine and the libraries they call log without passing them)."""
+    with ExitStack() as stack:
+        stack.enter_context(bind_job_id(str(job.id)))
+        stack.enter_context(structlog.contextvars.bound_contextvars(stage=str(job.stage)))
+        if job.video_id is not None:
+            stack.enter_context(bind_video_id(str(job.video_id)))
+        if job.subject_id is not None and job.subject_id != job.video_id:
+            stack.enter_context(
+                structlog.contextvars.bound_contextvars(
+                    subject_kind=job.subject_kind, subject_id=str(job.subject_id)
+                )
+            )
+        yield
 
 
 def default_worker_id() -> str:
@@ -192,7 +213,9 @@ class ClaimLoop:
                     if not self._drain_failed_logged:
                         self._drain_failed_logged = True
                         _log.warning(
-                            "claim_loop_drain_failed", error=f"{type(exc).__name__}: {exc}"
+                            "claim_loop_drain_failed",
+                            error=f"{type(exc).__name__}: {exc}",
+                            exc_info=True,
                         )
                     claimed = 0
                 else:
@@ -319,7 +342,7 @@ class ClaimLoop:
     async def _dispatch_job(self, job: Job) -> None:
         try:
             # the job's writes apply while this worker holds its claim (db/claim_owner.py)
-            with bind_job_id(str(job.id)), claim_owner.running_for(self.cfg.worker_id):
+            with _job_log_context(job), claim_owner.running_for(self.cfg.worker_id):
                 _log.info(
                     "job_dispatched",
                     job_id=job.id,
@@ -388,7 +411,7 @@ class ClaimLoop:
 
     async def _run_job(self, job: Job, sem: asyncio.Semaphore) -> None:
         try:
-            with bind_job_id(str(job.id)), claim_owner.running_for(self.cfg.worker_id):
+            with _job_log_context(job), claim_owner.running_for(self.cfg.worker_id):
                 _log.info(
                     "job_dispatched",
                     job_id=job.id,

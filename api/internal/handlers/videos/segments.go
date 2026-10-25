@@ -51,7 +51,7 @@ func (h *Handler) Segments(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if e := h.canRead(r.Context(), v.LibraryID); e != nil {
@@ -128,7 +128,7 @@ func (h *Handler) Segments(w http.ResponseWriter, r *http.Request) {
 			common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": []Segment{}, "partial": true})
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load transcript"))
+		httperror.Write(w, r, httperror.Internal("load transcript").Wrap(err))
 		return
 	}
 
@@ -148,7 +148,7 @@ func (h *Handler) Segments(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var s Segment
 		if err := rows.Scan(&s.ID, &s.Seq, &s.StartSec, &s.EndSec, &s.Text, &s.Speaker); err != nil {
-			httperror.Write(w, r, httperror.Internal("scan segment"))
+			httperror.Write(w, r, httperror.Internal("scan segment").Wrap(err))
 			return
 		}
 		s.Text = bidiIsolate(s.Text)
@@ -236,7 +236,7 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if e := h.canRead(r.Context(), v.LibraryID); e != nil {
@@ -246,7 +246,7 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 
 	subs, err := SubtitlesByVideo(r.Context(), h.DB, []string{id})
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("query subtitles"))
+		httperror.Write(w, r, httperror.Internal("query subtitles").Wrap(err))
 		return
 	}
 	items := subs[id]
@@ -322,7 +322,7 @@ func (h *Handler) Chapters(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if e := h.canRead(r.Context(), v.LibraryID); e != nil {
@@ -332,7 +332,7 @@ func (h *Handler) Chapters(w http.ResponseWriter, r *http.Request) {
 
 	chapters, err := ChaptersByVideo(r.Context(), h.DB, []string{id})
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("query chapters"))
+		httperror.Write(w, r, httperror.Internal("query chapters").Wrap(err))
 		return
 	}
 	items := chapters[id]

@@ -85,7 +85,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	all, err := h.repo().list(r.Context(), f)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list channels"))
+		httperror.Write(w, r, httperror.Internal("list channels").Wrap(err))
 		return
 	}
 	now := h.now()
@@ -193,7 +193,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	// Stable, scope-unique slug (D4): derive once, suffix on collision.
 	slug, err := h.uniqueSlug(r.Context(), req.LibraryID, req.Name)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("derive slug"))
+		httperror.Write(w, r, httperror.Internal("derive slug").Wrap(err))
 		return
 	}
 	c.Slug = slug
@@ -205,7 +205,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	} else {
 		n, err := h.nextNumber(r.Context(), req.LibraryID)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("assign number"))
+			httperror.Write(w, r, httperror.Internal("assign number").Wrap(err))
 			return
 		}
 		c.Number = n
@@ -252,7 +252,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("channel "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load channel"))
+		httperror.Write(w, r, httperror.Internal("load channel").Wrap(err))
 		return
 	}
 	if !h.canRead(p, c.LibraryID) {
@@ -294,7 +294,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 				httperror.Write(w, r, httperror.NotFound("channel "+id))
 				return
 			}
-			httperror.Write(w, r, httperror.Internal("load channel"))
+			httperror.Write(w, r, httperror.Internal("load channel").Wrap(err))
 			return
 		}
 	}
@@ -440,7 +440,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.repo().get(r.Context(), id)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("reload channel"))
+		httperror.Write(w, r, httperror.Internal("reload channel").Wrap(err))
 		return
 	}
 	h.attachOverrides(r.Context(), &updated)
@@ -478,7 +478,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.repo().delete(r.Context(), id); err != nil {
-		httperror.Write(w, r, httperror.Internal("delete channel"))
+		httperror.Write(w, r, httperror.Internal("delete channel").Wrap(err))
 		return
 	}
 	h.lineupChanged(r.Context())
@@ -509,7 +509,7 @@ func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 	}
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tx"))
+		httperror.Write(w, r, httperror.Internal("tx").Wrap(err))
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -556,7 +556,7 @@ func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		httperror.Write(w, r, httperror.Internal("commit reorder"))
+		httperror.Write(w, r, httperror.Internal("commit reorder").Wrap(err))
 		return
 	}
 	ids := make([]string, 0, len(moved))

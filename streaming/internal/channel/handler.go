@@ -99,7 +99,10 @@ func (h *HTTPHandler) serveLiveTS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "video/mp2t")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.WriteHeader(http.StatusOK)
-	_ = h.Engine.StreamChannelTS(r.Context(), id, w)
+	if err := h.Engine.StreamChannelTS(r.Context(), id, w); err != nil && r.Context().Err() == nil {
+		slog.Warn("channel: live stream ended with an error", "channel_id", id.String(), "err", err.Error(),
+			"event", "channel_ts_ended")
+	}
 }
 
 func channelParam(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {

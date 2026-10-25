@@ -39,6 +39,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/grpcsrv"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/handlers"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/procattr"
@@ -267,8 +268,9 @@ func runServe() error {
 	}
 
 	publicSrv := &http.Server{
-		Addr:              publicAddr,
-		Handler:           publicHandler,
+		Addr: publicAddr,
+		// every failed request (status 400+) in the log: the reason a player gave up
+		Handler:           httpx.LogFailures(logger)(publicHandler),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	adminSrv := &http.Server{
@@ -382,6 +384,7 @@ func buildGRPCServer(bg *background, logger *slog.Logger, backend probe.Backend,
 
 	srv := grpcsrv.New(probeCache, store, allocator, capability.NewRegistry())
 	srv.HWAccelNow = watchHWAccel(bg, logger, cfg).Get
+	srv.Logger = logger
 
 	// HLB-328: wire the real ffmpeg-spawning orchestrator so
 	// OpenSession actually transcodes. The output dir must match the
@@ -516,7 +519,7 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 	})
 
 	reaper := session.NewReaper(store, session.ReaperConfig{IdleAfter: vodSessionIdle, ActiveIdleAfter: vodActiveIdle,
-		Interval: vodSessionSweep})
+		Interval: vodSessionSweep, Logger: logger})
 	bg.Go(reaper.Run)
 	// the closed sessions' folders, and a previous run's (at start, then with
 	// the reaper)

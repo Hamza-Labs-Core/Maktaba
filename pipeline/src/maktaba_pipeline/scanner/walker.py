@@ -191,7 +191,7 @@ def _process_entry(
         _log_permission_once(log, entry.path, state, err)
         return
     except OSError as err:
-        log.debug("scanner.is_dir_failed", path=entry.path, err=str(err))
+        _log_entry_error(log, "scanner.is_dir_failed", entry.path, err)
         return
 
     if is_dir:
@@ -217,7 +217,7 @@ def _process_entry(
     try:
         is_file = entry.is_file(follow_symlinks=config.follow_symlinks)
     except OSError as err:
-        log.debug("scanner.is_file_failed", path=entry.path, err=str(err))
+        _log_entry_error(log, "scanner.is_file_failed", entry.path, err)
         return
     if not is_file:
         # FIFOs, sockets, devices, dangling symlinks. Story 1.1 treats
@@ -227,7 +227,7 @@ def _process_entry(
     try:
         st = entry.stat(follow_symlinks=config.follow_symlinks)
     except (PermissionError, FileNotFoundError, OSError) as err:
-        log.debug("scanner.stat_failed", path=entry.path, err=str(err))
+        _log_entry_error(log, "scanner.stat_failed", entry.path, err)
         return
 
     yield Candidate(
@@ -235,6 +235,15 @@ def _process_entry(
         size_bytes=int(st.st_size),
         mtime_ns=int(st.st_mtime_ns),
     )
+
+
+def _log_entry_error(log: Any, event: str, path: str, err: OSError) -> None:
+    """An entry that vanished mid-walk is routine (debug); any other error (EIO, a
+    stale handle, a timeout on the share) hides a file from the scan, so it warns."""
+    if err.errno in (errno.ENOENT, errno.ENOTDIR):
+        log.debug(event, path=path, err=str(err))
+    else:
+        log.warning(event, path=path, err=str(err), errno=err.errno)
 
 
 def _is_acceptable_basename(name: str, config: WalkConfig) -> bool:

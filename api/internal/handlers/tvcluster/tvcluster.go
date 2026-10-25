@@ -223,7 +223,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.read(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read the streaming cluster"))
+		httperror.Write(w, r, httperror.Internal("read the streaming cluster").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, resp)
@@ -497,7 +497,7 @@ func (h *Handler) PutHost(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("no such streaming host"))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("read the streaming host"))
+		httperror.Write(w, r, httperror.Internal("read the streaming host").Wrap(err))
 		return
 	}
 	sets, args, herr := buildPatch(p, role)
@@ -509,7 +509,7 @@ func (h *Handler) PutHost(w http.ResponseWriter, r *http.Request) {
 		args = append(args, id)
 		q := `UPDATE streaming_hosts SET ` + strings.Join(sets, ", ") + ` WHERE host_id = $` + strconv.Itoa(len(args))
 		if _, err := h.DB.ExecContext(r.Context(), q, args...); err != nil {
-			httperror.Write(w, r, httperror.Internal("update the streaming host"))
+			httperror.Write(w, r, httperror.Internal("update the streaming host").Wrap(err))
 			return
 		}
 	}
@@ -521,7 +521,7 @@ func (h *Handler) PutHost(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.read(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read the streaming host"))
+		httperror.Write(w, r, httperror.Internal("read the streaming host").Wrap(err))
 		return
 	}
 	for _, x := range resp.Hosts {

@@ -65,14 +65,14 @@ func (h *Handler) Status(w http.ResponseWriter, r *http.Request) {
 	}
 	st, err := h.Integration.Status(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tv remote status"))
+		httperror.Write(w, r, httperror.Internal("tv remote status").Wrap(err))
 		return
 	}
 	out := map[string]any{"integration": st}
 	if h.Remote != nil {
 		rs, err := h.Remote.Status(r.Context())
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("tv remote status"))
+			httperror.Write(w, r, httperror.Internal("tv remote status").Wrap(err))
 			return
 		}
 		out["remote"] = rs
@@ -87,7 +87,7 @@ func (h *Handler) Test(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.Integration.Test(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tv remote test"))
+		httperror.Write(w, r, httperror.Internal("tv remote test").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, res)
@@ -114,7 +114,7 @@ func (h *Handler) SetEnabled(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/tv-remote-needs-test", err.Error()))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("tv remote enable"))
+		httperror.Write(w, r, httperror.Internal("tv remote enable").Wrap(err))
 		return
 	}
 	h.Status(w, r)
@@ -138,7 +138,7 @@ func (h *Handler) Remove(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.Integration.Remove(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tv remote remove"))
+		httperror.Write(w, r, httperror.Internal("tv remote remove").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, res)

@@ -209,7 +209,7 @@ func (h *Handler) DismissRow(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1, $2)
 		ON CONFLICT DO NOTHING
 	`, p.UserID, reasonKind); err != nil {
-		httperror.Write(w, r, httperror.Internal("could not record dismissal"))
+		httperror.Write(w, r, httperror.Internal("could not record dismissal").Wrap(err))
 		return
 	}
 	h.bustUser(p.UserID)
@@ -238,7 +238,7 @@ func (h *Handler) DismissItem(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1, '', $2)
 		ON CONFLICT DO NOTHING
 	`, p.UserID, videoID); err != nil {
-		httperror.Write(w, r, httperror.Internal("could not record dismissal"))
+		httperror.Write(w, r, httperror.Internal("could not record dismissal").Wrap(err))
 		return
 	}
 	h.bustUser(p.UserID)

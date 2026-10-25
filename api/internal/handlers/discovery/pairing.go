@@ -98,7 +98,7 @@ func (h *Handler) Request(w http.ResponseWriter, r *http.Request) {
 	}
 	code, err := discovery.GenerateCode()
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("generate code"))
+		httperror.Write(w, r, httperror.Internal("generate code").Wrap(err))
 		return
 	}
 	now := h.now()
@@ -112,7 +112,7 @@ func (h *Handler) Request(w http.ResponseWriter, r *http.Request) {
 		IssuedAt:  now,
 		ExpiresAt: now.Add(ttl),
 	}); err != nil {
-		httperror.Write(w, r, httperror.Internal("store ticket"))
+		httperror.Write(w, r, httperror.Internal("store ticket").Wrap(err))
 		return
 	}
 	if h.Audit != nil {
@@ -203,7 +203,7 @@ func (h *Handler) Exchange(w http.ResponseWriter, r *http.Request) {
 	}
 	tok, err := h.Minter.Mint(r.Context(), t.UserID, req.DeviceKind, req.DeviceLabel)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("mint device tokens"))
+		httperror.Write(w, r, httperror.Internal("mint device tokens").Wrap(err))
 		return
 	}
 	if h.Audit != nil {

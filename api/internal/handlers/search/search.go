@@ -372,7 +372,7 @@ func (h *Handler) ListSaved(w http.ResponseWriter, r *http.Request) {
 		WHERE user_id = $1 ORDER BY created_at DESC
 	`, p.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list saved"))
+		httperror.Write(w, r, httperror.Internal("list saved").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -400,7 +400,7 @@ func (h *Handler) DeleteSaved(w http.ResponseWriter, r *http.Request) {
 		DELETE FROM saved_searches WHERE id = $1 AND user_id = $2
 	`, id, p.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("delete saved"))
+		httperror.Write(w, r, httperror.Internal("delete saved").Wrap(err))
 		return
 	}
 	n, _ := res.RowsAffected()

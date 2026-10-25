@@ -14,6 +14,7 @@ package watchdog
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -47,6 +48,10 @@ type Watchdog struct {
 	Interval     time.Duration
 	Stale        time.Duration
 	ProbeTimeout time.Duration
+	// Logger receives each probe's failure and recovery (a transition, not
+	// every beat; nil: slog's default): a process the supervisor kills for a
+	// stale heartbeat has the reason in the log before.
+	Logger *slog.Logger
 
 	now func() time.Time
 
@@ -109,8 +114,10 @@ func (w *Watchdog) Beat(ctx context.Context) {
 			return
 		}
 		w.mu.Lock()
+		prev, seen := w.results[p.name]
 		w.results[p.name] = result{at: w.now(), err: err}
 		w.mu.Unlock()
+		w.logTransition(p, prev.err, seen, err)
 		if err != nil && p.hard && hardErr == nil {
 			hardErr = fmt.Errorf("%s: %w", p.name, err)
 		}
@@ -122,6 +129,22 @@ func (w *Watchdog) Beat(ctx context.Context) {
 		w.lastErr = nil
 	} else {
 		w.lastErr = hardErr
+	}
+}
+
+// logTransition logs a probe that started failing (or fails differently) and
+// one that answers again.
+func (w *Watchdog) logTransition(p probe, prev error, seen bool, err error) {
+	l := w.Logger
+	if l == nil {
+		l = slog.Default()
+	}
+	switch {
+	case err != nil && (prev == nil || prev.Error() != err.Error()):
+		l.Warn("watchdog probe failed", "probe", p.name, "hard", p.hard, "err", err.Error(),
+			"event", "watchdog_probe_failed")
+	case err == nil && seen && prev != nil:
+		l.Info("watchdog probe answers again", "probe", p.name, "event", "watchdog_probe_recovered")
 	}
 }
 

@@ -91,7 +91,7 @@ func (h *Hub) Files(w http.ResponseWriter, r *http.Request) {
 	out := FilesIndex{Files: loc, Nodes: []MachineFiles{}}
 	root, err := openCluster(loc.Dir)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read the cluster folder"))
+		httperror.Write(w, r, httperror.Internal("read the cluster folder").Wrap(err))
 		return
 	}
 	if root != nil {
@@ -127,7 +127,7 @@ func (h *Hub) Files(w http.ResponseWriter, r *http.Request) {
 		entries, err := readDirIn(src.root, ".")
 		if err != nil {
 			if !src.archived {
-				httperror.Write(w, r, httperror.Internal("read the cluster folder"))
+				httperror.Write(w, r, httperror.Internal("read the cluster folder").Wrap(err))
 				return
 			}
 			continue
@@ -493,7 +493,7 @@ func (h *Hub) historyRecords(w http.ResponseWriter, r *http.Request) {
 	}
 	root, err := openCluster(h.Location().Dir)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read the cluster folder"))
+		httperror.Write(w, r, httperror.Internal("read the cluster folder").Wrap(err))
 		return
 	}
 	if root != nil {
@@ -715,7 +715,7 @@ func (h *Hub) historySamples(w http.ResponseWriter, r *http.Request) {
 	}
 	root, err := openCluster(h.Location().Dir)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read the cluster folder"))
+		httperror.Write(w, r, httperror.Internal("read the cluster folder").Wrap(err))
 		return
 	}
 	if root != nil {
