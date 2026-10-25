@@ -213,21 +213,21 @@ restart (`brew services restart maktaba`).
 ## Installing
 
 ```sh
-# Debian / Ubuntu, from the repository (every stable release: maktaba-server, and the Linux
-# app, maktaba)
-curl -fsSL https://packages.maktaba.dev/maktaba.gpg | sudo tee /usr/share/keyrings/maktaba.gpg >/dev/null
-curl -fsSL https://packages.maktaba.dev/apt/maktaba.list | sudo tee /etc/apt/sources.list.d/maktaba.list
-sudo apt update && sudo apt install maktaba-server
-# ... or one release's package
+# Debian / Ubuntu: the release's package
 sudo apt install ./maktaba-server_<ver>-1_amd64.deb
 
-# Fedora / RHEL / CentOS, from the repository
-sudo curl -fsSL -o /etc/yum.repos.d/maktaba.repo https://packages.maktaba.dev/rpm/maktaba.repo
-sudo dnf install maktaba-server
-# ... or one release's package
+# Fedora / RHEL / CentOS: the release's package
 sudo dnf install ./maktaba-server-<ver>-1.x86_64.rpm
 
-# macOS (Homebrew tap): the server (it updates itself), or the Mac app
+# Once the apt / dnf repositories are set up (below; the release notes name their address,
+# <url>): the same packages, from the repository
+curl -fsSL <url>/maktaba.gpg | sudo tee /usr/share/keyrings/maktaba.gpg >/dev/null
+curl -fsSL <url>/apt/maktaba.list | sudo tee /etc/apt/sources.list.d/maktaba.list
+sudo apt update && sudo apt install maktaba-server
+sudo curl -fsSL -o /etc/yum.repos.d/maktaba.repo <url>/rpm/maktaba.repo && sudo dnf install maktaba-server
+
+# macOS, once the Homebrew tap is published (below): the server (it updates itself), or the
+# Mac app; until then the release's maktaba.rb is attached
 brew install hamza-labs-core/tap/maktaba
 brew install --cask hamza-labs-core/tap/maktaba-app
 
@@ -321,28 +321,37 @@ shellcheck deploy/packaging/install.sh deploy/packaging/scripts/*.sh
 [`packages.yml`](../../.github/workflows/packages.yml) brings them up to each stable release by
 itself once it is published (it runs when release.yml or desktop-release.yml completes, and acts
 only on a published release that is the newest stable one; a pre-release, a draft or a
-maintenance release changes nothing). It publishes only the release's own files, checked first:
-the server's packages and the formula against the release's Sigstore-signed `checksums.txt`, the
-Linux app's packages and the Mac app's bundle against the apps' updater key. Nothing changes what
-a machine verifies: an installed server still verifies every release it installs itself.
+maintenance release changes nothing), and again every week (apt's signed indexes are valid for
+14 days). It publishes only the release's own files, checked first: the server's packages and the
+formula against the release's Sigstore-signed `checksums.txt`, the Mac app's bundle against the
+apps' updater key. Nothing changes what a machine verifies: an installed server still verifies
+every release it installs itself. The Linux app is not in the repositories: it updates itself
+([Epic 39](../../specs/epics/39-linux-app/README.md#packaging-and-updates-the-tauri-updater-appimage-first-no-aptdnf-repository)).
 
-- **apt and dnf** ([`tools/release/pkg-repo.sh`](../../tools/release/pkg-repo.sh)): one static
-  tree (`apt/`: `dists/stable`, `pool/main`; `rpm/`: `repodata`, `packages`) in an S3-compatible
-  bucket (Cloudflare R2 by default) served at `https://packages.maktaba.dev`, with the three
-  newest versions of each package. The indexes are signed with the repository's key (apt's
-  `InRelease`, dnf's `repomd.xml.asc`, `repo_gpgcheck=1`) and name every package's SHA-256; the
-  packages stay the release's bytes. The key's public half is `maktaba.gpg` / `maktaba.asc` at
-  the root, and `index.html` says how to add the repositories. Configuration: the variables
-  `MAKTABA_PACKAGES_URL`, `MAKTABA_PACKAGES_BUCKET`, `MAKTABA_PACKAGES_ENDPOINT` (R2's S3 API;
-  empty for AWS, with `MAKTABA_PACKAGES_REGION`), and the secrets `MAKTABA_PACKAGES_ACCESS_KEY_ID`,
-  `MAKTABA_PACKAGES_SECRET_ACCESS_KEY`, `MAKTABA_REPO_SIGNING_KEY` (the armored private key) and
+- **apt and dnf** ([`tools/release/pkg-repo.sh`](../../tools/release/pkg-repo.sh)): the server
+  (`maktaba-server`), one static tree (`apt/`: `dists/stable`, `pool/main`; `rpm/`: `repodata`,
+  `packages`) in an S3-compatible bucket (Cloudflare R2 by default) served at the address
+  `MAKTABA_PACKAGES_URL` names, with the three newest versions of each package. The indexes are
+  signed with the repository's key (apt's `InRelease`, valid for 14 days, with by-hash copies so a
+  machine reading while a release is published finds what its index names; dnf's
+  `repomd.xml.asc`). The `.deb` packages are the release's own bytes; the `.rpm` packages are the
+  release's verified bytes plus the repository key's signature (dnf checks both:
+  `gpgcheck=1`, `repo_gpgcheck=1`), with the release file's SHA-256 beside each. The key's public
+  half is `maktaba.gpg` / `maktaba.asc` at the root, and `index.html` says how to add the
+  repositories. Configuration, in the `packages` environment (deployments from `main` only): the
+  variables `MAKTABA_PACKAGES_URL`, `MAKTABA_PACKAGES_BUCKET`, `MAKTABA_PACKAGES_ENDPOINT` (R2's
+  S3 API; empty for AWS, with `MAKTABA_PACKAGES_REGION`), and the secrets
+  `MAKTABA_PACKAGES_ACCESS_KEY_ID`, `MAKTABA_PACKAGES_SECRET_ACCESS_KEY`,
+  `MAKTABA_REPO_SIGNING_KEY` (the armored private key: RSA, which EL8's rpm reads) and
   `MAKTABA_REPO_SIGNING_PASSPHRASE` (when it has one).
 - **Homebrew** ([`tools/release/homebrew-tap.sh`](../../tools/release/homebrew-tap.sh)): the
   release's `maktaba.rb` to `Formula/maktaba.rb` and the Mac app's cask to
   `Casks/maktaba-app.rb`, one commit; the tap is never taken back to an older release.
-  Configuration: the variable `HOMEBREW_TAP_REPO` (e.g. `hamza-labs-core/homebrew-tap`) and the
-  secret `HOMEBREW_TAP_TOKEN` (a token with `contents:write` on the tap).
+  Configuration, in the same environment: the variable `HOMEBREW_TAP_REPO` (e.g.
+  `hamza-labs-core/homebrew-tap`, a repository to create) and the secret `HOMEBREW_TAP_TOKEN` (a
+  token with `contents:write` on the tap).
 
-Each part is skipped, with a notice on the run, until its configuration is there. The Linux app's
-packages and the cask also need `TAURI_UPDATER_PUBKEY` (without it the apps cannot update
-either, and they are left out).
+A part with nothing configured is skipped with a warning on the run that names what it needs (a
+release never goes red for it); a part configured only in part fails the run; nothing is ever
+published unsigned. The cask also needs `TAURI_UPDATER_PUBKEY` (without it the tap gets the
+formula alone).

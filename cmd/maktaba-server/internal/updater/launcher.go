@@ -67,15 +67,17 @@ func launcherPackaged(exe string) bool {
 		(strings.HasPrefix(p, "/usr/") || strings.HasPrefix(p, "/opt/homebrew/") || strings.Contains(p, "/Cellar/"))
 }
 
-// packagedFix is what brings a package manager's launcher up to a release: the command
-// that upgrades the package (the package repositories carry every stable release).
-func packagedFix(exe string) string {
+// packagedFix is what brings a package manager's launcher up to version: the release's own
+// package, or an upgrade from the package repository or the tap where the machine has one.
+func packagedFix(exe, version string) string {
 	p := filepath.ToSlash(exe)
 	if runtime.GOOS == "darwin" || strings.HasPrefix(p, "/opt/homebrew/") || strings.Contains(p, "/Cellar/") {
 		return "Homebrew owns it: `brew upgrade maktaba`, then retry the update"
 	}
-	return "a package manager owns it: upgrade the package (`sudo apt install --only-upgrade maktaba-server`, " +
-		"or `sudo dnf upgrade maktaba-server`), then retry the update"
+	return fmt.Sprintf("a package manager owns it: install the release's package (%s's `.deb` or `.rpm`: "+
+		"`sudo apt install ./maktaba-server_*.deb`, `sudo dnf install ./maktaba-server-*.rpm`), or upgrade it "+
+		"from the package repository where the machine has one (`sudo apt install --only-upgrade maktaba-server`, "+
+		"`sudo dnf upgrade maktaba-server`), then retry the update", layout.NormalizeVersion(version))
 }
 
 // checkLauncher refuses a release whose launcher protocol the running launcher cannot
@@ -102,7 +104,7 @@ func (li *LayoutInstaller) launcherReplaceable(version string) (bool, string) {
 	case exe == "":
 		return false, "the launcher does not say where it is: update it once by hand (`maktaba-server setup --self-managed`)"
 	case launcherPackaged(exe):
-		return false, packagedFix(exe)
+		return false, packagedFix(exe, version)
 	case runtime.GOOS == "windows":
 		next := filepath.Join(li.Layout.ReleaseDir(layout.NormalizeVersion(version)), layout.Exe("maktaba-launcher"))
 		return false, fmt.Sprintf("on Windows the running launcher cannot hand over in place: put the release's in place "+

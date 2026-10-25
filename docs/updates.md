@@ -262,13 +262,15 @@ plain binary is replaced in place, the previous one kept as `<binary>.bak`.
 
 ## Package repositories and the Homebrew tap
 
-Every stable release is published, once it is published on GitHub as the newest stable one, to an
-apt and a dnf repository (`https://packages.maktaba.dev`: the server, `maktaba-server`, and the
-Linux app, `maktaba`; signed indexes) and to the Homebrew tap (the formula, and the Mac app's cask
-`maktaba-app`), by `packages.yml`. It publishes only the release's own files, checked first against
-the release's signature (or, for the apps, their updater key). An installed server still installs
-its updates itself, verified; the package manager keeps the package's own files (the launcher)
-current. Setup and configuration:
+Each release's own `.deb` and `.rpm` (and `maktaba.rb`) are attached to it on GitHub: that is the
+way to install a package. Once the project sets them up, `packages.yml` also publishes every stable
+release, when it is published on GitHub as the newest stable one, to an apt and a dnf repository
+(the server, `maktaba-server`; signed indexes, and the `.rpm` packages signed with the repository
+key) and to the Homebrew tap (the formula, and the Mac app's cask `maktaba-app`); the release notes
+then name them. It publishes only the release's own files, checked first against the release's
+signature (or, for the Mac app, its updater key). The Linux app is not in the repositories: it
+updates itself. An installed server still installs its updates itself, verified; the package
+manager keeps the package's own files (the launcher) current. Setup and configuration:
 [deploy/packaging](../deploy/packaging/README.md#package-repositories-and-the-homebrew-tap).
 
 ## What is verified
