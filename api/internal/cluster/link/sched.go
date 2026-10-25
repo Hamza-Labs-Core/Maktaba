@@ -50,6 +50,8 @@ func (s *sender) send(ctx context.Context, f Frame) error {
 	select {
 	case <-s.done:
 		return ErrClosed
+	case <-ctx.Done():
+		return ctx.Err()
 	default:
 	}
 	select {

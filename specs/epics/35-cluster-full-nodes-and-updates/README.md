@@ -357,7 +357,7 @@ owner on 2026-10-19 (**accepted default**). The questions and their answers are 
                  │ verify fail       │ health fail          │ boot-loop (launcher)    │ crash loop
                  ▼                   ▼                      ▼                         ▼
              failed_tv          rolling_back ──────────────────────────────────► rolled_back
- home_committed ─► rolling_out ─► done | done_with_failures | held (platform held / admin paused)
+ home_committed ─► rolling_out ─► done | done_needs_person | done_with_failures | held (platform held / admin paused)
 ```
 
 **Machine target** — per node in `update_targets`.

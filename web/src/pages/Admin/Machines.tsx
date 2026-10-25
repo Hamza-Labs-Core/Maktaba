@@ -78,7 +78,7 @@ import {
 import { bidiIsolate, lookupMessage, useI18n } from "../../lib/i18n";
 import { safeHttpUrl } from "../../lib/navigation";
 import { logWindow, nodeLogsLink } from "../../lib/logLinks";
-import { homeDbOf, type HomeDb } from "../../lib/homeDb";
+import { accessAnswerWords, homeDbOf, type HomeDb } from "../../lib/homeDb";
 import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
 import "../../styles/machines.css";
@@ -844,18 +844,34 @@ function useCapabilityChips(node: ClusterNode): string[] {
 }
 
 /** A full machine that cannot reach the home's database: why (in the reader's words), the
- * home re-provisioning its access when it does, what it said, and its own log files around
- * the last try (the admin log page, over its channel). */
+ * home re-provisioning its access when it does, the machine's own request for one and the
+ * home's answer, what it said, and its own log files around the last try (the admin log
+ * page, over its channel). */
 function HomeDbNotice({ homeDb, nodeId }: { homeDb: HomeDb; nodeId: string }) {
   const { t, has } = useHomeDbWords();
   const code = homeDb.code ?? "other";
   const reason = has(`machines.homeDb.code.${code}`)
     ? t(`machines.homeDb.code.${code}`)
     : t("machines.homeDb.code.other");
+  const answer = homeDb.answer ? accessAnswerWords(homeDb.answer, has) : null;
   return (
     <div className="mkt-mc-note mkt-mc-note--warn" role="alert" data-testid="machine-home-db">
       <p>{t("machines.homeDb.unreachable", { reason })}</p>
       {homeDb.healing && <p>{t("machines.homeDb.healing")}</p>}
+      {homeDb.asked && !homeDb.answer && !homeDb.healing && <p>{t("machines.homeDb.asked")}</p>}
+      {homeDb.answer && answer && (
+        <p data-testid="machine-home-db-answer">
+          {t(answer.key, { reason: answer.reasonKey ? t(answer.reasonKey) : "" })}
+        </p>
+      )}
+      {homeDb.answer && !homeDb.answer.ok && homeDb.answer.reason && (
+        <details>
+          <summary>{t("machines.homeDb.answerDetail")}</summary>
+          <p className="mkt-mc-muted" dir="ltr">
+            {homeDb.answer.reason}
+          </p>
+        </details>
+      )}
       {homeDb.detail && (
         <details>
           <summary>{t("machines.homeDb.detail")}</summary>

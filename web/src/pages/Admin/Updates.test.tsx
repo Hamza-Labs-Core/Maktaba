@@ -431,6 +431,31 @@ describe("Admin Updates", () => {
     );
   });
 
+  it("a run whose only machines left need a person reads done, naming them and why", async () => {
+    const over = {
+      ...runView,
+      state: "done_needs_person",
+      finished_at: finishedAt,
+      detail: {},
+      error: { failed: 0, held: 0, needs_person: 1 },
+      targets: [needsPerson],
+    };
+    routes(
+      overview({
+        last_run: { ...liveRun, state: "done_needs_person", finished_at: finishedAt },
+      }),
+      over,
+      [over]
+    );
+    renderPage();
+    const line = await screen.findByTestId("updates-run-needs-person");
+    expect(line).toHaveTextContent("Machines that need you (1): nas-box (");
+    expect(line).toHaveTextContent("This install cannot update itself yet");
+    expect(screen.getAllByText("done, machines need you").length).toBeGreaterThan(0);
+    expect(screen.queryByText("done, with failures")).toBeNull();
+    expect(screen.queryByTestId("updates-last-failed")).toBeNull();
+  });
+
   const applying = { ...liveRun, state: "home_applying", step: "applying" };
   const applyingView = {
     ...runView,
@@ -1036,6 +1061,35 @@ describe("Admin Updates: logs links and the home's database", () => {
       "/admin/logs?node=n1&since=2026-10-24T05%3A28%3A00.000Z"
     );
     expect(screen.queryByTestId("updates-machine-home-home-db")).toBeNull();
+  });
+
+  it("says the node asked the home for a new login, and the home's answer (en + ar)", async () => {
+    const homeDb = {
+      ok: false,
+      code: "refused",
+      at,
+      fails: 9,
+      asked: at,
+      answer: { ok: false, code: "something_new", reason: "the home's own words", at },
+    };
+    routes(machinesWith({}, { home_db: homeDb }), null);
+    const first = renderPage();
+    expect(await screen.findByTestId("updates-machine-n1-home-db-answer")).toHaveTextContent(
+      "The home cannot give this machine a new login: an error the details say"
+    );
+    expect(screen.getByTestId("updates-machine-n1-home-db")).toHaveTextContent(
+      "the home's own words"
+    );
+    first.unmount();
+
+    routes(
+      machinesWith({}, { home_db: { ...homeDb, answer: { ok: false, code: "no_worker_group" } } }),
+      null
+    );
+    renderPage("ar");
+    expect(await screen.findByTestId("updates-machine-n1-home-db-answer")).toHaveTextContent(
+      "مجموعة الأجهزة غير موجودة في قاعدة بيانات الخادم الرئيسي"
+    );
   });
 
   it("a node that reaches it, or an unknown reason, reads as such (en + ar)", async () => {

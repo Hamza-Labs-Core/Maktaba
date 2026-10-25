@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 )
 
 // The home re-makes this machine's database access over the channel (its role made again
@@ -300,5 +301,100 @@ func TestHomeDBWatchTargetAndSecrets(t *testing.T) {
 	w.reconnected()
 	if w.State() != nil || len(w.kick) != 1 {
 		t.Fatalf("the check before the connection kept: %+v", w.State())
+	}
+}
+
+// A machine whose failure is confirmed and that got no re-made access asks its home for
+// one, homeDBAskAfter after the confirmation; then after homeDBAskFirst, twice as long each
+// time up to homeDBAskMax. It never asks while it follows a re-made access, nor unconnected
+// (it asks at the next check). The home's answer is kept in its state (its pages show it)
+// until it logs in again, which starts its requests afresh.
+func TestHomeDBWatchAsksForItsAccess(t *testing.T) {
+	now := time.Date(2026, 10, 25, 9, 0, 0, 0, time.UTC)
+	fail := errors.New("dial tcp 192.168.50.177:5432: connect: connection refused")
+	connected := true
+	var asked []machineagent.HomeDB
+	changes := 0
+	w := &homeDBWatch{probe: func(context.Context) error { return fail }, clock: func() time.Time { return now },
+		target: func() string { return "192.168.50.177:5432/maktaba" }, onChange: func() { changes++ },
+		ask: func(st machineagent.HomeDB) bool {
+			if connected {
+				asked = append(asked, st)
+			}
+			return connected
+		}}
+	ctx := context.Background()
+	step := func(d time.Duration) {
+		now = now.Add(d)
+		w.check(ctx)
+		w.maybeAsk()
+	}
+	step(0) // one failure: not confirmed
+	step(10 * time.Second)
+	if len(asked) != 0 {
+		t.Fatal("asked at once")
+	}
+	step(time.Minute)
+	if len(asked) != 0 {
+		t.Fatal("asked before the home's own re-made access had its time")
+	}
+	step(time.Minute) // two minutes after the confirmation
+	if len(asked) != 1 || asked[0].Code != "refused" || asked[0].Target != "192.168.50.177:5432/maktaba" ||
+		!w.State().Asked.Equal(now) {
+		t.Fatalf("first request: %+v, state %+v", asked, w.State())
+	}
+	step(30 * time.Second)
+	if len(asked) != 1 {
+		t.Fatal("asked again too soon")
+	}
+	connected = false
+	step(30 * time.Second) // due, but not connected
+	connected = true
+	step(10 * time.Second)
+	if len(asked) != 2 {
+		t.Fatalf("second request: %d", len(asked))
+	}
+	step(time.Minute + 50*time.Second)
+	if len(asked) != 2 {
+		t.Fatal("the second wait is not twice the first")
+	}
+	step(10 * time.Second)
+	if len(asked) != 3 {
+		t.Fatalf("third request: %d", len(asked))
+	}
+	for asks, want := range map[int]time.Duration{1: time.Minute, 2: 2 * time.Minute, 3: 4 * time.Minute, 7: time.Hour, 40: time.Hour} {
+		if got := askAgainAfter(asks); got != want {
+			t.Errorf("askAgainAfter(%d) = %s, want %s", asks, got, want)
+		}
+	}
+	// the home's answer: kept through the next checks, said again (update.state)
+	before := changes
+	w.answered(machineagent.AccessAnswer{Code: "cannot_alter_role", Reason: "this home's database user may not change this machine's role", At: now})
+	step(10 * time.Second)
+	if st := w.State(); st.Answer == nil || st.Answer.Code != "cannot_alter_role" || changes == before {
+		t.Fatalf("the answer: %+v (%d changes)", st, changes-before)
+	}
+	// following a re-made access: no request
+	w.healing()
+	step(time.Hour)
+	if len(asked) != 3 {
+		t.Fatal("asked while it follows a re-made access")
+	}
+	// it logs in: requests and answer behind it, and a new failure waits its time again
+	fail = nil
+	step(time.Second)
+	if st := w.State(); !st.OK || st.Answer != nil || !st.Asked.IsZero() {
+		t.Fatalf("back: %+v", st)
+	}
+	fail = errors.New("connection refused")
+	step(time.Second)
+	step(time.Second)
+	step(time.Minute)
+	if len(asked) != 3 {
+		t.Fatal("a new failure asked before its time")
+	}
+	step(time.Minute)
+	if len(asked) != 4 {
+		t.Fatalf("a new failure's request: %d", len(asked))
 	}
 }

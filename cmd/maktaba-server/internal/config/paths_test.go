@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 func noEnv(string) string { return "" }
@@ -322,5 +324,31 @@ func TestMigrateRefusesToOverwriteData(t *testing.T) {
 	}
 	if readAt(t, filepath.Join(cur.Data, "maktaba.db")) != "NEW" || !exists(filepath.Join(old.Config, "server.toml")) {
 		t.Fatal("nothing may move when the migration is refused")
+	}
+}
+
+// A server its launcher started finds server.toml through the install's pointer
+// (MAKTABA_INSTALL_ROOT) when MAKTABA_CONFIG is not set: a Windows logon task or service
+// carries no environment. MAKTABA_CONFIG wins; no pointer: the default.
+func TestPathFromTheInstallsPointer(t *testing.T) {
+	root := t.TempDir()
+	cfg := filepath.Join(t.TempDir(), "server.toml")
+	if err := os.WriteFile(filepath.Join(root, layout.ConfigPointerFile), []byte(cfg+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MAKTABA_CONFIG", "")
+	t.Setenv(layout.EnvInstallRoot, root)
+	if got := Path(); got != cfg {
+		t.Fatalf("Path() = %q, want the pointer's %q", got, cfg)
+	}
+	explicit := filepath.Join(t.TempDir(), "explicit.toml")
+	t.Setenv("MAKTABA_CONFIG", explicit)
+	if got := Path(); got != explicit {
+		t.Fatalf("MAKTABA_CONFIG: %q", got)
+	}
+	t.Setenv("MAKTABA_CONFIG", "")
+	t.Setenv(layout.EnvInstallRoot, t.TempDir()) // no pointer there
+	if got := Path(); got != filepath.Join(configDir(), "server.toml") {
+		t.Fatalf("no pointer: %q", got)
 	}
 }
