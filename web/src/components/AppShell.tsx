@@ -205,6 +205,13 @@ export function AppShell() {
           <ThemeToggle />
           <LangToggle />
           {user && (
+            // the name opens the account; signing out is its own, labelled button (the
+            // name alone used to sign out at a click)
+            <NavLink to="/account" className="mkt-btn mkt-btn--ghost" title={t("nav.account")}>
+              {user.username}
+            </NavLink>
+          )}
+          {user && (
             <button
               type="button"
               className="mkt-btn mkt-btn--ghost"
@@ -218,9 +225,8 @@ export function AppShell() {
                 }
                 nav("/login", { replace: true });
               }}
-              aria-label={t("nav.signOut")}
             >
-              {user.username}
+              {t("nav.signOut")}
             </button>
           )}
         </div>
