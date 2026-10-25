@@ -59,6 +59,7 @@ const (
 	StepCommit    = "commit"
 	StepLauncher  = "launcher" // the launcher replaced (story 35.7 AC6)
 	StepRollback  = "rollback"
+	StepTV        = "tv" // the TV moved to the new streaming binary (story 35.6, tv.go)
 )
 
 // Busy reports whether state is a run under way (another may not start).
@@ -231,6 +232,14 @@ type Journal struct {
 	PendingSec int `json:"pending_sec,omitempty"`
 	// Rollbacks counts the switches back tried (a second one that does not take fails).
 	Rollbacks int `json:"rollbacks,omitempty"`
+	// TV is the TV step (the home's new release moves the TV to its streaming binary
+	// before it commits, story 35.6); TVDeadline how long its change may wait behind
+	// another (the window's end and overrun, from the home's apply).
+	TV         *TVRun     `json:"tv,omitempty"`
+	TVDeadline *time.Time `json:"tv_deadline,omitempty"`
+	// EdgeProtocol is the release's edge_protocol (its verified release.json): the front
+	// door restarts only when it differs from the running front door's (FrontDoorRestarts).
+	EdgeProtocol int `json:"edge_protocol,omitempty"`
 	// Reason is why the run rolled back.
 	Reason    string    `json:"reason,omitempty"`
 	StartedAt time.Time `json:"started_at"`
@@ -257,6 +266,10 @@ func (j *Journal) clone() *Journal {
 	if j.Rehearsal != nil {
 		r := *j.Rehearsal
 		c.Rehearsal = &r
+	}
+	if j.TV != nil {
+		t := *j.TV
+		c.TV = &t
 	}
 	c.Job.Assets = make(map[string]string, len(j.Job.Assets))
 	for k, v := range j.Job.Assets {

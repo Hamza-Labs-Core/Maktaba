@@ -20,6 +20,7 @@ __all__ = [
     "IN_FLIGHT",
     "OPEN",
     "REOPEN_WHY",
+    "SOURCE_AUTO_UPDATE",
     "Change",
     "StateConflict",
     "create_change",
@@ -108,15 +109,25 @@ async def in_flight(db: Any) -> Change | None:
     return None if row is None else _decode(row)
 
 
+#: the automatic updater's change of the streaming binary (Epic 35 story 35.6): a change
+#: of its own, which no update joins (the API's tvchange.SourceAutoUpdate)
+SOURCE_AUTO_UPDATE = "auto_update"
+
+
 async def open_changes(db: Any) -> list[Change]:
     """The changes no one approved in ``draft … ready``, oldest first. There is one at
     most (the open change); a second is one opened before the rule (or while the
-    first was in flight) and joins the first (``stage.collapse_open``)."""
+    first was in flight) and joins the first (``stage.collapse_open``). The automatic
+    updater's change is none of them: it queues behind the change in flight on its own."""
     marks = ",".join(f"'{s}'" for s in OPEN)
     rows = await db.fetch(
         f"SELECT * FROM tv_changes WHERE state IN ({marks}) ORDER BY number, created_at"
     )
-    return [ch for ch in map(_decode, rows) if not ch.row.get("approved_by")]
+    return [
+        ch
+        for ch in map(_decode, rows)
+        if not ch.row.get("approved_by") and ch.source.get("kind") != SOURCE_AUTO_UPDATE
+    ]
 
 
 async def open_change(db: Any) -> Change | None:

@@ -45,6 +45,11 @@ func buildPlacement() placement.Table {
 		// the cluster sign-in's node half (story 35.9 AC6)
 		"/api/cluster/sso/start",
 		"/api/cluster/sso/callback",
+		// this machine's update moves its TV to the new streaming binary (story 35.6):
+		// its own supervisor asks its own API
+		"/internal/updates/tv-change",
+		"/internal/updates/tv-change/{run}",
+		"/internal/updates/tv-change/{run}/withdraw",
 		// VOD is served by the node itself: its streaming role reads the NAS (R13)
 		"/api/stream/capabilities",
 		"/api/stream/sessions",

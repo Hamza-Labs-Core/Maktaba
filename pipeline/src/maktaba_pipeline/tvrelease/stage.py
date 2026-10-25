@@ -135,7 +135,7 @@ async def stage_change(
                 detail={"release_id": rel.id, "sched_gen": rel.sched_gen, "reused": rel.reused},
                 release_id=rel.id, base_release_id=None if live is None else str(live),
                 kinds=kinds, diff={**diff, "pending": pending}, anchor_at=at, staged_at=clock,
-                auto_rule=_strictest(cfg, kinds),
+                auto_rule=_strictest(cfg, kinds, cur.source.get("kind", "")),
             )  # fmt: skip
         _log.info(
             "tv_change_staged", change_id=change_id, release=rel.id, gen=rel.sched_gen,
@@ -154,10 +154,10 @@ async def stage_change(
 _STAGE_ATTEMPTS = 3
 
 
-def _strictest(cfg: Any, kinds: list[str]) -> str:
+def _strictest(cfg: Any, kinds: list[str], source_kind: str = "") -> str:
     from .config import auto_rule
 
-    return auto_rule(cfg, kinds)
+    return auto_rule(cfg, kinds, source_kind)
 
 
 # --- the open change ----------------------------------------------------------------

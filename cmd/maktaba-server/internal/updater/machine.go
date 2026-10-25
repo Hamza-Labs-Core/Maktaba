@@ -193,6 +193,9 @@ type Machine struct {
 	// TVOnAir reports whether this machine keeps TV streams on air now (its tv-slot
 	// processes run): a launcher's handover then waits for the next restart (nil: none).
 	TVOnAir func() bool
+	// TV moves the home's TV to the new release's streaming binary before the commit
+	// (story 35.6, tv.go); nil: no TV slots here (a node, a SQLite home), nothing to move.
+	TV TVSwapper
 
 	mu      sync.Mutex
 	j       *Journal
@@ -1071,8 +1074,10 @@ func (m *Machine) watch(ctx context.Context) {
 				m.rollback("start_timeout")
 				return
 			}
-		case watched >= bound:
+		case watched >= bound && !waitsForTV(v, healthySince, now, watch):
 			// neither healthy long enough nor unhealthy long enough: a flapping release
+			// (one healthy for its whole watch waits only for its TV step, whose own
+			// limits bound it)
 			m.logf("no verdict within %s of watching: %s", bound, v.Why)
 			m.rollback("watch_timeout")
 			return
@@ -1081,7 +1086,14 @@ func (m *Machine) watch(ctx context.Context) {
 			if healthySince.IsZero() {
 				healthySince = now
 			}
-			if now.Sub(healthySince) >= watch && m.commit() {
+			// the TV moves to the new streaming binary while the release is watched; the
+			// release commits once both are done
+			tvDone, code, detail := m.tvStep(ctx)
+			if code != "" {
+				m.failTV(code, detail)
+				return
+			}
+			if now.Sub(healthySince) >= watch && tvDone && m.commit() {
 				return
 			}
 		default:
@@ -1207,6 +1219,8 @@ func (m *Machine) rollback(reason string) {
 	_ = m.mutate(func(j *Journal) { j.State, j.Reason, j.Rollbacks = StateRollingBack, reason, j.Rollbacks+1 })
 	_ = m.beginStep(StepRollback)
 	m.logf("rolling back %s to %s: %s", j.Job.Version, orNone(j.From), reason)
+	// the TV first (story 35.6 AC8): its change cancelled, or rolled back on the air
+	m.withdrawTV(reason)
 	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)
 	if migrated {
 		if m.Rehearser != nil {

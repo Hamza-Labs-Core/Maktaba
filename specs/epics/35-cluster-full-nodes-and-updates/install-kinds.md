@@ -1,6 +1,7 @@
 # Epic 35 phase B + D, reconciled with the one-app installs (Epics 36, 38, 39)
 
-> **Status:** built with stories 35.4, 35.5, 35.6 (the restart fallback), 35.12 and the parts of
+> **Status:** built with stories 35.4, 35.5, 35.6 (the restart fallback and the binary TV change
+> below), 35.12 and the parts of
 > 35.13 that show, pause and retry a run; of 35.7, AC5–AC7 (resume from the journal, the
 > launcher's guard, launcher replacement, `--status`): **the handover of surviving TV children
 > across a supervisor restart (AC1–AC4) is not built**, so a machine restarts whole, under the
@@ -17,7 +18,7 @@
 | The app's updater is the only updater inside an app; the server's own is off (Epic 36 contract-update). | The server decides **what** and the order of the machines (policy, home first, one node at a time); a desktop app that runs the server stages what the home orders and installs it **when someone clicks there** (owner decision D1, "Ask first" below); the app's updater still does the swap for Mac and Windows. Headless and plain server installs update by themselves in the window. |
 | Rollback replaces binaries; the schema stays (migrations are additive). | Every installed release (38.12) refuses a database a newer release migrated (`migrate up` exits 3, `serve` refuses). So a rollback after a migration also **puts back the dump taken before it**. |
 | The orchestrator backs up and migrates before restarting the roles (§5.3 steps 6–9). | Every home migrates at the new release's start, through the 38.12 database step (dump, migrate, put back on failure), whatever the install kind. The orchestrator rehearses the migrations on a scratch copy before anything is installed. |
-| TV: Epic 33 hot swap, or a restart when nobody watches (§7.2). | The fallback: the home restarts in the window only while `tv_staging.quiet_max_viewers` (0) are watching (checked before the drain and again right before its apply); a machine only while its own streams have no more watchers (`channel_runtime.host_id`), and the machines keeping streams on air go last; at the window's end the home is `tv_busy` and tried again next window. The Epic 33 binary swap and the TV handover across a supervisor restart (§8.1, story 35.7 AC1–AC4) are not built. |
+| TV: Epic 33 hot swap, or a restart when nobody watches (§7.2). | The fallback: the home restarts in the window only while `tv_staging.quiet_max_viewers` (0) are watching (checked before the drain and again right before its apply); a machine only while its own streams have no more watchers (`channel_runtime.host_id`), and the machines keeping streams on air go last; at the window's end the home is `tv_busy` and tried again next window. Then the Epic 33 binary swap (story 35.6): once the new release runs, its supervisor asks the TV change controller for a change of the streaming binary alone (`source.kind = auto_update`), promoted without an approval at programme boundaries, and commits only once it is live (below, "The TV step"). |
 
 ## One run, four installers
 
@@ -257,3 +258,35 @@ that comes back behind the watermark gets a `catch_up` run of its own.
   `PIP_INDEX_URL`, or a proxy), no room (`disk_space`), a launcher a package manager or a
   Windows service owns when a release needs a newer one (`launcher_protocol`), a Mac app that
   needs an administrator (`needs_admin`), the cases above.
+
+## The TV step (story 35.6)
+
+The design puts the TV step before the restart (§5.3 step 10), after `migrate`; here every home
+migrates at its new release's start, so the step runs in the **new release's** supervisor, during
+its watch, where the new streaming binary never meets an older schema:
+
+1. Once the new release is healthy, its supervisor asks its own API (`POST
+   /internal/updates/tv-change`, its per-boot local token) for the run's change: the live TV
+   release with `streaming = {version, sha256}` of this release's binary (its `.verified`). One
+   change per run: asking again returns it (a supervisor that restarts mid-swap waits for it).
+2. The change is its own: no save joins it and it joins no one's open change (story 33.12 AC3
+   does not apply to it). While another change is in flight it waits as a draft (README R9.4); the
+   controller stages it when its turn comes. Rule: `immediate` only for source `auto_update` with
+   kinds exactly `[binary]` (a binary change by hand, or one with another kind, keeps its rules).
+3. The release commits once it was healthy for its watch **and** its change is live (or there was
+   nothing to swap: TV staging off, no TV release yet, the binary live already).
+4. Failures roll the release back: `failed_tv` (its verification or swap failed, or it was rolled
+   back: the release blocked, the admin told with the checks that failed), `tv_change_pending`
+   (still behind a change awaiting approval at the window's end and overrun, which the apply
+   passes: a gate like `tv_busy`, no attempt counted), `tv_timeout` (not on the air within
+   `boundary_max_wait_minutes` + 10 of its stage: an attempt), `tv_change_cancelled` (an admin
+   cancelled it: blocked until a retry).
+5. A rollback for any reason takes the change back first: cancelled before the air, rolled back
+   (Epic 33.9, warm while the previous slot is warm, else cold) once live, and rolled back by the
+   controller when a swap under way ends.
+
+`keep_versions` pruning keeps every release a running process uses (a front door kept on its
+release, a slot bound to another's binary). `maktaba-streaming --version --json` says the front
+door's `edge_protocol`, and the journal keeps the release's: the front door restarts only when they
+differ (`updater.FrontDoorRestarts`), which matters once the supervisor hands the TV processes over
+across its restart (story 35.7 AC1–AC4).

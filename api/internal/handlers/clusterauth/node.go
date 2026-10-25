@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -107,20 +106,12 @@ type Node struct {
 // LocalTokenHeader carries the supervisor's per-boot local token
 // (MAKTABA_SUPERVISOR_TOKEN_FILE): the home's own update watch reads which machines cannot
 // log in to its database from /api/cluster/self with it.
-const LocalTokenHeader = "X-Maktaba-Local-Token"
+const LocalTokenHeader = mw.LocalTokenHeader
 
 // trusted reports whether a request may see the home's machines: this machine's own
 // supervisor, with its local token (/api/cluster/self is public, and carries no session:
 // the pages read the machines' database logins from /api/cluster and /api/cluster/updates).
-func trusted(r *http.Request) bool {
-	got, file := r.Header.Get(LocalTokenHeader), strings.TrimSpace(os.Getenv("MAKTABA_SUPERVISOR_TOKEN_FILE"))
-	if got == "" || file == "" {
-		return false
-	}
-	b, err := os.ReadFile(file)
-	want := strings.TrimSpace(string(b))
-	return err == nil && want != "" && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
-}
+func trusted(r *http.Request) bool { return mw.FromSupervisor(r) }
 
 // MountSelf mounts GET /api/cluster/self alone (the home serves it too). Its machines
 // that cannot log in to the home's database (names and why) go to this machine's

@@ -276,6 +276,9 @@ func (ai *AppInstaller) Stage(ctx context.Context, j *Journal, log io.Writer) er
 		return err
 	}
 	j.Signed = signedOf(res)
+	if res != nil {
+		j.EdgeProtocol = res.Manifest.EdgeProtocol
+	}
 	kept, err := ai.keep(ai.Running(), log)
 	if err != nil {
 		return Fail("keep_failed", "keep a copy of the running payload: %v", err)
