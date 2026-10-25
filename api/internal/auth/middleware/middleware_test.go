@@ -10,6 +10,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secret"
 )
 
@@ -304,5 +305,35 @@ func TestIsPublicChannelArt(t *testing.T) {
 	gate.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/c1/art/watermark", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("anonymous art GET: %d", rec.Code)
+	}
+}
+
+// The release mirror's routes pass the gate for a request the home verified as a
+// machine's (the delegation middleware runs first), and for nothing else: no user, no
+// machine, no pass; a machine's signature opens no other route.
+func TestMachineRoutesPassForAMachineOnly(t *testing.T) {
+	gate := RequireAuthExcept(DefaultPublicAllowlist())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	get := func(path string, machine bool) int {
+		req := httptest.NewRequest("GET", path, nil)
+		if machine {
+			req = req.WithContext(delegation.WithNode(req.Context(), "6f9c1d2e-1111-4222-8333-944455556666"))
+		}
+		rec := httptest.NewRecorder()
+		gate.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for _, p := range []string{"/api/cluster/updates/artifacts/1.5.0/release.json",
+		"/api/cluster/updates/wheelhouse/1.5.0/linux-amd64", "/api/cluster/updates/tuf/targets/ab.trusted_root.json"} {
+		if c := get(p, true); c != http.StatusOK {
+			t.Errorf("a machine's %s: %d", p, c)
+		}
+		if c := get(p, false); c != http.StatusUnauthorized {
+			t.Errorf("an anonymous %s: %d", p, c)
+		}
+	}
+	if c := get("/api/cluster/updates", true); c != http.StatusUnauthorized {
+		t.Errorf("a machine's signature opened the updates page: %d", c)
 	}
 }

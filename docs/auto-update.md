@@ -116,13 +116,40 @@ How each kind of install takes a release
 | **Windows app** | The same; the installer stops and starts the server. | The click. The first update from a release before automatic updates. |
 | **Linux app** (AppImage, `.deb`, `.rpm`) | The server installs the release's signed Linux payload as a new runtime directory, and switches to it after the click in the app (no root needed); `previous` is kept for the rollback. | The click. The first update from a release before automatic updates. The app's own window updates with its updater. |
 | **Headless** (`install.sh --app`) | The same runtime switch, by itself in the window. | The first update from a release before automatic updates. |
-| **Plain server** on the side-by-side layout (`setup --self-managed`, `.deb`/`.rpm` in the layout) | Staged in `bin/releases/<v>` with its migrations and its own pipeline environment (`venv`, built from the release's wheel with the machine's Python 3.12 and the extras its environment had), switched to under the launcher's guard; the pipeline runs the new environment. A release that needs a newer launcher replaces it after its commit. | A Python 3.12 for the pipeline (or `MAKTABA_PIPELINE_PYTHON`), and access to PyPI (or a mirror in `PIP_INDEX_URL`, or a proxy). |
+| **Plain server** on the side-by-side layout (`setup --self-managed`, `.deb`/`.rpm` in the layout) | Staged in `bin/releases/<v>` with its migrations and its own pipeline environment (`venv`, built from the release's wheel with the machine's Python 3.12 and the extras its environment had), switched to under the launcher's guard; the pipeline runs the new environment. A release that needs a newer launcher replaces it after its commit. | A Python 3.12 for the pipeline (or `MAKTABA_PIPELINE_PYTHON`). Its packages come from the home's wheelhouse on a node (below), else from PyPI (or a mirror in `PIP_INDEX_URL`, or a proxy). |
 | Plain binary copied by hand (no launcher) | — (reported: `not_self_managed`) | One `maktaba-server setup --service`, then automatic. |
 | **Docker** | — | `docker compose pull && docker compose up -d` (Epic 28.3's `409`). |
 
 Automatic installs are on by default (`rules.updates.auto_install`); with them off (Admin ->
 Updates -> Pause) the home only checks and notifies. `MAKTABA_UPDATE_DISABLE=1` turns the
 checks off altogether.
+
+### The machines download from the home (story 35.12)
+
+A machine takes each release from its home rather than each from GitHub and PyPI, so a machine
+without internet access updates too. Nothing is trusted for coming from the home: every file is
+verified on the machine exactly as one from GitHub.
+
+- **Release files.** The home keeps a copy of each release its machines install
+  (`<data_dir>/updates/mirror/<version>/`): the signed small files, and each platform's archive,
+  pipeline wheel and constraints, fetched once, ahead of the machines' prepare, and kept only
+  when their digest is the one the signed `checksums.txt` lists. A machine downloads
+  `GET /api/cluster/updates/artifacts/{version}/{name}` (signed with its delegation key; range
+  requests; at most three downloads at once per machine), and falls back to GitHub after three
+  failures, or at once for a file the home does not hold. The copies follow `keep_versions`.
+- **The wheelhouse** (`rules.updates.wheelhouse`, on by default). The home downloads each
+  release's pinned pipeline packages once for every platform its machines run (`pip download
+  --only-binary=:all: --require-hashes` for that platform and the release's Python, with the
+  pipeline's own Python), and a machine builds its pipeline environment from them alone
+  (`--no-index`); a package with no wheel for its platform comes from PyPI, logged. pip checks
+  every file against its hash in the release's constraints, wherever it came from. The desktop
+  apps and the Linux runtime copy keep the wheelhouse beside the staged release
+  (`updates/wheelhouse/<version>`) for the app's environment step at its first start.
+- **The Sigstore trusted root.** The home passes Sigstore's TUF repository on
+  (`/api/cluster/updates/tuf/…`); a machine that cannot reach the public one reads it there, and
+  its TUF client verifies every file from the root it carries.
+- Not through the home: a desktop app's own bundle, which its updater downloads from the
+  release (its signature checked as before).
 
 ## When an update fails: where it says why
 

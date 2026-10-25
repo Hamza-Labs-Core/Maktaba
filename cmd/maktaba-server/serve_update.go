@@ -30,6 +30,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/homemirror"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -143,16 +144,19 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 			if !ok {
 				rt = appruntime.New(filepath.Dir(bundle))
 			}
+			updates := filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
 			return &updater.RuntimeInstaller{Runtime: rt, Source: src, Version: version.Version, LauncherRoot: lroot,
-				Owner: runtimeOwner(), Record: record, Open: updater.OpenURL}, filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
+				Owner: runtimeOwner(), Record: record, Open: updater.OpenURL,
+				WheelRoot: filepath.Join(updates, wheelhouseFolder)}, updates
 		}
 		bundled := strings.TrimSpace(os.Getenv(envAppBundled))
 		if bundled == "" {
 			bundled = bundle
 		}
+		updates := filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
 		return &updater.AppInstaller{Payload: bundle, Bundled: bundled, App: appOf(bundled), LauncherRoot: lroot,
-				Source: src, Version: version.Version, Record: record, Rehearse: home, Open: updater.OpenURL},
-			filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
+			Source: src, Version: version.Version, Record: record, Rehearse: home, Open: updater.OpenURL,
+			WheelRoot: filepath.Join(updates, wheelhouseFolder)}, updates
 	}
 	if releaseDir != "" {
 		l := layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir)))))
@@ -161,6 +165,10 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 	}
 	return flatInstaller{}, filepath.Join(cfg.StateDir(), "updates")
 }
+
+// wheelhouseFolder is where, in the updates folder, a desktop app's or a runtime copy's
+// staged release keeps the home's wheelhouse (updater.WheelhouseDir).
+const wheelhouseFolder = "wheelhouse"
 
 // updatesDirOf is this install's updates folder (installKind's: the journal, the app's
 // order, the update attempts): the launcher root's (or the state root's) for the desktop
@@ -218,15 +226,41 @@ func (flatInstaller) Revert(context.Context, *updater.Journal) error  { return n
 func (flatInstaller) Commit(context.Context, *updater.Journal) error  { return nil }
 func (flatInstaller) Discard(context.Context, *updater.Journal) error { return nil }
 
+// homeMirrorClient is a node's way to its home's mirror: its requests carry the delegation
+// key the machine agent holds.
+func homeMirrorClient(agent *machineagent.Agent) *homemirror.Client {
+	return &homemirror.Client{Home: agent.ID.HomeURL, NodeID: agent.ID.NodeID, Log: os.Stderr,
+		Key: func() (homemirror.Key, bool) {
+			k := agent.CurrentKey()
+			if k == nil {
+				return homemirror.Key{}, false
+			}
+			return homemirror.Key{ID: k.ID, Secret: k.Key}, true
+		}}
+}
+
+// withHomeMirror makes a node download releases from its home's mirror first (GitHub
+// after three failures, at once for a file the home does not hold) and its pipeline's
+// packages from the home's wheelhouse (story 35.12 AC3, design §3.4); every file is
+// verified here as before.
+func withHomeMirror(src updater.Source, c *homemirror.Client) updater.Source {
+	hc := *src.HTTP
+	hc.Transport = c.Transport(hc.Transport)
+	src.HTTP = &hc
+	src.Wheels = c.Wheelhouse
+	return src
+}
+
 // updateSource is the pinned repository and the trusted root (refreshed through TUF
-// into <data_dir>/sigstore, as the API's).
-func updateSource(cfg config.Config) updater.Source {
+// into <data_dir>/sigstore, as the API's; a node reads the TUF repository through its home
+// when it cannot reach Sigstore's: tufMirror).
+func updateSource(cfg config.Config, tufMirror *releaseverify.TUFMirror) updater.Source {
 	id, err := releaseverify.IdentityFromEnv()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[serve] update: %v: the default repository is used\n", err)
 		id, _ = releaseverify.NewIdentity("")
 	}
-	store := &releaseverify.RootStore{Dir: filepath.Join(cfg.Server.DataDir, "sigstore")}
+	store := &releaseverify.RootStore{Dir: filepath.Join(cfg.Server.DataDir, "sigstore"), Mirror: tufMirror}
 	return updater.Source{Identity: id, HTTP: &http.Client{Timeout: 30 * time.Minute},
 		Trusted: func(ctx context.Context) (root.TrustedMaterial, error) {
 			if err := store.Refresh(ctx); err != nil {
@@ -338,7 +372,17 @@ func (r recordFile) Unmark(version string) error {
 // serve with a code (75).
 func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, home bool, pg *pgbundle.Bundle,
 	node *nodeServices, exit func(int)) *updates {
-	src := updateSource(cfg)
+	var mirror *homemirror.Client
+	var tufMirror *releaseverify.TUFMirror
+	if node != nil && node.agent != nil {
+		mirror = homeMirrorClient(node.agent)
+		tufMirror = &releaseverify.TUFMirror{BaseURL: strings.TrimRight(mirror.Home, "/") + "/api/cluster/updates/tuf",
+			Transport: mirror.SignedTransport(nil)}
+	}
+	src := updateSource(cfg, tufMirror)
+	if mirror != nil {
+		src = withHomeMirror(src, mirror)
+	}
 	inst, dir := installKind(cfg, releaseDir, home, src)
 	u := &updates{}
 	if ri, ok := inst.(*updater.RuntimeInstaller); ok {

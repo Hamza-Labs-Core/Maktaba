@@ -48,6 +48,9 @@ type RuntimeInstaller struct {
 	// StopPython (the guard or the pointer could not be written): the release before keeps
 	// running, its pipeline with it (nil: nothing to turn on).
 	StartPython func(ctx context.Context) error
+	// WheelRoot is where the home's wheelhouse of a staged release goes (WheelhouseDir):
+	// the app's venv step builds the pipeline's environment from it ("" none).
+	WheelRoot string
 
 	nudge nudger
 }
@@ -114,7 +117,7 @@ func (ri *RuntimeInstaller) Preflight(_ context.Context, j *Journal) error {
 
 // Stage implements Installer: the payload tarball, verified against the signed
 // checksums.txt, unpacked and installed as a runtime directory (current unchanged).
-func (ri *RuntimeInstaller) Stage(ctx context.Context, j *Journal, _ io.Writer) error {
+func (ri *RuntimeInstaller) Stage(ctx context.Context, j *Journal, log io.Writer) error {
 	var res *releaseverify.Result
 	if err := retryFetch(ctx, func() error {
 		var err error
@@ -177,6 +180,7 @@ func (ri *RuntimeInstaller) Stage(ctx context.Context, j *Journal, _ io.Writer) 
 	}
 	cur, _ := ri.Runtime.Current()
 	j.Staged, j.FromRef, j.Signed = filepath.Base(r.Dir), cur, signedOf(res)
+	ri.Source.stageWheels(ctx, j, ri.WheelRoot, log)
 	return nil
 }
 

@@ -55,6 +55,9 @@ type Driver struct {
 	// Recheck re-reads a release from GitHub and marks it withdrawn when it is (nil: the
 	// Service's Discoverer's Recheck, none without one).
 	Recheck func(ctx context.Context, r Release, channel string) (string, error)
+	// Mirror is the home's copy of the releases its machines install (story 35.12 AC3; nil:
+	// the machines download from GitHub and PyPI themselves).
+	Mirror *Mirror
 
 	mu        sync.Mutex
 	wake      chan struct{}
@@ -62,6 +65,9 @@ type Driver struct {
 	pending   map[string]time.Time // catch-ups recently tried, by node
 	rechecked map[string]time.Time // releases last re-read from GitHub, by version
 	lateLook  time.Time            // when reconcileHome last asked the home
+
+	// prefetched: the runs whose release the mirror was asked to fetch
+	prefetched map[string]bool
 }
 
 // Withdrawn releases are noticed while a run goes on (review A-W: a release deleted
@@ -301,6 +307,51 @@ func (d *Driver) job(ctx context.Context, run Run, home bool) (MachineJob, error
 	return j, nil
 }
 
+// prefetch asks the mirror, once per run, to fetch the run's release for the platforms the
+// cluster's machines run: they download it from the home as they prepare.
+func (d *Driver) prefetch(ctx context.Context, run Run) {
+	if d.Mirror == nil {
+		return
+	}
+	d.mu.Lock()
+	if d.prefetched == nil {
+		d.prefetched = map[string]bool{}
+	}
+	done := d.prefetched[run.ID]
+	d.prefetched[run.ID] = true
+	d.mu.Unlock()
+	if !done {
+		d.Mirror.Prefetch(ctx, run.Version, d.platforms(ctx))
+	}
+}
+
+// platforms are the platforms the cluster's approved machines run (their rows, and what
+// their agents say).
+func (d *Driver) platforms(ctx context.Context) []string {
+	nodes, _ := d.nodes(ctx)
+	_, states := d.agentStates()
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		// an agent says "linux-amd64"; release.json and the mirror name it "linux/amd64"
+		if p = strings.TrimSpace(p); !strings.Contains(p, "/") {
+			p = strings.Replace(p, "-", "/", 1)
+		}
+		if p != "" && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	for _, n := range nodes {
+		add(n.platform)
+	}
+	for _, s := range states {
+		add(s.Platform)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // finish ends a run in state with an error document; the machines' drain is put back.
 func (d *Driver) finish(ctx context.Context, run Run, det RunDetail, state string, errDoc map[string]any) error {
 	d.undrain(ctx, run, &det)
@@ -320,6 +371,13 @@ func (d *Driver) finish(ctx context.Context, run Run, det RunDetail, state strin
 	}
 	d.audit(ctx, run, "run_"+state, errDoc)
 	d.log().Info("update run ended", "event", "update_run_ended", "run_id", run.ID, "version", run.Version, "state", state)
+	if d.Mirror != nil {
+		// the mirror keeps the run's release and the newest keep_versions it holds
+		d.Mirror.Prune(keepVersions(d.Mirror.Held(), run.Version, d.policy(ctx).KeepVersions))
+		d.mu.Lock()
+		delete(d.prefetched, run.ID)
+		d.mu.Unlock()
+	}
 	return nil
 }
 
@@ -1197,6 +1255,7 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 	if err != nil {
 		return err
 	}
+	d.prefetch(ctx, run)
 	pol := d.policy(ctx)
 	agents, states := d.agentStates()
 	// a run for named machines (a Retry, a Resume, a catch-up) touches only those; the

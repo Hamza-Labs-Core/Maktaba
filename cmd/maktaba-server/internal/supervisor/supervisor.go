@@ -173,6 +173,11 @@ func Build(role Role, opts Options) (Process, error) {
 			return Process{}, err
 		}
 		cmd = exec.Command(bin, "serve")
+		// the home's release mirror downloads each release's pipeline dependencies for its
+		// machines with the pipeline's own Python (its pip): the wheelhouse (Epic 35 §3.4)
+		if os.Getenv(EnvWheelhousePython) == "" {
+			env = append(env, EnvWheelhousePython+"="+pythonFor(opts))
+		}
 
 	case RoleStreaming:
 		bin, err := opts.resolve("maktaba-streaming", "MAKTABA_STREAMING_BIN")
@@ -200,6 +205,10 @@ func Build(role Role, opts Options) (Process, error) {
 	}
 	return p, nil
 }
+
+// EnvWheelhousePython names, for the api, the Python its release mirror downloads the
+// machines' pipeline packages with (the pipeline's: pythonFor).
+const EnvWheelhousePython = "MAKTABA_WHEELHOUSE_PYTHON"
 
 // PythonProbeTimeout bounds one liveness check of a pipeline worker: its /healthz
 // answers once the GIL is free, which a Chroma write into a large index can hold for
