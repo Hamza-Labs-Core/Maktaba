@@ -10,7 +10,7 @@
 // Live updates via SSE /ws/library/{id} (the AC-3 {type,at,payload}
 // envelope). The transcript list is windowed (slice cap) rather than a
 // TanStack-Virtual integration — see report deferral note.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Tabs } from "@ds/components/Tabs/Tabs";
@@ -33,6 +33,7 @@ import {
 } from "../lib/analytics";
 import { TitleRow } from "../help/HelpLink";
 import { VideoPoster } from "../components/VideoViews";
+import { VideoPlayer } from "./VideoPlayer";
 
 interface Video extends DisplayTitleVideo {
   id: string;
@@ -117,6 +118,18 @@ export function VideoDetail() {
   const [params, setParams] = useSearchParams();
   const tabParam = params.get("tab") ?? "";
   const tab = TAB_IDS.includes(tabParam) ? tabParam : "watch";
+  // Play opens the player in the picture's place (for this video only): the
+  // stream session opens on Play, not when the page is just looked at.
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const playing = playingId != null && playingId === videoId;
+  const heroRef = useRef<HTMLElement | null>(null);
+  const setHero = (el: HTMLElement | null) => {
+    heroRef.current = el;
+  };
+  const play = () => {
+    setPlayingId(videoId ?? null);
+    heroRef.current?.scrollIntoView?.({ block: "nearest" });
+  };
 
   useEffect(() => {
     if (!videoId) return;
@@ -183,9 +196,11 @@ export function VideoDetail() {
               {video.description}
             </p>
           )}
-          <Link to={`/videos/${video.id}/watch`} className="mkt-btn mkt-btn--primary">
-            ▶ {t("video.play")}
-          </Link>
+          {!playing && (
+            <Button variant="primary" onClick={play}>
+              ▶ {t("video.play")}
+            </Button>
+          )}
           {/* Story 26.9 — web context card (rating/cast/summary + related). */}
           <MediaContextCard videoId={videoId} />
         </div>
@@ -226,17 +241,25 @@ export function VideoDetail() {
   return (
     <section className="mkt-page mkt-video">
       <header className="mkt-page__header mkt-video__header">
-        {/* the video's picture; it plays the video, like the Play button */}
-        <Link
-          to={`/videos/${video.id}/watch`}
-          className="mkt-video__hero"
-          aria-label={`${t("video.play")}: ${video.title || video.filename}`}
-        >
-          <VideoPoster videoId={video.id} />
-          <span className="mkt-video__hero-play" aria-hidden="true">
-            ▶
-          </span>
-        </Link>
+        {/* the video's picture until Play; then the player in its place, on this page */}
+        {playing ? (
+          <div className="mkt-video__hero mkt-video__hero--player" ref={setHero}>
+            <VideoPlayer hideBack autoPlay />
+          </div>
+        ) : (
+          <button
+            type="button"
+            ref={setHero}
+            className="mkt-video__hero"
+            onClick={play}
+            aria-label={`${t("video.play")}: ${video.title || video.filename}`}
+          >
+            <VideoPoster videoId={video.id} />
+            <span className="mkt-video__hero-play" aria-hidden="true">
+              ▶
+            </span>
+          </button>
+        )}
         <TitleRow>
           <h1 dir="auto">{video.title || video.filename}</h1>
         </TitleRow>
