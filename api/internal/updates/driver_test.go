@@ -32,6 +32,11 @@ type fakeMachine struct {
 	backup *RunBackup
 	// handsOver: its TV processes run on across its restart (story 35.7)
 	handsOver bool
+	// rbReason, rbErr: the reason and error of a rollback outcome (default: a 503)
+	rbReason string
+	rbErr    *MachineError
+	// applyBody is the last apply's request
+	applyBody any
 }
 
 // click is someone choosing to install on the machine's desktop app.
@@ -78,6 +83,7 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 		}
 		m.st.State = MApplying
 		m.applies++
+		m.applyBody = body
 		if m.onApply != nil {
 			m.onApply()
 		}
@@ -118,6 +124,9 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 				return nil, errors.New("restarting")
 			case MRolledBack:
 				m.st.State, m.st.Reason = MRolledBack, "api /readyz 503"
+				if m.rbReason != "" {
+					m.st.Reason, m.st.Error = m.rbReason, m.rbErr
+				}
 			case MApplyFailed:
 				m.st.State, m.st.Error = MApplyFailed, &MachineError{Step: "restart", Code: "app_install_failed"}
 			default:

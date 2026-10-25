@@ -30,8 +30,10 @@ type LayoutInstaller struct {
 	// PipelinePython is the configured [pipeline] python ("" none): the interpreter its
 	// environment was made from builds the release's.
 	PipelinePython string
-	// InUse are the releases running processes use besides the current one (the TV
-	// processes handed over across restarts, story 35.7): never pruned (nil: none).
+	// InUse are the releases running processes run from besides the current one (the
+	// supervisor's: a front door kept on its release, a TV slot bound to another's binary,
+	// the TV processes handed over across restarts, stories 35.6 and 35.7): never pruned
+	// (nil: none).
 	InUse func() []string
 	Now   func() time.Time
 }
@@ -194,8 +196,9 @@ func (li *LayoutInstaller) Commit(ctx context.Context, j *Journal) error {
 	if keep < 2 {
 		keep = 3
 	}
-	// what a prune leaves is pruned by the next commit; the release is kept either way, and
-	// so is every release a running process uses (the TV processes handed over)
+	// what a prune leaves is pruned by the next commit; the release is kept either way,
+	// and so is every release a running process uses (story 35.6 AC6, the TV processes
+	// handed over: story 35.7)
 	inUse := []string{layout.NormalizeVersion(j.From)}
 	if li.InUse != nil {
 		inUse = append(inUse, li.InUse()...)

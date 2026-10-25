@@ -63,7 +63,7 @@ func (u *updates) tvHandover(_ *updater.Journal, target string, arm bool) (bool,
 	if fd := sup.SurvivorRelease(supervisor.RoleStreaming); fd != "" {
 		have := edgeProtocol(lay.ReleaseDir(fd))
 		want := edgeProtocol(lay.ReleaseDir(layout.NormalizeVersion(target)))
-		if have == 0 || want == 0 || have != want {
+		if updater.FrontDoorRestarts(want, have) {
 			return false, fmt.Sprintf("the TV front door (%s) speaks edge protocol %d and %s %d: it restarts", fd, have,
 				layout.NormalizeVersion(target), want)
 		}
@@ -92,18 +92,6 @@ func (u *updates) beforeExit(code int) {
 		return
 	}
 	fmt.Fprintln(os.Stderr, "[serve] updates: the TV processes run on across the restart")
-}
-
-// survivorReleases is the layout installer's InUse: the releases the TV processes handed
-// over across restarts run from (never pruned under them).
-func (u *updates) survivorReleases() []string {
-	u.mu.Lock()
-	sup := u.sup
-	u.mu.Unlock()
-	if sup == nil {
-		return nil
-	}
-	return sup.SurvivorReleases()
 }
 
 // edgeProtocol is the edge_protocol of the release in dir (its release.json), 0 when it

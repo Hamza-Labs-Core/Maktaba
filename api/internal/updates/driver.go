@@ -802,7 +802,13 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 	if d.withdrawn(ctx, run.Version, true) {
 		return nil // the next step ends the run (stopWithdrawn)
 	}
-	if _, err := d.Home.Do(ctx, "apply", map[string]any{"run_id": run.ID}); err != nil {
+	apply := map[string]any{"run_id": run.ID}
+	if deadline := d.windowDeadline(run, pol); !deadline.IsZero() {
+		// the new release's TV change waits behind another change no longer than the
+		// window (story 35.6 AC4: tv_change_pending, tried again in the next window)
+		apply["tv_deadline"] = deadline
+	}
+	if _, err := d.Home.Do(ctx, "apply", apply); err != nil {
 		if strings.Contains(err.Error(), "update_no_run") || strings.Contains(err.Error(), "update_not_ready") {
 			return d.finish(ctx, run, det, RunFailed, map[string]any{"code": "home_not_prepared", "detail": err.Error()})
 		}
@@ -900,6 +906,9 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 		if st.Reason != "" {
 			doc["reason"] = st.Reason
 		}
+		if tvCodes[st.Reason] {
+			return d.tvRolledBack(ctx, run, det, st.Reason, doc)
+		}
 		_ = d.Store.Block(ctx, run.Version, "rolled_back")
 		d.notify(ctx, NoticeRolledBack, notify.SeverityError, run, map[string]any{"reason": st.Reason})
 		return d.finish(ctx, run, det, RunRolledBack, doc)
@@ -915,6 +924,48 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 		return d.finish(ctx, run, det, RunFailedRollback, doc)
 	}
 	return nil
+}
+
+// The TV step's outcomes (story 35.6): the home's new release moves the TV to its
+// streaming binary through a TV change before it commits, and rolls back when that fails.
+const (
+	// CodeFailedTV: the change's verification or swap failed (or it was rolled back):
+	// the release is blocked, the admin told with the checks that failed.
+	CodeFailedTV = "failed_tv"
+	// CodeTVChangePending: queued behind a TV change that waits for an approval until
+	// the window's end: a gate, tried again in the next window (no attempt counted).
+	CodeTVChangePending = "tv_change_pending"
+	// CodeTVTimeout: the change did not reach the air within boundary_max_wait + 10
+	// minutes of its stage (an attempt, as any failed run).
+	CodeTVTimeout = "tv_timeout"
+	// CodeTVChangeCancelled: an admin cancelled the update's TV change: the release is
+	// blocked until an admin retries it.
+	CodeTVChangeCancelled = "tv_change_cancelled"
+)
+
+// tvCodes are the reasons a home rolls back for at its TV step.
+var tvCodes = map[string]bool{CodeFailedTV: true, CodeTVChangePending: true, CodeTVTimeout: true,
+	CodeTVChangeCancelled: true}
+
+// tvRolledBack ends a run whose home went back to the release before at its TV step.
+func (d *Driver) tvRolledBack(ctx context.Context, run Run, det RunDetail, code string, doc map[string]any) error {
+	doc["code"] = code
+	switch code {
+	case CodeTVChangePending:
+		return d.gateEnded(ctx, run, det, code,
+			"the TV change waited behind a change awaiting approval until the window ended; tried again in the next window")
+	case CodeTVTimeout:
+		d.blockFor(ctx, run, doc)
+		d.notifyFailure(ctx, run, doc)
+	case CodeTVChangeCancelled:
+		_ = d.Store.Block(ctx, run.Version, "tv_cancelled")
+		d.notify(ctx, NoticeRolledBack, notify.SeverityError, run, map[string]any{"reason": code})
+	default: // failed_tv
+		_ = d.Store.Block(ctx, run.Version, CodeFailedTV)
+		d.notify(ctx, NoticeRolledBack, notify.SeverityError, run, map[string]any{"reason": code,
+			"detail": doc["detail"]})
+	}
+	return d.finish(ctx, run, det, RunRolledBack, doc)
 }
 
 func (d *Driver) homeCommitted(ctx context.Context, run Run, det RunDetail) error {

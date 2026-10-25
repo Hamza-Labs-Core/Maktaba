@@ -250,8 +250,8 @@ func TestCanHandOver(t *testing.T) {
 	if ok, why := s.HandOver(); ok || why == "" {
 		t.Fatalf("HandOver without a record: %v %q", ok, why)
 	}
-	if releaseOf(filepath.Join("x", "bin", "releases", "1.4.0", "maktaba-streaming")) != "1.4.0" ||
-		releaseOf(filepath.Join("x", "bin", "maktaba-streaming")) != "" {
+	if releaseOfPath(filepath.Join("x", "bin", "releases", "1.4.0", "maktaba-streaming")) != "1.4.0" ||
+		releaseOfPath(filepath.Join("x", "bin", "maktaba-streaming")) != "" {
 		t.Fatal("releaseOf")
 	}
 }

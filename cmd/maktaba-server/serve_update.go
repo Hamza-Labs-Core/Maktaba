@@ -65,9 +65,10 @@ type updates struct {
 	m *updater.Machine
 	// health's view of this machine, and its processes' stop, set once the supervisor
 	// exists
-	mu   sync.Mutex
-	snap func() supervisor.Snapshot
-	want func(role supervisor.Role, instance string, on bool) error
+	mu    sync.Mutex
+	snap  func() supervisor.Snapshot
+	want  func(role supervisor.Role, instance string, on bool) error
+	inUse func() []string
 	// the TV handover (serve_handover.go): the supervisor, the layout of a plain server's
 	// install, and an exit 75 armed to hand the TV processes over
 	sup   *supervisor.Supervisor
@@ -353,9 +354,8 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 		ri.StartPython = u.startPython // and starts again when the switch goes no further
 	}
 	if li, ok := inst.(*updater.LayoutInstaller); ok && handoverDir(releaseDir) != "" {
-		// story 35.7: the TV processes run on across its restarts (and their releases stay)
+		// story 35.7: the TV processes run on across its restarts (their releases stay: InUse)
 		u.lay = &li.Layout
-		li.InUse = u.survivorReleases
 	}
 	m := &updater.Machine{Dir: dir, Installer: inst, Exit: exit, Log: os.Stderr}
 	m.TVHandover = u.tvHandover
@@ -383,6 +383,14 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 		}
 		return false
 	}
+	if home && supervisor.SlotsEnabled(cfg) {
+		// the TV moves to the new release's streaming binary before the release commits
+		// (story 35.6): its TV change goes through the API's change controller
+		m.TV = &apiTV{cfg: cfg, releaseDir: releaseDir}
+	}
+	if li, ok := inst.(*updater.LayoutInstaller); ok {
+		li.InUse = u.releasesInUse // a front door or a TV slot keeps the release it runs
+	}
 	u.m = m
 	m.Start(ctx)
 	m.Resume()
@@ -392,8 +400,20 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 
 func (u *updates) setSupervisor(sup *supervisor.Supervisor) {
 	u.mu.Lock()
-	u.snap, u.want, u.sup = sup.Snapshot, sup.Want, sup
+	u.snap, u.want, u.inUse, u.sup = sup.Snapshot, sup.Want, sup.ReleasesInUse, sup
 	u.mu.Unlock()
+}
+
+// releasesInUse are the releases the supervisor's running processes run from (none before
+// it exists).
+func (u *updates) releasesInUse() []string {
+	u.mu.Lock()
+	f := u.inUse
+	u.mu.Unlock()
+	if f == nil {
+		return nil
+	}
+	return f()
 }
 
 func (u *updates) snapshot() (supervisor.Snapshot, bool) {
@@ -430,6 +450,9 @@ func (u *updates) agentState(st *machineagent.UpdateState) {
 type updateRequest struct {
 	RunID string `json:"run_id"`
 	updater.Job
+	// TVDeadline (apply): how long the release's TV change may wait behind another change
+	// (the window's end and overrun, story 35.6 AC4)
+	TVDeadline *time.Time `json:"tv_deadline,omitempty"`
 }
 
 // handle runs a request of the home's; the answer is the machine's status.
@@ -448,6 +471,9 @@ func (u *updates) handle(name string, body json.RawMessage) (any, int, error) {
 	case "prepare":
 		err = u.m.Prepare(req.Job)
 	case "apply":
+		if req.TVDeadline != nil {
+			u.m.SetTVDeadline(req.Job.RunID, *req.TVDeadline)
+		}
 		err = u.m.Apply(req.Job.RunID)
 	case "abort":
 		err = u.m.Abort(req.Job.RunID)

@@ -75,6 +75,14 @@ click):
    (`backups/pre-<old>-to-<new>.dump`, checked to read back), migrates it, and puts the
    dump back if the migrations fail. Its health is watched (every role running, the API
    ready and answering as the new version) for 10 minutes; then it is kept.
+   Meanwhile the TV moves to the new release's streaming software the way any TV change
+   goes on the air (Live TV → Changes): a change of the streaming binary alone, staged next
+   to what airs, checked, and swapped at programme boundaries, without waiting for an
+   approval (only this updater's binary change skips it; every other change still waits for
+   one). The release is kept once that change is on the air. If its check or its swap
+   fails, the release rolls back (blocked, the failing checks in the notice); if it waits
+   behind a change awaiting your approval until the window ends, the next window tries
+   again. A rollback for any reason takes the TV back too.
 4. **Every machine follows**, after the home: they download and verify in parallel, then
    switch one at a time, each drained of its jobs for its own switch and watched before the
    next (`node_failure_policy`, default `hold_platform`: one that fails holds the others of its

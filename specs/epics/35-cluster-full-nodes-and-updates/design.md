@@ -418,6 +418,12 @@ If another TV change is `ready` waiting for approval, the binary change queues b
 Epic 33 R9.4 (rebased); the orchestrator does not wait for an approval it cannot get: it waits until
 the window's end + overrun, then fails the run with `tv_change_pending` (retried next window).
 
+*As built:* every home migrates at its new release's start ([install-kinds.md](install-kinds.md)),
+so this step runs in the new release's supervisor during its watch, and the release commits once
+the change is live; a failure rolls the release back (`failed_tv`, `tv_change_pending`,
+`tv_timeout`, `tv_change_cancelled`), and a rollback takes the change back first
+([install-kinds.md](install-kinds.md), "The TV step").
+
 ### 7.2 Before the two-slot runtime (today)
 
 One streaming process: the front door and the engine are the same. Step 10 becomes "restart

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -155,22 +154,6 @@ func (s *Supervisor) HandedOver() bool {
 	return s.ho.handedOver
 }
 
-// SurvivorReleases are the releases the running survivors' programs are from (a
-// release a running process uses is never pruned).
-func (s *Supervisor) SurvivorReleases() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var out []string
-	for _, c := range s.children {
-		if c.proc.Survives && c.cmd != nil {
-			if v := releaseOf(c.cmd.Path); v != "" {
-				out = append(out, v)
-			}
-		}
-	}
-	return out
-}
-
 // SurvivorRelease is the release the running survivor of role (its first instance) runs
 // its program from, "" when none runs or its program is from no release directory.
 func (s *Supervisor) SurvivorRelease(role Role) string {
@@ -178,23 +161,10 @@ func (s *Supervisor) SurvivorRelease(role Role) string {
 	defer s.mu.Unlock()
 	for _, c := range s.children {
 		if c.proc.Role == role && c.proc.Survives && c.cmd != nil {
-			return releaseOf(c.cmd.Path)
+			return releaseOfPath(c.cmd.Path)
 		}
 	}
 	return ""
-}
-
-// releaseOf is the release a program is from (<install>/bin/releases/<v>/…: v), "" for
-// any other path.
-func releaseOf(path string) string {
-	if path == "" {
-		return ""
-	}
-	dir := filepath.Dir(path)
-	if filepath.Base(filepath.Dir(dir)) != "releases" {
-		return ""
-	}
-	return filepath.Base(dir)
 }
 
 // startHandover runs at Run's start: the boot's job (Windows), then the record the
@@ -414,7 +384,7 @@ func (s *Supervisor) saveRecord(handover bool) {
 			continue
 		}
 		e := layout.HandoverChild{Role: string(c.proc.Role), Instance: c.proc.Instance, PID: c.cmd.Process.Pid,
-			Start: c.ident, Job: c.job, Probe: c.proc.Probe, Binary: c.cmd.Path, Release: releaseOf(c.cmd.Path),
+			Start: c.ident, Job: c.job, Probe: c.proc.Probe, Binary: c.cmd.Path, Release: releaseOfPath(c.cmd.Path),
 			Wanted: c.proc.OnDemand && c.wanted}
 		if runtime.GOOS != "windows" {
 			e.PGID = e.PID // it leads its own process group (prepareTree)

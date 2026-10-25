@@ -69,8 +69,15 @@ class MaktabaTvStagingConfig:
     param_change_push: str = "approve"
 
 
-def auto_rule(cfg: MaktabaTvStagingConfig, kinds: list[str] | tuple[str, ...]) -> str:
-    """The strictest auto-promote rule among ``kinds`` (story 33.10 AC6)."""
+def auto_rule(
+    cfg: MaktabaTvStagingConfig, kinds: list[str] | tuple[str, ...], source_kind: str = ""
+) -> str:
+    """The strictest auto-promote rule among ``kinds`` (story 33.10 AC6); ``immediate`` for
+    the automatic updater's change of the streaming binary alone (Epic 35 story 35.6, the
+    API's tvchange.ChangeRule): a binary change by hand, or one with another kind, keeps
+    the rules."""
+    if source_kind == "auto_update" and list(kinds) == ["binary"]:
+        return "immediate"
     rules = [str(getattr(cfg, f"auto_promote_{k}", "approval")) for k in kinds] or ["approval"]
     return min(rules, key=lambda r: AUTO_RULES.index(r) if r in AUTO_RULES else 0)
 
