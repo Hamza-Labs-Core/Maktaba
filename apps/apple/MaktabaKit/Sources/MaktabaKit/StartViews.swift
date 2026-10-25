@@ -165,6 +165,8 @@ public struct AuthorizedImage: View {
         .aspectRatio(16 / 9, contentMode: .fit)
         .clipped()
         .task(id: video) {
+            // another video's picture must not stay up while (or when) this one does not load
+            image = nil
             guard let data = try? await client.poster(video: video) else { return }
             #if canImport(UIKit)
             if let ui = UIImage(data: data) { image = Image(uiImage: ui) }

@@ -7,6 +7,7 @@ import SwiftUI
 @main
 struct RemoteApp: App {
     @State private var session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.remote")
+    @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.system
 
     var body: some Scene {
         WindowGroup {
@@ -17,7 +18,7 @@ struct RemoteApp: App {
                     NotAnAdmin(session: session, user: user)
                 }
             }
-            .tint(Color(red: 0xE3 / 255, green: 0xB2 / 255, blue: 0x52 / 255))
+            .maktabaTheme(theme)
         }
     }
 }

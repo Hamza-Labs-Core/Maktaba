@@ -11,6 +11,7 @@ struct StatusView: View {
     @State private var loaded = false
     @State private var busy: String?
     @State private var problem: String?
+    @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.system
 
     private var retryable: [FailureGroup] { groups.filter { $0.action == "retry" } }
 
@@ -32,7 +33,8 @@ struct StatusView: View {
                     }
                 }
             }
-            .navigationTitle(session.current?.name ?? "Maktaba Remote")
+            .maktabaSurface()
+            .navigationTitle("Status")
             .refreshable { await load() }
             .task {
                 while !Task.isCancelled {
@@ -49,6 +51,8 @@ struct StatusView: View {
                 }
                 ToolbarItem(placement: .secondaryAction) {
                     Menu("Account", systemImage: "person.crop.circle") {
+                        if let home = session.current { Text(home.name) }
+                        ThemePicker(mode: $theme)
                         Button("Switch home", systemImage: "house") { session.switchHome() }
                         Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { session.signOut() }
                     }
