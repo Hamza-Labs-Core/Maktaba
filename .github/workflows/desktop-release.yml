@@ -408,6 +408,8 @@ jobs:
           set -euo pipefail
           app=apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Maktaba.app
           if [ "$APPLE_NOTARIZE" = true ]; then
+            # its ticket stapled (again, with retries), so Gatekeeper judges it offline
+            tools/release/mac-app/staple.sh "$app"
             tools/release/mac-app/check.sh --app "$app" --notarized
           elif [ "$APPLE_SIGN" = true ]; then
             tools/release/mac-app/check.sh --app "$app" --signed
@@ -464,8 +466,8 @@ jobs:
           for dmg in apps/desktop/src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg; do
             codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dmg"
             xcrun notarytool submit "$dmg" "${auth[@]}" --wait --timeout 60m
-            xcrun stapler staple "$dmg"
-            xcrun stapler validate "$dmg"
+            # retried: Apple's ticket service drops connections (stapler exit 68)
+            tools/release/mac-app/staple.sh "$dmg"
           done
 
       # Windows "portable" deliverable: zip the raw built executable so
