@@ -401,6 +401,11 @@ perf-ci-inner:
 	@# pipeline uv env (the only env with pytest) against the
 	@# repo-root tests/perf suite. $(CURDIR) is the repo root.
 	@cd $(PIPELINE_DIR) && uv run pytest $(CURDIR)/tests/perf/test_perf_ci.py -q
+	@# Epic 35 story 35.16 TC11's latency half: the cluster link's control channel under 20
+	@# TV pulls and a release download (its numbers in the log; the integration tier keeps
+	@# the functional half).
+	@echo "==> go test -tags perf TestControlLatencySLO (api/internal/cluster/link)"
+	@cd api && go test -tags perf -count=1 -v -run '^TestControlLatencySLO$$' ./internal/cluster/link/
 
 # ---------------------------------------------------------------------------
 # Coverage floor (Story 20.3 AC1/TC1) — real gate with teeth.
