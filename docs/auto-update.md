@@ -15,7 +15,7 @@ needs.
 | Server (admin) | Admin -> Updates (`/admin/updates`): Update now, Check now, Skip, pause; a run's steps on the home and on each machine, Cancel (before the home switches), Retry, Skip and Roll back a machine, Resume a held rollout. `POST /api/admin/system/update {"confirm":true}` is Update now. |
 | CLI | `maktaba-server update` reads the same GitHub Releases feed and verifies with the same code (`--check`, `--version vX.Y.Z`, `--rollback`). |
 | Desktop (Tauri) | Built-in updater reads the Release's `latest.json`, applies on relaunch (signature-verified). An app that runs the server stages the release the home's update orders and installs it on a click there (below); a client-only app keeps its own "restart to install" badge. |
-| Mobile | In-app banner → App Store / Play Store / `.apk` (apps can't self-update). |
+| Mobile | In-app banner → App Store / Play Store / `.apk` (apps can't self-update; [below](#the-mobile-apps-update-banner-story-285)). |
 
 ## Channels
 
@@ -25,6 +25,23 @@ needs.
 A build's channel is derived from its version string (a prerelease
 suffix ⇒ `beta`), overridable with `MAKTABA_UPDATE_CHANNEL`. Switching
 `beta`→`stable` never downgrades a running server.
+
+## The mobile app's update banner (story 28.5)
+
+A store app cannot update itself, so the iOS and Android app (the web app in Capacitor) only says
+when a newer release exists and where to get it. At launch, at most once a day (Settings → About →
+App updates: daily, weekly or never), it asks the server it is connected to
+(`GET /api/system/updates`, the server's channel), or GitHub's latest stable release when no server
+answers (a phone never follows beta by itself; a server whose update checks are off is followed, and
+then no banner shows). When the release is newer than the app, a banner says "New version available
+— vX.Y.Z" with **Get update** (the App Store on iOS, the Play Store for the Play build, the `.apk` on
+the release for the sideloaded build) and the release notes. **Dismiss** hides it until a newer
+version ships. Offline the check is skipped and tried again at the next launch; GitHub's rate limit
+backs it off until its reset. The app never downloads a binary itself.
+
+The release's mobile builds carry the tag's version and their kind (`mobile-release.yml`: the APK's
+web bundle is the sideload build, the AAB's the store build); the iOS App Store page comes from the
+`IOS_APP_STORE_URL` repository variable (the release page while it is unset).
 
 ## Server configuration (env)
 
