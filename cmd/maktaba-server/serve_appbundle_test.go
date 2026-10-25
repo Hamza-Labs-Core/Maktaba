@@ -1299,3 +1299,41 @@ func TestAppBundleStaleAndFirstInstallAttempts(t *testing.T) {
 		t.Fatalf("an old start of the same release: %+v", got)
 	}
 }
+
+// The home's wheelhouse a node's update staged beside the release goes once the app's venv
+// is ready (its packages are in it); a build that failed keeps it for the next try.
+func TestAppBundleVenvRemovesTheWheelhouse(t *testing.T) {
+	wh := filepath.Join(t.TempDir(), "wheelhouse", "1.5.0")
+	if err := os.MkdirAll(wh, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wh, "index.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prev := venvRun
+	t.Cleanup(func() { venvRun = prev })
+	fail := true
+	venvRun = func(_ context.Context, spec appvenv.Spec, _ func(appvenv.Progress)) (appvenv.Result, error) {
+		if spec.Wheelhouse != wh {
+			t.Errorf("the build was given %q", spec.Wheelhouse)
+		}
+		if fail {
+			return appvenv.Result{}, &appvenv.Error{Message: "pip: no torch"}
+		}
+		return appvenv.Result{Pipeline: "1.5.0"}, nil
+	}
+	g := &venvGate{spec: appvenv.Spec{Wheelhouse: wh}}
+	if err := g.run(context.Background(), noReport); err == nil {
+		t.Fatal("a failed build passed")
+	}
+	if _, err := os.Stat(wh); err != nil {
+		t.Fatal("a failed build took the wheelhouse")
+	}
+	fail = false
+	if err := g.run(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(wh); err == nil {
+		t.Fatal("the wheelhouse was kept after the venv was built")
+	}
+}

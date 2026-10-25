@@ -145,11 +145,14 @@ the next start from the update's journal (`updates/journal.json`).
   verified on the machine exactly as one from GitHub.
   - **Release files.** The home keeps a copy of each release its machines install
     (`<data_dir>/updates/mirror/<version>/`): the signed small files, and each platform's archive,
-    pipeline wheel and constraints, fetched once ahead of the machines and kept only when their
-    digest is the one the signed `checksums.txt` lists. A machine downloads
+    pipeline wheel and constraints, fetched once ahead of the machines (or taken from the home's
+    own staged release when its copy verifies) and kept only when their digest is the one the
+    signed `checksums.txt` lists; each kept copy is checked again once per process, and one a
+    power cut or a damaged block spoilt is fetched again. A machine downloads
     `GET /api/cluster/updates/artifacts/{version}/{name}` (signed with its delegation key; range
     requests; at most three downloads at once per machine) and falls back to GitHub after three
-    failures, or at once for a file the home does not hold. The copies follow `keep_versions`.
+    failures, at once for a file the home does not hold, and on the next try for a file whose copy
+    from the home failed its own verification. The copies follow `keep_versions`.
   - **The wheelhouse** (`wheelhouse`, on by default). The home downloads each release's pinned
     pipeline packages once for every platform its machines run (`pip download --only-binary=:all:
     --require-hashes`), and a machine builds its pipeline environment from them alone
