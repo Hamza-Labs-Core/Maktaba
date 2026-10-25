@@ -143,7 +143,9 @@ async def test_a_worker_without_the_share_never_checks_it(
     """The index worker (share=False): no storage check, no path conversion, no share
     probes. A stalled share must not hold its threads, nor get it killed mid-write."""
     from maktaba_pipeline.cluster.node import WorkerAgent
+    from maktaba_pipeline.engine import failure_policy
 
+    monkeypatch.setattr(failure_policy, "_share_probes", True)  # restored after the test
     homes: list[bool] = []
 
     async def start_home(self: WorkerAgent) -> None:
@@ -156,4 +158,5 @@ async def test_a_worker_without_the_share_never_checks_it(
     names = await _boot_tasks(db, share=False)
     assert homes == [], "a worker without the share must not run the storage check"
     assert "queue-health" not in names
+    assert failure_policy._share_probes is False
     assert {"worker-hb", "stage-selection", "reconciler"} <= set(names)

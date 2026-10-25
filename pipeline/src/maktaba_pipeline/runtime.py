@@ -579,7 +579,11 @@ async def _start_engine(
         await agent.start_node(caps)
     elif not cfg.share:
         # the other workers check the storage and convert the paths; a stalled share
-        # must not reach this one (the storage check's threads would wait on it)
+        # must not reach this one (the storage check's threads would wait on it), nor
+        # the failure policy's look at a library root
+        from .engine.failure_policy import set_share_probes
+
+        set_share_probes(False)
         _log.info("worker_leaves_the_share_to_the_others", worker_id=worker_id)
     else:
         try:
