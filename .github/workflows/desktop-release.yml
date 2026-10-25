@@ -9,7 +9,7 @@
 #                          Contents/Resources/server built by tools/release/mac-app/
 #                          payload.sh (Go binaries, Postgres, ffmpeg, Python, the
 #                          pipeline wheel), macOS 15+
-#                 x86_64 — the client only (Intel Macs keep the Homebrew/node paths)
+#                 (no Intel Mac build since v0.3.15: Apple silicon only)
 #   Windows   →  the NSIS -setup.exe WITH the server inside (Epic 38, story 38.11):
 #                <install>\server built by tools/release/win-app/payload.sh (the same
 #                pieces, x86_64, plus the Visual C++ runtime), a current-user install in
@@ -102,10 +102,6 @@ jobs:
             rust-targets: aarch64-apple-darwin
             payload: mac-app
             args: '--target aarch64-apple-darwin --bundles app,dmg --config ../../build/mac-app/tauri.mac-app.conf.json'
-          - label: macos-x86_64
-            os: macos-15
-            rust-targets: x86_64-apple-darwin
-            args: '--target x86_64-apple-darwin --bundles app,dmg'
           # Windows x86_64: the server payload in <install>\server (the overlay adds
           # it as a resource, with the NSIS installer's hooks).
           - label: windows
