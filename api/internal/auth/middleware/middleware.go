@@ -233,6 +233,9 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		"/api/cluster/sso/exchange":        {},
 		"/api/cluster/delegate/introspect": {},
 		"/api/cluster/delegate/signout":    {},
+		// Epic 35 story 35.5 — this machine's supervisor records a restore the command
+		// line asked for: the handler refuses any request without its per-boot local token.
+		"/internal/updates/restored": {},
 	}
 }
 

@@ -128,9 +128,10 @@ jobs:
 
   # Epic 35 story 35.5 AC6: the previous stable release against this build's database. Its
   # repository tests run on this build's migrations (a rollback runs it there), and the
-  # nodes' schema guard is checked both ways (a machine behind its home, one ahead). A
-  # failure fails the build unless a newer migration is marked "Breaking for the previous
-  # release" (tools/compat-prev/run.sh).
+  # nodes' schema guard is checked both ways (a machine behind its home, one ahead): an
+  # old node against a new home at the schema level, not an old node process. A failure
+  # fails the build unless a newer migration is marked "Breaking for the previous release"
+  # (tools/compat-prev/run.sh).
   compat-prev:
     runs-on: ubuntu-22.04
     timeout-minutes: 25
