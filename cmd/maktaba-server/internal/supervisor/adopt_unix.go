@@ -28,7 +28,7 @@ func prepareSurvivor(*exec.Cmd) {}
 
 // attachSurvivor is attachTree: the child leads its process group, which the next
 // supervisor signals by its id. detached reports it may outlive the supervisor.
-func attachSurvivor(cmd *exec.Cmd, _ *tvJob, _ string) (tree *procTree, detached bool, err error) {
+func attachSurvivor(cmd *exec.Cmd, _ *tvJob, _ string, _ int) (tree *procTree, detached bool, err error) {
 	tree, err = attachTree(cmd)
 	return tree, true, err
 }
@@ -42,8 +42,14 @@ func errBreakaway(error) bool { return false }
 // inChildJob: POSIX children have no named job.
 func inChildJob(string, int) bool { return false }
 
+// descendants: POSIX sweeps no job.
+func descendants([]int) map[int]bool { return nil }
+
+// heldOf: POSIX children have no job a launcher holds.
+func heldOf(*procTree) uint64 { return 0 }
+
 // adoptTree ties an adopted child's process group to it (the group it leads).
-func adoptTree(c layout.HandoverChild, _ string) (*procTree, *os.Process, error) {
+func adoptTree(c layout.HandoverChild, _ string, _ int) (*procTree, *os.Process, error) {
 	p, err := os.FindProcess(c.PID)
 	if err != nil {
 		return nil, nil, err

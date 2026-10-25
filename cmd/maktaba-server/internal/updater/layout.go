@@ -100,6 +100,7 @@ func (li *LayoutInstaller) Stage(ctx context.Context, j *Journal, log io.Writer)
 	}
 	j.LauncherProtocol = st.Result.Manifest.LauncherProtocol
 	j.EdgeProtocol = st.Result.Manifest.EdgeProtocol
+	j.HandoverProtocol = st.Result.Manifest.HandoverProtocol
 	ok, why := li.launcherReplaceable(j.Job.Version)
 	if err := checkLauncher(j, ok, why); err != nil {
 		return err

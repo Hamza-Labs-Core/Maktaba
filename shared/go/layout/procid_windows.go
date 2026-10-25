@@ -11,7 +11,7 @@ import (
 )
 
 // BootID is this boot's id: the boot counter Windows keeps (PrefetchParameters BootId),
-// else the boot time to the ten minutes (from the time since boot).
+// else the boot time in seconds (from the time since boot: SameBoot allows for its drift).
 func BootID() string {
 	if k, err := registry.OpenKey(registry.LOCAL_MACHINE,
 		`SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters`, registry.QUERY_VALUE); err == nil {
@@ -21,8 +21,7 @@ func BootID() string {
 		}
 	}
 	up := windows.DurationSinceBoot()
-	boot := time.Now().Add(-up).UTC().Truncate(10 * time.Minute)
-	return "t" + strconv.FormatInt(boot.Unix(), 10)
+	return "t" + strconv.FormatInt(time.Now().Add(-up).Unix(), 10)
 }
 
 // ProcessStart is the creation time of a running process (GetProcessTimes, in 100 ns

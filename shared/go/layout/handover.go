@@ -25,6 +25,29 @@ import (
 // HandoverFile is the record's name in the updates directory.
 const HandoverFile = "handover.json"
 
+// HandoverProtocol is the handover this build's supervisor speaks: it keeps the record and
+// adopts what a record of this protocol lists. A release says it in its signed
+// release.json (handover_protocol: tools/release/genrelease reads this line); a handover
+// is made only onto a release that says it (one from before adopts nothing, and would
+// start its own TV processes on the ports the handed-over ones hold).
+const HandoverProtocol = 1
+
+// ReleaseHandoverProtocol is the handover_protocol of the release in dir (its
+// release.json), 0 when it says none or cannot be read.
+func ReleaseHandoverProtocol(dir string) int {
+	b, err := os.ReadFile(filepath.Join(dir, "release.json"))
+	if err != nil {
+		return 0
+	}
+	var m struct {
+		HandoverProtocol int `json:"handover_protocol"`
+	}
+	if json.Unmarshal(b, &m) != nil {
+		return 0
+	}
+	return m.HandoverProtocol
+}
+
 // EnvLauncherHandover is "1" in the environment of a server started by a launcher that
 // leaves the processes a handover lists running when the server exits 75 (and stops
 // them on every other exit).
@@ -37,9 +60,13 @@ type HandoverChild struct {
 	PID      int    `json:"pid"`
 	// Start is the OS's start time of PID (ProcessStart): the pid's identity.
 	Start uint64 `json:"start"`
-	// PGID is its process group (POSIX: it leads one); Job its named job (Windows).
-	PGID int    `json:"pgid,omitempty"`
-	Job  string `json:"job,omitempty"`
+	// PGID is its process group (POSIX: it leads one); Job its named job (Windows), and
+	// JobHeld the launcher's handle to that job (it keeps the job, and its name, alive
+	// after the supervisor that made it exits; whoever ends the process closes it).
+	PGID      int    `json:"pgid,omitempty"`
+	Job       string `json:"job,omitempty"`
+	JobHeld   uint64 `json:"job_held,omitempty"`
+	JobHolder int    `json:"job_holder,omitempty"` // the launcher holding JobHeld
 	// Probe is its liveness URL; Admin its admin address.
 	Probe string `json:"probe,omitempty"`
 	Admin string `json:"admin,omitempty"`
@@ -111,42 +138,69 @@ func RemoveHandover(updatesDir string) error {
 // HandedOverBy reports whether h is a handover the supervisor with pid wrote on this
 // boot (the launcher then leaves its children running).
 func (h *Handover) HandedOverBy(pid int) bool {
-	return h != nil && h.Handover && h.Writer == pid && h.BootID != "" && h.BootID == BootID()
+	return h != nil && h.Handover && h.Writer == pid && h.CurrentBoot()
 }
 
 // CurrentBoot reports whether the record is of this boot.
-func (h *Handover) CurrentBoot() bool { return h != nil && h.BootID != "" && h.BootID == BootID() }
+func (h *Handover) CurrentBoot() bool { return h != nil && SameBoot(h.BootID, BootID()) }
+
+// SameBoot reports whether two boot ids name one boot: equal, or both the boot time a
+// machine without a boot counter reads (Windows' fallback, "t<unix seconds>") within a
+// few minutes of each other (it moves with the clock's corrections). A reboot that close
+// is still told apart by the processes' start times, which adoption checks.
+func SameBoot(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	ta, oka := bootTime(a)
+	tb, okb := bootTime(b)
+	if !oka || !okb {
+		return false
+	}
+	d := ta - tb
+	if d < 0 {
+		d = -d
+	}
+	return d <= bootTimeSlack
+}
+
+// bootTimeSlack is how far apart two readings of one boot's time may be.
+const bootTimeSlack = 5 * 60
+
+func bootTime(id string) (int64, bool) {
+	if !strings.HasPrefix(id, "t") {
+		return 0, false
+	}
+	var n int64
+	for _, r := range id[1:] {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+		n = n*10 + int64(r-'0')
+	}
+	return n, len(id) > 1
+}
 
 // TVJobName is the named job the processes that may outlive the supervisor run in on
-// Windows (story 35.7 AC4: Local\Maktaba-tv-<boot id>), of the install whose updates
-// directory is updatesDir: the install's own, so another install on the machine (or a
-// test's) never meets it.
+// Windows (story 35.7 AC4), of the install whose updates directory is updatesDir: the
+// install's own (its hash), so another install on the machine (or a test's) never meets
+// it. Named kernel objects end with their last handle, so no boot's name outlives it.
 func TVJobName(updatesDir string) string {
 	abs, err := filepath.Abs(updatesDir)
 	if err != nil {
 		abs = updatesDir
 	}
 	sum := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(abs))))
-	return `Local\Maktaba-tv-` + sanitizeName(BootID()) + "-" + hex.EncodeToString(sum[:4])
+	return `Local\Maktaba-tv-` + hex.EncodeToString(sum[:4])
 }
 
 // TVChildJobName is the named job of one such process, nested in the boot's job: the
 // next supervisor opens it by name to end that process with its descendants.
 func TVChildJobName(updatesDir string, pid int) string {
 	return TVJobName(updatesDir) + "-" + itoa(pid)
-}
-
-func sanitizeName(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		switch {
-		case r >= '0' && r <= '9', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '-', r == '.':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('_')
-		}
-	}
-	return b.String()
 }
 
 func itoa(n int) string {

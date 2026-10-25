@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -232,7 +233,15 @@ func (s *Supervisor) sweepJob(keep []layout.HandoverChild) {
 	if h.job == nil {
 		return
 	}
+	roots := make([]int, 0, len(keep))
+	for _, c := range keep {
+		roots = append(roots, c.PID)
+	}
+	below := descendants(roots) // what they started (ffmpeg), their jobs gone or not
 	h.job.sweep(func(pid int) bool {
+		if below[pid] {
+			return true
+		}
 		for _, c := range keep {
 			if pid == c.PID || (c.Job != "" && inChildJob(c.Job, pid)) {
 				return true
@@ -248,7 +257,7 @@ func (s *Supervisor) endEntry(e layout.HandoverChild, why string) {
 	if !layout.ProcessIs(e.PID, e.Start) {
 		return
 	}
-	tree, p, err := adoptTree(e, s.ho.dir)
+	tree, p, err := adoptTree(e, s.ho.dir, s.ho.launcherPID)
 	if err != nil {
 		return
 	}
@@ -256,6 +265,15 @@ func (s *Supervisor) endEntry(e layout.HandoverChild, why string) {
 	tree.kill()
 	_ = p.Kill()
 	tree.release()
+}
+
+// adminOf is the admin address a probe URL names (story 35.7 AC1: the record lists it).
+func adminOf(probe string) string {
+	u, err := url.Parse(probe)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
 
 func nameOf(e layout.HandoverChild) string {
@@ -274,7 +292,7 @@ func (s *Supervisor) adoptRun(ctx context.Context, c *child, a layout.HandoverCh
 	why := ""
 	if !layout.ProcessIs(a.PID, a.Start) {
 		why = "its process is gone (or its pid is another process's now)"
-	} else if t, pp, err := adoptTree(a, s.ho.dir); err != nil {
+	} else if t, pp, err := adoptTree(a, s.ho.dir, s.ho.launcherPID); err != nil {
 		why = err.Error()
 	} else if err := s.adoptProbe(ctx, c.proc); err != nil {
 		why = "its probe does not answer: " + err.Error()
@@ -384,10 +402,14 @@ func (s *Supervisor) saveRecord(handover bool) {
 			continue
 		}
 		e := layout.HandoverChild{Role: string(c.proc.Role), Instance: c.proc.Instance, PID: c.cmd.Process.Pid,
+			Admin: adminOf(c.proc.Probe),
 			Start: c.ident, Job: c.job, Probe: c.proc.Probe, Binary: c.cmd.Path, Release: releaseOfPath(c.cmd.Path),
 			Wanted: c.proc.OnDemand && c.wanted}
 		if runtime.GOOS != "windows" {
 			e.PGID = e.PID // it leads its own process group (prepareTree)
+		}
+		if held := heldOf(c.tree); held != 0 {
+			e.JobHeld, e.JobHolder = held, h.launcherPID
 		}
 		if c.binding != nil {
 			if b, err := json.Marshal(c.binding); err == nil {

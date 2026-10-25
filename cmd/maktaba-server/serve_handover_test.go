@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -21,6 +22,22 @@ func TestTVHandoverWiring(t *testing.T) {
 	}
 	l := layout.New(t.TempDir())
 	u.lay = &l
+	sup0 := supervisor.New(nil, supervisor.DefaultPolicy(), supervisor.WithHandover(l.UpdatesDir(), 0))
+	u.setSupervisor(sup0)
+	// a release whose supervisor does not adopt (one from before the handover): never
+	if ok, why := u.tvHandover(nil, "1.5.0", true); ok || u.armed.Load() || !strings.Contains(why, "adopt") {
+		t.Fatalf("a target that does not adopt: %v %q", ok, why)
+	}
+	if err := os.MkdirAll(l.ReleaseDir("1.5.0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(l.ReleaseDir("1.5.0"), releaseverify.ManifestFile),
+		[]byte(`{"v":1,"handover_protocol":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	u.mu.Lock()
+	u.sup = nil
+	u.mu.Unlock()
 	if ok, _ := u.tvHandover(nil, "1.5.0", true); ok || u.armed.Load() {
 		t.Fatal("armed without a supervisor")
 	}

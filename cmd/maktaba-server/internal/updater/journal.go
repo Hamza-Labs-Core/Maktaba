@@ -216,6 +216,9 @@ type Journal struct {
 	// front door runs on (across the restart, on its previous release's binary) only to a
 	// release that speaks its protocol, else it restarts (FrontDoorRestarts).
 	EdgeProtocol int `json:"edge_protocol,omitempty"`
+	// HandoverProtocol is the release's handover_protocol (its verified release.json): a
+	// handover is made only onto a release whose supervisor adopts (story 35.7).
+	HandoverProtocol int `json:"handover_protocol,omitempty"`
 	// HandsOver: this machine's TV processes run on across its restart (story 35.7), so
 	// the run need not wait for the TV to be quiet; HandoverWhy says why they cannot.
 	HandsOver   bool   `json:"hands_over,omitempty"`

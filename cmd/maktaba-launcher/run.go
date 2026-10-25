@@ -529,11 +529,11 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 		select {
 		case err := <-done:
 			r := finish(err, runResult{})
-			keep = ln.survivors(cmd.Process.Pid, r.code == ExitRestart)
+			keep = ln.survivors(cmd.Process.Pid, r.code == ExitRestart, ln.isPending(ver))
 			return r
 		case <-ctx.Done():
 			r := finish(ln.stop(cmd, child, done, stopFile), runResult{stopped: true})
-			keep = ln.survivors(cmd.Process.Pid, false)
+			keep = ln.survivors(cmd.Process.Pid, false, false)
 			return r
 		case <-tick.C:
 			child.reap()
@@ -546,7 +546,7 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 			if ln.guardVersion == ver && ln.isPending(ver) && !ln.cfg.Now().Before(ln.deadline(ver)) {
 				ln.log.Event("launcher_pending_timeout", ver, map[string]any{"after_s": int(ln.cfg.Now().Sub(ln.firstStart).Seconds())})
 				r := finish(ln.stop(cmd, child, done, stopFile), runResult{timedOut: true})
-				keep = ln.survivors(cmd.Process.Pid, false)
+				keep = ln.survivors(cmd.Process.Pid, false, true)
 				return r
 			}
 		}

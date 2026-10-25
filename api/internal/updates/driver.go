@@ -711,6 +711,17 @@ func targetHandsOver(t Target) bool {
 	return len(t.Detail) > 0 && json.Unmarshal(t.Detail, &st) == nil && st.HandsOver
 }
 
+// handsOverNoMore records that a machine's TV cannot be handed over now (its apply
+// refused with tv_busy): its prepared report no longer says it does.
+func (d *Driver) handsOverNoMore(ctx context.Context, run Run, t Target) {
+	var st MachineStatus
+	if len(t.Detail) == 0 || json.Unmarshal(t.Detail, &st) != nil {
+		return
+	}
+	st.HandsOver = false
+	_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{Detail: st})
+}
+
 // tvBusy reports whether more watch the TV than tv_staging.quiet_max_viewers.
 func (d *Driver) tvBusy(ctx context.Context) (bool, int) {
 	n := 0
@@ -866,9 +877,19 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 		// window (story 35.6 AC4: tv_change_pending, tried again in the next window)
 		apply["tv_deadline"] = deadline
 	}
+	// a home that hands its TV over passed the gate above: it is told whether the TV is
+	// watched, and refuses (tv_busy) when it cannot hand over now after all (story 35.7)
+	if run.Trigger != TriggerManual && homeHandsOver(det) {
+		apply["tv_busy"], _ = d.tvBusy(ctx)
+	}
 	if _, err := d.Home.Do(ctx, "apply", apply); err != nil {
 		if strings.Contains(err.Error(), "update_no_run") || strings.Contains(err.Error(), "update_not_ready") {
 			return d.finish(ctx, run, det, RunFailed, map[string]any{"code": "home_not_prepared", "detail": err.Error()})
+		}
+		if strings.Contains(err.Error(), "tv_busy") {
+			// its report says it does not hand over now: the gate waits for a quiet TV
+			_, _ = d.homeStatus(ctx, run, &det)
+			return nil
 		}
 		return err
 	}
@@ -1523,7 +1544,15 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 				d.startConvert(ctx, run, pol, t, workers[t.NodeID])
 				break
 			}
-			ok, raw, err := d.Cluster.Command(ctx, sid, "update.apply", map[string]any{"run_id": run.ID}, 30*time.Second)
+			busy := run.Trigger != TriggerManual && targetHandsOver(t) && d.machineTVBusy(ctx, t.NodeID)
+			ok, raw, err := d.Cluster.Command(ctx, sid, "update.apply", map[string]any{"run_id": run.ID, "tv_busy": busy},
+				30*time.Second)
+			if (err != nil || !ok) && strings.Contains(fmt.Sprint(err, " ", string(raw)), "tv_busy") {
+				// it cannot hand its TV over now after all, and its streams are watched:
+				// its report says so, and the gate holds it (another machine first)
+				d.handsOverNoMore(ctx, run, t)
+				continue
+			}
 			if err != nil || !ok {
 				d.targetFailed(ctx, run, pol, t, TargetFailed, map[string]any{"code": "apply_refused",
 					"detail": strings.TrimSpace(fmt.Sprint(err, " ", string(raw)))})
