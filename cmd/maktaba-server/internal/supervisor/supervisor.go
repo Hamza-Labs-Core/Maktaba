@@ -68,6 +68,10 @@ type Process struct {
 	// program that a signal cannot ask on this OS: postgres on Windows, through
 	// pg_ctl, which needs no console). The kill after the grace is the same.
 	Stop func()
+	// StopGrace, when longer than the supervisor's, is how long this child has to stop
+	// once asked before it is killed (the index worker: its drain lets a search index
+	// write finish, and a kill in the middle of one breaks the index).
+	StopGrace time.Duration
 	// StopSignal, when set, is the graceful-stop signal in place of SIGTERM
 	// (postgres: SIGINT, its fast shutdown). POSIX only: on Windows every child
 	// is asked with CTRL_BREAK (askChild).
@@ -89,6 +93,15 @@ type Process struct {
 	// migrations). report sets the process's detail in /processes (an error's
 	// too: DetailOf).
 	Prepare func(ctx context.Context, report func(Detail)) error
+}
+
+// graceFor is how long p has to stop once asked: grace, or its own StopGrace when
+// longer.
+func (p Process) graceFor(grace time.Duration) time.Duration {
+	if p.StopGrace > grace {
+		return p.StopGrace
+	}
+	return grace
 }
 
 // stopSignal is the process's graceful-stop signal.

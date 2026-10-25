@@ -487,7 +487,9 @@ def default_search_backends() -> tuple[
             hits = _index().search(q, k=k, library_ids=library_ids, languages=languages)
             return [h.to_json() for h in hits]
 
-        return await asyncio.to_thread(_run)
+        from .search import gate  # noqa: PLC0415
+
+        return await gate.read(_run)
 
     return embed, semantic, embedder
 

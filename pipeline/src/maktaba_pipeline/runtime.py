@@ -114,6 +114,9 @@ class RuntimeConfig:
     reaper_interval_sec: float = 30.0
     claim_poll_sec: float = 1.0
     claim_poll_max_sec: float = 30.0
+    #: on shutdown, how long the jobs in flight may take before they are cancelled
+    #: (``WorkerConfig.shutdown_drain_sec``; the index worker's is longer)
+    shutdown_drain_sec: float = 15.0
     #: Deprecated: per-stage caps were never wired (F10). Concurrency now comes from
     #: ``worker_pools``; kept so existing callers still construct the config.
     stage_concurrency: dict[Stage, int] = field(default_factory=dict)
@@ -402,7 +405,9 @@ async def run(
     worker_id = cfg.worker_id or default_worker_id()
     shutdown = asyncio.Event()
     install_signal_handlers(shutdown)
-    background: list[asyncio.Task[None]] = []
+    background: list[asyncio.Task[None]] = [
+        asyncio.create_task(_close_index_on_shutdown(shutdown), name="index-close")
+    ]
     engine_rt: EngineRuntime | None = None
     stage_names: tuple[str, ...] = tuple(str(s) for s in cfg.stages)
     stage_pools: dict[str, str] = {}
@@ -412,7 +417,8 @@ async def run(
 
     if cfg.engine:
         started = await _start_engine(database, cfg, worker_id, host, shutdown, dispatch_overrides)
-        engine_rt, background = started.runtime, started.tasks
+        engine_rt = started.runtime
+        background.extend(started.tasks)
         selector = started.selector
         agent = started.agent
         stage_names = started.served
@@ -436,6 +442,7 @@ async def run(
         supported_stages=stage_names,
         claim_poll_sec=cfg.claim_poll_sec,
         claim_poll_max_sec=cfg.claim_poll_max_sec,
+        shutdown_drain_sec=cfg.shutdown_drain_sec,
         worker_id=worker_id,
         pool_mode=cfg.engine,
         stage_pools=stage_pools,
@@ -479,6 +486,9 @@ async def run(
             await shutdown.wait()
     finally:
         shutdown.set()
+        from .search import gate
+
+        gate.close()  # as _close_index_on_shutdown, should the loop end on its own
         await reaper.stop()
         for task in background:
             task.cancel()
@@ -493,6 +503,15 @@ async def run(
         _log.info("pipeline_runtime_stopped")
     # 77 when the home refused this machine for good (revoked): services stop restarting
     return exitcodes.exit_code(0)
+
+
+async def _close_index_on_shutdown(shutdown: asyncio.Event) -> None:
+    """The moment the worker stops, no search index write starts (search/gate.py): the
+    jobs waiting for one end at once, the one writing finishes its write."""
+    from .search import gate
+
+    await shutdown.wait()
+    gate.close()
 
 
 @dataclass(slots=True)

@@ -3,7 +3,9 @@ package supervisor
 import (
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
@@ -15,6 +17,16 @@ const IndexStages = "index,chapter_infer"
 
 // IndexInstance is the index worker's instance name (pipeline/index).
 const IndexInstance = "index"
+
+const (
+	// IndexDrain is how long the index worker's jobs in flight may take once it is
+	// asked to stop (MAKTABA_PIPELINE_DRAIN_SEC): no new search index write starts
+	// then, and the one running finishes (search/gate.py), so most stops take seconds.
+	IndexDrain = 30 * time.Second
+	// IndexStopGrace is its stop grace: the drain, the Chroma close and the exit after
+	// it. Within the launcher's 60 s, which also stops postgres after the roles.
+	IndexStopGrace = 45 * time.Second
+)
 
 const (
 	// pipelineSearchAddr is the index worker's gRPC port (the semantic search).
@@ -53,8 +65,9 @@ func operatorKeepsIndexOff() bool {
 // it runs only IndexStages, serves the semantic search on its own gRPC port (the api
 // gets it as MAKTABA_PIPELINE_SEARCH_ADDR), has its own logs and liveness port, and
 // runs with MAKTABA_PIPELINE_SHARE=off: none of the storage checks or share probes
-// every other worker makes, so nothing in it waits on the share. The operator's own
-// stage exclusions reach it as they are.
+// every other worker makes, so nothing in it waits on the share. Its drain and stop
+// grace (IndexDrain, IndexStopGrace) are longer than the others': it is never killed
+// in the middle of a write. The operator's own stage exclusions reach it as they are.
 func BuildIndexWorker(opts Options) ([]Process, error) {
 	n, err := NodeOf(opts.Config)
 	if err != nil {
@@ -73,11 +86,13 @@ func BuildIndexWorker(opts Options) ([]Process, error) {
 	env = setEnv(env, "MAKTABA_PIPELINE_GRPC_ADDR", pipelineSearch(opts.Config))
 	env = setEnv(env, "MAKTABA_PIPELINE_LOGS_ADDR", logs)
 	env = setEnv(env, "MAKTABA_PIPELINE_SHARE", "off")
+	env = setEnv(env, "MAKTABA_PIPELINE_DRAIN_SEC", strconv.Itoa(int(IndexDrain.Seconds())))
 	cmd := exec.Command(pythonFor(opts), "-m", "maktaba_pipeline")
 	cmd.Env = env
 	wire(cmd)
 	return []Process{{Role: RolePipeline, Instance: IndexInstance, Cmd: cmd,
-		Probe: "http://" + LocalAddr(logs, "9104") + "/healthz", ProbeTimeout: PythonProbeTimeout}}, nil
+		Probe: "http://" + LocalAddr(logs, "9104") + "/healthz", ProbeTimeout: PythonProbeTimeout,
+		StopGrace: IndexStopGrace}}, nil
 }
 
 // indexMainEnv is the main worker's side of the index worker: it leaves IndexStages

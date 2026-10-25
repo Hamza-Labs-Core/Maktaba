@@ -416,6 +416,17 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **Stopping the server no longer breaks the search index.** The index worker stopped
+  with 27 index jobs in flight: it noticed the stop 9 s late (the claim loop waited out its
+  poll), cancelled them after 15 s while their Chroma writes ran on in threads, then did not
+  exit (Python waits for those threads) until the supervisor killed it, mid-write. Now every
+  write to the search index runs alone (one at a time per process) and is never cut short: a
+  job cancelled during one ends once it is written, and once the worker stops no new write
+  starts (the jobs waiting for one end at once, as interrupted). The claim loop ends its wait
+  the moment a stop comes. After its runtime stops the worker closes its Chroma client and
+  exits without the threads still running. The index worker gets a 30 s drain
+  (`MAKTABA_PIPELINE_DRAIN_SEC`) and a 45 s stop grace of its own (`Process.StopGrace`,
+  also for a restart and a hung worker), within the launcher's 60 s.
 - **The search index no longer breaks when the media share stalls.** The index and
   `chapter_infer` stages and the meaning (semantic) search ran in the main pipeline worker,
   beside the stages that read the NAS share; a share that stalled got that worker killed for
