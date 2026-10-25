@@ -199,7 +199,14 @@ if [ -n "$APP" ]; then
         run "codesign --verify --deep --strict" codesign --verify --deep --strict "$APP"
     fi
     if [ "$NOTARIZED" -eq 1 ]; then
-        run "Gatekeeper (spctl)" spctl --assess --type execute "$APP"
+        # an unstapled app is judged online: a dropped lookup is tried again (20, 40, 80 s)
+        before="$fails"
+        for wait in 20 40 80 0; do
+            fails="$before"
+            run "Gatekeeper (spctl)" spctl --assess --type execute "$APP"
+            [ "$fails" -eq "$before" ] || [ "$wait" -eq 0 ] || { echo "  Gatekeeper again in ${wait}s"; sleep "$wait"; continue; }
+            break
+        done
     fi
 fi
 
