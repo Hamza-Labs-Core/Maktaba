@@ -102,3 +102,15 @@ right place to get it**, without ever downloading a binary themselves.
 
 - **Push a notification when the app is closed?** Out of scope; relies on
   the on-launch check. Epic 25's push infra could drive this later.
+
+## As built
+
+- The banner is the sideloaded Android app's only. A store build (the Play Store's AAB, every iOS
+  build) shows none: its store updates it, only after review, and no store says cheaply and
+  reliably which version it carries, so the banner could point at a version the store does not
+  offer yet. The App Store and Play Store links above are therefore not used.
+- **Get update** opens the release's own `.apk` when the release lists one at GitHub's download
+  path for the tag (an unsigned build attaches none), else the release page; never a guessed URL or
+  a host the server names.
+- Code: `web/src/lib/appUpdate.ts` (not `update.ts`: `updates.ts` is the server's status),
+  `web/src/components/UpdateBanner.tsx`, the frequency on Settings → About.

@@ -11,6 +11,13 @@
 //     stable release (a phone never tracks beta by itself). A server whose checks are off says
 //     so and is followed: no banner. GitHub's rate limit backs the fallback off until its reset.
 //   - Dismissed: hidden for that version and every older one; a newer one shows again.
+//   - Which builds: the sideloaded Android app only. A store build (the Play Store's, every
+//     iOS build) is updated by its store, which carries a release only after its review, and
+//     no store says cheaply and reliably which version it has: such a build shows no banner
+//     rather than one pointing at a version its store does not offer yet.
+//   - The action: the release's own .apk when the release lists one (mobile-release.yml
+//     attaches it only when the build is signed), else the release page; never a guessed URL,
+//     and never a host the server names: GitHub's download path for that tag only.
 import { api } from "./api";
 import { compareVersions, validVersion } from "./updatesApi";
 import type { UpdateStatus } from "./updates";
@@ -24,16 +31,14 @@ export interface AppRelease {
   version: string;
   /** The release's page (its notes). */
   releaseUrl: string;
-  /** The sideload build's .apk on the release. */
-  apkUrl: string;
+  /** The sideload build's .apk, when the release lists one. */
+  apkUrl?: string;
   source: "server" | "github";
 }
 
 export type Distribution = "store" | "sideload";
 
 const REPO = "Hamza-Labs-Core/Maktaba";
-/** Android's store page (the app id of apps/mobile/capacitor.config.ts). */
-export const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.hamzalabs.maktaba";
 
 export const FREQUENCY_KEY = "mkt:update:frequency";
 const LAST_CHECK_KEY = "mkt:update:lastCheck";
@@ -98,13 +103,24 @@ export function writeFrequency(f: CheckFrequency, store: Store | null = safeLoca
   set(store, FREQUENCY_KEY, f);
 }
 
+/** A stored time (ms), or null when it is missing or not a number (a corrupted value). */
+function storedTime(store: Store | null, key: string): number | null {
+  const raw = get(store, key);
+  const n = raw === null ? NaN : Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** Whether a check is due now: checks on, the frequency's window passed since the last one
- * that answered, and no rate-limit backoff running. */
+ * that answered, and no rate-limit backoff running. A stored time that is not a number, a
+ * last check in the future (the clock went back) or a backoff longer than a day counts as
+ * none: nothing kept on the phone can stop the checks for good. */
 export function checkDue(freq: CheckFrequency, now: number, store: Store | null): boolean {
   if (freq === "off") return false;
-  if (now < Number(get(store, BACKOFF_KEY) ?? 0)) return false;
+  const backoff = storedTime(store, BACKOFF_KEY);
+  if (backoff !== null && now < backoff && backoff - now <= DAY) return false;
   const window = freq === "weekly" ? 7 * DAY : DAY;
-  return now - Number(get(store, LAST_CHECK_KEY) ?? 0) >= window;
+  const last = storedTime(store, LAST_CHECK_KEY);
+  return last === null || last > now || now - last >= window;
 }
 
 /** Whether the banner for `version` was dismissed (that version, or a newer one). */
@@ -123,10 +139,17 @@ function releaseUrlFor(version: string): string {
 
 /** The sideload build's .apk on the release (mobile-release.yml: maktaba-<version>.apk). */
 function apkUrlFor(version: string): string {
-  return `https://github.com/${REPO}/releases/download/v${version}/maktaba-${version}.apk`;
+  return `https://github.com/${REPO}/releases/download/v${version}/${apkName(version)}`;
 }
 
 const apkName = (version: string) => `maktaba-${version}.apk`;
+
+/** The release's .apk when its assets list one at GitHub's download path for the tag;
+ * undefined otherwise (no signed .apk attached, or a URL elsewhere). */
+function listedApk(version: string, assets: { name?: string; url?: string }[] = []) {
+  const want = apkUrlFor(version);
+  return assets.some((a) => a.name === apkName(version) && a.url === want) ? want : undefined;
+}
 
 function httpsUrl(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -167,22 +190,22 @@ async function fromGitHub(d: CheckDeps): Promise<AppRelease | null> {
   const version = bare(rel.tag_name ?? "");
   // /releases/latest is the newest stable release already; a beta never reaches a phone here
   if (rel.draft || rel.prerelease || !validVersion(version) || version.includes("-")) return null;
-  const apk = rel.assets?.find((a) => a.name === apkName(version));
+  const assets = rel.assets?.map((a) => ({ name: a.name, url: a.browser_download_url }));
   return {
     version,
     releaseUrl: httpsUrl(rel.html_url) ?? releaseUrlFor(version),
-    apkUrl: httpsUrl(apk?.browser_download_url) ?? apkUrlFor(version),
+    apkUrl: listedApk(version, assets),
     source: "github",
   };
 }
 
+/** The server's word (its status carries GitHub's assets of the release, as `url`). */
 function fromServer(s: UpdateStatus & { assets?: { name?: string; url?: string }[] }): AppRelease {
   const version = bare(s.latest_version ?? "");
-  const apk = s.assets?.find((a) => a.name === apkName(version));
   return {
     version,
     releaseUrl: httpsUrl(s.release_url) ?? releaseUrlFor(version),
-    apkUrl: httpsUrl(apk?.url) ?? apkUrlFor(version),
+    apkUrl: listedApk(version, s.assets),
     source: "server",
   };
 }
@@ -207,7 +230,9 @@ export async function latestRelease(d: CheckDeps): Promise<AppRelease | null> {
 function readLatest(store: Store | null): AppRelease | null {
   try {
     const r = JSON.parse(get(store, LATEST_KEY) ?? "null") as AppRelease | null;
-    return r && typeof r.version === "string" && validVersion(r.version) ? r : null;
+    if (!r || typeof r.version !== "string" || !validVersion(r.version)) return null;
+    // only GitHub's download path for that tag, as listedApk found it
+    return r.apkUrl === apkUrlFor(r.version) ? r : { ...r, apkUrl: undefined };
   } catch {
     return null;
   }
@@ -241,28 +266,23 @@ export async function appUpdateToOffer(
   return latest;
 }
 
-/** The build's distribution (Android): the Play Store build or the sideloaded .apk. */
-export function distribution(): Distribution {
+/** The build's distribution: every iOS build is the App Store's; on Android the Play Store
+ * build (VITE_DISTRIBUTION=store, the AAB's bundle) or the sideloaded .apk. */
+export function distribution(platform: NativePlatform): Distribution {
+  if (platform === "ios") return "store";
   return import.meta.env?.VITE_DISTRIBUTION === "store" ? "store" : "sideload";
 }
 
-/** The App Store page (iOS), when the build knows it. */
-export function iosAppStoreUrl(): string | null {
-  return httpsUrl(import.meta.env?.VITE_IOS_APP_STORE_URL);
+/** Whether this build offers the banner (and its setting): the sideloaded Android app only;
+ * a store build is updated by its store (see the top of this file). */
+export function bannerOffered(
+  platform: NativePlatform,
+  dist: Distribution = distribution(platform)
+): boolean {
+  return platform === "android" && dist === "sideload";
 }
 
-/**
- * Where the banner's action goes: the App Store on iOS (the release page while the build
- * knows no App Store page), the Play Store for Android's store build, the .apk for its
- * sideload build, the release page anywhere else.
- */
-export function actionUrl(
-  rel: AppRelease,
-  platform: NativePlatform,
-  dist: Distribution = distribution(),
-  appStore: string | null = iosAppStoreUrl()
-): string {
-  if (platform === "ios") return appStore ?? rel.releaseUrl;
-  if (platform === "android") return dist === "store" ? PLAY_STORE_URL : rel.apkUrl;
-  return rel.releaseUrl;
+/** Where the banner's action goes: the release's .apk, else the release page. */
+export function actionUrl(rel: AppRelease): string {
+  return rel.apkUrl ?? rel.releaseUrl;
 }

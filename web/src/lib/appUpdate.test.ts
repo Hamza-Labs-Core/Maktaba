@@ -1,11 +1,12 @@
 // Story 28.5 — the mobile app's own update check (T01–T09): compare, throttle, dismiss
-// until a newer version, the server source first, the GitHub fallback, the action per
-// platform. Every source is a fake: no network.
+// until a newer version, the server source first, the GitHub fallback, the action (the
+// release's own .apk, else its page) and the builds that offer it. Every source is a fake: no
+// network.
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
-  PLAY_STORE_URL,
   actionUrl,
   appUpdateToOffer,
+  bannerOffered,
   checkDue,
   dismissVersion,
   isDismissed,
@@ -206,24 +207,107 @@ describe("the app's update check", () => {
   });
 });
 
-describe("the banner's action", () => {
+const APK = "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v1.4.2/maktaba-1.4.2.apk";
+
+describe("the .apk the banner links", () => {
+  beforeEach(() => localStorage.clear());
+
+  const fromGitHub = async (assets: unknown[]) => {
+    const body = { tag_name: "v1.4.2", html_url: "https://github.com/x", assets };
+    return appUpdateToOffer(
+      "1.4.1",
+      deps({
+        serverStatus: vi.fn(offline),
+        fetchFn: vi.fn(() => Promise.resolve(new Response(JSON.stringify(body)))),
+      })
+    );
+  };
+
+  it("is the release's own .apk at GitHub's download path for the tag", async () => {
+    expect(
+      (await fromGitHub([{ name: "maktaba-1.4.2.apk", browser_download_url: APK }]))?.apkUrl
+    ).toBe(APK);
+  });
+
+  it("is none when the release lists no .apk (an unsigned build attaches none), or lists it elsewhere", async () => {
+    expect((await fromGitHub([]))?.apkUrl).toBeUndefined();
+    localStorage.clear();
+    const elsewhere = [
+      { name: "maktaba-1.4.2.apk", browser_download_url: "https://evil.example/maktaba-1.4.2.apk" },
+    ];
+    expect((await fromGitHub(elsewhere))?.apkUrl).toBeUndefined();
+  });
+
+  it("never follows a host the server names", async () => {
+    const evil = deps({
+      serverStatus: vi.fn(() =>
+        Promise.resolve({
+          ...server("1.4.2"),
+          assets: [{ name: "maktaba-1.4.2.apk", url: "https://evil.example/maktaba-1.4.2.apk" }],
+        })
+      ),
+    });
+    expect((await appUpdateToOffer("1.4.1", evil))?.apkUrl).toBeUndefined();
+    localStorage.clear();
+    const github = deps({
+      serverStatus: vi.fn(() =>
+        Promise.resolve({ ...server("1.4.2"), assets: [{ name: "maktaba-1.4.2.apk", url: APK }] })
+      ),
+    });
+    expect((await appUpdateToOffer("1.4.1", github))?.apkUrl).toBe(APK);
+  });
+
+  it("drops a kept release's .apk that is not GitHub's for its tag", async () => {
+    localStorage.setItem("mkt:update:lastCheck", String(T0));
+    localStorage.setItem(
+      "mkt:update:latest",
+      JSON.stringify({
+        version: "1.4.2",
+        releaseUrl: "https://github.com/x",
+        apkUrl: "https://evil.example/a.apk",
+        source: "server",
+      })
+    );
+    expect((await appUpdateToOffer("1.4.1", deps()))?.apkUrl).toBeUndefined();
+  });
+});
+
+describe("the banner's action and the builds that show it", () => {
   const rel: AppRelease = {
     version: "1.4.2",
     releaseUrl: "https://github.com/Hamza-Labs-Core/Maktaba/releases/tag/v1.4.2",
-    apkUrl: "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v1.4.2/maktaba-1.4.2.apk",
+    apkUrl: APK,
     source: "server",
   };
 
-  it("T06: opens the App Store on iOS (the release page while the build knows none)", () => {
-    expect(actionUrl(rel, "ios", "sideload", "https://apps.apple.com/app/id123")).toBe(
-      "https://apps.apple.com/app/id123"
-    );
-    expect(actionUrl(rel, "ios", "sideload", null)).toBe(rel.releaseUrl);
+  it("T07: opens the .apk, else the release page", () => {
+    expect(actionUrl(rel)).toBe(APK);
+    expect(actionUrl({ ...rel, apkUrl: undefined })).toBe(rel.releaseUrl);
   });
 
-  it("T07: opens the Play Store for the store build and the .apk for the sideload build", () => {
-    expect(actionUrl(rel, "android", "store")).toBe(PLAY_STORE_URL);
-    expect(actionUrl(rel, "android", "sideload")).toBe(rel.apkUrl);
-    expect(actionUrl(rel, "web", "store")).toBe(rel.releaseUrl);
+  it("T06: is the sideloaded Android app's only: a store build (Play, every iOS build) is its store's", () => {
+    expect(bannerOffered("android", "sideload")).toBe(true);
+    expect(bannerOffered("android", "store")).toBe(false);
+    expect(bannerOffered("ios")).toBe(false);
+    expect(bannerOffered("ios", "sideload")).toBe(false);
+    expect(bannerOffered("web", "sideload")).toBe(false);
+  });
+});
+
+describe("a corrupted stored time never stops the checks", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("checks when the last check or the backoff is not a number, in the future, or too long", () => {
+    localStorage.setItem("mkt:update:lastCheck", "not a time");
+    expect(checkDue("daily", T0, localStorage)).toBe(true);
+    localStorage.setItem("mkt:update:lastCheck", String(T0 + 30 * DAY)); // the clock went back
+    expect(checkDue("daily", T0, localStorage)).toBe(true);
+    localStorage.setItem("mkt:update:lastCheck", String(T0 - DAY));
+    localStorage.setItem("mkt:update:backoffUntil", "NaN");
+    expect(checkDue("daily", T0, localStorage)).toBe(true);
+    localStorage.setItem("mkt:update:backoffUntil", String(T0 + 365 * DAY));
+    expect(checkDue("daily", T0, localStorage)).toBe(true);
+    localStorage.setItem("mkt:update:backoffUntil", String(T0 + 3_600_000));
+    expect(checkDue("daily", T0, localStorage)).toBe(false);
   });
 });
