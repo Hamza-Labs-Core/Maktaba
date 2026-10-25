@@ -25,6 +25,20 @@ func (r *recorder) Skipf(format string, args ...any) {}
 func (r *recorder) SkipNow()                         {}
 func (r *recorder) Skipped() bool                    { return false }
 
+// clockAt is a clock that reads start, then start+took on every later read: a test that
+// took exactly took, whatever the runner's load.
+func clockAt(took time.Duration) func() time.Time {
+	start := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	calls := 0
+	return func() time.Time {
+		calls++
+		if calls == 1 {
+			return start
+		}
+		return start.Add(took)
+	}
+}
+
 func fmtSafe(format string, args ...any) string {
 	// Avoid pulling fmt into this tiny helper just to format; the
 	// tests only check substrings, so a sloppy concat is fine.
@@ -40,8 +54,7 @@ func fmtSafe(format string, args ...any) string {
 // error.
 func TestSoftCapSilentBelowCap(t *testing.T) {
 	r := &recorder{}
-	WithSoftCap(r, 100*time.Millisecond)
-	// No work — finish immediately.
+	withSoftCap(r, 100*time.Millisecond, clockAt(100*time.Millisecond)) // at the cap: silent
 	r.cleanup()
 	if len(r.logs) != 0 {
 		t.Fatalf("expected no logs, got %v", r.logs)
@@ -54,8 +67,7 @@ func TestSoftCapSilentBelowCap(t *testing.T) {
 // TestSoftCapWarnsAboveCap: TC2 (slow but not >3×).
 func TestSoftCapWarnsAboveCap(t *testing.T) {
 	r := &recorder{}
-	WithSoftCap(r, 5*time.Millisecond)
-	time.Sleep(10 * time.Millisecond)
+	withSoftCap(r, 5*time.Millisecond, clockAt(10*time.Millisecond)) // 2x the cap
 	r.cleanup()
 	if len(r.logs) == 0 {
 		t.Fatalf("expected a WARN log, got none")
@@ -68,9 +80,7 @@ func TestSoftCapWarnsAboveCap(t *testing.T) {
 // TestSoftCapFailsBeyondHardCap: TC2 hard-fail variant.
 func TestSoftCapFailsBeyondHardCap(t *testing.T) {
 	r := &recorder{}
-	WithSoftCap(r, 1*time.Millisecond)
-	// Sleep for 10ms = 10× cap, well past the 3× hard cap.
-	time.Sleep(10 * time.Millisecond)
+	withSoftCap(r, 1*time.Millisecond, clockAt(10*time.Millisecond)) // 10x: past the 3x hard cap
 	r.cleanup()
 	if len(r.errors) == 0 {
 		t.Fatalf("expected a hard-cap Errorf, got none")
@@ -88,4 +98,30 @@ func TestRequireUnitSkipsWhenNotShort(t *testing.T) {
 	// panicking when called against a no-op TB.
 	r := &recorder{}
 	RequireUnit(r)
+}
+
+// WithSoftCap itself measures on the real clock: a test that does nothing stays silent.
+func TestWithSoftCapRealClock(t *testing.T) {
+	r := &recorder{}
+	WithSoftCap(r, time.Minute)
+	r.cleanup()
+	if len(r.logs)+len(r.errors) != 0 {
+		t.Fatalf("logs %v errors %v", r.logs, r.errors)
+	}
+}
+
+// Exactly 3x the cap still only warns; past it fails.
+func TestSoftCapHardCapEdge(t *testing.T) {
+	r := &recorder{}
+	withSoftCap(r, 5*time.Millisecond, clockAt(15*time.Millisecond))
+	r.cleanup()
+	if len(r.logs) != 1 || len(r.errors) != 0 {
+		t.Fatalf("at 3x: logs %v errors %v", r.logs, r.errors)
+	}
+	r = &recorder{}
+	withSoftCap(r, 5*time.Millisecond, clockAt(15*time.Millisecond+time.Nanosecond))
+	r.cleanup()
+	if len(r.errors) != 1 {
+		t.Fatalf("past 3x: errors %v", r.errors)
+	}
 }
