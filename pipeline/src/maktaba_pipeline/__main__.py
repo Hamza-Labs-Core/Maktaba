@@ -139,6 +139,7 @@ def _build_runtime_config(
         host=host,
         path_map=args.path_map or "",
         engine=not args.no_engine,
+        share=not getattr(args, "no_share", False),
         worker_id=worker_id,
         role="node" if node is not None else "home",
         node_id=node.node_id if node is not None else None,
@@ -219,7 +220,11 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
             # run the queue worker on its own.
             from .grpc_server import serve_grpc
 
-            grpc_server, grpc_task = await serve_grpc(addr=grpc_addr, database=database)
+            grpc_server, grpc_task = await serve_grpc(
+                addr=grpc_addr,
+                database=database,
+                semantic=not getattr(args, "no_semantic", False),
+            )
             log.info("pipeline_grpc_listening", addr=grpc_addr)
         except Exception as exc:  # noqa: BLE001 — startup-only branch
             log.warning("pipeline_grpc_disabled", reason=str(exc))
@@ -299,6 +304,22 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=os.getenv("MAKTABA_PIPELINE_NO_ENGINE") == "1",
         help="Run the original per-stage loop without the queue-graph engine.",
+    )
+    run_p.add_argument(
+        "--no-share",
+        action="store_true",
+        default=os.getenv("MAKTABA_PIPELINE_SHARE") == "off",
+        help="Never touch the media share (MAKTABA_PIPELINE_SHARE=off): no storage checks, "
+        "no share probes, no path conversion. The supervisor's index worker runs so: a "
+        "share that stalls cannot hold it, nor get it killed in the middle of a write.",
+    )
+    run_p.add_argument(
+        "--no-semantic",
+        action="store_true",
+        default=os.getenv("MAKTABA_PIPELINE_SEMANTIC") == "off",
+        help="The gRPC server answers no Embed / SemanticSearch and never opens the search "
+        "index (MAKTABA_PIPELINE_SEMANTIC=off): another worker (the index worker) holds it, "
+        "and Chroma wants one process per directory.",
     )
     run_p.add_argument(
         "--worker-id",

@@ -118,3 +118,42 @@ def test_the_transcribe_stage_imports_without_numpy() -> None:
         "assert t.settings_from_env().language == 'ar'\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+async def _boot_tasks(db: Database, **kw: Any) -> list[str]:
+    """The background tasks a worker starts with (their names)."""
+    cfg = RuntimeConfig(database_url="x", stages=(), host="PC", **kw)
+    stop = asyncio.Event()
+    overrides: dict[Stage | str, StageHandler] = dict.fromkeys(LEGACY_HANDLERS, _noop_handler)
+    started = await _start_engine(db, cfg, "pc/1", "PC", stop, overrides)
+    stop.set()
+    names = [t.get_name() for t in started.tasks]
+    for t in started.tasks:
+        t.cancel()
+    for t in started.tasks:
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await t
+    return names
+
+
+@pytest.mark.asyncio
+async def test_a_worker_without_the_share_never_checks_it(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The index worker (share=False): no storage check, no path conversion, no share
+    probes. A stalled share must not hold its threads, nor get it killed mid-write."""
+    from maktaba_pipeline.cluster.node import WorkerAgent
+
+    homes: list[bool] = []
+
+    async def start_home(self: WorkerAgent) -> None:
+        homes.append(True)
+
+    monkeypatch.setattr(WorkerAgent, "start_home", start_home)
+    assert "queue-health" in await _boot_tasks(db)
+    assert homes == [True]
+    homes.clear()
+    names = await _boot_tasks(db, share=False)
+    assert homes == [], "a worker without the share must not run the storage check"
+    assert "queue-health" not in names
+    assert {"worker-hb", "stage-selection", "reconciler"} <= set(names)

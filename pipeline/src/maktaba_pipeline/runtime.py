@@ -104,6 +104,11 @@ class RuntimeConfig:
     exclude_stages: tuple[str, ...] = ()
     #: run through the queue-graph engine (pools, change-driven propagation, extensions)
     engine: bool = True
+    #: False (``--no-share``): this worker never touches the media share: no storage
+    #: check or path conversion (``start_home``), no foreign-thumbnail repair, no queue
+    #: health probes, its cluster files on this machine. The supervisor's index worker
+    #: runs so, its stages read only the database and the search index
+    share: bool = True
     heartbeat_sec: float = DEFAULT_HEARTBEAT_SEC
     stale_claim_sec: float = 90.0
     reaper_interval_sec: float = 30.0
@@ -572,6 +577,10 @@ async def _start_engine(
     caps = await asyncio.to_thread(capabilities)
     if is_node:
         await agent.start_node(caps)
+    elif not cfg.share:
+        # the other workers check the storage and convert the paths; a stalled share
+        # must not reach this one (the storage check's threads would wait on it)
+        _log.info("worker_leaves_the_share_to_the_others", worker_id=worker_id)
     else:
         try:
             # story 31.3: canonical share paths resolve through this machine's mounts
@@ -637,7 +646,7 @@ async def _start_engine(
     if is_node:
         # a node stops its jobs before their claim lease lapses, however its beats hang
         tasks.append(asyncio.create_task(agent.run_lease_watch(), name="claim-lease"))
-    if not is_node:
+    if not is_node and cfg.share:
         # Epic 40: the dependency watchers release jobs parked on the model, a share or
         # disk space; the home's mounts are the ones that matter (one worker probes)
         from .engine.watchers import run_watchers
@@ -661,6 +670,7 @@ async def _start_engine(
                     shutdown=shutdown,
                     worker=agent,
                     health=collector,
+                    on_share=cfg.share,
                 ),
                 name="cluster-agent",
             )

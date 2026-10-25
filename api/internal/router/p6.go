@@ -59,6 +59,10 @@ type P6Deps struct {
 	// grpcpipeline.SemanticSearcher (the real client does); still nil →
 	// search is FTS-only.
 	SearchSemantic search.SemanticClient
+	// SearchPipelineClient is the pipeline worker that holds the search index (the
+	// supervisor's index worker, MAKTABA_PIPELINE_SEARCH_ADDR): the semantic leg asks
+	// it rather than PipelineClient. Nil → PipelineClient.
+	SearchPipelineClient grpcpipeline.Client
 	// SearchSemanticBudget overrides the per-request deadline of the
 	// semantic leg (zero → search.DefaultSemanticBudget).
 	SearchSemanticBudget time.Duration
@@ -113,14 +117,19 @@ func modelPipelineClient(c grpcpipeline.Client) models.Pipeline {
 }
 
 // searchSemantic is the search handler's semantic leg: the explicit
-// SearchSemantic, else the pipeline's SemanticSearch RPC over the same
-// gRPC connection, else nil (FTS-only). A nil interface is returned as
-// nil, never as a typed nil the handler's nil check would miss.
+// SearchSemantic, else the SemanticSearch RPC of SearchPipelineClient (the
+// index worker) or, without one, of the pipeline over the same gRPC
+// connection, else nil (FTS-only). A nil interface is returned as nil, never
+// as a typed nil the handler's nil check would miss.
 func searchSemantic(d P6Deps) search.SemanticClient {
 	if d.SearchSemantic != nil {
 		return d.SearchSemantic
 	}
-	if ss, ok := d.PipelineClient.(grpcpipeline.SemanticSearcher); ok && ss != nil {
+	client := d.PipelineClient
+	if d.SearchPipelineClient != nil {
+		client = d.SearchPipelineClient
+	}
+	if ss, ok := client.(grpcpipeline.SemanticSearcher); ok && ss != nil {
 		return search.NewGRPCSemantic(ss, d.DB)
 	}
 	return nil

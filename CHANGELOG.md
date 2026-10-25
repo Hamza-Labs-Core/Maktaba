@@ -416,6 +416,19 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The search index no longer breaks when the media share stalls.** The index and
+  `chapter_infer` stages and the meaning (semantic) search ran in the main pipeline worker,
+  beside the stages that read the NAS share; a share that stalled got that worker killed for
+  not answering, and a Chroma write cut in half left the index unusable ("Error constructing
+  hnsw segment"; three times on the home Mac). On a home the supervisor now runs them in a
+  pipeline worker of their own (`pipeline/index`, `MAKTABA_PIPELINE_STAGES=index,chapter_infer`)
+  that never touches the share (`MAKTABA_PIPELINE_SHARE=off`: no storage checks, share probes
+  or path conversion) and serves the semantic search on its own gRPC port (127.0.0.1:9093, logs
+  and liveness on 127.0.0.1:9104; `[server] pipeline_search_addr` / `pipeline_index_logs_addr`),
+  which the API asks (`MAKTABA_PIPELINE_SEARCH_ADDR`). The main worker leaves those stages to it
+  and opens no Chroma (`MAKTABA_PIPELINE_SEMANTIC=off`): one process per Chroma directory, as
+  before. `[pipeline] index_worker = "off"` keeps the old layout; an operator who excludes
+  `index` or lists the stages by hand (`MAKTABA_PIPELINE_STAGES`), and a node, get none.
 - **The first video played right after Maktaba first starts is no longer refused.** The API makes
   the machine's stream signing key as it starts, and the streaming role looked for it every two
   seconds: a signed stream URL in between was refused ("bad signature"), and so was every one
