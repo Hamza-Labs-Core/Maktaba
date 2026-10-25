@@ -76,6 +76,19 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	}
 	h.WebURL, h.Version = os.Getenv("MAKTABA_WEB_URL"), version.Version
 	h.PGBundled, h.PGCA = os.Getenv("MAKTABA_CLUSTER_PG_PORT") != "", os.Getenv("MAKTABA_CLUSTER_PG_CA")
+	// what keeps this home able to give its machines roles: the bundled Postgres's grants
+	// made again by its supervisor (its superuser is the home's own), and a lost group role
+	// made again by the home's own user
+	if sc := switchover.SupervisorFromEnv(); h.PGBundled && sc != nil {
+		h.MendBundled = func(ctx context.Context) error {
+			cctx, cancel := context.WithTimeout(ctx, time.Minute)
+			defer cancel()
+			return sc.Call(cctx, "mend-roles", struct{}{}, nil)
+		}
+	}
+	if driver == "postgres" {
+		h.RolesDB = db
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	bctx, bcancel := context.WithTimeout(ctx, 10*time.Second)
 	id, err := h.Bootstrap(bctx, cluster.StableHostName())
@@ -154,7 +167,10 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	// (its role missing or refused, the database moved to another cluster or port) gets
 	// its access made again and pushed over the machine channel
 	if driver == "postgres" {
-		go hub.EnsureAccess(ctx, h, 10*time.Second, logger)
+		go func() {
+			h.MendAtStart(ctx) // a home that may not give roles mends that before any machine asks
+			hub.EnsureAccess(ctx, h, 10*time.Second, logger)
+		}()
 	}
 	// every revocation on the home reaches the full nodes within the second (story
 	// 35.9 AC4): the session store reports it, the hub pushes auth.revoked

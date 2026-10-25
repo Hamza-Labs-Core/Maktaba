@@ -10,6 +10,7 @@ package pgbundle
 // (CREATEROLE, REPLICATION, pg_monitor), granted once by the cluster bootstrap.
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -354,10 +355,12 @@ func (b Bundle) writeHBA() error {
 // functions that make, read, move or drop a slot are the app role's alone in the app's
 // database: a machine's replication role follows its publication over the replication
 // protocol and needs none of them (with one it could read the slots' changes past its
-// publication). Prepare runs it once per clusterRev (the marker), in the app's database
-// (a function's grant is that database's); every statement is safe to run again. On a
-// server older than Maktaba's own Postgres 16 what it lacks is left out: a parameter's
-// grant (15), a membership without its rights (16).
+// publication). And the app role administers the machines' roles and their groups that
+// the superuser made (roleAdminSQL). Prepare runs it once per clusterRev (the marker), in
+// the app's database (a function's grant is that database's), and the supervisor again
+// when the home's API finds a grant missing (MendClusterGrants); every statement is safe
+// to run again. On a server older than Maktaba's own Postgres 16 what it lacks is left
+// out: a parameter's grant (15), a membership without its rights (16).
 const clusterSQL = `\set ON_ERROR_STOP on
 \c ` + AppDatabase + `
 ALTER ROLE ` + AppRole + ` WITH CREATEROLE REPLICATION;
@@ -398,11 +401,53 @@ BEGIN
     END IF;
 END
 $$;
+` + roleAdminSQL
+
+// roleAdminSQL gives the app role ADMIN OPTION on the machines' roles (maktaba_node_*,
+// their copies' maktaba_rep_*), their groups and the groups' members that it does not
+// administer yet. On Postgres 16 a role that may create roles alters, grants or drops only
+// a role it administers, which it does for those it made itself; one the superuser made —
+// a restore's (the move from the developer stack makes the source's roles), an older
+// release's — it may not touch: the home could give its machine no new password (its
+// access, re-made, never landed), let a new machine into the group, nor revoke one. As
+// Postgres gives a role's creator: ADMIN without the role's rights (INHERIT FALSE, SET
+// FALSE). Older servers let such a role alter any role that is not a superuser.
+const roleAdminSQL = `DO $$
+DECLARE r name;
+BEGIN
+    IF current_setting('server_version_num')::int >= 160000 THEN
+        FOR r IN SELECT g.rolname FROM pg_roles g
+                  WHERE NOT g.rolsuper AND g.rolname <> '` + AppRole + `'
+                    AND (g.rolname IN ('` + WorkerGroup + `', '` + ReplicaGroup + `')
+                         OR g.rolname ~ '^maktaba_(node|rep)_'
+                         OR EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles p ON p.oid = m.roleid
+                                     WHERE m.member = g.oid AND p.rolname IN ('` + WorkerGroup + `', '` + ReplicaGroup + `')))
+                    AND NOT EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles a ON a.oid = m.member
+                                     WHERE m.roleid = g.oid AND a.rolname = '` + AppRole + `' AND m.admin_option)
+                    AND NOT pg_has_role(g.oid, '` + AppRole + `', 'MEMBER') LOOP
+            EXECUTE format('GRANT %I TO ` + AppRole + ` WITH ADMIN OPTION, INHERIT FALSE, SET FALSE', r);
+        END LOOP;
+    END IF;
+END
+$$;
 `
 
 // clusterRev is clusterSQL's revision: a cluster whose marker names an older one (or
-// none: the first) runs it again.
-const clusterRev = 2
+// none: the first) runs it again. 3: the app role administers the roles the superuser
+// made (roleAdminSQL).
+const clusterRev = 3
+
+// MendClusterGrants runs the cluster bootstrap's grants again on the running server, as
+// its superuser: the home's API asks for it (its supervisor's mend-roles) when its user
+// cannot give or change a machine's role, so the machine gets its access without a
+// restart of the home.
+func (b Bundle) MendClusterGrants(ctx context.Context) error {
+	q, err := b.NewQuerier()
+	if err != nil {
+		return err
+	}
+	return q.Exec(ctx, "postgres", clusterSQL)
+}
 
 // clusterDone reports whether the cluster bootstrap ran at clusterRev here.
 func (b Bundle) clusterDone() bool {
