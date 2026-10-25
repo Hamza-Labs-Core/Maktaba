@@ -138,7 +138,10 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 		Commands: commands,
 		// a check of the home's database made after the home heard from this machine again
 		OnConnect: ns.homeDB.reconnected,
+		// the home's answer to this machine's request for its database access
+		OnAccessAnswer: ns.homeDB.answered,
 	}
+	ns.homeDB.ask = func(st machineagent.HomeDB) bool { return ns.agent.RequestAccess(&st) }
 	go ns.agent.Run(ctx)
 	if os.Getenv(envLauncherRoot) != "" || os.Getenv("MAKTABA_RELEASE_DIR") != "" {
 		// an installed full node: the worker units of its worker-only install a conversion
