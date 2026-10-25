@@ -18,6 +18,15 @@ BUILD="$REPO_ROOT/build/mac-app"
 
 [ "$(uname -m)" = arm64 ] || { echo "build-app: Maktaba.app with the server is Apple Silicon only" >&2; exit 1; }
 
+# This Mac's Maktaba signing keychain (the stable identity, payload.sh): unlocked for
+# the build when its password file is there; the identity is used unless one is given.
+SIGN_KEYCHAIN="$HOME/Library/Keychains/maktaba-signing.keychain-db"
+SIGN_PASS="$HOME/.config/maktaba/codesign/keychain.pass"
+if [ -z "${APPLE_SIGNING_IDENTITY:-}" ] && [ -f "$SIGN_KEYCHAIN" ] && [ -f "$SIGN_PASS" ]; then
+    security unlock-keychain -p "$(cat "$SIGN_PASS")" "$SIGN_KEYCHAIN"
+    export MAKTABA_MAC_SIGN_IDENTITY="${MAKTABA_MAC_SIGN_IDENTITY:-Maktaba Code Signing}"
+fi
+
 "$SCRIPT_DIR/payload.sh" --build "$BUILD" "$@"
 
 cd "$REPO_ROOT/apps/desktop"
