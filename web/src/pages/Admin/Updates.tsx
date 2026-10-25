@@ -17,7 +17,7 @@ import { lookupMessage, useI18n } from "../../lib/i18n";
 import { CopyField } from "../../components/CopyField";
 import { hrefOf, updateCodeHelp } from "../../help/registry";
 import { UpdatesBackups } from "./UpdatesBackups";
-import type { HomeDb } from "../../lib/homeDb";
+import { accessAnswerWords, type HomeDb } from "../../lib/homeDb";
 import {
   logsExportURL,
   logsLink,
@@ -601,18 +601,36 @@ function versionCmp(a: string, b: string): number | null {
 }
 
 /** A node that cannot reach the home's database: why, the home re-provisioning its access
- * when it does, what it said, and its logs. */
+ * when it does, the machine's own request for one and the home's answer, what it said,
+ * and its logs. */
 function HomeDbNote({ machineId, homeDb }: { machineId: string; homeDb: HomeDb }) {
   const { t, locale } = useI18n();
   const code = homeDb.code ?? "other";
   const key = `machines.homeDb.code.${code}`;
   const reason =
     lookupMessage(locale, key) !== undefined ? t(key) : t("machines.homeDb.code.other");
+  const answer = homeDb.answer
+    ? accessAnswerWords(homeDb.answer, (k) => lookupMessage(locale, k) !== undefined)
+    : null;
   const id = `updates-machine-${machineId}-home-db`;
   return (
     <div className="mkt-error" role="alert" data-testid={id}>
       <div>{t("machines.homeDb.unreachable", { reason })}</div>
       {homeDb.healing && <div className="mkt-muted">{t("machines.homeDb.healing")}</div>}
+      {homeDb.asked && !homeDb.answer && !homeDb.healing && (
+        <div className="mkt-muted">{t("machines.homeDb.asked")}</div>
+      )}
+      {homeDb.answer && answer && (
+        <div data-testid={`${id}-answer`}>
+          {t(answer.key, { reason: answer.reasonKey ? t(answer.reasonKey) : "" })}
+        </div>
+      )}
+      {homeDb.answer && !homeDb.answer.ok && homeDb.answer.reason && (
+        <details>
+          <summary>{t("machines.homeDb.answerDetail")}</summary>
+          <ErrorDetail text={homeDb.answer.reason} />
+        </details>
+      )}
       {homeDb.detail && (
         <details>
           <summary>{t("machines.homeDb.detail")}</summary>

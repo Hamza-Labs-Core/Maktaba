@@ -603,6 +603,44 @@ describe("Machines admin page: the home's database", () => {
     );
   });
 
+  it("says the machine asked the home for a new login, and the home's answer (en + ar)", async () => {
+    const asked: ClusterNode = {
+      ...baseNode,
+      full_node: true,
+      update_state: {
+        home_db: {
+          ok: false,
+          code: "refused",
+          at,
+          fails: 9,
+          asked: at,
+          answer: {
+            ok: false,
+            code: "cannot_alter_role",
+            reason:
+              "this home's database user may not change this machine's role (permission denied)",
+            at,
+          },
+        },
+      },
+    };
+    routesWith([asked]);
+    const first = renderPage();
+    const card = await screen.findByRole("article", { name: "Studio Mac" });
+    expect(within(card).getByTestId("machine-home-db-answer")).toHaveTextContent(
+      "The home cannot give this machine a new login: the home's database user may not change this machine's role"
+    );
+    expect(within(card).getByTestId("machine-home-db")).toHaveTextContent("permission denied");
+    first.unmount();
+
+    localStorage.setItem("mkt:locale", "ar");
+    renderPage();
+    const ar = await screen.findByRole("article", { name: "Studio Mac" });
+    expect(within(ar).getByTestId("machine-home-db-answer")).toHaveTextContent(
+      "لا يستطيع الخادم الرئيسي منح هذا الجهاز تسجيل دخول جديداً"
+    );
+  });
+
   it("a machine that reaches it stays Online, with no note (and reads in Arabic)", async () => {
     routesWith([{ ...baseNode, update_state: { home_db: { ok: true, at } } }]);
     const first = renderPage();

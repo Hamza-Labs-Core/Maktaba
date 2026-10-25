@@ -127,6 +127,15 @@ func TestHomeDBShown(t *testing.T) {
 	if (*HomeDB)(nil).shown() != nil {
 		t.Fatal("nil")
 	}
+	// the machine's request for its access and the home's answer reach the page too
+	var st agentState
+	if err := json.Unmarshal([]byte(`{"home_db":{"ok":false,"code":"refused","fails":5,"asked":"2026-10-25T09:02:00Z",`+
+		`"answer":{"ok":false,"code":"cannot_alter_role","reason":"may not change this machine's role"}}}`), &st); err != nil {
+		t.Fatal(err)
+	}
+	if h := st.HomeDB.shown(); h == nil || h.Asked == nil || h.Answer == nil || h.Answer.Code != "cannot_alter_role" {
+		t.Fatalf("the request and its answer: %+v", h)
+	}
 }
 
 // The query goes, the sentence's punctuation after the URL stays.

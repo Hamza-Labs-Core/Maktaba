@@ -1038,6 +1038,35 @@ describe("Admin Updates: logs links and the home's database", () => {
     expect(screen.queryByTestId("updates-machine-home-home-db")).toBeNull();
   });
 
+  it("says the node asked the home for a new login, and the home's answer (en + ar)", async () => {
+    const homeDb = {
+      ok: false,
+      code: "refused",
+      at,
+      fails: 9,
+      asked: at,
+      answer: { ok: false, code: "something_new", reason: "the home's own words", at },
+    };
+    routes(machinesWith({}, { home_db: homeDb }), null);
+    const first = renderPage();
+    expect(await screen.findByTestId("updates-machine-n1-home-db-answer")).toHaveTextContent(
+      "The home cannot give this machine a new login: an error the details say"
+    );
+    expect(screen.getByTestId("updates-machine-n1-home-db")).toHaveTextContent(
+      "the home's own words"
+    );
+    first.unmount();
+
+    routes(
+      machinesWith({}, { home_db: { ...homeDb, answer: { ok: false, code: "no_worker_group" } } }),
+      null
+    );
+    renderPage("ar");
+    expect(await screen.findByTestId("updates-machine-n1-home-db-answer")).toHaveTextContent(
+      "مجموعة الأجهزة غير موجودة في قاعدة بيانات الخادم الرئيسي"
+    );
+  });
+
   it("a node that reaches it, or an unknown reason, reads as such (en + ar)", async () => {
     routes(machinesWith({}, { home_db: { ok: false, code: "something_new" } }), null);
     const first = renderPage();
