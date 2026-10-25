@@ -346,6 +346,19 @@ func (h *Hub) event(fields map[string]any) {
 	h.files.Write(KindEvents, fields)
 }
 
+// Record appends an event of the home's own to the hub's events file (its `event` field
+// names it: the update flow's, story 35.15 AC2).
+func (h *Hub) Record(fields map[string]any) {
+	if h == nil || len(fields) == 0 {
+		return
+	}
+	rec := make(map[string]any, len(fields)+1)
+	for k, v := range fields {
+		rec[k] = v
+	}
+	h.event(rec)
+}
+
 // ---------- registry ----------
 
 func newID() string {

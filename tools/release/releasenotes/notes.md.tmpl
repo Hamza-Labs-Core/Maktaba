@@ -1,0 +1,39 @@
+Automated release for {{.Tag}}.
+
+### Install
+
+- **Linux/macOS (script):** download `install.sh` below with `checksums.txt` and `checksums.txt.sigstore.json`, verify them (below), then `bash install.sh`; on Linux, `bash install.sh --app` installs the whole server for a machine without a desktop
+- **Debian/Ubuntu:** download the `.deb` below, then `sudo apt install ./maktaba-server_*.deb`
+- **Fedora/RHEL:** download the `.rpm` below, then `sudo dnf install ./maktaba-server-*.rpm`
+- **macOS (Homebrew):** `maktaba.rb` formula is attached (and pushed to the tap when configured)
+- **Windows / manual:** grab the matching `.tar.gz` / `.zip` archive
+- **Linux, one installation that runs everything (Epic 39):** the `Maktaba_*.AppImage` (or its `.deb` / `.rpm`) from the desktop build; on a machine without a desktop, `maktaba-linux-payload-*-<x86_64|aarch64>.tar.gz`: the same server, Postgres and Python (ffmpeg is the distribution's: setup names the command that installs it), run as a systemd user service
+- **Worker machine (join a home, no checkout):** unpack `maktaba-node-*.tar.gz` (macOS/Linux) or `maktaba-node-*.zip` (Windows) and run `install-node.sh` / `windows\install-node.ps1`: it installs this release's `maktaba_pipeline-*.whl` (also attached, with its `-constraints.txt`). See docs/cluster/join-a-machine.md.
+
+Artifacts are signed with keyless cosign (Sigstore) by this
+repository's release workflow for exactly this tag; Maktaba
+machines verify that in process before installing anything.
+`release.json` (versions, schema revisions, per-platform
+digests) is listed in `checksums.txt`. Verify by hand, with the
+exact identity machines pin (never a regular expression, which
+would also accept another repository's workflow):
+
+```
+cosign verify-blob --bundle checksums.txt.sigstore.json \
+  --certificate-identity {{.SAN}} \
+  --certificate-oidc-issuer {{.Issuer}} \
+  checksums.txt
+sha256sum --ignore-missing -c checksums.txt
+```
+
+(`--certificate checksums.txt.pem --signature checksums.txt.sig`
+in place of `--bundle` checks the same identity.)
+
+Container images are signed at their digest; verify with
+`cosign verify <image>@<digest>` and
+`--certificate-identity {{.SAN}}`
+`--certificate-oidc-issuer {{.Issuer}}`.
+{{- if .LinuxPayloadMissing}}
+
+**Not in this release:** the Linux payload for {{.LinuxPayloadMissing}} (its build failed). Machines on that architecture keep the version they run until the next release.
+{{- end}}

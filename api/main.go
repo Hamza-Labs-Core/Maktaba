@@ -60,7 +60,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
-	metrics "github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go"
 	tracing "github.com/Hamza-Labs-Core/Maktaba/shared/tracing/go"
 )
 
@@ -269,14 +268,11 @@ func runServe() error {
 	warm := warmPeriod()
 	adminMux := health.AdminMux("api", checks, warm)
 
-	// /metrics on admin port. The handler is bound by NewHandler with
-	// Public=false (no bearer required) because the admin port is
-	// already firewalled in production deploys.
-	mh, err := metrics.NewHandler(metrics.Config{Bind: adminAddr})
-	if err != nil {
-		return fmt.Errorf("metrics handler: %w", err)
-	}
-	adminMux.Handle("/metrics", mh)
+	// /metrics on admin port, no bearer required because the admin port
+	// is already firewalled in production deploys. It carries this
+	// machine's supervisor's update metrics too (story 35.15): one
+	// scrape target per machine.
+	adminMux.Handle("/metrics", metricsHandler(os.Getenv("MAKTABA_SUPERVISOR_URL")))
 
 	// Recent-logs endpoint on the admin port, mirroring the streaming
 	// service. The public-facing viewer/export use /api/admin/logs/*

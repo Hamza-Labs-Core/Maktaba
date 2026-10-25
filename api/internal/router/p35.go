@@ -188,6 +188,14 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 			return cfg.QuietMaxViewers
 		}}
 	svc.Starter = drv
+	// story 35.15: the update events in the hub's events file, the numbers on /metrics
+	drv.Events = func(fields map[string]any) {
+		if h := d.Hub.Get(); h != nil {
+			h.Record(fields)
+		}
+	}
+	upMetrics := updates.NewMetrics(drv, func() string { return d.Current })
+	updates.Expose(upMetrics)
 	svc.Blockers = []updates.Blocker{
 		updates.TVChangeBlocker{DB: d.DB},
 		updates.SwitchoverBlocker{DB: d.DB},
@@ -215,6 +223,11 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 		}
 		go svc.RunScheduler(ctx)
 		go drv.Run(ctx)
+		sampler := &updates.HealthSampler{Metrics: upMetrics, Logger: d.Logger, Behind: func(ctx context.Context) bool {
+			pl, _, _, err := svc.Plan(ctx)
+			return err == nil && pl.Target != nil
+		}}
+		go sampler.Run(ctx)
 	}
 	return h
 }

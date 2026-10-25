@@ -23,6 +23,9 @@ type Dispatcher struct {
 	Proxy http.Handler
 	// Paused is the schema guard's verdict ("" = the node's code fits).
 	Paused func() string
+	// Served counts each request by its class and status (story 35.15: the node's
+	// metrics; nil: not counted).
+	Served func(class Class, status int)
 }
 
 // ClassOf is the class a request is served by.
@@ -54,6 +57,17 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := d.ClassOf(r)
 	w.Header().Set(HeaderPlacement, string(c))
 	r = r.WithContext(context.WithValue(r.Context(), classKey{}, c))
+	if d.Served != nil {
+		sc := &statusCapture{ResponseWriter: w}
+		w = sc
+		defer func() {
+			status := sc.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			d.Served(c, status)
+		}()
+	}
 	switch c {
 	case Local:
 		d.Local.ServeHTTP(w, r)
@@ -69,6 +83,29 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		d.Proxy.ServeHTTP(w, r)
 	}
 }
+
+// statusCapture keeps the status a handler wrote. No Write override (the bytes pass
+// straight through); Flush and Unwrap keep streams and sockets working (the proxy's
+// flushes and hijack go through http.ResponseController).
+type statusCapture struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusCapture) WriteHeader(code int) {
+	if s.status == 0 {
+		s.status = code
+	}
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusCapture) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (s *statusCapture) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 // WritePaused answers 503 {code: "paused", reason} (story 35.8 AC4).
 func WritePaused(w http.ResponseWriter, reason string) {

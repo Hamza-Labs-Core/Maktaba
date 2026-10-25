@@ -21,6 +21,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
@@ -740,7 +741,14 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	} else {
 		report(detail("db_checking", "Checking the library database", cur))
 	}
+	migStart := time.Now()
 	err = g.migrate(ctx, cur, update.State != "", report)
+	if err == nil && update.State != "" {
+		// the update's migrations, for /metrics (story 35.15)
+		if rerr := updater.RecordMigration(g.updates, cur, time.Since(migStart), time.Now()); rerr != nil {
+			fmt.Fprintf(g.log, "[serve] the migrations' time is not recorded: %v\n", rerr)
+		}
+	}
 	if ctx.Err() != nil {
 		return ctx.Err() // stopped: the next start goes on (the record says migrating)
 	}

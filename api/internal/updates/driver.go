@@ -55,7 +55,11 @@ type Driver struct {
 	// Recheck re-reads a release from GitHub and marks it withdrawn when it is (nil: the
 	// Service's Discoverer's Recheck, none without one).
 	Recheck func(ctx context.Context, r Release, channel string) (string, error)
+	// Events receives each update event (story 35.15 AC2: the hub's events file; nil:
+	// the structured log only).
+	Events func(fields map[string]any)
 
+	obs       observer // what the last look saw (events.go)
 	mu        sync.Mutex
 	wake      chan struct{}
 	stepMu    sync.Mutex
@@ -174,6 +178,7 @@ func (d *Driver) Run(ctx context.Context) {
 	t := time.NewTicker(tick)
 	defer t.Stop()
 	for {
+		d.observe(ctx)
 		if err := d.Step(ctx); err != nil && ctx.Err() == nil {
 			d.log().Warn("update driver step failed", "event", "update_driver_error", "err", err.Error())
 		}
