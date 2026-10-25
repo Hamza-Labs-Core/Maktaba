@@ -61,15 +61,19 @@ from a database backup (see invariant 4 above).
 
 ## Packaged upgrade (Homebrew / dpkg / rpm)
 
+A `.deb`/`.rpm` and the Homebrew formula update themselves: the server installs each release in
+its quiet window (Epic 35; the package owns the launcher, the updater the releases). The package
+manager brings a new launcher, from the apt/dnf repositories or the tap, which follow each stable
+release:
+
 ```sh
-brew upgrade maktaba           # macOS
-sudo apt upgrade maktaba       # Debian / Ubuntu
-sudo dnf upgrade maktaba       # Fedora / RHEL
+brew upgrade maktaba                               # macOS
+sudo apt install --only-upgrade maktaba-server     # Debian / Ubuntu
+sudo dnf upgrade maktaba-server                    # Fedora / RHEL
 ```
 
-The post-install hook of each package runs forward migrations and
-restarts the launchd / systemd units in the same order:
-
-1. `maktaba-api` (carries the migrator)
-2. `maktaba-streaming`
-3. `maktaba-pipeline`
+The package's release becomes current only when it is newer than what the updater installed
+(the `.deb`/`.rpm` postinstall, the formula's service: `setup --self-managed --identity package`);
+its start then migrates the database in its database step (a dump first, put back if a
+migration fails), as an automatic update does. Neither the packages nor the formula migrate
+anything themselves.

@@ -42,10 +42,24 @@ func needsNewLauncher(j *Journal) bool {
 	return j.LauncherProtocol > runningLauncherProtocol()
 }
 
-// launcherPackaged reports whether a package manager owns the launcher (.deb/.rpm:
-// story 35.7 EC4).
+// launcherPackaged reports whether a package manager owns the launcher: a .deb/.rpm's
+// (story 35.7 EC4), or Homebrew's (its formula runs the launcher from its own keg, under
+// /opt/homebrew or /usr/local).
 func launcherPackaged(exe string) bool {
-	return runtime.GOOS != "windows" && strings.HasPrefix(filepath.ToSlash(exe), "/usr/")
+	p := filepath.ToSlash(exe)
+	return runtime.GOOS != "windows" &&
+		(strings.HasPrefix(p, "/usr/") || strings.HasPrefix(p, "/opt/homebrew/") || strings.Contains(p, "/Cellar/"))
+}
+
+// packagedFix is what brings a package manager's launcher up to a release: the command
+// that upgrades the package (the package repositories carry every stable release).
+func packagedFix(exe string) string {
+	p := filepath.ToSlash(exe)
+	if runtime.GOOS == "darwin" || strings.HasPrefix(p, "/opt/homebrew/") || strings.Contains(p, "/Cellar/") {
+		return "Homebrew owns it: `brew upgrade maktaba`, then retry the update"
+	}
+	return "a package manager owns it: upgrade the package (`sudo apt install --only-upgrade maktaba-server`, " +
+		"or `sudo dnf upgrade maktaba-server`), then retry the update"
 }
 
 // checkLauncher refuses a release whose launcher protocol the running launcher cannot
@@ -72,7 +86,7 @@ func (li *LayoutInstaller) launcherReplaceable(version string) (bool, string) {
 	case exe == "":
 		return false, "the launcher does not say where it is: update it once by hand (`maktaba-server setup --self-managed`)"
 	case launcherPackaged(exe):
-		return false, "a package manager owns it: update the package"
+		return false, packagedFix(exe)
 	case runtime.GOOS == "windows":
 		next := filepath.Join(li.Layout.ReleaseDir(layout.NormalizeVersion(version)), layout.Exe("maktaba-launcher"))
 		return false, fmt.Sprintf("on Windows the running launcher cannot hand over in place: put the release's in place "+

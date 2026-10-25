@@ -68,9 +68,20 @@ func TestLauncherReplacement(t *testing.T) {
 	if strings.TrimSpace(string(req)) != exe {
 		t.Fatalf("handover request %q", req)
 	}
-	// a package's launcher (EC4) is not replaced: the release is refused
+	// a package's launcher (EC4) is not replaced: the release is refused, naming the
+	// package manager's command; Homebrew's keg is a package's too
 	if !launcherPackaged("/usr/bin/maktaba-launcher") || launcherPackaged(exe) {
 		t.Fatal("packaged launcher detection")
+	}
+	for _, p := range []string{"/opt/homebrew/opt/maktaba/libexec/release/maktaba-launcher",
+		"/usr/local/Cellar/maktaba/1.4.0/libexec/release/maktaba-launcher"} {
+		if !launcherPackaged(p) || !strings.Contains(packagedFix(p), "brew upgrade maktaba") {
+			t.Errorf("%s: packaged %v, fix %q", p, launcherPackaged(p), packagedFix(p))
+		}
+	}
+	if fix := packagedFix("/usr/bin/maktaba-launcher"); runtime.GOOS == "linux" &&
+		(!strings.Contains(fix, "apt install --only-upgrade maktaba-server") || !strings.Contains(fix, "dnf upgrade maktaba-server")) {
+		t.Errorf("a .deb/.rpm launcher's fix: %q", fix)
 	}
 }
 

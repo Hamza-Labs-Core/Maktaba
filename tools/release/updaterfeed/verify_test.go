@@ -160,3 +160,39 @@ func TestCheckFeed(t *testing.T) {
 		t.Fatalf("no feed: %d", got)
 	}
 }
+
+// --verify checks a release's downloaded app packages as the apps would (the package
+// repositories publish a Linux app's .deb or .rpm only once it checks): their key, their
+// release's version; nothing signed, or a usage error, is no pass.
+func TestMainVerify(t *testing.T) {
+	k, other := newKey(t), newKey(t)
+	files := map[string]string{}
+	for name, body := range map[string]string{"Maktaba_0.3.6_amd64.deb": "deb-x86", "Maktaba-0.3.6-1.aarch64.rpm": "rpm-arm"} {
+		files[name] = body
+		files[name+".sig"] = k.sign([]byte(body), "timestamp:1	file:"+name+"	version:0.3.6")
+	}
+	dir := stage(t, files)
+	run := func(args ...string) (int, string) {
+		var so, se bytes.Buffer
+		code := Main(append([]string{"--verify"}, args...), &so, &se, now)
+		return code, se.String()
+	}
+	if code, se := run("--dir", dir, "--pubkey", k.pub, "--tag", "v0.3.6"); code != 0 {
+		t.Fatalf("the apps' key: exit %d: %s", code, se)
+	}
+	if code, se := run("--dir", dir, "--pubkey", other.pub, "--tag", "v0.3.6"); code != 1 || !strings.Contains(se, "refuse") {
+		t.Fatalf("another key: exit %d: %s", code, se)
+	}
+	if code, _ := run("--dir", dir, "--pubkey", k.pub, "--tag", "v0.3.7"); code != 1 {
+		t.Fatalf("another release's version: exit %d", code)
+	}
+	if code, _ := run("--dir", stage(t, map[string]string{"Maktaba_0.3.6_amd64.deb": "deb-x86"}), "--pubkey", k.pub, "--tag", "v0.3.6"); code != 1 {
+		t.Fatalf("nothing signed: exit %d", code)
+	}
+	if code, _ := run("--dir", dir, "--tag", "v0.3.6"); code != 2 {
+		t.Fatalf("no key: exit %d", code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "latest.json")); !os.IsNotExist(err) {
+		t.Fatal("--verify wrote a feed")
+	}
+}

@@ -151,7 +151,9 @@ jobs:
           shellcheck -x deploy/packaging/install.sh deploy/packaging/tests/install-sh-verify.sh \
             deploy/packaging/tests/install-sh-systemd.sh deploy/packaging/scripts/postinstall.sh \
             deploy/packaging/scripts/preremove.sh tools/release/tag-guard.sh tools/release/release-assets.sh \
-            tools/release/trusted-root-age.sh tools/release/tag-guard-test.sh tools/release/release-assets-test.sh
+            tools/release/trusted-root-age.sh tools/release/tag-guard-test.sh tools/release/release-assets-test.sh \
+            tools/release/pkg-repo.sh tools/release/pkg-repo-test.sh tools/release/homebrew-tap.sh \
+            tools/release/homebrew-tap-test.sh
       - name: install-node.sh dry runs
         run: deploy/packaging/node/tests/install-node-dry-run.sh
       # The home-server install.sh refuses a release missing checksums.txt,
@@ -175,6 +177,35 @@ jobs:
       - name: release assets adopt (a bundle and its signature together)
         if: runner.os == 'Linux'
         run: bash tools/release/release-assets-test.sh
+
+  # The package repositories packages.yml publishes after a stable release (pkg-repo.sh),
+  # built from fake packages with a throwaway key: apt and dnf (Rocky Linux 9, Fedora)
+  # install from them through the signed index and refuse a changed one; and the Homebrew
+  # tap's formula and cask (homebrew-tap.sh), filled, parsed and pushed to a scratch tap.
+  package-repos:
+    name: package repositories (apt, dnf, Homebrew tap)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: tools/release/go.mod
+          cache-dependency-path: tools/release/go.sum
+      - name: Install the repository tools
+        # GOTOOLCHAIN=auto: nfpm needs a newer Go than the runner's (as release.yml's
+        # package-nfpm installs it)
+        env:
+          GOTOOLCHAIN: auto
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends apt-utils createrepo-c
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
+          echo "$(go env GOPATH)/bin" >>"${GITHUB_PATH}"
+      - name: apt and dnf repositories
+        run: REQUIRE=apt,rpm,dnf bash tools/release/pkg-repo-test.sh
+      - name: Homebrew formula and cask
+        run: bash tools/release/homebrew-tap-test.sh
 
   install-linux:
     name: install from the archive (linux, --system)
