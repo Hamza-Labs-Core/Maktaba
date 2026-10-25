@@ -254,6 +254,14 @@ fi
 signing='"signingIdentity": "-", "hardenedRuntime": false'
 if [ -n "$IDENTITY" ] && [ "$IDENTITY" != "-" ]; then
     signing='"hardenedRuntime": true'
+elif [ -n "${MAKTABA_MAC_SIGN_IDENTITY:-}" ]; then
+    # Without a Developer ID, a stable identity of our own (Maktaba's self-signed
+    # code-signing certificate): macOS keys the privacy grants (Full Disk Access, which
+    # reading the NAS share needs) to the app's designated requirement. Ad hoc that is
+    # the build's hash, a new app on every update, so each update lost the grant and
+    # the workers' NAS reads stalled; with a certificate it is "this identifier signed
+    # by this certificate", the same for every build. Not notarized (no Apple identity).
+    signing="\"signingIdentity\": \"$MAKTABA_MAC_SIGN_IDENTITY\", \"hardenedRuntime\": false"
 fi
 # web/dist is built above (make server), so tauri does not rebuild it.
 cat >"$BUILD/tauri.mac-app.conf.json" <<EOF
