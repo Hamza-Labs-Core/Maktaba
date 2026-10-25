@@ -142,6 +142,12 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	// The home's JWT keys (Story 10.6): an operator's MAKTABA_JWT_*_PEM, else the pair a
 	// switch of the home handed over (Epic 37), in the keys directory.
 	if role == RoleAPI && os.Getenv("MAKTABA_JWT_PRIVATE_KEY_PEM") == "" && os.Getenv("MAKTABA_JWT_PUBLIC_KEY_PEM") == "" {
+		// a home with none makes its pair (a node's api verifies with its home's keys)
+		if !NodeMode(cfg, n) {
+			if err := EnsureJWTKeys(); err != nil {
+				return nil, err
+			}
+		}
 		privPath, pubPath := JWTKeyPaths()
 		priv, err1 := os.ReadFile(privPath)
 		pub, err2 := os.ReadFile(pubPath)
