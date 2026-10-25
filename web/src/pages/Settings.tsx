@@ -19,6 +19,7 @@ import { ModelsSection } from "./Settings/ModelsSection";
 import { RulesSection } from "./Settings/RulesSection";
 import { UpdatesSettings } from "./Settings/UpdatesSettings";
 import { AppUpdateSettings } from "./Settings/AppUpdateSettings";
+import { HomeNameSettings } from "./Settings/HomeNameSettings";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, downloadBlob, ApiError } from "../lib/api";
@@ -143,6 +144,12 @@ function AccountTab() {
         <p className="mkt-alert" role="alert">
           {t("homeOffline.signOut")}
         </p>
+      )}
+      {user.is_admin && (
+        <>
+          <hr />
+          <HomeNameSettings />
+        </>
       )}
       <hr />
       <h2>{t("settings.tokens.title")}</h2>

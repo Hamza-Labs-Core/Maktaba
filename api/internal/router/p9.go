@@ -5,13 +5,17 @@
 package router
 
 import (
+	"context"
 	"database/sql"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/auth"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 )
 
 // P9Deps bundles the dependencies for the Phase 9 auth surface.
@@ -26,6 +30,11 @@ type P9Deps struct {
 	// (free build / no entitlement source). Must be the SAME Store the
 	// subscriptions surface uses so an apply/revoke is seen here too.
 	Seats auth.SeatLimiter
+
+	// Settings reads the home's name (home.name) for GET /api/auth/me: the
+	// reader PATCH /api/settings drops the cache of (P6Deps.Settings). Nil ⇒
+	// one of its own (a rename then reads within its cache's few seconds).
+	Settings *runtimecfg.Reader
 }
 
 // MountP9 attaches every Phase 9 (Epic 10 stories 10.2/10.3/10.4/10.5/10.16)
@@ -46,6 +55,23 @@ func MountP9(r chi.Router, d P9Deps) *auth.Handler {
 		AccessTTL:     d.AccessTTL,
 		Seats:         d.Seats,
 	})
+	settings := d.Settings
+	if settings == nil {
+		settings = runtimecfg.New(d.DB)
+	}
+	h.HomeName = HomeName(settings, cluster.ComputerName)
 	h.Mount(r)
 	return h
+}
+
+// HomeName is the home's name: the one an admin stored (home.name), else the
+// computer's name (asked once, on the first read).
+func HomeName(settings *runtimecfg.Reader, computer func() string) func(context.Context) string {
+	fallback := sync.OnceValue(computer)
+	return func(ctx context.Context) string {
+		if n, ok := settings.Text(ctx, runtimecfg.HomeName); ok {
+			return n
+		}
+		return fallback()
+	}
 }

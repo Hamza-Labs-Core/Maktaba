@@ -31,6 +31,30 @@ func StableHostName() string {
 	return "maktaba"
 }
 
+// ComputerName is the machine's name for people: on macOS the computer name
+// (`scutil --get ComputerName`, "Sara's Mac mini"), elsewhere the host name; in
+// a container (whose host name is its id) or when neither is known, "Maktaba".
+func ComputerName() string {
+	if runtime.GOOS == "darwin" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if out, err := exec.CommandContext(ctx, "scutil", "--get", "ComputerName").Output(); err == nil {
+			if n := strings.TrimSpace(string(out)); n != "" {
+				return n
+			}
+		}
+	}
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return "Maktaba"
+	}
+	if h, err := os.Hostname(); err == nil {
+		if n := cleanHost(h); n != "" {
+			return n
+		}
+	}
+	return "Maktaba"
+}
+
 func cleanHost(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.TrimSuffix(s, ".local")

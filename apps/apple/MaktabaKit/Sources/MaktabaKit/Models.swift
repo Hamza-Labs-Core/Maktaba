@@ -12,6 +12,25 @@ public struct User: Codable, Hashable, Sendable {
     }
 }
 
+/// `GET /api/auth/me`: who is signed in, and the home's name for people (an admin renames
+/// it in the web Settings; a home that does not say keeps the name the app has).
+public struct Me: Decodable, Sendable {
+    public let user: User
+    public let homeName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case homeName = "home_name"
+    }
+
+    public init(from decoder: Decoder) throws {
+        user = try User(from: decoder)
+        let name = try decoder.container(keyedBy: CodingKeys.self)
+            .decodeIfPresent(String.self, forKey: .homeName)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        homeName = name?.isEmpty == false ? name : nil
+    }
+}
+
 /// `POST /api/auth/login` and `/api/auth/refresh` for a native client (`X-Maktaba-Client:
 /// native`): the tokens in the body, not cookies.
 public struct AuthTokens: Codable, Sendable {

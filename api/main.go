@@ -51,6 +51,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
@@ -499,8 +500,12 @@ func runServe() error {
 			// BusDSN: the event bus's pq.Listener takes a connection string (lib/pq
 			// has no connector-based listener), so its sslmode is settled once, here
 			// at startup, not per connection as appDB's is.
+			// one runtime settings reader for the settings and auth surfaces: a
+			// PATCH /api/settings (a renamed home) reads at once in /api/auth/me
+			runtimeSettings := runtimecfg.New(appDB)
 			router.MountP6(r, router.P6Deps{
-				Secrets: homeSecrets,
+				Settings: runtimeSettings,
+				Secrets:  homeSecrets,
 				OnQueues: func(q *queues.Handler) {
 					_, remoteCtl, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
 						DB: appDB, Secrets: homeSecrets, Logger: logger, Notifier: notifyHub,
@@ -544,6 +549,7 @@ func runServe() error {
 				SecureCookies: cookiesSecure(),
 				AccessTTL:     accessTokenTTL(),
 				Seats:         subscriptions.NewSeatLimiter(entStore),
+				Settings:      runtimeSettings,
 			})
 			if p9 != nil {
 				cookieAuth = p9.CookieAuth
