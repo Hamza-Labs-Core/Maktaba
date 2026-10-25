@@ -251,13 +251,14 @@ func TestTestOfflineReturns503(t *testing.T) {
 	}
 }
 
-// SMD-18: a signed-in non-admin can list models but not change them.
+// SMD-18: a signed-in non-admin can neither list the models nor change them (the models
+// page is the home admins'; the API enforces roles).
 func TestModelMutationsAreAdminOnly(t *testing.T) {
 	p := &fakePipeline{}
 	r := newRouter(p)
 	member := &principal.Principal{UserID: "member"}
-	if w := doAs(t, r, http.MethodGet, "/api/models", member); w.Code != http.StatusOK {
-		t.Fatalf("list as member: %d, want 200", w.Code)
+	if w := doAs(t, r, http.MethodGet, "/api/models", member); w.Code != http.StatusForbidden {
+		t.Fatalf("list as member: %d, want 403", w.Code)
 	}
 	for _, c := range []struct{ method, path string }{
 		{http.MethodPost, "/api/models/whisper-small/download"},

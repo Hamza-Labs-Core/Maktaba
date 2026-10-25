@@ -96,9 +96,12 @@ func newFixture(t *testing.T, opts ...fixtureOpt) *fixture {
 				req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{UserID: "u1", IsAdmin: true}))
 			case "viewer":
 				req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{UserID: "u2"}))
-			case "pat":
+			case "pat": // a viewer's personal access token
 				req = req.WithContext(principal.WithPrincipal(req.Context(),
 					&principal.Principal{UserID: "u3", Source: principal.SourcePAT}))
+			case "adminpat": // an admin's personal access token (it carries its owner's role)
+				req = req.WithContext(principal.WithPrincipal(req.Context(),
+					&principal.Principal{UserID: "u4", IsAdmin: true, Source: principal.SourcePAT}))
 			}
 			next.ServeHTTP(w, req)
 		})

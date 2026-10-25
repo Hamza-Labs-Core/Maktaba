@@ -39,9 +39,10 @@ func newFixture(rules ...*queuestest.Rule) *fixture {
 	return f
 }
 
-// viewer reads every library (the summary is then unfiltered).
+// viewer is a home admin (the summary is the admins': the API enforces roles); the name
+// stays from when the page was open to every user.
 func viewer() *principal.Principal {
-	return &principal.Principal{UserID: "u2", AccessAllLibraries: true}
+	return &principal.Principal{UserID: "u2", AccessAllLibraries: true, IsAdmin: true}
 }
 
 func (f *fixture) get(p *principal.Principal) *httptest.ResponseRecorder {
@@ -130,18 +131,18 @@ func TestSummary_NeedsAuth(t *testing.T) {
 
 // A caller granted only library A sees A's row and A's failures; a
 // failure with no library is for all-library callers only.
-func TestSummary_ScopedToCallerLibraries(t *testing.T) {
+func TestSummary_NonAdminsAreRefused(t *testing.T) {
 	f := newFixture(fullRules()...)
-	s := decode(t, f.get(&principal.Principal{UserID: "u3", Libraries: []string{libA}}))
-	if len(s.Libraries) != 1 || s.Libraries[0].LibraryID != libA {
-		t.Errorf("libraries = %+v, want only A", s.Libraries)
-	}
-	if len(s.Failures) != 1 || s.Failures[0].JobID != 901 {
-		t.Errorf("failures = %+v, want only job 901", s.Failures)
-	}
-	none := decode(t, f.get(&principal.Principal{UserID: "u4"}))
-	if len(none.Libraries) != 0 || len(none.Failures) != 0 {
-		t.Errorf("no-library caller sees %+v / %+v", none.Libraries, none.Failures)
+	// a non-admin, whatever libraries it sees, reads none of the server's transcription
+	// state (totals, budgets, failures)
+	for _, p := range []*principal.Principal{
+		{UserID: "u3", Libraries: []string{libA}},
+		{UserID: "u4"},
+		{UserID: "u5", AccessAllLibraries: true},
+	} {
+		if rec := f.get(p); rec.Code != http.StatusForbidden {
+			t.Errorf("summary as %+v: %d, want 403", p, rec.Code)
+		}
 	}
 }
 

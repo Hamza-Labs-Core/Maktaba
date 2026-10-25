@@ -8,29 +8,29 @@
 
 ## Summary
 
-| ID     | Title                                                      | Category      | Priority | Covered by existing test?       |
-| ------ | ---------------------------------------------------------- | ------------- | -------- | ------------------------------- |
-| MOR-01 | Normal user sees Settings, Transcription and account links | Happy path    | P1       | Yes (`AppShell.cases.test.tsx`) |
-| MOR-02 | Normal user sees no Administration group                   | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`) |
-| MOR-03 | Admin sees the Administration group with every admin link  | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`) |
-| MOR-04 | User object without `is_admin` shows no admin group        | Empty state   | P2       | Yes (`AppShell.cases.test.tsx`) |
-| MOR-05 | "More" tab opens /more and is marked active                | Navigation    | P2       | Yes (`AppShell.cases.test.tsx`) |
-| MOR-06 | Each link opens its page; Back returns to /more            | Navigation    | P2       | Yes (`AppShell.cases.test.tsx`) |
-| MOR-07 | Sign out goes to /login and Back does not return           | Happy path    | P1       | Yes (`AppShell.cases.test.tsx`) |
-| MOR-08 | Sign out still leaves when the server call fails           | Error         | P2       | Yes (`AppShell.cases.test.tsx`) |
-| MOR-09 | Double-clicking Sign out sends one request                 | Validation    | P3       | No                              |
-| MOR-10 | Signed-out deep link to /more, then back after sign-in     | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`) |
-| MOR-11 | Auth still loading on /more                                | Loading       | P3       | No                              |
-| MOR-12 | Crash during render shows a fallback; Back recovers        | Error         | P1       | Yes (`AppShell.cases.test.tsx`) |
-| MOR-13 | Phone width 375px                                          | Responsive    | P2       | No (e2e-only)                   |
-| MOR-14 | Wide screen /more still works                              | Responsive    | P3       | No                              |
-| MOR-15 | Arabic / RTL                                               | RTL           | P2       | Yes (`AppShell.cases.test.tsx`) |
-| MOR-16 | Light and dark theme                                       | Theme         | P3       | No                              |
-| MOR-17 | Headings, list semantics and keyboard                      | Accessibility | P2       | Yes (`AppShell.cases.test.tsx`) |
+| ID     | Title                                                     | Category      | Priority | Covered by existing test?       |
+| ------ | --------------------------------------------------------- | ------------- | -------- | ------------------------------- |
+| MOR-01 | Normal user sees the account links, no server pages       | Happy path    | P1       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-02 | Normal user sees no Administration group                  | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-03 | Admin sees the Administration group with every admin link | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-04 | User object without `is_admin` shows no admin group       | Empty state   | P2       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-05 | "More" tab opens /more and is marked active               | Navigation    | P2       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-06 | Each link opens its page; Back returns to /more           | Navigation    | P2       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-07 | Sign out goes to /login and Back does not return          | Happy path    | P1       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-08 | Sign out still leaves when the server call fails          | Error         | P2       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-09 | Double-clicking Sign out sends one request                | Validation    | P3       | No                              |
+| MOR-10 | Signed-out deep link to /more, then back after sign-in    | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-11 | Auth still loading on /more                               | Loading       | P3       | No                              |
+| MOR-12 | Crash during render shows a fallback; Back recovers       | Error         | P1       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-13 | Phone width 375px                                         | Responsive    | P2       | No (e2e-only)                   |
+| MOR-14 | Wide screen /more still works                             | Responsive    | P3       | No                              |
+| MOR-15 | Arabic / RTL                                              | RTL           | P2       | Yes (`AppShell.cases.test.tsx`) |
+| MOR-16 | Light and dark theme                                      | Theme         | P3       | No                              |
+| MOR-17 | Headings, list semantics and keyboard                     | Accessibility | P2       | Yes (`AppShell.cases.test.tsx`) |
 
 ## Cases
 
-### MOR-01 — Normal user sees Settings, Transcription and account links
+### MOR-01 — Normal user sees the account links, no server pages
 
 - **Priority:** P1
 - **Category:** Happy path
@@ -38,7 +38,7 @@
 - **Preconditions / data:** `/api/auth/me` → `{ "user": { "id": "u2", "username": "viewer", "is_admin": false } }`.
 - **Steps:**
   1. Open `/more`.
-- **Expected:** `h1` "More". One list with links in this order: Transcription `/transcription`, Settings `/settings`, Account `/account`, Devices `/account/devices`, Sessions `/account/sessions`, API tokens `/account/tokens`, Billing & license `/billing`, Cloud status `/cloud/status`, Help `/help`. (Order follows `NAV` then `SECONDARY` — Transcription comes before Settings.) A "Sign out" button below.
+- **Expected:** `h1` "More". One list with links in this order: Account `/account`, Devices `/account/devices`, Sessions `/account/sessions`, API tokens `/account/tokens`, Billing & license `/billing`, Cloud status `/cloud/status`, Help `/help` (`SECONDARY`). No Processing `/queue`, Transcription `/transcription` or Settings `/settings` link: those are admin pages (MOR-03). A "Sign out" button below.
 
 ### MOR-02 — Normal user sees no Administration group
 
@@ -58,7 +58,7 @@
 - **Preconditions / data:** `/me` → `{ "user": { "id": "u1", "username": "root", "is_admin": true } }`.
 - **Steps:**
   1. Open `/more`.
-- **Expected:** After the MOR-01 list, `h2` "Administration" and a second list: Users `/admin/users`, Library access `/admin/library-acl`, Channels `/admin/channels`, Filler pools `/admin/filler`, Live TV access `/admin/live-tv`, Analytics `/admin/analytics`, Audit log `/admin/audit`, System health `/admin/health`, Machines `/admin/machines`, Logs `/admin/logs`, All devices `/admin/devices`, Extensions `/admin/extensions` (12). `/admin/enrichment` is not listed — on a phone there is no way to reach it except typing the URL (likely gap).
+- **Expected:** After the MOR-01 list, `h2` "Administration" and a second list: Processing `/queue`, Transcription `/transcription`, Settings `/settings` (first), Users `/admin/users`, Library access `/admin/library-acl`, Channels `/admin/channels`, Filler pools `/admin/filler`, Live TV access `/admin/live-tv`, Analytics `/admin/analytics`, Audit log `/admin/audit`, System health `/admin/health`, Machines `/admin/machines`, Logs `/admin/logs`, All devices `/admin/devices`, Extensions `/admin/extensions` (15). `/admin/enrichment` is not listed — on a phone there is no way to reach it except typing the URL (likely gap).
 
 ### MOR-04 — User object without `is_admin` shows no admin group
 
@@ -179,7 +179,7 @@
 - **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`, admin.
 - **Steps:**
   1. Open `/more`.
-- **Expected:** `dir="rtl"`. `h1` "المزيد"; links "التفريغ النصي", "الإعدادات", "الحساب", "الأجهزة", "الجلسات", "رموز الـ API", "الفوترة والترخيص", "حالة السحابة"; `h2` "الإدارة"; button "تسجيل الخروج". Icons sit on the right of each label.
+- **Expected:** `dir="rtl"`. `h1` "المزيد"; links "الحساب", "الأجهزة", "الجلسات", "رموز الـ API", "الفوترة والترخيص", "حالة السحابة"; `h2` "الإدارة" then "قائمة المعالجة", "التفريغ النصي", "الإعدادات" and the other admin links; button "تسجيل الخروج". Icons sit on the right of each label.
 
 ### MOR-16 — Light and dark theme
 

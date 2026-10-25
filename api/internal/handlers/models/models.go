@@ -21,6 +21,7 @@ package models
 
 import (
 	"context"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -139,6 +140,9 @@ func known(id string) bool {
 // When the pipeline is unreachable it falls back to the static catalog
 // so the UI still renders (degraded, not failed).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	if !adminOnly(w, r) {
+		return
+	}
 	if h.offline() {
 		common.WriteJSON(w, r, http.StatusOK, fallbackCatalog)
 		return
@@ -255,4 +259,15 @@ func (h *Handler) Test(w http.ResponseWriter, r *http.Request) {
 		Detail:    res.Detail,
 		Error:     res.Error,
 	})
+}
+
+// adminOnly refuses anyone but a home admin (the API enforces roles: these routes back the
+// admin pages, and hiding the pages is not the rule).
+func adminOnly(w http.ResponseWriter, r *http.Request) bool {
+	p := principal.FromContext(r.Context())
+	if p == nil || !p.IsAdmin {
+		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+		return false
+	}
+	return true
 }

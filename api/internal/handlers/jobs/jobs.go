@@ -521,6 +521,9 @@ func etaSeconds(stages map[string]StageStats) float64 {
 // extension stages appear without code changes); stages that only show
 // up in processing_jobs are still reported.
 func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
+	if !adminOnly(w, r) {
+		return
+	}
 	ctx := r.Context()
 	now := h.now()
 	resp := StatsResponse{ByStage: map[string]StageStats{}, Workers: []WorkerInfo{}}
@@ -746,6 +749,17 @@ func (h *Handler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	if !p.IsAdmin {
+		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+		return false
+	}
+	return true
+}
+
+// adminOnly refuses anyone but a home admin (the API enforces roles: these routes back the
+// admin pages, and hiding the pages is not the rule).
+func adminOnly(w http.ResponseWriter, r *http.Request) bool {
+	p := principal.FromContext(r.Context())
+	if p == nil || !p.IsAdmin {
 		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
 		return false
 	}

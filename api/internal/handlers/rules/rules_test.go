@@ -132,7 +132,7 @@ func TestEmbeddedSchemaParses(t *testing.T) {
 
 func TestGet_NoRowsAllDefaults(t *testing.T) {
 	_, srv := newServer(t)
-	code, resp := do(t, srv, http.MethodGet, "/api/rules", "", user)
+	code, resp := do(t, srv, http.MethodGet, "/api/rules", "", admin)
 	if code != http.StatusOK {
 		t.Fatalf("status %d", code)
 	}
@@ -177,7 +177,7 @@ func TestPatch_SetResetRoundTrip(t *testing.T) {
 		t.Fatalf("stored %v", row)
 	}
 
-	_, got := do(t, srv, http.MethodGet, "/api/rules", "", user)
+	_, got := do(t, srv, http.MethodGet, "/api/rules", "", admin)
 	f := fieldOf(t, got, "planner", "min_slot_minutes")
 	if f["value"] != float64(45) || f["changed"] != true || f["default"] != float64(30) {
 		t.Errorf("GET after set: %v", f)
@@ -334,7 +334,7 @@ func TestGet_UnknownAndInvalidStored(t *testing.T) {
 	db, srv := newServer(t)
 	putRow(t, db, "planner", `{"retired_knob":1,"min_slot_minutes":2,"mix_number":120}`)
 	putRow(t, db, "groups", `"not an object"`)
-	_, resp := do(t, srv, http.MethodGet, "/api/rules", "", user)
+	_, resp := do(t, srv, http.MethodGet, "/api/rules", "", admin)
 
 	sec := sectionOf(t, resp, "planner")
 	if u := toStrings(sec["unknown"]); len(u) != 1 || u[0] != "retired_knob" {
@@ -443,5 +443,15 @@ func TestPatch_RowsMayLeaveOutDefaultedColumnsButNotNullThem(t *testing.T) {
 	}}`, admin)
 	if code != http.StatusBadRequest {
 		t.Fatalf("a required column left out: want 400, got %d %v", code, resp)
+	}
+}
+
+// The rules are the home admins' to read too (the API enforces roles).
+func TestReadIsAdminOnly(t *testing.T) {
+	_, srv := newServer(t)
+	for _, p := range []*principal.Principal{nil, user} {
+		if code, _ := do(t, srv, http.MethodGet, "/api/rules", "", p); code != http.StatusForbidden {
+			t.Errorf("GET /api/rules as %v: %d, want 403", p, code)
+		}
 	}
 }

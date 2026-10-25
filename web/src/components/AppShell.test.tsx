@@ -101,28 +101,13 @@ describe("AppShell admin navigation", () => {
   });
 });
 
-describe("AppShell transcription navigation", () => {
+describe("AppShell server pages (Processing, Transcription, Settings)", () => {
   const viewer = { user: { id: "u2", username: "viewer", is_admin: false, roles: [] } };
+  const admin = { user: { id: "u1", username: "root", is_admin: true, roles: [] } };
+  const serverPages = [en["nav.queue"], en["nav.transcription"], en["nav.settings"]];
 
-  it("lists Transcription in the sidebar, behind More on the six-item tab bar", async () => {
-    get.mockResolvedValue(viewer);
-    renderShell();
-    const [sidebar, tabbar] = await screen.findAllByRole("navigation", {
-      name: en["nav.primary"],
-    });
-    expect(within(sidebar).getByRole("link", { name: en["nav.transcription"] })).toHaveAttribute(
-      "href",
-      "/transcription"
-    );
-    const tabs = within(tabbar).getAllByRole("link");
-    expect(tabs).toHaveLength(6);
-    expect(tabs.map((a) => a.getAttribute("href"))).not.toContain("/transcription");
-    expect(tabs[tabs.length - 1]).toHaveAttribute("href", "/more");
-  });
-
-  it("puts Transcription on the More page", async () => {
-    get.mockResolvedValue(viewer);
-    render(
+  function renderMore() {
+    return render(
       <MemoryRouter>
         <I18nProvider>
           <AuthProvider>
@@ -131,6 +116,61 @@ describe("AppShell transcription navigation", () => {
         </I18nProvider>
       </MemoryRouter>
     );
+  }
+
+  it("hides them from a viewer's sidebar and five-item tab bar", async () => {
+    get.mockResolvedValue(viewer);
+    renderShell();
+    const [sidebar, tabbar] = await screen.findAllByRole("navigation", {
+      name: en["nav.primary"],
+    });
+    await within(sidebar).findByRole("link", { name: en["nav.account"] });
+    for (const name of serverPages) {
+      expect(within(sidebar).queryByRole("link", { name })).not.toBeInTheDocument();
+      expect(within(tabbar).queryByRole("link", { name })).not.toBeInTheDocument();
+    }
+    const tabs = within(tabbar).getAllByRole("link");
+    expect(tabs.map((a) => a.getAttribute("href"))).toEqual([
+      "/library",
+      "/series",
+      "/guide",
+      "/search",
+      "/more",
+    ]);
+  });
+
+  it("lists them for an admin in the sidebar, not on the tab bar", async () => {
+    get.mockResolvedValue(admin);
+    renderShell();
+    const [sidebar, tabbar] = await screen.findAllByRole("navigation", {
+      name: en["nav.primary"],
+    });
+    expect(
+      await within(sidebar).findByRole("link", { name: en["nav.transcription"] })
+    ).toHaveAttribute("href", "/transcription");
+    expect(within(sidebar).getByRole("link", { name: en["nav.queue"] })).toHaveAttribute(
+      "href",
+      "/queue"
+    );
+    expect(within(sidebar).getByRole("link", { name: en["nav.settings"] })).toHaveAttribute(
+      "href",
+      "/settings"
+    );
+    expect(within(tabbar).getAllByRole("link")).toHaveLength(5);
+  });
+
+  it("keeps them off a viewer's More page", async () => {
+    get.mockResolvedValue(viewer);
+    renderMore();
+    await screen.findByRole("link", { name: en["nav.account"] });
+    for (const name of serverPages) {
+      expect(screen.queryByRole("link", { name })).not.toBeInTheDocument();
+    }
+  });
+
+  it("puts Transcription on an admin's More page", async () => {
+    get.mockResolvedValue(admin);
+    renderMore();
     expect(await screen.findByRole("link", { name: en["nav.transcription"] })).toHaveAttribute(
       "href",
       "/transcription"
@@ -178,7 +218,7 @@ describe("AppShell System health badge", () => {
     resetStatusStore();
     serve(viewer, "down");
     renderShell();
-    await screen.findAllByRole("link", { name: en["nav.transcription"] });
+    await screen.findAllByRole("link", { name: en["nav.account"] });
     expect(screen.queryByTestId("health-badge")).not.toBeInTheDocument();
     expect(get).not.toHaveBeenCalledWith(STATUS_PATH);
   });
@@ -186,25 +226,32 @@ describe("AppShell System health badge", () => {
 
 describe("AppShell update badge (Story 28.6)", () => {
   const viewer = { user: { id: "u2", username: "viewer", is_admin: false, roles: [] } };
-  beforeEach(() => resetUpdateStatusCache());
+  const admin = { user: { id: "u1", username: "root", is_admin: true, roles: [] } };
+  const newer = {
+    available: true,
+    latest_version: "v2.0.0",
+    current_version: "v1.0.0",
+    channel: "stable",
+    checked_at: "",
+  };
+  beforeEach(() => {
+    resetUpdateStatusCache();
+    resetStatusStore();
+  });
 
-  function serve(updates: unknown) {
+  function serve(user: unknown, updates: unknown) {
     get.mockImplementation((url: string) =>
-      Promise.resolve(url.startsWith("/api/system/updates") ? updates : viewer)
+      url.startsWith(STATUS_PATH)
+        ? Promise.resolve({ status: "ok", items: [], checked_at: "", code: "", reason: "" })
+        : Promise.resolve(url.startsWith("/api/system/updates") ? updates : user)
     );
   }
 
-  it("badges Settings and More when an update is available", async () => {
-    serve({
-      available: true,
-      latest_version: "v2.0.0",
-      current_version: "v1.0.0",
-      channel: "stable",
-      checked_at: "",
-    });
+  it("badges an admin's Settings (Administration group) and More when an update is available", async () => {
+    serve(admin, newer);
     renderShell();
     const [sidebar, tabbar] = await screen.findAllByRole("navigation", { name: en["nav.primary"] });
-    const settings = within(sidebar).getByRole("link", { name: en["nav.settings"] });
+    const settings = await within(sidebar).findByRole("link", { name: en["nav.settings"] });
     await waitFor(() => expect(settings).toHaveAccessibleDescription(en["update.badge"]));
     expect(settings).toHaveAttribute("href", "/settings");
     expect(within(settings).getByTestId("update-badge")).toBeInTheDocument();
@@ -214,22 +261,29 @@ describe("AppShell update badge (Story 28.6)", () => {
     expect(get).toHaveBeenCalledWith("/api/system/updates");
   });
 
+  it("badges only More for a viewer, who has no Settings link", async () => {
+    serve(viewer, newer);
+    renderShell();
+    const [sidebar, tabbar] = await screen.findAllByRole("navigation", { name: en["nav.primary"] });
+    const more = within(tabbar).getByRole("link", { name: en["nav.more"] });
+    await waitFor(() => expect(more).toHaveAccessibleDescription(en["update.badge"]));
+    expect(within(more).getByTestId("update-badge")).toBeInTheDocument();
+    expect(
+      within(sidebar).queryByRole("link", { name: en["nav.settings"] })
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("update-badge")).toHaveLength(1);
+  });
+
   it("shows no badge when up to date or when checks are off", async () => {
     for (const status of [
       { available: false, current_version: "v1.0.0", channel: "stable", checked_at: "" },
-      {
-        available: true,
-        disabled: true,
-        latest_version: "v2.0.0",
-        current_version: "v1.0.0",
-        channel: "stable",
-        checked_at: "",
-      },
+      { ...newer, disabled: true },
     ]) {
       resetUpdateStatusCache();
-      serve(status);
+      serve(admin, status);
       const { unmount } = renderShell();
-      await screen.findAllByRole("link", { name: en["nav.transcription"] });
+      await screen.findAllByRole("link", { name: en["nav.settings"] });
+      await waitFor(() => expect(get).toHaveBeenCalledWith("/api/system/updates"));
       expect(screen.queryByTestId("update-badge")).not.toBeInTheDocument();
       unmount();
     }

@@ -311,7 +311,11 @@ func TestOpenAIDoorStreaming(t *testing.T) {
 	announce(runner, model("llama3", true))
 	waitFor(t, "model known", func() bool { return len(f.hub.Router().Models()) == 1 })
 
-	resp := f.do("GET", "/api/cluster/llm/v1/models", "", "pat")
+	// a viewer's access token gets none of the cluster's models (the API enforces roles)
+	if resp := f.do("GET", "/api/cluster/llm/v1/models", "", "pat"); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("a viewer's token: %d, want 403", resp.StatusCode)
+	}
+	resp := f.do("GET", "/api/cluster/llm/v1/models", "", "adminpat")
 	var models struct {
 		Object string `json:"object"`
 		Data   []struct {
@@ -333,7 +337,7 @@ func TestOpenAIDoorStreaming(t *testing.T) {
 		got <- fakeRunner(t, runner, chunks, map[string]any{"prompt_tokens": 3, "completion_tokens": 2, "ms": 9}, "")
 	}()
 	resp = f.do("POST", "/api/cluster/llm/v1/chat/completions",
-		`{"model":"llama3","stream":true,"messages":[{"role":"user","content":"hi"}]}`, "pat")
+		`{"model":"llama3","stream":true,"messages":[{"role":"user","content":"hi"}]}`, "adminpat")
 	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
 		t.Fatalf("status %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}

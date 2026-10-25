@@ -1,11 +1,10 @@
 package queues
 
-// Library visibility for the control centre's reads. The queue pages are
-// in every signed-in user's navigation, so they stay open to non-admins,
-// but what a non-admin sees of individual items is kept to the libraries
-// granted to them (the rule videos use): job rows of other libraries, or
+// Library visibility for the control centre's reads. Every route of the
+// package is admin-only (Mount); this filter stays as a second line for a
+// principal that sees only some libraries: job rows of other libraries, or
 // of no library (catalog-wide work), are left out, and failure samples
-// (subject labels and error text) are blanked. Counts stay global.
+// (subject labels and error text) are blanked.
 
 import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"

@@ -150,7 +150,11 @@ func (h *Handler) export(w http.ResponseWriter, r *http.Request, scopeUserID str
 	baseFilter := mlog.FilterFromQuery(r)
 
 	sysInfo := h.systemInfo(ctx, scopeUserID != "")
-	healthJSON := h.healthSnapshot(r)
+	// the server's health (disks, budgets, failure reasons) is an admin's to read
+	healthJSON := []byte(`{"status":"left out: an admin's export has it"}`)
+	if scopeUserID == "" {
+		healthJSON = h.healthSnapshot(r)
+	}
 
 	apiLogs := h.localLogs(baseFilter, scopeUserID)
 	errSummary := errorSummary(h.scopedEntries(mlog.Filter{MinLevel: 0}, scopeUserID))
@@ -276,8 +280,9 @@ func (h *Handler) localLogs(f mlog.Filter, scopeUserID string) []byte {
 }
 
 // scopedEntries returns ring entries filtered by f and, when
-// scopeUserID is set, restricted to lines belonging to that user (or
-// lines with no user_id, which are un-attributed system events).
+// scopeUserID is set, restricted to lines belonging to that user. Lines
+// with no user_id are the server's own (other users' library paths and
+// errors among them): an admin's export only.
 func (h *Handler) scopedEntries(f mlog.Filter, scopeUserID string) []mlog.Entry {
 	if h.Ring == nil {
 		return nil
@@ -292,7 +297,7 @@ func (h *Handler) scopedEntries(f mlog.Filter, scopeUserID string) []mlog.Entry 
 			UserID string `json:"user_id"`
 		}
 		_ = json.Unmarshal(e.Raw, &rec)
-		if rec.UserID == "" || rec.UserID == scopeUserID {
+		if rec.UserID == scopeUserID {
 			out = append(out, e)
 		}
 	}

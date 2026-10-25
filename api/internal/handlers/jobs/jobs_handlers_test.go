@@ -193,7 +193,7 @@ func TestStats(t *testing.T) {
 			Rows: [][]driver.Value{{"w1", "nas-1", "{probe}", nil, now0.Add(-time.Hour), now0.Add(-time.Second), nil, nil, nil, nil}}},
 	}
 	_, r := newJobsFixture(rules...)
-	rec := call(r, "GET", "/api/queue/stats", false)
+	rec := call(r, "GET", "/api/queue/stats", true)
 	if rec.Code != 200 {
 		t.Fatalf("status %d %s", rec.Code, rec.Body.String())
 	}
@@ -243,7 +243,7 @@ func TestStats_WorkersTableMissingIsTolerated(t *testing.T) {
 	_, r := newJobsFixture(
 		&queuestest.Rule{Match: "from job_stages", Cols: []string{"stage", "ext", "enabled"}, Rows: [][]driver.Value{{"probe", nil, true}}},
 		&queuestest.Rule{Match: "from workers", Err: errNoTable})
-	rec := call(r, "GET", "/api/queue/stats", false)
+	rec := call(r, "GET", "/api/queue/stats", true)
 	var s StatsResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &s)
 	if rec.Code != 200 || s.ByStage["probe"].NoWorker {
@@ -280,5 +280,14 @@ func TestWorkerHost(t *testing.T) {
 		if got := workerHost(in); got != want {
 			t.Errorf("workerHost(%q)=%q want %q", in, got, want)
 		}
+	}
+}
+
+// The queue's stats (every stage, the workers' hosts) are the home admins' (the API
+// enforces roles).
+func TestStatsIsAdminOnly(t *testing.T) {
+	_, r := newJobsFixture()
+	if rec := call(r, "GET", "/api/queue/stats", false); rec.Code != http.StatusForbidden {
+		t.Errorf("stats as a non-admin: %d, want 403", rec.Code)
 	}
 }
