@@ -1,11 +1,17 @@
 // PWA service worker (Story 11.10).
 //
-//   - App shell: the page itself (a navigation) network-first, the cached
-//     shell only offline; hashed assets cache-first. The cache name carries
-//     a build stamp that vite.config.ts writes into dist/sw.js at every
-//     build (src/lib/swStamp.ts), so a new release is a new worker: it busts
-//     the old shell, and the registration in src/lib/pwa.ts fires
-//     `mkt:sw-update` so the UI can offer a reload.
+//   - App shell (page loads, /, /index.html, /theme-boot.js): NETWORK-FIRST,
+//     the cache only when offline. It was cache-first under a build stamp
+//     that never changed, so the first shell a browser saw was kept for
+//     ever: after an update it named the old bundle's script, the server
+//     answered that missing script with the page, and the app (the Mac
+//     app's window above all) stayed blank. The hashed bundle, art and
+//     icons go to the network (the server keeps /assets/ immutable, and a
+//     missing one is a 404, never the page).
+//   - The cache name carries a build stamp that vite.config.ts writes into
+//     dist/sw.js at every build (src/lib/swStamp.ts: the release and a hash
+//     of the built index.html), so each release is a new worker that
+//     replaces the old one and its cache.
 //   - /api/*: NETWORK-ONLY. The API authenticates via the HttpOnly
 //     `mkt_sess` cookie (web/src/lib/api.ts sends credentials:"include").
 //     Cache Storage is keyed by URL only — it cannot tell user A's
@@ -15,11 +21,13 @@
 //     allowlist back without a per-user cache key (default-deny).
 //   - Mutations (non-GET) and WS: pass through untouched.
 //
-// `skipWaiting()` is NOT called on install: a new SW stays "waiting"
-// until the user accepts the in-app update (pwa.ts posts SKIP_WAITING
-// on the reload action). This guarantees a mid-session SW swap cannot
-// silently activate and resurrect any legacy poisoned API cache while
-// the page is still showing the previous user's data.
+// A new SW takes over at once (skipWaiting on install): a waiting SW
+// behind a stale shell could never be accepted, since that shell cannot
+// render the in-app update toast. Taking over cannot resurrect a legacy
+// poisoned API cache: activate deletes every cache but this shell's
+// before it claims the pages, and this SW never reads an API cache. A
+// page older than the server's release is offered the reload then
+// (src/lib/pwa.ts); the page is never reloaded behind the user's back.
 const BUILD = "dev";
 const SHELL_CACHE = "mkt-shell-" + BUILD;
 // theme-boot.js runs before first paint (no theme flash), so it is shell too.
@@ -34,7 +42,8 @@ function isApiCache(name) {
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)));
-  // Intentionally NO self.skipWaiting() — see header comment.
+  // takes over at once — see header comment
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
@@ -55,7 +64,8 @@ self.addEventListener("message", (event) => {
   const data = event.data;
   if (!data || typeof data.type !== "string") return;
   if (data.type === "SKIP_WAITING") {
-    // Driven by the in-app "reload to update" affordance (pwa.ts).
+    // Driven by the in-app "reload to update" affordance (pwa.ts), for a
+    // worker still waiting (and by the toast of an older release's page).
     self.skipWaiting();
     return;
   }
@@ -87,14 +97,20 @@ self.addEventListener("fetch", (event) => {
   // /api/* is network-only: do not consult or populate any cache.
   if (url.pathname.startsWith("/api/")) return;
 
-  // The page itself: network-first, so an updated server's page (and its new
-  // hashed assets) shows at once; the cached shell only when offline.
-  if (req.mode === "navigate") {
-    event.respondWith(fetch(req).catch(() => caches.match("/index.html")));
-    return;
+  // App shell: network-first (the current build's page), kept for offline.
+  if (req.mode === "navigate" || SHELL.includes(url.pathname)) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            const key = req.mode === "navigate" ? "/index.html" : req;
+            event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.put(key, copy)));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req).then((cached) => cached || caches.match("/index.html")))
+    );
   }
-
-  // Hashed assets and the rest of the shell: cache-first with a network
-  // fallback (a missing asset is a 404 from the server, never the SPA page).
-  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
+  // Everything else (the hashed bundle, art, icons): the network.
 });
