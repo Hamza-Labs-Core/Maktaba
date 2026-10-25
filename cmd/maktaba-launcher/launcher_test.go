@@ -406,24 +406,30 @@ func TestLauncherBackoff(t *testing.T) {
 	cfg := testConfig(l.Root)
 	cfg.BackoffInitial = 100 * time.Millisecond
 	cfg.BackoffMax = 400 * time.Millisecond
+	// the backoff the launcher asks for between the crashes, not the wall clock's gaps (a
+	// loaded runner's process starts made those meaningless)
+	var mu sync.Mutex
+	var waits []time.Duration
+	cfg.Sleep = func(ctx context.Context, d time.Duration) bool {
+		mu.Lock()
+		waits = append(waits, d)
+		mu.Unlock()
+		return ctx.Err() == nil
+	}
 	stop := startLauncher(t, cfg)
 	waitFor(t, "six starts", func() bool { return countAct(readTrace(l), "1.0.0", "crash") >= 6 })
 	_ = stop()
-	tr := readTrace(l)
-	var gaps []time.Duration
-	for i := 1; i < 6; i++ {
-		gaps = append(gaps, tr[i].at.Sub(tr[i-1].at))
-	}
-	// 100, 200, 400, 400, 400 ms of backoff (plus process start time)
+	mu.Lock()
+	defer mu.Unlock()
+	// 100, 200, 400 ms, then capped at 400
 	want := []time.Duration{100, 200, 400, 400, 400}
-	for i, g := range gaps {
-		w := want[i] * time.Millisecond
-		if g < w-20*time.Millisecond || g > w+1500*time.Millisecond {
-			t.Fatalf("gap %d = %v, want about %v (all gaps %v)", i, g, w, gaps)
-		}
+	if len(waits) < len(want) {
+		t.Fatalf("waits %v, want %v first", waits, want)
 	}
-	if gaps[4] > 2*gaps[2]+500*time.Millisecond {
-		t.Fatalf("backoff not capped: %v", gaps)
+	for i, w := range want {
+		if waits[i] != w*time.Millisecond {
+			t.Fatalf("wait %d = %v, want %v (all waits %v)", i, waits[i], w*time.Millisecond, waits)
+		}
 	}
 }
 

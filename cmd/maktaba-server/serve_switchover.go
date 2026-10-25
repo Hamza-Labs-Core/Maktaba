@@ -471,7 +471,13 @@ func (s *switching) newHomeOf(ctx context.Context, req homeRequest) (any, error)
 			ID     string `json:"id"`
 			Notice string `json:"notice"`
 		}
-		if base == "" || getJSON(ctx, client, strings.TrimRight(base, "/")+"/api/cluster/moved/"+url.PathEscape(me.NodeID), &m) != nil ||
+		// only a machine's address as the cluster records it (the API's records of the new
+		// home), never anything else a request could carry; the notice is the cluster
+		// key's word, whoever answers
+		if !homeURLRe.MatchString(base) {
+			continue
+		}
+		if getJSON(ctx, client, strings.TrimRight(base, "/")+"/api/cluster/moved/"+url.PathEscape(me.NodeID), &m) != nil ||
 			m.ID != req.ID {
 			continue
 		}
@@ -702,6 +708,32 @@ func (s *switching) homeFiles() (map[string][]byte, error) {
 	}
 	return files, nil
 }
+
+// nodeIDRe is a machine's id (a UUID): what a standby kit's file is named after.
+var nodeIDRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// sealedKitPath is the standby kit's file for machine node, <state>/switchover/standby-
+// <node>.chunks: node must be a machine's id (never a path), and the file stays in the
+// switchover folder.
+func sealedKitPath(stateDir, node string) (string, error) {
+	if !nodeIDRe.MatchString(node) || strings.Contains(node, "..") {
+		return "", fmt.Errorf("%q is not a machine's id", node)
+	}
+	dir, err := filepath.Abs(filepath.Join(stateDir, "switchover"))
+	if err != nil {
+		return "", err
+	}
+	path, err := filepath.Abs(filepath.Join(dir, "standby-"+node+".chunks"))
+	if err != nil || !strings.HasPrefix(path, dir+string(filepath.Separator)) {
+		return "", fmt.Errorf("%q is not a machine's id", node)
+	}
+	return path, nil
+}
+
+// homeURLRe is a machine's address as the cluster records it (cluster_nodes' api_url and
+// web_url, which the API sends): http or https, a host or an address, a port, nothing more
+// (no user, no path, no query): what newHomeOf asks for the notice of the home moved.
+var homeURLRe = regexp.MustCompile(`^https?://([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(:[0-9]{1,5})?/?$`)
 
 // sealKit seals k for the machine whose public key is to (the cluster key's private half
 // clusterPriv) under id, into path: the number of chunks.

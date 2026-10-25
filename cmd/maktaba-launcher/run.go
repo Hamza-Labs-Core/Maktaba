@@ -56,6 +56,9 @@ type Config struct {
 
 	Stdout, Stderr io.Writer
 	Now            func() time.Time
+	// Sleep waits d, or until ctx ends (false): the backoff between starts (nil: a timer;
+	// the tests record what the launcher asks for instead of timing it)
+	Sleep func(ctx context.Context, d time.Duration) bool
 }
 
 func (c *Config) defaults() {
@@ -156,7 +159,7 @@ func (ln *launcher) loop(ctx context.Context) error {
 
 		ver := ln.choose()
 		if ver == "" {
-			if !sleepCtx(ctx, backoff) {
+			if !ln.sleep(ctx, backoff) {
 				return nil
 			}
 			backoff = minDur(backoff*2, ln.cfg.BackoffMax)
@@ -212,7 +215,7 @@ func (ln *launcher) loop(ctx context.Context) error {
 		if res.ran >= ln.cfg.StableAfter {
 			backoff = ln.cfg.BackoffInitial
 		}
-		if !sleepCtx(ctx, backoff) {
+		if !ln.sleep(ctx, backoff) {
 			return nil
 		}
 		backoff = minDur(backoff*2, ln.cfg.BackoffMax)
@@ -580,6 +583,14 @@ func exitCode(cmd *exec.Cmd, err error) int {
 		return ee.ExitCode()
 	}
 	return -1
+}
+
+// sleep is the backoff's wait (Config.Sleep, else a timer).
+func (ln *launcher) sleep(ctx context.Context, d time.Duration) bool {
+	if ln.cfg.Sleep != nil {
+		return ln.cfg.Sleep(ctx, d)
+	}
+	return sleepCtx(ctx, d)
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {
