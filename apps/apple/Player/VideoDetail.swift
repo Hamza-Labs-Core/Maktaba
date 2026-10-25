@@ -35,6 +35,7 @@ struct VideoDetail: View {
             .padding()
             .frame(maxWidth: 900, alignment: .leading)
         }
+        .maktabaSurface()
         .navigationTitle(video.displayTitle)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

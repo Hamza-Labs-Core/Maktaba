@@ -6,18 +6,16 @@ import SwiftUI
 @main
 struct PlayerApp: App {
     @State private var session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.player")
+    @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.system
+    /// A video plays: the whole app goes dark, whatever the theme.
+    @State private var playing = false
 
     var body: some Scene {
         WindowGroup {
             SessionGate(session: session, title: "Maktaba Player") { user, client in
-                LibraryBrowser(session: session, user: user, client: client)
+                LibraryBrowser(session: session, user: user, client: client, playing: $playing)
             }
-            .tint(.brass)
+            .maktabaTheme(theme, forceDark: playing)
         }
     }
-}
-
-extension Color {
-    /// The brand's gold ("Ink & Brass", as on the TV apps).
-    static let brass = Color(red: 0xE3 / 255, green: 0xB2 / 255, blue: 0x52 / 255)
 }

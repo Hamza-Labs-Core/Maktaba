@@ -11,7 +11,9 @@ struct LibraryBrowser: View {
     let session: AppSession
     let user: User
     let client: APIClient
+    @Binding var playing: Bool
 
+    @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.system
     @State private var playback: Playback
     @State private var halfFolded = false
     @State private var libraries: [Library] = []
@@ -26,10 +28,11 @@ struct LibraryBrowser: View {
 
     static let all = "all"
 
-    init(session: AppSession, user: User, client: APIClient) {
+    init(session: AppSession, user: User, client: APIClient, playing: Binding<Bool>) {
         self.session = session
         self.user = user
         self.client = client
+        _playing = playing
         _playback = State(initialValue: Playback(client: client))
     }
 
@@ -38,7 +41,8 @@ struct LibraryBrowser: View {
             .environment(playback)
             .task { await loadLibraries() }
             .task(id: "\(library ?? "")|\(query)") { await reload() }
-            .onDisappear { playback.stop() }
+            .onChange(of: playback.video != nil) { playing = $1 }
+            .onDisappear { playback.stop(); playing = false }
     }
 
     @ViewBuilder private var layout: some View {
@@ -67,7 +71,7 @@ struct LibraryBrowser: View {
                     }
                 }
             }
-            .navigationTitle(session.current?.name ?? "Maktaba")
+            .navigationTitle("Libraries")
             .toolbar { accountMenu }
         } content: {
             List(selection: $video) {
@@ -76,6 +80,7 @@ struct LibraryBrowser: View {
                         .onAppear { if v == videos.last { Task { await loadMore() } } }
                 }
             }
+            .maktabaSurface()
             .overlay { listState }
             .searchable(text: $query, prompt: "Search titles")
             .navigationTitle(title)
@@ -115,12 +120,18 @@ struct LibraryBrowser: View {
                     List {
                         ForEach([LibraryChoice(id: Self.all, name: "All videos")] + libraries.map { LibraryChoice(id: $0.id, name: $0.name) }) { lib in
                             Button { library = lib.id } label: {
-                                Label(lib.name, systemImage: lib.id == Self.all ? "square.grid.2x2" : "books.vertical")
+                                Label {
+                                    Text(lib.name).foregroundStyle(Color.primary)
+                                } icon: {
+                                    Image(systemName: lib.id == Self.all ? "square.grid.2x2" : "books.vertical")
+                                        .foregroundStyle(Color.brass)
+                                }
                             }
-                            .listRowBackground(lib.id == library ? Color.brass.opacity(0.2) : nil)
+                            .listRowBackground(lib.id == library ? Color.mktChosen : Color.mktSurface)
                         }
                     }
-                    .navigationTitle(session.current?.name ?? "Maktaba")
+                    .maktabaSurface()
+                    .navigationTitle("Libraries")
                 }
             }
         } secondary: {
@@ -129,11 +140,12 @@ struct LibraryBrowser: View {
                     ForEach(videos) { v in
                         Button {
                             if playback.video != nil { browsing = [v] } else { video = v }
-                        } label: { VideoRow(client: client, video: v) }
-                        .listRowBackground(v == (playback.video ?? video) ? Color.brass.opacity(0.2) : nil)
+                        } label: { VideoRow(client: client, video: v).foregroundStyle(Color.primary) }
+                        .listRowBackground(v.id == (playback.video ?? video)?.id ? Color.mktChosen : Color.mktSurface)
                         .onAppear { if v == videos.last { Task { await loadMore() } } }
                     }
                 }
+                .maktabaSurface()
                 .overlay { listState }
                 .searchable(text: $query, prompt: "Search titles")
                 .navigationTitle(title)
@@ -186,6 +198,8 @@ struct LibraryBrowser: View {
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Text(user.username)
+                if let home = session.current { Text(home.name) }
+                ThemePicker(mode: $theme)
                 Button("Switch home", systemImage: "house") { session.switchHome() }
                 Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { session.signOut() }
             } label: {
