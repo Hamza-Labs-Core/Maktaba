@@ -516,3 +516,56 @@ def test_default_worker_id_format() -> None:
 def test_wakeup_source_protocol_satisfied_by_implementations() -> None:
     assert isinstance(PollOnlyWakeup(poll_sec=1.0), WakeupSource)
     assert isinstance(PubsubWakeup(poll_sec=1.0), WakeupSource)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_cancels_jobs_past_the_drain_bound() -> None:
+    """A job still running past shutdown_drain_sec is cancelled, so the worker exits
+    inside its supervisor's stop grace instead of being killed mid-job."""
+    db = FakeDB()
+    db.add(Stage.PROBE)
+    cfg = _make_cfg(shutdown_drain_sec=0.2)
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def dispatch(_: Job) -> None:
+        started.set()
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    wakeup = _ManualWakeup()
+    loop = ClaimLoop(db, cfg, dispatch, wakeup=wakeup)
+    task = asyncio.create_task(loop.run())
+    wakeup.fire()
+    await asyncio.wait_for(started.wait(), timeout=2.0)
+    loop.shutdown_event.set()
+    wakeup.fire()
+    await asyncio.wait_for(task, timeout=2.0)
+    assert cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_lets_a_quick_job_finish() -> None:
+    db = FakeDB()
+    db.add(Stage.PROBE)
+    cfg = _make_cfg(shutdown_drain_sec=2.0)
+    started = asyncio.Event()
+    finished: list[int] = []
+
+    async def dispatch(job: Job) -> None:
+        started.set()
+        await asyncio.sleep(0.1)
+        finished.append(job.id)
+
+    wakeup = _ManualWakeup()
+    loop = ClaimLoop(db, cfg, dispatch, wakeup=wakeup)
+    task = asyncio.create_task(loop.run())
+    wakeup.fire()
+    await asyncio.wait_for(started.wait(), timeout=2.0)
+    loop.shutdown_event.set()
+    wakeup.fire()
+    await asyncio.wait_for(task, timeout=3.0)
+    assert finished == [1]
