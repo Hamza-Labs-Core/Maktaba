@@ -197,7 +197,8 @@ func offlineRestorer(cfg config.Config) (*restorer, error) {
 	if b, found, err := pgbundle.Resolve(cfg, exe); err == nil && found {
 		pg = &b
 	}
-	inst, _ := installKind(cfg, l.ReleaseDir(filepath.Base(filepath.Dir(self))), true, updateSource(cfg))
+	// a home restores: it has no home's mirror to ask (nil)
+	inst, _ := installKind(cfg, l.ReleaseDir(filepath.Base(filepath.Dir(self))), true, updateSource(cfg, nil))
 	return newRestorer(cfg, homeDatabase(cfg, pg), inst, nil), nil
 }
 

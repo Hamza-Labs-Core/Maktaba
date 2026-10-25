@@ -28,6 +28,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secret"
 )
 
@@ -237,7 +238,7 @@ func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handl
 				WritePasswordChangeRequired(w)
 				return
 			}
-			if isPublic(public, r.URL.Path) || IsPublicChannelArt(r) {
+			if isPublic(public, r.URL.Path) || IsPublicChannelArt(r) || machineRoute(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -248,6 +249,25 @@ func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handl
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// machineRoutes are the home's routes for its machines alone (Epic 35 story 35.12: the
+// release mirror, the wheelhouse, the TUF repository passed on): a request the home's
+// delegation middleware verified as a machine's (it runs first) passes the gate without a
+// user, and each handler refuses any other.
+var machineRoutes = []string{"/api/cluster/updates/artifacts/", "/api/cluster/updates/wheelhouse/",
+	"/api/cluster/updates/tuf/"}
+
+func machineRoute(r *http.Request) bool {
+	if delegation.NodeFrom(r.Context()) == "" {
+		return false
+	}
+	for _, p := range machineRoutes {
+		if strings.HasPrefix(r.URL.Path, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func isPublic(public map[string]struct{}, path string) bool {

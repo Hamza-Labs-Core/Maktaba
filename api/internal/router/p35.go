@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -157,6 +158,10 @@ type P35Deps struct {
 	Hub *HubRef
 	// Home is the home's supervisor (nil: MAKTABA_SUPERVISOR_URL and its token file).
 	Home updates.HomeSupervisor
+	// DataDir is the API's data volume: the release mirror keeps its copies there
+	// (<data_dir>/updates/mirror, story 35.12 AC3); "" keeps none (the machines download
+	// from GitHub and PyPI themselves).
+	DataDir string
 }
 
 // MountP35 attaches the update routes and starts the loops.
@@ -199,6 +204,16 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 			}
 			return cfg.QuietMaxViewers
 		}}
+	if d.DataDir != "" {
+		// the machines' downloads: from the home first (the wheelhouse with the pipeline's
+		// Python the supervisor names)
+		drv.Mirror = &updates.Mirror{Store: store, Dir: filepath.Join(d.DataDir, "updates", "mirror"), Log: d.Logger,
+			Python: func() string { return getenv("MAKTABA_WHEELHOUSE_PYTHON") },
+			Enabled: func(ctx context.Context) bool {
+				p, err := svc.Policy(ctx)
+				return err != nil || p.Wheelhouse
+			}}
+	}
 	svc.Starter = drv
 	// story 35.15: the update events in the hub's events file, the numbers on /metrics
 	drv.Events = func(fields map[string]any) {
@@ -214,7 +229,7 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 		&updates.HomeHealth{BaseURL: sup, HTTP: d.HTTPClient},
 	}
 	rulesHandler := &rules.Handler{DB: d.DB, Staging: tvchange.NewDrafts(d.DB)}
-	h := &updates.Handler{Svc: svc, Driver: drv, RulesPatch: rulesHandler.Patch}
+	h := &updates.Handler{Svc: svc, Driver: drv, RulesPatch: rulesHandler.Patch, Mirror: drv.Mirror}
 	h.Mount(r)
 	if d.Ref != nil {
 		d.Ref.h.Store(h)

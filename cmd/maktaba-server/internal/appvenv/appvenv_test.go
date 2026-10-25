@@ -76,6 +76,14 @@ func fakeBootstrap(args []string) int {
 		say("building", "deps", "Collecting torch", "", 0.41)
 		say("failed", "deps", "deps failed (exit 1):", "deps failed (exit 1):\none\ntwo\nERROR: no torch", 0.41)
 		return 1
+	case "wheels":
+		// the home's wheelhouse alone lacks a package; with PyPI too it builds
+		if os.Getenv("PIP_NO_INDEX") == "1" {
+			say("failed", "deps", "deps failed (exit 1):", "ERROR: No matching distribution found for torch==2.4.0", 0.41)
+			return 1
+		}
+		say("ready", "done", "maktaba-pipeline 1.4.0 ready", "", 1)
+		return 0
 	case "exit130":
 		say("interrupted", "deps", "stopped; the next run resumes", "", 0.41)
 		return exitInterrupted
@@ -212,6 +220,52 @@ func TestRunGivesTheBootstrapItsOwnEnvironment(t *testing.T) {
 	if env["PYTHONPATH"] != wheel || env["PYTHONUTF8"] != "1" || env["PYTHONNOUSERSITE"] != "1" ||
 		env["HTTPS_PROXY"] != "http://proxy.lan:3128" || env["PATH"] == "" {
 		t.Errorf("env = %v", env)
+	}
+}
+
+// The home's wheelhouse (a finished fetch: its index.json) goes to pip alone first; a run
+// that fails so goes on with PyPI too, the wheelhouse still offered. A folder with no index
+// (a fetch that did not finish) is no wheelhouse.
+func TestRunTakesTheHomesWheelhouseFirst(t *testing.T) {
+	payload := fakePayload(t, "wheels")
+	wh := filepath.Join(t.TempDir(), "wheelhouse")
+	if err := os.MkdirAll(wh, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := spec(payload)
+	s.Wheelhouse = wh
+	envOf := func(c fakeCall) map[string]string {
+		env := map[string]string{}
+		for _, kv := range c.Env {
+			k, v, _ := strings.Cut(kv, "=")
+			env[strings.ToUpper(k)] = v
+		}
+		return env
+	}
+	if _, err := Run(context.Background(), s, nil); err != nil {
+		t.Fatal(err)
+	}
+	cs := calls(t, payload)
+	if len(cs) != 2 || envOf(cs[1])["PIP_FIND_LINKS"] != "" {
+		t.Fatalf("an unfinished wheelhouse was taken: %d calls, %v", len(cs), envOf(cs[len(cs)-1]))
+	}
+	if err := os.WriteFile(filepath.Join(wh, "index.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(filepath.Join(payload, "fake-calls.jsonl"))
+	res, err := Run(context.Background(), s, nil)
+	if err != nil || res.Reused {
+		t.Fatalf("Run = %+v, %v", res, err)
+	}
+	cs = calls(t, payload)
+	if len(cs) != 3 {
+		t.Fatalf("%d calls, want the check, the wheelhouse alone, then with PyPI", len(cs))
+	}
+	if e := envOf(cs[1]); e["PIP_NO_INDEX"] != "1" || e["PIP_FIND_LINKS"] != wh {
+		t.Fatalf("the first build: %v", e)
+	}
+	if e := envOf(cs[2]); e["PIP_NO_INDEX"] != "" || e["PIP_FIND_LINKS"] != wh {
+		t.Fatalf("the second build: %v", e)
 	}
 }
 

@@ -245,8 +245,10 @@ updated its runtime) offers its own update for its window and tray.
   replaces (its bootstrap's `maktaba-venv.json`, else the extras whose requirements it has
   installed; `dev` never), so a worker given the STT extras keeps them; packages added by hand
   outside the extras are not carried (`MAKTABA_PYTHON` still wins over the release's
-  environment). Packages come from PyPI (or `PIP_INDEX_URL`, a proxy): a machine that cannot
-  reach them needs a person (`venv_network`); one whose Python is not the one the release's
+  environment). Packages come from the home's wheelhouse on a node (story 35.12: the home
+  downloads each release's pins once per platform its machines run; pip installs from it alone,
+  then PyPI for a package it lacks), else from PyPI (or `PIP_INDEX_URL`, a proxy): a machine
+  that can reach neither needs a person (`venv_network`); one whose Python is not the one the release's
   pins are made for (`pipeline.python` in `release.json`), where pip finds no build of a
   pinned package, needs a person too (`venv_python_unsupported`, naming both versions).
 

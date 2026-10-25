@@ -40,6 +40,8 @@ type Handler struct {
 	// RulesPatch is the rules handler's PATCH /api/rules/{section}: settings are stored
 	// where every other rule is (app_settings rules.updates), with its validation.
 	RulesPatch http.HandlerFunc
+	// Mirror serves the release files and wheelhouses to the machines (nil: none).
+	Mirror *Mirror
 }
 
 // Mount attaches the routes.
@@ -60,6 +62,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/cluster/updates/backups", h.BackupsList)
 	r.Get("/api/cluster/updates/backups/{name}/restore", h.RestorePlanView)
 	r.Post("/api/cluster/updates/backups/{name}/restore", h.Restore)
+	h.Mirror.Mount(r)
 }
 
 func admin(w http.ResponseWriter, r *http.Request) *principal.Principal {

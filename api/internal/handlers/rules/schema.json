@@ -5556,6 +5556,14 @@
      "default": 2048,
      "minimum": 0,
      "maximum": 1048576
+    },
+    {
+     "name": "wheelhouse",
+     "kind": "bool",
+     "group": "Updates rollout",
+     "label": "Keep the pipeline's packages for the machines",
+     "help": "The home downloads each release's Python packages once for every platform its machines run, so a machine without PyPI still updates.",
+     "default": true
     }
    ]
   },

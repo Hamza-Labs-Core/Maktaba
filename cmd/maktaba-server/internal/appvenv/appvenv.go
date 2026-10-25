@@ -38,6 +38,26 @@ type Spec struct {
 	// Extras are the pipeline's extras the venv must have ("": the bootstrap's own
 	// default): a plain server's release keeps the ones the environment it replaces has.
 	Extras string
+	// Wheelhouse is a folder of the pipeline's packages the home keeps for its machines
+	// (Epic 35 design §3.4), taken when it holds the fetch's index.json (a fetch that
+	// finished): pip installs from it alone first, and from PyPI too when it lacks one this
+	// machine needs. Every package is checked against its hash in the constraints whatever
+	// the folder holds.
+	Wheelhouse string
+}
+
+// wheelhouseIndex is the file a finished wheelhouse fetch writes last (homemirror).
+const wheelhouseIndex = "index.json"
+
+// wheelhouse is the spec's wheelhouse when it is a finished one ("" otherwise).
+func (s Spec) wheelhouse() string {
+	if s.Wheelhouse == "" {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(s.Wheelhouse, wheelhouseIndex)); err != nil {
+		return ""
+	}
+	return s.Wheelhouse
 }
 
 func (s Spec) python() string {
@@ -216,6 +236,12 @@ func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error
 		logw = io.Discard
 	}
 	env := bootstrapEnv(os.Environ(), wheel)
+	// the home's wheelhouse alone first: a machine without PyPI builds its environment
+	// from it (a run that fails so is run again with PyPI too, below)
+	local := spec.wheelhouse()
+	if local != "" {
+		env = append(env[:len(env):len(env)], "PIP_FIND_LINKS="+local, "PIP_NO_INDEX=1")
+	}
 	// When ctx ends the bootstrap is asked to stop (ctrlbreak.Stopper: SIGTERM,
 	// or CTRL_BREAK to a process group of its own on Windows, through a handle
 	// opened as it starts so the event never goes astray to the server's
@@ -248,6 +274,28 @@ func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error
 		return Result{}, ErrInterrupted
 	}
 
+	res, err := build(ctx, bootstrap, py, spec, wheel, progress)
+	if err == nil || local == "" || errors.Is(err, ErrInterrupted) || ctx.Err() != nil {
+		return res, err
+	}
+	// the home's wheelhouse lacked a package this machine needs (one with no wheel for
+	// its platform), or one did not install: the build goes on with PyPI too, from where
+	// it stopped
+	_, _ = fmt.Fprintf(logw, "[venv] the home's wheelhouse was not enough (%v): the rest comes from PyPI\n", err)
+	withIndex := env[:0:0]
+	for _, kv := range env {
+		if kv != "PIP_NO_INDEX=1" {
+			withIndex = append(withIndex, kv)
+		}
+	}
+	env = withIndex
+	return build(ctx, bootstrap, py, spec, wheel, progress)
+}
+
+// build runs the bootstrap's build with py (bootstrap makes its command); progress gets
+// its status lines.
+func build(ctx context.Context, bootstrap func(extra ...string) (*exec.Cmd, *ctrlbreak.Stopper), py string,
+	spec Spec, wheel string, progress func(Progress)) (Result, error) {
 	cmd, stop := bootstrap()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

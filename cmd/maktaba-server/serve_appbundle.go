@@ -122,7 +122,10 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 	}
 	var venvStep *sharedStep
 	if py := supervisor.PythonOverride(cfg); py == "" {
-		venv := &venvGate{spec: appvenv.Spec{Payload: dir, Venv: filepath.Join(cfg.StateDir(), "venv")},
+		// a node's update staged the home's wheelhouse beside (updater.WheelhouseDir): the
+		// pipeline's packages come from it first
+		wheels := updater.WheelhouseDir(filepath.Join(updatesDirOf(cfg, ""), wheelhouseFolder), cur.Version)
+		venv := &venvGate{spec: appvenv.Spec{Payload: dir, Venv: filepath.Join(cfg.StateDir(), "venv"), Wheelhouse: wheels},
 			updates: updatesDirOf(cfg, ""), version: cur.Version}
 		venvStep = &sharedStep{wait: detail("venv_waiting", "Waiting for the transcription tools"), run: venv.run}
 	} else {

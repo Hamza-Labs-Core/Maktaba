@@ -543,6 +543,14 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 			t.Fatalf("the %s's release is still pending: %+v", name, p)
 		}
 	}
+	// story 35.12: the node took the release from its home's mirror, which kept the files
+	// it fetched once from GitHub (the node verified each one itself as before)
+	if !strings.Contains(node.log.String(), r091.Archive+" from the home's mirror") {
+		t.Fatalf("the node did not take %s from the home's mirror", r091.Archive)
+	}
+	if _, err := os.Stat(filepath.Join(homeDir, "data", "updates", "mirror", "0.9.1", r091.Archive+".ok")); err != nil {
+		t.Fatalf("the home's mirror kept no %s: %v", r091.Archive, err)
+	}
 	var applied int64
 	if err := adb.QueryRowContext(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&applied); err != nil || applied != 150 {
 		t.Fatalf("the home's schema is at %d (%v), want 150", applied, err)
