@@ -385,6 +385,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		admin = u.adminHandler(admin, token)
 	}
 	admin = logFilesAdmin(admin, token, logDirs)
+	admin = metricsAdmin(admin, logDirs.Updates)
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}

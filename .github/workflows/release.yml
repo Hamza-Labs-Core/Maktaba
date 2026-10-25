@@ -971,50 +971,15 @@ jobs:
           # the apps' feed is required before publishing when the apps can update
           REQUIRE_FEED: ${{ vars.TAURI_UPDATER_PUBKEY != '' }}
           PACKAGES_URL: ${{ vars.MAKTABA_PACKAGES_URL }}
+          TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
         run: |
           set -euo pipefail
-          repos=""
-          if [ -n "${PACKAGES_URL}" ]; then
-            repos=" (or from the apt / dnf repositories, which carry every stable release: ${PACKAGES_URL})"
-          fi
-          notes="Automated release for ${TAG}.
-
-          ### Install
-
-          - **Linux/macOS (script):** download \`install.sh\` below with \`checksums.txt\` and \`checksums.txt.sigstore.json\`, verify them (below), then \`bash install.sh\`; on Linux, \`bash install.sh --app\` installs the whole server for a machine without a desktop
-          - **Debian/Ubuntu:** download the \`.deb\` below, then \`sudo apt install ./maktaba-server_*.deb\`${repos}
-          - **Fedora/RHEL:** download the \`.rpm\` below, then \`sudo dnf install ./maktaba-server-*.rpm\`${repos}
-          - **macOS (Homebrew):** \`brew install hamza-labs-core/tap/maktaba\` (the server; it updates itself), \`brew install --cask hamza-labs-core/tap/maktaba-app\` (the app): the tap follows each stable release; \`maktaba.rb\` is attached
-          - **Windows / manual:** grab the matching \`.tar.gz\` / \`.zip\` archive
-          - **Linux, one installation that runs everything (Epic 39):** the \`Maktaba_*.AppImage\` (or its \`.deb\` / \`.rpm\`) from the desktop build; on a machine without a desktop, \`maktaba-linux-payload-*-<x86_64|aarch64>.tar.gz\`: the same server, Postgres and Python (ffmpeg is the distribution's: setup names the command that installs it), run as a systemd user service
-          - **Worker machine (join a home, no checkout):** unpack \`maktaba-node-*.tar.gz\` (macOS/Linux) or \`maktaba-node-*.zip\` (Windows) and run \`install-node.sh\` / \`windows\\install-node.ps1\`: it installs this release's \`maktaba_pipeline-*.whl\` (also attached, with its \`-constraints.txt\`). See docs/cluster/join-a-machine.md.
-
-          Artifacts are signed with keyless cosign (Sigstore) by this
-          repository's release workflow for exactly this tag; Maktaba
-          machines verify that in process before installing anything.
-          \`release.json\` (versions, schema revisions, per-platform
-          digests) is listed in \`checksums.txt\`. Verify by hand:
-
-          \`\`\`
-          cosign verify-blob --bundle checksums.txt.sigstore.json \\
-            --certificate-identity https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG} \\
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
-            checksums.txt
-          sha256sum --ignore-missing -c checksums.txt
-          \`\`\`
-
-          (\`--certificate checksums.txt.pem --signature checksums.txt.sig\`
-          in place of \`--bundle\` checks the same identity.)
-
-          Container images are signed at their digest; verify with
-          \`cosign verify <image>@<digest>\` and
-          \`--certificate-identity https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}\`
-          \`--certificate-oidc-issuer https://token.actions.githubusercontent.com\`."
-          if [ -n "${LINUX_PAYLOAD_MISSING:-}" ]; then
-            notes="${notes}
-
-          **Not in this release:** the Linux payload for ${LINUX_PAYLOAD_MISSING} (its build failed). Machines on that architecture keep the version they run until the next release."
-          fi
+          # the notes print the exact identity machines pin for this tag (releaseverify:
+          # this workflow at refs/tags/<tag>), never a regular expression (story 35.15), and
+          # where the packages and the tap are when they are configured (packages.yml)
+          notes="$(cd tools/release && go run ./cmd/release-notes --tag "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --linux-payload-missing "${LINUX_PAYLOAD_MISSING:-}" \
+            --packages-url "${PACKAGES_URL}" --tap-repo "${TAP_REPO}")"
           # The guard opened the release as a draft; the notes go on it (a published
           # release keeps its own). The files are attached (a published release only gains
           # missing ones, and a re-run whose checksums.txt differs is refused), then the
