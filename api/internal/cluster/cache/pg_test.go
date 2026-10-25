@@ -83,7 +83,8 @@ func readersView(t *testing.T, db *sql.DB, now time.Time) string {
 	qh.Mount(r)
 	get := func(path string) string {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
-		req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{UserID: "u1"}))
+		// the control centre's reads are the admins' (the API enforces roles)
+		req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{UserID: "u1", IsAdmin: true, AccessAllLibraries: true}))
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {

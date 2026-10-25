@@ -390,7 +390,7 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 	}
 
 	gate := RequireAuthExcept(DefaultPublicAllowlist())
-	h := gate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := gate(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		t.Errorf("%s reached its handler without a signed-in user", r.URL.Path)
 	}))
 	for _, path := range []string{

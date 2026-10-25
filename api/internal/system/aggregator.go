@@ -16,10 +16,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
 // Service is one row in the aggregator's fan-out. Name is the key the

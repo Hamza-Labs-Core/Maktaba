@@ -21,8 +21,9 @@ package models
 
 import (
 	"context"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"net/http"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 
 	"github.com/go-chi/chi/v5"
 
