@@ -374,6 +374,57 @@ func TestReconnectAndLinkLost(t *testing.T) {
 	}
 }
 
+// An answer the dropped channel cuts after it began is never a complete one: the body
+// read ends with link_lost (not io.EOF), whatever the home's handler did once its request
+// ended.
+func TestAnAnswerCutByTheDropIsLinkLost(t *testing.T) {
+	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "part")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done() // the channel drops in the middle of the answer
+		_, _ = io.WriteString(w, " and the rest")
+	})
+	h := newHarness(t, api)
+	c := h.connect(nil)
+	req, _ := http.NewRequest(http.MethodGet, h.home+"/api/x", nil)
+	resp, err := c.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(resp.Body, buf); err != nil || string(buf) != "part" {
+		t.Fatalf("the answer's start: %q %v", buf, err)
+	}
+	h.srv.mu.Lock()
+	sess := h.srv.sessions[testNode]
+	h.srv.mu.Unlock()
+	sess.closeWith(websocket.StatusGoingAway, "test")
+	rest, err := io.ReadAll(resp.Body)
+	if !errors.Is(err, ErrLinkLost) {
+		t.Fatalf("the cut answer read %q, %v; want link_lost", rest, err)
+	}
+}
+
+// An answer whose body is shorter than its Content-Length is not a complete one.
+func TestAShortBodyIsUnexpectedEOF(t *testing.T) {
+	api := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "10")
+		_, _ = io.WriteString(w, "five!")
+	})
+	h := newHarness(t, api)
+	c := h.connect(nil)
+	req, _ := http.NewRequest(http.MethodGet, h.home+"/api/x", nil)
+	resp, err := c.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if b, err := io.ReadAll(resp.Body); !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("a short body read %q, %v; want io.ErrUnexpectedEOF", b, err)
+	}
+}
+
 // With browser HTTPS on, a machine asks for its web certificate on the control channel
 // and keeps it (its supervisor serves 8443 with it); off, it removes it (AC15).
 func TestWebCertificateWhileHTTPSIsOn(t *testing.T) {

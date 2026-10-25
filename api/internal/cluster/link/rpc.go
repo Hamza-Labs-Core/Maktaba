@@ -176,6 +176,13 @@ func (c *ctrl) onReq(f Frame) {
 			h = http.NotFoundHandler()
 		}
 		h.ServeHTTP(w, req)
+		if ctx.Err() != nil {
+			// the request was cut (the session is ending, or the machine cancelled it): a
+			// handler that returned on that is no answer, and nothing it wrote may arrive as
+			// a complete one (an empty 200, a short body); the machine sees link_lost and
+			// tries a GET again on its next session
+			return
+		}
 		w.finish()
 	}()
 }
