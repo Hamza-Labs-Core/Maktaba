@@ -135,60 +135,13 @@ func (s *nodeSetup) home() string {
 	return h
 }
 
-// unitDirs are the systemd folders the Epic 31 installer writes the worker's units to:
-// the user's, and the system's when this runs as root.
-func (s *nodeSetup) unitDirs() []unitDir {
-	dirs := []unitDir{{dir: filepath.Join(s.home(), ".config", "systemd", "user"), user: true}}
-	if s.SystemUnits != "" {
-		dirs = append(dirs, unitDir{dir: s.SystemUnits})
-	}
-	return dirs
+// units are this machine's Epic 31 worker units (worker_units.go).
+func (s *nodeSetup) units() workerUnits {
+	return workerUnits{goos: s.goos(), home: s.home(), systemUnits: s.SystemUnits, run: s.Run, say: s.say}
 }
 
-type unitDir struct {
-	dir  string
-	user bool
-}
-
-// workerInstances counts the extra workers the Epic 31 installer registered
-// (maktaba-node@1..N): a node converted by its update keeps that many ([pipeline]
-// instances), as `install-node --full --instances N` would set.
-func (s *nodeSetup) workerInstances() int {
-	switch s.goos() {
-	case "windows":
-		n := 0
-		for i := 1; i <= 16; i++ {
-			if s.Run("schtasks", "/Query", "/TN", fmt.Sprintf("maktaba-node@%d", i)) == nil {
-				n++
-			}
-		}
-		return n
-	case "darwin":
-		matches, _ := filepath.Glob(filepath.Join(s.home(), "Library", "LaunchAgents", "com.maktaba.node.*.plist"))
-		return len(matches)
-	}
-	n := 0
-	for _, d := range s.unitDirs() {
-		n += len(enabledInstances(d.dir))
-	}
-	return n
-}
-
-// enabledInstances are the worker template's enabled instances in a systemd folder
-// (maktaba-node@N.service, linked under a *.target.wants folder).
-func enabledInstances(dir string) []string {
-	matches, _ := filepath.Glob(filepath.Join(dir, "*.target.wants", "maktaba-node@*.service"))
-	seen := map[string]bool{}
-	var out []string
-	for _, m := range matches {
-		if name := filepath.Base(m); !seen[name] && name != "maktaba-node@.service" {
-			seen[name] = true
-			out = append(out, name)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
+// workerInstances counts the extra workers (maktaba-node@1..N) the conversion keeps.
+func (s *nodeSetup) workerInstances() int { return s.units().instances() }
 
 // constraints is the pin set this machine's pipeline installs (story 38.9): the
 // release's cuda set (torch's CUDA build, 2.0 GB) on Windows x86_64 where the NVIDIA
@@ -247,9 +200,7 @@ func runSetupNodeCmd(cmd *cobra.Command, lf layoutFlags) error {
 		},
 	}
 	s.Healthy = func(ctx context.Context) error { return waitNodeAnswers(ctx, s.ConfigPath) }
-	if runtime.GOOS == "linux" && os.Geteuid() == 0 {
-		s.SystemUnits = "/etc/systemd/system" // a root install's worker units (install-node.sh --system)
-	}
+	s.SystemUnits = rootSystemUnits() // a root install's worker units (install-node.sh --system)
 	s.InstallService = func(sp service.Spec) error { return service.Install(sp, func(l string) { s.say("    %s", l) }) }
 	return s.run(cmd.Context())
 }
@@ -355,6 +306,12 @@ func (s *nodeSetup) run(ctx context.Context) error {
 		hctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		err := s.Healthy(hctx)
 		cancel()
+		if err != nil && s.Converting {
+			// the rollout's conversion: the node's own start removes the worker units once it
+			// runs (leftoverWorkerUnits), and the rollout waits for its agent on the release
+			s.say("  the new service is not answering yet (%v): the node removes the old worker units when it starts", err)
+			return nil
+		}
 		if err != nil {
 			s.say("  the new service is not healthy yet (%v): the old worker units are kept; see %s", err, s.Root)
 			return err
@@ -788,59 +745,7 @@ func (s *nodeSetup) registerService() error {
 
 // removeWorkerUnits removes the Epic 31 installer's worker units (only after the new
 // service answered).
-func (s *nodeSetup) removeWorkerUnits() {
-	switch s.goos() {
-	case "windows":
-		names := []string{"maktaba-node"}
-		for i := 1; i <= 16; i++ {
-			names = append(names, fmt.Sprintf("maktaba-node@%d", i))
-		}
-		for _, n := range names {
-			if s.Run("schtasks", "/Query", "/TN", n) == nil {
-				_ = s.Run("schtasks", "/End", "/TN", n)
-				if s.Run("schtasks", "/Delete", "/F", "/TN", n) == nil {
-					s.say("  removed the worker task %s", n)
-				}
-			}
-		}
-	case "darwin":
-		matches, _ := filepath.Glob(filepath.Join(s.home(), "Library", "LaunchAgents", "com.maktaba.node*.plist"))
-		for _, p := range matches {
-			_ = s.Run("launchctl", "bootout", fmt.Sprintf("gui/%d", os.Getuid()), p)
-			if os.Remove(p) == nil {
-				s.say("  removed the worker agent %s", filepath.Base(p))
-			}
-		}
-	default:
-		for _, d := range s.unitDirs() {
-			systemctl := func(args ...string) error {
-				if d.user {
-					args = append([]string{"--user"}, args...)
-				}
-				return s.Run("systemctl", args...)
-			}
-			// the template's instances first (maktaba-node@N: disabled by their own names,
-			// the template's file is no unit to stop), then the units' files
-			for _, name := range enabledInstances(d.dir) {
-				_ = systemctl("disable", "--now", name)
-				s.say("  stopped the worker %s", name)
-			}
-			matches, _ := filepath.Glob(filepath.Join(d.dir, "maktaba-node*.service"))
-			for _, p := range matches {
-				name := filepath.Base(p)
-				if name != "maktaba-node@.service" {
-					_ = systemctl("disable", "--now", name)
-				}
-				if os.Remove(p) == nil {
-					s.say("  removed the worker unit %s", name)
-				}
-			}
-			if len(matches) > 0 {
-				_ = systemctl("daemon-reload")
-			}
-		}
-	}
-}
+func (s *nodeSetup) removeWorkerUnits() { s.units().remove() }
 
 // waitNodeAnswers waits until this machine's API answers /api/system/version as a node.
 func waitNodeAnswers(ctx context.Context, configPath string) error {

@@ -305,3 +305,84 @@ func TestSetupNodeRemovesTheWorkersInstanceUnits(t *testing.T) {
 		}
 	}
 }
+
+// The rollout's conversion that misses the new service's health wait is no failure: the
+// node removes the old worker units when it starts (leftoverWorkerUnits), and setup run
+// again (a retried conversion) picks up where it stopped, the installed release kept.
+func TestSetupNodeConvertingIsResumable(t *testing.T) {
+	ss, _, from := fakeRelease(t)
+	rec := &recorder{}
+	s, _, _ := newTestSetup(t, ss, from, rec)
+	s.Converting = true
+	s.Healthy = func(context.Context) error { return errors.New("not answering yet") }
+	if err := s.run(context.Background()); err != nil {
+		t.Fatalf("a missed health wait failed the conversion: %v\n%s", err, s.Out)
+	}
+	if !strings.Contains(s.Out.(*bytes.Buffer).String(), "removes the old worker units when it starts") {
+		t.Fatalf("output:\n%s", s.Out)
+	}
+	if strings.Contains(strings.Join(rec.calls, "\n"), "/Delete") {
+		t.Fatal("the worker units went before the new service answered")
+	}
+	// again (the conversion retried): the release installed already, the service answers now
+	s.Healthy = func(context.Context) error { return nil }
+	s.Out = &bytes.Buffer{}
+	if err := s.run(context.Background()); err != nil {
+		t.Fatalf("setup run again: %v\n%s", err, s.Out)
+	}
+	if readPointer(filepath.Join(s.Root, "current")) != "1.5.0" {
+		t.Fatal("current lost")
+	}
+	// the installer's own run (not a conversion) still says it failed
+	s.Converting = false
+	s.Healthy = func(context.Context) error { return errors.New("not answering") }
+	if err := s.run(context.Background()); err == nil {
+		t.Fatal("an installer run hid the missed health wait")
+	}
+}
+
+// What a conversion left is removed at the node's start, once: a second pass finds nothing
+// (leftoverWorkerUnits runs at every start).
+func TestWorkerUnitsRemovalIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".config", "systemd", "user")
+	wants := filepath.Join(dir, "default.target.wants")
+	if err := os.MkdirAll(wants, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{filepath.Join(dir, "maktaba-node.service"), filepath.Join(wants, "maktaba-node.service")} {
+		if err := os.WriteFile(p, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := &recorder{}
+	u := workerUnits{goos: "linux", home: home, run: rec.run, say: func(string, ...any) {}}
+	if n := u.remove(); n != 1 {
+		t.Fatalf("removed %d", n)
+	}
+	rec.calls = nil
+	if n := u.remove(); n != 0 || len(rec.calls) != 0 {
+		t.Fatalf("a second pass removed %d, ran %v", n, rec.calls)
+	}
+	// a Mac's agents, then nothing
+	agents := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agents, "com.maktaba.node.plist"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	u.goos = "darwin"
+	if n := u.remove(); n != 1 {
+		t.Fatalf("macOS removed %d", n)
+	}
+	if n := u.remove(); n != 0 {
+		t.Fatalf("macOS second pass removed %d", n)
+	}
+	// Windows: only the tasks that exist are ended and deleted
+	rec = &recorder{}
+	u = workerUnits{goos: "windows", run: rec.run, say: func(string, ...any) {}}
+	if n := u.remove(); n != 1 || !strings.Contains(strings.Join(rec.calls, "\n"), "schtasks /Delete /F /TN maktaba-node") {
+		t.Fatalf("windows removed %d: %v", n, rec.calls)
+	}
+}
