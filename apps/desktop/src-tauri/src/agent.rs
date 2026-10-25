@@ -424,6 +424,11 @@ pub fn register_for_this_build() -> Result<bool, String> {
     if std::fs::read_to_string(&path).ok().as_deref() == Some(stamp.as_str()) {
         return Ok(false);
     }
+    // LaunchServices first learns where this bundle now is: the login item names its
+    // program relative to the bundle, which launchd finds through it. Right after an
+    // install it still knows the old copy, and the agent "Could not find and/or
+    // execute program ... Contents/MacOS/Maktaba" until the app launched again.
+    register_bundle_with_launch_services();
     // an older build's registration (or none): replaced by this build's. The
     // unregister finishes in the background; a register that comes first leaves the
     // job unable to find its program ("Could not find and/or execute program
@@ -446,6 +451,21 @@ pub fn register_for_this_build() -> Result<bool, String> {
     }
     let _ = std::fs::write(&path, &stamp);
     Ok(true)
+}
+
+/// Tell LaunchServices where this app bundle is (`lsregister -f`); best effort.
+#[cfg(target_os = "macos")]
+fn register_bundle_with_launch_services() {
+    const LSREGISTER: &str = "/System/Library/Frameworks/CoreServices.framework/Frameworks/\
+        LaunchServices.framework/Support/lsregister";
+    let Some(bundle) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.ancestors().nth(3).map(|p| p.to_path_buf()))
+        .filter(|p| p.extension().is_some_and(|e| e == "app"))
+    else {
+        return;
+    };
+    let _ = Command::new(LSREGISTER).arg("-f").arg(&bundle).output();
 }
 
 /// This build of the app: its executable's path, size and modification time.
