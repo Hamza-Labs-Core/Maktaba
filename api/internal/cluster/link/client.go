@@ -326,7 +326,7 @@ func (s *csess) dispatch(f Frame) {
 	switch f.Kind {
 	case KindEvent:
 		s.onEvent(f.Payload)
-	case KindResp, KindChunk, KindEnd:
+	case KindResp, KindChunk, KindEnd, KindWhole:
 		s.mu.Lock()
 		cl := s.calls[f.ID]
 		s.mu.Unlock()
@@ -339,6 +339,22 @@ func (s *csess) dispatch(f Frame) {
 			if json.Unmarshal(f.Payload, &h) != nil {
 				h = RespHead{Status: http.StatusBadGateway}
 			}
+			select {
+			case cl.resp <- h:
+			default:
+			}
+		case KindWhole:
+			s.forget(f.ID)
+			var h RespHead
+			if json.Unmarshal(f.Payload, &h) != nil {
+				h = RespHead{Status: http.StatusBadGateway}
+			}
+			if len(h.Body) > 0 {
+				_ = cl.body.write(h.Body)
+			}
+			h.Body = nil
+			cl.body.closeWith(nil)
+			cl.moved <- nil
 			select {
 			case cl.resp <- h:
 			default:
@@ -480,6 +496,25 @@ func (c *Client) waitUp(ctx context.Context, old *csess, d time.Duration) *csess
 			return nil
 		}
 	}
+}
+
+// Ping is one control-frame round trip on the control channel (ping, pong: no request
+// handler, no data stream).
+func (c *Client) Ping(ctx context.Context) (time.Duration, error) {
+	s := c.current()
+	if s == nil {
+		return 0, ErrNotConnected
+	}
+	start := time.Now()
+	ans, err := s.ask(ctx, map[string]any{"t": "ping"})
+	if err != nil {
+		return 0, err
+	}
+	var h eventHead
+	if json.Unmarshal(ans, &h) != nil || h.T != "pong" {
+		return 0, errors.New("link: no pong")
+	}
+	return time.Since(start), nil
 }
 
 // ---------- streams ----------

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"runtime"
 	"sync"
 	"time"
 
@@ -91,6 +92,7 @@ func (s *streamConn) pump() {
 		s.buf = append(s.buf, data...)
 		s.cond.Broadcast()
 		s.mu.Unlock()
+		runtime.Gosched() // as Write: a bulk stream read leaves the CPU between messages
 	}
 }
 
@@ -144,6 +146,9 @@ func (s *streamConn) Write(b []byte) (int, error) {
 		}
 		n += k
 		b = b[k:]
+		// a bulk stream (a release download) yields the CPU between messages: the control
+		// channel's goroutines get it within one message's time, not after a whole slice
+		runtime.Gosched()
 	}
 	return n, nil
 }

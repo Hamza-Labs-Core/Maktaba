@@ -23,9 +23,11 @@ type ReqHead struct {
 }
 
 // RespHead is its answer's first frame (kind resp): chunks of the body follow, then end.
+// A small answer is one frame (kind whole) with its Body.
 type RespHead struct {
 	Status int         `json:"status"`
 	Header http.Header `json:"header,omitempty"`
+	Body   []byte      `json:"body,omitempty"`
 }
 
 // EndBody is an answer's end frame: Moved when the rest of the body goes on a data
@@ -201,9 +203,12 @@ type rpcWriter struct {
 	ctx    context.Context
 	header http.Header
 	status int
-	buf    []byte
-	sent   int
-	err    error
+	// headSent: the resp frame went (on the first flush or when the body outgrows a
+	// frame); an answer that ends before goes whole in one frame
+	headSent bool
+	buf      []byte
+	sent     int
+	err      error
 	// moved: the rest goes to the svc_body stream through this pipe
 	moved *io.PipeWriter
 }
@@ -221,7 +226,18 @@ func (w *rpcWriter) WriteHeader(code int) {
 		return // an informational answer is not forwarded
 	}
 	w.status = code
-	head, err := json.Marshal(RespHead{Status: code, Header: w.header.Clone()})
+}
+
+// sendHead sends the resp frame (once).
+func (w *rpcWriter) sendHead() {
+	if w.headSent || w.err != nil {
+		return
+	}
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	w.headSent = true
+	head, err := json.Marshal(RespHead{Status: w.status, Header: w.header.Clone()})
 	if err == nil && len(head) > MaxPayload {
 		err = ErrFrameTooLarge
 	}
@@ -252,6 +268,7 @@ func (w *rpcWriter) Write(p []byte) (int, error) {
 	}
 	w.buf = append(w.buf, p...)
 	if len(w.buf) >= MaxPayload {
+		w.sendHead()
 		w.flushFull()
 	}
 	return len(p), w.err
@@ -280,6 +297,7 @@ func (w *rpcWriter) Flush() {
 	if w.moved != nil || w.err != nil {
 		return
 	}
+	w.sendHead()
 	for _, p := range split(w.buf) {
 		w.sendChunk(p)
 	}
@@ -289,6 +307,7 @@ func (w *rpcWriter) Flush() {
 // move sends the end frame with a svc_body ticket; the buffered bytes and the rest of the
 // body go to that stream once the machine opens it (it must within the ticket's life).
 func (w *rpcWriter) move() error {
+	w.sendHead()
 	pr, pw := io.Pipe()
 	tok, taken, reason := w.c.srv.issueBody(w.c, pr)
 	if tok == "" {
@@ -330,9 +349,19 @@ func (w *rpcWriter) finish() {
 		return
 	}
 	if w.err != nil {
+		w.sendHead()
 		end, _ := json.Marshal(EndBody{Error: w.err.Error()})
 		_ = w.c.out.send(context.Background(), Frame{ID: w.id, Kind: KindEnd, Class: ClassRPC, Payload: end})
 		return
+	}
+	if !w.headSent {
+		// the whole answer in one frame when it fits
+		if whole, err := json.Marshal(RespHead{Status: w.status, Header: w.header.Clone(), Body: w.buf}); err == nil &&
+			len(whole) <= MaxPayload {
+			w.headSent = true
+			_ = w.c.out.send(w.ctx, Frame{ID: w.id, Kind: KindWhole, Class: ClassRPC, Payload: whole})
+			return
+		}
 	}
 	w.Flush()
 	_ = w.c.out.send(w.ctx, Frame{ID: w.id, Kind: KindEnd, Class: ClassRPC})

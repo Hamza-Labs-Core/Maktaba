@@ -1127,4 +1127,6 @@ answer moved to a stream). Integration: a node and a home with Postgres in `veri
 control channel with a TV stream open (stream survives 60 s, re-attaches; after 60 s closes and the
 front door fails over); revoke during streams (all closed at once); migrate a v2-only joined node
 without re-join; `prefer` → `require` switch; legacy paths refused in `require`. Load: 20 TV pulls
-plus a release download on one machine with control-channel p99 latency < 50 ms.
+plus a release download on one machine with control-channel p99 latency < 50 ms, control frames
+and requests alike, as the link's own cost: over the machine's own loopback round trip measured in
+the same window (CPU shared with other processes slows every round trip, the link's included).

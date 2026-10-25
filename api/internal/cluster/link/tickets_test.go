@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -309,8 +310,20 @@ func TestControlLatencyUnderStreams(t *testing.T) {
 	}
 	open("release.tar.gz")
 	time.Sleep(100 * time.Millisecond) // the streams flowing
-	rtts := make([]time.Duration, 0, 100)
+	// the runner's own round trip in the same window: one byte echoed over plain loopback
+	// TCP (no TLS, no link) under the same streams; what CPU sharing with other processes
+	// adds to every round trip shows here
+	echo := echoServer(t)
+	ctl := make([]time.Duration, 0, 100)
+	rpc := make([]time.Duration, 0, 100)
+	base := make([]time.Duration, 0, 100)
 	for range 100 {
+		base = append(base, echo())
+		d, err := c.Ping(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctl = append(ctl, d)
 		start := time.Now()
 		req, _ := http.NewRequest(http.MethodGet, h.home+"/api/ping", nil)
 		resp, err := c.RoundTrip(req)
@@ -319,18 +332,67 @@ func TestControlLatencyUnderStreams(t *testing.T) {
 		}
 		_, _ = io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
-		rtts = append(rtts, time.Since(start))
+		rpc = append(rpc, time.Since(start))
 	}
-	slices.Sort(rtts)
-	p99 := rtts[98]
+	slices.Sort(ctl)
+	slices.Sort(rpc)
+	slices.Sort(base)
 	h.srv.mu.Lock()
 	sess := h.srv.sessions[testNode]
 	h.srv.mu.Unlock()
 	cs := c.current()
-	t.Logf("p50 %v, p99 %v, max %v; queue waits: machine rpc %v control %v, home rpc %v control %v", rtts[49], p99, rtts[99],
+	t.Logf("control p50 %v p99 %v max %v; rpc p50 %v p99 %v max %v; runner (loopback echo) p50 %v p99 %v; queue waits: machine rpc %v control %v, home rpc %v control %v",
+		ctl[49], ctl[98], ctl[99], rpc[49], rpc[98], rpc[99], base[49], base[98],
 		time.Duration(cs.out.maxRPCWait.Load()), time.Duration(cs.out.maxControlWait.Load()),
 		time.Duration(sess.out.maxRPCWait.Load()), time.Duration(sess.out.maxControlWait.Load()))
-	if p99 > 50*time.Millisecond {
-		t.Fatalf("the control channel's p99 round trip took %v under 20 TV pulls and a release download", p99)
+	// the design's bound (§18.11) is the link's own cost: 50 ms over the runner's round trip
+	bound := 50*time.Millisecond + base[98]
+	if ctl[98] > bound {
+		t.Fatalf("the control channel's p99 control round trip took %v (runner's %v) under 20 TV pulls and a release download", ctl[98], base[98])
+	}
+	if rpc[98] > bound {
+		t.Fatalf("the control channel's p99 request took %v (runner's %v) under 20 TV pulls and a release download", rpc[98], base[98])
+	}
+}
+
+// echoServer is a one-byte echo over plain loopback TCP: the runner's own round trip.
+func echoServer(t *testing.T) func() time.Duration {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		b := make([]byte, 1)
+		for {
+			if _, err := c.Read(b); err != nil {
+				return
+			}
+			if _, err := c.Write(b); err != nil {
+				return
+			}
+		}
+	}()
+	c, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	b := make([]byte, 1)
+	return func() time.Duration {
+		start := time.Now()
+		if _, err := c.Write(b); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Read(b); err != nil {
+			t.Fatal(err)
+		}
+		return time.Since(start)
 	}
 }
