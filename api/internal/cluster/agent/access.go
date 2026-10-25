@@ -260,6 +260,12 @@ func (h *Hub) requestGranted(nodeID string) time.Time {
 // access.answer {id, ok, code, reason}: what stops the home, with its code
 // (cluster.AccessError), or not_taken with the machine's own answer. Every request is in
 // the events file.
+//
+// The push (EnsureAccess) and this pull can both re-make the same machine's access within
+// moments (the push's retry and the machine's request crossing): each GrantAccess sets a
+// new password, so the first home.access the machine takes is outdated by the second.
+// That heals by itself: the machine keeps the last home.access it took, which is the
+// role's current password, and a login refused in between is retried at its next check.
 func (h *Hub) onAccessRequest(s *Session, raw []byte) {
 	var f struct {
 		ID string `json:"id"`

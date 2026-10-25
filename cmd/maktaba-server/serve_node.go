@@ -145,11 +145,15 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 			ns.homeDB.reconnected()
 		},
 		// the home's answer to this machine's request for its database access: one that
-		// does not know this machine sends it back to the join flow
+		// does not know this machine, said again and again (rejoinWatch.unknown), sends it
+		// back to the join flow
 		OnAccessAnswer: func(a machineagent.AccessAnswer) {
 			ns.homeDB.answered(a)
-			if a.Code == "unknown" || a.Code == "not_approved" {
+			switch {
+			case a.Code == "unknown" || a.Code == "not_approved":
 				ns.rejoin.unknown(ctx)
+			case a.OK:
+				ns.rejoin.known()
 			}
 		},
 		// the home refuses this machine's sessions (removed, rejected, revoked): the join

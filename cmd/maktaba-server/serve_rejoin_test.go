@@ -98,3 +98,43 @@ func TestRejoinAfterTheHomeRefusesThisMachine(t *testing.T) {
 		t.Fatal("a re-join outlived the home taking this machine")
 	}
 }
+
+// The home answering that it does not know this machine sends it to the join flow only once
+// the home it follows said so rejoinAfter times over at least rejoinSpan: one answer (a
+// stale or a new home in a switch), an answer with the access between, or another home's
+// answer start the count again.
+func TestRejoinOnUnknownAnswersIsConfirmed(t *testing.T) {
+	home := "http://home-a:8080"
+	node := config.NodeConfig{NodeID: "6f1c2a3b-4d5e-4f60-8a71-92b3c4d5e6f7", Home: config.HomeRef{URL: home}}
+	now := time.Date(2026, 10, 25, 9, 0, 0, 0, time.UTC)
+	w := &rejoinWatch{node: func() config.NodeConfig { return node }, clock: func() time.Time { return now },
+		joined: func(config.NodeConfig, machineagent.Joined) error { return nil }}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := func() bool {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		return w.cancel != nil
+	}
+	w.unknown(ctx) // one answer: a moment's
+	now = now.Add(40 * time.Second)
+	w.unknown(ctx)
+	w.known() // the home gives the access after all
+	now = now.Add(40 * time.Second)
+	w.unknown(ctx)
+	now = now.Add(40 * time.Second)
+	w.unknown(ctx)
+	node.Home.URL = "http://home-b:8080" // the machine follows another home now
+	now = now.Add(40 * time.Second)
+	w.unknown(ctx)
+	if started() {
+		t.Fatal("a re-join before the home this machine follows said so long enough")
+	}
+	now = now.Add(40 * time.Second)
+	w.unknown(ctx)
+	now = now.Add(21 * time.Second)
+	w.unknown(ctx) // the third from home-b, over a minute: the join flow
+	if !started() {
+		t.Fatal("no re-join after the home said so three times over a minute")
+	}
+}

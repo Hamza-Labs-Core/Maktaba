@@ -49,8 +49,16 @@ type rejoinWatch struct {
 	mu       sync.Mutex
 	refusals int
 	first    time.Time
-	cancel   context.CancelFunc // the re-join running, if one is
-	state    *machineagent.RejoinState
+	// unknowns counts the home's answers to this machine's access requests that it does
+	// not know this machine (or has not approved it), from the home it follows (its
+	// address, unknownHome): the same confirmation as refused sessions, rejoinAfter of them
+	// over at least rejoinSpan, since a stale or a new home in the middle of a switch can
+	// answer so for a moment
+	unknowns     int
+	firstUnknown time.Time
+	unknownHome  string
+	cancel       context.CancelFunc // the re-join running, if one is
+	state        *machineagent.RejoinState
 }
 
 func newRejoinWatch() *rejoinWatch {
@@ -86,15 +94,39 @@ func (w *rejoinWatch) refused(ctx context.Context, code int) {
 }
 
 // unknown is the home answering this machine's request for its access that it does not
-// know it, or that it is not approved: the join flow at once.
+// know it, or that it is not approved: the join flow once the home this machine follows
+// has said so rejoinAfter times over at least rejoinSpan (another home's answer starts the
+// count again; an answer with the access ends it: known).
 func (w *rejoinWatch) unknown(ctx context.Context) {
 	if w == nil {
 		return
 	}
+	now := w.clock()
+	home := w.node().HomeURL()
 	w.mu.Lock()
-	w.refusals, w.first = rejoinAfter, w.clock().Add(-rejoinSpan)
+	if w.unknowns == 0 || home != w.unknownHome {
+		w.unknowns, w.firstUnknown, w.unknownHome = 0, now, home
+	}
+	w.unknowns++
+	confirmed := w.unknowns >= rejoinAfter && now.Sub(w.firstUnknown) >= rejoinSpan
+	if confirmed {
+		w.refusals, w.first = rejoinAfter, now.Add(-rejoinSpan)
+	}
 	w.mu.Unlock()
-	w.refused(ctx, 4003)
+	if confirmed {
+		w.refused(ctx, 4003)
+	}
+}
+
+// known is the home answering this machine's request with its access: what it said
+// before about not knowing it was a moment's (a switch).
+func (w *rejoinWatch) known() {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.unknowns = 0
+	w.mu.Unlock()
 }
 
 // connected is a session the home took: no re-join (one running stops: the home takes
