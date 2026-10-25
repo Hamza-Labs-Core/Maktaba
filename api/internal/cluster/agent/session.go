@@ -136,6 +136,9 @@ type Session struct {
 	// only renew its certificate (cert.csr)
 	viaLink  bool
 	certOnly bool
+	// clockSkew is the machine's clock minus the home's, from its last update.state
+	clockSkew time.Duration
+	hasSkew   bool
 }
 
 type outFrame struct {
@@ -393,11 +396,6 @@ func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote, linkNode
 	authAt := h.now()
 	s := &Session{Kind: hello.Kind, Host: ident.Host, WorkerID: ident.WorkerID, PID: hello.PID,
 		OS: clip(hello.OS, 64), Version: clip(hello.Version, 64), Process: clip(hello.Process, 32), viaLink: viaLink}
-	if hello.Kind == "node" && !viaLink && linkctx.Require() {
-		// the link is required: a machine's plain session only renews its certificate (an
-		// expired one cannot open the link), and is nobody's machine agent
-		s.certOnly, s.Process = true, "cert-only"
-	}
 	s.IP = h.folderIP(hello.Kind, hello.IP, remote)
 	ident.IP = s.IP
 	var nodePub []byte
@@ -418,6 +416,12 @@ func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote, linkNode
 		case n.State != cluster.StateApproved:
 			// unknown, pending, rejected and revoked look the same
 			return refuse(CloseNotMember, "")
+		}
+		if !viaLink && linkctx.Require() && h.cfg.HasCert != nil && h.cfg.HasCert(ctx, s.NodeID) {
+			// the link is required: a machine that holds a certificate renews it on a plain
+			// session (an expired one cannot open the link) and does nothing else there; one
+			// that never got one (a worker-only machine, an older release) keeps its channel
+			s.certOnly, s.Process = true, "cert-only"
 		}
 		name := n.Name
 		s.NodeName, ident.NodeName = &name, &name

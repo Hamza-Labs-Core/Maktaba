@@ -115,6 +115,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	}
 	hub := mountClusterHub(r, h, db, driver, store, keys, certs, logger)
 	if hl != nil {
+		hl.skews = hub.ClockSkews
 		// a revoked (or removed) machine loses its link and its certificates at once
 		closeSessions := h.OnRevoke
 		h.OnRevoke = func(nodeID string) {
@@ -233,6 +234,11 @@ func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver strin
 	cfg.Logger = logger
 	cfg.Delegation = keys
 	cfg.Certs = certs
+	if hc, ok := certs.(interface {
+		HasCert(ctx context.Context, nodeID string) bool
+	}); ok {
+		cfg.HasCert = hc.HasCert
+	}
 	if db != nil {
 		// the extension service door (story 31.R): nodes run the Plex
 		// stages without the token; rules.relay switches it

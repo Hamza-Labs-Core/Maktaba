@@ -137,6 +137,7 @@ func serveLocalFetch(c *link.Client) http.HandlerFunc {
 			return
 		}
 		if c == nil || !c.Connected() {
+			w.Header().Set("X-Maktaba-Link", "down")
 			http.Error(w, "the cluster link is not up", http.StatusServiceUnavailable)
 			return
 		}
@@ -162,8 +163,9 @@ func serveLocalFetch(c *link.Client) http.HandlerFunc {
 		resp, err := c.StreamHTTP(r.Context(), purpose, out)
 		if err != nil {
 			code := http.StatusBadGateway
-			if errors.Is(err, link.ErrNotConnected) {
+			if errors.Is(err, link.ErrNotConnected) || errors.Is(err, link.ErrLinkLost) {
 				code = http.StatusServiceUnavailable
+				w.Header().Set("X-Maktaba-Link", "down")
 			}
 			http.Error(w, err.Error(), code)
 			return

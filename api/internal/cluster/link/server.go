@@ -66,10 +66,10 @@ const (
 // homeServed are the purposes a machine opens to read from the home, and the paths each
 // may ask for (a stream carries one request, which must be under one of them).
 var homeServed = map[string][]string{
-	PurposeArtifact:   {"/api/cluster/updates/artifacts/"},
+	PurposeArtifact:   {"/api/cluster/updates/artifacts/", "/api/cluster/updates/tuf/"},
 	PurposeWheelhouse: {"/api/cluster/updates/wheelhouse/", "/api/cluster/updates/wheels/"},
 	PurposeBackup:     {"/api/cluster/backups/"},
-	PurposeVOD:        {"/stream/via-home/"},
+	PurposeVOD:        {"/stream/"},
 	PurposeWSProxy:    {"/api/cluster/agent", "/api/cluster/ws"},
 }
 
