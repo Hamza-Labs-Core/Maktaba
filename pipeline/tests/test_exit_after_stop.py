@@ -75,7 +75,11 @@ def test_the_exit_does_not_wait_for_a_stuck_thread(exits: list[int]) -> None:
     assert event == "pipeline_exit_threads_left" and "stuck-on-the-share" in kw["threads"]
 
 
-def test_a_clean_stop_exits_normally(exits: list[int]) -> None:
+def test_a_clean_stop_exits_normally(exits: list[int], monkeypatch: pytest.MonkeyPatch) -> None:
+    before = set(cli._lingering_threads())  # other tests' threads are not this exit's
+    real = cli._lingering_threads
+    monkeypatch.setattr(cli, "_lingering_threads", lambda: [t for t in real() if t not in before])
+
     async def main() -> None:
         await asyncio.to_thread(lambda: None)  # the executor's thread ends at its shutdown
         await cli._exit_if_threads_linger(0, _Log())
@@ -119,3 +123,26 @@ def test_the_client_is_never_closed_under_a_write(
         hold.set()
         t.join()
     assert log.events[-1][0] == "search_index_write_still_running"
+
+
+def test_the_exit_never_cuts_a_write(monkeypatch: pytest.MonkeyPatch, exits: list[int]) -> None:
+    """A write still running after both waits: no os._exit (the process ends once the
+    write's thread did, or at the supervisor's kill), and no client is closed under it."""
+    monkeypatch.setattr(semantic, "close_clients", lambda: pytest.fail("closed under a write"))
+    hold, started = threading.Event(), threading.Event()
+
+    def writer() -> None:
+        with gate._write_lock:
+            started.set()
+            hold.wait(5)
+
+    t = threading.Thread(target=writer)
+    t.start()
+    started.wait(2)
+    log = _Log()
+    try:
+        asyncio.run(cli._exit_if_threads_linger(0, log))
+    finally:
+        hold.set()
+        t.join()
+    assert exits == [] and log.events[-1][0] == "search_index_write_still_running"

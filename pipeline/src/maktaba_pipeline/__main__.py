@@ -299,9 +299,14 @@ async def _exit_if_threads_linger(
     from .search import gate
 
     # a search index write still running is waited for, never cut (a second wait:
-    # _close_search_index gave up on it)
+    # _close_search_index gave up on it): past it the process exits the slow way, once
+    # the write's thread ended, or at the supervisor's kill at the end of its grace
     if not await asyncio.to_thread(gate.wait_idle, _INDEX_CLOSE_WAIT_SEC):
         log.warning("search_index_write_still_running", after_sec=2 * _INDEX_CLOSE_WAIT_SEC)
+        return
+    from .search import semantic
+
+    await asyncio.to_thread(semantic.close_clients)  # when the write ended late
     loop: Any = asyncio.get_running_loop()  # the base loop's shutdown takes a timeout
     with contextlib.suppress(Exception):  # the threads are counted below
         await loop.shutdown_default_executor(timeout=_EXIT_WAIT_SEC)

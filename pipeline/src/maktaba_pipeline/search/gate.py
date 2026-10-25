@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import weakref
 from collections.abc import Callable
 from typing import Any
 
@@ -31,7 +32,9 @@ _write_lock = threading.Lock()
 _closed = threading.Event()
 #: the asyncio side of the lock, so waiting jobs queue on the loop, not in threads
 #: (a cancelled waiter then ends at once, having written nothing)
-_queues: dict[int, asyncio.Lock] = {}
+_queues: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 class IndexClosed(asyncio.CancelledError):
@@ -57,9 +60,9 @@ def reopen() -> None:
 
 def _queue() -> asyncio.Lock:
     loop = asyncio.get_running_loop()
-    lock = _queues.get(id(loop))
+    lock = _queues.get(loop)
     if lock is None:
-        lock = _queues[id(loop)] = asyncio.Lock()
+        lock = _queues[loop] = asyncio.Lock()
     return lock
 
 
@@ -87,8 +90,7 @@ async def write[T](fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
             try:
                 await asyncio.shield(fut)
             except asyncio.CancelledError:
-                if not fut.done():
-                    cancelled = True  # the write goes on: wait for it, then end
+                cancelled = True  # the write goes on (or just ended): wait, then end
         if cancelled:
             raise asyncio.CancelledError
         result = fut.result()  # its own exception, when it raised one
