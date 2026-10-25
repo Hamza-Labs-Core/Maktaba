@@ -132,25 +132,35 @@ def test_the_binary_comes_out_of_either_archive() -> None:
 
 @pytest.mark.unit
 def test_the_mirror_first_then_github() -> None:
-    seen: list[str] = []
+    seen: list[tuple[str, dict[str, str]]] = []
     bodies = {
         "https://gh.test/a": b"from github",
         "http://home:8080/api/cluster/updates/artifacts/1.5.0/b": b"from the mirror",
     }
 
-    def get(url: str) -> bytes | None:
-        seen.append(url)
+    def get(url: str, headers: Mapping[str, str]) -> bytes | None:
+        seen.append((url, dict(headers)))
         return bodies.get(url)
 
-    fetch = cv.release_source(
-        "http://home:8080/", {"version": "1.5.0", "assets": {"a": "https://gh.test/a"}}, get
-    )
+    job = {"version": "1.5.0", "assets": {"a": "https://gh.test/a"}, "download_token": "mkt_dl_t.s"}
+    fetch = cv.release_source("http://home:8080/", job, get)
     assert fetch("b") == b"from the mirror"
     assert fetch("a") == b"from github"
     assert fetch("c") is None
-    assert seen[0] == "http://home:8080/api/cluster/updates/artifacts/1.5.0/b"
+    # the home's token goes to the home's mirror alone, never to GitHub
+    for url, headers in seen:
+        if url.startswith("http://home:8080/api/cluster/updates/artifacts/1.5.0/"):
+            assert headers == {"Authorization": "Bearer mkt_dl_t.s"}, url
+        else:
+            assert "Authorization" not in headers, url
+    assert seen[0][0] == "http://home:8080/api/cluster/updates/artifacts/1.5.0/b"
+    assert ("https://gh.test/a", {}) in seen
+    # without a token (an older home): no header at all
+    seen.clear()
+    cv.release_source("http://home:8080", {"version": "1.5.0"}, get)("b")
+    assert seen == [("http://home:8080/api/cluster/updates/artifacts/1.5.0/b", {})]
 
-    def broken(url: str) -> bytes | None:
+    def broken(url: str, headers: Mapping[str, str]) -> bytes | None:
         raise OSError("connection refused")
 
     with pytest.raises(ConvertError) as err:

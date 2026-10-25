@@ -2,6 +2,7 @@ package updates
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -23,6 +24,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates/dltoken"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
@@ -34,7 +36,9 @@ import (
 //	GET /api/cluster/updates/wheelhouse/{version}/{platform}/{f}  one of its wheels
 //	GET /api/cluster/updates/tuf/{file}                          Sigstore's TUF repository (tufmirror.go)
 //
-// Only a machine's signed request (its delegation key, story 35.9) is answered. A machine
+// Only a machine's signed request (its delegation key, story 35.9) is answered, and on the
+// artifact route a worker-only machine's download token for the release it converts to
+// (DownloadToken: it has no delegation key yet, story 35.8 AC8). A machine
 // downloads from here first and from GitHub after three failures, and verifies every file
 // itself as before: the home's copy is a source, never a trust anchor (plan D4).
 //
@@ -69,6 +73,7 @@ type Mirror struct {
 	Now      func() time.Time
 
 	mu           sync.Mutex
+	tokenKey     []byte // the download tokens' key (<Dir>/.download-token.key)
 	fetching     map[string]*flight
 	perNode      map[string]int
 	wheels       map[string]*wheelBuild
@@ -161,10 +166,116 @@ func (m *Mirror) Mount(r chi.Router) {
 func (m *Mirror) machine(w http.ResponseWriter, r *http.Request) (release func(), ok bool) {
 	node := delegation.NodeFrom(r.Context())
 	if node == "" {
-		httperror.Write(w, r, &httperror.Error{Type: "about:blank#machine_only", Title: "unauthorized",
-			Status: http.StatusUnauthorized, Detail: "the release mirror answers the cluster's machines only"})
+		machineOnly(w, r, "the release mirror answers the cluster's machines only")
 		return nil, false
 	}
+	return m.admit(w, r, node)
+}
+
+func machineOnly(w http.ResponseWriter, r *http.Request, detail string) {
+	httperror.Write(w, r, &httperror.Error{Type: "about:blank#machine_only", Title: "unauthorized",
+		Status: http.StatusUnauthorized, Detail: detail})
+}
+
+// downloader admits, on the artifact route, a machine's signed request or a download
+// token for version (a worker-only machine converting: story 35.8 AC8): its signature and
+// expiry hold, it names version, and its machine is still one of the cluster's.
+func (m *Mirror) downloader(w http.ResponseWriter, r *http.Request, version string) (release func(), ok bool) {
+	if delegation.NodeFrom(r.Context()) != "" {
+		return m.machine(w, r)
+	}
+	tok := dltoken.FromRequest(r)
+	if tok == "" {
+		machineOnly(w, r, "the release mirror answers the cluster's machines only")
+		return nil, false
+	}
+	key, err := m.key()
+	if err != nil {
+		machineOnly(w, r, "this home issues no download tokens")
+		return nil, false
+	}
+	c, err := dltoken.Verify(key, tok, m.now())
+	if err != nil {
+		machineOnly(w, r, "the download token is not valid: "+err.Error())
+		return nil, false
+	}
+	if NormalizeVersion(c.Version) != NormalizeVersion(version) {
+		machineOnly(w, r, "the download token is for another release")
+		return nil, false
+	}
+	if !m.member(r.Context(), c.Node) {
+		machineOnly(w, r, "the download token's machine is not one of the cluster's")
+		return nil, false
+	}
+	return m.admit(w, r, c.Node)
+}
+
+// member reports whether a machine is an approved member of the cluster (a revoked or
+// removed one's token stops working).
+func (m *Mirror) member(ctx context.Context, node string) bool {
+	if m.Store == nil || m.Store.DB == nil {
+		return false
+	}
+	var state string
+	err := m.Store.DB.QueryRowContext(ctx, `SELECT state FROM cluster_nodes WHERE id = $1`, node).Scan(&state)
+	return err == nil && state == "approved"
+}
+
+// tokenKeyFile is where the download tokens' key is kept, in the mirror's folder (a file,
+// never served: the copies are in the releases' folders).
+const tokenKeyFile = ".download-token.key"
+
+// key is the download tokens' key: 32 random bytes made once and kept (0600), so tokens
+// outlive an API restart.
+func (m *Mirror) key() ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.tokenKey) > 0 {
+		return m.tokenKey, nil
+	}
+	if m.Dir == "" {
+		return nil, errors.New("the mirror keeps no files")
+	}
+	path := filepath.Join(m.Dir, tokenKeyFile)
+	if b, err := os.ReadFile(path); err == nil && len(b) >= 32 {
+		m.tokenKey = b
+		return b, nil
+	}
+	if err := os.MkdirAll(m.Dir, 0o755); err != nil {
+		return nil, err
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return nil, err
+	}
+	m.tokenKey = b
+	return b, nil
+}
+
+// DownloadToken is a token that lets node fetch version's files from the artifact route
+// for dltoken.Lifetime (a worker-only machine converting has no delegation key yet).
+func (m *Mirror) DownloadToken(node, version string) (string, error) {
+	if m == nil {
+		return "", errors.New("no mirror")
+	}
+	key, err := m.key()
+	if err != nil {
+		return "", err
+	}
+	return dltoken.Mint(key, node, NormalizeVersion(version), m.now().Add(dltoken.Lifetime)), nil
+}
+
+// admit counts one more download of node's within its share; release is called when the
+// request ends.
+func (m *Mirror) admit(w http.ResponseWriter, r *http.Request, node string) (release func(), ok bool) {
 	m.mu.Lock()
 	if m.perNode == nil {
 		m.perNode = map[string]int{}
@@ -192,12 +303,12 @@ func (m *Mirror) machine(w http.ResponseWriter, r *http.Request) (release func()
 var mirrorName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
 
 func (m *Mirror) serveArtifact(w http.ResponseWriter, r *http.Request) {
-	done, ok := m.machine(w, r)
+	version, name := chi.URLParam(r, "version"), chi.URLParam(r, "name")
+	done, ok := m.downloader(w, r, version)
 	if !ok {
 		return
 	}
 	defer done()
-	version, name := chi.URLParam(r, "version"), chi.URLParam(r, "name")
 	path, sum, err := m.Artifact(r.Context(), version, name)
 	if err != nil {
 		m.fail(w, r, err)

@@ -49,7 +49,7 @@ func workerOnly(name string) bool { return name == "update.convert" }
 var bulkyResults = map[string]bool{"logs.files": true}
 
 // secretArgs are the commands' arguments the event log never shows.
-var secretArgs = map[string][]string{"home.access": {"password"}}
+var secretArgs = map[string][]string{"home.access": {"password"}, "update.convert": {"download_token"}}
 
 // Accepts reports whether the hub sends a command of this name at all (CommandWithin
 // refuses any other with ErrBadCommand): the switch's tests ask it of their fake hub.

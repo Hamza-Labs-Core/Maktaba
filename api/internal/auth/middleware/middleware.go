@@ -30,6 +30,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secret"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates/dltoken"
 )
 
 // MinAdminTokenLen is Story 10.9 EC-2: refuse `MAKTABA_ADMIN_TOKEN`
@@ -255,12 +256,15 @@ func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handl
 // release mirror, the wheelhouse, the TUF repository passed on): a request the home's
 // delegation middleware verified as a machine's (it runs first) passes the gate without a
 // user, and each handler refuses any other.
+// The artifact route is first (machineRoute).
 var machineRoutes = []string{"/api/cluster/updates/artifacts/", "/api/cluster/updates/wheelhouse/",
 	"/api/cluster/updates/tuf/"}
 
 func machineRoute(r *http.Request) bool {
 	if delegation.NodeFrom(r.Context()) == "" {
-		return false
+		// a worker-only machine converting has no delegation key: its download token
+		// (story 35.8 AC8) reaches the artifact route alone, whose handler verifies it
+		return dltoken.FromRequest(r) != "" && strings.HasPrefix(r.URL.Path, machineRoutes[0])
 	}
 	for _, p := range machineRoutes {
 		if strings.HasPrefix(r.URL.Path, p) {

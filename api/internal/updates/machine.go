@@ -29,6 +29,9 @@ type MachineJob struct {
 	// AppPostgresMajor is the release's app payloads' PostgreSQL majors (its verified
 	// release.json's): a machine refuses another major than its own before downloading
 	AppPostgresMajor map[string]int `json:"app_postgres_major,omitempty"`
+	// DownloadToken lets a worker-only machine converting (update.convert, story 35.8 AC8)
+	// fetch this release from the home's mirror without a delegation key (dltoken)
+	DownloadToken string `json:"download_token,omitempty"`
 }
 
 // MachineStep is one step of a machine's run.

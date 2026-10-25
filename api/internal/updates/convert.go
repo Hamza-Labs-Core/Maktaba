@@ -100,10 +100,29 @@ func (d *Driver) tooOldKnown(ctx context.Context, nodeID, version string, w Node
 	return det.Why == WhyTooOld && det.Version == w.Version
 }
 
+// convertJob is the run's job for a worker-only machine's conversion, with a download
+// token for the home's mirror when the home keeps one (the machine has no delegation key
+// yet; without a token it downloads from GitHub).
+func (d *Driver) convertJob(ctx context.Context, run Run, t Target) (MachineJob, error) {
+	job, err := d.job(ctx, run, false)
+	if err != nil {
+		return job, err
+	}
+	if d.Mirror != nil {
+		if tok, err := d.Mirror.DownloadToken(t.NodeID, run.Version); err == nil {
+			job.DownloadToken = tok
+		} else {
+			d.log().Warn("update mirror: no download token for a conversion", "event", "update_mirror_token_failed",
+				"node_id", t.NodeID, "err", err.Error())
+		}
+	}
+	return job, nil
+}
+
 // startConvert sends a worker-only machine's worker update.convert (its turn came, it is
 // drained): converting, or worker_only when its pipeline predates the command.
 func (d *Driver) startConvert(ctx context.Context, run Run, pol Policy, t Target, w NodeWorker) {
-	job, err := d.job(ctx, run, false)
+	job, err := d.convertJob(ctx, run, t)
 	if err != nil {
 		d.targetFailed(ctx, run, pol, t, TargetFailed, map[string]any{"code": CodeConvertRefused, "detail": err.Error()})
 		return
@@ -158,7 +177,7 @@ func (d *Driver) followConvert(ctx context.Context, run Run, pol Policy, t Targe
 		}
 	}
 	if w, ok := workers[t.NodeID]; ok {
-		job, err := d.job(ctx, run, false)
+		job, err := d.convertJob(ctx, run, t)
 		if err == nil {
 			// asked again for the same run, the worker says how far it got
 			ok, raw, err := d.Cluster.Command(ctx, w.Session, "update.convert", job, 15*time.Second)
