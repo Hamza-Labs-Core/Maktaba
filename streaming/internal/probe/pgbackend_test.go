@@ -80,6 +80,11 @@ func okCols(vid, lib uuid.UUID, probed bool) []any {
 		int64(1024),                    // size_bytes
 		time.Unix(1700000000, 0).UTC(), // mtime
 		probed,                         // probed
+		"smpte2084",                    // color_transfer
+		"bt2020nc",                     // color_space
+		"bt2020",                       // color_primaries
+		"tv",                           // color_range
+		"yuv420p10le",                  // pix_fmt
 	}
 }
 
@@ -105,6 +110,10 @@ func TestPGBackend_LookupSuccess(t *testing.T) {
 	}
 	if !row.Probed {
 		t.Fatalf("expected probed=true")
+	}
+	if row.ColorTransfer != "smpte2084" || row.ColorMatrix != "bt2020nc" || row.ColorPrimaries != "bt2020" ||
+		row.ColorRange != "tv" || row.PixFmt != "yuv420p10le" {
+		t.Fatalf("the video stream's colour not scanned: %+v", row)
 	}
 	// The single bound arg must be the video id.
 	if len(q.gotArgs) != 1 || q.gotArgs[0] != vid {
