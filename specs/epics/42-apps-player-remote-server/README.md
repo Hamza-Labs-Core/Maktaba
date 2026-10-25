@@ -26,11 +26,28 @@ The owner's decisions (2026-10-25):
 | TV, tvOS and Android TV | Maktaba TV (today's apps) | — | — |
 | Web served by the home | — | — | part of the server: its web UI is player and remote together |
 | Cloud web (the VPS, `cloud/`) | yes, once a home is connected | yes, once a home is connected | — |
+| Maktaba service admin (the VPS, `cloud/`) | — | — | — (it runs the service itself: see Roles) |
 
    That is six mobile apps on each of Android and iOS (player and remote for phone, foldable and
    tablet), a desktop player beside the desktop server, the TV player, the home's own web UI, and
    the cloud web that is a player and a remote for a connected home.
 3. **Macs are Apple silicon only** (no Intel builds since v0.3.15).
+4. **The Maktaba service admin is its own role and surface**, not to be confused with a home's
+   admins (see Roles).
+
+## Roles
+
+| Role | Who | Where they act | Rights |
+|---|---|---|---|
+| Viewer | a home's users | Player apps, TV, the home's web UI, the cloud web player | watch what their libraries allow |
+| Home admin (local admin) | a home's users with `is_admin` | Remote apps, the home's web UI, the cloud web remote | run *their* home: processing, settings, users, Live TV, machines, updates |
+| **Maktaba service admin** | the people who operate Maktaba Cloud (Hamza Labs) | the cloud's operator console (`cloud/internal/handlers/admin`, `/v1/admin/*`) on the VPS | run *the service*: cloud accounts, plans and billing, abuse, relay and subdomains, push, releases. **No** access to any home's libraries, videos or settings, and no home admin rights by being a service admin |
+
+The two admin roles never mix: a home admin is never a service admin by that, and a service
+admin reaches a home only as any other user would (an account that home made for them). The cloud
+web's player and remote act with the signed-in user's rights on the connected home; the operator
+console is a separate part of the cloud with its own sign-in and its own audit log. No app in this
+epic offers service administration: the console stays a web surface of the cloud.
 
 ## What exists (main, 2026-10-25)
 
