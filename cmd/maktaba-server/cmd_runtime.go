@@ -31,6 +31,9 @@ type runtimeDeps struct {
 
 var newRuntimeDeps = func() runtimeDeps {
 	d := runtimeDeps{rt: appruntime.New(filepath.Join(config.LocalDirs().Data, "runtime"))}
+	if config.Container() != "" {
+		return d // the container's entrypoint runs the launcher: no unit to stop and start
+	}
 	sd := newServiceDeps()
 	d.service = unitService{m: sd.manager, u: sd.unit}
 	return d

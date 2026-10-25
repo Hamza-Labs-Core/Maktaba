@@ -282,10 +282,12 @@ type UpdatePhase = "idle" | "downloading" | "restarting" | "done" | "error" | "r
 // It shows the running build, the update channel and last-check time, an
 // "available" card with the release notes rendered as (safe) Markdown,
 // and — for admins on a self-updatable install — a one-click "Update
-// now". A Docker install is known from the status (`install: "docker"`),
-// so its `docker compose pull` instruction shows up front instead of a
-// button that can't work; an older server's 409 instruction still shows
-// after a click. A self-update the server undid (rolled_back) is reported.
+// now". A container that cannot update itself (the stack built from source)
+// is known from the status (`install: "docker"` with its instructions), so
+// its `docker compose pull` instruction shows up front instead of a button
+// that can't work; the Docker image updates itself (`install: "docker"`, no
+// instructions) and keeps the button. An older server's 409 instruction still
+// shows after a click. A self-update the server undid (rolled_back) is reported.
 function AboutTab() {
   const { t, formatDate } = useI18n();
   const { user } = useAuth();
@@ -355,6 +357,12 @@ function AboutTab() {
       }
     } catch (e) {
       if (!alive.current) return;
+      if (e instanceof ApiError && e.status === 409 && e.problem.code === "updater_unavailable") {
+        // the Docker image updates itself through the server's updater, not running here
+        toast.show({ tone: "error", message: e.problem.detail ?? t("common.error") });
+        setPhase("idle");
+        return;
+      }
       if (e instanceof ApiError && e.status === 409) {
         // Docker/package-manager install: surface the instruction.
         const hint =
@@ -371,7 +379,8 @@ function AboutTab() {
 
   const version = ver?.version ?? buildVersion;
   const channel = ver?.channel ?? upd?.channel ?? "stable";
-  const docker = upd?.install === "docker" ? upd.instructions || DOCKER_INSTRUCTIONS : dockerHint;
+  // instructions come only with a container that cannot update itself
+  const docker = upd?.install === "docker" && upd.instructions ? upd.instructions : dockerHint;
   const showUpdateButton =
     user?.is_admin && upd?.available && phase !== "done" && phase !== "rolled_back" && !docker;
   const lastRollback = phase === "idle" ? upd?.rolled_back : undefined;
@@ -509,8 +518,6 @@ function AboutTab() {
     </div>
   );
 }
-
-const DOCKER_INSTRUCTIONS = "docker compose pull && docker compose up -d";
 
 // pollVersionUntilChanged re-fetches /api/system/version until it reports
 // a version different from `from` (the server re-execs after a self-

@@ -104,3 +104,21 @@ func TestLoadCanonicalRepoManifest(t *testing.T) {
 		t.Fatalf("real manifest invalid: %v", err)
 	}
 }
+
+// The Docker install's image is an optional component (absent when the Linux payloads did
+// not build), checked as the others when present.
+func TestValidateOptionalServerComponent(t *testing.T) {
+	with := strings.Replace(validJSON(), `"web":`, `"server":    {"image": "registry/maktaba-server:v1.2.3", "sha256": "sha256:`+repeat("e", 64)+`"},
+    "web":`, 1)
+	m, err := Load(writeTemp(t, with))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Components["server"].Image != "registry/maktaba-server:v1.2.3" {
+		t.Fatalf("server: %+v", m.Components["server"])
+	}
+	bad := strings.Replace(with, `"sha256:`+repeat("e", 64)+`"`, `"sha256:beef"`, 1)
+	if _, err := Load(writeTemp(t, bad)); err == nil || !strings.Contains(err.Error(), "components.server") {
+		t.Fatalf("a bad server digest: %v", err)
+	}
+}

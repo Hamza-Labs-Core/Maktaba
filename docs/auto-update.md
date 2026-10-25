@@ -118,7 +118,8 @@ How each kind of install takes a release
 | **Headless** (`install.sh --app`) | The same runtime switch, by itself in the window. | The first update from a release before automatic updates. |
 | **Plain server** on the side-by-side layout (`setup --self-managed`, `.deb`/`.rpm` in the layout) | Staged in `bin/releases/<v>` with its migrations and its own pipeline environment (`venv`, built from the release's wheel with the machine's Python 3.12 and the extras its environment had), switched to under the launcher's guard; the pipeline runs the new environment. A release that needs a newer launcher replaces it after its commit. | A Python 3.12 for the pipeline (or `MAKTABA_PIPELINE_PYTHON`), and access to PyPI (or a mirror in `PIP_INDEX_URL`, or a proxy). |
 | Plain binary copied by hand (no launcher) | — (reported: `not_self_managed`) | One `maktaba-server setup --service`, then automatic. |
-| **Docker** | — | `docker compose pull && docker compose up -d` (Epic 28.3's `409`). |
+| **Docker** (`ghcr.io/hamza-labs-core/maktaba-server`, [cloud/installers/docker](../cloud/installers/docker/docker-compose.yml)) | The headless runtime switch, on the image's volume, by itself in the window: the image only puts its payload there the first time (or when a newer image is pulled; never an older one), and the server updates it from then on. | Nothing (no image to pull, no Docker socket). |
+| A container of the stack built from source (`deploy/compose`) | — | `docker compose pull && docker compose up -d` (Epic 28.3's `409`). |
 
 Automatic installs are on by default (`rules.updates.auto_install`); with them off (Admin ->
 Updates -> Pause) the home only checks and notifies. `MAKTABA_UPDATE_DISABLE=1` turns the
@@ -221,9 +222,11 @@ local build: install the next release's `.dmg` once.
 - **`.deb` / `.rpm`** — the server invokes the package manager
   (`apt-get install --only-upgrade` / `dnf upgrade`) so package state
   stays consistent.
-- **Docker** — returns `409` with
-  `docker compose pull && docker compose up -d` (a container can't
-  replace its own image).
+- **Docker** — the Docker image (`maktaba-server`) updates the runtime
+  on its volume through Epic 35's orchestrator (Update now starts its
+  run); a container of the stack built from source returns `409` with
+  `docker compose pull && docker compose up -d` (it can't replace its own
+  image).
 
 ## Desktop updater signing (one-time)
 

@@ -205,3 +205,14 @@ func TestJobPGMajorChange(t *testing.T) {
 		t.Fatalf("a job that does not say: %v", err)
 	}
 }
+
+// The Docker install's runtime updates as a headless install's does; its kind says Docker
+// (the Updates page names it).
+func TestRuntimeInstallerKindInTheDockerImage(t *testing.T) {
+	if k := (&RuntimeInstaller{}).Kind(); k != "runtime" {
+		t.Errorf("a Linux runtime: %q", k)
+	}
+	if k := (&RuntimeInstaller{Container: "docker"}).Kind(); k != "docker" {
+		t.Errorf("the Docker image's runtime: %q", k)
+	}
+}

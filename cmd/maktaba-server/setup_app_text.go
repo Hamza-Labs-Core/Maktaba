@@ -45,6 +45,7 @@ var terminalTexts = map[string][2]string{
 	"terminal.copying":       {"Copying the server into {dir}", "جارٍ نسخ الخادم إلى {dir}"},
 	"terminal.llmLater":      {"The language model was not downloaded now ({err}); the server downloads it in the background.", "لم يُنزَّل نموذج اللغة الآن ({err})؛ سيُنزّله الخادم في الخلفية."},
 	"terminal.started":       {"Started the service {unit}.", "بدأت الخدمة {unit}."},
+	"terminal.container":     {"The container starts Maktaba now (docker compose logs -f follows it).", "تبدأ الحاوية تشغيل مكتبة الآن (يتابعها الأمر docker compose logs -f)."},
 	"terminal.linger":        {"It starts at boot (linger).", "تبدأ عند إقلاع الحاسوب (linger)."},
 	"terminal.noLinger":      {"It runs while you are logged in. To start it at boot, an administrator can run: loginctl enable-linger {user} ({err})", "تعمل ما دمت مسجّل الدخول. ليبدأ عند الإقلاع، يستطيع المسؤول تشغيل: loginctl enable-linger {user} ({err})"},
 	"terminal.done":          {"Maktaba is set up. Open {url} (or this computer's address on your network).", "اكتمل إعداد مكتبة. افتح {url} (أو عنوان هذا الحاسوب على شبكتك)."},

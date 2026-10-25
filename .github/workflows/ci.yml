@@ -112,6 +112,7 @@ jobs:
               - 'apps/desktop/**'
               - 'cmd/maktaba-launcher/**'
               - 'deploy/packaging/node/build-release.sh'
+              - 'deploy/docker/server/**'
               - 'pipeline/pyproject.toml'
               - 'pipeline/uv.lock'
               - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'

@@ -78,6 +78,7 @@ func newRootCmd() *cobra.Command {
 		newServiceCmd(),
 		newRuntimeCmd(),
 		newFFmpegCmd(),
+		newContainerCmd(),
 	)
 	return root
 }

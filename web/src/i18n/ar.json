@@ -3222,6 +3222,7 @@
   "updates.page.target.rollbackDone": "يعود الجهاز إلى الإصدار الذي كان يعمل به.",
   "updates.kind.layout": "خادم (إصدارات متجاورة)",
   "updates.kind.runtime": "تطبيق لينكس أو تثبيت بلا واجهة",
+  "updates.kind.docker": "حاوية Docker (تحدّث نفسها)",
   "updates.kind.appbundle": "تطبيق سطح المكتب",
   "updates.kind.flat": "خادم منسوخ يدوياً (لا يحدّث نفسه)",
   "updates.trigger.auto": "النافذة الهادئة",

@@ -3222,6 +3222,7 @@
   "updates.page.target.rollbackDone": "The machine goes back to the release it ran before.",
   "updates.kind.layout": "server (releases side by side)",
   "updates.kind.runtime": "Linux app or headless install",
+  "updates.kind.docker": "Docker container (updates itself)",
   "updates.kind.appbundle": "desktop app",
   "updates.kind.flat": "server copied by hand (cannot update itself)",
   "updates.trigger.auto": "the quiet window",

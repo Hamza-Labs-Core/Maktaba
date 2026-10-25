@@ -43,12 +43,23 @@ run.**
 | **Windows app** (Epic 38) | `MAKTABA_APP_BUNDLE` in `<install>\server` beside `Maktaba.exe` | same (a plain copy) | same; the NSIS installer's hooks stop and start the server | same |
 | **Linux app** (Epic 39; `MAKTABA_RUNTIME_OWNER=app`) | the launcher runs from a runtime copy | download the release's `maktaba-linux-payload-<v>-<arch>.tar.gz`, verified against the signed `checksums.txt`, installed as a new runtime directory; rehearse (home) | order it from the app (nothing for it to fetch: it shows it); after a click there and the home's go, `runtime/current` → the new directory, `previous` → the old; exit 75 (the launcher starts `runtime/current` again) | `current` → `previous`; exit 75 |
 | **Headless** (`install.sh --app`; `MAKTABA_RUNTIME_OWNER=headless`) | the same runtime copy | the same | by itself, in the window: the switch above, no order | the same |
+| **Docker** (`ghcr.io/hamza-labs-core/maktaba-server`; `MAKTABA_CONTAINER=docker`, owner headless) | the same runtime copy, on the image's volume; kind `docker` | the same | the same as headless: the server switches the volume's runtime by itself and exits 75; the launcher (run by the image's entrypoint, `maktaba-server container`, behind tini) starts it | the same |
 | **Plain server** (`setup --self-managed`, `.deb`/`.rpm` in the layout) | `MAKTABA_LAUNCHER=1`, `bin/releases/<v>` | `releaseverify/install.Stage` into `bin/releases/<v>` with the release's migrations; **the pipeline's environment** `bin/releases/<v>/venv` built from the release's wheel and hash-checked constraints (verified like every file) with the machine's Python (§3.4); smoke (`python -m maktaba_pipeline --version` says the wheel's version, PEP 440's spelling of the release's); rehearse (home) | `current` = `<v>` under the launcher's guard (`pending`); exit 75; the pipeline runs the release's venv | `current` = `previous`; exit 75 |
 
 A **flat** install (binaries copied by hand, no launcher) has nothing to fall back with: its run
 fails its preflight with `not_self_managed` and the one command that converts it
 (`maktaba-server setup --service`, which writes the layout and points the service at the
-launcher); from then on it updates itself. Docker keeps Epic 28.3's answer.
+launcher); from then on it updates itself.
+
+**Docker** is the headless install in a container (`deploy/docker/server`, built by `release.yml` from
+the release's own Linux payloads, signed at its digest, `server` in `release-manifest.json`). The
+image is only a bootstrap: its entrypoint puts its payload on the volume's runtime when the runtime
+has none or an older one (never an older payload over a newer runtime), owned by the machine, waits
+for the setup (`docker compose run --rm maktaba setup`: the terminal wizard, with no systemd checks
+and no service step), then runs the runtime's launcher and copies its log to `docker logs`. Updates
+are the headless install's, verified in process; there is no Docker socket and nothing to pull. A
+container of the stack built from source (`deploy/compose`, the development and CI stack) keeps Epic
+28.3's answer (`409`, `docker compose pull && docker compose up -d`).
 
 ### Where each piece lives
 

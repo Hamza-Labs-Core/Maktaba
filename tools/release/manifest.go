@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -72,10 +73,19 @@ func (m *Manifest) Validate() error {
 	}
 	required := []string{"api", "streaming", "pipeline", "web"}
 	for _, k := range required {
-		c, ok := m.Components[k]
-		if !ok {
+		if _, ok := m.Components[k]; !ok {
 			return fmt.Errorf("components.%s: required", k)
 		}
+	}
+	// every component, the optional ones too (cloud; server, the Docker install's image,
+	// present when its payloads built), as the required ones
+	names := make([]string, 0, len(m.Components))
+	for k := range m.Components {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		c := m.Components[k]
 		if !strings.Contains(c.Image, ":") {
 			return fmt.Errorf("components.%s.image: missing tag", k)
 		}

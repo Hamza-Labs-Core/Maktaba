@@ -10,6 +10,8 @@
 # install their own, and `maktaba-server ffmpeg` must take Ubuntu's and Debian's and refuse
 # Fedora's ffmpeg-free (no libx264) with the RPM Fusion command. Then e2e.sh runs the server
 # the way the app installs it, as the runner's systemd user unit, on the runner's ffmpeg.
+# The Docker install's image (deploy/docker/server) is built from the payload and started on
+# a fresh volume: its entrypoint's bootstrap, and its wait for the setup.
 # Unsigned: the updater signature comes with desktop-release.yml.
 
 name: Linux app
@@ -128,6 +130,32 @@ jobs:
                 bash tools/release/linux-app/check.sh --payload build/linux-app/server --ffmpeg "$WANT"'
             echo "::endgroup::"
           done
+
+      # The Docker install's image (deploy/docker/server), built from this payload as
+      # release.yml builds it from the release's: a command runs after the entrypoint put the
+      # payload on a fresh volume's runtime (owned by the machine: the server updates it);
+      # with no setup yet the container waits, saying how to set up, and docker stop ends it.
+      - name: The Docker image
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          ctx="$RUNNER_TEMP/server-image"
+          mkdir -p "$ctx/$ARCH"
+          cp -a build/linux-app/server "$ctx/$ARCH/server"
+          docker build -q -f deploy/docker/server/Dockerfile -t maktaba-server:ci "$ctx"
+          docker volume create maktaba-ci >/dev/null
+          trap 'docker rm -f maktaba-ci >/dev/null 2>&1 || true; docker volume rm maktaba-ci >/dev/null 2>&1 || true' EXIT
+          docker run --rm -v maktaba-ci:/var/lib/maktaba maktaba-server:ci runtime status | tee "$RUNNER_TEMP/runtime-status.txt"
+          grep -q "owner headless" "$RUNNER_TEMP/runtime-status.txt"
+          docker run -d --name maktaba-ci -v maktaba-ci:/var/lib/maktaba maktaba-server:ci >/dev/null
+          for _ in $(seq 1 60); do
+            if docker logs maktaba-ci 2>&1 | grep -q "not set up yet"; then break; fi
+            sleep 1
+          done
+          docker logs maktaba-ci 2>&1 | tee "$RUNNER_TEMP/container.log" | grep -q "not set up yet"
+          docker stop -t 30 maktaba-ci >/dev/null
+          test "$(docker inspect -f '{{.State.ExitCode}}' maktaba-ci)" = 0
 
       # Epic 39 story 39.11: `setup --answers` as `install.sh --app` runs it (runtime copy,
       # venv, models, finish, the systemd user unit), every role on 127.0.0.1, back from a
