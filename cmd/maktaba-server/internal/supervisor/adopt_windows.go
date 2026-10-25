@@ -158,35 +158,23 @@ func closeIn(holder int, h windows.Handle) {
 }
 
 // descendants are the processes below roots (by their parents, from a snapshot of every
-// process): what an adopted TV process started (ffmpeg).
+// process, each with its creation time: descendantsOf): what an adopted TV process
+// started (ffmpeg).
 func descendants(roots []int) map[int]bool {
-	out := map[int]bool{}
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		return out
+		return map[int]bool{}
 	}
 	defer func() { _ = windows.CloseHandle(snap) }()
-	parent := map[int]int{}
+	var procs []procEntry
 	var e windows.ProcessEntry32
 	e.Size = uint32(unsafe.Sizeof(e))
 	for err := windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
-		parent[int(e.ProcessID)] = int(e.ParentProcessID)
+		pid := int(e.ProcessID)
+		created, _ := layout.ProcessStart(pid) // 0: gone, or not to be read
+		procs = append(procs, procEntry{pid: pid, ppid: int(e.ParentProcessID), created: created})
 	}
-	in := map[int]bool{}
-	for _, r := range roots {
-		in[r] = true
-	}
-	for pid := range parent {
-		seen := map[int]bool{}
-		for p := parent[pid]; p != 0 && !seen[p]; p = parent[p] {
-			seen[p] = true
-			if in[p] {
-				out[pid] = true
-				break
-			}
-		}
-	}
-	return out
+	return descendantsOf(roots, procs)
 }
 
 // rejob puts a running process and its descendants in a new named job (not
