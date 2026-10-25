@@ -98,6 +98,12 @@ class WorkerConfig:
     worker_id: str = field(default_factory=default_worker_id)
     claim_poll_sec: float = 1.0
     claim_poll_max_sec: float = 30.0
+    #: On shutdown, how long the jobs in flight may take to finish before they are
+    #: cancelled (they end as interrupted and are claimed again). Bounded so the worker
+    #: exits inside its supervisor's stop grace (maktaba-server: 30 s): a worker killed
+    #: there, mid-job, left the Chroma search index unusable. A cancelled job's call
+    #: running in a thread (a Chroma write) still completes: the process exits after it.
+    shutdown_drain_sec: float = 15.0
     #: Pool mode (plan 06-11 section 5): claim per resource pool through
     #: ``engine.claim.claim_for_pool``. ``stage_pools`` maps every supported
     #: stage to its pool. Off by default so the original per-stage loop (and its
@@ -206,6 +212,14 @@ class ClaimLoop:
                     worker_id=self.cfg.worker_id,
                     in_flight=len(in_flight),
                 )
+                _, pending = await asyncio.wait(in_flight, timeout=self.cfg.shutdown_drain_sec)
+                if pending:
+                    _log.warning(
+                        "claim_loop_drain_timeout",
+                        worker_id=self.cfg.worker_id,
+                        cancelled=self.stop_in_flight(),
+                        after_sec=self.cfg.shutdown_drain_sec,
+                    )
                 await asyncio.gather(*in_flight, return_exceptions=True)
             _log.info("claim_loop_stopped", worker_id=self.cfg.worker_id)
 
