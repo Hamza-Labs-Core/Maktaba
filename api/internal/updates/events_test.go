@@ -120,3 +120,47 @@ func TestLauncherRollbackEvent(t *testing.T) {
 		t.Fatalf("launcher_rollback %v", e)
 	}
 }
+
+// The last tick before an API restart: what the previous process's last Step wrote after
+// its last look (a machine prepared, a step done) is said by the first look of the next
+// process, once; what the previous process said is not said again.
+func TestEventsMissedAcrossARestartAreSaidOnce(t *testing.T) {
+	r := newDriverRig(t)
+	ctx := context.Background()
+	before := &eventLog{}
+	r.d.Events = before.add
+	r.d.observe(ctx) // a first start ever: nothing to say, the mark is set
+	run, err := r.f.store.InsertRun(ctx, "1.5.0", "1.4.0", TriggerAuto, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.f.now = r.f.now.Add(time.Minute)
+	r.d.observe(ctx)
+	if len(before.named(EventPlanned)) != 1 {
+		t.Fatalf("planned: %v", before.recs)
+	}
+	// the last Step before the restart: the home's preflight done after the last look
+	r.f.now = r.f.now.Add(time.Minute)
+	started, fin := r.f.now.Add(-30*time.Second), r.f.now
+	if err := r.f.store.ReplaceSteps(ctx, run.ID, HomeHost, stepSeqBase(0, true), []MachineStep{
+		{Step: "preflight", State: "done", StartedAt: started, FinishedAt: &fin}}); err != nil {
+		t.Fatal(err)
+	}
+	// the API restarts: a new driver over the same database
+	after := &eventLog{}
+	r.f.now = r.f.now.Add(time.Minute)
+	d2 := &Driver{Store: r.d.Store, Svc: r.d.Svc, Now: r.d.Now, Events: after.add, Getenv: r.d.Getenv}
+	d2.observe(ctx)
+	if len(after.named(EventStepStarted)) != 1 || len(after.named(EventStepFinished)) != 1 {
+		t.Fatalf("what the last tick wrote was not said after the restart: %v", after.recs)
+	}
+	if len(after.named(EventPlanned)) != 0 {
+		t.Fatalf("an event said before the restart was said again: %v", after.recs)
+	}
+	d2.observe(ctx)
+	d3 := &Driver{Store: r.d.Store, Svc: r.d.Svc, Now: r.d.Now, Events: after.add, Getenv: r.d.Getenv}
+	d3.observe(ctx)
+	if len(after.named(EventStepFinished)) != 1 {
+		t.Fatalf("said twice: %v", after.recs)
+	}
+}
