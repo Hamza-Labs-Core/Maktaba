@@ -29,7 +29,8 @@ const (
 	troubleFor = 24 * time.Hour
 )
 
-// troubled are the run states that ended badly.
+// troubled are the run states that ended badly (a run whose only machines left need a
+// person, done_needs_person, did not: those machines show as behind).
 var troubled = map[string]bool{RunFailed: true, RunRolledBack: true, RunFailedRollback: true, RunHeld: true,
 	RunDoneFailures: true}
 

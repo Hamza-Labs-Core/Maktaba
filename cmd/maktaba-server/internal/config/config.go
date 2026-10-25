@@ -24,6 +24,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // Config mirrors the server.toml schema documented in the task. Every
@@ -384,6 +386,13 @@ func Defaults() Config {
 func Path() string {
 	if p := strings.TrimSpace(os.Getenv("MAKTABA_CONFIG")); p != "" {
 		return p
+	}
+	// a server its launcher started: the install's own word on where its server.toml is
+	// (setup wrote it; a Windows task or service carries no MAKTABA_CONFIG)
+	if root := strings.TrimSpace(os.Getenv(layout.EnvInstallRoot)); root != "" {
+		if p := layout.ReadConfigPointer(root); p != "" {
+			return p
+		}
 	}
 	return filepath.Join(configDir(), "server.toml")
 }

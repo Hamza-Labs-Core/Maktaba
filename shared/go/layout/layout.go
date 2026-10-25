@@ -42,6 +42,26 @@ const (
 	VerifiedFile  = ".verified"
 )
 
+// ConfigPointerFile is the install's own word on where its server.toml is (one absolute
+// path, written by `setup --self-managed --service`): a Windows logon task or service
+// carries no environment, so the server a launcher starts reads it there (EnvInstallRoot)
+// when MAKTABA_CONFIG is not set, under any launcher and any service manager.
+const ConfigPointerFile = "server.toml.path"
+
+// ReadConfigPointer is the server.toml path root's ConfigPointerFile names, "" when there
+// is none or it is not one absolute path.
+func ReadConfigPointer(root string) string {
+	b, err := os.ReadFile(filepath.Join(root, ConfigPointerFile))
+	if err != nil {
+		return ""
+	}
+	p := strings.TrimSpace(string(b))
+	if p == "" || strings.ContainsAny(p, "\r\n") || !filepath.IsAbs(p) {
+		return ""
+	}
+	return p
+}
+
 // Environment the launcher hands the server it starts.
 const (
 	EnvLauncher    = "MAKTABA_LAUNCHER"     // "1" when started by maktaba-launcher

@@ -342,3 +342,26 @@ func TestValidateRefusesSharedWritable(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// The install's pointer to its server.toml: one absolute path, else nothing.
+func TestReadConfigPointer(t *testing.T) {
+	root := t.TempDir()
+	if got := ReadConfigPointer(root); got != "" {
+		t.Fatalf("no pointer: %q", got)
+	}
+	abs := filepath.Join(t.TempDir(), "server.toml")
+	for content, want := range map[string]string{
+		abs + "\n":            abs,
+		"  " + abs + "  \r\n": abs,
+		"server.toml\n":       "",
+		"":                    "",
+		abs + "\n" + abs:      "",
+	} {
+		if err := os.WriteFile(filepath.Join(root, ConfigPointerFile), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := ReadConfigPointer(root); got != want {
+			t.Errorf("%q: %q, want %q", content, got, want)
+		}
+	}
+}

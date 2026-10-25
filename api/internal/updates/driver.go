@@ -22,6 +22,9 @@ import (
 const (
 	NoticeInstalledHome   = "update.installed_home"
 	NoticeRolloutComplete = "update.rollout_complete"
+	// NoticeRolloutNeedsYou: the rollout ended with every machine on the release but those
+	// that need a person (named, with their reasons)
+	NoticeRolloutNeedsYou = "update.rollout_needs_you"
 	NoticeRolledBack      = "update.rolled_back"
 	NoticeNodeFailed      = "update.node_failed"
 	NoticeNeedsPerson     = "update.needs_person"
@@ -1755,6 +1758,7 @@ func (d *Driver) maybeFinishRollout(ctx context.Context, run Run, det RunDetail)
 	// wait for the next window
 	pastWindow := !deadline.IsZero() && d.now().After(deadline) && (det.Home == nil || !det.Home.Asks)
 	failed, held, waiting, busy := 0, 0, 0, false
+	var needYou []string // the machines that need a person, with their reasons
 	for _, t := range targets {
 		switch t.State {
 		case TargetPrepared:
@@ -1789,8 +1793,10 @@ func (d *Driver) maybeFinishRollout(ctx context.Context, run Run, det RunDetail)
 			waiting++
 		case TargetHeld:
 			held++
-		case TargetFailed, TargetFailedPrepare, TargetRolledBack, TargetNeedsPerson:
+		case TargetFailed, TargetFailedPrepare, TargetRolledBack:
 			failed++
+		case TargetNeedsPerson:
+			needYou = append(needYou, t.Name+" ("+readErr(t.Error).Code+")")
 		}
 	}
 	step := ""
@@ -1809,11 +1815,18 @@ func (d *Driver) maybeFinishRollout(ctx context.Context, run Run, det RunDetail)
 		state = RunHeld
 	case failed > 0:
 		state = RunDoneFailures
+	case len(needYou) > 0:
+		// only machines a person must see to: the release did not fail anywhere
+		state = RunDoneNeedsPerson
 	}
-	if state == RunDone {
+	switch state {
+	case RunDone:
 		d.notify(ctx, NoticeRolloutComplete, notify.SeverityInfo, run, map[string]any{"machines": len(targets)})
+	case RunDoneNeedsPerson:
+		d.notify(ctx, NoticeRolloutNeedsYou, notify.SeverityWarn, run, map[string]any{"count": len(needYou),
+			"machines": strings.Join(needYou, ", ")})
 	}
-	return d.finish(ctx, run, det, state, map[string]any{"failed": failed, "held": held})
+	return d.finish(ctx, run, det, state, map[string]any{"failed": failed, "held": held, "needs_person": len(needYou)})
 }
 
 // Supersedable reports whether Supersede would end the active run for version (nothing

@@ -431,6 +431,31 @@ describe("Admin Updates", () => {
     );
   });
 
+  it("a run whose only machines left need a person reads done, naming them and why", async () => {
+    const over = {
+      ...runView,
+      state: "done_needs_person",
+      finished_at: finishedAt,
+      detail: {},
+      error: { failed: 0, held: 0, needs_person: 1 },
+      targets: [needsPerson],
+    };
+    routes(
+      overview({
+        last_run: { ...liveRun, state: "done_needs_person", finished_at: finishedAt },
+      }),
+      over,
+      [over]
+    );
+    renderPage();
+    const line = await screen.findByTestId("updates-run-needs-person");
+    expect(line).toHaveTextContent("Machines that need you (1): nas-box (");
+    expect(line).toHaveTextContent("This install cannot update itself yet");
+    expect(screen.getAllByText("done, machines need you").length).toBeGreaterThan(0);
+    expect(screen.queryByText("done, with failures")).toBeNull();
+    expect(screen.queryByTestId("updates-last-failed")).toBeNull();
+  });
+
   const applying = { ...liveRun, state: "home_applying", step: "applying" };
   const applyingView = {
     ...runView,

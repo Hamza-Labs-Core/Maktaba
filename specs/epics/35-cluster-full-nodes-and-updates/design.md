@@ -842,7 +842,7 @@ home_committed
                   machine agent reconnected
           remove pending; watermark = <v>; undrain; update.state {version}
        home: target healthy within node_health_timeout? next : failure (§13.4)
-done | done_with_failures | held
+done | done_needs_person (only machines a person must see to) | done_with_failures | held
 ```
 
 ### 13.4 Failures
