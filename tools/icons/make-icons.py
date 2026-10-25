@@ -151,14 +151,15 @@ def desktop(master: Image.Image) -> None:
     full_tile(master, 256).save(DESKTOP / "128x128@2x.png")
 
 
-def web(master: Image.Image) -> None:
+def web(master: Image.Image, mark: Image.Image) -> None:
     WEB.mkdir(parents=True, exist_ok=True)
     small = zoomed(master, 1.18)
     full_tile(small, 32).save(WEB / "favicon-32.png")
     for s in (192, 512):
         full_tile(master, s).save(WEB / f"icon-{s}.png")
-    # Maskable and Apple touch icons are square and opaque: the platform rounds them.
-    sized(master, 512).save(WEB / "maskable-512.png")
+    # Maskable and Apple touch icons are square and opaque: the platform crops them.
+    # A maskable icon may be cut to the inner 80% circle, so the mark sits smaller.
+    on_ground(mark, 512, 512, 0.8).convert("RGB").save(WEB / "maskable-512.png")
     sized(master, 180).save(WEB / "apple-touch-icon.png")
     full_tile(small, 48).save(
         WEB_ROOT / "favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)]
@@ -341,7 +342,7 @@ def main() -> None:
     master = load_master()
     mark = mark_layer(master)
     desktop(master)
-    web(master)
+    web(master, mark)
     tv_android(master, mark)
     tv_os(mark)
     mobile(master, mark)
