@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues/queuestest"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 )
@@ -25,7 +26,7 @@ func TestDetail(t *testing.T) {
 	f := newFixture(rules...)
 
 	t.Run("ok", func(t *testing.T) {
-		rec := f.do("GET", "/api/queues/probe", "", allViewer())
+		rec := f.do("GET", "/api/queues/probe", "", admin())
 		if rec.Code != 200 {
 			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 		}
@@ -50,7 +51,7 @@ func TestDetail(t *testing.T) {
 	})
 	t.Run("unknown stage", func(t *testing.T) {
 		g := newFixture()
-		if rec := g.do("GET", "/api/queues/nope", "", viewer()); rec.Code != 404 {
+		if rec := g.do("GET", "/api/queues/nope", "", admin()); rec.Code != 404 {
 			t.Fatalf("status %d", rec.Code)
 		}
 	})
@@ -83,7 +84,7 @@ func TestRate(t *testing.T) {
 				&queuestest.Rule{Match: "from processing_jobs where stage = $1 and finished_at", Cols: []string{"b", "d", "f", "s"},
 					Rows: [][]driver.Value{{b, int64(12), int64(2), int64(30)}}},
 				&queuestest.Rule{Match: "from health_samples", Cols: []string{"b", "n"}, Rows: [][]driver.Value{{b, 4.0}}})
-			rec := f.do("GET", tc.url, "", viewer())
+			rec := f.do("GET", tc.url, "", admin())
 			if rec.Code != tc.wantCode {
 				t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 			}
@@ -147,7 +148,7 @@ func TestJobs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(singleStageRule(stageRow("probe", "episodes", 1, "nas_read")), stagesRule(stageRow("probe", "episodes", 1, "nas_read")),
 				&queuestest.Rule{Match: "where j.stage = $1", Cols: jobRefCols(), Rows: rows(tc.rows)})
-			rec := f.do("GET", tc.url, "", allViewer())
+			rec := f.do("GET", tc.url, "", admin())
 			if rec.Code != tc.wantCode {
 				t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 			}
@@ -201,7 +202,7 @@ func TestFailures(t *testing.T) {
 	f := newFixture(stagesRule(stageRow("probe", "episodes", 1, "nas_read")), singleStageRule(stageRow("probe", "episodes", 1, "nas_read")),
 		codedRule, legacyRule, reviewRule, labels)
 
-	rec := f.do("GET", "/api/queues/probe/failures", "", allViewer())
+	rec := f.do("GET", "/api/queues/probe/failures", "", admin())
 	if rec.Code != 200 {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
@@ -242,7 +243,7 @@ func TestFailures(t *testing.T) {
 
 func TestIssues_AllStages(t *testing.T) {
 	f := newFixture(stagesRule(stageRow("probe", "episodes", 1, "nas_read")))
-	rec := f.do("GET", "/api/issues", "", allViewer())
+	rec := f.do("GET", "/api/issues", "", admin())
 	var out struct {
 		Groups []FailureGroup `json:"groups"`
 	}
@@ -282,7 +283,7 @@ func TestActivity(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(&queuestest.Rule{Match: "from job_events e", Cols: logCols, Rows: tc.rows})
-			rec := f.do("GET", tc.url, "", allViewer())
+			rec := f.do("GET", tc.url, "", admin())
 			if rec.Code != tc.wantCode {
 				t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 			}
@@ -319,11 +320,17 @@ func TestJobEvents(t *testing.T) {
 		&queuestest.Rule{Match: "from job_events e",
 			Cols: []string{"id", "at", "job_id", "stage", "k", "sid", "label", "level", "kind", "message", "data"},
 			Rows: [][]driver.Value{{int64(1), t0, int64(7), "probe", "video", uidA, "E1", "debug", "skipped", "unchanged", `{"a":1}`}}})
-	// the job is in library L: a caller without it gets 404, no log read
-	if rec := f.do("GET", "/api/jobs/7/events", "", viewer()); rec.Code != 404 {
-		t.Fatalf("viewer without the job's library: %d", rec.Code)
+	// non-admins, even one granted the job's library, are refused by the
+	// package's admin-only Mount (the API enforces roles): 403, no read
+	for _, p := range []*principal.Principal{viewer(), libViewer(), allViewer()} {
+		if rec := f.do("GET", "/api/jobs/7/events", "", p); rec.Code != http.StatusForbidden {
+			t.Fatalf("non-admin %s: %d", p.UserID, rec.Code)
+		}
 	}
-	rec := f.do("GET", "/api/jobs/7/events", "", libViewer())
+	if n := len(f.db.Calls()); n != 0 {
+		t.Fatalf("queried %d times for refused callers", n)
+	}
+	rec := f.do("GET", "/api/jobs/7/events", "", admin())
 	var out struct{ Items []LogLine }
 	decode(t, rec, &out)
 	if rec.Code != 200 || len(out.Items) != 1 || out.Items[0].Level != "debug" {
@@ -339,7 +346,7 @@ func TestJobEvents(t *testing.T) {
 		t.Errorf("sql/args = %s %v", c.SQL, c.Args)
 	}
 	for _, bad := range []string{"/api/jobs/x/events", "/api/jobs/0/events"} {
-		if rec := f.do("GET", bad, "", viewer()); rec.Code != 400 {
+		if rec := f.do("GET", bad, "", admin()); rec.Code != 400 {
 			t.Errorf("%s -> %d", bad, rec.Code)
 		}
 	}
@@ -373,7 +380,7 @@ func TestItemHistory(t *testing.T) {
 
 	t.Run("video", func(t *testing.T) {
 		f := newFixture(rules...)
-		rec := f.do("GET", "/api/items/video/"+uidA+"/history?limit=2", "", allViewer())
+		rec := f.do("GET", "/api/items/video/"+uidA+"/history?limit=2", "", admin())
 		if rec.Code != 200 {
 			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 		}
@@ -454,7 +461,7 @@ func TestItemHistory(t *testing.T) {
 			"/api/items/catalog/" + uidA + "/history":        404, // not the catalog id
 			"/api/items/video/" + uidA + "/history?cursor=z": 400,
 		} {
-			if rec := f.do("GET", url, "", viewer()); rec.Code != want {
+			if rec := f.do("GET", url, "", admin()); rec.Code != want {
 				t.Errorf("%s -> %d want %d", url, rec.Code, want)
 			}
 		}
@@ -484,7 +491,7 @@ func TestLibraries(t *testing.T) {
 		&queuestest.Rule{Match: "select library_id::text, stage, count(*) from latest", Cols: []string{"lib", "stage", "n"},
 			Rows: [][]driver.Value{{uidA, "probe", int64(3)}}},
 	)
-	rec := f.do("GET", "/api/queues/libraries", "", allViewer())
+	rec := f.do("GET", "/api/queues/libraries", "", admin())
 	var out struct{ Items []LibraryQueueRow }
 	decode(t, rec, &out)
 	if rec.Code != 200 || len(out.Items) != 2 {
@@ -510,13 +517,13 @@ func TestLibraries(t *testing.T) {
 
 	// cached for 5 s
 	n := len(f.db.Calls())
-	f.do("GET", "/api/queues/libraries", "", allViewer())
+	f.do("GET", "/api/queues/libraries", "", admin())
 	if len(f.db.Calls()) != n {
 		t.Errorf("second call within 5s must be served from cache")
 	}
 	now := t0.Add(6 * time.Second)
 	f.h.NowFunc = func() time.Time { return now }
-	f.do("GET", "/api/queues/libraries", "", allViewer())
+	f.do("GET", "/api/queues/libraries", "", admin())
 	if len(f.db.Calls()) == n {
 		t.Errorf("cache must expire after 5s")
 	}
@@ -537,7 +544,7 @@ func TestHealthSeries(t *testing.T) {
 		t.Run(tc.url, func(t *testing.T) {
 			f := newFixture(&queuestest.Rule{Match: "from health_samples", Cols: []string{"metric", "t", "v"}, Rows: [][]driver.Value{
 				{"nas.open_ms_p95", t0.Add(-time.Minute), 80.0}, {"nas.open_ms_p95", t0, 90.0}, {"cpu.pct", t0, 10.0}}})
-			rec := f.do("GET", tc.url, "", viewer())
+			rec := f.do("GET", tc.url, "", admin())
 			if rec.Code != tc.wantCode {
 				t.Fatalf("status %d", rec.Code)
 			}
@@ -656,7 +663,7 @@ func TestInitialFrame(t *testing.T) {
 		t.Fatalf("ev = %+v", ev)
 	}
 	_ = ws.Event(*ev)
-	if rec := f.do(http.MethodGet, "/api/queues", "", viewer()); rec.Code != 200 {
+	if rec := f.do(http.MethodGet, "/api/queues", "", admin()); rec.Code != 200 {
 		t.Fatal(rec.Code)
 	}
 }

@@ -300,6 +300,11 @@ SELECT j.id, j.subject_id::text, COALESCE(v.title, v.filename, j.subject_id::tex
 // and the failures are kept to the libraries the caller can read (the
 // cache is shared, so it is filtered per request); the totals stay global.
 func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
+	// the server's transcription state (totals, budgets, failures): the home admins'
+	if p := principal.FromContext(r.Context()); p == nil || !p.IsAdmin {
+		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+		return
+	}
 	p := principal.FromContext(r.Context())
 	if p == nil {
 		httperror.Write(w, r, httperror.Forbidden("", "auth required"))

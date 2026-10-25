@@ -16,6 +16,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"net/http"
 	"sync"
 	"time"
@@ -180,7 +181,27 @@ func (a *Aggregator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(res)
+	_ = json.NewEncoder(w).Encode(forCaller(principal.FromContext(r.Context()), res))
+}
+
+// forCaller is what each caller may read of the health (the API enforces roles): anyone
+// (the route is public, for probes) the overall status; a signed-in viewer each service's
+// status too (the Cloud status page); a home admin everything, the checks' reasons, the
+// disk, the queue and the transcription budget among them.
+func forCaller(p *principal.Principal, res Health) any {
+	switch {
+	case p == nil:
+		return struct {
+			Status string `json:"status"`
+		}{res.Status}
+	case !p.IsAdmin:
+		out := Health{Status: res.Status, Services: map[string]Snapshot{}}
+		for name, s := range res.Services {
+			out.Services[name] = Snapshot{Status: s.Status}
+		}
+		return out
+	}
+	return res
 }
 
 // probe issues a GET against the service's /readyz and translates the

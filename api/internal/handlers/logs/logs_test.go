@@ -157,9 +157,14 @@ func TestUserExportScopesToOwnLogs(t *testing.T) {
 	if !strings.Contains(apiLogs, "u-alice") {
 		t.Errorf("alice's own line missing from scoped export:\n%s", apiLogs)
 	}
-	// Un-attributed system lines (no user_id) should still be present.
-	if !strings.Contains(apiLogs, "startup") {
-		t.Errorf("system line missing from scoped export:\n%s", apiLogs)
+	// The server's own lines (no user_id) are an admin's: they name other users'
+	// library paths and errors (the API enforces roles).
+	if strings.Contains(apiLogs, "startup") {
+		t.Errorf("a user's export carries the server's own lines:\n%s", apiLogs)
+	}
+	var health map[string]any
+	if err := json.Unmarshal(bundle["health-check.json"], &health); err != nil || len(health) != 1 || health["status"] == nil {
+		t.Errorf("a user's export carries the server's health: %s %v", bundle["health-check.json"], err)
 	}
 	// Cross-user job status must be omitted from the user export.
 	if _, ok := bundle["jobs.json"]; ok {
@@ -205,9 +210,9 @@ func TestUserExportScopesPeerLogs(t *testing.T) {
 	if !strings.Contains(peerLogs, "alice stream") {
 		t.Errorf("alice's own peer line missing:\n%s", peerLogs)
 	}
-	// Un-attributed peer system lines stay (consistent with local scope).
-	if !strings.Contains(peerLogs, "system tick") {
-		t.Errorf("un-attributed peer system line missing:\n%s", peerLogs)
+	// Un-attributed peer system lines are left out too (consistent with local scope).
+	if strings.Contains(peerLogs, "system tick") {
+		t.Errorf("a user's export carries a peer's system line:\n%s", peerLogs)
 	}
 }
 

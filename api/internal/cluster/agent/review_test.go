@@ -23,7 +23,7 @@ func TestJobsSnapshotRunning(t *testing.T) {
 			"since": "2026-10-19T08:00:00Z", "progress": nil},
 	}}})
 	waitFor(t, "metrics", func() bool { return f.hub.Processes()[0].Metrics != nil })
-	b := f.browser("viewer")
+	b := f.browser("admin")
 	snap := b.subscribeSnap(TopicJobs)
 	var s struct {
 		Jobs    []json.RawMessage `json:"jobs"`

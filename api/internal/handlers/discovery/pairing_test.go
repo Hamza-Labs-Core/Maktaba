@@ -176,19 +176,37 @@ func TestStatusPendingThenPaired(t *testing.T) {
 		IssuedAt:  now,
 		ExpiresAt: now.Add(time.Minute),
 	})
+	ask := func(p *principal.Principal) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/pairing/status?code=ABCD-1234", nil)
+		if p != nil {
+			req = req.WithContext(principal.WithPrincipal(req.Context(), p))
+		}
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+	owner := &principal.Principal{UserID: "u1"}
 
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/pairing/status?code=ABCD-1234", nil))
-	if rec.Code != http.StatusAccepted {
+	if rec := ask(owner); rec.Code != http.StatusAccepted {
 		t.Fatalf("pending status=%d", rec.Code)
+	}
+	// someone else's ticket: not found, not even that it exists (the API enforces roles)
+	for _, p := range []*principal.Principal{nil, {UserID: "u2"}} {
+		if rec := ask(p); rec.Code != http.StatusNotFound {
+			t.Errorf("another user's ticket as %v: %d, want 404", p, rec.Code)
+		}
+	}
+	if rec := ask(&principal.Principal{UserID: "admin", IsAdmin: true}); rec.Code != http.StatusAccepted {
+		t.Errorf("an admin: %d", rec.Code)
 	}
 
 	if _, err := store.Consume(context.Background(), "ABCD1234"); err != nil {
 		t.Fatal(err)
 	}
-	rec2 := httptest.NewRecorder()
-	r.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/api/pairing/status?code=ABCD-1234", nil))
-	if rec2.Code != http.StatusOK {
-		t.Fatalf("paired status=%d body=%s", rec2.Code, rec2.Body.String())
+	if rec := ask(owner); rec.Code != http.StatusOK {
+		t.Fatalf("paired status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if rec := ask(&principal.Principal{UserID: "u2"}); rec.Code != http.StatusNotFound {
+		t.Errorf("another user learns who paired: %d", rec.Code)
 	}
 }

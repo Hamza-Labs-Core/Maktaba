@@ -28,7 +28,9 @@ func TestBrowserNeedsSignIn(t *testing.T) {
 func TestBrowserAdminTopics(t *testing.T) {
 	f := newFixture(t)
 	v := f.browser("viewer")
-	for _, topic := range []string{TopicMetrics, TopicLLM, TopicProcesses, "logs:*:info"} {
+	// every topic is the home admins' (the API enforces roles): a viewer gets none
+	for _, topic := range []string{TopicMetrics, TopicLLM, TopicProcesses, "logs:*:info",
+		TopicQueues, TopicJobs, TopicWorkers, TopicLibrary} {
 		v.send(map[string]any{"op": "subscribe", "topics": []string{topic}})
 		m := v.nextType("error")
 		if !strings.Contains(string(m.Data), `"forbidden"`) {
@@ -39,7 +41,6 @@ func TestBrowserAdminTopics(t *testing.T) {
 	if m := v.nextType("error"); !strings.Contains(string(m.Data), "unknown_topic") {
 		t.Fatalf("unknown topic: %s", m.Data)
 	}
-	v.subscribe(TopicQueues, TopicJobs, TopicWorkers, TopicLibrary)
 	v.send(map[string]any{"op": "cmd", "id": 7, "session": "x", "name": "drain"})
 	if m := v.nextType("cmd.result"); !strings.Contains(string(m.Data), "forbidden") {
 		t.Fatalf("viewer cmd: %s", m.Data)
@@ -98,7 +99,7 @@ func TestBrowserProcessesMetricsJobsAndCmd(t *testing.T) {
 		t.Fatalf("job = %s", m.Data)
 	}
 	// a late subscriber gets the recent jobs
-	late := f.browser("viewer")
+	late := f.browser("admin")
 	late.send(map[string]any{"op": "subscribe", "topics": []string{TopicJobs}})
 	s := late.next(func(m browserMsg) bool { return m.Type == "snapshot" })
 	var js struct {
@@ -220,7 +221,7 @@ func TestQueuesWorkersLibraryTopics(t *testing.T) {
 		defer f.hub.mu.RUnlock()
 		return f.hub.workers != nil && f.hub.library != nil
 	})
-	b := f.browser("viewer")
+	b := f.browser("admin")
 	b.subscribeSnap(TopicQueues)
 	m := b.nextType("queues") // pushed within a second of subscribing
 	var snap queues.Snapshot

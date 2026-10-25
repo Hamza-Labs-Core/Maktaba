@@ -77,8 +77,10 @@ func requireUser(w http.ResponseWriter, r *http.Request) bool {
 	case p == nil:
 		writeOpenAIError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return false
-	case !p.IsAdmin && p.Source != principal.SourcePAT:
-		writeOpenAIError(w, http.StatusForbidden, "forbidden", "an admin or a personal access token is required")
+	case !p.IsAdmin:
+		// the cluster's models are the home admins' compute: a session or a personal access
+		// token of an admin (a token carries its owner's role), never a viewer's token
+		writeOpenAIError(w, http.StatusForbidden, "forbidden", "a home admin's session or access token is required")
 		return false
 	}
 	return true

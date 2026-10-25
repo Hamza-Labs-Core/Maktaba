@@ -33,8 +33,11 @@ const (
 	maxSnapshotLogs = 500
 )
 
+// topicAdmin: every topic is the home admins' (the queues, the jobs of every library,
+// the workers, the libraries' processing, metrics, the cluster's models and processes):
+// the API enforces roles, and the REST reads behind them are admin-only too.
 var topicAdmin = map[string]bool{
-	TopicQueues: false, TopicJobs: false, TopicWorkers: false, TopicLibrary: false,
+	TopicQueues: true, TopicJobs: true, TopicWorkers: true, TopicLibrary: true,
 	TopicMetrics: true, TopicLLM: true, TopicProcesses: true,
 }
 

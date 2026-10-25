@@ -269,7 +269,7 @@ func TestPools(t *testing.T) {
 	}
 	t.Run("list", func(t *testing.T) {
 		f := newFixture(poolRules(1)...)
-		rec := f.do("GET", "/api/pools", "", viewer())
+		rec := f.do("GET", "/api/pools", "", admin())
 		var out struct {
 			Pools []Pool `json:"pools"`
 		}
