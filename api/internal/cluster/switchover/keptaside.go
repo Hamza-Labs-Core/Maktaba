@@ -140,7 +140,8 @@ func (o *Orchestrator) postReport(w http.ResponseWriter, r *http.Request) {
 	pub, err := base64.StdEncoding.DecodeString(pubB64)
 	priv, perr := os.ReadFile(o.ClusterKeyFile)
 	if err != nil || perr != nil || len(pub) != 32 || len(priv) != 32 {
-		httperror.Write(w, r, httperror.Internal("kept aside").Wrap(err))
+		httperror.Write(w, r, httperror.Internal("kept aside").Wrap(
+			errors.Join(err, perr, fmt.Errorf("key lengths %d/%d, want 32", len(pub), len(priv)))))
 		return
 	}
 	plain, err := openReport(priv, pub, req.Term, req.Sealed)

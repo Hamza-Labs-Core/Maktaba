@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
@@ -123,5 +124,37 @@ func TestClipAndStripQuery(t *testing.T) {
 	}
 	if got := stripQuery("https://user:pw@h/p?q#f"); got != "https://h/p" {
 		t.Fatalf("stripQuery userinfo: %q", got)
+	}
+}
+
+func TestReportLimiter(t *testing.T) {
+	var l reportLimiter
+	now := time.Now()
+	if !l.allow("u1", "s1", "reopen", now) || !l.allow("u1", "s1", "fatal", now) {
+		t.Fatal("a reopen and the fatal report after it both land")
+	}
+	if l.allow("u1", "s1", "fatal", now) {
+		t.Fatal("the same outcome again within the interval")
+	}
+	// one user naming fresh session ids is capped
+	n := 0
+	for i := 0; i < 100; i++ {
+		if l.allow("u2", uuid.NewString(), "fatal", now) {
+			n++
+		}
+	}
+	if n != reportsPerUser {
+		t.Fatalf("u2 logged %d, want %d", n, reportsPerUser)
+	}
+	if !l.allow("u2", uuid.NewString(), "fatal", now.Add(reportWindow)) {
+		t.Fatal("a new window allows again")
+	}
+	// the map stays bounded
+	for i := 0; i < reportKeysMax+10; i++ {
+		l.allow(uuid.NewString(), uuid.NewString(), "fatal", now)
+	}
+	l.allow("u3", "s3", "fatal", now.Add(2*reportWindow))
+	if len(l.last) > reportKeysMax+1 || len(l.users) > reportKeysMax+1 {
+		t.Fatalf("limiter grew to %d/%d", len(l.last), len(l.users))
 	}
 }

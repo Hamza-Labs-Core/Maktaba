@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -51,9 +52,69 @@ type PlaybackReport struct {
 // reportFieldMax bounds every string written to the log.
 const reportFieldMax = 300
 
-// reportInterval: at most one report per session this often (a player in a
-// retry loop writes one line, not hundreds).
+// reportInterval: at most one report per session and outcome this often (a
+// player in a retry loop writes one line, not hundreds; a reopen and the fatal
+// report that follows it in the same moment both land).
 const reportInterval = time.Second
+
+// reportsPerUser bounds one user's reports per reportWindow, whatever session
+// ids they name (the session is not looked up).
+const (
+	reportsPerUser = 30
+	reportWindow   = time.Minute
+	// reportKeysMax: past it the limiter drops what is older than its window
+	reportKeysMax = 4096
+)
+
+// reportLimiter is PostPlaybackError's rate limit.
+type reportLimiter struct {
+	mu    sync.Mutex
+	last  map[string]time.Time // session|outcome -> last report
+	users map[string]userWindow
+}
+
+type userWindow struct {
+	start time.Time
+	n     int
+}
+
+// allow reports whether a report of user about session's outcome is logged now.
+func (l *reportLimiter) allow(user, session, outcome string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.last == nil {
+		l.last, l.users = map[string]time.Time{}, map[string]userWindow{}
+	}
+	if len(l.last) > reportKeysMax {
+		for k, t := range l.last {
+			if now.Sub(t) >= reportInterval {
+				delete(l.last, k)
+			}
+		}
+	}
+	if len(l.users) > reportKeysMax {
+		for k, u := range l.users {
+			if now.Sub(u.start) >= reportWindow {
+				delete(l.users, k)
+			}
+		}
+	}
+	key := session + "|" + outcome
+	if t, ok := l.last[key]; ok && now.Sub(t) < reportInterval {
+		return false
+	}
+	u := l.users[user]
+	if now.Sub(u.start) >= reportWindow {
+		u = userWindow{start: now}
+	}
+	if u.n >= reportsPerUser {
+		return false
+	}
+	u.n++
+	l.users[user] = u
+	l.last[key] = now
+	return true
+}
 
 // PostPlaybackError logs a player's playback failure as `playback_failed`.
 func (h *Handler) PostPlaybackError(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +133,7 @@ func (h *Handler) PostPlaybackError(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, e)
 		return
 	}
-	if !h.reports().Allow(sessionID, h.now()) {
+	if !h.reports.allow(p.UserID, sessionID, rep.Outcome, h.now()) {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
@@ -96,11 +157,6 @@ func (h *Handler) PostPlaybackError(w http.ResponseWriter, r *http.Request) {
 		"user_agent", clip(r.UserAgent()),
 	)
 	w.WriteHeader(http.StatusAccepted)
-}
-
-func (h *Handler) reports() *sessionDebouncer {
-	h.reportOnce.Do(func() { h.reportLimit = newSessionDebouncer(reportInterval) })
-	return h.reportLimit
 }
 
 // stripQuery drops a URL's query and fragment: a stream URL's query is its

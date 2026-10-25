@@ -112,7 +112,8 @@ SCRUBBED_VALUE = "***"
 # ``X-Plex-Token=abc``, ``?token=abc``, ``&sig=abc``, ``access_token=abc``,
 # ``password=abc`` in a URL query, a header dump or an exception text
 _SECRET_PARAM_RE = re.compile(
-    r"(?i)(?<![\w-])([\w-]*token|sig|signature|password|passwd|secret|api_?key)=([^&\s\"'<>,;]+)"
+    r"(?i)(?<![\w-])([\w-]*(?:token|password|passwd|secret|api_?key)|sig|signature)"
+    r"=([\"']?)([^&\s\"'<>,;]+)"
 )
 # ``scheme://user:pass@host`` (a DSN, an authenticated share URL): the password goes
 _URL_USERINFO_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^/\s:@]*):([^/\s@]+)@")
@@ -321,7 +322,7 @@ def scrub_secrets(text: str) -> str:
         return text
     out = text
     if "=" in out:
-        out = _SECRET_PARAM_RE.sub(lambda m: f"{m.group(1)}={SCRUBBED_VALUE}", out)
+        out = _SECRET_PARAM_RE.sub(lambda m: f"{m.group(1)}={m.group(2)}{SCRUBBED_VALUE}", out)
     if "@" in out:
         out = _URL_USERINFO_RE.sub(lambda m: f"{m.group(1)}:{SCRUBBED_VALUE}@", out)
     return text if out == text else out

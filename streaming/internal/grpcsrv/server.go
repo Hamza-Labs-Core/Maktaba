@@ -13,7 +13,6 @@ package grpcsrv
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -347,7 +346,9 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 			s.log().Error("vod transcode did not start", "session_id", sessID.String(),
 				"video_id", req.VideoID, "input", pathmap.Resolve(row.Path), "hwaccel", string(hw),
 				"err", terr.Error(), "event", "vod_transcode_start_failed")
-			return OpenSessionResponse{}, fmt.Errorf("%w: %v", ErrFailedPrecondition, terr)
+			// the reason is in the log line above: it names this host's paths,
+			// which the API would hand the player
+			return OpenSessionResponse{}, ErrFailedPrecondition
 		}
 		handle.OnEnd(release) // the slot is the encoder's, not the viewer's
 		transcoder = handle

@@ -164,9 +164,8 @@ type Handler struct {
 	ledgerOnce   sync.Once
 	// reconcileOnce starts the retry of the sessions not written yet (Mount)
 	reconcileOnce sync.Once
-	// reportLimit bounds the playback error reports per session (reports)
-	reportLimit *sessionDebouncer
-	reportOnce  sync.Once
+	// reports bounds the playback error reports (PostPlaybackError)
+	reports reportLimiter
 }
 
 // dbCtx bounds a database call on a node (Offline set); the home waits as before.

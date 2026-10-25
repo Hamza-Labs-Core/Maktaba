@@ -47,7 +47,8 @@ Follow the session from the API to the encoder to the player:
 4. **`event=stream_request_failed`** (streaming): every `/stream/*` request
    answered 400 or more: `path` (no query), `status`, `problem` (the problem
    name, e.g. `transcode-stopped` for a 410, `segment-not-found`,
-   `signed-url-expired`, `video-bytes-missing`), `duration_ms`.
+   `signed-url-expired`, `video-bytes-missing`), `duration_ms`. A playlist or
+   segment a cold transcode has not written yet is logged at INFO, not WARN.
 5. **`event=playback_failed`** (api, reported by the player): what the
    browser saw after the session opened. `engine` (`hls.js`, `native`,
    `direct`), `outcome` (`fatal`: the error screen; `reopen`: it opened the
@@ -139,6 +140,6 @@ POST /api/stream/sessions/{session_id}/errors
   "http_status", "url", "position_sec" }
 ```
 
-It answers 202, stores nothing, and is limited to one line per session per
-second. `web/src/lib/playbackReport.ts` is the web (and phone) client; the
+It answers 202 and stores nothing. It is limited to one line per session and
+outcome per second, and 30 per user per minute. `web/src/lib/playbackReport.ts` is the web (and phone) client; the
 API side is `api/internal/handlers/streaming/playback_report.go`.

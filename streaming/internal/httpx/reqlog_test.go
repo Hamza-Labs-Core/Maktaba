@@ -17,6 +17,8 @@ func TestLogFailures(t *testing.T) {
 		switch r.URL.Path {
 		case "/stream/s1/v0/index.m3u8":
 			Write(w, http.StatusGone, "transcode-stopped", "gone", "")
+		case "/stream/s1/v0/seg9.ts":
+			Write(w, http.StatusNotFound, "segment-not-found", "not yet", "")
 		case "/stream/s1/boom":
 			w.WriteHeader(http.StatusInternalServerError)
 		default:
@@ -47,6 +49,12 @@ func TestLogFailures(t *testing.T) {
 		if line[k] != v {
 			t.Errorf("%s = %v, want %v", k, line[k], v)
 		}
+	}
+
+	buf.Reset()
+	do("/stream/s1/v0/seg9.ts")
+	if !strings.Contains(buf.String(), `"level":"INFO"`) || !strings.Contains(buf.String(), "segment-not-found") {
+		t.Fatalf("a segment not written yet is Info: %s", buf.String())
 	}
 
 	buf.Reset()
