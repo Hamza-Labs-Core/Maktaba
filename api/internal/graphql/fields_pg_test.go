@@ -264,10 +264,11 @@ func cases() []fieldCase {
 		{"library", func(t *testing.T, e *pgEnv) {
 			q := `query($id: ID!) { library(id: $id) { id name createdAt } }`
 			unauthorized(t, e, q, map[string]any{"id": libA})
-			// a library the member may not see answers as one that does not exist (the REST
-			// read's 404 since #313: a 403 told which ids exist): null, never its fields
-			if v := e.ok(member, "library", q, map[string]any{"id": libB}); v != nil {
-				t.Fatalf("a library the member may not see = %v, want null", v)
+			// a library the member may not see answers as one that does not exist: null,
+			// no error naming it (the API enforces roles; a 403 told which ids exist)
+			e.fails(member, "", q, map[string]any{"id": libB})
+			if _, env := e.gql(member, q, map[string]any{"id": libB}); env["data"].(map[string]any)["library"] != nil {
+				t.Fatalf("a hidden library: %v", env)
 			}
 			lib := e.ok(member, "library", q, map[string]any{"id": libA}).(map[string]any)
 			if lib["name"] != "Alpha" {
@@ -390,7 +391,7 @@ func cases() []fieldCase {
 		{"queueStats", func(t *testing.T, e *pgEnv) {
 			q := `{ queueStats }`
 			unauthorized(t, e, q, nil)
-			e.fails(member, "forbidden", q, nil) // admin-only since #313 (GET /api/queue/stats)
+			e.fails(member, "forbidden", q, nil) // the queue's stats are the admins'
 			st := e.ok(admin, "queueStats", q, nil).(map[string]any)
 			if _, ok := st["by_stage"]; !ok {
 				t.Fatalf("queueStats = %v", st)
@@ -448,7 +449,7 @@ func cases() []fieldCase {
 		{"settings", func(t *testing.T, e *pgEnv) {
 			q := `{ settings }`
 			unauthorized(t, e, q, nil)
-			e.fails(member, "forbidden", q, nil) // admin-only since #313 (GET /api/settings)
+			e.fails(member, "forbidden", q, nil) // the server's settings are the admins'
 			if _, ok := e.ok(admin, "settings", q, nil).(map[string]any); !ok {
 				t.Fatal("settings is not an object")
 			}

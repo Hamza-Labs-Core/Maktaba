@@ -6,9 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/go-chi/chi/v5"
 )
 
 func TestRedactSecrets(t *testing.T) {

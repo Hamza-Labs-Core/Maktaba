@@ -23,10 +23,11 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+
 	"github.com/go-chi/chi/v5"
 
 	authmw "github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
