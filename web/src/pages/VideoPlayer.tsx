@@ -100,9 +100,16 @@ export interface VideoPlayerProps {
   onVideoElement?: (el: HTMLVideoElement | null) => void;
   /** Leaves out the Back button (a parent page has its own). */
   hideBack?: boolean;
+  /** Starts playing as soon as the stream is attached (the viewer already pressed Play). */
+  autoPlay?: boolean;
 }
 
-export function VideoPlayer({ markers, onVideoElement, hideBack = false }: VideoPlayerProps = {}) {
+export function VideoPlayer({
+  markers,
+  onVideoElement,
+  hideBack = false,
+  autoPlay = false,
+}: VideoPlayerProps = {}) {
   const { videoId } = useParams();
   const [params] = useSearchParams();
   const nav = useNavigate();
@@ -578,6 +585,7 @@ export function VideoPlayer({ markers, onVideoElement, hideBack = false }: Video
           className="mkt-player__video"
           controls
           playsInline
+          autoPlay={autoPlay}
           preload="metadata"
           // the video's picture until it plays (a missing one leaves the frame)
           poster={videoId ? carrySig(`/api/videos/${videoId}/poster`, sigSource) : undefined}
