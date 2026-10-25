@@ -62,6 +62,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/cluster/updates/backups", h.BackupsList)
 	r.Get("/api/cluster/updates/backups/{name}/restore", h.RestorePlanView)
 	r.Post("/api/cluster/updates/backups/{name}/restore", h.Restore)
+	r.Post("/internal/updates/restored", h.RestoredNotice)
 	h.Mirror.Mount(r)
 }
 

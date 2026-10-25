@@ -4,9 +4,10 @@ package updates
 // the API's structured log and the hub's events file (Epic 31 §7.4). They are read off
 // the database rather than raised where each change is made: every driver tick compares
 // the runs, their machines' steps and targets and the catalog with what the last tick
-// saw, and says what changed. A change made while the API was down (an update restarts
-// it) is said once it is back; nothing is said twice in one process, and the first look
-// after a start only learns what is there.
+// saw, and says what changed. Each look that said something keeps its time with the
+// settings (eventsMarkKey): the first look after a start (an update restarts the API)
+// says what happened after that mark, by its own time (a step's start or end, a
+// machine's prepared_at or healthy_at, a run's end), once, and only learns the rest.
 
 import (
 	"context"
@@ -54,18 +55,26 @@ type observer struct {
 	failed  map[string]bool // releases whose verification failed
 	gone    map[string]bool // withdrawn releases
 	catAt   time.Time
-	first   bool // this look only learns what is there
+	first   bool       // this look only learns what is there, but what happened after mark
+	mark    *time.Time // the previous process's last look that said something
+	spoke   bool       // this look said something
 }
 
-// say emits an event once by key (silently on the first look after a start).
-func (d *Driver) say(o *observer, key, name string, fields map[string]any) {
+// eventsMarkKey keeps the time of the last look that said something (app_settings).
+const eventsMarkKey = "updates.events_mark"
+
+// say emits an event once by key. On the first look after a start it is said only when it
+// happened (at) after the previous process's mark: what that process did not see.
+func (d *Driver) say(o *observer, key, name string, at *time.Time, fields map[string]any) {
 	if o.said[key] {
 		return
 	}
 	o.said[key] = true
-	if !o.first {
-		d.emit(name, fields)
+	if o.first && (o.mark == nil || at == nil || !at.After(*o.mark)) {
+		return
 	}
+	o.spoke = true
+	d.emit(name, fields)
 }
 
 // emit says one event: the structured log, and the hub's events file when there is one.
@@ -93,19 +102,27 @@ func (d *Driver) observe(ctx context.Context) {
 	defer o.mu.Unlock()
 	o.first = !o.started
 	if o.first {
-		o.started = true
 		o.said, o.failed, o.gone = map[string]bool{}, map[string]bool{}, map[string]bool{}
+		var mark time.Time
+		if d.Store.loadSetting(ctx, eventsMarkKey, &mark) && !mark.IsZero() {
+			o.mark = &mark
+		}
 	}
 	runs, err := d.Store.Runs(ctx, 3)
 	if err != nil {
 		return
 	}
+	o.started, o.spoke = true, false
 	for _, run := range runs {
 		d.observeRun(ctx, o, run)
 	}
 	if o.first || d.now().Sub(o.catAt) >= catalogLookEvery {
 		o.catAt = d.now()
 		d.observeCatalog(ctx, o)
+	}
+	// everything up to now is said: the next start says only what comes after
+	if o.spoke || (o.first && o.mark == nil) {
+		d.Store.saveSetting(ctx, eventsMarkKey, d.now())
 	}
 }
 
@@ -122,15 +139,15 @@ func (d *Driver) observeRun(ctx context.Context, o *observer, run Run) {
 		f["host_id"] = HomeHost
 		return f
 	}
-	d.say(o, "planned/"+run.ID, EventPlanned, home(map[string]any{"trigger": run.Trigger, "from_version": run.FromVersion}))
+	d.say(o, "planned/"+run.ID, EventPlanned, &run.StartedAt, home(map[string]any{"trigger": run.Trigger, "from_version": run.FromVersion}))
 	if run.State == RunHomeCommitted {
-		d.say(o, "committed/"+run.ID, EventHomeCommitted, home(nil))
+		d.say(o, "committed/"+run.ID, EventHomeCommitted, nil, home(nil))
 	}
 	if run.State == RunRolledBack {
 		code := errCode(run.Error)
-		d.say(o, "rolled_back/"+run.ID, EventRolledBack, home(map[string]any{"code": code}))
+		d.say(o, "rolled_back/"+run.ID, EventRolledBack, run.FinishedAt, home(map[string]any{"code": code}))
 		if launcherCodes[code] {
-			d.say(o, "launcher/"+run.ID, EventLauncherRolled, home(map[string]any{"code": code}))
+			d.say(o, "launcher/"+run.ID, EventLauncherRolled, run.FinishedAt, home(map[string]any{"code": code}))
 		}
 	}
 	if steps, err := d.Store.Steps(ctx, run.ID); err == nil {
@@ -140,15 +157,15 @@ func (d *Driver) observeRun(ctx context.Context, o *observer, run Run) {
 			if st.State == "skipped" {
 				continue
 			}
-			d.say(o, "step_started/"+key, EventStepStarted, f)
+			d.say(o, "step_started/"+key, EventStepStarted, &st.StartedAt, f)
 			switch st.State {
 			case "done":
-				d.say(o, "step_finished/"+key, EventStepFinished, f)
+				d.say(o, "step_finished/"+key, EventStepFinished, st.FinishedAt, f)
 				if st.Host == HomeHost && st.Step == "commit" {
-					d.say(o, "committed/"+run.ID, EventHomeCommitted, home(nil))
+					d.say(o, "committed/"+run.ID, EventHomeCommitted, st.FinishedAt, home(nil))
 				}
 			case "failed":
-				d.say(o, "step_failed/"+key, EventStepFailed, f)
+				d.say(o, "step_failed/"+key, EventStepFailed, st.FinishedAt, f)
 			}
 		}
 	}
@@ -164,23 +181,23 @@ func (d *Driver) observeRun(ctx context.Context, o *observer, run Run) {
 			f["code"] = code
 		}
 		if t.PreparedAt != nil {
-			d.say(o, "prepared/"+key, EventNodePrepared, f)
+			d.say(o, "prepared/"+key, EventNodePrepared, t.PreparedAt, f)
 		}
 		// a machine's failure is said again after a retry (another attempt)
 		attempt := key + "/" + strconv.Itoa(t.Attempts)
 		switch t.State {
 		case TargetHealthy:
-			d.say(o, "applied/"+key, EventNodeApplied, f)
+			d.say(o, "applied/"+key, EventNodeApplied, t.HealthyAt, f)
 			if run.Trigger == TriggerCatchUp {
-				d.say(o, "caught_up/"+key, EventNodeCaughtUp, f)
+				d.say(o, "caught_up/"+key, EventNodeCaughtUp, t.HealthyAt, f)
 			}
 		case TargetFailed, TargetFailedPrepare, TargetRolledBack, TargetNeedsPerson:
-			d.say(o, "failed/"+attempt, EventNodeFailed, f)
+			d.say(o, "failed/"+attempt, EventNodeFailed, t.UpdatedAt, f)
 			if t.State == TargetRolledBack && launcherCodes[code] {
-				d.say(o, "launcher/"+attempt, EventLauncherRolled, f)
+				d.say(o, "launcher/"+attempt, EventLauncherRolled, t.UpdatedAt, f)
 			}
 		case TargetHeld:
-			d.say(o, "held/"+attempt, EventNodeHeld, f)
+			d.say(o, "held/"+attempt, EventNodeHeld, t.UpdatedAt, f)
 		}
 	}
 }
@@ -193,18 +210,16 @@ func (d *Driver) observeCatalog(ctx context.Context, o *observer) {
 	for _, r := range cat {
 		if r.VerifyError != nil && !o.failed[r.Version] {
 			o.failed[r.Version] = true
-			if !o.first {
-				d.emit(EventVerifyFailed, map[string]any{"version": r.Version, "host_id": HomeHost,
-					"reason": r.VerifyError.Kind, "file": r.VerifyError.File})
-			}
+			delete(o.said, "verify_failed/"+r.Version)
+			d.say(o, "verify_failed/"+r.Version, EventVerifyFailed, nil, map[string]any{"version": r.Version,
+				"host_id": HomeHost, "reason": r.VerifyError.Kind, "file": r.VerifyError.File})
 		} else if r.VerifyError == nil {
 			delete(o.failed, r.Version) // verified again: a later failure is said
 		}
 		if r.WithdrawnAt != nil && !o.gone[r.Version] {
 			o.gone[r.Version] = true
-			if !o.first {
-				d.emit(EventWithdrawn, map[string]any{"version": r.Version, "host_id": HomeHost})
-			}
+			d.say(o, "withdrawn/"+r.Version, EventWithdrawn, r.WithdrawnAt, map[string]any{"version": r.Version,
+				"host_id": HomeHost})
 		}
 	}
 }

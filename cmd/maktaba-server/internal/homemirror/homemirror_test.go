@@ -150,12 +150,18 @@ func fetch(t *testing.T, c *http.Client, u string, hdr map[string]string) (int, 
 	return resp.StatusCode, string(b)
 }
 
-// A release file comes from the home's mirror, signed, ranges and all; GitHub is not asked.
+// A release file comes from the home's mirror, signed, ranges and all, and again when it
+// is asked for again and matched the checksums the mirror served; GitHub is not asked.
 func TestTransportPrefersTheMirror(t *testing.T) {
 	h := newHome(t)
-	h.files["/api/cluster/updates/artifacts/1.5.0/release.json"] = []byte(`{"version":"1.5.0"}`)
+	manifest := []byte(`{"version":"1.5.0"}`)
+	h.files["/api/cluster/updates/artifacts/1.5.0/release.json"] = manifest
+	h.files["/api/cluster/updates/artifacts/1.5.0/checksums.txt"] = []byte(sum(manifest) + "  release.json\n")
 	gh, ghHits := github(t)
 	c := &http.Client{Transport: h.client().Transport(nil)}
+	if code, _ := fetch(t, c, gh.URL+"/o/r/releases/download/v1.5.0/checksums.txt", nil); code != http.StatusOK {
+		t.Fatalf("checksums.txt: %d", code)
+	}
 	code, body := fetch(t, c, gh.URL+"/o/r/releases/download/v1.5.0/release.json", nil)
 	if code != http.StatusOK || body != `{"version":"1.5.0"}` {
 		t.Fatalf("release.json: %d %q", code, body)
@@ -311,5 +317,36 @@ func TestSignedTransport(t *testing.T) {
 	nokey.Key = func() (Key, bool) { return Key{}, false }
 	if _, err := (&http.Client{Transport: nokey.SignedTransport(nil)}).Get(h.srv.URL + "/api/cluster/updates/tuf/timestamp.json"); err == nil {
 		t.Fatal("a request went without a key")
+	}
+}
+
+// A copy the mirror served that did not match the checksums the mirror served, asked for
+// again (the stage's verification failed and it tries again), comes from GitHub; with
+// GitHub out of reach, from the mirror again (verified again). Over the link alike: the
+// rule is the transport's. Story 35.12 review F1.
+func TestTransportAsksGitHubForACopyThatDidNotVerify(t *testing.T) {
+	h := newHome(t)
+	archive := []byte("the archive")
+	base := "/api/cluster/updates/artifacts/1.5.0/"
+	h.files[base+"checksums.txt"] = []byte(sum(archive) + "  maktaba.tar.gz\n")
+	h.files[base+"maktaba.tar.gz"] = []byte("a damaged copy")
+	gh, ghHits := github(t)
+	c := &http.Client{Transport: h.client().Transport(nil)}
+	u := gh.URL + "/o/r/releases/download/v1.5.0/"
+	fetch(t, c, u+"checksums.txt", nil)
+	if _, body := fetch(t, c, u+"maktaba.tar.gz", nil); body != "a damaged copy" || *ghHits != 0 {
+		t.Fatalf("first: %q (GitHub %d)", body, *ghHits)
+	}
+	if _, body := fetch(t, c, u+"maktaba.tar.gz", nil); body != "github:maktaba.tar.gz" || *ghHits != 1 {
+		t.Fatalf("asked again: %q (GitHub %d)", body, *ghHits)
+	}
+	// the bundle and checksums.txt, which nothing lists, alike
+	if _, body := fetch(t, c, u+"checksums.txt", nil); body != "github:checksums.txt" {
+		t.Fatalf("checksums.txt asked again: %q", body)
+	}
+	// GitHub out of reach (an offline node): the mirror again
+	gh.Close()
+	if _, body := fetch(t, c, u+"maktaba.tar.gz", nil); body != "a damaged copy" {
+		t.Fatalf("GitHub away: %q", body)
 	}
 }

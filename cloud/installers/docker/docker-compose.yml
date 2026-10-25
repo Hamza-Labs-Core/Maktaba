@@ -10,9 +10,14 @@
 # now, pause): the server verifies each release (its Sigstore signature from the release
 # workflow, the checksums) and installs it as a new runtime on the `maktaba` volume, switching to
 # it under the launcher's guard and back if it cannot start. The image tag below is only where
-# a new volume starts from; there is nothing to pull for updates. Pulling a newer image is
-# harmless (it goes on the volume at its next start); an older one never replaces what the
-# volume runs.
+# a new volume starts from; there is nothing to pull for updates.
+#
+# A newer image pulled later is switched to at the container's next start the same way, under
+# the launcher's guard: kept once its server has run for a few minutes, and if it cannot start,
+# the volume goes back to what ran before and that image's release is not tried again (the
+# image you ran before still runs). An older image never replaces what the volume runs. If you
+# manage the image yourself (Watchtower, a pinned tag you move), turn the server's own updates
+# off so only one thing updates it: MAKTABA_UPDATE_DISABLE below (or Admin -> Updates -> Pause).
 
 services:
   maktaba:
@@ -20,6 +25,8 @@ services:
     restart: unless-stopped
     # the launcher drains the server on a stop (the pipeline's jobs, then Postgres)
     stop_grace_period: 90s
+    # environment:
+    #   MAKTABA_UPDATE_DISABLE: "1"   # the image is updated by something else (see above)
     # the host's network (Linux): the machines and apps of your network find this home (mDNS)
     # and reach it at this machine's own address, as with any other install. Docker Desktop
     # (Mac, Windows) has no host network: there, use the ports below instead.

@@ -18,6 +18,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // keepInstaller is an install that keeps releases (updater.Keeper) for the restore's
@@ -47,6 +48,7 @@ type restoreRig struct {
 	backups string
 	exits   chan int
 	run     *updater.Journal
+	told    []string // the restores recorded through the API (by, backup, release)
 }
 
 func newRestoreRig(t *testing.T, schemas map[string]int64) *restoreRig {
@@ -66,6 +68,10 @@ func newRestoreRig(t *testing.T, schemas map[string]int64) *restoreRig {
 	rig := &restoreRig{inst: inst, backups: backups, exits: make(chan int, 1)}
 	rig.r = &restorer{stateDir: filepath.Join(dir, "state"), db: &dbsafe.Target{Backups: backups}, inst: inst,
 		run: func() *updater.Journal { return rig.run }, exit: func(c int) { rig.exits <- c }, log: io.Discard,
+		tell: func(_ context.Context, pl restorePlan, by string) error {
+			rig.told = append(rig.told, by+" "+pl.Backup+" "+pl.Release)
+			return nil
+		},
 		schema: func(_ context.Context, p string) (int64, error) {
 			s, ok := schemas[filepath.Base(p)]
 			if !ok || s < 0 {
@@ -135,18 +141,18 @@ func TestRestoreRefusesWithoutConfirm(t *testing.T) {
 		{"pre-v0.1.0-to-v0.2.0.dump", true, "restore_no_backup"},
 		{"maktaba-20261020-0300.dump", true, "restore_unreadable"},
 	} {
-		if _, err := rig.r.restore(ctx, c.name, "root", c.confirm); restoreCode(err) != c.code {
+		if _, err := rig.r.restore(ctx, c.name, "root", c.confirm, false); restoreCode(err) != c.code {
 			t.Errorf("%s (confirm %v): %v, want %s", c.name, c.confirm, err, c.code)
 		}
 	}
 	rig.run = &updater.Journal{Job: updater.Job{Version: "0.4.0"}, State: updater.StateWatching}
-	if _, err := rig.r.restore(ctx, "pre-v0.2.0-to-v0.3.0.dump", "root", true); restoreCode(err) != "restore_update_under_way" {
+	if _, err := rig.r.restore(ctx, "pre-v0.2.0-to-v0.3.0.dump", "root", true, false); restoreCode(err) != "restore_update_under_way" {
 		t.Fatalf("during a run: %v", err)
 	}
 	rig.run.State = updater.StateCommitted
 	noDB := *rig.r
 	noDB.db = nil
-	if _, err := noDB.restore(ctx, "pre-v0.2.0-to-v0.3.0.dump", "root", true); restoreCode(err) != "restore_no_database" {
+	if _, err := noDB.restore(ctx, "pre-v0.2.0-to-v0.3.0.dump", "root", true, false); restoreCode(err) != "restore_no_database" {
 		t.Fatalf("a home without a Postgres of its own: %v", err)
 	}
 	if len(rig.inst.ran) != 0 || len(rig.exits) != 0 {
@@ -167,14 +173,14 @@ func TestRestoreMarksTheRecordAndRestarts(t *testing.T) {
 		t.Fatal(err)
 	}
 	rig.inst.runErr = errors.New("0.2.0 is not a valid release")
-	if _, err := rig.r.restore(context.Background(), "pre-v0.2.0-to-v0.3.0.dump", "root", true); restoreCode(err) != "restore_switch_failed" {
+	if _, err := rig.r.restore(context.Background(), "pre-v0.2.0-to-v0.3.0.dump", "root", true, false); restoreCode(err) != "restore_switch_failed" {
 		t.Fatalf("a failed switch: %v", err)
 	}
 	if rec, _, _ := apppayload.ReadDatabase(rig.r.stateDir); rec.State != apppayload.DatabaseMigrated || rec.Dump != "/old.dump" {
 		t.Fatalf("the record after a failed switch: %+v", rec)
 	}
 	rig.inst.runErr = nil
-	pl, err := rig.r.restore(context.Background(), "pre-v0.2.0-to-v0.3.0.dump", "root", true)
+	pl, err := rig.r.restore(context.Background(), "pre-v0.2.0-to-v0.3.0.dump", "root", true, false)
 	if err != nil || pl.Release != "0.2.0" {
 		t.Fatalf("restore %+v %v", pl, err)
 	}
@@ -186,6 +192,9 @@ func TestRestoreMarksTheRecordAndRestarts(t *testing.T) {
 	if len(rig.inst.ran) != 1 || rig.inst.ran[0] != "0.2.0" {
 		t.Fatalf("ran %v", rig.inst.ran)
 	}
+	if len(rig.told) != 0 {
+		t.Fatalf("the page's restore (recorded by the API itself) was told again: %v", rig.told)
+	}
 	select {
 	case c := <-rig.exits:
 		if c != 75 {
@@ -195,7 +204,7 @@ func TestRestoreMarksTheRecordAndRestarts(t *testing.T) {
 		t.Fatal("the home did not restart")
 	}
 	// asked again before the start put it back: refused, nothing marked twice
-	if _, err := rig.r.restore(context.Background(), "pre-v0.2.0-to-v0.3.0.dump", "root", true); restoreCode(err) != "restore_under_way" {
+	if _, err := rig.r.restore(context.Background(), "pre-v0.2.0-to-v0.3.0.dump", "root", true, false); restoreCode(err) != "restore_under_way" {
 		t.Fatalf("a second restore: %v", err)
 	}
 }
@@ -311,6 +320,15 @@ func TestRestoreEndpoints(t *testing.T) {
 	if code, _ := call(http.MethodPost, "/update/restore", `{"backup":"pre-v0.2.0-to-v0.3.0.dump","by":"root","confirm":true}`); code != http.StatusAccepted {
 		t.Fatalf("restore %d", code)
 	}
+	// the restart it asked for happens inside the test (no goroutine outlives it)
+	select {
+	case <-rig.exits:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the home did not restart")
+	}
+	if len(rig.told) != 1 || rig.told[0] != "root pre-v0.2.0-to-v0.3.0.dump 0.2.0" {
+		t.Fatalf("the command line's restore was not recorded through the API: %v", rig.told)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/update/backups", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -324,5 +342,42 @@ func TestRestoreEndpoints(t *testing.T) {
 	node.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "restore_not_home") {
 		t.Fatalf("a node: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Review M4: the command line's restore without a server that answers is refused while a
+// server runs all the same (its launcher holds the install's lock): nothing is marked or
+// switched, and it says the server did not answer. With no server, it is prepared.
+func TestRestoreOfflineRefusedWhileAServerRuns(t *testing.T) {
+	rig := newRestoreRig(t, map[string]int64{"pre-v0.2.0-to-v0.3.0.dump": 140})
+	rig.r.exit, rig.r.tell = nil, nil
+	l := layout.New(t.TempDir())
+	held, err := l.Lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	err = restoreOffline(context.Background(), &out, rig.r, l, "pre-v0.2.0-to-v0.3.0.dump", true)
+	if err == nil || !strings.Contains(err.Error(), "did not answer") || !strings.Contains(err.Error(), "nothing was changed") {
+		t.Fatalf("under a running server: %v", err)
+	}
+	if len(rig.inst.ran) != 0 {
+		t.Fatalf("switched under a running server: %v", rig.inst.ran)
+	}
+	if _, ok, _ := apppayload.ReadDatabase(rig.r.stateDir); ok {
+		t.Fatal("the record was marked under a running server")
+	}
+	// reading is fine: said to be from the files
+	out.Reset()
+	if err := restoreOffline(context.Background(), &out, rig.r, l, "", false); err != nil || !strings.Contains(out.String(), "did not answer") {
+		t.Fatalf("the list under a running server: %v %q", err, out.String())
+	}
+	layout.Unlock(held)
+	out.Reset()
+	if err := restoreOffline(context.Background(), &out, rig.r, l, "pre-v0.2.0-to-v0.3.0.dump", true); err != nil {
+		t.Fatalf("with no server: %v", err)
+	}
+	if len(rig.inst.ran) != 1 || !strings.Contains(out.String(), "next start puts the backup back") {
+		t.Fatalf("with no server: ran %v, said %q", rig.inst.ran, out.String())
 	}
 }

@@ -6,6 +6,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 )
 
 func gather(t *testing.T, reg *prometheus.Registry) map[string]*dto.MetricFamily {
@@ -38,7 +40,7 @@ func TestNodeMetricsRegistered(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := New(reg)
 	pausedMu.Lock()
-	paused = func() string { return "paused: home database at 0150, this machine needs 0152 — update the home" }
+	paused = func() string { return schemaguard.PauseHomeBehind }
 	pausedMu.Unlock()
 	t.Cleanup(func() {
 		pausedMu.Lock()
@@ -90,14 +92,28 @@ func TestNodeMetricsRegistered(t *testing.T) {
 	}
 }
 
-func TestPauseCode(t *testing.T) {
-	for reason, want := range map[string]string{
-		"paused: home database at 0150, this machine needs 0152 — update the home":                              "home_behind",
-		"paused: home database at 0152 needs this machine at 0152 or newer (it has 0150) — update this machine": "node_behind",
-		"something else": "other",
-	} {
-		if got := PauseCode(reason); got != want {
-			t.Errorf("%q: %s, want %s", reason, got, want)
+// The paused label is the schema guard's code, never words of its message; a code this
+// build does not know is other.
+func TestPausedLabelIsTheGuardsCode(t *testing.T) {
+	for code, want := range map[string]string{schemaguard.PauseHomeBehind: "home_behind",
+		schemaguard.PauseNodeBehind: "node_behind", "future_code": "other"} {
+		reg := prometheus.NewRegistry()
+		reg.MustRegister(pausedCollector{desc: prometheus.NewDesc(MetricPaused, "x", []string{"reason"}, nil)})
+		pausedMu.Lock()
+		paused = func() string { return code }
+		pausedMu.Unlock()
+		f := gather(t, reg)[MetricPaused]
+		if got := labels(f); len(got) != 1 || got[0] != "reason="+want {
+			t.Errorf("%s: %v", code, got)
 		}
+	}
+	pausedMu.Lock()
+	paused = nil
+	pausedMu.Unlock()
+	h := schemaguard.HomeSchema{Known: true, Applied: 150}
+	if schemaguard.PauseCode(h, 152) != schemaguard.PauseHomeBehind ||
+		schemaguard.PauseCode(schemaguard.HomeSchema{Known: true, Applied: 152, HasMinNode: true, MinNode: 153}, 152) != schemaguard.PauseNodeBehind ||
+		schemaguard.PauseCode(schemaguard.HomeSchema{Known: true, Applied: 152}, 152) != "" {
+		t.Fatal("the guard's codes")
 	}
 }

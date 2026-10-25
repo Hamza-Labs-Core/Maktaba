@@ -60,6 +60,15 @@ has none or an older one (never an older payload over a newer runtime), owned by
 for the setup (`docker compose run --rm maktaba setup`: the terminal wizard, with no systemd checks
 and no service step), then runs the runtime's launcher and copies its log to `docker logs`. Updates
 are the headless install's, verified in process; there is no Docker socket and nothing to pull. A
+newer image pulled later is switched to as an update is (`cmd_container.go`): under the launcher's
+guard (`pending.json`, run `docker-image`, the runtime before to go back to, the database record),
+with `appruntime.Point`, so the watermark stays; the entrypoint keeps it once the server has
+answered with the new version for 3 minutes (guard cleared, watermark raised, older runtimes
+pruned), and when the launcher goes back instead it records the version in
+`updates/image-refused.json` and never switches to that image again (a newer one, yes); the image
+that ran before still runs, as the watermark never rose. A `docker compose run` from a newer image
+switches nothing and prunes nothing (a container may be running). An image managed elsewhere
+(Watchtower) runs with `MAKTABA_UPDATE_DISABLE=1`, so only one thing updates it. A
 container of the stack built from source (`deploy/compose`, the development and CI stack) keeps Epic
 28.3's answer (`409`, `docker compose pull && docker compose up -d`).
 

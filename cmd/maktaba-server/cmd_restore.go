@@ -20,6 +20,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/selfupdate"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/install"
 )
 
@@ -123,11 +124,32 @@ func runRestore(ctx context.Context, out io.Writer, cfg config.Config, backup st
 	if a := supervisorAsker(cfg); a != nil {
 		return restoreThroughServer(ctx, out, a, name, confirm)
 	}
-	r, err := offlineRestorer(cfg)
+	r, l, err := offlineRestorer(cfg)
 	if err != nil {
 		return err
 	}
-	if backup == "" {
+	return restoreOffline(ctx, out, r, l, name, confirm)
+}
+
+// restoreOffline is the command when no server answered: this install's own restorer
+// over its layout l (the next start does the restore), refused while a server runs.
+func restoreOffline(ctx context.Context, out io.Writer, r *restorer, l layout.Layout, name string, confirm bool) error {
+	// no server answered: one may run all the same (its admin not up yet during a long
+	// database step, or busy): its launcher holds the install's lock for its life
+	lk, err := l.Lock()
+	if errors.Is(err, layout.ErrLocked) {
+		if confirm {
+			return fmt.Errorf("a Maktaba server runs here (its launcher holds %s) but did not answer on its admin: "+
+				"nothing was changed. Try again once it answers (a long database step may be under way), or restore "+
+				"from the Updates page", l.LockPath())
+		}
+		fmt.Fprintln(out, "A Maktaba server runs here but did not answer on its admin: this is read from its files.")
+	} else if err != nil {
+		return err
+	} else {
+		defer layout.Unlock(lk) // no launcher starts the server while the restore is prepared
+	}
+	if name == "" || name == "." {
 		printBackups(out, r.list())
 		return nil
 	}
@@ -139,7 +161,7 @@ func runRestore(ctx context.Context, out io.Writer, cfg config.Config, backup st
 		printPlan(out, pl, false)
 		return errors.New("not restored: run it again with --confirm")
 	}
-	if _, err := r.restore(ctx, name, "the command line", true); err != nil {
+	if _, err := r.restore(ctx, name, "the command line", true, false); err != nil {
 		return err
 	}
 	printPlan(out, pl, true)
@@ -180,17 +202,17 @@ func restoreThroughServer(ctx context.Context, out io.Writer, a *restoreAsker, n
 	return nil
 }
 
-// offlineRestorer is this install's restorer when no server runs: a plain server's
-// layout (the launcher starts the release the restore points at).
-func offlineRestorer(cfg config.Config) (*restorer, error) {
+// offlineRestorer is this install's restorer when no server answers: a plain server's
+// layout (the launcher starts the release the restore points at), and the layout.
+func offlineRestorer(cfg config.Config) (*restorer, layout.Layout, error) {
 	self, err := selfupdate.Self()
 	if err != nil {
-		return nil, err
+		return nil, layout.Layout{}, err
 	}
 	l, ok := install.Root(self)
 	if !ok {
-		return nil, errors.New("no Maktaba server runs here: start it, then restore from the Updates page or run this " +
-			"command again")
+		return nil, l, errors.New("no Maktaba server answered here: start it (or wait until it answers), then restore " +
+			"from the Updates page or run this command again")
 	}
 	exe, _ := os.Executable()
 	var pg *pgbundle.Bundle
@@ -199,7 +221,9 @@ func offlineRestorer(cfg config.Config) (*restorer, error) {
 	}
 	// a home restores: it has no home's mirror to ask (nil)
 	inst, _ := installKind(cfg, l.ReleaseDir(filepath.Base(filepath.Dir(self))), true, updateSource(cfg, nil))
-	return newRestorer(cfg, homeDatabase(cfg, pg), inst, nil), nil
+	r := newRestorer(cfg, homeDatabase(cfg, pg), inst, nil)
+	r.tell = nil // no API runs to record it
+	return r, l, nil
 }
 
 func printBackups(out io.Writer, l backupList) {

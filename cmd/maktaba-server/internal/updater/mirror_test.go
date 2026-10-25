@@ -4,12 +4,17 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/homemirror"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	rv "github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/install"
@@ -131,5 +136,81 @@ func TestStageWheelsKeepsTheStagedReleaseOnly(t *testing.T) {
 	Source{}.stageWheels(context.Background(), j, root, nil)
 	if entries, _ := os.ReadDir(root); len(entries) != 1 {
 		t.Fatalf("a source with no wheelhouse touched %v", entries)
+	}
+}
+
+// Story 35.14: a release file someone tampered with on the home's mirror is caught by the
+// node's own verification, and the stage's next try takes that file from GitHub: the
+// update goes on (story 35.12 review F1: one damaged copy never holds a machine).
+func TestMirrorTamperCaughtByNode(t *testing.T) {
+	rs := newReleases(t)
+	ctx := context.Background()
+	l := layout.New(t.TempDir())
+	old, _ := rs.publish(t, "v1.4.0", releaseverifytest.ReleaseOptions{MinUpgradeFrom: "1.0.0"}, nil)
+	get := func(_ context.Context, u string, _ int64) ([]byte, error) { return old.Files[filepath.Base(u)], nil }
+	assetsOld := map[string]string{}
+	for n := range old.Files {
+		assetsOld[n] = "mem://" + n
+	}
+	if _, err := install.Stage(ctx, l, get, rv.Input{Tag: "v1.4.0", Identity: rs.source().Identity, TrustedMaterial: rs.tm},
+		assetsOld, testPlatform); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.WritePointer(layout.CurrentFile, "1.4.0"); err != nil {
+		t.Fatal(err)
+	}
+	rel, _ := rs.publish(t, "v1.5.0", releaseverifytest.ReleaseOptions{MinUpgradeFrom: "1.4.0"}, nil)
+	// the release on GitHub, at its asset paths (the node's transport knows them by those)
+	assets := map[string]string{}
+	var mu sync.Mutex
+	asked := map[string]int{}
+	for n, b := range rel.Files {
+		rs.files["o/r/releases/download/v1.5.0/"+n] = b
+		assets[n] = rs.srv.URL + "/o/r/releases/download/v1.5.0/" + n
+	}
+	// the home's mirror, whose copy of the archive someone changed
+	home := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := filepath.Base(r.URL.Path)
+		mu.Lock()
+		asked[name]++
+		mu.Unlock()
+		b, ok := rel.Files[name]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if name == rel.Archive {
+			b = append([]byte("tampered "), b...)
+		}
+		_, _ = w.Write(b)
+	}))
+	t.Cleanup(home.Close)
+	var log bytes.Buffer
+	c := &homemirror.Client{Home: home.URL, NodeID: "6f9c1d2e-1111-4222-8333-944455556666", Log: &log,
+		Pause: time.Millisecond, Key: func() (homemirror.Key, bool) { return homemirror.Key{ID: "k1", Secret: []byte("s")}, true }}
+	src := rs.source()
+	hc := *src.HTTP
+	hc.Transport = c.Transport(hc.Transport)
+	src.HTTP = &hc
+	t.Setenv(envPipelinePython, "/opt/python3.12/bin/python3")
+	prevBuild := venvBuild
+	venvBuild = func(_ context.Context, spec appvenv.Spec, _ func(appvenv.Progress)) (appvenv.Result, error) {
+		return appvenv.Result{}, os.MkdirAll(spec.Venv, 0o755)
+	}
+	t.Cleanup(func() { venvBuild = prevBuild })
+
+	li := &LayoutInstaller{Layout: l, Source: src, Version: "1.4.0"}
+	j := &Journal{Job: jobFor("v1.5.0", assets), From: "1.4.0"}
+	if err := li.Stage(ctx, j, nil); err != nil {
+		t.Fatalf("the stage did not get past the tampered copy: %v\n%s", err, log.String())
+	}
+	if j.Staged != l.ReleaseDir("1.5.0") {
+		t.Fatalf("staged %q", j.Staged)
+	}
+	mu.Lock()
+	n := asked[rel.Archive]
+	mu.Unlock()
+	if n != 1 || !strings.Contains(log.String(), rel.Archive+" from GitHub (the home's copy did not verify)") {
+		t.Fatalf("the home asked %d times for the archive; log:\n%s", n, log.String())
 	}
 }

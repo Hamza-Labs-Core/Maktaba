@@ -998,6 +998,11 @@ func (g *venvGate) run(ctx context.Context, report func(supervisor.Detail)) erro
 	if !res.Reused {
 		fmt.Fprintf(os.Stderr, "[serve] the pipeline's venv is ready (pipeline %s, Python %s)\n", res.Pipeline, res.Python)
 	}
+	// the home's wheelhouse the update staged for it (GBs with torch) has served: its
+	// packages are in the venv now (or the venv needed none of them)
+	if g.spec.Wheelhouse != "" {
+		_ = os.RemoveAll(g.spec.Wheelhouse)
+	}
 	return nil
 }
 

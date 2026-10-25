@@ -13,6 +13,7 @@ package main
 // (backups/replaced-<version>-<utc>.dump).
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,6 +30,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
@@ -49,6 +51,10 @@ type restorer struct {
 	// exitDelay is how long a restore lets its answer go out before the home restarts
 	// (restoreExitDelay; tests set it to 0)
 	exitDelay time.Duration
+	// tell records a restore the Updates page did not ask for (the command line's) where
+	// the page's is recorded: this machine's API audits it and tells the machines the home
+	// goes away (best effort; nil: nothing to tell)
+	tell func(ctx context.Context, pl restorePlan, by string) error
 }
 
 // backupInfo is one dump in the home's backups folder.
@@ -266,8 +272,9 @@ func chooseRelease(kept []updater.KeptRelease, schema int64, hint string) (updat
 
 // restore puts the backup name back: confirmed (the page and the command make the
 // person say so), checked as plan checks it, then the record marked, the install pointed
-// at the matching release and the home restarted on it. by is who asked.
-func (r *restorer) restore(ctx context.Context, name, by string, confirm bool) (restorePlan, error) {
+// at the matching release and the home restarted on it. by is who asked; tell: record it
+// through the API before the restart (the page's own request is recorded by the API).
+func (r *restorer) restore(ctx context.Context, name, by string, confirm, tell bool) (restorePlan, error) {
 	if !confirm {
 		return restorePlan{}, refuse("restore_not_confirmed", "a restore replaces the library database with the "+
 			"backup and loses every change made since it was taken: confirm it")
@@ -281,6 +288,11 @@ func (r *restorer) restore(ctx context.Context, name, by string, confirm bool) (
 	}
 	fmt.Fprintf(orDiscardW(r.log), "[serve] restore of %s asked by %s: the home restarts on %s, which puts it back "+
 		"before any role runs\n", pl.Backup, by, pl.Release)
+	if tell && r.tell != nil {
+		if err := r.tell(ctx, pl, by); err != nil {
+			fmt.Fprintf(orDiscardW(r.log), "[serve] the restore could not be recorded by the API: %v\n", err)
+		}
+	}
 	if r.exit != nil {
 		delay := r.exitDelay
 		go func() {
@@ -360,7 +372,7 @@ func restoreCode(err error) string {
 // newRestorer is the home's restorer over its database (nil db: none to put a dump into).
 func newRestorer(cfg config.Config, db *dbsafe.Target, inst updater.Installer, exit func(int)) *restorer {
 	r := &restorer{stateDir: cfg.StateDir(), db: db, inst: inst, exit: exit, log: os.Stderr,
-		exitDelay: restoreExitDelay}
+		exitDelay: restoreExitDelay, tell: apiRestoreNotice(cfg)}
 	if db != nil {
 		t := *db
 		r.schema = t.DumpSchema
@@ -373,6 +385,9 @@ type restoreRequest struct {
 	Backup  string `json:"backup"`
 	By      string `json:"by"`
 	Confirm bool   `json:"confirm"`
+	// Page: the Updates page asks (through the API, which audits it and tells the
+	// machines itself); otherwise the command line, recorded through the API here
+	Page bool `json:"page,omitempty"`
 }
 
 // serveRestore serves /update/backups (GET: the backups and the kept releases) and
@@ -412,7 +427,7 @@ func (u *updates) serveRestore(w http.ResponseWriter, r *http.Request, name stri
 		if by == "" {
 			by = "an admin"
 		}
-		pl, err := u.r.restore(r.Context(), req.Backup, by, req.Confirm)
+		pl, err := u.r.restore(r.Context(), req.Backup, by, req.Confirm, !req.Page)
 		if err != nil {
 			refused(pl, err)
 			return
@@ -420,5 +435,37 @@ func (u *updates) serveRestore(w http.ResponseWriter, r *http.Request, name stri
 		answer(http.StatusAccepted, map[string]any{"plan": pl})
 	default:
 		http.Error(w, "method", http.StatusMethodNotAllowed)
+	}
+}
+
+// apiRestoreNotice tells this machine's API of a restore the command line asked for
+// (POST /internal/updates/restored, with this supervisor's per-boot local token): it is
+// audited as the page's is and the machines are told the home goes away.
+func apiRestoreNotice(cfg config.Config) func(ctx context.Context, pl restorePlan, by string) error {
+	return func(ctx context.Context, pl restorePlan, by string) error {
+		tok, err := os.ReadFile(supervisor.LocalTokenPath(cfg))
+		if err != nil {
+			return err
+		}
+		body, _ := json.Marshal(map[string]any{"backup": pl.Backup, "release": pl.Release, "schema": pl.Schema,
+			"running": pl.Running, "backup_at": pl.At, "by": by})
+		cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		url := "http://" + supervisor.LocalAddr(cfg.Server.Listen, "8080") + "/internal/updates/restored"
+		req, err := http.NewRequestWithContext(cctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Maktaba-Local-Token", strings.TrimSpace(string(tok)))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			return fmt.Errorf("the API answered %d", resp.StatusCode)
+		}
+		return nil
 	}
 }

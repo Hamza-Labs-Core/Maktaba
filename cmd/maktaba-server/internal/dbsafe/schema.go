@@ -30,16 +30,32 @@ func (t Target) DumpSchema(ctx context.Context, dump string) (int64, error) {
 	return appliedInScript(bytes.NewReader(out))
 }
 
-// appliedInScript reads the newest applied migration from a restore script's COPY of
-// goose_db_version (version_id and is_applied by the COPY's column list).
+// appliedInScript reads the schema a restore script's COPY of goose_db_version holds: the
+// newest migration still applied (version_id and is_applied by the COPY's column list).
+// goose records a migration run down as a later row with is_applied false, so each
+// version counts as its latest row (by id, else by order) says, as goose itself reads it.
 func appliedInScript(r io.Reader) (int64, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
+	type row struct {
+		id      int64
+		applied bool
+	}
 	var (
-		in              bool
-		verCol, applCol = -1, -1
-		top             int64
+		in                     bool
+		idCol, verCol, applCol = -1, -1, -1
+		latest                 = map[int64]row{}
+		n                      int64
 	)
+	effective := func() int64 {
+		var top int64
+		for v, r := range latest {
+			if r.applied && v > top {
+				top = v
+			}
+		}
+		return top
+	}
 	for sc.Scan() {
 		line := sc.Text()
 		if !in {
@@ -54,6 +70,8 @@ func appliedInScript(r io.Reader) (int64, error) {
 			}
 			for i, c := range strings.Split(rest[open+1:cl], ",") {
 				switch strings.Trim(strings.TrimSpace(c), `"`) {
+				case "id":
+					idCol = i
 				case "version_id":
 					verCol = i
 				case "is_applied":
@@ -67,18 +85,30 @@ func appliedInScript(r io.Reader) (int64, error) {
 			continue
 		}
 		if line == `\.` {
-			return top, nil
+			return effective(), nil
 		}
 		f := strings.Split(line, "\t")
-		if verCol >= len(f) || (applCol >= 0 && applCol < len(f) && f[applCol] != "t") {
+		if verCol >= len(f) {
 			continue
 		}
-		if v, err := strconv.ParseInt(f[verCol], 10, 64); err == nil && v > top {
-			top = v
+		v, err := strconv.ParseInt(f[verCol], 10, 64)
+		if err != nil {
+			continue
+		}
+		n++
+		id := n // the row's order when the COPY names no id
+		if idCol >= 0 && idCol < len(f) {
+			if x, err := strconv.ParseInt(f[idCol], 10, 64); err == nil {
+				id = x
+			}
+		}
+		applied := applCol < 0 || (applCol < len(f) && f[applCol] == "t")
+		if old, seen := latest[v]; !seen || id >= old.id {
+			latest[v] = row{id: id, applied: applied}
 		}
 	}
 	if err := sc.Err(); err != nil {
 		return 0, err
 	}
-	return top, nil // no goose table in the dump: no migrations
+	return effective(), nil // no goose table in the dump: no migrations
 }

@@ -295,6 +295,9 @@ logged `supervisor_adopt_failed` and started afresh. Nothing to do.
   itself (a container of the stack built from source: `docker compose pull && docker compose up
   -d`).
 - `local_build`: a desktop app built locally: install the release's app by hand once.
+- A newer Docker image whose release could not start: `docker logs` says "could not start here: the
+  launcher went back to …". Nothing to do: the volume runs what ran before, that image is not
+  tried again, and the next release comes by the server's own update or a newer image.
 - The desktop apps' own install reasons (`needs_admin`, `translocated`, `app_management`,
   `quarantined`, `login_item_unsigned`, `installer_not_finished`, `relaunch_failed`, …) and their
   fixes are in [update-attempts.md](../../specs/epics/35-cluster-full-nodes-and-updates/update-attempts.md)

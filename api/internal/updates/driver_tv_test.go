@@ -16,7 +16,7 @@ func TestDriverFailedTVBlocksTheRelease(t *testing.T) {
 	r.home.outcome, r.home.rbReason = MRolledBack, CodeFailedTV
 	r.home.rbErr = &MachineError{Step: "tv", Code: CodeFailedTV, Detail: "TV change #7: verify_failed (stream_plays)"}
 	_, _ = r.f.svc.Tick(ctx)
-	run := r.drive(t, 30)
+	run := r.drive(t, 8)
 	if run.State != RunRolledBack || !strings.Contains(string(run.Error), CodeFailedTV) ||
 		!strings.Contains(string(run.Error), "stream_plays") {
 		t.Fatalf("run %s %s", run.State, run.Error)
@@ -37,7 +37,7 @@ func TestDriverTVChangePendingIsAGate(t *testing.T) {
 	r.home.outcome, r.home.rbReason = MRolledBack, CodeTVChangePending
 	r.home.rbErr = &MachineError{Step: "tv", Code: CodeTVChangePending, Detail: "waited behind TV change #6"}
 	_, _ = r.f.svc.Tick(ctx)
-	run := r.drive(t, 30)
+	run := r.drive(t, 8)
 	if run.State != RunFailed || !strings.Contains(string(run.Error), CodeTVChangePending) {
 		t.Fatalf("run %s %s", run.State, run.Error)
 	}
@@ -59,7 +59,7 @@ func TestDriverTVTimeoutAndCancel(t *testing.T) {
 	r.home.outcome, r.home.rbReason = MRolledBack, CodeTVTimeout
 	r.home.rbErr = &MachineError{Step: "tv", Code: CodeTVTimeout}
 	_, _ = r.f.svc.Tick(ctx)
-	if run := r.drive(t, 30); run.State != RunRolledBack {
+	if run := r.drive(t, 8); run.State != RunRolledBack {
 		t.Fatalf("run %s %s", run.State, run.Error)
 	}
 	if rel, _ := r.f.store.Get(ctx, "1.5.0"); rel.BlockedReason != "" || rel.Attempts != 1 {
@@ -70,7 +70,7 @@ func TestDriverTVTimeoutAndCancel(t *testing.T) {
 	c.home.outcome, c.home.rbReason = MRolledBack, CodeTVChangeCancelled
 	c.home.rbErr = &MachineError{Step: "tv", Code: CodeTVChangeCancelled}
 	_, _ = c.f.svc.Tick(ctx)
-	if run := c.drive(t, 30); run.State != RunRolledBack {
+	if run := c.drive(t, 8); run.State != RunRolledBack {
 		t.Fatalf("run %s %s", run.State, run.Error)
 	}
 	if rel, _ := c.f.store.Get(ctx, "1.5.0"); rel.BlockedReason != "tv_cancelled" {

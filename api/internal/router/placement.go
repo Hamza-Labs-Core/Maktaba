@@ -53,6 +53,8 @@ func buildPlacement() placement.Table {
 		"/internal/updates/tv-change",
 		"/internal/updates/tv-change/{run}",
 		"/internal/updates/tv-change/{run}/withdraw",
+		// a restore the command line asked for, recorded by this machine's API (story 35.5)
+		"/internal/updates/restored",
 		// VOD is served by the node itself: its streaming role reads the NAS (R13)
 		"/api/stream/capabilities",
 		"/api/stream/sessions",

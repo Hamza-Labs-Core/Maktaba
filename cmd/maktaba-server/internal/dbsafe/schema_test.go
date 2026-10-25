@@ -29,6 +29,18 @@ func TestAppliedInScript(t *testing.T) {
 	if got, err := appliedInScript(strings.NewReader(reordered)); err != nil || got != 13 {
 		t.Fatalf("columns in another order: %d %v", got, err)
 	}
+	// review L6: a migration run down after (a later row, is_applied false) is not held
+	down := "COPY public.goose_db_version (id, version_id, is_applied, tstamp) FROM stdin;\n" +
+		"1\t148\tt\tx\n2\t149\tt\tx\n3\t149\tf\tx\n" + `\.` + "\n"
+	if got, err := appliedInScript(strings.NewReader(down)); err != nil || got != 148 {
+		t.Fatalf("a migration run down: %d %v, want 148", got, err)
+	}
+	// and one run up again after that is
+	again := "COPY public.goose_db_version (id, version_id, is_applied) FROM stdin;\n" +
+		"1\t148\tt\n2\t149\tt\n3\t149\tf\n4\t149\tt\n" + `\.` + "\n"
+	if got, err := appliedInScript(strings.NewReader(again)); err != nil || got != 149 {
+		t.Fatalf("run up again: %d %v, want 149", got, err)
+	}
 	if got, err := appliedInScript(strings.NewReader("SET x = 1;\n")); err != nil || got != 0 {
 		t.Fatalf("no goose table: %d %v", got, err)
 	}

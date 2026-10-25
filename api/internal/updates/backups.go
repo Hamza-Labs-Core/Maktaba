@@ -22,6 +22,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 )
 
 // Backup is one dump in the home's backups folder.
@@ -109,7 +110,8 @@ func (c *SupervisorClient) Restore(ctx context.Context, name, by string) (*Resto
 	var out struct {
 		Plan *RestorePlan `json:"plan"`
 	}
-	body := map[string]any{"backup": name, "by": by, "confirm": true}
+	// page: the API audits it and tells the machines (Restore); the supervisor does not
+	body := map[string]any{"backup": name, "by": by, "confirm": true, "page": true}
 	if err := c.restoreCall(ctx, http.MethodPost, "/update/restore", body, &out); err != nil {
 		return nil, err
 	}
@@ -265,6 +267,38 @@ func (h *Handler) Restore(w http.ResponseWriter, r *http.Request) {
 		go h.Driver.disconnectMachines(context.WithoutCancel(r.Context()), "home_restore")
 	}
 	common.WriteJSON(w, r, http.StatusAccepted, pl)
+}
+
+// RestoredNotice serves POST /internal/updates/restored, this machine's own supervisor only
+// (its per-boot local token): a restore the command line asked for (maktaba-server
+// restore), recorded as the page's is — audited, and the machines told the home goes away.
+func (h *Handler) RestoredNotice(w http.ResponseWriter, r *http.Request) {
+	if !mw.FromSupervisor(r) {
+		httperror.Write(w, r, httperror.Forbidden("", "this machine's supervisor only"))
+		return
+	}
+	var req struct {
+		Backup   string    `json:"backup"`
+		Release  string    `json:"release"`
+		Schema   int64     `json:"schema"`
+		Running  string    `json:"running"`
+		BackupAt time.Time `json:"backup_at"`
+		By       string    `json:"by"`
+	}
+	if e := common.ReadJSON(r, &req, maxBody); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	if strings.TrimSpace(req.Backup) == "" {
+		bad(w, r, "bad_request", "backup is required")
+		return
+	}
+	h.Svc.Store.Audit(r.Context(), "", "cli", "update.restore", req.Backup, map[string]any{
+		"release": req.Release, "schema": req.Schema, "running": req.Running, "backup_at": req.BackupAt, "by": req.By})
+	if h.Driver != nil && h.Driver.Cluster != nil {
+		go h.Driver.disconnectMachines(context.WithoutCancel(r.Context()), "home_restore")
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // disconnectMachines tells every machine agent the home goes away (a restore by hand

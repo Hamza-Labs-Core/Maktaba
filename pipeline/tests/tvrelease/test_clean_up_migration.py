@@ -8,6 +8,8 @@ from maktaba_pipeline.engine.sql import is_pg, now, to_ts
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.tvrelease.store import create_change, get_change, update_change
 
+pytestmark = pytest.mark.integration
+
 
 async def _change(db: Database, state: str, *, aired: bool = False) -> str:
     cid = await create_change(

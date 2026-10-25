@@ -273,7 +273,7 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 	rt.rules = nodemode.CachedRules(dbs.app, time.Minute)
 	minutes := func(n int) time.Duration { return time.Duration(n) * time.Minute }
 	// a full node's metrics only: a home and a worker have none of these series
-	rt.metrics = nodemetrics.Register(func() string { return rt.guard.Paused() })
+	rt.metrics = nodemetrics.Register(func() string { return rt.guard.PausedCode() })
 	rt.resolver = &nodeauth.Resolver{Link: rt.link, Logger: logger, SecureCookies: cookiesSecure(), Metrics: rt.metrics,
 		Grace:             func() time.Duration { return time.Duration(rt.rules().GraceSeconds) * time.Second },
 		CopyMaxLag:        func() time.Duration { return minutes(rt.rules().OfflineCopyMaxLagMinutes) },

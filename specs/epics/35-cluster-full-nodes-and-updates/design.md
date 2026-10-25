@@ -809,11 +809,20 @@ own journal (§5.2 shape) so a power loss during its apply resumes or rolls back
 
 ### 13.2 The mirror
 
-`GET /api/cluster/updates/artifacts/{version}/{name}`: files from the home's
-`bin/releases/<version>/` and `updates/downloads/<version>/` (archives for every platform the cluster
-has, downloaded by the home during its own step 2 for each platform in `cluster_nodes.platform`),
-plus `trusted_root.json`. Node-signed (§10.2), range requests, rate-limited per node. The home
-verifies what it mirrors, the node verifies again; a node never trusts the home's verification.
+`GET /api/cluster/updates/artifacts/{version}/{name}`: the files of a release the home verified,
+kept under `<data_dir>/updates/mirror/<version>/`. Each is taken once: from the home's own staged
+release when it holds a copy that verifies (its `bin/releases/<version>/` keeps the signed files and
+the pipeline's wheel and constraints; the home keeps extracted programs, not archives), else from the
+release's GitHub asset, ahead of the machines' prepare for each platform the machines run (and on a
+machine's first ask). A file is kept only when its SHA-256 is the one the signed `checksums.txt`
+lists (`checksums.txt` itself: the digest whose signature the catalog verified), written through a
+synced temporary file with its `.ok` marker last, and checked again once in each process: a copy a
+power cut or a damaged block spoilt is fetched again, never served for ever. The trusted root
+reaches the machines through `/api/cluster/updates/tuf/` (Sigstore's TUF repository passed on,
+verified by each machine's TUF client, §3.3). Node-signed (§10.2), range requests, at most 3
+downloads at once per machine. The home verifies what it mirrors, the node verifies again; a node
+never trusts the home's verification, and a file whose mirror copy failed its verification is
+taken from GitHub on the stage's next try.
 
 ### 13.3 Sequence
 
