@@ -168,8 +168,6 @@ func TestMirrorUnknownName404(t *testing.T) {
 		"/api/cluster/updates/artifacts/1.5.0/latest.json", // published, not in checksums.txt
 		"/api/cluster/updates/artifacts/1.5.0/nothing.tar.gz",
 		"/api/cluster/updates/artifacts/1.6.0/release.json",
-		"/api/cluster/updates/artifacts/1.5.0/..%2Fx",
-		"/api/cluster/updates/artifacts/not-a-version/release.json",
 	} {
 		if rec := rig.get(p, "node-1", nil); rec.Code != http.StatusNotFound {
 			t.Errorf("%s: %d %s", p, rec.Code, rec.Body.String())
@@ -387,7 +385,7 @@ func TestWheelhouseBuildsAndServes(t *testing.T) {
 			t.Errorf("pip download lacks %q: %s", w, got)
 		}
 	}
-	if rec := rig.get("/api/cluster/updates/wheelhouse/1.5.0/plan9-mips", "node-1", nil); rec.Code != http.StatusNotFound {
+	if rec := rig.get("/api/cluster/updates/wheelhouse/1.5.0/plan9-mips", "node-1", nil); rec.Code != http.StatusBadRequest {
 		t.Fatalf("a platform it does not know: %d", rec.Code)
 	}
 	if rec := rig.get(path, "", nil); rec.Code != http.StatusUnauthorized {
@@ -618,5 +616,48 @@ func TestDriverPrefetchesTheRunsRelease(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if n := rig.hit("maktaba-server_1.5.0_linux_amd64.tar.gz"); n != 1 {
 		t.Fatalf("the archive fetched %d times", n)
+	}
+}
+
+// A version, platform or file name that would reach a path outside the mirror's folder is
+// refused before any file is touched (400): "..", encoded dots and slashes, backslashes,
+// absolute paths and drives, on the release files, the wheelhouse index and its wheels.
+func TestMirrorRefusesPathsOutsideItsFolder(t *testing.T) {
+	rig := newMirrorRig(t)
+	for _, p := range []string{
+		"/api/cluster/updates/artifacts/1.5.0/..%2Fx",
+		"/api/cluster/updates/artifacts/1.5.0/..",
+		"/api/cluster/updates/artifacts/1.5.0/%2e%2e",
+		"/api/cluster/updates/artifacts/1.5.0/%2e%2e%2fsecrets",
+		"/api/cluster/updates/artifacts/1.5.0/..%5C..%5Cwin.ini",
+		"/api/cluster/updates/artifacts/1.5.0/a..b",
+		"/api/cluster/updates/artifacts/1.5.0/%2Fetc%2Fpasswd",
+		"/api/cluster/updates/artifacts/1.5.0/C:%5CWindows%5Cwin.ini",
+		"/api/cluster/updates/artifacts/..%2F..%2Fetc/passwd",
+		"/api/cluster/updates/artifacts/not-a-version/release.json",
+		"/api/cluster/updates/wheelhouse/..%2F1.5.0/linux-amd64",
+		"/api/cluster/updates/wheelhouse/1.5.0/..%2Flinux-amd64",
+		"/api/cluster/updates/wheelhouse/1.5.0/linux-amd64/..%2F..%2Fx.whl",
+		"/api/cluster/updates/wheelhouse/1.5.0/linux-amd64/%2e%2e",
+	} {
+		if rec := rig.get(p, "node-1", nil); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d %s", p, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// inside keeps every path a request names inside its root.
+func TestInsideStaysInItsRoot(t *testing.T) {
+	root := t.TempDir()
+	if p, err := inside(root, "1.5.0", "release.json"); err != nil || filepath.Dir(filepath.Dir(p)) != root {
+		t.Fatalf("a plain name: %q %v", p, err)
+	}
+	for _, parts := range [][]string{
+		{".."}, {"1.5.0", ".."}, {"../x"}, {`..\x`}, {"a/b"}, {`a\b`}, {"C:x"}, {"/etc"}, {""}, {"."},
+		{"1.5.0", "..%2f"},
+	} {
+		if p, err := inside(root, parts...); !errors.Is(err, errOutside) {
+			t.Errorf("%q: %q %v", parts, p, err)
+		}
 	}
 }

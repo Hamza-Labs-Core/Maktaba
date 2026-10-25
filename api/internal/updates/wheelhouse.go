@@ -124,14 +124,19 @@ func pythonOf(man *releaseverify.Manifest) string {
 	return "3.12"
 }
 
-// wheelDir is a release's wheelhouse for platform.
-func (m *Mirror) wheelDir(version, platform string) string {
-	return filepath.Join(m.Dir, version, "wheelhouse", platformSegment(platform))
+// wheelDir is a release's wheelhouse for platform (inside: never outside the mirror's
+// folder).
+func (m *Mirror) wheelDir(version, platform string) (string, error) {
+	return inside(m.Dir, version, "wheelhouse", platformSegment(platform))
 }
 
 // readWheelIndex is a finished wheelhouse's index.
 func (m *Mirror) readWheelIndex(version, platform string) (*WheelIndex, error) {
-	b, err := os.ReadFile(filepath.Join(m.wheelDir(version, platform), wheelIndexFile))
+	dir, err := m.wheelDir(version, platform)
+	if err != nil {
+		return nil, err
+	}
+	b, err := os.ReadFile(filepath.Join(dir, wheelIndexFile))
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +227,11 @@ func (m *Mirror) buildWheelhouse(ctx context.Context, rel Release, man *releasev
 	if err != nil {
 		return err
 	}
-	parent := filepath.Dir(m.wheelDir(rel.Version, platform))
+	final, err := m.wheelDir(rel.Version, platform)
+	if err != nil {
+		return err
+	}
+	parent := filepath.Dir(final)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
 	}
@@ -292,7 +301,6 @@ func (m *Mirror) buildWheelhouse(ctx context.Context, rel Release, man *releasev
 	if err := os.WriteFile(filepath.Join(tmp, wheelIndexFile), b, 0o644); err != nil {
 		return err
 	}
-	final := m.wheelDir(rel.Version, platform)
 	_ = os.RemoveAll(final)
 	if err := os.Rename(tmp, final); err != nil {
 		return err
@@ -435,8 +443,8 @@ func (m *Mirror) serveWheelIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	defer done()
 	platform := platformOfSegment(chi.URLParam(r, "platform"))
-	if platform == "" {
-		httperror.Write(w, r, httperror.NotFound("no wheelhouse for that platform"))
+	if platform == "" || !ValidVersion(chi.URLParam(r, "version")) {
+		httperror.Write(w, r, httperror.BadRequest("not a release version and a platform the home keeps a wheelhouse for"))
 		return
 	}
 	rel, err := m.release(r.Context(), chi.URLParam(r, "version"))
@@ -480,8 +488,8 @@ func (m *Mirror) serveWheel(w http.ResponseWriter, r *http.Request) {
 	defer done()
 	platform := platformOfSegment(chi.URLParam(r, "platform"))
 	file := chi.URLParam(r, "file")
-	if platform == "" || !mirrorName.MatchString(file) {
-		httperror.Write(w, r, httperror.NotFound("no such wheel"))
+	if platform == "" || !plainName(file) || !ValidVersion(chi.URLParam(r, "version")) {
+		httperror.Write(w, r, httperror.BadRequest("not a release version, platform and wheel name"))
 		return
 	}
 	rel, err := m.release(r.Context(), chi.URLParam(r, "version"))
@@ -496,7 +504,16 @@ func (m *Mirror) serveWheel(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, f := range idx.Files {
 		if f.Name == file {
-			serveFile(w, r, filepath.Join(m.wheelDir(rel.Version, platform), file), file, f.SHA256)
+			// the index's own name (the file the home downloaded), never the request's
+			p, err := m.wheelDir(rel.Version, platform)
+			if err == nil {
+				p, err = inside(p, f.Name)
+			}
+			if err != nil {
+				m.fail(w, r, err)
+				return
+			}
+			serveFile(w, r, p, f.Name, f.SHA256)
 			return
 		}
 	}

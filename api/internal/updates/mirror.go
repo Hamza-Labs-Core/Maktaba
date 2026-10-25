@@ -302,8 +302,42 @@ func (m *Mirror) admit(w http.ResponseWriter, r *http.Request, node string) (rel
 // mirrorName: a release file's name as checksums.txt may list it (no path).
 var mirrorName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
 
+// plainName reports whether name is one release file's name: mirrorName's characters, and
+// never "..".
+func plainName(name string) bool {
+	return mirrorName.MatchString(name) && !strings.Contains(name, "..")
+}
+
+// errOutside: a version, platform or file name from a request that would name a path
+// outside the mirror's folder ("..", a separator, a drive): refused (a 400).
+var errOutside = errors.New("not a release version, platform or file name")
+
+// inside is root joined with parts, refused (errOutside) unless every part is one plain
+// name (no "..", no separator, no drive) and the result stays inside root: what a request
+// names never reaches a path outside the mirror's folder. The path is absolute.
+func inside(root string, parts ...string) (string, error) {
+	for _, p := range parts {
+		if p == "" || p == "." || strings.Contains(p, "..") || strings.ContainsAny(p, `/\:`) {
+			return "", errOutside
+		}
+	}
+	base, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	path, err := filepath.Abs(filepath.Join(append([]string{base}, parts...)...))
+	if err != nil || !strings.HasPrefix(path, base+string(filepath.Separator)) {
+		return "", errOutside
+	}
+	return path, nil
+}
+
 func (m *Mirror) serveArtifact(w http.ResponseWriter, r *http.Request) {
 	version, name := chi.URLParam(r, "version"), chi.URLParam(r, "name")
+	if !ValidVersion(version) || !plainName(name) {
+		httperror.Write(w, r, httperror.BadRequest("not a release version and file name"))
+		return
+	}
 	done, ok := m.downloader(w, r, version)
 	if !ok {
 		return
@@ -320,6 +354,10 @@ func (m *Mirror) serveArtifact(w http.ResponseWriter, r *http.Request) {
 // fail answers a request the mirror cannot serve: a 404 for what it does not hold, a 502
 // when GitHub would not give it the file (the machine falls back to GitHub itself).
 func (m *Mirror) fail(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, errOutside) {
+		httperror.Write(w, r, httperror.BadRequest(err.Error()))
+		return
+	}
 	if errors.Is(err, errNotMirrored) {
 		httperror.Write(w, r, httperror.NotFound(err.Error()))
 		return
@@ -372,7 +410,7 @@ func (m *Mirror) release(ctx context.Context, version string) (Release, error) {
 // Artifact is the kept copy of a release file (its path and SHA-256), fetched and checked
 // first when the mirror does not hold it yet.
 func (m *Mirror) Artifact(ctx context.Context, version, name string) (path, sum string, err error) {
-	if !mirrorName.MatchString(name) {
+	if !plainName(name) {
 		return "", "", fmt.Errorf("%w: %q", errNotMirrored, name)
 	}
 	rel, err := m.release(ctx, version)
@@ -405,7 +443,11 @@ func (m *Mirror) Artifact(ctx context.Context, version, name string) (path, sum 
 
 // sums is a kept release's checksums.txt.
 func (m *Mirror) sums(rel Release) (releaseverify.Checksums, error) {
-	b, err := os.ReadFile(filepath.Join(m.Dir, rel.Version, ChecksumsFile))
+	p, err := inside(m.Dir, rel.Version, ChecksumsFile)
+	if err != nil {
+		return nil, err
+	}
+	b, err := os.ReadFile(p)
 	if err != nil {
 		return nil, err
 	}
@@ -432,8 +474,11 @@ const okSuffix = ".ok"
 // ensure is the path of a kept release file, fetched from its GitHub asset first when the
 // mirror does not hold it; want is its SHA-256 ("" not checked: the bundle).
 func (m *Mirror) ensure(ctx context.Context, rel Release, name, want string) (string, error) {
-	dir := filepath.Join(m.Dir, rel.Version)
-	path := filepath.Join(dir, name)
+	path, err := inside(m.Dir, rel.Version, name)
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Dir(path)
 	if ok, err := os.ReadFile(path + okSuffix); err == nil && strings.TrimSpace(string(ok)) == want {
 		if _, err := os.Stat(path); err == nil {
 			return path, nil
@@ -693,10 +738,12 @@ func platformOfSegment(seg string) string {
 		return ""
 	}
 	p := osName + "/" + arch
-	if _, ok := pipPlatforms[p]; !ok {
-		return ""
+	for known := range pipPlatforms {
+		if known == p {
+			return known // the table's own string, not the request's
+		}
 	}
-	return p
+	return ""
 }
 
 // retryAfter writes a Retry-After of d.
