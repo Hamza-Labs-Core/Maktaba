@@ -71,7 +71,7 @@ owner on 2026-10-19 (**accepted default**). The questions and their answers are 
 | Skew | Home ≥ every machine. A machine behind runs while the schema guard says its code fits; it pauses (Epic 31 §5.1) when a migration says older nodes break. A machine that comes back online behind is updated at once (catch-up), streaming machines in the quiet window. |
 | TV during updates | Through Epic 33's hot swap: the new streaming binary runs as the staging slot, is verified and swapped at programme boundaries; the front door restarts only when its `edge_protocol` changed. Until the two-slot runtime (33.1) is built, the update restarts the streaming role in the window when no more than `quiet_max_viewers` are watching. |
 | Quiet window | `updates.window = "03:00-05:00"` (home's local time), default equal to `tv_staging.quiet_window`. A run starts only inside it; the TV swap and node rollout may finish after it (bounded by `window_overrun_minutes`, 120). |
-| Package-managed installs | Self-managed layout required for automatic updates. `.deb`/`.rpm` move to the layout (the package installs the launcher and the first release under `/var/lib/maktaba`); Homebrew installs are offered `maktaba-server setup --self-managed`; Docker keeps Epic 28.3's 409 with instructions (out of scope). |
+| Package-managed installs | Self-managed layout required for automatic updates. `.deb`/`.rpm` move to the layout (the package installs the launcher and the first release under `/var/lib/maktaba`); the Homebrew formula's service runs the launcher over the same layout under brew's `var` (built: brew owns the launcher, the updater the releases); apt/dnf repositories and the Homebrew tap follow each stable release (`packages.yml`); Docker installs run the headless Linux runtime on the image's volume and update themselves the same way (`deploy/docker/server`, install-kinds.md); only a container of the stack built from source keeps Epic 28.3's 409 with instructions. |
 | Downgrades | Never automatic. The installed-version watermark only rises; a pin below it, a channel switch `beta → stable` and a re-published older tag are all refused. The only way back is a rollback to the kept, already verified `previous` release, and only when its code fits the current schema. |
 
 ## Scope
@@ -249,8 +249,9 @@ owner on 2026-10-19 (**accepted default**). The questions and their answers are 
   authenticated home channel.
 
 ### R12 — The cluster link (machine-to-machine TLS)
-- R12.1 The home runs an internal CA (ECDSA P-256; key only on the home, `cluster-ca.key` 0600 beside
-  `secrets.key`, sealed copy in `home_secrets`); it issues every machine a certificate at join (CSR
+- R12.1 The home runs an internal CA (ECDSA P-256; key on the home, `cluster-ca.key` 0600 beside
+  `secrets.key`, sealed copy in `home_secrets`, and sealed in the switchover's and the
+  standbys' kits so the next home keeps the CA); it issues every machine a certificate at join (CSR
   from the node; the CA certificate and its fingerprint in the sealed join bundle), renews it over the
   control channel before expiry, and stops accepting it when the machine is revoked.
 - R12.2 **Control channel first.** One `wss://` with mutual TLS per machine to the home's API port;

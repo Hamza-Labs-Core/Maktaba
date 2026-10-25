@@ -19,6 +19,9 @@ from maktaba_pipeline.tvrelease.commit import _apply_filler
 from tests.engine.factory import make_library, make_video
 from tests.tvrelease.helpers import add_channel
 
+pytestmark = pytest.mark.integration
+
+
 POOL = "00000000-0000-4000-8000-0000000000f1"
 NEW_POOL = "00000000-0000-4000-8000-0000000000f2"
 LIVE_ITEM = "00000000-0000-4000-8000-0000000000a1"

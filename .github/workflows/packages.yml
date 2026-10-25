@@ -1,0 +1,331 @@
+# The package repositories (apt, dnf: the server, maktaba-server) and the Homebrew tap,
+# brought up to the newest stable release.
+#
+# A release is published by whichever tag workflow finishes last (release.yml or
+# desktop-release.yml: tools/release/release-assets.sh), so this runs when either completes
+# (workflow_run, from main's copy of this file) and acts only on a published release that is
+# the newest stable one: a pre-release, a draft, an older or a maintenance release changes
+# nothing. It also runs every week, for the newest stable release again: the apt indexes are
+# valid for 14 days, so they are signed again (and anything a run missed is caught up). Every
+# run brings the repositories and the tap to the same place, so a run that replaces a pending
+# one (the concurrency group below) loses nothing.
+#
+# It publishes only the release's own files, each checked first: the server's packages and the
+# formula against the release's Sigstore-signed checksums.txt (the identity machines verify:
+# release.yml at the tag), the Mac app's bundle against the apps' updater key. The .rpm
+# packages are then signed with the repository key (dnf checks it, gpgcheck=1); the .deb
+# packages stay the release's bytes (apt checks them through the signed index). The Linux app
+# is not in the repositories (Epic 39: one updater, the app's).
+#
+# Configuration, in the protected `packages` environment (deployments from main only). A part
+# with nothing configured is skipped with a warning naming what it needs (a release never goes
+# red for it); a part configured only in part fails; nothing is ever published unsigned.
+#   apt + dnf  vars.MAKTABA_PACKAGES_URL       the public address
+#              vars.MAKTABA_PACKAGES_BUCKET    the S3-compatible bucket it serves ("name" or "name/prefix")
+#              vars.MAKTABA_PACKAGES_ENDPOINT  the S3 API (Cloudflare R2: https://<account>.r2.cloudflarestorage.com;
+#                                              empty for AWS S3, with vars.MAKTABA_PACKAGES_REGION)
+#              secrets.MAKTABA_PACKAGES_ACCESS_KEY_ID, secrets.MAKTABA_PACKAGES_SECRET_ACCESS_KEY
+#              secrets.MAKTABA_REPO_SIGNING_KEY         the repository's armored private key (RSA: EL8's
+#                                                       rpm reads no EdDSA); its public half is published
+#              secrets.MAKTABA_REPO_SIGNING_PASSPHRASE  when the key has one
+#   Homebrew   vars.HOMEBREW_TAP_REPO (owner/homebrew-tap), secrets.HOMEBREW_TAP_TOKEN (contents:write on it)
+# The Mac app's cask also needs vars.TAURI_UPDATER_PUBKEY (without it the tap gets the formula).
+
+name: Packages
+
+on:
+  workflow_run:
+    workflows: [Release, Desktop Release]
+    types: [completed]
+  # twice a week: the apt indexes say Valid-Until 14 days (VALID_DAYS), so they are signed
+  # again well before they expire, and even two missed runs leave a week's margin
+  schedule:
+    - cron: '17 4 * * 1,4'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release tag (vX.Y.Z): published, and the newest stable release"
+        required: true
+
+permissions:
+  contents: read
+
+# One at a time, never cancelled: every run writes the same repositories and the same tap. A
+# pending run that a newer one replaces loses nothing (every run does the same work).
+concurrency:
+  group: packages
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: the newest stable release, published
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.which.outputs.tag }}
+      publish: ${{ steps.which.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: tools/release/go.mod
+          cache-dependency-path: tools/release/go.sum
+      - name: Which release
+        id: which
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          RUN_TAG: ${{ github.event.workflow_run.head_branch }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+        run: |
+          set -euo pipefail
+          none() { echo "::notice::$1"; echo "publish=false" >>"${GITHUB_OUTPUT}"; exit 0; }
+          case "${EVENT}" in
+            workflow_dispatch)
+              # the protected environment's secrets go to main's copy of this file alone
+              [ "${GITHUB_REF}" = refs/heads/main ] || none "a run from ${GITHUB_REF} publishes nothing (main only)"
+              tag="${INPUT_TAG}" ;;
+            schedule)
+              tag="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
+              [ -n "${tag}" ] || none "no release is the latest yet" ;;
+            *)
+              [ "${RUN_EVENT}" = push ] || none "the run was no tag push: nothing to publish"
+              tag="${RUN_TAG}" ;;
+          esac
+          [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || none "${tag}: not a stable release tag: nothing to publish"
+          [ "$(gh release view "${tag}" --json isDraft --jq .isDraft 2>/dev/null || echo none)" = false ] ||
+            none "${tag} is not published yet: the workflow that publishes it runs this again"
+          published="$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName')"
+          [ "$(printf '%s\n' "${published}" | (cd tools/release && go run ./cmd/release-order latest --tag "${tag}"))" = true ] ||
+            none "${tag} is not the newest stable release: the repositories and the tap keep theirs"
+          echo "tag=${tag}" >>"${GITHUB_OUTPUT}"
+          echo "publish=true" >>"${GITHUB_OUTPUT}"
+
+  repos:
+    name: apt + dnf repositories
+    needs: gate
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: packages
+    env:
+      TAG: ${{ needs.gate.outputs.tag }}
+      REPO_URL: ${{ vars.MAKTABA_PACKAGES_URL }}
+      BUCKET: ${{ vars.MAKTABA_PACKAGES_BUCKET }}
+      ENDPOINT: ${{ vars.MAKTABA_PACKAGES_ENDPOINT }}
+      AWS_DEFAULT_REGION: ${{ vars.MAKTABA_PACKAGES_REGION || 'auto' }}
+      # Cloudflare R2 refuses the checksums newer AWS CLIs send by default
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # what is set, never its value
+      - name: Configured
+        id: config
+        env:
+          HAS_KEY_ID: ${{ secrets.MAKTABA_PACKAGES_ACCESS_KEY_ID != '' }}
+          HAS_SECRET: ${{ secrets.MAKTABA_PACKAGES_SECRET_ACCESS_KEY != '' }}
+          HAS_SIGNING: ${{ secrets.MAKTABA_REPO_SIGNING_KEY != '' }}
+        run: |
+          set -euo pipefail
+          have="" missing=""
+          check() { if [ "$2" = true ]; then have="${have} $1"; else missing="${missing} $1"; fi; }
+          check vars.MAKTABA_PACKAGES_URL "$([ -n "${REPO_URL}" ] && echo true || echo false)"
+          check vars.MAKTABA_PACKAGES_BUCKET "$([ -n "${BUCKET}" ] && echo true || echo false)"
+          check secrets.MAKTABA_PACKAGES_ACCESS_KEY_ID "${HAS_KEY_ID}"
+          check secrets.MAKTABA_PACKAGES_SECRET_ACCESS_KEY "${HAS_SECRET}"
+          check secrets.MAKTABA_REPO_SIGNING_KEY "${HAS_SIGNING}"
+          if [ -z "${missing}" ]; then
+            echo "ready=true" >>"${GITHUB_OUTPUT}"
+          elif [ -z "${have}" ]; then
+            echo "::warning::the package repositories are not set up, so ${TAG} is not in them. To publish them, set in the packages environment:${missing}"
+            echo "ready=false" >>"${GITHUB_OUTPUT}"
+          else
+            echo "::error::the package repositories are set up only in part (missing:${missing}; set:${have}): nothing is published until all of them are set"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6.0.2
+        if: steps.config.outputs.ready == 'true'
+      - uses: sigstore/cosign-installer@v3.10.0
+        if: steps.config.outputs.ready == 'true'
+      - name: Install the repository tools
+        if: steps.config.outputs.ready == 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends apt-utils createrepo-c rpm
+
+      - name: Download the release's server packages
+        if: steps.config.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p dl
+          gh release download "${TAG}" --dir dl --pattern checksums.txt --pattern checksums.txt.sigstore.json \
+            --pattern 'maktaba-server_*.deb' --pattern 'maktaba-server-*.rpm'
+          ls -l dl
+
+      # The release's signed set: checksums.txt carries the identity every machine verifies,
+      # and each package must be listed in it and match.
+      - name: Check them
+        if: steps.config.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          cosign verify-blob --bundle dl/checksums.txt.sigstore.json \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com dl/checksums.txt
+          (cd dl && sha256sum --check --ignore-missing --strict checksums.txt)
+          mkdir -p take
+          shopt -s nullglob
+          for f in dl/maktaba-server_*.deb dl/maktaba-server-*.rpm; do
+            base="${f##*/}"
+            awk '{sub(/^\.\//, "", $2); print $2}' dl/checksums.txt | grep -qxF "${base}" ||
+              { echo "::error::${base} is not in the release's signed checksums.txt"; exit 1; }
+            cp "${f}" take/
+          done
+          ls -l take
+          [ -n "$(ls take)" ] || { echo "::error::${TAG} has no server package to publish"; exit 1; }
+
+      - name: Signing key
+        if: steps.config.outputs.ready == 'true'
+        env:
+          SIGNING_KEY: ${{ secrets.MAKTABA_REPO_SIGNING_KEY }}
+          SIGNING_PASSPHRASE: ${{ secrets.MAKTABA_REPO_SIGNING_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          export GNUPGHOME="${RUNNER_TEMP}/gnupg"
+          mkdir -p "${GNUPGHOME}"
+          chmod 0700 "${GNUPGHOME}"
+          printf '%s\n' "${SIGNING_KEY}" | gpg --batch --import 2>/dev/null
+          fpr="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr/ {print $10; exit}')"
+          [ -n "${fpr}" ] || { echo "::error::secrets.MAKTABA_REPO_SIGNING_KEY holds no secret key"; exit 1; }
+          {
+            echo "GNUPGHOME=${GNUPGHOME}"
+            echo "GPG_KEY=${fpr}"
+          } >>"${GITHUB_ENV}"
+          if [ -n "${SIGNING_PASSPHRASE}" ]; then
+            printf '%s' "${SIGNING_PASSPHRASE}" >"${RUNNER_TEMP}/repo-passphrase"
+            echo "GPG_PASSPHRASE_FILE=${RUNNER_TEMP}/repo-passphrase" >>"${GITHUB_ENV}"
+          fi
+          echo "signing with ${fpr}"
+
+      - name: Add the release to the repositories
+        if: steps.config.outputs.ready == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.MAKTABA_PACKAGES_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MAKTABA_PACKAGES_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          ep=()
+          [ -z "${ENDPOINT}" ] || ep=(--endpoint-url "${ENDPOINT}")
+          aws s3 sync "s3://${BUCKET}" repo "${ep[@]}" --only-show-errors
+          bash tools/release/pkg-repo.sh add repo take/*
+          bash tools/release/pkg-repo.sh prune repo
+          bash tools/release/pkg-repo.sh index repo
+          find repo -type f ! -path '*/by-hash/*' | sort
+
+      # The packages first, then every index (apt's by-hash copies among them) but the signed
+      # tops, then those, apt's InRelease last; then what was pruned goes. A machine that read
+      # the old InRelease meanwhile finds what it names (by-hash/), and dnf's data files have
+      # names of their own.
+      - name: Publish
+        if: steps.config.outputs.ready == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.MAKTABA_PACKAGES_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MAKTABA_PACKAGES_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          ep=()
+          [ -z "${ENDPOINT}" ] || ep=(--endpoint-url "${ENDPOINT}")
+          dst="s3://${BUCKET}"
+          aws s3 sync repo "${dst}" "${ep[@]}" --only-show-errors --exclude '*' \
+            --include '*.deb' --include '*.rpm' --include '*.rpm.sha256' \
+            --cache-control "public, max-age=31536000, immutable"
+          aws s3 sync repo "${dst}" "${ep[@]}" --only-show-errors --exclude '*.deb' --exclude '*.rpm' \
+            --exclude '*.rpm.sha256' --exclude 'apt/dists/stable/InRelease' --exclude 'apt/dists/stable/Release' \
+            --exclude 'apt/dists/stable/Release.gpg' --exclude 'rpm/repodata/repomd.xml' \
+            --exclude 'rpm/repodata/repomd.xml.asc' --cache-control "no-cache"
+          for f in apt/dists/stable/Release apt/dists/stable/Release.gpg rpm/repodata/repomd.xml.asc \
+            rpm/repodata/repomd.xml apt/dists/stable/InRelease; do
+            aws s3 cp "repo/${f}" "${dst}/${f}" "${ep[@]}" --only-show-errors --cache-control "no-cache"
+          done
+          aws s3 sync repo "${dst}" "${ep[@]}" --only-show-errors --delete --size-only
+          echo "::notice::${TAG} is in the package repositories at ${REPO_URL}"
+
+  homebrew:
+    name: Homebrew tap
+    needs: gate
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: packages
+    env:
+      TAG: ${{ needs.gate.outputs.tag }}
+      TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
+      UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Configured
+        id: config
+        env:
+          HAS_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          if [ -n "${TAP_REPO}" ] && [ "${HAS_TOKEN}" = true ]; then
+            echo "ready=true" >>"${GITHUB_OUTPUT}"
+          elif [ -z "${TAP_REPO}" ] && [ "${HAS_TOKEN}" != true ]; then
+            echo "::warning::the Homebrew tap is not set up, so ${TAG} is not in it. To publish it, set in the packages environment: vars.HOMEBREW_TAP_REPO secrets.HOMEBREW_TAP_TOKEN"
+            echo "ready=false" >>"${GITHUB_OUTPUT}"
+          else
+            missing="vars.HOMEBREW_TAP_REPO"
+            [ -n "${TAP_REPO}" ] && missing="secrets.HOMEBREW_TAP_TOKEN"
+            echo "::error::the Homebrew tap is set up only in part (missing: ${missing}): nothing is pushed until both are set"
+            exit 1
+          fi
+      - uses: actions/checkout@v6.0.2
+        if: steps.config.outputs.ready == 'true'
+      - uses: actions/setup-go@v6.4.0
+        if: steps.config.outputs.ready == 'true'
+        with:
+          go-version-file: tools/release/go.mod
+          cache-dependency-path: tools/release/go.sum
+      - uses: sigstore/cosign-installer@v3.10.0
+        if: steps.config.outputs.ready == 'true'
+
+      # The formula is the release's own maktaba.rb (signed with the rest); the cask names
+      # the Mac app's bundle once its updater signature checks.
+      - name: The formula and the cask
+        if: steps.config.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          mkdir -p dl app
+          gh release download "${TAG}" --dir dl --pattern checksums.txt --pattern checksums.txt.sigstore.json \
+            --pattern maktaba.rb
+          cosign verify-blob --bundle dl/checksums.txt.sigstore.json \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com dl/checksums.txt
+          awk '{sub(/^\.\//, "", $2); print $2}' dl/checksums.txt | grep -qxF maktaba.rb ||
+            { echo "::error::maktaba.rb is not in the release's signed checksums.txt"; exit 1; }
+          (cd dl && sha256sum --check --ignore-missing --strict checksums.txt)
+          bundle="Maktaba_${ver}_aarch64.app.tar.gz"
+          if [ -z "${UPDATER_PUBKEY}" ]; then
+            echo "::notice::vars.TAURI_UPDATER_PUBKEY is not set: the tap gets the formula alone"
+          elif gh release download "${TAG}" --dir app --pattern "${bundle}" --pattern "${bundle}.sig" &&
+              [ -f "app/${bundle}" ] && [ -f "app/${bundle}.sig" ]; then
+            (cd tools/release && go run ./cmd/updater-feed --verify --dir ../../app --pubkey "${UPDATER_PUBKEY}" --tag "${TAG}")
+            bash tools/release/homebrew-tap.sh cask "${ver}" "$(sha256sum "app/${bundle}" | awk '{print $1}')" >maktaba-app.rb
+          else
+            echo "::notice::${TAG} has no signed ${bundle}: the tap gets the formula alone"
+          fi
+
+      - name: Push to the tap
+        if: steps.config.outputs.ready == 'true'
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          git clone -q --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+          cask=()
+          [ ! -f maktaba-app.rb ] || cask=(maktaba-app.rb)
+          bash tools/release/homebrew-tap.sh push tap "${TAG}" dl/maktaba.rb "${cask[@]}"

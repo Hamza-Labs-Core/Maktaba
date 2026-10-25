@@ -35,6 +35,10 @@ type RuntimeInstaller struct {
 	Owner string
 	// Record is the home's database record ("" on a node).
 	Record string
+	// Container is the container the runtime is in ("docker": the Docker install, whose
+	// image puts its payload on the volume's runtime and runs the launcher; "" none). It
+	// updates exactly as a headless install does; only its kind says so.
+	Container string
 	// Open starts the Linux app with the order's deep link when it does not answer
 	// within NudgeAfter (90 s); tests replace it.
 	Open       func(ctx context.Context, url string) error
@@ -48,6 +52,9 @@ type RuntimeInstaller struct {
 	// StopPython (the guard or the pointer could not be written): the release before keeps
 	// running, its pipeline with it (nil: nothing to turn on).
 	StartPython func(ctx context.Context) error
+	// WheelRoot is where the home's wheelhouse of a staged release goes (WheelhouseDir):
+	// the app's venv step builds the pipeline's environment from it ("" none).
+	WheelRoot string
 
 	nudge nudger
 }
@@ -84,8 +91,13 @@ func (ri *RuntimeInstaller) now() time.Time {
 	return time.Now()
 }
 
-// Kind implements Installer.
-func (ri *RuntimeInstaller) Kind() string { return "runtime" }
+// Kind implements Installer: "docker" for the Docker install's runtime, else "runtime".
+func (ri *RuntimeInstaller) Kind() string {
+	if ri.Container == "docker" {
+		return "docker"
+	}
+	return "runtime"
+}
 
 // Running implements Installer.
 func (ri *RuntimeInstaller) Running() string { return layout.NormalizeVersion(ri.Version) }
@@ -114,7 +126,7 @@ func (ri *RuntimeInstaller) Preflight(_ context.Context, j *Journal) error {
 
 // Stage implements Installer: the payload tarball, verified against the signed
 // checksums.txt, unpacked and installed as a runtime directory (current unchanged).
-func (ri *RuntimeInstaller) Stage(ctx context.Context, j *Journal, _ io.Writer) error {
+func (ri *RuntimeInstaller) Stage(ctx context.Context, j *Journal, log io.Writer) error {
 	var res *releaseverify.Result
 	if err := retryFetch(ctx, func() error {
 		var err error
@@ -171,12 +183,15 @@ func (ri *RuntimeInstaller) Stage(ctx context.Context, j *Journal, _ io.Writer) 
 		return err
 	}
 	j.LauncherProtocol = res.Manifest.LauncherProtocol // the new runtime brings its launcher
+	j.EdgeProtocol = res.Manifest.EdgeProtocol
+	j.HandoverProtocol = res.Manifest.HandoverProtocol
 	r, err := ri.Runtime.Install(ctx, payload, nil, appruntime.Options{})
 	if err != nil {
 		return Fail("install_failed", "%v", err)
 	}
 	cur, _ := ri.Runtime.Current()
 	j.Staged, j.FromRef, j.Signed = filepath.Base(r.Dir), cur, signedOf(res)
+	ri.Source.stageWheels(ctx, j, ri.WheelRoot, log)
 	return nil
 }
 

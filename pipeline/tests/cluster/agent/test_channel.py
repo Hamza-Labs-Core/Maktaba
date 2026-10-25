@@ -20,6 +20,7 @@ from maktaba_pipeline.cluster.agent.client import (
     ChannelAgent,
     Commands,
     agent_url,
+    agent_urls,
 )
 from maktaba_pipeline.cluster.agent.files import ClusterFiles
 from maktaba_pipeline.cluster.agent.jobs import JobTracker
@@ -595,6 +596,36 @@ async def test_the_welcome_names_the_folder_and_the_share(tmp_path: Path) -> Non
     assert files.status()["dir"] == str(tmp_path / "nas" / "maktaba" / "cluster" / "192.168.50.20")
     assert files.retention_days == 3 and files.file_cap == 7 * 1024 * 1024
     files.stop()
+
+
+async def test_agent_via_local_link() -> None:
+    """A full node's process dials its node API's loopback route to the home's channel
+    over the machine's cluster link first (story 35.16), its v2 sealing unchanged; with
+    the link not up (nothing answers there) it reaches the home straight."""
+    assert agent_urls("http://h:8080", env={}) == ["ws://h:8080/api/cluster/agent"]
+    local = "ws://127.0.0.1:1/api/cluster/link/local/agent"
+    assert agent_urls("http://h:8080", env={"MAKTABA_CLUSTER_AGENT_URL": local}) == [
+        local,
+        "ws://h:8080/api/cluster/agent",
+    ]
+    hub, key = node_hub()
+    async with running_hub(hub):
+        # the "link" route is the hub itself: the session goes through it, sealed as ever
+        import os
+
+        os.environ["MAKTABA_CLUSTER_AGENT_URL"] = f"ws://127.0.0.1:{hub.port}/api/cluster/agent"
+        try:
+            agent = make_agent(hub, node_key=key)
+            async with running(agent):
+                await until(lambda: agent.connects >= 1)
+        finally:
+            os.environ["MAKTABA_CLUSTER_AGENT_URL"] = local  # nothing listens: straight to the home
+        try:
+            agent = make_agent(hub, node_key=key)
+            async with running(agent):
+                await until(lambda: agent.connects >= 1)
+        finally:
+            del os.environ["MAKTABA_CLUSTER_AGENT_URL"]
 
 
 async def test_a_worker_without_the_share_keeps_its_files_here(tmp_path: Path) -> None:

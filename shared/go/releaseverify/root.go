@@ -6,14 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/tuf"
 	"github.com/theupdateframework/go-tuf/v2/metadata"
+	"github.com/theupdateframework/go-tuf/v2/metadata/fetcher"
 )
 
 //go:generate go run ./cmd/update-trusted-root
@@ -95,6 +98,19 @@ type RootStore struct {
 	// cacheDir as its metadata cache.
 	Now   func() time.Time
 	Fetch func(ctx context.Context, cacheDir string) ([]byte, error)
+	// Mirror is a second place Sigstore's TUF repository is read from when the public
+	// one cannot be reached: a node's home, which passes it on to its machines (Epic 35
+	// design §3.3). Its files are verified exactly as the public repository's, from the
+	// same TUF root, so the home is never trusted for the root it serves. Nil: none.
+	Mirror *TUFMirror
+}
+
+// TUFMirror is a TUF repository location besides the public one (RootStore.Mirror).
+type TUFMirror struct {
+	// BaseURL is the repository's root, e.g. http://home:8080/api/cluster/updates/tuf.
+	BaseURL string
+	// Transport carries its requests (a node signs them for its home); nil: the default.
+	Transport http.RoundTripper
 }
 
 func (s *RootStore) now() time.Time {
@@ -203,7 +219,17 @@ func (s *RootStore) Refresh(ctx context.Context) error {
 	if fetch == nil {
 		fetch = fetchTUF
 	}
+	source := tuf.DefaultMirror
 	raw, err := fetch(ctx, filepath.Join(dir, "tuf"))
+	if err != nil && s.Fetch == nil && s.Mirror != nil && s.Mirror.BaseURL != "" {
+		// the public repository out of reach: the same repository through the mirror
+		var merr error
+		if raw, merr = fetchTUFMirror(ctx, filepath.Join(dir, "tuf"), s.Mirror); merr == nil {
+			err, source = nil, s.Mirror.BaseURL
+		} else {
+			err = fmt.Errorf("%w (and through %s: %v)", err, s.Mirror.BaseURL, merr)
+		}
+	}
 	if err != nil {
 		var exp *metadata.ErrExpiredMetadata
 		if errors.As(err, &exp) {
@@ -216,7 +242,7 @@ func (s *RootStore) Refresh(ctx context.Context) error {
 	if _, err := root.NewTrustedRootFromJSON(raw); err != nil {
 		return fmt.Errorf("releaseverify: refreshed trusted root does not parse: %w", err)
 	}
-	meta, err := json.Marshal(rootMeta{FetchedAt: s.now().UTC(), Source: tuf.DefaultMirror})
+	meta, err := json.Marshal(rootMeta{FetchedAt: s.now().UTC(), Source: source})
 	if err != nil {
 		return err
 	}
@@ -233,7 +259,24 @@ func (s *RootStore) expired(err error) {
 	}
 }
 
-func fetchTUF(ctx context.Context, cacheDir string) ([]byte, error) {
+// fetchTUFMirror is fetchTUF from a mirror of the public repository (its own cache under
+// cacheDir; the same TUF root anchors it). Tests replace it.
+var fetchTUFMirror = func(ctx context.Context, cacheDir string, m *TUFMirror) ([]byte, error) {
+	opts := tuf.DefaultOptions().WithCachePath(cacheDir).WithContext(ctx)
+	opts.RepositoryBaseURL = strings.TrimRight(m.BaseURL, "/")
+	f := fetcher.NewDefaultFetcher()
+	if m.Transport != nil {
+		f = f.NewFetcherWithRoundTripper(m.Transport)
+	}
+	opts.Fetcher = f
+	c, err := tuf.New(opts)
+	if err != nil {
+		return nil, err
+	}
+	return c.GetTarget("trusted_root.json")
+}
+
+var fetchTUF = func(ctx context.Context, cacheDir string) ([]byte, error) {
 	opts := tuf.DefaultOptions().WithCachePath(cacheDir).WithContext(ctx)
 	c, err := tuf.New(opts)
 	if err != nil {

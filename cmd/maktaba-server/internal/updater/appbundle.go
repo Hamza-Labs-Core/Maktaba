@@ -54,6 +54,9 @@ type AppInstaller struct {
 	// PollEvery is how often the app's answer is read (1 s).
 	PollEvery time.Duration
 	Now       func() time.Time
+	// WheelRoot is where the home's wheelhouse of a staged release goes (WheelhouseDir):
+	// the app's venv step builds the pipeline's environment from it ("" none).
+	WheelRoot string
 
 	nudge nudger
 }
@@ -276,11 +279,15 @@ func (ai *AppInstaller) Stage(ctx context.Context, j *Journal, log io.Writer) er
 		return err
 	}
 	j.Signed = signedOf(res)
+	if res != nil {
+		j.EdgeProtocol = res.Manifest.EdgeProtocol
+	}
 	kept, err := ai.keep(ai.Running(), log)
 	if err != nil {
 		return Fail("keep_failed", "keep a copy of the running payload: %v", err)
 	}
 	j.Staged, j.FromRef = staging, kept
+	ai.Source.stageWheels(ctx, j, ai.WheelRoot, log)
 	return nil
 }
 

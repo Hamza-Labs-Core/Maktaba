@@ -173,6 +173,49 @@ describe("Admin Updates", () => {
     expect(screen.getByTestId("updates-cluster-version")).toHaveTextContent("1.4.0");
   });
 
+  it("a worker only: converted by its next update, or its installer to run once (story 35.8 AC8)", async () => {
+    const o = overview();
+    const machines: unknown[] = [
+      ...o.machines,
+      {
+        id: "w1",
+        name: "old-worker",
+        role: "node",
+        version: "1.3.0",
+        state: "worker_only",
+        convert: "installer",
+      },
+      {
+        id: "w2",
+        name: "new-worker",
+        role: "node",
+        version: "1.4.0",
+        state: "worker_only",
+        convert: "next_update",
+      },
+      {
+        id: "w3",
+        name: "converting",
+        role: "node",
+        version: "1.4.0",
+        state: "converting",
+        target: "1.5.0",
+      },
+    ];
+    routes({ ...o, machines }, null);
+    renderPage();
+    const table = await screen.findByTestId("updates-machines");
+    expect(within(table).getByTestId("updates-machine-w1-convert")).toHaveTextContent(
+      "worker-only — re-run the installer once"
+    );
+    expect(within(table).getByTestId("updates-machine-w2-convert")).toHaveTextContent(
+      "its next update makes it a full node by itself"
+    );
+    expect(within(table).getByTestId("updates-machine-w3")).toHaveTextContent(
+      "becoming a full node"
+    );
+  });
+
   it("follows a run under way: its steps, what it waits on, and Cancel before the switch", async () => {
     routes(overview({ run: liveRun }), runView);
     post.mockResolvedValue({ cancelled: true });
@@ -607,6 +650,11 @@ describe("Admin Updates: the last update attempt", () => {
     );
     expect(screen.queryByDisplayValue(/sudo chown/)).toBeNull();
     expect(screen.queryByText(/sudo chown/)).toBeNull();
+    // the reason's entry in the help (Epic 35 story 35.15 AC8)
+    expect(screen.getByTestId("updates-machine-home-attempt-help")).toHaveAttribute(
+      "href",
+      "/help/updates#code-desktop-app"
+    );
     // the logs of the attempt's window (the admin bundle, with the log files)
     await user.click(screen.getByRole("button", { name: "Download the logs" }));
     await waitFor(() =>

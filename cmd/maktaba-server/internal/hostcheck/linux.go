@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/service"
 )
 
@@ -56,6 +57,9 @@ type Linux struct {
 	Unit service.AppUnit
 	// User is the login name the remedies name.
 	User string
+	// Container is the container the setup runs in (the Docker image: config.Container):
+	// its entrypoint runs the server, so there is no systemd user service to check.
+	Container string
 }
 
 // LocalLinux reads this machine.
@@ -64,7 +68,8 @@ func LocalLinux(unit service.AppUnit) Linux {
 	if u, err := user.Current(); err == nil {
 		name = u.Username
 	}
-	return Linux{Glibc: localGlibc, Manager: service.LocalUserManager(), Unit: unit, User: name}
+	return Linux{Glibc: localGlibc, Manager: service.LocalUserManager(), Unit: unit, User: name,
+		Container: config.Container()}
 }
 
 // localGlibc asks getconf (glibc's own), which a musl system does not answer.
@@ -90,6 +95,9 @@ func (l Linux) Check(ctx context.Context) Result {
 	case olderThan(v, MinGlibc):
 		r.problem("glibc_old", fmt.Sprintf("This Linux has glibc %s; Maktaba needs %s or newer (Ubuntu 22.04, Debian 12, "+
 			"Fedora 36, RHEL 10 or later).", v, MinGlibc), "have", v, "need", MinGlibc)
+	}
+	if l.Container != "" {
+		return r // the container's entrypoint runs the server: no user service, no linger
 	}
 	st := l.Manager.Status(ctx, l.Unit)
 	switch {

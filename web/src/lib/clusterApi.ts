@@ -139,6 +139,9 @@ export interface ClusterNode {
   web_url?: string | null;
   /** Epic 35 (story 35.8): a full machine (web, API, streaming); false: a worker only */
   full_node?: boolean;
+  /** Epic 35 (story 35.8 AC8): a worker only's next update makes it a full node
+   * (next_update), or its pipeline is too old for that (installer: re-run it once) */
+  worker_convert?: "next_update" | "installer";
   /** Epic 35 (design §11.5): VOD served by another machine when the share is not readable here */
   vod?: NodeVod;
   /** Epic 35 (story 35.12): the update rollout's view of this machine */
@@ -213,6 +216,33 @@ export interface ClusterSelf {
 export interface ClusterView {
   home: ClusterHome;
   nodes: ClusterNode[];
+  /** the cluster link (story 35.16); absent on a home without a cluster CA */
+  link?: ClusterLink;
+}
+
+/** The cluster link: its mode, the CA, each machine's link and certificate. */
+export interface ClusterLink {
+  mode: "off" | "prefer" | "require";
+  auto_require: boolean;
+  ca_sha256: string;
+  ca_url: string;
+  web_https: boolean;
+  /** the approved machines that held their link for a day, of all of them */
+  ready: number;
+  machines: number;
+  nodes?: Record<
+    string,
+    {
+      connected: boolean;
+      since?: string;
+      cert_not_after?: string;
+      has_cert: boolean;
+      /** the machine's clock minus the home's, when over a minute (EC2) */
+      clock_skew_seconds?: number;
+      /** why it keeps the link from becoming required (EC3) */
+      blocks?: "worker_only" | "no_cert" | "not_connected" | "under_a_day" | "clock_skew";
+    }
+  >;
 }
 
 export interface NodeUpdate {

@@ -42,9 +42,19 @@ func buildPlacement() placement.Table {
 		// term it would take (Epic 37)
 		"/api/cluster/emergency",
 		"/api/cluster/term-claim",
+		// the machine's own processes on its cluster link (story 35.16)
+		"/api/cluster/link/local/agent",
+		"/api/cluster/link/local/fetch",
 		// the cluster sign-in's node half (story 35.9 AC6)
 		"/api/cluster/sso/start",
 		"/api/cluster/sso/callback",
+		// this machine's update moves its TV to the new streaming binary (story 35.6):
+		// its own supervisor asks its own API
+		"/internal/updates/tv-change",
+		"/internal/updates/tv-change/{run}",
+		"/internal/updates/tv-change/{run}/withdraw",
+		// a restore the command line asked for, recorded by this machine's API (story 35.5)
+		"/internal/updates/restored",
 		// VOD is served by the node itself: its streaming role reads the NAS (R13)
 		"/api/stream/capabilities",
 		"/api/stream/sessions",

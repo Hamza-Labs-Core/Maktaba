@@ -125,3 +125,55 @@ jobs:
         env:
           MAKTABA_CLOUD_DB_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
         run: go test -tags=integration -count=1 ./...
+
+  # Epic 35 story 35.5 AC6: the previous stable release against this build's database. Its
+  # repository tests run on this build's migrations (a rollback runs it there), and the
+  # nodes' schema guard is checked both ways (a machine behind its home, one ahead): an
+  # old node against a new home at the schema level, not an old node process. A failure
+  # fails the build unless a newer migration is marked "Breaking for the previous release"
+  # (tools/compat-prev/run.sh).
+  compat-prev:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: maktaba
+          POSTGRES_PASSWORD: maktaba
+          POSTGRES_DB: maktaba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U maktaba"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+      PGPASSWORD: maktaba
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          # the previous release's tag and its tree
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            pg_isready -h localhost -p 5432 -U maktaba >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "::error::Postgres not ready after 60s"
+          exit 1
+
+      - name: The previous release on this build's database
+        run: make compat-prev

@@ -79,3 +79,44 @@ func TestDetectInstallRuntime(t *testing.T) {
 		t.Error("an app-owned runtime updates with the app")
 	}
 }
+
+// The Docker image's runtime updates itself through the server's updater: the install is
+// "docker" with no manual instructions, and only a build without the updater (or before
+// it started) answers this handler, with a 409 that says so.
+func TestDockerImageUpdatesItself(t *testing.T) {
+	su := NewSelfUpdater(availableUpdater(t, "v1.0.0", nil))
+	su.detect = func(string) installKind { return installContainer }
+	su.selfPathFunc = func() (string, error) {
+		return "/var/lib/maktaba/data/maktaba/runtime/v1.0.0_1a2b3c4d/bin/maktaba-api", nil
+	}
+	if su.InstallName() != "docker" || su.manualDocker() {
+		t.Fatalf("install %q, manual %v", su.InstallName(), su.manualDocker())
+	}
+	doc := statusDoc(t, su, fixedStatus(`{"available":true,"latest_version":"v1.2.0","channel":"stable"}`))
+	if doc["install"] != "docker" {
+		t.Fatalf("install = %v", doc["install"])
+	}
+	if _, ok := doc["instructions"]; ok {
+		t.Fatalf("manual instructions for the image that updates itself: %v", doc)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/system/update", strings.NewReader(`{"confirm":true}`)).
+		WithContext(adminCtx())
+	su.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "updater_unavailable") {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// detectInstall: the runtime's launcher says headless; the Docker image says its container too.
+func TestDetectInstallInTheDockerImage(t *testing.T) {
+	t.Setenv(EnvRuntimeOwner, RuntimeOwnerHeadless)
+	t.Setenv(EnvContainer, "")
+	if k := detectInstall("/x/bin/maktaba-api"); k != installRuntime {
+		t.Errorf("a headless runtime: %v", k)
+	}
+	t.Setenv(EnvContainer, "docker")
+	if k := detectInstall("/x/bin/maktaba-api"); k != installContainer {
+		t.Errorf("the Docker image's runtime: %v", k)
+	}
+}

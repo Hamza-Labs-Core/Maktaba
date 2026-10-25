@@ -38,6 +38,7 @@ func (r *driverRig) active(t *testing.T) Run {
 // D1: the home's desktop app is ordered without the window's or the TV's gate and
 // nothing is drained while it waits; its click drains the cluster, then the home goes.
 func TestDriverHomeAppWaitsForItsClick(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.asks = true
@@ -77,6 +78,7 @@ func TestDriverHomeAppWaitsForItsClick(t *testing.T) {
 // D1: a machine's desktop app waits for its click while the rollout goes on with the
 // others; the run stays (waiting_click) and its click takes the next turn.
 func TestDriverMachineAppWaitsWhileTheOthersGo(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "darwin-arm64", "1.4.0")
@@ -105,6 +107,7 @@ func TestDriverMachineAppWaitsWhileTheOthersGo(t *testing.T) {
 // D1: a newer release takes the place of a run that only waits for clicks: the orders
 // are withdrawn and the newer run orders it in their place.
 func TestDriverNewerReleaseSupersedesAWaitingRun(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "darwin-arm64", "1.4.0")
@@ -148,6 +151,7 @@ func TestDriverNewerReleaseSupersedesAWaitingRun(t *testing.T) {
 
 // D1: Cancel withdraws a home's order before its go, never after.
 func TestDriverCancelAHomeOrder(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.asks = true
@@ -167,6 +171,7 @@ func TestDriverCancelAHomeOrder(t *testing.T) {
 // window (the default, "immediate", catches a machine that keeps no TV up at once:
 // TestCatchUpImmediate).
 func TestCatchUpRespectsRollbacksAndTheWindow(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -208,6 +213,7 @@ func TestCatchUpRespectsRollbacksAndTheWindow(t *testing.T) {
 
 // review 8: a machine gone mid-prepare is offline, not a run held for ever.
 func TestDriverMachineGoneMidPrepare(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")

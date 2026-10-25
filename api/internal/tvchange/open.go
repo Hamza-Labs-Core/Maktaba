@@ -32,7 +32,9 @@ const ActionReopen = "reopen"
 
 // OpenChanges are the changes no one approved in draft … ready, oldest first. There is
 // one at most; a second (opened before the rule, or while the first was in flight)
-// joins the first (CollapseOpen).
+// joins the first (CollapseOpen). The automatic updater's change of the streaming binary
+// is none of them (story 35.6): its own change, which no save joins and which joins no
+// one's, queued behind the change in flight like any newer draft.
 func (s *Store) OpenChanges(ctx context.Context, q queryer) ([]*Change, error) {
 	rows, err := q.QueryContext(ctx, `SELECT `+changeCols+` FROM tv_changes
 		WHERE state IN ('draft','staged','verifying','ready') ORDER BY number, created_at`)
@@ -46,7 +48,7 @@ func (s *Store) OpenChanges(ctx context.Context, q queryer) ([]*Change, error) {
 		if err != nil {
 			return nil, err
 		}
-		if len(c.ApprovedBy) == 0 {
+		if len(c.ApprovedBy) == 0 && c.SourceKind() != SourceAutoUpdate {
 			out = append(out, c)
 		}
 	}
@@ -67,7 +69,7 @@ func (s *Store) OpenChange(ctx context.Context, q queryer) (*Change, error) {
 // diffs (a channel plan's is tens of MB): the controller's tick looks every few
 // seconds for a second one.
 func (s *Store) countOpen(ctx context.Context, q queryer) (int, error) {
-	rows, err := q.QueryContext(ctx, `SELECT approved_by FROM tv_changes
+	rows, err := q.QueryContext(ctx, `SELECT approved_by, source FROM tv_changes
 		WHERE state IN ('draft','staged','verifying','ready')`)
 	if err != nil {
 		return 0, err
@@ -75,13 +77,15 @@ func (s *Store) countOpen(ctx context.Context, q queryer) (int, error) {
 	defer rows.Close()
 	n := 0
 	for rows.Next() {
-		var appr []byte
-		if err := rows.Scan(&appr); err != nil {
+		var appr, src []byte
+		if err := rows.Scan(&appr, &src); err != nil {
 			return 0, err
 		}
 		by := []string{}
 		decodeJSON(appr, &by)
-		if len(by) == 0 {
+		ch := Change{}
+		decodeJSON(src, &ch.Source)
+		if len(by) == 0 && ch.SourceKind() != SourceAutoUpdate {
 			n++
 		}
 	}

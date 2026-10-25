@@ -418,6 +418,12 @@ If another TV change is `ready` waiting for approval, the binary change queues b
 Epic 33 R9.4 (rebased); the orchestrator does not wait for an approval it cannot get: it waits until
 the window's end + overrun, then fails the run with `tv_change_pending` (retried next window).
 
+*As built:* every home migrates at its new release's start ([install-kinds.md](install-kinds.md)),
+so this step runs in the new release's supervisor during its watch, and the release commits once
+the change is live; a failure rolls the release back (`failed_tv`, `tv_change_pending`,
+`tv_timeout`, `tv_change_cancelled`), and a rollback takes the change back first
+([install-kinds.md](install-kinds.md), "The TV step").
+
 ### 7.2 Before the two-slot runtime (today)
 
 One streaming process: the front door and the engine are the same. Step 10 becomes "restart
@@ -475,6 +481,15 @@ the job outlives the supervisor; the new supervisor opens it by name and adopts 
 (`QueryInformationJobObject` lists pids). The launcher closes its handle — killing the job — only on
 a service stop. If the duplicate fails, the update degrades to "restart children in order" in the
 quiet window with TV viewers ≤ `quiet_max_viewers` (story 33.14 EC2), and says so in the run log.
+
+As built (install-kinds.md, "TV handover"): the job's name carries the install's hash in place
+of the boot id (another install, or a test, never meets it; a named object ends with its last
+handle), each surviving child also has a named job of its own nested in it (what ends that child
+with its descendants after a handover; its handle is duplicated into the launcher too), a
+handover is made only onto a release whose `release.json` says `handover_protocol`, and a
+launcher that speaks the handover keeps the job it runs every server in across the restart, so
+the children stay there without leaving it (a logon task's or a CI runner's job may refuse a
+breakaway); the boot's job is the way under a launcher from before it.
 
 ### 8.3 Launcher replacement
 
@@ -542,6 +557,22 @@ pipeline agent `cmd update.convert {run_id, version}` (a new command in the pipe
 pipeline's constraints), and runs `bin/releases/<v>/maktaba-server setup --node --converting`, which
 does the steps above and reports through the new machine agent. A worker-only node too old to know
 `update.convert` is shown "worker-only — re-run the installer once" (its installer run converts it).
+As built: the conversion is the machine's turn in the rollout (drained first, one machine at a
+time, inside the window; target state `converting`), and a catch-up converts the worker-only
+machines in the window. The worker downloads from the artifact mirror with a download token
+the job carries (`download_token`: HMAC-SHA256 by a home-held key kept in the mirror's folder,
+naming the machine and the release, four hours; the mirror's artifact route alone takes it, for
+a machine still approved; never the wheelhouse or TUF routes, which setup does not use), never
+sending it to GitHub (a bearer token: whoever holds it fetches that release's public files as
+that machine until it expires or the machine is revoked; never logged, never persisted). An
+installed full node's start removes leftover Epic 31 worker units (a conversion that missed its
+health wait, which then exits 0, or stopped before removing them), so no second pipeline stays;
+setup run again resumes (the release installed already). The worker verifies with the Sigstore root the server compiles in (a
+copy in the pipeline package, refreshed with it by `trusted-root.yml`), runs setup outside its
+own service (a `systemd-run --scope`, a `Win32_Process.Create` process outside the scheduled
+task's job, a new session on macOS) and answers each later `update.convert` of the run with how
+far it got; the target is healthy once the machine's new agent reports the release. Setup keeps
+the worker's extra instances (`maktaba-node@N`) as `[pipeline] instances`.
 This PC (the Windows worker node joined today) converts on the first rollout after 35.8 ships if its
 pipeline has `update.convert`, else on its next installer run.
 
@@ -780,11 +811,20 @@ own journal (§5.2 shape) so a power loss during its apply resumes or rolls back
 
 ### 13.2 The mirror
 
-`GET /api/cluster/updates/artifacts/{version}/{name}`: files from the home's
-`bin/releases/<version>/` and `updates/downloads/<version>/` (archives for every platform the cluster
-has, downloaded by the home during its own step 2 for each platform in `cluster_nodes.platform`),
-plus `trusted_root.json`. Node-signed (§10.2), range requests, rate-limited per node. The home
-verifies what it mirrors, the node verifies again; a node never trusts the home's verification.
+`GET /api/cluster/updates/artifacts/{version}/{name}`: the files of a release the home verified,
+kept under `<data_dir>/updates/mirror/<version>/`. Each is taken once: from the home's own staged
+release when it holds a copy that verifies (its `bin/releases/<version>/` keeps the signed files and
+the pipeline's wheel and constraints; the home keeps extracted programs, not archives), else from the
+release's GitHub asset, ahead of the machines' prepare for each platform the machines run (and on a
+machine's first ask). A file is kept only when its SHA-256 is the one the signed `checksums.txt`
+lists (`checksums.txt` itself: the digest whose signature the catalog verified), written through a
+synced temporary file with its `.ok` marker last, and checked again once in each process: a copy a
+power cut or a damaged block spoilt is fetched again, never served for ever. The trusted root
+reaches the machines through `/api/cluster/updates/tuf/` (Sigstore's TUF repository passed on,
+verified by each machine's TUF client, §3.3). Node-signed (§10.2), range requests, at most 3
+downloads at once per machine. The home verifies what it mirrors, the node verifies again; a node
+never trusts the home's verification, and a file whose mirror copy failed its verification is
+taken from GitHub on the stage's next try.
 
 ### 13.3 Sequence
 
@@ -1086,5 +1126,10 @@ a `control` frame beyond one message), the HTTP-over-control `RoundTripper` (bod
 answer moved to a stream). Integration: a node and a home with Postgres in `verify-full`; kill the
 control channel with a TV stream open (stream survives 60 s, re-attaches; after 60 s closes and the
 front door fails over); revoke during streams (all closed at once); migrate a v2-only joined node
-without re-join; `prefer` → `require` switch; legacy paths refused in `require`. Load: 20 TV pulls
-plus a release download on one machine with control-channel p99 latency < 50 ms.
+without re-join; `prefer` → `require` switch; legacy paths refused in `require`. Load, in two
+halves: the integration tier checks it works (20 TV pulls plus a release download on one machine,
+every control frame and request answered, none near a stall: a 2 s ceiling, which a runner's load
+never reaches and a stalled channel always does); the perf tier (`make perf-ci`, `-tags perf`)
+measures the latency: control-channel p99 < 50 ms, control frames and requests alike, as the
+link's own cost over the machine's own loopback round trip measured in the same window (CPU shared
+with other processes slows every round trip, the link's included), with the numbers reported.

@@ -315,7 +315,7 @@ func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, lo
 	localRouter := chi.NewRouter()
 	local.Mount(localRouter)
 	fd := &frontdoor.Handler{Svc: svc, Settings: csettings, Self: ident.ID, Local: localRouter,
-		Engine: engine, Keyring: keyring, Tracker: tracker, Logger: logger}
+		Engine: engine, Keyring: keyring, Tracker: tracker, Logger: logger, Client: linkClient(b.pool)}
 
 	b.loop = &cluster.HostLoop{Store: cluster.PGBeatStore{Pool: b.pool}, HostID: ident.ID, Keyring: keyring, Logger: logger,
 		Info: func(ctx context.Context) cluster.BeatInfo {
@@ -537,6 +537,10 @@ func buildNodeTVReady(bg *background, logger *slog.Logger, cfg config.Config, po
 
 	logger.Info("tv: streaming node ready", "host_id", id, "stream_base_url", base,
 		"encoders", strings.Join(b.caps.Encoders, ","), "event", "tv_node_ready")
+	// the home requires the cluster link: it reads this machine's channels over the
+	// link (a loopback stream from the machine's API), never over the network (35.16)
+	mode := &cluster.LinkMode{Pool: pool}
+	r.Use(frontdoor.LoopbackOnlyWhen(mode.Required))
 	cluster.MountNode(r, keyring, &channel.HTTPHandler{Engine: engine}, func() cluster.Health {
 		ids := engine.ActiveIDs()
 		active := make([]string, 0, len(ids))

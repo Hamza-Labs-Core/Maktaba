@@ -17,6 +17,7 @@ import type {
 } from "../../lib/queueApi";
 import { runMachine, useJobStream, useQueuesSnapshot, useWorkers } from "../../lib/useQueueStream";
 import { ActivityLog } from "../../components/queue/ActivityLog";
+import { ControlCentreUpdateCard } from "../../components/cluster/updates/ControlCentreUpdateCard";
 import { FlowLanes } from "../../components/queue/FlowLanes";
 import { HostJobs, hostWorkerIds, runsOnHost } from "../../components/queue/hostFilter";
 import { ExplainPanel } from "../../components/queue/ExplainPanel";
@@ -220,6 +221,9 @@ export function QueueOverview() {
       {host && <HostJobs host={host} stream={stream} workers={workers} />}
 
       <PulseBanner />
+
+      {/* an update under way (story 35.15): admins only, as the Updates page */}
+      {admin && <ControlCentreUpdateCard />}
 
       <RunPanel
         stages={snapshot.stages}

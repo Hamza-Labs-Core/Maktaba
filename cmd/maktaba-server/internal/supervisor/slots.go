@@ -92,7 +92,7 @@ func BuildSlot(name string, opts Options) (Process, error) {
 	cmd.Env = env
 	wire(cmd)
 	return Process{Role: RoleTVSlot, Instance: name, OnDemand: slotOnDemand[name], Cmd: cmd,
-		Probe: "http://" + SlotAdminAddr(name) + "/healthz"}, nil
+		Probe: "http://" + SlotAdminAddr(name) + "/healthz", Survives: true}, nil
 }
 
 // BuildSlots is every slot instance.

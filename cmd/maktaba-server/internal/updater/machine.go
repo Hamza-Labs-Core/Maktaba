@@ -167,6 +167,10 @@ var (
 	ErrPastSwitch = errors.New("past_switch")      // abort after the switch
 	ErrAhead      = errors.New("update_ahead")     // this machine runs a newer release
 	ErrNoRollback = errors.New("no_rollback")      // nothing to roll back to, or the database moved on
+	// ErrTVBusy: the apply's restart would now cut a watched TV, the handover the run
+	// counted on being one it cannot make now (story 35.7): nothing changed, and the run's
+	// TV gate holds it.
+	ErrTVBusy = errors.New("tv_busy")
 )
 
 // Machine runs this machine's part of updates.
@@ -191,8 +195,18 @@ type Machine struct {
 	// sends its update.state again).
 	OnChange func()
 	// TVOnAir reports whether this machine keeps TV streams on air now (its tv-slot
-	// processes run): a launcher's handover then waits for the next restart (nil: none).
+	// processes, or its streaming role, run): a launcher's replacement that cannot hand the
+	// TV over then waits for the next restart, which the run's TV gate holds for a quiet
+	// TV (nil: none).
 	TVOnAir func() bool
+	// TVHandover reports whether this machine's TV processes (the front door, the slots)
+	// can run on across the restart onto target, the release the next start runs (story
+	// 35.7), and why not; arm also makes serve's next exit 75 hand them over. nil: they
+	// never do (every process restarts, under the run's TV gate).
+	TVHandover func(j *Journal, target string, arm bool) (bool, string)
+	// TV moves the home's TV to the new release's streaming binary before the commit
+	// (story 35.6, tv.go); nil: no TV slots here (a node, a SQLite home), nothing to move.
+	TV TVSwapper
 
 	mu      sync.Mutex
 	j       *Journal
@@ -552,6 +566,7 @@ func (m *Machine) prepare(ctx context.Context) {
 		}
 		_ = m.endStep(s.name, state, detail)
 	}
+	ho, hoWhy := m.tvHandover(m.Status().Journal, j.Job.Version, false)
 	stopped := false
 	_ = m.mutate(func(j *Journal) {
 		if j.State != StatePreparing {
@@ -559,6 +574,7 @@ func (m *Machine) prepare(ctx context.Context) {
 			return
 		}
 		j.State, j.Step = StatePrepared, ""
+		j.HandsOver, j.HandoverWhy = ho, hoWhy
 	})
 	if stopped {
 		_ = m.withJournal(func(j *Journal) error { return m.Installer.Discard(context.Background(), j) })
@@ -691,6 +707,22 @@ func (m *Machine) Abort(runID string) error {
 // release that comes up finishes the run (Resume). An install a person updates is
 // ordered from the app instead (awaiting_click); once someone clicked there, Apply again
 // is the home's go.
+// ApplyGated is Apply for a run the home ordered while the TV is watched (tvBusy: it
+// skipped its TV gate because this machine's prepared report said it hands its TV over):
+// when it cannot hand over now, it refuses (ErrTVBusy) and says so in its report, so the
+// run's TV gate holds it.
+func (m *Machine) ApplyGated(runID string, tvBusy bool) error {
+	if j := m.Status().Journal; tvBusy && m.TVHandover != nil && j != nil && j.Job.RunID == runID &&
+		(j.State == StatePrepared || j.State == StateClicked) && j.Staged != "running" {
+		if ok, why := m.TVHandover(j, j.Job.Version, false); !ok {
+			_ = m.mutate(func(j *Journal) { j.HandsOver, j.HandoverWhy = false, why })
+			return fmt.Errorf("%w: the TV processes cannot be handed over now (%s) and the TV is watched", ErrTVBusy, why)
+		}
+	}
+	return m.Apply(runID)
+}
+
+// Apply switches to the prepared release and restarts on it.
 func (m *Machine) Apply(runID string) error {
 	m.mu.Lock()
 	if m.j == nil || m.j.Job.RunID != runID {
@@ -763,6 +795,7 @@ func (m *Machine) apply(ctx context.Context) {
 		return
 	}
 	_ = m.endStep(StepSwitch, "done", "")
+	m.armHandover(j.Job.Version)
 	_ = m.mutate(func(j *Journal) { j.State = StateRestarting })
 	_ = m.beginStep(StepRestart)
 	m.logf("restarting on %s", j.Job.Version)
@@ -1113,8 +1146,10 @@ func (m *Machine) watch(ctx context.Context) {
 				m.rollback("start_timeout")
 				return
 			}
-		case watched >= bound:
+		case watched >= bound && !waitsForTV(v, healthySince, now, watch):
 			// neither healthy long enough nor unhealthy long enough: a flapping release
+			// (one healthy for its whole watch waits only for its TV step, whose own
+			// limits bound it)
 			m.logf("no verdict within %s of watching: %s", bound, v.Why)
 			m.rollback("watch_timeout")
 			return
@@ -1123,7 +1158,14 @@ func (m *Machine) watch(ctx context.Context) {
 			if healthySince.IsZero() {
 				healthySince = now
 			}
-			if now.Sub(healthySince) >= watch && m.commit() {
+			// the TV moves to the new streaming binary while the release is watched; the
+			// release commits once both are done
+			tvDone, code, detail := m.tvStep(ctx)
+			if code != "" {
+				m.failTV(code, detail)
+				return
+			}
+			if now.Sub(healthySince) >= watch && tvDone && m.commit() {
 				return
 			}
 		default:
@@ -1191,7 +1233,7 @@ func (m *Machine) replaceLauncher() {
 		return
 	}
 	j := m.Status().Journal
-	if j == nil || !needsNewLauncher(j) {
+	if j == nil || !wantsNewLauncher(j) {
 		return
 	}
 	_ = m.beginStep(StepLauncher)
@@ -1205,7 +1247,10 @@ func (m *Machine) replaceLauncher() {
 		_ = m.endStep(StepLauncher, "skipped", "")
 		return
 	}
-	if m.TVOnAir != nil && m.TVOnAir() {
+	// the TV processes run on across this restart when they can (story 35.7): then it
+	// cuts no TV
+	handsOver, _ := m.tvHandover(j, j.Job.Version, true)
+	if !handsOver && m.TVOnAir != nil && m.TVOnAir() {
 		// a restart now would cut the TV this machine keeps on air, outside the gates the
 		// run's restarts pass: the new launcher takes over at the next restart instead
 		_ = m.endStep(StepLauncher, "done", fmt.Sprintf("launcher protocol %d: takes over at the next restart "+
@@ -1215,7 +1260,12 @@ func (m *Machine) replaceLauncher() {
 		return
 	}
 	_ = m.endStep(StepLauncher, "done", fmt.Sprintf("launcher protocol %d", j.LauncherProtocol))
-	m.logf("the launcher of %s (protocol %d) takes over: restarting", j.Job.Version, j.LauncherProtocol)
+	if needsNewLauncher(j) {
+		m.logf("the launcher of %s (protocol %d) takes over: restarting", j.Job.Version, j.LauncherProtocol)
+	} else {
+		m.logf("the launcher of %s takes over (it keeps the TV processes running across restarts): restarting",
+			j.Job.Version)
+	}
 	if m.Exit != nil {
 		m.Exit(75)
 	}
@@ -1249,6 +1299,8 @@ func (m *Machine) rollback(reason string) {
 	_ = m.mutate(func(j *Journal) { j.State, j.Reason, j.Rollbacks = StateRollingBack, reason, j.Rollbacks+1 })
 	_ = m.beginStep(StepRollback)
 	m.warnf("rolling back %s to %s: %s", j.Job.Version, orNone(j.From), reason)
+	// the TV first (story 35.6 AC8): its change cancelled, or rolled back on the air
+	m.withdrawTV(reason)
 	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)
 	if migrated {
 		if m.Rehearser != nil {
@@ -1276,8 +1328,33 @@ func (m *Machine) rollback(reason string) {
 		m.errorf("the switch back failed: %s", f.Error())
 		return
 	}
+	m.armHandover(j.From)
 	if m.Exit != nil {
 		m.Exit(75)
+	}
+}
+
+// tvHandover is TVHandover (false when there is none).
+func (m *Machine) tvHandover(j *Journal, target string, arm bool) (bool, string) {
+	if m.TVHandover == nil || j == nil {
+		return false, ""
+	}
+	return m.TVHandover(j, target, arm)
+}
+
+// armHandover makes the next exit 75 hand the TV processes over to the start on target
+// when they can run on across it (story 35.7), and says which it is in the run's log:
+// a restart that cannot hand over restarts every process, the TV's too (AC4).
+func (m *Machine) armHandover(target string) {
+	if m.TVHandover == nil {
+		return
+	}
+	ok, why := m.tvHandover(m.Status().Journal, target, true)
+	_ = m.mutate(func(j *Journal) { j.HandsOver, j.HandoverWhy = ok, why })
+	if ok {
+		m.logf("the TV processes run on across the restart onto %s", target)
+	} else if why != "" {
+		m.logf("every process restarts onto %s, the TV's too: %s", target, why)
 	}
 }
 

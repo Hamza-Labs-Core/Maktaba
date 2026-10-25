@@ -311,9 +311,25 @@ channels only when the home places them here). The home stays the only database,
 only place migrations run and the only holder of secrets. Sign-ins are the home's: open
 the machine's web address and press **Continue with <home>**.
 
-Worker-only nodes are converted automatically on their next update once the home's
-rollout sends `update.convert` (story 35.12). A worker whose pipeline is too old to know
-that command (every worker installed before this release) converts once by hand:
+Worker-only nodes are converted automatically on their next update (story 35.8 AC8):
+on the machine's turn in the home's rollout (inside the update window, after its jobs
+finish), the home sends its worker `update.convert`. The worker downloads the release the
+home runs from the home's mirror (with the download token the command carries: that
+machine, that release, for 4 hours), GitHub Releases otherwise, and verifies it itself
+before anything runs: the Sigstore bundle of `checksums.txt` against the pinned
+release-workflow identity, with the same Sigstore root the server compiles in, then every
+file against `checksums.txt` and the server binary against `release.json`. Then it runs
+that release's `maktaba-server setup --node --converting` outside its own service (a
+systemd scope, a process of its own on Windows and macOS), which does the steps below,
+keeps the extra workers as `[pipeline] instances`, and removes the old worker units once
+the new service answers. Admin -> Updates follows it ("becoming a full node") and says
+why when it fails (the download, the verification, or setup's own words); the machine
+stays drained then, and is tried again with the next release or a Retry.
+
+A worker whose pipeline is too old to know that command (every worker installed before
+this release) is shown "worker-only — re-run the installer once". Re-running the
+installer (with or without `--full`) installs a pipeline that knows it; or convert once
+by hand:
 
 1. Download, from the release the home runs (Admin → System health shows its version),
    the server archive for this machine (`maktaba-server-<version>-<os>-<arch>.zip` or
@@ -344,8 +360,8 @@ keeps this worker's Python environment for the pipeline (`--python`, written to
 `--mode service` for a Windows service; Linux: a systemd user unit; macOS: a
 LaunchAgent), waits until the new service answers as a node, and only then removes the
 old worker units (`maktaba-node`, `maktaba-node@N`). `--dry-run` prints the plan.
-Without `--from` it fetches the home's version itself (the home's mirror, else GitHub
-Releases). A machine joined before the cluster channel's handshake v2 (no
+Without `--from` it fetches the home's version itself from GitHub Releases (the home's
+mirror answers a worker only with the token of the home's own `update.convert`). A machine joined before the cluster channel's handshake v2 (no
 `home.cluster_pub` in `node.json`) must re-join first.
 
 A worker started by hand (a script or a shortcut running `maktaba-pipeline run`) is not

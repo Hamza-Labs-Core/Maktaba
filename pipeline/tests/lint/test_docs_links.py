@@ -1,33 +1,58 @@
-"""Epic 32 story 32.12 TC1: the TV runbook's relative links resolve.
+"""The docs' relative links resolve (Epic 32 story 32.12 TC1, Epic 35 story 35.15 TC5).
 
-Every relative link in ``docs/tv-cluster-and-remote.md`` and in the Epic 32 specs points at
-a file that exists, and every ``#anchor`` into the runbook names one of its anchors (the Live
-TV admin page links straight to them: web/src/pages/Admin/LiveTV/docs.ts). CI counts these
-files as code (ci.yml's ``meta`` filter), so a change to them runs this test.
+Every relative link in the TV runbook (``docs/tv-cluster-and-remote.md``) and the Epic 32
+specs, and in the update docs (``docs/updates.md``, ``docs/auto-update.md``, the cluster docs,
+the packaging docs) and the Epic 35 specs, points at a file that exists, and every ``#anchor``
+into one of those pages names one of its headings. The in-app help's own links are checked by
+web/src/help/help.coverage.test.ts (the Live TV page links there now). CI counts these files
+as code (ci.yml's ``meta`` filter), so a change to them runs this test.
 """
 
 from __future__ import annotations
 
+import functools
 import re
 from pathlib import Path
 
+import pytest
 import yaml
+
+pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[3]
 RUNBOOK = ROOT / "docs" / "tv-cluster-and-remote.md"
 SPECS = ROOT / "specs" / "epics" / "32-tv-streaming-cluster-remote"
-ADMIN_LINKS = ROOT / "web" / "src" / "pages" / "Admin" / "LiveTV" / "docs.ts"
+UPDATE_SPECS = ROOT / "specs" / "epics" / "35-cluster-full-nodes-and-updates"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 
 
+def _update_docs() -> list[Path]:
+    """The update docs (story 35.15): what an admin reads about updates, and the epic."""
+    return [
+        ROOT / "docs" / "updates.md",
+        ROOT / "docs" / "auto-update.md",
+        *sorted((ROOT / "docs" / "cluster").glob("*.md")),
+        ROOT / "deploy" / "packaging" / "README.md",
+        ROOT / "deploy" / "packaging" / "upgrade.md",
+        ROOT / "deploy" / "packaging" / "node" / "README.md",
+        *sorted(UPDATE_SPECS.glob("*.md")),
+    ]
+
+
+@functools.cache
 def _anchors(md: Path) -> set[str]:
-    text = md.read_text(encoding="utf-8")
+    """A page's anchors as GitHub makes them: each heading (code blocks aside), lowercased,
+    without punctuation, spaces as hyphens, a repeated one numbered; and explicit ids."""
+    text = re.sub(r"```.*?```", "", md.read_text(encoding="utf-8"), flags=re.S)
     ids = set(re.findall(r'<a id="([^"]+)"></a>', text))
-    for h in re.findall(r"^#+ (.+)$", text, re.M):
-        slug = re.sub(r"[^\w\- ]", "", h.lower()).strip().replace(" ", "-")
-        ids.add(slug)
+    seen: dict[str, int] = {}
+    for h in re.findall(r"^#+ (.+?)\s*$", text, re.M):
+        slug = re.sub(r"[^\w\- ]", "", h.lower()).replace(" ", "-")
+        n = seen.get(slug, 0)
+        seen[slug] = n + 1
+        ids.add(slug if n == 0 else f"{slug}-{n}")
     return ids
 
 
@@ -39,27 +64,63 @@ def _links(md: Path) -> list[str]:
     return [m for m in LINK.findall(text) if not re.match(r"^[a-z]+:", m)]
 
 
-def test_runbook_and_specs_links_resolve() -> None:
-    files = [RUNBOOK, *sorted(SPECS.glob("*.md"))]
+def _broken(files: list[Path], checked: set[Path]) -> list[str]:
+    """The links of files that name no file, or an anchor missing from a page of checked."""
     bad: list[str] = []
     for md in files:
         for link in _links(md):
             target, _, anchor = link.partition("#")
-            path = (md.parent / target).resolve() if target else md
+            path = (md.parent / target).resolve() if target else md.resolve()
             if not path.exists():
                 bad.append(f"{md.relative_to(ROOT)}: {link} (no such file)")
                 continue
-            if anchor and path == RUNBOOK and anchor not in _anchors(RUNBOOK):
+            if anchor and path in checked and anchor not in _anchors(path):
                 bad.append(f"{md.relative_to(ROOT)}: {link} (no such anchor)")
+    return bad
+
+
+def test_runbook_and_specs_links_resolve() -> None:
+    files = [RUNBOOK, *sorted(SPECS.glob("*.md"))]
+    bad = _broken(files, {RUNBOOK.resolve()})
     assert not bad, "\n".join(bad)
 
 
-def test_admin_page_anchors_exist() -> None:
-    anchors = _anchors(RUNBOOK)
-    wanted = re.findall(r':\s*"([a-z-]+)"', ADMIN_LINKS.read_text(encoding="utf-8"))
-    assert wanted, "no anchors found in docs.ts"
-    missing = [a for a in wanted if a not in anchors]
-    assert not missing, f"the Live TV page links to missing runbook anchors: {missing}"
+def test_update_docs_links_resolve() -> None:
+    files = _update_docs()
+    assert all(f.exists() for f in files), [str(f) for f in files if not f.exists()]
+    bad = _broken(files, {f.resolve() for f in files})
+    assert not bad, "\n".join(bad)
+
+
+def test_update_docs_cover_the_story() -> None:
+    """Story 35.15 AC4–AC6: the pages say what an admin needs, in the words of the app."""
+    updates = (ROOT / "docs" / "updates.md").read_text(encoding="utf-8")
+    for needle in (
+        "## Settings",
+        "auto_install",
+        "node_failure_policy",
+        "wheelhouse",
+        "Update now",
+        "deferred_until",
+        "pinned_version",
+        "## What happens to TV",
+        "tv_change_pending",
+        "maktaba-server restore",
+        "--certificate-identity",
+    ):
+        assert needle in updates, needle
+    runbook = (ROOT / "docs" / "cluster" / "runbook-updates.md").read_text(encoding="utf-8")
+    for needle in (
+        "maktaba-server update --rollback",
+        "maktaba-launcher --status",
+        "updates/journal.json",
+        "maktaba-launcher.old",
+        "restore_no_release",
+        "failed_tv",
+        "worker_only",
+        "## Known issues",
+    ):
+        assert needle in runbook, needle
 
 
 def test_runbook_covers_the_story_sections() -> None:
@@ -110,7 +171,8 @@ def _matches(pattern: str, path: str) -> bool:
 
 def test_ci_counts_these_docs_as_code() -> None:
     patterns = _meta_patterns()
-    read = [f.relative_to(ROOT).as_posix() for f in [RUNBOOK, *sorted(SPECS.glob("*.md"))]]
+    files = [RUNBOOK, *sorted(SPECS.glob("*.md")), *_update_docs()]
+    read = [f.relative_to(ROOT).as_posix() for f in files]
     unlisted = [f for f in read if not any(_matches(p, f) for p in patterns)]
     assert not unlisted, (
         f"markdown this test reads that ci.yml's meta filter does not list (a change to it would "

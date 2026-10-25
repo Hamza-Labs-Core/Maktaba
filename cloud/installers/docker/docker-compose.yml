@@ -1,32 +1,55 @@
-# Reference compose for users who want the full Maktaba stack at home.
-# Pairs the server + Postgres + a config bind-mount. For relay-only
-# users, the Postgres section is optional — the server can run with
-# SQLite, see api/docs/deployment.md.
-version: "3.9"
+# The Docker install of Maktaba: one container that runs the server and everything it runs
+# (the web app, the API, live TV, the pipeline, its own Postgres), and updates itself.
+#
+#   docker compose up -d                        # pulls the image, waits for the setup
+#   docker compose run --rm maktaba setup       # the setup, in the terminal (once)
+#
+# After the setup the container starts Maktaba by itself; open http://<this machine>:8088.
+#
+# Updates are automatic, as on every other install (Admin -> Updates: the quiet window, Update
+# now, pause): the server verifies each release (its Sigstore signature from the release
+# workflow, the checksums) and installs it as a new runtime on the `maktaba` volume, switching to
+# it under the launcher's guard and back if it cannot start. The image tag below is only where
+# a new volume starts from; there is nothing to pull for updates.
+#
+# A newer image pulled later is switched to at the container's next start the same way, under
+# the launcher's guard: kept once its server has run for a few minutes, and if it cannot start,
+# the volume goes back to what ran before and that image's release is not tried again (the
+# image you ran before still runs). An older image never replaces what the volume runs. If you
+# manage the image yourself (Watchtower, a pinned tag you move), turn the server's own updates
+# off so only one thing updates it: MAKTABA_UPDATE_DISABLE below (or Admin -> Updates -> Pause).
 
 services:
-  maktaba-server:
-    image: ghcr.io/hamza-labs-core/maktaba-server:stable
+  maktaba:
+    image: ghcr.io/hamza-labs-core/maktaba-server:latest
     restart: unless-stopped
-    ports:
-      - "8080:8080"
+    # the launcher drains the server on a stop (the pipeline's jobs, then Postgres)
+    stop_grace_period: 90s
+    # environment:
+    #   MAKTABA_UPDATE_DISABLE: "1"   # the image is updated by something else (see above)
+    # the host's network (Linux): the machines and apps of your network find this home (mDNS)
+    # and reach it at this machine's own address, as with any other install. Docker Desktop
+    # (Mac, Windows) has no host network: there, use the ports below instead.
+    network_mode: host
+    # ports:
+    #   - "8088:8088"   # the web app
+    #   - "8080:8080"   # the API the cluster's machines and the apps use
+    #   - "8081:8081"   # live TV
+    #   - "54329:54329" # the bundled Postgres, for machines that join this home (TLS, their roles only)
     volumes:
-      - ./config:/etc/maktaba:ro
-      - maktaba-data:/var/lib/maktaba
-    environment:
-      MAKTABA_DB_URL: "postgres://maktaba@db:5432/maktaba?sslmode=disable"
-    depends_on:
-      - db
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: maktaba
-      POSTGRES_DB: maktaba
-      POSTGRES_HOST_AUTH_METHOD: trust
-    volumes:
-      - maktaba-pg:/var/lib/postgresql/data
+      # everything Maktaba keeps: server.toml, the runtime it updates, the database, logs, models
+      - maktaba:/var/lib/maktaba
+      # your library, as the setup's library screens name it (read-write: the cluster's folder
+      # lives beside the media on a share; the media itself is never written)
+      - ${MAKTABA_MEDIA:-./media}:/media
+    # NVIDIA GPUs (the second listen, faster transcription) need the NVIDIA container toolkit:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
 
 volumes:
-  maktaba-data:
-  maktaba-pg:
+  maktaba:

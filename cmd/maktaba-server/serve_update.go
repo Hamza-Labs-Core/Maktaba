@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sigstore/sigstore-go/pkg/root"
@@ -30,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/homemirror"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -62,11 +64,19 @@ const envAppBundled = "MAKTABA_APP_BUNDLED"
 // updates is serve's update machinery.
 type updates struct {
 	m *updater.Machine
+	// r restores the home's backups by hand (serve_restore.go; nil on a node)
+	r *restorer
 	// health's view of this machine, and its processes' stop, set once the supervisor
 	// exists
-	mu   sync.Mutex
-	snap func() supervisor.Snapshot
-	want func(role supervisor.Role, instance string, on bool) error
+	mu    sync.Mutex
+	snap  func() supervisor.Snapshot
+	want  func(role supervisor.Role, instance string, on bool) error
+	inUse func() []string
+	// the TV handover (serve_handover.go): the supervisor, the layout of a plain server's
+	// install, and an exit 75 armed to hand the TV processes over
+	sup   *supervisor.Supervisor
+	lay   *layout.Layout
+	armed atomic.Bool
 }
 
 // pythonStopWait is how long stopPython waits for the pipeline's processes to be gone.
@@ -130,8 +140,8 @@ func (u *updates) startPython(_ context.Context) error {
 }
 
 // installKind picks this server's installer (install-kinds.md): the desktop app's
-// bundle, the Linux runtime copy, the side-by-side layout, or a flat install that
-// cannot update itself.
+// bundle, the Linux runtime copy (a headless install's and the Docker install's too),
+// the side-by-side layout, or a flat install that cannot update itself.
 func installKind(cfg config.Config, releaseDir string, home bool, src updater.Source) (updater.Installer, string) {
 	record := ""
 	if home {
@@ -143,16 +153,19 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 			if !ok {
 				rt = appruntime.New(filepath.Dir(bundle))
 			}
+			updates := filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
 			return &updater.RuntimeInstaller{Runtime: rt, Source: src, Version: version.Version, LauncherRoot: lroot,
-				Owner: runtimeOwner(), Record: record, Open: updater.OpenURL}, filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
+				Owner: runtimeOwner(), Record: record, Container: config.Container(), Open: updater.OpenURL,
+				WheelRoot: filepath.Join(updates, wheelhouseFolder)}, updates
 		}
 		bundled := strings.TrimSpace(os.Getenv(envAppBundled))
 		if bundled == "" {
 			bundled = bundle
 		}
+		updates := filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
 		return &updater.AppInstaller{Payload: bundle, Bundled: bundled, App: appOf(bundled), LauncherRoot: lroot,
-				Source: src, Version: version.Version, Record: record, Rehearse: home, Open: updater.OpenURL},
-			filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
+			Source: src, Version: version.Version, Record: record, Rehearse: home, Open: updater.OpenURL,
+			WheelRoot: filepath.Join(updates, wheelhouseFolder)}, updates
 	}
 	if releaseDir != "" {
 		l := layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir)))))
@@ -161,6 +174,10 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 	}
 	return flatInstaller{}, filepath.Join(cfg.StateDir(), "updates")
 }
+
+// wheelhouseFolder is where, in the updates folder, a desktop app's or a runtime copy's
+// staged release keeps the home's wheelhouse (updater.WheelhouseDir).
+const wheelhouseFolder = "wheelhouse"
 
 // updatesDirOf is this install's updates folder (installKind's: the journal, the app's
 // order, the update attempts): the launcher root's (or the state root's) for the desktop
@@ -218,15 +235,41 @@ func (flatInstaller) Revert(context.Context, *updater.Journal) error  { return n
 func (flatInstaller) Commit(context.Context, *updater.Journal) error  { return nil }
 func (flatInstaller) Discard(context.Context, *updater.Journal) error { return nil }
 
+// homeMirrorClient is a node's way to its home's mirror: its requests carry the delegation
+// key the machine agent holds.
+func homeMirrorClient(agent *machineagent.Agent) *homemirror.Client {
+	return &homemirror.Client{Home: agent.ID.HomeURL, NodeID: agent.ID.NodeID, Log: os.Stderr,
+		Key: func() (homemirror.Key, bool) {
+			k := agent.CurrentKey()
+			if k == nil {
+				return homemirror.Key{}, false
+			}
+			return homemirror.Key{ID: k.ID, Secret: k.Key}, true
+		}}
+}
+
+// withHomeMirror makes a node download releases from its home's mirror first (GitHub
+// after three failures, at once for a file the home does not hold) and its pipeline's
+// packages from the home's wheelhouse (story 35.12 AC3, design §3.4); every file is
+// verified here as before.
+func withHomeMirror(src updater.Source, c *homemirror.Client) updater.Source {
+	hc := *src.HTTP
+	hc.Transport = c.Transport(hc.Transport)
+	src.HTTP = &hc
+	src.Wheels = c.Wheelhouse
+	return src
+}
+
 // updateSource is the pinned repository and the trusted root (refreshed through TUF
-// into <data_dir>/sigstore, as the API's).
-func updateSource(cfg config.Config) updater.Source {
+// into <data_dir>/sigstore, as the API's; a node reads the TUF repository through its home
+// when it cannot reach Sigstore's: tufMirror).
+func updateSource(cfg config.Config, tufMirror *releaseverify.TUFMirror) updater.Source {
 	id, err := releaseverify.IdentityFromEnv()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[serve] update: %v: the default repository is used\n", err)
 		id, _ = releaseverify.NewIdentity("")
 	}
-	store := &releaseverify.RootStore{Dir: filepath.Join(cfg.Server.DataDir, "sigstore")}
+	store := &releaseverify.RootStore{Dir: filepath.Join(cfg.Server.DataDir, "sigstore"), Mirror: tufMirror}
 	return updater.Source{Identity: id, HTTP: &http.Client{Timeout: 30 * time.Minute},
 		Trusted: func(ctx context.Context) (root.TrustedMaterial, error) {
 			if err := store.Refresh(ctx); err != nil {
@@ -340,16 +383,37 @@ func (r recordFile) Unmark(version string) error {
 // serve with a code (75).
 func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, home bool, pg *pgbundle.Bundle,
 	node *nodeServices, exit func(int)) *updates {
-	src := updateSource(cfg)
+	var mirror *homemirror.Client
+	var tufMirror *releaseverify.TUFMirror
+	if node != nil && node.agent != nil {
+		mirror = homeMirrorClient(node.agent)
+		// story 35.16: over the machine's cluster link first (the node API's loopback fetch);
+		// the signed path while the link is not up and the home does not require it
+		mirror.Link = &homemirror.LocalLink{API: "http://" + supervisor.LocalAddr(cfg.Server.Listen, "8080"),
+			TokenFile: supervisor.LocalTokenPath(cfg)}
+		tufMirror = &releaseverify.TUFMirror{BaseURL: strings.TrimRight(mirror.Home, "/") + "/api/cluster/updates/tuf",
+			Transport: mirror.SignedTransport(nil)}
+	}
+	src := updateSource(cfg, tufMirror)
+	if mirror != nil {
+		src = withHomeMirror(src, mirror)
+	}
 	inst, dir := installKind(cfg, releaseDir, home, src)
 	u := &updates{}
 	if ri, ok := inst.(*updater.RuntimeInstaller); ok {
 		ri.StopPython = u.stopPython   // a runtime of another Python minor: the pipeline stops first
 		ri.StartPython = u.startPython // and starts again when the switch goes no further
 	}
+	if li, ok := inst.(*updater.LayoutInstaller); ok && handoverDir(releaseDir) != "" {
+		// story 35.7: the TV processes run on across its restarts (their releases stay: InUse)
+		u.lay = &li.Layout
+	}
 	m := &updater.Machine{Dir: dir, Installer: inst, Exit: exit, Log: os.Stderr}
+	m.TVHandover = u.tvHandover
 	if home {
 		m.Records = recordFile(apppayload.DatabasePath(cfg.StateDir()))
+		u.r = newRestorer(cfg, homeDatabase(cfg, pg), inst, exit)
+		u.r.run = func() *updater.Journal { return m.Status().Journal }
 		if t := homeDatabase(cfg, pg); t != nil {
 			m.Rehearser = rehearser{*t}
 			go func() { // a crash during a rehearsal left its scratch database
@@ -366,11 +430,20 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 			return true // not known: not now
 		}
 		for _, p := range snap.Processes {
-			if p.Role == supervisor.RoleTVSlot && p.State == supervisor.StateRunning {
+			// the slots, or the streaming role where there are none (it is the TV then)
+			if (p.Role == supervisor.RoleTVSlot || p.Role == supervisor.RoleStreaming) && p.State == supervisor.StateRunning {
 				return true
 			}
 		}
 		return false
+	}
+	if home && supervisor.SlotsEnabled(cfg) {
+		// the TV moves to the new release's streaming binary before the release commits
+		// (story 35.6): its TV change goes through the API's change controller
+		m.TV = &apiTV{cfg: cfg, releaseDir: releaseDir}
+	}
+	if li, ok := inst.(*updater.LayoutInstaller); ok {
+		li.InUse = u.releasesInUse // a front door or a TV slot keeps the release it runs
 	}
 	u.m = m
 	m.Start(ctx)
@@ -381,8 +454,20 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 
 func (u *updates) setSupervisor(sup *supervisor.Supervisor) {
 	u.mu.Lock()
-	u.snap, u.want = sup.Snapshot, sup.Want
+	u.snap, u.want, u.inUse, u.sup = sup.Snapshot, sup.Want, sup.ReleasesInUse, sup
 	u.mu.Unlock()
+}
+
+// releasesInUse are the releases the supervisor's running processes run from (none before
+// it exists).
+func (u *updates) releasesInUse() []string {
+	u.mu.Lock()
+	f := u.inUse
+	u.mu.Unlock()
+	if f == nil {
+		return nil
+	}
+	return f()
 }
 
 func (u *updates) snapshot() (supervisor.Snapshot, bool) {
@@ -418,7 +503,13 @@ func (u *updates) agentState(st *machineagent.UpdateState) {
 // updateRequest is a request of the home's (loopback or update.* command).
 type updateRequest struct {
 	RunID string `json:"run_id"`
+	// TVBusy (apply): the home orders it while the TV is watched (story 35.7: it counted on
+	// this machine handing its TV over)
+	TVBusy bool `json:"tv_busy,omitempty"`
 	updater.Job
+	// TVDeadline (apply): how long the release's TV change may wait behind another change
+	// (the window's end and overrun, story 35.6 AC4)
+	TVDeadline *time.Time `json:"tv_deadline,omitempty"`
 }
 
 // handle runs a request of the home's; the answer is the machine's status.
@@ -437,7 +528,10 @@ func (u *updates) handle(name string, body json.RawMessage) (any, int, error) {
 	case "prepare":
 		err = u.m.Prepare(req.Job)
 	case "apply":
-		err = u.m.Apply(req.Job.RunID)
+		if req.TVDeadline != nil {
+			u.m.SetTVDeadline(req.Job.RunID, *req.TVDeadline)
+		}
+		err = u.m.ApplyGated(req.Job.RunID, req.TVBusy)
 	case "abort":
 		err = u.m.Abort(req.Job.RunID)
 	case "rollback":
@@ -477,6 +571,10 @@ func (u *updates) adminHandler(base http.Handler, token string) http.Handler {
 		}
 		if name == "log" {
 			u.serveLog(w, r)
+			return
+		}
+		if name == "backups" || name == "restore" {
+			u.serveRestore(w, r, name)
 			return
 		}
 		if name != "status" && r.Method != http.MethodPost {

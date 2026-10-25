@@ -22,6 +22,10 @@
 #                        LICENSE + sample config (+ systemd unit on Linux).
 #   5. package-nfpm      build native .deb (Debian/Ubuntu) and .rpm
 #                        (Fedora/RHEL) for linux/{amd64,arm64} with nfpm.
+#   5a. build-server-image  the Docker install's image (deploy/docker/server):
+#                        a bootstrap of the headless Linux install holding
+#                        this release's own Linux payloads, multi-arch,
+#                        signed at its digest like the other images.
 #   5b. package-node     the worker side of a multi-instance home (Epic 31):
 #                        the pipeline wheel stamped with the tag, its
 #                        dependency constraints from uv.lock, and the node
@@ -678,11 +682,152 @@ jobs:
           path: out/*
           retention-days: 7
 
+  # The Docker install's image (deploy/docker/server/Dockerfile): Debian with its ffmpeg and
+  # tini, around this release's own Linux payloads (the tarballs just built, unpacked); its
+  # entrypoint puts the payload on the volume's runtime, and the server updates that runtime
+  # by itself from then on (the headless Linux install's updates, verified in process). Like
+  # the payloads it does not hold the release back: an architecture whose payload failed is
+  # left out of the image, and with neither there is no image (the manifest then has no
+  # `server`). Pushed, tagged (:latest as build-images moves it) and signed at its digest.
+  build-server-image:
+    name: image (server)
+    needs: [guard, package-linux-payload]
+    if: >-
+      !cancelled() && needs.guard.outputs.published != 'true' &&
+      needs.package-linux-payload.result != 'skipped'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Download the Linux payloads
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-linux-payload-*
+          path: staged
+          merge-multiple: true
+
+      # the build context: x86_64/server and aarch64/server, as the Dockerfile takes them
+      - name: Unpack the payloads
+        id: ctx
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          platforms=""
+          for pair in "x86_64 linux/amd64" "aarch64 linux/arm64"; do
+            arch="${pair% *}" platform="${pair#* }"
+            f="staged/maktaba-linux-payload-${ver}-${arch}.tar.gz"
+            if [ ! -f "$f" ]; then
+              echo "::warning::no Linux payload for ${arch}: the server image is built without it"
+              continue
+            fi
+            mkdir -p "ctx/${arch}"
+            tar -xzf "$f" -C "ctx/${arch}"
+            platforms="${platforms:+$platforms,}${platform}"
+          done
+          echo "platforms=${platforms}" >>"$GITHUB_OUTPUT"
+
+      # the arm64 leg's apt-get runs under emulation
+      - uses: docker/setup-qemu-action@v3.6.0
+        if: steps.ctx.outputs.platforms != ''
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v4.1.0
+        if: steps.ctx.outputs.platforms != ''
+
+      - name: Install cosign
+        if: steps.ctx.outputs.platforms != ''
+        uses: sigstore/cosign-installer@v3.10.0
+
+      - name: Registry login
+        if: steps.ctx.outputs.platforms != ''
+        uses: docker/login-action@v4.2.0
+        with:
+          registry: ${{ env.REGISTRY == 'ghcr.io/hamza-labs-core' && 'ghcr.io' || env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Source date
+        id: sde
+        if: steps.ctx.outputs.platforms != ''
+        run: echo "epoch=$(git log -1 --pretty=%ct)" >> "$GITHUB_OUTPUT"
+
+      # `:latest` as build-images moves it: only with the tag the guard says is the latest
+      - name: Image tags
+        id: tags
+        if: steps.ctx.outputs.platforms != ''
+        env:
+          IMAGE: ${{ env.REGISTRY }}/maktaba-server
+          TAG: ${{ github.ref_name }}
+          LATEST: ${{ needs.guard.outputs.latest }}
+        run: |
+          {
+            echo "list<<EOF"
+            echo "${IMAGE}:${TAG}"
+            if [ "${LATEST}" = true ]; then echo "${IMAGE}:latest"; fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push server
+        id: build
+        if: steps.ctx.outputs.platforms != ''
+        uses: docker/build-push-action@v7.2.0
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.sde.outputs.epoch }}
+        with:
+          context: ctx
+          file: deploy/docker/server/Dockerfile
+          platforms: ${{ steps.ctx.outputs.platforms }}
+          outputs: type=image,push=true,rewrite-timestamp=true
+          provenance: true
+          sbom: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+          tags: ${{ steps.tags.outputs.list }}
+          labels: |
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Sign image (keyless cosign)
+        if: steps.ctx.outputs.platforms != ''
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/maktaba-server@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$IMAGE_REF"
+
+      - name: Stage digest for hand-off
+        if: steps.ctx.outputs.platforms != ''
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p digest-out
+          printf 'server %s\n' "${DIGEST}" > digest-out/server
+          cat digest-out/server
+
+      - name: Upload digest artifact
+        if: steps.ctx.outputs.platforms != ''
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: digest-server
+          path: digest-out/server
+          retention-days: 7
+
   # The Linux payloads do not hold the release back: a leg that failed leaves its
-  # architecture out (the notes say so), the rest is published. Every other job must pass.
+  # architecture out (the notes say so), the rest is published; so does the server image,
+  # which is made of them. Every other job must pass.
   sign-and-release:
     name: sign + publish release
-    needs: [build-artifacts, build-server, build-images, package-archives, package-nfpm, package-node, package-linux-payload]
+    needs: [build-artifacts, build-server, build-images, build-server-image, package-archives, package-nfpm, package-node, package-linux-payload]
     if: >-
       !cancelled() &&
       needs.build-artifacts.result == 'success' && needs.build-server.result == 'success' &&
@@ -785,6 +930,10 @@ jobs:
           tar --sort=name --mtime="@${sde}" --owner=0 --group=0 --numeric-owner \
               -C shared/db/migrations -czf "dist/maktaba-migrations-${ver}.tar.gz" -T migrations.list
           rm -f migrations.list
+          # The Docker install's compose file, pinned to this release's image (a new volume
+          # starts from it; the server updates the volume by itself after that).
+          sed "s|maktaba-server:latest|maktaba-server:${TAG}|" cloud/installers/docker/docker-compose.yml \
+            > dist/maktaba-docker-compose.yml
           # The installer itself, listed in checksums.txt and so signed with the rest:
           # a machine fetches it from the release and verifies it like the payload
           # (specs/epics/39-linux-app/headless.md) before running it.
@@ -803,9 +952,10 @@ jobs:
               -C staged/web-dist -cf - . | gzip -n > "dist/maktaba-web-${TAG}.tar.gz"
           ls -l dist
 
-      # Fill the Homebrew formula template with this release's version and
-      # the SHA-256 of each macOS archive, then publish it as a release
-      # asset. If a tap repo + token are configured, also push it there.
+      # Fill the Homebrew formula template with this release's version and the SHA-256 of
+      # each macOS archive, as a release asset (signed with the rest). packages.yml commits
+      # it to the tap once the release is published as the newest stable one (a formula
+      # pushed here named a draft's files, and a maintenance release took the tap back).
       - name: Generate Homebrew formula
         env:
           TAG: ${{ github.ref_name }}
@@ -814,45 +964,9 @@ jobs:
           ver="${TAG#v}"
           sha_arm="$(sha256sum "dist/maktaba-server-${ver}-darwin-arm64.tar.gz" | awk '{print $1}')"
           sha_amd="$(sha256sum "dist/maktaba-server-${ver}-darwin-amd64.tar.gz" | awk '{print $1}')"
-          # only the formula's own lines: its header comment names the placeholders
-          sed -e "/^[[:space:]]*#/!s/__VERSION__/${ver}/g" \
-              -e "/^[[:space:]]*#/!s/__SHA256_DARWIN_ARM64__/${sha_arm}/g" \
-              -e "/^[[:space:]]*#/!s/__SHA256_DARWIN_AMD64__/${sha_amd}/g" \
-              deploy/packaging/homebrew/maktaba.rb > dist/maktaba.rb
+          bash tools/release/homebrew-tap.sh formula "${ver}" "${sha_arm}" "${sha_amd}" > dist/maktaba.rb
           echo "----- generated dist/maktaba.rb -----"
           cat dist/maktaba.rb
-
-      # Optional: commit the formula to a separate homebrew-tap repo so
-      # `brew install <owner>/tap/maktaba` works. No-op unless both the
-      # HOMEBREW_TAP_REPO repo variable (e.g. "owner/homebrew-tap") and a
-      # HOMEBREW_TAP_TOKEN secret (a PAT with `contents:write` on the tap)
-      # are set — so the default repo's release still succeeds without it.
-      # never for a pre-release: the tap's formula is the stable one
-      - name: Publish formula to tap
-        if: ${{ vars.HOMEBREW_TAP_REPO != '' && !contains(github.ref_name, '-') }}
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "HOMEBREW_TAP_REPO set but HOMEBREW_TAP_TOKEN secret missing; skipping tap push." >&2
-            exit 0
-          fi
-          tmp="$(mktemp -d)"
-          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" "${tmp}"
-          mkdir -p "${tmp}/Formula"
-          cp dist/maktaba.rb "${tmp}/Formula/maktaba.rb"
-          git -C "${tmp}" config user.name "maktaba-release-bot"
-          git -C "${tmp}" config user.email "maktaba@hamzalabs.dev"
-          git -C "${tmp}" add Formula/maktaba.rb
-          if git -C "${tmp}" diff --cached --quiet; then
-            echo "Formula already up to date in tap."
-          else
-            git -C "${tmp}" commit -m "maktaba ${TAG}"
-            git -C "${tmp}" push origin HEAD
-          fi
 
       # The previous release's release.json bounds breaks_previous_home and carries
       # min_upgrade_from forward: the highest published version below this tag, the
@@ -938,6 +1052,12 @@ jobs:
           DIGEST_PIPELINE="$(digest_of pipeline)"
           DIGEST_WEB="$(digest_of web)"
           DIGEST_CLOUD="$(digest_of cloud)"
+          # the Docker install's image, when its payloads built (build-server-image)
+          SERVER_COMPONENT=""
+          if [ -f digests/server ]; then
+            SERVER_COMPONENT=",
+              \"server\":    {\"image\": \"${REGISTRY}/maktaba-server:${TAG}\",    \"sha256\": \"$(digest_of server)\"}"
+          fi
           # schema_rev comes from release.json (derived from the migration
           # set, checked against SCHEMA_REV/SchemaRev). rollback_* stay
           # empty/0 until the rollback-tracking story lands.
@@ -953,7 +1073,7 @@ jobs:
               "streaming": {"image": "${REGISTRY}/maktaba-streaming:${TAG}", "sha256": "${DIGEST_STREAMING}"},
               "pipeline":  {"image": "${REGISTRY}/maktaba-pipeline:${TAG}",  "sha256": "${DIGEST_PIPELINE}"},
               "web":       {"image": "${REGISTRY}/maktaba-web:${TAG}",       "sha256": "${DIGEST_WEB}"},
-              "cloud":     {"image": "${REGISTRY}/maktaba-cloud:${TAG}",     "sha256": "${DIGEST_CLOUD}"}
+              "cloud":     {"image": "${REGISTRY}/maktaba-cloud:${TAG}",     "sha256": "${DIGEST_CLOUD}"}${SERVER_COMPONENT}
             },
             "rollback_to": "",
             "rollback_schema_rev": 0
@@ -1009,46 +1129,16 @@ jobs:
           TAG: ${{ github.ref_name }}
           # the apps' feed is required before publishing when the apps can update
           REQUIRE_FEED: ${{ vars.TAURI_UPDATER_PUBKEY != '' }}
+          PACKAGES_URL: ${{ vars.MAKTABA_PACKAGES_URL }}
+          TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
         run: |
           set -euo pipefail
-          notes="Automated release for ${TAG}.
-
-          ### Install
-
-          - **Linux/macOS (script):** download \`install.sh\` below with \`checksums.txt\` and \`checksums.txt.sigstore.json\`, verify them (below), then \`bash install.sh\`; on Linux, \`bash install.sh --app\` installs the whole server for a machine without a desktop
-          - **Debian/Ubuntu:** download the \`.deb\` below, then \`sudo apt install ./maktaba-server_*.deb\`
-          - **Fedora/RHEL:** download the \`.rpm\` below, then \`sudo dnf install ./maktaba-server-*.rpm\`
-          - **macOS (Homebrew):** \`maktaba.rb\` formula is attached (and pushed to the tap when configured)
-          - **Windows / manual:** grab the matching \`.tar.gz\` / \`.zip\` archive
-          - **Linux, one installation that runs everything (Epic 39):** the \`Maktaba_*.AppImage\` (or its \`.deb\` / \`.rpm\`) from the desktop build; on a machine without a desktop, \`maktaba-linux-payload-*-<x86_64|aarch64>.tar.gz\`: the same server, Postgres and Python (ffmpeg is the distribution's: setup names the command that installs it), run as a systemd user service
-          - **Worker machine (join a home, no checkout):** unpack \`maktaba-node-*.tar.gz\` (macOS/Linux) or \`maktaba-node-*.zip\` (Windows) and run \`install-node.sh\` / \`windows\\install-node.ps1\`: it installs this release's \`maktaba_pipeline-*.whl\` (also attached, with its \`-constraints.txt\`). See docs/cluster/join-a-machine.md.
-
-          Artifacts are signed with keyless cosign (Sigstore) by this
-          repository's release workflow for exactly this tag; Maktaba
-          machines verify that in process before installing anything.
-          \`release.json\` (versions, schema revisions, per-platform
-          digests) is listed in \`checksums.txt\`. Verify by hand:
-
-          \`\`\`
-          cosign verify-blob --bundle checksums.txt.sigstore.json \\
-            --certificate-identity https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG} \\
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
-            checksums.txt
-          sha256sum --ignore-missing -c checksums.txt
-          \`\`\`
-
-          (\`--certificate checksums.txt.pem --signature checksums.txt.sig\`
-          in place of \`--bundle\` checks the same identity.)
-
-          Container images are signed at their digest; verify with
-          \`cosign verify <image>@<digest>\` and
-          \`--certificate-identity https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}\`
-          \`--certificate-oidc-issuer https://token.actions.githubusercontent.com\`."
-          if [ -n "${LINUX_PAYLOAD_MISSING:-}" ]; then
-            notes="${notes}
-
-          **Not in this release:** the Linux payload for ${LINUX_PAYLOAD_MISSING} (its build failed). Machines on that architecture keep the version they run until the next release."
-          fi
+          # the notes print the exact identity machines pin for this tag (releaseverify:
+          # this workflow at refs/tags/<tag>), never a regular expression (story 35.15), and
+          # where the packages and the tap are when they are configured (packages.yml)
+          notes="$(cd tools/release && go run ./cmd/release-notes --tag "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --linux-payload-missing "${LINUX_PAYLOAD_MISSING:-}" \
+            --packages-url "${PACKAGES_URL}" --tap-repo "${TAP_REPO}")"
           # The guard opened the release as a draft; the notes go on it (a published
           # release keeps its own). The files are attached (a published release only gains
           # missing ones, and a re-run whose checksums.txt differs is refused), then the

@@ -55,12 +55,16 @@ type Node struct {
 	// address (the Machines page links to it); full_node false = worker-only (the
 	// pipeline alone; it converts on its next update or installer run); vod is the
 	// VOD fallback when the machine cannot read the share (design §11.5).
-	Version     *string         `json:"version"`
-	Platform    *string         `json:"platform"`
-	WebURL      *string         `json:"web_url"`
-	FullNode    bool            `json:"full_node"`
-	VOD         json.RawMessage `json:"vod"`
-	UpdateState json.RawMessage `json:"update_state"`
+	Version  *string `json:"version"`
+	Platform *string `json:"platform"`
+	WebURL   *string `json:"web_url"`
+	FullNode bool    `json:"full_node"`
+	// WorkerConvert is what becomes of a worker-only machine: next_update (its next
+	// update makes it a full node) or installer (its pipeline is too old for that: re-run
+	// the installer once); "" when not known.
+	WorkerConvert string          `json:"worker_convert,omitempty"`
+	VOD           json.RawMessage `json:"vod"`
+	UpdateState   json.RawMessage `json:"update_state"`
 	// Copy: the full node's copy of this database (Epic 37): its state, how far
 	// behind, when it last applied the home's changes; copy_reported_at when it said so.
 	Copy           json.RawMessage `json:"copy"`
@@ -158,8 +162,16 @@ func (h *Handler) views(ctx context.Context, now time.Time) ([]Node, error) {
 	}
 	out := make([]Node, 0, len(nodes))
 	live := h.liveStates()
+	var convert map[string]string
+	if h.WorkerConvert != nil {
+		convert = h.WorkerConvert(ctx)
+	}
 	for _, n := range nodes {
-		out = append(out, h.live(view(n, byNode[n.ID], stages[n.ID], now), live))
+		v := h.live(view(n, byNode[n.ID], stages[n.ID], now), live)
+		if !v.FullNode {
+			v.WorkerConvert = convert[n.ID]
+		}
+		out = append(out, v)
 	}
 	return out, nil
 }

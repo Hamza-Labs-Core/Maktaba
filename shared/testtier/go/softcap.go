@@ -23,9 +23,16 @@ import (
 // code review.
 func WithSoftCap(t testing.TB, cap time.Duration) {
 	t.Helper()
-	start := time.Now()
+	withSoftCap(t, cap, time.Now)
+}
+
+// withSoftCap is WithSoftCap on the clock now (the tests drive one of their own: no sleep
+// against the cap).
+func withSoftCap(t testing.TB, cap time.Duration, now func() time.Time) {
+	t.Helper()
+	start := now()
 	t.Cleanup(func() {
-		dur := time.Since(start)
+		dur := now().Sub(start)
 		switch {
 		case dur > time.Duration(HardCapMultiplier)*cap:
 			t.Errorf("test took %s > %dx soft cap %s (Story 20.1 AC4)",

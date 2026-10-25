@@ -49,6 +49,10 @@ type Manifest struct {
 	// machine refuses a release whose Postgres would not open its database before it
 	// asks the app to install it.
 	AppPostgresMajor map[string]int `json:"app_postgres_major,omitempty"`
+	// HandoverProtocol is the TV handover the release's supervisor speaks (Epic 35 story
+	// 35.7, shared/go/layout.HandoverProtocol): it adopts the TV processes a supervisor
+	// hands over across its restart. Absent (0) before: a handover is never made onto it.
+	HandoverProtocol int `json:"handover_protocol,omitempty"`
 }
 
 // PostgresMajor is the PostgreSQL major an app payload bundles (0: the release does

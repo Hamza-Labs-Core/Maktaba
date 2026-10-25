@@ -198,6 +198,8 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "[serve] web UI on %s (embedded=%v)\n", cfg.Server.WebListen, webui.Embedded)
+		// story 35.16 AC15: the same pages on 8443 while the API keeps a web certificate
+		go serveHTTPS(ctx, webSrv.Handler, webCertDirs(), httpsAddr, 30*time.Second)
 	}
 
 	// Epic 35 story 35.11: the supervisor is the machine's one mDNS advertiser
@@ -232,7 +234,10 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	// left (the new release watches and commits, or the previous one records the
 	// rollback) before any role starts
 	if wholeMachine && containsRole(roles, supervisor.RoleAPI) {
-		u := startUpdates(ctx, cfg, releaseDir, node == nil, pg, node, func(int) {
+		u := startUpdates(ctx, cfg, releaseDir, node == nil, pg, node, func(code int) {
+			if up := upd.Load(); up != nil {
+				up.beforeExit(code) // an armed exit 75 hands the TV processes over (story 35.7)
+			}
 			restart.Store(true)
 			cancel()
 		})
@@ -365,6 +370,11 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	if llmOpt != nil {
 		supOpts = append(supOpts, llmOpt)
 	}
+	if dir := handoverDir(releaseDir); dir != "" {
+		// story 35.7: the TV processes' record, and the adoption of those the supervisor
+		// before handed over
+		supOpts = append(supOpts, supervisor.WithHandover(dir, launcherPID()))
+	}
 	// the ffmpeg every role runs, checked now and every ten minutes: the System
 	// health page shows the verdict (Epic 39: on Linux the distribution's)
 	exe, _ := os.Executable()
@@ -401,6 +411,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		admin = u.adminHandler(admin, token)
 	}
 	admin = logFilesAdmin(admin, token, logDirs)
+	admin = metricsAdmin(admin, logDirs.Updates)
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
@@ -578,7 +589,9 @@ func webHandler(cfg config.Config, node *nodeServices) http.Handler {
 	if node != nil {
 		home := homeStreamProxy(supervisor.HomeStreamURL(node.node))
 		publicProxy = home
-		gated = nodeStreamRouter(streamProxy, home, node.HomeAway)
+		// story 35.16 AC14: the VOD fallback on the machine's cluster link when it is up
+		gated = nodeStreamRouter(streamProxy, home, node.HomeAway, vodOverLink("http://"+supervisor.LocalAddr(cfg.Server.Listen, "8080"),
+			supervisor.LocalTokenPath(cfg), home))
 		allow = allowedNodeStreamPath
 	}
 	for _, p := range publicStreamPaths {

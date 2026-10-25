@@ -39,20 +39,27 @@ var (
 
 type childHandle struct{}
 
+// runJob is Windows' job; POSIX ties nothing to it.
+type runJob struct{}
+
+func newRunJob() *runJob { return nil }
+func (*runJob) close()   {}
+
 func becomeSubreaper() { _ = unix.Prctl(unix.PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) }
 
 func prepareChild(*exec.Cmd)                      {}
-func attachChild(*exec.Cmd) *childHandle          { return &childHandle{} }
+func attachChild(*exec.Cmd, *runJob) *childHandle { return &childHandle{} }
 func askStop(cmd *exec.Cmd, _ *childHandle) error { return cmd.Process.Signal(syscall.SIGTERM) }
 func setupConsole(_, _ bool)                      {}
 
 // release runs once the server has been reaped: what it left behind is
-// stopped (SIGTERM, then SIGKILL after orphanGrace) and reaped.
-func (*childHandle) release() { stopOrphans(orphanGrace) }
+// stopped (SIGTERM, then SIGKILL after orphanGrace) and reaped, but for the
+// process groups in keep (the TV processes it handed over, story 35.7).
+func (*childHandle) release(keep map[int]bool) { stopOrphans(orphanGrace, keep) }
 
 // kill is the stop grace running out: the server is killed by the caller,
 // and everything it left behind with it.
-func (*childHandle) kill() { stopOrphans(0) }
+func (*childHandle) kill() { stopOrphans(0, nil) }
 
 // reap collects what ended while the server runs (a role's child that
 // outlived the role): no zombie stays behind under the launcher.
@@ -116,8 +123,8 @@ func signalOrphan(o orphan, sig syscall.Signal) {
 	_ = syscall.Kill(o.pid, sig)
 }
 
-func stopOrphans(grace time.Duration) {
-	left := listOrphans()
+func stopOrphans(grace time.Duration, keep map[int]bool) {
+	left := kept(listOrphans(), keep)
 	if len(left) == 0 {
 		return
 	}
@@ -128,24 +135,38 @@ func stopOrphans(grace time.Duration) {
 	for _, o := range left {
 		killOrphan(o, sig)
 	}
-	if left = reapUntil(left, time.Now().Add(grace)); len(left) == 0 {
+	if left = reapUntil(left, time.Now().Add(grace), keep); len(left) == 0 {
 		return
 	}
 	for _, o := range left {
 		killOrphan(o, syscall.SIGKILL)
 	}
-	reapUntil(left, time.Now().Add(orphanKillWait))
+	reapUntil(left, time.Now().Add(orphanKillWait), keep)
+}
+
+// kept is os without the orphans whose process group keep keeps.
+func kept(os []orphan, keep map[int]bool) []orphan {
+	if len(keep) == 0 {
+		return os
+	}
+	out := os[:0]
+	for _, o := range os {
+		if !keep[o.pgid] {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // reapUntil reaps what exits of left without ever blocking, until none is
 // left or the deadline passes, and returns what is still there.
-func reapUntil(left []orphan, deadline time.Time) []orphan {
+func reapUntil(left []orphan, deadline time.Time, keep map[int]bool) []orphan {
 	for {
 		for _, o := range left {
 			var ws syscall.WaitStatus
 			_, _ = wait4(o.pid, &ws, syscall.WNOHANG, nil)
 		}
-		if left = listOrphans(); len(left) == 0 || time.Now().After(deadline) {
+		if left = kept(listOrphans(), keep); len(left) == 0 || time.Now().After(deadline) {
 			return left
 		}
 		time.Sleep(50 * time.Millisecond)

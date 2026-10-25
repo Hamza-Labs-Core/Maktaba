@@ -80,10 +80,15 @@ func (li *LayoutInstaller) buildVenv(ctx context.Context, j *Journal, res *relea
 			"in %s", envPipelinePython)
 	}
 	extras := li.extras(ctx)
+	// a node builds it from its home's wheelhouse when the home keeps one (design §3.4)
+	wheels := ""
+	if li.Source.wheelhouse(ctx, j, filepath.Join(pipe, "wheelhouse"), log) {
+		wheels = filepath.Join(pipe, "wheelhouse")
+	}
 	_, _ = fmt.Fprintf(log, "[update] building the pipeline's environment with %s (extras: %s)\n", py, orDefault(extras))
 	said := -1
 	_, err := venvBuild(ctx, appvenv.Spec{Python: py, Pipeline: pipe, Venv: filepath.Join(dir, "venv"), Log: log,
-		Extras: extras},
+		Extras: extras, Wheelhouse: wheels},
 		func(pr appvenv.Progress) {
 			if pct := int(pr.Fraction * 10); pct != said {
 				said = pct
@@ -108,6 +113,9 @@ func (li *LayoutInstaller) buildVenv(ctx context.Context, j *Journal, res *relea
 				"reach PyPI (or the mirror or proxy it is given: PIP_INDEX_URL, HTTPS_PROXY): %v", err)
 		}
 		return Fail("venv_failed", "%v", err)
+	}
+	if wheels != "" {
+		_ = os.RemoveAll(wheels) // its packages are in the environment now
 	}
 	return nil
 }

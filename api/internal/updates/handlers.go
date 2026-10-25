@@ -30,6 +30,9 @@ const maxBody = 64 << 10
 //	POST /api/cluster/updates/defer      {until}  (RFC 3339; "" clears)
 //	POST /api/cluster/updates/check      check GitHub now
 //	GET  /api/cluster/updates/runs       history (?limit=)
+//	GET  /api/cluster/updates/backups    the home's backups and kept releases (story 35.5 AC8)
+//	GET  /api/cluster/updates/backups/{name}/restore   what restoring it does
+//	POST /api/cluster/updates/backups/{name}/restore   {confirm:"<name>"}  -> 202 (the home restarts)
 type Handler struct {
 	Svc *Service
 	// Driver runs the runs (nil: an API that cannot install; the run actions answer 503).
@@ -37,6 +40,8 @@ type Handler struct {
 	// RulesPatch is the rules handler's PATCH /api/rules/{section}: settings are stored
 	// where every other rule is (app_settings rules.updates), with its validation.
 	RulesPatch http.HandlerFunc
+	// Mirror serves the release files and wheelhouses to the machines (nil: none).
+	Mirror *Mirror
 }
 
 // Mount attaches the routes.
@@ -54,6 +59,11 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/cluster/updates/runs/{id}/cancel", h.Cancel)
 	r.Post("/api/cluster/updates/runs/{id}/resume", h.Resume)
 	r.Post("/api/cluster/updates/runs/{id}/targets/{node}/{action}", h.TargetAction)
+	r.Get("/api/cluster/updates/backups", h.BackupsList)
+	r.Get("/api/cluster/updates/backups/{name}/restore", h.RestorePlanView)
+	r.Post("/api/cluster/updates/backups/{name}/restore", h.Restore)
+	r.Post("/internal/updates/restored", h.RestoredNotice)
+	h.Mirror.Mount(r)
 }
 
 func admin(w http.ResponseWriter, r *http.Request) *principal.Principal {
@@ -116,6 +126,10 @@ type Machine struct {
 	// HomeDB is a node's login to the home's database (nil: it has not said): "this
 	// machine can't reach the home's database: <reason>" when not ok.
 	HomeDB *HomeDB `json:"home_db,omitempty"`
+	// Convert is what becomes of a worker-only machine (story 35.8 AC8): next_update (its
+	// next update makes it a full node) or installer ("worker-only — re-run the installer
+	// once": its pipeline is too old for that).
+	Convert string `json:"convert,omitempty"`
 }
 
 // Overview builds GET /api/cluster/updates.

@@ -59,6 +59,7 @@ const (
 	StepCommit    = "commit"
 	StepLauncher  = "launcher" // the launcher replaced (story 35.7 AC6)
 	StepRollback  = "rollback"
+	StepTV        = "tv" // the TV moved to the new streaming binary (story 35.6, tv.go)
 )
 
 // Busy reports whether state is a run under way (another may not start).
@@ -211,6 +212,17 @@ type Journal struct {
 	App string `json:"app,omitempty"`
 	// LauncherProtocol is the release's launcher_protocol (its verified release.json).
 	LauncherProtocol int `json:"launcher_protocol,omitempty"`
+	// EdgeProtocol is the release's edge_protocol (its verified release.json): the TV
+	// front door runs on (across the restart, on its previous release's binary) only to a
+	// release that speaks its protocol, else it restarts (FrontDoorRestarts).
+	EdgeProtocol int `json:"edge_protocol,omitempty"`
+	// HandoverProtocol is the release's handover_protocol (its verified release.json): a
+	// handover is made only onto a release whose supervisor adopts (story 35.7).
+	HandoverProtocol int `json:"handover_protocol,omitempty"`
+	// HandsOver: this machine's TV processes run on across its restart (story 35.7), so
+	// the run need not wait for the TV to be quiet; HandoverWhy says why they cannot.
+	HandsOver   bool   `json:"hands_over,omitempty"`
+	HandoverWhy string `json:"handover_why,omitempty"`
 	// Signed is the staged release's signed record (version, checksums digest, signing
 	// time), kept at the commit for the next update's rules (an app bundle's, a runtime's:
 	// a layout keeps its watermark)
@@ -231,6 +243,11 @@ type Journal struct {
 	PendingSec int `json:"pending_sec,omitempty"`
 	// Rollbacks counts the switches back tried (a second one that does not take fails).
 	Rollbacks int `json:"rollbacks,omitempty"`
+	// TV is the TV step (the home's new release moves the TV to its streaming binary
+	// before it commits, story 35.6); TVDeadline how long its change may wait behind
+	// another (the window's end and overrun, from the home's apply).
+	TV         *TVRun     `json:"tv,omitempty"`
+	TVDeadline *time.Time `json:"tv_deadline,omitempty"`
 	// Reason is why the run rolled back.
 	Reason    string    `json:"reason,omitempty"`
 	StartedAt time.Time `json:"started_at"`
@@ -257,6 +274,10 @@ func (j *Journal) clone() *Journal {
 	if j.Rehearsal != nil {
 		r := *j.Rehearsal
 		c.Rehearsal = &r
+	}
+	if j.TV != nil {
+		t := *j.TV
+		c.TV = &t
 	}
 	c.Job.Assets = make(map[string]string, len(j.Job.Assets))
 	for k, v := range j.Job.Assets {

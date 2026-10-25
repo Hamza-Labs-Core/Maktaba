@@ -56,6 +56,7 @@ import { queueLabeller } from "../../components/cluster/names";
 import { QueuesPanel } from "../../components/cluster/QueuesPanel";
 import { RelayDoorCard } from "../../components/cluster/RelayDoorCard";
 import { RelayPanel } from "../../components/cluster/RelayPanel";
+import { LinkCard } from "../../components/cluster/LinkCard";
 import { SwitchHomeCard } from "../../components/cluster/SwitchHomeCard";
 import { useClusterFiles } from "../../components/cluster/useClusterFiles";
 import { useFmt } from "../../components/queue/format";
@@ -380,6 +381,7 @@ const Approvals = memo(function Approvals({
           <p className="mkt-mc-muted">{t("common.error")}</p>
         </section>
       )}
+      {view.link && <LinkCard link={view.link} nodes={view.nodes} />}
       <section className="mkt-mc-section" aria-labelledby="mkt-mc-pending-h">
         <h2 id="mkt-mc-pending-h" className="mkt-mc-section__title">
           {t("machines.pending.title")}
@@ -946,7 +948,13 @@ const MachineCard = memo(function MachineCard({
           {version && <span className="mkt-mc-chip">{version}</span>}
           {active && node.full_node === true && <Badge tone="success">{t("machines.full")}</Badge>}
           {active && node.full_node === false && (
-            <Badge tone="neutral">{t("machines.workerOnly")}</Badge>
+            <Badge tone="neutral">
+              {t(
+                node.worker_convert === "installer"
+                  ? "machines.workerOnly"
+                  : "machines.workerOnlyConverts"
+              )}
+            </Badge>
           )}
           {/* "last seen" only while it is away: on a live machine it changed every poll */}
           {status !== "online" && node.last_seen_at && (

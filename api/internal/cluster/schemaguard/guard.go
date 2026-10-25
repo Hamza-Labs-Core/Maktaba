@@ -21,7 +21,7 @@ import (
 
 // SchemaRev is the highest migration slot this code ships (shared/db/migrations); a
 // test fails when a migration is added without raising it.
-const SchemaRev = 149
+const SchemaRev = 150
 
 // MinNodeFunction is what a migration that breaks older nodes (re)defines.
 const MinNodeFunction = "maktaba_min_node_schema"
@@ -59,14 +59,32 @@ func Read(ctx context.Context, db *sql.DB) HomeSchema {
 	return h
 }
 
+// Pause codes: why a node with schema `required` must not run against h (PauseCode), for
+// what reads it rather than a person (the node's metrics).
+const (
+	PauseHomeBehind = "home_behind" // the home's database is older than this machine needs
+	PauseNodeBehind = "node_behind" // the home's database needs this machine newer
+)
+
+// PauseCode is PauseReason's code ("" = fits).
+func PauseCode(h HomeSchema, required int) string {
+	switch {
+	case h.Known && h.Applied < required:
+		return PauseHomeBehind
+	case h.HasMinNode && h.MinNode > required:
+		return PauseNodeBehind
+	}
+	return ""
+}
+
 // PauseReason is "paused: <why>" when a node with schema `required` must not run
 // against h, else "". The words match the pipeline's and the streaming node's.
 func PauseReason(h HomeSchema, required int) string {
-	if h.Known && h.Applied < required {
+	switch PauseCode(h, required) {
+	case PauseHomeBehind:
 		return fmt.Sprintf("paused: home database at %04d, this machine needs %04d — update the home",
 			h.Applied, required)
-	}
-	if h.HasMinNode && h.MinNode > required {
+	case PauseNodeBehind:
 		at := ""
 		if h.Known {
 			at = fmt.Sprintf(" at %04d", h.Applied)
@@ -152,6 +170,19 @@ func (g *Guard) Paused() string {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	return g.reason
+}
+
+// PausedCode is the last verdict's code (PauseCode; "" = fits).
+func (g *Guard) PausedCode() string {
+	if g == nil {
+		return ""
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.reason == "" {
+		return ""
+	}
+	return PauseCode(g.home, g.required())
 }
 
 // Home is the last schema read and when.

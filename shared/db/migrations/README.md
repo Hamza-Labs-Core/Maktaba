@@ -66,14 +66,25 @@ DATABASE_URL=... make migrate-status
    says "Breaking for older nodes". Nodes below that pause until updated.
    Additive migrations need neither. The release's `release.json`
    `min_node_schema` is the highest value these rows name (Epic 35 story
-   35.1; the release workflow fails if they disagree).
+   35.1; the release workflow fails if they disagree). migration-lint
+   checks that every such row's migration defines the function, with the
+   value the row names, and that no migration defines it without one.
 10. **Breaking for the previous release.** A contract step (drop a column,
    tighten a constraint the previous release's code violates) comes at
    least one release after the code stopped relying on it. A migration
    that cannot wait says "Breaking for the previous release" in its
    MANIFEST row: the release is then `breaks_previous_home` in its
    `release.json` and is held for approval instead of updating by itself
-   (Epic 35 design §6.3).
+   (Epic 35 design §6.3). `make compat-prev` runs the previous release's
+   repository tests against a database these migrations made, and fails
+   the build when they break it without this marker (story 35.5 AC6).
+11. **A NO TRANSACTION file runs again whole.** A crash part way through a
+   file goose runs without a transaction leaves it unapplied, and the next
+   start runs it again from the top: every statement of its Up section is
+   harmless twice (`IF NOT EXISTS`, `IF EXISTS`, `CREATE OR REPLACE`, an
+   `INSERT … ON CONFLICT` or `WHERE NOT EXISTS`, a constraint added again
+   after `DROP CONSTRAINT IF EXISTS`, a `DO` block that checks first).
+   migration-lint enforces it (Epic 35 story 35.5 AC5).
 
 ## File naming
 

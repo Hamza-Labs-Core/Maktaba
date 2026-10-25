@@ -23,6 +23,7 @@ func (f fakeTrust) TrustedMaterial(context.Context) (root.TrustedMaterial, error
 // The catalog's verifier is shared/go/releaseverify (story 35.1): a release
 // signed by the pinned workflow verifies, another identity is an incident.
 func TestReleaseVerifierAdapter(t *testing.T) {
+	t.Parallel()
 	ss := releaseverifytest.MustNew()
 	tm, err := ss.TrustedRoot()
 	if err != nil {

@@ -76,6 +76,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/tv/rollback", h.RollbackPoint)
 	r.Get("/api/tv/slots", h.Slots)
 	r.Get("/api/tv/releases", h.Releases)
+	h.mountAutoUpdate(r)
 	mountPage(r, h)
 }
 

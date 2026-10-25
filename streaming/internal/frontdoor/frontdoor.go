@@ -257,6 +257,9 @@ func (h *Handler) forward(ctx context.Context, p placement.Placement, path strin
 		req.Header[k] = v
 	}
 	h.Keyring.SignRequest(req, p.Gen)
+	if !host.IsHome() {
+		markLink(req, p.Host) // on the machine's cluster link when it has one (story 35.16)
+	}
 	resp, err := h.client().Do(req)
 	if err != nil {
 		if ctx.Err() == nil {

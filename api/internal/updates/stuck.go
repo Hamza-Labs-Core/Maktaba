@@ -16,8 +16,9 @@ const NoticeStuck = "update.stuck"
 const stuckWindows = 3
 
 // stuckCodes are the failures of a gate, not of the release or the machine: the window
-// ended while the TV was watched, or before the home could restart.
-var stuckCodes = map[string]bool{"tv_busy": true, "outside_window": true}
+// ended while the TV was watched, or before the home could restart, or while the update's
+// TV change waited behind one awaiting approval (story 35.6 AC4).
+var stuckCodes = map[string]bool{"tv_busy": true, "outside_window": true, "tv_change_pending": true}
 
 // Stuck is a release held by a gate for several windows in a row.
 type Stuck struct {
@@ -63,11 +64,16 @@ func (s *Service) stuck(ctx context.Context, version string) *Stuck {
 // admin to install it now.
 func (d *Driver) gateFailed(ctx context.Context, run Run, det RunDetail, code string) error {
 	_ = d.abortHome(ctx, run)
+	return d.gateEnded(ctx, run, det, code, "the window ended before the home could restart; tried again in the next window")
+}
+
+// gateEnded ends a run held at a gate until its window ended (nothing counted against
+// the release), and tells of a release held so for stuckWindows windows.
+func (d *Driver) gateEnded(ctx context.Context, run Run, det RunDetail, code, detail string) error {
 	d.Svc.notify(ctx, NoticeRunFailed, notify.Payload{Severity: notify.SeverityWarn,
 		Params: map[string]any{"version": run.Version, "code": code}, Link: "/admin/updates",
 		Subject: "release:" + run.Version + ":" + code, Every: time.Hour})
-	if err := d.finish(ctx, run, det, RunFailed, map[string]any{"code": code,
-		"detail": "the window ended before the home could restart; tried again in the next window"}); err != nil {
+	if err := d.finish(ctx, run, det, RunFailed, map[string]any{"code": code, "detail": detail}); err != nil {
 		return err
 	}
 	if st := d.Svc.stuck(ctx, run.Version); st != nil {

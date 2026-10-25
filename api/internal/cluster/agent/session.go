@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/linkctx"
 )
 
 // Close codes of design-agent.md §4.6.
@@ -130,6 +131,14 @@ type Session struct {
 	relays   map[string]context.CancelFunc // svc.request ids running
 	// updateState is a machine agent's last update.state (Epic 35)
 	updateState json.RawMessage
+	// viaLink: the session came over its machine's cluster link (story 35.16);
+	// certOnly: a machine's session off the link while the link is required, which may
+	// only renew its certificate (cert.csr)
+	viaLink  bool
+	certOnly bool
+	// clockSkew is the machine's clock minus the home's, from its last update.state
+	clockSkew time.Duration
+	hasSkew   bool
 }
 
 type outFrame struct {
@@ -283,7 +292,8 @@ func (h *Hub) ServeAgent(w http.ResponseWriter, r *http.Request) {
 		timedOut.Store(true)
 		_ = c.Close(CloseTimeout, closeReason(CloseTimeout, "handshake"))
 	})
-	s, c2s, s2c, err := h.handshake(r.Context(), c, remote)
+	linkNode, viaLink := linkctx.Node(r.Context())
+	s, c2s, s2c, err := h.handshake(r.Context(), c, remote, linkNode, viaLink)
 	if !timer.Stop() || timedOut.Load() {
 		if err == nil {
 			s.closeWith(CloseTimeout, "handshake")
@@ -352,7 +362,7 @@ func (h *Hub) folderIP(kind, reported, remote string) string {
 
 // handshake authenticates the process (both ways) and returns its
 // registered session with the two directions' ciphers.
-func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote string) (*Session, *Cipher, *Cipher, error) {
+func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote, linkNode string, viaLink bool) (*Session, *Cipher, *Cipher, error) {
 	var hello helloFrame
 	helloBytes, err := readText(ctx, c, &hello)
 	if err != nil {
@@ -371,6 +381,11 @@ func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote string) (
 	if hello.V != ProtocolVersion {
 		return refuse(CloseUnsupportedVersion, "2")
 	}
+	// over a machine's link the session is that machine's (its certificate named it): a
+	// home process never comes that way, nor another machine's
+	if viaLink && (hello.Kind != "node" || !strings.EqualFold(hello.NodeID, linkNode)) {
+		return refuse(CloseNotMember, "not this link's machine")
+	}
 	clientNonce, err1 := base64.StdEncoding.DecodeString(hello.Nonce)
 	clientEph, err2 := base64.StdEncoding.DecodeString(hello.Eph)
 	if err1 != nil || err2 != nil || len(clientNonce) != NonceSize || len(clientEph) != KeySize ||
@@ -380,7 +395,7 @@ func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote string) (
 
 	authAt := h.now()
 	s := &Session{Kind: hello.Kind, Host: ident.Host, WorkerID: ident.WorkerID, PID: hello.PID,
-		OS: clip(hello.OS, 64), Version: clip(hello.Version, 64), Process: clip(hello.Process, 32)}
+		OS: clip(hello.OS, 64), Version: clip(hello.Version, 64), Process: clip(hello.Process, 32), viaLink: viaLink}
 	s.IP = h.folderIP(hello.Kind, hello.IP, remote)
 	ident.IP = s.IP
 	var nodePub []byte
@@ -401,6 +416,12 @@ func (h *Hub) handshake(ctx context.Context, c *websocket.Conn, remote string) (
 		case n.State != cluster.StateApproved:
 			// unknown, pending, rejected and revoked look the same
 			return refuse(CloseNotMember, "")
+		}
+		if !viaLink && linkctx.Require() && h.cfg.HasCert != nil && h.cfg.HasCert(ctx, s.NodeID) {
+			// the link is required: a machine that holds a certificate renews it on a plain
+			// session (an expired one cannot open the link) and does nothing else there; one
+			// that never got one (a worker-only machine, an older release) keeps its channel
+			s.certOnly, s.Process = true, "cert-only"
 		}
 		name := n.Name
 		s.NodeName, ident.NodeName = &name, &name

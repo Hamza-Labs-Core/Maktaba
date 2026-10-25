@@ -42,6 +42,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	rv "github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/install"
@@ -264,7 +265,7 @@ func TestAutoUpdateHomeAndNode(t *testing.T) {
 		bins := buildRelease(t, filepath.Join(tmp, "build-"+version), version, schemaRev)
 		rev := schemaRev
 		if rev == 0 {
-			rev = 149
+			rev = schemaguard.SchemaRev // this tree's
 		}
 		r, err := ss.NewReleaseWith(updateRepo, "v"+version, platform, releaseverifytest.ReleaseOptions{Binaries: bins,
 			Migrations: mig, MinUpgradeFrom: "0.9.0", SchemaRev: rev, Wheel: fakeWheel(t, version)})
@@ -273,20 +274,22 @@ func TestAutoUpdateHomeAndNode(t *testing.T) {
 		}
 		return r
 	}
-	// 0.9.0 ships this tree's migrations; 0.9.1 adds slot 0150 (its API built to know it);
-	// 0.9.2 adds slot 0151 too, past what its API knows: it refuses the database it migrated
+	// 0.9.0 ships this tree's migrations; 0.9.1 adds the next slot (its API built to know it);
+	// 0.9.2 adds the one after too, past what its API knows: it refuses the database it
+	// migrated. The slots follow this tree's newest (schemaguard.SchemaRev).
+	nextRev := schemaguard.SchemaRev + 1
 	next := migrationFiles(t)
-	next["0150_e2e_next.sql"] = []byte("-- +goose Up\nCREATE TABLE IF NOT EXISTS e2e_next (id integer);\n" +
+	next[fmt.Sprintf("%04d_e2e_next.sql", nextRev)] = []byte("-- +goose Up\nCREATE TABLE IF NOT EXISTS e2e_next (id integer);\n" +
 		"-- +goose Down\nDROP TABLE IF EXISTS e2e_next;\n")
 	broken := map[string][]byte{}
 	for k, v := range next {
 		broken[k] = v
 	}
-	broken["0151_e2e_probe.sql"] = []byte("-- +goose Up\nCREATE TABLE IF NOT EXISTS e2e_probe (id integer);\n" +
+	broken[fmt.Sprintf("%04d_e2e_probe.sql", nextRev+1)] = []byte("-- +goose Up\nCREATE TABLE IF NOT EXISTS e2e_probe (id integer);\n" +
 		"-- +goose Down\nDROP TABLE IF EXISTS e2e_probe;\n")
 	r090 := newRel("0.9.0", migrationFiles(t), 0)
-	r091 := newRel("0.9.1", next, 150)
-	r092 := newRel("0.9.2", broken, 150)
+	r091 := newRel("0.9.1", next, nextRev)
+	r092 := newRel("0.9.2", broken, nextRev)
 	gh := newFakeGitHub(t)
 
 	// ---- the two installs ----
@@ -446,7 +449,7 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 		})
 		return c
 	}
-	copyFollows("the node's copy following the home", 149, time.Time{})
+	copyFollows("the node's copy following the home", schemaguard.SchemaRev, time.Time{})
 
 	// ---- Update now, as the owner ----
 	var admin *browser
@@ -543,15 +546,23 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 			t.Fatalf("the %s's release is still pending: %+v", name, p)
 		}
 	}
+	// story 35.12: the node took the release from its home's mirror, which kept the files
+	// it fetched once from GitHub (the node verified each one itself as before)
+	if !strings.Contains(node.log.String(), r091.Archive+" from the home's mirror") {
+		t.Fatalf("the node did not take %s from the home's mirror", r091.Archive)
+	}
+	if _, err := os.Stat(filepath.Join(homeDir, "data", "updates", "mirror", "0.9.1", r091.Archive+".ok")); err != nil {
+		t.Fatalf("the home's mirror kept no %s: %v", r091.Archive, err)
+	}
 	var applied int64
-	if err := adb.QueryRowContext(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&applied); err != nil || applied != 150 {
-		t.Fatalf("the home's schema is at %d (%v), want 150", applied, err)
+	if err := adb.QueryRowContext(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&applied); err != nil || applied != int64(nextRev) {
+		t.Fatalf("the home's schema is at %d (%v), want %d", applied, err, nextRev)
 	}
 	if _, err := os.Stat(filepath.Join(homeDir, "data", "backups", "pre-0.9.0-to-0.9.1.dump")); err != nil {
 		t.Fatalf("no pre-update dump: %v", err)
 	}
 	// the node's copy waited for the node's update, then copied the migrated home anew
-	copyFollows("the node's copy following the migrated home", 150, time.Time{})
+	copyFollows("the node's copy following the migrated home", int64(nextRev), time.Time{})
 
 	// ---- a release that cannot run on what it migrated: rolled back on the home alone ----
 	beforeRollback := time.Now()
@@ -573,7 +584,7 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 		t.Fatalf("the dump taken before 0.9.2's migration was not put back: e2e_probe %v, e2e_next %v", probe, nextTable)
 	}
 	// the dump put back took the node's slot with it: its copy is made anew from it
-	copyFollows("the node's copy made anew from the database put back", 150, beforeRollback)
+	copyFollows("the node's copy made anew from the database put back", int64(nextRev), beforeRollback)
 	resp, body := admin.do("GET", homeWeb+"/api/cluster/updates", nil, nil)
 	if resp.StatusCode == 200 && !strings.Contains(string(body), `"blocked_reason":"rolled_back"`) {
 		t.Fatalf("0.9.2 is not blocked: %s", tail(string(body), 2000))

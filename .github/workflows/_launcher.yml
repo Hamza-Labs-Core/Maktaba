@@ -156,7 +156,11 @@ jobs:
             chmod 0755 pkgroot/*
             ARCH=amd64 VERSION="$v" nfpm package -f deploy/packaging/nfpm.yaml -p deb -t out/
           }
-          inst() { sudo dpkg -i --force-depends "out/maktaba-server_${1}-1_amd64.deb"; }
+          inst() { sudo dpkg -i --force-depends "out/maktaba-server_${1}-1_amd64.deb" 2>&1 | tee dpkg.log; }
+          # what postinstall said about the service: an upgrade restarts it only when the
+          # release it runs, or its launcher's protocol, changed (never for a package that comes
+          # after the updater installed the same release)
+          said() { grep -q "$1" dpkg.log || { echo "::error::postinstall did not say '$1'"; cat dpkg.log; exit 1; }; }
           st() { sudo /usr/bin/maktaba-launcher --root /var/lib/maktaba --status --json; }
           field() { st | jq -r ".$1 // empty"; }
           want() { got="$(field "$1")"; [ "$got" = "$2" ] || { echo "::error::$1 = '$got', want '$2'"; st; exit 1; }; }
@@ -189,12 +193,19 @@ jobs:
           want current 1.2.4
           want previous 1.2.3
           want pending.version 1.2.4
+          said "the service started again if it was running (release 1.2.4)"
+
+          echo "==> the same package again (the updater installed it first): nothing restarts"
+          inst 1.2.4
+          want current 1.2.4
+          said "the service keeps running release 1.2.4"
 
           echo "==> an older package than the watermark only refreshes the launcher"
           sudo sh -c 'printf "1.3.0\n" > /var/lib/maktaba/watermark'
           build 1.2.2
-          sudo dpkg -i --force-depends --force-downgrade out/maktaba-server_1.2.2-1_amd64.deb
+          sudo dpkg -i --force-depends --force-downgrade out/maktaba-server_1.2.2-1_amd64.deb 2>&1 | tee dpkg.log
           want current 1.2.4
+          said "the service keeps running release 1.2.4"
           /usr/bin/maktaba-launcher --version | grep -q 'v1.2.2'
 
       # A pre-release tag's packages (release.yml runs this nfpm.yaml with VERSION

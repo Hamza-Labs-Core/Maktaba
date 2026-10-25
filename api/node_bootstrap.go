@@ -37,8 +37,10 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homeproxy"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodeauth"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodedb"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodemetrics"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/placement"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/switchover"
@@ -102,10 +104,12 @@ func (d nodeDBs) close() {
 
 // nodeRuntime is what a full node's API runs besides its routes.
 type nodeRuntime struct {
-	cfg      nodemode.Config
-	dbs      nodeDBs
-	link     *homelink.HTTPLink
-	feed     *homelink.AgentFeed
+	cfg  nodemode.Config
+	dbs  nodeDBs
+	link *homelink.HTTPLink
+	feed *homelink.AgentFeed
+	// linkC is the machine's cluster link (story 35.16; nil without a certificate folder)
+	linkC    *link.Client
 	resolver *nodeauth.Resolver
 	guard    *schemaguard.Guard
 	vod      *vodfallback.Fallback
@@ -113,6 +117,8 @@ type nodeRuntime struct {
 	proxy    http.Handler
 	rules    func() nodemode.Rules
 	logger   *slog.Logger
+	// metrics: the node's delegation, placement and pause numbers (story 35.15)
+	metrics *nodemetrics.Metrics
 	// recent: who changed something the copy may not have yet (their reads go to the
 	// home's); clock: the home's clock, which the copy's beat is stamped on
 	recent nodedb.Recent
@@ -257,11 +263,18 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 		return filepath.Join(dir, name)
 	}
 	rt.link = &homelink.HTTPLink{Home: cfg.HomeAPIURL, NodeID: cfg.NodeID, Logger: logger}
+	// the machine's cluster link carries the home calls while it is up (story 35.16)
+	if rt.linkC = startNodeLink(ctx, cfg.HomeAPIURL, cfg.NodeID, cfg.CertDir, os.Getenv("MAKTABA_STREAMING_HTTP_URL"),
+		logger); rt.linkC != nil {
+		rt.link.Link = rt.linkC
+	}
 	rt.home = &clusterauth.HomeInfoCache{Link: rt.link}
 
 	rt.rules = nodemode.CachedRules(dbs.app, time.Minute)
 	minutes := func(n int) time.Duration { return time.Duration(n) * time.Minute }
-	rt.resolver = &nodeauth.Resolver{Link: rt.link, Logger: logger, SecureCookies: cookiesSecure(),
+	// a full node's metrics only: a home and a worker have none of these series
+	rt.metrics = nodemetrics.Register(func() string { return rt.guard.PausedCode() })
+	rt.resolver = &nodeauth.Resolver{Link: rt.link, Logger: logger, SecureCookies: cookiesSecure(), Metrics: rt.metrics,
 		Grace:             func() time.Duration { return time.Duration(rt.rules().GraceSeconds) * time.Second },
 		CopyMaxLag:        func() time.Duration { return minutes(rt.rules().OfflineCopyMaxLagMinutes) },
 		LocalSessionTTL:   func() time.Duration { return time.Duration(rt.rules().OfflineSessionHours) * time.Hour },
@@ -561,6 +574,9 @@ func (rt *nodeRuntime) mountNodeRoutes(r chi.Router) {
 	if sc := switchover.SupervisorFromEnv(); sc != nil {
 		em.Supervisor = sc
 	}
+	// the machine's own processes reach the home on its cluster link (story 35.16)
+	r.Get(link.PathLocalAgent, serveLocalAgent(rt.linkC))
+	r.Get(link.PathLocalFetch, serveLocalFetch(rt.linkC))
 	router.MountNodeLocal(r, router.NodeLocalDeps{Self: rt.self, Node: &clusterauth.Node{
 		Link: rt.link, NodeID: rt.cfg.NodeID, Self: rt.self, SecureCookies: cookiesSecure(), Logger: rt.logger,
 		SSOEnabled: func(context.Context) bool { return rt.rules().SSO },
@@ -582,6 +598,7 @@ func (rt *nodeRuntime) handler(a *authState, r chi.Router, publicMux http.Handle
 	home := rt.copyReads(rt.limitOfflineSignIn(limit, rt.resolver.Home(rt.proxy)))
 	d := &placement.Dispatcher{Routes: r, Table: router.Placement, Local: local, Proxy: home,
 		Paused: rt.guard.Paused,
+		Served: func(c placement.Class, status int) { rt.metrics.Served(string(c), status) },
 		Fixed: map[string]placement.Class{"/healthz": placement.Local,
 			"/api/.well-known/jwks.json": placement.Home}}
 	var h http.Handler = d

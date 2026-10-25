@@ -7,8 +7,9 @@
 // inclusion proof, release.json, the archive's and the extracted binary's
 // digests, and the no-downgrade watermark), atomically swaps the running
 // maktaba-server binary (keeping a .bak), raises the watermark and re-execs. Package-managed (.deb/.rpm) installs
-// shell out to the package manager instead; Docker installs can't replace
-// their own image and get a 409 with instructions.
+// shell out to the package manager instead; a container of the stack built
+// from source can't replace its own image and gets a 409 with instructions,
+// while the Docker image's runtime updates itself through the orchestrator.
 //
 // The swap strategy mirrors the proven CLI updater in
 // cmd/maktaba-server/internal/selfupdate: write the new binary next to
@@ -51,11 +52,12 @@ import (
 type installKind int
 
 const (
-	installBinary  installKind = iota // plain archive / Homebrew / manual
-	installDocker                     // container — can't self-replace
-	installDeb                        // apt-managed
-	installRPM                        // dnf/yum-managed
-	installRuntime                    // the Linux app's runtime copy, updated by the machine (Epic 39)
+	installBinary    installKind = iota // plain archive / Homebrew / manual
+	installDocker                       // a container of the stack built from source — can't self-replace
+	installDeb                          // apt-managed
+	installRPM                          // dnf/yum-managed
+	installRuntime                      // the Linux app's runtime copy, updated by the machine (Epic 39)
+	installContainer                    // the Docker image's runtime on its volume, updated by the server itself
 )
 
 // SelfUpdater wires the self-update handler to the update-check service
@@ -182,6 +184,14 @@ func (s *SelfUpdater) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch s.detect(self) {
+	case installContainer:
+		// the Docker image updates the runtime on its volume through the server's
+		// updater (Epic 35: Update now starts its run); this handler serves only a build
+		// without it, or before it started
+		httperror.Write(w, r, httperror.Conflict("updater_unavailable",
+			"this Docker install updates itself through the server's updater (Admin → Updates), which this build "+
+				"does not have or has not started yet"))
+		return
 	case installDocker:
 		// A container can't replace its own image; tell the operator how.
 		w.Header().Set("Content-Type", "application/json")
@@ -277,7 +287,9 @@ func (s *SelfUpdater) LastRollback() *RollbackInfo {
 
 // InstallName is how this server was installed, as GET
 // /api/system/updates reports it: "managed" (the self-managed layout,
-// Epic 35.2), "docker", "deb", "rpm" or "binary".
+// Epic 35.2), "docker" (the Docker image, which updates itself, or a container
+// of the stack built from source, which manualDocker tells apart), "deb",
+// "rpm", "runtime" or "binary".
 func (s *SelfUpdater) InstallName() string {
 	self, err := s.selfPathFunc()
 	if err != nil {
@@ -287,7 +299,7 @@ func (s *SelfUpdater) InstallName() string {
 		return "managed"
 	}
 	switch s.detect(self) {
-	case installDocker:
+	case installDocker, installContainer:
 		return "docker"
 	case installDeb:
 		return "deb"
@@ -297,6 +309,20 @@ func (s *SelfUpdater) InstallName() string {
 		return "runtime"
 	}
 	return "binary"
+}
+
+// manualDocker reports whether this server is a container that cannot update itself (the
+// stack built from source, deploy/compose): an operator pulls and recreates it. The Docker
+// image's runtime (installContainer) updates itself.
+func (s *SelfUpdater) manualDocker() bool {
+	self, err := s.selfPathFunc()
+	if err != nil {
+		return false
+	}
+	if _, ok := install.Root(self); ok {
+		return false
+	}
+	return s.detect(self) == installDocker
 }
 
 // dockerInstructions is what an operator runs to update a container.
@@ -327,9 +353,8 @@ func (s *SelfUpdater) StatusHandler(base http.Handler) http.Handler {
 			_, _ = w.Write(rec.body)
 			return
 		}
-		kind := s.InstallName()
-		doc["install"] = kind
-		if kind == "docker" {
+		doc["install"] = s.InstallName()
+		if s.manualDocker() {
 			doc["instructions"] = dockerInstructions
 			if v, _ := doc["latest_version"].(string); v != "" {
 				doc["image"] = dockerImage(v)
@@ -619,6 +644,9 @@ func resolveSelf() (string, error) {
 
 func detectInstall(self string) installKind {
 	if os.Getenv(EnvRuntimeOwner) == RuntimeOwnerHeadless { // set by the runtime's launcher
+		if strings.TrimSpace(os.Getenv(EnvContainer)) != "" { // and by the Docker image
+			return installContainer
+		}
 		return installRuntime
 	}
 	if fileExists("/.dockerenv") || cgroupMentionsContainer() {

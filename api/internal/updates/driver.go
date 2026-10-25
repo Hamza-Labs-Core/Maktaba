@@ -55,13 +55,23 @@ type Driver struct {
 	// Recheck re-reads a release from GitHub and marks it withdrawn when it is (nil: the
 	// Service's Discoverer's Recheck, none without one).
 	Recheck func(ctx context.Context, r Release, channel string) (string, error)
+	// Events receives each update event (story 35.15 AC2: the hub's events file; nil:
+	// the structured log only).
+	Events func(fields map[string]any)
+	// Mirror is the home's copy of the releases its machines install (story 35.12 AC3; nil:
+	// the machines download from GitHub and PyPI themselves).
+	Mirror *Mirror
 
+	obs       observer // what the last look saw (events.go)
 	mu        sync.Mutex
 	wake      chan struct{}
 	stepMu    sync.Mutex
 	pending   map[string]time.Time // catch-ups recently tried, by node
 	rechecked map[string]time.Time // releases last re-read from GitHub, by version
 	lateLook  time.Time            // when reconcileHome last asked the home
+
+	// prefetched: the runs whose release the mirror was asked to fetch
+	prefetched map[string]bool
 }
 
 // Withdrawn releases are noticed while a run goes on (review A-W: a release deleted
@@ -174,6 +184,7 @@ func (d *Driver) Run(ctx context.Context) {
 	t := time.NewTicker(tick)
 	defer t.Stop()
 	for {
+		d.observe(ctx)
 		if err := d.Step(ctx); err != nil && ctx.Err() == nil {
 			d.log().Warn("update driver step failed", "event", "update_driver_error", "err", err.Error())
 		}
@@ -301,6 +312,51 @@ func (d *Driver) job(ctx context.Context, run Run, home bool) (MachineJob, error
 	return j, nil
 }
 
+// prefetch asks the mirror, once per run, to fetch the run's release for the platforms the
+// cluster's machines run: they download it from the home as they prepare.
+func (d *Driver) prefetch(ctx context.Context, run Run) {
+	if d.Mirror == nil {
+		return
+	}
+	d.mu.Lock()
+	if d.prefetched == nil {
+		d.prefetched = map[string]bool{}
+	}
+	done := d.prefetched[run.ID]
+	d.prefetched[run.ID] = true
+	d.mu.Unlock()
+	if !done {
+		d.Mirror.Prefetch(ctx, run.Version, d.platforms(ctx))
+	}
+}
+
+// platforms are the platforms the cluster's approved machines run (their rows, and what
+// their agents say).
+func (d *Driver) platforms(ctx context.Context) []string {
+	nodes, _ := d.nodes(ctx)
+	_, states := d.agentStates()
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		// an agent says "linux-amd64"; release.json and the mirror name it "linux/amd64"
+		if p = strings.TrimSpace(p); !strings.Contains(p, "/") {
+			p = strings.Replace(p, "-", "/", 1)
+		}
+		if p != "" && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	for _, n := range nodes {
+		add(n.platform)
+	}
+	for _, s := range states {
+		add(s.Platform)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // finish ends a run in state with an error document; the machines' drain is put back.
 func (d *Driver) finish(ctx context.Context, run Run, det RunDetail, state string, errDoc map[string]any) error {
 	d.undrain(ctx, run, &det)
@@ -320,6 +376,13 @@ func (d *Driver) finish(ctx context.Context, run Run, det RunDetail, state strin
 	}
 	d.audit(ctx, run, "run_"+state, errDoc)
 	d.log().Info("update run ended", "event", "update_run_ended", "run_id", run.ID, "version", run.Version, "state", state)
+	if d.Mirror != nil {
+		// the mirror keeps the run's release and the newest keep_versions it holds
+		d.Mirror.Prune(keepVersions(d.Mirror.Held(), run.Version, d.policy(ctx).KeepVersions))
+		d.mu.Lock()
+		delete(d.prefetched, run.ID)
+		d.mu.Unlock()
+	}
 	return nil
 }
 
@@ -637,6 +700,28 @@ func (d *Driver) windowDeadline(run Run, pol Policy) time.Time {
 	return end.Add(time.Duration(pol.WindowOverrunMinutes) * time.Minute)
 }
 
+// homeHandsOver reports whether the home's TV processes run on across its restart (story
+// 35.7: the TV handover): its restart cuts no TV, so no TV gate holds it.
+func homeHandsOver(det RunDetail) bool { return det.Home != nil && det.Home.HandsOver }
+
+// targetHandsOver reports whether a machine's TV processes run on across its restart, as
+// its prepared report says.
+func targetHandsOver(t Target) bool {
+	var st MachineStatus
+	return len(t.Detail) > 0 && json.Unmarshal(t.Detail, &st) == nil && st.HandsOver
+}
+
+// handsOverNoMore records that a machine's TV cannot be handed over now (its apply
+// refused with tv_busy): its prepared report no longer says it does.
+func (d *Driver) handsOverNoMore(ctx context.Context, run Run, t Target) {
+	var st MachineStatus
+	if len(t.Detail) == 0 || json.Unmarshal(t.Detail, &st) != nil {
+		return
+	}
+	st.HandsOver = false
+	_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{Detail: st})
+}
+
 // tvBusy reports whether more watch the TV than tv_staging.quiet_max_viewers.
 func (d *Driver) tvBusy(ctx context.Context) (bool, int) {
 	n := 0
@@ -674,7 +759,7 @@ func (d *Driver) homeGates(ctx context.Context, run Run, det RunDetail) error {
 		}
 		return d.gateFailed(ctx, run, det, code)
 	}
-	if run.Trigger != TriggerManual {
+	if run.Trigger != TriggerManual && !homeHandsOver(det) {
 		if busy, n := d.tvBusy(ctx); busy {
 			if det.Waiting != "tv_busy" {
 				det.Waiting = "tv_busy"
@@ -763,7 +848,7 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 		return nil // jobs finish (or checkpoint at the restart once the timeout passes)
 	}
 	// the gates again, right before the restart: viewers may have come during the drain
-	if run.Trigger != TriggerManual {
+	if run.Trigger != TriggerManual && !homeHandsOver(det) {
 		if busy, n := d.tvBusy(ctx); busy {
 			if deadline := d.windowDeadline(run, pol); !deadline.IsZero() && d.now().After(deadline) {
 				return d.gateFailed(ctx, run, det, "tv_busy")
@@ -786,9 +871,25 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 	if d.withdrawn(ctx, run.Version, true) {
 		return nil // the next step ends the run (stopWithdrawn)
 	}
-	if _, err := d.Home.Do(ctx, "apply", map[string]any{"run_id": run.ID}); err != nil {
+	apply := map[string]any{"run_id": run.ID}
+	if deadline := d.windowDeadline(run, pol); !deadline.IsZero() {
+		// the new release's TV change waits behind another change no longer than the
+		// window (story 35.6 AC4: tv_change_pending, tried again in the next window)
+		apply["tv_deadline"] = deadline
+	}
+	// a home that hands its TV over passed the gate above: it is told whether the TV is
+	// watched, and refuses (tv_busy) when it cannot hand over now after all (story 35.7)
+	if run.Trigger != TriggerManual && homeHandsOver(det) {
+		apply["tv_busy"], _ = d.tvBusy(ctx)
+	}
+	if _, err := d.Home.Do(ctx, "apply", apply); err != nil {
 		if strings.Contains(err.Error(), "update_no_run") || strings.Contains(err.Error(), "update_not_ready") {
 			return d.finish(ctx, run, det, RunFailed, map[string]any{"code": "home_not_prepared", "detail": err.Error()})
+		}
+		if strings.Contains(err.Error(), "tv_busy") {
+			// its report says it does not hand over now: the gate waits for a quiet TV
+			_, _ = d.homeStatus(ctx, run, &det)
+			return nil
 		}
 		return err
 	}
@@ -884,6 +985,9 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 		if st.Reason != "" {
 			doc["reason"] = st.Reason
 		}
+		if tvCodes[st.Reason] {
+			return d.tvRolledBack(ctx, run, det, st.Reason, doc)
+		}
 		_ = d.Store.Block(ctx, run.Version, "rolled_back")
 		d.notify(ctx, NoticeRolledBack, notify.SeverityError, run, map[string]any{"reason": st.Reason})
 		return d.finish(ctx, run, det, RunRolledBack, doc)
@@ -899,6 +1003,48 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 		return d.finish(ctx, run, det, RunFailedRollback, doc)
 	}
 	return nil
+}
+
+// The TV step's outcomes (story 35.6): the home's new release moves the TV to its
+// streaming binary through a TV change before it commits, and rolls back when that fails.
+const (
+	// CodeFailedTV: the change's verification or swap failed (or it was rolled back):
+	// the release is blocked, the admin told with the checks that failed.
+	CodeFailedTV = "failed_tv"
+	// CodeTVChangePending: queued behind a TV change that waits for an approval until
+	// the window's end: a gate, tried again in the next window (no attempt counted).
+	CodeTVChangePending = "tv_change_pending"
+	// CodeTVTimeout: the change did not reach the air within boundary_max_wait + 10
+	// minutes of its stage (an attempt, as any failed run).
+	CodeTVTimeout = "tv_timeout"
+	// CodeTVChangeCancelled: an admin cancelled the update's TV change: the release is
+	// blocked until an admin retries it.
+	CodeTVChangeCancelled = "tv_change_cancelled"
+)
+
+// tvCodes are the reasons a home rolls back for at its TV step.
+var tvCodes = map[string]bool{CodeFailedTV: true, CodeTVChangePending: true, CodeTVTimeout: true,
+	CodeTVChangeCancelled: true}
+
+// tvRolledBack ends a run whose home went back to the release before at its TV step.
+func (d *Driver) tvRolledBack(ctx context.Context, run Run, det RunDetail, code string, doc map[string]any) error {
+	doc["code"] = code
+	switch code {
+	case CodeTVChangePending:
+		return d.gateEnded(ctx, run, det, code,
+			"the TV change waited behind a change awaiting approval until the window ended; tried again in the next window")
+	case CodeTVTimeout:
+		d.blockFor(ctx, run, doc)
+		d.notifyFailure(ctx, run, doc)
+	case CodeTVChangeCancelled:
+		_ = d.Store.Block(ctx, run.Version, "tv_cancelled")
+		d.notify(ctx, NoticeRolledBack, notify.SeverityError, run, map[string]any{"reason": code})
+	default: // failed_tv
+		_ = d.Store.Block(ctx, run.Version, CodeFailedTV)
+		d.notify(ctx, NoticeRolledBack, notify.SeverityError, run, map[string]any{"reason": code,
+			"detail": doc["detail"]})
+	}
+	return d.finish(ctx, run, det, RunRolledBack, doc)
 }
 
 func (d *Driver) homeCommitted(ctx context.Context, run Run, det RunDetail) error {
@@ -1009,6 +1155,7 @@ func (d *Driver) planTargets(ctx context.Context, run Run, det RunDetail) error 
 		return err
 	}
 	agents, states := d.agentStates()
+	workers := d.nodeWorkers()
 	only := map[string]bool{}
 	for _, id := range det.Targets {
 		only[id] = true
@@ -1031,23 +1178,38 @@ func (d *Driver) planTargets(ctx context.Context, run Run, det RunDetail) error 
 			}
 			kind = s.Layout
 		}
-		if ver != "" && CompareVersions(ver, run.Version) == 0 {
+		_, connected := agents[n.id]
+		// a worker-only machine's version is its pipeline's: whatever it is, it converts
+		if ver != "" && CompareVersions(ver, run.Version) == 0 && (connected || n.full) {
 			continue // already there
 		}
 		t := Target{RunID: run.ID, NodeID: n.id, Name: n.name, Ord: ord, Platform: platform, Kind: kind,
 			FromVersion: NormalizeVersion(ver), ToVersion: NormalizeVersion(run.Version), State: TargetPending}
-		_, connected := agents[n.id]
 		later := ver != "" && d.laterBuild(ctx, ver, run.Version)
+		w, working := workers[n.id]
+		tooOld := false
 		switch {
+		case !connected && !n.full:
+			// a worker-only machine: converted on its turn (update.convert), offline until
+			// its worker is back, worker_only while its pipeline is known too old for it
+			t.Kind = KindWorker
+			switch {
+			case !working:
+				t.State = TargetOffline
+			case d.tooOldKnown(ctx, n.id, run.Version, w):
+				t.State, tooOld = TargetWorkerOnly, true
+			}
 		case ver != "" && CompareVersions(ver, run.Version) > 0, later:
 			t.State = TargetSkipped
-		case !connected && !n.full:
-			t.State = TargetWorkerOnly
 		case !connected:
 			t.State = TargetOffline
 		}
 		if err := d.Store.InsertTarget(ctx, t); err != nil {
 			return err
+		}
+		if tooOld {
+			_ = d.Store.UpdateTarget(ctx, run.ID, n.id, TargetChange{Detail: map[string]any{"why": WhyTooOld,
+				"pipeline_version": w.Version}})
 		}
 		if t.State == TargetSkipped {
 			why := "ahead_of_home"
@@ -1197,12 +1359,17 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 	if err != nil {
 		return err
 	}
+	d.prefetch(ctx, run)
 	pol := d.policy(ctx)
 	agents, states := d.agentStates()
 	// a run for named machines (a Retry, a Resume, a catch-up) touches only those; the
 	// others wait for a catch-up of their own (inside the window)
-	if len(det.Targets) == 0 && d.mayRestartMachines(run, det, pol) {
-		d.adoptBehind(ctx, run, targets, agents, states)
+	workers := d.nodeWorkers()
+	if d.mayRestartMachines(run, det, pol) {
+		if len(det.Targets) == 0 {
+			d.adoptBehind(ctx, run, targets, agents, states)
+		}
+		d.adoptWorkers(ctx, run, targets, workers)
 		targets, _ = d.Store.Targets(ctx, run.ID)
 	}
 	preparing, applying := 0, -1
@@ -1210,16 +1377,18 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 		switch t.State {
 		case TargetPreparing:
 			preparing++
-		case TargetApplying:
+		case TargetApplying, TargetConverting:
 			applying = i
 		}
 	}
-	// the one applying first: one machine at a time (the others prepare meanwhile, and
-	// the desktop apps' clicks are noted)
+	// the one applying (or converting) first: one machine at a time (the others prepare
+	// meanwhile, and the desktop apps' clicks are noted)
 	busy := false
 	if applying >= 0 {
-		done, err := d.followApply(ctx, run, pol, targets[applying], agents)
-		if err != nil {
+		var done bool
+		if targets[applying].State == TargetConverting {
+			done = d.followConvert(ctx, run, pol, targets[applying], agents, states, workers)
+		} else if done, err = d.followApply(ctx, run, pol, targets[applying], agents); err != nil {
 			return err
 		}
 		busy = !done
@@ -1236,6 +1405,13 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 		sid, connected := agents[t.NodeID]
 		switch t.State {
 		case TargetPending:
+			if t.Kind == KindWorker {
+				// a worker-only machine is converted on its turn (below), never prepared
+				if _, ok := workers[t.NodeID]; !ok {
+					_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetOffline})
+				}
+				continue
+			}
 			if !connected {
 				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetOffline})
 				continue
@@ -1342,23 +1518,41 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 	if !held {
 		targets, _ = d.Store.Targets(ctx, run.ID)
 		for _, t := range targets {
-			if t.State != TargetPrepared {
+			worker := t.State == TargetPending && t.Kind == KindWorker
+			if t.State != TargetPrepared && !worker {
 				continue
 			}
 			if !d.mayRestartMachines(run, det, pol) {
 				break // the window is over: the rest wait (held at the end, caught up later)
 			}
 			sid, connected := agents[t.NodeID]
+			if worker {
+				var w NodeWorker
+				w, connected = workers[t.NodeID]
+				sid = w.Session
+			}
 			if !connected {
 				continue
 			}
-			if run.Trigger != TriggerManual && d.machineTVBusy(ctx, t.NodeID) {
+			if run.Trigger != TriggerManual && !targetHandsOver(t) && d.machineTVBusy(ctx, t.NodeID) {
 				continue // its TV streams are watched: another machine first, this one later
 			}
 			if !d.nodeDrained(ctx, run, &det, pol, t) {
 				break // its turn: its jobs finish first (or checkpoint once drain_timeout passed)
 			}
-			ok, raw, err := d.Cluster.Command(ctx, sid, "update.apply", map[string]any{"run_id": run.ID}, 30*time.Second)
+			if worker {
+				d.startConvert(ctx, run, pol, t, workers[t.NodeID])
+				break
+			}
+			busy := run.Trigger != TriggerManual && targetHandsOver(t) && d.machineTVBusy(ctx, t.NodeID)
+			ok, raw, err := d.Cluster.Command(ctx, sid, "update.apply", map[string]any{"run_id": run.ID, "tv_busy": busy},
+				30*time.Second)
+			if (err != nil || !ok) && strings.Contains(fmt.Sprint(err, " ", string(raw)), "tv_busy") {
+				// it cannot hand its TV over now after all, and its streams are watched:
+				// its report says so, and the gate holds it (another machine first)
+				d.handsOverNoMore(ctx, run, t)
+				continue
+			}
 			if err != nil || !ok {
 				d.targetFailed(ctx, run, pol, t, TargetFailed, map[string]any{"code": "apply_refused",
 					"detail": strings.TrimSpace(fmt.Sprint(err, " ", string(raw)))})
@@ -1580,7 +1774,16 @@ func (d *Driver) maybeFinishRollout(ctx context.Context, run Run, det RunDetail)
 			_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHeld,
 				Error: map[string]any{"code": "window_over"}})
 			held++
-		case TargetPending, TargetApplying, TargetClicked:
+		case TargetPending:
+			if t.Kind == KindWorker && pastWindow {
+				// a worker-only machine whose turn did not come in the window: next window
+				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHeld,
+					Error: map[string]any{"code": "window_over"}})
+				held++
+				continue
+			}
+			busy = true
+		case TargetApplying, TargetConverting, TargetClicked:
 			busy = true
 		case TargetWaitingClick:
 			waiting++
@@ -1767,6 +1970,18 @@ func (d *Driver) catchUp(ctx context.Context) error {
 			continue
 		}
 		ids = append(ids, n.id)
+	}
+	if inWindow {
+		// the worker-only machines are made full nodes on the release (story 35.8 AC8):
+		// inside the window, as their conversion restarts them
+		for _, id := range d.workerCatchUps(ctx, nodes, agents, wm) {
+			d.mu.Lock()
+			last, tried := d.pending[id]
+			d.mu.Unlock()
+			if !tried || d.now().Sub(last) >= catchUpRetry {
+				ids = append(ids, id)
+			}
+		}
 	}
 	if len(ids) == 0 || d.withdrawn(ctx, wm, true) {
 		return nil

@@ -23,6 +23,9 @@ var commandNames = map[string]bool{
 	"standby.kit": true, "standby.commit": true, "standby.forget": true, "home.standbys": true,
 	// a machine's part of an automatic update (Epic 35 story 35.12): machine agents only
 	"update.prepare": true, "update.apply": true, "update.status": true, "update.abort": true, "update.rollback": true,
+	// a worker-only machine made a full node by its next update (story 35.8 AC8): its
+	// pipeline worker's agent (it has no machine agent yet), never a machine agent
+	"update.convert": true,
 	// a machine's own log files over a window, for the logs page and the bundle
 	"logs.files": true,
 }
@@ -34,15 +37,19 @@ var adminCommands = map[string]bool{"drain": true, "undrain": true, "reload_stag
 
 // machineOnly are the commands only a machine's own agent (its supervisor) takes.
 func machineOnly(name string) bool {
-	return strings.HasPrefix(name, "update.") || name == "home.access" || name == "logs.files"
+	return (strings.HasPrefix(name, "update.") && name != "update.convert") || name == "home.access" || name == "logs.files"
 }
+
+// workerOnly are the commands only a machine's pipeline worker takes (not its machine
+// agent, not a home process).
+func workerOnly(name string) bool { return name == "update.convert" }
 
 // bulkyResults are the commands whose answers the event log notes by size only (a
 // machine's log lines are not the hub's events).
 var bulkyResults = map[string]bool{"logs.files": true}
 
 // secretArgs are the commands' arguments the event log never shows.
-var secretArgs = map[string][]string{"home.access": {"password"}}
+var secretArgs = map[string][]string{"home.access": {"password"}, "update.convert": {"download_token"}}
 
 // Accepts reports whether the hub sends a command of this name at all (CommandWithin
 // refuses any other with ErrBadCommand): the switch's tests ask it of their fake hub.
@@ -99,7 +106,7 @@ func (h *Hub) CommandWithin(ctx context.Context, sessionID, name string, args js
 	if s == nil {
 		return CmdResult{}, ErrNoSession
 	}
-	if !commandNames[name] || (machineOnly(name) && !s.machineAgent()) {
+	if !commandNames[name] || (machineOnly(name) && !s.machineAgent()) || (workerOnly(name) && !s.nodeWorker()) {
 		return CmdResult{}, ErrBadCommand
 	}
 	if len(args) == 0 || string(args) == "null" {
@@ -219,6 +226,31 @@ func (h *Hub) MachineAgents() map[string]string {
 		if s.Process == "supervisor" && s.NodeID != "" && s.Kind != "home" {
 			out[s.NodeID] = id
 		}
+	}
+	return out
+}
+
+// NodeWorker is a machine's pipeline worker on the channel: its session, its worker id
+// and the pipeline version it reported.
+type NodeWorker struct {
+	Session, WorkerID, Version string
+}
+
+// NodeWorkers are the connected machines' pipeline workers, one by node id (the lowest
+// worker id of the machine's: maktaba-node before maktaba-node@2): a worker-only
+// machine's next update reaches it there (update.convert).
+func (h *Hub) NodeWorkers() map[string]NodeWorker {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	out := map[string]NodeWorker{}
+	for id, s := range h.sessions {
+		if !s.nodeWorker() || s.NodeID == "" {
+			continue
+		}
+		if cur, ok := out[s.NodeID]; ok && cur.WorkerID <= s.WorkerID {
+			continue
+		}
+		out[s.NodeID] = NodeWorker{Session: id, WorkerID: s.WorkerID, Version: s.Version}
 	}
 	return out
 }

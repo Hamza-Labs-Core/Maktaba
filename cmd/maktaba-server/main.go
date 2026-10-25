@@ -68,6 +68,7 @@ func newRootCmd() *cobra.Command {
 		newServeCmd(),
 		newSetupCmd(),
 		newUpdateCmd(),
+		newRestoreCmd(),
 		newUninstallCmd(),
 		newModelsCmd(),
 		newMigrateCmd(),
@@ -78,6 +79,7 @@ func newRootCmd() *cobra.Command {
 		newServiceCmd(),
 		newRuntimeCmd(),
 		newFFmpegCmd(),
+		newContainerCmd(),
 	)
 	return root
 }
@@ -87,6 +89,7 @@ const rootLong = `maktaba-server runs all of Maktaba from a single binary.
   maktaba-server setup     First-run wizard: write config, run migrations
   maktaba-server serve     Start the API, streaming, pipeline, and web UI
   maktaba-server update    Self-update to the latest release
+  maktaba-server restore   Put the library database back from a backup
   maktaba-server uninstall Guided teardown
   maktaba-server models    Manage Whisper transcription models
   maktaba-server migrate   Run database migrations

@@ -55,7 +55,7 @@ func main() {
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
 		case "--version":
-			fmt.Fprintln(os.Stdout, version.String())
+			printVersion(os.Stdout, os.Args[2:])
 			return
 		case "serve":
 			if err := runServe(); err != nil {

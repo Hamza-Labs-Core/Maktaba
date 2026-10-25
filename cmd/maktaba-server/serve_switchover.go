@@ -78,6 +78,10 @@ const (
 	kitCloud     = "cloud.json"
 	// the model server the home's LLM stages used when it is another machine's ([llm] url)
 	kitLLM = "llm.json"
+	// the cluster link's CA (story 35.16): the new home keeps the machines' certificates
+	// valid (their link, and its Postgres' client certificates) only with the same CA
+	kitLinkCAKey  = "cluster-ca.key"
+	kitLinkCACert = "cluster-ca.crt"
 )
 
 // kitLLMServer is the [llm] url and models a kit carries.
@@ -89,6 +93,9 @@ type kitLLMServer struct {
 // switching is this machine's part of a switch.
 type switching struct {
 	cfg config.Config
+	// answerFirst is how long a command that restarts the machine lets its answer go out
+	// first (a second; the tests shorten it)
+	answerFirst time.Duration
 	// pg is the home's bundled Postgres (nil on a node), cp a node's copy (nil on the
 	// home), stopCopy stops the copy's manager (the copy's database runs on).
 	pg       *pgbundle.Bundle
@@ -126,7 +133,7 @@ type switching struct {
 }
 
 func newSwitching(cfg config.Config) *switching {
-	return &switching{cfg: cfg, ready: make(chan struct{})}
+	return &switching{cfg: cfg, ready: make(chan struct{}), answerFirst: time.Second}
 }
 
 // setHomeDB records the node's watch of its login to the home's database.
@@ -231,6 +238,9 @@ func (s *switching) kitFiles() map[string]string {
 		out[kitCACert] = filepath.Join(config.KeysDir(), kitCACert)
 		out[kitCAKey] = filepath.Join(config.KeysDir(), kitCAKey)
 	}
+	// beside secrets.key, where the home's API keeps it
+	out[kitLinkCAKey] = filepath.Join(filepath.Dir(secretsKeyPath()), kitLinkCAKey)
+	out[kitLinkCACert] = filepath.Join(filepath.Dir(secretsKeyPath()), kitLinkCACert)
 	return out
 }
 
@@ -464,7 +474,13 @@ func (s *switching) newHomeOf(ctx context.Context, req homeRequest) (any, error)
 			ID     string `json:"id"`
 			Notice string `json:"notice"`
 		}
-		if base == "" || getJSON(ctx, client, strings.TrimRight(base, "/")+"/api/cluster/moved/"+url.PathEscape(me.NodeID), &m) != nil ||
+		// only a machine's address as the cluster records it (the API's records of the new
+		// home), never anything else a request could carry; the notice is the cluster
+		// key's word, whoever answers
+		if !homeURLRe.MatchString(base) {
+			continue
+		}
+		if getJSON(ctx, client, strings.TrimRight(base, "/")+"/api/cluster/moved/"+url.PathEscape(me.NodeID), &m) != nil ||
 			m.ID != req.ID {
 			continue
 		}
@@ -695,6 +711,32 @@ func (s *switching) homeFiles() (map[string][]byte, error) {
 	}
 	return files, nil
 }
+
+// nodeIDRe is a machine's id (a UUID): what a standby kit's file is named after.
+var nodeIDRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// sealedKitPath is the standby kit's file for machine node, <state>/switchover/standby-
+// <node>.chunks: node must be a machine's id (never a path), and the file stays in the
+// switchover folder.
+func sealedKitPath(stateDir, node string) (string, error) {
+	if !nodeIDRe.MatchString(node) || strings.Contains(node, "..") {
+		return "", fmt.Errorf("%q is not a machine's id", node)
+	}
+	dir, err := filepath.Abs(filepath.Join(stateDir, "switchover"))
+	if err != nil {
+		return "", err
+	}
+	path, err := filepath.Abs(filepath.Join(dir, "standby-"+node+".chunks"))
+	if err != nil || !strings.HasPrefix(path, dir+string(filepath.Separator)) {
+		return "", fmt.Errorf("%q is not a machine's id", node)
+	}
+	return path, nil
+}
+
+// homeURLRe is a machine's address as the cluster records it (cluster_nodes' api_url and
+// web_url, which the API sends): http or https, a host or an address, a port, nothing more
+// (no user, no path, no query): what newHomeOf asks for the notice of the home moved.
+var homeURLRe = regexp.MustCompile(`^https?://([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(:[0-9]{1,5})?/?$`)
 
 // sealKit seals k for the machine whose public key is to (the cluster key's private half
 // clusterPriv) under id, into path: the number of chunks.
@@ -989,8 +1031,12 @@ func (s *switching) homeKeyFiles() []string {
 	}
 	// the Hugging Face token stays: it is the person's own, for this machine's models
 	// (every machine keeps one of its own), not a key of the cluster's
+	// the cluster link's CA key and the home's web certificate (story 35.16) stay with the
+	// home: a machine never holds the CA's key
+	keys := filepath.Dir(secretsKeyPath())
 	return append([]string{secretsKeyPath(), clusterKeyPath(), caKey, priv, pub, supervisor.RelayCredPath(),
-		supervisor.RelayKeyPath()}, serverTLS...)
+		supervisor.RelayKeyPath(), filepath.Join(keys, kitLinkCAKey), filepath.Join(keys, "cluster-web.crt"),
+		filepath.Join(keys, "cluster-web.key")}, serverTLS...)
 }
 
 // wipeHomeKeys removes this machine's copies of the home's keys (overwritten first) and
@@ -1112,8 +1158,9 @@ func (s *switching) homeDatabase(args json.RawMessage) (ok bool, detail any) {
 		return false, err.Error()
 	}
 	fmt.Fprintln(os.Stderr, "[serve] node: the home's database certificate came over the machine channel: starting again with it")
+	wait := s.answerFirst
 	go func() {
-		time.Sleep(time.Second) // the answer goes out first
+		time.Sleep(wait) // the answer goes out first
 		requestReload()
 	}()
 	return true, map[string]any{"changed": true}

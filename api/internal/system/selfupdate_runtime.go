@@ -24,6 +24,12 @@ const (
 	RuntimeOwnerHeadless = "headless"
 )
 
+// EnvContainer names the container the server runs in, set by its image (the Docker
+// install, deploy/docker/server: "docker"). Its runtime is on the image's volume and the
+// server updates it by itself, as a headless install's: the orchestrator does (Epic 35),
+// never `docker compose pull`.
+const EnvContainer = "MAKTABA_CONTAINER"
+
 // runtimeUpdate starts the update of a runtime copy and answers 202: it runs
 // on its own, since moving `current` stops the service this API runs in.
 func (s *SelfUpdater) runtimeUpdate(w http.ResponseWriter, r *http.Request, self, version string) {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // Supervisor runs a set of child processes and keeps each one alive on
@@ -48,6 +49,9 @@ type Supervisor struct {
 	llm func() llmserver.Status
 	// ffmpeg, when set, is the last check of the roles' ffmpeg (WithFFmpeg).
 	ffmpeg func() *ffmpeg.Report
+	// ho, when set, keeps the handover record and adopts what it lists (WithHandover,
+	// handover.go: Epic 35 story 35.7).
+	ho *handoverState
 }
 
 // child is one supervised role. Everything but proc is guarded by s.mu.
@@ -63,6 +67,15 @@ type child struct {
 	binding    *SlotBinding // tv-slot: the TV release it runs (nil: the current binary)
 	basePath   string       // the binary the process was built with
 	wake       chan struct{}
+	done       chan struct{} // closed when its loop ends (or it never runs one)
+
+	// the handover (Process.Survives): the record's entry to adopt at the start, the
+	// running process's start time and named job (Windows), and whether it may outlive
+	// this supervisor (Windows: it left the launcher's job for the boot's)
+	adopt    *layout.HandoverChild
+	ident    uint64
+	job      string
+	detached bool
 }
 
 // Option tweaks a Supervisor (tests inject a clock, log and sink).
@@ -112,6 +125,7 @@ func New(procs []Process, policy Policy, opts ...Option) *Supervisor {
 				return ""
 			}(),
 			wake:   make(chan struct{}, 1),
+			done:   make(chan struct{}),
 			status: ChildStatus{Role: p.Role, Instance: p.Instance, State: st, ProbeURL: p.Probe, Wanted: !p.OnDemand},
 		})
 	}
@@ -151,6 +165,7 @@ func (s *Supervisor) Run(ctx context.Context, grace time.Duration) error {
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	s.startHandover()
 
 	var first, rest []*child
 	for _, c := range s.children {
@@ -166,6 +181,7 @@ func (s *Supervisor) Run(ctx context.Context, grace time.Duration) error {
 			wg.Add(1)
 			go func(c *child) {
 				defer wg.Done()
+				defer close(c.done)
 				s.loop(runCtx, c)
 			}(c)
 		}
@@ -189,8 +205,27 @@ func (s *Supervisor) Run(ctx context.Context, grace time.Duration) error {
 	// hard-kill stragglers after grace; the First processes last.
 	s.mu.Lock()
 	s.stopping = true
+	handover := s.ho != nil && s.ho.handingOver && ready
 	cancel()
 	s.mu.Unlock()
+	if handover {
+		// story 35.7: every process but the survivors stops; they run on, and the next
+		// supervisor adopts them from the record
+		var others []*child
+		for _, c := range rest {
+			if !c.proc.Survives {
+				others = append(others, c)
+			}
+		}
+		s.stopChildren(others, grace)
+		s.stopChildren(first, grace)
+		s.mu.Lock()
+		s.ho.handedOver = true
+		s.mu.Unlock()
+		s.saveRecord(true)
+		s.logf("handed over: the TV processes run on for the next supervisor")
+		return result
+	}
 	s.stopAll(rest, &restWG, grace)
 	s.stopAll(first, &firstWG, grace)
 	if !ready {
@@ -198,7 +233,46 @@ func (s *Supervisor) Run(ctx context.Context, grace time.Duration) error {
 			s.setState(c, StateStopped)
 		}
 	}
+	if s.ho != nil && !s.unadopted() {
+		_ = layout.RemoveHandover(s.ho.dir) // every process stopped
+	}
 	return result
+}
+
+// unadopted reports whether a process the record lists was never taken up (its loop never
+// ran: the supervisor stopped before it was ready). The record then stays, for the
+// launcher to stop it, or the next start to adopt it.
+func (s *Supervisor) unadopted() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.children {
+		if c.adopt != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// stopChildren is stopAll for some of the children (their loops' done channels).
+func (s *Supervisor) stopChildren(cs []*child, grace time.Duration) {
+	s.mu.Lock()
+	s.signalLocked(cs, false)
+	s.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		for _, c := range cs {
+			<-c.done
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(grace):
+		s.mu.Lock()
+		s.signalLocked(cs, true)
+		s.mu.Unlock()
+		<-done
+	}
 }
 
 // awaitRunning waits until every child in cs runs. It reports false when the
@@ -303,6 +377,18 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 	backoff := s.policy.BackoffInitial
 	tpl := c.proc.Cmd
 	first := true
+	s.mu.Lock()
+	a := c.adopt
+	c.adopt = nil
+	s.mu.Unlock()
+	if a != nil {
+		// story 35.7: the process the supervisor before handed over, when it is still
+		// that process and answers; its end is treated as any exit. It runs already: what
+		// gates a start (Prepare: the database step) holds only the fresh one after it.
+		if info, ok := s.adoptRun(ctx, c, *a); ok && s.afterExit(ctx, c, info, &backoff) {
+			return
+		}
+	}
 	if c.proc.Prepare != nil && !s.prepare(ctx, c) {
 		s.setState(c, StateStopped)
 		return
@@ -341,10 +427,31 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		}
 		startedAt := s.now()
 		var info ExitInfo
+		survive := s.survivalLocked(c)
 		startErr := applyBinding(cmd, c.binding, c.basePath)
 		if startErr == nil {
 			prepareTree(cmd)
+			orig := cmd.SysProcAttr
+			if survive == surviveBoot {
+				// on a copy: the template's (and so every later start's) stays as it is
+				sa := *orig
+				cmd.SysProcAttr = &sa
+				prepareSurvivor(cmd)
+			}
 			startErr = cmd.Start()
+			if survive == surviveBoot {
+				cmd.SysProcAttr = orig
+			}
+			if startErr != nil && survive == surviveBoot && errBreakaway(startErr) {
+				// the job this supervisor runs in lets no child leave it: this one ends
+				// with the supervisor, and an update restarts the TV (story 35.7 AC4)
+				s.ho.refused = c.proc.Name() + " cannot leave the job the server runs in: " + startErr.Error()
+				s.logf("%s; it is started without leaving it", s.ho.refused)
+				cmd = cloneCmd(cmd)
+				prepareTree(cmd)
+				survive = surviveNot
+				startErr = cmd.Start()
+			}
 		}
 		if err := startErr; err != nil {
 			info = ExitInfo{At: startedAt, Code: -1, Reason: ReasonStartFailed, Error: err.Error()}
@@ -356,7 +463,23 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			s.errorf("%s could not start: %v", c.proc.Name(), err)
 		} else {
 			pid := cmd.Process.Pid
-			tree, treeErr := attachTree(cmd)
+			var tree *procTree
+			var treeErr error
+			c.detached = false
+			if survive != surviveNot {
+				c.job = survivorJob(s.ho.dir, pid)
+				boot := s.ho.job
+				if survive == surviveHere {
+					boot = nil
+				}
+				tree, c.detached, treeErr = attachSurvivor(cmd, boot, c.job, s.ho.launcherPID)
+			} else {
+				c.job = ""
+				tree, treeErr = attachTree(cmd)
+			}
+			if c.proc.Survives {
+				identify(c, pid)
+			}
 			c.cmd = cmd
 			c.tree = tree
 			c.killReason = ""
@@ -375,6 +498,9 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			if treeErr != nil {
 				s.logf("%s (pid %d): its child processes are not tied to it: %v", c.proc.Name(), pid, treeErr)
 			}
+			if c.proc.Survives {
+				s.saveRecord(false)
+			}
 
 			probeCtx, stopProbe := context.WithCancel(ctx)
 			if c.proc.Probe != "" {
@@ -382,115 +508,130 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			}
 			waitErr := cmd.Wait()
 			stopProbe()
+			if s.HandedOver() && c.proc.Survives {
+				return // the next supervisor's process: nothing of it is this one's now
+			}
 			// The child is gone: end whatever it left behind (ffmpeg,
 			// yt-dlp) so a restart never runs next to orphans.
 			tree.release()
 			info = s.exitInfo(c, cmd, waitErr, startedAt)
 		}
-
-		s.mu.Lock()
-		stopping := s.stopping
-		if stopping {
-			info.Reason = ReasonShutdown
-		}
-		c.status.LastExit = &info
-		c.status.PID = 0
-		c.status.StartedAt = nil
-		c.cmd = nil
-		c.tree = nil
-		s.mu.Unlock()
-		if info.Reason != ReasonStartFailed {
-			code := info.Code
-			s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventExited, PID: info.PID, Code: &code,
-				Signal: info.Signal, Reason: info.Reason, UptimeSec: info.UptimeSec, Message: info.Error})
-		}
-		if s.onExit != nil && info.Reason != ReasonStartFailed {
-			s.onExit(c.proc, info)
-		}
-		if info.Reason == ReasonStopped && !stopping {
-			s.logf("%s stopped on request (pid %d)", c.proc.Name(), info.PID)
-			continue // waits until it is wanted again
-		}
-		if info.Reason == ReasonRestarted && !stopping {
-			// asked for: no backoff, and not an exit of a crash loop
-			s.logf("%s stopped to start again (pid %d)", c.proc.Name(), info.PID)
-			backoff = s.policy.BackoffInitial
-			continue
-		}
-		if stopping {
-			s.logf("%s stopped (pid %d, %s)", c.proc.Name(), info.PID, describeExit(info))
-			s.setState(c, StateStopped)
+		if s.afterExit(ctx, c, info, &backoff) {
 			return
 		}
-
-		// Decide what happens next.
-		switch {
-		case s.policy.Restart == RestartNever:
-			s.errorf("%s exited (pid %d, %s); restart = never, stopping the stack", c.proc.Name(), info.PID, describeExit(info))
-			s.setState(c, StateExited)
-			s.fatalOnce.Do(func() { s.fatal <- fmt.Errorf("%s exited: %s", c.proc.Name(), describeExit(info)) })
-			return
-		case s.policy.Restart == RestartOnFailure && info.Reason == ReasonClean:
-			s.logf("%s exited cleanly (pid %d, uptime %s); restart = on-failure, leaving it stopped",
-				c.proc.Name(), info.PID, uptime(info))
-			s.setState(c, StateExited)
-			return
-		}
-
-		now := s.now()
-		s.mu.Lock()
-		if time.Duration(info.UptimeSec*float64(time.Second)) >= s.policy.HealthyAfter {
-			// It ran long enough to count as healthy: forget the past.
-			backoff = s.policy.BackoffInitial
-			c.exits = nil
-			c.failed = false
-		}
-		c.exits = append(c.recentExits(now, s.policy.Window), now)
-		delay, state := backoff, StateBackoff
-		wasFailed := c.failed
-		// for the line below: the restart this wait leads to, and the window's exits so far
-		restartN, exitsN := c.status.Restarts+1, len(c.exits)
-		if len(c.exits) >= s.policy.MaxRestarts {
-			delay, state = s.policy.FailedRetry, StateFailed
-			c.failed = true
-		} else {
-			c.failed = false
-			backoff = nextBackoff(backoff, s.policy.BackoffMax)
-		}
-		next := now.Add(delay)
-		c.status.State = state
-		c.status.NextRestartAt = &next
-		s.mu.Unlock()
-
-		if state == StateFailed {
-			if !wasFailed {
-				s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: info.Reason, DelaySec: delay.Seconds(),
-					Message: fmt.Sprintf("%d exits in %s", s.policy.MaxRestarts, s.policy.Window)})
-			}
-			s.errorf("%s exited (pid %d, %s); crash loop: %d exits in %s, marked failed, retrying in %s",
-				c.proc.Name(), info.PID, describeExit(info), s.policy.MaxRestarts, s.policy.Window, delay)
-		} else {
-			s.warnf("%s exited (pid %d, %s); restarting in %s (restart #%d, %d/%d exits in %s)", c.proc.Name(), info.PID,
-				describeExit(info), delay, restartN, exitsN, s.policy.MaxRestarts, s.policy.Window)
-		}
-
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			s.setState(c, StateStopped)
-			return
-		case <-timer.C:
-		}
-		at := s.now()
-		s.mu.Lock()
-		c.status.Restarts++
-		c.status.LastRestartAt = &at
-		n := c.status.Restarts
-		s.mu.Unlock()
-		s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventRestarting, DelaySec: delay.Seconds(),
-			Message: fmt.Sprintf("restart #%d", n)})
 	}
+}
+
+// afterExit records a run's end (info) and waits as the policy says before the next
+// start. true: the loop ends (a shutdown, a policy that leaves the child stopped).
+func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, backoff *time.Duration) bool {
+	s.mu.Lock()
+	stopping := s.stopping
+	if stopping {
+		info.Reason = ReasonShutdown
+	}
+	c.status.LastExit = &info
+	c.status.PID = 0
+	c.status.StartedAt = nil
+	c.cmd = nil
+	c.tree = nil
+	c.ident = 0
+	s.mu.Unlock()
+	if c.proc.Survives {
+		s.saveRecord(false)
+	}
+	if info.Reason != ReasonStartFailed {
+		code := info.Code
+		s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventExited, PID: info.PID, Code: &code,
+			Signal: info.Signal, Reason: info.Reason, UptimeSec: info.UptimeSec, Message: info.Error})
+	}
+	if s.onExit != nil && info.Reason != ReasonStartFailed {
+		s.onExit(c.proc, info)
+	}
+	if info.Reason == ReasonStopped && !stopping {
+		s.logf("%s stopped on request (pid %d)", c.proc.Name(), info.PID)
+		return false // waits until it is wanted again
+	}
+	if info.Reason == ReasonRestarted && !stopping {
+		// asked for: no backoff, and not an exit of a crash loop
+		s.logf("%s stopped to start again (pid %d)", c.proc.Name(), info.PID)
+		*backoff = s.policy.BackoffInitial
+		return false
+	}
+	if stopping {
+		s.logf("%s stopped (pid %d, %s)", c.proc.Name(), info.PID, describeExit(info))
+		s.setState(c, StateStopped)
+		return true
+	}
+
+	// Decide what happens next.
+	switch {
+	case s.policy.Restart == RestartNever:
+		s.errorf("%s exited (pid %d, %s); restart = never, stopping the stack", c.proc.Name(), info.PID, describeExit(info))
+		s.setState(c, StateExited)
+		s.fatalOnce.Do(func() { s.fatal <- fmt.Errorf("%s exited: %s", c.proc.Name(), describeExit(info)) })
+		return true
+	case s.policy.Restart == RestartOnFailure && info.Reason == ReasonClean:
+		s.logf("%s exited cleanly (pid %d, uptime %s); restart = on-failure, leaving it stopped",
+			c.proc.Name(), info.PID, uptime(info))
+		s.setState(c, StateExited)
+		return true
+	}
+
+	now := s.now()
+	s.mu.Lock()
+	if time.Duration(info.UptimeSec*float64(time.Second)) >= s.policy.HealthyAfter {
+		// It ran long enough to count as healthy: forget the past.
+		*backoff = s.policy.BackoffInitial
+		c.exits = nil
+		c.failed = false
+	}
+	c.exits = append(c.recentExits(now, s.policy.Window), now)
+	delay, state := *backoff, StateBackoff
+	wasFailed := c.failed
+	// for the line below: the restart this wait leads to, and the window's exits so far
+	restartN, exitsN := c.status.Restarts+1, len(c.exits)
+	if len(c.exits) >= s.policy.MaxRestarts {
+		delay, state = s.policy.FailedRetry, StateFailed
+		c.failed = true
+	} else {
+		c.failed = false
+		*backoff = nextBackoff(*backoff, s.policy.BackoffMax)
+	}
+	next := now.Add(delay)
+	c.status.State = state
+	c.status.NextRestartAt = &next
+	s.mu.Unlock()
+
+	if state == StateFailed {
+		if !wasFailed {
+			s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: info.Reason, DelaySec: delay.Seconds(),
+				Message: fmt.Sprintf("%d exits in %s", s.policy.MaxRestarts, s.policy.Window)})
+		}
+		s.errorf("%s exited (pid %d, %s); crash loop: %d exits in %s, marked failed, retrying in %s",
+			c.proc.Name(), info.PID, describeExit(info), s.policy.MaxRestarts, s.policy.Window, delay)
+	} else {
+		s.warnf("%s exited (pid %d, %s); restarting in %s (restart #%d, %d/%d exits in %s)", c.proc.Name(), info.PID,
+			describeExit(info), delay, restartN, exitsN, s.policy.MaxRestarts, s.policy.Window)
+	}
+
+	timer := time.NewTimer(delay)
+	select {
+	case <-ctx.Done():
+		timer.Stop()
+		s.setState(c, StateStopped)
+		return true
+	case <-timer.C:
+	}
+	at := s.now()
+	s.mu.Lock()
+	c.status.Restarts++
+	c.status.LastRestartAt = &at
+	n := c.status.Restarts
+	s.mu.Unlock()
+	s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventRestarting, DelaySec: delay.Seconds(),
+		Message: fmt.Sprintf("restart #%d", n)})
+	return false
 }
 
 // recentExits returns the exits inside the crash-loop window. Caller

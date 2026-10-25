@@ -16,6 +16,8 @@ from maktaba_pipeline.tvrelease.config import CHANGE_KINDS, MaktabaTvStagingConf
 from maktaba_pipeline.tvrelease.snapshot import content_digest, lineup_digest, live_snapshot
 from tests.tvrelease.helpers import add_channel, library_with
 
+pytestmark = pytest.mark.integration
+
 
 def test_defaults_every_kind_needs_approval() -> None:
     cfg = MaktabaTvStagingConfig()

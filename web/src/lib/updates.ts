@@ -15,9 +15,10 @@ export interface UpdateStatus {
   release_url?: string;
   release_notes?: string;
   checked_at: string;
-  /** How this server updates: managed | docker | deb | rpm | binary. */
+  /** How this server updates: managed | docker | deb | rpm | runtime | binary. */
   install?: string;
-  /** Docker installs: the command an operator runs. */
+  /** A container that cannot update itself (the stack built from source): the command an
+   * operator runs. The Docker image updates itself and has none. */
   instructions?: string;
   image?: string;
   /** The last self-update that could not start and was undone. */

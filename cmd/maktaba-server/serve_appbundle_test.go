@@ -841,26 +841,28 @@ func TestAppBundleNoVenvForANamedPython(t *testing.T) {
 // contract-update.md.
 func TestDetailCodesAreAFixedList(t *testing.T) {
 	want := map[string]string{
-		"db_waiting":            "",
-		"db_checking":           "release",
-		"db_dumping":            "from to",
-		"db_migrating":          "to",
-		"db_restoring":          "failed dump",
-		"db_restored":           "failed error dump release",
-		"db_refused_older":      "release needed dump",
-		"db_ahead":              "release error",
-		"db_dump_failed":        "to error",
-		"db_migrate_failed":     "release error",
-		"db_restore_failed":     "failed error dump restore_error",
-		"db_restore_unfinished": "failed dump",
-		"db_no_cluster":         "failed error dump",
-		"db_record_failed":      "path error",
-		"pg_unreadable":         "path error",
-		"pg_major":              "cluster payload",
-		"venv_waiting":          "",
-		"venv_building":         "step done total percent message",
-		"venv_interrupted":      "log",
-		"venv_failed":           "error log",
+		"db_waiting":               "",
+		"db_checking":              "release",
+		"db_dumping":               "from to",
+		"db_migrating":             "to",
+		"db_restoring":             "failed dump",
+		"db_restored":              "failed error dump release",
+		"db_refused_older":         "release needed dump",
+		"db_ahead":                 "release error",
+		"db_dump_failed":           "to error",
+		"db_migrate_failed":        "release error",
+		"db_restore_failed":        "failed error dump restore_error",
+		"db_restore_unfinished":    "failed dump",
+		"db_restoring_backup":      "dump by",
+		"db_restore_backup_failed": "dump error",
+		"db_no_cluster":            "failed error dump",
+		"db_record_failed":         "path error",
+		"pg_unreadable":            "path error",
+		"pg_major":                 "cluster payload",
+		"venv_waiting":             "",
+		"venv_building":            "step done total percent message",
+		"venv_interrupted":         "log",
+		"venv_failed":              "error log",
 	}
 	if len(detailCodes) != len(want) {
 		t.Errorf("%d codes, the list has %d", len(detailCodes), len(want))
@@ -1295,5 +1297,43 @@ func TestAppBundleStaleAndFirstInstallAttempts(t *testing.T) {
 	if len(got) != 3 || got[0].To != "0.5.0" || got[0].Outcome != attempts.Installed || got[0].ID == "start-0.5.0-1" ||
 		old.ID != "start-0.5.0-1" || old.Outcome != attempts.Failed || old.Code != attempts.Interrupted {
 		t.Fatalf("an old start of the same release: %+v", got)
+	}
+}
+
+// The home's wheelhouse a node's update staged beside the release goes once the app's venv
+// is ready (its packages are in it); a build that failed keeps it for the next try.
+func TestAppBundleVenvRemovesTheWheelhouse(t *testing.T) {
+	wh := filepath.Join(t.TempDir(), "wheelhouse", "1.5.0")
+	if err := os.MkdirAll(wh, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wh, "index.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prev := venvRun
+	t.Cleanup(func() { venvRun = prev })
+	fail := true
+	venvRun = func(_ context.Context, spec appvenv.Spec, _ func(appvenv.Progress)) (appvenv.Result, error) {
+		if spec.Wheelhouse != wh {
+			t.Errorf("the build was given %q", spec.Wheelhouse)
+		}
+		if fail {
+			return appvenv.Result{}, &appvenv.Error{Message: "pip: no torch"}
+		}
+		return appvenv.Result{Pipeline: "1.5.0"}, nil
+	}
+	g := &venvGate{spec: appvenv.Spec{Wheelhouse: wh}}
+	if err := g.run(context.Background(), noReport); err == nil {
+		t.Fatal("a failed build passed")
+	}
+	if _, err := os.Stat(wh); err != nil {
+		t.Fatal("a failed build took the wheelhouse")
+	}
+	fail = false
+	if err := g.run(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(wh); err == nil {
+		t.Fatal("the wheelhouse was kept after the venv was built")
 	}
 }

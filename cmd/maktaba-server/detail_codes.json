@@ -11,6 +11,8 @@
   "db_migrate_failed": ["release", "error"],
   "db_restore_failed": ["failed", "error", "dump", "restore_error"],
   "db_restore_unfinished": ["failed", "dump"],
+  "db_restoring_backup": ["dump", "by"],
+  "db_restore_backup_failed": ["dump", "error"],
   "db_no_cluster": ["failed", "error", "dump"],
   "db_record_failed": ["path", "error"],
   "pg_unreadable": ["path", "error"],

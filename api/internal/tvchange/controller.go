@@ -227,6 +227,11 @@ func (c *Controller) Tick(ctx context.Context) error {
 	if err := c.tickOps(ctx, cfg); err != nil {
 		c.Logger.Warn("tv swap operations tick failed", "event", "tv_swap_ops_failed", "error", err.Error())
 	}
+	// story 35.6: an automatic update's change its run withdrew while it swapped goes
+	// back once it is live
+	if err := c.tickWithdrawn(ctx); err != nil {
+		c.Logger.Warn("tv withdrawn changes tick failed", "event", "tv_change_withdrawn_failed", "error", err.Error())
+	}
 	// story 33.5: the staging slot ends with its change (cancel, fail, live)
 	c.reconcileStaging(ctx)
 	// story 33.13: notices and the audit rows of automatic transitions (best-effort:
@@ -332,8 +337,9 @@ func (c *Controller) ready(ctx context.Context, cfg Config, ch *Change) error {
 	if AutoBlocked(cfg, ch) != "" {
 		return nil
 	}
-	if AutoPromote(cfg, ch.Kinds, c.now().In(loc), c.viewers(ctx), warn > 0, ch.SwapAt) {
-		return c.startSwap(ctx, ch, ActionAutoPromote, map[string]any{"rule": StrictestRule(cfg, ch.Kinds)})
+	rule := ChangeRule(cfg, ch)
+	if AutoPromoteRule(cfg, rule, c.now().In(loc), c.viewers(ctx), warn > 0, ch.SwapAt) {
+		return c.startSwap(ctx, ch, ActionAutoPromote, map[string]any{"rule": rule})
 	}
 	return nil
 }
@@ -412,7 +418,7 @@ func (c *Controller) Promote(ctx context.Context, ch *Change, actor *string) err
 		if err != nil {
 			return err
 		}
-		if StrictestRule(cfg, ch.Kinds) == RuleApproval {
+		if ChangeRule(cfg, ch) == RuleApproval {
 			return &ConflictError{State: ch.State, Reason: "approval_required"}
 		}
 		return c.startSwapBy(ctx, ch, ActionPromote, actor)

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -28,6 +29,47 @@ type Source struct {
 	HTTP    *http.Client
 	// Platform is release.json's os/arch ("" this machine's).
 	Platform string
+	// Wheels fetches the home's wheelhouse of a release for this platform into dir (a
+	// node's: homemirror); false when the home keeps none. Nil on the home and on a
+	// machine of no home: the pipeline's packages come from PyPI.
+	Wheels func(ctx context.Context, version, platform, dir string) (bool, error)
+}
+
+// wheelhouse fetches the home's wheelhouse of j's release into dir and says whether it
+// is there (a failure is logged: the environment's packages come from PyPI then).
+func (s Source) wheelhouse(ctx context.Context, j *Journal, dir string, log io.Writer) bool {
+	if s.Wheels == nil {
+		return false
+	}
+	ok, err := s.Wheels(ctx, j.Job.Version, s.platform(), dir)
+	if err != nil && log != nil {
+		_, _ = fmt.Fprintf(log, "[update] the home's wheelhouse was not fetched (%v): the pipeline's packages come from PyPI\n", err)
+	}
+	return ok && err == nil
+}
+
+// WheelhouseDir is where a desktop app's or a runtime copy's release keeps the home's
+// wheelhouse it was staged with, in root (<updates>/wheelhouse): the app's venv step builds
+// the pipeline's environment from it at the release's first start.
+func WheelhouseDir(root, version string) string {
+	return filepath.Join(root, safeName(layout.NormalizeVersion(version)))
+}
+
+// stageWheels fetches the home's wheelhouse of j's release into root's folder for it,
+// after removing the folders of every other release (a node's; nothing without Wheels).
+func (s Source) stageWheels(ctx context.Context, j *Journal, root string, log io.Writer) {
+	if s.Wheels == nil || root == "" {
+		return
+	}
+	keep := filepath.Base(WheelhouseDir(root, j.Job.Version))
+	if entries, err := os.ReadDir(root); err == nil {
+		for _, e := range entries {
+			if e.Name() != keep {
+				_ = os.RemoveAll(filepath.Join(root, e.Name()))
+			}
+		}
+	}
+	s.wheelhouse(ctx, j, WheelhouseDir(root, j.Job.Version), log)
 }
 
 func (s Source) get() releaseverify.Downloader {

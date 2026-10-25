@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -83,6 +84,18 @@ func (c hubCluster) NodeHosts() map[string][]string {
 	return map[string][]string{}
 }
 
+// NodeWorkers implements the updates driver's nodeWorkerer: each machine's pipeline
+// worker, where a worker-only machine's conversion goes (update.convert).
+func (c hubCluster) NodeWorkers() map[string]updates.NodeWorker {
+	out := map[string]updates.NodeWorker{}
+	if h := c.hub(); h != nil {
+		for id, w := range h.NodeWorkers() {
+			out[id] = updates.NodeWorker{Session: w.Session, Version: w.Version}
+		}
+	}
+	return out
+}
+
 func (c hubCluster) HomeProcesses() []string {
 	if h := c.hub(); h != nil {
 		return h.HomeProcesses()
@@ -145,6 +158,25 @@ type P35Deps struct {
 	Hub *HubRef
 	// Home is the home's supervisor (nil: MAKTABA_SUPERVISOR_URL and its token file).
 	Home updates.HomeSupervisor
+	// DataDir is the API's data volume: the release mirror keeps its copies there
+	// (<data_dir>/updates/mirror, story 35.12 AC3); "" keeps none (the machines download
+	// from GitHub and PyPI themselves).
+	DataDir string
+}
+
+// homeReleaseCopies are the folders of a release the home staged itself (a side-by-side
+// layout: the launcher runs it from bin/releases/<v>, MAKTABA_RELEASE_DIR): its signed
+// files, and its pipeline's wheel and constraints. Nil on another kind of install.
+func homeReleaseCopies(releaseDir string) func(version string) []string {
+	releaseDir = strings.TrimSpace(releaseDir)
+	if releaseDir == "" {
+		return nil
+	}
+	releases := filepath.Dir(filepath.Clean(releaseDir))
+	return func(version string) []string {
+		dir := filepath.Join(releases, updates.NormalizeVersion(version))
+		return []string{dir, filepath.Join(dir, "pipeline")}
+	}
 }
 
 // MountP35 attaches the update routes and starts the loops.
@@ -187,14 +219,33 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 			}
 			return cfg.QuietMaxViewers
 		}}
+	if d.DataDir != "" {
+		// the machines' downloads: from the home first (the wheelhouse with the pipeline's
+		// Python the supervisor names)
+		drv.Mirror = &updates.Mirror{Store: store, Dir: filepath.Join(d.DataDir, "updates", "mirror"), Log: d.Logger,
+			Python: func() string { return getenv("MAKTABA_WHEELHOUSE_PYTHON") },
+			Enabled: func(ctx context.Context) bool {
+				p, err := svc.Policy(ctx)
+				return err != nil || p.Wheelhouse
+			},
+			Local: homeReleaseCopies(getenv("MAKTABA_RELEASE_DIR"))}
+	}
 	svc.Starter = drv
+	// story 35.15: the update events in the hub's events file, the numbers on /metrics
+	drv.Events = func(fields map[string]any) {
+		if h := d.Hub.Get(); h != nil {
+			h.Record(fields)
+		}
+	}
+	upMetrics := updates.NewMetrics(drv, func() string { return d.Current })
+	updates.Expose(upMetrics)
 	svc.Blockers = []updates.Blocker{
 		updates.TVChangeBlocker{DB: d.DB},
 		updates.SwitchoverBlocker{DB: d.DB},
 		&updates.HomeHealth{BaseURL: sup, HTTP: d.HTTPClient},
 	}
 	rulesHandler := &rules.Handler{DB: d.DB, Staging: tvchange.NewDrafts(d.DB)}
-	h := &updates.Handler{Svc: svc, Driver: drv, RulesPatch: rulesHandler.Patch}
+	h := &updates.Handler{Svc: svc, Driver: drv, RulesPatch: rulesHandler.Patch, Mirror: drv.Mirror}
 	h.Mount(r)
 	if d.Ref != nil {
 		d.Ref.h.Store(h)
@@ -215,6 +266,11 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 		}
 		go svc.RunScheduler(ctx)
 		go drv.Run(ctx)
+		sampler := &updates.HealthSampler{Metrics: upMetrics, Logger: d.Logger, Behind: func(ctx context.Context) bool {
+			pl, _, _, err := svc.Plan(ctx)
+			return err == nil && pl.Target != nil
+		}}
+		go sampler.Run(ctx)
 	}
 	return h
 }

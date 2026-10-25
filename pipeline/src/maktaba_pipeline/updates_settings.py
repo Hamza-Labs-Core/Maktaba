@@ -50,6 +50,8 @@ class UpdatesConfig:
     #: immediate | window
     catch_up: str = "immediate"
     proxy_cache_mb: int = 2048
+    #: the home keeps each release's pipeline dependencies per platform for its machines
+    wheelhouse: bool = True
 
 
 register(
@@ -129,6 +131,12 @@ register(
             choices=("immediate", "window"),
         ),
         "proxy_cache_mb": Help(UPR, "Image cache on a machine (MB)", minimum=0, maximum=1_048_576),
+        "wheelhouse": Help(
+            UPR,
+            "Keep the pipeline's packages for the machines",
+            "The home downloads each release's Python packages once for every platform its "
+            "machines run, so a machine without PyPI still updates.",
+        ),
         "rehearse_migrations": Help(
             UPS,
             "Rehearse database changes first",
