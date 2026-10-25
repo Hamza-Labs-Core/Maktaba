@@ -93,6 +93,9 @@ type kitLLMServer struct {
 // switching is this machine's part of a switch.
 type switching struct {
 	cfg config.Config
+	// answerFirst is how long a command that restarts the machine lets its answer go out
+	// first (a second; the tests shorten it)
+	answerFirst time.Duration
 	// pg is the home's bundled Postgres (nil on a node), cp a node's copy (nil on the
 	// home), stopCopy stops the copy's manager (the copy's database runs on).
 	pg       *pgbundle.Bundle
@@ -130,7 +133,7 @@ type switching struct {
 }
 
 func newSwitching(cfg config.Config) *switching {
-	return &switching{cfg: cfg, ready: make(chan struct{})}
+	return &switching{cfg: cfg, ready: make(chan struct{}), answerFirst: time.Second}
 }
 
 // setHomeDB records the node's watch of its login to the home's database.
@@ -1155,8 +1158,9 @@ func (s *switching) homeDatabase(args json.RawMessage) (ok bool, detail any) {
 		return false, err.Error()
 	}
 	fmt.Fprintln(os.Stderr, "[serve] node: the home's database certificate came over the machine channel: starting again with it")
+	wait := s.answerFirst
 	go func() {
-		time.Sleep(time.Second) // the answer goes out first
+		time.Sleep(wait) // the answer goes out first
 		requestReload()
 	}()
 	return true, map[string]any{"changed": true}

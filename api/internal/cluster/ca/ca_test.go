@@ -49,7 +49,10 @@ func TestLeafSANAndCN(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	// the CA's own certificate is valid from the real clock (New), so the leaf is issued
+	// and verified on it too (a fixed date before New's time fails the chain); certificates
+	// keep whole seconds
+	now := time.Now().UTC().Truncate(time.Second)
 	c.Now = func() time.Time { return now }
 	is, err := c.SignNode(context.Background(), csrFor(t, elliptic.P256()), nodeID, 0)
 	if err != nil {

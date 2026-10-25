@@ -53,6 +53,7 @@ func TestHomeDatabaseOverTheChannel(t *testing.T) {
 		<-reloadCh
 	}
 	s := newSwitching(config.Config{})
+	s.answerFirst = 10 * time.Millisecond
 	ca := testCAPEM(t)
 	args, _ := json.Marshal(map[string]string{"ca_pem": ca})
 	handled, ok, detail := s.command(t.Context(), "home.database", args)
