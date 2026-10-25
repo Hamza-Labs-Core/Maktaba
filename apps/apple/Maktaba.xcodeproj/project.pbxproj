@@ -17,6 +17,7 @@
 		4842BD54B7F7F480974F1B1C /* Info-Mac.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4C1CBAB2A2706F209CE79B0E /* Info-Mac.plist */; };
 		48892B323294B4E9A3E2EB33 /* StatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BF36B28D70761701C49780E /* StatusView.swift */; };
 		532CEA3D14CBAE22F9AE8C13 /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 82FEF82284D142A8B84099D4 /* MaktabaKit */; };
+		5B3CEF53F6B93BDACEC04AD1 /* Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6629068B08CFDCF4BEA7DB9 /* Playback.swift */; };
 		605914018490BB068027BD7D /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6390E85846DBE30CED36A0C3 /* MaktabaKit */; };
 		6530CBABD0F3D2E98500640E /* VideoDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98AED34220C815DD101BEDF /* VideoDetail.swift */; };
 		7201F24E3D1190FA2E6F09CB /* Info-iPad.plist in Resources */ = {isa = PBXBuildFile; fileRef = E6AC62B2E29B7931B3D836B6 /* Info-iPad.plist */; };
@@ -26,11 +27,13 @@
 		A2238941ECE21FBB30DE48CA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 		A382431DD2D7A1BB74017B3F /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */; };
 		A5753F2E48C3030B374C0BCB /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
+		BC05734168F2524810868806 /* Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6629068B08CFDCF4BEA7DB9 /* Playback.swift */; };
 		C16C4AC8969FD4372611DCFB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 		D0DE15FC0DD46865143A6DDE /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */; };
 		D37D6697BF44C16D12BDB2F0 /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = A9EEAB3D015E479C9E4F8105 /* MaktabaKit */; };
 		D71932B2D7081414CEC9D39D /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */; };
 		DA70F8CCD0140FFCE32849A5 /* VideoDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98AED34220C815DD101BEDF /* VideoDetail.swift */; };
+		E087CBF011108E4B80A65DA6 /* Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6629068B08CFDCF4BEA7DB9 /* Playback.swift */; };
 		E0A70A830327B0968EAA194D /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
 		E874C97168BF20243A33317A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -54,6 +57,7 @@
 		D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E6AC62B2E29B7931B3D836B6 /* Info-iPad.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPad.plist"; sourceTree = "<group>"; };
 		F2E7A424529D8DE1BCD5975E /* Maktaba Remote iPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Maktaba Remote iPad.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F6629068B08CFDCF4BEA7DB9 /* Playback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Playback.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -157,6 +161,7 @@
 				1AB8DED5864DCE439AEB8ADA /* Info-iPhone.plist */,
 				4C1CBAB2A2706F209CE79B0E /* Info-Mac.plist */,
 				71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */,
+				F6629068B08CFDCF4BEA7DB9 /* Playback.swift */,
 				AD2EE657B05C62BB473F4249 /* Player-Mac.entitlements */,
 				C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */,
 				B98AED34220C815DD101BEDF /* VideoDetail.swift */,
@@ -394,6 +399,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D71932B2D7081414CEC9D39D /* LibraryBrowser.swift in Sources */,
+				BC05734168F2524810868806 /* Playback.swift in Sources */,
 				E0A70A830327B0968EAA194D /* PlayerApp.swift in Sources */,
 				734F1DE5823302E7A7C6F546 /* VideoDetail.swift in Sources */,
 			);
@@ -404,6 +410,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A382431DD2D7A1BB74017B3F /* LibraryBrowser.swift in Sources */,
+				E087CBF011108E4B80A65DA6 /* Playback.swift in Sources */,
 				A5753F2E48C3030B374C0BCB /* PlayerApp.swift in Sources */,
 				6530CBABD0F3D2E98500640E /* VideoDetail.swift in Sources */,
 			);
@@ -414,6 +421,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D0DE15FC0DD46865143A6DDE /* LibraryBrowser.swift in Sources */,
+				5B3CEF53F6B93BDACEC04AD1 /* Playback.swift in Sources */,
 				1041FCA639CA3B5FF05E1C8A /* PlayerApp.swift in Sources */,
 				DA70F8CCD0140FFCE32849A5 /* VideoDetail.swift in Sources */,
 			);

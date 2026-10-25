@@ -13,6 +13,11 @@ package main
 //     are checked by the API (GET /api/auth/me must answer 200); a good
 //     answer is cached for streamAuthTTL so segment fetches do not each
 //     cost an API round trip;
+//   - except a video's paths carrying a signed URL (?sig=): the streaming
+//     service checks that signature itself (audience, session or video,
+//     expiry, library) on every one of them, as on its own port, and the
+//     API signs it for the video's length plus an hour because a native
+//     player (AVPlayer) sends neither a cookie nor a fresh token mid-video;
 //   - strips Cookie and Authorization before proxying, so the session
 //     never reaches the streaming service.
 //
@@ -46,24 +51,39 @@ const streamAuthCacheMax = 1024
 
 const uuidRe = `[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`
 
-var streamPathRes = []*regexp.Regexp{
-	// a channel's live HLS (streaming/internal/channel/handler.go)
-	regexp.MustCompile(`^/stream/channel/` + uuidRe + `/(index\.m3u8|master\.m3u8|manifest\.m3u8|live\.ts|seg-[0-9]{1,12}\.ts)$`),
-	// with TV slots (Epic 33 story 33.1) the front door's stitched playlist
-	// lists each segment under the slot it came from: s/{slot}/seg-N.ts
-	regexp.MustCompile(`^/stream/channel/` + uuidRe + `/s/(blue|green|amber)/seg-[0-9]{1,12}\.ts$`),
-	// a video session (streaming/internal/server/server.go): master
-	// playlist / DASH manifest, rendition playlists and segments,
-	// subtitles and chapters
+// signedStreamPathRes are a video's paths: the streaming service wants a
+// signed URL on each (streaming/internal/server/server.go, auth.SignedURL).
+var signedStreamPathRes = []*regexp.Regexp{
+	// a video session: master playlist / DASH manifest, rendition
+	// playlists and segments, subtitles and chapters
 	regexp.MustCompile(`^/stream/` + uuidRe + `/(manifest\.m3u8|manifest\.mpd|chapters\.json|subs/auto\.vtt|subs/sidecar/[A-Za-z0-9_-]{1,32}\.vtt)$`),
 	regexp.MustCompile(`^/stream/` + uuidRe + `/[A-Za-z0-9_-]{1,32}/(index\.m3u8|[A-Za-z0-9_-]{1,64}\.(ts|m4s|mp4|aac|vtt))$`),
 	// direct play of a video
 	regexp.MustCompile(`^/stream/direct/` + uuidRe + `$`),
 }
 
+var streamPathRes = append([]*regexp.Regexp{
+	// a channel's live HLS (streaming/internal/channel/handler.go)
+	regexp.MustCompile(`^/stream/channel/` + uuidRe + `/(index\.m3u8|master\.m3u8|manifest\.m3u8|live\.ts|seg-[0-9]{1,12}\.ts)$`),
+	// with TV slots (Epic 33 story 33.1) the front door's stitched playlist
+	// lists each segment under the slot it came from: s/{slot}/seg-N.ts
+	regexp.MustCompile(`^/stream/channel/` + uuidRe + `/s/(blue|green|amber)/seg-[0-9]{1,12}\.ts$`),
+}, signedStreamPathRes...)
+
 // stagingPathRe is the staging preview of a channel (story 33.6): admins only.
 var stagingPathRe = regexp.MustCompile(`^/stream/staging/channel/` + uuidRe +
 	`/(index\.m3u8|s/(blue|green|amber)/seg-[0-9]{1,12}\.ts)$`)
+
+// signedStreamPath reports whether path is a video's, which the streaming
+// service guards with its signed URL.
+func signedStreamPath(path string) bool {
+	for _, re := range signedStreamPathRes {
+		if re.MatchString(path) {
+			return true
+		}
+	}
+	return false
+}
 
 // allowedStreamPath reports whether path is one the web app loads.
 func allowedStreamPath(path string) bool {
@@ -117,6 +137,10 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		pagetheme.NotFound(w, r)
 		return
 	}
+	if !staging && r.URL.Query().Get("sig") != "" && signedStreamPath(r.URL.Path) {
+		g.forward(w, r)
+		return
+	}
 	cookie, authz := r.Header.Get("Cookie"), r.Header.Get("Authorization")
 	if cookie == "" && authz == "" {
 		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
@@ -131,6 +155,11 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		pagetheme.Error(w, r, "the staging preview is for admins", http.StatusForbidden)
 		return
 	}
+	g.forward(w, r)
+}
+
+// forward hands the request to the streaming proxy without the session.
+func (g *streamGate) forward(w http.ResponseWriter, r *http.Request) {
 	out := r.Clone(r.Context())
 	out.Header.Del("Cookie")
 	out.Header.Del("Authorization")

@@ -164,6 +164,43 @@ func TestStreamGateNeedsASignedInSession(t *testing.T) {
 	}
 }
 
+// A video's paths with a signed URL pass without a session (a native player
+// sends none; the streaming service checks the signature), and without the
+// session's cookie; a channel's do not, nor a video's without ?sig=.
+func TestStreamGateLetsSignedVideoURLsThrough(t *testing.T) {
+	mux, be, _, _ := webMux(t)
+	for _, path := range []string{
+		"/stream/" + sessID + "/manifest.m3u8?sig=x.y.z",
+		"/stream/" + sessID + "/v0/index.m3u8?sig=x.y.z",
+		"/stream/" + sessID + "/v0/seg-3.ts?sig=x.y.z",
+		"/stream/direct/" + sessID + "?sig=x.y.z",
+	} {
+		if rec := get(mux, path, map[string]string{"Cookie": "mkt_sess=forged"}); rec.Code != 200 {
+			t.Errorf("%s: %d %q", path, rec.Code, rec.Body.String())
+		}
+	}
+	for _, path := range []string{
+		"/stream/channel/" + chanID + "/index.m3u8?sig=x.y.z",
+		"/stream/" + sessID + "/manifest.m3u8",
+		"/stream/" + sessID + "/manifest.m3u8?sig=",
+		"/stream/direct/" + sessID,
+	} {
+		if rec := get(mux, path, nil); rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s: %d, want 401", path, rec.Code)
+		}
+	}
+	be.mu.Lock()
+	defer be.mu.Unlock()
+	if len(be.paths) != 4 {
+		t.Errorf("streaming saw %v", be.paths)
+	}
+	for _, c := range be.cookies {
+		if c != "" {
+			t.Errorf("the session reached streaming: %q", c)
+		}
+	}
+}
+
 func TestStreamGateAllowList(t *testing.T) {
 	mux, be, _, _ := webMux(t)
 	for _, path := range []string{
