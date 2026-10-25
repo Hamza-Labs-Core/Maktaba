@@ -129,7 +129,8 @@ the command that installs it for your distribution (the terminal setup offers to
   open it and follow the setup. The window is the web app; the tray shows the server's status.
   The `.deb` depends on `ffmpeg` and the `.rpm` requires it; on Fedora and RHEL turn RPM Fusion on
   first (`sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm`),
-  or dnf finds no `ffmpeg` for it.
+  or dnf finds no `ffmpeg` for it. The `.deb` and the `.rpm` are in the package repositories too
+  (`sudo apt install maktaba`, `sudo dnf install maktaba`, once the repository is added as below).
   The app updates itself from the release's signed updates, installing one only when its signature
   matches the key built into the app ([auto-update](docs/auto-update.md)), and moves the server to
   the new version at its next start.
@@ -163,13 +164,16 @@ every artifact is checksummed and signed with keyless cosign:
 # Linux / macOS — one-line installer (detects OS + arch, verifies checksum)
 curl -fsSL https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/packaging/install.sh | bash
 
-# Debian / Ubuntu — native package (systemd unit, maktaba user, migrations)
-sudo apt install ./maktaba-server_<ver>-1_amd64.deb
+# Debian / Ubuntu — native package (systemd unit, maktaba user), from the repository
+curl -fsSL https://packages.maktaba.dev/maktaba.gpg | sudo tee /usr/share/keyrings/maktaba.gpg >/dev/null
+curl -fsSL https://packages.maktaba.dev/apt/maktaba.list | sudo tee /etc/apt/sources.list.d/maktaba.list
+sudo apt update && sudo apt install maktaba-server
 
-# Fedora / RHEL / CentOS
-sudo dnf install ./maktaba-server-<ver>-1.x86_64.rpm
+# Fedora / RHEL / CentOS, from the repository
+sudo curl -fsSL -o /etc/yum.repos.d/maktaba.repo https://packages.maktaba.dev/rpm/maktaba.repo
+sudo dnf install maktaba-server
 
-# macOS — Homebrew
+# macOS — Homebrew (the server; it updates itself)
 brew install hamza-labs-core/tap/maktaba
 ```
 

@@ -2,6 +2,7 @@
 // signed bundles desktop-release.yml staged (see package updaterfeed).
 //
 //	updater-feed --dir staged --repo owner/name --tag v1.5.0 [--notes TEXT] [--out latest.json]
+//	updater-feed --verify --dir downloaded --pubkey KEY --tag v1.5.0   (check bundles, write nothing)
 package main
 
 import (

@@ -799,9 +799,10 @@ jobs:
               -C staged/web-dist -cf - . | gzip -n > "dist/maktaba-web-${TAG}.tar.gz"
           ls -l dist
 
-      # Fill the Homebrew formula template with this release's version and
-      # the SHA-256 of each macOS archive, then publish it as a release
-      # asset. If a tap repo + token are configured, also push it there.
+      # Fill the Homebrew formula template with this release's version and the SHA-256 of
+      # each macOS archive, as a release asset (signed with the rest). packages.yml commits
+      # it to the tap once the release is published as the newest stable one (a formula
+      # pushed here named a draft's files, and a maintenance release took the tap back).
       - name: Generate Homebrew formula
         env:
           TAG: ${{ github.ref_name }}
@@ -810,45 +811,9 @@ jobs:
           ver="${TAG#v}"
           sha_arm="$(sha256sum "dist/maktaba-server-${ver}-darwin-arm64.tar.gz" | awk '{print $1}')"
           sha_amd="$(sha256sum "dist/maktaba-server-${ver}-darwin-amd64.tar.gz" | awk '{print $1}')"
-          # only the formula's own lines: its header comment names the placeholders
-          sed -e "/^[[:space:]]*#/!s/__VERSION__/${ver}/g" \
-              -e "/^[[:space:]]*#/!s/__SHA256_DARWIN_ARM64__/${sha_arm}/g" \
-              -e "/^[[:space:]]*#/!s/__SHA256_DARWIN_AMD64__/${sha_amd}/g" \
-              deploy/packaging/homebrew/maktaba.rb > dist/maktaba.rb
+          bash tools/release/homebrew-tap.sh formula "${ver}" "${sha_arm}" "${sha_amd}" > dist/maktaba.rb
           echo "----- generated dist/maktaba.rb -----"
           cat dist/maktaba.rb
-
-      # Optional: commit the formula to a separate homebrew-tap repo so
-      # `brew install <owner>/tap/maktaba` works. No-op unless both the
-      # HOMEBREW_TAP_REPO repo variable (e.g. "owner/homebrew-tap") and a
-      # HOMEBREW_TAP_TOKEN secret (a PAT with `contents:write` on the tap)
-      # are set — so the default repo's release still succeeds without it.
-      # never for a pre-release: the tap's formula is the stable one
-      - name: Publish formula to tap
-        if: ${{ vars.HOMEBREW_TAP_REPO != '' && !contains(github.ref_name, '-') }}
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "HOMEBREW_TAP_REPO set but HOMEBREW_TAP_TOKEN secret missing; skipping tap push." >&2
-            exit 0
-          fi
-          tmp="$(mktemp -d)"
-          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" "${tmp}"
-          mkdir -p "${tmp}/Formula"
-          cp dist/maktaba.rb "${tmp}/Formula/maktaba.rb"
-          git -C "${tmp}" config user.name "maktaba-release-bot"
-          git -C "${tmp}" config user.email "maktaba@hamzalabs.dev"
-          git -C "${tmp}" add Formula/maktaba.rb
-          if git -C "${tmp}" diff --cached --quiet; then
-            echo "Formula already up to date in tap."
-          else
-            git -C "${tmp}" commit -m "maktaba ${TAG}"
-            git -C "${tmp}" push origin HEAD
-          fi
 
       # The previous release's release.json bounds breaks_previous_home and carries
       # min_upgrade_from forward: the highest published version below this tag, the
@@ -1005,16 +970,21 @@ jobs:
           TAG: ${{ github.ref_name }}
           # the apps' feed is required before publishing when the apps can update
           REQUIRE_FEED: ${{ vars.TAURI_UPDATER_PUBKEY != '' }}
+          PACKAGES_URL: ${{ vars.MAKTABA_PACKAGES_URL }}
         run: |
           set -euo pipefail
+          repos=""
+          if [ -n "${PACKAGES_URL}" ]; then
+            repos=" (or from the apt / dnf repositories, which carry every stable release: ${PACKAGES_URL})"
+          fi
           notes="Automated release for ${TAG}.
 
           ### Install
 
           - **Linux/macOS (script):** download \`install.sh\` below with \`checksums.txt\` and \`checksums.txt.sigstore.json\`, verify them (below), then \`bash install.sh\`; on Linux, \`bash install.sh --app\` installs the whole server for a machine without a desktop
-          - **Debian/Ubuntu:** download the \`.deb\` below, then \`sudo apt install ./maktaba-server_*.deb\`
-          - **Fedora/RHEL:** download the \`.rpm\` below, then \`sudo dnf install ./maktaba-server-*.rpm\`
-          - **macOS (Homebrew):** \`maktaba.rb\` formula is attached (and pushed to the tap when configured)
+          - **Debian/Ubuntu:** download the \`.deb\` below, then \`sudo apt install ./maktaba-server_*.deb\`${repos}
+          - **Fedora/RHEL:** download the \`.rpm\` below, then \`sudo dnf install ./maktaba-server-*.rpm\`${repos}
+          - **macOS (Homebrew):** \`brew install hamza-labs-core/tap/maktaba\` (the server; it updates itself), \`brew install --cask hamza-labs-core/tap/maktaba-app\` (the app): the tap follows each stable release; \`maktaba.rb\` is attached
           - **Windows / manual:** grab the matching \`.tar.gz\` / \`.zip\` archive
           - **Linux, one installation that runs everything (Epic 39):** the \`Maktaba_*.AppImage\` (or its \`.deb\` / \`.rpm\`) from the desktop build; on a machine without a desktop, \`maktaba-linux-payload-*-<x86_64|aarch64>.tar.gz\`: the same server, Postgres and Python (ffmpeg is the distribution's: setup names the command that installs it), run as a systemd user service
           - **Worker machine (join a home, no checkout):** unpack \`maktaba-node-*.tar.gz\` (macOS/Linux) or \`maktaba-node-*.zip\` (Windows) and run \`install-node.sh\` / \`windows\\install-node.ps1\`: it installs this release's \`maktaba_pipeline-*.whl\` (also attached, with its \`-constraints.txt\`). See docs/cluster/join-a-machine.md.

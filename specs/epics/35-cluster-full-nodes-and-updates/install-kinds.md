@@ -43,7 +43,7 @@ run.**
 | **Windows app** (Epic 38) | `MAKTABA_APP_BUNDLE` in `<install>\server` beside `Maktaba.exe` | same (a plain copy) | same; the NSIS installer's hooks stop and start the server | same |
 | **Linux app** (Epic 39; `MAKTABA_RUNTIME_OWNER=app`) | the launcher runs from a runtime copy | download the release's `maktaba-linux-payload-<v>-<arch>.tar.gz`, verified against the signed `checksums.txt`, installed as a new runtime directory; rehearse (home) | order it from the app (nothing for it to fetch: it shows it); after a click there and the home's go, `runtime/current` → the new directory, `previous` → the old; exit 75 (the launcher starts `runtime/current` again) | `current` → `previous`; exit 75 |
 | **Headless** (`install.sh --app`; `MAKTABA_RUNTIME_OWNER=headless`) | the same runtime copy | the same | by itself, in the window: the switch above, no order | the same |
-| **Plain server** (`setup --self-managed`, `.deb`/`.rpm` in the layout) | `MAKTABA_LAUNCHER=1`, `bin/releases/<v>` | `releaseverify/install.Stage` into `bin/releases/<v>` with the release's migrations; **the pipeline's environment** `bin/releases/<v>/venv` built from the release's wheel and hash-checked constraints (verified like every file) with the machine's Python (§3.4); smoke (`python -m maktaba_pipeline --version` says the wheel's version, PEP 440's spelling of the release's); rehearse (home) | `current` = `<v>` under the launcher's guard (`pending`); exit 75; the pipeline runs the release's venv | `current` = `previous`; exit 75 |
+| **Plain server** (`setup --self-managed`, `.deb`/`.rpm` and the Homebrew formula in the layout) | `MAKTABA_LAUNCHER=1`, `bin/releases/<v>` | `releaseverify/install.Stage` into `bin/releases/<v>` with the release's migrations; **the pipeline's environment** `bin/releases/<v>/venv` built from the release's wheel and hash-checked constraints (verified like every file) with the machine's Python (§3.4); smoke (`python -m maktaba_pipeline --version` says the wheel's version, PEP 440's spelling of the release's); rehearse (home) | `current` = `<v>` under the launcher's guard (`pending`); exit 75; the pipeline runs the release's venv | `current` = `previous`; exit 75 |
 
 A **flat** install (binaries copied by hand, no launcher) has nothing to fall back with: its run
 fails its preflight with `not_self_managed` and the one command that converts it
@@ -212,6 +212,14 @@ updated its runtime) offers its own update for its window and tray.
   (its server up a minute, nothing pending). One this install cannot replace (a package's, a
   Windows service's) refuses the release before it installs, naming the commands that do it by
   hand.
+- **Package-managed installs** (`.deb`/`.rpm`, from a release or the apt/dnf repositories, and
+  the Homebrew formula): the package owns the launcher, the updater owns the releases
+  (`bin/releases/<v>` under `/var/lib/maktaba`, or brew's `var/maktaba/server`), so they update
+  by themselves like any plain server. The package manager brings a new launcher (`apt upgrade`,
+  `dnf upgrade`, `brew upgrade`) and its release only when that is newer than what the updater
+  installed; the repositories and the tap follow each stable release by themselves
+  (`packages.yml`, after the release is published). A release that needs a newer launcher than
+  the package's refuses before it installs, naming that command (`launcher_protocol`).
 - **The pipeline's environment on a plain server**: built with the extras of the environment it
   replaces (its bootstrap's `maktaba-venv.json`, else the extras whose requirements it has
   installed; `dev` never), so a worker given the STT extras keeps them; packages added by hand

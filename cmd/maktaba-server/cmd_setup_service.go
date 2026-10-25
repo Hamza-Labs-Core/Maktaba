@@ -98,7 +98,9 @@ func runLayoutSetup(f layoutFlags) error {
 	logf := func(s string) { fmt.Println("  " + s) }
 
 	if f.selfManaged {
-		if selfmanaged.HomebrewManaged(from) {
+		// the formula's own service stages its release this way (identity package): brew
+		// owns the launcher, the updater the releases, so its updates stay on
+		if selfmanaged.HomebrewManaged(from) && f.identity != selfmanaged.IdentityPackage {
 			fmt.Printf("This install is managed by Homebrew (%s): automatic updates are off for it.\n", from)
 			fmt.Printf("Converting copies it to %s; stop Homebrew's service first: brew services stop maktaba\n", root)
 		}

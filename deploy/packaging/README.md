@@ -16,7 +16,7 @@ The [`release.yml`](../../.github/workflows/release.yml) workflow runs on a
 | `maktaba-server-<ver>-windows-amd64.zip` | `package-archives` | windows/amd64 |
 | `maktaba-server_<ver>-1_<arch>.deb` | `package-nfpm` (nfpm) | amd64, arm64 |
 | `maktaba-server-<ver>-1.<arch>.rpm` | `package-nfpm` (nfpm) | x86_64, aarch64 |
-| `maktaba.rb` (Homebrew formula) | `sign-and-release` | macOS arm64 + amd64 |
+| `maktaba.rb` (Homebrew formula) | `sign-and-release` | macOS arm64 + amd64; [`packages.yml`](../../.github/workflows/packages.yml) commits it to the tap, with the Mac app's cask, once the release is published as the newest stable one |
 | `maktaba-cloud-<os>-<arch>` (relay) | `build-artifacts` | linux/{amd64,arm64} |
 | `maktaba-web-<tag>.tar.gz` (web bundle) | `build-artifacts` | n/a |
 | `maktaba-linux-payload-<ver>-<x86_64\|aarch64>.tar.gz` | `package-linux-payload` ([`tools/release/linux-app`](../../tools/release/linux-app/README.md)) | the Linux app's server payload (Go binaries, Postgres 16 with its libraries, Python, the pipeline wheel; ffmpeg is the distribution's) for a machine without a desktop: `install.sh --app` ([Epic 39](../../specs/epics/39-linux-app/headless.md)) |
@@ -103,7 +103,8 @@ install wrote.
 | `scripts/postinstall.sh` | create `maktaba` user, dirs, enable the service on a first install; on an upgrade restart it if it was running (migrations are the release's own start's: its database step) |
 | `scripts/preremove.sh` | on uninstall, stop and disable the service (an upgrade leaves it to postinstall) |
 | `scripts/postremove.sh` | `systemctl daemon-reload` after removal |
-| `homebrew/maktaba.rb` | Homebrew formula **template** (`__VERSION__` / `__SHA256_*__` filled at release) |
+| `homebrew/maktaba.rb` | Homebrew formula **template** (`__VERSION__` / `__SHA256_*__` filled at release; the server, self-managed: its service runs the launcher) |
+| `homebrew/maktaba-app.rb` | Homebrew cask **template** for the Mac app (filled by `packages.yml` from the release's checked app bundle) |
 | `launchd/com.maktaba.*.plist` | macOS launchd units |
 | `install.sh` | curl-pipe-bash installer (detect OS/arch, download, verify, install) |
 | `node/` | worker-only install for a machine that joined a home (Epic 31): launchd agent, systemd units, Windows task/service, installers, and `build-release.sh` for the release's node assets — see [`node/README.md`](node/README.md) |
@@ -156,20 +157,37 @@ The conversion copies (does not move) `maktaba-server`, `maktaba-api`,
 records their digests in `.verified` (`identity: "migrated"`), writes
 `current` and `watermark`, puts the launcher at the root and rewrites the
 service. `server.toml`, `secrets.key` and `node.json` stay where they are.
-Homebrew installs are not converted automatically (brew owns the Cellar);
-stop brew's service first (`brew services stop maktaba`).
+
+The **Homebrew formula** is self-managed already, as the `.deb`/`.rpm` are: brew owns the
+launcher, the updater owns the releases. Its service stages the formula's release under
+`$(brew --prefix)/var/maktaba/server` (`setup --self-managed --identity package`, only when it
+is newer than what the updater installed there) and runs the launcher, so the server installs
+each new release by itself in its quiet window; `brew upgrade maktaba` brings a new launcher
+(the one thing a release can need from brew: the updater says so, `launcher_protocol`). The
+`maktaba-server` on PATH runs the service's current release. A formula from before this
+(its service ran `maktaba-server serve` itself) takes the launcher at its service's next
+restart (`brew services restart maktaba`).
 
 ## Installing
 
 ```sh
-# Debian / Ubuntu
+# Debian / Ubuntu, from the repository (every stable release: maktaba-server, and the Linux
+# app, maktaba)
+curl -fsSL https://packages.maktaba.dev/maktaba.gpg | sudo tee /usr/share/keyrings/maktaba.gpg >/dev/null
+curl -fsSL https://packages.maktaba.dev/apt/maktaba.list | sudo tee /etc/apt/sources.list.d/maktaba.list
+sudo apt update && sudo apt install maktaba-server
+# ... or one release's package
 sudo apt install ./maktaba-server_<ver>-1_amd64.deb
 
-# Fedora / RHEL / CentOS
+# Fedora / RHEL / CentOS, from the repository
+sudo curl -fsSL -o /etc/yum.repos.d/maktaba.repo https://packages.maktaba.dev/rpm/maktaba.repo
+sudo dnf install maktaba-server
+# ... or one release's package
 sudo dnf install ./maktaba-server-<ver>-1.x86_64.rpm
 
-# macOS (Homebrew tap)
+# macOS (Homebrew tap): the server (it updates itself), or the Mac app
 brew install hamza-labs-core/tap/maktaba
+brew install --cask hamza-labs-core/tap/maktaba-app
 
 # Linux, the whole server for a machine without a desktop (Epic 39): the app's
 # setup in the terminal, a systemd user service; run as that user, not root, with
@@ -245,9 +263,33 @@ shellcheck deploy/packaging/install.sh deploy/packaging/scripts/*.sh
 8. Upgrade: an automatic update (docs/auto-update.md), or the package / image by hand.
    Rollback: the updater's own; by hand, see `upgrade.md`.
 
-### Optional: Homebrew tap auto-publish
+### Package repositories and the Homebrew tap
 
-Set the `HOMEBREW_TAP_REPO` repo variable (e.g. `hamza-labs-core/homebrew-tap`)
-and a `HOMEBREW_TAP_TOKEN` secret (a PAT with `contents:write` on the tap) to
-have `sign-and-release` commit the generated `maktaba.rb` to `Formula/` on each
-release. Without them, the formula is still attached as a release asset.
+[`packages.yml`](../../.github/workflows/packages.yml) brings them up to each stable release by
+itself once it is published (it runs when release.yml or desktop-release.yml completes, and acts
+only on a published release that is the newest stable one; a pre-release, a draft or a
+maintenance release changes nothing). It publishes only the release's own files, checked first:
+the server's packages and the formula against the release's Sigstore-signed `checksums.txt`, the
+Linux app's packages and the Mac app's bundle against the apps' updater key. Nothing changes what
+a machine verifies: an installed server still verifies every release it installs itself.
+
+- **apt and dnf** ([`tools/release/pkg-repo.sh`](../../tools/release/pkg-repo.sh)): one static
+  tree (`apt/`: `dists/stable`, `pool/main`; `rpm/`: `repodata`, `packages`) in an S3-compatible
+  bucket (Cloudflare R2 by default) served at `https://packages.maktaba.dev`, with the three
+  newest versions of each package. The indexes are signed with the repository's key (apt's
+  `InRelease`, dnf's `repomd.xml.asc`, `repo_gpgcheck=1`) and name every package's SHA-256; the
+  packages stay the release's bytes. The key's public half is `maktaba.gpg` / `maktaba.asc` at
+  the root, and `index.html` says how to add the repositories. Configuration: the variables
+  `MAKTABA_PACKAGES_URL`, `MAKTABA_PACKAGES_BUCKET`, `MAKTABA_PACKAGES_ENDPOINT` (R2's S3 API;
+  empty for AWS, with `MAKTABA_PACKAGES_REGION`), and the secrets `MAKTABA_PACKAGES_ACCESS_KEY_ID`,
+  `MAKTABA_PACKAGES_SECRET_ACCESS_KEY`, `MAKTABA_REPO_SIGNING_KEY` (the armored private key) and
+  `MAKTABA_REPO_SIGNING_PASSPHRASE` (when it has one).
+- **Homebrew** ([`tools/release/homebrew-tap.sh`](../../tools/release/homebrew-tap.sh)): the
+  release's `maktaba.rb` to `Formula/maktaba.rb` and the Mac app's cask to
+  `Casks/maktaba-app.rb`, one commit; the tap is never taken back to an older release.
+  Configuration: the variable `HOMEBREW_TAP_REPO` (e.g. `hamza-labs-core/homebrew-tap`) and the
+  secret `HOMEBREW_TAP_TOKEN` (a token with `contents:write` on the tap).
+
+Each part is skipped, with a notice on the run, until its configuration is there. The Linux app's
+packages and the cask also need `TAURI_UPDATER_PUBKEY` (without it the apps cannot update
+either, and they are left out).
