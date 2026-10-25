@@ -53,8 +53,11 @@ UNIT_PER_TEST_SOFT_CAP  ?= 400ms
 # modules one after another, then pytest). 2m30s failed PRs whose every
 # test passed (2m30.5s, 2m31.9s). 3m30s is the slowest of those runs plus
 # ~40%, for runner noise and the next tests; a test that hangs, or a
-# slowdown that takes the tier past it, still fails.
-INTEGRATION_TIER_BUDGET ?= 3m30s
+# slowdown that takes the tier past it, still fails. By 2026-10-25 every
+# test passed in runs of 3m35s-3m50s (Epic 36's index worker, the error
+# logging, the claim loop's tests) and the tier failed main on time alone,
+# holding releases: 5m is the slowest of those plus ~30%.
+INTEGRATION_TIER_BUDGET ?= 5m
 E2E_TIER_BUDGET         ?= 5m
 MEDIA_E2E_TIER_BUDGET   ?= 9m
 PERF_CI_TIER_BUDGET     ?= 2m
