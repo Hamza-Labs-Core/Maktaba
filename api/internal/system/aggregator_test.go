@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
 // helper that builds a fake service whose /readyz returns the given
