@@ -42,10 +42,14 @@ func BackupsKeep(dir string, def int) int {
 	return def
 }
 
+// ReplacedDumpPrefix starts the name of a dump of the database a restore by hand replaced
+// (replaced-<version>-<utc>.dump: story 35.5 AC8).
+const ReplacedDumpPrefix = "replaced-"
+
 // PruneBackups keeps, in a backups folder, the newest keep pre-update dumps (pre-*.dump,
-// keepPath always) and the newest keep dumps of failed updates (failed-*.dump), and
-// removes the folders of rehearsals a crash left (.rehearse-*, older than an hour): each
-// holds a whole database.
+// keepPath always), the newest keep dumps of failed updates (failed-*.dump) and as many of
+// databases a restore replaced (replaced-*.dump), and removes the folders of rehearsals a
+// crash left (.rehearse-*, older than an hour): each holds a whole database.
 func PruneBackups(dir, keepPath string, keep int) error {
 	keep = max(keep, 1)
 	entries, err := os.ReadDir(dir)
@@ -75,7 +79,7 @@ func PruneBackups(dir, keepPath string, keep int) error {
 		if !strings.HasSuffix(name, backupSuffix) {
 			continue
 		}
-		for _, prefix := range []string{updateDumpPrefix, "failed-"} {
+		for _, prefix := range []string{updateDumpPrefix, "failed-", ReplacedDumpPrefix} {
 			if strings.HasPrefix(name, prefix) {
 				kinds[prefix] = append(kinds[prefix], dump{filepath.Join(dir, name), info.ModTime()})
 			}

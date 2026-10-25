@@ -3695,6 +3695,8 @@
   "setup.starting.detail.db_migrate_failed": "The library database could not be brought up to date for {release}.",
   "setup.starting.detail.db_restore_failed": "The update to {failed} could not change the library database, and putting it back from {dump} failed too. Maktaba stays stopped; its next start tries again.",
   "setup.starting.detail.db_restore_unfinished": "The library database is being put back as it was before the update to {failed} (from {dump}): start the whole server to finish it.",
+  "setup.starting.detail.db_restoring_backup": "Putting the library database back from the backup {dump}, as {by} asked.",
+  "setup.starting.detail.db_restore_backup_failed": "Putting the library database back from the backup {dump} failed. Nothing was changed; Maktaba stays stopped and its next start tries again.",
   "setup.starting.detail.db_no_cluster": "The update to {failed} could not change the library database, and this Maktaba runs no database of its own to put {dump} back into.",
   "setup.starting.detail.db_record_failed": "The library database's record ({path}) cannot be read or saved.",
   "setup.starting.detail.pg_unreadable": "The library database ({path}) cannot be read.",

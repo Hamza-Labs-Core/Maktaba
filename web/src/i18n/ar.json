@@ -3708,6 +3708,8 @@
   "setup.starting.detail.db_migrate_failed": "تعذّر تحديث قاعدة بيانات المكتبة لتوافق {release}.",
   "setup.starting.detail.db_restore_failed": "لم يتمكن التحديث إلى {failed} من تعديل قاعدة بيانات المكتبة، وفشلت إعادتها من {dump} أيضًا. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة.",
   "setup.starting.detail.db_restore_unfinished": "جارٍ إعادة قاعدة بيانات المكتبة كما كانت قبل التحديث إلى {failed} (من {dump}): شغّل الخادم كاملًا لإتمام ذلك.",
+  "setup.starting.detail.db_restoring_backup": "جارٍ إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية {dump}، بطلب من {by}.",
+  "setup.starting.detail.db_restore_backup_failed": "فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية {dump}. لم يتغيّر شيء؛ تبقى مكتبة متوقفة ويعيد تشغيلها التالي المحاولة.",
   "setup.starting.detail.db_no_cluster": "لم يتمكن التحديث إلى {failed} من تعديل قاعدة بيانات المكتبة، ولا تشغّل هذه النسخة من مكتبة قاعدة بيانات خاصة بها لإعادة {dump} إليها.",
   "setup.starting.detail.db_record_failed": "تتعذّر قراءة سجل قاعدة بيانات المكتبة ({path}) أو حفظه.",
   "setup.starting.detail.pg_unreadable": "تتعذّر قراءة قاعدة بيانات المكتبة ({path}).",

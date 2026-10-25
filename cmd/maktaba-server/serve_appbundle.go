@@ -428,7 +428,9 @@ func (g *migrationGate) backups() string {
 // dumpAside dumps the database as a failed update left it (failed-<version>-<utc>.dump
 // beside the backups), unless that was done already for this failure (the update's own
 // rollback does it before it switches back; a launcher's fallback, a boot loop or a
-// refusal does not). Best effort: the putting back goes on either way (D2).
+// refusal does not). A restore by hand sets aside the database it replaces
+// (replaced-<version>-<utc>.dump), once since it was asked. Best effort: the putting
+// back goes on either way (D2).
 func (g *migrationGate) dumpAside(ctx context.Context, rec apppayload.Database) {
 	dir := g.backups()
 	since := time.Time{}
@@ -436,6 +438,9 @@ func (g *migrationGate) dumpAside(ctx context.Context, rec apppayload.Database) 
 		since = st.ModTime()
 	}
 	prefix := "failed-" + rec.Failed + "-"
+	if rec.By != "" {
+		prefix, since = pgbundle.ReplacedDumpPrefix+rec.Version+"-", rec.At
+	}
 	if ents, err := os.ReadDir(dir); err == nil {
 		for _, e := range ents {
 			if info, err := e.Info(); err == nil && strings.HasPrefix(e.Name(), prefix) &&
@@ -803,6 +808,9 @@ func (g *migrationGate) restore(ctx context.Context, rec apppayload.Database, re
 			"library database (%s), and this Maktaba runs no database of its own to put %s back into",
 			rec.Failed, rec.Error, rec.Dump), rec.Failed, rec.Error, rec.Dump))
 	}
+	if rec.By != "" {
+		return g.restoreAsked(ctx, rec, report)
+	}
 	report(detail("db_restoring", fmt.Sprintf("The update to %s could not change the library database: putting it "+
 		"back as it was", rec.Failed), rec.Failed, rec.Dump))
 	g.dumpAside(ctx, rec)
@@ -844,6 +852,33 @@ func (g *migrationGate) restore(ctx context.Context, rec apppayload.Database, re
 		return rec, err
 	}
 	fmt.Fprintf(g.log, "[serve] the library database is back as it was before the update to %s\n", rec.Failed)
+	return done, nil
+}
+
+// restoreAsked puts back a backup a person asked for (rec.By: story 35.5 AC8), before
+// any role runs: the database it replaces set aside first, the dump put back as a failed
+// update's is (one transaction, the machines' copies made anew), and recorded restored
+// with the release it was put back for. No update attempt: nothing failed.
+func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Database, report func(supervisor.Detail)) (apppayload.Database, error) {
+	report(detail("db_restoring_backup", fmt.Sprintf("Putting the library database back from %s, as %s asked",
+		rec.Dump, rec.By), rec.Dump, rec.By))
+	g.dumpAside(ctx, rec)
+	fmt.Fprintf(g.log, "[serve] restore asked by %s: putting %s back for %s\n", rec.By, rec.Dump, orUnknown(rec.From))
+	err := g.putBack(ctx, rec.Dump)
+	if ctx.Err() != nil {
+		return rec, ctx.Err() // the record still says restoring: the next start finishes it
+	}
+	if err != nil {
+		return rec, supervisor.Halt(detailErr("db_restore_backup_failed", fmt.Sprintf("putting the library database "+
+			"back from %s failed: %v. Nothing was changed; Maktaba stays stopped and its next start tries again",
+			rec.Dump, err), rec.Dump, err.Error()))
+	}
+	done := apppayload.Database{Version: rec.From, State: apppayload.DatabaseRestored, From: rec.From, Dump: rec.Dump,
+		By: rec.By}
+	if err := g.save(done); err != nil {
+		return rec, err
+	}
+	fmt.Fprintf(g.log, "[serve] the library database is back as it was in %s\n", rec.Dump)
 	return done, nil
 }
 

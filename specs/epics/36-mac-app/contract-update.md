@@ -151,6 +151,8 @@ takes a new code.
 | `db_migrate_failed` | `release`, `error` | The library database could not be brought up to date for `release`: `error` (no update: tried again) |
 | `db_restore_failed` | `failed`, `error`, `dump`, `restore_error` | The update to `failed` could not change the library database (`error`), and putting the database back from `dump` failed too: `restore_error`. Maktaba stays stopped; its next start tries to put it back again |
 | `db_restore_unfinished` | `failed`, `dump` | The library database is being put back as it was before the update to `failed` (from `dump`): start the whole server (`maktaba-server serve`) to finish it |
+| `db_restoring_backup` | `dump`, `by` | Putting the library database back from the backup `dump`, as `by` asked (a restore by hand, Epic 35 story 35.5 AC8) |
+| `db_restore_backup_failed` | `dump`, `error` | Putting the library database back from the backup `dump` failed: nothing was changed; Maktaba stays stopped and its next start tries again |
 | `db_no_cluster` | `failed`, `error`, `dump` | The update to `failed` could not change the library database (`error`), and this Maktaba runs no database of its own to put `dump` back into |
 | `db_record_failed` | `path`, `error` | The library database's record (`path`) cannot be read or saved: `error` |
 | `pg_unreadable` | `path`, `error` | The library database (`path`) cannot be read: `error` |

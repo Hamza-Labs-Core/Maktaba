@@ -62,6 +62,8 @@ const envAppBundled = "MAKTABA_APP_BUNDLED"
 // updates is serve's update machinery.
 type updates struct {
 	m *updater.Machine
+	// r restores the home's backups by hand (serve_restore.go; nil on a node)
+	r *restorer
 	// health's view of this machine, and its processes' stop, set once the supervisor
 	// exists
 	mu   sync.Mutex
@@ -348,6 +350,8 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	m := &updater.Machine{Dir: dir, Installer: inst, Exit: exit, Log: os.Stderr}
 	if home {
 		m.Records = recordFile(apppayload.DatabasePath(cfg.StateDir()))
+		u.r = newRestorer(cfg, homeDatabase(cfg, pg), inst, exit)
+		u.r.run = func() *updater.Journal { return m.Status().Journal }
 		if t := homeDatabase(cfg, pg); t != nil {
 			m.Rehearser = rehearser{*t}
 			go func() { // a crash during a rehearsal left its scratch database
@@ -475,6 +479,10 @@ func (u *updates) adminHandler(base http.Handler, token string) http.Handler {
 		}
 		if name == "log" {
 			u.serveLog(w, r)
+			return
+		}
+		if name == "backups" || name == "restore" {
+			u.serveRestore(w, r, name)
 			return
 		}
 		if name != "status" && r.Method != http.MethodPost {
