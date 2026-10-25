@@ -75,6 +75,10 @@ type MachineStatus struct {
 	Attempts []Attempt `json:"attempts,omitempty"`
 	// Backup is the dump the home's new release took before its migrations (at its commit).
 	Backup *RunBackup `json:"backup,omitempty"`
+	// HandsOver: the machine's TV processes run on across its restart (story 35.7), so its
+	// restart cuts no TV and need not wait for it to be quiet; HandoverWhy says why not.
+	HandsOver   bool   `json:"hands_over,omitempty"`
+	HandoverWhy string `json:"handover_why,omitempty"`
 }
 
 // RunBackup is a dump of the home's database a run took (update_runs.backup).

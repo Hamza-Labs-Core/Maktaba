@@ -30,7 +30,10 @@ type LayoutInstaller struct {
 	// PipelinePython is the configured [pipeline] python ("" none): the interpreter its
 	// environment was made from builds the release's.
 	PipelinePython string
-	Now            func() time.Time
+	// InUse are the releases running processes use besides the current one (the TV
+	// processes handed over across restarts, story 35.7): never pruned (nil: none).
+	InUse func() []string
+	Now   func() time.Time
 }
 
 func (li *LayoutInstaller) now() time.Time {
@@ -94,6 +97,7 @@ func (li *LayoutInstaller) Stage(ctx context.Context, j *Journal, log io.Writer)
 		return nil
 	}
 	j.LauncherProtocol = st.Result.Manifest.LauncherProtocol
+	j.EdgeProtocol = st.Result.Manifest.EdgeProtocol
 	ok, why := li.launcherReplaceable(j.Job.Version)
 	if err := checkLauncher(j, ok, why); err != nil {
 		return err
@@ -190,8 +194,13 @@ func (li *LayoutInstaller) Commit(ctx context.Context, j *Journal) error {
 	if keep < 2 {
 		keep = 3
 	}
-	// what a prune leaves is pruned by the next commit; the release is kept either way
-	_, _ = li.Layout.Prune(keep, layout.NormalizeVersion(j.From))
+	// what a prune leaves is pruned by the next commit; the release is kept either way, and
+	// so is every release a running process uses (the TV processes handed over)
+	inUse := []string{layout.NormalizeVersion(j.From)}
+	if li.InUse != nil {
+		inUse = append(inUse, li.InUse()...)
+	}
+	_, _ = li.Layout.Prune(keep, inUse...)
 	return nil
 }
 

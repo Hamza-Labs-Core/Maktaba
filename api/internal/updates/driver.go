@@ -642,6 +642,17 @@ func (d *Driver) windowDeadline(run Run, pol Policy) time.Time {
 	return end.Add(time.Duration(pol.WindowOverrunMinutes) * time.Minute)
 }
 
+// homeHandsOver reports whether the home's TV processes run on across its restart (story
+// 35.7: the TV handover): its restart cuts no TV, so no TV gate holds it.
+func homeHandsOver(det RunDetail) bool { return det.Home != nil && det.Home.HandsOver }
+
+// targetHandsOver reports whether a machine's TV processes run on across its restart, as
+// its prepared report says.
+func targetHandsOver(t Target) bool {
+	var st MachineStatus
+	return len(t.Detail) > 0 && json.Unmarshal(t.Detail, &st) == nil && st.HandsOver
+}
+
 // tvBusy reports whether more watch the TV than tv_staging.quiet_max_viewers.
 func (d *Driver) tvBusy(ctx context.Context) (bool, int) {
 	n := 0
@@ -679,7 +690,7 @@ func (d *Driver) homeGates(ctx context.Context, run Run, det RunDetail) error {
 		}
 		return d.gateFailed(ctx, run, det, code)
 	}
-	if run.Trigger != TriggerManual {
+	if run.Trigger != TriggerManual && !homeHandsOver(det) {
 		if busy, n := d.tvBusy(ctx); busy {
 			if det.Waiting != "tv_busy" {
 				det.Waiting = "tv_busy"
@@ -768,7 +779,7 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 		return nil // jobs finish (or checkpoint at the restart once the timeout passes)
 	}
 	// the gates again, right before the restart: viewers may have come during the drain
-	if run.Trigger != TriggerManual {
+	if run.Trigger != TriggerManual && !homeHandsOver(det) {
 		if busy, n := d.tvBusy(ctx); busy {
 			if deadline := d.windowDeadline(run, pol); !deadline.IsZero() && d.now().After(deadline) {
 				return d.gateFailed(ctx, run, det, "tv_busy")
@@ -1357,7 +1368,7 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 			if !connected {
 				continue
 			}
-			if run.Trigger != TriggerManual && d.machineTVBusy(ctx, t.NodeID) {
+			if run.Trigger != TriggerManual && !targetHandsOver(t) && d.machineTVBusy(ctx, t.NodeID) {
 				continue // its TV streams are watched: another machine first, this one later
 			}
 			if !d.nodeDrained(ctx, run, &det, pol, t) {

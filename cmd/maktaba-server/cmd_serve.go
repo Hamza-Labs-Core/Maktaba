@@ -225,7 +225,10 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	// left (the new release watches and commits, or the previous one records the
 	// rollback) before any role starts
 	if wholeMachine && containsRole(roles, supervisor.RoleAPI) {
-		u := startUpdates(ctx, cfg, releaseDir, node == nil, pg, node, func(int) {
+		u := startUpdates(ctx, cfg, releaseDir, node == nil, pg, node, func(code int) {
+			if up := upd.Load(); up != nil {
+				up.beforeExit(code) // an armed exit 75 hands the TV processes over (story 35.7)
+			}
 			restart.Store(true)
 			cancel()
 		})
@@ -351,6 +354,11 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	}
 	if llmOpt != nil {
 		supOpts = append(supOpts, llmOpt)
+	}
+	if dir := handoverDir(releaseDir); dir != "" {
+		// story 35.7: the TV processes' record, and the adoption of those the supervisor
+		// before handed over
+		supOpts = append(supOpts, supervisor.WithHandover(dir, launcherPID()))
 	}
 	// the ffmpeg every role runs, checked now and every ten minutes: the System
 	// health page shows the verdict (Epic 39: on Linux the distribution's)

@@ -180,6 +180,7 @@ func (ri *RuntimeInstaller) Stage(ctx context.Context, j *Journal, _ io.Writer) 
 		return err
 	}
 	j.LauncherProtocol = res.Manifest.LauncherProtocol // the new runtime brings its launcher
+	j.EdgeProtocol = res.Manifest.EdgeProtocol
 	r, err := ri.Runtime.Install(ctx, payload, nil, appruntime.Options{})
 	if err != nil {
 		return Fail("install_failed", "%v", err)

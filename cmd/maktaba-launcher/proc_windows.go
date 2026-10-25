@@ -12,14 +12,52 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// childHandle holds the kill-on-close Job Object the server runs in: when
-// the launcher dies (the logon task is ended, the service is killed) the
-// kernel closes the handle and the server goes with it, so a restarted
-// launcher never finds an orphaned server on its ports. BREAKAWAY_OK lets the
-// supervisor's own per-child jobs and the 35.7 handover leave it.
+// runJob is the kill-on-close Job Object the launcher runs every server in, held
+// for the launcher's whole life: when the launcher dies (the logon task is ended,
+// the service is killed) the kernel closes the handle and whatever runs in it
+// goes too, so a restarted launcher never finds an orphaned server on its ports.
+// Between servers the launcher ends what a server left in it, but for the TV
+// processes a server handed over to the next one (story 35.7), which stay in it.
+// BREAKAWAY_OK lets the supervisor's own per-child jobs, and the TV processes of
+// a server under a launcher from before the handover, leave it.
+type runJob struct {
+	job windows.Handle // 0: none could be made
+}
+
+func newRunJob() *runJob {
+	job, err := windows.CreateJobObject(nil, nil)
+	if err != nil {
+		return &runJob{}
+	}
+	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK
+	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation,
+		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
+		_ = windows.CloseHandle(job)
+		return &runJob{}
+	}
+	return &runJob{job: job}
+}
+
+// close closes the job when the launcher ends: kill-on-close ends what is left.
+func (j *runJob) close() {
+	if j != nil && j.job != 0 {
+		_ = windows.CloseHandle(j.job)
+		j.job = 0
+	}
+}
+
+// end ends every process in the job.
+func (j *runJob) end() {
+	if j != nil && j.job != 0 {
+		_ = windows.TerminateJobObject(j.job, 1)
+	}
+}
+
+// childHandle ties a server to the launcher's job.
 type childHandle struct {
 	mu  sync.Mutex
-	job windows.Handle
+	run *runJob
 	// proc keeps the server's pid its own until it is reaped: a CTRL_BREAK
 	// naming a pid that leads no process group goes astray (it can reach the
 	// launcher itself), so askStop asks only while this shows it running, and
@@ -47,8 +85,8 @@ var (
 	procShowWindow   = user32.NewProc("ShowWindow")
 )
 
-func attachChild(cmd *exec.Cmd) *childHandle {
-	h := &childHandle{}
+func attachChild(cmd *exec.Cmd, rj *runJob) *childHandle {
+	h := &childHandle{run: rj}
 	if p, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_SUSPEND_RESUME,
 		false, uint32(cmd.Process.Pid)); err == nil {
 		h.proc = p
@@ -59,16 +97,8 @@ func attachChild(cmd *exec.Cmd) *childHandle {
 		return h // cannot resume it either; Wait reports what happens
 	}
 	defer func() { _ = windows.CloseHandle(ph) }()
-	if job, err := windows.CreateJobObject(nil, nil); err == nil {
-		var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-		info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK
-		if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation,
-			uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err == nil &&
-			windows.AssignProcessToJobObject(job, ph) == nil {
-			h.job = job
-		} else {
-			_ = windows.CloseHandle(job)
-		}
+	if rj != nil && rj.job != 0 {
+		_ = windows.AssignProcessToJobObject(rj.job, ph)
 	}
 	if r, _, _ := procResume.Call(uintptr(ph)); r != 0 {
 		_ = cmd.Process.Kill()
@@ -79,17 +109,17 @@ func attachChild(cmd *exec.Cmd) *childHandle {
 func (h *childHandle) kill() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.job != 0 {
-		_ = windows.TerminateJobObject(h.job, 1)
-	}
+	h.run.end()
 }
 
-func (h *childHandle) release() {
+// release runs once the server has been reaped: what it left in the launcher's job
+// is ended, unless it handed the TV processes over (keep not nil, story 35.7): they
+// run on in the job for the next server to adopt.
+func (h *childHandle) release(keep map[int]bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.job != 0 {
-		_ = windows.CloseHandle(h.job)
-		h.job = 0
+	if keep == nil {
+		h.run.end()
 	}
 	if h.proc != 0 {
 		_ = windows.CloseHandle(h.proc)

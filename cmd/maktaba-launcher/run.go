@@ -108,6 +108,9 @@ type launcher struct {
 	// oldSelf: the launcher a replacement left (maktaba-launcher.old) is kept until this
 	// one's first good start (story 35.7 AC6), then removed
 	oldSelf bool
+	// job is what every server runs in (Windows: a kill-on-close job held for the
+	// launcher's life, kept across a server's TV handover)
+	job *runJob
 }
 
 // Run starts the current release and keeps it running until ctx ends or
@@ -126,8 +129,9 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	defer layout.Unlock(lk)
 	becomeSubreaper() // Linux: what a crashed server leaves behind comes back to us
-	ln := &launcher{cfg: cfg, l: l, log: newEventLog(l.LauncherLog(), cfg.Stderr, cfg.Now)}
+	ln := &launcher{cfg: cfg, l: l, log: newEventLog(l.LauncherLog(), cfg.Stderr, cfg.Now), job: newRunJob()}
 	defer ln.log.Close()
+	defer ln.job.close()
 	ln.oldSelf = cfg.Bundle == ""
 	if cfg.StopEvent != "" {
 		var release func()
@@ -469,6 +473,7 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 		EnvStopFile + "=" + stopFile,
 		layout.EnvLauncherProtocol + "=" + strconv.Itoa(LauncherProtocol),
 		layout.EnvLauncherExe + "=" + selfPath(),
+		layout.EnvLauncherHandover + "=1",
 	}
 	if ln.cfg.Bundle != "" {
 		// Not MAKTABA_LAUNCHER/RELEASE_DIR/INSTALL_ROOT: the server must not
@@ -484,6 +489,7 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 			EnvStopFile + "=" + stopFile,
 			layout.EnvLauncherProtocol + "=" + strconv.Itoa(LauncherProtocol),
 			layout.EnvLauncherExe + "=" + selfPath(),
+			layout.EnvLauncherHandover + "=1",
 		}, updateEnv(ln.cfg.RuntimeRoot)...)
 	}
 	cmd := exec.Command(server, append([]string{"serve"}, ln.cfg.Args...)...)
@@ -499,8 +505,11 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 		ln.log.Event("launcher_start_error", ver, map[string]any{"err": err.Error()})
 		return runResult{code: -1, err: err}
 	}
-	child := attachChild(cmd)
-	defer child.release()
+	child := attachChild(cmd, ln.job)
+	// what the server left behind is stopped once it has exited, but for the TV processes
+	// it handed over to the next server (story 35.7: survivors)
+	var keep map[int]bool
+	defer func() { child.release(keep) }()
 	ln.log.Event("launcher_start", ver, map[string]any{"pid": cmd.Process.Pid, "pending": pending})
 
 	done := make(chan error, 1)
@@ -519,9 +528,13 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 	for {
 		select {
 		case err := <-done:
-			return finish(err, runResult{})
+			r := finish(err, runResult{})
+			keep = ln.survivors(cmd.Process.Pid, r.code == ExitRestart)
+			return r
 		case <-ctx.Done():
-			return finish(ln.stop(cmd, child, done, stopFile), runResult{stopped: true})
+			r := finish(ln.stop(cmd, child, done, stopFile), runResult{stopped: true})
+			keep = ln.survivors(cmd.Process.Pid, false)
+			return r
 		case <-tick.C:
 			child.reap()
 			if ln.oldSelf && !ln.isPending(ver) && ln.cfg.Now().Sub(start) >= ln.cfg.StableAfter {
@@ -532,7 +545,9 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 			}
 			if ln.guardVersion == ver && ln.isPending(ver) && !ln.cfg.Now().Before(ln.deadline(ver)) {
 				ln.log.Event("launcher_pending_timeout", ver, map[string]any{"after_s": int(ln.cfg.Now().Sub(ln.firstStart).Seconds())})
-				return finish(ln.stop(cmd, child, done, stopFile), runResult{timedOut: true})
+				r := finish(ln.stop(cmd, child, done, stopFile), runResult{timedOut: true})
+				keep = ln.survivors(cmd.Process.Pid, false)
+				return r
 			}
 		}
 	}

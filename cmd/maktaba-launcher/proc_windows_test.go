@@ -20,8 +20,8 @@ func TestAskStopAfterTheServerExited(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	child := attachChild(cmd)
-	defer child.release()
+	child := attachChild(cmd, nil)
+	defer child.release(nil)
 	if child.proc == 0 {
 		t.Fatal("no handle on the server")
 	}
@@ -34,7 +34,7 @@ func TestAskStopAfterTheServerExited(t *testing.T) {
 	if err := askStop(cmd, child); err != nil {
 		t.Fatalf("asking an exited server: %v", err)
 	}
-	child.release()
+	child.release(nil)
 	if child.running() {
 		t.Fatal("a released handle shows as running")
 	}
@@ -72,8 +72,8 @@ func TestAskStopHoldsTheServerWhileAsking(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	child := attachChild(cmd)
-	defer child.release()
+	child := attachChild(cmd, nil)
+	defer child.release(nil)
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	defer func() {

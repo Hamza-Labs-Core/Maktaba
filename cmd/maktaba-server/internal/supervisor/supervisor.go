@@ -83,6 +83,9 @@ type Process struct {
 	// BeforeStart, when set, runs before each start (the bundled postgres: a lock file a
 	// postmaster that did not end cleanly left, pgbundle.Bundle.ClearStaleLock).
 	BeforeStart func()
+	// Survives: a TV process (the front door, a slot) that outlives a supervisor
+	// restart for an update (Epic 35 story 35.7: HandOver, WithHandover).
+	Survives bool
 	// Prepare, when set, runs before the process's first start and must succeed
 	// before it starts (prepare.go, Epic 38 story 38.12: the desktop app builds
 	// the pipeline's venv, or takes the database's dump before an update's
@@ -194,7 +197,9 @@ func Build(role Role, opts Options) (Process, error) {
 	}
 	cmd.Env = env
 	wire(cmd)
-	p := Process{Role: role, Cmd: cmd, Probe: ProbeURL(role, opts.Config)}
+	// the streaming role keeps TV on air (the front door): it outlives a supervisor
+	// restart (story 35.7)
+	p := Process{Role: role, Cmd: cmd, Probe: ProbeURL(role, opts.Config), Survives: role == RoleStreaming}
 	if role == RolePipeline {
 		p.ProbeTimeout = PythonProbeTimeout
 	}

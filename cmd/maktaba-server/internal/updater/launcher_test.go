@@ -26,6 +26,7 @@ func TestLauncherReplacement(t *testing.T) {
 	_ = os.WriteFile(exe, []byte("launcher 1"), 0o755)
 	t.Setenv(layout.EnvLauncherProtocol, "1")
 	t.Setenv(layout.EnvLauncherExe, exe)
+	t.Setenv(layout.EnvLauncherHandover, "1") // a launcher that keeps the TV across restarts
 	li := &LayoutInstaller{Layout: l, Version: "1.4.0"}
 	j := &Journal{Job: homeJob(), LauncherProtocol: 1}
 
@@ -142,4 +143,55 @@ func TestHandoverWaitsWhileTVIsOnAir(t *testing.T) {
 		}
 	}
 	t.Fatalf("steps %+v", j.Steps)
+}
+
+// Story 35.7: a launcher from before the TV handover (it does not say
+// MAKTABA_LAUNCHER_HANDOVER) is replaced by the committed release's on POSIX even at the
+// same protocol, where that happens by itself; one that cannot be replaced stays, and
+// nothing is refused for it. Windows keeps any launcher.
+func TestLauncherRefreshForTheHandover(t *testing.T) {
+	root := t.TempDir()
+	l := layout.New(root)
+	rel := l.ReleaseDir("1.5.0")
+	_ = os.MkdirAll(rel, 0o755)
+	_ = os.WriteFile(filepath.Join(rel, layout.Exe("maktaba-launcher")), []byte("launcher with the handover"), 0o755)
+	exe := filepath.Join(root, "bin", layout.Exe("maktaba-launcher"))
+	_ = os.MkdirAll(filepath.Dir(exe), 0o755)
+	_ = os.WriteFile(exe, []byte("launcher 1"), 0o755)
+	t.Setenv(layout.EnvLauncherProtocol, "1")
+	t.Setenv(layout.EnvLauncherExe, exe)
+	t.Setenv(layout.EnvLauncherHandover, "")
+	li := &LayoutInstaller{Layout: l, Version: "1.4.0"}
+	j := &Journal{Job: homeJob(), LauncherProtocol: 1}
+	ok, why := li.launcherReplaceable(j.Job.Version)
+	if err := checkLauncher(j, ok, why); err != nil {
+		t.Fatalf("a refresh is never refused: %v", err)
+	}
+	prev := replaceSelf
+	defer func() { replaceSelf = prev }()
+	replaceSelf = func(newLauncher, target string) error { return os.Rename(newLauncher, target) }
+	replaced, err := li.ReplaceLauncher(j)
+	if runtime.GOOS == "windows" {
+		if replaced || err != nil || refreshLauncher() {
+			t.Fatalf("Windows keeps its launcher: %v %v", replaced, err)
+		}
+		return
+	}
+	if !replaced || err != nil {
+		t.Fatalf("refresh: %v %v", replaced, err)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "launcher with the handover" {
+		t.Fatalf("the launcher in place says %q", b)
+	}
+	// a package's launcher stays, without an error (EC4)
+	t.Setenv(layout.EnvLauncherExe, "/usr/bin/maktaba-launcher")
+	if replaced, err := li.ReplaceLauncher(j); replaced || err != nil {
+		t.Fatalf("a package's launcher: %v %v", replaced, err)
+	}
+	// one that says it keeps the TV: nothing to do
+	t.Setenv(layout.EnvLauncherExe, exe)
+	t.Setenv(layout.EnvLauncherHandover, "1")
+	if replaced, err := li.ReplaceLauncher(j); replaced || err != nil {
+		t.Fatalf("a launcher with the handover: %v %v", replaced, err)
+	}
 }
