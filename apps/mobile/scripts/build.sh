@@ -5,6 +5,8 @@
 #   1. Build the shared web SPA → web/dist   (the JS bundle both shells serve)
 #   2. cap sync                              → copy web/dist + plugins into
 #                                              the native iOS/Android projects
+#   3. apply-icons.sh                        → the Maktaba icon over
+#                                              Capacitor's default
 #
 # The native projects (ios/, android/) are generated on demand by
 # `npx cap add` and are gitignored; if they do not exist yet this script
@@ -56,17 +58,20 @@ case "${PLATFORM}" in
     add_if_missing ios
     log "Syncing iOS"
     npx cap sync ios
+    "${SCRIPT_DIR}/apply-icons.sh" ios
     ;;
   android)
     add_if_missing android
     log "Syncing Android"
     npx cap sync android
+    "${SCRIPT_DIR}/apply-icons.sh" android
     ;;
   all)
     add_if_missing ios
     add_if_missing android
     log "Syncing all platforms"
     npx cap sync
+    "${SCRIPT_DIR}/apply-icons.sh" all
     ;;
   *)
     echo "Unknown platform '${PLATFORM}' (want: ios | android | all)" >&2

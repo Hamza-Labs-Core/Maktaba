@@ -1,18 +1,17 @@
 # Bundle icons
 
-`tauri.conf.json > bundle.icon` references the icon set in this directory. The committed set
-is a **placeholder**: the web app's mark (a #1E5AD8 rounded square, `web/public/manifest.webmanifest`)
-at 1024×1024, so every desktop build works. Real artwork is a follow-up; regenerate the
-set from a square source PNG (≥ 1024×1024, transparent) and keep these five files:
+`tauri.conf.json > bundle.icon` references the icon set in this directory: the Maktaba
+mark (gold on the library navy), generated on Magnific with the owner's account. The files
+are cut from one master, `tools/icons/source/maktaba-icon.png`, by
+`tools/icons/make-icons.py`, which also writes the web, TV and phone icons. To change the
+icon, replace the master and run:
 
 ```bash
-cd apps/desktop
-pnpm exec tauri icon /path/to/logo.png -o /tmp/icons
-cp /tmp/icons/{32x32.png,128x128.png,128x128@2x.png,icon.icns,icon.ico} src-tauri/icons/
+uv run --no-project --with pillow python tools/icons/make-icons.py
 ```
 
 | File | Platform |
 |---|---|
 | `32x32.png`, `128x128.png`, `128x128@2x.png` | Linux / general |
-| `icon.icns` | macOS |
-| `icon.ico` | Windows |
+| `icon.icns` | macOS (Apple's grid: an 824 px rounded square with margins on 1024) |
+| `icon.ico` | Windows (16–256 px) |

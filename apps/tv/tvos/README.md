@@ -78,4 +78,3 @@ tvOS 17 simulator or device. Set the signing team and the API base URL
 - **Siri intents** — an `INSpeakableString` intents extension so
   "Hey Siri, search Maktaba for…" deep-links into `SearchView`.
 - **Top Shelf** extension for the tvOS home-screen recommendation strip.
-- Real `AppIcon` layered image stacks (placeholders only today).
