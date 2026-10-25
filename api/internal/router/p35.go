@@ -83,6 +83,18 @@ func (c hubCluster) NodeHosts() map[string][]string {
 	return map[string][]string{}
 }
 
+// NodeWorkers implements the updates driver's nodeWorkerer: each machine's pipeline
+// worker, where a worker-only machine's conversion goes (update.convert).
+func (c hubCluster) NodeWorkers() map[string]updates.NodeWorker {
+	out := map[string]updates.NodeWorker{}
+	if h := c.hub(); h != nil {
+		for id, w := range h.NodeWorkers() {
+			out[id] = updates.NodeWorker{Session: w.Session, Version: w.Version}
+		}
+	}
+	return out
+}
+
 func (c hubCluster) HomeProcesses() []string {
 	if h := c.hub(); h != nil {
 		return h.HomeProcesses()

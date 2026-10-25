@@ -562,8 +562,9 @@ func TestDriverPrepareFailures(t *testing.T) {
 	}
 }
 
-// A machine ahead of the home is skipped, never downgraded; a worker-only one is
-// reported.
+// A machine ahead of the home is skipped, never downgraded; a worker-only one whose worker
+// is not on the channel is offline (converted once it is back: convert_test.go) and shown
+// worker-only.
 func TestDriverSkewRules(t *testing.T) {
 	r := newDriverRig(t)
 	ctx := context.Background()
@@ -575,7 +576,8 @@ func TestDriverSkewRules(t *testing.T) {
 	_, _ = r.f.svc.Tick(ctx)
 	run := r.drive(t, 30)
 	ts := targetsByName(t, r.f.store, run.ID)
-	if run.State != RunDone || ts["alpha"].State != TargetSkipped || ts["worker"].State != TargetWorkerOnly || ahead.st != nil {
+	if run.State != RunDone || ts["alpha"].State != TargetSkipped || ts["worker"].State != TargetOffline ||
+		ts["worker"].Kind != KindWorker || ahead.st != nil {
 		t.Fatalf("run %s targets %+v", run.State, ts)
 	}
 	ms := r.d.Machines(ctx, Machine{ID: "home", Role: "home", Version: "1.5.0"})

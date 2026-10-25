@@ -205,8 +205,10 @@ func (d *Driver) Machines(ctx context.Context, home Machine) []Machine {
 			}
 		}
 	}
+	convert := d.WorkerConvert(ctx)
 	for _, n := range nodes {
-		m := Machine{ID: n.id, Name: n.name, Role: "node", Version: NormalizeVersion(n.version), Platform: n.platform}
+		m := Machine{ID: n.id, Name: n.name, Role: "node", Version: NormalizeVersion(n.version), Platform: n.platform,
+			Convert: convert[n.id]}
 		s, connected := states[n.id]
 		if connected {
 			if s.Version != "" {

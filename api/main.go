@@ -597,7 +597,7 @@ func runServe() error {
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the
 			// machine join/approve/revoke surface and its housekeeping.
-			clusterClose, verifier := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, hubRef, logger)
+			clusterClose, verifier := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, hubRef, updatesRef, logger)
 			defer clusterClose()
 			nodeVerifier = verifier
 			// Epic 35 stories 35.9, 35.11: the nodes' delegation and cluster sign-in,

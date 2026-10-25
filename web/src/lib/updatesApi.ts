@@ -91,6 +91,9 @@ export interface UpdateMachine {
   attempts?: UpdateAttempt[];
   /** a node: whether it reaches the home's database (its machine agent's report) */
   home_db?: HomeDb;
+  /** a worker-only machine (story 35.8 AC8): next_update (its next update makes it a full
+   * node) or installer (its pipeline is too old for that: re-run the installer once) */
+  convert?: "next_update" | "installer";
 }
 
 /** One try at bringing a machine to a release, whoever made it (update-attempts.md): the

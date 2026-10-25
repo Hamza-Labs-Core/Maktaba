@@ -1076,6 +1076,7 @@ func (d *Driver) planTargets(ctx context.Context, run Run, det RunDetail) error 
 		return err
 	}
 	agents, states := d.agentStates()
+	workers := d.nodeWorkers()
 	only := map[string]bool{}
 	for _, id := range det.Targets {
 		only[id] = true
@@ -1098,23 +1099,38 @@ func (d *Driver) planTargets(ctx context.Context, run Run, det RunDetail) error 
 			}
 			kind = s.Layout
 		}
-		if ver != "" && CompareVersions(ver, run.Version) == 0 {
+		_, connected := agents[n.id]
+		// a worker-only machine's version is its pipeline's: whatever it is, it converts
+		if ver != "" && CompareVersions(ver, run.Version) == 0 && (connected || n.full) {
 			continue // already there
 		}
 		t := Target{RunID: run.ID, NodeID: n.id, Name: n.name, Ord: ord, Platform: platform, Kind: kind,
 			FromVersion: NormalizeVersion(ver), ToVersion: NormalizeVersion(run.Version), State: TargetPending}
-		_, connected := agents[n.id]
 		later := ver != "" && d.laterBuild(ctx, ver, run.Version)
+		w, working := workers[n.id]
+		tooOld := false
 		switch {
+		case !connected && !n.full:
+			// a worker-only machine: converted on its turn (update.convert), offline until
+			// its worker is back, worker_only while its pipeline is known too old for it
+			t.Kind = KindWorker
+			switch {
+			case !working:
+				t.State = TargetOffline
+			case d.tooOldKnown(ctx, n.id, run.Version, w):
+				t.State, tooOld = TargetWorkerOnly, true
+			}
 		case ver != "" && CompareVersions(ver, run.Version) > 0, later:
 			t.State = TargetSkipped
-		case !connected && !n.full:
-			t.State = TargetWorkerOnly
 		case !connected:
 			t.State = TargetOffline
 		}
 		if err := d.Store.InsertTarget(ctx, t); err != nil {
 			return err
+		}
+		if tooOld {
+			_ = d.Store.UpdateTarget(ctx, run.ID, n.id, TargetChange{Detail: map[string]any{"why": WhyTooOld,
+				"pipeline_version": w.Version}})
 		}
 		if t.State == TargetSkipped {
 			why := "ahead_of_home"
@@ -1268,8 +1284,12 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 	agents, states := d.agentStates()
 	// a run for named machines (a Retry, a Resume, a catch-up) touches only those; the
 	// others wait for a catch-up of their own (inside the window)
-	if len(det.Targets) == 0 && d.mayRestartMachines(run, det, pol) {
-		d.adoptBehind(ctx, run, targets, agents, states)
+	workers := d.nodeWorkers()
+	if d.mayRestartMachines(run, det, pol) {
+		if len(det.Targets) == 0 {
+			d.adoptBehind(ctx, run, targets, agents, states)
+		}
+		d.adoptWorkers(ctx, run, targets, workers)
 		targets, _ = d.Store.Targets(ctx, run.ID)
 	}
 	preparing, applying := 0, -1
@@ -1277,16 +1297,18 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 		switch t.State {
 		case TargetPreparing:
 			preparing++
-		case TargetApplying:
+		case TargetApplying, TargetConverting:
 			applying = i
 		}
 	}
-	// the one applying first: one machine at a time (the others prepare meanwhile, and
-	// the desktop apps' clicks are noted)
+	// the one applying (or converting) first: one machine at a time (the others prepare
+	// meanwhile, and the desktop apps' clicks are noted)
 	busy := false
 	if applying >= 0 {
-		done, err := d.followApply(ctx, run, pol, targets[applying], agents)
-		if err != nil {
+		var done bool
+		if targets[applying].State == TargetConverting {
+			done = d.followConvert(ctx, run, pol, targets[applying], agents, states, workers)
+		} else if done, err = d.followApply(ctx, run, pol, targets[applying], agents); err != nil {
 			return err
 		}
 		busy = !done
@@ -1303,6 +1325,13 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 		sid, connected := agents[t.NodeID]
 		switch t.State {
 		case TargetPending:
+			if t.Kind == KindWorker {
+				// a worker-only machine is converted on its turn (below), never prepared
+				if _, ok := workers[t.NodeID]; !ok {
+					_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetOffline})
+				}
+				continue
+			}
 			if !connected {
 				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetOffline})
 				continue
@@ -1409,13 +1438,19 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 	if !held {
 		targets, _ = d.Store.Targets(ctx, run.ID)
 		for _, t := range targets {
-			if t.State != TargetPrepared {
+			worker := t.State == TargetPending && t.Kind == KindWorker
+			if t.State != TargetPrepared && !worker {
 				continue
 			}
 			if !d.mayRestartMachines(run, det, pol) {
 				break // the window is over: the rest wait (held at the end, caught up later)
 			}
 			sid, connected := agents[t.NodeID]
+			if worker {
+				var w NodeWorker
+				w, connected = workers[t.NodeID]
+				sid = w.Session
+			}
 			if !connected {
 				continue
 			}
@@ -1424,6 +1459,10 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 			}
 			if !d.nodeDrained(ctx, run, &det, pol, t) {
 				break // its turn: its jobs finish first (or checkpoint once drain_timeout passed)
+			}
+			if worker {
+				d.startConvert(ctx, run, pol, t, workers[t.NodeID])
+				break
 			}
 			ok, raw, err := d.Cluster.Command(ctx, sid, "update.apply", map[string]any{"run_id": run.ID}, 30*time.Second)
 			if err != nil || !ok {
@@ -1647,7 +1686,16 @@ func (d *Driver) maybeFinishRollout(ctx context.Context, run Run, det RunDetail)
 			_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHeld,
 				Error: map[string]any{"code": "window_over"}})
 			held++
-		case TargetPending, TargetApplying, TargetClicked:
+		case TargetPending:
+			if t.Kind == KindWorker && pastWindow {
+				// a worker-only machine whose turn did not come in the window: next window
+				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHeld,
+					Error: map[string]any{"code": "window_over"}})
+				held++
+				continue
+			}
+			busy = true
+		case TargetApplying, TargetConverting, TargetClicked:
 			busy = true
 		case TargetWaitingClick:
 			waiting++
@@ -1834,6 +1882,18 @@ func (d *Driver) catchUp(ctx context.Context) error {
 			continue
 		}
 		ids = append(ids, n.id)
+	}
+	if inWindow {
+		// the worker-only machines are made full nodes on the release (story 35.8 AC8):
+		// inside the window, as their conversion restarts them
+		for _, id := range d.workerCatchUps(ctx, nodes, agents, wm) {
+			d.mu.Lock()
+			last, tried := d.pending[id]
+			d.mu.Unlock()
+			if !tried || d.now().Sub(last) >= catchUpRetry {
+				ids = append(ids, id)
+			}
+		}
 	}
 	if len(ids) == 0 || d.withdrawn(ctx, wm, true) {
 		return nil

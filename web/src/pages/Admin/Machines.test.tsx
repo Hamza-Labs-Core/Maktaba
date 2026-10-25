@@ -396,6 +396,24 @@ describe("Machines admin page", () => {
     );
   });
 
+  it("a worker only says whether its next update makes it a full node (story 35.8 AC8)", async () => {
+    const v = fixture();
+    v.nodes[1] = {
+      ...baseNode,
+      full_node: false,
+      worker_convert: "next_update",
+      vod: {},
+      update_state: {},
+    };
+    get.mockResolvedValue(v);
+    renderPage();
+    const card = await screen.findByRole("article", { name: "Studio Mac" });
+    expect(
+      within(card).getByText("Worker only — becomes a full node at its next update")
+    ).toBeInTheDocument();
+    expect(within(card).queryByText(/re-run the installer/)).not.toBeInTheDocument();
+  });
+
   it("links each machine to its web address, with its version and kind (Epic 35)", async () => {
     const v = fixture();
     v.home.web_url = "http://home.local:8780";
@@ -406,6 +424,7 @@ describe("Machines admin page", () => {
       version: "1.5.0",
       platform: "darwin-arm64",
       full_node: false,
+      worker_convert: "installer",
       vod: {},
       update_state: {},
     };

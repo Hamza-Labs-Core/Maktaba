@@ -32,6 +32,10 @@ var keysCheckEvery = 10 * time.Minute
 
 func (s *Session) machineAgent() bool { return s.Kind == "node" && s.Process == ProcessSupervisor }
 
+// nodeWorker reports whether the session is a machine's pipeline worker (a node process
+// that is not its machine agent).
+func (s *Session) nodeWorker() bool { return s.Kind == "node" && s.Process != ProcessSupervisor }
+
 func keysFrame(k delegation.Key) map[string]any {
 	return map[string]any{"t": "keys", "delegation": map[string]any{
 		"id": k.ID, "key": k.Secret, "not_after": k.NotAfter.UTC().Format(time.RFC3339)}}

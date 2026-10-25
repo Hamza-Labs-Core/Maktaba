@@ -51,6 +51,11 @@ jobs:
         working-directory: shared/go/releaseverify
         run: go generate ./...
 
+      - name: The pipeline's copy follows it
+        # a worker-only machine verifies the release it converts to with sigstore-python
+        # (story 35.8 AC8), against the same root
+        run: cp shared/go/releaseverify/trusted_root.json pipeline/src/maktaba_pipeline/cluster/agent/sigstore_trusted_root.json
+
       - name: The refreshed root verifies a release as the old one did
         working-directory: shared/go/releaseverify
         run: go test -count=1 ./...
@@ -73,7 +78,8 @@ jobs:
           git config user.name "maktaba-release-bot"
           git config user.email "maktaba@hamzalabs.dev"
           git checkout -b "${branch}"
-          git add shared/go/releaseverify/trusted_root.json shared/go/releaseverify/trusted_root.meta.json
+          git add shared/go/releaseverify/trusted_root.json shared/go/releaseverify/trusted_root.meta.json \
+            pipeline/src/maktaba_pipeline/cluster/agent/sigstore_trusted_root.json
           git commit -m "chore(releaseverify): refresh the embedded Sigstore trusted root"
           git push origin "${branch}"
           gh pr create --base main --head "${branch}" \
