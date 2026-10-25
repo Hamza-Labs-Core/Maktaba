@@ -146,13 +146,13 @@ func serveLocalFetch(c *link.Client) http.HandlerFunc {
 		if purpose == "" {
 			purpose = link.PurposeArtifact
 		}
-		if !strings.HasPrefix(path, "/") {
+		if !strings.HasPrefix(path, "/") || strings.Contains(path, "..") {
 			http.Error(w, "path is required", http.StatusBadRequest)
 			return
 		}
 		out, err := http.NewRequestWithContext(r.Context(), http.MethodGet, "http://home"+path, nil)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "not a path of the home's", http.StatusBadRequest) // never the request's words
 			return
 		}
 		for _, h := range []string{"Range", "If-Range", "If-None-Match", "If-Modified-Since", "Accept"} {
@@ -176,6 +176,9 @@ func serveLocalFetch(c *link.Client) http.HandlerFunc {
 				w.Header()[k] = vs
 			}
 		}
+		// served on this machine's origin: never a page the home's stream made (proxiedType)
+		w.Header().Set("Content-Type", proxiedType(resp.Header.Get("Content-Type")))
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
 	}

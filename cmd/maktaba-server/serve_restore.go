@@ -166,13 +166,22 @@ func (r *restorer) path(name string) (string, os.FileInfo, error) {
 		return "", nil, refuse("restore_no_database", "this home's library database is not a PostgreSQL this "+
 			"Maktaba can put a dump back into")
 	}
-	if name == "" || name != filepath.Base(name) || strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+	if name == "" || name != filepath.Base(name) || strings.ContainsAny(name, `/\:`) || strings.Contains(name, "..") ||
+		name == "." {
 		return "", nil, refuse("restore_bad_backup", "%q is not the name of a backup in %s", name, r.db.Backups)
 	}
 	if _, ok := backupOf(name); !ok {
 		return "", nil, refuse("restore_bad_backup", "%q is not a backup (a .dump in %s)", name, r.db.Backups)
 	}
-	p := filepath.Join(r.db.Backups, name)
+	// the backups folder's own file, never one outside it
+	dir, err := filepath.Abs(r.db.Backups)
+	if err != nil {
+		return "", nil, refuse("restore_no_backup", "the backups folder %s: %v", r.db.Backups, err)
+	}
+	p, err := filepath.Abs(filepath.Join(dir, name))
+	if err != nil || !strings.HasPrefix(p, dir+string(filepath.Separator)) {
+		return "", nil, refuse("restore_bad_backup", "%q is not the name of a backup in %s", name, r.db.Backups)
+	}
 	st, err := os.Stat(p)
 	if err != nil || !st.Mode().IsRegular() {
 		return "", nil, refuse("restore_no_backup", "there is no backup %s in %s", name, r.db.Backups)

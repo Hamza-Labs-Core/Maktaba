@@ -128,6 +128,12 @@ func TestRestoreRefusesWithoutConfirm(t *testing.T) {
 	}{
 		{"pre-v0.2.0-to-v0.3.0.dump", false, "restore_not_confirmed"},
 		{"../state/database.json", true, "restore_bad_backup"},
+		{"../pre-v0.2.0-to-v0.3.0.dump", true, "restore_bad_backup"},
+		{`..\pre-v0.2.0-to-v0.3.0.dump`, true, "restore_bad_backup"},
+		{"..", true, "restore_bad_backup"},
+		{"pre..v0.2.0-to-v0.3.0.dump", true, "restore_bad_backup"},
+		{`C:\pre-v0.2.0-to-v0.3.0.dump`, true, "restore_bad_backup"},
+		{"/etc/pre-v0.2.0-to-v0.3.0.dump", true, "restore_bad_backup"},
 		{"notes.txt", true, "restore_bad_backup"},
 		{"pre-v0.1.0-to-v0.2.0.dump", true, "restore_no_backup"},
 		{"maktaba-20261020-0300.dump", true, "restore_unreadable"},

@@ -560,7 +560,7 @@ func (hl *homeLink) servePull(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := http.NewRequestWithContext(r.Context(), http.MethodGet, "http://node"+path, nil)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "not a path of the machine's", http.StatusBadRequest) // never the request's words
 		return
 	}
 	for k, vs := range r.Header {
@@ -584,6 +584,9 @@ func (hl *homeLink) servePull(w http.ResponseWriter, r *http.Request) {
 	for k, vs := range resp.Header {
 		w.Header()[k] = vs
 	}
+	// served on the home's origin: never a page another machine made (proxiedType)
+	w.Header().Set("Content-Type", proxiedType(resp.Header.Get("Content-Type")))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(resp.StatusCode)
 	fl, _ := w.(http.Flusher)
 	buf := make([]byte, 32<<10)
