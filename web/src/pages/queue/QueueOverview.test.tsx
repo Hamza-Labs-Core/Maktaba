@@ -233,6 +233,23 @@ describe("QueueOverview", () => {
     expect(post).toHaveBeenCalledWith("/api/queues/fingerprint/retry", { cause: "nas_timeout" });
   });
 
+  it.each([
+    ["at the top of the page", 0],
+    ["in Needs attention", 1],
+  ])("Retry all %s retries every group with a Retry button", async (_where, which) => {
+    setup();
+    const buttons = await screen.findAllByRole("button", { name: "Retry all 9" });
+    expect(buttons).toHaveLength(2);
+    await userEvent.click(buttons[which]);
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/queues/link/retry", { cause: "youtube_bot_check" })
+    );
+    expect(post).toHaveBeenCalledWith("/api/queues/fingerprint/retry", { cause: "nas_timeout" });
+    // the groups without a Retry button are left alone
+    const retries = post.mock.calls.filter((c) => String(c[0]).endsWith("/retry"));
+    expect(retries).toHaveLength(2);
+  });
+
   it("appends live job.log lines in one batch per second and filters problems", async () => {
     setup();
     await screen.findByRole("link", { name: "Length" });

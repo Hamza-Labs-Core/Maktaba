@@ -47,6 +47,8 @@ export interface QueueHeaderProps {
   busy?: boolean;
   onTogglePause: () => void;
   onQueueWork: () => void;
+  /** Retry every "Needs attention" group that has a Retry button (left out: no button). */
+  retryAll?: { count: number; busy: boolean; disabled?: boolean; onClick: () => void };
 }
 
 export function QueueHeader({
@@ -55,8 +57,9 @@ export function QueueHeader({
   busy,
   onTogglePause,
   onQueueWork,
+  retryAll,
 }: QueueHeaderProps) {
-  const { t } = useI18n();
+  const { t, n } = useI18n();
   return (
     <header className="mkt-q-header">
       <div className="mkt-q-header__title">
@@ -75,6 +78,16 @@ export function QueueHeader({
         <Link className="mkt-q-linkbtn" to="/admin/extensions">
           {t("queue.header.extensions")}
         </Link>
+        {retryAll && (
+          <Button
+            variant="secondary"
+            loading={retryAll.busy}
+            disabled={retryAll.disabled}
+            onClick={retryAll.onClick}
+          >
+            {t("queue.issues.retryAll", { n: n(retryAll.count) })}
+          </Button>
+        )}
         <Button variant="secondary" onClick={onTogglePause} disabled={busy}>
           {pausedAll ? t("queue.header.resumeAll") : t("queue.header.pauseAll")}
         </Button>
