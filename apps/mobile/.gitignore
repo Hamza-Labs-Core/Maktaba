@@ -5,8 +5,10 @@ dist/
 
 # Generated native projects (created by `npx cap add`; not checked in —
 # they require the platform toolchain and are reproducible from config).
-ios/
-android/
+# Anchored: an unanchored ios/ also hid icons/ios/, so the iOS app icon was
+# never committed and the release's iOS build failed copying it.
+/ios/
+/android/
 
 # --- iOS / Xcode (in case ios/ is ever partially committed) ---
 ios/App/Pods/
