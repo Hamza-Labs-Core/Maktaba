@@ -62,7 +62,7 @@ contents:
     dst: /usr/share/doc/$1/marker
 EOF
     nfpm package -f "${d}/nfpm.yaml" -p rpm -t "${d}/out" >/dev/null
-    mv "${d}"/out/*.rpm "${work}/pkgs/$5"
+    mv "${d}"/out/*.rpm "${work}/pkgs/$4"
 }
 
 rpms=false
