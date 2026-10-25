@@ -261,3 +261,44 @@ func TestRevokeClosesAllStreamsAtOnce(t *testing.T) {
 	}
 	h.waitFor(func() bool { return !h.srv.Live(testNode) }, "the control session to end")
 }
+
+// TC11 (light): with 20 streams pushing data on one machine, the control channel still
+// answers quickly (each stream has its own connection; control frames go first).
+func TestControlLatencyUnderStreams(t *testing.T) {
+	var stop atomic.Bool
+	defer stop.Store(true)
+	mux := http.NewServeMux()
+	chunk := make([]byte, 32<<10)
+	mux.HandleFunc("/api/cluster/updates/artifacts/", func(w http.ResponseWriter, r *http.Request) {
+		for !stop.Load() && r.Context().Err() == nil {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	})
+	mux.HandleFunc("/api/ping", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "pong") })
+	h := newHarness(t, mux)
+	h.srv.Settings = func() Settings { return Settings{MaxStreams: 32} }
+	c := h.connect(nil)
+	for range 20 {
+		body := openArtifact(t, c)
+		defer body.Close()
+		go func() { _, _ = io.Copy(io.Discard, body) }()
+	}
+	var worst time.Duration
+	for range 30 {
+		start := time.Now()
+		req, _ := http.NewRequest(http.MethodGet, h.home+"/api/ping", nil)
+		resp, err := c.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		worst = max(worst, time.Since(start))
+	}
+	// the design's p99 < 50 ms on real hardware; a loaded CI runner (-race) gets room
+	if worst > 500*time.Millisecond {
+		t.Fatalf("the slowest control round trip took %v under 20 streams", worst)
+	}
+}
