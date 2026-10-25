@@ -446,8 +446,10 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     renderShell(["/series", "/library"]);
     const user = userEvent.setup();
     await screen.findByRole("heading", { name: "page /library" });
+    // the name is the account link, not the sign-out button
+    expect(screen.getByRole("link", { name: "viewer" })).toHaveAttribute("href", "/account");
     const signOut = screen.getByRole("button", { name: en["nav.signOut"] });
-    expect(signOut).toHaveTextContent("viewer");
+    expect(signOut).not.toHaveTextContent("viewer");
     await user.click(signOut);
     expect(await screen.findByLabelText(en["login.username"])).toBeInTheDocument();
     expect(post).toHaveBeenCalledWith("/api/auth/logout");
@@ -488,7 +490,7 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     expect(await screen.findByText(en["homeOffline.signOut"])).toBeInTheDocument();
     expect(where()).toHaveTextContent(/^\/library$/);
     expect(purge).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: en["nav.signOut"] })).toHaveTextContent("viewer");
+    expect(screen.getByRole("button", { name: en["nav.signOut"] })).toBeInTheDocument();
   });
 
   it("SHL-14c: a sign-out the home did not answer in time keeps the user and says so", async () => {
@@ -505,7 +507,7 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: en["nav.signOut"] }));
     expect(await screen.findByText(en["homeOffline.signOut"])).toBeInTheDocument();
     expect(purge).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: en["nav.signOut"] })).toHaveTextContent("viewer");
+    expect(screen.getByRole("link", { name: "viewer" })).toBeInTheDocument(); // still signed in
   });
 
   it("SHL-15: the theme button cycles light, dark, system", async () => {
