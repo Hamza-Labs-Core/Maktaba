@@ -8,6 +8,7 @@ Automated release for {{.Tag}}.
 - **macOS (Homebrew):** {{if .Tap}}`brew install {{.Tap}}/maktaba` (the server; it updates itself), `brew install --cask {{.Tap}}/maktaba-app` (the app): the tap follows each stable release; `maktaba.rb` is attached{{else}}`maktaba.rb` formula is attached{{end}}
 - **Windows / manual:** grab the matching `.tar.gz` / `.zip` archive
 - **Linux, one installation that runs everything (Epic 39):** the `Maktaba_*.AppImage` (or its `.deb` / `.rpm`) from the desktop build; on a machine without a desktop, `maktaba-linux-payload-*-<x86_64|aarch64>.tar.gz`: the same server, Postgres and Python (ffmpeg is the distribution's: setup names the command that installs it), run as a systemd user service
+- **Docker:** download `maktaba-docker-compose.yml` below as `docker-compose.yml`, then `docker compose up -d` and `docker compose run --rm maktaba setup`: one container (`ghcr.io/hamza-labs-core/maktaba-server`) that runs everything and updates itself on its volume, as every other install does
 - **Worker machine (join a home, no checkout):** unpack `maktaba-node-*.tar.gz` (macOS/Linux) or `maktaba-node-*.zip` (Windows) and run `install-node.sh` / `windows\install-node.ps1`: it installs this release's `maktaba_pipeline-*.whl` (also attached, with its `-constraints.txt`). See docs/cluster/join-a-machine.md.
 
 Artifacts are signed with keyless cosign (Sigstore) by this

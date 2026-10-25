@@ -199,8 +199,11 @@ After installing, run `maktaba-server setup` (or edit
 web UI is on port `8088`. Packaging details, install paths, and the full
 artifact list are in [`deploy/packaging/`](deploy/packaging/README.md).
 
-Prefer containers? `docker compose -f deploy/compose/docker-compose.yml up`
-runs the same stack from the multi-arch GHCR images.
+Prefer containers? [`cloud/installers/docker/docker-compose.yml`](cloud/installers/docker/docker-compose.yml)
+runs Maktaba in one container (`ghcr.io/hamza-labs-core/maktaba-server`, multi-arch):
+`docker compose up -d`, then `docker compose run --rm maktaba setup` once. It updates itself
+on its volume like every other install. (`deploy/compose/docker-compose.yml` is the
+development and CI stack, built from source.)
 
 ---
 

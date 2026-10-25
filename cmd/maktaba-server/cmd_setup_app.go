@@ -19,6 +19,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appruntime"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
 
 // `maktaba-server setup` on a machine whose server runs from an app payload
@@ -246,6 +247,9 @@ type appSetup struct {
 	runtime func(ctx context.Context) (stepRunner, error)
 	// afterFinish installs and starts the service (Linux: the systemd user unit).
 	afterFinish func(ctx context.Context) error
+	// finished is the text said after finish where nothing installs a service (the
+	// Docker image: its entrypoint starts the server once setup wrote server.toml).
+	finished string
 	// pollEvery is how often a Plex PIN is checked.
 	pollEvery time.Duration
 	// skipWait starts a wait a Ctrl+C skips (the Plex sign-in) instead of
@@ -428,6 +432,8 @@ func (a *appSetup) Run(ctx context.Context) error {
 		if err := a.afterFinish(ctx); err != nil {
 			return err
 		}
+	} else if a.finished != "" {
+		a.say(a.finished)
 	}
 	a.printf("\n")
 	a.say("terminal.done", "url", fin.WebURL)
@@ -773,8 +779,21 @@ func runAppSetupCmd(answersFile string, answersFD int, lang string) error {
 		a.runtime = func(ctx context.Context) (stepRunner, error) { return headlessRuntime(ctx, t, os.Stdout) }
 		a.afterFinish = func(ctx context.Context) error { return headlessService(ctx, t, os.Stdout) }
 		a.install = runInTerminal
+		containerSetup(a, config.Container())
 	}
 	return endError(t, a.Run(context.Background()))
+}
+
+// containerSetup fits the terminal setup to the container it runs in (the Docker image,
+// `docker compose run --rm maktaba setup`): no service to install (the image's
+// entrypoint starts the server once server.toml is there) and nothing to install with
+// sudo (the image carries its ffmpeg, and runs as an ordinary user). Outside a
+// container it changes nothing.
+func containerSetup(a *appSetup, container string) {
+	if container == "" {
+		return
+	}
+	a.afterFinish, a.finished, a.install = nil, "terminal.container", nil
 }
 
 // runInTerminal runs a shell command with this terminal (sudo asks for the

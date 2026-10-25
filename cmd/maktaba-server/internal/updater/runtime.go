@@ -35,6 +35,10 @@ type RuntimeInstaller struct {
 	Owner string
 	// Record is the home's database record ("" on a node).
 	Record string
+	// Container is the container the runtime is in ("docker": the Docker install, whose
+	// image puts its payload on the volume's runtime and runs the launcher; "" none). It
+	// updates exactly as a headless install does; only its kind says so.
+	Container string
 	// Open starts the Linux app with the order's deep link when it does not answer
 	// within NudgeAfter (90 s); tests replace it.
 	Open       func(ctx context.Context, url string) error
@@ -84,8 +88,13 @@ func (ri *RuntimeInstaller) now() time.Time {
 	return time.Now()
 }
 
-// Kind implements Installer.
-func (ri *RuntimeInstaller) Kind() string { return "runtime" }
+// Kind implements Installer: "docker" for the Docker install's runtime, else "runtime".
+func (ri *RuntimeInstaller) Kind() string {
+	if ri.Container == "docker" {
+		return "docker"
+	}
+	return "runtime"
+}
 
 // Running implements Installer.
 func (ri *RuntimeInstaller) Running() string { return layout.NormalizeVersion(ri.Version) }

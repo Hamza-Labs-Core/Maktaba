@@ -130,8 +130,8 @@ func (u *updates) startPython(_ context.Context) error {
 }
 
 // installKind picks this server's installer (install-kinds.md): the desktop app's
-// bundle, the Linux runtime copy, the side-by-side layout, or a flat install that
-// cannot update itself.
+// bundle, the Linux runtime copy (a headless install's and the Docker install's too),
+// the side-by-side layout, or a flat install that cannot update itself.
 func installKind(cfg config.Config, releaseDir string, home bool, src updater.Source) (updater.Installer, string) {
 	record := ""
 	if home {
@@ -144,7 +144,8 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 				rt = appruntime.New(filepath.Dir(bundle))
 			}
 			return &updater.RuntimeInstaller{Runtime: rt, Source: src, Version: version.Version, LauncherRoot: lroot,
-				Owner: runtimeOwner(), Record: record, Open: updater.OpenURL}, filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
+					Owner: runtimeOwner(), Record: record, Container: config.Container(), Open: updater.OpenURL},
+				filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
 		}
 		bundled := strings.TrimSpace(os.Getenv(envAppBundled))
 		if bundled == "" {

@@ -13,7 +13,7 @@ installers/
   macos/         # signed/notarized .dmg + sparkle feed
   windows/       # MSI via WiX + Authenticode
   linux/         # .deb, .rpm, .pkg.tar.zst (debian/redhat/arch families)
-  docker/        # multi-arch images: amd64, arm64
+  docker/        # the Docker install's compose file (image: deploy/docker/server, amd64 + arm64)
   nas/           # Synology .spk, QNAP .qpkg
   rpi/           # Raspberry Pi images: 64-bit Lite + Maktaba overlay
   cloud-vps/     # one-click templates: DigitalOcean / Hetzner / Linode
@@ -41,7 +41,7 @@ Every installer's job is the same:
 | macOS | `codesign --options=runtime` + `xcrun notarytool` | Apple Developer ID, stored in 1Password vault `maktaba-codesign` |
 | Windows | `signtool` (Authenticode) | EV cert on YubiKey, off-network |
 | Linux .deb/.rpm | `dpkg-sig` / `rpm --addsign` (GPG) | GPG key `0xMAKTABASIGNING`, retained in `vault.hamzalabs.com/keys/release` |
-| Docker | `cosign sign-blob` | Cosign keyring, GitHub OIDC-bound |
+| Docker | `cosign sign` at the image digest (release.yml) | keyless, the release workflow's OIDC identity |
 | iOS/Android (clients) | xcode automated; Play store upload key | platform-managed |
 
 ## Auto-update
@@ -51,7 +51,7 @@ Each installer registers an update channel:
 - macOS → Sparkle XML feed at `https://releases.maktaba.app/macos/appcast.xml`
 - Windows → Squirrel feed
 - Linux → distro package repo
-- Docker → image tag (`stable`, `beta`)
+- Docker → none: the container updates the runtime on its volume itself, from the verified releases (docs/auto-update.md)
 - RPi → `apt-get upgrade` against our hosted repo
 
 The auto-update mechanism never bypasses signature checks. A failed
@@ -74,7 +74,7 @@ Each installer ships an uninstaller that:
 | 25.27 | macOS DMG | scaffold |
 | 25.28 | Windows MSI | scaffold |
 | 25.29 | Linux .deb/.rpm | scaffold |
-| 25.30 | Docker image | scaffold |
+| 25.30 | Docker image | built (`ghcr.io/hamza-labs-core/maktaba-server`, updates itself) |
 | 25.31 | NAS .spk/.qpkg | scaffold |
 | 25.32 | Raspberry Pi image | scaffold |
 | 25.33 | Cloud VPS templates | scaffold |

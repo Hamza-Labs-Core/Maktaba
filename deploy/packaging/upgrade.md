@@ -14,6 +14,8 @@ upgrade via Homebrew / dpkg / rpm. Both follow the same invariants:
 
 ## Container upgrade
 
+The Docker install (one container, `ghcr.io/hamza-labs-core/maktaba-server`, [cloud/installers/docker](../../cloud/installers/docker/docker-compose.yml)) needs none of this: it updates the runtime on its volume by itself, as a headless install does (docs/auto-update.md). The steps below are for the multi-service stack built from source (`deploy/compose`).
+
 ```sh
 # 1. Stage: pull the new images, do not switch traffic yet.
 docker compose pull api streaming pipeline web
