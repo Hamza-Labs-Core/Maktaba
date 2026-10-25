@@ -205,3 +205,93 @@ def test_parse_hits_skips_rows_without_metadata() -> None:
         "text": "text",
     }
     assert parse_hits({}) == []
+
+
+class _TunableCollection:
+    def __init__(self, threshold: int | None) -> None:
+        self.configuration = {"hnsw": {"sync_threshold": threshold}} if threshold else {}
+        self.modified: list[dict[str, Any]] = []
+
+    def modify(self, configuration: dict[str, Any]) -> None:
+        self.modified.append(configuration)
+        self.configuration = {"hnsw": dict(configuration["hnsw"])}
+
+
+class _TunableClient:
+    def __init__(self, coll: _TunableCollection) -> None:
+        self.coll = coll
+
+    def get_collection(self, name: str, embedding_function: Any = None) -> _TunableCollection:
+        return self.coll
+
+
+def test_the_collection_gets_this_machines_sync_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Chroma's 1000 rewrote the whole HNSW index (21 GB on the home Mac) every 1000
+    vectors: the collection is set to MAKTABA_CHROMA_SYNC_THRESHOLD (10 000) once."""
+    from maktaba_pipeline.search import semantic as sem
+
+    monkeypatch.delenv("MAKTABA_CHROMA_SYNC_THRESHOLD", raising=False)
+    coll = _TunableCollection(1000)
+    assert sem._tuned(_TunableClient(coll), coll, "c") is coll
+    assert coll.modified == [{"hnsw": {"sync_threshold": 10_000}}]
+    sem._tuned(_TunableClient(coll), coll, "c")
+    assert len(coll.modified) == 1  # already set: not again
+    monkeypatch.setenv("MAKTABA_CHROMA_SYNC_THRESHOLD", "0")  # leave Chroma's own
+    other = _TunableCollection(1000)
+    sem._tuned(_TunableClient(other), other, "c")
+    assert other.modified == []
+    monkeypatch.setenv("MAKTABA_CHROMA_SYNC_THRESHOLD", "20000")
+    sem._tuned(_TunableClient(other), other, "c")
+    assert other.modified == [{"hnsw": {"sync_threshold": 20_000}}]
+    bare = _TunableCollection(None)  # an older chromadb without a configuration
+    assert sem._tuned(_TunableClient(bare), bare, "c") is bare and bare.modified == []
+
+
+def test_collection_open_is_a_lookup(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+    from maktaba_pipeline.search import semantic as sem
+
+    monkeypatch.setattr(sem, "_COLLECTIONS", {})
+    monkeypatch.setattr(sem, "_TUNED", set())
+    assert not sem.collection_open("m", str(tmp_path))
+    key = (str(tmp_path), sem.collection_name("m"))
+    sem._COLLECTIONS[key] = object()
+    assert not sem.collection_open("m", str(tmp_path))  # open by a reader, not tuned yet
+    sem._TUNED.add(key)
+    assert sem.collection_open("m", str(tmp_path))
+
+
+def test_only_the_index_stage_tunes_and_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """A reader (chapter_infer, the search) opens the collection as it is: the settings
+    write is the index stage's, under the write lock, once per process."""
+    from maktaba_pipeline.search import semantic as sem
+
+    coll = _TunableCollection(1000)
+    key = (str(tmp_path), sem.collection_name("m"))
+    monkeypatch.setattr(sem, "_CLIENTS", {str(tmp_path): _TunableClient(coll)})
+    monkeypatch.setattr(sem, "_COLLECTIONS", {key: coll})
+    monkeypatch.setattr(sem, "_TUNED", set())
+    monkeypatch.delenv("MAKTABA_CHROMA_SYNC_THRESHOLD", raising=False)
+    assert sem.open_collection("m", str(tmp_path)) is coll and coll.modified == []
+    sem.open_collection("m", str(tmp_path), tune=True)
+    sem.open_collection("m", str(tmp_path), tune=True)
+    assert coll.modified == [{"hnsw": {"sync_threshold": 10_000}}]
+
+
+def test_reads_and_deletes_by_id_go_in_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
+    from maktaba_pipeline.search import semantic as sem
+
+    monkeypatch.setattr(sem, "ID_CHUNK", 2)
+    coll, emb = FakeCollection(), FakeEmbedder()
+    idx = SemanticIndex(coll, emb)
+    tid, vid = uuid.uuid4(), uuid.uuid4()
+    segs = [IndexedSegment(i, tid, i, float(i), float(i + 1), f"نص {i}") for i in range(5)]
+    idx.upsert_segments(video_id=vid, library_id=uuid.uuid4(), segments=segs)
+    ids = [embed_id_for(tid, i) for i in range(5)]
+    got = sem.video_vectors(coll, vid, ids)
+    assert [v.seq for v in got] == [0, 1, 2, 3, 4] and len(coll.gets) == 3
+    idx.delete_ids(ids[:3])
+    assert len(coll.deletes) == 2 and len(coll.rows) == 2

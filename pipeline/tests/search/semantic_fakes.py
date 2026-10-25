@@ -84,16 +84,30 @@ class FakeCollection:
         for i, e, m, d in zip(ids, embeddings, metadatas, documents, strict=True):
             self.rows[i] = (list(e), dict(m), d)
 
-    def delete(self, where: dict[str, Any]) -> None:
+    deletes: list[dict[str, Any]] = field(default_factory=list)
+
+    def delete(self, ids: Sequence[str] | None = None, where: dict[str, Any] | None = None) -> None:
+        self.deletes.append({"ids": list(ids) if ids is not None else None, "where": where})
+        if ids is not None:
+            for key in ids:
+                self.rows.pop(key, None)
+            return
         for key in [k for k, (_, m, _) in self.rows.items() if _matches(m, where)]:
             del self.rows[key]
 
+    gets: list[dict[str, Any]] = field(default_factory=list)
+
     def get(
         self,
+        ids: Sequence[str] | None = None,
         where: dict[str, Any] | None = None,
         include: Sequence[str] = (),
     ) -> dict[str, Any]:
-        hits = [(key, e, m, d) for key, (e, m, d) in self.rows.items() if _matches(m, where)]
+        self.gets.append({"ids": list(ids) if ids is not None else None, "where": where})
+        if ids is not None:
+            hits = [(key, *self.rows[key]) for key in ids if key in self.rows]
+        else:
+            hits = [(key, e, m, d) for key, (e, m, d) in self.rows.items() if _matches(m, where)]
         return {
             "ids": [h[0] for h in hits],
             "embeddings": [h[1] for h in hits],

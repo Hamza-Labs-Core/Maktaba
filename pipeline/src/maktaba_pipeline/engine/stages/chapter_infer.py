@@ -26,10 +26,12 @@ import hashlib
 import importlib
 from collections.abc import Callable
 from typing import Any
+from uuid import UUID
 
 from ...db.jobs import Job
 from ...library_mgmt.chapter import Segment, extractive_title, infer_topic_chapters
 from ...search import gate
+from ...search.embedder import embed_id_for
 from ...search.semantic import (
     SemanticUnavailable,
     StoredVector,
@@ -53,6 +55,10 @@ __all__ = [
     "reset_collection_factory",
     "set_collection_factory",
 ]
+
+#: the active transcript's segments: the ids of its vectors (search/embedder.py), read by
+#: id (a read by video scans the whole collection's metadata)
+_SEQS_SQL = "SELECT seq, text FROM transcript_segments WHERE transcript_id = $1"
 
 _AUTHORED_SQL = (
     "SELECT COUNT(*) FROM chapters WHERE video_id = $1 AND source IN ('embedded', 'manual')"
@@ -105,9 +111,9 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     )
 
 
-def _read_vectors(video_id: Any) -> list[StoredVector]:
+def _read_vectors(video_id: Any, ids: list[str] | None = None) -> list[StoredVector]:
     try:
-        return video_vectors(_collection_factory(), video_id)
+        return video_vectors(_collection_factory(), video_id, ids)
     except SemanticUnavailable as exc:
         raise StageFailure("search_unavailable", str(exc), retryable=False) from exc
 
@@ -171,8 +177,15 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         )
     transcript_id, _ = active
     await ctx.progress("read vectors", 0, 1, force=True)
+    ids = [
+        embed_id_for(UUID(transcript_id), int(r["seq"]))
+        for r in await db.fetch(_SEQS_SQL, transcript_id)
+        if str(r["text"] or "").strip()  # blank segments have no vector
+    ]
     vectors = [
-        vec for vec in await gate.read(_read_vectors, v.id) if vec.transcript_id == transcript_id
+        vec
+        for vec in await gate.read(_read_vectors, v.id, ids)
+        if vec.transcript_id == transcript_id
     ]
     if not vectors:
         # the index has not written this transcript's vectors yet (or every segment was
