@@ -16,6 +16,7 @@ import { LangToggle } from "./LangToggle";
 import { NotificationsBell } from "./NotificationsBell";
 import { updateAvailable, useUpdateStatus } from "../lib/updates";
 import { useSystemStatus } from "../lib/systemStatus";
+import { UpdateBanner } from "./UpdateBanner";
 
 // Where the update badge sits (Story 28.6): Settings in the sidebar and
 // the More menu, and More in the phone tab bar (Settings lives behind it).
@@ -289,6 +290,8 @@ export function AppShell() {
           )}
         </nav>
         <main className="mkt-shell__main" role="main" id="mkt-main" tabIndex={-1}>
+          {/* the mobile app's own update (story 28.5): nothing outside the Capacitor app */}
+          <UpdateBanner />
           <RouteErrorBoundary resetKey={pathname}>
             <Outlet />
           </RouteErrorBoundary>
