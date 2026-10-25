@@ -57,7 +57,9 @@ __all__ = [
     "embed_model",
     "get_embedder",
     "close_clients",
+    "collection_open",
     "open_collection",
+    "sync_threshold",
     "parse_hits",
     "pick_device",
     "search_available",
@@ -106,6 +108,29 @@ def batch_size() -> int:
     except ValueError:
         n = DEFAULT_BATCH_SIZE
     return max(1, n)
+
+
+#: how many additions Chroma keeps in its log before it writes its HNSW index to disk
+SYNC_THRESHOLD_ENV = "MAKTABA_CHROMA_SYNC_THRESHOLD"
+#: Chroma's default is 1000: it then rewrites the whole index (on the home Mac 12 million
+#: vectors, a 21 GB data file and a 1.2 GB id map) every 1000 vectors, seconds each: the
+#: index worker wrote about 120 vectors a second. Each write also costs more the more
+#: writes wait in the log since the last rewrite, and so does the rewrite: measured on a
+#: copy of that index, 10 000 writes about 600 a second (8 000: 560, 15 000: 570 at
+#: first and less as the log grows, 50 000: 550 falling to 330). The writes not yet in
+#: the index are in Chroma's log, applied again when it opens. A kill during the rewrite
+#: is what breaks the index, so fewer rewrites are also fewer chances of that.
+DEFAULT_SYNC_THRESHOLD = 10_000
+
+
+def sync_threshold() -> int:
+    """``MAKTABA_CHROMA_SYNC_THRESHOLD`` (0: leave the collection's own setting)."""
+    raw = os.getenv(SYNC_THRESHOLD_ENV, "").strip()
+    try:
+        n = int(raw) if raw else DEFAULT_SYNC_THRESHOLD
+    except ValueError:
+        n = DEFAULT_SYNC_THRESHOLD
+    return max(0, n)
 
 
 def collection_name(model: str, prefix: str | None = None) -> str:
@@ -289,10 +314,13 @@ class VectorCollection(Protocol):
         documents: Sequence[str],
     ) -> None: ...
 
-    def delete(self, where: dict[str, Any]) -> None: ...
+    def delete(
+        self, ids: Sequence[str] | None = None, where: dict[str, Any] | None = None
+    ) -> None: ...
 
     def get(
         self,
+        ids: Sequence[str] | None = None,
         where: dict[str, Any] | None = None,
         include: Sequence[str] = ...,
     ) -> dict[str, Any]: ...
@@ -338,7 +366,35 @@ def open_collection(model: str | None = None, persist_dir: str | None = None) ->
         coll = client.get_or_create_collection(
             name=name, metadata={"hnsw:space": "cosine"}, embedding_function=None
         )
+        coll = _tuned(client, coll, name)
         _COLLECTIONS[key] = coll
+        return coll
+
+
+def collection_open(model: str | None = None, persist_dir: str | None = None) -> bool:
+    """Whether this process has the collection open already (:func:`open_collection` is
+    then a lookup: it needs no lock of the search index's writes)."""
+    key = (persist_dir or chroma_dir(), collection_name(model or embed_model()))
+    with _STORE_LOCK:
+        return key in _COLLECTIONS
+
+
+def _tuned(client: Any, coll: Any, name: str) -> Any:
+    """The collection with this machine's :func:`sync_threshold` (stored in Chroma's own
+    configuration of the collection: set once, kept by every later open)."""
+    want = sync_threshold()
+    if not want:
+        return coll
+    try:
+        hnsw = (getattr(coll, "configuration", None) or {}).get("hnsw") or {}
+        have = hnsw.get("sync_threshold")
+        if have is None or int(have) == want:
+            return coll
+        coll.modify(configuration={"hnsw": {"sync_threshold": want}})
+        _log.info("chroma_sync_threshold_set", collection=name, before=int(have), after=want)
+        return client.get_collection(name=name, embedding_function=None)
+    except Exception as exc:  # noqa: BLE001 - an older chromadb: its own setting stays
+        _log.warning("chroma_sync_threshold_unchanged", error=f"{type(exc).__name__}: {exc}")
         return coll
 
 
@@ -396,11 +452,19 @@ class StoredVector:
     embedding: list[float]
 
 
-def video_vectors(collection: VectorCollection, video_id: UUID | str) -> list[StoredVector]:
-    """Every vector of ``video_id`` in segment order (no embedding model is loaded)."""
-    res = collection.get(
-        where={"video_id": str(video_id)}, include=["embeddings", "metadatas", "documents"]
-    )
+def video_vectors(
+    collection: VectorCollection, video_id: UUID | str, ids: Sequence[str] | None = None
+) -> list[StoredVector]:
+    """Every vector of ``video_id`` in segment order (no embedding model is loaded); with
+    ``ids`` (from the database) only those, read by id: a read by video scans the whole
+    collection's metadata (0.8 s on 12 million vectors, by id 0.01 s)."""
+    include = ["embeddings", "metadatas", "documents"]
+    if ids is not None:
+        if not ids:
+            return []
+        res = collection.get(ids=list(ids), include=include)
+    else:
+        res = collection.get(where={"video_id": str(video_id)}, include=include)
     embeddings = res.get("embeddings")
     if embeddings is None:  # a numpy array has no truth value: test for None, not falsy
         embeddings = []
@@ -461,24 +525,44 @@ class SemanticIndex:
         return cls(open_collection(model), get_embedder(model))
 
     def delete_video(self, video_id: UUID | str) -> None:
+        """Drop every vector of the video (a scan of the collection's metadata: about a
+        second on 12 million vectors; :meth:`video_ids` and :meth:`delete_ids` are the
+        index stage's way)."""
         self.collection.delete(where={"video_id": str(video_id)})
 
-    def upsert_segments(
+    def video_ids(self, video_id: UUID | str) -> set[str]:
+        """The ids of the video's vectors now (a read: no lock of the writes)."""
+        res = self.collection.get(where={"video_id": str(video_id)}, include=[])
+        return {str(i) for i in res.get("ids") or []}
+
+    def delete_ids(self, ids: Sequence[str]) -> None:
+        if ids:
+            self.collection.delete(ids=list(ids))
+
+    def embed_segments(
+        self, segments: Sequence[IndexedSegment]
+    ) -> tuple[list[IndexedSegment], list[list[float]]]:
+        """One batch's non-blank segments and their vectors (the model only: no Chroma)."""
+        chunk = [s for s in segments if s.text.strip()]
+        if not chunk:
+            return [], []
+        return chunk, self.embedder.embed_passages([s.text for s in chunk])
+
+    def write_vectors(
         self,
         *,
         video_id: UUID | str,
         library_id: UUID | str,
-        segments: Sequence[IndexedSegment],
+        chunk: Sequence[IndexedSegment],
+        vectors: Sequence[Sequence[float]],
         language: str | None = None,
     ) -> int:
-        """Embed ``segments`` (one batch) and upsert them; blank ones are skipped."""
-        chunk = [s for s in segments if s.text.strip()]
+        """Upsert one embedded batch (:meth:`embed_segments`); the number written."""
         if not chunk:
             return 0
-        vecs = self.embedder.embed_passages([s.text for s in chunk])
         self.collection.upsert(
             ids=[embed_id_for(s.transcript_id, s.seq) for s in chunk],
-            embeddings=vecs,
+            embeddings=[list(v) for v in vectors],
             documents=[s.text for s in chunk],
             metadatas=[
                 {
@@ -495,6 +579,24 @@ class SemanticIndex:
             ],
         )
         return len(chunk)
+
+    def upsert_segments(
+        self,
+        *,
+        video_id: UUID | str,
+        library_id: UUID | str,
+        segments: Sequence[IndexedSegment],
+        language: str | None = None,
+    ) -> int:
+        """Embed ``segments`` (one batch) and upsert them; blank ones are skipped."""
+        chunk, vectors = self.embed_segments(segments)
+        return self.write_vectors(
+            video_id=video_id,
+            library_id=library_id,
+            chunk=chunk,
+            vectors=vectors,
+            language=language,
+        )
 
     def replace_video(
         self,

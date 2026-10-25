@@ -178,6 +178,8 @@ async def test_chapters_and_the_video_vector_are_written(
     # a re-run replaces, never duplicates
     again = await chapter_infer.run(db, _job("video", v, lib), _ctx())
     assert len(await _chapters(db, v)) == 3 and again.output_hash == res.output_hash
+    # the vectors are read by id (from the database), never by a scan of the video
+    assert coll.gets and all(g["where"] is None and g["ids"] for g in coll.gets)
 
 
 @pytest.mark.asyncio
