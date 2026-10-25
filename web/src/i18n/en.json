@@ -1348,6 +1348,7 @@
   "queue.issues.none": "Nothing needs attention.",
   "queue.issues.last": "last seen {time}",
   "queue.issues.retry": "Retry {n}",
+  "queue.issues.retryAll": "Retry all {n}",
   "queue.issues.retryNas": "Retry {n} (NAS open p95 {ms})",
   "queue.issues.apply": "Apply",
   "queue.issues.openSettings": "Open settings",

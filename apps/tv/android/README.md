@@ -84,6 +84,5 @@ to `https://demo.maktaba.app`.
 
 - **Assistant voice search** — a `SearchManager` searchable config +
   content provider so "Hey Google, search Maktaba for…" deep-links in.
-- A real branded `app_banner` (the committed one is a placeholder).
 - A Home-screen **recommendation channel** (`androidx.tvprovider`).
 - Hilt for DI in place of the hand-wired `AppContainer`.

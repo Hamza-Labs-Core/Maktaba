@@ -38,7 +38,7 @@ import { safeGroups, safeLibraries, safeSnapshot } from "./safeData";
 import "../../styles/queue.css";
 
 export function QueueOverview() {
-  const { t } = useI18n();
+  const { t, n } = useI18n();
   const { snapshot: rawSnapshot, error: loadError, polling, reload } = useQueuesSnapshot();
   // a payload that is not a snapshot (an HTML page from a proxy) counts as a load error
   const snapshot = useMemo(
@@ -161,6 +161,16 @@ export function QueueOverview() {
     void action
       .run(groupKey(g), () => queueApi.retry(g.stage, { cause: g.cause }))
       .then((r) => r && refreshAfter());
+  // every group with a Retry button, one retry each (the same call as the button)
+  const retryable = issues.filter((g) => g.action === "retry");
+  const retryableCount = retryable.reduce((sum, g) => sum + g.count, 0);
+  const onRetryAll = () =>
+    void action
+      .run("retry-all", async () => {
+        for (const g of retryable) await queueApi.retry(g.stage, { cause: g.cause });
+        return true;
+      })
+      .then((r) => r && refreshAfter());
   const onApply = (g: FailureGroup) =>
     void action
       .run(groupKey(g), () => queueApi.apply(g.stage, { all: true }))
@@ -178,6 +188,16 @@ export function QueueOverview() {
         state={state}
         pausedAll={snapshot.paused_all}
         busy={action.busy === "pause-all"}
+        retryAll={
+          retryable.length > 0
+            ? {
+                count: retryableCount,
+                busy: action.busy === "retry-all",
+                disabled: action.busy != null && action.busy !== "retry-all",
+                onClick: onRetryAll,
+              }
+            : undefined
+        }
         onTogglePause={() =>
           void action
             .run("pause-all", () =>
@@ -236,9 +256,22 @@ export function QueueOverview() {
 
       <div className="mkt-q-cols">
         <section className="mkt-q-panel" aria-labelledby="mkt-q-issues-h">
-          <h2 className="mkt-q-section-title" id="mkt-q-issues-h">
-            {t("queue.issues.title")}
-          </h2>
+          <div className="mkt-q-section-head">
+            <h2 className="mkt-q-section-title" id="mkt-q-issues-h">
+              {t("queue.issues.title")}
+            </h2>
+            {retryable.length > 1 && (
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={action.busy === "retry-all"}
+                disabled={action.busy != null && action.busy !== "retry-all"}
+                onClick={onRetryAll}
+              >
+                {t("queue.issues.retryAll", { n: n(retryableCount) })}
+              </Button>
+            )}
+          </div>
           <IssueList
             groups={issues}
             stageLabel={stageLabel}

@@ -105,6 +105,12 @@ today; signing certs, push credentials (FCM `google-services.json`, APNs
 key + entitlements), and store metadata are provisioned per-platform
 outside version control.
 
+The app icon is the exception: `icons/` holds the prebuilt Android
+(`android-res/`) and iOS (`ios/`) icons, cut from the master by
+`tools/icons/make-icons.py`, and `scripts/apply-icons.sh` copies them over
+Capacitor's default after `cap add` / `cap sync` (`scripts/build.sh` and
+the release workflow run it).
+
 ## CI build & packaging
 
 [`.github/workflows/mobile-release.yml`](../../.github/workflows/mobile-release.yml)

@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
+from ..log import get_logger
 from .embedder import embed_id_for
 
 __all__ = [
@@ -55,6 +56,7 @@ __all__ = [
     "collection_name",
     "embed_model",
     "get_embedder",
+    "close_clients",
     "open_collection",
     "parse_hits",
     "pick_device",
@@ -304,6 +306,7 @@ class VectorCollection(Protocol):
     ) -> dict[str, Any]: ...
 
 
+_log = get_logger()
 _CLIENTS: dict[str, Any] = {}
 _COLLECTIONS: dict[tuple[str, str], Any] = {}
 _STORE_LOCK = threading.Lock()
@@ -337,6 +340,35 @@ def open_collection(model: str | None = None, persist_dir: str | None = None) ->
         )
         _COLLECTIONS[key] = coll
         return coll
+
+
+def close_clients() -> int:
+    """Close this process's Chroma clients (the worker stops): what each holds open is
+    released, and a later :func:`open_collection` opens a new one. The number closed.
+    Call it with no write running (search/gate.py)."""
+    with _STORE_LOCK:
+        clients = list(_CLIENTS.values())
+        _CLIENTS.clear()
+        _COLLECTIONS.clear()
+    for client in clients:
+        try:
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
+            else:
+                system = getattr(client, "_system", None)
+                stop = getattr(system, "stop", None)
+                if callable(stop):
+                    stop()
+        except Exception as exc:  # noqa: BLE001 - the process exits anyway
+            _log.warning("chroma_close_failed", error=f"{type(exc).__name__}: {exc}")
+    if clients:
+        try:
+            shared = importlib.import_module("chromadb.api.client").SharedSystemClient
+            shared.clear_system_cache()
+        except Exception:  # noqa: BLE001 - an older or newer chromadb: nothing cached there
+            pass
+    return len(clients)
 
 
 @dataclass(frozen=True, slots=True)

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"sync"
 	"time"
 
@@ -304,22 +305,37 @@ func (s *Supervisor) awaitRunning(ctx context.Context, cs []*child) (bool, error
 	}
 }
 
-// stopAll sends cs their graceful-stop signal, waits up to grace for their
-// loops to end and then kills what is left.
+// stopAll sends cs their graceful-stop signal, waits up to grace (a child's own
+// StopGrace when longer) for their loops to end and then kills what is left: each
+// child at the end of its own grace.
 func (s *Supervisor) stopAll(cs []*child, wg *sync.WaitGroup, grace time.Duration) {
 	s.mu.Lock()
 	s.signalLocked(cs, false)
 	s.mu.Unlock()
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(grace):
-		s.mu.Lock()
-		s.signalLocked(cs, true)
-		s.mu.Unlock()
-		<-done
+	byGrace := map[time.Duration][]*child{}
+	for _, c := range cs {
+		g := c.proc.graceFor(grace)
+		byGrace[g] = append(byGrace[g], c)
 	}
+	graces := make([]time.Duration, 0, len(byGrace))
+	for g := range byGrace {
+		graces = append(graces, g)
+	}
+	sort.Slice(graces, func(i, j int) bool { return graces[i] < graces[j] })
+	start := time.Now()
+	for _, g := range graces {
+		select {
+		case <-done:
+			return
+		case <-time.After(time.Until(start.Add(g))):
+			s.mu.Lock()
+			s.signalLocked(byGrace[g], true)
+			s.mu.Unlock()
+		}
+	}
+	<-done
 }
 
 // signalLocked signals every running child of cs. A kill takes the child's
@@ -696,12 +712,13 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 			// native call holding its GIL) finishes it and exits, where a kill mid-write
 			// can leave its store broken (the Chroma index). Killed after HangGrace.
 			if c.proc.askStop(cmd.Process, tree) == nil {
+				hang := c.proc.graceFor(HangGrace)
 				select {
 				case <-ctx.Done():
 					return // it stopped
-				case <-time.After(HangGrace):
+				case <-time.After(hang):
 				}
-				s.logf("%s (pid %d) did not stop within %s; killing it", c.proc.Name(), cmd.Process.Pid, HangGrace)
+				s.logf("%s (pid %d) did not stop within %s; killing it", c.proc.Name(), cmd.Process.Pid, hang)
 			}
 			tree.kill()
 			_ = cmd.Process.Kill()
@@ -840,7 +857,7 @@ func (s *Supervisor) Restart(role Role, instance string) error {
 		return nil
 	}
 	go func() {
-		time.Sleep(restartGrace)
+		time.Sleep(c.proc.graceFor(restartGrace))
 		s.killRun(c, cmd)
 	}()
 	return nil

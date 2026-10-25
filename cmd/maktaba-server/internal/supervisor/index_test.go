@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
@@ -48,6 +49,11 @@ func TestTheIndexWorker(t *testing.T) {
 	if p.Probe != "http://127.0.0.1:9104/healthz" || p.ProbeTimeout != PythonProbeTimeout {
 		t.Errorf("probe = %s, %s", p.Probe, p.ProbeTimeout)
 	}
+	// its drain lets a search index write finish; its grace covers the drain and the
+	// exit, and stays within the launcher's 60 s (which stops postgres after it)
+	if p.StopGrace != IndexStopGrace || IndexStopGrace <= IndexDrain+10*time.Second || IndexStopGrace > 50*time.Second {
+		t.Errorf("stop grace %s for a %s drain", p.StopGrace, IndexDrain)
+	}
 	m := envMap(p.Cmd.Env)
 	for k, want := range map[string]string{
 		"MAKTABA_PIPELINE_STAGES":         IndexStages,
@@ -55,6 +61,7 @@ func TestTheIndexWorker(t *testing.T) {
 		"MAKTABA_PIPELINE_GRPC_ADDR":      "127.0.0.1:9093",
 		"MAKTABA_PIPELINE_LOGS_ADDR":      "127.0.0.1:9104",
 		"MAKTABA_PIPELINE_SHARE":          "off",
+		"MAKTABA_PIPELINE_DRAIN_SEC":      "30",
 		"MAKTABA_PIPELINE_SEMANTIC":       "",
 	} {
 		if m[k] != want {
@@ -68,6 +75,9 @@ func TestTheIndexWorker(t *testing.T) {
 	main := envMap(mainProcess(t, cfg).Cmd.Env)
 	if ex := main["MAKTABA_PIPELINE_EXCLUDE_STAGES"]; !hasStage(ex, "index") || !hasStage(ex, "chapter_infer") {
 		t.Errorf("the main worker must leave the index stages to the index worker: %q", ex)
+	}
+	if main["MAKTABA_PIPELINE_DRAIN_SEC"] != "" {
+		t.Errorf("the main worker keeps the default drain: %q", main["MAKTABA_PIPELINE_DRAIN_SEC"])
 	}
 	if main["MAKTABA_PIPELINE_SEMANTIC"] != "off" || main["MAKTABA_PIPELINE_SHARE"] != "" {
 		t.Errorf("the main worker: semantic %q, share %q", main["MAKTABA_PIPELINE_SEMANTIC"], main["MAKTABA_PIPELINE_SHARE"])
