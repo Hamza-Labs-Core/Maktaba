@@ -59,8 +59,15 @@ Per-user state, all under **`~/Library/Application Support/Maktaba/`** (`data/`,
 - **The server runs as a login item** (`SMAppService.agent`) — the bundled `maktaba-launcher serve`
   under launchd with `KeepAlive`. It runs whether or not the window is open, and starts at login.
 - **`maktaba-server` supervises** postgres → api → streaming → pipeline (main worker) + N
-  transcription workers, and the language model server (`ollama`), with the backoff/restart and
-  `/processes` it already has.
+  transcription workers + the index worker, and the language model server (`ollama`), with the
+  backoff/restart and `/processes` it already has.
+- **The search index has a worker of its own** (`pipeline/index`): the `index` and `chapter_infer`
+  stages and the semantic search (gRPC 127.0.0.1:9093, which the API gets as
+  `MAKTABA_PIPELINE_SEARCH_ADDR`), with `MAKTABA_PIPELINE_SHARE=off` so nothing in it waits on the
+  NAS. The main worker, which reads the share and is killed when a stalled share hangs it, opens
+  no Chroma (`MAKTABA_PIPELINE_SEMANTIC=off`), so it can no longer cut an index write in half;
+  Chroma still has one process per directory. `[pipeline] index_worker = "off"` puts it back in
+  the main worker.
 - **The language model is local too.** The LLM stages (`check_tags`, `check_clips`, enrich,
   display titles) ask an Ollama server; on the home Mac nothing provided one and ~7,600 jobs failed
   with "connection refused". The app bundles Ollama (story 36.11) and runs it like every role.

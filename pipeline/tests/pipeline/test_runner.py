@@ -569,3 +569,57 @@ async def test_shutdown_lets_a_quick_job_finish() -> None:
     wakeup.fire()
     await asyncio.wait_for(task, timeout=3.0)
     assert finished == [1]
+
+
+@pytest.mark.asyncio
+async def test_a_shutdown_ends_the_wait_for_the_next_tick() -> None:
+    """The wakeup waits up to its poll (backed off to claim_poll_max_sec, 30 s, on a
+    quiet queue): a shutdown must end the loop at once, not at the next tick (the index
+    worker noticed a SIGTERM 9 s late, which ate into its drain)."""
+    db = FakeDB()
+    cfg = _make_cfg(claim_poll_sec=30.0, claim_poll_max_sec=30.0)
+    wakeup = PollOnlyWakeup(poll_sec=30.0)
+
+    async def dispatch(_: Job) -> None:  # pragma: no cover - empty queue
+        pass
+
+    loop = ClaimLoop(db, cfg, dispatch, wakeup=wakeup)
+    task = asyncio.create_task(loop.run())
+    await asyncio.sleep(0.05)
+    started = asyncio.get_running_loop().time()
+    loop.shutdown_event.set()  # no nudge
+    await asyncio.wait_for(task, timeout=2.0)
+    assert asyncio.get_running_loop().time() - started < 1.0
+
+
+@pytest.mark.asyncio
+async def test_the_drain_never_cuts_a_search_index_write() -> None:
+    """A job cancelled past the drain bound while its search index write runs ends once
+    the write did: the claim loop (and the exit after it) waits for the write."""
+    import threading
+
+    from maktaba_pipeline.search import gate
+
+    db = FakeDB()
+    db.add(Stage.PROBE)
+    cfg = _make_cfg(shutdown_drain_sec=0.1)
+    writing = threading.Event()
+    written = threading.Event()
+
+    def slow_write() -> None:
+        writing.set()
+        threading.Event().wait(0.5)  # a long Chroma upsert
+        written.set()
+
+    async def dispatch(_: Job) -> None:
+        await gate.write(slow_write)
+
+    wakeup = _ManualWakeup()
+    loop = ClaimLoop(db, cfg, dispatch, wakeup=wakeup)
+    task = asyncio.create_task(loop.run())
+    wakeup.fire()
+    await asyncio.wait_for(asyncio.to_thread(writing.wait, 2.0), timeout=3.0)
+    loop.shutdown_event.set()
+    await asyncio.wait_for(task, timeout=3.0)
+    assert written.is_set(), "the loop ended before the write it cancelled"
+    assert gate.wait_idle(0)

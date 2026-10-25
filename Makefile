@@ -72,8 +72,11 @@ GOARCH ?= $(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 #
 #   -trimpath            strip absolute paths from the binary so $HOME and
 #                        $PWD don't leak into the build.
-#   -ldflags '-buildid=' clear Go's link-time random build ID; without this
-#                        every build hashes differently.
+#   -ldflags '-buildid=' clear Go's link-time build ID (not for macOS: Go
+#                        makes the LC_UUID from it, and macOS matches a
+#                        Local Network or other privacy grant to a program
+#                        by that; the ID is a content hash, so two builds
+#                        still match byte for byte).
 #   -ldflags '-s -w'     strip debug + symbol tables (smaller + stable).
 #   -X version.Version=… stamp release metadata so binaries can introspect
 #                        themselves (`--version`, /healthz, log fields).
@@ -96,7 +99,8 @@ API_VERSION_PKG       := github.com/Hamza-Labs-Core/Maktaba/api/internal/version
 STREAMING_VERSION_PKG := github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version
 SERVER_VERSION_PKG    := github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version
 
-GO_LDFLAGS_BASE := -buildid= -s -w
+# macOS builds keep the build ID (above): GOOS from the command line, else this host's
+GO_LDFLAGS_BASE := $(if $(filter darwin,$(or $(GOOS),$(shell go env GOOS))),,-buildid= )-s -w
 # The streaming binary ships with TV staging and hot swap (Epic 33 stories
 # 33.5-33.9) compiled in; `make build-go-streaming STREAMING_TAGS=` builds
 # without them (rules.tv_staging.enabled then has no effect).

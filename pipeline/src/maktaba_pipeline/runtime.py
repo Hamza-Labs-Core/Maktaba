@@ -104,11 +104,19 @@ class RuntimeConfig:
     exclude_stages: tuple[str, ...] = ()
     #: run through the queue-graph engine (pools, change-driven propagation, extensions)
     engine: bool = True
+    #: False (``--no-share``): this worker never touches the media share: no storage
+    #: check or path conversion (``start_home``), no foreign-thumbnail repair, no queue
+    #: health probes, its cluster files on this machine. The supervisor's index worker
+    #: runs so, its stages read only the database and the search index
+    share: bool = True
     heartbeat_sec: float = DEFAULT_HEARTBEAT_SEC
     stale_claim_sec: float = 90.0
     reaper_interval_sec: float = 30.0
     claim_poll_sec: float = 1.0
     claim_poll_max_sec: float = 30.0
+    #: on shutdown, how long the jobs in flight may take before they are cancelled
+    #: (``WorkerConfig.shutdown_drain_sec``; the index worker's is longer)
+    shutdown_drain_sec: float = 15.0
     #: Deprecated: per-stage caps were never wired (F10). Concurrency now comes from
     #: ``worker_pools``; kept so existing callers still construct the config.
     stage_concurrency: dict[Stage, int] = field(default_factory=dict)
@@ -397,7 +405,9 @@ async def run(
     worker_id = cfg.worker_id or default_worker_id()
     shutdown = asyncio.Event()
     install_signal_handlers(shutdown)
-    background: list[asyncio.Task[None]] = []
+    background: list[asyncio.Task[None]] = [
+        asyncio.create_task(_close_index_on_shutdown(shutdown), name="index-close")
+    ]
     engine_rt: EngineRuntime | None = None
     stage_names: tuple[str, ...] = tuple(str(s) for s in cfg.stages)
     stage_pools: dict[str, str] = {}
@@ -407,7 +417,8 @@ async def run(
 
     if cfg.engine:
         started = await _start_engine(database, cfg, worker_id, host, shutdown, dispatch_overrides)
-        engine_rt, background = started.runtime, started.tasks
+        engine_rt = started.runtime
+        background.extend(started.tasks)
         selector = started.selector
         agent = started.agent
         stage_names = started.served
@@ -431,6 +442,7 @@ async def run(
         supported_stages=stage_names,
         claim_poll_sec=cfg.claim_poll_sec,
         claim_poll_max_sec=cfg.claim_poll_max_sec,
+        shutdown_drain_sec=cfg.shutdown_drain_sec,
         worker_id=worker_id,
         pool_mode=cfg.engine,
         stage_pools=stage_pools,
@@ -474,6 +486,9 @@ async def run(
             await shutdown.wait()
     finally:
         shutdown.set()
+        from .search import gate
+
+        gate.close()  # as _close_index_on_shutdown, should the loop end on its own
         await reaper.stop()
         for task in background:
             task.cancel()
@@ -488,6 +503,15 @@ async def run(
         _log.info("pipeline_runtime_stopped")
     # 77 when the home refused this machine for good (revoked): services stop restarting
     return exitcodes.exit_code(0)
+
+
+async def _close_index_on_shutdown(shutdown: asyncio.Event) -> None:
+    """The moment the worker stops, no search index write starts (search/gate.py): the
+    jobs waiting for one end at once, the one writing finishes its write."""
+    from .search import gate
+
+    await shutdown.wait()
+    gate.close()
 
 
 @dataclass(slots=True)
@@ -572,6 +596,14 @@ async def _start_engine(
     caps = await asyncio.to_thread(capabilities)
     if is_node:
         await agent.start_node(caps)
+    elif not cfg.share:
+        # the other workers check the storage and convert the paths; a stalled share
+        # must not reach this one (the storage check's threads would wait on it), nor
+        # the failure policy's look at a library root
+        from .engine.failure_policy import set_share_probes
+
+        set_share_probes(False)
+        _log.info("worker_leaves_the_share_to_the_others", worker_id=worker_id)
     else:
         try:
             # story 31.3: canonical share paths resolve through this machine's mounts
@@ -637,7 +669,7 @@ async def _start_engine(
     if is_node:
         # a node stops its jobs before their claim lease lapses, however its beats hang
         tasks.append(asyncio.create_task(agent.run_lease_watch(), name="claim-lease"))
-    if not is_node:
+    if not is_node and cfg.share:
         # Epic 40: the dependency watchers release jobs parked on the model, a share or
         # disk space; the home's mounts are the ones that matter (one worker probes)
         from .engine.watchers import run_watchers
@@ -661,6 +693,7 @@ async def _start_engine(
                     shutdown=shutdown,
                     worker=agent,
                     health=collector,
+                    on_share=cfg.share,
                 ),
                 name="cluster-agent",
             )

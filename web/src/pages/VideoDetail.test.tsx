@@ -8,15 +8,16 @@ import { ApiError } from "../lib/api";
 import { renderPage, memberUser, adminUser, quietCrash } from "../test/pageHarness";
 import { makeHub } from "../test/queueHarness";
 
-const { get, post, patch, hub } = vi.hoisted(() => ({
+const { get, post, patch, del, hub } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
+  del: vi.fn(() => Promise.resolve()),
   hub: { current: null as null | ReturnType<typeof makeHub> },
 }));
 vi.mock("../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../lib/api")>("../lib/api");
-  return { ...actual, api: { ...actual.api, get, post, patch } };
+  return { ...actual, api: { ...actual.api, get, post, patch, delete: del } };
 });
 const subscribe = vi.fn((ch: string, fn: (ev: unknown) => void) => {
   const off = hub.current!.subscribe(ch, fn);
@@ -137,22 +138,46 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
     ).toEqual(["Watch", "Metadata", "Transcript", "Chapters", "Files", "Processing", "Statistics"]);
     expect(screen.getByRole("tab", { name: "Watch" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Intro talk")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "▶ Play" })).toHaveAttribute(
-      "href",
-      "/videos/v1/watch"
-    );
+    expect(screen.getByRole("button", { name: "▶ Play" })).toBeInTheDocument();
   });
 
-  it("VID-01: the video's picture leads the header and plays it", async () => {
+  it("VID-01: the video's picture leads the header", async () => {
     serve();
     const { container } = renderVideo();
-    const hero = await screen.findByRole("link", { name: "Play: Lecture 1" });
-    expect(hero).toHaveAttribute("href", "/videos/v1/watch");
+    const hero = await screen.findByRole("button", { name: "Play: Lecture 1" });
     expect(hero.querySelector("img")?.getAttribute("src")).toBe("/api/videos/v1/poster");
     // a video with no picture yet shows a plain box, not a broken image
     fireEvent.error(hero.querySelector("img")!);
     expect(container.querySelector(".mkt-video__hero .mkt-card__poster--fallback")).not.toBeNull();
   });
+
+  it.each([["Play: Lecture 1"], ["▶ Play"]])(
+    "VID-01: %s plays the video here, in the picture's place",
+    async (name) => {
+      serve({ "/api/videos/v1/chapters": { items: [] } });
+      post.mockResolvedValue({
+        session_id: "s1",
+        mode: "direct",
+        direct_url: "/stream/direct/s1?sig=x",
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      });
+      const { container } = renderVideo();
+      await screen.findByRole("heading", { level: 1, name: "Lecture 1" });
+      // just looking at the page opens no stream
+      expect(post).not.toHaveBeenCalled();
+      await userEvent.setup().click(screen.getByRole("button", { name }));
+      const video = await screen.findByTestId("mkt-video");
+      expect(post).toHaveBeenCalledWith("/api/stream/sessions", { video_id: "v1" });
+      expect((video as HTMLVideoElement).autoplay).toBe(true);
+      expect(video.closest(".mkt-video__hero--player")).not.toBeNull();
+      expect(container.querySelector("button.mkt-video__hero")).toBeNull();
+      expect(screen.queryByRole("button", { name: "▶ Play" })).toBeNull();
+      // the page stays (no trip to /watch), the tabs under the player
+      expect(screen.getByTestId("loc")).toHaveTextContent("/videos/v1");
+      expect(screen.getByTestId("loc")).not.toHaveTextContent("/watch");
+      expect(screen.getByRole("tab", { name: "Watch" })).toBeInTheDocument();
+    }
+  );
 
   it("VID-01: related videos show their pictures", async () => {
     serve({

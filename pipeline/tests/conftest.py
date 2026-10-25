@@ -169,3 +169,12 @@ def _unit_tests_skip_disk_syncs(
     fsync) past their 0.1 s cap. Durability is not what a unit test checks."""
     if request.node.get_closest_marker("unit") is not None:
         monkeypatch.setattr("os.fsync", lambda fd: None)
+
+
+@pytest.fixture(autouse=True)
+def _search_index_open() -> None:
+    """A worker that stopped closed the search index's writes for the process
+    (search/gate.py, the runtime's shutdown): each test starts with them open."""
+    from maktaba_pipeline.search import gate
+
+    gate.reopen()

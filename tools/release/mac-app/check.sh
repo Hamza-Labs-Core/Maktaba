@@ -86,6 +86,16 @@ while IFS= read -r f; do
 done < <(find "$PAYLOAD" -type f -print0 | xargs -0 file | awk -F': ' '/Mach-O/ {print $1}')
 [ "$bad" -eq 0 ] && ok "$n Mach-O files, all arm64, self-contained"
 
+echo "build IDs"
+# macOS matches a Local Network (and other privacy) grant to a program by its LC_UUID: without
+# one the grant never applies ("failed to get UUIDs for .../maktaba-launcher", Plex "No route
+# to host" with the switch on). Go writes it from its build ID, so a build must not clear that.
+bad=0
+for f in "$PAYLOAD"/bin/*; do
+    otool -l "$f" | grep -q LC_UUID || { fail "bin/${f##*/}: no LC_UUID (built with -buildid=?)"; bad=$((bad + 1)); }
+done
+[ "$bad" -eq 0 ] && ok "every program in bin/ has an LC_UUID"
+
 echo "PostgreSQL"
 # the only logical decoding output plugin is pgoutput: another one (test_decoding) would let a
 # machine's replication role decode every table, past what is published to it (Epic 37)

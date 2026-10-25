@@ -129,10 +129,11 @@ class JobsFileSink:
 
 
 def _settings_hook(
-    files: ClusterFiles, locator: share.ShareLocator | None = None
+    files: ClusterFiles, locator: share.ShareLocator | None = None, *, on_share: bool = True
 ) -> Callable[[Mapping[str, Any]], None]:
     """``welcome.settings``: the hub's share root wins over this process's own guess;
-    its retention and cap apply unless this machine's environment sets them."""
+    its retention and cap apply unless this machine's environment sets them. A worker
+    that never touches the share (``on_share=False``) keeps its files where they are."""
 
     def apply(settings: Mapping[str, Any]) -> None:
         files.apply_settings(
@@ -150,7 +151,12 @@ def _settings_hook(
             # the hub names the folder it files this process under
             loop.run_in_executor(None, files.set_ip, share.folder_name(ip))
         root = settings.get("share_root")
-        if isinstance(root, str) and root.strip() and not os.environ.get(share.ENV_CLUSTER_DIR):
+        if (
+            on_share
+            and isinstance(root, str)
+            and root.strip()
+            and not os.environ.get(share.ENV_CLUSTER_DIR)
+        ):
             if locator is not None:
                 # resolved through this machine's map, now and at every retry
                 locator.share_root, locator.how = root.strip(), f"share root {root.strip()}"
@@ -193,7 +199,11 @@ async def run_agent(
     job_tracker: JobTracker | None = None,
     paused: Callable[[], str | None] | None = None,
     pause_listeners: list[Callable[[], None]] | None = None,
+    on_share: bool = True,
 ) -> None:
+    """The agent; ``on_share=False`` (a worker run with ``--no-share``, the index worker)
+    keeps its files on this machine (``~/.maktaba/cluster``) and never looks for the
+    share: a stalled share must not reach it."""
     files: ClusterFiles | None = None
     shipper: LogShipper | None = None
     agent: ChannelAgent | None = None
@@ -206,14 +216,18 @@ async def run_agent(
         ip = await asyncio.to_thread(share.machine_ip, ident.url)
         ident.ip = ip
         ident.os, ident.version = AgentIdentity.describe_os()
-        root: str | None
-        try:
-            root, how = await asyncio.wait_for(share.find_share_root(database), 30)
-        except (TimeoutError, asyncio.TimeoutError):  # noqa: UP041
-            root, how = None, "share lookup timed out"
-        # the share root goes through the path map active when the files are placed
-        # (and at every retry): a node paused at start has no map yet
-        locator = share.ShareLocator(root, how, path_map=active_path_map)
+        locator: share.ShareLocator | None = None
+        if not on_share:
+            how = "this worker never touches the share"
+        else:
+            root: str | None
+            try:
+                root, how = await asyncio.wait_for(share.find_share_root(database), 30)
+            except (TimeoutError, asyncio.TimeoutError):  # noqa: UP041
+                root, how = None, "share lookup timed out"
+            # the share root goes through the path map active when the files are placed
+            # (and at every retry): a node paused at start has no map yet
+            locator = share.ShareLocator(root, how, path_map=active_path_map)
         files = await asyncio.to_thread(
             ClusterFiles, None, ip, worker_id, reason=how, locate=locator
         )
@@ -259,7 +273,7 @@ async def run_agent(
                 revoked=_refused(shutdown),
                 check_membership=check_membership,
             ),
-            on_settings=_settings_hook(files, locator),
+            on_settings=_settings_hook(files, locator, on_share=on_share),
             status_path=status_dir() / f"{safe_name(worker_id)}.json",
             paused=paused,
         )
@@ -309,10 +323,12 @@ async def run_for_worker(
     shutdown: asyncio.Event,
     worker: Any,
     health: Any = None,
+    on_share: bool = True,
 ) -> None:
     """The agent of an engine worker: ``worker`` is its stage selection
     (:class:`~..node.WorkerAgent`: ``cmd drain`` holds it, ``cmd reload_stages``
-    re-reads it now), ``health`` its :class:`~...engine.health.HealthCollector`."""
+    re-reads it now), ``health`` its :class:`~...engine.health.HealthCollector`;
+    ``on_share`` as :func:`run_agent`."""
     from ...engine.health import health_frame
 
     selector = worker.selector
@@ -343,4 +359,5 @@ async def run_for_worker(
         # the local status file says so while the home is gone (nothing reaches it)
         paused=lambda: selector.paused or selector.unreachable,
         pause_listeners=worker.pause_listeners,
+        on_share=on_share,
     )

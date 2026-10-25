@@ -152,6 +152,16 @@ async def library_root(db: Any, video_id: Any) -> str | None:
     return best
 
 
+#: False in a worker that never touches the share (``--no-share``, the index worker): a
+#: missing file is then never put down to the share, whose probe could hang a thread
+_share_probes = True
+
+
+def set_share_probes(on: bool) -> None:
+    global _share_probes
+    _share_probes = on
+
+
 async def root_answers(root: str, timeout_s: float) -> bool:
     """The root's folder exists and lists on this machine within ``timeout_s`` (a dead SMB
     mount can hang a stat for minutes: a check that does not answer is a no)."""
@@ -219,7 +229,7 @@ async def decide(
     cls = class_for(cause, cfg.class_overrides)
     if cls == MODEL:
         cls = f"{MODEL}:{_model_section(stage)}"
-    elif cause.startswith("file_missing") and cls == ITEM_PERMANENT:
+    elif cause.startswith("file_missing") and cls == ITEM_PERMANENT and _share_probes:
         root = await library_root(db, video_id)
         if root is not None and not await root_answers(root, cfg.probe_timeout_seconds):
             cls = f"{SHARE}:{root}"

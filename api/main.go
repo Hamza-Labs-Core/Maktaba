@@ -444,6 +444,17 @@ func runServe() error {
 				logger.Info("p6: pipeline gRPC client wired",
 					"addr", pipelineAddr, "event", "p6_pipeline_wired")
 			}
+			// MAKTABA_PIPELINE_SEARCH_ADDR is the pipeline worker that holds the
+			// search index (the supervisor's index worker): the semantic search
+			// goes there, the rest to pipelineAddr.
+			var searchPipelineClient grpcpipeline.Client
+			if searchAddr := os.Getenv("MAKTABA_PIPELINE_SEARCH_ADDR"); searchAddr != "" {
+				cfg := grpcpipeline.DefaultConfig()
+				cfg.Addr = searchAddr
+				searchPipelineClient = grpcpipeline.NewRealClient(cfg)
+				logger.Info("p6: pipeline search gRPC client wired",
+					"addr", searchAddr, "event", "p6_pipeline_search_wired")
+			}
 			if streamingAddr != "" {
 				cfg := grpcstreaming.DefaultConfig()
 				cfg.Addr = streamingAddr
@@ -496,6 +507,7 @@ func runServe() error {
 				},
 				DB:                   appDB,
 				PipelineClient:       pipelineClient,
+				SearchPipelineClient: searchPipelineClient,
 				StreamingClient:      streamingClient,
 				SearchSemanticBudget: semanticBudget,
 				BusCtx:               busCtx,

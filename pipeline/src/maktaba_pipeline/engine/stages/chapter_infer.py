@@ -29,6 +29,7 @@ from typing import Any
 
 from ...db.jobs import Job
 from ...library_mgmt.chapter import Segment, extractive_title, infer_topic_chapters
+from ...search import gate
 from ...search.semantic import (
     SemanticUnavailable,
     StoredVector,
@@ -171,9 +172,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     transcript_id, _ = active
     await ctx.progress("read vectors", 0, 1, force=True)
     vectors = [
-        vec
-        for vec in await asyncio.to_thread(_read_vectors, v.id)
-        if vec.transcript_id == transcript_id
+        vec for vec in await gate.read(_read_vectors, v.id) if vec.transcript_id == transcript_id
     ]
     if not vectors:
         # the index has not written this transcript's vectors yet (or every segment was
