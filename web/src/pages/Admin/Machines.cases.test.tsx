@@ -456,7 +456,10 @@ describe("Machines (test-cases/admin-machines.md)", () => {
   ])("MCH-15: code %s is accepted as %s", async (code, digits) => {
     open();
     await approveWith(code);
-    expect(post).toHaveBeenCalledWith("/api/cluster/nodes/p1/approve", { code: digits });
+    expect(post).toHaveBeenCalledWith("/api/cluster/nodes/p1/approve", {
+      code: digits,
+      full: false,
+    });
   });
 
   it.each(["12345a", "1234567"])("MCH-15: code %s is refused client-side", async (code) => {

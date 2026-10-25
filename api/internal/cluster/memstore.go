@@ -234,6 +234,10 @@ func (m *MemoryStore) UpdateNode(_ context.Context, id string, p NodePatch, now 
 	case p.ClearPathMap:
 		n.PathMap, n.PathMapSource = nil, nil
 	}
+	if p.FullAllowed != nil {
+		n.FullAllowed = *p.FullAllowed
+		n.FullNode = n.FullCapable && n.FullAllowed
+	}
 	n.UpdatedAt = now
 	return nil
 }
@@ -310,4 +314,15 @@ func (m *MemoryStore) ClearSealed(_ context.Context, cutoff time.Time) error {
 		}
 	}
 	return nil
+}
+
+// SetFullCapable is a machine's report that it can be full (tests: on Postgres,
+// cluster_node_report_full); full_node follows the admin's FullAllowed (slot 0151).
+func (m *MemoryStore) SetFullCapable(id string, capable bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if n, err := m.get(id, ""); err == nil {
+		n.FullCapable = capable
+		n.FullNode = capable && n.FullAllowed
+	}
 }

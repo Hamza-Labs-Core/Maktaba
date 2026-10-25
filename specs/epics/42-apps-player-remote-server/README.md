@@ -138,7 +138,8 @@ Two kinds of account, kept apart:
 
 **Linking:** a home user, signed in to the home, links their cloud account from Account →
 Linked accounts (a cloud sign-in in a browser sheet; the home stores the cloud user's id against
-the home user, `home_user_links`). One cloud account can be linked to users on several homes;
+the home user, `home_user_links`, with the link's scope: `play`, or `manage` for an admin who
+asked for it on the home). One cloud account can be linked to users on several homes;
 one home user to one cloud account. Unlinking (the user, or the home's admin) cuts it at once.
 
 **Signing in with it:**
@@ -155,6 +156,13 @@ one home user to one cloud account. Unlinking (the user, or the home's admin) cu
 
 **Rules:**
 
+- **The surface grants nothing.** Player or Remote, native or the cloud web, an app changed by
+  its user: the home's API checks the home user's role on every route, from the token alone.
+  A viewer through the cloud Remote is a viewer; a tampered app with a viewer's token is too.
+- **Links have a scope, set on the home.** A link is `play` by default. `manage` (managing
+  the home through the cloud) is set only on the home, by a home admin, for their own link.
+  A token the home issues from an assertion carries the link's scope, and every admin route
+  refuses a `play`-scoped token, even an admin's: a stolen cloud account can watch, not manage.
 - The home decides everything: the rights are the linked home user's; a disabled home user or a
   removed link refuses the assertion; the home works without the cloud (local sign-in, local
   network).
