@@ -222,6 +222,9 @@ class Commands:
     #: a membership check through the database, now (the node heartbeat): run when the
     #: hub's close says "not a member" / "revoked", which alone proves nothing
     check_membership: Callable[[], Awaitable[None]] | None = None
+    #: ``cmd update.convert``: this worker-only machine made a full node by its next update
+    #: (story 35.8 AC8, convert.py); its answer (ok, detail) is the command's
+    convert: Callable[[Mapping[str, Any]], Awaitable[tuple[bool, dict[str, Any]]]] | None = None
 
 
 class _Session:
@@ -712,7 +715,8 @@ class ChannelAgent:
         name = str(frame.get("name") or "")
         args = frame.get("args") if isinstance(frame.get("args"), Mapping) else {}
         assert isinstance(args, Mapping)
-        ok, detail = True, ""
+        ok: bool = True
+        detail: Any = ""
         close: tuple[int, str] | None = None
         try:
             if name in ("drain", "undrain"):
@@ -725,6 +729,11 @@ class ChannelAgent:
                     ok, detail = False, "this process has no stage selection"
                 else:
                     detail = await self.commands.reload_stages()
+            elif name == "update.convert":
+                if self.commands.convert is None:
+                    ok, detail = False, "this process converts nothing (not a machine's worker)"
+                else:
+                    ok, detail = await self.commands.convert(args)
             elif name == "log_level":
                 level = str(args.get("level") or "")
                 if level.lower() not in ("debug", "info", "warning", "warn", "error"):

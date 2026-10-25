@@ -48,6 +48,9 @@ const (
 	TargetHeld          = "held"
 	TargetSkipped       = "skipped"
 	TargetWorkerOnly    = "worker_only"
+	// TargetConverting: a worker-only machine becoming a full node on its turn (story 35.8
+	// AC8, convert.go)
+	TargetConverting = "converting"
 	// A desktop app that runs the server (owner decision D1): ordered, it waits for a
 	// click there (the rollout goes on with the others), then for its turn.
 	TargetWaitingClick = "waiting_click"

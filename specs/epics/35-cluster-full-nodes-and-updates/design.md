@@ -542,6 +542,14 @@ pipeline agent `cmd update.convert {run_id, version}` (a new command in the pipe
 pipeline's constraints), and runs `bin/releases/<v>/maktaba-server setup --node --converting`, which
 does the steps above and reports through the new machine agent. A worker-only node too old to know
 `update.convert` is shown "worker-only — re-run the installer once" (its installer run converts it).
+As built: the conversion is the machine's turn in the rollout (drained first, one machine at a
+time, inside the window; target state `converting`), and a catch-up converts the worker-only
+machines in the window. The worker verifies with the Sigstore root the server compiles in (a
+copy in the pipeline package, refreshed with it by `trusted-root.yml`), runs setup outside its
+own service (a `systemd-run --scope`, a `Win32_Process.Create` process outside the scheduled
+task's job, a new session on macOS) and answers each later `update.convert` of the run with how
+far it got; the target is healthy once the machine's new agent reports the release. Setup keeps
+the worker's extra instances (`maktaba-node@N`) as `[pipeline] instances`.
 This PC (the Windows worker node joined today) converts on the first rollout after 35.8 ships if its
 pipeline has `update.convert`, else on its next installer run.
 

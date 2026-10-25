@@ -139,6 +139,9 @@ export interface ClusterNode {
   web_url?: string | null;
   /** Epic 35 (story 35.8): a full machine (web, API, streaming); false: a worker only */
   full_node?: boolean;
+  /** Epic 35 (story 35.8 AC8): a worker only's next update makes it a full node
+   * (next_update), or its pipeline is too old for that (installer: re-run it once) */
+  worker_convert?: "next_update" | "installer";
   /** Epic 35 (design §11.5): VOD served by another machine when the share is not readable here */
   vod?: NodeVod;
   /** Epic 35 (story 35.12): the update rollout's view of this machine */

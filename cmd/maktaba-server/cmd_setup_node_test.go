@@ -225,3 +225,83 @@ func TestSetupNodeChoosesTorchsBuild(t *testing.T) {
 		t.Error("IsConstraints")
 	}
 }
+
+// The rollout's conversion (story 35.8 AC8) keeps the worker's extra instances: the
+// installer's maktaba-node@1..N become [pipeline] instances = N; an explicit --instances
+// wins.
+func TestSetupNodeConvertingKeepsTheWorkersInstances(t *testing.T) {
+	home := t.TempDir()
+	wants := filepath.Join(home, ".config", "systemd", "user", "default.target.wants")
+	if err := os.MkdirAll(wants, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"maktaba-node.service", "maktaba-node@1.service", "maktaba-node@2.service"} {
+		if err := os.WriteFile(filepath.Join(wants, n), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &nodeSetup{GOOS: "linux", Home: home, Run: (&recorder{}).run}
+	if n := s.workerInstances(); n != 2 {
+		t.Fatalf("linux instances %d", n)
+	}
+	agents := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"com.maktaba.node.plist", "com.maktaba.node.1.plist"} {
+		if err := os.WriteFile(filepath.Join(agents, n), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.GOOS = "darwin"
+	if n := s.workerInstances(); n != 1 {
+		t.Fatalf("macOS instances %d", n)
+	}
+	rec := &recorder{}
+	s = &nodeSetup{GOOS: "windows", Run: func(name string, args ...string) error {
+		rec.calls = append(rec.calls, name+" "+strings.Join(args, " "))
+		if name == "schtasks" && args[0] == "/Query" && args[2] != "maktaba-node@1" && args[2] != "maktaba-node@2" &&
+			args[2] != "maktaba-node@3" {
+			return errors.New("no such task")
+		}
+		return nil
+	}}
+	if n := s.workerInstances(); n != 3 {
+		t.Fatalf("windows instances %d", n)
+	}
+}
+
+// The old worker's units go once the new service answers, the template's instances
+// included (disabled by their own names: maktaba-node@.service is no unit to stop).
+func TestSetupNodeRemovesTheWorkersInstanceUnits(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".config", "systemd", "user")
+	wants := filepath.Join(dir, "default.target.wants")
+	if err := os.MkdirAll(wants, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{filepath.Join(dir, "maktaba-node.service"), filepath.Join(dir, "maktaba-node@.service"),
+		filepath.Join(wants, "maktaba-node.service"), filepath.Join(wants, "maktaba-node@1.service")} {
+		if err := os.WriteFile(p, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := &recorder{}
+	s := &nodeSetup{GOOS: "linux", Home: home, Run: rec.run, Out: &bytes.Buffer{}}
+	s.removeWorkerUnits()
+	all := strings.Join(rec.calls, "\n")
+	for _, want := range []string{"systemctl --user disable --now maktaba-node@1.service",
+		"systemctl --user disable --now maktaba-node.service", "systemctl --user daemon-reload"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("%q not run:\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "disable --now maktaba-node@.service") {
+		t.Fatalf("the template was stopped as a unit:\n%s", all)
+	}
+	for _, f := range []string{"maktaba-node.service", "maktaba-node@.service"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s kept", f)
+		}
+	}
+}

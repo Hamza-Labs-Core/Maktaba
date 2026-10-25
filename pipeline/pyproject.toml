@@ -12,6 +12,9 @@ dependencies = [
     "grpcio>=1.68",
     "huggingface-hub>=0.25",
     "psutil>=6",
+    # the release a worker-only machine converts to (update.convert, story 35.8 AC8): its
+    # checksums verified against the pinned signing identity before anything runs
+    "sigstore>=4.5,<5",
     "structlog>=24.0",
     "watchdog>=4.0.0",
     "websockets>=13",

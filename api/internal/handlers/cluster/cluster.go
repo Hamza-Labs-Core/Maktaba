@@ -95,6 +95,9 @@ type Handler struct {
 	// hub's): a node's view carries its own (its release, its run, its login to this
 	// home's database); nil: the stored one.
 	LiveStates func() map[string]json.RawMessage
+	// WorkerConvert says what becomes of each worker-only machine (the update driver's,
+	// story 35.8 AC8): next_update or installer; nil: not said.
+	WorkerConvert func(ctx context.Context) map[string]string
 	// OnNodeChanged is called after an admin changes a machine's stage
 	// switches or drain: its processes reload their stages at once.
 	OnNodeChanged func(nodeID string)

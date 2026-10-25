@@ -116,6 +116,10 @@ type Machine struct {
 	// HomeDB is a node's login to the home's database (nil: it has not said): "this
 	// machine can't reach the home's database: <reason>" when not ok.
 	HomeDB *HomeDB `json:"home_db,omitempty"`
+	// Convert is what becomes of a worker-only machine (story 35.8 AC8): next_update (its
+	// next update makes it a full node) or installer ("worker-only — re-run the installer
+	// once": its pipeline is too old for that).
+	Convert string `json:"convert,omitempty"`
 }
 
 // Overview builds GET /api/cluster/updates.

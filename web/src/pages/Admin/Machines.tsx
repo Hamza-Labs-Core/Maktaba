@@ -946,7 +946,13 @@ const MachineCard = memo(function MachineCard({
           {version && <span className="mkt-mc-chip">{version}</span>}
           {active && node.full_node === true && <Badge tone="success">{t("machines.full")}</Badge>}
           {active && node.full_node === false && (
-            <Badge tone="neutral">{t("machines.workerOnly")}</Badge>
+            <Badge tone="neutral">
+              {t(
+                node.worker_convert === "installer"
+                  ? "machines.workerOnly"
+                  : "machines.workerOnlyConverts"
+              )}
+            </Badge>
           )}
           {/* "last seen" only while it is away: on a live machine it changed every poll */}
           {status !== "online" && node.last_seen_at && (

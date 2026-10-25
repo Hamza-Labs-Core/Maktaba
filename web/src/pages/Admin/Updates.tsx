@@ -437,6 +437,11 @@ export function AdminUpdates() {
                   {m.role === "node" && m.home_db && m.home_db.ok === false && (
                     <HomeDbNote machineId={m.id} homeDb={m.home_db} />
                   )}
+                  {m.state === "worker_only" && m.convert && (
+                    <div className="mkt-muted" data-testid={`updates-machine-${m.id}-convert`}>
+                      {t(`updates.convert.${m.convert}`)}
+                    </div>
+                  )}
                 </td>
               </tr>
               {(m.attempts?.length ?? 0) > 0 && (
