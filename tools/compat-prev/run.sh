@@ -15,6 +15,11 @@
 #     release migrated, and pauses exactly when that database is below this build's
 #     schema ("update the home").
 #
+# "An old node against a new home" is covered at the schema level: the old release's
+# code and guard on the new database. No old node process talks to a new home here (the
+# cluster channel's and the link's protocols are versioned and checked by their own
+# tests).
+#
 # Needs MAKTABA_TEST_PG_URL (a Postgres whose user may create databases and roles: it
 # makes and drops its own compat_* databases, and the migrations' cluster-wide roles),
 # psql (PSQL to name another), git tags (a full clone), and Go. COMPAT_PREV_TAG names

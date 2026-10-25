@@ -132,6 +132,7 @@ func TestBackupsAndRestore(t *testing.T) {
 		t.Fatalf("restore %d %v", code, out)
 	}
 	if len(sup.restored) != 1 || sup.restored[0]["backup"] != "pre-v0.2.0-to-v0.3.0.dump" || sup.restored[0]["confirm"] != true ||
+		sup.restored[0]["page"] != true ||
 		sup.restored[0]["by"] == "" {
 		t.Fatalf("asked %v", sup.restored)
 	}
@@ -157,5 +158,49 @@ func TestBackupsAndRestore(t *testing.T) {
 	if code, out := do(t, r2, "GET", "/api/cluster/updates/backups", nil, true); code != http.StatusServiceUnavailable ||
 		!strings.Contains(out["code"].(string), "orchestrator_unavailable") {
 		t.Fatalf("no supervisor: %d %v", code, out)
+	}
+}
+
+// Review L3: a restore the command line asked for (through the supervisor) is recorded by
+// the API as the page's is: audited, the machines told; only this machine's supervisor may
+// say so.
+func TestRestoredNoticeFromTheSupervisor(t *testing.T) {
+	f := newFixture(t, sqliteDB(t))
+	tok := filepath.Join(t.TempDir(), "token")
+	_ = os.WriteFile(tok, []byte("tok\n"), 0o600)
+	t.Setenv("MAKTABA_SUPERVISOR_TOKEN_FILE", tok)
+	cl := &disconnectFake{}
+	h := &Handler{Svc: f.svc, Driver: &Driver{Store: f.store, Svc: f.svc, Cluster: cl}}
+	r := chi.NewRouter()
+	h.Mount(r)
+	post := func(token string) int {
+		req := httptest.NewRequest(http.MethodPost, "/internal/updates/restored",
+			strings.NewReader(`{"backup":"pre-v0.2.0-to-v0.3.0.dump","release":"0.2.0","schema":140,"by":"the command line"}`))
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("X-Maktaba-Local-Token", token)
+		}
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := post(""); code != http.StatusForbidden {
+		t.Fatalf("without the token: %d", code)
+	}
+	if code := post("nope"); code != http.StatusForbidden {
+		t.Fatalf("another token: %d", code)
+	}
+	if code := post("tok"); code != http.StatusNoContent {
+		t.Fatalf("the supervisor: %d", code)
+	}
+	if a := auditActions(t, f); len(a) != 1 || a[0] != "update.restore" {
+		t.Fatalf("audit %v", a)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for len(cl.commands()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := cl.commands(); len(got) != 1 || got[0] != "s-n1 disconnect" {
+		t.Fatalf("machines told %v", got)
 	}
 }
