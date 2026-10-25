@@ -314,12 +314,14 @@ test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
 	@bash tools/test-budget.sh wall integration $(INTEGRATION_TIER_BUDGET) -- \
 		$(MAKE) --no-print-directory test-integration-inner
 
+# -vet=off: the unit tier's go test and the lint job vet every package already; the
+# integration tier spends its budget on the tests.
 .PHONY: test-integration-inner
 test-integration-inner:
 	@for mod in $(INTEGRATION_GO_MODULES); do \
 		echo "==> go test -tags=integration ./... ($$mod)"; \
 		(cd $$mod && $(if $(INTEGRATION_GO_PG_URL),MAKTABA_TEST_PG_URL='$(INTEGRATION_GO_PG_URL)') \
-			go test -tags=integration -count=1 ./...); \
+			go test -tags=integration -vet=off -count=1 ./...); \
 	done
 	@# pytest exits 5 when no tests match the marker — that's the
 	@# normal state until Story 20.4 lands real integration tests.

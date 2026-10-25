@@ -4,12 +4,10 @@ promoted without an approval."""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from maktaba_pipeline.runtime import Database
-from maktaba_pipeline.tvrelease.config import auto_rule
+from maktaba_pipeline.tvrelease.config import MaktabaTvStagingConfig, auto_rule
 from maktaba_pipeline.tvrelease.stage import collapse_open, stage_change
 from maktaba_pipeline.tvrelease.store import create_change, get_change, open_change, open_changes
 from tests.tvrelease.helpers import NOW, add_channel, library_with, set_staging
@@ -18,7 +16,7 @@ _SHA = "ab" * 32
 
 
 def test_only_the_updaters_binary_change_is_immediate() -> None:
-    cfg = SimpleNamespace(auto_promote_binary="approval", auto_promote_lineup="approval")
+    cfg = MaktabaTvStagingConfig(auto_promote_binary="approval", auto_promote_lineup="approval")
     assert auto_rule(cfg, ["binary"], "auto_update") == "immediate"
     assert auto_rule(cfg, ["binary"], "manual") == "approval"
     assert auto_rule(cfg, ["binary"]) == "approval"
