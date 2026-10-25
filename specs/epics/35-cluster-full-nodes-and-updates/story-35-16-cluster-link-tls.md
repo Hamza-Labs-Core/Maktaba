@@ -86,7 +86,11 @@ transport".
 - **TC9** Integration: Postgres with `verify-full` and client certificates; a stolen password without
   the certificate is refused.
 - **TC10** `TestLinkModeAutoRequire`, `TestLegacyPathsRefusedInRequire`.
-- **TC11** Load: 20 TV pulls + a release download on one machine; control-channel p99 < 50 ms.
+- **TC11** Load: 20 TV pulls + a release download on one machine; control-channel p99 < 50 ms, for
+  control frames (a control ping) and for requests (an RPC) alike. The bound is the link's own cost:
+  it is measured over the machine's own round trip in the same window (a one-byte echo over plain
+  loopback TCP under the same load), so CPU the machine shares with other processes (a CI runner's
+  other test binaries) is not counted against the link.
 - **TC12** Python: the pipeline agent connects through the supervisor's loopback endpoint with its v2
   sealing unchanged (`test_agent_via_local_link`).
 

@@ -480,6 +480,9 @@ func (c *ctrl) onEvent(b []byte) {
 		}
 		_ = c.event(StreamTicket{T: "stream.ticket", ID: o.ID, Ticket: t, URL: PathStream,
 			ExpiresAt: c.srv.now().Add(ticketLife).UTC()})
+	case "ping":
+		// the control channel's own round trip (control frames, no handler)
+		_ = c.event(map[string]any{"t": "pong", "id": h.ID})
 	case "cert.renew":
 		var cr CertRenew
 		if json.Unmarshal(b, &cr) != nil {

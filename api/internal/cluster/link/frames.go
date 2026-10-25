@@ -34,6 +34,9 @@ const (
 	KindEnd    byte = 4
 	KindCancel byte = 5
 	KindEvent  byte = 6
+	// KindWhole is a small answer whole in one frame (its head with the body, no chunk
+	// or end frames): one write and one read where three would be.
+	KindWhole byte = 7
 )
 
 // Classes: control frames (commands, cert.*, tickets, offers) are always sent before rpc
@@ -99,7 +102,7 @@ func Decode(b []byte) (Frame, error) {
 		return Frame{}, ErrBadFrame
 	}
 	f := Frame{ID: binary.BigEndian.Uint32(b[0:4]), Kind: b[4], Class: b[5]}
-	if f.Kind < KindReq || f.Kind > KindEvent || (f.Class != ClassControl && f.Class != ClassRPC) {
+	if f.Kind < KindReq || f.Kind > KindWhole || (f.Class != ClassControl && f.Class != ClassRPC) {
 		return Frame{}, ErrBadFrame
 	}
 	f.Payload = append([]byte(nil), b[HeadSize:]...)
