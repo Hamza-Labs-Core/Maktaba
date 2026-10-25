@@ -160,13 +160,26 @@ func TestMirrorTamperCaughtByNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	rel, _ := rs.publish(t, "v1.5.0", releaseverifytest.ReleaseOptions{MinUpgradeFrom: "1.4.0"}, nil)
-	// the release on GitHub, at its asset paths (the node's transport knows them by those)
+	// the release on GitHub, at its asset paths (the node's transport knows them by those),
+	// each answered as the real GitHub does: a 302 to its object host
 	assets := map[string]string{}
 	var mu sync.Mutex
 	asked := map[string]int{}
-	for n, b := range rel.Files {
-		rs.files["o/r/releases/download/v1.5.0/"+n] = b
-		assets[n] = rs.srv.URL + "/o/r/releases/download/v1.5.0/" + n
+	objects := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, ok := rel.Files[filepath.Base(r.URL.Path)]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(b)
+	}))
+	t.Cleanup(objects.Close)
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, objects.URL+"/github-production-release-asset/"+filepath.Base(r.URL.Path), http.StatusFound)
+	}))
+	t.Cleanup(gh.Close)
+	for n := range rel.Files {
+		assets[n] = gh.URL + "/o/r/releases/download/v1.5.0/" + n
 	}
 	// the home's mirror, whose copy of the archive someone changed
 	home := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

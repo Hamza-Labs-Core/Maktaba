@@ -123,16 +123,33 @@ func (h *home) client() *Client {
 
 // github is a stand-in GitHub serving every release file as "github:<name>".
 func github(t *testing.T) (*httptest.Server, *int) {
-	n := new(int)
+	gh, _, n := githubWithObjects(t)
+	return gh, n
+}
+
+// githubWithObjects is a stand-in GitHub that answers a release asset as the real one
+// does: a 302 to its object host (the second server, at a path that is no release
+// asset's), which serves the file as "github:<name>". n counts GitHub's answers.
+func githubWithObjects(t *testing.T) (gh, objects *httptest.Server, n *int) {
+	n = new(int)
 	var mu sync.Mutex
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	objects = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "github:"+filepath.Base(r.URL.Path))
+	}))
+	t.Cleanup(objects.Close)
+	gh = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		*n++
 		mu.Unlock()
+		if strings.Contains(r.URL.Path, "/releases/download/") {
+			http.Redirect(w, r, objects.URL+"/github-production-release-asset/"+filepath.Base(r.URL.Path)+"?X-Amz-Signature=x",
+				http.StatusFound)
+			return
+		}
 		_, _ = io.WriteString(w, "github:"+filepath.Base(r.URL.Path))
 	}))
-	t.Cleanup(s.Close)
-	return s, n
+	t.Cleanup(gh.Close)
+	return gh, objects, n
 }
 
 func fetch(t *testing.T, c *http.Client, u string, hdr map[string]string) (int, string) {
@@ -350,3 +367,64 @@ func TestTransportAsksGitHubForACopyThatDidNotVerify(t *testing.T) {
 		t.Fatalf("GitHub away: %q", body)
 	}
 }
+
+// GitHub answers a release asset with a 302 to its object host: a copy from the home that
+// did not verify is taken from there (over the link alike), and when the object host does
+// not answer, from the mirror again. Recheck of #287.
+func TestTransportFollowsGitHubToItsObjectHost(t *testing.T) {
+	archive := []byte("the archive")
+	sums := []byte(sum(archive) + "  maktaba.tar.gz\n")
+	serve := func(w http.ResponseWriter, path string) {
+		switch filepath.Base(path) {
+		case "checksums.txt":
+			_, _ = w.Write(sums)
+		case "maktaba.tar.gz":
+			_, _ = io.WriteString(w, "a damaged copy")
+		default:
+			http.NotFound(w, nil)
+		}
+	}
+	// the signed path, and the cluster link (a local API that carries the mirror's requests)
+	h := newHome(t)
+	h.files["/api/cluster/updates/artifacts/1.5.0/checksums.txt"] = sums
+	h.files["/api/cluster/updates/artifacts/1.5.0/maktaba.tar.gz"] = []byte("a damaged copy")
+	tok := filepath.Join(t.TempDir(), "token")
+	_ = os.WriteFile(tok, []byte("t0k"), 0o600)
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serve(w, r.URL.Query().Get("path"))
+	}))
+	t.Cleanup(api.Close)
+	overLink := h.client()
+	overLink.Link = &LocalLink{API: api.URL, TokenFile: tok}
+	for name, c := range map[string]*Client{"signed": h.client(), "link": overLink} {
+		gh, objects, ghHits := githubWithObjects(t)
+		hc := &http.Client{Transport: c.Transport(nil)}
+		u := gh.URL + "/o/r/releases/download/v1.5.0/"
+		fetch(t, hc, u+"checksums.txt", nil)
+		if _, body := fetch(t, hc, u+"maktaba.tar.gz", nil); body != "a damaged copy" {
+			t.Fatalf("%s: first: %q", name, body)
+		}
+		if code, body := fetch(t, hc, u+"maktaba.tar.gz", nil); code != http.StatusOK || body != "github:maktaba.tar.gz" ||
+			*ghHits != 1 {
+			t.Fatalf("%s: asked again: %d %q (GitHub %d)", name, code, body, *ghHits)
+		}
+		// GitHub answers but its object host does not: the mirror again
+		objects.Close()
+		if _, body := fetch(t, hc, u+"maktaba.tar.gz", nil); body != "a damaged copy" {
+			t.Fatalf("%s: the object host away: %q", name, body)
+		}
+	}
+	// a redirect from https to http, or to another scheme, is not followed
+	tr := &transport{c: h.client(), base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": {"http://objects.example/x"}},
+			Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+	})}
+	req, _ := http.NewRequest(http.MethodGet, "https://github.com/o/r/releases/download/v1.5.0/x", nil)
+	if _, err := tr.github(req); err == nil {
+		t.Fatal("followed a redirect from https to http")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

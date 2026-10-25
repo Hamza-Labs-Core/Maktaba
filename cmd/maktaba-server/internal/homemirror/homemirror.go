@@ -366,9 +366,9 @@ func (t *transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	if t.suspect(version, name) {
 		// asked again after the mirror's copy did not verify: GitHub's, which the stage
-		// verifies the same way; the mirror again only when GitHub does not answer
-		resp, err := t.base.RoundTrip(r)
-		if err == nil && resp.StatusCode == http.StatusOK {
+		// verifies the same way; the mirror again only when GitHub does not give it
+		resp, err := t.github(r)
+		if err == nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent) {
 			t.c.logf("%s from GitHub (the home's copy did not verify)", name)
 			return resp, nil
 		}
@@ -430,6 +430,50 @@ func (t *transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	t.c.logf("%s from GitHub (the home's mirror: %s)", name, why)
 	return t.base.RoundTrip(r)
+}
+
+// maxRedirects bounds the hops of github's answer (an http.Client's default is ten).
+const maxRedirects = 5
+
+// github asks GitHub for r, following its redirects as an http.Client would (a release
+// asset's URL answers with a redirect to its object host): at most maxRedirects, never
+// from https to http, with the request's range headers. The last answer.
+func (t *transport) github(r *http.Request) (*http.Response, error) {
+	req := r
+	for hop := 0; ; hop++ {
+		resp, err := t.base.RoundTrip(req)
+		if err != nil {
+			return nil, err
+		}
+		switch resp.StatusCode {
+		case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther, http.StatusTemporaryRedirect,
+			http.StatusPermanentRedirect:
+		default:
+			return resp, nil
+		}
+		loc, err := resp.Location()
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		_ = resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if hop+1 >= maxRedirects {
+			return nil, fmt.Errorf("GitHub redirected %s more than %d times", r.URL, maxRedirects)
+		}
+		if (loc.Scheme != "https" && loc.Scheme != "http") || (req.URL.Scheme == "https" && loc.Scheme != "https") {
+			return nil, fmt.Errorf("GitHub redirected %s to %s", r.URL, loc.Redacted())
+		}
+		next, err := http.NewRequestWithContext(r.Context(), http.MethodGet, loc.String(), nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, h := range []string{"Range", "If-Range", "Accept", "User-Agent"} {
+			if v := r.Header.Get(h); v != "" {
+				next.Header.Set(h, v)
+			}
+		}
+		req = next
+	}
 }
 
 // getVia is get over a given transport (the mirror's own requests skip the mirror).
