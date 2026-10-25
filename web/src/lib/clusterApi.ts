@@ -232,7 +232,16 @@ export interface ClusterLink {
   machines: number;
   nodes?: Record<
     string,
-    { connected: boolean; since?: string; cert_not_after?: string; has_cert: boolean }
+    {
+      connected: boolean;
+      since?: string;
+      cert_not_after?: string;
+      has_cert: boolean;
+      /** the machine's clock minus the home's, when over a minute (EC2) */
+      clock_skew_seconds?: number;
+      /** why it keeps the link from becoming required (EC3) */
+      blocks?: "worker_only" | "no_cert" | "not_connected" | "under_a_day" | "clock_skew";
+    }
   >;
 }
 

@@ -92,6 +92,9 @@ type homeLink struct {
 	notifier notify.Notifier
 	logger   *slog.Logger
 
+	// skews are the machines' clock skews (the hub's, from their update.state)
+	skews func() map[string]time.Duration
+
 	mu    sync.Mutex
 	rules linkRules
 	down  map[string]time.Time // machines whose session ended, since when
@@ -460,6 +463,32 @@ type LinkNode struct {
 	Since        *time.Time `json:"since,omitempty"`
 	CertNotAfter *time.Time `json:"cert_not_after,omitempty"`
 	HasCert      bool       `json:"has_cert"`
+	// ClockSkewSeconds is the machine's clock minus the home's when over a minute (EC2;
+	// past 5 minutes its new certificate is not valid yet).
+	ClockSkewSeconds int `json:"clock_skew_seconds,omitempty"`
+	// Blocks is why this machine keeps the link from becoming required (EC3):
+	// worker_only, no_cert, not_connected, under_a_day, clock_skew; "" when it does not.
+	Blocks string `json:"blocks,omitempty"`
+}
+
+// maxSkew is how far a machine's clock may be off before it is said (EC2).
+const maxSkew = 5 * time.Minute
+
+// blocks is why a machine keeps the link from becoming required ("" when it does not).
+func blocks(n LinkNode, full bool, skew time.Duration, now time.Time) string {
+	switch {
+	case !full:
+		return "worker_only"
+	case skew > maxSkew || skew < -maxSkew:
+		return "clock_skew"
+	case !n.HasCert:
+		return "no_cert"
+	case !n.Connected:
+		return "not_connected"
+	case n.Since == nil || now.Sub(*n.Since) < requireAfter:
+		return "under_a_day"
+	}
+	return ""
 }
 
 // info is the link's state for GET /api/cluster.
@@ -468,15 +497,20 @@ func (hl *homeLink) info(ctx context.Context) any {
 	out := LinkInfo{Mode: lr.Mode, AutoRequire: lr.AutoRequire, CASHA256: hl.ca.SHA256, CAURL: link.PathCACert,
 		WebHTTPS: lr.WebHTTPS, Nodes: map[string]LinkNode{}}
 	out.Ready, out.Machines, _ = hl.linkReady(ctx)
-	rows, err := hl.db.QueryContext(ctx, `SELECT id::text, link_since, cert_not_after, cert_serial IS NOT NULL
+	var skews map[string]time.Duration
+	if hl.skews != nil {
+		skews = hl.skews()
+	}
+	rows, err := hl.db.QueryContext(ctx, `SELECT id::text, link_since, cert_not_after, cert_serial IS NOT NULL, full_node
 		FROM cluster_nodes WHERE state = 'approved'`)
 	if err == nil {
 		defer rows.Close()
+		now := time.Now()
 		for rows.Next() {
 			var id string
 			var since, notAfter sql.NullTime
-			var has bool
-			if rows.Scan(&id, &since, &notAfter, &has) != nil {
+			var has, full bool
+			if rows.Scan(&id, &since, &notAfter, &has, &full) != nil {
 				continue
 			}
 			n := LinkNode{Connected: hl.srv.Live(id), HasCert: has}
@@ -485,6 +519,13 @@ func (hl *homeLink) info(ctx context.Context) any {
 			}
 			if notAfter.Valid {
 				n.CertNotAfter = &notAfter.Time
+			}
+			skew := skews[id]
+			if skew > time.Minute || skew < -time.Minute {
+				n.ClockSkewSeconds = int(skew.Round(time.Second) / time.Second)
+			}
+			if lr.Mode == linkctx.ModePrefer {
+				n.Blocks = blocks(n, full, skew, now)
 			}
 			out.Nodes[id] = n
 		}

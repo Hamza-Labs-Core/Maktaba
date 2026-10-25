@@ -136,6 +136,9 @@ type Session struct {
 	// only renew its certificate (cert.csr)
 	viaLink  bool
 	certOnly bool
+	// clockSkew is the machine's clock minus the home's, from its last update.state
+	clockSkew time.Duration
+	hasSkew   bool
 }
 
 type outFrame struct {

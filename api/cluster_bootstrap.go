@@ -115,6 +115,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	}
 	hub := mountClusterHub(r, h, db, driver, store, keys, certs, logger)
 	if hl != nil {
+		hl.skews = hub.ClockSkews
 		// a revoked (or removed) machine loses its link and its certificates at once
 		closeSessions := h.OnRevoke
 		h.OnRevoke = func(nodeID string) {

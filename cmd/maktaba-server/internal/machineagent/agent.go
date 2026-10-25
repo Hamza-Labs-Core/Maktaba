@@ -511,7 +511,10 @@ func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher, v
 		}
 		st := a.State()
 		f := map[string]any{"t": "update.state", "version": st.Version, "prepared_version": st.PreparedVersion,
-			"platform": st.Platform, "layout": st.Layout}
+			"platform": st.Platform, "layout": st.Layout,
+			// this machine's clock: the home shows one more than 5 minutes off (its
+			// certificates would not be valid yet, story 35.16 EC2)
+			"clock": time.Now().UTC()}
 		if st.Run != nil {
 			f["run"] = st.Run
 		}

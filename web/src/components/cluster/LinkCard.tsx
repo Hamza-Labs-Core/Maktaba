@@ -48,6 +48,11 @@ export function LinkCard({ link, nodes }: { link: ClusterLink; nodes: ClusterNod
                     : left !== null && left > 0
                       ? t("machines.link.certLeft", { time: f.dur(left) })
                       : t("machines.link.certExpired")}
+                  {n.clock_skew_seconds
+                    ? " · " +
+                      t("machines.link.clockSkew", { time: f.dur(Math.abs(n.clock_skew_seconds)) })
+                    : ""}
+                  {n.blocks ? " · " + t(`machines.link.block.${n.blocks}`) : ""}
                 </span>
               </li>
             );
