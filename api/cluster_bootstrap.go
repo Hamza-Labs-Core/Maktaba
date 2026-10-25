@@ -169,6 +169,11 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	if driver == "postgres" {
 		go func() {
 			h.MendAtStart(ctx) // a home that may not give roles mends that before any machine asks
+			if os.Getenv("MAKTABA_E2E_NO_ACCESS_PUSH") == "1" {
+				// the end-to-end tests' home that never pushes: its machines ask
+				hub.AnswerAccessRequests(h, logger)
+				return
+			}
 			hub.EnsureAccess(ctx, h, 10*time.Second, logger)
 		}()
 	}

@@ -158,6 +158,9 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 		RejoinState: ns.rejoin.State,
 	}
 	ns.homeDB.ask = func(st machineagent.HomeDB) bool { return ns.agent.RequestAccess(&st) }
+	if d, err := time.ParseDuration(os.Getenv("MAKTABA_E2E_ACCESS_ASK")); err == nil && d > 0 {
+		ns.homeDB.askAfter, ns.homeDB.askFirst = d, d // the end-to-end tests ask sooner
+	}
 	go ns.agent.Run(ctx)
 	if os.Getenv(envLauncherRoot) != "" || os.Getenv("MAKTABA_RELEASE_DIR") != "" {
 		// an installed full node: the worker units of its worker-only install a conversion

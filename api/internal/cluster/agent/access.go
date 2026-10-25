@@ -140,7 +140,7 @@ func (h *Hub) EnsureAccess(ctx context.Context, g AccessGranter, every time.Dura
 		logger = slog.Default()
 	}
 	// a machine's own request (access.request) is answered with g too
-	h.setAccessGranter(g, logger)
+	h.AnswerAccessRequests(g, logger)
 	granted := map[string]time.Time{} // node -> when its access was last re-made
 	tries := map[string]int{}         // node -> re-makes since it last logged in
 	checked := map[string]bool{}      // agent sessions whose role was checked
@@ -237,7 +237,9 @@ type accessRequests struct {
 	granted map[string]time.Time // node -> when a request of its re-made its access
 }
 
-func (h *Hub) setAccessGranter(g AccessGranter, logger *slog.Logger) {
+// AnswerAccessRequests answers the machines' own requests for their database access with g
+// (EnsureAccess does, besides its push).
+func (h *Hub) AnswerAccessRequests(g AccessGranter, logger *slog.Logger) {
 	h.acc.mu.Lock()
 	h.acc.granter, h.acc.logger = g, logger
 	h.acc.mu.Unlock()
