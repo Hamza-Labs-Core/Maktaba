@@ -137,6 +137,26 @@ func TestMe_ProjectsPrincipal(t *testing.T) {
 	}
 }
 
+// Every signed-in user reads the home's name, not only an admin (the apps show it).
+func TestMe_HomeNameForEveryUser(t *testing.T) {
+	h := &Handler{HomeName: func(context.Context) string { return "Living room" }}
+	for _, p := range []*principal.Principal{{UserID: "viewer"}, {UserID: "admin", IsAdmin: true}} {
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+		req = req.WithContext(principal.WithPrincipal(req.Context(), p))
+		rec := httptest.NewRecorder()
+		h.Me(rec, req)
+		var got struct {
+			HomeName string `json:"home_name"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %v", p.UserID, rec.Code, err)
+		}
+		if got.HomeName != "Living room" {
+			t.Errorf("%s: home_name = %q", p.UserID, got.HomeName)
+		}
+	}
+}
+
 func TestMe_NoPrincipalIs401(t *testing.T) {
 	h := &Handler{}
 	rec := httptest.NewRecorder()

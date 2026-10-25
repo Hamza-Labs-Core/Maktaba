@@ -288,11 +288,14 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Diagnostics" })).toBeInTheDocument();
     expect(screen.getByText(/Collect a diagnostics bundle/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Collect diagnostics" })).toBeInTheDocument();
+    // renaming the home is an admin's (the API refuses anyone else)
+    expect(screen.queryByRole("heading", { name: "Home name" })).not.toBeInTheDocument();
   });
 
   it("SAC-02: an admin sees (admin) after the name", () => {
     renderSettings("/settings", { user: { id: "u1", username: "root", is_admin: true } });
     expect(screen.getByText("root").closest("p")).toHaveTextContent("Signed in as root (admin)");
+    expect(screen.getByRole("heading", { level: 2, name: "Home name" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign out everywhere" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Collect diagnostics" })).toBeInTheDocument();
   });
@@ -478,8 +481,9 @@ describe("Settings account (test-cases/settings-account.md)", () => {
 
   it("SAC-13: a deep link to each sub-route renders that tab and only its calls", async () => {
     const cases: [string, () => Promise<unknown>, string[]][] = [
-      ["/settings", () => screen.findByText(/Signed in as/), []],
-      ["/settings/", () => screen.findByText(/Signed in as/), []],
+      // an admin's Account tab reads the home's name
+      ["/settings", () => screen.findByText(/Signed in as/), ["/api/auth/me"]],
+      ["/settings/", () => screen.findByText(/Signed in as/), ["/api/auth/me"]],
       ["/settings/sessions", () => screen.findByRole("link", { name: "Manage sessions" }), []],
       ["/settings/appearance", () => screen.findByRole("radiogroup", { name: "Theme" }), []],
       [

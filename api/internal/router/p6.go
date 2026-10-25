@@ -51,7 +51,11 @@ import (
 // P6Deps bundles the dependencies for Phase 6 handlers. DB is the only
 // required field; gRPC clients are optional (a nil client is a no-op).
 type P6Deps struct {
-	DB              *sql.DB
+	DB *sql.DB
+	// Settings is the runtime settings reader (PATCH /api/settings drops its
+	// cache). Nil ⇒ one of its own; main.go shares one with the auth surface,
+	// so a renamed home reads at once in GET /api/auth/me.
+	Settings        *runtimecfg.Reader
 	PipelineClient  grpcpipeline.Client
 	StreamingClient grpcstreaming.Client
 	// SearchSemantic is the semantic leg of POST /api/search. Nil →
@@ -149,7 +153,10 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	// the runtime settings PATCH /api/settings stores (search weights, TTLs,
 	// pause grace, heartbeat): one reader, its cache dropped by the PATCH
-	runtimeSettings := runtimecfg.New(d.DB)
+	runtimeSettings := d.Settings
+	if runtimeSettings == nil {
+		runtimeSettings = runtimecfg.New(d.DB)
+	}
 
 	// Story 9.6 AC-1: inject the concrete library-scoped scan
 	// enqueuer so POST /api/libraries/{id}/scan actually creates a

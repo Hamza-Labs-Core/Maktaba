@@ -40,9 +40,44 @@ import Testing
         #expect(u.username == "mahmoud" && u.isAdmin)
     }
 
+    @Test func meCarriesTheHomesName() throws {
+        let json = #"{"user_id":"u1","is_admin":false,"libraries":[],"id":"u1","username":"sara","home_name":" Living room ","user":{"id":"u1","username":"sara","is_admin":false}}"#
+        let me = try JSONDecoder().decode(Me.self, from: Data(json.utf8))
+        #expect(me.user.username == "sara" && !me.user.isAdmin)
+        #expect(me.homeName == "Living room")
+    }
+
+    /// An older home (or a machine answering for it) does not say its name.
+    @Test(arguments: [#"{"id":"u1","username":"sara","is_admin":false}"#,
+                      #"{"id":"u1","username":"sara","is_admin":false,"home_name":"  "}"#])
+    func meWithoutAName(json: String) throws {
+        #expect(try JSONDecoder().decode(Me.self, from: Data(json.utf8)).homeName == nil)
+    }
+
     @Test func videoTitleFallsBackToTheFile() throws {
         let json = #"{"id":"v","library_id":"l","filename":"a.mp4","title":""}"#
         #expect(try JSONDecoder().decode(Video.self, from: Data(json.utf8)).displayTitle == "a.mp4")
+    }
+}
+
+@MainActor @Suite struct HomeName {
+    /// The home's name replaces the address in the homes this app knows, and stays there.
+    @Test func keepsTheNameTheHomeSays() throws {
+        let suite = "maktabakit.test.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let url = URL(string: "http://192.168.50.177:8088")!
+        let session = AppSession(app: "test", defaults: defaults)
+        session.use(Home(url: url, name: "192.168.50.177"))
+        session.named(nil) // the home did not say
+        #expect(session.current?.name == "192.168.50.177")
+        session.named("Living room")
+        #expect(session.current?.name == "Living room")
+        #expect(session.homes.map(\.name) == ["Living room"])
+        // picking the home again by its old value adds no second one
+        session.use(Home(url: url, name: "192.168.50.177"))
+        #expect(session.homes.count == 1)
+        #expect(AppSession(app: "test", defaults: defaults).homes.map(\.name) == ["Living room"])
     }
 }
 

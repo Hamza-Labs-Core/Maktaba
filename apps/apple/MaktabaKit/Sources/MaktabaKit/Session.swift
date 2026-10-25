@@ -59,7 +59,8 @@ public final class TokenStore: @unchecked Sendable {
     }
 }
 
-/// A home this app knows: its address and a name to show.
+/// A home this app knows: its address and a name to show (its address until the home
+/// says its name, after signing in).
 public struct Home: Codable, Hashable, Identifiable, Sendable {
     public var id: URL { url }
     public let url: URL
@@ -123,7 +124,7 @@ public final class AppSession {
 
     /// Picks a home: its client, and signed in at once when the Keychain still has tokens.
     public func use(_ home: Home) {
-        if !homes.contains(home) {
+        if !homes.contains(where: { $0.url == home.url }) {
             homes.append(home)
             save()
         }
@@ -139,9 +140,9 @@ public final class AppSession {
 
     public func forget(_ home: Home) {
         TokenStore(app: app, home: home.url).clear()
-        homes.removeAll { $0 == home }
+        homes.removeAll { $0.url == home.url }
         save()
-        if current == home { switchHome() }
+        if current?.url == home.url { switchHome() }
     }
 
     public func switchHome() {
@@ -154,7 +155,7 @@ public final class AppSession {
     public func signIn(username: String, password: String) async throws {
         guard let client else { return }
         _ = try await client.signIn(username: username, password: password)
-        phase = .signedIn(try await client.me())
+        signedIn(try await client.whoami())
     }
 
     public func signOut() {
@@ -169,7 +170,24 @@ public final class AppSession {
 
     private func restore() async {
         guard let client else { return }
-        if let me = try? await client.me() { phase = .signedIn(me) }
+        if let me = try? await client.whoami() { signedIn(me) }
+    }
+
+    private func signedIn(_ me: Me) {
+        named(me.homeName)
+        phase = .signedIn(me.user)
+    }
+
+    /// The current home's name, as the home says it (nil: it did not say, so the name
+    /// stays), kept with the homes this app knows.
+    func named(_ name: String?) {
+        guard let name, var home = current, home.name != name else { return }
+        home.name = name
+        current = home
+        if let i = homes.firstIndex(where: { $0.url == home.url }) {
+            homes[i] = home
+        }
+        save()
     }
 
     private func save() {

@@ -57,6 +57,7 @@ func TestEveryRouteIsAdminOnly(t *testing.T) {
 	for _, c := range []struct{ method, path, body string }{
 		{http.MethodGet, "/api/settings", ""},
 		{http.MethodPatch, "/api/settings", `{"search.fts_weight": 2}`},
+		{http.MethodPatch, "/api/settings", `{"home.name": "Living room"}`}, // renaming the home
 		{http.MethodGet, "/api/settings/stt-backends", ""},
 		{http.MethodPost, "/api/settings/stt-test", `{"backend":"openai"}`},
 	} {

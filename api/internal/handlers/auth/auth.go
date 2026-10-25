@@ -129,6 +129,10 @@ type Handler struct {
 	// it from the request because the proxy strips HTTPS.
 	SecureCookies bool
 
+	// HomeName is the home's name for people, in GET /api/auth/me so every
+	// signed-in user's app can show it. Nil ⇒ no home_name in the answer.
+	HomeName func(context.Context) string
+
 	// Now lets tests override wall time. Defaults to time.Now.UTC.
 	Now func() time.Time
 }
@@ -529,6 +533,8 @@ type meResponse struct {
 	ID        string       `json:"id"`
 	Username  string       `json:"username"`
 	User      userResponse `json:"user"`
+	// HomeName is the home's name for people (an admin renames it in Settings).
+	HomeName string `json:"home_name,omitempty"`
 }
 
 // Me returns the authenticated principal's projection. The global
@@ -565,7 +571,12 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	homeName := ""
+	if h.HomeName != nil {
+		homeName = h.HomeName(r.Context())
+	}
 	common.WriteJSON(w, r, http.StatusOK, meResponse{
+		HomeName:  homeName,
 		UserID:    p.UserID,
 		IsAdmin:   p.IsAdmin,
 		Libraries: libs,

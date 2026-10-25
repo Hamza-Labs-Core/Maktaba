@@ -32,6 +32,9 @@ const (
 	// GraphQLPersistedOnly turns on persisted-query allowlist mode (Story
 	// 7.17 AC-5): non-admins run only stored GraphQL operations. Default off.
 	GraphQLPersistedOnly = "graphql.persisted_only"
+	// HomeName is the home's name for people (every signed-in user's app shows
+	// it); unset or empty, the computer's name.
+	HomeName = "home.name"
 )
 
 // DefaultTTL is how long a read is cached.
@@ -165,4 +168,19 @@ func (r *Reader) Bool(ctx context.Context, key string) (bool, bool) {
 		return false, true
 	}
 	return false, false
+}
+
+// Text reads a text setting (a JSON string, or bare text), trimmed. Unset,
+// unreadable or empty reads as ("", false).
+func (r *Reader) Text(ctx context.Context, key string) (string, bool) {
+	raw, ok := r.raw(ctx, key)
+	if !ok {
+		return "", false
+	}
+	var s string
+	if json.Unmarshal(raw, &s) != nil {
+		s = string(raw)
+	}
+	s = strings.TrimSpace(s)
+	return s, s != ""
 }

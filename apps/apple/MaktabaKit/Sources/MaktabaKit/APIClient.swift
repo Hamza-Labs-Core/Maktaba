@@ -42,6 +42,11 @@ public actor APIClient {
     }
 
     public func me() async throws -> User {
+        try await whoami().user
+    }
+
+    /// `GET /api/auth/me` with the home's name.
+    public func whoami() async throws -> Me {
         try await get("/api/auth/me")
     }
 

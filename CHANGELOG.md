@@ -12,6 +12,11 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **A home has a name.** An admin names the home in Settings → Account (empty: the
+  computer's name, which is the default). Every signed-in user's Apple app shows that name in
+  its home list and title instead of the address that was typed. The API refuses the rename to
+  anyone but an admin, and gives the name to every signed-in user in `GET /api/auth/me`
+  (`home_name`).
 - **Search results per video.** The Search page shows two lists, "In titles" and "In
   transcripts", one entry per video with no repeats. A transcript match shows the video's
   poster, title, library and duration, its true number of matching passages in the active
