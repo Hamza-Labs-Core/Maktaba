@@ -123,6 +123,10 @@ SYNC_THRESHOLD_ENV = "MAKTABA_CHROMA_SYNC_THRESHOLD"
 DEFAULT_SYNC_THRESHOLD = 10_000
 
 
+#: ids per Chroma call by id (SQLite caps a statement at 32 766 parameters)
+ID_CHUNK = 5000
+
+
 def sync_threshold() -> int:
     """``MAKTABA_CHROMA_SYNC_THRESHOLD`` (0: leave the collection's own setting)."""
     raw = os.getenv(SYNC_THRESHOLD_ENV, "").strip()
@@ -337,17 +341,26 @@ class VectorCollection(Protocol):
 _log = get_logger()
 _CLIENTS: dict[str, Any] = {}
 _COLLECTIONS: dict[tuple[str, str], Any] = {}
+#: the collections given this machine's sync_threshold in this process
+_TUNED: set[tuple[str, str]] = set()
 _STORE_LOCK = threading.Lock()
 
 
-def open_collection(model: str | None = None, persist_dir: str | None = None) -> Any:
+def open_collection(
+    model: str | None = None, persist_dir: str | None = None, *, tune: bool = False
+) -> Any:
     """The persistent Chroma collection of ``model``'s vectors (one client per directory
-    per process: Chroma wants a single writer)."""
+    per process: Chroma wants a single writer). ``tune`` (the index stage, under the
+    search index's write lock: it writes the collection's settings) also gives it this
+    machine's :func:`sync_threshold`, once per process."""
     name = collection_name(model or embed_model())
     path = persist_dir or chroma_dir()
     with _STORE_LOCK:
         key = (path, name)
         if key in _COLLECTIONS:
+            if tune and key not in _TUNED:
+                _COLLECTIONS[key] = _tuned(_CLIENTS[path], _COLLECTIONS[key], name)
+                _TUNED.add(key)
             return _COLLECTIONS[key]
         try:
             chromadb = importlib.import_module("chromadb")
@@ -366,17 +379,20 @@ def open_collection(model: str | None = None, persist_dir: str | None = None) ->
         coll = client.get_or_create_collection(
             name=name, metadata={"hnsw:space": "cosine"}, embedding_function=None
         )
-        coll = _tuned(client, coll, name)
+        if tune:
+            coll = _tuned(client, coll, name)
+            _TUNED.add(key)
         _COLLECTIONS[key] = coll
         return coll
 
 
 def collection_open(model: str | None = None, persist_dir: str | None = None) -> bool:
-    """Whether this process has the collection open already (:func:`open_collection` is
-    then a lookup: it needs no lock of the search index's writes)."""
+    """Whether this process has the collection open and tuned already (the index stage's
+    :func:`open_collection` is then a lookup: it needs no lock of the search index's
+    writes)."""
     key = (persist_dir or chroma_dir(), collection_name(model or embed_model()))
     with _STORE_LOCK:
-        return key in _COLLECTIONS
+        return key in _COLLECTIONS and key in _TUNED
 
 
 def _tuned(client: Any, coll: Any, name: str) -> Any:
@@ -406,6 +422,7 @@ def close_clients() -> int:
         clients = list(_CLIENTS.values())
         _CLIENTS.clear()
         _COLLECTIONS.clear()
+        _TUNED.clear()
     for client in clients:
         try:
             close = getattr(client, "close", None)
@@ -462,7 +479,14 @@ def video_vectors(
     if ids is not None:
         if not ids:
             return []
-        res = collection.get(ids=list(ids), include=include)
+        res: dict[str, list[Any]] = {"embeddings": [], "metadatas": [], "documents": []}
+        for i in range(0, len(ids), ID_CHUNK):  # SQLite caps a statement's parameters
+            part = collection.get(ids=list(ids[i : i + ID_CHUNK]), include=include)
+            metas = list(part.get("metadatas") or [])
+            got = part.get("embeddings")
+            res["embeddings"].extend([] if got is None else list(got))
+            res["metadatas"].extend(metas)
+            res["documents"].extend(list(part.get("documents") or [""] * len(metas)))
     else:
         res = collection.get(where={"video_id": str(video_id)}, include=include)
     embeddings = res.get("embeddings")
@@ -521,8 +545,9 @@ class SemanticIndex:
 
     @classmethod
     def default(cls) -> SemanticIndex:
+        """The index stage's: the collection tuned (call it under the write lock)."""
         model = embed_model()
-        return cls(open_collection(model), get_embedder(model))
+        return cls(open_collection(model, tune=True), get_embedder(model))
 
     def delete_video(self, video_id: UUID | str) -> None:
         """Drop every vector of the video (a scan of the collection's metadata: about a
@@ -536,8 +561,8 @@ class SemanticIndex:
         return {str(i) for i in res.get("ids") or []}
 
     def delete_ids(self, ids: Sequence[str]) -> None:
-        if ids:
-            self.collection.delete(ids=list(ids))
+        for i in range(0, len(ids), ID_CHUNK):  # SQLite caps a statement's parameters
+            self.collection.delete(ids=list(ids[i : i + ID_CHUNK]))
 
     def embed_segments(
         self, segments: Sequence[IndexedSegment]
