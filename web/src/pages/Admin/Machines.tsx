@@ -681,6 +681,8 @@ function PendingRow({ node, onChanged }: { node: ClusterNode; onChanged: () => v
   const fmt = useFmt();
   const showError = useErrorToast();
   const [code, setCode] = useState("");
+  // a copy of this home's database on the machine: the admin's choice, off by default
+  const [full, setFull] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const left = secondsUntil(node.expires_at);
@@ -696,7 +698,7 @@ function PendingRow({ node, onChanged }: { node: ClusterNode; onChanged: () => v
     setBusy(true);
     setMessage(null);
     clusterApi
-      .approve(node.id, digits)
+      .approve(node.id, digits, full)
       .then(() => {
         setCode("");
         onChanged();
@@ -758,6 +760,13 @@ function PendingRow({ node, onChanged }: { node: ClusterNode; onChanged: () => v
           disabled={busy || expired}
           className="mkt-mc-code"
         />
+        <Toggle
+          label={t("machines.pending.fullCopy")}
+          checked={full}
+          disabled={busy || expired}
+          onChange={(e) => setFull(e.currentTarget.checked)}
+        />
+        <p className="mkt-mc-muted">{t("machines.pending.fullCopyHelp")}</p>
         <div className="mkt-mc-actions">
           <Button type="submit" disabled={busy || expired || code.trim() === ""}>
             {t("machines.pending.approve")}
@@ -1011,6 +1020,15 @@ const MachineCard = memo(function MachineCard({
                 disabled={busy}
                 onChange={(e) => update({ drain: e.currentTarget.checked })}
               />
+              {node.full_capable === true && (
+                <Toggle
+                  label={t("machines.fullCopy")}
+                  title={t("machines.fullCopyHelp")}
+                  checked={node.full_allowed === true}
+                  disabled={busy}
+                  onChange={(e) => update({ full_allowed: e.currentTarget.checked })}
+                />
+              )}
               <Button variant="destructive" disabled={busy} onClick={() => setConfirm("revoke")}>
                 {t("machines.revoke")}
               </Button>

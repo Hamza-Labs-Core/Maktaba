@@ -358,3 +358,49 @@ func TestMachineRoutesPassForAMachineOnly(t *testing.T) {
 		t.Errorf("another bearer on the artifact route: %d", c)
 	}
 }
+
+// The public allowlist is pinned: a route reaches a handler without a signed-in user only
+// if it is on this list, and adding one is a change made here on purpose (the API enforces
+// roles: a route left off the gate by mistake would be open to anyone). The admin's cluster
+// routes, and every other admin route, stay behind the gate.
+func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
+	want := []string{
+		"/healthz", "/api/system/health", "/api/system/version", "/api/.well-known/jwks.json",
+		"/.well-known/security.txt", "/api/auth/login", "/api/auth/refresh", "/api/auth/register",
+		"/api/cluster/join", "/api/cluster/join/*", "/api/cluster/agent",
+		"/api/cluster/link", "/api/cluster/link/stream", "/api/cluster/ca.crt", "/api/cluster/link/pull",
+		"/api/cluster/link/local/*", "/api/tv/remote/webhook", "/api/cluster/self", "/api/cluster/moved/*",
+		"/api/cluster/kept-aside/report", "/api/cluster/term-claim",
+		"/api/cluster/sso/authorize", "/api/cluster/sso/start", "/api/cluster/sso/callback",
+		"/api/cluster/sso/exchange", "/api/cluster/delegate/introspect", "/api/cluster/delegate/signout",
+		"/internal/updates/restored",
+	}
+	got := DefaultPublicAllowlist()
+	if len(got) != len(want) {
+		t.Errorf("the public allowlist has %d routes, the pinned list %d: update both on purpose", len(got), len(want))
+	}
+	for _, p := range want {
+		if _, ok := got[p]; !ok {
+			t.Errorf("pinned public route %s is not in the allowlist", p)
+		}
+		delete(got, p)
+	}
+	for p := range got {
+		t.Errorf("route %s is public but not pinned here", p)
+	}
+
+	gate := RequireAuthExcept(DefaultPublicAllowlist())
+	h := gate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("%s reached its handler without a signed-in user", r.URL.Path)
+	}))
+	for _, path := range []string{
+		"/api/cluster", "/api/cluster/settings", "/api/cluster/nodes/x", "/api/cluster/nodes/x/approve",
+		"/api/cluster/nodes/x/revoke", "/api/users", "/api/settings", "/api/queues", "/api/admin/system/status",
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("POST", path, nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("anonymous %s: %d, want 401", path, rec.Code)
+		}
+	}
+}

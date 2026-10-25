@@ -208,7 +208,8 @@ func (c *switchCluster) join(m switchBox, name string) string {
 		c.t.Fatal(err)
 	}
 	c.exec(c.adb, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at,
-	        approved_by, full_node, web_url) VALUES ($1, $2, 'approved', 'windows', 'amd64', $3, $4, now(), 'test', true, $5)`,
+	        approved_by, full_node, full_capable, full_allowed, web_url)
+	        VALUES ($1, $2, 'approved', 'windows', 'amd64', $3, $4, now(), 'test', true, true, true, $5)`,
 		id, name, cluster.EncodeKey(nodePub), role, m.webURL)
 	nodeDSN := (&url.URL{Scheme: "postgres", User: url.UserPassword(role, "node-pass-0123456789"),
 		Host: fmt.Sprintf("127.0.0.1:%d", c.a.pgPort), Path: "/maktaba", RawQuery: "sslmode=prefer"}).String()

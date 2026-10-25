@@ -76,10 +76,14 @@ type Node struct {
 	// What a full node reports about itself (Epic 35 slot 0135, story 35.8): its
 	// release, platform, own web address, whether it runs maktaba-server in node mode,
 	// the VOD fallback (design §11.5) and the rollout's view of it (story 35.12).
-	Version     *string
-	Platform    *string
-	WebURL      *string
-	FullNode    bool
+	Version  *string
+	Platform *string
+	WebURL   *string
+	FullNode bool
+	// FullCapable: the machine reports it can be a full machine; FullAllowed: a home
+	// admin allowed it (slot 0151). FullNode is both: only then does it get a copy.
+	FullCapable bool
+	FullAllowed bool
 	VOD         json.RawMessage
 	UpdateState json.RawMessage
 	// Copy is what a full node reports of its copy of this database (Epic 37, slot
@@ -105,6 +109,9 @@ type NodePatch struct {
 	Drain        *bool
 	PathMap      json.RawMessage
 	ClearPathMap bool
+	// FullAllowed: a home admin allows (or takes back) a full machine's copy; full_node
+	// becomes what the machine reports and this (slot 0151).
+	FullAllowed *bool
 }
 
 // Store persists the identity and the machine registry.
