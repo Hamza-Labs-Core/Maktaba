@@ -348,6 +348,41 @@ var nodeConfig = config.LocalNodeConfig
 // verifying the home's CA, pinned in the keys directory). A CA that cannot be pinned is
 // said: the connection still verifies, so it fails rather than trusts.
 func HomeDSN(n config.NodeConfig) string {
+	return withClientCert(homeDSN(n), nodeConfigDir())
+}
+
+// withClientCert offers the machine's cluster-link certificate (beside node.json, story
+// 35.16) to the home's database on a TLS connection: its CN is the machine's role, which
+// the home requires once the link is (clientcert=verify-full). A server that does not ask
+// for it ignores it.
+func withClientCert(dsn, dir string) string {
+	cert, key := filepath.Join(dir, "cluster-node.crt"), filepath.Join(dir, "cluster-node.key")
+	if dir == "" {
+		return dsn
+	}
+	if _, err := os.Stat(cert); err != nil {
+		return dsn
+	}
+	if _, err := os.Stat(key); err != nil {
+		return dsn
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return dsn
+	}
+	q := u.Query()
+	switch q.Get("sslmode") {
+	case "verify-ca", "verify-full", "require":
+	default:
+		return dsn
+	}
+	q.Set("sslcert", filepath.ToSlash(cert))
+	q.Set("sslkey", filepath.ToSlash(key))
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func homeDSN(n config.NodeConfig) string {
 	dsn, err := n.HomeDSN(config.KeysDir())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[supervisor] the home's database: %v\n", err)

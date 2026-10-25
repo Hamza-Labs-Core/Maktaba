@@ -29,6 +29,9 @@ type Reach struct {
 	Open bool `json:"open"`
 	// Addrs are the approved machines' own addresses (the hosts they joined from)
 	Addrs []string `json:"addrs,omitempty"`
+	// Require: the home requires the cluster link (rules.cluster link_mode, story 35.16):
+	// the machines' roles need their client certificates too
+	Require bool `json:"require,omitempty"`
 }
 
 // reachSQL reads the Reach: joins open (their hour not up) or a machine approved, and
@@ -39,6 +42,10 @@ const reachSQL = `SELECT
   OR EXISTS (SELECT 1 FROM cluster_nodes WHERE state = 'approved'),
   COALESCE((SELECT string_agg(DISTINCT remote_addr, ',' ORDER BY remote_addr) FROM cluster_nodes
              WHERE state = 'approved' AND remote_addr IS NOT NULL AND remote_addr <> ''), '');`
+
+// requireSQL reads whether the home requires the cluster link (story 35.16): asked apart,
+// so a database without the settings table (not migrated yet) still answers the rest.
+const requireSQL = `SELECT COALESCE((SELECT value->>'link_mode' FROM app_settings WHERE key = 'rules.cluster'), '') = 'require';`
 
 // reachFile keeps the last Reach the cluster asked for, which a start follows (none
 // yet: this machine only).
@@ -132,6 +139,9 @@ func (b Bundle) reach(ctx context.Context, q Querier) (Reach, error) {
 		return Reach{}, fmt.Errorf("the cluster's reach: %q", rows[0])
 	}
 	r := Reach{Open: open == "t"}
+	if req, err := q.Query(ctx, AppDatabase, requireSQL); err == nil && len(req) == 1 {
+		r.Require = strings.TrimSpace(req[0]) == "t"
+	}
 	if addrs = strings.TrimSpace(addrs); addrs != "" {
 		r.Addrs = strings.Split(addrs, ",")
 	}
@@ -197,7 +207,7 @@ func (b Bundle) followReach(ctx context.Context, restart func() error, log io.Wr
 		return err
 	}
 	was := b.LastReach()
-	if now.Open == was.Open && slices.Equal(now.Addrs, was.Addrs) {
+	if now.Open == was.Open && slices.Equal(now.Addrs, was.Addrs) && now.Require == was.Require {
 		return nil
 	}
 	if err := b.KeepReach(now); err != nil {
@@ -205,6 +215,11 @@ func (b Bundle) followReach(ctx context.Context, restart func() error, log io.Wr
 	}
 	if err := b.writeHBA(); err != nil {
 		return err
+	}
+	if now.Require != was.Require && now.Open {
+		// the client certificates' CA is a start argument (ssl_ca_file): started again
+		fmt.Fprintln(log, "[postgres] the cluster link is required now or no more: the machines' certificates follow (starting it again)")
+		return restart()
 	}
 	if now.Open != was.Open {
 		if now.Open {

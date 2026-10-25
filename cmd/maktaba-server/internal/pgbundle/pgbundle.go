@@ -223,6 +223,11 @@ func (b Bundle) serverArgs(lan bool) []string {
 		"-c", "log_timezone=UTC"}
 	if b.TLS && b.TLSReady() {
 		args = append(args, "-c", "ssl=on", "-c", "ssl_cert_file="+b.serverCert(), "-c", "ssl_key_file="+b.serverKey())
+		// the machines' client certificates from the home's cluster CA (story 35.16):
+		// asked of their roles once the cluster link is required (hbaConf)
+		if ca := b.clusterCA(); ca != "" {
+			args = append(args, "-c", "ssl_ca_file="+ca)
+		}
 	}
 	return args
 }
