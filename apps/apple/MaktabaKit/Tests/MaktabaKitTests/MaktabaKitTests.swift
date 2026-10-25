@@ -91,3 +91,46 @@ import Testing
         }
     }
 }
+
+@Suite struct Proxy {
+    let proxy = try! StreamProxy(client: APIClient(home: URL(string: "http://192.168.50.177:8088")!,
+                                                   tokens: TokenStore(app: "test.proxy", home: URL(string: "http://192.168.50.177:8088")!)))
+
+    @Test func servesOnlyItsSecretsStreamPaths() {
+        let s = proxy.secret
+        #expect(proxy.remote(forTarget: "/\(s)/stream/abc/manifest.m3u8?sig=x")?.absoluteString
+            == "http://192.168.50.177:8088/stream/abc/manifest.m3u8?sig=x")
+        #expect(proxy.remote(forTarget: "/\(s)/stream/abc/v0/seg-1.ts?sig=x")?.path() == "/stream/abc/v0/seg-1.ts")
+        for refused in [
+            "/stream/abc/manifest.m3u8",            // no secret: another app on the device
+            "/wrong/stream/abc/manifest.m3u8",
+            "/\(s)/api/videos",                      // not a stream
+            "/\(s)/stream/../api/auth/me",            // climbing out
+            "/\(s)/stream/%2E%2E/api/auth/me",
+            "/\(s)/streamx/abc",
+        ] {
+            #expect(proxy.remote(forTarget: refused) == nil, "\(refused)")
+        }
+    }
+
+    @Test func parsesARequestHead() {
+        let r = Request(Data("GET /a/stream/x?sig=1 HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=0-1\r\n\r\n".utf8))
+        #expect(r?.method == "GET" && r?.target == "/a/stream/x?sig=1" && r?.headers["range"] == "bytes=0-1")
+        #expect(Request(Data("nonsense\r\n\r\n".utf8)) == nil)
+    }
+}
+
+@Suite struct ProxyLoopback {
+    /// A request the proxy cannot forward (no token here) still gets an answer, not a reset.
+    @Test func answersOnTheLoopback() async throws {
+        let home = URL(string: "http://127.0.0.1:9")!
+        let proxy = try StreamProxy(client: APIClient(home: home, tokens: TokenStore(app: "test.proxy.loop", home: home)))
+        try await proxy.start()
+        defer { proxy.stop() }
+        let local = try #require(proxy.local(URL(string: "http://127.0.0.1:9/stream/abc/manifest.m3u8?sig=x")!))
+        let (_, response) = try await URLSession.shared.data(from: local)
+        #expect((response as? HTTPURLResponse)?.statusCode == 502)
+        let (_, other) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(proxy.port!)/stream/abc/manifest.m3u8")!)
+        #expect((other as? HTTPURLResponse)?.statusCode == 404)
+    }
+}

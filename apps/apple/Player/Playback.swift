@@ -21,6 +21,9 @@ final class Playback {
     private var renewAt = Date.distantFuture
     private var openedAt = Date.distantPast
     private var running: Task<Void, Never>?
+    /// Where the player reads the stream from: every request reaches the home with the
+    /// user's token as it is now (see `StreamProxy`).
+    private var proxy: StreamProxy?
 
     init(client: APIClient) {
         self.client = client
@@ -48,6 +51,8 @@ final class Playback {
         player = nil
         problem = nil
         video = nil
+        proxy?.stop()
+        proxy = nil
     }
 
     private func run() async {
@@ -56,10 +61,9 @@ final class Playback {
         await watch()
     }
 
-    /// Opens (or reopens) the stream at `start` seconds. The signed URL is enough for a home
-    /// from 0.3.18 on; AVPlayer also sends the Bearer header, which an older home's web port
-    /// wants on `/stream/` (there a token that ends mid-video fails the item, and `watch`
-    /// reopens it).
+    /// Opens (or reopens) the stream at `start` seconds, through the app's stream proxy: the
+    /// home's web port wants the user's token on every `/stream/` request, and AVPlayer
+    /// cannot renew one mid-video.
     private func open(from start: Double) async {
         guard let video else { return }
         do {
@@ -69,6 +73,13 @@ final class Playback {
                 return
             }
             let auth = try await client.playbackHeaders()
+            let proxy = try self.proxy ?? StreamProxy(client: client)
+            self.proxy = proxy
+            try await proxy.start()
+            guard let local = proxy.local(url) else {
+                problem = "Could not start playback on this device."
+                return
+            }
             if let old = session, old != s.sessionID {
                 Task { [client] in await client.closeStream(old) }
             }
@@ -77,7 +88,7 @@ final class Playback {
             try Task.checkCancellation()
             openedAt = .now
             renewAt = (s.expires ?? .distantFuture).addingTimeInterval(-60)
-            let item = AVPlayerItem(asset: AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": auth.headers]))
+            let item = AVPlayerItem(url: local)
             let p = player ?? AVPlayer()
             p.replaceCurrentItem(with: item)
             if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
