@@ -522,6 +522,9 @@ type sub struct {
 	conninfo, slot  string
 	pubs            []string
 	tables          map[string]bool // the tables it subscribes, by name
+	// syncing: tables whose first copy is not done (srsubstate not 'r'). Their state names
+	// a table-sync slot on the server the subscription was talking to.
+	syncing int
 }
 
 func (c Copy) subscription(ctx context.Context, db *sql.DB) (sub, error) {
@@ -538,16 +541,20 @@ func (c Copy) subscription(ctx context.Context, db *sql.DB) (sub, error) {
 	}
 	s.exists, s.slot, s.pubs = true, slot.String, pubs
 	s.tables = map[string]bool{}
-	rows, err := db.QueryContext(ctx, `SELECT c.relname FROM pg_subscription_rel r JOIN pg_subscription s ON s.oid = r.srsubid
+	rows, err := db.QueryContext(ctx, `SELECT c.relname, r.srsubstate::text FROM pg_subscription_rel r
+	  JOIN pg_subscription s ON s.oid = r.srsubid
 	  JOIN pg_class c ON c.oid = r.srrelid WHERE s.subname = $1`, Subscription)
 	if err != nil {
 		return sub{}, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var n string
-		if rows.Scan(&n) == nil {
+		var n, state string
+		if rows.Scan(&n, &state) == nil {
 			s.tables[n] = true
+			if state != "r" {
+				s.syncing++
+			}
 		}
 	}
 	return s, rows.Err()
@@ -698,14 +705,15 @@ func (c Copy) Follow(ctx context.Context, g Grant) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if !s.exists || !g.SlotExists || s.slot != g.Slot || len(s.pubs) != 1 || s.pubs[0] != g.Publication {
+	conn, err := c.conninfo(g.Database)
+	if err != nil {
+		return false, err
+	}
+	mk, _ := c.Mark()
+	if !reusable(s, g, mk, conn) {
 		return false, nil
 	}
 	if err := c.writeAccess(); err != nil {
-		return false, err
-	}
-	conn, err := c.conninfo(g.Database)
-	if err != nil {
 		return false, err
 	}
 	name := pq.QuoteIdentifier(Subscription)
@@ -734,6 +742,26 @@ func (c Copy) Follow(ctx context.Context, g Grant) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// reusable reports whether the subscription s can go on for grant g (conn: the home's
+// connection now; mk: the copy's marker): the same slot and publication, the same home
+// database, and no table half copied from somewhere else.
+func reusable(s sub, g Grant, mk Marker, conn string) bool {
+	switch {
+	case !s.exists || !g.SlotExists || s.slot != g.Slot || len(s.pubs) != 1 || s.pubs[0] != g.Publication:
+		return false
+	case mk.SystemID != "" && g.SystemID != "" && mk.SystemID != g.SystemID:
+		// another home's database (a switch): the subscription, its tables' states with
+		// it, is the old home's; the slot and publication names are the same on every home
+		return false
+	case s.conninfo != conn && s.syncing > 0:
+		// a table still in its first copy resumes from a table-sync slot on the server it
+		// was copying from: pointed elsewhere, its worker asks for a slot that is not
+		// there, for ever ("replication slot pg_..._sync_... does not exist")
+		return false
+	}
+	return true
 }
 
 // Pause disables the subscription (the home's schema is ahead of this machine's: its

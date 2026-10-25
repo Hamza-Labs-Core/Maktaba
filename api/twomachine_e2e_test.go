@@ -215,10 +215,21 @@ func startMachine(t *testing.T, name, bin string, env []string) *machine {
 	t.Cleanup(func() {
 		m.stop()
 		if t.Failed() {
-			t.Logf("---- %s log (tail) ----\n%s", name, tail(m.log.String(), 6000))
-			// MAKTABA_E2E_LOG_DIR keeps each machine's whole log of a failed run
+			t.Logf("---- %s log (tail) ----\n%s", name, tail(m.log.String(), 20000))
+			// MAKTABA_E2E_LOG_DIR keeps each machine's whole log of a failed run (CI uploads
+			// it). The folder is made here: a step that never made it lost every log, and a
+			// flaky run then left 40 lines to go by.
 			if dir := os.Getenv("MAKTABA_E2E_LOG_DIR"); dir != "" {
-				_ = os.WriteFile(filepath.Join(dir, t.Name()+"-"+name+".log"), []byte(m.log.String()), 0o600)
+				path := filepath.Join(dir, strings.ReplaceAll(t.Name(), "/", "_")+"-"+name+".log")
+				err := os.MkdirAll(dir, 0o755)
+				if err == nil {
+					err = os.WriteFile(path, []byte(m.log.String()), 0o600)
+				}
+				if err != nil {
+					t.Logf("%s's whole log could not be kept: %v", name, err)
+				} else {
+					t.Logf("%s's whole log: %s", name, path)
+				}
 			}
 		}
 	})
