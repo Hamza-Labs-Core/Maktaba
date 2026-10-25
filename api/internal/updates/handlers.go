@@ -30,6 +30,9 @@ const maxBody = 64 << 10
 //	POST /api/cluster/updates/defer      {until}  (RFC 3339; "" clears)
 //	POST /api/cluster/updates/check      check GitHub now
 //	GET  /api/cluster/updates/runs       history (?limit=)
+//	GET  /api/cluster/updates/backups    the home's backups and kept releases (story 35.5 AC8)
+//	GET  /api/cluster/updates/backups/{name}/restore   what restoring it does
+//	POST /api/cluster/updates/backups/{name}/restore   {confirm:"<name>"}  -> 202 (the home restarts)
 type Handler struct {
 	Svc *Service
 	// Driver runs the runs (nil: an API that cannot install; the run actions answer 503).
@@ -54,6 +57,9 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/cluster/updates/runs/{id}/cancel", h.Cancel)
 	r.Post("/api/cluster/updates/runs/{id}/resume", h.Resume)
 	r.Post("/api/cluster/updates/runs/{id}/targets/{node}/{action}", h.TargetAction)
+	r.Get("/api/cluster/updates/backups", h.BackupsList)
+	r.Get("/api/cluster/updates/backups/{name}/restore", h.RestorePlanView)
+	r.Post("/api/cluster/updates/backups/{name}/restore", h.Restore)
 }
 
 func admin(w http.ResponseWriter, r *http.Request) *principal.Principal {

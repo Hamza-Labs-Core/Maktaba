@@ -15,6 +15,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError, downloadBlob } from "../../lib/api";
 import { lookupMessage, useI18n } from "../../lib/i18n";
 import { CopyField } from "../../components/CopyField";
+import { UpdatesBackups } from "./UpdatesBackups";
 import type { HomeDb } from "../../lib/homeDb";
 import {
   logsExportURL,
@@ -514,6 +515,8 @@ export function AdminUpdates() {
           </tbody>
         </table>
       )}
+
+      <UpdatesBackups />
 
       <Modal
         open={confirmNow}

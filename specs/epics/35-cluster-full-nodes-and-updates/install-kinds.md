@@ -170,6 +170,14 @@ updated its runtime) offers its own update for its window and tray.
    its copy: the previous release refuses that database (reported as the copy's error, reads
    go to the home), while the copy's subscription keeps applying the home's changes; the copy
    is taken up again when the machine takes the release.
+5. **A restore by hand** (story 35.5 AC8): the Updates page lists the home's backups
+   (`/api/cluster/updates/backups`) and puts one back after its name is typed;
+   `maktaba-server restore --backup <file> --confirm` does the same. The home's supervisor
+   reads the dump's schema, picks the kept release of that schema (`updater.Keeper`: a plain
+   server's releases, the runtime copies, the app's payload and its kept copies), marks the
+   record `restoring` with the dump and who asked (`by`), points the install at that release
+   and restarts (`serve_restore.go`); that release's database step puts the dump back before
+   any role, the database it replaces set aside (`replaced-<version>-<utc>.dump`).
 
 ### What the run guards against
 

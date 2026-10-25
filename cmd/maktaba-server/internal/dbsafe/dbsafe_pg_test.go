@@ -453,3 +453,27 @@ func TestRestoreFailingLeavesTheDatabase(t *testing.T) {
 		t.Fatal("the failed restore left the database empty")
 	}
 }
+
+// Story 35.5 AC8: a dump says the schema it holds (the newest migration applied in it),
+// read from the file alone; a restore by hand runs the kept release of that schema.
+func TestDumpSchema(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	var want int64
+	if err := r.db.QueryRow(`SELECT MAX(version_id) FROM goose_db_version WHERE is_applied`).Scan(&want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.t.DumpSchema(ctx, dump)
+	if err != nil || got != want || got < 100 {
+		t.Fatalf("schema %d (%v), want %d", got, err, want)
+	}
+	bad := filepath.Join(r.t.Backups, "bad.dump")
+	_ = os.WriteFile(bad, []byte("not a dump"), 0o600)
+	if _, err := r.t.DumpSchema(ctx, bad); err == nil || !strings.Contains(err.Error(), "dump_unreadable") {
+		t.Fatalf("not a dump: %v", err)
+	}
+}

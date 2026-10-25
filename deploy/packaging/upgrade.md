@@ -79,3 +79,35 @@ The package's release becomes current only when it is newer than what the update
 its start then migrates the database in its database step (a dump first, put back if a
 migration fails), as an automatic update does. Neither the packages nor the formula migrate
 anything themselves.
+
+## Automatic updates: the database only moves forward (Epic 35 story 35.5)
+
+The updater never runs a down migration (`MAKTABA_DISABLE_DOWN` stays the default above).
+Migrations are additive, so a release rolled back after its migrations runs on the newer
+schema, or its start puts back the dump taken before them (install-kinds.md, "The
+database"). `make compat-prev` checks every build against the previous stable release's
+repository tests on the new schema; a migration that breaks it must say "Breaking for the
+previous release" in `shared/db/migrations/MANIFEST.md` (the release is then held for an
+admin).
+
+**Backups.** Before every update that migrates, the home dumps its database into
+`<data_dir>/backups/pre-<from>-to-<to>.dump` (checked with `pg_restore --list`), and keeps
+`rules.updates.backups_keep` (3) of each kind: those, the bundled database's daily
+`maktaba-<time>.dump`, the database a failed update left (`failed-*`) and the one a restore
+replaced (`replaced-*`).
+
+**Putting a backup back** (story 35.5 AC8): Admin → Updates → *Backups of the library
+database* → Restore, or
+
+```sh
+maktaba-server restore                                  # the backups and the releases kept
+maktaba-server restore --backup pre-0.3.5-to-0.3.6.dump # what restoring it would do
+maktaba-server restore --backup pre-0.3.5-to-0.3.6.dump --confirm
+```
+
+The home restarts on the kept release whose schema is the backup's (the dump's newest
+applied migration) and that release puts the backup back before anything else runs; the
+database it replaces is set aside first. Every change made since the backup was taken is
+lost. With no release of that schema kept, it refuses and names the release to install
+first. It refuses while an update runs. A machine of a home has no backups of its own: it
+copies the restored database anew.
