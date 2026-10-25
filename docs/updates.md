@@ -170,8 +170,15 @@ the next start from the update's journal (`updates/journal.json`).
   itself (the pinned identity,
   `checksums.txt`, the server binary against `release.json`) and runs that release's
   `setup --node --converting`, which installs the side-by-side layout and the launcher's service
-  and removes the old worker units once the node answers. Admin → Updates shows it as "becoming a
-  full node". A worker whose pipeline predates the command shows "worker-only — re-run the
+  and removes the old worker units once the node answers; when it misses that wait, or the
+  machine stops before it removes them, the full node's own start removes them (no second
+  pipeline stays), and a retried conversion picks up the release it installed. Admin → Updates
+  shows it as "becoming a full node". The download token is a bearer token, not bound to the
+  connection: whoever holds it can fetch that release's files (public release assets, verified
+  on the machine anyway) as that machine, within its download limit, until it expires or the
+  machine is revoked. The home's channel log never shows it, the worker keeps it in memory only,
+  it never goes to GitHub, and the mirror never redirects; on a home reached over plain HTTP it
+  crosses the LAN in clear, as the release files do. A worker whose pipeline predates the command shows "worker-only — re-run the
   installer once" ([join a machine](cluster/join-a-machine.md#a-worker-only-machine-becomes-a-full-node)).
 - **Skew.** No machine is ever ordered to a release the home has not committed. A machine whose
   code does not fit the home's database pauses (its web address shows the paused page) until its

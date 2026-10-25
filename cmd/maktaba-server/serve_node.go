@@ -140,6 +140,11 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 		OnConnect: ns.homeDB.reconnected,
 	}
 	go ns.agent.Run(ctx)
+	if os.Getenv(envLauncherRoot) != "" || os.Getenv("MAKTABA_RELEASE_DIR") != "" {
+		// an installed full node: the worker units of its worker-only install a conversion
+		// left would run a second pipeline (story 35.8 AC8)
+		go leftoverWorkerUnits(ctx)
+	}
 	go ns.watchHome(ctx, apiOrigin(cfg.Server.Listen))
 	go ns.homeDB.run(ctx)
 	fmt.Fprintf(os.Stderr, "[serve] full node of %s (node %s): api, web, pipeline, streaming\n", n.HomeURL(), n.Node8())

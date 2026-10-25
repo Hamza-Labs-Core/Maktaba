@@ -561,7 +561,11 @@ machines in the window. The worker downloads from the artifact mirror with a dow
 the job carries (`download_token`: HMAC-SHA256 by a home-held key kept in the mirror's folder,
 naming the machine and the release, four hours; the mirror's artifact route alone takes it, for
 a machine still approved; never the wheelhouse or TUF routes, which setup does not use), never
-sending it to GitHub. The worker verifies with the Sigstore root the server compiles in (a
+sending it to GitHub (a bearer token: whoever holds it fetches that release's public files as
+that machine until it expires or the machine is revoked; never logged, never persisted). An
+installed full node's start removes leftover Epic 31 worker units (a conversion that missed its
+health wait, which then exits 0, or stopped before removing them), so no second pipeline stays;
+setup run again resumes (the release installed already). The worker verifies with the Sigstore root the server compiles in (a
 copy in the pipeline package, refreshed with it by `trusted-root.yml`), runs setup outside its
 own service (a `systemd-run --scope`, a `Win32_Process.Create` process outside the scheduled
 task's job, a new session on macOS) and answers each later `update.convert` of the run with how

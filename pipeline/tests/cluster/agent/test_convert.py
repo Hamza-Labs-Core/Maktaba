@@ -31,8 +31,22 @@ def sha(b: bytes) -> str:
 # --- the signature: a real release, verified offline with the pinned root -----------------
 
 
+@pytest.fixture
+def sigstore_installed() -> None:
+    """sigstore-python is a pipeline dependency (pyproject, uv.lock): an environment made
+    before it came says so, rather than an ImportError deep in a verification."""
+    try:
+        import sigstore  # noqa: F401
+    except ModuleNotFoundError:
+        pytest.fail(
+            "sigstore-python is missing: this environment predates it (pyproject, uv.lock); "
+            "run `uv sync --frozen`"
+        )
+
+
 # real signatures and the pinned root: sigstore-python's first import alone takes seconds
 @pytest.mark.integration
+@pytest.mark.usefixtures("sigstore_installed")
 def test_a_real_release_verifies_with_the_pinned_identity() -> None:
     checksums = (FIXTURES / "checksums.txt").read_bytes()
     bundle = (FIXTURES / "checksums.txt.sigstore.json").read_bytes()
@@ -41,6 +55,7 @@ def test_a_real_release_verifies_with_the_pinned_identity() -> None:
 
 # real signatures and the pinned root: sigstore-python's first import alone takes seconds
 @pytest.mark.integration
+@pytest.mark.usefixtures("sigstore_installed")
 def test_another_tag_or_repository_is_someone_else() -> None:
     checksums = (FIXTURES / "checksums.txt").read_bytes()
     bundle = (FIXTURES / "checksums.txt.sigstore.json").read_bytes()
@@ -52,6 +67,7 @@ def test_another_tag_or_repository_is_someone_else() -> None:
 
 # real signatures and the pinned root: sigstore-python's first import alone takes seconds
 @pytest.mark.integration
+@pytest.mark.usefixtures("sigstore_installed")
 def test_a_changed_checksums_file_is_refused() -> None:
     checksums = (FIXTURES / "checksums.txt").read_bytes() + b"0" * 64 + b"  ./evil\n"
     bundle = (FIXTURES / "checksums.txt.sigstore.json").read_bytes()

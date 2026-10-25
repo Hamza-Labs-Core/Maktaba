@@ -98,6 +98,17 @@ func newConvertRig(t *testing.T) (*driverRig, *convertCluster) {
 	return r, cc
 }
 
+// atTheRelease puts the home on the release already (its own run over), so the next step
+// plans a catch-up of the machines alone: no home part, a handful of driver ticks (each
+// of which re-sends update.convert and mints a download token).
+func atTheRelease(t *testing.T, r *driverRig) {
+	t.Helper()
+	if err := r.f.store.RaiseWatermark(context.Background(), "1.5.0"); err != nil {
+		t.Fatal(err)
+	}
+	r.f.svc.Current, r.home.version = "1.5.0", "1.5.0"
+}
+
 // workerNode adds a worker-only machine: a cluster_nodes row that is not a full node, and
 // its pipeline worker on the channel (its version the pipeline's).
 func workerNode(t *testing.T, r *driverRig, cc *convertCluster, id, name, version string) *fakeWorker {
@@ -169,10 +180,10 @@ func TestConvertTooOldWorker(t *testing.T) {
 	ctx := context.Background()
 	w := workerNode(t, r, cc, "w1", "studio", "1.3.0")
 	w.old = true
-	_, _ = r.f.svc.Tick(ctx)
-	run := r.drive(t, 40)
+	atTheRelease(t, r)
+	run := r.drive(t, 20)
 	ts := targetsByName(t, r.f.store, run.ID)
-	if run.State != RunDone || ts["studio"].State != TargetWorkerOnly {
+	if run.Trigger != TriggerCatchUp || run.State != RunDone || ts["studio"].State != TargetWorkerOnly {
 		t.Fatalf("run %s targets %+v", run.State, ts)
 	}
 	var det struct {
@@ -190,8 +201,10 @@ func TestConvertTooOldWorker(t *testing.T) {
 	if len(ms) != 2 || ms[1].State != "worker_only" || ms[1].Convert != ConvertInstaller {
 		t.Fatalf("machines %+v", ms)
 	}
-	// the same pipeline: no catch-up asks it again
+	// the same pipeline: no catch-up asks it again, not even a day later (in the window again,
+	// past the retry's wait)
 	asked := len(w.asks)
+	r.f.now = r.f.now.Add(24 * time.Hour)
 	_ = r.d.Step(ctx)
 	if a, _ := r.f.store.ActiveRun(ctx); a != nil {
 		t.Fatalf("a catch-up for a worker known too old: %+v", a)
@@ -203,8 +216,7 @@ func TestConvertTooOldWorker(t *testing.T) {
 	if got := r.d.WorkerConvert(ctx)["w1"]; got != ConvertNextUpdate {
 		t.Fatalf("WorkerConvert after the installer %q", got)
 	}
-	_ = r.d.Step(ctx) // plans the catch-up
-	cu := r.drive(t, 40)
+	cu := r.drive(t, 20) // its first step plans the catch-up
 	if cu.Trigger != TriggerCatchUp || cu.State != RunDone || len(w.asks) <= asked {
 		t.Fatalf("catch-up %+v asks %d", cu, len(w.asks))
 	}
@@ -220,8 +232,8 @@ func TestConvertFailure(t *testing.T) {
 	ctx := context.Background()
 	w := workerNode(t, r, cc, "w1", "studio", "1.4.0")
 	w.fail = true
-	_, _ = r.f.svc.Tick(ctx)
-	run := r.drive(t, 40)
+	atTheRelease(t, r)
+	run := r.drive(t, 20)
 	ts := targetsByName(t, r.f.store, run.ID)
 	if run.State != RunDoneFailures || ts["studio"].State != TargetFailed {
 		t.Fatalf("run %s targets %+v", run.State, ts)
@@ -248,11 +260,10 @@ func TestConvertFailure(t *testing.T) {
 // A refusal for another reason than its age fails the target (convert_refused).
 func TestConvertRefused(t *testing.T) {
 	r, cc := newConvertRig(t)
-	ctx := context.Background()
 	w := workerNode(t, r, cc, "w1", "studio", "1.4.0")
 	w.refuse = "a conversion of another run is under way"
-	_, _ = r.f.svc.Tick(ctx)
-	run := r.drive(t, 40)
+	atTheRelease(t, r)
+	run := r.drive(t, 20)
 	ts := targetsByName(t, r.f.store, run.ID)
 	if e := readErr(ts["studio"].Error); ts["studio"].State != TargetFailed || e.Code != CodeConvertRefused ||
 		!strings.Contains(e.Detail, "another run") {
@@ -267,19 +278,19 @@ func TestConvertTimeout(t *testing.T) {
 	ctx := context.Background()
 	w := workerNode(t, r, cc, "w1", "studio", "1.4.0")
 	w.never = true
-	_, _ = r.f.svc.Tick(ctx)
+	atTheRelease(t, r)
 	// until the worker has its order (the target converting), then past the conversion's
 	// time at once: a minute a step would take 120 steps
-	for i := 0; i < 40; i++ {
+	for i := 0; i < 20; i++ {
 		_ = r.d.Step(ctx)
 		r.f.now = r.f.now.Add(time.Minute)
 		a, _ := r.f.store.ActiveRun(ctx)
-		if a == nil || targetsByName(t, r.f.store, a.ID)["studio"].AppliedAt != nil {
+		if a != nil && targetsByName(t, r.f.store, a.ID)["studio"].AppliedAt != nil {
 			break
 		}
 	}
 	r.f.now = r.f.now.Add(convertTimeout)
-	run := r.drive(t, 20)
+	run := r.drive(t, 10)
 	ts := targetsByName(t, r.f.store, run.ID)
 	if e := readErr(ts["studio"].Error); ts["studio"].State != TargetFailed || e.Code != CodeConvertTimeout {
 		t.Fatalf("run %s target %+v", run.State, ts["studio"])
@@ -312,11 +323,10 @@ func TestConvertWorkerBackDuringTheRun(t *testing.T) {
 // and that release (it has no delegation key yet).
 func TestConvertJobCarriesADownloadToken(t *testing.T) {
 	r, cc := newConvertRig(t)
-	ctx := context.Background()
 	r.d.Mirror = &Mirror{Store: r.f.store, Dir: t.TempDir()}
 	w := workerNode(t, r, cc, "w1", "studio", "1.4.0")
-	_, _ = r.f.svc.Tick(ctx)
-	r.drive(t, 40)
+	atTheRelease(t, r)
+	r.drive(t, 20)
 	if len(w.asks) == 0 || w.asks[0].DownloadToken == "" {
 		t.Fatalf("asks %+v", w.asks)
 	}
