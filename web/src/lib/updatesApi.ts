@@ -203,6 +203,7 @@ export interface UpdatesOverview {
 export const RUN_ENDED = new Set([
   "done",
   "done_with_failures",
+  "done_needs_person",
   "held",
   "failed",
   "rolled_back",

@@ -67,6 +67,7 @@ export function stateTone(state: string): Tone {
     case "worker_only":
     case "ahead_of_home":
     case "done_with_failures":
+    case "done_needs_person":
     case "cancelled":
     case "waiting_click":
     case "awaiting_click":
@@ -841,8 +842,14 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
   const homeSteps = view.steps.filter((s) => s.host === "home");
   const ended = RUN_ENDED.has(view.state);
   const held = view.targets.some((x) => x.state === "held");
-  // a run an admin cancelled, or a newer release replaced, did not fail
-  const failedRun = ended && !["done", "cancelled", "superseded"].includes(view.state);
+  // a run an admin cancelled, or a newer release replaced, did not fail; nor did one whose
+  // only machines left need a person (their reasons are named)
+  const failedRun =
+    ended && !["done", "done_needs_person", "cancelled", "superseded"].includes(view.state);
+  const needYou =
+    view.state === "done_needs_person"
+      ? view.targets.filter((x) => x.state === "needs_person")
+      : [];
   return (
     <section aria-labelledby="updates-run-title" data-testid="updates-run">
       <h2 id="updates-run-title">
@@ -852,6 +859,19 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
       </h2>
       <p>
         <Badge tone={stateTone(view.state)}>{w.state(view.state)}</Badge>{" "}
+        {needYou.length > 0 && (
+          <span className="mkt-muted" data-testid="updates-run-needs-person">
+            {t("updates.page.runNeedsPerson", {
+              count: needYou.length,
+              machines: needYou
+                .map((x) => {
+                  const code = (x.error as { code?: string } | undefined)?.code;
+                  return code ? `${x.name} (${w.code(String(code))})` : x.name;
+                })
+                .join(", "),
+            })}
+          </span>
+        )}
         {view.detail?.waiting && (
           <span className="mkt-muted">{w.waiting(view.detail.waiting)}</span>
         )}

@@ -13,21 +13,25 @@ import (
 // Run states the driver moves through (README "State machines", reconciled with the
 // install kinds: install-kinds.md).
 const (
-	RunPlanned        = "planned"
-	RunHomePreparing  = "home_preparing"
-	RunHomePrepared   = "home_prepared" // waits for its gates (window, TV) and the drain
-	RunDraining       = "draining"
-	RunHomeApplying   = "home_applying" // ordered (an app: waits for a click), switched, restarting, watching
-	RunHomeCommitted  = "home_committed"
-	RunRollingOut     = "rolling_out"
-	RunDone           = "done"
-	RunDoneFailures   = "done_with_failures"
-	RunHeld           = "held"
-	RunFailed         = "failed"          // nothing changed (before the switch)
-	RunRolledBack     = "rolled_back"     // the home went back to the release before
-	RunFailedRollback = "failed_rollback" // the home could not go back: needs a person
-	RunCancelled      = "cancelled"
-	RunSuperseded     = "superseded" // a newer release took the place of a run that waited for clicks
+	RunPlanned       = "planned"
+	RunHomePreparing = "home_preparing"
+	RunHomePrepared  = "home_prepared" // waits for its gates (window, TV) and the drain
+	RunDraining      = "draining"
+	RunHomeApplying  = "home_applying" // ordered (an app: waits for a click), switched, restarting, watching
+	RunHomeCommitted = "home_committed"
+	RunRollingOut    = "rolling_out"
+	RunDone          = "done"
+	RunDoneFailures  = "done_with_failures"
+	// RunDoneNeedsPerson: every machine took the release but those that need a person
+	// (an install that cannot update itself, an app that cannot change itself…): no
+	// failure of the release, the machines named with their reasons
+	RunDoneNeedsPerson = "done_needs_person"
+	RunHeld            = "held"
+	RunFailed          = "failed"          // nothing changed (before the switch)
+	RunRolledBack      = "rolled_back"     // the home went back to the release before
+	RunFailedRollback  = "failed_rollback" // the home could not go back: needs a person
+	RunCancelled       = "cancelled"
+	RunSuperseded      = "superseded" // a newer release took the place of a run that waited for clicks
 )
 
 // StepWaitingClick is a run's step while all it waits for is a click on a desktop app
