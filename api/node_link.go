@@ -182,6 +182,7 @@ func serveLocalFetch(c *link.Client) http.HandlerFunc {
 		// served on this machine's origin: never a page the home's stream made (proxiedType)
 		w.Header().Set("Content-Type", proxiedType(resp.Header.Get("Content-Type")))
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Security-Policy", proxiedCSP)
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
 	}

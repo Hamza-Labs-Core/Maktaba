@@ -249,8 +249,9 @@ owner on 2026-10-19 (**accepted default**). The questions and their answers are 
   authenticated home channel.
 
 ### R12 — The cluster link (machine-to-machine TLS)
-- R12.1 The home runs an internal CA (ECDSA P-256; key only on the home, `cluster-ca.key` 0600 beside
-  `secrets.key`, sealed copy in `home_secrets`); it issues every machine a certificate at join (CSR
+- R12.1 The home runs an internal CA (ECDSA P-256; key on the home, `cluster-ca.key` 0600 beside
+  `secrets.key`, sealed copy in `home_secrets`, and sealed in the switchover's and the
+  standbys' kits so the next home keeps the CA); it issues every machine a certificate at join (CSR
   from the node; the CA certificate and its fingerprint in the sealed join bundle), renews it over the
   control channel before expiry, and stops accepting it when the machine is revoked.
 - R12.2 **Control channel first.** One `wss://` with mutual TLS per machine to the home's API port;

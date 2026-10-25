@@ -272,6 +272,9 @@ func TestRevokeClosesAllStreamsAtOnce(t *testing.T) {
 // the sender keeps, are reported with the latencies (on a CPU-starved runner they are
 // the writer goroutine waiting for a CPU, not traffic queued ahead of them).
 func TestControlLatencyUnderStreams(t *testing.T) {
+	if testing.Short() {
+		t.Skip("a load test (20 streams): the integration tier runs it")
+	}
 	var stop atomic.Bool
 	defer stop.Store(true)
 	mux := http.NewServeMux()

@@ -40,8 +40,10 @@ func newFakePipeline(dir string, readyAfter time.Duration) *fakePipeline {
 		case <-p.stopped:
 			return
 		}
-		_ = os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U\n#EXTINF:4.0,\nseg-1.ts\n"), 0o644)
+		// the segment before the playlist that names it, as a station writes them (a reader
+		// of the playlist never asks for a segment not there yet)
 		_ = os.WriteFile(filepath.Join(dir, "seg-1.ts"), bytes.Repeat([]byte{0x47}, tsPacket), 0o644)
+		_ = os.WriteFile(filepath.Join(dir, "index.m3u8"), []byte("#EXTM3U\n#EXTINF:4.0,\nseg-1.ts\n"), 0o644)
 	}()
 	return p
 }

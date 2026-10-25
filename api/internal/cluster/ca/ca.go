@@ -3,11 +3,14 @@
 // the story. It signs every machine's certificate from a CSR (the machine's key never
 // leaves it) and the home's own certificates (server, pg_server, client, web).
 //
-// The CA's key lives on the home only: cluster-ca.key (0600) beside secrets.key, and a
-// sealed copy in home_secrets (cluster.ca.key) so that a restore of the database and the
-// secrets key brings the same CA back (EC6) and every machine's certificate stays valid.
-// It is never written on a node, on the share, or in a diagnostics bundle; nothing serves
-// it (only the CA certificate is public: GET /api/cluster/ca.crt).
+// The CA's key lives on the home: cluster-ca.key (0600) beside secrets.key, and a sealed
+// copy in home_secrets (cluster.ca.key) so that a restore of the database and the secrets
+// key brings the same CA back (EC6) and every machine's certificate stays valid. The
+// switchover's and the standbys' kits carry it sealed for the machine that may become the
+// home (the next home keeps the CA); a node writes it only when it becomes the home, and a
+// demoted home wipes it with its other home keys. It is never written on the share or in
+// a diagnostics bundle; nothing serves it (only the CA certificate is public: GET
+// /api/cluster/ca.crt).
 package ca
 
 import (

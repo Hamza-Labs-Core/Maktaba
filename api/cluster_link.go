@@ -582,11 +582,17 @@ func (hl *homeLink) servePull(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 	for k, vs := range resp.Header {
+		// a machine's hop-by-hop headers and cookies stay with it (never set on the home's
+		// origin)
+		if hopHeaders[http.CanonicalHeaderKey(k)] || http.CanonicalHeaderKey(k) == "Set-Cookie" {
+			continue
+		}
 		w.Header()[k] = vs
 	}
 	// served on the home's origin: never a page another machine made (proxiedType)
 	w.Header().Set("Content-Type", proxiedType(resp.Header.Get("Content-Type")))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", proxiedCSP)
 	w.WriteHeader(resp.StatusCode)
 	fl, _ := w.(http.Flusher)
 	buf := make([]byte, 32<<10)

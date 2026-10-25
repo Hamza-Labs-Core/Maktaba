@@ -15,11 +15,13 @@ re-joining.
 
 ## How it works
 
-- **The cluster CA** lives on the home only: `cluster-ca.key` beside `secrets.key` (the
-  server's keys folder), plus a sealed copy in the home's database, so restoring the home
-  from a backup (the database and the secrets key) brings the same CA back and every
-  machine's certificate stays valid. It is never written on a machine, on the share or in a
-  diagnostics bundle.
+- **The cluster CA** lives on the home: `cluster-ca.key` beside `secrets.key` (the server's
+  keys folder), plus a sealed copy in the home's database, so restoring the home from a
+  backup (the database and the secrets key) brings the same CA back and every machine's
+  certificate stays valid. A switchover's or a standby's kit carries it sealed for the
+  machine that may become the home, so the next home keeps the CA; a machine writes it only
+  when it becomes the home, and a home that steps down wipes it. It is never written on the
+  share or in a diagnostics bundle.
 - **A machine's certificate** is made from a key the machine generates and never sends:
   at join, the request carries a certificate request and the approval returns the
   certificate (protected by the pairing code you typed: nothing is trusted on first use). A

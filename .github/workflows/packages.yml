@@ -37,8 +37,10 @@ on:
   workflow_run:
     workflows: [Release, Desktop Release]
     types: [completed]
+  # twice a week: the apt indexes say Valid-Until 14 days (VALID_DAYS), so they are signed
+  # again well before they expire, and even two missed runs leave a week's margin
   schedule:
-    - cron: '17 4 * * 1'
+    - cron: '17 4 * * 1,4'
   workflow_dispatch:
     inputs:
       tag:
