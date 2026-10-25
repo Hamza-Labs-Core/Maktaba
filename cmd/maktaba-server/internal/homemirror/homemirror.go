@@ -104,6 +104,10 @@ type Client struct {
 	Key func() (Key, bool)
 	// Base is the transport under the mirror's (nil: http.DefaultTransport).
 	Base http.RoundTripper
+	// Link carries the mirror's requests over the machine's cluster link (story 35.16):
+	// tried first, unsigned (the link proves the machine); the signed path when it does
+	// not answer (the link not up), which the home refuses once it requires the link.
+	Link http.RoundTripper
 	Now  func() time.Time
 	// Log gets one line per file taken from the mirror or not (nil: none).
 	Log io.Writer
@@ -156,10 +160,41 @@ func (c *Client) pause() time.Duration {
 }
 
 func (c *Client) usable() (Key, bool) {
-	if c == nil || strings.TrimSpace(c.Home) == "" || c.NodeID == "" || c.Key == nil {
+	if c == nil || strings.TrimSpace(c.Home) == "" || c.NodeID == "" {
 		return Key{}, false
 	}
-	return c.Key()
+	if c.Key != nil {
+		if k, ok := c.Key(); ok {
+			return k, true
+		}
+	}
+	// no delegation key (the link required, or not yet one): the link alone
+	return Key{}, c.Link != nil
+}
+
+// overLink sends req on the machine's cluster link; false when the link does not carry
+// it (not up), and the signed path is tried.
+func (c *Client) overLink(req *http.Request) (*http.Response, bool) {
+	if c.Link == nil {
+		return nil, false
+	}
+	resp, err := c.Link.RoundTrip(req)
+	if err != nil {
+		return nil, false
+	}
+	if resp.StatusCode == http.StatusServiceUnavailable && resp.Header.Get("X-Maktaba-Link") == "down" {
+		_ = resp.Body.Close()
+		return nil, false
+	}
+	return resp, true
+}
+
+// sign signs req with key, or fails without one.
+func (c *Client) sign(req *http.Request, key Key) error {
+	if len(key.Secret) == 0 {
+		return errors.New("homemirror: the cluster link is not up and there is no delegation key")
+	}
+	return Sign(req, c.NodeID, key, c.now())
 }
 
 // get sends a signed GET of path (under the home's API) with hdr's headers.
@@ -171,7 +206,10 @@ func (c *Client) get(ctx context.Context, path string, key Key, hdr http.Header)
 	for k, v := range hdr {
 		req.Header[k] = v
 	}
-	if err := Sign(req, c.NodeID, key, c.now()); err != nil {
+	if resp, ok := c.overLink(req); ok {
+		return resp, nil
+	}
+	if err := c.sign(req, key); err != nil {
 		return nil, err
 	}
 	return c.base().RoundTrip(req)
@@ -279,7 +317,10 @@ func (c *Client) getVia(ctx context.Context, rt http.RoundTripper, path string, 
 	for k, v := range hdr {
 		req.Header[k] = v
 	}
-	if err := Sign(req, c.NodeID, key, c.now()); err != nil {
+	if resp, ok := c.overLink(req); ok {
+		return resp, nil
+	}
+	if err := c.sign(req, key); err != nil {
 		return nil, err
 	}
 	return rt.RoundTrip(req)
@@ -306,7 +347,10 @@ func (s *signed) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, errors.New("homemirror: no delegation key yet (the machine agent has not reached the home)")
 	}
 	r = r.Clone(r.Context())
-	if err := Sign(r, s.c.NodeID, key, s.c.now()); err != nil {
+	if resp, ok := s.c.overLink(r); ok {
+		return resp, nil
+	}
+	if err := s.c.sign(r, key); err != nil {
 		return nil, err
 	}
 	return s.base.RoundTrip(r)
@@ -464,4 +508,44 @@ func fileSHA256(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// LocalLink is the machine's cluster link as its supervisor reaches it: the node API's
+// loopback fetch (GET /api/cluster/link/local/fetch?purpose=&path=, the local token),
+// which opens a data stream to the home for one file (story 35.16). A link that is not
+// up answers 503 with X-Maktaba-Link: down.
+type LocalLink struct {
+	// API is the node API on loopback (http://127.0.0.1:<port>).
+	API       string
+	TokenFile string
+	Client    *http.Client
+}
+
+// RoundTrip implements http.RoundTripper for a GET of a path under the home's API.
+func (l *LocalLink) RoundTrip(r *http.Request) (*http.Response, error) {
+	purpose := "artifact"
+	if strings.HasPrefix(r.URL.Path, "/api/cluster/updates/wheelhouse/") {
+		purpose = "wheelhouse"
+	}
+	tok, err := os.ReadFile(l.TokenFile) //nolint:gosec // this machine's own token file
+	if err != nil {
+		return nil, err
+	}
+	q := url.Values{"purpose": {purpose}, "path": {r.URL.RequestURI()}}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet,
+		strings.TrimRight(l.API, "/")+"/api/cluster/link/local/fetch?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, h := range []string{"Range", "If-Range", "Accept", "If-None-Match", "If-Modified-Since"} {
+		if v := r.Header.Get(h); v != "" {
+			req.Header.Set(h, v)
+		}
+	}
+	req.Header.Set("X-Maktaba-Local-Token", strings.TrimSpace(string(tok)))
+	c := l.Client
+	if c == nil {
+		c = http.DefaultClient
+	}
+	return c.Do(req)
 }

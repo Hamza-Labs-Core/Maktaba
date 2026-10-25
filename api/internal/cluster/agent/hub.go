@@ -115,6 +115,10 @@ type Config struct {
 	// 35.16: a machine joined before the link gets its certificate on its channel
 	// session, no re-join); nil: cert.csr is refused.
 	Certs CertIssuer
+	// HasCert reports whether a machine holds a cluster-link certificate: only such a
+	// machine's plain session is cert-only while the link is required (one that never got
+	// one — a worker-only machine, an older release — keeps its channel); nil: none does.
+	HasCert func(ctx context.Context, nodeID string) bool
 
 	Now    func() time.Time
 	Logger *slog.Logger

@@ -307,6 +307,12 @@ func (hl *homeLink) IssueCert(ctx context.Context, nodeID, csrPEM string) (agent
 	return agent.CertIssue{Cert: string(is.PEM), CACert: string(hl.ca.CertPEM), CASHA256: hl.ca.SHA256, NotAfter: is.NotAfter}, nil
 }
 
+// HasCert reports whether a machine holds a cluster-link certificate.
+func (hl *homeLink) HasCert(ctx context.Context, nodeID string) bool {
+	cur, err := hl.ca.Store.Current(ctx, nodeID)
+	return err == nil && cur != ""
+}
+
 // JoinTLS signs a joining machine's CSR for its sealed credentials.
 func (hl *homeLink) JoinTLS(ctx context.Context, nodeID, csrPEM string) (*cluster.PayloadTLS, error) {
 	is, err := hl.ca.SignNode(ctx, []byte(csrPEM), nodeID, hl.linkRules().CertDays)

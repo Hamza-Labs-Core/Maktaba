@@ -385,6 +385,10 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	var tufMirror *releaseverify.TUFMirror
 	if node != nil && node.agent != nil {
 		mirror = homeMirrorClient(node.agent)
+		// story 35.16: over the machine's cluster link first (the node API's loopback fetch);
+		// the signed path while the link is not up and the home does not require it
+		mirror.Link = &homemirror.LocalLink{API: "http://" + supervisor.LocalAddr(cfg.Server.Listen, "8080"),
+			TokenFile: supervisor.LocalTokenPath(cfg)}
 		tufMirror = &releaseverify.TUFMirror{BaseURL: strings.TrimRight(mirror.Home, "/") + "/api/cluster/updates/tuf",
 			Transport: mirror.SignedTransport(nil)}
 	}

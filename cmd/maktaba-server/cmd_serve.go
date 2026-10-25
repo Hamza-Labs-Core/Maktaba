@@ -573,7 +573,9 @@ func webHandler(cfg config.Config, node *nodeServices) http.Handler {
 	if node != nil {
 		home := homeStreamProxy(supervisor.HomeStreamURL(node.node))
 		publicProxy = home
-		gated = nodeStreamRouter(streamProxy, home, node.HomeAway)
+		// story 35.16 AC14: the VOD fallback on the machine's cluster link when it is up
+		gated = nodeStreamRouter(streamProxy, home, node.HomeAway, vodOverLink("http://"+supervisor.LocalAddr(cfg.Server.Listen, "8080"),
+			supervisor.LocalTokenPath(cfg), home))
 		allow = allowedNodeStreamPath
 	}
 	for _, p := range publicStreamPaths {
