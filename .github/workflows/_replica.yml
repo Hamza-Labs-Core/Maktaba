@@ -195,6 +195,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: e2e-update-logs
+          name: e2e-machine-logs
           path: ${{ runner.temp }}/e2e-logs
           if-no-files-found: ignore
