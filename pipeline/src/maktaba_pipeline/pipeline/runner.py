@@ -283,7 +283,12 @@ class ClaimLoop:
             if pool is None:
                 continue
             stages = [str(s) for s in current if self.cfg.stage_pools.get(str(s)) == pool_name]
-            while not self.shutdown_event.is_set():
+            # at most the pool's size per pass, then the next pool: jobs that end faster
+            # than a claim takes (probes) kept a slot free at every claim, and the loop
+            # never left their pool (no Plex, link or tag job ran for as long as probes
+            # were queued)
+            taken = 0
+            while not self.shutdown_event.is_set() and taken < pool.effective_size:
                 sem = self._pool_sems.get(pool_name) if pool.scope == "per_worker" else None
                 if pool.scope == "per_worker" and (sem is None or self._sem_value(sem) <= 0):
                     break
@@ -297,6 +302,7 @@ class ClaimLoop:
                 if job is None:
                     break
                 count += 1
+                taken += 1
                 if sem is not None:
                     await sem.acquire()
                 self._pool_inflight[pool_name] = self._pool_inflight.get(pool_name, 0) + 1
