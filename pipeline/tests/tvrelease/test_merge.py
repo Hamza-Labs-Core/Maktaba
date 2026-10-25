@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from maktaba_pipeline.tvrelease.merge import (
     PLAN_CHANNELS,
     hand_layer,
@@ -11,6 +13,9 @@ from maktaba_pipeline.tvrelease.merge import (
     plan_pending,
     with_plan_layer,
 )
+
+pytestmark = pytest.mark.unit
+
 
 LIVE = "00000000-0000-4000-8000-000000000001"
 GONE = "00000000-0000-4000-8000-000000000002"
