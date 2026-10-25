@@ -59,6 +59,9 @@ struct WatchView: View {
     @State private var player: AVPlayer?
     @State private var session: String?
     @State private var problem: String?
+    /// When to reopen: just before the signed URL or the access token AVPlayer sends ends.
+    @State private var renewAt = Date.distantFuture
+    @State private var openedAt = Date.distantPast
 
     var body: some View {
         Group {
@@ -123,28 +126,61 @@ struct WatchView: View {
     }
 
     private func open() async {
+        await play(from: 0)
+        guard player != nil else { return }
+        await watch()
+    }
+
+    /// Opens (or reopens) the stream at `start` seconds. AVPlayer sends the Bearer header on
+    /// every request of the asset: the home's web port lets only a signed-in caller through
+    /// to `/stream/`, the signed URL alone is not enough there.
+    private func play(from start: Double) async {
         do {
-            let s = try await client.openStream(video: video.id)
+            let s = try await client.openStream(video: video.id, startSec: Int(start))
             guard let url = s.playbackURL(home: client.home) else {
                 problem = "The home gave no address to play."
                 return
             }
+            let auth = try await client.playbackHeaders()
+            if let old = session, old != s.sessionID {
+                Task { await client.closeStream(old) }
+            }
             session = s.sessionID
-            let p = AVPlayer(url: url)
+            try await client.waitUntilPlayable(url, headers: auth.headers)
+            openedAt = .now
+            renewAt = min(auth.until, s.expires ?? .distantFuture).addingTimeInterval(-60)
+            let item = AVPlayerItem(asset: AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": auth.headers]))
+            let p = player ?? AVPlayer()
+            p.replaceCurrentItem(with: item)
+            if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
             player = p
             p.play()
-            await reportWhilePlaying(p, session: s.sessionID)
         } catch {
+            player = nil
             problem = error.localizedDescription
         }
     }
 
-    /// Every 10 s while the screen is up: the position, so "continue watching" resumes here.
-    private func reportWhilePlaying(_ p: AVPlayer, session: String) async {
+    /// Every 10 s while the screen is up: the position, so "continue watching" resumes
+    /// here; a reopen where it is before the URL or token ends, or once when the item failed.
+    private func watch() async {
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(10))
+            guard let p = player, let session else { return }
             let at = p.currentTime().seconds
             if at.isFinite, at > 0 { await client.reportProgress(session: session, positionSec: Int(at)) }
+            let failed = p.currentItem?.status == .failed
+            if failed, Date.now.timeIntervalSince(openedAt) < 30 {
+                p.pause()
+                player = nil
+                problem = p.currentItem?.error?.localizedDescription ?? "The video stopped playing."
+                return
+            }
+            if failed || Date.now >= renewAt {
+                let wasPlaying = p.rate > 0
+                await play(from: at.isFinite ? at : 0)
+                if !wasPlaying { player?.pause() }
+            }
         }
     }
 

@@ -54,3 +54,40 @@ import Testing
         #expect(r.url?.absoluteString == "http://h:8088/api/videos?library=L&limit=60")
     }
 }
+
+@Suite struct VideoList {
+    /// The home accepts only updated_at, created_at or title (a "-created_at" answered 400
+    /// and the Player showed nothing after signing in).
+    @Test func asksWithASortTheHomeKnows() {
+        let q = APIClient.videoListQuery(library: "L", query: "", cursor: nil)
+        #expect(["updated_at", "created_at", "title"].contains(q["sort"] ?? ""))
+        #expect(q["library"] == "L" && q["q"] == nil && q["limit"] == "60")
+    }
+}
+
+@Suite struct Playback {
+    @Test func readsAJWTsExpiry() {
+        // {"sub":"u1","exp":1793000000}, base64url without padding
+        let payload = Data(#"{"sub":"u1","exp":1793000000}"#.utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        #expect(APIClient.expiry(of: "h.\(payload).s") == Date(timeIntervalSince1970: 1793000000))
+        #expect(APIClient.expiry(of: "not-a-jwt") == nil)
+    }
+
+    @Test func findsAPlaylistsFirstURI() {
+        let master = "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-STREAM-INF:BANDWIDTH=1460800,RESOLUTION=854x480\nv0/index.m3u8?sig=a\nv1/index.m3u8?sig=a\n"
+        #expect(APIClient.firstURI(inPlaylist: master) == "v0/index.m3u8?sig=a")
+        #expect(APIClient.firstURI(inPlaylist: "#EXTM3U\r\n#EXTINF:6,\r\n  seg-0.ts  \r\n") == "seg-0.ts")
+        #expect(APIClient.firstURI(inPlaylist: "#EXTM3U\n") == nil)
+    }
+
+    @Test func readsTheSignedURLsEnd() throws {
+        for at in ["2026-10-25T20:30:00Z", "2026-10-25T20:30:00.123456Z"] {
+            let json = #"{"session_id":"s1","mode":"transcode","manifest_url":"/m","expires_at":"\#(at)"}"#
+            let s = try JSONDecoder().decode(StreamSession.self, from: Data(json.utf8))
+            let want = Date(timeIntervalSince1970: 1792960200)
+            #expect(abs((s.expires ?? .distantPast).timeIntervalSince(want)) < 1)
+        }
+    }
+}
