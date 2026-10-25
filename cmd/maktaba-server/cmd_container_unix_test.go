@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"os"
@@ -14,14 +13,20 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appruntime"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
-func containerFor(t *testing.T, payload string) (containerDeps, *bytes.Buffer) {
+func containerFor(t *testing.T, payload string) (containerDeps, *syncBuf) {
 	t.Helper()
-	var out bytes.Buffer
+	out := &syncBuf{}
 	dir := t.TempDir()
-	return containerDeps{rt: appruntime.New(filepath.Join(dir, "runtime")), payload: payload, self: "/opt/maktaba/server/bin/maktaba-server",
-		config: filepath.Join(dir, "server.toml"), logFile: filepath.Join(dir, "server.log"), out: &out, every: 5 * time.Millisecond}, &out
+	rt := appruntime.New(filepath.Join(dir, "runtime"))
+	rt.Sync = func() {} // a whole-system sync takes seconds on a busy machine
+	return containerDeps{rt: rt, payload: payload, self: "/opt/maktaba/server/bin/maktaba-server",
+		config: filepath.Join(dir, "server.toml"), logFile: filepath.Join(dir, "server.log"), out: out,
+		every: 5 * time.Millisecond, launcherRoot: dir, now: time.Now, guardFor: time.Hour,
+		settle: 20 * time.Millisecond, confirmEvery: 5 * time.Millisecond,
+		version: func(context.Context) string { return "" }}, out
 }
 
 func currentVersion(t *testing.T, rt appruntime.Runtime) string {
@@ -33,14 +38,22 @@ func currentVersion(t *testing.T, rt appruntime.Runtime) string {
 	return st.Version
 }
 
-// The image's payload goes on the volume's runtime: the first one becomes current (the
-// machine its owner: the server updates it), a newer image replaces it, an older image
-// changes nothing (the volume's newer runtime runs), the same image again changes nothing.
-func TestContainerBootstrap(t *testing.T) {
-	c, out := containerFor(t, onePayload(t, "1.5.0"))
-	ctx := context.Background()
-	if err := c.bootstrap(ctx); err != nil {
-		t.Fatal(err)
+// withImage is c with the image's payload at version (a new image pulled).
+func withImage(t *testing.T, c containerDeps, version string) containerDeps {
+	t.Helper()
+	c.payload = onePayload(t, version)
+	return c
+}
+
+// A fresh volume gets the image's payload as its first runtime, owned by the machine (the
+// server updates it), with no guard; the same image again changes nothing.
+func TestContainerBootstrapFirst(t *testing.T) {
+	c, _ := containerFor(t, onePayload(t, "1.5.0"))
+	for range 2 {
+		g, err := c.bootstrap(context.Background(), false)
+		if err != nil || g != nil {
+			t.Fatalf("guard %+v, err %v", g, err)
+		}
 	}
 	if v := currentVersion(t, c.rt); v != "1.5.0" {
 		t.Fatalf("the first runtime: %q", v)
@@ -48,32 +61,135 @@ func TestContainerBootstrap(t *testing.T) {
 	if o := c.rt.ReadOwner(); o != appruntime.OwnerHeadless {
 		t.Fatalf("owner %q: the server would not update it", o)
 	}
-	if err := c.bootstrap(ctx); err != nil { // the same image restarted
+}
+
+// A newer image is switched to as an update is: under the launcher's guard (the runtime
+// before named to go back to), the watermark left where it was, nothing pruned.
+func TestContainerBootstrapNewerIsGuarded(t *testing.T) {
+	c, out := containerFor(t, onePayload(t, "1.5.0"))
+	ctx := context.Background()
+	if _, err := c.bootstrap(ctx, false); err != nil {
 		t.Fatal(err)
 	}
-
-	newer := c
-	newer.payload = onePayload(t, "1.6.0")
-	if err := newer.bootstrap(ctx); err != nil {
+	before, _ := c.rt.Current()
+	newer := withImage(t, c, "1.6.0")
+	g, err := newer.bootstrap(ctx, false)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if v := currentVersion(t, c.rt); v != "1.6.0" {
 		t.Fatalf("a newer image: %q", v)
 	}
-	if !strings.Contains(out.String(), "replaces 1.5.0") {
+	onDisk, err := layout.ReadGuard(c.launcherRoot)
+	if err != nil || g == nil || onDisk == nil || onDisk.RunID != imageRunID || onDisk.Version != "1.6.0" ||
+		onDisk.PreviousRuntime != before || !onDisk.Deadline.After(time.Now()) {
+		t.Fatalf("the guard: returned %+v, on disk %+v (%v)", g, onDisk, err)
+	}
+	if w := c.rt.Watermark(); w != "1.5.0" {
+		t.Fatalf("the watermark rose before the release ran: %q", w)
+	}
+	if !strings.Contains(out.String(), "under the launcher's guard") {
 		t.Fatalf("said %q", out.String())
 	}
+	// a restart of the container before it was kept watches on
+	if again, err := newer.bootstrap(ctx, false); err != nil || again == nil || again.Version != "1.6.0" {
+		t.Fatalf("restarted: %+v %v", again, err)
+	}
+}
 
-	older := c
-	older.payload = onePayload(t, "1.4.0")
-	if err := older.bootstrap(ctx); err != nil {
+// An older image changes nothing; nor does a newer one before a command (a `docker
+// compose run` beside a container that may be running): no switch, no guard.
+func TestContainerBootstrapOlderAndCommand(t *testing.T) {
+	c, out := containerFor(t, onePayload(t, "1.5.0"))
+	ctx := context.Background()
+	if _, err := c.bootstrap(ctx, false); err != nil {
 		t.Fatal(err)
 	}
-	if v := currentVersion(t, c.rt); v != "1.6.0" {
-		t.Fatalf("an older image replaced the volume's newer runtime: %q", v)
+	if g, err := withImage(t, c, "1.4.0").bootstrap(ctx, false); err != nil || g != nil {
+		t.Fatalf("an older image: %+v %v", g, err)
 	}
-	if !strings.Contains(out.String(), "older than 1.6.0") {
+	if g, err := withImage(t, c, "1.6.0").bootstrap(ctx, true); err != nil || g != nil {
+		t.Fatalf("a command from a newer image: %+v %v", g, err)
+	}
+	if v := currentVersion(t, c.rt); v != "1.5.0" {
+		t.Fatalf("current moved to %q", v)
+	}
+	if g, _ := layout.ReadGuard(c.launcherRoot); g != nil {
+		t.Fatalf("a guard: %+v", g)
+	}
+	if !strings.Contains(out.String(), "older than 1.5.0") || !strings.Contains(out.String(), "when the container starts") {
 		t.Fatalf("said %q", out.String())
+	}
+}
+
+// A newer image whose server answers with its version for the settle time is kept, as an
+// update's commit: the guard cleared, the watermark raised.
+func TestContainerConfirmKeepsAHealthyImage(t *testing.T) {
+	c, out := containerFor(t, onePayload(t, "1.5.0"))
+	ctx := context.Background()
+	if _, err := c.bootstrap(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	newer := withImage(t, c, "1.6.0")
+	g, err := newer.bootstrap(ctx, false)
+	if err != nil || g == nil {
+		t.Fatalf("%+v %v", g, err)
+	}
+	newer.version = func(context.Context) string { return "v1.6.0" }
+	done := make(chan struct{})
+	go func() { newer.confirm(ctx, *g); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("not kept")
+	}
+	if g, _ := layout.ReadGuard(c.launcherRoot); g != nil {
+		t.Fatalf("the guard stayed: %+v", g)
+	}
+	if w := c.rt.Watermark(); w != "1.6.0" {
+		t.Fatalf("the watermark: %q", w)
+	}
+	if !strings.Contains(out.String(), "runs: kept") {
+		t.Fatalf("said %q", out.String())
+	}
+}
+
+// When the launcher goes back (the new release could not start), the image's version is
+// refused: the image that ran before still runs (the watermark never rose), that newer
+// image is not switched to again, and a newer one still is.
+func TestContainerConfirmRecordsARevert(t *testing.T) {
+	c, out := containerFor(t, onePayload(t, "1.5.0"))
+	ctx := context.Background()
+	if _, err := c.bootstrap(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	newer := withImage(t, c, "1.6.0")
+	g, err := newer.bootstrap(ctx, false)
+	if err != nil || g == nil {
+		t.Fatalf("%+v %v", g, err)
+	}
+	// the launcher's fallback: `current` back, then the guard cleared
+	if _, err := c.rt.Point(ctx, g.PreviousRuntime, appruntime.Options{AllowDowngrade: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := layout.ClearGuard(c.launcherRoot); err != nil {
+		t.Fatal(err)
+	}
+	newer.confirm(ctx, *g)
+	if r := c.refused(); r != "1.6.0" {
+		t.Fatalf("refused %q", r)
+	}
+	if g, err := c.bootstrap(ctx, false); err != nil || g != nil || currentVersion(t, c.rt) != "1.5.0" {
+		t.Fatalf("the image before: %+v %v %q", g, err, currentVersion(t, c.rt))
+	}
+	if g, err := newer.bootstrap(ctx, false); err != nil || g != nil || currentVersion(t, c.rt) != "1.5.0" {
+		t.Fatalf("the refused image again: %+v %v %q", g, err, currentVersion(t, c.rt))
+	}
+	if !strings.Contains(out.String(), "could not start here") {
+		t.Fatalf("said %q", out.String())
+	}
+	if g, err := withImage(t, c, "1.7.0").bootstrap(ctx, false); err != nil || g == nil || currentVersion(t, c.rt) != "1.7.0" {
+		t.Fatalf("a newer image: %+v %v", g, err)
 	}
 }
 
