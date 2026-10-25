@@ -314,23 +314,20 @@ test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
 	@bash tools/test-budget.sh wall integration $(INTEGRATION_TIER_BUDGET) -- \
 		$(MAKE) --no-print-directory test-integration-inner
 
-# -vet=off: the unit tier's go test and the lint job vet every package already; the
-# integration tier spends its budget on the tests.
+# The Go modules run four at a time (tools/ci/integration-go.sh: their output in order,
+# the tier failing when any fails), with the pipeline's integration tests beside them.
+# pytest exits 5 when no tests match the marker: that is no failure (the `|| ...` forms:
+# .SHELLFLAGS has -e).
 .PHONY: test-integration-inner
 test-integration-inner:
-	@for mod in $(INTEGRATION_GO_MODULES); do \
-		echo "==> go test -tags=integration ./... ($$mod)"; \
-		(cd $$mod && $(if $(INTEGRATION_GO_PG_URL),MAKTABA_TEST_PG_URL='$(INTEGRATION_GO_PG_URL)') \
-			go test -tags=integration -vet=off -count=1 ./...); \
-	done
-	@# pytest exits 5 when no tests match the marker — that's the
-	@# normal state until Story 20.4 lands real integration tests.
-	@# The `|| { ... }` form is required because .SHELLFLAGS has
-	@# `-e`, which would otherwise kill the recipe on pytest's
-	@# non-zero exit before the rc check runs.
-	@cd $(PIPELINE_DIR) && uv run pytest -m integration || { \
-		rc=$$?; [ $$rc -eq 5 ] || exit $$rc; \
-	}
+	@py_log="$$(mktemp)"; \
+	( cd $(PIPELINE_DIR) && uv run pytest -m integration ) >"$$py_log" 2>&1 & py=$$!; \
+	go_rc=0; $(if $(INTEGRATION_GO_PG_URL),MAKTABA_TEST_PG_URL='$(INTEGRATION_GO_PG_URL)') \
+		bash tools/ci/integration-go.sh $(INTEGRATION_GO_MODULES) || go_rc=$$?; \
+	py_rc=0; wait $$py || py_rc=$$?; \
+	echo "==> pytest -m integration ($(PIPELINE_DIR))"; cat "$$py_log"; rm -f "$$py_log"; \
+	if [ $$py_rc -ne 0 ] && [ $$py_rc -ne 5 ]; then exit $$py_rc; fi; \
+	exit $$go_rc
 
 # Epic 35 story 35.5 AC6: the previous stable release against this build's database (its
 # repository tests on these migrations, and the nodes' schema guard both ways); a failure
