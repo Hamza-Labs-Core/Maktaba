@@ -146,16 +146,18 @@ Mirror CI locally with `make package-mobile-android` /
 
 ## Update banner (story 28.5)
 
-The app cannot update itself; it tells the user when a newer release exists
-and opens the right place to get it (`web/src/lib/appUpdate.ts`,
-`web/src/components/UpdateBanner.tsx`): the App Store on iOS, the Play Store
-for the AAB's build, the `.apk` for the sideloaded APK's build. The web
-bundle's build settings decide which:
+The sideloaded Android app cannot update itself; it tells the user when a
+newer release exists and opens the release's `.apk` (or the release page
+when the release lists none) (`web/src/lib/appUpdate.ts`,
+`web/src/components/UpdateBanner.tsx`). A store build shows no banner: the
+Play Store updates the AAB's build and the App Store every iOS build, each
+only after its review, and no store says cheaply which version it carries.
+The web bundle's build settings decide:
 
 | Setting | Values | Set by |
 |---|---|---|
 | `VERSION` | the tag (`v0.3.6`) | `mobile-release.yml` (a bare local build is `dev`: no banner) |
-| `VITE_DISTRIBUTION` | `sideload` (default) / `store` | the APK's bundle / the AAB's bundle |
-| `VITE_IOS_APP_STORE_URL` | the App Store page | the `IOS_APP_STORE_URL` repository variable (unset: the release page) |
+| `VITE_DISTRIBUTION` | `sideload` (default) / `store` | the APK's bundle / the AAB's bundle (iOS is always a store build) |
 
-How often it checks (daily, weekly, never) is under Settings → About.
+How often it checks (daily, weekly, never) is under Settings → About, in the
+sideloaded app.

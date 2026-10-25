@@ -15,7 +15,7 @@ an update, the machines, restore, the settings — are in [updates.md](updates.m
 | Server (admin) | Admin -> Updates (`/admin/updates`): Update now, Check now, Skip, Pause, a run's steps on the home and on each machine, Retry, Skip, Roll back, the backups and Restore ([updates.md](updates.md#update-now-skip-defer-pin)). |
 | CLI | `maktaba-server update` reads the same feed and verifies with the same code (`--check`, `--version vX.Y.Z`, `--rollback`). |
 | Desktop (Tauri) | Built-in updater reads the Release's `latest.json`, applies on relaunch (signature-verified). An app that runs the server stages the release the home's update orders and installs it on a click there; a client-only app keeps its own "restart to install" badge. |
-| Mobile | In-app banner → App Store / Play Store / `.apk` (apps can't self-update; [below](#the-mobile-apps-update-banner-story-285)). |
+| Mobile | The sideloaded Android app: an in-app banner → the release's `.apk`; store builds are updated by their store ([below](#the-mobile-apps-update-banner-story-285)). |
 
 ## Channels
 
@@ -28,20 +28,24 @@ with `MAKTABA_UPDATE_CHANNEL` on the server ([updates.md](updates.md#channels)).
 
 ## The mobile app's update banner (story 28.5)
 
-A store app cannot update itself, so the iOS and Android app (the web app in Capacitor) only says
-when a newer release exists and where to get it. At launch, at most once a day (Settings → About →
-App updates: daily, weekly or never), it asks the server it is connected to
+The sideloaded Android app (the web app in Capacitor, installed from the release's `.apk`) cannot
+update itself, so it says when a newer release exists and where to get it. At launch, at most once a
+day (Settings → About → App updates: daily, weekly or never), it asks the server it is connected to
 (`GET /api/system/updates`, the server's channel), or GitHub's latest stable release when no server
 answers (a phone never follows beta by itself; a server whose update checks are off is followed, and
 then no banner shows). When the release is newer than the app, a banner says "New version available
-— vX.Y.Z" with **Get update** (the App Store on iOS, the Play Store for the Play build, the `.apk` on
-the release for the sideloaded build) and the release notes. **Dismiss** hides it until a newer
-version ships. Offline the check is skipped and tried again at the next launch; GitHub's rate limit
-backs it off until its reset. The app never downloads a binary itself.
+— vX.Y.Z" with **Get update** (the release's own `.apk`, at GitHub's download path for that tag;
+the release page when the release lists none, as an unsigned build attaches none) and the release
+notes. **Dismiss** hides it until a newer version ships. Offline the check is skipped and tried again
+at the next launch; GitHub's rate limit backs it off until its reset (a stored time that is not a
+number, in the future, or a backoff over a day never stops the checks). The app never downloads a
+binary itself.
 
-The release's mobile builds carry the tag's version and their kind (`mobile-release.yml`: the APK's
-web bundle is the sideload build, the AAB's the store build); the iOS App Store page comes from the
-`IOS_APP_STORE_URL` repository variable (the release page while it is unset).
+A store build shows no banner: the Play Store updates the AAB's build and the App Store every iOS
+build, each only once its review is through, and no store says cheaply and reliably which version it
+carries, so a banner could point at a version the store does not offer yet. The release's mobile
+builds carry the tag's version and their kind (`mobile-release.yml`: the APK's web bundle is the
+sideload build, the AAB's the store build).
 
 ## The desktop apps' own updates
 
