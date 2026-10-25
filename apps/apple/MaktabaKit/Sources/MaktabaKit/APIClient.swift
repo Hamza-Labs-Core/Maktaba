@@ -53,11 +53,17 @@ public actor APIClient {
     }
 
     public func videos(library: String?, query: String? = nil, cursor: String? = nil) async throws -> Page<Video> {
-        var q = ["limit": "60", "sort": "-created_at"]
+        try await get("/api/videos", query: Self.videoListQuery(library: library, query: query, cursor: cursor))
+    }
+
+    /// The video list's query: the newest first. The home's sorts are updated_at,
+    /// created_at or title (it answers 400 to anything else).
+    static func videoListQuery(library: String?, query: String?, cursor: String?) -> [String: String] {
+        var q = ["limit": "60", "sort": "created_at"]
         if let library { q["library"] = library }
         if let query, !query.isEmpty { q["q"] = query }
         if let cursor { q["cursor"] = cursor }
-        return try await get("/api/videos", query: q)
+        return q
     }
 
     public func video(_ id: String) async throws -> Video {
@@ -69,6 +75,67 @@ public actor APIClient {
         var body: [String: Any] = ["video_id": video]
         if startSec > 0 { body["start_sec"] = startSec }
         return try await send(request("POST", "/api/stream/sessions", body: body))
+    }
+
+    /// The header the player sends with every `/stream/` request (the web port lets only
+    /// a signed-in caller through), with an access token good for at least `minLife`,
+    /// and when that token ends. AVPlayer cannot refresh it: reopen before `until`.
+    public func playbackHeaders(minLife: TimeInterval = 120) async throws -> (headers: [String: String], until: Date) {
+        var access = tokens.access
+        if access.flatMap(Self.expiry(of:)).map({ $0.timeIntervalSinceNow < minLife }) ?? true {
+            access = try await refreshOnce()
+        }
+        guard let access, let until = Self.expiry(of: access) else { throw APIError.signedOut }
+        return (["Authorization": "Bearer \(access)"], until)
+    }
+
+    /// Waits until an HLS stream can start: a transcode writes its rendition playlist a
+    /// moment after the session opens, while the master playlist names it at once. hls.js
+    /// retries the 404 in between; AVPlayer gives up, so the player waits here first.
+    public func waitUntilPlayable(_ url: URL, headers: [String: String], timeout: Duration = .seconds(30)) async throws {
+        guard url.path().hasSuffix(".m3u8") else { return }
+        func fetch(_ u: URL) async throws -> (Int, Data) {
+            var r = URLRequest(url: u)
+            headers.forEach { r.setValue($1, forHTTPHeaderField: $0) }
+            do {
+                let (d, resp) = try await session.data(for: r)
+                return ((resp as? HTTPURLResponse)?.statusCode ?? 0, d)
+            } catch {
+                throw APIError.transport(error.localizedDescription)
+            }
+        }
+        let (code, master) = try await fetch(url)
+        guard code == 200 else { throw APIError.status(code, String(decoding: master.prefix(300), as: UTF8.self)) }
+        guard let first = Self.firstURI(inPlaylist: String(decoding: master, as: UTF8.self)),
+              let rendition = URL(string: first, relativeTo: url)?.absoluteURL else { return }
+        let deadline = ContinuousClock.now + timeout
+        while true {
+            let (code, body) = try await fetch(rendition)
+            if code == 200 { return }
+            guard code == 404, ContinuousClock.now < deadline else {
+                throw APIError.status(code, String(decoding: body.prefix(300), as: UTF8.self))
+            }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+    }
+
+    /// The first URI line of an HLS playlist (its first variant or segment).
+    static func firstURI(inPlaylist text: String) -> String? {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty && !$0.hasPrefix("#") }
+    }
+
+    /// The `exp` of a JWT (nil when it is not one).
+    static func expiry(of jwt: String) -> Date? {
+        let parts = jwt.split(separator: ".")
+        guard parts.count == 3 else { return nil }
+        var b64 = parts[1].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        b64 += String(repeating: "=", count: (4 - b64.count % 4) % 4)
+        guard let data = Data(base64Encoded: b64),
+              let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let exp = claims["exp"] as? Double else { return nil }
+        return Date(timeIntervalSince1970: exp)
     }
 
     public func closeStream(_ session: String) async {

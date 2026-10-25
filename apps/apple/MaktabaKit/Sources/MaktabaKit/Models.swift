@@ -58,19 +58,29 @@ public struct Page<Item: Decodable & Sendable>: Decodable, Sendable {
 }
 
 /// `POST /api/stream/sessions`: where the video plays from. `direct_url` is the file
-/// itself; `manifest_url` an HLS playlist. Both are signed (`?sig=`) and relative to the
-/// home, so the player needs no Authorization header.
+/// itself; `manifest_url` an HLS playlist. Both are signed (`?sig=`, good until
+/// `expires_at`) and relative to the home. The home's web port also wants a signed-in
+/// caller on `/stream/` (`APIClient.playbackHeaders`).
 public struct StreamSession: Codable, Sendable {
     public let sessionID: String
     public let mode: String
     public let manifestURL: String?
     public let directURL: String?
+    public let expiresAt: String?
 
     enum CodingKeys: String, CodingKey {
         case mode
         case sessionID = "session_id"
         case manifestURL = "manifest_url"
         case directURL = "direct_url"
+        case expiresAt = "expires_at"
+    }
+
+    /// When the signed URL stops working (nil: the home did not say).
+    public var expires: Date? {
+        guard let expiresAt else { return nil }
+        return (try? Date(expiresAt, strategy: .iso8601.year().month().day().time(includingFractionalSeconds: true)))
+            ?? (try? Date(expiresAt, strategy: .iso8601))
     }
 
     /// The URL the player opens, against the home's address.
