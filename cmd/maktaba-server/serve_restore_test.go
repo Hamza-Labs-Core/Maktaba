@@ -73,9 +73,6 @@ func newRestoreRig(t *testing.T, schemas map[string]int64) *restoreRig {
 			}
 			return s, nil
 		}}
-	prev := restoreExitDelay
-	restoreExitDelay = 0
-	t.Cleanup(func() { restoreExitDelay = prev })
 	return rig
 }
 

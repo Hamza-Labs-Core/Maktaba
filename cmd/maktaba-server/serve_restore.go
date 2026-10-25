@@ -46,6 +46,9 @@ type restorer struct {
 	log  io.Writer
 	// schema reads the schema a dump holds (dbsafe's DumpSchema; tests replace it)
 	schema func(ctx context.Context, path string) (int64, error)
+	// exitDelay is how long a restore lets its answer go out before the home restarts
+	// (restoreExitDelay; tests set it to 0)
+	exitDelay time.Duration
 }
 
 // backupInfo is one dump in the home's backups folder.
@@ -279,8 +282,9 @@ func (r *restorer) restore(ctx context.Context, name, by string, confirm bool) (
 	fmt.Fprintf(orDiscardW(r.log), "[serve] restore of %s asked by %s: the home restarts on %s, which puts it back "+
 		"before any role runs\n", pl.Backup, by, pl.Release)
 	if r.exit != nil {
+		delay := r.exitDelay
 		go func() {
-			time.Sleep(restoreExitDelay) // the answer goes out first
+			time.Sleep(delay) // the answer goes out first
 			r.exit(75)
 		}()
 	}
@@ -288,7 +292,7 @@ func (r *restorer) restore(ctx context.Context, name, by string, confirm bool) (
 }
 
 // restoreExitDelay is how long a restore lets its answer go out before the home restarts.
-var restoreExitDelay = 2 * time.Second
+const restoreExitDelay = 2 * time.Second
 
 // mark records the restore and points the install at the plan's release: the next start
 // is that release's, and its database step puts the dump back.
@@ -355,7 +359,8 @@ func restoreCode(err error) string {
 
 // newRestorer is the home's restorer over its database (nil db: none to put a dump into).
 func newRestorer(cfg config.Config, db *dbsafe.Target, inst updater.Installer, exit func(int)) *restorer {
-	r := &restorer{stateDir: cfg.StateDir(), db: db, inst: inst, exit: exit, log: os.Stderr}
+	r := &restorer{stateDir: cfg.StateDir(), db: db, inst: inst, exit: exit, log: os.Stderr,
+		exitDelay: restoreExitDelay}
 	if db != nil {
 		t := *db
 		r.schema = t.DumpSchema

@@ -265,6 +265,9 @@ func TestRevokeClosesAllStreamsAtOnce(t *testing.T) {
 // TC11 (light): with 20 streams pushing data on one machine, the control channel still
 // answers quickly (each stream has its own connection; control frames go first).
 func TestControlLatencyUnderStreams(t *testing.T) {
+	if testing.Short() {
+		t.Skip("a load test (20 busy streams): the integration tier runs it")
+	}
 	var stop atomic.Bool
 	defer stop.Store(true)
 	mux := http.NewServeMux()

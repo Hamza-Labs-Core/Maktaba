@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -11,7 +12,10 @@
 -- without a break (the home switches the link to `require` once every machine has held
 -- one for a day).
 --
--- Additive only; the certificates stay the home API's (nothing for maktaba_worker).
+-- Additive only; the certificates stay the home API's: nothing for maktaba_worker, and no
+-- machine's copy holds them (Epic 37: like cluster_nodes, the machines' own; the copy's
+-- exclusion gains cluster_certs). NO TRANSACTION for the index (CONCURRENTLY): every
+-- statement is safe to run again.
 --
 CREATE TABLE IF NOT EXISTS cluster_certs (
     serial      TEXT PRIMARY KEY,
@@ -24,16 +28,87 @@ CREATE TABLE IF NOT EXISTS cluster_certs (
     issued_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at  TIMESTAMPTZ NULL
 );
-CREATE INDEX IF NOT EXISTS cluster_certs_node_idx ON cluster_certs (node_id);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE INDEX CONCURRENTLY IF NOT EXISTS cluster_certs_node_idx ON cluster_certs (node_id);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE cluster_nodes ADD COLUMN IF NOT EXISTS cert_serial TEXT;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE cluster_nodes ADD COLUMN IF NOT EXISTS cert_not_after TIMESTAMPTZ;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE cluster_nodes ADD COLUMN IF NOT EXISTS link_since TIMESTAMPTZ;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
+        -- slot 0103's default privileges gave the group role rights on new tables
+        REVOKE ALL ON cluster_certs FROM maktaba_worker;
+    END IF;
+END
+$$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- slot 0147's exclusion, with the certificates: the machines' own, like cluster_nodes
+CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
+LANGUAGE sql IMMUTABLE AS $f$
+    SELECT ARRAY[
+        -- secrets
+        'home_secrets', 'tv_cluster_secret', 'tv_push_secrets', 'tv_simulcast_destinations',
+        'refresh_tokens', 'password_reset_tokens', 'pairing_tickets', 'cluster_sso_codes',
+        'idempotency_keys', 'licenses', 'devices', 'device_downloads', 'audit_log',
+        -- live cookies (their hashes are copied: web_session_keys)
+        'web_sessions',
+        -- the machines' own (a machine's row of cluster_nodes is published to it alone)
+        'cluster_nodes', 'cluster_node_stages', 'cluster_metrics_cache', 'cluster_log_cache',
+        'cluster_cache_files', 'cluster_certs',
+        -- what an old home wrote after an emergency took the home from it (the home's to
+        -- apply or not)
+        'cluster_kept_aside',
+        -- each database's own
+        'goose_db_version', 'maktaba_schema_version'
+    ]::text[]
+$f$;
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
+CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
+LANGUAGE sql IMMUTABLE AS $f$
+    SELECT ARRAY[
+        'home_secrets', 'tv_cluster_secret', 'tv_push_secrets', 'tv_simulcast_destinations',
+        'refresh_tokens', 'password_reset_tokens', 'pairing_tickets', 'cluster_sso_codes',
+        'idempotency_keys', 'licenses', 'devices', 'device_downloads', 'audit_log',
+        'web_sessions',
+        'cluster_nodes', 'cluster_node_stages', 'cluster_metrics_cache', 'cluster_log_cache',
+        'cluster_cache_files',
+        'cluster_kept_aside',
+        'goose_db_version', 'maktaba_schema_version'
+    ]::text[]
+$f$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE cluster_nodes DROP COLUMN IF EXISTS link_since;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE cluster_nodes DROP COLUMN IF EXISTS cert_not_after;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE cluster_nodes DROP COLUMN IF EXISTS cert_serial;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 DROP TABLE IF EXISTS cluster_certs;
 -- +goose StatementEnd

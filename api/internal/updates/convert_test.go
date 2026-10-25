@@ -268,7 +268,18 @@ func TestConvertTimeout(t *testing.T) {
 	w := workerNode(t, r, cc, "w1", "studio", "1.4.0")
 	w.never = true
 	_, _ = r.f.svc.Tick(ctx)
-	run := r.drive(t, 200)
+	// until the worker has its order (the target converting), then past the conversion's
+	// time at once: a minute a step would take 120 steps
+	for i := 0; i < 40; i++ {
+		_ = r.d.Step(ctx)
+		r.f.now = r.f.now.Add(time.Minute)
+		a, _ := r.f.store.ActiveRun(ctx)
+		if a == nil || targetsByName(t, r.f.store, a.ID)["studio"].AppliedAt != nil {
+			break
+		}
+	}
+	r.f.now = r.f.now.Add(convertTimeout)
+	run := r.drive(t, 20)
 	ts := targetsByName(t, r.f.store, run.ID)
 	if e := readErr(ts["studio"].Error); ts["studio"].State != TargetFailed || e.Code != CodeConvertTimeout {
 		t.Fatalf("run %s target %+v", run.State, ts["studio"])
