@@ -83,15 +83,21 @@ from a database backup (rule 4 above).
 ## Packaged upgrade (Homebrew / dpkg / rpm)
 
 A `.deb`/`.rpm` and the Homebrew formula update themselves: the server installs each release in
-its quiet window (Epic 35; the package owns the launcher, the updater the releases). The package
-manager brings a new launcher, from the apt/dnf repositories or the tap, which follow each stable
-release:
+its quiet window (Epic 35; the package owns the launcher, the updater the releases). A new
+launcher comes with the package: the release's own `.deb`/`.rpm`, or an upgrade from the apt/dnf
+repositories or the tap where they are set up (they follow each stable release):
 
 ```sh
-brew upgrade maktaba                               # macOS
-sudo apt install --only-upgrade maktaba-server     # Debian / Ubuntu
-sudo dnf upgrade maktaba-server                    # Fedora / RHEL
+sudo apt install ./maktaba-server_<ver>-1_amd64.deb   # Debian / Ubuntu, the release's package
+sudo dnf install ./maktaba-server-<ver>-1.x86_64.rpm  # Fedora / RHEL, the release's package
+sudo apt install --only-upgrade maktaba-server        # ... or from the repository
+sudo dnf upgrade maktaba-server
+brew upgrade maktaba                                  # macOS
 ```
+
+An upgrade restarts the service only when the release it runs changes (the package's release is
+newer than what the updater installed) or its launcher's protocol does; a package that comes after
+the updater installed the same release changes nothing that runs.
 
 The package's release becomes current only when it is newer than what the updater installed
 (the `.deb`/`.rpm` postinstall, the formula's service: `setup --self-managed --identity package`);

@@ -179,13 +179,15 @@ jobs:
         run: bash tools/release/release-assets-test.sh
 
   # The package repositories packages.yml publishes after a stable release (pkg-repo.sh),
-  # built from fake packages with a throwaway key: apt and dnf (Rocky Linux 9, Fedora)
-  # install from them through the signed index and refuse a changed one; and the Homebrew
-  # tap's formula and cask (homebrew-tap.sh), filled, parsed and pushed to a scratch tap.
+  # built from fake packages with a throwaway key: apt installs through the signed index
+  # (by-hash: also while a release is being published) and refuses a changed one; dnf on
+  # Rocky Linux 8 and 9 and Fedora 42, over HTTP, installs through both signatures (the
+  # index's and the signed .rpm's) and refuses a tampered repository. And the Homebrew tap's
+  # formula and cask (homebrew-tap.sh), filled, parsed and pushed to a scratch tap.
   package-repos:
     name: package repositories (apt, dnf, Homebrew tap)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-go@v6.4.0
@@ -199,7 +201,7 @@ jobs:
           GOTOOLCHAIN: auto
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends apt-utils createrepo-c
+          sudo apt-get install -y -q --no-install-recommends apt-utils createrepo-c rpm
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
           echo "$(go env GOPATH)/bin" >>"${GITHUB_PATH}"
       - name: apt and dnf repositories

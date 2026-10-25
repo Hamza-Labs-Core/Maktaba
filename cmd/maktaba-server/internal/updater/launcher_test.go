@@ -76,12 +76,15 @@ func TestLauncherReplacement(t *testing.T) {
 	}
 	for _, p := range []string{"/opt/homebrew/opt/maktaba/libexec/release/maktaba-launcher",
 		"/usr/local/Cellar/maktaba/1.4.0/libexec/release/maktaba-launcher"} {
-		if !launcherPackaged(p) || !strings.Contains(packagedFix(p), "brew upgrade maktaba") {
-			t.Errorf("%s: packaged %v, fix %q", p, launcherPackaged(p), packagedFix(p))
+		if !launcherPackaged(p) || !strings.Contains(packagedFix(p, "1.5.0"), "brew upgrade maktaba") {
+			t.Errorf("%s: packaged %v, fix %q", p, launcherPackaged(p), packagedFix(p, "1.5.0"))
 		}
 	}
-	if fix := packagedFix("/usr/bin/maktaba-launcher"); runtime.GOOS == "linux" &&
-		(!strings.Contains(fix, "apt install --only-upgrade maktaba-server") || !strings.Contains(fix, "dnf upgrade maktaba-server")) {
+	// a machine that installed a downloaded .deb has no repository to upgrade from: the
+	// release's own package comes first
+	if fix := packagedFix("/usr/bin/maktaba-launcher", "v1.5.0"); runtime.GOOS == "linux" &&
+		(!strings.Contains(fix, "1.5.0's `.deb` or `.rpm`") || !strings.Contains(fix, "sudo apt install ./maktaba-server_*.deb") ||
+			!strings.Contains(fix, "apt install --only-upgrade maktaba-server") || !strings.Contains(fix, "dnf upgrade maktaba-server")) {
 		t.Errorf("a .deb/.rpm launcher's fix: %q", fix)
 	}
 }

@@ -233,8 +233,9 @@ updated its runtime) offers its own update for its window and tray.
   (its server up a minute, nothing pending). One this install cannot replace (a package's, a
   Windows service's) refuses the release before it installs, naming the commands that do it by
   hand.
-- **Package-managed installs** (`.deb`/`.rpm`, from a release or the apt/dnf repositories, and
-  the Homebrew formula): the package owns the launcher, the updater owns the releases
+- **Package-managed installs** (`.deb`/`.rpm` of the server, from a release or the apt/dnf
+  repositories once they are set up, and the Homebrew formula; the Linux app stays out of the
+  repositories, Epic 39): the package owns the launcher, the updater owns the releases
   (`bin/releases/<v>` under `/var/lib/maktaba`, or brew's `var/maktaba/server`), so they update
   by themselves like any plain server. The package manager brings a new launcher (`apt upgrade`,
   `dnf upgrade`, `brew upgrade`) and its release only when that is newer than what the updater

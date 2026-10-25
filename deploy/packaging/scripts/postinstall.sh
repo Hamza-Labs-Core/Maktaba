@@ -56,6 +56,18 @@ fi
 #     older than what the updater installed only refreshes the launcher).
 #     The package owns /usr/bin/maktaba-launcher; the updater owns releases.
 RELEASE_SRC=/usr/lib/maktaba/release
+# What an upgrade restarts the service for (step 5): `current` moved to this package's
+# release, or this package's launcher speaks another launcher_protocol than the one the
+# service runs (the copy the previous package put at the root, run as the maktaba user: it
+# is that user's file). The release the updater installed in its window, already current,
+# is never restarted for (a package that comes after it changes nothing that runs).
+launcher_protocol() {
+    [ -x "$1" ] || return 0
+    runuser -u "${MAKTABA_USER}" -- "$1" --version 2>/dev/null |
+        sed -n 's/.*(launcher_protocol \([0-9][0-9]*\)).*/\1/p'
+}
+current_before=$(cat "${DATA_DIR}/current" 2>/dev/null || true)
+protocol_before=$(launcher_protocol "${DATA_DIR}/maktaba-launcher")
 if [ -x "${RELEASE_SRC}/maktaba-server" ]; then
     if ! runuser -u "${MAKTABA_USER}" -- \
             "${RELEASE_SRC}/maktaba-server" setup --self-managed --system --no-service \
@@ -78,11 +90,20 @@ fi
 # 5. A fresh install: enable (but do not start) the service so it survives a reboot; the
 #    operator edits ${CONFIG} (media roots!) then `systemctl start`. An upgrade: the
 #    service starts again if it was running (try-restart), on the release `current` names
-#    now; the operator's choice to enable or disable it stays as it was.
+#    now, only when that moved or the launcher's protocol changed (above); otherwise what
+#    runs stays running (an apt or dnf upgrade after the updater installed that release in
+#    its quiet window cuts no one off). The operator's choice to enable or disable it stays
+#    as it was.
 if command -v systemctl >/dev/null 2>&1; then
     if [ "${upgrade}" -eq 1 ]; then
-        systemctl try-restart maktaba-server.service >/dev/null 2>&1 || true
-        echo "maktaba-server: upgraded; the service started again if it was running."
+        current_after=$(cat "${DATA_DIR}/current" 2>/dev/null || true)
+        protocol_after=$(launcher_protocol /usr/bin/maktaba-launcher)
+        if [ "${current_after}" != "${current_before}" ] || [ "${protocol_after}" != "${protocol_before}" ]; then
+            systemctl try-restart maktaba-server.service >/dev/null 2>&1 || true
+            echo "maktaba-server: upgraded; the service started again if it was running (release ${current_after:-none})."
+        else
+            echo "maktaba-server: upgraded; the service keeps running release ${current_after:-none} (nothing it runs changed)."
+        fi
         exit 0
     fi
     systemctl enable maktaba-server.service >/dev/null 2>&1 || true
