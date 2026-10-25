@@ -193,6 +193,11 @@ type Machine struct {
 	// TVOnAir reports whether this machine keeps TV streams on air now (its tv-slot
 	// processes run): a launcher's handover then waits for the next restart (nil: none).
 	TVOnAir func() bool
+	// TVHandover reports whether this machine's TV processes (the front door, the slots)
+	// can run on across the restart onto target, the release the next start runs (story
+	// 35.7), and why not; arm also makes serve's next exit 75 hand them over. nil: they
+	// never do (every process restarts, under the run's TV gate).
+	TVHandover func(j *Journal, target string, arm bool) (bool, string)
 
 	mu      sync.Mutex
 	j       *Journal
@@ -518,6 +523,7 @@ func (m *Machine) prepare(ctx context.Context) {
 		}
 		_ = m.endStep(s.name, state, detail)
 	}
+	ho, hoWhy := m.tvHandover(m.Status().Journal, j.Job.Version, false)
 	stopped := false
 	_ = m.mutate(func(j *Journal) {
 		if j.State != StatePreparing {
@@ -525,6 +531,7 @@ func (m *Machine) prepare(ctx context.Context) {
 			return
 		}
 		j.State, j.Step = StatePrepared, ""
+		j.HandsOver, j.HandoverWhy = ho, hoWhy
 	})
 	if stopped {
 		_ = m.withJournal(func(j *Journal) error { return m.Installer.Discard(context.Background(), j) })
@@ -729,6 +736,7 @@ func (m *Machine) apply(ctx context.Context) {
 		return
 	}
 	_ = m.endStep(StepSwitch, "done", "")
+	m.armHandover(j.Job.Version)
 	_ = m.mutate(func(j *Journal) { j.State = StateRestarting })
 	_ = m.beginStep(StepRestart)
 	m.logf("restarting on %s", j.Job.Version)
@@ -1149,7 +1157,7 @@ func (m *Machine) replaceLauncher() {
 		return
 	}
 	j := m.Status().Journal
-	if j == nil || !needsNewLauncher(j) {
+	if j == nil || !wantsNewLauncher(j) {
 		return
 	}
 	_ = m.beginStep(StepLauncher)
@@ -1163,7 +1171,10 @@ func (m *Machine) replaceLauncher() {
 		_ = m.endStep(StepLauncher, "skipped", "")
 		return
 	}
-	if m.TVOnAir != nil && m.TVOnAir() {
+	// the TV processes run on across this restart when they can (story 35.7): then it
+	// cuts no TV
+	handsOver, _ := m.tvHandover(j, j.Job.Version, true)
+	if !handsOver && m.TVOnAir != nil && m.TVOnAir() {
 		// a restart now would cut the TV this machine keeps on air, outside the gates the
 		// run's restarts pass: the new launcher takes over at the next restart instead
 		_ = m.endStep(StepLauncher, "done", fmt.Sprintf("launcher protocol %d: takes over at the next restart "+
@@ -1173,7 +1184,12 @@ func (m *Machine) replaceLauncher() {
 		return
 	}
 	_ = m.endStep(StepLauncher, "done", fmt.Sprintf("launcher protocol %d", j.LauncherProtocol))
-	m.logf("the launcher of %s (protocol %d) takes over: restarting", j.Job.Version, j.LauncherProtocol)
+	if needsNewLauncher(j) {
+		m.logf("the launcher of %s (protocol %d) takes over: restarting", j.Job.Version, j.LauncherProtocol)
+	} else {
+		m.logf("the launcher of %s takes over (it keeps the TV processes running across restarts): restarting",
+			j.Job.Version)
+	}
 	if m.Exit != nil {
 		m.Exit(75)
 	}
@@ -1234,8 +1250,33 @@ func (m *Machine) rollback(reason string) {
 		m.logf("the switch back failed: %s", f.Error())
 		return
 	}
+	m.armHandover(j.From)
 	if m.Exit != nil {
 		m.Exit(75)
+	}
+}
+
+// tvHandover is TVHandover (false when there is none).
+func (m *Machine) tvHandover(j *Journal, target string, arm bool) (bool, string) {
+	if m.TVHandover == nil || j == nil {
+		return false, ""
+	}
+	return m.TVHandover(j, target, arm)
+}
+
+// armHandover makes the next exit 75 hand the TV processes over to the start on target
+// when they can run on across it (story 35.7), and says which it is in the run's log:
+// a restart that cannot hand over restarts every process, the TV's too (AC4).
+func (m *Machine) armHandover(target string) {
+	if m.TVHandover == nil {
+		return
+	}
+	ok, why := m.tvHandover(m.Status().Journal, target, true)
+	_ = m.mutate(func(j *Journal) { j.HandsOver, j.HandoverWhy = ok, why })
+	if ok {
+		m.logf("the TV processes run on across the restart onto %s", target)
+	} else if why != "" {
+		m.logf("every process restarts onto %s, the TV's too: %s", target, why)
 	}
 }
 

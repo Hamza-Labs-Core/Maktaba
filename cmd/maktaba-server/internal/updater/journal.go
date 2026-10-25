@@ -211,6 +211,13 @@ type Journal struct {
 	App string `json:"app,omitempty"`
 	// LauncherProtocol is the release's launcher_protocol (its verified release.json).
 	LauncherProtocol int `json:"launcher_protocol,omitempty"`
+	// EdgeProtocol is the release's edge_protocol (its verified release.json): the TV
+	// front door runs on across the restart only to a release that speaks its protocol.
+	EdgeProtocol int `json:"edge_protocol,omitempty"`
+	// HandsOver: this machine's TV processes run on across its restart (story 35.7), so
+	// the run need not wait for the TV to be quiet; HandoverWhy says why they cannot.
+	HandsOver   bool   `json:"hands_over,omitempty"`
+	HandoverWhy string `json:"handover_why,omitempty"`
 	// Signed is the staged release's signed record (version, checksums digest, signing
 	// time), kept at the commit for the next update's rules (an app bundle's, a runtime's:
 	// a layout keeps its watermark)

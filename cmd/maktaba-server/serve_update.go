@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sigstore/sigstore-go/pkg/root"
@@ -67,6 +68,11 @@ type updates struct {
 	mu   sync.Mutex
 	snap func() supervisor.Snapshot
 	want func(role supervisor.Role, instance string, on bool) error
+	// the TV handover (serve_handover.go): the supervisor, the layout of a plain server's
+	// install, and an exit 75 armed to hand the TV processes over
+	sup   *supervisor.Supervisor
+	lay   *layout.Layout
+	armed atomic.Bool
 }
 
 // pythonStopWait is how long stopPython waits for the pipeline's processes to be gone.
@@ -345,7 +351,13 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 		ri.StopPython = u.stopPython   // a runtime of another Python minor: the pipeline stops first
 		ri.StartPython = u.startPython // and starts again when the switch goes no further
 	}
+	if li, ok := inst.(*updater.LayoutInstaller); ok && handoverDir(releaseDir) != "" {
+		// story 35.7: the TV processes run on across its restarts (and their releases stay)
+		u.lay = &li.Layout
+		li.InUse = u.survivorReleases
+	}
 	m := &updater.Machine{Dir: dir, Installer: inst, Exit: exit, Log: os.Stderr}
+	m.TVHandover = u.tvHandover
 	if home {
 		m.Records = recordFile(apppayload.DatabasePath(cfg.StateDir()))
 		if t := homeDatabase(cfg, pg); t != nil {
@@ -379,7 +391,7 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 
 func (u *updates) setSupervisor(sup *supervisor.Supervisor) {
 	u.mu.Lock()
-	u.snap, u.want = sup.Snapshot, sup.Want
+	u.snap, u.want, u.sup = sup.Snapshot, sup.Want, sup
 	u.mu.Unlock()
 }
 

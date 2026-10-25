@@ -1,10 +1,11 @@
 # Epic 35 phase B + D, reconciled with the one-app installs (Epics 36, 38, 39)
 
-> **Status:** built with stories 35.4, 35.5, 35.6 (the restart fallback), 35.12 and the parts of
-> 35.13 that show, pause and retry a run; of 35.7, AC5–AC7 (resume from the journal, the
-> launcher's guard, launcher replacement, `--status`): **the handover of surviving TV children
-> across a supervisor restart (AC1–AC4) is not built**, so a machine restarts whole, under the
-> TV gate (story 35.6's fallback, the spec's own degradation). **Why this page:** the Epic 35 design (2026-10-19) predates the desktop apps that
+> **Status:** built with stories 35.4, 35.5, 35.6 (the restart fallback), 35.7 (the TV handover
+> across a supervisor restart, resume from the journal, the launcher's guard, launcher
+> replacement, `--status`), 35.12 and the parts of 35.13 that show, pause and retry a run. A
+> plain server install's TV processes (the front door and the slots) run on across its
+> restarts; every other install restarts whole, under the TV gate (story 35.6's fallback).
+> **Why this page:** the Epic 35 design (2026-10-19) predates the desktop apps that
 > carry the server (Epic 36 Mac, 38 Windows, 39 Linux) and the database step they run at every
 > start (Epic 38 story 38.12). This page says what changed, and what each kind of install does
 > now. Where it and [design.md](design.md) disagree, this page wins.
@@ -17,7 +18,7 @@
 | The app's updater is the only updater inside an app; the server's own is off (Epic 36 contract-update). | The server decides **what** and the order of the machines (policy, home first, one node at a time); a desktop app that runs the server stages what the home orders and installs it **when someone clicks there** (owner decision D1, "Ask first" below); the app's updater still does the swap for Mac and Windows. Headless and plain server installs update by themselves in the window. |
 | Rollback replaces binaries; the schema stays (migrations are additive). | Every installed release (38.12) refuses a database a newer release migrated (`migrate up` exits 3, `serve` refuses). So a rollback after a migration also **puts back the dump taken before it**. |
 | The orchestrator backs up and migrates before restarting the roles (§5.3 steps 6–9). | Every home migrates at the new release's start, through the 38.12 database step (dump, migrate, put back on failure), whatever the install kind. The orchestrator rehearses the migrations on a scratch copy before anything is installed. |
-| TV: Epic 33 hot swap, or a restart when nobody watches (§7.2). | The fallback: the home restarts in the window only while `tv_staging.quiet_max_viewers` (0) are watching (checked before the drain and again right before its apply); a machine only while its own streams have no more watchers (`channel_runtime.host_id`), and the machines keeping streams on air go last; at the window's end the home is `tv_busy` and tried again next window. The Epic 33 binary swap and the TV handover across a supervisor restart (§8.1, story 35.7 AC1–AC4) are not built. |
+| TV: Epic 33 hot swap, or a restart when nobody watches (§7.2). | A plain server install (the launcher over `bin/releases`) hands its TV processes over across the restart (§8.1, story 35.7, "TV handover" below): the front door and the slots keep serving while every other process restarts on the new release, and the new supervisor adopts them, so the run waits for no quiet TV (the machine's prepared report says `hands_over`). Where they cannot run on (another install kind, a front door the new release's `edge_protocol` does not match, a Linux launcher from before the handover, a Windows server whose job lets no child leave it under a launcher from before it), the fallback: the home restarts in the window only while `tv_staging.quiet_max_viewers` (0) are watching (checked before the drain and again right before its apply); a machine only while its own streams have no more watchers (`channel_runtime.host_id`), and the machines keeping streams on air go last; at the window's end the home is `tv_busy` and tried again next window. |
 
 ## One run, four installers
 
@@ -257,3 +258,38 @@ that comes back behind the watermark gets a `catch_up` run of its own.
   `PIP_INDEX_URL`, or a proxy), no room (`disk_space`), a launcher a package manager or a
   Windows service owns when a release needs a newer one (`launcher_protocol`), a Mac app that
   needs an administrator (`needs_admin`), the cases above.
+
+## TV handover (story 35.7)
+
+- **The record.** The supervisor of a plain server install keeps `updates/handover.json` (in the
+  launcher's install root): every TV process that runs (the streaming role, the tv-slot
+  instances), with its pid, the OS's start time of that pid (`/proc/<pid>/stat`, `kern.proc.pid`,
+  `GetProcessTimes`: a reused pid is never taken for it), its process group (POSIX) or named job
+  (Windows), its probe, its program and release, and a slot's TV release binding. It is rewritten
+  whenever one starts or ends, and removed when every process stopped.
+- **The restart.** An update's exit 75 onto the new release (or back, on a rollback) is armed to
+  hand over when the TV processes can run on across it: every other process stops as at a
+  shutdown, the record is marked `handover` by that supervisor on this boot, and serve exits 75
+  without signalling them. The run's log says which it was, and why not when it was not.
+- **The launcher** (it says `MAKTABA_LAUNCHER_HANDOVER=1` to the server) leaves what such a record
+  lists running at that exit 75 (Linux: those process groups are kept out of the orphans it stops;
+  Windows: it keeps the kill-on-close job it runs every server in, held for its whole life, across
+  that restart). On every other exit, and at a stop, it stops what the record lists (POSIX: the
+  process groups, each only while its leader is still that process; Windows: the job) and removes
+  the record. A launcher from before the handover is replaced by the committed release's on POSIX
+  where that happens by itself (the same full restart, in the window and under the TV gate, as a
+  `launcher_protocol` change); Windows keeps any launcher.
+- **Windows under a launcher from before the handover**: the TV processes leave the launcher's job
+  (`CREATE_BREAKAWAY_FROM_JOB`; the launcher's job has always allowed it) for the boot's named job
+  `Local\Maktaba-tv-<boot id>-<install>` (the install's hash: never another install's, nor a
+  test's), whose handle the supervisor duplicates into the launcher, so it outlives the
+  supervisor and dies with the launcher. Where the job the server runs in lets no child leave it,
+  that process ends with the supervisor and every restart is whole (AC4's degradation).
+- **Adoption.** The next supervisor adopts each listed process still the same process (pid and
+  start time) whose probe answers, and supervises it by probe and by polling; one that ends, or
+  must restart, is replaced by an ordinary child; one that cannot be adopted is started afresh
+  (`supervisor_adopt_failed`). A record of an earlier boot is removed. On Windows what the boot's
+  job holds beyond the adopted processes is ended.
+- **What stays.** The front door runs on only to a release that speaks its `edge_protocol` (the
+  releases' `release.json`); a release a running TV process uses is never pruned. The desktop apps
+  (their own installers) and a flat install restart whole, under the TV gate.

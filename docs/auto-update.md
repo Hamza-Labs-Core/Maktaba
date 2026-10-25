@@ -49,9 +49,11 @@ click):
 1. **The home prepares** it: downloads and verifies it (the signature, every file),
    stages it, runs it once (`--version`), and rehearses its migrations on a scratch copy
    of the database (a migration that fails on the real data stops here; nothing changed).
-2. **It waits for its moment**: inside the window, with nobody watching TV
-   (`tv_staging.quiet_max_viewers`, 0): the home restarts, live TV with it. The
-   cluster's jobs are drained.
+2. **It waits for its moment**: inside the window. A plain server install's TV keeps
+   playing across its restart (the front door and the TV slots are handed over to the new
+   supervisor), so it waits for nothing more; any other install restarts live TV with it, so
+   it waits for nobody to be watching (`tv_staging.quiet_max_viewers`, 0). The cluster's jobs
+   are drained.
 3. **The home switches** to it and restarts. The new release's start dumps the database
    (`backups/pre-<old>-to-<new>.dump`, checked to read back), migrates it, and puts the
    dump back if the migrations fail. Its health is watched (every role running, the API

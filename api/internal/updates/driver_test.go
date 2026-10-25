@@ -30,6 +30,8 @@ type fakeMachine struct {
 	pendingFor int
 	// backup: the dump its commit reports
 	backup *RunBackup
+	// handsOver: its TV processes run on across its restart (story 35.7)
+	handsOver bool
 }
 
 // click is someone choosing to install on the machine's desktop app.
@@ -102,7 +104,7 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 			if m.prepFail != "" {
 				m.st.State, m.st.Error = MPrepareFailed, &MachineError{Step: "stage", Code: m.prepFail}
 			} else {
-				m.st.State = MPrepared
+				m.st.State, m.st.HandsOver = MPrepared, m.handsOver
 			}
 		case MApplying, MWatching:
 			if m.pendingFor > 0 {
@@ -574,5 +576,34 @@ func TestDriverSkewRules(t *testing.T) {
 	}
 	if states["alpha"] != "ahead_of_home" || states["worker"] != "worker_only" {
 		t.Fatalf("machines %v", fmt.Sprint(states))
+	}
+}
+
+// Story 35.7: a home whose TV processes run on across its restart (the TV handover) is
+// not held for the TV: its restart cuts no TV. One that cannot hand over waits, as before.
+func TestDriverHandoverNeedsNoQuietTV(t *testing.T) {
+	r := newDriverRig(t)
+	ctx := context.Background()
+	r.home.handsOver = true
+	r.viewers = 3
+	_, _ = r.f.svc.Tick(ctx)
+	if run := r.drive(t, 20); run.State != RunDone || r.home.applies != 1 {
+		t.Fatalf("run %s applies %d", run.State, r.home.applies)
+	}
+}
+
+// Story 35.7: a machine whose TV processes run on across its restart is not held while
+// its streams are watched.
+func TestDriverNodeHandoverNeedsNoQuietTV(t *testing.T) {
+	r := newDriverRig(t)
+	ctx := context.Background()
+	a := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
+	a.handsOver = true
+	if _, err := r.f.db.Exec(`INSERT INTO channel_runtime (channel_id, viewer_count, host_id, state) VALUES ('c1', 2, 'n1', 'live')`); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = r.f.svc.Tick(ctx)
+	if run := r.drive(t, 40); run.State != RunDone || a.version != "1.5.0" {
+		t.Fatalf("run %s alpha %s", run.State, a.version)
 	}
 }

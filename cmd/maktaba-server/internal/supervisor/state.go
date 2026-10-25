@@ -99,6 +99,9 @@ type ChildStatus struct {
 	// paths whole). Detail stays the English, for the logs and older readers.
 	DetailCode   string         `json:"detail_code,omitempty"`
 	DetailParams map[string]any `json:"detail_params,omitempty"`
+	// Adopted: the process runs from before this supervisor started (handed over
+	// across its restart, story 35.7); it is watched, not waited for.
+	Adopted bool `json:"adopted,omitempty"`
 }
 
 // Event is one entry of the supervisor's event log (start, exit,

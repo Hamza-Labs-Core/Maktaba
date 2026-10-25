@@ -42,6 +42,22 @@ func needsNewLauncher(j *Journal) bool {
 	return j.LauncherProtocol > runningLauncherProtocol()
 }
 
+// refreshLauncher reports whether the running launcher is from before the TV handover
+// (story 35.7: it does not say MAKTABA_LAUNCHER_HANDOVER) where that matters, POSIX: on
+// Linux it would stop the TV processes a server hands over, on a Mac it would not stop
+// them at a service stop. The committed release's launcher (this server's own build,
+// which speaks it) then takes its place where that happens by itself, never asked of a
+// person: a launcher that cannot be replaced here stays, and every restart stays whole.
+// Windows keeps any launcher (the handover works under the one it has).
+func refreshLauncher() bool {
+	return runtime.GOOS != "windows" && os.Getenv(layout.EnvLauncherExe) != "" &&
+		os.Getenv(layout.EnvLauncherHandover) != "1"
+}
+
+// wantsNewLauncher reports whether the job's committed release replaces the running
+// launcher: it needs a newer one, or the running one is from before the handover.
+func wantsNewLauncher(j *Journal) bool { return needsNewLauncher(j) || refreshLauncher() }
+
 // launcherPackaged reports whether a package manager owns the launcher (.deb/.rpm:
 // story 35.7 EC4).
 func launcherPackaged(exe string) bool {
@@ -91,14 +107,20 @@ const windowsServiceName = "Maktaba"
 // running one and moved into place by itself (--replace-self keeps the old as .old,
 // removed at the next good start), then the handover asked.
 func (li *LayoutInstaller) ReplaceLauncher(j *Journal) (bool, error) {
-	if !needsNewLauncher(j) {
+	if !wantsNewLauncher(j) {
 		return false, nil
 	}
 	if ok, why := li.launcherReplaceable(j.Job.Version); !ok {
+		if !needsNewLauncher(j) {
+			return false, nil // a refresh only: the launcher this install has stays
+		}
 		return false, fmt.Errorf("%s", why)
 	}
-	exe := strings.TrimSpace(os.Getenv(layout.EnvLauncherExe))
 	src := filepath.Join(li.Layout.ReleaseDir(layout.NormalizeVersion(j.Job.Version)), layout.Exe("maktaba-launcher"))
+	if _, err := os.Stat(src); err != nil && !needsNewLauncher(j) {
+		return false, nil // a release without its own launcher: nothing to refresh with
+	}
+	exe := strings.TrimSpace(os.Getenv(layout.EnvLauncherExe))
 	tmp := exe + ".new"
 	if err := layout.CopyFile(src, tmp); err != nil {
 		return false, err
@@ -122,7 +144,7 @@ var replaceSelf = func(newLauncher, target string) error {
 // ReplaceLauncher implements LauncherReplacer: the runtime's current launcher is the new
 // runtime's already; the running one hands over to it.
 func (ri *RuntimeInstaller) ReplaceLauncher(j *Journal) (bool, error) {
-	if !needsNewLauncher(j) || ri.LauncherRoot == "" {
+	if !wantsNewLauncher(j) || ri.LauncherRoot == "" {
 		return false, nil
 	}
 	cur, err := ri.Runtime.Current()

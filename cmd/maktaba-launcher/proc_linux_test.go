@@ -82,7 +82,7 @@ func TestStopOrphansNeverWaitsForOneThatCannotDie(t *testing.T) {
 	}
 	orphanKillWait = 200 * time.Millisecond
 	start := time.Now()
-	stopOrphans(100 * time.Millisecond)
+	stopOrphans(100*time.Millisecond, nil)
 	if d := time.Since(start); d > 2*time.Second {
 		t.Errorf("stopOrphans took %v", d)
 	}
