@@ -3,6 +3,7 @@ package httpx
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -21,7 +22,8 @@ var notYet = map[string]bool{
 	"segment-not-found":   true,
 }
 
-// LogFailures logs every request answered with a status of 400 or more as
+// LogFailures logs every /stream/* request (the bytes a player fetches: VOD,
+// posters, live channels) answered with a status of 400 or more as
 // `stream_request_failed` (Warn; Error from 500; Info for a file a running
 // transcode has not written yet): method, path, status, the
 // problem's name, bytes written and duration. A successful request writes
@@ -35,6 +37,11 @@ func LogFailures(logger *slog.Logger) func(http.Handler) http.Handler {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// the cluster's internal calls (a 404 is an answer there) are not a player's
+			if !strings.HasPrefix(r.URL.Path, "/stream/") {
+				next.ServeHTTP(w, r)
+				return
+			}
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			t0 := time.Now()
 			next.ServeHTTP(ww, r)

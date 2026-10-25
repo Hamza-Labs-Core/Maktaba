@@ -21,6 +21,8 @@ func TestLogFailures(t *testing.T) {
 			Write(w, http.StatusNotFound, "segment-not-found", "not yet", "")
 		case "/stream/s1/boom":
 			w.WriteHeader(http.StatusInternalServerError)
+		case "/internal/tv/staging":
+			http.NotFound(w, r)
 		default:
 			_, _ = w.Write([]byte("ok"))
 		}
@@ -30,6 +32,7 @@ func TestLogFailures(t *testing.T) {
 	}
 
 	do("/stream/s1/seg1.ts?sig=SECRET")
+	do("/internal/tv/staging")
 	if buf.Len() != 0 {
 		t.Fatalf("a 200 is not logged: %s", buf.String())
 	}
