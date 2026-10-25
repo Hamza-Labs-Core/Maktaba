@@ -9,7 +9,7 @@
 #                          Contents/Resources/server built by tools/release/mac-app/
 #                          payload.sh (Go binaries, Postgres, ffmpeg, Python, the
 #                          pipeline wheel), macOS 15+
-#                 x86_64 — the client only (Intel Macs keep the Homebrew/node paths)
+#                 (no Intel Mac build since v0.3.15: Apple silicon only)
 #   Windows   →  the NSIS -setup.exe WITH the server inside (Epic 38, story 38.11):
 #                <install>\server built by tools/release/win-app/payload.sh (the same
 #                pieces, x86_64, plus the Visual C++ runtime), a current-user install in
@@ -102,10 +102,6 @@ jobs:
             rust-targets: aarch64-apple-darwin
             payload: mac-app
             args: '--target aarch64-apple-darwin --bundles app,dmg --config ../../build/mac-app/tauri.mac-app.conf.json'
-          - label: macos-x86_64
-            os: macos-15
-            rust-targets: x86_64-apple-darwin
-            args: '--target x86_64-apple-darwin --bundles app,dmg'
           # Windows x86_64: the server payload in <install>\server (the overlay adds
           # it as a resource, with the NSIS installer's hooks).
           - label: windows
@@ -466,7 +462,9 @@ jobs:
           for dmg in apps/desktop/src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg; do
             codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dmg"
             xcrun notarytool submit "$dmg" "${auth[@]}" --wait --timeout 60m
-            # retried: Apple's ticket service drops connections (stapler exit 68)
+            # stapling fetches the ticket from Apple's CloudKit; a dropped connection there
+            # failed whole releases (v0.3.10, v0.3.14: "The network connection was lost",
+            # error 68), so it is retried (the same script staples the .app above)
             tools/release/mac-app/staple.sh "$dmg"
           done
 
