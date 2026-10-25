@@ -3,8 +3,10 @@ package link
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -262,20 +264,30 @@ func TestRevokeClosesAllStreamsAtOnce(t *testing.T) {
 	h.waitFor(func() bool { return !h.srv.Live(testNode) }, "the control session to end")
 }
 
-// TC11 (light): with 20 streams pushing data on one machine, the control channel still
-// answers quickly (each stream has its own connection; control frames go first).
+// TC11 (design §18.11): 20 TV pulls (a channel's bitrate each, about 4 Mbit/s) and a
+// release download (as fast as it goes) on one machine; the control channel's p99 round
+// trip stays under 50 ms. Each stream has its own connection and the control channel's
+// queue holds only its own frames (control before rpc): the frames' queue waits, which
+// the sender keeps, are reported with the latencies (on a CPU-starved runner they are
+// the writer goroutine waiting for a CPU, not traffic queued ahead of them).
 func TestControlLatencyUnderStreams(t *testing.T) {
-	if testing.Short() {
-		t.Skip("a load test (20 busy streams): the integration tier runs it")
-	}
 	var stop atomic.Bool
 	defer stop.Store(true)
 	mux := http.NewServeMux()
 	chunk := make([]byte, 32<<10)
 	mux.HandleFunc("/api/cluster/updates/artifacts/", func(w http.ResponseWriter, r *http.Request) {
+		// a TV pull: 32 KiB every 64 ms; the release download: no pause
+		pace := 64 * time.Millisecond
+		if strings.HasSuffix(r.URL.Path, "/release.tar.gz") {
+			pace = 0
+		}
 		for !stop.Load() && r.Context().Err() == nil {
 			if _, err := w.Write(chunk); err != nil {
 				return
+			}
+			w.(http.Flusher).Flush()
+			if pace > 0 {
+				time.Sleep(pace)
 			}
 		}
 	})
@@ -283,13 +295,22 @@ func TestControlLatencyUnderStreams(t *testing.T) {
 	h := newHarness(t, mux)
 	h.srv.Settings = func() Settings { return Settings{MaxStreams: 32} }
 	c := h.connect(nil)
-	for range 20 {
-		body := openArtifact(t, c)
-		defer body.Close()
-		go func() { _, _ = io.Copy(io.Discard, body) }()
+	open := func(name string) {
+		req, _ := http.NewRequest(http.MethodGet, "http://home/api/cluster/updates/artifacts/1.5.0/"+name, nil)
+		resp, err := c.StreamHTTP(context.Background(), PurposeArtifact, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = resp.Body.Close() })
+		go func() { _, _ = io.Copy(io.Discard, resp.Body) }()
 	}
-	var worst time.Duration
-	for range 30 {
+	for i := range 20 {
+		open(fmt.Sprintf("channel-%d.ts", i))
+	}
+	open("release.tar.gz")
+	time.Sleep(100 * time.Millisecond) // the streams flowing
+	rtts := make([]time.Duration, 0, 100)
+	for range 100 {
 		start := time.Now()
 		req, _ := http.NewRequest(http.MethodGet, h.home+"/api/ping", nil)
 		resp, err := c.RoundTrip(req)
@@ -298,10 +319,18 @@ func TestControlLatencyUnderStreams(t *testing.T) {
 		}
 		_, _ = io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
-		worst = max(worst, time.Since(start))
+		rtts = append(rtts, time.Since(start))
 	}
-	// the design's p99 < 50 ms on real hardware; a loaded CI runner (-race) gets room
-	if worst > 500*time.Millisecond {
-		t.Fatalf("the slowest control round trip took %v under 20 streams", worst)
+	slices.Sort(rtts)
+	p99 := rtts[98]
+	h.srv.mu.Lock()
+	sess := h.srv.sessions[testNode]
+	h.srv.mu.Unlock()
+	cs := c.current()
+	t.Logf("p50 %v, p99 %v, max %v; queue waits: machine rpc %v control %v, home rpc %v control %v", rtts[49], p99, rtts[99],
+		time.Duration(cs.out.maxRPCWait.Load()), time.Duration(cs.out.maxControlWait.Load()),
+		time.Duration(sess.out.maxRPCWait.Load()), time.Duration(sess.out.maxControlWait.Load()))
+	if p99 > 50*time.Millisecond {
+		t.Fatalf("the control channel's p99 round trip took %v under 20 TV pulls and a release download", p99)
 	}
 }
