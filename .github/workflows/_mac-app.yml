@@ -75,15 +75,27 @@ jobs:
         run: |
           brew list shellcheck >/dev/null 2>&1 || brew install shellcheck
           shellcheck -x tools/release/mac-app/payload.sh tools/release/mac-app/check.sh tools/release/mac-app/build-app.sh \
-            tools/release/mac-app/lib.sh tools/release/mac-app/pins-check.sh
+            tools/release/mac-app/lib.sh tools/release/mac-app/pins-check.sh tools/release/mac-app/tauri-build.sh \
+            tools/release/mac-app/tauri-build-check.sh
 
       # dry run of the pins (pins.env complete) and the checked download, offline
       - name: Pins (dry run)
         run: bash tools/release/mac-app/pins-check.sh
 
+      # what tauri gets to notarize with: never an ad-hoc app, never empty settings, and the
+      # release's Mac legs build through the same script
+      - name: Notarization settings (dry run)
+        run: bash tools/release/mac-app/tauri-build-check.sh
+
+      # In the release's environment without the Apple secrets: desktop-release.yml's "Build
+      # the Tauri bundles" exports these set but empty, which made tauri notarize the ad-hoc
+      # app and fail every release's macos-arm64 leg (v0.3.0-rc.7, v0.3.1).
       - name: Build Maktaba.app with the payload, and check it
         env:
           VERSION: v0.0.0-ci.${{ github.run_number }}
+          APPLE_ID: ''
+          APPLE_PASSWORD: ''
+          APPLE_TEAM_ID: ''
         run: make mac-app
 
       - name: Sizes

@@ -373,6 +373,11 @@ pub fn probe(addr: &str) -> Probe {
 }
 
 fn fetch(addr: &str) -> Option<Snapshot> {
+    parse_response(&get_loopback(addr, "/processes")?)
+}
+
+/// A GET of `path` at `addr` (host:port), loopback only, short timeouts: the raw response.
+fn get_loopback(addr: &str, path: &str) -> Option<Vec<u8>> {
     let sock: SocketAddr = addr
         .to_socket_addrs()
         .ok()?
@@ -381,13 +386,54 @@ fn fetch(addr: &str) -> Option<Snapshot> {
     let mut stream = TcpStream::connect_timeout(&sock, timeout).ok()?;
     stream.set_read_timeout(Some(timeout)).ok()?;
     stream.set_write_timeout(Some(timeout)).ok()?;
-    let req =
-        format!("GET /processes HTTP/1.0\r\nHost: {addr}\r\nAccept: application/json\r\n\r\n");
+    let req = format!("GET {path} HTTP/1.0\r\nHost: {addr}\r\nAccept: application/json\r\n\r\n");
     stream.write_all(req.as_bytes()).ok()?;
     let mut raw = Vec::new();
     // 4 MB is far above a snapshot (a few dozen processes, 50 events)
     stream.take(4 << 20).read_to_end(&mut raw).ok()?;
-    parse_response(&raw)
+    Some(raw)
+}
+
+/// The release the local server's api answers on (its public /api/system/version), at
+/// its web address on this machine; None when it does not answer (stopped, still starting).
+pub fn server_version(web_url: &str) -> Option<String> {
+    let raw = get_loopback(&addr_of(web_url)?, "/api/system/version")?;
+    version_of_response(&raw)
+}
+
+/// Whether the local server's own automatic updates are on (its /api/cluster/self's
+/// `updates_auto`, said to callers on this machine only), at its web address on this
+/// machine; None when it does not say (an older server, a node) or does not answer.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn updates_auto(web_url: &str) -> Option<bool> {
+    let raw = get_loopback(&addr_of(web_url)?, "/api/cluster/self")?;
+    updates_auto_of_response(&raw)
+}
+
+/// `updates_auto` in a raw HTTP/1.x response carrying /api/cluster/self's JSON.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn updates_auto_of_response(raw: &[u8]) -> Option<bool> {
+    let text = std::str::from_utf8(raw).ok()?;
+    let (head, body) = text.split_once("\r\n\r\n")?;
+    if head.lines().next()?.split_whitespace().nth(1)? != "200" {
+        return None;
+    }
+    let v: Value = serde_json::from_str(body).ok()?;
+    v.get("updates_auto")?.as_bool()
+}
+
+/// The version in a raw HTTP/1.x response carrying /api/system/version's JSON.
+pub fn version_of_response(raw: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(raw).ok()?;
+    let (head, body) = text.split_once("\r\n\r\n")?;
+    if head.lines().next()?.split_whitespace().nth(1)? != "200" {
+        return None;
+    }
+    let v: Value = serde_json::from_str(body).ok()?;
+    v.get("version")?
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// The host:port of a supervisor URL like "http://127.0.0.1:9103".
@@ -431,6 +477,8 @@ pub fn failure_in_log(tail: &str) -> Option<String> {
             }
             continue;
         }
+        // maktaba-server stamps its own lines ("<RFC 3339 time> [serve] …", "… Error: …")
+        let line = untimed(line);
         if line.starts_with("[serve] supervisor state on") {
             break;
         }
@@ -454,6 +502,16 @@ pub fn failure_in_log(tail: &str) -> Option<String> {
         }
     }
     exited.map(|e| cut(&e))
+}
+
+/// A server.log line without its leading time: maktaba-server starts its own lines with one
+/// ("2026-10-24T19:03:27.208Z [serve] …", "… [update] …", "… Error: …"); a line without
+/// one (an older server, a role's JSON, the launcher's) is as it is.
+fn untimed(line: &str) -> &str {
+    match line.split_once(' ') {
+        Some((at, rest)) if crate::attempts::parse_rfc3339(at).is_some() => rest.trim_start(),
+        _ => line,
+    }
 }
 
 /// A launcher event line's reason when it could not start the server
@@ -772,6 +830,29 @@ mod tests {
         let served = "Error: an old problem\n[serve] supervisor state on http://127.0.0.1:9103/processes\nsome role's line";
         assert_eq!(failure_in_log(served), None);
         assert_eq!(failure_in_log(""), None);
+        // maktaba-server's stamped lines read the same as the unstamped ones
+        let stamped_port =
+            "2026-10-24T19:03:27.208Z Error: web UI cannot listen on 127.0.0.1:8088: bind";
+        assert_eq!(
+            failure_in_log(stamped_port).as_deref(),
+            Some("web UI cannot listen on 127.0.0.1:8088: bind")
+        );
+        let stamped_admin = "2026-10-24T19:03:27.208Z [serve] supervisor state on http://127.0.0.1:9103/processes\n\
+                             2026-10-24T19:03:28Z [serve] supervisor admin endpoint on 127.0.0.1:9103 failed (continuing): bind";
+        assert_eq!(
+            failure_in_log(stamped_admin).as_deref(),
+            Some("supervisor admin endpoint on 127.0.0.1:9103 failed (continuing): bind")
+        );
+        let stamped_served = "2026-10-24T19:03:26Z Error: an old problem\n\
+                              2026-10-24T19:03:27.208Z [serve] supervisor state on http://127.0.0.1:9103/processes\n\
+                              some role's line";
+        assert_eq!(failure_in_log(stamped_served), None);
+        // a line that only starts with a word like a time is not stripped
+        assert_eq!(
+            untimed("2026-13-99T00:00:00Z [serve] x"),
+            "2026-13-99T00:00:00Z [serve] x"
+        );
+        assert_eq!(untimed("[serve] x"), "[serve] x");
         // long reasons are cut for the tooltip
         let long = format!("Error: {}", "x".repeat(300));
         let got = failure_in_log(&long).unwrap();
@@ -1071,5 +1152,64 @@ mod tests {
         assert_eq!(probe(&addr), snap(vec![child("api", "running")]));
         server.join().unwrap();
         assert_eq!(probe("10.255.255.1:9103"), Probe::Unreachable);
+    }
+
+    // The release the local server answers on, from its public version endpoint.
+    #[test]
+    fn the_local_servers_release() {
+        use std::net::TcpListener;
+        let ln = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/", ln.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut s, _) = ln.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let n = s.read(&mut buf).unwrap();
+            assert!(String::from_utf8_lossy(&buf[..n]).starts_with("GET /api/system/version "));
+            let body = r#"{"version":"0.3.1","role":"home"}"#;
+            write!(
+                s,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        });
+        assert_eq!(server_version(&url).as_deref(), Some("0.3.1"));
+        server.join().unwrap();
+        assert_eq!(
+            version_of_response(b"HTTP/1.1 503 Unavailable\r\n\r\n{\"version\":\"1\"}"),
+            None
+        );
+        assert_eq!(
+            version_of_response(b"HTTP/1.1 200 OK\r\n\r\n{\"version\":\"\"}"),
+            None
+        );
+        assert_eq!(server_version("http://10.255.255.1:8080"), None);
+    }
+
+    /// Whether the local server's own automatic updates are on: its /api/cluster/self says,
+    /// or nothing is known (an older server, a node, an error, no answer).
+    #[test]
+    fn whether_the_servers_updates_are_automatic() {
+        assert_eq!(
+            updates_auto_of_response(
+                b"HTTP/1.1 200 OK\r\n\r\n{\"role\":\"home\",\"updates_auto\":true}"
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            updates_auto_of_response(
+                b"HTTP/1.1 200 OK\r\n\r\n{\"role\":\"home\",\"updates_auto\":false}"
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            updates_auto_of_response(b"HTTP/1.1 200 OK\r\n\r\n{\"role\":\"home\"}"),
+            None
+        );
+        assert_eq!(
+            updates_auto_of_response(b"HTTP/1.1 500 Oops\r\n\r\n{\"updates_auto\":true}"),
+            None
+        );
+        assert_eq!(updates_auto("http://10.255.255.1:8080"), None);
     }
 }

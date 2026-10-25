@@ -97,9 +97,9 @@ the running binaries are never replaced.
 - **Update now in the web app** (`POST /api/admin/system/update`) starts that same command as its own
   transient user unit (`systemd-run --user`, `maktaba-update-<time>`), since activation stops the
   service the API runs in, and answers 202. Its output is in `journalctl --user -u maktaba-update-*`.
-- **Automatic updates** follow `rules.updates` (quiet window, minimum release age, pin, defer, skip)
-  once Epic 35's orchestrator (35.4) installs by itself: it runs the same update. Until then the
-  update check notifies, and an admin clicks Update now.
+- **Automatic updates** follow `rules.updates` (quiet window, minimum release age, pin, defer, skip):
+  Epic 35's orchestrator installs the release by itself, running the same update (the runtime
+  switch, under the launcher's guard).
 - **Back:** a new runtime whose service does not start is switched back at once (activation order).
   `maktaba-server update --rollback` switches to `previous`, the runtime that ran before, by hand.
   Switching back by itself when the new server starts but never confirms (Epic 35's 3-minute

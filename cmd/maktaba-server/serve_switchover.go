@@ -99,6 +99,11 @@ type switching struct {
 	want func(role supervisor.Role, on bool) error
 	// ready is closed once the above are known (a command waits for it)
 	ready chan struct{}
+	// homeDB is a node's login to its home's database (serve_homeaccess.go; nil: a home);
+	// under mu (set once the node's services run, read by the commands)
+	homeDB *homeDBWatch
+	// followed: this machine follows a new home (home.moved), and starts again with it
+	followed bool
 
 	mu   sync.Mutex
 	busy string // the switchover under way here
@@ -122,6 +127,36 @@ type switching struct {
 
 func newSwitching(cfg config.Config) *switching {
 	return &switching{cfg: cfg, ready: make(chan struct{})}
+}
+
+// setHomeDB records the node's watch of its login to the home's database.
+func (s *switching) setHomeDB(w *homeDBWatch) {
+	s.mu.Lock()
+	s.homeDB = w
+	s.mu.Unlock()
+}
+
+// homeDBWatch is the node's watch of its login to the home's database (nil: a home).
+func (s *switching) homeDBWatch() *homeDBWatch {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.homeDB
+}
+
+// switchingNow says what switch of the home runs here ("": none): one under way, a
+// promotion, a demotion, a step-down, or a new home this machine follows already.
+func (s *switching) switchingNow() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.followed:
+		return "this machine follows a new home"
+	case s.busy != "":
+		return "a switch of the home is under way"
+	case s.promoting != "" || s.demoting || s.stepping:
+		return "this machine takes or gives up the home"
+	}
+	return ""
 }
 
 // set records this machine's databases (serve resolves them after the machine agent
@@ -1092,6 +1127,9 @@ func (s *switching) command(ctx context.Context, name string, args json.RawMessa
 	case "home.database":
 		ok, detail := s.homeDatabase(args)
 		return true, ok, detail
+	case "home.access":
+		ok, detail := s.homeAccess(args)
+		return true, ok, detail
 	case "home.standbys":
 		ok, detail := s.homeStandbys(args)
 		return true, ok, detail
@@ -1826,6 +1864,9 @@ func (s *switching) follow(ctx context.Context, id string, term int64, h newHome
 	}); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	s.followed = true
+	s.mu.Unlock()
 	fmt.Fprintf(os.Stderr, "[switchover] the home is %s now (copy kept: %v): starting again\n", h.APIURL, moved)
 	go func() {
 		time.Sleep(answerFirst)

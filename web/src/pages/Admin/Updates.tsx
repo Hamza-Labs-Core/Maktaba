@@ -4,21 +4,36 @@
 // none), the run under way step by step (the home's steps, then one row per machine),
 // and what happened before. The few actions are here too: Update now, Check now, pause
 // (automatic installs off), Cancel a run before the home switches, Retry, Skip or Roll
-// back a machine, Resume a held rollout.
-import { useCallback, useEffect, useState } from "react";
+// back a machine, Resume a held rollout. Under each machine, its last update attempt
+// (update-attempts.md): whoever made it (the desktop app's own updater, a release's first
+// start, a run), what happened, why, and what to do next.
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Modal } from "@ds/components/Modal/Modal";
 import { useToast } from "@ds/components/Toast/Toast";
-import { ApiError } from "../../lib/api";
+import { ApiError, downloadBlob } from "../../lib/api";
 import { lookupMessage, useI18n } from "../../lib/i18n";
+import { CopyField } from "../../components/CopyField";
+import type { HomeDb } from "../../lib/homeDb";
 import {
+  logsExportURL,
+  logsLink,
+  logWindow,
+  nodeLogsLink,
+  type LogFilters,
+} from "../../lib/logLinks";
+import {
+  ATTEMPT_FAILED,
+  compareVersions,
   RUN_ENDED,
   runCancellable,
   TARGET_RETRYABLE,
   TARGET_SKIPPABLE,
   WAITING_CLICK,
   updatesApi,
+  validVersion,
+  type UpdateAttempt,
   type UpdateMachine,
   type UpdateRun,
   type UpdateRunView,
@@ -86,14 +101,24 @@ function useWords() {
     }
     return t("updates.page.failedCheck", { code: c });
   };
+  /** An attempt's reason: the code's words as code() has them, else the code itself, its
+   * underscores as spaces (the detail beside it says the rest). */
+  const reason = (c: string) => {
+    const words = code(c);
+    return words === t("updates.page.failedCheck", { code: c }) ? c.replace(/_/g, " ") : words;
+  };
   return {
     t,
     state,
     step,
     code,
+    reason,
+    outcome: (o: string) => word("outcome", o),
+    source: (src: string) => word("source", src),
     kind: (k: string) => word("kind", k),
     trigger: (s: string) => word("trigger", s),
     waiting: (s: string) => word("waiting", s),
+    word,
   };
 }
 
@@ -109,6 +134,26 @@ function ErrorDetail({ text, testId }: { text: string; testId?: string }) {
 
 function when(iso?: string): string {
   return iso ? new Date(iso).toLocaleString() : "";
+}
+
+/** How long ago, in the reader's language ("5 minutes ago"). */
+function ago(iso: string, locale: string): string {
+  const s = (Date.parse(iso) - Date.now()) / 1000;
+  if (!Number.isFinite(s)) return "";
+  const rtf = new Intl.RelativeTimeFormat(locale === "ar" ? "ar-EG" : "en", { numeric: "auto" });
+  const a = Math.abs(s);
+  if (a < 60) return rtf.format(Math.round(s), "second");
+  if (a < 3600) return rtf.format(Math.round(s / 60), "minute");
+  if (a < 86400) return rtf.format(Math.round(s / 3600), "hour");
+  return rtf.format(Math.round(s / 86400), "day");
+}
+
+/** An attempt's badge tone. */
+function outcomeTone(outcome: string): Tone {
+  if (outcome === "installed") return "success";
+  if (ATTEMPT_FAILED.has(outcome)) return "error";
+  if (outcome === "cancelled") return "neutral";
+  return "accent";
 }
 
 function duration(run: UpdateRun): string {
@@ -154,6 +199,19 @@ export function AdminUpdates() {
     return () => clearInterval(id);
   }, [running, load]);
 
+  // the logs of an attempt's window (a node's: its own log files, over its channel)
+  const downloadLogs = async (f: LogFilters) => {
+    setBusy(true);
+    try {
+      await downloadBlob(logsExportURL(f), "maktaba-diagnostics.tar.gz");
+    } catch (e) {
+      const detail = e instanceof ApiError ? e.message : t("common.error");
+      toast.show({ tone: "error", message: `${t("updates.attempt.logsFailed")}: ${detail}` });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const act = async (fn: () => Promise<unknown>, done: string) => {
     setBusy(true);
     try {
@@ -198,6 +256,28 @@ export function AdminUpdates() {
   }
   const machines: UpdateMachine[] = ov.machines ?? [];
   const paused = !ov.policy.auto_install;
+  // why a due release does not start now: a blocker, a retry's pause, a person's failure
+  const tick = ov.last_tick;
+  const tickWhy =
+    tick && !running && tick.reason && (tick.action === "blocked" || tick.action === "none")
+      ? tick.action === "blocked"
+        ? w.word("blocker", tick.reason)
+        : w.waiting(tick.reason)
+      : "";
+  const blocked = ov.catalog.filter((r) => r.blocked_reason && !r.withdrawn_at);
+  const last = ov.last_run;
+  const lastFailed =
+    !running &&
+    last &&
+    (last.state === "failed" || last.state === "rolled_back") &&
+    !blocked.some((r) => r.version === last.version) &&
+    (last.trigger === "auto" || last.trigger === "manual");
+  const lastCode = (() => {
+    const e = last?.error as { code?: string } | undefined;
+    return e?.code ?? last?.state ?? "";
+  })();
+  const installNow = (version: string) =>
+    act(() => updatesApi.runNow(version), t("updates.held.started", { version }));
 
   return (
     <section className="mkt-page mkt-updates" aria-labelledby="updates-page-title">
@@ -208,10 +288,69 @@ export function AdminUpdates() {
       <p className="mkt-muted" data-testid="updates-next">
         {next}
       </p>
+      {tickWhy && target && (
+        <p className="mkt-muted" data-testid="updates-tick">
+          {t("updates.tick.notStarted", { reason: tickWhy })}
+        </p>
+      )}
       {paused && (
         <p className="mkt-muted" data-testid="updates-paused">
           {t("updates.page.paused")}
         </p>
+      )}
+      {ov.stuck && !running && (
+        <div className="mkt-callout" role="alert" data-testid="updates-stuck">
+          <p>
+            {t("updates.stuck.title", {
+              version: ov.stuck.version,
+              windows: ov.stuck.windows,
+              reason: w.reason(ov.stuck.code),
+            })}
+          </p>
+          <p className="mkt-muted">{t("updates.stuck.body")}</p>
+          <Button variant="primary" disabled={busy} onClick={() => installNow(ov.stuck!.version)}>
+            {t("updates.blocked.install")}
+          </Button>
+        </div>
+      )}
+      {blocked.map((r) => (
+        <div className="mkt-callout" key={r.version} data-testid={`updates-blocked-${r.version}`}>
+          <p>
+            {t("updates.blocked.title", {
+              version: r.version,
+              reason: w.word("blocked.reason", r.blocked_reason ?? ""),
+            })}
+          </p>
+          <Button
+            variant="secondary"
+            disabled={busy || running}
+            onClick={() =>
+              act(
+                () => updatesApi.unblock(r.version),
+                t("updates.blocked.unblocked", { version: r.version })
+              )
+            }
+          >
+            {t("updates.blocked.unblock")}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={busy || running}
+            onClick={() => installNow(r.version)}
+          >
+            {t("updates.blocked.install")}
+          </Button>
+        </div>
+      ))}
+      {lastFailed && last && (
+        <div className="mkt-callout" data-testid="updates-last-failed">
+          <p>
+            {t("updates.lastRun.failed", { version: last.version, reason: w.reason(lastCode) })}
+          </p>
+          <Button variant="secondary" disabled={busy} onClick={() => installNow(last.version)}>
+            {t("updates.lastRun.retry", { version: last.version })}
+          </Button>
+        </div>
       )}
       {ov.check_stale && (
         <p className="mkt-error" role="alert">
@@ -273,27 +412,51 @@ export function AdminUpdates() {
         </thead>
         <tbody>
           {machines.map((m) => (
-            <tr key={m.id} data-testid={`updates-machine-${m.id}`}>
-              <td>
-                {m.role === "home" ? t("updates.page.home") : m.name}
-                {m.platform ? <span className="mkt-muted"> · {m.platform}</span> : null}
-              </td>
-              <td dir="ltr">{m.version || "-"}</td>
-              <td>{m.kind ? w.kind(m.kind) : "-"}</td>
-              <td>
-                <Badge tone={stateTone(m.state)}>{w.state(m.state)}</Badge>
-                {m.target && WAITING_CLICK.has(m.state) && (
-                  <div className="mkt-muted" data-testid={`updates-machine-${m.id}-click`}>
-                    {t(
-                      m.state === "clicked" ? "updates.page.clicked" : "updates.page.waitingClick",
-                      {
-                        version: m.target,
+            <Fragment key={m.id}>
+              <tr data-testid={`updates-machine-${m.id}`}>
+                <td>
+                  {m.role === "home" ? t("updates.page.home") : m.name}
+                  {m.platform ? <span className="mkt-muted"> · {m.platform}</span> : null}
+                </td>
+                <td dir="ltr">{m.version || "-"}</td>
+                <td>{m.kind ? w.kind(m.kind) : "-"}</td>
+                <td>
+                  <Badge tone={stateTone(m.state)}>{w.state(m.state)}</Badge>
+                  {m.target && WAITING_CLICK.has(m.state) && (
+                    <div className="mkt-muted" data-testid={`updates-machine-${m.id}-click`}>
+                      {t(
+                        m.state === "clicked"
+                          ? "updates.page.clicked"
+                          : "updates.page.waitingClick",
+                        {
+                          version: m.target,
+                        }
+                      )}
+                    </div>
+                  )}
+                  {m.role === "node" && m.home_db && m.home_db.ok === false && (
+                    <HomeDbNote machineId={m.id} homeDb={m.home_db} />
+                  )}
+                </td>
+              </tr>
+              {(m.attempts?.length ?? 0) > 0 && (
+                <tr className="mkt-updates__attempt-row">
+                  <td colSpan={4}>
+                    <AttemptBlock
+                      machine={m}
+                      busy={busy}
+                      onRetry={(runId) =>
+                        act(
+                          () => updatesApi.targetAction(runId, m.id, "retry"),
+                          t("updates.page.target.retryDone")
+                        )
                       }
-                    )}
-                  </div>
-                )}
-              </td>
-            </tr>
+                      onLogs={(f) => void downloadLogs(f)}
+                    />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -376,6 +539,272 @@ export function AdminUpdates() {
         <p>{t("updates.page.confirmBody")}</p>
       </Modal>
     </section>
+  );
+}
+
+/** Where a machine's logs around a time are, on the admin log page: a joined machine's own
+ * log files (over its channel), the home's live logs and log files. */
+function logsHref(machine: UpdateMachine, since?: string, until?: string): string {
+  return machine.role === "node"
+    ? nodeLogsLink(machine.id, { since, until })
+    : logsLink({ since, until });
+}
+
+/** The commands that mend a reason, as the web holds them (a machine's own text is never
+ * offered to copy). */
+const FIX_COMMANDS: Record<string, string> = {
+  quarantined: "xattr -dr com.apple.quarantine /Applications/Maktaba.app",
+  login_item_unsigned:
+    "codesign --force --deep -s - --identifier com.hamzalabs.maktaba /Applications/Maktaba.app",
+};
+
+/** The reasons whose words already say the release before runs again. */
+const SAYS_PREVIOUS = new Set([
+  "start_failed",
+  "boot_loop",
+  "pending_timeout",
+  "launcher_boot_loop",
+  "launcher_pending_timeout",
+  "launcher_refused",
+]);
+
+/** The steps an attempt fails at before its release runs (the app's check, download,
+ * signature, install and relaunch; a run's preflight, stage, smoke test and switch): a
+ * machine that runs that release now reached it another way. A failure at a later step
+ * (the pipeline's environment, the database step) happened to the release it runs: it
+ * still holds. */
+const BEFORE_IT_RUNS = new Set([
+  "check",
+  "download",
+  "verify",
+  "install",
+  "relaunch",
+  "preflight",
+  "stage",
+  "smoke",
+  "switch",
+]);
+
+/** How two versions compare (above 0: a is later), null when either is not a version. */
+function versionCmp(a: string, b: string): number | null {
+  if (!a || !b || !validVersion(a.trim()) || !validVersion(b.trim())) return null;
+  return compareVersions(a, b);
+}
+
+/** A node that cannot reach the home's database: why, the home re-provisioning its access
+ * when it does, what it said, and its logs. */
+function HomeDbNote({ machineId, homeDb }: { machineId: string; homeDb: HomeDb }) {
+  const { t, locale } = useI18n();
+  const code = homeDb.code ?? "other";
+  const key = `machines.homeDb.code.${code}`;
+  const reason =
+    lookupMessage(locale, key) !== undefined ? t(key) : t("machines.homeDb.code.other");
+  const id = `updates-machine-${machineId}-home-db`;
+  return (
+    <div className="mkt-error" role="alert" data-testid={id}>
+      <div>{t("machines.homeDb.unreachable", { reason })}</div>
+      {homeDb.healing && <div className="mkt-muted">{t("machines.homeDb.healing")}</div>}
+      {homeDb.detail && (
+        <details>
+          <summary>{t("machines.homeDb.detail")}</summary>
+          <ErrorDetail text={homeDb.detail} />
+        </details>
+      )}
+      <a href={nodeLogsLink(machineId, logWindow(homeDb.at))} data-testid={`${id}-logs`}>
+        {t("machines.homeDb.logs")}
+      </a>
+    </div>
+  );
+}
+
+/** A machine's last update attempt, then its earlier ones (update-attempts.md). */
+function AttemptBlock({
+  machine,
+  busy,
+  onRetry,
+  onLogs,
+}: {
+  machine: UpdateMachine;
+  busy: boolean;
+  onRetry: (runId: string) => void;
+  onLogs: (f: LogFilters) => void;
+}) {
+  const w = useWords();
+  const { t } = w;
+  const { locale } = useI18n();
+  const has = (key: string) => lookupMessage(locale, key) !== undefined;
+  const attempts = machine.attempts ?? [];
+  const last = attempts[0];
+  if (!last) return null;
+  const id = `updates-machine-${machine.id}-attempt`;
+  // a desktop app's server that a failed start halted on that release: it cannot go back
+  // by itself (the gate put its database back and stopped it)
+  const haltedOn = (a: UpdateAttempt) =>
+    a.outcome === "put_back" &&
+    machine.kind === "appbundle" &&
+    versionCmp(machine.version, a.to) === 0;
+  // the machine reached a later release, or that one another way (it failed before the
+  // release ran): the failure is history; one at the release it runs, after it ran (its
+  // pipeline's environment, its database step), still holds
+  const cmp = versionCmp(machine.version, last.to);
+  const superseded =
+    ATTEMPT_FAILED.has(last.outcome) &&
+    cmp !== null &&
+    (cmp > 0 || (cmp === 0 && BEFORE_IT_RUNS.has(last.step ?? "") && !haltedOn(last)));
+  const failed = ATTEMPT_FAILED.has(last.outcome) && !superseded;
+  const reasonOf = (a: UpdateAttempt) =>
+    a.code
+      ? w.reason(a.code)
+      : a.detail
+        ? (a.detail.split("\n")[0] ?? a.detail)
+        : t("updates.attempt.noReason");
+  const headline = (a: UpdateAttempt) => {
+    // a check that failed before the feed named a release has no `to`
+    const to = a.to || t("updates.attempt.newRelease");
+    const vars = { to, reason: reasonOf(a) };
+    switch (a.outcome) {
+      case "installed":
+        return t("updates.attempt.installed", vars);
+      case "running":
+        return t("updates.attempt.running", vars);
+      case "failed":
+        return t("updates.attempt.failed", vars);
+      case "put_back":
+        if (haltedOn(a)) {
+          return t("updates.attempt.putBackStopped", {
+            ...vars,
+            from: a.from || t("updates.attempt.before"),
+          });
+        }
+        return t(
+          SAYS_PREVIOUS.has(a.code ?? "")
+            ? "updates.attempt.putBackSaid"
+            : "updates.attempt.putBack",
+          vars
+        );
+      case "rolled_back":
+        return t(
+          SAYS_PREVIOUS.has(a.code ?? "")
+            ? "updates.attempt.rolledBackSaid"
+            : "updates.attempt.rolledBack",
+          vars
+        );
+      case "cancelled":
+        return t("updates.attempt.cancelled", vars);
+      default:
+        return t("updates.attempt.other", { to, outcome: w.outcome(a.outcome) });
+    }
+  };
+  const who = last.trigger
+    ? t("updates.attempt.byTrigger", {
+        who: w.source(last.source),
+        how: w.trigger(last.trigger),
+      })
+    : t("updates.attempt.by", { who: w.source(last.source) });
+  // a run's machine is retried as the run page's Retry does (the home has Update now)
+  const retry =
+    failed && last.source === "run" && last.run_id && machine.role === "node" ? last.run_id : "";
+  // its logs: from two minutes before it began to two after it ended
+  const win = logWindow(last.at, last.ended_at);
+  // what to do next: the reason's words (and the command the web holds for it), else the
+  // machine's own text, shown as what it said
+  const fixKey = last.code ? `updates.fix.${last.code}` : "";
+  const fixWords = fixKey && has(fixKey) ? t(fixKey) : "";
+  const command = last.code ? FIX_COMMANDS[last.code] : undefined;
+  return (
+    <div className="mkt-updates__attempt" data-testid={id}>
+      <div>
+        <strong>{t("updates.attempt.title")}</strong>{" "}
+        {superseded ? (
+          <Badge tone="neutral">{t("updates.attempt.reached")}</Badge>
+        ) : (
+          <Badge tone={outcomeTone(last.outcome)}>{w.outcome(last.outcome)}</Badge>
+        )}
+      </div>
+      <p className={failed ? "mkt-error" : undefined} data-testid={`${id}-headline`}>
+        {headline(last)}
+      </p>
+      {superseded && (
+        <p className="mkt-muted" data-testid={`${id}-superseded`}>
+          {t("updates.attempt.reachedLater", { version: machine.version })}
+        </p>
+      )}
+      <p className="mkt-muted" data-testid={`${id}-meta`}>
+        {t("updates.attempt.when", { ago: ago(last.at, locale), at: when(last.at) })}
+        {" · "}
+        {last.from || last.to ? (
+          <>
+            <span dir="ltr">
+              {last.from ? `${last.from} → ` : ""}
+              {last.to || "?"}
+            </span>
+            {" · "}
+          </>
+        ) : null}
+        {who}
+        {last.step ? (
+          <>
+            {" · "}
+            {t(
+              last.outcome === "running" ? "updates.attempt.atStep" : "updates.attempt.stoppedAt",
+              { step: w.step(last.step) }
+            )}
+          </>
+        ) : null}
+      </p>
+      {last.detail ? (
+        <details data-testid={`${id}-detail`}>
+          <summary>{t("updates.attempt.detail")}</summary>
+          <ErrorDetail text={last.detail} />
+        </details>
+      ) : null}
+      {failed && (fixWords || command) ? (
+        <div data-testid={`${id}-fix`}>
+          {fixWords && <p>{t("updates.attempt.next", { fix: fixWords })}</p>}
+          {command && <CopyField label={t("updates.attempt.fix")} value={command} />}
+        </div>
+      ) : null}
+      {failed && !fixWords && !command && last.fix ? (
+        <p className="mkt-muted" data-testid={`${id}-machine-fix`}>
+          {t("updates.attempt.machineSays")} <span dir="ltr">{last.fix}</span>
+        </p>
+      ) : null}
+      {failed && (
+        <div className="mkt-updates__actions">
+          {retry && (
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => onRetry(retry)}>
+              {t("updates.page.target.retry")}
+            </Button>
+          )}
+          <a href={logsHref(machine, win.since, win.until)} data-testid={`${id}-logs-link`}>
+            {t("updates.attempt.seeLogs")}
+          </a>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              onLogs({ ...win, node: machine.role === "node" ? machine.id : undefined })
+            }
+          >
+            {t("updates.attempt.logs")}
+          </Button>
+        </div>
+      )}
+      {attempts.length > 1 && (
+        <details data-testid={`${id}-earlier`}>
+          <summary>{t("updates.attempt.earlier", { count: attempts.length - 1 })}</summary>
+          <ul>
+            {attempts.slice(1).map((a) => (
+              <li key={a.id}>
+                <span className="mkt-muted">{when(a.at)}</span>{" "}
+                <Badge tone={outcomeTone(a.outcome)}>{w.outcome(a.outcome)}</Badge> {headline(a)}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }
 

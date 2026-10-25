@@ -5,10 +5,11 @@
 // the page, and the app (the Mac app's window above all) stayed blank.
 import { describe, it, expect, vi } from "vitest";
 import src from "../../public/sw.js?raw";
+import { stampServiceWorker } from "./swStamp";
 
 type Listener = (event: Record<string, unknown>) => void;
 
-function loadWorker(network: (url: string) => Promise<Response>) {
+function loadWorker(network: (url: string) => Promise<Response>, source: string = src) {
   const listeners: Record<string, Listener> = {};
   const stores = new Map<string, Map<string, Response>>();
   const keyOf = (k: unknown) => (typeof k === "string" ? k : new URL((k as Request).url).pathname);
@@ -41,7 +42,7 @@ function loadWorker(network: (url: string) => Promise<Response>) {
   const fetchFn = vi.fn((req: Request | string) =>
     network(typeof req === "string" ? req : new URL(req.url).pathname)
   );
-  new Function("self", "caches", "fetch", src)(self, caches, fetchFn);
+  new Function("self", "caches", "fetch", source)(self, caches, fetchFn);
   return { listeners, stores, caches, self, fetchFn };
 }
 
@@ -105,13 +106,24 @@ describe("sw.js", () => {
   });
 
   it("on activate deletes every cache but this build's shell, then takes the pages", async () => {
-    const w = loadWorker(async () => new Response("x"));
-    for (const name of ["mkt-shell-v2", "mkt-api-v1"]) await w.caches.open(name);
-    await w.caches.open("mkt-shell-v3");
+    // the worker as a build stamps it (vite.config.ts): each release its own shell
+    const w = loadWorker(
+      async () => new Response("x"),
+      stampServiceWorker(src, "0.3.2-abcdef012345")
+    );
+    for (const name of [
+      "mkt-shell-v2",
+      "mkt-shell-v3",
+      "mkt-shell-0.3.1-0123456789ab",
+      "mkt-api-v1",
+    ]) {
+      await w.caches.open(name);
+    }
+    await w.caches.open("mkt-shell-0.3.2-abcdef012345");
     await new Promise<void>((done) => {
       w.listeners.activate({ waitUntil: (p: Promise<unknown>) => void p.then(() => done()) });
     });
-    expect([...w.stores.keys()]).toEqual(["mkt-shell-v3"]);
+    expect([...w.stores.keys()]).toEqual(["mkt-shell-0.3.2-abcdef012345"]);
     expect(w.self.clients.claim).toHaveBeenCalled();
   });
 });

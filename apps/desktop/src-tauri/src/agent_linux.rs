@@ -85,6 +85,69 @@ pub fn data_dir(getenv: impl Fn(&str) -> Option<String>, home: &Path) -> PathBuf
     xdg(&getenv, "XDG_DATA_HOME", home, &[".local", "share"]).join("maktaba")
 }
 
+/// The server's unit file, in the user's systemd folder: $XDG_CONFIG_HOME/systemd/user, or
+/// ~/.config/systemd/user (where `maktaba-server service install` writes it).
+const UNIT_FILE: &str = "maktaba-server.service";
+
+/// The value of `name` the server's unit was written with: `service install` pins the XDG
+/// directories in its Environment= lines, so the server's state folder (where the home's
+/// order and the attempts are) is where that environment says, not where this app's own
+/// environment would put it. None when there is no unit, or it pins none.
+pub fn unit_env(home: &Path, name: &str) -> Option<String> {
+    unit_env_with(env, home, name)
+}
+
+/// unit_env with the environment `getenv`: the unit in $XDG_CONFIG_HOME/systemd/user first
+/// (when it is set and absolute), else in ~/.config/systemd/user.
+pub fn unit_env_with(
+    getenv: impl Fn(&str) -> Option<String>,
+    home: &Path,
+    name: &str,
+) -> Option<String> {
+    let mut dirs = Vec::new();
+    if let Some(v) = getenv("XDG_CONFIG_HOME").filter(|v| Path::new(v).is_absolute()) {
+        dirs.push(PathBuf::from(v));
+    }
+    dirs.push(home.join(".config"));
+    dirs.iter()
+        .find_map(|d| std::fs::read_to_string(d.join("systemd").join("user").join(UNIT_FILE)).ok())
+        .and_then(|unit| unit_env_in(&unit, name))
+}
+
+/// unit_env of a unit's text: its `Environment="NAME=value"` lines (backslash and quote
+/// escaped, % doubled, as service/appunit.go writes them), the last one that sets name.
+pub fn unit_env_in(unit: &str, name: &str) -> Option<String> {
+    let mut out = None;
+    for line in unit.lines() {
+        let Some(rest) = line.trim().strip_prefix("Environment=") else {
+            continue;
+        };
+        let quoted = rest.strip_prefix('"').and_then(|r| r.strip_suffix('"'));
+        let kv = match quoted {
+            Some(q) => {
+                let mut s = String::with_capacity(q.len());
+                let mut chars = q.chars().peekable();
+                while let Some(c) = chars.next() {
+                    match c {
+                        '\\' => s.extend(chars.next()),
+                        '%' if chars.peek() == Some(&'%') => {
+                            chars.next();
+                            s.push('%');
+                        }
+                        c => s.push(c),
+                    }
+                }
+                s
+            }
+            None => rest.to_string(),
+        };
+        if let Some(v) = kv.strip_prefix(name).and_then(|r| r.strip_prefix('=')) {
+            out = Some(v.to_string());
+        }
+    }
+    out
+}
+
 /// $XDG_STATE_HOME/maktaba/logs (maktaba-server's logs directory on Linux).
 pub fn logs_dir(getenv: impl Fn(&str) -> Option<String>, home: &Path) -> PathBuf {
     xdg(&getenv, "XDG_STATE_HOME", home, &[".local", "state"])
@@ -281,7 +344,94 @@ pub enum Plan {
     },
 }
 
-pub fn plan(st: &RuntimeStatus) -> Plan {
+/// Whether an updater orders this server's updates: it is a machine of a home (its
+/// node.json, in the config folder the server's unit pins), or the server's own automatic
+/// updates are on (its /api/cluster/self says `updates_auto` to this machine, at
+/// `web_url`). Then a newer payload of this app (a newer AppImage, a package upgraded) is
+/// kept, not switched to: the home's run installs that release as a new runtime, in its
+/// window and after its checks (owner decision D3). A standalone server whose automatic
+/// updates are off takes it as before: a machine that once ran an update, or follows an
+/// apt mirror with updates off, still follows its package. A server that does not say (the
+/// app's start often asks before the server's unit answers; an older server) is taken by
+/// its last word here (AUTO_FILE), else by whether its updater ever ran a release here (its
+/// journal in the updates folder).
+pub fn home_manages(web_url: Option<&str>) -> bool {
+    let Some(h) = home() else {
+        return false;
+    };
+    let abs = |v: &String| Path::new(v).is_absolute();
+    let config = unit_env(&h, "XDG_CONFIG_HOME")
+        .filter(abs)
+        .or_else(|| env("XDG_CONFIG_HOME").filter(abs))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| h.join(".config"));
+    let node = std::fs::read_to_string(config.join("maktaba").join("node.json")).ok();
+    let updates = super::state_root().map(|r| r.join("updates"));
+    let auto = match web_url.and_then(crate::status::updates_auto) {
+        Some(on) => {
+            if let Some(dir) = &updates {
+                remember_auto(dir, on);
+            }
+            Some(on)
+        }
+        None => updates.as_deref().and_then(remembered_auto),
+    };
+    let journal = updates
+        .as_deref()
+        .is_some_and(|d| d.join("journal.json").is_file());
+    managed_by_home(node.as_deref(), auto, journal)
+}
+
+/// The server's last word on its automatic updates (/api/cluster/self's `updates_auto`),
+/// kept in the updates folder beside app-attempts.json: the app's next start goes by it
+/// while the server does not answer yet.
+const AUTO_FILE: &str = "app-updates-auto.json";
+
+/// The last word kept (AUTO_FILE in `updates`); None when there is none, or it cannot be
+/// read.
+fn remembered_auto(updates: &Path) -> Option<bool> {
+    let raw = std::fs::read(updates.join(AUTO_FILE)).ok()?;
+    serde_json::from_slice::<Value>(&raw)
+        .ok()?
+        .get("updates_auto")?
+        .as_bool()
+}
+
+/// Keeps the server's word (AUTO_FILE in `updates`), written when it changed. Best-effort:
+/// without it the next start goes by the updater's journal.
+fn remember_auto(updates: &Path, on: bool) {
+    if remembered_auto(updates) == Some(on) {
+        return;
+    }
+    let _ = std::fs::create_dir_all(updates);
+    let _ = std::fs::write(
+        updates.join(AUTO_FILE),
+        serde_json::json!({ "updates_auto": on }).to_string(),
+    );
+}
+
+/// home_manages of what the machine holds and says: a node.json of a joined machine (its
+/// id and its home's address) is ordered by its home. Else the server's word on its own
+/// automatic updates decides (`auto_updates`: said now, or the last word kept); a server
+/// with no word is ordered by its updater when that updater ran a release here (its
+/// `journal`).
+pub fn managed_by_home(node_json: Option<&str>, auto_updates: Option<bool>, journal: bool) -> bool {
+    let joined = node_json
+        .and_then(|t| serde_json::from_str::<Value>(t).ok())
+        .is_some_and(|v| {
+            let set = |p: &str| {
+                v.pointer(p)
+                    .and_then(Value::as_str)
+                    .is_some_and(|x| !x.trim().is_empty())
+            };
+            set("/node_id") && (set("/home/url") || set("/home/api_url"))
+        });
+    joined || auto_updates.unwrap_or(journal)
+}
+
+/// What to do with this app's payload (`home_orders`: an updater orders this server's
+/// updates, home_manages).
+pub fn plan(st: &RuntimeStatus, home_orders: bool) -> Plan {
     if st.downgrade {
         let server = if st.watermark.is_empty() {
             &st.version
@@ -294,11 +444,40 @@ pub fn plan(st: &RuntimeStatus) -> Plan {
             running: st.version.clone(),
         };
     }
-    if st.update_pending {
+    // the same release built again (another build of its payload: v0.3.0's Linux payload
+    // tarball and its app's differed) is what runs already: the server switches releases
+    // itself (owner decision D3), never this app behind the home's back
+    let runs_it =
+        !st.version.is_empty() && crate::attempts::at_least(&st.version, &st.from_version);
+    // a newer payload, on a server a home manages: the home's run switches to it (a first
+    // runtime, nothing running yet, is installed whoever manages it)
+    let homes = home_orders && !st.version.is_empty();
+    if st.update_pending && !runs_it && !homes {
         Plan::Install
     } else {
         Plan::Keep
     }
+}
+
+/// Whether this app is older than the release its server runs (Plan::Older's versions: the
+/// app's, the newest the machine ran, what runs), asked without changing anything: the
+/// tray's catch-up, asked again while the app runs (the server updates its own runtime).
+/// None when it is not, or when this build carries no payload.
+pub fn runtime_older() -> Result<Option<(String, String, String)>, String> {
+    let Some(p) = payload() else {
+        return Ok(None);
+    };
+    let from = p.server_dir.to_string_lossy().to_string();
+    let st: RuntimeStatus = run_json(&["runtime", "status", "--from", &from])
+        .and_then(|v| serde_json::from_value(v).map_err(|e| e.to_string()))?;
+    Ok(match plan(&st, false) {
+        Plan::Older {
+            app,
+            server,
+            running,
+        } => Some((app, server, running)),
+        _ => None,
+    })
 }
 
 /// The user's message for an app older than this machine's server, in the
@@ -331,12 +510,14 @@ static RUNTIME_READY: Mutex<bool> = Mutex::new(false);
 /// newer than what the unit runs, install it and switch the unit to it (the
 /// server stops while `current` moves; a paused, stopped unit stays stopped;
 /// the supervisor's next start backs up, migrates and rebuilds the venv as
-/// the payload needs). An older app changes nothing.
-pub fn sync_runtime() -> Result<Synced, String> {
+/// the payload needs), unless an updater orders this server's updates
+/// (home_manages, asked at `web_url`: the server's own address). An older app
+/// changes nothing.
+pub fn sync_runtime(web_url: Option<&str>) -> Result<Synced, String> {
     if payload().is_none() {
         return Ok(Synced::Current); // a client-only build carries none
     }
-    sync_with(|_| {}).map_err(|e| e.message)
+    sync_with(|_| {}, web_url).map_err(|e| e.message)
 }
 
 /// Before a setup step (and the service's registration): the runtime holds
@@ -344,7 +525,8 @@ pub fn sync_runtime() -> Result<Synced, String> {
 /// first. Progress lines of the copy go to on_progress. An older app's setup
 /// stops here with `downgrade`.
 pub fn ensure_runtime(on_progress: impl FnMut(Progress)) -> Result<(), StepError> {
-    match sync_with(on_progress)? {
+    // a setup step: no server answers yet to say whether its updates are automatic
+    match sync_with(on_progress, None)? {
         Synced::Older { app, server, .. } => {
             Err(StepError::new("downgrade", older_message(&app, &server)))
         }
@@ -352,7 +534,10 @@ pub fn ensure_runtime(on_progress: impl FnMut(Progress)) -> Result<(), StepError
     }
 }
 
-fn sync_with(on_progress: impl FnMut(Progress)) -> Result<Synced, StepError> {
+fn sync_with(
+    on_progress: impl FnMut(Progress),
+    web_url: Option<&str>,
+) -> Result<Synced, StepError> {
     let mut ready = RUNTIME_READY.lock().unwrap_or_else(|e| e.into_inner());
     if *ready {
         return Ok(Synced::Current);
@@ -367,7 +552,19 @@ fn sync_with(on_progress: impl FnMut(Progress)) -> Result<Synced, StepError> {
     let st: RuntimeStatus = run_json(&["runtime", "status", "--from", &from])
         .and_then(|v| serde_json::from_value(v).map_err(|e| e.to_string()))
         .map_err(|e| StepError::new("runtime", e))?;
-    let synced = match plan(&st) {
+    let home_orders = home_manages(web_url);
+    if home_orders
+        && st.update_pending
+        && !st.version.is_empty()
+        && !crate::attempts::at_least(&st.version, &st.from_version)
+    {
+        crate::attempts::log(&format!(
+            "this app's server payload ({}) is newer than the release the server runs ({}): \
+             a home, or this server's own automatic updates, switch to it",
+            st.from_version, st.version
+        ));
+    }
+    let synced = match plan(&st, home_orders) {
         Plan::Older {
             app,
             server,
@@ -792,11 +989,124 @@ mod tests {
         serde_json::from_str(json).unwrap()
     }
 
+    // the plan of a server no home manages
+    fn plan_free(st: &RuntimeStatus) -> Plan {
+        plan(st, false)
+    }
+
+    /// A server a home manages keeps its runtime when this app is newer: the home's run
+    /// switches it (D3). Its first runtime, an older app and the same payload are as before.
+    #[test]
+    fn a_home_orders_the_update_of_a_server_it_manages() {
+        let newer = rt(
+            r#"{"current":"v1.5.0_1a2b3c4d","version":"v1.5.0","watermark":"v1.5.0",
+                           "from_version":"v1.6.0","update_pending":true,"downgrade":false}"#,
+        );
+        assert_eq!(plan(&newer, false), Plan::Install);
+        assert_eq!(plan(&newer, true), Plan::Keep);
+        let first = rt(
+            r#"{"root":"/r","owner":"app","installed":[],"from_version":"v1.6.0",
+                           "update_pending":true,"downgrade":false}"#,
+        );
+        assert_eq!(plan(&first, true), Plan::Install);
+        let older = rt(
+            r#"{"version":"v1.6.0","watermark":"v1.6.0","from_version":"v1.5.0","downgrade":true}"#,
+        );
+        assert!(matches!(plan(&older, true), Plan::Older { .. }));
+
+        // what tells it: a joined machine's node.json, whatever its server says
+        let joined = r#"{"node_id":"n1","name":"studio","private_key":"k","home":{"url":"http://192.168.50.177:8080"}}"#;
+        assert!(managed_by_home(Some(joined), None, false));
+        assert!(managed_by_home(Some(joined), Some(false), false));
+        assert!(managed_by_home(Some(joined), Some(true), false));
+        let older_key = r#"{"node_id":"n1","home":{"api_url":"http://home:8080"}}"#;
+        assert!(managed_by_home(Some(older_key), None, false));
+        assert!(!managed_by_home(
+            Some(r#"{"node_id":"","home":{"url":"http://h"}}"#),
+            None,
+            false
+        ));
+        assert!(!managed_by_home(
+            Some(r#"{"node_id":"n1","home":{}}"#),
+            None,
+            false
+        ));
+        assert!(!managed_by_home(Some("not json"), None, false));
+        // a standalone server: its automatic updates on keep the payload, off take it,
+        // whatever its updater ran before
+        assert!(managed_by_home(None, Some(true), false));
+        assert!(managed_by_home(None, Some(true), true));
+        assert!(!managed_by_home(None, Some(false), false));
+        assert!(!managed_by_home(None, Some(false), true));
+        // one that does not say (not answering yet at the app's start, an older server):
+        // its updater's journal of a release it ran keeps the payload; none takes it
+        assert!(managed_by_home(None, None, true));
+        assert!(!managed_by_home(None, None, false));
+    }
+
+    /// The server's last word on its automatic updates is kept for the next start, which
+    /// often asks before the server answers; rewritten only when it changes.
+    #[test]
+    fn the_servers_last_word_on_its_updates_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let updates = dir.path().join("updates");
+        assert_eq!(remembered_auto(&updates), None);
+        remember_auto(&updates, true);
+        assert_eq!(remembered_auto(&updates), Some(true));
+        remember_auto(&updates, false);
+        assert_eq!(remembered_auto(&updates), Some(false));
+        std::fs::write(updates.join(AUTO_FILE), "not json").unwrap();
+        assert_eq!(remembered_auto(&updates), None);
+    }
+
+    /// The server's unit is found in $XDG_CONFIG_HOME/systemd/user, else ~/.config's.
+    #[test]
+    fn the_unit_is_found_where_xdg_config_home_says() {
+        let home = tempfile::tempdir().unwrap();
+        let config = tempfile::tempdir().unwrap();
+        let unit_dir = config.path().join("systemd").join("user");
+        std::fs::create_dir_all(&unit_dir).unwrap();
+        std::fs::write(
+            unit_dir.join(UNIT_FILE),
+            "[Service]\nEnvironment=\"XDG_DATA_HOME=/srv/data\"\n",
+        )
+        .unwrap();
+        let cfg = config.path().to_string_lossy().to_string();
+        let with = |k: &str| (k == "XDG_CONFIG_HOME").then(|| cfg.clone());
+        assert_eq!(
+            unit_env_with(with, home.path(), "XDG_DATA_HOME").as_deref(),
+            Some("/srv/data")
+        );
+        // not there, and not set: ~/.config's
+        assert_eq!(unit_env_with(|_| None, home.path(), "XDG_DATA_HOME"), None);
+        let default_dir = home.path().join(".config").join("systemd").join("user");
+        std::fs::create_dir_all(&default_dir).unwrap();
+        std::fs::write(
+            default_dir.join(UNIT_FILE),
+            "[Service]\nEnvironment=\"XDG_DATA_HOME=/home/me/data\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            unit_env_with(|_| None, home.path(), "XDG_DATA_HOME").as_deref(),
+            Some("/home/me/data")
+        );
+        // a relative XDG_CONFIG_HOME is not one
+        assert_eq!(
+            unit_env_with(
+                |k: &str| (k == "XDG_CONFIG_HOME").then(|| "rel/config".to_string()),
+                home.path(),
+                "XDG_DATA_HOME"
+            )
+            .as_deref(),
+            Some("/home/me/data")
+        );
+    }
+
     #[test]
     fn the_plan_follows_the_runtime_status() {
         // nothing installed yet: the first runtime
         assert_eq!(
-            plan(&rt(
+            plan_free(&rt(
                 r#"{"root":"/r","owner":"app","installed":[],"from":"v1.5.0_1a2b3c4d",
                        "from_version":"v1.5.0","update_pending":true,"downgrade":false}"#
             )),
@@ -804,7 +1114,7 @@ mod tests {
         );
         // the same payload runs
         assert_eq!(
-            plan(&rt(
+            plan_free(&rt(
                 r#"{"current":"v1.5.0_1a2b3c4d","version":"v1.5.0","watermark":"v1.5.0",
                        "from":"v1.5.0_1a2b3c4d","from_version":"v1.5.0","update_pending":false,"downgrade":false}"#
             )),
@@ -812,7 +1122,7 @@ mod tests {
         );
         // an older app (an old AppImage opened again): never installed
         assert_eq!(
-            plan(&rt(
+            plan_free(&rt(
                 r#"{"current":"v1.5.0_1a2b3c4d","version":"v1.5.0","watermark":"v1.5.0",
                        "from_version":"v1.4.0","update_pending":false,"downgrade":true}"#
             )),
@@ -822,9 +1132,25 @@ mod tests {
                 running: "v1.5.0".into()
             }
         );
+        // the same release built again (another build of its payload): what runs already
+        assert_eq!(
+            plan_free(&rt(
+                r#"{"current":"v1.5.0_1a2b3c4d","version":"v1.5.0","watermark":"v1.5.0",
+                       "from":"v1.5.0_9f8e7d6c","from_version":"v1.5.0","update_pending":true,"downgrade":false}"#
+            )),
+            Plan::Keep
+        );
+        // a newer one: installed
+        assert_eq!(
+            plan_free(&rt(
+                r#"{"current":"v1.5.0_1a2b3c4d","version":"v1.5.0","watermark":"v1.5.0",
+                       "from_version":"v1.6.0","update_pending":true,"downgrade":false}"#
+            )),
+            Plan::Install
+        );
         // the newest this machine ran is what an older app is compared with
         assert_eq!(
-            plan(&rt(
+            plan_free(&rt(
                 r#"{"version":"v1.3.0","watermark":"v1.5.0","from_version":"v1.4.0","downgrade":true}"#
             )),
             Plan::Older {
@@ -833,6 +1159,25 @@ mod tests {
                 running: "v1.3.0".into()
             }
         );
+    }
+
+    /// The unit's pinned environment, as service/appunit.go writes it: quoted, escaped, %
+    /// doubled; the last line that sets a name wins; none without a unit line for it.
+    #[test]
+    fn the_unit_s_environment_is_read() {
+        let unit = "[Service]\nEnvironment=\"XDG_CONFIG_HOME=/home/me/.config\"\n\
+                    Environment=\"XDG_DATA_HOME=/srv/me/100%% \\\"data\\\"\"\n\
+                    ExecStart=/x\n";
+        assert_eq!(
+            unit_env_in(unit, "XDG_DATA_HOME").as_deref(),
+            Some("/srv/me/100% \"data\"")
+        );
+        assert_eq!(
+            unit_env_in(unit, "XDG_CONFIG_HOME").as_deref(),
+            Some("/home/me/.config")
+        );
+        assert_eq!(unit_env_in(unit, "XDG_STATE_HOME"), None);
+        assert_eq!(unit_env_in(unit, "XDG_DATA"), None);
     }
 
     #[test]

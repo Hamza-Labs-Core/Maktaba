@@ -47,9 +47,22 @@ on:
 permissions:
   contents: read
 
+# One run per tag at a time, never cancelled.
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  # the tag-order guard (release.yml's guard opens the release as a draft)
+  guard:
+    uses: ./.github/workflows/_tag-guard.yml
+    permissions:
+      contents: write
+      actions: read
+
   android:
     name: android (apk + aab)
+    needs: [guard]
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     permissions:
@@ -197,25 +210,21 @@ jobs:
           path: out/*
           retention-days: 14
 
-      # Signed builds only. Without the keystore this step (and the Release
-      # creation it may do) is skipped; tauri-action and release.yml still
-      # create the Release.
+      # Signed builds only. Without the keystore this step is skipped (release.yml's
+      # guard opens the release).
       - name: Attach to GitHub Release
         if: steps.collect.outputs.signed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release upload "${TAG}" out/* --clobber
-          else
-            pre=(); case "${TAG}" in *-*) pre=(--prerelease --latest=false) ;; esac
-            gh release create "${TAG}" --title "${TAG}" --generate-notes --verify-tag "${pre[@]}" out/*
-          fi
+        # To the tag's release, a draft until release.yml's signed files and the server apps
+        # are in (it is never made public or the latest from here); a published release only
+        # gains the files it lacks.
+        run: tools/release/release-assets.sh upload "${TAG}" out/*
 
   ios:
     name: ios (ipa — signing deferred)
+    needs: [guard]
     runs-on: macos-latest
     timeout-minutes: 45
     permissions:

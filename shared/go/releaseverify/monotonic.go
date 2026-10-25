@@ -22,9 +22,12 @@ type Watermark struct {
 // CheckMonotonic applies the watermark rules (story 35.1 AC6) to a verified
 // release:
 //   - version < watermark → ErrDowngrade;
-//   - version == watermark with a different checksums.txt → ErrReplay;
-//   - signed earlier than the watermark release → ErrReplay (an old commit
-//     re-signed under a new tag).
+//   - version == watermark with a different checksums.txt, or signed before it →
+//     ErrReplay (the same version with other content);
+//   - a newer version signed earlier than the watermark release on its major.minor
+//     line → ErrOlderBuild (OlderBuild: an rc tagged after its release; not an alarm);
+//     on a higher major.minor it is accepted (a hotfix on an older minor, story 22.5
+//     EC1).
 //
 // An empty watermark (first install, or a machine from before story 35.1)
 // accepts anything Verify accepted.
@@ -42,11 +45,19 @@ func CheckMonotonic(w Watermark, r *Result) error {
 	case c == 0 && w.ChecksumsSHA256 != "" && w.ChecksumsSHA256 != r.ChecksumsSHA256:
 		return fail(ErrReplay, ChecksumsFile, fmt.Sprintf("%s was installed with different checksums (%s, now %s)", v, w.ChecksumsSHA256, r.ChecksumsSHA256), nil)
 	}
-	if !w.SignedAt.IsZero() && !r.SignedAt.IsZero() && r.SignedAt.Before(w.SignedAt) {
+	if w.SignedAt.IsZero() || r.SignedAt.IsZero() || !r.SignedAt.Before(w.SignedAt) {
+		return nil
+	}
+	switch {
+	case CompareVersions(v, w.Version) == 0:
 		return fail(ErrReplay, BundleFile, fmt.Sprintf("%s was signed at %s, before the installed %s (%s)",
 			v, r.SignedAt.Format(time.RFC3339), w.Version, w.SignedAt.Format(time.RFC3339)), nil)
+	case OlderBuild(v, r.SignedAt, w.Version, w.SignedAt):
+		return fail(ErrOlderBuild, BundleFile, fmt.Sprintf("%s was signed at %s, before the installed %s (%s): an "+
+			"older build of this line, passed by", v, r.SignedAt.Format(time.RFC3339), w.Version,
+			w.SignedAt.Format(time.RFC3339)), nil)
 	}
-	return nil
+	return nil // a higher major.minor signed earlier: a hotfix line moving up
 }
 
 // WatermarkFile persists a Watermark next to the install: Path holds the

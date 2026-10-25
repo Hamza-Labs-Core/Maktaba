@@ -1,16 +1,25 @@
 // Admin log viewer (troubleshooting / diagnostics surface).
 //
 // Real contracts:
-//   GET /api/admin/logs/stream?level=&services=&q=&limit=  (admin)
+//   GET /api/admin/logs/stream?level=&services=&q=&since=&until=&limit=  (admin)
 //        → { entries: <raw JSON log line>[], count }
-//   GET /api/admin/logs/export?format=&since=&services=&level=  (admin)
-//        → .tar.gz diagnostics bundle (Content-Disposition download)
+//   GET /api/admin/logs/files?since=&until=&node=&limit=  (admin)
+//        → { node, entries: [{ts, level, service, file, msg, raw}], files: [{name, missing, truncated}] }
+//          a machine's log files (server.log, app.log, launcher.log), a joined machine's
+//          over its channel (503 node_offline, 502 node_no_answer)
+//   GET /api/admin/logs/export?format=&since=&until=&node=&services=&level=  (admin)
+//        → .tar.gz diagnostics bundle (Content-Disposition download), with the log files
 //
 // The viewer polls /stream on an interval (pausable), colour-codes by
 // level, and filters client- + server-side. Each entry is the verbatim
 // structured JSON line from the service ring buffers, so we parse the
 // common contract fields (ts/level/service/msg) for display and keep
 // the rest as an expandable detail blob.
+//
+// Its filters can come in the address (a failure elsewhere links here: update-attempts.md):
+// ?services=, ?level=, ?since= / ?until= (ISO times: the server sends only those lines, and
+// the machine's log files of that window are shown with them), and ?node= (a joined
+// machine: its own log files, over its channel).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@ds/components/Card/Card";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -22,10 +31,34 @@ import { api, downloadBlob, ApiError } from "../../lib/api";
 import { useToast } from "@ds/components/Toast/Toast";
 import { AdminGate } from "../../components/AdminGate";
 import { TitleRow } from "../../help/HelpLink";
+import { clusterApi } from "../../lib/clusterApi";
+import {
+  inWindow,
+  logFilesURL,
+  logsExportURL,
+  readLogFilters,
+  type LogFilters,
+} from "../../lib/logLinks";
 
 interface StreamResponse {
   entries?: unknown[] | null;
   count: number;
+}
+
+/** One line of a machine's log files (GET /api/admin/logs/files). */
+interface FileEntry {
+  ts?: string;
+  level?: string;
+  service?: string;
+  file?: string;
+  msg?: string;
+  raw?: string;
+}
+
+interface FilesResponse {
+  node?: string;
+  entries?: FileEntry[] | null;
+  files?: { name: string; missing?: boolean; truncated?: boolean }[] | null;
 }
 
 // LogLine is the parsed view of one structured entry. Unknown extra
@@ -37,11 +70,17 @@ interface LogLine {
   msg: string;
   attrs: Record<string, unknown>;
   raw: Record<string, unknown>;
+  /** the log file it was read from (a line of the live logs has none) */
+  file?: string;
 }
 
 const LEVELS = ["debug", "info", "warn", "error"] as const;
 const POLL_MS = 3000;
 const POLL_LIMIT = 1000;
+/** The log files are read again this often while the window is still open (no end, or an end
+ * still to come); a window that is over is read once. */
+const FILES_POLL_MS = 15_000;
+const FILES_LIMIT = 2000;
 
 export function AdminLogs() {
   return (
@@ -51,14 +90,35 @@ export function AdminLogs() {
   );
 }
 
+/** The filters the page opened with (its address). */
+function initialFilters(): LogFilters {
+  return readLogFilters(typeof window === "undefined" ? "" : window.location.search);
+}
+
 function LogsInner() {
   const { t, formatDate } = useI18n();
   const toast = useToast();
 
+  const [initial] = useState(initialFilters);
   const [lines, setLines] = useState<LogLine[]>([]);
-  const [level, setLevel] = useState<string>("debug");
-  const [service, setService] = useState<string>("");
+  const [level, setLevel] = useState<string>(
+    LEVELS.includes(initial.level as (typeof LEVELS)[number]) ? (initial.level as string) : "debug"
+  );
+  const [service, setService] = useState<string>(initial.services ?? "");
   const [search, setSearch] = useState<string>("");
+  // a failure's time window (from the address); "Show all" lets it go
+  const [range, setRange] = useState<Pick<LogFilters, "since" | "until">>({
+    since: initial.since,
+    until: initial.until,
+  });
+  const windowed = Boolean(range.since || range.until);
+  // a joined machine's own log files (the live logs are the home's, so they are not shown)
+  const node = initial.node ?? "";
+  const [nodeName, setNodeName] = useState("");
+  const [fileLines, setFileLines] = useState<LogLine[]>([]);
+  const [filesErr, setFilesErr] = useState("");
+  // the files the machine cut to the window's newest lines (it has older ones)
+  const [filesCut, setFilesCut] = useState<string[]>([]);
   const [paused, setPaused] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -71,11 +131,14 @@ function LogsInner() {
     if (level) p.set("level", level);
     if (service) p.set("services", service);
     if (search.trim()) p.set("q", search.trim());
+    if (range.since) p.set("since", range.since);
+    if (range.until) p.set("until", range.until);
     p.set("limit", String(POLL_LIMIT));
     return p.toString();
-  }, [level, service, search]);
+  }, [level, service, search, range]);
 
   const refresh = useCallback(() => {
+    if (node) return;
     api
       .get<StreamResponse>(`/api/admin/logs/stream?${query}`)
       .then((r) => {
@@ -90,11 +153,63 @@ function LogsInner() {
   // Poll on an interval unless paused. A filter change refreshes
   // immediately (refresh identity changes with the query).
   useEffect(() => {
+    if (node) return;
     refresh();
     if (paused) return;
     const id = setInterval(refresh, POLL_MS);
     return () => clearInterval(id);
-  }, [refresh, paused]);
+  }, [refresh, paused, node]);
+
+  // The machine's log files of the window (a joined machine's with ?node=): read when the
+  // page opens on a window or a machine, again while that window is still open.
+  const files = windowed || node !== "";
+  const refreshFiles = useCallback(() => {
+    api
+      .get<FilesResponse>(
+        logFilesURL({ since: range.since, until: range.until, node, limit: FILES_LIMIT })
+      )
+      .then((r) => {
+        const entries = Array.isArray(r?.entries) ? r.entries : [];
+        setFileLines(entries.flatMap((e) => fileLine(e) ?? []));
+        setFilesCut(
+          (Array.isArray(r?.files) ? r.files : []).filter((f) => f?.truncated).map((f) => f.name)
+        );
+        setFilesErr("");
+      })
+      .catch((e) => {
+        const code = e instanceof ApiError ? (e.problem.code ?? "") : "";
+        setFilesErr(code === "node_offline" || code === "node_no_answer" ? code : "error");
+      });
+  }, [range.since, range.until, node]);
+  useEffect(() => {
+    if (!files) {
+      setFileLines([]);
+      setFilesCut([]);
+      setFilesErr("");
+      return;
+    }
+    refreshFiles();
+    const over = range.until !== undefined && Date.parse(range.until) < Date.now();
+    if (paused || over) return;
+    const id = setInterval(refreshFiles, FILES_POLL_MS);
+    return () => clearInterval(id);
+  }, [files, refreshFiles, paused, range.until]);
+
+  // the machine's name for the heading (its id until the cluster says)
+  useEffect(() => {
+    if (!node) return;
+    let alive = true;
+    clusterApi
+      .getCluster()
+      .then((v) => {
+        const n = (v?.nodes ?? []).find((x) => x.id === node);
+        if (alive && n?.name) setNodeName(n.name);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [node]);
 
   // Keep the view pinned to the newest line while auto-scroll is on.
   useEffect(() => {
@@ -106,10 +221,14 @@ function LogsInner() {
   const onExport = useCallback(async () => {
     setExporting(true);
     try {
-      const p = new URLSearchParams();
-      if (level) p.set("level", level);
-      if (service) p.set("services", service);
-      await downloadBlob(`/api/admin/logs/export?${p.toString()}`, "maktaba-diagnostics.tar.gz");
+      const url = logsExportURL({
+        level: level || undefined,
+        services: service || undefined,
+        since: range.since,
+        until: range.until,
+        node: node || undefined,
+      });
+      await downloadBlob(url, "maktaba-diagnostics.tar.gz");
       toast.show({ tone: "success", message: t("logs.export.success") });
     } catch (e) {
       const detail = e instanceof ApiError ? e.message : t("common.error");
@@ -117,15 +236,41 @@ function LogsInner() {
     } finally {
       setExporting(false);
     }
-  }, [level, service, toast, t]);
+  }, [level, service, range.since, range.until, node, toast, t]);
 
   // Service options are derived from whatever services appear in the
   // current window, so a single-service deploy shows just its own.
   const services = useMemo(() => {
     const set = new Set<string>();
     lines.forEach((l) => l.service && set.add(l.service));
+    fileLines.forEach((l) => l.service && set.add(l.service));
+    if (service) set.add(service); // one the address asked for, before its lines come
     return Array.from(set).sort();
-  }, [lines]);
+  }, [lines, fileLines, service]);
+
+  // the lines of the window (all of them without one): the live logs and the log files,
+  // merged by time, the files' copy of a live line left out, the filters applied to the
+  // files' lines here (the server applies them to the live logs)
+  const shown = useMemo(() => {
+    const live = windowed ? lines.filter((l) => inWindow(l.ts, range)) : lines;
+    if (fileLines.length === 0) return live;
+    const seen = new Set(live.map(lineKey));
+    const floor = LEVELS.indexOf(level as (typeof LEVELS)[number]);
+    const needle = search.trim().toLowerCase();
+    const fromFiles = fileLines.filter((l) => {
+      if (seen.has(lineKey(l))) return false;
+      if (service && l.service !== service) return false;
+      const lv = LEVELS.indexOf(normLevel(l.level) as (typeof LEVELS)[number]);
+      if (floor > 0 && lv >= 0 && lv < floor) return false;
+      if (needle && !`${l.msg} ${String(l.raw.line ?? "")}`.toLowerCase().includes(needle)) {
+        return false;
+      }
+      return !windowed || inWindow(l.ts, range);
+    });
+    return mergeByTime(live, fromFiles);
+  }, [lines, fileLines, range, windowed, level, service, search]);
+  // a window (or a machine's files) with nothing in it: say so, and offer its bundle
+  const empty = windowed || node !== "";
 
   return (
     <section className="mkt-page mkt-logs">
@@ -134,6 +279,12 @@ function LogsInner() {
           <h1>{t("logs.title")}</h1>
         </TitleRow>
         <span className="mkt-muted">{t("logs.subtitle")}</span>
+        {node && (
+          <p data-testid="logs-node">
+            <strong>{t("logs.node.title", { name: nodeName || node })}</strong>{" "}
+            <span className="mkt-muted">{t("logs.node.what")}</span>
+          </p>
+        )}
       </header>
 
       <div className="mkt-logs__toolbar">
@@ -188,14 +339,47 @@ function LogsInner() {
       </div>
 
       {err && <p className="mkt-muted">{t("logs.error")}</p>}
+      {filesErr && (
+        <p className="mkt-muted" role="status" data-testid="logs-files-error">
+          {t(`logs.files.${filesErr}`)}
+        </p>
+      )}
+      {!filesErr && filesCut.length > 0 && (
+        <p className="mkt-muted" role="status" data-testid="logs-files-cut">
+          {t("logs.files.truncated", { files: filesCut.join(", ") })}
+        </p>
+      )}
+
+      {windowed && (
+        <p className="mkt-logs__window" role="status" data-testid="logs-window">
+          {range.since && range.until
+            ? t("logs.window.between", {
+                since: formatDate(range.since),
+                until: formatDate(range.until),
+              })
+            : range.since
+              ? t("logs.window.since", { since: formatDate(range.since) })
+              : t("logs.window.until", { until: formatDate(range.until as string) })}{" "}
+          <Button variant="secondary" size="sm" onClick={() => setRange({})}>
+            {t("logs.window.all")}
+          </Button>
+        </p>
+      )}
 
       <Card className="mkt-logs__viewport">
         <div className="mkt-logs__scroll" ref={scrollRef}>
-          {lines.length === 0 ? (
-            <p className="mkt-muted mkt-logs__empty">{t("logs.empty")}</p>
+          {shown.length === 0 ? (
+            <div className="mkt-muted mkt-logs__empty">
+              <p>{empty ? t("logs.window.empty") : t("logs.empty")}</p>
+              {empty && (
+                <Button variant="secondary" size="sm" onClick={onExport} disabled={exporting}>
+                  {t("logs.window.download")}
+                </Button>
+              )}
+            </div>
           ) : (
             <ul className="mkt-logs__list">
-              {lines.map((l, i) => (
+              {shown.map((l, i) => (
                 <LogRow key={i} line={l} formatDate={formatDate} />
               ))}
             </ul>
@@ -221,7 +405,12 @@ function LogRow({
       <Badge tone={tone} className="mkt-badge--sm">
         {line.level || "?"}
       </Badge>
-      {line.service && <span className="mkt-logs__service">{line.service}</span>}
+      {(line.service || line.file) && (
+        <span className="mkt-logs__service">
+          {line.service}
+          {line.file && <span className="mkt-logs__file"> · {line.file}</span>}
+        </span>
+      )}
       <span className="mkt-logs__msg">{line.msg}</span>
       {hasAttrs && (
         <details className="mkt-logs__attrs">
@@ -274,6 +463,58 @@ function parseLine(entry: unknown): LogLine | null {
     attrs,
     raw: rec,
   };
+}
+
+// fileLine is one line of a machine's log files in the viewer's shape: its time, level,
+// service and words as the server read them, the line itself kept for the detail row.
+function fileLine(e: FileEntry | null): LogLine | null {
+  if (!e || typeof e !== "object") return null;
+  const raw = typeof e.raw === "string" ? e.raw : "";
+  const msg = typeof e.msg === "string" && e.msg ? e.msg : raw;
+  if (!msg) return null;
+  return {
+    ts: typeof e.ts === "string" ? e.ts : "",
+    level: typeof e.level === "string" ? e.level : "",
+    service: typeof e.service === "string" ? e.service : "",
+    msg,
+    attrs: raw && raw !== msg ? { line: raw } : {},
+    raw: { line: raw },
+    file: typeof e.file === "string" && e.file ? e.file : undefined,
+  };
+}
+
+// lineKey is what a line of the live logs and its copy in server.log share.
+function lineKey(l: LogLine): string {
+  return `${l.ts}\u0001${l.service}\u0001${l.msg}`;
+}
+
+function normLevel(level: string): string {
+  const lv = level.toLowerCase();
+  return lv === "warning" ? "warn" : lv;
+}
+
+// mergeByTime merges two lists each already in time order (a line without a time stays
+// where its list has it, before the lines with one).
+function mergeByTime(a: LogLine[], b: LogLine[]): LogLine[] {
+  const time = (l: LogLine) => {
+    const t = Date.parse(l.ts);
+    return Number.isFinite(t) ? t : -Infinity;
+  };
+  const out: LogLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const x = a[i] as LogLine;
+    const y = b[j] as LogLine;
+    if (time(y) < time(x)) {
+      out.push(y);
+      j++;
+    } else {
+      out.push(x);
+      i++;
+    }
+  }
+  return out.concat(a.slice(i), b.slice(j));
 }
 
 // tsText reads a numeric ts as epoch seconds (or milliseconds when it is

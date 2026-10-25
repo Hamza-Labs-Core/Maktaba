@@ -97,6 +97,9 @@ func New(d Deps) chi.Router {
 	// request as coming through the relay; checked on the real peer
 	// address, before RealIP rewrites it.
 	r.Use(mw.StripVia)
+	// likewise a program on this machine (the desktop app asks /api/cluster/self over
+	// loopback), judged on the real peer address
+	r.Use(mw.MarkLocalCaller)
 	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019: intentional behind a trusted proxy (see comment above)
 	r.Use(mw.RequestID)
 	// Recoverer carries the central HLB-300 error-report hook. With a

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
 // States of a machine's run (Journal.State).
@@ -95,11 +96,19 @@ type Job struct {
 	RehearseMaxGB int  `json:"rehearse_max_db_gb,omitempty"`
 	// KeepVersions releases stay installed after a commit (never fewer than 2).
 	KeepVersions int `json:"keep_versions,omitempty"`
+	// BackupsKeep pre-update dumps (and as many dumps of failed updates) stay after a
+	// commit (rules.updates.backups_keep; 0: the machine's own setting).
+	BackupsKeep int `json:"backups_keep,omitempty"`
 	// WatchSeconds: how long the new release must stay healthy before it is
 	// committed; HealthSeconds: how long it may stay unhealthy before it is rolled
 	// back (0: the defaults).
 	WatchSeconds  int `json:"watch_seconds,omitempty"`
 	HealthSeconds int `json:"health_seconds,omitempty"`
+	// AppPostgresMajor is the release's app payloads' PostgreSQL majors, from the home's
+	// verified catalog (release.json's app_postgres_major): another major than this
+	// machine's is refused in preflight, before any download (and again from the verified
+	// release.json at the stage)
+	AppPostgresMajor map[string]int `json:"app_postgres_major,omitempty"`
 }
 
 // Validate checks the job's shape.
@@ -202,6 +211,13 @@ type Journal struct {
 	App string `json:"app,omitempty"`
 	// LauncherProtocol is the release's launcher_protocol (its verified release.json).
 	LauncherProtocol int `json:"launcher_protocol,omitempty"`
+	// Signed is the staged release's signed record (version, checksums digest, signing
+	// time), kept at the commit for the next update's rules (an app bundle's, a runtime's:
+	// a layout keeps its watermark)
+	Signed *releaseverify.Watermark `json:"signed,omitempty"`
+	// Backup is the dump the new release's start took before its migrations (a home's, at
+	// its commit): the run records it (update_runs.backup)
+	Backup *Backup `json:"backup,omitempty"`
 	// WatchSince is when the new release first came up; Starts how often it started
 	// while watched (a supervisor that keeps dying rolls back).
 	WatchSince *time.Time `json:"watch_since,omitempty"`
@@ -300,4 +316,10 @@ func SaveJournal(dir string, j *Journal) error {
 func setAside(dir string, now time.Time) error {
 	from := filepath.Join(dir, JournalFile)
 	return os.Rename(from, from+".unreadable-"+now.UTC().Format("20060102T150405"))
+}
+
+// Backup is a dump of the database: where it is and how large.
+type Backup struct {
+	Path  string `json:"path"`
+	Bytes int64  `json:"bytes"`
 }

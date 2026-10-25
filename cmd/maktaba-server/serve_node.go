@@ -37,6 +37,8 @@ type nodeServices struct {
 	token string
 	// homeAway: this machine's API says it cannot reach its home (watchHome)
 	homeAway atomic.Bool
+	// homeDB: this machine's login to its home's database (serve_homeaccess.go)
+	homeDB *homeDBWatch
 }
 
 // HomeAway reports whether this machine cannot reach its home now.
@@ -100,6 +102,12 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 		return nil, nil
 	}
 	ns := &nodeServices{node: n}
+	// this machine's login to its home's database, in its update.state (serve_homeaccess.go)
+	ns.homeDB = newHomeDBWatch(func() {
+		if ns.agent != nil {
+			ns.agent.Nudge()
+		}
+	})
 	tok, err := machineagent.WriteToken(supervisor.LocalTokenPath(cfg))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[serve] node: cannot write the local token (the API cannot reach the machine agent): %v\n", err)
@@ -118,13 +126,17 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 			if u := upd(); u != nil {
 				u.agentState(&st)
 			}
+			st.HomeDB = ns.homeDB.State()
 			return st
 		},
 		// the home's switch to another machine (serve_switchover.go)
 		Commands: commands,
+		// a check of the home's database made after the home heard from this machine again
+		OnConnect: ns.homeDB.reconnected,
 	}
 	go ns.agent.Run(ctx)
 	go ns.watchHome(ctx, apiOrigin(cfg.Server.Listen))
+	go ns.homeDB.run(ctx)
 	fmt.Fprintf(os.Stderr, "[serve] full node of %s (node %s): api, web, pipeline, streaming\n", n.HomeURL(), n.Node8())
 	return ns, nil
 }

@@ -97,7 +97,13 @@ func (h *Hub) CmdHTTP(w http.ResponseWriter, r *http.Request) {
 	if p := principal.FromContext(r.Context()); p != nil && p.UserID != "" {
 		by = "user:" + p.UserID
 	}
-	res, err := h.Command(r.Context(), session, req.Name, req.Args, by)
+	var res CmdResult
+	var err error
+	if adminCommands[req.Name] {
+		res, err = h.Command(r.Context(), session, req.Name, req.Args, by)
+	} else {
+		err = ErrBadCommand // the home's own (a switch, an update, a machine's access) never from a request
+	}
 	switch {
 	case errors.Is(err, ErrNoSession):
 		httperror.Write(w, r, httperror.NotFound("process"))

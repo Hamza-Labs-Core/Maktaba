@@ -42,6 +42,14 @@ type Manifest struct {
 	EdgeProtocol       int       `json:"edge_protocol,omitempty"`
 	LauncherProtocol   int       `json:"launcher_protocol,omitempty"`
 	AgentProtocol      int       `json:"agent_protocol,omitempty"`
+	// SignedAt is when the release was signed, its earliest verified transparency-log
+	// time: not release.json's (the catalog writes it at the verification), the time the
+	// machines' "never go back" rule compares
+	SignedAt time.Time `json:"signed_at,omitzero"`
+	// AppPostgresMajor is each app payload's bundled PostgreSQL major (release.json's,
+	// absent before): the machines' jobs carry it, so one whose database another major
+	// made refuses the release before it downloads anything
+	AppPostgresMajor map[string]int `json:"app_postgres_major,omitempty"`
 }
 
 // ReleaseFiles are the three small signed files of a release, as downloaded.
@@ -85,6 +93,9 @@ const (
 	KindReplay      = "replay"
 	KindDowngrade   = "downgrade"
 	KindRootExpired = "root_expired"
+	// KindOlderBuild: newer in version than a release installed here but signed before it
+	// on its major.minor line (releaseverify.OlderBuild): passed by, never an incident.
+	KindOlderBuild = "older_build"
 	// KindNoManifest: a release published before story 35.1 (no release.json or no
 	// bundle). Never an automatic target (design §3.2), and not an incident.
 	KindNoManifest = "no_manifest"

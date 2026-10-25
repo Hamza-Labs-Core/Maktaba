@@ -398,6 +398,27 @@ pub fn write_state(path: &Path, req: &Request, state: &str, error: &str) -> std:
     Err(last.unwrap_or_else(|| std::io::Error::other("the order could not be written")))
 }
 
+/// The error an ordered install answers with (the order's `error`): its code first, then
+/// what happened (`needs_admin: …`), as the server reads it (updater/request.go appFailure:
+/// needs_admin, app_management, translocated, not_writable, local_build and
+/// login_item_unsigned are a machine that needs a person, not a failure of the release).
+/// A code whose mending is a command (login_item_unsigned's codesign) carries it.
+pub fn order_error(code: &str, detail: &str) -> String {
+    let mut out = if code.is_empty() || detail.starts_with(&format!("{code}:")) {
+        detail.to_string()
+    } else {
+        format!("{code}: {detail}")
+    };
+    if code == crate::attempts::LOGIN_ITEM_UNSIGNED {
+        let fix = crate::attempts::fix_for(code);
+        if !fix.is_empty() && !out.contains(&fix) {
+            out.push_str("; to mend it: ");
+            out.push_str(&fix);
+        }
+    }
+    out
+}
+
 /// The code an ordered install's error starts with when this app cannot be replaced
 /// without an administrator's password (macOS: Maktaba.app in a folder this user cannot
 /// change, such as /Applications for a standard user). The updater's prompt for the
@@ -439,6 +460,148 @@ pub fn needs_admin(bundle: &Path, writable: impl Fn(&Path) -> bool) -> Option<St
     ))
 }
 
+/// What keeps this app from replacing its bundle at `bundle` without a person, checked
+/// without asking anything (macOS; the updater asks for an administrator's password when
+/// its move fails, which an install the home ordered never lets it do): the code and why.
+/// In this order, as each makes the next one's answer wrong: a copy macOS runs from a
+/// temporary place (translocated), a read-only volume (a disk image: not_writable), a folder
+/// this user cannot change (needs_admin, its detail starting with the code as the server
+/// reads it), a locked bundle, or macOS refusing this app's change inside it (App
+/// Management, an ACL: app_management). None when nothing does, or outside a bundle.
+#[cfg(any(target_os = "macos", test))]
+pub fn swap_blocker(bundle: &Path, probe: &Probe) -> Option<(&'static str, String)> {
+    if (probe.translocated)(bundle) {
+        return Some((
+            crate::attempts::TRANSLOCATED,
+            format!(
+                "macOS runs this copy of Maktaba from a temporary read-only place ({}): move \
+                 Maktaba.app to the Applications folder and open it from there",
+                bundle.display()
+            ),
+        ));
+    }
+    if (probe.read_only)(bundle) {
+        return Some((
+            crate::attempts::NOT_WRITABLE,
+            format!(
+                "{} is on a read-only volume (a disk image?): copy Maktaba.app to the Applications \
+                 folder and open it from there",
+                bundle.display()
+            ),
+        ));
+    }
+    if let Some(why) = needs_admin(bundle, probe.writable) {
+        return Some((NEEDS_ADMIN, why));
+    }
+    if (probe.locked)(bundle) {
+        return Some((
+            crate::attempts::APP_MANAGEMENT,
+            format!(
+                "{} is locked (Finder › Get Info › Locked, or its immutable flag): unlock it",
+                bundle.display()
+            ),
+        ));
+    }
+    if let Err(e) = (probe.can_change)(bundle) {
+        if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(1) {
+            return Some((
+                crate::attempts::APP_MANAGEMENT,
+                format!(
+                    "macOS refused this app changing {} ({e}): allow Maktaba in System Settings › \
+                     Privacy & Security › App Management",
+                    bundle.display()
+                ),
+            ));
+        }
+    }
+    None
+}
+
+/// The checks swap_blocker reads (tests give their own).
+#[cfg(any(target_os = "macos", test))]
+pub struct Probe {
+    /// macOS runs the app from App Translocation
+    pub translocated: fn(&Path) -> bool,
+    /// the bundle's volume is read-only
+    pub read_only: fn(&Path) -> bool,
+    /// this user can change a folder (writable)
+    pub writable: fn(&Path) -> bool,
+    /// the bundle (or its Contents) carries an immutable flag
+    pub locked: fn(&Path) -> bool,
+    /// this user may change the bundle the way the swap does: a file made and removed
+    /// inside Contents, a folder made, renamed and removed beside the bundle
+    pub can_change: fn(&Path) -> std::io::Result<()>,
+}
+
+#[cfg(target_os = "macos")]
+impl Probe {
+    /// This Mac's.
+    pub fn here() -> Probe {
+        Probe {
+            translocated: crate::attempts::is_translocated,
+            read_only: read_only_volume,
+            writable,
+            locked: immutable,
+            can_change: change_like_a_swap,
+        }
+    }
+}
+
+/// The volume that holds `path` is mounted read-only.
+#[cfg(target_os = "macos")]
+fn read_only_volume(path: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(c) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: c outlives the call and st is a plain struct statvfs fills
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    unsafe { libc::statvfs(c.as_ptr(), &mut st) == 0 && (st.f_flag & libc::ST_RDONLY) != 0 }
+}
+
+/// The bundle, or its Contents, has the user or system immutable flag (Finder's Locked).
+#[cfg(target_os = "macos")]
+fn immutable(bundle: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    [bundle.to_path_buf(), bundle.join("Contents")]
+        .iter()
+        .any(|p| {
+            let Ok(c) = std::ffi::CString::new(p.as_os_str().as_bytes()) else {
+                return false;
+            };
+            // SAFETY: c outlives the call and st is a plain struct lstat fills
+            let mut st: libc::stat = unsafe { std::mem::zeroed() };
+            let flags = if unsafe { libc::lstat(c.as_ptr(), &mut st) } == 0 {
+                st.st_flags
+            } else {
+                0
+            };
+            flags & (libc::UF_IMMUTABLE | libc::SF_IMMUTABLE) != 0
+        })
+}
+
+/// Changes the bundle the way the updater's swap does, and undoes them: App Management
+/// (TCC) and ACLs refuse these with EPERM where the folder's mode allows them.
+#[cfg(target_os = "macos")]
+fn change_like_a_swap(bundle: &Path) -> std::io::Result<()> {
+    let tag = format!(".maktaba-swap-check-{}", std::process::id());
+    let inside = bundle.join("Contents").join(&tag);
+    std::fs::write(&inside, b"")?;
+    let _ = std::fs::remove_file(&inside);
+    let parent = bundle
+        .parent()
+        .ok_or_else(|| std::io::Error::other("no folder"))?;
+    let (a, b) = (
+        parent.join(format!("{tag}-a")),
+        parent.join(format!("{tag}-b")),
+    );
+    std::fs::create_dir(&a)?;
+    let moved = std::fs::rename(&a, &b);
+    let _ = std::fs::remove_dir(&a);
+    let _ = std::fs::remove_dir(&b);
+    moved
+}
+
 /// Whether this user can change the folder `dir` (create and remove its entries); a
 /// read-only volume cannot be.
 #[cfg(all(unix, any(target_os = "macos", test)))]
@@ -454,6 +617,104 @@ pub fn writable(dir: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn probe() -> Probe {
+        Probe {
+            translocated: |_| false,
+            read_only: |_| false,
+            writable: |_| true,
+            locked: |_| false,
+            can_change: |_| Ok(()),
+        }
+    }
+
+    /// The swap's checks, each in its place: a translocated copy (whose folder also reads as
+    /// not writable) says so first, a read-only volume next, then a folder that needs an
+    /// administrator, then a lock or App Management; nothing when the user may swap it.
+    #[test]
+    fn the_order_s_error_starts_with_its_code() {
+        assert_eq!(
+            order_error("local_build", "this app was built locally"),
+            "local_build: this app was built locally"
+        );
+        assert_eq!(
+            order_error("needs_admin", "needs_admin: /Applications"),
+            "needs_admin: /Applications"
+        );
+        assert_eq!(order_error("", "x"), "x");
+        // the server reads login_item_unsigned as a machine that needs a person: the
+        // order says what mends it
+        let unsigned = order_error(
+            crate::attempts::LOGIN_ITEM_UNSIGNED,
+            "after the update to 0.3.2, macOS would not register the server's login item",
+        );
+        assert!(
+            unsigned.starts_with("login_item_unsigned: after the update to 0.3.2")
+                && unsigned.contains("codesign --force --deep -s -"),
+            "{unsigned}"
+        );
+        let said = order_error(
+            crate::attempts::LOGIN_ITEM_UNSIGNED,
+            &format!(
+                "login_item_unsigned: not signed: {}",
+                crate::attempts::fix_for("login_item_unsigned")
+            ),
+        );
+        assert_eq!(said.matches("codesign").count(), 1, "{said}");
+    }
+
+    #[test]
+    fn the_swap_is_checked_without_a_prompt() {
+        let b = Path::new("/Applications/Maktaba.app");
+        assert_eq!(swap_blocker(b, &probe()), None);
+        let p = Probe {
+            translocated: |_| true,
+            writable: |_| false,
+            read_only: |_| true,
+            ..probe()
+        };
+        assert_eq!(
+            swap_blocker(b, &p).unwrap().0,
+            crate::attempts::TRANSLOCATED
+        );
+        let p = Probe {
+            read_only: |_| true,
+            writable: |_| false,
+            ..probe()
+        };
+        assert_eq!(
+            swap_blocker(b, &p).unwrap().0,
+            crate::attempts::NOT_WRITABLE
+        );
+        let p = Probe {
+            writable: |_| false,
+            ..probe()
+        };
+        let (code, why) = swap_blocker(b, &p).unwrap();
+        assert_eq!(code, NEEDS_ADMIN);
+        assert!(why.starts_with("needs_admin: "), "{why}");
+        let p = Probe {
+            locked: |_| true,
+            ..probe()
+        };
+        assert_eq!(
+            swap_blocker(b, &p).unwrap().0,
+            crate::attempts::APP_MANAGEMENT
+        );
+        let p = Probe {
+            can_change: |_| Err(std::io::Error::from_raw_os_error(1)),
+            ..probe()
+        };
+        let (code, why) = swap_blocker(b, &p).unwrap();
+        assert_eq!(code, crate::attempts::APP_MANAGEMENT);
+        assert!(why.contains("App Management"), "{why}");
+        // another error of the check is no reason to refuse
+        let p = Probe {
+            can_change: |_| Err(std::io::Error::other("busy")),
+            ..probe()
+        };
+        assert_eq!(swap_blocker(b, &p), None);
+    }
 
     fn req(state: &str, version: &str, feed: &str) -> Request {
         Request {

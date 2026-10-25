@@ -1,6 +1,7 @@
 package updates
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -162,4 +163,80 @@ func rawMap(m map[string]string) map[string]json.RawMessage {
 		out[k] = json.RawMessage(v)
 	}
 	return out
+}
+
+// One "never go back" rule (releaseverify.OlderBuild): rc.7 was tagged after v0.3.0, so a
+// home on rc.7 does not take 0.3.0 (newer in version, the older build) but takes 0.3.1; a
+// hotfix on an older minor signed after the next minor still moves up to it (22.5 EC1).
+func TestChooseTargetPassesAnOlderBuild(t *testing.T) {
+	at := func(s string) func(*Release) {
+		return func(r *Release) {
+			p, _ := time.Parse(time.RFC3339, s)
+			r.Manifest.Published = p
+		}
+	}
+	beta := DefaultPolicy()
+	beta.Channel = ChannelBeta
+	cat := []Release{rel("0.3.0-rc.6", at("2026-10-24T05:16:46Z")), rel("0.3.0", at("2026-10-24T05:43:50Z")),
+		rel("0.3.0-rc.7", at("2026-10-24T06:17:21Z"))}
+	for _, pol := range []Policy{DefaultPolicy(), beta} {
+		if c := ChooseTarget(cat, pol, "0.3.0-rc.7", ""); c.Target != nil || c.Reason != ReasonUpToDate {
+			t.Fatalf("%s: a home on rc.7 took the older build: %+v", pol.Channel, c.Target)
+		}
+	}
+	// a machine on rc.6 (signed before 0.3.0) still takes 0.3.0
+	if c := ChooseTarget(cat, DefaultPolicy(), "0.3.0-rc.6", ""); c.Target == nil || c.Target.Version != "0.3.0" {
+		t.Fatalf("rc.6: %+v", c.Target)
+	}
+	cat = append(cat, rel("0.3.1", at("2026-10-24T17:56:46Z")))
+	if c := ChooseTarget(cat, DefaultPolicy(), "0.3.0-rc.7", ""); c.Target == nil || c.Target.Version != "0.3.1" {
+		t.Fatalf("0.3.1: %+v", c.Target)
+	}
+	// the floor is the watermark when it is higher: an rc.7 watermark passes 0.3.0 by
+	if c := ChooseTarget(cat[:3], DefaultPolicy(), "0.3.0-rc.6", "0.3.0-rc.7"); c.Target != nil {
+		t.Fatalf("watermark rc.7: %+v", c.Target)
+	}
+	// a hotfix on 0.2 signed after 0.3.0 moves up to it
+	hot := []Release{rel("0.2.5", at("2026-10-25T00:00:00Z")), rel("0.3.0", at("2026-10-24T05:43:50Z"))}
+	if c := ChooseTarget(hot, DefaultPolicy(), "0.2.5", ""); c.Target == nil || c.Target.Version != "0.3.0" {
+		t.Fatalf("hotfix line: %+v", c.Target)
+	}
+	// a running release the catalog does not know (or has not verified): no time rule
+	if c := ChooseTarget(cat[1:2], DefaultPolicy(), "0.3.0-rc.7", ""); c.Target == nil || c.Target.Version != "0.3.0" {
+		t.Fatalf("unknown running release: %+v", c.Target)
+	}
+}
+
+// R4 (audit): the rule compares the verified signing times (the transparency log's, as the
+// machines do), not release.json's "published": a release.json that says otherwise does
+// not decide; the verification keeps that time in the catalog.
+func TestChooseTargetComparesTheSigningTime(t *testing.T) {
+	ts := func(s string) time.Time { p, _ := time.Parse(time.RFC3339, s); return p }
+	signed := func(published, signedAt string) func(*Release) {
+		return func(r *Release) {
+			r.Manifest.Published = ts(published)
+			r.Manifest.SignedAt = ts(signedAt)
+		}
+	}
+	// release.json's times say rc.7 came first; the signing times say 0.3.0 did
+	cat := []Release{rel("0.3.0", signed("2026-10-24T07:00:00Z", "2026-10-24T05:44:07Z")),
+		rel("0.3.0-rc.7", signed("2026-10-24T05:00:00Z", "2026-10-24T06:17:37Z"))}
+	if c := ChooseTarget(cat, DefaultPolicy(), "0.3.0-rc.7", ""); c.Target != nil {
+		t.Fatalf("an older build by its signing time was taken: %+v", c.Target)
+	}
+
+	store := &Store{DB: sqliteDB(t)}
+	ctx := context.Background()
+	seed(t, store, rel("0.3.1"))
+	m := Manifest{V: 1, Version: "0.3.1", Tag: "v0.3.1", Published: ts("2026-10-24T17:56:46Z"),
+		SignedAt: ts("2000-01-01T00:00:00Z")} // a release.json naming a time is overridden
+	if err := store.SetVerified(ctx, "0.3.1", Verified{Manifest: m, ChecksumsSHA256: "c",
+		SignedAt: ts("2026-10-24T17:57:06Z")}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Get(ctx, "0.3.1")
+	if err != nil || got.Manifest == nil || !got.Manifest.SignedAt.Equal(ts("2026-10-24T17:57:06Z")) ||
+		!got.signedTime().Equal(ts("2026-10-24T17:57:06Z")) {
+		t.Fatalf("the verified signing time: %+v %v", got.Manifest, err)
+	}
 }

@@ -2,6 +2,7 @@ package updater
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,7 +69,11 @@ func (s Source) verify(ctx context.Context, j *Journal) (*releaseverify.Result, 
 		if !ok {
 			return nil, Fail("release_incomplete", "%s has no %s", j.Job.Tag, name)
 		}
-		return get(ctx, u, 4<<20)
+		b, err := get(ctx, u, 4<<20)
+		if err != nil {
+			return nil, Fail("download_failed", "%s: %v", name, err)
+		}
+		return b, nil
 	}
 	if in.Checksums, err = small(releaseverify.ChecksumsFile); err != nil {
 		return nil, err
@@ -109,9 +114,24 @@ func checkRoom(dir string, need uint64) error {
 	return nil
 }
 
-// verifyFailure maps a releaseverify error to the run's failure code (the Updates page
-// names the check that failed).
+// verifyFailure maps a release check's error to the run's failure code (the Updates page
+// names the check that failed). Only releaseverify's own failures are verify_* (a release
+// that is not what it says: the home blocks it); anything else (a download's HTTP error
+// or timeout, a full or unwritable disk while it is fetched) is download_failed, an attempt
+// tried again; an older build than the release installed here (releaseverify.OlderBuild:
+// an rc tagged after its release) is older_build, passed by.
 func verifyFailure(err error) error {
+	var f *Failure
+	if errors.As(err, &f) {
+		return err // classified already
+	}
+	var rv *releaseverify.Error
+	if !errors.As(err, &rv) {
+		return &Failure{Code: "download_failed", Detail: err.Error()}
+	}
+	if isErr(err, releaseverify.ErrOlderBuild) {
+		return &Failure{Code: "older_build", Detail: err.Error()}
+	}
 	code := "verify_failed"
 	for _, c := range []struct {
 		e    error

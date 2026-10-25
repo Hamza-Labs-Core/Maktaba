@@ -25,3 +25,16 @@ func TestErrorPageIsThemedDarkByDefault(t *testing.T) {
 		t.Fatal("a non-browser request gets plain text")
 	}
 }
+
+// A client route gets the app's page; a backend's path and a missing hashed asset (a page an
+// older release left open) get a 404.
+func TestFallsBack(t *testing.T) {
+	for path, want := range map[string]bool{
+		"/library/42": true, "/": true, "/admin/updates": true,
+		"/api/videos": false, "/stream/x.m3u8": false, "/assets/index-abc123.js": false,
+	} {
+		if got := FallsBack(path, "/api/", "/stream/"); got != want {
+			t.Errorf("%s: %v, want %v", path, got, want)
+		}
+	}
+}

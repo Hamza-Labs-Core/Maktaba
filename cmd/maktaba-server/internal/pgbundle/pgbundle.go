@@ -213,11 +213,14 @@ func (b Bundle) serverArgs(lan bool) []string {
 	}
 	// wal_level=logical: a home publishes its database to its machines' copies, and a
 	// machine's copy may become the home (specs/epics/37-node-replica). Room for every
-	// machine's slot and sender, the first copy's tables in parallel on each side.
+	// machine's slot and sender, the first copy's tables in parallel on each side. Its log
+	// lines' times are UTC (log_timezone), as every other line of server.log: the logs page
+	// puts them in one window.
 	args := []string{"-D", b.Data, "-p", strconv.Itoa(b.Port),
 		"-c", "listen_addresses=" + listen, "-c", "unix_socket_directories=" + sock, "-c", "wal_level=logical",
 		"-c", "max_replication_slots=40", "-c", "max_wal_senders=40", "-c", "max_worker_processes=24",
-		"-c", "max_logical_replication_workers=12", "-c", "max_sync_workers_per_subscription=8"}
+		"-c", "max_logical_replication_workers=12", "-c", "max_sync_workers_per_subscription=8",
+		"-c", "log_timezone=UTC"}
 	if b.TLS && b.TLSReady() {
 		args = append(args, "-c", "ssl=on", "-c", "ssl_cert_file="+b.serverCert(), "-c", "ssl_key_file="+b.serverKey())
 	}
@@ -366,7 +369,7 @@ func (b Bundle) initdb(ctx context.Context, superPW string, log io.Writer) error
 	fmt.Fprintf(log, "[postgres] creating the database cluster in %s\n", b.Data)
 	cmd := exec.CommandContext(ctx, b.Bin("initdb"), "-D", tmp, "-U", SuperUser, "--pwfile="+pwfile.Name(),
 		"--auth=scram-sha-256", "--encoding=UTF8", "--locale=C")
-	cmd.Stdout, cmd.Stderr = log, log
+	cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)
 	if err := cmd.Run(); err != nil {
 		_ = os.RemoveAll(tmp)
 		return fmt.Errorf("bundled postgres: initdb %s: %w", b.Data, err)
@@ -407,7 +410,7 @@ func (b Bundle) bootstrap(ctx context.Context, superPW, sql string, log io.Write
 			"-U", SuperUser, "-d", "postgres")
 		psql.Env = append(os.Environ(), "PGPASSWORD="+superPW)
 		psql.Stdin = strings.NewReader(sql)
-		psql.Stdout, psql.Stderr = log, log
+		psql.Stdout, psql.Stderr = childLog(log), childLog(log)
 		return psql.Run()
 	})
 }
@@ -419,7 +422,7 @@ func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) 
 	if err != nil {
 		return err
 	}
-	srv.Stdout, srv.Stderr = log, log
+	srv.Stdout, srv.Stderr = childLog(log), childLog(log)
 	if err := srv.Start(); err != nil {
 		return err
 	}

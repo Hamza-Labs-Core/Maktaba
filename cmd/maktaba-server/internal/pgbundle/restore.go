@@ -100,7 +100,7 @@ func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts Re
 		"-U", SuperUser, "-d", AppDatabase, "--no-owner", "--role="+AppRole, "--exit-on-error",
 		"-j", strconv.Itoa(jobs), "-L", list, dump)
 	cmd.Env = append(os.Environ(), "PGPASSWORD="+q.pw)
-	cmd.Stdout, cmd.Stderr = log, log
+	cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("pg_restore %s: %w", dump, err)
 	}

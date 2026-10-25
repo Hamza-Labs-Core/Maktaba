@@ -115,7 +115,13 @@ func (p *PGRoles) Create(ctx context.Context, role, password string) error {
 	if err := p.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, role).Scan(&exists); err != nil {
 		return err
 	}
-	id, pw, group := pq.QuoteIdentifier(role), pq.QuoteLiteral(password), pq.QuoteIdentifier(WorkerGroup)
+	// its SCRAM verifier, never the password itself: a DDL log or pg_stat_activity shows
+	// no secret
+	verifier, err := ScramVerifier(password)
+	if err != nil {
+		return err
+	}
+	id, pw, group := pq.QuoteIdentifier(role), pq.QuoteLiteral(verifier), pq.QuoteIdentifier(WorkerGroup)
 	if !exists {
 		_, err := p.DB.ExecContext(ctx, `CREATE ROLE `+id+` LOGIN PASSWORD `+pw+` IN ROLE `+group)
 		return err
@@ -123,7 +129,7 @@ func (p *PGRoles) Create(ctx context.Context, role, password string) error {
 	if _, err := p.DB.ExecContext(ctx, `ALTER ROLE `+id+` LOGIN PASSWORD `+pw); err != nil {
 		return err
 	}
-	_, err := p.DB.ExecContext(ctx, `GRANT `+group+` TO `+id)
+	_, err = p.DB.ExecContext(ctx, `GRANT `+group+` TO `+id)
 	return err
 }
 
@@ -136,8 +142,12 @@ func (p *PGRoles) Disable(ctx context.Context, role string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	verifier, err := ScramVerifier(pw)
+	if err != nil {
+		return 0, err
+	}
 	if _, err := p.DB.ExecContext(ctx,
-		`ALTER ROLE `+pq.QuoteIdentifier(role)+` NOLOGIN PASSWORD `+pq.QuoteLiteral(pw)); err != nil {
+		`ALTER ROLE `+pq.QuoteIdentifier(role)+` NOLOGIN PASSWORD `+pq.QuoteLiteral(verifier)); err != nil {
 		return 0, err
 	}
 	// its copy of this database stops following too (specs/epics/37-node-replica)
@@ -174,4 +184,23 @@ func (p *PGRoles) Drop(ctx context.Context, role string) error {
 	p.endCopy(ctx, role, true)
 	_, err := p.DB.ExecContext(ctx, `DROP ROLE IF EXISTS `+pq.QuoteIdentifier(role))
 	return err
+}
+
+// Usable reports whether role exists and may log in on this database's cluster now.
+func (p *PGRoles) Usable(ctx context.Context, role string) (bool, error) {
+	var can sql.NullBool
+	err := p.DB.QueryRowContext(ctx, `SELECT rolcanlogin FROM pg_roles WHERE rolname = $1`, role).Scan(&can)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return can.Valid && can.Bool, err
+}
+
+// ServerPort is the port the database says it listens on (0 over a Unix socket).
+func (p *PGRoles) ServerPort(ctx context.Context) (int, error) {
+	var port sql.NullInt64
+	if err := p.DB.QueryRowContext(ctx, `SELECT inet_server_port()`).Scan(&port); err != nil {
+		return 0, err
+	}
+	return int(port.Int64), nil
 }

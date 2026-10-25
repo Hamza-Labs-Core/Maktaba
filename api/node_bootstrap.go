@@ -34,6 +34,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homeproxy"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodeauth"
@@ -53,6 +54,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 )
 
@@ -468,9 +470,38 @@ func publicCopy(raw []byte) json.RawMessage {
 // copyStatusFile is the supervisor's status of this machine's copy (nodecopy.StatusFile).
 const copyStatusFile = "copy.json"
 
+// homeAutoUpdates is whether this home installs releases by itself (rules.updates
+// auto_install as this build applies it, off with MAKTABA_UPDATE_DISABLE), read at most
+// every 30 s (/api/cluster/self is asked often).
+func homeAutoUpdates(db *sql.DB) func(context.Context) bool {
+	var mu sync.Mutex
+	var at time.Time
+	var on bool
+	return func(ctx context.Context) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		if time.Since(at) < 30*time.Second {
+			return on
+		}
+		if v := os.Getenv("MAKTABA_UPDATE_DISABLE"); v == "1" || strings.EqualFold(v, "true") {
+			on, at = false, time.Now()
+			return on
+		}
+		p, err := updates.LoadPolicy(ctx, db, version.Channel(), os.Getenv)
+		if err != nil {
+			return on // the last word until the database answers
+		}
+		on, at = p.EffectiveAutoInstall(), time.Now()
+		return on
+	}
+}
+
 // homeSelf is the home's GET /api/cluster/self: its identity, web address and the
-// machines' addresses (the apps learn the cluster from any machine, story 35.11 EC2).
-func homeSelf(store cluster.Store, webURL string, term func(context.Context) int64) clusterauth.SelfFunc {
+// machines' addresses (the apps learn the cluster from any machine, story 35.11 EC2), and
+// whether it installs releases by itself (autoUpdates; MountSelf says it to this machine
+// only).
+func homeSelf(store cluster.Store, webURL string, term func(context.Context) int64,
+	offDB func() []agent.OffDatabase, autoUpdates func(context.Context) bool) clusterauth.SelfFunc {
 	return func(ctx context.Context) clusterauth.SelfInfo {
 		info := clusterauth.SelfInfo{Role: "home", Version: version.Version, SchemaRev: schemaguard.SchemaRev,
 			WebURL: webURL, SSO: true}
@@ -479,6 +510,10 @@ func homeSelf(store cluster.Store, webURL string, term func(context.Context) int
 		}
 		cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
+		if autoUpdates != nil {
+			on := autoUpdates(cctx)
+			info.UpdatesAuto = &on
+		}
 		if term != nil {
 			info.Term = term(cctx)
 		}
@@ -496,6 +531,16 @@ func homeSelf(store cluster.Store, webURL string, term func(context.Context) int
 					row.WebURL = *n.WebURL
 				}
 				info.Machines = append(info.Machines, row)
+			}
+		}
+		if offDB != nil {
+			names := map[string]string{}
+			for _, m := range info.Machines {
+				names[m.ID] = m.Name
+			}
+			for _, o := range offDB() {
+				info.MachinesDB = append(info.MachinesDB, clusterauth.SelfMachineDB{ID: o.NodeID, Name: names[o.NodeID],
+					Code: o.Code, Healing: o.Healing})
 			}
 		}
 		return info
@@ -696,11 +741,18 @@ func warnUnclassified(r chi.Router, logger *slog.Logger) {
 // mountHomeClusterAuth mounts the home's delegation and cluster sign-in endpoints and
 // its /api/cluster/self (stories 35.9, 35.11), and runs its side of the machines'
 // copies of its database (Epic 37).
-func mountHomeClusterAuth(r chi.Router, db *sql.DB, logger *slog.Logger) {
+func mountHomeClusterAuth(r chi.Router, db *sql.DB, hubRef *router.HubRef, logger *slog.Logger) {
 	webURL := os.Getenv("MAKTABA_WEB_URL")
 	router.MountClusterAuth(r, router.ClusterAuthDeps{DB: db, WebURL: webURL, Logger: logger})
+	offDB := func() []agent.OffDatabase {
+		if h := hubRef.Get(); h != nil {
+			return h.MachinesOffDatabase()
+		}
+		return nil
+	}
 	router.MountNodeLocal(r, router.NodeLocalDeps{Self: homeSelf(&cluster.PGStore{DB: db}, webURL,
-		func(ctx context.Context) int64 { return switchover.TermOf(ctx, db) }), Moved: switchover.MovedHandler(db)})
+		func(ctx context.Context) int64 { return switchover.TermOf(ctx, db) }, offDB, homeAutoUpdates(db)),
+		Moved: switchover.MovedHandler(db)})
 	// the machines' copies of this database (Epic 37): the beat, the CA, the cap, the
 	// slots guarded; on a database that is not Maktaba's own Postgres, none without the rule
 	// (read at each beat, its errors told apart: a rule not read ends no copy)

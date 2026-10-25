@@ -3,6 +3,7 @@ package webui
 import (
 	"html"
 	"net/http"
+	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
 )
@@ -47,4 +48,22 @@ func retryFor(status int) int {
 		return 10
 	}
 	return 0
+}
+
+// FallsBack reports whether a path that is not a file of the app gets the app's page
+// (its client-side routes, /library/42) rather than a 404: not a path of a backend
+// (apiPrefixes), and not one of the app's hashed assets (/assets/…). A page an older
+// release left open asks for its own assets, which a new release no longer has: a 404
+// lets it reload (src/lib/pwa.ts) where the app's page in place of a script would leave
+// it blank.
+func FallsBack(path string, apiPrefixes ...string) bool {
+	if strings.HasPrefix(path, assetsPrefix) {
+		return false
+	}
+	for _, p := range apiPrefixes {
+		if strings.HasPrefix(path, p) {
+			return false
+		}
+	}
+	return true
 }

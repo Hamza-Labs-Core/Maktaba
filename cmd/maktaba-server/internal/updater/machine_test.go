@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"sync"
@@ -195,6 +196,24 @@ func (r fakeRecords) Migrated(string) bool {
 type fakeRehearser struct {
 	err error
 	n   int
+	// pruned are the backups_keep a commit pruned the dumps to (BackupPruner)
+	mu     sync.Mutex
+	pruned []int
+	// dumps are the update dumps it finds, by "from>to" (BackupFinder)
+	dumps map[string]*Backup
+}
+
+func (r *fakeRehearser) UpdateDump(from, to string) *Backup {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.dumps[from+">"+to]
+}
+
+func (r *fakeRehearser) PruneBackups(keep int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pruned = append(r.pruned, keep)
+	return nil
 }
 
 func (r *fakeRehearser) Rehearse(context.Context, string, string, int, io.Writer) (Rehearsal, error) {
@@ -274,7 +293,9 @@ func startRig(t *testing.T, dir string, w *world, health Verdict) *rig {
 	r.inst = &fakeInst{w: w, running: running, died: make(chan struct{})}
 	r.health = &fakeHealth{v: health}
 	c := &clock{t: time.Date(2026, 10, 22, 3, 0, 0, 0, time.UTC)}
-	r.m = &Machine{Dir: dir, Installer: r.inst, Health: r.health, Records: fakeRecords{w}, Rehearser: &fakeRehearser{},
+	// the dump a home's 1.5.0 start took before its migrations
+	dumps := map[string]*Backup{"1.4.0>1.5.0": {Path: filepath.Join(dir, "backups", "pre-1.4.0-to-1.5.0.dump"), Bytes: 4096}}
+	r.m = &Machine{Dir: dir, Installer: r.inst, Health: r.health, Records: fakeRecords{w}, Rehearser: &fakeRehearser{dumps: dumps},
 		Now: c.now, CheckEvery: time.Millisecond, Exit: func(code int) {
 			w.mu.Lock()
 			w.exits = append(w.exits, code)

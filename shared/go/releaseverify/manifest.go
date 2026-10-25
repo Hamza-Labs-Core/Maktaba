@@ -44,6 +44,20 @@ type Manifest struct {
 	// before): what a home's update rehearses on a scratch copy and what a plain
 	// server install migrates with.
 	Migrations *Migrations `json:"migrations,omitempty"`
+	// AppPostgresMajor is each app payload's bundled PostgreSQL major, by payload
+	// ("mac-app", "win-app", "linux-app"; absent before): signed with the rest, so a
+	// machine refuses a release whose Postgres would not open its database before it
+	// asks the app to install it.
+	AppPostgresMajor map[string]int `json:"app_postgres_major,omitempty"`
+}
+
+// PostgresMajor is the PostgreSQL major an app payload bundles (0: the release does
+// not say).
+func (m *Manifest) PostgresMajor(payload string) int {
+	if m == nil {
+		return 0
+	}
+	return m.AppPostgresMajor[payload]
 }
 
 // Migrations is one .tar.gz of the release's shared/db/migrations/*.sql files.

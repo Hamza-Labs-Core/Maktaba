@@ -10,6 +10,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appruntime"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/selfupdate"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
@@ -86,6 +87,16 @@ func runRuntimeUpdate(ctx context.Context, out io.Writer, d runtimeDeps, src rel
 		return fmt.Errorf("refusing %s: %w", rel.Tag, err)
 	}
 	fmt.Fprintf(out, "Verified %s: signed by %s at %s.\n", rel.Tag, res.Identity, res.SignedAt.Format("2006-01-02 15:04:05Z"))
+	// the one "never go back" rule, against the release this runtime recorded last
+	if err := updater.CheckNotBack(d.rt.Root, st.Version, res); err != nil {
+		var f *updater.Failure
+		if errors.As(err, &f) && f.Code == "older_build" {
+			fmt.Fprintf(out, "You are up to date: %s is newer in version but an older build than %s (signed before it).\n",
+				rel.Tag, st.Version)
+			return nil
+		}
+		return fmt.Errorf("refusing %s: %w", rel.Tag, err)
+	}
 	if check {
 		fmt.Fprintln(out, "(--check) not installing. Re-run without --check to upgrade.")
 		return nil
@@ -107,6 +118,7 @@ func runRuntimeUpdate(ctx context.Context, out io.Writer, d runtimeDeps, src rel
 		return err
 	}
 	if r.First {
+		_ = updater.KeepSigned(d.rt.Root, res)
 		fmt.Fprintf(out, "current = %s.\n", filepath.Base(r.Dir))
 		return nil
 	}
@@ -114,6 +126,7 @@ func runRuntimeUpdate(ctx context.Context, out io.Writer, d runtimeDeps, src rel
 	if err != nil {
 		return err
 	}
+	_ = updater.KeepSigned(d.rt.Root, res)
 	pruned, err := d.rt.Prune(ctx, 2)
 	if err != nil {
 		return err

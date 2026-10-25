@@ -67,6 +67,39 @@ type RepoFacts struct {
 	AgentProtocol      int
 	LauncherProtocol   int
 	Python             string
+	// AppPostgresMajor is each app payload's bundled PostgreSQL major, from its pins
+	// (tools/release/<payload>/pins.env POSTGRES_VERSION); a payload without pins is left out.
+	AppPostgresMajor map[string]int
+}
+
+// AppPayloads are the app payloads whose pins name their bundled PostgreSQL.
+var AppPayloads = []string{"mac-app", "win-app", "linux-app"}
+
+// pgVersionRe is a pins.env's POSTGRES_VERSION line.
+var pgVersionRe = regexp.MustCompile(`(?m)^POSTGRES_VERSION=(\d+)(?:\.\d+)*\s*$`)
+
+// appPostgresMajors reads each app payload's bundled PostgreSQL major from its pins.
+func appPostgresMajors(repo string) (map[string]int, error) {
+	out := map[string]int{}
+	for _, p := range AppPayloads {
+		b, err := os.ReadFile(filepath.Join(repo, "tools", "release", p, "pins.env"))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		m := pgVersionRe.FindSubmatch(b)
+		if m == nil {
+			return nil, fmt.Errorf("tools/release/%s/pins.env names no POSTGRES_VERSION", p)
+		}
+		n, _ := strconv.Atoi(string(m[1]))
+		out[p] = n
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 var (
@@ -139,6 +172,9 @@ func ReadRepo(repo string, previousRev int) (RepoFacts, error) {
 		return f, fmt.Errorf("%s: want MAJOR.MINOR", PythonVersion)
 	}
 	f.Python = parts[0] + "." + parts[1]
+	if f.AppPostgresMajor, err = appPostgresMajors(repo); err != nil {
+		return f, err
+	}
 	return f, nil
 }
 
@@ -227,7 +263,7 @@ func Build(o Options) (*rv.Manifest, error) {
 		Published: published.UTC().Truncate(time.Second), SchemaRev: facts.SchemaRev, MinNodeSchema: facts.MinNodeSchema,
 		BreaksPreviousHome: facts.BreaksPreviousHome, MinUpgradeFrom: minUp,
 		EdgeProtocol: facts.EdgeProtocol, LauncherProtocol: launcher, AgentProtocol: facts.AgentProtocol,
-		Assets: map[string]rv.Asset{},
+		Assets: map[string]rv.Asset{}, AppPostgresMajor: facts.AppPostgresMajor,
 	}
 	entries, err := os.ReadDir(o.Dist)
 	if err != nil {
@@ -339,6 +375,11 @@ func Check(m *rv.Manifest, repo string, previousRev int) error {
 	}
 	if m.LauncherProtocol != facts.LauncherProtocol {
 		errs = append(errs, fmt.Sprintf("launcher_protocol %d, %s says %d", m.LauncherProtocol, LauncherGo, facts.LauncherProtocol))
+	}
+	for p, n := range m.AppPostgresMajor {
+		if facts.AppPostgresMajor[p] != n {
+			errs = append(errs, fmt.Sprintf("app_postgres_major %s %d, tools/release/%s/pins.env says %d", p, n, p, facts.AppPostgresMajor[p]))
+		}
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("release.json disagrees with the repository: %s", strings.Join(errs, "; "))

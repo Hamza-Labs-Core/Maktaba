@@ -327,6 +327,7 @@ func runServe() error {
 	// reuses the dedicated stats pool for the connection/job sections so
 	// it never contends with handler traffic. Peer log URLs let the
 	// bundle proxy the streaming + pipeline ring buffers.
+	hubRef := &router.HubRef{} // Epic 35: the update driver's cluster channel (and a machine's log files)
 	router.MountLogs(r, router.LogsDeps{
 		DB:                 statsDB,
 		DataDir:            statsDataDir,
@@ -335,6 +336,9 @@ func runServe() error {
 		AggregatorServices: buildAggregatorServices(),
 		StatsDB:            statsDB,
 		Peers:              buildLogPeers(),
+		// this machine's server.log, app.log and launcher.log from its supervisor, and a
+		// machine's over the machine channel: where an update's story is
+		Files: router.LogFiles(os.Getenv("MAKTABA_SUPERVISOR_URL"), os.Getenv("MAKTABA_SUPERVISOR_TOKEN_FILE"), hubRef, nil),
 	})
 	logger.Info("logs: diagnostics export surface mounted", "event", "logs_mounted")
 
@@ -355,7 +359,6 @@ func runServe() error {
 	// A full node checks nothing itself: the home updates the cluster (these routes
 	// are home class there, proxied).
 	updatesRef := &router.UpdatesRef{} // Epic 35: filled once the app database is open
-	hubRef := &router.HubRef{}         // Epic 35: the update driver's cluster channel
 	var updater *system.Updater
 	if !nodeCfg.Enabled {
 		updater = buildUpdater(logger)
@@ -603,7 +606,7 @@ func runServe() error {
 			nodeVerifier = verifier
 			// Epic 35 stories 35.9, 35.11: the nodes' delegation and cluster sign-in,
 			// and this machine's /api/cluster/self
-			mountHomeClusterAuth(r, appDB, logger)
+			mountHomeClusterAuth(r, appDB, hubRef, logger)
 
 			// Story 15.6 pairing reaper. Mirrors the idempotency sweeper
 			// (go idemSweep()): a boot goroutine expires stale tickets and

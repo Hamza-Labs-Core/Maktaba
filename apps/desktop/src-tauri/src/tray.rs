@@ -9,8 +9,9 @@
 // `media-pause` and `preferences` are also forwarded to the web shell
 // (web/src/lib/desktop.ts KNOWN_MENU_IDS). The words are the system's UI
 // language's, English or Arabic (lang.rs).
+use crate::attempts::{self, Attempt};
 use crate::autoinstall::Shown;
-use crate::lang::{fill, Lang};
+use crate::lang::{fill, update_reason, Lang};
 use crate::status::{ServerStatus, NO_ANSWER};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,6 +129,44 @@ pub fn badge_color(status: &ServerStatus, update_ready: bool) -> Option<[u8; 3]>
     }
 }
 
+/// The badge of an app that runs no server (Windows and Linux): violet while its own feed
+/// offers an update, else none (it has no server status to show).
+pub fn client_badge(update_ready: bool) -> Option<[u8; 3]> {
+    update_ready.then_some(BADGE_UPDATE)
+}
+
+/// The entries with item `id`'s label (and whether it can be clicked) replaced: the update
+/// item while its download runs, or the portable app's. Entries without it stay as they are.
+pub fn with_label(mut entries: Vec<Entry>, id: &str, label: &str, clickable: bool) -> Vec<Entry> {
+    for e in &mut entries {
+        if let Entry::Item {
+            id: this,
+            label: l,
+            enabled,
+        } = e
+        {
+            if *this == id {
+                *l = label.to_string();
+                *enabled = clickable;
+            }
+        }
+    }
+    entries
+}
+
+/// The update item while `version` downloads: the share of `total` when it is known, else
+/// the megabytes so far.
+pub fn download_label(lang: Lang, version: &str, got: u64, total: Option<u64>) -> String {
+    let progress = match total.filter(|t| *t > 0) {
+        Some(t) => format!("{}%", (got.saturating_mul(100) / t).min(100)),
+        None => format!("{} MB", got / (1 << 20)),
+    };
+    fill(
+        lang.words().update_downloading,
+        &[("version", version), ("progress", &progress)],
+    )
+}
+
 /// The icon (RGBA, `width` × `height`) with a round badge of `color` in its
 /// bottom-right corner, ringed in white so it reads on a dark or light
 /// taskbar, its edge anti-aliased. Drawn at run time: no icon file per state.
@@ -168,7 +207,7 @@ pub fn action_failed(lang: Lang, id: &str) -> &'static str {
         "server-pause" => w.pause_failed,
         "server-resume" => w.resume_failed,
         "stop-and-quit" => w.stop_failed,
-        "open-logs" => w.logs_failed,
+        "open-logs" | "update-logs" | "update-log-folder" => w.logs_failed,
         "change-server" => w.setup_failed,
         _ => w.action_failed,
     }
@@ -230,6 +269,11 @@ pub fn entries_with_order(
             None => {}
         }
         out.push(Entry::Separator);
+    } else if update_ready {
+        // an app that runs no server updates from its own feed (the Intel Mac app, an app
+        // connected to another Maktaba, the Windows portable: owner decision D1)
+        out.push(item("update", w.update_ready));
+        out.push(Entry::Separator);
     }
     out.push(item("show", w.open));
     if !server {
@@ -285,6 +329,68 @@ pub fn order_notice(lang: Lang, version: &str, home: bool) -> String {
         w.order_ready_node
     };
     fill(line, &[("version", version)])
+}
+
+/// The menu's line about the last update attempt when it failed (update-attempts.md: until
+/// the next attempt): "Update to <v> failed: <reason>". None when it did not fail, or when
+/// this app (`own`) reached its release another way since (a newer release, or that one
+/// installed by hand); a failure at the relaunch on the release the app runs stays: the app
+/// came back on it, its server did not.
+pub fn failed_line(lang: Lang, last: Option<&Attempt>, own: &str) -> Option<String> {
+    let a = last.filter(|a| a.outcome == attempts::FAILED)?;
+    let reached = !a.to.is_empty() && attempts::at_least(own, &a.to);
+    let its_server = a.step == attempts::STEP_RELAUNCH && attempts::at_least(&a.to, own);
+    if reached && !its_server {
+        return None;
+    }
+    let version = if a.to.is_empty() { "?" } else { a.to.as_str() };
+    Some(fill(
+        lang.words().update_failed_line,
+        &[
+            ("version", version),
+            ("reason", update_reason(lang, &a.code)),
+        ],
+    ))
+}
+
+/// The OS notification's text for an update to `version` that failed with `code`.
+pub fn failed_notice(lang: Lang, version: &str, code: &str) -> String {
+    let version = if version.is_empty() { "?" } else { version };
+    fill(
+        lang.words().update_failed_notice,
+        &[("version", version), ("reason", update_reason(lang, code))],
+    )
+}
+
+/// The menu with the failed update's line (failed_line) under the status line (on top in
+/// client mode, which has none), and under it the way to its details: "See the logs" (the
+/// web logs page of this machine's server at the attempt's time; `see_logs`: there is a
+/// server here to show them) and "Open the log folder" (app.log and server.log).
+pub fn with_failed_update(
+    mut entries: Vec<Entry>,
+    line: Option<String>,
+    lang: Lang,
+    see_logs: bool,
+) -> Vec<Entry> {
+    let Some(label) = line else {
+        return entries;
+    };
+    let w = lang.words();
+    let at = usize::from(matches!(
+        entries.first(),
+        Some(Entry::Item { id: "status", .. })
+    ));
+    let mut add = vec![Entry::Item {
+        id: "update-failed",
+        label,
+        enabled: false,
+    }];
+    if see_logs {
+        add.push(item("update-logs", w.see_logs));
+    }
+    add.push(item("update-log-folder", w.open_log_folder));
+    entries.splice(at..at, add);
+    entries
 }
 
 /// The window menu's Server submenu (Linux without a tray, Epic 39 story
@@ -354,6 +460,76 @@ pub fn window_enabled(entries: &[Entry], id: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_failed_update_says_why_under_the_status_until_the_next_attempt() {
+        let failed = Attempt {
+            to: "0.3.0".into(),
+            outcome: attempts::FAILED.into(),
+            code: attempts::NEEDS_ADMIN.into(),
+            ..Attempt::default()
+        };
+        let line = failed_line(Lang::En, Some(&failed), "0.3.0-rc.5");
+        assert_eq!(
+            line.as_deref(),
+            Some("Update to 0.3.0 failed: replacing the app needs an administrator's password")
+        );
+        let server = entries(Lang::En, true, &ServerStatus::Running, false);
+        let with = with_failed_update(server.clone(), line.clone(), Lang::En, true);
+        assert_eq!(
+            ids(&with)[..4],
+            [
+                "status",
+                "update-failed",
+                "update-logs",
+                "update-log-folder"
+            ]
+        );
+        assert!(!window_enabled(&with, "update-failed"));
+        assert!(window_enabled(&with, "update-logs") && window_enabled(&with, "update-log-folder"));
+        let labels: Vec<&str> = with
+            .iter()
+            .filter_map(|e| match e {
+                Entry::Item {
+                    id: "update-logs" | "update-log-folder",
+                    label,
+                    ..
+                } => Some(label.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(labels, ["See the logs", "Open the log folder"]);
+        // client mode: no server here to show the logs page, the folder still
+        let client = entries(Lang::Ar, false, &ServerStatus::SetupNeeded, false);
+        let with = with_failed_update(client, line.clone(), Lang::Ar, false);
+        assert_eq!(ids(&with)[..2], ["update-failed", "update-log-folder"]);
+        assert!(!ids(&with).contains(&"update-logs"));
+        // the next attempt (running, or installed) takes the line and its items away
+        let mut next = failed.clone();
+        next.outcome = attempts::RUNNING.into();
+        assert_eq!(failed_line(Lang::En, Some(&next), "0.3.0-rc.5"), None);
+        // reached another way since (a newer app, or the release installed by hand): gone;
+        // the app on the release while its server did not come back: it stays
+        assert_eq!(failed_line(Lang::En, Some(&failed), "0.3.1"), None);
+        assert_eq!(failed_line(Lang::En, Some(&failed), "0.3.0"), None);
+        let mut server_down = failed.clone();
+        server_down.step = attempts::STEP_RELAUNCH.into();
+        server_down.code = attempts::LOGIN_ITEM_UNSIGNED.into();
+        assert!(failed_line(Lang::En, Some(&server_down), "0.3.0").is_some());
+        assert_eq!(failed_line(Lang::En, Some(&server_down), "0.3.1"), None);
+        let none = with_failed_update(server.clone(), None, Lang::En, true);
+        assert_eq!(none, server);
+        assert!(!ids(&none).iter().any(|id| id.starts_with("update-")));
+        assert_eq!(
+            action_failed(Lang::En, "update-logs"),
+            Lang::En.words().logs_failed
+        );
+        assert!(failed_notice(Lang::Ar, "0.3.0", attempts::DISK_FULL).contains("0.3.0"));
+        assert_eq!(
+            failed_notice(Lang::En, "", attempts::NO_NETWORK),
+            "Maktaba could not update to ?: this machine could not reach the internet"
+        );
+    }
+
     fn ids(e: &[Entry]) -> Vec<&'static str> {
         e.iter()
             .filter_map(|x| match x {
@@ -365,7 +541,7 @@ mod tests {
 
     #[test]
     fn client_mode_has_no_server_items() {
-        let e = entries(Lang::En, false, &ServerStatus::Stopped, true);
+        let e = entries(Lang::En, false, &ServerStatus::Stopped, false);
         assert_eq!(
             ids(&e),
             [
@@ -376,6 +552,35 @@ mod tests {
                 "tray-settings",
                 "quit"
             ]
+        );
+    }
+
+    /// An app that runs no server shows its own feed's update (the Intel Mac app, an app
+    /// connected to another Maktaba, the Windows portable), with its badge on Windows and
+    /// Linux; the update item's label follows its download, or the portable's words.
+    #[test]
+    fn a_client_shows_its_update() {
+        let e = entries(Lang::En, false, &ServerStatus::SetupNeeded, true);
+        assert_eq!(ids(&e)[..2], ["update", "show"]);
+        assert_eq!(client_badge(true), Some(BADGE_UPDATE));
+        assert_eq!(client_badge(false), None);
+        let e = with_label(e, "update", "Downloading Maktaba 1.5.0: 45%", false);
+        assert!(
+            matches!(&e[0], Entry::Item { label, enabled: false, .. } if label.ends_with("45%"))
+        );
+        assert_eq!(
+            download_label(Lang::En, "1.5.0", 45, Some(100)),
+            "Downloading Maktaba 1.5.0: 45%"
+        );
+        assert_eq!(
+            download_label(Lang::En, "1.5.0", 3 << 20, None),
+            "Downloading Maktaba 1.5.0: 3 MB"
+        );
+        // no update item: nothing changes
+        let plain = entries(Lang::En, false, &ServerStatus::SetupNeeded, false);
+        assert_eq!(
+            ids(&with_label(plain.clone(), "update", "x", true)),
+            ids(&plain)
         );
     }
 

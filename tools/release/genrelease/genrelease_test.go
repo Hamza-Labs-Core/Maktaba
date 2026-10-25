@@ -28,6 +28,12 @@ func TestReadRepoCheckout(t *testing.T) {
 	if f.EdgeProtocol < 1 || f.AgentProtocol < 1 || f.Python == "" {
 		t.Fatalf("facts = %+v", f)
 	}
+	// each app payload's bundled PostgreSQL major, from its pins
+	for _, p := range AppPayloads {
+		if f.AppPostgresMajor[p] < 14 {
+			t.Fatalf("app_postgres_major %s = %d (facts %+v)", p, f.AppPostgresMajor[p], f.AppPostgresMajor)
+		}
+	}
 }
 
 func TestMarkers(t *testing.T) {
@@ -122,6 +128,27 @@ func TestBuildAndCheck(t *testing.T) {
 	m.MinNodeSchema = 7
 	if err := Check(m, repo, 0); err == nil || !strings.Contains(err.Error(), "min_node_schema") {
 		t.Fatalf("Check accepted a wrong min_node_schema: %v", err)
+	}
+	m.MinNodeSchema = 8
+	// the app payloads' PostgreSQL majors come from their pins, and Check holds them to it
+	pins := filepath.Join(repo, "tools", "release", "mac-app")
+	if err := os.MkdirAll(pins, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pins, "pins.env"), []byte("POSTGRES_VERSION=16.15.0\nPOSTGRES_URL=x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m2, err := Build(Options{Tag: "v1.5.0", Commit: strings.Repeat("ab", 20), Dist: dist, Repo: repo,
+		Published: time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m2.PostgresMajor("mac-app") != 16 || m2.PostgresMajor("win-app") != 0 || Check(m2, repo, 0) != nil {
+		t.Fatalf("app_postgres_major = %v", m2.AppPostgresMajor)
+	}
+	m2.AppPostgresMajor["mac-app"] = 17
+	if err := Check(m2, repo, 0); err == nil || !strings.Contains(err.Error(), "app_postgres_major") {
+		t.Fatalf("Check accepted a wrong app_postgres_major: %v", err)
 	}
 }
 

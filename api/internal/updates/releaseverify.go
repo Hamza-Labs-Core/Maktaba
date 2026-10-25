@@ -52,7 +52,8 @@ func (v ReleaseVerifier) VerifyRelease(ctx context.Context, tag string, f Releas
 		Manifest: Manifest{V: m.V, Version: m.Version, Tag: m.Tag, Commit: m.Commit, Channel: m.Channel,
 			Published: m.Published, SchemaRev: m.SchemaRev, MinNodeSchema: m.MinNodeSchema,
 			BreaksPreviousHome: m.BreaksPreviousHome, MinUpgradeFrom: m.MinUpgradeFrom,
-			EdgeProtocol: m.EdgeProtocol, LauncherProtocol: m.LauncherProtocol, AgentProtocol: m.AgentProtocol},
+			EdgeProtocol: m.EdgeProtocol, LauncherProtocol: m.LauncherProtocol, AgentProtocol: m.AgentProtocol,
+			AppPostgresMajor: m.AppPostgresMajor},
 		ChecksumsSHA256: res.ChecksumsSHA256, SignedAt: res.SignedAt, Identity: res.Identity,
 	}, nil
 }
@@ -66,7 +67,7 @@ func kindOf(k error) string {
 		{releaseverify.ErrTlog, KindTlog}, {releaseverify.ErrChecksum, KindChecksum},
 		{releaseverify.ErrManifest, KindManifest}, {releaseverify.ErrNoHashes, KindNoHashes},
 		{releaseverify.ErrReplay, KindReplay}, {releaseverify.ErrDowngrade, KindDowngrade},
-		{releaseverify.ErrRootExpired, KindRootExpired},
+		{releaseverify.ErrRootExpired, KindRootExpired}, {releaseverify.ErrOlderBuild, KindOlderBuild},
 	} {
 		if errors.Is(k, m.err) {
 			return m.kind

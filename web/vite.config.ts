@@ -2,7 +2,9 @@ import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { serviceWorkerBuild, stampServiceWorker } from "./src/lib/swStamp";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -35,11 +37,30 @@ function writeVersionJson(): Plugin {
   };
 }
 
+// stampServiceWorker gives dist/sw.js this build's stamp (src/lib/swStamp.ts): a new
+// release is a new worker, so the browser installs it and offers the reload.
+function stampServiceWorkerPlugin(): Plugin {
+  return {
+    name: "maktaba-stamp-sw",
+    apply: "build",
+    closeBundle() {
+      const dist = path.resolve(__dirname, "dist");
+      const shell = readFileSync(path.join(dist, "index.html"));
+      const build = serviceWorkerBuild(
+        BUILD_VERSION,
+        createHash("sha256").update(shell).digest("hex")
+      );
+      const sw = path.join(dist, "sw.js");
+      writeFileSync(sw, stampServiceWorker(readFileSync(sw, "utf8"), build));
+    },
+  };
+}
+
 export default defineConfig({
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(BUILD_VERSION),
   },
-  plugins: [react(), writeVersionJson()],
+  plugins: [react(), writeVersionJson(), stampServiceWorkerPlugin()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),

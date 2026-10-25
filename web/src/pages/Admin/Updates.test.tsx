@@ -6,10 +6,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { get, post, put } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }));
+const { get, post, put, downloadBlob } = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+  downloadBlob: vi.fn(),
+}));
 vi.mock("../../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../../lib/api")>("../../lib/api");
-  return { ...actual, api: { ...actual.api, get, post, put } };
+  return { ...actual, api: { ...actual.api, get, post, put }, downloadBlob };
 });
 
 import { I18nProvider } from "../../lib/i18n";
@@ -150,6 +155,7 @@ beforeEach(() => {
   get.mockReset();
   post.mockReset();
   put.mockReset();
+  downloadBlob.mockReset();
   localStorage.clear();
 });
 
@@ -524,5 +530,589 @@ describe("Admin Updates", () => {
     expect(stateTone("preparing")).toBe("accent");
     expect(stateTone("needs_person")).toBe("warn");
     expect(stateTone("superseded")).toBe("neutral");
+  });
+});
+
+// update-attempts.md: under each machine, its last update attempt, whoever made it (the
+// desktop app's own updater, a release's first start, a run): what happened, why in the
+// reader's words, the raw detail, and what to do next.
+describe("Admin Updates: the last update attempt", () => {
+  const at = new Date(Date.now() - 5 * 60_000).toISOString();
+
+  /** The overview with these attempts on the home (and, optionally, on studio-pc). */
+  function withAttempts(home: unknown[], node: unknown[] = []) {
+    const ov = overview();
+    const machines = (ov.machines as Record<string, unknown>[]).map((m) =>
+      m.id === "home" ? { ...m, attempts: home } : m.id === "n1" ? { ...m, attempts: node } : m
+    );
+    return { ...ov, machines };
+  }
+
+  function attempt(over: Record<string, unknown> = {}) {
+    return {
+      id: "app-1",
+      at,
+      source: "app",
+      trigger: "badge",
+      from: "1.4.0",
+      to: "1.5.0",
+      outcome: "failed",
+      ...over,
+    };
+  }
+
+  it("an installed attempt reads as done, with when, from, to and who", async () => {
+    routes(withAttempts([attempt({ outcome: "installed", ended_at: at })]), null);
+    renderPage();
+    const block = await screen.findByTestId("updates-machine-home-attempt");
+    expect(block).toHaveTextContent("Last update");
+    expect(screen.getByTestId("updates-machine-home-attempt-headline")).toHaveTextContent(
+      "Updated to 1.5.0"
+    );
+    const meta = screen.getByTestId("updates-machine-home-attempt-meta");
+    expect(meta).toHaveTextContent("5 minutes ago");
+    expect(meta).toHaveTextContent("1.4.0 → 1.5.0");
+    expect(meta).toHaveTextContent("By the desktop app (its update badge)");
+    expect(within(block).queryByRole("button", { name: "Download the logs" })).toBeNull();
+  });
+
+  it("a failed attempt says why, its step, the app's own words, what to do, and offers the logs", async () => {
+    routes(
+      withAttempts([
+        attempt({
+          step: "install",
+          code: "needs_admin",
+          detail: "Permission denied (os error 13)\nwhile replacing /Applications/Maktaba.app",
+          fix: "sudo chown -R $(whoami) /Applications/Maktaba.app",
+        }),
+      ]),
+      null
+    );
+    downloadBlob.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+    const headline = await screen.findByTestId("updates-machine-home-attempt-headline");
+    expect(headline).toHaveTextContent(
+      "The update to 1.5.0 failed: The desktop app cannot be replaced without an administrator's password"
+    );
+    expect(screen.getByTestId("updates-machine-home-attempt-meta")).toHaveTextContent(
+      "Stopped at: Install"
+    );
+    expect(screen.getByTestId("updates-machine-home-attempt-detail")).toHaveTextContent(
+      "Permission denied (os error 13)"
+    );
+    // what to do, in the reader's words; the machine's own text is not offered to copy
+    expect(screen.getByTestId("updates-machine-home-attempt-fix")).toHaveTextContent(
+      "What to do: move Maktaba to a folder this user can change"
+    );
+    expect(screen.queryByDisplayValue(/sudo chown/)).toBeNull();
+    expect(screen.queryByText(/sudo chown/)).toBeNull();
+    // the logs of the attempt's window (the admin bundle, with the log files)
+    await user.click(screen.getByRole("button", { name: "Download the logs" }));
+    await waitFor(() =>
+      expect(downloadBlob).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/api\/admin\/logs\/export\?since=/),
+        "maktaba-diagnostics.tar.gz"
+      )
+    );
+    expect(String(downloadBlob.mock.calls[0]?.[0])).not.toContain("node=");
+  });
+
+  it("a command to copy is the web's own for the reason, never the machine's text", async () => {
+    routes(
+      withAttempts([
+        attempt({ step: "install", code: "quarantined", fix: "rm -rf ~ # not this" }),
+        attempt({ id: "app-0", code: "something_brand_new", fix: "rm -rf ~" }),
+      ]),
+      null
+    );
+    renderPage();
+    const fix = await screen.findByTestId("updates-machine-home-attempt-fix");
+    expect(fix).toHaveTextContent("What to do: run this in Terminal, then open Maktaba again");
+    expect(
+      within(fix).getByDisplayValue("xattr -dr com.apple.quarantine /Applications/Maktaba.app")
+    ).toBeInTheDocument();
+    expect(screen.queryByDisplayValue(/rm -rf/)).toBeNull();
+    expect(screen.queryByText(/rm -rf/)).toBeNull();
+  });
+
+  it("a reason with no words of what to do shows the machine's text as what it said", async () => {
+    routes(
+      withAttempts([attempt({ code: "something_brand_new", fix: "restart the frobnicator" })]),
+      null
+    );
+    renderPage();
+    const said = await screen.findByTestId("updates-machine-home-attempt-machine-fix");
+    expect(said).toHaveTextContent("The machine suggests: restart the frobnicator");
+    expect(screen.queryByDisplayValue("restart the frobnicator")).toBeNull();
+    expect(screen.queryByTestId("updates-machine-home-attempt-fix")).toBeNull();
+  });
+
+  it("a failure the machine got past (it runs that release now) is history, not red", async () => {
+    const ov = withAttempts([attempt({ code: "relaunch_failed", step: "relaunch" })]);
+    ov.machines = (ov.machines as Record<string, unknown>[]).map((m) =>
+      m.id === "home" ? { ...m, version: "1.5.0" } : m
+    );
+    routes(ov, null);
+    renderPage();
+    const block = await screen.findByTestId("updates-machine-home-attempt");
+    expect(block).toHaveTextContent("reached later");
+    expect(screen.getByTestId("updates-machine-home-attempt-superseded")).toHaveTextContent(
+      "This machine runs 1.5.0 now, so this failure no longer holds it back."
+    );
+    expect(screen.getByTestId("updates-machine-home-attempt-headline")).not.toHaveClass(
+      "mkt-error"
+    );
+    expect(within(block).queryByRole("button", { name: "Download the logs" })).toBeNull();
+    expect(screen.queryByTestId("updates-machine-home-attempt-fix")).toBeNull();
+  });
+
+  it("a run that failed before its release ran (at stage) is history once the machine runs it", async () => {
+    const ov = withAttempts([
+      attempt({
+        source: "run",
+        trigger: "run",
+        step: "stage",
+        code: "download_failed",
+        run_id: "run-9",
+      }),
+    ]);
+    ov.machines = (ov.machines as Record<string, unknown>[]).map((m) =>
+      m.id === "home" ? { ...m, version: "1.5.0" } : m
+    );
+    routes(ov, null);
+    renderPage();
+    expect(
+      await screen.findByTestId("updates-machine-home-attempt-superseded")
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("updates-machine-home-attempt-headline")).not.toHaveClass(
+      "mkt-error"
+    );
+  });
+
+  it("a failure at the release it runs, after it ran (the pipeline's environment), still holds", async () => {
+    const ov = withAttempts([
+      attempt({ source: "server", trigger: "start", step: "venv", code: "venv_failed" }),
+    ]);
+    ov.machines = (ov.machines as Record<string, unknown>[]).map((m) =>
+      m.id === "home" ? { ...m, version: "1.5.0" } : m
+    );
+    routes(ov, null);
+    renderPage();
+    const headline = await screen.findByTestId("updates-machine-home-attempt-headline");
+    expect(headline).toHaveClass("mkt-error");
+    expect(screen.queryByTestId("updates-machine-home-attempt-superseded")).toBeNull();
+  });
+
+  it("a desktop app's server halted on the release it could not start says it stays stopped", async () => {
+    const ov = withAttempts([
+      attempt({
+        id: "start-1.5.0",
+        source: "server",
+        trigger: "start",
+        outcome: "put_back",
+        step: "migrate",
+        code: "db_migrate_failed",
+      }),
+    ]);
+    ov.machines = (ov.machines as Record<string, unknown>[]).map((m) =>
+      m.id === "home" ? { ...m, version: "1.5.0" } : m
+    );
+    routes(ov, null);
+    renderPage();
+    const headline = await screen.findByTestId("updates-machine-home-attempt-headline");
+    expect(headline).toHaveTextContent(
+      "1.5.0 failed to start: The library database could not be brought up to date for the new release. Its library database is back as it was before the update, and the server stays stopped: install 1.4.0 again, or an update that fixes this."
+    );
+    expect(headline).not.toHaveTextContent("previous release runs again");
+    expect(headline).toHaveClass("mkt-error");
+  });
+
+  it("a reason that already says the release before runs again is not told twice", async () => {
+    routes(
+      withAttempts([
+        attempt({ source: "server", trigger: "start", outcome: "put_back", code: "start_failed" }),
+      ]),
+      null
+    );
+    renderPage();
+    const headline = await screen.findByTestId("updates-machine-home-attempt-headline");
+    expect(headline.textContent?.match(/runs again/g)).toHaveLength(1);
+  });
+
+  it("the launcher's reasons, a run's states and the start step have words", async () => {
+    routes(
+      withAttempts(
+        [
+          attempt({
+            source: "server",
+            trigger: "start",
+            outcome: "rolled_back",
+            step: "start",
+            code: "launcher_boot_loop",
+          }),
+          attempt({ id: "a2", outcome: "failed", code: "launcher_refused" }),
+          attempt({ id: "a3", outcome: "failed", code: "launcher_pending_timeout" }),
+          attempt({ id: "a4", outcome: "failed", code: "previous_app_not_restored" }),
+          attempt({ id: "a5", source: "server", outcome: "failed", code: "start_interrupted" }),
+        ],
+        [
+          attempt({ id: "run-1", source: "run", code: "failed_prepare", run_id: "run-1" }),
+          attempt({ id: "run-0", source: "run", code: "needs_person", run_id: "run-0" }),
+        ]
+      ),
+      null
+    );
+    renderPage();
+    const headline = await screen.findByTestId("updates-machine-home-attempt-headline");
+    expect(headline).toHaveTextContent(
+      "1.5.0 did not hold: The new release kept stopping as it started"
+    );
+    expect(headline.textContent?.match(/runs again/g)).toHaveLength(1);
+    expect(screen.getByTestId("updates-machine-home-attempt-meta")).toHaveTextContent(
+      "Stopped at: Start the new release"
+    );
+    const earlier = screen.getByTestId("updates-machine-home-attempt-earlier");
+    expect(earlier).toHaveTextContent("The launcher refused the new release");
+    expect(earlier).toHaveTextContent("did not confirm it was running in time");
+    expect(earlier).toHaveTextContent("could not be put back in its folder");
+    expect(earlier).toHaveTextContent("start never finished");
+    expect(screen.getByTestId("updates-machine-n1-attempt-headline")).toHaveTextContent(
+      "The machine could not get the release ready"
+    );
+    expect(screen.getByTestId("updates-machine-n1-attempt-earlier")).toHaveTextContent(
+      "it needs a person"
+    );
+    expect(document.body).not.toHaveTextContent(/launcher_|failed_prepare|needs_person|: start\b/);
+  });
+
+  it("a release that failed to start and was put back says so; the previous release runs", async () => {
+    routes(
+      withAttempts([
+        attempt({
+          id: "start-1.5.0",
+          source: "server",
+          trigger: "start",
+          outcome: "put_back",
+          step: "migrate",
+          code: "db_migrate_failed",
+          detail: 'migrate: ERROR 0150_x.sql: relation "videos" does not exist',
+        }),
+      ]),
+      null
+    );
+    renderPage();
+    expect(await screen.findByTestId("updates-machine-home-attempt-headline")).toHaveTextContent(
+      "1.5.0 failed to start: The library database could not be brought up to date for the new release. The previous release runs again."
+    );
+    const meta = screen.getByTestId("updates-machine-home-attempt-meta");
+    expect(meta).toHaveTextContent("By the server, starting the new release (its first start)");
+    expect(meta).toHaveTextContent("Stopped at: Update the library database");
+  });
+
+  it("a check that failed before the feed named a release says so without a version", async () => {
+    routes(
+      withAttempts([
+        attempt({ from: "", to: "", step: "check", code: "no_network", detail: "dns error" }),
+      ]),
+      null
+    );
+    renderPage();
+    const headline = await screen.findByTestId("updates-machine-home-attempt-headline");
+    expect(headline).toHaveTextContent("The update to a new release failed:");
+    expect(screen.getByTestId("updates-machine-home-attempt-meta")).not.toHaveTextContent("→");
+  });
+
+  it("an attempt under way says where it is", async () => {
+    routes(withAttempts([attempt({ outcome: "running", step: "download" })]), null);
+    renderPage();
+    expect(await screen.findByTestId("updates-machine-home-attempt-headline")).toHaveTextContent(
+      "Updating to 1.5.0"
+    );
+    expect(screen.getByTestId("updates-machine-home-attempt-meta")).toHaveTextContent(
+      "Now: Download"
+    );
+  });
+
+  it("a reason it has no words for reads as its code; none at all says so", async () => {
+    routes(
+      withAttempts([attempt({ code: "something_brand_new" }), attempt({ id: "app-0", code: "" })]),
+      null
+    );
+    renderPage();
+    expect(await screen.findByTestId("updates-machine-home-attempt-headline")).toHaveTextContent(
+      "The update to 1.5.0 failed: something brand new"
+    );
+    const earlier = screen.getByTestId("updates-machine-home-attempt-earlier");
+    expect(earlier).toHaveTextContent("Earlier attempts (1)");
+    expect(earlier).toHaveTextContent("The update to 1.5.0 failed: no reason was recorded");
+  });
+
+  it("a machine's failed run is retried from its attempt", async () => {
+    routes(
+      withAttempts(
+        [],
+        [
+          attempt({
+            id: "run-7",
+            source: "run",
+            trigger: "auto",
+            outcome: "rolled_back",
+            step: "watch",
+            code: "watch_timeout",
+            run_id: "run-7",
+          }),
+        ]
+      ),
+      null
+    );
+    post.mockResolvedValue({});
+    const user = userEvent.setup();
+    renderPage();
+    const block = await screen.findByTestId("updates-machine-n1-attempt");
+    expect(screen.queryByTestId("updates-machine-home-attempt")).toBeNull();
+    expect(screen.getByTestId("updates-machine-n1-attempt-headline")).toHaveTextContent(
+      "1.5.0 did not hold: The new release never settled"
+    );
+    expect(screen.getByTestId("updates-machine-n1-attempt-meta")).toHaveTextContent(
+      "By the cluster's update (the quiet window)"
+    );
+    await user.click(within(block).getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/runs/run-7/targets/n1/retry", {})
+    );
+  });
+
+  it("reads in Arabic", async () => {
+    routes(
+      withAttempts([
+        attempt({ source: "server", trigger: "start", outcome: "put_back", code: "db_ahead" }),
+      ]),
+      null
+    );
+    renderPage("ar");
+    const headline = await screen.findByTestId("updates-machine-home-attempt-headline");
+    expect(headline).toHaveTextContent("فشل بدء 1.5.0");
+    expect(headline).toHaveTextContent("يعمل الإصدار السابق مجدداً");
+    expect(screen.getByTestId("updates-machine-home-attempt")).not.toHaveTextContent(
+      /updates\.|failed to start/
+    );
+  });
+});
+
+// update-attempts.md: a failure links to its logs (a node's own on the Machines page, the
+// home's on the log page) for its time, and a node that cannot reach the home's database
+// says why on its row.
+describe("Admin Updates: logs links and the home's database", () => {
+  const at = "2026-10-24T05:30:00Z";
+  const ended = "2026-10-24T05:31:00Z";
+
+  function machinesWith(home: Record<string, unknown>, node: Record<string, unknown>) {
+    const ov = overview();
+    return {
+      ...ov,
+      machines: (ov.machines as Record<string, unknown>[]).map((m) =>
+        m.id === "home" ? { ...m, ...home } : m.id === "n1" ? { ...m, ...node } : m
+      ),
+    };
+  }
+
+  const failed = {
+    id: "app-1",
+    at,
+    ended_at: ended,
+    source: "app",
+    trigger: "badge",
+    from: "1.4.0",
+    to: "1.5.0",
+    outcome: "failed",
+    code: "no_network",
+  };
+
+  it("links a failure to its logs for its time: the home's log page, a node's own logs", async () => {
+    routes(machinesWith({ attempts: [failed] }, { attempts: [{ ...failed, id: "app-2" }] }), null);
+    renderPage();
+    const home = await screen.findByTestId("updates-machine-home-attempt-logs-link");
+    expect(home).toHaveTextContent("See the logs");
+    expect(home).toHaveAttribute(
+      "href",
+      "/admin/logs?since=2026-10-24T05%3A28%3A00.000Z&until=2026-10-24T05%3A33%3A00.000Z"
+    );
+    // a node's: its own log files on the log page, over its channel
+    expect(screen.getByTestId("updates-machine-n1-attempt-logs-link")).toHaveAttribute(
+      "href",
+      "/admin/logs?node=n1&since=2026-10-24T05%3A28%3A00.000Z&until=2026-10-24T05%3A33%3A00.000Z"
+    );
+    // the reason stays the main thing; the bundle download is still there
+    expect(screen.getByTestId("updates-machine-home-attempt-headline")).toHaveTextContent(
+      "The update to 1.5.0 failed: The update could not be reached"
+    );
+    const downloads = screen.getAllByRole("button", { name: "Download the logs" });
+    expect(downloads).toHaveLength(2);
+    downloadBlob.mockResolvedValue(undefined);
+    await userEvent.setup().click(downloads[1] as HTMLElement);
+    await waitFor(() =>
+      expect(downloadBlob).toHaveBeenCalledWith(
+        "/api/admin/logs/export?since=2026-10-24T05%3A28%3A00.000Z&until=2026-10-24T05%3A33%3A00.000Z&node=n1",
+        "maktaba-diagnostics.tar.gz"
+      )
+    );
+  });
+
+  it("says why a node cannot reach the home's database, the healing, the detail and its logs", async () => {
+    routes(
+      machinesWith(
+        {},
+        {
+          state: "up_to_date",
+          home_db: {
+            ok: false,
+            code: "auth_failed",
+            detail: 'pq: password authentication failed for user "maktaba_node_n1"',
+            at,
+            healing: true,
+          },
+        }
+      ),
+      null
+    );
+    renderPage();
+    const note = await screen.findByTestId("updates-machine-n1-home-db");
+    expect(note).toHaveTextContent(
+      "This machine can't reach the home's database: the home's database refused its password"
+    );
+    expect(note).toHaveTextContent("The home gave it new access; it is following it.");
+    expect(note).toHaveTextContent("password authentication failed");
+    expect(screen.getByTestId("updates-machine-n1-home-db-logs")).toHaveAttribute(
+      "href",
+      "/admin/logs?node=n1&since=2026-10-24T05%3A28%3A00.000Z"
+    );
+    expect(screen.queryByTestId("updates-machine-home-home-db")).toBeNull();
+  });
+
+  it("a node that reaches it, or an unknown reason, reads as such (en + ar)", async () => {
+    routes(machinesWith({}, { home_db: { ok: false, code: "something_new" } }), null);
+    const first = renderPage();
+    expect(await screen.findByTestId("updates-machine-n1-home-db")).toHaveTextContent(
+      "an error the details say"
+    );
+    first.unmount();
+
+    routes(machinesWith({}, { home_db: { ok: false, code: "no_hba" } }), null);
+    renderPage("ar");
+    expect(await screen.findByTestId("updates-machine-n1-home-db")).toHaveTextContent(
+      "لا يستطيع هذا الجهاز الوصول إلى قاعدة بيانات الخادم الرئيسي"
+    );
+  });
+
+  it("shows nothing for a node that reaches the home's database", async () => {
+    routes(machinesWith({}, { home_db: { ok: true, at } }), null);
+    renderPage();
+    await screen.findByTestId("updates-machine-n1");
+    expect(screen.queryByTestId("updates-machine-n1-home-db")).toBeNull();
+  });
+});
+
+// The server audit (H1, H2, M6, L5): why a due release does not start, a blocked release
+// tried again or installed now, a release the TV held for several windows installed now,
+// and the last failed update retried.
+describe("Admin Updates: blocked, stuck and waiting releases", () => {
+  it("says why a due release does not start now", async () => {
+    routes(
+      overview({
+        last_tick: { action: "blocked", reason: "recent_crash", version: "1.5.0", at: finishedAt },
+      }),
+      null
+    );
+    renderPage();
+    expect(await screen.findByTestId("updates-tick")).toHaveTextContent(
+      "Not started now: a part of the home's server crashed in the last ten minutes"
+    );
+  });
+
+  it("a release that waits for a person after its last try says so", async () => {
+    routes(
+      overview({
+        last_tick: { action: "none", reason: "needs_person", version: "1.5.0", at: finishedAt },
+      }),
+      null
+    );
+    renderPage();
+    expect(await screen.findByTestId("updates-tick")).toHaveTextContent("The last try needs you");
+  });
+
+  it("a blocked release is tried again, or installed now", async () => {
+    routes(
+      overview({
+        catalog: [{ ...target, version: "1.4.5", blocked_reason: "rolled_back", attempts: 1 }],
+      }),
+      null
+    );
+    post.mockResolvedValue({ unblocked: true, version: "1.4.5" });
+    const user = userEvent.setup();
+    renderPage();
+    const box = await screen.findByTestId("updates-blocked-1.4.5");
+    expect(box).toHaveTextContent("1.4.5 is blocked: it was rolled back on the home");
+    await user.click(within(box).getByRole("button", { name: "Try it again" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/unblock", { version: "1.4.5" })
+    );
+    post.mockResolvedValue({ run_id: "run-9", version: "1.4.5" });
+    await user.click(within(box).getByRole("button", { name: "Install now" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/run", {
+        version: "1.4.5",
+        confirm: true,
+      })
+    );
+  });
+
+  it("a release the TV held for several windows is offered to install now", async () => {
+    routes(
+      overview({ stuck: { version: "1.5.0", code: "tv_busy", windows: 3, since: finishedAt } }),
+      null
+    );
+    post.mockResolvedValue({ run_id: "run-9", version: "1.5.0" });
+    const user = userEvent.setup();
+    renderPage();
+    const box = await screen.findByTestId("updates-stuck");
+    expect(box).toHaveTextContent("1.5.0 has not installed in 3 windows");
+    await user.click(within(box).getByRole("button", { name: "Install now" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/run", {
+        version: "1.5.0",
+        confirm: true,
+      })
+    );
+  });
+
+  it("the last failed update is tried again now", async () => {
+    const failed = {
+      ...liveRun,
+      id: "run-7",
+      state: "failed",
+      finished_at: finishedAt,
+      error: { code: "local_build" },
+    };
+    routes(overview({ last_run: failed }), null, [failed]);
+    renderPage();
+    const box = await screen.findByTestId("updates-last-failed");
+    expect(box).toHaveTextContent("This app was built locally and can't update itself");
+    expect(within(box).getByRole("button", { name: "Try 1.5.0 again now" })).toBeInTheDocument();
+  });
+
+  it("reads in Arabic", async () => {
+    routes(
+      overview({
+        stuck: { version: "1.5.0", code: "tv_busy", windows: 3, since: finishedAt },
+        catalog: [{ ...target, version: "1.4.5", blocked_reason: "attempts" }],
+        last_tick: { action: "blocked", reason: "run_active", version: "1.5.0", at: finishedAt },
+      }),
+      null
+    );
+    renderPage("ar");
+    expect(await screen.findByTestId("updates-stuck")).toHaveTextContent("ثبّته الآن");
+    expect(screen.getByTestId("updates-blocked-1.4.5")).toHaveTextContent("فشل في ثلاث نوافذ");
+    expect(screen.getByTestId("updates-tick")).toHaveTextContent("يجري تحديث بالفعل");
   });
 });

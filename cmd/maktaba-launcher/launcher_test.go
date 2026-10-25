@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -81,6 +82,12 @@ func fakeServerMain() {
 	if lb, err := os.ReadFile(filepath.Join(rel, "label")); err == nil { // a payload's own name (guard tests)
 		ver = strings.TrimSpace(string(lb))
 	}
+	// a stop asked once the trace says this start ran is caught: the handler is in place
+	// before the line is written (a test may wait for the line, then ask for the stop)
+	sig := make(chan os.Signal, 1)
+	if act != "hang" {
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	}
 	appendLine(filepath.Join(root, "trace"), fmt.Sprintf("%d %s %s", time.Now().UnixMilli(), ver, act))
 	switch {
 	case strings.HasPrefix(act, "exit:"):
@@ -110,8 +117,6 @@ func fakeServerMain() {
 		_ = layout.New(root).Confirm()
 		fallthrough
 	default: // run
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 		stop := os.Getenv(EnvStopFile)
 		for {
 			select {
@@ -179,17 +184,45 @@ func selfBinary(t *testing.T) string {
 }
 
 // mkRelease installs the test binary as bin/releases/<v>/maktaba-server with
-// .verified and a behavior script.
+// .verified and a behavior script. The test's releases are hard links to one copy of
+// it (fake-bin under the root), where the file system allows: one copy per test, which
+// a scanner reads once on Windows, rather than one per release. (A link to the running
+// test binary itself could not be removed there.)
 func mkRelease(t *testing.T, l layout.Layout, v, behavior string) {
 	t.Helper()
 	dir := l.ReleaseDir(v)
-	if err := layout.CopyFile(selfBinary(t), filepath.Join(dir, layout.Exe("maktaba-server"))); err != nil {
+	dst := filepath.Join(dir, layout.Exe("maktaba-server"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
+	}
+	one := filepath.Join(l.Root, "fake-bin", layout.Exe("maktaba-server"))
+	if _, err := os.Stat(one); err != nil {
+		if err := layout.CopyFile(selfBinary(t), one); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Link(one, dst); err != nil {
+		if err := layout.CopyFile(selfBinary(t), dst); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := layout.WriteVerified(dir, "test", v, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	setBehavior(t, l, v, behavior)
+}
+
+// ownCopy makes release v's maktaba-server a copy of its own (the releases are hard links
+// to one copy: a test that changes one release's binary must not change the others').
+func ownCopy(t *testing.T, l layout.Layout, v string) {
+	t.Helper()
+	dst := l.ServerPath(v)
+	if err := os.Remove(dst); err != nil {
+		t.Fatal(err)
+	}
+	if err := layout.CopyFile(selfBinary(t), dst); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func setBehavior(t *testing.T, l layout.Layout, v, behavior string) {
@@ -434,19 +467,37 @@ func TestBootLoopGuardFallsBack(t *testing.T) {
 }
 
 func TestPendingTimeoutFallsBack(t *testing.T) {
-	t.Parallel()
+	// not parallel: it runs alone, before the parallel tests start their processes, so a
+	// loaded machine (a scanner reading every new copy at once on Windows) does not stretch it
 	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "run"}, "1.0.0")
 	if err := l.Switch("2.0.0", "run-1", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	cfg := testConfig(l.Root)
-	cfg.PendingTimeout = 400 * time.Millisecond
-	startLauncher(t, cfg)
-	waitFor(t, "previous started", func() bool { return countAct(readTrace(l), "1.0.0", "run") == 1 })
-	if countAct(readTrace(l), "2.0.0", "stopped") != 1 {
-		t.Fatal("the unconfirmed release was not stopped before the fallback")
+	// the release is held (the orchestrator's deadline far ahead) until it runs, then its
+	// deadline passes: the timeout is a step of the test, not a race with the release's
+	// start on a loaded machine (a stop before its handler was in place left no trace)
+	if ok, err := l.ExtendPending("run-1", time.Now().Add(time.Hour)); !ok || err != nil {
+		t.Fatalf("hold the release: %v %v", ok, err)
 	}
+	cfg := testConfig(l.Root)
+	cfg.PendingTimeout = time.Millisecond
+	startLauncher(t, cfg)
+	waitFor(t, "the release started", func() bool { return countAct(readTrace(l), "2.0.0", "run") == 1 })
+	p, err := l.ReadPending()
+	if err != nil || p == nil {
+		t.Fatalf("pending: %+v %v", p, err)
+	}
+	p.Deadline = time.Now().Add(-time.Second).UTC()
+	b, _ := json.Marshal(p)
+	if err := layout.WriteFileAtomic(filepath.Join(l.Root, layout.PendingFile), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "previous started", func() bool { return countAct(readTrace(l), "1.0.0", "run") == 1 })
+	// the stop's trace line and the event are written by other processes and goroutines:
+	// waited for, not read once (review L3: the order of two writes is no promise)
+	waitFor(t, "the unconfirmed release stopped", func() bool { return countAct(readTrace(l), "2.0.0", "stopped") == 1 })
+	waitFor(t, "the rollback logged", func() bool { return len(events(l, "launcher_rollback")) == 1 })
 	rb := events(l, "launcher_rollback")
 	if len(rb) != 1 || rb[0].Detail["reason"] != "pending_timeout" {
 		t.Fatalf("launcher_rollback = %+v", rb)
@@ -457,17 +508,22 @@ func TestPendingTimeoutFallsBack(t *testing.T) {
 }
 
 func TestConfirmedPendingStays(t *testing.T) {
-	t.Parallel()
+	// not parallel: it runs alone, before the parallel tests start their processes, so a
+	// loaded machine (a scanner reading every new copy at once on Windows) does not stretch it
 	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "crash,confirm-run"}, "1.0.0")
 	if err := l.Switch("2.0.0", "run-1", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	cfg := testConfig(l.Root)
-	cfg.PendingTimeout = 400 * time.Millisecond
-	startLauncher(t, cfg)
+	// the pending timeout is long enough for a crash and a start again on a slow machine
+	// (testConfig's): the release confirms, its pending mark goes, and no timeout can
+	// take it back after that (review L3: a 400 ms timeout raced the second start)
+	startLauncher(t, testConfig(l.Root))
 	waitFor(t, "confirmed", func() bool { return countAct(readTrace(l), "2.0.0", "confirm-run") == 1 })
-	time.Sleep(800 * time.Millisecond) // past the pending timeout
+	waitFor(t, "no longer pending", func() bool {
+		p, err := l.ReadPending()
+		return err == nil && p == nil
+	})
 	if cur, _ := l.Current(); cur != "2.0.0" {
 		t.Fatalf("current = %q", cur)
 	}
@@ -482,6 +538,7 @@ func TestLauncherRefusesTamperedCurrent(t *testing.T) {
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "run"}, "1.0.0")
 	_ = l.Switch("2.0.0", "", time.Now())
 	_ = l.Confirm()
+	ownCopy(t, l, "2.0.0")
 	f, err := os.OpenFile(l.ServerPath("2.0.0"), os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -634,6 +691,7 @@ func TestStatusAndVerifyCLI(t *testing.T) {
 	if code := run([]string{"--verify", l.ReleaseDir("1.0.0")}, &out, &errb); code != 0 {
 		t.Fatal("verify failed on a file .verified does not list")
 	}
+	ownCopy(t, l, "1.0.0")
 	f, _ := os.OpenFile(l.ServerPath("1.0.0"), os.O_APPEND|os.O_WRONLY, 0)
 	_, _ = f.WriteString("changed")
 	_ = f.Close()

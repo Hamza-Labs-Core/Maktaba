@@ -8,6 +8,8 @@ everything. This directory builds it.
 | `payload.sh` | builds `build/mac-app/server` (layout below), signs it when there is an identity, writes the tauri overlay `build/mac-app/tauri.mac-app.conf.json` |
 | `check.sh` | smoke test of the payload and, with `--app`, of the built bundle |
 | `build-app.sh` | payload → `tauri build` → check. `make mac-app` runs it |
+| `tauri-build.sh` | `tauri build`, given the notarization settings only when the app can be notarized (a Developer ID and a complete set); `build-app.sh` and `desktop-release.yml`'s Mac legs build through it |
+| `tauri-build-check.sh` | dry run of `tauri-build.sh`'s settings: the release without the Apple secrets, ad hoc, a Developer ID with and without a complete set |
 | `pins.env` | the third-party downloads: version, URL, SHA-256 |
 | `lib.sh` | the checked download (`fetch`) and the pins check, shared by `payload.sh` and `pins-check.sh` |
 | `pins-check.sh` | dry run, offline: every pin is complete, and `fetch` keeps a matching download, re-fetches a bad cached one and stops on a checksum mismatch (`--online` also asks each URL) |
@@ -84,5 +86,9 @@ tauri then signs the app (seals `Resources/`), notarizes and staples it, and
 secrets: `APPLE_CERTIFICATE` (base64 Developer ID Application .p12), `APPLE_CERTIFICATE_PASSWORD`,
 `APPLE_ID`, `APPLE_PASSWORD` (app-specific), `APPLE_TEAM_ID`, optionally `APPLE_SIGNING_IDENTITY`;
 and for the in-app updater `TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)` with its public key in
-`tauri.conf.json` (`plugins.updater.pubkey`). Without them the release is unsigned and still
-builds.
+`tauri.conf.json` (`plugins.updater.pubkey`). Without them the app is signed ad hoc and not
+notarized, and the release still builds. tauri notarizes whenever the Apple ID or API key settings
+are in its environment, even empty, which failed the macos-arm64 leg of v0.3.0-rc.7 and v0.3.1
+("Team ID must be at least 3 characters"): `tauri-build.sh` hands them to tauri only for a
+Developer ID app with a complete set, and CI's mac-app gate builds with them set but empty, as
+the release does without the secrets.

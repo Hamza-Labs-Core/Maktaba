@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 )
 
 // CookieSSO holds a cluster sign-in in progress on the node: "<state>.<verifier>".
@@ -49,6 +51,22 @@ type SelfInfo struct {
 	Machines []SelfRow       `json:"machines,omitempty"`
 	// AcceptJoins: the home's "accept new machines" switch (its mDNS join=1).
 	AcceptJoins bool `json:"accept_joins,omitempty"`
+	// MachinesDB are the home's machines that say they cannot log in to its database (the
+	// home re-makes their access): an update's watch waits for them to follow it.
+	MachinesDB []SelfMachineDB `json:"machines_db,omitempty"`
+	// UpdatesAuto is whether the home installs releases by itself (rules.updates
+	// auto_install as this build applies it; absent on a node): the Linux app leaves a
+	// newer payload to the home's run when it does. Said to a program on this machine (the
+	// app asks over loopback) or its supervisor only, never to the LAN.
+	UpdatesAuto *bool `json:"updates_auto,omitempty"`
+}
+
+// SelfMachineDB is a machine that cannot log in to its home's database.
+type SelfMachineDB struct {
+	ID      string `json:"id"`
+	Name    string `json:"name,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Healing bool   `json:"healing,omitempty"`
 }
 
 // SelfHome is a node's view of its home.
@@ -86,12 +104,40 @@ type Node struct {
 	Logger     *slog.Logger
 }
 
-// MountSelf mounts GET /api/cluster/self alone (the home serves it too).
+// LocalTokenHeader carries the supervisor's per-boot local token
+// (MAKTABA_SUPERVISOR_TOKEN_FILE): the home's own update watch reads which machines cannot
+// log in to its database from /api/cluster/self with it.
+const LocalTokenHeader = "X-Maktaba-Local-Token"
+
+// trusted reports whether a request may see the home's machines: this machine's own
+// supervisor, with its local token (/api/cluster/self is public, and carries no session:
+// the pages read the machines' database logins from /api/cluster and /api/cluster/updates).
+func trusted(r *http.Request) bool {
+	got, file := r.Header.Get(LocalTokenHeader), strings.TrimSpace(os.Getenv("MAKTABA_SUPERVISOR_TOKEN_FILE"))
+	if got == "" || file == "" {
+		return false
+	}
+	b, err := os.ReadFile(file)
+	want := strings.TrimSpace(string(b))
+	return err == nil && want != "" && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+// MountSelf mounts GET /api/cluster/self alone (the home serves it too). Its machines
+// that cannot log in to the home's database (names and why) go to this machine's
+// supervisor only; whether it installs releases by itself, to a program on this machine
+// too (middleware.LocalCaller: the router's chain marks it).
 func MountSelf(r chi.Router, self SelfFunc) {
 	r.Get("/api/cluster/self", func(w http.ResponseWriter, r *http.Request) {
 		info := SelfInfo{Role: "home"}
 		if self != nil {
 			info = self(r.Context())
+		}
+		sup := trusted(r)
+		if !sup {
+			info.MachinesDB = nil
+		}
+		if !sup && !mw.LocalCaller(r) {
+			info.UpdatesAuto = nil
 		}
 		info.ServedAt = time.Now().UTC()
 		w.Header().Set("Cache-Control", "no-store")

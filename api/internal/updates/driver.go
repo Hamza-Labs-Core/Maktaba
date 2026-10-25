@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
 // Notification kinds of a run (story 35.13 AC8; the web says them as notify.<kind>).
@@ -278,9 +279,13 @@ func (d *Driver) job(ctx context.Context, run Run, home bool) (MachineJob, error
 	}
 	pol := d.policy(ctx)
 	j := MachineJob{RunID: run.ID, Version: NormalizeVersion(run.Version), Tag: rel.Tag, Assets: assets, Home: home,
-		Rehearse: home && pol.RehearseMigrations, RehearseMaxGB: pol.RehearseMaxDBGB, KeepVersions: pol.KeepVersions}
+		Rehearse: home && pol.RehearseMigrations, RehearseMaxGB: pol.RehearseMaxDBGB, KeepVersions: pol.KeepVersions,
+		BackupsKeep: pol.BackupsKeep}
 	if j.Tag == "" {
 		j.Tag = "v" + j.Version
+	}
+	if rel.Manifest != nil {
+		j.AppPostgresMajor = rel.Manifest.AppPostgresMajor
 	}
 	// the watch's length (tests and the end-to-end run shorten it)
 	key := "MAKTABA_UPDATE_NODE_WATCH_SECONDS"
@@ -299,6 +304,7 @@ func (d *Driver) job(ctx context.Context, run Run, home bool) (MachineJob, error
 // finish ends a run in state with an error document; the machines' drain is put back.
 func (d *Driver) finish(ctx context.Context, run Run, det RunDetail, state string, errDoc map[string]any) error {
 	d.undrain(ctx, run, &det)
+	d.releaseNodeDrains(ctx, run, &det)
 	// the machines' orders still waiting for a click are withdrawn (their apps forget them)
 	if targets, err := d.Store.Targets(ctx, run.ID); err == nil {
 		for _, t := range targets {
@@ -499,33 +505,112 @@ func (d *Driver) homePreparing(ctx context.Context, run Run, det RunDetail) erro
 }
 
 // blockFor blocks the release when a failure says it must not be tried again by itself
-// (a verification or a rehearsal failure), and counts the attempt otherwise; a failure of
-// the machine's install, not of the release (no room, no Python, no PyPI: needsPerson)
-// counts nothing, so the next window goes once a person mended it.
+// (its signature or identity refused, its migrations failed on a copy of the database),
+// and counts the attempt otherwise, at most once a window for an automatic run (story
+// 35.4 AC9: three windows, then blocked); a failure of the machine's install, not of the
+// release (no room, no Python, no PyPI, an app built locally: needsPerson) counts
+// nothing, so the next window goes once a person mended it. A rehearsal that could not
+// run (no room for its dump, its scratch database refused, a restore that failed: the
+// machine, not the release) is an attempt like any other.
 func (d *Driver) blockFor(ctx context.Context, run Run, doc map[string]any) {
 	code, _ := doc["code"].(string)
-	switch {
-	case needsPerson(doc):
+	switch failureClass(doc) {
+	case classOlderBuild:
+		// an older build of the running release's line (an rc tagged after its release),
+		// which the catalog could not tell (its running release unknown to it): never a
+		// candidate here, so set aside quietly (blocked "older_build": no attempt counted,
+		// no verification alarm, no notice), and passed by from now on
+		_ = d.Store.Block(ctx, run.Version, KindOlderBuild)
+		d.audit(ctx, run, "older_build_passed", map[string]any{"detail": doc["detail"]})
+	case classPerson:
 		// a person mends the machine: no attempt counted
-	case strings.HasPrefix(code, "verify_"):
+	case classVerify:
 		_ = d.Store.Block(ctx, run.Version, "verify")
-	case strings.HasPrefix(code, "rehearsal"):
+	case classRehearsal:
 		_ = d.Store.Block(ctx, run.Version, "rehearsal")
 	default:
+		if d.countedInWindow(ctx, run) {
+			d.audit(ctx, run, "attempt_counted_already", map[string]any{"code": code})
+			return
+		}
 		if blocked, _ := d.Store.CountAttempt(ctx, run.Version); blocked {
 			d.audit(ctx, run, "release_blocked", map[string]any{"reason": "attempts"})
 		}
 	}
 }
 
+// What a failed run's error is to its release (blockFor).
+const (
+	classOlderBuild = "older_build" // an older build of the running release's line: set aside quietly
+	classPerson     = "person"      // the machine's install needs a person: nothing counted
+	classVerify     = "verify"      // the release's signature or identity refused: blocked
+	classRehearsal  = "rehearsal"   // its migrations failed on a copy of the data: blocked
+	classAttempt    = "attempt"     // anything else (a download, a rehearsal that could not run): one attempt
+)
+
+// failureClass is what a run's error document is to its release.
+func failureClass(doc map[string]any) string {
+	code, _ := doc["code"].(string)
+	switch {
+	case code == KindOlderBuild:
+		return classOlderBuild
+	case needsPerson(doc):
+		return classPerson
+	case strings.HasPrefix(code, "verify_"):
+		return classVerify
+	case code == "rehearsal_failed":
+		return classRehearsal
+	}
+	return classAttempt
+}
+
+// countedInWindow reports whether an earlier automatic run of the release failed (and
+// counted) in the window occurrence run began in: a window counts one attempt.
+func (d *Driver) countedInWindow(ctx context.Context, run Run) bool {
+	if run.Trigger != TriggerAuto {
+		return false
+	}
+	w, err := ParseWindow(d.policy(ctx).Window)
+	if err != nil {
+		return false
+	}
+	start, _, ok := w.Containing(run.StartedAt, d.Svc.loc())
+	if !ok {
+		return false
+	}
+	failed, err := d.Store.FailedAutoRuns(ctx, run.Version, start)
+	if err != nil {
+		return false
+	}
+	for _, r := range failed {
+		if r.ID == run.ID {
+			continue
+		}
+		if failureClass(runErrDoc(r)) == classAttempt {
+			return true
+		}
+	}
+	return false
+}
+
 // notifyFailure tells of the home's failed run: a person must mend the machine's install
-// (needsPerson), or the release failed.
+// (needsPerson: once per release and reason, not once per run: the next window tries
+// again), or the release failed (at most hourly per release and reason: a failed run is
+// tried again within the window).
 func (d *Driver) notifyFailure(ctx context.Context, run Run, doc map[string]any) {
+	code, _ := doc["code"].(string)
+	if code == KindOlderBuild {
+		return // passed by quietly (blockFor audits it): no incident
+	}
+	params := map[string]any{"machine": "home", "code": code, "version": run.Version}
 	if needsPerson(doc) {
-		d.notify(ctx, NoticeNeedsPerson, notify.SeverityWarn, run, map[string]any{"machine": "home", "code": doc["code"]})
+		d.Svc.notify(ctx, NoticeNeedsPerson, notify.Payload{Severity: notify.SeverityWarn, Params: params,
+			Link: "/admin/updates", Subject: "release:" + run.Version + ":home:" + code, Every: notifyOnce})
 		return
 	}
-	d.notify(ctx, NoticeRunFailed, notify.SeverityError, run, map[string]any{"code": doc["code"]})
+	delete(params, "machine")
+	d.Svc.notify(ctx, NoticeRunFailed, notify.Payload{Severity: notify.SeverityError, Params: params,
+		Link: "/admin/updates", Subject: "release:" + run.Version + ":" + code, Every: time.Hour})
 }
 
 // windowDeadline is when an automatic run's apply must have begun: the end of the
@@ -587,10 +672,7 @@ func (d *Driver) homeGates(ctx context.Context, run Run, det RunDetail) error {
 		if det.Waiting == "tv_busy" {
 			code = "tv_busy"
 		}
-		_ = d.abortHome(ctx, run)
-		d.notify(ctx, NoticeRunFailed, notify.SeverityWarn, run, map[string]any{"code": code})
-		return d.finish(ctx, run, det, RunFailed, map[string]any{"code": code,
-			"detail": "the window ended before the home could restart; tried again in the next window"})
+		return d.gateFailed(ctx, run, det, code)
 	}
 	if run.Trigger != TriggerManual {
 		if busy, n := d.tvBusy(ctx); busy {
@@ -684,10 +766,7 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 	if run.Trigger != TriggerManual {
 		if busy, n := d.tvBusy(ctx); busy {
 			if deadline := d.windowDeadline(run, pol); !deadline.IsZero() && d.now().After(deadline) {
-				_ = d.abortHome(ctx, run)
-				d.notify(ctx, NoticeRunFailed, notify.SeverityWarn, run, map[string]any{"code": "tv_busy"})
-				return d.finish(ctx, run, det, RunFailed, map[string]any{"code": "tv_busy",
-					"detail": "the window ended before the home could restart; tried again in the next window"})
+				return d.gateFailed(ctx, run, det, "tv_busy")
 			}
 			if det.Waiting != "tv_busy" {
 				det.Waiting = "tv_busy"
@@ -796,6 +875,9 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 		_ = d.Store.SetRunState(ctx, run.ID, RunHomeApplying, st.State)
 		return nil
 	case MCommitted:
+		if st.Backup != nil && st.Backup.Path != "" {
+			_ = d.Store.SetRunBackup(ctx, run.ID, map[string]any{"path": st.Backup.Path, "bytes": st.Backup.Bytes})
+		}
 		return d.homeCommitted(ctx, run, det)
 	case MRolledBack:
 		doc := machineErr(st, "rolled_back")
@@ -875,6 +957,31 @@ type agentState struct {
 		RunID string `json:"run_id"`
 		State string `json:"state"`
 	} `json:"run"`
+	// Attempts are the machine's own update attempts (update-attempts.md)
+	Attempts []Attempt `json:"attempts"`
+	// HomeDB is the machine's login to the home's database (the home re-makes its
+	// access when it cannot)
+	HomeDB *HomeDB `json:"home_db"`
+}
+
+// HomeDB is a machine's login to the home's database, as its update.state says it.
+type HomeDB struct {
+	OK      bool       `json:"ok"`
+	Code    string     `json:"code,omitempty"`
+	Detail  string     `json:"detail,omitempty"`
+	At      *time.Time `json:"at,omitempty"`
+	Healing bool       `json:"healing,omitempty"`
+	// Fails is how many logins in a row failed on the machine
+	Fails int `json:"fails,omitempty"`
+}
+
+// shown is the machine's word as the page shows it: a failure only once the machine saw
+// it twice in a row (one try can meet a home in the middle of a switch), else nil.
+func (h *HomeDB) shown() *HomeDB {
+	if h == nil || (!h.OK && h.Fails < 2) {
+		return nil
+	}
+	return h
 }
 
 func (d *Driver) agentStates() (map[string]string, map[string]agentState) {
@@ -930,8 +1037,9 @@ func (d *Driver) planTargets(ctx context.Context, run Run, det RunDetail) error 
 		t := Target{RunID: run.ID, NodeID: n.id, Name: n.name, Ord: ord, Platform: platform, Kind: kind,
 			FromVersion: NormalizeVersion(ver), ToVersion: NormalizeVersion(run.Version), State: TargetPending}
 		_, connected := agents[n.id]
+		later := ver != "" && d.laterBuild(ctx, ver, run.Version)
 		switch {
-		case ver != "" && CompareVersions(ver, run.Version) > 0:
+		case ver != "" && CompareVersions(ver, run.Version) > 0, later:
 			t.State = TargetSkipped
 		case !connected && !n.full:
 			t.State = TargetWorkerOnly
@@ -942,11 +1050,18 @@ func (d *Driver) planTargets(ctx context.Context, run Run, det RunDetail) error 
 			return err
 		}
 		if t.State == TargetSkipped {
-			_ = d.Store.UpdateTarget(ctx, run.ID, n.id, TargetChange{Detail: map[string]any{"why": "ahead_of_home"}})
+			why := "ahead_of_home"
+			if later {
+				why = KindOlderBuild // a later build of the release's line
+			}
+			_ = d.Store.UpdateTarget(ctx, run.ID, n.id, TargetChange{Detail: map[string]any{"why": why}})
 		}
 		ord++
 	}
 	d.audit(ctx, run, "rollout_planned", map[string]any{"targets": ord})
+	if rel, err := d.Store.Get(ctx, run.Version); err == nil {
+		d.notePausedMachines(ctx, run, rel)
+	}
 	return d.Store.SetRunState(ctx, run.ID, RunRollingOut, "")
 }
 
@@ -1034,12 +1149,10 @@ func (d *Driver) adoptBehind(ctx context.Context, run Run, targets []Target, age
 			}
 			continue
 		}
-		if last, why, _ := d.Store.LastTargetState(ctx, n.id, run.Version); last == TargetRolledBack ||
-			last == TargetFailed || last == TargetFailedPrepare || last == TargetNeedsPerson ||
-			(last == TargetSkipped && why == "skipped") {
+		s := states[n.id]
+		if d.heldBack(ctx, n.id, run.Version, ver, s.Layout, s.Attempts) {
 			continue
 		}
-		s := states[n.id]
 		if err := d.Store.InsertTarget(ctx, Target{RunID: run.ID, NodeID: n.id, Name: n.name, Ord: ord,
 			Platform: firstNonEmpty(s.Platform, n.platform), Kind: s.Layout, FromVersion: NormalizeVersion(ver),
 			ToVersion: NormalizeVersion(run.Version), State: TargetPending}); err == nil {
@@ -1198,6 +1311,7 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 				busy = true
 			case MCommitted:
 				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHealthy, Healthy: true, Detail: st})
+				d.nodeUndrain(ctx, run, t.NodeID)
 			case MRolledBack:
 				d.targetFailed(ctx, run, pol, t, TargetRolledBack, machineErr(st, st.State))
 			case MApplyFailed, MAborted, MPrepareFailed, MFailed:
@@ -1212,6 +1326,9 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 		// someone clicked on a machine: its turn comes first (it ignores the window: the
 		// person there chose the moment; not the TV it keeps on air for others)
 		t := clicked[0]
+		if !d.nodeDrained(ctx, run, &det, pol, t) {
+			return d.maybeFinishRollout(ctx, run, det) // its jobs finish first; no other machine goes meanwhile
+		}
 		ok, raw, err := d.Cluster.Command(ctx, agents[t.NodeID], "update.apply", map[string]any{"run_id": run.ID}, 30*time.Second)
 		if err != nil || !ok {
 			d.targetFailed(ctx, run, pol, t, TargetFailed, map[string]any{"code": "apply_refused",
@@ -1237,6 +1354,9 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 			}
 			if run.Trigger != TriggerManual && d.machineTVBusy(ctx, t.NodeID) {
 				continue // its TV streams are watched: another machine first, this one later
+			}
+			if !d.nodeDrained(ctx, run, &det, pol, t) {
+				break // its turn: its jobs finish first (or checkpoint once drain_timeout passed)
 			}
 			ok, raw, err := d.Cluster.Command(ctx, sid, "update.apply", map[string]any{"run_id": run.ID}, 30*time.Second)
 			if err != nil || !ok {
@@ -1329,6 +1449,7 @@ func (d *Driver) followApply(ctx context.Context, run Run, pol Policy, t Target,
 			case MCommitted:
 				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHealthy, Healthy: true, Detail: st})
 				d.audit(ctx, run, "node_healthy", map[string]any{"node_id": t.NodeID})
+				d.nodeUndrain(ctx, run, t.NodeID)
 				return true, nil
 			case MRolledBack, MApplyFailed, MFailed:
 				state := TargetRolledBack
@@ -1352,6 +1473,14 @@ func (d *Driver) followApply(ctx context.Context, run Run, pol Policy, t Target,
 // "Machine failure"): hold_platform holds the others of its platform, halt every other,
 // continue none. A held machine's order waiting for its click is withdrawn.
 func (d *Driver) targetFailed(ctx context.Context, run Run, pol Policy, t Target, state string, doc map[string]any) {
+	if code, _ := doc["code"].(string); code == KindOlderBuild {
+		// the machine runs a later build of the release's line (the release is an rc's
+		// older build): it is ahead, as one on a higher version is
+		_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetSkipped,
+			Detail: map[string]any{"why": KindOlderBuild}})
+		d.audit(ctx, run, "node_older_build", map[string]any{"node_id": t.NodeID, "error": doc})
+		return
+	}
 	if needsPerson(doc) {
 		// nothing another try mends, and nothing about the release: no machine is held
 		// for it (node_failure_policy is about releases that fail)
@@ -1390,9 +1519,19 @@ func (d *Driver) targetFailed(ctx context.Context, run Run, pol Policy, t Target
 // that cannot update itself, an app or launcher too old for it, an app this user cannot
 // replace, no room for it, no Python (or not one the release's pins were made for) or no
 // PyPI for its pipeline's environment.
+// The trust root's codes are this server's (a build too old to check the release), and
+// an app built locally (the placeholder updater key: it can take no update) or one macOS
+// will not let replace itself (App Management, locked files) waits for a person too.
 var needsPersonCodes = map[string]bool{"not_self_managed": true, "old_launcher": true, "no_app": true,
 	"no_app_update": true, "launcher_protocol": true, "disk_space": true, "not_writable": true, "no_runtime": true,
-	"no_python": true, "venv_network": true, "venv_python_unsupported": true, "needs_admin": true}
+	"no_python": true, "venv_network": true, "venv_python_unsupported": true, "needs_admin": true,
+	"local_build": true, "app_management": true, "translocated": true, "verify_trust_root_expired": true,
+	"no_trust_root": true,
+	"trust_root":    true, "python_store_stub": true,
+	// macOS refused the server's login item of the new app (not code-signed): its fix is a
+	// signed app, or codesign; a release whose bundled Postgres major is not this one's (no
+	// upgrade path: its data directory would not open)
+	"login_item_unsigned": true, "pg_major_change": true}
 
 func needsPerson(doc map[string]any) bool {
 	code, _ := doc["code"].(string)
@@ -1549,8 +1688,14 @@ func (d *Driver) Supersede(ctx context.Context, version string) (bool, error) {
 
 // ---------- catch-up ----------
 
-// catchUpRetry is how long a machine whose catch-up failed waits before the next one.
-const catchUpRetry = 6 * time.Hour
+// catchUpRetry is how long a machine whose catch-up failed before its switch (a download,
+// a refusal) waits before the next one; catchUpPersonRetry how long one that needs a
+// person waits, unchanged (its release, its install kind): a day, not a run every few hours
+// that can only fail the same way.
+const (
+	catchUpRetry       = 6 * time.Hour
+	catchUpPersonRetry = 24 * time.Hour
+)
 
 // catchUp gives a machine behind the watermark (offline during the rollout, or joined
 // since) a run of its own: the release the cluster runs, the home's phase skipped
@@ -1563,19 +1708,26 @@ func (d *Driver) catchUp(ctx context.Context) error {
 	if !pol.EffectiveAutoInstall() {
 		return nil
 	}
-	wm, err := d.Store.Watermark(ctx)
+	wm, err := d.clusterRelease(ctx)
 	if err != nil || wm == "" {
 		return err
 	}
-	if rel, err := d.Store.Get(ctx, wm); err != nil || rel.VerifyState != VerifyVerified || rel.WithdrawnAt != nil {
+	rel, err := d.Store.Get(ctx, wm)
+	if err != nil || rel.VerifyState != VerifyVerified || rel.WithdrawnAt != nil {
 		return nil // the home's release is not one the catalog verified (installed by hand), or withdrawn
 	}
-	// it restarts machines: inside the window only (a run held at the window's end waits
-	// for the next one)
+	// it restarts machines: catch_up "immediate" any time, but a machine that keeps TV
+	// streams on air (and every machine with catch_up "window") inside the window only; a
+	// machine the release's schema pauses (its local routes answer 503 until it runs the
+	// release) at once, always (README, rules.updates.catch_up)
+	inWindow := true
 	if w, err := ParseWindow(pol.Window); err == nil {
-		if _, _, ok := w.Containing(d.now(), d.Svc.loc()); !ok {
-			return nil
-		}
+		_, _, inWindow = w.Containing(d.now(), d.Svc.loc())
+	}
+	immediate := pol.CatchUp != "window"
+	streams := map[string]bool{}
+	if !inWindow {
+		streams = d.streamingHosts(ctx)
 	}
 	agents, states := d.agentStates()
 	nodes, err := d.nodes(ctx)
@@ -1599,10 +1751,13 @@ func (d *Driver) catchUp(ctx context.Context) error {
 			s.Run.State == MWatching || s.Run.State == MAwaitingClick || s.Run.State == MClicked) {
 			continue // it is busy with a run of its own
 		}
+		if !inWindow && !d.schemaPaused(ctx, rel, ver) && (!immediate || streams[n.id]) {
+			continue // the window, for this one
+		}
 		// the release failed or was rolled back on it (by itself, or by an admin): it waits
-		// for a newer release or an admin's Retry
-		if last, why, _ := d.Store.LastTargetState(ctx, n.id, wm); last == TargetRolledBack || last == TargetFailed ||
-			last == TargetFailedPrepare || last == TargetNeedsPerson || (last == TargetSkipped && why == "skipped") {
+		// for a newer release or an admin's Retry (a part a person mends is tried again once
+		// the machine changed, or after catchUpRetry: heldBack)
+		if d.heldBack(ctx, n.id, wm, ver, s.Layout, s.Attempts) {
 			continue
 		}
 		d.mu.Lock()
@@ -1634,4 +1789,22 @@ func (d *Driver) catchUp(ctx context.Context) error {
 	}
 	d.audit(ctx, run, "run_planned", map[string]any{"trigger": TriggerCatchUp, "targets": ids})
 	return nil
+}
+
+// laterBuild reports whether a machine on installed runs a later build than version, the
+// run's release: version is newer but signed before it on its major.minor line
+// (releaseverify.OlderBuild), as the catalog knows both.
+func (d *Driver) laterBuild(ctx context.Context, installed, version string) bool {
+	if CompareVersions(version, installed) <= 0 {
+		return false
+	}
+	rel, err := d.Store.Get(ctx, version)
+	if err != nil {
+		return false
+	}
+	cur, err := d.Store.Get(ctx, installed)
+	if err != nil {
+		return false
+	}
+	return releaseverify.OlderBuild(rel.Version, rel.signedTime(), cur.Version, cur.signedTime())
 }

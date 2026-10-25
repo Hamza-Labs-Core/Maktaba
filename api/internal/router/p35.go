@@ -42,6 +42,14 @@ func (r *HubRef) Set(h *agent.Hub) {
 	}
 }
 
+// Get is the hub (nil before it is set).
+func (r *HubRef) Get() *agent.Hub {
+	if r == nil {
+		return nil
+	}
+	return r.h.Load()
+}
+
 // hubCluster is updates.Cluster over the hub.
 type hubCluster struct{ ref *HubRef }
 
@@ -64,6 +72,15 @@ func (c hubCluster) MachineStates() map[string]json.RawMessage {
 		return h.MachineStates()
 	}
 	return map[string]json.RawMessage{}
+}
+
+// NodeHosts implements the updates driver's nodeHoster: the hosts a machine's sessions
+// report, to find its running jobs.
+func (c hubCluster) NodeHosts() map[string][]string {
+	if h := c.hub(); h != nil {
+		return h.NodeHosts()
+	}
+	return map[string][]string{}
 }
 
 func (c hubCluster) HomeProcesses() []string {

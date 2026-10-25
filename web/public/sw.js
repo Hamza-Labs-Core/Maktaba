@@ -5,7 +5,13 @@
 //     that never changed, so the first shell a browser saw was kept for
 //     ever: after an update it named the old bundle's script, the server
 //     answered that missing script with the page, and the app (the Mac
-//     app's window above all) stayed blank.
+//     app's window above all) stayed blank. The hashed bundle, art and
+//     icons go to the network (the server keeps /assets/ immutable, and a
+//     missing one is a 404, never the page).
+//   - The cache name carries a build stamp that vite.config.ts writes into
+//     dist/sw.js at every build (src/lib/swStamp.ts: the release and a hash
+//     of the built index.html), so each release is a new worker that
+//     replaces the old one and its cache.
 //   - /api/*: NETWORK-ONLY. The API authenticates via the HttpOnly
 //     `mkt_sess` cookie (web/src/lib/api.ts sends credentials:"include").
 //     Cache Storage is keyed by URL only — it cannot tell user A's
@@ -19,8 +25,10 @@
 // behind a stale shell could never be accepted, since that shell cannot
 // render the in-app update toast. Taking over cannot resurrect a legacy
 // poisoned API cache: activate deletes every cache but this shell's
-// before it claims the pages, and this SW never reads an API cache.
-const BUILD = "v3";
+// before it claims the pages, and this SW never reads an API cache. A
+// page older than the server's release is offered the reload then
+// (src/lib/pwa.ts); the page is never reloaded behind the user's back.
+const BUILD = "dev";
 const SHELL_CACHE = "mkt-shell-" + BUILD;
 // theme-boot.js runs before first paint (no theme flash), so it is shell too.
 const SHELL = ["/", "/index.html", "/theme-boot.js"];
@@ -56,7 +64,8 @@ self.addEventListener("message", (event) => {
   const data = event.data;
   if (!data || typeof data.type !== "string") return;
   if (data.type === "SKIP_WAITING") {
-    // Driven by the in-app "reload to update" affordance (pwa.ts).
+    // Driven by the in-app "reload to update" affordance (pwa.ts), for a
+    // worker still waiting (and by the toast of an older release's page).
     self.skipWaiting();
     return;
   }

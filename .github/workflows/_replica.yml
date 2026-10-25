@@ -101,6 +101,17 @@ jobs:
           sudo apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends ffmpeg >/dev/null
           ffmpeg -hide_banner -version | head -1
 
+      - name: Machine roles sign in with their passwords (the two-machine runs)
+        # the clusters run with trust auth; a machine's role must prove the password the home
+        # hands it (the re-made access of TestNodeFollowsTheHomeDatabase among them): scram
+        # for the machines' roles, first in pg_hba
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/pg55432"
+          { echo 'host all /^maktaba_node_ 127.0.0.1/32 scram-sha-256'; cat "$d/pg_hba.conf"; } > "$d/pg_hba.new"
+          mv "$d/pg_hba.new" "$d/pg_hba.conf"
+          "$PG16/bin/pg_ctl" -D "$d" reload
+
       - name: Two machines with the home away (e2e)
         working-directory: api
         env:
@@ -108,8 +119,10 @@ jobs:
           MAKTABA_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
         run: |
           set -euo pipefail
-          go test -count=1 -timeout 30m -run TestTwoMachinesOnePC -v . | tee "$RUNNER_TEMP/e2e-two.out"
-          grep -q -- "--- PASS: TestTwoMachinesOnePC " "$RUNNER_TEMP/e2e-two.out" || { echo "::error::TestTwoMachinesOnePC did not run"; exit 1; }
+          go test -count=1 -timeout 30m -run 'TestTwoMachinesOnePC|TestNodeFollowsTheHomeDatabase' -v . | tee "$RUNNER_TEMP/e2e-two.out"
+          for t in TestTwoMachinesOnePC TestNodeFollowsTheHomeDatabase; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/e2e-two.out" || { echo "::error::$t did not run"; exit 1; }
+          done
 
       - name: The servers' logs (on failure)
         if: failure()

@@ -167,13 +167,13 @@ pub struct Words {
     /// The server did not stop for the update.
     pub update_stop_failed: &'static str,
     /// After a failed update: a paused server.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     pub update_stays_paused: &'static str,
     /// After a failed update: the server starts again.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     pub update_starting_again: &'static str,
     /// After a failed update: it could not start again.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     pub update_start_failed: &'static str,
     /// `{url}` could not be opened in the window.
     pub open_failed: &'static str,
@@ -218,6 +218,23 @@ pub struct Words {
     /// on the home itself, and on a machine the cluster's update waits for.
     pub order_ready_home: &'static str,
     pub order_ready_node: &'static str,
+    /// An update that failed (update-attempts.md): the menu's line until the next attempt,
+    /// and the OS notification; {reason} is update_reason's.
+    pub update_failed_line: &'static str,
+    pub update_failed_notice: &'static str,
+    /// Under the failed line, and the notification's button: the web logs page of this
+    /// machine's server at the attempt's time, and the folder of app.log and server.log.
+    pub see_logs: &'static str,
+    pub open_log_folder: &'static str,
+    /// An app that runs no server (client mode, the Intel Mac app): the OS notification once
+    /// per release its own feed offers (the Mac's menu-bar item has no badge).
+    pub update_ready_notice: &'static str,
+    /// The Windows portable app (no installer of its own): its update item, which opens the
+    /// release page; it cannot install the setup beside itself.
+    pub update_out_portable: &'static str,
+    /// The update item while the update downloads: {version}, and {progress} (45%, or the
+    /// megabytes so far when the size is not known).
+    pub update_downloading: &'static str,
     /// Between the names in a list (the roles in a status line).
     pub list_sep: &'static str,
 }
@@ -255,11 +272,11 @@ pub static EN: Words = Words {
     model_missing: "Language model: {name} not downloaded",
     update_failed: "The update could not be installed.",
     update_stop_failed: "The update was not installed: the server could not be stopped for it.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     update_stays_paused: "The server stays paused.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     update_starting_again: "The server is starting again.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     update_start_failed: "The server could not start again.",
     open_failed: "Cannot open {url}.",
     #[cfg(windows)]
@@ -283,6 +300,13 @@ pub static EN: Words = Words {
     order_clicked: "Installing Maktaba {version} when the cluster is ready…",
     order_ready_home: "Maktaba {version} is ready to install on this home",
     order_ready_node: "Maktaba {version} is ready: the cluster's update waits for this machine",
+    update_failed_line: "Update to {version} failed: {reason}",
+    update_failed_notice: "Maktaba could not update to {version}: {reason}",
+    see_logs: "See the logs",
+    open_log_folder: "Open the log folder",
+    update_ready_notice: "Maktaba {version} is ready: choose Update ready in the menu to install it",
+    update_out_portable: "Maktaba {version} is out: download the new zip",
+    update_downloading: "Downloading Maktaba {version}: {progress}",
     list_sep: ", ",
 };
 
@@ -319,11 +343,11 @@ pub static AR: Words = Words {
     model_missing: "النموذج اللغوي: {name} غير مُنزَّل",
     update_failed: "تعذّر تثبيت التحديث.",
     update_stop_failed: "لم يُثبَّت التحديث: تعذّر إيقاف الخادم من أجله.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     update_stays_paused: "يبقى الخادم متوقفًا مؤقتًا.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     update_starting_again: "يبدأ الخادم من جديد.",
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     update_start_failed: "تعذّر تشغيل الخادم من جديد.",
     open_failed: "يتعذّر فتح {url}.",
     #[cfg(windows)]
@@ -347,8 +371,84 @@ pub static AR: Words = Words {
     order_clicked: "يُثبَّت الإصدار {version} من مكتبة حين تصبح المجموعة جاهزة…",
     order_ready_home: "الإصدار {version} من مكتبة جاهز للتثبيت على هذا الخادم الرئيسي",
     order_ready_node: "الإصدار {version} من مكتبة جاهز: تحديث المجموعة ينتظر هذا الجهاز",
+    update_failed_line: "فشل التحديث إلى {version}: {reason}",
+    update_failed_notice: "تعذّر تحديث مكتبة إلى {version}: {reason}",
+    see_logs: "عرض السجلات",
+    open_log_folder: "فتح مجلد السجلات",
+    update_ready_notice: "الإصدار {version} من مكتبة جاهز: اختر «التحديث جاهز» من القائمة لتثبيته",
+    update_out_portable: "صدر الإصدار {version} من مكتبة: نزّل ملف zip الجديد",
+    update_downloading: "تنزيل الإصدار {version} من مكتبة: {progress}",
     list_sep: "، ",
 };
+
+/// Why an update failed, in `lang`: the reason of each code of attempts.rs (update-
+/// attempts.md), plain words for the menu, the notification and the dialog.
+pub fn update_reason(lang: Lang, code: &str) -> &'static str {
+    match lang {
+        Lang::En => match code {
+            "no_network" => "this machine could not reach the internet",
+            "feed_not_found" => "the release's update information is missing",
+            "feed_invalid" => "the release's update information could not be read",
+            "asset_not_found" => "the download for this machine is missing",
+            "signature_mismatch" => "the download's signature does not match this app's key",
+            "needs_admin" => "replacing the app needs an administrator's password",
+            "not_writable" => "the app's files cannot be replaced",
+            "disk_full" => "the disk is full",
+            "translocated" => {
+                "macOS runs this copy of the app from a temporary place: move it to Applications"
+            }
+            "quarantined" => "macOS still marks the app as downloaded and unchecked",
+            "installer_exit" => "the system's package installer failed",
+            "previous_app_not_restored" => {
+                "the update failed and the app could not be put back in its folder"
+            }
+            "server_stop_failed" => "the server could not be stopped for the install",
+            "relaunch_failed" => "the app did not come back on the new release",
+            "login_item_unsigned" => {
+                "the app is not code-signed, so macOS will not start its server"
+            }
+            "app_management" => {
+                "macOS does not let this app replace itself (App Management, or the app is locked)"
+            }
+            "local_build" => {
+                "this app was built locally and can't update itself: install the release by hand once"
+            }
+            "installer_not_finished" => "the installer did not finish, so the update did not go in",
+            "check_failed" => "checking for the update failed",
+            "download_failed" => "the download failed",
+            _ => "the install failed",
+        },
+        Lang::Ar => match code {
+            "no_network" => "تعذّر على هذا الجهاز الوصول إلى الإنترنت",
+            "feed_not_found" => "معلومات التحديث الخاصة بالإصدار مفقودة",
+            "feed_invalid" => "تعذّرت قراءة معلومات التحديث الخاصة بالإصدار",
+            "asset_not_found" => "ملف التنزيل الخاص بهذا الجهاز مفقود",
+            "signature_mismatch" => "توقيع الملف المنزَّل لا يطابق مفتاح هذا التطبيق",
+            "needs_admin" => "استبدال التطبيق يحتاج إلى كلمة مرور المسؤول",
+            "not_writable" => "تعذّر استبدال ملفات التطبيق",
+            "disk_full" => "القرص ممتلئ",
+            "translocated" => {
+                "يشغّل macOS هذه النسخة من التطبيق من مكان مؤقت: انقلها إلى مجلد التطبيقات"
+            }
+            "quarantined" => "ما زال macOS يَسِم التطبيق بأنه منزَّل ولم يُفحص",
+            "installer_exit" => "فشل مثبِّت الحزم في النظام",
+            "previous_app_not_restored" => "فشل التحديث وتعذّرت إعادة التطبيق إلى مجلده",
+            "server_stop_failed" => "تعذّر إيقاف الخادم من أجل التثبيت",
+            "relaunch_failed" => "لم يعد التطبيق إلى العمل على الإصدار الجديد",
+            "login_item_unsigned" => "التطبيق غير موقَّع، لذا لن يشغّل macOS خادمه",
+            "app_management" => {
+                "لا يسمح macOS لهذا التطبيق باستبدال نفسه (إدارة التطبيقات، أو أن التطبيق مقفل)"
+            }
+            "local_build" => {
+                "بُني هذا التطبيق محليًا ولا يستطيع تحديث نفسه: ثبّت الإصدار يدويًا مرة واحدة"
+            }
+            "installer_not_finished" => "لم يكتمل المثبِّت، فلم يُثبَّت التحديث",
+            "check_failed" => "فشل التحقق من وجود التحديث",
+            "download_failed" => "فشل التنزيل",
+            _ => "فشل التثبيت",
+        },
+    }
+}
 
 /// An error dialog's text: the sentence in the tray's language, then the
 /// programs' own errors (their English), each on its own line, as they are.
@@ -450,6 +550,13 @@ mod tests {
             ("order_clicked", Some(w.order_clicked)),
             ("order_ready_home", Some(w.order_ready_home)),
             ("order_ready_node", Some(w.order_ready_node)),
+            ("update_failed_line", Some(w.update_failed_line)),
+            ("update_failed_notice", Some(w.update_failed_notice)),
+            ("see_logs", Some(w.see_logs)),
+            ("open_log_folder", Some(w.open_log_folder)),
+            ("update_ready_notice", Some(w.update_ready_notice)),
+            ("update_out_portable", Some(w.update_out_portable)),
+            ("update_downloading", Some(w.update_downloading)),
             ("older_app", Some(w.older_app)),
         ];
         // the lines only Windows reads
@@ -506,6 +613,28 @@ mod tests {
         }
         assert_eq!(EN.no_answer, crate::status::NO_ANSWER);
         assert_eq!((EN.list_sep, AR.list_sep), (", ", "، "));
+    }
+
+    #[test]
+    fn every_update_failure_has_its_reason_in_both_languages() {
+        let arabic = |c: char| ('\u{0600}'..='\u{06ff}').contains(&c);
+        let mut seen = std::collections::HashSet::new();
+        for code in crate::attempts::CODES {
+            let (en, ar) = (update_reason(Lang::En, code), update_reason(Lang::Ar, code));
+            assert!(!en.trim().is_empty(), "{code}");
+            assert!(ar.chars().any(arabic), "{code} is not in Arabic: {ar}");
+            assert!(seen.insert(en), "{code} says what another code says: {en}");
+        }
+        assert_eq!(
+            fill(
+                EN.update_failed_line,
+                &[
+                    ("version", "0.3.0"),
+                    ("reason", update_reason(Lang::En, "needs_admin"))
+                ]
+            ),
+            "Update to 0.3.0 failed: replacing the app needs an administrator's password"
+        );
     }
 
     #[test]

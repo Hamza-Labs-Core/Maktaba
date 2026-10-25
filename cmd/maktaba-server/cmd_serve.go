@@ -21,6 +21,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logfiles"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
@@ -101,6 +102,9 @@ type serveOptions struct {
 }
 
 func runServe(cfg config.Config, opts serveOptions) error {
+	// serve's own lines carry their time (stderr_stamp.go): the logs page places them
+	stopStamp := stampStderr()
+	defer stopStamp()
 	// Epic 35 story 35.8: a half-written node.json stops here, once, with its path,
 	// rather than as every node role's crash loop; one a write is still under way on is
 	// waited for first (nodeConfigSettles).
@@ -147,7 +151,13 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	// Epic 35 (stories 35.4–35.7, 35.12): this machine's part of automatic updates;
 	// a node takes the home's update.* commands on the channel (serve_update.go)
 	var upd atomic.Pointer[updates]
+	// this machine's own log files, for the logs page and the bundle (serve_logfiles.go)
+	logDirs := logfiles.Dirs{Logs: config.LogsDir(), Updates: updatesDirOf(cfg, releaseDir)}
 	commands := func(ctx context.Context, name string, args json.RawMessage) (bool, bool, any) {
+		if name == "logs.files" {
+			ok, detail := logFilesCommand(ctx, logDirs, args)
+			return true, ok, detail
+		}
 		if h, ok, detail := upd.Load().command(ctx, name, args); h {
 			return h, ok, detail
 		}
@@ -159,6 +169,9 @@ func runServe(cfg config.Config, opts serveOptions) error {
 			return err
 		}
 		if node != nil {
+			// the home re-makes this machine's database access when it cannot log in
+			// (serve_homeaccess.go): the node marks itself healing as it follows it
+			sw.setHomeDB(node.homeDB)
 			// a switch of the home while this machine was off (serve_switchover.go)
 			go sw.watchMoved(ctx)
 		} else {
@@ -219,6 +232,8 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		upd.Store(u)
 		if node != nil && node.agent != nil {
 			u.m.OnChange = node.agent.Nudge
+			// the desktop app writes its own attempts: the home hears of them
+			go u.m.WatchAttempts(ctx, 15*time.Second)
 		}
 	}
 
@@ -317,7 +332,8 @@ func runServe(cfg config.Config, opts serveOptions) error {
 			if pg != nil {
 				ext = nil
 			}
-			procs = layoutHomeGates(cfg, filepath.Base(filepath.Clean(releaseDir)), pg, ext, procs, os.Stderr)
+			procs = layoutHomeGates(cfg, filepath.Base(filepath.Clean(releaseDir)), pg, ext, procs,
+				updatesDirOf(cfg, releaseDir), os.Stderr)
 		}
 	}
 
@@ -368,6 +384,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 	if u := upd.Load(); u != nil {
 		admin = u.adminHandler(admin, token)
 	}
+	admin = logFilesAdmin(admin, token, logDirs)
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
@@ -381,6 +398,7 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		_ = shutdownWeb(webSrv)
 	}
 	if restart.Load() {
+		stopStamp()
 		os.Exit(exitRestart) // drained: the launcher starts current again
 	}
 	if reloaded.Load() {

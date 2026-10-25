@@ -137,12 +137,32 @@ func (r requests) answer(j *Journal) (string, error) {
 	return q.State, nil
 }
 
-// appFailure is the code and detail of the app's error: needs_admin (an app this user
-// cannot replace: a person moves it or an administrator installs it), else
+// appCodes are the app's own codes for an order it could not install, as its error
+// begins ("<code>: <why>"): needs_admin (an app this user cannot replace: a person moves
+// it or an administrator installs it), local_build (an app built locally, with the
+// placeholder updater key: it can verify no update; the release is installed by hand
+// once), app_management (macOS does not let it replace itself: App Management, locked
+// files), translocated (macOS runs it from a temporary read-only place: it is moved to
+// Applications), not_writable (its files cannot be replaced), installer_not_finished
+// (the Windows installer did not finish once the app closed: tried again),
+// login_item_unsigned (macOS refused the new app's server login item, an app without its
+// code signature: a person signs it, or installs a signed release; the home's driver
+// counts no attempt).
+var appCodes = []string{"needs_admin", "local_build", "app_management", "translocated", "not_writable",
+	"installer_not_finished", "login_item_unsigned"}
+
+// refusedCodes are the app's codes for an order it refused before it touched its bundle
+// (a person's to mend; the release before needs no copy put back).
+var refusedCodes = map[string]bool{"needs_admin": true, "local_build": true, "app_management": true,
+	"translocated": true, "not_writable": true}
+
+// appFailure is the code and detail of the app's error: one of appCodes, else
 // app_install_failed.
 func appFailure(msg string) (string, string) {
-	if rest, ok := strings.CutPrefix(msg, "needs_admin:"); ok {
-		return "needs_admin", strings.TrimSpace(rest)
+	for _, c := range appCodes {
+		if rest, ok := strings.CutPrefix(msg, c+":"); ok {
+			return c, strings.TrimSpace(rest)
+		}
 	}
 	return "app_install_failed", msg
 }

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -43,45 +42,7 @@ func (b Bundle) DumpBeforeUpdate(ctx context.Context, from, to string, keep int)
 	if err := b.dumpTo(ctx, path); err != nil {
 		return "", err
 	}
-	return path, b.pruneUpdateDumps(path, keep)
-}
-
-// pruneUpdateDumps keeps the newest keep pre-update dumps (by the time they
-// were written: the names do not sort by it), and keep always.
-func (b Bundle) pruneUpdateDumps(keep string, n int) error {
-	n = max(n, 1)
-	entries, err := os.ReadDir(b.Backups)
-	if err != nil {
-		return err
-	}
-	type dump struct {
-		path string
-		mod  int64
-	}
-	var dumps []dump
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasPrefix(name, updateDumpPrefix) || !strings.HasSuffix(name, backupSuffix) {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			continue // gone meanwhile
-		}
-		dumps = append(dumps, dump{filepath.Join(b.Backups, name), info.ModTime().UnixNano()})
-	}
-	sort.SliceStable(dumps, func(i, j int) bool {
-		if dumps[i].path == keep || dumps[j].path == keep {
-			return dumps[i].path == keep
-		}
-		return dumps[i].mod > dumps[j].mod
-	})
-	for _, d := range dumps[min(n, len(dumps)):] {
-		if err := os.Remove(d.path); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-	}
-	return nil
+	return path, PruneBackups(b.Backups, path, BackupsKeep(b.Backups, keep))
 }
 
 // RestoreRunning replaces the app database with a dump of this cluster's own (a

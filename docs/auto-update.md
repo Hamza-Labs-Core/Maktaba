@@ -57,9 +57,12 @@ click):
    dump back if the migrations fail. Its health is watched (every role running, the API
    ready and answering as the new version) for 10 minutes; then it is kept.
 4. **Every machine follows**, after the home: they download and verify in parallel, then
-   switch one at a time, each watched before the next (`node_failure_policy`, default
-   `hold_platform`: one that fails holds the others of its platform). A machine offline
-   meanwhile is caught up when it comes back, in the next window. A desktop app's machine
+   switch one at a time, each drained of its jobs for its own switch and watched before the
+   next (`node_failure_policy`, default `hold_platform`: one that fails holds the others of its
+   platform). A machine offline meanwhile is caught up when it comes back (`catch_up`:
+   `immediate` any time, except a machine carrying TV streams; `window` only inside the
+   window), and one whose part failed for a reason since mended is caught up too. A machine the
+   new release's schema paused is caught up at once. A desktop app's machine
    waits for its click while the others go; its click takes the next turn. A run that waits
    only for clicks gives way to a newer release.
 
@@ -68,8 +71,41 @@ When it had already migrated the database, the dump taken before its migrations 
 back first (every release refuses a database a newer one migrated); writes made between
 that dump and the rollback are lost — minutes, inside the window, with the jobs drained —
 and the failed state is dumped aside (`backups/failed-<version>-<time>.dump`). The release
-is then blocked until a newer one appears or an admin retries it. A power cut at any step
-is recovered at the next start from the update's journal (`updates/journal.json`).
+is then blocked until a newer one appears or an admin unblocks it (Admin → Updates → "Try it
+again", or "Update now" naming it). A power cut at any step is recovered at the next start
+from the update's journal (`updates/journal.json`).
+
+**Which release is newer.** One rule for every updater (the home's choice, the plain server,
+the runtime, the apps' server payload, the `update` commands): a release numbered higher but
+signed before the one running here, on the same major.minor line, is an older build (an rc of a
+version already released, tagged after it) and is passed by: not a downgrade, not a replay
+alarm, no notice (`older_build`). A higher major.minor always counts as newer, so a hotfix on an
+older minor still moves up. The same version with other checksums stays a refused replay. A
+release seen before its signed files were attached (they come a few minutes after it is
+created) is verified as soon as GitHub lists them. A download that fails (HTTP, a timeout, the
+disk) is `download_failed`: retried twice at once, then as any failure that may pass, never a
+verification failure that blocks the release.
+
+**When a run cannot finish:**
+- **A failure that may pass** (a download, an install that did not take) is tried again at
+  once, then 15 minutes later, then in the next window; each window counts one attempt.
+- **A failure that needs a person** (no app in the release for that machine, not enough disk, an
+  install that is not self-managed, an app that cannot change itself or was built locally, a
+  trust root that expired, the Microsoft Store's `python3` alias where the pipeline needs a real
+  Python) starts no new run until the next window or an admin acts, and is told once.
+- **A release that bundles another PostgreSQL major** than the one a machine runs is never started
+  on its data: the release says each app's major (`release.json`'s `app_postgres_major`, signed),
+  so a runtime install and an app's install refuse it before anything is installed
+  (`pg_major_change`, needs a person, the release not blocked). A release from before that field
+  is refused by the start's database step, which halts and goes back.
+- **Only a verification failure or a rehearsal that failed on the real data** blocks a release;
+  a rehearsal that could not run (its dump, scratch database or restore) is an attempt.
+- **A home whose window always has a viewer** (or that is always outside it) is told after three
+  windows ("stuck", `update.stuck`), and the page offers "Install now".
+- The page shows what the scheduler waits for ("Not started now: …"), and a machine its new
+  release's schema pauses is told (`update.node_paused_schema`).
+- The dumps are kept to `rules.updates.backups_keep`; scratch copies a crash left behind go
+  after an hour.
 
 How each kind of install takes a release
 ([install-kinds.md](../specs/epics/35-cluster-full-nodes-and-updates/install-kinds.md)):
@@ -87,6 +123,96 @@ How each kind of install takes a release
 Automatic installs are on by default (`rules.updates.auto_install`); with them off (Admin ->
 Updates -> Pause) the home only checks and notifies. `MAKTABA_UPDATE_DISABLE=1` turns the
 checks off altogether.
+
+## When an update fails: where it says why
+
+Every update attempt is kept with its reason
+([update-attempts.md](../specs/epics/35-cluster-full-nodes-and-updates/update-attempts.md)):
+the desktop app's own updater (its badge, its menu, the home's order), a release's first start
+(the database step, the pipeline's environment), and the cluster's runs. **Admin → Updates**
+shows, for the home and each machine, the last attempt: when, from and to, the step it stopped
+at, the reason in plain words, the raw error, and what to do next (Retry, the fix, or the logs).
+"See the logs" opens the logs page on that update's time window with the machine's own files
+beside the api's lines: `server.log` (the database step, every role), `app.log` (the desktop
+app's updater) and `launcher.log`, a node's fetched over the machine channel
+(`GET /api/admin/logs/files`). "Download the logs" is the diagnostics bundle of the same window
+with those files in it (`files/*.log`, a node's under `node-<id>/`). The desktop app says the
+same in its menu and an OS notification, which open the logs page, or the folder with `app.log`
+and `server.log` when the server does not answer. A machine that cannot log in to the
+home's database says so on the Updates and Machines pages; the home re-makes its access by
+itself ([machine-database-access.md](../specs/epics/37-node-replica/machine-database-access.md)).
+
+Where the evidence is on each machine:
+
+| | macOS | Windows | Linux app |
+|---|---|---|---|
+| the attempts | `~/Library/Application Support/Maktaba/updates/app-attempts.json`, `server-attempts.json` | `%LOCALAPPDATA%\Maktaba\updates\` (the same two) | the app's data folder, `updates/` |
+| the app's log | `~/Library/Logs/Maktaba/app.log` | `%LOCALAPPDATA%\Maktaba\logs\app.log` | the app's logs folder, `app.log` |
+| the server's log | `~/Library/Logs/Maktaba/server.log` | `%LOCALAPPDATA%\Maktaba\logs\` | the app's logs folder |
+| the database step | `~/Library/Application Support/Maktaba/state/database.json`; the dump before the update: `backups/pre-<from>-to-<to>.dump`; a failed state set aside: `backups/failed-*.dump` | the same under `%LOCALAPPDATA%\Maktaba` | the same under the data folder |
+| the launcher | `~/Library/Application Support/Maktaba/updates/launcher.log` | `%LOCALAPPDATA%\Maktaba\updates\launcher.log` | the runtime's `updates/launcher.log` |
+
+On a Mac, the server's login item and code signing show in the system log:
+`log show --last 2d --style compact --predicate 'process == "Maktaba" OR eventMessage CONTAINS[c] "com.hamzalabs.maktaba"'`,
+`launchctl print gui/$(id -u)/com.hamzalabs.maktaba.server`, and
+`codesign -dv --verbose=2 /Applications/Maktaba.app`. An app with no code signature at all
+cannot start its server's login item (`login_item_unsigned`): 0.3.0's Mac app is such an app
+(built from the 0.3.0-rc.6 commit, before the ad-hoc signing of the bundle). 0.3.0-rc.7 and
+0.3.1 have no Apple-Silicon app at all (their release could not build it: tauri tried to notarize
+the ad-hoc app with empty Apple settings), so their update feeds offer a Mac nothing. Until the
+next release, only
+`codesign --force --deep -s - --identifier com.hamzalabs.maktaba /Applications/Maktaba.app`
+mends an installed 0.3.0; the next release's app is signed ad hoc and updates as usual. Also
+worth a look on the Mac: `~/Library/Application Support/com.hamzalabs.maktaba/mode.json` (server
+or client), `sfltool dumpbtm` (the login items macOS knows),
+`log show --last 2d --predicate 'eventMessage CONTAINS "Codesigning failure"'`,
+`xattr -l /Applications/Maktaba.app`, and a leftover `$TMPDIR/tauri_current_app*` or
+`tauri_updated_app*` (an update the updater left half done).
+
+### The desktop apps' own updates
+
+- **Every app shows its update**, the ones that run no server too (the Intel Mac app, an app
+  connected to another Maktaba): the menu's update item and its badge. The Windows portable
+  (no installer beside it) offers "download the new zip" and opens the release page.
+- **One install at a time**, with a 45-minute download limit, a stall watchdog (reported as
+  `no_network`) and the progress in the update item.
+- **On a Mac**, an ordered install checks, without prompting, that the app can change itself:
+  `translocated` first, then a read-only volume (`not_writable`), `needs_admin`, and
+  `app_management` (App Management refused, or the bundle locked). It never reaches a password
+  prompt. The server's login item needs a signed bundle (ad hoc is enough) and is bound to the
+  build that registered it, so each new build registers it again at its first start.
+- **On a Mac**, the server is stopped before the app's bundle is swapped (no old process reads
+  the new files), and started again on the release it had when the install fails.
+- **On Windows**, an installer that does not finish after the app closed is recorded at the next
+  start (`installer_not_finished`); an unattended home's server is started again on the release
+  it had once the installer is gone (15 minutes at the soonest, 2 hours at most), and the home's
+  run is told at once. The installer removes the old payload only when the server stopped.
+- **On Linux**, an app whose server an updater will order never switches the server to its own
+  newer payload (a newer AppImage, an apt upgrade): a node's home orders it, and so does a home
+  whose automatic updates are on (its `/api/cluster/self` says `updates_auto`, to callers on
+  the same machine only). A standalone server with automatic updates off takes the app's newer
+  payload as before. A server that does not say (it is not answering yet when the app starts,
+  or it is older) goes by its last word, kept in `updates/app-updates-auto.json`; with none
+  kept, the payload is left to the server's updater when it has run a release there
+  (`updates/journal.json`).
+- **A release becomes latest** only once every desktop platform is in its verified update feed
+  (`updater-feed --require desktop`, each signature checked against the public key): a release
+  missing one is published but not offered as latest.
+
+### A Mac or PC app built locally cannot update itself
+
+An app built on the machine (`make mac-app`, a local `tauri build`) carries the placeholder
+updater key and the version 0.1.0: it can verify no release, so it cannot take one. It says so
+instead of failing: its menu, the home's Updates page and an ordered run read `local_build`,
+"this app was built locally and can't update itself: install the release by hand once". Such a
+run is no failure of the release: it counts no attempt and blocks nothing, and the rest of the
+cluster updates as usual. To bring that machine onto the release track, install the next
+release's app by hand once (on a Mac, the `.dmg` from the GitHub release, dragged over the app in
+Applications; its data and settings stay). From then on it updates itself like any other.
+
+Note for the Mac home that reports 0.3.0-rc.7: no Apple-Silicon app was built for rc.7 or 0.3.1
+(their release failed to notarize the ad-hoc app), so an "rc.7" Mac home is most likely such a
+local build: install the next release's `.dmg` once.
 
 ## Install-type behaviour for the manual self-update (Epic 28)
 

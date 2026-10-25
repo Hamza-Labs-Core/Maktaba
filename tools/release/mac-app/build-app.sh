@@ -23,8 +23,8 @@ BUILD="$REPO_ROOT/build/mac-app"
 cd "$REPO_ROOT/apps/desktop"
 [ -d node_modules ] || pnpm install --frozen-lockfile
 rustup target add aarch64-apple-darwin >/dev/null 2>&1 || true
-# CI=true: tauri's dmg script skips the Finder window layout (AppleScript), which hangs without a GUI session
-CI="${CI:-true}" pnpm exec tauri build --target aarch64-apple-darwin --bundles app,dmg --config "$BUILD/tauri.mac-app.conf.json"
+# as desktop-release.yml builds it: notarized only when the app can be (tauri-build.sh)
+"$SCRIPT_DIR/tauri-build.sh" --target aarch64-apple-darwin --bundles app,dmg --config "$BUILD/tauri.mac-app.conf.json"
 
 bundle="$REPO_ROOT/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle"
 signed=()

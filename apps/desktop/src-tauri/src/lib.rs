@@ -30,6 +30,7 @@ use tauri::{
 use tauri_plugin_deep_link::DeepLinkExt;
 
 mod agent;
+mod attempts;
 mod autoinstall;
 mod lang;
 mod mode;

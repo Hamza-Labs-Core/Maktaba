@@ -23,8 +23,12 @@ type MachineJob struct {
 	Rehearse      bool              `json:"rehearse,omitempty"`
 	RehearseMaxGB int               `json:"rehearse_max_db_gb,omitempty"`
 	KeepVersions  int               `json:"keep_versions,omitempty"`
+	BackupsKeep   int               `json:"backups_keep,omitempty"`
 	WatchSeconds  int               `json:"watch_seconds,omitempty"`
 	HealthSeconds int               `json:"health_seconds,omitempty"`
+	// AppPostgresMajor is the release's app payloads' PostgreSQL majors (its verified
+	// release.json's): a machine refuses another major than its own before downloading
+	AppPostgresMajor map[string]int `json:"app_postgres_major,omitempty"`
 }
 
 // MachineStep is one step of a machine's run.
@@ -66,6 +70,17 @@ type MachineStatus struct {
 	// BoundSec is how long the machine's own limits let the run go on from its switch (its
 	// start steps' cap, from its database's size, and its watch's bound).
 	BoundSec int `json:"bound_sec,omitempty"`
+	// Attempts are the machine's update attempts (the desktop app's own, its releases'
+	// starts), every failure with its reason, newest first.
+	Attempts []Attempt `json:"attempts,omitempty"`
+	// Backup is the dump the home's new release took before its migrations (at its commit).
+	Backup *RunBackup `json:"backup,omitempty"`
+}
+
+// RunBackup is a dump of the home's database a run took (update_runs.backup).
+type RunBackup struct {
+	Path  string `json:"path"`
+	Bytes int64  `json:"bytes"`
 }
 
 // RunID is the run the report is of ("" none).

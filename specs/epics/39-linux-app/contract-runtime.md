@@ -57,7 +57,7 @@ Every command takes `--json`: NDJSON events as in [setup's contract](../36-mac-a
 |---|---|
 | `runtime install [--from DIR] [--owner app\|headless] [--activate] [--allow-downgrade]` | `--from` defaults to the payload this binary runs from. Removes what an install cut short left, checks the room, then copies every file into `.staging-*`, checking it against `files.sha256` as it goes (`stage: copy`, bytes `done`/`total`). Writes the payload.json and files.sha256 it verified (not the source read again), then the directory is flushed and renamed to its final name. If that name exists already with the same manifest, nothing is copied. **The first runtime** (no `current` yet) becomes `current` at once, so an install alone leaves something the service can run (`"activated": true`). With `--activate`: stop the service (if installed), point `current` at it, start the service, prune |
 | `runtime activate <dir\|previous> [--allow-downgrade]` | the same switch, for an installed directory; `previous` is the one that ran before (a rollback) |
-| `runtime status [--from DIR]` | `current`, its `version`, `previous`, `watermark`, `owner`, the installed directories; and for the payload this binary runs from (or `--from`): `from`, `from_version`, `update_pending` (it is newer than current, or the same version built again) and `downgrade` (it is older than the watermark) |
+| `runtime status [--from DIR]` | `current`, its `version`, `previous`, `watermark`, `owner`, the installed directories; and for the payload this binary runs from (or `--from`): `from`, `from_version`, `update_pending` (it is newer than current, or the same version built again; the app activates only a newer one: the same release built again is kept as it is, and switching is the server's, D3) and `downgrade` (it is older than the watermark) |
 | `runtime prune [--keep N]` | keeps `current`, `previous` and the newest other installs up to N in all (N ≥ 2), removes the rest. Never `current` or `previous` |
 
 **Downgrades.** A version older than the watermark (compared as release versions, a leading `v`
@@ -102,8 +102,10 @@ the new version. Then the supervisor's next start runs [36.8's contract](../36-m
   uses it.
 - **Updates** follow the runtime's owner, read from `owner.json` at every server start (a change
   applies at the next one). The launcher sets `MAKTABA_RUNTIME_OWNER` for the server and every role.
-  - `owner: app`: also `MAKTABA_UPDATE_DISABLE=1` (one updater, the app's). `maktaba-server update`
-    refuses and says the app updates it.
+  - `owner: app`: the server takes part in the cluster's automatic updates like any machine (Epic
+    35: the home orders the release, the server installs the payload as a new runtime after the
+    click in the app); the launcher no longer sets `MAKTABA_UPDATE_DISABLE`. `maktaba-server
+    update` by hand still refuses and says the app updates it.
   - `owner: headless`: no `MAKTABA_UPDATE_DISABLE`, so the API's update check runs. `maktaba-server
     update` verifies the release (Epic 35: the Sigstore bundle over `checksums.txt` from the release
     workflow of that tag, Rekor, `release.json`), downloads `maktaba-linux-payload-<v>-<arch>.tar.gz`

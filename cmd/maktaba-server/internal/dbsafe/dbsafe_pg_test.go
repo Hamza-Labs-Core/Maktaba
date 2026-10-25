@@ -414,3 +414,42 @@ func runAPI(ctx context.Context, api string, args ...string) (string, error) {
 	out, err := exec.CommandContext(ctx, api, args...).CombinedOutput()
 	return string(out), err
 }
+
+// L4 (audit): a restore that fails part way leaves the database as it was, not empty:
+// the schema's drop and the dump's restore are one transaction.
+func TestRestoreFailingLeavesTheDatabase(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	if !havePSQL(r.t.bin("psql")) {
+		t.Skip("no psql beside the Postgres programs")
+	}
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('after.update', '1')`); err != nil {
+		t.Fatal(err)
+	}
+	// a dump cut part way: its restore fails (before, the schema was dropped first and
+	// the database left empty)
+	raw, _ := os.ReadFile(dump)
+	bad := filepath.Join(r.t.Backups, "bad.dump")
+	_ = os.WriteFile(bad, raw[:len(raw)*2/3], 0o600)
+	var log bytes.Buffer
+	if err := r.t.Restore(ctx, bad, &log); err == nil {
+		t.Fatal("a cut dump restored")
+	}
+	db2, err := r.t.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+	r.db = db2
+	var n int
+	if err := db2.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("the database changed under a failed restore: %d %v\n%s", n, err, log.String())
+	}
+	if !r.has(t, "videos") {
+		t.Fatal("the failed restore left the database empty")
+	}
+}

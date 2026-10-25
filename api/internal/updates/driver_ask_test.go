@@ -16,6 +16,16 @@ func (r *driverRig) stepN(n int) {
 	}
 }
 
+// stepUntil steps the driver until ok holds (at most n steps, a minute of the clock each):
+// no more steps than the test needs (the unit tier's time cap).
+func (r *driverRig) stepUntil(n int, ok func() bool) {
+	ctx := context.Background()
+	for i := 0; i < n && !ok(); i++ {
+		_ = r.d.Step(ctx)
+		r.f.now = r.f.now.Add(time.Minute)
+	}
+}
+
 func (r *driverRig) active(t *testing.T) Run {
 	t.Helper()
 	run, err := r.f.store.ActiveRun(context.Background())
@@ -100,7 +110,13 @@ func TestDriverNewerReleaseSupersedesAWaitingRun(t *testing.T) {
 	a := r.node(t, "n1", "alpha", "darwin-arm64", "1.4.0")
 	a.asks = true
 	_, _ = r.f.svc.Tick(ctx)
-	r.stepN(40)
+	waiting := func(version string) func() bool {
+		return func() bool {
+			run, _ := r.f.store.ActiveRun(ctx)
+			return run != nil && run.Version == version && run.Step == StepWaitingClick && a.state() == MAwaitingClick
+		}
+	}
+	r.stepUntil(40, waiting("1.5.0"))
 	old := r.active(t)
 	if old.Step != StepWaitingClick || a.state() != MAwaitingClick {
 		t.Fatalf("run %s/%s machine %s", old.State, old.Step, a.state())
@@ -118,7 +134,7 @@ func TestDriverNewerReleaseSupersedesAWaitingRun(t *testing.T) {
 		t.Fatalf("old run %s machine %s alpha %s", got.State, a.state(), ts["alpha"].State)
 	}
 	// a clicked machine is not superseded under the person's hand
-	r.stepN(40)
+	r.stepUntil(40, waiting("1.6.0"))
 	cur := r.active(t)
 	if cur.Version != "1.6.0" || a.state() != MAwaitingClick {
 		t.Fatalf("new run %s/%s machine %s", cur.Version, cur.Step, a.state())
@@ -147,7 +163,9 @@ func TestDriverCancelAHomeOrder(t *testing.T) {
 }
 
 // review 6: a machine the release rolled back on (by itself, or an admin's Roll back) is
-// not caught up with it again; review 7: a catch-up waits for the window.
+// not caught up with it again; review 7: with catch_up "window" a catch-up waits for the
+// window (the default, "immediate", catches a machine that keeps no TV up at once:
+// TestCatchUpImmediate).
 func TestCatchUpRespectsRollbacksAndTheWindow(t *testing.T) {
 	r := newDriverRig(t)
 	ctx := context.Background()
@@ -167,6 +185,10 @@ func TestCatchUpRespectsRollbacksAndTheWindow(t *testing.T) {
 	}
 
 	r2 := newDriverRig(t)
+	if _, err := r2.f.db.Exec(`INSERT INTO app_settings (key, value) VALUES ($1, $2)`, SettingsKey,
+		`{"catch_up":"window"}`); err != nil {
+		t.Fatal(err)
+	}
 	n := r2.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
 	r2.cluster.offline["n1"] = true
 	_, _ = r2.f.svc.Tick(ctx)

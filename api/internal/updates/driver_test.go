@@ -28,6 +28,8 @@ type fakeMachine struct {
 	// pendingFor: status reports a start step (watching, pending) this many times after
 	// the apply before the outcome
 	pendingFor int
+	// backup: the dump its commit reports
+	backup *RunBackup
 }
 
 // click is someone choosing to install on the machine's desktop app.
@@ -118,6 +120,7 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 				m.st.State, m.st.Error = MApplyFailed, &MachineError{Step: "restart", Code: "app_install_failed"}
 			default:
 				m.st.State = MCommitted
+				m.st.Backup = m.backup
 				m.version = m.st.Job.Version
 			}
 		}

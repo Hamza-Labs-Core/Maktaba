@@ -69,7 +69,12 @@ func (li *LayoutInstaller) buildVenv(ctx context.Context, j *Journal, res *relea
 			return verifyFailure(err)
 		}
 	}
-	py := li.python()
+	py, stub := li.python()
+	if py == "" && stub != "" {
+		return Fail("python_store_stub", "the only Python on PATH is the Microsoft Store's alias (%s), which runs no "+
+			"Python: install Python 3.12 from python.org (or turn the alias off in Settings > Apps > Advanced app "+
+			"settings > App execution aliases), or name one in %s", stub, envPipelinePython)
+	}
 	if py == "" {
 		return Fail("no_python", "no Python for the pipeline's environment: install Python 3.12 (or uv), or name one "+
 			"in %s", envPipelinePython)
@@ -254,22 +259,61 @@ print(json.dumps(have))
 
 // python is the interpreter the pipeline's environment is built with: the one named in
 // MAKTABA_PIPELINE_PYTHON; the one the running release's environment (or the configured
-// [pipeline] python's) was made from; else the first Python on PATH.
-func (li *LayoutInstaller) python() string {
+// [pipeline] python's) was made from; on Windows the py launcher's 3.12; else the first
+// Python on PATH that is not the Microsoft Store's alias (stub: the alias found, when it
+// was the only one: it opens the Store and exits 9009, no Python).
+func (li *LayoutInstaller) python() (py, stub string) {
 	if p := strings.TrimSpace(os.Getenv(envPipelinePython)); p != "" {
-		return p
+		return p, ""
 	}
 	for _, py := range []string{venvPython(filepath.Join(li.Layout.ReleaseDir(li.Running()), "venv")), li.PipelinePython} {
 		if base := baseInterpreter(py); base != "" {
-			return base
+			return base, ""
+		}
+	}
+	if runtime.GOOS == "windows" {
+		if p := pyLauncher(); p != "" {
+			return p, ""
 		}
 	}
 	for _, name := range []string{"python3.12", "python3", "python"} {
-		if p, err := exec.LookPath(name); err == nil {
-			return p
+		if p, err := lookPath(name); err == nil {
+			if storeAlias(p) {
+				stub = p
+				continue
+			}
+			return p, ""
 		}
 	}
-	return ""
+	return "", stub
+}
+
+// lookPath and pyLauncher find Pythons (tests replace them).
+var (
+	lookPath   = exec.LookPath
+	pyLauncher = func() string {
+		launcher, err := exec.LookPath("py")
+		if err != nil {
+			return ""
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, launcher, "-3.12", "-c", "import sys; print(sys.executable)").Output()
+		if err != nil {
+			return ""
+		}
+		p := strings.TrimSpace(string(out))
+		if _, err := os.Stat(p); err != nil || storeAlias(p) {
+			return ""
+		}
+		return p
+	}
+)
+
+// storeAlias reports whether a path is one of Windows' App execution aliases
+// (%LOCALAPPDATA%\Microsoft\WindowsApps): python3.exe there opens the Microsoft Store.
+func storeAlias(p string) bool {
+	return strings.Contains(strings.ToLower(filepath.ToSlash(p)), "/microsoft/windowsapps/")
 }
 
 // venvPython is a venv's interpreter.
