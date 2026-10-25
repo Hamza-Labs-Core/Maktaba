@@ -26,6 +26,7 @@ func (s relaySource) Attach(ch uuid.UUID) func() { return s.h.Tracker.AttachPush
 
 func (s relaySource) Stream(ctx context.Context, ch uuid.UUID, w io.Writer, started func(relay.Origin)) error {
 	h := s.h
+	ctx = withPurpose(ctx, PurposeRelayPull)
 	p, err := h.Svc.Resolve(ctx, ch)
 	if err != nil {
 		return err

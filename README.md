@@ -163,15 +163,20 @@ every artifact is checksummed and signed with keyless cosign:
 # Linux / macOS — one-line installer (detects OS + arch, verifies checksum)
 curl -fsSL https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/packaging/install.sh | bash
 
-# Debian / Ubuntu — native package (systemd unit, maktaba user, migrations)
+# Debian / Ubuntu — native package (systemd unit, maktaba user), from the release
 sudo apt install ./maktaba-server_<ver>-1_amd64.deb
 
 # Fedora / RHEL / CentOS
 sudo dnf install ./maktaba-server-<ver>-1.x86_64.rpm
 
-# macOS — Homebrew
+# macOS — Homebrew (the server; it updates itself), once the tap is published
 brew install hamza-labs-core/tap/maktaba
 ```
+
+Each of these updates itself after that, in its quiet window. Once the project's apt and dnf
+repositories and its Homebrew tap are set up, the release notes name them: the repositories
+carry the same server packages (their page says how to add them), and the tap the formula
+(attached to each release as `maktaba.rb` meanwhile).
 
 **Windows: the Maktaba app.** Install `Maktaba_<ver>_x64-setup.exe` from the
 [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest). It
@@ -195,8 +200,11 @@ After installing, run `maktaba-server setup` (or edit
 web UI is on port `8088`. Packaging details, install paths, and the full
 artifact list are in [`deploy/packaging/`](deploy/packaging/README.md).
 
-Prefer containers? `docker compose -f deploy/compose/docker-compose.yml up`
-runs the same stack from the multi-arch GHCR images.
+Prefer containers? [`cloud/installers/docker/docker-compose.yml`](cloud/installers/docker/docker-compose.yml)
+runs Maktaba in one container (`ghcr.io/hamza-labs-core/maktaba-server`, multi-arch):
+`docker compose up -d`, then `docker compose run --rm maktaba setup` once. It updates itself
+on its volume like every other install. (`deploy/compose/docker-compose.yml` is the
+development and CI stack, built from source.)
 
 ---
 

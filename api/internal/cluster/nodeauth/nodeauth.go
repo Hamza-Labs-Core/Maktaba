@@ -53,6 +53,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodemetrics"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/placement"
 )
 
@@ -118,6 +119,9 @@ type Resolver struct {
 	SecureCookies bool
 	Now           func() time.Time
 	Logger        *slog.Logger
+	// Metrics counts the questions to the home and the cache's answers (story 35.15;
+	// nil: not counted).
+	Metrics *nodemetrics.Metrics
 
 	mu      sync.Mutex
 	cache   map[string]*entry
@@ -492,6 +496,7 @@ func (r *Resolver) resolve(ctx context.Context, key string, req delegation.Intro
 		return nil, "", ErrHomeUnreachable
 	}
 	if e, ok := r.get(key); ok {
+		r.Metrics.CacheHit()
 		if e.denied {
 			return nil, "", nil
 		}
@@ -503,6 +508,7 @@ func (r *Resolver) resolve(ctx context.Context, key string, req delegation.Intro
 	a, err := r.Link.Introspect(ctx, req)
 	switch {
 	case errors.Is(err, homelink.ErrUnauthorized):
+		r.Metrics.Delegate(nodemetrics.DelegateDenied)
 		r.answered()
 		r.put(key, &entry{denied: true, until: r.now().Add(NegativeTTL)}, gen)
 		return nil, "", nil
@@ -512,8 +518,10 @@ func (r *Resolver) resolve(ctx context.Context, key string, req delegation.Intro
 		if ctx.Err() == nil && errors.Is(err, homelink.ErrUnreachable) {
 			r.unanswered()
 		}
+		r.Metrics.Delegate(nodemetrics.DelegateUnreachable)
 		return nil, "", ErrHomeUnreachable
 	}
+	r.Metrics.Delegate(nodemetrics.DelegateOK)
 	r.answered()
 	now := r.now()
 	until := now.Add(PositiveTTL)

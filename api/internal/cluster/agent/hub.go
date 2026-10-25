@@ -111,6 +111,14 @@ type Config struct {
 	// Delegation issues the nodes' delegation keys (Epic 35 story 35.9); nil: the
 	// machine agents get none (full nodes then cannot act for users).
 	Delegation KeyIssuer
+	// Certs signs a machine's cluster-link certificate from its CSR (cert.csr, story
+	// 35.16: a machine joined before the link gets its certificate on its channel
+	// session, no re-join); nil: cert.csr is refused.
+	Certs CertIssuer
+	// HasCert reports whether a machine holds a cluster-link certificate: only such a
+	// machine's plain session is cert-only while the link is required (one that never got
+	// one — a worker-only machine, an older release — keeps its channel); nil: none does.
+	HasCert func(ctx context.Context, nodeID string) bool
 
 	Now    func() time.Time
 	Logger *slog.Logger
@@ -344,6 +352,19 @@ func (h *Hub) sweepLoop(ctx context.Context) {
 func (h *Hub) event(fields map[string]any) {
 	fields["ts"] = h.now().Format(time.RFC3339Nano)
 	h.files.Write(KindEvents, fields)
+}
+
+// Record appends an event of the home's own to the hub's events file (its `event` field
+// names it: the update flow's, story 35.15 AC2).
+func (h *Hub) Record(fields map[string]any) {
+	if h == nil || len(fields) == 0 {
+		return
+	}
+	rec := make(map[string]any, len(fields)+1)
+	for k, v := range fields {
+		rec[k] = v
+	}
+	h.event(rec)
 }
 
 // ---------- registry ----------

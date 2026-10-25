@@ -23,6 +23,8 @@ from maktaba_pipeline.tvrelease.stage import stage_change
 from maktaba_pipeline.tvrelease.store import create_change, get_change, update_change
 from tests.tvrelease.helpers import NOW, add_channel, blocks, channel_def, library_with
 
+pytestmark = pytest.mark.integration
+
 
 async def _two_channels(db: Database) -> tuple[str, str, Any]:
     lib = await library_with(db, 8, tag="first")

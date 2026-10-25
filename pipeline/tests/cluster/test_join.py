@@ -138,8 +138,10 @@ def test_join_shows_the_code_waits_and_saves_the_credentials(
 
     body = home.joins[0]
     assert set(body) == {
-        "node_id", "name", "os", "arch", "versions", "capabilities", "storage", "pubkey",
+        "node_id", "name", "os", "arch", "versions", "capabilities", "storage", "pubkey", "csr",
     }  # fmt: skip
+    # the cluster link's certificate request (story 35.16): its key never leaves here
+    assert body["csr"].startswith("-----BEGIN CERTIFICATE REQUEST-----")
     assert body["name"] == "linux-box" and body["node_id"] == cfg.node_id
     assert body["capabilities"]["pipeline_version"] and "pipeline" in body["versions"]
     code = home.code()

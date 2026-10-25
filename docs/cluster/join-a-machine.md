@@ -19,6 +19,13 @@ In short:
 > `pipeline` folder wherever you see `maktaba-pipeline` (for example
 > `uv run python -m maktaba_pipeline join`).
 
+> **A worker-only machine, or a full node.** These steps install a **worker-only** machine: the
+> pipeline, which pulls work from the home. Every worker-only machine becomes a **full node** —
+> the whole of Maktaba, with its own web app at its own address — by itself at its next update
+> ([below](#a-worker-only-machine-becomes-a-full-node)). To make it a full node at once, add
+> `--full` to the node installer (`-Full` on Windows). On Windows the Maktaba app can also run a
+> full node, with its tray and its own updates (its setup moves an installer's node into it).
+
 ## Before you start
 
 - The home is running and you can sign in to its web app as an admin.
@@ -369,6 +376,56 @@ with code 77. The
 installer's services and the systemd example (`RestartPreventExitStatus=77`) do not restart
 it then; the hand-made launchd and Task Scheduler entries above do, and keep being refused —
 unload them when you remove the machine.
+
+## A worker-only machine becomes a full node
+
+**By itself, at its next update** (Epic 35 story 35.8): when the home installs a release, a
+worker-only machine's turn in the rollout (inside the quiet window, once its jobs finished)
+converts it. The home sends its worker `update.convert`; the worker downloads the release from the
+home (with a download token the home puts in the command), or from GitHub when the home does not
+have it, verifies it itself — the release's signature with the exact pinned identity, every file
+against `checksums.txt`, the server against `release.json` — and runs that release's
+`maktaba-server setup --node --converting` outside its own service. Setup installs the
+side-by-side layout and the launcher's service, keeps the extra workers, waits until the machine
+answers as a node, and only then removes the old worker units. **Admin > Updates** follows it
+("becoming a full node") and says why when it fails (the download, the verification, or setup's own
+words); the machine then stays drained and is tried again with a **Retry** or the next release.
+
+**A worker too old to know the command** (installed before Epic 35's conversion) shows
+**worker-only — re-run the installer once** on the Updates and Machines pages. Run the node
+installer of the home's release again: it installs a pipeline that converts at the next update, or,
+with `--full`, converts at once:
+
+```sh
+./maktaba-node-<version>/install-node.sh --full --server-dir <the release's server, extracted>
+```
+
+```powershell
+.\maktaba-node-<version>\windows\install-node.ps1 -Full -ServerDir <the release's server, extracted>
+```
+
+Both run `maktaba-server setup --node` (by hand: see
+[deploy/packaging/node](../../deploy/packaging/node/README.md#becoming-a-full-node-epic-35)). A
+worker started by hand (a script running `maktaba-pipeline run`) is not one of the installer's
+units: stop it yourself afterwards, or the machine runs two workers.
+
+**Afterwards**, open the machine's address (its card on Admin > Machines) and press **Continue
+with <home>**: one sign-in for every machine. It updates with the rest of the cluster from then on
+([updates](../updates.md)).
+
+### Windows: a logon task or a service
+
+| | Logon task (the default) | Windows service |
+|---|---|---|
+| Worker-only machine | Task `maktaba-node` (and `maktaba-node@<N>`), "At log on" of this user | `install-node.ps1 -Mode Service`: one NSSM service per worker (elevated PowerShell, `nssm.exe` on the PATH) |
+| Full node | Task **Maktaba**, "At log on" of this user, running the launcher | `-Full -Mode Service` (or `setup --node --mode service`): a Windows service running the launcher |
+| Starts | when the user signs in (turn on automatic sign-in on a dedicated PC) | at boot, with nobody signed in |
+| The NAS | mapped drive letters, `net use` and Credential Manager entries of that user work | no mapped drive letters (session 0): the share must be a UNC path (`\\nas\share`) and the path map must use it |
+| Rights | no administrator needed | an administrator to install; it runs as your account (asked once) |
+
+Pick the task for a desktop PC someone signs in to, the service for a headless machine that
+should work right after a power cut. Switching later: run the installer again with the other
+`-Mode`.
 
 ## Leaving the cluster
 

@@ -121,7 +121,7 @@ build tool:
 
 | Job | Runner | Steps | Artifacts |
 |---|---|---|---|
-| `android` | `ubuntu-22.04` | Node + pnpm + JDK 17 + Android SDK → `cap add/sync android` → `gradlew assembleRelease bundleRelease` | `maktaba-<version>.apk` (sideload) + `maktaba-<version>.aab` (Play Store) |
+| `android` | `ubuntu-22.04` | Node + pnpm + JDK 17 + Android SDK → `cap add/sync android` → `gradlew assembleRelease` → the web bundle again as the store build → `cap copy android` → `gradlew bundleRelease` | `maktaba-<version>.apk` (sideload) + `maktaba-<version>.aab` (Play Store) |
 | `ios` | `macos-latest` | Node + pnpm + Xcode + CocoaPods → `cap add/sync ios` → `pod install` → `xcodebuild archive` | unsigned `.xcarchive` (compile check) |
 
 **Android signing** runs only when the keystore secrets are present, so
@@ -149,3 +149,21 @@ TODO.
 
 Mirror CI locally with `make package-mobile-android` /
 `make package-mobile-ios`.
+
+## Update banner (story 28.5)
+
+The sideloaded Android app cannot update itself; it tells the user when a
+newer release exists and opens the release's `.apk` (or the release page
+when the release lists none) (`web/src/lib/appUpdate.ts`,
+`web/src/components/UpdateBanner.tsx`). A store build shows no banner: the
+Play Store updates the AAB's build and the App Store every iOS build, each
+only after its review, and no store says cheaply which version it carries.
+The web bundle's build settings decide:
+
+| Setting | Values | Set by |
+|---|---|---|
+| `VERSION` | the tag (`v0.3.6`) | `mobile-release.yml` (a bare local build is `dev`: no banner) |
+| `VITE_DISTRIBUTION` | `sideload` (default) / `store` | the APK's bundle / the AAB's bundle (iOS is always a store build) |
+
+How often it checks (daily, weekly, never) is under Settings → About, in the
+sideloaded app.

@@ -10,7 +10,9 @@ This folder explains how it works and how to run it:
 | Page | What it covers |
 |---|---|
 | This page | What a cluster is, the home and the machines, how work is shared |
-| [Join a machine](join-a-machine.md) | Step by step on macOS, Linux and Windows: install, mount the NAS, join, approve, run as a service |
+| [Join a machine](join-a-machine.md) | Step by step on macOS, Linux and Windows: install, mount the NAS, join, approve, run as a service; full nodes; a logon task or a service on Windows |
+| [Updates](../updates.md) | How the home and every machine install each release by themselves, and what you control |
+| [Update runbook](runbook-updates.md) | What to do when an update fails, failure by failure |
 | [Files on the share](files-on-the-share.md) | The `maktaba` folder on the NAS: logs, metrics, jobs; how to read them from any machine; how long they are kept |
 | [LLMs](llms.md) | Running Ollama or LM Studio on a machine and using it from the whole cluster |
 | [Troubleshooting](troubleshooting.md) | What to do when something does not work |
@@ -27,7 +29,8 @@ This folder explains how it works and how to run it:
 - its own workers.
 
 **A machine** is any other computer — macOS, Linux or Windows — that you add to the cluster.
-It runs only Maktaba workers (`maktaba-pipeline`). It needs:
+It runs Maktaba workers (`maktaba-pipeline`) and, as a **full node**, the whole of Maktaba
+([below](#full-nodes-open-maktaba-on-any-machine)). It needs:
 
 - the network path to the home (ports 8080 and 5432),
 - the NAS share mounted, so it can read the videos and write next to them,
@@ -35,6 +38,65 @@ It runs only Maktaba workers (`maktaba-pipeline`). It needs:
   home. Nothing joins without you.
 
 You can add as many machines as you like, and remove or block any of them at any time.
+
+## Full nodes: open Maktaba on any machine
+
+A **full node** runs the same `maktaba-server` as the home, in node mode: its own web app and API
+at its own address (port 8088), its workers, and the streaming role (videos on demand read from
+the NAS on that machine; TV channels when the home places them there). The home stays the only
+database, the only place migrations run, and the only holder of secrets (Plex tokens, Cloudflare
+keys, accounts).
+
+- **Open any machine.** Each machine's address is on its card on Admin > Machines. Its sign-in
+  page offers **Continue with <home>**: accounts live on the home, so one sign-in works on every
+  machine (`rules.cluster.sso`).
+- **What answers where.** Library, video pages, collections and people are read on the machine
+  itself (images through a local cache of the home's); playing a video reads the NAS there. Search,
+  watch history and favourites, Processing, Machines, Logs, the admin settings, Extensions, Plex,
+  Cloudflare, Users, Live TV changes and Updates go to the home through the machine (the machine
+  proxies them, signed with its own key). Live TV plays through the home's front door. System
+  health shows the machine's own processes and the cluster's.
+- **When the home is away.** After 30 seconds without an answer the machine serves from its own
+  copy of the home's database (Epic 37), read-only: sign-ins, reads, playback and TV go on; changes
+  answer "the home is unreachable" until it is back.
+- **The paused page.** A machine whose code does not fit the home's database (during a rollout,
+  before its own update lands) shows **This machine is paused** with a link to the home, and
+  reloads by itself once its update is in.
+
+Every worker-only machine becomes a full node by itself at its next update; a new machine can be
+installed as one directly ([join a machine](join-a-machine.md#a-worker-only-machine-becomes-a-full-node)).
+
+## Updates
+
+The home installs each release by itself in its quiet window, then every machine, one at a time;
+the machines download it from the home and verify it themselves. See [updates](../updates.md) for
+what happens and what you control, and the [update runbook](runbook-updates.md) when something
+goes wrong.
+
+## The cluster link
+
+Story 35.16 moves what the machines say to the home onto encrypted connections that prove which
+machine is talking:
+
+- **A cluster CA on the home** (created at its first start) gives every machine a certificate:
+  at join (the machine sends a certificate request; its key never leaves it) and, for a machine
+  that joined before, by itself after its update. Certificates last 30 days
+  (`rules.cluster.tls_cert_days`) and renew when a third is left.
+- **One control channel per machine**: a WebSocket over mutual TLS on the home's API port (8080:
+  plain HTTP is still served there). Control, commands, session checks and the routes the machine
+  proxies to the home travel on it. Each data stream (TV between the front door and a streaming
+  machine, release and wheelhouse downloads, backups) opens its own connection with a single-use
+  ticket issued on the control channel.
+- **Mode** (`rules.cluster.link_mode`): `prefer` by default (a machine with a certificate uses the
+  link, one without uses the signed HTTP paths as before, so mixed versions keep working),
+  switched to `require` by itself once every approved machine has been on the link for 24 hours.
+  Revoking a machine closes its control channel and every stream at once.
+- **Media** is never read through the link: every machine reads the library from the NAS itself.
+- **Optional browser HTTPS** (`rules.cluster.tls_web_https`): each machine's web app also on port
+  8443 with a certificate from the cluster CA (its fingerprint on the Machines page).
+
+Certificates on each operating system, the database (`setup --pg-tls`), the modes and the
+optional HTTPS are in [The cluster link](tls.md).
 
 ## How the work is shared: queues and pulling
 
@@ -143,7 +205,9 @@ The Machines page reads it once the share has let a day go. Settings, on the hom
 
 | From | To | Port | For |
 |---|---|---|---|
-| machines, browsers | home | 8080 TCP | the web app, the API, the live connection (WebSocket), the LLM address |
+| machines, browsers | home | 8080 TCP | the web app, the API, the live connection (WebSocket), the LLM address; the machines' [cluster link](tls.md) (TLS on the same port) |
+| browsers | full node | 8088 TCP | the machine's own web app |
+| browsers | any machine | 8443 TCP | the web app over HTTPS, when `tls_web_https` is on ([cluster link](tls.md#https-in-the-browser-optional)) |
 | machines | home | 5432 TCP | the database (each machine has its own login) |
 | machines | NAS | the NAS's (SMB 445, NFS 2049) | the videos and the `maktaba` folder |
 | machines | home | 5353 UDP multicast | finding the home automatically (optional) |

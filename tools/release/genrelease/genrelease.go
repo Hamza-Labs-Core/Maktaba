@@ -34,6 +34,7 @@ const (
 	EdgeProtocolGo  = "streaming/internal/frontdoor/protocol.go"
 	AgentProtocolGo = "api/internal/cluster/agent/crypto.go"
 	LauncherGo      = "cmd/maktaba-launcher/main.go"
+	HandoverGo      = "shared/go/layout/handover.go"
 	PythonVersion   = "pipeline/.python-version"
 
 	// MarkerOlderNodes and MarkerPreviousRelease are the MANIFEST.md markers
@@ -66,6 +67,7 @@ type RepoFacts struct {
 	EdgeProtocol       int
 	AgentProtocol      int
 	LauncherProtocol   int
+	HandoverProtocol   int
 	Python             string
 	// AppPostgresMajor is each app payload's bundled PostgreSQL major, from its pins
 	// (tools/release/<payload>/pins.env POSTGRES_VERSION); a payload without pins is left out.
@@ -110,6 +112,7 @@ var (
 	schemaPyRe = regexp.MustCompile(`(?m)^SCHEMA_REV\s*(?::\s*int\s*)?=\s*(\d+)\s*$`)
 	schemaGoRe = regexp.MustCompile(`(?m)^const SchemaRev\s*=\s*(\d+)\s*$`)
 	edgeRe     = regexp.MustCompile(`(?m)^const EdgeProtocol\s*=\s*(\d+)\s*$`)
+	handoverRe = regexp.MustCompile(`(?m)^const HandoverProtocol\s*=\s*(\d+)\s*$`)
 	launcherRe = regexp.MustCompile(`(?m)^const LauncherProtocol\s*=\s*(\d+)\s*$`)
 	agentRe    = regexp.MustCompile(`(?m)^\s*ProtocolVersion\s*=\s*(\d+)\s*$`)
 )
@@ -161,6 +164,9 @@ func ReadRepo(repo string, previousRev int) (RepoFacts, error) {
 		return f, err
 	}
 	if f.LauncherProtocol, err = intConst(filepath.Join(repo, LauncherGo), launcherRe); err != nil {
+		return f, err
+	}
+	if f.HandoverProtocol, err = intConst(filepath.Join(repo, HandoverGo), handoverRe); err != nil {
 		return f, err
 	}
 	pv, err := os.ReadFile(filepath.Join(repo, PythonVersion))
@@ -263,7 +269,7 @@ func Build(o Options) (*rv.Manifest, error) {
 		Published: published.UTC().Truncate(time.Second), SchemaRev: facts.SchemaRev, MinNodeSchema: facts.MinNodeSchema,
 		BreaksPreviousHome: facts.BreaksPreviousHome, MinUpgradeFrom: minUp,
 		EdgeProtocol: facts.EdgeProtocol, LauncherProtocol: launcher, AgentProtocol: facts.AgentProtocol,
-		Assets: map[string]rv.Asset{}, AppPostgresMajor: facts.AppPostgresMajor,
+		HandoverProtocol: facts.HandoverProtocol, Assets: map[string]rv.Asset{}, AppPostgresMajor: facts.AppPostgresMajor,
 	}
 	entries, err := os.ReadDir(o.Dist)
 	if err != nil {
@@ -375,6 +381,9 @@ func Check(m *rv.Manifest, repo string, previousRev int) error {
 	}
 	if m.LauncherProtocol != facts.LauncherProtocol {
 		errs = append(errs, fmt.Sprintf("launcher_protocol %d, %s says %d", m.LauncherProtocol, LauncherGo, facts.LauncherProtocol))
+	}
+	if m.HandoverProtocol != facts.HandoverProtocol {
+		errs = append(errs, fmt.Sprintf("handover_protocol %d, %s says %d", m.HandoverProtocol, HandoverGo, facts.HandoverProtocol))
 	}
 	for p, n := range m.AppPostgresMajor {
 		if facts.AppPostgresMajor[p] != n {

@@ -28,7 +28,10 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
+	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secret"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates/dltoken"
 )
 
 // MinAdminTokenLen is Story 10.9 EC-2: refuse `MAKTABA_ADMIN_TOKEN`
@@ -160,6 +163,15 @@ func RequireAuth(next http.Handler) http.Handler {
 //     process: it proves possession of its pairing key (or the home agent
 //     key) inside the WebSocket handshake, and attempts are rate-limited
 //     per IP.
+//   - /api/cluster/link and /api/cluster/link/stream (Epic 35 story 35.16) — a
+//     machine's mutual-TLS link: the handler requires the machine's current
+//     certificate from the home's cluster CA (and a single-use ticket for a
+//     stream); /api/cluster/ca.crt is the CA's public certificate.
+//   - /api/cluster/link/pull (35.16) — the home's front door on loopback; the
+//     handler refuses any request without this machine's local token.
+//   - /api/cluster/link/local/* (35.16) — a full node's own processes on
+//     loopback (its machine agent, its pipeline, its updater); the handlers
+//     refuse any other caller.
 //   - /api/tv/remote/webhook (Epic 32.7) — Cloudflare Notifications cannot
 //     sign in; the handler checks the cf-webhook-auth secret and only
 //     asks the remote controller for a reconcile.
@@ -188,6 +200,14 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// Epic 31 phase 2 — every process's channel to the home; it
 		// authenticates in the protocol (pairing key or home agent key).
 		"/api/cluster/agent": {},
+		// Epic 35 story 35.16 — the cluster link: mutual TLS + tickets, the CA's
+		// public certificate, the front door's loopback pulls (local token), a
+		// node's loopback routes for its own processes.
+		"/api/cluster/link":         {},
+		"/api/cluster/link/stream":  {},
+		"/api/cluster/ca.crt":       {},
+		"/api/cluster/link/pull":    {},
+		"/api/cluster/link/local/*": {},
 		// Epic 32 story 32.7 — Cloudflare Notifications for the live inputs;
 		// the handler refuses any request without the webhook secret header.
 		"/api/tv/remote/webhook": {},
@@ -214,6 +234,9 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		"/api/cluster/sso/exchange":        {},
 		"/api/cluster/delegate/introspect": {},
 		"/api/cluster/delegate/signout":    {},
+		// Epic 35 story 35.5 — this machine's supervisor records a restore the command
+		// line asked for: the handler refuses any request without its per-boot local token.
+		"/internal/updates/restored": {},
 	}
 }
 
@@ -237,7 +260,7 @@ func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handl
 				WritePasswordChangeRequired(w)
 				return
 			}
-			if isPublic(public, r.URL.Path) || IsPublicChannelArt(r) {
+			if isPublic(public, r.URL.Path) || IsPublicChannelArt(r) || machineRoute(r) || supervisorRoute(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -248,6 +271,42 @@ func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handl
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// machineRoutes are the home's routes for its machines alone (Epic 35 story 35.12: the
+// release mirror, the wheelhouse, the TUF repository passed on): a request the home's
+// delegation middleware verified as a machine's (it runs first) passes the gate without a
+// user, and each handler refuses any other.
+// The artifact route is first (machineRoute).
+var machineRoutes = []string{"/api/cluster/updates/artifacts/", "/api/cluster/updates/wheelhouse/",
+	"/api/cluster/updates/tuf/"}
+
+func machineRoute(r *http.Request) bool {
+	if delegation.NodeFrom(r.Context()) == "" {
+		// a worker-only machine converting has no delegation key: its download token
+		// (story 35.8 AC8) reaches the artifact route alone, whose handler verifies it
+		return dltoken.FromRequest(r) != "" && strings.HasPrefix(r.URL.Path, machineRoutes[0])
+	}
+	for _, p := range machineRoutes {
+		if strings.HasPrefix(r.URL.Path, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// supervisorPrefix is this machine's own supervisor's routes on its API (Epic 35 story
+// 35.6: the update's TV change, POST /internal/updates/tv-change, GET …/{run}, POST
+// …/{run}/withdraw): its per-boot local token passes the gate without a user, on these
+// alone, and each handler checks the token again.
+const supervisorPrefix = "/internal/updates/tv-change"
+
+func supervisorRoute(r *http.Request) bool {
+	p := r.URL.Path
+	if p != supervisorPrefix && !strings.HasPrefix(p, supervisorPrefix+"/") {
+		return false
+	}
+	return mw.FromSupervisor(r)
 }
 
 func isPublic(public map[string]struct{}, path string) bool {

@@ -26,6 +26,13 @@ type procTree struct {
 	mu   sync.Mutex
 	job  windows.Handle // 0 once released, or when no job could be made
 	proc windows.Handle // the child; 0 once released
+	// terminate: job is a child's named job, which is not kill-on-close (the child may
+	// outlive this supervisor, story 35.7): release ends what is left in it itself
+	terminate bool
+	// held is the launcher's (holder's) handle to that job, which keeps the job and its
+	// name alive after this supervisor exits: release closes it with the job
+	held   windows.Handle
+	holder int
 }
 
 // prepareTree runs before Start: the child is created suspended so it
@@ -156,8 +163,15 @@ func (t *procTree) release() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.job != 0 {
+		if t.terminate {
+			_ = windows.TerminateJobObject(t.job, 1)
+		}
 		_ = windows.CloseHandle(t.job)
 		t.job = 0
+	}
+	if t.held != 0 {
+		closeIn(t.holder, t.held)
+		t.held = 0
 	}
 	if t.proc != 0 {
 		_ = windows.CloseHandle(t.proc)

@@ -135,7 +135,13 @@ another PostgreSQL major than the running one: refused before anything is instal
 runtime install from its payload and by an app's install from the signed `release.json`'s
 `app_postgres_major`; needs a person, the release not blocked; a release from before that field
 is refused by the start's database step, `pg_major`). The app's
-`login_item_unsigned` needs a person too.
+`login_item_unsigned` needs a person too. A worker-only machine's conversion (story 35.8 AC8)
+fails at `download` (`download_failed`, `release_incomplete`), `verify` (`verify_*`,
+`version_mismatch`: its worker checks the release itself) or `install` (`install_failed`:
+`setup --node` exited, its own words in the detail); `convert_refused` is a worker that refused
+the command (another conversion under way), `convert_timeout` one not back as a full node on the
+release within two hours. A worker whose pipeline predates the command is `worker_only` (no
+attempt: "re-run the installer once").
 
 ## The desktop app
 

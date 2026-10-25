@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   isNativeRuntime,
+  nativePlatform,
   installNativeConsumers,
   deepLinkToPath,
   consumePendingDeepLink,
@@ -54,6 +55,30 @@ describe("isNativeRuntime", () => {
       isNativePlatform: () => false,
     };
     expect(isNativeRuntime()).toBe(false);
+  });
+});
+
+// Story 28.5: where the app's own update comes from depends on the platform.
+describe("nativePlatform", () => {
+  afterEach(() => {
+    delete (window as unknown as { Capacitor?: unknown }).Capacitor;
+  });
+
+  it("is web in a browser, or when the shell reports web", () => {
+    expect(nativePlatform()).toBe("web");
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => false,
+      getPlatform: () => "ios",
+    };
+    expect(nativePlatform()).toBe("web");
+  });
+
+  it.each(["ios", "android"])("is %s inside that shell", (p) => {
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => p,
+    };
+    expect(nativePlatform()).toBe(p);
   });
 });
 

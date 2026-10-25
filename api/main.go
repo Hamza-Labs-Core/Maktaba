@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -35,6 +36,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
@@ -60,7 +62,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
-	metrics "github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go"
 	tracing "github.com/Hamza-Labs-Core/Maktaba/shared/tracing/go"
 )
 
@@ -269,14 +270,11 @@ func runServe() error {
 	warm := warmPeriod()
 	adminMux := health.AdminMux("api", checks, warm)
 
-	// /metrics on admin port. The handler is bound by NewHandler with
-	// Public=false (no bearer required) because the admin port is
-	// already firewalled in production deploys.
-	mh, err := metrics.NewHandler(metrics.Config{Bind: adminAddr})
-	if err != nil {
-		return fmt.Errorf("metrics handler: %w", err)
-	}
-	adminMux.Handle("/metrics", mh)
+	// /metrics on admin port, no bearer required because the admin port
+	// is already firewalled in production deploys. It carries this
+	// machine's supervisor's update metrics too (story 35.15): one
+	// scrape target per machine.
+	adminMux.Handle("/metrics", metricsHandler(os.Getenv("MAKTABA_SUPERVISOR_URL")))
 
 	// Recent-logs endpoint on the admin port, mirroring the streaming
 	// service. The public-facing viewer/export use /api/admin/logs/*
@@ -387,6 +385,9 @@ func runServe() error {
 	var nodeRT *nodeRuntime
 	var nodeFatal <-chan error // nil on the home: never ready
 	var nodeVerifier *delegation.Verifier
+	// homeLinkSrv is the home's cluster link (story 35.16): its port then serves the
+	// machines' mutual TLS beside plain HTTP (nil: plain HTTP only)
+	var homeLinkSrv *homeLink
 	if nodeCfg.Enabled {
 		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, logger)
 		if err != nil {
@@ -592,7 +593,7 @@ func runServe() error {
 			// scheduler (/api/cluster/updates). Verification is story 35.1's.
 			router.MountP35(r, router.P35Deps{DB: appDB, Logger: logger, Current: version.Version, Notifier: notifyHub,
 				BaseChannel: version.Channel(), Ref: updatesRef, RunLoops: true, Hub: hubRef, GitHubBaseURL: e2eGitHubAPI(),
-				Verifier: updates.ReleaseVerifier{Trust: updater}})
+				Verifier: updates.ReleaseVerifier{Trust: updater}, DataDir: statsDataDir})
 			logger.Info("p27: live-channel + guide handlers mounted",
 				"event", "p27_mounted")
 
@@ -613,9 +614,10 @@ func runServe() error {
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the
 			// machine join/approve/revoke surface and its housekeeping.
-			clusterClose, verifier := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, hubRef, logger)
+			clusterClose, verifier, hl := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, hubRef, updatesRef, notifyHub, logger)
 			defer clusterClose()
 			nodeVerifier = verifier
+			homeLinkSrv = hl
 			// Epic 35 stories 35.9, 35.11: the nodes' delegation and cluster sign-in,
 			// and this machine's /api/cluster/self
 			mountHomeClusterAuth(r, appDB, hubRef, logger)
@@ -647,6 +649,10 @@ func runServe() error {
 	if nodeRT != nil {
 		publicHandler = nodeRT.handler(auth, r, publicMux)
 	}
+	if homeLinkSrv != nil {
+		// a machine's requests on its link go through the same checks as any other
+		homeLinkSrv.srv.Handler = publicHandler
+	}
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
 		Handler:           publicHandler,
@@ -664,7 +670,18 @@ func runServe() error {
 	errCh := make(chan error, 2)
 	go func() {
 		logger.Info("listening", "addr", publicAddr, "kind", "public", "event", "http_listen")
-		errCh <- publicSrv.ListenAndServe()
+		if homeLinkSrv == nil {
+			errCh <- publicSrv.ListenAndServe()
+			return
+		}
+		// one port, two kinds of client: the first byte of each connection decides
+		// between the machines' mutual TLS and everyone's plain HTTP (story 35.16)
+		ln, err := net.Listen("tcp", publicAddr)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		errCh <- publicSrv.Serve(link.NewSniffListener(ln, homeLinkSrv.srv.TLSConfig()))
 	}()
 	go func() {
 		logger.Info("listening", "addr", adminAddr, "kind", "admin", "event", "http_listen")

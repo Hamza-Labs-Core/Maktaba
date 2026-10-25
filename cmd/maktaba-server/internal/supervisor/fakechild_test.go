@@ -80,6 +80,8 @@ func fakeChild(mode string) {
 		os.Exit(code)
 	case "exit0":
 		os.Exit(0)
+	case "handover-supervisor":
+		handoverSupervisorMain()
 	case "sleep":
 		if pidfile := os.Getenv("FAKE_PIDFILE"); pidfile != "" {
 			if err := os.WriteFile(pidfile+".tmp", []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil ||

@@ -66,12 +66,23 @@ type Link interface {
 	HasKey() bool
 }
 
-// HTTPLink is the legacy Link: signed HTTP to the home.
+// LinkTransport is the machine's cluster link (story 35.16): its control channel carries
+// the home calls while it is up.
+type LinkTransport interface {
+	Connected() bool
+	RoundTrip(*http.Request) (*http.Response, error)
+}
+
+// HTTPLink is the node's Link: the calls go on the machine's cluster link while it is up
+// (its certificate proves the machine: nothing is signed), else as signed HTTP to the
+// home (the legacy path of design §18, while the home does not require the link).
 type HTTPLink struct {
 	Home   string // e.g. http://home:8080
 	NodeID string
 	// Base is the transport under the signer (nil: a clone of http.DefaultTransport).
-	Base   http.RoundTripper
+	Base http.RoundTripper
+	// Link is the machine's cluster link (nil: none, the legacy path only).
+	Link   LinkTransport
 	Now    func() time.Time
 	Logger *slog.Logger
 
@@ -97,8 +108,10 @@ func (l *HTTPLink) SetKey(k delegation.Key) {
 	l.emit(Event{Kind: "keys", Key: &k})
 }
 
-// HasKey implements Link.
-func (l *HTTPLink) HasKey() bool { return l.key.Load() != nil }
+// HasKey implements Link: the node can act for users (a delegation key, or its link up).
+func (l *HTTPLink) HasKey() bool {
+	return l.key.Load() != nil || (l.Link != nil && l.Link.Connected())
+}
 
 // HomeURL implements Link.
 func (l *HTTPLink) HomeURL() string { return strings.TrimRight(l.Home, "/") }
@@ -129,6 +142,13 @@ type signer struct {
 }
 
 func (s signer) RoundTrip(r *http.Request) (*http.Response, error) {
+	if lt := s.l.Link; lt != nil && lt.Connected() {
+		resp, err := lt.RoundTrip(r)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrUnreachable, err)
+		}
+		return resp, nil
+	}
 	k := s.l.key.Load()
 	if k == nil {
 		return nil, fmt.Errorf("%w: no delegation key yet (the machine agent has not reached the home)", ErrUnreachable)

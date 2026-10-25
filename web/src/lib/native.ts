@@ -27,6 +27,7 @@
 
 interface CapacitorGlobal {
   isNativePlatform?: () => boolean;
+  getPlatform?: () => string;
 }
 
 // Story 12.9 deep-link routes. A `maktaba://` custom-scheme URL or an
@@ -61,6 +62,17 @@ export function deepLinkToPath(raw: string): string | null {
 export function isNativeRuntime(): boolean {
   const cap = (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor;
   return typeof cap?.isNativePlatform === "function" ? cap.isNativePlatform() : false;
+}
+
+export type NativePlatform = "ios" | "android" | "web";
+
+/** The native shell's platform (Story 28.5: where the app's own update comes from); "web"
+ * outside the Capacitor shell. */
+export function nativePlatform(): NativePlatform {
+  if (!isNativeRuntime()) return "web";
+  const cap = (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor;
+  const p = typeof cap?.getPlatform === "function" ? cap.getPlatform() : "";
+  return p === "ios" || p === "android" ? p : "web";
 }
 
 // Cache names the SPA may drop under memory pressure. Keep in sync with

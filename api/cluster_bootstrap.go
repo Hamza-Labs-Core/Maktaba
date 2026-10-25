@@ -22,6 +22,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/switchover"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	clusterh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/cluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
@@ -43,7 +44,7 @@ const clusterTick = 30 * time.Second
 // It also returns the verifier of the full nodes' signed requests (Epic 35 story 35.9:
 // their delegation keys are issued on the channel and sealed in store).
 func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secrets.Store, hubRef *router.HubRef,
-	logger *slog.Logger) (func(), *delegation.Verifier) {
+	updatesRef *router.UpdatesRef, notifier notify.Notifier, logger *slog.Logger) (func(), *delegation.Verifier, *homeLink) {
 	driver := "postgres"
 	if isSQLiteDSN(dsn) {
 		driver = "sqlite"
@@ -71,7 +72,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		Logger:     logger,
 	})
 	if h == nil {
-		return func() {}, nil
+		return func() {}, nil, nil
 	}
 	h.WebURL, h.Version = os.Getenv("MAKTABA_WEB_URL"), version.Version
 	h.PGBundled, h.PGCA = os.Getenv("MAKTABA_CLUSTER_PG_PORT") != "", os.Getenv("MAKTABA_CLUSTER_PG_CA")
@@ -95,11 +96,47 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	if driver == "sqlite" {
 		keys.DB = nil
 	}
-	hub := mountClusterHub(r, h, db, driver, store, keys, logger)
+	// the cluster link (story 35.16): the home's CA, its certificates and the machines'
+	// mutual-TLS channel on this port; a home without a CA keeps the older paths only
+	var hl *homeLink
+	var certs agent.CertIssuer
+	if driver == "postgres" {
+		name := ""
+		if id.InstanceID != "" {
+			name = id.Name
+		}
+		if hl = startHomeLink(ctx, db, store, h.Store, name, logger); hl != nil {
+			hl.notifier = notifier
+			certs = hl
+			h.JoinTLS, h.Link = hl.JoinTLS, hl.info
+			hl.mount(r)
+			go hl.run(ctx)
+		}
+	}
+	hub := mountClusterHub(r, h, db, driver, store, keys, certs, logger)
+	if hl != nil {
+		hl.skews = hub.ClockSkews
+		// a revoked (or removed) machine loses its link and its certificates at once
+		closeSessions := h.OnRevoke
+		h.OnRevoke = func(nodeID string) {
+			if closeSessions != nil {
+				closeSessions(nodeID)
+			}
+			hl.revoke(nodeID)
+		}
+	}
 	hubRef.Set(hub) // the update driver's machines (Epic 35 story 35.12)
 	// a node's view on the Machines page carries its agent's last update.state (its login
 	// to this home's database among it)
 	h.LiveStates = hub.MachineStates
+	// and a worker-only machine's what becomes of it (its next update converts it, or its
+	// installer must run once: story 35.8 AC8), as the update driver knows it
+	h.WorkerConvert = func(ctx context.Context) map[string]string {
+		if uh := updatesRef.Get(); uh != nil && uh.Driver != nil {
+			return uh.Driver.WorkerConvert(ctx)
+		}
+		return nil
+	}
 	// the machines verify this home's bundled Postgres with its CA, handed over the
 	// machine channel (and sealed in a join's credentials); another database is said to
 	// have no TLS when it has none
@@ -159,7 +196,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 			_ = pub.Close()
 		}
 		sessions.SetRevokeHook(nil)
-	}, verifier
+	}, verifier, hl
 }
 
 // mountClusterHub reads the hub's settings (agent.FromEnv), loads or
@@ -170,7 +207,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 // MAKTABA_HOME_CLUSTER_KEY), whose public half goes into every approved
 // machine's sealed credentials; then it mounts the hub.
 func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver string, store secrets.Store,
-	keys agent.KeyIssuer, logger *slog.Logger) *agent.Hub {
+	keys agent.KeyIssuer, certs agent.CertIssuer, logger *slog.Logger) *agent.Hub {
 	cfg, warnings := agent.FromEnv(os.Getenv)
 	for _, w := range warnings {
 		logger.Warn("p31: cluster hub setting ignored", "detail", w, "event", "p31_hub_setting")
@@ -196,6 +233,12 @@ func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver strin
 	}
 	cfg.Logger = logger
 	cfg.Delegation = keys
+	cfg.Certs = certs
+	if hc, ok := certs.(interface {
+		HasCert(ctx context.Context, nodeID string) bool
+	}); ok {
+		cfg.HasCert = hc.HasCert
+	}
 	if db != nil {
 		// the extension service door (story 31.R): nodes run the Plex
 		// stages without the token; rules.relay switches it

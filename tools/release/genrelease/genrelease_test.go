@@ -74,6 +74,7 @@ func fakeRepo(t *testing.T, py, gov int) string {
 	write(SchemaGo, "const SchemaRev = "+itoa(gov)+"\n")
 	write(EdgeProtocolGo, "const EdgeProtocol = 3\n")
 	write(LauncherGo, "const LauncherProtocol = 1\n")
+	write(HandoverGo, "const HandoverProtocol = 1\n")
 	write(AgentProtocolGo, "const (\n\tProtocolVersion = 2\n)\n")
 	write(PythonVersion, "3.12.4\n")
 	return dir
@@ -118,7 +119,7 @@ func TestBuildAndCheck(t *testing.T) {
 			}
 		}
 	}
-	if m.SchemaRev != 8 || m.MinNodeSchema != 8 || m.EdgeProtocol != 3 || m.AgentProtocol != 2 ||
+	if m.SchemaRev != 8 || m.MinNodeSchema != 8 || m.EdgeProtocol != 3 || m.AgentProtocol != 2 || m.HandoverProtocol != 1 ||
 		m.LauncherProtocol != 1 || m.MinUpgradeFrom != "1.5.0" || m.Channel != "stable" || m.Pipeline.Python != "3.12" {
 		t.Fatalf("manifest = %+v", m)
 	}

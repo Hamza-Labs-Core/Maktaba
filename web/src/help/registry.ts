@@ -229,3 +229,144 @@ export function systemHealthHelp(kind: string): HelpRef {
   const known = (SYSTEM_HEALTH_KINDS as readonly string[]).includes(kind);
   return { topic: "system-health", anchor: known ? `item-${codeAnchor(kind)}` : "items" };
 }
+
+/**
+ * The reasons an update stops with (Admin -> Updates: a machine's last attempt, a run, a
+ * machine's part of a run; web i18n updates.code.*) and their entry in the updates topic,
+ * one per kind of failure. A check of the release (verify_*) links to its signature entry;
+ * a reason a newer server sends, to the general one.
+ */
+export const UPDATE_CODE_HELP: ReadonlyMap<string, string> = new Map([
+  // updates#rolled-back
+  ["admin", "rolled-back"],
+  ["admin_rollback", "rolled-back"],
+  ["boot_loop", "rolled-back"],
+  ["did_not_start", "rolled-back"],
+  ["did_not_stay_up", "rolled-back"],
+  ["interrupted", "rolled-back"],
+  ["launcher_boot_loop", "rolled-back"],
+  ["launcher_pending_timeout", "rolled-back"],
+  ["launcher_refused", "rolled-back"],
+  ["pending_timeout", "rolled-back"],
+  ["restarts", "rolled-back"],
+  ["rollback_failed", "rolled-back"],
+  ["rollback_loop", "rolled-back"],
+  ["rolled_back", "rolled-back"],
+  ["start_failed", "rolled-back"],
+  ["start_interrupted", "rolled-back"],
+  ["start_timeout", "rolled-back"],
+  ["switch_failed", "rolled-back"],
+  ["watch_timeout", "rolled-back"],
+  // updates#verify-failed
+  ["checksums_changed", "verify-failed"],
+  ["payload_invalid", "verify-failed"],
+  ["version_mismatch", "verify-failed"],
+  ["trust_root", "verify-failed"],
+  ["no_trust_root", "verify-failed"],
+  // updates#replay
+  ["verify_replay", "replay"],
+  ["verify_downgrade", "replay"],
+  ["older_build", "replay"],
+  // updates#code-database
+  ["database", "code-database"],
+  ["db_ahead", "code-database"],
+  ["db_dump_failed", "code-database"],
+  ["db_migrate_failed", "code-database"],
+  ["db_refused_older", "code-database"],
+  ["db_restore_failed", "code-database"],
+  ["rehearsal_failed", "code-database"],
+  ["pg_major_change", "code-database"],
+  // updates#code-tv
+  ["tv_busy", "code-tv"],
+  ["tv_change_pending", "code-tv"],
+  ["tv_timeout", "code-tv"],
+  ["failed_tv", "code-tv"],
+  ["tv_change_cancelled", "code-tv"],
+  // updates#code-machine
+  ["failed_prepare", "code-machine"],
+  ["prepare_failed", "code-machine"],
+  ["prepare_refused", "code-machine"],
+  ["prepare_timeout", "code-machine"],
+  ["apply_failed", "code-machine"],
+  ["apply_refused", "code-machine"],
+  ["node_health_timeout", "code-machine"],
+  ["held", "code-machine"],
+  ["home_not_prepared", "code-machine"],
+  ["home_timeout", "code-machine"],
+  ["window_over", "code-machine"],
+  ["outside_window", "code-machine"],
+  ["convert_refused", "code-machine"],
+  ["convert_timeout", "code-machine"],
+  ["switchover", "code-machine"],
+  ["switchover_open", "code-machine"],
+  ["journal_lost", "code-machine"],
+  // updates#code-desktop-app
+  ["app_did_not_install", "code-desktop-app"],
+  ["app_install_failed", "code-desktop-app"],
+  ["app_management", "code-desktop-app"],
+  ["app_not_started", "code-desktop-app"],
+  ["app_order_gone", "code-desktop-app"],
+  ["app_request_failed", "code-desktop-app"],
+  ["asset_not_found", "code-desktop-app"],
+  ["check_failed", "code-desktop-app"],
+  ["feed_invalid", "code-desktop-app"],
+  ["feed_not_found", "code-desktop-app"],
+  ["installer_exit", "code-desktop-app"],
+  ["installer_not_finished", "code-desktop-app"],
+  ["local_build", "code-desktop-app"],
+  ["login_item_unsigned", "code-desktop-app"],
+  ["needs_admin", "code-desktop-app"],
+  ["no_app", "code-desktop-app"],
+  ["no_app_update", "code-desktop-app"],
+  ["no_network", "code-desktop-app"],
+  ["not_writable", "code-desktop-app"],
+  ["previous_app_not_restored", "code-desktop-app"],
+  ["quarantined", "code-desktop-app"],
+  ["relaunch_failed", "code-desktop-app"],
+  ["server_stop_failed", "code-desktop-app"],
+  ["signature_mismatch", "code-desktop-app"],
+  ["translocated", "code-desktop-app"],
+  // updates#code-python
+  ["venv_failed", "code-python"],
+  ["venv_interrupted", "code-python"],
+  ["venv_network", "code-python"],
+  ["venv_python_unsupported", "code-python"],
+  ["no_python", "code-python"],
+  ["python_store_stub", "code-python"],
+  // updates#code-needs-person
+  ["needs_person", "code-needs-person"],
+  ["not_self_managed", "code-needs-person"],
+  ["orchestrator_unavailable", "code-needs-person"],
+  ["old_launcher", "code-needs-person"],
+  ["launcher_protocol", "code-needs-person"],
+  ["no_runtime", "code-needs-person"],
+  ["worker_only", "code-needs-person"],
+  // updates#code-download
+  ["download_failed", "code-download"],
+  ["release_incomplete", "code-download"],
+  ["disk_full", "code-download"],
+  ["disk_space", "code-download"],
+  ["no_release", "code-download"],
+  ["withdrawn", "code-download"],
+  ["turned_prerelease", "code-download"],
+  // updates#run-failed
+  ["bad_job", "run-failed"],
+  ["cancelled", "run-failed"],
+  ["failed", "run-failed"],
+  ["refused", "run-failed"],
+  ["superseded", "run-failed"],
+  ["replaced_by_newer", "run-failed"],
+  ["smoke_failed", "run-failed"],
+  ["smoke_missing", "run-failed"],
+  ["smoke_version", "run-failed"],
+  ["install_failed", "run-failed"],
+  ["keep_failed", "run-failed"],
+  ["no_previous", "run-failed"],
+]);
+
+export function updateCodeHelp(code: string | null | undefined): HelpRef {
+  const c = code ?? "";
+  const anchor =
+    UPDATE_CODE_HELP.get(c) ?? (c.startsWith("verify_") ? "verify-failed" : "run-failed");
+  return { topic: "updates", anchor };
+}

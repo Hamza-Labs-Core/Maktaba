@@ -205,6 +205,9 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 			add("MAKTABA_NODE_WEB_URL", cfg.PublicWebURL())
 			add("MAKTABA_AGENT_URL", StateURL(cfg))
 			add("MAKTABA_AGENT_TOKEN_FILE", LocalTokenPath(cfg))
+			// the machine's cluster-link certificate lives beside node.json; the api holds
+			// the machine's link (story 35.16)
+			add("MAKTABA_NODE_CERT_DIR", nodeConfigDir())
 			// its own state (the sign-ins made here, when the home last answered)
 			add("MAKTABA_NODE_STATE_DIR", NodeStateDir(cfg))
 			// its copy of the home's database (Epic 37)
@@ -230,6 +233,12 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		}
 		add("MAKTABA_ADMIN_ADDR", streamingAdmin(cfg))
 		add("MAKTABA_STREAMING_GRPC_ADDR", streamingGRPC(cfg))
+		// story 35.16: the home's front door reads a machine's channel over that
+		// machine's cluster link, through this machine's api on loopback
+		if !n.Joined() || forcedHome(cfg) {
+			add("MAKTABA_LINK_PULL_URL", "http://"+LocalAddr(cfg.Server.Listen, "8080"))
+			add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
+		}
 		// Epic 33 story 33.1: the streaming role is the front door of the TV
 		// slots (which encode); it asks the supervisor for the standby and
 		// staging instances.
@@ -299,11 +308,24 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 			env = setEnv(env, "DATABASE_URL", HomeDSN(n))
 			env = setEnv(env, "MAKTABA_DATABASE_URL", HomeDSN(n))
 			add("MAKTABA_NODE", "1")
+			// story 35.16: its channel agent reaches the home on the machine's cluster
+			// link, through this machine's api on loopback (straight to the home while
+			// the link is not up)
+			add("MAKTABA_CLUSTER_AGENT_URL", LocalAgentURL(cfg))
 		}
 	}
 
 	return env, nil
 }
+
+// LocalAgentURL is a full node's loopback route to the home's channel over its cluster
+// link (the node api's /api/cluster/link/local/agent, story 35.16).
+func LocalAgentURL(cfg config.Config) string {
+	return "ws://" + LocalAddr(cfg.Server.Listen, "8080") + "/api/cluster/link/local/agent"
+}
+
+// nodeConfigDir is the folder of this machine's node.json (tests replace it).
+var nodeConfigDir = func() string { return filepath.Dir(config.LocalNodeConfigPath()) }
 
 // NodeOf is this machine's node config as a role's environment, and serve's start (its
 // Postgres, the machine agent, its copy of the home's database), are made from it: none
@@ -332,6 +354,41 @@ var nodeConfig = config.LocalNodeConfig
 // verifying the home's CA, pinned in the keys directory). A CA that cannot be pinned is
 // said: the connection still verifies, so it fails rather than trusts.
 func HomeDSN(n config.NodeConfig) string {
+	return withClientCert(homeDSN(n), nodeConfigDir())
+}
+
+// withClientCert offers the machine's cluster-link certificate (beside node.json, story
+// 35.16) to the home's database on a TLS connection: its CN is the machine's role, which
+// the home requires once the link is (clientcert=verify-full). A server that does not ask
+// for it ignores it.
+func withClientCert(dsn, dir string) string {
+	cert, key := filepath.Join(dir, "cluster-node.crt"), filepath.Join(dir, "cluster-node.key")
+	if dir == "" {
+		return dsn
+	}
+	if _, err := os.Stat(cert); err != nil {
+		return dsn
+	}
+	if _, err := os.Stat(key); err != nil {
+		return dsn
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return dsn
+	}
+	q := u.Query()
+	switch q.Get("sslmode") {
+	case "verify-ca", "verify-full", "require":
+	default:
+		return dsn
+	}
+	q.Set("sslcert", filepath.ToSlash(cert))
+	q.Set("sslkey", filepath.ToSlash(key))
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func homeDSN(n config.NodeConfig) string {
 	dsn, err := n.HomeDSN(config.KeysDir())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[supervisor] the home's database: %v\n", err)

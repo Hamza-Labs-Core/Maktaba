@@ -29,6 +29,7 @@ from ...llm.service import LocalLLM
 from ...log import get_logger
 from .. import crypto, exitcodes, share
 from .client import AgentIdentity, ChannelAgent, Commands
+from .convert import make_handler as convert_handler
 from .files import ClusterFiles, safe_name
 from .jobs import JobTracker, tracker
 from .logship import AGENT_LOGGER, LogShipper, normalize_level
@@ -272,6 +273,8 @@ async def run_agent(
                 reload_stages=reload_stages,
                 revoked=_refused(shutdown),
                 check_membership=check_membership,
+                # a worker-only machine's next update makes it a full node (story 35.8 AC8)
+                convert=convert_handler(ident.url) if ident.kind == "node" else None,
             ),
             on_settings=_settings_hook(files, locator, on_share=on_share),
             status_path=status_dir() / f"{safe_name(worker_id)}.json",

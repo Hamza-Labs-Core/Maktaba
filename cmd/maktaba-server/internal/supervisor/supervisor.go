@@ -87,6 +87,9 @@ type Process struct {
 	// BeforeStart, when set, runs before each start (the bundled postgres: a lock file a
 	// postmaster that did not end cleanly left, pgbundle.Bundle.ClearStaleLock).
 	BeforeStart func()
+	// Survives: a TV process (the front door, a slot) that outlives a supervisor
+	// restart for an update (Epic 35 story 35.7: HandOver, WithHandover).
+	Survives bool
 	// Prepare, when set, runs before the process's first start and must succeed
 	// before it starts (prepare.go, Epic 38 story 38.12: the desktop app builds
 	// the pipeline's venv, or takes the database's dump before an update's
@@ -186,6 +189,11 @@ func Build(role Role, opts Options) (Process, error) {
 			return Process{}, err
 		}
 		cmd = exec.Command(bin, "serve")
+		// the home's release mirror downloads each release's pipeline dependencies for its
+		// machines with the pipeline's own Python (its pip): the wheelhouse (Epic 35 §3.4)
+		if os.Getenv(EnvWheelhousePython) == "" {
+			env = append(env, EnvWheelhousePython+"="+pythonFor(opts))
+		}
 
 	case RoleStreaming:
 		bin, err := opts.resolve("maktaba-streaming", "MAKTABA_STREAMING_BIN")
@@ -212,12 +220,18 @@ func Build(role Role, opts Options) (Process, error) {
 	}
 	cmd.Env = env
 	wire(cmd)
-	p := Process{Role: role, Cmd: cmd, Probe: ProbeURL(role, opts.Config)}
+	// the streaming role keeps TV on air (the front door): it outlives a supervisor
+	// restart (story 35.7)
+	p := Process{Role: role, Cmd: cmd, Probe: ProbeURL(role, opts.Config), Survives: role == RoleStreaming}
 	if role == RolePipeline {
 		p.ProbeTimeout = PythonProbeTimeout
 	}
 	return p, nil
 }
+
+// EnvWheelhousePython names, for the api, the Python its release mirror downloads the
+// machines' pipeline packages with (the pipeline's: pythonFor).
+const EnvWheelhousePython = "MAKTABA_WHEELHOUSE_PYTHON"
 
 // PythonProbeTimeout bounds one liveness check of a pipeline worker: its /healthz
 // answers once the GIL is free, which a Chroma write into a large index can hold for

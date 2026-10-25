@@ -141,6 +141,32 @@ describe("Settings", () => {
     expect(post).not.toHaveBeenCalled();
   });
 
+  it("keeps Update now for the Docker image, which updates itself", async () => {
+    serve({ ...available, install: "docker" }); // no instructions: the image's runtime
+    renderAt("/settings/about");
+    expect(await screen.findByRole("button", { name: en["update.updateNow"] })).toBeInTheDocument();
+    expect(screen.queryByText(en["update.docker.instructions"])).not.toBeInTheDocument();
+  });
+
+  it("says why when the Docker image's updater is not there", async () => {
+    serve({ ...available, install: "docker" });
+    post.mockRejectedValue(
+      new ApiError({
+        type: "about:blank",
+        title: "conflict",
+        status: 409,
+        code: "updater_unavailable",
+        detail: "this Docker install updates itself through the server's updater",
+      })
+    );
+    renderAt("/settings/about");
+    fireEvent.click(await screen.findByRole("button", { name: en["update.updateNow"] }));
+    expect(
+      await screen.findByText("this Docker install updates itself through the server's updater")
+    ).toBeInTheDocument();
+    expect(screen.queryByText(en["update.docker.instructions"])).not.toBeInTheDocument();
+  });
+
   it("hides Update now from a non-admin", async () => {
     auth.user = { id: "u2", username: "viewer", is_admin: false };
     serve(available);

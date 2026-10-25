@@ -42,6 +42,7 @@ func (r *driverRig) minutes(t *testing.T, n int) {
 // failure is tried again at once, then after retryBackoff, then in the next window, and
 // a window counts one attempt (three windows block the release, not three minutes).
 func TestFailedRunRetriedWithBackoff(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.prepFail = "download_failed"
@@ -75,6 +76,7 @@ func TestFailedRunRetriedWithBackoff(t *testing.T) {
 // an app built locally) starts no new run in its window and counts nothing; its notice
 // is one per release and reason; the next window tries once more.
 func TestNeedsPersonRunsOncePerWindow(t *testing.T) {
+	t.Parallel()
 	// every person's code is told apart by failureClass (TestFailureClasses); one of them
 	// walks the windows here: one run in a window, its notice once, no attempt, and one run
 	// again in the next window
@@ -107,6 +109,7 @@ func TestNeedsPersonRunsOncePerWindow(t *testing.T) {
 // block a release; a rehearsal that could not run is an attempt, an expired trust root a
 // person's; an older build is set aside quietly.
 func TestFailureClasses(t *testing.T) {
+	t.Parallel()
 	for code, want := range map[string]string{
 		"rehearsal_failed": classRehearsal, "verify_signature": classVerify, "verify_checksum": classVerify,
 		"rehearsal_dump": classAttempt, "rehearsal_scratch": classAttempt, "rehearsal_restore": classAttempt,
@@ -125,6 +128,7 @@ func TestFailureClasses(t *testing.T) {
 // What blockFor does to the release, one rig per kind of failure: blocked, set aside,
 // counted.
 func TestARehearsalOnTheDataBlocks(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	r.home.prepFail = "rehearsal_failed"
 	r.minutes(t, 2)
@@ -134,6 +138,7 @@ func TestARehearsalOnTheDataBlocks(t *testing.T) {
 }
 
 func TestAFailedDownloadIsAnAttempt(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	r.home.prepFail = "download_failed"
 	r.minutes(t, 2)
@@ -143,6 +148,7 @@ func TestAFailedDownloadIsAnAttempt(t *testing.T) {
 }
 
 func TestAnOlderBuildIsSetAside(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	r.home.prepFail = KindOlderBuild
 	r.minutes(t, 2)
@@ -156,6 +162,7 @@ func TestAnOlderBuildIsSetAside(t *testing.T) {
 // catalog does not know that refuses the release as an older build is skipped too, with no
 // notice and no hold on the others.
 func TestANodeOnALaterBuildIsSkipped(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	seed(t, r.f.store, rel("1.5.0-rc.7", func(rr *Release) {
@@ -196,6 +203,7 @@ func TestANodeOnALaterBuildIsSkipped(t *testing.T) {
 // H2 (audit): an admin retries a blocked release: Update now naming it unblocks and
 // installs it (a withdrawn one stays refused), and Unblock lets the next window take it.
 func TestRetryABlockedRelease(t *testing.T) {
+	t.Parallel()
 	enableAutoInstall(t)
 	f := newFixture(t, sqliteDB(t))
 	ctx := context.Background()
@@ -239,6 +247,7 @@ func TestRetryABlockedRelease(t *testing.T) {
 // caught up once it changed (its install converted) or catchUpRetry later; one the
 // release rolled back on stays (TestCatchUpRespectsRollbacksAndTheWindow).
 func TestMendedMachineCaughtUp(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	n := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -268,6 +277,7 @@ func TestMendedMachineCaughtUp(t *testing.T) {
 // once, outside the window, and a home installed by hand raises the cluster's release:
 // its machines show behind and are caught up to it.
 func TestCatchUpImmediateBehindAHandInstalledHome(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.f.svc.Current = "1.5.0" // the home installed 1.5.0 by hand: no run, no watermark
@@ -289,6 +299,7 @@ func TestCatchUpImmediateBehindAHandInstalledHome(t *testing.T) {
 
 // M3 (audit): a machine is drained for its own apply and undrained once healthy.
 func TestNodeDrainedForItsApply(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	n := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -315,6 +326,7 @@ func TestNodeDrainedForItsApply(t *testing.T) {
 // M6 (audit): a release a gate (the TV watched) held for stuckWindows windows in a row is
 // told once and shown, for an admin to install it now.
 func TestStuckReleaseEscalates(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.viewers = 5
@@ -340,6 +352,7 @@ func TestStuckReleaseEscalates(t *testing.T) {
 // L5 (audit): the overview says why a due release does not start (the scheduler's last
 // decision), and a machine the release's schema pauses is told once.
 func TestLastTickAndPausedMachines(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	m15 := Manifest{V: 1, Version: "1.5.0", Tag: "v1.5.0", Channel: ChannelStable, SchemaRev: 150, MinNodeSchema: 150,
@@ -376,6 +389,7 @@ func (c hostedCluster) NodeHosts() map[string][]string { return c.hosts }
 // report (a Mac's "Studio.local", a machine renamed in the cluster), not only by its
 // cluster name; another machine's jobs are not its own.
 func TestNodeJobsByTheHostItReports(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	if _, err := r.f.db.Exec(`ALTER TABLE processing_jobs ADD COLUMN claimed_by TEXT`); err != nil {
@@ -401,6 +415,7 @@ func TestNodeJobsByTheHostItReports(t *testing.T) {
 // N2 (audit, second check): a machine a person must mend, unchanged, is caught up at most
 // once a day (not every few hours, each run failing the same way).
 func TestNeedsPersonCaughtUpOncePerDay(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	n := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -425,6 +440,7 @@ func TestNeedsPersonCaughtUpOncePerDay(t *testing.T) {
 // L1 (audit, second check): the dump the home's new release took before its migrations is
 // recorded on the run (update_runs.backup).
 func TestHomeCommitRecordsTheBackup(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.backup = &RunBackup{Path: "/srv/maktaba/backups/pre-1.4.0-to-1.5.0.dump", Bytes: 9000}
@@ -442,6 +458,7 @@ func TestHomeCommitRecordsTheBackup(t *testing.T) {
 // A host is the same machine only by its full name, or a bare name against that name with a
 // domain; addresses and two names with domains are never shortened.
 func TestSameHost(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		a, b string
 		want bool
@@ -465,6 +482,7 @@ func TestSameHost(t *testing.T) {
 // A held part a person mends is tried again at once when the machine's own newer attempt
 // gives another reason; the same reason, or an attempt from before the part, waits.
 func TestReasonChangedCatchesUpAtOnce(t *testing.T) {
+	t.Parallel()
 	held := time.Date(2026, 10, 24, 10, 0, 0, 0, time.UTC)
 	tg := Target{State: TargetNeedsPerson, UpdatedAt: &held, Error: json.RawMessage(`{"code":"app_management"}`)}
 	at := func(minutes int, code string) Attempt {

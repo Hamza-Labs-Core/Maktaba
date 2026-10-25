@@ -145,7 +145,7 @@ func (c *Controller) onEvent(ctx context.Context, cfg Config, e feedEvent) error
 		if len(ch.ApprovedBy) > 0 {
 			return nil // approved ahead: it goes on by itself
 		}
-		if rule := StrictestRule(cfg, ch.Kinds); rule != RuleApproval {
+		if rule := ChangeRule(cfg, ch); rule != RuleApproval {
 			kind, p.Severity = NotifyAutoScheduled, notify.SeverityInfo
 			params["rule"] = rule
 			params["window"] = cfg.QuietWindow

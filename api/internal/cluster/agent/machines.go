@@ -32,6 +32,10 @@ var keysCheckEvery = 10 * time.Minute
 
 func (s *Session) machineAgent() bool { return s.Kind == "node" && s.Process == ProcessSupervisor }
 
+// nodeWorker reports whether the session is a machine's pipeline worker (a node process
+// that is not its machine agent).
+func (s *Session) nodeWorker() bool { return s.Kind == "node" && s.Process != ProcessSupervisor }
+
 func keysFrame(k delegation.Key) map[string]any {
 	return map[string]any{"t": "keys", "delegation": map[string]any{
 		"id": k.ID, "key": k.Secret, "not_after": k.NotAfter.UTC().Format(time.RFC3339)}}
@@ -175,17 +179,35 @@ func (h *Hub) BroadcastRevoked(r RevokedSessions) int {
 // onUpdateState records a machine agent's update.state (its release and platform).
 func (h *Hub) onUpdateState(s *Session, raw []byte) {
 	var f struct {
-		Version  string `json:"version"`
-		Platform string `json:"platform"`
+		Version  string    `json:"version"`
+		Platform string    `json:"platform"`
+		Clock    time.Time `json:"clock"`
 	}
 	if json.Unmarshal(raw, &f) != nil {
 		return
 	}
 	s.mu.Lock()
 	s.updateState = stripT(raw)
+	if !f.Clock.IsZero() {
+		s.clockSkew, s.hasSkew = f.Clock.Sub(h.now()), true
+	}
 	s.mu.Unlock()
 	h.event(map[string]any{"event": "update_state", "session": s.ID, "node_id": nullable(s.NodeID),
 		"version": f.Version, "platform": f.Platform})
+}
+
+// ClockSkews are the connected machine agents' clocks minus the home's, by node id (story
+// 35.16 EC2: a machine more than 5 minutes off cannot use its new certificate yet).
+func (h *Hub) ClockSkews() map[string]time.Duration {
+	out := map[string]time.Duration{}
+	for _, s := range h.machineAgents() {
+		s.mu.Lock()
+		if s.NodeID != "" && s.hasSkew {
+			out[s.NodeID] = s.clockSkew
+		}
+		s.mu.Unlock()
+	}
+	return out
 }
 
 // MachineStates are the connected machine agents' last update.state (their release,

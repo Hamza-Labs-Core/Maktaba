@@ -39,9 +39,23 @@ class ClusterMachinesConfig:
     copies_on_operator_postgres: bool = False
     #: a node's disk cache for the pictures it fetches from the home (posters, sprites)
     proxy_cache_mb: int = 2048
+    #: the cluster link (story 35.16): off, prefer (a machine with a certificate uses it) or
+    #: require (the older paths refused)
+    link_mode: str = "prefer"
+    #: prefer becomes require by itself once every machine held the link for a day
+    link_auto_require: bool = True
+    #: the data streams one machine may hold open at once
+    link_max_streams: int = 32
+    #: a machine's open streams wait this long for its control connection to come back
+    link_stream_grace_seconds: int = 60
+    #: a machine certificate's life (renewed when a third is left)
+    tls_cert_days: int = 30
+    #: every machine also serves its web pages on 8443 with a cluster-CA certificate
+    tls_web_https: bool = False
 
 
 _C = "Machines"
+_L = "Cluster link"
 settings.register(ClusterMachinesConfig, {
     "sso": settings.Help(_C, "One sign-in for every machine",
                          "Opening another machine offers \"Continue with <home>\": a one-time "
@@ -96,4 +110,35 @@ settings.register(ClusterMachinesConfig, {
     "proxy_cache_mb": settings.Help(_C, "Picture cache per machine (MB)",
                                     "Posters and sprites a machine fetched from the home.",
                                     minimum=0, maximum=1_048_576),
+    "link_mode": settings.Help(
+        _L, "Cluster link",
+        "How the machines reach the home. prefer: a machine that holds a "
+        "certificate from this home talks to it over one encrypted, mutually "
+        "authenticated connection (and a separate one per stream); the others use "
+        "the older paths. require: the older paths are refused. off: the older "
+        "paths only. The home switches from prefer to require by itself once every "
+        "machine has held the link for a day (below).", choices=("off", "prefer", "require")),
+    "link_auto_require": settings.Help(
+        _L, "Switch to require by itself",
+        "On: once every approved machine has held its link to the home for 24 hours "
+        "without a break, the link becomes required (the Machines page says so). "
+        "Set the link back to prefer to stop it."),
+    "link_max_streams": settings.Help(
+        _L, "Streams per machine",
+        "The data streams (TV pulls, release downloads, proxied sockets) one "
+        "machine may hold open at once; one more is refused.", minimum=1, maximum=256),
+    "link_stream_grace_seconds": settings.Help(
+        _L, "Streams outlive a dropped link (s)",
+        "When a machine's control connection drops (the home's API restarting), its "
+        "open streams keep running this long and carry on with its next connection; "
+        "past it they close.", minimum=0, maximum=600),
+    "tls_cert_days": settings.Help(
+        _L, "Machine certificate life (days)",
+        "A machine's certificate from this home's cluster CA lasts this long; the "
+        "machine renews it by itself when a third of it is left.", minimum=2, maximum=365),
+    "tls_web_https": settings.Help(
+        _L, "HTTPS on port 8443",
+        "Every machine also serves its web pages on port 8443 over HTTPS, with a "
+        "certificate from this home's cluster CA. Install the CA (Machines page) on "
+        "a device to open them without a warning."),
 })  # fmt: skip

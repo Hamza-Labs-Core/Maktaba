@@ -134,3 +134,16 @@ func TestOlderThan(t *testing.T) {
 		}
 	}
 }
+
+// In the Docker image the entrypoint runs the server: no systemd, no user manager and no
+// linger is no problem there; glibc still is.
+func TestLinuxCheckInAContainer(t *testing.T) {
+	l := Linux{Glibc: glibc("2.36"), Manager: manager(t, false, false), Unit: unit(t), User: "maktaba", Container: "docker"}
+	if r := l.Check(context.Background()); len(r.Problems) != 0 || len(r.Warnings) != 0 {
+		t.Errorf("a container: %+v", r)
+	}
+	l.Glibc = glibc("")
+	if n := one(t, "musl in a container", l.Check(context.Background()).Problems); n.Code != "glibc_missing" {
+		t.Errorf("musl in a container: %+v", n)
+	}
+}

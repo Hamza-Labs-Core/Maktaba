@@ -20,6 +20,9 @@ const (
 	SourceManual        = "manual"
 	SourceWriteChannels = "write_channels"
 	SourceSchedule      = "schedule"
+	// SourceAutoUpdate is the automatic updater's change of the streaming binary (Epic 35
+	// story 35.6, autoupdate.go): a change of its own, which no save joins.
+	SourceAutoUpdate = "auto_update"
 )
 
 // Pending is a change's diff.pending: what its producer wants (the shape the

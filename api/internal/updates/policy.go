@@ -66,6 +66,9 @@ type Policy struct {
 	BackupsKeep              int        `json:"backups_keep"`
 	CatchUp                  string     `json:"catch_up"`
 	ProxyCacheMB             int        `json:"proxy_cache_mb"`
+	// Wheelhouse: the home keeps each release's pipeline dependencies per platform for its
+	// machines (design §3.4).
+	Wheelhouse bool `json:"wheelhouse"`
 }
 
 // DefaultPolicy is the README defaults (auto_install true: owner decision).
@@ -86,6 +89,7 @@ func DefaultPolicy() Policy {
 		BackupsKeep:              3,
 		CatchUp:                  "immediate",
 		ProxyCacheMB:             2048,
+		Wheelhouse:               true,
 	}
 }
 
@@ -192,6 +196,7 @@ func (p Policy) ApplyOverrides(o map[string]json.RawMessage) Policy {
 	i("backups_keep", &p.BackupsKeep)
 	s("catch_up", &p.CatchUp)
 	i("proxy_cache_mb", &p.ProxyCacheMB)
+	b("wheelhouse", &p.Wheelhouse)
 	if p.SkippedVersions == nil {
 		p.SkippedVersions = []string{}
 	}

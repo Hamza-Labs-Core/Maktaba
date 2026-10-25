@@ -8,6 +8,12 @@
 #               maktaba-<version>.aab   (Play Store)
 #   iOS      →  maktaba-<version>.ipa   (signing DEFERRED — see below)
 #
+# The web bundle carries the tag's version (VERSION, story 28.1): the app's
+# update banner (story 28.5) compares it with the latest release. Only the
+# sideloaded APK shows it (VITE_DISTRIBUTION=sideload); the AAB's bundle is a
+# second web build marked store (copied in before bundleRelease), which shows
+# none: the Play Store updates it, as the App Store does every iOS build.
+#
 # NATIVE PROJECTS ARE NOT CHECKED IN
 # ----------------------------------
 # `apps/mobile/{ios,android}` are gitignored and generated on demand by
@@ -106,6 +112,9 @@ jobs:
 
       - name: Build web bundle
         working-directory: web
+        env:
+          VERSION: ${{ github.ref_name }}
+          VITE_DISTRIBUTION: sideload
         run: |
           pnpm install --frozen-lockfile
           node design-system/build/build-tokens.mjs
@@ -145,12 +154,29 @@ jobs:
           echo "versionName=${ver} versionCode=${code}"
           grep -E "versionName|versionCode" app/build.gradle
 
-      - name: Assemble release APK + AAB
+      - name: Assemble release APK
         working-directory: apps/mobile/android
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon assembleRelease bundleRelease
+          ./gradlew --no-daemon assembleRelease
+
+      # The Play Store build's bundle says so: it shows no update banner
+      # (story 28.5), the Play Store updates it once its review is through.
+      - name: Rebuild the web bundle for the Play Store
+        working-directory: web
+        env:
+          VERSION: ${{ github.ref_name }}
+          VITE_DISTRIBUTION: store
+        run: pnpm build
+
+      - name: Bundle release AAB
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          npx --no-install cap copy android
+          cd android
+          ./gradlew --no-daemon bundleRelease
 
       # Sign only when a keystore is provided. apksigner (APK) + jarsigner
       # (AAB) live in the Android SDK that setup-android installed.
@@ -248,6 +274,8 @@ jobs:
 
       - name: Build web bundle
         working-directory: web
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
           pnpm install --frozen-lockfile
           node design-system/build/build-tokens.mjs

@@ -144,6 +144,21 @@ func StrictestRule(c Config, kinds []string) string {
 	return best
 }
 
+// ChangeRule is the auto-promote rule of a change: immediate for the automatic updater's
+// change of the streaming binary alone (Epic 35 story 35.6, the owner's override of Epic
+// 33 decision 2: source auto_update and kinds exactly [binary]); every other change,
+// a binary change made by hand and one that carries another kind too, the strictest
+// rule of its kinds (approval by default).
+func ChangeRule(c Config, ch *Change) string {
+	if ch != nil && ch.SourceKind() == SourceAutoUpdate && len(ch.Kinds) == 1 && ch.Kinds[0] == "binary" {
+		return RuleImmediate
+	}
+	if ch == nil {
+		return RuleApproval
+	}
+	return StrictestRule(c, ch.Kinds)
+}
+
 // InQuietWindow reports whether local time t is inside "HH:MM-HH:MM" (a window over
 // midnight, 23:00-02:00, works). A malformed window is never quiet.
 func InQuietWindow(window string, t time.Time) bool {
@@ -181,13 +196,18 @@ func hm(s string) (int, bool) {
 // at a moment inside the window with at most quiet_max_viewers viewers and no
 // warnings. An explicit swap_at in the future waits for it.
 func AutoPromote(c Config, kinds []string, local time.Time, viewers int, warnings bool, swapAt *time.Time) bool {
+	return AutoPromoteRule(c, StrictestRule(c, kinds), local, viewers, warnings, swapAt)
+}
+
+// AutoPromoteRule is AutoPromote under a rule already resolved (ChangeRule).
+func AutoPromoteRule(c Config, rule string, local time.Time, viewers int, warnings bool, swapAt *time.Time) bool {
 	if warnings {
 		return false
 	}
 	if swapAt != nil && local.Before(*swapAt) {
 		return false
 	}
-	switch StrictestRule(c, kinds) {
+	switch rule {
 	case RuleImmediate:
 		return true
 	case RuleQuietWindow:

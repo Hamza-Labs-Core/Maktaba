@@ -321,21 +321,28 @@ test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
 	@bash tools/test-budget.sh wall integration $(INTEGRATION_TIER_BUDGET) -- \
 		$(MAKE) --no-print-directory test-integration-inner
 
+# The Go modules run four at a time (tools/ci/integration-go.sh: their output in order,
+# the tier failing when any fails), with the pipeline's integration tests beside them.
+# pytest exits 5 when no tests match the marker: that is no failure (the `|| ...` forms:
+# .SHELLFLAGS has -e).
 .PHONY: test-integration-inner
 test-integration-inner:
-	@for mod in $(INTEGRATION_GO_MODULES); do \
-		echo "==> go test -tags=integration ./... ($$mod)"; \
-		(cd $$mod && $(if $(INTEGRATION_GO_PG_URL),MAKTABA_TEST_PG_URL='$(INTEGRATION_GO_PG_URL)') \
-			go test -tags=integration -count=1 ./...); \
-	done
-	@# pytest exits 5 when no tests match the marker — that's the
-	@# normal state until Story 20.4 lands real integration tests.
-	@# The `|| { ... }` form is required because .SHELLFLAGS has
-	@# `-e`, which would otherwise kill the recipe on pytest's
-	@# non-zero exit before the rc check runs.
-	@cd $(PIPELINE_DIR) && uv run pytest -m integration || { \
-		rc=$$?; [ $$rc -eq 5 ] || exit $$rc; \
-	}
+	@py_log="$$(mktemp)"; \
+	( cd $(PIPELINE_DIR) && uv run pytest -m integration ) >"$$py_log" 2>&1 & py=$$!; \
+	go_rc=0; $(if $(INTEGRATION_GO_PG_URL),MAKTABA_TEST_PG_URL='$(INTEGRATION_GO_PG_URL)') \
+		bash tools/ci/integration-go.sh $(INTEGRATION_GO_MODULES) || go_rc=$$?; \
+	py_rc=0; wait $$py || py_rc=$$?; \
+	echo "==> pytest -m integration ($(PIPELINE_DIR))"; cat "$$py_log"; rm -f "$$py_log"; \
+	if [ $$py_rc -ne 0 ] && [ $$py_rc -ne 5 ]; then exit $$py_rc; fi; \
+	exit $$go_rc
+
+# Epic 35 story 35.5 AC6: the previous stable release against this build's database (its
+# repository tests on these migrations, and the nodes' schema guard both ways); a failure
+# without a "Breaking for the previous release" MANIFEST row fails. Needs
+# MAKTABA_TEST_PG_URL, psql and the git tags.
+.PHONY: compat-prev
+compat-prev:  ## The previous release on this build's database (needs MAKTABA_TEST_PG_URL).
+	@bash tools/compat-prev/run.sh
 
 .PHONY: migrate
 migrate:  ## Apply database migrations against $$DATABASE_URL.
@@ -401,6 +408,11 @@ perf-ci-inner:
 	@# pipeline uv env (the only env with pytest) against the
 	@# repo-root tests/perf suite. $(CURDIR) is the repo root.
 	@cd $(PIPELINE_DIR) && uv run pytest $(CURDIR)/tests/perf/test_perf_ci.py -q
+	@# Epic 35 story 35.16 TC11's latency half: the cluster link's control channel under 20
+	@# TV pulls and a release download (its numbers in the log; the integration tier keeps
+	@# the functional half).
+	@echo "==> go test -tags perf TestControlLatencySLO (api/internal/cluster/link)"
+	@cd api && go test -tags perf -count=1 -v -run '^TestControlLatencySLO$$' ./internal/cluster/link/
 
 # ---------------------------------------------------------------------------
 # Coverage floor (Story 20.3 AC1/TC1) — real gate with teeth.

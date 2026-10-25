@@ -114,7 +114,34 @@ type nodeSetup struct {
 	// CUDATorch reports whether this machine's NVIDIA GPU runs the second listen, so its
 	// pipeline takes torch's CUDA build (nil: secondListenGPUHere; tests replace it).
 	CUDATorch func() bool
+	// GOOS, Home and SystemUnits are where the old worker's units are looked for (tests
+	// set them): this OS, the user's home, and the system's unit folder when root on Linux
+	// ("" otherwise).
+	GOOS, Home, SystemUnits string
 }
+
+func (s *nodeSetup) goos() string {
+	if s.GOOS != "" {
+		return s.GOOS
+	}
+	return runtime.GOOS
+}
+
+func (s *nodeSetup) home() string {
+	if s.Home != "" {
+		return s.Home
+	}
+	h, _ := os.UserHomeDir()
+	return h
+}
+
+// units are this machine's Epic 31 worker units (worker_units.go).
+func (s *nodeSetup) units() workerUnits {
+	return workerUnits{goos: s.goos(), home: s.home(), systemUnits: s.SystemUnits, run: s.Run, say: s.say}
+}
+
+// workerInstances counts the extra workers (maktaba-node@1..N) the conversion keeps.
+func (s *nodeSetup) workerInstances() int { return s.units().instances() }
 
 // constraints is the pin set this machine's pipeline installs (story 38.9): the
 // release's cuda set (torch's CUDA build, 2.0 GB) on Windows x86_64 where the NVIDIA
@@ -173,6 +200,7 @@ func runSetupNodeCmd(cmd *cobra.Command, lf layoutFlags) error {
 		},
 	}
 	s.Healthy = func(ctx context.Context) error { return waitNodeAnswers(ctx, s.ConfigPath) }
+	s.SystemUnits = rootSystemUnits() // a root install's worker units (install-node.sh --system)
 	s.InstallService = func(sp service.Spec) error { return service.Install(sp, func(l string) { s.say("    %s", l) }) }
 	return s.run(cmd.Context())
 }
@@ -219,6 +247,12 @@ func (s *nodeSetup) run(ctx context.Context) error {
 	if s.Converting && s.From == "" {
 		if self, err := os.Executable(); err == nil {
 			s.From = filepath.Dir(self)
+		}
+	}
+	if s.Converting && s.Instances < 0 {
+		// the rollout's conversion: the worker's extra instances become the node's
+		if n := s.workerInstances(); n > 0 {
+			s.Instances = n
 		}
 	}
 	ver := strings.TrimPrefix(s.Version, "v")
@@ -272,6 +306,12 @@ func (s *nodeSetup) run(ctx context.Context) error {
 		hctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		err := s.Healthy(hctx)
 		cancel()
+		if err != nil && s.Converting {
+			// the rollout's conversion: the node's own start removes the worker units once it
+			// runs (leftoverWorkerUnits), and the rollout waits for its agent on the release
+			s.say("  the new service is not answering yet (%v): the node removes the old worker units when it starts", err)
+			return nil
+		}
 		if err != nil {
 			s.say("  the new service is not healthy yet (%v): the old worker units are kept; see %s", err, s.Root)
 			return err
@@ -705,44 +745,7 @@ func (s *nodeSetup) registerService() error {
 
 // removeWorkerUnits removes the Epic 31 installer's worker units (only after the new
 // service answered).
-func (s *nodeSetup) removeWorkerUnits() {
-	switch runtime.GOOS {
-	case "windows":
-		names := []string{"maktaba-node"}
-		for i := 1; i <= 16; i++ {
-			names = append(names, fmt.Sprintf("maktaba-node@%d", i))
-		}
-		for _, n := range names {
-			if s.Run("schtasks", "/Query", "/TN", n) == nil {
-				_ = s.Run("schtasks", "/End", "/TN", n)
-				if s.Run("schtasks", "/Delete", "/F", "/TN", n) == nil {
-					s.say("  removed the worker task %s", n)
-				}
-			}
-		}
-	case "darwin":
-		home, _ := os.UserHomeDir()
-		matches, _ := filepath.Glob(filepath.Join(home, "Library", "LaunchAgents", "com.maktaba.node*.plist"))
-		for _, p := range matches {
-			_ = s.Run("launchctl", "bootout", fmt.Sprintf("gui/%d", os.Getuid()), p)
-			if os.Remove(p) == nil {
-				s.say("  removed the worker agent %s", filepath.Base(p))
-			}
-		}
-	default:
-		home, _ := os.UserHomeDir()
-		dir := filepath.Join(home, ".config", "systemd", "user")
-		matches, _ := filepath.Glob(filepath.Join(dir, "maktaba-node*.service"))
-		for _, p := range matches {
-			name := filepath.Base(p)
-			_ = s.Run("systemctl", "--user", "disable", "--now", name)
-			if os.Remove(p) == nil {
-				s.say("  removed the worker unit %s", name)
-			}
-		}
-		_ = s.Run("systemctl", "--user", "daemon-reload")
-	}
-}
+func (s *nodeSetup) removeWorkerUnits() { s.units().remove() }
 
 // waitNodeAnswers waits until this machine's API answers /api/system/version as a node.
 func waitNodeAnswers(ctx context.Context, configPath string) error {

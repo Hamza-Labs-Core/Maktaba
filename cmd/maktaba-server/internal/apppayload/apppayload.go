@@ -101,9 +101,14 @@ type Database struct {
 	Dump string `json:"dump,omitempty"`
 	// Failed is the release whose migrations failed (restoring, restored) and
 	// Error what they said.
-	Failed string    `json:"failed,omitempty"`
-	Error  string    `json:"error,omitempty"`
-	At     time.Time `json:"at"`
+	Failed string `json:"failed,omitempty"`
+	Error  string `json:"error,omitempty"`
+	// By is who asked for a restore by hand (story 35.5 AC8: an admin on the Updates page,
+	// or the command line): restoring, then restored, with no failed release; Version is
+	// then the release whose database is replaced and From the one the dump is put back
+	// for.
+	By string    `json:"by,omitempty"`
+	At time.Time `json:"at"`
 }
 
 // The states of a Database record.

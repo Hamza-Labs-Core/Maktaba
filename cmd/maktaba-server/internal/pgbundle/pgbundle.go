@@ -223,6 +223,13 @@ func (b Bundle) serverArgs(lan bool) []string {
 		"-c", "log_timezone=UTC"}
 	if b.TLS && b.TLSReady() {
 		args = append(args, "-c", "ssl=on", "-c", "ssl_cert_file="+b.serverCert(), "-c", "ssl_key_file="+b.serverKey())
+		// the machines' client certificates from the home's cluster CA (story 35.16), only
+		// while the cluster link is required (hbaConf asks their roles for them then): a
+		// server with a CA verifies every certificate a client offers, and one from another
+		// CA (a machine of a home whose CA it does not hold yet) would fail its login
+		if ca := b.clusterCA(); ca != "" && b.LastReach().Require {
+			args = append(args, "-c", "ssl_ca_file="+ca)
+		}
 	}
 	return args
 }

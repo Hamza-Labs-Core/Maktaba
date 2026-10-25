@@ -154,11 +154,15 @@ func Main(args []string, stdout, stderr io.Writer, now time.Time) int {
 	pubkey := fs.String("pubkey", "", "the apps' updater public key (TAURI_UPDATER_PUBKEY): every signature is checked against it")
 	require := fs.String("require", "", `platform keys the feed must have (comma list, "desktop" or "server-apps")`)
 	check := fs.String("check", "", "check this feed (a release's latest.json) has the --require platforms; write nothing")
+	verify := fs.Bool("verify", false, "check every signed bundle in --dir against --pubkey for --tag; write nothing")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *check != "" {
 		return checkFeed(*check, *require, stdout, stderr)
+	}
+	if *verify {
+		return verifyBundles(*dir, *pubkey, *tag, stdout, stderr)
 	}
 	if *dir == "" || *repo == "" || *tag == "" || fs.NArg() != 0 {
 		_, _ = fmt.Fprintf(stderr, "updater-feed: %v: --dir DIR --repo OWNER/NAME --tag vX.Y.Z [--notes TEXT] [--out FILE]\n", errUsage)
@@ -194,6 +198,22 @@ func Main(args []string, stdout, stderr io.Writer, now time.Time) int {
 		_, _ = fmt.Fprintf(stderr, "updater-feed: the feed has no %s: not every platform published\n", strings.Join(miss, ", "))
 		return ExitIncomplete
 	}
+	return 0
+}
+
+// verifyBundles checks the release's downloaded bundles as the apps would (VerifyDir): the
+// package repositories (packages.yml) publish a Linux app's .deb or .rpm only once its
+// signature checks. 0, 1 (one does not check, or none is signed), 2 (usage).
+func verifyBundles(dir, pubkey, tag string, stdout, stderr io.Writer) int {
+	if dir == "" || pubkey == "" || tag == "" {
+		_, _ = fmt.Fprintf(stderr, "updater-feed: %v: --verify --dir DIR --pubkey KEY --tag vX.Y.Z\n", errUsage)
+		return 2
+	}
+	if err := VerifyDir(dir, pubkey, tag); err != nil {
+		_, _ = fmt.Fprintln(stderr, "updater-feed: a signature the apps would refuse:", err)
+		return 1
+	}
+	_, _ = fmt.Fprintf(stdout, "%s: every signed bundle checks against the apps' key for %s\n", dir, tag)
 	return 0
 }
 

@@ -17,6 +17,9 @@ from maktaba_pipeline.tvrelease.generation import pool_overlay
 from maktaba_pipeline.tvrelease.stage import write_plan_pending
 from tests.engine.factory import make_library, make_video
 
+pytestmark = pytest.mark.integration
+
+
 POOL = "00000000-0000-4000-8000-0000000000f1"
 
 

@@ -30,6 +30,15 @@ type fakeMachine struct {
 	pendingFor int
 	// backup: the dump its commit reports
 	backup *RunBackup
+	// handsOver: its TV processes run on across its restart (story 35.7); lostHandover: it
+	// cannot at the apply after all (an apply with the TV watched is refused, tv_busy)
+	handsOver    bool
+	lostHandover bool
+	// rbReason, rbErr: the reason and error of a rollback outcome (default: a 503)
+	rbReason string
+	rbErr    *MachineError
+	// applyBody is the last apply's request
+	applyBody any
 }
 
 // click is someone choosing to install on the machine's desktop app.
@@ -64,6 +73,16 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 		m.st = &MachineStatus{Job: &j, State: MPreparing, From: m.version, Installer: m.installer, Asks: m.asks,
 			Steps: []MachineStep{{Step: "preflight", State: "done"}}}
 	case "apply":
+		if b, _ := json.Marshal(body); m.lostHandover && m.st != nil && m.st.State == MPrepared {
+			var req struct {
+				TVBusy bool `json:"tv_busy"`
+			}
+			_ = json.Unmarshal(b, &req)
+			m.st.HandsOver = false
+			if req.TVBusy {
+				return m.copy(), errors.New("tv_busy: the TV processes cannot be handed over now")
+			}
+		}
 		if m.st != nil && m.st.State == MAwaitingClick {
 			return m.copy(), nil // asked again: waits for its click
 		}
@@ -76,6 +95,7 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 		}
 		m.st.State = MApplying
 		m.applies++
+		m.applyBody = body
 		if m.onApply != nil {
 			m.onApply()
 		}
@@ -102,7 +122,7 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 			if m.prepFail != "" {
 				m.st.State, m.st.Error = MPrepareFailed, &MachineError{Step: "stage", Code: m.prepFail}
 			} else {
-				m.st.State = MPrepared
+				m.st.State, m.st.HandsOver = MPrepared, m.handsOver
 			}
 		case MApplying, MWatching:
 			if m.pendingFor > 0 {
@@ -116,6 +136,9 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 				return nil, errors.New("restarting")
 			case MRolledBack:
 				m.st.State, m.st.Reason = MRolledBack, "api /readyz 503"
+				if m.rbReason != "" {
+					m.st.Reason, m.st.Error = m.rbReason, m.rbErr
+				}
 			case MApplyFailed:
 				m.st.State, m.st.Error = MApplyFailed, &MachineError{Step: "restart", Code: "app_install_failed"}
 			default:
@@ -303,6 +326,7 @@ func targetsByName(t *testing.T, s *Store, runID string) map[string]Target {
 // The home updates first, then every machine, one at a time, each checked before the
 // next; the workers are drained while the home applies and put back after.
 func TestDriverHomeThenMachinesOneAtATime(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -363,6 +387,7 @@ func TestDriverHomeThenMachinesOneAtATime(t *testing.T) {
 
 // A home that rolls back leaves the machines alone and blocks the release.
 func TestDriverHomeRollbackTouchesNoMachine(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	n1 := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -388,6 +413,7 @@ func TestDriverHomeRollbackTouchesNoMachine(t *testing.T) {
 
 // node_failure_policy over three machines on two platforms.
 func TestDriverFailurePolicies(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		policy, run    string
 		bravo, charlie string
@@ -423,6 +449,7 @@ func TestDriverFailurePolicies(t *testing.T) {
 
 // A machine that never reports back is failed after node_health_timeout_minutes.
 func TestDriverNodeHealthTimeout(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0").outcome = "silent"
@@ -436,6 +463,7 @@ func TestDriverNodeHealthTimeout(t *testing.T) {
 
 // An offline machine is left offline by the rollout and caught up when it comes back.
 func TestDriverCatchUp(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	n1 := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -457,6 +485,7 @@ func TestDriverCatchUp(t *testing.T) {
 
 // Cancel is accepted before the home switches only.
 func TestDriverCancel(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	_, _ = r.f.svc.Tick(ctx)
@@ -488,6 +517,7 @@ func TestDriverCancel(t *testing.T) {
 // An automatic run restarts the home only with nobody watching; at the window's end
 // it gives up (tv_busy) and is tried in the next window.
 func TestDriverWaitsForTheTV(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.viewers = 2
@@ -513,6 +543,7 @@ func TestDriverWaitsForTheTV(t *testing.T) {
 // The API restarts mid-run (an update restarts it): a new driver takes the run up from
 // the database.
 func TestDriverResumesAcrossAnAPIRestart(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -532,6 +563,7 @@ func TestDriverResumesAcrossAnAPIRestart(t *testing.T) {
 // A failed prepare counts against the release (blocked at three); a verification or a
 // rehearsal failure blocks it at once.
 func TestDriverPrepareFailures(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ code, blocked string }{{"verify_identity", "verify"}, {"rehearsal_failed", "rehearsal"},
 		{"download_failed", ""}} {
 		t.Run(tc.code, func(t *testing.T) {
@@ -551,9 +583,11 @@ func TestDriverPrepareFailures(t *testing.T) {
 	}
 }
 
-// A machine ahead of the home is skipped, never downgraded; a worker-only one is
-// reported.
+// A machine ahead of the home is skipped, never downgraded; a worker-only one whose worker
+// is not on the channel is offline (converted once it is back: convert_test.go) and shown
+// worker-only.
 func TestDriverSkewRules(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	ahead := r.node(t, "n1", "alpha", "linux-amd64", "1.6.0")
@@ -564,7 +598,8 @@ func TestDriverSkewRules(t *testing.T) {
 	_, _ = r.f.svc.Tick(ctx)
 	run := r.drive(t, 30)
 	ts := targetsByName(t, r.f.store, run.ID)
-	if run.State != RunDone || ts["alpha"].State != TargetSkipped || ts["worker"].State != TargetWorkerOnly || ahead.st != nil {
+	if run.State != RunDone || ts["alpha"].State != TargetSkipped || ts["worker"].State != TargetOffline ||
+		ts["worker"].Kind != KindWorker || ahead.st != nil {
 		t.Fatalf("run %s targets %+v", run.State, ts)
 	}
 	ms := r.d.Machines(ctx, Machine{ID: "home", Role: "home", Version: "1.5.0"})
@@ -574,5 +609,56 @@ func TestDriverSkewRules(t *testing.T) {
 	}
 	if states["alpha"] != "ahead_of_home" || states["worker"] != "worker_only" {
 		t.Fatalf("machines %v", fmt.Sprint(states))
+	}
+}
+
+// Story 35.7: a home whose TV processes run on across its restart (the TV handover) is
+// not held for the TV: its restart cuts no TV. One that cannot hand over waits, as before.
+func TestDriverHandoverNeedsNoQuietTV(t *testing.T) {
+	t.Parallel()
+	r := newDriverRig(t)
+	ctx := context.Background()
+	r.home.handsOver = true
+	r.viewers = 3
+	_, _ = r.f.svc.Tick(ctx)
+	if run := r.drive(t, 20); run.State != RunDone || r.home.applies != 1 {
+		t.Fatalf("run %s applies %d", run.State, r.home.applies)
+	}
+}
+
+// Story 35.7: a machine whose TV processes run on across its restart is not held while
+// its streams are watched.
+func TestDriverNodeHandoverNeedsNoQuietTV(t *testing.T) {
+	t.Parallel()
+	r := newDriverRig(t)
+	ctx := context.Background()
+	a := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
+	a.handsOver = true
+	if _, err := r.f.db.Exec(`INSERT INTO channel_runtime (channel_id, viewer_count, host_id, state) VALUES ('c1', 2, 'n1', 'live')`); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = r.f.svc.Tick(ctx)
+	if run := r.drive(t, 40); run.State != RunDone || a.version != "1.5.0" {
+		t.Fatalf("run %s alpha %s", run.State, a.version)
+	}
+}
+
+// Story 35.7 (review L1): a home whose prepared report said it hands its TV over, which
+// cannot at the apply after all, refuses while the TV is watched; the run's TV gate then
+// holds it until the TV is quiet.
+func TestDriverLostHandoverWaitsForTheTV(t *testing.T) {
+	t.Parallel()
+	r := newDriverRig(t)
+	ctx := context.Background()
+	r.home.handsOver, r.home.lostHandover = true, true
+	r.viewers = 3
+	_, _ = r.f.svc.Tick(ctx)
+	r.stepN(8)
+	if run := r.active(t); r.home.applies != 0 || run.Step != "waiting_tv" && run.State != RunDraining {
+		t.Fatalf("run %s/%s applies %d", run.State, run.Step, r.home.applies)
+	}
+	r.viewers = 0
+	if run := r.drive(t, 20); run.State != RunDone || r.home.applies != 1 {
+		t.Fatalf("run %s applies %d", run.State, r.home.applies)
 	}
 }

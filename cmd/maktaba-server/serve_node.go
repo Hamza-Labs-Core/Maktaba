@@ -13,10 +13,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -116,7 +118,10 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 	host, _ := os.Hostname()
 	ns.agent = &machineagent.Agent{
 		ID: machineagent.Identity{NodeID: n.NodeID, Node8: n.Node8(), PrivateKey: n.PrivateKey,
-			ClusterPub: n.Home.ClusterPub, HomeURL: n.HomeURL(), Host: host},
+			ClusterPub: n.Home.ClusterPub, HomeURL: n.HomeURL(), Host: host,
+			// the cluster link (story 35.16): its certificate beside node.json, and the
+			// node api's loopback route to the home's channel over it
+			CertDir: filepath.Dir(config.LocalNodeConfigPath()), LocalURL: supervisor.LocalAgentURL(cfg)},
 		State: func() machineagent.UpdateState {
 			st := machineagent.UpdateState{Version: version.Version, Platform: runtime.GOOS + "-" + runtime.GOARCH,
 				Layout: "flat"}
@@ -135,6 +140,11 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 		OnConnect: ns.homeDB.reconnected,
 	}
 	go ns.agent.Run(ctx)
+	if os.Getenv(envLauncherRoot) != "" || os.Getenv("MAKTABA_RELEASE_DIR") != "" {
+		// an installed full node: the worker units of its worker-only install a conversion
+		// left would run a second pipeline (story 35.8 AC8)
+		go leftoverWorkerUnits(ctx)
+	}
 	go ns.watchHome(ctx, apiOrigin(cfg.Server.Listen))
 	go ns.homeDB.run(ctx)
 	fmt.Fprintf(os.Stderr, "[serve] full node of %s (node %s): api, web, pipeline, streaming\n", n.HomeURL(), n.Node8())
@@ -191,7 +201,11 @@ const offlineChannels = "/stream/offline"
 // machine's own channels; a session the home serves (/stream/via-home/…) to the home's
 // streaming port; everything else (VOD) to this machine's streaming role, which reads
 // the NAS itself.
-func nodeStreamRouter(local, home http.Handler, homeAway func() bool) http.Handler {
+func nodeStreamRouter(local, home http.Handler, homeAway func() bool, vod ...http.Handler) http.Handler {
+	viaHome := home
+	if len(vod) > 0 && vod[0] != nil {
+		viaHome = vod[0]
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		switch {
@@ -209,7 +223,7 @@ func nodeStreamRouter(local, home http.Handler, homeAway func() bool) http.Handl
 			out.URL.Path = "/stream/" + strings.TrimPrefix(p, viaHomePrefix)
 			out.URL.RawPath = ""
 			w.Header().Set("X-Maktaba-Stream", "home-vod-fallback")
-			home.ServeHTTP(w, out)
+			viaHome.ServeHTTP(w, out)
 		default:
 			w.Header().Set("X-Maktaba-Stream", "local")
 			local.ServeHTTP(w, r)
@@ -295,4 +309,45 @@ func advertiseMachine(ctx context.Context, cfg config.Config, ns *nodeServices) 
 		case <-time.After(30 * time.Second):
 		}
 	}
+}
+
+// vodOverLink sends a VOD session the home serves (the fallback, design §11.5) over the
+// machine's cluster link (story 35.16 AC14: the node API's loopback fetch, purpose vod),
+// and to the home's streaming port (direct) while the link is not up.
+func vodOverLink(api, tokenFile string, direct http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tok, err := os.ReadFile(tokenFile) //nolint:gosec // this machine's own token file
+		if err != nil || r.Method != http.MethodGet {
+			direct.ServeHTTP(w, r)
+			return
+		}
+		q := url.Values{"purpose": {"vod"}, "path": {r.URL.RequestURI()}}
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, strings.TrimRight(api, "/")+
+			"/api/cluster/link/local/fetch?"+q.Encode(), nil)
+		if err != nil {
+			direct.ServeHTTP(w, r)
+			return
+		}
+		for _, h := range []string{"Range", "If-Range", "Accept"} {
+			if v := r.Header.Get(h); v != "" {
+				req.Header.Set(h, v)
+			}
+		}
+		req.Header.Set("X-Maktaba-Local-Token", strings.TrimSpace(string(tok)))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil || (resp.StatusCode == http.StatusServiceUnavailable && resp.Header.Get("X-Maktaba-Link") == "down") {
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			direct.ServeHTTP(w, r)
+			return
+		}
+		defer resp.Body.Close()
+		for k, vs := range resp.Header {
+			w.Header()[k] = vs
+		}
+		w.Header().Set("X-Maktaba-Stream-Link", "1")
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
+	})
 }

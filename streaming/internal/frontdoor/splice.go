@@ -190,6 +190,9 @@ func (h *Handler) remoteTS(ctx context.Context, hostID string, gen int64, ch uui
 		return err
 	}
 	h.Keyring.SignRequest(req, gen)
+	if !host.IsHome() {
+		markLink(req, hostID) // on the machine's cluster link when it has one (story 35.16)
+	}
 	resp, err := h.client().Do(req)
 	if err != nil {
 		if ctx.Err() == nil {

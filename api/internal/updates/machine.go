@@ -29,6 +29,9 @@ type MachineJob struct {
 	// AppPostgresMajor is the release's app payloads' PostgreSQL majors (its verified
 	// release.json's): a machine refuses another major than its own before downloading
 	AppPostgresMajor map[string]int `json:"app_postgres_major,omitempty"`
+	// DownloadToken lets a worker-only machine converting (update.convert, story 35.8 AC8)
+	// fetch this release from the home's mirror without a delegation key (dltoken)
+	DownloadToken string `json:"download_token,omitempty"`
 }
 
 // MachineStep is one step of a machine's run.
@@ -75,6 +78,10 @@ type MachineStatus struct {
 	Attempts []Attempt `json:"attempts,omitempty"`
 	// Backup is the dump the home's new release took before its migrations (at its commit).
 	Backup *RunBackup `json:"backup,omitempty"`
+	// HandsOver: the machine's TV processes run on across its restart (story 35.7), so its
+	// restart cuts no TV and need not wait for it to be quiet; HandoverWhy says why not.
+	HandsOver   bool   `json:"hands_over,omitempty"`
+	HandoverWhy string `json:"handover_why,omitempty"`
 }
 
 // RunBackup is a dump of the home's database a run took (update_runs.backup).

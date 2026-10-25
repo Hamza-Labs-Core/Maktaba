@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/linkctx"
 )
 
 // Rejection reasons (logged, and the problem's code).
@@ -29,6 +31,9 @@ const (
 	ReasonReplay      = "replay"
 	ReasonUnsigned    = "unsigned_body_not_allowed"
 	ReasonSession     = "session_mismatch"
+	// ReasonLinkRequired: a signed request over plain HTTP while the home requires the
+	// cluster link (story 35.16 AC13): the machine's requests go on its link.
+	ReasonLinkRequired = "link_required"
 )
 
 // RejectError is a refused signature.
@@ -183,8 +188,22 @@ func NodeFrom(ctx context.Context) string {
 func Accept(v *Verifier, sessionCookie string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// over its link the machine is proved by its certificate (story 35.16): no
+			// signature is needed, and none is checked
+			if nodeID, ok := linkctx.Node(r.Context()); ok {
+				if !delegatedSession(w, r, v, nodeID, sessionCookie) {
+					return
+				}
+				r.Header.Del(HeaderVia)
+				next.ServeHTTP(w, r.WithContext(WithNode(r.Context(), nodeID)))
+				return
+			}
 			if !Signed(r) {
 				next.ServeHTTP(w, r)
+				return
+			}
+			if linkctx.Require() {
+				writeReject(w, ReasonLinkRequired)
 				return
 			}
 			if v == nil || v.Keys == nil {
@@ -201,19 +220,30 @@ func Accept(v *Verifier, sessionCookie string) func(http.Handler) http.Handler {
 				writeReject(w, reason)
 				return
 			}
-			if sid := r.Header.Get(HeaderDelegatedSession); sid != "" && sessionCookie != "" {
-				if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" && c.Value != sid {
-					_ = v.reject(r, nodeID, ReasonSession)
-					writeReject(w, ReasonSession)
-					return
-				}
-				setCookie(r, sessionCookie, sid)
+			if !delegatedSession(w, r, v, nodeID, sessionCookie) {
+				return
 			}
 			// the marker is ours now: the router's StripVia must not see a forged one
 			r.Header.Del(HeaderVia)
 			next.ServeHTTP(w, r.WithContext(WithNode(r.Context(), nodeID)))
 		})
 	}
+}
+
+// delegatedSession puts the user's session the machine acts for in the request's cookie
+// (a cookie that names another one is refused); false when it answered.
+func delegatedSession(w http.ResponseWriter, r *http.Request, v *Verifier, nodeID, sessionCookie string) bool {
+	if sid := r.Header.Get(HeaderDelegatedSession); sid != "" && sessionCookie != "" {
+		if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" && c.Value != sid {
+			if v != nil {
+				_ = v.reject(r, nodeID, ReasonSession)
+			}
+			writeReject(w, ReasonSession)
+			return false
+		}
+		setCookie(r, sessionCookie, sid)
+	}
+	return true
 }
 
 // setCookie replaces (or adds) one cookie in the request's Cookie header.

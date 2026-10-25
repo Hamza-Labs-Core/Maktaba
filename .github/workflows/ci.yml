@@ -76,6 +76,15 @@ jobs:
               # and the anchors the Live TV admin page links to
               - 'docs/tv-cluster-and-remote.md'
               - 'specs/epics/32-tv-streaming-cluster-remote/**'
+              # the update docs and Epic 35's specs: test_docs_links checks their links
+              # (story 35.15 TC5)
+              - 'docs/updates.md'
+              - 'docs/auto-update.md'
+              - 'docs/cluster/**'
+              - 'deploy/packaging/README.md'
+              - 'deploy/packaging/upgrade.md'
+              - 'deploy/packaging/node/README.md'
+              - 'specs/epics/35-cluster-full-nodes-and-updates/**'
               # the web's markdown (test-cases/, help/): lint-web's prettier --check
               - 'web/**/*.md'
               # the pipeline's README: the wheel's metadata (pyproject readme)
@@ -112,6 +121,7 @@ jobs:
               - 'apps/desktop/**'
               - 'cmd/maktaba-launcher/**'
               - 'deploy/packaging/node/build-release.sh'
+              - 'deploy/docker/server/**'
               - 'pipeline/pyproject.toml'
               - 'pipeline/uv.lock'
               - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'

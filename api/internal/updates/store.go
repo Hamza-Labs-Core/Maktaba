@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -232,7 +233,106 @@ func (s *Store) SetVerifyError(ctx context.Context, version string, ve *VerifyEr
 	_, err := s.DB.ExecContext(ctx, `UPDATE release_catalog SET verify_state = $2, verify_error = $3,
 		checksums_sha256 = CASE WHEN $4 = '' THEN checksums_sha256 ELSE $4 END WHERE version = $1`,
 		version, state, string(b), checksums)
+	if err == nil {
+		s.countVerifyFailure(ctx, ve.Kind)
+	}
 	return err
+}
+
+// Counters are the update flow's running totals (/metrics: never going down, kept across
+// restarts).
+type Counters struct {
+	// VerifyFailures are the verifications that failed, by the kind of failure.
+	VerifyFailures map[string]int64 `json:"verify_failures,omitempty"`
+	// Steps are the machines' steps that ended (done or failed), by step label: how long
+	// each took, counted once when its end is said (events.go).
+	Steps map[string]*HistTotal `json:"steps,omitempty"`
+}
+
+// HistTotal is a histogram's running total: how many, their sum, and how many at or under
+// each bucket.
+type HistTotal struct {
+	Count   uint64    `json:"count"`
+	Sum     float64   `json:"sum"`
+	Buckets []float64 `json:"buckets"` // the bounds the counts are of
+	Counts  []uint64  `json:"counts"`
+}
+
+// add counts one value v.
+func (h *HistTotal) add(v float64, bounds []float64) {
+	if len(h.Counts) != len(bounds) {
+		h.Buckets, h.Counts = append([]float64(nil), bounds...), make([]uint64, len(bounds))
+	}
+	h.Count++
+	h.Sum += v
+	for i, b := range h.Buckets {
+		if v <= b {
+			h.Counts[i]++
+		}
+	}
+}
+
+// countStep adds an ended step's time to the running totals (best effort).
+func (s *Store) countStep(ctx context.Context, label string, seconds float64, bounds []float64) {
+	countersMu.Lock()
+	defer countersMu.Unlock()
+	c := s.Counters(ctx)
+	if c.Steps == nil {
+		c.Steps = map[string]*HistTotal{}
+	}
+	h := c.Steps[label]
+	if h == nil {
+		h = &HistTotal{}
+		c.Steps[label] = h
+	}
+	h.add(seconds, bounds)
+	s.saveSetting(ctx, countersKey, c)
+}
+
+const countersKey = "updates.counters"
+
+var countersMu sync.Mutex
+
+// Counters reads the running totals (none when unread).
+func (s *Store) Counters(ctx context.Context) Counters {
+	var v string
+	var c Counters
+	if err := s.DB.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = $1`, countersKey).Scan(&v); err == nil {
+		_ = json.Unmarshal([]byte(v), &c)
+	}
+	return c
+}
+
+// countVerifyFailure adds a failed verification to the running totals (best effort).
+func (s *Store) countVerifyFailure(ctx context.Context, kind string) {
+	if kind == "" {
+		kind = "unknown"
+	}
+	countersMu.Lock()
+	defer countersMu.Unlock()
+	c := s.Counters(ctx)
+	if c.VerifyFailures == nil {
+		c.VerifyFailures = map[string]int64{}
+	}
+	c.VerifyFailures[kind]++
+	s.saveSetting(ctx, countersKey, c)
+}
+
+// saveSetting writes v as JSON under key in app_settings (best effort).
+func (s *Store) saveSetting(ctx context.Context, key string, v any) {
+	b, _ := json.Marshal(v)
+	_, _ = s.DB.ExecContext(ctx, `INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, $3)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
+		key, string(b), s.ts(s.now()))
+}
+
+// loadSetting reads key's JSON from app_settings into v (false when there is none).
+func (s *Store) loadSetting(ctx context.Context, key string, v any) bool {
+	var raw string
+	if err := s.DB.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = $1`, key).Scan(&raw); err != nil {
+		return false
+	}
+	return json.Unmarshal([]byte(raw), v) == nil
 }
 
 // ResetForReverify forgets a verification (a re-tagged release, story 35.3 EC4).

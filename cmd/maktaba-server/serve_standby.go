@@ -102,7 +102,10 @@ func (s *switching) standbyKit(ctx context.Context, req homeRequest) (any, error
 	if !req.Force && req.Have == hash {
 		return map[string]any{"hash": hash, "unchanged": true}, nil
 	}
-	path := filepath.Join(s.cfg.StateDir(), "switchover", "standby-"+filepath.Base(req.ToNode)+".chunks")
+	path, err := sealedKitPath(s.cfg.StateDir(), req.ToNode)
+	if err != nil {
+		return nil, err
+	}
 	n, err := sealKit(k, clusterPriv, to, id, path)
 	if err != nil {
 		return nil, err
