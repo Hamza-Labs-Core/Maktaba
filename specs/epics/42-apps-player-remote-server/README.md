@@ -34,6 +34,28 @@ The owner's decisions (2026-10-25):
 3. **Macs are Apple silicon only** (no Intel builds since v0.3.15).
 4. **The Maktaba service admin is its own role and surface**, not to be confused with a home's
    admins (see Roles).
+5. **The apps are native** (2026-10-25): SwiftUI on Apple (iPhone with iPhone Duo, iPad, Mac,
+   Apple TV), Jetpack Compose on Android (phone, foldable, tablet, Android TV), Compose for
+   Desktop on Windows and Linux. The web SPA stays what the home serves and what the cloud web
+   shows. The Desktop Server (Epics 36, 38, 39) stays the Tauri app that carries the server.
+
+## Native toolkits
+
+| Family | Toolkit | Covers | Shares with |
+|---|---|---|---|
+| Apple | SwiftUI + `MaktabaKit` (`apps/apple`) | Player: iPhone (iPhone Duo too), iPad, Mac. Remote: iPhone, iPad. Then Apple TV | the tvOS app, folded in (its client moves to `MaktabaKit`) |
+| Android | Jetpack Compose | Player and Remote: phone, foldable, tablet; Android TV | the Android TV app |
+| Windows, Linux | Compose for Desktop | Player | the Android code (Kotlin) |
+
+Players come first. The Remote starts with the essentials: status, needs attention with
+Retry and Retry all, processing, machines, updates, admin push alerts. Deeper admin pages open
+the home's web UI until they are built natively.
+
+**Form factors on Apple:** the iPhone Duo is an iPhone, and no device requirement in Apple's
+documentation limits an app to it, so the iPhone app is the foldable app on Apple: it adapts
+(Apple's iPhone Duo guide: `NavigationSplitView`, standard toolbars that move to the vertical
+bar, `ArrangementView` for the watch screen, layout from the view's size). iPad is its own
+target and listing. On Android the foldable can be its own listing.
 
 ## Roles
 
@@ -63,8 +85,10 @@ epic offers service administration: the console stays a web surface of the cloud
 
 ## Shape
 
-### 1. One SPA, editions at build time
+### 1. The web: one SPA, editions at build time (the home's web UI and the cloud web)
 
+The installed apps are native (Native toolkits); the SPA is what a browser shows: the home's
+own web UI, and the cloud web's player and remote for a connected home.
 `VITE_MAKTABA_EDITION` = `full` (the home's own web UI, the default), `player` or `remote`.
 
 - **Routes:** viewer routes (library, series, video, watch, search, TV guide and live, history,
@@ -105,12 +129,20 @@ mobile preferences). The app remembers several homes.
 
 | App | Built from | Identity | Notes |
 |---|---|---|---|
-| Desktop Player | `apps/desktop`, no server payload, edition `player`, mode fixed to Client | `com.hamzalabs.maktaba.player`, "Maktaba Player" | its own `mode.json` folder (from the identifier), its own updater feed |
-| Desktop Server | today's app (Epics 36, 38, 39), edition `full` | `com.hamzalabs.maktaba` | unchanged |
-| Mobile Player, phone / foldable / tablet | `apps/mobile`, edition `player`, layouts per form factor | `com.hamzalabs.maktaba.player`, `.player.foldable`, `.player.tablet` | six store listings per platform with the remote ones |
-| Mobile Remote, phone / foldable / tablet | `apps/mobile`, edition `remote` | `com.hamzalabs.maktaba.remote`, `.remote.foldable`, `.remote.tablet` | admin push notifications (failures, health) |
-| TV | `apps/tv` | `com.hamzalabs.maktaba.tv` | gains the home picker and sign-in by code |
+| Player, iPhone (iPhone Duo too) | `apps/apple`, SwiftUI | `com.hamzalabs.maktaba.player` | scheme "Maktaba Player" (started: PR on `feat/apple-native-apps`) |
+| Player, iPad | `apps/apple` | `com.hamzalabs.maktaba.player.tablet` | its own listing |
+| Player, Mac (Apple silicon) | `apps/apple` | `com.hamzalabs.maktaba.player.mac` | the desktop player on macOS |
+| Remote, iPhone / iPad | `apps/apple` | `com.hamzalabs.maktaba.remote`, `.remote.tablet` | admin push notifications (failures, health) |
+| Player and Remote, Android phone / foldable / tablet | Compose | `com.hamzalabs.maktaba.player`, `.player.foldable`, `.player.tablet`; `.remote…` | six listings with the remote ones |
+| Player, Windows / Linux | Compose for Desktop | `com.hamzalabs.maktaba.player` | its own updater feed |
+| Desktop Server | today's Tauri app (Epics 36, 38, 39), web edition `full` | `com.hamzalabs.maktaba` | unchanged |
+| TV | `apps/tv` now, then the Apple and Android code bases | `com.hamzalabs.maktaba.tv` | gains the home picker and sign-in by code |
 | Cloud web | `cloud/` serving the SPA, edition by URL (`/play`, `/manage`) | the cloud domain | talks to the connected home through the relay |
+
+`apps/mobile` (the Capacitor wrapper) is retired once the native phone apps ship.
+
+**Signing:** Apple apps sign with Xcode's automatic signing (team `G58UVTKQPB`); archives
+and uploads from Xcode or `xcodebuild -allowProvisioningUpdates`.
 
 **Form factors:** the foldable and tablet apps share the phone app's code. What differs is the
 layout: two panes (library list and video, or queue and detail) on wide screens, and a foldable's
@@ -129,13 +161,14 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
 
 ## Stories (in order)
 
-1. **42.1 Editions:** `VITE_MAKTABA_EDITION`, lazy server routes, nav per edition, a bundle check
-   that the player has no server code, "Manage" section in `full`.
-2. **42.2 Runtime home:** the API base as a runtime setting from the shell; several homes
-   remembered.
-3. **42.3 Home picker:** mDNS (desktop now, mobile with a plugin), by address, QR.
-4. **42.4 Desktop Player:** identity, mode fixed to Client, release legs, `latest-player.json`.
-5. **42.5 Mobile Player and Remote (phone):** two editions, bundle ids, store builds.
+1. **42.1 Apple Player and Remote:** `apps/apple` (SwiftUI, `MaktabaKit`): home by address,
+   sign-in, libraries, a video, watching (stream sessions, progress), needs attention with
+   Retry. iPhone (iPhone Duo), iPad, Mac; Xcode automatic signing. (Started.)
+2. **42.2 Home picker:** mDNS (Bonjour on Apple, NSD on Android), by address, QR; several homes.
+3. **42.3 Android Player and Remote:** Compose, phone / foldable / tablet, sharing with Android TV.
+4. **42.4 Desktop Player on Windows and Linux:** Compose for Desktop, release legs,
+   `latest-player.json`.
+5. **42.5 Web editions:** `VITE_MAKTABA_EDITION`, lazy server routes, "Manage" in `full`.
 6. **42.6 Sign-in by code:** endpoints, the approve screen, mobile, desktop and TV.
 7. **42.7 Through the cloud:** pick a connected home via Maktaba Cloud, talk through the relay.
 8. **42.8 Tablet and foldable:** two-pane and fold-aware layouts, their own listings.
