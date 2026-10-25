@@ -1,12 +1,14 @@
 package settings
 
 import (
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
-	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
 func TestRedactSecrets(t *testing.T) {

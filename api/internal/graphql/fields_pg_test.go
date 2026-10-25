@@ -264,7 +264,11 @@ func cases() []fieldCase {
 		{"library", func(t *testing.T, e *pgEnv) {
 			q := `query($id: ID!) { library(id: $id) { id name createdAt } }`
 			unauthorized(t, e, q, map[string]any{"id": libA})
-			e.fails(member, "forbidden", q, map[string]any{"id": libB})
+			// a library the member may not see answers as one that does not exist (the REST
+			// read's 404 since #313: a 403 told which ids exist): null, never its fields
+			if v := e.ok(member, "library", q, map[string]any{"id": libB}); v != nil {
+				t.Fatalf("a library the member may not see = %v, want null", v)
+			}
 			lib := e.ok(member, "library", q, map[string]any{"id": libA}).(map[string]any)
 			if lib["name"] != "Alpha" {
 				t.Fatalf("library = %v", lib)
@@ -386,7 +390,8 @@ func cases() []fieldCase {
 		{"queueStats", func(t *testing.T, e *pgEnv) {
 			q := `{ queueStats }`
 			unauthorized(t, e, q, nil)
-			st := e.ok(member, "queueStats", q, nil).(map[string]any)
+			e.fails(member, "forbidden", q, nil) // admin-only since #313 (GET /api/queue/stats)
+			st := e.ok(admin, "queueStats", q, nil).(map[string]any)
 			if _, ok := st["by_stage"]; !ok {
 				t.Fatalf("queueStats = %v", st)
 			}
@@ -443,7 +448,8 @@ func cases() []fieldCase {
 		{"settings", func(t *testing.T, e *pgEnv) {
 			q := `{ settings }`
 			unauthorized(t, e, q, nil)
-			if _, ok := e.ok(member, "settings", q, nil).(map[string]any); !ok {
+			e.fails(member, "forbidden", q, nil) // admin-only since #313 (GET /api/settings)
+			if _, ok := e.ok(admin, "settings", q, nil).(map[string]any); !ok {
 				t.Fatal("settings is not an object")
 			}
 		}},

@@ -83,7 +83,8 @@ func readersView(t *testing.T, db *sql.DB, now time.Time) string {
 	qh.Mount(r)
 	get := func(path string) string {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
-		req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{UserID: "u1"}))
+		// the queues routes are admin-only (#313)
+		req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{UserID: "u1", IsAdmin: true}))
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
