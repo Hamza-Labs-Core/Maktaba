@@ -2,6 +2,9 @@ package updates
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -86,7 +89,10 @@ func (m *Mirror) tufGet(ctx context.Context, name string) ([]byte, int, error) {
 	path := filepath.Join(m.Dir, "tuf", filepath.FromSlash(name))
 	if immutable {
 		if b, err := os.ReadFile(path); err == nil {
-			return b, http.StatusOK, nil
+			if tufWhole(name, b) {
+				return b, http.StatusOK, nil
+			}
+			_ = os.Remove(path) // a kept copy that is not whole: read again
 		}
 	} else {
 		m.mu.Lock()
@@ -123,11 +129,8 @@ func (m *Mirror) tufGet(ctx context.Context, name string) ([]byte, int, error) {
 		return nil, 0, fmt.Errorf("%s is larger than %d bytes", name, tufFileLimit)
 	}
 	if immutable {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
-			tmp := path + ".tmp"
-			if os.WriteFile(tmp, b, 0o644) == nil {
-				_ = os.Rename(tmp, path)
-			}
+		if tufWhole(name, b) && os.MkdirAll(filepath.Dir(path), 0o755) == nil {
+			_ = writeSynced(path, b)
 		}
 	} else {
 		m.mu.Lock()
@@ -135,6 +138,18 @@ func (m *Mirror) tufGet(ctx context.Context, name string) ([]byte, int, error) {
 		m.mu.Unlock()
 	}
 	return b, http.StatusOK, nil
+}
+
+// tufWhole reports whether a repository file is whole, as far as the home can tell without
+// TUF (the machine's TUF client verifies the rest): a target named by its SHA-256 has that
+// digest, and metadata is JSON.
+func tufWhole(name string, b []byte) bool {
+	if rest, ok := strings.CutPrefix(name, "targets/"); ok {
+		digest, _, _ := strings.Cut(rest, ".")
+		sum := sha256.Sum256(b)
+		return hex.EncodeToString(sum[:]) == digest
+	}
+	return json.Valid(b)
 }
 
 func (m *Mirror) lastTimestamp() []byte {

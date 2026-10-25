@@ -489,7 +489,7 @@ func TestDropPin(t *testing.T) {
 // (a TUF client looks for the next root until one), and nothing but the repository's names.
 func TestMirrorPassesOnTheTUFRepository(t *testing.T) {
 	rig := newMirrorRig(t)
-	target := "targets/" + strings.Repeat("ab", 32) + ".trusted_root.json"
+	target := "targets/" + hexSum([]byte(`{"trusted":"root"}`)) + ".trusted_root.json"
 	files := map[string]string{"1.root.json": `{"root":1}`, "timestamp.json": `{"ts":1}`, target: `{"trusted":"root"}`}
 	var mu sync.Mutex
 	hits := map[string]int{}
@@ -659,5 +659,113 @@ func TestInsideStaysInItsRoot(t *testing.T) {
 		if p, err := inside(root, parts...); !errors.Is(err, errOutside) {
 			t.Errorf("%q: %q %v", parts, p, err)
 		}
+	}
+}
+
+// A kept copy that no longer verifies (a power cut before its data reached the disk, a
+// damaged block, an edit) is dropped and fetched again: by the next process, which checks
+// each kept file once, and by this one when the file changed under it. Story 35.12 review F1.
+func TestMirrorDamagedKeptCopyIsFetchedAgain(t *testing.T) {
+	rig := newMirrorRig(t)
+	archive := "maktaba-server_1.5.0_linux_amd64.tar.gz"
+	path := "/api/cluster/updates/artifacts/1.5.0/" + archive
+	if rec := rig.get(path, "node-1", nil); rec.Code != http.StatusOK {
+		t.Fatalf("first: %d", rec.Code)
+	}
+	kept := filepath.Join(rig.m.Dir, "1.5.0", archive)
+	if err := os.Truncate(kept, 0); err != nil { // the data never reached the disk
+		t.Fatal(err)
+	}
+	// the next process (the API restarted after the power cut)
+	rig.m = &Mirror{Store: rig.store, Dir: rig.m.Dir}
+	rig.router = chi.NewRouter()
+	rig.router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(delegation.WithNode(r.Context(), r.Header.Get("X-Test-Node"))))
+		})
+	})
+	rig.m.Mount(rig.router)
+	rec := rig.get(path, "node-1", nil)
+	if rec.Code != http.StatusOK || rec.Body.String() != string(rig.files[archive]) {
+		t.Fatalf("after the damage: %d %q", rec.Code, rec.Body.String())
+	}
+	if n := rig.hit(archive); n != 2 {
+		t.Fatalf("GitHub asked %d times, want twice (the damaged copy fetched again)", n)
+	}
+	// changed under the running process (another length, another time): checked again
+	if err := os.WriteFile(kept, []byte("edited by hand"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rec := rig.get(path, "node-2", nil); rec.Body.String() != string(rig.files[archive]) || rig.hit(archive) != 3 {
+		t.Fatalf("an edited copy: %q, GitHub asked %d times", rec.Body.String(), rig.hit(archive))
+	}
+	// an intact copy is hashed once, then served as it is
+	if rec := rig.get(path, "node-3", nil); rec.Code != http.StatusOK || rig.hit(archive) != 3 {
+		t.Fatalf("an intact copy: %d, GitHub asked %d times", rec.Code, rig.hit(archive))
+	}
+}
+
+// The home takes a file from its own staged release (bin/releases/<v>: the signed files,
+// the pipeline's wheel and constraints) when it verifies, rather than downloading it again;
+// a copy that does not verify is passed over. Design §13.2.
+func TestMirrorReusesTheHomesOwnCopies(t *testing.T) {
+	rig := newMirrorRig(t)
+	rel := filepath.Join(t.TempDir(), "bin", "releases", "1.5.0")
+	pipe := filepath.Join(rel, "pipeline")
+	if err := os.MkdirAll(pipe, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	whl, cons := "maktaba_pipeline-1.5.0-py3-none-any.whl", "maktaba_pipeline-1.5.0-constraints.txt"
+	for name, b := range map[string][]byte{filepath.Join(rel, "release.json"): rig.files["release.json"],
+		filepath.Join(pipe, whl): rig.files[whl], filepath.Join(pipe, cons): []byte("not the constraints")} {
+		if err := os.WriteFile(name, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rig.m.Local = func(version string) []string {
+		if version != "1.5.0" {
+			return nil
+		}
+		return []string{rel, pipe}
+	}
+	for _, n := range []string{"release.json", whl, cons} {
+		if rec := rig.get("/api/cluster/updates/artifacts/1.5.0/"+n, "node-1", nil); rec.Code != http.StatusOK ||
+			rec.Body.String() != string(rig.files[n]) {
+			t.Fatalf("%s: %d %q", n, rec.Code, rec.Body.String())
+		}
+	}
+	if rig.hit("release.json") != 0 || rig.hit(whl) != 0 {
+		t.Fatalf("GitHub asked for a file the home holds: release.json %d, wheel %d", rig.hit("release.json"), rig.hit(whl))
+	}
+	if rig.hit(cons) != 1 {
+		t.Fatalf("a home copy that does not verify was used (GitHub asked %d times)", rig.hit(cons))
+	}
+}
+
+// A kept TUF file that is not whole (a target whose digest is not its name's, metadata that
+// is not JSON) is read again from the public repository rather than passed on.
+func TestMirrorTUFCacheIsCheckedBeforeUse(t *testing.T) {
+	rig := newMirrorRig(t)
+	body := `{"trusted":"root"}`
+	target := "targets/" + hexSum([]byte(body)) + ".trusted_root.json"
+	hits := 0
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(up.Close)
+	rig.m.TUFUpstream = up.URL
+	if rec := rig.get("/api/cluster/updates/tuf/"+target, "node-1", nil); rec.Body.String() != body {
+		t.Fatalf("first: %q", rec.Body.String())
+	}
+	kept := filepath.Join(rig.m.Dir, "tuf", filepath.FromSlash(target))
+	if err := os.WriteFile(kept, []byte(`{"trusted":"roo`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rec := rig.get("/api/cluster/updates/tuf/"+target, "node-1", nil); rec.Body.String() != body || hits != 2 {
+		t.Fatalf("a damaged copy: %q (read %d times)", rec.Body.String(), hits)
+	}
+	if !tufWhole("3.root.json", []byte(`{"a":1}`)) || tufWhole("3.root.json", []byte(`{"a":`)) {
+		t.Fatal("tufWhole on metadata")
 	}
 }

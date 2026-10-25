@@ -14,6 +14,7 @@
 package homemirror
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -23,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
 	"net/url"
@@ -33,6 +35,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
 // Key is the node's delegation key (the machine agent's, from the home's keys frame).
@@ -235,7 +239,11 @@ func releaseAsset(u *url.URL) (version, name string, ok bool) {
 // Transport sends a release asset's download (…/releases/download/<tag>/<name>) to the
 // home's mirror first, and to GitHub after Tries failures, or at once when the home does
 // not hold the file (404), does not take the node's signature, or could not fetch it
-// itself (502). Every other request goes to base untouched.
+// itself (502). A file the mirror served that is asked for again, and whose copy did not
+// match the checksums the mirror served (its verification failed: the stage tries
+// again), goes to GitHub first, and to the mirror again only when GitHub does not answer:
+// one damaged copy on the home never holds a machine's update. Every other request goes
+// to base untouched.
 func (c *Client) Transport(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
@@ -246,6 +254,105 @@ func (c *Client) Transport(base http.RoundTripper) http.RoundTripper {
 type transport struct {
 	c    *Client
 	base http.RoundTripper
+
+	mu     sync.Mutex
+	served map[string]servedCopy        // version/name: what the mirror served
+	sums   map[string]map[string]string // version: the checksums.txt the mirror served
+}
+
+// servedCopy is a file the mirror served: the SHA-256 of all of it ("" when it was not
+// read to its end) and when.
+type servedCopy struct {
+	sha string
+	at  time.Time
+}
+
+// repeatWindow is how long a file the mirror served is remembered (a later stage asks
+// the mirror again: the home may have mended its copy).
+const repeatWindow = time.Hour
+
+// suspect reports whether the mirror served version/name before and the copy it served is
+// not known to match the checksums.txt it served (a repeat after a failed verification, or
+// after a download cut short; checksums.txt and the bundle, which nothing lists, alike).
+func (t *transport) suspect(version, name string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	s, ok := t.served[version+"/"+name]
+	if !ok {
+		return false
+	}
+	if t.c.now().Sub(s.at) > repeatWindow {
+		delete(t.served, version+"/"+name)
+		return false
+	}
+	want, listed := t.sums[version][name]
+	return !listed || s.sha == "" || s.sha != want
+}
+
+// record notes what the mirror serves for version/name as its body is read.
+func (t *transport) record(version, name string, resp *http.Response) {
+	t.mu.Lock()
+	if t.served == nil {
+		t.served = map[string]servedCopy{}
+	}
+	t.served[version+"/"+name] = servedCopy{at: t.c.now()}
+	t.mu.Unlock()
+	if resp.StatusCode != http.StatusOK {
+		return // a part: not the whole file's digest
+	}
+	tb := &teeBody{ReadCloser: resp.Body, h: sha256.New()}
+	if name == checksumsFile {
+		tb.buf = &bytes.Buffer{}
+	}
+	tb.done = func(sum string, content []byte) {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		if s, ok := t.served[version+"/"+name]; ok {
+			s.sha = sum
+			t.served[version+"/"+name] = s
+		}
+		if content != nil {
+			if sums, err := releaseverify.ParseChecksums(content); err == nil {
+				if t.sums == nil {
+					t.sums = map[string]map[string]string{}
+				}
+				t.sums[version] = sums
+			}
+		}
+	}
+	resp.Body = tb
+}
+
+// checksumsFile is the release's signed checksums.
+const checksumsFile = "checksums.txt"
+
+// teeBody hashes a body as it is read (and keeps checksums.txt's, at most 1 MiB); done
+// gets the digest once it is read to its end.
+type teeBody struct {
+	io.ReadCloser
+	h        hash.Hash
+	buf      *bytes.Buffer
+	done     func(sum string, content []byte)
+	finished bool
+}
+
+func (b *teeBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		b.h.Write(p[:n])
+		if b.buf != nil && b.buf.Len() < 1<<20 {
+			b.buf.Write(p[:n])
+		}
+	}
+	if err == io.EOF && !b.finished {
+		b.finished = true
+		var content []byte
+		if b.buf != nil {
+			content = b.buf.Bytes()
+		}
+		b.done(hex.EncodeToString(b.h.Sum(nil)), content)
+	}
+	return n, err
 }
 
 func (t *transport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -256,6 +363,22 @@ func (t *transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	key, ok := t.c.usable()
 	if !ok {
 		return t.base.RoundTrip(r)
+	}
+	if t.suspect(version, name) {
+		// asked again after the mirror's copy did not verify: GitHub's, which the stage
+		// verifies the same way; the mirror again only when GitHub does not answer
+		resp, err := t.base.RoundTrip(r)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			t.c.logf("%s from GitHub (the home's copy did not verify)", name)
+			return resp, nil
+		}
+		if err == nil {
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+			_ = resp.Body.Close()
+		}
+		if r.Context().Err() != nil {
+			return nil, r.Context().Err()
+		}
 	}
 	path := "/api/cluster/updates/artifacts/" + url.PathEscape(version) + "/" + url.PathEscape(name)
 	hdr := http.Header{}
@@ -269,6 +392,7 @@ func (t *transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		resp, err := t.c.getVia(r.Context(), t.base, path, key, hdr)
 		if err == nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent) {
 			t.c.logf("%s from the home's mirror", name)
+			t.record(version, name, resp)
 			return resp, nil
 		}
 		if r.Context().Err() != nil {

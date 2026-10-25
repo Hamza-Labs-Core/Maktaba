@@ -164,6 +164,21 @@ type P35Deps struct {
 	DataDir string
 }
 
+// homeReleaseCopies are the folders of a release the home staged itself (a side-by-side
+// layout: the launcher runs it from bin/releases/<v>, MAKTABA_RELEASE_DIR): its signed
+// files, and its pipeline's wheel and constraints. Nil on another kind of install.
+func homeReleaseCopies(releaseDir string) func(version string) []string {
+	releaseDir = strings.TrimSpace(releaseDir)
+	if releaseDir == "" {
+		return nil
+	}
+	releases := filepath.Dir(filepath.Clean(releaseDir))
+	return func(version string) []string {
+		dir := filepath.Join(releases, updates.NormalizeVersion(version))
+		return []string{dir, filepath.Join(dir, "pipeline")}
+	}
+}
+
 // MountP35 attaches the update routes and starts the loops.
 func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 	if d.DB == nil {
@@ -212,7 +227,8 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 			Enabled: func(ctx context.Context) bool {
 				p, err := svc.Policy(ctx)
 				return err != nil || p.Wheelhouse
-			}}
+			},
+			Local: homeReleaseCopies(getenv("MAKTABA_RELEASE_DIR"))}
 	}
 	svc.Starter = drv
 	// story 35.15: the update events in the hub's events file, the numbers on /metrics

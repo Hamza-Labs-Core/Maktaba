@@ -70,10 +70,15 @@ type Mirror struct {
 	// FreeDisk is the free space of the disk holding a path (nil: system.DiskFreeBytes):
 	// the mirror keeps nothing that would leave the home's disk without room.
 	FreeDisk func(path string) (uint64, error)
-	Now      func() time.Time
+	// Local are the folders where the home keeps its own verified copies of a release's
+	// files (its staged bin/releases/<version> and its pipeline folder): the mirror takes a
+	// file from them when it verifies, rather than downloading it again. Nil: none.
+	Local func(version string) []string
+	Now   func() time.Time
 
 	mu           sync.Mutex
-	tokenKey     []byte // the download tokens' key (<Dir>/.download-token.key)
+	tokenKey     []byte              // the download tokens' key (<Dir>/.download-token.key)
+	checked      map[string]keptStat // kept files that verified in this process
 	fetching     map[string]*flight
 	perNode      map[string]int
 	wheels       map[string]*wheelBuild
@@ -471,18 +476,51 @@ func (m *Mirror) manifest(ctx context.Context, rel Release) (*releaseverify.Mani
 // bundle, which nothing lists). A file without one is fetched anew.
 const okSuffix = ".ok"
 
-// ensure is the path of a kept release file, fetched from its GitHub asset first when the
-// mirror does not hold it; want is its SHA-256 ("" not checked: the bundle).
+// keptStat is a kept file as it was when it last verified in this process: a file that
+// still has its size and time is served without hashing it again.
+type keptStat struct {
+	want string
+	size int64
+	mod  time.Time
+}
+
+// checkedOK reports whether path verified in this process and is unchanged since.
+func (m *Mirror) checkedOK(path, want string) bool {
+	st, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.checked[path]
+	return ok && c.want == want && c.size == st.Size() && c.mod.Equal(st.ModTime())
+}
+
+func (m *Mirror) markChecked(path, want string) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.checked == nil {
+		m.checked = map[string]keptStat{}
+	}
+	m.checked[path] = keptStat{want: want, size: st.Size(), mod: st.ModTime()}
+}
+
+// ensure is the path of a kept release file, fetched first when the mirror does not hold
+// it or holds a copy that no longer verifies; want is its SHA-256 ("" not listed: the
+// bundle). Each kept file is checked once in a process (its SHA-256, the bundle its size
+// against the release's), so a copy a power cut, a damaged block or an edit spoilt is
+// dropped and fetched again rather than served for ever.
 func (m *Mirror) ensure(ctx context.Context, rel Release, name, want string) (string, error) {
 	path, err := inside(m.Dir, rel.Version, name)
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Dir(path)
-	if ok, err := os.ReadFile(path + okSuffix); err == nil && strings.TrimSpace(string(ok)) == want {
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
+	if m.checkedOK(path, want) {
+		return path, nil
 	}
 	m.mu.Lock()
 	if m.fetching == nil {
@@ -500,9 +538,10 @@ func (m *Mirror) ensure(ctx context.Context, rel Release, name, want string) (st
 	f := &flight{done: make(chan struct{})}
 	m.fetching[path] = f
 	m.mu.Unlock()
-	// the fetch outlives the request that started it (the other machines wait for it)
+	// the check or the fetch outlives the request that started it (the other machines wait
+	// for it)
 	go func() {
-		f.err = m.fetch(context.WithoutCancel(ctx), rel, name, want, dir, path)
+		f.err = m.keepOrFetch(context.WithoutCancel(ctx), rel, name, want, filepath.Dir(path), path)
 		m.mu.Lock()
 		delete(m.fetching, path)
 		m.mu.Unlock()
@@ -516,74 +555,183 @@ func (m *Mirror) ensure(ctx context.Context, rel Release, name, want string) (st
 	}
 }
 
-// fetch downloads one release file into dir and keeps it when its digest is want.
+// keepOrFetch keeps a kept copy that verifies, else drops it and fetches the file.
+func (m *Mirror) keepOrFetch(ctx context.Context, rel Release, name, want, dir, path string) error {
+	if ok, err := os.ReadFile(path + okSuffix); err == nil && strings.TrimSpace(string(ok)) == want {
+		if m.intact(rel, name, want, path) {
+			m.markChecked(path, want)
+			return nil
+		}
+		m.log().Warn("update mirror: a kept release file no longer verifies: fetched again",
+			"event", "update_mirror_damaged", "version", rel.Version, "file", name)
+		_ = os.Remove(path + okSuffix)
+		_ = os.Remove(path)
+	}
+	if err := m.fetch(ctx, rel, name, want, dir, path); err != nil {
+		return err
+	}
+	m.markChecked(path, want)
+	return nil
+}
+
+// assetSize is the size GitHub gives a release file (0 not known).
+func assetSize(rel Release, name string) int64 {
+	for _, a := range rel.Assets {
+		if a.Name == name && a.Size > 0 {
+			return a.Size
+		}
+	}
+	return 0
+}
+
+// intact reports whether a kept copy is the release's file: its SHA-256 is want, or for
+// the bundle (want "") its size is the release's.
+func (m *Mirror) intact(rel Release, name, want, path string) bool {
+	if want == "" {
+		st, err := os.Stat(path)
+		size := assetSize(rel, name)
+		return err == nil && (size == 0 || st.Size() == size)
+	}
+	sum, _, err := fileSHA256(path)
+	return err == nil && sum == want
+}
+
+// fetch puts one release file into the mirror: the home's own copy of it when it holds
+// one that verifies (Local: its staged release's signed files, pipeline wheel and
+// constraints), else the release's GitHub asset; kept only when its digest is want.
 func (m *Mirror) fetch(ctx context.Context, rel Release, name, want, dir, path string) error {
 	u := assetURL(rel, name)
 	if u == "" {
 		return fmt.Errorf("%w: %s publishes no %s", errNotMirrored, rel.Tag, name)
 	}
-	var size uint64
-	for _, a := range rel.Assets {
-		if a.Name == name && a.Size > 0 {
-			size = uint64(a.Size)
-		}
-	}
-	if err := m.room(size); err != nil {
+	size := assetSize(rel, name)
+	if err := m.room(uint64(size)); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
-	defer cancel()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	_ = os.Remove(path + okSuffix)
-	tmp, err := os.CreateTemp(dir, "."+name+".*")
-	if err != nil {
-		return err
+	if m.reuse(rel, name, want, size, dir, path) {
+		return nil
 	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		_ = tmp.Close()
 		return err
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 	resp, err := m.client().Do(req)
 	if err != nil {
-		_ = tmp.Close()
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		_ = tmp.Close()
 		return fmt.Errorf("GET %s: HTTP %d", u, resp.StatusCode)
 	}
-	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(resp.Body, mirrorFileLimit+1))
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
+	n, err := m.keep(rel, name, want, dir, path, io.LimitReader(resp.Body, mirrorFileLimit+1), "GET "+u)
 	if err != nil {
-		return fmt.Errorf("GET %s: %w", u, err)
-	}
-	if n > mirrorFileLimit {
-		return fmt.Errorf("GET %s: larger than %d bytes", u, mirrorFileLimit)
-	}
-	got := hex.EncodeToString(h.Sum(nil))
-	if want != "" && got != want {
-		m.log().Error("update mirror: a release file does not match its checksum", "event", "update_mirror_mismatch",
-			"version", rel.Version, "file", name, "want", want, "got", got)
-		return fmt.Errorf("%s of %s has SHA-256 %s, not the %s its signed checksums list", name, rel.Tag, got, want)
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return err
-	}
-	if err := os.WriteFile(path+okSuffix, []byte(want), 0o644); err != nil {
 		return err
 	}
 	m.log().Info("update mirror: release file kept", "event", "update_mirror_kept", "version", rel.Version,
 		"file", name, "bytes", n)
 	return nil
+}
+
+// reuse puts the home's own copy of a release file into the mirror when it holds one that
+// verifies (its SHA-256 is want; the bundle, its size the release's): its staged release
+// keeps the signed files and the pipeline's wheel and constraints (it keeps extracted
+// programs, not the archives, which are fetched).
+func (m *Mirror) reuse(rel Release, name, want string, size int64, dir, path string) bool {
+	if m.Local == nil || (want == "" && size == 0) {
+		return false
+	}
+	for _, d := range m.Local(rel.Version) {
+		src := filepath.Join(d, name)
+		if st, err := os.Stat(src); err != nil || !st.Mode().IsRegular() || (size > 0 && st.Size() != size) {
+			continue
+		}
+		f, err := os.Open(src)
+		if err != nil {
+			continue
+		}
+		n, err := m.keep(rel, name, want, dir, path, f, src)
+		_ = f.Close()
+		if err == nil {
+			m.log().Info("update mirror: release file kept from the home's own copy", "event", "update_mirror_kept",
+				"version", rel.Version, "file", name, "bytes", n, "from", src)
+			return true
+		}
+	}
+	return false
+}
+
+// keep writes r into the mirror as path when its digest is want ("" not checked): through
+// a synced temporary file, renamed, then its <name>.ok marker the same way, so a power cut
+// leaves either a whole file with its marker or no marker (the file is fetched again).
+func (m *Mirror) keep(rel Release, name, want, dir, path string, r io.Reader, from string) (int64, error) {
+	tmp, err := os.CreateTemp(dir, "."+name+".*")
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	h := sha256.New()
+	n, err := io.Copy(io.MultiWriter(tmp, h), r)
+	if err == nil {
+		err = tmp.Sync()
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", from, err)
+	}
+	if n > mirrorFileLimit {
+		return 0, fmt.Errorf("%s: larger than %d bytes", from, mirrorFileLimit)
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if want != "" && got != want {
+		m.log().Error("update mirror: a release file does not match its checksum", "event", "update_mirror_mismatch",
+			"version", rel.Version, "file", name, "from", from, "want", want, "got", got)
+		return 0, fmt.Errorf("%s of %s has SHA-256 %s, not the %s its signed checksums list", name, rel.Tag, got, want)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return 0, err
+	}
+	if err := writeSynced(path+okSuffix, []byte(want)); err != nil {
+		return 0, err
+	}
+	syncDir(dir)
+	return n, nil
+}
+
+// writeSynced writes b to path through a synced temporary file and a rename.
+func writeSynced(path string, b []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	_, err = tmp.Write(b)
+	if err == nil {
+		err = tmp.Sync()
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+// syncDir makes a folder's renames durable where the system allows it (best-effort).
+func syncDir(dir string) {
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
 }
 
 // platformFiles are the files a machine of platform (release.json's "os/arch") installs

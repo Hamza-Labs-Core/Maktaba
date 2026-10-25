@@ -25,7 +25,8 @@ Design: [design.md](design.md) §9.2, §13; README R8, decisions "Order", "Machi
   the `release.json` it verified itself.
 - **AC3** Mirror: `GET /api/cluster/updates/artifacts/{version}/{name}` serves the verified files of a
   staged release (every platform present in `cluster_nodes.platform`) and `trusted_root.json`;
-  node-signed (story 35.9 delegation key), range requests, per-node rate limit; unknown names 404.
+  node-signed (story 35.9 delegation key), range requests, at most 3 downloads at once per machine
+  (a 429 with `Retry-After` beyond: the limit is a concurrency cap, not a rate); unknown names 404.
 - **AC4** On `home_committed` every online full node gets `update.prepare` (at most 3 downloading at
   once); it downloads (mirror, then GitHub after 3 failures), verifies (story 35.1), stages
   `bin/releases/<v>/` with its venv, and reports `prepared`; progress arrives as `update.progress`.
