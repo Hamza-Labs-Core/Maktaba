@@ -165,7 +165,10 @@ verified on the machine exactly as one from GitHub.
   when their digest is the one the signed `checksums.txt` lists. A machine downloads
   `GET /api/cluster/updates/artifacts/{version}/{name}` (signed with its delegation key; range
   requests; at most three downloads at once per machine), and falls back to GitHub after three
-  failures, or at once for a file the home does not hold. The copies follow `keep_versions`.
+  failures, or at once for a file the home does not hold. The copies follow `keep_versions`. A
+  worker-only machine becoming a full node has no delegation key yet: its `update.convert` job
+  carries a download token instead (an HMAC by a key only the home holds, for that machine and
+  that release, four hours), which this route alone takes, sent to the home only.
 - **The wheelhouse** (`rules.updates.wheelhouse`, on by default). The home downloads each
   release's pinned pipeline packages once for every platform its machines run (`pip download
   --only-binary=:all: --require-hashes` for that platform and the release's Python, with the

@@ -336,4 +336,25 @@ func TestMachineRoutesPassForAMachineOnly(t *testing.T) {
 	if c := get("/api/cluster/updates", true); c != http.StatusUnauthorized {
 		t.Errorf("a machine's signature opened the updates page: %d", c)
 	}
+	// a worker-only machine converting: its download token (story 35.8 AC8) reaches the
+	// artifact route alone (its handler verifies it), never the others
+	withToken := func(path, header string) int {
+		req := httptest.NewRequest("GET", path, nil)
+		req.Header.Set("Authorization", header)
+		rec := httptest.NewRecorder()
+		gate.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if c := withToken("/api/cluster/updates/artifacts/1.5.0/release.json", "Bearer mkt_dl_x.y"); c != http.StatusOK {
+		t.Errorf("a download token on the artifact route: %d", c)
+	}
+	for _, p := range []string{"/api/cluster/updates/wheelhouse/1.5.0/linux-amd64", "/api/cluster/updates/tuf/root.json",
+		"/api/cluster/updates"} {
+		if c := withToken(p, "Bearer mkt_dl_x.y"); c != http.StatusUnauthorized {
+			t.Errorf("a download token opened %s: %d", p, c)
+		}
+	}
+	if c := withToken("/api/cluster/updates/artifacts/1.5.0/release.json", "Bearer mkt_pat_x"); c != http.StatusUnauthorized {
+		t.Errorf("another bearer on the artifact route: %d", c)
+	}
 }

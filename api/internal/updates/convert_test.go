@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates/dltoken"
 )
 
 // fakeWorker plays a worker-only machine's pipeline worker as its agent answers
@@ -292,5 +294,27 @@ func TestConvertWorkerBackDuringTheRun(t *testing.T) {
 	run := r.drive(t, 80)
 	if ts := targetsByName(t, r.f.store, run.ID); run.State != RunDone || ts["studio"].State != TargetHealthy {
 		t.Fatalf("run %s targets %+v", run.State, ts)
+	}
+}
+
+// The conversion's job carries a download token for the home's mirror, for that machine
+// and that release (it has no delegation key yet).
+func TestConvertJobCarriesADownloadToken(t *testing.T) {
+	r, cc := newConvertRig(t)
+	ctx := context.Background()
+	r.d.Mirror = &Mirror{Store: r.f.store, Dir: t.TempDir()}
+	w := workerNode(t, r, cc, "w1", "studio", "1.4.0")
+	_, _ = r.f.svc.Tick(ctx)
+	r.drive(t, 40)
+	if len(w.asks) == 0 || w.asks[0].DownloadToken == "" {
+		t.Fatalf("asks %+v", w.asks)
+	}
+	key, err := r.d.Mirror.key()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := dltoken.Verify(key, w.asks[0].DownloadToken, time.Now())
+	if err != nil || c.Node != "w1" || c.Version != "1.5.0" {
+		t.Fatalf("token %+v %v", c, err)
 	}
 }

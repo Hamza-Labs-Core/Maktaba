@@ -557,7 +557,11 @@ does the steps above and reports through the new machine agent. A worker-only no
 `update.convert` is shown "worker-only — re-run the installer once" (its installer run converts it).
 As built: the conversion is the machine's turn in the rollout (drained first, one machine at a
 time, inside the window; target state `converting`), and a catch-up converts the worker-only
-machines in the window. The worker verifies with the Sigstore root the server compiles in (a
+machines in the window. The worker downloads from the artifact mirror with a download token
+the job carries (`download_token`: HMAC-SHA256 by a home-held key kept in the mirror's folder,
+naming the machine and the release, four hours; the mirror's artifact route alone takes it, for
+a machine still approved; never the wheelhouse or TUF routes, which setup does not use), never
+sending it to GitHub. The worker verifies with the Sigstore root the server compiles in (a
 copy in the pipeline package, refreshed with it by `trusted-root.yml`), runs setup outside its
 own service (a `systemd-run --scope`, a `Win32_Process.Create` process outside the scheduled
 task's job, a new session on macOS) and answers each later `update.convert` of the run with how

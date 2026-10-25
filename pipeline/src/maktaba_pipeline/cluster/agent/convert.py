@@ -3,8 +3,9 @@ design §9.4).
 
 A machine that joined with the Epic 31 installer runs the pipeline alone. On its next update
 the home's run drains it and sends this worker ``update.convert`` (the run's job: ``run_id``,
-``version``, ``tag``, ``assets``). The worker downloads the release for this platform (the
-home's artifact mirror first, the job's GitHub Releases URLs otherwise) and verifies it
+``version``, ``tag``, ``assets``, ``download_token``). The worker downloads the release for
+this platform (the home's artifact mirror first, with the job's download token: it has no
+delegation key yet; the job's GitHub Releases URLs otherwise) and verifies it
 itself before anything runs: ``checksums.txt``'s Sigstore bundle against the pinned signing
 identity (the release workflow of the repository, run by a tag push for exactly this tag,
 on GitHub's runners), with the Sigstore root the server pins; then ``release.json``, the
@@ -228,11 +229,20 @@ def extract_binary(archive_name: str, archive: bytes, base: str) -> tuple[str, b
 # --- downloads -----------------------------------------------------------------------------
 
 Fetcher = Callable[[str], bytes | None]
+Getter = Callable[[str, Mapping[str, str]], bytes | None]
 
 
-def http_get(url: str, *, timeout: float = DOWNLOAD_TIMEOUT, limit: int = MAX_FILE) -> bytes | None:
-    """A GET of ``url``: its body, None on 404."""
-    req = urllib.request.Request(url, headers={"Accept": "application/octet-stream"})
+def http_get(
+    url: str,
+    headers: Mapping[str, str] | None = None,
+    *,
+    timeout: float = DOWNLOAD_TIMEOUT,
+    limit: int = MAX_FILE,
+) -> bytes | None:
+    """A GET of ``url`` (with ``headers``): its body, None on 404."""
+    req = urllib.request.Request(
+        url, headers={"Accept": "application/octet-stream", **(headers or {})}
+    )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - the home's or GitHub's URL
             body: bytes = resp.read(limit + 1)
@@ -245,25 +255,27 @@ def http_get(url: str, *, timeout: float = DOWNLOAD_TIMEOUT, limit: int = MAX_FI
     return body
 
 
-def release_source(
-    home_url: str, job: Mapping[str, Any], get: Callable[[str], bytes | None] = http_get
-) -> Fetcher:
+def release_source(home_url: str, job: Mapping[str, Any], get: Getter = http_get) -> Fetcher:
     """A getter of the release's files by name: the home's artifact mirror first (story
-    35.12), the job's GitHub Releases URLs otherwise. A file found nowhere is None."""
+    35.12), with the job's download token (this machine has no delegation key yet: the
+    home's ``dltoken``, sent to the mirror alone), the job's GitHub Releases URLs otherwise.
+    A file found nowhere is None."""
     version = str(job.get("version") or "")
     mirror = home_url.rstrip("/") + "/api/cluster/updates/artifacts/" + urllib_quote(version) + "/"
     assets = job.get("assets") if isinstance(job.get("assets"), Mapping) else {}
     assert isinstance(assets, Mapping)
+    token = str(job.get("download_token") or "")
+    to_mirror = {"Authorization": "Bearer " + token} if token else {}
 
     def fetch(name: str) -> bytes | None:
         errors: list[str] = []
-        urls = [mirror + urllib_quote(name)]
+        sources: list[tuple[str, Mapping[str, str]]] = [(mirror + urllib_quote(name), to_mirror)]
         gh = assets.get(name)
         if isinstance(gh, str) and gh.startswith("https://"):
-            urls.append(gh)
-        for url in urls:
+            sources.append((gh, {}))  # GitHub never sees the home's token
+        for url, headers in sources:
             try:
-                body = get(url)
+                body = get(url, headers)
             except ConvertError:
                 raise
             except Exception as exc:  # noqa: BLE001 - the next source, then download_failed

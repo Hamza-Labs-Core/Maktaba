@@ -314,7 +314,8 @@ the machine's web address and press **Continue with <home>**.
 Worker-only nodes are converted automatically on their next update (story 35.8 AC8):
 on the machine's turn in the home's rollout (inside the update window, after its jobs
 finish), the home sends its worker `update.convert`. The worker downloads the release the
-home runs (the home's mirror first, GitHub Releases otherwise) and verifies it itself
+home runs (the home's mirror first, with the download token the order carries, GitHub
+Releases otherwise) and verifies it itself
 before anything runs: the Sigstore bundle of `checksums.txt` against the pinned
 release-workflow identity, with the same Sigstore root the server compiles in, then every
 file against `checksums.txt` and the server binary against `release.json`. Then it runs
