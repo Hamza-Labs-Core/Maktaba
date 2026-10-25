@@ -1,0 +1,892 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		08792A39621BC0D1AD8FD83D /* Info-iPad.plist in Resources */ = {isa = PBXBuildFile; fileRef = BA377D873DB5DE610F6F4CAD /* Info-iPad.plist */; };
+		1041FCA639CA3B5FF05E1C8A /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
+		1B10F25BB6570AA50C4D7B03 /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0C77824C36473EFAD01BAB9E /* MaktabaKit */; };
+		1C33535269E26B7E658EC39B /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 407F09D429B7875D504C90A8 /* MaktabaKit */; };
+		1FC3DC895B1B1685ABC4A27A /* RemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7C782FE57543EEFC505FBD /* RemoteApp.swift */; };
+		20875CB8E8401C9CEA9900F0 /* StatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BF36B28D70761701C49780E /* StatusView.swift */; };
+		27847FF8942ED1B52AA74B0D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
+		4842BD54B7F7F480974F1B1C /* Info-Mac.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4C1CBAB2A2706F209CE79B0E /* Info-Mac.plist */; };
+		48892B323294B4E9A3E2EB33 /* StatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BF36B28D70761701C49780E /* StatusView.swift */; };
+		532CEA3D14CBAE22F9AE8C13 /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 82FEF82284D142A8B84099D4 /* MaktabaKit */; };
+		605914018490BB068027BD7D /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6390E85846DBE30CED36A0C3 /* MaktabaKit */; };
+		6530CBABD0F3D2E98500640E /* VideoDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98AED34220C815DD101BEDF /* VideoDetail.swift */; };
+		7201F24E3D1190FA2E6F09CB /* Info-iPad.plist in Resources */ = {isa = PBXBuildFile; fileRef = E6AC62B2E29B7931B3D836B6 /* Info-iPad.plist */; };
+		734F1DE5823302E7A7C6F546 /* VideoDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98AED34220C815DD101BEDF /* VideoDetail.swift */; };
+		7C874EA6DC3BEA7710430857 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
+		80E256576FD19547D635B132 /* RemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7C782FE57543EEFC505FBD /* RemoteApp.swift */; };
+		A2238941ECE21FBB30DE48CA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
+		A382431DD2D7A1BB74017B3F /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */; };
+		A5753F2E48C3030B374C0BCB /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
+		C16C4AC8969FD4372611DCFB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
+		D0DE15FC0DD46865143A6DDE /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */; };
+		D37D6697BF44C16D12BDB2F0 /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = A9EEAB3D015E479C9E4F8105 /* MaktabaKit */; };
+		D71932B2D7081414CEC9D39D /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */; };
+		DA70F8CCD0140FFCE32849A5 /* VideoDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98AED34220C815DD101BEDF /* VideoDetail.swift */; };
+		E0A70A830327B0968EAA194D /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
+		E874C97168BF20243A33317A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0BF36B28D70761701C49780E /* StatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusView.swift; sourceTree = "<group>"; };
+		1AB8DED5864DCE439AEB8ADA /* Info-iPhone.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPhone.plist"; sourceTree = "<group>"; };
+		417287D5058D2F24320D219E /* Maktaba Player Mac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Maktaba Player Mac.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		421935020FD51F16B047EBB2 /* Maktaba Remote.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Maktaba Remote.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4C1CBAB2A2706F209CE79B0E /* Info-Mac.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-Mac.plist"; sourceTree = "<group>"; };
+		57B95C7D1BA10C7BA2F7E751 /* Info-iPhone.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPhone.plist"; sourceTree = "<group>"; };
+		5E7C782FE57543EEFC505FBD /* RemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteApp.swift; sourceTree = "<group>"; };
+		71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryBrowser.swift; sourceTree = "<group>"; };
+		8FC62B44E1ADC7CCADF67B6D /* MaktabaKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MaktabaKit; path = MaktabaKit; sourceTree = SOURCE_ROOT; };
+		A131A888F4586F376E30AAFC /* Maktaba Player iPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Maktaba Player iPad.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AD2EE657B05C62BB473F4249 /* Player-Mac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Player-Mac.entitlements"; sourceTree = "<group>"; };
+		B05F2853C3A8F998DD0A2B31 /* Maktaba Player.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Maktaba Player.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B98AED34220C815DD101BEDF /* VideoDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoDetail.swift; sourceTree = "<group>"; };
+		BA377D873DB5DE610F6F4CAD /* Info-iPad.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPad.plist"; sourceTree = "<group>"; };
+		C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerApp.swift; sourceTree = "<group>"; };
+		D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		E6AC62B2E29B7931B3D836B6 /* Info-iPad.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPad.plist"; sourceTree = "<group>"; };
+		F2E7A424529D8DE1BCD5975E /* Maktaba Remote iPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Maktaba Remote iPad.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1153D143C1ECFAA315C76229 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D37D6697BF44C16D12BDB2F0 /* MaktabaKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		48F67B7B76B0A58D0C1CB412 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1B10F25BB6570AA50C4D7B03 /* MaktabaKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5C83AEA4C05132D8097646A4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				532CEA3D14CBAE22F9AE8C13 /* MaktabaKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7337B462E72247979E0F15C6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				605914018490BB068027BD7D /* MaktabaKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E3D6C6289DD95BEEF604F916 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1C33535269E26B7E658EC39B /* MaktabaKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		155580AAB36074A87709BE50 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A131A888F4586F376E30AAFC /* Maktaba Player iPad.app */,
+				417287D5058D2F24320D219E /* Maktaba Player Mac.app */,
+				B05F2853C3A8F998DD0A2B31 /* Maktaba Player.app */,
+				F2E7A424529D8DE1BCD5975E /* Maktaba Remote iPad.app */,
+				421935020FD51F16B047EBB2 /* Maktaba Remote.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		39A9EAFCE8CE049D86120D74 = {
+			isa = PBXGroup;
+			children = (
+				A58CCF55A93E9B6F1176E15F /* Packages */,
+				D6E2C86F7FB1D55B91C2FB21 /* Player */,
+				6442257796A0911226385A5D /* Remote */,
+				CF709E30D55338DE1F526821 /* Shared */,
+				155580AAB36074A87709BE50 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		6442257796A0911226385A5D /* Remote */ = {
+			isa = PBXGroup;
+			children = (
+				E6AC62B2E29B7931B3D836B6 /* Info-iPad.plist */,
+				57B95C7D1BA10C7BA2F7E751 /* Info-iPhone.plist */,
+				5E7C782FE57543EEFC505FBD /* RemoteApp.swift */,
+				0BF36B28D70761701C49780E /* StatusView.swift */,
+			);
+			path = Remote;
+			sourceTree = "<group>";
+		};
+		A58CCF55A93E9B6F1176E15F /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				8FC62B44E1ADC7CCADF67B6D /* MaktabaKit */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		CF709E30D55338DE1F526821 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		D6E2C86F7FB1D55B91C2FB21 /* Player */ = {
+			isa = PBXGroup;
+			children = (
+				BA377D873DB5DE610F6F4CAD /* Info-iPad.plist */,
+				1AB8DED5864DCE439AEB8ADA /* Info-iPhone.plist */,
+				4C1CBAB2A2706F209CE79B0E /* Info-Mac.plist */,
+				71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */,
+				AD2EE657B05C62BB473F4249 /* Player-Mac.entitlements */,
+				C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */,
+				B98AED34220C815DD101BEDF /* VideoDetail.swift */,
+			);
+			path = Player;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		33A1FFA6329335B5C388C656 /* Maktaba Player */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 33CB36A35512E4159FE476D1 /* Build configuration list for PBXNativeTarget "Maktaba Player" */;
+			buildPhases = (
+				FA8FB770BFF7DBC1EE429DAE /* Sources */,
+				FDAD6C1D3C6A1B0A86CCAFA6 /* Resources */,
+				1153D143C1ECFAA315C76229 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Maktaba Player";
+			packageProductDependencies = (
+				A9EEAB3D015E479C9E4F8105 /* MaktabaKit */,
+			);
+			productName = "Maktaba Player";
+			productReference = B05F2853C3A8F998DD0A2B31 /* Maktaba Player.app */;
+			productType = "com.apple.product-type.application";
+		};
+		657EF104AFC0393639910185 /* Maktaba Player Mac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8903CD42062427CE794B11DC /* Build configuration list for PBXNativeTarget "Maktaba Player Mac" */;
+			buildPhases = (
+				AF9AA44745BFD5ED3F5BE9D6 /* Sources */,
+				B032527E99C8DA8D1D4061CB /* Resources */,
+				E3D6C6289DD95BEEF604F916 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Maktaba Player Mac";
+			packageProductDependencies = (
+				407F09D429B7875D504C90A8 /* MaktabaKit */,
+			);
+			productName = "Maktaba Player Mac";
+			productReference = 417287D5058D2F24320D219E /* Maktaba Player Mac.app */;
+			productType = "com.apple.product-type.application";
+		};
+		7C97571B22891477D2B9E7DB /* Maktaba Remote iPad */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B8C671E12A053C67AB5CED6B /* Build configuration list for PBXNativeTarget "Maktaba Remote iPad" */;
+			buildPhases = (
+				2145672035B36FC71B4EADC2 /* Sources */,
+				3E39AE64FF0593B1B4003040 /* Resources */,
+				5C83AEA4C05132D8097646A4 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Maktaba Remote iPad";
+			packageProductDependencies = (
+				82FEF82284D142A8B84099D4 /* MaktabaKit */,
+			);
+			productName = "Maktaba Remote iPad";
+			productReference = F2E7A424529D8DE1BCD5975E /* Maktaba Remote iPad.app */;
+			productType = "com.apple.product-type.application";
+		};
+		80CFDCA447097901D79C125D /* Maktaba Remote */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2FA7036DF3FE0078DED0757D /* Build configuration list for PBXNativeTarget "Maktaba Remote" */;
+			buildPhases = (
+				1866B97534FFC5171BC23D8F /* Sources */,
+				6AA166AF6D7B21F12C0F6681 /* Resources */,
+				7337B462E72247979E0F15C6 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Maktaba Remote";
+			packageProductDependencies = (
+				6390E85846DBE30CED36A0C3 /* MaktabaKit */,
+			);
+			productName = "Maktaba Remote";
+			productReference = 421935020FD51F16B047EBB2 /* Maktaba Remote.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C62322D47BDA0B73AC07226D /* Maktaba Player iPad */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7D45300EE3ED6868B944CDFF /* Build configuration list for PBXNativeTarget "Maktaba Player iPad" */;
+			buildPhases = (
+				7AA5C36372C0521D6A302D7B /* Sources */,
+				F005288A517A3ADE0012AD11 /* Resources */,
+				48F67B7B76B0A58D0C1CB412 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Maktaba Player iPad";
+			packageProductDependencies = (
+				0C77824C36473EFAD01BAB9E /* MaktabaKit */,
+			);
+			productName = "Maktaba Player iPad";
+			productReference = A131A888F4586F376E30AAFC /* Maktaba Player iPad.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		565A916276171556EA608FB1 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					33A1FFA6329335B5C388C656 = {
+						DevelopmentTeam = G58UVTKQPB;
+						ProvisioningStyle = Automatic;
+					};
+					657EF104AFC0393639910185 = {
+						DevelopmentTeam = G58UVTKQPB;
+						ProvisioningStyle = Automatic;
+					};
+					7C97571B22891477D2B9E7DB = {
+						DevelopmentTeam = G58UVTKQPB;
+						ProvisioningStyle = Automatic;
+					};
+					80CFDCA447097901D79C125D = {
+						DevelopmentTeam = G58UVTKQPB;
+						ProvisioningStyle = Automatic;
+					};
+					C62322D47BDA0B73AC07226D = {
+						DevelopmentTeam = G58UVTKQPB;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 6F078C393CA43C560E469BF6 /* Build configuration list for PBXProject "Maktaba" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 39A9EAFCE8CE049D86120D74;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D2BF4B4BCB2BDE9A817A6A81 /* XCLocalSwiftPackageReference "MaktabaKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 155580AAB36074A87709BE50 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				33A1FFA6329335B5C388C656 /* Maktaba Player */,
+				657EF104AFC0393639910185 /* Maktaba Player Mac */,
+				C62322D47BDA0B73AC07226D /* Maktaba Player iPad */,
+				80CFDCA447097901D79C125D /* Maktaba Remote */,
+				7C97571B22891477D2B9E7DB /* Maktaba Remote iPad */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		3E39AE64FF0593B1B4003040 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7C874EA6DC3BEA7710430857 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6AA166AF6D7B21F12C0F6681 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E874C97168BF20243A33317A /* Assets.xcassets in Resources */,
+				7201F24E3D1190FA2E6F09CB /* Info-iPad.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B032527E99C8DA8D1D4061CB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A2238941ECE21FBB30DE48CA /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F005288A517A3ADE0012AD11 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C16C4AC8969FD4372611DCFB /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FDAD6C1D3C6A1B0A86CCAFA6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				27847FF8942ED1B52AA74B0D /* Assets.xcassets in Resources */,
+				4842BD54B7F7F480974F1B1C /* Info-Mac.plist in Resources */,
+				08792A39621BC0D1AD8FD83D /* Info-iPad.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1866B97534FFC5171BC23D8F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1FC3DC895B1B1685ABC4A27A /* RemoteApp.swift in Sources */,
+				48892B323294B4E9A3E2EB33 /* StatusView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2145672035B36FC71B4EADC2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				80E256576FD19547D635B132 /* RemoteApp.swift in Sources */,
+				20875CB8E8401C9CEA9900F0 /* StatusView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7AA5C36372C0521D6A302D7B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D71932B2D7081414CEC9D39D /* LibraryBrowser.swift in Sources */,
+				E0A70A830327B0968EAA194D /* PlayerApp.swift in Sources */,
+				734F1DE5823302E7A7C6F546 /* VideoDetail.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AF9AA44745BFD5ED3F5BE9D6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A382431DD2D7A1BB74017B3F /* LibraryBrowser.swift in Sources */,
+				A5753F2E48C3030B374C0BCB /* PlayerApp.swift in Sources */,
+				6530CBABD0F3D2E98500640E /* VideoDetail.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FA8FB770BFF7DBC1EE429DAE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D0DE15FC0DD46865143A6DDE /* LibraryBrowser.swift in Sources */,
+				1041FCA639CA3B5FF05E1C8A /* PlayerApp.swift in Sources */,
+				DA70F8CCD0140FFCE32849A5 /* VideoDetail.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1EB6B7449605484F2D9F97EB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = "Player/Info-iPad.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Maktaba;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = audio;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.player.tablet;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Debug;
+		};
+		42C84F5A971C8263A676A316 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "Player/Player-Mac.entitlements";
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = "Player/Info-Mac.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Player";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.player.mac;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		4C1722D29D1BE7CD03890DFE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = "Remote/Info-iPhone.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.remote;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		61A192A7A98A03208539B4FB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = "Player/Info-iPhone.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Maktaba;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = audio;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.player;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		6A5C6A16CE38379FC47822FC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = "Player/Info-iPhone.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Maktaba;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = audio;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.player;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A3178D3F96AD3E12441C4801 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = "Remote/Info-iPhone.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.remote;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		B2EC09448FD6E246ADB66623 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = G58UVTKQPB;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		B4A6FAB01D14A109D2FB7D4C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = "Player/Info-iPad.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Maktaba;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = audio;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.player.tablet;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Release;
+		};
+		CFC5FD20CE8A157296A1124B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = "Remote/Info-iPad.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.remote.tablet;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Release;
+		};
+		D6D472D998DF9187CABD9A09 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = G58UVTKQPB;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		EC581CC2177CC0C1F8106C2E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "Player/Player-Mac.entitlements";
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = "Player/Info-Mac.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Player";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.player.mac;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		F55D674A7E7FCD2954FE6C99 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = "Remote/Info-iPad.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.remote.tablet;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2FA7036DF3FE0078DED0757D /* Build configuration list for PBXNativeTarget "Maktaba Remote" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4C1722D29D1BE7CD03890DFE /* Debug */,
+				A3178D3F96AD3E12441C4801 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		33CB36A35512E4159FE476D1 /* Build configuration list for PBXNativeTarget "Maktaba Player" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6A5C6A16CE38379FC47822FC /* Debug */,
+				61A192A7A98A03208539B4FB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6F078C393CA43C560E469BF6 /* Build configuration list for PBXProject "Maktaba" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D6D472D998DF9187CABD9A09 /* Debug */,
+				B2EC09448FD6E246ADB66623 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		7D45300EE3ED6868B944CDFF /* Build configuration list for PBXNativeTarget "Maktaba Player iPad" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1EB6B7449605484F2D9F97EB /* Debug */,
+				B4A6FAB01D14A109D2FB7D4C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		8903CD42062427CE794B11DC /* Build configuration list for PBXNativeTarget "Maktaba Player Mac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				42C84F5A971C8263A676A316 /* Debug */,
+				EC581CC2177CC0C1F8106C2E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B8C671E12A053C67AB5CED6B /* Build configuration list for PBXNativeTarget "Maktaba Remote iPad" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F55D674A7E7FCD2954FE6C99 /* Debug */,
+				CFC5FD20CE8A157296A1124B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		D2BF4B4BCB2BDE9A817A6A81 /* XCLocalSwiftPackageReference "MaktabaKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = MaktabaKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0C77824C36473EFAD01BAB9E /* MaktabaKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MaktabaKit;
+		};
+		407F09D429B7875D504C90A8 /* MaktabaKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MaktabaKit;
+		};
+		6390E85846DBE30CED36A0C3 /* MaktabaKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MaktabaKit;
+		};
+		82FEF82284D142A8B84099D4 /* MaktabaKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MaktabaKit;
+		};
+		A9EEAB3D015E479C9E4F8105 /* MaktabaKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MaktabaKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 565A916276171556EA608FB1 /* Project object */;
+}
