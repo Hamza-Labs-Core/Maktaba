@@ -104,9 +104,9 @@ pub fn tooltip(line: &str) -> String {
 /// agent runs but that does not answer (the tray says "Maktaba has a problem"
 /// for both).
 const BADGE_PROBLEM: [u8; 3] = [0xd3, 0x3a, 0x2c];
-/// The badge of an update ready: violet, far in hue from the icon's blue
-/// (#1E5AD8, which a blue badge vanished into at 16 px) and from the other
-/// badges.
+/// The badge of an update ready: violet, far in hue from the icon's navy
+/// and gold (#0B111C, #E3B252; a blue badge once vanished into the old blue
+/// icon at 16 px) and from the other badges.
 const BADGE_UPDATE: [u8; 3] = [0xc7, 0x52, 0xe8];
 const BADGE_RUNNING: [u8; 3] = [0x2e, 0x9d, 0x4f];
 /// A deep amber: a light one (#E0A100) was 2:1 on a light taskbar.
@@ -1051,15 +1051,16 @@ mod tests {
 
     #[test]
     fn the_update_badge_stands_out_on_the_icon_and_either_taskbar() {
-        // the app icon's blue (icons/*.png)
-        let icon = [0x1e, 0x5a, 0xd8];
-        // the old blue sat 4 degrees from the icon at 1.24:1
-        assert!(
-            hue_apart(BADGE_UPDATE, icon) >= 60.0,
-            "{}",
-            hue(BADGE_UPDATE)
-        );
-        assert!(contrast(BADGE_UPDATE, icon) >= 1.5);
+        // the app icon's navy ground and gold mark (icons/*.png)
+        for icon in [[0x0b, 0x11, 0x1c], [0xe3, 0xb2, 0x52]] {
+            // a blue badge once sat 4 degrees from the old blue icon at 1.24:1
+            assert!(
+                hue_apart(BADGE_UPDATE, icon) >= 60.0,
+                "{}",
+                hue(BADGE_UPDATE)
+            );
+            assert!(contrast(BADGE_UPDATE, icon) >= 1.5);
+        }
         // and it is not read as a problem
         assert!(hue_apart(BADGE_UPDATE, BADGE_PROBLEM) >= 60.0);
     }

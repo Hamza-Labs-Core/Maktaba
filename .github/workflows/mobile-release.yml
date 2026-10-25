@@ -122,6 +122,7 @@ jobs:
             npx --no-install cap add android
           fi
           npx --no-install cap sync android
+          ./scripts/apply-icons.sh android
 
       # Stamp versionName (= tag) and a monotonic versionCode from the tag
       # (Story 28.1). The native project is scaffolded by `cap add`, so we
@@ -263,6 +264,7 @@ jobs:
             npx --no-install cap add ios
           fi
           npx --no-install cap sync ios
+          ./scripts/apply-icons.sh ios
 
       - name: Install CocoaPods
         working-directory: apps/mobile/ios/App
