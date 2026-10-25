@@ -156,3 +156,26 @@ func TestKeepUpdateDumps(t *testing.T) {
 		}
 	}
 }
+
+// TestIndexWorker: the index worker is on unless [pipeline] index_worker says off,
+// and [server] can move its two ports.
+func TestIndexWorker(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server.toml")
+	body := "[pipeline]\nindex_worker = \"off\"\n[server]\npipeline_search_addr = \"127.0.0.1:19093\"\npipeline_index_logs_addr = \"127.0.0.1:19104\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := LoadFrom(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Pipeline.IndexWorkerOn() || cfg.Server.PipelineSearchAddr != "127.0.0.1:19093" ||
+		cfg.Server.PipelineIndexLogsAddr != "127.0.0.1:19104" {
+		t.Errorf("parsed %+v / %+v", cfg.Pipeline, cfg.Server)
+	}
+	for v, on := range map[string]bool{"": true, "on": true, "off": false, "No": false, "0": false} {
+		if got := (PipelineSection{IndexWorker: v}).IndexWorkerOn(); got != on {
+			t.Errorf("index_worker = %q: on = %v", v, got)
+		}
+	}
+}

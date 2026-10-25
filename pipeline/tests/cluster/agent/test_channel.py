@@ -626,3 +626,24 @@ async def test_agent_via_local_link() -> None:
                 await until(lambda: agent.connects >= 1)
         finally:
             del os.environ["MAKTABA_CLUSTER_AGENT_URL"]
+
+
+async def test_a_worker_without_the_share_keeps_its_files_here(tmp_path: Path) -> None:
+    """The index worker (``--no-share``): the hub's share root does not move its files
+    to the share; the rest of the welcome still applies."""
+    from maktaba_pipeline.cluster.agent.service import _settings_hook
+
+    hub, key = node_hub()
+    (tmp_path / "nas").mkdir()
+    hub.settings = {"ip": "192.168.50.20", "share_root": str(tmp_path / "nas"),
+                    "retention_days": 3, "file_mb": 7}  # fmt: skip
+    files = ClusterFiles(None, "10.0.0.5", "w", fallback_dir=tmp_path / "local")
+    hook = _settings_hook(files, on_share=False)
+    async with running_hub(hub):
+        agent = make_agent(hub, node_key=key, files=files, on_settings=hook)
+        async with running(agent):
+            await hub.wait_session(1)
+            await until(lambda: files.ip == "192.168.50.20" and files.retention_days == 3)
+    assert not files.on_share and not (tmp_path / "nas" / "maktaba").exists()
+    assert files.status()["dir"] == str(tmp_path / "local" / "192.168.50.20")
+    files.stop()

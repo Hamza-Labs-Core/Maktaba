@@ -159,6 +159,21 @@ type PipelineSection struct {
 	// environment, setup --node --python); empty: the release's venv, else python3.
 	// MAKTABA_PYTHON still wins.
 	Python string `toml:"python"`
+	// IndexWorker: "on" (default) runs the search index (the index and chapter_infer
+	// stages and the semantic search) in a worker of its own that never reads the
+	// media share, so a share that stalls the main worker can no longer get the index
+	// killed mid-write; "off" keeps it in the main worker, as before.
+	IndexWorker string `toml:"index_worker"`
+}
+
+// IndexWorkerOn reports whether the index runs in its own worker (anything but
+// off/false/no/0).
+func (p PipelineSection) IndexWorkerOn() bool {
+	switch strings.ToLower(strings.TrimSpace(p.IndexWorker)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
 }
 
 // TVSection is the [tv] table (Epic 33 story 33.1).
@@ -201,11 +216,15 @@ type ServerSection struct {
 	// into the app keeps its flag here, Epic 38 story 38.13).
 	MDNS string `toml:"mdns"`
 	// The intra-host ports of the roles (defaults 127.0.0.1:9050, :9101,
-	// 127.0.0.1:9090, 127.0.0.1:9102); set them to run two machines on one host.
+	// 127.0.0.1:9090, 127.0.0.1:9102, and the index worker's 127.0.0.1:9093 and
+	// 127.0.0.1:9104); set them to run two machines on one host.
 	StreamingGRPCAddr  string `toml:"streaming_grpc_addr"`
 	StreamingAdminAddr string `toml:"streaming_admin_addr"`
 	PipelineGRPCAddr   string `toml:"pipeline_grpc_addr"`
 	PipelineLogsAddr   string `toml:"pipeline_logs_addr"`
+	// the index worker's semantic search (gRPC) and its logs and liveness port
+	PipelineSearchAddr    string `toml:"pipeline_search_addr"`
+	PipelineIndexLogsAddr string `toml:"pipeline_index_logs_addr"`
 }
 
 // MDNSOn reports whether the machine advertises itself (anything but

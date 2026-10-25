@@ -47,3 +47,21 @@ func TestSearchSemantic_Wiring(t *testing.T) {
 		t.Fatal("the real pipeline client must enable semantic search")
 	}
 }
+
+// TestSearchSemantic_IndexWorker: with the index worker's client
+// (MAKTABA_PIPELINE_SEARCH_ADDR) the semantic leg asks it, never the main
+// pipeline worker, which opens no search index.
+func TestSearchSemantic_IndexWorker(t *testing.T) {
+	type mainPipeline struct{ semanticPipeline }
+	index := semanticPipeline{}
+	got, ok := searchSemantic(P6Deps{PipelineClient: mainPipeline{}, SearchPipelineClient: index}).(*search.GRPCSemantic)
+	if !ok {
+		t.Fatalf("want *search.GRPCSemantic, got %T", got)
+	}
+	if _, isIndex := got.Backend.(semanticPipeline); !isIndex {
+		t.Fatalf("the semantic leg must ask the index worker, got %T", got.Backend)
+	}
+	if got := searchSemantic(P6Deps{PipelineClient: semanticPipeline{}, SearchPipelineClient: plainPipeline{}}); got != nil {
+		t.Fatalf("an index worker without the RPC: want nil (FTS-only), got %T", got)
+	}
+}

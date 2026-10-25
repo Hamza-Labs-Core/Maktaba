@@ -122,3 +122,18 @@ def test_join_run_starts_as_the_node_even_with_a_database_url_set(
     args = parser.parse_args(["join", "--run", "--home", "http://h:8080"])
     assert cli._join(args, parser, None) == 0
     assert seen == [None]  # node mode: the joined config's database, not the env's
+
+
+def test_the_index_worker_flags(cfg_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The supervisor's index worker runs with MAKTABA_PIPELINE_SHARE=off, the main
+    worker beside it with MAKTABA_PIPELINE_SEMANTIC=off; unset, both are on."""
+    monkeypatch.delenv("MAKTABA_PIPELINE_SHARE", raising=False)
+    monkeypatch.delenv("MAKTABA_PIPELINE_SEMANTIC", raising=False)
+    args = _args()
+    assert cli._build_runtime_config(args).share is True  # type: ignore[arg-type]
+    assert args.no_semantic is False  # type: ignore[attr-defined]
+    monkeypatch.setenv("MAKTABA_PIPELINE_SHARE", "off")
+    monkeypatch.setenv("MAKTABA_PIPELINE_SEMANTIC", "off")
+    args = _args()
+    assert cli._build_runtime_config(args).share is False  # type: ignore[arg-type]
+    assert args.no_semantic is True  # type: ignore[attr-defined]

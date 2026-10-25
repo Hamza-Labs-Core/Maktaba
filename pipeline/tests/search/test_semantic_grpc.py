@@ -87,3 +87,32 @@ def test_default_backends_use_the_shared_index(monkeypatch: pytest.MonkeyPatch) 
     assert len(_call(svc, svc.semantic_search, req)["hits"]) == 1
     vec = _call(svc, svc.embed, {"text": "صوم"})["vector"]
     assert len(vec) > 0 and emb.queries[-1] == "صوم"
+
+
+def test_a_worker_without_the_index_answers_no_semantic_search(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``semantic=False`` (MAKTABA_PIPELINE_SEMANTIC=off, the main worker beside the index
+    worker): the server never builds the search backends, so it never opens Chroma."""
+
+    def backends() -> Any:
+        raise AssertionError("the search index must stay closed in this worker")
+
+    built: list[PipelineService] = []
+
+    class Recording(PipelineService):
+        def __init__(self, **kw: Any) -> None:
+            super().__init__(**kw)
+            built.append(self)
+
+    monkeypatch.setattr(grpc_server, "default_search_backends", backends)
+    monkeypatch.setattr(grpc_server, "PipelineService", Recording)
+
+    async def run() -> None:
+        server, task = await grpc_server.serve_grpc(addr="127.0.0.1:0", semantic=False)
+        await server.stop(grace=0)
+        await task
+
+    asyncio.run(run())
+    (svc,) = built
+    assert "not configured" in _call(svc, svc.semantic_search, {"q": "x"})["error"]

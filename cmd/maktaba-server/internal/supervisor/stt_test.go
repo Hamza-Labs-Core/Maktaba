@@ -237,7 +237,7 @@ func TestPlanSTTLeavesRoomForTheSecondListen(t *testing.T) {
 		t.Errorf("[transcription] overrides beside the second listen = %+v", p)
 	}
 	m := envMap(mainProcess(t, cfg).Cmd.Env)
-	if m["MAKTABA_PIPELINE_EXCLUDE_STAGES"] != "transcribe" {
+	if sttExclude(m) != "transcribe" {
 		t.Errorf("the main worker leaves transcribe to the GPU worker: %v", m)
 	}
 	procs, err := BuildPipelineInstances(Options{Config: cfg})
@@ -616,7 +616,7 @@ func TestWorkersWaitForTheSecondListen(t *testing.T) {
 		t.Fatalf("workers = %d, %v", len(procs), err)
 	}
 	main := envMap(mainProcess(t, cfg).Cmd.Env)
-	if v := main["MAKTABA_PIPELINE_EXCLUDE_STAGES"]; v != "" {
+	if v := sttExclude(main); v != "" {
 		t.Errorf("the main worker decides by the rules: exclude = %q", v)
 	}
 	if main["MAKTABA_STT_BATCH"] != "8" {
@@ -748,7 +748,7 @@ func TestNoWorkersWithoutTheEngine(t *testing.T) {
 	if err != nil || len(procs) != 0 {
 		t.Fatalf("workers = %d, %v", len(procs), err)
 	}
-	if v := envMap(mainProcess(t, cfg).Cmd.Env)["MAKTABA_PIPELINE_EXCLUDE_STAGES"]; v != "" {
+	if v := sttExclude(envMap(mainProcess(t, cfg).Cmd.Env)); v != "" {
 		t.Errorf("no workers: the main worker keeps transcribe (and says why it cannot): %q", v)
 	}
 	sttInstalled = func(string) bool { return true }
@@ -976,7 +976,7 @@ func TestPipelineWorkersOnAppleSilicon(t *testing.T) {
 	if v := m["MAKTABA_STT_AUDIO_HOURS"]; v != "" {
 		t.Errorf("Mac main worker without workers: %s", v)
 	}
-	if v := m["MAKTABA_PIPELINE_EXCLUDE_STAGES"]; v != "" {
+	if v := sttExclude(m); v != "" {
 		t.Errorf("Mac main worker without workers transcribes: %q", v)
 	}
 }
@@ -989,7 +989,7 @@ func TestPipelineWorkersOnAnNvidiaGPU(t *testing.T) {
 	cfg := noRefine()
 	cfg.Transcription.ComputeType = "int8_float16"
 	main := envMap(mainProcess(t, cfg).Cmd.Env)
-	if main["MAKTABA_PIPELINE_EXCLUDE_STAGES"] != "transcribe" {
+	if sttExclude(main) != "transcribe" {
 		t.Errorf("the main worker leaves transcribe to the GPU worker: %q", main["MAKTABA_PIPELINE_EXCLUDE_STAGES"])
 	}
 	for _, k := range []string{"MAKTABA_STT_AUDIO_HOURS", "MAKTABA_STT_COMPUTE_TYPE", "MAKTABA_STT_CPU_THREADS"} {
@@ -1030,7 +1030,7 @@ func TestTheMainWorkerTranscribesOnTheCPU(t *testing.T) {
 		m["MAKTABA_STT_AUDIO_HOURS"] != num(host.AudioHours) {
 		t.Errorf("the main worker's knobs: %v", m)
 	}
-	if v := m["MAKTABA_PIPELINE_EXCLUDE_STAGES"]; v != "" {
+	if v := sttExclude(m); v != "" {
 		t.Errorf("the main worker transcribes: exclude = %q", v)
 	}
 	t.Setenv("MAKTABA_STT_CPU_THREADS", "12")

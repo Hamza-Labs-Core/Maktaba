@@ -178,6 +178,26 @@ async def test_a_missing_file_on_a_share_that_does_not_answer_waits_for_it(
 
 
 @pytest.mark.asyncio
+async def test_a_worker_without_the_share_never_probes_it(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The index worker (``--no-share``): a missing file is the item's, and no library
+    root is looked at (a stalled share would hold the probe's thread)."""
+    from maktaba_pipeline.engine import failure_policy
+
+    async def probe(root: str, timeout_s: float) -> bool:
+        raise AssertionError("a worker without the share must not probe it")
+
+    monkeypatch.setattr(failure_policy, "root_answers", probe)
+    monkeypatch.setattr(failure_policy, "_share_probes", True)
+    failure_policy.set_share_probes(False)
+    row, _ = await _fail_with(
+        db, StageFailure("file_missing", "/lib/a.mp4: not found", retryable=False)
+    )
+    assert row["state"] == "failed" and row["failure_class"] == "item_permanent"
+
+
+@pytest.mark.asyncio
 async def test_a_missing_file_on_a_share_that_answers_needs_you(
     db: Database, tmp_path: Path
 ) -> None:

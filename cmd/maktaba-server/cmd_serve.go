@@ -300,6 +300,12 @@ func runServe(cfg config.Config, opts serveOptions) error {
 				return err
 			}
 			procs = append(procs, extra...)
+			// the search index in a worker of its own, away from the share's stalls
+			index, err := supervisor.BuildIndexWorker(sopts)
+			if err != nil {
+				return err
+			}
+			procs = append(procs, index...)
 		}
 		// Epic 33 story 33.1: the streaming role is the front door; the channel
 		// engine runs in the TV slots next to it (live + hot standby; the third

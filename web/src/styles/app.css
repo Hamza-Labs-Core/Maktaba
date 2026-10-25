@@ -3340,6 +3340,19 @@ a.mkt-guide__chanhead:hover {
   overflow: hidden;
   box-shadow: var(--shadow-md);
 }
+/* the picture is a button: no button look */
+button.mkt-video__hero {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+/* the player in the picture's place: its controls sit above the video */
+.mkt-video__hero--player {
+  overflow: visible;
+  box-shadow: none;
+  border-radius: 0;
+}
 .mkt-video__hero .mkt-card__poster {
   display: block;
   width: 100%;
