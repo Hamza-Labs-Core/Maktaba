@@ -1122,6 +1122,19 @@ type HomeDB struct {
 	Healing bool       `json:"healing,omitempty"`
 	// Fails is how many logins in a row failed on the machine
 	Fails int `json:"fails,omitempty"`
+	// Asked is when the machine last asked the home for its access (none came on its own),
+	// and Answer the home's answer
+	Asked  *time.Time    `json:"asked,omitempty"`
+	Answer *AccessAnswer `json:"answer,omitempty"`
+}
+
+// AccessAnswer is the home's answer to a machine's request for its database access: ok, or
+// why not (its code: cluster.AccessError's) in the home's words.
+type AccessAnswer struct {
+	OK     bool       `json:"ok"`
+	Code   string     `json:"code,omitempty"`
+	Reason string     `json:"reason,omitempty"`
+	At     *time.Time `json:"at,omitempty"`
 }
 
 // shown is the machine's word as the page shows it: a failure only once the machine saw

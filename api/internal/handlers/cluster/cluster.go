@@ -19,6 +19,7 @@ package cluster
 import (
 	"context"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -74,6 +75,14 @@ type Handler struct {
 	// file; "" with its TLS off), sealed in a join's credentials.
 	PGBundled bool
 	PGCA      string
+	// MendBundled asks the supervisor to give the bundled Postgres's app role its cluster
+	// grants again (CREATEROLE, REPLICATION, ADMIN on the machines' roles: pgbundle's cluster
+	// bootstrap), when it lacks them (a move or a restore without them); nil: not this home's
+	// to mend.
+	MendBundled func(ctx context.Context) error
+	// RolesDB is the home's database as its own user (the roles' Postgres): a missing
+	// group role is made again on it (cluster.EnsureWorkerGroup); nil: not made.
+	RolesDB *sql.DB
 	// PGPlain: the database is another one (an operator's own) and has no TLS at all
 	// (`ssl` off): the machines are told so, as for a bundled one with its TLS off. One
 	// with TLS has the operator's CA, which this home does not hold: the machines'

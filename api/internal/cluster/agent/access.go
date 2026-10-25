@@ -3,11 +3,15 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 )
 
 // AccessGranter is the home's side of its machines' database access (the home owns it).
@@ -135,6 +139,8 @@ func (h *Hub) EnsureAccess(ctx context.Context, g AccessGranter, every time.Dura
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// a machine's own request (access.request) is answered with g too
+	h.AnswerAccessRequests(g, logger)
 	granted := map[string]time.Time{} // node -> when its access was last re-made
 	tries := map[string]int{}         // node -> re-makes since it last logged in
 	checked := map[string]bool{}      // agent sessions whose role was checked
@@ -167,6 +173,9 @@ func (h *Hub) EnsureAccess(ctx context.Context, g AccessGranter, every time.Dura
 			}
 			if why == "" || (!granted[s.NodeID].IsZero() && h.now().Sub(granted[s.NodeID]) < retryAfter(tries[s.NodeID])) {
 				continue
+			}
+			if t := h.requestGranted(s.NodeID); !t.IsZero() && h.now().Sub(t) < accessRetry {
+				continue // its own request re-made it a moment ago: it follows that one
 			}
 			granted[s.NodeID] = h.now()
 			tries[s.NodeID]++
@@ -212,4 +221,133 @@ func retryAfter(tries int) time.Duration {
 		d *= 2
 	}
 	return min(d, accessRetryMax)
+}
+
+// accessAskEvery is how soon a machine may ask for its database access again
+// (access.request): a machine asks a minute after its first request at the soonest (its
+// own backoff), so a request sooner is refused, never a password changed in a loop.
+const accessAskEvery = 30 * time.Second
+
+// accessRequests are the machines' own requests for their database access.
+type accessRequests struct {
+	mu      sync.Mutex
+	granter AccessGranter
+	logger  *slog.Logger
+	asked   map[string]time.Time // node -> its last request
+	granted map[string]time.Time // node -> when a request of its re-made its access
+}
+
+// AnswerAccessRequests answers the machines' own requests for their database access with g
+// (EnsureAccess does, besides its push).
+func (h *Hub) AnswerAccessRequests(g AccessGranter, logger *slog.Logger) {
+	h.acc.mu.Lock()
+	h.acc.granter, h.acc.logger = g, logger
+	h.acc.mu.Unlock()
+}
+
+// requestGranted is when a machine's own request last re-made its access (zero: never).
+func (h *Hub) requestGranted(nodeID string) time.Time {
+	h.acc.mu.Lock()
+	defer h.acc.mu.Unlock()
+	return h.acc.granted[nodeID]
+}
+
+// onAccessRequest answers a machine agent's access.request ({id, home_db}): a machine that
+// cannot log in to this home's database, and got no re-made access from the home's own
+// push, asks for one. The access is made for the session's own machine (the handshake
+// proved it: never a machine a frame names), as the push makes it (GrantAccess, then
+// home.access), at most once per accessAskEvery per machine, and the machine gets an
+// access.answer {id, ok, code, reason}: what stops the home, with its code
+// (cluster.AccessError), or not_taken with the machine's own answer. Every request is in
+// the events file.
+func (h *Hub) onAccessRequest(s *Session, raw []byte) {
+	var f struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(raw, &f) != nil {
+		return
+	}
+	answer := func(ok bool, code, reason string) {
+		s.send(map[string]any{"t": "access.answer", "id": f.ID, "ok": ok, "code": code, "reason": reason})
+	}
+	if !s.machineAgent() || s.NodeID == "" {
+		h.accessAnswered(s, h.log(), false, cluster.AccessUnknown, "only a machine's agent asks for its database access", answer)
+		return
+	}
+	now := h.now()
+	h.acc.mu.Lock()
+	g, logger := h.acc.granter, h.acc.logger
+	last := h.acc.asked[s.NodeID]
+	limited := !last.IsZero() && now.Sub(last) < accessAskEvery
+	if g != nil && !limited {
+		if h.acc.asked == nil {
+			h.acc.asked = map[string]time.Time{}
+		}
+		h.acc.asked[s.NodeID] = now
+	}
+	h.acc.mu.Unlock()
+	if logger == nil {
+		logger = h.log()
+	}
+	switch {
+	case g == nil:
+		h.accessAnswered(s, logger, false, cluster.AccessOther,
+			"this home gives no database access now (it is starting, or its database is not Postgres)", answer)
+	case limited:
+		h.accessAnswered(s, logger, false, cluster.AccessRateLimited, fmt.Sprintf("asked again too soon: "+
+			"ask again in %s", (accessAskEvery-now.Sub(last)).Round(time.Second)), answer)
+	default:
+		go h.grantRequested(s, g, logger, answer)
+	}
+}
+
+// grantRequested re-makes a machine's access at its own request and sends it (home.access).
+func (h *Hub) grantRequested(s *Session, g AccessGranter, logger *slog.Logger, answer func(ok bool, code, reason string)) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	args, err := g.GrantAccess(ctx, s.NodeID)
+	if err != nil {
+		h.accessAnswered(s, logger, false, cluster.AccessCode(err), err.Error(), answer)
+		return
+	}
+	h.acc.mu.Lock()
+	if h.acc.granted == nil {
+		h.acc.granted = map[string]time.Time{}
+	}
+	h.acc.granted[s.NodeID] = h.now()
+	h.acc.mu.Unlock()
+	res, err := h.CommandWithin(ctx, s.ID, "home.access", args, "system", 30*time.Second)
+	switch {
+	case err != nil:
+		h.accessAnswered(s, logger, false, cluster.AccessNotTaken, "the access did not reach the machine: "+err.Error(), answer)
+	case !res.OK:
+		h.accessAnswered(s, logger, false, cluster.AccessNotTaken, "the machine did not take it: "+detailText(res.Detail), answer)
+	default:
+		h.accessAnswered(s, logger, true, "", "its access was made again and sent to it", answer)
+	}
+}
+
+// accessAnswered records a machine's request and its answer (the events file, the log),
+// then answers it.
+func (h *Hub) accessAnswered(s *Session, logger *slog.Logger, ok bool, code, reason string,
+	answer func(ok bool, code, reason string)) {
+	h.event(map[string]any{"event": "access_request", "session": s.ID, "node_id": nullable(s.NodeID), "ok": ok,
+		"code": nullable(code), "detail": reason})
+	if ok {
+		logger.Info("cluster: a machine asked for its database access: made again and sent", "node_id", s.NodeID,
+			"event", "cluster_access_requested")
+	} else {
+		logger.Warn("cluster: a machine asked for its database access, which this home cannot give", "node_id", s.NodeID,
+			"code", code, "reason", reason, "event", "cluster_access_request_refused")
+	}
+	answer(ok, code, reason)
+}
+
+// detailText is a command result's detail as text (a JSON string unquoted).
+func detailText(raw json.RawMessage) string {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	return string(raw)
 }

@@ -41,6 +41,8 @@ type nodeServices struct {
 	homeAway atomic.Bool
 	// homeDB: this machine's login to its home's database (serve_homeaccess.go)
 	homeDB *homeDBWatch
+	// rejoin: the join flow again when the home no longer takes this machine (serve_rejoin.go)
+	rejoin *rejoinWatch
 }
 
 // HomeAway reports whether this machine cannot reach its home now.
@@ -103,7 +105,7 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 	if !supervisor.NodeMode(cfg, n) {
 		return nil, nil
 	}
-	ns := &nodeServices{node: n}
+	ns := &nodeServices{node: n, rejoin: newRejoinWatch()}
 	// this machine's login to its home's database, in its update.state (serve_homeaccess.go)
 	ns.homeDB = newHomeDBWatch(func() {
 		if ns.agent != nil {
@@ -136,8 +138,28 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 		},
 		// the home's switch to another machine (serve_switchover.go)
 		Commands: commands,
-		// a check of the home's database made after the home heard from this machine again
-		OnConnect: ns.homeDB.reconnected,
+		// a check of the home's database made after the home heard from this machine again;
+		// a home that takes this machine needs no re-join
+		OnConnect: func() {
+			ns.rejoin.connected()
+			ns.homeDB.reconnected()
+		},
+		// the home's answer to this machine's request for its database access: one that
+		// does not know this machine sends it back to the join flow
+		OnAccessAnswer: func(a machineagent.AccessAnswer) {
+			ns.homeDB.answered(a)
+			if a.Code == "unknown" || a.Code == "not_approved" {
+				ns.rejoin.unknown(ctx)
+			}
+		},
+		// the home refuses this machine's sessions (removed, rejected, revoked): the join
+		// flow again, as itself
+		OnRefused:   func(code int) { ns.rejoin.refused(ctx, code) },
+		RejoinState: ns.rejoin.State,
+	}
+	ns.homeDB.ask = func(st machineagent.HomeDB) bool { return ns.agent.RequestAccess(&st) }
+	if d, err := time.ParseDuration(os.Getenv("MAKTABA_E2E_ACCESS_ASK")); err == nil && d > 0 {
+		ns.homeDB.askAfter, ns.homeDB.askFirst = d, d // the end-to-end tests ask sooner
 	}
 	go ns.agent.Run(ctx)
 	if os.Getenv(envLauncherRoot) != "" || os.Getenv("MAKTABA_RELEASE_DIR") != "" {

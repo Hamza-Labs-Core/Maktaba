@@ -119,8 +119,8 @@ jobs:
           MAKTABA_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
         run: |
           set -euo pipefail
-          go test -count=1 -timeout 30m -run 'TestTwoMachinesOnePC|TestNodeFollowsTheHomeDatabase' -v . | tee "$RUNNER_TEMP/e2e-two.out"
-          for t in TestTwoMachinesOnePC TestNodeFollowsTheHomeDatabase; do
+          go test -count=1 -timeout 30m -run 'TestTwoMachinesOnePC|TestNodeFollowsTheHomeDatabase|TestNodeAsksForItsAccess' -v . | tee "$RUNNER_TEMP/e2e-two.out"
+          for t in TestTwoMachinesOnePC TestNodeFollowsTheHomeDatabase TestNodeAsksForItsAccess; do
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/e2e-two.out" || { echo "::error::$t did not run"; exit 1; }
           done
 

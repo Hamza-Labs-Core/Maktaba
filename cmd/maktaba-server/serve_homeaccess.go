@@ -6,7 +6,10 @@ package main
 // to another cluster or port: an app's move from an operator Postgres to its own, a
 // restore, a new port) gets its access re-made by the home over the machine channel
 // ("home.access"), which the home's cluster key authenticates, and follows it: node.json
-// changed under its lock, then a new start with it.
+// changed under its lock, then a new start with it. When no re-made access comes on its
+// own (homeDBAskAfter after the failure is confirmed), the machine asks the home for one
+// (access.request), again after homeDBAskFirst, twice as long each time up to
+// homeDBAskMax, and logs and shows the home's answer.
 
 import (
 	"context"
@@ -202,6 +205,24 @@ var (
 	homeDBRecheck = 10 * time.Second
 )
 
+// homeDBAskAfter is how long after its failure is confirmed this machine waits for the
+// home's own re-made access before it asks for one (access.request); homeDBAskFirst is the
+// wait before it asks again, twice as long each time after that, up to homeDBAskMax.
+var (
+	homeDBAskAfter = 2 * time.Minute
+	homeDBAskFirst = time.Minute
+	homeDBAskMax   = time.Hour
+)
+
+// askAgainAfter is how long after its asks-th request this machine asks again.
+func askAgainAfter(asks int) time.Duration {
+	d := homeDBAskFirst
+	for i := 1; i < asks && d < homeDBAskMax; i++ {
+		d *= 2
+	}
+	return min(d, homeDBAskMax)
+}
+
 // homeDBWatch keeps this machine's last login to its home's database (update.state's
 // home_db).
 type homeDBWatch struct {
@@ -218,9 +239,23 @@ type homeDBWatch struct {
 	// first, every and recheck are run's pauses (0: homeDBFirst, homeDBEvery, homeDBRecheck;
 	// tests shorten them here, never in the package's)
 	first, every, recheck time.Duration
+	// ask asks the home for this machine's access (the machine agent's RequestAccess),
+	// false when it is not connected; nil: never asked
+	ask func(st machineagent.HomeDB) bool
+	// askAfter and askFirst are maybeAsk's waits (0: homeDBAskAfter, homeDBAskFirst; tests
+	// shorten them here)
+	askAfter, askFirst time.Duration
+	// clock is now (tests replace it)
+	clock func() time.Time
 
 	mu sync.Mutex
 	st *machineagent.HomeDB
+	// confirmedAt is when the failure was confirmed, asks and lastAsk this machine's
+	// requests since, and answer the home's last answer (kept until it logs in again)
+	confirmedAt time.Time
+	asks        int
+	lastAsk     time.Time
+	answer      *machineagent.AccessAnswer
 }
 
 func newHomeDBWatch(onChange func()) *homeDBWatch {
@@ -300,6 +335,10 @@ func (w *homeDBWatch) check(ctx context.Context) {
 		if prev != nil && !prev.OK {
 			next.Fails = prev.Fails + 1
 		}
+		next.Asked, next.Answer = w.lastAsk, w.answer
+	} else {
+		// it logs in: its requests and the home's answer are behind it
+		w.confirmedAt, w.asks, w.lastAsk, w.answer = time.Time{}, 0, time.Time{}, nil
 	}
 	confirmed := next.Fails >= machineagent.ConfirmFails && (prev == nil || prev.Fails < machineagent.ConfirmFails)
 	changed := prev == nil || prev.OK != next.OK || prev.Code != next.Code || prev.Healing != next.Healing || confirmed
@@ -311,9 +350,86 @@ func (w *homeDBWatch) check(ctx context.Context) {
 	switch {
 	case err != nil && !next.Healing && confirmed:
 		fmt.Fprintf(os.Stderr, "[serve] node: cannot log in to the home's database at %s (%s): %s; the home "+
-			"re-makes this machine's access when it is its to mend\n", next.Target, next.Code, next.Detail)
+			"re-makes this machine's access when it is its to mend, or this machine asks it for one\n",
+			next.Target, next.Code, next.Detail)
 	case err == nil && prev != nil && !prev.OK:
 		fmt.Fprintln(os.Stderr, "[serve] node: the home's database is reachable again")
+	}
+	if w.onChange != nil {
+		w.onChange()
+	}
+}
+
+func (w *homeDBWatch) now() time.Time {
+	if w.clock != nil {
+		return w.clock()
+	}
+	return time.Now()
+}
+
+// maybeAsk asks the home for this machine's access when its failure is confirmed (and it
+// follows no re-made access) and none came within askAfter; again askAgainAfter its last
+// request. A machine that is not connected asks at the next check.
+func (w *homeDBWatch) maybeAsk() {
+	if w == nil || w.ask == nil {
+		return
+	}
+	now := w.now()
+	after, first := w.askAfter, w.askFirst
+	if after <= 0 {
+		after = homeDBAskAfter
+	}
+	w.mu.Lock()
+	st := w.st
+	if st == nil || st.OK || st.Healing || st.Fails < machineagent.ConfirmFails {
+		w.mu.Unlock()
+		return
+	}
+	if w.confirmedAt.IsZero() {
+		w.confirmedAt = now
+	}
+	wait := askAgainAfter(w.asks)
+	if first > 0 {
+		wait = min(wait, first<<max(w.asks-1, 0))
+	}
+	due := now.Sub(w.confirmedAt) >= after && (w.lastAsk.IsZero() || now.Sub(w.lastAsk) >= wait)
+	c := *st
+	w.mu.Unlock()
+	if !due || !w.ask(c) {
+		return
+	}
+	w.mu.Lock()
+	w.asks++
+	w.lastAsk = now.UTC()
+	if w.st != nil && !w.st.OK {
+		w.st.Asked = w.lastAsk
+	}
+	n := w.asks
+	w.mu.Unlock()
+	fmt.Fprintf(os.Stderr, "[serve] node: no new access to the home's database came: this machine asks the home "+
+		"for one (request %d)\n", n)
+	if w.onChange != nil {
+		w.onChange()
+	}
+}
+
+// answered keeps the home's answer to this machine's request, logs it in clear words and
+// says it in update.state (the home's Machines page and this machine's Updates page show it).
+func (w *homeDBWatch) answered(a machineagent.AccessAnswer) {
+	if w == nil {
+		return
+	}
+	a.Reason = noCreds(a.Reason)
+	w.mu.Lock()
+	w.answer = &a
+	if w.st != nil && !w.st.OK {
+		w.st.Answer = &a
+	}
+	w.mu.Unlock()
+	if a.OK {
+		fmt.Fprintln(os.Stderr, "[serve] node: the home gave this machine a new login to its database, as it asked")
+	} else {
+		fmt.Fprintf(os.Stderr, "[serve] node: the home cannot give this machine a new login: %s (%s)\n", a.Reason, a.Code)
 	}
 	if w.onChange != nil {
 		w.onChange()
@@ -346,6 +462,7 @@ func (w *homeDBWatch) run(ctx context.Context) {
 			}
 		}
 		w.check(ctx)
+		w.maybeAsk()
 		next := every
 		if st := w.State(); st != nil && !st.OK {
 			next = recheck

@@ -246,8 +246,9 @@ func (s *switching) kitFiles() map[string]string {
 
 // ---------- the home's side: its API's loopback calls ----------
 
-// adminHandler adds POST /switchover/{check,freeze,thaw,kit,relay,demote} to the
-// supervisor's loopback admin, for a caller holding the per-boot local token.
+// adminHandler adds POST /switchover/{check,freeze,thaw,kit,relay,demote,...} to the
+// supervisor's loopback admin, for a caller holding the per-boot local token; and
+// mend-roles (the bundled Postgres's cluster grants again, pgbundle.MendClusterGrants).
 func (s *switching) adminHandler(base http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", base)
@@ -268,6 +269,9 @@ func (s *switching) adminHandler(base http.Handler) http.Handler {
 		case step == "record" || step == "recorded" || step == "term-claim":
 			// the API's own records: kept on any home (one that cannot be switched has none);
 			// another standby's claim on a term: answered by every machine and the home
+		case step == "mend-roles" && s.pg == nil:
+			http.Error(w, "this home's database is not Maktaba's own Postgres: its grants are its operator's", http.StatusConflict)
+			return
 		case s.pg == nil:
 			http.Error(w, "this home's database is not Maktaba's own Postgres: it cannot be switched", http.StatusConflict)
 			return
@@ -347,6 +351,13 @@ func (s *switching) adminHandler(base http.Handler) http.Handler {
 			out, err = s.keptApply(ctx, req)
 		case "kept-dismiss":
 			out, err = s.keptDismiss(ctx, req)
+		case "mend-roles":
+			// the home's API cannot give or change a machine's database role: the cluster
+			// bootstrap's grants again, as the superuser (a restore, the move from the
+			// developer stack, left them out)
+			if err = s.pg.MendClusterGrants(ctx); err == nil {
+				out = map[string]any{"ok": true}
+			}
 		case "demote":
 			// answered first: the demotion ends with this machine starting again, the API
 			// that asked among its processes; asked again while it runs, it says so, and

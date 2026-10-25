@@ -150,6 +150,9 @@ type Hub struct {
 
 	queuesDirty  chan struct{}
 	workersDirty chan struct{}
+
+	// acc is the machines' own requests for their database access (access.request)
+	acc accessRequests
 }
 
 // New builds a hub; Run starts its loops.
