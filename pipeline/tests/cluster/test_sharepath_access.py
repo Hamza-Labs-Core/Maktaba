@@ -157,3 +157,43 @@ def test_share_root_of_canonical_roots() -> None:
         ["smb://home-nas/Originals/Backup/Youtube", "smb://home-nas/Originals/Backup/Talks"]
     )
     assert got == ("smb://home-nas/Originals/Backup", True)
+
+
+@pytest.mark.asyncio
+async def test_a_storage_check_that_never_answers_does_not_hold_the_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A share that stopped answering left check_storage blocked in ``open()``, and the
+    worker never started: no job ran, not even those that never touch the share."""
+    import threading
+
+    from maktaba_pipeline.cluster import node
+
+    release = threading.Event()
+    tags: list[str] = []
+
+    def stuck(_samples: object, _pm: object, tag: str, **_: object) -> object:
+        tags.append(tag)
+        release.wait(10)
+        return {"read": "ok", "write": "ok", "checked_at": "", "detail": None}
+
+    monkeypatch.setattr(node, "check_storage", stuck)
+    monkeypatch.setattr(node, "check_shares", stuck)
+    monkeypatch.setattr(node, "STORAGE_CHECK_TIMEOUT_SEC", 0.2)
+    agent = WorkerAgent(
+        db=None,
+        worker_id="w1",
+        selector=StageSelector(
+            graph=[], requested=None, excluded=frozenset(), handlers=frozenset()
+        ),
+        graph=[],
+        shutdown=asyncio.Event(),
+    )
+    try:
+        result = await asyncio.wait_for(agent._check_storage(), timeout=3)
+    finally:
+        release.set()
+    assert (result["read"], result["write"], result["shares"]) == ("error", "error", [])
+    assert "no answer" in result["detail"]
+    # each process writes its own probe file (the home's workers start together)
+    assert tags[0].startswith("home-") and tags[0] != "home"

@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
@@ -140,6 +141,12 @@ async def _home_admin_map(db: Any) -> dict[str, str] | None:
 
 def path_map_from_json(data: dict[str, str] | None) -> PathMap:
     return PathMap.parse(json.dumps(data)) if data else PathMap()
+
+
+#: How long one storage check (``check_storage``, ``check_shares``) may take. A share
+#: that stopped answering blocked the worker's start in ``open()`` for good: no job ran
+#: on the machine, not even those that never touch the share (the search index).
+STORAGE_CHECK_TIMEOUT_SEC = 30.0
 
 
 @dataclass
@@ -404,9 +411,31 @@ class WorkerAgent:
             self.runtime.path_map = pm
 
     async def _check_storage(self) -> dict[str, Any]:
-        tag = self.node8 or "home"
-        result = await asyncio.to_thread(check_storage, self.samples, self.path_map, tag)
-        result["shares"] = await asyncio.to_thread(check_shares, self.samples, self.path_map, tag)
+        # each process its own probe file: a home's workers all start at once, and
+        # sharing one name made them write and remove the same file together
+        tag = f"{self.node8 or 'home'}-{os.getpid()}"
+        # a share that does not answer must not hold the worker: the check runs in a
+        # thread, and past STORAGE_CHECK_TIMEOUT_SEC it counts as an error (a node then stops
+        # its storage stages, as for any failed check) while the worker goes on
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(check_storage, self.samples, self.path_map, tag),
+                STORAGE_CHECK_TIMEOUT_SEC,
+            )
+        except TimeoutError:
+            result = {
+                "read": "error",
+                "write": "error",
+                "checked_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                "detail": f"the storage check got no answer within {STORAGE_CHECK_TIMEOUT_SEC:g} s",
+            }
+        try:
+            result["shares"] = await asyncio.wait_for(
+                asyncio.to_thread(check_shares, self.samples, self.path_map, tag),
+                STORAGE_CHECK_TIMEOUT_SEC,
+            )
+        except TimeoutError:
+            result["shares"] = []
         share_list = getattr(self.path_map, "share_list", None)
         result["mounts"] = share_list() if callable(share_list) else []
         result["path_map"] = self.path_map.as_json()
