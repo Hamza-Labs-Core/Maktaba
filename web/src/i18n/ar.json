@@ -1342,6 +1342,7 @@
   "queue.issues.none": "لا شيء يحتاج إلى انتباه.",
   "queue.issues.last": "آخر ظهور {time}",
   "queue.issues.retry": "إعادة محاولة {n}",
+  "queue.issues.retryAll": "إعادة محاولة الكل {n}",
   "queue.issues.retryNas": "إعادة محاولة {n} (فتح NAS p95 {ms})",
   "queue.issues.apply": "تطبيق",
   "queue.issues.openSettings": "فتح الإعدادات",

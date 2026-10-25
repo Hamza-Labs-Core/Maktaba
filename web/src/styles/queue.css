@@ -69,6 +69,14 @@
 .mkt-q-error {
   color: var(--color-error);
 }
+/* a section title with an action at its end ("Needs attention" + Retry all) */
+.mkt-q-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
 .mkt-q-section-title {
   font-size: var(--font-size-lg);
   font-weight: 600;
