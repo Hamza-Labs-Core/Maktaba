@@ -406,6 +406,53 @@ func TestAnAnswerCutByTheDropIsLinkLost(t *testing.T) {
 	}
 }
 
+// A large answer (moved to a data stream) the machine cancels in the middle, its session
+// alive, ends on the home too: the home's stream closes at once, and the machine reads an
+// error, never the end of a complete body.
+func TestACancelledMovedAnswerClosesItsStream(t *testing.T) {
+	chunk := bytes.Repeat([]byte("x"), 32<<10)
+	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for r.Context().Err() == nil { // as long as it is read
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	})
+	h := newHarness(t, api)
+	c := h.connect(nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, h.home+"/api/big", nil)
+	resp, err := c.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	// past the inline part: the rest comes on the data stream
+	if _, err := io.CopyN(io.Discard, resp.Body, MaxInline+(256<<10)); err != nil {
+		t.Fatal(err)
+	}
+	open := func() int {
+		h.srv.mu.Lock()
+		defer h.srv.mu.Unlock()
+		if n := h.srv.nodes[testNode]; n != nil {
+			return len(n.open)
+		}
+		return 0
+	}
+	if open() != 1 {
+		t.Fatalf("%d streams open on the home, want the answer's", open())
+	}
+	cancel()
+	h.waitFor(func() bool { return open() == 0 }, "the home's stream of the cancelled answer to close")
+	if _, err := io.ReadAll(resp.Body); err == nil {
+		t.Fatal("the cancelled answer read to a complete end")
+	}
+	if !h.srv.Live(testNode) {
+		t.Fatal("the session ended with the request")
+	}
+}
+
 // An answer whose body is shorter than its Content-Length is not a complete one.
 func TestAShortBodyIsUnexpectedEOF(t *testing.T) {
 	api := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

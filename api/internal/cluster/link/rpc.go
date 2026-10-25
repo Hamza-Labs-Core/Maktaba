@@ -103,6 +103,9 @@ func (b *bodyBuf) Read(p []byte) (int, error) {
 
 func (b *bodyBuf) Close() error { b.closeWith(io.ErrClosedPipe); return nil }
 
+// errAnswerCut ends an answer moved to a data stream whose request was cut.
+var errAnswerCut = errors.New("link: the answer was cut")
+
 // inflight is a request the home serves for a machine.
 type inflight struct {
 	id     uint32
@@ -180,7 +183,12 @@ func (c *ctrl) onReq(f Frame) {
 			// the request was cut (the session is ending, or the machine cancelled it): a
 			// handler that returned on that is no answer, and nothing it wrote may arrive as
 			// a complete one (an empty 200, a short body); the machine sees link_lost and
-			// tries a GET again on its next session
+			// tries a GET again on its next session. An answer moved to a data stream ends
+			// there as cut (its stream closes as an error, never a body's end), so the
+			// stream does not outlive the request.
+			if w.moved != nil {
+				_ = w.moved.CloseWithError(errAnswerCut)
+			}
 			return
 		}
 		w.finish()
