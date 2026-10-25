@@ -63,18 +63,34 @@ type observer struct {
 // eventsMarkKey keeps the time of the last look that said something (app_settings).
 const eventsMarkKey = "updates.events_mark"
 
-// say emits an event once by key. On the first look after a start it is said only when it
-// happened (at) after the previous process's mark: what that process did not see.
-func (d *Driver) say(o *observer, key, name string, at *time.Time, fields map[string]any) {
+// say emits an event once by key, and reports whether it did. On the first look after a
+// start it is said only when it happened (at) after the previous process's mark: what that
+// process did not see.
+func (d *Driver) say(o *observer, key, name string, at *time.Time, fields map[string]any) bool {
 	if o.said[key] {
-		return
+		return false
 	}
 	o.said[key] = true
 	if o.first && (o.mark == nil || at == nil || !at.After(*o.mark)) {
-		return
+		return false
 	}
 	o.spoke = true
 	d.emit(name, fields)
+	return true
+}
+
+// countStep adds a step whose end was just said to the step_duration running totals
+// (metrics.go): each step is counted once, so the histogram never goes down, whatever
+// the machine's journal later rewrites.
+func (d *Driver) countStep(ctx context.Context, st RunStep) {
+	if st.FinishedAt == nil || st.StartedAt.IsZero() {
+		return
+	}
+	sec := st.FinishedAt.Sub(st.StartedAt).Seconds()
+	if sec < 0 {
+		sec = 0
+	}
+	d.Store.countStep(ctx, stepLabel(st.Step), sec, stepBuckets)
 }
 
 // emit says one event: the structured log, and the hub's events file when there is one.
@@ -160,12 +176,16 @@ func (d *Driver) observeRun(ctx context.Context, o *observer, run Run) {
 			d.say(o, "step_started/"+key, EventStepStarted, &st.StartedAt, f)
 			switch st.State {
 			case "done":
-				d.say(o, "step_finished/"+key, EventStepFinished, st.FinishedAt, f)
+				if d.say(o, "step_finished/"+key, EventStepFinished, st.FinishedAt, f) {
+					d.countStep(ctx, st)
+				}
 				if st.Host == HomeHost && st.Step == "commit" {
 					d.say(o, "committed/"+run.ID, EventHomeCommitted, st.FinishedAt, home(nil))
 				}
 			case "failed":
-				d.say(o, "step_failed/"+key, EventStepFailed, st.FinishedAt, f)
+				if d.say(o, "step_failed/"+key, EventStepFailed, st.FinishedAt, f) {
+					d.countStep(ctx, st)
+				}
 			}
 		}
 	}

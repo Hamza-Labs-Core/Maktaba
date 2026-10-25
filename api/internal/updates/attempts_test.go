@@ -35,6 +35,7 @@ func (c attemptCluster) MachineStates() map[string]json.RawMessage {
 // the home's from its supervisor's status, a node's from its update.state, each merged
 // with its last finished part in a run (source run, with the run to retry).
 func TestMachinesCarryTheirAttempts(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "darwin-arm64", "1.4.0")
@@ -58,6 +59,7 @@ func TestMachinesCarryTheirAttempts(t *testing.T) {
 // A node's part in a run that ended (rolled back) is an attempt of its own, with the run
 // to retry and the machine's reason; a run about the home is the home's.
 func TestRunPartsAreAttempts(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0").outcome = MRolledBack
@@ -81,6 +83,7 @@ func TestRunPartsAreAttempts(t *testing.T) {
 // The run's error document becomes the attempt's step, code and detail (a reason when
 // the detail is missing).
 func TestRunAttemptReadsTheError(t *testing.T) {
+	t.Parallel()
 	end := time.Date(2026, 10, 24, 6, 0, 0, 0, time.UTC)
 	a := runAttempt(Run{ID: "r1", Version: "v1.5.0", FromVersion: "1.4.0", Trigger: TriggerAuto, State: RunRolledBack,
 		StartedAt: end.Add(-time.Hour), FinishedAt: &end,
@@ -99,6 +102,7 @@ func TestRunAttemptReadsTheError(t *testing.T) {
 // A machine's detail reaches the page without URLs' queries and cut to maxDetail (a node of
 // an older build sends them whole).
 func TestMergedAttemptsAreClean(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("é", 2000)
 	got := mergeAttempts([]Attempt{{ID: "app-1", At: time.Now(), Detail: "GET https://cdn.example/a.tar.gz?sig=s3cret: 403 " + long,
 		Fix: "see https://x.example/p?token=t"}})
@@ -110,6 +114,7 @@ func TestMergedAttemptsAreClean(t *testing.T) {
 
 // A machine's failed login to the home's database reaches the page once it saw it twice.
 func TestHomeDBShown(t *testing.T) {
+	t.Parallel()
 	if (&HomeDB{OK: false, Code: "refused", Fails: 1}).shown() != nil {
 		t.Fatal("one failed try shown")
 	}
@@ -126,6 +131,7 @@ func TestHomeDBShown(t *testing.T) {
 
 // The query goes, the sentence's punctuation after the URL stays.
 func TestCleanDetailKeepsThePunctuation(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"GET https://x/a.tar.gz?sig=s3cret): 403":            "GET https://x/a.tar.gz): 403",
 		"see https://x/p?token=t.":                           "see https://x/p.",

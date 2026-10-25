@@ -10,6 +10,7 @@ import (
 // minute: 0 up to date, 1 a release waits, 2 a run is under way, 3 the last run ended
 // badly (a day at most).
 func TestHealthSamplesUpdateState(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	if _, err := r.f.db.Exec(`CREATE TABLE IF NOT EXISTS health_samples (at TEXT NOT NULL, host TEXT NOT NULL,

@@ -33,6 +33,7 @@ func (l *eventLog) named(name string) []map[string]any {
 // TC2: the events a run makes, as the driver's ticks see it, each carry run_id, version
 // and host_id; the first look after a start says nothing of what was there already.
 func TestUpdateEventsCarryRunID(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	log := &eventLog{}
@@ -99,6 +100,7 @@ func TestUpdateEventsCarryRunID(t *testing.T) {
 // A release the launcher's guard took back (it did not stay running) says
 // launcher_rollback beside update_rolled_back.
 func TestLauncherRollbackEvent(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	log := &eventLog{}
@@ -125,6 +127,7 @@ func TestLauncherRollbackEvent(t *testing.T) {
 // its last look (a machine prepared, a step done) is said by the first look of the next
 // process, once; what the previous process said is not said again.
 func TestEventsMissedAcrossARestartAreSaidOnce(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	before := &eventLog{}

@@ -11,6 +11,7 @@ import (
 
 // AC3: a failed TV change blocks the release and tells the admin which checks failed.
 func TestDriverFailedTVBlocksTheRelease(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.outcome, r.home.rbReason = MRolledBack, CodeFailedTV
@@ -32,6 +33,7 @@ func TestDriverFailedTVBlocksTheRelease(t *testing.T) {
 // AC4: queued behind a change awaiting approval until the window ended: a gate (as a
 // watched TV), tried again in the next window; nothing counts against the release.
 func TestDriverTVChangePendingIsAGate(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.outcome, r.home.rbReason = MRolledBack, CodeTVChangePending
@@ -54,6 +56,7 @@ func TestDriverTVChangePendingIsAGate(t *testing.T) {
 // A change that did not reach the air in time is an attempt like any failed run; an
 // admin's cancel of it blocks the release until a retry.
 func TestDriverTVTimeoutAndCancel(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.outcome, r.home.rbReason = MRolledBack, CodeTVTimeout

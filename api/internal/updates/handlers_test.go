@@ -71,6 +71,7 @@ func auditActions(t *testing.T, f *fixture) []string {
 
 // TC6: every update endpoint is admin only.
 func TestNonAdmin403(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, sqliteDB(t))
 	h := newRouter(t, f)
 	for _, c := range []struct{ m, p string }{
@@ -87,6 +88,7 @@ func TestNonAdmin403(t *testing.T) {
 
 // TC6 / AC8: a pin below the installed version is refused with pin_below_installed.
 func TestPinBelowWatermark400(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, sqliteDB(t))
 	if err := f.store.RaiseWatermark(context.Background(), "1.5.0"); err != nil {
 		t.Fatal(err)
@@ -187,6 +189,7 @@ func TestSkipDeferRunAndOverview(t *testing.T) {
 // The orchestrator is story 35.4: a supervisor that does not know /update/* makes
 // Update now 503 orchestrator_unavailable and the run failed.
 func TestUpdateNowWithoutOrchestrator(t *testing.T) {
+	t.Parallel()
 	enableAutoInstall(t)
 	sup := httptest.NewServer(http.NotFoundHandler())
 	defer sup.Close()
@@ -202,6 +205,7 @@ func TestUpdateNowWithoutOrchestrator(t *testing.T) {
 // Slot 0132: the five tables exist on SQLite (applied above) and, on Postgres, are
 // revoked from maktaba_worker (TestMigrationS1Revoked; plan 35.3 §3).
 func TestMigrationS1Revoked(t *testing.T) {
+	t.Parallel()
 	b, err := os.ReadFile(migrationsDir(t) + "/0132_update_runs.sql")
 	if err != nil {
 		t.Fatal(err)

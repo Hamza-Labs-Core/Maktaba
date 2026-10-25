@@ -50,9 +50,11 @@ func labelValues(f *dto.MetricFamily, label string) []string {
 // TC1: every metric of story 35.15 AC1 the API owns is there with its labels, read from
 // the database: a second collector (an API that restarted) reads the same numbers (EC1).
 func TestUpdateMetricsRegistered(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
+	r.d.observe(ctx) // the driver's look: the steps' ends it says are counted
 	if d, err := r.f.svc.Tick(ctx); err != nil || d.Action != "started" {
 		t.Fatalf("tick: %+v %v", d, err)
 	}
@@ -84,6 +86,23 @@ func TestUpdateMetricsRegistered(t *testing.T) {
 	}
 	checked := fin.Add(-time.Hour)
 	r.f.store.SaveState(ctx, State{LastCheckAt: &checked})
+	r.d.observe(ctx)
+	steps := func(fams map[string]*dto.MetricFamily) uint64 {
+		var n uint64
+		for _, m := range fams[MetricStepDuration].GetMetric() {
+			n += m.GetHistogram().GetSampleCount()
+		}
+		return n
+	}
+	counted := steps(gatherUpdates(t, NewMetrics(r.d, func() string { return "1.5.0" })))
+	// the journal rewritten with fewer steps (a retry): the histogram does not go down
+	if err := r.f.store.ReplaceSteps(ctx, run.ID, HomeHost, stepSeqBase(0, true), nil); err != nil {
+		t.Fatal(err)
+	}
+	r.d.observe(ctx)
+	if got := steps(gatherUpdates(t, NewMetrics(r.d, func() string { return "1.5.0" }))); got != counted || counted < 2 {
+		t.Fatalf("step samples %d after the rewrite, %d before", got, counted)
+	}
 
 	for _, attempt := range []string{"first", "after a restart"} {
 		fams := gatherUpdates(t, NewMetrics(r.d, func() string { return "1.5.0" }))
@@ -107,8 +126,15 @@ func TestUpdateMetricsRegistered(t *testing.T) {
 		if v := fams[MetricRuns].GetMetric()[0].GetCounter().GetValue(); v != 1 {
 			t.Fatalf("%s: runs_total %v", attempt, v)
 		}
-		if got := labelValues(fams[MetricStepDuration], "step"); strings.Join(got, ",") != "other,stage" {
+		got := labelValues(fams[MetricStepDuration], "step")
+		joined := "," + strings.Join(got, ",") + ","
+		if !strings.Contains(joined, ",other,") || !strings.Contains(joined, ",stage,") {
 			t.Fatalf("%s: steps %v", attempt, got)
+		}
+		for _, l := range got {
+			if l != stepOther && !knownSteps[l] {
+				t.Fatalf("%s: an unbounded step label %q", attempt, l)
+			}
 		}
 		if n := fams[MetricNodeApply].GetMetric()[0].GetHistogram().GetSampleCount(); n != 1 {
 			t.Fatalf("%s: node apply samples %d", attempt, n)
@@ -141,6 +167,7 @@ func TestUpdateMetricsRegistered(t *testing.T) {
 // targets{state} has every target state there is (each Target* constant of the package),
 // so the states add up to the run's machines whatever they are doing.
 func TestTargetStatesListedAll(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -195,6 +222,7 @@ func TestTargetStatesListedAll(t *testing.T) {
 // The step label's values are the steps a machine's journal records (the updater's Step*
 // constants, another module): a step added there is added here.
 func TestKnownStepsAreTheJournals(t *testing.T) {
+	t.Parallel()
 	b, err := os.ReadFile(filepath.Join("..", "..", "..", "cmd", "maktaba-server", "internal", "updater", "journal.go"))
 	if err != nil {
 		t.Fatal(err)

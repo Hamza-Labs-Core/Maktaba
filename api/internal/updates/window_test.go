@@ -19,6 +19,7 @@ func at(loc *time.Location, y int, m time.Month, d, hh, mm int) time.Time {
 }
 
 func TestParseWindow(t *testing.T) {
+	t.Parallel()
 	for _, ok := range []string{"03:00-05:00", "23:00-01:00", "0:00-1:00", " 22:30 - 23:59 "} {
 		if _, err := ParseWindow(ok); err != nil {
 			t.Errorf("%q: %v", ok, err)
@@ -34,6 +35,7 @@ func TestParseWindow(t *testing.T) {
 // TC2 (story 35.3): the window's edges, the 30-minute margin, a window across midnight,
 // DST changes in two time zones.
 func TestSchedulerWindow(t *testing.T) {
+	t.Parallel()
 	ny := mustLoc(t, "America/New_York")
 	lon := mustLoc(t, "Europe/London")
 	tokyo := mustLoc(t, "Asia/Tokyo")
@@ -89,6 +91,7 @@ func TestSchedulerWindow(t *testing.T) {
 }
 
 func TestWindowNextStart(t *testing.T) {
+	t.Parallel()
 	ny := mustLoc(t, "America/New_York")
 	w := Window{StartMin: 3 * 60, EndMin: 5 * 60}
 	cases := []struct {
@@ -117,6 +120,7 @@ func TestWindowNextStart(t *testing.T) {
 
 // Release age, deferral and the window together (story 35.3 AC5; the plan's next run).
 func TestMakePlanAgeDeferralWindow(t *testing.T) {
+	t.Parallel()
 	enableAutoInstall(t)
 	ny := mustLoc(t, "America/New_York")
 	pol := DefaultPolicy()

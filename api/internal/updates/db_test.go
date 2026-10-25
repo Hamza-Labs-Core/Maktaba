@@ -145,6 +145,11 @@ func disableAutoInstall(t *testing.T) {
 
 func enableAutoInstall(t *testing.T) {
 	t.Helper()
+	if autoInstallEnabled == "true" {
+		// the tests' default: nothing to write (the parallel tests read it together; only
+		// serial tests turn it off, and put it back before those run)
+		return
+	}
 	old := autoInstallEnabled
 	autoInstallEnabled = "true"
 	t.Cleanup(func() { autoInstallEnabled = old })

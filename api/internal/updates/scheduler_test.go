@@ -61,6 +61,7 @@ func newFixture(t *testing.T, db *sql.DB) *fixture {
 // The scheduler starts a due run: a planned update_runs row (trigger auto) handed to
 // the supervisor (story 35.3 AC5).
 func TestSchedulerStartsDueRun(t *testing.T) {
+	t.Parallel()
 	enableAutoInstall(t)
 	for _, be := range backends(t) {
 		t.Run(be.name, func(t *testing.T) {
@@ -85,6 +86,7 @@ func TestSchedulerStartsDueRun(t *testing.T) {
 
 // TC3 (story 35.3): a TV change in flight, an active run, a crashed role, a deferral.
 func TestSchedulerBlockers(t *testing.T) {
+	t.Parallel()
 	enableAutoInstall(t)
 	ctx := context.Background()
 
@@ -198,6 +200,7 @@ func TestSchedulerBlockers(t *testing.T) {
 // TC6 (story 35.3 AC7): Update now skips only the window and the release age; it
 // approves a held contract release; it never skips the checks (blockers, withdrawal).
 func TestUpdateNowIgnoresWindowAndAge(t *testing.T) {
+	t.Parallel()
 	enableAutoInstall(t)
 	ctx := context.Background()
 	f := newFixture(t, sqliteDB(t))
