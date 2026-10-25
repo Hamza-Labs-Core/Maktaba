@@ -17,7 +17,8 @@
 //     rather than one pointing at a version its store does not offer yet.
 //   - The action: the release's own .apk when the release lists one (mobile-release.yml
 //     attaches it only when the build is signed), else the release page; never a guessed URL,
-//     and never a host the server names: GitHub's download path for that tag only.
+//     and never a host the server names: GitHub's download path for that tag only, and this
+//     repository's release pages only.
 import { api } from "./api";
 import { compareVersions, validVersion } from "./updatesApi";
 import type { UpdateStatus } from "./updates";
@@ -151,12 +152,21 @@ function listedApk(version: string, assets: { name?: string; url?: string }[] = 
   return assets.some((a) => a.name === apkName(version) && a.url === want) ? want : undefined;
 }
 
-function httpsUrl(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
+/** The release's page: `raw` when it is one of this repository's release pages on GitHub,
+ * else the tag's page there; never a host the server (or a kept value) names. */
+function releasePage(raw: unknown, version: string): string {
+  if (typeof raw !== "string") return releaseUrlFor(version);
   try {
-    return new URL(raw).protocol === "https:" ? raw : null;
+    const u = new URL(raw);
+    const ours =
+      u.protocol === "https:" &&
+      u.host === "github.com" &&
+      u.username === "" &&
+      u.password === "" &&
+      u.pathname.startsWith(`/${REPO}/releases/`);
+    return ours ? u.href : releaseUrlFor(version);
   } catch {
-    return null;
+    return releaseUrlFor(version);
   }
 }
 
@@ -193,7 +203,7 @@ async function fromGitHub(d: CheckDeps): Promise<AppRelease | null> {
   const assets = rel.assets?.map((a) => ({ name: a.name, url: a.browser_download_url }));
   return {
     version,
-    releaseUrl: httpsUrl(rel.html_url) ?? releaseUrlFor(version),
+    releaseUrl: releasePage(rel.html_url, version),
     apkUrl: listedApk(version, assets),
     source: "github",
   };
@@ -204,7 +214,7 @@ function fromServer(s: UpdateStatus & { assets?: { name?: string; url?: string }
   const version = bare(s.latest_version ?? "");
   return {
     version,
-    releaseUrl: httpsUrl(s.release_url) ?? releaseUrlFor(version),
+    releaseUrl: releasePage(s.release_url, version),
     apkUrl: listedApk(version, s.assets),
     source: "server",
   };
@@ -231,8 +241,12 @@ function readLatest(store: Store | null): AppRelease | null {
   try {
     const r = JSON.parse(get(store, LATEST_KEY) ?? "null") as AppRelease | null;
     if (!r || typeof r.version !== "string" || !validVersion(r.version)) return null;
-    // only GitHub's download path for that tag, as listedApk found it
-    return r.apkUrl === apkUrlFor(r.version) ? r : { ...r, apkUrl: undefined };
+    // only this repository's pages on GitHub, as the check found them
+    return {
+      ...r,
+      releaseUrl: releasePage(r.releaseUrl, r.version),
+      apkUrl: r.apkUrl === apkUrlFor(r.version) ? r.apkUrl : undefined,
+    };
   } catch {
     return null;
   }

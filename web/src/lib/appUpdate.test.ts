@@ -311,3 +311,46 @@ describe("a corrupted stored time never stops the checks", () => {
     expect(checkDue("daily", T0, localStorage)).toBe(false);
   });
 });
+
+describe("the release page the banner links", () => {
+  beforeEach(() => localStorage.clear());
+
+  const TAG_PAGE = "https://github.com/Hamza-Labs-Core/Maktaba/releases/tag/v1.4.2";
+
+  it("is this repository's release page on GitHub, else the tag's page there", async () => {
+    for (const [url, want] of [
+      [TAG_PAGE, TAG_PAGE],
+      ["https://evil.example/Hamza-Labs-Core/Maktaba/releases/tag/v1.4.2", TAG_PAGE],
+      ["https://github.com/someone/else/releases/tag/v1.4.2", TAG_PAGE],
+      ["https://user:pw@github.com/Hamza-Labs-Core/Maktaba/releases/tag/v1.4.2", TAG_PAGE],
+      ["http://github.com/Hamza-Labs-Core/Maktaba/releases/tag/v1.4.2", TAG_PAGE],
+      ["javascript:alert(1)", TAG_PAGE],
+    ]) {
+      localStorage.clear();
+      const fromServer = deps({
+        serverStatus: vi.fn(() => Promise.resolve(server("1.4.2", { release_url: url }))),
+      });
+      expect((await appUpdateToOffer("1.4.1", fromServer))?.releaseUrl).toBe(want);
+      localStorage.clear();
+      const body = { tag_name: "v1.4.2", html_url: url, assets: [] };
+      const fromGitHub = deps({
+        serverStatus: vi.fn(offline),
+        fetchFn: vi.fn(() => Promise.resolve(new Response(JSON.stringify(body)))),
+      });
+      expect((await appUpdateToOffer("1.4.1", fromGitHub))?.releaseUrl).toBe(want);
+    }
+  });
+
+  it("re-pins a kept release's page", async () => {
+    localStorage.setItem("mkt:update:lastCheck", String(T0));
+    localStorage.setItem(
+      "mkt:update:latest",
+      JSON.stringify({
+        version: "1.4.2",
+        releaseUrl: "https://evil.example/notes",
+        source: "server",
+      })
+    );
+    expect((await appUpdateToOffer("1.4.1", deps()))?.releaseUrl).toBe(TAG_PAGE);
+  });
+});
