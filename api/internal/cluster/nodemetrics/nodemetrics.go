@@ -7,11 +7,11 @@ package nodemetrics
 
 import (
 	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	metrics "github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go"
 )
 
@@ -46,7 +46,8 @@ var (
 )
 
 // Register registers the node's metrics on the process's registry (once) and returns
-// them; pausedFn is the schema guard's verdict ("" = the node's code fits).
+// them; pausedFn is the schema guard's verdict as its code (schemaguard.PauseCode; "" =
+// the node's code fits).
 func Register(pausedFn func() string) *Metrics {
 	pausedMu.Lock()
 	paused = pausedFn
@@ -98,7 +99,7 @@ func (m *Metrics) Served(class string, status int) {
 }
 
 // pausedCollector reads the guard's verdict at each scrape: {reason="none"} 0 while the
-// node's code fits, else {reason=<why>} 1.
+// node's code fits, else {reason=<its code>} 1 (a code this build does not know: other).
 type pausedCollector struct{ desc *prometheus.Desc }
 
 func (c pausedCollector) Describe(ch chan<- *prometheus.Desc) { ch <- c.desc }
@@ -111,22 +112,13 @@ func (c pausedCollector) Collect(ch chan<- prometheus.Metric) {
 	if fn != nil {
 		reason = fn()
 	}
-	if reason == "" {
+	switch reason {
+	case "":
 		ch <- prometheus.MustNewConstMetric(c.desc, prometheus.GaugeValue, 0, "none")
 		return
+	case schemaguard.PauseHomeBehind, schemaguard.PauseNodeBehind:
+	default:
+		reason = "other"
 	}
-	ch <- prometheus.MustNewConstMetric(c.desc, prometheus.GaugeValue, 1, PauseCode(reason))
-}
-
-// PauseCode is a bounded label for the guard's reason text (schemaguard.PauseReason):
-// home_behind (the home's database is older than this machine needs), node_behind (the
-// home needs this machine newer), or other.
-func PauseCode(reason string) string {
-	switch {
-	case strings.Contains(reason, "update the home"):
-		return "home_behind"
-	case strings.Contains(reason, "update this machine"):
-		return "node_behind"
-	}
-	return "other"
+	ch <- prometheus.MustNewConstMetric(c.desc, prometheus.GaugeValue, 1, reason)
 }

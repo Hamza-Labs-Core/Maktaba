@@ -1,18 +1,23 @@
 package updates
 
 // Story 35.15 AC1: the update flow's Prometheus metrics, on the API's /metrics (admin
-// port). Every number is read from update_runs, update_run_steps, update_targets and the
-// catalog when Prometheus scrapes (at most every metricsCacheFor), not counted in memory:
-// an API that restarts mid-run (an update restarts it) shows the same counts after as
-// before (EC1). The supervisor's own (the database step's migration time) are its
-// /metrics, merged into the API's (cmd/maktaba-server/internal/updater/metrics.go).
+// port). Every number is read from the database when Prometheus scrapes (at most every
+// metricsCacheFor), not counted in memory: an API that restarts mid-run (an update
+// restarts it) shows the same counts after as before (EC1). The counters and histograms
+// never go down: the runs, steps and targets they count are rows that are never deleted
+// (each histogram is summed by the database over all of them), and verification failures
+// are a running total kept with the settings (Store.SetVerifyError). The supervisor's own
+// (the database step's migration time) are its /metrics, merged into the API's
+// (cmd/maktaba-server/internal/updater/metrics.go).
 //
-// Labels are bounded: run and target states, step names, verification failure kinds.
-// Never a run id, a node id or a version.
+// Labels are bounded: run and target states, the known step names (anything else a
+// machine reports is "other"), verification failure kinds. Never a run id, a node id or a
+// version.
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,18 +29,19 @@ import (
 
 // Metric names (design §16).
 const (
-	MetricRuns            = "maktaba_update_runs_total"
-	MetricRunDuration     = "maktaba_update_run_duration_seconds"
-	MetricStepDuration    = "maktaba_update_step_duration_seconds"
-	MetricBackupBytes     = "maktaba_update_backup_bytes"
-	MetricTargets         = "maktaba_update_targets"
-	MetricNodeApply       = "maktaba_update_node_apply_duration_seconds"
-	MetricVerifyFailures  = "maktaba_update_verify_failures_total"
-	MetricMachinesBehind  = "maktaba_update_machines_behind"
-	MetricLastCheck       = "maktaba_update_last_check_timestamp"
-	metricsCacheFor       = 15 * time.Second
-	metricsQueryTimeout   = 5 * time.Second
-	metricsMaxDurationRow = 5000 // the newest rows a histogram is built from
+	MetricRuns           = "maktaba_update_runs_total"
+	MetricRunDuration    = "maktaba_update_run_duration_seconds"
+	MetricStepDuration   = "maktaba_update_step_duration_seconds"
+	MetricBackupBytes    = "maktaba_update_backup_bytes"
+	MetricTargets        = "maktaba_update_targets"
+	MetricNodeApply      = "maktaba_update_node_apply_duration_seconds"
+	MetricVerifyFailures = "maktaba_update_verify_failures_total"
+	MetricMachinesBehind = "maktaba_update_machines_behind"
+	MetricLastCheck      = "maktaba_update_last_check_timestamp"
+	metricsCacheFor      = 15 * time.Second
+	metricsQueryTimeout  = 5 * time.Second
+	// stepOther is the label of a step this build does not know
+	stepOther = "other"
 )
 
 // Histogram buckets (seconds): a run is minutes to hours; a step seconds to an hour; a
@@ -46,10 +52,24 @@ var (
 	applyBuckets = []float64{30, 60, 120, 300, 600, 1200, 1800, 3600}
 )
 
-// targetStates are every target state, so a state that empties reads 0.
+// targetStates are every target state, so a state that empties reads 0 (a test holds it
+// to the Target* constants).
 var targetStates = []string{TargetPending, TargetOffline, TargetPreparing, TargetPrepared, TargetFailedPrepare,
 	TargetApplying, TargetHealthy, TargetRolledBack, TargetFailed, TargetHeld, TargetSkipped, TargetWorkerOnly,
-	TargetWaitingClick, TargetClicked, TargetNeedsPerson}
+	TargetWaitingClick, TargetClicked, TargetNeedsPerson, TargetConverting}
+
+// knownSteps are the steps a machine's journal records (cmd/maktaba-server/internal/updater
+// Step*; a test holds them together): the step label's values, any other is stepOther.
+var knownSteps = map[string]bool{"preflight": true, "stage": true, "smoke": true, "rehearse": true, "ask": true,
+	"switch": true, "restart": true, "watch": true, "commit": true, "launcher": true, "rollback": true, "tv": true}
+
+// stepLabel is a step's label value.
+func stepLabel(step string) string {
+	if knownSteps[step] {
+		return step
+	}
+	return stepOther
+}
 
 // Metrics is the update flow's prometheus.Collector.
 type Metrics struct {
@@ -116,9 +136,9 @@ func (m *Metrics) Describe(ch chan<- *prometheus.Desc) {
 type metricsSnap struct {
 	at        time.Time
 	runs      map[string]float64
-	runDur    []float64
-	stepDur   map[string][]float64
-	apply     []float64
+	runDur    histo
+	stepDur   map[string]*histo
+	apply     histo
 	targets   map[string]float64
 	backup    *float64
 	verify    map[string]float64
@@ -132,9 +152,9 @@ func (m *Metrics) Collect(ch chan<- prometheus.Metric) {
 	for state, n := range s.runs {
 		ch <- prometheus.MustNewConstMetric(m.descRuns, prometheus.CounterValue, n, state)
 	}
-	ch <- constHistogram(m.descRunDur, runBuckets, s.runDur)
-	for step, vals := range s.stepDur {
-		ch <- constHistogram(m.descStepDur, stepBuckets, vals, step)
+	ch <- s.runDur.metric(m.descRunDur, runBuckets)
+	for step, h := range s.stepDur {
+		ch <- h.metric(m.descStepDur, stepBuckets, step)
 	}
 	if s.backup != nil {
 		ch <- prometheus.MustNewConstMetric(m.descBackup, prometheus.GaugeValue, *s.backup)
@@ -142,7 +162,7 @@ func (m *Metrics) Collect(ch chan<- prometheus.Metric) {
 	for _, state := range targetStates {
 		ch <- prometheus.MustNewConstMetric(m.descTargets, prometheus.GaugeValue, s.targets[state], state)
 	}
-	ch <- constHistogram(m.descApply, applyBuckets, s.apply)
+	ch <- s.apply.metric(m.descApply, applyBuckets)
 	for reason, n := range s.verify {
 		ch <- prometheus.MustNewConstMetric(m.descVerify, prometheus.CounterValue, n, reason)
 	}
@@ -154,19 +174,73 @@ func (m *Metrics) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-// constHistogram is a histogram of vals (seconds) over buckets.
-func constHistogram(desc *prometheus.Desc, buckets, vals []float64, labels ...string) prometheus.Metric {
+// histo is a histogram the database summed: how many, their sum, and how many at or
+// under each bucket (cumulative).
+type histo struct {
+	count  uint64
+	sum    float64
+	counts []uint64
+}
+
+func (h *histo) add(o histo) {
+	h.count += o.count
+	h.sum += o.sum
+	if h.counts == nil {
+		h.counts = make([]uint64, len(o.counts))
+	}
+	for i, c := range o.counts {
+		h.counts[i] += c
+	}
+}
+
+func (h histo) metric(desc *prometheus.Desc, buckets []float64, labels ...string) prometheus.Metric {
 	counts := make(map[float64]uint64, len(buckets))
-	var sum float64
-	for _, v := range vals {
-		sum += v
-		for _, b := range buckets {
-			if v <= b {
-				counts[b]++
-			}
+	for i, b := range buckets {
+		if i < len(h.counts) {
+			counts[b] = h.counts[i]
 		}
 	}
-	return prometheus.MustNewConstHistogram(desc, uint64(len(vals)), sum, counts, labels...)
+	return prometheus.MustNewConstHistogram(desc, h.count, h.sum, counts, labels...)
+}
+
+// seconds is the SQL of a row's duration in seconds, from two timestamp columns.
+func (m *Metrics) seconds(from, to string) string {
+	if m.Driver.Store.sqlite() {
+		return "(julianday(" + to + ") - julianday(" + from + ")) * 86400.0"
+	}
+	return "EXTRACT(EPOCH FROM (" + to + " - " + from + "))"
+}
+
+// histograms sums the durations of rows by group: inner is a query of (g, d) rows, d in
+// seconds ("" groups: one).
+func (m *Metrics) histograms(ctx context.Context, inner string, buckets []float64) (map[string]*histo, error) {
+	q := "SELECT g, count(*), COALESCE(sum(d), 0)"
+	for _, b := range buckets {
+		q += fmt.Sprintf(", COALESCE(sum(CASE WHEN d <= %g THEN 1 ELSE 0 END), 0)", b)
+	}
+	rows, err := m.Driver.Store.DB.QueryContext(ctx, q+" FROM ("+inner+") x WHERE d IS NOT NULL GROUP BY g")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]*histo{}
+	for rows.Next() {
+		var g string
+		h := histo{counts: make([]uint64, len(buckets))}
+		dest := []any{&g, &h.count, &h.sum}
+		for i := range h.counts {
+			dest = append(dest, &h.counts[i])
+		}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, err
+		}
+		if cur, ok := out[g]; ok {
+			cur.add(h)
+		} else {
+			out[g] = &h
+		}
+	}
+	return out, rows.Err()
 }
 
 func (m *Metrics) snapshot() *metricsSnap {
@@ -184,53 +258,39 @@ func (m *Metrics) snapshot() *metricsSnap {
 
 // read takes every number from the database (a query that fails leaves its numbers out).
 func (m *Metrics) read(ctx context.Context, now time.Time) *metricsSnap {
-	s := &metricsSnap{at: now, runs: map[string]float64{}, stepDur: map[string][]float64{},
+	s := &metricsSnap{at: now, runs: map[string]float64{}, stepDur: map[string]*histo{},
 		targets: map[string]float64{}, verify: map[string]float64{}}
 	st := m.Driver.Store
 	db := st.DB
-	if rows, err := db.QueryContext(ctx, `SELECT state, started_at, finished_at FROM update_runs
-		WHERE finished_at IS NOT NULL ORDER BY started_at DESC`); err == nil {
-		n := 0
+	if rows, err := db.QueryContext(ctx, `SELECT state, count(*) FROM update_runs WHERE finished_at IS NOT NULL
+		GROUP BY state`); err == nil {
 		for rows.Next() {
 			var state string
-			var started, finished nullTime
-			if rows.Scan(&state, &started, &finished) != nil {
-				continue
-			}
-			s.runs[state]++
-			if n++; n <= metricsMaxDurationRow && started.t != nil && finished.t != nil {
-				s.runDur = append(s.runDur, finished.t.Sub(*started.t).Seconds())
+			var n float64
+			if rows.Scan(&state, &n) == nil {
+				s.runs[state] = n
 			}
 		}
 		_ = rows.Close()
 	}
-	if rows, err := db.QueryContext(ctx, `SELECT step, started_at, finished_at FROM update_run_steps
-		WHERE finished_at IS NOT NULL AND state IN ('done', 'failed') ORDER BY started_at DESC`); err == nil {
-		n := 0
-		for rows.Next() {
-			var step string
-			var started, finished nullTime
-			if rows.Scan(&step, &started, &finished) != nil || started.t == nil || finished.t == nil {
-				continue
-			}
-			if n++; n <= metricsMaxDurationRow {
-				s.stepDur[step] = append(s.stepDur[step], finished.t.Sub(*started.t).Seconds())
-			}
-		}
-		_ = rows.Close()
+	if hs, err := m.histograms(ctx, `SELECT '' AS g, `+m.seconds("started_at", "finished_at")+` AS d
+		FROM update_runs WHERE finished_at IS NOT NULL`, runBuckets); err == nil && hs[""] != nil {
+		s.runDur = *hs[""]
 	}
-	if rows, err := db.QueryContext(ctx, `SELECT applied_at, healthy_at FROM update_targets
-		WHERE applied_at IS NOT NULL AND healthy_at IS NOT NULL ORDER BY healthy_at DESC`); err == nil {
-		for rows.Next() {
-			var applied, healthy nullTime
-			if rows.Scan(&applied, &healthy) != nil || applied.t == nil || healthy.t == nil {
-				continue
-			}
-			if len(s.apply) < metricsMaxDurationRow {
-				s.apply = append(s.apply, healthy.t.Sub(*applied.t).Seconds())
+	if hs, err := m.histograms(ctx, `SELECT step AS g, `+m.seconds("started_at", "finished_at")+` AS d
+		FROM update_run_steps WHERE finished_at IS NOT NULL AND state IN ('done', 'failed')`, stepBuckets); err == nil {
+		for step, h := range hs {
+			label := stepLabel(step)
+			if cur, ok := s.stepDur[label]; ok {
+				cur.add(*h)
+			} else {
+				s.stepDur[label] = h
 			}
 		}
-		_ = rows.Close()
+	}
+	if hs, err := m.histograms(ctx, `SELECT '' AS g, `+m.seconds("applied_at", "healthy_at")+` AS d
+		FROM update_targets WHERE applied_at IS NOT NULL AND healthy_at IS NOT NULL`, applyBuckets); err == nil && hs[""] != nil {
+		s.apply = *hs[""]
 	}
 	var raw nullJSON
 	if err := db.QueryRowContext(ctx, `SELECT backup FROM update_runs WHERE backup IS NOT NULL
@@ -254,16 +314,8 @@ func (m *Metrics) read(ctx context.Context, now time.Time) *metricsSnap {
 			}
 		}
 	}
-	if cat, cerr := st.Catalog(ctx); cerr == nil {
-		for _, r := range cat {
-			if r.VerifyError != nil {
-				kind := r.VerifyError.Kind
-				if kind == "" {
-					kind = "unknown"
-				}
-				s.verify[kind]++
-			}
-		}
+	for kind, n := range st.Counters(ctx).VerifyFailures {
+		s.verify[kind] = float64(n)
 	}
 	if n, ok := m.machinesBehind(ctx); ok {
 		v := float64(n)

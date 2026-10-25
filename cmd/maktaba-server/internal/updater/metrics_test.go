@@ -7,8 +7,9 @@ import (
 	"time"
 )
 
-// TC1 (the supervisor's): the migrations' time is kept in the updates folder, so a
-// supervisor that restarts shows it again (EC1), as a Prometheus histogram.
+// TC1 (the supervisor's): the migrations' time is a running total kept in the updates
+// folder, so a supervisor that restarts shows it again (EC1), as a Prometheus histogram
+// that never goes down.
 func TestMigrationMetricsKept(t *testing.T) {
 	dir := t.TempDir()
 	var empty bytes.Buffer
@@ -42,11 +43,9 @@ func TestMigrationMetricsKept(t *testing.T) {
 			t.Fatalf("missing %q in\n%s", want, s)
 		}
 	}
-	for i := 0; i < metricsKeep+5; i++ {
-		_ = RecordMigration(dir, "1.6.0", time.Second, at)
-	}
-	if n := len(readMetrics(dir).Migrations); n != metricsKeep {
-		t.Fatalf("kept %d migrations", n)
+	// a running total: it never goes down, and the last one is kept for a person to read
+	if m := readMetrics(dir).Migrations; m.Count != 3 || m.Last.Version != "1.5.2" {
+		t.Fatalf("totals %+v", m)
 	}
 	if err := RecordMigration("", "1.6.0", time.Second, at); err != nil {
 		t.Fatalf("no updates folder: %v", err)
