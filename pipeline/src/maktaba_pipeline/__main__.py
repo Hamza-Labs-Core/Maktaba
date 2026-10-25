@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import os
 import sys
+import threading
 from typing import Any
 
 from . import __version__
@@ -148,6 +150,7 @@ def _build_runtime_config(
         reaper_interval_sec=args.reaper_interval_sec,
         claim_poll_sec=args.claim_poll_sec,
         claim_poll_max_sec=args.claim_poll_max_sec,
+        shutdown_drain_sec=args.drain_sec,
     )
 
 
@@ -229,13 +232,19 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
         except Exception as exc:  # noqa: BLE001 — startup-only branch
             log.warning("pipeline_grpc_disabled", reason=str(exc))
 
+    code = 1  # run raised
+    failure: BaseException | None = None
     try:
         # Track R1: feed the real per-stage adapter map. All seven stages
         # (SCAN, PROBE, EXTRACT, TRANSCRIBE, SUBTITLE_GEN, INDEX,
         # THUMBNAIL) now have a thin-wrapper adapter and are in the map,
         # so every stage in _DEFAULT_STAGES runs real work rather than a
         # silent no-op drain — see maktaba_pipeline.handlers.
-        return await run(cfg, db=database, dispatch_overrides=build_real_dispatch())
+        code = await run(cfg, db=database, dispatch_overrides=build_real_dispatch())
+        return code
+    except BaseException as exc:
+        failure = exc
+        raise
     finally:
         if grpc_server is not None:
             await grpc_server.stop(grace=1.0)
@@ -249,6 +258,68 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
         if log_server is not None:
             log_server.shutdown()
         await database.close()
+        await _close_search_index(log)
+        await _exit_if_threads_linger(code, log, failure)
+
+
+#: after the runtime stopped: how long a write to the search index may still take,
+#: and then how long the other threads still running (a read from a share that does not
+#: answer, a download) may take before the process exits without them
+_INDEX_CLOSE_WAIT_SEC = 10.0
+_EXIT_WAIT_SEC = 5.0
+
+
+async def _close_search_index(log: Any) -> None:
+    """No new write to the search index, wait for the one running, close the Chroma
+    clients (search/gate.py): the files are whole when the process ends."""
+    from .search import gate, semantic
+
+    gate.close()
+    if not await asyncio.to_thread(gate.wait_idle, _INDEX_CLOSE_WAIT_SEC):
+        # never close the client under a write: the exit waits for that thread below
+        log.warning("search_index_write_still_running", after_sec=_INDEX_CLOSE_WAIT_SEC)
+        return
+    closed = await asyncio.to_thread(semantic.close_clients)
+    if closed:
+        log.info("search_index_closed", clients=closed)
+
+
+def _lingering_threads() -> list[threading.Thread]:
+    me = threading.current_thread()
+    return [t for t in threading.enumerate() if t is not me and t.is_alive() and not t.daemon]
+
+
+async def _exit_if_threads_linger(
+    code: int, log: Any, failure: BaseException | None = None
+) -> None:
+    """The worker stopped: exit now, without the threads still running. Python's exit
+    waits for every one of them (asyncio's executor up to 5 minutes), and the supervisor
+    killed the process at the end of its grace instead: a kill during a search index
+    write broke the index. The write itself is waited for (_close_search_index)."""
+    from .search import gate
+
+    # a search index write still running is waited for, never cut (a second wait:
+    # _close_search_index gave up on it): past it the process exits the slow way, once
+    # the write's thread ended, or at the supervisor's kill at the end of its grace
+    if not await asyncio.to_thread(gate.wait_idle, _INDEX_CLOSE_WAIT_SEC):
+        log.warning("search_index_write_still_running", after_sec=2 * _INDEX_CLOSE_WAIT_SEC)
+        return
+    from .search import semantic
+
+    await asyncio.to_thread(semantic.close_clients)  # when the write ended late
+    loop: Any = asyncio.get_running_loop()  # the base loop's shutdown takes a timeout
+    with contextlib.suppress(Exception):  # the threads are counted below
+        await loop.shutdown_default_executor(timeout=_EXIT_WAIT_SEC)
+    left = _lingering_threads()
+    if not left:
+        return
+    if failure is not None and not isinstance(failure, asyncio.CancelledError):
+        log.error("pipeline_runtime_failed", exc_info=failure)  # its traceback, said once
+    log.warning("pipeline_exit_threads_left", threads=[t.name for t in left], exit_code=code)
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(Exception):
+            stream.flush()
+    os._exit(code)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -320,6 +391,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="The gRPC server answers no Embed / SemanticSearch and never opens the search "
         "index (MAKTABA_PIPELINE_SEMANTIC=off): another worker (the index worker) holds it, "
         "and Chroma wants one process per directory.",
+    )
+    run_p.add_argument(
+        "--drain-sec",
+        type=float,
+        default=float(os.getenv("MAKTABA_PIPELINE_DRAIN_SEC", "15.0")),
+        help="On shutdown, how long the jobs in flight may take before they are cancelled "
+        "(MAKTABA_PIPELINE_DRAIN_SEC; the supervisor gives the index worker longer).",
     )
     run_p.add_argument(
         "--worker-id",

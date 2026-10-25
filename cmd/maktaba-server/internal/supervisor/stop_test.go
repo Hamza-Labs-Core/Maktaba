@@ -183,3 +183,50 @@ func TestUnwantedChildIsAskedToStop(t *testing.T) {
 		t.Fatalf("last exit = %+v, want code 0, reason stopped", exit)
 	}
 }
+
+// A child with its own StopGrace (the index worker, whose drain lets a search index
+// write finish) is killed only at the end of it; the others at the end of the
+// supervisor's grace, not held for the longest.
+func TestAChildsOwnStopGrace(t *testing.T) {
+	if !ownConsole(t) {
+		return
+	}
+	short, _ := askedStop(t, RoleStreaming, "hold")
+	long, _ := askedStop(t, RolePipeline, "hold")
+	long.Instance = IndexInstance
+	const grace, own = 1 * time.Second, 3 * time.Second
+	long.StopGrace = own
+	s := New([]Process{short, long}, testPolicy(), WithLog(&syncBuffer{}))
+	stop, _ := runningGrace(t, s, grace)
+	waitFor(t, s, "running", func(snap Snapshot) bool {
+		return proc(snap, RoleStreaming).State == StateRunning && proc(snap, RolePipeline).State == StateRunning
+	})
+	start := time.Now()
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+	snap := s.Snapshot()
+	a, b := proc(snap, RoleStreaming).LastExit, proc(snap, RolePipeline).LastExit
+	if a == nil || b == nil {
+		t.Fatalf("exits: %+v / %+v", a, b)
+	}
+	if took := a.At.Sub(start); took < grace || took > own-500*time.Millisecond {
+		t.Errorf("the child without its own grace was killed after %s, want about %s", took, grace)
+	}
+	if took := b.At.Sub(start); took < own {
+		t.Errorf("the child with StopGrace %s was killed after %s", own, took)
+	}
+}
+
+func TestGraceFor(t *testing.T) {
+	t.Parallel()
+	if g := (Process{}).graceFor(30 * time.Second); g != 30*time.Second {
+		t.Errorf("no StopGrace: %s", g)
+	}
+	if g := (Process{StopGrace: 45 * time.Second}).graceFor(30 * time.Second); g != 45*time.Second {
+		t.Errorf("a longer StopGrace: %s", g)
+	}
+	if g := (Process{StopGrace: 5 * time.Second}).graceFor(30 * time.Second); g != 30*time.Second {
+		t.Errorf("a shorter StopGrace never shortens the supervisor's: %s", g)
+	}
+}

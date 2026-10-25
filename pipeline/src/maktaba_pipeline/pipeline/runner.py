@@ -100,9 +100,9 @@ class WorkerConfig:
     claim_poll_max_sec: float = 30.0
     #: On shutdown, how long the jobs in flight may take to finish before they are
     #: cancelled (they end as interrupted and are claimed again). Bounded so the worker
-    #: exits inside its supervisor's stop grace (maktaba-server: 30 s): a worker killed
-    #: there, mid-job, left the Chroma search index unusable. A cancelled job's call
-    #: running in a thread (a Chroma write) still completes: the process exits after it.
+    #: exits inside its supervisor's stop grace (maktaba-server: 30 s; the index worker
+    #: gets a longer drain and grace, MAKTABA_PIPELINE_DRAIN_SEC). A job cancelled
+    #: during a search index write ends once the write did (search/gate.py).
     shutdown_drain_sec: float = 15.0
     #: Pool mode (plan 06-11 section 5): claim per resource pool through
     #: ``engine.claim.claim_for_pool``. ``stage_pools`` maps every supported
@@ -180,6 +180,9 @@ class ClaimLoop:
         )
         in_flight = self.in_flight
         backoff = self.cfg.claim_poll_sec
+        # the wakeup waits up to its poll (backed off to claim_poll_max_sec on a quiet
+        # queue): a shutdown ends that wait at once, not at the next tick
+        stopper = asyncio.create_task(self._close_wakeup_on_shutdown(), name="claim-stop")
         try:
             async for _ in self._wakeup.signals():
                 if self.shutdown_event.is_set():
@@ -205,6 +208,7 @@ class ClaimLoop:
                     backoff = min(backoff * 2.0, self.cfg.claim_poll_max_sec)
                 self._wakeup.poll_sec = backoff
         finally:
+            stopper.cancel()
             await self._wakeup.aclose()
             if in_flight:
                 _log.info(
@@ -222,6 +226,10 @@ class ClaimLoop:
                     )
                 await asyncio.gather(*in_flight, return_exceptions=True)
             _log.info("claim_loop_stopped", worker_id=self.cfg.worker_id)
+
+    async def _close_wakeup_on_shutdown(self) -> None:
+        await self.shutdown_event.wait()
+        await self._wakeup.aclose()
 
     def stop_in_flight(self) -> int:
         """Cancel every job in flight (they end as interrupted, writing nothing); the

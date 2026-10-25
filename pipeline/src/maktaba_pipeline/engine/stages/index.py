@@ -15,17 +15,18 @@ model or a new index format indexes the video again; anything else is skipped.
 A video without an active transcript has its vectors removed and succeeds (there is
 nothing to search). Segments are embedded and written in batches
 (``MAKTABA_EMBED_BATCH``, default 64), each in a worker thread, with progress and a cancel
-check between batches.
+check between batches. Every Chroma call goes through :mod:`~maktaba_pipeline.search.gate`:
+one write at a time in the process, none cut short by the worker stopping.
 """
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
 from ...db.jobs import Job
+from ...search import gate
 from ...search.semantic import (
     INDEX_VERSION,
     IndexedSegment,
@@ -108,11 +109,11 @@ def _open_index() -> SemanticIndex:
 
 async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     v = await require_video(db, job.subject.id)
-    index = await asyncio.to_thread(_open_index)
+    index = await gate.write(_open_index)
     model = index.embedder.model_name
     active = await active_transcript(db, v.id)
     if active is None:
-        await asyncio.to_thread(index.delete_video, v.id)
+        await gate.write(index.delete_video, v.id)
         return StageResult(
             output_hash=canonical_hash({"transcript": None, "model": model}),
             summary={"segments": 0, "reason": "no active transcript", "model": model},
@@ -136,10 +137,10 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     await ctx.progress("embed", 0, total, force=True)
     written = 0
     try:
-        await asyncio.to_thread(index.delete_video, v.id)
+        await gate.write(index.delete_video, v.id)
         for start in range(0, total, size):
             await ctx.check_cancel()
-            written += await asyncio.to_thread(
+            written += await gate.write(
                 index.upsert_segments,
                 video_id=v.id,
                 library_id=v.library_id,
