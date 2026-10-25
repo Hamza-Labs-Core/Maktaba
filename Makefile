@@ -330,6 +330,14 @@ test-integration-inner:
 		rc=$$?; [ $$rc -eq 5 ] || exit $$rc; \
 	}
 
+# Epic 35 story 35.5 AC6: the previous stable release against this build's database (its
+# repository tests on these migrations, and the nodes' schema guard both ways); a failure
+# without a "Breaking for the previous release" MANIFEST row fails. Needs
+# MAKTABA_TEST_PG_URL, psql and the git tags.
+.PHONY: compat-prev
+compat-prev:  ## The previous release on this build's database (needs MAKTABA_TEST_PG_URL).
+	@bash tools/compat-prev/run.sh
+
 .PHONY: migrate
 migrate:  ## Apply database migrations against $$DATABASE_URL.
 	@if [ -z "$${DATABASE_URL:-}" ]; then \
