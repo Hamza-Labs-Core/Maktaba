@@ -8,6 +8,9 @@
 //   POST /api/cluster/updates/check      check GitHub now
 //   GET  /api/cluster/updates/runs[/{id}] history, a run with its steps and machines (35.4, 35.12)
 //   POST /api/cluster/updates/runs/{id}/cancel|resume, /targets/{node}/retry|skip|rollback
+//   GET  /api/cluster/updates/backups    the home's backups and kept releases (35.5 AC8)
+//   GET  /api/cluster/updates/backups/{name}/restore   what restoring it does
+//   POST /api/cluster/updates/backups/{name}/restore   {confirm: "<name>"} -> 202 (the home restarts)
 import { api } from "./api";
 import type { HomeDb } from "./homeDb";
 
@@ -250,6 +253,36 @@ export function runCancellable(view: Pick<UpdateRunView, "state" | "detail">): b
   return view.state === "home_applying" && WAITING_CLICK.has(view.detail?.home?.state ?? "");
 }
 
+/** One dump in the home's backups folder. */
+export interface HomeBackup {
+  name: string;
+  bytes: number;
+  at: string;
+  /** update (before an update's migrations: from is the release whose database it holds),
+   * failed (what a failed update left), replaced (what a restore replaced), daily */
+  kind: "update" | "failed" | "replaced" | "daily";
+  from?: string;
+  to?: string;
+}
+
+export interface HomeBackups {
+  backups: HomeBackup[];
+  kept: { version: string; schema?: number; running?: boolean }[];
+  running: string;
+  /** a restore asked and not finished: the home's next start does it */
+  restoring?: string;
+}
+
+/** What restoring a backup does: the home restarts on `release` (the kept release of the
+ * dump's schema); every change since `at` is lost. */
+export interface RestorePlan {
+  backup: string;
+  schema: number;
+  release: string;
+  running: string;
+  at: string;
+}
+
 export const updatesApi = {
   overview: () => api.get<UpdatesOverview>("/api/cluster/updates"),
   saveSettings: (set: Partial<Record<keyof UpdatesPolicy, unknown>>) =>
@@ -277,6 +310,13 @@ export const updatesApi = {
       {}
     ),
   logURL: (id: string) => `/api/cluster/updates/runs/${encodeURIComponent(id)}/log`,
+  backups: () => api.get<HomeBackups>("/api/cluster/updates/backups"),
+  restorePlan: (name: string) =>
+    api.get<RestorePlan>(`/api/cluster/updates/backups/${encodeURIComponent(name)}/restore`),
+  restore: (name: string) =>
+    api.post<RestorePlan>(`/api/cluster/updates/backups/${encodeURIComponent(name)}/restore`, {
+      confirm: name,
+    }),
 };
 
 /** A quiet window "HH:MM-HH:MM" (may cross midnight), longer than 30 minutes. */
