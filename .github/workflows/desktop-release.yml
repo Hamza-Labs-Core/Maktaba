@@ -464,8 +464,17 @@ jobs:
           for dmg in apps/desktop/src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg; do
             codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dmg"
             xcrun notarytool submit "$dmg" "${auth[@]}" --wait --timeout 60m
-            xcrun stapler staple "$dmg"
-            xcrun stapler validate "$dmg"
+            # stapling fetches the ticket from Apple's CloudKit; a dropped connection there
+            # failed whole releases (v0.3.10, v0.3.14: "The network connection was lost",
+            # error 68), so it is tried a few times before the leg fails
+            for try in 1 2 3 4 5; do
+              if xcrun stapler staple "$dmg" && xcrun stapler validate "$dmg"; then
+                break
+              fi
+              [ "$try" -eq 5 ] && { echo "::error::stapling $dmg failed 5 times"; exit 1; }
+              echo "::warning::stapling $dmg failed (try $try), again in $((try * 20)) s"
+              sleep $((try * 20))
+            done
           done
 
       # Windows "portable" deliverable: zip the raw built executable so
