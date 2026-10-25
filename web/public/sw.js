@@ -1,8 +1,11 @@
 // PWA service worker (Story 11.10).
 //
-//   - App shell: cache-first. The cache name carries a build stamp so a
-//     new deploy busts the old shell (the registration in src/lib/pwa.ts
-//     fires `mkt:sw-update` so the UI can offer a reload).
+//   - App shell (page loads, /, /index.html, /theme-boot.js): NETWORK-FIRST,
+//     the cache only when offline. It was cache-first under a build stamp
+//     that never changed, so the first shell a browser saw was kept for
+//     ever: after an update it named the old bundle's script, the server
+//     answered that missing script with the page, and the app (the Mac
+//     app's window above all) stayed blank.
 //   - /api/*: NETWORK-ONLY. The API authenticates via the HttpOnly
 //     `mkt_sess` cookie (web/src/lib/api.ts sends credentials:"include").
 //     Cache Storage is keyed by URL only — it cannot tell user A's
@@ -12,12 +15,12 @@
 //     allowlist back without a per-user cache key (default-deny).
 //   - Mutations (non-GET) and WS: pass through untouched.
 //
-// `skipWaiting()` is NOT called on install: a new SW stays "waiting"
-// until the user accepts the in-app update (pwa.ts posts SKIP_WAITING
-// on the reload action). This guarantees a mid-session SW swap cannot
-// silently activate and resurrect any legacy poisoned API cache while
-// the page is still showing the previous user's data.
-const BUILD = "v2";
+// A new SW takes over at once (skipWaiting on install): a waiting SW
+// behind a stale shell could never be accepted, since that shell cannot
+// render the in-app update toast. Taking over cannot resurrect a legacy
+// poisoned API cache: activate deletes every cache but this shell's
+// before it claims the pages, and this SW never reads an API cache.
+const BUILD = "v3";
 const SHELL_CACHE = "mkt-shell-" + BUILD;
 // theme-boot.js runs before first paint (no theme flash), so it is shell too.
 const SHELL = ["/", "/index.html", "/theme-boot.js"];
@@ -31,7 +34,8 @@ function isApiCache(name) {
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)));
-  // Intentionally NO self.skipWaiting() — see header comment.
+  // takes over at once — see header comment
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
@@ -84,10 +88,20 @@ self.addEventListener("fetch", (event) => {
   // /api/* is network-only: do not consult or populate any cache.
   if (url.pathname.startsWith("/api/")) return;
 
-  // App shell: cache-first with a network fallback to the SPA entry.
-  event.respondWith(
-    caches
-      .match(req)
-      .then((cached) => cached || fetch(req).catch(() => caches.match("/index.html")))
-  );
+  // App shell: network-first (the current build's page), kept for offline.
+  if (req.mode === "navigate" || SHELL.includes(url.pathname)) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            const key = req.mode === "navigate" ? "/index.html" : req;
+            event.waitUntil(caches.open(SHELL_CACHE).then((c) => c.put(key, copy)));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req).then((cached) => cached || caches.match("/index.html")))
+    );
+  }
+  // Everything else (the hashed bundle, art, icons): the network.
 });
