@@ -216,6 +216,24 @@ export interface ClusterSelf {
 export interface ClusterView {
   home: ClusterHome;
   nodes: ClusterNode[];
+  /** the cluster link (story 35.16); absent on a home without a cluster CA */
+  link?: ClusterLink;
+}
+
+/** The cluster link: its mode, the CA, each machine's link and certificate. */
+export interface ClusterLink {
+  mode: "off" | "prefer" | "require";
+  auto_require: boolean;
+  ca_sha256: string;
+  ca_url: string;
+  web_https: boolean;
+  /** the approved machines that held their link for a day, of all of them */
+  ready: number;
+  machines: number;
+  nodes?: Record<
+    string,
+    { connected: boolean; since?: string; cert_not_after?: string; has_cert: boolean }
+  >;
 }
 
 export interface NodeUpdate {

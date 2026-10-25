@@ -30,6 +30,7 @@ from typing import IO, Any
 from .. import __version__
 from ..engine.workers import stable_hostname
 from . import config as node_config
+from . import linkcert
 from .capabilities import capabilities
 from .config import HomeRef, NodeConfig
 from .crypto import (
@@ -96,9 +97,9 @@ def _error_code(payload: dict[str, Any]) -> str:
     return str(err or payload.get("code") or "")
 
 
-def join_request_body(cfg: NodeConfig, public_b64: str) -> dict[str, Any]:
+def join_request_body(cfg: NodeConfig, public_b64: str, csr: str = "") -> dict[str, Any]:
     caps = capabilities()
-    return {
+    body: dict[str, Any] = {
         "node_id": cfg.node_id,
         "name": cfg.name,
         "os": caps["os"],
@@ -109,6 +110,10 @@ def join_request_body(cfg: NodeConfig, public_b64: str) -> dict[str, Any]:
         "storage": {"candidates": candidate_roots()},
         "pubkey": public_b64,
     }
+    if csr:
+        # the cluster link's certificate request (story 35.16); its key stays here
+        body["csr"] = csr
+    return body
 
 
 def pick_home(homes: list[Home], *, ask: Callable[[str], str] | None, out: IO[str]) -> Home:
@@ -224,7 +229,9 @@ def join(
     base = home.url.rstrip("/")
     out.write(f"Asking {home.name or base} to take this machine ({cfg.name})...\n")
 
-    status, resp = _http("POST", f"{base}/api/cluster/join", join_request_body(cfg, kp.public_b64))
+    link_request = linkcert.new_request(cfg.node_id)
+    body = join_request_body(cfg, kp.public_b64, link_request.csr_pem)
+    status, resp = _http("POST", f"{base}/api/cluster/join", body)
     if status == 403:
         raise JoinError(_MESSAGES["joins_closed"])
     if status == 409:
@@ -293,6 +300,21 @@ def join(
         joined_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     )
     saved = node_config.save(joined, path)
+    tls = payload.get("tls") or {}
+    if tls.get("cert"):
+        try:
+            linkcert.save(
+                Path(saved).parent,
+                link_request,
+                str(tls.get("cert") or ""),
+                str(tls.get("ca_cert") or ""),
+                str(tls.get("ca_sha256") or ""),
+            )
+        except (linkcert.LinkCertError, OSError) as exc:
+            # the machine asks for its certificate on its channel session instead
+            out.write(
+                f"The cluster-link certificate was not kept ({exc}); it is asked for again.\n"
+            )
     out.write(
         f"Approved. This machine joined {joined.home.name or base}; settings saved to {saved}\n"
     )

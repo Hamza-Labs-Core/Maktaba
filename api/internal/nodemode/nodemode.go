@@ -44,6 +44,9 @@ type Config struct {
 	Platform string
 	// Name is this machine's name (node.json's, MAKTABA_NODE_NAME).
 	Name string
+	// CertDir is the folder of node.json, where the machine's cluster-link certificate
+	// lives (MAKTABA_NODE_CERT_DIR, story 35.16); "": no link.
+	CertDir string
 }
 
 // FromEnv reads the node-mode environment.
@@ -59,6 +62,7 @@ func FromEnv(getenv func(string) string) Config {
 		AgentTokenFile: strings.TrimSpace(getenv("MAKTABA_AGENT_TOKEN_FILE")),
 		Platform:       strings.TrimSpace(getenv("MAKTABA_PLATFORM")),
 		Name:           strings.TrimSpace(getenv("MAKTABA_NODE_NAME")),
+		CertDir:        strings.TrimSpace(getenv("MAKTABA_NODE_CERT_DIR")),
 	}
 	return c
 }

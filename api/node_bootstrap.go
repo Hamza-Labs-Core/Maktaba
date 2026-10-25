@@ -37,6 +37,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homeproxy"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodeauth"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodedb"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/nodemetrics"
@@ -103,10 +104,12 @@ func (d nodeDBs) close() {
 
 // nodeRuntime is what a full node's API runs besides its routes.
 type nodeRuntime struct {
-	cfg      nodemode.Config
-	dbs      nodeDBs
-	link     *homelink.HTTPLink
-	feed     *homelink.AgentFeed
+	cfg  nodemode.Config
+	dbs  nodeDBs
+	link *homelink.HTTPLink
+	feed *homelink.AgentFeed
+	// linkC is the machine's cluster link (story 35.16; nil without a certificate folder)
+	linkC    *link.Client
 	resolver *nodeauth.Resolver
 	guard    *schemaguard.Guard
 	vod      *vodfallback.Fallback
@@ -260,6 +263,11 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 		return filepath.Join(dir, name)
 	}
 	rt.link = &homelink.HTTPLink{Home: cfg.HomeAPIURL, NodeID: cfg.NodeID, Logger: logger}
+	// the machine's cluster link carries the home calls while it is up (story 35.16)
+	if rt.linkC = startNodeLink(ctx, cfg.HomeAPIURL, cfg.NodeID, cfg.CertDir, os.Getenv("MAKTABA_STREAMING_HTTP_URL"),
+		logger); rt.linkC != nil {
+		rt.link.Link = rt.linkC
+	}
 	rt.home = &clusterauth.HomeInfoCache{Link: rt.link}
 
 	rt.rules = nodemode.CachedRules(dbs.app, time.Minute)
@@ -566,6 +574,9 @@ func (rt *nodeRuntime) mountNodeRoutes(r chi.Router) {
 	if sc := switchover.SupervisorFromEnv(); sc != nil {
 		em.Supervisor = sc
 	}
+	// the machine's own processes reach the home on its cluster link (story 35.16)
+	r.Get(link.PathLocalAgent, serveLocalAgent(rt.linkC))
+	r.Get(link.PathLocalFetch, serveLocalFetch(rt.linkC))
 	router.MountNodeLocal(r, router.NodeLocalDeps{Self: rt.self, Node: &clusterauth.Node{
 		Link: rt.link, NodeID: rt.cfg.NodeID, Self: rt.self, SecureCookies: cookiesSecure(), Logger: rt.logger,
 		SSOEnabled: func(context.Context) bool { return rt.rules().SSO },

@@ -54,7 +54,21 @@ var (
 func (b Bundle) CACert() string { return filepath.Join(b.Keys, CACertFile) }
 
 func (b Bundle) serverCert() string { return filepath.Join(b.Keys, serverCertFile) }
-func (b Bundle) serverKey() string  { return filepath.Join(b.Keys, serverKeyFile) }
+
+// ClusterCAFile is the home's cluster CA certificate (Epic 35 story 35.16), which its API
+// keeps beside secrets.key: the server verifies the machines' client certificates with
+// it (ssl_ca_file), required of them once the cluster link is (Reach.Require).
+const ClusterCAFile = "cluster-ca.crt"
+
+// clusterCA is the cluster CA's file when the home has one ("" before its API made it).
+func (b Bundle) clusterCA() string {
+	p := filepath.Join(b.Keys, ClusterCAFile)
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	return p
+}
+func (b Bundle) serverKey() string { return filepath.Join(b.Keys, serverKeyFile) }
 
 // ServerTLSFiles are the server's certificate and key: signed by the database CA, which
 // the machines verify their home's database by (verify-ca: any certificate the CA signed
@@ -279,9 +293,16 @@ func (b Bundle) hbaConf() string {
 			// a machine on another network (a VPN) by its own address
 			from = append(from, r.machineAddrs()...)
 		}
+		// the cluster link required (story 35.16 AC12): a machine's role also needs its
+		// certificate from the cluster CA, whose CN is that role (a stolen password alone
+		// is useless)
+		auth := "scram-sha-256"
+		if r.Require && b.TLS && b.clusterCA() != "" {
+			auth = "scram-sha-256 clientcert=verify-full"
+		}
 		for _, from := range from {
 			if !frozen {
-				fmt.Fprintf(&s, "%-7s %-12s %-16s %-15s scram-sha-256\n", remote, AppDatabase, "+"+WorkerGroup, from)
+				fmt.Fprintf(&s, "%-7s %-12s %-16s %-15s %s\n", remote, AppDatabase, "+"+WorkerGroup, from, auth)
 			}
 			fmt.Fprintf(&s, "%-7s %-12s %-16s %-15s scram-sha-256\n", remote, AppDatabase, "+"+ReplicaGroup, from)
 		}

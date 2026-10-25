@@ -162,6 +162,15 @@ func RequireAuth(next http.Handler) http.Handler {
 //     process: it proves possession of its pairing key (or the home agent
 //     key) inside the WebSocket handshake, and attempts are rate-limited
 //     per IP.
+//   - /api/cluster/link and /api/cluster/link/stream (Epic 35 story 35.16) — a
+//     machine's mutual-TLS link: the handler requires the machine's current
+//     certificate from the home's cluster CA (and a single-use ticket for a
+//     stream); /api/cluster/ca.crt is the CA's public certificate.
+//   - /api/cluster/link/pull (35.16) — the home's front door on loopback; the
+//     handler refuses any request without this machine's local token.
+//   - /api/cluster/link/local/* (35.16) — a full node's own processes on
+//     loopback (its machine agent, its pipeline, its updater); the handlers
+//     refuse any other caller.
 //   - /api/tv/remote/webhook (Epic 32.7) — Cloudflare Notifications cannot
 //     sign in; the handler checks the cf-webhook-auth secret and only
 //     asks the remote controller for a reconcile.
@@ -190,6 +199,14 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// Epic 31 phase 2 — every process's channel to the home; it
 		// authenticates in the protocol (pairing key or home agent key).
 		"/api/cluster/agent": {},
+		// Epic 35 story 35.16 — the cluster link: mutual TLS + tickets, the CA's
+		// public certificate, the front door's loopback pulls (local token), a
+		// node's loopback routes for its own processes.
+		"/api/cluster/link":         {},
+		"/api/cluster/link/stream":  {},
+		"/api/cluster/ca.crt":       {},
+		"/api/cluster/link/pull":    {},
+		"/api/cluster/link/local/*": {},
 		// Epic 32 story 32.7 — Cloudflare Notifications for the live inputs;
 		// the handler refuses any request without the webhook secret header.
 		"/api/tv/remote/webhook": {},

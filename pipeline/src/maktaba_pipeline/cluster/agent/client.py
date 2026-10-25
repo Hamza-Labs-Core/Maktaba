@@ -140,6 +140,16 @@ def agent_url(home_url: str) -> str:
     return urllib.parse.urlunsplit((scheme, u.netloc, base + AGENT_PATH, "", ""))
 
 
+def agent_urls(home_url: str, env: Mapping[str, str] | None = None) -> list[str]:
+    """The addresses a process dials, in order: on a full node, the node API's loopback
+    route to the home's channel over the machine's cluster link
+    (``MAKTABA_CLUSTER_AGENT_URL``, story 35.16; the v2 sealing is kept end to end), then
+    the home straight (while the link is not up)."""
+    direct = agent_url(home_url)
+    local = (env if env is not None else os.environ).get("MAKTABA_CLUSTER_AGENT_URL", "").strip()
+    return [local, direct] if local and local != direct else [direct]
+
+
 def _metrics_file_sec() -> float:
     """``MAKTABA_CLUSTER_METRICS_FILE_SEC``: a metrics line in the file at most this often
     (default 10 s; the channel still gets every frame)."""
@@ -464,15 +474,26 @@ class ChannelAgent:
         """One connection; returns how long its session lasted (0 without one)."""
         from websockets.asyncio.client import connect
 
-        url = agent_url(self.identity.url)
-        async with connect(
-            url,
-            open_timeout=HANDSHAKE_SEC,
-            ping_interval=None,  # liveness is the protocol's ping/pong (section 4.5)
-            close_timeout=2,
-            max_size=MAX_FRAME,
-            max_queue=64,
-        ) as ws:
+        urls = agent_urls(self.identity.url)
+        ws: Any = None
+        url = urls[-1]
+        for i, candidate in enumerate(urls):
+            try:
+                ws = await connect(
+                    candidate,
+                    open_timeout=HANDSHAKE_SEC,
+                    ping_interval=None,  # liveness is the protocol's ping/pong (section 4.5)
+                    close_timeout=2,
+                    max_size=MAX_FRAME,
+                    max_queue=64,
+                )
+                url = candidate
+                break
+            except Exception:
+                if i == len(urls) - 1:
+                    raise
+                # the cluster link is not up on this machine: the home straight
+        async with ws:
             try:
                 session = await asyncio.wait_for(self._handshake(ws), HANDSHAKE_SEC)
             except BaseException:

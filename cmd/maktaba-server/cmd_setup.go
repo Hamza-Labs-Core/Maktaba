@@ -31,6 +31,7 @@ func newSetupCmd() *cobra.Command {
 	var answersFile string
 	var answersFD int
 	var lang string
+	var pgTLS bool
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Interactive first-run wizard",
@@ -38,6 +39,14 @@ func newSetupCmd() *cobra.Command {
 			"\n\nWith --self-managed or --service it instead converts this install to the side-by-side layout run by maktaba-launcher (automatic updates) and writes the OS service." +
 			"\n\nWith --node it converts this worker-only node into a full node (maktaba-server in node mode, the same layout and launcher).",
 		RunE: func(c *cobra.Command, _ []string) error {
+			if pgTLS {
+				// Epic 35 story 35.16: the home's Postgres and the machines' certificates
+				cfg, _, err := config.Load()
+				if err != nil {
+					return err
+				}
+				return runSetupPGTLS(c.OutOrStdout(), cfg, config.KeysDir(), pgSANs(cfg), time.Now())
+			}
 			if jsonMode {
 				// Epic 36 story 36.6: the app's setup screens, one step per run
 				if code := runSetupJSON(step, os.Stdin, os.Stdout); code != 0 {
@@ -62,6 +71,7 @@ func newSetupCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&runMigrate, "migrate", true, "run the initial database migration at the end")
 	_ = cmd.Flags().MarkDeprecated("migrate", "setup always prepares the database now (the app's finish step)")
+	cmd.Flags().BoolVar(&pgTLS, "pg-tls", false, "the home's Postgres verifies the machines' cluster certificates (prints what to apply to a Postgres Maktaba does not run)")
 	cmd.Flags().BoolVar(&jsonMode, "json", false, "run one --step for Maktaba.app (JSON on stdin, NDJSON on stdout)")
 	cmd.Flags().StringVar(&step, "step", "", "with --json: the step (status)")
 	cmd.Flags().StringVar(&answersFile, "answers", "", "from a payload: the steps' inputs from this JSON file ({\"admin\": {...}, ...}) instead of prompts")

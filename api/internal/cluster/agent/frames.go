@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"time"
@@ -11,7 +12,12 @@ import (
 // dispatch handles one opened frame (design-agent.md §5). Unknown types
 // are ignored (a newer agent may send more; the counter still moved).
 func (h *Hub) dispatch(s *Session, t string, raw []byte) {
+	if s.certOnly && t != "ping" && t != "pong" && t != "cert.csr" {
+		return
+	}
 	switch t {
+	case "cert.csr":
+		h.onCertCSR(s, raw)
 	case "ping":
 		var f struct {
 			TS json.RawMessage `json:"ts"`
@@ -215,4 +221,55 @@ func (l *ipLimiter) allow(ip string, now time.Time) bool {
 	}
 	b.last = now
 	return b.l.AllowN(now, 1)
+}
+
+// CertIssuer signs a machine's cluster-link certificate (story 35.16).
+type CertIssuer interface {
+	IssueCert(ctx context.Context, nodeID, csrPEM string) (CertIssue, error)
+}
+
+// CertIssue is a signed certificate, the CA it chains to and the CA's fingerprint.
+type CertIssue struct {
+	Cert     string    `json:"cert"`
+	CACert   string    `json:"ca_cert"`
+	CASHA256 string    `json:"ca_sha256"`
+	NotAfter time.Time `json:"not_after"`
+}
+
+// onCertCSR answers a machine's cert.csr (its key made on the machine; the session's
+// v2 handshake proved both sides, so the CA returned on it is as trustworthy as a join's).
+func (h *Hub) onCertCSR(s *Session, raw []byte) {
+	var f struct {
+		ID  string `json:"id"`
+		CSR string `json:"csr"`
+	}
+	if json.Unmarshal(raw, &f) != nil {
+		return
+	}
+	refused := func(reason string) {
+		s.send(map[string]any{"t": "cert.refused", "id": f.ID, "reason": reason})
+	}
+	if s.Kind != "node" || s.NodeID == "" {
+		refused("not a machine")
+		return
+	}
+	if h.cfg.Certs == nil {
+		refused("this home has no cluster CA")
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		is, err := h.cfg.Certs.IssueCert(ctx, s.NodeID, f.CSR)
+		if err != nil {
+			h.log().Warn("cluster: a machine's certificate request was refused", "node_id", s.NodeID, "err", err,
+				"event", "cluster_cert_refused")
+			refused(err.Error())
+			return
+		}
+		h.log().Info("cluster: certificate issued on a machine's channel session", "node_id", s.NodeID,
+			"not_after", is.NotAfter, "event", "cluster_cert_issued")
+		s.send(map[string]any{"t": "cert.issued", "id": f.ID, "cert": is.Cert, "ca_cert": is.CACert,
+			"ca_sha256": is.CASHA256, "not_after": is.NotAfter})
+	}()
 }

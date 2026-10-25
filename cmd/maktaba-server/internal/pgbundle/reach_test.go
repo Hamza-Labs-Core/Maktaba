@@ -80,3 +80,36 @@ func TestTheMachinesReachOnlyWhatTheClusterAsks(t *testing.T) {
 	defer cancel()
 	b.WatchReach(ctx, time.Millisecond, func() error { t.Error("listen = loopback, yet started again"); return nil }, io.Discard)
 }
+
+// Once the home requires the cluster link (story 35.16 AC12), the machines' roles need
+// their client certificates from the cluster CA too (whose file the server is started
+// with); their copies' replication roles are unchanged.
+func TestRequiredLinkAsksForClientCertificates(t *testing.T) {
+	dir := t.TempDir()
+	b := Bundle{Data: filepath.Join(dir, "postgres"), Keys: filepath.Join(dir, "keys"), Port: DefaultPort, LAN: true, TLS: true}
+	for _, d := range []string{b.Data, b.Keys} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := b.KeepReach(Reach{Open: true, Require: true}); err != nil {
+		t.Fatal(err)
+	}
+	if hba := b.hbaConf(); strings.Contains(hba, "clientcert") {
+		t.Fatalf("no cluster CA yet, but certificates asked:\n%s", hba)
+	}
+	if err := os.WriteFile(filepath.Join(b.Keys, ClusterCAFile), []byte("CA"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hba := b.hbaConf()
+	if !strings.Contains(hba, "+maktaba_worker  samenet         scram-sha-256 clientcert=verify-full") ||
+		strings.Contains(hba, "+"+ReplicaGroup+" samenet         scram-sha-256 clientcert") {
+		t.Fatalf("required:\n%s", hba)
+	}
+	if err := b.KeepReach(Reach{Open: true}); err != nil {
+		t.Fatal(err)
+	}
+	if hba := b.hbaConf(); strings.Contains(hba, "clientcert") {
+		t.Fatalf("prefer, but certificates asked:\n%s", hba)
+	}
+}

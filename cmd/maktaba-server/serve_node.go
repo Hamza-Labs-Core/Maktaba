@@ -17,6 +17,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -116,7 +117,10 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 	host, _ := os.Hostname()
 	ns.agent = &machineagent.Agent{
 		ID: machineagent.Identity{NodeID: n.NodeID, Node8: n.Node8(), PrivateKey: n.PrivateKey,
-			ClusterPub: n.Home.ClusterPub, HomeURL: n.HomeURL(), Host: host},
+			ClusterPub: n.Home.ClusterPub, HomeURL: n.HomeURL(), Host: host,
+			// the cluster link (story 35.16): its certificate beside node.json, and the
+			// node api's loopback route to the home's channel over it
+			CertDir: filepath.Dir(config.LocalNodeConfigPath()), LocalURL: supervisor.LocalAgentURL(cfg)},
 		State: func() machineagent.UpdateState {
 			st := machineagent.UpdateState{Version: version.Version, Platform: runtime.GOOS + "-" + runtime.GOARCH,
 				Layout: "flat"}
