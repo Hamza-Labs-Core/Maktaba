@@ -18,10 +18,11 @@ import (
 // latest (one per desktop leg of desktop-release.yml): an app reads the newest release's
 // feed, and a release whose feed lacks its platform strands it (v0.3.1 had no
 // darwin-aarch64: the Apple-silicon Mac home could take no update).
-var Required = []string{"darwin-aarch64", "darwin-x86_64", "windows-x86_64", "linux-x86_64", "linux-aarch64"}
+// No Intel Mac (darwin-x86_64) since v0.3.15: Macs are Apple silicon only.
+var Required = []string{"darwin-aarch64", "windows-x86_64", "linux-x86_64", "linux-aarch64"}
 
-// ServerApps are the platforms whose app carries the server (every one but the Intel Mac's
-// client): a release is published (no longer a draft) only once their bundles are in its
+// ServerApps are the platforms whose app carries the server (every desktop platform now
+// that the Intel Mac's client is gone): a release is published (no longer a draft) only once their bundles are in its
 // feed, since a home or a machine on them updates from it.
 var ServerApps = []string{"darwin-aarch64", "windows-x86_64", "linux-x86_64", "linux-aarch64"}
 

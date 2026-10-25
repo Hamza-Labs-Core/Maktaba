@@ -149,8 +149,9 @@ func TestCheckFeed(t *testing.T) {
 	if got := run("server-apps"); got != 0 {
 		t.Fatalf("server apps all there: %d", got)
 	}
-	if got := run("desktop"); got != ExitIncomplete {
-		t.Fatalf("no Intel Mac client: %d", got)
+	// no Intel Mac build any more: a desktop release is whole without darwin-x86_64
+	if got := run("desktop"); got != 0 {
+		t.Fatalf("every desktop platform there: %d", got)
 	}
 	write("darwin-x86_64", "windows-x86_64", "linux-x86_64", "linux-aarch64")
 	if got := run("server-apps"); got != ExitIncomplete {
