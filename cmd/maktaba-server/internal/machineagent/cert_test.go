@@ -61,7 +61,12 @@ func TestCertRequestedAndKept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := saveCert(dir, sign(csr, 30*24*time.Hour), caPEM, "00"+caSHA[2:]); err == nil {
+	// another fingerprint: its first digit always differs ("00"+… matched one CA in 256)
+	other := "0" + caSHA[1:]
+	if caSHA[0] == '0' {
+		other = "1" + caSHA[1:]
+	}
+	if err := saveCert(dir, sign(csr, 30*24*time.Hour), caPEM, other); err == nil {
 		t.Fatal("a CA that does not match its fingerprint was kept")
 	}
 	if err := saveCert(dir, sign(csr, 30*24*time.Hour), caPEM, caSHA); err != nil {
