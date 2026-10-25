@@ -55,7 +55,8 @@
 #   APPLE_CERTIFICATE_PASSWORD  its export password
 #   APPLE_SIGNING_IDENTITY      optional, e.g. "Developer ID Application: Hamza Labs (TEAMID)"
 #                               (default: the identity found in the certificate)
-#   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID   notarization (an app-specific password)
+#   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID   notarization (an app-specific password), or
+#   APPLE_API_KEY_P8 / APPLE_API_KEY_ID / APPLE_API_ISSUER   an App Store Connect API key
 # Every Mach-O in the server payload is signed by payload.sh (hardened runtime,
 # timestamp; python3 with tools/release/mac-app/entitlements/python.plist), then
 # tauri signs + notarizes + staples the app, then the .dmg is notarized and
@@ -131,7 +132,9 @@ jobs:
     env:
       APPLE_SIGN: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_CERTIFICATE != '' }}
       MAC_CODESIGN: ${{ secrets.MAC_CODESIGN_P12 != '' }}
-      APPLE_NOTARIZE: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
+      # notarized with either credential: the Apple ID trio (an app-specific password) or an
+      # App Store Connect API key (APPLE_API_KEY_P8, the .p8's text; its key id; the issuer)
+      APPLE_NOTARIZE: ${{ startsWith(matrix.os, 'macos') && secrets.APPLE_CERTIFICATE != '' && ((secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM_ID != '') || (secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER != '')) }}
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -373,6 +376,10 @@ jobs:
           APPLE_ID: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_ID || '' }}
           APPLE_PASSWORD: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          # or an App Store Connect API key (tauri-build.sh takes either set)
+          APPLE_API_KEY_P8: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_API_KEY_P8 || '' }}
+          APPLE_API_KEY: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_API_ISSUER || '' }}
           ARGS: ${{ matrix.args }}
           TAG: ${{ github.ref_name }}
         run: |
@@ -384,6 +391,12 @@ jobs:
             # packages in their own forms, the app still the tag's semver)
             ../../tools/release/linux-app/bundle.sh "$TAG" "${words[@]}"
           elif [ "$RUNNER_OS" = macOS ]; then
+            # the API key's .p8 as a file for tauri (APPLE_API_KEY_PATH)
+            if [ -n "${APPLE_API_KEY_P8:-}" ]; then
+              printf '%s\n' "$APPLE_API_KEY_P8" >"$RUNNER_TEMP/notary-key.p8"
+              export APPLE_API_KEY_PATH="$RUNNER_TEMP/notary-key.p8"
+            fi
+            unset APPLE_API_KEY_P8
             ../../tools/release/mac-app/tauri-build.sh "${words[@]}"
           else
             pnpm tauri build "${words[@]}"
@@ -435,13 +448,22 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           TARGET: ${{ matrix.rust-targets }}
         run: |
           set -euo pipefail
+          # the Apple ID trio when it is set, else the API key
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            auth=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
+          else
+            printf '%s\n' "$APPLE_API_KEY_P8" >"$RUNNER_TEMP/notary-key.p8"
+            auth=(--key "$RUNNER_TEMP/notary-key.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")
+          fi
           for dmg in apps/desktop/src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg; do
             codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dmg"
-            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
-              --team-id "$APPLE_TEAM_ID" --wait --timeout 60m
+            xcrun notarytool submit "$dmg" "${auth[@]}" --wait --timeout 60m
             xcrun stapler staple "$dmg"
             xcrun stapler validate "$dmg"
           done
