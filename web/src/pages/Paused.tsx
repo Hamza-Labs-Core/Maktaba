@@ -132,6 +132,18 @@ export function Paused({
         ) : (
           <p className="mkt-paused__note">{t("paused.homeUnknown")}</p>
         )}
+        {homeUrl && (
+          <p className="mkt-paused__note">
+            <a
+              href={`${homeUrl.replace(/\/+$/, "")}/help/machines#${
+                code === "paused" ? "paused-page" : "home-unreachable"
+              }`}
+              data-testid="paused-help"
+            >
+              {t("paused.whatItMeans")}
+            </a>
+          </p>
+        )}
         <p className="mkt-paused__note">{t("paused.autoReload")}</p>
         <div className="mkt-paused__actions">
           <button type="button" className="mkt-btn" onClick={onReload}>

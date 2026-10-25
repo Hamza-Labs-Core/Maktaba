@@ -15,6 +15,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError, downloadBlob } from "../../lib/api";
 import { lookupMessage, useI18n } from "../../lib/i18n";
 import { CopyField } from "../../components/CopyField";
+import { hrefOf, updateCodeHelp } from "../../help/registry";
 import { UpdatesBackups } from "./UpdatesBackups";
 import type { HomeDb } from "../../lib/homeDb";
 import {
@@ -784,6 +785,15 @@ function AttemptBlock({
               {t("updates.page.target.retry")}
             </Button>
           )}
+          {last.code ? (
+            <a
+              className="mkt-helplink"
+              href={hrefOf(updateCodeHelp(last.code))}
+              data-testid={`${id}-help`}
+            >
+              {t("help.learnMore")}
+            </a>
+          ) : null}
           <a href={logsHref(machine, win.since, win.until)} data-testid={`${id}-logs-link`}>
             {t("updates.attempt.seeLogs")}
           </a>
@@ -858,7 +868,14 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
       </p>
       {view.error?.code && (
         <div className={failedRun ? "mkt-error" : "mkt-muted"} data-testid="updates-run-error">
-          {w.code(String(view.error.code))}
+          {w.code(String(view.error.code))}{" "}
+          <a
+            className="mkt-helplink"
+            href={hrefOf(updateCodeHelp(String(view.error.code)))}
+            data-testid="updates-run-error-help"
+          >
+            {t("help.learnMore")}
+          </a>
           {view.error.detail ? (
             <ErrorDetail text={String(view.error.detail)} testId="updates-run-error-detail" />
           ) : null}
@@ -954,7 +971,14 @@ function TargetRow({
         ) : target.error?.code ? (
           <span className="mkt-muted" data-testid={`updates-target-${id}-error`}>
             {" "}
-            {w.code(String(target.error.code))}
+            {w.code(String(target.error.code))}{" "}
+            <a
+              className="mkt-helplink"
+              href={hrefOf(updateCodeHelp(String(target.error.code)))}
+              data-testid={`updates-target-${id}-error-help`}
+            >
+              {t("help.learnMore")}
+            </a>
           </span>
         ) : null}
         {target.error?.detail ? (

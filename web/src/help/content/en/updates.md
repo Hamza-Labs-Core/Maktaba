@@ -26,7 +26,7 @@ Admins see **Update now** under an available update.
 
 **Update now** does not wait for the quiet window or the release age.
 
-On a Docker install there is no button. The page shows **This is a Docker install. Run:** and the command to run on the server instead.
+The one-container Docker install updates itself like any other. A container of the stack built from source has no button: the page shows **This is a Docker install. Run:** and the command to run on the server instead.
 
 ### Automatic updates {#automatic-updates}
 
@@ -53,6 +53,18 @@ Some releases change the database in a way that cannot be undone by going back t
 
 - **Approve and update now**: install it now.
 - **Skip this version**: never install it automatically.
+
+### The Updates page {#updates-page}
+
+Admins open [Admin → Updates](/admin/updates). It shows:
+
+- **The update under way**: the version being installed and its step on the home and on each machine. **Cancel this update** stops it before the home switches. On a machine's row: **Retry**, **Skip** and **Roll back**. **Update the held machines** goes on with a rollout a failure held.
+- **Each machine's last update**: when, from which version to which, the step it stopped at, the reason in plain words with **Learn more**, the error as the machine wrote it, what to do next, **See the logs** and **Download the logs**.
+- **Backups of the library database**: the copies taken before each update, each with **Restore**.
+
+### Put a backup back {#restore-backup}
+
+**Restore** puts the home back as it was when the backup was taken. Type the backup's name to confirm. Maktaba restarts on the version that matches the backup and puts it back before anything else runs; the database it replaces is kept as a backup too. **Every change made since the backup was taken is lost.** It is refused while an update runs, or when no kept version matches the backup (it names the version to install first). The other machines copy the restored database by themselves.
 
 ## What the states and messages mean {#states}
 
@@ -92,7 +104,7 @@ Some releases change the database in a way that cannot be undone by going back t
 
 ### Will an update interrupt what people are watching? {#faq-interrupt}
 
-Automatic updates start only in the quiet window, so choose hours when nobody watches. Running jobs are given time to finish, and transcriptions resume from where they were.
+Automatic updates start only in the quiet window. On most servers the TV keeps playing across the restart and moves to the new version at a programme boundary; on other installs the update waits until nobody watches. Running jobs are given time to finish, and transcriptions resume from where they were.
 
 ### How do I stay on the version I have? {#faq-stay}
 
@@ -100,7 +112,7 @@ Turn off **Install updates automatically**, or set **Stay at or below version** 
 
 ### Can I go back to an older version? {#faq-downgrade}
 
-Not from the app. Maktaba only goes back by itself when a new version fails to start.
+Maktaba goes back by itself when a new version fails. To go back further, [put a backup back](/help/updates#restore-backup) on Admin → Updates: changes made since that backup are lost.
 
 ### Why is there a dot on Settings? {#faq-dot}
 
@@ -137,6 +149,48 @@ An update is available. Open [Settings → About](/settings/about) to see it.
 - **What it means:** The part of Maktaba that installs updates did not accept the update. The code in brackets says why.
 - **Does Maktaba fix it itself?** No. Nothing was changed: you are still on your current version.
 - **What you can do:** Check [System health](/help/system-health) and the [Logs](/help/logs), then press **Update now** on [Settings → About](/settings/about) to try again.
+
+### The library database could not be updated {#code-database}
+
+- **What it means:** The step that saves the library database and brings it up to date for the new version failed, or the changes failed when tried on a copy first, or the new version needs another database version than this machine has.
+- **Does Maktaba fix it itself?** In most cases: nothing was changed, or the database was put back as it was before the update and the previous version runs. That version is not installed again by itself.
+- **What you can do:** Read the reason and **See the logs**. When it says the database could not be put back, or the version is older than the database, [put a backup back](/help/updates#restore-backup).
+
+### The TV during an update {#code-tv}
+
+- **What it means:** The TV moves to the new version at a programme boundary. Someone watched until the quiet window ended, another TV change waited for your approval, or the TV change failed its checks, took too long or was cancelled.
+- **Does Maktaba fix it itself?** Yes: it waits for the next quiet window, or puts the previous version back. A TV change that failed blocks that version until you try it again.
+- **What you can do:** Approve or reject the change waiting on [TV changes](/admin/live-tv/changes), where the failed checks are listed. Press **Try it again** once the cause is fixed.
+
+### A machine did not follow {#code-machine}
+
+- **What it means:** A machine could not get the new version ready, could not install it, or was not healthy in time. Other machines of the same kind may wait for it.
+- **Does Maktaba fix it itself?** Yes: the machine goes back to its previous version and takes no work until you act. A machine that was offline is updated when it comes back.
+- **What you can do:** On [Admin → Updates](/admin/updates), read its reason and logs, then press **Retry**, **Skip**, or **Update the held machines**.
+
+### The desktop app could not install the update {#code-desktop-app}
+
+- **What it means:** The Maktaba app on that machine could not replace itself: its folder needs an administrator, macOS blocks it, the download failed, or the app did not come back on the new version.
+- **Does Maktaba fix it itself?** It keeps the version that runs, and tries again later when that can help.
+- **What you can do:** Follow the fix shown under the reason: it names the setting or the command. An app built on the machine itself cannot update: install the release by hand once.
+
+### The processing environment could not be set up {#code-python}
+
+- **What it means:** The new version's processing environment could not be built: the machine has no suitable Python 3.12, or its packages could not be downloaded.
+- **Does Maktaba fix it itself?** It keeps the previous version and tries again at the next start or quiet window.
+- **What you can do:** Install Python 3.12 on that machine, or check its network. On Windows, turn off the Microsoft Store's Python alias.
+
+### This machine cannot update itself as it is installed {#code-needs-person}
+
+- **What it means:** The machine was installed in a way that cannot take a new version by itself (a program copied by hand, a launcher too old, a container of the stack built from source), or the version needs a newer launcher from its package manager.
+- **Does Maktaba fix it itself?** No. The other machines update as usual.
+- **What you can do:** Follow the fix under the reason: usually one command, or one version installed by hand. A machine that shows **Worker only — re-run the installer once** needs its installer run once.
+
+### The release could not be downloaded {#code-download}
+
+- **What it means:** A file of the new version could not be downloaded, is missing for this machine, or there was no room on the disk.
+- **Does Maktaba fix it itself?** Yes: it tries again at once, then later, then in the next quiet window. Machines download from the home first, then from GitHub.
+- **What you can do:** Check the network and the free disk space, then press **Retry**, or wait.
 
 ### Write the window as HH:MM-HH:MM {#bad-window}
 

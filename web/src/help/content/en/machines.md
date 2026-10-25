@@ -122,7 +122,7 @@ Its unfinished jobs go back to the queue and another machine or the home takes t
 
 ### How do I update a machine safely? {#faq-update}
 
-Turn on **Drain**, wait until **Jobs running** shows 0, update it, then turn drain off. See [Updates](/help/updates).
+You need not: machines update by themselves after the home, one at a time, each drained of its jobs first and checked before the next. To update one now, press **Retry** on its row on [Admin → Updates](/admin/updates). See [Updates](/help/updates).
 
 ### Can I stop a machine doing transcription only? {#faq-one-queue}
 
@@ -169,8 +169,8 @@ Yes. Set that queue's switch to **Off** in **Queues this machine pulls from**.
 ### Worker only {#worker-only}
 
 - **What it means:** the machine was installed to pull jobs only; it does not serve the web app or video.
-- **Does Maktaba fix it itself?** No.
-- **What you can do:** re-run the installer on it once with the full option, as the badge says.
+- **Does Maktaba fix it itself?** Yes, when its badge says **becomes a full node at its next update**: it converts by itself in the next update's quiet window.
+- **What you can do:** when the badge says **re-run the installer once**, its pipeline is too old to convert by itself: re-run the installer on it once (with the full option to convert at once).
 
 ### VOD served by another machine {#vod-fallback}
 

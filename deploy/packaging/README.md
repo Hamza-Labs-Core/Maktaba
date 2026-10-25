@@ -23,8 +23,9 @@ The [`release.yml`](../../.github/workflows/release.yml) workflow runs on a
 | `maktaba-node-<ver>.tar.gz` / `.zip` (node installer + wheel) | `package-node` | macOS + Linux / Windows; see [`node/README.md`](node/README.md#getting-the-installer) |
 | `maktaba_pipeline-<ver>-py3-none-any.whl` + `maktaba-pipeline-<ver>-constraints.txt` | `package-node` | any (pure Python, 3.12+) |
 | `release.json` | `sign-and-release` (`tools/release/cmd/gen-release-json`) | version, schema revisions, protocol numbers, per-platform archive + binary digests ([Epic 35 design §3.1](../../specs/epics/35-cluster-full-nodes-and-updates/design.md)); listed in `checksums.txt` |
-| `checksums.txt` + `checksums.txt.sigstore.json` (+ legacy `.sig` / `.pem`) | `sign-and-release` | keyless cosign; the bundle carries the Rekor inclusion proof, so machines verify offline. Identity: exactly `https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/release.yml@refs/tags/<tag>` ([how](../../docs/auto-update.md#verifying-server-artifacts-manually)) |
-| Container images (multi-arch) | `build-images` | linux/{amd64,arm64} on GHCR |
+| `checksums.txt` + `checksums.txt.sigstore.json` (+ legacy `.sig` / `.pem`) | `sign-and-release` | keyless cosign; the bundle carries the Rekor inclusion proof, so machines verify offline. Identity: exactly `https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/release.yml@refs/tags/<tag>` ([how](../../docs/updates.md#verifying-a-release-by-hand)) |
+| Container images (multi-arch) | `build-images` | linux/{amd64,arm64} on GHCR (the multi-service stack built from source, `deploy/compose`) |
+| `ghcr.io/hamza-labs-core/maktaba-server` (the Docker install) + `maktaba-docker-compose.yml` | `build-server-image` | linux/{amd64,arm64}: one container that runs everything and updates itself on its volume ([cloud/installers/docker](../../cloud/installers/docker/docker-compose.yml)) |
 
 Each archive is flat and contains the `maktaba-server`, `maktaba-api`, and
 `maktaba-streaming` binaries (the unified server forks the latter two at
@@ -52,7 +53,7 @@ logged in. Nothing else needs root but installing that ffmpeg when the system ha
   signed releases: Update now in the web app, or `maktaba-server update` (`--check` only verifies,
   `--rollback` goes back to the version that ran before); each verifies the release, installs its
   payload beside the running one and switches to it. It also installs updates by itself in the
-  quiet window (`rules.updates`, Epic 35's update orchestrator; docs/auto-update.md).
+  quiet window (`rules.updates`, Epic 35's update orchestrator; [updates](../../docs/updates.md)).
 - **A machine without a desktop, verified.** `install.sh --app` never runs a payload it has not
   verified: it checks the Sigstore signature over the release's `checksums.txt` (with the
   machine's cosign, or cosign's own release build, which it fetches and checks against a pinned
@@ -132,6 +133,47 @@ postinstall writes `current` only when the package is newer than `watermark`
 launcher). `maktaba-launcher --status` shows current, previous, pending and
 the last rollback.
 
+## The layout and the launcher (Epic 35)
+
+Every install that updates itself keeps its releases side by side and runs them through a small,
+stable program, the **launcher** (`maktaba-launcher`, story 35.2), which the service manager
+starts:
+
+```
+<root>/bin/releases/<version>/   one directory per release: maktaba-server, -api, -streaming,
+                                 the pipeline's venv, release.json and .verified (the digests
+                                 the updater checked)
+<root>/current, previous         pointer files: the release that runs, the one to go back to
+<root>/pending                   only while a new release is unconfirmed
+<root>/watermark                 the highest version this machine ever installed
+<root>/maktaba-launcher          what the service runs
+<root>/updates/                  journal.json (the run), launcher.log, server-attempts.json,
+                                 handover.json (the TV processes kept across a restart)
+```
+
+- **Starting.** The launcher checks the current release's binaries against `.verified` and runs
+  it; a release whose files do not check out is refused (`launcher_refused`) and the previous one
+  runs.
+- **Switching.** The server stages a release, writes `pending` and moves `current`, then exits 75:
+  the launcher starts the new release at once. The new release confirms itself once healthy (the
+  launcher removes `pending`).
+- **The guard.** A release that stops three times within ten minutes, or does not confirm within
+  15 minutes, is put back: `previous` becomes `current` again (`launcher_boot_loop`,
+  `launcher_pending_timeout`), and the run finishes its rollback.
+- **TV across the restart.** At an update's exit 75 the launcher leaves the TV processes the
+  server handed over running (`updates/handover.json`), and stops them on any other exit or at a
+  stop (story 35.7).
+- **Replacing the launcher.** A release whose `launcher_protocol` is newer than the running
+  launcher's replaces it after the release commits, inside the window (`--replace-self`: the
+  running file kept as `.old` until the next good start). A package manager's launcher (the
+  `.deb`/`.rpm`, Homebrew) is the package's to replace: the run says which command does it.
+- **`maktaba-launcher --status`** prints current, previous, pending and the last rollback.
+
+Which installs use it: the `.deb`/`.rpm` (`/var/lib/maktaba`), `setup --self-managed` (the roots
+below), the Homebrew formula (`$(brew --prefix)/var/maktaba/server`) and a full node. The desktop
+apps and the Linux runtime copy (the Linux app, `install.sh --app`, the Docker image) install their
+own way and run the same launcher over their payload ([install-kinds.md](../../specs/epics/35-cluster-full-nodes-and-updates/install-kinds.md)).
+
 ## Self-managed installs (archive, manual, Homebrew, Windows)
 
 ```sh
@@ -206,9 +248,19 @@ sudo MAKTABA_SYSTEMD=1 bash install.sh
 
 After installing a package: edit `/etc/maktaba/server.toml` (set your
 `[media].roots`), then `sudo systemctl start maktaba-server`. The web UI is
-on port `8088`. An upgrade of the package restarts a running service; the new
-release's start dumps and migrates the database (the database step), as an
-automatic update does.
+on port `8088`. From then on the server installs each release by itself in its
+quiet window ([updates](../../docs/updates.md)). An upgrade of the package brings
+its launcher, and its release only when it is newer than what the updater
+installed; that release's start dumps and migrates the database (the database
+step), as an automatic update does.
+
+**Docker** (one container, the whole server): download the release's
+`maktaba-docker-compose.yml` as `docker-compose.yml`, then
+`docker compose up -d` and `docker compose run --rm maktaba setup`. The image only
+bootstraps: its entrypoint (`maktaba-server container`) puts the image's payload on
+the volume's runtime the first time (never an older one over a newer one) and runs
+the launcher there, so the container updates itself like a headless Linux install,
+with no Docker socket and nothing to pull.
 
 ## Local validation
 
@@ -260,8 +312,9 @@ shellcheck deploy/packaging/install.sh deploy/packaging/scripts/*.sh
 7. The embedded Sigstore trusted root is refreshed by `trusted-root.yml` every week (a PR
    when it changed or is 45 days old; set `MAKTABA_BOT_TOKEN` so that PR runs CI). Lint warns
    from day 60 and fails at day 90 (`tools/release/trusted-root-age.sh`).
-8. Upgrade: an automatic update (docs/auto-update.md), or the package / image by hand.
-   Rollback: the updater's own; by hand, see `upgrade.md`.
+8. Upgrade: an automatic update ([docs/updates.md](../../docs/updates.md)), or the package / image
+   by hand. Rollback: the updater's own; by hand, see [`upgrade.md`](upgrade.md) and the
+   [update runbook](../../docs/cluster/runbook-updates.md).
 
 ### Package repositories and the Homebrew tap
 
