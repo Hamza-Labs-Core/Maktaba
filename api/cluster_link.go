@@ -9,8 +9,11 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
 	"log/slog"
@@ -19,6 +22,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -107,7 +111,7 @@ func startHomeLink(ctx context.Context, db *sql.DB, store secrets.Store, nodes c
 	c.Store = ca.SQLStore{DB: db}
 	hl := &homeLink{db: db, ca: c, nodes: nodes, logger: logger, rules: defaultLinkRules(), down: map[string]time.Time{}}
 	hl.srv = &link.Server{CA: c, Certs: c.Store, Logger: logger, Settings: hl.settings, OnSession: hl.onSession,
-		Alert: hl.alert,
+		Alert: hl.alert, WebCert: hl.webCert,
 		Approved: func(ctx context.Context, id string) (bool, error) {
 			n, err := nodes.Node(ctx, id)
 			if errors.Is(err, cluster.ErrNotFound) {
@@ -143,6 +147,7 @@ func (hl *homeLink) run(ctx context.Context) {
 		if n%10 == 0 {
 			hl.refreshServerCert(ctx) // every 5 minutes: the home's addresses may move (EC1)
 		}
+		hl.keepWebCert(ctx)
 	}
 }
 
@@ -166,7 +171,62 @@ func (hl *homeLink) linkRules() linkRules {
 
 func (hl *homeLink) settings() link.Settings {
 	lr := hl.linkRules()
-	return link.Settings{Mode: lr.Mode, MaxStreams: lr.MaxStreams, StreamGrace: time.Duration(lr.GraceSeconds) * time.Second}
+	return link.Settings{Mode: lr.Mode, MaxStreams: lr.MaxStreams, StreamGrace: time.Duration(lr.GraceSeconds) * time.Second,
+		WebHTTPS: lr.WebHTTPS}
+}
+
+// keepWebCert keeps the home's own web certificate (browser HTTPS on 8443, AC15) beside
+// the CA while the rule is on, issued again when its addresses moved or it nears its
+// end; removed when the rule is off (the supervisor serves 8443 while it is there).
+func (hl *homeLink) keepWebCert(ctx context.Context) {
+	files := link.CertFiles{Dir: ca.Dir(os.Getenv)}
+	if !hl.linkRules().WebHTTPS {
+		_ = files.SaveWeb(nil, nil)
+		return
+	}
+	sans := hl.homeSANs(ctx)
+	if pair, err := tls.LoadX509KeyPair(filepath.Join(files.Dir, link.WebCertFile), filepath.Join(files.Dir, link.WebKeyFile)); err == nil {
+		if leaf, err := x509.ParseCertificate(pair.Certificate[0]); err == nil && ca.SameSANs(leaf, sans) &&
+			time.Until(leaf.NotAfter) > 30*24*time.Hour {
+			return
+		}
+	}
+	pair, _, err := hl.ca.IssueHome(ctx, ca.KindWeb, sans, "", 365)
+	if err != nil {
+		return
+	}
+	keyPEM, err := ca.KeyPEM(pair)
+	if err != nil {
+		return
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: pair.Certificate[0]})
+	if err := files.SaveWeb(certPEM, keyPEM); err != nil {
+		hl.logger.Warn("link: the home's web certificate could not be kept", "err", err, "event", "link_web_cert_failed")
+	}
+}
+
+// webCert signs a machine's web certificate for its own addresses only: the address its
+// link came from, its name on the local network and its web address' host (a machine
+// cannot get a certificate for another one's name).
+func (hl *homeLink) webCert(ctx context.Context, nodeID, remote, csrPEM string) (string, error) {
+	n, err := hl.nodes.Node(ctx, nodeID)
+	if err != nil {
+		return "", err
+	}
+	sans := []string{remote}
+	if name := strings.ToLower(strings.TrimSpace(n.Name)); name != "" && !strings.ContainsAny(name, " /\\:") {
+		sans = append(sans, name+".local")
+	}
+	if n.WebURL != nil {
+		if u, err := url.Parse(*n.WebURL); err == nil && u.Hostname() != "" {
+			sans = append(sans, u.Hostname())
+		}
+	}
+	is, err := hl.ca.SignWeb(ctx, []byte(csrPEM), nodeID, sans, 90)
+	if err != nil {
+		return "", err
+	}
+	return string(is.PEM), nil
 }
 
 // homeSANs are the home's addresses (design §18.2): its host names, every address of

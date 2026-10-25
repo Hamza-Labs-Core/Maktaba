@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -369,5 +371,35 @@ func TestReconnectAndLinkLost(t *testing.T) {
 	req, _ = http.NewRequest(http.MethodPost, h.home+"/api/x", strings.NewReader("x"))
 	if _, err := c.RoundTrip(req); !errors.Is(err, ErrLinkLost) {
 		t.Fatalf("a POST cut by the drop: %v", err)
+	}
+}
+
+// With browser HTTPS on, a machine asks for its web certificate on the control channel
+// and keeps it (its supervisor serves 8443 with it); off, it removes it (AC15).
+func TestWebCertificateWhileHTTPSIsOn(t *testing.T) {
+	h := newHarness(t, nil)
+	h.srv.Settings = func() Settings { return Settings{WebHTTPS: true} }
+	var asked string
+	h.srv.WebCert = func(ctx context.Context, node, remote, csr string) (string, error) {
+		asked = remote
+		is, err := h.ca.SignWeb(ctx, []byte(csr), node, []string{remote, "studio.local"}, 90)
+		if err != nil {
+			return "", err
+		}
+		return string(is.PEM), nil
+	}
+	h.connect(nil)
+	files := CertFiles{Dir: h.dir}
+	h.waitFor(func() bool { return !files.webDue(time.Now()) }, "the web certificate")
+	if asked != "127.0.0.1" {
+		t.Fatalf("signed for %q, not the address the link came from", asked)
+	}
+	pair, err := tls.LoadX509KeyPair(filepath.Join(h.dir, WebCertFile), filepath.Join(h.dir, WebKeyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, _ := x509.ParseCertificate(pair.Certificate[0])
+	if _, err := leaf.Verify(x509.VerifyOptions{Roots: h.ca.Pool(), DNSName: "studio.local"}); err != nil {
+		t.Fatal(err)
 	}
 }

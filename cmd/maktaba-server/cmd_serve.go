@@ -191,6 +191,8 @@ func runServe(cfg config.Config, opts serveOptions) error {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "[serve] web UI on %s (embedded=%v)\n", cfg.Server.WebListen, webui.Embedded)
+		// story 35.16 AC15: the same pages on 8443 while the API keeps a web certificate
+		go serveHTTPS(ctx, webSrv.Handler, webCertDirs(), httpsAddr, 30*time.Second)
 	}
 
 	// Epic 35 story 35.11: the supervisor is the machine's one mDNS advertiser

@@ -129,6 +129,12 @@ a volume and the server's group), set `MAKTABA_HOME_AGENT_KEY_MODE=0640` on the 
 key is then also readable by the server's group. Only `0600` and `0640` are accepted; the
 cluster key always stays `0600`.
 
+## The cluster link
+
+Machines talk to the home over encrypted connections that prove which machine is talking,
+on the home's usual port, with certificates from the home's own small CA; nothing to set up.
+See [The cluster link](tls.md) for its modes, the database, and optional HTTPS on port 8443.
+
 ## The long-term archive
 
 The share keeps two weeks of files; the home keeps a compressed archive of every machine's
@@ -143,7 +149,8 @@ The Machines page reads it once the share has let a day go. Settings, on the hom
 
 | From | To | Port | For |
 |---|---|---|---|
-| machines, browsers | home | 8080 TCP | the web app, the API, the live connection (WebSocket), the LLM address |
+| machines, browsers | home | 8080 TCP | the web app, the API, the live connection (WebSocket), the LLM address; the machines' [cluster link](tls.md) (TLS on the same port) |
+| browsers | any machine | 8443 TCP | the web app over HTTPS, when `tls_web_https` is on ([cluster link](tls.md#https-in-the-browser-optional)) |
 | machines | home | 5432 TCP | the database (each machine has its own login) |
 | machines | NAS | the NAS's (SMB 445, NFS 2049) | the videos and the `maktaba` folder |
 | machines | home | 5353 UDP multicast | finding the home automatically (optional) |

@@ -56,6 +56,7 @@ import { queueLabeller } from "../../components/cluster/names";
 import { QueuesPanel } from "../../components/cluster/QueuesPanel";
 import { RelayDoorCard } from "../../components/cluster/RelayDoorCard";
 import { RelayPanel } from "../../components/cluster/RelayPanel";
+import { LinkCard } from "../../components/cluster/LinkCard";
 import { SwitchHomeCard } from "../../components/cluster/SwitchHomeCard";
 import { useClusterFiles } from "../../components/cluster/useClusterFiles";
 import { useFmt } from "../../components/queue/format";
@@ -380,6 +381,7 @@ const Approvals = memo(function Approvals({
           <p className="mkt-mc-muted">{t("common.error")}</p>
         </section>
       )}
+      {view.link && <LinkCard link={view.link} nodes={view.nodes} />}
       <section className="mkt-mc-section" aria-labelledby="mkt-mc-pending-h">
         <h2 id="mkt-mc-pending-h" className="mkt-mc-section__title">
           {t("machines.pending.title")}

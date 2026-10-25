@@ -294,6 +294,7 @@ func (c *Client) session(ctx context.Context) error {
 		}
 	}()
 	go s.renewWhenDue()
+	go s.keepWebCert(hello.WebHTTPS)
 	err = s.readLoop()
 	cancel()
 	s.out.close()
@@ -766,6 +767,38 @@ func (s *csess) renewWhenDue() {
 		case <-t.C:
 		}
 	}
+}
+
+// keepWebCert keeps the machine's web certificate for browser HTTPS while the home says
+// so (cert.web), and removes it when it does not (the supervisor then closes 8443).
+func (s *csess) keepWebCert(on bool) {
+	if !on {
+		_ = s.cl.Files.SaveWeb(nil, nil)
+		return
+	}
+	if !s.cl.Files.webDue(s.cl.now()) {
+		return
+	}
+	keyPEM, csrPEM, err := NewKeyAndCSR(s.cl.NodeID)
+	if err != nil {
+		return
+	}
+	actx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+	defer cancel()
+	ans, err := s.ask(actx, map[string]any{"t": "cert.web", "csr": string(csrPEM)})
+	if err != nil {
+		return
+	}
+	var is CertIssued
+	if json.Unmarshal(ans, &is) != nil || is.T != "cert.issued" {
+		s.cl.log().Warn("node: the home refused this machine's web certificate", "reason", is.Reason, "event", "node_web_cert_refused")
+		return
+	}
+	if err := s.cl.Files.SaveWeb([]byte(is.Cert), keyPEM); err != nil {
+		s.cl.log().Warn("node: the web certificate could not be kept", "err", err, "event", "node_web_cert_failed")
+		return
+	}
+	s.cl.log().Info("node: web certificate for HTTPS on 8443 received", "event", "node_web_cert")
 }
 
 // Renew asks the home for a new certificate (cert.renew) with a new key and saves it;

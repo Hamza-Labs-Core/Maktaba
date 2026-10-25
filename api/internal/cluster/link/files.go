@@ -28,6 +28,48 @@ const (
 	NodeCAFile   = "cluster-ca.crt"
 )
 
+// WebCertFile and WebKeyFile are the machine's certificate for browser HTTPS on 8443
+// (AC15), kept while the home's rule says so (the supervisor serves 8443 while they are).
+const (
+	WebCertFile = "cluster-web.crt"
+	WebKeyFile  = "cluster-web.key"
+)
+
+// SaveWeb keeps a web certificate with its key, or (nil) removes them.
+func (f CertFiles) SaveWeb(certPEM, keyPEM []byte) error {
+	if certPEM == nil {
+		_ = os.Remove(f.path(WebCertFile))
+		_ = os.Remove(f.path(WebKeyFile))
+		return nil
+	}
+	if _, err := tls.X509KeyPair(certPEM, keyPEM); err != nil {
+		return err
+	}
+	for _, w := range []struct {
+		name string
+		b    []byte
+	}{{WebKeyFile, keyPEM}, {WebCertFile, certPEM}} {
+		tmp := f.path(w.name) + ".tmp"
+		if err := os.WriteFile(tmp, w.b, 0o600); err != nil {
+			return err
+		}
+		if err := os.Rename(tmp, f.path(w.name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// webDue reports whether the web certificate is missing or within 30 days of its end.
+func (f CertFiles) webDue(now time.Time) bool {
+	pair, err := tls.LoadX509KeyPair(f.path(WebCertFile), f.path(WebKeyFile))
+	if err != nil {
+		return true
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	return err != nil || leaf.NotAfter.Sub(now) < 30*24*time.Hour
+}
+
 // CertFiles are a machine's certificate files in Dir.
 type CertFiles struct{ Dir string }
 

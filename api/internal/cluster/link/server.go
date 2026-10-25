@@ -81,6 +81,9 @@ type Settings struct {
 	Mode        string        `json:"mode"`
 	MaxStreams  int           `json:"max_streams"`
 	StreamGrace time.Duration `json:"-"`
+	// WebHTTPS: every machine serves its pages on 8443 too (AC15): a machine asks for
+	// its web certificate (cert.web) while it is on.
+	WebHTTPS bool `json:"web_https"`
 }
 
 // DefaultSettings: prefer, 32 streams, 60 s grace.
@@ -106,9 +109,12 @@ type Server struct {
 	// OnSession reports a machine's control session coming up or going (link_since).
 	OnSession func(nodeID string, up bool)
 	// Alert is told of repeated ticket reuse (3 in 10 minutes).
-	Alert  func(nodeID, detail string)
-	Logger *slog.Logger
-	Now    func() time.Time
+	Alert func(nodeID, detail string)
+	// WebCert signs a machine's web certificate for browser HTTPS (cert.web, AC15) for the
+	// addresses the home allows it (remote: the address its link came from); nil: none.
+	WebCert func(ctx context.Context, nodeID, remote, csrPEM string) (certPEM string, err error)
+	Logger  *slog.Logger
+	Now     func() time.Time
 
 	mu       sync.Mutex
 	sessions map[string]*ctrl
@@ -145,6 +151,7 @@ func (s *Server) settings() Settings {
 		if got.StreamGrace > 0 {
 			st.StreamGrace = got.StreamGrace
 		}
+		st.WebHTTPS = got.WebHTTPS
 	}
 	return st
 }
@@ -285,6 +292,7 @@ type Hello struct {
 	Session    string    `json:"session"`
 	Mode       string    `json:"mode"`
 	MaxStreams int       `json:"max_streams"`
+	WebHTTPS   bool      `json:"web_https,omitempty"`
 	At         time.Time `json:"at"`
 }
 
@@ -314,7 +322,8 @@ func (s *Server) ServeLink(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(context.Background())
 	sess := &ctrl{id: newID(), node: node, serial: serial, remote: r.RemoteAddr, srv: s, conn: c, out: newSender(),
 		ctx: ctx, cancel: cancel, reqs: map[uint32]*inflight{}}
-	hello, _ := json.Marshal(Hello{T: "hello", Session: sess.id, Mode: st.Mode, MaxStreams: st.MaxStreams, At: s.now().UTC()})
+	hello, _ := json.Marshal(Hello{T: "hello", Session: sess.id, Mode: st.Mode, MaxStreams: st.MaxStreams,
+		WebHTTPS: st.WebHTTPS, At: s.now().UTC()})
 	wctx, wcancel := context.WithTimeout(r.Context(), writeTimeout)
 	err = c.Write(wctx, websocket.MessageText, hello)
 	wcancel()
@@ -477,6 +486,28 @@ func (c *ctrl) onEvent(b []byte) {
 			return
 		}
 		go func() { _ = c.event(c.srv.Renew(c.ctx, c.node, cr)) }()
+	case "cert.web":
+		var cr CertRenew
+		if json.Unmarshal(b, &cr) != nil {
+			return
+		}
+		go func() {
+			if c.srv.WebCert == nil {
+				_ = c.event(CertIssued{T: "cert.refused", ID: cr.ID, Reason: "no web certificates"})
+				return
+			}
+			host, _, err := net.SplitHostPort(c.remote)
+			if err != nil {
+				host = c.remote
+			}
+			cert, err := c.srv.WebCert(c.ctx, c.node, host, cr.CSR)
+			if err != nil {
+				_ = c.event(CertIssued{T: "cert.refused", ID: cr.ID, Reason: err.Error()})
+				return
+			}
+			_ = c.event(CertIssued{T: "cert.issued", ID: cr.ID, Cert: cert, CACert: string(c.srv.CA.CertPEM),
+				CASHA256: c.srv.CA.SHA256})
+		}()
 	}
 }
 

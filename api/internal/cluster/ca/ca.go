@@ -383,6 +383,28 @@ func (c *CA) sign(ctx context.Context, tmpl *x509.Certificate, pub any, kind, no
 	return is, nil
 }
 
+// SignWeb signs a machine's certificate for browser HTTPS (AC15) from its CSR: server
+// use only, for sans (the addresses the home allows it: its own), `days` days.
+func (c *CA) SignWeb(ctx context.Context, csrRaw []byte, nodeID string, sans []string, days int) (*Issued, error) {
+	csr, err := ParseCSR(csrRaw)
+	if err != nil {
+		return nil, err
+	}
+	tmpl := &x509.Certificate{Subject: pkix.Name{CommonName: "maktaba-web-" + nodeID},
+		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	for _, s := range normalSANs(sans) {
+		if ip := net.ParseIP(s); ip != nil {
+			tmpl.IPAddresses = append(tmpl.IPAddresses, ip)
+		} else {
+			tmpl.DNSNames = append(tmpl.DNSNames, s)
+		}
+	}
+	if days <= 0 {
+		days = 90
+	}
+	return c.sign(ctx, tmpl, csr.PublicKey, KindWeb, nodeID, time.Duration(days)*24*time.Hour)
+}
+
 // IssueHome makes one of the home's own certificates (server, pg_server, web: the SANs
 // are its addresses; client: uri) with a key made here. Their keys stay on the home.
 func (c *CA) IssueHome(ctx context.Context, kind string, sans []string, uri string, days int) (tls.Certificate, *Issued, error) {
