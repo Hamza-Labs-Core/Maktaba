@@ -128,6 +128,7 @@ func (rig *mirrorRig) hit(name string) int {
 // A machine's signed request gets a verified file of the release, fetched from GitHub
 // once; a range request gets its part; anyone else gets nothing.
 func TestMirrorSignedRangeRequests(t *testing.T) {
+	t.Parallel()
 	rig := newMirrorRig(t)
 	archive := "maktaba-server_1.5.0_linux_amd64.tar.gz"
 	path := "/api/cluster/updates/artifacts/1.5.0/" + archive
@@ -163,6 +164,7 @@ func TestMirrorSignedRangeRequests(t *testing.T) {
 // A name the release does not list, a release the home did not verify (or that was
 // withdrawn) and a name with a path are 404s.
 func TestMirrorUnknownName404(t *testing.T) {
+	t.Parallel()
 	rig := newMirrorRig(t)
 	for _, p := range []string{
 		"/api/cluster/updates/artifacts/1.5.0/latest.json", // published, not in checksums.txt
@@ -185,6 +187,7 @@ func TestMirrorUnknownName404(t *testing.T) {
 // (502: the machine goes to GitHub itself, and verifies there); once GitHub serves the
 // right one it is.
 func TestMirrorRefusesAFileThatDoesNotMatch(t *testing.T) {
+	t.Parallel()
 	rig := newMirrorRig(t)
 	whl := "maktaba_pipeline-1.5.0-py3-none-any.whl"
 	rig.serve[whl] = []byte("a wheel someone swapped")
@@ -210,6 +213,7 @@ func TestMirrorRefusesAFileThatDoesNotMatch(t *testing.T) {
 // One machine has at most mirrorPerNode downloads open at once; the next is told to come
 // back (429), and another machine is not held up.
 func TestMirrorPerNodeLimit(t *testing.T) {
+	t.Parallel()
 	m := &Mirror{}
 	req := func(node string) (*httptest.ResponseRecorder, func(), bool) {
 		r := httptest.NewRequest(http.MethodGet, "/x", nil).WithContext(delegation.WithNode(context.Background(), node))
@@ -245,6 +249,7 @@ func TestMirrorPerNodeLimit(t *testing.T) {
 // Prefetch fetches the signed files and each platform's files before any machine asks;
 // Prune keeps the run's release and the newest keep_versions.
 func TestMirrorPrefetchAndPrune(t *testing.T) {
+	t.Parallel()
 	rig := newMirrorRig(t)
 	rig.m.Prefetch(context.Background(), "1.5.0", []string{"linux/amd64", "darwin/arm64"})
 	want := []string{ChecksumsFile, BundleFile, "release.json", "maktaba-server_1.5.0_linux_amd64.tar.gz",
@@ -273,6 +278,7 @@ func TestMirrorPrefetchAndPrune(t *testing.T) {
 }
 
 func TestKeepVersions(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		held    []string
 		version string
@@ -412,6 +418,7 @@ func TestWheelhouseOff(t *testing.T) {
 // The marker filter keeps the pins whose markers hold on the platform, with their hashes,
 // across uv export's continuation lines and comments (a real Python, when there is one).
 func TestPinsForPlatform(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("runs Python; runs without -short (the integration tier)")
 	}
@@ -466,6 +473,7 @@ nvidia-cublas-cu12==12.1.3.1 ; platform_machine == 'x86_64' and sys_platform == 
 
 // dropPin takes one pin out by its normalized name.
 func TestDropPin(t *testing.T) {
+	t.Parallel()
 	p := filepath.Join(t.TempDir(), "pins")
 	if err := os.WriteFile(p, []byte("anyio==4.4.0 --hash=sha256:aa\nTorch_Audio==2.4.0 --hash=sha256:bb\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -488,6 +496,7 @@ func TestDropPin(t *testing.T) {
 // copy when the public repository is out of reach), the public repository's 404 passed on
 // (a TUF client looks for the next root until one), and nothing but the repository's names.
 func TestMirrorPassesOnTheTUFRepository(t *testing.T) {
+	t.Parallel()
 	rig := newMirrorRig(t)
 	target := "targets/" + hexSum([]byte(`{"trusted":"root"}`)) + ".trusted_root.json"
 	files := map[string]string{"1.root.json": `{"root":1}`, "timestamp.json": `{"ts":1}`, target: `{"trusted":"root"}`}
@@ -590,6 +599,7 @@ func TestMirrorLeavesRoomOnTheDisk(t *testing.T) {
 // The driver asks the mirror once per run for the run's release, for the platforms the
 // cluster's machines run (their rows and their agents' word).
 func TestDriverPrefetchesTheRunsRelease(t *testing.T) {
+	t.Parallel()
 	rig := newMirrorRig(t)
 	if _, err := rig.store.DB.Exec(`INSERT INTO cluster_nodes (id, name, state, platform, full_node) VALUES
 		('n1', 'studio', 'approved', 'linux-amd64', 1), ('n2', 'old', 'revoked', 'windows/amd64', 1)`); err != nil {
@@ -623,6 +633,7 @@ func TestDriverPrefetchesTheRunsRelease(t *testing.T) {
 // refused before any file is touched (400): "..", encoded dots and slashes, backslashes,
 // absolute paths and drives, on the release files, the wheelhouse index and its wheels.
 func TestMirrorRefusesPathsOutsideItsFolder(t *testing.T) {
+	t.Parallel()
 	rig := newMirrorRig(t)
 	for _, p := range []string{
 		"/api/cluster/updates/artifacts/1.5.0/..%2Fx",
@@ -648,6 +659,7 @@ func TestMirrorRefusesPathsOutsideItsFolder(t *testing.T) {
 
 // inside keeps every path a request names inside its root.
 func TestInsideStaysInItsRoot(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if p, err := inside(root, "1.5.0", "release.json"); err != nil || filepath.Dir(filepath.Dir(p)) != root {
 		t.Fatalf("a plain name: %q %v", p, err)
@@ -666,6 +678,7 @@ func TestInsideStaysInItsRoot(t *testing.T) {
 // damaged block, an edit) is dropped and fetched again: by the next process, which checks
 // each kept file once, and by this one when the file changed under it. Story 35.12 review F1.
 func TestMirrorDamagedKeptCopyIsFetchedAgain(t *testing.T) {
+	t.Parallel()
 	rig := newMirrorRig(t)
 	archive := "maktaba-server_1.5.0_linux_amd64.tar.gz"
 	path := "/api/cluster/updates/artifacts/1.5.0/" + archive
@@ -709,6 +722,7 @@ func TestMirrorDamagedKeptCopyIsFetchedAgain(t *testing.T) {
 // the pipeline's wheel and constraints) when it verifies, rather than downloading it again;
 // a copy that does not verify is passed over. Design §13.2.
 func TestMirrorReusesTheHomesOwnCopies(t *testing.T) {
+	t.Parallel()
 	rig := newMirrorRig(t)
 	rel := filepath.Join(t.TempDir(), "bin", "releases", "1.5.0")
 	pipe := filepath.Join(rel, "pipeline")
@@ -745,6 +759,7 @@ func TestMirrorReusesTheHomesOwnCopies(t *testing.T) {
 // A kept TUF file that is not whole (a target whose digest is not its name's, metadata that
 // is not JSON) is read again from the public repository rather than passed on.
 func TestMirrorTUFCacheIsCheckedBeforeUse(t *testing.T) {
+	t.Parallel()
 	rig := newMirrorRig(t)
 	body := `{"trusted":"root"}`
 	target := "targets/" + hexSum([]byte(body)) + ".trusted_root.json"

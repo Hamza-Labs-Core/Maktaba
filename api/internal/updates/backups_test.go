@@ -89,6 +89,7 @@ func (d *disconnectFake) commands() []string {
 // the restore itself only with the backup's name typed (admin only, audited), the
 // machines told the home goes away; a refusal keeps its code.
 func TestBackupsAndRestore(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, sqliteDB(t))
 	sup := &supervisorFake{}
 	srv, tok := sup.server(t)

@@ -4,9 +4,10 @@ package updates
 // port). Every number is read from the database when Prometheus scrapes (at most every
 // metricsCacheFor), not counted in memory: an API that restarts mid-run (an update
 // restarts it) shows the same counts after as before (EC1). The counters and histograms
-// never go down: the runs, steps and targets they count are rows that are never deleted
-// (each histogram is summed by the database over all of them), and verification failures
-// are a running total kept with the settings (Store.SetVerifyError). The supervisor's own
+// never go down: the runs and targets they count are rows that are never deleted (each
+// histogram is summed by the database over all of them); the machines' steps (whose rows
+// a machine's journal rewrites) and verification failures are running totals kept with
+// the settings, counted once each (events.go countStep, Store.SetVerifyError). The supervisor's own
 // (the database step's migration time) are its /metrics, merged into the API's
 // (cmd/maktaba-server/internal/updater/metrics.go).
 //
@@ -277,17 +278,6 @@ func (m *Metrics) read(ctx context.Context, now time.Time) *metricsSnap {
 		FROM update_runs WHERE finished_at IS NOT NULL`, runBuckets); err == nil && hs[""] != nil {
 		s.runDur = *hs[""]
 	}
-	if hs, err := m.histograms(ctx, `SELECT step AS g, `+m.seconds("started_at", "finished_at")+` AS d
-		FROM update_run_steps WHERE finished_at IS NOT NULL AND state IN ('done', 'failed')`, stepBuckets); err == nil {
-		for step, h := range hs {
-			label := stepLabel(step)
-			if cur, ok := s.stepDur[label]; ok {
-				cur.add(*h)
-			} else {
-				s.stepDur[label] = h
-			}
-		}
-	}
 	if hs, err := m.histograms(ctx, `SELECT '' AS g, `+m.seconds("applied_at", "healthy_at")+` AS d
 		FROM update_targets WHERE applied_at IS NOT NULL AND healthy_at IS NOT NULL`, applyBuckets); err == nil && hs[""] != nil {
 		s.apply = *hs[""]
@@ -314,8 +304,15 @@ func (m *Metrics) read(ctx context.Context, now time.Time) *metricsSnap {
 			}
 		}
 	}
-	for kind, n := range st.Counters(ctx).VerifyFailures {
+	counters := st.Counters(ctx)
+	for kind, n := range counters.VerifyFailures {
 		s.verify[kind] = float64(n)
+	}
+	for label, h := range counters.Steps {
+		if h == nil || len(h.Counts) != len(stepBuckets) {
+			continue // counted over other bounds: not shown under these
+		}
+		s.stepDur[stepLabel(label)] = &histo{count: h.Count, sum: h.Sum, counts: h.Counts}
 	}
 	if n, ok := m.machinesBehind(ctx); ok {
 		v := float64(n)

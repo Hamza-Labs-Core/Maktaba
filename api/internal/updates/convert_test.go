@@ -126,6 +126,7 @@ func workerNode(t *testing.T, r *driverRig, cc *convertCluster, id, name, versio
 // drained, sent update.convert (the run's job), healthy once its new agent is on the
 // release. Its pipeline being on the release already changes nothing: it converts.
 func TestConvertWorkerOnlyOnItsTurn(t *testing.T) {
+	t.Parallel()
 	r, cc := newConvertRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -176,6 +177,7 @@ func TestConvertWorkerOnlyOnItsTurn(t *testing.T) {
 // once"): the run is done, nothing failed; later runs do not ask it again while its
 // pipeline is the same; an installer run (a newer pipeline) makes it convertible again.
 func TestConvertTooOldWorker(t *testing.T) {
+	t.Parallel()
 	r, cc := newConvertRig(t)
 	ctx := context.Background()
 	w := workerNode(t, r, cc, "w1", "studio", "1.3.0")
@@ -228,6 +230,7 @@ func TestConvertTooOldWorker(t *testing.T) {
 // A conversion that fails (its setup exits non-zero) fails its target with the worker's
 // reason; the machine stays drained and is not caught up again for this release.
 func TestConvertFailure(t *testing.T) {
+	t.Parallel()
 	r, cc := newConvertRig(t)
 	ctx := context.Background()
 	w := workerNode(t, r, cc, "w1", "studio", "1.4.0")
@@ -259,6 +262,7 @@ func TestConvertFailure(t *testing.T) {
 
 // A refusal for another reason than its age fails the target (convert_refused).
 func TestConvertRefused(t *testing.T) {
+	t.Parallel()
 	r, cc := newConvertRig(t)
 	w := workerNode(t, r, cc, "w1", "studio", "1.4.0")
 	w.refuse = "a conversion of another run is under way"
@@ -274,6 +278,7 @@ func TestConvertRefused(t *testing.T) {
 // A conversion that never brings the machine's agent on the release fails after
 // convertTimeout (convert_timeout).
 func TestConvertTimeout(t *testing.T) {
+	t.Parallel()
 	r, cc := newConvertRig(t)
 	ctx := context.Background()
 	w := workerNode(t, r, cc, "w1", "studio", "1.4.0")
@@ -300,6 +305,7 @@ func TestConvertTimeout(t *testing.T) {
 // A worker-only machine offline when the run begins is converted once its worker is back
 // (inside the window), within the same run.
 func TestConvertWorkerBackDuringTheRun(t *testing.T) {
+	t.Parallel()
 	r, cc := newConvertRig(t)
 	ctx := context.Background()
 	w := workerNode(t, r, cc, "w1", "studio", "1.4.0")
@@ -322,6 +328,7 @@ func TestConvertWorkerBackDuringTheRun(t *testing.T) {
 // The conversion's job carries a download token for the home's mirror, for that machine
 // and that release (it has no delegation key yet).
 func TestConvertJobCarriesADownloadToken(t *testing.T) {
+	t.Parallel()
 	r, cc := newConvertRig(t)
 	r.d.Mirror = &Mirror{Store: r.f.store, Dir: t.TempDir()}
 	w := workerNode(t, r, cc, "w1", "studio", "1.4.0")

@@ -326,6 +326,7 @@ func targetsByName(t *testing.T, s *Store, runID string) map[string]Target {
 // The home updates first, then every machine, one at a time, each checked before the
 // next; the workers are drained while the home applies and put back after.
 func TestDriverHomeThenMachinesOneAtATime(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -386,6 +387,7 @@ func TestDriverHomeThenMachinesOneAtATime(t *testing.T) {
 
 // A home that rolls back leaves the machines alone and blocks the release.
 func TestDriverHomeRollbackTouchesNoMachine(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	n1 := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -411,6 +413,7 @@ func TestDriverHomeRollbackTouchesNoMachine(t *testing.T) {
 
 // node_failure_policy over three machines on two platforms.
 func TestDriverFailurePolicies(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		policy, run    string
 		bravo, charlie string
@@ -446,6 +449,7 @@ func TestDriverFailurePolicies(t *testing.T) {
 
 // A machine that never reports back is failed after node_health_timeout_minutes.
 func TestDriverNodeHealthTimeout(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0").outcome = "silent"
@@ -459,6 +463,7 @@ func TestDriverNodeHealthTimeout(t *testing.T) {
 
 // An offline machine is left offline by the rollout and caught up when it comes back.
 func TestDriverCatchUp(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	n1 := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -480,6 +485,7 @@ func TestDriverCatchUp(t *testing.T) {
 
 // Cancel is accepted before the home switches only.
 func TestDriverCancel(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	_, _ = r.f.svc.Tick(ctx)
@@ -511,6 +517,7 @@ func TestDriverCancel(t *testing.T) {
 // An automatic run restarts the home only with nobody watching; at the window's end
 // it gives up (tv_busy) and is tried in the next window.
 func TestDriverWaitsForTheTV(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.viewers = 2
@@ -536,6 +543,7 @@ func TestDriverWaitsForTheTV(t *testing.T) {
 // The API restarts mid-run (an update restarts it): a new driver takes the run up from
 // the database.
 func TestDriverResumesAcrossAnAPIRestart(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -555,6 +563,7 @@ func TestDriverResumesAcrossAnAPIRestart(t *testing.T) {
 // A failed prepare counts against the release (blocked at three); a verification or a
 // rehearsal failure blocks it at once.
 func TestDriverPrepareFailures(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ code, blocked string }{{"verify_identity", "verify"}, {"rehearsal_failed", "rehearsal"},
 		{"download_failed", ""}} {
 		t.Run(tc.code, func(t *testing.T) {
@@ -578,6 +587,7 @@ func TestDriverPrepareFailures(t *testing.T) {
 // is not on the channel is offline (converted once it is back: convert_test.go) and shown
 // worker-only.
 func TestDriverSkewRules(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	ahead := r.node(t, "n1", "alpha", "linux-amd64", "1.6.0")
@@ -605,6 +615,7 @@ func TestDriverSkewRules(t *testing.T) {
 // Story 35.7: a home whose TV processes run on across its restart (the TV handover) is
 // not held for the TV: its restart cuts no TV. One that cannot hand over waits, as before.
 func TestDriverHandoverNeedsNoQuietTV(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.handsOver = true
@@ -618,6 +629,7 @@ func TestDriverHandoverNeedsNoQuietTV(t *testing.T) {
 // Story 35.7: a machine whose TV processes run on across its restart is not held while
 // its streams are watched.
 func TestDriverNodeHandoverNeedsNoQuietTV(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -635,6 +647,7 @@ func TestDriverNodeHandoverNeedsNoQuietTV(t *testing.T) {
 // cannot at the apply after all, refuses while the TV is watched; the run's TV gate then
 // holds it until the TV is quiet.
 func TestDriverLostHandoverWaitsForTheTV(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.handsOver, r.home.lostHandover = true, true

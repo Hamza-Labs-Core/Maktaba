@@ -244,6 +244,49 @@ func (s *Store) SetVerifyError(ctx context.Context, version string, ve *VerifyEr
 type Counters struct {
 	// VerifyFailures are the verifications that failed, by the kind of failure.
 	VerifyFailures map[string]int64 `json:"verify_failures,omitempty"`
+	// Steps are the machines' steps that ended (done or failed), by step label: how long
+	// each took, counted once when its end is said (events.go).
+	Steps map[string]*HistTotal `json:"steps,omitempty"`
+}
+
+// HistTotal is a histogram's running total: how many, their sum, and how many at or under
+// each bucket.
+type HistTotal struct {
+	Count   uint64    `json:"count"`
+	Sum     float64   `json:"sum"`
+	Buckets []float64 `json:"buckets"` // the bounds the counts are of
+	Counts  []uint64  `json:"counts"`
+}
+
+// add counts one value v.
+func (h *HistTotal) add(v float64, bounds []float64) {
+	if len(h.Counts) != len(bounds) {
+		h.Buckets, h.Counts = append([]float64(nil), bounds...), make([]uint64, len(bounds))
+	}
+	h.Count++
+	h.Sum += v
+	for i, b := range h.Buckets {
+		if v <= b {
+			h.Counts[i]++
+		}
+	}
+}
+
+// countStep adds an ended step's time to the running totals (best effort).
+func (s *Store) countStep(ctx context.Context, label string, seconds float64, bounds []float64) {
+	countersMu.Lock()
+	defer countersMu.Unlock()
+	c := s.Counters(ctx)
+	if c.Steps == nil {
+		c.Steps = map[string]*HistTotal{}
+	}
+	h := c.Steps[label]
+	if h == nil {
+		h = &HistTotal{}
+		c.Steps[label] = h
+	}
+	h.add(seconds, bounds)
+	s.saveSetting(ctx, countersKey, c)
 }
 
 const countersKey = "updates.counters"

@@ -10,6 +10,7 @@ import (
 // review A2: a home that neither commits nor rolls back within hours of its switch ends
 // the run (the cluster undrained, a person told), whatever its supervisor answers.
 func TestDriverHomeCeiling(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -39,6 +40,7 @@ func TestDriverHomeCeiling(t *testing.T) {
 
 // review A3: Cancel during a rollout withdraws the orders waiting for a click.
 func TestDriverCancelWithdrawsWaitingOrders(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "darwin-arm64", "1.4.0")
@@ -60,6 +62,7 @@ func TestDriverCancelWithdrawsWaitingOrders(t *testing.T) {
 // review A4: a machine offline when the rollout began, back while the run waits for
 // another machine's click, is updated by that run (no catch-up can start meanwhile).
 func TestDriverRolloutTakesBackAMachine(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "darwin-arm64", "1.4.0")
@@ -82,6 +85,7 @@ func TestDriverRolloutTakesBackAMachine(t *testing.T) {
 // review A5: a machine whose install cannot update itself needs a person; it holds no
 // other machine of its platform.
 func TestDriverInstallKindProblemsNeedAPerson(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -109,6 +113,7 @@ func TestDriverInstallKindProblemsNeedAPerson(t *testing.T) {
 // review A6: a machine busy with a start step (its Python environment) is not failed for
 // the time it takes.
 func TestDriverNodeStartStepHoldsTheTimeout(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -123,6 +128,7 @@ func TestDriverNodeStartStepHoldsTheTimeout(t *testing.T) {
 // review A8: a release withdrawn while the home's app waits for its click ends the run
 // (the order withdrawn); a catch-up never spreads a withdrawn release.
 func TestDriverWithdrawnReleaseStops(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.asks = true
@@ -145,6 +151,7 @@ func TestDriverWithdrawnReleaseStops(t *testing.T) {
 // review A9: viewers who come during the drain hold the home's restart; a machine whose
 // streams are watched waits while the others go; streaming machines go last.
 func TestDriverTVGatesTheRestarts(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -184,6 +191,7 @@ func TestDriverTVGatesTheRestarts(t *testing.T) {
 
 // review A10: no update run starts while a switch of the home is under way.
 func TestSchedulerWaitsForASwitchover(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.f.svc.Blockers = append(r.f.svc.Blockers, SwitchoverBlocker{DB: r.f.db})
@@ -204,6 +212,7 @@ func TestSchedulerWaitsForASwitchover(t *testing.T) {
 // review A-R5: a run that waits for clicks is superseded only when the newer release can
 // start: a blocker leaves it (and its orders) as they are.
 func TestSupersedeOnlyWhenTheNewerRunStarts(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "darwin-arm64", "1.4.0")
@@ -228,6 +237,7 @@ func TestSupersedeOnlyWhenTheNewerRunStarts(t *testing.T) {
 // review: a home's app clicked outside the window leaves its automatic machines waiting
 // for the next window, not held.
 func TestDriverHomeClickedOutsideTheWindow(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.asks = true

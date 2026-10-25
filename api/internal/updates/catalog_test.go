@@ -191,6 +191,7 @@ func TestCatalogVerifiesNewEntries(t *testing.T) {
 // release exists minutes earlier) is verified once they are there, not passed by forever;
 // one that still has none is not downloaded again.
 func TestCatalogVerifiesALateManifest(t *testing.T) {
+	t.Parallel()
 	for _, be := range backends(t) {
 		t.Run(be.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -235,6 +236,7 @@ func TestCatalogVerifiesALateManifest(t *testing.T) {
 // EC4: the same version re-published with another checksums.txt is re-verified (not
 // installed) or, once installed, refused as a replay.
 func TestCatalogRetag(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := sqliteDB(t)
 	g := newFakeGitHub(t)
@@ -272,6 +274,7 @@ func TestCatalogRetag(t *testing.T) {
 // TC5 (story 35.3 AC6): just before a run the release is re-read; gone, turned
 // prerelease on stable, or another checksums.txt -> withdrawn, not installed, notified.
 func TestRecheckWithdrawn(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, c := range []struct {
 		name   string
@@ -317,6 +320,7 @@ func TestRecheckWithdrawn(t *testing.T) {
 
 // AC10: a check that has not succeeded for 14 days warns (a freeze hint).
 func TestCheckStaleWarns(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	db := sqliteDB(t)
 	g := newFakeGitHub(t)
@@ -344,6 +348,7 @@ func TestCheckStaleWarns(t *testing.T) {
 // A release's assets are the pinned repository's own: a download named elsewhere (another
 // host, another repository) is dropped at discovery, so no machine ever fetches it.
 func TestPinnedAssets(t *testing.T) {
+	t.Parallel()
 	d := &Discoverer{BaseURL: "https://api.github.com", Repo: "Hamza-Labs-Core/Maktaba"}
 	r := Release{Tag: "v1.5.0", Assets: []Asset{
 		{Name: "release.json", URL: "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v1.5.0/release.json"},

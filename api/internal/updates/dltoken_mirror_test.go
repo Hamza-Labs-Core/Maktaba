@@ -16,6 +16,7 @@ import (
 // while that machine is the cluster's, until it expires; never another release, never the
 // wheelhouse or the TUF repository.
 func TestMirrorTakesADownloadToken(t *testing.T) {
+	t.Parallel()
 	rig := newMirrorRig(t)
 	if _, err := rig.store.DB.Exec(`INSERT INTO cluster_nodes (id, name, state, full_node) VALUES
 		('w1', 'studio', 'approved', 0), ('w2', 'gone', 'revoked', 0)`); err != nil {

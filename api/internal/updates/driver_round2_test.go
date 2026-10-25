@@ -26,6 +26,7 @@ func (c oldAgentCluster) Command(ctx context.Context, sid, name string, args any
 // review round 2 (A-O): an old machine agent's "does not run update.prepare" is the
 // machine's install, not the release: it needs a person and holds nobody.
 func TestDriverOldAgentNeedsAPerson(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -42,6 +43,7 @@ func TestDriverOldAgentNeedsAPerson(t *testing.T) {
 // review round 2: no room on the home is a person's to mend, not an attempt of the
 // release (freeing space lets the next window go).
 func TestDriverNoRoomCountsNoAttempt(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.prepFail = "disk_space"
@@ -60,6 +62,7 @@ func TestDriverNoRoomCountsNoAttempt(t *testing.T) {
 // review round 2 (A-W): a release withdrawn upstream while the home's app waits for its
 // click is found when the run looks again before the go: the run ends, nothing installs.
 func TestDriverRechecksTheReleaseBeforeTheGo(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.asks = true
@@ -94,6 +97,7 @@ func TestDriverRechecksTheReleaseBeforeTheGo(t *testing.T) {
 // review round 2 (A-N1): a run that only waits for a click does not hold a switch of the
 // home: once one starts, the order is withdrawn and the run ends.
 func TestDriverWaitingRunEndsForASwitchover(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.asks = true
@@ -116,6 +120,7 @@ func TestDriverWaitingRunEndsForASwitchover(t *testing.T) {
 // review round 2 (A-N2): a home that commits after its run gave up on it (home_timeout)
 // raises the watermark, so the machines catch up to its release.
 func TestDriverHomeCommittedAfterTheCeiling(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -145,6 +150,7 @@ func TestDriverHomeCommittedAfterTheCeiling(t *testing.T) {
 // review round 2: a one-machine Retry touches only that machine, not every machine
 // behind (outside the window too).
 func TestDriverRetryOfOneMachineTouchesOnlyIt(t *testing.T) {
+	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
@@ -172,6 +178,7 @@ func TestDriverRetryOfOneMachineTouchesOnlyIt(t *testing.T) {
 // Review round 3: the driver never gives up on a home still within its own limits (a
 // large database's start steps can take longer than homeCeiling).
 func TestHomeCeilingCoversTheHomesOwnBound(t *testing.T) {
+	t.Parallel()
 	if got := homeCeilingFor(nil); got != homeCeiling {
 		t.Fatalf("no report: %s", got)
 	}

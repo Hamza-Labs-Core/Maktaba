@@ -27,6 +27,7 @@ var contract = func(r *Release) { r.Manifest.BreaksPreviousHome = true }
 // TC1 (story 35.3): the target is a pure function of catalog, policy, current version
 // and watermark.
 func TestChooseTarget(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	pol := DefaultPolicy()
 	beta := pol
@@ -82,6 +83,7 @@ func TestChooseTarget(t *testing.T) {
 }
 
 func TestCompareVersions(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		a, b string
 		want int
@@ -105,6 +107,7 @@ func TestCompareVersions(t *testing.T) {
 }
 
 func TestPolicyValidate(t *testing.T) {
+	t.Parallel()
 	p := DefaultPolicy()
 	p.PinnedVersion = "1.4.0"
 	if err := p.Validate("1.5.0"); err == nil || policyErrCode(err) != "pin_below_installed" {
@@ -169,6 +172,7 @@ func rawMap(m map[string]string) map[string]json.RawMessage {
 // home on rc.7 does not take 0.3.0 (newer in version, the older build) but takes 0.3.1; a
 // hotfix on an older minor signed after the next minor still moves up to it (22.5 EC1).
 func TestChooseTargetPassesAnOlderBuild(t *testing.T) {
+	t.Parallel()
 	at := func(s string) func(*Release) {
 		return func(r *Release) {
 			p, _ := time.Parse(time.RFC3339, s)
@@ -211,6 +215,7 @@ func TestChooseTargetPassesAnOlderBuild(t *testing.T) {
 // machines do), not release.json's "published": a release.json that says otherwise does
 // not decide; the verification keeps that time in the catalog.
 func TestChooseTargetComparesTheSigningTime(t *testing.T) {
+	t.Parallel()
 	ts := func(s string) time.Time { p, _ := time.Parse(time.RFC3339, s); return p }
 	signed := func(published, signedAt string) func(*Release) {
 		return func(r *Release) {
