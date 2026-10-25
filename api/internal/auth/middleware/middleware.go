@@ -29,6 +29,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
+	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secret"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates/dltoken"
 )
@@ -256,7 +257,7 @@ func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handl
 				WritePasswordChangeRequired(w)
 				return
 			}
-			if isPublic(public, r.URL.Path) || IsPublicChannelArt(r) || machineRoute(r) {
+			if isPublic(public, r.URL.Path) || IsPublicChannelArt(r) || machineRoute(r) || supervisorRoute(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -289,6 +290,20 @@ func machineRoute(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// supervisorPrefix is this machine's own supervisor's routes on its API (Epic 35 story
+// 35.6: the update's TV change, POST /internal/updates/tv-change, GET …/{run}, POST
+// …/{run}/withdraw): its per-boot local token passes the gate without a user, on these
+// alone, and each handler checks the token again.
+const supervisorPrefix = "/internal/updates/tv-change"
+
+func supervisorRoute(r *http.Request) bool {
+	p := r.URL.Path
+	if p != supervisorPrefix && !strings.HasPrefix(p, supervisorPrefix+"/") {
+		return false
+	}
+	return mw.FromSupervisor(r)
 }
 
 func isPublic(public map[string]struct{}, path string) bool {

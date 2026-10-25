@@ -12,6 +12,9 @@ from maktaba_pipeline.tvrelease.stage import collapse_open, stage_change
 from maktaba_pipeline.tvrelease.store import create_change, get_change, open_change, open_changes
 from tests.tvrelease.helpers import NOW, add_channel, library_with, set_staging
 
+pytestmark = pytest.mark.integration
+
+
 _SHA = "ab" * 32
 
 

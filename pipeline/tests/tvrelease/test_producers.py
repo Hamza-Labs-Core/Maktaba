@@ -21,6 +21,9 @@ from maktaba_pipeline.tvrelease.store import get_change
 from tests.engine.factory import make_library, make_video
 from tests.tvrelease.helpers import NOW, add_channel, blocks, library_with, set_staging
 
+pytestmark = pytest.mark.integration
+
+
 _JOB = SimpleNamespace(id=1)
 
 
