@@ -78,6 +78,10 @@ const (
 	kitCloud     = "cloud.json"
 	// the model server the home's LLM stages used when it is another machine's ([llm] url)
 	kitLLM = "llm.json"
+	// the cluster link's CA (story 35.16): the new home keeps the machines' certificates
+	// valid (their link, and its Postgres' client certificates) only with the same CA
+	kitLinkCAKey  = "cluster-ca.key"
+	kitLinkCACert = "cluster-ca.crt"
 )
 
 // kitLLMServer is the [llm] url and models a kit carries.
@@ -231,6 +235,9 @@ func (s *switching) kitFiles() map[string]string {
 		out[kitCACert] = filepath.Join(config.KeysDir(), kitCACert)
 		out[kitCAKey] = filepath.Join(config.KeysDir(), kitCAKey)
 	}
+	// beside secrets.key, where the home's API keeps it
+	out[kitLinkCAKey] = filepath.Join(filepath.Dir(secretsKeyPath()), kitLinkCAKey)
+	out[kitLinkCACert] = filepath.Join(filepath.Dir(secretsKeyPath()), kitLinkCACert)
 	return out
 }
 
@@ -989,8 +996,12 @@ func (s *switching) homeKeyFiles() []string {
 	}
 	// the Hugging Face token stays: it is the person's own, for this machine's models
 	// (every machine keeps one of its own), not a key of the cluster's
+	// the cluster link's CA key and the home's web certificate (story 35.16) stay with the
+	// home: a machine never holds the CA's key
+	keys := filepath.Dir(secretsKeyPath())
 	return append([]string{secretsKeyPath(), clusterKeyPath(), caKey, priv, pub, supervisor.RelayCredPath(),
-		supervisor.RelayKeyPath()}, serverTLS...)
+		supervisor.RelayKeyPath(), filepath.Join(keys, kitLinkCAKey), filepath.Join(keys, "cluster-web.crt"),
+		filepath.Join(keys, "cluster-web.key")}, serverTLS...)
 }
 
 // wipeHomeKeys removes this machine's copies of the home's keys (overwritten first) and

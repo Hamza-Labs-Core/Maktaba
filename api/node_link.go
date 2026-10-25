@@ -88,6 +88,9 @@ func serveLocalAgent(c *link.Client) http.HandlerFunc {
 			return
 		}
 		if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			// a probe: the link is up, in the home's mode (a process on a plain session
+			// moves to the link only when the home requires it)
+			w.Header().Set("X-Maktaba-Link-Mode", c.Mode())
 			http.Error(w, "a WebSocket upgrade is expected", http.StatusBadRequest)
 			return
 		}

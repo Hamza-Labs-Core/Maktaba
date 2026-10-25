@@ -365,9 +365,12 @@ func (a *Agent) session(ctx context.Context) (websocket.StatusCode, error) {
 	return a.pump(ctx, c, c2s, s2c, viaLink)
 }
 
-// linkUp reports whether the node api's loopback route to the link answers (it says a
-// WebSocket is expected, rather than 503 for a link that is not up).
-func (a *Agent) linkUp(ctx context.Context) bool {
+// linkRequired reports whether the node api's loopback route says its link is up and the
+// home requires it: only then does a working session straight to the home move to the
+// link (there it may do nothing but renew a certificate). A move drops the session for a
+// moment, which the home sees as the machine going offline (an update under way waits for
+// it), so it never happens while the home still takes the direct one.
+func (a *Agent) linkRequired(ctx context.Context) bool {
 	if a.ID.LocalURL == "" {
 		return false
 	}
@@ -383,7 +386,7 @@ func (a *Agent) linkUp(ctx context.Context) bool {
 		return false
 	}
 	_ = resp.Body.Close()
-	return resp.StatusCode != http.StatusServiceUnavailable && resp.StatusCode != http.StatusNotFound
+	return resp.StatusCode == http.StatusBadRequest && resp.Header.Get("X-Maktaba-Link-Mode") == "require"
 }
 
 func (a *Agent) handshake(ctx context.Context, c *websocket.Conn, nodePriv, homePub []byte) (*cipher, *cipher, error) {
@@ -493,7 +496,7 @@ func hmacEqual(a, b []byte) bool {
 }
 
 // pump runs the sealed frames of one session. A session straight to the home moves to
-// the machine's link once that is up (checked every minute): the home may require it.
+// the machine's link once the home requires it (checked every minute).
 func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher, viaLink bool) (websocket.StatusCode, error) {
 	out := make(chan []byte, 64)
 	send := func(v any) {
@@ -593,7 +596,7 @@ func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher, v
 		case <-nudge:
 			sendState()
 		case <-linkCheck.C:
-			if !viaLink && a.linkUp(ctx) {
+			if !viaLink && a.linkRequired(ctx) {
 				_ = c.Close(websocket.StatusNormalClosure, "normal moving to the cluster link")
 				return websocket.StatusNormalClosure, errors.New("machineagent: moving to the cluster link")
 			}
