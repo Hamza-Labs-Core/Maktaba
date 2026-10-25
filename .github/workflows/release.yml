@@ -259,12 +259,16 @@ jobs:
           cp -R web/dist/. "${EMBED}/"
           touch "${EMBED}/.gitkeep"
           mkdir -p "${GITHUB_WORKSPACE}/dist"
-          LDFLAGS="-buildid= -s -w \
-            -X ${PKG}.Version=${VERSION} \
-            -X ${PKG}.Commit=${COMMIT} \
-            -X ${PKG}.BuildDate=${SDE}"
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
             os="${target%/*}"; arch="${target#*/}"
+            # macOS keeps Go's build ID: the LC_UUID made from it is how macOS matches a
+            # Local Network or other privacy grant to the program (a content hash, so
+            # still reproducible)
+            bid="-buildid= "; [ "${os}" = darwin ] && bid=""
+            LDFLAGS="${bid}-s -w \
+              -X ${PKG}.Version=${VERSION} \
+              -X ${PKG}.Commit=${COMMIT} \
+              -X ${PKG}.BuildDate=${SDE}"
             out="${GITHUB_WORKSPACE}/dist/maktaba-server-${os}-${arch}"
             [ "${os}" = windows ] && out="${out}.exe"
             echo "==> maktaba-server ${os}/${arch}"
@@ -277,7 +281,7 @@ jobs:
             [ "${os}" = windows ] && lout="${lout}.exe"
             ( cd cmd/maktaba-launcher && \
               GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 SOURCE_DATE_EPOCH="${SDE}" \
-              go build -trimpath -ldflags "-buildid= -s -w -X main.Version=${VERSION}" -o "${lout}" . )
+              go build -trimpath -ldflags "${bid}-s -w -X main.Version=${VERSION}" -o "${lout}" . )
           done
           ls -l "${GITHUB_WORKSPACE}/dist"
 
