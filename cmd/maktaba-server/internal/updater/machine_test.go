@@ -610,10 +610,21 @@ func TestRollbackCommitted(t *testing.T) {
 // side effects, starts the next process on whatever release the disk says, and checks
 // the run still ends where it must: prepared again for a cut prepare, nothing changed
 // for a cut before the restart was handed over, committed (healthy) after it.
-func TestResumeAfterACrashAtEveryStep(t *testing.T) {
-	for _, step := range []string{StepPreflight, StepStage, StepSmoke, StepSwitch, StepRestart, StepCommit} {
+// Split in two, each case in parallel (each has its own world and folder): one test of
+// twelve cases ran past the unit tier's cap under -race.
+func TestResumeAfterACrashWhilePreparing(t *testing.T) {
+	resumeAfterACrashAt(t, StepPreflight, StepStage, StepSmoke)
+}
+
+func TestResumeAfterACrashWhileApplying(t *testing.T) {
+	resumeAfterACrashAt(t, StepSwitch, StepRestart, StepCommit)
+}
+
+func resumeAfterACrashAt(t *testing.T, steps ...string) {
+	for _, step := range steps {
 		for _, when := range []string{"before", "after"} {
 			t.Run(when+"_"+step, func(t *testing.T) {
+				t.Parallel()
 				w := newWorld("1.4.0")
 				r := startRig(t, t.TempDir(), w, healthy)
 				r.inst.dieAt = when + ":" + step
