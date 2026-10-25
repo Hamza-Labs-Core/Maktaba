@@ -42,6 +42,9 @@ func buildPlacement() placement.Table {
 		// term it would take (Epic 37)
 		"/api/cluster/emergency",
 		"/api/cluster/term-claim",
+		// the machine's own processes on its cluster link (story 35.16)
+		"/api/cluster/link/local/agent",
+		"/api/cluster/link/local/fetch",
 		// the cluster sign-in's node half (story 35.9 AC6)
 		"/api/cluster/sso/start",
 		"/api/cluster/sso/callback",

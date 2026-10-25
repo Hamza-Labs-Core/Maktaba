@@ -134,7 +134,7 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 
 	fd := &frontdoor.Handler{Svc: svc, Settings: csettings, Self: ident.ID, Keyring: keyring, Tracker: tracker,
 		Logger: logger, Slots: slots, CacheRoot: b.cfg.Cache.Root,
-		PublicBase: publicBase}
+		PublicBase: publicBase, Client: linkClient(b.pool)}
 
 	liveStations := func() []uuid.UUID { return slots.LiveStations() }
 	b.loop = &cluster.HostLoop{Store: cluster.PGBeatStore{Pool: b.pool}, HostID: ident.ID, Keyring: keyring, Logger: logger,

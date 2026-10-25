@@ -5757,6 +5757,65 @@
      "default": 2048,
      "minimum": 0,
      "maximum": 1048576
+    },
+    {
+     "name": "link_mode",
+     "kind": "str",
+     "group": "Cluster link",
+     "label": "Cluster link",
+     "help": "How the machines reach the home. prefer: a machine that holds a certificate from this home talks to it over one encrypted, mutually authenticated connection (and a separate one per stream); the others use the older paths. require: the older paths are refused. off: the older paths only. The home switches from prefer to require by itself once every machine has held the link for a day (below).",
+     "default": "prefer",
+     "choices": [
+      "off",
+      "prefer",
+      "require"
+     ]
+    },
+    {
+     "name": "link_auto_require",
+     "kind": "bool",
+     "group": "Cluster link",
+     "label": "Switch to require by itself",
+     "help": "On: once every approved machine has held its link to the home for 24 hours without a break, the link becomes required (the Machines page says so). Set the link back to prefer to stop it.",
+     "default": true
+    },
+    {
+     "name": "link_max_streams",
+     "kind": "int",
+     "group": "Cluster link",
+     "label": "Streams per machine",
+     "help": "The data streams (TV pulls, release downloads, proxied sockets) one machine may hold open at once; one more is refused.",
+     "default": 32,
+     "minimum": 1,
+     "maximum": 256
+    },
+    {
+     "name": "link_stream_grace_seconds",
+     "kind": "int",
+     "group": "Cluster link",
+     "label": "Streams outlive a dropped link (s)",
+     "help": "When a machine's control connection drops (the home's API restarting), its open streams keep running this long and carry on with its next connection; past it they close.",
+     "default": 60,
+     "minimum": 0,
+     "maximum": 600
+    },
+    {
+     "name": "tls_cert_days",
+     "kind": "int",
+     "group": "Cluster link",
+     "label": "Machine certificate life (days)",
+     "help": "A machine's certificate from this home's cluster CA lasts this long; the machine renews it by itself when a third of it is left.",
+     "default": 30,
+     "minimum": 2,
+     "maximum": 365
+    },
+    {
+     "name": "tls_web_https",
+     "kind": "bool",
+     "group": "Cluster link",
+     "label": "HTTPS on port 8443",
+     "help": "Every machine also serves its web pages on port 8443 over HTTPS, with a certificate from this home's cluster CA. Install the CA (Machines page) on a device to open them without a warning.",
+     "default": false
     }
    ]
   },

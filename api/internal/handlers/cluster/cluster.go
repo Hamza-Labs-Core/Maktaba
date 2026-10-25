@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -105,6 +106,53 @@ type Handler struct {
 	// 35.11), shown next to the machines'.
 	WebURL  string
 	Version string
+	// JoinTLS signs a joining machine's CSR for its sealed credentials (story 35.16);
+	// nil: the home has no cluster CA (the machine asks again on its channel session).
+	JoinTLS func(ctx context.Context, nodeID, csrPEM string) (*cluster.PayloadTLS, error)
+	// Link is the cluster link's state for the Machines page; nil: none.
+	Link func(ctx context.Context) any
+
+	// csrs are the pending join requests' CSRs (kept until approved or expired; a home
+	// restarted meanwhile approves without one, and the machine asks on its channel)
+	csrMu sync.Mutex
+	csrs  map[string]pendingCSR
+}
+
+type pendingCSR struct {
+	pem     string
+	expires time.Time
+}
+
+// keepCSR remembers a join request's CSR until it expires.
+func (h *Handler) keepCSR(nodeID, csr string, expires time.Time) {
+	h.csrMu.Lock()
+	defer h.csrMu.Unlock()
+	if h.csrs == nil {
+		h.csrs = map[string]pendingCSR{}
+	}
+	now := h.now()
+	for id, p := range h.csrs {
+		if now.After(p.expires) {
+			delete(h.csrs, id)
+		}
+	}
+	if csr == "" {
+		delete(h.csrs, nodeID)
+		return
+	}
+	h.csrs[nodeID] = pendingCSR{pem: csr, expires: expires}
+}
+
+// takeCSR is a pending request's CSR ("" for none), forgotten once taken.
+func (h *Handler) takeCSR(nodeID string) string {
+	h.csrMu.Lock()
+	defer h.csrMu.Unlock()
+	p, ok := h.csrs[nodeID]
+	delete(h.csrs, nodeID)
+	if !ok || h.now().After(p.expires) {
+		return ""
+	}
+	return p.pem
 }
 
 // Mount wires the routes.
@@ -295,6 +343,9 @@ type JoinRequest struct {
 	Capabilities json.RawMessage `json:"capabilities"`
 	Storage      json.RawMessage `json:"storage"`
 	Pubkey       string          `json:"pubkey"`
+	// CSR is the machine's cluster-link certificate request (story 35.16; its key made
+	// on the machine); an older machine sends none.
+	CSR string `json:"csr,omitempty"`
 }
 
 // JoinHome identifies the home in the join answer.
@@ -408,6 +459,10 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 		errInternal(w, r, "store join request", err)
 		return
 	}
+	if len(req.CSR) > 8<<10 {
+		req.CSR = "" // not a certificate request; the machine asks on its channel instead
+	}
+	h.keepCSR(nodeID, strings.TrimSpace(req.CSR), expires)
 	h.log().Info("cluster: join request", "node_id", nodeID, "remote", addr, "event", "cluster_join_request")
 	common.WriteJSON(w, r, http.StatusAccepted, JoinResponse{
 		RequestID:  nodeID,
@@ -508,6 +563,9 @@ type Home struct {
 type Overview struct {
 	Home  Home   `json:"home"`
 	Nodes []Node `json:"nodes"`
+	// Link is the cluster link (story 35.16): its mode, the CA's fingerprint, each
+	// machine's link and certificate.
+	Link any `json:"link,omitempty"`
 }
 
 func (h *Handler) home(ctx context.Context, id cluster.Identity) Home {
@@ -549,7 +607,11 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 		home.WebURL = &u
 	}
 	home.Version = h.Version
-	common.WriteJSON(w, r, http.StatusOK, Overview{Home: home, Nodes: nodes})
+	out := Overview{Home: home, Nodes: nodes}
+	if h.Link != nil {
+		out.Link = h.Link(ctx)
+	}
+	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
 // SettingsRequest is the body of PUT /api/cluster/settings.
@@ -774,12 +836,22 @@ func (h *Handler) provision(ctx context.Context, r *http.Request, n cluster.Node
 	}
 	role := cluster.RoleName(n.ID)
 	dbCA, dbTLS := h.pgTLS()
+	var linkTLS *cluster.PayloadTLS
+	if csr := h.takeCSR(n.ID); csr != "" && h.JoinTLS != nil {
+		if t, err := h.JoinTLS(ctx, n.ID, csr); err == nil {
+			linkTLS = t
+		} else {
+			h.log().Warn("cluster: the joining machine's certificate request was refused; it asks again on its channel",
+				"node_id", n.ID, "err", err, "event", "cluster_join_csr_refused")
+		}
+	}
 	payload, err := cluster.MarshalPayload(cluster.Payload{
 		DatabaseCA:  dbCA,
 		DatabaseTLS: dbTLS,
 		DatabaseURL: cluster.DatabaseURL(role, password, host, h.machinePort(ctx), dbName),
 		Home:        cluster.PayloadHome{APIURL: apiURL, ClusterPub: h.ClusterPub, InstanceID: id.InstanceID, Name: id.Name},
 		NodeID:      n.ID,
+		TLS:         linkTLS,
 		V:           cluster.PayloadVersion,
 	})
 	if err != nil {

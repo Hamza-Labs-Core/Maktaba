@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -35,6 +36,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
@@ -387,6 +389,9 @@ func runServe() error {
 	var nodeRT *nodeRuntime
 	var nodeFatal <-chan error // nil on the home: never ready
 	var nodeVerifier *delegation.Verifier
+	// homeLinkSrv is the home's cluster link (story 35.16): its port then serves the
+	// machines' mutual TLS beside plain HTTP (nil: plain HTTP only)
+	var homeLinkSrv *homeLink
 	if nodeCfg.Enabled {
 		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, logger)
 		if err != nil {
@@ -601,9 +606,10 @@ func runServe() error {
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the
 			// machine join/approve/revoke surface and its housekeeping.
-			clusterClose, verifier := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, hubRef, logger)
+			clusterClose, verifier, hl := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, hubRef, notifyHub, logger)
 			defer clusterClose()
 			nodeVerifier = verifier
+			homeLinkSrv = hl
 			// Epic 35 stories 35.9, 35.11: the nodes' delegation and cluster sign-in,
 			// and this machine's /api/cluster/self
 			mountHomeClusterAuth(r, appDB, hubRef, logger)
@@ -635,6 +641,10 @@ func runServe() error {
 	if nodeRT != nil {
 		publicHandler = nodeRT.handler(auth, r, publicMux)
 	}
+	if homeLinkSrv != nil {
+		// a machine's requests on its link go through the same checks as any other
+		homeLinkSrv.srv.Handler = publicHandler
+	}
 	publicSrv := &http.Server{
 		Addr:              publicAddr,
 		Handler:           publicHandler,
@@ -652,7 +662,18 @@ func runServe() error {
 	errCh := make(chan error, 2)
 	go func() {
 		logger.Info("listening", "addr", publicAddr, "kind", "public", "event", "http_listen")
-		errCh <- publicSrv.ListenAndServe()
+		if homeLinkSrv == nil {
+			errCh <- publicSrv.ListenAndServe()
+			return
+		}
+		// one port, two kinds of client: the first byte of each connection decides
+		// between the machines' mutual TLS and everyone's plain HTTP (story 35.16)
+		ln, err := net.Listen("tcp", publicAddr)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		errCh <- publicSrv.Serve(link.NewSniffListener(ln, homeLinkSrv.srv.TLSConfig()))
 	}()
 	go func() {
 		logger.Info("listening", "addr", adminAddr, "kind", "admin", "event", "http_listen")

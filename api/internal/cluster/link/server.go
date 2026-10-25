@@ -31,6 +31,14 @@ const (
 	PathLink   = "/api/cluster/link"
 	PathStream = "/api/cluster/link/stream"
 	PathCACert = "/api/cluster/ca.crt"
+	// PathPull is the home's loopback route its front door reads a machine's channel from
+	// (tv_pull, relay_pull over that machine's link).
+	PathPull = "/api/cluster/link/pull"
+	// PathLocalAgent and PathLocalFetch are a full node's loopback routes: its
+	// supervisor's machine agent and its pipeline processes reach the home's channel
+	// through them (ws_proxy), and its updater the home's files (artifact, wheelhouse).
+	PathLocalAgent = "/api/cluster/link/local/agent"
+	PathLocalFetch = "/api/cluster/link/local/fetch"
 	// TicketScheme is the Authorization scheme of a stream connection.
 	TicketScheme = "Maktaba-Ticket"
 )

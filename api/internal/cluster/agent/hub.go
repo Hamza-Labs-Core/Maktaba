@@ -111,6 +111,10 @@ type Config struct {
 	// Delegation issues the nodes' delegation keys (Epic 35 story 35.9); nil: the
 	// machine agents get none (full nodes then cannot act for users).
 	Delegation KeyIssuer
+	// Certs signs a machine's cluster-link certificate from its CSR (cert.csr, story
+	// 35.16: a machine joined before the link gets its certificate on its channel
+	// session, no re-join); nil: cert.csr is refused.
+	Certs CertIssuer
 
 	Now    func() time.Time
 	Logger *slog.Logger

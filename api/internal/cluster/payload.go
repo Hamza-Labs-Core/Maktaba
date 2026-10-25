@@ -34,7 +34,18 @@ type Payload struct {
 	DatabaseURL string      `json:"database_url"`
 	Home        PayloadHome `json:"home"`
 	NodeID      string      `json:"node_id"`
-	V           int         `json:"v"`
+	// TLS is the machine's cluster-link certificate (story 35.16): its CSR was in the
+	// join request; absent for a machine that sent none (it asks over its channel session).
+	TLS *PayloadTLS `json:"tls,omitempty"`
+	V   int         `json:"v"`
+}
+
+// PayloadTLS is the machine's certificate from the home's cluster CA, the CA and its
+// fingerprint (pinned through the pairing code's protection: no trust on first use).
+type PayloadTLS struct {
+	CACert   string `json:"ca_cert"`
+	CASHA256 string `json:"ca_sha256"`
+	Cert     string `json:"cert"`
 }
 
 // DatabaseURL builds the machine's connection string: its own role and

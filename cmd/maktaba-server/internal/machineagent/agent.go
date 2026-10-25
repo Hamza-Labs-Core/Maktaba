@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	mrand "math/rand/v2"
+	"net/http"
 	"net/url"
 	"os"
 	"runtime"
@@ -51,6 +52,13 @@ type Identity struct {
 	ClusterPub string // the home's cluster key, standard base64
 	HomeURL    string // the home's API, http(s)://host:port
 	Host       string
+	// CertDir is where the machine's cluster-link certificate lives (beside node.json,
+	// story 35.16): one it lacks (or that expired) it asks for on its session.
+	CertDir string
+	// LocalURL is the node api's loopback route to the home's channel over the machine's
+	// cluster link (ws://127.0.0.1:<port>/api/cluster/link/local/agent): tried first,
+	// the home straight when the link is not up.
+	LocalURL string
 }
 
 // Key is a delegation key from the home.
@@ -311,7 +319,8 @@ func agentURL(home string) (string, error) {
 	return u.String(), nil
 }
 
-// session runs one connection: handshake, then frames until it ends.
+// session runs one connection: handshake, then frames until it ends. The machine's
+// cluster link is tried first (the node api's loopback route), then the home straight.
 func (a *Agent) session(ctx context.Context) (websocket.StatusCode, error) {
 	wsURL, err := agentURL(a.ID.HomeURL)
 	if err != nil {
@@ -323,10 +332,19 @@ func (a *Agent) session(ctx context.Context) (websocket.StatusCode, error) {
 		return 0, errors.New("machineagent: the node config's keys are not 32-byte base64")
 	}
 	dctx, cancel := context.WithTimeout(ctx, handshakeMax)
-	c, _, err := websocket.Dial(dctx, wsURL, &websocket.DialOptions{CompressionMode: websocket.CompressionDisabled})
-	if err != nil {
-		cancel()
-		return 0, err
+	var c *websocket.Conn
+	viaLink := false
+	if a.ID.LocalURL != "" {
+		if lc, _, lerr := websocket.Dial(dctx, a.ID.LocalURL, &websocket.DialOptions{CompressionMode: websocket.CompressionDisabled}); lerr == nil {
+			c, viaLink = lc, true
+		}
+	}
+	if c == nil {
+		c, _, err = websocket.Dial(dctx, wsURL, &websocket.DialOptions{CompressionMode: websocket.CompressionDisabled})
+		if err != nil {
+			cancel()
+			return 0, err
+		}
 	}
 	defer func() { _ = c.CloseNow() }()
 	c.SetReadLimit(8 << 20)
@@ -340,11 +358,32 @@ func (a *Agent) session(ctx context.Context) (websocket.StatusCode, error) {
 	a.lastErr = ""
 	a.mu.Unlock()
 	a.connected.Store(true)
-	a.log().Info("node: machine agent connected to the home", "event", "node_agent_connected")
+	a.log().Info("node: machine agent connected to the home", "link", viaLink, "event", "node_agent_connected")
 	if a.OnConnect != nil {
 		a.OnConnect()
 	}
-	return a.pump(ctx, c, c2s, s2c)
+	return a.pump(ctx, c, c2s, s2c, viaLink)
+}
+
+// linkUp reports whether the node api's loopback route to the link answers (it says a
+// WebSocket is expected, rather than 503 for a link that is not up).
+func (a *Agent) linkUp(ctx context.Context) bool {
+	if a.ID.LocalURL == "" {
+		return false
+	}
+	u := "http" + strings.TrimPrefix(a.ID.LocalURL, "ws")
+	pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(pctx, http.MethodGet, u, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode != http.StatusServiceUnavailable && resp.StatusCode != http.StatusNotFound
 }
 
 func (a *Agent) handshake(ctx context.Context, c *websocket.Conn, nodePriv, homePub []byte) (*cipher, *cipher, error) {
@@ -453,8 +492,9 @@ func hmacEqual(a, b []byte) bool {
 	return v == 0
 }
 
-// pump runs the sealed frames of one session.
-func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher) (websocket.StatusCode, error) {
+// pump runs the sealed frames of one session. A session straight to the home moves to
+// the machine's link once that is up (checked every minute): the home may require it.
+func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher, viaLink bool) (websocket.StatusCode, error) {
 	out := make(chan []byte, 64)
 	send := func(v any) {
 		b, err := json.Marshal(v)
@@ -484,6 +524,17 @@ func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher) (
 		send(f)
 	}
 	sendState()
+	// a machine without a cluster-link certificate (or whose certificate expired) asks
+	// for one on this session (story 35.16)
+	if needCert(a.ID.CertDir, time.Now()) {
+		if csr, err := newCSR(a.ID.CertDir, a.ID.NodeID); err == nil {
+			send(map[string]any{"t": "cert.csr", "id": "cert-1", "csr": csr})
+		} else {
+			a.log().Warn("node: the cluster-link certificate request could not be made", "err", err, "event", "node_cert_csr_failed")
+		}
+	}
+	linkCheck := time.NewTicker(time.Minute)
+	defer linkCheck.Stop()
 	nudge := a.nudgeCh()
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -538,6 +589,11 @@ func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher) (
 			}
 		case <-nudge:
 			sendState()
+		case <-linkCheck.C:
+			if !viaLink && a.linkUp(ctx) {
+				_ = c.Close(websocket.StatusNormalClosure, "normal moving to the cluster link")
+				return websocket.StatusNormalClosure, errors.New("machineagent: moving to the cluster link")
+			}
 		case <-recv:
 			if !silence.Stop() {
 				select {
@@ -585,6 +641,27 @@ func (a *Agent) dispatch(pt []byte, send func(any)) {
 		if json.Unmarshal(pt, &f) == nil {
 			a.publish(Event{Kind: "revoked", Revoked: &f})
 		}
+	case "cert.issued":
+		var f struct {
+			Cert     string `json:"cert"`
+			CACert   string `json:"ca_cert"`
+			CASHA256 string `json:"ca_sha256"`
+		}
+		if json.Unmarshal(pt, &f) != nil {
+			return
+		}
+		if err := saveCert(a.ID.CertDir, f.Cert, f.CACert, f.CASHA256); err != nil {
+			a.log().Warn("node: the cluster-link certificate could not be kept", "err", err, "event", "node_cert_save_failed")
+			return
+		}
+		a.log().Info("node: cluster-link certificate received from the home", "event", "node_cert_received")
+	case "cert.refused":
+		var f struct {
+			Reason string `json:"reason"`
+		}
+		_ = json.Unmarshal(pt, &f)
+		a.log().Warn("node: the home refused the cluster-link certificate request", "reason", f.Reason,
+			"event", "node_cert_refused")
 	case "cmd":
 		var f struct {
 			ID   string `json:"id"`
