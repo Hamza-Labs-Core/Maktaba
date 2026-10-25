@@ -188,6 +188,11 @@ func Build(role Role, opts Options) (Process, error) {
 		// Windows or Linux it gets the plan's knobs, for when it transcribes itself
 		// (story 38.8)
 		env = PlanFor(opts).mainEnv(env)
+		// the index worker (BuildIndexWorker) takes the search index, and the main
+		// worker leaves it to it
+		if env, err = indexMainEnv(opts.Config, env); err != nil {
+			return Process{}, err
+		}
 
 	default:
 		return Process{}, fmt.Errorf("unknown role %q", role)

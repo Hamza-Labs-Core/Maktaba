@@ -160,9 +160,15 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// its admin port (9101); the pipeline on its dedicated logs port
 		// (9102, set below). Without this the bundle would carry api logs
 		// only.
-		add("MAKTABA_LOG_PEERS",
-			"streaming=http://"+LocalAddr(streamingAdmin(cfg), "9101")+"/logs/recent,"+
-				"pipeline=http://"+pipelineLogs(cfg)+"/logs/recent")
+		peers := "streaming=http://" + LocalAddr(streamingAdmin(cfg), "9101") + "/logs/recent," +
+			"pipeline=http://" + pipelineLogs(cfg) + "/logs/recent"
+		if IndexWorkerOn(cfg, n) {
+			// the semantic search is the index worker's (BuildIndexWorker): the
+			// main worker opens no Chroma
+			add("MAKTABA_PIPELINE_SEARCH_ADDR", pipelineSearch(cfg))
+			peers += ",pipeline-index=http://" + pipelineIndexLogs(cfg) + "/logs/recent"
+		}
+		add("MAKTABA_LOG_PEERS", peers)
 		// Process supervision (Story 22.9): the api proxies the
 		// supervisor's state to GET /api/system/processes and records
 		// crashes into health_samples.

@@ -498,8 +498,14 @@ async def serve_grpc(
     service: PipelineService | None = None,
     max_workers: int = 10,
     database: Any | None = None,
+    semantic: bool = True,
 ) -> tuple[Any, asyncio.Task[None]]:
     """Start the gRPC server bound to ``addr`` (e.g. ``0.0.0.0:50051``).
+
+    ``semantic=False`` (``MAKTABA_PIPELINE_SEMANTIC=off``) leaves ``Embed`` /
+    ``SemanticSearch`` unconfigured: the process never opens the search index nor
+    loads the embedding model, because another worker (the supervisor's index worker)
+    holds the Chroma directory.
 
     Returns the server handle (call ``.stop(grace=…)`` to shut down)
     and the background task that drives the server. The caller is
@@ -515,10 +521,15 @@ async def serve_grpc(
             from .engine.plan_preview import PlanPreview
 
             plan_preview = PlanPreview(database)
-        embed, semantic, warm = default_search_backends()
-        if embed is None:
-            _log.info("pipeline_grpc_semantic_disabled", reason="search extra not installed")
-        service = PipelineService(embedder=embed, semantic=semantic, plan_preview=plan_preview)
+        embed: Callable[[str], Awaitable[list[float]]] | None = None
+        search: SemanticSearchFn | None = None
+        if not semantic:
+            _log.info("pipeline_grpc_semantic_disabled", reason="served by the index worker")
+        else:
+            embed, search, warm = default_search_backends()
+            if embed is None:
+                _log.info("pipeline_grpc_semantic_disabled", reason="search extra not installed")
+        service = PipelineService(embedder=embed, semantic=search, plan_preview=plan_preview)
 
     server = grpc.aio.server()
     server.add_generic_rpc_handlers((_build_generic_handler(service),))
