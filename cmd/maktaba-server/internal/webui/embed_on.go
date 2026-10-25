@@ -11,9 +11,6 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
-	"strings"
-
-	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
 )
 
 //go:embed all:dist
@@ -22,12 +19,7 @@ var distFS embed.FS
 // Embedded reports whether the SPA was compiled in.
 const Embedded = true
 
-// Handler returns an http.Handler that serves the embedded SPA with
-// history-API fallback: unknown non-asset paths return index.html so
-// client-side routes (e.g. /library/42) resolve. apiPrefixes are the
-// path prefixes that must NOT fall back to index.html (they belong to a
-// reverse-proxied backend); a request under one of them that misses
-// returns 404 rather than the SPA shell.
+// Handler returns an http.Handler that serves the embedded SPA (serveSPA).
 func Handler(apiPrefixes ...string) http.Handler {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
@@ -35,26 +27,5 @@ func Handler(apiPrefixes ...string) http.Handler {
 		// loud rather than serve a broken UI.
 		panic("webui: dist subtree missing: " + err.Error())
 	}
-	fileServer := http.FileServer(http.FS(sub))
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		clean := strings.TrimPrefix(r.URL.Path, "/")
-		if clean == "" {
-			clean = "index.html"
-		}
-		if _, err := fs.Stat(sub, clean); err != nil {
-			for _, p := range apiPrefixes {
-				if strings.HasPrefix(r.URL.Path, p) {
-					pagetheme.NotFound(w, r)
-					return
-				}
-			}
-			// SPA fallback.
-			r2 := r.Clone(r.Context())
-			r2.URL.Path = "/"
-			fileServer.ServeHTTP(w, r2)
-			return
-		}
-		fileServer.ServeHTTP(w, r)
-	})
+	return serveSPA(sub, apiPrefixes...)
 }
