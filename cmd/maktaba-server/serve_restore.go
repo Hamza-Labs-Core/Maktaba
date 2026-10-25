@@ -46,7 +46,6 @@ type restorer struct {
 	log  io.Writer
 	// schema reads the schema a dump holds (dbsafe's DumpSchema; tests replace it)
 	schema func(ctx context.Context, path string) (int64, error)
-	now    func() time.Time
 }
 
 // backupInfo is one dump in the home's backups folder.
@@ -94,13 +93,6 @@ func (e *restoreError) Error() string { return e.Code + ": " + e.Detail }
 
 func refuse(code, format string, a ...any) error {
 	return &restoreError{Code: code, Detail: fmt.Sprintf(format, a...)}
-}
-
-func (r *restorer) clock() time.Time {
-	if r.now != nil {
-		return r.now()
-	}
-	return time.Now()
 }
 
 func (r *restorer) running() string {
