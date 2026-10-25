@@ -127,7 +127,7 @@
 - **Preconditions / data:** `/me` → `{ "user": { "id": "u2", "username": "viewer", "is_admin": false } }`.
 - **Steps:**
   1. Open `/library`; read the sidebar (first `navigation` named "Primary").
-- **Expected:** Sidebar links, in order: Library `/library`, Series `/series`, TV Guide `/guide`, Search `/search`, Processing `/queue`, Transcription `/transcription`, Settings `/settings`, Account `/account`, Devices `/account/devices`, Sessions `/account/sessions`, API tokens `/account/tokens`, Billing & license `/billing`, Cloud status `/cloud/status`, Help `/help`. No "Administration" text and no link starting with `/admin/`. Same when `is_admin` is missing from the user object.
+- **Expected:** Sidebar links, in order: Library `/library`, Series `/series`, TV Guide `/guide`, Search `/search`, Account `/account`, Devices `/account/devices`, Sessions `/account/sessions`, API tokens `/account/tokens`, Billing & license `/billing`, Cloud status `/cloud/status`, Help `/help`. No "Administration" text, no link starting with `/admin/`, and no Processing `/queue`, Transcription `/transcription` or Settings `/settings` link in the sidebar or the tab bar (running the server is the admins'; the API refuses anyone else). The tab bar is Library, Series, TV Guide, Search, More. Same when `is_admin` is missing from the user object.
 
 ### SHL-09 — Admin sees the Administration group with every admin link
 
@@ -137,7 +137,7 @@
 - **Preconditions / data:** `/me` → `{ "user": { "id": "u1", "username": "root", "is_admin": true } }`.
 - **Steps:**
   1. Open `/library`.
-- **Expected:** After the SHL-08 links, group label "Administration" then: Users `/admin/users`, Library access `/admin/library-acl`, Channels `/admin/channels`, Filler pools `/admin/filler`, Live TV access `/admin/live-tv`, Analytics `/admin/analytics`, Audit log `/admin/audit`, System health `/admin/health`, Machines `/admin/machines`, Logs `/admin/logs`, All devices `/admin/devices`, Extensions `/admin/extensions`. Note `/admin/enrichment` is routed but not linked anywhere in the nav (likely gap — confirm whether it should be listed).
+- **Expected:** After the SHL-08 links, group label "Administration" then: Processing `/queue`, Transcription `/transcription`, Settings `/settings` (first), Users `/admin/users`, Library access `/admin/library-acl`, Channels `/admin/channels`, Filler pools `/admin/filler`, Live TV access `/admin/live-tv`, Analytics `/admin/analytics`, Audit log `/admin/audit`, System health `/admin/health`, Machines `/admin/machines`, Logs `/admin/logs`, All devices `/admin/devices`, Extensions `/admin/extensions`. Note `/admin/enrichment` is routed but not linked anywhere in the nav (likely gap — confirm whether it should be listed).
 
 ### SHL-10 — Non-admin deep link to an admin page shows "Admins only"
 
@@ -211,7 +211,7 @@
 - **Steps:**
   1. Click "AR" (accessible name "Language: العربية").
   2. Reload (re-render with same storage).
-- **Expected:** `<html dir="rtl" lang="ar">`; button now "EN" (name "اللغة: English"); nav labels "المكتبة", "المسلسلات", "دليل القنوات", "البحث", "قائمة المعالجة"; sidebar on the right (`[dir="rtl"] .mkt-shell__nav`). `localStorage["mkt:locale"] = "ar"` and the choice survives the reload.
+- **Expected:** `<html dir="rtl" lang="ar">`; button now "EN" (name "اللغة: English"); nav labels "المكتبة", "المسلسلات", "دليل القنوات", "البحث", "الحساب"; sidebar on the right (`[dir="rtl"] .mkt-shell__nav`). `localStorage["mkt:locale"] = "ar"` and the choice survives the reload.
 
 ### SHL-17 — Notifications: `items: null` / missing / `unread: null`
 
@@ -377,7 +377,7 @@
 - **Preconditions / data:** e2e viewport 375x812, signed in as `a_very_long_username_here`, 120 unread notifications.
 - **Steps:**
   1. Open `/library`; scroll to the bottom of the page.
-- **Expected:** Sidebar hidden (`@media (max-width: 640px)`), tab bar visible with Library, Series, TV Guide, Search, Processing, More. `document.documentElement.scrollWidth <= 375`. Header fits (search, bell "99+", theme, lang, username truncated). Page content not hidden behind the tab bar. Same in Arabic (tab order mirrored).
+- **Expected:** Sidebar hidden (`@media (max-width: 640px)`), tab bar visible with Library, Series, TV Guide, Search, More (the server pages are in the admin section, behind More). `document.documentElement.scrollWidth <= 375`. Header fits (search, bell "99+", theme, lang, username truncated). Page content not hidden behind the tab bar. Same in Arabic (tab order mirrored).
 
 ### SHL-33 — Light and dark theme across the shell
 

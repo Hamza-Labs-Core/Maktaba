@@ -76,19 +76,31 @@ func TestAccess_FilterEvent(t *testing.T) {
 	}
 }
 
+// Non-admins are refused by the package's admin-only Mount (the API enforces
+// roles), so another library's activity and history never reach them: the
+// restricted viewer gets 403 before any query; an admin still reads them.
 func TestAccess_ActivityAndHistoryHideOtherLibraries(t *testing.T) {
 	f := newFixture(stagesRule())
 	other := "66666666-6666-4666-8666-666666666666"
-	if rec := f.do(http.MethodGet, "/api/activity?library_id="+other, "", libViewer()); rec.Code != http.StatusNotFound {
+	if rec := f.do(http.MethodGet, "/api/activity?library_id="+other, "", libViewer()); rec.Code != http.StatusForbidden {
 		t.Fatalf("activity of another library: %d", rec.Code)
+	}
+	if n := len(f.db.Calls()); n != 0 {
+		t.Fatalf("queried %d times for a refused caller", n)
 	}
 	g := newFixture(stagesRule(),
 		videoSubjectRule(other))
-	if rec := g.do(http.MethodGet, "/api/items/video/"+uidA+"/history", "", libViewer()); rec.Code != http.StatusNotFound {
+	if rec := g.do(http.MethodGet, "/api/items/video/"+uidA+"/history", "", libViewer()); rec.Code != http.StatusForbidden {
 		t.Fatalf("history of another library's video: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := g.do(http.MethodGet, "/api/items/catalog/"+CatalogID+"/history", "", libViewer()); rec.Code != http.StatusNotFound {
+	if rec := g.do(http.MethodGet, "/api/items/catalog/"+CatalogID+"/history", "", libViewer()); rec.Code != http.StatusForbidden {
 		t.Fatalf("catalog history for a library viewer: %d", rec.Code)
+	}
+	if n := len(g.db.Calls()); n != 0 {
+		t.Fatalf("queried %d times for a refused caller", n)
+	}
+	if rec := g.do(http.MethodGet, "/api/items/video/"+uidA+"/history", "", admin()); rec.Code != http.StatusOK {
+		t.Fatalf("admin history: %d %s", rec.Code, rec.Body.String())
 	}
 	for _, path := range []string{"/api/workers", "/api/extensions"} {
 		if rec := f.do(http.MethodGet, path, "", allViewer()); rec.Code != http.StatusForbidden {

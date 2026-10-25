@@ -132,7 +132,7 @@ func TestRecordBacklog(t *testing.T) {
 	}
 	// A plain GET never writes.
 	g := newFixture(snapshotRules()...)
-	g.do("GET", "/api/queues", "", viewer())
+	g.do("GET", "/api/queues", "", admin())
 	if len(g.db.Find("insert into health_samples")) != 0 {
 		t.Errorf("GET /api/queues must not write health samples")
 	}

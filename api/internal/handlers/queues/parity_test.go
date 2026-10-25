@@ -4,7 +4,6 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -46,7 +45,7 @@ func TestExplain_ValidatesAndEscapes(t *testing.T) {
 	for _, tc := range []struct{ url string }{
 		{"/api/explain"}, {"/api/explain?q=a"}, {"/api/explain?q=ab&library_id=nope"}, {"/api/explain?q=ab&limit=x"},
 	} {
-		if rec := f.do("GET", tc.url, "", viewer()); rec.Code != http.StatusBadRequest {
+		if rec := f.do("GET", tc.url, "", admin()); rec.Code != http.StatusBadRequest {
 			t.Errorf("%s -> %d", tc.url, rec.Code)
 		}
 	}
@@ -62,7 +61,7 @@ func TestExplain_EpisodeVerdictWithPlaylistsAndPlex(t *testing.T) {
 	f := newFixture(explainRules(&queuestest.Rule{Match: "from series_episodes e",
 		Cols: []string{"sid", "series", "name", "season", "episode", "attached"},
 		Rows: [][]driver.Value{{seasonA, seriesX, "كنوز السيرة", int64(2), int64(7), true}}})...)
-	rec := f.do("GET", "/api/explain?q=%D8%B7%D9%84%D8%B9&library_id="+libL+"&limit=500", "", libViewer())
+	rec := f.do("GET", "/api/explain?q=%D8%B7%D9%84%D8%B9&library_id="+libL+"&limit=500", "", admin())
 	if rec.Code != 200 {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
@@ -95,37 +94,37 @@ func libViewer() *principal.Principal {
 	return &principal.Principal{UserID: "u3", Libraries: []string{libL}}
 }
 
-func TestExplain_AppliesTheLibraryACL(t *testing.T) {
+// Renamed from TestExplain_AppliesTheLibraryACL: non-admins are refused by the
+// package's admin-only Mount (the API enforces roles), so no library ACL is
+// left to apply. A restricted or library-less viewer gets 403 before any
+// query; an admin is not scoped at all.
+func TestExplain_RefusesNonAdmins(t *testing.T) {
 	other := "99999999-9999-4999-8999-999999999999"
 	f := newFixture(explainRules()...)
-	// a library the caller was not granted is refused before any query
-	if rec := f.do("GET", "/api/explain?q=ab&library_id="+other, "", libViewer()); rec.Code != http.StatusForbidden {
-		t.Fatalf("other library -> %d", rec.Code)
-	}
-	if n := len(f.db.Find("from videos v")); n != 0 {
-		t.Fatalf("queried %d times for a refused library", n)
-	}
-	// without library_id a non-admin is scoped to the granted libraries
-	if rec := f.do("GET", "/api/explain?q=ab", "", libViewer()); rec.Code != 200 {
-		t.Fatalf("scoped -> %d %s", rec.Code, rec.Body.String())
-	}
-	for _, m := range []string{"from videos v", "from youtube_videos y"} {
-		for _, c := range f.db.Find(m) {
-			if len(c.Args) != 4 || !strings.Contains(fmt.Sprint(c.Args[3]), libL) {
-				t.Errorf("%s not scoped: %v", m, c.Args)
-			}
+	for _, tc := range []struct {
+		url string
+		p   *principal.Principal
+	}{
+		{"/api/explain?q=ab&library_id=" + other, libViewer()},
+		{"/api/explain?q=ab&library_id=" + libL, libViewer()},
+		{"/api/explain?q=ab", libViewer()},
+		{"/api/explain?q=ab", viewer()},
+		{"/api/explain?q=ab", allViewer()},
+	} {
+		if rec := f.do("GET", tc.url, "", tc.p); rec.Code != http.StatusForbidden {
+			t.Errorf("%s as %s -> %d", tc.url, tc.p.UserID, rec.Code)
 		}
 	}
-	// a viewer with no libraries gets an empty scope (matches nothing), an admin none
-	f = newFixture(explainRules()...)
-	f.do("GET", "/api/explain?q=ab", "", viewer())
-	for _, c := range f.db.Find("from videos v") {
-		if c.Args[3] == nil || fmt.Sprint(c.Args[3]) != "{}" {
-			t.Errorf("no-library viewer scope %#v", c.Args[3])
-		}
+	if n := len(f.db.Calls()); n != 0 {
+		t.Fatalf("queried %d times for refused callers", n)
 	}
 	f = newFixture(explainRules()...)
-	f.do("GET", "/api/explain?q=ab", "", admin())
+	if rec := f.do("GET", "/api/explain?q=ab", "", admin()); rec.Code != 200 {
+		t.Fatalf("admin -> %d %s", rec.Code, rec.Body.String())
+	}
+	if len(f.db.Find("from videos v")) == 0 {
+		t.Fatal("admin explain ran no video query")
+	}
 	for _, c := range f.db.Find("from videos v") {
 		if c.Args[3] != nil {
 			t.Errorf("admin scope %#v", c.Args[3])
@@ -182,7 +181,7 @@ func TestExplain_OtherVerdicts(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(explainRules(tc.rules...)...)
-			rec := f.do("GET", "/api/explain?q=طلع", "", viewer())
+			rec := f.do("GET", "/api/explain?q=طلع", "", admin())
 			var out ExplainResponse
 			decode(t, rec, &out)
 			if rec.Code != 200 || len(out.Videos) != 1 || out.Videos[0].Verdict.Kind != tc.kind || out.Videos[0].Verdict.Label != tc.label {
@@ -201,7 +200,7 @@ func TestExplain_AShortIsNeverAnEpisodeCandidate(t *testing.T) {
 		{Match: "from series_seasons ss where ss.retired_at is null and (ss.metadata", Cols: []string{"a", "b", "c", "d", "e"}},
 	}
 	f := newFixture(rules...)
-	rec := f.do("GET", "/api/explain?q=cl", "", viewer())
+	rec := f.do("GET", "/api/explain?q=cl", "", admin())
 	var out ExplainResponse
 	decode(t, rec, &out)
 	if len(out.Videos) != 1 || out.Videos[0].Verdict.Kind != VerdictShort || out.Videos[0].Playlists == nil {
@@ -350,7 +349,7 @@ func styleListFixture() *fixture {
 
 func TestSeasonStyles_List(t *testing.T) {
 	f := styleListFixture()
-	rec := f.do("GET", "/api/seasons/styles?q=50%25&pinned=true&library_id="+libL, "", libViewer())
+	rec := f.do("GET", "/api/seasons/styles?q=50%25&pinned=true&library_id="+libL, "", admin())
 	var out struct{ Items []SeasonStyle }
 	decode(t, rec, &out)
 	if rec.Code != 200 || len(out.Items) != 2 || *out.Items[0].OverrideStyle != "cinematic" || out.Items[1].Style != nil {
@@ -360,43 +359,41 @@ func TestSeasonStyles_List(t *testing.T) {
 	if a[0] != libL || a[1] != `%50\%%` || a[2] != true {
 		t.Errorf("args %v", a)
 	}
-	if rec = f.do("GET", "/api/seasons/styles?library_id=zzz", "", viewer()); rec.Code != http.StatusBadRequest {
+	if rec = f.do("GET", "/api/seasons/styles?library_id=zzz", "", admin()); rec.Code != http.StatusBadRequest {
 		t.Errorf("bad library -> %d", rec.Code)
 	}
 }
 
-func TestSeasonStyles_AppliesTheLibraryACL(t *testing.T) {
+// Renamed from TestSeasonStyles_AppliesTheLibraryACL: non-admins are refused
+// by the package's admin-only Mount (the API enforces roles), so no library
+// ACL is left to apply. Non-admins get 403 before any query; an admin lists
+// every library's seasons, unscoped.
+func TestSeasonStyles_RefusesNonAdmins(t *testing.T) {
 	other := "99999999-9999-4999-8999-999999999999"
 	f := styleListFixture()
-	// a library the caller was not granted is refused before any query
-	if rec := f.do("GET", "/api/seasons/styles?library_id="+other, "", libViewer()); rec.Code != http.StatusForbidden {
-		t.Fatalf("other library -> %d", rec.Code)
-	}
-	if n := len(f.db.Find("left join season_style st")); n != 0 {
-		t.Fatalf("queried %d times for a refused library", n)
-	}
-	scopeOf := func(p *principal.Principal) driver.Value {
-		t.Helper()
-		f := styleListFixture()
-		if rec := f.do("GET", "/api/seasons/styles", "", p); rec.Code != 200 {
-			t.Fatalf("list -> %d %s", rec.Code, rec.Body.String())
+	for _, tc := range []struct {
+		url string
+		p   *principal.Principal
+	}{
+		{"/api/seasons/styles?library_id=" + other, libViewer()},
+		{"/api/seasons/styles", libViewer()},
+		{"/api/seasons/styles", viewer()},
+		{"/api/seasons/styles", allViewer()},
+	} {
+		if rec := f.do("GET", tc.url, "", tc.p); rec.Code != http.StatusForbidden {
+			t.Errorf("%s as %s -> %d", tc.url, tc.p.UserID, rec.Code)
 		}
-		a := f.db.Find("left join season_style st")[0].Args
-		if len(a) != 5 {
-			t.Fatalf("args %v", a)
-		}
-		return a[4]
 	}
-	// without library_id a non-admin is scoped to the granted libraries,
-	// a viewer with none to nothing, an admin not at all
-	if got := fmt.Sprint(scopeOf(libViewer())); !strings.Contains(got, libL) {
-		t.Errorf("granted viewer scope %s", got)
+	if n := len(f.db.Calls()); n != 0 {
+		t.Fatalf("queried %d times for refused callers", n)
 	}
-	if got := fmt.Sprint(scopeOf(viewer())); got != "{}" {
-		t.Errorf("no-library viewer scope %s", got)
+	f = styleListFixture()
+	if rec := f.do("GET", "/api/seasons/styles", "", admin()); rec.Code != 200 {
+		t.Fatalf("admin list -> %d %s", rec.Code, rec.Body.String())
 	}
-	if got := scopeOf(admin()); got != nil {
-		t.Errorf("admin scope %#v", got)
+	a := f.db.Find("left join season_style st")[0].Args
+	if len(a) != 5 || a[4] != nil {
+		t.Errorf("admin args %v", a)
 	}
 }
 
@@ -411,7 +408,7 @@ func TestInsights(t *testing.T) {
 		&queuestest.Rule{Match: "from season_tags t", Cols: []string{"genre", "n"},
 			Rows: [][]driver.Value{{"aqeedah", int64(9)}, {"seerah", int64(4)}}},
 	)
-	rec := f.do("GET", "/api/queues/insights", "", viewer())
+	rec := f.do("GET", "/api/queues/insights", "", admin())
 	var out Insights
 	decode(t, rec, &out)
 	if rec.Code != 200 || out.Totals.Videos != 100 || out.Totals.StylePinned != 2 || out.Totals.VideosWithoutDate != 7 ||
@@ -460,11 +457,8 @@ func TestPulse_States(t *testing.T) {
 				(len(out.Stuck) != 1 || out.StuckCount != 1 || out.Stuck[0].Stage != "probe" || out.Stuck[0].HeartbeatAgeSec != 1800) {
 				t.Errorf("stuck %+v", out.Stuck)
 			}
-			// a non-admin sees the state and the count, never the job details
-			rec = tc.f.do("GET", "/api/queues/pulse", "", viewer())
-			var vo Pulse
-			decode(t, rec, &vo)
-			if rec.Code != 200 || vo.State != tc.want || len(vo.Stuck) != 0 || vo.Stuck == nil || vo.StuckCount != out.StuckCount {
+			// a non-admin is refused by the package's admin-only Mount (the API enforces roles)
+			if rec = tc.f.do("GET", "/api/queues/pulse", "", viewer()); rec.Code != http.StatusForbidden {
 				t.Errorf("viewer pulse %d %s", rec.Code, rec.Body.String())
 			}
 		})
@@ -473,7 +467,7 @@ func TestPulse_States(t *testing.T) {
 
 func TestPulse_ReportsTheAgeOfTheLastActivity(t *testing.T) {
 	f := pulseFixture(1, 0, t0.Add(-12*time.Second), t0.Add(-90*time.Second), false)
-	rec := f.do("GET", "/api/queues/pulse", "", viewer())
+	rec := f.do("GET", "/api/queues/pulse", "", admin())
 	var raw map[string]json.RawMessage
 	decode(t, rec, &raw)
 	var out Pulse
@@ -494,7 +488,7 @@ func TestLibraryCollections(t *testing.T) {
 		&queuestest.Rule{Match: "from promo_links p", Cols: []string{"vid", "title", "show", "sid", "season", "ev"},
 			Rows: [][]driver.Value{{videoV, "برومو الحبيب", "الحبيب", seasonA, int64(2), "title names the show"}}},
 	)
-	rec := f.do("GET", "/api/items/library/"+libL+"/collections", "", libViewer())
+	rec := f.do("GET", "/api/items/library/"+libL+"/collections", "", admin())
 	var out LibraryCollectionsResponse
 	decode(t, rec, &out)
 	if rec.Code != 200 || len(out.Topics) != 2 || out.Topics[0].Collection == nil || out.Topics[1].Collection != nil ||
@@ -507,7 +501,7 @@ func TestLibraryCollections(t *testing.T) {
 			t.Errorf("not scoped to the library: %v", c.Args)
 		}
 	}
-	if rec = f.do("GET", "/api/items/library/nope/collections", "", viewer()); rec.Code != http.StatusBadRequest {
+	if rec = f.do("GET", "/api/items/library/nope/collections", "", admin()); rec.Code != http.StatusBadRequest {
 		t.Errorf("bad id -> %d", rec.Code)
 	}
 	if rec = f.do("GET", "/api/items/library/"+libL+"/collections", "", nil); rec.Code != http.StatusForbidden {

@@ -40,27 +40,18 @@ function HealthDot() {
   );
 }
 
+// Everyone's pages: watching. Running the server (processing, transcription, settings)
+// is the admins' (ADMIN below), and the API refuses anyone else on those routes.
 const NAV = [
   { to: "/library", key: "nav.library", icon: "▦" },
   { to: "/series", key: "nav.series", icon: "▤" },
   { to: "/guide", key: "nav.guide", icon: "▥" },
   { to: "/search", key: "nav.search", icon: "⌕" },
-  { to: "/queue", key: "nav.queue", icon: "⚙" },
-  { to: "/transcription", key: "nav.transcription", icon: "✎" },
-  { to: "/settings", key: "nav.settings", icon: "☰" },
 ] as const;
 
-// Primary pages that live behind "More" on the phone (sidebar on wide
-// screens): the tab bar has room for five tabs and "More".
-const MORE_ONLY: ReadonlySet<string> = new Set(["/settings", "/transcription"]);
-
-// The phone tab bar has room for five tabs and "More": Settings,
-// Transcription, the account pages and the admin pages live behind More
-// (/more).
-const TABS = [
-  ...NAV.filter((item) => !MORE_ONLY.has(item.to)),
-  { to: "/more", key: "nav.more", icon: "⋯" },
-] as const;
+// The phone tab bar: the watching pages and "More" (the account pages and, for admins,
+// the admin pages live behind More: /more).
+const TABS = [...NAV, { to: "/more", key: "nav.more", icon: "⋯" }] as const;
 
 // Secondary nav is sidebar-only (kept out of the compact bottom tab bar);
 // these surfaces are reachable by every authenticated user.
@@ -81,6 +72,9 @@ const SECONDARY = [
 const LIVE_TV_PATH = "/admin/live-tv";
 
 const ADMIN = [
+  { to: "/queue", key: "nav.queue", icon: "⚙" },
+  { to: "/transcription", key: "nav.transcription", icon: "✎" },
+  { to: "/settings", key: "nav.settings", icon: "☰" },
   { to: "/admin/users", key: "nav.admin.users", icon: "◉" },
   { to: "/admin/library-acl", key: "nav.admin.libraryAcl", icon: "▦" },
   { to: "/admin/channels", key: "nav.admin.channels", icon: "▥" },
@@ -277,10 +271,17 @@ export function AppShell() {
                   className="mkt-nav-link"
                   title={t(item.key)}
                   aria-label={t(item.key)}
-                  aria-describedby={healthDown && item.to === HEALTH_PATH ? HEALTH_DESC : undefined}
+                  aria-describedby={
+                    badged(item.to)
+                      ? UPDATE_DESC
+                      : healthDown && item.to === HEALTH_PATH
+                        ? HEALTH_DESC
+                        : undefined
+                  }
                 >
                   <span className="mkt-nav-link__icon" aria-hidden="true">
                     {item.icon}
+                    {badged(item.to) && <UpdateDot />}
                     {healthDown && item.to === HEALTH_PATH && <HealthDot />}
                   </span>
                   <span className="mkt-nav-link__label">{t(item.key)}</span>
@@ -347,7 +348,7 @@ export function MoreMenu() {
   const groups: Array<{
     title?: string;
     items: ReadonlyArray<{ to: string; key: string; icon: string }>;
-  }> = [{ items: [...NAV.filter((item) => MORE_ONLY.has(item.to)), ...SECONDARY] }];
+  }> = [{ items: SECONDARY }];
   if (user?.is_admin) groups.push({ title: t("nav.admin"), items: ADMIN });
   return (
     <section className="mkt-page mkt-more">

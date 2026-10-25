@@ -631,6 +631,7 @@ func TestAdminOnly(t *testing.T) {
 		{"POST", "/api/cluster/nodes/" + nodeID + "/reject", ""},
 		{"POST", "/api/cluster/nodes/" + nodeID + "/revoke", ""},
 		{"PUT", "/api/cluster/nodes/" + nodeID, `{"drain":true}`},
+		{"PUT", "/api/cluster/nodes/" + nodeID, `{"full_allowed":true}`},
 		{"DELETE", "/api/cluster/nodes/" + nodeID, ""},
 	} {
 		for _, p := range []*principal.Principal{nil, viewer()} {
@@ -640,8 +641,75 @@ func TestAdminOnly(t *testing.T) {
 		}
 	}
 	n, _ := f.store.Node(context.Background(), nodeID)
-	if n.State != "pending" || n.CodeAttempts != 0 || n.Drain {
+	if n.State != "pending" || n.CodeAttempts != 0 || n.Drain || n.FullAllowed {
 		t.Errorf("non-admin calls changed the node: %+v", n)
+	}
+}
+
+// A full machine (a copy of this database) is the home admin's decision, never the
+// machine's: approving leaves it off unless the admin asks; only an admin turns it on or
+// off; it takes effect with what the machine reports (full_node = capable and allowed).
+func TestAFullMachineIsTheAdminsDecision(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.openJoins()
+	jr := f.join()
+	decode(t, f.approve(nodeCode(t, jr.HomePubkey)), 200, nil)
+	n, _ := f.store.Node(ctx, nodeID)
+	if n.FullAllowed || n.FullNode {
+		t.Fatalf("approved without asking: allowed %v, full %v", n.FullAllowed, n.FullNode)
+	}
+
+	// the machine reports it can be full: still no copy
+	f.store.SetFullCapable(nodeID, true)
+	n, _ = f.store.Node(ctx, nodeID)
+	if n.FullNode {
+		t.Fatal("a machine's own report made it full")
+	}
+
+	// a viewer, or no one, cannot allow it
+	for _, p := range []*principal.Principal{nil, viewer()} {
+		if rec := f.do("PUT", "/api/cluster/nodes/"+nodeID, `{"full_allowed":true}`, p); rec.Code != http.StatusForbidden {
+			t.Errorf("full_allowed as %v: %d", p, rec.Code)
+		}
+	}
+	if n, _ = f.store.Node(ctx, nodeID); n.FullAllowed || n.FullNode {
+		t.Fatal("a non-admin allowed a copy")
+	}
+
+	// the admin allows it, and takes it back
+	var view map[string]any
+	decode(t, f.do("PUT", "/api/cluster/nodes/"+nodeID, `{"full_allowed":true}`, admin()), 200, &view)
+	if view["full_allowed"] != true || view["full_capable"] != true || view["full_node"] != true {
+		t.Errorf("after allowing: %v", view)
+	}
+	decode(t, f.do("PUT", "/api/cluster/nodes/"+nodeID, `{"full_allowed":false}`, admin()), 200, &view)
+	if view["full_allowed"] != false || view["full_node"] != false {
+		t.Errorf("after taking back: %v", view)
+	}
+}
+
+// Approving with "full" allows the copy at once (it takes effect once the machine reports).
+func TestApproveCanAllowAFullMachine(t *testing.T) {
+	f := newFixture(t)
+	f.openJoins()
+	jr := f.join()
+	rec := f.do("POST", "/api/cluster/nodes/"+nodeID+"/approve",
+		`{"code":"`+nodeCode(t, jr.HomePubkey)+`","full":true}`, admin())
+	var view map[string]any
+	decode(t, rec, 200, &view)
+	if view["full_allowed"] != true || view["full_node"] != false {
+		t.Errorf("approved with full: %v", view)
+	}
+}
+
+// Only an approved machine can be allowed a copy (a pending request cannot be primed).
+func TestFullAllowedNeedsAnApprovedMachine(t *testing.T) {
+	f := newFixture(t)
+	f.openJoins()
+	f.join()
+	if rec := f.do("PUT", "/api/cluster/nodes/"+nodeID, `{"full_allowed":true}`, admin()); rec.Code != http.StatusBadRequest {
+		t.Errorf("pending machine: %d", rec.Code)
 	}
 }
 

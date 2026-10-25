@@ -59,6 +59,9 @@ type Node struct {
 	Platform *string `json:"platform"`
 	WebURL   *string `json:"web_url"`
 	FullNode bool    `json:"full_node"`
+	// FullCapable: the machine says it can be full; FullAllowed: an admin allowed it.
+	FullCapable bool `json:"full_capable"`
+	FullAllowed bool `json:"full_allowed"`
 	// WorkerConvert is what becomes of a worker-only machine: next_update (its next
 	// update makes it a full node) or installer (its pipeline is too old for that: re-run
 	// the installer once); "" when not known.
@@ -98,6 +101,7 @@ func view(n cluster.Node, workers []cluster.NodeWorker, stages map[string]bool, 
 		LastSeenAt: n.LastSeenAt, UpdatedAt: n.UpdatedAt,
 		Workers: []NodeWorker{}, StageOverrides: map[string]bool{},
 		Version: n.Version, Platform: n.Platform, WebURL: n.WebURL, FullNode: n.FullNode,
+		FullCapable: n.FullCapable, FullAllowed: n.FullAllowed,
 		VOD: n.VOD, UpdateState: n.UpdateState, Copy: n.Copy, CopyReportedAt: n.CopyReportedAt,
 	}
 	if out.Copy == nil {

@@ -257,9 +257,6 @@ const USER_LINKS = [
   ["nav.series", "/series"],
   ["nav.guide", "/guide"],
   ["nav.search", "/search"],
-  ["nav.queue", "/queue"],
-  ["nav.transcription", "/transcription"],
-  ["nav.settings", "/settings"],
   ["nav.account", "/account"],
   ["nav.devices", "/account/devices"],
   ["nav.sessions", "/account/sessions"],
@@ -270,13 +267,19 @@ const USER_LINKS = [
   ["nav.help", "/help"],
 ] as const;
 
-const MORE_LINKS = [
+// The account pages, billing, cloud status and help: everyone's half of the More page.
+const MORE_LINKS = USER_LINKS.slice(4);
+
+// Running the server is the admins' (the API refuses anyone else): these lead the
+// Administration group and never show for a normal user.
+const SERVER_LINKS = [
+  ["nav.queue", "/queue"],
   ["nav.transcription", "/transcription"],
   ["nav.settings", "/settings"],
-  ...USER_LINKS.slice(7),
 ] as const;
 
 const ADMIN_LINKS = [
+  ...SERVER_LINKS,
   ["nav.admin.users", "/admin/users"],
   ["nav.admin.libraryAcl", "/admin/library-acl"],
   ["nav.admin.channels", "/admin/channels"],
@@ -406,6 +409,18 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     await screen.findByRole("heading", { name: "page /library" });
     expect(linkList(sidebar())).toEqual(named(USER_LINKS));
     expect(screen.queryByText(en["nav.admin"])).not.toBeInTheDocument();
+    // no server page (Processing, Transcription, Settings) anywhere: sidebar or tab bar
+    for (const [k, href] of SERVER_LINKS) {
+      expect(screen.queryByRole("link", { name: en[k] })).not.toBeInTheDocument();
+      expect(document.querySelector(`a[href="${href}"]`)).toBeNull();
+    }
+    expect(linkList(tabbar()).map(([, href]) => href)).toEqual([
+      "/library",
+      "/series",
+      "/guide",
+      "/search",
+      "/more",
+    ]);
   });
 
   it("SHL-09: an admin sees the Administration group with every admin link", async () => {
@@ -414,6 +429,11 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     await screen.findByRole("heading", { name: "page /library" });
     expect(within(sidebar()).getByText(en["nav.admin"])).toBeInTheDocument();
     expect(linkList(sidebar())).toEqual([...named(USER_LINKS), ...named(ADMIN_LINKS)]);
+    // Processing, Transcription and Settings open the group, before the other admin links
+    const admin = linkList(sidebar()).slice(USER_LINKS.length, USER_LINKS.length + 3);
+    expect(admin).toEqual(named(SERVER_LINKS));
+    // the tab bar stays the same five for an admin
+    expect(within(tabbar()).getAllByRole("link")).toHaveLength(5);
     // /admin/enrichment is routed but not in the nav (reported as a gap)
     expect(within(sidebar()).queryByRole("link", { name: /enrichment/i })).toBeNull();
   });
@@ -554,7 +574,7 @@ describe("AppShell (test-cases/app-shell.md)", () => {
       "nav.series",
       "nav.guide",
       "nav.search",
-      "nav.queue",
+      "nav.account",
     ] as const) {
       expect(within(nav).getByRole("link", { name: ar[k] })).toBeInTheDocument();
     }
@@ -828,11 +848,14 @@ describe("MoreMenu (test-cases/more-menu.md)", () => {
     return main();
   };
 
-  it("MOR-01: a normal user sees Settings, Transcription and the account links", async () => {
+  it("MOR-01: a normal user sees the account links, and no Processing, Transcription or Settings", async () => {
     renderShell(["/more"]);
     const m = await moreSection();
     const lists = within(m).getAllByRole("list");
     expect(linkList(lists[0])).toEqual(named(MORE_LINKS));
+    for (const [k] of SERVER_LINKS) {
+      expect(within(m).queryByRole("link", { name: en[k] })).not.toBeInTheDocument();
+    }
     expect(within(m).getByRole("button", { name: en["nav.signOut"] })).toBeInTheDocument();
   });
 
@@ -856,6 +879,7 @@ describe("MoreMenu (test-cases/more-menu.md)", () => {
     expect(lists).toHaveLength(2);
     expect(linkList(lists[0])).toEqual(named(MORE_LINKS));
     expect(linkList(lists[1])).toEqual(named(ADMIN_LINKS));
+    expect(linkList(lists[1]).slice(0, 3)).toEqual(named(SERVER_LINKS));
   });
 
   it.each([

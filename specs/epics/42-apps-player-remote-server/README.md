@@ -124,6 +124,56 @@ mobile preferences). The app remembers several homes.
 - **Username and password**, as on the TV apps today.
 - **By code** (new): the app shows a short code; a signed-in device (the home's web UI, or a remote
   app) approves it. New endpoints next to pairing (`/api/pairing/…`); the TV apps adopt it too.
+- **With a linked Maktaba Cloud account** (decided 2026-10-25): see Linked accounts.
+
+### Linked accounts (a home account and a Maktaba Cloud account)
+
+Two kinds of account, kept apart:
+
+| | Home account | Maktaba Cloud account |
+|---|---|---|
+| Lives | the home's database (`users`; joined machines hold a read copy, never its tokens) | the cloud's database (`cloud/`) |
+| Who | everyone who watches or runs that home | anyone (free); the owner's also owns the home's cloud registration (claim, subdomain, relay, plan) |
+| Rights | everything inside the home: libraries, admin | none inside any home by itself |
+
+**Linking:** a home user, signed in to the home, links their cloud account from Account →
+Linked accounts (a cloud sign-in in a browser sheet; the home stores the cloud user's id against
+the home user, `home_user_links`, with the link's scope: `play`, or `manage` for an admin who
+asked for it on the home). One cloud account can be linked to users on several homes;
+one home user to one cloud account. Unlinking (the user, or the home's admin) cuts it at once.
+
+**Signing in with it:**
+
+1. The app signs in to Maktaba Cloud (password, or Sign in with Apple / Google through the
+   cloud's OAuth). The cloud lists the homes this cloud account is linked to (each home tells
+   the cloud which cloud users it has linked, by id only).
+2. The person picks a home. The app asks the cloud for a short-lived **home assertion**: signed
+   by the cloud, naming the cloud user and that home, for one use, a minute.
+3. The app gives the assertion to the home (`POST /api/auth/cloud`), through the relay or on the
+   local network. The home verifies the cloud's signature (the cloud's public key, pinned at
+   claim), finds the linked home user, and issues **its own** tokens, as a password sign-in
+   would. From then on the app talks to the home with the home's tokens.
+
+**Rules:**
+
+- **The surface grants nothing.** Player or Remote, native or the cloud web, an app changed by
+  its user: the home's API checks the home user's role on every route, from the token alone.
+  A viewer through the cloud Remote is a viewer; a tampered app with a viewer's token is too.
+- **Links have a scope, set on the home.** A link is `play` by default. `manage` (managing
+  the home through the cloud) is set only on the home, by a home admin, for their own link.
+  A token the home issues from an assertion carries the link's scope, and every admin route
+  refuses a `play`-scoped token, even an admin's: a stolen cloud account can watch, not manage.
+- The home decides everything: the rights are the linked home user's; a disabled home user or a
+  removed link refuses the assertion; the home works without the cloud (local sign-in, local
+  network).
+- The cloud never holds a home's tokens, passwords or library data; an assertion names who, not
+  what they may do.
+- A Maktaba service admin is no one in a home unless a home user linked them (Roles).
+- A home not claimed in the cloud has no linked accounts; its apps sign in to it directly.
+
+**Away from home:** the app keeps both of a home's addresses (local, and the cloud's subdomain)
+and uses whichever answers; the video then goes home → relay → app, metered by the owner's plan,
+and the home's transcoding lowers it to fit the connection.
 
 ### 4. The apps
 
@@ -170,7 +220,9 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    `latest-player.json`.
 5. **42.5 Web editions:** `VITE_MAKTABA_EDITION`, lazy server routes, "Manage" in `full`.
 6. **42.6 Sign-in by code:** endpoints, the approve screen, mobile, desktop and TV.
-7. **42.7 Through the cloud:** pick a connected home via Maktaba Cloud, talk through the relay.
+7. **42.7 Linked accounts and the cloud:** linking (home Account page, `home_user_links`), the
+   cloud's home assertion, `POST /api/auth/cloud`, the app's cloud sign-in and home list, both
+   addresses per home (local and relay).
 8. **42.8 Tablet and foldable:** two-pane and fold-aware layouts, their own listings.
 9. **42.9 Cloud web player and remote:** the cloud serves the SPA editions for a connected home.
 10. **42.10 TV:** the home picker and sign-in by code on tvOS and Android TV.

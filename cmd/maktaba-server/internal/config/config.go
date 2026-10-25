@@ -367,7 +367,7 @@ func Defaults() Config {
 			Listen:     "0.0.0.0:8080",
 			DataDir:    data,
 			WebListen:  "0.0.0.0:8088",
-			AdminAddr:  ":9100",
+			AdminAddr:  "127.0.0.1:9100", // logs and metrics: this machine only
 			StreamAddr: ":8081",
 		},
 		Database: DatabaseSection{
@@ -425,8 +425,17 @@ func LoadFrom(path string) (Config, bool, error) {
 	if !cfg.DatabaseURLSet {
 		cfg.Database.URL = Defaults().Database.URL
 	}
+	// the api's admin port (logs, metrics: no sign-in) on every interface was the default
+	// setup wrote into server.toml: it is this machine's only now (anything else an
+	// operator chose stays)
+	if cfg.Server.AdminAddr == legacyAdminAddr {
+		cfg.Server.AdminAddr = Defaults().Server.AdminAddr
+	}
 	return cfg, true, nil
 }
+
+// legacyAdminAddr is the api admin port's old default, on every interface.
+const legacyAdminAddr = ":9100"
 
 // Save atomically writes cfg to Path(), creating the parent directory.
 func (c Config) Save() error {

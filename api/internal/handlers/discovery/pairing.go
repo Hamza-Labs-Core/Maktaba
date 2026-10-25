@@ -138,6 +138,12 @@ func (h *Handler) Status(w http.ResponseWriter, r *http.Request) {
 		writePairingError(w, r, err)
 		return
 	}
+	// a ticket is its requester's to poll (or an admin's): anyone else learns nothing of
+	// it, not even that it exists (the API enforces roles)
+	if p := principal.FromContext(r.Context()); p == nil || (p.UserID != t.UserID && !p.IsAdmin) {
+		writePairingError(w, r, discovery.ErrCodeNotFound)
+		return
+	}
 	if t.ConsumedAt == nil {
 		common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"status": "pending"})
 		return

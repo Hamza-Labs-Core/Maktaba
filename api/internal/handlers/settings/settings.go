@@ -109,6 +109,9 @@ func isBool(raw json.RawMessage) bool {
 
 // Read returns the merged effective config with secrets redacted.
 func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
+	if !adminOnly(w, r) {
+		return
+	}
 	merged := h.merged(r.Context())
 	redacted := redactSecrets(merged)
 	common.WriteJSON(w, r, http.StatusOK, redacted)
@@ -161,6 +164,9 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 
 // STTBackends implements AC-4.
 func (h *Handler) STTBackends(w http.ResponseWriter, r *http.Request) {
+	if !adminOnly(w, r) {
+		return
+	}
 	if h.Pipeline == nil {
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": []Backend{}})
 		return
@@ -181,6 +187,9 @@ type STTTestRequest struct {
 
 // STTTest implements AC-5.
 func (h *Handler) STTTest(w http.ResponseWriter, r *http.Request) {
+	if !adminOnly(w, r) {
+		return
+	}
 	if h.Pipeline == nil {
 		httperror.Write(w, r, &httperror.Error{
 			Type:   "https://maktaba.dev/problems/unavailable",
@@ -258,4 +267,15 @@ func (h *Handler) now() time.Time {
 		return h.NowFunc()
 	}
 	return time.Now().UTC()
+}
+
+// adminOnly refuses anyone but a home admin (the API enforces roles: these routes back the
+// admin pages, and hiding the pages is not the rule).
+func adminOnly(w http.ResponseWriter, r *http.Request) bool {
+	p := principal.FromContext(r.Context())
+	if p == nil || !p.IsAdmin {
+		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+		return false
+	}
+	return true
 }

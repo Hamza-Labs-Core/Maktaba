@@ -191,7 +191,21 @@ describe("Machines admin page", () => {
     renderPage();
     await userEvent.type(await screen.findByLabelText(/Code shown on/), "123 456");
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
-    expect(post).toHaveBeenCalledWith("/api/cluster/nodes/p1/approve", { code: "123456" });
+    expect(post).toHaveBeenCalledWith("/api/cluster/nodes/p1/approve", {
+      code: "123456",
+      full: false,
+    });
+  });
+
+  it("approves with a copy of the database only when the admin asks", async () => {
+    renderPage();
+    await userEvent.type(await screen.findByLabelText(/Code shown on/), "123456");
+    await userEvent.click(screen.getByLabelText("Keep a copy of this home's database on it"));
+    await userEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(post).toHaveBeenCalledWith("/api/cluster/nodes/p1/approve", {
+      code: "123456",
+      full: true,
+    });
   });
 
   it("refuses a code that is not 6 digits without calling the API", async () => {

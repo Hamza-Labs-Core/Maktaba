@@ -254,41 +254,62 @@ func TestRunJSONSubtestBreaches(t *testing.T) {
 	}
 }
 
-// Up to rerunMax tests are re-run; more is a slowdown, not the runner:
-// none is re-run and every breach fails, as without re-runs.
-func TestRunJSONTooManyBreachesAreNotRerun(t *testing.T) {
-	for _, n := range []int{defaultRerunMax, defaultRerunMax + 1} {
-		t.Run(fmt.Sprint(n), func(t *testing.T) {
-			var stream strings.Builder
+// Up to rerunMax tests are re-run one by one. More are re-run together,
+// one go test for their package with -p 1 -parallel 1 (each alone, in
+// turn: a package's t.Parallel tests stretch each other under load): those
+// fast alone are warnings, and a slowdown that repeats there still fails.
+func TestRunJSONManyBreachesAreRerunTogether(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		n       int
+		alone   float64 // each test's time in the re-run
+		wantErr bool
+	}{
+		{"at the limit", defaultRerunMax, 0.01, false},
+		{"over it, the runner's load", defaultRerunMax + 1, 0.01, false},
+		{"over it, a slowdown", defaultRerunMax + 1, 0.5, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stream, batch strings.Builder
 			f := &fakeGoTest{t: t, replies: map[string]string{}}
-			for i := range n {
+			names := []string{}
+			for i := range tc.n {
 				name := fmt.Sprintf("TestSlow%d", i)
+				names = append(names, name)
 				fmt.Fprintf(&stream, `{"Action":"pass","Package":"p","Test":%q,"Elapsed":0.5}`+"\n", name)
-				f.replies["^"+name+"$"] = fmt.Sprintf(`{"Action":"pass","Package":"p","Test":%q,"Elapsed":0.01}`, name)
+				reply := fmt.Sprintf(`{"Action":"pass","Package":"p","Test":%q,"Elapsed":%g}`+"\n", name, tc.alone)
+				f.replies["^"+name+"$"] = reply
+				batch.WriteString(reply)
 			}
 			stream.WriteString(`{"Action":"pass","Package":"p","Elapsed":6}` + "\n")
-			if n > defaultRerunMax {
-				f.replies = nil // any re-run is an error
+			together := "^(" + strings.Join(names, "|") + ")$"
+			if tc.n > defaultRerunMax {
+				f.replies = map[string]string{together: batch.String()}
 			}
 			var out bytes.Buffer
 			got := runJSON(rerunCfg(f), strings.NewReader(stream.String()), &out)
 			s := out.String()
-			if n <= defaultRerunMax {
-				if got != 0 || len(f.calls) != n || strings.Count(s, "::warning::") != n {
-					t.Fatalf("%d breaches: exit %d, %d re-runs, want 0 and %d warnings:\n%s", n, got, len(f.calls), n, s)
+			if tc.n <= defaultRerunMax {
+				if got != 0 || len(f.calls) != tc.n || strings.Count(s, "::warning::") != tc.n {
+					t.Fatalf("%d breaches: exit %d, %d re-runs, want 0 and %d warnings:\n%s", tc.n, got, len(f.calls), tc.n, s)
 				}
 				return
 			}
-			if got != 1 || len(f.calls) != 0 {
-				t.Fatalf("%d breaches: exit %d, %d re-runs, want 1 and none:\n%s", n, got, len(f.calls), s)
+			want := append(slices.Clone(unitGoTest), "-p", "1", "-parallel", "1", "-run", together, "p")
+			if len(f.calls) != 1 || !slices.Equal(f.calls[0], want) {
+				t.Fatalf("re-runs = %q, want one %q", f.calls, want)
 			}
-			for _, w := range []string{
-				fmt.Sprintf("%d tests past the hard cap 300ms, more than %d", n, defaultRerunMax),
-				fmt.Sprintf("::error::test-budget [unit] %d hard soft-cap breach(es):", n),
-			} {
-				if !strings.Contains(s, w) {
-					t.Fatalf("missing %q in:\n%s", w, s)
+			if !strings.Contains(s, fmt.Sprintf("%d tests past the hard cap 300ms, more than %d: re-run together", tc.n, defaultRerunMax)) {
+				t.Fatalf("no batch line in:\n%s", s)
+			}
+			if tc.wantErr {
+				if got != 1 || !strings.Contains(s, fmt.Sprintf("::error::test-budget [unit] %d hard soft-cap breach(es):", tc.n)) {
+					t.Fatalf("a slowdown that repeats alone must fail, got exit %d:\n%s", got, s)
 				}
+				return
+			}
+			if got != 0 || strings.Count(s, "::warning::") != tc.n {
+				t.Fatalf("breaches fast alone: exit %d, want 0 and %d warnings:\n%s", got, tc.n, s)
 			}
 		})
 	}

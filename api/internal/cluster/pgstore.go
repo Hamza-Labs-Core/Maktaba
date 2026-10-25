@@ -81,7 +81,8 @@ func (s *PGStore) SetName(ctx context.Context, name string) (Identity, error) {
 const nodeCols = `id::text, name, state, os, arch, versions, capabilities, storage, path_map, path_map_source,
 	drain, node_pubkey, home_pubkey, home_privkey, code_attempts, expires_at, sealed, db_role, remote_addr,
 	api_url, created_at, approved_at, approved_by, revoked_at, last_seen_at, updated_at,
-	version, platform, web_url, full_node, vod, update_state, replica, replica_reported_at`
+	version, platform, web_url, full_node, vod, update_state, replica, replica_reported_at,
+	full_capable, full_allowed`
 
 func scanNode(row interface{ Scan(...any) error }) (Node, error) {
 	var n Node
@@ -91,7 +92,8 @@ func scanNode(row interface{ Scan(...any) error }) (Node, error) {
 	if err := row.Scan(&n.ID, &n.Name, &n.State, &os, &arch, &versions, &caps, &storage, &pathMap, &pms,
 		&n.Drain, &n.NodePubkey, &hpub, &hpriv, &n.CodeAttempts, &expires, &sealed, &role, &raddr,
 		&apiURL, &n.CreatedAt, &approved, &by, &revoked, &seen, &n.UpdatedAt,
-		&ver, &plat, &web, &n.FullNode, &vod, &upd, &copyState, &copyAt); err != nil {
+		&ver, &plat, &web, &n.FullNode, &vod, &upd, &copyState, &copyAt,
+		&n.FullCapable, &n.FullAllowed); err != nil {
 		return Node{}, err
 	}
 	n.Version, n.Platform, n.WebURL = strPtr(ver), strPtr(plat), strPtr(web)
@@ -223,8 +225,10 @@ UPDATE cluster_nodes SET
 	drain = COALESCE($3, drain),
 	path_map = CASE WHEN $4 THEN $5::jsonb ELSE path_map END,
 	path_map_source = CASE WHEN $4 THEN (CASE WHEN $5::jsonb IS NULL THEN NULL ELSE 'admin' END) ELSE path_map_source END,
+	full_allowed = COALESCE($7, full_allowed),
+	full_node = full_capable AND COALESCE($7, full_allowed),
 	updated_at = $6
- WHERE id = $1`, id, nullStr(p.Name), nullBool(p.Drain), setMap, pm, now)
+ WHERE id = $1`, id, nullStr(p.Name), nullBool(p.Drain), setMap, pm, now, nullBool(p.FullAllowed))
 }
 
 // DeleteNode implements Store.

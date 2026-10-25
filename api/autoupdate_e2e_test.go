@@ -401,7 +401,8 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 		t.Fatal(err)
 	}
 	if _, err := adb.ExecContext(ctx, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role,
-	        approved_at, approved_by, full_node, web_url) VALUES ($1, 'studio-node', 'approved', $2, $3, $4, $5, now(), 'test', true, $6)`,
+	        approved_at, approved_by, full_node, full_capable, full_allowed, web_url)
+	        VALUES ($1, 'studio-node', 'approved', $2, $3, $4, $5, now(), 'test', true, true, true, $6)`,
 		nodeID, runtime.GOOS, runtime.GOARCH, cluster.EncodeKey(nodePub), role, nodeWeb); err != nil {
 		t.Fatal(err)
 	}

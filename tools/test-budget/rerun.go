@@ -12,8 +12,11 @@ package main
 // stands (fails the build) only if the test is past the hard cap there
 // too, fails there, or does not report. One that does not repeat is a
 // ::warning:: naming both timings, so a test drifting toward the cap
-// stays visible. More than rerunMax tests to re-run in one module is a
-// slowdown, not the runner: every breach stands, none is re-run.
+// stays visible. More than rerunMax tests to re-run in one module are
+// re-run together, one go test per package with -p 1 -parallel 1: each
+// test then runs alone, one after the other (a package's t.Parallel tests
+// stretch each other's time under -race on a loaded runner), and a real
+// slowdown still repeats there and stands.
 
 import (
 	"bufio"
@@ -23,6 +26,7 @@ import (
 	"io"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -91,15 +95,15 @@ func judgeBreaches(cfg *config, hardCap time.Duration, breaches []breach, out io
 		}
 		settles[top] = append(settles[top], i)
 	}
-	if len(runs) > cfg.rerunMax {
-		_, _ = fmt.Fprintf(out, "test-budget [%s] %d tests past the hard cap %s, more than %d: a slowdown, not the runner; none re-run\n",
-			cfg.tier, len(runs), hardCap, cfg.rerunMax)
-		return verdicts
-	}
-
 	run := cfg.run
 	if run == nil {
 		run = execRunner
+	}
+	if len(runs) > cfg.rerunMax {
+		_, _ = fmt.Fprintf(out, "test-budget [%s] %d tests past the hard cap %s, more than %d: re-run together, one at a time\n",
+			cfg.tier, len(runs), hardCap, cfg.rerunMax)
+		batchRerun(cfg, run, hardCap, breaches, runs, settles, verdicts, out)
+		return verdicts
 	}
 	for _, r := range runs {
 		b := breaches[r]
@@ -113,6 +117,45 @@ func judgeBreaches(cfg *config, hardCap time.Duration, breaches []breach, out io
 		}
 	}
 	return verdicts
+}
+
+// batchRerun settles the re-run breaches with one go test per package:
+// -p 1 -parallel 1, -run anchored to their top-level tests, so each runs
+// alone, in turn (a top-level test runs its subtests too).
+func batchRerun(cfg *config, run runner, hardCap time.Duration, breaches []breach, runs []int,
+	settles map[int][]int, verdicts []verdict, out io.Writer) {
+	pkgs := []string{}
+	tops := map[string][]string{} // package -> its top-level tests, in order
+	for _, r := range runs {
+		b := breaches[r]
+		top, _, _ := strings.Cut(b.test, "/")
+		if _, ok := tops[b.pkg]; !ok {
+			pkgs = append(pkgs, b.pkg)
+		}
+		if !slices.Contains(tops[b.pkg], top) {
+			tops[b.pkg] = append(tops[b.pkg], top)
+		}
+	}
+	for _, pkg := range pkgs {
+		names := make([]string, len(tops[pkg]))
+		for i, n := range tops[pkg] {
+			names[i] = strings.TrimSuffix(strings.TrimPrefix(runPattern(n), "^"), "$")
+		}
+		argv := append(append([]string{}, cfg.rerunCmd...), "-p", "1", "-parallel", "1",
+			"-run", "^("+strings.Join(names, "|")+")$", pkg)
+		_, _ = fmt.Fprintf(out, "test-budget [%s] re-running %d tests of %s alone, in turn: %s\n",
+			cfg.tier, len(names), pkg, strings.Join(argv, " "))
+		stdout, err := run(cfg.rerunDir, argv)
+		results, other := parseRerun(stdout, pkg)
+		for _, r := range runs {
+			if breaches[r].pkg != pkg {
+				continue
+			}
+			for _, i := range settles[r] {
+				verdicts[i] = settle(breaches[i], cfg.perTestSoftCap, hardCap, results, other, err)
+			}
+		}
+	}
 }
 
 // outermost is the outermost breach by a passing test that holds breach

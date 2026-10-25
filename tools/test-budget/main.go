@@ -68,7 +68,7 @@ type config struct {
 	// list; empty, a breach fails without a re-run.
 	rerunCmd []string
 	rerunDir string // where rerunCmd runs: the module
-	rerunMax int    // more tests to re-run than this: none is re-run
+	rerunMax int    // more tests to re-run than this: re-run together, one at a time
 	run      runner // nil runs the command (execRunner)
 }
 
@@ -98,7 +98,7 @@ func parseFlags() *config {
 	flag.StringVar(&cfg.rerunDir, "rerun-dir", "",
 		"directory the go test command after -- runs in to re-run a hard-cap breach alone (json mode)")
 	flag.IntVar(&cfg.rerunMax, "rerun-max", defaultRerunMax,
-		"with more tests than this to re-run, re-run none: every breach fails (json mode)")
+		"with more tests than this to re-run, re-run them in one go test per package, -parallel 1 (json mode)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr,
 			"usage: %s --mode=json [--per-package-budget=30s] [--per-test-soft-cap=100ms] [--tier=NAME]\n"+

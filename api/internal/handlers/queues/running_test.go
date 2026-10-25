@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues/queuestest"
 )
 
@@ -28,7 +29,7 @@ func TestRunning_FiltersByHost(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(runningRule())
-			rec := f.do(http.MethodGet, tc.target, "", allViewer())
+			rec := f.do(http.MethodGet, tc.target, "", admin())
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d: %s", rec.Code, rec.Body)
 			}
@@ -66,11 +67,17 @@ func TestRunning_FiltersByHost(t *testing.T) {
 
 func TestRunning_RejectsBadHostAndAnonymous(t *testing.T) {
 	f := newFixture(runningRule())
-	if rec := f.do(http.MethodGet, "/api/queues/running?host=not-a-node", "", allViewer()); rec.Code != http.StatusBadRequest {
+	if rec := f.do(http.MethodGet, "/api/queues/running?host=not-a-node", "", admin()); rec.Code != http.StatusBadRequest {
 		t.Errorf("bad host status = %d", rec.Code)
 	}
 	if rec := f.do(http.MethodGet, "/api/queues/running", "", nil); rec.Code != http.StatusForbidden {
 		t.Errorf("anonymous status = %d", rec.Code)
+	}
+	// non-admins are refused by the package's admin-only Mount (the API enforces roles)
+	for _, p := range []*principal.Principal{viewer(), allViewer(), libViewer()} {
+		if rec := f.do(http.MethodGet, "/api/queues/running", "", p); rec.Code != http.StatusForbidden {
+			t.Errorf("non-admin %s status = %d", p.UserID, rec.Code)
+		}
 	}
 	if n := len(f.db.Calls()); n != 0 {
 		t.Errorf("ran %d statements", n)
