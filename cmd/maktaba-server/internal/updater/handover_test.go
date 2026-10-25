@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"errors"
 	"sync"
 	"testing"
 )
@@ -53,4 +54,37 @@ func TestApplyWithoutHandoverSaysWhy(t *testing.T) {
 	if j.HandsOver || j.HandoverWhy == "" {
 		t.Fatalf("journal %+v", j)
 	}
+}
+
+// Review L1: a run ordered while the TV is watched (the home skipped its TV gate for this
+// machine's prepared hands_over) is refused when the handover cannot be made now, and
+// the report says so; with the TV quiet it applies (every process restarts).
+func TestApplyGatedRefusesALostHandover(t *testing.T) {
+	w := newWorld("1.4.0")
+	r := startRig(t, t.TempDir(), w, healthy)
+	can := true
+	var mu sync.Mutex
+	r.m.TVHandover = func(*Journal, string, bool) (bool, string) {
+		mu.Lock()
+		defer mu.Unlock()
+		if can {
+			return true, ""
+		}
+		return false, "a slot runs where it cannot outlive the supervisor"
+	}
+	_ = r.m.Prepare(homeJob())
+	r.waitState(StatePrepared)
+	mu.Lock()
+	can = false
+	mu.Unlock()
+	if err := r.m.ApplyGated("run-1", true); !errors.Is(err, ErrTVBusy) {
+		t.Fatalf("a watched TV it can no longer hand over: %v", err)
+	}
+	if j := r.m.Status().Journal; j.State != StatePrepared || j.HandsOver {
+		t.Fatalf("journal %+v", j)
+	}
+	if err := r.m.ApplyGated("run-1", false); err != nil {
+		t.Fatal(err)
+	}
+	r.waitExit()
 }

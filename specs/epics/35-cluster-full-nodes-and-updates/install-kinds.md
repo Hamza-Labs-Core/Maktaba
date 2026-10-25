@@ -299,28 +299,41 @@ that comes back behind the watermark gets a `catch_up` run of its own.
   (Windows), its probe, its program and release, and a slot's TV release binding. It is rewritten
   whenever one starts or ends, and removed when every process stopped.
 - **The restart.** An update's exit 75 onto the new release (or back, on a rollback) is armed to
-  hand over when the TV processes can run on across it: every other process stops as at a
-  shutdown, the record is marked `handover` by that supervisor on this boot, and serve exits 75
-  without signalling them. The run's log says which it was, and why not when it was not.
+  hand over when the TV processes can run on across it and the release it goes to adopts them
+  (its signed `release.json` says `handover_protocol`, from `shared/go/layout.HandoverProtocol`;
+  a release from before says none, and gets a whole restart under the TV gate): every other
+  process stops as at a shutdown, the record is marked `handover` by that supervisor on this
+  boot, and serve exits 75 without signalling them. The run's log says which it was, and why not
+  when it was not. A machine whose prepared report said `hands_over` but that cannot hand over
+  at the apply refuses it while the TV is watched (`tv_busy`): the run's TV gate then holds it.
 - **The launcher** (it says `MAKTABA_LAUNCHER_HANDOVER=1` to the server) leaves what such a record
   lists running at that exit 75 (Linux: those process groups are kept out of the orphans it stops;
   Windows: it keeps the kill-on-close job it runs every server in, held for its whole life, across
-  that restart). On every other exit, and at a stop, it stops what the record lists (POSIX: the
-  process groups, each only while its leader is still that process; Windows: the job) and removes
-  the record. A launcher from before the handover is replaced by the committed release's on POSIX
-  where that happens by itself (the same full restart, in the window and under the TV gate, as a
-  `launcher_protocol` change); Windows keeps any launcher.
+  that restart). So it does when the release under trial ends any other way (a crash, the guard's
+  timeout) and both releases the next start may run adopt: that start (the release again, or the
+  one the guard goes back to) adopts them. On every other exit, and at a stop, it stops what the
+  record lists (POSIX: the process groups, each only while its leader is still that process;
+  Windows: the job) and removes the record. A launcher from before the handover is replaced by
+  the committed release's on POSIX where that happens by itself (a full restart, at once only
+  while no TV process runs, else at the next restart, which the run's TV gate holds for a quiet
+  TV); Windows keeps any launcher.
 - **Windows under a launcher from before the handover**: the TV processes leave the launcher's job
   (`CREATE_BREAKAWAY_FROM_JOB`; the launcher's job has always allowed it) for the boot's named job
-  `Local\Maktaba-tv-<boot id>-<install>` (the install's hash: never another install's, nor a
-  test's), whose handle the supervisor duplicates into the launcher, so it outlives the
-  supervisor and dies with the launcher. Where the job the server runs in lets no child leave it,
-  that process ends with the supervisor and every restart is whole (AC4's degradation).
+  `Local\Maktaba-tv-<install>` (the install's hash: never another install's, nor a test's; a
+  named object ends with its last handle, so no boot's outlives it), whose handle the supervisor
+  duplicates into the launcher, so it outlives the supervisor and dies with the launcher. Where
+  the job the server runs in lets no child leave it, that process ends with the supervisor and
+  every restart is whole (AC4's degradation). Each TV process's own named job (what ends it with
+  its ffmpeg) is duplicated into the launcher too, so it and its name outlive the supervisor
+  that made it; whoever ends that process closes it. A job nobody kept is made anew at the
+  adoption around the process and its descendants (by their parents).
 - **Adoption.** The next supervisor adopts each listed process still the same process (pid and
   start time) whose probe answers, and supervises it by probe and by polling; one that ends, or
   must restart, is replaced by an ordinary child; one that cannot be adopted is started afresh
   (`supervisor_adopt_failed`). A record of an earlier boot is removed. On Windows what the boot's
-  job holds beyond the adopted processes is ended.
+  job holds beyond the adopted processes and their descendants is ended. A supervisor that stops
+  before it is ready leaves the record of what it never adopted (the launcher stops it, or the
+  next start adopts it).
 - **What stays.** The front door runs on only to a release that speaks its `edge_protocol` (the
   releases' `release.json`); a release a running TV process uses is never pruned. The desktop apps
   (their own installers) and a flat install restart whole, under the TV gate.

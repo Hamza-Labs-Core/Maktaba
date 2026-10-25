@@ -482,9 +482,11 @@ the job outlives the supervisor; the new supervisor opens it by name and adopts 
 a service stop. If the duplicate fails, the update degrades to "restart children in order" in the
 quiet window with TV viewers ≤ `quiet_max_viewers` (story 33.14 EC2), and says so in the run log.
 
-As built (install-kinds.md, "TV handover"): the job's name carries the install's hash after the
-boot id (another install, or a test, never meets it), each surviving child also has a named job
-of its own nested in it (what ends that child with its descendants after a handover), and a
+As built (install-kinds.md, "TV handover"): the job's name carries the install's hash in place
+of the boot id (another install, or a test, never meets it; a named object ends with its last
+handle), each surviving child also has a named job of its own nested in it (what ends that child
+with its descendants after a handover; its handle is duplicated into the launcher too), a
+handover is made only onto a release whose `release.json` says `handover_protocol`, and a
 launcher that speaks the handover keeps the job it runs every server in across the restart, so
 the children stay there without leaving it (a logon task's or a CI runner's job may refuse a
 breakaway); the boot's job is the way under a launcher from before it.

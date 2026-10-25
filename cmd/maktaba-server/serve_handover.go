@@ -57,6 +57,11 @@ func (u *updates) tvHandover(_ *updater.Journal, target string, arm bool) (bool,
 	if sup == nil {
 		return false, "the supervisor does not run yet"
 	}
+	if p := layout.ReleaseHandoverProtocol(lay.ReleaseDir(layout.NormalizeVersion(target))); p < 1 {
+		// a release from before the handover adopts nothing: it would start its own TV
+		// processes on the ports the handed-over ones hold
+		return false, layout.NormalizeVersion(target) + "'s supervisor does not adopt the TV processes (its release.json says no handover_protocol)"
+	}
 	if goruntime.GOOS == "linux" && os.Getenv(layout.EnvLauncherHandover) != "1" {
 		return false, "the launcher is from before the TV handover (the committed release's takes its place)"
 	}

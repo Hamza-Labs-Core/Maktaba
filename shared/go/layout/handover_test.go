@@ -47,7 +47,37 @@ func TestHandoverRecord(t *testing.T) {
 	}
 }
 
-// The named job is the install's own and of this boot.
+// One boot's ids agree, a fallback boot time within its drift too.
+func TestSameBoot(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		same bool
+	}{
+		{"b126", "b126", true}, {"b126", "b127", false}, {"", "", false},
+		{"t1000000", "t1000059", true}, {"t1000000", "t1000300", true}, {"t1000000", "t1000301", false},
+		{"t1000000", "b126", false}, {"tx", "tx", true}, {"tx", "ty", false},
+	} {
+		if got := SameBoot(c.a, c.b); got != c.same {
+			t.Errorf("SameBoot(%q, %q) = %v", c.a, c.b, got)
+		}
+	}
+}
+
+// A release says the handover its supervisor speaks in its release.json.
+func TestReleaseHandoverProtocol(t *testing.T) {
+	dir := t.TempDir()
+	if ReleaseHandoverProtocol(dir) != 0 {
+		t.Fatal("no release.json")
+	}
+	if err := os.WriteFile(dir+"/release.json", []byte(`{"v":1,"handover_protocol":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ReleaseHandoverProtocol(dir) != HandoverProtocol {
+		t.Fatal("handover_protocol not read")
+	}
+}
+
+// The named job is the install's own.
 func TestTVJobName(t *testing.T) {
 	a, b := TVJobName(t.TempDir()), TVJobName(t.TempDir())
 	if a == b || !strings.HasPrefix(a, `Local\Maktaba-tv-`) {

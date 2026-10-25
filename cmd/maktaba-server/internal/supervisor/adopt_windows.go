@@ -128,6 +128,105 @@ func openJob(name string, access uint32) windows.Handle {
 	return windows.Handle(h)
 }
 
+// holdIn duplicates a job's handle into the launcher (holder): the job, and its name,
+// then outlive this supervisor. 0 when it cannot.
+func holdIn(holder int, job windows.Handle) windows.Handle {
+	if holder <= 0 || job == 0 {
+		return 0
+	}
+	lp, err := windows.OpenProcess(windows.PROCESS_DUP_HANDLE, false, uint32(holder))
+	if err != nil {
+		return 0
+	}
+	defer func() { _ = windows.CloseHandle(lp) }()
+	var out windows.Handle
+	if windows.DuplicateHandle(windows.CurrentProcess(), job, lp, &out, 0, false, windows.DUPLICATE_SAME_ACCESS) != nil {
+		return 0
+	}
+	return out
+}
+
+// closeIn closes a handle the launcher (holder) holds (holdIn's), once the job it keeps
+// is done with.
+func closeIn(holder int, h windows.Handle) {
+	lp, err := windows.OpenProcess(windows.PROCESS_DUP_HANDLE, false, uint32(holder))
+	if err != nil {
+		return
+	}
+	defer func() { _ = windows.CloseHandle(lp) }()
+	_ = windows.DuplicateHandle(lp, h, 0, nil, 0, false, windows.DUPLICATE_CLOSE_SOURCE)
+}
+
+// descendants are the processes below roots (by their parents, from a snapshot of every
+// process): what an adopted TV process started (ffmpeg).
+func descendants(roots []int) map[int]bool {
+	out := map[int]bool{}
+	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return out
+	}
+	defer func() { _ = windows.CloseHandle(snap) }()
+	parent := map[int]int{}
+	var e windows.ProcessEntry32
+	e.Size = uint32(unsafe.Sizeof(e))
+	for err := windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
+		parent[int(e.ProcessID)] = int(e.ParentProcessID)
+	}
+	in := map[int]bool{}
+	for _, r := range roots {
+		in[r] = true
+	}
+	for pid := range parent {
+		seen := map[int]bool{}
+		for p := parent[pid]; p != 0 && !seen[p]; p = parent[p] {
+			seen[p] = true
+			if in[p] {
+				out[pid] = true
+				break
+			}
+		}
+	}
+	return out
+}
+
+// rejob puts a running process and its descendants in a new named job (not
+// kill-on-close): an adopted TV process whose own job is gone.
+func rejob(pid int, name string) (windows.Handle, error) {
+	n, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return 0, err
+	}
+	job, err := windows.CreateJobObject(nil, n)
+	if err != nil {
+		return 0, err
+	}
+	for _, p := range append([]int{pid}, keys(descendants([]int{pid}))...) {
+		h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(p))
+		if err != nil {
+			continue
+		}
+		_ = windows.AssignProcessToJobObject(job, h)
+		_ = windows.CloseHandle(h)
+	}
+	return job, nil
+}
+
+// heldOf is the launcher's handle to a child's job (0: none).
+func heldOf(t *procTree) uint64 {
+	if t == nil {
+		return 0
+	}
+	return uint64(t.held)
+}
+
+func keys(m map[int]bool) []int {
+	out := make([]int, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 // inChildJob reports whether pid is in the named job of an adopted child (it or one of
 // its descendants).
 func inChildJob(jobName string, pid int) bool {
@@ -161,10 +260,11 @@ func survivorJob(dir string, pid int) string { return layout.TVChildJobName(dir,
 // attachSurvivor puts a started (suspended) child that may outlive the supervisor in
 // the boot's job (j; nil: it stays in the jobs it is in, the launcher's, which a
 // launcher that speaks the handover keeps across it) and in a named job of its own
-// nested there (not kill-on-close: what ends it with its descendants), and resumes it.
-// detached reports it is there; otherwise it gets the kill-on-close job of any child (it
-// then ends with this supervisor) and err says why.
-func attachSurvivor(cmd *exec.Cmd, j *tvJob, childJob string) (tree *procTree, detached bool, err error) {
+// nested there (not kill-on-close: what ends it with its descendants), whose handle the
+// launcher (holder) also holds, and resumes it. detached reports it is there; otherwise
+// it gets the kill-on-close job of any child (it then ends with this supervisor) and err
+// says why.
+func attachSurvivor(cmd *exec.Cmd, j *tvJob, childJob string, holder int) (tree *procTree, detached bool, err error) {
 	ph, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|windows.PROCESS_SUSPEND_RESUME|
 		windows.SYNCHRONIZE, false, uint32(cmd.Process.Pid))
 	if err != nil {
@@ -186,6 +286,7 @@ func attachSurvivor(cmd *exec.Cmd, j *tvJob, childJob string) (tree *procTree, d
 		why = fmt.Errorf("assign to %s: %w", childJob, err)
 	} else {
 		tree.job, tree.terminate, detached = cj, true, true
+		tree.held, tree.holder = holdIn(holder, cj), holder
 	}
 	if !detached {
 		if job, jerr := newKillOnCloseJob(); jerr == nil {
@@ -218,8 +319,9 @@ func assignTo(j *tvJob, ph windows.Handle) error {
 
 // adoptTree opens an adopted child (its process and its named job): what asks it to
 // stop, ends it with its descendants, and waits for it. The process must still be the
-// one that started at c.Start.
-func adoptTree(c layout.HandoverChild, _ string) (*procTree, *os.Process, error) {
+// one that started at c.Start. A job the launcher (holder) no longer keeps is made anew
+// around the process and its descendants, and handed to the launcher.
+func adoptTree(c layout.HandoverChild, dir string, holder int) (*procTree, *os.Process, error) {
 	ph, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_SUSPEND_RESUME|windows.PROCESS_TERMINATE|
 		windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(c.PID))
 	if err != nil {
@@ -231,9 +333,19 @@ func adoptTree(c layout.HandoverChild, _ string) (*procTree, *os.Process, error)
 		_ = windows.CloseHandle(ph)
 		return nil, nil, fmt.Errorf("pid %d is another process now", c.PID)
 	}
-	tree := &procTree{proc: ph, terminate: true}
+	tree := &procTree{proc: ph, terminate: true, holder: holder}
 	if c.Job != "" {
 		tree.job = openJob(c.Job, jobObjectTerminate|jobObjectQuery)
+	}
+	switch {
+	case tree.job != 0 && c.JobHeld != 0 && c.JobHolder == holder:
+		tree.held = windows.Handle(c.JobHeld) // the launcher keeps it already
+	case tree.job != 0:
+		tree.held = holdIn(holder, tree.job)
+	default:
+		if job, err := rejob(c.PID, layout.TVChildJobName(dir, c.PID)); err == nil {
+			tree.job, tree.held = job, holdIn(holder, job)
+		}
 	}
 	p, err := os.FindProcess(c.PID)
 	if err != nil {

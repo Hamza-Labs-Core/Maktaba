@@ -232,10 +232,24 @@ func (s *Supervisor) Run(ctx context.Context, grace time.Duration) error {
 			s.setState(c, StateStopped)
 		}
 	}
-	if s.ho != nil {
+	if s.ho != nil && !s.unadopted() {
 		_ = layout.RemoveHandover(s.ho.dir) // every process stopped
 	}
 	return result
+}
+
+// unadopted reports whether a process the record lists was never taken up (its loop never
+// ran: the supervisor stopped before it was ready). The record then stays, for the
+// launcher to stop it, or the next start to adopt it.
+func (s *Supervisor) unadopted() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.children {
+		if c.adopt != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // stopChildren is stopAll for some of the children (their loops' done channels).
@@ -442,7 +456,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 				if survive == surviveHere {
 					boot = nil
 				}
-				tree, c.detached, treeErr = attachSurvivor(cmd, boot, c.job)
+				tree, c.detached, treeErr = attachSurvivor(cmd, boot, c.job, s.ho.launcherPID)
 			} else {
 				c.job = ""
 				tree, treeErr = attachTree(cmd)

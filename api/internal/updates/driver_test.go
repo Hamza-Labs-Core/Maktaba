@@ -30,8 +30,10 @@ type fakeMachine struct {
 	pendingFor int
 	// backup: the dump its commit reports
 	backup *RunBackup
-	// handsOver: its TV processes run on across its restart (story 35.7)
-	handsOver bool
+	// handsOver: its TV processes run on across its restart (story 35.7); lostHandover: it
+	// cannot at the apply after all (an apply with the TV watched is refused, tv_busy)
+	handsOver    bool
+	lostHandover bool
 	// rbReason, rbErr: the reason and error of a rollback outcome (default: a 503)
 	rbReason string
 	rbErr    *MachineError
@@ -71,6 +73,16 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 		m.st = &MachineStatus{Job: &j, State: MPreparing, From: m.version, Installer: m.installer, Asks: m.asks,
 			Steps: []MachineStep{{Step: "preflight", State: "done"}}}
 	case "apply":
+		if b, _ := json.Marshal(body); m.lostHandover && m.st != nil && m.st.State == MPrepared {
+			var req struct {
+				TVBusy bool `json:"tv_busy"`
+			}
+			_ = json.Unmarshal(b, &req)
+			m.st.HandsOver = false
+			if req.TVBusy {
+				return m.copy(), errors.New("tv_busy: the TV processes cannot be handed over now")
+			}
+		}
 		if m.st != nil && m.st.State == MAwaitingClick {
 			return m.copy(), nil // asked again: waits for its click
 		}
@@ -616,5 +628,24 @@ func TestDriverNodeHandoverNeedsNoQuietTV(t *testing.T) {
 	_, _ = r.f.svc.Tick(ctx)
 	if run := r.drive(t, 40); run.State != RunDone || a.version != "1.5.0" {
 		t.Fatalf("run %s alpha %s", run.State, a.version)
+	}
+}
+
+// Story 35.7 (review L1): a home whose prepared report said it hands its TV over, which
+// cannot at the apply after all, refuses while the TV is watched; the run's TV gate then
+// holds it until the TV is quiet.
+func TestDriverLostHandoverWaitsForTheTV(t *testing.T) {
+	r := newDriverRig(t)
+	ctx := context.Background()
+	r.home.handsOver, r.home.lostHandover = true, true
+	r.viewers = 3
+	_, _ = r.f.svc.Tick(ctx)
+	r.stepN(8)
+	if run := r.active(t); r.home.applies != 0 || run.Step != "waiting_tv" && run.State != RunDraining {
+		t.Fatalf("run %s/%s applies %d", run.State, run.Step, r.home.applies)
+	}
+	r.viewers = 0
+	if run := r.drive(t, 20); run.State != RunDone || r.home.applies != 1 {
+		t.Fatalf("run %s applies %d", run.State, r.home.applies)
 	}
 }

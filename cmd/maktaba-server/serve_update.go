@@ -428,7 +428,8 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 			return true // not known: not now
 		}
 		for _, p := range snap.Processes {
-			if p.Role == supervisor.RoleTVSlot && p.State == supervisor.StateRunning {
+			// the slots, or the streaming role where there are none (it is the TV then)
+			if (p.Role == supervisor.RoleTVSlot || p.Role == supervisor.RoleStreaming) && p.State == supervisor.StateRunning {
 				return true
 			}
 		}
@@ -500,6 +501,9 @@ func (u *updates) agentState(st *machineagent.UpdateState) {
 // updateRequest is a request of the home's (loopback or update.* command).
 type updateRequest struct {
 	RunID string `json:"run_id"`
+	// TVBusy (apply): the home orders it while the TV is watched (story 35.7: it counted on
+	// this machine handing its TV over)
+	TVBusy bool `json:"tv_busy,omitempty"`
 	updater.Job
 	// TVDeadline (apply): how long the release's TV change may wait behind another change
 	// (the window's end and overrun, story 35.6 AC4)
@@ -525,7 +529,7 @@ func (u *updates) handle(name string, body json.RawMessage) (any, int, error) {
 		if req.TVDeadline != nil {
 			u.m.SetTVDeadline(req.Job.RunID, *req.TVDeadline)
 		}
-		err = u.m.Apply(req.Job.RunID)
+		err = u.m.ApplyGated(req.Job.RunID, req.TVBusy)
 	case "abort":
 		err = u.m.Abort(req.Job.RunID)
 	case "rollback":

@@ -167,6 +167,10 @@ var (
 	ErrPastSwitch = errors.New("past_switch")      // abort after the switch
 	ErrAhead      = errors.New("update_ahead")     // this machine runs a newer release
 	ErrNoRollback = errors.New("no_rollback")      // nothing to roll back to, or the database moved on
+	// ErrTVBusy: the apply's restart would now cut a watched TV, the handover the run
+	// counted on being one it cannot make now (story 35.7): nothing changed, and the run's
+	// TV gate holds it.
+	ErrTVBusy = errors.New("tv_busy")
 )
 
 // Machine runs this machine's part of updates.
@@ -191,7 +195,9 @@ type Machine struct {
 	// sends its update.state again).
 	OnChange func()
 	// TVOnAir reports whether this machine keeps TV streams on air now (its tv-slot
-	// processes run): a launcher's handover then waits for the next restart (nil: none).
+	// processes, or its streaming role, run): a launcher's replacement that cannot hand the
+	// TV over then waits for the next restart, which the run's TV gate holds for a quiet
+	// TV (nil: none).
 	TVOnAir func() bool
 	// TVHandover reports whether this machine's TV processes (the front door, the slots)
 	// can run on across the restart onto target, the release the next start runs (story
@@ -667,6 +673,22 @@ func (m *Machine) Abort(runID string) error {
 // release that comes up finishes the run (Resume). An install a person updates is
 // ordered from the app instead (awaiting_click); once someone clicked there, Apply again
 // is the home's go.
+// ApplyGated is Apply for a run the home ordered while the TV is watched (tvBusy: it
+// skipped its TV gate because this machine's prepared report said it hands its TV over):
+// when it cannot hand over now, it refuses (ErrTVBusy) and says so in its report, so the
+// run's TV gate holds it.
+func (m *Machine) ApplyGated(runID string, tvBusy bool) error {
+	if j := m.Status().Journal; tvBusy && m.TVHandover != nil && j != nil && j.Job.RunID == runID &&
+		(j.State == StatePrepared || j.State == StateClicked) && j.Staged != "running" {
+		if ok, why := m.TVHandover(j, j.Job.Version, false); !ok {
+			_ = m.mutate(func(j *Journal) { j.HandsOver, j.HandoverWhy = false, why })
+			return fmt.Errorf("%w: the TV processes cannot be handed over now (%s) and the TV is watched", ErrTVBusy, why)
+		}
+	}
+	return m.Apply(runID)
+}
+
+// Apply switches to the prepared release and restarts on it.
 func (m *Machine) Apply(runID string) error {
 	m.mu.Lock()
 	if m.j == nil || m.j.Job.RunID != runID {
