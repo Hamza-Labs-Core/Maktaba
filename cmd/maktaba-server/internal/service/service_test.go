@@ -192,3 +192,51 @@ func TestInstallRunsPlan(t *testing.T) {
 		t.Fatal("no service-manager command run")
 	}
 }
+
+// A spec that names its server.toml writes the install's pointer to it first, for every
+// service manager: a Windows logon task (or service) carries no MAKTABA_CONFIG, so the
+// server its launcher starts reads the pointer (config.Path) instead of the defaults.
+func TestPlanWritesTheConfigPointer(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "maktaba")
+	cfg := filepath.Join(t.TempDir(), "elsewhere", "server.toml")
+	for _, kind := range []Kind{KindTask, KindWinService, KindSystemd, KindLaunchd} {
+		steps, err := Plan(Spec{Kind: kind, Mode: layout.ModeUser, Root: root, Home: t.TempDir(), ConfigPath: cfg})
+		if err != nil || len(steps) < 2 {
+			t.Fatalf("%s: %v %v", kind, steps, err)
+		}
+		if steps[0].Path != filepath.Join(root, layout.ConfigPointerFile) || steps[0].Content != cfg+"\n" {
+			t.Errorf("%s: first step %+v", kind, steps[0])
+		}
+	}
+	// no server.toml named: no pointer (the server's own default)
+	steps, err := Plan(Spec{Kind: KindTask, Mode: layout.ModeUser, Root: root})
+	if err != nil || len(steps) != 2 || strings.Contains(steps[0].Path, layout.ConfigPointerFile) {
+		t.Fatalf("without a config: %v %v", steps, err)
+	}
+	// a relative path is made absolute (the task starts in the install root)
+	steps, _ = Plan(Spec{Kind: KindTask, Mode: layout.ModeUser, Root: root, ConfigPath: "server.toml"})
+	if got := strings.TrimSpace(steps[0].Content); !filepath.IsAbs(got) {
+		t.Fatalf("relative config: %q", got)
+	}
+}
+
+// Installing writes the pointer where the launcher's server reads it (faked service
+// manager: no task or unit is registered on this machine).
+func TestInstallWritesTheConfigPointer(t *testing.T) {
+	kind := DefaultKind(runtimeGOOS(), layout.ModeUser)
+	if !Supported(kind, runtimeGOOS()) || kind == KindWinService {
+		t.Skip("no user service kind here")
+	}
+	home := t.TempDir()
+	root := filepath.Join(home, "maktaba")
+	cfg := filepath.Join(home, "config", "server.toml")
+	old := runCmd
+	runCmd = func([]string) error { return nil }
+	t.Cleanup(func() { runCmd = old })
+	if err := Install(Spec{Kind: kind, Mode: layout.ModeUser, Root: root, Home: home, ConfigPath: cfg}, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if got := layout.ReadConfigPointer(root); got != cfg {
+		t.Fatalf("pointer %q, want %q", got, cfg)
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"text/template"
@@ -225,9 +226,24 @@ func (st Step) String() string {
 	}
 }
 
-// Plan lists what installing the service does.
+// Plan lists what installing the service does: first, when the spec names its
+// server.toml, the install's pointer to it (layout.ConfigPointerFile), which the server
+// reads under any service manager (a Windows task or service carries no environment).
 func Plan(s Spec) ([]Step, error) {
 	s = s.withDefaults()
+	steps, err := plan(s)
+	if err != nil || s.ConfigPath == "" {
+		return steps, err
+	}
+	cfg, err := filepath.Abs(s.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+	return append([]Step{{Path: filepath.Join(s.Root, layout.ConfigPointerFile), Content: cfg + "\n"}}, steps...), nil
+}
+
+// plan is Plan's service manager's own steps.
+func plan(s Spec) ([]Step, error) {
 	content, err := Render(s)
 	if err != nil {
 		return nil, err
