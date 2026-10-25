@@ -70,9 +70,10 @@ func TestContainerWaitsForSetup(t *testing.T) {
 	dir := t.TempDir()
 	var out bytes.Buffer
 	c := containerDeps{config: filepath.Join(dir, "server.toml"), out: &out, every: 10 * time.Millisecond}
+	cfg := c.config // the goroutine's own copy: c.config changes below
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		_ = os.WriteFile(c.config, []byte("[server]\n"), 0o600)
+		_ = os.WriteFile(cfg, []byte("[server]\n"), 0o600)
 	}()
 	if !c.waitSetup(context.Background()) {
 		t.Fatal("did not go on once set up")

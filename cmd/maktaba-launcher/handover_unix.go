@@ -21,7 +21,7 @@ func stopListed(rec *layout.Handover, grace time.Duration) {
 	for _, c := range rec.Children {
 		if layout.ProcessIs(c.PID, c.Start) {
 			left = append(left, c)
-			_ = syscall.Kill(-group(c), syscall.SIGTERM)
+			signalListed(c, syscall.SIGTERM)
 		}
 	}
 	deadline := time.Now().Add(grace)
@@ -36,16 +36,18 @@ func stopListed(rec *layout.Handover, grace time.Duration) {
 		left = kept
 	}
 	for _, c := range left {
-		_ = syscall.Kill(-group(c), syscall.SIGKILL)
+		signalListed(c, syscall.SIGKILL)
 	}
 }
 
-// group is the process group a listed process leads.
-func group(c layout.HandoverChild) int {
-	if c.PGID > 0 {
-		return c.PGID
+// signalListed signals a listed process: its process group when the record names one
+// (the group it leads, with whatever it started), else the process itself (one that
+// leads no group: a signal to -pid would reach nobody).
+func signalListed(c layout.HandoverChild, sig syscall.Signal) {
+	if c.PGID > 0 && syscall.Kill(-c.PGID, sig) == nil {
+		return
 	}
-	return c.PID
+	_ = syscall.Kill(c.PID, sig)
 }
 
 // stopTVJob: POSIX has no job; stopListed and the orphans' stop end what was left.

@@ -215,8 +215,9 @@ if [ "${rpms}" = true ] && has docker && docker info >/dev/null 2>&1; then
             set -e
             cp /repo/rpm/maktaba.repo /etc/yum.repos.d/maktaba.repo
             dnf -q -y --disablerepo="*" --enablerepo=maktaba makecache
-            n="$(dnf -q --disablerepo="*" --enablerepo=maktaba list --showduplicates --available maktaba-server 2>/dev/null | grep -c "^maktaba-server")"
-            [ "$n" = 3 ] || { echo "dnf sees $n versions" >&2; exit 1; }
+            # the container architecture only: the repository carries the other one too
+            n="$(dnf -q --disablerepo="*" --enablerepo=maktaba list --showduplicates --available maktaba-server 2>/dev/null | grep -c "^maktaba-server\.$(uname -m) ")"
+            [ "$n" = 3 ] || { echo "dnf sees $n versions for $(uname -m)" >&2; exit 1; }
             dnf -q -y --disablerepo="*" --enablerepo=maktaba install maktaba-server >/dev/null
             rpm -q maktaba-server | grep -q "0.3.10-1" || { echo "installed $(rpm -q maktaba-server)" >&2; exit 1; }
             cp -r /repo /tmp/repo
