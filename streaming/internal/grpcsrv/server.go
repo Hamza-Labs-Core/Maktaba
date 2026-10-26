@@ -290,6 +290,10 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		if req.ForceSoftware {
 			hw = ffmpeg.HWAccelSoftware
 		}
+		var colour *ffmpeg.Colour
+		if c, ok := ffmpeg.CatalogueColour(row.ColorTransfer, row.ColorMatrix, row.ColorPrimaries, row.ColorRange, row.PixFmt); ok {
+			colour = &c // no probe of the file at the open (a NAS can take seconds)
+		}
 		handle, terr := s.Transcode.Start(ctx, ffmpeg.Job{
 			SessionID:   sessID.String(),
 			InputPath:   pathmap.Resolve(row.Path), // story 31.3: canonical -> local
@@ -301,6 +305,7 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 			SourceCodec: row.VideoCodec,
 			NoAudio:     row.AudioCodec == "" && row.AudioChannels == 0,
 			StartSec:    start,
+			Colour:      colour,
 		})
 		if terr != nil {
 			release()

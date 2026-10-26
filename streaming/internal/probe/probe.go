@@ -35,6 +35,10 @@ type Row struct {
 	Size          int64
 	ModTime       time.Time
 	Probed        bool
+	// The video stream's colour and pixel format as the pipeline's probe saw them
+	// (media_info.raw_ffprobe; "" when it named none): the transcode's tone-mapping
+	// reads them instead of probing the file again at the session's open.
+	ColorTransfer, ColorMatrix, ColorPrimaries, ColorRange, PixFmt string
 }
 
 // Errors.
