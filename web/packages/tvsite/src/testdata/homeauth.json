@@ -1,0 +1,9 @@
+{
+  "_note": "TEST-ONLY secret; see api/internal/tvremote/homeauth_parity_test.go",
+  "secret": "4f1c2a9e8b7d6c5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a",
+  "method": "POST",
+  "path": "/_home/state",
+  "ts": 1793000000,
+  "body": "{\"schema\":1,\"at\":\"2026-10-26T12:00:00Z\",\"customer_code\":\"abc123xyz\",\"channels\":[]}",
+  "sig": "d597bbcef5915414aa14b95603d4eeb28c758ad6ace5cbbddeafe79c21d10ac7"
+}

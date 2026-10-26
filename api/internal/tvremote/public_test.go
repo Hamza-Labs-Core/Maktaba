@@ -193,7 +193,7 @@ func TestSiteSecrets(t *testing.T) {
 	fx := newPub(t)
 	ctx := context.Background()
 	a, err := fx.c.NewSiteSecrets(ctx, "admin-1")
-	if err != nil || a.SigningKeyID == "" || a.SigningKeyPEM == "" || len(a.HomeHMAC) != 64 {
+	if err != nil || a.SigningKeyID == "" || a.SigningKeyJWK == "" || len(a.HomeHMAC) != 64 {
 		t.Fatalf("secrets %+v %v", a, err)
 	}
 	b, err := fx.c.NewSiteSecrets(ctx, "admin-1")

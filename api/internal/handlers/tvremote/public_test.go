@@ -47,15 +47,15 @@ func TestPublicRoutes(t *testing.T) {
 	var s struct {
 		HomeHMAC      string `json:"home_hmac"`
 		SigningKeyID  string `json:"signing_key_id"`
-		SigningKeyPEM string `json:"signing_key_pem"`
+		SigningKeyJWK string `json:"signing_key_jwk"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &s)
-	if rec.Code != 200 || len(s.HomeHMAC) != 64 || s.SigningKeyPEM == "" || f.Keys[s.SigningKeyID].ID == "" {
+	if rec.Code != 200 || len(s.HomeHMAC) != 64 || s.SigningKeyJWK == "" || f.Keys[s.SigningKeyID].ID == "" {
 		t.Fatalf("site secrets: %d %s", rec.Code, rec.Body)
 	}
 	rec = as(h, "GET", "/api/tv/public", ``, admin)
 	if !strings.Contains(rec.Body.String(), `"secrets_set":true`) || strings.Contains(rec.Body.String(), s.HomeHMAC) ||
-		strings.Contains(rec.Body.String(), "PRIVATE") {
+		strings.Contains(rec.Body.String(), s.SigningKeyJWK[:24]) {
 		t.Errorf("status after secrets (never answered again): %s", rec.Body)
 	}
 }

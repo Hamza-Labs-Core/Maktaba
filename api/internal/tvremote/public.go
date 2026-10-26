@@ -34,6 +34,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote/cf"
 )
 
 const (
@@ -414,11 +416,12 @@ func (c *Controller) SiteState(ctx context.Context) (SiteState, error) {
 }
 
 // SiteSecrets are given once, to paste into the Worker's secrets
-// (wrangler secret put): the home's HMAC secret and the site's signing key.
+// (wrangler secret put HOME_HMAC, STREAM_KEY_ID, STREAM_KEY_JWK): the home's
+// HMAC secret and the site's signing key as a JWK (WebCrypto's form).
 type SiteSecrets struct {
 	HomeHMAC      string `json:"home_hmac"`
 	SigningKeyID  string `json:"signing_key_id"`
-	SigningKeyPEM string `json:"signing_key_pem"`
+	SigningKeyJWK string `json:"signing_key_jwk"`
 }
 
 // NewSiteSecrets creates the site's Stream signing key (deleting the
@@ -454,9 +457,13 @@ func (c *Controller) NewSiteSecrets(ctx context.Context, actor string) (SiteSecr
 	if err := c.Integration.Secrets.Put(ctx, SecretSiteHMAC, []byte(sec), actor); err != nil {
 		return SiteSecrets{}, err
 	}
+	jwk, err := cf.PrivateJWK(k.PEM, k.ID)
+	if err != nil {
+		return SiteSecrets{}, err
+	}
 	c.log().Info("tv_public: site secrets created", "kid", k.ID, "by", actor, "event", "tv_public_secrets")
 	c.audit(ctx, "tv_public.secrets", actor, k.ID, nil)
-	return SiteSecrets{HomeHMAC: sec, SigningKeyID: k.ID, SigningKeyPEM: k.PEM}, nil
+	return SiteSecrets{HomeHMAC: sec, SigningKeyID: k.ID, SigningKeyJWK: jwk}, nil
 }
 
 // siteKey is the site's signing key.
