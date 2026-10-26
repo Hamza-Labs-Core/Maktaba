@@ -355,6 +355,10 @@ func (w *homeDBWatch) check(ctx context.Context) {
 		return
 	}
 	switch {
+	case err != nil && !next.Healing && confirmed && !remakeMends(next.Code):
+		fmt.Fprintf(os.Stderr, "[serve] node: cannot log in to the home's database at %s (%s): %s; a new "+
+			"password would not mend it (its certificate, or the home's), so none is asked for\n",
+			next.Target, next.Code, next.Detail)
 	case err != nil && !next.Healing && confirmed:
 		fmt.Fprintf(os.Stderr, "[serve] node: cannot log in to the home's database at %s (%s): %s; the home "+
 			"re-makes this machine's access when it is its to mend, or this machine asks it for one\n",
