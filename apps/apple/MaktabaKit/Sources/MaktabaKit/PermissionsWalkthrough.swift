@@ -114,6 +114,8 @@ public struct PermissionsWalkthrough: View {
             }
             .padding(16)
         }
+        // its own element holding the others, so the buttons keep their identifiers
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("permissions.walkthrough")
         .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
         .environment(\.locale, words.locale)
@@ -142,9 +144,8 @@ struct PermissionCard: View {
                     .font(.caption.bold())
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(Capsule().fill(Color.brass.opacity(0.25)))
-                Spacer()
-                stateLabel
             }
+            stateLabel
             Text(words.text(.localNetworkWhy))
             Text(words.text(.localNetworkWithout)).foregroundStyle(.secondary)
             if let help {
