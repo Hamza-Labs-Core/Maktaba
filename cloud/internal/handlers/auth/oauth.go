@@ -26,8 +26,9 @@ const (
 
 // errOAuth codes end up in the sign-in page's ?error= parameter.
 var (
-	errEmailInUse = errors.New("email_in_use")
-	errNoEmail    = errors.New("no_email")
+	errEmailInUse      = errors.New("email_in_use")
+	errNoEmail         = errors.New("no_email")
+	errEmailUnverified = errors.New("email_unverified")
 )
 
 func (d *Deps) setOAuthCookie(w http.ResponseWriter, name, value string, crossSite bool) {
@@ -199,6 +200,9 @@ func (d *Deps) finishOAuth(w http.ResponseWriter, r *http.Request, provider stri
 	case errors.Is(err, errNoEmail):
 		d.toSignIn(w, r, "no_email")
 		return
+	case errors.Is(err, errEmailUnverified):
+		d.toSignIn(w, r, "email_unverified")
+		return
 	case err != nil:
 		d.Logger.Error("auth: federate", "provider", provider, "err", err)
 		d.toSignIn(w, r, "oauth_failed")
@@ -268,11 +272,17 @@ func (d *Deps) federate(ctx context.Context, provider string, id oauth.Identity)
 	case !errors.Is(err, stores.ErrUserNotFound):
 		return stores.User{}, err
 	}
+	// A new account needs an address the provider vouches for: an
+	// unverified one could be someone else's, and the link would outlive
+	// the real owner claiming the account later.
+	if !id.EmailVerified {
+		return stores.User{}, errEmailUnverified
+	}
 	name := id.DisplayName
 	if len([]rune(name)) > maxDisplayName {
 		name = string([]rune(name)[:maxDisplayName])
 	}
-	u, err := d.Users.Create(ctx, email, "", name, id.EmailVerified)
+	u, err := d.Users.Create(ctx, email, "", name, true)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return stores.User{}, errEmailInUse

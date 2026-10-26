@@ -42,6 +42,7 @@
   "oauthError.bad_state": "That sign-in link expired or came from another window. Start again.",
   "oauthError.email_in_use": "An account with this email already exists. Sign in with your password, then link the provider.",
   "oauthError.no_email": "The provider didn't share an email address, which an account needs.",
+  "oauthError.email_unverified": "The provider hasn't verified this email address, so it can't open a new account.",
   "oauthError.blocked": "Sign-in is blocked for this account. Contact support.",
   "oauthError.no_session": "Your sign-in didn't complete. Please sign in again.",
   "oauthError.account_suspended": "This account is suspended.",

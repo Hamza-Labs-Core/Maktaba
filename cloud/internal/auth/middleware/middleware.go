@@ -22,21 +22,49 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
-// StatusFunc returns the account status for a user id, or
-// stores.ErrUserNotFound. RequireUser consults it on every request so a
-// suspension or deletion takes effect at once rather than when the
-// 15-minute access token runs out.
-type StatusFunc func(ctx context.Context, userID string) (string, error)
+// StatusFunc reports whether the bearer of an access token may still
+// act: the account's status (stores.Status*), or StatusSignedOut when the
+// session the token came from was revoked, or StatusBlocked when the
+// account is blocklisted; stores.ErrUserNotFound for a deleted account.
+// RequireUser consults it on every request so a suspension, block or
+// sign-out takes effect at once rather than when the 15-minute token
+// runs out.
+type StatusFunc func(ctx context.Context, userID, sessionID string) (string, error)
 
-// UserStatus is the production StatusFunc: one primary-key lookup.
+// Extra outcomes of StatusFunc beyond the account statuses.
+const (
+	StatusSignedOut = "signed_out"
+	StatusBlocked   = "blocked"
+)
+
+// UserStatus is the production StatusFunc: one query. A rotated session
+// is still alive — its access token predates the rotation.
 func UserStatus(db *sql.DB) StatusFunc {
-	return func(ctx context.Context, id string) (string, error) {
-		var s string
-		err := db.QueryRowContext(ctx, `SELECT status FROM users WHERE id = $1`, id).Scan(&s)
+	return func(ctx context.Context, id, sid string) (string, error) {
+		var status string
+		var blocked, live bool
+		err := db.QueryRowContext(ctx, `
+            SELECT u.status,
+                   EXISTS (SELECT 1 FROM blocklist b WHERE b.subject_kind = 'user' AND b.subject = u.id::text
+                           AND (b.expires_at IS NULL OR b.expires_at > now())),
+                   ($2 = '' OR EXISTS (SELECT 1 FROM sessions s WHERE s.id::text = $2 AND s.user_id = u.id
+                           AND (s.revoked_at IS NULL OR s.revoke_reason = 'rotated')))
+            FROM users u WHERE u.id = $1`, id, sid).Scan(&status, &blocked, &live)
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", stores.ErrUserNotFound
 		}
-		return s, err
+		switch {
+		case err != nil:
+			return "", err
+		case status == stores.StatusSuspended:
+			// Suspension revokes the sessions too; say why.
+			return status, nil
+		case !live:
+			return StatusSignedOut, nil
+		case blocked:
+			return StatusBlocked, nil
+		}
+		return status, nil
 	}
 }
 
@@ -58,9 +86,9 @@ func RequireUser(signer *token.Signer, status StatusFunc) func(http.Handler) htt
 				return
 			}
 			if status != nil {
-				s, err := status(r.Context(), claims.Sub)
+				s, err := status(r.Context(), claims.Sub, claims.SID)
 				switch {
-				case errors.Is(err, stores.ErrUserNotFound):
+				case errors.Is(err, stores.ErrUserNotFound), err == nil && s == StatusSignedOut:
 					writeErr(w, http.StatusUnauthorized, "unauthorized")
 					return
 				case err != nil:
@@ -68,6 +96,9 @@ func RequireUser(signer *token.Signer, status StatusFunc) func(http.Handler) htt
 					return
 				case s == stores.StatusSuspended:
 					writeErr(w, http.StatusForbidden, "account_suspended")
+					return
+				case s == StatusBlocked:
+					writeErr(w, http.StatusForbidden, "blocked")
 					return
 				}
 			}

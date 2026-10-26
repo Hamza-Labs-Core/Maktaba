@@ -161,17 +161,23 @@ func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, ev stripeEvent) ([]no
 		if err != nil || uid == "" {
 			return nil, err
 		}
-		var last sql.NullTime
-		err = tx.QueryRowContext(ctx, `SELECT last_event_at FROM subscriptions WHERE user_id = $1 FOR UPDATE`, uid).Scan(&last)
+		var cur struct {
+			subID  sql.NullString
+			status sql.NullString
+		}
+		err = tx.QueryRowContext(ctx, `SELECT stripe_subscription_id, status FROM subscriptions WHERE user_id = $1 FOR UPDATE`, uid).Scan(&cur.subID, &cur.status)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return nil, err
-		}
-		if last.Valid && last.Time.After(at) {
-			return nil, nil // an older event delivered late
 		}
 		status := o.Status
 		if ev.Type == "customer.subscription.deleted" {
 			status = "canceled"
+		}
+		// A second subscription (two checkouts paid) must not move the
+		// account while the current one is live: only a live
+		// subscription may take over from another.
+		if cur.subID.Valid && cur.subID.String != o.ID && liveStatuses[cur.status.String] && !liveStatuses[status] {
+			return nil, nil
 		}
 		tier, priceID, interval := d.planOf(o)
 		effective := billingpkg.PlanFree
@@ -186,7 +192,12 @@ func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, ev stripeEvent) ([]no
 		if periodEnd > 0 {
 			end = time.Unix(periodEnd, 0).UTC()
 		}
-		if _, err := tx.ExecContext(ctx, `
+		// The ordering guard lives in the upsert itself, so two concurrent
+		// deliveries for an account with no row yet cannot both win. Stripe
+		// timestamps are whole seconds; on a tie, an "incomplete" event
+		// never overwrites a live status (created → active usually share
+		// a second and may arrive in either order).
+		res, err := tx.ExecContext(ctx, `
             INSERT INTO subscriptions (user_id, plan, interval, stripe_customer_id, stripe_subscription_id, stripe_price_id,
                                        status, current_period_end, cancel_at_period_end, last_event_at, updated_at)
             VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,NULLIF($6,''),$7,$8,$9,$10,now())
@@ -201,8 +212,17 @@ func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, ev stripeEvent) ([]no
                 cancel_at_period_end = EXCLUDED.cancel_at_period_end,
                 last_event_at = EXCLUDED.last_event_at,
                 updated_at = now()
-        `, uid, effective, interval, o.Customer, o.ID, priceID, status, end, o.CancelAtPeriodEnd, at); err != nil {
+            WHERE subscriptions.last_event_at IS NULL
+               OR subscriptions.last_event_at < EXCLUDED.last_event_at
+               OR (subscriptions.last_event_at = EXCLUDED.last_event_at
+                   AND NOT (EXCLUDED.status IN ('incomplete','incomplete_expired')
+                            AND subscriptions.status IN ('active','trialing','past_due')))
+        `, uid, effective, interval, o.Customer, o.ID, priceID, status, end, o.CancelAtPeriodEnd, at)
+		if err != nil {
 			return nil, err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return nil, nil // an older event delivered late
 		}
 		return nil, setEffectivePlan(ctx, tx, uid, effective)
 

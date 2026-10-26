@@ -8,7 +8,7 @@ import (
 func TestClientIP(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "[2001:db8::1]:443"
-	r.Header.Set("X-Forwarded-For", "198.51.100.7, 10.0.0.1")
+	r.Header.Set("X-Forwarded-For", "1.2.3.4, 198.51.100.7")
 	r.Header.Set("CF-Connecting-IP", "198.51.100.9")
 	if got := ClientIP(r, false); got != "2001:db8::1" {
 		t.Errorf("untrusted: %q", got)

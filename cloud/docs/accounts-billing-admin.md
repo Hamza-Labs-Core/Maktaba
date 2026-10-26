@@ -42,7 +42,10 @@ All bodies are JSON. Errors are `{"error": "<code>", "message": "…"}`.
 | `GET /v1/auth/providers` | — | `200 {"google":bool,"apple":bool}` | — |
 
 `user` is `{id, email, email_verified, display_name?, plan, role}`.
-Access tokens last 15 minutes; refresh sessions 30 days. A password
+Access tokens last 15 minutes; refresh sessions 30 days. The refresh
+cookie is host-only (no `Domain`), so it never reaches a home server on a
+relay subdomain. Every bearer request also checks that its session is still
+alive and the account is not suspended or blocklisted. A password
 reset, a password change, a suspension and an account deletion all
 revoke every session.
 
@@ -54,7 +57,8 @@ the OAuth starts are limited per client IP (burst 30, 5/s; the mail-sending
 ones burst 5, 1 per 12 s). Ten failed logins for one account in 15
 minutes lock it for 30 minutes. A blocklisted IP or account gets `403
 blocked`. The client IP is the TCP peer unless `server.trust_proxy_headers`
-is on (then the left-most `X-Forwarded-For`/`CF-Connecting-IP`).
+is on (then `CF-Connecting-IP`, else the right-most `X-Forwarded-For` entry,
+the one the proxy appended).
 
 ## Account — `/v1/account/*` (bearer token)
 
@@ -168,6 +172,7 @@ What the account side had before this change, and what it has now.
 | Google `id_token` verifier was never wired (`nil`) | Google sign-in always failed | JWKS verifier (RS256/ES256) checking iss, aud, exp, nonce; PKCE |
 | Apple `id_token` decoded without any check; no `state` on the Apple callback; `email_verified` parsed as bool (Apple sends a string) | login CSRF; parse failures | same verifier, state + nonce cookies (`SameSite=None` for Apple's form_post) |
 | OAuth callbacks answered JSON to a browser redirect | the browser showed a JSON blob | callbacks set the refresh cookie and redirect to the web app |
+| Refresh cookie was scoped to `.maktaba.app` (found in review) | every home server behind `*.relay.maktaba.app` received it: account takeover | host-only cookie |
 | Rate-limit key was `X-Forwarded-For` or `RemoteAddr` with its port | a client picked its own key; every new connection was a new bucket | TCP peer without port, proxy headers only when `trust_proxy_headers` |
 | Webhook: `checkout.session.completed` mapped to plan `free`; subscription events carried no user id; duplicate events re-applied; no ordering | a successful checkout downgraded the payer; later events were dropped | metadata `user_id` on the subscription, customer-id fallback, event + apply in one transaction, `last_event_at` ordering |
 | Suspension (`status`) was never checked | an account the old `BlockUser` blocked could sign straight back in | login, refresh, OAuth and every bearer request check it |

@@ -52,29 +52,29 @@ func LoadSignerFromFile(path string) (*Signer, error) {
 	}
 	b = []byte(strings.TrimSpace(string(b)))
 	// Allow PEM-style or raw hex/base64.
+	// Text encodings first: 64 hex characters are also 64 bytes, and
+	// reading them raw as an expanded key would publish a garbage
+	// public key.
 	var key ed25519.PrivateKey
-	switch {
-	case len(b) == ed25519.PrivateKeySize:
-		key = ed25519.PrivateKey(b)
-	case len(b) == ed25519.SeedSize:
-		key = ed25519.NewKeyFromSeed(b)
-	default:
+	fromBytes := func(d []byte) ed25519.PrivateKey {
+		switch len(d) {
+		case ed25519.PrivateKeySize:
+			return ed25519.PrivateKey(d)
+		case ed25519.SeedSize:
+			return ed25519.NewKeyFromSeed(d)
+		}
+		return nil
+	}
+	if decoded, err := hex.DecodeString(string(b)); err == nil {
+		key = fromBytes(decoded)
+	}
+	if key == nil {
 		if decoded, err := base64.StdEncoding.DecodeString(string(b)); err == nil {
-			switch len(decoded) {
-			case ed25519.PrivateKeySize:
-				key = ed25519.PrivateKey(decoded)
-			case ed25519.SeedSize:
-				key = ed25519.NewKeyFromSeed(decoded)
-			}
+			key = fromBytes(decoded)
 		}
-		if decoded, err := hex.DecodeString(string(b)); err == nil {
-			switch len(decoded) {
-			case ed25519.PrivateKeySize:
-				key = ed25519.PrivateKey(decoded)
-			case ed25519.SeedSize:
-				key = ed25519.NewKeyFromSeed(decoded)
-			}
-		}
+	}
+	if key == nil {
+		key = fromBytes(b)
 	}
 	if key == nil {
 		return nil, errors.New("entitlement: unable to parse private key (need 32-byte seed or 64-byte ed25519 key)")

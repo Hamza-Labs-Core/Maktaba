@@ -25,6 +25,11 @@ var ErrNotFound = errors.New("sessions: not found")
 // of the account.
 var ErrReplayed = errors.New("sessions: rotated refresh token replayed")
 
+// ErrRotatedRecently is a token rotated less than ReplayGrace ago: a
+// sibling tab won the refresh race. The caller answers 401 but must not
+// clear the cookie — the winner's response has just set the new one.
+var ErrRotatedRecently = errors.New("sessions: refresh token rotated moments ago")
+
 // ReplayGrace is how long after a rotation the old token is treated as
 // a plain miss rather than a replay. Two tabs refreshing at the same
 // moment both present the same token; the loser should get a 401, not
@@ -114,6 +119,9 @@ func (s *Store) Lookup(ctx context.Context, rawToken string) (Session, error) {
 		if reason.String == ReasonRotated && time.Since(revoked.Time) > ReplayGrace {
 			return Session{UserID: sess.UserID}, ErrReplayed
 		}
+		if reason.String == ReasonRotated {
+			return Session{}, ErrRotatedRecently
+		}
 		return Session{}, ErrNotFound
 	}
 	if time.Now().UTC().After(sess.ExpiresAt) {
@@ -160,7 +168,12 @@ func (s *Store) RevokeForUser(ctx context.Context, id, userID string) (bool, err
 // RevokeAllForUser is used by password change, suspension, deletion and
 // "sign out everywhere".
 func (s *Store) RevokeAllForUser(ctx context.Context, userID string) error {
-	_, err := s.DB.ExecContext(ctx, `UPDATE sessions SET revoked_at = now(), revoke_reason = $2 WHERE user_id = $1 AND revoked_at IS NULL`, userID, ReasonRevoked)
+	// Rotated sessions are retired too: an access token minted from one
+	// is still within its 15 minutes, and RequireUser treats a rotated
+	// session as alive.
+	_, err := s.DB.ExecContext(ctx, `
+        UPDATE sessions SET revoked_at = COALESCE(revoked_at, now()), revoke_reason = $2
+        WHERE user_id = $1 AND (revoked_at IS NULL OR revoke_reason = $3)`, userID, ReasonRevoked, ReasonRotated)
 	return err
 }
 

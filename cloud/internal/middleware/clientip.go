@@ -16,16 +16,19 @@ const (
 // trustProxy it is the TCP peer, port stripped — a client cannot pick
 // its own rate-limit key by sending a header. With trustProxy (the api
 // sits behind Cloudflare or a reverse proxy that overwrites these
-// headers) CF-Connecting-IP wins, then the left-most X-Forwarded-For.
+// headers) CF-Connecting-IP wins, then the right-most X-Forwarded-For
+// entry — the one our proxy appended; entries to its left are whatever
+// the client sent.
 func ClientIP(r *http.Request, trustProxy bool) string {
 	if trustProxy {
 		if v := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); v != "" && net.ParseIP(v) != nil {
 			return v
 		}
 		if v := r.Header.Get("X-Forwarded-For"); v != "" {
-			first := strings.TrimSpace(strings.Split(v, ",")[0])
-			if net.ParseIP(first) != nil {
-				return first
+			parts := strings.Split(v, ",")
+			last := strings.TrimSpace(parts[len(parts)-1])
+			if net.ParseIP(last) != nil {
+				return last
 			}
 		}
 	}

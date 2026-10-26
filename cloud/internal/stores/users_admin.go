@@ -132,17 +132,20 @@ func (s *Users) SetRole(ctx context.Context, id, role string) error {
 
 // ServiceAdmins lists the accounts holding the service-admin role.
 func (s *Users) ServiceAdmins(ctx context.Context) ([]AccountSummary, error) {
-	res, _, err := s.Search(ctx, AccountQuery{Limit: 100})
+	rows, err := s.DB.QueryContext(ctx, `SELECT id, email, status FROM users WHERE role = $1 ORDER BY email`, RoleServiceAdmin)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	out := []AccountSummary{}
-	for _, a := range res {
-		if a.Role == RoleServiceAdmin {
-			out = append(out, a)
+	for rows.Next() {
+		a := AccountSummary{Role: RoleServiceAdmin}
+		if err := rows.Scan(&a.ID, &a.Email, &a.Status); err != nil {
+			return nil, err
 		}
+		out = append(out, a)
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 // Identity is one linked sign-in provider.

@@ -345,7 +345,7 @@ func (d *Deps) setStatus(w http.ResponseWriter, r *http.Request, status string) 
 		return
 	}
 	if status == stores.StatusSuspended {
-		if _, err := tx.ExecContext(ctx, `UPDATE sessions SET revoked_at = now(), revoke_reason = $2 WHERE user_id = $1 AND revoked_at IS NULL`, id, sessions.ReasonRevoked); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE sessions SET revoked_at = COALESCE(revoked_at, now()), revoke_reason = $2 WHERE user_id = $1 AND (revoked_at IS NULL OR revoke_reason = $3)`, id, sessions.ReasonRevoked, sessions.ReasonRotated); err != nil {
 			d.fail(w, r, "revoke sessions", err)
 			return
 		}

@@ -173,19 +173,21 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		app.Use(blockedIPs(detector, logger))
 
 		authh.Mount(app, &authh.Deps{
-			Users:        users,
-			Sessions:     sess,
-			Signer:       signer,
-			Tokens:       stores.NewMailTokens(pool.DB),
-			Mailer:       mailer,
-			Templates:    templates,
-			Abuse:        detector,
-			Audit:        auditLog,
-			Logger:       logger,
-			Google:       googleFlow,
-			Apple:        appleFlow,
-			WebURL:       cfg.Server.WebURL,
-			CookieDomain: extractCookieDomain(cfg.Server.PublicURL),
+			Users:     users,
+			Sessions:  sess,
+			Signer:    signer,
+			Tokens:    stores.NewMailTokens(pool.DB),
+			Mailer:    mailer,
+			Templates: templates,
+			Abuse:     detector,
+			Audit:     auditLog,
+			Logger:    logger,
+			Google:    googleFlow,
+			Apple:     appleFlow,
+			WebURL:    cfg.Server.WebURL,
+			// Host-only: a Domain=.maktaba.app cookie would also go to
+			// every home server behind *.relay.maktaba.app.
+			CookieDomain: "",
 			Secure:       true,
 		})
 
@@ -279,27 +281,4 @@ func blockedIPs(d *abuse.Detector, logger *slog.Logger) func(http.Handler) http.
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-func extractCookieDomain(publicURL string) string {
-	// "https://api.maktaba.app" → ".maktaba.app" so the cookie is
-	// shared with web.maktaba.app. We do a tiny suffix split rather
-	// than pulling net/url for one host extraction.
-	const prefix = "https://"
-	host := publicURL
-	if len(host) >= len(prefix) && host[:len(prefix)] == prefix {
-		host = host[len(prefix):]
-	}
-	for i := len(host) - 1; i >= 0; i-- {
-		if host[i] == '.' {
-			// Find the dot before this one — last 2 labels.
-			for j := i - 1; j >= 0; j-- {
-				if host[j] == '.' {
-					return host[j:]
-				}
-			}
-			return "." + host
-		}
-	}
-	return ""
 }

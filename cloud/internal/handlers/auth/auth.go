@@ -374,6 +374,10 @@ func (d *Deps) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess, err := d.Sessions.Lookup(r.Context(), c.Value)
+	if errors.Is(err, sessions.ErrRotatedRecently) {
+		writeError(w, http.StatusUnauthorized, "no_session", "")
+		return
+	}
 	if errors.Is(err, sessions.ErrReplayed) {
 		d.replayed(r, sess.UserID)
 		clearRefreshCookie(w, d.CookieDomain, d.Secure)
