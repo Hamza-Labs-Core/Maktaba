@@ -179,6 +179,7 @@ def build_sprite_args(
     columns: int = 5,
     rows: int = 5,
     tile_width: int = 160,
+    keyframes_only: bool = True,
     binary: str | None = None,
 ) -> list[str]:
     """Compose the sprite-sheet ffmpeg command line.
@@ -205,8 +206,7 @@ def build_sprite_args(
         "-nostdin",
         "-threads",
         "1",
-        "-skip_frame",
-        "nokey",
+        *(["-skip_frame", "nokey"] if keyframes_only else []),
         "-i",
         src,
         "-frames:v",
@@ -263,7 +263,17 @@ async def generate_poster(
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"poster.{cfg.image_format}"
     ts = _poster_timestamp(duration_sec, cfg)
-    await run(build_poster_args(src, ts, str(out), width=cfg.poster_width, binary=binary))
+    # A seek past the video's last frame gives ffmpeg nothing to encode (it then fails on
+    # the encoder, rc 234): a file whose video track is shorter than the container's
+    # duration (a long audio track) or a very short clip. Earlier points, then the start.
+    points = [ts, *(p for p in (1.0, 0.0) if p < ts)]
+    for i, at in enumerate(points):
+        try:
+            await run(build_poster_args(src, at, str(out), width=cfg.poster_width, binary=binary))
+            return out
+        except ThumbnailError as exc:
+            if exc.kind != "ffmpeg_thumbnail" or i == len(points) - 1:
+                raise
     return out
 
 
@@ -282,17 +292,26 @@ async def generate_sprite(
     out_dir = thumbnail_dir_for(content_hash, root=root)
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"sprite.{cfg.image_format}"
-    await run(
-        build_sprite_args(
-            src,
-            str(out),
-            duration_sec=duration_sec,
-            columns=cfg.sprite_columns,
-            rows=cfg.sprite_rows,
-            tile_width=cfg.sprite_tile_width,
-            binary=binary,
-        )
-    )
+    # keyframes only is fast on a long video; a short one can have fewer keyframes than the
+    # grid has tiles (or none after the first), and ffmpeg then encodes nothing: every frame
+    for keyframes_only in (True, False):
+        try:
+            await run(
+                build_sprite_args(
+                    src,
+                    str(out),
+                    duration_sec=duration_sec,
+                    columns=cfg.sprite_columns,
+                    rows=cfg.sprite_rows,
+                    tile_width=cfg.sprite_tile_width,
+                    keyframes_only=keyframes_only,
+                    binary=binary,
+                )
+            )
+            return out
+        except ThumbnailError as exc:
+            if exc.kind != "ffmpeg_thumbnail" or not keyframes_only:
+                raise
     return out
 
 
