@@ -404,11 +404,23 @@ func notify(sessionIDs []string, reason string) {
 }
 
 // RecordSignIn marks a web session or refresh family a cloud sign-in
-// made, with the link's scope then.
+// made, with the link's scope then. A web session also leaves the
+// machines' copy (web_session_keys, which its creation just filled; the
+// copy's trigger keeps it out from now on, slot 0153): a machine signing
+// in from its copy refuses it rather than not knowing its scope.
 func (s *Store) RecordSignIn(ctx context.Context, kind, id, userID, scope string) error {
-	_, err := s.DB.ExecContext(ctx,
+	if _, err := s.DB.ExecContext(ctx,
 		`INSERT INTO cloud_sign_ins (id_sha256, kind, user_id, scope, created_at) VALUES ($1, $2, $3, $4, $5)`,
-		idSum(id), kind, userID, scope, s.now())
+		idSum(id), kind, userID, scope, s.now()); err != nil {
+		return err
+	}
+	if kind != KindSession {
+		return nil
+	}
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM web_session_keys WHERE id_sha256 = $1`, idSum(id))
+	if err != nil && undefinedTable(err) {
+		return nil // a database without machine copies (SQLite before slot 0147)
+	}
 	return err
 }
 
@@ -432,7 +444,7 @@ func undefinedTable(err error) bool {
 	if errors.As(err, &pe) {
 		return pe.Code == "42P01"
 	}
-	return strings.Contains(err.Error(), "no such table: cloud_sign_ins")
+	return strings.Contains(err.Error(), "no such table")
 }
 
 // AllLibraries lists every library id: what an admin's play sign-in reads,

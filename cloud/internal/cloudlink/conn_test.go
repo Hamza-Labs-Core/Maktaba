@@ -73,7 +73,7 @@ func TestAuthenticate_ProtocolViolation(t *testing.T) {
 // TestDial_RealWebsocket_AgainstRelayCodec stands up a real websocket
 // server that frames replies with the SAME relay codec the production
 // cloud uses (one frame per binary message, via relay.ReadFrame /
-// mustEncode-equivalent), and asserts Dialer.Dial completes the
+// encodeFrame-equivalent), and asserts Dialer.Dial completes the
 // handshake over a genuine WSS upgrade.
 func TestDial_RealWebsocket_AgainstRelayCodec(t *testing.T) {
 	up := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}

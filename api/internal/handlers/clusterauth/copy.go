@@ -77,8 +77,10 @@ func (c Copy) session(ctx context.Context, id string) (*delegation.IntrospectAns
 	if err != nil {
 		return nil, err
 	}
-	// a session a Maktaba Cloud sign-in made keeps its link's scope on the
-	// copy too, the home away (cloud_sign_ins is copied, by id hash)
+	// a session a Maktaba Cloud sign-in made is not in the copy (slot 0153:
+	// web_session_keys leaves it out, cloud_sign_ins is the home's own), so
+	// it never gets here; the scope is checked all the same, should a
+	// copy ever hold it
 	scope, err := (&cloudlink.Store{DB: c.Home.DB}).ScopeOf(ctx, cloudlink.KindSession, u.String())
 	if err != nil {
 		return nil, err

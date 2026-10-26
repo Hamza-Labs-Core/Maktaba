@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -50,7 +51,11 @@ func (w *wsConn) ReadFrame() (Frame, error) {
 }
 func (w *wsConn) WriteFrame(f Frame) error {
 	_ = w.c.SetWriteDeadline(time.Now().Add(writeWait))
-	return w.c.WriteMessage(websocket.BinaryMessage, mustEncode(f))
+	b, err := encodeFrame(f)
+	if err != nil {
+		return err
+	}
+	return w.c.WriteMessage(websocket.BinaryMessage, b)
 }
 func (w *wsConn) Close() error { return w.c.Close() }
 
@@ -67,14 +72,28 @@ func (r *byteReader) Read(p []byte) (int, error) {
 
 var errEOF = errors.New("EOF")
 
-func mustEncode(f Frame) []byte {
-	buf := make([]byte, 0, 9+len(f.Payload))
-	buf = append(buf, f.Kind)
-	buf = append(buf, byte(f.StreamID>>24), byte(f.StreamID>>16), byte(f.StreamID>>8), byte(f.StreamID))
-	n := uint32(len(f.Payload))
-	buf = append(buf, byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
-	buf = append(buf, f.Payload...)
-	return buf
+// encodeFrame puts one frame in one websocket message. A payload over
+// MaxFrameBytes is refused before anything is allocated (its length would
+// not fit the frame header's bound either).
+func encodeFrame(f Frame) ([]byte, error) {
+	n := len(f.Payload)
+	if n > MaxFrameBytes {
+		return nil, ErrFrameTooLarge
+	}
+	buf := make([]byte, 9, 9+n)
+	buf[0] = f.Kind
+	binary.BigEndian.PutUint32(buf[1:5], f.StreamID)
+	binary.BigEndian.PutUint32(buf[5:9], uint32(n))
+	return append(buf, f.Payload...), nil
+}
+
+// writeControl writes a small control frame (AUTH_OK / AUTH_FAIL).
+func writeControl(c *websocket.Conn, f Frame) error {
+	b, err := encodeFrame(f)
+	if err != nil {
+		return err
+	}
+	return c.WriteMessage(websocket.BinaryMessage, b)
 }
 
 // AuthPayload is the body of the first frame the on-prem server sends.
@@ -160,7 +179,7 @@ func ServeTunnels(reg *Registry, store TunnelStore, logger *slog.Logger) http.Ha
 		c.SetReadLimit(wsReadLimit)
 		fail := func(reason string) {
 			_ = c.SetWriteDeadline(time.Now().Add(writeWait))
-			_ = c.WriteMessage(websocket.BinaryMessage, mustEncode(Frame{Kind: KindAuthFail, Payload: []byte(`{"error":"` + reason + `"}`)}))
+			_ = writeControl(c, Frame{Kind: KindAuthFail, Payload: []byte(`{"error":"` + reason + `"}`)})
 			_ = c.Close()
 		}
 		_ = c.SetReadDeadline(time.Now().Add(authDeadline))
@@ -194,7 +213,7 @@ func ServeTunnels(reg *Registry, store TunnelStore, logger *slog.Logger) http.Ha
 		}
 		ok, _ := json.Marshal(okp)
 		_ = c.SetWriteDeadline(time.Now().Add(writeWait))
-		if err := c.WriteMessage(websocket.BinaryMessage, mustEncode(Frame{Kind: KindAuthOK, Payload: ok})); err != nil {
+		if err := writeControl(c, Frame{Kind: KindAuthOK, Payload: ok}); err != nil {
 			_ = c.Close()
 			return
 		}

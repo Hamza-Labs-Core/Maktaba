@@ -48,7 +48,7 @@ func dialAuth(t *testing.T, url string, payload any) (*websocket.Conn, Frame) {
 		t.Fatal(err)
 	}
 	body, _ := json.Marshal(payload)
-	if err := c.WriteMessage(websocket.BinaryMessage, mustEncode(Frame{Kind: KindAuth, Payload: body})); err != nil {
+	if err := writeControl(c, Frame{Kind: KindAuth, Payload: body}); err != nil {
 		t.Fatal(err)
 	}
 	_, data, err := c.ReadMessage()

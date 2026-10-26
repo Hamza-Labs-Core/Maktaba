@@ -3,7 +3,9 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -389,6 +391,17 @@ func TestCloudUnlinkEndsSignIns(t *testing.T) {
 	}
 	if web.code != 200 || cookie == "" {
 		t.Fatalf("web cloud sign-in: %d", web.code)
+	}
+	// a cloud session never reaches the machines' copy (web_session_keys),
+	// not even after its row changes (that fires the copy's trigger)
+	_ = c.do("GET", "/api/auth/me", cookie, nil)
+	if _, err := c.db.Exec(`UPDATE web_sessions SET expires_at = expires_at + interval '1 minute' WHERE id = $1`, strings.TrimPrefix(cookie, "mkt_sess=")); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(strings.TrimPrefix(cookie, "mkt_sess=")))
+	var keys int
+	if err := c.db.QueryRow(`SELECT count(*) FROM web_session_keys WHERE id_sha256 = $1`, hex.EncodeToString(sum[:])).Scan(&keys); err != nil || keys != 0 {
+		t.Fatalf("a cloud session in the copy's keys: %d %v", keys, err)
 	}
 	if got := c.do("GET", "/api/auth/me", cookie, nil); got.code != 200 || got.body["cloud_scope"] != "play" {
 		t.Fatalf("cookie me: %d %v", got.code, got.body)
