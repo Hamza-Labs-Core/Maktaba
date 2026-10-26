@@ -435,6 +435,39 @@ func undefinedTable(err error) bool {
 	return strings.Contains(err.Error(), "no such table: cloud_sign_ins")
 }
 
+// AllLibraries lists every library id: what an admin's play sign-in reads,
+// named one by one (a play cap never reads "everything").
+func (s *Store) AllLibraries(ctx context.Context) ([]string, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT CAST(id AS TEXT) FROM libraries ORDER BY 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// CapPlay caps a play principal the way ApplyCloudScope does, listing every
+// library when it read all of them (an admin's).
+func (s *Store) CapPlay(ctx context.Context, p *principal.Principal) error {
+	var all []string
+	if p.AccessAllLibraries {
+		var err error
+		if all, err = s.AllLibraries(ctx); err != nil {
+			return err
+		}
+	}
+	p.ApplyCloudScope(principal.CloudScopePlay, all)
+	return nil
+}
+
 // LinkedCloudUsers lists every cloud account linked here (the report to
 // the cloud, by id only).
 func (s *Store) LinkedCloudUsers(ctx context.Context) ([]string, error) {

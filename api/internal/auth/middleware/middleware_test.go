@@ -421,6 +421,9 @@ func TestJWTBearer_CloudScopeCaps(t *testing.T) {
 		{"manage", true, principal.CloudScopeManage},
 		{"", true, ""},
 	} {
+		// a play cap ends all-library access ("sees everything"): a play
+		// token reads only the libraries it names
+		wantAll := c.wantAdmin
 		tok, err := jwt.Sign(s, jwt.Claims{Iss: "maktaba", Aud: "api", Sub: "u", Usr: "u", IsAdmin: true, Scp: c.scp})
 		if err != nil {
 			t.Fatal(err)
@@ -429,7 +432,7 @@ func TestJWTBearer_CloudScopeCaps(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/x", nil)
 		req.Header.Set("Authorization", "Bearer "+tok)
 		JWTBearer(s, "api")(capture(&got)).ServeHTTP(httptest.NewRecorder(), req)
-		if got == nil || got.IsAdmin != c.wantAdmin || got.CloudScope != c.wantCloud || !got.AccessAllLibraries {
+		if got == nil || got.IsAdmin != c.wantAdmin || got.CloudScope != c.wantCloud || got.AccessAllLibraries != wantAll {
 			t.Errorf("scp %q: principal %+v", c.scp, got)
 		}
 		if got.ViaCloud() != (c.wantCloud != "") {

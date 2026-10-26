@@ -26,7 +26,10 @@ type LinkReader interface {
 // play caps a manage sign-in to play. Other sign-ins pass untouched.
 type Gate struct {
 	Links LinkReader
-	Now   func() time.Time
+	// Libraries lists every library (an admin's sign-in capped to play
+	// reads them by name); nil ⇒ the capped sign-in reads no library.
+	Libraries func(ctx context.Context) ([]string, error)
+	Now       func() time.Time
 
 	mu    sync.Mutex
 	cache map[string]gateEntry
@@ -100,7 +103,16 @@ func (g *Gate) Middleware(next http.Handler) http.Handler {
 		}
 		if scope == principal.CloudScopePlay && p.CloudScope != principal.CloudScopePlay {
 			capped := *p
-			capped.ApplyCloudScope(principal.CloudScopePlay)
+			var all []string
+			if capped.AccessAllLibraries && g.Libraries != nil {
+				if all, err = g.Libraries(r.Context()); err != nil {
+					w.Header().Set("Content-Type", "application/problem+json")
+					w.WriteHeader(http.StatusServiceUnavailable)
+					_, _ = w.Write([]byte(`{"type":"about:blank","title":"the sign-in check is not answering","status":503}`))
+					return
+				}
+			}
+			capped.ApplyCloudScope(principal.CloudScopePlay, all)
 			r = r.WithContext(principal.WithPrincipal(r.Context(), &capped))
 		}
 		next.ServeHTTP(w, r)

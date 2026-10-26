@@ -84,7 +84,9 @@ func (c Copy) session(ctx context.Context, id string) (*delegation.IntrospectAns
 		return nil, err
 	}
 	if scope == principal.CloudScopePlay {
-		p.IsAdmin = false
+		if err := capPlay(ctx, c.Home.DB, &p); err != nil {
+			return nil, err
+		}
 	}
 	a := &delegation.IntrospectAnswer{Principal: p, Source: string(principal.SourceCookie), CSRFSHA256: csrf,
 		ExpiresAt: expires}
@@ -147,4 +149,18 @@ func (c Copy) SignedInThrough(ctx context.Context, userID string) (bool, error) 
 func NewCopy(db *sql.DB, node string) Copy {
 	return Copy{NodeID: node, Home: &Home{DB: db, Sessions: sessions.New(db), Users: users.New(db),
 		ACL: &authz.ACLStore{DB: db}, PAT: pat.New(db)}}
+}
+
+// capPlay caps a wire principal from a cloud play session: no admin, and
+// an admin's every library listed rather than "all" (principal.ApplyCloudScope).
+func capPlay(ctx context.Context, db *sql.DB, p *delegation.Principal) error {
+	if p.IsAdmin || p.AccessAllLibraries {
+		all, err := (&cloudlink.Store{DB: db}).AllLibraries(ctx)
+		if err != nil {
+			return err
+		}
+		p.Libraries = all
+	}
+	p.IsAdmin, p.AccessAllLibraries = false, false
+	return nil
 }

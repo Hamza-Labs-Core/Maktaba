@@ -70,7 +70,7 @@ func MountP9(r chi.Router, d P9Deps) *auth.Handler {
 	h.Cloud = &auth.CloudLinking{
 		Store:    store,
 		Identity: &cloudlink.IdentitySource{Path: d.CloudIdentityPath},
-		Gate:     &cloudlink.Gate{Links: store},
+		Gate:     &cloudlink.Gate{Links: store, Libraries: store.AllLibraries},
 	}
 	h.Mount(r)
 	return h

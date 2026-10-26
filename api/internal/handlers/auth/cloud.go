@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
@@ -217,30 +218,24 @@ func (h *Handler) cloudAccessClaims(ctx context.Context, u *users.User, scope st
 }
 
 func (h *Handler) allLibraries(ctx context.Context) ([]string, error) {
-	if h.DB == nil {
-		return []string{}, nil
+	return h.Cloud.Store.AllLibraries(ctx)
+}
+
+// CloudAccessTTL caps a cloud sign-in's access token: a machine (or the
+// streaming service) verifies it offline, without the link gate, so an
+// unlink reaches it when it expires.
+const CloudAccessTTL = 5 * time.Minute
+
+func (h *Handler) cloudAccessTTL() time.Duration {
+	ttl := h.AccessTTL
+	if ttl == 0 {
+		ttl = DefaultAccessTTL
 	}
-	rows, err := h.DB.QueryContext(ctx, `SELECT CAST(id AS TEXT) FROM libraries ORDER BY 1`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
+	return min(ttl, CloudAccessTTL)
 }
 
 func (h *Handler) respondCloudNative(w http.ResponseWriter, r *http.Request, u *users.User, scope string) {
-	accessTTL := h.AccessTTL
-	if accessTTL == 0 {
-		accessTTL = DefaultAccessTTL
-	}
+	accessTTL := h.cloudAccessTTL()
 	now := h.now()
 	claims, err := h.cloudAccessClaims(r.Context(), u, scope, now, accessTTL)
 	if err != nil {
@@ -352,6 +347,10 @@ func (h *Handler) StartCloudLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if RefuseCloudSession(w, r, p) || !h.cloudReady(w, r) {
+		return
+	}
+	if p.UserID == users.SentinelAdminID {
+		httperror.Write(w, r, httperror.Forbidden("", "the admin token has no account to link"))
 		return
 	}
 	id, _, err := h.Cloud.Identity.Load()
@@ -485,6 +484,10 @@ func (h *Handler) AdminGetCloudLink(w http.ResponseWriter, r *http.Request) {
 	if !h.cloudReady(w, r) {
 		return
 	}
+	if _, err := uuid.Parse(chi.URLParam(r, "id")); err != nil {
+		httperror.Write(w, r, httperror.NotFound("user"))
+		return
+	}
 	link, err := h.Cloud.Store.LinkFor(r.Context(), chi.URLParam(r, "id"))
 	if errors.Is(err, cloudlink.ErrNotLinked) {
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"link": nil})
@@ -509,6 +512,10 @@ func (h *Handler) AdminUnlinkCloud(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) unlink(w http.ResponseWriter, r *http.Request, p *principal.Principal, userID string) {
 	if !h.cloudReady(w, r) {
+		return
+	}
+	if _, err := uuid.Parse(userID); err != nil {
+		httperror.Write(w, r, httperror.NotFound("cloud link"))
 		return
 	}
 	err := h.Cloud.Store.Unlink(r.Context(), userID)

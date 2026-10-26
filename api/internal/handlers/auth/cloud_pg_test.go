@@ -20,6 +20,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	authmw "github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
@@ -48,7 +49,7 @@ func newCloudHome(t *testing.T) *cloudHome {
 	cloud := cloudlinktest.New(t)
 	store := &cloudlink.Store{DB: db}
 	h.Cloud = &CloudLinking{Store: store, Identity: &cloudlink.IdentitySource{Path: cloud.IdentityPath},
-		Gate: &cloudlink.Gate{Links: store}}
+		Gate: &cloudlink.Gate{Links: store, Libraries: store.AllLibraries}}
 	r := chi.NewRouter()
 	h.Mount(r)
 	apitokens.New(pat.New(db)).Mount(r)
@@ -205,6 +206,75 @@ func TestCloudPlaySignInIsNoAdmin(t *testing.T) {
 	local := "Bearer " + c.localSignIn("amina")
 	if got := c.do("GET", "/api/security/audit", local, nil); got.code != 200 {
 		t.Fatalf("local admin audit: %d", got.code)
+	}
+}
+
+// An admin's play sign-in reads every library by name, never "all": the
+// routes that read all-library access as "sees everything" (catalog-wide
+// reports, every job) must not open for it. On the cookie path, and on a
+// manage token the gate caps to play.
+func TestCloudPlayIsNoAllLibraryAccess(t *testing.T) {
+	c := newCloudHome(t)
+	admin := c.user("amina", true)
+	c.link(admin.ID, cloudAdmin, "manage")
+	var seen *principal.Principal
+	probe := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cp := *principal.FromContext(r.Context())
+		seen = &cp
+	})
+	stack := c.h.CookieAuth(c.h.Cloud.Gate.Middleware(probe))
+	check := func(name string, req *http.Request, wantAll bool) {
+		t.Helper()
+		seen = nil
+		stack.ServeHTTP(httptest.NewRecorder(), req)
+		if seen == nil {
+			t.Fatalf("%s: no principal", name)
+		}
+		if seen.AccessAllLibraries != wantAll || (!wantAll && (seen.IsAdmin || len(seen.Libraries) != len(c.libs))) {
+			t.Fatalf("%s: principal %+v (libraries %v)", name, seen, c.libs)
+		}
+	}
+	// a web sign-in while the link is manage: the admin's full role
+	web := c.do("POST", "/api/auth/cloud", "", map[string]string{"assertion": c.cloud.Assertion(cloudlink.PurposeSignIn, cloudAdmin, "")})
+	var sess string
+	for _, ck := range web.resp.Cookies() {
+		if ck.Name == CookieSession {
+			sess = ck.Value
+		}
+	}
+	manageTok, _, _ := c.signIn(cloudAdmin)
+	cookieReq := func() *http.Request {
+		r := httptest.NewRequest("GET", "/x", nil)
+		r.AddCookie(&http.Cookie{Name: CookieSession, Value: sess})
+		return r
+	}
+	check("manage cookie", cookieReq(), true)
+	// lowered to play: the gate caps the manage JWT already out
+	if _, err := c.db.Exec(`UPDATE home_user_links SET scope = 'play' WHERE user_id = $1`, admin.ID); err != nil {
+		t.Fatal(err)
+	}
+	c.h.Cloud.Gate.Forget(admin.ID)
+	jwtReq := httptest.NewRequest("GET", "/x", nil)
+	jwtReq.Header.Set("Authorization", "Bearer "+manageTok)
+	var capped *principal.Principal
+	authmw.JWTBearer(c.keys, "api")(c.h.Cloud.Gate.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cp := *principal.FromContext(r.Context())
+		capped = &cp
+	}))).ServeHTTP(httptest.NewRecorder(), jwtReq)
+	if capped == nil || capped.IsAdmin || capped.AccessAllLibraries || len(capped.Libraries) != len(c.libs) {
+		t.Fatalf("a manage token capped to play: %+v", capped)
+	}
+	// a play web sign-in's session
+	web = c.do("POST", "/api/auth/cloud", "", map[string]string{"assertion": c.cloud.Assertion(cloudlink.PurposeSignIn, cloudAdmin, "")})
+	for _, ck := range web.resp.Cookies() {
+		if ck.Name == CookieSession {
+			sess = ck.Value
+		}
+	}
+	check("play cookie", cookieReq(), false)
+	// and the token's lifetime is the cloud's short one
+	if cl := c.claims(manageTok); cl.Exp-cl.Iat > int64(CloudAccessTTL/time.Second) {
+		t.Fatalf("cloud access token lives %ds", cl.Exp-cl.Iat)
 	}
 }
 

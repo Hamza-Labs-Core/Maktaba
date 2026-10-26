@@ -457,6 +457,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	now := h.now()
 	var claims jwt.Claims
 	if scope != "" {
+		accessTTL = h.cloudAccessTTL()
 		claims, err = h.cloudAccessClaims(r.Context(), u, scope, now, accessTTL)
 	} else {
 		var libs []string
@@ -801,7 +802,14 @@ func (h *Handler) CookieAuth(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			p.ApplyCloudScope(scope)
+			if scope == principal.CloudScopePlay {
+				if err := h.Cloud.Store.CapPlay(r.Context(), p); err != nil {
+					next.ServeHTTP(w, r)
+					return
+				}
+			} else {
+				p.ApplyCloudScope(scope, nil)
+			}
 		}
 		next.ServeHTTP(w, r.WithContext(principal.WithPrincipal(r.Context(), p)))
 	})

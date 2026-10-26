@@ -614,7 +614,7 @@ func (r *Resolver) verifyJWT(ctx context.Context, tok string) *principal.Princip
 	}
 	p := &principal.Principal{UserID: c.Usr, IsAdmin: c.IsAdmin, Libraries: c.Lib,
 		AccessAllLibraries: c.IsAdmin, Source: principal.SourceJWT}
-	p.ApplyCloudScope(c.Scp) // a cloud play token is no admin on a node either
+	p.ApplyCloudScope(c.Scp, nil) // a cloud play token is no admin on a node either
 	return p
 }
 

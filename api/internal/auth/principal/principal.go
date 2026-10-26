@@ -81,9 +81,12 @@ const (
 )
 
 // ApplyCloudScope sets the cloud scope and caps the principal by it: a
-// play sign-in is never an admin (it keeps the libraries it reads), and
-// an unknown scope is treated as play.
-func (p *Principal) ApplyCloudScope(scope string) {
+// play sign-in is never an admin, and an unknown scope is treated as play.
+// A play cap also ends all-library access, which several routes read as
+// "sees everything" (catalog-wide reports, every job): an admin's play
+// sign-in reads the libraries in all (every library, listed) instead, and
+// with all nil it reads only the Libraries it already names.
+func (p *Principal) ApplyCloudScope(scope string, all []string) {
 	if p == nil || scope == "" {
 		return
 	}
@@ -93,6 +96,10 @@ func (p *Principal) ApplyCloudScope(scope string) {
 	p.CloudScope = scope
 	if scope == CloudScopePlay {
 		p.IsAdmin = false
+		if p.AccessAllLibraries {
+			p.AccessAllLibraries = false
+			p.Libraries = append([]string(nil), all...)
+		}
 	}
 }
 

@@ -287,7 +287,9 @@ func (h *Home) Resolve(ctx context.Context, req IntrospectRequest) (*IntrospectA
 			return nil, err
 		}
 		if scope == principal.CloudScopePlay {
-			p.IsAdmin = false
+			if err := capPlay(ctx, h.DB, &p); err != nil {
+				return nil, err
+			}
 		}
 		_ = h.Sessions.TouchLastSeen(ctx, sess.ID, h.now())
 		ans = IntrospectAnswer{Principal: p, Source: string(principal.SourceCookie),

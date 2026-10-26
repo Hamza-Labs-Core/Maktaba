@@ -122,7 +122,7 @@ func JWTBearer(set *keys.Set, expectedAud string) func(http.Handler) http.Handle
 			}
 			// a cloud sign-in's token: its link scope caps it (a play
 			// token is no admin, whatever is_admin says)
-			p.ApplyCloudScope(c.Scp)
+			p.ApplyCloudScope(c.Scp, nil) // a play token lists its libraries itself
 			next.ServeHTTP(w, r.WithContext(principal.WithPrincipal(r.Context(), p)))
 		})
 	}
