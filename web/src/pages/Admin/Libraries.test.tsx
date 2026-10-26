@@ -195,8 +195,11 @@ describe("AdminLibraries", () => {
     });
     const big = await screen.findByRole("heading", { level: 2, name: "Dr. Othman Alkamees" });
     const li = big.closest("li") as HTMLElement;
-    expect(within(li).getByRole("button", { name: "Scanning…" })).toBeDisabled();
-    expect(within(li).getByRole("status")).toHaveTextContent("Looking for new and changed files");
+    // the scan is picked up in an effect after the first render: wait for it
+    expect(await within(li).findByRole("button", { name: "Scanning…" })).toBeDisabled();
+    expect(await within(li).findByRole("status")).toHaveTextContent(
+      "Looking for new and changed files"
+    );
     expect(screen.queryByRole("region", { name: "Folders claimed twice" })).toBeNull();
   });
 
