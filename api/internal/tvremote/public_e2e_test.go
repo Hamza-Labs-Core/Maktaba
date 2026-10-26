@@ -20,6 +20,7 @@ package tvremote_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,10 +46,27 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote/rtmptest"
 )
 
-func TestPublicEndToEnd(t *testing.T) {
-	if os.Getenv("MAKTABA_TEST_PG_URL") == "" || testing.Short() {
-		t.Skip("MAKTABA_TEST_PG_URL unset (or -short): skipping the public site end-to-end test")
-	}
+// publicRig is the home side of the public site on one machine: a scratch
+// database, the streaming home, the fake Cloudflare and ingest, the remote
+// controller and the publisher posting to siteURL (siteURL nil: a stand-in
+// site in this process, which records the posts).
+type publicRig struct {
+	db       *sql.DB
+	ctl      *tvremote.Controller
+	store    *secrets.Memory
+	f        *cftest.Server
+	ing      *rtmptest.Server
+	home     *e2eProc
+	homePort int
+	pubCh    string
+	privCh   string
+	sec      tvremote.SiteSecrets
+	audits   func() []string
+	posted   func() []tvremote.SiteState
+}
+
+func startPublicRig(t *testing.T, siteURL string) *publicRig {
+	t.Helper()
 	rtmptest.NeedFFmpeg(t)
 	db, dsn := clustertest.ScratchDB(t)
 	ctx := context.Background()
@@ -126,7 +144,7 @@ func TestPublicEndToEnd(t *testing.T) {
 	}
 	var smu sync.Mutex
 	var posted []tvremote.SiteState
-	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	stand := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		ts, _ := strconv.ParseInt(r.Header.Get(tvremote.HeaderHomeTime), 10, 64)
 		if r.URL.Path != tvremote.SiteStatePath || time.Since(time.Unix(ts, 0)).Abs() > time.Minute ||
@@ -141,17 +159,20 @@ func TestPublicEndToEnd(t *testing.T) {
 		smu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	defer site.Close()
+	t.Cleanup(stand.Close)
+	if siteURL == "" {
+		siteURL = stand.URL
+	}
 
 	ptrue := true
 	if _, err := ctl.SetPublic(ctx, "admin", pubCh, tvremote.PublicChange{Public: &ptrue, RightsConfirmed: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := ctl.SavePublicSettings(ctx, "admin", tvremote.PublicSettings{Enabled: true, SiteURL: site.URL}); err != nil {
+	if err := ctl.SavePublicSettings(ctx, "admin", tvremote.PublicSettings{Enabled: true, SiteURL: siteURL}); err != nil {
 		t.Fatal(err)
 	}
 	cctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	t.Cleanup(cancel)
 	go ctl.Run(cctx)
 	pub := &tvremote.Publisher{Ctl: ctl, Every: time.Second}
 	go pub.Run(cctx)
@@ -167,9 +188,26 @@ func TestPublicEndToEnd(t *testing.T) {
 		fmt.Sprintf("MAKTABA_STREAMING_GRPC_ADDR=127.0.0.1:%d", e2eFreePort(t)),
 		fmt.Sprintf("MAKTABA_PUBLIC_BASE_URL=http://127.0.0.1:%d", port),
 		"MAKTABA_CACHE_ROOT=" + filepath.Join(t.TempDir(), "home-cache")})
+	return &publicRig{db: db, ctl: ctl, store: store, f: f, ing: ing, home: home, homePort: port, pubCh: pubCh, privCh: privCh,
+		sec:    sec,
+		audits: func() []string { amu.Lock(); defer amu.Unlock(); return append([]string(nil), audits...) },
+		posted: func() []tvremote.SiteState {
+			smu.Lock()
+			defer smu.Unlock()
+			return append([]tvremote.SiteState(nil), posted...)
+		}}
+}
+
+func TestPublicEndToEnd(t *testing.T) {
+	if os.Getenv("MAKTABA_TEST_PG_URL") == "" || testing.Short() {
+		t.Skip("MAKTABA_TEST_PG_URL unset (or -short): skipping the public site end-to-end test")
+	}
+	rig := startPublicRig(t, "")
+	ctx := context.Background()
+	db, ctl, store, f, ing, home, pubCh, privCh, sec := rig.db, rig.ctl, rig.store, rig.f, rig.ing, rig.home, rig.pubCh, rig.privCh, rig.sec
+	t0 := time.Now()
 
 	// 1. always on: the public channel goes live with no viewer at all
-	t0 := time.Now()
 	var pushID, videoUID string
 	e2eWait(t, "the public channel's push to go live", 180*time.Second, func() bool {
 		return db.QueryRow(`SELECT id, video_uid FROM tv_remote_pushes WHERE channel_id = $1 AND state = 'live'`,
@@ -223,8 +261,7 @@ func TestPublicEndToEnd(t *testing.T) {
 	// 2. the home's post reaches the site: the public channel on air, its video
 	var last tvremote.SiteState
 	e2eWait(t, "a post with the channel on air", 30*time.Second, func() bool {
-		smu.Lock()
-		defer smu.Unlock()
+		posted := rig.posted()
 		if len(posted) == 0 {
 			return false
 		}
@@ -266,16 +303,133 @@ func TestPublicEndToEnd(t *testing.T) {
 
 	// 4. the site switched off: the hold goes, and the push becomes an ordinary
 	// one (it ends at the idle timeout, unit-tested in TestPublicPushAlwaysOn)
-	if err := ctl.SavePublicSettings(ctx, "admin", tvremote.PublicSettings{Enabled: false, SiteURL: site.URL}); err != nil {
+	if err := ctl.SavePublicSettings(ctx, "admin", tvremote.PublicSettings{Enabled: false}); err != nil {
 		t.Fatal(err)
 	}
 	e2eWait(t, "the public hold to go", 30*time.Second, func() bool {
 		_ = db.QueryRow(`SELECT holds::text FROM tv_remote_pushes WHERE id = $1`, pushID).Scan(&holds)
 		return !strings.Contains(holds, `"public"`)
 	})
-	amu.Lock()
-	defer amu.Unlock()
-	if len(audits) == 0 || audits[0] != "tv_public.secrets "+sec.SigningKeyID {
+	if audits := rig.audits(); len(audits) == 0 || audits[0] != "tv_public.secrets "+sec.SigningKeyID {
 		t.Errorf("audit %v", audits)
 	}
+}
+
+// TestPublicSiteDemo is a manual, glass-to-glass look at the public site:
+// the real Worker (web/packages/tvsite/dev/serve.mjs runs src/worker.ts) on
+// :8787 receives the home's posts and signs viewer tokens; a stand-in for
+// Stream's delivery on :18790 checks each token (RS256 with the site's key,
+// the live video, not expired) and serves the channel's own HLS from the
+// home. Open http://127.0.0.1:8787 in a browser while it runs.
+//
+//	MAKTABA_TV_SITE_DEMO=<minutes> MAKTABA_TEST_PG_URL=… go test -run TestPublicSiteDemo -v ./internal/tvremote/
+func TestPublicSiteDemo(t *testing.T) {
+	minutes, _ := strconv.Atoi(os.Getenv("MAKTABA_TV_SITE_DEMO"))
+	if minutes <= 0 || os.Getenv("MAKTABA_TEST_PG_URL") == "" {
+		t.Skip("set MAKTABA_TV_SITE_DEMO=<minutes> and MAKTABA_TEST_PG_URL to run the public site demo")
+	}
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node not on PATH")
+	}
+	rig := startPublicRig(t, "http://127.0.0.1:8787")
+	ctx := context.Background()
+	raw, err := rig.store.Get(ctx, tvremote.SecretSiteSigningKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sk cf.SigningKey
+	_ = json.Unmarshal(raw, &sk)
+	priv, err := cf.ParseSigningKey(sk.PEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveVideo := func() string {
+		var v string
+		_ = rig.db.QueryRow(`SELECT video_uid FROM tv_remote_pushes WHERE channel_id = $1 AND state = 'live'`, rig.pubCh).Scan(&v)
+		return v
+	}
+
+	// Stream's delivery, stood in: /<token>/manifest/<file>
+	homeHLS := fmt.Sprintf("http://127.0.0.1:%d/stream/channel/%s/", rig.homePort, rig.pubCh)
+	var served, refused int
+	var vmu sync.Mutex
+	stream := &http.Server{Addr: "127.0.0.1:18790", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 3)
+		ok := len(parts) == 3 && parts[1] == "manifest"
+		if ok {
+			c, good := cftest.Claims(parts[0])
+			ok = good && cftest.VerifyToken(parts[0], &priv.PublicKey) == nil && c.Kid == sk.ID &&
+				c.Sub == liveVideo() && c.Exp > time.Now().Unix()
+		}
+		vmu.Lock()
+		if !ok {
+			refused++
+			vmu.Unlock()
+			http.Error(w, "denied", http.StatusUnauthorized)
+			return
+		}
+		served++
+		vmu.Unlock()
+		file := parts[2]
+		if file == "video.m3u8" {
+			file = "index.m3u8"
+		}
+		resp, err := http.Get(homeHLS + file)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		if strings.HasSuffix(file, ".m3u8") {
+			// absolute segment paths from the front door become relative to the token
+			body = bytes.ReplaceAll(body, []byte("/stream/channel/"+rig.pubCh+"/"), nil)
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		} else {
+			w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(body)
+	})}
+	go func() { _ = stream.ListenAndServe() }()
+	t.Cleanup(func() { _ = stream.Close() })
+
+	// the real Worker
+	vars := filepath.Join(t.TempDir(), "vars.json")
+	blob, _ := json.Marshal(map[string]string{"HOME_HMAC": rig.sec.HomeHMAC, "STREAM_KEY_ID": rig.sec.SigningKeyID,
+		"STREAM_KEY_JWK": rig.sec.SigningKeyJWK, "STREAM_BASE_URL": "http://127.0.0.1:18790", "TOKEN_TTL_SECONDS": "120"})
+	if err := os.WriteFile(vars, blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, file, _, _ := runtime.Caller(0)
+	webDir := filepath.Join(filepath.Dir(file), "..", "..", "..", "web")
+	node := exec.Command("node", "packages/tvsite/dev/serve.mjs", vars, "8787")
+	node.Dir = webDir
+	nodeLog := &bytes.Buffer{}
+	node.Stdout, node.Stderr = nodeLog, nodeLog
+	if err := node.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = node.Process.Kill(); _, _ = node.Process.Wait(); t.Logf("worker log:\n%s", nodeLog) })
+
+	e2eWait(t, "the channel on air at the site", 180*time.Second, func() bool {
+		resp, err := http.Get("http://127.0.0.1:8787/api/v1/lineup")
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		var l struct {
+			Channels []struct {
+				OnAir bool `json:"on_air"`
+			} `json:"channels"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&l)
+		return len(l.Channels) == 1 && l.Channels[0].OnAir
+	})
+	t.Logf("ready: open http://127.0.0.1:8787 (for %d minutes)", minutes)
+	time.Sleep(time.Duration(minutes) * time.Minute)
+	vmu.Lock()
+	t.Logf("stream stand-in: %d requests served with a valid token, %d refused", served, refused)
+	vmu.Unlock()
 }
