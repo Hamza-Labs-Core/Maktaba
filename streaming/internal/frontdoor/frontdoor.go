@@ -287,7 +287,9 @@ func (h *Handler) forward(ctx context.Context, p placement.Placement, path strin
 	return resp, nil
 }
 
-// segmentWriter keeps a segment answer's status (a viewing counts a served one).
+// segmentWriter keeps a segment answer's status (a viewing counts a served one). The
+// body goes straight to the writer underneath: only the status is kept, and an answer
+// that never set one is a 200 (net/http's).
 type segmentWriter struct {
 	http.ResponseWriter
 	code int
@@ -300,11 +302,12 @@ func (w *segmentWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
-func (w *segmentWriter) Write(b []byte) (int, error) {
+// status is the answer's status (200 when none was set).
+func (w *segmentWriter) status() int {
 	if w.code == 0 {
-		w.code = http.StatusOK
+		return http.StatusOK
 	}
-	return w.ResponseWriter.Write(b)
+	return w.code
 }
 
 // Flush passes through (segments are copied with a flush after each write).
@@ -323,7 +326,7 @@ func (h *Handler) segmentServed(ch uuid.UUID, r *http.Request, w *segmentWriter)
 	if h.Viewings == nil {
 		return
 	}
-	if w.code >= 200 && w.code < 300 || w.code == http.StatusTemporaryRedirect {
+	if code := w.status(); code >= 200 && code < 300 || code == http.StatusTemporaryRedirect {
 		h.Viewings.Segment(ch, viewing.FromRequest(r))
 	}
 }

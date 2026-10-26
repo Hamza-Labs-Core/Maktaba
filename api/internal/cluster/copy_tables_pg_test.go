@@ -14,9 +14,6 @@ import (
 // copied unless cluster_copy_excluded() (slot 0147) leaves it out, so a migration that
 // adds one must decide: add it here, or to the exclusion (a secret, a machine's own).
 var copyReviewed = []string{
-	// Epic 44's analytics (slot 0158): plays' and viewings' records and the API's daily
-	// counts per app, no secret, as watch_sessions and tv_remote_sessions
-	"api_usage_daily", "api_usage_people_daily",
 	"app_settings", "audio_cache", "audio_tracks", "books", "channel_art_overrides",
 	"channel_audit_channels", "channel_audits", "channel_placements", "channel_plans",
 	"channel_programs", "channel_runtime", "channel_schedule_state", "channels", "chapters",
@@ -43,7 +40,7 @@ var copyReviewed = []string{
 	"transcript_words", "transcripts", "tv_change_events", "tv_changes", "tv_channel_switch",
 	"tv_release_channels", "tv_releases", "tv_remote_inputs", "tv_remote_pushes",
 	"tv_remote_sessions", "tv_remote_usage_daily", "tv_routing", "tv_simulcast_attachments",
-	"tv_simulcast_outputs", "tv_slot_events", "tv_slots", "tv_swap_ops", "tv_watch_sessions", "update_run_steps",
+	"tv_simulcast_outputs", "tv_slot_events", "tv_slots", "tv_swap_ops", "update_run_steps",
 	"update_runs", "update_targets", "update_watermark", "user_analytics_prefs", "user_recs",
 	"users", "video_classification", "video_embeddings", "video_entities", "video_repairs",
 	"video_signals", "video_tags", "video_topic_tags", "video_topics", "videos", "watch_sessions",

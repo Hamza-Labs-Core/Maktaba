@@ -14,9 +14,11 @@
 --   api_usage_daily       the API's requests per day, app and platform (errors, time, slow)
 --   api_usage_people_daily who used which app on a day
 --
--- maktaba_worker keeps the default rights (slot 0103) on the new tables, as on every
--- ordinary table (slot 0152's lesson). The rows hold no secret. NO TRANSACTION for the
--- indexes (CONCURRENTLY), as slot 0150.
+-- The new tables are not in a machine's copy: cluster_copy_excluded() gains them (they
+-- change every few seconds, and only the home's API reads them). maktaba_worker keeps
+-- the default rights (slot 0103) on them, as on every ordinary table (slot 0152's
+-- lesson). The rows hold no secret. NO TRANSACTION for the indexes (CONCURRENTLY), as
+-- slot 0150.
 
 ALTER TABLE watch_sessions ADD COLUMN IF NOT EXISTS stream_session_id UUID;
 ALTER TABLE watch_sessions ADD COLUMN IF NOT EXISTS client_app TEXT;
@@ -76,7 +78,80 @@ CREATE TABLE IF NOT EXISTS api_usage_people_daily (
 );
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- slot 0155's exclusion, with the analytics tables
+CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
+LANGUAGE sql IMMUTABLE AS $f$
+    SELECT ARRAY[
+        -- secrets
+        'home_secrets', 'tv_cluster_secret', 'tv_push_secrets', 'tv_simulcast_destinations',
+        'refresh_tokens', 'password_reset_tokens', 'pairing_tickets', 'cluster_sso_codes',
+        'idempotency_keys', 'licenses', 'devices', 'device_downloads', 'audit_log',
+        -- live cookies (their hashes are copied: web_session_keys)
+        'web_sessions',
+        -- the machines' own (a machine's row of cluster_nodes is published to it alone)
+        'cluster_nodes', 'cluster_node_stages', 'cluster_metrics_cache', 'cluster_log_cache',
+        'cluster_cache_files', 'cluster_certs',
+        -- what an old home wrote after an emergency took the home from it (the home's to
+        -- apply or not)
+        'cluster_kept_aside',
+        -- each database's own
+        'goose_db_version', 'maktaba_schema_version',
+        -- semantic search's vectors (never queried on a machine; a new home indexes
+        -- again what it lacks) and which store search reads
+        'segment_embeddings', 'semantic_store_state',
+        -- linked accounts (slot 0153): the home's own
+        'home_user_links', 'cloud_link_nonces', 'cloud_assertions_used', 'cloud_sign_ins',
+        -- the public site's channels (slot 0154): read by the home's API only (a public
+        -- decision is the home's; a machine's copy has no use for it)
+        'tv_public_channels',
+        -- the license's state (slot 0155), telemetry (0156) and feature flags (0157):
+        -- the home's API alone reads them
+        'license_state', 'telemetry_events', 'telemetry_web_vitals',
+        'feature_flag_overrides', 'beta_cohorts',
+        -- analytics (slot 0158): plays, viewings and the API's use per app, written by the
+        -- home's API and front door every few seconds; a machine's copy has no use for them
+        'tv_watch_sessions', 'api_usage_daily', 'api_usage_people_daily'
+    ]::text[]
+$f$;
+-- +goose StatementEnd
+
 -- +goose Down
+-- +goose StatementBegin
+-- slot 0155's exclusion again
+CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
+LANGUAGE sql IMMUTABLE AS $f$
+    SELECT ARRAY[
+        -- secrets
+        'home_secrets', 'tv_cluster_secret', 'tv_push_secrets', 'tv_simulcast_destinations',
+        'refresh_tokens', 'password_reset_tokens', 'pairing_tickets', 'cluster_sso_codes',
+        'idempotency_keys', 'licenses', 'devices', 'device_downloads', 'audit_log',
+        -- live cookies (their hashes are copied: web_session_keys)
+        'web_sessions',
+        -- the machines' own (a machine's row of cluster_nodes is published to it alone)
+        'cluster_nodes', 'cluster_node_stages', 'cluster_metrics_cache', 'cluster_log_cache',
+        'cluster_cache_files', 'cluster_certs',
+        -- what an old home wrote after an emergency took the home from it (the home's to
+        -- apply or not)
+        'cluster_kept_aside',
+        -- each database's own
+        'goose_db_version', 'maktaba_schema_version',
+        -- semantic search's vectors (never queried on a machine; a new home indexes
+        -- again what it lacks) and which store search reads
+        'segment_embeddings', 'semantic_store_state',
+        -- linked accounts (slot 0153): the home's own
+        'home_user_links', 'cloud_link_nonces', 'cloud_assertions_used', 'cloud_sign_ins',
+        -- the public site's channels (slot 0154): read by the home's API only (a public
+        -- decision is the home's; a machine's copy has no use for it)
+        'tv_public_channels',
+        -- the license's state (slot 0155), telemetry (0156) and feature flags (0157):
+        -- the home's API alone reads them
+        'license_state', 'telemetry_events', 'telemetry_web_vitals',
+        'feature_flag_overrides', 'beta_cohorts'
+    ]::text[]
+$f$;
+-- +goose StatementEnd
+
 -- +goose StatementBegin
 DROP TABLE IF EXISTS api_usage_people_daily;
 DROP TABLE IF EXISTS api_usage_daily;

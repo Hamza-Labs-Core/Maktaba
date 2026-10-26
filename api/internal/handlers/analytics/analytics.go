@@ -2,7 +2,6 @@ package analytics
 
 import (
 	"database/sql"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"net/http"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 )
 
 // Handler serves the admin analytics page (Story 29.3, rebuilt by Epic 44
