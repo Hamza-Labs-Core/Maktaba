@@ -193,6 +193,8 @@ import Testing
     @Test(arguments: [
         ("192.168.50.177", ["web": "8088", "role": "home"], "http://192.168.50.177:8088"),
         ("MahmoudacStudio.local.", [:], "http://MahmoudacStudio.local:8080"),
+        ("Mahmouds-Mac-Studio.local.local.", ["web": "8088"], "http://Mahmouds-Mac-Studio.local:8088"),
+        ("box.LOCAL.local", [:], "http://box.LOCAL:8080"),
         ("10.0.0.2", ["web": "443", "tls": "1"], "https://10.0.0.2:443"),
     ])
     func anAnnouncedHomesAddress(host: String, txt: [String: String], want: String) {

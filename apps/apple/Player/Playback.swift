@@ -32,8 +32,30 @@ final class Playback {
     func play(_ v: Video) {
         if v.id == video?.id, problem == nil { return }
         stop()
+        #if os(iOS)
+        // the app declares background audio: with the playback category the sound goes on
+        // when the screen locks or the app goes to the background (and ignores the mute switch)
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
         video = v
         running = Task { await run() }
+    }
+
+    /// Play or pause what is open (the keyboard's space, the Playback menu).
+    func togglePause() {
+        guard let p = player else { return }
+        if p.rate > 0 { p.pause() } else { p.play() }
+    }
+
+    /// Moves `seconds` forward (back when negative), not before the start nor past the end.
+    func skip(by seconds: Double) {
+        guard let p = player else { return }
+        let now = p.currentTime().seconds
+        guard now.isFinite else { return }
+        var to = max(0, now + seconds)
+        if let end = p.currentItem?.duration.seconds, end.isFinite { to = min(to, max(0, end - 1)) }
+        p.seek(to: CMTime(seconds: to, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
     func stop() {
@@ -98,7 +120,7 @@ final class Playback {
             return
         } catch {
             player = nil
-            problem = error.localizedDescription
+            problem = (error as? APIError)?.message ?? error.localizedDescription
         }
     }
 
@@ -128,7 +150,8 @@ final class Playback {
 }
 
 /// The video with its title and a close button over it (AVKit's own controls on the
-/// video). Full screen, or one half of a half-folded iPhone Duo.
+/// video; Esc closes). Full screen, the Mac's whole window, or one half of a half-folded
+/// iPhone Duo.
 struct WatchView: View {
     let playback: Playback
 
@@ -137,7 +160,7 @@ struct WatchView: View {
             ZStack {
                 Color.black
                 if let player = playback.player {
-                    VideoPlayer(player: player)
+                    PlayerSurface(player: player)
                 } else if let problem = playback.problem {
                     ContentUnavailableView("Can't play", systemImage: "exclamationmark.triangle", description: Text(problem))
                         .foregroundStyle(.white)
@@ -148,6 +171,7 @@ struct WatchView: View {
             .ignoresSafeArea()
             HStack {
                 Button("Close", systemImage: "xmark") { playback.stop() }
+                    .keyboardShortcut(.cancelAction)
                     .labelStyle(.iconOnly)
                     .font(.title2)
                     .padding(12)
@@ -163,4 +187,34 @@ struct WatchView: View {
         }
         .background(.black)
     }
+}
+
+/// The Playback menu (the Mac's menu bar, an iPad's with a keyboard): space plays and
+/// pauses, the arrows skip 10 s, Command-period stops. Each is off while nothing plays, so
+/// the keys stay the search field's and the lists'.
+struct PlaybackCommands: Commands {
+    @FocusedValue(\.playback) private var playback
+
+    var body: some Commands {
+        CommandMenu("Playback") {
+            Button("Play/Pause") { playback?.togglePause() }
+                .keyboardShortcut(.space, modifiers: [])
+                .disabled(playback?.player == nil)
+            Button("Skip Forward 10 Seconds") { playback?.skip(by: 10) }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+                .disabled(playback?.player == nil)
+            Button("Skip Back 10 Seconds") { playback?.skip(by: -10) }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+                .disabled(playback?.player == nil)
+            Divider()
+            Button("Stop") { playback?.stop() }
+                .keyboardShortcut(".", modifiers: .command)
+                .disabled(playback?.video == nil)
+        }
+    }
+}
+
+extension FocusedValues {
+    /// What plays in the focused window.
+    @Entry var playback: Playback?
 }

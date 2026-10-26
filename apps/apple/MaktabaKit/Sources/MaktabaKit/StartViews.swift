@@ -71,6 +71,7 @@ public struct HomePickerView: View {
                     if let problem { Text(problem).foregroundStyle(.red) }
                 }
             }
+            .formStyle(.grouped)
             .navigationTitle(title)
         }
     }
@@ -119,6 +120,7 @@ public struct SignInView: View {
                 }
                 .disabled(username.isEmpty || password.isEmpty || busy)
             }
+            .formStyle(.grouped)
             .navigationTitle("Sign in")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
