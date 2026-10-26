@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="brand">مكتبة</string>
+    <string name="app_player">المشغّل</string>
+    <string name="app_remote">الإدارة عن بُعد</string>
+    <string name="tagline_player">اختر جهازك الرئيسي لتبدأ المشاهدة.</string>
+    <string name="tagline_remote">اختر الجهاز الرئيسي الذي تديره.</string>
+
+    <string name="homes_on_network">على هذه الشبكة</string>
+    <string name="homes_looking">جارٍ البحث عن أجهزة رئيسية…</string>
+    <string name="homes_none">لم يستجب أي جهاز رئيسي على هذه الشبكة بعد.</string>
+    <string name="homes_saved">أجهزتك الرئيسية</string>
+    <string name="home_saved">محفوظ</string>
+    <string name="home_forget">إزالة %1$s</string>
+
+    <string name="address_title">إدخال عنوان</string>
+    <string name="address_label">العنوان، مثل 192.168.1.20:8088</string>
+    <string name="address_invalid">هذا ليس عنوان جهاز رئيسي.</string>
+    <string name="connect">اتصال</string>
+
+    <string name="local_network_title">العثور على الأجهزة الرئيسية على هذه الشبكة</string>
+    <string name="local_network_body">يحتاج تطبيق مكتبة إلى إذنك للوصول إلى الأجهزة على شبكتك المحلية، حيث جهازك الرئيسي.</string>
+    <string name="local_network_allow">السماح</string>
+    <string name="local_network_denied">من دونه، يعمل عنوان الجهاز الرئيسي على الإنترنت فقط.</string>
+
+    <string name="signin_title">تسجيل الدخول</string>
+    <string name="signin_to">سجّل الدخول إلى %1$s</string>
+    <string name="username">اسم المستخدم</string>
+    <string name="password">كلمة المرور</string>
+    <string name="signin_submit">تسجيل الدخول</string>
+    <string name="signin_wrong">اسم المستخدم أو كلمة المرور غير صحيحة.</string>
+    <string name="signin_unreachable">تعذّر الوصول إلى %1$s.</string>
+    <string name="other_home">اختيار جهاز رئيسي آخر</string>
+    <string name="signin_kept_failed">تعذّر التحقق من تسجيل دخولك: %1$s</string>
+    <string name="try_again">إعادة المحاولة</string>
+</resources>
