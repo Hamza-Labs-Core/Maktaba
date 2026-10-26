@@ -54,9 +54,11 @@ func (r *repo) insertStart(ctx context.Context, s startRow) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO watch_sessions
 		  (id, user_id, video_id, started_at, last_heartbeat,
-		   duration_sec, percent_complete, state, device_type, platform, quality, ip_addr_hash)
-		VALUES ($1,$2,$3,$4,$4,0,0,'active',$5,$6,$7,$8)`,
-		s.id, s.userID, s.videoID, s.now, s.deviceType, s.platform, s.quality, s.ipHash)
+		   duration_sec, percent_complete, state, device_type, platform, quality, ip_addr_hash,
+		   client_app, client_version)
+		VALUES ($1,$2,$3,$4,$4,0,0,'active',$5,$6,$7,$8,$9,$10)`,
+		s.id, s.userID, s.videoID, s.now, s.deviceType, s.platform, s.quality, s.ipHash,
+		s.clientApp, s.clientVersion)
 	return err
 }
 
@@ -64,6 +66,7 @@ type startRow struct {
 	id, userID, videoID           string
 	deviceType, platform, quality string
 	ipHash                        string
+	clientApp, clientVersion      string
 	now                           time.Time
 }
 
