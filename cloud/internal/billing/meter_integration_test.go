@@ -4,40 +4,20 @@ package billing
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db/dbtest"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
-	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
 
 // Close makes the last flush before it returns: the relay's shutdown must
 // not lose the bytes counted since the last tick.
 func TestMeterCloseFlushes(t *testing.T) {
-	url := os.Getenv("MAKTABA_CLOUD_DB_URL")
-	if url == "" {
-		t.Skip("MAKTABA_CLOUD_DB_URL not set")
-	}
 	ctx := context.Background()
-	pool, err := db.Open(url, 4, 2, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = pool.Close() }()
-	mig := db.NewMigrator(pool, migrations.FS, ".")
-	for attempt := 1; ; attempt++ {
-		if err = mig.Up(ctx); err == nil {
-			break
-		}
-		if attempt == 5 {
-			t.Fatal(err)
-		}
-		time.Sleep(time.Duration(attempt) * 300 * time.Millisecond)
-	}
+	pool := dbtest.Migrated(t)
 	u, err := stores.NewUsers(pool.DB).Create(ctx, uuid.NewString()+"@example.test", "", "M", true)
 	if err != nil {
 		t.Fatal(err)

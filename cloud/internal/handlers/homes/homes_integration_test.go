@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -18,11 +17,10 @@ import (
 
 	authmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/token"
-	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db/dbtest"
 	serversh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/servers"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/homeassert"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
-	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
 
 // world is the api role's servers + homes routes, mounted as role_api.go
@@ -38,27 +36,7 @@ type world struct {
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
-	url := os.Getenv("MAKTABA_CLOUD_DB_URL")
-	if url == "" {
-		t.Skip("MAKTABA_CLOUD_DB_URL not set")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	pool, err := db.Open(url, 4, 2, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = pool.Close() })
-	mig := db.NewMigrator(pool, migrations.FS, ".")
-	for attempt := 1; ; attempt++ {
-		if err = mig.Up(ctx); err == nil {
-			break
-		}
-		if attempt == 5 {
-			t.Fatal(err)
-		}
-		time.Sleep(time.Duration(attempt) * 300 * time.Millisecond)
-	}
+	pool := dbtest.Migrated(t)
 	w := &world{t: t, tokens: token.NewSigner([]byte(strings.Repeat("s", 32))),
 		signer: homeassert.DeriveFromSeed([]byte(t.Name())),
 		srvs:   stores.NewServers(pool.DB), users: stores.NewUsers(pool.DB)}

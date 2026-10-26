@@ -80,7 +80,7 @@ func encodeFrame(f Frame) ([]byte, error) {
 	if n > MaxFrameBytes {
 		return nil, ErrFrameTooLarge
 	}
-	buf := make([]byte, 9, 9+n)
+	buf := make([]byte, 9) // append grows it: no size computed here
 	buf[0] = f.Kind
 	binary.BigEndian.PutUint32(buf[1:5], f.StreamID)
 	binary.BigEndian.PutUint32(buf[5:9], uint32(n))
