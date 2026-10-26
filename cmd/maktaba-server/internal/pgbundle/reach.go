@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -30,8 +31,14 @@ type Reach struct {
 	// Addrs are the approved machines' own addresses (the hosts they joined from)
 	Addrs []string `json:"addrs,omitempty"`
 	// Require: the home requires the cluster link (rules.cluster link_mode, story 35.16):
-	// the machines' roles need their client certificates too
+	// the machines' roles that present their client certificates (CertRoles) need them too
 	Require bool `json:"require,omitempty"`
+	// CertRoles are the database roles of the approved machines that said every one of
+	// their processes presents its cluster certificate to this database (update.state's
+	// db_client_cert) and hold a valid one: only theirs need it once the link is required.
+	// A machine that never said so (an older release, one whose certificate is not there)
+	// keeps its password alone: requiring the link never cuts a machine off its database.
+	CertRoles []string `json:"cert_roles,omitempty"`
 }
 
 // reachSQL reads the Reach: joins open (their hour not up) or a machine approved, and
@@ -46,6 +53,22 @@ const reachSQL = `SELECT
 // requireSQL reads whether the home requires the cluster link (story 35.16): asked apart,
 // so a database without the settings table (not migrated yet) still answers the rest.
 const requireSQL = `SELECT COALESCE((SELECT value->>'link_mode' FROM app_settings WHERE key = 'rules.cluster'), '') = 'require';`
+
+// certRolesSQL reads Reach.CertRoles: the approved machines' roles whose machine said, in
+// its last update.state, that its processes present their cluster certificates
+// (cluster_nodes.update_state's db_client_cert, the home API's record of it), and whose
+// current certificate is valid and not revoked (cluster_certs, slot 0150). Asked apart: a
+// database without those (not migrated yet) answers none, and then no machine needs one.
+const certRolesSQL = `SELECT COALESCE((SELECT string_agg(n.db_role, ',' ORDER BY n.db_role) FROM cluster_nodes n
+  WHERE n.state = 'approved' AND n.db_role IS NOT NULL AND n.db_role <> ''
+    AND n.update_state->>'db_client_cert' = 'true'
+    AND n.cert_serial IS NOT NULL AND n.cert_not_after > now()
+    AND EXISTS (SELECT 1 FROM cluster_certs c WHERE c.serial = n.cert_serial AND c.revoked_at IS NULL
+                  AND c.not_before <= now() AND c.not_after > now())), '');`
+
+// machineRoleRe is a machine's database role (cluster.RoleName): only such a name goes into
+// pg_hba.conf as a role of its own.
+var machineRoleRe = regexp.MustCompile(`^maktaba_node_[0-9a-f]{32}$`)
 
 // reachFile keeps the last Reach the cluster asked for, which a start follows (none
 // yet: this machine only).
@@ -142,6 +165,13 @@ func (b Bundle) reach(ctx context.Context, q Querier) (Reach, error) {
 	if req, err := q.Query(ctx, AppDatabase, requireSQL); err == nil && len(req) == 1 {
 		r.Require = strings.TrimSpace(req[0]) == "t"
 	}
+	if roles, err := q.Query(ctx, AppDatabase, certRolesSQL); err == nil && len(roles) == 1 {
+		for _, role := range strings.Split(strings.TrimSpace(roles[0]), ",") {
+			if machineRoleRe.MatchString(role) {
+				r.CertRoles = append(r.CertRoles, role)
+			}
+		}
+	}
 	if addrs = strings.TrimSpace(addrs); addrs != "" {
 		r.Addrs = strings.Split(addrs, ",")
 	}
@@ -207,7 +237,8 @@ func (b Bundle) followReach(ctx context.Context, restart func() error, log io.Wr
 		return err
 	}
 	was := b.LastReach()
-	if now.Open == was.Open && slices.Equal(now.Addrs, was.Addrs) && now.Require == was.Require {
+	if now.Open == was.Open && slices.Equal(now.Addrs, was.Addrs) && now.Require == was.Require &&
+		slices.Equal(now.CertRoles, was.CertRoles) {
 		return nil
 	}
 	if err := b.KeepReach(now); err != nil {

@@ -294,16 +294,26 @@ func (b Bundle) hbaConf() string {
 			// a machine on another network (a VPN) by its own address
 			from = append(from, r.machineAddrs()...)
 		}
-		// the cluster link required (story 35.16 AC12): a machine's role also needs its
-		// certificate from the cluster CA, whose CN is that role (a stolen password alone
-		// is useless)
-		auth := "scram-sha-256"
-		if r.Require && b.TLS && b.clusterCA() != "" {
-			auth = "scram-sha-256 clientcert=verify-full"
+		// the cluster link required (story 35.16 AC12): the role of a machine that presents
+		// its certificate from the cluster CA (Reach.CertRoles), whose CN is that role, also
+		// needs it (a stolen password alone is useless), on its own line before the group's
+		// (the first line that matches decides). Every other machine's role keeps its
+		// password alone: one whose processes do not present a certificate (an older
+		// release) is never cut off its database by the link becoming required.
+		if r.Require && b.TLS && b.clusterCA() != "" && !frozen {
+			for _, role := range r.CertRoles {
+				if !machineRoleRe.MatchString(role) {
+					continue
+				}
+				for _, from := range from {
+					fmt.Fprintf(&s, "%-7s %-12s %-16s %-15s scram-sha-256 clientcert=verify-full\n", remote, AppDatabase,
+						role, from)
+				}
+			}
 		}
 		for _, from := range from {
 			if !frozen {
-				fmt.Fprintf(&s, "%-7s %-12s %-16s %-15s %s\n", remote, AppDatabase, "+"+WorkerGroup, from, auth)
+				fmt.Fprintf(&s, "%-7s %-12s %-16s %-15s scram-sha-256\n", remote, AppDatabase, "+"+WorkerGroup, from)
 			}
 			fmt.Fprintf(&s, "%-7s %-12s %-16s %-15s scram-sha-256\n", remote, AppDatabase, "+"+ReplicaGroup, from)
 		}
