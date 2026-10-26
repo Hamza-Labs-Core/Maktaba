@@ -19,7 +19,6 @@ final class TVPlayback {
     private var openedAt = Date.distantPast
     private var running: Task<Void, Never>?
     private var proxy: StreamProxy?
-    private var ended: NSObjectProtocol?
 
     init(client: APIClient, video: Video) {
         self.client = client
@@ -32,24 +31,25 @@ final class TVPlayback {
         running = Task { await run(from: start) }
     }
 
-    func stop() {
+    /// Stops, and returns once the home has where it stopped (so a page shown next offers
+    /// to resume there).
+    func stop() async {
         running?.cancel()
         running = nil
         player?.pause()
-        if let session {
+        let stopped = session.map { session in
             let at = player?.currentTime().seconds ?? 0
             let done = player?.currentItem.map { $0.duration.seconds.isFinite && at >= $0.duration.seconds - 5 } ?? false
-            Task { [client] in
+            return Task { [client] in
                 if at.isFinite, at > 0 { await client.reportProgress(session: session, positionSec: Int(at), completed: done) }
                 await client.closeStream(session)
             }
         }
-        if let ended { NotificationCenter.default.removeObserver(ended) }
-        ended = nil
         session = nil
         player = nil
         proxy?.stop()
         proxy = nil
+        await stopped?.value
     }
 
     private func run(from start: Double) async {

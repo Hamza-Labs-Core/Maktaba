@@ -5,8 +5,9 @@ import Observation
 
 /// The homes that announce themselves on this network: a home publishes `_maktaba._tcp`
 /// (its API port, with its web port, name and role in the TXT record). The address an app
-/// uses is the web port on the address the announcement resolves to, as a person would
-/// type it (its `.local` name). An app that browses lists `_maktaba._tcp` under `NSBonjourServices`.
+/// uses is the web port on the host the announcement resolves to (its `.local` name), the
+/// address a person would type. An app that browses lists `_maktaba._tcp` under
+/// `NSBonjourServices`.
 @MainActor @Observable
 public final class HomeBrowser {
     public struct Found: Identifiable, Hashable, Sendable {

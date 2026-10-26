@@ -113,13 +113,8 @@ final class MaktabaTVUITests: XCTestCase {
         moveFocus(to: address, with: .down)
         remote.press(.select)
         app.typeText(try XCTUnwrap(env["MAKTABA_HOME"]))
-        shot("typed-address")
-        remote.press(.menu) // back from the keyboard, the text kept
-        sleep(1)
-        shot("address")
-        let connect = app.buttons["Connect"]
-        if !connect.hasFocus { moveFocus(to: connect, with: .right) }
-        remote.press(.select)
+        finishTyping() // submits the field: Connect
+        pressIfStillThere(app.buttons["Connect"], with: .right)
     }
 
     func signIn() throws {
@@ -136,17 +131,32 @@ final class MaktabaTVUITests: XCTestCase {
         moveFocus(to: username, with: .up)
         remote.press(.select)
         app.typeText(try XCTUnwrap(env["MAKTABA_USER"]))
-        remote.press(.menu)
+        finishTyping()
         let password = app.secureTextFields["Password"]
         moveFocus(to: password, with: .down)
         remote.press(.select)
         app.typeText(try XCTUnwrap(env["MAKTABA_PASSWORD"]))
-        remote.press(.menu)
-        moveFocus(to: app.buttons["Sign in"], with: .down)
-        remote.press(.select)
+        finishTyping() // submits the field: Sign in
+        pressIfStillThere(app.buttons["Sign in"], with: .down)
     }
 
     // MARK: helpers
+
+    /// Presses `button` if the screen still shows it (a submitted field may have done its work).
+    func pressIfStillThere(_ button: XCUIElement, with direction: XCUIRemote.Button) {
+        guard button.waitForExistence(timeout: 2), button.isEnabled else { return }
+        moveFocus(to: button, with: direction)
+        remote.press(.select)
+    }
+
+    /// Leaves the full-screen keyboard by its own button (next / done), the text kept.
+    func finishTyping() {
+        let done = app.buttons.matching(NSPredicate(format: "label IN[c] {'next', 'done', 'go', 'search'}")).firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "no keyboard button")
+        moveFocus(to: done, with: .down)
+        remote.press(.select)
+        sleep(1)
+    }
 
     /// Presses `direction` until `element` has focus (at most 12 times).
     func moveFocus(to element: XCUIElement, with direction: XCUIRemote.Button) {

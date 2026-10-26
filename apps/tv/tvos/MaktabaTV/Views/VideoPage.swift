@@ -9,6 +9,8 @@ struct VideoPage: View {
     @State private var video: Video?
     @State private var problem: String?
     @State private var playing: TVPlayback?
+    /// What played last: stopped when the player closes.
+    @State private var played: TVPlayback?
 
     var body: some View {
         Group {
@@ -52,9 +54,8 @@ struct VideoPage: View {
         }
         .background(Theme.background.ignoresSafeArea())
         .task { await load() }
-        .fullScreenCover(item: $playing, onDismiss: { Task { await load() } }) { p in
+        .fullScreenCover(item: $playing, onDismiss: stopped) { p in
             PlayerScreen(playback: p)
-                .onDisappear { p.stop() }
         }
     }
 
@@ -62,7 +63,18 @@ struct VideoPage: View {
         guard let client else { return }
         let p = TVPlayback(client: client, video: v)
         p.start(at: at)
+        played = p
         playing = p
+    }
+
+    /// The player closed: stop (the home keeps where), then show the page as it is now.
+    private func stopped() {
+        let p = played
+        played = nil
+        Task {
+            await p?.stop()
+            await load()
+        }
     }
 
     private func load() async {
