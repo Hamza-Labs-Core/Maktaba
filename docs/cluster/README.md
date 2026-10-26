@@ -47,9 +47,9 @@ the NAS on that machine; TV channels when the home places them there). The home 
 database, the only place migrations run, and the only holder of secrets (Plex tokens, Cloudflare
 keys, accounts).
 
-- **Open any machine.** Each machine's address is on its card on Admin > Machines. Its sign-in
-  page offers **Continue with <home>**: accounts live on the home, so one sign-in works on every
-  machine (`rules.cluster.sso`).
+- **Open any machine.** Each machine's address is on its card on Admin > Machines. Sign in there
+  with your usual username and password: accounts live on the home, and the machine checks them
+  with it (or with its own copy of the home's database while the home is away).
 - **What answers where.** Library, video pages, collections and people are read on the machine
   itself (images through a local cache of the home's); playing a video reads the NAS there. Search,
   watch history and favourites, Processing, Machines, Logs, the admin settings, Extensions, Plex,

@@ -1,4 +1,4 @@
-"""``rules.cluster``: how the machines of a cluster share sign-ins and serve pages (Epic 35
+"""``rules.cluster``: how the machines of a cluster check sign-ins and serve pages (Epic 35
 stories 35.9, 35.10), and how a full machine runs on its own copy of the home's database
 while the home is away (Epic 37). Read by the APIs (the home's and every full node's); the
 pipeline only declares the section so the settings page shows it."""
@@ -16,8 +16,6 @@ __all__ = ["ClusterMachinesConfig"]
 class ClusterMachinesConfig:
     """Sign-in across machines and what a full node serves for the home."""
 
-    #: a signed-in user who opens another machine is offered "Continue with <home>"
-    sso: bool = True
     #: after this long without an answer from the home, a node stops asking it per request
     #: (it signs people in and answers them from its own copy of the home's database)
     delegate_unreachable_grace_seconds: int = 30
@@ -57,10 +55,6 @@ class ClusterMachinesConfig:
 _C = "Machines"
 _L = "Cluster link"
 settings.register(ClusterMachinesConfig, {
-    "sso": settings.Help(_C, "One sign-in for every machine",
-                         "Opening another machine offers \"Continue with <home>\": a one-time "
-                         "code carries the sign-in there. Off: each machine asks for its own "
-                         "sign-in (still against the home's accounts)."),
     "delegate_unreachable_grace_seconds": settings.Help(
         _C, "Home unreachable after (s)",
         "A machine that cannot reach the home this long stops asking it for every request: "

@@ -378,6 +378,11 @@ fn fetch(addr: &str) -> Option<Snapshot> {
 
 /// A GET of `path` at `addr` (host:port), loopback only, short timeouts: the raw response.
 fn get_loopback(addr: &str, path: &str) -> Option<Vec<u8>> {
+    get_loopback_as(addr, path, "application/json")
+}
+
+/// get_loopback, accepting `accept`.
+fn get_loopback_as(addr: &str, path: &str, accept: &str) -> Option<Vec<u8>> {
     let sock: SocketAddr = addr
         .to_socket_addrs()
         .ok()?
@@ -386,7 +391,7 @@ fn get_loopback(addr: &str, path: &str) -> Option<Vec<u8>> {
     let mut stream = TcpStream::connect_timeout(&sock, timeout).ok()?;
     stream.set_read_timeout(Some(timeout)).ok()?;
     stream.set_write_timeout(Some(timeout)).ok()?;
-    let req = format!("GET {path} HTTP/1.0\r\nHost: {addr}\r\nAccept: application/json\r\n\r\n");
+    let req = format!("GET {path} HTTP/1.0\r\nHost: {addr}\r\nAccept: {accept}\r\n\r\n");
     stream.write_all(req.as_bytes()).ok()?;
     let mut raw = Vec::new();
     // 4 MB is far above a snapshot (a few dozen processes, 50 events)
@@ -399,6 +404,32 @@ fn get_loopback(addr: &str, path: &str) -> Option<Vec<u8>> {
 pub fn server_version(web_url: &str) -> Option<String> {
     let raw = get_loopback(&addr_of(web_url)?, "/api/system/version")?;
     version_of_response(&raw)
+}
+
+/// Whether the local server's web app answers at its web address on this machine: its
+/// page (with anything but a server error: the page, or a way to sign in) and its api (its
+/// public /api/system/version). The window opens it only then (shell::open_local_server):
+/// a server whose processes run may not serve yet, and the window would show an error
+/// page, or the page an earlier visit cached without the bundle it names: blank.
+pub fn web_answers(web_url: &str) -> bool {
+    let Some(addr) = addr_of(web_url) else {
+        return false;
+    };
+    let page = get_loopback_as(&addr, "/", "text/html")
+        .as_deref()
+        .and_then(status_code)
+        .is_some_and(|c| (200..400).contains(&c));
+    page && server_version(web_url).is_some()
+}
+
+/// The status code of a raw HTTP/1.x response.
+pub fn status_code(raw: &[u8]) -> Option<u16> {
+    let end = raw.iter().position(|&b| b == b'\n').unwrap_or(raw.len());
+    let line = std::str::from_utf8(&raw[..end]).ok()?;
+    if !line.starts_with("HTTP/") {
+        return None;
+    }
+    line.split_whitespace().nth(1)?.parse().ok()
 }
 
 /// Whether the local server's own automatic updates are on (its /api/cluster/self's
@@ -1184,6 +1215,54 @@ mod tests {
             None
         );
         assert_eq!(server_version("http://10.255.255.1:8080"), None);
+    }
+
+    /// A stand-in web server on a loopback port: `page` answers "/" (None: the connection
+    /// is closed unanswered) and `version` answers /api/system/version.
+    fn web_server(page: Option<&'static str>, version: &'static str) -> String {
+        use std::net::TcpListener;
+        let ln = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", ln.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for s in ln.incoming() {
+                let Ok(mut s) = s else { return };
+                let mut buf = [0u8; 1024];
+                let n = s.read(&mut buf).unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                let answer = if req.starts_with("GET / ") {
+                    assert!(req.contains("Accept: text/html"), "{req}");
+                    match page {
+                        Some(a) => a,
+                        None => continue,
+                    }
+                } else {
+                    version
+                };
+                let _ = s.write_all(answer.as_bytes());
+            }
+        });
+        url
+    }
+
+    // The window opens the local web app only once its page and its api answer.
+    #[test]
+    fn the_web_app_answers_with_its_page_and_its_api() {
+        let page = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!doctype html>";
+        let version = "HTTP/1.1 200 OK\r\n\r\n{\"version\":\"0.3.20\"}";
+        let starting = "HTTP/1.1 503 Service Unavailable\r\n\r\nstarting";
+        assert!(web_answers(&web_server(Some(page), version)));
+        // a way to sign in is an answer
+        let sign_in = "HTTP/1.1 302 Found\r\nLocation: /login\r\n\r\n";
+        assert!(web_answers(&web_server(Some(sign_in), version)));
+        // a page still starting, a page that says nothing, an api not up yet: not yet
+        assert!(!web_answers(&web_server(Some(starting), version)));
+        assert!(!web_answers(&web_server(None, version)));
+        assert!(!web_answers(&web_server(Some(page), starting)));
+        // nothing listening there, or not this machine
+        assert!(!web_answers("http://127.0.0.1:1"));
+        assert!(!web_answers("http://10.255.255.1:8080"));
+        assert_eq!(status_code(b"HTTP/1.0 204 No Content\r\n\r\n"), Some(204));
+        assert_eq!(status_code(b"garbage"), None);
     }
 
     /// Whether the local server's own automatic updates are on: its /api/cluster/self says,

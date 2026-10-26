@@ -161,7 +161,7 @@ Decides how new releases are installed. **Install updates automatically** (on) i
 
 ### Machines {#cluster}
 
-Decides how the machines of your cluster act as one Maktaba. **One sign-in for every machine** (on) lets you move from one machine to another without signing in again. **Home unreachable after (s)** (30) is how long a machine waits before it stops serving signed-in pages when it cannot reach the home. See [Machines](/help/machines).
+Decides how the machines of your cluster act as one Maktaba. **Home unreachable after (s)** (30) is how long a machine waits before it stops serving signed-in pages when it cannot reach the home. See [Machines](/help/machines).
 
 ### Transcription {#transcription}
 

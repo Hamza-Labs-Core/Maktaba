@@ -430,7 +430,7 @@ func (rt *nodeRuntime) reportLoop(ctx context.Context) {
 // self is a node's GET /api/cluster/self.
 func (rt *nodeRuntime) self(ctx context.Context) clusterauth.SelfInfo {
 	info := clusterauth.SelfInfo{Role: "node", ID: rt.cfg.NodeID, Name: rt.cfg.Name, Version: version.Version,
-		SchemaRev: schemaguard.SchemaRev, WebURL: rt.cfg.WebURL, Paused: rt.guard.Paused(), SSO: rt.rules().SSO}
+		SchemaRev: schemaguard.SchemaRev, WebURL: rt.cfg.WebURL, Paused: rt.guard.Paused()}
 	ok, since := rt.resolver.Reachability()
 	home := &clusterauth.SelfHome{Reachable: ok, FailingSince: since}
 	if hs, got := rt.home.Get(ctx); got {
@@ -517,7 +517,7 @@ func homeSelf(store cluster.Store, webURL string, term func(context.Context) int
 	offDB func() []agent.OffDatabase, autoUpdates func(context.Context) bool) clusterauth.SelfFunc {
 	return func(ctx context.Context) clusterauth.SelfInfo {
 		info := clusterauth.SelfInfo{Role: "home", Version: version.Version, SchemaRev: schemaguard.SchemaRev,
-			WebURL: webURL, SSO: true}
+			WebURL: webURL}
 		if store == nil {
 			return info
 		}
@@ -560,8 +560,8 @@ func homeSelf(store cluster.Store, webURL string, term func(context.Context) int
 	}
 }
 
-// mountNodeRoutes mounts the node-only routes (/api/cluster/self, the sign-in's node
-// half).
+// mountNodeRoutes mounts the node-only routes (/api/cluster/self, a switch's notices,
+// the emergency, the machine's own processes on its cluster link).
 func (rt *nodeRuntime) mountNodeRoutes(r chi.Router) {
 	// a switch's notices of the new home: from the copy (it answers with the home away),
 	// else the home's database
@@ -577,10 +577,8 @@ func (rt *nodeRuntime) mountNodeRoutes(r chi.Router) {
 	// the machine's own processes reach the home on its cluster link (story 35.16)
 	r.Get(link.PathLocalAgent, serveLocalAgent(rt.linkC))
 	r.Get(link.PathLocalFetch, serveLocalFetch(rt.linkC))
-	router.MountNodeLocal(r, router.NodeLocalDeps{Self: rt.self, Node: &clusterauth.Node{
-		Link: rt.link, NodeID: rt.cfg.NodeID, Self: rt.self, SecureCookies: cookiesSecure(), Logger: rt.logger,
-		SSOEnabled: func(context.Context) bool { return rt.rules().SSO },
-	}, Moved: switchover.MovedHandler(movedDB), EmergencyStatus: em.Status, Emergency: em.Start, TermClaim: em.Claim})
+	router.MountNodeLocal(r, router.NodeLocalDeps{Self: rt.self, Moved: switchover.MovedHandler(movedDB),
+		EmergencyStatus: em.Status, Emergency: em.Start, TermClaim: em.Claim})
 }
 
 // handler is the node's public handler: the placement dispatcher over the local
@@ -755,12 +753,12 @@ func warnUnclassified(r chi.Router, logger *slog.Logger) {
 	}
 }
 
-// mountHomeClusterAuth mounts the home's delegation and cluster sign-in endpoints and
-// its /api/cluster/self (stories 35.9, 35.11), and runs its side of the machines'
-// copies of its database (Epic 37).
+// mountHomeClusterAuth mounts the home's delegation endpoints and its /api/cluster/self
+// (stories 35.9, 35.11), and runs its side of the machines' copies of its database
+// (Epic 37).
 func mountHomeClusterAuth(r chi.Router, db *sql.DB, hubRef *router.HubRef, logger *slog.Logger) {
 	webURL := os.Getenv("MAKTABA_WEB_URL")
-	router.MountClusterAuth(r, router.ClusterAuthDeps{DB: db, WebURL: webURL, Logger: logger})
+	router.MountClusterAuth(r, router.ClusterAuthDeps{DB: db, Logger: logger})
 	offDB := func() []agent.OffDatabase {
 		if h := hubRef.Get(); h != nil {
 			return h.MachinesOffDatabase()

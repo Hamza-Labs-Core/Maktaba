@@ -45,7 +45,7 @@ describe("NodeGuard", () => {
   });
 
   it("renders the app on the home", async () => {
-    fetchMock.mockResolvedValue(json(200, { role: "home", id: "h", version: "1.5.0", sso: true }));
+    fetchMock.mockResolvedValue(json(200, { role: "home", id: "h", version: "1.5.0" }));
     renderGuard();
     expect(screen.getByText("the app")).toBeInTheDocument();
     await act(() => Promise.resolve());
@@ -61,7 +61,6 @@ describe("NodeGuard", () => {
               role: "node",
               id: "n1",
               version: "1.5.0",
-              sso: true,
               home: { reachable: true },
             })
           : json(
@@ -87,7 +86,7 @@ describe("NodeGuard", () => {
   });
 
   it("keeps the app readable under a notice when the home is unreachable", async () => {
-    fetchMock.mockResolvedValue(json(200, { role: "node", id: "n1", version: "1.5.0", sso: true }));
+    fetchMock.mockResolvedValue(json(200, { role: "node", id: "n1", version: "1.5.0" }));
     renderGuard();
     act(() => {
       window.dispatchEvent(
@@ -110,7 +109,7 @@ describe("NodeGuard", () => {
     fetchMock.mockImplementation((input, init) => {
       const url = String(input);
       if (url.endsWith("/api/cluster/self"))
-        return Promise.resolve(json(200, { role: "node", id: "n1", version: "1.5.0", sso: true }));
+        return Promise.resolve(json(200, { role: "node", id: "n1", version: "1.5.0" }));
       // the node plays a video it can read (a `local` route) and refuses a change of the home's
       if (url.endsWith("/api/stream/sessions") && init?.method === "POST")
         return Promise.resolve(marked({ session_id: "s1" }, 201));
@@ -153,7 +152,6 @@ describe("NodeGuard", () => {
               role: "node",
               id: "n1",
               version: "1.5.0",
-              sso: true,
               home: { reachable: false },
             })
           : json(
@@ -192,7 +190,7 @@ describe("NodeGuard", () => {
       let reachable = false;
       fetchMock.mockImplementation(() =>
         Promise.resolve(
-          json(200, { role: "node", id: "n1", version: "1.5.0", sso: true, home: { reachable } })
+          json(200, { role: "node", id: "n1", version: "1.5.0", home: { reachable } })
         )
       );
       renderGuard();
@@ -218,7 +216,7 @@ describe("NodeGuard", () => {
   });
 
   it("paused outranks home_unreachable", async () => {
-    fetchMock.mockResolvedValue(json(200, { role: "node", id: "n1", version: "1.5.0", sso: true }));
+    fetchMock.mockResolvedValue(json(200, { role: "node", id: "n1", version: "1.5.0" }));
     renderGuard();
     act(() => {
       window.dispatchEvent(
@@ -238,7 +236,7 @@ describe("NodeGuard", () => {
     fetchMock.mockImplementation((input) =>
       Promise.resolve(
         String(input).endsWith("/api/cluster/self")
-          ? json(200, { role: "node", id: "n1", version: "1.5.0", sso: true })
+          ? json(200, { role: "node", id: "n1", version: "1.5.0" })
           : json(503, { title: "busy", status: 503, code: "overloaded" })
       )
     );
