@@ -135,12 +135,14 @@ type Sender struct {
 	kick chan struct{}
 	once sync.Once
 
-	mu       sync.Mutex
+	mu sync.Mutex
+	// lastSent is the last delivery of a server report (an app's batch does not
+	// count: the status is the admin's view of the server's own data)
 	lastSent time.Time
 	lastErr  string
 }
 
-// Status is what the sender last did.
+// Status is what the sender last did with the server's reports.
 type Status struct {
 	LastSentAt *time.Time `json:"last_sent_at"`
 	LastError  string     `json:"last_error"`
@@ -176,7 +178,7 @@ func (s *Sender) Kick() {
 	}
 }
 
-// Status is the last delivery's time and the last error since.
+// Status is the last server report's delivery and the last error since.
 func (s *Sender) Status() Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -307,7 +309,12 @@ func (s *Sender) send(ctx context.Context, url string, now time.Time, rows []Row
 			return false
 		}
 		s.mu.Lock()
-		s.lastSent, s.lastErr = now, ""
+		s.lastErr = ""
+		for _, r := range rows {
+			if r.Kind == KindServer {
+				s.lastSent = now
+			}
+		}
 		s.mu.Unlock()
 		return true
 	case err == nil && status/100 == 4 && status != http.StatusTooManyRequests && status != http.StatusRequestTimeout:

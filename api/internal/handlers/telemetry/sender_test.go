@@ -90,6 +90,9 @@ func TestSenderSwitchOff(t *testing.T) {
 	if len(store.kinds()) != 0 || len(s.Reporter.Errors.Take()) != 0 {
 		t.Fatalf("outbox %v, or errors kept while off", store.kinds())
 	}
+	if s.Status().LastSentAt != nil {
+		t.Fatal("an app's batch counted as the server's report")
+	}
 }
 
 // On, one report a day: the first tick of a day adds it, later ticks do not.
