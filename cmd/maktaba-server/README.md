@@ -82,16 +82,21 @@ models = ["qwen2.5:7b"]  # what the server keeps
 pull = "auto"            # auto: the supervisor downloads a missing model | off
 ```
 
-**Usage analytics (`[telemetry]`, Epic 16 stories 16.5, 16.7).** A device whose user
-opted in (the app asks once; Settings → Privacy changes it) sends anonymous usage events
-to this server's API under a random pseudonym: the app's version and OS, the library's
-size as a range, how often each area is used, and error reports without paths. They are
-kept 90 days (Web Vitals 30), never with an IP address or a user. `off` makes the API
-answer and store nothing; it reaches the API as `MAKTABA_TELEMETRY_ENABLED=false`.
+**Usage data (`[telemetry]`, Epic 16 stories 16.5, 16.7).** Anonymous usage data goes
+to Maktaba Cloud, for Maktaba's makers, never to a sink on this server. Two separate
+consents, both off by default: an admin's switch (Settings → Privacy) for the server's
+own daily report (its version, system, install kind, ranges of its size and use, its
+features and its errors scrubbed of paths, file names and addresses), and each app's
+own user for that app's batches, which the app posts to this server and the server
+forwards as they are. Ids are random per install; no IP address, user or title is sent.
+Batches wait in `telemetry_outbox` and are retried with backoff; one a week old is
+dropped. `off` here overrides both: nothing leaves the server, its own data nor any
+app's (`MAKTABA_TELEMETRY_ENABLED=false`). `MAKTABA_TELEMETRY_URL` sends elsewhere than
+the license server's Maktaba Cloud (`off`: nowhere).
 
 ```toml
 [telemetry]
-enabled = "on"           # on (default) | off: store nothing any device sends
+enabled = "on"           # on (default): the consents decide | off: nothing is sent
 ```
 
 **Streaming on a cluster node (Epic 32.1).** On a machine that joined a home

@@ -1,5 +1,9 @@
 # Implementation Plan — Story 16.7 API: telemetry sink
 
+> **Superseded (2026-10-26).** This plan built the first version: data for the home's
+> admin, stored on the home. The rework sends it to Maktaba Cloud with two consents; see
+> the story's "Rework" and "Implementation" sections [story-16-07-telemetry-api.md](story-16-07-telemetry-api.md). Kept as history.
+
 > Companion to [story-16-07-telemetry-api.md](story-16-07-telemetry-api.md).
 > The story states *what* and *why*; this plan states *how*.
 

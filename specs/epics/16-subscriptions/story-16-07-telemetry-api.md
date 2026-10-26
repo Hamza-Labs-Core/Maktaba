@@ -1,139 +1,83 @@
-# Story 16.7 — API: telemetry sink
+# Story 16.7 — API: usage data to Maktaba Cloud
 
-**Status:** **NEW** — added in response to
-[REVIEW §3.2](../../REVIEW.md): Story 16.5 and Epic 21 Story 21.2 EC-3
-referenced `POST /api/telemetry` and `POST /api/telemetry/web-vitals`
-without an owning story. This story owns both endpoints, the storage
-schema, the redaction filter, and the on-server retention policy.
+The transport and stores of [Story 16.5](story-16-05-telemetry-opt-in.md)'s anonymous usage
+data: the home's report, the pipe apps send through, the home's outbox and sender, and
+Maktaba Cloud's ingest, store and operator view.
+
+## Rework (2026-10-26)
+
+The first version (slot 0156) was a sink on the home: public `POST /api/telemetry` and
+`/api/telemetry/web-vitals` storing events in `telemetry_events` / `telemetry_web_vitals`
+for 90 / 30 days, read by no one but SQL. The data now goes to Maktaba Cloud (story 16.5
+says why); slot **0161** drops both tables (and what they held) for `telemetry_outbox`.
 
 ## AC
 
-### Schema
+### The home
 
-- New table `telemetry_events`:
-  - `id BIGSERIAL PRIMARY KEY`
-  - `received_at TIMESTAMPTZ NOT NULL DEFAULT now()`
-  - `device_pseudonym TEXT NOT NULL` (16 random chars; client-generated
-    once at opt-in time, never linked to user)
-  - `event_kind TEXT NOT NULL`
-    (e.g., `app.open`, `search.run`, `player.start`, `error.uncaught`)
-  - `app_version TEXT`
-  - `os TEXT`, `os_version TEXT`
-  - `locale TEXT`
-  - `payload JSONB NOT NULL` (sanitized; see redaction below)
-- New table `telemetry_web_vitals`:
-  - `id BIGSERIAL PRIMARY KEY`
-  - `received_at TIMESTAMPTZ NOT NULL DEFAULT now()`
-  - `device_pseudonym TEXT NOT NULL`
-  - `metric TEXT NOT NULL` (`LCP`, `FID`, `CLS`, `INP`, `TTFB`)
-  - `value DOUBLE PRECISION NOT NULL`
-  - `route TEXT` (route template, e.g., `/watch/:id`, NEVER the real id)
-- Indexes: `(received_at)` for retention sweep; `(event_kind,
-  received_at)` for analyst queries.
-- Migration owner: this story.
+- `POST /api/telemetry/app` (any signed-in user; who posted is never kept): an app's batch
+  `{consent, install_id, app, platform, form_factor, app_version, os_version, locale,
+  events: [{kind, payload, ts}], vitals: [{metric, value, route}]}`. Forwarded only with
+  `consent: true` (else 204, nothing kept), whatever the admin's server switch says.
+  At most 100 events and 50 vitals (413); unknown kind or metric 400; per-IP budget 1,000
+  a minute (429). Each field is normalized to what the cloud takes; free text is scrubbed
+  of library roots, home folders, other paths (the file name too; its extension stays),
+  origins, query strings, emails, IP addresses and host names; a route becomes its
+  template.
+- `DELETE /api/telemetry/app/{install_id}` (signed in): drops the install's waiting
+  batches and queues a `forget` for the cloud. 204 whether or not anything existed.
+- `GET /api/telemetry/server` (admin): `{sharing, enabled, pending, oldest_pending,
+  last_sent_at, last_error, preview}`; the preview is the day's report as it would go.
+- `POST /api/telemetry/server/forget` (admin): drops the server's waiting reports, queues a
+  `forget` under the home's id, and gives the home a new id.
+- The admin's switch is `telemetry.share_server_data` (`PATCH /api/settings`, admin only).
+- The sender (a goroutine of the home's API) adds the day's report once a UTC day while
+  the switch is on (off, it drops the server's waiting reports and the error counts), and
+  delivers the outbox to `{cloud}/v1/telemetry` in envelopes of at most 20 batches and
+  480 KiB: 2xx clears them; 429, 5xx or no answer puts them off (1 min, doubled, at most
+  6 h, or Retry-After); another 4xx sends each batch of the envelope alone and drops the
+  refused one. A batch a week old is dropped unsent; at most 5,000 wait.
+- The cloud is the license server's (the cloud the home is claimed in, else
+  `MAKTABA_LICENSE_SERVER`, else `https://api.maktaba.app`); `MAKTABA_TELEMETRY_URL`
+  overrides (`off`: nowhere). `[telemetry] enabled = "off"`: nothing is queued or sent.
+- Server errors are counted in memory by kind (every Error-level log record's message and
+  `event` attribute, never its other attributes) and drained by each report.
 
-### Endpoints
+### Maktaba Cloud
 
-- `POST /api/telemetry {events: [{event_kind, payload, ts}]}` →
-  `204` accept up to 100 events per request; over → `413`.
-- `POST /api/telemetry/web-vitals {metrics: [{metric, value, route, ts}]}` →
-  `204` accept up to 50 metrics per request.
-- `DELETE /api/telemetry/devices/{device_pseudonym}` → `204` purges all
-  rows for that pseudonym (the "Forget my device" affordance from
-  Story 16.5). Public — anyone with the pseudonym can purge their own
-  data; the pseudonym acts as a self-asserted bearer.
-- All POST endpoints accept anonymous traffic but rate-limit per IP
-  (1k events/min) to prevent flooding.
-
-### Redaction (ENFORCED at the API boundary)
-
-- Server-side allow-list of `event_kind` values; any unknown kind →
-  `400 unknown-event-kind`.
-- For each known kind, an allow-list of `payload` field names; unknown
-  fields are stripped silently.
-- IP addresses: dropped at the API edge; never persisted (Story 21.8
-  is the canonical source for the privacy policy).
-- Free-text fields (`error_message` for `error.uncaught`) are scanned
-  for paths matching the configured library roots and stripped; the
-  filter is a `regexp_replace` over each `library.root_path` known to
-  the server.
-
-### Self-host & retention
-
-- `[telemetry] enabled = false` (config) disables ingestion: endpoints
-  return `204` but never write rows. Ensures the spec's "self-host
-  server-side opt-out" promise is tested.
-- Retention: 90 days for `telemetry_events`, 30 days for
-  `telemetry_web_vitals`. A nightly sweep removes older rows.
+- `POST /v1/telemetry` (anonymous): `{schema: 1, batches: [server | app | forget]}`.
+  At most 512 KiB (413) and 20 batches; one invalid batch refuses the envelope (400);
+  per-IP and per-install rate limits (429 + Retry-After); a second scrubbing pass; one
+  transaction. No address is stored or logged.
+- Storage: server reports (one per install and day, a resend replaces it), app installs,
+  app events, error groups and occurrences, Web Vitals. Retention: reports 400 days, app
+  data and error occurrences 90, vitals 30.
+- `GET /v1/admin/usage?days=N` (service admins): installs, versions, platforms, install
+  kinds, apps in use, feature use, error groups, vitals p75. Shown in the cloud console's
+  Admin → Usage.
 
 ## TC
 
-- Client posts a sanitized `app.open` event: row appears in
-  `telemetry_events`.
-- Client posts an `error.uncaught` event whose `error_message` contains
-  `/Users/me/Lectures/foo.mp4` (a known library root): the persisted
-  row has `…/foo.mp4` stripped to `<path>/foo.mp4` (root only;
-  filename retained because it's not personally identifying).
-- Client posts an `event_kind = "private.evil"` (not in allow-list):
-  400 with `unknown-event-kind`.
-- DELETE the device pseudonym: subsequent SELECTs return zero rows.
-- `[telemetry] enabled = false` and a POST: 204 but the table is still
-  empty.
-
-## EC
-
-- Client time skew (events arrive with a `ts` 24 h in the future):
-  truncate to `received_at` for ordering; log warning.
-- Network burst (1,001 events in a request): the 1,001st returns 413;
-  the first 1,000 are not persisted (atomic).
-- A library root path containing regex metacharacters: the redaction
-  filter `regexp_quote`s before substituting.
-- Telemetry endpoint reachable from the open internet: rate limit
-  prevents abuse; admins can disable entirely via the config flag.
+- Switch off: the sender sends nothing of the home's; an app batch with consent still goes.
+- Switch on: one server report a day reaches the cloud.
+- An app batch without consent: 204 and nothing queued.
+- A viewer: 403 on the server's routes and on the switch; signed out: 401 everywhere.
+- An error message with a library path, a file name and an address: none of them leaves
+  the home.
+- The cloud down: the batches wait and are retried; a week later they are gone.
 
 ## Implementation
 
-**Status: done.** Built on branch `worktree-agent-a80d9c8f289bb66b9`.
+**Status: done (reworked 2026-10-26).**
 
-- **Schema:** slot **0156** `shared/db/migrations/0156_telemetry.sql` (+ `.sqlite.sql`):
-  `telemetry_events`, `telemetry_web_vitals`, indexes on `received_at`,
-  `(event_kind, received_at)` and the pseudonym (for "Forget my device"). Not in a
-  machine's copy: slot 0155 lists both tables in `cluster_copy_excluded()`.
-- **Handlers:** `api/internal/handlers/telemetry` (allow-list, redaction, handlers,
-  retention sweeper), mounted by `api/internal/router/telemetry.go`; the three routes
-  are on the auth gate's public allowlist (`DefaultPublicAllowlist`, pinned by its test).
-- **Rate limit:** the existing token-bucket limiter (`api/internal/middleware/ratelimit.go`)
-  gains `IPBudget`, which takes n tokens at once: 1,000 events + metrics a minute per IP
-  (counted per event, not per request), 30 deletes a minute per IP; 429 with `Retry-After`.
-  The IP is never stored (`TestNoRemoteAddrInTelemetry` checks every column).
-- **Config:** `[telemetry] enabled` in server.toml (default on) reaches the API as
-  `MAKTABA_TELEMETRY_ENABLED=false` when off; the POSTs then answer 204 and store
-  nothing. "Forget my device" works either way.
-- **Retention:** `telemetry.Sweeper`, started in `api/main.go` beside the watch reaper:
-  a pass at start, then daily; events 90 days, Web Vitals 30 days.
-- **Tests:** `telemetry_test.go` (SQLite, from the migration file) covers the plan's §8
-  allow-list, redaction, HTTP, retention and IP tests; `telemetry_pg_test.go` runs the sink
-  on Postgres with every migration applied (`MAKTABA_TEST_PG_URL`).
-
-**Differences from the spec and plan (the repo's conventions win):**
-
-- The handlers live in `api/internal/handlers/telemetry`, not `api/internal/telemetry` +
-  `api/internal/http`; no sqlc (the API uses `database/sql`).
-- Slot 0156, not 0064. Postgres indexes are `CONCURRENTLY` under `NO TRANSACTION`
-  (migration-lint).
-- The request body carries the device context once: `{device_pseudonym, app_version, os,
-  os_version, locale, events: [{event_kind, payload, ts}]}` (web vitals:
-  `{device_pseudonym, metrics: [...]}`).
-- An extra nullable column `occurred_at` keeps the device's `ts`; a time more than a
-  minute ahead of the server is truncated to `received_at` and logged (the EC).
-- The library-root placeholder is `<library>` (the plan), not `<path>` (the story's TC).
-  Home folders (`/Users/x`, `/home/x`, `C:\Users\x`) are also replaced, with `<home>`. The
-  roots are read from `library_roots` (cached one minute) rather than rebuilt on
-  `library.added` events.
-- Payload values must be scalars (an object or list is dropped like an unknown field);
-  strings are capped at 2,048 characters; a payload over 16 KiB is 413.
-- Allow-list additions: `feature.used {feature, count}` (story 16.5's feature-usage counts)
-  and `app.open.library_size_bucket`.
-- A 4xx-refused batch is never retried by the client; the per-request caps answer 413
-  `too-many-events` with nothing stored (the transaction makes a batch all or nothing).
-- No admin read endpoint (the plan asks for none). The rows are read with SQL.
+- Home: `api/internal/handlers/telemetry` (`report.go`, `errcount.go`, `outbox.go`,
+  `sender.go`, `telemetry.go`, `allowlist.go`, `redact.go`, `ranges.go`), wired by
+  `api/internal/router/telemetry.go` and `api/main.go`; slot 0161
+  `shared/db/migrations/0161_usage_data_outbox.sql` (+ `.sqlite.sql`); the routes are off
+  the auth gate's public allowlist.
+- Cloud: `cloud/internal/telemetry`, `cloud/internal/handlers/admin/usage.go`, migration
+  `cloud/migrations/00150001_usage_telemetry.sql`, `web/cloud/src/pages/admin/Usage.tsx`,
+  `cloud/docs/usage-data.md`.
+- Tests: the home's `api/internal/handlers/telemetry/*_test.go` (the pipe and its roles,
+  scrubbing, the sender against a fake cloud, Postgres), `settings` (the switch's role);
+  the cloud's `cloud/internal/telemetry` and `cmd/maktaba-cloud` integration tests.

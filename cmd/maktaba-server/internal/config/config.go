@@ -180,15 +180,16 @@ func (p PipelineSection) IndexWorkerOn() bool {
 }
 
 // TelemetrySection is the [telemetry] table (Epic 16 stories 16.5, 16.7): whether
-// this server's API stores the anonymous usage events of the devices whose users
-// opted in. No client sends anything before its user opts in.
+// anonymous usage data may leave this server for Maktaba Cloud at all. On, the
+// consents decide (the admin's switch for the server's own report, each app's
+// user for that app's batches; both off by default).
 type TelemetrySection struct {
-	// Enabled: "on" (default) stores them; "off" answers the telemetry
-	// endpoints and stores nothing (the API's MAKTABA_TELEMETRY_ENABLED).
+	// Enabled: "on" (default) lets the consents decide; "off" sends nothing,
+	// the server's data nor any app's (the API's MAKTABA_TELEMETRY_ENABLED).
 	Enabled string `toml:"enabled"`
 }
 
-// On reports whether the API stores telemetry (anything but off/false/no/0).
+// On reports whether usage data may leave the server (anything but off/false/no/0).
 func (t TelemetrySection) On() bool {
 	switch strings.ToLower(strings.TrimSpace(t.Enabled)) {
 	case "off", "false", "no", "0":

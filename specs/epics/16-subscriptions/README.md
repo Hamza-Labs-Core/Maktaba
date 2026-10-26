@@ -19,9 +19,9 @@ control), §11.5 (secrets).
 | 16.2 | [Premium features](story-16-02-premium-features.md) | done |
 | 16.3 | [Subscription management](story-16-03-subscription-management.md) | done |
 | 16.4 | [License key validation](story-16-04-license-validation.md) | done |
-| 16.5 | [Usage analytics (opt-in)](story-16-05-telemetry-opt-in.md) | done |
+| 16.5 | [Anonymous usage data (opt-in, two levels)](story-16-05-telemetry-opt-in.md) | done (reworked 2026-10-26) |
 | 16.6 | [Feature flags per tier](story-16-06-feature-flags.md) | done |
-| 16.7 | [API: telemetry sink](story-16-07-telemetry-api.md) | done (added per REVIEW §3.2) |
+| 16.7 | [API: usage data to Maktaba Cloud](story-16-07-telemetry-api.md) | done (reworked 2026-10-26) |
 | 16.8 | [API: feature-flag resolution](story-16-08-feature-flags-api.md) | done (added per REVIEW §3.2) |
 
 ---

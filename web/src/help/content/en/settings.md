@@ -31,6 +31,10 @@ Changes apply at once and are kept in this browser.
 
 The **Activity tracking** switch and your recent history. See [Your account](/help/account#privacy).
 
+**Usage data: this app** is your own answer, for this app on this device: share anonymous usage data with Maktaba's makers, to help improve Maktaba, or not. It is off until you turn it on (the app asks once). What is shared: the app's version, the kind of device and its language, how often each part of the app is used, and error reports with paths, file names and addresses removed. Never shared: file names, titles, transcripts, searches, who you are, or your IP address. **Delete what this app sent** asks Maktaba to delete it.
+
+Admins also see **Usage data: this server**: the server's own anonymous report, sent to Maktaba once a day while the switch is on (off until an admin turns it on). **See exactly what is sent** shows the report as it would go now. See [Who gets the usage data?](#faq-usage-data).
+
 ### Models {#models-tab}
 
 **Model Management** lists the AI models Maktaba uses, in three groups: **Speech-to-Text** (transcription), **Embedding** (meaning search) and **Diarization** (telling speakers apart). Each card shows the model's size, where it runs and its state.
@@ -83,6 +87,10 @@ Technical details about your own recent activity on this server, to help find a 
 ### Why does my theme change back on another computer? {#faq-theme-per-browser}
 
 Theme, language and density are kept per browser. Set them on each device.
+
+### Who gets the usage data? {#faq-usage-data}
+
+Maktaba's makers, through Maktaba Cloud, to see which versions, systems and features are used and which errors happen across homes. Not this home's admin: an admin already sees this home's use, by name, in [Analytics](/help/analytics). The two answers are separate: the admin's switch covers the server's own report only, and each app asks its own user for that app. An app sends through its home (the home passes it on as it is, without the app needing the internet), and only while that app's user said yes. Every ID is random and linked to no account, user or home; every count is a rough range.
 
 ## When something goes wrong {#troubleshooting}
 
