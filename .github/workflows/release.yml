@@ -154,15 +154,18 @@ jobs:
         working-directory: web
         run: pnpm install --frozen-lockfile
 
-      # VERSION comes from the tag, not `git describe`, so the artifact
-      # version string is exactly the tag the maintainer pushed. The
-      # streaming binary is built with -tags tvstaging (TV staging and hot
-      # swap, Epic 33.5-33.9) through the Makefile's STREAMING_TAGS.
+      # Epic 16: the license-server public key over the placeholder before any
+      # build (tools/release/license-key.sh); a release without it fails.
       - name: Embed the license-server key
+        shell: bash
         env:
           MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
         run: tools/release/license-key.sh --require
 
+      # VERSION comes from the tag, not `git describe`, so the artifact
+      # version string is exactly the tag the maintainer pushed. The
+      # streaming binary is built with -tags tvstaging (TV staging and hot
+      # swap, Epic 33.5-33.9) through the Makefile's STREAMING_TAGS.
       - name: Build Go binaries
         env:
           GOOS: ${{ matrix.goos }}
@@ -252,7 +255,10 @@ jobs:
           name: release-web-bundle
           path: web/dist
 
+      # Epic 16: the license-server public key over the placeholder before any
+      # build (tools/release/license-key.sh); a release without it fails.
       - name: Embed the license-server key
+        shell: bash
         env:
           MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
         run: tools/release/license-key.sh --require
@@ -372,13 +378,16 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      # rewrite-timestamp: every layer's files carry the commit's time (SOURCE_DATE_EPOCH),
-      # so a re-run builds the same layers (the attestations still record their build).
+      # Epic 16: the license-server public key over the placeholder before any
+      # build (tools/release/license-key.sh); a release without it fails.
       - name: Embed the license-server key
+        shell: bash
         env:
           MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
         run: tools/release/license-key.sh --require
 
+      # rewrite-timestamp: every layer's files carry the commit's time (SOURCE_DATE_EPOCH),
+      # so a re-run builds the same layers (the attestations still record their build).
       - name: Build and push ${{ matrix.svc }}
         id: build
         uses: docker/build-push-action@v7.2.0
@@ -670,13 +679,16 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq patchelf zip ffmpeg
 
-      # check.sh: no ffmpeg in the payload, and the server takes the runner's
-      # (Ubuntu 22.04's, as the app's users get theirs from their distribution)
+      # Epic 16: the license-server public key over the placeholder before any
+      # build (tools/release/license-key.sh); a release without it fails.
       - name: Embed the license-server key
+        shell: bash
         env:
           MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
         run: tools/release/license-key.sh --require
 
+      # check.sh: no ffmpeg in the payload, and the server takes the runner's
+      # (Ubuntu 22.04's, as the app's users get theirs from their distribution)
       - name: Build the payload, check it, pack it
         env:
           TAG: ${{ github.ref_name }}

@@ -390,3 +390,11 @@ func TestPersistentStore_ReplaceKeepsOneActive(t *testing.T) {
 		t.Fatalf("one-active invariant violated: %d active rows", active)
 	}
 }
+
+// An unreadable licenses table leaves a usable free-tier store, not nil.
+func TestPersistentStore_LoadErrorKeepsAStore(t *testing.T) {
+	s, err := NewPersistentStore(context.Background(), errLoadActiveDB{&fakeLicenseDB{}}, nil)
+	if err == nil || s == nil || s.Current() != nil || s.TierName() != "free" {
+		t.Fatalf("store %v err %v", s, err)
+	}
+}

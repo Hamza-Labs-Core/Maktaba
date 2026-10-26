@@ -243,3 +243,53 @@ func TestRefresher_TrustsServerDate(t *testing.T) {
 		t.Fatal("the license server's date shows the license expired; the local clock must not keep it")
 	}
 }
+
+// An offline home with no license server still moves its clock's
+// high-water mark, so setting the clock back after expiry revives
+// nothing, across a restart too.
+func TestRefresher_OfflineClockRatchets(t *testing.T) {
+	pub, priv := newKey(t)
+	v := &Verifier{PublicKey: pub}
+	now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	db := &statefulDB{}
+	s, _ := NewPersistentStore(context.Background(), db, v)
+	s.SetClock(func() time.Time { return now })
+	applyLicense(t, s, v, priv, LicenseInner{LicenseID: "air", Tier: TierPro, IssuedAt: now, ExpiresAt: now.Add(10 * 24 * time.Hour)})
+	r := &Refresher{Store: s, Verifier: v, ServerURL: func() string { return "" }}
+	now = now.Add(20 * 24 * time.Hour)
+	if err := r.refresh(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(-15 * 24 * time.Hour)
+	s2, _ := NewPersistentStore(context.Background(), db, v)
+	s2.SetClock(func() time.Time { return now })
+	if s2.Current() != nil {
+		t.Fatal("a clock set back on an offline home revived an expired license")
+	}
+}
+
+// A plan license of the same tier does not replace an offline license.
+func TestRefresher_SameTierKeepsOffline(t *testing.T) {
+	pub, priv := newKey(t)
+	s := NewStore()
+	applyLicense(t, s, &Verifier{PublicKey: pub}, priv, LicenseInner{LicenseID: "offline-home", Tier: TierHome, IssuedAt: time.Now(), ExpiresAt: time.Now().Add(365 * 24 * time.Hour)})
+	f := &fakeCloud{priv: priv, planCode: 200, planBody: planLicense(t, priv, "cloud-srv-1", TierHome, "srv-1")}
+	r := newRefresher(t, f, s, pub, true)
+	if err := r.RefreshNow(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if s.Current().LicenseID != "offline-home" {
+		t.Fatalf("a same-tier plan license replaced the offline one: %s", s.Current().LicenseID)
+	}
+}
+
+// Kick before Run neither panics nor races, and is not lost.
+func TestRefresher_KickBeforeRun(t *testing.T) {
+	r := &Refresher{}
+	r.Kick()
+	select {
+	case <-r.kicks():
+	default:
+		t.Fatal("a kick before Run was lost")
+	}
+}

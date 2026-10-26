@@ -262,6 +262,12 @@ func (s *Store) RecordRefresh(ctx context.Context, err error) error {
 	return s.saveState(ctx)
 }
 
+// TouchClock persists the clock's high-water mark (it moves on with the
+// local clock), with nothing else changed.
+func (s *Store) TouchClock(ctx context.Context) error {
+	return s.saveState(ctx)
+}
+
 // Fingerprint identifies the applied license's signed content, so a
 // refresh that fetched the same license changes nothing.
 func (s *Store) Fingerprint() string {

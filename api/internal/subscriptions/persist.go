@@ -113,7 +113,9 @@ func NewPersistentStore(ctx context.Context, db LicensePersistence, v *Verifier)
 	}
 	rec, err := db.LoadActive(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("subscriptions: load active license: %w", err)
+		// unreadable: the free tier, reported; the store stays usable so
+		// every gate and the admin page share it
+		return s, fmt.Errorf("subscriptions: load active license: %w", err)
 	}
 	if rec == nil {
 		return s, stateErr // free tier

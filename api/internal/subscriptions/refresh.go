@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -41,16 +42,22 @@ type Refresher struct {
 	// Event, when set, records a change the refresh made (audit).
 	Event func(ctx context.Context, event string, detail map[string]any)
 
-	kick chan struct{}
+	kickOnce sync.Once
+	kick     chan struct{}
+}
+
+func (r *Refresher) kicks() chan struct{} {
+	r.kickOnce.Do(func() { r.kick = make(chan struct{}, 1) })
+	return r.kick
 }
 
 // Kick asks for a refresh soon. Never blocks.
 func (r *Refresher) Kick() {
-	if r == nil || r.kick == nil {
+	if r == nil {
 		return
 	}
 	select {
-	case r.kick <- struct{}{}:
+	case r.kicks() <- struct{}{}:
 	default:
 	}
 }
@@ -58,9 +65,7 @@ func (r *Refresher) Kick() {
 // Run refreshes at start, after each Kick and every CloudCheckEvery
 // until ctx ends.
 func (r *Refresher) Run(ctx context.Context) {
-	if r.kick == nil {
-		r.kick = make(chan struct{}, 1)
-	}
+	kick := r.kicks()
 	t := time.NewTicker(CloudCheckEvery)
 	defer t.Stop()
 	force := true
@@ -73,7 +78,7 @@ func (r *Refresher) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-r.kick:
+		case <-kick:
 			force = true
 		case <-t.C:
 		}
@@ -108,7 +113,10 @@ func (r *Refresher) refresh(ctx context.Context, force bool) error {
 		}
 	}
 	if !contacted && len(errs) == 0 {
-		return nil // nothing to ask (no license server configured)
+		// nothing to ask (no license server, or not due): the clock's
+		// high-water mark still moves on, so a clock set back later
+		// cannot revive an expired license on an offline home
+		return r.Store.TouchClock(ctx)
 	}
 	var err error
 	if len(errs) > 0 {
@@ -249,9 +257,10 @@ func (r *Refresher) applyPlanLicense(ctx context.Context, lic *License, st State
 	if lic.Signature == r.Store.Fingerprint() && st.LockReason != LockRevoked {
 		return nil
 	}
-	// a plan license does not displace a working offline license of a
-	// higher tier someone applied by hand
-	if st.Effective != nil && st.Effective.ServerID == "" && tierRank[st.Effective.Tier] > tierRank[ent.Tier] {
+	// a plan license does not displace a working offline license of the
+	// same or a higher tier someone applied by hand (the plan ending
+	// would then take the offline license with it)
+	if st.Effective != nil && st.Effective.ServerID == "" && tierRank[st.Effective.Tier] >= tierRank[ent.Tier] {
 		return nil
 	}
 	if err := r.Store.SetLicense(ctx, lic, ent); err != nil {

@@ -145,6 +145,9 @@ func EntitlementStore(d P10Deps) (*subpkg.Store, *subpkg.Verifier) {
 				d.Logger.Warn("p10: persisted license unverifiable; degraded to free tier",
 					"event", "license_recover_failed", "err", err)
 			}
+			if ps == nil {
+				ps = subpkg.NewStore()
+			}
 			store = ps
 		} else {
 			store = subpkg.NewStore()
