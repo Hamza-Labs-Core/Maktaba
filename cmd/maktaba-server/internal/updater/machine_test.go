@@ -487,7 +487,12 @@ func TestWatchFatalRollsBackAtOnce(t *testing.T) {
 func TestWatchRestartsTooOftenRollsBack(t *testing.T) {
 	w := newWorld("1.4.0")
 	r := startRig(t, t.TempDir(), w, healthy)
-	_ = r.m.Prepare(homeJob())
+	// what is tested is the count of starts: the rig's clock moves a minute a reading,
+	// so on a slow machine the unhealthy time reached the default limit first (reason
+	// "starting"); a limit the clock cannot reach between the restarts keeps it out
+	job := homeJob()
+	job.HealthSeconds = 1 << 30
+	_ = r.m.Prepare(job)
 	r.waitState(StatePrepared)
 	_ = r.m.Apply("run-1")
 	r.waitExit()
