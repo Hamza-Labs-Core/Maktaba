@@ -106,7 +106,7 @@ the report), `scrub_test.go` (error kinds, code frames); the cloud's `telemetry_
 **Status: done (reworked 2026-10-26).**
 
 - Home: `api/internal/handlers/telemetry` (report, error counts, outbox, sender, the pipe);
-  the switch is `runtimecfg.ShareServerData`; slot 0161 replaced the old sink.
+  the switch is `runtimecfg.ShareServerData`; slot 0161 emptied the old sink and added the outbox.
 - Web: `web/src/lib/telemetry/` (consent per install in localStorage under `mkt:usage:*`,
   the queue, the client), `TelemetryPrompt.tsx` (the ask), `Settings/TelemetrySettings.tsx`
   (this app) and `Settings/ServerUsageData.tsx` (this server, admins). English and Arabic.

@@ -9,7 +9,8 @@ Maktaba Cloud's ingest, store and operator view.
 The first version (slot 0156) was a sink on the home: public `POST /api/telemetry` and
 `/api/telemetry/web-vitals` storing events in `telemetry_events` / `telemetry_web_vitals`
 for 90 / 30 days, read by no one but SQL. The data now goes to Maktaba Cloud (story 16.5
-says why); slot **0161** drops both tables (and what they held) for `telemetry_outbox`.
+says why); slot **0161** deletes what both tables held (they stay, empty, for the previous release; a
+later slot drops them) and adds `telemetry_outbox`.
 
 ## AC
 

@@ -1,12 +1,13 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0161 (Epic 16, stories 16.5 and 16.7 reworked): the old
--- telemetry sink goes; the outbox of what waits to go to Maktaba Cloud comes. BIGSERIAL
+-- SQLite parity sibling for slot 0161 (Epic 16, stories 16.5 and 16.7 reworked): what the
+-- old telemetry sink held is deleted (its tables stay, empty, for the previous release);
+-- the outbox of what waits to go to Maktaba Cloud comes. BIGSERIAL
 -- becomes INTEGER PRIMARY KEY, TIMESTAMPTZ TEXT, JSONB TEXT.
 --
-DROP TABLE IF EXISTS telemetry_web_vitals;
-DROP TABLE IF EXISTS telemetry_events;
+DELETE FROM telemetry_web_vitals;
+DELETE FROM telemetry_events;
 
 CREATE TABLE IF NOT EXISTS telemetry_outbox (
     id              INTEGER PRIMARY KEY,

@@ -11,7 +11,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 )
 
-// On Postgres, with every migration applied (slot 0161 dropped the old sink and
+// On Postgres, with every migration applied (slot 0161 emptied the old sink and
 // made the outbox): the outbox keeps, puts off, prunes and drops as the sender
 // needs; the switch and the home's id live in app_settings; every query of the
 // report runs against the real tables.
@@ -20,8 +20,8 @@ func TestOnPostgres(t *testing.T) {
 	ctx := context.Background()
 	for _, old := range []string{"telemetry_events", "telemetry_web_vitals"} {
 		var n int
-		if err := db.QueryRow(`SELECT count(*) FROM information_schema.tables WHERE table_name = $1`, old).Scan(&n); err != nil || n != 0 {
-			t.Fatalf("%s is still there (%d, %v)", old, n, err)
+		if err := db.QueryRow(`SELECT count(*) FROM ` + old).Scan(&n); err != nil || n != 0 {
+			t.Fatalf("%s holds %d rows (%v)", old, n, err)
 		}
 	}
 

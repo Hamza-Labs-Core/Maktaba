@@ -4,8 +4,10 @@
 --
 -- Slot 0161 (Epic 16, stories 16.5 and 16.7 reworked): anonymous usage data goes to
 -- Maktaba Cloud, for improving Maktaba, no longer to a sink on the home. The home's admin
--- already sees everything on the home, by name (Epic 44's analytics), so the old sink
--- (slot 0156: telemetry_events, telemetry_web_vitals) is dropped with what it held.
+-- already sees everything on the home, by name (Epic 44's analytics), so what the old
+-- sink (slot 0156: telemetry_events, telemetry_web_vitals) held is deleted. Its tables
+-- stay, empty, for the previous release (an automatic update's rollback runs it on this
+-- database, and it still writes there); a later slot drops them.
 --
 --   telemetry_outbox   what waits to go to Maktaba Cloud: the home's own daily report
 --                      (kind 'server', only while the admin's switch is on), an app's
@@ -18,12 +20,11 @@
 --                      the sender's retries (backoff); a row older than seven days is
 --                      dropped unsent (a home without internet keeps nothing for long)
 --
--- Not in a machine's copy: cluster_copy_excluded() swaps the old tables for the outbox
--- (slot 0159's list otherwise). maktaba_worker: the default rights (no narrowing, as 0152).
+-- Not in a machine's copy: cluster_copy_excluded() is slot 0159's list and the outbox. maktaba_worker: the default rights (no narrowing, as 0152).
 -- NO TRANSACTION for the index (CONCURRENTLY), as slot 0150.
 --
-DROP TABLE IF EXISTS telemetry_web_vitals;
-DROP TABLE IF EXISTS telemetry_events;
+DELETE FROM telemetry_web_vitals;
+DELETE FROM telemetry_events;
 
 CREATE TABLE IF NOT EXISTS telemetry_outbox (
     id              BIGSERIAL   PRIMARY KEY,
@@ -43,7 +44,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS telemetry_outbox_next_idx
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- slot 0159's exclusion, with the outbox for the old sink's tables
+-- slot 0159's exclusion and the outbox
 CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
 LANGUAGE sql IMMUTABLE AS $f$
     SELECT ARRAY[
@@ -69,9 +70,10 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- the public site's channels (slot 0154): read by the home's API only (a public
         -- decision is the home's; a machine's copy has no use for it)
         'tv_public_channels',
-        -- the license's state (slot 0155) and feature flags (0157): the home's API alone
-        -- reads them
-        'license_state', 'feature_flag_overrides', 'beta_cohorts',
+        -- the license's state (slot 0155), the old telemetry sink (0156, empty since
+        -- 0161) and feature flags (0157): the home's API alone reads them
+        'license_state', 'telemetry_events', 'telemetry_web_vitals',
+        'feature_flag_overrides', 'beta_cohorts',
         -- analytics (slot 0158): plays, viewings and the API's use per app, written by the
         -- home's API and front door every few seconds; a machine's copy has no use for them
         'tv_watch_sessions', 'api_usage_daily', 'api_usage_people_daily',
@@ -125,29 +127,6 @@ $f$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- what the old sink held is not brought back
 DROP TABLE IF EXISTS telemetry_outbox;
-
--- slot 0156's sink again, empty (its indexes were for the data it held)
-CREATE TABLE IF NOT EXISTS telemetry_events (
-    id               BIGSERIAL   PRIMARY KEY,
-    received_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    occurred_at      TIMESTAMPTZ,
-    device_pseudonym TEXT        NOT NULL,
-    event_kind       TEXT        NOT NULL,
-    app_version      TEXT,
-    os               TEXT,
-    os_version       TEXT,
-    locale           TEXT,
-    payload          JSONB       NOT NULL DEFAULT '{}'::jsonb
-);
-
--- FID was replaced by INP in Web Vitals v3; it is still accepted from older clients.
-CREATE TABLE IF NOT EXISTS telemetry_web_vitals (
-    id               BIGSERIAL        PRIMARY KEY,
-    received_at      TIMESTAMPTZ      NOT NULL DEFAULT now(),
-    device_pseudonym TEXT             NOT NULL,
-    metric           TEXT             NOT NULL CHECK (metric IN ('LCP', 'FID', 'CLS', 'INP', 'TTFB')),
-    value            DOUBLE PRECISION NOT NULL,
-    route            TEXT
-);
 -- +goose StatementEnd
