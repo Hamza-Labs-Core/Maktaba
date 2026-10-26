@@ -62,6 +62,25 @@ func (s *SQLPairingStore) Put(ctx context.Context, t PairingTicket) error {
 	return err
 }
 
+// Insert stores a ticket whose code is free, in one statement: of two inserts of one
+// code, one wins and the other gets ErrCodeExists.
+func (s *SQLPairingStore) Insert(ctx context.Context, t PairingTicket) error {
+	const q = `
+		INSERT INTO pairing_tickets (code, user_id, issued_at, expires_at, consumed_at)
+		VALUES ($1, $2, $3, $4, NULL)
+		ON CONFLICT (code) DO NOTHING`
+	res, err := s.DB.ExecContext(ctx, q, t.Code, t.UserID, t.IssuedAt, t.ExpiresAt)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return ErrCodeExists
+	}
+	return nil
+}
+
 // Get fetches a ticket without consuming it. Expiry is evaluated in Go
 // against the store clock so behaviour matches MemoryPairingStore.
 func (s *SQLPairingStore) Get(ctx context.Context, code string) (PairingTicket, error) {

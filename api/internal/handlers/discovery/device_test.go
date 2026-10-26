@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -153,5 +155,61 @@ func TestDeviceCodeIsBoundToTheKey(t *testing.T) {
 	}
 	if !validDeviceCode(a.deviceCode(raw)) {
 		t.Fatalf("code %q is not in the alphabet", a.deviceCode(raw))
+	}
+}
+
+// A restart with the same key (the home derives it from its signing key) keeps the
+// waiting TV's code; another key answers 410 at once, so the TV asks for a new code.
+func TestDeviceCodeOutlivesARestartWithItsKey(t *testing.T) {
+	key := DeviceKeyFrom([]byte("the home's signing key"))
+	store := discovery.NewMemoryPairingStore()
+	mk := func(k []byte) http.Handler {
+		h := &Handler{Store: store, Minter: &fakeMinter{}, TTL: time.Minute, DeviceKey: k}
+		r := chi.NewRouter()
+		h.Mount(r)
+		h.MountDevice(r, -1)
+		return r
+	}
+	before := mk(key)
+	s := startDevice(t, before)
+	if rec := do(before, http.MethodPost, "/api/pairing/approve", `{"code":"`+s.Code+`"}`, "viewer-1"); rec.Code != http.StatusOK {
+		t.Fatalf("approve = %d", rec.Code)
+	}
+	if rec := poll(mk(DeviceKeyFrom([]byte("a new signing key"))), s.DeviceCode); rec.Code != http.StatusGone {
+		t.Fatalf("another key's poll = %d, want 410", rec.Code)
+	}
+	if rec := poll(mk(key), s.DeviceCode); rec.Code != http.StatusOK {
+		t.Fatalf("after a restart with the same key = %d, want 200", rec.Code)
+	}
+}
+
+// Two people approving one code at once: one approval stands, the other is refused (the
+// TV is never signed in as the second, nor twice).
+func TestDeviceApprovalsRaceToOne(t *testing.T) {
+	_, _, r, _ := newDeviceHandler(t)
+	s := startDevice(t, r)
+	codes := make(chan int, 20)
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			codes <- do(r, http.MethodPost, "/api/pairing/approve", `{"code":"`+s.Code+`"}`, fmt.Sprintf("user-%d", i)).Code
+		}(i)
+	}
+	wg.Wait()
+	close(codes)
+	ok := 0
+	for c := range codes {
+		switch c {
+		case http.StatusOK:
+			ok++
+		case http.StatusConflict:
+		default:
+			t.Fatalf("approve = %d", c)
+		}
+	}
+	if ok != 1 {
+		t.Fatalf("%d approvals stood, want 1", ok)
 	}
 }

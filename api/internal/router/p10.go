@@ -191,6 +191,10 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 		// default-denied on every library read/search (Defect 1).
 		acl := &authz.ACLStore{DB: d.DB}
 		ph.Minter = discoveryh.NewTokenMinter(resolver, acl, refresh.New(d.DB), d.Keys)
+		// the TVs' sign-in codes outlive a restart: their key comes from the signing key
+		if k := d.Keys.Active(); k != nil && k.Private != nil {
+			ph.DeviceKey = discoveryh.DeviceKeyFrom(k.Private.D.Bytes())
+		}
 		ph.Audit = pairAudit{w: securityaudit.NewWriter(d.DB)}
 	}
 	ph.Mount(r)

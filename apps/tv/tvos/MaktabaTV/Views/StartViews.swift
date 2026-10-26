@@ -140,7 +140,10 @@ struct TVSignInView: View {
             }
             .padding(80)
         }
-        .task(id: session.current?.url) { await pair() }
+        // the code is asked for only while it shows
+        .task(id: CodeTask(home: session.current?.url, shown: !byPassword)) {
+            if !byPassword { await pair() }
+        }
     }
 
     private var codePanel: some View {
@@ -210,7 +213,16 @@ struct TVSignInView: View {
                     case .waiting:
                         continue
                     case .approved:
-                        try await session.signedInByCode()
+                        // this TV holds the tokens now: keep asking who it is, never for a new code
+                        while !Task.isCancelled {
+                            do {
+                                try await session.signedInByCode()
+                                return
+                            } catch {
+                                problem = error.localizedDescription
+                                try await Task.sleep(for: .seconds(3))
+                            }
+                        }
                         return
                     case .expired:
                         break waiting
@@ -224,6 +236,12 @@ struct TVSignInView: View {
             }
         }
     }
+}
+
+/// What the code task runs for: this home, while its code shows.
+private struct CodeTask: Equatable {
+    let home: URL?
+    let shown: Bool
 }
 
 /// Username and password with the TV's keyboard.

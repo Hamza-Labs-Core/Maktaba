@@ -326,4 +326,8 @@ func TestDirect_ContentTypeFromTheProbedFormatList(t *testing.T) {
 			t.Errorf("container %q: Content-Type %q, want %q", container, got, want)
 		}
 	}
+	// Matroska and WebM probe alike: a .webm file is WebM
+	if got := contentTypeFor(&probe.Row{Container: "matroska,webm", Path: "/m/a.webm"}); got != "video/webm" {
+		t.Errorf("a .webm file: Content-Type %q, want video/webm", got)
+	}
 }

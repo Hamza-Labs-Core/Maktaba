@@ -7,12 +7,14 @@
 //	POST /api/pairing/device/token  public, per IP: the TV polls; 202 until approved,
 //	                                then its tokens (once)
 //
-// The TV's request writes nothing: the device code it keeps is its expiry and a random
-// part, and the code it shows is an HMAC of that under this process's key. So only the
-// TV holding the device code can collect an approval, and a code seen on the screen (or
+// The TV's request writes nothing: the device code it keeps is its expiry, the key's id
+// and a random part, and the code it shows is an HMAC of that under the key (DeviceKey:
+// the home derives it from its signing key, so a restart keeps it). So only the TV
+// holding the device code can collect an approval, and a code seen on the screen (or
 // guessed) is worth nothing without it. The approval is a pairing ticket under
 // "tv." + code, for the approver: Exchange normalises to upper case and never reaches it.
-// A restart forgets the key; a TV waiting then asks for a new code (410).
+// A device code made under another key (a key rotation, or a home without a signing key
+// restarting) gets 410 and the TV asks for a new one.
 package discovery
 
 import (
@@ -47,11 +49,15 @@ const (
 	crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 )
 
-// deviceKeys is the HMAC key per Handler, made on first use.
+// deviceKeys is the HMAC key per Handler and its id, made on first use.
 type deviceKeys struct {
 	once sync.Once
 	key  []byte
+	id   [4]byte
 }
+
+// deviceCodeLen is a device code's bytes: expiry (8), the key's id (4), random (16).
+const deviceCodeLen = 8 + 4 + 16
 
 // MountDevice attaches the TV sign-in routes. perMin caps the public ones per IP
 // (0: the defaults; negative: no limit, for tests).
@@ -85,9 +91,10 @@ type deviceStartResponse struct {
 // DeviceStart gives a TV a code to show.
 func (h *Handler) DeviceStart(w http.ResponseWriter, r *http.Request) {
 	exp := h.now().Add(DeviceCodeTTL)
-	raw := make([]byte, 8+16)
+	raw := make([]byte, deviceCodeLen)
 	binary.BigEndian.PutUint64(raw, uint64(exp.Unix()))
-	if _, err := rand.Read(raw[8:]); err != nil {
+	copy(raw[8:12], h.keys().id[:])
+	if _, err := rand.Read(raw[12:]); err != nil {
 		httperror.Write(w, r, httperror.Internal("device code").Wrap(err))
 		return
 	}
@@ -127,20 +134,16 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := deviceTicketPrefix + code
-	// an approval stands once: approving again (as anyone) would hand the TV another session
-	switch _, err := h.Store.Get(r.Context(), key); {
-	case errors.Is(err, discovery.ErrCodeNotFound):
-	case err == nil, errors.Is(err, discovery.ErrCodeExpired), errors.Is(err, discovery.ErrCodeConsumed):
+	// an approval stands once (one atomic insert): approving again, as anyone, would
+	// hand the TV another session or another person's
+	now := h.now()
+	switch err := h.Store.Insert(r.Context(), discovery.PairingTicket{
+		Code: key, UserID: p.UserID, IssuedAt: now, ExpiresAt: now.Add(DeviceCodeTTL),
+	}); {
+	case errors.Is(err, discovery.ErrCodeExists):
 		httperror.Write(w, r, httperror.Conflict("", "code already approved"))
 		return
-	default:
-		httperror.Write(w, r, httperror.Internal("pairing").Wrap(err))
-		return
-	}
-	now := h.now()
-	if err := h.Store.Put(r.Context(), discovery.PairingTicket{
-		Code: key, UserID: p.UserID, IssuedAt: now, ExpiresAt: now.Add(DeviceCodeTTL),
-	}); err != nil {
+	case err != nil:
 		httperror.Write(w, r, httperror.Internal("store approval").Wrap(err))
 		return
 	}
@@ -164,13 +167,13 @@ func (h *Handler) DeviceToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(req.DeviceCode)
-	if err != nil || len(raw) != 24 {
+	if err != nil || len(raw) != deviceCodeLen {
 		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{
 			{Field: "device_code", Message: "not a device code"},
 		}))
 		return
 	}
-	if h.now().Unix() > int64(binary.BigEndian.Uint64(raw)) {
+	if h.now().Unix() > int64(binary.BigEndian.Uint64(raw)) || !hmac.Equal(raw[8:12], h.keys().id[:]) {
 		httperror.Write(w, r, gone("code expired: ask for a new one"))
 		return
 	}
@@ -211,19 +214,33 @@ func (h *Handler) DeviceToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// keys is the device key (DeviceKey, else random for this process) and its id.
+func (h *Handler) keys() *deviceKeys {
+	h.device.once.Do(func() {
+		h.device.key = h.DeviceKey
+		if h.device.key == nil {
+			h.device.key = make([]byte, 32)
+			if _, err := rand.Read(h.device.key); err != nil {
+				panic("pairing: no randomness for the device key: " + err.Error())
+			}
+		}
+		sum := sha256.Sum256(append([]byte("maktaba tv pairing key id\x00"), h.device.key...))
+		copy(h.device.id[:], sum[:4])
+	})
+	return &h.device
+}
+
+// DeviceKeyFrom derives the TV pairing key from a home's secret (its signing key), so
+// the codes TVs wait on outlive a restart.
+func DeviceKeyFrom(secret []byte) []byte {
+	m := hmac.New(sha256.New, secret)
+	m.Write([]byte("maktaba tv pairing"))
+	return m.Sum(nil)
+}
+
 // deviceCode is the eight characters a device code shows as: 40 bits of its HMAC.
 func (h *Handler) deviceCode(raw []byte) string {
-	h.device.once.Do(func() {
-		if h.DeviceKey != nil {
-			h.device.key = h.DeviceKey
-			return
-		}
-		h.device.key = make([]byte, 32)
-		if _, err := rand.Read(h.device.key); err != nil {
-			panic("pairing: no randomness for the device key: " + err.Error())
-		}
-	})
-	m := hmac.New(sha256.New, h.device.key)
+	m := hmac.New(sha256.New, h.keys().key)
 	m.Write(raw)
 	sum := m.Sum(nil)
 	v := uint64(sum[0])<<32 | uint64(sum[1])<<24 | uint64(sum[2])<<16 | uint64(sum[3])<<8 | uint64(sum[4])

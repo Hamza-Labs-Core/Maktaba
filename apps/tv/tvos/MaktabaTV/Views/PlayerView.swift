@@ -34,7 +34,9 @@ final class TVPlayback {
     /// Stops, and returns once the home has where it stopped (so a page shown next offers
     /// to resume there).
     func stop() async {
+        // let a stream being opened finish first: its session is then ours to close
         running?.cancel()
+        await running?.value
         running = nil
         player?.pause()
         let stopped = session.map { session in
@@ -87,6 +89,7 @@ final class TVPlayback {
             let p = player ?? AVPlayer()
             p.replaceCurrentItem(with: item)
             if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
+            try Task.checkCancellation()
             player = p
             problem = nil
             p.play()
