@@ -192,6 +192,18 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
             return 1
         raise
 
+    if database.dialect == "postgres" and cfg.role == "home":
+        # semantic search's store (Epic 43): what pgvector allows, and a home with no
+        # Chroma vectors on Postgres. A machine decides nothing: its Chroma folder is
+        # not the home's
+        from .search import pgstore
+
+        try:
+            state = await pgstore.prepare(database)
+            log.info("semantic_store", store=state.store, pgvector=state.ready)
+        except Exception as exc:  # noqa: BLE001 - search falls back, the worker runs
+            log.warning("semantic_store_prepare_failed", error=f"{type(exc).__name__}: {exc}")
+
     # Recent-logs HTTP endpoint (/logs/recent) on a daemon thread so the
     # API's diagnostics export can proxy this service's ring buffer.
     # Opt-in via --logs-addr / $MAKTABA_PIPELINE_LOGS_ADDR.
@@ -480,7 +492,19 @@ def _build_parser() -> argparse.ArgumentParser:
     from .models.fetch_cli import add_parser as add_models_parser
 
     add_models_parser(subparsers)
+    _add_copy_chroma_parser(subparsers)
     return parser
+
+
+def _add_copy_chroma_parser(subparsers: Any) -> None:
+    """``copy-chroma`` (story 43.3). Its module needs numpy (the ``search`` extra):
+    without it the command is still listed, and says so when run."""
+    try:
+        from .search.chroma_copy import add_parser
+    except ImportError:
+        subparsers.add_parser("copy-chroma", help="Needs the search extra (numpy).")
+        return
+    add_parser(subparsers)
 
 
 def _join(args: argparse.Namespace, parser: argparse.ArgumentParser, log: Any) -> int:
@@ -520,7 +544,7 @@ def main(argv: list[str] | None = None) -> int:
     # --database-url never attach to the namespace and _serve crashes
     # with AttributeError. Both the prod ENTRYPOINT (`python -m
     # maktaba_pipeline`) and the dev supervisor invoke us this way.
-    _subcommands = {"run", "doctor", "join", "cluster", "storage", "models"}
+    _subcommands = {"run", "doctor", "join", "cluster", "storage", "models", "copy-chroma"}
     _top_level_flags = {"--version", "-V", "--help", "-h"}
     if not any(a in _subcommands for a in argv) and not any(a in _top_level_flags for a in argv):
         argv = ["run", *argv]
@@ -552,6 +576,13 @@ def main(argv: list[str] | None = None) -> int:
         from .models.fetch_cli import main as models_main
 
         return models_main(args)
+    if command == "copy-chroma":
+        try:
+            from .search.chroma_copy import main as copy_main
+        except ImportError as exc:
+            sys.stderr.write(f"copy-chroma needs the search extra: {exc}\n")
+            return 78
+        return copy_main(args)
 
     parser.print_help()
     return 2

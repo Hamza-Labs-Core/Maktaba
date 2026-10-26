@@ -26,7 +26,11 @@ x-build-args: &build-args
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # Postgres 16 with pgvector (semantic search, specs/epics/43-pgvector-search), the
+    # version the app bundles build. Debian-based: a data volume made by the earlier
+    # postgres:16-alpine image (musl) needs a REINDEX of its text indexes once, as glibc
+    # sorts some strings differently.
+    image: pgvector/pgvector:0.8.7-pg16
     restart: *restart
     # Parallel queries share memory through /dev/shm; Docker's default 64 MB ran
     # out under the transcription load ("could not resize shared memory segment").

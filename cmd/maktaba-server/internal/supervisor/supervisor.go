@@ -96,6 +96,16 @@ type Process struct {
 	// migrations). report sets the process's detail in /processes (an error's
 	// too: DetailOf).
 	Prepare func(ctx context.Context, report func(Detail)) error
+	// Once: a job that ends (the copy of the search index into Postgres, story 43.3).
+	// Its clean exit leaves it exited whatever the restart policy; a failure starts it
+	// again with the policy's backoff, until Tries failures in a row (a run of
+	// healthy_after or longer starts the count again): then it is left failed until the
+	// server's next start.
+	Once  bool
+	Tries int
+	// Progress, when set, is the Detail /processes shows while the process runs (how far
+	// its job is). Called outside the supervisor's lock; it must be quick.
+	Progress func() Detail
 }
 
 // graceFor is how long p has to stop once asked: grace, or its own StopGrace when

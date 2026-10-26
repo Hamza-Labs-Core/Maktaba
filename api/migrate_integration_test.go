@@ -23,7 +23,7 @@ import (
 // confirm rollback is clean.
 //
 // Tier: integration (build tag). The CI _integration.yml workflow
-// provisions postgres:16.4 and exports DATABASE_URL.
+// provisions Postgres 16 with pgvector (pgvector/pgvector:0.8.7-pg16) and exports DATABASE_URL.
 //
 // Locally: `DATABASE_URL=postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
 //

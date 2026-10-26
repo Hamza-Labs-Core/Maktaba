@@ -18,10 +18,10 @@ from maktaba_pipeline.search.semantic import PASSAGE_PREFIX, QUERY_PREFIX
 DIM = 32
 
 
-def bag_vector(text: str) -> list[float]:
-    v = [0.0] * DIM
+def bag_vector(text: str, dim: int = DIM) -> list[float]:
+    v = [0.0] * dim
     for word in text.split():
-        v[sum(word.encode("utf-8")) % DIM] += 1.0
+        v[sum(word.encode("utf-8")) % dim] += 1.0
     norm = math.sqrt(sum(x * x for x in v)) or 1.0
     return [x / norm for x in v]
 
@@ -44,14 +44,16 @@ class FakeEmbedder:
     model_name: str = "fake/e5"
     passages: list[list[str]] = field(default_factory=list)
     queries: list[str] = field(default_factory=list)
+    #: 384 for segment_embeddings (halfvec(384))
+    dim: int = DIM
 
     def embed_passages(self, texts: Sequence[str]) -> list[list[float]]:
         self.passages.append(list(texts))
-        return [bag_vector(t) for t in texts]
+        return [bag_vector(t, self.dim) for t in texts]
 
     def embed_query(self, text: str) -> list[float]:
         self.queries.append(text)
-        return bag_vector(text)
+        return bag_vector(text, self.dim)
 
 
 def _matches(meta: dict[str, Any], where: dict[str, Any] | None) -> bool:

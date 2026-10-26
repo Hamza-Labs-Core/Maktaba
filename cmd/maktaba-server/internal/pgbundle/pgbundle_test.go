@@ -143,7 +143,7 @@ func TestPrepareFirstStart(t *testing.T) {
 	}
 	sql := read(t, filepath.Join(logDir, "psql.sql"))
 	app := strings.TrimSpace(read(t, b.passwordFile(AppRole)))
-	for _, want := range []string{"PASSWORD '" + app + "'", "CREATE DATABASE maktaba OWNER maktaba", "CREATE EXTENSION IF NOT EXISTS pg_trgm"} {
+	for _, want := range []string{"PASSWORD '" + app + "'", "CREATE DATABASE maktaba OWNER maktaba", "CREATE EXTENSION IF NOT EXISTS pg_trgm", vectorSQL} {
 		if !strings.Contains(sql, want) {
 			t.Errorf("bootstrap SQL lacks %q:\n%s", want, sql)
 		}
@@ -476,6 +476,44 @@ func TestPrepareAnOlderClusterLetsTheAppRoleProvision(t *testing.T) {
 	}
 	if n := lines(t, filepath.Join(logDir, "psql.calls")); n != 3 {
 		t.Fatalf("the bootstrap ran %d times, want 3", n)
+	}
+
+	// a home provisioned before the bundle had pgvector (rev 3): once more, with the
+	// extension made in the app's database when this Postgres has it
+	if err := os.WriteFile(filepath.Join(b.Data, clusterMarker), []byte("2026-10-20T00:00:00Z\nrev 3\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	sql = read(t, filepath.Join(logDir, "psql.sql"))
+	if !strings.Contains(sql, vectorSQL) || strings.Contains(sql, "CREATE DATABASE") {
+		t.Fatalf("a home of rev 3: pgvector, without the app's bootstrap:\n%s", sql)
+	}
+	if n := lines(t, filepath.Join(logDir, "psql.calls")); n != 4 {
+		t.Fatalf("the bootstrap ran %d times, want 4", n)
+	}
+}
+
+// pgvector is made only when this Postgres has it (an older bundle, a machine's fetched
+// Postgres, must still start), by the superuser: it is not a trusted extension.
+func TestVectorOnlyWhenAvailable(t *testing.T) {
+	want := "SELECT 'CREATE EXTENSION IF NOT EXISTS vector'\n" +
+		"  WHERE EXISTS (SELECT FROM pg_available_extensions WHERE name = 'vector')\\gexec\n"
+	if vectorSQL != want {
+		t.Fatalf("vectorSQL = %q, want %q", vectorSQL, want)
+	}
+	for name, sql := range map[string]string{"bootstrap": bootstrapSQL("pw"), "restore": recreateSQL(RestoreOptions{}),
+		"cluster": clusterSQL} {
+		if !strings.Contains(sql, vectorSQL) {
+			t.Errorf("%s SQL lacks pgvector:\n%s", name, sql)
+		}
+		if strings.Contains(sql, "\nCREATE EXTENSION IF NOT EXISTS vector") {
+			t.Errorf("%s SQL makes pgvector unconditionally:\n%s", name, sql)
+		}
+	}
+	if !slices.Contains(Extensions, "vector") {
+		t.Errorf("Extensions = %v: a home's dump has vector", Extensions)
 	}
 }
 

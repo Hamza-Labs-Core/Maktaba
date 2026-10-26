@@ -3,7 +3,7 @@
 # story 36.7), for macOS arm64:
 #
 #   bin/       maktaba-server (web UI embedded) maktaba-api maktaba-streaming maktaba-launcher
-#   postgres/  bin/ lib/ share/          PostgreSQL 16, relocatable
+#   postgres/  bin/ lib/ share/          PostgreSQL 16, relocatable, with pgvector
 #   ffmpeg/    ffmpeg ffprobe            static
 #   ollama/    ollama llama-server       the language model server (arm64)
 #   python/    CPython 3.12              python-build-standalone, stdlib precompiled
@@ -52,7 +52,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ "$(uname -s)" = Darwin ] || die "the Mac app payload is built on macOS (codesign, ditto)"
-for t in go uv pnpm curl unzip shasum codesign file lipo; do
+for t in go uv pnpm curl unzip shasum codesign file lipo make xcrun; do
     command -v "$t" >/dev/null 2>&1 || die "$t is required"
 done
 [ -n "$VERSION" ] || VERSION="$(git -C "$REPO_ROOT" describe --tags --dirty --always 2>/dev/null || echo dev)"
@@ -109,6 +109,21 @@ find "$OUT/postgres/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_ou
     while IFS= read -r f; do rm -f "$f"; done || true
 cp "$pg/COPYRIGHT" "$OUT/licenses/postgresql.txt"
 cp "$pg/LICENSE" "$OUT/licenses/postgresql-binaries.txt"
+
+# --- pgvector (semantic search in Postgres, specs/epics/43-pgvector-search) ------------------
+log "pgvector $PGVECTOR_VERSION"
+tar -xzf "$(fetch "$PGVECTOR_URL" "$PGVECTOR_SHA256" "pgvector-$PGVECTOR_VERSION.tar.gz")" -C "$WORK"
+pgv="$WORK/pgvector-$PGVECTOR_VERSION"
+[ -f "$pgv/Makefile" ] && [ -f "$pgv/vector.control" ] || die "unexpected pgvector archive layout"
+# built against the PostgreSQL above (its pg_config, pgxs). PG_SYSROOT: the archive's
+# build files name its builder's Xcode SDK. OPTFLAGS empty: no -march=native, so the
+# module runs on every Apple silicon Mac. Signed below with every other Mach-O file.
+make -C "$pgv" --no-print-directory PG_CONFIG="$pg/bin/pg_config" PG_SYSROOT="$(xcrun --show-sdk-path)" OPTFLAGS="" \
+    >"$WORK/pgvector.log" 2>&1 || { tail -20 "$WORK/pgvector.log" >&2; die "pgvector did not build"; }
+[ -f "$pgv/vector.dylib" ] || die "pgvector built no vector.dylib"
+cp "$pgv/vector.dylib" "$OUT/postgres/lib/"
+cp "$pgv/vector.control" "$pgv"/sql/vector--*.sql "$OUT/postgres/share/extension/"
+cp "$pgv/LICENSE" "$OUT/licenses/pgvector.txt"
 
 # --- ffmpeg --------------------------------------------------------------------------------------
 log "ffmpeg $FFMPEG_VERSION"
@@ -206,6 +221,7 @@ cat >"$OUT/payload.json" <<EOF
   "version": "$VERSION",
   "platform": "darwin-arm64",
   "postgres": {"version": "$POSTGRES_VERSION", "source": "$POSTGRES_URL", "sha256": "$POSTGRES_SHA256"},
+  "pgvector": {"version": "$PGVECTOR_VERSION", "source": "$PGVECTOR_URL", "sha256": "$PGVECTOR_SHA256"},
   "ffmpeg": {"version": "$FFMPEG_VERSION", "source": "$FFMPEG_URL", "sha256": "$FFMPEG_SHA256",
              "ffprobe_source": "$FFPROBE_URL", "ffprobe_sha256": "$FFPROBE_SHA256"},
   "python": {"version": "$PYTHON_VERSION", "source": "$PYTHON_URL", "sha256": "$PYTHON_SHA256"},

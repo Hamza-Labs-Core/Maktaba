@@ -14,7 +14,11 @@ and schedules:
    that old (0, the default: only scans someone asks for);
 5. the periodic stages: a catalog stage with ``every_minutes_rule`` (Plex Live TV's
    channel-map check) is queued once that many minutes passed since its last job
-   (0: never).
+   (0: never);
+6. the semantic store (Epic 43): once search reads ``segment_embeddings``, a video whose
+   last ``index`` succeeded but has no vector there (a new home after a switchover: the
+   machines' copies hold none) is indexed again; its fingerprint says so
+   (stages/index.py).
 """
 
 from __future__ import annotations
@@ -53,6 +57,7 @@ class ReconcileReport:
     version_sweep: int = 0
     library_sweep: int = 0
     periodic: int = 0
+    semantic_missing: int = 0
 
 
 async def reconcile_once(
@@ -76,7 +81,8 @@ async def reconcile_once(
         sweep = await _version_sweep(db, graph)
         scans = await _library_sweeps(db, graph, t)
         periodic = await _periodic_stages(db, graph, t)
-    return ReconcileReport(True, propagated, refresh, sweep, scans, periodic)
+        missing = await _semantic_sweep(db, graph)
+    return ReconcileReport(True, propagated, refresh, sweep, scans, periodic, missing)
 
 
 async def _repair_unpropagated(db: Any, graph: Mapping[str, StageDef], t: datetime) -> int:
@@ -242,6 +248,44 @@ async def _version_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
     return total
 
 
+async def _semantic_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
+    """An ``index`` for each video whose latest index job succeeded, whose active
+    transcript has words, and that has no vector in ``segment_embeddings``, once search
+    reads it. A failed or live job is the latest: not queued again."""
+    if not is_pg(db) or "index" not in graph:
+        return 0
+    from ..search.pgstore import store_state
+
+    state = await store_state(db)
+    if not (state.read_postgres and state.ready):
+        return 0
+    rows = await db.fetch(
+        "SELECT j.subject_id AS sid FROM processing_jobs j"
+        " WHERE j.stage = 'index' AND j.subject_kind = 'video' AND j.state = 'done'"
+        f" AND j.outcome IN {SUCCESS}"
+        " AND j.id = (SELECT max(k.id) FROM processing_jobs k"
+        "  WHERE k.subject_kind = 'video' AND k.subject_id = j.subject_id AND k.stage = 'index')"
+        " AND NOT EXISTS (SELECT 1 FROM segment_embeddings e WHERE e.video_id = j.subject_id)"
+        " AND EXISTS (SELECT 1 FROM transcripts t"
+        "  JOIN transcript_segments s ON s.transcript_id = t.id"
+        "  WHERE t.video_id = j.subject_id AND t.is_active AND btrim(s.text) <> '')"
+        " ORDER BY j.id LIMIT $1",
+        SWEEP_BATCH,
+    )
+    n = 0
+    for r in rows:
+        res = await enqueue_job(
+            db,
+            subject_kind="video",
+            subject_id=UUID(str(r["sid"])),
+            stage="index",
+            priority=SWEEP_PRIORITY,
+            reason={"why": "no vectors in segment_embeddings", "by": "system"},
+        )
+        n += 1 if res.job_id is not None else 0
+    return n
+
+
 async def run_reconciler(
     db: Any,
     graph: Mapping[str, StageDef],
@@ -254,7 +298,7 @@ async def run_reconciler(
             report = await reconcile_once(db, graph)
             if report.leader and (
                 report.propagated or report.yt_refresh or report.version_sweep
-                or report.library_sweep or report.periodic
+                or report.library_sweep or report.periodic or report.semantic_missing
             ):  # fmt: skip
                 _log.info(
                     "reconciled",
@@ -263,6 +307,7 @@ async def run_reconciler(
                     version_sweep=report.version_sweep,
                     library_sweep=report.library_sweep,
                     periodic=report.periodic,
+                    semantic_missing=report.semantic_missing,
                 )
         except Exception:  # noqa: BLE001 - the reconciler must never take the worker down
             _log.exception("reconcile_failed")

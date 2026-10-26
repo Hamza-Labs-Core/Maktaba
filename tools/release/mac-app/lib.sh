@@ -4,7 +4,7 @@
 
 # The pieces pins.env pins: <PREFIX>_URL and <PREFIX>_SHA256 each (and <PREFIX>_VERSION
 # for the ones with a version of their own; ffprobe shares ffmpeg's).
-PINNED=(POSTGRES FFMPEG FFPROBE PYTHON OLLAMA)
+PINNED=(POSTGRES PGVECTOR FFMPEG FFPROBE PYTHON OLLAMA)
 
 sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
 

@@ -55,6 +55,7 @@ __all__ = [
     "chroma_dir",
     "collection_name",
     "embed_model",
+    "embed_segments",
     "get_embedder",
     "close_clients",
     "collection_open",
@@ -510,6 +511,16 @@ def video_vectors(
     return out
 
 
+def embed_segments(
+    embedder: Embedder, segments: Sequence[IndexedSegment]
+) -> tuple[list[IndexedSegment], list[list[float]]]:
+    """One batch's non-blank segments and their vectors."""
+    chunk = [s for s in segments if s.text.strip()]
+    if not chunk:
+        return [], []
+    return chunk, embedder.embed_passages([s.text for s in chunk])
+
+
 @dataclass(frozen=True, slots=True)
 class SegmentHit:
     segment_id: int
@@ -568,10 +579,7 @@ class SemanticIndex:
         self, segments: Sequence[IndexedSegment]
     ) -> tuple[list[IndexedSegment], list[list[float]]]:
         """One batch's non-blank segments and their vectors (the model only: no Chroma)."""
-        chunk = [s for s in segments if s.text.strip()]
-        if not chunk:
-            return [], []
-        return chunk, self.embedder.embed_passages([s.text for s in chunk])
+        return embed_segments(self.embedder, segments)
 
     def write_vectors(
         self,

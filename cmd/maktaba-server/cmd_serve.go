@@ -306,6 +306,12 @@ func runServe(cfg config.Config, opts serveOptions) error {
 				return err
 			}
 			procs = append(procs, index...)
+			// Epic 43: the search index copied from Chroma into Postgres, once
+			copyChroma, err := supervisor.BuildChromaCopy(sopts)
+			if err != nil {
+				return err
+			}
+			procs = append(procs, copyChroma...)
 		}
 		// Epic 33 story 33.1: the streaming role is the front door; the channel
 		// engine runs in the TV slots next to it (live + hot standby; the third
