@@ -122,12 +122,17 @@ func (o *Orchestrator) finishOnce(ctx context.Context, integrations Integrations
 		for nid, m := range machines {
 			_, _ = o.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = $2, updated_at = now() WHERE id = $1`, nid, m.PriorDrain)
 		}
+	}
+	if _, err = o.DB.ExecContext(ctx, `UPDATE cluster_switchovers SET state = $2, machines = $3::jsonb,
+	    integrations = $4::jsonb, updated_at = now(), done_at = CASE WHEN $2 = 'done' THEN now() ELSE done_at END
+	    WHERE id = $1`, id, newState, string(mj), string(ij)); err != nil {
+		return err
+	}
+	if done {
+		// said once the row holds it
 		o.log().Info("switchover: done on the new home", "id", id, "term", term, "event", "switchover_done")
 	}
-	_, err = o.DB.ExecContext(ctx, `UPDATE cluster_switchovers SET state = $2, machines = $3::jsonb,
-	    integrations = $4::jsonb, updated_at = now(), done_at = CASE WHEN $2 = 'done' THEN now() ELSE done_at END
-	    WHERE id = $1`, id, newState, string(mj), string(ij))
-	return err
+	return nil
 }
 
 // Recorded is a switch as the database has it (this home's latest one, the new home's
