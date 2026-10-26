@@ -19,6 +19,13 @@ opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Time
       -o DPkg::Lock::Timeout=60 -o Dpkg::Progress-Fancy=0 -o Dpkg::Use-Pty=0
       -o "Dir::Etc::sourceparts=$parts" -o APT::Get::List-Cleanup=0)
 
+# APT_CACHE_DIR keeps the downloaded packages where CI's cache saves and restores them:
+# the runner's mirror has served 50 KB/s for a whole step, and a warm run fetches nothing
+if [ -n "${APT_CACHE_DIR:-}" ]; then
+  mkdir -p "$APT_CACHE_DIR/partial"
+  opts+=(-o "Dir::Cache::Archives=$APT_CACHE_DIR")
+fi
+
 for try in 1 2 3; do
   if sudo timeout 180 apt-get "${opts[@]}" update -qq; then
     break
@@ -47,10 +54,17 @@ for try in 1 2; do
   # -q, not -qq: a stall shows the package it stopped on
   if sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 timeout "$limit" \
     apt-get "${opts[@]}" install -y -q --no-install-recommends "$@" >&2; then
+    # the cache's files are root's after apt: the cache action saves them as the runner
+    [ -n "${APT_CACHE_DIR:-}" ] && sudo chown -R "$(id -u):$(id -g)" "$APT_CACHE_DIR"
     exit 0
   fi
   [ "$try" = 2 ] && { echo "::error::apt-get install failed twice" >&2; exit 1; }
   echo "::warning::apt-get install failed or stalled (try $try), trying Ubuntu's own archive" >&2
+  # the runner reads its mirrors from /etc/apt/apt-mirrors.txt (sources say
+  # mirror+file:...): Ubuntu's own archive goes first there, and in plain sources
+  if [ -f /etc/apt/apt-mirrors.txt ]; then
+    printf 'http://archive.ubuntu.com/ubuntu/\tpriority:1\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+  fi
   for f in /etc/apt/sources.list "$parts"/*.sources; do
     [ -f "$f" ] && sudo sed -i 's#http://azure\.archive\.ubuntu\.com#http://archive.ubuntu.com#g' "$f"
   done

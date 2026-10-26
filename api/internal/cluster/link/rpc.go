@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/linkctx"
@@ -226,6 +227,9 @@ type rpcWriter struct {
 	err      error
 	// moved: the rest goes to the svc_body stream through this pipe
 	moved *io.PipeWriter
+	// done is set when the handler ended its answer; a request cancelled before that cuts
+	// the stream (cut), one ended after it lets the stream finish its last bytes
+	done atomic.Bool
 }
 
 func (w *rpcWriter) Header() http.Header { return w.header }
@@ -324,10 +328,14 @@ func (w *rpcWriter) Flush() {
 func (w *rpcWriter) move() error {
 	w.sendHead()
 	pr, pw := io.Pipe()
-	tok, taken, reason := w.c.srv.issueBody(w.c, pr)
+	cut := make(chan struct{})
+	var cutOnce sync.Once
+	cutNow := func() { cutOnce.Do(func() { close(cut) }) }
+	tok, taken, reason := w.c.srv.issueBody(w.c, cut, pr)
 	if tok == "" {
 		w.err = errors.New("link: no stream for a large answer: " + reason)
 		_ = pr.Close()
+		cutNow()
 		return w.err
 	}
 	end, _ := json.Marshal(EndBody{Moved: &StreamTicket{T: "stream.ticket", Purpose: PurposeSvcBody, Ticket: tok,
@@ -343,8 +351,14 @@ func (w *rpcWriter) move() error {
 	}
 	w.moved = pw
 	// a machine that never opens the stream must not hold the handler for ever; a request
-	// cancelled ends the stream's body
-	context.AfterFunc(w.ctx, func() { _ = pw.CloseWithError(context.Canceled) })
+	// cancelled before its answer ended ends the stream's body and cuts the stream (a write
+	// to a machine that stopped reading is not left blocked)
+	context.AfterFunc(w.ctx, func() {
+		_ = pw.CloseWithError(context.Canceled)
+		if !w.done.Load() {
+			cutNow()
+		}
+	})
 	go func() {
 		select {
 		case <-taken:
@@ -360,6 +374,7 @@ func (w *rpcWriter) finish() {
 		w.WriteHeader(http.StatusOK)
 	}
 	if w.moved != nil {
+		w.done.Store(true)
 		_ = w.moved.Close()
 		return
 	}
