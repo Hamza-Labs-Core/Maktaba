@@ -102,7 +102,9 @@ async def _from_database(url: str | None, path_map: str | None) -> Path | None:
 
     node = None if url else load_node()
     if not url and node is not None and node.joined:
-        url = node.database_url
+        from .homedb import home_dsn
+
+        url = home_dsn(node)
     if not url:
         return None
     from ..runtime import Database
