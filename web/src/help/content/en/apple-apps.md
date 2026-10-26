@@ -29,6 +29,7 @@ The apps ask for one permission, and only on iPhone, iPad and the Mac. They ask 
 - **How to grant it:** on the first run, **Before you start** shows **Local Network** as **Not asked yet**. Tap **Allow access**: the system asks once, and you choose **Allow**. The card then shows **Allowed**.
 - **Without it:** the app can't reach a home on your own network: connecting fails or waits. A home you reach over the internet (an `https://` address outside your network) still works.
 - **If you said no:** the card shows **Not allowed** and a button that opens the right place. You can also go there yourself:
+
   - **iPhone and iPad:** Settings → Privacy & Security → Local Network, then turn on **Maktaba** (Player) or **Maktaba Remote**. The same switch is on the app's own page: Settings → Apps → Maktaba → Local Network. **Open Settings** in the app opens that page.
   - **Mac:** System Settings → Privacy & Security → Local Network, then turn on **Maktaba Player**. **Open System Settings** in the app opens that pane.
 

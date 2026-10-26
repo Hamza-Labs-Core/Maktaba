@@ -240,8 +240,11 @@ mod tests {
     #[test]
     fn full_disk_access_is_read_from_the_open() {
         assert_eq!(full_disk_access_from(Ok(())), Grant::Granted);
-        let eperm = io::Error::from_raw_os_error(1); // EPERM: what TCC answers
-        assert_eq!(full_disk_access_from(Err(eperm)), Grant::Denied);
+        #[cfg(unix)]
+        {
+            let eperm = io::Error::from_raw_os_error(1); // EPERM: what TCC answers
+            assert_eq!(full_disk_access_from(Err(eperm)), Grant::Denied);
+        }
         let eacces = io::Error::from(io::ErrorKind::PermissionDenied);
         assert_eq!(full_disk_access_from(Err(eacces)), Grant::Denied);
         let missing = io::Error::from(io::ErrorKind::NotFound);
