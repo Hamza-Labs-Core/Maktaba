@@ -102,19 +102,6 @@ SELECT ensure_segment_embeddings();
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
-        -- slot 0103's default privileges gave the group role rights on new tables: the
-        -- machines read the store's state, only the home changes it
-        REVOKE ALL ON semantic_store_state FROM maktaba_worker;
-        GRANT SELECT ON semantic_store_state TO maktaba_worker;
-    END IF;
-END
-$$;
--- +goose StatementEnd
-
--- +goose StatementBegin
 -- slot 0150's exclusion, with the semantic store's tables
 CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
 LANGUAGE sql IMMUTABLE AS $f$
