@@ -1,7 +1,8 @@
 """``chapter_infer``: chapters at a video's topic shifts, and its mean vector (Story 9.18).
 
 Runs after ``index``. Reads the video's segment vectors back out of the semantic index
-(Chroma, no embedding model loaded), then:
+(no embedding model loaded: the store search reads, Chroma or ``segment_embeddings``,
+:mod:`~maktaba_pipeline.search.pgstore`), then:
 
 * stores their normalised mean in ``video_embeddings``: what ``topic_assign`` and
   ``topic_recluster`` cluster (slot 0121);
@@ -32,6 +33,7 @@ from ...db.jobs import Job
 from ...library_mgmt.chapter import Segment, extractive_title, infer_topic_chapters
 from ...search import gate
 from ...search.embedder import embed_id_for
+from ...search.pgstore import PgVectorStore, store_state
 from ...search.semantic import (
     SemanticUnavailable,
     StoredVector,
@@ -118,6 +120,25 @@ def _read_vectors(video_id: Any, ids: list[str] | None = None) -> list[StoredVec
         raise StageFailure("search_unavailable", str(exc), retryable=False) from exc
 
 
+async def _video_vectors(db: Any, video_id: Any, transcript_id: str) -> list[StoredVector]:
+    """The active transcript's vectors, from the store search reads (pgstore)."""
+    state = await store_state(db)
+    if state.read_postgres:
+        if not state.ready:
+            raise StageFailure(
+                "search_unavailable",
+                "semantic search is on Postgres and pgvector is not installed",
+                retryable=False,
+            )
+        return await PgVectorStore(db, embed_model()).video_vectors(video_id, transcript_id)
+    ids = [
+        embed_id_for(UUID(transcript_id), int(r["seq"]))
+        for r in await db.fetch(_SEQS_SQL, transcript_id)
+        if str(r["text"] or "").strip()  # blank segments have no vector
+    ]
+    return await gate.read(_read_vectors, video_id, ids)
+
+
 def _mean(vectors: list[StoredVector]) -> list[float]:
     """The normalised mean vector (numpy: the stage needs the search extra anyway)."""
     np: Any = importlib.import_module("numpy")
@@ -177,14 +198,9 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         )
     transcript_id, _ = active
     await ctx.progress("read vectors", 0, 1, force=True)
-    ids = [
-        embed_id_for(UUID(transcript_id), int(r["seq"]))
-        for r in await db.fetch(_SEQS_SQL, transcript_id)
-        if str(r["text"] or "").strip()  # blank segments have no vector
-    ]
     vectors = [
         vec
-        for vec in await gate.read(_read_vectors, v.id, ids)
+        for vec in await _video_vectors(db, v.id, transcript_id)
         if vec.transcript_id == transcript_id
     ]
     if not vectors:

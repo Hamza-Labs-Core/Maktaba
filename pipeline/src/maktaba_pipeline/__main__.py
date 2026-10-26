@@ -192,6 +192,18 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
             return 1
         raise
 
+    if database.dialect == "postgres" and cfg.role == "home":
+        # semantic search's store (Epic 43): what pgvector allows, and a home with no
+        # Chroma vectors on Postgres. A machine decides nothing: its Chroma folder is
+        # not the home's
+        from .search import pgstore
+
+        try:
+            state = await pgstore.prepare(database)
+            log.info("semantic_store", store=state.store, pgvector=state.ready)
+        except Exception as exc:  # noqa: BLE001 - search falls back, the worker runs
+            log.warning("semantic_store_prepare_failed", error=f"{type(exc).__name__}: {exc}")
+
     # Recent-logs HTTP endpoint (/logs/recent) on a daemon thread so the
     # API's diagnostics export can proxy this service's ring buffer.
     # Opt-in via --logs-addr / $MAKTABA_PIPELINE_LOGS_ADDR.
