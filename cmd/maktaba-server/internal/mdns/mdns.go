@@ -40,13 +40,12 @@ func Advertise(instance string, port int, version string) (*Advertiser, error) {
 		"path=/",
 	}
 
-	server, err := zeroconf.Register(
+	server, err := register(
 		instance,        // instance name
 		"_maktaba._tcp", // service type
 		"local.",        // domain
 		port,            // service port
 		txt,             // TXT records
-		nil,             // advertise on all interfaces
 	)
 	if err != nil {
 		return nil, fmt.Errorf("register mDNS service: %w", err)
