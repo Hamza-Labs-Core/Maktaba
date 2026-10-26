@@ -39,6 +39,9 @@ const (
 	EventRuntimeRootOverlap = "runtime-root-overlap"
 	EventPathOutOfRoot      = "path-out-of-root"
 	EventTopicRecluster     = "topic-recluster"
+	// epic 45: the management page's merge and empty-trash (API-only events)
+	EventLibraryMerged = "library-merged"
+	EventTrashEmptied  = "trash-emptied"
 )
 
 // AuditPayloadMaxBytes mirrors the Python AC EC: payloads larger than

@@ -11,6 +11,7 @@ package router_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -58,8 +59,9 @@ func (acStreaming) HealthCheck(context.Context) (grpcstreaming.Status, error) {
 }
 
 type acEnv struct {
-	t *testing.T
-	h http.Handler
+	t  *testing.T
+	h  http.Handler
+	db *sql.DB
 }
 
 func setupAccess(t *testing.T) (*acEnv, func(q string, args ...any) int) {
@@ -114,7 +116,7 @@ func setupAccess(t *testing.T) (*acEnv, func(q string, args ...any) int) {
 		}
 		r.ServeHTTP(w, req)
 	})
-	return &acEnv{t: t, h: h}, count
+	return &acEnv{t: t, h: h, db: db}, count
 }
 
 // do runs one request and decodes a JSON body (nil when empty).

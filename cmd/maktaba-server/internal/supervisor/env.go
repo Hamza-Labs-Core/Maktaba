@@ -608,7 +608,7 @@ func addStreamingCache(cfg config.Config, add func(k, v string)) {
 // it the files are opened at the paths the database keeps ("/Volumes/Originals/..."),
 // which on the Mac app is a share mounted elsewhere (or a stale mount that hangs), and
 // every channel aired filler. MAKTABA_PATH_MAP, which every role gets, is the workers'
-// "from=to,from2=to2" form, which streaming does not read. An operator's own is kept.
+// "from=to;from2=to2" form, which streaming does not read. An operator's own is kept.
 func addStreamPathMap(cfg config.Config, add func(k, v string)) {
 	if os.Getenv("MAKTABA_STREAM_PATH_MAP") != "" {
 		return
@@ -618,11 +618,12 @@ func addStreamPathMap(cfg config.Config, add func(k, v string)) {
 	}
 }
 
-// StreamPathMap turns the workers' path map ("from=to,from2=to2") into streaming's
-// ("from=>to;from2=>to2"); an entry without "=" or without a from is left out.
+// StreamPathMap turns the workers' path map ("from=to;from2=to2", the separator the
+// workers and the API read; "," as well, which older files were told to use) into
+// streaming's ("from=>to;from2=>to2"); an entry without "=" or without a from is left out.
 func StreamPathMap(workers string) string {
 	var out []string
-	for _, part := range strings.Split(workers, ",") {
+	for _, part := range strings.FieldsFunc(workers, func(r rune) bool { return r == ';' || r == ',' }) {
 		from, to, ok := strings.Cut(strings.TrimSpace(part), "=")
 		from, to = strings.TrimSpace(from), strings.TrimSpace(to)
 		if !ok || from == "" {

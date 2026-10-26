@@ -100,3 +100,11 @@ func (m PathMap) ToDB(localPath string) string {
 	}
 	return m.entries[best][0] + p[len(m.entries[best][1]):]
 }
+
+// Pairs returns the (database prefix, local prefix) entries, each with its
+// trailing "/", in the map's order.
+func (m PathMap) Pairs() [][2]string {
+	out := make([][2]string, len(m.entries))
+	copy(out, m.entries)
+	return out
+}

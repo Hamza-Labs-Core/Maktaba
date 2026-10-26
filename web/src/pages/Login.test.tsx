@@ -73,10 +73,10 @@ describe("Login next", () => {
     "//evil.example/library",
     "/\\evil.example/library",
     "javascript:alert(1)",
-  ])("ignores %s and goes to the library", async (next) => {
+  ])("ignores %s and goes to Home", async (next) => {
     renderAt(`/login?next=${encodeURIComponent(next)}`);
     await signIn();
-    expect(await screen.findByTestId("where")).toHaveTextContent("/library");
+    expect(await screen.findByTestId("where")).toHaveTextContent(/^\/$/);
   });
 
   // Settings' "sign out everywhere" ended this machine's sessions only

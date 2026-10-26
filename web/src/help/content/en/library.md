@@ -1,14 +1,56 @@
 # Library
 
-Browse every video Maktaba has found in your library folders.
+Find something to watch: Home, your libraries, each library's own page and every video in one grid.
 
 ## What it is {#what-it-is}
 
-The [Library](/library) page lists the videos of every library you may see, as cards or as a list. Maktaba watches your library folders and picks up new and changed files by itself; each new file then goes through [processing](/help/processing) (reading, transcribing, tagging) before it is fully ready.
+Maktaba watches your library folders and picks up new and changed files by itself; each new file then goes through [processing](/help/processing) (reading, transcribing, tagging) before it is fully ready. You browse what it found in four places:
 
-Which libraries you see is set by an admin (see [Library access](/help/library-access)).
+- [Home](/): rows across every library you may see, like Continue Watching and Recently Added, Live TV on now, and a row for each library you pinned.
+- [Libraries](/library): a card for each library, and the libraries you pinned in your order.
+- A library's page: its own rows (**Overview**) and all of its videos with sort and filters (**Browse**).
+- [All videos](/videos): every video of every library you may see, as cards or as a list.
+
+Which libraries you see is set by an admin (see [Library access](/help/library-access)). A library you may not see does not show anywhere: not on Home, not in a count, not in a row.
 
 ## How to use it {#how-to-use}
+
+### Home {#home}
+
+Home opens when you sign in. Its rows scroll sideways: drag or swipe them, use the arrow buttons next to a row's title, or press Tab to move from card to card.
+
+- **Continue Watching**: videos you started and have not finished (past the first 30 seconds, before the last 5%). The bar under a card shows how far you got.
+- **Recently Added**: the newest videos across your libraries. **See all** opens [All videos](/videos) sorted by date added.
+- **Recently Watched**: what you watched last, one card per video.
+- **What's On Now**: the Live TV channels on air, when there are any (see [Watch TV](/help/watch-tv)).
+- A row for each pinned library, in your order: what you are in the middle of there, then what is new. The row's title opens the library.
+
+A row with nothing in it is not shown. A new home with nothing to show says how to start.
+
+### Libraries {#libraries-page}
+
+Each card shows four recent posters, the library's name and how many videos it has. Click a card to open the library's page. **All videos** at the top opens every video in one grid.
+
+### Pin your libraries {#pinning}
+
+Press **Pin** on a library's card or on its page to keep it at hand: pinned libraries show under **Pinned** in the side menu and get their own row on Home. Press **Unpin** to remove it. You can pin up to 20.
+
+The **Pinned** list at the top of the Libraries page sets their order: use the up and down arrow buttons beside each one (they work with the keyboard too). The side menu and Home follow the new order at once. Your pins are saved on the server, so they follow you to every browser.
+
+### A library's page {#library-page}
+
+The page opens on **Overview**. **Browse** shows every video of the library with sort and filters. Admins also see **Scan now** and **Manage**, which opens Manage libraries.
+
+### Overview rows {#overview-rows}
+
+- **Continue Watching**, **Recently Added** and **Recently Watched**, as on Home, for this library only.
+- **Most Watched**: the videos played most in this library over the last 90 days, by everyone.
+- **Series**: the series found in this library. Click one to open the series (see [Series](/help/series)).
+- **By year**: one chip per year with how many videos are from it. Click a year to open **Browse** with that year's videos. The year is the file's date, which for downloaded videos is the day they were published.
+
+### Browse and All videos {#all-videos}
+
+**Browse** on a library's page and the [All videos](/videos) page are the same grid: the first covers one library, the second all of them. Everything you choose (sort, order and filters) is kept in the page's address, so Back, a refresh or a shared link keep it.
 
 ### Open a video {#open-a-video}
 
@@ -16,9 +58,12 @@ Click a card (or a title in the list) to open the video's page. See [Videos and 
 
 ### Sort {#sort}
 
-Pick **Sort**: **Recently added**, **Title** or **Duration**. The arrow button next to it switches between **Ascending** and **Descending**.
+Pick **Sort**: **Recently changed**, **Date added**, **Date published**, **Title**, **Duration** or **Most played**. The arrow button next to it switches between **Ascending** and **Descending**. Each sort starts in its natural order: newest, longest and most played first, titles from A.
 
-**Duration** sorts the videos already shown on the page. Press **Load more** first if you want it to cover more of them.
+### Filter by year and by what you watched {#filters}
+
+- **Year**: only the videos from that year. On a library's page you pick from the years it has; on All videos you type the year.
+- **Watched**: **Not watched**, **In progress** (started, not finished) or **Watched**. This is about what you watched, not anyone else.
 
 ### Grid or list {#view}
 
@@ -26,19 +71,19 @@ Under **View**, choose **Grid** for cards with posters, or **List** for a table 
 
 ### Filter by language {#filter-language}
 
-When the videos have a detected language, small chips with the language codes appear above the list. Click one to show only that language; click it again to show all. **Clear filters** removes the filter.
+When the videos have a detected language, small chips with the language codes appear above the list. Click one to show only that language; click it again to show all. **Clear filters** removes every filter (year, watched and language).
 
 ### Load more {#load-more}
 
-The page shows 60 videos at a time. Press **Load more** at the bottom for the next ones. The number on the button is how many are shown now.
+The grid shows 60 videos at a time. Press **Load more** at the bottom for the next ones. The number on the button is how many are shown now.
 
 ### Scan a library now {#scan-now}
 
-Admins see **Scan now** on a library's page when it has no videos yet. It looks for new and changed files right away instead of waiting.
+Admins see **Scan now** on a library's page. It looks for new and changed files right away instead of waiting.
 
 1. Press **Scan now**. **Scan started.** shows.
 2. A progress bar shows **Waiting for a worker**, then **Looking for new and changed files**, with about how many minutes are left.
-3. When it ends you see **Scan finished.** and the list reloads.
+3. When it ends you see **Scan finished.** and the page reloads.
 
 You can follow a scan, and every other step, on the [Processing](/queue) page. See [the scan stage](/help/stages#scan).
 
@@ -52,8 +97,11 @@ Cards only carry a badge when something needs your eye. A video still being proc
 - **No audio**: the video has no sound track, so it cannot be transcribed. Nothing to do unless the file is wrong.
 - **Replaced**: the file was replaced by a newer one in the library folder.
 - **No videos yet**: this library is empty, or nothing in it has been found yet.
-- **No videos match your filters.**: the language filter hides everything. Press **Clear filters**.
-- **Library not found.**: the link points to a library that does not exist or that you cannot see.
+- **Nothing to watch yet**: Home has no rows yet. Open **Libraries**, or (admins) add a library under **Manage libraries**.
+- **No libraries yet**: there is no library you may see. Ask an admin.
+- **No videos match your filters.**: the filters hide everything. Press **Clear filters**.
+- **Library not found**: the link points to a library that does not exist or that you cannot see.
+- **Could not change your pinned libraries**: the server did not save your pins; they stay as they were. The reason follows the message.
 - **Scan started.** / **Scan finished.**: the scan was queued, then ended.
 - **Scan failed**: the scan stopped; the reason follows the message.
 - **Could not start the scan**: the server refused to start it; the reason follows the message.
@@ -67,6 +115,14 @@ Maktaba waits until a new file stops changing (for example, until a copy ends) b
 ### Why do I not see a library my friend sees? {#faq-missing-library}
 
 Each user sees only the libraries an admin gave them. Ask an admin (see [Library access](/help/library-access)).
+
+### Why is a row missing from Home? {#faq-row-missing}
+
+Rows with nothing in them are hidden. **Continue Watching** shows up once you stop a video part-way, and a pinned library's row once it has videos.
+
+### Can someone else see what I pinned or watched? {#faq-private}
+
+No. Pins, **Continue Watching**, **Recently Watched** and the **Watched** filter are yours. Only **Most Watched** counts everyone's plays, and it never says who watched.
 
 ### Does Maktaba move or change my files? {#faq-files-safe}
 
@@ -95,6 +151,12 @@ Until a video has a title, Maktaba shows its file name. [Finding metadata](/help
 - **What it means:** The page could not read the list of videos from the server.
 - **Does Maktaba fix it itself?** No, the page waits for you.
 - **What you can do:** Press **Try again**. If it keeps failing, check [System health](/help/system-health) or ask an admin.
+
+### Pin or Unpin did nothing {#pin-failed}
+
+- **What it means:** The server refused the change (for example, the library was removed or you can no longer see it) or could not be reached.
+- **Does Maktaba fix it itself?** No. Your pins stay as they were.
+- **What you can do:** Reload the page and try again. If the library is gone, it drops off your pins by itself.
 
 ### A card has no picture {#no-poster}
 

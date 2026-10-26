@@ -29,6 +29,14 @@ func TestMutationsRefuseNonAdmins(t *testing.T) {
 		{"DELETE", "/api/libraries/" + lib + "?purge=true&confirm=Talks", ""},
 		{"POST", "/api/libraries/" + lib + "/scan", ""},
 		{"GET", "/api/libraries/" + lib + "/audit", ""},
+		// epic 45: the Manage libraries page (manage and folders also prove the
+		// static segments win over {id}: Get would answer a viewer 400)
+		{"GET", "/api/libraries/manage", ""},
+		{"GET", "/api/libraries/folders", ""},
+		{"GET", "/api/libraries/folders?path=/", ""},
+		{"GET", "/api/libraries/" + lib + "/impact", ""},
+		{"POST", "/api/libraries/" + lib + "/merge", `{"into":"` + lib + `","confirm":"Talks"}`},
+		{"POST", "/api/libraries/" + lib + "/empty-trash", ""},
 	} {
 		for _, p := range []*principal.Principal{nil, viewer} {
 			req := httptest.NewRequest(c.method, c.path, strings.NewReader(c.body))
