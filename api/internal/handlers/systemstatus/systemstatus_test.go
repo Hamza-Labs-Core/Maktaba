@@ -237,7 +237,8 @@ func TestPipeline(t *testing.T) {
 
 func TestProcesses(t *testing.T) {
 	sup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"processes":[{"role":"api","state":"running"},
+		// the supervisor's uptime has fractions (state.go: float64)
+		_, _ = w.Write([]byte(`{"processes":[{"role":"api","state":"running","uptime_sec":2562.309227125},
 			{"role":"streaming","state":"backoff","restarts":3},
 			{"role":"pipeline","state":"running","crash_loop":true}]}`))
 	}))
@@ -247,6 +248,9 @@ func TestProcesses(t *testing.T) {
 		t.Fatalf("processes: %+v", got)
 	}
 	want(t, got[0], StatusOK, "process_running")
+	if got[0].Details["uptime_seconds"] != int64(2562) {
+		t.Fatalf("uptime: %+v", got[0].Details)
+	}
 	want(t, got[1], StatusDegraded, "process_restarting")
 	want(t, got[2], StatusDown, "process_crash_loop")
 

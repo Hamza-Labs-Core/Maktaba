@@ -267,7 +267,8 @@ func checkProcesses(ctx context.Context, e *env) []Item {
 			State     string `json:"state"`
 			Restarts  int    `json:"restarts"`
 			CrashLoop bool   `json:"crash_loop"`
-			UptimeSec int64  `json:"uptime_sec"`
+			// fractional seconds, as the supervisor's state reports them
+			UptimeSec float64 `json:"uptime_sec"`
 		} `json:"processes"`
 	}
 	raw, err := processes.Fetch(ctx, e.h.client(), e.h.SupervisorURL)
@@ -286,7 +287,7 @@ func checkProcesses(ctx context.Context, e *env) []Item {
 		it := base("process:"+p.Role, GroupServices, KindProcess, p.Role)
 		st, code := processState(p.State, p.CrashLoop)
 		it.set(st, code, map[string]any{"role": p.Role, "restarts": p.Restarts}, processReasons[code])
-		it.Details = map[string]any{"state": p.State, "restarts": p.Restarts, "uptime_seconds": p.UptimeSec}
+		it.Details = map[string]any{"state": p.State, "restarts": p.Restarts, "uptime_seconds": int64(p.UptimeSec)}
 		out = append(out, it)
 	}
 	return out
