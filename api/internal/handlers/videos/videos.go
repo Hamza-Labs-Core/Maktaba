@@ -25,9 +25,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -65,6 +67,12 @@ type Video struct {
 	Tags          []string        `json:"tags,omitempty"`
 	LatestTrans   *string         `json:"latest_transcript_id,omitempty"`
 	PlaybackState *PlaybackState  `json:"playback_state,omitempty"`
+
+	// List only (Epic 45): the publish date (the file's mtime, which
+	// yt-dlp sets to the upload date) and, under sort=plays, everyone's
+	// plays.
+	PublishedAt *time.Time `json:"published_at,omitempty"`
+	Plays       *int64     `json:"plays,omitempty"`
 
 	// Display titles (Story 27.11, slot 0122): the short on-air title the
 	// guide and the channel strip show. DisplayTitle is the effective one
@@ -188,8 +196,9 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/videos/{id}/chapters", h.Chapters)
 }
 
-// List implements AC-1. Filters: library, language, q, sort, limit and
-// cursor (`next` of the previous page).
+// List implements AC-1. Filters: library, language, q, year (the mtime's
+// year), watched (the caller's playback state), series, sort, order, limit
+// and cursor (`next` of the previous page).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
@@ -213,13 +222,18 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if sort == "" {
 		sort = "updated_at"
 	}
-	if sort != "updated_at" && sort != "created_at" && sort != "title" {
+	if _, ok := listSorts[sort]; !ok {
 		httperror.Write(w, r, &httperror.Error{
 			Type:   "https://maktaba.dev/problems/invalid-sort",
 			Title:  "invalid sort",
 			Status: http.StatusBadRequest,
-			Detail: "sort must be one of: updated_at, created_at, title",
+			Detail: "sort must be one of: " + listSortNames,
 		})
+		return
+	}
+	order, ok := validOrder(q.Get("order"))
+	if !ok {
+		httperror.Write(w, r, httperror.InvalidQuery("order must be asc or desc"))
 		return
 	}
 
@@ -243,6 +257,49 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		conds = append(conds, placeholder("(title LIKE ", len(args)+1)+" OR description LIKE "+pidx(len(args)+1)+")")
 		args = append(args, "%"+qstr+"%")
 	}
+	if ys := q.Get("year"); ys != "" {
+		year, err := strconv.Atoi(ys)
+		if err != nil || year < 1 || year > 9998 {
+			httperror.Write(w, r, httperror.InvalidQuery("year must be a year, e.g. 2024"))
+			return
+		}
+		// A range on mtime, not a year function: the same SQL on both
+		// databases, and it can use the mtime index.
+		from := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
+		conds = append(conds, "mtime >= "+pidx(len(args)+1)+" AND mtime < "+pidx(len(args)+2))
+		args = append(args, from, from.AddDate(1, 0, 0))
+	}
+	if watched := q.Get("watched"); watched != "" {
+		// The caller's own playback state. A principal without a user row
+		// (the admin token) has none: the nil UUID matches no row.
+		uid := p.UserID
+		if _, err := uuid.Parse(uid); err != nil {
+			uid = uuid.Nil.String()
+		}
+		ps := "SELECT 1 FROM playback_state ps WHERE ps.user_id = " + pidx(len(args)+1) + " AND ps.video_id = videos.id"
+		switch watched {
+		case "watched":
+			conds = append(conds, "EXISTS ("+ps+" AND ps.completed)")
+		case "in_progress":
+			conds = append(conds, "EXISTS ("+ps+" AND NOT ps.completed AND ps.position_sec > 0)")
+		case "unwatched":
+			conds = append(conds, "NOT EXISTS ("+ps+" AND (ps.completed OR ps.position_sec > 0))")
+		default:
+			httperror.Write(w, r, httperror.InvalidQuery("watched must be unwatched, in_progress or watched"))
+			return
+		}
+		args = append(args, uid)
+	}
+	if seriesID := q.Get("series"); seriesID != "" {
+		if _, err := uuid.Parse(seriesID); err != nil {
+			httperror.Write(w, r, httperror.BadRequest("series must be a UUID"))
+			return
+		}
+		// The library scope below still applies: another library's
+		// series lists nothing.
+		conds = append(conds, "id IN (SELECT video_id FROM series_episodes WHERE series_id = "+pidx(len(args)+1)+")")
+		args = append(args, seriesID)
+	}
 	// Authz scope: non-admin users only see videos in libraries they own.
 	if !p.AccessAllLibraries && len(p.Libraries) > 0 {
 		placeholders := make([]string, len(p.Libraries))
@@ -257,13 +314,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cur, cerr := decodeListCursor(q.Get("cursor"), sort)
+	cur, cerr := decodeListCursor(q.Get("cursor"), sort, order)
 	if cerr != nil {
 		httperror.Write(w, r, cerr)
 		return
 	}
 	if cur != nil {
-		frag, cargs, werr := cur.where(sort, len(args)+1)
+		frag, cargs, werr := cur.where(sort, order, len(args)+1)
 		if werr != nil {
 			httperror.Write(w, r, werr)
 			return
@@ -276,9 +333,17 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if len(conds) > 0 {
 		where = " WHERE " + strings.Join(conds, " AND ")
 	}
+	cols := videoColumns + ", mtime"
+	from := " FROM videos"
+	withPlays := sort == "plays"
+	if withPlays {
+		// One grouped pass over watch_sessions, not a count per row.
+		cols += ", COALESCE(wp.plays, 0)"
+		from += " LEFT JOIN (SELECT video_id, COUNT(*) AS plays FROM watch_sessions GROUP BY video_id) wp ON wp.video_id = videos.id"
+	}
 	args = append(args, limit+1) // SELECT limit+1 to detect another page.
-	query := "SELECT " + videoColumns + " FROM videos" + where +
-		" ORDER BY " + sortExpr(sort) + " DESC, id DESC LIMIT " + pidx(len(args))
+	query := "SELECT " + cols + from + where +
+		" ORDER BY " + orderBy(sort, order) + " LIMIT " + pidx(len(args))
 
 	rows, err := h.DB.QueryContext(r.Context(), query, args...)
 	if err != nil {
@@ -288,19 +353,23 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	items := []Video{}
 	for rows.Next() {
-		v, err := scanVideoRow(rows)
+		v, err := scanListRow(rows, withPlays)
 		if err != nil {
 			httperror.Write(w, r, httperror.Internal("scan video: "+err.Error()))
 			return
 		}
 		items = append(items, v)
 	}
+	if err := rows.Err(); err != nil {
+		httperror.Write(w, r, httperror.Internal("read videos: "+err.Error()))
+		return
+	}
 
 	var next *string
 	if len(items) > limit {
 		items = items[:limit]
-		// Pass it back as ?cursor= (with the same sort) for the next page.
-		s := encodeListCursor(sort, items[len(items)-1])
+		// Pass it back as ?cursor= (with the same sort and order) for the next page.
+		s := encodeListCursor(sort, order, items[len(items)-1])
 		next = &s
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items, "next": next})
@@ -806,6 +875,75 @@ func scanVideoRow(rs rowScanner) (Video, error) {
 		v.Metadata = meta
 	}
 	return v, nil
+}
+
+// scanListRow scans a List row: the video columns, mtime and, under
+// sort=plays, the play count.
+func scanListRow(rs rowScanner, withPlays bool) (Video, error) {
+	var v Video
+	var meta []byte
+	var mtime nullTime
+	dest := []any{
+		&v.ID, &v.LibraryID, &v.Path, &v.Filename,
+		&v.Title, &v.Description, &v.State,
+		&v.DetectedLang, &v.DurationSec, &v.SizeBytes, &v.ContentHash,
+		&meta, &v.CreatedAt, &v.UpdatedAt, &mtime,
+	}
+	var plays int64
+	if withPlays {
+		dest = append(dest, &plays)
+	}
+	if err := rs.Scan(dest...); err != nil {
+		return Video{}, err
+	}
+	if len(meta) > 0 {
+		v.Metadata = meta
+	}
+	if mtime.Valid {
+		t := mtime.T
+		v.PublishedAt = &t
+	}
+	if withPlays {
+		v.Plays = &plays
+	}
+	return v, nil
+}
+
+// nullTime scans a timestamp stored natively (Postgres) or as text (SQLite).
+type nullTime struct {
+	T     time.Time
+	Valid bool
+}
+
+func (n *nullTime) Scan(v any) error {
+	n.Valid = false
+	switch x := v.(type) {
+	case nil:
+		return nil
+	case time.Time:
+		n.T, n.Valid = x.UTC(), true
+		return nil
+	case string:
+		return n.parse(x)
+	case []byte:
+		return n.parse(string(x))
+	}
+	return fmt.Errorf("nullTime: cannot scan %T", v)
+}
+
+func (n *nullTime) parse(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999 -0700 MST", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			n.T, n.Valid = t.UTC(), true
+			return nil
+		}
+	}
+	return fmt.Errorf("nullTime: bad timestamp %q", s)
 }
 
 // pidx and placeholder build $N parameter placeholders for both
