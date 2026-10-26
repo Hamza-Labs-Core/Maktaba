@@ -46,6 +46,7 @@ import { APITokens } from "./pages/Profile/APITokens";
 import { WatchHistory } from "./pages/Profile/WatchHistory";
 import { Account } from "./pages/Profile/Account";
 import { LibraryACL } from "./pages/Admin/LibraryACL";
+import { AdminLibraries } from "./pages/Admin/Libraries";
 import { Channels } from "./pages/Admin/Channels";
 import { FillerPools } from "./pages/Admin/FillerPools";
 import { AdminLiveTV } from "./pages/Admin/LiveTV";
@@ -142,6 +143,7 @@ export function App() {
                             element={<Navigate to="/settings/subscription" replace />}
                           />
                           <Route path="/cloud/status" element={<ServerStatus />} />
+                          <Route path="/admin/libraries" element={<AdminLibraries />} />
                           <Route path="/admin/users" element={<AdminUsers />} />
                           <Route path="/admin/library-acl" element={<LibraryACL />} />
                           <Route path="/admin/extensions" element={<AdminExtensions />} />

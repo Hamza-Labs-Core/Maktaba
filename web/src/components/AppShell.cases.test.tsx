@@ -131,6 +131,7 @@ const PAGES = [
   "/billing",
   "/cloud/status",
   "/videos/:videoId",
+  "/admin/libraries",
   "/admin/library-acl",
   "/admin/channels",
   "/admin/filler",
@@ -286,6 +287,7 @@ const SERVER_LINKS = [
 
 const ADMIN_LINKS = [
   ...SERVER_LINKS,
+  ["nav.admin.libraries", "/admin/libraries"],
   ["nav.admin.users", "/admin/users"],
   ["nav.admin.libraryAcl", "/admin/library-acl"],
   ["nav.admin.channels", "/admin/channels"],
