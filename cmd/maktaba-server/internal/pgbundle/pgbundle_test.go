@@ -275,7 +275,7 @@ func TestBackupKeepsSeven(t *testing.T) {
 		t.Fatalf("kept the wrong dumps: %v", names)
 	}
 	calls := read(t, filepath.Join(logDir, "pg_dump.calls"))
-	if !strings.Contains(calls, "-Fc") || !strings.Contains(calls, "-U "+SuperUser) || !strings.HasSuffix(strings.TrimSpace(calls), " maktaba") {
+	if !strings.Contains(calls, "-Fc -Z 1 ") || !strings.Contains(calls, "-U "+SuperUser) || !strings.HasSuffix(strings.TrimSpace(calls), " maktaba") {
 		t.Errorf("pg_dump args:\n%s", calls)
 	}
 	if got := b.lastBackup(); !got.Equal(start.AddDate(0, 0, 8)) {
