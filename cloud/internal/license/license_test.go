@@ -21,7 +21,7 @@ func goldenKey() ed25519.PrivateKey { return ed25519.NewKeyFromSeed(bytes.Repeat
 var goldenAt = time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC)
 
 func TestGoldenVector(t *testing.T) {
-	l, err := Sign(goldenKey(), LicenseInner{LicenseID: "golden-1", Tier: TierHome, Seats: 4, IssuedAt: goldenAt,
+	l, err := Sign(goldenKey(), Inner{LicenseID: "golden-1", Tier: TierHome, Seats: 4, IssuedAt: goldenAt,
 		ExpiresAt: goldenAt.Add(PlanLicenseTTL), Features: []string{"x"}, ServerID: "srv-g", Holder: "Golden"})
 	if err != nil || l.Signature != goldenLicenseSig {
 		t.Fatalf("license signature changed: %s (%v); the home's verifier pins %s", l.Signature, err, goldenLicenseSig)

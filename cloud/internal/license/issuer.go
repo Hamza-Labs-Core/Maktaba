@@ -87,7 +87,7 @@ func (is *Issuer) Offline(ctx context.Context, tier string, seats int, holder st
 		return License{}, err
 	}
 	now := is.now().UTC().Truncate(time.Second)
-	lic, err := Sign(is.Priv, LicenseInner{
+	lic, err := Sign(is.Priv, Inner{
 		LicenseID: id, Tier: tier, Seats: seats, IssuedAt: now, ExpiresAt: now.Add(valid), Holder: holder,
 	})
 	if err != nil {
@@ -101,7 +101,7 @@ func (is *Issuer) Offline(ctx context.Context, tier string, seats int, holder st
 	return lic, nil
 }
 
-func (is *Issuer) record(ctx context.Context, kind, userID, serverID string, l LicenseInner) error {
+func (is *Issuer) record(ctx context.Context, kind, userID, serverID string, l Inner) error {
 	_, err := is.DB.ExecContext(ctx, `
         INSERT INTO licenses_issued (license_id, kind, user_id, server_id, tier, seats, holder, issued_at, expires_at)
         VALUES ($1, $2, NULLIF($3,'')::uuid, NULLIF($4,'')::uuid, $5, $6, $7, $8, $9)

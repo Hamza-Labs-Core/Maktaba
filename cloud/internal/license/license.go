@@ -4,7 +4,7 @@
 //
 // The wire format is the home's (api/internal/subscriptions): a License
 // is {"license": <inner>, "signature": base64(ed25519(inner))}, where
-// the signed bytes are encoding/json's output for LicenseInner in its
+// the signed bytes are encoding/json's output for Inner in its
 // field order. The two modules cannot share code (separate Go modules,
 // both internal), so both pin the same golden vector in their tests:
 // change a field here and there, or every license breaks.
@@ -52,8 +52,8 @@ func TierForPlan(plan string) string {
 // changes nothing on an unchanged plan).
 const PlanLicenseTTL = 31 * 24 * time.Hour
 
-// LicenseInner is the signed payload. Field order is the wire contract.
-type LicenseInner struct {
+// Inner is the signed payload. Field order is the wire contract.
+type Inner struct {
 	LicenseID string    `json:"license_id"`
 	Tier      string    `json:"tier"`
 	Seats     int       `json:"seats"`
@@ -66,8 +66,8 @@ type LicenseInner struct {
 
 // License is the signed wire form the home accepts.
 type License struct {
-	License   LicenseInner `json:"license"`
-	Signature string       `json:"signature"`
+	License   Inner  `json:"license"`
+	Signature string `json:"signature"`
 }
 
 // RevocationsInner is the signed revocation list payload.
@@ -83,7 +83,7 @@ type RevocationList struct {
 }
 
 // Sign signs inner with priv.
-func Sign(priv ed25519.PrivateKey, inner LicenseInner) (License, error) {
+func Sign(priv ed25519.PrivateKey, inner Inner) (License, error) {
 	sig, err := sign(priv, inner)
 	return License{License: inner, Signature: sig}, err
 }
@@ -114,7 +114,7 @@ func PlanLicenseID(serverID string) string { return "cloud-" + serverID }
 // day of now.
 func ForPlan(priv ed25519.PrivateKey, serverID, tier, holder string, now time.Time) (License, error) {
 	day := now.UTC().Truncate(24 * time.Hour)
-	return Sign(priv, LicenseInner{
+	return Sign(priv, Inner{
 		LicenseID: PlanLicenseID(serverID),
 		Tier:      tier,
 		IssuedAt:  day,

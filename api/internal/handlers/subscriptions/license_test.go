@@ -30,7 +30,7 @@ func signed(t *testing.T, priv ed25519.PrivateKey, inner subscriptions.LicenseIn
 	return b
 }
 
-func do(r http.Handler, method, path string, ctx context.Context, body []byte) *httptest.ResponseRecorder {
+func do(ctx context.Context, r http.Handler, method, path string, body []byte) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, bytes.NewReader(body))
 	if ctx != nil {
 		req = req.WithContext(ctx)
@@ -57,15 +57,15 @@ func TestLicenseRoutes_AdminOnly(t *testing.T) {
 	}
 	for _, rt := range routes {
 		for name, ctx := range map[string]context.Context{"no one": context.Background(), "viewer": userCtx()} {
-			if rec := do(r, rt.method, rt.path, ctx, rt.body); rec.Code != http.StatusForbidden {
+			if rec := do(ctx, r, rt.method, rt.path, rt.body); rec.Code != http.StatusForbidden {
 				t.Errorf("%s %s as %s: %d, want 403", rt.method, rt.path, name, rec.Code)
 			}
 		}
-		if rec := do(r, rt.method, rt.path, adminCtx(), rt.body); rec.Code >= 400 {
+		if rec := do(adminCtx(), r, rt.method, rt.path, rt.body); rec.Code >= 400 {
 			t.Errorf("%s %s as admin: %d %s", rt.method, rt.path, rec.Code, rec.Body.String())
 		}
 	}
-	if rec := do(r, http.MethodGet, "/api/entitlements", context.Background(), nil); rec.Code != http.StatusForbidden {
+	if rec := do(context.Background(), r, http.MethodGet, "/api/entitlements", nil); rec.Code != http.StatusForbidden {
 		t.Errorf("entitlements as no one: %d", rec.Code)
 	}
 }
@@ -78,16 +78,16 @@ func TestLicense_WriteOnly(t *testing.T) {
 	var lic subscriptions.License
 	_ = json.Unmarshal(body, &lic)
 	for _, rec := range []*httptest.ResponseRecorder{
-		do(r, http.MethodPost, "/api/admin/license", adminCtx(), body),
-		do(r, http.MethodGet, "/api/admin/license", adminCtx(), nil),
-		do(r, http.MethodGet, "/api/entitlements", adminCtx(), nil),
+		do(adminCtx(), r, http.MethodPost, "/api/admin/license", body),
+		do(adminCtx(), r, http.MethodGet, "/api/admin/license", nil),
+		do(adminCtx(), r, http.MethodGet, "/api/entitlements", nil),
 	} {
 		if strings.Contains(rec.Body.String(), lic.Signature) || strings.Contains(rec.Body.String(), "signature") {
 			t.Fatalf("an answer carried the license key: %s", rec.Body.String())
 		}
 	}
 	var v LicenseView
-	_ = json.Unmarshal(do(r, http.MethodGet, "/api/admin/license", adminCtx(), nil).Body.Bytes(), &v)
+	_ = json.Unmarshal(do(adminCtx(), r, http.MethodGet, "/api/admin/license", nil).Body.Bytes(), &v)
 	if v.License == nil || v.License.Holder != "Owner" || v.Tier != subscriptions.TierPro || v.SeatsAllowed != subscriptions.SeatsUnlimited {
 		t.Fatalf("view: %+v", v)
 	}
@@ -112,7 +112,7 @@ func TestLicense_RefusalsArePlain(t *testing.T) {
 		"not json":    {[]byte("hello"), "not a Maktaba license"},
 	}
 	for name, c := range cases {
-		rec := do(r, http.MethodPost, "/api/admin/license", adminCtx(), c.body)
+		rec := do(adminCtx(), r, http.MethodPost, "/api/admin/license", c.body)
 		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), c.want) || !strings.Contains(rec.Body.String(), TypeLicenseInvalid) {
 			t.Errorf("%s: %d %s", name, rec.Code, rec.Body.String())
 		}
@@ -127,12 +127,12 @@ func TestLicense_NoVerifier(t *testing.T) {
 	h := &Handler{Store: subscriptions.NewStore()}
 	r := chi.NewRouter()
 	h.Mount(r)
-	rec := do(r, http.MethodPost, "/api/admin/license", adminCtx(), []byte("{}"))
+	rec := do(adminCtx(), r, http.MethodPost, "/api/admin/license", []byte("{}"))
 	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "cannot check licenses") {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 	var v LicenseView
-	_ = json.Unmarshal(do(r, http.MethodGet, "/api/admin/license", adminCtx(), nil).Body.Bytes(), &v)
+	_ = json.Unmarshal(do(adminCtx(), r, http.MethodGet, "/api/admin/license", nil).Body.Bytes(), &v)
 	if v.Available || v.Tier != subscriptions.TierFree {
 		t.Fatalf("view: %+v", v)
 	}
@@ -143,7 +143,7 @@ func TestLicense_OverSeatWarning(t *testing.T) {
 	h, r, _ := newHandler(t)
 	h.SeatCount = countStub(2)
 	var v LicenseView
-	_ = json.Unmarshal(do(r, http.MethodGet, "/api/admin/license", adminCtx(), nil).Body.Bytes(), &v)
+	_ = json.Unmarshal(do(adminCtx(), r, http.MethodGet, "/api/admin/license", nil).Body.Bytes(), &v)
 	if !v.OverSeats || v.SeatsUsed == nil || *v.SeatsUsed != 2 || v.SeatsAllowed != 1 || !strings.Contains(v.Message, "keep working") {
 		t.Fatalf("over-seat view: %+v", v)
 	}
@@ -155,8 +155,8 @@ func TestLicense_Audited(t *testing.T) {
 	var events []string
 	h.Audit = func(_ context.Context, actor, ev string, _ map[string]any) { events = append(events, actor+":"+ev) }
 	now := time.Now().UTC()
-	do(r, http.MethodPost, "/api/admin/license", adminCtx(), signed(t, priv, subscriptions.LicenseInner{LicenseID: "a", Tier: subscriptions.TierHome, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}))
-	do(r, http.MethodDelete, "/api/admin/license", adminCtx(), nil)
+	do(adminCtx(), r, http.MethodPost, "/api/admin/license", signed(t, priv, subscriptions.LicenseInner{LicenseID: "a", Tier: subscriptions.TierHome, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}))
+	do(adminCtx(), r, http.MethodDelete, "/api/admin/license", nil)
 	if strings.Join(events, ",") != "admin:license.applied,admin:license.removed" {
 		t.Fatalf("audit: %v", events)
 	}
