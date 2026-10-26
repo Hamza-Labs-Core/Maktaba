@@ -120,6 +120,14 @@ func TestSchedulerBlockers(t *testing.T) {
 		if d, _ := f.svc.Tick(ctx); d.Action != "blocked" || d.Reason != BlockRecentCrash {
 			t.Fatalf("recent crash: %+v", d)
 		}
+		// an admin's Update now is not held by the running release's crash
+		enableAutoInstall(t)
+		if run, err := f.svc.RunNow(ctx, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ""); err != nil || run.Version != "1.5.0" {
+			t.Fatalf("update now past a recent crash: %+v %v", run, err)
+		}
+		f = newFixture(t, sqliteDB(t))
+		seed(t, f.store, rel("1.5.0"))
+		f.svc.Blockers = append(f.svc.Blockers, &HomeHealth{BaseURL: sup.URL, Now: func() time.Time { return f.now }})
 		f.now = f.now.Add(6 * time.Minute) // 11 min after the crash
 		if d, _ := f.svc.Tick(ctx); d.Action != "started" {
 			t.Fatalf("quiet again: %+v", d)
