@@ -43,7 +43,7 @@ func remoteServer(t *testing.T) (http.Handler, *cftest.Server, *sql.DB, *remote.
 		`INSERT INTO channels (id, number, name, slug) VALUES ('` + chID + `', 101, 'One', 'one')`,
 		`INSERT INTO app_settings (key, value) VALUES ('tv_remote.enabled', 'true')`,
 	}
-	stmts = append(stmts, slotStatements(t, "0125_tv_remote.sqlite.sql", "0126_tv_simulcast.sqlite.sql")...)
+	stmts = append(stmts, slotStatements(t, "0125_tv_remote.sqlite.sql", "0126_tv_simulcast.sqlite.sql", "0154_tv_public.sqlite.sql")...)
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
 			t.Fatalf("%v: %s", err, s)
@@ -163,7 +163,12 @@ func TestRemoteAdminActions(t *testing.T) {
 		t.Fatalf("secret: %d %s", rec.Code, rec.Body)
 	}
 	_, _ = db.Exec(`INSERT INTO tv_remote_inputs (id, cf_uid, name) VALUES ('i1', 'cfin1', 'maktaba-x-1')`)
-	ev := `{"name":"Live","data":{"notification_name":"Stream Live Input","input_id":"cfin1","event_type":"live_input.errored","error_code":"ERR_GOP_OUT_OF_RANGE"}}`
+	// Cloudflare's documented live_input.errored payload (stream/stream-live/webhooks)
+	ev := `{"name":"Live Webhook Test","text":"Notification type: Stream Live Input","ts":1642074233,
+	  "data":{"notification_name":"Stream Live Input","input_id":"cfin1","event_type":"live_input.errored",
+	  "updated_at":"2022-01-13T11:43:41.855717910Z",
+	  "live_input_errored":{"error":{"code":"ERR_GOP_OUT_OF_RANGE","message":"Input GOP size or keyframe interval is out of range."},
+	  "video_codec":"","audio_codec":""}}}`
 	if rec := as(h, "POST", "/api/tv/remote/webhook", ev, nil, WebhookHeader, "wrong"); rec.Code != http.StatusForbidden {
 		t.Fatalf("bad secret: %d", rec.Code)
 	}

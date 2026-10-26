@@ -1,0 +1,28 @@
+# The Maktaba TV public site (Epic 34). Deploy from web/packages/tvsite:
+#   npx wrangler@4 deploy
+# Secrets (from Admin → Live TV → Public site → "Create the site's secrets"):
+#   npx wrangler@4 secret put HOME_HMAC
+#   npx wrangler@4 secret put STREAM_KEY_ID
+#   npx wrangler@4 secret put STREAM_KEY_JWK
+# See README.md.
+name = "maktaba-tv-site"
+main = "src/worker.ts"
+compatibility_date = "2026-09-01"
+
+[assets]
+directory = "./site"
+binding = "ASSETS"
+# /watch/<slug> is the page itself (the script reads the slug)
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/_home/*"]
+
+[[durable_objects.bindings]]
+name = "SITE"
+class_name = "SiteControl"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SiteControl"]
+
+[vars]
+TOKEN_TTL_SECONDS = "600"

@@ -88,7 +88,10 @@ type Integration struct {
 	CanPush func(ctx context.Context) (PushAbility, error)
 	// StopPushes stops every remote push (32.7); nil: none run yet.
 	StopPushes func(ctx context.Context) error
-	Logger     *slog.Logger
+	// ForgetInputs closes the pushes and drops the tv_remote_inputs rows once
+	// the inputs are gone at Cloudflare (AC5); nil: none.
+	ForgetInputs func(ctx context.Context) error
+	Logger       *slog.Logger
 }
 
 func (in *Integration) now() time.Time {
@@ -552,6 +555,7 @@ func (in *Integration) SetEnabled(ctx context.Context, on bool) error {
 // RemoveResult is what removing the integration did at Cloudflare.
 type RemoveResult struct {
 	DeletedInputs     []string `json:"deleted_inputs"`
+	DeletedRecordings []string `json:"deleted_recordings"`
 	DeletedSigningKey string   `json:"deleted_signing_key,omitempty"`
 	Errors            []string `json:"errors"`
 }
@@ -560,7 +564,7 @@ type RemoveResult struct {
 // the signing key at Cloudflare, then the secrets and settings (AC5).
 // Cloudflare failures are reported; the local removal happens anyway.
 func (in *Integration) Remove(ctx context.Context) (RemoveResult, error) {
-	res := RemoveResult{DeletedInputs: []string{}, Errors: []string{}}
+	res := RemoveResult{DeletedInputs: []string{}, DeletedRecordings: []string{}, Errors: []string{}}
 	if err := in.putSetting(ctx, SettingEnabled, false); err != nil {
 		return res, err
 	}
@@ -582,6 +586,19 @@ func (in *Integration) Remove(ctx context.Context) (RemoveResult, error) {
 				if !strings.HasPrefix(x.Name(), cf.LiveInputPrefix) {
 					continue
 				}
+				// the input's recordings outlive the input at Cloudflare and
+				// keep counting against storage: delete them first
+				if vs, err := cl.InputVideos(ctx, x.UID); err != nil {
+					res.Errors = append(res.Errors, "list recordings of "+x.UID+": "+err.Error())
+				} else {
+					for _, v := range vs {
+						if err := cl.DeleteVideo(ctx, v.UID); err != nil {
+							res.Errors = append(res.Errors, "delete recording "+v.UID+": "+err.Error())
+							continue
+						}
+						res.DeletedRecordings = append(res.DeletedRecordings, v.UID)
+					}
+				}
 				if err := cl.DeleteLiveInput(ctx, x.UID); err != nil {
 					res.Errors = append(res.Errors, "delete live input "+x.UID+": "+err.Error())
 					continue
@@ -596,11 +613,18 @@ func (in *Integration) Remove(ctx context.Context) (RemoveResult, error) {
 				res.DeletedSigningKey = k.ID
 			}
 		}
+		// the public site's own key (Epic 34): its tokens stop with the integration
+		if k, err := in.siteKey(ctx); err == nil && k.ID != "" {
+			if err := cl.DeleteSigningKey(ctx, k.ID); err != nil {
+				res.Errors = append(res.Errors, "delete the site's signing key: "+err.Error())
+			}
+		}
 	} else if c.account != "" {
 		res.Errors = append(res.Errors, "Cloudflare not cleaned up ("+tokenProblem(c.tokenErr)+"): delete Maktaba's live inputs and signing key in the dashboard")
 	}
 	if in.Secrets != nil {
-		for _, n := range []string{SecretAPIToken, SecretSigningKey, SecretSigningKey + "_prev", SecretWebhook} {
+		for _, n := range []string{SecretAPIToken, SecretSigningKey, SecretSigningKey + "_prev", SecretWebhook,
+			SecretSiteSigningKey, SecretSiteHMAC} {
 			if err := in.Secrets.Delete(ctx, n); err != nil {
 				return res, err
 			}
@@ -611,6 +635,11 @@ func (in *Integration) Remove(ctx context.Context) (RemoveResult, error) {
 			}
 		}
 	}
+	if in.ForgetInputs != nil {
+		if err := in.ForgetInputs(ctx); err != nil {
+			res.Errors = append(res.Errors, "forget inputs: "+err.Error())
+		}
+	}
 	if err := in.Ext.ClearExtension(ctx, Extension); err != nil {
 		return res, err
 	}
@@ -618,6 +647,7 @@ func (in *Integration) Remove(ctx context.Context) (RemoveResult, error) {
 		if _, err := in.DB.ExecContext(ctx, `DELETE FROM app_settings WHERE key = $1`, SettingLastTest); err != nil {
 			return res, err
 		}
+
 	}
 	in.log().Info("tv_remote: integration removed", "inputs", len(res.DeletedInputs),
 		"errors", len(res.Errors), "event", "tv_remote_removed")
@@ -639,6 +669,12 @@ func (in *Integration) ValidateSettings(ctx context.Context, cur, next map[strin
 	has := false
 	if in.Secrets != nil {
 		has, _ = in.Secrets.Has(ctx, SecretSigningKey)
+	}
+	if !has && in.DB != nil {
+		var n int
+		if err := in.DB.QueryRowContext(ctx, `SELECT count(*) FROM tv_remote_inputs`).Scan(&n); err == nil {
+			has = n > 0
+		}
 	}
 	if has {
 		return httperror.Conflict("https://maktaba.dev/problems/cloudflare-account-in-use",

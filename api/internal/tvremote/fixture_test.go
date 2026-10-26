@@ -113,7 +113,7 @@ func newRemote(t *testing.T) *remoteFx {
 			t.Fatal(err)
 		}
 	}
-	for _, slot := range []string{"0125_tv_remote.sqlite.sql", "0126_tv_simulcast.sqlite.sql"} {
+	for _, slot := range []string{"0125_tv_remote.sqlite.sql", "0126_tv_simulcast.sqlite.sql", "0154_tv_public.sqlite.sql"} {
 		for _, s := range upStatements(t, filepath.Join(migrationsDir(), slot)) {
 			// the API's SQLite runner rewrites ADD COLUMN IF NOT EXISTS; here the columns are new
 			s = strings.ReplaceAll(s, "ADD COLUMN IF NOT EXISTS", "ADD COLUMN")

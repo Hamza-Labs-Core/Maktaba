@@ -33,6 +33,7 @@ import { rulesApi, rulesError, type RuleSection } from "../../lib/rulesApi";
 import { docLink } from "./LiveTV/docs";
 import { OnAir } from "./LiveTV/OnAir";
 import { RemotePanel } from "./LiveTV/RemotePanel";
+import { PublicPanel } from "./LiveTV/PublicPanel";
 import { SimulcastPanel } from "./LiveTV/Simulcast";
 import { StreamingHosts } from "./LiveTV/StreamingHosts";
 import { useTvCluster } from "./LiveTV/useTvCluster";
@@ -182,6 +183,8 @@ function LiveTVInner() {
       <RemotePanel />
 
       <SimulcastPanel />
+
+      <PublicPanel />
 
       <PlexPanel info={info} device={device} />
 

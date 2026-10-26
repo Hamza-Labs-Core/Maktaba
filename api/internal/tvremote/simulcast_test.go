@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -652,6 +653,32 @@ func TestSimulcastCapScheduledWindow(t *testing.T) {
 	})
 }
 
+// AC9: a manual start on a scheduled attachment with no window ahead has no
+// end; at the cap it stops at once, like an always output.
+func TestSimulcastCapManualStartWithoutWindow(t *testing.T) {
+	fx := newSim(t)
+	fx.simRules(map[string]any{"enabled": true, "max_hours_per_month": 1, "lead_seconds": 0, "tail_seconds": 0})
+	ch := fx.chans[0]
+	d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", "key-gggggggggg")
+	att := fx.attach(ch, d.ID, tvremote.ModeSchedule, []map[string]any{{"kind": "series", "series_id": "never-airs"}})
+	if err := fx.c.StartOutput(context.Background(), "admin", att); err != nil {
+		t.Fatal(err)
+	}
+	fx.reconcile()
+	fx.goLive(ch)
+	fx.reconcile()
+	if o := fx.open(att); o.State != tvremote.OutLive {
+		t.Fatalf("manual start: %+v", o)
+	}
+	for i := 0; i < 8; i++ { // 80 minutes: past the one-hour cap
+		fx.advance(10 * time.Minute)
+		fx.reconcile()
+	}
+	if fx.hasOpen(att) {
+		t.Fatalf("an unbounded manual output kept running past the cap: %+v", fx.open(att))
+	}
+}
+
 // TC6 (continued): the budget.
 func TestSimulcastBudgetBlocksNew(t *testing.T) {
 	t.Run("budget block_new: no new output, running ones finish", func(t *testing.T) {
@@ -821,6 +848,7 @@ func TestSimulcastEdgeIntegrationRemoved(t *testing.T) {
 	fx := newSim(t)
 	ch := fx.chans[0]
 	fx.in.StopPushes = fx.c.StopAll
+	fx.in.ForgetInputs = fx.c.Forget
 	d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", "key-eeeeeeeeee")
 	att := fx.attach(ch, d.ID, tvremote.ModeAlways, nil)
 	fx.reconcile()
@@ -834,6 +862,17 @@ func TestSimulcastEdgeIntegrationRemoved(t *testing.T) {
 	}
 	if fx.f.OutputCount() != 0 || fx.hasOpen(att) {
 		t.Fatalf("outputs after remove: %d open %v", fx.f.OutputCount(), fx.hasOpen(att))
+	}
+	// AC5: the broadcast's recording went with its input; no push is left
+	// open and no input row is left to count against max_channels
+	if n := len(fx.f.Videos); n != 0 {
+		t.Errorf("%d recordings left at Cloudflare", n)
+	}
+	var inputs, open int
+	_ = fx.db.QueryRow(`SELECT count(*) FROM tv_remote_inputs`).Scan(&inputs)
+	_ = fx.db.QueryRow(`SELECT count(*) FROM tv_remote_pushes WHERE state NOT IN ('done', 'failed')`).Scan(&open)
+	if inputs != 0 || open != 0 {
+		t.Errorf("after remove: %d input rows, %d open pushes", inputs, open)
 	}
 	fx.reconcile()
 	if fx.hasOpen(att) {
@@ -878,5 +917,39 @@ func TestSimulcastEdgeOutputStatus(t *testing.T) {
 	v, _ := fx.c.SimulcastStatus(context.Background(), ch)
 	if o := v.Attachments[0].Output; o.CFStatus != "connected" || o.Platform {
 		t.Fatalf("view %+v", o)
+	}
+}
+
+// 32.11 AC3 / 32.13 AC1: a destination's stream key never reaches the logs
+// or the audit details, through the whole life of an output.
+func TestSimulcastKeyNotInLogs(t *testing.T) {
+	fx := newSim(t)
+	buf := &syncBuf{}
+	fx.c.Logger = slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	fx.in.Logger = fx.c.Logger
+	fx.c.Audit = func(_ context.Context, action, actor, target string, details map[string]any) {
+		b, _ := json.Marshal(details)
+		_, _ = buf.Write([]byte(action + " " + actor + " " + target + " " + string(b) + "\n"))
+	}
+	const key = "live-key-9f8e7d6c5b4a"
+	ch := fx.chans[0]
+	d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", key)
+	att := fx.attach(ch, d.ID, tvremote.ModeAlways, nil)
+	fx.reconcile()
+	fx.goLive(ch)
+	fx.reconcile()
+	if o := fx.open(att); o.State != tvremote.OutLive {
+		t.Fatalf("output %+v", o)
+	}
+	if err := fx.c.StopOutput(context.Background(), "admin", att); err != nil {
+		t.Fatal(err)
+	}
+	fx.reconcile()
+	logs := buf.String()
+	if !strings.Contains(logs, "tv_simulcast") {
+		t.Fatalf("nothing logged:\n%s", logs)
+	}
+	if strings.Contains(logs, key) || strings.Contains(logs, key[:12]) {
+		t.Errorf("the destination's stream key is in the logs or audit:\n%s", logs)
 	}
 }

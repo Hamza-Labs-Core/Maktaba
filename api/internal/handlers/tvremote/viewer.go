@@ -213,12 +213,20 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`)
 	}
 	raw, _ := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+	// Cloudflare's shape (developers.cloudflare.com/stream/stream-live/webhooks):
+	// data.input_id, data.event_type, and for live_input.errored the code at
+	// data.live_input_errored.error.code. A flat data.error_code is still read.
 	var ev struct {
 		Data struct {
-			InputID      string `json:"input_id"`
-			EventType    string `json:"event_type"`
-			ErrorCode    string `json:"error_code"`
-			LiveInputUID string `json:"live_input_id"`
+			InputID          string `json:"input_id"`
+			EventType        string `json:"event_type"`
+			ErrorCode        string `json:"error_code"`
+			LiveInputUID     string `json:"live_input_id"`
+			LiveInputErrored struct {
+				Error struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			} `json:"live_input_errored"`
 		} `json:"data"`
 	}
 	_ = json.Unmarshal(raw, &ev)
@@ -226,8 +234,12 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 	if input == "" {
 		input = ev.Data.LiveInputUID
 	}
+	code := ev.Data.LiveInputErrored.Error.Code
+	if code == "" {
+		code = ev.Data.ErrorCode
+	}
 	if input != "" {
-		_ = h.Remote.InputEvent(r.Context(), input, ev.Data.EventType, ev.Data.ErrorCode)
+		_ = h.Remote.InputEvent(r.Context(), input, ev.Data.EventType, code)
 	} else {
 		h.Remote.Wake()
 	}

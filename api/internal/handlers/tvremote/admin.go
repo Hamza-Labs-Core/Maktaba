@@ -27,6 +27,8 @@ type Handler struct {
 	Integration *remote.Integration
 	// Remote is the remote controller (32.7-32.10); nil: the routes answer 503.
 	Remote *remote.Controller
+	// Publisher posts the public site's state (Epic 34); nil: none runs.
+	Publisher *remote.Publisher
 }
 
 // Mount registers the routes.
@@ -43,6 +45,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/tv/remote/webhook-secret", h.NewWebhookSecret)
 	r.Post("/api/tv/remote/webhook", h.Webhook)
 	h.mountSimulcast(r)
+	h.mountPublic(r)
 }
 
 func requireAdmin(w http.ResponseWriter, r *http.Request) bool {

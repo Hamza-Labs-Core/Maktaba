@@ -2,6 +2,7 @@ package tvremote_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -259,6 +260,10 @@ func TestTuneIdempotent202(t *testing.T) {
 func TestHeartbeatAfterAccessLost(t *testing.T) {
 	fx := newRemote(t)
 	r := fx.liveTune("u", fx.chans[0])
+	var audited []string
+	fx.c.Audit = func(_ context.Context, action, _, target string, d map[string]any) {
+		audited = append(audited, action+" "+target+" "+fmt.Sprint(d["reason"]))
+	}
 	v := tvremote.Viewer{UserID: "u", CanRead: func(*string) bool { return false }}
 	_, err := fx.c.Heartbeat(context.Background(), v, r.SessionID)
 	if te, ok := err.(*tvremote.TuneError); !ok || te.Status != http.StatusForbidden {
@@ -268,6 +273,10 @@ func TestHeartbeatAfterAccessLost(t *testing.T) {
 	_ = fx.db.QueryRow(`SELECT ended_at FROM tv_remote_sessions WHERE id = $1`, r.SessionID).Scan(&ended)
 	if ended == nil {
 		t.Error("session not ended")
+	}
+	// 32.8 AC9: the end is audited like any other
+	if len(audited) != 1 || audited[0] != "tv_remote.end "+r.SessionID+" access_lost" {
+		t.Errorf("audit %v", audited)
 	}
 }
 
