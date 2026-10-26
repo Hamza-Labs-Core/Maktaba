@@ -90,3 +90,50 @@ schema, the redaction filter, and the on-server retention policy.
   filter `regexp_quote`s before substituting.
 - Telemetry endpoint reachable from the open internet: rate limit
   prevents abuse; admins can disable entirely via the config flag.
+
+## Implementation
+
+**Status: done.** Built on branch `worktree-agent-a80d9c8f289bb66b9`.
+
+- **Schema:** slot **0156** `shared/db/migrations/0156_telemetry.sql` (+ `.sqlite.sql`):
+  `telemetry_events`, `telemetry_web_vitals`, indexes on `received_at`,
+  `(event_kind, received_at)` and the pseudonym (for "Forget my device"). Not in a
+  machine's copy: slot 0155 lists both tables in `cluster_copy_excluded()`.
+- **Handlers:** `api/internal/handlers/telemetry` (allow-list, redaction, handlers,
+  retention sweeper), mounted by `api/internal/router/telemetry.go`; the three routes
+  are on the auth gate's public allowlist (`DefaultPublicAllowlist`, pinned by its test).
+- **Rate limit:** the existing token-bucket limiter (`api/internal/middleware/ratelimit.go`)
+  gains `IPBudget`, which takes n tokens at once: 1,000 events + metrics a minute per IP
+  (counted per event, not per request), 30 deletes a minute per IP; 429 with `Retry-After`.
+  The IP is never stored (`TestNoRemoteAddrInTelemetry` checks every column).
+- **Config:** `[telemetry] enabled` in server.toml (default on) reaches the API as
+  `MAKTABA_TELEMETRY_ENABLED=false` when off; the POSTs then answer 204 and store
+  nothing. "Forget my device" works either way.
+- **Retention:** `telemetry.Sweeper`, started in `api/main.go` beside the watch reaper:
+  a pass at start, then daily; events 90 days, Web Vitals 30 days.
+- **Tests:** `telemetry_test.go` (SQLite, from the migration file) covers the plan's §8
+  allow-list, redaction, HTTP, retention and IP tests; `telemetry_pg_test.go` runs the sink
+  on Postgres with every migration applied (`MAKTABA_TEST_PG_URL`).
+
+**Differences from the spec and plan (the repo's conventions win):**
+
+- The handlers live in `api/internal/handlers/telemetry`, not `api/internal/telemetry` +
+  `api/internal/http`; no sqlc (the API uses `database/sql`).
+- Slot 0156, not 0064. Postgres indexes are `CONCURRENTLY` under `NO TRANSACTION`
+  (migration-lint).
+- The request body carries the device context once: `{device_pseudonym, app_version, os,
+  os_version, locale, events: [{event_kind, payload, ts}]}` (web vitals:
+  `{device_pseudonym, metrics: [...]}`).
+- An extra nullable column `occurred_at` keeps the device's `ts`; a time more than a
+  minute ahead of the server is truncated to `received_at` and logged (the EC).
+- The library-root placeholder is `<library>` (the plan), not `<path>` (the story's TC).
+  Home folders (`/Users/x`, `/home/x`, `C:\Users\x`) are also replaced, with `<home>`. The
+  roots are read from `library_roots` (cached one minute) rather than rebuilt on
+  `library.added` events.
+- Payload values must be scalars (an object or list is dropped like an unknown field);
+  strings are capped at 2,048 characters; a payload over 16 KiB is 413.
+- Allow-list additions: `feature.used {feature, count}` (story 16.5's feature-usage counts)
+  and `app.open.library_size_bucket`.
+- A 4xx-refused batch is never retried by the client; the per-request caps answer 413
+  `too-many-events` with nothing stored (the transaction makes a batch all or nothing).
+- No admin read endpoint (the plan asks for none). The rows are read with SQL.
