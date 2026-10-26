@@ -23,7 +23,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 | SAC-09 | Diagnostics error toast on 500 / 403 / 401                | Error         | P2       | Yes (`Settings.test.tsx`) |
 | SAC-10 | Diagnostics error toast on network failure                | Error         | P2       | Yes (`Settings.test.tsx`) |
 | SAC-11 | Personal access tokens text is stale                      | Navigation    | P3       | No                        |
-| SAC-12 | Tab nav lists all seven tabs with correct hrefs           | Navigation    | P1       | Yes (`Settings.test.tsx`) |
+| SAC-12 | Tab nav lists all eight tabs with correct hrefs           | Navigation    | P1       | Yes (`Settings.test.tsx`) |
 | SAC-13 | Deep link to each sub-route renders that tab              | Navigation    | P1       | Yes (`Settings.test.tsx`) |
 | SAC-14 | Clicking a tab link switches the panel                    | Navigation    | P1       | Yes (`Settings.test.tsx`) |
 | SAC-15 | Active tab is marked (aria-current)                       | Accessibility | P2       | Yes (`Settings.test.tsx`) |
@@ -150,7 +150,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
   1. Open `/settings`.
 - **Expected (wanted):** a link to the real tokens page `/account/tokens` (route exists in `App.tsx`, `APITokens`). **Current:** the text "Personal access token management requires a backend endpoint that is not yet available." (`settings.tokens.deferred`) with no link (currently unhandled — likely bug: stale copy).
 
-### SAC-12 — Tab nav lists all seven tabs with correct hrefs
+### SAC-12 — Tab nav lists all eight tabs with correct hrefs
 
 - **Priority:** P1
 - **Category:** Navigation
@@ -158,7 +158,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 - **Preconditions / data:** any user; open `/settings`.
 - **Steps:**
   1. Get `navigation` named "Settings".
-- **Expected:** Seven links in order: Account → `/settings`, Sessions → `/settings/sessions`, Appearance → `/settings/appearance`, Privacy → `/settings/privacy`, Models → `/settings/models`, Rules → `/settings/rules`, About → `/settings/about`. Hrefs are the same when the current URL is a sub-route (e.g. from `/settings/rules`, "Account" still points to `/settings`, not `/settings/rules`).
+- **Expected:** Eight links in order: Account → `/settings`, Sessions → `/settings/sessions`, Appearance → `/settings/appearance`, Privacy → `/settings/privacy`, Models → `/settings/models`, Rules → `/settings/rules`, Advanced → `/settings/advanced`, About → `/settings/about`. Hrefs are the same when the current URL is a sub-route (e.g. from `/settings/rules`, "Account" still points to `/settings`, not `/settings/rules`).
 
 ### SAC-13 — Deep link to each sub-route renders that tab
 
@@ -232,7 +232,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 - **Steps:**
   1. Open `/settings`.
   2. Check `document.documentElement.scrollWidth <= innerWidth`.
-- **Expected:** All seven tab links are reachable (wrap or scroll inside the nav only); the page itself has no horizontal scroll; buttons are full width or fit. Note: `.mkt-settings__nav` is `display:flex` with no `flex-wrap` (`src/styles/app.css` ~line 399), so seven links likely overflow at 375px (likely bug).
+- **Expected:** All eight tab links are reachable (wrap or scroll inside the nav only); the page itself has no horizontal scroll; buttons are full width or fit. Note: `.mkt-settings__nav` is `display:flex` with no `flex-wrap` (`src/styles/app.css` ~line 399), so eight links likely overflow at 375px (likely bug).
 
 ### SAC-20 — Arabic: RTL layout and Arabic strings
 
@@ -263,4 +263,4 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 - **Steps:**
   1. Press Tab from the top of the main content.
   2. Press Enter on "Privacy".
-- **Expected:** Focus goes through the seven tab links in order, then "Sign out everywhere", then "Collect diagnostics", each with a visible focus ring. Enter on a link navigates. The toast after diagnostics is announced (status/alert live region). `axe` (`src/test/axe.ts`) reports no violations.
+- **Expected:** Focus goes through the eight tab links in order, then "Sign out everywhere", then "Collect diagnostics", each with a visible focus ring. Enter on a link navigates. The toast after diagnostics is announced (status/alert live region). `axe` (`src/test/axe.ts`) reports no violations.

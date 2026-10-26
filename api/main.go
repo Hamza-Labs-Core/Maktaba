@@ -586,6 +586,10 @@ func runServe() error {
 			// admin. All four packages had a working Mount() but no caller
 			// (specs/FULL_IMPLEMENTATION_AUDIT.md §A.4).
 			pairingStore := router.MountP10(r, p10Deps)
+			// Epic 16 story 16.8 — feature flags over the same entitlement store,
+			// signed with the server's Ed25519 identity (story 10.18)
+			router.MountFlags(r, router.FlagsDeps{DB: appDB, Entitlements: entStore, Logger: logger,
+				Identity: router.LoadServerIdentity(homeSecrets.Key, logger)})
 			logger.Info("p10: subscriptions/discovery/security/perf handlers mounted",
 				"event", "p10_mounted")
 
