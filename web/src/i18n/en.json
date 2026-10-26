@@ -457,6 +457,7 @@
   "update.phase.done": "Updated. Now running {version}.",
   "update.phase.error": "Update failed.",
   "update.rolledBack": "Update failed and was rolled back.",
+  "update.blocked": "The update can't start now: {reason}.",
   "update.docker.instructions": "This is a Docker install. Run:",
   "update.docker.image": "Image:",
   "update.disabled": "Automatic update checks are off.",

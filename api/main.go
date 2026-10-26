@@ -561,8 +561,10 @@ func runServe() error {
 				Keys:          auth.keys,
 				SecureCookies: cookiesSecure(),
 				AccessTTL:     accessTokenTTL(),
-				Seats:         subscriptions.NewSeatLimiter(entStore),
-				Settings:      runtimeSettings,
+				// Epic 16 story 16.1: free is single-user in every build; a
+				// release embeds the license key, so a home can lift it
+				Seats:    subscriptions.NewSeatLimiter(entStore),
+				Settings: runtimeSettings,
 				// Epic 42 story 42.7: the relay agent's identity (the
 				// supervisor passes its path while [cloud] is on)
 				CloudIdentityPath: os.Getenv("MAKTABA_CLOUD_IDENTITY"),

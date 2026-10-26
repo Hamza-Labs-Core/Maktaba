@@ -457,6 +457,7 @@
   "update.phase.done": "تم التحديث. يعمل الآن بالإصدار {version}.",
   "update.phase.error": "فشل التحديث.",
   "update.rolledBack": "فشل التحديث وتمت استعادة الإصدار السابق.",
+  "update.blocked": "لا يمكن بدء التحديث الآن: {reason}.",
   "update.docker.instructions": "هذا تثبيت عبر Docker. نفّذ:",
   "update.docker.image": "الصورة:",
   "update.disabled": "فحص التحديثات التلقائي معطّل.",

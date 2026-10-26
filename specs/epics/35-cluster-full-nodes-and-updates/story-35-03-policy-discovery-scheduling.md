@@ -37,7 +37,8 @@ Design: [design.md](design.md) §4, §3.5; README R4, R3.6, settings table.
 - **AC6** Just before starting, the GitHub release is re-read: gone, turned prerelease on `stable`, or a
   different `checksums.txt` → `withdrawn_at` set, not installed, notified.
 - **AC7** "Update now" (`POST /api/cluster/updates/run {version?, confirm:true}`, admin) skips only the
-  window and age conditions; `POST /api/admin/system/update` maps to it and returns `{run_id}`.
+  window and age conditions and a recent crash (the running release's, which the update may cure;
+  audited `update_past_recent_crash`); `POST /api/admin/system/update` maps to it and returns `{run_id}`.
 - **AC8** Skip (`/skip {version}`), defer (`/defer {until}`), pin (settings) are audited; a pin below the
   watermark is rejected (400 `pin_below_installed`); switching `beta → stable` never selects a lower
   version.
