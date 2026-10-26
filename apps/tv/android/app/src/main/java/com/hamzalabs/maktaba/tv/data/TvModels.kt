@@ -62,18 +62,24 @@ data class RailItem(
         }
 }
 
-/** `POST /api/auth/device/start`: what the TV shows while a person approves it. */
+/** `POST /api/pairing/device`: the code the TV shows while a person approves it. */
 @Serializable
 data class DeviceCode(
-    @SerialName("user_code") val userCode: String,
+    /** What a person reads and types: ABCD-1234. */
+    val code: String,
+    /** The TV's secret: only the TV holding it collects the approval. */
     @SerialName("device_code") val deviceCode: String,
-    @SerialName("verification_uri") val verificationUri: String,
-    @SerialName("verification_uri_complete") val verificationUriComplete: String,
-    @SerialName("expires_in") val expiresIn: Int = 600,
-    val interval: Int = 5,
-)
+    @SerialName("expires_at") val expiresAt: String? = null,
+    /** The approve page on the home, with the code: `/pair?code=ABCD-1234`. */
+    @SerialName("verify_path") val verifyPath: String = "/pair",
+    val interval: Int = 2,
+) {
+    /** When the code runs out, in epoch milliseconds (null: the home did not say). */
+    val expiresMillis: Long?
+        get() = expiresAt?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }
+}
 
-/** `POST /api/auth/device/token` once approved: the TV's own tokens. */
+/** `POST /api/pairing/device/token` once approved: the TV's own tokens. */
 @Serializable
 data class DeviceTokens(
     @SerialName("access_token") val accessToken: String,

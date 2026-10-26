@@ -8,6 +8,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -30,7 +34,7 @@ data class HomeRow(val title: String, val videos: List<Pair<TvVideo, Float>>)
  * newest videos, then the home's suggestions. The library scene is drawn behind it.
  */
 @Composable
-fun HomeScreen(api: TvApi, onOpen: (String) -> Unit, signedOut: () -> Unit) {
+fun HomeScreen(api: TvApi, focusFirst: Boolean, onOpen: (String) -> Unit, signedOut: () -> Unit) {
     val cw = stringResource(R.string.continue_watching)
     val recent = stringResource(R.string.recently_added)
     val forYou = stringResource(R.string.for_you)
@@ -56,24 +60,29 @@ fun HomeScreen(api: TvApi, onOpen: (String) -> Unit, signedOut: () -> Unit) {
         if (rows.isEmpty()) {
             Centered { Text(stringResource(R.string.nothing_yet), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text) }
         } else {
+            val first = remember { FocusRequester() }
+            // at launch and back from a video: the first card (not when the tab bar has focus)
+            LaunchedEffect(rows, focusFirst) { if (focusFirst) runCatching { first.requestFocus() } }
             LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 24.dp, bottom = 48.dp),
                 verticalArrangement = Arrangement.spacedBy(28.dp),
             ) {
-                items(rows, key = { it.title }) { row -> VideoRow(api, row, onOpen) }
+                items(rows, key = { it.title }) { row ->
+                    VideoRow(api, row, onOpen, first = if (focusFirst && row === rows.first()) first else null)
+                }
             }
         }
     }
 }
 
 @Composable
-fun VideoRow(api: TvApi, row: HomeRow, onOpen: (String) -> Unit) {
+fun VideoRow(api: TvApi, row: HomeRow, onOpen: (String) -> Unit, first: FocusRequester? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionTitle(row.title)
         // vertical room for the focused card's scale and ring
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(28.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
             contentPadding = PaddingValues(vertical = 14.dp, horizontal = 8.dp),
         ) {
             items(row.videos, key = { it.first.id }) { (v, progress) ->
@@ -83,6 +92,7 @@ fun VideoRow(api: TvApi, row: HomeRow, onOpen: (String) -> Unit) {
                     title = v.displayTitle,
                     subtitle = v.durationSec?.let { clock(it) },
                     progress = progress,
+                    cardModifier = if (first != null && v === row.videos.first().first) Modifier.focusRequester(first) else Modifier,
                     onClick = { onOpen(v.id) },
                 )
             }

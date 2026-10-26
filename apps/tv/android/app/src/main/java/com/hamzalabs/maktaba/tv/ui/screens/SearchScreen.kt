@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -23,9 +24,11 @@ import kotlinx.coroutines.delay
 
 /** Search the videos by name: the results follow the typing (a short pause, then the home). */
 @Composable
-fun SearchScreen(api: TvApi, onOpen: (String) -> Unit, signedOut: () -> Unit) {
+fun SearchScreen(api: TvApi, focusFirst: Boolean, onOpen: (String) -> Unit, signedOut: () -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
+    // back from a video: its results take focus again, until a new search (typing keeps focus)
+    val shownOnReturn = remember { query }
     LaunchedEffect(text) {
         delay(400)
         query = text.trim()
@@ -46,6 +49,7 @@ fun SearchScreen(api: TvApi, onOpen: (String) -> Unit, signedOut: () -> Unit) {
                 signedOut = signedOut,
                 onOpen = onOpen,
                 empty = stringResource(R.string.search_none, query),
+                focusFirst = focusFirst && query == shownOnReturn,
             ) { cursor -> api.videos(query = query, cursor = cursor) }
         }
     }

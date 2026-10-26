@@ -15,7 +15,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -42,6 +49,7 @@ fun TvTextField(
     keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
     val border = if (focused) MaktabaPalette.Gold else MaktabaPalette.Border
     val borderWidth = if (focused) FocusRingWidth else 1.dp
 
@@ -66,6 +74,15 @@ fun TvTextField(
             modifier = Modifier
                 .fillMaxWidth()
                 .onFocusChanged { focused = it.isFocused }
+                // a one-line field has no use for up and down: the remote leaves it with them
+                .onPreviewKeyEvent { e ->
+                    if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (e.key) {
+                        Key.DirectionUp -> focusManager.moveFocus(FocusDirection.Up)
+                        Key.DirectionDown -> focusManager.moveFocus(FocusDirection.Down)
+                        else -> false
+                    }
+                }
                 .background(MaktabaPalette.Surface, RoundedCornerShape(8.dp))
                 .border(borderWidth, border, RoundedCornerShape(8.dp))
                 .padding(horizontal = 16.dp, vertical = 12.dp),

@@ -24,9 +24,8 @@ class DeviceSignInTest {
     private fun json(code: Int, body: String) =
         MockResponse.Builder().code(code).setHeader("Content-Type", "application/json").body(body).build()
 
-    private fun code(n: Int) = """{"user_code":"ABCD-000$n","device_code":"secret-$n",
-        "verification_uri":"http://home:8088/link","verification_uri_complete":"http://home:8088/link?code=ABCD-000$n",
-        "expires_in":600,"interval":5}"""
+    private fun code(n: Int) = """{"code":"ABCD-000$n","device_code":"secret-$n",
+        "expires_at":"2026-10-26T08:10:00Z","verify_path":"/pair?code=ABCD-000$n","interval":5}"""
 
     @Before
     fun start() {
@@ -51,8 +50,8 @@ class DeviceSignInTest {
         var polls = 0
         route = { r ->
             when (r.url.encodedPath) {
-                "/api/auth/device/start" -> json(201, code(1))
-                "/api/auth/device/token" -> if (++polls < 3) json(202, """{"status":"pending"}""")
+                "/api/pairing/device" -> json(201, code(1))
+                "/api/pairing/device/token" -> if (++polls < 3) json(202, """{"status":"pending"}""")
                     else json(200, """{"access_token":"a1","access_expires_in":900,"refresh_token":"r1","user_id":"u1"}""")
                 else -> json(404, "{}")
             }
@@ -61,15 +60,13 @@ class DeviceSignInTest {
         val tokens = signIn().run { shown += it }
         assertEquals("a1", tokens.accessToken)
         assertEquals("r1", tokens.refreshToken)
-        assertEquals(listOf("ABCD-0001"), shown.map { it.userCode })
-        assertEquals("http://home:8088/link?code=ABCD-0001", shown.single().verificationUriComplete)
-        val start = seen.first()
-        assertEquals("native", start.headers["X-Maktaba-Client"])
-        assertTrue("names the device", start.body!!.utf8().contains("\"device_label\":\"Android TV (test)\""))
-        // polls carry the TV's secret, never the code on the screen, at the home's interval
-        val polls1 = seen.filter { it.url.encodedPath == "/api/auth/device/token" }
+        assertEquals(listOf("ABCD-0001"), shown.map { it.code })
+        assertEquals(server.url("/pair?code=ABCD-0001"), signIn().approveUrl(shown.single()))
+        assertEquals("native", seen.first().headers["X-Maktaba-Client"])
+        // polls carry the TV's secret (never the code on the screen) and its name, at the home's interval
+        val polls1 = seen.filter { it.url.encodedPath == "/api/pairing/device/token" }
         assertEquals(3, polls1.size)
-        assertTrue(polls1.all { it.body!!.utf8() == """{"device_code":"secret-1"}""" })
+        assertTrue(polls1.all { it.body!!.utf8() == """{"device_code":"secret-1","device_label":"Android TV (test)"}""" })
         assertEquals(15_000L, clock)
     }
 
@@ -78,16 +75,17 @@ class DeviceSignInTest {
         var starts = 0
         route = { r ->
             when (r.url.encodedPath) {
-                "/api/auth/device/start" -> json(201, code(++starts))
-                "/api/auth/device/token" ->
+                "/api/pairing/device" -> json(201, code(++starts))
+                "/api/pairing/device/token" ->
                     if (r.body!!.utf8().contains("secret-1")) json(410, """{"title":"code expired"}""")
+                    else if (r.body!!.utf8().contains("secret-2")) json(409, """{"title":"already collected"}""")
                     else json(200, """{"access_token":"a2","refresh_token":"r2"}""")
                 else -> json(404, "{}")
             }
         }
         val shown = mutableListOf<String>()
-        val tokens = signIn().run { shown += it.userCode }
-        assertEquals(listOf("ABCD-0001", "ABCD-0002"), shown)
+        val tokens = signIn().run { shown += it.code }
+        assertEquals(listOf("ABCD-0001", "ABCD-0002", "ABCD-0003"), shown)
         assertEquals("a2", tokens.accessToken)
     }
 
@@ -96,15 +94,15 @@ class DeviceSignInTest {
         var starts = 0
         route = { r ->
             when (r.url.encodedPath) {
-                "/api/auth/device/start" -> json(201, code(++starts))
+                "/api/pairing/device" -> json(201, code(++starts))
                 else -> if (starts == 1) json(202, "{}") else json(200, """{"access_token":"a","refresh_token":"r"}""")
             }
         }
         val shown = mutableListOf<String>()
-        signIn().run { shown += it.userCode }
+        signIn().run { shown += it.code }
         assertEquals(2, shown.size)
-        // 600 s at one poll each 5 s: 120 polls for the first code, then one for the second
-        assertEquals(121, seen.count { it.url.encodedPath == "/api/auth/device/token" })
+        // the TV's clock (0) disagrees with expires_at: ten minutes, one poll each 5 s, then the second code
+        assertEquals(121, seen.count { it.url.encodedPath == "/api/pairing/device/token" })
     }
 
     @Test

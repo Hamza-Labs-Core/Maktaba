@@ -43,7 +43,9 @@ fun MediaCard(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     progress: Float = 0f,
-    width: Dp = 300.dp,
+    width: Dp = 240.dp,
+    /** On the focusable card itself (a FocusRequester goes here). */
+    cardModifier: Modifier = Modifier,
     onClick: () -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -51,7 +53,7 @@ fun MediaCard(
     Column(modifier = modifier.width(width)) {
         Card(
             onClick = onClick,
-            modifier = Modifier
+            modifier = cardModifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
                 .onFocusChanged { focused = it.isFocused || it.hasFocus },

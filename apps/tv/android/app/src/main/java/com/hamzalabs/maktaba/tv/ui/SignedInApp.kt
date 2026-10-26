@@ -43,9 +43,14 @@ fun SignedInApp(app: MaktabaTVApp, user: User, client: ApiClient) {
     val api = remember(client) { TvApi(client) }
     val stack = remember(client) { mutableStateListOf<Place>(Place.Tabs) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    // a tab's first item takes focus at launch and back from a screen; not while the tab bar has it
+    var focusContent by remember(client) { mutableStateOf(true) }
     val signedOut = { app.session.signedOut() }
 
-    fun open(p: Place) { stack.add(p) }
+    fun open(p: Place) {
+        focusContent = true
+        stack.add(p)
+    }
     fun back() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
     BackHandler(enabled = stack.size > 1) { back() }
 
@@ -60,11 +65,11 @@ fun SignedInApp(app: MaktabaTVApp, user: User, client: ApiClient) {
         Place.Tabs -> Box(Modifier.fillMaxSize()) {
             if (tab == 0) LibraryBackdrop()
             Column(Modifier.fillMaxSize()) {
-                TopBar(tabs = tabs, selectedIndex = tab, onSelect = { tab = it })
+                TopBar(tabs = tabs, selectedIndex = tab, onSelect = { if (it != tab) focusContent = false; tab = it })
                 when (tab) {
-                    0 -> HomeScreen(api, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
-                    1 -> LibrariesScreen(api, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
-                    2 -> SearchScreen(api, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+                    0 -> HomeScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+                    1 -> LibrariesScreen(api, focusFirst = focusContent, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
+                    2 -> SearchScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
                     else -> AccountScreen(app, user)
                 }
             }

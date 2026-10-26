@@ -40,10 +40,10 @@ fun VideoScreen(api: TvApi, id: String, onPlay: (title: String, startMs: Long) -
         val focus = remember { FocusRequester() }
         LaunchedEffect(v.id) { runCatching { focus.requestFocus() } }
         Row(
-            Modifier.fillMaxSize().padding(horizontal = Gutter + 24.dp, vertical = Gutter),
-            horizontalArrangement = Arrangement.spacedBy(48.dp),
+            Modifier.fillMaxSize().padding(horizontal = Gutter, vertical = 40.dp),
+            horizontalArrangement = Arrangement.spacedBy(36.dp),
         ) {
-            Poster(api.client, v.id, Modifier.width(560.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)))
+            Poster(api.client, v.id, Modifier.width(380.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 SectionTitle(v.displayTitle)
                 val facts = listOfNotNull(

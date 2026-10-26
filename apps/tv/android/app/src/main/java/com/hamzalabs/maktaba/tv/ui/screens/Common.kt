@@ -24,7 +24,7 @@ import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 import kotlinx.coroutines.CancellationException
 
 /** The TV's overscan gutters: content stays clear of a TV's cropped edges. */
-val Gutter = 56.dp
+val Gutter = 48.dp
 
 /** What a screen loads: loading, the value, or why it could not. */
 sealed interface Load<out T> {

@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -50,7 +51,7 @@ import com.hamzalabs.maktaba.core.R as CoreR
 
 /**
  * Signing the TV in to [home]. First choice: a code. The TV shows a short code and a QR of the
- * home's approve page (`<home>/link?code=…`); a person signed in on their phone or the web
+ * home's approve page (`<home>/pair?code=…`); a person signed in on their phone or the web
  * approves it, and the TV is signed in as them, no password typed with a remote. Fallback: the
  * username and password on the on-screen keyboard (a home without sign-in by code goes straight
  * there).
@@ -58,13 +59,25 @@ import com.hamzalabs.maktaba.core.R as CoreR
 @Composable
 fun SignInScreen(app: MaktabaTVApp, home: Home) {
     var withPassword by remember(home.url) { mutableStateOf(false) }
+    // the kept sign-in could not be checked (the home did not answer): say so, try again
+    val restoreProblem by app.session.restoreProblem.collectAsState()
     var unsupported by remember(home.url) { mutableStateOf(false) }
 
     LibraryBackdrop {
         Column(
-            Modifier.fillMaxSize().padding(horizontal = 80.dp, vertical = 48.dp),
+            Modifier.fillMaxSize().padding(horizontal = Gutter, vertical = 24.dp),
             verticalArrangement = Arrangement.Center,
         ) {
+            restoreProblem?.let { why ->
+                Row(
+                    Modifier.padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(CoreR.string.signin_kept_failed, why), style = MaterialTheme.typography.bodyMedium, color = MaktabaPalette.Gold)
+                    MaktabaButton(onClick = { app.session.retryRestore() }) { Text(stringResource(R.string.try_again)) }
+                }
+            }
             if (withPassword) {
                 PasswordSignIn(app, home, unsupported) { withPassword = false }
             } else {
@@ -89,10 +102,11 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
     var attempt by remember { mutableIntStateOf(0) }
     val focus = remember { FocusRequester() }
 
+    val signIn = remember(home.url, label) { DeviceSignIn(home.httpUrl, label) }
     LaunchedEffect(home.url, attempt) {
         problem = null
         try {
-            val tokens = DeviceSignIn(home.httpUrl, label).run { c ->
+            val tokens = signIn.run { c ->
                 renewed = code != null
                 code = c
             }
@@ -108,8 +122,8 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
     }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
-    Row(horizontalArrangement = Arrangement.spacedBy(48.dp), verticalAlignment = Alignment.CenterVertically) {
-        ReadingPanel(Modifier.weight(1f), contentPadding = 32.dp) {
+    Row(horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
+        ReadingPanel(Modifier.weight(1f), contentPadding = 24.dp) {
             SectionTitle(stringResource(R.string.signin_code_title, home.name))
             val c = code
             when {
@@ -125,17 +139,17 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
                 else -> {
                     Text(
                         stringResource(R.string.signin_code_step1),
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaktabaPalette.Muted,
-                        modifier = Modifier.padding(top = 16.dp),
+                        modifier = Modifier.padding(top = 12.dp),
                     )
-                    Text(c.verificationUri, style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text)
-                    Text(stringResource(R.string.signin_code_step2), style = MaterialTheme.typography.bodyLarge, color = MaktabaPalette.Muted)
+                    Text(signIn.approveUrl(c).newBuilder().query(null).build().toString(), style = MaterialTheme.typography.titleMedium, color = MaktabaPalette.Text)
+                    Text(stringResource(R.string.signin_code_step2), style = MaterialTheme.typography.bodyMedium, color = MaktabaPalette.Muted)
                     Text(
-                        c.userCode,
+                        c.code,
                         style = MaterialTheme.typography.displayMedium.copy(letterSpacing = 6.sp),
                         color = MaktabaPalette.Gold,
-                        modifier = Modifier.padding(vertical = 16.dp),
+                        modifier = Modifier.padding(vertical = 4.dp),
                     )
                     Text(
                         stringResource(if (renewed) R.string.signin_code_new else R.string.signin_code_waiting),
@@ -144,7 +158,7 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
                     )
                 }
             }
-            Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (problem != null) {
                     MaktabaButton(onClick = { attempt++ }, modifier = Modifier.focusRequester(focus)) {
                         Text(stringResource(R.string.try_again))
@@ -157,7 +171,7 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
                 MaktabaButton(onClick = { app.session.switchHome() }) { Text(stringResource(CoreR.string.other_home)) }
             }
         }
-        code?.let { QrCode(it.verificationUriComplete, size = 280.dp) }
+        code?.let { QrCode(signIn.approveUrl(it).toString(), size = 220.dp) }
     }
 }
 

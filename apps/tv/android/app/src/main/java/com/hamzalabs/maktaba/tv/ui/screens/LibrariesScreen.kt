@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,6 +22,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,15 +45,17 @@ import kotlinx.coroutines.CancellationException
 
 /** The libraries this person can read (the home lists only those). */
 @Composable
-fun LibrariesScreen(api: TvApi, onOpen: (String, String) -> Unit, signedOut: () -> Unit) {
+fun LibrariesScreen(api: TvApi, focusFirst: Boolean, onOpen: (String, String) -> Unit, signedOut: () -> Unit) {
     val (state, retry) = rememberLoad(api, signedOut) { api.client.libraries() }
     LoadState(state, retry) { libs ->
         if (libs.isEmpty()) {
             Centered { Text(stringResource(R.string.nothing_yet), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text) }
             return@LoadState
         }
+        val first = remember { FocusRequester() }
+        LaunchedEffect(libs, focusFirst) { if (focusFirst) runCatching { first.requestFocus() } }
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(320.dp),
+            columns = GridCells.Adaptive(260.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = Gutter, vertical = 32.dp),
             horizontalArrangement = Arrangement.spacedBy(28.dp),
@@ -59,16 +64,17 @@ fun LibrariesScreen(api: TvApi, onOpen: (String, String) -> Unit, signedOut: () 
             items(libs, key = { it.id }) { lib ->
                 Card(
                     onClick = { onOpen(lib.id, lib.name) },
-                    modifier = Modifier.fillMaxWidth().height(150.dp),
+                    modifier = Modifier.fillMaxWidth().height(110.dp)
+                        .then(if (lib === libs.first()) Modifier.focusRequester(first) else Modifier),
                     shape = CardDefaults.shape(CardCorner),
                     colors = maktabaCardColors(),
                     scale = CardDefaults.scale(focusedScale = 1.05f),
                     border = goldFocusBorder(),
                 ) {
-                    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.BottomStart) {
-                        Column {
+                    Box(Modifier.fillMaxSize().padding(horizontal = 20.dp), contentAlignment = Alignment.CenterStart) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("۞", style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Gold)
-                            Text(lib.name, style = MaterialTheme.typography.headlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(lib.name, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -85,7 +91,7 @@ fun LibrariesScreen(api: TvApi, onOpen: (String, String) -> Unit, signedOut: () 
 fun LibraryScreen(api: TvApi, library: String, name: String, onOpen: (String) -> Unit, signedOut: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(top = 32.dp)) {
         SectionTitle(name, Modifier.padding(horizontal = Gutter))
-        VideoGrid(api, key = library, signedOut = signedOut, onOpen = onOpen) { cursor -> api.videos(library = library, cursor = cursor) }
+        VideoGrid(api, key = library, signedOut = signedOut, onOpen = onOpen, focusFirst = true) { cursor -> api.videos(library = library, cursor = cursor) }
     }
 }
 
@@ -97,6 +103,8 @@ fun VideoGrid(
     signedOut: () -> Unit,
     onOpen: (String) -> Unit,
     empty: String? = null,
+    /** The first video takes focus once there is one (a screen just opened, or came back). */
+    focusFirst: Boolean = false,
     page: suspend (String?) -> com.hamzalabs.maktaba.core.api.Page<TvVideo>,
 ) {
     val videos = remember(key) { mutableStateListOf<TvVideo>() }
@@ -130,8 +138,11 @@ fun VideoGrid(
         videos.isEmpty() && loading -> Centered { Text(stringResource(R.string.loading), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text) }
         videos.isEmpty() && problem != null -> LoadState(Load.Failed(problem!!), retry = { want++ }) {}
         videos.isEmpty() -> Centered { Text(empty ?: stringResource(R.string.nothing_yet), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text) }
-        else -> LazyVerticalGrid(
-            columns = GridCells.Adaptive(300.dp),
+        else -> {
+          val first = remember { FocusRequester() }
+          LaunchedEffect(key, focusFirst) { if (focusFirst) runCatching { first.requestFocus() } }
+          LazyVerticalGrid(
+            columns = GridCells.Adaptive(240.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = Gutter, vertical = 28.dp),
             horizontalArrangement = Arrangement.spacedBy(28.dp),
@@ -146,10 +157,12 @@ fun VideoGrid(
                     video = v.id,
                     title = v.displayTitle,
                     subtitle = v.durationSec?.let { clock(it) },
-                    width = 300.dp,
+                    width = 240.dp,
+                    cardModifier = if (i == 0) Modifier.focusRequester(first) else Modifier,
                     onClick = { onOpen(v.id) },
                 )
             }
+          }
         }
     }
 }

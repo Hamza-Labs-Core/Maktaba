@@ -13,7 +13,7 @@ TV Material, ZXing for the QR).
 | Screen | What | API |
 |---|---|---|
 | Choose a home | homes announcing `_maktaba._tcp` on the network (mDNS), saved homes, or a typed address | — |
-| Sign in | **a code**: the TV shows `ABCD-1234` and a QR of `<home>/link?code=…`; a person signed in on a phone or the web approves, and the TV is signed in as them. Fallback: username and password on the on-screen keyboard (and straight there on a home without sign-in by code) | `POST /api/auth/device/start`, `POST /api/auth/device/token`; `POST /api/auth/login` (`X-Maktaba-Client: native`) |
+| Sign in | **a code**: the TV shows `ABCD-1234` and a QR of `<home>/pair?code=…`; a person signed in on a phone or the web approves, and the TV is signed in as them. Fallback: username and password on the on-screen keyboard (and straight there on a home without sign-in by code) | `POST /api/pairing/device`, `POST /api/pairing/device/token` (approved with `POST /api/pairing/approve`, the web's `/pair`); `POST /api/auth/login` (`X-Maktaba-Client: native`) |
 | Home | Continue Watching (where you stopped), Recently added, For you; the library scene behind | `GET /api/recommendations`, `GET /api/videos?sort=created_at` |
 | Libraries | the libraries you can read, then a library's videos, a page at a time | `GET /api/libraries`, `GET /api/videos?library=` |
 | Search | videos by name, as you type | `GET /api/videos?q=` |
