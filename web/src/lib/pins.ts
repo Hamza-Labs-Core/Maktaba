@@ -18,6 +18,10 @@ export const MAX_PINS = 20;
 let pins: LibraryRef[] | null = null;
 let loadedFor: string | null = null;
 let inflight: Promise<LibraryRef[]> | null = null;
+// the list the server last confirmed (a refused save goes back to it), and the
+// saves in flight, one after another so two quick moves never race
+let confirmed: LibraryRef[] | null = null;
+let saving: Promise<unknown> = Promise.resolve();
 const listeners = new Set<(p: LibraryRef[] | null) => void>();
 
 function publish(next: LibraryRef[] | null) {
@@ -39,12 +43,17 @@ function parse(r: PinsDoc | null | undefined): LibraryRef[] {
 export function loadPins(user: string): Promise<LibraryRef[]> {
   if (loadedFor === user && pins) return Promise.resolve(pins);
   if (loadedFor === user && inflight) return inflight;
+  // another user's pins are never shown, not even while this user's load
+  if (loadedFor !== user) publish(null);
   loadedFor = user;
   const p = api
     .get<PinsDoc>(PINS_PATH)
     .then((r) => {
       const list = parse(r);
-      if (loadedFor === user) publish(list);
+      if (loadedFor === user) {
+        confirmed = list;
+        publish(list);
+      }
       return list;
     })
     .catch(() => {
@@ -63,19 +72,23 @@ export function loadPins(user: string): Promise<LibraryRef[]> {
  * Replaces the pins (the order is the list's). The nav shows the new list at
  * once; when the server refuses, the old list comes back and the error is thrown.
  */
-export async function savePins(next: LibraryRef[]): Promise<LibraryRef[]> {
-  const before = pins;
+export function savePins(next: LibraryRef[]): Promise<LibraryRef[]> {
   publish(next);
-  try {
-    const r = await api.put<PinsDoc>(PINS_PATH, { library_ids: next.map((p) => p.id) });
-    // the server's list wins (its names; a pin it no longer shows drops out)
-    const final = parse(r);
-    publish(final);
-    return final;
-  } catch (e) {
-    publish(before);
-    throw e;
-  }
+  const run = saving.then(async () => {
+    try {
+      const r = await api.put<PinsDoc>(PINS_PATH, { library_ids: next.map((p) => p.id) });
+      // the server's list wins (its names; a pin it no longer shows drops out)
+      const final = parse(r);
+      confirmed = final;
+      if (pins === next) publish(final);
+      return final;
+    } catch (e) {
+      publish(confirmed);
+      throw e;
+    }
+  });
+  saving = run.catch(() => undefined);
+  return run;
 }
 
 /** Pins `lib` at the end, or unpins it. */
@@ -118,4 +131,6 @@ export function resetPinsStore() {
   pins = null;
   loadedFor = null;
   inflight = null;
+  confirmed = null;
+  saving = Promise.resolve();
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -83,7 +84,8 @@ nested = { a = "b" }
 			}
 		}
 	}
-	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
+	// POSIX modes: Windows keeps the file the user's by its ACL (files_windows.go)
+	if fi, _ := os.Stat(path); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Errorf("mode %v, want 0600", fi.Mode().Perm())
 	}
 

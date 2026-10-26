@@ -31,6 +31,12 @@ type Tab = "overview" | "browse";
 
 export function LibraryPage() {
   const { libraryId = "" } = useParams();
+  // a page per library: going from one library to another starts afresh, never
+  // showing the first one's rows (or pinning it) under the second's id
+  return <LibraryPageOf key={libraryId} libraryId={libraryId} />;
+}
+
+function LibraryPageOf({ libraryId }: { libraryId: string }) {
   const { t, n } = useI18n();
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
