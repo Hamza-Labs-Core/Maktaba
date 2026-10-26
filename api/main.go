@@ -623,6 +623,9 @@ func runServe() error {
 				DB: appDB, Version: version.Version, StartTime: processStart,
 				PipelineAddr: pipelineAddr, SupervisorURL: supervisorURL, Secrets: homeSecrets,
 			})
+			// Epic 45 story 45.3: Settings, Storage & discovery (server.toml through the
+			// supervisor, and a restart)
+			router.MountServerSettings(r, appDB)
 			// Epic 33: TV changes (/api/tv/changes, releases, slots) and the change
 			// controller (staged -> verified -> approved -> swapped)
 			router.MountP33(r, router.P33Deps{DB: appDB, Logger: logger, RunController: true,
