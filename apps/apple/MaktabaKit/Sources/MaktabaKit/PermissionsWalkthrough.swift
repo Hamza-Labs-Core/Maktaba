@@ -23,9 +23,18 @@ public extension PermissionKind {
 public extension View {
     /// Shows the permissions walkthrough over the app: on the first run, and again whenever
     /// a required permission is refused; re-checked each time the app comes to the
-    /// foreground. `appName` is the name the person sees in Settings.
-    func permissionsWalkthrough(appName: String) -> some View {
+    /// foreground. `appName` is the name the person sees in Settings (the bundle's display
+    /// name by default).
+    func permissionsWalkthrough(appName: String = Bundle.main.displayName) -> some View {
         modifier(PermissionsGate(appName: appName))
+    }
+}
+
+extension Bundle {
+    /// The name under the icon and in Settings.
+    public var displayName: String {
+        (object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (object(forInfoDictionaryKey: "CFBundleName") as? String) ?? "Maktaba"
     }
 }
 
