@@ -268,7 +268,7 @@ const USER_LINKS = [
   ["nav.sessions", "/account/sessions"],
   ["nav.tokens", "/account/tokens"],
   ["nav.history", "/account/history"],
-  ["nav.billing", "/billing"],
+  ["nav.billing", "/settings/subscription"],
   ["nav.cloudStatus", "/cloud/status"],
   ["nav.help", "/help"],
 ] as const;

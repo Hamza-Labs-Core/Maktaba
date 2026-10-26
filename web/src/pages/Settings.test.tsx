@@ -467,10 +467,11 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     ["Models", "/settings/models"],
     ["Rules", "/settings/rules"],
     ["Advanced", "/settings/advanced"],
+    ["Subscription", "/settings/subscription"],
     ["About", "/settings/about"],
   ];
 
-  it("SAC-12: the tab nav lists all eight tabs with the right hrefs", () => {
+  it("SAC-12: the tab nav lists all nine tabs with the right hrefs", () => {
     for (const path of ["/settings", "/settings/rules"]) {
       const { unmount } = renderSettings(path);
       const nav = screen.getByRole("navigation", { name: "Settings" });
@@ -610,7 +611,17 @@ describe("Settings account (test-cases/settings-account.md)", () => {
       within(nav)
         .getAllByRole("link")
         .map((l) => l.textContent)
-    ).toEqual(["الحساب", "الجلسات", "المظهر", "الخصوصية", "النماذج", "القواعد", "متقدم", "حول"]);
+    ).toEqual([
+      "الحساب",
+      "الجلسات",
+      "المظهر",
+      "الخصوصية",
+      "النماذج",
+      "القواعد",
+      "متقدم",
+      "الاشتراك",
+      "حول",
+    ]);
     expect(screen.getByText("مها").closest("p")).toHaveTextContent("تسجيل الدخول باسم مها");
     expect(screen.getByRole("button", { name: "تسجيل الخروج من كل الأجهزة" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "جمع التشخيص" })).toBeInTheDocument();

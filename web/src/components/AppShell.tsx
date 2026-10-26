@@ -62,7 +62,7 @@ const SECONDARY = [
   { to: "/account/sessions", key: "nav.sessions", icon: "⧉" },
   { to: "/account/tokens", key: "nav.tokens", icon: "⚿" },
   { to: "/account/history", key: "nav.history", icon: "◷" },
-  { to: "/billing", key: "nav.billing", icon: "◈" },
+  { to: "/settings/subscription", key: "nav.billing", icon: "◈" },
   { to: "/cloud/status", key: "nav.cloudStatus", icon: "☁" },
   { to: "/help", key: "nav.help", icon: "?" },
 ] as const;

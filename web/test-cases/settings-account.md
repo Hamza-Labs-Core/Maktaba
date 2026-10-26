@@ -23,7 +23,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
 | SAC-09 | Diagnostics error toast on 500 / 403 / 401                | Error         | P2       | Yes (`Settings.test.tsx`) |
 | SAC-10 | Diagnostics error toast on network failure                | Error         | P2       | Yes (`Settings.test.tsx`) |
 | SAC-11 | Personal access tokens text is stale                      | Navigation    | P3       | No                        |
-| SAC-12 | Tab nav lists all eight tabs with correct hrefs           | Navigation    | P1       | Yes (`Settings.test.tsx`) |
+| SAC-12 | Tab nav lists all nine tabs with correct hrefs            | Navigation    | P1       | Yes (`Settings.test.tsx`) |
 | SAC-13 | Deep link to each sub-route renders that tab              | Navigation    | P1       | Yes (`Settings.test.tsx`) |
 | SAC-14 | Clicking a tab link switches the panel                    | Navigation    | P1       | Yes (`Settings.test.tsx`) |
 | SAC-15 | Active tab is marked (aria-current)                       | Accessibility | P2       | Yes (`Settings.test.tsx`) |
@@ -150,7 +150,7 @@ Test harness hint: render `<I18nProvider><ToastProvider><MemoryRouter initialEnt
   1. Open `/settings`.
 - **Expected (wanted):** a link to the real tokens page `/account/tokens` (route exists in `App.tsx`, `APITokens`). **Current:** the text "Personal access token management requires a backend endpoint that is not yet available." (`settings.tokens.deferred`) with no link (currently unhandled — likely bug: stale copy).
 
-### SAC-12 — Tab nav lists all eight tabs with correct hrefs
+### SAC-12 — Tab nav lists all nine tabs with correct hrefs
 
 - **Priority:** P1
 - **Category:** Navigation

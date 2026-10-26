@@ -71,7 +71,11 @@ function tierLabel(t: (k: string) => string, tier: string | undefined) {
   return t(`subscription.tier.${tier === "home" || tier === "pro" ? tier : "free"}`);
 }
 
-function seatsText(t: (k: string, v?: Record<string, string | number>) => string, allowed: number, used?: number) {
+function seatsText(
+  t: (k: string, v?: Record<string, string | number>) => string,
+  allowed: number,
+  used?: number
+) {
   const limit = allowed < 0 ? t("subscription.seats.unlimited") : String(allowed);
   return used == null ? limit : t("subscription.seats.of", { used, limit });
 }
@@ -102,7 +106,12 @@ function ViewerSubscription() {
       .then((e) => (e && typeof e === "object" ? setEnt(e) : setFailed(true)))
       .catch(() => setFailed(true));
   }, []);
-  if (failed) return <p className="mkt-alert" role="alert">{t("common.error")}</p>;
+  if (failed)
+    return (
+      <p className="mkt-alert" role="alert">
+        {t("common.error")}
+      </p>
+    );
   if (!ent) return <p className="mkt-loading">{t("common.loading")}</p>;
   return (
     <div className="mkt-settings__panel mkt-subscription">
@@ -123,7 +132,7 @@ function problemText(e: unknown, t: (k: string) => string): string {
 }
 
 function AdminSubscription() {
-  const { t, d } = useI18n();
+  const { t, formatDate: d } = useI18n();
   const toast = useToast();
   const [view, setView] = useState<LicenseView | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -198,7 +207,13 @@ function AdminSubscription() {
 
   const lic = view.license;
   const statusTone =
-    view.status === "active" ? "success" : view.status === "grace" ? "warn" : view.status === "none" ? "neutral" : "error";
+    view.status === "active"
+      ? "success"
+      : view.status === "grace"
+        ? "warn"
+        : view.status === "none"
+          ? "neutral"
+          : "error";
   return (
     <div className="mkt-settings__panel mkt-subscription">
       {view.message && (
@@ -209,7 +224,9 @@ function AdminSubscription() {
 
       <Card header={<strong>{t("subscription.plan")}</strong>}>
         <p>
-          <Badge tone={view.tier === "free" ? "neutral" : "accent"}>{tierLabel(t, view.tier)}</Badge>{" "}
+          <Badge tone={view.tier === "free" ? "neutral" : "accent"}>
+            {tierLabel(t, view.tier)}
+          </Badge>{" "}
           {view.status !== "none" && (
             <Badge tone={statusTone}>{t(`subscription.status.${view.status}`)}</Badge>
           )}
@@ -217,7 +234,9 @@ function AdminSubscription() {
         <dl className="mkt-kv">
           <div>
             <dt className="mkt-muted">{t("subscription.users")}</dt>
-            <dd data-testid="subscription-seats">{seatsText(t, view.seats_allowed, view.seats_used)}</dd>
+            <dd data-testid="subscription-seats">
+              {seatsText(t, view.seats_allowed, view.seats_used)}
+            </dd>
           </div>
           {lic?.holder && (
             <div>
@@ -246,12 +265,18 @@ function AdminSubscription() {
 
       <Card header={<strong>{t("subscription.cloud")}</strong>}>
         {view.cloud.claimed ? (
-          <p>{t("subscription.cloud.claimed", { slug: view.cloud.slug ?? view.cloud.server_id ?? "" })}</p>
+          <p>
+            {t("subscription.cloud.claimed", {
+              slug: view.cloud.slug ?? view.cloud.server_id ?? "",
+            })}
+          </p>
         ) : (
           <p className="mkt-muted">{t("subscription.cloud.unclaimed")}</p>
         )}
         {view.last_refresh_at && (
-          <p className="mkt-muted">{t("subscription.lastChecked", { when: d(view.last_refresh_at) })}</p>
+          <p className="mkt-muted">
+            {t("subscription.lastChecked", { when: d(view.last_refresh_at) })}
+          </p>
         )}
         {view.last_refresh_error && (
           <p className="mkt-muted" data-testid="subscription-refresh-error">
@@ -265,7 +290,12 @@ function AdminSubscription() {
             </a>
           )}
           {view.available && (
-            <Button variant="secondary" onClick={check} loading={busy === "check"} disabled={busy !== null}>
+            <Button
+              variant="secondary"
+              onClick={check}
+              loading={busy === "check"}
+              disabled={busy !== null}
+            >
               {t("subscription.checkNow")}
             </Button>
           )}
@@ -286,7 +316,11 @@ function AdminSubscription() {
               spellCheck={false}
             />
             <div className="mkt-toolbar">
-              <Button onClick={apply} loading={busy === "apply"} disabled={!license.trim() || busy !== null}>
+              <Button
+                onClick={apply}
+                loading={busy === "apply"}
+                disabled={!license.trim() || busy !== null}
+              >
                 {t("subscription.license.apply")}
               </Button>
               {lic && (

@@ -8,6 +8,8 @@
 //                 density comfortable/compact (persisted)
 //   Privacy     — tracking switch, recent history, activity timeline (29.4)
 //   Advanced    — Experiments: beta cohorts the user may join (16.6)
+//   Subscription — the plan, users against seats, the license, Maktaba
+//                 Cloud (Epic 16; admins manage it, viewers read it)
 //   About       — app version and updates (Epic 28)
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
@@ -23,6 +25,7 @@ import { AppUpdateSettings } from "./Settings/AppUpdateSettings";
 import { HomeNameSettings } from "./Settings/HomeNameSettings";
 import { ExperimentsSection } from "./Settings/ExperimentsSection";
 import { TelemetrySettings } from "./Settings/TelemetrySettings";
+import { SubscriptionSettings } from "./Settings/SubscriptionSettings";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, downloadBlob, ApiError } from "../lib/api";
@@ -80,6 +83,7 @@ export function Settings() {
         <NavLink to="/settings/models">{t("settings.section.models")}</NavLink>
         <NavLink to="/settings/rules">{t("settings.section.rules")}</NavLink>
         <NavLink to="/settings/advanced">{t("settings.section.advanced")}</NavLink>
+        <NavLink to="/settings/subscription">{t("settings.section.subscription")}</NavLink>
         <NavLink
           to="/settings/about"
           className="mkt-settings__navlink"
@@ -104,6 +108,7 @@ export function Settings() {
         <Route path="models" element={<ModelsSection />} />
         <Route path="rules" element={<RulesSection />} />
         <Route path="advanced" element={<AdvancedTab />} />
+        <Route path="subscription" element={<SubscriptionSettings />} />
         <Route path="about" element={<AboutTab />} />
         {/* an unknown tab (/settings/nope) opens Account instead of an empty panel */}
         <Route path="*" element={<Navigate to="/settings" replace />} />
