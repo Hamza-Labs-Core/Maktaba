@@ -514,8 +514,9 @@ func (h *Handler) Folders(w http.ResponseWriter, r *http.Request) {
 		err   error
 	}
 	ch := make(chan listed, 1)
+	list := listFolders // read once here: the goroutine may outlive the request
 	go func() {
-		names, err := listFolders(local, places)
+		names, err := list(local, places)
 		ch <- listed{names, err}
 	}()
 	timer := time.NewTimer(folderListTimeout)

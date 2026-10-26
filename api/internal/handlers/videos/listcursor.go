@@ -59,11 +59,6 @@ var listSorts = map[string]listSort{
 // listSortNames is the order the 400 names the sorts in.
 const listSortNames = "updated_at, created_at, title, published_at, duration_sec, plays"
 
-// sortExpr is the ORDER BY expression for a sort field.
-func sortExpr(sort string) string {
-	return listSorts[sort].expr
-}
-
 // orderBy is the ORDER BY list for a sort and direction: NULL keys last,
 // then the key, then the id as the tie-break.
 func orderBy(sort, order string) string {
