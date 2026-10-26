@@ -183,29 +183,6 @@ struct WatchView: View {
     }
 }
 
-/// The system player for `player`: SwiftUI's VideoPlayer on iPhone and iPad; on the Mac
-/// AppKit's AVPlayerView in a plain host view (see `PlayerHostView`), with the Mac's own
-/// controls and full-screen button.
-#if os(macOS)
-struct PlayerSurface: NSViewRepresentable {
-    let player: AVPlayer
-
-    func makeNSView(context: Context) -> NSView {
-        PlayerHostView(player: player)
-    }
-
-    func updateNSView(_ v: NSView, context: Context) {
-        (v as? PlayerHostView)?.player = player
-    }
-}
-#else
-struct PlayerSurface: View {
-    let player: AVPlayer
-
-    var body: some View { VideoPlayer(player: player) }
-}
-#endif
-
 /// The Playback menu (the Mac's menu bar, an iPad's with a keyboard): space plays and
 /// pauses, the arrows skip 10 s, Command-period stops. Each is off while nothing plays, so
 /// the keys stay the search field's and the lists'.
