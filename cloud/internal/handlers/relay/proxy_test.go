@@ -26,7 +26,7 @@ func TestSlugFromHost(t *testing.T) {
 func TestCloudCookiesStayOffHomes(t *testing.T) {
 	h := http.Header{}
 	h.Add("Cookie", "maktaba_refresh=secret; mkt_sess=home-session")
-	h.Add("Cookie", "MAKTABA_other=x; mkt_csrf=c")
+	h.Add("Cookie", "MAKTABA_other=x; oauth_state=s; mkt_csrf=c")
 	stripCloudCookies(h)
 	if got := h.Get("Cookie"); got != "mkt_sess=home-session; mkt_csrf=c" || len(h.Values("Cookie")) != 1 {
 		t.Fatalf("Cookie = %q", h.Values("Cookie"))
@@ -41,6 +41,7 @@ func TestCloudCookiesStayOffHomes(t *testing.T) {
 		"mkt_sess=a; Path=/; Domain=.relay.maktaba.app": false,
 		"x=1; domain=maktaba.app":                       false,
 		"maktaba_refresh=evil; Path=/":                  false,
+		"oauth_pkce=evil; Path=/":                       false,
 	} {
 		if hostOnlyCookie(v) != ok {
 			t.Errorf("hostOnlyCookie(%q) = %v", v, !ok)

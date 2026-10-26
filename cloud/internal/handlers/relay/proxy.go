@@ -209,10 +209,20 @@ func slugFromHost(host, publicHost string) string {
 	return strings.TrimSuffix(host, "."+publicHost)
 }
 
-// cloudCookiePrefix names the cloud's own cookies (maktaba_refresh, …).
-// The homes' cookies are their own names (mkt_sess, mkt_csrf), host-only on
-// their subdomain.
-const cloudCookiePrefix = "maktaba_"
+// cloudCookiePrefixes name the cloud's own cookies (maktaba_refresh, the
+// OAuth flow's oauth_state / oauth_nonce / oauth_pkce). The homes' cookies
+// are their own names (mkt_sess, mkt_csrf), host-only on their subdomain.
+var cloudCookiePrefixes = []string{"maktaba_", "oauth_"}
+
+func cloudCookie(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	for _, p := range cloudCookiePrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
 
 // stripCloudCookies drops the cloud's cookies from a request bound for a
 // home, keeping the home's own (its web sessions through the relay).
@@ -227,7 +237,7 @@ func stripCloudCookies(h http.Header) {
 		for _, c := range strings.Split(v, ";") {
 			c = strings.TrimSpace(c)
 			name, _, _ := strings.Cut(c, "=")
-			if c == "" || strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), cloudCookiePrefix) {
+			if c == "" || cloudCookie(name) {
 				continue
 			}
 			keep = append(keep, c)
@@ -244,7 +254,7 @@ func stripCloudCookies(h http.Header) {
 func hostOnlyCookie(setCookie string) bool {
 	parts := strings.Split(setCookie, ";")
 	name, _, _ := strings.Cut(strings.TrimSpace(parts[0]), "=")
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), cloudCookiePrefix) {
+	if cloudCookie(name) {
 		return false
 	}
 	for _, a := range parts[1:] {
