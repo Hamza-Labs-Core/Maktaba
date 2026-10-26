@@ -25,8 +25,12 @@ const (
 
 // Backup writes a pg_dump custom-format dump of the app database into
 // backups/ (maktaba-<local time>.dump, written beside and renamed into place)
-// and keeps the newest KeepBackups. It returns the dump's path.
+// and keeps the newest KeepBackups, after making room for it (MakeRoom). It
+// returns the dump's path.
 func (b Bundle) Backup(ctx context.Context, now time.Time) (string, error) {
+	if err := MakeRoom(b.Backups); err != nil {
+		return "", err
+	}
 	path := filepath.Join(b.Backups, backupPrefix+now.Format(backupStamp)+backupSuffix)
 	if err := b.dumpTo(ctx, path); err != nil {
 		return "", err

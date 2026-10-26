@@ -35,9 +35,12 @@ func UpdateDumpName(from, to string) string {
 // DumpBeforeUpdate writes a pg_dump custom-format dump of the app database into
 // backups/UpdateDumpName(from, to) (beside and renamed into place: a dump of
 // that name there already is replaced, so the dump is always the database as
-// it is now) and keeps the newest keep pre-update dumps, this one always. The
-// server must be up.
+// it is now) and keeps the newest keep pre-update dumps, this one always. Room
+// is made for it first (MakeRoom). The server must be up.
 func (b Bundle) DumpBeforeUpdate(ctx context.Context, from, to string, keep int) (string, error) {
+	if err := MakeRoom(b.Backups); err != nil {
+		return "", err
+	}
 	path := filepath.Join(b.Backups, UpdateDumpName(from, to))
 	if err := b.dumpTo(ctx, path); err != nil {
 		return "", err
