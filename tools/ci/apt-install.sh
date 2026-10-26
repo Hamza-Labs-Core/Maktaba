@@ -3,7 +3,7 @@
 # mirror eating the job. The runner's third-party sources (Microsoft, Azure, ...) are
 # not read: every package Maktaba's CI installs comes from Ubuntu's own archive. Each
 # update gets 3 minutes, three tries, a 30 s network timeout per request; the install
-# 4 minutes, twice, the second from Ubuntu's own archive.
+# APT_INSTALL_TIMEOUT (default 10 minutes), twice, the second from Ubuntu's own archive.
 set -euo pipefail
 [ $# -gt 0 ] || { echo "usage: apt-install.sh <package>..." >&2; exit 2; }
 
@@ -31,9 +31,12 @@ echo "man-db man-db/auto-update boolean false" | sudo debconf-set-selections
 sudo rm -f /var/lib/man-db/auto-update
 
 # the runner's mirror (azure.archive.ubuntu.com) has stalled a download for the whole
-# step: an install gets 4 minutes, and a second try reads Ubuntu's own archive
+# step: an install gets APT_INSTALL_TIMEOUT seconds (10 minutes; a big set such as the
+# Linux app's WebKit and GTK needs several on a good day), and a second try reads
+# Ubuntu's own archive
+limit=${APT_INSTALL_TIMEOUT:-600}
 for try in 1 2; do
-  if sudo DEBIAN_FRONTEND=noninteractive timeout 240 apt-get "${opts[@]}" install -y -qq --no-install-recommends "$@"; then
+  if sudo DEBIAN_FRONTEND=noninteractive timeout "$limit" apt-get "${opts[@]}" install -y -qq --no-install-recommends "$@"; then
     exit 0
   fi
   [ "$try" = 2 ] && { echo "::error::apt-get install failed twice" >&2; exit 1; }

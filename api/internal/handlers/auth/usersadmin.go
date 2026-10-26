@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -13,6 +14,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 )
 
 // Problem-type URIs for the admin user-management surface (Story 10.1
@@ -42,10 +44,8 @@ type SeatCounter interface {
 	CountUsers(ctx context.Context) (int, error)
 }
 
-// seatsUnlimited mirrors subscriptions.SeatsUnlimited without importing
-// the package here (avoids an import cycle risk and keeps this handler
-// dependency-light). Kept in sync by the seat-gate tests.
-const seatsUnlimited = -1
+// seatsUnlimited is subscriptions.SeatsUnlimited.
+const seatsUnlimited = subscriptions.SeatsUnlimited
 
 // enforceSeatLimit is the Epic 16 Story 16.2 gate at the user-create
 // boundary — the first real premium-gate call site. It returns a
@@ -80,10 +80,35 @@ func (h *Handler) enforceSeatLimit(ctx context.Context) error {
 		return httperror.Unavailable(0)
 	}
 	if n+1 > limit {
-		return httperror.Forbidden(TypeSeatLimit,
-			"seat limit reached for the current subscription tier")
+		tier := "free"
+		if tn, ok := h.Seats.(interface{ TierName() string }); ok {
+			tier = tn.TierName()
+		}
+		return seatRefusal(tier, limit, n)
 	}
 	return nil
+}
+
+// seatRefusal says in plain words why another user cannot be added and
+// what would allow it; the web shows the detail as is.
+func seatRefusal(tier string, limit, used int) *httperror.Error {
+	label := subscriptions.TierLabel(tier)
+	users := func(n int) string {
+		if n == 1 {
+			return "1 user"
+		}
+		return fmt.Sprintf("%d users", n)
+	}
+	detail := fmt.Sprintf("This home's %s plan allows %s and it has %d. ", label, users(limit), used)
+	if tier == string(subscriptions.TierHome) {
+		detail += "Pro has no limit: apply a Pro license in Settings → Subscription."
+	} else {
+		detail += "Adding users needs the Home plan (4 users) or Pro (unlimited): apply a license in Settings → Subscription."
+	}
+	return (&httperror.Error{
+		Type: TypeSeatLimit, Title: "User limit reached", Status: http.StatusForbidden, Detail: detail,
+	}).With("feature", string(subscriptions.FeatureMultiUser)).With("tier", tier).
+		With("seats_allowed", limit).With("seats_used", used)
 }
 
 // UserAdmin is the seam the admin user-management surface drives.

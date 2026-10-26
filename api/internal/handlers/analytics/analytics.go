@@ -11,6 +11,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 )
 
 // Handler serves the admin analytics dashboard (Story 29.3), per-video
@@ -29,7 +30,35 @@ type Handler struct {
 
 	NowFunc func() time.Time
 
+	// Advanced reports whether the license grants advanced analytics and
+	// the home's tier (Epic 16 story 16.2). Without it the free tier sees
+	// the last 30 days and neither the per-user breakdown nor export.
+	// Nil ⇒ granted (unit tests that predate the gate).
+	Advanced func() (bool, string)
+
 	cache *summaryCache
+}
+
+// gateAdvanced writes the license refusal and reports false when the
+// license does not grant advanced analytics.
+func (h *Handler) gateAdvanced(w http.ResponseWriter, r *http.Request) bool {
+	if h.Advanced == nil {
+		return true
+	}
+	ok, tier := h.Advanced()
+	if !ok {
+		httperror.Write(w, r, subscriptions.Refusal(subscriptions.FeatureAdvancedMetric, tier))
+	}
+	return ok
+}
+
+// gateRange lets the free tier ask for 30 days at most.
+func (h *Handler) gateRange(w http.ResponseWriter, r *http.Request, rng Range) bool {
+	switch rng.Label {
+	case "90d", "1y", "all":
+		return h.gateAdvanced(w, r)
+	}
+	return true
 }
 
 func (h *Handler) now() time.Time {
@@ -103,6 +132,9 @@ func (h *Handler) SummaryEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	now := h.now()
 	rng := ParseRange(r.URL.Query().Get("range"), now)
+	if !h.gateRange(w, r, rng) {
+		return
+	}
 	refresh := r.URL.Query().Get("refresh") == "true"
 
 	if !refresh {
@@ -151,6 +183,9 @@ func (h *Handler) TopVideos(w http.ResponseWriter, r *http.Request) {
 	}
 	limit = clamp(limit, 10, 100)
 	rng := ParseRange(r.URL.Query().Get("range"), h.now())
+	if !h.gateRange(w, r, rng) {
+		return
+	}
 	items, err := h.repo().topVideos(r.Context(), rng, limit)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("top videos").Wrap(err))
@@ -165,6 +200,9 @@ func (h *Handler) Activity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rng := ParseRange(r.URL.Query().Get("range"), h.now())
+	if !h.gateRange(w, r, rng) {
+		return
+	}
 	bucket := validBucket(r.URL.Query().Get("bucket"))
 	rp := h.repo()
 	series, err := rp.series(r.Context(), rng, bucket)
@@ -184,7 +222,7 @@ func (h *Handler) Activity(w http.ResponseWriter, r *http.Request) {
 
 // Users implements GET /api/admin/analytics/users?range=&limit=.
 func (h *Handler) Users(w http.ResponseWriter, r *http.Request) {
-	if requireAdmin(w, r) == nil {
+	if requireAdmin(w, r) == nil || !h.gateAdvanced(w, r) {
 		return
 	}
 	limit, e := common.QueryInt(r, "limit", 10)

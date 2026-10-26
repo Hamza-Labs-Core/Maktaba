@@ -266,6 +266,14 @@ jobs:
           rm -f "$RUNNER_TEMP/maktaba.p12"
           echo "MAKTABA_MAC_SIGN_IDENTITY=Maktaba Code Signing" >>"$GITHUB_ENV"
 
+      # Epic 16: the license-server public key over the placeholder before any
+      # build (tools/release/license-key.sh); a release without it fails.
+      - name: Embed the license-server key
+        shell: bash
+        env:
+          MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
+        run: tools/release/license-key.sh --require
+
       # The server payload (on a Mac signed when the identity is there) and the
       # tauri overlay that bundles it, then a smoke test of the payload alone.
       # Git Bash on Windows (make is MinGW's there).

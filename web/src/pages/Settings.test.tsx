@@ -466,10 +466,12 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     ["Privacy", "/settings/privacy"],
     ["Models", "/settings/models"],
     ["Rules", "/settings/rules"],
+    ["Advanced", "/settings/advanced"],
+    ["Subscription", "/settings/subscription"],
     ["About", "/settings/about"],
   ];
 
-  it("SAC-12: the tab nav lists all seven tabs with the right hrefs", () => {
+  it("SAC-12: the tab nav lists all nine tabs with the right hrefs", () => {
     for (const path of ["/settings", "/settings/rules"]) {
       const { unmount } = renderSettings(path);
       const nav = screen.getByRole("navigation", { name: "Settings" });
@@ -500,6 +502,11 @@ describe("Settings account (test-cases/settings-account.md)", () => {
         "/settings/rules",
         () => screen.findByRole("heading", { level: 2, name: "Rules" }),
         ["/api/rules"],
+      ],
+      [
+        "/settings/advanced",
+        () => screen.findByRole("heading", { level: 2, name: "Experiments" }),
+        ["/api/me/cohorts"],
       ],
       [
         "/settings/about",
@@ -604,7 +611,17 @@ describe("Settings account (test-cases/settings-account.md)", () => {
       within(nav)
         .getAllByRole("link")
         .map((l) => l.textContent)
-    ).toEqual(["الحساب", "الجلسات", "المظهر", "الخصوصية", "النماذج", "القواعد", "حول"]);
+    ).toEqual([
+      "الحساب",
+      "الجلسات",
+      "المظهر",
+      "الخصوصية",
+      "النماذج",
+      "القواعد",
+      "متقدم",
+      "الاشتراك",
+      "حول",
+    ]);
     expect(screen.getByText("مها").closest("p")).toHaveTextContent("تسجيل الدخول باسم مها");
     expect(screen.getByRole("button", { name: "تسجيل الخروج من كل الأجهزة" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "جمع التشخيص" })).toBeInTheDocument();
@@ -973,7 +990,7 @@ describe("Settings privacy (test-cases/settings-privacy.md)", () => {
     get.mockImplementation(() => new Promise(() => {}));
     renderSettings("/settings/privacy");
     expect(screen.getByRole("heading", { name: "Activity tracking" })).toBeInTheDocument();
-    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: /^Tracking/ })).not.toBeInTheDocument();
     expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
 
@@ -983,7 +1000,7 @@ describe("Settings privacy (test-cases/settings-privacy.md)", () => {
       const { unmount } = renderSettings("/settings/privacy");
       expect(await screen.findByText("Something went wrong.")).toHaveAttribute("role", "alert");
       await screen.findByRole("table");
-      expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+      expect(screen.queryByRole("switch", { name: /^Tracking/ })).not.toBeInTheDocument();
       expect(request).not.toHaveBeenCalled();
       unmount();
     }

@@ -30,6 +30,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/sessions"
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	billingh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/license"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
@@ -47,6 +48,9 @@ type Deps struct {
 	// gauges; optional.
 	LiveTunnels func(ctx context.Context) (servers, tunnels int)
 	Now         func() time.Time
+	// Licenses is the license record (Epic 16). Nil ⇒ the license
+	// routes answer 503.
+	Licenses *license.Issuer
 }
 
 func (d *Deps) now() time.Time {
@@ -79,6 +83,9 @@ func Mount(r chi.Router, d *Deps) {
 		g.Post("/v1/admin/abuse/block", d.Block)
 		g.Post("/v1/admin/abuse/unblock", d.Unblock)
 		g.Get("/v1/admin/audit", d.AuditLog)
+		g.Get("/v1/admin/licenses", d.ListLicenses)
+		g.Post("/v1/admin/licenses/{id}/revoke", d.RevokeLicense)
+		g.Post("/v1/admin/licenses/{id}/unrevoke", d.UnrevokeLicense)
 	})
 }
 
@@ -633,6 +640,9 @@ func (d *Deps) AuditLog(w http.ResponseWriter, r *http.Request) {
 // entry builds an audit row for an action by the admitted operator.
 func (d *Deps) entry(r *http.Request, action, target string, detail map[string]any) audit.Entry {
 	e := audit.Entry{Action: action, TargetKind: "user", TargetID: target, Detail: detail, IP: middleware.GetClientIP(r.Context())}
+	if strings.HasPrefix(action, "admin.license.") {
+		e.TargetKind = "license"
+	}
 	if strings.HasPrefix(action, "admin.abuse.") {
 		if k, _ := detail["subject_kind"].(string); k != "" {
 			e.TargetKind = k
@@ -657,4 +667,64 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 
 func writeErr(w http.ResponseWriter, code int, kind, msg string) {
 	writeJSON(w, code, map[string]string{"error": kind, "message": msg})
+}
+
+// ListLicenses lists the issued licenses with their revocations.
+func (d *Deps) ListLicenses(w http.ResponseWriter, r *http.Request) {
+	if d.Licenses == nil {
+		writeErr(w, http.StatusServiceUnavailable, "licensing_disabled", "")
+		return
+	}
+	limit, offset := pageParams(r, 50, 200)
+	list, total, err := d.Licenses.List(r.Context(), limit, offset)
+	if err != nil {
+		d.fail(w, r, "list licenses", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"licenses": list, "total": total})
+}
+
+// RevokeLicense puts a license id on the signed revocation list: the
+// home holding it locks at its next check (a plan license within a
+// minute, an offline one within a day).
+func (d *Deps) RevokeLicense(w http.ResponseWriter, r *http.Request) {
+	d.setRevoked(w, r, true)
+}
+
+// UnrevokeLicense takes a license id off the list.
+func (d *Deps) UnrevokeLicense(w http.ResponseWriter, r *http.Request) {
+	d.setRevoked(w, r, false)
+}
+
+func (d *Deps) setRevoked(w http.ResponseWriter, r *http.Request, revoke bool) {
+	if d.Licenses == nil {
+		writeErr(w, http.StatusServiceUnavailable, "licensing_disabled", "")
+		return
+	}
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	reason, ok := readReason(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	action := "admin.license.unrevoke"
+	if revoke {
+		action = "admin.license.revoke"
+		if err := d.Licenses.Revoke(ctx, id, reason, middleware.GetUserID(ctx)); err != nil {
+			d.fail(w, r, "revoke license", err)
+			return
+		}
+	} else if found, err := d.Licenses.Unrevoke(ctx, id); err != nil {
+		d.fail(w, r, "unrevoke license", err)
+		return
+	} else if !found {
+		writeErr(w, http.StatusNotFound, "not_found", "that license is not revoked")
+		return
+	}
+	if d.Audit != nil {
+		if err := d.Audit.Write(ctx, d.entry(r, action, id, map[string]any{"reason": reason})); err != nil {
+			d.Logger.Error("admin: audit license change", "err", err)
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

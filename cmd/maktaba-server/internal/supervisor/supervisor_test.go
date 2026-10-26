@@ -45,6 +45,23 @@ func TestChildEnvRoleSpecificBinds(t *testing.T) {
 	}
 }
 
+// [telemetry] enabled = "off" reaches the api as MAKTABA_TELEMETRY_ENABLED=false; on
+// (the default) adds nothing, and no other role gets it.
+func TestChildEnvTelemetryOptOut(t *testing.T) {
+	t.Parallel()
+	cfg := config.Defaults()
+	if hasKey(childEnvOK(RoleAPI, cfg), "MAKTABA_TELEMETRY_ENABLED") {
+		t.Error("telemetry on by default should add nothing")
+	}
+	cfg.Telemetry.Enabled = "off"
+	if !hasKV(childEnvOK(RoleAPI, cfg), "MAKTABA_TELEMETRY_ENABLED", "false") {
+		t.Error("[telemetry] enabled = off did not reach the api")
+	}
+	if hasKey(childEnvOK(RoleStreaming, cfg), "MAKTABA_TELEMETRY_ENABLED") {
+		t.Error("streaming got the api's telemetry switch")
+	}
+}
+
 func TestBuildMissingBinaryIsActionable(t *testing.T) {
 	// No t.Parallel(): t.Setenv forbids it.
 	t.Setenv("MAKTABA_API_BIN", "/nonexistent/maktaba-api-xyz")

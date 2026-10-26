@@ -15,14 +15,14 @@ control), §11.5 (secrets).
 
 | # | Story | Status |
 |---|-------|--------|
-| 16.1 | [Free tier (local only, single user)](story-16-01-free-tier.md) | spec |
-| 16.2 | [Premium features](story-16-02-premium-features.md) | spec |
-| 16.3 | [Subscription management](story-16-03-subscription-management.md) | spec |
-| 16.4 | [License key validation](story-16-04-license-validation.md) | spec |
-| 16.5 | [Usage analytics (opt-in)](story-16-05-telemetry-opt-in.md) | spec |
-| 16.6 | [Feature flags per tier](story-16-06-feature-flags.md) | spec |
-| 16.7 | [API: telemetry sink](story-16-07-telemetry-api.md) | spec (added per REVIEW §3.2) |
-| 16.8 | [API: feature-flag resolution](story-16-08-feature-flags-api.md) | spec (added per REVIEW §3.2) |
+| 16.1 | [Free tier (local only, single user)](story-16-01-free-tier.md) | done |
+| 16.2 | [Premium features](story-16-02-premium-features.md) | done |
+| 16.3 | [Subscription management](story-16-03-subscription-management.md) | done |
+| 16.4 | [License key validation](story-16-04-license-validation.md) | done |
+| 16.5 | [Usage analytics (opt-in)](story-16-05-telemetry-opt-in.md) | done |
+| 16.6 | [Feature flags per tier](story-16-06-feature-flags.md) | done |
+| 16.7 | [API: telemetry sink](story-16-07-telemetry-api.md) | done (added per REVIEW §3.2) |
+| 16.8 | [API: feature-flag resolution](story-16-08-feature-flags-api.md) | done (added per REVIEW §3.2) |
 
 ---
 
@@ -45,6 +45,12 @@ control), §11.5 (secrets).
   and live in the same redaction set as PATs (Epic 21 Story 21.1).
 - **Telemetry:** strictly opt-in; no PII (file names, transcripts,
   search queries) ever leaves the server.
+
+## Implementation
+
+Licensing end to end: [`docs/licensing.md`](../../../docs/licensing.md). Cloud
+side: [`cloud/docs/accounts-billing-admin.md`](../../../cloud/docs/accounts-billing-admin.md)
+(Licenses).
 
 ## Open questions
 

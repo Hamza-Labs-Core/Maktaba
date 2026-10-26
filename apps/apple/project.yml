@@ -102,8 +102,31 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
+        # StreamProxy listens on the loopback (127.0.0.1 only) for the system player
+        com.apple.security.network.server: true
+        # the tokens live in the data-protection keychain (no login-keychain prompts)
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.hamzalabs.maktaba.player.mac
     info:
       path: Player/Info-Mac.plist
+
+  # the Mac player shows inside the app (SwiftUI's VideoPlayer aborts there on macOS 27):
+  #   xcodebuild test -scheme "Maktaba Player Mac" -destination platform=macOS
+  Maktaba Player Mac Tests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: PlayerMacTests
+    dependencies:
+      - target: Maktaba Player Mac
+      - package: MaktabaKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.mac.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Maktaba Player Mac.app/Contents/MacOS/Maktaba Player Mac"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        ARCHS: arm64
 
   # ---- Maktaba Remote: iPhone (iPhone Duo too), iPad -------------------------------------
   Maktaba Remote:
@@ -181,6 +204,8 @@ schemes:
     build:
       targets: { Maktaba Player Mac: all }
     run: { config: Debug }
+    test:
+      targets: [Maktaba Player Mac Tests]
     archive: { config: Release }
   Maktaba Remote:
     build:

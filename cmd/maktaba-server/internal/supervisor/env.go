@@ -206,6 +206,10 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// Epic 35 story 35.11: this machine's own web address (the Machines page, the
 		// cluster sign-in)
 		add("MAKTABA_WEB_URL", cfg.PublicWebURL())
+		// Epic 16 story 16.7: [telemetry] enabled = "off" stores no device's events
+		if !cfg.Telemetry.On() {
+			add("MAKTABA_TELEMETRY_ENABLED", "false")
+		}
 		// Epic 35 story 35.8: a full node's api runs in node mode against the home's
 		// database with the node's own role; it never migrates.
 		if NodeMode(cfg, n) {

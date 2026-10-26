@@ -183,6 +183,7 @@ pub fn open_main(
         app.manage(Gate::open());
     }
     let window = WebviewWindowBuilder::from_config(app, &config)?.build()?;
+    keep_on_screen(&window, &config);
     if !start.clear {
         return Ok(());
     }
@@ -197,6 +198,72 @@ pub fn open_main(
     let handle = app.clone();
     start.run(|done| clear(&window, done), move || load_held(&handle));
     Ok(())
+}
+
+/// A rectangle in the screens' physical pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Rect {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+/// What a restored frame needs: (its configured size, centring). The saved window state
+/// is put back over the window's config, so a frame saved below the minimum (a state
+/// from before it) or on a display since unplugged came back as a sliver or off every
+/// screen: the app's window seemed gone. A frame below the minimum takes the configured
+/// size; one whose title bar is on no screen is centred.
+fn frame_fix(win: Rect, min: (f64, f64), screens: &[Rect]) -> (bool, bool) {
+    let small = win.w + 1.0 < min.0 || win.h + 1.0 < min.1;
+    // the middle of the title bar, where the window is dragged from
+    let (cx, cy) = (win.x + win.w / 2.0, win.y + 14.0);
+    let shown = screens
+        .iter()
+        .any(|s| cx >= s.x && cx < s.x + s.w && cy >= s.y && cy < s.y + s.h);
+    (small, small || !shown)
+}
+
+/// Puts a restored main window back at a usable size on a screen (frame_fix).
+fn keep_on_screen(w: &WebviewWindow, config: &tauri::utils::config::WindowConfig) {
+    let (Ok(scale), Ok(pos), Ok(size)) = (w.scale_factor(), w.outer_position(), w.outer_size())
+    else {
+        return;
+    };
+    let screens: Vec<Rect> = w
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|m| Rect {
+            x: m.position().x as f64,
+            y: m.position().y as f64,
+            w: m.size().width as f64,
+            h: m.size().height as f64,
+        })
+        .collect();
+    if screens.is_empty() {
+        return;
+    }
+    let win = Rect {
+        x: pos.x as f64,
+        y: pos.y as f64,
+        w: size.width as f64,
+        h: size.height as f64,
+    };
+    let min = (
+        config.min_width.unwrap_or(0.0) * scale,
+        config.min_height.unwrap_or(0.0) * scale,
+    );
+    let (resize, centre) = frame_fix(win, min, &screens);
+    if resize {
+        let _ = w.set_size(tauri::LogicalSize::new(config.width, config.height));
+    }
+    if centre {
+        let _ = w.center();
+    }
+    if resize || centre {
+        attempts::log("the window's saved frame was too small or off every screen: put back");
+    }
 }
 
 /// The load the gate held, once the clear is over.
@@ -354,6 +421,39 @@ fn clear(_: &WebviewWindow, done: Done) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn r(x: f64, y: f64, w: f64, h: f64) -> Rect {
+        Rect { x, y, w, h }
+    }
+
+    #[test]
+    fn a_restored_frame_is_kept_usable() {
+        let screens = [r(0.0, 0.0, 5120.0, 2880.0), r(-3840.0, 0.0, 3840.0, 2160.0)];
+        let min = (1920.0, 1200.0); // 960 x 600 at 2x
+                                    // a good frame stays as it is, on either screen
+        assert_eq!(
+            frame_fix(r(100.0, 100.0, 2560.0, 1600.0), min, &screens),
+            (false, false)
+        );
+        assert_eq!(
+            frame_fix(r(-3000.0, 50.0, 2560.0, 1600.0), min, &screens),
+            (false, false)
+        );
+        // saved below the minimum (the 480 x 300 sliver): its size again, centred
+        assert_eq!(
+            frame_fix(r(100.0, 100.0, 960.0, 600.0), min, &screens),
+            (true, true)
+        );
+        // its title bar above every screen, or on a display since unplugged: centred
+        assert_eq!(
+            frame_fix(r(-1058.0, -434.0, 2560.0, 1600.0), min, &screens),
+            (false, true)
+        );
+        assert_eq!(
+            frame_fix(r(9000.0, 100.0, 2560.0, 1600.0), min, &screens),
+            (false, true)
+        );
+    }
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// One start of `own` over the record at `path`, with a stand-in clearer that

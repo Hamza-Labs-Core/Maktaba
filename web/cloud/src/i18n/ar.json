@@ -270,5 +270,7 @@
   "error.reason_required": "اذكر سببًا؛ سيُسجَّل في سجل التدقيق.",
   "error.cannot_suspend_admin": "لا يمكن إيقاف مشرف خدمة (أو نفسك).",
   "error.google_disabled": "تسجيل الدخول عبر Google غير متاح.",
-  "error.apple_disabled": "تسجيل الدخول عبر Apple غير متاح."
+  "error.apple_disabled": "تسجيل الدخول عبر Apple غير متاح.",
+  "billing.plans.homeTier.home": "تحصل منازلك على خطة المنزل: وصول عن بُعد وحتى 4 مستخدمين",
+  "billing.plans.homeTier.pro": "تحصل منازلك على الخطة الاحترافية: وصول عن بُعد ومستخدمون بلا حد"
 }

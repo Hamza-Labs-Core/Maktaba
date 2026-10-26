@@ -89,6 +89,9 @@ public final class HomeBrowser {
     nonisolated static func homeURL(host: String, apiPort: Int, txt: [String: String]) -> URL? {
         var bare = host.split(separator: "%").first.map(String.init) ?? host
         if bare.hasSuffix(".") { bare.removeLast() }
+        // a home's mDNS library adds ".local." to a host name that already has it (the Mac's
+        // own is "name.local"): "name.local.local" resolves to nothing
+        while bare.lowercased().hasSuffix(".local.local") { bare.removeLast(".local".count) }
         guard !bare.isEmpty else { return nil }
         var c = URLComponents()
         c.scheme = txt["tls"] == "1" ? "https" : "http"
