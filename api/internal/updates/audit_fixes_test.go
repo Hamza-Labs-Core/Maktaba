@@ -297,6 +297,45 @@ func TestCatchUpImmediateBehindAHandInstalledHome(t *testing.T) {
 	}
 }
 
+// A run that waits for clicks on a release older than the one the home now runs (the home
+// installed by hand meanwhile) is superseded at the driver's next step, and the machines
+// are caught up to the home's release: the order of the older one waited for good before.
+func TestStepSupersedesAWaitingRunOlderThanTheHome(t *testing.T) {
+	t.Parallel()
+	r := newDriverRig(t)
+	ctx := context.Background()
+	r.f.svc.Current = "1.5.0" // the home installed 1.5.0 by hand
+	a := r.node(t, "n1", "alpha", "windows-amd64", "1.4.0")
+	a.asks = true
+	r.f.now = time.Date(2026, 10, 22, 14, 0, 0, 0, r.f.loc)
+	r.stepUntil(40, func() bool {
+		run, _ := r.f.store.ActiveRun(ctx)
+		return run != nil && run.Version == "1.5.0" && run.Step == StepWaitingClick && a.state() == MAwaitingClick
+	})
+	old := r.active(t)
+	if old.Trigger != TriggerCatchUp {
+		t.Fatalf("run %+v", old)
+	}
+
+	// the home goes on to 1.6.0 by hand; no newer release is due for the scheduler
+	seed(t, r.f.store, rel("1.6.0", func(x *Release) {
+		x.Assets = []Asset{{Name: "release.json", URL: "https://github.test/release.json"}}
+	}))
+	r.f.svc.Current = "1.6.0"
+	_ = r.d.Step(ctx)
+	got, _ := r.f.store.GetRun(ctx, old.ID)
+	if got.State != RunSuperseded || a.state() != MAborted {
+		t.Fatalf("old run %s, machine %s", got.State, a.state())
+	}
+	cu := r.active(t)
+	if cu.Trigger != TriggerCatchUp || cu.Version != "1.6.0" {
+		t.Fatalf("catch-up %+v", cu)
+	}
+	if wm, _ := r.f.store.Watermark(ctx); wm != "1.6.0" {
+		t.Fatalf("watermark %q", wm)
+	}
+}
+
 // M3 (audit): a machine is drained for its own apply and undrained once healthy.
 func TestNodeDrainedForItsApply(t *testing.T) {
 	t.Parallel()
