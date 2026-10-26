@@ -61,6 +61,7 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/account/history", { topic: "account", anchor: "watch-history" }],
   ["/pair", { topic: "account", anchor: "devices" }],
   ["/billing", { topic: "cloud", anchor: "billing" }],
+  ["/settings/subscription", { topic: "cloud", anchor: "billing" }],
   ["/cloud/status", { topic: "cloud", anchor: "cloud-status" }],
   ["/admin/users", { topic: "users" }],
   ["/admin/library-acl", { topic: "library-access" }],

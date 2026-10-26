@@ -39,6 +39,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
 	tracing "github.com/Hamza-Labs-Core/Maktaba/shared/tracing/go"
@@ -78,6 +79,12 @@ type Deps struct {
 	// errrpt capture) so unit tests that build a bare Deps are
 	// unaffected; main.go populates it from MAKTABA_ERROR_WEBHOOK.
 	ErrorReporter *errrpt.Reporter
+
+	// License is the entitlement store, published once main.go builds
+	// it: the relay gate (Epic 16 story 16.1, free is LAN-only) refuses
+	// what the cloud relay forwards unless the license grants
+	// cloud_relay. Nil leaves the gate off (bare-Deps unit tests).
+	License *subscriptions.StoreRef
 }
 
 // New builds the API's chi.Mux with the canonical middleware stack and
@@ -99,6 +106,9 @@ func New(d Deps) chi.Router {
 	r.Use(mw.StripVia)
 	// the relay reaches people's routes only, never the machines' (via.go)
 	r.Use(mw.RefuseRelayToMachines)
+	if d.License != nil {
+		r.Use(subscriptions.RelayGate(d.License))
+	}
 	// likewise a program on this machine (the desktop app asks /api/cluster/self over
 	// loopback), judged on the real peer address
 	r.Use(mw.MarkLocalCaller)

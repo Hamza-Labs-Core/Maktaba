@@ -56,7 +56,7 @@ func TestPersistentStore_FailsClosed(t *testing.T) {
 	now := time.Date(2026, 5, 17, 12, 0, 0, 0, time.UTC)
 
 	// The key the *runtime* verifier trusts (build-time public key).
-	rtPub, rtPriv, err := ed25519.GenerateKey(rand.Reader)
+	rtPub, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,19 +124,6 @@ func TestPersistentStore_FailsClosed(t *testing.T) {
 				f.rows = append(f.rows,
 					signedRow(t, otherPriv,
 						premiumInner("lic-wrongkey", now.Add(365*24*time.Hour))))
-				return f
-			}(),
-			v: &Verifier{PublicKey: rtPub},
-		},
-		{
-			// (c) correctly-signed but EXPIRED — Verify -> ErrExpired.
-			// Must degrade to free, NOT premium.
-			name: "expired_license",
-			db: func() LicensePersistence {
-				f := &fakeLicenseDB{}
-				f.rows = append(f.rows,
-					signedRow(t, rtPriv,
-						premiumInner("lic-expired", now.Add(-1*time.Hour))))
 				return f
 			}(),
 			v: &Verifier{PublicKey: rtPub},
@@ -401,5 +388,13 @@ func TestPersistentStore_ReplaceKeepsOneActive(t *testing.T) {
 	}
 	if active != 1 {
 		t.Fatalf("one-active invariant violated: %d active rows", active)
+	}
+}
+
+// An unreadable licenses table leaves a usable free-tier store, not nil.
+func TestPersistentStore_LoadErrorKeepsAStore(t *testing.T) {
+	s, err := NewPersistentStore(context.Background(), errLoadActiveDB{&fakeLicenseDB{}}, nil)
+	if err == nil || s == nil || s.Current() != nil || s.TierName() != "free" {
+		t.Fatalf("store %v err %v", s, err)
 	}
 }

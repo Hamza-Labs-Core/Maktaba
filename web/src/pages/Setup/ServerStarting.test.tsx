@@ -10,7 +10,7 @@ import { I18nProvider, bidiIsolate } from "../../lib/i18n";
 import en from "../../i18n/en.json";
 import ar from "../../i18n/ar.json";
 import type { ServerStatus, SetupApi } from "../../lib/desktopSetup";
-import { ServerStarting } from "./ServerStarting";
+import { dumpProgress, ServerStarting } from "./ServerStarting";
 import { codedText } from "./codedText";
 import { APART, startingDetail } from "./startingDetail";
 
@@ -257,5 +257,35 @@ describe("codedText", () => {
   it("falls back for a code the app has no words for", () => {
     expect(codedText(t, "p", "unknown", {}, {}, "fallback")).toBe("fallback");
     expect(codedText(t, "p", "unknown", undefined, {}, "")).toBe("");
+  });
+});
+
+// The owner's request: the restart shows its progress, not just a sentence. The backup
+// before an update says how much it has written of about how much (the newest finished
+// dump's size), on a bar; without an earlier dump it says how much so far.
+describe("the backup's progress", () => {
+  const dumping = (mb: number, expected_mb: number): ServerStatus => ({
+    kind: "starting",
+    detail_code: "db_dumping",
+    detail_params: { from: "v0.3.23", to: "v0.3.24", mb, expected_mb },
+  });
+
+  it("is a bar of what is written against what the last dump came to", async () => {
+    show(dumping(10240, 20480));
+    expect(await screen.findByText("10.0 GB of about 20.0 GB saved")).toBeInTheDocument();
+    const bar = screen.getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "50");
+    expect(screen.getByRole("dialog", { name: en["setup.starting.title"] })).toBeInTheDocument();
+  });
+
+  it("says how much so far when no dump came before, on a moving bar", async () => {
+    show(dumping(512, 0));
+    expect(await screen.findByText("512.0 MB saved so far")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
+  });
+
+  it("stops short of full when the dump outgrows the last one", () => {
+    expect(dumpProgress(dumping(30000, 20000))?.percent).toBe(99);
+    expect(dumpProgress({ kind: "running" })).toBeNull();
   });
 });

@@ -270,5 +270,7 @@
   "error.reason_required": "Give a reason; it goes into the audit log.",
   "error.cannot_suspend_admin": "A service admin (or yourself) can't be suspended.",
   "error.google_disabled": "Sign-in with Google is not available.",
-  "error.apple_disabled": "Sign-in with Apple is not available."
+  "error.apple_disabled": "Sign-in with Apple is not available.",
+  "billing.plans.homeTier.home": "Your homes get the Home plan: remote access and up to 4 users",
+  "billing.plans.homeTier.pro": "Your homes get the Pro plan: remote access and unlimited users"
 }

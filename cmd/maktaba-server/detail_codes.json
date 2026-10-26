@@ -1,7 +1,7 @@
 {
   "db_waiting": [],
   "db_checking": ["release"],
-  "db_dumping": ["from", "to"],
+  "db_dumping": ["from", "to", "mb", "expected_mb"],
   "db_migrating": ["to"],
   "db_restoring": ["failed", "dump"],
   "db_restored": ["failed", "error", "dump", "release"],

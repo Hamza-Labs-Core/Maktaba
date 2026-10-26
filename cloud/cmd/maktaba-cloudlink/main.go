@@ -78,7 +78,8 @@ func main() {
 		Proxy: &cloudlink.LocalProxy{BaseURL: cfg.localAPI},
 	}
 
-	// Local admin surface: GET /admin/cloud-link, POST /admin/cloud-link/links.
+	// Local admin surface: GET /admin/cloud-link, POST /admin/cloud-link/links,
+	// GET /admin/cloud-link/license.
 	rep := &cloudlink.LinkReporter{CloudAPI: cfg.cloudAPI, Creds: creds}
 	adminSrv := &http.Server{
 		Addr:              cfg.adminAddr,
@@ -108,6 +109,7 @@ func adminMux(sup *cloudlink.Supervisor, rep *cloudlink.LinkReporter) http.Handl
 	mux := http.NewServeMux()
 	mux.Handle("/admin/cloud-link", cloudlink.AdminHandler(sup))
 	mux.Handle("/admin/cloud-link/links", cloudlink.LinksHandler(rep))
+	mux.Handle("/admin/cloud-link/license", cloudlink.LicenseHandler(rep))
 	return mux
 }
 

@@ -141,7 +141,7 @@ takes a new code.
 |---|---|---|
 | `db_waiting` | — | Waiting for the library database |
 | `db_checking` | `release` | Checking the library database |
-| `db_dumping` | `from`, `to` | Saving the library database before the update to `to` |
+| `db_dumping` | `from`, `to`, `mb`, `expected_mb` | Saving the library database before the update to `to`: `mb` written so far, of about `expected_mb` (the newest finished dump's size; 0 when there is none) |
 | `db_migrating` | `to` | Updating the library database for `to` |
 | `db_restoring` | `failed`, `dump` | The update to `failed` could not change the library database: putting it back as it was |
 | `db_restored` | `failed`, `error`, `dump`, `release` | The update to `failed` could not change the library database (`error`). The database is back as it was before the update (restored from `dump`), and Maktaba stays stopped: install `release` (`""`: the version you had before) again to go on as before, or an update that fixes this; starting Maktaba again tries this update again |

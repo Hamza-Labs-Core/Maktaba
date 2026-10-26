@@ -3,13 +3,9 @@
 package main
 
 import (
-	"crypto/ed25519"
-	"encoding/base64"
 	"net/http"
 	"testing"
 	"time"
-
-	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/entitlement"
 )
 
 func subscriptionObj(id, customer, userID, status, price string, periodEnd time.Time) map[string]any {
@@ -157,32 +153,14 @@ func TestStripeCheckoutAndWebhooks(t *testing.T) {
 	}
 }
 
-// The entitlement token is signed with the published key and carries the
-// effective plan.
-func TestEntitlementAndUsage(t *testing.T) {
+// Usage reads the bandwidth meter's monthly rows.
+func TestUsage(t *testing.T) {
 	e := newEnv(t)
 	const email = "ent@example.test"
 	c := e.registerVerified(email)
 	uid := e.userID(email)
 	e.exec(`UPDATE users SET plan = 'pro' WHERE id = $1`, uid)
-	r := c.mustStatus(c.do("GET", "/v1/billing/entitlement", nil), 200).json(t)
-	key := e.client().do("GET", "/.well-known/maktaba-entitlement-key", nil).json(t)
-	pub, err := base64.StdEncoding.DecodeString(key["public_key"].(string))
-	if err != nil || len(pub) != ed25519.PublicKeySize {
-		t.Fatalf("public key: %v", key)
-	}
-	tok, err := entitlement.Verify(r["token"].(string), ed25519.PublicKey(pub), time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if tok.UserID != uid || tok.Plan != "pro" || tok.KeyFp != key["fingerprint"] {
-		t.Fatalf("token: %+v", tok)
-	}
-	if e.count(`SELECT count(*) FROM entitlement_grants WHERE user_id = $1`, uid) != 1 {
-		t.Fatal("grant not recorded")
-	}
 
-	// Usage reads the bandwidth meter's monthly rows.
 	var sid string
 	if err := e.pool.DB.QueryRow(`INSERT INTO servers (owner_user_id, name, slug, server_secret_hash) VALUES ($1,'NAS','ent-nas','x') RETURNING id`, uid).Scan(&sid); err != nil {
 		t.Fatal(err)

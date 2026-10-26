@@ -133,6 +133,10 @@ rm -rf "$OUT" "$WORK"
 mkdir -p "$OUT"/{bin,postgres,pipeline,licenses} "$WORK"
 
 
+# the license-server key (Epic 16): a release's workflow writes it before this
+# script; a local build embeds it when MAKTABA_LICENSE_PUBKEY is set
+"$REPO_ROOT/tools/release/license-key.sh"
+
 # --- Go binaries (the release envelope: -trimpath, stamped, web UI embedded) -----------------
 log "building the Go binaries for linux/$GOARCH ($VERSION)"
 make -C "$REPO_ROOT" --no-print-directory server build-go \

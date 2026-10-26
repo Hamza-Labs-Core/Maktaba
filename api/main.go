@@ -45,6 +45,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/logs"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/processes"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/telemetry"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
@@ -55,6 +56,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
@@ -309,7 +311,11 @@ func runServe() error {
 	statsDataDir, statsDB, statsClose := buildAggregatorStats(logger)
 	defer statsClose()
 
+	// Epic 16: the entitlement store is built with the app DB below; the
+	// relay gate in the router's chain reads it through this reference.
+	licRef := &subscriptions.StoreRef{}
 	r := router.New(router.Deps{
+		License:            licRef,
 		IdempotencyStore:   idemStore,
 		IPRatePerMin:       envIntDefault("MAKTABA_IP_RATE_PER_MIN", 6000),
 		UserRatePerMin:     envIntDefault("MAKTABA_USER_RATE_PER_MIN", 600),
@@ -536,8 +542,15 @@ func runServe() error {
 				Logger:       logger,
 				PerfRegistry: perfRegistry,
 			}
-			entStore, entVerifier := router.EntitlementStore(p10Deps)
+			entStore, licVerifier := router.EntitlementStore(p10Deps)
 			p10Deps.SubscriptionsStore = entStore
+			p10Deps.SubscriptionsVerifier = licVerifier
+			licRef.Set(entStore)
+			licRefresher, licCloud, licManage := licenseRefresher(entStore, licVerifier, appDB, logger)
+			p10Deps.LicenseRefresher, p10Deps.LicenseCloud, p10Deps.LicenseManageURL = licRefresher, licCloud, licManage
+			if licRefresher != nil {
+				go licRefresher.Run(context.Background())
+			}
 
 			// Phase 9 (Epic 10 stories 10.2-10.5, 10.16) — auth surface.
 			// Reuses the same app DB. SecureCookies tracks MAKTABA_HSTS
@@ -548,8 +561,10 @@ func runServe() error {
 				Keys:          auth.keys,
 				SecureCookies: cookiesSecure(),
 				AccessTTL:     accessTokenTTL(),
-				Seats:         router.SeatGate(entStore, entVerifier),
-				Settings:      runtimeSettings,
+				// Epic 16 story 16.1: free is single-user in every build; a
+				// release embeds the license key, so a home can lift it
+				Seats:    subscriptions.NewSeatLimiter(entStore),
+				Settings: runtimeSettings,
 				// Epic 42 story 42.7: the relay agent's identity (the
 				// supervisor passes its path while [cloud] is on)
 				CloudIdentityPath: os.Getenv("MAKTABA_CLOUD_IDENTITY"),
@@ -574,6 +589,10 @@ func runServe() error {
 			// admin. All four packages had a working Mount() but no caller
 			// (specs/FULL_IMPLEMENTATION_AUDIT.md §A.4).
 			pairingStore := router.MountP10(r, p10Deps)
+			// Epic 16 story 16.8 — feature flags over the same entitlement store,
+			// signed with the server's Ed25519 identity (story 10.18)
+			router.MountFlags(r, router.FlagsDeps{DB: appDB, Entitlements: entStore, Logger: logger,
+				Identity: router.LoadServerIdentity(homeSecrets.Key, logger)})
 			logger.Info("p10: subscriptions/discovery/security/perf handlers mounted",
 				"event", "p10_mounted")
 
@@ -621,7 +640,7 @@ func runServe() error {
 			// stats + export (29.3/29.5/29.6). The session reaper is a
 			// boot goroutine (interrupted-session reap every minute +
 			// daily retention purge), mirroring runPairingSweep.
-			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres"})
+			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef})
 			go (&watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),
@@ -629,6 +648,11 @@ func runServe() error {
 			}).Run(context.Background())
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",
 				"event", "p29_mounted")
+
+			// Epic 16 (stories 16.5, 16.7): the opt-in telemetry sink and its nightly
+			// retention sweep (events 90 days, Web Vitals 30)
+			router.MountTelemetry(r, router.TelemetryDeps{DB: appDB, Enabled: router.TelemetryEnabled(), Logger: logger})
+			go (&telemetry.Sweeper{DB: appDB, Logger: logger}).Run(context.Background())
 
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the

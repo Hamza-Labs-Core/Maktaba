@@ -18,6 +18,7 @@ import { updateAvailable, useUpdateStatus } from "../lib/updates";
 import { useSystemStatus } from "../lib/systemStatus";
 import { UpdateBanner } from "./UpdateBanner";
 import { MacPermissionsReminder } from "./MacPermissions/MacPermissionsReminder";
+import { TelemetryPrompt } from "./TelemetryPrompt";
 
 // Where the update badge sits (Story 28.6): Settings in the sidebar and
 // the More menu, and More in the phone tab bar (Settings lives behind it).
@@ -62,7 +63,7 @@ const SECONDARY = [
   { to: "/account/sessions", key: "nav.sessions", icon: "⧉" },
   { to: "/account/tokens", key: "nav.tokens", icon: "⚿" },
   { to: "/account/history", key: "nav.history", icon: "◷" },
-  { to: "/billing", key: "nav.billing", icon: "◈" },
+  { to: "/settings/subscription", key: "nav.billing", icon: "◈" },
   { to: "/cloud/status", key: "nav.cloudStatus", icon: "☁" },
   { to: "/help", key: "nav.help", icon: "?" },
 ] as const;
@@ -296,6 +297,8 @@ export function AppShell() {
           <UpdateBanner />
           {/* the Mac server app: what macOS still keeps from the server */}
           <MacPermissionsReminder />
+          {/* story 16.5: the opt-in question, and the collection once opted in */}
+          <TelemetryPrompt />
           <RouteErrorBoundary resetKey={pathname}>
             <Outlet />
           </RouteErrorBoundary>

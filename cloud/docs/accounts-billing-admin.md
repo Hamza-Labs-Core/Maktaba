@@ -81,13 +81,12 @@ Signing in during the 30-day hold is allowed and the account page offers
 
 | Method & path | Auth | Success |
 |---|---|---|
-| `GET /v1/billing/plans` | public | `{plans:[{id, name, price_cents, bandwidth_bytes_per_month, max_servers, max_concurrent_streams, relay_qos, includes_transcoding, family_seats, purchasable}]}` |
+| `GET /v1/billing/plans` | public | `{plans:[{id, name, price_cents, bandwidth_bytes_per_month, max_servers, max_concurrent_streams, relay_qos, includes_transcoding, family_seats, purchasable, home_tier}]}` (`home_tier`: the plan the license gives the account's homes, see Licenses) |
 | `GET /v1/billing/me` | bearer | `{plan, status, interval?, current_period_end?, cancel_at_period_end, has_customer}` |
 | `POST /v1/billing/checkout` | bearer | body `{plan:"pro"\|"family"}` → `{checkout_url, session_id}`; `422 bad_plan`, `409 already_subscribed` (use the portal), `503 billing_disabled` |
 | `POST /v1/billing/portal` | bearer | `{portal_url}`; `409 no_customer` |
 | `GET /v1/billing/usage` | bearer | `{month, plan, limit_bytes, used_bytes, servers:[{id, name, bytes_in, bytes_out}]}` |
-| `GET /v1/billing/entitlement` | bearer | `{token, plan, expires_at, key_fingerprint}` — Ed25519-signed, verifiable offline; `503 entitlement_disabled` |
-| `GET /.well-known/maktaba-entitlement-key` | public | `{fingerprint, public_key}` (base64 Ed25519) |
+| `GET /.well-known/maktaba-entitlement-key` | public | `{fingerprint, public_key}` (base64 Ed25519): the license-signing key, whose public half release builds of the home embed |
 | `POST /v1/billing/webhook` | Stripe signature | `200`; `400 invalid_signature` |
 
 Stripe runs in test mode only unless `stripe.live_mode = true` is set
@@ -107,6 +106,50 @@ marks the subscription `past_due`), `charge.dispute.created` (suspends the
 account, records an abuse signal). The effective plan is mirrored onto
 `users.plan` and onto the plan of every server the account owns, which is
 what the relay's bandwidth gate reads.
+
+## Licenses — Epic 16
+
+A paid plan becomes a **license** its homes verify: Ed25519-signed JSON
+`{"license": {license_id, tier, seats, issued_at, expires_at, features?, server_id?, holder?}, "signature"}`,
+signed with the entitlement key (`entitlement.private_key_path`). It is the
+one license format: the home (`api/internal/subscriptions`) verifies exactly
+these bytes, and both modules pin the same golden vector in their tests. The
+user-scoped entitlement token (`GET /v1/billing/entitlement`) is gone.
+
+| Cloud plan | Home tier | Seats on the home |
+|---|---|---|
+| `free` | none (the home's Free: one user, LAN only) | 1 |
+| `pro` | `home` | 4 |
+| `family` | `pro` | unlimited |
+
+| Method & path | Auth | Success |
+|---|---|---|
+| `GET /v1/servers/{id}/license` | the home's agent (basic auth `id:secret`) | `200 {license, manage_url}`: the owner's plan license for that home (`license_id` `cloud-<server id>`, `server_id` set, issued at the start of the UTC day, valid 31 days); `404 no_license` (free plan); `403 license_revoked` (the id is revoked, or the account is suspended, e.g. a disputed payment); `503 licensing_disabled` (no key) |
+| `GET /v1/licenses/revocations` | public | `{revocations:{issued_at, license_ids}, signature}`, signed with the same key; homes fetch it daily |
+| `GET /v1/admin/licenses?limit=&offset=` | service admin | `{licenses:[{license_id, kind plan\|offline, user_id?, server_id?, tier, seats, holder, issued_at, expires_at, revoked_at?, revoked_reason?}], total}` |
+| `POST /v1/admin/licenses/{id}/revoke` | service admin | `{reason}` → `204`; audited (`admin.license.revoke`) |
+| `POST /v1/admin/licenses/{id}/unrevoke` | service admin | `{reason}` → `204`, `404` when not revoked; audited |
+
+The home's relay agent asks for its license every minute on loopback
+(`GET 127.0.0.1:8765/admin/cloud-link/license`, passed through with the
+server secret only the agent holds), so an upgrade reaches the home within a
+minute of Stripe's webhook, a cancelled plan returns it to Free, and a
+revocation locks it at once. A home cut off from the cloud keeps its license
+until it expires (31 days, then 72 hours of clock-skew grace): the 30-day
+offline grace.
+
+Offline licenses (for a home not linked to the cloud) come from the CLI:
+
+```sh
+# signed with the key piped in (never written to disk); nothing recorded
+security find-generic-password -s maktaba-license-signing -w \
+  | maktaba-cloud license issue --key-stdin --tier pro --days 365 --holder "Name"
+# or with the cloud's own key and database (recorded in licenses_issued)
+maktaba-cloud license issue --config cloud.toml --tier home --holder "Name"
+maktaba-cloud license pubkey --key-stdin          # the PEM release builds embed
+maktaba-cloud license revoke   --id lic_… --reason "…" --config cloud.toml
+maktaba-cloud license unrevoke --id lic_… --reason "…" --config cloud.toml
+```
 
 ## Service admin — `/v1/admin/*` (bearer token + `service_admin`)
 
@@ -204,8 +247,8 @@ test-mode-only Stripe guard, and the cloud web app.
   console uses the normal session plus the role.
 - **Force-disconnect a server / tunnel revoke frames** (25.20, 25.5): owned
   by the relay work.
-- **Server-scoped entitlements** (`srv` claim) and the home server pulling
-  them: needs the server-authenticated channel from the linking work.
+- ~~**Server-scoped entitlements** and the home pulling them~~: done as
+  plan licenses (Licenses, above; Epic 16).
 - **Webhook offload to a worker and nightly reconciliation** (25.14):
   webhooks are applied inline; a 7-day failed-invoice downgrade job is not
   written.

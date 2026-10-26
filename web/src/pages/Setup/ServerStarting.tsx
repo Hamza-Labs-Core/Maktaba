@@ -8,8 +8,15 @@
 // window never shows a page that cannot load.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
+import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useI18n } from "../../lib/i18n";
-import { NO_ANSWER, type Platform, type ServerStatus, type SetupApi } from "../../lib/desktopSetup";
+import {
+  formatBytes,
+  NO_ANSWER,
+  type Platform,
+  type ServerStatus,
+  type SetupApi,
+} from "../../lib/desktopSetup";
 import { platformWords, usePlatform } from "./platform";
 import { startingDetail } from "./startingDetail";
 
@@ -18,6 +25,20 @@ export const STARTING_POLL_MS = 2000;
 export const PAGE_PATIENCE_MS = 30_000;
 /** What the shell says while the server runs but its page does not answer yet (shell.rs). */
 export const PAGE_NOT_ANSWERING = "page_not_answering";
+
+/** The backup before an update: what it has written and what it will likely come to
+ * (the newest finished dump's size; 0 when the server knows none), in MB. */
+export function dumpProgress(
+  status: ServerStatus | null
+): { mb: number; expected: number; percent: number | null } | null {
+  if (status?.kind !== "starting" || status.detail_code !== "db_dumping") return null;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+  const mb = num(status.detail_params?.mb);
+  const expected = num(status.detail_params?.expected_mb);
+  // a dump may outgrow the last one: the bar stops short of full until it is done
+  const percent = expected > 0 ? Math.min(99, (mb / expected) * 100) : null;
+  return { mb, expected, percent };
+}
 
 export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Platform }) {
   const { t } = useI18n();
@@ -99,15 +120,48 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
     ? startingDetail(t, status.detail_code, status.detail_params, words)
     : { text: "", apart: [] };
   const english = waits ? status.detail?.trim() : undefined;
+  const dump = dumpProgress(status);
+  const MB = 2 ** 20;
+  const dumpText = !dump
+    ? ""
+    : dump.expected > 0
+      ? t("setup.starting.progress.dump", {
+          done: formatBytes(dump.mb * MB),
+          total: formatBytes(dump.expected * MB),
+        })
+      : t("setup.starting.progress.dump_so_far", { done: formatBytes(dump.mb * MB) });
+  // the server is on its way: a bar, measured while the backup before an update is
+  // taken, moving otherwise
+  const working =
+    status === null || status.kind === "starting" || (status.kind === "running" && !pageSilent);
 
   return (
-    <main className="mkt-setup" aria-labelledby="mkt-starting-h">
-      <section className="mkt-setup__card">
+    <main className="mkt-setup mkt-setup--starting">
+      <section
+        className="mkt-setup__card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mkt-starting-h"
+      >
         <h1 id="mkt-starting-h" className="mkt-setup__title">
           {t("setup.starting.title")}
         </h1>
         <p role="status">{line}</p>
         {waitsOn.text && <p className="mkt-setup__note">{waitsOn.text}</p>}
+        {working && (
+          <div className="mkt-setup__progress">
+            <ProgressBar
+              label={t("setup.starting.title")}
+              value={dump?.percent ?? 0}
+              indeterminate={dump?.percent == null}
+            />
+            {dumpText && (
+              <p className="mkt-setup__note" aria-live="polite">
+                {dumpText}
+              </p>
+            )}
+          </div>
+        )}
         {(english || waitsOn.apart.length > 0) && (
           <details className="mkt-setup__details">
             <summary>{t("setup.details")}</summary>

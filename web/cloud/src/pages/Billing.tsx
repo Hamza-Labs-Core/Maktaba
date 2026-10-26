@@ -32,6 +32,8 @@ export interface Plan {
   includes_transcoding: boolean;
   family_seats: number;
   purchasable: boolean;
+  /** The plan the license gives this account's homes: "home", "pro" or "" (Epic 16). */
+  home_tier?: string;
 }
 
 export interface BillingMe {
@@ -243,6 +245,9 @@ function PlanCard({
         {plan.includes_transcoding && <li>{t("billing.plans.transcoding")}</li>}
         {plan.family_seats > 0 && (
           <li>{t("billing.plans.seats", { count: n(plan.family_seats) })}</li>
+        )}
+        {(plan.home_tier === "home" || plan.home_tier === "pro") && (
+          <li>{t(`billing.plans.homeTier.${plan.home_tier}`)}</li>
         )}
       </ul>
     </Card>
