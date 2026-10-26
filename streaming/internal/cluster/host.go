@@ -196,12 +196,18 @@ type NodeSettings struct {
 	Name        string
 	DatabaseURL string
 	ConfigPath  string
+	// DatabaseCA and DatabaseTLS are node.json's: the home's database CA (PEM), and "off"
+	// when its database has no TLS (HomeDSN)
+	DatabaseCA  string
+	DatabaseTLS string
 }
 
 type nodeFile struct {
 	NodeID      string `json:"node_id"`
 	Name        string `json:"name"`
 	DatabaseURL string `json:"database_url"`
+	DatabaseCA  string `json:"database_ca"`
+	DatabaseTLS string `json:"database_tls"`
 }
 
 // NodeMode reports whether this streaming process runs as a cluster node and with
@@ -234,7 +240,8 @@ func NodeMode(getenv func(string) string, goos, userHome string, readFile func(s
 		return NodeSettings{}, false, nil
 	}
 	ns := NodeSettings{NodeID: strings.TrimSpace(nf.NodeID), Name: strings.TrimSpace(nf.Name),
-		DatabaseURL: strings.TrimSpace(nf.DatabaseURL), ConfigPath: path}
+		DatabaseURL: strings.TrimSpace(nf.DatabaseURL), ConfigPath: path, DatabaseCA: nf.DatabaseCA,
+		DatabaseTLS: strings.TrimSpace(nf.DatabaseTLS)}
 	if v := strings.TrimSpace(getenv("MAKTABA_NODE_ID")); v != "" {
 		ns.NodeID = v
 	}

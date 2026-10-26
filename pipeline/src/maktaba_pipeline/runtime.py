@@ -45,6 +45,7 @@ from .cluster.node import WorkerAgent, home_unreachable, stop_jobs_after
 from .cluster.stages import StageSelector, refresh_stages, select_stages
 from .db.jobs import DBConn, Job, Stage
 from .db.jobs_state import StageError, mark_done, mark_failed_or_retry
+from .db.pgtls import connect_args
 from .engine.dispatch import EngineRuntime, dispatch_job
 from .engine.graph import StageDef
 from .engine.health import run_network_probes
@@ -161,23 +162,28 @@ class Database:
     #: lets ``db/jobs_state`` call into ``engine/hooks`` (error_cause, job_events, follow-ups)
     engine_hooks = True
 
-    def __init__(self, *, dialect: str, conn: Any = None, pool: Any = None, dsn: str = "") -> None:
+    def __init__(
+        self, *, dialect: str, conn: Any = None, pool: Any = None, dsn: str = "", tls: Any = None
+    ) -> None:
         self.dialect = dialect
         self._conn = conn  # sqlite path only
         self._pool = pool  # postgres path only
         self._dsn = dsn  # only used by acquire_listener (postgres only)
+        self._tls = tls  # the DSN's TLS (db/pgtls.py), for acquire_listener's connection
         self._lock: asyncio.Lock | None = None  # sqlite only, created lazily on the loop
 
     @classmethod
     async def connect(cls, url: str) -> Database:
         if url.startswith(("postgres://", "postgresql://")):
             asyncpg = _import_asyncpg()
+            # TLS as the DSN asks it, never a plain retry when it asks for TLS
+            dsn, tls = connect_args(url)
             # min_size=1 keeps a warm connection so the first reaper
             # tick doesn't pay the TCP+TLS+auth round-trip; max_size=10
             # is generous for a single pipeline daemon (reaper + claim
             # loop + per-job dispatch peaks at single-digit concurrency).
-            pool = await asyncpg.create_pool(url, min_size=1, max_size=10)
-            return cls(dialect="postgres", pool=pool, dsn=url)
+            pool = await asyncpg.create_pool(dsn, min_size=1, max_size=10, ssl=tls)
+            return cls(dialect="postgres", pool=pool, dsn=dsn, tls=tls)
 
         aiosqlite = _import_aiosqlite()
         path = _sqlite_path_from_url(url)
@@ -294,7 +300,7 @@ class Database:
         if self.dialect != "postgres":
             raise RuntimeError("acquire_listener is Postgres-only")
         asyncpg = _import_asyncpg()
-        return await asyncpg.connect(self._dsn)
+        return await asyncpg.connect(self._dsn, ssl=self._tls)
 
     async def close(self) -> None:
         with contextlib.suppress(Exception):

@@ -125,16 +125,56 @@ func TestWatchReachFollowsTheCluster(t *testing.T) {
 	if restarts != 1 {
 		t.Fatalf("an unchanged look started it again (%d)", restarts)
 	}
+	// the link required (story 35.16): the machine's role needs its certificate only once
+	// its machine says it presents one and it holds a valid one; a database without those
+	// columns (the look above) needed none
+	if err := os.WriteFile(filepath.Join(b.Keys, ClusterCAFile), []byte("CA"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const role = "maktaba_node_0b6f3c1e2a4d4e8f9c715d2a8b3e6f10"
+	sql(`CREATE TABLE app_settings (key text PRIMARY KEY, value jsonb NOT NULL);
+	     INSERT INTO app_settings VALUES ('rules.cluster', '{"link_mode": "require"}');
+	     ALTER TABLE cluster_nodes ADD COLUMN db_role text, ADD COLUMN cert_serial text,
+	       ADD COLUMN cert_not_after timestamptz, ADD COLUMN update_state jsonb NOT NULL DEFAULT '{}';
+	     CREATE TABLE cluster_certs (serial text PRIMARY KEY, subject text NOT NULL DEFAULT '',
+	       not_before timestamptz NOT NULL, not_after timestamptz NOT NULL, revoked_at timestamptz);
+	     INSERT INTO cluster_certs VALUES ('0a', '` + role + `', now() - interval '1 hour', now() + interval '30 days', NULL);
+	     UPDATE cluster_nodes SET db_role = '` + role + `', cert_serial = '0a', cert_not_after = now() + interval '30 days'
+	       WHERE state = 'approved';`)
+	look()
+	if !b.LastReach().Require || restarts != 2 || strings.Contains(hba(), "clientcert") {
+		t.Fatalf("required, the machine not saying it presents its certificate: %+v, %d restarts:\n%s",
+			b.LastReach(), restarts, hba())
+	}
+	sql(`UPDATE cluster_nodes SET update_state = update_state || '{"db_client_cert": true}' WHERE state = 'approved'`)
+	look()
+	if restarts != 2 || !strings.Contains(hba(), role+" samenet         scram-sha-256 clientcert=verify-full") ||
+		!strings.Contains(hba(), role+" 100.64.0.9/32   scram-sha-256 clientcert=verify-full") {
+		t.Fatalf("the machine presents its certificate (a reload alone): %d restarts:\n%s", restarts, hba())
+	}
+	// its certificate revoked, or its machine saying it no more (an older release again):
+	// its password alone
+	sql(`UPDATE cluster_certs SET revoked_at = now()`)
+	look()
+	if strings.Contains(hba(), "clientcert") || len(b.LastReach().CertRoles) != 0 {
+		t.Fatalf("its certificate revoked: %+v:\n%s", b.LastReach(), hba())
+	}
+	sql(`UPDATE cluster_certs SET revoked_at = NULL;
+	     UPDATE cluster_nodes SET update_state = update_state || '{"db_client_cert": false}'`)
+	look()
+	if strings.Contains(hba(), "clientcert") || restarts != 2 {
+		t.Fatalf("the machine no more presenting its certificate: %d restarts:\n%s", restarts, hba())
+	}
 	// joins whose hour is up still count for nothing, the machine still does
 	sql(`UPDATE instance_identity SET accept_joins_until = now() - interval '1 minute'`)
 	look()
-	if !b.LastReach().Open || restarts != 1 {
+	if !b.LastReach().Open || restarts != 2 {
 		t.Fatalf("the machine still approved: %+v, %d restarts", b.LastReach(), restarts)
 	}
 	// revoked, joins closed: this machine only again
 	sql(`UPDATE cluster_nodes SET state = 'revoked'`)
 	look()
-	if b.LastReach().Open || restarts != 2 || strings.Contains(hba(), "maktaba_worker") {
+	if b.LastReach().Open || restarts != 3 || strings.Contains(hba(), "maktaba_worker") {
 		t.Fatalf("no machine left: %+v, %d restarts:\n%s", b.LastReach(), restarts, hba())
 	}
 	if args := strings.Join(b.ServerArgs(), " "); !strings.Contains(args, "listen_addresses=127.0.0.1") {

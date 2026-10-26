@@ -175,7 +175,14 @@ func runServe() error {
 		return fmt.Errorf("the node config: %w", err)
 	}
 	if nodeMode && os.Getenv("DATABASE_URL") == "" && node.DatabaseURL != "" {
-		_ = os.Setenv("DATABASE_URL", node.DatabaseURL)
+		// not started by its supervisor (which hands it the roles' DATABASE_URL): the same
+		// connection from node.json, the home's CA verified and the machine's certificate
+		// offered, never node.json's URL as it is (TLS unverified, then plain)
+		dsn, err := node.HomeDSN()
+		if err != nil {
+			return fmt.Errorf("the home's database: %w", err)
+		}
+		_ = os.Setenv("DATABASE_URL", dsn)
 	}
 	// Epic 35 story 35.8 (design §9.1, R13): on a full node (MAKTABA_FULL_NODE=1, set by
 	// its supervisor) the streaming role also serves video on demand — its own sessions,

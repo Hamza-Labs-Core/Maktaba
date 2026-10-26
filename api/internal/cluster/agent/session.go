@@ -139,6 +139,12 @@ type Session struct {
 	// clockSkew is the machine's clock minus the home's, from its last update.state
 	clockSkew time.Duration
 	hasSkew   bool
+	// dbCertSaid is what this machine agent last said of its processes' certificates on
+	// the home's database (update.state's db_client_cert), dbCertKept what was kept of it
+	// (Config.DBClientCert; nil: nothing yet); dbCertKeep makes the keeps one at a time
+	dbCertSaid bool
+	dbCertKept *bool
+	dbCertKeep sync.Mutex
 }
 
 type outFrame struct {

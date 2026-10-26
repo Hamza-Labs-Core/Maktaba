@@ -1065,7 +1065,10 @@ async def _run(args: argparse.Namespace) -> int:
         done_file=Path(args.done_file) if args.done_file else None,
         switch=not args.no_switch,
     )
-    conn = await asyncpg.connect(args.database_url)
+    from ..db.pgtls import connect_args
+
+    dsn, tls = connect_args(args.database_url)
+    conn = await asyncpg.connect(dsn, ssl=tls)
     try:
         return await copy_chroma(conn, cfg)
     finally:
