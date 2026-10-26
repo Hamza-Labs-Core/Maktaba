@@ -21,6 +21,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/graphql"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/browse"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/collections"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/contextcard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/devices"
@@ -169,6 +170,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	libHandler.Mount(r)
 	// Phase 8 / Story 9.17: surfaced library audit feed.
 	libHandler.MountAudit(r)
+	// Epic 45 story 45.4: the browsing routes. /api/libraries/summary is a
+	// static segment, which chi prefers to /api/libraries/{id}.
+	(&browse.Handler{DB: d.DB}).Mount(r)
 
 	// Video patch, delete, process and reprocess write audit rows.
 	videoHandler := &videos.Handler{DB: d.DB, Audit: videos.DBAudit{DB: d.DB}}

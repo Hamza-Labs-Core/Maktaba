@@ -3443,6 +3443,306 @@ button.mkt-video__hero {
   border-radius: var(--radius-sm);
 }
 
+/* Epic 45 — Home, Libraries and a library's page: rows that scroll sideways */
+.mkt-row {
+  margin-block: var(--space-5);
+}
+.mkt-row__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-end: var(--space-2);
+}
+.mkt-row__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+.mkt-row__title a {
+  color: inherit;
+}
+.mkt-row__seeall {
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+.mkt-row__nav {
+  display: flex;
+  gap: var(--space-1);
+}
+.mkt-row__btn {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card, var(--color-subtle));
+  color: var(--color-fg);
+  font-size: var(--font-size-lg);
+  line-height: 1;
+  cursor: pointer;
+}
+.mkt-row__btn:focus-visible {
+  outline: 2px solid var(--color-accent-text);
+  outline-offset: 2px;
+}
+.mkt-row__scroller {
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: inline proximity;
+  /* a focused or snapped card stops clear of the row's edges */
+  scroll-padding-inline: var(--space-4);
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) var(--space-1) var(--space-2);
+  scrollbar-width: thin;
+}
+.mkt-row__item {
+  flex: 0 0 220px;
+  scroll-snap-align: start;
+}
+.mkt-media-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.mkt-media-card:focus-visible {
+  outline: 2px solid var(--color-accent-text);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+.mkt-media-card__art {
+  position: relative;
+  display: block;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-subtle);
+}
+.mkt-media-card__art .mkt-card__poster {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 0;
+}
+.mkt-media-card:hover .mkt-card__poster {
+  filter: brightness(1.08);
+}
+.mkt-media-card__dur {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline-end: var(--space-2);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: rgb(0 0 0 / 0.7);
+  color: #fff;
+  font-size: var(--font-size-sm);
+  /* durations read left to right in Arabic too */
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.mkt-media-card__progress {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  height: 4px;
+  background: rgb(0 0 0 / 0.45);
+}
+.mkt-media-card__progress > span {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+}
+.mkt-media-card__title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-weight: 600;
+}
+.mkt-media-card__meta {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+.mkt-home__start {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+}
+.mkt-home__loading {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* Libraries: the cards with a 2x2 poster mosaic, and the pinned list */
+.mkt-libgrid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+.mkt-libcard {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  background-color: var(--color-card, var(--color-subtle));
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.mkt-libcard__link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.mkt-libcard__mosaic {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-subtle);
+}
+.mkt-libcard__mosaic--single > * {
+  grid-area: 1 / 1 / 3 / 3;
+}
+.mkt-libcard__mosaic > img,
+.mkt-libcard__mosaic > span {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+  background: var(--color-neutral-300);
+}
+.mkt-libcard__name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mkt-libcard__meta {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+.mkt-libcard__pin {
+  align-self: flex-end;
+  margin: 0 var(--space-3) var(--space-3);
+}
+.mkt-libraries__pinned {
+  margin-block-end: var(--space-5);
+}
+.mkt-pinlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mkt-pinlist__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  background-color: var(--color-card, var(--color-subtle));
+}
+.mkt-pinlist__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mkt-pinlist__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* A library's page */
+.mkt-library-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-library--embedded {
+  padding-block-start: var(--space-3);
+}
+.mkt-library .mkt-toolbar {
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.mkt-year-input {
+  inline-size: 7rem;
+}
+.mkt-series-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  aspect-ratio: 16 / 9;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    160deg,
+    var(--color-accent-soft),
+    var(--color-card, var(--color-subtle))
+  );
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.mkt-series-tile__name {
+  font-weight: 600;
+}
+.mkt-series-tile__meta {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+.mkt-year-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.mkt-year-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.mkt-year-chip__count {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+
+/* The sidebar's Pinned group */
+.mkt-nav-pinned {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
 /* The Mac server's permissions (setup's Permissions step, the reminder) */
 .mkt-perms__list {
   display: grid;

@@ -17,6 +17,7 @@ export const HELP_CATEGORIES = [
     id: "admin",
     topics: [
       "users",
+      "library-management",
       "library-access",
       "machines",
       "system-health",
@@ -24,6 +25,7 @@ export const HELP_CATEGORIES = [
       "audit-log",
       "analytics",
       "cloud",
+      "storage",
     ],
   },
   { id: "connections", topics: ["extensions", "plex", "dizquetv"] },

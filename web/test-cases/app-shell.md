@@ -10,7 +10,7 @@
 
 | ID     | Title                                                                       | Category      | Priority | Covered by existing test?                                                                          |
 | ------ | --------------------------------------------------------------------------- | ------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| SHL-01 | `/` redirects to `/library`                                                 | Navigation    | P1       | Yes (`App.cases.test.tsx`)                                                                         |
+| SHL-01 | `/` is Home                                                                 | Navigation    | P1       | Yes (`App.cases.test.tsx`)                                                                         |
 | SHL-02 | Unknown route shows NotFound inside the shell                               | Navigation    | P2       | Yes (`AppShell.cases.test.tsx`; it.fails: bug, Arabic text)                                        |
 | SHL-03 | Unknown route while signed out goes to /login                               | Permissions   | P2       | Yes (`AppShell.cases.test.tsx`)                                                                    |
 | SHL-04 | Signed out on any shell route redirects to /login with `from`               | Permissions   | P1       | Yes (`AppShell.cases.test.tsx`)                                                                    |
@@ -47,7 +47,7 @@
 
 ## Cases
 
-### SHL-01 — `/` redirects to `/library`
+### SHL-01 — `/` is Home
 
 - **Priority:** P1
 - **Category:** Navigation
@@ -56,7 +56,7 @@
 - **Steps:**
   1. Open `/`.
   2. Press browser Back.
-- **Expected:** Location `/library`; the library page renders inside the shell. Back does not land on `/` again (redirect used `replace`).
+- **Expected:** Location `/`; Home renders inside the shell and only Home is current in the sidebar and the tab bar (Libraries is not). Back leaves the app's history as it was (Epic 45: `/` used to redirect to `/library`).
 
 ### SHL-02 — Unknown route shows NotFound inside the shell
 

@@ -44,7 +44,7 @@ export function Login() {
   const dest =
     safeRelativePath(new URLSearchParams(location.search).get("next")) ??
     safeRelativePath((location.state as LocationState | null)?.from) ??
-    "/library";
+    "/";
   const signedOut = (location.state as LocationState | null)?.signedOut;
 
   const leave = useCallback(() => {

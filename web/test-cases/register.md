@@ -3,14 +3,14 @@
 - **Route:** `/register`
 - **Component:** `src/pages/Auth/Register.tsx`; no child components
 - **API calls:** `POST /api/auth/register` `{ username, email, password }` → `200 { user: { id, username, is_admin } }` (cookie set, user signed in) via `useAuth().register` in `src/lib/auth.tsx`; errors: `403` problem `type` containing `registration-closed`, `409` problem `type` `username-exists` / `email-exists`. `GET /api/auth/me` (AuthProvider probe).
-- **Access:** public (outside `RequireAuth` and `AppShell`). A signed-in user is sent to `/library`.
+- **Access:** public (outside `RequireAuth` and `AppShell`). A signed-in user is sent to `/` (Home).
 - **Existing tests:** none (no `Register.test.tsx`). Gaps: everything.
 
 ## Summary
 
 | ID     | Title                                                    | Category      | Priority | Covered by existing test?                    |
 | ------ | -------------------------------------------------------- | ------------- | -------- | -------------------------------------------- |
-| REG-01 | Create account signs in and goes to /library             | Happy path    | P1       | Yes (`Register.test.tsx`)                    |
+| REG-01 | Create account signs in and goes to Home (`/`)           | Happy path    | P1       | Yes (`Register.test.tsx`)                    |
 | REG-02 | Submit disabled until every field is filled              | Validation    | P2       | Yes (`Register.test.tsx`)                    |
 | REG-03 | Whitespace-only username or email keeps submit disabled  | Validation    | P2       | Yes (`Register.test.tsx`)                    |
 | REG-04 | Password mismatch alert and disabled submit              | Validation    | P2       | Yes (`Register.test.tsx`)                    |
@@ -25,7 +25,7 @@
 | REG-13 | Network failure shows the generic error                  | Error         | P2       | Yes (`Register.test.tsx`)                    |
 | REG-14 | 200 with a body lacking `user` does not bounce silently  | Error         | P2       | Yes (`Register.test.tsx`)                    |
 | REG-15 | Submitting state: one request, button shows Loading      | Loading       | P2       | Yes (`Register.test.tsx`)                    |
-| REG-16 | Already signed in: /register goes to /library            | Navigation    | P2       | Yes (`Register.test.tsx`)                    |
+| REG-16 | Already signed in: /register goes to Home (`/`)          | Navigation    | P2       | Yes (`Register.test.tsx`)                    |
 | REG-17 | Links to sign in (form and closed state)                 | Navigation    | P2       | Yes (`Register.test.tsx`)                    |
 | REG-18 | Back after creating the account does not reopen the form | Navigation    | P3       | No                                           |
 | REG-19 | Crash during render shows a fallback; Back recovers      | Error         | P1       | Yes (`App.cases.test.tsx`)                   |
@@ -36,7 +36,7 @@
 
 ## Cases
 
-### REG-01 — Create account signs in and goes to /library
+### REG-01 — Create account signs in and goes to Home (`/`)
 
 - **Priority:** P1
 - **Category:** Happy path
@@ -46,7 +46,7 @@
   1. Open `/register`.
   2. Fill "Username" `salma`, "Email" `salma@example.com`, "Password" `longpass1`, "Confirm password" `longpass1`.
   3. Click "Create account".
-- **Expected:** One POST with body `{ "username": "salma", "email": "salma@example.com", "password": "longpass1" }` (no confirm field). Location `/library` (replace). The shell shows `salma` in the header.
+- **Expected:** One POST with body `{ "username": "salma", "email": "salma@example.com", "password": "longpass1" }` (no confirm field). Location `/` (Home) (replace). The shell shows `salma` in the header.
 
 ### REG-02 — Submit disabled until every field is filled
 
@@ -176,7 +176,7 @@
 - **Preconditions / data:** full App routes; POST → `200 {}`.
 - **Steps:**
   1. Submit.
-- **Expected:** An error is shown on `/register`. (Currently `setUser(undefined)` then `nav("/library")`, `RequireAuth` redirects to `/login` with no message — currently unhandled — likely bug.)
+- **Expected:** An error is shown on `/register`. (Currently `setUser(undefined)` then `nav("/")`, `RequireAuth` redirects to `/login` with no message — currently unhandled — likely bug.)
 
 ### REG-15 — Submitting state: one request, button shows Loading
 
@@ -188,7 +188,7 @@
   1. Submit, then click again.
 - **Expected:** Button text "Loading…", `disabled`; exactly one POST. Old error cleared when the new submit starts.
 
-### REG-16 — Already signed in: /register goes to /library
+### REG-16 — Already signed in: /register goes to Home (`/`)
 
 - **Priority:** P2
 - **Category:** Navigation
@@ -196,7 +196,7 @@
 - **Preconditions / data:** `/api/auth/me` → user.
 - **Steps:**
   1. Open `/register`.
-- **Expected:** Location `/library`; form never shown; no React "Cannot update a component while rendering" / react-router "navigate() in useEffect" warning. (Currently `nav()` is called during render — likely bug; expect a warning in the console spy.)
+- **Expected:** Location `/` (Home); form never shown; no React "Cannot update a component while rendering" / react-router "navigate() in useEffect" warning. (Currently `nav()` is called during render — likely bug; expect a warning in the console spy.)
 
 ### REG-17 — Links to sign in (form and closed state)
 
@@ -215,8 +215,8 @@
 - **Covered by existing test?** No
 - **Preconditions / data:** e2e: `/login` → "Create an account" → register succeeds.
 - **Steps:**
-  1. Press browser Back on `/library`.
-- **Expected:** Goes to `/login`, which forwards to `/library` (signed in); the register form is not shown again.
+  1. Press browser Back on `/`.
+- **Expected:** Goes to `/login`, which forwards to `/` (signed in); the register form is not shown again.
 
 ### REG-19 — Crash during render shows a fallback; Back recovers
 

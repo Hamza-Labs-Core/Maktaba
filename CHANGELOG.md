@@ -12,6 +12,32 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Libraries you can manage, browse and pin (Epic 45).** A **Home** page (`/`) across the
+  libraries you may see: Continue Watching, Recently Added, Recently Watched, Live TV on now,
+  and a row per pinned library. **Libraries** (`/library`) shows each library as a card with
+  its posters and count; a library's page has an Overview (Continue Watching, Recently Added,
+  Recently Watched, Most Watched, Series, By year) and a Browse grid that sorts by date added,
+  date published, title, length or plays and filters by year, watched and language
+  (`/api/videos` gains `sort=published_at|duration_sec|plays`, `order`, `year`, `watched`,
+  `series`). Pin libraries to keep them in the sidebar, in your own order (stored per user on
+  the server, slot 0159 `user_library_pins`). New API: `GET /api/home`,
+  `GET /api/libraries/summary`, `GET /api/libraries/{id}/hub`,
+  `GET/PUT /api/me/pinned-libraries`; every row and count is the caller's libraries only.
+- **Manage libraries** (`/admin/libraries`, admins): every library with its folders (and
+  whether this computer reaches them), counts, last scan and a live scan; add a library with a
+  folder picker that browses the server's disk; rename, change folders, empty trash (the
+  videos whose files are gone), merge into another library, and remove (files on disk are
+  never touched), each confirmed with what it takes along. Folders that two libraries share
+  are listed with a one-click merge into the library that holds the videos. New API:
+  `GET /api/libraries/manage`, `GET /api/libraries/folders`, `GET /api/libraries/{id}/impact`,
+  `POST /api/libraries/{id}/merge`, `POST /api/libraries/{id}/empty-trash`.
+- **Settings → Storage & discovery** (admins): the path map, media folders, LAN discovery,
+  the listen addresses and public URLs that lived only in `server.toml`, checked before they
+  are saved, written by the server (every other key kept), and applied by a restart started
+  from the page; a table shows each library folder and where this computer finds it. New API:
+  `GET/PUT /api/server/settings`, `POST /api/server/restart` (slot 0160: the `server` audit
+  category); the supervisor's loopback admin gains `/config/`.
+
 - **Usage analytics, opt-in.** The web app asks once per device, "Help improve Maktaba",
   listing what is shared (the app's version, OS and language, the library's size as a
   range, how often each area is used, error reports without paths) and what never is (file
@@ -429,6 +455,13 @@ don't append a line here; docs-only PRs are exempt.
   longer raise `UnicodeEncodeError`.
 
 ### Fixed
+
+- **A viewer's web session now sees the libraries they are granted.** The session cookie's
+  sign-in carried no library grants, so a non-admin user saw no library at all in the web app
+  (the apps' tokens were right).
+- **A library folder entered as the database stores it is found through the path map.**
+  Adding `/Volumes/Originals/...` on a Mac that mounts the share elsewhere was refused as
+  `not-found`.
 
 - **Indexing for search is about 3 to 5 times faster again.** Chroma, by default,
   rewrites its whole index to disk every 1000 vectors: on the home Mac's 12 million

@@ -65,6 +65,7 @@ import { ShortcutProvider } from "../lib/keyboard/shortcuts";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import { Login } from "../pages/Login";
 import { NotFound } from "../pages/NotFound";
+import { resetPinsStore } from "../lib/pins";
 import en from "../i18n/en.json";
 import ar from "../i18n/ar.json";
 
@@ -131,6 +132,7 @@ const PAGES = [
   "/billing",
   "/cloud/status",
   "/videos/:videoId",
+  "/admin/libraries",
   "/admin/library-acl",
   "/admin/channels",
   "/admin/filler",
@@ -209,6 +211,7 @@ function signedOut() {
 
 beforeEach(() => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  resetPinsStore();
   crash.paths.clear();
   crash.bell = false;
   drop.handler = null;
@@ -259,7 +262,8 @@ const linkList = (el: HTMLElement) =>
     .map((a) => [linkName(a), a.getAttribute("href")]);
 
 const USER_LINKS = [
-  ["nav.library", "/library"],
+  ["nav.home", "/"],
+  ["nav.libraries", "/library"],
   ["nav.series", "/series"],
   ["nav.guide", "/guide"],
   ["nav.search", "/search"],
@@ -273,8 +277,9 @@ const USER_LINKS = [
   ["nav.help", "/help"],
 ] as const;
 
-// The account pages, billing, cloud status and help: everyone's half of the More page.
-const MORE_LINKS = USER_LINKS.slice(4);
+// Series (no room on the tab bar), the account pages, billing, cloud status and help:
+// everyone's half of the More page.
+const MORE_LINKS = [["nav.series", "/series"] as const, ...USER_LINKS.slice(5)];
 
 // Running the server is the admins' (the API refuses anyone else): these lead the
 // Administration group and never show for a normal user.
@@ -286,6 +291,7 @@ const SERVER_LINKS = [
 
 const ADMIN_LINKS = [
   ...SERVER_LINKS,
+  ["nav.admin.libraries", "/admin/libraries"],
   ["nav.admin.users", "/admin/users"],
   ["nav.admin.libraryAcl", "/admin/library-acl"],
   ["nav.admin.channels", "/admin/channels"],
@@ -421,8 +427,8 @@ describe("AppShell (test-cases/app-shell.md)", () => {
       expect(document.querySelector(`a[href="${href}"]`)).toBeNull();
     }
     expect(linkList(tabbar()).map(([, href]) => href)).toEqual([
+      "/",
       "/library",
-      "/series",
       "/guide",
       "/search",
       "/more",
@@ -576,7 +582,8 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     await screen.findByRole("heading", { name: "page /library" });
     const nav = screen.getAllByRole("navigation", { name: ar["nav.primary"] })[0];
     for (const k of [
-      "nav.library",
+      "nav.home",
+      "nav.libraries",
       "nav.series",
       "nav.guide",
       "nav.search",
@@ -811,6 +818,68 @@ describe("AppShell (test-cases/app-shell.md)", () => {
       expect(link.querySelector(".mkt-nav-link__icon")).toHaveAttribute("aria-hidden", "true");
     }
   });
+
+  it("SHL-35: Home is current only on /, Libraries on a library's page", async () => {
+    renderShell(["/library"]);
+    await screen.findByRole("heading", { name: "page /library" });
+    const home = within(sidebar()).getByRole("link", { name: en["nav.home"] });
+    expect(home).toHaveAttribute("href", "/");
+    expect(home).not.toHaveAttribute("aria-current");
+    expect(within(sidebar()).getByRole("link", { name: en["nav.libraries"] })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    expect(within(tabbar()).getByRole("link", { name: en["nav.home"] })).not.toHaveAttribute(
+      "aria-current"
+    );
+  });
+
+  it("SHL-36: the Pinned group lists the pinned libraries in order, read once", async () => {
+    const base = get.getMockImplementation()!;
+    get.mockImplementation((path: string) =>
+      path === "/api/me/pinned-libraries"
+        ? Promise.resolve({
+            library_ids: [
+              "11111111-1111-4111-8111-111111111111",
+              "22222222-2222-4222-8222-222222222222",
+            ],
+            items: [
+              { id: "11111111-1111-4111-8111-111111111111", name: "دروس", position: 0 },
+              { id: "22222222-2222-4222-8222-222222222222", name: "Lectures", position: 1 },
+            ],
+          })
+        : base(path)
+    );
+    renderShell(["/library"]);
+    await screen.findByRole("heading", { name: "page /library" });
+    const group = await within(sidebar()).findByRole("list", { name: en["nav.pinned"] });
+    expect(linkList(group)).toEqual([
+      ["دروس", "/library/11111111-1111-4111-8111-111111111111"],
+      ["Lectures", "/library/22222222-2222-4222-8222-222222222222"],
+    ]);
+    expect(group.querySelector("bdi")).not.toBeNull();
+    // the group sits between the watching links and the account links
+    const hrefs = linkList(sidebar()).map(([, h]) => h);
+    expect(hrefs.indexOf("/library/11111111-1111-4111-8111-111111111111")).toBe(5);
+    expect(hrefs.indexOf("/account")).toBe(7);
+    // not on the phone tab bar
+    expect(within(tabbar()).getAllByRole("link")).toHaveLength(5);
+    expect(get.mock.calls.filter(([p]) => p === "/api/me/pinned-libraries")).toHaveLength(1);
+  });
+
+  it("SHL-36: no Pinned group without pins, or when the pins cannot be read", async () => {
+    const base = get.getMockImplementation()!;
+    get.mockImplementation((path: string) =>
+      path === "/api/me/pinned-libraries" ? Promise.reject(problem(500)) : base(path)
+    );
+    renderShell(["/library"]);
+    await screen.findByRole("heading", { name: "page /library" });
+    await waitFor(() =>
+      expect(get.mock.calls.some(([p]) => p === "/api/me/pinned-libraries")).toBe(true)
+    );
+    expect(within(sidebar()).queryByText(en["nav.pinned"])).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });
 
 describe("DesktopBridge drop overlay (test-cases/app-shell.md)", () => {
@@ -910,7 +979,7 @@ describe("MoreMenu (test-cases/more-menu.md)", () => {
       "aria-current",
       "page"
     );
-    expect(within(tabbar()).getByRole("link", { name: en["nav.library"] })).not.toHaveAttribute(
+    expect(within(tabbar()).getByRole("link", { name: en["nav.libraries"] })).not.toHaveAttribute(
       "aria-current"
     );
     expect(sidebar().querySelector("[aria-current]")).toBeNull();
@@ -1004,7 +1073,7 @@ describe("MoreMenu (test-cases/more-menu.md)", () => {
     await user.click(screen.getByRole("button", { name: "test back" }));
     expect(await screen.findByRole("heading", { name: "page /library" })).toBeInTheDocument();
     await toMore();
-    await user.click(within(tabbar()).getByRole("link", { name: en["nav.library"] }));
+    await user.click(within(tabbar()).getByRole("link", { name: en["nav.libraries"] }));
     expect(await screen.findByRole("heading", { name: "page /library" })).toBeInTheDocument();
     spy.mockRestore();
   });

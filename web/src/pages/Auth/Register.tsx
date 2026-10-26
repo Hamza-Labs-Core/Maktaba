@@ -28,7 +28,7 @@ export function Register() {
   const [closed, setClosed] = useState(false);
 
   // already signed in: a redirect element, never nav() while rendering
-  if (user) return <Navigate to="/library" replace />;
+  if (user) return <Navigate to="/" replace />;
 
   const mismatch = confirm !== "" && password !== confirm;
   // the 8-character minimum is checked here too (minLength only guards a
@@ -42,7 +42,7 @@ export function Register() {
     setError(null);
     try {
       await register(username, email, password);
-      nav("/library", { replace: true });
+      nav("/", { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
         // a problem without `type` (a plain JSON error) is still an error

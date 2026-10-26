@@ -1,18 +1,22 @@
-// Story 11.1 — Library browser.
+// Story 11.1 / Epic 45 — the video grid: All videos (`/videos`) and a
+// library's Browse tab (`/library/:id?tab=browse`, embedded).
 //
-// Speaks the real /api/videos contract:
-//   ?library=&language=&sort=(updated_at|created_at|title)&limit=&cursor=
+// Speaks the /api/videos contract:
+//   ?library=&language=&year=&watched=&sort=&order=&limit=&cursor=
 //   -> { items: Video[], next: string|null }
-// (the server field is `next`, NOT `next_cursor`; the old code's
-// `next_cursor` typo meant pagination never advanced.)
+// sort = updated_at|created_at|published_at|title|duration_sec|plays and
+// order = asc|desc are the server's (Epic 45); the cursor carries both, and
+// the server refuses (400) a cursor minted for another sort or order, so a
+// new sort, order or filter always starts over from the first page.
+// (The server field is `next`, NOT `next_cursor`.)
 //
-// Grid/list view persists per-user in localStorage; language filter
-// chips are URL-encoded; cursor "Load more" appends pages; empty states
-// distinguish first-run (admin "Scan now") vs filtered-out ("Clear
-// filters"). State badges + poster 404 fallback + bidi-isolated titles.
-// "Scan now" (admins) toasts the result, follows the scan job
-// (GET /api/jobs/{id}) with a progress bar, and reloads the list when the
-// scan is done.
+// Grid/list view persists per-user in localStorage; the sort, order and
+// filters (year, watched, language) live in the URL; cursor "Load more"
+// appends pages; empty states distinguish first-run (admin "Scan now") vs
+// filtered-out ("Clear filters"). State badges + poster 404 fallback +
+// bidi-isolated titles. "Scan now" (admins) toasts the result, follows the
+// scan job (GET /api/jobs/{id}) with a progress bar, and reloads the list
+// when the scan is done.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -26,11 +30,9 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
-import { WhatsOnNow } from "../components/WhatsOnNow";
 import { TitleRow } from "../help/HelpLink";
 import { VideoPoster, ViewToggle, formatDuration, useStoredView } from "../components/VideoViews";
 
-type SortField = "updated_at" | "title" | "duration_sec";
 const VIEW_KEY = "mkt:lib:view";
 
 interface Video {
@@ -42,6 +44,10 @@ interface Video {
   duration_sec?: number | null;
   size_bytes?: number;
   updated_at?: string;
+  /** the file's mtime (a download's upload date) */
+  published_at?: string | null;
+  /** everyone's plays; only under sort=plays */
+  plays?: number | null;
 }
 
 interface VideoListResponse {
@@ -49,16 +55,31 @@ interface VideoListResponse {
   next: string | null;
 }
 
-// Server only sorts on updated_at|created_at|title; `duration_sec` is a
-// client-side sort over the loaded page (documented limitation: the
-// list API has no duration sort key).
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const SERVER_SORT: Record<SortField, string> = {
-  updated_at: "updated_at",
-  title: "title",
-  duration_sec: "updated_at",
+// The server's sort keys, each with the order it starts in (newest, longest,
+// most played first; titles A to Z).
+const SORTS = {
+  updated_at: "desc",
+  created_at: "desc",
+  published_at: "desc",
+  title: "asc",
+  duration_sec: "desc",
+  plays: "desc",
+} as const;
+type SortField = keyof typeof SORTS;
+const SORT_LABEL: Record<SortField, string> = {
+  updated_at: "library.sort.recent",
+  created_at: "videosAll.sort.added",
+  published_at: "videosAll.sort.published",
+  title: "library.sort.title",
+  duration_sec: "library.sort.duration",
+  plays: "videosAll.sort.plays",
 };
+
+const WATCHED = ["unwatched", "in_progress", "watched"] as const;
+
+// Library ids are UUIDs; the server ignores any other `library` value and
+// would list every video, so a malformed id is "not found" here.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Only states a viewer should notice get a badge. The rest
 // (discovered → probed → … → ready) are processing steps, shown on the
@@ -92,8 +113,17 @@ const SCAN_TERMINAL = new Set(["done", "failed", "cancelled", "superseded"]);
 
 // ScanNow starts a library scan and follows it: a toast when it is queued
 // (or refused), a progress bar while the job is pending or running, and a
-// toast plus onDone() when it ends.
-export function ScanNow({ libraryId, onDone }: { libraryId: string; onDone: () => void }) {
+// toast plus onDone() when it ends. A scan already running (jobId, from
+// GET /api/libraries/manage after a reload) is followed the same way.
+export function ScanNow({
+  libraryId,
+  onDone,
+  jobId,
+}: {
+  libraryId: string;
+  onDone: () => void;
+  jobId?: string | null;
+}) {
   const { t } = useI18n();
   const toast = useToast();
   const [job, setJob] = useState<ScanJob | null>(null);
@@ -108,6 +138,13 @@ export function ScanNow({ libraryId, onDone }: { libraryId: string; onDone: () =
 
   const errMessage = (e: unknown) =>
     e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error");
+
+  useEffect(() => {
+    if (!jobId) return;
+    setJob({ id: jobId, state: "running" });
+    void follow(jobId);
+    // follow once per job id handed in (follow itself is rebuilt every render)
+  }, [jobId]);
 
   async function follow(id: string) {
     for (let i = 0; i < SCAN_POLL_MAX && alive.current; i++) {
@@ -177,9 +214,20 @@ export function ScanNow({ libraryId, onDone }: { libraryId: string; onDone: () =
   );
 }
 
-export function LibraryBrowser() {
-  const { libraryId } = useParams();
-  const { t, n, locale } = useI18n();
+interface LibraryBrowserProps {
+  /** the library to list; defaults to the route's :libraryId, else every library */
+  libraryId?: string;
+  /** inside a library's page (its Browse tab): no page title of its own */
+  embedded?: boolean;
+  /** the years to offer in the Year filter (the library hub's); else a number field */
+  years?: number[];
+}
+
+export function LibraryBrowser(props: LibraryBrowserProps = {}) {
+  const params0 = useParams();
+  const libraryId = props.libraryId ?? params0.libraryId;
+  const { embedded, years } = props;
+  const { t, n, formatDate } = useI18n();
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
 
@@ -187,21 +235,24 @@ export function LibraryBrowser() {
   const rawSort = params.get("sort");
   // An unknown ?sort= (a stale or hand-typed link) falls back to the default.
   const sort: SortField =
-    rawSort && Object.prototype.hasOwnProperty.call(SERVER_SORT, rawSort)
+    rawSort && Object.prototype.hasOwnProperty.call(SORTS, rawSort)
       ? (rawSort as SortField)
       : "updated_at";
-  // Library ids are UUIDs; the server ignores any other `library` value and
-  // would list every video, so a malformed id is "not found" here.
+  const rawOrder = params.get("order");
+  const order: "asc" | "desc" = rawOrder === "asc" || rawOrder === "desc" ? rawOrder : SORTS[sort];
   const badLibrary = !!libraryId && !UUID.test(libraryId);
   const [reloads, setReloads] = useState(0);
-  const order = params.get("order") === "asc" ? "asc" : "desc";
   const lang = params.get("language") || "";
+  const rawYear = params.get("year") || "";
+  const year = /^\d{4}$/.test(rawYear) ? rawYear : "";
+  const rawWatched = params.get("watched") || "";
+  const watched = (WATCHED as readonly string[]).includes(rawWatched) ? rawWatched : "";
 
   const [videos, setVideos] = useState<Video[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingMoreRef = useRef(false);
-  // Bumped whenever the list starts over (new sort, library, language or a
+  // Bumped whenever the list starts over (new sort, library, filter or a
   // retry): a Load more answer for an older list is dropped.
   const listGen = useRef(0);
   const [err, setErr] = useState<string | null>(null);
@@ -209,14 +260,17 @@ export function LibraryBrowser() {
   const buildQuery = useCallback(
     (after?: string | null) => {
       const qs = new URLSearchParams();
-      qs.set("sort", SERVER_SORT[sort]);
+      qs.set("sort", sort);
+      qs.set("order", order);
       qs.set("limit", "60");
       if (libraryId) qs.set("library", libraryId);
       if (lang) qs.set("language", lang);
+      if (year) qs.set("year", year);
+      if (watched) qs.set("watched", watched);
       if (after) qs.set("cursor", after);
       return qs.toString();
     },
-    [sort, libraryId, lang]
+    [sort, order, libraryId, lang, year, watched]
   );
 
   useEffect(() => {
@@ -278,26 +332,15 @@ export function LibraryBrowser() {
       });
   }
 
-  function patchParam(key: string, value: string | null) {
+  function patchParams(changes: Record<string, string | null>) {
     const nextParams = new URLSearchParams(params);
-    if (value) nextParams.set(key, value);
-    else nextParams.delete(key);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) nextParams.set(key, value);
+      else nextParams.delete(key);
+    }
     setParams(nextParams, { replace: true });
   }
-
-  const sorted = useMemo(() => {
-    if (!videos) return videos;
-    const arr = videos.slice();
-    if (sort === "duration_sec") {
-      arr.sort((a, b) => (a.duration_sec ?? 0) - (b.duration_sec ?? 0));
-    } else if (sort === "title") {
-      arr.sort((a, b) =>
-        (a.title || a.filename || "").localeCompare(b.title || b.filename || "", locale)
-      );
-    }
-    if (order === "desc") arr.reverse();
-    return arr;
-  }, [videos, sort, order, locale]);
+  const patchParam = (key: string, value: string | null) => patchParams({ [key]: value });
 
   const languages = useMemo(() => {
     const set = new Set<string>();
@@ -305,40 +348,104 @@ export function LibraryBrowser() {
     return [...set].sort();
   }, [videos]);
 
-  const filtersActive = Boolean(lang);
+  const filtersActive = Boolean(lang || year || watched);
+  const listName = embedded ? t("libraryPage.tab.browse") : t("videosAll.title");
+
+  const toolbar = (
+    <div className="mkt-toolbar" role="toolbar" aria-label={t("library.sort")}>
+      <label className="mkt-field">
+        <span className="mkt-field__label">{t("library.sort")}</span>
+        <select
+          value={sort}
+          // a new sort starts in its own order
+          onChange={(e) => patchParams({ sort: e.target.value, order: null })}
+          aria-label={t("library.sort")}
+        >
+          {(Object.keys(SORTS) as SortField[]).map((s) => (
+            <option key={s} value={s}>
+              {t(SORT_LABEL[s])}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        className="mkt-btn mkt-btn--ghost"
+        aria-label={order === "desc" ? t("library.order.asc") : t("library.order.desc")}
+        onClick={() => patchParam("order", order === "desc" ? "asc" : "desc")}
+      >
+        {order === "desc" ? "↓" : "↑"}
+      </button>
+      <label className="mkt-field">
+        <span className="mkt-field__label">{t("videosAll.filter.watched")}</span>
+        <select
+          value={watched}
+          onChange={(e) => patchParam("watched", e.target.value || null)}
+          aria-label={t("videosAll.filter.watched")}
+        >
+          <option value="">{t("library.filter.all")}</option>
+          {WATCHED.map((w) => (
+            <option key={w} value={w}>
+              {t(`videosAll.watched.${w}`)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="mkt-field">
+        <span className="mkt-field__label">{t("videosAll.filter.year")}</span>
+        {years && years.length > 0 ? (
+          <select
+            value={year}
+            onChange={(e) => patchParam("year", e.target.value || null)}
+            aria-label={t("videosAll.filter.year")}
+          >
+            <option value="">{t("library.filter.all")}</option>
+            {/* a year from a link that the hub does not list still shows */}
+            {[...new Set([...(year ? [Number(year)] : []), ...years])]
+              .sort((a, b) => b - a)
+              .map((y) => (
+                <option key={y} value={String(y)}>
+                  {n(y, { useGrouping: false })}
+                </option>
+              ))}
+          </select>
+        ) : (
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1900}
+            max={2100}
+            className="mkt-year-input"
+            defaultValue={year}
+            key={year}
+            aria-label={t("videosAll.filter.year")}
+            placeholder={t("library.filter.all")}
+            onBlur={(e) => {
+              const v = e.target.value.trim();
+              if (v !== year && (v === "" || /^\d{4}$/.test(v))) patchParam("year", v || null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+          />
+        )}
+      </label>
+      <ViewToggle view={view} onChange={setView} />
+    </div>
+  );
 
   return (
-    <section className="mkt-page mkt-library">
-      <header className="mkt-page__header">
-        <TitleRow>
-          <h1>{t("nav.library")}</h1>
-        </TitleRow>
-        <div className="mkt-toolbar" role="toolbar" aria-label={t("library.sort")}>
-          <label className="mkt-field">
-            <span className="mkt-field__label">{t("library.sort")}</span>
-            <select
-              value={sort}
-              onChange={(e) => patchParam("sort", e.target.value)}
-              aria-label={t("library.sort")}
-            >
-              <option value="updated_at">{t("library.sort.recent")}</option>
-              <option value="title">{t("library.sort.title")}</option>
-              <option value="duration_sec">{t("library.sort.duration")}</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="mkt-btn mkt-btn--ghost"
-            aria-label={order === "desc" ? t("library.order.asc") : t("library.order.desc")}
-            onClick={() => patchParam("order", order === "desc" ? "asc" : null)}
-          >
-            {order === "desc" ? "↓" : "↑"}
-          </button>
-          <ViewToggle view={view} onChange={setView} />
-        </div>
-      </header>
-
-      <WhatsOnNow />
+    <section className={embedded ? "mkt-library mkt-library--embedded" : "mkt-page mkt-library"}>
+      {embedded ? (
+        toolbar
+      ) : (
+        <header className="mkt-page__header">
+          <TitleRow>
+            <h1>{t("videosAll.title")}</h1>
+          </TitleRow>
+          {toolbar}
+        </header>
+      )}
 
       {languages.length > 0 && (
         <div className="mkt-chips" role="group" aria-label={t("library.filter.language")}>
@@ -373,30 +480,33 @@ export function LibraryBrowser() {
           kind="server"
           title={t("common.error")}
           description={err}
-          action={<Button onClick={() => setReloads((n) => n + 1)}>{t("common.retry")}</Button>}
+          action={<Button onClick={() => setReloads((x) => x + 1)}>{t("common.retry")}</Button>}
         />
       )}
 
-      {sorted !== null && sorted.length === 0 && !err && !badLibrary && (
+      {videos !== null && videos.length === 0 && !err && !badLibrary && (
         <EmptyState
           kind={filtersActive ? "filtered_out" : "first_run"}
           title={filtersActive ? t("library.empty.filtered") : t("library.empty.title")}
           description={filtersActive ? undefined : t("library.empty.desc")}
           action={
             filtersActive ? (
-              <Button variant="secondary" onClick={() => patchParam("language", null)}>
+              <Button
+                variant="secondary"
+                onClick={() => patchParams({ language: null, year: null, watched: null })}
+              >
                 {t("common.clearFilters")}
               </Button>
             ) : user?.is_admin && libraryId ? (
-              <ScanNow libraryId={libraryId} onDone={() => setReloads((n) => n + 1)} />
+              <ScanNow libraryId={libraryId} onDone={() => setReloads((x) => x + 1)} />
             ) : undefined
           }
         />
       )}
 
-      {sorted !== null && sorted.length > 0 && view === "grid" && (
+      {videos !== null && videos.length > 0 && view === "grid" && (
         <ul className="mkt-grid">
-          {sorted.map((v) => (
+          {videos.map((v) => (
             <li key={v.id} className="mkt-card">
               <Link to={`/videos/${v.id}`}>
                 <VideoPoster videoId={v.id} />
@@ -408,6 +518,12 @@ export function LibraryBrowser() {
                     <span>{formatDuration(v.duration_sec)}</span>
                   )}
                   {v.detected_language && <span> · {v.detected_language}</span>}
+                  {sort === "published_at" && v.published_at && (
+                    <span> · {formatDate(v.published_at)}</span>
+                  )}
+                  {typeof v.plays === "number" && (
+                    <span> · {t("videosAll.plays", { n: n(v.plays) })}</span>
+                  )}
                 </div>
                 <StateBadge state={v.state} />
               </Link>
@@ -416,8 +532,8 @@ export function LibraryBrowser() {
         </ul>
       )}
 
-      {sorted !== null && sorted.length > 0 && view === "list" && (
-        <table className="mkt-table" aria-label={t("nav.library")}>
+      {videos !== null && videos.length > 0 && view === "list" && (
+        <table className="mkt-table" aria-label={listName}>
           <thead>
             <tr>
               <th>{t("library.col.title")}</th>
@@ -427,7 +543,7 @@ export function LibraryBrowser() {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((v) => (
+            {videos.map((v) => (
               <tr key={v.id}>
                 <td dir="auto">
                   <Link to={`/videos/${v.id}`}>{v.title || v.filename}</Link>
@@ -444,7 +560,7 @@ export function LibraryBrowser() {
       {cursor && (
         <div className="mkt-loadmore">
           <Button variant="secondary" loading={loadingMore} onClick={loadMore}>
-            {t("common.loadMore")} {n((sorted ?? []).length)}
+            {t("common.loadMore")} {n((videos ?? []).length)}
           </Button>
         </div>
       )}
