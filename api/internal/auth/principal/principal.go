@@ -60,7 +60,53 @@ type Principal struct {
 	// middleware sets it from the user row; a full node from the home's
 	// introspection answer.
 	MustChangePassword bool
+
+	// CloudScope is set when the credential came from a Maktaba Cloud
+	// sign-in (Epic 42 story 42.7, linked accounts): the link's scope,
+	// CloudScopePlay or CloudScopeManage; "" for every other sign-in.
+	// Whoever builds a principal from a cloud credential clears IsAdmin
+	// for CloudScopePlay (ApplyCloudScope), so every admin check refuses
+	// a play sign-in, even an admin's. A cloud sign-in also mints no
+	// credential of its own that would outlive the link (ViaCloud).
+	CloudScope string
 }
+
+// Cloud link scopes (Epic 42 story 42.7).
+const (
+	// CloudScopePlay: watch only, whatever the home user's role.
+	CloudScopePlay = "play"
+	// CloudScopeManage: the home user's full role (an admin's own link,
+	// set by that admin on the home).
+	CloudScopeManage = "manage"
+)
+
+// ApplyCloudScope sets the cloud scope and caps the principal by it: a
+// play sign-in is never an admin, and an unknown scope is treated as play.
+// A play cap also ends all-library access, which several routes read as
+// "sees everything" (catalog-wide reports, every job): an admin's play
+// sign-in reads the libraries in all (every library, listed) instead, and
+// with all nil it reads only the Libraries it already names.
+func (p *Principal) ApplyCloudScope(scope string, all []string) {
+	if p == nil || scope == "" {
+		return
+	}
+	if scope != CloudScopeManage {
+		scope = CloudScopePlay
+	}
+	p.CloudScope = scope
+	if scope == CloudScopePlay {
+		p.IsAdmin = false
+		if p.AccessAllLibraries {
+			p.AccessAllLibraries = false
+			p.Libraries = append([]string(nil), all...)
+		}
+	}
+}
+
+// ViaCloud reports whether the principal signed in through Maktaba Cloud.
+// Such a sign-in may not mint a credential that outlives its link (an API
+// token, a paired device, a new password, another cloud link).
+func (p *Principal) ViaCloud() bool { return p != nil && p.CloudScope != "" }
 
 type ctxKey struct{}
 

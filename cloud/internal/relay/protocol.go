@@ -22,6 +22,14 @@
 //	0x09  AUTH_OK         payload = JSON `{"slug":"...", "issued_at":"..."}`
 //	0x0a  AUTH_FAIL       payload = JSON `{"error":"..."}`
 //	0x0b  HEARTBEAT       payload = JSON server stats; mirrors POST /heartbeat
+//	0x0c  WINDOW_UPDATE   payload = uint32 BE: RESPONSE_BODY bytes the cloud grants
+//
+// Flow control (WINDOW_UPDATE) is negotiated: the agent sends "flow":1 in
+// AUTH and the cloud answers "flow":1 in AUTH_OK when it agrees. On such a
+// tunnel the home sends at most InitialWindow bytes of RESPONSE_BODY
+// payload per stream beyond what the cloud has granted back; the cloud
+// grants as its client reads. Without it (an older agent or cloud) the
+// stream is unwindowed, as before.
 //
 // We size length as uint32 (≤4 GiB per frame); single-frame upper bound
 // is enforced at 16 MiB to keep memory bounded under hostile streams.
@@ -45,7 +53,17 @@ const (
 	KindAuthOK       byte = 0x09
 	KindAuthFail     byte = 0x0a
 	KindHeartbeat    byte = 0x0b
+	KindWindowUpdate byte = 0x0c
 )
+
+// InitialWindow is the RESPONSE_BODY credit (bytes) each stream starts
+// with on a flow-controlled tunnel: what the home may send before the
+// cloud grants more.
+const InitialWindow = 1 << 20
+
+// FlowVersion is the flow-control version both ends announce ("flow" in
+// AUTH and AUTH_OK).
+const FlowVersion = 1
 
 // MaxFrameBytes caps a single payload. 16 MiB lets normal HTML/JSON
 // responses through while preventing a misbehaving (or hostile) server

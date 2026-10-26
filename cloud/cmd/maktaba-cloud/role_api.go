@@ -25,9 +25,11 @@ import (
 	authh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/auth"
 	billingh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/billing"
 	healthh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/health"
+	homesh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/homes"
 	metricsh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/metrics"
 	pushh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/push"
 	serversh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/servers"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/homeassert"
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
 	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
@@ -100,6 +102,17 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			entSigner = s
 		}
 	}
+	// Linked accounts (Epic 42 story 42.7): home assertions are signed with
+	// a key derived from the entitlement key, so the one key file covers
+	// both; without it, linked sign-in is off (503) and the rest runs.
+	var assertions *homeassert.Signer
+	if entSigner != nil {
+		assertions = homeassert.DeriveFromSeed(entSigner.Priv.Seed())
+	} else {
+		logger.Warn("no entitlement key: linked-account sign-in (home assertions) is off")
+	}
+	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions}
+	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost}
 
 	// Push dispatcher — both drivers may be nil in non-prod; the
 	// dispatcher will log no-driver and skip those rows safely.
@@ -171,6 +184,13 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		app.Use(authRateLimit(ratelimit.NewLimiter(30, 5), authh.RateLimitedPaths))
 		app.Use(authRateLimit(ratelimit.NewLimiter(5, 1.0/12), authh.MailPaths))
 		app.Use(blockedIPs(detector, logger))
+		// a claim code is 8 characters: its redeem is limited per IP too
+		app.Use(authRateLimit(ratelimit.NewLimiter(30, 5), []string{"/v1/servers/claims/redeem"}))
+
+		// A home's agent: the claim code or the server's own secret is its
+		// credential, never a user token.
+		serversh.MountAgent(app, serversDeps)
+		homesh.MountPublic(app, homes)
 
 		authh.Mount(app, &authh.Deps{
 			Users:     users,
@@ -210,7 +230,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		app.Group(func(g chi.Router) {
 			g.Use(middleware.RequireUser(signer, middleware.UserStatus(pool.DB)))
 			accounth.Mount(g, &accounth.Deps{Users: users, Sessions: sess, Audit: auditLog, Logger: logger})
-			serversh.Mount(g, serversh.Deps{Servers: servers})
+			serversh.MountUser(g, serversDeps)
+			homesh.MountUser(g, homes)
 			(&healthh.Deps{DB: pool.DB}).Mount(g)
 			billingh.Mount(g, billing)
 			pushh.Mount(g, pushh.Deps{DB: pool.DB, Dispatcher: dispatcher})

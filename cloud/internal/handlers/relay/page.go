@@ -47,7 +47,7 @@ func wantsHTML(r *http.Request) bool {
 // pageText is the heading and sentence of each relay error kind.
 func pageText(kind string) (heading, message string, retry int) {
 	switch kind {
-	case "server_offline", "tunnel_error":
+	case "server_offline", "tunnel_error", "tunnel_timeout":
 		return "Your Maktaba server is unreachable",
 			"The relay cannot reach the home server right now. It may be off, restarting or offline; this page retries by itself.", 15
 	case "tier_limit":

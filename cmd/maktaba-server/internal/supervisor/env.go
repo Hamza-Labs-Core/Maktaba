@@ -131,6 +131,14 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		add("MAKTABA_SECRETS_KEY", SecretsKeyPath())
 	}
 
+	// Linked accounts (Epic 42 story 42.7): on the home that runs the relay
+	// agent, the api reads the agent's identity file (the cloud's pinned
+	// assertion key) and reports its linked cloud accounts through the agent.
+	if role == RoleAPI && RelayWanted(cfg) {
+		add("MAKTABA_CLOUD_IDENTITY", RelayIdentityPath())
+		add("MAKTABA_CLOUDLINK_ADMIN", RelayAdminAddr(cfg))
+	}
+
 	// This machine's stream signing key (Story 10.8): the api signs the video
 	// sessions' stream URLs with it (creating it on first start) and the
 	// streaming role verifies them with it. Per install: a node signs and
