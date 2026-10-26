@@ -1446,15 +1446,28 @@ describe("Settings about (test-cases/settings-about.md)", () => {
   it("SAB-12: a Docker / package install 409 shows the instruction, no polling", async () => {
     const user = userEvent.setup();
     mockGets({ "/api/system/updates": AVAILABLE });
-    const runs: [Record<string, unknown>, string | null][] = [
+    // [the 409's fields, the Docker instruction shown, the reason the update cannot start]
+    const runs: [Record<string, unknown>, string | null, string | null][] = [
       [
         { instructions: "docker compose pull && docker compose up -d" },
         "docker compose pull && docker compose up -d",
+        null,
       ],
-      [{ detail: "apt upgrade maktaba" }, "apt upgrade maktaba"],
-      [{}, null],
+      // a blocked update is not a Docker install: its reason, in the page's words
+      [
+        { code: "recent_crash", detail: "an update cannot start now: recent_crash" },
+        null,
+        "The update can't start now: a part of the home's server crashed in the last ten minutes.",
+      ],
+      // a reason this page has no words for: the server's
+      [
+        { code: "something_new", detail: "an update cannot start now: something_new" },
+        null,
+        "The update can't start now: an update cannot start now: something_new.",
+      ],
+      [{}, null, null],
     ];
-    for (const [extra, hint] of runs) {
+    for (const [extra, hint, blocked] of runs) {
       get.mockClear();
       post.mockRejectedValueOnce(problem(409, "Conflict", extra));
       const { unmount } = renderSettings("/settings/about", { user: adminUser });
@@ -1464,6 +1477,11 @@ describe("Settings about (test-cases/settings-about.md)", () => {
         expect(screen.getByText(hint).tagName).toBe("PRE");
         expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
         expect(screen.queryByText("Update failed.")).not.toBeInTheDocument();
+      } else if (blocked) {
+        expect(await screen.findByText(blocked)).toBeInTheDocument();
+        expect(screen.queryByText("This is a Docker install. Run:")).not.toBeInTheDocument();
+        expect(screen.queryByText("Update failed.")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Update now" })).toBeEnabled();
       } else {
         expect(await screen.findByText("Update failed.")).toBeInTheDocument();
       }

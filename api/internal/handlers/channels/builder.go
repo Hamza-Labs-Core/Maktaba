@@ -174,7 +174,7 @@ func (h *Handler) FollowPlan(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("channel "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load channel"))
+		httperror.Write(w, r, httperror.Internal("load channel").Wrap(err))
 		return
 	}
 	res, err := h.DB.ExecContext(r.Context(), `UPDATE external_links SET content_hash = $1

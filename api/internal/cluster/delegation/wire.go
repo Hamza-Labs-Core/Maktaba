@@ -33,21 +33,6 @@ type IntrospectAnswer struct {
 	OriginNodeID *string   `json:"origin_node_id"`
 }
 
-// ExchangeRequest is the node's half of the cluster sign-in (POST /api/cluster/sso/exchange).
-type ExchangeRequest struct {
-	Code     string `json:"code"`
-	Verifier string `json:"verifier"`
-}
-
-// ExchangeAnswer is the child session the node sets as its own host's cookie.
-type ExchangeAnswer struct {
-	SessionID  string    `json:"session_id"`
-	CSRFToken  string    `json:"csrf_token"`
-	ExpiresAt  time.Time `json:"expires_at"`
-	ReturnPath string    `json:"return_path"`
-	Principal  Principal `json:"principal"`
-}
-
 // Revoked is the auth.revoked frame's body as the node receives it: sessions by the
 // SHA-256 (hex) of their id — a node keys its cache by that and never needs the id —
 // or every credential of a user.

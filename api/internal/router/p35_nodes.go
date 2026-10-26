@@ -3,10 +3,8 @@
 //
 //	POST /api/cluster/delegate/introspect   home, node-signed
 //	POST /api/cluster/delegate/signout      home, node-signed
-//	GET  /api/cluster/sso/authorize         home, the browser (signed in on the home)
-//	POST /api/cluster/sso/exchange          home, node-signed
 //	GET  /api/cluster/self                  every machine, public
-//	GET  /api/cluster/sso/start|callback    a node, the browser
+//	*    /api/cluster/sso/…                 every machine: 404 (the cluster sign-in, removed)
 package router
 
 import (
@@ -20,17 +18,12 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/sessions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/clusterauth"
 )
 
-// ClusterAuthDeps bundles the home's delegation and sign-in endpoints.
+// ClusterAuthDeps bundles the home's delegation endpoints.
 type ClusterAuthDeps struct {
-	DB *sql.DB
-	// Nodes is the machine registry (nil: a Postgres store on DB).
-	Nodes cluster.Store
-	// WebURL is the home's own web address (its sign-in page).
-	WebURL string
+	DB     *sql.DB
 	Logger *slog.Logger
 }
 
@@ -39,21 +32,15 @@ func MountClusterAuth(r chi.Router, d ClusterAuthDeps) *clusterauth.Home {
 	if d.DB == nil {
 		return nil
 	}
-	nodes := d.Nodes
-	if nodes == nil {
-		nodes = &cluster.PGStore{DB: d.DB}
-	}
 	h := &clusterauth.Home{DB: d.DB, Sessions: sessions.New(d.DB), Users: users.New(d.DB),
-		ACL: &authz.ACLStore{DB: d.DB}, PAT: pat.New(d.DB), Nodes: nodes, WebURL: d.WebURL, Logger: d.Logger}
+		ACL: &authz.ACLStore{DB: d.DB}, PAT: pat.New(d.DB), Logger: d.Logger}
 	h.Mount(r)
 	return h
 }
 
-// NodeLocalDeps bundles /api/cluster/self and, on a node, the sign-in's node half.
+// NodeLocalDeps bundles /api/cluster/self and a machine's other routes of its own.
 type NodeLocalDeps struct {
 	Self clusterauth.SelfFunc
-	// Node is set on a full node; nil on the home (start / callback answer 404 there).
-	Node *clusterauth.Node
 	// Moved serves GET /api/cluster/moved/{node}: a switch's notice of the new home for
 	// a machine that was off (Epic 37); nil: not mounted.
 	Moved http.HandlerFunc
@@ -65,11 +52,11 @@ type NodeLocalDeps struct {
 	TermClaim http.HandlerFunc
 }
 
-// MountNodeLocal mounts GET /api/cluster/self, the sign-in's start and callback, and a
-// switch's notices of the new home.
+// MountNodeLocal mounts GET /api/cluster/self, the removed cluster sign-in's 404s
+// (clusterauth.RemovedRoutes) and a switch's notices of the new home.
 func MountNodeLocal(r chi.Router, d NodeLocalDeps) {
 	clusterauth.MountSelf(r, d.Self)
-	d.Node.Mount(r)
+	clusterauth.MountRemoved(r)
 	if d.Moved != nil {
 		r.Get("/api/cluster/moved/{node}", d.Moved)
 	}

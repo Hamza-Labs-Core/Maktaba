@@ -48,6 +48,11 @@ mdns-sd = "0.11"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSError", "NSArray", "NSLocale"] }
 objc2-service-management = { version = "0.3", default-features = false, features = ["std", "SMAppService", "objc2", "objc2-foundation"] }
+# The window's service workers and caches cleared after an app update
+# (webcache.rs): WKWebsiteDataStore, through the window's WKWebView. The
+# versions wry already uses.
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "objc2-app-kit", "block2", "WKWebView", "WKWebViewConfiguration", "WKWebsiteDataStore", "WKWebsiteDataRecord"] }
+block2 = "0.6"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -66,10 +71,17 @@ windows-sys = { version = "0.61", features = [
   "Win32_Security_Authentication_Identity",
   "Win32_Security_Authorization",
   "Win32_System_JobObjects",
+  "Win32_System_Registry",
   "Win32_System_Threading",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
+# The tray at sign-in: the HKCU Run value (run_entry.rs; Win32_System_Registry
+# above). The window's service workers and caches cleared after an app update
+# (webcache.rs): the WebView2 profile's ClearBrowsingData, through the
+# window's controller. The versions wry already uses.
+webview2-com = "0.39"
+windows-core = "0.62"
 
 # tauri-plugin-deep-link 2.6.2 builds `ini::ParseOption` on Linux without
 # the fields rust-ini 0.21.3 added, which fails with E0063. The exact pin
@@ -78,6 +90,10 @@ windows-sys = { version = "0.61", features = [
 # builds against current rust-ini.
 [target.'cfg(target_os = "linux")'.dependencies]
 rust-ini = "=0.21.1"
+# The window's service workers and caches cleared after an app update
+# (webcache.rs): WebKitGTK's website data manager. The version (and the
+# WebKitGTK API level) wry already uses.
+webkit2gtk = { version = "2.0", features = ["v2_38"] }
 
 [dev-dependencies]
 tempfile = "3"

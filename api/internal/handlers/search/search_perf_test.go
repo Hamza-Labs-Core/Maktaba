@@ -150,6 +150,9 @@ func TestEmbedCacheConcurrentSameKeyNoCorruption(t *testing.T) {
 				hits: []Hit{{SegmentID: 1, Snippet: "the alpha segment text"}},
 			},
 			EmbedCache: perf.NewCache[[]Hit]("search_embed", 100, time.Minute),
+			// the cache is under test, not the budget: under -race on a loaded runner a
+			// request past the default 200 ms degraded to full-text and its body differed
+			SemanticBudget: 30 * time.Second,
 		}
 	}
 	wantSnippet := highlightSnippet("the alpha segment text", query, 240)

@@ -8,6 +8,7 @@
 // surface. Removal is confirmed because it stops push delivery to that
 // device. Shares the Device shape + platform icon with the admin view.
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
 import { Button } from "@ds/components/Button/Button";
 import { Modal } from "@ds/components/Modal/Modal";
@@ -73,6 +74,9 @@ export function ConnectedDevices() {
         <TitleRow>
           <h1>{t("devices.title")}</h1>
         </TitleRow>
+        <Link to="/pair" className="mkt-btn">
+          {t("devices.signInTv")}
+        </Link>
       </header>
 
       {error ? (

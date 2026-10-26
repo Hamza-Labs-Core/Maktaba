@@ -37,6 +37,12 @@ func (b Bundle) Backup(ctx context.Context, now time.Time) (string, error) {
 // DumpTo is dumpTo (the database step's dump of a failed update's state, set aside).
 func (b Bundle) DumpTo(ctx context.Context, path string) error { return b.dumpTo(ctx, path) }
 
+// dumpCompress is the dump's gzip level. pg_dump compresses on one core and the search
+// vectors (segment_embeddings, tens of GB as text) made the default level the whole
+// cost of a dump: level 1 is 5.5x faster for 27% more bytes (the pre-update dump the
+// app waits for before it starts: 36 minutes became 7).
+const dumpCompress = "1"
+
 // dumpTo writes a pg_dump custom-format dump of the app database to path
 // (written beside, path.partial, and renamed into place: a dump cut short is
 // never taken for one).
@@ -49,7 +55,7 @@ func (b Bundle) dumpTo(ctx context.Context, path string) error {
 		return err
 	}
 	part := path + ".partial"
-	cmd := exec.CommandContext(ctx, b.Bin("pg_dump"), "-Fc", "-h", "127.0.0.1", "-p", strconv.Itoa(b.Port),
+	cmd := exec.CommandContext(ctx, b.Bin("pg_dump"), "-Fc", "-Z", dumpCompress, "-h", "127.0.0.1", "-p", strconv.Itoa(b.Port),
 		"-U", SuperUser, "-f", part, AppDatabase)
 	cmd.Env = append(os.Environ(), "PGPASSWORD="+superPW)
 	if out, err := cmd.CombinedOutput(); err != nil {

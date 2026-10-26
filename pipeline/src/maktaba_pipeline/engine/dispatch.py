@@ -59,6 +59,7 @@ async def dispatch_job(
     """Run ``job``: a legacy handler (then engine bookkeeping) or an engine stage."""
     stage = runtime.graph.get(job.stage)
     if stage is None:
+        _log.error("dispatch_unknown_stage", job_id=job.id, stage=job.stage)
         await mark_failed_or_retry(
             db,
             job_id=job.id,
@@ -72,6 +73,7 @@ async def dispatch_job(
     if stage.legacy:
         handler = legacy_handlers.get(job.stage)
         if handler is None:
+            _log.error("dispatch_unknown_stage", job_id=job.id, stage=job.stage, legacy=True)
             await mark_failed_or_retry(
                 db,
                 job_id=job.id,

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -85,5 +86,33 @@ func TestMachineHealthStartSteps(t *testing.T) {
 	procs[1].DetailCode, procs[1].Detail = "db_migrating", "Updating the library database for v1.5.0 (2 migrations done)"
 	if v := h.Check(context.Background(), "v1.5.0"); !v.Pending || !v.Unmeasured {
 		t.Fatalf("migrating: %+v", v)
+	}
+}
+
+// an api that does not answer at all says why in the verdict (a rollback's reason): the
+// transport's error, not "answers 0"; one that answers says its status.
+func TestMachineHealthSaysWhyTheAPIDidNotAnswer(t *testing.T) {
+	t.Setenv("MAKTABA_APP_BUNDLE", "")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone := ln.Addr().String()
+	_ = ln.Close() // nothing listens there now
+	procs := []supervisor.ChildStatus{{Role: supervisor.RoleAPI, State: supervisor.StateRunning}}
+	h := &machineHealth{snap: func() (supervisor.Snapshot, bool) { return supervisor.Snapshot{Processes: procs}, true }}
+	h.cfg.Server.AdminAddr = gone
+	v := h.Check(context.Background(), "v1.5.0")
+	if v.Healthy || !strings.HasPrefix(v.Why, "api /readyz: ") || strings.Contains(v.Why, "answers 0") {
+		t.Fatalf("api down: %+v", v)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	h.cfg.Server.AdminAddr = strings.TrimPrefix(srv.URL, "http://")
+	if v := h.Check(context.Background(), "v1.5.0"); v.Why != "api /readyz answers 503" {
+		t.Fatalf("api not ready: %+v", v)
 	}
 }

@@ -57,7 +57,7 @@ func (h *Handler) SimulcastStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := h.Remote.SimulcastStatus(r.Context(), "")
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tv simulcast status"))
+		httperror.Write(w, r, httperror.Internal("tv simulcast status").Wrap(err))
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")

@@ -162,6 +162,13 @@ public final class AppSession {
         signedIn(try await client.whoami())
     }
 
+    /// This device was signed in some other way (a TV's code, approved on a phone): who
+    /// is it now.
+    public func signedInByCode() async throws {
+        guard let client else { return }
+        signedIn(try await client.whoami())
+    }
+
     public func signOut() {
         if let current { TokenStore(app: app, home: current.url).clear() }
         phase = .signingIn

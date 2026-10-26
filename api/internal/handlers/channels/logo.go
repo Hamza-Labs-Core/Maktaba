@@ -99,7 +99,7 @@ func (h *Handler) serveArt(w http.ResponseWriter, r *http.Request, kind string) 
 			httperror.Write(w, r, httperror.NotFound("channel "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load channel"))
+		httperror.Write(w, r, httperror.Internal("load channel").Wrap(err))
 		return
 	}
 	p := artPath(c, kind)

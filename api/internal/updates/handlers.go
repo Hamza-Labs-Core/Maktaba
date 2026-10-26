@@ -277,7 +277,7 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request, p *principal.Prin
 		return
 	}
 	if h.RulesPatch == nil {
-		httperror.Write(w, r, httperror.Internal("updates: no settings store"))
+		httperror.Write(w, r, httperror.Internal("updates: no settings store").Wrap(err))
 		return
 	}
 	body, _ := json.Marshal(map[string]any{"set": set})

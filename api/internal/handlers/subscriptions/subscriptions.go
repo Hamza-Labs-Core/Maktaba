@@ -98,7 +98,7 @@ func (h *Handler) SetLicense(w http.ResponseWriter, r *http.Request) {
 	// backend) so the entitlement survives a restart; with the
 	// in-memory store it is equivalent to the old Set(ent).
 	if err := h.Store.SetLicense(r.Context(), &lic, ent); err != nil {
-		httperror.Write(w, r, httperror.Internal("persist license"))
+		httperror.Write(w, r, httperror.Internal("persist license").Wrap(err))
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -112,7 +112,7 @@ func (h *Handler) RevokeLicense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Store.Revoke(r.Context()); err != nil {
-		httperror.Write(w, r, httperror.Internal("persist revoke"))
+		httperror.Write(w, r, httperror.Internal("persist revoke").Wrap(err))
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

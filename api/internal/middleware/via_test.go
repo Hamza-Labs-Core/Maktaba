@@ -73,3 +73,37 @@ func TestMarkLocalCaller(t *testing.T) {
 		t.Error("a request MarkLocalCaller did not see counted as local")
 	}
 }
+
+func TestRefuseRelayToMachines(t *testing.T) {
+	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	h := RefuseRelayToMachines(ok)
+	cases := []struct {
+		path  string
+		relay bool
+		want  int
+	}{
+		{"/api/cluster/join", true, http.StatusNotFound},
+		{"/api/cluster/join/abc", true, http.StatusNotFound},
+		{"/api/cluster/agent", true, http.StatusNotFound},
+		{"/api/cluster/link/stream", true, http.StatusNotFound},
+		{"/api/cluster/delegate/introspect", true, http.StatusNotFound},
+		{"/api/cluster/updates/tuf/root.json", true, http.StatusNotFound},
+		{"/internal/updates/restored", true, http.StatusNotFound},
+		// people's routes, and the machines' on the network
+		{"/api/cluster/joins", true, http.StatusTeapot},
+		{"/api/cluster/nodes", true, http.StatusTeapot},
+		{"/api/videos", true, http.StatusTeapot},
+		{"/api/cluster/join", false, http.StatusTeapot},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest(http.MethodGet, c.path, nil)
+		if c.relay {
+			r.Header.Set(ViaHeader, "relay")
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		if rec.Code != c.want {
+			t.Errorf("%s relay=%v: %d, want %d", c.path, c.relay, rec.Code, c.want)
+		}
+	}
+}

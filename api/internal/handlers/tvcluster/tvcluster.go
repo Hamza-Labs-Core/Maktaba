@@ -223,7 +223,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.read(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read the streaming cluster"))
+		httperror.Write(w, r, httperror.Internal("read the streaming cluster").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, resp)
@@ -393,8 +393,57 @@ func (h *Handler) failovers(ctx context.Context, d time.Duration) int {
 	return n
 }
 
+// Push is a channel's running Cloudflare push (story 32.5 AC1, 32.7).
+type Push struct {
+	ID     string     `json:"id"`
+	State  string     `json:"state"`
+	Ingest string     `json:"ingest"`
+	LiveAt *time.Time `json:"live_at"`
+	Detail string     `json:"detail,omitempty"`
+}
+
+// remote reads each channel's running push and its open remote sessions
+// (32.5 AC1, AC3). Nothing when slot 0125 is not there (remote never set up).
+func (h *Handler) remote(ctx context.Context) (map[string]*Push, map[string]int) {
+	pushes, sessions := map[string]*Push{}, map[string]int{}
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT channel_id, id, state, ingest, live_at, COALESCE(detail, '')
+		FROM tv_remote_pushes WHERE state IN ('requested', 'connecting', 'live', 'stopping')
+		ORDER BY CASE state WHEN 'live' THEN 0 WHEN 'connecting' THEN 1 WHEN 'requested' THEN 2 ELSE 3 END, started_at DESC`)
+	if err != nil {
+		return pushes, sessions
+	}
+	for rows.Next() {
+		var ch string
+		var p Push
+		var live dbTime
+		if rows.Scan(&ch, &p.ID, &p.State, &p.Ingest, &live, &p.Detail) == nil && pushes[ch] == nil {
+			// a rotation has the old push stopping and its successor starting:
+			// the first row (live first, then the newest) is the channel's
+			p.LiveAt = live.ptr()
+			pushes[ch] = &p
+		}
+	}
+	rows.Close()
+	srows, err := h.DB.QueryContext(ctx, `
+		SELECT channel_id, count(*) FROM tv_remote_sessions WHERE ended_at IS NULL GROUP BY channel_id`)
+	if err != nil {
+		return pushes, sessions
+	}
+	defer srows.Close()
+	for srows.Next() {
+		var ch string
+		var n int
+		if srows.Scan(&ch, &n) == nil {
+			sessions[ch] = n
+		}
+	}
+	return pushes, sessions
+}
+
 func (h *Handler) onAir(ctx context.Context, byID map[string]*Host, viewers map[string]Viewers) ([]OnAir, error) {
 	out := []OnAir{}
+	pushes, remote := h.remote(ctx)
 	placed := map[string]bool{}
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT p.channel_id, COALESCE(c.number, 0), COALESCE(c.name, ''), COALESCE(c.slug, ''), p.host_id,
@@ -432,7 +481,10 @@ func (h *Handler) onAir(ctx context.Context, byID map[string]*Host, viewers map[
 			o.Stale = x.State == "down"
 		}
 		v := viewers[o.ChannelID]
-		o.Viewers = Viewers{HLS: v.HLS, Tuners: v.Tuners}
+		o.Viewers = Viewers{HLS: v.HLS, Tuners: v.Tuners, Remote: remote[o.ChannelID]}
+		if p := pushes[o.ChannelID]; p != nil {
+			o.Push = p
+		}
 		placed[o.ChannelID] = true
 		out = append(out, o)
 	}
@@ -497,7 +549,7 @@ func (h *Handler) PutHost(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("no such streaming host"))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("read the streaming host"))
+		httperror.Write(w, r, httperror.Internal("read the streaming host").Wrap(err))
 		return
 	}
 	sets, args, herr := buildPatch(p, role)
@@ -509,7 +561,7 @@ func (h *Handler) PutHost(w http.ResponseWriter, r *http.Request) {
 		args = append(args, id)
 		q := `UPDATE streaming_hosts SET ` + strings.Join(sets, ", ") + ` WHERE host_id = $` + strconv.Itoa(len(args))
 		if _, err := h.DB.ExecContext(r.Context(), q, args...); err != nil {
-			httperror.Write(w, r, httperror.Internal("update the streaming host"))
+			httperror.Write(w, r, httperror.Internal("update the streaming host").Wrap(err))
 			return
 		}
 	}
@@ -521,7 +573,7 @@ func (h *Handler) PutHost(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.read(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read the streaming host"))
+		httperror.Write(w, r, httperror.Internal("read the streaming host").Wrap(err))
 		return
 	}
 	for _, x := range resp.Hosts {

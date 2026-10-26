@@ -376,6 +376,58 @@ describe("VideoPlayer — hls.js (no native HLS)", () => {
     expect(instances.length).toBe(4);
   });
 
+  it("reports a stream gone to the server's log before reopening it", async () => {
+    post.mockImplementation((url: string) =>
+      Promise.resolve(url === "/api/stream/sessions" ? session() : undefined)
+    );
+    renderPlayer();
+    const first = await hlsReady();
+    act(() => {
+      first.emit("hlsError", {
+        type: "networkError",
+        details: "levelLoadError",
+        fatal: false,
+        url: `/stream/${SID}/v0.m3u8?sig=tok.one`,
+        response: { code: 410 },
+      });
+    });
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        `/api/stream/sessions/${SID}/errors`,
+        expect.objectContaining({
+          video_id: "vid-1",
+          mode: "transcode",
+          engine: "hls.js",
+          outcome: "reopen",
+          code: "levelLoadError",
+          http_status: 410,
+          url: `/stream/${SID}/v0.m3u8?sig=tok.one`,
+        })
+      )
+    );
+  });
+
+  it("reports the reopen limit as fatal when it shows the error", async () => {
+    post.mockImplementation((url: string) =>
+      Promise.resolve(url === "/api/stream/sessions" ? session() : undefined)
+    );
+    renderPlayer();
+    for (let n = 1; n <= 4; n++) {
+      const hls = await hlsReady(n);
+      act(() => {
+        hls.emit("hlsError", { type: "networkError", fatal: true, response: { code: 410 } });
+      });
+      if (n < 4) await hlsReady(n + 1);
+    }
+    await screen.findByRole("alert");
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        `/api/stream/sessions/${SID}/errors`,
+        expect.objectContaining({ outcome: "fatal", code: "reopen_limit" })
+      )
+    );
+  });
+
   it("renders sidecar subtitle tracks with the session sig", async () => {
     post.mockResolvedValue(
       session({

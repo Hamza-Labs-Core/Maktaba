@@ -17,7 +17,10 @@ func TestSimulcastRoutes(t *testing.T) {
 	admin := &principal.Principal{UserID: "admin-1", IsAdmin: true}
 	viewer := &principal.Principal{UserID: "u1"}
 	for _, rt := range [][2]string{{"GET", "/api/tv/simulcast"}, {"POST", "/api/tv/simulcast/destinations"},
-		{"PUT", "/api/channels/" + chID + "/simulcast"}, {"POST", "/api/tv/simulcast/outputs/x/start"}} {
+		{"PUT", "/api/tv/simulcast/destinations/x"}, {"DELETE", "/api/tv/simulcast/destinations/x"},
+		{"POST", "/api/tv/simulcast/destinations/x/test"}, {"GET", "/api/channels/" + chID + "/simulcast"},
+		{"PUT", "/api/channels/" + chID + "/simulcast"}, {"POST", "/api/tv/simulcast/outputs/x/start"},
+		{"POST", "/api/tv/simulcast/outputs/x/stop"}} {
 		if rec := as(h, rt[0], rt[1], `{}`, viewer); rec.Code != http.StatusForbidden {
 			t.Errorf("%s %s as a viewer: %d", rt[0], rt[1], rec.Code)
 		}

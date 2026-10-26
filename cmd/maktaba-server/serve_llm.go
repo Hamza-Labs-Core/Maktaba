@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	neturl "net/url"
 	"os"
+	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
@@ -46,6 +48,25 @@ func serveLLM(ctx context.Context, cfg *config.Config, whole bool) (*supervisor.
 	}
 	mgr := llmserver.NewManager(url, llmserver.Models(*cfg), bundled && srv.Pull, bundled, os.Stderr)
 	go mgr.Run(ctx)
-	fmt.Fprintf(os.Stderr, "[llm] language model server %s (models: %v)\n", url, mgr.Models)
+	fmt.Fprintf(os.Stderr, "[llm] language model server %s (models: %v)\n", llmLogURL(url), mgr.Models)
 	return proc, supervisor.WithLLM(mgr.Status), nil
+}
+
+// llmLogURL is [llm] url for the log: without its userinfo or query (a remote server's
+// login, an api_key=…), which the log must not keep.
+func llmLogURL(s string) string {
+	u, err := neturl.Parse(s)
+	if err != nil {
+		return noCreds(s)
+	}
+	login := u.User != nil
+	u.User, u.Fragment = nil, ""
+	if u.RawQuery != "" {
+		u.RawQuery = "…"
+	}
+	out := u.String()
+	if login {
+		out = strings.Replace(out, "://", "://…@", 1)
+	}
+	return out
 }

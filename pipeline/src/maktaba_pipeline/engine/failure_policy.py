@@ -17,12 +17,14 @@ stage's model, the item's library root) and the dependency's last probe
 from __future__ import annotations
 
 import asyncio
+import errno
 import os
 import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
+from ..log import get_logger
 from .causes import classify
 from .failure_classes import (
     ITEM_PERMANENT,
@@ -48,6 +50,8 @@ __all__ = [
     "read_config",
     "root_answers",
 ]
+
+_log = get_logger()
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,9 +175,33 @@ async def root_answers(root: str, timeout_s: float) -> bool:
         return True
 
     try:
-        return await asyncio.wait_for(asyncio.to_thread(look), timeout=timeout_s)
-    except (TimeoutError, OSError):
+        ok = await asyncio.wait_for(asyncio.to_thread(look), timeout=timeout_s)
+    except TimeoutError:
+        _note_root(root, "timeout", f"no answer within {timeout_s}s")
         return False
+    except OSError as exc:
+        code = errno.errorcode.get(exc.errno, str(exc.errno)) if exc.errno else "oserror"
+        _note_root(root, code, str(exc))
+        return False
+    _note_root(root, None if ok else "not_a_directory", None)
+    return ok
+
+
+#: root -> why it last failed to answer; a line is written when that changes, not on
+#: every probe (the watchers and the backfill probe a down share over and over)
+_root_down: dict[str, str] = {}
+
+
+def _note_root(root: str, reason: str | None, error: str | None) -> None:
+    before = _root_down.get(root)
+    if reason == before:
+        return
+    if reason is None:
+        _root_down.pop(root, None)
+        _log.info("share_root_reachable", root=root, was=before)
+        return
+    _root_down[root] = reason
+    _log.warning("share_root_unreachable", root=root, errno=reason, error=error)
 
 
 def _model_section(stage: str) -> str:

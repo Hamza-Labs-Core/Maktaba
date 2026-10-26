@@ -77,7 +77,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.DB.QueryContext(r.Context(), q, args...)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list tags"))
+		httperror.Write(w, r, httperror.Internal("list tags").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -125,7 +125,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	id := chi.URLParam(r, "id")
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM tags WHERE id=$1`, id); err != nil {
-		httperror.Write(w, r, httperror.Internal("delete tag"))
+		httperror.Write(w, r, httperror.Internal("delete tag").Wrap(err))
 		return
 	}
 	common.WriteNoContent(w)
@@ -147,7 +147,7 @@ func (h *Handler) PatchVideoTags(w http.ResponseWriter, r *http.Request) {
 	}
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tx"))
+		httperror.Write(w, r, httperror.Internal("tx").Wrap(err))
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -185,7 +185,7 @@ func (h *Handler) PatchVideoTags(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		httperror.Write(w, r, httperror.Internal("commit"))
+		httperror.Write(w, r, httperror.Internal("commit").Wrap(err))
 		return
 	}
 

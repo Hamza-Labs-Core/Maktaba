@@ -192,7 +192,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tx"))
+		httperror.Write(w, r, httperror.Internal("tx").Wrap(err))
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -241,7 +241,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		httperror.Write(w, r, httperror.Internal("commit"))
+		httperror.Write(w, r, httperror.Internal("commit").Wrap(err))
 		return
 	}
 	// Story 12.10 AC: audit log category='device'. Best-effort; never
@@ -376,7 +376,7 @@ func (h *Handler) Unregister(w http.ResponseWriter, r *http.Request) {
 		UPDATE devices SET revoked_at=$1 WHERE id=$2 AND user_id=$3 AND revoked_at IS NULL
 	`, h.now(), id, p.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("unregister"))
+		httperror.Write(w, r, httperror.Internal("unregister").Wrap(err))
 		return
 	}
 	n, _ := res.RowsAffected()
@@ -399,7 +399,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		FROM devices WHERE user_id = $1 AND revoked_at IS NULL ORDER BY last_seen_at DESC
 	`, p.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list devices"))
+		httperror.Write(w, r, httperror.Internal("list devices").Wrap(err))
 		return
 	}
 	defer rows.Close()

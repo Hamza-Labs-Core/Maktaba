@@ -59,6 +59,7 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/account/sessions", { topic: "account", anchor: "sessions" }],
   ["/account/tokens", { topic: "account", anchor: "api-tokens" }],
   ["/account/history", { topic: "account", anchor: "watch-history" }],
+  ["/pair", { topic: "account", anchor: "devices" }],
   ["/billing", { topic: "cloud", anchor: "billing" }],
   ["/cloud/status", { topic: "cloud", anchor: "cloud-status" }],
   ["/admin/users", { topic: "users" }],

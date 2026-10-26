@@ -78,7 +78,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.Store.List(r.Context(), p.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list tokens"))
+		httperror.Write(w, r, httperror.Internal("list tokens").Wrap(err))
 		return
 	}
 	items := make([]tokenView, 0, len(rows))
@@ -109,6 +109,13 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		writeUnauthorized(w, r)
 		return
 	}
+	// an API token outlives a cloud link (Epic 42 story 42.7): only a
+	// sign-in on the home makes one
+	if p.ViaCloud() {
+		httperror.Write(w, r, httperror.Forbidden("https://maktaba.dev/problems/cloud-session",
+			"a sign-in through Maktaba Cloud cannot make an API token; sign in on the home"))
+		return
+	}
 	var req createRequest
 	if e := common.ReadJSON(r, &req, 8<<10); e != nil {
 		httperror.Write(w, r, e)
@@ -134,7 +141,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := h.Store.Create(r.Context(), in)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("create token"))
+		httperror.Write(w, r, httperror.Internal("create token").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusCreated, createResponse{Token: t.Plaintext, PAT: toView(*t)})
@@ -157,7 +164,7 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("token"))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("revoke token"))
+		httperror.Write(w, r, httperror.Internal("revoke token").Wrap(err))
 		return
 	}
 	common.WriteNoContent(w)

@@ -181,7 +181,7 @@ func (h *Handler) Dismiss(w http.ResponseWriter, r *http.Request) {
 		args = append(args, req.ExternalID)
 	}
 	if _, err := h.DB.ExecContext(r.Context(), q, args...); err != nil {
-		httperror.Write(w, r, httperror.Internal("dismiss"))
+		httperror.Write(w, r, httperror.Internal("dismiss").Wrap(err))
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
@@ -229,7 +229,7 @@ func (h *Handler) Revert(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.DB.QueryContext(r.Context(), q, args...)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load provenance"))
+		httperror.Write(w, r, httperror.Internal("load provenance").Wrap(err))
 		return
 	}
 	type pf struct {
@@ -322,22 +322,22 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
 		`UPDATE media_metadata_enrichment SET is_dismissed = false WHERE video_id = $1`, id); err != nil {
-		httperror.Write(w, r, httperror.Internal("clear dismissals"))
+		httperror.Write(w, r, httperror.Internal("clear dismissals").Wrap(err))
 		return
 	}
 	note, err := h.queueEnrich(r, id, "manual", body.Query, body.Year)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("queue search"))
+		httperror.Write(w, r, httperror.Internal("queue search").Wrap(err))
 		return
 	}
 	cands, err := h.loadCandidates(r, id, "")
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load candidates"))
+		httperror.Write(w, r, httperror.Internal("load candidates").Wrap(err))
 		return
 	}
 	out := map[string]any{"queued": true, "candidates": cands, "job": h.jobStatus(r, id)}
@@ -368,7 +368,7 @@ func (h *Handler) Reenrich(w http.ResponseWriter, r *http.Request) {
 		`UPDATE media_metadata_enrichment SET is_dismissed = false WHERE video_id = $1`, id)
 	note, err := h.queueEnrich(r, id, "reenrich", "", nil)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("queue enrich"))
+		httperror.Write(w, r, httperror.Internal("queue enrich").Wrap(err))
 		return
 	}
 	out := map[string]any{"enqueued": true, "job": h.jobStatus(r, id)}
@@ -490,7 +490,7 @@ func (h *Handler) AcceptAll(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(),
 		`SELECT video_id FROM series_episodes WHERE series_id = $1`, seriesID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load episodes"))
+		httperror.Write(w, r, httperror.Internal("load episodes").Wrap(err))
 		return
 	}
 	var videoIDs []string

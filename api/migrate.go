@@ -45,7 +45,7 @@ func runMigrate(argv []string) error {
 		showHelp bool
 	)
 	fs.StringVar(&dir, "dir", defaultMigrationsDir(), "Migrations directory")
-	fs.StringVar(&dsn, "dsn", os.Getenv("DATABASE_URL"), "Database DSN (default: $DATABASE_URL)")
+	fs.StringVar(&dsn, "dsn", "", "Database DSN (default: $DATABASE_URL)")
 	fs.StringVar(&dialect, "dialect", "postgres", "SQL dialect: postgres, or sqlite (chosen automatically for sqlite:// DSNs)")
 	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "Overall migration timeout (0: none)")
 	fs.DurationVar(&lockWait, "lock-timeout", 0, "How long one statement waits for a lock another session holds "+
@@ -129,6 +129,11 @@ Flags:`)
 		downToTarget = t
 	}
 
+	if dsn == "" {
+		// read after parsing, not as the flag's default: --help and a flag
+		// error print defaults, and this one carries the password
+		dsn = os.Getenv("DATABASE_URL")
+	}
 	if dsn == "" {
 		return errors.New("DSN is empty: pass --dsn or set DATABASE_URL")
 	}

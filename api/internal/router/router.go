@@ -97,6 +97,8 @@ func New(d Deps) chi.Router {
 	// request as coming through the relay; checked on the real peer
 	// address, before RealIP rewrites it.
 	r.Use(mw.StripVia)
+	// the relay reaches people's routes only, never the machines' (via.go)
+	r.Use(mw.RefuseRelayToMachines)
 	// likewise a program on this machine (the desktop app asks /api/cluster/self over
 	// loopback), judged on the real peer address
 	r.Use(mw.MarkLocalCaller)

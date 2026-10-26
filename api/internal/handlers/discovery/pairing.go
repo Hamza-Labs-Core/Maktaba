@@ -66,6 +66,10 @@ type Handler struct {
 	// Audit, when set, records pair.code-issued / pair.code-claimed.
 	// Optional: nil disables audit (the no-DB dev path).
 	Audit AuditSink
+
+	// DeviceKey signs the TVs' device codes (device.go); nil: a random key per process.
+	DeviceKey []byte
+	device    deviceKeys
 }
 
 // AuditSink is the minimal slice of securityaudit.Writer the pairing
@@ -96,9 +100,16 @@ func (h *Handler) Request(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
 		return
 	}
+	// a paired device's tokens outlive a cloud link and carry the user's
+	// full role (Epic 42 story 42.7): only a sign-in on the home pairs
+	if p.ViaCloud() {
+		httperror.Write(w, r, httperror.Forbidden("https://maktaba.dev/problems/cloud-session",
+			"a sign-in through Maktaba Cloud cannot pair a device; sign in on the home"))
+		return
+	}
 	code, err := discovery.GenerateCode()
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("generate code"))
+		httperror.Write(w, r, httperror.Internal("generate code").Wrap(err))
 		return
 	}
 	now := h.now()
@@ -112,7 +123,7 @@ func (h *Handler) Request(w http.ResponseWriter, r *http.Request) {
 		IssuedAt:  now,
 		ExpiresAt: now.Add(ttl),
 	}); err != nil {
-		httperror.Write(w, r, httperror.Internal("store ticket"))
+		httperror.Write(w, r, httperror.Internal("store ticket").Wrap(err))
 		return
 	}
 	if h.Audit != nil {
@@ -209,7 +220,7 @@ func (h *Handler) Exchange(w http.ResponseWriter, r *http.Request) {
 	}
 	tok, err := h.Minter.Mint(r.Context(), t.UserID, req.DeviceKind, req.DeviceLabel)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("mint device tokens"))
+		httperror.Write(w, r, httperror.Internal("mint device tokens").Wrap(err))
 		return
 	}
 	if h.Audit != nil {

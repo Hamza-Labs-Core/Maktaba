@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/auth"
@@ -35,6 +36,11 @@ type P9Deps struct {
 	// reader PATCH /api/settings drops the cache of (P6Deps.Settings). Nil ⇒
 	// one of its own (a rename then reads within its cache's few seconds).
 	Settings *runtimecfg.Reader
+
+	// CloudIdentityPath is the relay agent's identity file (linked
+	// accounts, Epic 42 story 42.7); "" ⇒ this home is not claimed in the
+	// cloud, so no linked sign-in (the link routes answer so).
+	CloudIdentityPath string
 }
 
 // MountP9 attaches every Phase 9 (Epic 10 stories 10.2/10.3/10.4/10.5/10.16)
@@ -60,6 +66,12 @@ func MountP9(r chi.Router, d P9Deps) *auth.Handler {
 		settings = runtimecfg.New(d.DB)
 	}
 	h.HomeName = HomeName(settings, cluster.ComputerName)
+	store := &cloudlink.Store{DB: d.DB}
+	h.Cloud = &auth.CloudLinking{
+		Store:    store,
+		Identity: &cloudlink.IdentitySource{Path: d.CloudIdentityPath},
+		Gate:     &cloudlink.Gate{Links: store, Libraries: store.AllLibraries},
+	}
 	h.Mount(r)
 	return h
 }

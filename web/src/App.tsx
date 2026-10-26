@@ -58,6 +58,7 @@ import { ServerStatus } from "./pages/Cloud/ServerStatus";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Auth/Register";
 import { NotFound } from "./pages/NotFound";
+import { Pair } from "./pages/Pair";
 import { HelpIndex, HelpTopic } from "./help/Help";
 
 // ThemeSync re-applies the resolved theme whenever the OS preference
@@ -134,6 +135,7 @@ export function App() {
                         <Route path="/account/sessions" element={<Sessions />} />
                         <Route path="/account/tokens" element={<APITokens />} />
                         <Route path="/account/history" element={<WatchHistory />} />
+                        <Route path="/pair" element={<Pair />} />
                         <Route path="/billing" element={<Billing />} />
                         <Route path="/cloud/status" element={<ServerStatus />} />
                         <Route path="/admin/users" element={<AdminUsers />} />

@@ -106,11 +106,9 @@ enum Theme {
     /// Registers the bundled fonts with Core Text for this process, and
     /// styles the UIKit navigation titles SwiftUI can't reach. Call once
     /// at launch; repeat calls are harmless.
-    static func registerFonts() {
+    @MainActor static func registerFonts() {
         for name in fontFiles {
-            guard let url = resourceBundle.url(
-                forResource: name, withExtension: "ttf", subdirectory: "Fonts"
-            ) else { continue }
+            guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { continue }
             // Already-registered fonts return an error we can ignore.
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
@@ -128,9 +126,7 @@ enum Theme {
     /// (bookshelves at the sides, a brass lamp at the top, calm middle).
     static func libraryArt(for scheme: ColorScheme) -> Image? {
         let name = scheme == .dark ? "library-dark" : "library-light"
-        guard let url = resourceBundle.url(
-            forResource: name, withExtension: "jpg", subdirectory: "Art"
-        ) else { return nil }
+        guard let url = Bundle.main.url(forResource: name, withExtension: "jpg") else { return nil }
         #if canImport(UIKit)
         guard let image = UIImage(contentsOfFile: url.path) else { return nil }
         return Image(uiImage: image)
@@ -142,15 +138,6 @@ enum Theme {
         #endif
     }
 
-    /// Where bundled resources live: the SwiftPM resource bundle when
-    /// built as a package, the app bundle otherwise.
-    static var resourceBundle: Bundle {
-        #if SWIFT_PACKAGE
-        return Bundle.module
-        #else
-        return Bundle.main
-        #endif
-    }
 }
 
 // MARK: - Library backdrop
@@ -301,3 +288,38 @@ private extension NSColor {
     }
 }
 #endif
+
+// MARK: - Buttons
+
+/// The TV's action button: a quiet raised pill that turns gold with ink text, lifts and
+/// glows when focused (the system's bordered button takes the brass tint for both its fill
+/// and its label, so its words would vanish).
+struct GoldButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        GoldButton(configuration: configuration)
+    }
+
+    private struct GoldButton: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isFocused) private var focused
+        @Environment(\.isEnabled) private var enabled
+
+        var body: some View {
+            configuration.label
+                .font(Theme.body(30, weight: .semibold))
+                .foregroundStyle(focused ? Theme.onGold : Theme.text)
+                .padding(.horizontal, 40)
+                .padding(.vertical, 18)
+                .background(focused ? Theme.gold : Theme.raised, in: .capsule)
+                .overlay(Capsule().strokeBorder(Theme.border, lineWidth: focused ? 0 : 1))
+                .shadow(color: focused ? Theme.goldText.opacity(0.5) : .clear, radius: 18)
+                .scaleEffect(configuration.isPressed ? 0.97 : focused ? 1.06 : 1)
+                .opacity(enabled ? 1 : 0.45)
+                .animation(.easeOut(duration: 0.15), value: focused)
+        }
+    }
+}
+
+extension ButtonStyle where Self == GoldButtonStyle {
+    static var gold: GoldButtonStyle { GoldButtonStyle() }
+}

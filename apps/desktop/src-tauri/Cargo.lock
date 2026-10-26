@@ -2177,11 +2177,13 @@ dependencies = [
 name = "maktaba-desktop"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "libc",
  "mdns-sd",
  "objc2",
  "objc2-foundation",
  "objc2-service-management",
+ "objc2-web-kit",
  "rust-ini",
  "serde",
  "serde_json",
@@ -2196,6 +2198,9 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
  "tempfile",
+ "webkit2gtk",
+ "webview2-com",
+ "windows-core",
  "windows-sys 0.61.2",
 ]
 

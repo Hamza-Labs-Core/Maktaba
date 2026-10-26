@@ -367,6 +367,8 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 	want := []string{
 		"/healthz", "/api/system/health", "/api/system/version", "/api/.well-known/jwks.json",
 		"/.well-known/security.txt", "/api/auth/login", "/api/auth/refresh", "/api/auth/register",
+		"/api/auth/cloud", // Epic 42 story 42.7: the cloud assertion is the credential
+		"/api/pairing/device", "/api/pairing/device/token",
 		"/api/cluster/join", "/api/cluster/join/*", "/api/cluster/agent",
 		"/api/cluster/link", "/api/cluster/link/stream", "/api/cluster/ca.crt", "/api/cluster/link/pull",
 		"/api/cluster/link/local/*", "/api/tv/remote/webhook", "/api/cluster/self", "/api/cluster/moved/*",
@@ -401,6 +403,41 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 		h.ServeHTTP(rec, httptest.NewRequest("POST", path, nil))
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("anonymous %s: %d, want 401", path, rec.Code)
+		}
+	}
+}
+
+// A cloud sign-in's play token is never an admin, even one that says
+// is_admin (the home mints play tokens without it; this is the second
+// wall), and keeps what it may read. manage keeps the role.
+func TestJWTBearer_CloudScopeCaps(t *testing.T) {
+	s := setWithKey(t)
+	for _, c := range []struct {
+		scp       string
+		wantAdmin bool
+		wantCloud string
+	}{
+		{"play", false, principal.CloudScopePlay},
+		{"bogus", false, principal.CloudScopePlay},
+		{"manage", true, principal.CloudScopeManage},
+		{"", true, ""},
+	} {
+		// a play cap ends all-library access ("sees everything"): a play
+		// token reads only the libraries it names
+		wantAll := c.wantAdmin
+		tok, err := jwt.Sign(s, jwt.Claims{Iss: "maktaba", Aud: "api", Sub: "u", Usr: "u", IsAdmin: true, Scp: c.scp})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got *principal.Principal
+		req := httptest.NewRequest("GET", "/api/x", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		JWTBearer(s, "api")(capture(&got)).ServeHTTP(httptest.NewRecorder(), req)
+		if got == nil || got.IsAdmin != c.wantAdmin || got.CloudScope != c.wantCloud || got.AccessAllLibraries != wantAll {
+			t.Errorf("scp %q: principal %+v", c.scp, got)
+		}
+		if got.ViaCloud() != (c.wantCloud != "") {
+			t.Errorf("scp %q: ViaCloud %v", c.scp, got.ViaCloud())
 		}
 	}
 }

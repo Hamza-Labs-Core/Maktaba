@@ -14,7 +14,7 @@ import {
   type StepProgress,
 } from "../../lib/desktopSetup";
 import { PLEX_POLL_MS, SetupWizard, parsePathMap, type Screen } from "./SetupWizard";
-import { STARTING_POLL_MS, ServerStarting } from "./ServerStarting";
+import { PAGE_PATIENCE_MS, STARTING_POLL_MS, ServerStarting } from "./ServerStarting";
 import { DesktopGate } from "../../components/DesktopGate";
 
 const CHECK = {
@@ -929,6 +929,44 @@ describe("ServerStarting", () => {
     expect(await screen.findByText("The server is starting…")).toBeInTheDocument();
     await act(async () => vi.advanceTimersByTime(STARTING_POLL_MS * 2));
     await waitFor(() => expect(api.openLocalServer).toHaveBeenCalledTimes(1));
+  });
+
+  // A server whose processes run may not serve its page yet: the window opens it only once
+  // it answers (the shell says page_not_answering until then), and never shows an error
+  // page or a blank one meanwhile; after a while the screen says so, with a retry.
+  it("stays until the server's page answers, then says so with a retry", async () => {
+    const api = fakeApi();
+    api.serverStatus.mockResolvedValue({ kind: "running" } as never);
+    let answers = false;
+    api.openLocalServer.mockImplementation(async () => {
+      if (!answers)
+        throw "page_not_answering: the web app at http://127.0.0.1:8780 does not answer yet";
+    });
+    render(
+      <I18nProvider>
+        <ServerStarting api={api} />
+      </I18nProvider>
+    );
+    expect(await screen.findByText("Opening your library…")).toBeInTheDocument();
+    await waitFor(() => expect(api.openLocalServer).toHaveBeenCalledTimes(1));
+    // asked again at the next polls, with nothing said yet
+    await act(async () => vi.advanceTimersByTime(STARTING_POLL_MS * 2));
+    await waitFor(() => expect(api.openLocalServer.mock.calls.length).toBeGreaterThan(1));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    // still silent after a while: it says so, and offers the retry
+    await act(async () => vi.advanceTimersByTime(PAGE_PATIENCE_MS));
+    expect(await screen.findByText(/its page does not answer yet/)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    answers = true;
+    const before = api.openLocalServer.mock.calls.length;
+    await act(async () => {
+      screen.getByRole("button", { name: "Try again" }).click();
+    });
+    await waitFor(() => expect(api.openLocalServer.mock.calls.length).toBe(before + 1));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument()
+    );
   });
 
   it("names the processes that keep stopping", async () => {

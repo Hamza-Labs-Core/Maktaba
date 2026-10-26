@@ -214,7 +214,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if e := h.canRead(r, v.LibraryID); e != nil {
@@ -226,7 +226,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	cands, err := h.loadCandidates(r, id, "")
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load candidates"))
+		httperror.Write(w, r, httperror.Internal("load candidates").Wrap(err))
 		return
 	}
 	prot := h.protectedFields(r, id)
@@ -285,7 +285,7 @@ func (h *Handler) Pending(w http.ResponseWriter, r *http.Request) {
 		ORDER BY e.video_id, e.confidence DESC
 	`)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load pending"))
+		httperror.Write(w, r, httperror.Internal("load pending").Wrap(err))
 		return
 	}
 	defer rows.Close()

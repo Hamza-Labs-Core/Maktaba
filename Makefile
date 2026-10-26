@@ -547,8 +547,8 @@ desktop-build:  ## Build the Tauri desktop app for the host OS. Needs the Rust t
 # Compose on Android TV. Like the other native targets they are out of
 # the default `build` graph — they need Xcode / the Android SDK.
 .PHONY: tv-build-ios
-tv-build-ios:  ## Build the tvOS app's host-compilable core (swift build). Device builds use xcodebuild — see apps/tv/tvos/README.md.
-	cd $(TVOS_DIR) && swift build
+tv-build-ios:  ## Build the Apple TV app (scheme "Maktaba TV" in apps/apple/Maktaba.xcodeproj) for the tvOS simulator. Needs Xcode.
+	xcodebuild -project apps/apple/Maktaba.xcodeproj -scheme "Maktaba TV" -destination 'generic/platform=tvOS Simulator' CODE_SIGNING_ALLOWED=NO build
 
 .PHONY: tv-build-android
 tv-build-android:  ## Assemble the Android TV debug APK via the Gradle wrapper. Needs the Android SDK.

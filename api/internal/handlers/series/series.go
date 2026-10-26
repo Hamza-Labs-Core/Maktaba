@@ -128,7 +128,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	headers, err := h.loadSeriesHeaders(r, libraryFilter)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load series"))
+		httperror.Write(w, r, httperror.Internal("load series").Wrap(err))
 		return
 	}
 	if len(headers) == 0 {
@@ -191,7 +191,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	hd, ok, err := h.visibleSeries(r, p, id)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load series"))
+		httperror.Write(w, r, httperror.Internal("load series").Wrap(err))
 		return
 	}
 	if !ok {
@@ -289,7 +289,7 @@ func (h *Handler) Episodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, ok, err := h.visibleSeries(r, p, id); err != nil {
-		httperror.Write(w, r, httperror.Internal("load series"))
+		httperror.Write(w, r, httperror.Internal("load series").Wrap(err))
 		return
 	} else if !ok {
 		httperror.Write(w, r, httperror.NotFound("series "+id))
@@ -358,7 +358,7 @@ func (h *Handler) Missing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, ok, err := h.visibleSeries(r, p, id); err != nil {
-		httperror.Write(w, r, httperror.Internal("load series"))
+		httperror.Write(w, r, httperror.Internal("load series").Wrap(err))
 		return
 	} else if !ok {
 		httperror.Write(w, r, httperror.NotFound("series "+id))
@@ -455,7 +455,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		if _, err := h.DB.ExecContext(r.Context(),
 			`UPDATE series SET name_override = $1, updated_at = $2 WHERE id = $3`,
 			name, h.now(), id); err != nil {
-			httperror.Write(w, r, httperror.Internal("update series"))
+			httperror.Write(w, r, httperror.Internal("update series").Wrap(err))
 			return
 		}
 	}

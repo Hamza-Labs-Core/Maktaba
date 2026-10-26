@@ -27,6 +27,12 @@
 ; The per-user state shares $INSTDIR with the program (%LOCALAPPDATA%\Maktaba: server.toml,
 ; keys\, data\, postgres\, venv\, ...): nothing here deletes it, and the uninstaller removes
 ; only the files the installer wrote.
+;
+; The tray at sign-in: the app writes the user's Run value "Maktaba" (run_entry.rs), which
+; starts the installed Maktaba.exe hidden in the tray. A real uninstall removes it when it
+; starts this install's Maktaba.exe (--server-remove does too; this also covers a Maktaba.exe
+; that could not), with Windows' on/off for it (StartupApproved) and the app's marker that it
+; was written, so a later install's setup writes it again.
 
 !define MAKTABA_HOOKS_DIR "${__FILEDIR__}"
 ; the shell's source the decision reads (test-hooks.sh compiles the hooks with its own)
@@ -34,6 +40,15 @@
   !define MAKTABA_SHELL_SRC "${MAKTABA_HOOKS_DIR}\..\src"
 !endif
 !define MAKTABA_FLAGS_VALUE "MaktabaServerFlags"
+; the tray's Run value (run_entry.rs RUN_KEY, APPROVED_KEY, VALUE; test-hooks.sh uses keys of
+; its own)
+!ifndef MAKTABA_RUN_KEY
+  !define MAKTABA_RUN_KEY "Software\Microsoft\Windows\CurrentVersion\Run"
+!endif
+!ifndef MAKTABA_APPROVED_KEY
+  !define MAKTABA_APPROVED_KEY "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
+!endif
+!define MAKTABA_RUN_VALUE "Maktaba"
 
 ; MAKTABA_STAMP: $R9 = "<size> <time>" of the installed Maktaba.exe, "" when there is none
 !macro MAKTABA_STAMP
@@ -67,6 +82,19 @@
   ${Else}
     StrCpy $R8 0
   ${EndIf}
+!macroend
+
+; MAKTABA_REMOVE_RUN: the tray's Run value removed when it starts this install's Maktaba.exe
+; (run_entry::command), with its StartupApproved on/off, and the marker that it was written
+!macro MAKTABA_REMOVE_RUN
+  Push $R9
+  ReadRegStr $R9 HKCU "${MAKTABA_RUN_KEY}" "${MAKTABA_RUN_VALUE}"
+  ${If} $R9 == '"$INSTDIR\${MAINBINARYNAME}.exe" --hidden'
+    DeleteRegValue HKCU "${MAKTABA_RUN_KEY}" "${MAKTABA_RUN_VALUE}"
+    DeleteRegValue HKCU "${MAKTABA_APPROVED_KEY}" "${MAKTABA_RUN_VALUE}"
+  ${EndIf}
+  Delete "$INSTDIR\state\autostart-written"
+  Pop $R9
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
@@ -130,7 +158,7 @@
 !macro NSIS_HOOK_PREUNINSTALL
   ; Not when an update runs the old uninstaller (/UPDATE): the new installer's hooks stop and
   ; start the server around it. A real uninstall stops the server and removes the sign-in
-  ; task, so no task is left pointing at a removed program.
+  ; task and the tray's Run value, so nothing is left pointing at a removed program.
   ${If} $UpdateMode <> 1
     Push $R8
     Push $R9
@@ -141,5 +169,6 @@
     ${EndIf}
     Pop $R9
     Pop $R8
+    !insertmacro MAKTABA_REMOVE_RUN
   ${EndIf}
 !macroend

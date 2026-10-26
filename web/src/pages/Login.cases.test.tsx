@@ -1,18 +1,13 @@
 // Login cases from web/test-cases/login.md, with the real AuthProvider (the
 // existing Login.test.tsx mocks useAuth, so these live in their own file).
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../lib/api")>("../lib/api");
   return { ...actual, api: { ...actual.api, get, post } };
-});
-const { assignLocation } = vi.hoisted(() => ({ assignLocation: vi.fn() }));
-vi.mock("../lib/navigation", async () => {
-  const actual = await vi.importActual<typeof import("../lib/navigation")>("../lib/navigation");
-  return { ...actual, assignLocation };
 });
 
 import { amal, deferred, htmlError, problem, publicGet, renderAuth } from "./Auth/authTestHarness";
@@ -35,14 +30,12 @@ const node = (home: unknown) => ({
   name: "Studio Mac",
   version: "1.5.0",
   schema_rev: 134,
-  sso: true,
   home,
 });
 
 beforeEach(() => {
   get.mockReset();
   post.mockReset();
-  assignLocation.mockReset();
   get.mockImplementation(publicGet(null));
   post.mockImplementation((path: string) =>
     path === "/api/auth/login"
@@ -65,7 +58,6 @@ describe("Login (test-cases/login.md)", () => {
     renderAuth([{ pathname: "/login", state: { from: "/videos/42" } }]);
     await signIn();
     expect(await where()).toHaveTextContent(/^\/videos\/42$/);
-    expect(assignLocation).not.toHaveBeenCalled();
   });
 
   it("LGN-03: a signed-out deep link with no query comes back after sign-in", async () => {
@@ -92,7 +84,6 @@ describe("Login (test-cases/login.md)", () => {
       renderAuth([{ pathname: "/login", state: { from } }]);
       await signIn();
       expect(await where()).toHaveTextContent(/^\/library$/);
-      expect(assignLocation).not.toHaveBeenCalled();
     }
   );
 
@@ -196,7 +187,7 @@ describe("Login (test-cases/login.md)", () => {
     expect(screen.queryByTestId("where")).not.toBeInTheDocument();
   });
 
-  it("LGN-19: on a node the cluster prompt starts SSO back to state.from", async () => {
+  it("LGN-19: on a node the sign-in form is the only way in, back to state.from", async () => {
     get.mockImplementation(
       publicGet(null, {
         "/api/cluster/self": async () =>
@@ -204,39 +195,14 @@ describe("Login (test-cases/login.md)", () => {
       })
     );
     renderAuth([{ pathname: "/login", state: { from: "/videos/42" } }]);
-    const cont = await screen.findByRole("button", { name: /Home NAS/ });
-    expect(screen.getByText(en["clusterSignIn.or"])).toBeInTheDocument();
-    await userEvent.setup().click(cont);
-    expect(assignLocation).toHaveBeenCalledWith("/api/cluster/sso/start?return=%2Fvideos%2F42");
-  });
-
-  it("LGN-19: the cluster prompt is hidden while continuing an SSO authorize", async () => {
-    get.mockImplementation(
-      publicGet(null, {
-        "/api/cluster/self": async () =>
-          node({ name: "Home NAS", web_url: "http://home.local:8780", reachable: true }),
-      })
-    );
-    const next = encodeURIComponent("/api/cluster/sso/authorize?node=n1&challenge=abc");
-    renderAuth([`/login?next=${next}`]);
     await screen.findByLabelText(en["login.username"]);
     await waitFor(() => expect(get).toHaveBeenCalledWith("/api/auth/me"));
     expect(get).not.toHaveBeenCalledWith("/api/cluster/self");
-    expect(screen.queryByRole("button", { name: /Home NAS/ })).not.toBeInTheDocument();
-  });
-
-  it.each([
-    ["home: null", async () => node(null)],
-    ["no home key", async () => ({ ...node(null), home: undefined })],
-    ["500", () => Promise.reject(problem(500))],
-    ["HTML body", async () => "<html>oops</html>"],
-  ])("LGN-20: /api/cluster/self with %s: no prompt, sign-in works", async (_name, answer) => {
-    get.mockImplementation(publicGet(null, { "/api/cluster/self": answer }));
-    renderAuth(["/login"]);
-    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/cluster/self"));
-    expect(screen.queryByText(en["clusterSignIn.or"])).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Home NAS|Continue/ })).not.toBeInTheDocument();
+    const form = screen.getByRole("form", { name: en["login.submit"] });
+    expect(within(form).getAllByRole("button")).toHaveLength(1);
     await signIn();
-    expect(await where()).toHaveTextContent("/library");
+    expect(await where()).toHaveTextContent("/videos/42");
   });
 
   it("LGN-21: no forgot-password link; the register link opens its page; Back returns", async () => {

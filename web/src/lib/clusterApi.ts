@@ -208,8 +208,6 @@ export interface ClusterSelf {
   };
   /** the schema guard's reason; non-empty: this node is paused */
   paused?: string;
-  /** cluster sign-in is on */
-  sso: boolean;
   agent_connected?: boolean;
   vod?: NodeVod & { checked_at: string };
   /** a full node's copy of its home's database (Epic 37) */

@@ -50,7 +50,7 @@ func (h *Handler) Schedule(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("channel "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load channel"))
+		httperror.Write(w, r, httperror.Internal("load channel").Wrap(err))
 		return
 	}
 	if !h.canRead(p, c.LibraryID) {
@@ -84,7 +84,7 @@ func (h *Handler) Schedule(w http.ResponseWriter, r *http.Request) {
 	staging := r.URL.Query().Get("gen") == "staging" && p.IsAdmin
 	blocks, err := h.loadSchedule(r, id, start, end, staging)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read schedule"))
+		httperror.Write(w, r, httperror.Internal("read schedule").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{
@@ -114,7 +114,7 @@ func (h *Handler) Regenerate(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("channel "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load channel"))
+		httperror.Write(w, r, httperror.Internal("load channel").Wrap(err))
 		return
 	}
 	h.markStale(r.Context(), id)

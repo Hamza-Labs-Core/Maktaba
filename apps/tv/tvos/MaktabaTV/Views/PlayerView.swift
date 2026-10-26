@@ -1,93 +1,183 @@
-import SwiftUI
 import AVKit
+import MaktabaKit
+import SwiftUI
 
-/// Full-screen HLS player. tvOS ships `VideoPlayer` (a SwiftUI wrapper
-/// over `AVPlayerViewController`) which gives us the native transport
-/// bar, scrubbing, subtitle/audio selection, and Siri-remote gestures
-/// for free — re-implementing those for a 10-foot UI would be a mistake.
-///
-/// On top of playback this view drives the watch-analytics lifecycle
-/// (Story 29.1): it opens a session when playback starts, beats every
-/// 30 s via an `AVPlayer` periodic time observer, and closes the session
-/// on playback-end or when the view disappears.
-struct PlayerView: View {
-    let media: Media
+/// One video playing, as the Player apps play (apps/apple/Player/Playback.swift): a stream
+/// session from the home, read through MaktabaKit's `StreamProxy` (the home's web port
+/// wants the user's token on every `/stream/` request and AVPlayer cannot renew one), the
+/// position reported every 10 s so continue watching resumes there, a reopen before the
+/// signed URL ends or when the item fails, and the session closed when it stops.
+@MainActor @Observable
+final class TVPlayback {
+    let client: APIClient
+    let video: Video
+    private(set) var player: AVPlayer?
+    private(set) var problem: String?
 
-    @Environment(\.api) private var api
-    @State private var player: AVPlayer?
-    /// Mutable, reference-typed watch state so the escaping time-observer
-    /// closure sees live values across SwiftUI re-renders (a `@State`
-    /// struct field would be captured by value at install time).
-    @State private var watch = WatchState()
+    private var session: String?
+    private var renewAt = Date.distantFuture
+    private var openedAt = Date.distantPast
+    private var running: Task<Void, Never>?
+    private var proxy: StreamProxy?
 
-    var body: some View {
-        VideoPlayer(player: player)
-            .ignoresSafeArea()
-            .task { await start() }
-            .onDisappear {
-                stopWatch()
-                player?.pause()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { _ in
-                stopWatch()
-            }
+    init(client: APIClient, video: Video) {
+        self.client = client
+        self.video = video
     }
 
-    private func start() async {
-        // Prefer a server-provided absolute manifest; otherwise derive
-        // the signed HLS URL from the video id.
-        let manifest: URL
-        if let hls = media.hlsURL, let url = URL(string: hls) {
-            manifest = url
-        } else {
-            manifest = await api.hlsURL(for: media.id)
-        }
-
-        let item = AVPlayerItem(url: manifest)
-        let player = AVPlayer(playerItem: item)
-        self.player = player
-
-        // Open the watch session. A nil id means tracking is paused —
-        // we then skip heartbeats entirely.
-        if let sessionID = try? await api.watchStart(videoID: media.id, quality: "auto") {
-            watch.sessionID = sessionID
-            // Capture only Sendable values (the id string + the actor) in
-            // the @Sendable observer closure — never the WatchState box.
-            // The id is fixed for the session's life and the observer is
-            // detached in stopWatch(), so a late beat at most 409s.
-            let apiRef = api
-            let interval = CMTime(seconds: 30, preferredTimescale: 1)
-            watch.observer = player.addPeriodicTimeObserver(
-                forInterval: interval, queue: .main
-            ) { time in
-                guard time.seconds.isFinite else { return }
-                let pos = Int(max(0, time.seconds.rounded(.down)))
-                Task { try? await apiRef.watchHeartbeat(sessionID: sessionID, positionSec: pos) }
-            }
-        }
-
-        player.play()
+    /// Plays from `start` seconds (0: the beginning).
+    func start(at start: Double) {
+        running?.cancel()
+        running = Task { await run(from: start) }
     }
 
-    /// Close the session once: detach the observer and POST a final
-    /// position. Idempotent so onDisappear-after-end is harmless.
-    private func stopWatch() {
-        guard let id = watch.sessionID else { return }
-        watch.sessionID = nil
-        if let obs = watch.observer {
-            player?.removeTimeObserver(obs)
-            watch.observer = nil
+    /// Stops, and returns once the home has where it stopped (so a page shown next offers
+    /// to resume there).
+    func stop() async {
+        // let a stream being opened finish first: its session is then ours to close
+        running?.cancel()
+        await running?.value
+        running = nil
+        player?.pause()
+        let stopped = session.map { session in
+            let at = player?.currentTime().seconds ?? 0
+            let done = player?.currentItem.map { $0.duration.seconds.isFinite && at >= $0.duration.seconds - 5 } ?? false
+            return Task { [client] in
+                if at.isFinite, at > 0 { await client.reportProgress(session: session, positionSec: Int(at), completed: done) }
+                await client.closeStream(session)
+            }
         }
-        let secs = player?.currentTime().seconds ?? 0
-        let pos = Int(max(0, (secs.isFinite ? secs : 0).rounded(.down)))
-        let apiRef = api
-        Task { try? await apiRef.watchStop(sessionID: id, positionSec: pos) }
+        session = nil
+        player = nil
+        proxy?.stop()
+        proxy = nil
+        await stopped?.value
+    }
+
+    private func run(from start: Double) async {
+        await open(from: start)
+        guard player != nil else { return }
+        await watch()
+    }
+
+    private func open(from start: Double) async {
+        do {
+            let s = try await client.openStream(video: video.id, startSec: Int(start))
+            guard let url = s.playbackURL(home: client.home) else {
+                problem = "The home gave no address to play."
+                return
+            }
+            let auth = try await client.playbackHeaders()
+            let proxy = try self.proxy ?? StreamProxy(client: client)
+            self.proxy = proxy
+            try await proxy.start()
+            guard let local = proxy.local(url) else {
+                problem = "Could not start playback on this TV."
+                return
+            }
+            if let old = session, old != s.sessionID {
+                Task { [client] in await client.closeStream(old) }
+            }
+            session = s.sessionID
+            // a transcode writes its first playlist a moment after the session opens
+            try await client.waitUntilPlayable(url, headers: auth.headers, timeout: .seconds(60))
+            try Task.checkCancellation()
+            openedAt = .now
+            renewAt = (s.expires ?? .distantFuture).addingTimeInterval(-60)
+            let item = AVPlayerItem(url: local)
+            item.externalMetadata = Self.metadata(video)
+            let p = player ?? AVPlayer()
+            p.replaceCurrentItem(with: item)
+            if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
+            try Task.checkCancellation()
+            player = p
+            problem = nil
+            p.play()
+        } catch is CancellationError {
+            return
+        } catch {
+            player = nil
+            problem = error.localizedDescription
+        }
+    }
+
+    private func watch() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled, let p = player, let session else { return }
+            let at = p.currentTime().seconds
+            if at.isFinite, at > 0 { await client.reportProgress(session: session, positionSec: Int(at)) }
+            let failed = p.currentItem?.status == .failed
+            if failed, Date.now.timeIntervalSince(openedAt) < 30 {
+                p.pause()
+                player = nil
+                problem = p.currentItem?.error?.localizedDescription ?? "The video stopped playing."
+                return
+            }
+            if failed || Date.now >= renewAt {
+                let wasPlaying = p.rate > 0
+                await open(from: at.isFinite ? at : 0)
+                if !wasPlaying { player?.pause() }
+            }
+        }
+    }
+
+    /// The title and description the TV's info panel shows.
+    static func metadata(_ v: Video) -> [AVMetadataItem] {
+        func item(_ id: AVMetadataIdentifier, _ value: String) -> AVMetadataItem {
+            let m = AVMutableMetadataItem()
+            m.identifier = id
+            m.value = value as NSString
+            m.extendedLanguageTag = "und"
+            return m
+        }
+        var items = [item(.commonIdentifierTitle, v.displayTitle)]
+        if let d = v.description, !d.isEmpty { items.append(item(.commonIdentifierDescription, d)) }
+        return items
     }
 }
 
-/// Reference box for the watch-session state shared with the periodic
-/// time-observer closure.
-private final class WatchState {
-    var sessionID: String?
-    var observer: Any?
+/// The video full screen, with the system's transport bar (scrubbing, audio and subtitle
+/// choices, the Siri remote's gestures). Menu on the remote closes it.
+struct PlayerScreen: View {
+    let playback: TVPlayback
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if let player = playback.player {
+                SystemPlayer(player: player)
+            } else if let problem = playback.problem {
+                VStack(spacing: 32) {
+                    ContentUnavailableView("Can't play", systemImage: "exclamationmark.triangle", description: Text(problem))
+                    Button("Close") { dismiss() }.buttonStyle(.gold)
+                }
+                .foregroundStyle(.white)
+            } else {
+                VStack(spacing: 24) {
+                    ProgressView().tint(.white)
+                    Text("Starting \(playback.video.displayTitle)…").foregroundStyle(.white.opacity(0.8))
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .onReceive(NotificationCenter.default.publisher(for: AVPlayerItem.didPlayToEndTimeNotification)) { note in
+            if (note.object as? AVPlayerItem) === playback.player?.currentItem { dismiss() }
+        }
+    }
+}
+
+private struct SystemPlayer: UIViewControllerRepresentable {
+    let player: AVPlayer
+
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let c = AVPlayerViewController()
+        c.player = player
+        return c
+    }
+
+    func updateUIViewController(_ c: AVPlayerViewController, context: Context) {
+        if c.player !== player { c.player = player }
+    }
 }

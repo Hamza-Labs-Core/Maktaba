@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The start screens' words (home picker, sign-in), in English and Arabic (values-ar), with
+     the web's terms (web/src/i18n): a home is «الجهاز الرئيسي». -->
+<resources>
+    <string name="brand">Maktaba</string>
+    <string name="app_player">Player</string>
+    <string name="app_remote">Remote</string>
+    <string name="tagline_player">Choose your home to start watching.</string>
+    <string name="tagline_remote">Choose the home you run.</string>
+
+    <string name="homes_on_network">On this network</string>
+    <string name="homes_looking">Looking for homes…</string>
+    <string name="homes_none">No home has answered on this network yet.</string>
+    <string name="homes_saved">Your homes</string>
+    <string name="home_saved">Saved</string>
+    <string name="home_forget">Forget %1$s</string>
+
+    <string name="address_title">Enter an address</string>
+    <string name="address_label">Address, like 192.168.1.20:8088</string>
+    <string name="address_invalid">That is not a home\'s address.</string>
+    <string name="connect">Connect</string>
+
+    <string name="local_network_title">Find homes on this network</string>
+    <string name="local_network_body">Maktaba needs your permission to reach devices on your local network, where your home is.</string>
+    <string name="local_network_allow">Allow</string>
+    <string name="local_network_denied">Without it, only a home\'s internet address works.</string>
+
+    <string name="signin_title">Sign in</string>
+    <string name="signin_to">Sign in to %1$s</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="signin_submit">Sign in</string>
+    <string name="signin_wrong">Invalid username or password.</string>
+    <string name="signin_unreachable">Could not reach %1$s.</string>
+    <string name="other_home">Choose another home</string>
+    <string name="signin_kept_failed">Could not check your sign-in: %1$s</string>
+    <string name="try_again">Try again</string>
+</resources>

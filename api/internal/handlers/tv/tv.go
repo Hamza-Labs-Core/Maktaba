@@ -165,7 +165,7 @@ func (h *Handler) OnAir(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN channels c ON c.id = rt.channel_id
 		ORDER BY c.number, rt.host`)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read channel runtime"))
+		httperror.Write(w, r, httperror.Internal("read channel runtime").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -177,7 +177,7 @@ func (h *Handler) OnAir(w http.ResponseWriter, r *http.Request) {
 		var started, beat dbTime
 		if err := rows.Scan(&c.ChannelID, &c.Number, &c.Name, &hostID, &c.Host, &base, &pid, &c.State, &enc,
 			&c.Viewers, &c.Restarts, &c.NVENCFallbacks, &started, &beat); err != nil {
-			httperror.Write(w, r, httperror.Internal("read channel runtime"))
+			httperror.Write(w, r, httperror.Internal("read channel runtime").Wrap(err))
 			return
 		}
 		if pid.Valid {
@@ -196,7 +196,7 @@ func (h *Handler) OnAir(w http.ResponseWriter, r *http.Request) {
 		       nvenc_free, vt_free, heartbeat_at
 		FROM streaming_hosts ORDER BY role, host`)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read streaming hosts"))
+		httperror.Write(w, r, httperror.Internal("read streaming hosts").Wrap(err))
 		return
 	}
 	defer hrows.Close()
@@ -206,7 +206,7 @@ func (h *Handler) OnAir(w http.ResponseWriter, r *http.Request) {
 		var beat dbTime
 		if err := hrows.Scan(&s.HostID, &s.Host, &s.Role, &base, &enc, &s.MaxActive, &s.ActiveChannels,
 			&s.NVENCFree, &s.VTFree, &beat); err != nil {
-			httperror.Write(w, r, httperror.Internal("read streaming hosts"))
+			httperror.Write(w, r, httperror.Internal("read streaming hosts").Wrap(err))
 			return
 		}
 		s.StreamBaseURL, s.Encoder = base.String, enc.String
@@ -392,7 +392,7 @@ func (h *Handler) GetHDHR(w http.ResponseWriter, r *http.Request) {
 	}
 	d, err := h.device(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load hdhr device"))
+		httperror.Write(w, r, httperror.Internal("load hdhr device").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, d)
@@ -425,7 +425,7 @@ func (h *Handler) PatchHDHR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.device(r.Context()); err != nil { // provision first
-		httperror.Write(w, r, httperror.Internal("load hdhr device"))
+		httperror.Write(w, r, httperror.Internal("load hdhr device").Wrap(err))
 		return
 	}
 	sets, args := []string{}, []any{}
@@ -445,13 +445,13 @@ func (h *Handler) PatchHDHR(w http.ResponseWriter, r *http.Request) {
 	if len(sets) > 0 {
 		q := "UPDATE hdhr_device SET " + strings.Join(sets, ", ") + " WHERE id = 1"
 		if _, err := h.DB.ExecContext(r.Context(), q, args...); err != nil {
-			httperror.Write(w, r, httperror.Internal("update hdhr device"))
+			httperror.Write(w, r, httperror.Internal("update hdhr device").Wrap(err))
 			return
 		}
 	}
 	d, err := h.device(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("reload hdhr device"))
+		httperror.Write(w, r, httperror.Internal("reload hdhr device").Wrap(err))
 		return
 	}
 	if len(sets) > 0 {

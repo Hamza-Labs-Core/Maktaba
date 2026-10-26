@@ -91,7 +91,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if !p.AccessAllLibraries && !p.HasLibrary(libraryID) {

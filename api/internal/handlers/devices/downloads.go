@@ -115,7 +115,7 @@ func (h *Handler) requireDeviceSession(w http.ResponseWriter, r *http.Request) (
 		return "", false
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("device lookup"))
+		httperror.Write(w, r, httperror.Internal("device lookup").Wrap(err))
 		return "", false
 	}
 	return devID, true
@@ -148,7 +148,7 @@ func (h *Handler) SetDownloaded(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+vid))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if !videos.CanRead(principal.FromContext(r.Context()), libraryID) {
@@ -201,7 +201,7 @@ func (h *Handler) ClearDownloaded(w http.ResponseWriter, r *http.Request) {
 	_, err := h.DB.ExecContext(r.Context(),
 		`DELETE FROM device_downloads WHERE device_id=$1 AND video_id=$2`, devID, vid)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("clear downloaded"))
+		httperror.Write(w, r, httperror.Internal("clear downloaded").Wrap(err))
 		return
 	}
 	common.WriteNoContent(w)

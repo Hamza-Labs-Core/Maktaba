@@ -42,6 +42,15 @@ const (
 	KindAuthOK       = relay.KindAuthOK
 	KindAuthFail     = relay.KindAuthFail
 	KindHeartbeat    = relay.KindHeartbeat
+	KindWindowUpdate = relay.KindWindowUpdate
+)
+
+// InitialWindow and FlowVersion are the relay's flow-control constants
+// (protocol.go): each stream's starting credit, and the version both ends
+// announce at AUTH.
+const (
+	InitialWindow = relay.InitialWindow
+	FlowVersion   = relay.FlowVersion
 )
 
 // MaxFrameBytes mirrors the server's single-frame cap so the client

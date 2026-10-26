@@ -302,7 +302,9 @@ class Debouncer:
         except Exception as err:  # noqa: BLE001 — callback failures never tear down the watcher
             self.log.warning(
                 "watcher.debouncer.callback_failed",
+                library_id=ev.library_id,
                 path=ev.path,
                 op=ev.op.value,
                 err=str(err),
+                exc_info=True,
             )

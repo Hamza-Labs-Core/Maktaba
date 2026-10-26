@@ -32,6 +32,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/authz"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
@@ -54,7 +55,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
@@ -536,7 +536,7 @@ func runServe() error {
 				Logger:       logger,
 				PerfRegistry: perfRegistry,
 			}
-			entStore, _ := router.EntitlementStore(p10Deps)
+			entStore, entVerifier := router.EntitlementStore(p10Deps)
 			p10Deps.SubscriptionsStore = entStore
 
 			// Phase 9 (Epic 10 stories 10.2-10.5, 10.16) — auth surface.
@@ -548,11 +548,24 @@ func runServe() error {
 				Keys:          auth.keys,
 				SecureCookies: cookiesSecure(),
 				AccessTTL:     accessTokenTTL(),
-				Seats:         subscriptions.NewSeatLimiter(entStore),
+				Seats:         router.SeatGate(entStore, entVerifier),
 				Settings:      runtimeSettings,
+				// Epic 42 story 42.7: the relay agent's identity (the
+				// supervisor passes its path while [cloud] is on)
+				CloudIdentityPath: os.Getenv("MAKTABA_CLOUD_IDENTITY"),
 			})
 			if p9 != nil {
-				cookieAuth = p9.CookieAuth
+				// the cookie principal, then the cloud link gate over every
+				// principal (JWT, PAT and cookie alike): a cloud sign-in
+				// whose link is gone is no one, one lowered to play is play
+				gate := p9.Cloud.Gate.Middleware
+				cookie := p9.CookieAuth
+				cookieAuth = func(next http.Handler) http.Handler { return cookie(gate(next)) }
+				if agent := os.Getenv("MAKTABA_CLOUDLINK_ADMIN"); agent != "" {
+					rep := cloudlink.NewReporter(agent, p9.Cloud.Store, logger)
+					p9.Cloud.Store.Changed = rep.Kick
+					go rep.Run(context.Background(), 30*time.Minute)
+				}
 				csrf = p9.CSRF
 				logger.Info("p9: auth handlers mounted", "event", "p9_mounted")
 			}

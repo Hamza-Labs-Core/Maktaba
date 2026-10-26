@@ -76,17 +76,17 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	users, err := h.listUsers(r)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list users"))
+		httperror.Write(w, r, httperror.Internal("list users").Wrap(err))
 		return
 	}
 	libs, err := h.listLibraries(r)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list libraries"))
+		httperror.Write(w, r, httperror.Internal("list libraries").Wrap(err))
 		return
 	}
 	grants, err := h.ACL.AllGrants(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list grants"))
+		httperror.Write(w, r, httperror.Internal("list grants").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, listResponse{
@@ -129,14 +129,14 @@ func (h *Handler) BulkUpsert(w http.ResponseWriter, r *http.Request) {
 			err = h.ACL.SetRole(r.Context(), g.UserID, g.LibraryID, g.Role)
 		}
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("apply grant"))
+			httperror.Write(w, r, httperror.Internal("apply grant").Wrap(err))
 			return
 		}
 	}
 	// Echo the fresh state so the SPA can reconcile without a refetch.
 	grants, err := h.ACL.AllGrants(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("reload grants"))
+		httperror.Write(w, r, httperror.Internal("reload grants").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"grants": grants})

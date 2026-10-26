@@ -115,16 +115,26 @@ export function registerServiceWorker(): void {
 /** Where the last reload for a missing chunk is remembered (one per minute at most). */
 const STALE_RELOAD_KEY = "mkt:stale-chunk-reload";
 
+/** The longest the reload for a missing chunk waits on the service worker's update. */
+export const WORKER_UPDATE_WAIT_MS = 3000;
+
 /**
  * A page an older release left open asks for its own hashed chunks, which the updated
  * server no longer has (a 404): Vite reports `vite:preloadError`. The page reloads once
  * to take the new release's page and chunks; a second failure within a minute is left to
  * show (no reload loop).
+ *
+ * The reload goes through the page's service worker, which may be an older release's
+ * (one from before the network-first shell answers the page from its cache, the stale page
+ * again). So the worker is asked to update first (WORKER_UPDATE_WAIT_MS at most): the
+ * server's worker takes over at once (skipWaiting) and deletes every older cache, and the
+ * reload gets the server's page.
  */
 export function reloadOnStaleChunks(
   win: Pick<Window, "addEventListener" | "location"> = window,
   store: Pick<Storage, "getItem" | "setItem"> | null = safeSession(),
-  now: () => number = Date.now
+  now: () => number = Date.now,
+  workers: Pick<ServiceWorkerContainer, "getRegistration"> | null = safeWorkers()
 ): void {
   win.addEventListener("vite:preloadError", (event: Event) => {
     const last = Number(store?.getItem(STALE_RELOAD_KEY) ?? 0);
@@ -135,8 +145,40 @@ export function reloadOnStaleChunks(
       // storage refused (a private window): reload anyway, once per page
     }
     event.preventDefault();
-    win.location.reload();
+    if (!workers) {
+      win.location.reload();
+      return;
+    }
+    void updateWorker(workers).then(() => win.location.reload());
   });
+}
+
+/**
+ * Ask the page's service worker to update (the server's worker replaces an older
+ * release's), for `wait` ms at most; never fails.
+ */
+export async function updateWorker(
+  workers: Pick<ServiceWorkerContainer, "getRegistration">,
+  wait: number = WORKER_UPDATE_WAIT_MS
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const update = workers
+    .getRegistration()
+    .then((reg) => reg?.update())
+    .catch(() => undefined);
+  const late = new Promise<void>((done) => (timer = setTimeout(done, wait)));
+  await Promise.race([update, late]);
+  clearTimeout(timer);
+}
+
+function safeWorkers(): Pick<ServiceWorkerContainer, "getRegistration"> | null {
+  try {
+    return typeof navigator !== "undefined" && "serviceWorker" in navigator
+      ? navigator.serviceWorker
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function safeSession(): Storage | null {

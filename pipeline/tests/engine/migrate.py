@@ -109,8 +109,58 @@ def apply_sqlite(
     recorded and skipped. Slots ``>= strict_from`` (this workstream) must apply
     unmodified: any error raises.
     """
+    paths = list_migrations(sqlite=True, upto=upto)
+    fk = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+    empty = conn.execute("SELECT count(*) FROM sqlite_master").fetchone()[0] == 0
+    if not empty:
+        return _apply_sqlite_paths(conn, paths, strict_from)
+    # every migration test applies all the slots before its own (150+ files): the schema
+    # is built once per (slots, rules) in this process and copied, from the longest built
+    # prefix on; a database with anything in it already is applied to as it is
+    key = (strict_from, fk)
+    built = _built.setdefault(key, {})
+    target = int(paths[-1].name[:4]) if paths else 0
+    base = max((k for k in built if k <= target), default=None)
     problems: list[str] = []
-    for path in list_migrations(sqlite=True, upto=upto):
+    rest = paths
+    if base is not None:
+        template, problems = built[base]
+        template.backup(conn)
+        rest = [p for p in paths if int(p.name[:4]) > base]
+    # applied in steps of _STEP slots, each step kept: a test of slot N then applies at
+    # most the _STEP slots before its own
+    i = 0
+    while i < len(rest):
+        j = i
+        while j < len(rest) and int(rest[j].name[:4]) // _STEP == int(rest[i].name[:4]) // _STEP:
+            j += 1
+        problems = problems + _apply_sqlite_paths(conn, rest[i:j], strict_from)
+        reached = int(rest[j - 1].name[:4])
+        if reached not in built:
+            copy = sqlite3.connect(":memory:", check_same_thread=False)
+            conn.backup(copy)
+            built[reached] = (copy, problems)
+        i = j
+    return list(problems)
+
+
+#: how many slots one kept step of the schema spans
+_STEP = 10
+
+
+def warm_sqlite() -> None:
+    """Build every kept step of the schema now (a session fixture's work, before any
+    test's own time is measured)."""
+    apply_sqlite(sqlite3.connect(":memory:"))
+
+
+#: the schemas built so far: (strict_from, foreign_keys) -> last slot -> (db, problems)
+_built: dict[tuple[int, int], dict[int, tuple[sqlite3.Connection, list[str]]]] = {}
+
+
+def _apply_sqlite_paths(conn: sqlite3.Connection, paths: list[Path], strict_from: int) -> list[str]:
+    problems: list[str] = []
+    for path in paths:
         slot = int(path.name[:4])
         for stmt in up_statements(path.read_text(encoding="utf-8")):
             if slot >= strict_from:

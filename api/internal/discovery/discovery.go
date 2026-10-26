@@ -99,6 +99,10 @@ type PairingTicket struct {
 // use the in-memory implementation.
 type PairingStore interface {
 	Put(ctx context.Context, t PairingTicket) error
+	// Insert stores a new ticket only if its code is free (ErrCodeExists otherwise, for
+	// an expired or consumed one too until it is swept): one atomic step, so a code is
+	// approved once.
+	Insert(ctx context.Context, t PairingTicket) error
 	Get(ctx context.Context, code string) (PairingTicket, error)
 	Consume(ctx context.Context, code string) (PairingTicket, error)
 	// Sweep is the Story 15.6 reaper query: hard-delete every ticket
@@ -114,6 +118,9 @@ type PairingStore interface {
 // ErrCodeNotFound is returned by PairingStore.Get/Consume when the
 // code does not exist (or has expired and been swept).
 var ErrCodeNotFound = errors.New("pairing code not found")
+
+// ErrCodeExists is returned by PairingStore.Insert when the code is taken.
+var ErrCodeExists = errors.New("pairing code already exists")
 
 // ErrCodeExpired is returned when the code is present but past TTL.
 var ErrCodeExpired = errors.New("pairing code expired")
@@ -147,6 +154,17 @@ func (m *MemoryPairingStore) SetNow(fn func() time.Time) {
 func (m *MemoryPairingStore) Put(_ context.Context, t PairingTicket) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.tickets[t.Code] = t
+	return nil
+}
+
+// Insert stores a ticket whose code is free.
+func (m *MemoryPairingStore) Insert(_ context.Context, t PairingTicket) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.tickets[t.Code]; ok {
+		return ErrCodeExists
+	}
 	m.tickets[t.Code] = t
 	return nil
 }

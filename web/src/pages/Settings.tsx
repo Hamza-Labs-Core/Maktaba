@@ -13,7 +13,7 @@ import { Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-route
 import { RadioGroup, Radio } from "@ds/components/Choice/Radio";
 import { Button } from "@ds/components/Button/Button";
 import { useAuth } from "../lib/auth";
-import { useI18n, type Locale } from "../lib/i18n";
+import { lookupMessage, useI18n, type Locale } from "../lib/i18n";
 import { readMode, setMode, type ThemeMode } from "../lib/theme";
 import { ModelsSection } from "./Settings/ModelsSection";
 import { RulesSection } from "./Settings/RulesSection";
@@ -297,7 +297,7 @@ type UpdatePhase = "idle" | "downloading" | "restarting" | "done" | "error" | "r
 // instructions) and keeps the button. An older server's 409 instruction still
 // shows after a click. A self-update the server undid (rolled_back) is reported.
 function AboutTab() {
-  const { t, formatDate } = useI18n();
+  const { t, formatDate, locale } = useI18n();
   const { user } = useAuth();
   const toast = useToast();
   const buildVersion = import.meta.env?.VITE_APP_VERSION ?? "dev";
@@ -372,11 +372,20 @@ function AboutTab() {
         return;
       }
       if (e instanceof ApiError && e.status === 409) {
-        // Docker/package-manager install: surface the instruction.
-        const hint =
-          (e.problem as unknown as { instructions?: string }).instructions ?? e.problem.detail;
+        // a container that cannot update itself sends its instruction (an older server's
+        // answer); any other 409 is a reason the update cannot start now, never a Docker
+        // install (a recent crash, a running update, a switch of the home)
+        const hint = (e.problem as unknown as { instructions?: string }).instructions;
         if (hint) {
           setDockerHint(hint);
+          setPhase("idle");
+          return;
+        }
+        const code = e.problem.code;
+        const key = code ? `updates.blocker.${code}` : "";
+        const reason = key && lookupMessage(locale, key) !== undefined ? t(key) : e.problem.detail;
+        if (reason) {
+          toast.show({ tone: "error", message: t("update.blocked", { reason }) });
           setPhase("idle");
           return;
         }

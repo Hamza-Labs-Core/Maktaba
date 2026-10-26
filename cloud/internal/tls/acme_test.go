@@ -39,3 +39,15 @@ func TestPolicyFromResolver(t *testing.T) {
 	}
 	_ = errors.New
 }
+
+func TestPolicyRefusesUnknownAndNested(t *testing.T) {
+	p := PolicyFromResolver("relay.test", "relay.test", &fakeResolver{known: map[string]bool{"home": true}})
+	for host, ok := range map[string]bool{
+		"relay.test": true, "home.relay.test": true,
+		"other.relay.test": false, "a.home.relay.test": false, "evil.test": false, "home.relay.test.evil": false,
+	} {
+		if err := p(context.Background(), host); (err == nil) != ok {
+			t.Errorf("%s: err=%v, want ok=%v", host, err, ok)
+		}
+	}
+}

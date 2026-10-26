@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -43,6 +45,24 @@ type ManifestHandler struct {
 	Sessions SessionStreamReader
 	Layout   HLSDirResolver
 	Now      func() time.Time
+	// Logger receives the session's files that are there and cannot be read
+	// (nil: slog's default).
+	Logger *slog.Logger
+}
+
+// readFailed logs a failed read of a session's playlist or segment that is
+// not "not written yet" (permissions, a full or failing disk): the player
+// sees a 404 like a segment still to come, and waits.
+func (h *ManifestHandler) readFailed(r *http.Request, path string, err error) {
+	if errors.Is(err, fs.ErrNotExist) {
+		return
+	}
+	l := h.Logger
+	if l == nil {
+		l = slog.Default()
+	}
+	l.ErrorContext(r.Context(), "a stream file could not be read", "session_id", auth.SubjectFromContext(r.Context()),
+		"path", path, "err", err.Error(), "event", "vod_file_read_failed")
 }
 
 // ServeMaster handles GET /stream/{session_id}/manifest.{m3u8,mpd}.
@@ -79,6 +99,7 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		h.readFailed(r, path, err)
 		if errors.Is(err, os.ErrNotExist) {
 			httpx.Write(w, http.StatusNotFound, "manifest-not-found",
 				"manifest not yet on disk",
@@ -138,6 +159,7 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		h.readFailed(r, path, err)
 		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", err.Error())
 		return
 	}
@@ -215,6 +237,7 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		h.readFailed(r, path, err)
 		// AC-3: 404 if segment not yet on disk. Players will refetch
 		// the variant playlist and try again.
 		httpx.Write(w, http.StatusNotFound, "segment-not-found",

@@ -1,7 +1,15 @@
 // attachVod helpers: sig carrying, HTTP status extraction, and the native
 // path's expiry handling (no HTTP status there).
 import { describe, it, expect, vi } from "vitest";
-import { VOD_STALL_MS, attachVod, carrySig, httpStatusOf, sigOf } from "./vod";
+import {
+  VOD_STALL_MS,
+  attachVod,
+  carrySig,
+  hlsErrorOf,
+  httpStatusOf,
+  sigOf,
+  type VodError,
+} from "./vod";
 
 const M = "/stream/s1/manifest.m3u8?sig=a.b%2Bc";
 
@@ -156,5 +164,147 @@ describe("attachVod native path", () => {
     expect(h.mode).toBe("unsupported");
     expect(v.getAttribute("src")).toBe(M);
     h.detach();
+  });
+});
+
+describe("attachVod onError", () => {
+  function nativeVideo() {
+    const v = document.createElement("video");
+    v.canPlayType = vi.fn(() => "maybe") as HTMLVideoElement["canPlayType"];
+    return v;
+  }
+  it("describes a native media error that is fatal", async () => {
+    const v = nativeVideo();
+    Object.defineProperty(v, "error", {
+      value: { code: 3, message: "PIPELINE_ERROR_DECODE" },
+      configurable: true,
+    });
+    const onError = vi.fn<(e: VodError) => void>();
+    const onFatal = vi.fn();
+    const h = attachVod(v, M, {
+      onError,
+      onFatal,
+      isExpired: () => false,
+      probe: () => Promise.resolve(200),
+    });
+    v.dispatchEvent(new Event("error"));
+    await vi.waitFor(() => expect(onFatal).toHaveBeenCalledTimes(1));
+    expect(onError).toHaveBeenCalledWith({
+      engine: "native",
+      outcome: "fatal",
+      code: "media_err_3",
+      message: "PIPELINE_ERROR_DECODE",
+      httpStatus: 200,
+      url: M,
+    });
+    h.detach();
+  });
+  it("describes a native stream gone before the reopen", async () => {
+    const v = nativeVideo();
+    const onError = vi.fn<(e: VodError) => void>();
+    const onGone = vi.fn();
+    const h = attachVod(v, M, {
+      onError,
+      onGone,
+      isExpired: () => false,
+      probe: () => Promise.resolve(404),
+    });
+    v.dispatchEvent(new Event("error"));
+    await vi.waitFor(() => expect(onGone).toHaveBeenCalledTimes(1));
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "reopen", code: "manifest_gone", httpStatus: 404 })
+    );
+    h.detach();
+  });
+  it("does not describe an expired signature (the owner just refreshes it)", () => {
+    const v = nativeVideo();
+    const onError = vi.fn();
+    const h = attachVod(v, M, { onError, onAuthError: vi.fn(), isExpired: () => true });
+    v.dispatchEvent(new Event("error"));
+    expect(onError).not.toHaveBeenCalled();
+    h.detach();
+  });
+
+  // A stand-in for hls.js: records its error handler so a test can fire it.
+  function fakeHls() {
+    let onErr: ((evt: string, data: unknown) => void) | null = null;
+    class FakeHls {
+      static Events = { ERROR: "hlsError" };
+      static ErrorTypes = { NETWORK_ERROR: "networkError", MEDIA_ERROR: "mediaError" };
+      static isSupported = () => true;
+      on(_e: string, fn: (evt: string, data: unknown) => void) {
+        onErr = fn;
+      }
+      attachMedia() {}
+      loadSource() {}
+      startLoad() {}
+      recoverMediaError() {}
+      destroy() {}
+    }
+    return { Hls: FakeHls, fire: (data: unknown) => onErr?.("hlsError", data) };
+  }
+  async function attachHls(opts: Parameters<typeof attachVod>[2]) {
+    const v = document.createElement("video");
+    v.canPlayType = vi.fn(() => "") as HTMLVideoElement["canPlayType"];
+    const fake = fakeHls();
+    const h = attachVod(v, M, { ...opts, loadHls: () => Promise.resolve(fake.Hls as never) });
+    await vi.waitFor(() => expect(h.mode).toBe("hls"));
+    return { h, fire: fake.fire };
+  }
+  it("describes a fatal hls.js media error with its details", async () => {
+    const onError = vi.fn<(e: VodError) => void>();
+    const onFatal = vi.fn();
+    const { h, fire } = await attachHls({ onError, onFatal });
+    const err = {
+      fatal: true,
+      type: "mediaError",
+      details: "bufferAppendError",
+      error: { message: "decode" },
+    };
+    fire(err); // recovery 1
+    fire(err); // recovery 2
+    expect(onError).not.toHaveBeenCalled();
+    fire(err);
+    expect(onFatal).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith({
+      engine: "hls.js",
+      outcome: "fatal",
+      code: "bufferAppendError",
+      message: "decode",
+      httpStatus: 0,
+      url: undefined,
+    });
+    h.detach();
+  });
+  it("describes a segment 410 before the reopen", async () => {
+    const onError = vi.fn<(e: VodError) => void>();
+    const onGone = vi.fn();
+    const { h, fire } = await attachHls({ onError, onGone });
+    fire({
+      fatal: false,
+      type: "networkError",
+      details: "fragLoadError",
+      frag: { url: "/stream/s1/seg9.ts?sig=x" },
+      response: { code: 410, text: "Gone" },
+    });
+    expect(onGone).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        engine: "hls.js",
+        outcome: "reopen",
+        code: "fragLoadError",
+        httpStatus: 410,
+        url: "/stream/s1/seg9.ts?sig=x",
+      })
+    );
+    h.detach();
+  });
+  it("hlsErrorOf falls back to the error type", () => {
+    expect(hlsErrorOf({ type: "otherError" })).toEqual({
+      code: "otherError",
+      message: "",
+      httpStatus: 0,
+      url: undefined,
+    });
   });
 });

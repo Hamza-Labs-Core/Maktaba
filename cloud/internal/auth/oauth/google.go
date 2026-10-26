@@ -1,13 +1,21 @@
 // Package oauth implements the third-party identity flows: Google
 // (OIDC) and Apple (Sign in with Apple).
 //
-// Both flows reduce to the same shape: get an `id_token`, verify its
-// signature against the provider's JWKS, extract a stable `subject`,
-// and federate that to a user row via stores.Users.LinkOAuth.
+// Both flows reduce to the same shape: send the browser to the
+// provider with a state (CSRF), a nonce (id_token replay) and — for
+// Google — a PKCE challenge; on the callback swap the code for an
+// id_token, verify it against the provider's JWKS (IDTokenVerifier),
+// and hand the handler a stable `subject` to federate to a user row.
+//
+// Endpoints are fields so tests point the flows at a fake provider;
+// production uses the defaults.
 package oauth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,12 +25,6 @@ import (
 	"strings"
 	"time"
 )
-
-// GoogleVerifier fetches Google's JWKS and verifies an id_token.
-// In tests we replace it with a stub that returns a fixed identity.
-type GoogleVerifier interface {
-	Verify(ctx context.Context, idToken string) (Identity, error)
-}
 
 // Identity is the trimmed-down claim set we care about.
 type Identity struct {
@@ -38,75 +40,133 @@ type GoogleConfig struct {
 	ClientID     string
 	ClientSecret string
 	RedirectURL  string
+
+	// Provider endpoints; empty means Google's.
+	AuthEndpoint  string
+	TokenEndpoint string
+	JWKSURL       string
 }
 
-// GoogleFlow encapsulates the OAuth-code/PKCE flow. The flow operates
-// in two stages:
-//  1. AuthURL — returned to the browser to begin the dance.
-//  2. Exchange — server-side, swaps the code for tokens, then verifies
-//     the id_token via GoogleVerifier and returns Identity.
+// Google's published endpoints.
+const (
+	googleAuth   = "https://accounts.google.com/o/oauth2/v2/auth"
+	googleToken  = "https://oauth2.googleapis.com/token"
+	googleJWKS   = "https://www.googleapis.com/oauth2/v3/certs"
+	googleIssuer = "https://accounts.google.com"
+)
+
+// GoogleFlow is the OIDC authorization-code flow with PKCE.
 type GoogleFlow struct {
 	Config   GoogleConfig
-	Verifier GoogleVerifier
+	Verifier *IDTokenVerifier
 	HTTP     *http.Client
 }
 
-func NewGoogleFlow(cfg GoogleConfig, v GoogleVerifier) *GoogleFlow {
-	return &GoogleFlow{Config: cfg, Verifier: v, HTTP: &http.Client{Timeout: 10 * time.Second}}
+// NewGoogleFlow fills the default endpoints and builds the verifier.
+func NewGoogleFlow(cfg GoogleConfig) *GoogleFlow {
+	if cfg.AuthEndpoint == "" {
+		cfg.AuthEndpoint = googleAuth
+	}
+	if cfg.TokenEndpoint == "" {
+		cfg.TokenEndpoint = googleToken
+	}
+	if cfg.JWKSURL == "" {
+		cfg.JWKSURL = googleJWKS
+	}
+	hc := &http.Client{Timeout: 10 * time.Second}
+	return &GoogleFlow{
+		Config: cfg,
+		HTTP:   hc,
+		Verifier: &IDTokenVerifier{
+			JWKSURL:  cfg.JWKSURL,
+			Issuers:  []string{googleIssuer, "accounts.google.com"},
+			Audience: cfg.ClientID,
+			HTTP:     hc,
+		},
+	}
 }
 
-// AuthURL builds the URL the SPA redirects to. `state` is the CSRF
-// nonce the caller stores in a short-lived cookie; we echo it back
-// on the redirect so a replay against another browser fails.
-func (g *GoogleFlow) AuthURL(state string) string {
+// AuthURL is where the browser goes to sign in. state and nonce are the
+// values the caller stored in short-lived cookies; codeChallenge is
+// PKCEChallenge(verifier) of the verifier it stored.
+func (g *GoogleFlow) AuthURL(state, nonce, codeChallenge string) string {
 	q := url.Values{}
 	q.Set("client_id", g.Config.ClientID)
 	q.Set("redirect_uri", g.Config.RedirectURL)
 	q.Set("response_type", "code")
 	q.Set("scope", "openid email profile")
 	q.Set("access_type", "online")
+	q.Set("prompt", "select_account")
 	q.Set("state", state)
-	return "https://accounts.google.com/o/oauth2/v2/auth?" + q.Encode()
+	q.Set("nonce", nonce)
+	q.Set("code_challenge", codeChallenge)
+	q.Set("code_challenge_method", "S256")
+	return g.Config.AuthEndpoint + "?" + q.Encode()
 }
 
-// Exchange swaps the code for a token bundle.
-func (g *GoogleFlow) Exchange(ctx context.Context, code string) (Identity, error) {
+// Exchange swaps the code (with the PKCE verifier) for an id_token and
+// returns the identity it asserts, after checking it was minted for
+// this sign-in (nonce).
+func (g *GoogleFlow) Exchange(ctx context.Context, code, codeVerifier, nonce string) (Identity, error) {
 	form := url.Values{}
 	form.Set("code", code)
 	form.Set("client_id", g.Config.ClientID)
 	form.Set("client_secret", g.Config.ClientSecret)
 	form.Set("redirect_uri", g.Config.RedirectURL)
 	form.Set("grant_type", "authorization_code")
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://oauth2.googleapis.com/token", strings.NewReader(form.Encode()))
+	form.Set("code_verifier", codeVerifier)
+	idToken, err := postForIDToken(ctx, g.HTTP, g.Config.TokenEndpoint, form)
 	if err != nil {
-		return Identity{}, err
+		return Identity{}, fmt.Errorf("google oauth: %w", err)
+	}
+	return g.Verifier.Verify(ctx, idToken, nonce)
+}
+
+// postForIDToken calls a token endpoint and returns its id_token.
+func postForIDToken(ctx context.Context, hc *http.Client, endpoint string, form url.Values) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := g.HTTP.Do(req)
+	req.Header.Set("Accept", "application/json")
+	resp, err := hc.Do(req)
 	if err != nil {
-		return Identity{}, fmt.Errorf("google oauth: token endpoint: %w", err)
+		return "", fmt.Errorf("token endpoint: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return Identity{}, fmt.Errorf("google oauth: token endpoint %d: %s", resp.StatusCode, string(body))
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK {
+		var e struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(body, &e)
+		return "", fmt.Errorf("token endpoint %d: %s", resp.StatusCode, e.Error)
 	}
 	var tr struct {
-		IDToken     string `json:"id_token"`
-		AccessToken string `json:"access_token"`
+		IDToken string `json:"id_token"`
 	}
 	if err := json.Unmarshal(body, &tr); err != nil {
-		return Identity{}, err
+		return "", err
 	}
 	if tr.IDToken == "" {
-		return Identity{}, errors.New("google oauth: empty id_token")
+		return "", errors.New("token endpoint returned no id_token")
 	}
-	// Guard against a missing verifier: production wiring must supply a
-	// JWKS-backed GoogleVerifier. Without it we cannot trust the id_token,
-	// so fail closed with a clear error instead of panicking on a nil
-	// interface call.
-	if g.Verifier == nil {
-		return Identity{}, errors.New("google oauth: id_token verifier not configured")
+	return tr.IDToken, nil
+}
+
+// RandomToken returns n random bytes, base64url — state, nonce and PKCE
+// verifier values.
+func RandomToken(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
 	}
-	return g.Verifier.Verify(ctx, tr.IDToken)
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// PKCEChallenge is the S256 code challenge of a verifier.
+func PKCEChallenge(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }

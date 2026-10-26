@@ -26,6 +26,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	discoverypkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
+	authh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/auth"
 	discoveryh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/discovery"
 	perfh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/perf"
 	securityh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/security"
@@ -142,6 +143,17 @@ func EntitlementStore(d P10Deps) (*subpkg.Store, *subpkg.Verifier) {
 	return store, verifier
 }
 
+// SeatGate is the seat cap POST /api/users enforces: the entitlement's once a license
+// can be applied (a verifier). A build with no license key has no entitlement source,
+// so no cap: its home could never lift the free tier's single seat (the gate is inert
+// unwired, as auth.Handler documents).
+func SeatGate(store *subpkg.Store, verifier *subpkg.Verifier) authh.SeatLimiter {
+	if verifier == nil {
+		return nil
+	}
+	return subpkg.NewSeatLimiter(store)
+}
+
 // MountP10 attaches the four previously-orphaned handler packages.
 // Each handler is safe to mount with partial deps; missing inputs
 // surface as 404 / 503 at the route, not as a panic at boot.
@@ -191,9 +203,14 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 		// default-denied on every library read/search (Defect 1).
 		acl := &authz.ACLStore{DB: d.DB}
 		ph.Minter = discoveryh.NewTokenMinter(resolver, acl, refresh.New(d.DB), d.Keys)
+		// the TVs' sign-in codes outlive a restart: their key comes from the signing key
+		if k := d.Keys.Active(); k != nil && k.Private != nil {
+			ph.DeviceKey = discoveryh.DeviceKeyFrom(k.Private.D.Bytes())
+		}
 		ph.Audit = pairAudit{w: securityaudit.NewWriter(d.DB)}
 	}
 	ph.Mount(r)
+	ph.MountDevice(r, 0)
 
 	// Security disclosure + SBOM.
 	policy := d.SecurityPolicy

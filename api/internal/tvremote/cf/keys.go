@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/url"
 	"strings"
@@ -118,4 +119,26 @@ func SignToken(key SigningKey, sub string, ttl time.Duration, now time.Time, rul
 		return "", err
 	}
 	return signing + "." + enc.EncodeToString(sig), nil
+}
+
+// PrivateJWK is a signing key as a private RSA JWK, base64 of its JSON (the
+// form of Cloudflare's own jwk field), for a Worker that signs tokens with
+// WebCrypto (which imports a JWK, not a PKCS#1 PEM).
+func PrivateJWK(pemField, kid string) (string, error) {
+	k, err := ParseSigningKey(pemField)
+	if err != nil {
+		return "", err
+	}
+	k.Precompute()
+	b64 := func(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
+	e := big.NewInt(int64(k.E)).Bytes()
+	j := map[string]string{"kty": "RSA", "alg": "RS256", "kid": kid,
+		"n": b64(k.N.Bytes()), "e": b64(e), "d": b64(k.D.Bytes()),
+		"p": b64(k.Primes[0].Bytes()), "q": b64(k.Primes[1].Bytes()),
+		"dp": b64(k.Precomputed.Dp.Bytes()), "dq": b64(k.Precomputed.Dq.Bytes()), "qi": b64(k.Precomputed.Qinv.Bytes())}
+	blob, err := json.Marshal(j)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(blob), nil
 }

@@ -13,6 +13,7 @@ package grpcsrv
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -141,6 +142,25 @@ type Server struct {
 	// error): its folder keeps every segment until the session closes, so
 	// main.go refuses one with too little free on the cache's disk.
 	TranscodeRoom func() error
+
+	// Logger receives the session lifecycle (opened, reused, closed, refused);
+	// nil: slog's default.
+	Logger *slog.Logger
+}
+
+func (s *Server) log() *slog.Logger {
+	if s.Logger == nil {
+		return slog.Default()
+	}
+	return s.Logger
+}
+
+// stderrOf is the last of a session's encoder's stderr ("" without one).
+func stderrOf(t session.Transcoder) string {
+	if h, ok := t.(interface{ Stderr() string }); ok && h != nil {
+		return h.Stderr()
+	}
+	return ""
 }
 
 // New returns a Server with sensible defaults filled in.
@@ -178,8 +198,12 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	row, err := s.Probe.Lookup(ctx, videoUUID)
 	if err != nil {
 		if errors.Is(err, probe.ErrNotProbed) {
+			s.log().Warn("vod session refused: the video is not probed yet",
+				"video_id", req.VideoID, "event", "vod_open_not_probed")
 			return OpenSessionResponse{}, ErrFailedPrecondition
 		}
+		s.log().Warn("vod session refused: the video's probe could not be read",
+			"video_id", req.VideoID, "err", err.Error(), "event", "vod_open_probe_failed")
 		return OpenSessionResponse{}, ErrNotFound
 	}
 
@@ -190,17 +214,30 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	// latest to start before it). None: a new one starts there, beside the
 	// others — the user's other device plays on in its own, which the reaper
 	// closes once nothing fetches from it.
-	open, _ := s.Sessions.OpenByUserVideo(ctx, userUUID, videoUUID)
+	open, err := s.Sessions.OpenByUserVideo(ctx, userUUID, videoUUID)
+	if err != nil {
+		s.log().Warn("vod sessions of the video not listed: opening a new one",
+			"video_id", req.VideoID, "err", err.Error(), "event", "vod_open_dedupe_failed")
+	}
 	var reuse *session.Row
 	for _, existing := range open {
 		switch {
 		case existing.TranscodeCut():
-			_ = s.Sessions.Close(ctx, existing.ID, session.ReasonTranscodeFailed, s.Now().UTC())
+			s.log().Warn("vod session closed: its transcode ended short of the video's end",
+				"session_id", existing.ID.String(), "video_id", req.VideoID,
+				"reason", string(session.ReasonTranscodeFailed),
+				"stderr", lastStderrLines(stderrOf(existing.Transcoder)), "event", "vod_session_closed")
+			if cerr := s.Sessions.Close(ctx, existing.ID, session.ReasonTranscodeFailed, s.Now().UTC()); cerr != nil {
+				s.log().Warn("vod session not closed", "session_id", existing.ID.String(),
+					"err", cerr.Error(), "event", "vod_session_close_failed")
+			}
 		case s.reaches(existing, req.StartSec) && (reuse == nil || existing.StartSec >= reuse.StartSec):
 			reuse = existing
 		}
 	}
 	if reuse != nil {
+		s.log().Info("vod session reused", "session_id", reuse.ID.String(), "video_id", req.VideoID,
+			"mode", string(reuse.Mode), "start_sec", req.StartSec, "event", "vod_session_reused")
 		return s.respFor(reuse, ladderFor(row, req)), nil
 	}
 
@@ -250,6 +287,8 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		case slots.DecisionQueue:
 			state = session.StateQueued
 		case slots.DecisionExhausted:
+			s.log().Warn("vod session refused: every transcode slot is taken",
+				"video_id", req.VideoID, "event", "vod_slots_exhausted")
 			return OpenSessionResponse{}, ErrResourceExhausted
 		}
 	}
@@ -309,6 +348,11 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		})
 		if terr != nil {
 			release()
+			s.log().Error("vod transcode did not start", "session_id", sessID.String(),
+				"video_id", req.VideoID, "input", pathmap.Resolve(row.Path), "hwaccel", string(hw),
+				"err", terr.Error(), "event", "vod_transcode_start_failed")
+			// the reason is in the log line above: it names this host's paths,
+			// which the API would hand the player
 			return OpenSessionResponse{}, ErrFailedPrecondition
 		}
 		handle.OnEnd(release) // the slot is the encoder's, not the viewer's
@@ -346,9 +390,15 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 			cancel()
 		}
 		release()
+		s.log().Error("vod session not stored", "session_id", sessID.String(), "video_id", req.VideoID,
+			"err", err.Error(), "event", "vod_session_insert_failed")
 		return OpenSessionResponse{}, err
 	}
 
+	s.log().Info("vod session opened", "session_id", sessID.String(), "video_id", req.VideoID,
+		"mode", string(mode), "state", string(state), "verdict", verdict.Reason,
+		"source", row.Container+"/"+row.VideoCodec+"/"+row.AudioCodec, "height", row.Height,
+		"start_sec", start, "pid", pid, "event", "vod_session_opened")
 	return s.respFor(sessRow, ladder), nil
 }
 
@@ -441,6 +491,13 @@ func (s *Server) CloseSession(ctx context.Context, sessionID string) error {
 		return nil
 	}
 	err = s.Sessions.Close(ctx, id, session.ReasonAPI, s.Now().UTC())
+	if err != nil {
+		s.log().Warn("vod session not closed", "session_id", sessionID, "err", err.Error(),
+			"event", "vod_session_close_failed")
+	} else {
+		s.log().Info("vod session closed", "session_id", sessionID, "reason", string(session.ReasonAPI),
+			"event", "vod_session_closed")
+	}
 	if row.SlotHold != "" {
 		// its transcode's end gives it back too (closing stops it); a session
 		// without one (no orchestrator) only here
@@ -531,3 +588,12 @@ func getHostnameEnv() string {
 
 // getenv is overridable for tests.
 var getenv = func(_ string) string { return "" }
+
+// lastStderrLines is the last few lines of an encoder's stderr, for a log line.
+func lastStderrLines(stderr string) string {
+	lines := strings.Split(strings.TrimRight(stderr, "\n"), "\n")
+	if len(lines) > 10 {
+		lines = lines[len(lines)-10:]
+	}
+	return strings.Join(lines, "\n")
+}

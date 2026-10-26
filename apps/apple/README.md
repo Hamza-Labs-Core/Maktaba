@@ -9,6 +9,7 @@ SwiftUI apps that talk to a home's REST API, like the TV apps.
 | Maktaba Player Mac | macOS 15+, Apple silicon | `com.hamzalabs.maktaba.player.mac` | browse and watch |
 | Maktaba Remote | iPhone (iPhone Duo included) | `com.hamzalabs.maktaba.remote` | run a home (its admins only): needs attention, the queue, libraries, machines, the home's state |
 | Maktaba Remote iPad | iPad | `com.hamzalabs.maktaba.remote.tablet` | the same, on iPad |
+| Maktaba TV | Apple TV (tvOS 26) | `com.hamzalabs.maktaba.tv` | browse and watch on the television; sources in [`apps/tv/tvos`](../tv/tvos/) |
 
 `MaktabaKit/` is the Swift package they share: the API client (Bearer tokens, one refresh on
 a 401, `X-Maktaba-Client: native`), stream sessions (signed URLs; `StreamProxy` hands every `/stream/` request to

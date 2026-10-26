@@ -23,6 +23,8 @@ type Problem struct {
 func Write(w http.ResponseWriter, status int, problemType, title, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// the request log (LogFailures) writes the problem's name next to the status
+	w.Header().Set(ProblemHeader, problemType)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(Problem{
 		Type:   "https://maktaba.invalid/problems/" + problemType,

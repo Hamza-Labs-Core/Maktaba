@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 )
 
@@ -92,4 +93,161 @@ func (d *Detector) IsBlocked(ctx context.Context, s Subject) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+// Signal kinds recorded by the account side, in addition to the ones in
+// the package comment.
+const (
+	KindLoginFailed      = "login_failed"
+	KindRefreshReplay    = "refresh_token_replay"
+	KindSignup           = "signup"
+	KindStripeForgery    = "stripe_signature_forgery"
+	KindDispute          = "charge_dispute"
+	KindOAuthState       = "oauth_state"
+	KindPasswordResetReq = "password_reset_request"
+)
+
+// Login lockout (story 25.2): this many failed logins for one account
+// inside LockoutWindow lock it for LockoutFor.
+const (
+	LockoutThreshold = 10
+	LockoutWindow    = 15 * time.Minute
+	LockoutFor       = 30 * time.Minute
+)
+
+// LoginLocked reports whether the account has LockoutThreshold failed
+// logins in the last LockoutWindow, and if so how long until the oldest
+// of them ages out of the LockoutFor lock.
+func (d *Detector) LoginLocked(ctx context.Context, userID string) (bool, time.Duration, error) {
+	var n int
+	var newest sql.NullTime
+	err := d.DB.QueryRowContext(ctx, `
+        SELECT count(*), max(created_at) FROM abuse_signals
+        WHERE subject_kind = 'user' AND subject = $1 AND kind = $2
+          AND created_at > now() - make_interval(secs => $3)
+    `, userID, KindLoginFailed, LockoutFor.Seconds()).Scan(&n, &newest)
+	if err != nil {
+		return false, 0, err
+	}
+	if n < LockoutThreshold {
+		return false, 0, nil
+	}
+	// Count only the failures that fall inside one LockoutWindow ending
+	// at the newest: a slow trickle spread over 30 minutes is not a
+	// burst.
+	var burst int
+	if err := d.DB.QueryRowContext(ctx, `
+        SELECT count(*) FROM abuse_signals
+        WHERE subject_kind = 'user' AND subject = $1 AND kind = $2
+          AND created_at > $3::timestamptz - make_interval(secs => $4)
+    `, userID, KindLoginFailed, newest.Time, LockoutWindow.Seconds()).Scan(&burst); err != nil {
+		return false, 0, err
+	}
+	if burst < LockoutThreshold {
+		return false, 0, nil
+	}
+	left := time.Until(newest.Time.Add(LockoutFor))
+	if left <= 0 {
+		return false, 0, nil
+	}
+	return true, left, nil
+}
+
+// ClearLoginFailures forgets an account's failed logins after a
+// successful one, so a user who mistypes a few times a day is never
+// locked out by their own history.
+func (d *Detector) ClearLoginFailures(ctx context.Context, userID string) error {
+	_, err := d.DB.ExecContext(ctx, `DELETE FROM abuse_signals WHERE subject_kind = 'user' AND subject = $1 AND kind = $2`, userID, KindLoginFailed)
+	return err
+}
+
+// Unblock removes a subject from the blocklist. It reports whether the
+// subject was listed.
+func (d *Detector) Unblock(ctx context.Context, s Subject) (bool, error) {
+	res, err := d.DB.ExecContext(ctx, `DELETE FROM blocklist WHERE subject_kind = $1 AND subject = $2`, s.Kind, s.ID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// Signal is a recorded abuse signal, for the operator console.
+type Signal struct {
+	ID          int64          `json:"id"`
+	SubjectKind string         `json:"subject_kind"`
+	Subject     string         `json:"subject"`
+	Kind        string         `json:"kind"`
+	Severity    int            `json:"severity"`
+	Detail      map[string]any `json:"detail,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
+}
+
+// RecentSignals lists the newest signals, optionally for one subject.
+func (d *Detector) RecentSignals(ctx context.Context, subject *Subject, limit int) ([]Signal, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	q := `SELECT id, subject_kind, subject, kind, severity, detail, created_at FROM abuse_signals`
+	args := []any{}
+	if subject != nil {
+		q += ` WHERE subject_kind = $1 AND subject = $2`
+		args = append(args, subject.Kind, subject.ID)
+	}
+	args = append(args, limit)
+	q += ` ORDER BY created_at DESC, id DESC LIMIT $` + strconv.Itoa(len(args))
+	rows, err := d.DB.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Signal{}
+	for rows.Next() {
+		var s Signal
+		var dj []byte
+		if err := rows.Scan(&s.ID, &s.SubjectKind, &s.Subject, &s.Kind, &s.Severity, &dj, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		if len(dj) > 0 {
+			_ = json.Unmarshal(dj, &s.Detail)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// BlockEntry is one blocklist row.
+type BlockEntry struct {
+	SubjectKind string     `json:"subject_kind"`
+	Subject     string     `json:"subject"`
+	Reason      string     `json:"reason,omitempty"`
+	BlockedAt   time.Time  `json:"blocked_at"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+}
+
+// Blocklist lists the subjects currently blocked (expired rows are
+// left out).
+func (d *Detector) Blocklist(ctx context.Context) ([]BlockEntry, error) {
+	rows, err := d.DB.QueryContext(ctx, `
+        SELECT subject_kind, subject, COALESCE(reason,''), blocked_at, expires_at FROM blocklist
+        WHERE expires_at IS NULL OR expires_at > now()
+        ORDER BY blocked_at DESC LIMIT 500`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []BlockEntry{}
+	for rows.Next() {
+		var b BlockEntry
+		var exp sql.NullTime
+		if err := rows.Scan(&b.SubjectKind, &b.Subject, &b.Reason, &b.BlockedAt, &exp); err != nil {
+			return nil, err
+		}
+		if exp.Valid {
+			t := exp.Time
+			b.ExpiresAt = &t
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
 }

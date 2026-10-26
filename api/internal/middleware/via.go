@@ -25,6 +25,41 @@ func StripVia(next http.Handler) http.Handler {
 	})
 }
 
+// relayRefusedPrefixes are the routes for this home's machines and its own
+// processes alone: the cluster's join, channel, link, delegation and
+// handover routes and the release mirror. Machines reach them on the
+// network, never through the relay (Epic 32: "never through the relay"),
+// so RefuseRelayToMachines answers them 404 there. The people's routes
+// (the Machines page an admin uses) are not in the list.
+var relayRefusedPrefixes = []string{
+	"/api/cluster/join", "/api/cluster/agent", "/api/cluster/link",
+	"/api/cluster/delegate/", "/api/cluster/moved/", "/api/cluster/kept-aside/",
+	"/api/cluster/term-claim", "/api/cluster/updates/artifacts/",
+	"/api/cluster/updates/wheelhouse/", "/api/cluster/updates/tuf/", "/internal/",
+}
+
+// RefuseRelayToMachines answers 404 to a request the relay forwarded
+// (X-Maktaba-Via, which StripVia keeps only from loopback) for a
+// machine-only route. It must run after StripVia.
+func RefuseRelayToMachines(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(ViaHeader) != "" && relayRefused(r.URL.Path) {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func relayRefused(path string) bool {
+	for _, p := range relayRefusedPrefixes {
+		if path == p || strings.HasPrefix(path, p) && (strings.HasSuffix(p, "/") || path[len(p)] == '/') {
+			return true
+		}
+	}
+	return false
+}
+
 // localCallerKey marks a request this machine itself sent (MarkLocalCaller).
 type localCallerKey struct{}
 

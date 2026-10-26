@@ -27,6 +27,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/placement"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/procattr"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
@@ -169,7 +170,7 @@ func runSlot(args []string) error {
 	adminMux.Handle("/metrics", tvmetrics.Handler())
 	bg.Go(procWatchdog.Run)
 
-	publicSrv := &http.Server{Addr: *listen, Handler: srv.Handler(), ReadHeaderTimeout: 5 * time.Second}
+	publicSrv := &http.Server{Addr: *listen, Handler: httpx.LogFailures(logger)(srv.Handler()), ReadHeaderTimeout: 5 * time.Second}
 	adminSrv := &http.Server{Addr: *admin, Handler: adminMux, ReadHeaderTimeout: 5 * time.Second}
 	errCh := make(chan error, 2)
 	go func() {

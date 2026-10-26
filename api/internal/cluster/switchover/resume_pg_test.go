@@ -129,14 +129,9 @@ func TestASwitchCalledOffThawsTheHome(t *testing.T) {
 	if got := strings.Join(s.called(), " "); !strings.HasSuffix(got, "thaw relay:true") {
 		t.Fatalf("the supervisor's steps: %v", got)
 	}
-	// the row follows the state the switch reports (written just after): wait for it
+	// the row holds the state the switch reports (written before it is shown)
 	var state string
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
-		_ = o.DB.QueryRowContext(ctx, `SELECT state FROM cluster_switchovers WHERE id = $1`, id).Scan(&state)
-		if state == "failed" || time.Now().After(deadline) {
-			break
-		}
-	}
+	_ = o.DB.QueryRowContext(ctx, `SELECT state FROM cluster_switchovers WHERE id = $1`, id).Scan(&state)
 	if state != "failed" {
 		t.Fatalf("the row: %q", state)
 	}
