@@ -7,6 +7,8 @@ Phase 11 scaffolds the platform wrappers that re-use the shared
 |---|---|---|
 | [`apps/mobile/`](mobile/) | Capacitor 6 (iOS + Android) | Epic 12 |
 | [`apps/desktop/`](desktop/) | Tauri 2 (macOS / Win / Linux) | Epic 13 |
+| [`apps/apple/`](apple/) | SwiftUI: Player and Remote (iPhone, iPad, Mac) | Epic 42 |
+| [`apps/android/`](android/) | Jetpack Compose: Player and Remote (phone, foldable, tablet) | Epic 42 |
 
 Both wrappers expect `web/dist/` to exist; their build scripts call
 `pnpm --filter maktaba-web build` to produce it before bundling.
