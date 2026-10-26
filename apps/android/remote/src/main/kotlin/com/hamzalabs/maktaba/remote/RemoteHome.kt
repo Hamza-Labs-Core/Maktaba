@@ -59,23 +59,56 @@ enum class Place(val label: String, val icon: ImageVector) {
     Machines("Machines", Icons.Outlined.Dns),
 }
 
-/** What every Remote screen needs: the client, and how to report a failure or a sign-out. */
+/**
+ * What every Remote screen needs: the client, and how to report a failure or a sign-out.
+ * A screen's loads and its actions fail apart: the next poll that works clears a load's
+ * failure, never an action's (that stays until another action, a refresh or another place).
+ */
 class Remote(val client: ApiClient, private val session: AppSession) {
-    var problem by mutableStateOf<String?>(null)
+    private var loadProblem by mutableStateOf<String?>(null)
+    private var actionProblem by mutableStateOf<String?>(null)
 
-    /** Runs [block]; a sign-out goes back to signing in, anything else shows as the problem. */
-    suspend fun <T> call(block: suspend ApiClient.() -> T): T? = try {
-        client.block().also { problem = null }
+    /** What went wrong, to show above the list. */
+    val problem: String? get() = actionProblem ?: loadProblem
+
+    fun clear() {
+        loadProblem = null
+        actionProblem = null
+    }
+
+    /** Reads the home's state: a failure shows until a read works again. */
+    suspend fun <T> load(block: suspend ApiClient.() -> T): T? =
+        attempt(block).also { loadProblem = if (it != null) null else lastError }
+
+    /** Changes the home: each failure is kept and shown, labelled by [what] when given. */
+    suspend fun act(what: String? = null, block: suspend ApiClient.() -> Unit): Boolean {
+        if (attempt(block) != null) return true
+        val why = lastError ?: return false
+        actionProblem = listOfNotNull(actionProblem, if (what != null) "$what: $why" else why).joinToString("\n")
+        return false
+    }
+
+    /** A new action starts with a clean slate. */
+    fun startAction() {
+        actionProblem = null
+    }
+
+    private var lastError: String? = null
+
+    /** Runs [block]; a sign-out goes back to signing in, anything else is the last error. */
+    private suspend fun <T> attempt(block: suspend ApiClient.() -> T): T? = try {
+        client.block().also { lastError = null }
     } catch (e: CancellationException) {
         throw e
     } catch (e: ApiException.SignedOut) {
         session.signedOut()
+        lastError = null
         null
     } catch (e: ApiException.Status) {
-        problem = if (e.code == 403) "The home refused: only its admins can do this." else e.message
+        lastError = if (e.code == 403) "The home refused: only its admins can do this." else e.message
         null
     } catch (e: Exception) {
-        problem = e.message
+        lastError = e.message ?: e.toString()
         null
     }
 }
@@ -94,7 +127,7 @@ fun RemoteHome(session: AppSession, user: User, client: ApiClient, themes: Theme
             Place.entries.forEach { p ->
                 item(
                     selected = p == place,
-                    onClick = { place = p; remote.problem = null },
+                    onClick = { place = p; remote.clear() },
                     icon = { Icon(p.icon, null) },
                     label = { Text(p.label) },
                 )

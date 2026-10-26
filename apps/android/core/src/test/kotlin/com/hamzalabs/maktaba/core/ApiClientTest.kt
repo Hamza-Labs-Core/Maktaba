@@ -238,6 +238,47 @@ class ApiClientTest {
     }
 
     @Test
+    fun aBusyHomeDoesNotSignOut() = runBlocking {
+        route = { r -> if (r.url.encodedPath == "/api/auth/refresh") json(429, "slow down") else json(401, "{}") }
+        val tokens = MemoryTokens(stale, "r1")
+        try {
+            client(tokens).libraries()
+            fail("expected a 429")
+        } catch (e: ApiException.Status) {
+            assertEquals(429, e.code)
+        }
+        assertEquals("a 429 keeps the tokens", "r1", tokens.refresh)
+    }
+
+    @Test
+    fun aFastClockDoesNotRefreshOnEveryRequest() = runBlocking {
+        // this device runs 20 minutes ahead: every token it gets looks already expired
+        val c = ApiClient(server.url("/"), MemoryTokens(jwt(nowSec - 60), "r1"), now = { (nowSec + 1200) * 1000 })
+        repeat(5) { c.playbackToken(60) }
+        assertEquals("one refresh, then the fresh token is used", 1, refreshes.get())
+    }
+
+    @Test
+    fun waitingForAStreamRefreshesOnA401AndStaysOnThisHome() = runBlocking {
+        route = { r ->
+            when {
+                r.url.encodedPath == "/api/auth/refresh" -> defaultRoute(r)
+                r.headers["Authorization"] != "Bearer $fresh" -> json(401, "")
+                r.url.encodedPath.endsWith("master.m3u8") -> json(200, "#EXTM3U\nhttps://cdn.example.com/v0.m3u8\n")
+                else -> json(200, "#EXTM3U\n")
+            }
+        }
+        try {
+            client(MemoryTokens(stale, "r1")).waitUntilPlayable(server.url("/stream/s1/master.m3u8"), intervalMs = 1)
+            fail("a rendition on another host must not get the token")
+        } catch (e: ApiException.Status) {
+            assertTrue(e.body.contains("cdn.example.com"))
+        }
+        assertEquals("the master's 401 refreshed once", 1, refreshes.get())
+        assertTrue("nothing went to another host", seen.all { it.url.host == server.url("/").host })
+    }
+
+    @Test
     fun readsAJwtsExpiry() {
         assertEquals((nowSec + 900) * 1000, ApiClient.jwtExpiry(fresh))
         assertNull(ApiClient.jwtExpiry("not-a-jwt"))

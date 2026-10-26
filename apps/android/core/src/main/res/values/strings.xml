@@ -33,4 +33,6 @@
     <string name="signin_wrong">Invalid username or password.</string>
     <string name="signin_unreachable">Could not reach %1$s.</string>
     <string name="other_home">Choose another home</string>
+    <string name="signin_kept_failed">Could not check your sign-in: %1$s</string>
+    <string name="try_again">Try again</string>
 </resources>

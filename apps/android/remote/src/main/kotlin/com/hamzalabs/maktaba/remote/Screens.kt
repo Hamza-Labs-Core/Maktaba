@@ -97,11 +97,12 @@ fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     suspend fun load() {
-        remote.call { needsAttention() }?.let { groups = it }
+        remote.load { needsAttention() }?.let { groups = it }
     }
     suspend fun retry(gs: List<FailureGroup>) {
         busy = if (gs.size == 1) gs[0].id else "all"
-        for (g in gs) remote.call { retry(g.stage, g.cause) } ?: remote.problem?.let { remote.problem = "${g.label}: $it" }
+        remote.startAction()
+        for (g in gs) remote.act(g.label) { retry(g.stage, g.cause) }
         busy = null
         load()
     }
@@ -113,7 +114,7 @@ fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
         remote = remote,
         account = account,
         refreshing = refreshing,
-        onRefresh = { refreshing = true; load(); refreshing = false },
+        onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
         actions = {
             TextButton(onClick = { scope.launch { retry(retryable) } }, enabled = retryable.isNotEmpty() && busy == null) {
                 if (busy == "all") Busy() else Text("Retry all")
@@ -189,12 +190,13 @@ fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     suspend fun load() {
-        remote.call { queues() }?.let { snap = it }
+        remote.load { queues() }?.let { snap = it }
     }
     fun act(id: String, block: suspend com.hamzalabs.maktaba.core.api.ApiClient.() -> Unit) {
         scope.launch {
             busy = id
-            remote.call(block)
+            remote.startAction()
+            remote.act(block = block)
             busy = null
             load()
         }
@@ -207,7 +209,7 @@ fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
         remote = remote,
         account = account,
         refreshing = refreshing,
-        onRefresh = { refreshing = true; load(); refreshing = false },
+        onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
         actions = {
             val s = snap
             if (s != null) {
@@ -299,12 +301,13 @@ fun LibrariesScreen(remote: Remote, account: @Composable () -> Unit) {
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     suspend fun load() {
-        remote.call { libraries() }?.let { libraries = it }
+        remote.load { libraries() }?.let { libraries = it }
     }
     fun scan(id: String) {
         scope.launch {
             busy = id
-            if (remote.call { scanLibrary(id) } != null) scanned = scanned + id
+            remote.startAction()
+            if (remote.act { scanLibrary(id) }) scanned = scanned + id
             busy = null
         }
     }
@@ -315,7 +318,7 @@ fun LibrariesScreen(remote: Remote, account: @Composable () -> Unit) {
         remote = remote,
         account = account,
         refreshing = refreshing,
-        onRefresh = { refreshing = true; load(); refreshing = false },
+        onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
         chosenTitle = lib?.name,
         onUnchoose = { chosen = null },
         detail = lib?.let { l ->
@@ -364,7 +367,7 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     suspend fun load() {
-        remote.call { machines() }?.let { overview = it }
+        remote.load { machines() }?.let { overview = it }
     }
     Polling(15_000) { load() }
     val machine = overview?.nodes?.firstOrNull { it.id == chosen }
@@ -373,7 +376,7 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
         remote = remote,
         account = account,
         refreshing = refreshing,
-        onRefresh = { refreshing = true; load(); refreshing = false },
+        onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
         chosenTitle = machine?.name,
         onUnchoose = { chosen = null },
         detail = machine?.let { m ->
@@ -381,7 +384,8 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
                 MachineDetail(m, busy == m.id) { drain ->
                     scope.launch {
                         busy = m.id
-                        remote.call { setDrain(m.id, drain) }
+                        remote.startAction()
+                        remote.act { setDrain(m.id, drain) }
                         busy = null
                         load()
                     }

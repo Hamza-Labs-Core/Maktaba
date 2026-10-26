@@ -31,4 +31,6 @@
     <string name="signin_wrong">اسم المستخدم أو كلمة المرور غير صحيحة.</string>
     <string name="signin_unreachable">تعذّر الوصول إلى %1$s.</string>
     <string name="other_home">اختيار جهاز رئيسي آخر</string>
+    <string name="signin_kept_failed">تعذّر التحقق من تسجيل دخولك: %1$s</string>
+    <string name="try_again">إعادة المحاولة</string>
 </resources>

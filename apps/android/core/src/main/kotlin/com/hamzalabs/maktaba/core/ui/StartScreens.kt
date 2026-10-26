@@ -333,7 +333,12 @@ fun SignIn(session: AppSession, app: MaktabaApp) {
             }
         }
     }
+    val kept by session.restoreProblem.collectAsState()
     StartFrame(app) {
+        kept?.let { why ->
+            Text(stringResource(R.string.signin_kept_failed, why), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = session::retryRestore) { Text(stringResource(R.string.try_again)) }
+        }
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(stringResource(R.string.signin_to, name), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
             Text(home?.url?.substringAfter("://") ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

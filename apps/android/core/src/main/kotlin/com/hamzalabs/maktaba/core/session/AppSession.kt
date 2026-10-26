@@ -1,8 +1,10 @@
 package com.hamzalabs.maktaba.core.session
 
 import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.Me
 import com.hamzalabs.maktaba.core.api.User
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -71,6 +73,10 @@ class AppSession(
     private val _phase = MutableStateFlow<Phase>(Phase.ChoosingHome)
     val phase: StateFlow<Phase> = _phase.asStateFlow()
 
+    private val _restoreProblem = MutableStateFlow<String?>(null)
+    /** Why the kept sign-in could not be checked (the home did not answer): try again, or sign in. */
+    val restoreProblem: StateFlow<String?> = _restoreProblem.asStateFlow()
+
     /** The client for the current home (null while choosing one). */
     var client: ApiClient? = null
         private set
@@ -91,8 +97,27 @@ class AppSession(
         val c = clientFor(home.httpUrl, tokens)
         client = c
         _phase.value = Phase.SigningIn
-        if (tokens.access != null) {
-            scope.launch { runCatching { c.whoami() }.getOrNull()?.let { signedIn(c, it) } }
+        _restoreProblem.value = null
+        if (tokens.access != null) restore(c)
+    }
+
+    /** Signs in again with the kept tokens, if the home answers. */
+    fun retryRestore() {
+        client?.let(::restore)
+    }
+
+    private fun restore(c: ApiClient) {
+        scope.launch {
+            try {
+                signedIn(c, c.whoami())
+                _restoreProblem.value = null
+            } catch (e: ApiException.SignedOut) {
+                _restoreProblem.value = null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (c === client) _restoreProblem.value = e.message ?: e.toString()
+            }
         }
     }
 

@@ -58,10 +58,12 @@ class HomeDiscovery(context: Context) {
 
     fun homes(): Flow<List<FoundHome>> = callbackFlow {
         val found = linkedMapOf<String, FoundHome>()
+        /** Services announced and not lost: a resolve that ends after its service left is dropped. */
+        val present = mutableSetOf<String>()
         val lock = Any()
         fun publish() = trySend(synchronized(lock) { found.values.distinctBy { it.id ?: it.url } })
         val resolver = Resolver(nsd) { instance, home ->
-            synchronized(lock) { if (home != null) found[instance] = home else found.remove(instance) }
+            synchronized(lock) { if (home != null && instance in present) found[instance] = home else found.remove(instance) }
             publish()
         }
         val listener = object : NsdManager.DiscoveryListener {
@@ -69,10 +71,16 @@ class HomeDiscovery(context: Context) {
             override fun onDiscoveryStopped(serviceType: String) {}
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) { close() }
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
-            override fun onServiceFound(info: NsdServiceInfo) = resolver.resolve(info)
+            override fun onServiceFound(info: NsdServiceInfo) {
+                synchronized(lock) { present += info.serviceName }
+                resolver.resolve(info)
+            }
             override fun onServiceLost(info: NsdServiceInfo) {
                 resolver.lost(info)
-                synchronized(lock) { found.remove(info.serviceName) }
+                synchronized(lock) {
+                    present -= info.serviceName
+                    found.remove(info.serviceName)
+                }
                 publish()
             }
         }
@@ -110,7 +118,9 @@ class HomeDiscovery(context: Context) {
         @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
         private fun follow(info: NsdServiceInfo) {
             val cb = object : NsdManager.ServiceInfoCallback {
-                override fun onServiceInfoCallbackRegistrationFailed(errorCode: Int) {}
+                override fun onServiceInfoCallbackRegistrationFailed(errorCode: Int) {
+                    synchronized(callbacks) { callbacks.remove(info.serviceName) }
+                }
                 override fun onServiceUpdated(s: NsdServiceInfo) {
                     val host = s.hostAddresses.firstOrNull { it is Inet4Address } ?: s.hostAddresses.firstOrNull()
                     done(info.serviceName, foundHome(s.serviceName, host, s.port, txt(s)))
@@ -123,6 +133,7 @@ class HomeDiscovery(context: Context) {
                 callbacks[info.serviceName] = cb
             }
             runCatching { nsd.registerServiceInfoCallback(info, executor, cb) }
+                .onFailure { synchronized(callbacks) { callbacks.remove(info.serviceName) } }
         }
 
         @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)

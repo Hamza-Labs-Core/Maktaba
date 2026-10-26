@@ -9,6 +9,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -19,9 +20,13 @@ import com.hamzalabs.maktaba.core.api.Video
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * What is playing, for the whole app: the watch screen may be full screen (folded, open flat,
@@ -53,6 +58,8 @@ class Playback(
     /** When to reopen: just before the signed URL ends. */
     private var renewAt = Long.MAX_VALUE
     private var openedAt = 0L
+    /** The video played to its end (and the home was told). */
+    private var ended = false
     private var running: Job? = null
     private val streamHttp by lazy { client.streamHttp() }
 
@@ -87,36 +94,47 @@ class Playback(
         if (player != null) watch()
     }
 
-    /** Opens (or reopens) the stream at [fromMs]. */
+    /**
+     * Opens (or reopens) the stream at [fromMs]. The session in use is closed only once the new
+     * one plays; a reopen that fails leaves the old stream playing (it shows why only when there
+     * is nothing left to play).
+     */
     private suspend fun open(fromMs: Long) {
         val v = video ?: return
+        val old = session
         try {
-            val s = client.openStream(v.id, (fromMs / 1000).toInt())
-            val url = s.playbackUrl(client.home)
-            if (url == null) {
-                problem = "The home gave no address to play."
-                return
+            // a session the home opened is always closed, even when the player stopped meanwhile
+            val s = withContext(NonCancellable) { client.openStream(v.id, (fromMs / 1000).toInt()) }
+            try {
+                currentCoroutineContext().ensureActive()
+                val url = s.playbackUrl(client.home) ?: throw IllegalStateException("The home gave no address to play.")
+                client.waitUntilPlayable(url)
+                currentCoroutineContext().ensureActive()
+                val item = MediaItem.Builder()
+                    .setUri(url.toString())
+                    .apply { if (s.isHls) setMimeType(MimeTypes.APPLICATION_M3U8) }
+                    .build()
+                val p = player ?: newPlayer()
+                p.setMediaItem(item, fromMs)
+                p.prepare()
+                p.playWhenReady = true
+                player = p
+            } catch (e: Throwable) {
+                background.launch { client.closeStream(s.sessionId) }
+                throw e
             }
-            session?.takeIf { it != s.sessionId }?.let { old -> background.launch { client.closeStream(old) } }
             session = s.sessionId
-            client.waitUntilPlayable(url)
+            ended = false
             openedAt = System.currentTimeMillis()
             renewAt = (s.expiresMillis ?: Long.MAX_VALUE).let { if (it == Long.MAX_VALUE) it else it - 60_000 }
-            val item = MediaItem.Builder()
-                .setUri(url.toString())
-                .apply { if (s.isHls) setMimeType(MimeTypes.APPLICATION_M3U8) }
-                .build()
-            val p = player ?: newPlayer()
-            p.setMediaItem(item, fromMs)
-            p.prepare()
-            p.playWhenReady = true
-            player = p
+            if (old != null && old != s.sessionId) background.launch { client.closeStream(old) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiException.SignedOut) {
             stop()
             signedOut()
         } catch (e: Exception) {
+            if (old != null && player?.playerError == null) return
             player?.release()
             player = null
             problem = e.message ?: e.toString()
@@ -146,6 +164,12 @@ class Playback(
             val p = player ?: return
             val s = session ?: return
             val at = p.currentPosition
+            if (p.playbackState == Player.STATE_ENDED) {
+                // watched to the end: said once, not again every 10 s
+                if (!ended) client.reportProgress(s, (at / 1000).toInt(), completed = true)
+                ended = true
+                continue
+            }
             if (at > 0) client.reportProgress(s, (at / 1000).toInt())
             val failed = p.playerError
             if (failed != null && System.currentTimeMillis() - openedAt < 30_000) {

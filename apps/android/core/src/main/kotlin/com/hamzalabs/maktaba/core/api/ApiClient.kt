@@ -103,8 +103,15 @@ class ApiClient(
         val access = tokens.access
         val exp = access?.let(::jwtExpiry)
         if (exp != null && exp - now() >= minLifeSec * 1000) return access
+        // a token this client got moments ago is fresh, whatever this device's clock says of its
+        // `exp` (a clock that runs fast would otherwise refresh on every segment)
+        val fresh = lastRefresh
+        if (access != null && fresh != null && fresh.first == access && now() - fresh.second < FRESH_MS) return access
         return refreshAfter(access)
     }
+
+    /** The last access token this client refreshed to, and when (this device's clock). */
+    @Volatile private var lastRefresh: Pair<String, Long>? = null
 
     /** Whether [url] is this home's `/stream/`: the only place the player sends the token. */
     fun isStream(url: HttpUrl): Boolean =
@@ -131,10 +138,14 @@ class ApiClient(
         }
     }
 
+    /** A `/stream/` GET of this home with the token, refreshed once on a 401 (as the player's). */
     private suspend fun fetchStream(url: HttpUrl): Pair<Int, String> {
+        if (!isStream(url)) throw ApiException.Status(0, "not this home's stream: ${url.host}")
+        suspend fun get(token: String) = execute(Request.Builder().url(url).header("Authorization", "Bearer $token").build())
         val token = playbackToken(60)
-        val r = Request.Builder().url(url).header("Authorization", "Bearer $token").build()
-        return execute(r).let { (code, body) -> code to String(body) }
+        var (code, body) = get(token)
+        if (code == 401) get(refreshAfter(token)).let { code = it.first; body = it.second }
+        return code to String(body)
     }
 
     // ---------- remote (home admins; the home refuses anyone else) ----------
@@ -229,12 +240,14 @@ class ApiClient(
         val refresh = tokens.refresh ?: throw ApiException.SignedOut
         val body = buildJsonObject { put("refresh_token", JsonPrimitive(refresh)) }
         val (code, bytes) = exchange(request("POST", "/api/auth/refresh", body = body), null)
-        if (code in 400..499) {
+        // the home refused the refresh token; a busy (429) or failing home keeps the tokens
+        if (code == 400 || code == 401 || code == 403) {
             tokens.clear()
             throw ApiException.SignedOut
         }
         val t: AuthTokens = decode(checked(code, bytes))
         tokens.save(t)
+        lastRefresh = t.accessToken to now()
         t.accessToken
     }
 
@@ -270,6 +283,9 @@ class ApiClient(
 
     companion object {
         private val JSON = "application/json".toMediaType()
+
+        /** How long a just-refreshed access token counts as fresh (it lasts 15 minutes). */
+        private const val FRESH_MS = 10 * 60_000L
 
         val json = Json {
             ignoreUnknownKeys = true
