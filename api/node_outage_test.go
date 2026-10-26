@@ -52,9 +52,6 @@ func (f *outageHome) Introspect(context.Context, delegation.IntrospectRequest) (
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 		Principal: delegation.Principal{UserID: "u1", Username: "amal", Libraries: []string{}}}, nil
 }
-func (f *outageHome) Exchange(context.Context, delegation.ExchangeRequest) (*delegation.ExchangeAnswer, error) {
-	return nil, homelink.ErrUnauthorized
-}
 func (f *outageHome) JWKS(context.Context) ([]byte, error) { return []byte(`{"keys":[]}`), nil }
 func (f *outageHome) Self(context.Context) (json.RawMessage, error) {
 	if f.isDown() {

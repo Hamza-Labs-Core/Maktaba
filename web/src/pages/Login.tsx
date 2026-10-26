@@ -1,11 +1,8 @@
 // Login page (Story 10.2 cookie flow).
 //
-// Epic 35 (design §10.5): `?next=` names where to go once signed in. On the
-// home it is the cluster sign-in step a node sent the user to
-// (/api/cluster/sso/authorize?...), which is an API redirect: the page goes
-// there with a full navigation. Any other relative path is an app route.
-// Only a path on this site is followed, never an absolute URL. On a node, the
-// cluster sign-in prompt offers to sign in through the home instead.
+// The sign-in form is the only way in, on every machine: a node checks it against the
+// home's accounts (Epic 35). `?next=` names where to go once signed in; only a path on
+// this site is followed, never an absolute URL.
 //
 // A node that cannot reach its home checks a sign-in against its own copy of the
 // home's database (Epic 37): the page says the sign-in holds on this machine only.
@@ -14,12 +11,11 @@
 // session again, so a user a reload landed here goes back in.
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
-import { ClusterSignIn } from "../components/ClusterSignIn";
 import { useHomeUnreachable } from "../components/HomeOffline";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
-import { ApiError, apiUrl, isHomeUnreachable } from "../lib/api";
-import { SSO_AUTHORIZE_PATH, assignLocation, safeRelativePath } from "../lib/navigation";
+import { ApiError, isHomeUnreachable } from "../lib/api";
+import { safeRelativePath } from "../lib/navigation";
 
 interface LocationState {
   from?: string;
@@ -45,10 +41,8 @@ export function Login() {
   const [error, setError] = useState<string | null>(null);
   const left = useRef(false);
 
-  const next = safeRelativePath(new URLSearchParams(location.search).get("next"));
-  const toAuthorize = next !== null && next.startsWith(SSO_AUTHORIZE_PATH);
   const dest =
-    (toAuthorize ? null : next) ??
+    safeRelativePath(new URLSearchParams(location.search).get("next")) ??
     safeRelativePath((location.state as LocationState | null)?.from) ??
     "/library";
   const signedOut = (location.state as LocationState | null)?.signedOut;
@@ -56,9 +50,8 @@ export function Login() {
   const leave = useCallback(() => {
     if (left.current) return;
     left.current = true;
-    if (toAuthorize && next) assignLocation(apiUrl(next));
-    else nav(dest, { replace: true });
-  }, [toAuthorize, next, dest, nav]);
+    nav(dest, { replace: true });
+  }, [dest, nav]);
 
   // already signed in (or the session probe finished): go on
   useEffect(() => {
@@ -114,7 +107,6 @@ export function Login() {
     <main className="mkt-login">
       <form className="mkt-login__form" onSubmit={onSubmit} aria-label={t("login.submit")}>
         <h1 className="mkt-login__title">{t("app.title")}</h1>
-        {!toAuthorize && !homeOut && <ClusterSignIn returnTo={dest} />}
         {homeOut && (
           <p className="mkt-login__hint" role="note">
             {t("homeOffline.signInHere")}

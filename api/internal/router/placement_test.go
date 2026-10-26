@@ -84,7 +84,10 @@ func TestPlacementExamples(t *testing.T) {
 	}{
 		{"GET", "/api/system/version", placement.Local},
 		{"GET", "/api/cluster/self", placement.Local},
+		// the cluster sign-in's routes, removed: every machine answers them 404 itself
 		{"GET", "/api/cluster/sso/callback", placement.Local},
+		{"GET", "/api/cluster/sso/authorize", placement.Local},
+		{"POST", "/api/cluster/sso/exchange", placement.Local},
 		{"POST", "/api/stream/sessions", placement.Local},
 		{"POST", "/api/stream/sessions/{id}/progress", placement.Home},
 		{"GET", "/api/videos", placement.Any},

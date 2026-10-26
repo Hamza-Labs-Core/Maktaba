@@ -53,7 +53,6 @@ type Link interface {
 	// HomeURL is the home's API base URL the Transport sends to.
 	HomeURL() string
 	Introspect(ctx context.Context, req delegation.IntrospectRequest) (*delegation.IntrospectAnswer, error)
-	Exchange(ctx context.Context, req delegation.ExchangeRequest) (*delegation.ExchangeAnswer, error)
 	// JWKS is the home's JSON Web Key Set (bearer access tokens are verified locally).
 	JWKS(ctx context.Context) ([]byte, error)
 	// Self is the home's GET /api/cluster/self (its name, web address, version).
@@ -224,15 +223,6 @@ func (l *HTTPLink) call(ctx context.Context, method, path string, body any, out 
 func (l *HTTPLink) Introspect(ctx context.Context, req delegation.IntrospectRequest) (*delegation.IntrospectAnswer, error) {
 	var a delegation.IntrospectAnswer
 	if err := l.call(ctx, http.MethodPost, "/api/cluster/delegate/introspect", req, &a); err != nil {
-		return nil, err
-	}
-	return &a, nil
-}
-
-// Exchange implements Link.
-func (l *HTTPLink) Exchange(ctx context.Context, req delegation.ExchangeRequest) (*delegation.ExchangeAnswer, error) {
-	var a delegation.ExchangeAnswer
-	if err := l.call(ctx, http.MethodPost, "/api/cluster/sso/exchange", req, &a); err != nil {
 		return nil, err
 	}
 	return &a, nil

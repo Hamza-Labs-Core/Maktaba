@@ -132,8 +132,8 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                      "a failure is tried, what waits on the model, a share or disk space "
                      "and how often those are checked, which failures are of which class"),
     "cluster": (ClusterMachinesConfig, "Machines", "every machine of the cluster as the same "
-                "Maktaba: one sign-in for all of them, when a machine stops waiting for the "
-                "home"),
+                "Maktaba: the home's accounts on all of them, when a machine stops waiting for "
+                "the home"),
     "transcription": (TranscriptionConfig, "Transcription", "which machines transcribe: "
                       "while the second listen is on, those that run it, unless machines "
                       "without it may too"),

@@ -29,19 +29,19 @@ import (
 // KitTables are the tables replication leaves out that the new home needs as they are:
 // the home's secrets and tokens, the web sessions (live cookies: a copy holds their
 // hashes only), the machines and their stage switches, the licence, the devices, the
-// audit log (cluster_copy_excluded() but each database's own state and the caches,
-// which the new home makes again). A table this home lacks (an older schema) is
-// skipped.
+// audit log (cluster_copy_excluded() but each database's own state, the caches, which
+// the new home makes again, and cluster_sso_codes, which nothing writes since the
+// cluster sign-in was removed). A table this home lacks (an older schema) is skipped.
 var KitTables = []string{
 	"home_secrets", "tv_cluster_secret", "tv_push_secrets", "tv_simulcast_destinations",
-	"refresh_tokens", "password_reset_tokens", "pairing_tickets", "cluster_sso_codes",
+	"refresh_tokens", "password_reset_tokens", "pairing_tickets",
 	"idempotency_keys", "licenses", "devices", "device_downloads", "audit_log", "web_sessions",
 	"cluster_nodes", "cluster_node_stages", "cluster_kept_aside",
 }
 
 // StandbyTables are the kit's tables a standby home keeps for an emergency: KitTables but
 // the history and the tokens that last minutes (the audit log, idempotency keys, reset
-// tokens, pairing tickets, SSO codes). The home gathers it again whenever its secrets,
+// tokens, pairing tickets). The home gathers it again whenever its secrets,
 // keys or machines change, so it stays small.
 var StandbyTables = []string{
 	"home_secrets", "tv_cluster_secret", "tv_push_secrets", "tv_simulcast_destinations",

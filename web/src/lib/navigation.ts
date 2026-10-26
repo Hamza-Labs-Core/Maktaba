@@ -1,11 +1,5 @@
-// Whole-page navigation (Epic 35): the cluster sign-in goes through the API
-// (node -> home -> node), which the router cannot do. Kept in one module so
+// Whole-page navigation and the addresses the app follows. Kept in one module so
 // tests can mock it (jsdom's window.location cannot be spied on).
-
-/** Leaves the app for url (a full page load). */
-export function assignLocation(url: string): void {
-  window.location.assign(url);
-}
 
 /** Reloads the page (a new build may be waiting). */
 export function reloadPage(): void {
@@ -27,14 +21,6 @@ export function safeRelativePath(raw: string | null | undefined): string | null 
     if (c < 0x20 || c === 0x7f) return null;
   }
   return raw;
-}
-
-/** The home's cluster sign-in step a node sent the user to (design §10.5). */
-export const SSO_AUTHORIZE_PATH = "/api/cluster/sso/authorize";
-
-/** Where a node starts the cluster sign-in, coming back to returnTo. */
-export function ssoStartUrl(returnTo: string): string {
-  return `/api/cluster/sso/start?return=${encodeURIComponent(returnTo)}`;
 }
 
 /** u when it is an http(s) address (a machine's reported web address), else null. */

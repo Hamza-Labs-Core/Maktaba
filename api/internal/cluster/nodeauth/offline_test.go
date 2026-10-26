@@ -92,9 +92,6 @@ func (f *fakeHome) Introspect(_ context.Context, req delegation.IntrospectReques
 	return &delegation.IntrospectAnswer{Source: src, CSRFSHA256: s1CSRFHash, ExpiresAt: f.expires,
 		Principal: delegation.Principal{UserID: "u1", Username: "amal", Libraries: []string{"lib1"}}}, nil
 }
-func (f *fakeHome) Exchange(context.Context, delegation.ExchangeRequest) (*delegation.ExchangeAnswer, error) {
-	return nil, homelink.ErrUnauthorized
-}
 func (f *fakeHome) JWKS(context.Context) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

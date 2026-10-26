@@ -5678,16 +5678,8 @@
   {
    "key": "cluster",
    "title": "Machines",
-   "what": "every machine of the cluster as the same Maktaba: one sign-in for all of them, when a machine stops waiting for the home",
+   "what": "every machine of the cluster as the same Maktaba: the home's accounts on all of them, when a machine stops waiting for the home",
    "fields": [
-    {
-     "name": "sso",
-     "kind": "bool",
-     "group": "Machines",
-     "label": "One sign-in for every machine",
-     "help": "Opening another machine offers \"Continue with <home>\": a one-time code carries the sign-in there. Off: each machine asks for its own sign-in (still against the home's accounts).",
-     "default": true
-    },
     {
      "name": "delegate_unreachable_grace_seconds",
      "kind": "int",
