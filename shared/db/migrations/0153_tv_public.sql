@@ -17,7 +17,7 @@
 -- machine cannot make a channel public by writing a row, `rights_sig` is an HMAC by the
 -- home (its key in home_secrets, which machines cannot read) over the channel, the flag,
 -- the slug and the confirmation: the home ignores a public row whose signature does not
--- match.
+-- match, nor one whose signature is not the latest the home recorded (a replay).
 --
 CREATE TABLE IF NOT EXISTS tv_public_channels (
     channel_id           UUID        PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,

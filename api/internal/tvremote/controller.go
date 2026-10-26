@@ -80,6 +80,7 @@ type Controller struct {
 	sched    map[string]schedCache // resolved windows per attachment
 	holds    map[string]bool       // channel -> its push is held by simulcast
 	pubHolds map[string]bool       // channel -> its push is held by the public site (Epic 34)
+	pubMu    sync.Mutex            // one public decision at a time (the home's record of them)
 	noted    map[string]bool       // notices given once
 	outPoll  map[string]time.Time  // output row -> last Cloudflare poll
 	outRetry map[string]time.Time  // errored output row -> last attempt

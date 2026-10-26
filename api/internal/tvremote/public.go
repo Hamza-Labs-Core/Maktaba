@@ -50,6 +50,11 @@ const (
 	// machines may write that table (slot 0153 keeps their default rights) but
 	// cannot read home_secrets, so a row they write is not taken as public.
 	SecretPublicRowKey = "tv_public_row_key"
+	// SecretPublicState is the home's own record of which channels are public:
+	// channel -> the signature of its current public decision. A signed row a
+	// machine saved and wrote back later (a replay of an older decision) does
+	// not match it.
+	SecretPublicState = "tv_public_state"
 	// HoldPublic: the push is held by the public site (always on).
 	HoldPublic = "public"
 	// SiteStatePath is the Worker's endpoint for the home's state.
@@ -153,6 +158,16 @@ func (c *Controller) rowKey(ctx context.Context) ([]byte, error) {
 	return k, nil
 }
 
+// publicState reads the home's record of the public channels (empty when none).
+func (c *Controller) publicState(ctx context.Context) (map[string]string, error) {
+	m := map[string]string{}
+	raw, err := c.Integration.Secrets.Get(ctx, SecretPublicState)
+	if err != nil || len(raw) == 0 {
+		return m, nil
+	}
+	return m, json.Unmarshal(raw, &m)
+}
+
 // rowSig is the HMAC of one public decision.
 func rowSig(key []byte, channel string, public bool, slug, by string, at *time.Time) string {
 	var ms int64
@@ -201,6 +216,7 @@ func (c *Controller) PublicChannels(ctx context.Context) ([]PublicChannel, error
 	defer rows.Close()
 	out := []PublicChannel{}
 	var key []byte
+	var state map[string]string
 	for rows.Next() {
 		var x PublicChannel
 		var id, chSlug, slug, by, sig ns
@@ -224,8 +240,13 @@ func (c *Controller) PublicChannels(ctx context.Context) ([]PublicChannel, error
 					return nil, err
 				}
 			}
+			if state == nil {
+				if state, err = c.publicState(ctx); err != nil {
+					return nil, err
+				}
+			}
 			want := rowSig(key, x.ChannelID, true, x.Slug, by.S, x.RightsConfirmedAt)
-			if !hmac.Equal([]byte(want), []byte(sig.S)) {
+			if !hmac.Equal([]byte(want), []byte(sig.S)) || !hmac.Equal([]byte(state[x.ChannelID]), []byte(sig.S)) {
 				x.Public, x.Unsigned = false, true
 				c.noteOnce(x.ChannelID+"|public|unsigned|"+sig.S, func() {
 					c.log().Warn("tv_public: a channel's public row was not written by the home; it stays private",
@@ -318,6 +339,8 @@ func (c *Controller) SetPublic(ctx context.Context, actor, channelID string, ch 
 		next.Public = *ch.Public
 	}
 	next.Unsigned = false
+	c.pubMu.Lock()
+	defer c.pubMu.Unlock()
 	key, err := c.rowKey(ctx)
 	if err != nil {
 		return PublicChannel{}, err
@@ -335,6 +358,20 @@ func (c *Controller) SetPublic(ctx context.Context, actor, channelID string, ch 
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return PublicChannel{}, refuse(http.StatusConflict, "slug_taken", "another channel has the slug "+next.Slug)
 		}
+		return PublicChannel{}, err
+	}
+	// the home's own record: only this decision's signature counts from now on
+	state, err := c.publicState(ctx)
+	if err != nil {
+		return PublicChannel{}, err
+	}
+	if next.Public {
+		state[channelID] = sig
+	} else {
+		delete(state, channelID)
+	}
+	blob, _ := json.Marshal(state)
+	if err := c.Integration.Secrets.Put(ctx, SecretPublicState, blob, actor); err != nil {
 		return PublicChannel{}, err
 	}
 	switch {

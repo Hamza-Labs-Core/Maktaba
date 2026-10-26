@@ -103,6 +103,28 @@ func TestPublicRowWrittenAroundTheAPI(t *testing.T) {
 	if len(fx.pushes(a)) != 0 || len(fx.pushes(b)) != 0 {
 		t.Fatal("an unsigned public row was pushed")
 	}
+	// a replay: the signed row of a public decision, saved by a machine and
+	// written back after the admin made the channel private, does not count
+	c := fx.chans[2]
+	fx.makePublic(c)
+	var sig, at string
+	if err := fx.db.QueryRow(`SELECT rights_sig, rights_confirmed_at FROM tv_public_channels WHERE channel_id = $1`, c).Scan(&sig, &at); err != nil {
+		t.Fatal(err)
+	}
+	if _, te := fx.set(c, tvremote.PublicChange{Public: ptr(false)}); te != nil {
+		t.Fatal(te)
+	}
+	fx.exec(`UPDATE tv_public_channels SET public = 1, rights_sig = $1, rights_confirmed_at = $2 WHERE channel_id = $3`, sig, at, c)
+	all, _ = fx.c.PublicChannels(context.Background())
+	for _, x := range all {
+		if x.ChannelID == c && (x.Public || !x.Unsigned) {
+			t.Errorf("a replayed public row counts: %+v", x)
+		}
+	}
+	fx.reconcile()
+	if len(fx.pushes(c)) != 0 {
+		t.Fatal("a replayed public row was pushed")
+	}
 	// the admin makes it public again: confirmation asked, then signed
 	if _, te := fx.set(b, tvremote.PublicChange{Public: ptr(true)}); te == nil || te.Code != "rights_confirmation_required" {
 		t.Fatalf("an unsigned row skipped the confirmation: %v", te)
