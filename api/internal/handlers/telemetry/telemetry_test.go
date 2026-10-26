@@ -418,9 +418,11 @@ func TestRateLimitPerIPCountsEvents(t *testing.T) {
 			t.Fatalf("batch %d: status %d: %s", i, rec.Code, rec.Body)
 		}
 	}
-	rec := f.do(t, http.MethodPost, "/api/telemetry", events(ev("app.open", nil)), "192.0.2.1")
+	// a whole batch over the budget: the bucket refills ~17 events a
+	// second, so a slow runner may have a few back, never 100
+	rec := f.do(t, http.MethodPost, "/api/telemetry", events(batch...), "192.0.2.1")
 	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
-		t.Fatalf("event 1,001: status %d: %s", rec.Code, rec.Body)
+		t.Fatalf("events 1,001-1,100: status %d: %s", rec.Code, rec.Body)
 	}
 	if rec := f.do(t, http.MethodPost, "/api/telemetry", events(ev("app.open", nil)), "192.0.2.2"); rec.Code != http.StatusNoContent {
 		t.Fatalf("another IP: status %d", rec.Code)

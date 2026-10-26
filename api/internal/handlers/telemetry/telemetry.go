@@ -374,10 +374,10 @@ func (h *Handler) allow(w http.ResponseWriter, r *http.Request, b *middleware.IP
 	return false
 }
 
-func tooMany(what string, max int) *httperror.Error {
+func tooMany(what string, limit int) *httperror.Error {
 	return &httperror.Error{
 		Type: TypeTooManyEvents, Title: "too many " + what, Status: http.StatusRequestEntityTooLarge,
-		Detail: "at most " + strconv.Itoa(max) + " " + what + " per request; none was stored",
+		Detail: "at most " + strconv.Itoa(limit) + " " + what + " per request; none was stored",
 	}
 }
 
