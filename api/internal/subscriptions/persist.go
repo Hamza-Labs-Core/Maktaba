@@ -58,90 +58,105 @@ type LicensePersistence interface {
 	LoadActive(ctx context.Context) (*persistedLicense, error)
 }
 
+// StatePersistence keeps what the license server last said (slot
+// 0155). The SQL backend implements it; a backend without it keeps that
+// state in memory only.
+type StatePersistence interface {
+	SaveState(ctx context.Context, st persistedState) error
+	LoadState(ctx context.Context) (*persistedState, error)
+}
+
+// persistedState is the `license_state` row (slot 0155).
+type persistedState struct {
+	Revocations      string
+	RevocationsAt    time.Time
+	ClockHighWater   time.Time
+	LastRefreshAt    time.Time
+	LastRefreshError string
+	LockReason       string
+}
+
 // NewPersistentStore builds a Store whose Set/Revoke writes are
 // durable and whose initial state is recovered from the backend. The
 // stored signed license is re-verified against v so a key rotation or
 // tampered row fails closed (free tier) instead of trusting the
-// persisted snapshot.
+// persisted snapshot. An expired license is kept (Settings says
+// "expired") but grants nothing past SkewGrace.
 //
 // A recovery error is returned: callers (router wiring) decide whether
 // to fail boot or degrade to free tier; we surface it rather than
 // silently swallow a corrupt store.
 func NewPersistentStore(ctx context.Context, db LicensePersistence, v *Verifier) (*Store, error) {
 	s := &Store{persist: db}
+	// An unreadable state row costs the revocation list and the clock's
+	// high-water mark until the next refresh, never the license.
+	var stateErr error
+	if sp, ok := db.(StatePersistence); ok {
+		st, err := sp.LoadState(ctx)
+		if err != nil {
+			stateErr = fmt.Errorf("subscriptions: load license state: %w", err)
+		}
+		if st != nil {
+			s.lockReason, s.highWater = st.LockReason, st.ClockHighWater.UTC()
+			s.lastRefreshAt, s.lastRefreshError = st.LastRefreshAt, st.LastRefreshError
+			if st.Revocations != "" && v != nil {
+				var list RevocationList
+				if json.Unmarshal([]byte(st.Revocations), &list) == nil && v.VerifyRevocations(&list) == nil {
+					s.revoked = map[string]bool{}
+					for _, id := range list.Revocations.LicenseIDs {
+						s.revoked[id] = true
+					}
+					s.revocationsRaw, s.revocationsAt = st.Revocations, st.RevocationsAt
+				}
+			}
+		}
+	}
 	rec, err := db.LoadActive(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("subscriptions: load active license: %w", err)
 	}
 	if rec == nil {
-		return s, nil // free tier
+		return s, stateErr // free tier
 	}
-	ent, err := s.recover(rec, v)
+	lic, ent, err := s.recover(rec, v)
 	if err != nil {
 		// A persisted-but-unverifiable license must not silently grant
 		// premium; leave the store on the free tier and report.
 		return s, fmt.Errorf("subscriptions: recover active license %q: %w", rec.LicenseID, err)
 	}
-	s.current = ent
-	return s, nil
+	s.license, s.raw = ent, lic
+	return s, stateErr
 }
 
 // recover re-derives the Entitlements from the persisted signed
 // license. Re-verifying (rather than trusting the snapshot columns)
 // keeps the build-time public key the single source of truth.
-func (s *Store) recover(rec *persistedLicense, v *Verifier) (*Entitlements, error) {
+func (s *Store) recover(rec *persistedLicense, v *Verifier) (*License, *Entitlements, error) {
 	if v == nil {
-		return nil, errors.New("no verifier configured")
+		return nil, nil, errNoVerifier
 	}
 	var lic License
 	if err := json.Unmarshal([]byte(rec.RawJWT), &lic); err != nil {
-		return nil, fmt.Errorf("decode stored license: %w", err)
+		return nil, nil, fmt.Errorf("decode stored license: %w", err)
 	}
-	ent, err := v.Verify(&lic, time.Now().UTC())
+	ent, err := v.VerifySignature(&lic)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return ent, nil
+	return &lic, ent, nil
 }
 
-// SetLicense applies lic (already verified by the caller into ent),
-// caching it in-memory and, when a persistence backend is configured,
-// durably recording it as the sole active license. The raw signed
-// JSON is stored so the entitlement can be re-verified after a
-// restart.
-func (s *Store) SetLicense(ctx context.Context, lic *License, ent *Entitlements) error {
-	if s.persist != nil {
-		raw, err := json.Marshal(lic)
-		if err != nil {
-			return fmt.Errorf("subscriptions: encode license: %w", err)
-		}
-		rec := persistedLicense{
-			LicenseID: lic.License.LicenseID,
-			Tier:      lic.License.Tier,
-			Seats:     lic.License.Seats,
-			IssuedAt:  lic.License.IssuedAt,
-			ExpiresAt: lic.License.ExpiresAt,
-			RawJWT:    string(raw),
-			Features:  lic.License.Features,
-		}
-		if err := s.persist.SaveActive(ctx, rec); err != nil {
-			return fmt.Errorf("subscriptions: persist license: %w", err)
-		}
+func recordOf(lic *License) persistedLicense {
+	raw, _ := json.Marshal(lic) // a License always marshals
+	return persistedLicense{
+		LicenseID: lic.License.LicenseID,
+		Tier:      lic.License.Tier,
+		Seats:     lic.License.Seats,
+		IssuedAt:  lic.License.IssuedAt,
+		ExpiresAt: lic.License.ExpiresAt,
+		RawJWT:    string(raw),
+		Features:  lic.License.Features,
 	}
-	s.Set(ent)
-	return nil
-}
-
-// Revoke durably reverts the instance to the free tier. With no
-// persistence backend it is equivalent to Set(nil).
-func (s *Store) Revoke(ctx context.Context) error {
-	if s.persist != nil {
-		if err := s.persist.RevokeActive(ctx); err != nil {
-			return fmt.Errorf("subscriptions: persist revoke: %w", err)
-		}
-	}
-	s.Set(nil)
-	return nil
 }
 
 // sqlLicenseStore is the Postgres-backed LicensePersistence. It maps
@@ -239,4 +254,42 @@ func (p *sqlLicenseStore) LoadActive(ctx context.Context) (*persistedLicense, er
 		}
 	}
 	return &rec, nil
+}
+
+func (p *sqlLicenseStore) SaveState(ctx context.Context, st persistedState) error {
+	_, err := p.db.ExecContext(ctx,
+		`INSERT INTO license_state
+		   (id, revocations, revocations_at, clock_high_water, last_refresh_at, last_refresh_error, lock_reason)
+		 VALUES (1, $1, $2, $3, $4, $5, $6)
+		 ON CONFLICT (id) DO UPDATE SET
+		   revocations        = EXCLUDED.revocations,
+		   revocations_at     = EXCLUDED.revocations_at,
+		   clock_high_water   = EXCLUDED.clock_high_water,
+		   last_refresh_at    = EXCLUDED.last_refresh_at,
+		   last_refresh_error = EXCLUDED.last_refresh_error,
+		   lock_reason        = EXCLUDED.lock_reason`,
+		st.Revocations, nullTime(st.RevocationsAt), nullTime(st.ClockHighWater),
+		nullTime(st.LastRefreshAt), st.LastRefreshError, st.LockReason)
+	return err
+}
+
+func (p *sqlLicenseStore) LoadState(ctx context.Context) (*persistedState, error) {
+	var st persistedState
+	var revAt, hw, refAt sql.NullTime
+	err := p.db.QueryRowContext(ctx,
+		`SELECT revocations, revocations_at, clock_high_water, last_refresh_at, last_refresh_error, lock_reason
+		   FROM license_state WHERE id = 1`,
+	).Scan(&st.Revocations, &revAt, &hw, &refAt, &st.LastRefreshError, &st.LockReason)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	st.RevocationsAt, st.ClockHighWater, st.LastRefreshAt = revAt.Time, hw.Time, refAt.Time
+	return &st, nil
+}
+
+func nullTime(t time.Time) sql.NullTime {
+	return sql.NullTime{Time: t.UTC(), Valid: !t.IsZero()}
 }

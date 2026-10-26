@@ -48,7 +48,7 @@ func (e exportRow) record() []string {
 // Export implements GET /api/admin/analytics/export?format=csv|json&range=
 // (Story 29.6). Admin only; streams rather than buffering the result set.
 func (h *Handler) Export(w http.ResponseWriter, r *http.Request) {
-	if requireAdmin(w, r) == nil {
+	if requireAdmin(w, r) == nil || !h.gateAdvanced(w, r) {
 		return
 	}
 	format := r.URL.Query().Get("format")

@@ -310,7 +310,11 @@ func runServe() error {
 	statsDataDir, statsDB, statsClose := buildAggregatorStats(logger)
 	defer statsClose()
 
+	// Epic 16: the entitlement store is built with the app DB below; the
+	// relay gate in the router's chain reads it through this reference.
+	licRef := &subscriptions.StoreRef{}
 	r := router.New(router.Deps{
+		License:            licRef,
 		IdempotencyStore:   idemStore,
 		IPRatePerMin:       envIntDefault("MAKTABA_IP_RATE_PER_MIN", 6000),
 		UserRatePerMin:     envIntDefault("MAKTABA_USER_RATE_PER_MIN", 600),
@@ -537,8 +541,15 @@ func runServe() error {
 				Logger:       logger,
 				PerfRegistry: perfRegistry,
 			}
-			entStore, _ := router.EntitlementStore(p10Deps)
+			entStore, licVerifier := router.EntitlementStore(p10Deps)
 			p10Deps.SubscriptionsStore = entStore
+			p10Deps.SubscriptionsVerifier = licVerifier
+			licRef.Set(entStore)
+			licRefresher, licCloud, licManage := licenseRefresher(entStore, licVerifier, appDB, logger)
+			p10Deps.LicenseRefresher, p10Deps.LicenseCloud, p10Deps.LicenseManageURL = licRefresher, licCloud, licManage
+			if licRefresher != nil {
+				go licRefresher.Run(context.Background())
+			}
 
 			// Phase 9 (Epic 10 stories 10.2-10.5, 10.16) — auth surface.
 			// Reuses the same app DB. SecureCookies tracks MAKTABA_HSTS
@@ -622,7 +633,7 @@ func runServe() error {
 			// stats + export (29.3/29.5/29.6). The session reaper is a
 			// boot goroutine (interrupted-session reap every minute +
 			// daily retention purge), mirroring runPairingSweep.
-			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres"})
+			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef})
 			go (&watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

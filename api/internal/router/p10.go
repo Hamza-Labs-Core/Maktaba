@@ -51,6 +51,17 @@ type P10Deps struct {
 	// /api/admin/license endpoint disabled.
 	SubscriptionsVerifier *subpkg.Verifier
 
+	// LicenseRefresher keeps the license in step with the license
+	// server (Story 16.4); the admin's "Check now" runs it. Nil: none.
+	LicenseRefresher *subpkg.Refresher
+
+	// LicenseCloud reports this home's place in Maktaba Cloud for
+	// Settings → Subscription. Nil: never claimed.
+	LicenseCloud func() subh.CloudLink
+
+	// LicenseManageURL is the cloud's billing page ("" ⇒ none).
+	LicenseManageURL string
+
 	// PairingStore persists pairing tickets. Nil + a non-nil DB →
 	// Postgres-backed store (`pairing_tickets`, slot 0055) so a code
 	// survives a restart and works across replicas. Nil + nil DB →
@@ -153,7 +164,13 @@ func EntitlementStore(d P10Deps) (*subpkg.Store, *subpkg.Verifier) {
 // in-memory otherwise).
 func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 	store, verifier := EntitlementStore(d)
-	(&subh.Handler{Store: store, Verifier: verifier}).Mount(r)
+	sh := &subh.Handler{Store: store, Verifier: verifier, Refresher: d.LicenseRefresher,
+		Cloud: d.LicenseCloud, ManageURL: d.LicenseManageURL}
+	if d.DB != nil {
+		sh.SeatCount = users.New(d.DB)
+		sh.Audit = LicenseAudit(d.DB)
+	}
+	sh.Mount(r)
 
 	// Pairing. Prefer a persistent store: an in-memory store loses
 	// every code on restart and is invisible to other replicas (the
@@ -236,4 +253,16 @@ func (p pairAudit) WritePairEvent(ctx context.Context, claimed bool, actorUserID
 		TargetID:    code,
 		Payload:     map[string]any{"code": code},
 	})
+}
+
+// LicenseAudit writes a license change (apply, removal, revocation, a
+// plan ending) to the security audit log (Epic 16: every subscription
+// state change writes an audit row). A failed write never fails the
+// change.
+func LicenseAudit(db *sql.DB) func(ctx context.Context, actor, event string, detail map[string]any) {
+	w := securityaudit.NewWriter(db)
+	return func(ctx context.Context, actor, event string, detail map[string]any) {
+		id, _ := detail["license_id"].(string)
+		_ = w.Write(ctx, securityaudit.Entry{Event: securityaudit.Event(event), ActorUserID: actor, TargetID: id, Payload: detail})
+	}
 }
