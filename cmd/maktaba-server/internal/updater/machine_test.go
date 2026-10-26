@@ -56,6 +56,18 @@ func (w *world) called(c string) bool {
 	return false
 }
 
+// waitCalled waits for a call the machine makes after the state it published (the
+// installer's discard runs outside the machine's lock, after the journal says so).
+func (w *world) waitCalled(t *testing.T, c string) bool {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if w.called(c) {
+			return true
+		}
+	}
+	return false
+}
+
 // fakeInst is an installer over a world. dieAt "before:<step>" / "after:<step>" makes the
 // process die there: the goroutine ends on the spot (nothing more is written by it).
 type fakeInst struct {
@@ -475,7 +487,12 @@ func TestWatchFatalRollsBackAtOnce(t *testing.T) {
 func TestWatchRestartsTooOftenRollsBack(t *testing.T) {
 	w := newWorld("1.4.0")
 	r := startRig(t, t.TempDir(), w, healthy)
-	_ = r.m.Prepare(homeJob())
+	// what is tested is the count of starts: the rig's clock moves a minute a reading,
+	// so on a slow machine the unhealthy time reached the default limit first (reason
+	// "starting"); a limit the clock cannot reach between the restarts keeps it out
+	job := homeJob()
+	job.HealthSeconds = 1 << 30
+	_ = r.m.Prepare(job)
 	r.waitState(StatePrepared)
 	_ = r.m.Apply("run-1")
 	r.waitExit()

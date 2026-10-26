@@ -180,7 +180,9 @@ func (m *Mirror) startWheelhouse(ctx context.Context, rel Release, man *releasev
 	b := &wheelBuild{done: make(chan struct{}), at: m.now()}
 	m.wheels[key] = b
 	m.mu.Unlock()
+	m.bg.Add(1)
 	go func() {
+		defer m.bg.Done()
 		// one wheelhouse at a time: each is a large download
 		wheelSlot <- struct{}{}
 		defer func() { <-wheelSlot }()
