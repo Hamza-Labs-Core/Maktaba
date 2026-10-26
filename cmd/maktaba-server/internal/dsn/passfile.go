@@ -1,8 +1,6 @@
 package dsn
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/url"
 	"os"
@@ -93,6 +91,31 @@ func WritePassFile(dir, name string, lines []string) (string, error) {
 	return path, nil
 }
 
+// passfileName names a passfile by its connections ("user@host-port-db", joined by "+"
+// in order), in characters any file system takes.
+func passfileName(bares []string) string {
+	var names []string
+	for _, b := range bares {
+		u, err := url.Parse(b)
+		if err != nil {
+			continue
+		}
+		names = append(names, u.User.Username()+"@"+u.Hostname()+"-"+u.Port()+"-"+strings.TrimPrefix(u.Path, "/"))
+	}
+	sort.Strings(names)
+	name := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '@', r == '+', r == '_':
+			return r
+		}
+		return '_'
+	}, strings.Join(names, "+"))
+	if len(name) > 200 {
+		name = name[:200]
+	}
+	return name
+}
+
 // Redact masks the credentials of a URL in s (for an error or a log line).
 func Redact(s string) string { return redact(s) }
 
@@ -124,10 +147,8 @@ func ProcessEnv(env []string, dir string) ([]string, error) {
 	if len(lines) == 0 {
 		return out, nil
 	}
-	// named by the URLs without their passwords: no digest of a secret in a file name
-	sort.Strings(bares)
-	sum := sha256.Sum256([]byte(strings.Join(bares, "\n")))
-	path, err := WritePassFile(dir, hex.EncodeToString(sum[:6]), lines)
+	// named by the connections it serves, readable and with no digest of anything secret
+	path, err := WritePassFile(dir, passfileName(bares), lines)
 	if err != nil {
 		return nil, err
 	}
