@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
@@ -15,7 +16,20 @@ import (
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
+	tlspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/tls"
 )
+
+// tlsAsk answers the edge's ask: GET ?domain=<host>, 200 to issue, 403 not.
+func tlsAsk(policy tlspkg.HostPolicy) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		host := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("domain")))
+		if host == "" || policy(r.Context(), host) != nil {
+			http.Error(w, "no certificate for this host", http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
 
 // runRelay binds the relay role: a single listener that accepts both
 // WebSocket upgrade requests from server agents at /v1/relay/ws AND
@@ -84,6 +98,11 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 	}
 	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector)))
 	r.Get("/privacy", relayControl(privacy.PolicyHandler))
+	// Story 25.23: the edge's on-demand TLS asks here before it requests a
+	// certificate (Caddy `on_demand_tls { ask … }`): 200 only for the bare
+	// relay host and the subdomain of a claimed server, so random names
+	// cannot burn the ACME quota.
+	r.Get("/v1/relay/tls-ask", relayControl(tlsAsk(tlspkg.PolicyFromResolver(cfg.Relay.PublicHost, cfg.Relay.PublicHost, serversStore))))
 
 	r.HandleFunc("/*", proxy.ServeHTTP)
 

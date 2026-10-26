@@ -26,6 +26,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/authz"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/sessions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
@@ -278,6 +279,15 @@ func (h *Home) Resolve(ctx context.Context, req IntrospectRequest) (*IntrospectA
 		p, err := h.livePrincipal(ctx, sess.UserID)
 		if err != nil {
 			return nil, err
+		}
+		// a session a Maktaba Cloud sign-in made keeps its link's scope on
+		// every machine: a play one is no admin (Epic 42 story 42.7)
+		scope, err := (&cloudlink.Store{DB: h.DB}).ScopeOf(ctx, cloudlink.KindSession, sess.ID)
+		if err != nil {
+			return nil, err
+		}
+		if scope == principal.CloudScopePlay {
+			p.IsAdmin = false
 		}
 		_ = h.Sessions.TouchLastSeen(ctx, sess.ID, h.now())
 		ans = IntrospectAnswer{Principal: p, Source: string(principal.SourceCookie),

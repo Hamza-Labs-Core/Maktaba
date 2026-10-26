@@ -28,6 +28,11 @@ const RoleRelay Role = "relay"
 const (
 	RelayCredFile = "cloudlink.cred"
 	RelayKeyFile  = "cloudlink.key"
+	// RelayIdentityFile is what the agent writes beside its credentials once
+	// claimed (cloud/internal/cloudlink IdentityFile): the home's server id in
+	// the cloud and the cloud's pinned assertion key, which the API reads to
+	// verify linked-account sign-ins (Epic 42 story 42.7).
+	RelayIdentityFile = "cloudlink.identity.json"
 )
 
 // RelayAdminDefault is the agent's loopback status address ([cloud] admin_addr).
@@ -36,6 +41,9 @@ const RelayAdminDefault = "127.0.0.1:8765"
 // RelayCredPath and RelayKeyPath are the agent's files.
 func RelayCredPath() string { return filepath.Join(config.KeysDir(), RelayCredFile) }
 func RelayKeyPath() string  { return filepath.Join(config.KeysDir(), RelayKeyFile) }
+
+// RelayIdentityPath is the agent's identity file.
+func RelayIdentityPath() string { return filepath.Join(config.KeysDir(), RelayIdentityFile) }
 
 // RelayWanted reports whether this machine runs the relay agent: the home (never a
 // machine joined to one, nor one whose node config cannot be read), with [cloud] enabled
