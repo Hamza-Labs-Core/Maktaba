@@ -23,7 +23,7 @@ struct LibraryView: View {
                 LazyVGrid(columns: columns, spacing: 56) {
                     ForEach(libraries) { library in
                         NavigationLink {
-                            VideoGrid(title: library.name, library: library.id).videoDestination()
+                            VideoGrid(title: library.name, library: library.id)
                         } label: {
                             LibraryCard(library: library)
                         }
@@ -98,7 +98,9 @@ struct VideoGrid: View {
             } else {
                 LazyVGrid(columns: columns, spacing: 64) {
                     ForEach(videos) { v in
-                        NavigationLink(value: VideoRoute(id: v.id)) {
+                        NavigationLink {
+                            VideoPage(id: v.id)
+                        } label: {
                             VideoCard(id: v.id, title: v.displayTitle)
                         }
                         .buttonStyle(.borderless)

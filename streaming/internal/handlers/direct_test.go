@@ -307,3 +307,23 @@ func TestParseRange(t *testing.T) {
 }
 
 var _ = context.Background
+
+// The pipeline stores ffprobe's format_name as the container: a list of the names one
+// demuxer reads. A player that cannot sniff (AVPlayer on an extension-less URL) opens a
+// file only with its type, so each list must map like its plain name.
+func TestDirect_ContentTypeFromTheProbedFormatList(t *testing.T) {
+	for container, want := range map[string]string{
+		"mov,mp4,m4a,3gp,3g2,mj2": "video/mp4",
+		"mp4":                     "video/mp4",
+		"matroska,webm":           "video/x-matroska",
+		"webm":                    "video/webm",
+		"mpegts":                  "video/MP2T",
+		"avi":                     "video/x-msvideo",
+		"flv":                     "application/octet-stream",
+		"":                        "application/octet-stream",
+	} {
+		if got := contentTypeFor(&probe.Row{Container: container}); got != want {
+			t.Errorf("container %q: Content-Type %q, want %q", container, got, want)
+		}
+	}
+}

@@ -18,7 +18,9 @@ struct SearchView: View {
             } else {
                 LazyVGrid(columns: columns, spacing: 64) {
                     ForEach(results) { v in
-                        NavigationLink(value: VideoRoute(id: v.id)) {
+                        NavigationLink {
+                            VideoPage(id: v.id)
+                        } label: {
                             VideoCard(id: v.id, title: v.displayTitle)
                         }
                         .buttonStyle(.borderless)

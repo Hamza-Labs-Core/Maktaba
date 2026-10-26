@@ -94,7 +94,9 @@ struct VideoRow: View {
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 48) {
                     ForEach(items) { item in
-                        NavigationLink(value: VideoRoute(id: item.id)) {
+                        NavigationLink {
+                            VideoPage(id: item.id)
+                        } label: {
                             VideoCard(id: item.id, title: item.title, progress: item.progress)
                         }
                         .buttonStyle(.borderless)

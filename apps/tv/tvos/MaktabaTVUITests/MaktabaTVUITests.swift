@@ -40,6 +40,8 @@ final class MaktabaTVUITests: XCTestCase {
         sleep(4)
         shot("library")
         remote.press(.select)
+        sleep(4)
+        shot("opened")
         let play = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Play' OR label BEGINSWITH 'Resume'")).firstMatch
         XCTAssertTrue(play.waitForExistence(timeout: 20))
         shot("video")
@@ -48,9 +50,7 @@ final class MaktabaTVUITests: XCTestCase {
         remote.press(.select)
         sleep(45)
         shot("playing")
-        remote.press(.menu)
-        sleep(2)
-        remote.press(.menu)
+        remote.press(.menu) // closes the player
         sleep(4)
         shot("after-playing")
         // back on the page: it now offers to resume
@@ -60,7 +60,34 @@ final class MaktabaTVUITests: XCTestCase {
         sleep(30)
         shot("resumed")
         remote.press(.menu)
-        sleep(2)
+        sleep(4)
+        shot("after-resumed")
+    }
+
+    /// Plays the library's second video (MAKTABA_TRANSCODE_INDEX, default 1): on the test
+    /// home it is one the home must transcode, started cold.
+    func testColdTranscodePlays() throws {
+        app.launchArguments = ["-uitest-reset"]
+        app.launch()
+        try signIn()
+        XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 20))
+        remote.press(.up)
+        moveFocus(to: app.tabBars.buttons["Libraries"], with: .right)
+        remote.press(.down)
+        sleep(3)
+        remote.press(.select)
+        sleep(4)
+        for _ in 0..<(Int(env["MAKTABA_TRANSCODE_INDEX"] ?? "1") ?? 1) { remote.press(.right); usleep(500_000) }
+        remote.press(.select)
+        let play = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Play' OR label BEGINSWITH 'Resume'")).firstMatch
+        XCTAssertTrue(play.waitForExistence(timeout: 20))
+        shot("transcode-video")
+        remote.press(.select)
+        sleep(20)
+        shot("transcode-starting")
+        sleep(25)
+        shot("transcode-playing")
+        XCTAssertFalse(app.staticTexts["Can't play"].exists, "the transcode did not play")
         remote.press(.menu)
     }
 
@@ -131,10 +158,7 @@ final class MaktabaTVUITests: XCTestCase {
         moveFocus(to: username, with: .up)
         remote.press(.select)
         app.typeText(try XCTUnwrap(env["MAKTABA_USER"]))
-        finishTyping()
-        let password = app.secureTextFields["Password"]
-        moveFocus(to: password, with: .down)
-        remote.press(.select)
+        finishTyping() // "next": the keyboard goes on to the password
         app.typeText(try XCTUnwrap(env["MAKTABA_PASSWORD"]))
         finishTyping() // submits the field: Sign in
         pressIfStillThere(app.buttons["Sign in"], with: .down)
