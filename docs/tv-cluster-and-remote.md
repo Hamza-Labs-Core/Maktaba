@@ -121,8 +121,16 @@ of remote viewers, and remote viewers play it from Cloudflare with a signed link
    1,000-minute block = $5/month**, which holds about **two** concurrent 8-hour broadcasts
    (2 × 480 min). Buy another block for every two more channels you want away from home at once,
    and set `tv_remote.storage_plan_minutes` to match.
-3. **API token.** My Profile → API Tokens → Create Token → custom: **Stream: Edit** (Stream Write)
-   and **Account Analytics: Read** (for the minutes watched). Limit it to your account.
+3. **API token.** My Profile → API Tokens → Create Token → *Create Custom Token*, with these
+   permissions and nothing else:
+
+   | Permission | Level | Needed for |
+   |---|---|---|
+   | Account → **Stream** | **Edit** | live inputs, recordings, signing keys, live outputs (simulcast), storage use |
+   | Account → **Account Analytics** | **Read** | the minutes watched (budget). Optional: without it the estimate uses session minutes |
+
+   *Account Resources*: include **only your account**. No zone permission is needed. Test connection
+   reports a token without Stream access, or with Analytics missing, as its own line.
 4. **Enter it.** Admin → Extensions → *Cloudflare Stream*: the account id and the token. The token is
    stored on the home only, encrypted (`home_secrets`), never readable by other machines and never
    shown again.
@@ -137,7 +145,40 @@ Optional:
   2 s GOP without B-frames, which LL-HLS needs.
 - Webhooks — polling is the source of truth; a Cloudflare Notifications webhook only speeds up
   error detection. `POST /api/tv/remote/webhook-secret` (admin) returns a new secret, the header
-  and the URL path to enter at Cloudflare.
+  and the URL path. At Cloudflare: Notifications → Destinations → *Webhooks* → the home's public
+  URL (through the relay) + `/api/tv/remote/webhook`, with that secret (Cloudflare sends it in the
+  `cf-webhook-auth` header); then Notifications → Add → *Stream Live Input* (connected,
+  disconnected, errored) to that destination. An errored event's code
+  (`data.live_input_errored.error.code`) is kept on the input.
+
+<a id="public-site"></a>
+
+### 4.1 The public TV site (Epic 34, first slice)
+
+A public channel can be watched by anyone, on your own site running on Cloudflare (a Worker). The
+visitor reaches only the Worker and Cloudflare Stream, never the home: the home posts its lineup
+and live video ids outward, signed, every 10 s.
+
+1. Remote viewing set up (above), Test connection green.
+2. **Deploy the Worker** from `web/packages/tvsite` with your own Cloudflare login:
+   `npx wrangler@4 login`, then `npx wrangler@4 deploy`. It needs the Workers Paid plan (Durable
+   Objects). Note its address (`https://maktaba-tv-site.<you>.workers.dev`).
+3. Admin → Live TV → **Public site**: *Create the site's secrets*. This creates the site's own
+   Stream signing key and a home secret, shown once. Put each into the Worker:
+   `npx wrangler@4 secret put HOME_HMAC`, `… STREAM_KEY_ID`, `… STREAM_KEY_JWK`.
+4. Same panel: the site address, *Publish public channels* on, Save. The panel shows the last
+   update the site received.
+5. Make a channel public with its switch: you confirm you hold the rights to show it to the public
+   (asked again every time, kept for audit).
+
+A public channel is sent to Cloudflare **all the time**, whether or not anyone watches, so it uses
+one of `tv_remote.max_channels` and storage like any running broadcast. Replacing the site's
+secrets stops every token the old key signed. Removing the Cloudflare integration deletes the site's
+key too.
+
+Not yet: the guide, exclusion slates, a custom domain, Turnstile or invite-only access, and the
+dedicated A/B public inputs (see specs/epics/34-tv-public-site). To try the site locally without a
+Cloudflare account, see `TestPublicSiteDemo` in `api/internal/tvremote/public_e2e_test.go`.
 
 <a id="costs"></a>
 
@@ -229,6 +270,9 @@ remote API), re-tuning when a link is about to expire; see story 32.9 "Native ap
 | `ERR_UNSUPPORTED_VIDEO_CODEC` / `_AUDIO_CODEC` | not H.264 / not AAC | the push transcodes AC-3 to AAC; check the channel's output settings |
 | `ERR_UNHEALTHY` | Cloudflare found the input unhealthy | retried once on a fresh input; a channel failing twice is "remote failed" for 10 minutes |
 | a node fails mid-push | its channels move (§3); the push continues from the new host on the same input | nothing; watch the Remote panel's events |
+| a node loses power mid-push (its connection stays open) | the home's relay hears nothing from it for 5 s, drops it and follows the channel to its new host, on the same push session (same Cloudflare video) | nothing; `tv_push_source_lost` in the events |
+| the home's uplink is down | the relay restarts its ffmpeg with a growing pause (up to 5 s); Cloudflare keeps the video for 30 s | if longer, the push fails and viewers tune again; check the uplink |
+| a public channel is off air on the site | the home has not posted for 60 s, or its push is not live | Admin → Live TV → Public site shows the last update and its error |
 | the home is down | everything stops: the home is the front door and the database | bring the home back; nodes and Cloudflare wait |
 | a playback link leaked | someone has a signed URL | Admin → Extensions → Cloudflare Stream → **Rotate signing key**: every remote link stops at once; viewers' players pick up new links at their next heartbeat |
 | a stream key leaked | someone could push to your input | delete the live input in the Cloudflare dashboard (Maktaba creates a fresh one on demand) or remove and re-add the integration |
