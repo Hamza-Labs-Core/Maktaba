@@ -217,6 +217,12 @@ beforeEach(() => {
   purge.mockReset();
   purge.mockResolvedValue(undefined);
   signedIn(viewer);
+  // the usage-analytics question (story 16.5) is answered: these cases read the
+  // page's own lists (TelemetryPrompt.test asks it)
+  localStorage.setItem(
+    "mkt:telemetry:consent",
+    JSON.stringify({ granted: false, at: "2026-10-26T00:00:00Z" })
+  );
   notifications = async () => ({ items: [], unread: 0 });
   get.mockImplementation((path: string) => {
     if (path === "/api/auth/me") return me();

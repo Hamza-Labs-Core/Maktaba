@@ -20,6 +20,7 @@ import { RulesSection } from "./Settings/RulesSection";
 import { UpdatesSettings } from "./Settings/UpdatesSettings";
 import { AppUpdateSettings } from "./Settings/AppUpdateSettings";
 import { HomeNameSettings } from "./Settings/HomeNameSettings";
+import { TelemetrySettings } from "./Settings/TelemetrySettings";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, downloadBlob, ApiError } from "../lib/api";
@@ -634,6 +635,9 @@ function PrivacyTab() {
           label={tracking ? t("settings.privacy.on") : t("settings.privacy.off")}
         />
       )}
+
+      <hr />
+      <TelemetrySettings />
 
       <hr />
       <h2>{t("settings.privacy.history")}</h2>

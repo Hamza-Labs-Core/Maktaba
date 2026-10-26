@@ -2877,6 +2877,28 @@ a.mkt-guide__chanhead:hover {
   gap: var(--space-2) var(--space-3);
 }
 
+/* Story 16.5 — the usage-analytics question (the update banner's frame) */
+.mkt-telemetry {
+  align-items: flex-end;
+}
+.mkt-telemetry__body {
+  flex: 1 1 28rem;
+  min-width: 0;
+}
+.mkt-telemetry__title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-base);
+}
+.mkt-telemetry__label {
+  margin: var(--space-2) 0 0;
+  font-weight: 600;
+}
+.mkt-telemetry ul,
+.mkt-telemetry-settings ul {
+  margin: var(--space-1) 0;
+  padding-inline-start: var(--space-5);
+}
+
 /* A node that cannot reach its home: readable, changes refused */
 .mkt-home-offline {
   position: sticky;
