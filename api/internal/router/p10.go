@@ -26,6 +26,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	discoverypkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
+	authh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/auth"
 	discoveryh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/discovery"
 	perfh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/perf"
 	securityh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/security"
@@ -140,6 +141,17 @@ func EntitlementStore(d P10Deps) (*subpkg.Store, *subpkg.Verifier) {
 		}
 	}
 	return store, verifier
+}
+
+// SeatGate is the seat cap POST /api/users enforces: the entitlement's once a license
+// can be applied (a verifier). A build with no license key has no entitlement source,
+// so no cap: its home could never lift the free tier's single seat (the gate is inert
+// unwired, as auth.Handler documents).
+func SeatGate(store *subpkg.Store, verifier *subpkg.Verifier) authh.SeatLimiter {
+	if verifier == nil {
+		return nil
+	}
+	return subpkg.NewSeatLimiter(store)
 }
 
 // MountP10 attaches the four previously-orphaned handler packages.

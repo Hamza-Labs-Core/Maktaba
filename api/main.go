@@ -55,7 +55,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
@@ -537,7 +536,7 @@ func runServe() error {
 				Logger:       logger,
 				PerfRegistry: perfRegistry,
 			}
-			entStore, _ := router.EntitlementStore(p10Deps)
+			entStore, entVerifier := router.EntitlementStore(p10Deps)
 			p10Deps.SubscriptionsStore = entStore
 
 			// Phase 9 (Epic 10 stories 10.2-10.5, 10.16) — auth surface.
@@ -549,7 +548,7 @@ func runServe() error {
 				Keys:          auth.keys,
 				SecureCookies: cookiesSecure(),
 				AccessTTL:     accessTokenTTL(),
-				Seats:         subscriptions.NewSeatLimiter(entStore),
+				Seats:         router.SeatGate(entStore, entVerifier),
 				Settings:      runtimeSettings,
 				// Epic 42 story 42.7: the relay agent's identity (the
 				// supervisor passes its path while [cloud] is on)
