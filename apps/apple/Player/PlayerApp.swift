@@ -16,6 +16,7 @@ struct PlayerApp: App {
                 LibraryBrowser(session: session, user: user, client: client, playing: $playing)
             }
             .maktabaTheme(theme, forceDark: playing)
+            .permissionsWalkthrough()
         }
     }
 }
