@@ -110,6 +110,9 @@ func (d *Deps) Handler() http.Handler {
 		req.Header.Set("X-Relayed-By", "maktaba-cloud")
 		// only the home's own agent marks a request as relayed
 		req.Header.Del("X-Maktaba-Via")
+		// the cloud's own cookies never reach a home (a parent-domain one
+		// would otherwise ride along to every home's subdomain)
+		stripCloudCookies(req.Header)
 
 		rc := http.NewResponseController(w)
 		// the server's read/write timeouts are for requests, not streams:
@@ -134,6 +137,9 @@ func (d *Deps) Handler() http.Handler {
 		defer resp.Body.Close()
 		for k, vs := range resp.Header {
 			for _, v := range vs {
+				if k == "Set-Cookie" && !hostOnlyCookie(v) {
+					continue
+				}
 				w.Header().Add(k, v)
 			}
 		}
@@ -201,6 +207,53 @@ func slugFromHost(host, publicHost string) string {
 		return ""
 	}
 	return strings.TrimSuffix(host, "."+publicHost)
+}
+
+// cloudCookiePrefix names the cloud's own cookies (maktaba_refresh, …).
+// The homes' cookies are their own names (mkt_sess, mkt_csrf), host-only on
+// their subdomain.
+const cloudCookiePrefix = "maktaba_"
+
+// stripCloudCookies drops the cloud's cookies from a request bound for a
+// home, keeping the home's own (its web sessions through the relay).
+func stripCloudCookies(h http.Header) {
+	vals := h.Values("Cookie")
+	if len(vals) == 0 {
+		return
+	}
+	h.Del("Cookie")
+	var keep []string
+	for _, v := range vals {
+		for _, c := range strings.Split(v, ";") {
+			c = strings.TrimSpace(c)
+			name, _, _ := strings.Cut(c, "=")
+			if c == "" || strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), cloudCookiePrefix) {
+				continue
+			}
+			keep = append(keep, c)
+		}
+	}
+	if len(keep) > 0 {
+		h.Set("Cookie", strings.Join(keep, "; "))
+	}
+}
+
+// hostOnlyCookie reports whether a home's Set-Cookie stays on its own
+// subdomain: one with a Domain attribute could cover the cloud's hosts or
+// another home's, and is dropped. A cloud-named cookie is dropped too.
+func hostOnlyCookie(setCookie string) bool {
+	parts := strings.Split(setCookie, ";")
+	name, _, _ := strings.Cut(strings.TrimSpace(parts[0]), "=")
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), cloudCookiePrefix) {
+		return false
+	}
+	for _, a := range parts[1:] {
+		k, _, _ := strings.Cut(strings.TrimSpace(a), "=")
+		if strings.EqualFold(strings.TrimSpace(k), "domain") {
+			return false
+		}
+	}
+	return true
 }
 
 // forwardedHeaders are the client-address headers a client could set;
