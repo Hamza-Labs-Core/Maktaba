@@ -367,6 +367,7 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 	want := []string{
 		"/healthz", "/api/system/health", "/api/system/version", "/api/.well-known/jwks.json",
 		"/.well-known/security.txt", "/api/auth/login", "/api/auth/refresh", "/api/auth/register",
+		"/api/auth/device/start", "/api/auth/device/token",
 		"/api/cluster/join", "/api/cluster/join/*", "/api/cluster/agent",
 		"/api/cluster/link", "/api/cluster/link/stream", "/api/cluster/ca.crt", "/api/cluster/link/pull",
 		"/api/cluster/link/local/*", "/api/tv/remote/webhook", "/api/cluster/self", "/api/cluster/moved/*",

@@ -259,6 +259,7 @@ const USER_LINKS = [
   ["nav.search", "/search"],
   ["nav.account", "/account"],
   ["nav.devices", "/account/devices"],
+  ["nav.linkDevice", "/link"],
   ["nav.sessions", "/account/sessions"],
   ["nav.tokens", "/account/tokens"],
   ["nav.history", "/account/history"],

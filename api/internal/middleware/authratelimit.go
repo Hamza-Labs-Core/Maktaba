@@ -46,6 +46,11 @@ func DefaultAuthRouteLimits() []AuthRouteLimit {
 		{Path: "/api/auth/refresh", PerMin: 60},
 		{Path: "/api/auth/logout", PerMin: 30},
 		{Path: "/api/auth/logout-all", PerMin: 30},
+		// a TV's sign-in by code: starting is rare, the poll runs every 5 s,
+		// approving guesses a code (40 bits) only this fast
+		{Path: "/api/auth/device/start", PerMin: 10},
+		{Path: "/api/auth/device/token", PerMin: 30},
+		{Path: "/api/auth/device/approve", PerMin: 10},
 	}
 }
 
