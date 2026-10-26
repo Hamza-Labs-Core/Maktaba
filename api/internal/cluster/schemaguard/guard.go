@@ -21,7 +21,7 @@ import (
 
 // SchemaRev is the highest migration slot this code ships (shared/db/migrations); a
 // test fails when a migration is added without raising it.
-const SchemaRev = 154
+const SchemaRev = 156
 
 // MinNodeFunction is what a migration that breaks older nodes (re)defines.
 const MinNodeFunction = "maktaba_min_node_schema"

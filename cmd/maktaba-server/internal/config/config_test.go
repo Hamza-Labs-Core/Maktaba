@@ -180,6 +180,26 @@ func TestIndexWorker(t *testing.T) {
 	}
 }
 
+// TestTelemetry: telemetry is stored unless [telemetry] enabled says off (Epic 16).
+func TestTelemetry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server.toml")
+	if err := os.WriteFile(path, []byte("[telemetry]\nenabled = \"off\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := LoadFrom(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Telemetry.On() {
+		t.Errorf("parsed %+v", cfg.Telemetry)
+	}
+	for v, on := range map[string]bool{"": true, "on": true, "off": false, "false": false, "0": false} {
+		if got := (TelemetrySection{Enabled: v}).On(); got != on {
+			t.Errorf("enabled = %q: on = %v", v, got)
+		}
+	}
+}
+
 // The api's admin port (logs and metrics, no sign-in) listens on this machine only: the
 // old default on every interface that setup wrote into server.toml moves to loopback, and
 // an operator's own address stays.

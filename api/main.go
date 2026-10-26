@@ -45,6 +45,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/logs"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/processes"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/telemetry"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
@@ -630,6 +631,11 @@ func runServe() error {
 			}).Run(context.Background())
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",
 				"event", "p29_mounted")
+
+			// Epic 16 (stories 16.5, 16.7): the opt-in telemetry sink and its nightly
+			// retention sweep (events 90 days, Web Vitals 30)
+			router.MountTelemetry(r, router.TelemetryDeps{DB: appDB, Enabled: router.TelemetryEnabled(), Logger: logger})
+			go (&telemetry.Sweeper{DB: appDB, Logger: logger}).Run(context.Background())
 
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the

@@ -41,6 +41,7 @@ type Config struct {
 	Pipeline      PipelineSection      `toml:"pipeline"`
 	Postgres      PostgresSection      `toml:"postgres"`
 	LLM           LLMSection           `toml:"llm"`
+	Telemetry     TelemetrySection     `toml:"telemetry"`
 
 	// DatabaseURLSet: server.toml sets [database] url (Load), or a caller chose
 	// one to keep (setup); Save writes the url only then. Unset, a Mac with the
@@ -172,6 +173,24 @@ type PipelineSection struct {
 // off/false/no/0).
 func (p PipelineSection) IndexWorkerOn() bool {
 	switch strings.ToLower(strings.TrimSpace(p.IndexWorker)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
+}
+
+// TelemetrySection is the [telemetry] table (Epic 16 stories 16.5, 16.7): whether
+// this server's API stores the anonymous usage events of the devices whose users
+// opted in. No client sends anything before its user opts in.
+type TelemetrySection struct {
+	// Enabled: "on" (default) stores them; "off" answers the telemetry
+	// endpoints and stores nothing (the API's MAKTABA_TELEMETRY_ENABLED).
+	Enabled string `toml:"enabled"`
+}
+
+// On reports whether the API stores telemetry (anything but off/false/no/0).
+func (t TelemetrySection) On() bool {
+	switch strings.ToLower(strings.TrimSpace(t.Enabled)) {
 	case "off", "false", "no", "0":
 		return false
 	}

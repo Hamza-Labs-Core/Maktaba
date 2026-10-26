@@ -91,6 +91,47 @@ func (s *rlStore) take(key string) (allow bool, retryAfterSec int) {
 	return false, secs
 }
 
+// takeN consumes n tokens from key's bucket at once (all or none).
+func (s *rlStore) takeN(key string, n int) (allow bool, retryAfterSec int) {
+	now := time.Now()
+	s.mu.Lock()
+	e, ok := s.bucket[key]
+	if !ok {
+		e = &rlEntry{l: rate.NewLimiter(s.rate, s.burst)}
+		s.bucket[key] = e
+	}
+	e.last = now
+	s.mu.Unlock()
+
+	if e.l.AllowN(now, n) {
+		return true, 0
+	}
+	secs := int(time.Duration(float64(n)*float64(time.Second)/float64(s.rate)).Seconds()) + 1
+	return false, secs
+}
+
+// IPBudget is a per-IP token bucket a handler draws several tokens from in one
+// request: the telemetry sink (Epic 16 story 16.7) caps events per minute per IP,
+// and one request carries up to 100 of them. The IP lives in memory only, for as
+// long as the bucket is in use.
+type IPBudget struct{ s *rlStore }
+
+// NewIPBudget allows perMin tokens per minute per IP (and a burst of as many).
+func NewIPBudget(perMin int) *IPBudget {
+	s := newRLStore(perMin)
+	go runSweep(s)
+	return &IPBudget{s: s}
+}
+
+// Allow takes n tokens from r's IP; false with the seconds to wait when it has not
+// that many left (nothing is taken then).
+func (b *IPBudget) Allow(r *http.Request, n int) (bool, int) {
+	if n < 1 {
+		n = 1
+	}
+	return b.s.takeN("ip:"+clientIP(r), n)
+}
+
 // sweep drops idle buckets. Called by callers' background goroutine.
 func (s *rlStore) sweep() {
 	cutoff := time.Now().Add(-s.idleTTL)
