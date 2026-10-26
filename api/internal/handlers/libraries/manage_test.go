@@ -493,7 +493,7 @@ func TestFoldersTimeout(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	oldList, oldTimeout := listFolders, folderListTimeout
-	listFolders = func(string) ([]string, error) { <-release; return nil, nil }
+	listFolders = func(string, []Place) ([]string, error) { <-release; return nil, nil }
 	folderListTimeout = 20 * time.Millisecond
 	t.Cleanup(func() { listFolders, folderListTimeout = oldList, oldTimeout })
 

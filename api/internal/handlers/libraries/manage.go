@@ -515,7 +515,7 @@ func (h *Handler) Folders(w http.ResponseWriter, r *http.Request) {
 	}
 	ch := make(chan listed, 1)
 	go func() {
-		names, err := listFolders(local)
+		names, err := listFolders(local, places)
 		ch <- listed{names, err}
 	}()
 	timer := time.NewTimer(folderListTimeout)
@@ -559,12 +559,29 @@ func (h *Handler) Folders(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
+// errOutsidePlaces: the picker was asked for a folder outside its places.
+var errOutsidePlaces = errors.New("outside the picker's places")
+
 // folderListTimeout bounds a folder listing. A variable for the tests.
 var folderListTimeout = 5 * time.Second
 
 // listFolders is the sub-folders of local, hidden ones left out. A variable
 // so the tests can stand in a mount that does not answer.
-var listFolders = func(local string) ([]string, error) {
+var listFolders = func(local string, places []Place) ([]string, error) {
+	// the containment check again, beside the read: a folder outside the
+	// places is never listed, whoever calls
+	local = filepath.Clean(local)
+	inside := false
+	for _, p := range places {
+		base := strings.TrimSuffix(filepath.Clean(p.LocalPath), string(filepath.Separator))
+		if local == base || strings.HasPrefix(local, base+string(filepath.Separator)) {
+			inside = true
+			break
+		}
+	}
+	if !inside {
+		return nil, errOutsidePlaces
+	}
 	ents, err := os.ReadDir(local)
 	if err != nil {
 		return nil, err
