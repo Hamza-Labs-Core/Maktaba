@@ -7,6 +7,11 @@
 [server]
 listen_addr   = "0.0.0.0:8080"
 public_url    = "https://api.maktaba.app"
+# Origin of the cloud web app (mail links, OAuth landings). Defaults to public_url.
+web_url       = "https://app.maktaba.app"
+# Read the client IP from CF-Connecting-IP / X-Forwarded-For. Only behind a
+# proxy that overwrites those headers.
+trust_proxy_headers = false
 read_timeout  = "30s"
 write_timeout = "60s"
 shutdown_grace = "20s"
@@ -39,6 +44,11 @@ key_path  = ""
 [stripe]
 # Both come from env: MAKTABA_CLOUD_STRIPE_SECRET, MAKTABA_CLOUD_STRIPE_WEBHOOK_SECRET.
 publishable_key = ""
+# Monthly price ids (env MAKTABA_CLOUD_PRICE_PRO / MAKTABA_CLOUD_PRICE_FAMILY).
+price_pro_monthly    = ""
+price_family_monthly = ""
+# An sk_live_ key is refused unless this is true. Leave false: test mode.
+live_mode = false
 
 [apns]
 team_id  = ""
@@ -50,8 +60,10 @@ bundle_id = "com.maktaba.app"
 project_id           = ""
 service_account_path = ""
 
-[admin]
-allowed_email_domain = "hamzalabs.com"
+[mail]
+# "log" writes account mails (verification, reset) to the api log instead of
+# delivering them. It is the only driver today.
+driver = "log"
 
 [entitlement]
 # Ed25519 key path; private key never touches client-readable mounts.

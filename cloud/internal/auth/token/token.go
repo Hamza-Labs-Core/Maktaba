@@ -42,9 +42,12 @@ type Claims struct {
 	Sub   string `json:"sub"` // user id (UUID)
 	Email string `json:"email,omitempty"`
 	Plan  string `json:"plan,omitempty"`
-	IAT   int64  `json:"iat"`
-	EXP   int64  `json:"exp"`
-	JTI   string `json:"jti"`
+	// SID is the refresh session the token was minted from, so the
+	// account page can mark "this device".
+	SID string `json:"sid,omitempty"`
+	IAT int64  `json:"iat"`
+	EXP int64  `json:"exp"`
+	JTI string `json:"jti"`
 }
 
 // Signer issues + verifies tokens. The HMAC secret is loaded once at
@@ -59,7 +62,7 @@ func NewSigner(secret []byte) *Signer {
 }
 
 // Issue returns the encoded token string.
-func (s *Signer) Issue(userID, email, plan string, now time.Time) (string, error) {
+func (s *Signer) Issue(userID, email, plan, sessionID string, now time.Time) (string, error) {
 	jti := make([]byte, 16)
 	if _, err := rand.Read(jti); err != nil {
 		return "", err
@@ -69,6 +72,7 @@ func (s *Signer) Issue(userID, email, plan string, now time.Time) (string, error
 		Sub:   userID,
 		Email: email,
 		Plan:  plan,
+		SID:   sessionID,
 		IAT:   now.Unix(),
 		EXP:   now.Add(AccessTTL).Unix(),
 		JTI:   base64.RawURLEncoding.EncodeToString(jti),

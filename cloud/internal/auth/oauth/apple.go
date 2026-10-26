@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,31 +19,77 @@ import (
 type AppleConfig struct {
 	TeamID      string
 	KeyID       string
-	ClientID    string
+	ClientID    string // the Services ID for web sign-in
 	KeyPath     string
 	RedirectURL string
+
+	// Provider endpoints; empty means Apple's.
+	AuthEndpoint  string
+	TokenEndpoint string
+	JWKSURL       string
 }
 
-// AppleFlow implements Sign in with Apple. The notable difference from
-// Google is the `client_secret` is generated *by us* per-request: a
-// short-lived JWT signed with the EC private key Apple gave us at app
-// registration. We DO NOT call out to Apple's authorization screen —
-// the iOS/macOS SDK handles that; we receive the authorization code on
-// our redirect endpoint, then call Apple's token endpoint here.
+// Apple's published endpoints.
+const (
+	appleAuth   = "https://appleid.apple.com/auth/authorize"
+	appleToken  = "https://appleid.apple.com/auth/token"
+	appleJWKS   = "https://appleid.apple.com/auth/keys"
+	appleIssuer = "https://appleid.apple.com"
+)
+
+// AppleFlow implements Sign in with Apple for the web. The notable
+// difference from Google is the `client_secret`, which we generate per
+// request: a short-lived ES256 JWT signed with the key Apple issued.
+// Apple posts the callback (response_mode=form_post) cross-site, which
+// is why the handler's state cookies are SameSite=None.
 type AppleFlow struct {
-	Config AppleConfig
-	HTTP   *http.Client
-	Now    func() time.Time
+	Config   AppleConfig
+	Verifier *IDTokenVerifier
+	HTTP     *http.Client
+	Now      func() time.Time
 }
 
+// NewAppleFlow fills the default endpoints and builds the verifier.
 func NewAppleFlow(cfg AppleConfig) *AppleFlow {
-	return &AppleFlow{Config: cfg, HTTP: &http.Client{Timeout: 10 * time.Second}, Now: func() time.Time { return time.Now().UTC() }}
+	if cfg.AuthEndpoint == "" {
+		cfg.AuthEndpoint = appleAuth
+	}
+	if cfg.TokenEndpoint == "" {
+		cfg.TokenEndpoint = appleToken
+	}
+	if cfg.JWKSURL == "" {
+		cfg.JWKSURL = appleJWKS
+	}
+	hc := &http.Client{Timeout: 10 * time.Second}
+	return &AppleFlow{
+		Config: cfg,
+		HTTP:   hc,
+		Now:    func() time.Time { return time.Now().UTC() },
+		Verifier: &IDTokenVerifier{
+			JWKSURL:  cfg.JWKSURL,
+			Issuers:  []string{appleIssuer},
+			Audience: cfg.ClientID,
+			HTTP:     hc,
+		},
+	}
 }
 
-// Exchange swaps the authorization code for an id_token, then surfaces
-// the Identity. Apple's id_tokens are ES256-signed; verification keys
-// are at https://appleid.apple.com/auth/keys (JWKS).
-func (a *AppleFlow) Exchange(ctx context.Context, code string) (Identity, error) {
+// AuthURL is where the browser goes to sign in.
+func (a *AppleFlow) AuthURL(state, nonce string) string {
+	q := url.Values{}
+	q.Set("client_id", a.Config.ClientID)
+	q.Set("redirect_uri", a.Config.RedirectURL)
+	q.Set("response_type", "code")
+	q.Set("response_mode", "form_post")
+	q.Set("scope", "name email")
+	q.Set("state", state)
+	q.Set("nonce", nonce)
+	return a.Config.AuthEndpoint + "?" + q.Encode()
+}
+
+// Exchange swaps the authorization code for an id_token and returns the
+// identity it asserts, after verifying it against Apple's keys.
+func (a *AppleFlow) Exchange(ctx context.Context, code, nonce string) (Identity, error) {
 	clientSecret, err := a.clientSecret()
 	if err != nil {
 		return Identity{}, fmt.Errorf("apple oauth: client_secret: %w", err)
@@ -55,45 +100,26 @@ func (a *AppleFlow) Exchange(ctx context.Context, code string) (Identity, error)
 	form.Set("code", code)
 	form.Set("grant_type", "authorization_code")
 	form.Set("redirect_uri", a.Config.RedirectURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://appleid.apple.com/auth/token", strings.NewReader(form.Encode()))
+	idToken, err := postForIDToken(ctx, a.HTTP, a.Config.TokenEndpoint, form)
 	if err != nil {
-		return Identity{}, err
+		return Identity{}, fmt.Errorf("apple oauth: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := a.HTTP.Do(req)
-	if err != nil {
-		return Identity{}, err
+	return a.Verifier.Verify(ctx, idToken, nonce)
+}
+
+// AppleUserName reads the display name from the `user` form field Apple
+// posts on the first sign-in only (it is not in the id_token).
+func AppleUserName(userField string) string {
+	var u struct {
+		Name struct {
+			FirstName string `json:"firstName"`
+			LastName  string `json:"lastName"`
+		} `json:"name"`
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return Identity{}, fmt.Errorf("apple oauth: token endpoint %d: %s", resp.StatusCode, string(body))
+	if json.Unmarshal([]byte(userField), &u) != nil {
+		return ""
 	}
-	var tr struct {
-		IDToken string `json:"id_token"`
-	}
-	if err := json.Unmarshal(body, &tr); err != nil {
-		return Identity{}, err
-	}
-	if tr.IDToken == "" {
-		return Identity{}, errors.New("apple oauth: empty id_token")
-	}
-	// Parse without signature verification here — production wires a
-	// JWKS-backed verifier; we exercise the field-extraction path so
-	// tests can pin behaviour without needing live Apple keys.
-	parts := strings.Split(tr.IDToken, ".")
-	if len(parts) != 3 {
-		return Identity{}, errors.New("apple oauth: malformed id_token")
-	}
-	payload, err := decodeJWTPayload(parts[1])
-	if err != nil {
-		return Identity{}, err
-	}
-	return Identity{
-		Subject:       payload.Sub,
-		Email:         payload.Email,
-		EmailVerified: payload.EmailVerified,
-	}, nil
+	return strings.TrimSpace(u.Name.FirstName + " " + u.Name.LastName)
 }
 
 // clientSecret returns a short-lived ES256-signed JWT. We do not import
@@ -116,22 +142,4 @@ func (a *AppleFlow) clientSecret() (string, error) {
 		return "", errors.New("apple oauth: key is not ECDSA")
 	}
 	return signES256(ec, a.Config.TeamID, a.Config.KeyID, a.Config.ClientID, a.Now())
-}
-
-type applePayload struct {
-	Sub           string `json:"sub"`
-	Email         string `json:"email"`
-	EmailVerified bool   `json:"email_verified"`
-}
-
-func decodeJWTPayload(seg string) (applePayload, error) {
-	body, err := jwtURLDecode(seg)
-	if err != nil {
-		return applePayload{}, err
-	}
-	var p applePayload
-	if err := json.Unmarshal(body, &p); err != nil {
-		return applePayload{}, err
-	}
-	return p, nil
 }

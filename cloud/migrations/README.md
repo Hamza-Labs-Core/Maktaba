@@ -7,7 +7,7 @@ runner at the same DSN.
 ## Conventions
 
 - Files are named `00<slot><seq>_<topic>.sql`. The leading four digits
-  are the Epic slot (`0001`–`0010` reserved for Epic 25), the next four
+  are the Epic slot (`0001`–`0010` were Epic 25's first pass; later slots are taken in order), the next four
   are the ordering within that slot.
 - Every file must contain `-- +goose Up` and `-- +goose Down` markers so
   rollbacks work.
@@ -34,3 +34,5 @@ first runs, the second observes `current = head` and exits cleanly.
 | 0008 | 25.22 subdomains | subdomains, reserved_slugs |
 | 0009 | 25.25 abuse | abuse_signals, blocklist |
 | 0010 | 25.26 entitlement | entitlement_keys, entitlement_grants |
+| 0011 | 30.1 relay analytics | relay_metrics_raw, relay_metrics_hourly |
+| 0012 | 25.2/25.5/25.14/25.20 accounts & admin | users.role + suspension, session rotation, audit_log, invoices, webhook ordering |
