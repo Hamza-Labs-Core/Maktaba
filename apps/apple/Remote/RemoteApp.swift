@@ -2,8 +2,9 @@ import MaktabaKit
 import SwiftUI
 
 /// Maktaba Remote: run a home from your phone or iPad (its admins only; the home refuses
-/// anyone else). It opens on what needs attention. Deeper admin pages come in later stories;
-/// until then the home's web UI has them.
+/// anyone else, whatever the app shows). It opens on what needs attention; the processing
+/// queue, the libraries, the machines and the home's state are a tap away (tabs on iPhone,
+/// a sidebar on iPad).
 @main
 struct RemoteApp: App {
     @State private var session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.remote")
@@ -13,7 +14,7 @@ struct RemoteApp: App {
         WindowGroup {
             SessionGate(session: session, title: "Maktaba Remote") { user, client in
                 if user.isAdmin {
-                    StatusView(session: session, client: client)
+                    RemoteRoot(session: session, user: user, client: client)
                 } else {
                     NotAnAdmin(session: session, user: user)
                 }

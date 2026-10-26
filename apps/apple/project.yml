@@ -101,6 +101,8 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
+        # StreamProxy listens on the loopback (127.0.0.1 only) for the system player
+        com.apple.security.network.server: true
     info:
       path: Player/Info-Mac.plist
 

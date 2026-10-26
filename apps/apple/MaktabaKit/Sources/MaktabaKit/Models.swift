@@ -49,6 +49,8 @@ public struct AuthTokens: Codable, Sendable {
 public struct Library: Codable, Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
+    /// The folders it reads (an admin's view; nil when the home does not say).
+    public let roots: [String]?
 }
 
 /// A video in `GET /api/videos` and `GET /api/videos/{id}`.
@@ -97,9 +99,7 @@ public struct StreamSession: Codable, Sendable {
 
     /// When the signed URL stops working (nil: the home did not say).
     public var expires: Date? {
-        guard let expiresAt else { return nil }
-        return (try? Date(expiresAt, strategy: .iso8601.year().month().day().time(includingFractionalSeconds: true)))
-            ?? (try? Date(expiresAt, strategy: .iso8601))
+        expiresAt.flatMap(homeTime)
     }
 
     /// The URL the player opens, against the home's address.

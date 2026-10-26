@@ -110,6 +110,10 @@ public final class AppSession {
     public private(set) var phase: Phase = .choosingHome
     public private(set) var client: APIClient?
 
+    public var signedIn: Bool {
+        if case .signedIn = phase { true } else { false }
+    }
+
     private let app: String
     private let defaults: UserDefaults
 

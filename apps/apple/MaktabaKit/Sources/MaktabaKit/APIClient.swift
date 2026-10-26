@@ -166,10 +166,66 @@ public actor APIClient {
     }
 
     public func retry(stage: String, cause: String) async throws {
-        _ = try await sendRaw(request("POST", "/api/queues/\(stage)/retry", body: ["cause": cause]))
+        _ = try await sendRaw(request("POST", "/api/queues/\(Self.segment(stage))/retry", body: ["cause": cause]))
+    }
+
+    /// The processing queue: every stage, its counts, paused or not.
+    public func queues() async throws -> QueueSnapshot {
+        try await get("/api/queues")
+    }
+
+    /// One stage's failed jobs, grouped by cause.
+    public func failures(stage: String) async throws -> [FailureGroup] {
+        let r: FailureGroups = try await get("/api/queues/\(Self.segment(stage))/failures")
+        return r.groups
+    }
+
+    /// Pauses or resumes one stage (its running jobs finish; nothing new starts).
+    public func setPaused(stage: String, _ paused: Bool) async throws {
+        _ = try await sendRaw(request("POST", "/api/queues/\(Self.segment(stage))/\(paused ? "pause" : "resume")"))
+    }
+
+    /// Pauses or resumes every stage at once.
+    public func setPausedAll(_ paused: Bool) async throws {
+        _ = try await sendRaw(request("POST", paused ? "/api/queues/pause-all" : "/api/queues/resume-all"))
+    }
+
+    /// Looks for new and changed files in a library (the home answers 202 and scans).
+    public func scan(library: String) async throws {
+        _ = try await sendRaw(request("POST", "/api/libraries/\(Self.segment(library))/scan"))
+    }
+
+    /// The home and its machines.
+    public func cluster() async throws -> ClusterOverview {
+        try await get("/api/cluster")
+    }
+
+    /// Lets machines ask to join for the next hour, or stops them.
+    public func setAcceptJoins(_ open: Bool) async throws {
+        _ = try await sendRaw(request("PUT", "/api/cluster/settings", body: ["accept_joins": open]))
+    }
+
+    /// Approves a machine's request with the code it shows (a wrong code answers 400
+    /// `wrong_code` with `attempts_left`; see `APIError.problem`).
+    public func approve(machine: String, code: String) async throws {
+        _ = try await sendRaw(request("POST", "/api/cluster/nodes/\(Self.segment(machine))/approve", body: ["code": code]))
+    }
+
+    public func reject(machine: String) async throws {
+        _ = try await sendRaw(request("POST", "/api/cluster/nodes/\(Self.segment(machine))/reject"))
+    }
+
+    /// Lets an approved machine go: it stops working for the home at once.
+    public func revoke(machine: String) async throws {
+        _ = try await sendRaw(request("POST", "/api/cluster/nodes/\(Self.segment(machine))/revoke"))
     }
 
     // MARK: plumbing
+
+    /// An id or stage name as one path segment (a "/" in it cannot reach another route).
+    static func segment(_ s: String) -> String {
+        s.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_."))) ?? s
+    }
 
     func get<T: Decodable>(_ path: String, query: [String: String] = [:]) async throws -> T {
         try await send(request("GET", path, query: query))
@@ -194,7 +250,7 @@ public actor APIClient {
     private func send<T: Decodable>(_ r: URLRequest, authorized: Bool = true) async throws -> T {
         let data = try await sendRaw(r, authorized: authorized)
         do {
-            return try JSONDecoder().decode(T.self, from: data)
+            return try JSONDecoder.home.decode(T.self, from: data)
         } catch {
             throw APIError.decoding(String(describing: error))
         }
