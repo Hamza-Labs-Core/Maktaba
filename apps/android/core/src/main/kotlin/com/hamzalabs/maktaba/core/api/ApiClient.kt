@@ -134,7 +134,7 @@ class ApiClient(
     private suspend fun fetchStream(url: HttpUrl): Pair<Int, String> {
         val token = playbackToken(60)
         val r = Request.Builder().url(url).header("Authorization", "Bearer $token").build()
-        return execute(r).use { it.code to (it.body.string()) }
+        return execute(r).let { (code, body) -> code to String(body) }
     }
 
     // ---------- remote (home admins; the home refuses anyone else) ----------
@@ -216,7 +216,7 @@ class ApiClient(
 
     private suspend fun exchange(r: Request, access: String?): Pair<Int, ByteArray> {
         val req = if (access != null) r.newBuilder().header("Authorization", "Bearer $access").build() else r
-        return execute(req).use { it.code to it.body.bytes() }
+        return execute(req)
     }
 
     /**
@@ -238,7 +238,11 @@ class ApiClient(
         t.accessToken
     }
 
-    private suspend fun execute(r: Request): Response = suspendCancellableCoroutine { cont ->
+    /**
+     * Sends [r] and reads the whole answer on OkHttp's own thread: the caller may be the main
+     * thread, where Android forbids network reads (a chunked body is read as it comes).
+     */
+    private suspend fun execute(r: Request): Pair<Int, ByteArray> = suspendCancellableCoroutine { cont ->
         val call = http.newCall(r)
         cont.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
@@ -247,7 +251,9 @@ class ApiClient(
             }
 
             override fun onResponse(call: Call, response: Response) {
-                cont.resume(response) { _, r, _ -> r.close() }
+                val read = runCatching { response.use { it.code to it.body.bytes() } }
+                read.onSuccess { cont.resume(it) }
+                read.onFailure { cont.resumeWithException(ApiException.Transport(it.message ?: it.toString())) }
             }
         })
     }

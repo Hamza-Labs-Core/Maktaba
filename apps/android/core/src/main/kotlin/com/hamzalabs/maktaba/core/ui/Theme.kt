@@ -3,10 +3,16 @@ package com.hamzalabs.maktaba.core.ui
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import com.hamzalabs.maktaba.core.R
 import com.hamzalabs.maktaba.core.session.KeyValueStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -97,6 +103,29 @@ object InkAndBrass {
     )
 }
 
+/** The web's type: IBM Plex Sans Arabic for text, Amiri for headings (both SIL OFL). */
+object MaktabaFonts {
+    val Plex = FontFamily(
+        Font(R.font.ibm_plex_sans_arabic_regular, FontWeight.Normal),
+        Font(R.font.ibm_plex_sans_arabic_medium, FontWeight.Medium),
+        Font(R.font.ibm_plex_sans_arabic_semibold, FontWeight.SemiBold),
+        Font(R.font.ibm_plex_sans_arabic_semibold, FontWeight.Bold),
+    )
+    val Amiri = FontFamily(Font(R.font.amiri_bold, FontWeight.Bold))
+
+    val typography: Typography = Typography().let { t ->
+        fun TextStyle.plex() = copy(fontFamily = Plex)
+        fun TextStyle.amiri() = copy(fontFamily = Amiri, fontWeight = FontWeight.Bold)
+        t.copy(
+            displayLarge = t.displayLarge.amiri(), displayMedium = t.displayMedium.amiri(), displaySmall = t.displaySmall.amiri(),
+            headlineLarge = t.headlineLarge.amiri(), headlineMedium = t.headlineMedium.amiri(), headlineSmall = t.headlineSmall.amiri(),
+            titleLarge = t.titleLarge.plex(), titleMedium = t.titleMedium.plex(), titleSmall = t.titleSmall.plex(),
+            bodyLarge = t.bodyLarge.plex(), bodyMedium = t.bodyMedium.plex(), bodySmall = t.bodySmall.plex(),
+            labelLarge = t.labelLarge.plex(), labelMedium = t.labelMedium.plex(), labelSmall = t.labelSmall.plex(),
+        )
+    }
+}
+
 /** The app's theme: the picked mode, dark while [forceDark] (as while a video plays). */
 @Composable
 fun MaktabaTheme(mode: ThemeMode, forceDark: Boolean = false, content: @Composable () -> Unit) {
@@ -105,7 +134,7 @@ fun MaktabaTheme(mode: ThemeMode, forceDark: Boolean = false, content: @Composab
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
     }
-    MaterialTheme(colorScheme = if (dark) InkAndBrass.Dark else InkAndBrass.Light) {
+    MaterialTheme(colorScheme = if (dark) InkAndBrass.Dark else InkAndBrass.Light, typography = MaktabaFonts.typography) {
         SystemBars(dark)
         content()
     }

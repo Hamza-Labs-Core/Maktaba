@@ -43,6 +43,11 @@ android {
         }
     }
 
+    // English and Arabic: Android's per-app language setting lists both.
+    androidResources {
+        generateLocaleConfig = true
+    }
+
     buildFeatures {
         compose = true
         resValues = true

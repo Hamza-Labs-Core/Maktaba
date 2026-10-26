@@ -40,6 +40,19 @@ reaches a home on the Mac's network by its address (`192.168.50.177:8088`).
 
 ## How it works
 
+- **Finding a home:** a home announces itself over mDNS as `_maktaba._tcp`
+  (`cmd/maktaba-server/internal/mdns`). The home picker lists every `role=home` announcement
+  (a cluster's worker machines say `role=node` and are left out) at its web port (`web=` in
+  the TXT record; the service's own port is the API's). Saved homes come next, and typing an
+  address is the fallback. Before sign-in a home shows the name its machine announces; once
+  signed in, it shows the home's own name from `GET /api/auth/me`.
+- **Local network permission:** on Android 17 (API 37) and later, reaching a home on the
+  local network, by mDNS or by address, needs `ACCESS_LOCAL_NETWORK`, a runtime permission.
+  The picker asks for it. Without it, only an internet address works.
+- **Start screens:** Ink & Brass with the logo and the web's library art. Text is set in IBM
+  Plex Sans Arabic and headings in Amiri, as on the web. They are in English and Arabic (the
+  web's terms, `web/src/i18n`), and Android's per-app language setting lists both. The
+  screens after sign-in are still English only.
 - **Signing in** as a native client (`X-Maktaba-Client: native`): the home answers with an
   access token (RS256, 15 minutes) and a refresh token in the body. On a 401 the client
   refreshes once and retries; requests that 401 together share one refresh (`ApiClient.refreshAfter`).
@@ -72,5 +85,6 @@ reaches a home on the Mac's network by its address (`192.168.50.177:8088`).
 
 ## Icons
 
-`core/src/main/res/mipmap-*` are the phone icons from `tools/icons/make-icons.py`, which
-copies them here when it runs.
+`core/src/main/res/mipmap-*` hold the adaptive icon's layers from `tools/icons/make-icons.py`,
+which copies them here when it runs. The logo (`drawable-nodpi/maktaba_logo.png`) is the web's
+`icons/icon-512.png`, and the library art is `web/public/art/library/`.

@@ -3,6 +3,10 @@ package com.hamzalabs.maktaba.core.layout
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,7 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -62,7 +66,7 @@ fun panesFor(widthDp: Int, fold: Fold?): Panes = when {
 /** The current window's [Panes], from Jetpack WindowManager's fold (through Material's adaptive info). */
 @Composable
 fun currentPanes(): Panes {
-    val info = currentWindowAdaptiveInfo()
+    val info = currentWindowAdaptiveInfoV2()
     val hinge = info.windowPosture.hingeList.firstOrNull()
     val fold = hinge?.let {
         val b = it.bounds
@@ -99,10 +103,11 @@ fun HingeSplit(
         when (panes) {
             is Panes.Tabletop -> {
                 val (a, b) = cut(panes.hinge, origin.y.toInt(), size.height)
+                // the top half does not reach the navigation bar, nor the bottom one the status bar
                 Column(Modifier.fillMaxSize()) {
-                    Box(Modifier.fillMaxWidth().height(with(density) { a.toDp() })) { first() }
+                    Box(Modifier.fillMaxWidth().height(with(density) { a.toDp() }).consumeWindowInsets(WindowInsets.navigationBars)) { first() }
                     Box(Modifier.fillMaxWidth().height(with(density) { (b - a).toDp() }))
-                    Box(Modifier.fillMaxWidth().weight(1f)) { second() }
+                    Box(Modifier.fillMaxWidth().weight(1f).consumeWindowInsets(WindowInsets.statusBars)) { second() }
                 }
             }
             is Panes.Book -> {

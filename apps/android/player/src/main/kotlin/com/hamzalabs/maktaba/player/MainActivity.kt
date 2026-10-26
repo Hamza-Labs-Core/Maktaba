@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.hamzalabs.maktaba.core.ui.MaktabaApp
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.SessionGate
 
@@ -25,7 +26,7 @@ class MainActivity : ComponentActivity() {
             // dark while a video plays, as on the web and the Apple apps
             MaktabaTheme(mode, forceDark = playing) {
                 Surface {
-                    SessionGate(app.session, "Maktaba Player") { user, client ->
+                    SessionGate(app.session, MaktabaApp.Player) { user, client ->
                         LibraryBrowser(app.session, user, client, app.themes, onPlaying = { playing = it })
                     }
                 }

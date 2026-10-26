@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.player
 
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.VideoLibrary
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -122,7 +124,8 @@ class BrowserState(private val client: ApiClient, private val signedOut: () -> U
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            problem = e.message
+            Log.w("Maktaba", "browser: ${e.javaClass.simpleName}", e)
+            problem = e.message ?: e.toString()
         }
     }
 }
@@ -322,6 +325,9 @@ private fun VideoList(
                 when {
                     state.problem != null && state.videos.isEmpty() -> Message("Can't load", detail = state.problem)
                     state.loaded && state.videos.isEmpty() -> Message("No videos")
+                    !state.loaded && state.videos.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
                     else -> LazyColumn(Modifier.fillMaxSize()) {
                         itemsIndexed(state.videos, key = { _, v -> v.id }) { i, v ->
                             VideoRow(client, v, chosen = v.id == chosen) { onOpen(v) }

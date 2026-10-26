@@ -340,8 +340,15 @@ def mobile(master: Image.Image, mark: Image.Image) -> None:
 
 
 def android_native() -> None:
-    """The native Android apps (Player and Remote) share the phone icons, from their core."""
-    shutil.copytree(MOBILE / "android-res", ANDROID_NATIVE, dirs_exist_ok=True)
+    """The native Android apps (Player and Remote) share the phone icons, from their core: the
+    adaptive icon's layers only (minSdk 26 always takes the adaptive icon)."""
+    src = MOBILE / "android-res"
+    for d in src.glob("mipmap-*"):
+        out = ANDROID_NATIVE / d.name
+        out.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(d / "ic_launcher_foreground.png", out / "ic_launcher_foreground.png")
+    (ANDROID_NATIVE / "values").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src / "values" / "ic_launcher_background.xml", ANDROID_NATIVE / "values" / "ic_launcher_background.xml")
 
 
 def main() -> None:
