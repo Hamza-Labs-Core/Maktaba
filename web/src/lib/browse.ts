@@ -2,6 +2,7 @@
 //
 //   GET /api/home                    -> HomeResponse
 //   GET /api/libraries/summary       -> { items: LibrarySummary[] }
+//   GET /api/videos (extended)       -> lib/LibraryBrowser (the grid)
 //   GET /api/libraries/{id}/hub      -> LibraryHub (404: not visible)
 //   GET/PUT /api/me/pinned-libraries -> lib/pins.ts
 //
@@ -102,11 +103,11 @@ export async function fetchHome(): Promise<HomeResponse> {
 }
 
 export async function fetchLibrarySummary(): Promise<LibrarySummary[]> {
-  const r = await api.get<unknown>("/api/libraries/summary");
-  // { items: [...] }, the API's list convention; a bare array is read too
-  return list<LibrarySummary>(Array.isArray(r) ? r : obj(r).items)
-    .filter((l) => l && typeof l.id === "string")
-    .map((l) => ({ ...l, poster_video_ids: list<string>(l.poster_video_ids).slice(0, 4) }));
+  const r = await api.get<{ items: LibrarySummary[] | null }>("/api/libraries/summary");
+  return (r?.items ?? []).map((l) => ({
+    ...l,
+    poster_video_ids: (l.poster_video_ids ?? []).slice(0, 4),
+  }));
 }
 
 export async function fetchHub(id: string): Promise<LibraryHub> {

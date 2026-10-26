@@ -1,0 +1,238 @@
+/* Epic 45: Manage libraries (/admin/libraries) and Settings → Storage &
+   discovery. Logical properties only: the pages mirror under dir="rtl", while
+   paths keep their own left-to-right direction (dir="ltr" on the path). */
+.mkt-libadmin__path {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.mkt-libadmin__small {
+  font-size: var(--font-size-sm);
+}
+
+.mkt-libadmin__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+.mkt-libadmin__card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  background: var(--color-panel, var(--color-bg));
+}
+.mkt-libadmin__card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.mkt-libadmin__card-head h2 {
+  margin: 0;
+}
+.mkt-libadmin__counts {
+  margin: 0;
+  color: var(--color-muted);
+}
+.mkt-libadmin__label {
+  font-size: var(--font-size-sm);
+  margin-block: var(--space-3) var(--space-1);
+}
+.mkt-libadmin__roots {
+  margin: 0;
+  padding-inline-start: var(--space-4);
+  display: grid;
+  gap: var(--space-2);
+}
+.mkt-libadmin__local,
+.mkt-libadmin__problem {
+  display: block;
+  margin-block-start: var(--space-1);
+}
+.mkt-libadmin__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
+.mkt-libadmin__conflicts {
+  border: 1px solid var(--color-warn);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-block-end: var(--space-4);
+}
+.mkt-libadmin__conflicts h2 {
+  margin-block-start: 0;
+}
+.mkt-libadmin__conflicts > ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.mkt-libadmin__conflict ul {
+  margin: 0;
+  padding-inline-start: var(--space-4);
+}
+.mkt-libadmin__conflict-lib {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block: var(--space-1);
+}
+
+/* Add / Edit library */
+.mkt-libadmin__folders {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.mkt-libadmin__folder-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.mkt-libadmin__folder-fields > :first-child {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+.mkt-libadmin__advanced summary {
+  cursor: pointer;
+}
+
+/* Folder picker */
+.mkt-libadmin__picker {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-block-start: var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+}
+.mkt-libadmin__picker-bar,
+.mkt-libadmin__picker-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.mkt-libadmin__picker-actions {
+  justify-content: flex-end;
+}
+.mkt-libadmin__crumbs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+.mkt-libadmin__crumbs li + li::before {
+  content: "/";
+  color: var(--color-muted);
+  margin-inline-end: var(--space-1);
+}
+.mkt-libadmin__crumbs li:nth-child(2)::before {
+  content: "";
+  margin: 0;
+}
+.mkt-libadmin__crumb {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--color-accent-text, var(--color-accent));
+  cursor: pointer;
+  font: inherit;
+}
+.mkt-libadmin__crumb:hover {
+  text-decoration: underline;
+}
+.mkt-libadmin__entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-block-size: 16rem;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.mkt-libadmin__entry {
+  display: block;
+  inline-size: 100%;
+  text-align: start;
+  background: none;
+  border: 0;
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.mkt-libadmin__entry:hover,
+.mkt-libadmin__entry:focus-visible {
+  background: var(--color-subtle);
+}
+
+.mkt-libadmin__impact {
+  margin: 0;
+  padding-inline-start: var(--space-4);
+}
+
+/* Storage & discovery */
+.mkt-storage fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.mkt-storage legend {
+  font-weight: 600;
+  margin-block-end: var(--space-1);
+}
+.mkt-storage__form {
+  gap: var(--space-5);
+}
+.mkt-storage__pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.mkt-storage__pair > :not(button) {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.mkt-storage__banner {
+  border: 1px solid var(--color-warn);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-block: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+.mkt-storage__banner p {
+  margin: 0;
+}
+.mkt-storage__warn {
+  border-inline-start: 3px solid var(--color-warn);
+  padding-inline-start: var(--space-2);
+  margin: 0;
+}
+.mkt-storage__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.mkt-storage__reach {
+  margin-block-start: var(--space-6);
+}

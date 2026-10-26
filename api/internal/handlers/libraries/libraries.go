@@ -8,6 +8,14 @@
 //	POST   /api/libraries/{id}/scan
 //	GET    /api/libraries/{id}/stats
 //
+// and the epic 45 management routes (manage.go, merge.go):
+//
+//	GET    /api/libraries/manage
+//	GET    /api/libraries/folders
+//	GET    /api/libraries/{id}/impact
+//	POST   /api/libraries/{id}/merge
+//	POST   /api/libraries/{id}/empty-trash
+//
 // Validation lives here (root path checks, name uniqueness translation),
 // the SQL is one round-trip per operation, and destructive operations
 // (DELETE ?purge=true) require a name-match confirmation per AC-4.
@@ -30,6 +38,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libpaths"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 )
 
@@ -99,9 +108,11 @@ type OSPathChecker struct{}
 // “not-readable“.
 //
 // Story 31.3: a canonical root (smb://nas/share/...) is checked through the
-// home's mount of the share.
+// home's mount of the share. Epic 45: a root in the database's form
+// (/Volumes/Originals/...) is checked where this machine reaches it, through
+// the server's path map.
 func (OSPathChecker) Check(root string) error {
-	root = sharepath.ToLocal(root)
+	root = libpaths.ToLocal(root)
 	if !filepath.IsAbs(root) {
 		return errPathNotAbsolute
 	}
@@ -149,6 +160,13 @@ func (h *Handler) Mount(r chi.Router) {
 	// videos fallback for environments where library_stats_cache has
 	// not been migrated, but production mounts StatsCached.
 	r.Get("/api/libraries/{id}/stats", h.StatsCached)
+	// Epic 45: the admin's Manage libraries page. chi matches the static
+	// segments before {id}.
+	r.Get("/api/libraries/manage", h.Manage)
+	r.Get("/api/libraries/folders", h.Folders)
+	r.Get("/api/libraries/{id}/impact", h.Impact)
+	r.Post("/api/libraries/{id}/merge", h.Merge)
+	r.Post("/api/libraries/{id}/empty-trash", h.EmptyTrash)
 }
 
 // List returns every library the principal can read. For an admin /
@@ -721,15 +739,15 @@ func (h *Handler) normaliseAndValidateRoots(in []string) ([]string, []httperror.
 // library's roots (or vice-versa). exceptID skips the row being edited
 // during a PATCH.
 func (h *Handler) checkRootOverlap(ctx context.Context, exceptID string, roots []string) *httperror.Error {
-	rows, err := h.DB.QueryContext(ctx, `SELECT id, roots FROM libraries`)
+	rows, err := h.DB.QueryContext(ctx, `SELECT id, name, roots FROM libraries`)
 	if err != nil {
 		return httperror.Internal("overlap check")
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var id string
+		var id, name string
 		var existing stringArray
-		if err := rows.Scan(&id, &existing); err != nil {
+		if err := rows.Scan(&id, &name, &existing); err != nil {
 			return httperror.Internal("overlap scan")
 		}
 		if id == exceptID {
@@ -742,13 +760,54 @@ func (h *Handler) checkRootOverlap(ctx context.Context, exceptID string, roots [
 						Type:   "https://maktaba.dev/problems/library-roots-overlap",
 						Title:  "library roots overlap",
 						Status: http.StatusUnprocessableEntity,
-						Detail: a + " overlaps existing library root " + b,
+						Detail: overlapDetail(a, b) + " (library " + name + ")",
 					}
 				}
 			}
 		}
 	}
 	return nil
+}
+
+// overlapDetail says how a proposed root a meets an existing root b: the
+// same folder, or one inside the other (epic 45: the page tells them apart).
+func overlapDetail(a, b string) string {
+	switch overlapKind(a, b) {
+	case kindSame:
+		return a + " is the same folder as existing library root " + b
+	case kindInside:
+		return a + " is inside existing library root " + b
+	default:
+		return a + " contains existing library root " + b
+	}
+}
+
+const (
+	kindSame     = "same"
+	kindInside   = "inside"   // a is inside b
+	kindContains = "contains" // b is inside a
+)
+
+// overlapKind classifies two overlapping roots the way pathsOverlap
+// compares them; "" when they do not overlap.
+func overlapKind(a, b string) string {
+	if !pathsOverlap(a, b) {
+		return ""
+	}
+	if sharepath.IsCanonical(a) || sharepath.IsCanonical(b) {
+		a = strings.ToLower(strings.TrimRight(a, "/"))
+		b = strings.ToLower(strings.TrimRight(b, "/"))
+	} else {
+		a, b = filepath.Clean(a), filepath.Clean(b)
+	}
+	switch {
+	case a == b:
+		return kindSame
+	case len(a) > len(b):
+		return kindInside
+	default:
+		return kindContains
+	}
 }
 
 // pathsOverlap reports whether one of (a, b) contains the other or

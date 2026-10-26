@@ -5,7 +5,9 @@
 //   ?library=&language=&year=&watched=&sort=&order=&limit=&cursor=
 //   -> { items: Video[], next: string|null }
 // sort = updated_at|created_at|published_at|title|duration_sec|plays and
-// order = asc|desc are the server's (Epic 45); the cursor carries both.
+// order = asc|desc are the server's (Epic 45); the cursor carries both, and
+// the server refuses (400) a cursor minted for another sort or order, so a
+// new sort, order or filter always starts over from the first page.
 // (The server field is `next`, NOT `next_cursor`.)
 //
 // Grid/list view persists per-user in localStorage; the sort, order and
@@ -42,6 +44,10 @@ interface Video {
   duration_sec?: number | null;
   size_bytes?: number;
   updated_at?: string;
+  /** the file's mtime (a download's upload date) */
+  published_at?: string | null;
+  /** everyone's plays; only under sort=plays */
+  plays?: number | null;
 }
 
 interface VideoListResponse {
@@ -107,8 +113,17 @@ const SCAN_TERMINAL = new Set(["done", "failed", "cancelled", "superseded"]);
 
 // ScanNow starts a library scan and follows it: a toast when it is queued
 // (or refused), a progress bar while the job is pending or running, and a
-// toast plus onDone() when it ends.
-export function ScanNow({ libraryId, onDone }: { libraryId: string; onDone: () => void }) {
+// toast plus onDone() when it ends. A scan already running (jobId, from
+// GET /api/libraries/manage after a reload) is followed the same way.
+export function ScanNow({
+  libraryId,
+  onDone,
+  jobId,
+}: {
+  libraryId: string;
+  onDone: () => void;
+  jobId?: string | null;
+}) {
   const { t } = useI18n();
   const toast = useToast();
   const [job, setJob] = useState<ScanJob | null>(null);
@@ -123,6 +138,13 @@ export function ScanNow({ libraryId, onDone }: { libraryId: string; onDone: () =
 
   const errMessage = (e: unknown) =>
     e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error");
+
+  useEffect(() => {
+    if (!jobId) return;
+    setJob({ id: jobId, state: "running" });
+    void follow(jobId);
+    // follow once per job id handed in (follow itself is rebuilt every render)
+  }, [jobId]);
 
   async function follow(id: string) {
     for (let i = 0; i < SCAN_POLL_MAX && alive.current; i++) {
@@ -205,7 +227,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   const params0 = useParams();
   const libraryId = props.libraryId ?? params0.libraryId;
   const { embedded, years } = props;
-  const { t, n } = useI18n();
+  const { t, n, formatDate } = useI18n();
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
 
@@ -496,6 +518,12 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
                     <span>{formatDuration(v.duration_sec)}</span>
                   )}
                   {v.detected_language && <span> · {v.detected_language}</span>}
+                  {sort === "published_at" && v.published_at && (
+                    <span> · {formatDate(v.published_at)}</span>
+                  )}
+                  {typeof v.plays === "number" && (
+                    <span> · {t("videosAll.plays", { n: n(v.plays) })}</span>
+                  )}
                 </div>
                 <StateBadge state={v.state} />
               </Link>

@@ -88,6 +88,7 @@ const ADMIN = [
   { to: "/queue", key: "nav.queue", icon: "⚙" },
   { to: "/transcription", key: "nav.transcription", icon: "✎" },
   { to: "/settings", key: "nav.settings", icon: "☰" },
+  { to: "/admin/libraries", key: "nav.admin.libraries", icon: "▣" },
   { to: "/admin/users", key: "nav.admin.users", icon: "◉" },
   { to: "/admin/library-acl", key: "nav.admin.libraryAcl", icon: "▦" },
   { to: "/admin/channels", key: "nav.admin.channels", icon: "▥" },

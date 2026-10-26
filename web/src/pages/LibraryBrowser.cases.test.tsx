@@ -477,6 +477,32 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     await waitFor(() => expect(videoCalls().at(-1)).not.toMatch(/year=|watched=|language=/));
   });
 
+  it("LIB-27: under Most played a card shows its plays; under Date published its date", async () => {
+    serve((url: string) => ({
+      items: [
+        {
+          id: "v1",
+          filename: "a.mp4",
+          state: "ready",
+          published_at: "2019-03-04T00:00:00Z",
+          ...(url.includes("sort=plays") ? { plays: 12 } : {}),
+        },
+      ],
+      next: null,
+    }));
+    renderLib("/library?sort=plays");
+    const card = await screen.findByRole("link", { name: /a\.mp4/ });
+    expect(card).toHaveTextContent("12 plays");
+    expect(card).not.toHaveTextContent("2019");
+    await userEvent
+      .setup()
+      .selectOptions(screen.getByRole("combobox", { name: "Sort" }), "published_at");
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: /a\.mp4/ })).not.toHaveTextContent("plays")
+    );
+    expect(screen.getByRole("link", { name: /a\.mp4/ })).toHaveTextContent("2019");
+  });
+
   it("LIB-26: typing a year filters; a bad ?year= or ?watched= is not sent", async () => {
     serve({ items: [], next: null });
     renderLib("/library?year=19&watched=bogus");

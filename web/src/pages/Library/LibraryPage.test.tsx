@@ -48,12 +48,13 @@ function serve(hub: unknown = HUB, videos: unknown = { items: [], next: null }) 
     if (url === `/api/libraries/${ID}/hub`)
       return hub instanceof Error ? Promise.reject(hub) : Promise.resolve(hub);
     if (url.startsWith("/api/videos?")) return Promise.resolve(videos);
-    if (url === "/api/me/pinned-libraries") return Promise.resolve({ items: [] });
+    if (url === "/api/me/pinned-libraries") return Promise.resolve({ library_ids: [], items: [] });
     return Promise.reject(new Error(`unmocked GET ${url}`));
   });
   put.mockImplementation((_u: string, body: { library_ids: string[] }) =>
     Promise.resolve({
-      items: body.library_ids.map((id) => ({ id, name: HUB.library.name })),
+      library_ids: body.library_ids,
+      items: body.library_ids.map((id, position) => ({ id, name: HUB.library.name, position })),
     })
   );
 }

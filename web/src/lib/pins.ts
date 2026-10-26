@@ -1,7 +1,8 @@
 // The signed-in user's pinned libraries (Epic 45), in their order:
 //
-//   GET /api/me/pinned-libraries          -> { items: [{ id, name }] }
-//   PUT /api/me/pinned-libraries          { library_ids: [...] } (the order is the array's)
+//   GET /api/me/pinned-libraries  -> { library_ids: [...], items: [{ id, name, position }] }
+//   PUT /api/me/pinned-libraries  { library_ids: [...] } (the order is the array's; at most
+//                                 20; a library the caller may not see is 404) -> the same document
 //
 // The sidebar's "Pinned" group, the Libraries page and a library's page share
 // one store: the nav reads it once per user, and a page that changes the pins
@@ -24,13 +25,14 @@ function publish(next: LibraryRef[] | null) {
   for (const l of listeners) l(next);
 }
 
-// { items: [...] } (the API's list convention); a bare array or { libraries } is read too.
-function parse(r: unknown): LibraryRef[] {
-  const o = r && typeof r === "object" ? (r as Record<string, unknown>) : {};
-  const raw = Array.isArray(r) ? r : Array.isArray(o.items) ? o.items : o.libraries;
-  return (Array.isArray(raw) ? raw : [])
-    .filter((p) => p && typeof p === "object" && typeof (p as LibraryRef).id === "string")
-    .map((p) => ({ id: (p as LibraryRef).id, name: String((p as LibraryRef).name ?? "") }));
+// The document both verbs answer: the ids in order, and the pins with their names.
+interface PinsDoc {
+  library_ids: string[];
+  items: Array<{ id: string; name: string; position: number }>;
+}
+
+function parse(r: PinsDoc | null | undefined): LibraryRef[] {
+  return (r?.items ?? []).map((p) => ({ id: p.id, name: p.name }));
 }
 
 /** Reads the pins for `user` (once; later calls share the answer). */
@@ -39,7 +41,7 @@ export function loadPins(user: string): Promise<LibraryRef[]> {
   if (loadedFor === user && inflight) return inflight;
   loadedFor = user;
   const p = api
-    .get<unknown>(PINS_PATH)
+    .get<PinsDoc>(PINS_PATH)
     .then((r) => {
       const list = parse(r);
       if (loadedFor === user) publish(list);
@@ -65,10 +67,9 @@ export async function savePins(next: LibraryRef[]): Promise<LibraryRef[]> {
   const before = pins;
   publish(next);
   try {
-    const r = await api.put<unknown>(PINS_PATH, { library_ids: next.map((p) => p.id) });
-    const answer = parse(r);
-    // the server's names win; an empty answer (204) keeps what was sent
-    const final = answer.length > 0 || next.length === 0 ? answer : next;
+    const r = await api.put<PinsDoc>(PINS_PATH, { library_ids: next.map((p) => p.id) });
+    // the server's list wins (its names; a pin it no longer shows drops out)
+    const final = parse(r);
     publish(final);
     return final;
   } catch (e) {

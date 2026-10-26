@@ -132,6 +132,7 @@ const PAGES = [
   "/billing",
   "/cloud/status",
   "/videos/:videoId",
+  "/admin/libraries",
   "/admin/library-acl",
   "/admin/channels",
   "/admin/filler",
@@ -290,6 +291,7 @@ const SERVER_LINKS = [
 
 const ADMIN_LINKS = [
   ...SERVER_LINKS,
+  ["nav.admin.libraries", "/admin/libraries"],
   ["nav.admin.users", "/admin/users"],
   ["nav.admin.libraryAcl", "/admin/library-acl"],
   ["nav.admin.channels", "/admin/channels"],
@@ -837,9 +839,13 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     get.mockImplementation((path: string) =>
       path === "/api/me/pinned-libraries"
         ? Promise.resolve({
+            library_ids: [
+              "11111111-1111-4111-8111-111111111111",
+              "22222222-2222-4222-8222-222222222222",
+            ],
             items: [
-              { id: "11111111-1111-4111-8111-111111111111", name: "دروس" },
-              { id: "22222222-2222-4222-8222-222222222222", name: "Lectures" },
+              { id: "11111111-1111-4111-8111-111111111111", name: "دروس", position: 0 },
+              { id: "22222222-2222-4222-8222-222222222222", name: "Lectures", position: 1 },
             ],
           })
         : base(path)

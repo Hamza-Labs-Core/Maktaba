@@ -36,15 +36,21 @@ const summary = (pinned: string[] = []) => ({
 
 let pins: Array<{ id: string; name: string }>;
 
+// GET and PUT /api/me/pinned-libraries answer the same document
+const pinsDoc = () => ({
+  library_ids: pins.map((p) => p.id),
+  items: pins.map((p, position) => ({ ...p, position })),
+});
+
 function serve(sum: unknown = summary()) {
   get.mockImplementation((url: string) => {
     if (url === "/api/libraries/summary") return Promise.resolve(sum);
-    if (url === "/api/me/pinned-libraries") return Promise.resolve({ items: pins });
+    if (url === "/api/me/pinned-libraries") return Promise.resolve(pinsDoc());
     return Promise.reject(new Error(`unmocked GET ${url}`));
   });
   put.mockImplementation((_url: string, body: { library_ids: string[] }) => {
     pins = body.library_ids.map((id) => [A, B, C].find((l) => l.id === id)!);
-    return Promise.resolve({ items: pins });
+    return Promise.resolve(pinsDoc());
   });
 }
 
@@ -182,7 +188,7 @@ describe("Libraries", () => {
     get.mockImplementation((url: string) =>
       url === "/api/libraries/summary"
         ? Promise.reject(new ApiError({ type: "about:blank", title: "boom", status: 500 }))
-        : Promise.resolve({ items: [] })
+        : Promise.resolve({ library_ids: [], items: [] })
     );
     renderLibraries();
     const alert = await screen.findByRole("alert");
