@@ -102,7 +102,24 @@ func TestANodeLogsInToAHomeThatRequiresItsCertificate(t *testing.T) {
 	if st := w.State(); st.OK || st.Code != "tls" || asked != 0 {
 		t.Fatalf("the watch: %+v, %d requests for a re-made access", st, asked)
 	}
+	// a certificate for another role (a machine that joined under an older role name):
+	// Postgres says the password failed; it is cert_mismatch, never asked for either
+	cert, key = clusterCA.leaf(t, role+"0", false)
+	writeCert()
+	err = probeHomeDB(ctx)
+	if err == nil || classifyHomeDB(err) != "cert_mismatch" {
+		t.Fatalf("another role's certificate: %v (%s)", err, classifyHomeDB(err))
+	}
+	for range 6 {
+		now = now.Add(time.Hour)
+		w.check(ctx)
+		w.maybeAsk()
+	}
+	if st := w.State(); st.Code != "cert_mismatch" || asked != 0 {
+		t.Fatalf("the watch: %+v, %d requests", st, asked)
+	}
 	// the certificate back: the check logs in again
+	cert, key = clusterCA.leaf(t, role, false)
 	writeCert()
 	w.check(ctx)
 	if st := w.State(); !st.OK {

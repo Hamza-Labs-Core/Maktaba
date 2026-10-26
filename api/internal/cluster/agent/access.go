@@ -327,7 +327,7 @@ func requestMends(ctx context.Context, g AccessGranter, nodeID string, db homeDB
 		if why := remakeWhy(db, host, port, name); why != "" {
 			return why
 		}
-	} else if db.Code != "tls" {
+	} else if !notMendable(db.Code) {
 		return "requested" // where it points is not known here: made again, as asked
 	}
 	if usable, err := g.AccessUsable(ctx, nodeID); err == nil && !usable {
@@ -335,6 +335,11 @@ func requestMends(ctx context.Context, g AccessGranter, nodeID string, db homeDB
 	}
 	return ""
 }
+
+// notMendable reports a machine's failed login no re-made access mends wherever the
+// database is: TLS (its certificate, the home's), or a certificate for another role than
+// its login's (cert_mismatch: a re-made access keeps the same role).
+func notMendable(code string) bool { return code == "tls" || code == "cert_mismatch" }
 
 // grantRequested re-makes a machine's access at its own request (db: the failed login it
 // asks for, nil when it does not say) and sends it (home.access), when a re-made access

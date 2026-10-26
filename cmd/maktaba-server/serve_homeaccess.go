@@ -13,8 +13,11 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"database/sql"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -225,10 +228,12 @@ func askAgainAfter(asks int) time.Duration {
 
 // remakeMends reports whether a re-made access may mend a failure of code: never TLS (the
 // home requiring the machine's certificate, this machine not verifying the home's, a
-// plain connection a TLS-only home refuses): a new password changes none of it, and asked
+// plain connection a TLS-only home refuses), nor a certificate for another role than the
+// login's (cert_mismatch: the home re-makes the same role): a new password changes none of
+// it, and asked
 // for it the home made one the roles then no longer had, again and again. The home decides
 // the rest (its remakeWhy: a refused password, or a database that moved).
-func remakeMends(code string) bool { return code != "tls" }
+func remakeMends(code string) bool { return code != "tls" && code != "cert_mismatch" }
 
 // homeDBWatch keeps this machine's last login to its home's database (update.state's
 // home_db).
@@ -493,7 +498,50 @@ func probeHomeDB(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("%s", noCreds(err.Error()))
 	}
-	return pingDSN(ctx, dsn)
+	return withCertCheck(dsn, pingDSN(ctx, dsn))
+}
+
+// certMismatch is a login the home refused while this machine offered a certificate for
+// another role than the login's: Postgres says its CN check (clientcert=verify-full) failed
+// as the password's failure, which no new password mends (the home re-makes the same role:
+// it is still not the certificate's).
+type certMismatch struct {
+	cn, role string
+	err      error
+}
+
+func (e *certMismatch) Error() string {
+	return fmt.Sprintf("this machine's certificate is for %s, not its database role %s (%v)", e.cn, e.role, e.err)
+}
+
+func (e *certMismatch) Unwrap() error { return e.err }
+
+// withCertCheck is err, or a certMismatch when err is a refused password (auth_failed)
+// while dsn offers a certificate whose CN is not dsn's user.
+func withCertCheck(dsn string, err error) error {
+	if err == nil || classifyHomeDB(err) != "auth_failed" {
+		return err
+	}
+	u, perr := url.Parse(dsn)
+	if perr != nil || u.User == nil || u.Query().Get("sslcert") == "" {
+		return err
+	}
+	b, rerr := os.ReadFile(u.Query().Get("sslcert"))
+	if rerr != nil {
+		return err
+	}
+	blk, _ := pem.Decode(b)
+	if blk == nil {
+		return err
+	}
+	c, cerr := x509.ParseCertificate(blk.Bytes)
+	if cerr != nil {
+		return err
+	}
+	if role := u.User.Username(); c.Subject.CommonName != role {
+		return &certMismatch{cn: c.Subject.CommonName, role: role, err: err}
+	}
+	return err
 }
 
 // homeDBDSN is how the check logs in: exactly as the roles do (supervisor.HomeDSN, the
@@ -553,6 +601,10 @@ func pingOnce(ctx context.Context, dsn string) error {
 
 // classifyHomeDB is why a login to the home's database failed.
 func classifyHomeDB(err error) string {
+	var cm *certMismatch
+	if errors.As(err, &cm) {
+		return "cert_mismatch"
+	}
 	msg := strings.ToLower(err.Error())
 	has := func(s ...string) bool {
 		for _, x := range s {

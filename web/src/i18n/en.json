@@ -1789,6 +1789,7 @@
   "machines.homeDb.code.unreachable": "the home's database could not be reached over the network",
   "machines.homeDb.code.no_database": "the library database is missing on the home",
   "machines.homeDb.code.tls": "the secure connection to the home's database failed",
+  "machines.homeDb.code.cert_mismatch": "its certificate is for another database role than its login's",
   "machines.homeDb.code.other": "an error the details say",
   "machines.homeDb.asked": "It asked the home for a new login; no answer yet.",
   "machines.homeDb.answer": "The home cannot give this machine a new login: {reason}",
