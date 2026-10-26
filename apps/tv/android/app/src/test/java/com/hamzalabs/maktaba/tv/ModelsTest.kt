@@ -28,7 +28,7 @@ class ModelsTest {
 
     @Test
     fun theApprovePageFitsInAQr() {
-        val m = qrModules("http://192.168.50.177:8088/link?code=ABCD-1234")
+        val m = qrModules("http://192.168.50.177:8088/pair?code=ABCD-1234")
         assertNotNull(m)
         assertTrue(m!!.size in 21..41)
         assertEquals(m.size, m[0].size)
