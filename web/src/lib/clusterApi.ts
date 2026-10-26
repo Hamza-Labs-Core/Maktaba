@@ -245,6 +245,9 @@ export interface ClusterLink {
       clock_skew_seconds?: number;
       /** why it keeps the link from becoming required (EC3) */
       blocks?: "worker_only" | "no_cert" | "not_connected" | "under_a_day" | "clock_skew";
+      /** its processes present their certificate to the home's database: once the link is
+       * required its role needs it there too (else its password alone; an older release) */
+      db_cert?: boolean;
     }
   >;
 }

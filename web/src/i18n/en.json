@@ -1759,6 +1759,7 @@
   "machines.link.block.not_connected": "keeps the link optional: not on the link now",
   "machines.link.block.under_a_day": "keeps the link optional: on the link for less than a day",
   "machines.link.block.clock_skew": "keeps the link optional: its clock is off (its certificate is not valid there yet)",
+  "machines.link.dbPassword": "its database login still uses its password alone: its processes do not present their certificate yet (they do once it runs the current release)",
   "machines.link.ca": "Cluster CA fingerprint (SHA-256):",
   "machines.link.download": "Download the cluster CA certificate (for HTTPS on port 8443)",
   "machines.pending.title": "Asking to join",
