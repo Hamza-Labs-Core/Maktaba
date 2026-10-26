@@ -18,8 +18,16 @@ import { fetchLibrarySummary, type LibraryRef, type LibrarySummary } from "../..
 import { MAX_PINS, movePin, togglePin, usePins } from "../../lib/pins";
 import { TitleRow } from "../../help/HelpLink";
 
-/** The 2x2 poster mosaic of a library card (blank tiles fill a short one). */
+/** The 2x2 poster mosaic of a library card; a library with fewer than four
+ *  posters shows its newest one whole instead of blank tiles. */
 export function PosterMosaic({ ids }: { ids: string[] }) {
+  if (ids.length > 0 && ids.length < 4) {
+    return (
+      <span className="mkt-libcard__mosaic mkt-libcard__mosaic--single" aria-hidden="true">
+        <MosaicTile id={ids[0]} />
+      </span>
+    );
+  }
   const tiles = [0, 1, 2, 3].map((i) => ids[i] ?? null);
   return (
     <span className="mkt-libcard__mosaic" aria-hidden="true">

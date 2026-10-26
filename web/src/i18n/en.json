@@ -4670,7 +4670,7 @@
   "videosAll.watched.unwatched": "Not watched",
   "videosAll.watched.in_progress": "In progress",
   "videosAll.watched.watched": "Watched",
-  "nav.admin.libraries": "Libraries",
+  "nav.admin.libraries": "Manage libraries",
   "settings.section.storage": "Storage & discovery",
   "libraryAdmin.title": "Manage libraries",
   "libraryAdmin.desc": "Add libraries, choose their folders, scan them, and fix folders that two libraries share.",

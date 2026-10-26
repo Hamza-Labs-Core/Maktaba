@@ -3593,6 +3593,9 @@ button.mkt-video__hero {
   overflow: hidden;
   background: var(--color-subtle);
 }
+.mkt-libcard__mosaic--single > * {
+  grid-area: 1 / 1 / 3 / 3;
+}
 .mkt-libcard__mosaic > img,
 .mkt-libcard__mosaic > span {
   width: 100%;
