@@ -45,8 +45,8 @@ func TestWorkerTokenParity(t *testing.T) {
 			t.Fatal(err)
 		}
 		fx = parityFixture{Note: "TEST-ONLY key, never used anywhere else; see api/internal/tvremote/cf/parity_test.go",
-			PEM:  base64.StdEncoding.EncodeToString(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)})),
-			Kid:  "parity-kid-1", Sub: "ea95132c15732412d22c1476fa83f27a", Now: 1_793_000_000, TTL: 600}
+			PEM: base64.StdEncoding.EncodeToString(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)})),
+			Kid: "parity-kid-1", Sub: "ea95132c15732412d22c1476fa83f27a", Now: 1_793_000_000, TTL: 600}
 	} else {
 		b, err := os.ReadFile(parityPath())
 		if err != nil {
