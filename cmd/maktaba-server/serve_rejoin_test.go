@@ -62,6 +62,7 @@ func TestRejoinAfterTheHomeRefusesThisMachine(t *testing.T) {
 		joined: func(config.NodeConfig, machineagent.Joined) error { return nil }}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	defer w.stop() // the re-join ends before the pauses above are put back
 
 	w.refused(ctx, 4003) // one refusal: a home in the middle of a switch
 	now = now.Add(30 * time.Second)
@@ -111,6 +112,7 @@ func TestRejoinOnUnknownAnswersIsConfirmed(t *testing.T) {
 		joined: func(config.NodeConfig, machineagent.Joined) error { return nil }}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	defer w.stop() // the re-join it starts ends with the test
 	started := func() bool {
 		w.mu.Lock()
 		defer w.mu.Unlock()

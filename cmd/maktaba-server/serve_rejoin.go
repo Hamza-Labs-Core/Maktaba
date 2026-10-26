@@ -59,6 +59,8 @@ type rejoinWatch struct {
 	unknownHome  string
 	cancel       context.CancelFunc // the re-join running, if one is
 	state        *machineagent.RejoinState
+	// running is the re-join's goroutine (stop waits for it)
+	running sync.WaitGroup
 }
 
 func newRejoinWatch() *rejoinWatch {
@@ -89,8 +91,27 @@ func (w *rejoinWatch) refused(ctx context.Context, code int) {
 		}
 		fmt.Fprintf(os.Stderr, "[serve] node: the home refuses this machine's sessions: %s; asking it to take this "+
 			"machine again, as itself (its own id and key), for its admin to approve\n", why)
-		go w.run(rctx)
+		w.running.Add(1)
+		go func() {
+			defer w.running.Done()
+			w.run(rctx)
+		}()
 	}
+}
+
+// stop ends a re-join running and waits until it has (a test's end: nothing of it reads
+// what the test puts back after).
+func (w *rejoinWatch) stop() {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	if w.cancel != nil {
+		w.cancel()
+		w.cancel = nil
+	}
+	w.mu.Unlock()
+	w.running.Wait()
 }
 
 // unknown is the home answering this machine's request for its access that it does not
