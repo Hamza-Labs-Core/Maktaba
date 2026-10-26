@@ -91,6 +91,14 @@ func TestSetupAndTheSupervisorAgreeOnTheGPU(t *testing.T) {
 	cases = append(cases, []hostinfo.GPU{big, small}, []hostinfo.GPU{small, big})
 	for _, gpus := range cases {
 		setup := secondListenOn(runtime.GOOS, "amd64", gpus).Runs
+		if runtime.GOOS == "darwin" {
+			// a Mac has no CUDA: setup never asks, and the supervisor never sees an
+			// NVIDIA GPU there to plan on (no nvidia-smi)
+			if setup {
+				t.Errorf("%+v on darwin: setup asks for the sign-in", gpus)
+			}
+			continue
+		}
 		plans := supervisor.SecondListenGPU(theirs(gpus[0])) == ""
 		if setup != plans {
 			t.Errorf("%+v on %s: setup says %v, the supervisor %v", gpus, runtime.GOOS, setup, plans)
