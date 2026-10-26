@@ -32,7 +32,7 @@ use std::sync::Mutex;
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{Action, BundlePaths, LoginItem};
+use super::{Action, BundlePaths, LoginItem, HIDDEN_FLAG};
 use crate::lang::{fill, Lang};
 use crate::setup::{self, Progress, StepError};
 
@@ -733,9 +733,6 @@ pub fn name_has_owner(out: &str) -> Option<bool> {
         None
     }
 }
-
-/// The argv[1] that starts the app with its window hidden (the tray at login).
-pub const HIDDEN_FLAG: &str = "--hidden";
 
 /// The key that marks an autostart entry as this app's.
 const AUTOSTART_MARK: &str = "X-Maktaba-Tray=true";

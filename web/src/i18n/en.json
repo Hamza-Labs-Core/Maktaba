@@ -3777,6 +3777,7 @@
   "setup.starting.stopped": "The server is stopped. Choose Resume server in {tray}.",
   "setup.starting.problem": "Some parts keep stopping: {roles}. Open logs from {tray} to see why.",
   "setup.starting.not_answering": "The server does not start. Open logs from {tray} to see more.",
+  "setup.starting.page_not_answering": "The server runs, but its page does not answer yet. Maktaba keeps trying; you can try again now, or open logs from {tray} to see why.",
   "setup.starting.log_says": "Its log says:",
   "setup.starting.detail.db_waiting": "Waiting for the library database.",
   "setup.starting.detail.db_checking": "Checking the library database.",
