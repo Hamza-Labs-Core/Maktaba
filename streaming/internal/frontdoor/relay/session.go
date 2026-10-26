@@ -135,6 +135,19 @@ const (
 	BehindLimit  = 3
 	BehindWindow = 5 * time.Minute
 	sourceRetry  = 500 * time.Millisecond
+	// SourceIdle: a source that sent bytes and then went silent this long
+	// (a node that lost power holds its TCP connection open) is dropped and
+	// the channel resolved again, well inside the input's 30 s
+	// timeoutSeconds, so Cloudflare keeps the same video (32.7 AC10).
+	SourceIdle = 5 * time.Second
+	// SourceFirstByte: how long a fresh source may take to send its first
+	// bytes (a station starting) before it is dropped the same way.
+	SourceFirstByte = 20 * time.Second
+	// RestartMax caps the backoff between ffmpeg restarts that each ended
+	// quickly (the uplink is down: 32.7 EC1); a run longer than
+	// restartHealthy resets it to RestartDelay.
+	RestartMax     = 5 * time.Second
+	restartHealthy = 10 * time.Second
 )
 
 // Session is one running push: one ffmpeg, fed from the channel's current
@@ -156,6 +169,8 @@ type Session struct {
 	Stall, Restart time.Duration
 	// KillGrace is how long a stopped ffmpeg may take to exit (default 3 s).
 	KillGrace time.Duration
+	// Idle and FirstByte override SourceIdle and SourceFirstByte (tests).
+	Idle, FirstByte time.Duration
 
 	feed    chan chunk
 	gen     int // bumped at every Resync: older chunks are dropped
@@ -266,12 +281,14 @@ func (s *Session) Run(ctx context.Context) error {
 
 // feeder is the io.Writer a source writes into: retimed, then queued for ffmpeg.
 type feeder struct {
-	s   *Session
-	ctx context.Context
-	err error
+	s    *Session
+	ctx  context.Context
+	err  error
+	last atomic.Int64 // unix nanos of the last write; 0 before the first
 }
 
 func (f *feeder) Write(b []byte) (int, error) {
+	f.last.Store(time.Now().UnixNano())
 	f.s.mu.Lock()
 	out, err := f.s.rt.Process(b)
 	var cp []byte
@@ -349,6 +366,7 @@ func (s *Session) sourceLoop(ctx context.Context) {
 			}
 		}()
 		fw := &feeder{s: s, ctx: sctx}
+		go s.watchIdle(sctx, scancel, fw)
 		err := s.Source.Stream(sctx, s.Channel, fw, func(o Origin) {
 			s.mu.Lock()
 			prev := s.origin
@@ -392,9 +410,50 @@ func (s *Session) sourceLoop(ctx context.Context) {
 	}
 }
 
+// watchIdle ends a source that stopped sending (SourceIdle after its last
+// bytes, SourceFirstByte before the first): a dead node's connection is not
+// closed for minutes, and the relay must resolve the channel again first.
+func (s *Session) watchIdle(ctx context.Context, cancel context.CancelFunc, fw *feeder) {
+	idle, first := s.Idle, s.FirstByte
+	if idle <= 0 {
+		idle = SourceIdle
+	}
+	if first <= 0 {
+		first = SourceFirstByte
+	}
+	tick := idle / 5
+	if tick > time.Second {
+		tick = time.Second
+	}
+	t := time.NewTicker(tick)
+	defer t.Stop()
+	began := time.Now()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			last := fw.last.Load()
+			silent, limit := now.Sub(began), first
+			if last != 0 {
+				silent, limit = now.Sub(time.Unix(0, last)), idle
+			}
+			if silent >= limit {
+				s.log().Warn("relay: the source went silent; resolving the channel again",
+					"silent", silent.Round(time.Millisecond).String(), "origin", s.Origin().String(),
+					"event", "tv_push_source_lost")
+				cancel()
+				return
+			}
+		}
+	}
+}
+
 func (s *Session) pushLoop(ctx context.Context, fatal chan<- error) {
 	args := Args(s.Creds, s.Audio)
+	delay := s.restartDelay()
 	for ctx.Err() == nil {
+		began := time.Now()
 		p, err := s.Runner.Start(s.FFmpeg, args)
 		if err != nil {
 			s.report("error", "ffmpeg did not start: "+err.Error())
@@ -445,15 +504,30 @@ func (s *Session) pushLoop(ctx context.Context, fatal chan<- error) {
 		if t := p.Tail(); t != "" {
 			detail += ": " + lastLine(t)
 		}
+		// back off while ffmpeg keeps ending at once (the uplink is down),
+		// staying inside the input's 30 s reconnect window
+		if time.Since(began) >= restartHealthy {
+			delay = s.restartDelay()
+		}
 		s.log().Warn("relay: ffmpeg ended; restarting on the same input", "why", Mask(detail, s.Creds.Key),
-			"event", "tv_push_reconnect")
+			"retry_in", delay.String(), "event", "tv_push_reconnect")
 		s.report("error", detail)
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(s.restartDelay()):
+		case <-time.After(delay):
+		}
+		if delay *= 2; delay > s.restartMax() {
+			delay = s.restartMax()
 		}
 	}
+}
+
+func (s *Session) restartMax() time.Duration {
+	if s.Restart > 0 && s.Restart*10 < RestartMax {
+		return s.Restart * 10
+	}
+	return RestartMax
 }
 
 func (s *Session) killGrace() time.Duration {

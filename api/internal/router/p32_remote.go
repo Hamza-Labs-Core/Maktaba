@@ -80,6 +80,7 @@ func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, *
 		ctl.Notifier = notify.NewHub(d.DB, d.Logger)
 	}
 	in.StopPushes = ctl.StopAll
+	in.ForgetInputs = ctl.Forget
 	if d.DB != nil && !d.NoLoop {
 		go ctl.Run(context.Background())
 		// story 32.11: the TV numbers the control centre charts, every minute

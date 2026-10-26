@@ -770,6 +770,21 @@ func (c *Controller) StopAll(ctx context.Context) error {
 	return err
 }
 
+// Forget closes every push that is still open and drops the input rows: the
+// integration was removed, so there is no Cloudflare left to finish against,
+// and stale rows would count against max_channels when it is added again.
+func (c *Controller) Forget(ctx context.Context) error {
+	c.init()
+	now := c.st.t(c.now())
+	if _, err := c.st.db.ExecContext(ctx, `UPDATE tv_remote_pushes SET state = 'done',
+	    end_reason = COALESCE(end_reason, 'removed'), ended_at = COALESCE(ended_at, $1), state_at = $1
+	    WHERE state NOT IN ('done', 'failed')`, now); err != nil {
+		return err
+	}
+	_, err := c.st.db.ExecContext(ctx, `DELETE FROM tv_remote_inputs`)
+	return err
+}
+
 // inputKeys is the cf_input.<uid> secret: the ingest endpoints with their keys.
 type inputKeys struct {
 	RTMPSURL      string `json:"rtmps_url"`

@@ -163,6 +163,55 @@ func TestClusterGetShape(t *testing.T) {
 	}
 }
 
+// 32.5 AC1, AC3: the On air row carries the channel's running Cloudflare push
+// and its open remote sessions (none when remote was never set up: slot 0125
+// absent, as in TestClusterGetShape).
+func TestClusterOnAirRemote(t *testing.T) {
+	db := newDB(t)
+	now := time.Now()
+	seed(t, db, now)
+	for _, q := range []string{
+		`CREATE TABLE tv_remote_pushes (id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, state TEXT NOT NULL,
+			ingest TEXT NOT NULL, live_at TEXT, detail TEXT)`,
+		`CREATE TABLE tv_remote_sessions (id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, ended_at TEXT)`,
+		`INSERT INTO tv_remote_pushes VALUES ('p0', 'c1', 'done', 'rtmps', NULL, NULL),
+			('p1', 'c1', 'live', 'rtmps', '` + ts(now.Add(-time.Minute)) + `', NULL)`,
+		`INSERT INTO tv_remote_sessions VALUES ('s1', 'c1', NULL), ('s2', 'c1', NULL), ('s3', 'c1', '` + ts(now) + `'),
+			('s4', 'c2', '` + ts(now) + `')`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	h := &Handler{DB: db, Now: func() time.Time { return now }}
+	r := chi.NewRouter()
+	h.Mount(r)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, admin(httptest.NewRequest("GET", "/api/tv/cluster", nil)))
+	var resp struct {
+		OnAir []struct {
+			ChannelID string  `json:"channel_id"`
+			Viewers   Viewers `json:"viewers"`
+			Push      *Push   `json:"push"`
+		} `json:"on_air"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range resp.OnAir {
+		switch o.ChannelID {
+		case "c1":
+			if o.Push == nil || o.Push.ID != "p1" || o.Push.State != "live" || o.Push.LiveAt == nil || o.Viewers.Remote != 2 {
+				t.Errorf("c1 push %+v remote %d", o.Push, o.Viewers.Remote)
+			}
+		case "c2":
+			if o.Push != nil || o.Viewers.Remote != 0 {
+				t.Errorf("c2 push %+v remote %d", o.Push, o.Viewers.Remote)
+			}
+		}
+	}
+}
+
 // TC1 of 32.5: the home cannot be disabled; override 0-64; weight; URL must be http(s).
 func TestPutHostValidation(t *testing.T) {
 	db := newDB(t)
