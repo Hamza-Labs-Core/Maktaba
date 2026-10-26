@@ -9,7 +9,7 @@ public enum APIError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case let .transport(why): "Could not reach the home: \(why)"
-        case let .status(code, body): "The home answered \(code): \(body)"
+        case let .status(code, body): "The home answered \(code): \(body.prefix(300))"
         case let .decoding(why): "Unexpected answer from the home: \(why)"
         case .signedOut: "Signed out. Sign in again."
         }
@@ -200,7 +200,7 @@ public actor APIClient {
         case 409, 410:
             return .expired
         case let code:
-            throw APIError.status(code, String(decoding: data.prefix(300), as: UTF8.self))
+            throw APIError.status(code, String(decoding: data.prefix(4096), as: UTF8.self))
         }
     }
 
@@ -323,7 +323,7 @@ public actor APIClient {
             throw APIError.signedOut
         }
         guard (200..<300).contains(code) else {
-            throw APIError.status(code, String(decoding: data.prefix(300), as: UTF8.self))
+            throw APIError.status(code, String(decoding: data.prefix(4096), as: UTF8.self))
         }
         return data
     }

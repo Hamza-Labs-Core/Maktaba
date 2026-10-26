@@ -32,6 +32,12 @@ final class Playback {
     func play(_ v: Video) {
         if v.id == video?.id, problem == nil { return }
         stop()
+        #if os(iOS)
+        // the app declares background audio: with the playback category the sound goes on
+        // when the screen locks or the app goes to the background (and ignores the mute switch)
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
         video = v
         running = Task { await run() }
     }
@@ -114,7 +120,7 @@ final class Playback {
             return
         } catch {
             player = nil
-            problem = error.localizedDescription
+            problem = (error as? APIError)?.message ?? error.localizedDescription
         }
     }
 

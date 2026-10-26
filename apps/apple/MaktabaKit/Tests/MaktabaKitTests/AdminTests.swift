@@ -178,6 +178,19 @@ import Testing
         }
     }
 
+    /// A long problem (the request id, the type URI) is read whole, not cut mid-JSON.
+    @Test func readsALongProblem() async throws {
+        let long = #"{"code":"insufficient_storage","detail":"the server that streams it has too little free on its disk to transcode it","instance":"/api/stream/sessions","requestId":"01a178df-2dc4-734f-9927-fee2cf9f1c82","status":507,"title":"not enough disk space to prepare this video","type":"https://maktaba.dev/problems/insufficient-storage"}"#
+        #expect(long.utf8.count > 300)
+        Stub.answer(507, long)
+        do {
+            _ = try await client().queues()
+            Issue.record("a 507 decoded")
+        } catch let e as APIError {
+            #expect(e.message == "the server that streams it has too little free on its disk to transcode it")
+        }
+    }
+
     @Test func readsTheQueueAndTheMachines() async throws {
         Stub.answer(200, QueueScreen.snapshot)
         #expect(try await client().queues().rows.count == 4)
