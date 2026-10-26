@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.ClusterOverview
 import com.hamzalabs.maktaba.core.api.FailureGroup
@@ -72,9 +73,10 @@ private fun Detail(content: @Composable () -> Unit) {
 
 @Composable
 private fun Fact(label: String, value: String) {
-    Row(Modifier.fillMaxWidth()) {
-        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyLarge)
+    // the label keeps its width; a long value wraps beside it
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.End)
     }
 }
 
@@ -144,7 +146,7 @@ fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
     ) {
         val gs = groups
         when {
-            gs == null -> item { Message("Loading…") }
+            gs == null -> item { if (remote.problem == null) Message("Loading…") }
             gs.isEmpty() -> item {
                 ListItem(
                     headlineContent = { Text("Nothing needs attention") },
@@ -197,7 +199,8 @@ fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
             load()
         }
     }
-    Polling(10_000) { load() }
+    // the snapshot counts every job: a busy home takes seconds to answer, so not too often
+    Polling(30_000) { load() }
     val row = snap?.rows?.firstOrNull { it.id == chosen }
     AdminScreen(
         title = "Queue",
@@ -219,7 +222,7 @@ fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
     ) {
         val s = snap
         when {
-            s == null -> item { Message("Loading…") }
+            s == null -> item { if (remote.problem == null) Message("Loading…") }
             else -> {
                 if (s.pausedAll) {
                     item {
@@ -330,7 +333,7 @@ fun LibrariesScreen(remote: Remote, account: @Composable () -> Unit) {
     ) {
         val ls = libraries
         when {
-            ls == null -> item { Message("Loading…") }
+            ls == null -> item { if (remote.problem == null) Message("Loading…") }
             ls.isEmpty() -> item { Message("No libraries yet", detail = "Add one from the home's web Settings.") }
             else -> items(ls, key = { it.id }) { l ->
                 ListItem(
@@ -388,7 +391,7 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
     ) {
         val o = overview
         when {
-            o == null -> item { Message("Loading…") }
+            o == null -> item { if (remote.problem == null) Message("Loading…") }
             else -> {
                 item {
                     ListItem(
