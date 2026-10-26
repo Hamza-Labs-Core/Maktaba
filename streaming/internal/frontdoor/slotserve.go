@@ -219,6 +219,9 @@ func (h *Handler) serveSlotSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.Tracker.TouchHLS(id, r)
+	sw := &segmentWriter{ResponseWriter: w}
+	defer h.segmentServed(id, r, sw)
+	w = sw
 	hdr := http.Header{}
 	if rg := r.Header.Get("Range"); rg != "" {
 		hdr.Set("Range", rg)

@@ -103,6 +103,7 @@ func runSlot(args []string) error {
 
 	chRepo := channel.NewPGRepo(pool, b.hostname)
 	chRepo.HostID = ident.ID
+	chRepo.KeepViewers = true // the front door counts every viewer (Epic 44 story 44.4)
 	binding := &slot.Binding{}
 	repo := slot.Repo{PGRepo: chRepo, State: state, Bound: binding}
 	bindTo := func(ctx context.Context, rel string) error {
