@@ -218,7 +218,7 @@ func TestCloudPlayIsNoAllLibraryAccess(t *testing.T) {
 	admin := c.user("amina", true)
 	c.link(admin.ID, cloudAdmin, "manage")
 	var seen *principal.Principal
-	probe := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	probe := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		cp := *principal.FromContext(r.Context())
 		seen = &cp
 	})
@@ -257,7 +257,7 @@ func TestCloudPlayIsNoAllLibraryAccess(t *testing.T) {
 	jwtReq := httptest.NewRequest("GET", "/x", nil)
 	jwtReq.Header.Set("Authorization", "Bearer "+manageTok)
 	var capped *principal.Principal
-	authmw.JWTBearer(c.keys, "api")(c.h.Cloud.Gate.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	authmw.JWTBearer(c.keys, "api")(c.h.Cloud.Gate.Middleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		cp := *principal.FromContext(r.Context())
 		capped = &cp
 	}))).ServeHTTP(httptest.NewRecorder(), jwtReq)
