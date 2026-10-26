@@ -17,6 +17,7 @@ from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.sql import is_pg, to_ts
 from maktaba_pipeline.engine.stages import index as stage
 from maktaba_pipeline.runtime import Database
+from maktaba_pipeline.search.pgstore import StoreState
 from maktaba_pipeline.search.semantic import SemanticIndex, SemanticUnavailable
 from tests.engine.factory import make_library, make_video
 from tests.search.semantic_fakes import FakeCollection, FakeEmbedder
@@ -32,6 +33,17 @@ class _Ctx:
 
     async def check_cancel(self) -> None:
         self.cancel_checks += 1
+
+
+@pytest.fixture(autouse=True)
+def chroma_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about Chroma: no segment_embeddings even where pgvector is
+    installed (tests/search/test_pgstore.py has the Postgres store's)."""
+
+    async def state(db: Any, *, fresh: bool = False) -> StoreState:
+        return StoreState(store="chroma", ready=False)
+
+    monkeypatch.setattr(stage, "store_state", state)
 
 
 @pytest.fixture
@@ -154,6 +166,7 @@ async def test_run_embeds_the_active_transcript_and_replaces_old_vectors(
         "segments": 3,
         "model": "fake/e5",
         "stale_ids": 2,  # the old transcript's one segment, the new one's blank one
+        "store": "chroma",
     }
     # the old vectors go by id once the new ones are written: no delete scans the
     # collection by video (about a second each on the home Mac's 12 million vectors)
