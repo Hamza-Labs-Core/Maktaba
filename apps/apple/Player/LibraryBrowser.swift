@@ -3,7 +3,9 @@ import SwiftUI
 
 /// Libraries, their videos, a video, and what is playing. The layout follows the device:
 /// - a NavigationSplitView (Apple's guidance for iPhone Duo: one column folded, columns
-///   open flat, as on iPad and the Mac), with the player full screen over it;
+///   open flat, as on iPad and the Mac; on an iPad in Split View or Slide Over it folds to
+///   one column like a phone), with the player full screen over it (on the Mac, over the
+///   window);
 /// - a half-folded iPhone Duo: an ArrangementView split at the hinge, the navigation (a
 ///   library menu and the videos) on one half and the page on the other, the player taking
 ///   the page's half while it plays, so browsing goes on beside it.
@@ -42,6 +44,7 @@ struct LibraryBrowser: View {
             .environment(playback)
             .task { await loadLibraries() }
             .task(id: "\(library ?? "")|\(query)") { await reload() }
+            .focusedSceneValue(\.playback, playback)
             .onChange(of: playback.video != nil) { playing = $1 }
             .onDisappear { playback.stop(); playing = false }
     }
@@ -86,13 +89,26 @@ struct LibraryBrowser: View {
             .searchable(text: $query, prompt: "Search titles")
             .navigationTitle(title)
             .refreshable { await reload() }
+            #if os(macOS)
+            // room for a poster and a title beside it
+            .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 460)
+            #endif
         } detail: {
             page
         }
         #if os(iOS)
         .fullScreenCover(isPresented: watching) { WatchView(playback: playback) }
         #else
-        .sheet(isPresented: watching) { WatchView(playback: playback).frame(minWidth: 800, minHeight: 500) }
+        // the Mac: the video fills the window (it resizes with it; the green button or
+        // Control-Command-F makes it full screen), the toolbar out of the way
+        .overlay {
+            if playback.video != nil {
+                WatchView(playback: playback).transition(.opacity)
+            }
+        }
+        .toolbar(playback.video != nil ? .hidden : .automatic, for: .windowToolbar)
+        .animation(.easeInOut(duration: 0.2), value: playback.video != nil)
+        .frame(minWidth: 760, minHeight: 480)
         #endif
     }
 
