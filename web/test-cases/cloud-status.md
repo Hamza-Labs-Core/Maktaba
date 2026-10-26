@@ -1,7 +1,7 @@
 # Cloud server status
 
 - **Route:** `/cloud/status` (no params, no query state)
-- **Component:** `src/pages/Cloud/ServerStatus.tsx`; children (same file): `ConnectedView`, helper `findCloudService()`; design system `Card`, `Badge`, `EmptyState`. Does not use `ClusterSignIn` or any cluster API.
+- **Component:** `src/pages/Cloud/ServerStatus.tsx`; children (same file): `ConnectedView`, helper `findCloudService()`; design system `Card`, `Badge`, `EmptyState`. Does not use any cluster API.
 - **API calls:** `GET /api/system/health` → `{ status, services: Record<string, { status: string, checks?: Record<string, { status, reason? }>, reason?: string }> }` (server `api/internal/system/aggregator.go`; `services` is always a map there); `GET /api/system/version` → `{ version, build_sha, ... }`. Both via `api` in `src/lib/api.ts`; both are on the server's public allowlist (no auth needed). Polls both every 30 s (`REFRESH_MS = 30_000`, `setInterval`, cleared on unmount). The "cloud" service is the first key in `services` matching `/cloud|relay|tunnel/i`.
 - **Access:** signed-in user (`RequireAuth` + `AppShell`). No admin check. Sidebar link `nav.cloudStatus` ("Cloud status").
 - **Existing tests:** none. Gaps: everything.

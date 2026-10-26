@@ -12,6 +12,11 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **A home has a name.** An admin names the home in Settings → Account (empty: the
+  computer's name, which is the default). Every signed-in user's Apple app shows that name in
+  its home list and title instead of the address that was typed. The API refuses the rename to
+  anyone but an admin, and gives the name to every signed-in user in `GET /api/auth/me`
+  (`home_name`).
 - **Search results per video.** The Search page shows two lists, "In titles" and "In
   transcripts", one entry per video with no repeats. A transcript match shows the video's
   poster, title, library and duration, its true number of matching passages in the active
@@ -416,6 +421,19 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **Indexing for search is about 3 to 5 times faster again.** Chroma, by default,
+  rewrites its whole index to disk every 1000 vectors: on the home Mac's 12 million
+  vectors that is a 21 GB file and a 1.2 GB id map, seconds each time, and it held the
+  index worker to about 120 vectors a second (3–4 index jobs a minute). The collection now
+  rewrites every 10 000 (`MAKTABA_CHROMA_SYNC_THRESHOLD`, set once on the collection; 0
+  leaves Chroma's own), which measured about 600 a second on a copy of that index. An
+  index job no longer scans the collection: the vectors of a video's old transcripts are
+  deleted by their ids (from the database), not by a delete over the whole collection
+  (about a second each), and `chapter_infer` reads a video's vectors by id (0.01 s, not
+  0.8 s). The embedding runs outside the search index's write lock, and an index already
+  open is used without it. Each index job logs where its time went (`index_timings`: the
+  embedding, the writes, the wait for the write lock, the database read), also in its
+  summary.
 - **Stopping the server no longer breaks the search index.** The index worker stopped
   with 27 index jobs in flight: it noticed the stop 9 s late (the claim loop waited out its
   poll), cancelled them after 15 s while their Chroma writes ran on in threads, then did not

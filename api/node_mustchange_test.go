@@ -45,9 +45,6 @@ func (f *fakeHome) Introspect(_ context.Context, req delegation.IntrospectReques
 	return &delegation.IntrospectAnswer{Source: src, Principal: delegation.Principal{UserID: "u1", Username: "amal",
 		Libraries: []string{}, MustChangePassword: f.mustChange}}, nil
 }
-func (f *fakeHome) Exchange(context.Context, delegation.ExchangeRequest) (*delegation.ExchangeAnswer, error) {
-	return nil, homelink.ErrUnauthorized
-}
 func (f *fakeHome) JWKS(context.Context) ([]byte, error)          { return []byte(`{"keys":[]}`), nil }
 func (f *fakeHome) Self(context.Context) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }
 func (f *fakeHome) Subscribe(func(homelink.Event))                {}

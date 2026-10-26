@@ -317,8 +317,8 @@ func TestReadFactsAndCompare(t *testing.T) {
 		t.Fatalf("unrestorable = %q", u)
 	}
 	f2 := f
-	f2.Extensions, f2.Roles = []string{"vector"}, []string{"Bad-Name"}
-	if u := f2.Unrestorable(); !reflect.DeepEqual(u, []string{"the extension vector", "the role Bad-Name"}) {
+	f2.Extensions, f2.Roles = []string{"vector", "postgis"}, []string{"Bad-Name"}
+	if u := f2.Unrestorable(); !reflect.DeepEqual(u, []string{"the extension postgis", "the role Bad-Name"}) {
 		t.Fatalf("unrestorable = %q", u)
 	}
 	if got := f.MachineRoles(); !reflect.DeepEqual(got, []string{"maktaba_node_aa"}) {

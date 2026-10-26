@@ -111,6 +111,8 @@ func (h *Hub) dispatch(s *Session, t string, raw []byte) {
 		}
 	case "update.state":
 		h.onUpdateState(s, raw)
+	case "access.request":
+		h.onAccessRequest(s, raw)
 	case "cmd.result":
 		var f CmdResult
 		if json.Unmarshal(raw, &f) == nil {

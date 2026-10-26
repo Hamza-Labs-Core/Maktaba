@@ -291,6 +291,13 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
 		return
 	}
+	// a library the caller may not see answers as one that does not exist, before it is
+	// read: a 403 would tell which ids are libraries (the API enforces roles)
+	p := principal.FromContext(r.Context())
+	if p == nil || (!p.AccessAllLibraries && !p.HasLibrary(id)) {
+		httperror.Write(w, r, httperror.NotFound("library "+id))
+		return
+	}
 	lib, err := h.loadLibrary(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -298,11 +305,6 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
-		return
-	}
-	p := principal.FromContext(r.Context())
-	if p == nil || (!p.AccessAllLibraries && !p.HasLibrary(id)) {
-		httperror.Write(w, r, httperror.Forbidden("", ""))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, lib)

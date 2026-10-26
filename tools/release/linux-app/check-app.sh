@@ -106,6 +106,12 @@ for bundle in "$@"; do
     if find "$root/usr/lib" -path '*/server/payload.json' 2>/dev/null | grep -q .; then
         fail "a payload among the resources in usr/lib (linuxdeploy rewrites ELF files there)"
     fi
+    # pgvector beside the other extensions (semantic search, Epic 43); check.sh creates it
+    if [ -f "$payload/postgres/lib/vector.so" ] && [ -f "$payload/postgres/share/extension/vector.control" ]; then
+        ok "pgvector in the payload"
+    else
+        fail "no pgvector (postgres/lib/vector.so, share/extension/vector.control) in $name"
+    fi
     # No ffmpeg anywhere in the bundle: not in the payload, not among what the AppImage
     # brings along (its GStreamer plugins: gst-libav links libavcodec). The list goes to a
     # file (find | head under pipefail ended the script on SIGPIPE). Exact names: libavc1394, a

@@ -1,4 +1,4 @@
-// Login: where it goes once signed in (Epic 35, design §10.5 — `?next=`).
+// Login: where it goes once signed in (`?next=`).
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -9,11 +9,6 @@ const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../lib/api")>("../lib/api");
   return { ...actual, api: { ...actual.api, get } };
-});
-const { assignLocation } = vi.hoisted(() => ({ assignLocation: vi.fn() }));
-vi.mock("../lib/navigation", async () => {
-  const actual = await vi.importActual<typeof import("../lib/navigation")>("../lib/navigation");
-  return { ...actual, assignLocation };
 });
 const { auth } = vi.hoisted(() => ({
   auth: {
@@ -50,50 +45,38 @@ async function signIn() {
   await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
 }
 
-const AUTHORIZE = "/api/cluster/sso/authorize?node=n1&challenge=abc&state=s&return=%2Flibrary";
-
 describe("Login next", () => {
   beforeEach(() => {
     localStorage.clear();
     get.mockReset();
-    get.mockRejectedValue(new Error("no cluster"));
-    assignLocation.mockReset();
+    get.mockRejectedValue(new Error("nothing on this page asks the server"));
     auth.user = null;
     auth.login.mockReset();
     auth.login.mockResolvedValue(undefined);
   });
 
-  it("continues the cluster sign-in with a full page load", async () => {
-    renderAt(`/login?next=${encodeURIComponent(AUTHORIZE)}`);
-    await signIn();
-    expect(auth.login).toHaveBeenCalledWith("amal", "secret");
-    expect(assignLocation).toHaveBeenCalledWith(AUTHORIZE);
-  });
-
-  it("continues at once when already signed in", () => {
-    auth.user = { id: "u1", username: "amal", is_admin: false };
-    renderAt(`/login?next=${encodeURIComponent(AUTHORIZE)}`);
-    expect(assignLocation).toHaveBeenCalledTimes(1);
-    expect(assignLocation).toHaveBeenCalledWith(AUTHORIZE);
-  });
-
-  it("opens another app path with the router", async () => {
+  it("opens the next app path with the router", async () => {
     renderAt(`/login?next=${encodeURIComponent("/videos/42")}`);
     await signIn();
+    expect(auth.login).toHaveBeenCalledWith("amal", "secret");
     expect(await screen.findByTestId("where")).toHaveTextContent("/videos/42");
-    expect(assignLocation).not.toHaveBeenCalled();
+  });
+
+  it("goes on at once when already signed in", async () => {
+    auth.user = { id: "u1", username: "amal", is_admin: false };
+    renderAt(`/login?next=${encodeURIComponent("/videos/42")}`);
+    expect(await screen.findByTestId("where")).toHaveTextContent("/videos/42");
   });
 
   it.each([
-    "http://evil.example/api/cluster/sso/authorize",
-    "//evil.example/api/cluster/sso/authorize",
-    "/\\evil.example/api/cluster/sso/authorize",
+    "http://evil.example/library",
+    "//evil.example/library",
+    "/\\evil.example/library",
     "javascript:alert(1)",
   ])("ignores %s and goes to the library", async (next) => {
     renderAt(`/login?next=${encodeURIComponent(next)}`);
     await signIn();
     expect(await screen.findByTestId("where")).toHaveTextContent("/library");
-    expect(assignLocation).not.toHaveBeenCalled();
   });
 
   // Settings' "sign out everywhere" ended this machine's sessions only

@@ -1,0 +1,159 @@
+# The native Apple apps (Epic 42). Generate Maktaba.xcodeproj from this file:
+#   cd apps/apple && xcodegen
+# Signing is Xcode's: automatic, team G58UVTKQPB (Mahmoud Darwish). Xcode makes the App IDs,
+# certificates and profiles; command-line builds pass -allowProvisioningUpdates.
+name: Maktaba
+options:
+  bundleIdPrefix: com.hamzalabs.maktaba
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "15.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+packages:
+  MaktabaKit:
+    path: MaktabaKit
+settings:
+  base:
+    DEVELOPMENT_TEAM: G58UVTKQPB
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: YES
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+
+targetTemplates:
+  # every app: plain http to a home on the local network is allowed (a self-hosted home is
+  # often http://192.168.x.x:8088)
+  App:
+    type: application
+    dependencies:
+      - package: MaktabaKit
+    settings:
+      base:
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Maktaba connects to your home server on this network."
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.entertainment
+    info:
+      properties:
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+  IOSApp:
+    templates: [App]
+    platform: iOS
+    settings:
+      base:
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+
+targets:
+  # ---- Maktaba Player: iPhone (iPhone Duo too), iPad, Mac -------------------------------
+  Maktaba Player:
+    templates: [IOSApp]
+    sources:
+      - path: Player
+      - path: Shared/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_CFBundleDisplayName: Maktaba
+        INFOPLIST_KEY_UIBackgroundModes: audio
+    info:
+      path: Player/Info-iPhone.plist
+  Maktaba Player iPad:
+    templates: [IOSApp]
+    sources:
+      - path: Player
+        excludes: ["*.plist"]
+      - path: Shared/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.tablet
+        TARGETED_DEVICE_FAMILY: "2"
+        INFOPLIST_KEY_CFBundleDisplayName: Maktaba
+        INFOPLIST_KEY_UIBackgroundModes: audio
+    info:
+      path: Player/Info-iPad.plist
+  Maktaba Player Mac:
+    templates: [App]
+    platform: macOS
+    sources:
+      - path: Player
+        excludes: ["*.plist"]
+      - path: Shared/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.mac
+        INFOPLIST_KEY_CFBundleDisplayName: Maktaba Player
+        ARCHS: arm64
+        ENABLE_HARDENED_RUNTIME: YES
+    entitlements:
+      path: Player/Player-Mac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+    info:
+      path: Player/Info-Mac.plist
+
+  # ---- Maktaba Remote: iPhone (iPhone Duo too), iPad -------------------------------------
+  Maktaba Remote:
+    templates: [IOSApp]
+    sources:
+      - path: Remote
+      - path: Shared/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_CFBundleDisplayName: Maktaba Remote
+    info:
+      path: Remote/Info-iPhone.plist
+  Maktaba Remote iPad:
+    templates: [IOSApp]
+    sources:
+      - path: Remote
+        excludes: ["*.plist"]
+      - path: Shared/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote.tablet
+        TARGETED_DEVICE_FAMILY: "2"
+        INFOPLIST_KEY_CFBundleDisplayName: Maktaba Remote
+    info:
+      path: Remote/Info-iPad.plist
+
+schemes:
+  Maktaba Player:
+    build:
+      targets: { Maktaba Player: all }
+    run: { config: Debug }
+    archive: { config: Release }
+  Maktaba Player iPad:
+    build:
+      targets: { Maktaba Player iPad: all }
+    run: { config: Debug }
+    archive: { config: Release }
+  Maktaba Player Mac:
+    build:
+      targets: { Maktaba Player Mac: all }
+    run: { config: Debug }
+    archive: { config: Release }
+  Maktaba Remote:
+    build:
+      targets: { Maktaba Remote: all }
+    run: { config: Debug }
+    archive: { config: Release }
+  Maktaba Remote iPad:
+    build:
+      targets: { Maktaba Remote iPad: all }
+    run: { config: Debug }
+    archive: { config: Release }

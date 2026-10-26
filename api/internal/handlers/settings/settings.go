@@ -20,6 +20,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
@@ -90,6 +92,20 @@ var runtimeKeys = map[string]func(json.RawMessage) bool{
 	runtimecfg.WSHeartbeat:          numberIn(5, 300),    // SSE keep-alive (30 s)
 	runtimecfg.OpenRegistration:     isBool,              // self-service registration (off)
 	runtimecfg.GraphQLPersistedOnly: isBool,              // GraphQL persisted-query allowlist (off)
+	runtimecfg.HomeName:             isName,              // the home's name for people (the computer's name)
+}
+
+// MaxHomeName is the longest home name, in characters.
+const MaxHomeName = 64
+
+// isName is a home name: a string of at most MaxHomeName characters with no
+// control characters; empty goes back to the default name.
+func isName(raw json.RawMessage) bool {
+	var s string
+	if json.Unmarshal(raw, &s) != nil || utf8.RuneCountInString(strings.TrimSpace(s)) > MaxHomeName {
+		return false
+	}
+	return !strings.ContainsFunc(s, unicode.IsControl)
 }
 
 func numberIn(lo, hi float64) func(json.RawMessage) bool {
@@ -109,6 +125,9 @@ func isBool(raw json.RawMessage) bool {
 
 // Read returns the merged effective config with secrets redacted.
 func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
+	if !adminOnly(w, r) {
+		return
+	}
 	merged := h.merged(r.Context())
 	redacted := redactSecrets(merged)
 	common.WriteJSON(w, r, http.StatusOK, redacted)
@@ -161,6 +180,9 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 
 // STTBackends implements AC-4.
 func (h *Handler) STTBackends(w http.ResponseWriter, r *http.Request) {
+	if !adminOnly(w, r) {
+		return
+	}
 	if h.Pipeline == nil {
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": []Backend{}})
 		return
@@ -181,6 +203,9 @@ type STTTestRequest struct {
 
 // STTTest implements AC-5.
 func (h *Handler) STTTest(w http.ResponseWriter, r *http.Request) {
+	if !adminOnly(w, r) {
+		return
+	}
 	if h.Pipeline == nil {
 		httperror.Write(w, r, &httperror.Error{
 			Type:   "https://maktaba.dev/problems/unavailable",
@@ -258,4 +283,15 @@ func (h *Handler) now() time.Time {
 		return h.NowFunc()
 	}
 	return time.Now().UTC()
+}
+
+// adminOnly refuses anyone but a home admin (the API enforces roles: these routes back the
+// admin pages, and hiding the pages is not the rule).
+func adminOnly(w http.ResponseWriter, r *http.Request) bool {
+	p := principal.FromContext(r.Context())
+	if p == nil || !p.IsAdmin {
+		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+		return false
+	}
+	return true
 }

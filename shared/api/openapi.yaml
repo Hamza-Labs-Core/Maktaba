@@ -235,11 +235,19 @@ paths:
       summary: Return the authenticated user
       responses:
         '200':
-          description: Authenticated user profile.
+          description: Authenticated user profile, and the home's name.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                allOf:
+                - $ref: '#/components/schemas/User'
+                - type: object
+                  properties:
+                    home_name:
+                      type: string
+                      description: The home's name for people (an admin renames
+                        it with PATCH /settings home.name; unset, the computer's
+                        name).
         '401':
           $ref: '#/components/responses/Unauthorized'
         default:

@@ -223,17 +223,16 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// Epic 37 — a standby home's claim on an emergency's term: sealed from its key to
 		// the machine it asks (that machine's supervisor refuses any other).
 		"/api/cluster/term-claim": {},
-		// Epic 35 story 35.9 — the cluster sign-in: authorize sends a browser
-		// that is not signed in to the home's sign-in page (and checks the
-		// session itself); start and callback run before the node holds a
-		// session. Introspect and exchange are a node's calls: the handlers
-		// refuse any request without a verified node signature.
-		"/api/cluster/sso/authorize":       {},
-		"/api/cluster/sso/start":           {},
-		"/api/cluster/sso/callback":        {},
-		"/api/cluster/sso/exchange":        {},
+		// Epic 35 story 35.9 — a node's calls to the home: the handlers refuse any
+		// request without a verified node signature.
 		"/api/cluster/delegate/introspect": {},
 		"/api/cluster/delegate/signout":    {},
+		// the cluster sign-in's routes, removed (clusterauth.RemovedRoutes): every
+		// machine answers them 404, to anyone, not 401
+		"/api/cluster/sso/authorize": {},
+		"/api/cluster/sso/start":     {},
+		"/api/cluster/sso/callback":  {},
+		"/api/cluster/sso/exchange":  {},
 		// Epic 35 story 35.5 — this machine's supervisor records a restore the command
 		// line asked for: the handler refuses any request without its per-boot local token.
 		"/internal/updates/restored": {},

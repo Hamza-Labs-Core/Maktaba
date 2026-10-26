@@ -45,9 +45,12 @@ func buildPlacement() placement.Table {
 		// the machine's own processes on its cluster link (story 35.16)
 		"/api/cluster/link/local/agent",
 		"/api/cluster/link/local/fetch",
-		// the cluster sign-in's node half (story 35.9 AC6)
+		// the cluster sign-in's routes, removed: this machine answers them 404 itself
+		// (clusterauth.RemovedRoutes), the home away or not
 		"/api/cluster/sso/start",
 		"/api/cluster/sso/callback",
+		"/api/cluster/sso/authorize",
+		"/api/cluster/sso/exchange",
 		// this machine's update moves its TV to the new streaming binary (story 35.6):
 		// its own supervisor asks its own API
 		"/internal/updates/tv-change",
@@ -125,11 +128,9 @@ func buildPlacement() placement.Table {
 		"/api/queues/failures",
 		"/api/queues/failures/actions",
 		"/api/workers",
-		// story 35.9: the home's half of delegation and the cluster sign-in
+		// story 35.9: the home's half of delegation
 		"/api/cluster/delegate/introspect",
 		"/api/cluster/delegate/signout",
-		"/api/cluster/sso/authorize",
-		"/api/cluster/sso/exchange",
 	))
 	// every write of an `any` family, and the reads that need the home
 	add([]placement.Rule{

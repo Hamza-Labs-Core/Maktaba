@@ -264,6 +264,40 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	}
 	exec(home, `UPDATE cluster_nodes SET full_node = true WHERE id = $1`, nodeID)
 
+	// a full machine is the home admin's decision (slot 0151): the machine's own report
+	// says it can be one, and gives it no copy until an admin allowed it
+	exec(home, `UPDATE cluster_nodes SET full_node = false, full_capable = false, full_allowed = false WHERE id = $1`, nodeID)
+	report := func() {
+		t.Helper()
+		if _, err := node.Exec(`SELECT cluster_node_report_full($1, '', '', '', true, NULL)`, nodeID); err != nil {
+			t.Fatalf("the machine's report: %v", err)
+		}
+	}
+	fullOf := func() (full, capable bool) {
+		t.Helper()
+		if err := home.QueryRow(`SELECT full_node, full_capable FROM cluster_nodes WHERE id = $1`, nodeID).Scan(&full, &capable); err != nil {
+			t.Fatal(err)
+		}
+		return full, capable
+	}
+	report()
+	if full, capable := fullOf(); full || !capable {
+		t.Fatalf("a machine made itself full: full %v, capable %v", full, capable)
+	}
+	if _, err := ask(node, nodeID, pw, false); !isCode(err, "MK403") {
+		t.Fatalf("a copy for a machine no admin allowed: %v, want MK403", err)
+	}
+	// nor can the machine allow itself
+	if _, err := node.Exec(`UPDATE cluster_nodes SET full_allowed = true WHERE id = $1`, nodeID); !isCode(err, "42501") {
+		t.Fatalf("the machine allowed itself: %v, want insufficient_privilege", err)
+	}
+	// the admin allows it: the machine's next report makes it full
+	exec(home, `UPDATE cluster_nodes SET full_allowed = true WHERE id = $1`, nodeID)
+	report()
+	if full, _ := fullOf(); !full {
+		t.Fatal("an allowed, capable machine is not full")
+	}
+
 	// the home's loop: the beat (a slot exists), the CA, the cap
 	ca := filepath.Join(t.TempDir(), "ca.crt")
 	if err := os.WriteFile(ca, []byte("-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----\n"), 0o600); err != nil {

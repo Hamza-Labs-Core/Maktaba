@@ -409,8 +409,8 @@ Both run `maktaba-server setup --node` (by hand: see
 worker started by hand (a script running `maktaba-pipeline run`) is not one of the installer's
 units: stop it yourself afterwards, or the machine runs two workers.
 
-**Afterwards**, open the machine's address (its card on Admin > Machines) and press **Continue
-with <home>**: one sign-in for every machine. It updates with the rest of the cluster from then on
+**Afterwards**, open the machine's address (its card on Admin > Machines) and sign in with your
+usual account (it lives on the home). It updates with the rest of the cluster from then on
 ([updates](../updates.md)).
 
 ### Windows: a logon task or a service

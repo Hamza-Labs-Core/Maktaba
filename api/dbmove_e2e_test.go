@@ -52,8 +52,8 @@ func TestNodeFollowsTheHomeDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = roles.Drop(context.Background(), role) })
-	if _, err := db.ExecContext(ctx, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at, approved_by)
-	       VALUES ($1, 'studio-gpu', 'approved', 'linux', 'amd64', $2, $3, now(), 'test')`, nodeID, cluster.EncodeKey(nodePub), role); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at, approved_by, full_allowed)
+	       VALUES ($1, 'studio-gpu', 'approved', 'linux', 'amd64', $2, $3, now(), 'test', true)`, nodeID, cluster.EncodeKey(nodePub), role); err != nil {
 		t.Fatal(err)
 	}
 	// the node reaches the database at an address the test can take away (the old one)

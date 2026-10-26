@@ -715,19 +715,22 @@ func (c *Client) roundTripOnce(req *http.Request, body []byte) (*http.Response, 
 		cancelRemote()
 		cl.body.closeWith(ctx.Err())
 	})
+	rb := &callBody{cl: cl, stop: stop, want: -1}
 	resp := &http.Response{Status: fmt.Sprintf("%d %s", h.Status, http.StatusText(h.Status)), StatusCode: h.Status,
 		Proto: "HTTP/1.1", ProtoMajor: 1, ProtoMinor: 1, Header: h.Header, Request: req, ContentLength: -1,
-		Body: &callBody{cl: cl, stop: stop}}
+		Body: rb}
 	if resp.Header == nil {
 		resp.Header = http.Header{}
 	}
 	if cl := resp.Header.Get("Content-Length"); cl != "" {
-		if n, err := strconv.ParseInt(cl, 10, 64); err == nil {
+		if n, err := strconv.ParseInt(cl, 10, 64); err == nil && n >= 0 {
 			resp.ContentLength = n
+			rb.want = n
 		}
 	}
 	if req.Method == http.MethodHead {
 		resp.ContentLength = 0
+		rb.want = -1
 	}
 	return resp, s, true, nil
 }
@@ -739,16 +742,30 @@ func linkErr(err error) error {
 	return err
 }
 
-// callBody reads an answer's chunks, then the rest from its data stream when it moved.
+// callBody reads an answer's chunks, then the rest from its data stream when it moved. It
+// ends (io.EOF) only at the answer's end frame (a session that drops ends it with
+// link_lost), and, when the answer says its length (want, -1 when not), only with every
+// byte of it: short is io.ErrUnexpectedEOF, never a complete answer.
 type callBody struct {
 	cl     *call
 	stop   func() bool
 	stream net.Conn
 	done   bool
 	once   sync.Once
+	want   int64
+	got    int64
 }
 
 func (b *callBody) Read(p []byte) (int, error) {
+	n, err := b.read(p)
+	b.got += int64(n)
+	if err == io.EOF && b.want >= 0 && b.got != b.want {
+		return n, io.ErrUnexpectedEOF
+	}
+	return n, err
+}
+
+func (b *callBody) read(p []byte) (int, error) {
 	if b.stream != nil {
 		return b.stream.Read(p)
 	}

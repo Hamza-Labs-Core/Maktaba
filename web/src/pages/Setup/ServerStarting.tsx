@@ -2,14 +2,22 @@
 // by the bundled web app in server mode until this machine's server answers,
 // then the shell loads the local web app in the window. Polls the shell's
 // status (the menu-bar / tray poller's last reading of the supervisor's
-// /processes).
-import { useEffect, useRef, useState } from "react";
+// /processes). Once the server's processes run, the shell opens the web app
+// only when its page and api answer (open_local_server); until then this
+// screen stays, and after PAGE_PATIENCE_MS it says so, with a retry: the
+// window never shows a page that cannot load.
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@ds/components/Button/Button";
 import { useI18n } from "../../lib/i18n";
 import { NO_ANSWER, type Platform, type ServerStatus, type SetupApi } from "../../lib/desktopSetup";
 import { platformWords, usePlatform } from "./platform";
 import { startingDetail } from "./startingDetail";
 
 export const STARTING_POLL_MS = 2000;
+/** How long the server's page may not answer, once its processes run, before the screen says so. */
+export const PAGE_PATIENCE_MS = 30_000;
+/** What the shell says while the server runs but its page does not answer yet (shell.rs). */
+export const PAGE_NOT_ANSWERING = "page_not_answering";
 
 export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Platform }) {
   const { t } = useI18n();
@@ -17,32 +25,57 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
   const words = platformWords(t, platform ?? asked);
   const [status, setStatus] = useState<ServerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // the server runs but its page has not answered for PAGE_PATIENCE_MS
+  const [pageSilent, setPageSilent] = useState(false);
   const opened = useRef(false);
+  const alive = useRef(true);
+  // since when the server's page has not answered (null: it has not been asked yet)
+  const silentSince = useRef<number | null>(null);
+
+  // Ask the shell to open the local web app; while its page does not answer the
+  // next poll asks again (or the retry, at once).
+  const open = useCallback(() => {
+    if (opened.current) return;
+    opened.current = true;
+    api
+      .openLocalServer()
+      .then(() => {
+        if (alive.current) setPageSilent(false);
+      })
+      .catch((e) => {
+        opened.current = false;
+        if (!alive.current) return;
+        const said = String(e);
+        if (said.includes(PAGE_NOT_ANSWERING)) {
+          if (silentSince.current === null) silentSince.current = Date.now();
+          setPageSilent(Date.now() - silentSince.current >= PAGE_PATIENCE_MS);
+          return;
+        }
+        setError(said);
+      });
+  }, [api]);
 
   useEffect(() => {
-    let alive = true;
+    alive.current = true;
     const look = () =>
       api
         .serverStatus()
         .then((s) => {
-          if (!alive) return;
+          if (!alive.current) return;
           setStatus(s);
-          if (s.kind === "running" && !opened.current) {
-            opened.current = true;
-            api.openLocalServer().catch((e) => {
-              opened.current = false;
-              if (alive) setError(String(e));
-            });
-          }
+          if (s.kind === "running") return open();
+          // not running (any more): the page's wait starts again when it runs
+          silentSince.current = null;
+          setPageSilent(false);
         })
         .catch(() => {});
     void look();
     const timer = setInterval(() => void look(), STARTING_POLL_MS);
     return () => {
-      alive = false;
+      alive.current = false;
       clearInterval(timer);
     };
-  }, [api]);
+  }, [api, open]);
 
   let line = t("setup.starting.starting");
   // a line of server.log, in the server's own words: shown as it is, apart from the
@@ -55,6 +88,8 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
     if (status.reason && status.reason !== NO_ANSWER) logLine = status.reason;
   } else if (status?.kind === "stopped" || status?.kind === "paused")
     line = t("setup.starting.stopped", words);
+  else if (status?.kind === "running" && pageSilent)
+    line = t("setup.starting.page_not_answering", words);
   else if (status?.kind === "running") line = t("setup.starting.opening");
   // what the server waits on, in this language when the app has words for its
   // code (else the line above says it generically); the programs' own words
@@ -87,6 +122,13 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
         {logLine && (
           <p className="mkt-setup__note">
             {t("setup.starting.log_says")} <code dir="ltr">{logLine}</code>
+          </p>
+        )}
+        {status?.kind === "running" && pageSilent && (
+          <p>
+            <Button type="button" onClick={open}>
+              {t("common.retry")}
+            </Button>
           </p>
         )}
         {error && (

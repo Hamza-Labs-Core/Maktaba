@@ -93,6 +93,9 @@ func (h *Handler) loadSchema() (*Schema, error) {
 // Read implements GET /api/rules. The global auth gate already requires
 // a signed-in principal, matching GET /api/settings.
 func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
+	if !adminOnly(w, r) {
+		return
+	}
 	s, err := h.loadSchema()
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("rules schema: "+err.Error()))
@@ -436,4 +439,15 @@ func Effective(ctx context.Context, db *sql.DB, section string) (map[string]any,
 		}
 	}
 	return out, nil
+}
+
+// adminOnly refuses anyone but a home admin (the API enforces roles: these routes back the
+// admin pages, and hiding the pages is not the rule).
+func adminOnly(w http.ResponseWriter, r *http.Request) bool {
+	p := principal.FromContext(r.Context())
+	if p == nil || !p.IsAdmin {
+		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+		return false
+	}
+	return true
 }

@@ -181,8 +181,9 @@ var roleName = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 func ValidRoleName(r string) bool { return roleName.MatchString(r) }
 
 // Extensions are the extensions every app database has (made by Prepare and
-// Restore); a dump that needs another cannot be restored as the app role.
-var Extensions = []string{"plpgsql", "pg_trgm", "unaccent", "pgcrypto"}
+// Restore; vector when the bundle has it); a dump that needs another cannot be
+// restored as the app role.
+var Extensions = []string{"plpgsql", "pg_trgm", "unaccent", "pgcrypto", "vector"}
 
 // recreateSQL drops the app database (and anything connected to it) and makes it
 // again, with the extensions and the source's other roles.
@@ -203,6 +204,7 @@ func recreateSQL(opts RestoreOptions) string {
 	}
 	sb.WriteString("\\c " + AppDatabase + "\n")
 	sb.WriteString("CREATE EXTENSION IF NOT EXISTS pg_trgm;\nCREATE EXTENSION IF NOT EXISTS unaccent;\nCREATE EXTENSION IF NOT EXISTS pgcrypto;\n")
+	sb.WriteString(vectorSQL)
 	return sb.String()
 }
 

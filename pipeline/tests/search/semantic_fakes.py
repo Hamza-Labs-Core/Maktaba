@@ -18,10 +18,10 @@ from maktaba_pipeline.search.semantic import PASSAGE_PREFIX, QUERY_PREFIX
 DIM = 32
 
 
-def bag_vector(text: str) -> list[float]:
-    v = [0.0] * DIM
+def bag_vector(text: str, dim: int = DIM) -> list[float]:
+    v = [0.0] * dim
     for word in text.split():
-        v[sum(word.encode("utf-8")) % DIM] += 1.0
+        v[sum(word.encode("utf-8")) % dim] += 1.0
     norm = math.sqrt(sum(x * x for x in v)) or 1.0
     return [x / norm for x in v]
 
@@ -44,14 +44,16 @@ class FakeEmbedder:
     model_name: str = "fake/e5"
     passages: list[list[str]] = field(default_factory=list)
     queries: list[str] = field(default_factory=list)
+    #: 384 for segment_embeddings (halfvec(384))
+    dim: int = DIM
 
     def embed_passages(self, texts: Sequence[str]) -> list[list[float]]:
         self.passages.append(list(texts))
-        return [bag_vector(t) for t in texts]
+        return [bag_vector(t, self.dim) for t in texts]
 
     def embed_query(self, text: str) -> list[float]:
         self.queries.append(text)
-        return bag_vector(text)
+        return bag_vector(text, self.dim)
 
 
 def _matches(meta: dict[str, Any], where: dict[str, Any] | None) -> bool:
@@ -84,16 +86,30 @@ class FakeCollection:
         for i, e, m, d in zip(ids, embeddings, metadatas, documents, strict=True):
             self.rows[i] = (list(e), dict(m), d)
 
-    def delete(self, where: dict[str, Any]) -> None:
+    deletes: list[dict[str, Any]] = field(default_factory=list)
+
+    def delete(self, ids: Sequence[str] | None = None, where: dict[str, Any] | None = None) -> None:
+        self.deletes.append({"ids": list(ids) if ids is not None else None, "where": where})
+        if ids is not None:
+            for key in ids:
+                self.rows.pop(key, None)
+            return
         for key in [k for k, (_, m, _) in self.rows.items() if _matches(m, where)]:
             del self.rows[key]
 
+    gets: list[dict[str, Any]] = field(default_factory=list)
+
     def get(
         self,
+        ids: Sequence[str] | None = None,
         where: dict[str, Any] | None = None,
         include: Sequence[str] = (),
     ) -> dict[str, Any]:
-        hits = [(key, e, m, d) for key, (e, m, d) in self.rows.items() if _matches(m, where)]
+        self.gets.append({"ids": list(ids) if ids is not None else None, "where": where})
+        if ids is not None:
+            hits = [(key, *self.rows[key]) for key in ids if key in self.rows]
+        else:
+            hits = [(key, e, m, d) for key, (e, m, d) in self.rows.items() if _matches(m, where)]
         return {
             "ids": [h[0] for h in hits],
             "embeddings": [h[1] for h in hits],

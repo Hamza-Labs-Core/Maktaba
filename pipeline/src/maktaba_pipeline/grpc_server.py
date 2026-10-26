@@ -465,18 +465,22 @@ async def _dispatch(
     return json.dumps(result).encode("utf-8")
 
 
-def default_search_backends() -> tuple[
-    Callable[[str], Awaitable[list[float]]] | None, SemanticSearchFn | None, Any
-]:
+def default_search_backends(
+    database: Any | None = None,
+) -> tuple[Callable[[str], Awaitable[list[float]]] | None, SemanticSearchFn | None, Any]:
     """The real ``Embed`` / ``SemanticSearch`` backends, or ``(None, None, None)`` when
     the optional ``search`` extra is not installed.
 
     Both use the process-wide embedder (``MAKTABA_EMBED_MODEL``, default
-    multilingual-e5-small, ``"query: "`` prefix) and the persistent Chroma collection at
-    ``MAKTABA_CHROMA_DIR`` that the engine ``index`` stage writes, so query and index
-    vectors always come from the same model. The model and collection open lazily on
-    the first call; the third value is the embedder, for warming it up.
+    multilingual-e5-small, ``"query: "`` prefix) and the store the engine ``index``
+    stage writes, so query and index vectors always come from the same model. The store
+    is the one ``semantic_store_state`` names (search/pgstore.py): ``segment_embeddings``
+    in ``database`` once it says postgres (without pgvector the search answers "backend
+    not configured": the API then searches the words only), else the persistent Chroma
+    collection at ``MAKTABA_CHROMA_DIR``. The model and collection open lazily on the
+    first call; the third value is the embedder, for warming it up.
     """
+    from .search.pgstore import PgVectorStore, store_state  # noqa: PLC0415
     from .search.semantic import (  # noqa: PLC0415
         SemanticIndex,
         get_query_embedder,
@@ -499,6 +503,14 @@ def default_search_backends() -> tuple[
     async def semantic(
         q: str, k: int, library_ids: list[str], languages: list[str]
     ) -> list[dict[str, Any]]:
+        if database is not None and (state := await store_state(database)).read_postgres:
+            if not state.ready:
+                raise RuntimeError("semantic search backend not configured (no pgvector)")
+            vec = await asyncio.to_thread(embedder.embed_query, q)
+            pg = PgVectorStore(database, embedder.model_name)
+            hits = await pg.search(vec, k=k, library_ids=library_ids, languages=languages)
+            return [h.to_json() for h in hits]
+
         def _run() -> list[dict[str, Any]]:
             hits = _index().search(q, k=k, library_ids=library_ids, languages=languages)
             return [h.to_json() for h in hits]
@@ -544,7 +556,7 @@ async def serve_grpc(
         if not semantic:
             _log.info("pipeline_grpc_semantic_disabled", reason="served by the index worker")
         else:
-            embed, search, warm = default_search_backends()
+            embed, search, warm = default_search_backends(database)
             if embed is None:
                 _log.info("pipeline_grpc_semantic_disabled", reason="search extra not installed")
         service = PipelineService(embedder=embed, semantic=search, plan_preview=plan_preview)

@@ -161,6 +161,24 @@ func (s *Supervisor) Snapshot() Snapshot {
 	if s.ffmpeg != nil {
 		ff = s.ffmpeg()
 	}
+	out := s.snapshot(llm, ff)
+	// a running job's progress (Process.Progress), read outside the lock
+	for i, c := range s.children {
+		if c.proc.Progress == nil || i >= len(out.Processes) {
+			continue
+		}
+		if st := out.Processes[i]; st.PID == 0 && st.State != StateFailed {
+			continue
+		}
+		if d := c.proc.Progress(); d.Text != "" {
+			st := &out.Processes[i]
+			st.Detail, st.DetailCode, st.DetailParams = d.Text, d.Code, d.Params
+		}
+	}
+	return out
+}
+
+func (s *Supervisor) snapshot(llm *llmserver.Status, ff *ffmpeg.Report) Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()

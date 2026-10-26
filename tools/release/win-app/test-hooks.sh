@@ -13,11 +13,14 @@
 #   flag-taking build the whole previous payload (server\, ours: its payload.json) is
 #   removed once its server stopped, as an update installs over the old files and a file the
 #   new payload dropped would stay; the state beside it stays. A payload not ours loses only
-#   its old pipeline wheel.
+#   its old pipeline wheel. An uninstall removes the tray's Run value when it starts this
+#   install's Maktaba.exe (with its StartupApproved on/off and the app's marker); the
+#   uninstall an update runs, and another program's value, leave it.
 #
 # Needs makensis (tauri's copy in %LOCALAPPDATA%\tauri\NSIS after a build, or one on PATH)
-# and PowerShell's Add-Type for the stand-ins. Runs in Git Bash. The records go to
-# HKCU\Software\MaktabaHooksTest, removed afterwards.
+# and PowerShell's Add-Type for the stand-ins. Runs in Git Bash. The records, and the Run
+# and StartupApproved values, go to HKCU\Software\MaktabaHooksTest (never the user's own
+# Run key), removed afterwards.
 #
 # Usage: test-hooks.sh [--makensis PATH]
 set -euo pipefail
@@ -123,6 +126,7 @@ NSI
 for v in "install knows 0" "install old 0" "uninstall knows 0" "uninstall knows 1"; do
     read -r phase src update <<<"$v"
     "$MAKENSIS" -V1 "-DPHASE=$phase" "-DUPDATE=$update" "-DSRC=$(cygpath -w "$T/$src.exe")" \
+        "-DMAKTABA_RUN_KEY=Software\MaktabaHooksTest\Run" "-DMAKTABA_APPROVED_KEY=Software\MaktabaHooksTest\StartupApproved" \
         "-DMAKTABA_SHELL_SRC=$(cygpath -w "$T/src-$src")" "-DHOOKS=$(cygpath -w "$HOOKS")" "-DOUT=$(cygpath -w "$T/$phase-$src-$update.exe")" "$(cygpath -w "$T/harness.nsi")" >/dev/null ||
         { echo "test-hooks: makensis failed for $v" >&2; exit 1; }
 done
@@ -193,8 +197,37 @@ cp "$T/old.exe" "$INST/Maktaba.exe"
 step "the client-only app there, then a flag-taking build" install-knows-0 "--server-start" present
 cp "$T/old.exe" "$INST/Maktaba.exe"   # put over it later: the record is stale
 step "a client-only Maktaba.exe over it, then a flag-taking build" install-knows-0 "--server-start" present
+# the tray's Run value (run_entry.rs) as the app writes it, its on/off and the app's marker
+RUN_OURS="\"$(cygpath -w "$INST")\\Maktaba.exe\" --hidden"
+set_run() {
+    wincmd reg.exe add "$KEY\\Run" /v Maktaba /t REG_SZ /d "$1" /f >/dev/null
+    wincmd reg.exe add "$KEY\\StartupApproved" /v Maktaba /t REG_BINARY /d 030000000000000000000000 /f >/dev/null
+    mkdir -p "$INST/state"
+    : >"$INST/state/autostart-written"
+}
+run_value() { wincmd reg.exe query "$KEY\\Run" /v Maktaba 2>/dev/null | tr -d '\r' | sed -n 's/.*REG_SZ *//p' || true; }
+approved() { if wincmd reg.exe query "$KEY\\StartupApproved" /v Maktaba >/dev/null 2>&1; then echo kept; else echo removed; fi; }
+set_run "$RUN_OURS"
 step "the uninstall an update runs" uninstall-knows-1 "" present
+if [ "$(run_value)" != "$RUN_OURS" ] || [ "$(approved)" != kept ] || [ ! -f "$INST/state/autostart-written" ]; then
+    fail "the uninstall an update runs touched the tray's Run value ('$(run_value)', on/off $(approved))"
+else
+    ok "the uninstall an update runs leaves the tray's Run value"
+fi
 step "an uninstall" uninstall-knows-0 "--server-stop|--server-remove" absent
+if [ -n "$(run_value)" ] || [ "$(approved)" != removed ] || [ -e "$INST/state/autostart-written" ]; then
+    fail "an uninstall left the tray's Run value ('$(run_value)', on/off $(approved), marker $([ -e "$INST/state/autostart-written" ] && echo kept || echo removed))"
+else
+    ok "an uninstall removes the tray's Run value, its on/off and the marker"
+fi
+step "a fresh install again" install-knows-0 "--server-start" present
+set_run '"C:\Other\Other.exe" --hidden'
+step "an uninstall beside another program's Run value" uninstall-knows-0 "--server-stop|--server-remove" absent
+if [ "$(run_value)" != '"C:\Other\Other.exe" --hidden' ] || [ "$(approved)" != kept ]; then
+    fail "an uninstall removed another program's Run value ('$(run_value)', on/off $(approved))"
+else
+    ok "an uninstall leaves another program's Run value"
+fi
 
 if [ "$fails" -ne 0 ]; then
     echo "$fails check(s) failed"

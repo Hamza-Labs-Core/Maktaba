@@ -38,7 +38,7 @@ Design: [design.md](design.md) §10; README R2, decision "Sessions across machin
   `X-Maktaba-Origin-Node`; the session row gets `origin_node_id`; `Set-Cookie` has no `Domain`, so
   the cookie is host-only for the node; cookie attributes are `httpsec.SecureCookie`'s; CSRF double
   submit works per host (mutating requests compare `sha256(X-CSRF-Token)` to `csrf_sha256`).
-- **AC6** Cluster sign-in (design §10.5): node shows "Continue as …"; home `authorize` issues a code
+- **AC6** (Removed October 2026: design §10.5.) Cluster sign-in (design §10.5): node shows "Continue as …"; home `authorize` issues a code
   (32 bytes, stored hashed, 60 s, single use, bound to node and S256 challenge, relative return path);
   node `callback` checks state and `exchange`s with the verifier; the home creates a child session
   (`parent_session_id`). Signing out on the home ends its children; signing out on a node ends only

@@ -137,8 +137,14 @@ export interface ClusterNode {
   platform?: string | null;
   /** Epic 35 (story 35.11): its own web address */
   web_url?: string | null;
-  /** Epic 35 (story 35.8): a full machine (web, API, streaming); false: a worker only */
+  /** Epic 35 (story 35.8): a full machine (web, API, streaming); false: a worker only.
+   * Since slot 0151: what the machine reports (full_capable) and an admin allowed
+   * (full_allowed), both */
   full_node?: boolean;
+  /** the machine reports it can be a full machine (it runs maktaba-server as a node) */
+  full_capable?: boolean;
+  /** an admin allowed it a copy of this home's database; never the machine's own choice */
+  full_allowed?: boolean;
   /** Epic 35 (story 35.8 AC8): a worker only's next update makes it a full node
    * (next_update), or its pipeline is too old for that (installer: re-run it once) */
   worker_convert?: "next_update" | "installer";
@@ -202,8 +208,6 @@ export interface ClusterSelf {
   };
   /** the schema guard's reason; non-empty: this node is paused */
   paused?: string;
-  /** cluster sign-in is on */
-  sso: boolean;
   agent_connected?: boolean;
   vod?: NodeVod & { checked_at: string };
   /** a full node's copy of its home's database (Epic 37) */
@@ -252,6 +256,8 @@ export interface NodeUpdate {
   path_map?: Record<string, string> | null;
   /** true / false: switched on / off; null: automatic */
   stages?: Record<string, boolean | null>;
+  /** an admin allows (true) or takes back (false) the machine's copy of this home's database */
+  full_allowed?: boolean;
 }
 
 const q = encodeURIComponent;
@@ -261,8 +267,9 @@ export const clusterApi = {
   getSelf: () => api.get<ClusterSelf>("/api/cluster/self"),
   putSettings: (body: { accept_joins?: boolean; name?: string }) =>
     api.put<ClusterHome>("/api/cluster/settings", body),
-  approve: (id: string, code: string) =>
-    api.post<ClusterNode>(`/api/cluster/nodes/${q(id)}/approve`, { code }),
+  /** full: the admin allows the machine a copy of this home's database */
+  approve: (id: string, code: string, full = false) =>
+    api.post<ClusterNode>(`/api/cluster/nodes/${q(id)}/approve`, { code, full }),
   reject: (id: string) => api.post<ClusterNode>(`/api/cluster/nodes/${q(id)}/reject`),
   revoke: (id: string) => api.post<ClusterNode>(`/api/cluster/nodes/${q(id)}/revoke`),
   updateNode: (id: string, body: NodeUpdate) =>

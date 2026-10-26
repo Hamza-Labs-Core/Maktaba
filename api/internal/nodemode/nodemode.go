@@ -185,14 +185,13 @@ func Unreachable(err error) bool {
 }
 
 // Rules is rules.cluster (app_settings; the pipeline's ClusterMachinesConfig declares
-// the section): cluster sign-in on or off, how long a node waits for an unreachable
-// home before it stops asking it per request, how current its copy of the home's
+// the section): how long a node waits for an unreachable home before it stops asking it
+// per request, how current its copy of the home's
 // database must be to answer meanwhile (and to be read from while the home answers),
 // how long a sign-in made on it then lasts, how much the home keeps for a copy behind,
 // whether the machines keep copies of a home's database that is not Maktaba's own
 // Postgres, its picture cache.
 type Rules struct {
-	SSO                        bool `json:"sso"`
 	GraceSeconds               int  `json:"delegate_unreachable_grace_seconds"`
 	OfflineCopyMaxLagMinutes   int  `json:"offline_copy_max_lag_minutes"`
 	CopyReadsMaxLagSeconds     int  `json:"copy_reads_max_lag_seconds"`
@@ -205,7 +204,7 @@ type Rules struct {
 
 // DefaultRules are the section's defaults.
 func DefaultRules() Rules {
-	return Rules{SSO: true, GraceSeconds: 30, OfflineCopyMaxLagMinutes: 10, CopyReadsMaxLagSeconds: 30, OfflineSessionHours: 12,
+	return Rules{GraceSeconds: 30, OfflineCopyMaxLagMinutes: 10, CopyReadsMaxLagSeconds: 30, OfflineSessionHours: 12,
 		OfflineSessionGraceMinutes: 30, ReplicaWALKeepGB: 20, ProxyCacheMB: 2048}
 }
 
@@ -272,10 +271,6 @@ func LoadRules(ctx context.Context, db *sql.DB) (Rules, error) {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(raw, &m) != nil {
 		return out, nil
-	}
-	var b bool
-	if v, ok := m["sso"]; ok && json.Unmarshal(v, &b) == nil {
-		out.SSO = b
 	}
 	var on *bool
 	if v, ok := m["copies_on_operator_postgres"]; ok && json.Unmarshal(v, &on) == nil && on != nil {

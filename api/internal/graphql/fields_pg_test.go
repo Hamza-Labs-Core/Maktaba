@@ -264,7 +264,12 @@ func cases() []fieldCase {
 		{"library", func(t *testing.T, e *pgEnv) {
 			q := `query($id: ID!) { library(id: $id) { id name createdAt } }`
 			unauthorized(t, e, q, map[string]any{"id": libA})
-			e.fails(member, "forbidden", q, map[string]any{"id": libB})
+			// a library the member may not see answers as one that does not exist: null,
+			// no error naming it (the API enforces roles; a 403 told which ids exist)
+			e.fails(member, "", q, map[string]any{"id": libB})
+			if _, env := e.gql(member, q, map[string]any{"id": libB}); env["data"].(map[string]any)["library"] != nil {
+				t.Fatalf("a hidden library: %v", env)
+			}
 			lib := e.ok(member, "library", q, map[string]any{"id": libA}).(map[string]any)
 			if lib["name"] != "Alpha" {
 				t.Fatalf("library = %v", lib)
@@ -386,7 +391,8 @@ func cases() []fieldCase {
 		{"queueStats", func(t *testing.T, e *pgEnv) {
 			q := `{ queueStats }`
 			unauthorized(t, e, q, nil)
-			st := e.ok(member, "queueStats", q, nil).(map[string]any)
+			e.fails(member, "forbidden", q, nil) // the queue's stats are the admins'
+			st := e.ok(admin, "queueStats", q, nil).(map[string]any)
 			if _, ok := st["by_stage"]; !ok {
 				t.Fatalf("queueStats = %v", st)
 			}
@@ -443,7 +449,8 @@ func cases() []fieldCase {
 		{"settings", func(t *testing.T, e *pgEnv) {
 			q := `{ settings }`
 			unauthorized(t, e, q, nil)
-			if _, ok := e.ok(member, "settings", q, nil).(map[string]any); !ok {
+			e.fails(member, "forbidden", q, nil) // the server's settings are the admins'
+			if _, ok := e.ok(admin, "settings", q, nil).(map[string]any); !ok {
 				t.Fatal("settings is not an object")
 			}
 		}},

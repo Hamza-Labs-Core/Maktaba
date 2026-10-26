@@ -26,6 +26,7 @@ if str(_SHARED_PY) not in sys.path:
 import pytest  # noqa: E402,I001
 from maktaba_testtier.netguard import unit_netguard  # noqa: F401,E402
 from maktaba_testtier.softcap import (  # noqa: F401,E402
+    pytest_runtest_call,
     pytest_runtest_makereport,
 )
 

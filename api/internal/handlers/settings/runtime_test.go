@@ -57,3 +57,38 @@ func TestPatchRuntimeSettings(t *testing.T) {
 		t.Errorf("subtitle.url_ttl_sec: %d", rec.Code)
 	}
 }
+
+// An admin renames the home (home.name): a name of up to 64 characters, empty for the
+// computer's name again; anything else is refused and nothing is stored.
+func TestPatchHomeName(t *testing.T) {
+	db := runtimecfgtest.DB(t)
+	reader := runtimecfg.New(db)
+	h := &Handler{DB: db, Settings: reader}
+	r := chi.NewRouter()
+	h.Mount(r)
+	ctx := context.Background()
+	if rec := patch(t, r, `{"home.name": "  بيت سارة  "}`); rec.Code != 200 {
+		t.Fatalf("patch %d %s", rec.Code, rec.Body.String())
+	}
+	if n, ok := reader.Text(ctx, runtimecfg.HomeName); !ok || n != "بيت سارة" {
+		t.Fatalf("home name = %q %v", n, ok)
+	}
+	for _, bad := range []string{
+		`{"home.name": 7}`,
+		`{"home.name": "` + strings.Repeat("x", MaxHomeName+1) + `"}`,
+		`{"home.name": "a\nb"}`,
+	} {
+		if rec := patch(t, r, bad); rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%.40s: %d", bad, rec.Code)
+		}
+	}
+	if rec := patch(t, r, `{"home.name": "`+strings.Repeat("é", MaxHomeName)+`"}`); rec.Code != 200 {
+		t.Errorf("64 characters: %d", rec.Code)
+	}
+	if rec := patch(t, r, `{"home.name": ""}`); rec.Code != 200 {
+		t.Fatalf("clear %d", rec.Code)
+	}
+	if n, ok := reader.Text(ctx, runtimecfg.HomeName); ok {
+		t.Fatalf("a cleared name reads as set: %q", n)
+	}
+}

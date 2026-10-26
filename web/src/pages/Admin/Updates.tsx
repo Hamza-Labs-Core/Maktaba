@@ -17,7 +17,7 @@ import { lookupMessage, useI18n } from "../../lib/i18n";
 import { CopyField } from "../../components/CopyField";
 import { hrefOf, updateCodeHelp } from "../../help/registry";
 import { UpdatesBackups } from "./UpdatesBackups";
-import type { HomeDb } from "../../lib/homeDb";
+import { accessAnswerWords, type HomeDb } from "../../lib/homeDb";
 import {
   logsExportURL,
   logsLink,
@@ -67,6 +67,7 @@ export function stateTone(state: string): Tone {
     case "worker_only":
     case "ahead_of_home":
     case "done_with_failures":
+    case "done_needs_person":
     case "cancelled":
     case "waiting_click":
     case "awaiting_click":
@@ -601,18 +602,36 @@ function versionCmp(a: string, b: string): number | null {
 }
 
 /** A node that cannot reach the home's database: why, the home re-provisioning its access
- * when it does, what it said, and its logs. */
+ * when it does, the machine's own request for one and the home's answer, what it said,
+ * and its logs. */
 function HomeDbNote({ machineId, homeDb }: { machineId: string; homeDb: HomeDb }) {
   const { t, locale } = useI18n();
   const code = homeDb.code ?? "other";
   const key = `machines.homeDb.code.${code}`;
   const reason =
     lookupMessage(locale, key) !== undefined ? t(key) : t("machines.homeDb.code.other");
+  const answer = homeDb.answer
+    ? accessAnswerWords(homeDb.answer, (k) => lookupMessage(locale, k) !== undefined)
+    : null;
   const id = `updates-machine-${machineId}-home-db`;
   return (
     <div className="mkt-error" role="alert" data-testid={id}>
       <div>{t("machines.homeDb.unreachable", { reason })}</div>
       {homeDb.healing && <div className="mkt-muted">{t("machines.homeDb.healing")}</div>}
+      {homeDb.asked && !homeDb.answer && !homeDb.healing && (
+        <div className="mkt-muted">{t("machines.homeDb.asked")}</div>
+      )}
+      {homeDb.answer && answer && (
+        <div data-testid={`${id}-answer`}>
+          {t(answer.key, { reason: answer.reasonKey ? t(answer.reasonKey) : "" })}
+        </div>
+      )}
+      {homeDb.answer && !homeDb.answer.ok && homeDb.answer.reason && (
+        <details>
+          <summary>{t("machines.homeDb.answerDetail")}</summary>
+          <ErrorDetail text={homeDb.answer.reason} />
+        </details>
+      )}
       {homeDb.detail && (
         <details>
           <summary>{t("machines.homeDb.detail")}</summary>
@@ -841,8 +860,14 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
   const homeSteps = view.steps.filter((s) => s.host === "home");
   const ended = RUN_ENDED.has(view.state);
   const held = view.targets.some((x) => x.state === "held");
-  // a run an admin cancelled, or a newer release replaced, did not fail
-  const failedRun = ended && !["done", "cancelled", "superseded"].includes(view.state);
+  // a run an admin cancelled, or a newer release replaced, did not fail; nor did one whose
+  // only machines left need a person (their reasons are named)
+  const failedRun =
+    ended && !["done", "done_needs_person", "cancelled", "superseded"].includes(view.state);
+  const needYou =
+    view.state === "done_needs_person"
+      ? view.targets.filter((x) => x.state === "needs_person")
+      : [];
   return (
     <section aria-labelledby="updates-run-title" data-testid="updates-run">
       <h2 id="updates-run-title">
@@ -852,6 +877,19 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
       </h2>
       <p>
         <Badge tone={stateTone(view.state)}>{w.state(view.state)}</Badge>{" "}
+        {needYou.length > 0 && (
+          <span className="mkt-muted" data-testid="updates-run-needs-person">
+            {t("updates.page.runNeedsPerson", {
+              count: needYou.length,
+              machines: needYou
+                .map((x) => {
+                  const code = (x.error as { code?: string } | undefined)?.code;
+                  return code ? `${x.name} (${w.code(String(code))})` : x.name;
+                })
+                .join(", "),
+            })}
+          </span>
+        )}
         {view.detail?.waiting && (
           <span className="mkt-muted">{w.waiting(view.detail.waiting)}</span>
         )}

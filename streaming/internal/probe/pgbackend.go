@@ -83,6 +83,8 @@ func (b *PGBackend) Close() {
 //     (its presence is what "probed" means)
 //   - audio_tracks  — the default/first track's codec + channels, which
 //     the capability matrix reasons over for direct-play vs transcode
+//   - media_info.raw_ffprobe — the first video stream (not cover art): its
+//     colour and pixel format, for the transcode's tone-mapping
 //
 // HDR and MIME have no columns in the current schema; the matrix
 // treats an empty HDR as SDR and direct-play derives Content-Type from
@@ -103,9 +105,22 @@ SELECT
   COALESCE(at.channels, 0),
   v.size_bytes,
   v.mtime,
-  (mi.video_id IS NOT NULL) AS probed
+  (mi.video_id IS NOT NULL) AS probed,
+  COALESCE(vs.s->>'color_transfer', ''),
+  COALESCE(vs.s->>'color_space', ''),
+  COALESCE(vs.s->>'color_primaries', ''),
+  COALESCE(vs.s->>'color_range', ''),
+  COALESCE(vs.s->>'pix_fmt', '')
 FROM videos v
 LEFT JOIN media_info mi ON mi.video_id = v.id
+LEFT JOIN LATERAL (
+  SELECT s
+  FROM jsonb_array_elements(CASE WHEN jsonb_typeof(mi.raw_ffprobe->'streams') = 'array'
+                                 THEN mi.raw_ffprobe->'streams' ELSE '[]'::jsonb END) s
+  WHERE s->>'codec_type' = 'video'
+    AND COALESCE(s->'disposition'->>'attached_pic', '0') <> '1'
+  LIMIT 1
+) vs ON true
 LEFT JOIN LATERAL (
   SELECT codec, channels
   FROM audio_tracks
@@ -197,6 +212,11 @@ func lookupOn(ctx context.Context, q pgQuerier, videoID uuid.UUID) (*Row, error)
 		&row.Size,
 		&row.ModTime,
 		&row.Probed,
+		&row.ColorTransfer,
+		&row.ColorMatrix,
+		&row.ColorPrimaries,
+		&row.ColorRange,
+		&row.PixFmt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

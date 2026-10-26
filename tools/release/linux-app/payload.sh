@@ -4,8 +4,9 @@
 # ffmpeg.
 #
 #   bin/       maktaba-server (web UI embedded) maktaba-api maktaba-streaming maktaba-launcher
-#   postgres/  bin/ lib/ share/          PostgreSQL 16, with the libraries it links that a
-#                                        minimal system can lack, all on an $ORIGIN rpath
+#   postgres/  bin/ lib/ share/          PostgreSQL 16 with pgvector, and the libraries it
+#                                        links that a minimal system can lack, all on an
+#                                        $ORIGIN rpath
 #   python/    CPython 3.12              python-build-standalone, stdlib precompiled
 #   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt
 #   migrations/  the database's schema (shared/db/migrations): maktaba-api finds them beside bin/
@@ -63,7 +64,7 @@ case "$(uname -m)" in
     *)             die "unsupported architecture $(uname -m) (x86_64 or aarch64)" ;;
 esac
 tools=(curl sha256sum)
-[ "$FETCH_ONLY" = 1 ] || tools+=(go uv pnpm tar patchelf)
+[ "$FETCH_ONLY" = 1 ] || tools+=(go uv pnpm tar patchelf make gcc)
 for t in "${tools[@]}"; do
     command -v "$t" >/dev/null 2>&1 || die "$t is required"
 done
@@ -109,16 +110,18 @@ fetch() {
 
 PG_FILE="postgresql-$POSTGRES_VERSION-$ARCH.tar.gz"
 PY_FILE="cpython-$PYTHON_VERSION-$ARCH.tar.gz"
+PGV_FILE="pgvector-$PGVECTOR_VERSION.tar.gz"
 # an earlier pins.env's files (a cache restored by its prefix) are not kept, so a piece
 # no longer pinned (the ffmpeg builds of before) never goes into the payload or the cache
 # saved after this run
 for f in "$CACHE"/*; do
     [ -e "$f" ] || continue
-    case "${f##*/}" in "$PG_FILE"|"$PY_FILE") ;; *) rm -rf "$f" ;; esac
+    case "${f##*/}" in "$PG_FILE"|"$PY_FILE"|"$PGV_FILE") ;; *) rm -rf "$f" ;; esac
 done
 
 if [ "$FETCH_ONLY" = 1 ]; then
     fetch "$(pin POSTGRES_URL)" "$(pin POSTGRES_SHA256)" "$PG_FILE" >/dev/null
+    fetch "$PGVECTOR_URL" "$PGVECTOR_SHA256" "$PGV_FILE" >/dev/null
     fetch "$(pin PYTHON_URL)" "$(pin PYTHON_SHA256)" "$PY_FILE" >/dev/null
     log "the pinned downloads for $ARCH are in $CACHE"
     exit 0
@@ -170,6 +173,21 @@ find "$OUT/postgres/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_ou
     while IFS= read -r f; do rm -f "$f"; done || true
 cp "$pg/COPYRIGHT" "$OUT/licenses/postgresql.txt"
 cp "$pg/LICENSE" "$OUT/licenses/postgresql-binaries.txt"
+
+# --- pgvector (semantic search in Postgres, specs/epics/43-pgvector-search) ------------------
+# Built with gcc against the PostgreSQL above (its pg_config, pgxs) before its libraries
+# are gathered, so vector.so gets the $ORIGIN rpath and the glibc check like the rest.
+# OPTFLAGS empty: no -march=native, so the module runs on any CPU of this architecture.
+log "pgvector $PGVECTOR_VERSION"
+tar -xzf "$(fetch "$PGVECTOR_URL" "$PGVECTOR_SHA256" "$PGV_FILE")" -C "$WORK"
+pgv="$WORK/pgvector-$PGVECTOR_VERSION"
+if [ ! -f "$pgv/Makefile" ] || [ ! -f "$pgv/vector.control" ]; then die "unexpected pgvector archive layout"; fi
+make -C "$pgv" --no-print-directory PG_CONFIG="$pg/bin/pg_config" CC=gcc OPTFLAGS="" \
+    >"$WORK/pgvector.log" 2>&1 || { tail -20 "$WORK/pgvector.log" >&2; die "pgvector did not build"; }
+[ -f "$pgv/vector.so" ] || die "pgvector built no vector.so"
+cp "$pgv/vector.so" "$OUT/postgres/lib/"
+cp "$pgv/vector.control" "$pgv"/sql/vector--*.sql "$OUT/postgres/share/extension/"
+cp "$pgv/LICENSE" "$OUT/licenses/pgvector.txt"
 
 # --- Python (first: the payload's own tools run with it) ------------------------------------
 log "Python $PYTHON_VERSION"
@@ -264,6 +282,7 @@ WHEEL_NAME="$(basename "${whl[0]}")"
 P_VERSION="$VERSION" P_PLATFORM="linux-$ARCH" P_MIN_GLIBC="$min_glibc" P_MANIFEST="$manifest" \
 P_PG_VERSION="$POSTGRES_VERSION" P_PG_URL="$(pin POSTGRES_URL)" P_PG_SHA="$(pin POSTGRES_SHA256)" \
 P_PY_VERSION="$PYTHON_VERSION" P_PY_URL="$(pin PYTHON_URL)" P_PY_SHA="$(pin PYTHON_SHA256)" \
+P_PGV_VERSION="$PGVECTOR_VERSION" P_PGV_URL="$PGVECTOR_URL" P_PGV_SHA="$PGVECTOR_SHA256" \
 P_WHEEL="$WHEEL_NAME" P_WHEEL_SHA="$(sha256 "$OUT/pipeline/$WHEEL_NAME")" \
 P_CONS_SHA="$(sha256 "$OUT/pipeline/constraints.txt")" \
 "$PY" -I - "$OUT/payload.json" "${closure[@]}" <<'EOF'
@@ -276,6 +295,7 @@ doc = {
     "min_glibc": e["P_MIN_GLIBC"],
     "postgres": {"version": e["P_PG_VERSION"], "source": e["P_PG_URL"], "sha256": e["P_PG_SHA"],
                  "libraries": sys.argv[2:]},
+    "pgvector": {"version": e["P_PGV_VERSION"], "source": e["P_PGV_URL"], "sha256": e["P_PGV_SHA"]},
     "python": {"version": e["P_PY_VERSION"], "source": e["P_PY_URL"], "sha256": e["P_PY_SHA"]},
     "pipeline": {"wheel": e["P_WHEEL"], "sha256": e["P_WHEEL_SHA"], "constraints_sha256": e["P_CONS_SHA"]},
     "files": {"manifest": "files.sha256", **json.loads(e["P_MANIFEST"])},

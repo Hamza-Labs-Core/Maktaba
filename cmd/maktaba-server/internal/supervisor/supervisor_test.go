@@ -1,9 +1,12 @@
 package supervisor
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -127,37 +130,72 @@ func TestChildEnvSharesTheSecretsKey(t *testing.T) {
 	}
 }
 
-// A switch of the home hands its JWT keys over as files: the API gets them, unless its
-// operator set its own.
-func TestChildEnvHandsTheAPIAHandedOverJWTPair(t *testing.T) {
+// A home without a JWT pair makes one, and the API gets it: a native app's sign-in (the TV
+// apps, the native Player and Remote) answered 500 without one. A pair already there (a
+// switch of the home handed it over) is kept, and an operator's own keys win.
+func TestChildEnvGivesTheAPIAJWTPair(t *testing.T) {
+	jwtKeyBits = 1024
+	t.Cleanup(func() { jwtKeyBits = 2048 })
 	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", "")
 	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", "")
 	t.Setenv("MAKTABA_CONFIG", filepath.Join(t.TempDir(), "server.toml"))
 	cfg := config.Defaults()
-	if hasKV(childEnvOK(RoleAPI, cfg), "MAKTABA_JWT_PRIVATE_KEY_PEM", "") {
-		t.Fatal("an empty JWT key set")
+
+	// none yet: the home makes a pair the api can read, private to its owner
+	env := childEnvOK(RoleAPI, cfg)
+	priv, pub := JWTKeyPaths()
+	privPEM, err1 := os.ReadFile(priv)
+	pubPEM, err2 := os.ReadFile(pub)
+	if err1 != nil || err2 != nil {
+		t.Fatalf("no pair made: %v %v", err1, err2)
 	}
-	for _, kv := range childEnvOK(RoleAPI, cfg) {
-		if strings.HasPrefix(kv, "MAKTABA_JWT_") {
-			t.Fatalf("a JWT key with none handed over: %s", kv)
+	if !hasKV(env, "MAKTABA_JWT_PRIVATE_KEY_PEM", string(privPEM)) || !hasKV(env, "MAKTABA_JWT_PUBLIC_KEY_PEM", string(pubPEM)) {
+		t.Fatal("the API does not get the pair made")
+	}
+	if b, _ := pem.Decode(privPEM); b == nil || b.Type != "PRIVATE KEY" {
+		t.Fatalf("private key: %q", privPEM)
+	} else if _, err := x509.ParsePKCS8PrivateKey(b.Bytes); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := pem.Decode(pubPEM); b == nil || b.Type != "PUBLIC KEY" {
+		t.Fatalf("public key: %q", pubPEM)
+	}
+	if runtime.GOOS != "windows" {
+		if fi, _ := os.Stat(priv); fi.Mode().Perm() != 0o600 {
+			t.Fatalf("private key mode %v", fi.Mode().Perm())
 		}
 	}
-	priv, pub := JWTKeyPaths()
-	if err := os.WriteFile(priv, []byte("PRIVATE PEM"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(pub, []byte("PUBLIC PEM"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	env := childEnvOK(RoleAPI, cfg)
-	if !hasKV(env, "MAKTABA_JWT_PRIVATE_KEY_PEM", "PRIVATE PEM") || !hasKV(env, "MAKTABA_JWT_PUBLIC_KEY_PEM", "PUBLIC PEM") {
-		t.Fatal("the API does not get the handed-over JWT keys")
+	// made once: the next start keeps it (tokens signed with it stay good)
+	childEnvOK(RoleAPI, cfg)
+	if again, _ := os.ReadFile(priv); string(again) != string(privPEM) {
+		t.Fatal("the pair was made anew")
 	}
 	for _, kv := range childEnvOK(RolePipeline, cfg) {
 		if strings.HasPrefix(kv, "MAKTABA_JWT_") {
 			t.Fatalf("the pipeline got a JWT key: %s", kv)
 		}
 	}
+
+	// a pair a switch of the home handed over is the one the API gets
+	if err := os.WriteFile(priv, []byte("PRIVATE PEM"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pub, []byte("PUBLIC PEM"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env = childEnvOK(RoleAPI, cfg)
+	if !hasKV(env, "MAKTABA_JWT_PRIVATE_KEY_PEM", "PRIVATE PEM") || !hasKV(env, "MAKTABA_JWT_PUBLIC_KEY_PEM", "PUBLIC PEM") {
+		t.Fatal("the API does not get the handed-over JWT keys")
+	}
+
+	// half a pair is never completed with a new private key
+	if err := os.Remove(pub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ChildEnv(RoleAPI, cfg); err == nil {
+		t.Fatal("half a pair: no error")
+	}
+
 	t.Setenv("MAKTABA_JWT_PRIVATE_KEY_PEM", "OWN")
 	t.Setenv("MAKTABA_JWT_PUBLIC_KEY_PEM", "OWN PUB")
 	for _, kv := range childEnvOK(RoleAPI, cfg) {

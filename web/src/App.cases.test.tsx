@@ -10,20 +10,8 @@ vi.mock("./lib/api", async () => {
   const actual = await vi.importActual<typeof import("./lib/api")>("./lib/api");
   return { ...actual, api: { ...actual.api, get, post } };
 });
-// crash switches: ClusterSignIn (only on /login) and a t() key per page title
-const { crash } = vi.hoisted(() => ({ crash: { cluster: false, keys: new Set<string>() } }));
-vi.mock("./components/ClusterSignIn", async () => {
-  const actual = await vi.importActual<typeof import("./components/ClusterSignIn")>(
-    "./components/ClusterSignIn"
-  );
-  return {
-    ...actual,
-    ClusterSignIn: (props: { returnTo?: string }) => {
-      if (crash.cluster) throw new Error("cluster boom");
-      return <actual.ClusterSignIn {...props} />;
-    },
-  };
-});
+// crash switch: a t() key (one page's title or label) throws
+const { crash } = vi.hoisted(() => ({ crash: { keys: new Set<string>() } }));
 vi.mock("./lib/i18n", async () => {
   const actual = await vi.importActual<typeof import("./lib/i18n")>("./lib/i18n");
   return {
@@ -61,7 +49,6 @@ async function browserBack() {
 }
 
 beforeEach(() => {
-  crash.cluster = false;
   crash.keys.clear();
   signedIn = false;
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
@@ -107,7 +94,6 @@ describe("Public page crash (login / register test cases)", () => {
     expect(await screen.findByRole("alert", {}, { timeout: 300 })).toHaveTextContent(
       en["common.pageError"]
     );
-    crash.cluster = false;
     crash.keys.clear();
     await browserBack();
     expect(await screen.findByRole("heading", { name: backHeading })).toBeInTheDocument();
@@ -119,7 +105,7 @@ describe("Public page crash (login / register test cases)", () => {
     quiet();
     open("/register");
     await screen.findByRole("heading", { name: en["register.title"] });
-    crash.cluster = true;
+    crash.keys.add("login.username"); // the Login page's label (not the register page's)
     await act(async () => {
       window.history.pushState({}, "", "/login");
       window.dispatchEvent(new PopStateEvent("popstate"));

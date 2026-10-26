@@ -94,11 +94,20 @@ func TestDriverInstallKindProblemsNeedAPerson(t *testing.T) {
 	_, _ = r.f.svc.Tick(ctx)
 	run := r.drive(t, 60)
 	ts := targetsByName(t, r.f.store, run.ID)
-	if ts["alpha"].State != TargetNeedsPerson || ts["bravo"].State != TargetHealthy || run.State != RunDoneFailures {
+	// no failure of the release: done, the machine that needs a person named with its reason
+	if ts["alpha"].State != TargetNeedsPerson || ts["bravo"].State != TargetHealthy || run.State != RunDoneNeedsPerson {
 		t.Fatalf("run %s alpha %s bravo %s", run.State, ts["alpha"].State, ts["bravo"].State)
 	}
 	if r.f.notes.find(NoticeNeedsPerson) == nil {
 		t.Fatalf("notices %v", r.f.notes.kinds())
+	}
+	n := r.f.notes.find(NoticeRolloutNeedsYou)
+	if n == nil || n.p.Params["count"] != 1 || n.p.Params["machines"] != "alpha (not_self_managed)" ||
+		r.f.notes.find(NoticeRolloutComplete) != nil {
+		t.Fatalf("the rollout's notice: %+v (notices %v)", n, r.f.notes.kinds())
+	}
+	if !strings.Contains(string(run.Error), `"needs_person":1`) {
+		t.Fatalf("the run's counts: %s", run.Error)
 	}
 	// no catch-up retries it every tick: it waits for a person (an admin's Retry)
 	a.mu.Lock()
@@ -254,5 +263,37 @@ func TestDriverHomeClickedOutsideTheWindow(t *testing.T) {
 	r.f.now = r.f.now.Add(17 * time.Hour) // the next night
 	if got := r.drive(t, 30); got.State != RunDone || n.version != "1.5.0" {
 		t.Fatalf("run %s alpha %s", got.State, n.version)
+	}
+}
+
+// A machine that needs a person beside one whose update failed: the run ended with a
+// failure, as before (done_with_failures, not done_needs_person).
+func TestDriverFailureAndNeedsPersonIsFailures(t *testing.T) {
+	t.Parallel()
+	r := newDriverRig(t)
+	ctx := context.Background()
+	a := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
+	a.prepFail = "not_self_managed"
+	b := r.node(t, "n2", "bravo", "darwin-arm64", "1.4.0")
+	b.prepFail = "download_failed"
+	_, _ = r.f.svc.Tick(ctx)
+	run := r.drive(t, 80)
+	if run.State != RunDoneFailures {
+		ts := targetsByName(t, r.f.store, run.ID)
+		t.Fatalf("run %s alpha %s bravo %s", run.State, ts["alpha"].State, ts["bravo"].State)
+	}
+	if r.f.notes.find(NoticeRolloutNeedsYou) != nil {
+		t.Fatalf("notices %v", r.f.notes.kinds())
+	}
+}
+
+// The home's attempt of a run whose only machines left need a person: installed.
+func TestRunAttemptNeedsPersonInstalled(t *testing.T) {
+	t.Parallel()
+	if a := runAttempt(Run{ID: "r1", State: RunDoneNeedsPerson}); a.Outcome != OutcomeInstalled {
+		t.Fatalf("outcome %s", a.Outcome)
+	}
+	if troubled[RunDoneNeedsPerson] {
+		t.Fatal("a run whose machines need a person is not trouble")
 	}
 }

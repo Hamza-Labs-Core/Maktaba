@@ -168,7 +168,7 @@ func TestParity_AgainstPostgres(t *testing.T) {
 		VALUES ($1, 'youtube', 'yt-1', '{"link_method":"info_json"}', 1)`, videoV)
 
 	// explain: the linked episode, the extra, and the video on YouTube only
-	rec := f.do("GET", "/api/explain?q=%D8%B7%D9%84%D8%B9&library_id="+libL, "", libViewer())
+	rec := f.do("GET", "/api/explain?q=%D8%B7%D9%84%D8%B9&library_id="+libL, "", admin())
 	var ex ExplainResponse
 	if rec.Code != 200 {
 		t.Fatalf("explain %d %s", rec.Code, rec.Body.String())
@@ -178,7 +178,7 @@ func TestParity_AgainstPostgres(t *testing.T) {
 		*ex.Videos[0].Width != 1920 || len(ex.Remote) != 1 || ex.Remote[0].YouTubeID != "yt-remote" {
 		t.Fatalf("explain %+v", ex)
 	}
-	rec = f.do("GET", "/api/explain?q=%D8%A8%D8%B1%D9%88%D9%85%D9%88", "", libViewer())
+	rec = f.do("GET", "/api/explain?q=%D8%A8%D8%B1%D9%88%D9%85%D9%88", "", admin())
 	decode(t, rec, &ex)
 	if rec.Code != 200 || len(ex.Videos) != 1 || ex.Videos[0].Verdict.Kind != VerdictExtra {
 		t.Fatalf("explain extra %d %s", rec.Code, rec.Body.String())
@@ -198,18 +198,16 @@ func TestParity_AgainstPostgres(t *testing.T) {
 		t.Fatalf("rate_style queued %d %v", queued, err)
 	}
 	var list struct{ Items []SeasonStyle }
-	for _, p := range []*principal.Principal{libViewer(), admin()} {
-		rec = f.do("GET", "/api/seasons/styles?pinned=true", "", p)
-		decode(t, rec, &list)
-		if rec.Code != 200 || len(list.Items) != 1 || *list.Items[0].OverrideStyle != "cinematic" {
+	// non-admins are refused by the package's admin-only Mount (the API enforces roles)
+	for _, p := range []*principal.Principal{libViewer(), viewer()} {
+		if rec = f.do("GET", "/api/seasons/styles?pinned=true", "", p); rec.Code != http.StatusForbidden {
 			t.Fatalf("list as %s %d %s", p.UserID, rec.Code, rec.Body.String())
 		}
 	}
-	// a viewer granted no library sees none of its seasons
-	rec = f.do("GET", "/api/seasons/styles?pinned=true", "", viewer())
+	rec = f.do("GET", "/api/seasons/styles?pinned=true", "", admin())
 	decode(t, rec, &list)
-	if rec.Code != 200 || len(list.Items) != 0 {
-		t.Fatalf("ungranted list %d %s", rec.Code, rec.Body.String())
+	if rec.Code != 200 || len(list.Items) != 1 || *list.Items[0].OverrideStyle != "cinematic" {
+		t.Fatalf("list as admin %d %s", rec.Code, rec.Body.String())
 	}
 	if rec = f.do("PUT", "/api/seasons/"+seasonA+"/style", `{"style":null}`, admin()); rec.Code != 200 {
 		t.Fatalf("clear %d %s", rec.Code, rec.Body.String())
@@ -229,10 +227,12 @@ func TestParity_AgainstPostgres(t *testing.T) {
 		VALUES ('88888888-8888-4888-8888-888888888888', $1, 'clips', 'rest', 'x', 'مقاطع', 'h')`, libL)
 	mustExec(t, db, `INSERT INTO promo_links (video_id, library_id, series_id, season_id, season, score, evidence)
 		VALUES ('66666666-6666-4666-8666-666666666666', $1, $2, $3, 1, 0.9, 'title names the show')`, libL, seriesX, seasonA)
-	if rec = f.do("GET", "/api/items/library/"+libL+"/collections", "", viewer()); rec.Code != http.StatusForbidden {
-		t.Fatalf("ungranted collections %d %s", rec.Code, rec.Body.String())
+	for _, p := range []*principal.Principal{viewer(), libViewer()} {
+		if rec = f.do("GET", "/api/items/library/"+libL+"/collections", "", p); rec.Code != http.StatusForbidden {
+			t.Fatalf("non-admin %s collections %d %s", p.UserID, rec.Code, rec.Body.String())
+		}
 	}
-	rec = f.do("GET", "/api/items/library/"+libL+"/collections", "", libViewer())
+	rec = f.do("GET", "/api/items/library/"+libL+"/collections", "", admin())
 	var cols LibraryCollectionsResponse
 	decode(t, rec, &cols)
 	if rec.Code != 200 || len(cols.Topics) != 1 || cols.Topics[0].Items != 1 || *cols.Topics[0].Collection != "قناة - ملف - السيرة" ||
@@ -241,7 +241,7 @@ func TestParity_AgainstPostgres(t *testing.T) {
 	}
 
 	// insights and pulse run on the real schema
-	if rec = f.do("GET", "/api/queues/insights", "", viewer()); rec.Code != http.StatusOK {
+	if rec = f.do("GET", "/api/queues/insights", "", admin()); rec.Code != http.StatusOK {
 		t.Fatalf("insights %d %s", rec.Code, rec.Body.String())
 	}
 	mustExec(t, db, `UPDATE processing_jobs SET state = 'running', claimed_at = now() - interval '1 hour',

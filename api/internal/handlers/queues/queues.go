@@ -99,7 +99,27 @@ type Handler struct {
 // Mount wires the routes. Static segments (graph, libraries, health,
 // pause-all, resume-all) are registered next to the {stage} wildcard;
 // chi gives static segments priority.
+//
+// Every route is the home admins' (the control centre, the Remote): reads too, since
+// counts, throughput, failures and workers are the server's state, not a viewer's (the
+// API enforces roles; the web hides the pages, but that is not the rule).
 func (h *Handler) Mount(r chi.Router) {
+	r.Group(func(r chi.Router) {
+		r.Use(adminOnly)
+		h.mount(r)
+	})
+}
+
+// adminOnly refuses anyone but a home admin before any handler of the package runs.
+func adminOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requireAdmin(w, r) {
+			next.ServeHTTP(w, r)
+		}
+	})
+}
+
+func (h *Handler) mount(r chi.Router) {
 	r.Get("/api/queues", h.Snapshot)
 	r.Get("/api/queues/graph", h.Graph)
 	r.Get("/api/queues/libraries", h.Libraries)

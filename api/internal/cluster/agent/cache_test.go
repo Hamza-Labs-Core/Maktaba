@@ -185,7 +185,7 @@ func TestWorkersCarryTheirSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := f.browser("viewer")
+	b := f.browser("admin")
 	var data json.RawMessage
 	waitFor(t, "workers with session", func() bool {
 		data = b.subscribeSnap(TopicWorkers)

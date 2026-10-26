@@ -19,6 +19,7 @@ package cluster
 import (
 	"context"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -74,6 +75,14 @@ type Handler struct {
 	// file; "" with its TLS off), sealed in a join's credentials.
 	PGBundled bool
 	PGCA      string
+	// MendBundled asks the supervisor to give the bundled Postgres's app role its cluster
+	// grants again (CREATEROLE, REPLICATION, ADMIN on the machines' roles: pgbundle's cluster
+	// bootstrap), when it lacks them (a move or a restore without them); nil: not this home's
+	// to mend.
+	MendBundled func(ctx context.Context) error
+	// RolesDB is the home's database as its own user (the roles' Postgres): a missing
+	// group role is made again on it (cluster.EnsureWorkerGroup); nil: not made.
+	RolesDB *sql.DB
 	// PGPlain: the database is another one (an operator's own) and has no TLS at all
 	// (`ssl` off): the machines are told so, as for a bundled one with its TLS off. One
 	// with TLS has the operator's CA, which this home does not hold: the machines'
@@ -705,6 +714,9 @@ func notPending(n cluster.Node) *httperror.Error {
 // ApproveRequest is the body of POST /api/cluster/nodes/{id}/approve.
 type ApproveRequest struct {
 	Code string `json:"code"`
+	// Full: the admin allows the machine a copy of this database (a full machine) once it
+	// reports it can be one; off by default. Never the machine's own choice (slot 0151).
+	Full bool `json:"full"`
 }
 
 // Approve implements POST /api/cluster/nodes/{id}/approve.
@@ -779,7 +791,14 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		errInternal(w, r, "approve", err)
 		return
 	}
-	h.log().Info("cluster: machine approved", "node_id", n.ID, "role", role, "event", "cluster_approved")
+	if req.Full {
+		if err := h.Store.UpdateNode(ctx, n.ID, cluster.NodePatch{FullAllowed: &req.Full}, now); err != nil {
+			errInternal(w, r, "allow a full machine", err)
+			return
+		}
+	}
+	h.log().Info("cluster: machine approved", "node_id", n.ID, "role", role, "full_allowed", req.Full,
+		"by", actor(r), "event", "cluster_approved")
 	h.writeNode(w, r, n.ID)
 }
 
@@ -948,6 +967,9 @@ type UpdateRequest struct {
 	Drain   *bool            `json:"drain"`
 	PathMap json.RawMessage  `json:"path_map"`
 	Stages  map[string]*bool `json:"stages"`
+	// FullAllowed: an admin allows (true) or takes back (false) the machine's copy of this
+	// database; it takes effect with what the machine reports (full_node, slot 0151).
+	FullAllowed *bool `json:"full_allowed"`
 }
 
 // UpdateNode implements PUT /api/cluster/nodes/{id}.
@@ -965,7 +987,11 @@ func (h *Handler) UpdateNode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	patch := cluster.NodePatch{Drain: req.Drain}
+	patch := cluster.NodePatch{Drain: req.Drain, FullAllowed: req.FullAllowed}
+	if req.FullAllowed != nil && n.State != cluster.StateApproved {
+		httperror.Write(w, r, httperror.BadRequest("only an approved machine can be allowed a copy"))
+		return
+	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" || len(name) > maxNameLen {
@@ -998,7 +1024,11 @@ func (h *Handler) UpdateNode(w http.ResponseWriter, r *http.Request) {
 		errInternal(w, r, "update machine", err)
 		return
 	}
-	if h.OnNodeChanged != nil && (req.Drain != nil || len(req.Stages) > 0) {
+	if req.FullAllowed != nil {
+		h.log().Info("cluster: a machine's copy allowed or taken back", "node_id", n.ID,
+			"full_allowed", *req.FullAllowed, "by", actor(r), "event", "cluster_full_allowed")
+	}
+	if h.OnNodeChanged != nil && (req.Drain != nil || len(req.Stages) > 0 || req.FullAllowed != nil) {
 		h.OnNodeChanged(n.ID)
 	}
 	h.writeNode(w, r, n.ID)

@@ -574,3 +574,47 @@ var errReadable = readableError("ffmpeg not on PATH")
 type readableError string
 
 func (e readableError) Error() string { return string(e) }
+
+// The catalogue's colour settles HDR or not when it names the transfer, or when
+// the picture is 8-bit (PQ and HLG need more); otherwise the file is probed.
+func TestCatalogueColour(t *testing.T) {
+	for name, c := range map[string]struct {
+		transfer, pixFmt string
+		want             Colour
+		known            bool
+	}{
+		"PQ named":                  {"smpte2084", "yuv420p10le", Colour{Transfer: "smpte2084", Matrix: "bt2020nc"}, true},
+		"SDR named":                 {"bt709", "yuv420p", Colour{Transfer: "bt709", Matrix: "bt2020nc"}, true},
+		"none named, 8-bit":         {"", "yuv420p", Colour{Matrix: "bt2020nc"}, true},
+		"unknown, 8-bit":            {"unknown", "yuvj420p", Colour{Matrix: "bt2020nc"}, true},
+		"none named, 10-bit (MKV)":  {"unknown", "yuv420p10le", Colour{}, false},
+		"none named, depth unknown": {"", "", Colour{}, false},
+	} {
+		got, known := CatalogueColour(c.transfer, "bt2020nc", "", "", c.pixFmt)
+		if known != c.known || got != c.want {
+			t.Errorf("%s: %+v %v, want %+v %v", name, got, known, c.want, c.known)
+		}
+	}
+}
+
+// toneMapFor: a colour from the catalogue is used as it is, the file is not probed
+// (on a NAS the probe took seconds at every open, and timed out).
+func TestToneMapForUsesTheCataloguesColour(t *testing.T) {
+	e := &execRunner{
+		colour: func(context.Context, string, string) (Colour, error) {
+			t.Fatal("the file was probed although the catalogue had its colour")
+			return Colour{}, nil
+		},
+		filters: func(context.Context, string) (map[string]bool, error) {
+			return map[string]bool{"zscale": true, "tonemap": true}, nil
+		},
+	}
+	hdr := Colour{Transfer: "smpte2084"}
+	if got := e.toneMapFor(context.Background(), Job{InputPath: "/in.mkv", Ladder: DefaultLadder(0), Colour: &hdr}); !strings.Contains(got, "tonemap=") {
+		t.Errorf("HDR from the catalogue: no tone-mapping in %q", got)
+	}
+	sdr := Colour{Transfer: "bt709"}
+	if got := e.toneMapFor(context.Background(), Job{InputPath: "/in.mkv", Ladder: DefaultLadder(0), Colour: &sdr}); got != "" {
+		t.Errorf("SDR from the catalogue: %q", got)
+	}
+}

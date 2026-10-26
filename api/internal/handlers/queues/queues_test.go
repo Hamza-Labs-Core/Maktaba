@@ -119,6 +119,100 @@ func jobRefRow(id int64, stage, state string) []driver.Value {
 
 // ---------- pure functions ----------
 
+// TestEveryRouteIsAdminOnly: the API enforces roles. Every route of the
+// package, reads included, is the home admins'; anonymous callers and every
+// kind of non-admin get 403 from the admin-only Mount before any handler
+// (and so any query) runs. The table must list every registered route.
+func TestEveryRouteIsAdminOnly(t *testing.T) {
+	routes := []struct{ method, pattern, path, body string }{
+		{"GET", "/api/queues", "/api/queues", ""},
+		{"GET", "/api/queues/graph", "/api/queues/graph", ""},
+		{"GET", "/api/queues/libraries", "/api/queues/libraries", ""},
+		{"GET", "/api/queues/health", "/api/queues/health", ""},
+		{"GET", "/api/queues/insights", "/api/queues/insights", ""},
+		{"GET", "/api/queues/pulse", "/api/queues/pulse", ""},
+		{"GET", "/api/queues/running", "/api/queues/running", ""},
+		{"GET", "/api/queues/failures", "/api/queues/failures", ""},
+		{"POST", "/api/queues/failures/actions", "/api/queues/failures/actions", `{"action":"retry","job_ids":[1]}`},
+		{"POST", "/api/queues/pause-all", "/api/queues/pause-all", ""},
+		{"POST", "/api/queues/resume-all", "/api/queues/resume-all", ""},
+		{"GET", "/api/queues/{stage}", "/api/queues/probe", ""},
+		{"PATCH", "/api/queues/{stage}", "/api/queues/probe", `{"enabled":false}`},
+		{"GET", "/api/queues/{stage}/rate", "/api/queues/probe/rate", ""},
+		{"GET", "/api/queues/{stage}/jobs", "/api/queues/probe/jobs", ""},
+		{"GET", "/api/queues/{stage}/failures", "/api/queues/probe/failures", ""},
+		{"POST", "/api/queues/{stage}/pause", "/api/queues/probe/pause", ""},
+		{"POST", "/api/queues/{stage}/resume", "/api/queues/probe/resume", ""},
+		{"POST", "/api/queues/{stage}/retry", "/api/queues/probe/retry", `{}`},
+		{"POST", "/api/queues/{stage}/apply", "/api/queues/probe/apply", `{}`},
+		{"GET", "/api/workers", "/api/workers", ""},
+		{"GET", "/api/extensions", "/api/extensions", ""},
+		{"PUT", "/api/extensions/{name}", "/api/extensions/cloudflare_stream", `{"enabled":true}`},
+		{"POST", "/api/extensions/{name}/test", "/api/extensions/cloudflare_stream/test", ""},
+		{"POST", "/api/extensions/plex/signin", "/api/extensions/plex/signin", ""},
+		{"GET", "/api/extensions/plex/signin/{id}", "/api/extensions/plex/signin/42", ""},
+		{"POST", "/api/extensions/plex/signin/{id}/use", "/api/extensions/plex/signin/42/use", `{"name":"Home"}`},
+		{"GET", "/api/pools", "/api/pools", ""},
+		{"PUT", "/api/pools/{pool}", "/api/pools/nas_read", `{"size":2}`},
+		{"POST", "/api/queue/retrigger", "/api/queue/retrigger", `{"stage":"probe"}`},
+		{"GET", "/api/issues", "/api/issues", ""},
+		{"GET", "/api/activity", "/api/activity", ""},
+		{"GET", "/api/jobs/{id}/events", "/api/jobs/7/events", ""},
+		{"GET", "/api/items/{kind}/{id}/history", "/api/items/video/" + uidA + "/history", ""},
+		{"GET", "/api/items/library/{id}/collections", "/api/items/library/" + uidA + "/collections", ""},
+		{"GET", "/api/explain", "/api/explain?q=ab", ""},
+		{"GET", "/api/seasons/styles", "/api/seasons/styles", ""},
+		{"PUT", "/api/seasons/{id}/style", "/api/seasons/" + uidA + "/style", `{"style":"talk"}`},
+		{"PUT", "/api/series/{id}/style", "/api/series/" + uidB + "/style", `{"style":"talk"}`},
+	}
+
+	// the table covers every registered route, no more, no less
+	f := newFixture()
+	listed := map[string]bool{}
+	for _, rt := range routes {
+		listed[rt.method+" "+rt.pattern] = true
+	}
+	registered := map[string]bool{}
+	if err := chi.Walk(f.r, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		registered[method+" "+route] = true
+		if !listed[method+" "+route] {
+			t.Errorf("route %s %s is not in the table", method, route)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for k := range listed {
+		if !registered[k] {
+			t.Errorf("table lists %s, which is not registered", k)
+		}
+	}
+
+	callers := []struct {
+		name, msg string
+		p         *principal.Principal
+	}{
+		{"anonymous", "auth required", nil},
+		{"viewer", "admin-only", viewer()},
+		{"all-libraries viewer", "admin-only", allViewer()},
+		{"library viewer", "admin-only", libViewer()},
+	}
+	for _, rt := range routes {
+		for _, c := range callers {
+			t.Run(rt.method+" "+rt.pattern+" as "+c.name, func(t *testing.T) {
+				f := newFixture()
+				rec := f.do(rt.method, rt.path, rt.body, c.p)
+				if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), c.msg) {
+					t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+				}
+				if n := len(f.db.Calls()); n != 0 {
+					t.Fatalf("a handler ran %d statements", n)
+				}
+			})
+		}
+	}
+}
+
 func TestWaitingReason_Precedence(t *testing.T) {
 	ptr := func(s string) *string { return &s }
 	base := func() stageInputs {
@@ -411,7 +505,7 @@ func snapshotRules() []*queuestest.Rule {
 
 func TestSnapshot(t *testing.T) {
 	f := newFixture(snapshotRules()...)
-	rec := f.do(http.MethodGet, "/api/queues", "", allViewer())
+	rec := f.do(http.MethodGet, "/api/queues", "", admin())
 	if rec.Code != 200 {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
@@ -537,7 +631,7 @@ func TestSnapshot_StaleGraphIssue(t *testing.T) {
 		{Match: "stage = any($2::text[])", Cols: []string{"stage", "n"}, Rows: [][]driver.Value{{"transcribe", int64(7)}}},
 	}
 	f := newFixture(rules...)
-	rec := f.do(http.MethodGet, "/api/issues", "", viewer())
+	rec := f.do(http.MethodGet, "/api/issues", "", admin())
 	var out struct {
 		Groups []FailureGroup `json:"groups"`
 	}
@@ -559,7 +653,7 @@ func TestGraph(t *testing.T) {
 		&queuestest.Rule{Match: "from worker_pools", Cols: []string{"pool", "label", "scope", "size", "default_size", "updated_at", "updated_by"},
 			Rows: [][]driver.Value{{"cpu", "CPU", "per_worker", nil, nil, t0, nil}}},
 	)
-	rec := f.do(http.MethodGet, "/api/queues/graph", "", viewer())
+	rec := f.do(http.MethodGet, "/api/queues/graph", "", admin())
 	var out struct {
 		Stages []StageInfo `json:"stages"`
 		Pools  []Pool      `json:"pools"`

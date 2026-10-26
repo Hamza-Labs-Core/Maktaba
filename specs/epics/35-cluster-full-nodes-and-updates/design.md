@@ -669,6 +669,8 @@ machine's API cross-origin; the cluster sign-in uses top-level redirects).
 
 ### 10.5 Cluster sign-in (one sign-in for every machine)
 
+> **Removed (October 2026).** Across devices the button could not know who you are, so it only added a second, confusing way in: the sign-in form is the only one on every machine (a node checks it against the home's accounts). The `/api/cluster/sso/*` routes answer 404 on every machine; `rules.cluster.sso` and `SelfInfo.sso` are gone. `cluster_sso_codes` stays one release (the previous release still names it: migrations README rule 10) and is dropped by the next one.
+
 ```
 user on node B, not signed in ──► web shows "Continue as … (signed in on <home>)" when the home is reachable
   B: verifier = random 32 bytes, challenge = S256(verifier), state cookie on B
@@ -842,7 +844,7 @@ home_committed
                   machine agent reconnected
           remove pending; watermark = <v>; undrain; update.state {version}
        home: target healthy within node_health_timeout? next : failure (§13.4)
-done | done_with_failures | held
+done | done_needs_person (only machines a person must see to) | done_with_failures | held
 ```
 
 ### 13.4 Failures

@@ -69,8 +69,9 @@ func errorSummary(entries []mlog.Entry) ErrorSummary {
 const errorLevel = 8
 
 // scopeJSONL restricts a block of newline-delimited JSON log lines to a
-// single user: it keeps lines attributed to scopeUserID plus
-// un-attributed system lines (no user_id), mirroring scopedEntries.
+// single user: it keeps lines attributed to scopeUserID only (the
+// server's own lines, with no user_id, are an admin's), mirroring
+// scopedEntries.
 // Used to scope proxied peer logs, which arrive as raw JSONL the peer
 // service cannot filter by user. A line that does not parse as JSON is
 // dropped (fail-closed) so a malformed peer line can never leak through
@@ -90,7 +91,7 @@ func scopeJSONL(data []byte, scopeUserID string) []byte {
 		if err := json.Unmarshal(line, &rec); err != nil {
 			continue
 		}
-		if rec.UserID == "" || rec.UserID == scopeUserID {
+		if rec.UserID == scopeUserID {
 			buf.Write(line)
 			buf.WriteByte('\n')
 		}

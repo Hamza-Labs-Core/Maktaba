@@ -881,7 +881,12 @@ func (s *Server) ServeStream(w http.ResponseWriter, r *http.Request) {
 			sc.closeNow(websocket.StatusNormalClosure, "nobody waits")
 		}
 	case t.body != nil:
-		_, _ = io.Copy(sc, t.body)
+		if _, err := io.Copy(sc, t.body); err != nil {
+			// the answer was cut (its request ended, or the machine went): the stream ends as
+			// an error, never as the body's end a reader would take for a complete answer
+			sc.closeNow(websocket.StatusInternalError, "the answer was cut")
+			return
+		}
 		_ = sc.Close()
 	default:
 		h := s.Handler

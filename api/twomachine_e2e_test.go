@@ -6,11 +6,12 @@ package main
 //
 //   - the node runs in node mode with its own limited database role, and its API refuses
 //     to start with a role that can run DDL;
-//   - a sign-in on the home is carried to the node by the cluster sign-in (single-use
-//     code, PKCE), the node's cookie is its own;
+//   - a sign-in on the node (its sign-in form, checked by the home) is the home's, tagged
+//     with the node, and the node's cookie is its own; the cluster sign-in's routes are
+//     gone (404 on both machines);
 //   - local / any / home routes are served as classed (home ones proxied with the user's
 //     session, writes included, CSRF per address), the hub WebSocket through the proxy;
-//   - signing out on the home blocks the node's session within a second;
+//   - signing out everywhere on the home blocks the node's session within a second;
 //   - VOD on the node is opened on the node itself (no request reaches the home); a
 //     video this node cannot read falls back to the home, and the Machines page says so;
 //   - the Machines page lists every machine's web address;
@@ -361,8 +362,10 @@ func TestTwoMachinesOnePC(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = (&cluster.PGRoles{DB: db}).Drop(context.Background(), role) })
-	exec1(`INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at, approved_by)
-	       VALUES ($1, 'studio-node', 'approved', 'linux', 'amd64', $2, $3, now(), 'test')`, nodeID, cluster.EncodeKey(nodePub), role)
+	// approved as an admin would, with a copy allowed (full_allowed, slot 0151): the node's
+	// own report makes it full
+	exec1(`INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, db_role, approved_at, approved_by, full_allowed)
+	       VALUES ($1, 'studio-node', 'approved', 'linux', 'amd64', $2, $3, now(), 'test', true)`, nodeID, cluster.EncodeKey(nodePub), role)
 	// sslmode=prefer, as the join hands it (lib/pq takes no prefer: pgdsn, nodecopy)
 	nodeDSN := strings.Replace(clustertest.WithUser(t, dsn, role, "node-pass-xyz"), "sslmode=disable", "sslmode=prefer", 1)
 	// the node reaches the database through a proxy the test can cut (the home's
@@ -480,26 +483,16 @@ slots = "off"
 		}
 	})
 
-	// ---- sign in on the home, carry it to the node ----
+	// ---- sign in on the home, and on the node with its own sign-in form ----
 	user := newBrowser(t)
 	resp, body := user.do("POST", homeWebURL+"/api/auth/login", map[string]string{"username": "owner", "password": "owner-pass-123"}, nil)
 	if resp.StatusCode != 200 {
 		t.Fatalf("login on the home: %d %s", resp.StatusCode, body)
 	}
-	t.Run("cluster sign-in", func(t *testing.T) {
-		resp, _ := user.do("GET", nodeWebURL+"/api/cluster/sso/start?return=/library", nil, nil)
-		auth := resp.Header.Get("Location")
-		if resp.StatusCode != 302 || !strings.HasPrefix(auth, homeWebURL+"/api/cluster/sso/authorize?") {
-			t.Fatalf("start: %d %q", resp.StatusCode, auth)
-		}
-		resp, _ = user.do("GET", auth, nil, nil)
-		cb := resp.Header.Get("Location")
-		if resp.StatusCode != 302 || !strings.HasPrefix(cb, nodeWebURL+"/api/cluster/sso/callback?code=") {
-			t.Fatalf("authorize: %d %q", resp.StatusCode, cb)
-		}
-		resp, _ = user.do("GET", cb, nil, nil)
-		if resp.StatusCode != 302 || resp.Header.Get("Location") != "/library" {
-			t.Fatalf("callback: %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	t.Run("sign-in on the node", func(t *testing.T) {
+		resp, body := user.do("POST", nodeWebURL+"/api/auth/login", map[string]string{"username": "owner", "password": "owner-pass-123"}, nil)
+		if resp.StatusCode != 200 {
+			t.Fatalf("login on the node: %d %s", resp.StatusCode, body)
 		}
 		for _, c := range resp.Cookies() {
 			if c.Domain != "" {
@@ -507,18 +500,25 @@ slots = "off"
 			}
 		}
 		if user.cookie(nodeWebURL, "mkt_sess") == "" || user.cookie(nodeWebURL, "mkt_sess") == user.cookie(homeWebURL, "mkt_sess") {
-			t.Fatal("the node has its own (child) session cookie")
+			t.Fatal("the node has its own session cookie")
 		}
-		// the code is single use
-		resp, _ = user.do("GET", cb, nil, nil)
-		if resp.StatusCode == 302 {
-			t.Fatal("a used code must be refused")
-		}
+		// a sign-in on the node is the home's, tagged with the node
 		var origin, parent sql.NullString
 		if err := db.QueryRowContext(ctx, `SELECT CAST(origin_node_id AS TEXT), CAST(parent_session_id AS TEXT) FROM web_sessions WHERE id = $1`,
-			user.cookie(nodeWebURL, "mkt_sess")).Scan(&origin, &parent); err != nil || origin.String != nodeID ||
-			parent.String != user.cookie(homeWebURL, "mkt_sess") {
-			t.Fatalf("child session: origin=%v parent=%v err=%v", origin, parent, err)
+			user.cookie(nodeWebURL, "mkt_sess")).Scan(&origin, &parent); err != nil || origin.String != nodeID || parent.Valid {
+			t.Fatalf("the node's session: origin=%v parent=%v err=%v", origin, parent, err)
+		}
+		// the cluster sign-in is gone: its routes answer 404 on both machines, signed in or not
+		for _, u := range []string{nodeWebURL + "/api/cluster/sso/start?return=/library", nodeWebURL + "/api/cluster/sso/callback?code=x&state=y",
+			homeWebURL + "/api/cluster/sso/authorize?node=" + nodeID, homeWebURL + "/api/cluster/sso/exchange"} {
+			if resp, _ := user.do("GET", u, nil, nil); resp.StatusCode != http.StatusNotFound {
+				t.Errorf("%s: %d, want 404", u, resp.StatusCode)
+			}
+			if r, err := http.Get(u); err != nil || r.StatusCode != http.StatusNotFound {
+				t.Errorf("%s anonymous: %v %v, want 404", u, r, err)
+			} else {
+				_ = r.Body.Close()
+			}
 		}
 	})
 
@@ -735,12 +735,14 @@ slots = "off"
 		time.Sleep(time.Duration(hold) * time.Second)
 	}
 
-	t.Run("signing out on the home blocks the node within a second", func(t *testing.T) {
+	t.Run("signing out everywhere on the home blocks the node within a second", func(t *testing.T) {
 		resp, _ := user.do("GET", nodeWebURL+"/api/videos", nil, nil)
 		if resp.StatusCode != 200 {
 			t.Fatalf("before: %d", resp.StatusCode)
 		}
-		resp, _ = user.do("POST", homeWebURL+"/api/auth/logout", nil, map[string]string{"X-Maktaba-CSRF": user.cookie(homeWebURL, "mkt_csrf")})
+		// the node's session is its own (signed in there), not the home session's: the home
+		// ends it with "sign out everywhere", pushed to the node by user (auth.revoked)
+		resp, _ = user.do("POST", homeWebURL+"/api/auth/logout-all", nil, map[string]string{"X-Maktaba-CSRF": user.cookie(homeWebURL, "mkt_csrf")})
 		if resp.StatusCode != 204 {
 			t.Fatalf("logout: %d", resp.StatusCode)
 		}

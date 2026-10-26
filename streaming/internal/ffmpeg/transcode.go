@@ -42,6 +42,9 @@ type Job struct {
 	// StartSec is where in the source the transcode starts (seconds; HLS
 	// only, EncodePlan.Start).
 	StartSec int
+	// Colour is the source's colour from the catalogue (CatalogueColour), nil
+	// when it does not settle HDR or not: then the runner probes the file.
+	Colour *Colour
 
 	// toneMap: the runner's tone-mapping for an HDR source (toneMapFor)
 	toneMap string
@@ -387,7 +390,13 @@ func (e *execRunner) toneMapFor(ctx context.Context, job Job) string {
 	if ffprobe == "" {
 		ffprobe = "ffprobe"
 	}
-	c, err := colour(ctx, ffprobe, job.InputPath)
+	var c Colour
+	var err error
+	if job.Colour != nil {
+		c = *job.Colour
+	} else {
+		c, err = colour(ctx, ffprobe, job.InputPath)
+	}
 	if err != nil {
 		e.logger().Warn("transcode: the source's colour probe failed, encoding it as SDR",
 			"session_id", job.SessionID, "input", job.InputPath, "err", err.Error(), "event", "vod_colour_probe_failed")
@@ -459,6 +468,34 @@ func sourceColour(ctx context.Context, ffprobe, input string) (Colour, error) {
 		return Colour{}, fmt.Errorf("ffprobe: %w", err)
 	}
 	return parseColour(out), nil
+}
+
+// CatalogueColour is the source's colour from what the pipeline's probe stored
+// (the video stream's fields and pixel format), and whether it settles HDR or not
+// without reading the file again: a named transfer does; none named on an 8-bit
+// picture is SDR (PQ and HLG need 10 bits or more). Otherwise (none named, a
+// higher or unknown depth: an MKV whose transfer only the frames name) the file
+// is probed at the session's open, as before.
+func CatalogueColour(transfer, matrix, primaries, rng, pixFmt string) (Colour, bool) {
+	named := func(v string) string {
+		switch v {
+		case "unknown", "unspecified", "reserved":
+			return ""
+		}
+		return v
+	}
+	c := Colour{Transfer: named(transfer), Matrix: named(matrix), Primaries: named(primaries), Range: named(rng)}
+	if c.Transfer != "" || eightBit[pixFmt] {
+		return c, true
+	}
+	return Colour{}, false
+}
+
+// eightBit: pixel formats of 8 bits a component.
+var eightBit = map[string]bool{
+	"yuv420p": true, "yuvj420p": true, "yuv422p": true, "yuvj422p": true, "yuv444p": true, "yuvj444p": true,
+	"yuv440p": true, "yuvj440p": true, "yuv411p": true, "yuv410p": true, "nv12": true, "nv16": true, "nv21": true,
+	"gray": true, "rgb24": true, "bgr24": true, "rgba": true, "bgra": true, "argb": true, "abgr": true, "pal8": true,
 }
 
 func parseColour(out []byte) Colour {

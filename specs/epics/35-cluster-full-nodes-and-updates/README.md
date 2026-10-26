@@ -143,7 +143,7 @@ owner on 2026-10-19 (**accepted default**). The questions and their answers are 
   (playback, TV) and sign-ins from its copy of the home's database (design §10.3, Epic 37).
 - R2.4 Signing in on a node creates the session on the home (tagged `origin_node_id`); the cookie is
   host-only for the node's address; CSRF double submit works per host.
-- R2.5 Cluster sign-in: a signed-in user who opens another machine is offered "Continue as …"; a
+- R2.5 (Removed October 2026: design §10.5.) Cluster sign-in: a signed-in user who opens another machine is offered "Continue as …"; a
   one-time code (60 s, single use, bound to the target node and a PKCE verifier) creates a child
   session on the home for that machine; signing out on the home ends its children.
 - R2.6 Node APIs enforce the same roles and ACLs; admin-only routes on a node are admin-only.
@@ -357,7 +357,7 @@ owner on 2026-10-19 (**accepted default**). The questions and their answers are 
                  │ verify fail       │ health fail          │ boot-loop (launcher)    │ crash loop
                  ▼                   ▼                      ▼                         ▼
              failed_tv          rolling_back ──────────────────────────────────► rolled_back
- home_committed ─► rolling_out ─► done | done_with_failures | held (platform held / admin paused)
+ home_committed ─► rolling_out ─► done | done_needs_person | done_with_failures | held (platform held / admin paused)
 ```
 
 **Machine target** — per node in `update_targets`.
@@ -421,7 +421,7 @@ Epic 33 did for `tv_staging.enabled`.
 The copy's own rules (`offline_copy_max_lag_minutes`, `offline_session_hours`,
 `offline_session_grace_minutes`, `replica_wal_keep_gb`) are Epic 37's (`specs/epics/37-node-replica`).
 
-Cluster sign-in has its own switch, `rules.cluster.sso` (default `true`; off: each machine asks for its own sign-in, still against the home's sessions).
+Cluster sign-in had its own switch, `rules.cluster.sso`; both were removed in October 2026 (design §10.5).
 
 ## APIs
 
@@ -447,12 +447,12 @@ POST   /api/cluster/delegate/introspect        {cookie_session? | bearer? | pat?
 ANY    /api/…                                  home-class routes proxied by a node: X-Maktaba-Node, X-Maktaba-Node-Sig,
                                                X-Maktaba-Delegated-Session (or Authorization passed through)
 GET    /api/cluster/updates/artifacts/{version}/{name}   the verified files of a staged release (mirror)
-GET    /api/cluster/sso/authorize?node=&challenge=&return=   (browser, home origin) → 302 node callback ?code=
-POST   /api/cluster/sso/exchange               (node, signed) {code, verifier} → session for the node's origin
 
 # Node (local class)
 GET    /api/system/version · /api/system/processes · /api/cluster/self   this machine (identity, role, version, home)
-GET    /api/cluster/sso/callback?code=         (browser, node origin) sets the node cookie
+
+# Every machine: removed (the cluster sign-in, design §10.5)
+ANY    /api/cluster/sso/start · /callback · /authorize · /exchange   404, to anyone
 
 # Supervisor loopback (127.0.0.1:9103, local token)
 POST   /update/start {run_id} · GET /update/status · POST /update/abort (before migrate only) · POST /update/rollback

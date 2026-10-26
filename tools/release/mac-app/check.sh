@@ -3,7 +3,8 @@
 # built app bundle. Runs on macOS arm64 (CI: the mac-app gate and desktop-release).
 #
 #   every binary starts (--version), every Mach-O is arm64 and links nothing outside the
-#   payload but the system, Postgres initdb + start + the extensions Maktaba creates,
+#   payload but the system, Postgres initdb + start + the extensions Maktaba creates
+#   (pgvector too: a halfvec HNSW index answers a nearest-neighbour query),
 #   Ollama serves its API on a loopback port,
 #   the bundled Python builds a venv offline, and running it writes nothing into the
 #   payload (a new file would break the app's signature seal).
@@ -108,6 +109,25 @@ if "$pg/initdb" -D "$SCRATCH/pgdata" -U maktaba --auth=trust -E UTF8 >"$SCRATCH/
         -o "-p $port -k '' -c listen_addresses=127.0.0.1" start >/dev/null 2>&1; then
     run "extensions" "$pg/psql" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq -v ON_ERROR_STOP=1 \
         -c "CREATE EXTENSION pg_trgm; CREATE EXTENSION pgcrypto; CREATE EXTENSION unaccent; SELECT 'pg_trgm, pgcrypto, unaccent on ' || version();"
+    # semantic search's store (specs/epics/43-pgvector-search): the column type, the HNSW
+    # index and the query the pipeline uses; a row's nearest is itself, found by the index
+    rc=0
+    out="$(perl -e 'alarm 30; exec @ARGV' "$pg/psql" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq -v ON_ERROR_STOP=1 \
+        -c "CREATE EXTENSION vector;" \
+        -c "CREATE TABLE vec_check (id int PRIMARY KEY, e halfvec(384));" \
+        -c "INSERT INTO vec_check SELECT i, (SELECT array_agg(sin(i * j)::real ORDER BY j) FROM generate_series(1, 384) j)::halfvec
+                FROM generate_series(1, 200) i;" \
+        -c "CREATE INDEX vec_check_hnsw ON vec_check USING hnsw (e halfvec_cosine_ops);" \
+        -c "SET enable_seqscan = off;" \
+        -c "SELECT 'vector ' || (SELECT extversion FROM pg_extension WHERE extname = 'vector') || ', nearest: ' ||
+                string_agg(id::text, ',') FROM (SELECT id FROM vec_check
+                ORDER BY e <=> (SELECT e FROM vec_check WHERE id = 42) LIMIT 3) n;" \
+        -c "EXPLAIN (COSTS OFF) SELECT id FROM vec_check ORDER BY e <=> (SELECT e FROM vec_check WHERE id = 42) LIMIT 3;" \
+        -c "DROP TABLE vec_check;" 2>&1)" || rc=$?
+    case "$rc:$out" in
+        0:*"nearest: 42,"*"Index Scan using vec_check_hnsw"*) ok "pgvector: $(printf '%s\n' "$out" | grep -m1 '^vector ')" ;;
+        *) fail "pgvector (exit $rc): $(printf '%s\n' "$out" | tail -4)" ;;
+    esac
     run "pg_dump" "$pg/pg_dump" -h 127.0.0.1 -p "$port" -U maktaba -Fc -f "$SCRATCH/dump" postgres
     "$pg/pg_ctl" -D "$SCRATCH/pgdata" -m fast -w stop >/dev/null 2>&1 || fail "pg_ctl stop"
 else
@@ -199,7 +219,14 @@ if [ -n "$APP" ]; then
         run "codesign --verify --deep --strict" codesign --verify --deep --strict "$APP"
     fi
     if [ "$NOTARIZED" -eq 1 ]; then
-        run "Gatekeeper (spctl)" spctl --assess --type execute "$APP"
+        # an unstapled app is judged online: a dropped lookup is tried again (20, 40, 80 s)
+        before="$fails"
+        for wait in 20 40 80 0; do
+            fails="$before"
+            run "Gatekeeper (spctl)" spctl --assess --type execute "$APP"
+            [ "$fails" -eq "$before" ] || [ "$wait" -eq 0 ] || { echo "  Gatekeeper again in ${wait}s"; sleep "$wait"; continue; }
+            break
+        done
     fi
 fi
 

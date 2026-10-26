@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { pageIsStale, reloadOnStaleChunks, watchTakeovers } from "./pwa";
+import { WORKER_UPDATE_WAIT_MS, pageIsStale, reloadOnStaleChunks, watchTakeovers } from "./pwa";
 
 describe("reloadOnStaleChunks", () => {
   it("reloads once when an older release's chunk is gone, not in a loop", () => {
@@ -24,6 +24,70 @@ describe("reloadOnStaleChunks", () => {
     clock += 120_000;
     target.dispatchEvent(new Event("vite:preloadError", { cancelable: true }));
     expect(reload).toHaveBeenCalledTimes(2);
+  });
+});
+
+// The reload goes through the page's service worker, which may be an older release's (the
+// app's window keeps its profile across updates): the worker is updated first, so the
+// server's worker (which takes over at once and deletes the older caches) answers it.
+describe("reloadOnStaleChunks under an older release's service worker", () => {
+  function page(workers: Parameters<typeof reloadOnStaleChunks>[3], order: string[] = []) {
+    const target = new EventTarget();
+    const reload = vi.fn(() => void order.push("reload"));
+    reloadOnStaleChunks(
+      {
+        addEventListener: target.addEventListener.bind(target),
+        location: { reload } as unknown as Location,
+      } as unknown as Window,
+      null,
+      () => 1_000_000,
+      workers
+    );
+    const fail = () => target.dispatchEvent(new Event("vite:preloadError", { cancelable: true }));
+    return { fail, reload };
+  }
+  const registration = (update: () => Promise<unknown>) => ({
+    getRegistration: vi.fn(async () => ({ update }) as unknown as ServiceWorkerRegistration),
+  });
+
+  it("updates the worker, then reloads", async () => {
+    const order: string[] = [];
+    const p = page(
+      registration(async () => void order.push("update")),
+      order
+    );
+    p.fail();
+    await vi.waitFor(() => expect(p.reload).toHaveBeenCalledTimes(1));
+    expect(order).toEqual(["update", "reload"]);
+  });
+
+  it("reloads anyway when the update hangs, fails, or no worker is there", async () => {
+    vi.useFakeTimers();
+    try {
+      const hung = page(registration(() => new Promise(() => {})));
+      hung.fail();
+      await vi.advanceTimersByTimeAsync(WORKER_UPDATE_WAIT_MS - 1);
+      expect(hung.reload).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(hung.reload).toHaveBeenCalledTimes(1);
+
+      const failed = page(registration(() => Promise.reject(new TypeError("offline"))));
+      failed.fail();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(failed.reload).toHaveBeenCalledTimes(1);
+
+      const none = page({ getRegistration: vi.fn(async () => undefined) });
+      none.fail();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(none.reload).toHaveBeenCalledTimes(1);
+
+      // a browser without service workers: at once
+      const bare = page(null);
+      bare.fail();
+      expect(bare.reload).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

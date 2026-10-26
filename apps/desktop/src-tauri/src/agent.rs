@@ -62,6 +62,9 @@ pub const LABEL: &str = "com.hamzalabs.maktaba.server";
 pub const PLIST_NAME: &str = "com.hamzalabs.maktaba.server.plist";
 /// argv[1] that turns the app executable into the server agent.
 pub const AGENT_FLAG: &str = "--server-agent";
+/// The argument that starts the app with its window hidden: the tray at sign-in (the Linux
+/// autostart entry, the Windows Run value).
+pub const HIDDEN_FLAG: &str = "--hidden";
 /// argv[1] of the Windows installer's hooks: start the server when it is set
 /// up and not paused, stop it and wait, stop it and remove the sign-in task.
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -536,10 +539,11 @@ fn build_stamp() -> Option<String> {
 // open_login_items_settings enables and runs it. Windows only: stopping the
 // server for an install (its files are in use while it runs), moving a task
 // of the old shared name to this user's, and whether setup ran on this PC.
+// The tray at sign-in too: the Run value (run_entry.rs).
 #[cfg(windows)]
 pub use win::{
     agent_alive, control, login_item, open_login_items_settings, register, registered_here,
-    replace_old_task, stop_for_install, unregister,
+    replace_old_task, stop_for_install, sync_autostart, unregister,
 };
 
 // Linux: the systemd user unit, through `maktaba-server service`.

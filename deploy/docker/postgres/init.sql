@@ -1,6 +1,6 @@
 -- Postgres bootstrap for the Maktaba compose stack (Story 22.3).
 --
--- The postgres:16-alpine image already creates POSTGRES_DB owned by
+-- The pgvector/pgvector:pg16 image already creates POSTGRES_DB owned by
 -- POSTGRES_USER on first boot, so this script only adds the bits that
 -- can't be set by env vars: role privileges, extensions, and the
 -- application's schema_migrations baseline.
@@ -15,6 +15,8 @@
 -- Required by Story 03 (semantic search) and 04 (text search).
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS unaccent;
+-- Semantic search's vectors (Epic 43, pgvector: the image carries it).
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Story 22.4 created the goose-managed schema_migrations table; nothing
 -- to seed here, but the connection above ensures the database exists.

@@ -17,6 +17,7 @@ from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.sql import is_pg, to_ts
 from maktaba_pipeline.engine.stages import index as stage
 from maktaba_pipeline.runtime import Database
+from maktaba_pipeline.search.pgstore import StoreState
 from maktaba_pipeline.search.semantic import SemanticIndex, SemanticUnavailable
 from tests.engine.factory import make_library, make_video
 from tests.search.semantic_fakes import FakeCollection, FakeEmbedder
@@ -32,6 +33,17 @@ class _Ctx:
 
     async def check_cancel(self) -> None:
         self.cancel_checks += 1
+
+
+@pytest.fixture(autouse=True)
+def chroma_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about Chroma: no segment_embeddings even where pgvector is
+    installed (tests/search/test_pgstore.py has the Postgres store's)."""
+
+    async def state(db: Any, *, fresh: bool = False) -> StoreState:
+        return StoreState(store="chroma", ready=False)
+
+    monkeypatch.setattr(stage, "store_state", state)
 
 
 @pytest.fixture
@@ -147,12 +159,28 @@ async def test_run_embeds_the_active_transcript_and_replaces_old_vectors(
     }
     assert {m["segment_id"] for m in metas} == seg_ids
     assert [len(b) for b in emb.passages[-2:]] == [2, 1]  # batches of MAKTABA_EMBED_BATCH
-    assert res.summary == {"transcript_id": str(new), "segments": 3, "model": "fake/e5"}
+    timings = {k: res.summary.pop(k) for k in list(res.summary) if k.endswith("_sec")}
+    assert set(timings) == {"embed_sec", "write_sec", "write_wait_sec", "read_sec"}
+    assert res.summary == {
+        "transcript_id": str(new),
+        "segments": 3,
+        "model": "fake/e5",
+        "stale_ids": 2,  # the old transcript's one segment, the new one's blank one
+        "store": "chroma",
+    }
+    # the old vectors go by id once the new ones are written: no delete scans the
+    # collection by video (about a second each on the home Mac's 12 million vectors)
+    stale = sorted([f"{old}:0", f"{new}:3"])
+    assert coll.deletes[-1] == {"ids": stale, "where": None}
+    assert all(d["where"] is None for d in coll.deletes)
     assert ctx.progress_calls[0] == ("embed", 0, 4) and ctx.progress_calls[-1] == ("embed", 4, 4)
     assert ctx.cancel_checks == 2
 
+    deletes = len(coll.deletes)
     again = await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
     assert again.output_hash == res.output_hash  # same transcript, same output
+    assert again.summary["stale_ids"] == 2  # asked again: Chroma no longer has them
+    assert coll.deletes[deletes:] == [{"ids": stale, "where": None}]
 
     hits = SemanticIndex(coll, emb).search("صلاة الفجر", k=1, library_ids=[str(lib)])
     assert hits[0].start_sec == 0.0 and hits[0].segment_id in seg_ids
@@ -189,3 +217,50 @@ async def test_missing_search_extra_fails_without_retry(db: Database) -> None:
         assert err.value.kind == "search_unavailable" and not err.value.retryable
     finally:
         stage.reset_index_factory()
+
+
+@pytest.mark.asyncio
+async def test_a_blanked_segment_loses_its_vector(
+    db: Database, store: tuple[FakeCollection, FakeEmbedder]
+) -> None:
+    """The same transcript, edited: a segment made blank has its vector deleted (by id),
+    the others are replaced in place."""
+    coll, _ = store
+    lib = await make_library(db)
+    v = await make_video(db, lib)
+    tid = await _transcript(db, v, ["أ", "ب", "ج"])
+    await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
+    assert len(coll.rows) == 3
+    await db.execute(
+        "UPDATE transcript_segments SET text = '' WHERE transcript_id = $1 AND seq = 1", str(tid)
+    )
+    res = await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
+    assert sorted(m["seq"] for m in coll.metas()) == [0, 2]
+    assert res.summary["stale_ids"] == 1
+
+
+@pytest.mark.asyncio
+async def test_the_embedding_does_not_hold_the_write_lock(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One job embeds while another writes: only the upsert holds the search index's
+    write lock (search/gate.py), the model has its own."""
+    from maktaba_pipeline.search import gate
+
+    coll = FakeCollection()
+    held: list[bool] = []
+
+    class Probe(FakeEmbedder):
+        def embed_passages(self, texts: Any) -> list[list[float]]:
+            held.append(gate._write_lock.locked())
+            return super().embed_passages(texts)
+
+    stage.set_index_factory(lambda: SemanticIndex(coll, Probe()))
+    try:
+        lib = await make_library(db)
+        v = await make_video(db, lib)
+        await _transcript(db, v, ["أ", "ب"])
+        await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
+    finally:
+        stage.reset_index_factory()
+    assert held and not any(held)

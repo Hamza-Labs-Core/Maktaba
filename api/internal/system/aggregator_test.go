@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
 // helper that builds a fake service whose /readyz returns the given
@@ -35,7 +37,7 @@ func TestAggregator_AllOK(t *testing.T) {
 	})
 
 	rr := httptest.NewRecorder()
-	agg.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/system/health", nil))
+	agg.ServeHTTP(rr, adminReq())
 
 	var got Health
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
@@ -62,7 +64,7 @@ func TestAggregator_OneServiceDegraded(t *testing.T) {
 	})
 
 	rr := httptest.NewRecorder()
-	agg.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/system/health", nil))
+	agg.ServeHTTP(rr, adminReq())
 
 	var got Health
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
@@ -92,7 +94,7 @@ func TestAggregator_ServiceUnreachable(t *testing.T) {
 	})
 
 	rr := httptest.NewRecorder()
-	agg.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/system/health", nil))
+	agg.ServeHTTP(rr, adminReq())
 
 	var got Health
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
@@ -110,7 +112,7 @@ func TestAggregator_NoServicesConfigured(t *testing.T) {
 	t.Parallel()
 	agg := NewAggregator(nil)
 	rr := httptest.NewRecorder()
-	agg.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/system/health", nil))
+	agg.ServeHTTP(rr, adminReq())
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
@@ -132,7 +134,7 @@ func TestAggregator_GarbageBody(t *testing.T) {
 	agg := NewAggregator([]Service{{Name: "weird", URL: url}})
 
 	rr := httptest.NewRecorder()
-	agg.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/system/health", nil))
+	agg.ServeHTTP(rr, adminReq())
 
 	var got Health
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
@@ -183,7 +185,7 @@ func TestAggregator_SlowUpstream(t *testing.T) {
 	agg.timeout = 100e6
 
 	rr := httptest.NewRecorder()
-	agg.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/system/health", nil))
+	agg.ServeHTTP(rr, adminReq())
 
 	var got Health
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
@@ -205,7 +207,7 @@ func TestAggregator_SnapshotShapeIsStable(t *testing.T) {
 	agg := NewAggregator([]Service{{Name: "api", URL: url}})
 
 	rr := httptest.NewRecorder()
-	agg.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/system/health", nil))
+	agg.ServeHTTP(rr, adminReq())
 
 	var got Health
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
@@ -226,7 +228,7 @@ func TestAggregator_StatsPopulated(t *testing.T) {
 	agg.queueDepthFn = func(context.Context) (int, error) { return 7, nil }
 
 	rr := httptest.NewRecorder()
-	agg.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/system/health", nil))
+	agg.ServeHTTP(rr, adminReq())
 
 	var got Health
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
@@ -253,7 +255,7 @@ func TestAggregator_StatProbeFailureIsZero(t *testing.T) {
 	agg.queueDepthFn = func(context.Context) (int, error) { return 999, errors.New("db down") }
 
 	rr := httptest.NewRecorder()
-	agg.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/system/health", nil))
+	agg.ServeHTTP(rr, adminReq())
 
 	var got Health
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
@@ -296,5 +298,46 @@ func TestNewAggregatorWithStats_WiresSeams(t *testing.T) {
 	}
 	if withDir.queueDepthFn != nil {
 		t.Fatalf("nil DB should leave queueDepthFn nil")
+	}
+}
+
+// adminReq asks for the health as a home admin (the full report).
+func adminReq() *http.Request {
+	r := httptest.NewRequest(http.MethodGet, "/api/system/health", nil)
+	return r.WithContext(principal.WithPrincipal(r.Context(), &principal.Principal{UserID: "a", IsAdmin: true}))
+}
+
+// The route is public (probes), but what a caller reads depends on who it is (the API
+// enforces roles): no one gets the overall status only, a viewer each service's status,
+// an admin everything (reasons, disk, queue).
+func TestAggregator_WhatEachCallerReads(t *testing.T) {
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"down","checks":{"db":{"status":"down","reason":"secret detail"}}}`))
+	}))
+	defer down.Close()
+	agg := NewAggregator([]Service{{Name: "pipeline", URL: down.URL}})
+	agg.diskFreeFn = func() (uint64, error) { return 4096, nil }
+	ask := func(p *principal.Principal) string {
+		r := httptest.NewRequest(http.MethodGet, "/api/system/health", nil)
+		if p != nil {
+			r = r.WithContext(principal.WithPrincipal(r.Context(), p))
+		}
+		rr := httptest.NewRecorder()
+		agg.ServeHTTP(rr, r)
+		return rr.Body.String()
+	}
+	anon := ask(nil)
+	if strings.Contains(anon, "pipeline") || strings.Contains(anon, "secret") || strings.Contains(anon, "4096") ||
+		!strings.Contains(anon, `"status"`) {
+		t.Errorf("no one reads more than the status: %s", anon)
+	}
+	viewer := ask(&principal.Principal{UserID: "v"})
+	if !strings.Contains(viewer, "pipeline") || strings.Contains(viewer, "secret") || strings.Contains(viewer, "4096") {
+		t.Errorf("a viewer reads the services' status only: %s", viewer)
+	}
+	admin := ask(&principal.Principal{UserID: "a", IsAdmin: true})
+	if !strings.Contains(admin, "secret detail") || !strings.Contains(admin, "4096") {
+		t.Errorf("an admin reads everything: %s", admin)
 	}
 }

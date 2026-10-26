@@ -25,6 +25,34 @@ export interface HomeDb {
   /** how many logins in a row failed (a failure counts once seen twice: one try can meet a
    * home in the middle of a switch) */
   fails?: number;
+  /** when the machine last asked the home for a new login (none came on its own) */
+  asked?: string;
+  /** the home's answer to that request */
+  answer?: AccessAnswer;
+}
+
+/** The home's answer to a machine's request for a new login to its database. */
+export interface AccessAnswer {
+  ok: boolean;
+  /** why not (machines.homeDb.answerCode.<code>) */
+  code?: string;
+  /** the home's own words (English) */
+  reason?: string;
+  at?: string;
+}
+
+/** The i18n key of an answer's line, and of its reason by code (`other` for a code this
+ * page does not know). */
+export function accessAnswerWords(
+  answer: AccessAnswer,
+  has: (key: string) => boolean
+): { key: string; reasonKey: string } {
+  if (answer.ok) return { key: "machines.homeDb.answerOk", reasonKey: "" };
+  const byCode = `machines.homeDb.answerCode.${answer.code ?? "other"}`;
+  return {
+    key: "machines.homeDb.answer",
+    reasonKey: has(byCode) ? byCode : "machines.homeDb.answerCode.other",
+  };
 }
 
 /** The `home_db` of a node's raw update_state, when it reports one. */

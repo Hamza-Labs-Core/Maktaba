@@ -72,7 +72,7 @@ func runAttempt(r Run) Attempt {
 		From: NormalizeVersion(r.FromVersion), To: NormalizeVersion(r.Version), Step: e.Step, Code: e.Code,
 		Detail: e.Detail, RunID: r.ID}
 	switch r.State {
-	case RunDone, RunDoneFailures, RunHeld:
+	case RunDone, RunDoneFailures, RunDoneNeedsPerson, RunHeld:
 		a.Outcome = OutcomeInstalled // the home took it (the machines' parts are theirs)
 	case RunRolledBack:
 		a.Outcome = OutcomeRolledBack

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lib/pq"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 )
 
@@ -132,5 +134,77 @@ func TestNodeViewCarriesItsLiveState(t *testing.T) {
 	decode(t, f.do("GET", "/api/cluster", "", admin()), http.StatusOK, &o)
 	if len(o.Nodes) != 1 || o.Nodes[0].UpdateState.HomeDB.OK || o.Nodes[0].UpdateState.HomeDB.Code != "auth_failed" {
 		t.Fatalf("the node's view: %+v", o)
+	}
+}
+
+// What stops a re-made access is said with its code (the machine logs it, its pages show
+// it), and what this home can mend it mends first: on its own (bundled) Postgres, a user
+// that may not create roles, or that may not change a role the superuser made (Postgres
+// 16: a restore's), gets the cluster grants again from the supervisor (MendBundled) and
+// the access is made; a home whose database is an operator's says why.
+func TestGrantAccessMendsWhatStopsIt(t *testing.T) {
+	f := newFixture(t)
+	f.openJoins()
+	jr := f.join()
+	decode(t, f.approve(nodeCode(t, jr.HomePubkey)), http.StatusOK, nil)
+	roles := &usableRoles{fakeRoles: f.roles, port: 55432}
+	f.h.Roles = roles
+	ctx := context.Background()
+	if _, err := f.h.GrantAccess(ctx, "5b1a3e86-0000-4000-8000-00000000abcd"); cluster.AccessCode(err) != cluster.AccessUnknown {
+		t.Fatalf("a machine the home does not know: %v", err)
+	}
+	mends := 0
+	f.h.MendBundled = func(context.Context) error {
+		mends++
+		roles.supported, roles.reason, roles.createErr = true, "", nil
+		return nil
+	}
+	// an operator's Postgres whose user may not create roles: said, never mended
+	roles.supported, roles.reason = false, cluster.ReasonCannotCreate
+	if _, err := f.h.GrantAccess(ctx, nodeID); cluster.AccessCode(err) != cluster.AccessCannotCreate || mends != 0 {
+		t.Fatalf("an operator's Postgres: %v (mends %d)", err, mends)
+	}
+	// its own Postgres: mended, then made
+	f.h.PGBundled = true
+	if _, err := f.h.GrantAccess(ctx, nodeID); err != nil || mends != 1 {
+		t.Fatalf("the bundled Postgres, mended: %v (mends %d)", err, mends)
+	}
+	// a role the superuser made (a restore's): the cluster grants again, then made
+	roles.createErr = &pq.Error{Code: "42501", Message: "permission denied to alter role"}
+	raw, err := f.h.GrantAccess(ctx, nodeID)
+	if err != nil || mends != 2 {
+		t.Fatalf("a role the superuser made: %v (mends %d)", err, mends)
+	}
+	var a machineAccess
+	if json.Unmarshal(raw, &a) != nil || f.roles.created[a.Role] != a.Password {
+		t.Fatalf("access %+v", a)
+	}
+	// the supervisor cannot mend it: said, with its code
+	f.h.MendBundled = func(context.Context) error { return errors.New("the supervisor does not answer") }
+	roles.createErr = &pq.Error{Code: "42501", Message: "permission denied to alter role"}
+	if _, err := f.h.GrantAccess(ctx, nodeID); cluster.AccessCode(err) != cluster.AccessNoAdmin {
+		t.Fatalf("a role it may not change, unmended: %v", err)
+	}
+	roles.createErr = nil
+	// the group role gone, and no database to make it again on
+	roles.supported, roles.reason = false, cluster.ReasonNoGroup
+	if _, err := f.h.GrantAccess(ctx, nodeID); cluster.AccessCode(err) != cluster.AccessNoGroup {
+		t.Fatalf("no group: %v", err)
+	}
+	roles.supported, roles.reason = true, ""
+	// a term the database cannot say, a CA it cannot read
+	roles.termErr = errors.New("the database went away")
+	if _, err := f.h.GrantAccess(ctx, nodeID); cluster.AccessCode(err) != cluster.AccessTerm {
+		t.Fatalf("no term: %v", err)
+	}
+	roles.termErr = nil
+	f.h.PGCA = filepath.Join(t.TempDir(), "no-ca.pem")
+	if _, err := f.h.GrantAccess(ctx, nodeID); cluster.AccessCode(err) != cluster.AccessCA {
+		t.Fatalf("no CA: %v", err)
+	}
+	f.h.PGCA = ""
+	decode(t, f.do("POST", "/api/cluster/nodes/"+nodeID+"/revoke", "", admin()), http.StatusOK, nil)
+	if _, err := f.h.GrantAccess(ctx, nodeID); cluster.AccessCode(err) != cluster.AccessNotApproved {
+		t.Fatalf("a revoked machine: %v", err)
 	}
 }

@@ -189,6 +189,11 @@ maktaba-server setup --service [--user|--system]   # only (re)write the OS servi
 | macOS | `~/Library/Application Support/Maktaba/server` | LaunchAgent (`--system`: LaunchDaemon, `/usr/local/var/maktaba`) |
 | Windows | `%LOCALAPPDATA%\Maktaba` | logon task "Maktaba" (`--system`: Windows service, `%ProgramData%\Maktaba`) |
 
+The service finds `server.toml` wherever it lives: setup writes its absolute path into
+the root's `server.toml.path`, and the server the launcher starts reads it there when
+`MAKTABA_CONFIG` is not set (a Windows logon task or service carries no environment; the
+systemd and launchd units also set `MAKTABA_CONFIG`). `MAKTABA_CONFIG` wins when set.
+
 On Windows the Maktaba app (Epic 38, `Maktaba_<ver>_x64-setup.exe` on the release)
 is the install: it carries the server, Postgres, ffmpeg and Python, runs setup in
 its window and starts the server at sign-in. Its setup finds an install made here

@@ -119,6 +119,21 @@ type HomeDB struct {
 	// HomeHost is the host the machine reaches its home's API at (where an access with no
 	// database host points it).
 	HomeHost string `json:"home_host,omitempty"`
+	// Asked is when this machine last asked its home for its access (no re-made access came
+	// on its own: RequestAccess), and Answer the home's answer.
+	Asked  time.Time     `json:"asked,omitzero"`
+	Answer *AccessAnswer `json:"answer,omitempty"`
+}
+
+// AccessAnswer is the home's answer to this machine's request for its database access: ok
+// (the access was made again and sent), else why not, with its code (the home's
+// cluster.AccessError codes: not_approved, unknown, cannot_create_roles, cannot_alter_role,
+// no_worker_group, term, database_ca, rate_limited, not_taken, other).
+type AccessAnswer struct {
+	OK     bool      `json:"ok"`
+	Code   string    `json:"code,omitempty"`
+	Reason string    `json:"reason,omitempty"`
+	At     time.Time `json:"at"`
 }
 
 // ConfirmFails is how many failed logins in a row make a failure the home acts on.
@@ -149,8 +164,18 @@ type Agent struct {
 	Logger    *slog.Logger
 	// Commands answers the home's commands besides disconnect (the switchover's).
 	Commands Command
+	// OnAccessAnswer is called with the home's answer to RequestAccess.
+	OnAccessAnswer func(AccessAnswer)
+	// OnRefused is called each time the home ends a session as one it does not take: not a
+	// member (4003: a machine it does not know, or pending, rejected, revoked) or revoked
+	// (4010).
+	OnRefused func(code int)
+	// RejoinState is this machine's request to be taken again, for Status (nil: none).
+	RejoinState func() *RejoinState
 
 	mu        sync.Mutex
+	send      func(any) // the session's, while connected
+	asks      int
 	nudge     chan struct{}
 	key       *Key
 	subs      map[chan Event]struct{}
@@ -190,6 +215,19 @@ type Status struct {
 	HasKey    bool      `json:"has_key"`
 	KeyID     string    `json:"key_id,omitempty"`
 	LastError string    `json:"last_error,omitempty"`
+	// Rejoin is this machine asking its home to take it again (its sessions refused)
+	Rejoin *RejoinState `json:"rejoin,omitempty"`
+}
+
+// RejoinState is a machine's request to its home to take it again: waiting (its pairing
+// code, for the home's admin), held (the home still holds it, revoked: an admin removes it
+// there first), refused (the home's answer in Reason), joined.
+type RejoinState struct {
+	State  string    `json:"state"`
+	Code   string    `json:"code,omitempty"`
+	Home   string    `json:"home,omitempty"`
+	Reason string    `json:"reason,omitempty"`
+	At     time.Time `json:"at"`
 }
 
 // Status reports the agent's state.
@@ -197,6 +235,9 @@ func (a *Agent) Status() Status {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	s := Status{Connected: a.connected.Load(), LastError: a.lastErr, HasKey: a.key != nil}
+	if a.RejoinState != nil {
+		s.Rejoin = a.RejoinState()
+	}
 	if s.Connected {
 		s.Since = a.since
 	}
@@ -283,6 +324,9 @@ func (a *Agent) Run(ctx context.Context) {
 			return
 		}
 		a.setErr(err)
+		if (code == closeNotMember || code == closeRevoked) && a.OnRefused != nil {
+			a.OnRefused(int(code))
+		}
 		if time.Since(start) > time.Minute {
 			delay = backoffFloor
 		}
@@ -508,6 +552,14 @@ func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher, v
 			}
 		}
 	}
+	a.mu.Lock()
+	a.send = send
+	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		a.send = nil
+		a.mu.Unlock()
+	}()
 	sendState := func() {
 		if a.State == nil {
 			return
@@ -620,6 +672,23 @@ func (a *Agent) pump(ctx context.Context, c *websocket.Conn, c2s, s2c *cipher, v
 	}
 }
 
+// RequestAccess asks the home for this machine's database access (access.request, with its
+// last login st), on the session it is connected on; false when it is not connected. The
+// home answers for the session's own machine (OnAccessAnswer), and sends the access as it
+// sends a re-made one (home.access).
+func (a *Agent) RequestAccess(st *HomeDB) bool {
+	a.mu.Lock()
+	send := a.send
+	a.asks++
+	id := fmt.Sprintf("access-%d", a.asks)
+	a.mu.Unlock()
+	if send == nil {
+		return false
+	}
+	send(map[string]any{"t": "access.request", "id": id, "home_db": st})
+	return true
+}
+
 func (a *Agent) dispatch(pt []byte, send func(any)) {
 	var head struct {
 		T string `json:"t"`
@@ -661,6 +730,15 @@ func (a *Agent) dispatch(pt []byte, send func(any)) {
 			return
 		}
 		a.log().Info("node: cluster-link certificate received from the home", "event", "node_cert_received")
+	case "access.answer":
+		var f AccessAnswer
+		if json.Unmarshal(pt, &f) != nil {
+			return
+		}
+		f.At = time.Now().UTC()
+		if a.OnAccessAnswer != nil {
+			a.OnAccessAnswer(f)
+		}
 	case "cert.refused":
 		var f struct {
 			Reason string `json:"reason"`

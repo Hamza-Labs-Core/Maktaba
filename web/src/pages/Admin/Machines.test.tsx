@@ -191,7 +191,21 @@ describe("Machines admin page", () => {
     renderPage();
     await userEvent.type(await screen.findByLabelText(/Code shown on/), "123 456");
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
-    expect(post).toHaveBeenCalledWith("/api/cluster/nodes/p1/approve", { code: "123456" });
+    expect(post).toHaveBeenCalledWith("/api/cluster/nodes/p1/approve", {
+      code: "123456",
+      full: false,
+    });
+  });
+
+  it("approves with a copy of the database only when the admin asks", async () => {
+    renderPage();
+    await userEvent.type(await screen.findByLabelText(/Code shown on/), "123456");
+    await userEvent.click(screen.getByLabelText("Keep a copy of this home's database on it"));
+    await userEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(post).toHaveBeenCalledWith("/api/cluster/nodes/p1/approve", {
+      code: "123456",
+      full: true,
+    });
   });
 
   it("refuses a code that is not 6 digits without calling the API", async () => {
@@ -600,6 +614,44 @@ describe("Machines admin page: the home's database", () => {
     expect(within(note).getByRole("link", { name: "See the logs" })).toHaveAttribute(
       "href",
       `/admin/logs?node=${unreachable.id}&since=2026-10-24T05%3A28%3A00.000Z`
+    );
+  });
+
+  it("says the machine asked the home for a new login, and the home's answer (en + ar)", async () => {
+    const asked: ClusterNode = {
+      ...baseNode,
+      full_node: true,
+      update_state: {
+        home_db: {
+          ok: false,
+          code: "refused",
+          at,
+          fails: 9,
+          asked: at,
+          answer: {
+            ok: false,
+            code: "cannot_alter_role",
+            reason:
+              "this home's database user may not change this machine's role (permission denied)",
+            at,
+          },
+        },
+      },
+    };
+    routesWith([asked]);
+    const first = renderPage();
+    const card = await screen.findByRole("article", { name: "Studio Mac" });
+    expect(within(card).getByTestId("machine-home-db-answer")).toHaveTextContent(
+      "The home cannot give this machine a new login: the home's database user may not change this machine's role"
+    );
+    expect(within(card).getByTestId("machine-home-db")).toHaveTextContent("permission denied");
+    first.unmount();
+
+    localStorage.setItem("mkt:locale", "ar");
+    renderPage();
+    const ar = await screen.findByRole("article", { name: "Studio Mac" });
+    expect(within(ar).getByTestId("machine-home-db-answer")).toHaveTextContent(
+      "لا يستطيع الخادم الرئيسي منح هذا الجهاز تسجيل دخول جديداً"
     );
   });
 

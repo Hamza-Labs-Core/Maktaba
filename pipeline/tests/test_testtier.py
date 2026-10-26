@@ -71,3 +71,14 @@ def test_soft_cap_scales_under_coverage() -> None:
 
     assert _coverage_scale(True) == COVERAGE_SOFT_CAP_SCALE > 1
     assert _coverage_scale(False) == 1.0
+
+
+def test_soft_cap_fails_only_a_test_slow_twice() -> None:
+    """Over the hard cap once with a fast run after it is the runner's load; over it
+    twice (or with no second run) is the test."""
+    from maktaba_testtier.softcap import breached
+
+    assert not breached(0.2, None, 0.3)  # under the cap: never run again
+    assert not breached(0.55, 0.02, 0.3)  # a stall, then fast: the runner
+    assert breached(0.55, 0.5, 0.3)  # slow twice: the test
+    assert breached(0.55, None, 0.3)  # the second run failed or did not run

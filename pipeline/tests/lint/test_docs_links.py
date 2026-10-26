@@ -11,6 +11,7 @@ as code (ci.yml's ``meta`` filter), so a change to them runs this test.
 from __future__ import annotations
 
 import functools
+import os
 import re
 from pathlib import Path
 
@@ -64,14 +65,27 @@ def _links(md: Path) -> list[str]:
     return [m for m in LINK.findall(text) if not re.match(r"^[a-z]+:", m)]
 
 
+@functools.cache
+def _exists(path: Path) -> bool:
+    return path.exists()
+
+
+def _target(md: Path, target: str) -> Path:
+    """Where a link of md points, as an absolute path: normalised as text, not resolved on
+    the disk (the docs hold no symlinks, and resolving each link made the file system calls
+    the bulk of this test's time)."""
+    return Path(os.path.normpath(os.path.abspath(md.parent / target if target else md)))
+
+
 def _broken(files: list[Path], checked: set[Path]) -> list[str]:
     """The links of files that name no file, or an anchor missing from a page of checked."""
+    checked = {_target(f, "") for f in checked}
     bad: list[str] = []
     for md in files:
         for link in _links(md):
             target, _, anchor = link.partition("#")
-            path = (md.parent / target).resolve() if target else md.resolve()
-            if not path.exists():
+            path = _target(md, target)
+            if not _exists(path):
                 bad.append(f"{md.relative_to(ROOT)}: {link} (no such file)")
                 continue
             if anchor and path in checked and anchor not in _anchors(path):
@@ -81,14 +95,14 @@ def _broken(files: list[Path], checked: set[Path]) -> list[str]:
 
 def test_runbook_and_specs_links_resolve() -> None:
     files = [RUNBOOK, *sorted(SPECS.glob("*.md"))]
-    bad = _broken(files, {RUNBOOK.resolve()})
+    bad = _broken(files, {RUNBOOK})
     assert not bad, "\n".join(bad)
 
 
 def test_update_docs_links_resolve() -> None:
     files = _update_docs()
     assert all(f.exists() for f in files), [str(f) for f in files if not f.exists()]
-    bad = _broken(files, {f.resolve() for f in files})
+    bad = _broken(files, set(files))
     assert not bad, "\n".join(bad)
 
 

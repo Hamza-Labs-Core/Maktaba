@@ -34,10 +34,12 @@ mod attempts;
 mod autoinstall;
 mod lang;
 mod mode;
+mod run_entry;
 mod setup;
 mod shell;
 mod status;
 mod tray;
+mod webcache;
 
 use shell::focus_main;
 
@@ -116,6 +118,24 @@ pub fn run() {
         _ => {}
     }
 
+    // Linux (Epic 39): without a StatusNotifier host there is no tray to come
+    // back from. Closing the window then quits the app (the server is a
+    // systemd unit and keeps running), and the window's menu carries the
+    // tray's server items.
+    #[cfg(target_os = "linux")]
+    let keep_in_tray = agent::linux::tray_available();
+    #[cfg(not(target_os = "linux"))]
+    let keep_in_tray = true;
+    // Started at sign-in (the Linux autostart entry, the Windows Run value:
+    // `--hidden`): the window is made hidden, and only the tray shows; the
+    // saved window state keeps its size and place but does not show it.
+    let hidden = keep_in_tray && std::env::args().any(|a| a == agent::HIDDEN_FLAG);
+    let mut window_state = tauri_plugin_window_state::Builder::default();
+    if hidden {
+        use tauri_plugin_window_state::StateFlags;
+        window_state = window_state.with_state_flags(StateFlags::all() - StateFlags::VISIBLE);
+    }
+
     let mut builder = tauri::Builder::default();
 
     // single-instance is desktop-only and MUST be the first plugin
@@ -138,14 +158,14 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(window_state.build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // the OS notification of a release the home ordered, ready here (shell.rs)
         .plugin(tauri_plugin_notification::init())
-        .setup(|app| {
+        .setup(move |app| {
             // Deep links (`maktaba://…`, Story 13.x). At runtime we
             // register the scheme (no-op when the bundle already owns it
             // via tauri.conf.json; required for `cargo tauri dev` on
@@ -173,15 +193,6 @@ pub fn run() {
                 });
             }
 
-            // Linux (Epic 39): without a StatusNotifier host there is no tray
-            // to come back from. Closing the window then quits the app (the
-            // server is a systemd unit and keeps running), and the window's
-            // menu carries the tray's server items.
-            #[cfg(target_os = "linux")]
-            let keep_in_tray = agent::linux::tray_available();
-            #[cfg(not(target_os = "linux"))]
-            let keep_in_tray = true;
-
             // Menu bar (Story 13.1 AC-1 / Story 13.7).
             let handle = app.handle();
             let menu = build_menu(handle, !keep_in_tray)?;
@@ -202,6 +213,11 @@ pub fn run() {
                 let _ = app.emit("menu", id);
             });
 
+            // The window (tauri.conf.json's, made here): on a release's first
+            // start its web caches are cleared before it loads (webcache.rs),
+            // whichever way the app started; hidden when started at sign-in.
+            shell::open_window(handle, hidden)?;
+
             // System tray / menu-bar item (Story 13.4, Epic 36 story
             // 36.5): server status, Open Maktaba, Pause/Resume server,
             // Open logs, the player's Play / Pause, Settings, Quit (the
@@ -211,13 +227,8 @@ pub fn run() {
             // Close-to-tray (Story 13.4 AC-5): closing the window hides
             // it instead of terminating the app; Quit (tray/menu) still
             // exits. In server mode the server keeps running either way.
-            // Linux: started by the tray's autostart entry (`--hidden`), the
-            // window stays hidden; without a tray, closing it quits.
-            if let Some(main) = app.get_webview_window("main") {
-                #[cfg(target_os = "linux")]
-                if keep_in_tray && std::env::args().any(|a| a == agent::linux::HIDDEN_FLAG) {
-                    let _ = main.hide();
-                }
+            // Linux without a tray: closing it quits.
+            if let Some(main) = app.get_webview_window(webcache::MAIN) {
                 let win = main.clone();
                 main.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {

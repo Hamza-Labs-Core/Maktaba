@@ -22,7 +22,6 @@ function self(over: Partial<ClusterSelf> = {}): ClusterSelf {
     name: "Studio Mac",
     version: "1.5.0",
     schema_rev: 134,
-    sso: true,
     paused: WHY,
     home: { name: "Home NAS", web_url: "http://home.local:8780", reachable: true },
     served_at: new Date().toISOString(),

@@ -179,3 +179,30 @@ func TestIndexWorker(t *testing.T) {
 		}
 	}
 }
+
+// The api's admin port (logs and metrics, no sign-in) listens on this machine only: the
+// old default on every interface that setup wrote into server.toml moves to loopback, and
+// an operator's own address stays.
+func TestAdminAddrIsThisMachinesOnly(t *testing.T) {
+	if got := Defaults().Server.AdminAddr; got != "127.0.0.1:9100" {
+		t.Fatalf("default admin_addr = %q", got)
+	}
+	dir := t.TempDir()
+	for _, c := range []struct{ file, want string }{
+		{"[server]\nadmin_addr = \":9100\"\n", "127.0.0.1:9100"},
+		{"[server]\nadmin_addr = \"0.0.0.0:9200\"\n", "0.0.0.0:9200"},
+		{"[server]\n", "127.0.0.1:9100"},
+	} {
+		path := filepath.Join(dir, "server.toml")
+		if err := os.WriteFile(path, []byte(c.file), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, _, err := LoadFrom(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Server.AdminAddr != c.want {
+			t.Errorf("%q: admin_addr = %q, want %q", c.file, cfg.Server.AdminAddr, c.want)
+		}
+	}
+}
