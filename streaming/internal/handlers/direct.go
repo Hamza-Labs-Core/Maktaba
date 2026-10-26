@@ -314,22 +314,33 @@ func copyReader(w http.ResponseWriter, r FileReader, offset, length int64) (int6
 
 // contentTypeFor picks the Content-Type for a direct-play response.
 // Falls back to application/octet-stream on unknowns so dumb players
-// still treat the body as binary.
+// still treat the body as binary. The pipeline stores ffprobe's
+// format_name as the container, a list of the names one demuxer reads
+// ("mov,mp4,m4a,3gp,3g2,mj2", "matroska,webm"): any of them counts, and
+// a .webm file is WebM (Matroska and WebM probe alike). A
+// player that cannot sniff (AVPlayer on a URL with no extension) opens
+// only a file it is told the type of.
 func contentTypeFor(row *probe.Row) string {
 	if row.MIMEType != "" {
 		return row.MIMEType
 	}
-	switch strings.ToLower(row.Container) {
-	case "mp4", "mov", "m4v":
-		return "video/mp4"
-	case "mkv":
-		return "video/x-matroska"
-	case "webm":
+	// one demuxer reads both: the file says which it is
+	if strings.HasSuffix(strings.ToLower(row.Path), ".webm") {
 		return "video/webm"
-	case "ts", "m2ts":
-		return "video/MP2T"
-	case "avi":
-		return "video/x-msvideo"
+	}
+	for _, name := range strings.Split(strings.ToLower(row.Container), ",") {
+		switch strings.TrimSpace(name) {
+		case "mp4", "mov", "m4v":
+			return "video/mp4"
+		case "mkv", "matroska":
+			return "video/x-matroska"
+		case "webm":
+			return "video/webm"
+		case "ts", "m2ts", "mpegts":
+			return "video/MP2T"
+		case "avi":
+			return "video/x-msvideo"
+		}
 	}
 	return "application/octet-stream"
 }

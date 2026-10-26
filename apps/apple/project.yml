@@ -8,6 +8,7 @@ options:
   deploymentTarget:
     iOS: "26.0"
     macOS: "15.0"
+    tvOS: "26.0"
   createIntermediateGroups: true
   groupSortPosition: top
 packages:
@@ -131,6 +132,40 @@ targets:
     info:
       path: Remote/Info-iPad.plist
 
+  # ---- Maktaba TV: Apple TV (Epic 14). Its sources stay with the other TV app in apps/tv. -
+  Maktaba TV:
+    templates: [App]
+    platform: tvOS
+    sources:
+      - path: ../tv/tvos/MaktabaTV
+        excludes: ["Info.plist", "Resources/Fonts/*.txt"]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.tv
+        TARGETED_DEVICE_FAMILY: "3"
+        INFOPLIST_KEY_CFBundleDisplayName: Maktaba
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
+        # its own catalog: the layered tvOS icon and Top Shelf images (AppIcon.brandassets)
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: ""
+    info:
+      path: ../tv/tvos/MaktabaTV/Info.plist
+      properties:
+        NSBonjourServices: ["_maktaba._tcp"]
+        UIAppFonts: [Amiri-Bold.ttf, IBMPlexSansArabic-Regular.ttf, IBMPlexSansArabic-Medium.ttf, IBMPlexSansArabic-SemiBold.ttf]
+  Maktaba TV UITests:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources:
+      - path: ../tv/tvos/MaktabaTVUITests
+    dependencies:
+      - target: Maktaba TV
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.tv.uitests
+        TEST_TARGET_NAME: Maktaba TV
+
 schemes:
   Maktaba Player:
     build:
@@ -156,4 +191,11 @@ schemes:
     build:
       targets: { Maktaba Remote iPad: all }
     run: { config: Debug }
+    archive: { config: Release }
+  Maktaba TV:
+    build:
+      targets: { Maktaba TV: all }
+    run: { config: Debug }
+    test:
+      targets: [Maktaba TV UITests]
     archive: { config: Release }

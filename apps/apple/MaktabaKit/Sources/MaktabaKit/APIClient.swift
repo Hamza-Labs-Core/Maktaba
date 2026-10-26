@@ -158,6 +158,52 @@ public actor APIClient {
         try await sendRaw(request("GET", "/api/videos/\(video)/poster"))
     }
 
+    /// The home screen's rails (`GET /api/recommendations`): continue watching first.
+    public func recommendations(surface: String = "tv-home") async throws -> [Rail] {
+        let r: Recommendations = try await get("/api/recommendations", query: ["surface": surface, "limit": "20"])
+        return r.rails
+    }
+
+    // MARK: sign-in by code (a TV)
+
+    /// Asks the home for a code to show (`POST /api/pairing/device`). nil: this home signs
+    /// in by password only (one from before codes answers 401 or 404).
+    public func startDevicePairing() async throws -> DevicePairing? {
+        do {
+            return try await send(request("POST", "/api/pairing/device"), authorized: false)
+        } catch let APIError.status(code, _) where code == 401 || code == 404 || code == 405 {
+            return nil
+        }
+    }
+
+    /// Asks whether the code was approved; once it is, this device is signed in as the
+    /// person who approved it (the tokens are kept, as after `signIn`).
+    public func collectDevicePairing(_ p: DevicePairing, label: String) async throws -> DevicePairing.State {
+        var r = request("POST", "/api/pairing/device/token", body: ["device_code": p.deviceCode, "device_label": label])
+        r.timeoutInterval = 15
+        let data: Data, response: URLResponse
+        do {
+            (data, response) = try await session.data(for: r)
+        } catch {
+            throw APIError.transport(error.localizedDescription)
+        }
+        switch (response as? HTTPURLResponse)?.statusCode ?? 0 {
+        case 200:
+            do {
+                tokens.save(try JSONDecoder().decode(AuthTokens.self, from: data))
+            } catch {
+                throw APIError.decoding(String(describing: error))
+            }
+            return .approved
+        case 202, 429:
+            return .waiting
+        case 409, 410:
+            return .expired
+        case let code:
+            throw APIError.status(code, String(decoding: data.prefix(300), as: UTF8.self))
+        }
+    }
+
     // MARK: remote (home admins; the home refuses anyone else)
 
     public func needsAttention() async throws -> [FailureGroup] {

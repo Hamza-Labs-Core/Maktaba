@@ -31,6 +31,8 @@ On [Account](/account), in **Change password**:
 
 [Devices](/account/devices) lists the phones and apps registered to receive push notifications for you, with their app version and when they were last seen. Press **Remove** to stop notifications to one of them.
 
+To sign in a TV, open the address the TV shows (or scan its QR code) and press **Approve** on [Sign in a TV](/pair). The TV is then signed in as you, with your own access, so approve only a TV in front of you.
+
 ### API tokens {#api-tokens}
 
 A token lets a script or the command line use Maktaba as you, without your password.

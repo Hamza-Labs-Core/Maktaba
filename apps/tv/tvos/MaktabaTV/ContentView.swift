@@ -1,24 +1,26 @@
+import MaktabaKit
 import SwiftUI
 
-/// The main navigation surface: a top tab bar (the tvOS-native
-/// `TabView` renders this as the focusable bar along the top of the
-/// screen). Each tab is an independent navigation stack.
+/// The top tab bar (tvOS draws it as the focusable bar along the top). Each tab has its
+/// own navigation stack.
 struct ContentView: View {
-    @EnvironmentObject private var auth: AuthManager
+    let session: AppSession
+    let user: User
 
     var body: some View {
         TabView {
-            HomeView()
-                .tabItem { Label("Home", systemImage: "house.fill") }
-
-            LibraryView()
-                .tabItem { Label("Libraries", systemImage: "books.vertical.fill") }
-
-            SearchView()
-                .tabItem { Label("Search", systemImage: "magnifyingglass") }
-
-            SettingsView()
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+            Tab("Home", systemImage: "house.fill") {
+                NavigationStack { HomeView() }
+            }
+            Tab("Libraries", systemImage: "books.vertical.fill") {
+                NavigationStack { LibraryView() }
+            }
+            Tab("Search", systemImage: "magnifyingglass") {
+                NavigationStack { SearchView() }
+            }
+            Tab("Settings", systemImage: "gearshape.fill") {
+                SettingsView(session: session, user: user)
+            }
         }
     }
 }

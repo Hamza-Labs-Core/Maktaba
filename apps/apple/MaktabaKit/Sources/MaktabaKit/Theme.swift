@@ -90,8 +90,12 @@ public extension View {
 
     /// A list or scroll view on the theme's background instead of the system grey.
     func maktabaSurface() -> some View {
+        #if os(tvOS)
+        background(Color.mktBackground)
+        #else
         scrollContentBackground(.hidden)
             .background(Color.mktBackground)
+        #endif
     }
 }
 
