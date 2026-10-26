@@ -230,7 +230,7 @@ func clientIP(r *http.Request) string {
 		peer = r.RemoteAddr
 	}
 	ip := net.ParseIP(peer)
-	if ip == nil || !(ip.IsLoopback() || ip.IsPrivate()) {
+	if ip == nil || !ip.IsLoopback() && !ip.IsPrivate() {
 		return peer
 	}
 	vs := r.Header.Values("X-Forwarded-For")

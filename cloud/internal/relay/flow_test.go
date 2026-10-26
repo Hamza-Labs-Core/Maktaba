@@ -38,7 +38,7 @@ func nextOut(t *testing.T, conn *chanConn, within time.Duration, kinds ...byte) 
 	}
 }
 
-func proxyAsync(tun *Tunnel, ctx context.Context, timeout time.Duration) (chan *http.Response, chan error) {
+func proxyAsync(ctx context.Context, tun *Tunnel, timeout time.Duration) (chan *http.Response, chan error) {
 	rc, ec := make(chan *http.Response, 1), make(chan error, 1)
 	go func() {
 		resp, err := tun.ProxyWithin(ctx, httptest.NewRequest(http.MethodGet, "http://slug/x", nil), timeout)
@@ -56,7 +56,7 @@ func TestFlow_GrantsCreditAsTheClientReads(t *testing.T) {
 	conn := newChanConn()
 	tun := NewTunnel("srv", "slug", conn, WithFlowControl())
 	defer tun.Close()
-	rc, ec := proxyAsync(tun, context.Background(), 0)
+	rc, ec := proxyAsync(context.Background(), tun, 0)
 	id := answerHead(t, conn)
 	var resp *http.Response
 	select {
@@ -84,7 +84,7 @@ func TestFlow_OverWindowFailsTheStream(t *testing.T) {
 	conn := newChanConn()
 	tun := NewTunnel("srv", "slug", conn, WithFlowControl())
 	defer tun.Close()
-	rc, _ := proxyAsync(tun, context.Background(), 0)
+	rc, _ := proxyAsync(context.Background(), tun, 0)
 	id := answerHead(t, conn)
 	resp := <-rc
 	defer resp.Body.Close()
@@ -119,7 +119,7 @@ func TestLegacy_StalledStreamFailsNotDrops(t *testing.T) {
 	conn := newChanConn()
 	tun := NewTunnel("srv", "slug", conn)
 	defer tun.Close()
-	rc, _ := proxyAsync(tun, context.Background(), 0)
+	rc, _ := proxyAsync(context.Background(), tun, 0)
 	id := answerHead(t, conn)
 	resp := <-rc
 	defer resp.Body.Close()
@@ -147,7 +147,7 @@ func TestProxyWithin_HeadTimeout(t *testing.T) {
 	conn := newChanConn()
 	tun := NewTunnel("srv", "slug", conn)
 	defer tun.Close()
-	_, ec := proxyAsync(tun, context.Background(), 50*time.Millisecond)
+	_, ec := proxyAsync(context.Background(), tun, 50*time.Millisecond)
 	id := awaitRequestEOF(t, conn)
 	select {
 	case err := <-ec:
@@ -167,7 +167,7 @@ func TestProxyWithin_BodyOutlivesHeadTimeout(t *testing.T) {
 	conn := newChanConn()
 	tun := NewTunnel("srv", "slug", conn)
 	defer tun.Close()
-	rc, ec := proxyAsync(tun, context.Background(), 50*time.Millisecond)
+	rc, ec := proxyAsync(context.Background(), tun, 50*time.Millisecond)
 	id := answerHead(t, conn)
 	var resp *http.Response
 	select {
@@ -196,7 +196,7 @@ func TestProxy_ClientGoneTellsTheHome(t *testing.T) {
 	tun := NewTunnel("srv", "slug", conn, WithFlowControl())
 	defer tun.Close()
 	ctx, cancel := context.WithCancel(context.Background())
-	rc, _ := proxyAsync(tun, ctx, 0)
+	rc, _ := proxyAsync(ctx, tun, 0)
 	id := answerHead(t, conn)
 	resp := <-rc
 	go func() {

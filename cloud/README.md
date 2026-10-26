@@ -150,6 +150,54 @@ automatically.
 | 25.34 | auto-update | installers/auto-update.md |
 | 25.35 | first-run wizard | installers/first-run-wizard.md |
 | 25.36 | uninstaller | installers/uninstaller.md |
+| 42.7  | linked accounts: home assertions, home list | homeassert/, handlers/homes, stores/homelinks.go (home side: api/internal/auth/cloudlink) |
+
+## The relay and linked accounts (Epic 25, Epic 42 story 42.7)
+
+**Tunnel.** A home's agent (`maktaba-cloudlink`, run by the home's
+supervisor) dials `wss://<relay>/v1/relay/ws`, authenticates with the
+server id and secret it got at claim (`AUTH`, argon2id at rest), and
+carries every request for `<slug>.<relay host>` to the home's **web port**
+on loopback (the UI, `/api`, and `/stream/` behind its sign-in gate).
+Frames: `relay/protocol.go`. Per-stream credit flow control
+(`WINDOW_UPDATE` 0x0c, 1 MiB initial window) is used when both ends
+announce `"flow":1` in AUTH / AUTH_OK; one slow client never stalls the
+tunnel, and no frame is ever dropped (a stream is failed instead). Only
+the wait for the home's response head is bounded (60s): a video plays as
+long as its client reads. The agent pings every 25s and redials with
+backoff when the cloud is silent for 35s.
+
+**Claim.** `POST /v1/servers/claims` (owner, user auth) mints an 8-char
+code; the agent redeems it at `POST /v1/servers/claims/redeem` (no user
+token: the code is the credential), in one transaction with the server
+row (a reserved or taken slug answers 409 and leaves the code usable).
+The answer carries the cloud's **assertion public key**, which the home
+pins (`cloudlink.identity.json` beside the sealed credentials).
+
+**Linked accounts.** The cloud never grants anything inside a home:
+
+- `GET /v1/homes`: the homes a cloud account is linked to (reported by
+  each home, by cloud user id only: `PUT /v1/servers/{id}/links`, server
+  secret) or owns.
+- `POST /v1/homes/{id}/assertion` `{purpose}`: a one-use, one-minute
+  Ed25519 assertion naming the cloud account and the home (`homeassert`).
+  `signin` only for a home that linked the account; `link` for any home,
+  bound to the nonce the home user's own sign-in started.
+- The home verifies it with its pinned key, finds the home user it
+  linked, and issues its own tokens with that user's role capped by the
+  link's scope (`play` by default; `manage` only set by an admin, on the
+  home, for their own link). Every role rule is enforced by the home's
+  API (`POST /api/auth/cloud`, `/api/me/cloud-link`).
+
+The assertion key is derived from the entitlement key
+(`entitlement.private_key_path`), so no second secret is provisioned;
+without it the api role answers 503 to assertion requests.
+
+**Metering.** `billing.Meter` counts each home's relayed bytes while a
+response streams (every MiB), gates on the plan's monthly allowance, and
+flushes to `bandwidth_samples` / `bandwidth_monthly` every 30s and on
+shutdown. **TLS:** the edge's on-demand ask is `/v1/relay/tls-ask`
+(claimed slugs only).
 
 ## Test coverage (this PR)
 
@@ -168,6 +216,8 @@ Unit tests live next to their packages and exercise:
 - config TOML loader + env override + role-specific validation.
 - request-id middleware (mint v7, propagate valid, reject non-v7).
 
-Integration tests requiring a live Postgres are out of scope for this
-bootstrap PR; the schema migrations are exercised by `goose up` in
-each CI matrix entry that boots the binary.
+Integration tests against a live Postgres (`go test -tags=integration
+./...` with `MAKTABA_CLOUD_DB_URL`) cover the claim, agent auth, home links
+and assertions (`handlers/homes`), the meter's flush, relay metrics and the
+privacy purge. The relay's end to end test (`handlers/relay/e2e_test.go`)
+runs a real tunnel and agent behind the relay role's middleware.

@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -19,7 +20,8 @@
 --
 -- A machine's copy holds home_user_links and cloud_sign_ins (a session a cloud sign-in
 -- made keeps its scope there too, the home away); cluster_copy_excluded() gains the
--- nonces and the used assertions (each database's own). maktaba_worker: none.
+-- nonces and the used assertions (each database's own). maktaba_worker: none. NO
+-- TRANSACTION for the index (CONCURRENTLY), as slot 0150.
 CREATE TABLE IF NOT EXISTS home_user_links (
     user_id       UUID        PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     cloud_user_id TEXT        NOT NULL UNIQUE,
@@ -56,7 +58,7 @@ CREATE TABLE IF NOT EXISTS cloud_sign_ins (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE INDEX IF NOT EXISTS cloud_sign_ins_user ON cloud_sign_ins (user_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS cloud_sign_ins_user ON cloud_sign_ins (user_id);
 -- +goose StatementEnd
 
 -- +goose StatementBegin

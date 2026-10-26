@@ -37,7 +37,6 @@ type Deps struct {
 	// RelayHost is the relay's public apex: a home's relay address is
 	// https://<slug>.<RelayHost>.
 	RelayHost string
-	Now       func() time.Time
 }
 
 // MountUser registers the routes behind the user auth group.
@@ -49,13 +48,6 @@ func MountUser(r chi.Router, d *Deps) {
 // MountPublic registers the public key route (no auth).
 func MountPublic(r chi.Router, d *Deps) {
 	r.Get("/v1/homes/assertion-key", d.Key)
-}
-
-func (d *Deps) now() time.Time {
-	if d.Now != nil {
-		return d.Now()
-	}
-	return time.Now()
 }
 
 type homeView struct {
