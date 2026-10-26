@@ -248,7 +248,7 @@ func TestSetupPlatforms(t *testing.T) {
 }
 
 func TestSetupAdmin(t *testing.T) {
-	e := newSetupEnv(t)
+	newSetupEnv(t)
 	for _, c := range []struct {
 		in     map[string]string
 		code   string
@@ -270,6 +270,16 @@ func TestSetupAdmin(t *testing.T) {
 			t.Errorf("%q = %d %v", c.in, code, ev)
 		}
 	}
+}
+
+// TestSetupAdminHashes: a valid admin's password is hashed by the api (here the fake
+// one, a process of its own: over a second under -race, so not in the -short tier, like
+// every test that starts one) and only its hash kept.
+func TestSetupAdminHashes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts the api program; runs without -short")
+	}
+	e := newSetupEnv(t)
 	code, _, ev := runStep(t, "admin", map[string]string{"username": "admin", "password": "s3cret-long"})
 	if code != 0 || data(t, ev)["username"] != "admin" {
 		t.Fatalf("admin = %d %v", code, ev)
