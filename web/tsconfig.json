@@ -19,9 +19,10 @@
       "@maktaba/tvplayer": ["packages/tvplayer/src/index.ts"]
     }
   },
-  "include": ["src", "design-system/components", "packages"],
+  "include": ["src", "cloud/src", "design-system/components", "packages"],
   "exclude": [
     "dist",
+    "dist-cloud",
     "node_modules",
     "mockups",
     "wiki-app",

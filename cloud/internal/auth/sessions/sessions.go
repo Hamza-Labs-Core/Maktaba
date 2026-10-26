@@ -19,6 +19,25 @@ const DefaultTTL = 30 * 24 * time.Hour
 
 var ErrNotFound = errors.New("sessions: not found")
 
+// ErrReplayed is returned by Lookup when the token belongs to a session
+// that was already rotated: whoever presents it is replaying a token
+// the legitimate client has replaced. The caller revokes every session
+// of the account.
+var ErrReplayed = errors.New("sessions: rotated refresh token replayed")
+
+// ReplayGrace is how long after a rotation the old token is treated as
+// a plain miss rather than a replay. Two tabs refreshing at the same
+// moment both present the same token; the loser should get a 401, not
+// sign the account out everywhere.
+const ReplayGrace = 10 * time.Second
+
+// Revocation reasons stored in sessions.revoke_reason.
+const (
+	ReasonRotated = "rotated"
+	ReasonLogout  = "logout"
+	ReasonRevoked = "revoked"
+)
+
 // Session is the row shape exposed to handlers.
 type Session struct {
 	ID        string
@@ -28,6 +47,7 @@ type Session struct {
 	ExpiresAt time.Time
 	RevokedAt *time.Time
 	CreatedAt time.Time
+	LastUsed  *time.Time
 }
 
 // Store persists sessions. We hash the refresh token at rest and
@@ -59,7 +79,7 @@ func (s *Store) Create(ctx context.Context, userID, userAgent, ip string) (Sessi
 	err := s.DB.QueryRowContext(ctx, `
         INSERT INTO sessions (user_id, refresh_token_hash, user_agent, ip, expires_at)
         VALUES ($1,$2,$3,NULLIF($4,'')::inet,$5)
-        RETURNING id, user_id, COALESCE(user_agent,''), COALESCE(ip::text,''), expires_at, created_at
+        RETURNING id, user_id, COALESCE(user_agent,''), COALESCE(host(ip),''), expires_at, created_at
     `, userID, hash, userAgent, ip, expires).Scan(
 		&sess.ID, &sess.UserID, &sess.UserAgent, &sess.IP, &sess.ExpiresAt, &sess.CreatedAt,
 	)
@@ -76,13 +96,14 @@ func (s *Store) Lookup(ctx context.Context, rawToken string) (Session, error) {
 	hash := hashToken(rawToken)
 	var sess Session
 	var revoked sql.NullTime
+	var reason sql.NullString
 	err := s.DB.QueryRowContext(ctx, `
-        SELECT id, user_id, COALESCE(user_agent,''), COALESCE(ip::text,''),
-               expires_at, revoked_at, created_at
+        SELECT id, user_id, COALESCE(user_agent,''), COALESCE(host(ip),''),
+               expires_at, revoked_at, created_at, revoke_reason
         FROM sessions
         WHERE refresh_token_hash = $1
     `, hash).Scan(&sess.ID, &sess.UserID, &sess.UserAgent, &sess.IP,
-		&sess.ExpiresAt, &revoked, &sess.CreatedAt)
+		&sess.ExpiresAt, &revoked, &sess.CreatedAt, &reason)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, ErrNotFound
 	}
@@ -90,8 +111,9 @@ func (s *Store) Lookup(ctx context.Context, rawToken string) (Session, error) {
 		return Session{}, err
 	}
 	if revoked.Valid {
-		t := revoked.Time
-		sess.RevokedAt = &t
+		if reason.String == ReasonRotated && time.Since(revoked.Time) > ReplayGrace {
+			return Session{UserID: sess.UserID}, ErrReplayed
+		}
 		return Session{}, ErrNotFound
 	}
 	if time.Now().UTC().After(sess.ExpiresAt) {
@@ -100,16 +122,81 @@ func (s *Store) Lookup(ctx context.Context, rawToken string) (Session, error) {
 	return sess, nil
 }
 
-// Revoke marks the session inactive. Idempotent.
+// Revoke marks the session inactive (a sign-out). Idempotent.
 func (s *Store) Revoke(ctx context.Context, id string) error {
-	_, err := s.DB.ExecContext(ctx, `UPDATE sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`, id)
+	return s.revoke(ctx, id, ReasonLogout)
+}
+
+// Rotate retires a session whose refresh token is being exchanged for
+// a new one. It reports false when the session was already revoked —
+// a concurrent refresh won the race — so the caller does not mint a
+// second live session from one token.
+func (s *Store) Rotate(ctx context.Context, id string) (bool, error) {
+	res, err := s.DB.ExecContext(ctx, `UPDATE sessions SET revoked_at = now(), revoke_reason = $2 WHERE id = $1 AND revoked_at IS NULL`, id, ReasonRotated)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+
+func (s *Store) revoke(ctx context.Context, id, reason string) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE sessions SET revoked_at = now(), revoke_reason = $2 WHERE id = $1 AND revoked_at IS NULL`, id, reason)
 	return err
 }
 
-// RevokeAllForUser is used by password change and "sign out everywhere".
+// RevokeForUser revokes one session of the given account. It reports
+// false when the id is not a live session of that account, so a caller
+// cannot revoke someone else's session by guessing an id.
+func (s *Store) RevokeForUser(ctx context.Context, id, userID string) (bool, error) {
+	res, err := s.DB.ExecContext(ctx, `UPDATE sessions SET revoked_at = now(), revoke_reason = $3 WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`, id, userID, ReasonRevoked)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+
+// RevokeAllForUser is used by password change, suspension, deletion and
+// "sign out everywhere".
 func (s *Store) RevokeAllForUser(ctx context.Context, userID string) error {
-	_, err := s.DB.ExecContext(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, userID)
+	_, err := s.DB.ExecContext(ctx, `UPDATE sessions SET revoked_at = now(), revoke_reason = $2 WHERE user_id = $1 AND revoked_at IS NULL`, userID, ReasonRevoked)
 	return err
+}
+
+// ListActive returns the account's live sessions, newest first.
+func (s *Store) ListActive(ctx context.Context, userID string) ([]Session, error) {
+	rows, err := s.DB.QueryContext(ctx, `
+        SELECT id, user_id, COALESCE(user_agent,''), COALESCE(host(ip),''), expires_at, created_at, last_used_at
+        FROM sessions
+        WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
+        ORDER BY created_at DESC
+    `, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Session{}
+	for rows.Next() {
+		var sess Session
+		var used sql.NullTime
+		if err := rows.Scan(&sess.ID, &sess.UserID, &sess.UserAgent, &sess.IP, &sess.ExpiresAt, &sess.CreatedAt, &used); err != nil {
+			return nil, err
+		}
+		if used.Valid {
+			t := used.Time
+			sess.LastUsed = &t
+		}
+		out = append(out, sess)
+	}
+	return out, rows.Err()
+}
+
+// CountActive is the number of live sessions an account holds.
+func (s *Store) CountActive(ctx context.Context, userID string) (int, error) {
+	var n int
+	err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM sessions WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()`, userID).Scan(&n)
+	return n, err
 }
 
 // hashToken returns the at-rest representation of a refresh token.

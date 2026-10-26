@@ -12,8 +12,10 @@
 package entitlement
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -132,4 +134,40 @@ func Fingerprint(pub ed25519.PublicKey) string {
 // String is a tiny debug helper.
 func (t Token) String() string {
 	return fmt.Sprintf("entitlement{sub=%s srv=%s plan=%s exp=%s kfp=%s}", t.UserID, t.ServerID, t.Plan, t.ExpiresAt.Format(time.RFC3339), t.KeyFp)
+}
+
+// Public returns the verification key home servers pin.
+func (s *Signer) Public() ed25519.PublicKey { return s.Priv.Public().(ed25519.PublicKey) }
+
+// RegisterKey records the signer's public key in entitlement_keys so
+// grants can reference it and operators can see which key is live.
+// Idempotent; called at api start.
+func RegisterKey(ctx context.Context, db *sql.DB, s *Signer) error {
+	_, err := db.ExecContext(ctx, `
+        INSERT INTO entitlement_keys (fingerprint, public_key) VALUES ($1, $2)
+        ON CONFLICT (fingerprint) DO NOTHING
+    `, s.Fp, []byte(s.Public()))
+	return err
+}
+
+// TTL is how long an issued entitlement stays valid. Home servers
+// refresh well before; a server that cannot reach the cloud keeps its
+// paid features this long (offline gate, story 25.26).
+const TTL = 7 * 24 * time.Hour
+
+// Issue signs a user-scope entitlement for plan and records the grant.
+func Issue(ctx context.Context, db *sql.DB, s *Signer, userID, plan string, now time.Time) (string, Token, error) {
+	t := Token{UserID: userID, Plan: plan, IssuedAt: now.UTC(), ExpiresAt: now.UTC().Add(TTL)}
+	tok, err := s.Sign(t)
+	if err != nil {
+		return "", Token{}, err
+	}
+	t.KeyFp = s.Fp
+	if _, err := db.ExecContext(ctx, `
+        INSERT INTO entitlement_grants (user_id, plan, issued_at, expires_at, fingerprint)
+        VALUES ($1,$2,$3,$4,$5)
+    `, userID, plan, t.IssuedAt, t.ExpiresAt, s.Fp); err != nil {
+		return "", Token{}, err
+	}
+	return tok, t, nil
 }
