@@ -14,7 +14,9 @@ trap 'rm -rf "$parts"' EXIT
 if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
   cp /etc/apt/sources.list.d/ubuntu.sources "$parts/"
 fi
+# a lock another apt holds is waited for a minute at most, not for the whole step
 opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+      -o DPkg::Lock::Timeout=60 -o Dpkg::Progress-Fancy=0 -o Dpkg::Use-Pty=0
       -o "Dir::Etc::sourceparts=$parts" -o APT::Get::List-Cleanup=0)
 
 for try in 1 2 3; do
@@ -25,6 +27,12 @@ for try in 1 2 3; do
   echo "::warning::apt-get update failed (try $try), trying again" >&2
   sleep 10
 done
+# Ubuntu 22.04's needrestart asks, after an install, which services to restart: with no
+# terminal to answer it the install never ends. It restarts nothing here.
+export NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1
+# shellcheck disable=SC2016 # needrestart's own Perl, kept as it is
+echo '$nrconf{restart} = "a";' | sudo tee /etc/needrestart/conf.d/90-ci.conf >/dev/null 2>&1 || true
+
 # man-db rebuilding its index after every install is the known stall of GitHub's
 # runners (minutes for ffmpeg's hundred packages): CI reads no man pages
 echo "man-db man-db/auto-update boolean false" | sudo debconf-set-selections
@@ -36,7 +44,9 @@ sudo rm -f /var/lib/man-db/auto-update
 # Ubuntu's own archive
 limit=${APT_INSTALL_TIMEOUT:-600}
 for try in 1 2; do
-  if sudo DEBIAN_FRONTEND=noninteractive timeout "$limit" apt-get "${opts[@]}" install -y -qq --no-install-recommends "$@"; then
+  # -q, not -qq: a stall shows the package it stopped on
+  if sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 timeout "$limit" \
+    apt-get "${opts[@]}" install -y -q --no-install-recommends "$@" >&2; then
     exit 0
   fi
   [ "$try" = 2 ] && { echo "::error::apt-get install failed twice" >&2; exit 1; }
