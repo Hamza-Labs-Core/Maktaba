@@ -34,8 +34,11 @@ jobs:
       - name: No binaries or files over 5 MB
         shell: bash
         env:
-          # extended regexes of paths allowed anyway, one per line (none yet)
-          ALLOW: ""
+          # extended regexes of paths allowed anyway, one per line. A Gradle wrapper's jar is
+          # Gradle's own, checked against its published checksum by the gate that uses it
+          # (_android-apps.yml).
+          ALLOW: |
+            apps/android/gradle/wrapper/gradle-wrapper\.jar
         run: |
           base=$(git merge-base origin/main HEAD)
           bad=0
