@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -916,5 +917,39 @@ func TestSimulcastEdgeOutputStatus(t *testing.T) {
 	v, _ := fx.c.SimulcastStatus(context.Background(), ch)
 	if o := v.Attachments[0].Output; o.CFStatus != "connected" || o.Platform {
 		t.Fatalf("view %+v", o)
+	}
+}
+
+// 32.11 AC3 / 32.13 AC1: a destination's stream key never reaches the logs
+// or the audit details, through the whole life of an output.
+func TestSimulcastKeyNotInLogs(t *testing.T) {
+	fx := newSim(t)
+	buf := &syncBuf{}
+	fx.c.Logger = slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	fx.in.Logger = fx.c.Logger
+	fx.c.Audit = func(_ context.Context, action, actor, target string, details map[string]any) {
+		b, _ := json.Marshal(details)
+		_, _ = buf.Write([]byte(action + " " + actor + " " + target + " " + string(b) + "\n"))
+	}
+	const key = "live-key-9f8e7d6c5b4a"
+	ch := fx.chans[0]
+	d := fx.dest(tvremote.KindRTMP, "rtmp://ingest.example.com/app", key)
+	att := fx.attach(ch, d.ID, tvremote.ModeAlways, nil)
+	fx.reconcile()
+	fx.goLive(ch)
+	fx.reconcile()
+	if o := fx.open(att); o.State != tvremote.OutLive {
+		t.Fatalf("output %+v", o)
+	}
+	if err := fx.c.StopOutput(context.Background(), "admin", att); err != nil {
+		t.Fatal(err)
+	}
+	fx.reconcile()
+	logs := buf.String()
+	if !strings.Contains(logs, "tv_simulcast") {
+		t.Fatalf("nothing logged:\n%s", logs)
+	}
+	if strings.Contains(logs, key) || strings.Contains(logs, key[:12]) {
+		t.Errorf("the destination's stream key is in the logs or audit:\n%s", logs)
 	}
 }
