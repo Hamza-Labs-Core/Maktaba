@@ -30,3 +30,25 @@ view tier, expiry, payment method, change tier, cancel.
   customer ID; the second purchase is refunded automatically.
 - Disputed payment: license tier flips to `free` until resolved; no
   data is destroyed.
+
+## Implementation (2026-10-26)
+
+**Status: done.** The billing itself is Maktaba Cloud's (Epic 25: Stripe
+Checkout, the customer portal for payment method, cancellation, receipts and tax,
+webhooks with ordering and retries; see
+[`cloud/docs/accounts-billing-admin.md`](../../../cloud/docs/accounts-billing-admin.md)).
+This epic connects it to the home:
+
+- Settings → Subscription shows the tier, users against seats, the license's
+  holder and renewal/expiry date, and **Manage plan** deep-links to the cloud's
+  billing page (the portal is one click from there).
+- A paid plan becomes a license for each of the owner's homes; the home asks for
+  it every minute, so an upgrade unlocks within 60 s of the webhook and a
+  cancellation that reaches its end returns the home to Free.
+- Disputed payment: the cloud suspends the account; its homes' licenses are
+  refused (`license_revoked`) and lock; after the dispute the same license comes
+  back and unlocks.
+- The cloud's plan cards say which home plan each gives (`home_tier`).
+- Cloud plan names predate this epic: `pro` gives the home **Home**, `family`
+  gives **Pro** (`license.TierForPlan`). Renaming the cloud catalog is a product
+  decision left open.

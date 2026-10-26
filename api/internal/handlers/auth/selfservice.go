@@ -86,6 +86,14 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// Epic 16 story 16.2: a registration takes a seat like an admin's
+	// create does (the first user, the home's admin, always may).
+	if !bootstrap {
+		if err := h.enforceSeatLimit(r.Context()); err != nil {
+			httperror.Write(w, r, err)
+			return
+		}
+	}
 
 	// Pre-check email so a collision returns a precise 409 rather than
 	// the ambiguous username/email unique violation from Create.

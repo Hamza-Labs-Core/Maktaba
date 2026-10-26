@@ -82,6 +82,18 @@ models = ["qwen2.5:7b"]  # what the server keeps
 pull = "auto"            # auto: the supervisor downloads a missing model | off
 ```
 
+**Usage analytics (`[telemetry]`, Epic 16 stories 16.5, 16.7).** A device whose user
+opted in (the app asks once; Settings → Privacy changes it) sends anonymous usage events
+to this server's API under a random pseudonym: the app's version and OS, the library's
+size as a range, how often each area is used, and error reports without paths. They are
+kept 90 days (Web Vitals 30), never with an IP address or a user. `off` makes the API
+answer and store nothing; it reaches the API as `MAKTABA_TELEMETRY_ENABLED=false`.
+
+```toml
+[telemetry]
+enabled = "on"           # on (default) | off: store nothing any device sends
+```
+
 **Streaming on a cluster node (Epic 32.1).** On a machine that joined a home
 (Epic 31, `node.json` holds its database credential), `maktaba-server serve
 --role streaming` runs the streaming service as a cluster node: the home's

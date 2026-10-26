@@ -130,3 +130,17 @@ var errCount = &countErr{}
 type countErr struct{}
 
 func (*countErr) Error() string { return "db: count failed" }
+
+// The refusal names the plan, the numbers and what to do.
+func TestSeatGate_RefusalIsPlain(t *testing.T) {
+	store := subscriptions.NewStore()
+	store.Set(&subscriptions.Entitlements{Tier: subscriptions.TierHome})
+	h := &Handler{UserAdmin: &fakeUserAdmin{}, Seats: subscriptions.NewSeatLimiter(store), SeatCount: seatStub{count: 4}}
+	rec := httptest.NewRecorder()
+	h.AdminCreateUser(rec, adminReq(http.MethodPost, "/api/users", `{"username":"e","password":"pw-correct-horse"}`))
+	body := rec.Body.String()
+	if rec.Code != http.StatusForbidden || !contains(body, "Home plan allows 4 users and it has 4") ||
+		!contains(body, "Pro license") || !contains(body, `"seats_allowed":4`) {
+		t.Fatalf("%d %s", rec.Code, body)
+	}
+}

@@ -5,10 +5,10 @@ Three pages about your installation itself: the devices that get notifications, 
 ## What it is {#what-it-is}
 
 - **[All devices](/admin/devices)** (under Administration): the phones, tablets and browsers registered to receive push notifications. Despite its name, it lists the devices registered to **your** account.
-- **[Billing & license](/billing)**: your plan (**Tier**), how many accounts it allows (**Seats**), which features are on (**Entitlements**) and, for administrators, the licence key.
+- **[Subscription](/settings/subscription)** (Settings → Subscription): this home's plan (Free, Home or Pro), its users against what the plan allows, what the plan includes and, for administrators, the license and Maktaba Cloud.
 - **[Cloud status](/cloud/status)** (**Cloud server status**): whether this server is connected to a Maktaba Cloud relay.
 
-Billing & license and Cloud status are in the side menu for every signed-in user. All devices is in the Administration menu.
+Subscription and Cloud status are in the side menu for every signed-in user. All devices is in the Administration menu.
 
 ## How to use it {#how-to-use}
 
@@ -20,16 +20,21 @@ The table shows each device's **Platform**, **App**, **App version**, **Last see
 - **Remove** a device and confirm. It stops receiving notifications.
 - **Register device** adds one by hand. You need the **Platform**, the app's **Push token** and its **Bundle ID**; this is mainly for testing.
 
-### Billing & license {#billing}
+### Subscription {#billing}
 
-**Current plan** shows your **Tier** (for example _free_), the **Seats** it allows and the **License ID**. **Entitlements** lists each feature as **Enabled** or **Disabled**.
+**Plan** shows this home's plan and **Users**: how many people have an account, of how many the plan allows. **What the plan includes** lists remote access through Maktaba Cloud, more than one user, cloud backup, analytics beyond 30 days, and connecting other homes, each **Included** or **Not included**.
 
-To upgrade (administrators only):
+- **Free** is the whole library for one user on your home network.
+- **Home** adds remote access, up to 4 users, cloud backup and the full analytics.
+- **Pro** has no user limit and adds connecting other homes.
 
-1. Paste the signed licence document you received into **License key**.
-2. Click **Apply license**. The message _License applied._ confirms it, and the plan and features update.
+The home itself enforces the plan: when something is not included, the home refuses it and says why (for example _This home's Free plan allows 1 user and it has 1._). People who already have an account keep working even when the home has more users than its plan allows; only new ones are refused.
 
-**Revoke license** removes the licence at once, without asking, and returns this server to the free tier (_Reverted to free tier._).
+For administrators:
+
+- **Maktaba Cloud**: a home linked to Maktaba Cloud gets the license of your cloud plan by itself and renews it every day. **Manage plan** (or **Get a plan**) opens your cloud account's billing page; **Check now** asks the license server at once.
+- **License**: to use a license you received, paste it into **Paste a license** and click **Apply license**. It is checked, applied and never shown again. **Remove license** asks first, then returns the home to Free.
+- A cloud license that cannot be renewed keeps working for about a month; then the home shows _Reconnect to validate the license_ and returns to Free until it can reach Maktaba Cloud again. A license Maktaba revokes stops at once.
 
 ### Cloud status {#cloud-status}
 

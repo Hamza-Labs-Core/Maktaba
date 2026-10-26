@@ -6,7 +6,6 @@
 //	POST /v1/billing/checkout     — start a Stripe checkout
 //	POST /v1/billing/portal       — open the Stripe customer portal
 //	GET  /v1/billing/usage        — this month's relay bandwidth
-//	GET  /v1/billing/entitlement  — Ed25519-signed plan token
 //	POST /v1/billing/webhook      — Stripe webhooks (webhook.go)
 package billing
 
@@ -27,6 +26,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/sessions"
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/entitlement"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/license"
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
@@ -71,7 +71,6 @@ func Mount(r chi.Router, d *Deps) {
 	r.Post("/v1/billing/checkout", d.Checkout)
 	r.Post("/v1/billing/portal", d.Portal)
 	r.Get("/v1/billing/usage", d.Usage)
-	r.Get("/v1/billing/entitlement", d.Entitlement)
 }
 
 // Plans returns the static catalog from billing.Tiers.
@@ -87,6 +86,9 @@ func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 		Transcoding bool   `json:"includes_transcoding"`
 		FamilySeats int    `json:"family_seats"`
 		Purchasable bool   `json:"purchasable"`
+		// HomeTier is the plan the license gives the owner's homes
+		// (Epic 16: home or pro; "" for free).
+		HomeTier string `json:"home_tier"`
 	}
 	out := []viewTier{}
 	for _, id := range []string{billingpkg.PlanFree, billingpkg.PlanPro, billingpkg.PlanFamily} {
@@ -97,6 +99,7 @@ func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 			MaxStreams: t.MaxConcurrentStreams, RelayQoS: t.RelayQoS,
 			Transcoding: t.IncludesTranscoding, FamilySeats: t.FamilySeats,
 			Purchasable: d.Stripe.Configured() && d.priceFor(id) != "",
+			HomeTier:    license.TierForPlan(id),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"plans": out})
@@ -317,31 +320,8 @@ func AccountUsage(ctx context.Context, db *sql.DB, uid string, month time.Time) 
 	return out, total, rows.Err()
 }
 
-// Entitlement issues a signed token for the caller's effective plan.
-// Home servers verify it offline against the key at
-// /.well-known/maktaba-entitlement-key.
-func (d *Deps) Entitlement(w http.ResponseWriter, r *http.Request) {
-	if d.Entitlements == nil {
-		writeErr(w, http.StatusServiceUnavailable, "entitlement_disabled", "entitlement signing is not configured")
-		return
-	}
-	uid := middleware.GetUserID(r.Context())
-	u, err := d.Users.ByID(r.Context(), uid)
-	if err != nil {
-		d.fail(w, r, "load account", err)
-		return
-	}
-	tok, t, err := entitlement.Issue(r.Context(), d.DB, d.Entitlements, uid, u.Plan, d.now())
-	if err != nil {
-		d.fail(w, r, "issue entitlement", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"token": tok, "plan": t.Plan, "expires_at": t.ExpiresAt, "key_fingerprint": t.KeyFp,
-	})
-}
-
-// EntitlementKey publishes the verification key.
+// EntitlementKey publishes the license-signing key: the public half
+// release builds of the home embed (Epic 16 story 16.4).
 func (d *Deps) EntitlementKey(w http.ResponseWriter, _ *http.Request) {
 	if d.Entitlements == nil {
 		writeErr(w, http.StatusServiceUnavailable, "entitlement_disabled", "")

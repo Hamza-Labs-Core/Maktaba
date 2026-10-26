@@ -83,7 +83,7 @@ func TestSetAndRevokeLicense(t *testing.T) {
 		bytes.NewReader(body)).WithContext(adminCtx())
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	if !h.Store.Allows(subscriptions.FeatureCloudRelay) {

@@ -6,6 +6,8 @@
 //	GET  /v1/servers/{id}             — one-server detail
 //	POST /v1/servers/{id}/heartbeat   — server agent updates health
 //	PUT  /v1/servers/{id}/links       — server agent reports its linked cloud accounts
+//	GET  /v1/servers/{id}/license     — server agent fetches its owner's plan license
+//	GET  /v1/licenses/revocations     — public: the signed revocation list
 //
 // The user routes (MountUser) sit behind the cloud's user auth; the
 // agent routes (MountAgent) do not: the agent has no user token, the
@@ -27,6 +29,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/argon2id"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/homeassert"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/license"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
@@ -37,6 +40,11 @@ type Deps struct {
 	// goes back to the agent at redeem, where the home pins it. Nil ⇒
 	// none is sent (the agent asks again later).
 	Assertions *homeassert.Signer
+	// Licenses issues a home its owner's plan license (Epic 16 story
+	// 16.4). Nil ⇒ the license routes answer 503.
+	Licenses *license.Issuer
+	// ManageURL is the billing page a home's Settings links to.
+	ManageURL string
 }
 
 // MountUser registers the routes a signed-in cloud user calls.
@@ -52,6 +60,8 @@ func MountAgent(r chi.Router, d Deps) {
 	r.Post("/v1/servers/claims/redeem", d.RedeemClaim)
 	r.Post("/v1/servers/{id}/heartbeat", d.Heartbeat)
 	r.Put("/v1/servers/{id}/links", d.PutLinks)
+	r.Get("/v1/servers/{id}/license", d.License)
+	r.Get("/v1/licenses/revocations", d.Revocations)
 }
 
 type claimResp struct {
@@ -243,6 +253,50 @@ func (d *Deps) PutLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// License answers a home's agent with the license its owner's plan
+// grants: 200 {license, manage_url}; 404 no_license (the free plan: the
+// home returns to free); 403 license_revoked (revoked, or the account
+// suspended after a disputed payment: the home locks at once).
+func (d *Deps) License(w http.ResponseWriter, r *http.Request) {
+	id, ok := d.agentAuth(w, r)
+	if !ok {
+		return
+	}
+	if d.Licenses == nil {
+		writeErr(w, 503, "licensing_disabled", "")
+		return
+	}
+	lic, err := d.Licenses.ForServer(r.Context(), id)
+	switch {
+	case errors.Is(err, license.ErrNoLicense):
+		writeErr(w, 404, "no_license", "this home's owner has no paid plan")
+	case errors.Is(err, license.ErrRevoked):
+		writeErr(w, 403, "license_revoked", "")
+	case errors.Is(err, license.ErrUnknownServer):
+		writeErr(w, 404, "not_found", "")
+	case err != nil:
+		writeErr(w, 500, "license_failed", "")
+	default:
+		writeJSON(w, 200, map[string]any{"license": lic, "manage_url": d.ManageURL})
+	}
+}
+
+// Revocations is the signed list of revoked license ids every home
+// fetches daily; public (it names ids only).
+func (d *Deps) Revocations(w http.ResponseWriter, r *http.Request) {
+	if d.Licenses == nil {
+		writeErr(w, 503, "licensing_disabled", "")
+		return
+	}
+	list, err := d.Licenses.Revocations(r.Context())
+	if err != nil {
+		writeErr(w, 500, "revocations_failed", "")
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	writeJSON(w, 200, list)
 }
 
 func newServerSecret() (string, error) {

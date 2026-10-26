@@ -36,3 +36,4 @@ first runs, the second observes `current = head` and exits cleanly.
 | 0010 | 25.26 entitlement | entitlement_keys, entitlement_grants |
 | 0011 | 30.1 relay analytics | relay_metrics_raw, relay_metrics_hourly |
 | 0012 | 25.2/25.5/25.14/25.20 accounts & admin | users.role + suspension, session rotation, audit_log, invoices, webhook ordering |
+| 0014 | 16.4 licenses | licenses_issued, license_revocations (the signed revocation list) |

@@ -154,6 +154,14 @@ jobs:
         working-directory: web
         run: pnpm install --frozen-lockfile
 
+      # Epic 16: the license-server public key over the placeholder before any
+      # build (tools/release/license-key.sh); a release without it fails.
+      - name: Embed the license-server key
+        shell: bash
+        env:
+          MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
+        run: tools/release/license-key.sh --require
+
       # VERSION comes from the tag, not `git describe`, so the artifact
       # version string is exactly the tag the maintainer pushed. The
       # streaming binary is built with -tags tvstaging (TV staging and hot
@@ -246,6 +254,14 @@ jobs:
         with:
           name: release-web-bundle
           path: web/dist
+
+      # Epic 16: the license-server public key over the placeholder before any
+      # build (tools/release/license-key.sh); a release without it fails.
+      - name: Embed the license-server key
+        shell: bash
+        env:
+          MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
+        run: tools/release/license-key.sh --require
 
       - name: Cross-compile maktaba-server
         env:
@@ -361,6 +377,14 @@ jobs:
             if [ "${LATEST}" = true ]; then echo "${IMAGE}:latest"; fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+
+      # Epic 16: the license-server public key over the placeholder before any
+      # build (tools/release/license-key.sh); a release without it fails.
+      - name: Embed the license-server key
+        shell: bash
+        env:
+          MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
+        run: tools/release/license-key.sh --require
 
       # rewrite-timestamp: every layer's files carry the commit's time (SOURCE_DATE_EPOCH),
       # so a re-run builds the same layers (the attestations still record their build).
@@ -654,6 +678,14 @@ jobs:
           pnpm -C web install --frozen-lockfile
           sudo apt-get update -qq
           sudo apt-get install -y -qq patchelf zip ffmpeg
+
+      # Epic 16: the license-server public key over the placeholder before any
+      # build (tools/release/license-key.sh); a release without it fails.
+      - name: Embed the license-server key
+        shell: bash
+        env:
+          MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
+        run: tools/release/license-key.sh --require
 
       # check.sh: no ffmpeg in the payload, and the server takes the runner's
       # (Ubuntu 22.04's, as the app's users get theirs from their distribution)

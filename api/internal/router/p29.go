@@ -23,6 +23,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/analytics"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 )
 
 // P29Deps bundles the dependencies for the Epic 29 handlers.
@@ -32,6 +33,10 @@ type P29Deps struct {
 	// Driver selects the analytics dialect ("postgres" default, "sqlite"
 	// for the unified home-server binary).
 	Driver string
+
+	// License gates advanced analytics (Epic 16 story 16.2). Nil ⇒
+	// ungated (tests).
+	License *subscriptions.StoreRef
 }
 
 // MountP29 attaches the Epic 29 route handlers onto r. Safe to skip when
@@ -41,5 +46,12 @@ func MountP29(r chi.Router, d P29Deps) {
 		return
 	}
 	(&watch.Handler{DB: d.DB}).Mount(r)
-	(&analytics.Handler{DB: d.DB, Driver: d.Driver}).Mount(r)
+	ah := &analytics.Handler{DB: d.DB, Driver: d.Driver}
+	if d.License != nil {
+		ah.Advanced = func() (bool, string) {
+			s := d.License.Store()
+			return s.Allows(subscriptions.FeatureAdvancedMetric), s.TierName()
+		}
+	}
+	ah.Mount(r)
 }

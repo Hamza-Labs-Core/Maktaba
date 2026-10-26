@@ -30,6 +30,7 @@ import (
 	pushh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/push"
 	serversh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/servers"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/homeassert"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/license"
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
 	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
@@ -111,7 +112,15 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	} else {
 		logger.Warn("no entitlement key: linked-account sign-in (home assertions) is off")
 	}
-	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions}
+	// Licenses (Epic 16 story 16.4): a paid plan becomes a license its
+	// homes verify, signed with the entitlement key (release builds of
+	// the home embed its public half); without it, licensing is off.
+	var licenses *license.Issuer
+	if entSigner != nil {
+		licenses = &license.Issuer{DB: pool.DB, Priv: entSigner.Priv}
+	}
+	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions, Licenses: licenses,
+		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
 	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost}
 
 	// Push dispatcher — both drivers may be nil in non-prod; the
@@ -240,7 +249,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			// role in the database (never an email domain or a home role).
 			adminh.Mount(g, &adminh.Deps{
 				DB: pool.DB, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
-				Logger: logger, Gate: adminGate, LiveTunnels: live,
+				Logger: logger, Gate: adminGate, LiveTunnels: live, Licenses: licenses,
 			})
 
 			// Epic 30 — relay-analytics dashboard + export + GDPR endpoints.
