@@ -640,8 +640,10 @@ func (c *Controller) wanted(ctx context.Context, a Attachment, o *SimOutput, ss 
 	switch {
 	case !ready:
 		return want{reason: notReady}
-	case u.Capped && running && a.Mode == ModeAlways && a.Manual != "start":
-		return want{reason: ReasonCap} // always outputs stop at once at the cap
+	case u.Capped && running && w.end == nil:
+		// always outputs, and a manual start with no window to finish, stop
+		// at once at the cap: they would otherwise never end
+		return want{reason: ReasonCap}
 	case u.Capped && !running:
 		return want{reason: ReasonCap}
 	case u.Exhausted && !running:

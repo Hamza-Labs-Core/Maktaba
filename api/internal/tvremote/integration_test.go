@@ -76,6 +76,11 @@ func newFixture(t *testing.T) *fixture {
 			t.Fatal(err)
 		}
 	}
+	for _, s := range upStatements(t, filepath.Join(migrationsDir(), "0125_tv_remote.sqlite.sql")) {
+		if _, err := db.Exec(strings.ReplaceAll(s, "ADD COLUMN IF NOT EXISTS", "ADD COLUMN")); err != nil {
+			t.Fatalf("%v\n%s", err, s)
+		}
+	}
 	fx := &fixture{f: cftest.New(t), db: db, store: secrets.NewMemory(),
 		ext: &fakeExt{settings: map[string]any{"account_id": "acc1"}}, now: time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)}
 	_ = fx.store.Put(context.Background(), tvremote.SecretAPIToken, []byte("tok-secret"), "")
@@ -300,8 +305,12 @@ func TestRemoveIntegration(t *testing.T) {
 	if err := fx.in.SetEnabled(ctx, true); err != nil {
 		t.Fatal(err)
 	}
-	stopped := false
+	// a broadcast that was just stopped left its recording at Cloudflare
+	rec := fx.f.AddVideo(mine.UID, "ready")
+	theirRec := fx.f.AddVideo(theirs.UID, "ready")
+	stopped, forgot := false, false
 	fx.in.StopPushes = func(context.Context) error { stopped = true; return nil }
+	fx.in.ForgetInputs = func(context.Context) error { forgot = true; return nil }
 	res, err := fx.in.Remove(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -311,6 +320,12 @@ func TestRemoveIntegration(t *testing.T) {
 	}
 	if fx.f.Inputs[theirs.UID] == nil || fx.f.Inputs[mine.UID] != nil || len(fx.f.Keys) != 0 {
 		t.Errorf("cloudflare after remove: inputs %v keys %v", fx.f.Inputs, fx.f.Keys)
+	}
+	if fx.f.Videos[rec.UID] != nil || fx.f.Videos[theirRec.UID] == nil || len(res.DeletedRecordings) != 1 {
+		t.Errorf("recordings after remove: %v (deleted %v)", fx.f.Videos, res.DeletedRecordings)
+	}
+	if !forgot {
+		t.Error("the local input rows were not forgotten")
 	}
 	for _, n := range []string{tvremote.SecretAPIToken, tvremote.SecretSigningKey} {
 		if ok, _ := fx.store.Has(ctx, n); ok {
@@ -331,6 +346,14 @@ func TestAccountChangeRefusedWhileInUse(t *testing.T) {
 	if err := fx.in.ValidateSettings(ctx, cur, map[string]any{"account_id": "acc2"}, nil); err != nil {
 		t.Fatalf("nothing on the account yet: %v", err)
 	}
+	// live inputs on the account (no signing key yet) also hold the account
+	if _, err := fx.db.Exec(`INSERT INTO tv_remote_inputs (id, cf_uid, name) VALUES ('i1', 'cfin1', 'maktaba-x-1')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.in.ValidateSettings(ctx, cur, map[string]any{"account_id": "acc2"}, nil); err == nil {
+		t.Fatal("account change allowed while Maktaba has live inputs on it")
+	}
+	_, _ = fx.db.Exec(`DELETE FROM tv_remote_inputs`)
 	fx.ext.settings["customer_code"] = "abc123xyz"
 	_, _ = fx.in.Test(ctx)
 	err := fx.in.ValidateSettings(ctx, cur, map[string]any{"account_id": "acc2"}, nil)

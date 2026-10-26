@@ -366,6 +366,9 @@ func (c *Controller) Heartbeat(ctx context.Context, v Viewer, sessionID string) 
 	ch, err := c.st.channel(ctx, x.ChannelID)
 	if err != nil || !ch.enabled || !c.canRead(ch, v) || !viewerAllowed(s, c.named(ctx, s, v)) {
 		_ = c.st.setSession(ctx, x.ID, map[string]any{"ended_at": now, "end_reason": "access_lost"})
+		c.log().Info("tv_remote: session ended, access lost", "session_id", x.ID, "user_id", v.UserID,
+			"channel_id", x.ChannelID, "event", "tv_remote_end")
+		c.audit(ctx, "tv_remote.end", v.UserID, x.ID, map[string]any{"channel_id": x.ChannelID, "reason": "access_lost"})
 		c.Wake()
 		return Beat{State: "ended"}, refuse(http.StatusForbidden, "remote_not_allowed", "you may no longer watch this channel")
 	}
