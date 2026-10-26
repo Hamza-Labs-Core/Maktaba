@@ -126,8 +126,8 @@ of remote viewers, and remote viewers play it from Cloudflare with a signed link
 
    | Permission | Level | Needed for |
    |---|---|---|
-   | Account → **Stream** | **Edit** | live inputs, recordings, signing keys, live outputs (simulcast), storage use |
-   | Account → **Account Analytics** | **Read** | the minutes watched (budget). Optional: without it the estimate uses session minutes |
+   | Account → **Stream: Edit** | Edit | live inputs, recordings, signing keys, live outputs (simulcast), storage use |
+   | Account → **Account Analytics: Read** | Read | the minutes watched (budget). Optional: without it the estimate uses session minutes |
 
    *Account Resources*: include **only your account**. No zone permission is needed. Test connection
    reports a token without Stream access, or with Analytics missing, as its own line.

@@ -111,8 +111,6 @@ REVOKE ALL ON cluster_replica_beat FROM maktaba_worker;
 REVOKE ALL ON search_runs FROM maktaba_worker;
 -- slot 0150
 REVOKE ALL ON cluster_certs FROM maktaba_worker;
--- slot 0153
-REVOKE ALL ON tv_public_channels FROM maktaba_worker;
 `
 
 // groupNameRe is a group role's name groupSQL accepts.

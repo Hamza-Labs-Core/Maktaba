@@ -11,6 +11,10 @@
 -- (story 34.3, through Epic 32's push and relay). The site keeps its own state in the
 -- Worker, not here.
 --
+-- maktaba_worker keeps the default rights (slot 0103) on this table, as on every
+-- ordinary table: narrowing them here would be undone by an older release remaking
+-- its worker group (compat-prev), as slot 0152 found. The rows hold no secret.
+--
 CREATE TABLE IF NOT EXISTS tv_public_channels (
     channel_id           UUID        PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
     public               BOOLEAN     NOT NULL DEFAULT false,
@@ -21,18 +25,6 @@ CREATE TABLE IF NOT EXISTS tv_public_channels (
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_by           TEXT
 );
--- +goose StatementEnd
-
--- +goose StatementBegin
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
-        -- slot 0103's default privileges gave the group role rights on new tables: a
-        -- machine has nothing to do with the public site (the home API is the only reader).
-        REVOKE ALL ON tv_public_channels FROM maktaba_worker;
-    END IF;
-END
-$$;
 -- +goose StatementEnd
 
 -- +goose Down
