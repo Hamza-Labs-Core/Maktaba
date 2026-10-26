@@ -2,7 +2,8 @@
 # apt-install.sh <package>...: install Ubuntu packages on a CI runner without a stuck
 # mirror eating the job. The runner's third-party sources (Microsoft, Azure, ...) are
 # not read: every package Maktaba's CI installs comes from Ubuntu's own archive. Each
-# update gets 3 minutes, three tries, a 30 s network timeout per request.
+# update gets 3 minutes, three tries, a 30 s network timeout per request; the install
+# 4 minutes, twice, the second from Ubuntu's own archive.
 set -euo pipefail
 [ $# -gt 0 ] || { echo "usage: apt-install.sh <package>..." >&2; exit 2; }
 
@@ -24,4 +25,16 @@ for try in 1 2 3; do
   echo "::warning::apt-get update failed (try $try), trying again"
   sleep 10
 done
-sudo DEBIAN_FRONTEND=noninteractive timeout 600 apt-get "${opts[@]}" install -y -qq --no-install-recommends "$@"
+# the runner's mirror (azure.archive.ubuntu.com) has stalled a download for the whole
+# step: an install gets 4 minutes, and a second try reads Ubuntu's own archive
+for try in 1 2; do
+  if sudo DEBIAN_FRONTEND=noninteractive timeout 240 apt-get "${opts[@]}" install -y -qq --no-install-recommends "$@"; then
+    exit 0
+  fi
+  [ "$try" = 2 ] && { echo "::error::apt-get install failed twice" >&2; exit 1; }
+  echo "::warning::apt-get install failed or stalled (try $try), trying Ubuntu's own archive"
+  for f in /etc/apt/sources.list "$parts"/*.sources; do
+    [ -f "$f" ] && sudo sed -i 's#http://azure\.archive\.ubuntu\.com#http://archive.ubuntu.com#g' "$f"
+  done
+  sudo timeout 180 apt-get "${opts[@]}" update -qq || true
+done
