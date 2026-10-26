@@ -223,6 +223,13 @@ func askAgainAfter(asks int) time.Duration {
 	return min(d, homeDBAskMax)
 }
 
+// remakeMends reports whether a re-made access may mend a failure of code: never TLS (the
+// home requiring the machine's certificate, this machine not verifying the home's, a
+// plain connection a TLS-only home refuses): a new password changes none of it, and asked
+// for it the home made one the roles then no longer had, again and again. The home decides
+// the rest (its remakeWhy: a refused password, or a database that moved).
+func remakeMends(code string) bool { return code != "tls" }
+
 // homeDBWatch keeps this machine's last login to its home's database (update.state's
 // home_db).
 type homeDBWatch struct {
@@ -381,7 +388,7 @@ func (w *homeDBWatch) maybeAsk() {
 	}
 	w.mu.Lock()
 	st := w.st
-	if st == nil || st.OK || st.Healing || st.Fails < machineagent.ConfirmFails {
+	if st == nil || st.OK || st.Healing || st.Fails < machineagent.ConfirmFails || !remakeMends(st.Code) {
 		w.mu.Unlock()
 		return
 	}
@@ -478,12 +485,18 @@ func probeHomeDB(ctx context.Context) error {
 	if !n.Joined() {
 		return nil
 	}
-	dsn, err := n.HomeDSN(config.KeysDir())
+	dsn, err := homeDBDSN(n)
 	if err != nil {
 		return fmt.Errorf("%s", noCreds(err.Error()))
 	}
 	return pingDSN(ctx, dsn)
 }
+
+// homeDBDSN is how the check logs in: exactly as the roles do (supervisor.HomeDSN, the
+// machine's cluster-link certificate offered). Without it a home that requires the
+// certificate refused the check alone, and its failure had the home re-make a password
+// the roles then no longer had.
+func homeDBDSN(n config.NodeConfig) (string, error) { return supervisor.HomeDSNChecked(n) }
 
 // pingDSN opens dsn and pings it (lib/pq: a dsn that prefers TLS tries it, then none
 // when the server has no TLS).
@@ -546,6 +559,13 @@ func classifyHomeDB(err error) string {
 		return false
 	}
 	switch {
+	case has("requires a valid client certificate", "certificate", "x509", "tls:", "ssl is not enabled"):
+		// the certificate (the home requires the machine's, or this machine cannot verify
+		// the home's), or TLS the home does not have: no password's, never mended by a
+		// re-made access. (A plain connection a TLS-only home has no line for is "no
+		// encryption" under no_hba: the check's is plain only when the home says it has no
+		// TLS, where that is its pg_hba's.)
+		return "tls"
 	case has("password authentication failed", "28p01", "is not permitted to log in") ||
 		(has("role ") && has("does not exist")):
 		return "auth_failed"
@@ -555,7 +575,7 @@ func classifyHomeDB(err error) string {
 		return "no_database"
 	case has("connection refused", "actively refused"):
 		return "refused"
-	case has("x509", "certificate", "tls:", "ssl"):
+	case has("ssl"):
 		return "tls"
 	case has("timeout", "deadline exceeded", "no route to host", "no such host", "network is unreachable",
 		"i/o timeout", "host is down"):

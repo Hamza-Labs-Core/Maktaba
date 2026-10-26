@@ -14,6 +14,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
 // The home re-makes this machine's database access over the channel (its role made again
@@ -100,6 +101,60 @@ func TestHomeAccessOverTheChannel(t *testing.T) {
 	}
 }
 
+// A TLS failure (the home requires the machine's certificate) is never one this machine
+// asks the home to re-make its access for, however long it lasts: a new password does not
+// mend it, and the roles log in with the one they have.
+func TestHomeDBWatchNeverAsksForTLS(t *testing.T) {
+	now := time.Date(2026, 10, 26, 17, 0, 0, 0, time.UTC)
+	asked := 0
+	w := &homeDBWatch{probe: func(context.Context) error {
+		return errors.New("pq: connection requires a valid client certificate")
+	}, clock: func() time.Time { return now }, target: func() string { return "192.168.50.177:54329/maktaba" },
+		ask: func(machineagent.HomeDB) bool { asked++; return true }}
+	ctx := context.Background()
+	for range 200 { // over three hours of checks
+		now = now.Add(time.Minute)
+		w.check(ctx)
+		w.maybeAsk()
+	}
+	if st := w.State(); st.Code != "tls" || st.Fails < machineagent.ConfirmFails || asked != 0 {
+		t.Fatalf("state %+v, %d requests", st, asked)
+	}
+}
+
+// The check logs in exactly as the roles do (supervisor.HomeDSN): verifying the home's CA
+// and offering the machine's cluster-link certificate beside node.json.
+func TestHomeDBCheckOffersTheCertificate(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("MAKTABA_NODE_CONFIG", filepath.Join(dir, "node.json"))
+	t.Setenv("MAKTABA_CONFIG", filepath.Join(dir, "server.toml"))
+	for _, f := range []string{"cluster-node.crt", "cluster-node.key"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n := config.NodeConfig{NodeID: "1e943eda-0000-4000-8000-000000000001",
+		DatabaseURL: "postgres://maktaba_node_1e943eda:pw@192.168.50.177:54329/maktaba?sslmode=prefer",
+		DatabaseCA:  testCAPEM(t)}
+	dsn, err := homeDBDSN(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dsn != supervisor.HomeDSN(n) {
+		t.Fatalf("the check's %q is not the roles' %q", dsn, supervisor.HomeDSN(n))
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	if q.Get("sslmode") != "verify-ca" || q.Get("sslrootcert") == "" ||
+		q.Get("sslcert") != filepath.ToSlash(filepath.Join(dir, "cluster-node.crt")) ||
+		q.Get("sslkey") != filepath.ToSlash(filepath.Join(dir, "cluster-node.key")) {
+		t.Fatalf("the check's dsn: %v", q)
+	}
+}
+
 // Why a login to the home's database failed, as the home and the pages say it.
 func TestClassifyHomeDB(t *testing.T) {
 	for msg, want := range map[string]string{
@@ -111,6 +166,10 @@ func TestClassifyHomeDB(t *testing.T) {
 		`dial tcp 192.168.50.177:5432: connect: connection refused`:                                                            "refused",
 		`dial tcp 192.168.50.177:5432: connectex: No connection could be made because the target machine actively refused it.`: "refused",
 		`x509: certificate signed by unknown authority`:                                                                        "tls",
+		`pq: connection requires a valid client certificate`:                                                                   "tls",
+		`pq: certificate authentication failed for user "maktaba_node_1e943eda"`:                                               "tls",
+		`tls: failed to verify certificate: x509: certificate signed by unknown authority`:                                     "tls",
+		`pq: SSL is not enabled on the server`:                                                                                 "tls",
 		`dial tcp 10.0.0.9:5432: i/o timeout`:                                                                                  "unreachable",
 		`context deadline exceeded`:                                                                                            "unreachable",
 		`something else entirely`:                                                                                              "other",

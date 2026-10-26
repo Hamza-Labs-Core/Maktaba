@@ -1802,6 +1802,7 @@
   "machines.homeDb.answerCode.database_ca": "لا يستطيع الخادم الرئيسي قراءة شهادة قاعدة بياناته",
   "machines.homeDb.answerCode.rate_limited": "طلب الجهاز مرة أخرى قبل الأوان",
   "machines.homeDb.answerCode.not_taken": "لم يأخذ الجهاز تسجيل الدخول الذي مُنح له",
+  "machines.homeDb.answerCode.not_mendable": "لن يُصلحه دخول جديد: فشل اتصاله الآمن، لا كلمة مروره",
   "machines.homeDb.answerCode.other": "خطأ تذكره التفاصيل",
   "machines.status.draining": "يُنهي أعماله",
   "machines.status.revoked": "أُلغيت صلاحيته",

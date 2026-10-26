@@ -371,10 +371,21 @@ func NodeStateDir(cfg config.Config) string { return filepath.Join(cfg.Server.Da
 var nodeConfig = config.LocalNodeConfig
 
 // HomeDSN is a node's connection to its home's database (config.NodeConfig.HomeDSN:
-// verifying the home's CA, pinned in the keys directory). A CA that cannot be pinned is
-// said: the connection still verifies, so it fails rather than trusts.
+// verifying the home's CA, pinned in the keys directory), offering the machine's
+// cluster-link certificate (withClientCert). A CA that cannot be pinned is said: the
+// connection still verifies, so it fails rather than trusts. Every connection of a node to
+// its home's database is this one (the roles, the check of its login, its copy's calls):
+// a home that requires the certificate refuses one without it, and its refusal is TLS,
+// which a new password never mends.
 func HomeDSN(n config.NodeConfig) string {
 	return withClientCert(homeDSN(n), nodeConfigDir())
+}
+
+// HomeDSNChecked is HomeDSN with a CA that cannot be pinned returned (the DSN still
+// verifies against what is pinned already) rather than said.
+func HomeDSNChecked(n config.NodeConfig) (string, error) {
+	dsn, err := n.HomeDSN(config.KeysDir())
+	return withClientCert(dsn, nodeConfigDir()), err
 }
 
 // withClientCert offers the machine's cluster-link certificate (beside node.json, story

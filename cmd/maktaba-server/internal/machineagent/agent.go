@@ -128,7 +128,7 @@ type HomeDB struct {
 // AccessAnswer is the home's answer to this machine's request for its database access: ok
 // (the access was made again and sent), else why not, with its code (the home's
 // cluster.AccessError codes: not_approved, unknown, cannot_create_roles, cannot_alter_role,
-// no_worker_group, term, database_ca, rate_limited, not_taken, other).
+// no_worker_group, term, database_ca, rate_limited, not_taken, not_mendable, other).
 type AccessAnswer struct {
 	OK     bool      `json:"ok"`
 	Code   string    `json:"code,omitempty"`

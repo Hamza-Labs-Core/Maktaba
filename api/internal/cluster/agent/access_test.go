@@ -232,6 +232,74 @@ func TestEnsureAccessOnlyWhenItMends(t *testing.T) {
 	waitUntil(t, func() bool { return g.grants() == 1 })
 }
 
+// A machine's own request for a failed login a new password does not mend (TLS at the
+// right address: the home requires its certificate) gets none: refused (not_mendable),
+// nothing re-made, however often it asks. TLS where the database moved, and a role that
+// does not log in on this home's database, are made again.
+func TestATLSFailureIsNotMadeAgainOnRequest(t *testing.T) {
+	f := newFixture(t)
+	id, priv := f.approvedNode("studio-gpu")
+	a, err := f.dialAgent(helloOpts{kind: "node", nodeID: id, nodePriv: priv, process: "supervisor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &fakeGranter{usable: true}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go f.hub.EnsureAccess(ctx, g, time.Hour, nil)
+	waitUntil(t, func() bool {
+		f.hub.acc.mu.Lock()
+		defer f.hub.acc.mu.Unlock()
+		return f.hub.acc.granter != nil
+	})
+	again := func() {
+		f.hub.acc.mu.Lock()
+		f.hub.acc.asked = nil // past the rate limit
+		f.hub.acc.mu.Unlock()
+	}
+	tls := map[string]any{"ok": false, "code": "tls", "fails": 4, "target": "192.168.50.177:54329/maktaba",
+		"detail": "pq: connection requires a valid client certificate"}
+	for i := range 3 {
+		again()
+		a.send(map[string]any{"t": "access.request", "id": "ask-tls", "home_db": tls})
+		ans := a.recvType("access.answer")
+		if ans["ok"] != false || ans["code"] != cluster.AccessNotMendable || !strings.Contains(ans["reason"].(string), "tls") {
+			t.Fatalf("request %d: %v", i+1, ans)
+		}
+	}
+	// the same, said in its update.state rather than in the request
+	again()
+	a.send(map[string]any{"t": "update.state", "version": "1.5.0", "home_db": tls})
+	waitUntil(t, func() bool { return len(f.hub.MachinesOffDatabase()) == 1 })
+	a.send(map[string]any{"t": "access.request", "id": "ask-state"})
+	if ans := a.recvType("access.answer"); ans["code"] != cluster.AccessNotMendable {
+		t.Fatalf("from its update.state: %v", ans)
+	}
+	if g.grants() != 0 {
+		t.Fatalf("a TLS failure rotated the access: %d", g.grants())
+	}
+	// TLS where the database moved (its old port): made again
+	again()
+	a.send(map[string]any{"t": "access.request", "id": "ask-moved",
+		"home_db": map[string]any{"ok": false, "code": "tls", "fails": 4, "target": "192.168.50.177:5432/maktaba"}})
+	cmd := a.recvType("cmd")
+	a.send(map[string]any{"t": "cmd.result", "id": cmd["id"], "ok": true})
+	if ans := a.recvType("access.answer"); ans["ok"] != true {
+		t.Fatalf("moved: %v", ans)
+	}
+	// its role does not log in on this home's database: made again, whatever its failure
+	g.mu.Lock()
+	g.usable = false
+	g.mu.Unlock()
+	again()
+	a.send(map[string]any{"t": "access.request", "id": "ask-role", "home_db": tls})
+	cmd = a.recvType("cmd")
+	a.send(map[string]any{"t": "cmd.result", "id": cmd["id"], "ok": true})
+	if ans := a.recvType("access.answer"); ans["ok"] != true || g.grants() != 2 {
+		t.Fatalf("role unusable: %v (%d grants)", ans, g.grants())
+	}
+}
+
 // A machine's sessions say its host (the drain finds its running jobs by it).
 func TestNodeHosts(t *testing.T) {
 	f := newFixture(t)

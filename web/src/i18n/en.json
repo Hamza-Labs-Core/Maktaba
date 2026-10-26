@@ -1802,6 +1802,7 @@
   "machines.homeDb.answerCode.database_ca": "the home cannot read its database's certificate",
   "machines.homeDb.answerCode.rate_limited": "the machine asked again too soon",
   "machines.homeDb.answerCode.not_taken": "the machine did not take the login it was given",
+  "machines.homeDb.answerCode.not_mendable": "a new login would not mend it: its secure connection failed, not its password",
   "machines.homeDb.answerCode.other": "an error the details say",
   "machines.status.draining": "Draining",
   "machines.status.revoked": "Revoked",
