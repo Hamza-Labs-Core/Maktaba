@@ -1,9 +1,10 @@
-// Story 16.5: "Help improve Maktaba", the first-launch question about anonymous
-// usage analytics. Not a dialog: a notice at the top of the page that the app
-// stays usable around, asked once per device until answered. Nothing is
-// collected before "Share usage data"; Settings → Privacy changes the answer
-// later. It also starts the collection on a device that opted in, and counts
-// the areas of the app it visits.
+// Story 16.5: "Help improve Maktaba", this app's one question about sharing its
+// anonymous usage data with Maktaba (its makers, not the home's admin). Not a
+// dialog: a notice at the top of the page that the app stays usable around,
+// asked once per app install until answered ("Not now" is an answer: off).
+// Nothing is collected before "Share"; Settings → Privacy changes the answer
+// later. It also starts the collection where the user agreed, and counts the
+// areas of the app it visits.
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useI18n } from "../lib/i18n";
@@ -23,7 +24,6 @@ export function TelemetryScope() {
       <p className="mkt-telemetry__label">{t("telemetry.collected")}</p>
       <ul>
         <li>{t("telemetry.bullet.version")}</li>
-        <li>{t("telemetry.bullet.librarySize")}</li>
         <li>{t("telemetry.bullet.features")}</li>
         <li>{t("telemetry.bullet.errors")}</li>
       </ul>
@@ -42,7 +42,7 @@ export function TelemetryPrompt() {
 
   // starts once (a no-op later, and before an opt-in), then counts each route
   useEffect(() => {
-    startTelemetry(pathname);
+    startTelemetry();
     noteRoute(pathname);
   }, [pathname]);
 
@@ -68,7 +68,8 @@ export function TelemetryPrompt() {
           type="button"
           className="mkt-btn mkt-btn--primary"
           onClick={() => {
-            optIn(pathname);
+            optIn();
+            noteRoute(pathname);
             setOpen(false);
           }}
         >

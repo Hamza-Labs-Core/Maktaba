@@ -597,6 +597,7 @@ export async function pollVersionUntilChanged(
 function PrivacyTab() {
   const { t } = useI18n();
   const toast = useToast();
+  const { user } = useAuth();
   const [tracking, setTracking] = useState<boolean | null>(null);
   const [history, setHistory] = useState<HistoryItem[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -663,7 +664,7 @@ function PrivacyTab() {
       )}
 
       <hr />
-      <TelemetrySettings />
+      <TelemetrySettings isAdmin={user?.is_admin === true} />
 
       <hr />
       <h2>{t("settings.privacy.history")}</h2>

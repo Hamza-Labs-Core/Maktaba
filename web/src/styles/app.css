@@ -2917,6 +2917,18 @@ a.mkt-guide__chanhead:hover {
   margin: var(--space-1) 0;
   padding-inline-start: var(--space-5);
 }
+.mkt-telemetry-settings__server {
+  margin-block-start: var(--space-5);
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--color-border);
+}
+.mkt-telemetry-settings__preview {
+  max-block-size: 20rem;
+  overflow: auto;
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 /* A node that cannot reach its home: readable, changes refused */
 .mkt-home-offline {

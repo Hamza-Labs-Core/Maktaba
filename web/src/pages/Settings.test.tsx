@@ -156,6 +156,16 @@ function mockGets(over: Table = {}) {
     "/api/me/history": () => structuredClone(HISTORY),
     "/api/models": [],
     "/api/rules": { sections: [] },
+    // an admin's Privacy tab also reads the server's usage-data switch (story 16.5)
+    "/api/telemetry/server": {
+      sharing: false,
+      enabled: true,
+      pending: 0,
+      oldest_pending: null,
+      last_sent_at: null,
+      last_error: "",
+      preview: {},
+    },
     ...over,
   });
 }
@@ -491,7 +501,7 @@ describe("Settings account (test-cases/settings-account.md)", () => {
       [
         "/settings/privacy",
         () => screen.findByRole("heading", { name: "Activity tracking" }),
-        ["/api/me/"],
+        ["/api/me/", "/api/telemetry/server"],
       ],
       [
         "/settings/models",

@@ -1,40 +1,44 @@
-// Story 16.5: the web app's anonymous usage analytics, strictly opt-in. Until
-// the user opts in (the prompt, or Settings → Privacy) nothing is collected or
-// sent. Once in, this device sends to its own server's sink (story 16.7,
-// POST /api/telemetry) under a pseudonym made at opt-in:
+// Story 16.5: this app's anonymous usage data for Maktaba (its makers, to
+// improve it), strictly opt-in and this app's own: the home's admin cannot turn
+// it on for anyone, and the admin's switch for the server's own data does not
+// cover it. Until this app's user agrees (the ask, or Settings → Privacy),
+// nothing is collected or sent. Once in, the app posts its batches to its home
+// (POST /api/telemetry/app, with the consent in the body); the home scrubs them
+// and forwards them to Maktaba Cloud. The app itself never reaches the cloud.
 //
-//   - app.open: the app's version, OS and locale, the library's size as a range
+//   - app.open: once a launch
 //   - feature.used: how often each part of the app was opened (a count per area)
 //   - error.uncaught: an error's message and first five frames, without paths,
-//     the server's address or query strings
+//     addresses or query strings
 //
-// Never a file name, a transcript, a search query, a user or an address. A
-// server whose admin set [telemetry] enabled = "off" stores nothing it gets.
+// The app, its version, platform and kind of device are the X-Maktaba-Client
+// header's (Epic 44); the language is the page's. Never a file name, a title, a
+// transcript, a search, a user or an address; the id is random per install.
 import { api } from "../api";
-import { isDesktop } from "../desktop";
-import { nativePlatform } from "../native";
+import { clientHeaderValue } from "../clientHeader";
 import {
   allPseudonyms,
   dropPseudonyms,
   ensurePseudonym,
+  forgetLegacyConsent,
   pseudonym,
   readConsent,
   retirePseudonym,
   writeConsent,
 } from "./consent";
 import { TelemetryQueue, type PayloadValue, type TelemetryEvent } from "./queue";
-import { firstFrames, librarySizeBucket, routeFeature, sanitizeMessage } from "./sanitize";
+import { firstFrames, routeFeature, sanitizeMessage } from "./sanitize";
 
-/** the event kinds the server allows (story 16.7's allow-list), with their fields */
+/** the event kinds the home allows (story 16.7's allow-list), with their fields */
 export const Events = {
-  APP_OPEN: { kind: "app.open", fields: ["cold_start", "route", "library_size_bucket"] },
+  APP_OPEN: { kind: "app.open", fields: ["cold_start"] },
   FEATURE_USED: { kind: "feature.used", fields: ["feature", "count"] },
   ERROR_UNCAUGHT: { kind: "error.uncaught", fields: ["error_message", "stack_first_5"] },
 } as const;
 
 export type EventName = keyof typeof Events;
 
-const QUEUE_KEY = "mkt:telemetry:queue";
+const QUEUE_KEY = "mkt:usage:queue";
 // feature counts are summed and sent every few minutes, not per page view
 const FEATURE_FLUSH_MS = 5 * 60_000;
 // a page that throws in a loop sends a few reports, not thousands
@@ -47,7 +51,9 @@ let errorsSent = 0;
 let opened = false;
 let detach: (() => void) | null = null;
 
-/** enabled reports whether this device opted in. */
+forgetLegacyConsent();
+
+/** telemetryEnabled reports whether this app's user agreed. */
 export function telemetryEnabled(): boolean {
   return readConsent()?.granted === true;
 }
@@ -57,32 +63,23 @@ export function telemetryDecided(): boolean {
   return readConsent() !== null;
 }
 
-function appVersion(): string {
-  return import.meta.env?.VITE_APP_VERSION ?? "dev";
+/** the header's parts: `<app>/<version> (<platform>; <device>)` */
+export function clientInfo(): {
+  app: string;
+  app_version: string;
+  platform: string;
+  form_factor: string;
+} {
+  const m = clientHeaderValue().match(/^([^/]+)\/(\S+) \(([^;]+); ([^)]+)\)$/);
+  if (!m) return { app: "web", app_version: "dev", platform: "web", form_factor: "" };
+  return { app: m[1], app_version: m[2], platform: m[3], form_factor: m[4] };
 }
 
-/** the OS family and, when the browser says, its version: never the user agent itself */
-export function osInfo(): { os: string; os_version: string } {
-  const native = nativePlatform();
-  if (native !== "web") return { os: native, os_version: "" };
+/** the OS version, when the browser says it: never the user agent itself */
+function osVersion(): string {
   const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
-  const pick = (re: RegExp) => (ua.match(re)?.[1] ?? "").replace(/_/g, ".");
-  let os = "other";
-  let version = "";
-  if (/iPhone|iPad/.test(ua)) {
-    os = "ios";
-    version = pick(/OS (\d+[_.]\d+)/);
-  } else if (/Android/.test(ua)) {
-    os = "android";
-    version = pick(/Android (\d+)/);
-  } else if (/Mac OS X/.test(ua)) {
-    os = "macos";
-  } else if (/Windows/.test(ua)) {
-    os = "windows";
-  } else if (/Linux|CrOS/.test(ua)) {
-    os = "linux";
-  }
-  return { os: isDesktop() ? `${os}-desktop` : os, os_version: version };
+  const m = ua.match(/OS (\d+[_.]\d+)/) ?? ua.match(/Android (\d+)/);
+  return (m?.[1] ?? "").replace(/_/g, ".");
 }
 
 function locale(): string {
@@ -90,20 +87,19 @@ function locale(): string {
 }
 
 async function send(batch: TelemetryEvent[]): Promise<void> {
-  const p = pseudonym();
-  if (!p) return; // forgotten while the batch waited
-  const { os, os_version } = osInfo();
-  await api.post("/api/telemetry", {
-    device_pseudonym: p,
-    app_version: appVersion(),
-    os,
-    os_version,
+  const id = pseudonym();
+  if (!id || !telemetryEnabled()) return; // turned off while the batch waited
+  await api.post("/api/telemetry/app", {
+    consent: true,
+    install_id: id,
+    ...clientInfo(),
+    os_version: osVersion(),
     locale: locale(),
     events: batch,
   });
 }
 
-/** track queues an event; a no-op unless this device opted in. */
+/** track queues an event; a no-op unless this app's user agreed. */
 export function track(name: EventName, payload: Record<string, PayloadValue> = {}): void {
   if (!queue) return;
   const allowed: readonly string[] = Events[name].fields;
@@ -111,7 +107,7 @@ export function track(name: EventName, payload: Record<string, PayloadValue> = {
   for (const [k, v] of Object.entries(payload)) {
     if (allowed.includes(k)) kept[k] = v;
   }
-  queue.enqueue({ event_kind: Events[name].kind, payload: kept, ts: new Date().toISOString() });
+  queue.enqueue({ kind: Events[name].kind, payload: kept, ts: new Date().toISOString() });
 }
 
 /** noteRoute counts a visit to the route's area of the app (feature.used). */
@@ -161,41 +157,19 @@ function listen(): () => void {
   };
 }
 
-async function libraryBucket(): Promise<string | null> {
-  try {
-    const libs = await api.get<{ items?: { id: string }[] }>("/api/libraries");
-    let total = 0;
-    for (const l of libs.items ?? []) {
-      const s = await api.get<{ total_videos?: number }>(
-        `/api/libraries/${encodeURIComponent(l.id)}/stats`
-      );
-      total += s.total_videos ?? 0;
-    }
-    return librarySizeBucket(total);
-  } catch {
-    return null;
-  }
-}
-
 /**
- * startTelemetry begins collecting when this device opted in (at boot, and
+ * startTelemetry begins collecting when this app's user agreed (at boot, and
  * right after an opt-in); otherwise it does nothing. app.open is sent once a
  * launch.
  */
-export function startTelemetry(pathname = ""): void {
+export function startTelemetry(): void {
   if (queue || !telemetryEnabled()) return;
   ensurePseudonym();
   queue = new TelemetryQueue({ send, storageKey: QUEUE_KEY });
   detach = listen();
   if (!opened) {
     opened = true;
-    const route = routeFeature(pathname) ?? "";
-    void libraryBucket().then((bucket) => {
-      const payload: Record<string, PayloadValue> = { cold_start: true };
-      if (route) payload.route = route;
-      if (bucket) payload.library_size_bucket = bucket;
-      track("APP_OPEN", payload);
-    });
+    track("APP_OPEN", { cold_start: true });
   }
 }
 
@@ -215,14 +189,15 @@ function stopTelemetry(): void {
 }
 
 /** optIn records consent, makes a pseudonym and starts collecting. */
-export function optIn(pathname = ""): void {
+export function optIn(): void {
   writeConsent(true);
-  startTelemetry(pathname);
+  startTelemetry();
 }
 
 /**
  * optOut records the refusal and stops at once: waiting events are dropped and
- * nothing more is queued. The data already sent stays until "Forget my device".
+ * nothing more is queued. What was already sent stays until "Delete what this
+ * app sent".
  */
 export function optOut(): void {
   writeConsent(false);
@@ -231,10 +206,11 @@ export function optOut(): void {
 }
 
 /**
- * forgetDevice deletes everything this device sent (each pseudonym it used) from
- * the server and drops the waiting events. Still opted in, it carries on under a
- * fresh pseudonym. Throws when a delete fails (the pseudonyms not yet deleted are
- * kept, so it can be tried again).
+ * forgetDevice asks for everything this app sent (under each id it used) to be
+ * deleted: the home drops what still waits and asks Maktaba Cloud to delete the
+ * rest. The waiting events go too. Still opted in, it carries on under a fresh
+ * id. Throws when a delete fails (the ids not yet done are kept, so it can be
+ * tried again).
  */
 export async function forgetDevice(): Promise<void> {
   const wasOn = queue !== null;
@@ -242,7 +218,7 @@ export async function forgetDevice(): Promise<void> {
   const done: string[] = [];
   try {
     for (const p of allPseudonyms()) {
-      await api.delete(`/api/telemetry/devices/${encodeURIComponent(p)}`);
+      await api.delete(`/api/telemetry/app/${encodeURIComponent(p)}`);
       done.push(p);
     }
   } finally {
@@ -251,7 +227,7 @@ export async function forgetDevice(): Promise<void> {
   }
 }
 
-/** hasDeviceData reports whether this device ever sent under a pseudonym it still holds. */
+/** hasDeviceData reports whether this app ever sent under an id it still holds. */
 export function hasDeviceData(): boolean {
   return allPseudonyms().length > 0;
 }

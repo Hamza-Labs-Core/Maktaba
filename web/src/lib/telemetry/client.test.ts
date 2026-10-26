@@ -1,6 +1,8 @@
-// Story 16.5: nothing is collected before an opt-in; the pseudonym is made at
-// opt-in and a fresh one after an opt-out; toggling off stops at once; "Forget my
-// device" deletes every pseudonym this device used.
+// Story 16.5: nothing is collected before this app's user agrees; the install id
+// is made at opt-in and a fresh one after an opt-out; toggling off stops at once;
+// "Delete what this app sent" deletes under every id this app used. The batch
+// goes to the home's pipe with the consent in it, never to the cloud directly,
+// and asks nothing about the libraries.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { get, post, del } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), del: vi.fn() }));
@@ -32,14 +34,24 @@ describe("telemetry client", () => {
     del.mockReset().mockResolvedValue(undefined);
   });
 
-  it("makes 16-character base32 pseudonyms", () => {
+  it("makes 24-character base32 install ids", () => {
     const a = makePseudonym();
-    expect(a).toMatch(/^[A-Z2-7]{16}$/);
+    expect(a).toMatch(/^[A-Z2-7]{24}$/);
     expect(makePseudonym()).not.toBe(a);
   });
 
+  it("forgets a yes given when the data went to the home's admin", async () => {
+    localStorage.setItem("mkt:telemetry:consent", JSON.stringify({ granted: true, at: "x" }));
+    localStorage.setItem("mkt:telemetry:pseudonym", "ABCDEFGHJKMNPQRS");
+    vi.resetModules();
+    const fresh = await import("./client");
+    expect(fresh.telemetryDecided()).toBe(false);
+    expect(fresh.telemetryEnabled()).toBe(false);
+    expect(localStorage.getItem("mkt:telemetry:pseudonym")).toBeNull();
+  });
+
   it("collects nothing before an opt-in, nor after a decline", () => {
-    startTelemetry("/library");
+    startTelemetry();
     track("APP_OPEN", { cold_start: true });
     reportError(new Error("boom"));
     noteRoute("/search");
@@ -53,20 +65,20 @@ describe("telemetry client", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
-  it("opting in makes a pseudonym, keeps it for the session, and queues events", () => {
-    optIn("/library");
+  it("opting in makes an install id, keeps it for the session, and queues events", () => {
+    optIn();
     const p = pseudonym();
-    expect(p).toMatch(/^[A-Z2-7]{16}$/);
+    expect(p).toMatch(/^[A-Z2-7]{24}$/);
     startTelemetry();
     expect(pseudonym()).toBe(p);
     track("FEATURE_USED", { feature: "search", count: 2 });
-    expect(queuedForTests()).toBe(1);
+    expect(queuedForTests()).toBe(2); // app.open, once a launch, and this
   });
 
-  it("sends under the pseudonym, with only the fields a kind allows", async () => {
+  it("sends to the home's pipe with the consent, under the install id, with only the fields a kind allows", async () => {
     vi.useFakeTimers();
     try {
-      optIn("/search");
+      optIn();
       track("FEATURE_USED", { feature: "search", count: 1, query: "fiqh" } as never);
       await vi.advanceTimersByTimeAsync(31_000);
     } finally {
@@ -75,11 +87,21 @@ describe("telemetry client", () => {
     expect(post).toHaveBeenCalledTimes(1);
     const [path, body] = post.mock.calls[0] as [
       string,
-      { device_pseudonym: string; events: { event_kind: string; payload: object }[] },
+      {
+        consent: boolean;
+        install_id: string;
+        app: string;
+        platform: string;
+        events: { kind: string; payload: object }[];
+      },
     ];
-    expect(path).toBe("/api/telemetry");
-    expect(body.device_pseudonym).toBe(pseudonym());
-    const kinds = body.events.map((e) => e.event_kind);
+    expect(path).toBe("/api/telemetry/app");
+    expect(body.consent).toBe(true);
+    expect(body.install_id).toBe(pseudonym());
+    expect(body.app).toBe("web");
+    expect(body.platform).toMatch(/^[a-z0-9._-]+$/);
+    expect(get).not.toHaveBeenCalled(); // no library requests
+    const kinds = body.events.map((e) => e.kind);
     expect(kinds).toContain("app.open");
     expect(kinds).toContain("feature.used");
     for (const e of body.events) expect(e.payload).not.toHaveProperty("query");
@@ -96,11 +118,11 @@ describe("telemetry client", () => {
     expect(pseudonym()).toBeNull();
     optIn();
     expect(pseudonym()).not.toBe(first);
-    // the old one is kept for "Forget my device"
+    // the old one is kept for "Delete what this app sent"
     expect(allPseudonyms()).toContain(first);
   });
 
-  it("Forget my device deletes every pseudonym this device used and empties the queue", async () => {
+  it("Delete what this app sent covers every id this app used and empties the queue", async () => {
     optIn();
     const first = pseudonym() as string;
     optOut();
@@ -108,16 +130,16 @@ describe("telemetry client", () => {
     const second = pseudonym() as string;
     track("APP_OPEN");
     await forgetDevice();
-    expect(del).toHaveBeenCalledWith(`/api/telemetry/devices/${first}`);
-    expect(del).toHaveBeenCalledWith(`/api/telemetry/devices/${second}`);
+    expect(del).toHaveBeenCalledWith(`/api/telemetry/app/${first}`);
+    expect(del).toHaveBeenCalledWith(`/api/telemetry/app/${second}`);
     expect(allPseudonyms()).not.toContain(first);
     expect(allPseudonyms()).not.toContain(second);
-    // still opted in: it carries on under a fresh pseudonym, with nothing queued
+    // still opted in: it carries on under a fresh id, with nothing queued
     expect(pseudonym()).not.toBe(second);
     expect(queuedForTests()).toBe(0);
   });
 
-  it("keeps a pseudonym whose delete failed, to try again", async () => {
+  it("keeps an id whose delete failed, to try again", async () => {
     optIn();
     const p = pseudonym();
     optOut();

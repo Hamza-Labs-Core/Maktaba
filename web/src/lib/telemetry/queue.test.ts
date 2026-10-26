@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { TelemetryQueue, type TelemetryEvent } from "./queue";
 
 const ev = (i: number): TelemetryEvent => ({
-  event_kind: "app.open",
+  kind: "app.open",
   payload: { n: i },
   ts: "2026-10-26T00:00:00Z",
 });
@@ -54,7 +54,7 @@ describe("TelemetryQueue", () => {
     expect(send).toHaveBeenCalledTimes(4);
     expect(times.slice(1).map((t, i) => t - times[i])).toEqual([2000, 4000, 8000]);
     expect(q.size).toBe(0);
-    expect(q.backoffMs(10)).toBe(60_000);
+    expect(q.backoffMs(10)).toBe(300_000);
   });
 
   it("keeps the events through a dropped network", async () => {

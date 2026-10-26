@@ -1,6 +1,6 @@
 // Story 16.5: what an error report may carry, and the coarse values sent.
 import { describe, it, expect } from "vitest";
-import { firstFrames, librarySizeBucket, routeFeature, sanitizeMessage } from "./sanitize";
+import { firstFrames, routeFeature, sanitizeMessage } from "./sanitize";
 
 describe("sanitize", () => {
   it("strips home folders on Unix and Windows", () => {
@@ -36,13 +36,5 @@ describe("sanitize", () => {
     expect(routeFeature("/videos/3f2a")).toBe("videos");
     expect(routeFeature("/search")).toBe("search");
     expect(routeFeature("/nope")).toBeNull();
-  });
-
-  it("reports a library's size as a range", () => {
-    expect(librarySizeBucket(0)).toBe("0");
-    expect(librarySizeBucket(42)).toBe("1-99");
-    expect(librarySizeBucket(999)).toBe("100-999");
-    expect(librarySizeBucket(5000)).toBe("1k-10k");
-    expect(librarySizeBucket(10000)).toBe("10k+");
   });
 });
