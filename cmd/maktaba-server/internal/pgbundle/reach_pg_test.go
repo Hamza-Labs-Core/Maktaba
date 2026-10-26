@@ -136,9 +136,9 @@ func TestWatchReachFollowsTheCluster(t *testing.T) {
 	     INSERT INTO app_settings VALUES ('rules.cluster', '{"link_mode": "require"}');
 	     ALTER TABLE cluster_nodes ADD COLUMN db_role text, ADD COLUMN cert_serial text,
 	       ADD COLUMN cert_not_after timestamptz, ADD COLUMN update_state jsonb NOT NULL DEFAULT '{}';
-	     CREATE TABLE cluster_certs (serial text PRIMARY KEY, not_before timestamptz NOT NULL,
-	       not_after timestamptz NOT NULL, revoked_at timestamptz);
-	     INSERT INTO cluster_certs VALUES ('0a', now() - interval '1 hour', now() + interval '30 days', NULL);
+	     CREATE TABLE cluster_certs (serial text PRIMARY KEY, subject text NOT NULL DEFAULT '',
+	       not_before timestamptz NOT NULL, not_after timestamptz NOT NULL, revoked_at timestamptz);
+	     INSERT INTO cluster_certs VALUES ('0a', '` + role + `', now() - interval '1 hour', now() + interval '30 days', NULL);
 	     UPDATE cluster_nodes SET db_role = '` + role + `', cert_serial = '0a', cert_not_after = now() + interval '30 days'
 	       WHERE state = 'approved';`)
 	look()

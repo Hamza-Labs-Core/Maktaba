@@ -137,8 +137,13 @@ func TestRequiredLinkAsksForClientCertificates(t *testing.T) {
 	if hba := b.hbaConf(); strings.Contains(hba, "clientcert") || !strings.Contains(hba, "+"+WorkerGroup) {
 		t.Fatalf("required, but no machine presents a certificate:\n%s", hba)
 	}
+	// a machine joined before 2026-10-18 keeps its 8-hex role: its own line too
+	keep(Reach{Open: true, Require: true, CertRoles: []string{"maktaba_node_0b6f3c1e"}})
+	if hba := b.hbaConf(); !strings.Contains(hba, "maktaba_node_0b6f3c1e samenet         scram-sha-256 clientcert=verify-full") {
+		t.Fatalf("an 8-hex role:\n%s", hba)
+	}
 	// a name that is not a machine's role never goes in
-	keep(Reach{Open: true, Require: true, CertRoles: []string{"postgres", "all", "+maktaba_worker"}})
+	keep(Reach{Open: true, Require: true, CertRoles: []string{"postgres", "all", "+maktaba_worker", "maktaba_node_0b6f3c1e2a"}})
 	if hba := b.hbaConf(); strings.Contains(hba, "clientcert") {
 		t.Fatalf("a name that is no machine's role:\n%s", hba)
 	}
