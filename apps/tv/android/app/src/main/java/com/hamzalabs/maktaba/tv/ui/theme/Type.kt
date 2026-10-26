@@ -7,7 +7,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Typography
-import com.hamzalabs.maktaba.tv.R
+import com.hamzalabs.maktaba.core.R
 
 /**
  * Bundled fonts (SIL OFL 1.1 — licence texts ship in

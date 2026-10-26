@@ -1,110 +1,102 @@
 package com.hamzalabs.maktaba.tv.ui.screens
 
+import android.view.KeyEvent
+import androidx.annotation.OptIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import com.hamzalabs.maktaba.tv.data.repository.MediaRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Text
+import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.tv.MaktabaTVApp
+import com.hamzalabs.maktaba.tv.R
+import com.hamzalabs.maktaba.tv.playback.TvPlayback
+import com.hamzalabs.maktaba.tv.ui.components.MaktabaButton
+import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 
 /**
- * Full-screen HLS player. Media3's [PlayerView] provides the native TV
- * transport controls (play/pause/seek with the D-pad) so we don't
- * re-implement them. The [ExoPlayer] is built once and released in the
- * [DisposableEffect] teardown to avoid leaking the codec/surface.
- *
- * On top of playback this screen drives the watch-analytics lifecycle
- * (Story 29.1): it opens a session, beats every 30 s with the current
- * position, and closes the session on playback-end or screen teardown.
+ * Full screen playback. Media3's [PlayerView] is the transport (play/pause, seek with the
+ * D-pad, the audio and subtitle choices); [TvPlayback] owns the stream session. Back stops it:
+ * the last position goes to the home, so Continue Watching and Resume pick up here.
  */
-@androidx.annotation.OptIn(UnstableApi::class)
+@OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(
-    repository: MediaRepository,
-    videoId: String,
-    hlsUrl: String? = null,
+    app: MaktabaTVApp,
+    client: ApiClient,
+    video: String,
+    title: String,
+    startMs: Long,
+    onBack: () -> Unit,
+    signedOut: () -> Unit,
 ) {
     val context = LocalContext.current
-    val manifest = hlsUrl ?: repository.hlsUrl(videoId)
-
-    val player = remember {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(manifest))
-            prepare()
-            playWhenReady = true
-        }
+    val scope = rememberCoroutineScope()
+    val playback = remember(video, startMs) { TvPlayback(context, client, video, startMs, scope, app.background, signedOut) }
+    DisposableEffect(playback) {
+        playback.start()
+        onDispose { playback.stop() }
     }
 
-    DisposableEffect(Unit) {
-        // A scope detached from composition so the final stop() in
-        // onDispose still runs after the screen is torn down. The
-        // heartbeat loop and end-listener share it; it is cancelled in
-        // onDispose after the closing stop() is dispatched.
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        // Holds the live session id. null = tracking paused or closed.
-        var sessionId: String? = null
-
-        fun positionSec(): Long = (player.currentPosition / 1000).coerceAtLeast(0)
-
-        // Close once; idempotent via the id-null guard. Reads position on
-        // the player's (main) thread before dispatching the POST.
-        fun stop() {
-            val id = sessionId ?: return
-            sessionId = null
-            val pos = positionSec()
-            scope.launch { repository.watchStop(id, pos) }
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        val player = playback.player
+        if (player != null) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        useController = true
+                        setShowSubtitleButton(true)
+                        controllerShowTimeoutMs = 4_000
+                        keepScreenOn = true
+                        isFocusable = true
+                        isFocusableInTouchMode = true
+                        // the remote's keys go to the transport; Back leaves (Compose's BackHandler)
+                        setOnKeyListener { _, code, event ->
+                            if (code == KeyEvent.KEYCODE_BACK) return@setOnKeyListener false
+                            if (event.action == KeyEvent.ACTION_DOWN && !isControllerFullyVisible) showController()
+                            dispatchMediaKeyEvent(event)
+                        }
+                    }
+                },
+                update = { view ->
+                    if (view.player !== player) view.player = player
+                    if (!view.hasFocus()) view.requestFocus()
+                },
+            )
         }
-
-        // Open the session, then beat every 30 s while it is open.
-        val beatJob = scope.launch {
-            sessionId = repository.watchStart(videoId).getOrNull()
-            if (sessionId != null) {
-                while (isActive && sessionId != null) {
-                    delay(30_000)
-                    val id = sessionId ?: break
-                    repository.watchHeartbeat(id, positionSec())
+        val problem = playback.problem
+        when {
+            problem != null -> Centered {
+                Text(stringResource(R.string.playback_failed, problem), style = MaterialTheme.typography.titleMedium, color = MaktabaPalette.Text)
+                Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    MaktabaButton(onClick = { playback.retry() }) { Text(stringResource(R.string.try_again)) }
+                    MaktabaButton(onClick = onBack) { Text(stringResource(R.string.back)) }
                 }
             }
-        }
-
-        val listener = object : Player.Listener {
-            override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_ENDED) stop()
+            playback.opening -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    stringResource(R.string.preparing) + "\n" + title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaktabaPalette.Text,
+                )
             }
-        }
-        player.addListener(listener)
-
-        onDispose {
-            beatJob.cancel()
-            stop() // dispatched on `scope`, which we leave alive briefly
-            player.removeListener(listener)
-            player.release()
-            // The stop() launch above runs on Main.immediate, so it has
-            // already been dispatched; cancel only the still-pending beat
-            // structure, not the in-flight stop request body.
         }
     }
-
-    AndroidView(
-        modifier = Modifier.fillMaxSize(),
-        factory = { ctx ->
-            PlayerView(ctx).apply {
-                this.player = player
-                useController = true
-            }
-        },
-    )
 }

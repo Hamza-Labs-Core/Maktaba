@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">مكتبة</string>
+
+    <string name="tab_home">الرئيسية</string>
+    <string name="tab_libraries">المكتبات</string>
+    <string name="tab_search">البحث</string>
+    <string name="tab_account">الحساب</string>
+
+    <string name="choose_home">اختر جهازك الرئيسي</string>
+    <string name="choose_home_hint">تظهر هنا الأجهزة الرئيسية على هذه الشبكة، أو أدخل عنوان جهازك الرئيسي.</string>
+    <string name="enter_address">أدخل عنوانًا</string>
+
+    <string name="signin_code_title">تسجيل الدخول إلى %1$s</string>
+    <string name="signin_code_step1">افتح على هاتفك أو حاسوبك</string>
+    <string name="signin_code_step2">وأدخل هذا الرمز، أو امسح الرمز بهاتفك.</string>
+    <string name="signin_code_waiting">بانتظار موافقتك على هذا التلفاز…</string>
+    <string name="signin_code_new">رمز جديد، فقد انتهت صلاحية السابق.</string>
+    <string name="signin_with_password">تسجيل الدخول بكلمة المرور</string>
+    <string name="signin_with_code">تسجيل الدخول برمز</string>
+    <string name="signin_code_unsupported">لا يستطيع هذا الجهاز الرئيسي تسجيل دخول تلفاز برمز بعد. سجّل الدخول باسم المستخدم وكلمة المرور.</string>
+    <string name="tv_label">تلفاز أندرويد</string>
+
+    <string name="continue_watching">متابعة المشاهدة</string>
+    <string name="recently_added">أُضيف حديثًا</string>
+    <string name="for_you">مقترح لك</string>
+    <string name="nothing_yet">لا شيء هنا بعد.</string>
+    <string name="loading">جارٍ التحميل…</string>
+    <string name="could_not_load">تعذّر التحميل: %1$s</string>
+    <string name="try_again">حاول مجددًا</string>
+    <string name="more">المزيد</string>
+
+    <string name="search_hint">ابحث في مكتبتك</string>
+    <string name="search_none">لا توجد مقاطع تطابق «%1$s».</string>
+
+    <string name="play">تشغيل</string>
+    <string name="resume_from">المتابعة من %1$s</string>
+    <string name="start_over">من البداية</string>
+    <string name="watched">تمت المشاهدة</string>
+    <string name="minutes">%1$d دقيقة</string>
+
+    <string name="preparing">جارٍ تجهيز المقطع…</string>
+    <string name="playback_failed">تعذّر تشغيل المقطع: %1$s</string>
+    <string name="back">رجوع</string>
+
+    <string name="signed_in_as">مسجّل الدخول باسم %1$s</string>
+    <string name="home_label">الجهاز الرئيسي: %1$s</string>
+    <string name="switch_home">تبديل الجهاز الرئيسي</string>
+    <string name="sign_out">تسجيل الخروج</string>
+    <string name="language">اللغة</string>
+    <string name="licences">الخطّان هما أميري وIBM Plex Sans Arabic، بترخيص SIL Open Font License.</string>
+</resources>

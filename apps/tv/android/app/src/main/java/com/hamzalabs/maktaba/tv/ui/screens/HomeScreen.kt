@@ -1,126 +1,92 @@
 package com.hamzalabs.maktaba.tv.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.TvLazyRow
-import androidx.tv.foundation.lazy.list.items
-import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import com.hamzalabs.maktaba.tv.data.models.MediaRail
-import com.hamzalabs.maktaba.tv.data.repository.MediaRepository
-import com.hamzalabs.maktaba.tv.ui.components.CenteredPanel
+import com.hamzalabs.maktaba.tv.R
+import com.hamzalabs.maktaba.tv.data.TvApi
+import com.hamzalabs.maktaba.tv.data.TvVideo
 import com.hamzalabs.maktaba.tv.ui.components.MediaCard
-import com.hamzalabs.maktaba.tv.ui.components.ReadingPanel
 import com.hamzalabs.maktaba.tv.ui.components.SectionTitle
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+
+/** One row on Home: its name and its videos (with how much of each is watched). */
+data class HomeRow(val title: String, val videos: List<Pair<TvVideo, Float>>)
 
 /**
- * Landing screen: a vertical column of horizontally-scrolling rails
- * (Continue Watching first, then recommendation rows).
+ * Home: Continue Watching first (the home's own rail: where this person stopped), then the
+ * newest videos, then the home's suggestions. The library scene is drawn behind it.
  */
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-fun HomeScreen(
-    repository: MediaRepository,
-    onPlay: (videoId: String) -> Unit,
-) {
-    var rails by remember { mutableStateOf<List<MediaRail>>(emptyList()) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(true) }
-
-    LaunchedEffect(Unit) {
-        repository.homeRails()
-            .onSuccess { rails = it; error = null }
-            .onFailure { error = it.message }
-        loading = false
-    }
-
-    // The library scene is drawn behind this screen by NavGraph. The
-    // headline sits on a reading panel in the calm middle of the art,
-    // below the lamp; the rails sit in the faded lower half.
-    Column(Modifier.fillMaxSize()) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(170.dp)
-                .padding(bottom = 12.dp),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            ReadingPanel(contentPadding = 20.dp) {
-                SectionTitle("Your library")
-                Text(
-                    text = "Continue where you left off",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaktabaPalette.Muted,
-                )
+fun HomeScreen(api: TvApi, onOpen: (String) -> Unit, signedOut: () -> Unit) {
+    val cw = stringResource(R.string.continue_watching)
+    val recent = stringResource(R.string.recently_added)
+    val forYou = stringResource(R.string.for_you)
+    val (state, retry) = rememberLoad(api, signedOut) {
+        coroutineScope {
+            val recs = async { runCatching { api.recommendations() }.getOrNull() }
+            val newest = async { api.videos().items }
+            val rails = recs.await()?.rails.orEmpty()
+            val cont = rails.firstOrNull { it.id == "continue" }?.let { rail ->
+                async { api.railVideos(rail).map { (item, v) -> v to item.progress } }
             }
+            val suggested = rails.firstOrNull { it.id == "for-you" }?.let { rail ->
+                async { api.railVideos(rail).map { (_, v) -> v to 0f } }
+            }
+            listOfNotNull(
+                cont?.await()?.let { HomeRow(cw, it) },
+                HomeRow(recent, newest.await().map { it to 0f }),
+                suggested?.await()?.let { HomeRow(forYou, it) },
+            ).filter { it.videos.isNotEmpty() }
         }
-
-        when {
-            loading -> CenterMessage("Loading…")
-            error != null -> CenterMessage(error!!)
-            else -> TvLazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 48.dp),
-                verticalArrangement = Arrangement.spacedBy(36.dp),
-                contentPadding = PaddingValues(vertical = 24.dp),
+    }
+    LoadState(state, retry) { rows ->
+        if (rows.isEmpty()) {
+            Centered { Text(stringResource(R.string.nothing_yet), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text) }
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = Gutter, end = Gutter, top = 24.dp, bottom = 48.dp),
+                verticalArrangement = Arrangement.spacedBy(28.dp),
             ) {
-                items(rails) { rail ->
-                    RailRow(rail = rail, onPlay = onPlay)
-                }
+                items(rows, key = { it.title }) { row -> VideoRow(api, row, onOpen) }
             }
         }
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun RailRow(rail: MediaRail, onPlay: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionTitle(rail.title)
-        // Vertical padding leaves room for the focused card's scale + ring.
-        TvLazyRow(
-            horizontalArrangement = Arrangement.spacedBy(24.dp),
-            contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp),
+fun VideoRow(api: TvApi, row: HomeRow, onOpen: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionTitle(row.title)
+        // vertical room for the focused card's scale and ring
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(28.dp),
+            contentPadding = PaddingValues(vertical = 14.dp, horizontal = 8.dp),
         ) {
-            items(rail.items) { item ->
+            items(row.videos, key = { it.first.id }) { (v, progress) ->
                 MediaCard(
-                    title = item.title.ifEmpty { rail.title },
-                    posterUrl = item.posterUrl,
-                    progress = item.progress,
-                    onClick = { onPlay(item.videoId) },
+                    client = api.client,
+                    video = v.id,
+                    title = v.displayTitle,
+                    subtitle = v.durationSec?.let { clock(it) },
+                    progress = progress,
+                    onClick = { onOpen(v.id) },
                 )
             }
         }
     }
 }
 
-/**
- * Centred status text (loading / error / empty). Always on a reading
- * panel, so it stays legible whether or not the art is behind it.
- */
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-fun CenterMessage(text: String) {
-    CenteredPanel {
-        Text(text = text, style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text)
-    }
-}
