@@ -1,4 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The TV's words, in English and Arabic (values-ar), with the web's terms (web/src/i18n). The
+     home picker's and keyboard sign-in's shared words are the core's (apps/android/core). -->
 <resources>
     <string name="app_name">Maktaba</string>
+
+    <string name="tab_home">Home</string>
+    <string name="tab_libraries">Libraries</string>
+    <string name="tab_search">Search</string>
+    <string name="tab_account">Account</string>
+
+    <string name="choose_home">Choose your home</string>
+    <string name="choose_home_hint">Homes on this network appear here. Or enter a home\'s address.</string>
+    <string name="enter_address">Enter an address</string>
+
+    <string name="signin_code_title">Sign in to %1$s</string>
+    <string name="signin_code_step1">On your phone or computer, open</string>
+    <string name="signin_code_step2">and enter this code. Or scan the code with your phone.</string>
+    <string name="signin_code_waiting">Waiting for you to approve this TV…</string>
+    <string name="signin_code_new">A new code. The last one ran out.</string>
+    <string name="signin_with_password">Sign in with a password</string>
+    <string name="signin_with_code">Sign in with a code</string>
+    <string name="signin_code_unsupported">This home cannot sign a TV in with a code yet. Sign in with your username and password.</string>
+    <string name="tv_label">Android TV</string>
+
+    <string name="continue_watching">Continue watching</string>
+    <string name="recently_added">Recently added</string>
+    <string name="for_you">For you</string>
+    <string name="nothing_yet">Nothing here yet.</string>
+    <string name="loading">Loading…</string>
+    <string name="could_not_load">Could not load: %1$s</string>
+    <string name="try_again">Try again</string>
+
+    <string name="search_hint">Search your library</string>
+    <string name="search_none">No videos match “%1$s”.</string>
+
+    <string name="play">Play</string>
+    <string name="resume_from">Resume from %1$s</string>
+    <string name="start_over">Start over</string>
+    <string name="watched">Watched</string>
+
+    <string name="preparing">Preparing the video…</string>
+    <string name="playback_failed">The video could not play: %1$s</string>
+    <string name="back">Back</string>
+
+    <string name="signed_in_as">Signed in as %1$s</string>
+    <string name="home_label">Home: %1$s</string>
+    <string name="switch_home">Switch home</string>
+    <string name="sign_out">Sign out</string>
+    <string name="language">Language</string>
+    <string name="licences">The fonts are Amiri and IBM Plex Sans Arabic, under the SIL Open Font License.</string>
 </resources>

@@ -70,6 +70,9 @@ object AppPermissions {
 
     /** What Maktaba Player and Maktaba Remote ask for. */
     val phoneApps: List<AppPermission> = listOf(LocalNetwork)
+
+    /** What the Android TV app asks for: no notifications, no background work, no microphone. */
+    val tvApp: List<AppPermission> = listOf(LocalNetwork)
 }
 
 /**

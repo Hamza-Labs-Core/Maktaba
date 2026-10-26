@@ -1,28 +1,28 @@
 package com.hamzalabs.maktaba.tv
 
-import com.hamzalabs.maktaba.tv.permissions.AppPermission
-import com.hamzalabs.maktaba.tv.permissions.Need
-import com.hamzalabs.maktaba.tv.permissions.PermissionAction
-import com.hamzalabs.maktaba.tv.permissions.PermissionMemory
-import com.hamzalabs.maktaba.tv.permissions.PermissionPrefs
-import com.hamzalabs.maktaba.tv.permissions.PermissionRow
-import com.hamzalabs.maktaba.tv.permissions.PermissionState
-import com.hamzalabs.maktaba.tv.permissions.TvPermissions
-import com.hamzalabs.maktaba.tv.permissions.Walkthrough
-import com.hamzalabs.maktaba.tv.permissions.action
-import com.hamzalabs.maktaba.tv.permissions.permissionState
+import com.hamzalabs.maktaba.core.permissions.AppPermission
+import com.hamzalabs.maktaba.core.permissions.AppPermissions
+import com.hamzalabs.maktaba.core.permissions.Need
+import com.hamzalabs.maktaba.core.permissions.PermissionAction
+import com.hamzalabs.maktaba.core.permissions.PermissionMemory
+import com.hamzalabs.maktaba.core.permissions.PermissionRow
+import com.hamzalabs.maktaba.core.permissions.PermissionState
+import com.hamzalabs.maktaba.core.permissions.Walkthrough
+import com.hamzalabs.maktaba.core.permissions.action
+import com.hamzalabs.maktaba.core.permissions.permissionState
+import com.hamzalabs.maktaba.core.session.KeyValueStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TvPermissionsTest {
-    private val net = TvPermissions.LocalNetwork
+    private val net = AppPermissions.LocalNetwork
     private val optional = AppPermission("other", "android.permission.RECORD_AUDIO", 23, Need.Optional)
 
     @Test
     fun theTvAsksOnlyForTheLocalNetworkOnAndroid17AndLater() {
-        assertEquals(listOf("android.permission.ACCESS_LOCAL_NETWORK"), TvPermissions.all.map { it.permission })
+        assertEquals(listOf("android.permission.ACCESS_LOCAL_NETWORK"), AppPermissions.tvApp.map { it.permission })
         assertEquals(37, net.sinceSdk)
         assertEquals(Need.Required, net.need)
     }
@@ -65,7 +65,7 @@ class TvPermissionsTest {
     @Test
     fun theMemoryKeepsSeenAndAsked() {
         val map = mutableMapOf<String, String>()
-        val prefs = object : PermissionPrefs {
+        val prefs = object : KeyValueStore {
             override fun get(key: String) = map[key]
             override fun put(key: String, value: String?) {
                 if (value == null) map.remove(key) else map[key] = value

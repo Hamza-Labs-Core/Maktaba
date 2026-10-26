@@ -11,10 +11,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.hamzalabs.maktaba.tv.permissions.AppPermission
-import com.hamzalabs.maktaba.tv.permissions.PermissionRow
-import com.hamzalabs.maktaba.tv.permissions.PermissionState
-import com.hamzalabs.maktaba.tv.permissions.TvPermissions
+import com.hamzalabs.maktaba.core.permissions.AppPermission
+import com.hamzalabs.maktaba.core.permissions.AppPermissions
+import com.hamzalabs.maktaba.core.permissions.PermissionRow
+import com.hamzalabs.maktaba.core.permissions.PermissionState
 import com.hamzalabs.maktaba.tv.permissions.TvPermissionsScreen
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaTvTheme
 import org.junit.Assert.assertEquals
@@ -29,7 +29,7 @@ class TvPermissionsScreenTest {
     @get:Rule
     val rule = createComposeRule()
 
-    private val net = TvPermissions.LocalNetwork
+    private val net = AppPermissions.LocalNetwork
 
     private fun show(state: PermissionState, onAction: (AppPermission) -> Unit = {}, onContinue: () -> Unit = {}) {
         rule.setContent {

@@ -47,6 +47,18 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.hamzalabs.maktaba.core.permissions.AppPermission
+import com.hamzalabs.maktaba.core.permissions.AppPermissions
+import com.hamzalabs.maktaba.core.permissions.Need
+import com.hamzalabs.maktaba.core.permissions.PermissionAction
+import com.hamzalabs.maktaba.core.permissions.PermissionMemory
+import com.hamzalabs.maktaba.core.permissions.PermissionRow
+import com.hamzalabs.maktaba.core.permissions.PermissionState
+import com.hamzalabs.maktaba.core.permissions.Walkthrough
+import com.hamzalabs.maktaba.core.permissions.action
+import com.hamzalabs.maktaba.core.permissions.ok
+import com.hamzalabs.maktaba.core.permissions.permissionState
+import com.hamzalabs.maktaba.core.session.KeyValueStore
 import com.hamzalabs.maktaba.tv.R
 import com.hamzalabs.maktaba.tv.ui.components.LibraryBackdrop
 import com.hamzalabs.maktaba.tv.ui.components.MaktabaButton
@@ -65,7 +77,7 @@ private fun Context.activity(): Activity? {
 }
 
 private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).let { sp ->
-    object : PermissionPrefs {
+    object : KeyValueStore {
         override fun get(key: String): String? = sp.getString(key, null)
         override fun put(key: String, value: String?) {
             sp.edit().apply { if (value == null) remove(key) else putString(key, value) }.apply()
@@ -87,7 +99,7 @@ private fun read(context: Context, memory: PermissionMemory, permissions: List<A
  * app next comes to the foreground. It is a dialog, so the D-pad stays in it while it shows.
  */
 @Composable
-fun TvPermissionsGate(permissions: List<AppPermission> = TvPermissions.all, content: @Composable () -> Unit) {
+fun TvPermissionsGate(permissions: List<AppPermission> = AppPermissions.tvApp, content: @Composable () -> Unit) {
     val context = LocalContext.current
     val memory = remember { PermissionMemory(prefs(context)) }
     var rows by remember { mutableStateOf(read(context, memory, permissions)) }
@@ -225,17 +237,17 @@ fun TvPermissionsScreen(rows: List<PermissionRow>, onAction: (AppPermission) -> 
 }
 
 private fun titleOf(p: AppPermission) = when (p.id) {
-    TvPermissions.LocalNetwork.id -> R.string.tv_perm_local_network
+    AppPermissions.LocalNetwork.id -> R.string.tv_perm_local_network
     else -> error("the walkthrough has no words for ${p.id}")
 }
 
 private fun whyOf(p: AppPermission) = when (p.id) {
-    TvPermissions.LocalNetwork.id -> R.string.tv_perm_local_network_why
+    AppPermissions.LocalNetwork.id -> R.string.tv_perm_local_network_why
     else -> error("the walkthrough has no words for ${p.id}")
 }
 
 private fun withoutOf(p: AppPermission) = when (p.id) {
-    TvPermissions.LocalNetwork.id -> R.string.tv_perm_local_network_without
+    AppPermissions.LocalNetwork.id -> R.string.tv_perm_local_network_without
     else -> error("the walkthrough has no words for ${p.id}")
 }
 

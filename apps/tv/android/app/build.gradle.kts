@@ -1,90 +1,74 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
 
 android {
     namespace = "com.hamzalabs.maktaba.tv"
-    compileSdk = 34
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.hamzalabs.maktaba.tv"
-        // minSdk 28 = Android 9; the practical floor for current
-        // Android TV / Google TV devices that support Compose-for-TV.
+        // Android 9: the practical floor for current Android TV / Google TV devices.
         minSdk = 28
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        targetSdk = 37
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+    }
+
+    // English and Arabic: the system's per-app language setting lists both.
+    androidResources {
+        generateLocaleConfig = true
     }
 
     buildFeatures {
         compose = true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
-    }
-
-    kotlinOptions { jvmTarget = "17" }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
-    implementation(libs.core.ktx)
-    implementation(libs.lifecycle.runtime.ktx)
-    implementation(libs.lifecycle.viewmodel.compose)
-    implementation(libs.activity.compose)
-    implementation(libs.navigation.compose)
+    implementation(project(":core"))
 
-    implementation(platform(libs.compose.bom))
-    implementation(libs.compose.ui)
-    implementation(libs.compose.foundation)
-    implementation(libs.compose.ui.tooling.preview)
-    debugImplementation(libs.compose.ui.tooling)
+    // Compose for TV: focus-aware Material (cards, buttons, surfaces with focus visuals).
+    implementation(tv.tv.material)
 
-    // Compose-for-TV (focus-aware lazy rows/grids + TV Material theme).
-    implementation(libs.tv.foundation)
-    implementation(libs.tv.material)
-
-    // HLS playback via Media3 / ExoPlayer.
+    // HLS through Media3, every /stream/ request through the core's authorizing OkHttp client.
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
+    implementation(libs.media3.datasource.okhttp)
     implementation(libs.media3.ui)
 
-    // REST + JSON.
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.serialization)
-    implementation(libs.okhttp)
-    implementation(libs.okhttp.logging)
-    implementation(libs.kotlinx.serialization.json)
-
-    // Poster loading.
-    implementation(libs.coil.compose)
-
-    // Encrypted token storage (Android Keystore-backed).
-    implementation(libs.security.crypto)
+    // The sign-in QR (a matrix of the approve page's address, drawn by the app).
+    implementation(tv.zxing.core)
 
     testImplementation(libs.junit)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.kotlinx.coroutines.test)
 
     // The permissions walkthrough's Compose UI tests on a TV or emulator (connectedDebugAndroidTest).
     androidTestImplementation(platform(libs.compose.bom))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.espresso.core)
+    debugImplementation(libs.compose.ui.test.manifest)
 }
