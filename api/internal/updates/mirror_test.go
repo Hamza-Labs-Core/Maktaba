@@ -93,6 +93,8 @@ func newMirrorRig(t *testing.T) *mirrorRig {
 		t.Fatal(err)
 	}
 	rig.m = &Mirror{Store: rig.store, Dir: t.TempDir()}
+	// the prefetch goes on after what a test waits for: its folder goes after it ends
+	t.Cleanup(rig.m.Wait)
 	rig.router = chi.NewRouter()
 	rig.router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

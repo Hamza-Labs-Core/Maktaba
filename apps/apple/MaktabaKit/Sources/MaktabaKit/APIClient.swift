@@ -285,7 +285,7 @@ public actor APIClient {
         var r = URLRequest(url: c.url!)
         r.httpMethod = method
         r.setValue("application/json", forHTTPHeaderField: "Accept")
-        r.setValue("native", forHTTPHeaderField: "X-Maktaba-Client")
+        r.setValue(ClientHeader.value, forHTTPHeaderField: ClientHeader.name)
         if let body {
             r.httpBody = try? JSONSerialization.data(withJSONObject: body)
             r.setValue("application/json", forHTTPHeaderField: "Content-Type")

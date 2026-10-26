@@ -151,7 +151,11 @@ func (li *LayoutInstaller) ReplaceLauncher(j *Journal) (bool, error) {
 
 // replaceSelf runs the new launcher's --replace-self (tests replace it).
 var replaceSelf = func(newLauncher, target string) error {
-	if out, err := exec.CommandContext(context.Background(), newLauncher, "--replace-self", target).CombinedOutput(); err != nil {
+	// the new launcher was just written: tried again while the system says it is busy
+	out, err := layout.CombinedOutputFresh(func() *exec.Cmd {
+		return exec.CommandContext(context.Background(), newLauncher, "--replace-self", target)
+	})
+	if err != nil {
 		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil

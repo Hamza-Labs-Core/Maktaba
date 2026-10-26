@@ -15,6 +15,19 @@ var (
 		[]string{"method", "route_template", "status_class"},
 	)
 
+	// HTTPRequestsByClient counts requests by the app that sent them
+	// (X-Maktaba-Client, Epic 44 story 44.5). The app is a bounded label:
+	// the known apps, `unknown`, else `other`. A counter of its own so the
+	// latency histogram keeps its cardinality.
+	HTTPRequestsByClient = func() *prometheus.CounterVec {
+		c := prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "http_requests_by_client_total",
+			Help: "HTTP requests by the app that sent them and status class.",
+		}, []string{"client_app", "status_class"})
+		Reg().MustRegister(c)
+		return c
+	}()
+
 	HTTPInFlight = func() prometheus.Gauge {
 		g := prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "http_in_flight_requests",

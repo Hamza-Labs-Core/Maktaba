@@ -125,6 +125,18 @@ func (t *Tracker) AttachTS(ch uuid.UUID) func() {
 	}
 }
 
+// TSClients is the TS clients per channel (tuners and live.ts; not the push
+// relays): with the app viewings, channel_runtime.viewer_count.
+func (t *Tracker) TSClients() map[uuid.UUID]int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make(map[uuid.UUID]int, len(t.ts))
+	for ch, n := range t.ts {
+		out[ch] = n
+	}
+	return out
+}
+
 // TouchHLS records an HLS fetch by the request's client.
 func (t *Tracker) TouchHLS(ch uuid.UUID, r *http.Request) {
 	key := r.RemoteAddr

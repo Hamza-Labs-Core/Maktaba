@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// summaryCache memoises the summary payload per range label for a short
+// summaryCache memoises the summary payload per range and filters for a short
 // TTL to absorb dashboard refresh spam (D6). Mirrors streaming.capCache.
 type summaryCache struct {
 	mu  sync.Mutex

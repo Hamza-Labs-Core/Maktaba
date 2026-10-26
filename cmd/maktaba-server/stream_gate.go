@@ -14,7 +14,11 @@ package main
 //     answer is cached for streamAuthTTL so segment fetches do not each
 //     cost an API round trip;
 //   - strips Cookie and Authorization before proxying, so the session
-//     never reaches the streaming service.
+//     never reaches the streaming service;
+//   - names the signed-in person to the streaming service in
+//     X-Maktaba-Viewer (the user_id /api/auth/me answered; one a client sent
+//     is dropped), for the record of who watches a channel (Epic 44 story
+//     44.4). The front door trusts it only on loopback: from this gate.
 //
 // /xmltv.xml and /lineup.m3u stay public (players read them); external
 // players tune channels on the streaming port itself.
@@ -43,6 +47,10 @@ const streamAuthTTL = 30 * time.Second
 
 // streamAuthCacheMax bounds the accepted-session cache.
 const streamAuthCacheMax = 1024
+
+// viewerHeader names the signed-in person to the streaming service
+// (streaming/internal/viewing.ViewerHeader).
+const viewerHeader = "X-Maktaba-Viewer"
 
 const uuidRe = `[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`
 
@@ -88,6 +96,13 @@ type streamGate struct {
 	mu    sync.Mutex
 	ok    map[string]time.Time // credential hash → accepted until
 	admin map[string]bool      // credential hash → an admin's session (while in ok)
+	user  map[string]string    // credential hash → the session's user id (while in ok)
+}
+
+// sessionInfo is what /api/auth/me said of a session.
+type sessionInfo struct {
+	admin bool
+	user  string
 }
 
 func newStreamGate(next http.Handler, apiOrigin *url.URL) *streamGate {
@@ -98,6 +113,7 @@ func newStreamGate(next http.Handler, apiOrigin *url.URL) *streamGate {
 		now:     time.Now,
 		ok:      map[string]time.Time{},
 		admin:   map[string]bool{},
+		user:    map[string]string{},
 		allow:   allowedStreamPath,
 	}
 }
@@ -122,7 +138,7 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
 		return
 	}
-	ok, admin, err := g.session(r, cookie, authz)
+	ok, who, err := g.session(r, cookie, authz)
 	if err != nil {
 		// the API did not answer the check (down, restarting): not the viewer's sign-in,
 		// so not a 401 that sends them to sign in again; still nothing is streamed
@@ -134,33 +150,37 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
 		return
 	}
-	if staging && !admin {
+	if staging && !who.admin {
 		pagetheme.Error(w, r, "the staging preview is for admins", http.StatusForbidden)
 		return
 	}
 	out := r.Clone(r.Context())
 	out.Header.Del("Cookie")
 	out.Header.Del("Authorization")
+	out.Header.Del(viewerHeader)
+	if who.user != "" {
+		out.Header.Set(viewerHeader, who.user)
+	}
 	g.next.ServeHTTP(w, out)
 }
 
-// session reports whether the credentials are a signed-in session and whether
-// it is an admin's (GET /api/auth/me: 200, is_admin), with a short cache of the
-// accepted ones. err: the API did not answer at all (no verdict on the session).
-func (g *streamGate) session(r *http.Request, cookie, authz string) (bool, bool, error) {
+// session reports whether the credentials are a signed-in session, and whose
+// (GET /api/auth/me: 200, user_id, is_admin), with a short cache of the accepted
+// ones. err: the API did not answer at all (no verdict on the session).
+func (g *streamGate) session(r *http.Request, cookie, authz string) (bool, sessionInfo, error) {
 	sum := sha256.Sum256([]byte(cookie + "\x00" + authz))
 	key := hex.EncodeToString(sum[:])
 	now := g.now()
 	g.mu.Lock()
 	until, hit := g.ok[key]
-	adm := g.admin[key]
+	who := sessionInfo{admin: g.admin[key], user: g.user[key]}
 	g.mu.Unlock()
 	if hit && now.Before(until) {
-		return true, adm, nil
+		return true, who, nil
 	}
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, g.authURL, nil)
 	if err != nil {
-		return false, false, err
+		return false, sessionInfo{}, err
 	}
 	if cookie != "" {
 		req.Header.Set("Cookie", cookie)
@@ -171,10 +191,11 @@ func (g *streamGate) session(r *http.Request, cookie, authz string) (bool, bool,
 	req.Header.Set("Accept", "application/json")
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return false, false, err
+		return false, sessionInfo{}, err
 	}
 	var me struct {
-		IsAdmin bool `json:"is_admin"`
+		UserID  string `json:"user_id"`
+		IsAdmin bool   `json:"is_admin"`
 	}
 	if resp.StatusCode == http.StatusOK {
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&me)
@@ -184,24 +205,32 @@ func (g *streamGate) session(r *http.Request, cookie, authz string) (bool, bool,
 		g.mu.Lock()
 		delete(g.ok, key)
 		delete(g.admin, key)
+		delete(g.user, key)
 		g.mu.Unlock()
-		return false, false, nil
+		return false, sessionInfo{}, nil
 	}
+	who = sessionInfo{admin: me.IsAdmin, user: me.UserID}
 	g.mu.Lock()
 	if len(g.ok) >= streamAuthCacheMax {
 		for k, t := range g.ok {
 			if !now.Before(t) {
 				delete(g.ok, k)
 				delete(g.admin, k)
+				delete(g.user, k)
 			}
 		}
 		if len(g.ok) >= streamAuthCacheMax {
 			g.ok = map[string]time.Time{}
 			g.admin = map[string]bool{}
+			g.user = map[string]string{}
 		}
+	}
+	if g.user == nil {
+		g.user = map[string]string{}
 	}
 	g.ok[key] = now.Add(streamAuthTTL)
 	g.admin[key] = me.IsAdmin
+	g.user[key] = me.UserID
 	g.mu.Unlock()
-	return true, me.IsAdmin, nil
+	return true, who, nil
 }

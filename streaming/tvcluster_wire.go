@@ -32,6 +32,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/viewing"
 )
 
 // guideRules are the XMLTV guide's filler rules from the tv settings
@@ -270,11 +271,16 @@ func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *p
 	guideHandler := b.newGuideHandler(hdhrRepo, publicBase, nil)
 	var mounts []func(chi.Router)
 	var streamer hdhr.Streamer = engine
+	viewings := b.newViewings()
 	if clusterSchema(ctx, pool, 60*time.Second) {
+		// the front door counts every viewer: it writes viewer_count, the engine not
+		chRepo.KeepViewers = true
 		fd, assets := b.wireHomeCluster(ctx, engine, chHandler, ident, chRepo)
 		assets.Guide = guideHandler // the guide's images for the nodes
 		mounts = append(mounts, fd.Mount, fd.MountInternal, assets.Mount)
 		streamer = fd
+		fd.Viewings = viewings
+		viewings.Viewers = fd.ChannelViewers
 	} else {
 		logger.Warn("tv: the cluster schema (slot 0123) is missing; channels stream on this host only",
 			"event", "tv_cluster_schema_missing")
@@ -285,6 +291,8 @@ func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *p
 	// HDHomeRun emulation (Story 27.5): off until hdhr_device.enabled.
 	hdhrHandler := hdhr.New(hdhrRepo, streamer)
 	hdhrHandler.PublicBase = publicBase
+	hdhrHandler.Viewings = viewings
+	b.bg.Go(viewings.Run)
 	mounts = append(mounts, hdhrHandler.Mount)
 	mounts = append(mounts, guideHandler.Mount)
 	// Only the home advertises the tuner (the front door); a node never runs this.
@@ -293,6 +301,19 @@ func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *p
 		HTTPAddr: os.Getenv("MAKTABA_HTTP_ADDR")}
 	bg.Go(ssdp.Run)
 	return mounts, nil
+}
+
+// newViewings is the home's record of who watches the channels (Epic 44 story
+// 44.4): the front door's app viewers and the tuner's streams. The caller sets
+// its Viewers and starts its Run. No database: nothing is recorded (Run says so).
+func (b *tvBase) newViewings() *viewing.Tracker {
+	var store viewing.Store
+	if b.pool != nil {
+		store = &viewing.PGStore{Pool: b.pool}
+	}
+	vt := viewing.NewTracker(store)
+	vt.Logger = b.logger
+	return vt
 }
 
 func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, local *channel.HTTPHandler,
@@ -502,6 +523,7 @@ func buildNodeTVReady(bg *background, logger *slog.Logger, cfg config.Config, po
 	ident := channel.HostIdentity{ID: id, Host: b.hostname, Role: channel.RoleNode, StreamBaseURL: base}
 	chRepo := channel.NewPGRepo(pool, b.hostname)
 	chRepo.HostID = id
+	chRepo.KeepViewers = true // the home's front door counts this machine's viewers
 	scfg := b.stationConfig(chRepo)
 	scfg.PathMapSource = func() pathmap.Map { return pm.Load().(pathmap.Map) }
 	assetCache := &cluster.AssetCache{Base: func() string { s, _ := homeBase.Load().(string); return s },
