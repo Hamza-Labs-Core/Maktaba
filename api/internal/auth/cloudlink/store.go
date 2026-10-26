@@ -100,11 +100,23 @@ func (s *Store) StartLink(ctx context.Context, userID string) (string, time.Time
 	return nonce, exp, nil
 }
 
-// consumeNonce spends a home user's live nonce (one use).
+// consumeNonce spends a home user's live nonce (one use). The expiry is
+// compared here, not in SQL, so it holds on SQLite's text times as well.
 func consumeNonce(ctx context.Context, tx *sql.Tx, userID, nonce string, now time.Time) error {
-	res, err := tx.ExecContext(ctx,
-		`DELETE FROM cloud_link_nonces WHERE nonce_hash = $1 AND user_id = $2 AND expires_at >= $3`,
-		hashNonce(nonce), userID, now)
+	var owner string
+	var exp time.Time
+	err := tx.QueryRowContext(ctx, `SELECT CAST(user_id AS TEXT), expires_at FROM cloud_link_nonces WHERE nonce_hash = $1`,
+		hashNonce(nonce)).Scan(&owner, &exp)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNonce
+	}
+	if err != nil {
+		return err
+	}
+	if owner != userID || now.After(exp) {
+		return ErrNonce
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM cloud_link_nonces WHERE nonce_hash = $1`, hashNonce(nonce))
 	if err != nil {
 		return err
 	}
@@ -295,51 +307,93 @@ func (s *Store) SetScope(ctx context.Context, userID, scope string) (*Link, erro
 	return s.LinkFor(ctx, userID)
 }
 
+// idSum is how cloud_sign_ins names a session or refresh family: the
+// SHA-256 of its id (as web_session_keys), never the id, which is a live
+// credential a machine's copy must not hold.
+func idSum(id string) string {
+	sum := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(sum[:])
+}
+
 // revokeSignIns revokes the cloud sign-ins of a user (of one scope, or
-// all when scope is ""), returning the web session ids it ended.
+// all when scope is ""), returning the web session ids it ended. The
+// sign-ins are known by their ids' hashes: the user's live sessions and
+// refresh families are matched against them.
 func revokeSignIns(ctx context.Context, tx *sql.Tx, userID, scope string, now time.Time) ([]string, error) {
-	q := `SELECT id, kind FROM cloud_sign_ins WHERE user_id = $1`
+	q := `SELECT id_sha256, kind FROM cloud_sign_ins WHERE user_id = $1`
 	args := []any{userID}
 	if scope != "" {
 		q += ` AND scope = $2`
 		args = append(args, scope)
 	}
+	kinds, err := scanPairs(ctx, tx, q, args...)
+	if err != nil || len(kinds) == 0 {
+		return nil, err
+	}
+	sessIDs, err := scanColumn(ctx, tx, `SELECT CAST(id AS TEXT) FROM web_sessions WHERE user_id = $1 AND revoked_at IS NULL`, userID)
+	if err != nil {
+		return nil, err
+	}
+	families, err := scanColumn(ctx, tx, `SELECT DISTINCT CAST(family_id AS TEXT) FROM refresh_tokens WHERE user_id = $1 AND revoked_at IS NULL`, userID)
+	if err != nil {
+		return nil, err
+	}
+	var ended []string
+	for _, id := range sessIDs {
+		if kinds[idSum(id)] == KindSession {
+			if _, err := tx.ExecContext(ctx, `UPDATE web_sessions SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL`, now, id); err != nil {
+				return nil, err
+			}
+			ended = append(ended, id)
+		}
+	}
+	for _, fam := range families {
+		if kinds[idSum(fam)] == KindRefresh {
+			if _, err := tx.ExecContext(ctx, `UPDATE refresh_tokens SET revoked_at = $1 WHERE family_id = $2 AND revoked_at IS NULL`, now, fam); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for sum := range kinds {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM cloud_sign_ins WHERE id_sha256 = $1`, sum); err != nil {
+			return nil, err
+		}
+	}
+	return ended, nil
+}
+
+func scanPairs(ctx context.Context, tx *sql.Tx, q string, args ...any) (map[string]string, error) {
 	rows, err := tx.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
-	type signIn struct{ id, kind string }
-	var all []signIn
+	defer rows.Close()
+	out := map[string]string{}
 	for rows.Next() {
-		var si signIn
-		if err := rows.Scan(&si.id, &si.kind); err != nil {
-			_ = rows.Close()
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
 			return nil, err
 		}
-		all = append(all, si)
+		out[k] = v
 	}
-	_ = rows.Close()
-	if err := rows.Err(); err != nil {
+	return out, rows.Err()
+}
+
+func scanColumn(ctx context.Context, tx *sql.Tx, q string, args ...any) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, q, args...)
+	if err != nil {
 		return nil, err
 	}
-	var sessIDs []string
-	for _, si := range all {
-		switch si.kind {
-		case KindSession:
-			if _, err := tx.ExecContext(ctx, `UPDATE web_sessions SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL`, now, si.id); err != nil {
-				return nil, err
-			}
-			sessIDs = append(sessIDs, si.id)
-		case KindRefresh:
-			if _, err := tx.ExecContext(ctx, `UPDATE refresh_tokens SET revoked_at = $1 WHERE family_id = $2 AND revoked_at IS NULL`, now, si.id); err != nil {
-				return nil, err
-			}
-		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM cloud_sign_ins WHERE id = $1`, si.id); err != nil {
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
 			return nil, err
 		}
+		out = append(out, v)
 	}
-	return sessIDs, nil
+	return out, rows.Err()
 }
 
 // notify tells the cluster hub (and every node's cache) the sessions ended.
@@ -353,8 +407,8 @@ func notify(sessionIDs []string, reason string) {
 // made, with the link's scope then.
 func (s *Store) RecordSignIn(ctx context.Context, kind, id, userID, scope string) error {
 	_, err := s.DB.ExecContext(ctx,
-		`INSERT INTO cloud_sign_ins (id, kind, user_id, scope, created_at) VALUES ($1, $2, $3, $4, $5)`,
-		id, kind, userID, scope, s.now())
+		`INSERT INTO cloud_sign_ins (id_sha256, kind, user_id, scope, created_at) VALUES ($1, $2, $3, $4, $5)`,
+		idSum(id), kind, userID, scope, s.now())
 	return err
 }
 
@@ -363,7 +417,7 @@ func (s *Store) RecordSignIn(ctx context.Context, kind, id, userID, scope string
 // slot 0153 (a machine's older copy) has no cloud sign-ins.
 func (s *Store) ScopeOf(ctx context.Context, kind, id string) (string, error) {
 	var scope string
-	err := s.DB.QueryRowContext(ctx, `SELECT scope FROM cloud_sign_ins WHERE id = $1 AND kind = $2`, id, kind).Scan(&scope)
+	err := s.DB.QueryRowContext(ctx, `SELECT scope FROM cloud_sign_ins WHERE id_sha256 = $1 AND kind = $2`, idSum(id), kind).Scan(&scope)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return "", nil

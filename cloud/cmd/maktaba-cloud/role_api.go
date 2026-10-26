@@ -114,14 +114,17 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 
 	// Per-IP rate limit on unauthenticated routes. Burst 30, refill
 	// 5/sec — plenty for the login form, harsh for credential stuffing.
+	// It wraps the whole router (below, at the listener) rather than
+	// r.Use: chi refuses middleware after routes, and NewRouter has
+	// already mounted the health probes.
 	rl := ratelimit.NewLimiter(30, 5)
-	r.Use(rl.Middleware(func(req *http.Request) string {
+	limit := rl.Middleware(func(req *http.Request) string {
 		if req.URL.Path == "/v1/auth/login" || req.URL.Path == "/v1/auth/register" ||
 			req.URL.Path == "/v1/servers/claims/redeem" {
 			return ratelimit.IPKey(req)
 		}
 		return ""
-	}))
+	})
 
 	authh.Mount(r, authh.Deps{
 		Users:        users,
@@ -182,7 +185,7 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		DB: pool.DB, WebhookSecret: cfg.Stripe.WebhookSecret,
 	}).Webhook)
 
-	srv := httpServer(cfg.Server.ListenAddr, r, cfg.Server.ReadTimeout, cfg.Server.WriteTimeout)
+	srv := httpServer(cfg.Server.ListenAddr, limit(r), cfg.Server.ReadTimeout, cfg.Server.WriteTimeout)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := server.Run(ctx, logger, srv, cfg.Server.ShutdownGrace); err != nil {

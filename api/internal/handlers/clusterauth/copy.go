@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/authz"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/sessions"
@@ -75,6 +76,15 @@ func (c Copy) session(ctx context.Context, id string) (*delegation.IntrospectAns
 	}
 	if err != nil {
 		return nil, err
+	}
+	// a session a Maktaba Cloud sign-in made keeps its link's scope on the
+	// copy too, the home away (cloud_sign_ins is copied, by id hash)
+	scope, err := (&cloudlink.Store{DB: c.Home.DB}).ScopeOf(ctx, cloudlink.KindSession, u.String())
+	if err != nil {
+		return nil, err
+	}
+	if scope == principal.CloudScopePlay {
+		p.IsAdmin = false
 	}
 	a := &delegation.IntrospectAnswer{Principal: p, Source: string(principal.SourceCookie), CSRFSHA256: csrf,
 		ExpiresAt: expires}

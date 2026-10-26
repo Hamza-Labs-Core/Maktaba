@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/cloudlink"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
@@ -170,13 +172,23 @@ func newE2E(t *testing.T) *e2e {
 	edgeMux := http.NewServeMux()
 	edgeMux.Handle("/v1/relay/ws", relaypkg.ServeTunnels(e.reg, e.store, nil))
 	edgeMux.Handle("/", proxy)
-	e.edge = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// behind the middleware the relay role runs (server.NewRouter): its
+	// response recorder must let the tunnel upgrade (Hijack) and the proxy
+	// flush, as it once did not
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var edge http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/relay/ws" && r.Host != e2eHost {
 			edgeMux.ServeHTTP(w, r)
 			return
 		}
 		proxy.ServeHTTP(w, r)
-	}))
+	})
+	for _, mw := range []func(http.Handler) http.Handler{
+		middleware.CORS(nil), middleware.Logging(logger), middleware.RequestID, middleware.Recover(logger),
+	} {
+		edge = mw(edge)
+	}
+	e.edge = httptest.NewServer(edge)
 
 	sup := &cloudlink.Supervisor{
 		Dialer: &cloudlink.Dialer{

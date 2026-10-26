@@ -17,6 +17,7 @@ var copyReviewed = []string{
 	"app_settings", "audio_cache", "audio_tracks", "books", "channel_art_overrides",
 	"channel_audit_channels", "channel_audits", "channel_placements", "channel_plans",
 	"channel_programs", "channel_runtime", "channel_schedule_state", "channels", "chapters",
+	"cloud_sign_ins", "home_user_links",
 	"clip_checks", "clip_group_items", "clip_groups", "cluster_replica_beat", "cluster_switchovers",
 	"cluster_terms", "collection_items",
 	"collection_suggestions", "collections", "dependency_health", "display_title_llm",

@@ -13,8 +13,9 @@
 --   cloud_link_nonces    the link step's nonce: binds a cloud link assertion to the
 --                        home user who started it (hashed, a few minutes)
 --   cloud_assertions_used the assertions already used (one use each), kept until expiry
---   cloud_sign_ins       which web sessions and refresh families a cloud sign-in made,
---                        with the link's scope then; unlinking revokes them
+--   cloud_sign_ins       which web sessions and refresh families a cloud sign-in made (by
+--                        the SHA-256 of their id), with the link's scope then; unlinking
+--                        revokes them (a home on SQLite takes no machines: no copy rule)
 CREATE TABLE IF NOT EXISTS home_user_links (
     user_id       TEXT        PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     cloud_user_id TEXT        NOT NULL UNIQUE,
@@ -42,7 +43,7 @@ CREATE TABLE IF NOT EXISTS cloud_assertions_used (
 
 -- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS cloud_sign_ins (
-    id         TEXT        PRIMARY KEY,
+    id_sha256  TEXT        PRIMARY KEY,
     kind       TEXT        NOT NULL CHECK (kind IN ('session', 'refresh')),
     user_id    TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     scope      TEXT        NOT NULL CHECK (scope IN ('play', 'manage')),
