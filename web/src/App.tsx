@@ -41,7 +41,6 @@ import { AdminLogs } from "./pages/Admin/Logs";
 import { CloudDevices } from "./pages/Cloud/Devices";
 import { Billing } from "./pages/Cloud/Billing";
 import { ConnectedDevices } from "./pages/Profile/ConnectedDevices";
-import { LinkDevice } from "./pages/Profile/LinkDevice";
 import { Sessions } from "./pages/Profile/Sessions";
 import { APITokens } from "./pages/Profile/APITokens";
 import { WatchHistory } from "./pages/Profile/WatchHistory";
@@ -132,7 +131,6 @@ export function App() {
                         <Route path="/help/:topic" element={<HelpTopic />} />
                         <Route path="/account" element={<Account />} />
                         <Route path="/account/devices" element={<ConnectedDevices />} />
-                        <Route path="/link" element={<LinkDevice />} />
                         <Route path="/account/sessions" element={<Sessions />} />
                         <Route path="/account/tokens" element={<APITokens />} />
                         <Route path="/account/history" element={<WatchHistory />} />

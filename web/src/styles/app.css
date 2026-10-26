@@ -3393,21 +3393,3 @@ button.mkt-video__hero {
   margin-inline-end: var(--space-2);
   border-radius: var(--radius-sm);
 }
-
-/* Signing in a TV with its code (/link) */
-.mkt-link-device__card {
-  max-width: 32rem;
-}
-.mkt-link-device .mkt-stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4, 1rem);
-}
-.mkt-link-device .mkt-row {
-  display: flex;
-  gap: var(--space-3, 0.75rem);
-  flex-wrap: wrap;
-}
-.mkt-link-device .mkt-error {
-  color: var(--color-danger, #c0392b);
-}

@@ -194,8 +194,6 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 		ph.Audit = pairAudit{w: securityaudit.NewWriter(d.DB)}
 	}
 	ph.Mount(r)
-	// A TV signs in with a code a signed-in person approves; same minter.
-	(&discoveryh.DeviceLink{Minter: ph.Minter, Audit: ph.Audit}).Mount(r)
 
 	// Security disclosure + SBOM.
 	policy := d.SecurityPolicy

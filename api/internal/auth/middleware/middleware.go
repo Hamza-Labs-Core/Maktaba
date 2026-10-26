@@ -152,10 +152,6 @@ func RequireAuth(next http.Handler) http.Handler {
 //     reachability.
 //   - /api/auth/login — issues the first credential; the caller has
 //     none yet by definition.
-//   - /api/auth/device/start and /api/auth/device/token — a TV asks for a
-//     sign-in code and polls for the tokens once a signed-in person approves
-//     it; the poll needs the device secret only the TV holds, and both are
-//     rate-limited per IP.
 //   - /api/auth/refresh — rotates a refresh token; the caller's access
 //     token may already be expired, so it cannot be required here.
 //   - /api/cluster/join and /api/cluster/join/{node_id} (Epic 31) — a
@@ -195,10 +191,6 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		"/.well-known/security.txt":  {},
 		"/api/auth/login":            {},
 		"/api/auth/refresh":          {},
-		// a TV asks for a sign-in code and polls with its secret before it
-		// holds any credential (handlers/discovery/devicelink.go)
-		"/api/auth/device/start": {},
-		"/api/auth/device/token": {},
 		// web-pages-batch2 — self-service entry points the caller reaches
 		// before holding any credential.
 		"/api/auth/register": {},

@@ -4522,16 +4522,5 @@
   "rules.search.recent_limit.help": "How many of each user's searches the Recent searches list keeps. The query stays after its results are no longer kept; opening it searches again.",
   "rules.group.Search results": "Search results",
   "rules.group.Search history": "Search history",
-  "health.peers": "Service probes",
-  "link.title": "Sign in a TV",
-  "link.intro": "Enter the code your TV shows. It will be signed in as you.",
-  "link.code": "Code",
-  "link.continue": "Continue",
-  "link.confirm": "Sign in {device} as {user}?",
-  "link.approve": "Sign it in",
-  "link.done": "{device} is signed in. You can close this page.",
-  "link.aDevice": "this device",
-  "link.notFound": "No TV is showing this code. Check it, or wait for the TV to show a new one.",
-  "link.taken": "Someone else already signed this TV in.",
-  "nav.linkDevice": "Sign in a TV"
+  "health.peers": "Service probes"
 }
