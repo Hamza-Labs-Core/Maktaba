@@ -14,7 +14,7 @@ Maktaba is your library of lectures and shows. You open it in a web browser (or 
 2. Type your **Username** and **Password**.
 3. Press **Sign in**. You land on the Library, or on the page you were trying to open.
 
-If your home has several Maktaba machines, the sign-in page may offer to sign in through the home instead. Use it: one sign-in then works on every machine.
+If your home has several Maktaba machines, sign in on any of them with the same username and password: accounts live on the home.
 
 ### Create an account {#register}
 

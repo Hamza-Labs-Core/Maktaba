@@ -447,12 +447,12 @@ POST   /api/cluster/delegate/introspect        {cookie_session? | bearer? | pat?
 ANY    /api/…                                  home-class routes proxied by a node: X-Maktaba-Node, X-Maktaba-Node-Sig,
                                                X-Maktaba-Delegated-Session (or Authorization passed through)
 GET    /api/cluster/updates/artifacts/{version}/{name}   the verified files of a staged release (mirror)
-GET    /api/cluster/sso/authorize?node=&challenge=&return=   (browser, home origin) → 302 node callback ?code=
-POST   /api/cluster/sso/exchange               (node, signed) {code, verifier} → session for the node's origin
 
 # Node (local class)
 GET    /api/system/version · /api/system/processes · /api/cluster/self   this machine (identity, role, version, home)
-GET    /api/cluster/sso/callback?code=         (browser, node origin) sets the node cookie
+
+# Every machine: removed (the cluster sign-in, design §10.5)
+ANY    /api/cluster/sso/start · /callback · /authorize · /exchange   404, to anyone
 
 # Supervisor loopback (127.0.0.1:9103, local token)
 POST   /update/start {run_id} · GET /update/status · POST /update/abort (before migrate only) · POST /update/rollback

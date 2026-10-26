@@ -67,9 +67,9 @@ The home converts the stored file paths to the shared `smb://server/share/...` f
 
 Machines run the Plex stages through the home. The home adds the Plex token, so the token never leaves the home. Turn it on or off with **Relay extension calls for machines** on the **Relay** tab. Off: the Plex stages run on the home only. The limits per machine are in [Settings → Rules](/help/rules#relay).
 
-### One sign-in for every machine {#one-sign-in}
+### The same account on every machine {#one-sign-in}
 
-Each machine has its own web address (linked on its card). When you open it, the sign-in page offers **Continue with …** (the home's name), so you need not sign in again. Accounts always live on the home. Turn this off in [Settings → Rules](/help/rules#cluster).
+Each machine has its own web address (linked on its card). Sign in there with your usual username and password: accounts always live on the home, and the machine checks them with it.
 
 ### The paused page {#paused-page}
 
