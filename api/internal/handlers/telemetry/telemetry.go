@@ -44,6 +44,10 @@ const (
 	EventsPerMinute  = 1000
 	DeletesPerMinute = 30
 
+	// maxVital is the largest Web Vital kept, in milliseconds (Maktaba Cloud's
+	// limit).
+	maxVital = 600000
+
 	// futureSkew is how far ahead of the server a device's clock may be before
 	// its time is truncated to the server's.
 	futureSkew = time.Minute
@@ -277,11 +281,14 @@ func (h *Handler) PostApp(w http.ResponseWriter, r *http.Request) {
 	}
 	out := AppBatch{
 		Type: KindApp, InstallID: b.InstallID, App: b.App, Platform: b.Platform, FormFactor: b.FormFactor,
-		AppVersion: token(b.AppVersion, 32), OSVersion: token(b.OSVersion, 32), Locale: token(b.Locale, 16),
+		AppVersion: version(b.AppVersion, "unknown"), OSVersion: version(b.OSVersion, ""), Locale: locale(b.Locale),
 		Events: make([]EventOut, 0, len(b.Events)), Vitals: make([]MetricOut, 0, len(b.Vitals)),
 	}
 	for _, e := range b.Events {
-		payload := StripUnknownFields(e.Kind, e.Payload)
+		payload, ok := Normalize(e.Kind, e.Payload)
+		if !ok {
+			continue
+		}
 		size := 0
 		for k, v := range payload {
 			if s, ok := v.(string); ok {
@@ -302,7 +309,18 @@ func (h *Handler) PostApp(w http.ResponseWriter, r *http.Request) {
 		out.Events = append(out.Events, EventOut{Kind: e.Kind, Payload: payload, TS: occurred.Format(time.RFC3339)})
 	}
 	for _, m := range b.Vitals {
-		out.Vitals = append(out.Vitals, MetricOut{Metric: m.Metric, Value: m.Value, Route: RouteTemplate(m.Route)})
+		if m.Value > maxVital {
+			continue // a page open for ten minutes says nothing about its speed
+		}
+		route := RouteTemplate(m.Route)
+		if !strings.HasPrefix(route, "/") {
+			route = clip("/"+route, 120)
+		}
+		out.Vitals = append(out.Vitals, MetricOut{Metric: m.Metric, Value: m.Value, Route: route})
+	}
+	if len(out.Events)+len(out.Vitals) == 0 {
+		common.WriteNoContent(w)
+		return
 	}
 	if err := h.Store.Add(r.Context(), KindApp, b.InstallID, out); err != nil {
 		httperror.Write(w, r, httperror.Internal("telemetry: queue the batch").Wrap(err))
@@ -473,21 +491,7 @@ func RouteTemplate(route string) string {
 			parts[i] = ":id"
 		}
 	}
-	return clip(strings.Join(parts, "/"), 128)
-}
-
-// token keeps a version or a locale to [A-Za-z0-9._-] and n characters.
-func token(s string, n int) string {
-	var b strings.Builder
-	for _, c := range strings.TrimSpace(s) {
-		if b.Len() >= n {
-			break
-		}
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-' {
-			b.WriteRune(c)
-		}
-	}
-	return b.String()
+	return clip(strings.Join(parts, "/"), 120)
 }
 
 // clip shortens s to n runes (on a rune boundary).

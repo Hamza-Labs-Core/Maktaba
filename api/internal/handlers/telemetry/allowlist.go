@@ -18,6 +18,12 @@
 // is kept.
 package telemetry
 
+import (
+	"math"
+	"regexp"
+	"strings"
+)
+
 // AllowedKind is an event kind an app may send and the payload fields kept
 // for it. Declared in code, so the allow-list ships with the binary: a release
 // extends it, never the runtime.
@@ -81,4 +87,95 @@ func StripUnknownFields(kind string, payload map[string]any) map[string]any {
 		}
 	}
 	return out
+}
+
+// What Maktaba Cloud accepts of each field (a batch with one value it refuses
+// is refused whole, so the home sends only what it accepts).
+var (
+	codeRe    = regexp.MustCompile(`[^A-Za-z0-9._:-]`)
+	featureRe = regexp.MustCompile(`[^a-z0-9_]+`)
+	versionRe = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,39}$`)
+	localeRe  = regexp.MustCompile(`^[A-Za-z]{2,3}(?:[_-][A-Za-z0-9]{1,8}){0,3}$`)
+	sources   = map[string]bool{"direct": true, "transcode": true, "live": true}
+)
+
+const (
+	maxCount    = 1e6
+	maxDuration = 7 * 24 * 3600 * 1000
+)
+
+// Normalize is an allowed event's payload as Maktaba Cloud takes it: each
+// field to its kind (a feature's name to [a-z0-9_], a code to its characters,
+// a count or a duration to a whole number in range), what cannot be one
+// dropped. Free text (an error's message and frames) is left for the
+// scrubbing. ok false: the event says nothing without the field it lacks (a
+// feature.used without a feature).
+func Normalize(kind string, payload map[string]any) (out map[string]any, ok bool) {
+	out = StripUnknownFields(kind, payload)
+	for k, v := range out {
+		var keep any
+		switch k {
+		case "cold_start":
+			if b, isBool := v.(bool); isBool {
+				keep = b
+			}
+		case "feature":
+			if s, isStr := v.(string); isStr {
+				s = strings.Trim(featureRe.ReplaceAllString(strings.ToLower(s), "_"), "_")
+				if s != "" {
+					keep = clip(s, 40)
+				}
+			}
+		case "source":
+			if s, isStr := v.(string); isStr && sources[s] {
+				keep = s
+			}
+		case "codec", "error_kind":
+			if s, isStr := v.(string); isStr {
+				if s = clip(codeRe.ReplaceAllString(s, ""), 64); s != "" {
+					keep = s
+				}
+			}
+		case "count", "duration_ms":
+			if f, isNum := v.(float64); isNum && !math.IsNaN(f) && !math.IsInf(f, 0) {
+				limit := float64(maxCount)
+				if k == "duration_ms" {
+					limit = maxDuration
+				}
+				keep = math.Min(math.Max(math.Round(f), 0), limit)
+			}
+		case "error_message", "stack_first_5":
+			if s, isStr := v.(string); isStr && strings.TrimSpace(s) != "" {
+				keep = s
+			}
+		}
+		if keep == nil {
+			delete(out, k)
+		} else {
+			out[k] = keep
+		}
+	}
+	if kind == "feature.used" && out["feature"] == nil {
+		return nil, false
+	}
+	if kind == "error.uncaught" && out["error_message"] == nil {
+		return nil, false
+	}
+	return out, true
+}
+
+// version is v if Maktaba Cloud takes it as a version, else fallback.
+func version(v, fallback string) string {
+	if v = strings.TrimSpace(v); versionRe.MatchString(v) {
+		return v
+	}
+	return fallback
+}
+
+// locale is l if it is a language tag, else "".
+func locale(l string) string {
+	if l = strings.TrimSpace(l); len(l) <= 20 && localeRe.MatchString(l) {
+		return l
+	}
+	return ""
 }

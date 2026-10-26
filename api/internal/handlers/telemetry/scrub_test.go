@@ -104,3 +104,41 @@ func TestScrubErrors(t *testing.T) {
 		t.Fatalf("scrubErrors = %+v", got)
 	}
 }
+
+// Every field goes as Maktaba Cloud takes it (it refuses a whole batch for one
+// value it does not): names and codes to their characters, numbers whole and in
+// range, what cannot be one dropped, an event without its point dropped.
+func TestNormalize(t *testing.T) {
+	for _, c := range []struct {
+		kind string
+		in   map[string]any
+		want map[string]any
+		ok   bool
+	}{
+		{"feature.used", map[string]any{"feature": "Live-TV", "count": 2.6}, map[string]any{"feature": "live_tv", "count": 3.0}, true},
+		{"feature.used", map[string]any{"feature": "--", "count": 1.0}, nil, false},
+		{"feature.used", map[string]any{"count": -4.0, "feature": "x"}, map[string]any{"feature": "x", "count": 0.0}, true},
+		{"player.start", map[string]any{"source": "remux", "codec": ""}, map[string]any{}, true},
+		{"player.start", map[string]any{"source": "direct", "codec": "h264 (avc1)"}, map[string]any{"source": "direct", "codec": "h264avc1"}, true},
+		{"player.error", map[string]any{"error_kind": "http_404", "duration_ms": 1e12}, map[string]any{"error_kind": "http_404", "duration_ms": float64(maxDuration)}, true},
+		{"app.open", map[string]any{"cold_start": "yes"}, map[string]any{}, true},
+		{"error.uncaught", map[string]any{"error_message": "  "}, nil, false},
+	} {
+		got, ok := Normalize(c.kind, c.in)
+		if ok != c.ok || len(got) != len(c.want) {
+			t.Errorf("Normalize(%s, %v) = %v, %v", c.kind, c.in, got, ok)
+			continue
+		}
+		for k, v := range c.want {
+			if got[k] != v {
+				t.Errorf("Normalize(%s, %v)[%s] = %v, want %v", c.kind, c.in, k, got[k], v)
+			}
+		}
+	}
+	if version("0.3.27", "x") != "0.3.27" || version("", "unknown") != "unknown" || version("1 2", "") != "" {
+		t.Error("version")
+	}
+	if locale("ar") != "ar" || locale("en-US") != "en-US" || locale("123") != "" {
+		t.Error("locale")
+	}
+}

@@ -131,7 +131,10 @@ func scrubErrors(in []ErrorCount) []ErrorCount {
 	merged := map[string]int{}
 	var order []string
 	for _, e := range in {
-		m := clip(Scrub(e.Message), maxErrorRunes)
+		m := strings.TrimSpace(clip(Scrub(e.Message), maxErrorRunes))
+		if m == "" || e.Count <= 0 {
+			continue
+		}
 		if _, ok := merged[m]; !ok {
 			order = append(order, m)
 		}
