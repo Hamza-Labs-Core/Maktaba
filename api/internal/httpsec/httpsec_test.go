@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -127,6 +128,11 @@ func TestCORS_PreflightAllowedOrigin(t *testing.T) {
 	}
 	if rec.Header().Get("Access-Control-Max-Age") != "600" {
 		t.Errorf("Max-Age = %q, want 600", rec.Header().Get("Access-Control-Max-Age"))
+	}
+	// every app names itself on every request (Epic 44): the web app from
+	// another origin may send the header
+	if got := rec.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "X-Maktaba-Client") {
+		t.Errorf("Allow-Headers = %q, want X-Maktaba-Client among them", got)
 	}
 }
 

@@ -38,7 +38,7 @@ type CORSConfig struct {
 func DefaultCORS() CORSConfig {
 	return CORSConfig{
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Maktaba-CSRF"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Maktaba-CSRF", "X-Maktaba-Client"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}

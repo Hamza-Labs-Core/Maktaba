@@ -4,7 +4,7 @@ Test cases for every page in the web app (every route in `src/App.tsx`). These a
 not test code: each one says what to mock, what to do and what to expect, so it can be turned
 into a vitest + Testing Library test (or a browser e2e test) later.
 
-**48 pages, 1207 cases** (476 P1, 541 P2, 190 P3). 972 cases are covered by a test and 34
+**48 pages, 1207 cases** (475 P1, 544 P2, 188 P3). 975 cases are covered by a test and 34
 partly. Almost every P1 and P2 case has a test; most P3 cases (theme, minor layout) do not.
 Cases a unit test can't check (true phone layout, real theme colours, real playback) say
 `No (e2e-only)`. Cases that show a bug not fixed yet have an `it.fails` / `it.todo` test that
@@ -135,7 +135,7 @@ open are `it.fails` / `it.todo` tests.
 | [admin-enrichment.md](admin-enrichment.md)   | `/admin/enrichment`                               | ENR    | 21    | 9   | 13 / 0                  |
 | [admin-channels.md](admin-channels.md)       | `/admin/channels`                                 | CHN    | 38    | 18  | 30 / 2                  |
 | [admin-filler.md](admin-filler.md)           | `/admin/filler`                                   | FIL    | 24    | 10  | 19 / 0                  |
-| [admin-analytics.md](admin-analytics.md)     | `/admin/analytics`                                | ANL    | 26    | 10  | 19 / 1                  |
+| [admin-analytics.md](admin-analytics.md)     | `/admin/analytics`                                | ANL    | 26    | 9   | 22 / 1                  |
 | [admin-audit.md](admin-audit.md)             | `/admin/audit`                                    | AUD    | 28    | 9   | 22 / 0                  |
 | [admin-health.md](admin-health.md)           | `/admin/health`                                   | HLT    | 25    | 10  | 20 / 0                  |
 | [admin-machines.md](admin-machines.md)       | `/admin/machines`                                 | MCH    | 29    | 11  | 23 / 3                  |

@@ -189,6 +189,13 @@ func TestIsNativeClient(t *testing.T) {
 		{"web (no headers)", http.Header{}, false},
 		{"client header", http.Header{HeaderClient: []string{"native"}}, true},
 		{"client header mixed case", http.Header{HeaderClient: []string{"Native"}}, true},
+		// Epic 44: every app names itself; any but the web bundle's is native
+		{"player app", http.Header{HeaderClient: []string{"player/1.3.0 (ios; phone)"}}, true},
+		{"remote app", http.Header{HeaderClient: []string{"remote/1.0 (android; tablet)"}}, true},
+		{"tv app", http.Header{HeaderClient: []string{"tv/1.0 (tvos; tv)"}}, true},
+		{"web", http.Header{HeaderClient: []string{"web/0.3.25 (macos; desktop)"}}, false},
+		{"desktop shell", http.Header{HeaderClient: []string{"desktop/0.3.25 (windows; desktop)"}}, false},
+		{"mobile shell", http.Header{HeaderClient: []string{"mobile/0.3.25 (android; phone)"}}, false},
 		{"authorization header present", http.Header{"Authorization": []string{"Bearer xxx"}}, true},
 	}
 	for _, tc := range cases {

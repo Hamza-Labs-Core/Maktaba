@@ -85,8 +85,22 @@ import Testing
     @Test func nativeHeaderAndQuery() async {
         let c = APIClient(home: URL(string: "http://h:8088")!, tokens: TokenStore(app: "test", home: URL(string: "http://h:8088")!))
         let r = await c.request("GET", "/api/videos", query: ["library": "L", "limit": "60"])
-        #expect(r.value(forHTTPHeaderField: "X-Maktaba-Client") == "native")
+        #expect(r.value(forHTTPHeaderField: "X-Maktaba-Client") == ClientHeader.value)
         #expect(r.url?.absoluteString == "http://h:8088/api/videos?library=L&limit=60")
+    }
+
+    /// Every app names itself (Epic 44): app, version, platform, device.
+    @Test func clientHeaderNamesTheApp() {
+        #if os(macOS)
+        let tail = "(macos; desktop)"
+        #expect(ClientHeader.make(bundleID: "com.hamzalabs.maktaba.player.mac", version: "1.3.0") == "player/1.3.0 \(tail)")
+        #expect(ClientHeader.make(bundleID: "com.hamzalabs.maktaba.remote", version: "1.0") == "remote/1.0 \(tail)")
+        #expect(ClientHeader.make(bundleID: "com.hamzalabs.maktaba.tv", version: "") == "tv/dev \(tail)")
+        #elseif os(iOS)
+        #expect(ClientHeader.make(bundleID: "com.hamzalabs.maktaba.player", version: "1.3.0") == "player/1.3.0 (ios; phone)")
+        #expect(ClientHeader.make(bundleID: "com.hamzalabs.maktaba.remote.tablet", version: "1.0") == "remote/1.0 (ipados; tablet)")
+        #endif
+        #expect(ClientHeader.value.range(of: #"^(player|remote|tv)/\S+ \([a-z]+; [a-z]+\)$"#, options: .regularExpression) != nil)
     }
 }
 

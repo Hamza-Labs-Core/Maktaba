@@ -578,13 +578,16 @@ func TestSignInOnTheCopyWhileTheHomeIsAway(t *testing.T) {
 	if a := g.do(http.MethodPost, "/api/videos/v1/rating", id); !a.refusedChange() {
 		t.Fatalf("a change on a node-local session with the home away: %+v, want 503", a)
 	}
-	// a native app signs in with the home
-	req := httptest.NewRequest(http.MethodPost, LoginPath, strings.NewReader(`{"username":"amal","password":"pw-amal"}`))
-	req.Header.Set("X-Maktaba-Client", "native")
-	rec := httptest.NewRecorder()
-	g.h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("a native sign-in on the copy: %d, want 503", rec.Code)
+	// a native app signs in with the home: an old build (`native`) or one that
+	// names itself (Epic 44)
+	for _, app := range []string{"native", "player/1.3.0 (ios; phone)"} {
+		req := httptest.NewRequest(http.MethodPost, LoginPath, strings.NewReader(`{"username":"amal","password":"pw-amal"}`))
+		req.Header.Set("X-Maktaba-Client", app)
+		rec := httptest.NewRecorder()
+		g.h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("a native sign-in (%s) on the copy: %d, want 503", app, rec.Code)
+		}
 	}
 	// an account waiting on a password change waits for the home
 	if a, id := g.signIn(t, "badr", "pw-badr"); a.code != http.StatusServiceUnavailable || id != "" ||
