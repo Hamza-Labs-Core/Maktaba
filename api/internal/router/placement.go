@@ -131,6 +131,9 @@ func buildPlacement() placement.Table {
 		// story 35.9: the home's half of delegation
 		"/api/cluster/delegate/introspect",
 		"/api/cluster/delegate/signout",
+		// Epic 45: the home rows read the caller's playback and pins (viewing data;
+		// /api/libraries/summary and /hub are home by their prefix)
+		"/api/home",
 	))
 	// every write of an `any` family, and the reads that need the home
 	add([]placement.Rule{
