@@ -8,6 +8,7 @@ import { Outlet, NavLink, useLocation, useNavigate, useNavigationType } from "re
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useAuth } from "../lib/auth";
+import { usePins } from "../lib/pins";
 import { useI18n } from "../lib/i18n";
 import { useShortcuts } from "../lib/keyboard/shortcuts";
 import { applyServiceWorkerUpdate, type SwUpdateDetail } from "../lib/pwa";
@@ -43,16 +44,27 @@ function HealthDot() {
 
 // Everyone's pages: watching. Running the server (processing, transcription, settings)
 // is the admins' (ADMIN below), and the API refuses anyone else on those routes.
+// Home ("/") matches only itself (`end`), or it would be current on every page.
 const NAV = [
-  { to: "/library", key: "nav.library", icon: "▦" },
+  { to: "/", key: "nav.home", icon: "⌂" },
+  { to: "/library", key: "nav.libraries", icon: "▦" },
   { to: "/series", key: "nav.series", icon: "▤" },
   { to: "/guide", key: "nav.guide", icon: "▥" },
   { to: "/search", key: "nav.search", icon: "⌕" },
 ] as const;
 
-// The phone tab bar: the watching pages and "More" (the account pages and, for admins,
-// the admin pages live behind More: /more).
-const TABS = [...NAV, { to: "/more", key: "nav.more", icon: "⋯" }] as const;
+// The phone tab bar: Home, Libraries, Guide, Search and "More" (Series, the account
+// pages and, for admins, the admin pages live behind More: /more).
+const TABS = [
+  { to: "/", key: "nav.home", icon: "⌂" },
+  { to: "/library", key: "nav.libraries", icon: "▦" },
+  { to: "/guide", key: "nav.guide", icon: "▥" },
+  { to: "/search", key: "nav.search", icon: "⌕" },
+  { to: "/more", key: "nav.more", icon: "⋯" },
+] as const;
+
+// Series has no room on the phone tab bar: the More page lists it first.
+const SERIES = NAV[2];
 
 // Secondary nav is sidebar-only (kept out of the compact bottom tab bar);
 // these surfaces are reachable by every authenticated user.
@@ -135,6 +147,7 @@ export function AppShell() {
   const hasUpdate = updateAvailable(useUpdateStatus());
   const badged = (to: string) => hasUpdate && BADGED.has(to);
   const healthDown = useSystemStatus(!!user?.is_admin) === "down";
+  const pins = usePins(user?.id);
 
   useEffect(() => {
     focusSearchRef(searchRef.current);
@@ -233,6 +246,7 @@ export function AppShell() {
             <NavLink
               key={item.to}
               to={item.to}
+              end={item.to === "/"}
               className="mkt-nav-link"
               title={t(item.key)}
               aria-label={t(item.key)}
@@ -245,6 +259,29 @@ export function AppShell() {
               <span className="mkt-nav-link__label">{t(item.key)}</span>
             </NavLink>
           ))}
+          {pins && pins.length > 0 && (
+            <>
+              <span className="mkt-nav-group" id="mkt-nav-pinned">
+                {t("nav.pinned")}
+              </span>
+              <ul className="mkt-nav-pinned" aria-labelledby="mkt-nav-pinned">
+                {pins.map((p) => (
+                  <li key={p.id}>
+                    <NavLink
+                      to={`/library/${encodeURIComponent(p.id)}`}
+                      className="mkt-nav-link mkt-nav-link--pinned"
+                      title={p.name}
+                    >
+                      <span className="mkt-nav-link__icon" aria-hidden="true">
+                        ▪
+                      </span>
+                      <bdi className="mkt-nav-link__label">{p.name}</bdi>
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           {SECONDARY.map((item) => (
             <NavLink
               key={item.to}
@@ -316,6 +353,7 @@ export function AppShell() {
           <NavLink
             key={item.to}
             to={item.to}
+            end={item.to === "/"}
             className="mkt-tab"
             aria-describedby={
               badged(item.to)
@@ -351,7 +389,7 @@ export function MoreMenu() {
   const groups: Array<{
     title?: string;
     items: ReadonlyArray<{ to: string; key: string; icon: string }>;
-  }> = [{ items: SECONDARY }];
+  }> = [{ items: [SERIES, ...SECONDARY] }];
   if (user?.is_admin) groups.push({ title: t("nav.admin"), items: ADMIN });
   return (
     <section className="mkt-page mkt-more">

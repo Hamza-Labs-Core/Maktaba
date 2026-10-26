@@ -18,6 +18,9 @@ import { FlagsProvider } from "./lib/flags";
 import { ShortcutProvider } from "./lib/keyboard/shortcuts";
 import { applyResolvedTheme, readMode, watchSystemTheme } from "./lib/theme";
 import { LibraryBrowser } from "./pages/LibraryBrowser";
+import { Home } from "./pages/Home";
+import { Libraries } from "./pages/Library/Libraries";
+import { LibraryPage } from "./pages/Library/LibraryPage";
 import { SeriesBrowser } from "./pages/Library/SeriesBrowser";
 import { SeriesDetail } from "./pages/Library/SeriesDetail";
 import { AdminEnrichment } from "./pages/Admin/Enrichment";
@@ -110,9 +113,10 @@ export function App() {
                             </RequireAuth>
                           }
                         >
-                          <Route index element={<Navigate to="/library" replace />} />
-                          <Route path="/library" element={<LibraryBrowser />} />
-                          <Route path="/library/:libraryId" element={<LibraryBrowser />} />
+                          <Route path="/" element={<Home />} />
+                          <Route path="/library" element={<Libraries />} />
+                          <Route path="/library/:libraryId" element={<LibraryPage />} />
+                          <Route path="/videos" element={<LibraryBrowser />} />
                           <Route path="/series" element={<SeriesBrowser />} />
                           <Route path="/series/:id" element={<SeriesDetail />} />
                           <Route path="/videos/:videoId" element={<VideoDetail />} />

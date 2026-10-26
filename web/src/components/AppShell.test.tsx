@@ -131,8 +131,8 @@ describe("AppShell server pages (Processing, Transcription, Settings)", () => {
     }
     const tabs = within(tabbar).getAllByRole("link");
     expect(tabs.map((a) => a.getAttribute("href"))).toEqual([
+      "/",
       "/library",
-      "/series",
       "/guide",
       "/search",
       "/more",

@@ -92,7 +92,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
       next: null,
     });
     renderLib();
-    expect(screen.getByRole("heading", { name: "Library" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "All videos" })).toBeInTheDocument();
     const intro = await screen.findByRole("link", { name: /Intro/ });
     expect(intro).toHaveAttribute("href", "/videos/v1");
     expect(intro).toHaveTextContent("1:05");
@@ -161,12 +161,12 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(screen.getByRole("link", { name: "y.mp4" })).toBeInTheDocument();
     expect(document.querySelector(".mk-badge")).toBeNull();
     await user.click(screen.getByRole("radio", { name: "List" }));
-    const table = screen.getByRole("table", { name: "Library" });
+    const table = screen.getByRole("table", { name: "All videos" });
     const row = within(table).getByRole("link", { name: "x.mp4" }).closest("tr")!;
     expect(within(row).getAllByText("—")).toHaveLength(3);
     await user.selectOptions(screen.getByRole("combobox", { name: "Sort" }), "title");
     await user.selectOptions(screen.getByRole("combobox", { name: "Sort" }), "duration_sec");
-    const again = await screen.findByRole("table", { name: "Library" });
+    const again = await screen.findByRole("table", { name: "All videos" });
     expect(within(again).getByRole("link", { name: "y.mp4" })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -188,20 +188,12 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(screen.getByRole("link", { name: "B" })).toBeInTheDocument();
   });
 
-  it.each([
-    ["items: null", { server_time: "2026-10-19T10:00:00Z", items: null }],
-    ["empty object", {}],
-    ["500", () => Promise.reject(problem(500, "boom"))],
-    ["entry with null channel", { items: [{ channel: null }] }],
-  ])("LIB-05: WhatsOnNow %s does not break the page", async (_label, now) => {
-    serve({ items: [{ id: "v1", filename: "a.mp4", state: "ready" }], next: null }, now);
+  it("LIB-05: the grid no longer carries What's On Now (it moved to Home)", async () => {
+    serve({ items: [{ id: "v1", filename: "a.mp4", state: "ready" }], next: null });
     renderLib();
     expect(await screen.findByText("a.mp4")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(get.mock.calls.some((c) => String(c[0]).startsWith("/api/channels/now"))).toBe(true)
-    );
+    expect(get.mock.calls.some((c) => String(c[0]).startsWith("/api/channels/now"))).toBe(false);
     expect(screen.queryByTestId("whats-on-now-rail")).toBeNull();
-    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("LIB-06: admin on /library/:id sees Scan now, which POSTs the scan and says how it went", async () => {
@@ -384,7 +376,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     await screen.findByText("a.mp4");
     expect(screen.getByRole("radio", { name: "Grid" })).toHaveAttribute("aria-checked", "true");
     await user.click(screen.getByRole("radio", { name: "List" }));
-    const table = screen.getByRole("table", { name: "Library" });
+    const table = screen.getByRole("table", { name: "All videos" });
     expect(
       within(table)
         .getAllByRole("columnheader")
@@ -394,7 +386,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     first.unmount();
     renderLib();
     await screen.findByText("a.mp4");
-    expect(screen.getByRole("table", { name: "Library" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "All videos" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "List" })).toHaveAttribute("aria-checked", "true");
   });
 
@@ -411,7 +403,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(screen.getByRole("radio", { name: "Grid" })).toHaveAttribute("aria-checked", "true");
   });
 
-  it("LIB-20: sort select and order toggle update the URL (replace) and order", async () => {
+  it("LIB-20: sort select and order toggle update the URL (replace) and the server's sort", async () => {
     serve({
       items: [
         { id: "a", title: "Beta", filename: "a.mp4", state: "ready", duration_sec: 10 },
@@ -423,21 +415,79 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     renderLib("/library", { history: ["/elsewhere"] });
     const user = userEvent.setup();
     await screen.findByText("Beta");
+    expect(videoCalls()[0]).toContain("order=desc");
     await user.selectOptions(screen.getByRole("combobox", { name: "Sort" }), "title");
-    expect(screen.getByTestId("loc")).toHaveTextContent("/library?sort=title");
-    await waitFor(() => expect(videoCalls().at(-1)).toContain("sort=title"));
-    await waitFor(() => expect(cardTitles()).toEqual(["Gamma", "Beta", "alpha"]));
-    const calls = videoCalls().length;
-    await user.click(screen.getByRole("button", { name: "Ascending" }));
-    expect(screen.getByTestId("loc")).toHaveTextContent("order=asc");
-    expect(screen.getByRole("button", { name: "Descending" })).toBeInTheDocument();
-    expect(cardTitles()).toEqual(["alpha", "Beta", "Gamma"]);
-    expect(videoCalls()).toHaveLength(calls);
+    expect(screen.getByTestId("loc")).toHaveTextContent(/^\/library\?sort=title$/);
+    // titles start A to Z; the server sorts, the page keeps its order
+    await waitFor(() => expect(videoCalls().at(-1)).toMatch(/sort=title&order=asc/));
+    await waitFor(() => expect(cardTitles()).toEqual(["Beta", "alpha", "Gamma"]));
+    await user.click(screen.getByRole("button", { name: "Descending" }));
+    expect(screen.getByTestId("loc")).toHaveTextContent("order=desc");
+    expect(screen.getByRole("button", { name: "Ascending" })).toBeInTheDocument();
+    await waitFor(() => expect(videoCalls().at(-1)).toMatch(/sort=title&order=desc/));
+    // a new sort starts in its own order
     await user.selectOptions(screen.getByRole("combobox", { name: "Sort" }), "duration_sec");
-    await waitFor(() => expect(videoCalls().at(-1)).toContain("sort=updated_at"));
-    await waitFor(() => expect(cardTitles()).toEqual(["Gamma", "Beta", "alpha"]));
+    expect(screen.getByTestId("loc")).not.toHaveTextContent("order=");
+    await waitFor(() => expect(videoCalls().at(-1)).toMatch(/sort=duration_sec&order=desc/));
     await user.click(screen.getByRole("button", { name: "go back" }));
     expect(screen.getByText("elsewhere")).toBeInTheDocument();
+  });
+
+  it("LIB-20: every server sort is offered and sent as is", async () => {
+    serve({ items: [{ id: "v1", filename: "a.mp4", state: "ready" }], next: null });
+    renderLib();
+    const user = userEvent.setup();
+    await screen.findByText("a.mp4");
+    const select = screen.getByRole("combobox", { name: "Sort" });
+    const values = within(select)
+      .getAllByRole("option")
+      .map((o) => (o as HTMLOptionElement).value);
+    expect(values).toEqual([
+      "updated_at",
+      "created_at",
+      "published_at",
+      "title",
+      "duration_sec",
+      "plays",
+    ]);
+    for (const v of ["created_at", "published_at", "plays"]) {
+      await user.selectOptions(screen.getByRole("combobox", { name: "Sort" }), v);
+      await waitFor(() => expect(videoCalls().at(-1)).toContain(`sort=${v}&order=desc`));
+    }
+  });
+
+  it("LIB-26: year and watched filters go to the URL and the request; Clear filters clears all", async () => {
+    serve((url: string) =>
+      url.includes("watched=") ? { items: [], next: null } : { items: [], next: null }
+    );
+    renderLib("/library?year=2019&language=ar");
+    const user = userEvent.setup();
+    await waitFor(() => expect(videoCalls()).toHaveLength(1));
+    const first = new URLSearchParams(videoCalls()[0].split("?")[1]);
+    expect(first.get("year")).toBe("2019");
+    expect(first.get("language")).toBe("ar");
+    expect(screen.getByRole("spinbutton", { name: "Year" })).toHaveValue(2019);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Watched" }), "in_progress");
+    expect(screen.getByTestId("loc")).toHaveTextContent("watched=in_progress");
+    await waitFor(() => expect(videoCalls().at(-1)).toContain("watched=in_progress"));
+    expect(videoCalls().at(-1)).toContain("year=2019");
+    expect(await screen.findByText("No videos match your filters.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByTestId("loc")).toHaveTextContent(/^\/library$/);
+    await waitFor(() => expect(videoCalls().at(-1)).not.toMatch(/year=|watched=|language=/));
+  });
+
+  it("LIB-26: typing a year filters; a bad ?year= or ?watched= is not sent", async () => {
+    serve({ items: [], next: null });
+    renderLib("/library?year=19&watched=bogus");
+    const user = userEvent.setup();
+    await waitFor(() => expect(videoCalls()).toHaveLength(1));
+    expect(videoCalls()[0]).not.toMatch(/year=|watched=/);
+    const year = screen.getByRole("spinbutton", { name: "Year" });
+    await user.clear(year);
+    await user.type(year, "2021{Enter}");
+    expect(screen.getByTestId("loc")).toHaveTextContent("year=2021");
+    await waitFor(() => expect(videoCalls().at(-1)).toContain("year=2021"));
   });
 
   it("LIB-21: language chips filter; Clear filters on a filtered-out empty list", async () => {
@@ -517,7 +567,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
       expect(screen.getByRole("link", { name: `${id}.mp4` }).querySelector(".mk-badge")).toBeNull();
     }
     await userEvent.setup().click(screen.getByRole("radio", { name: "List" }));
-    const table = screen.getByRole("table", { name: "Library" });
+    const table = screen.getByRole("table", { name: "All videos" });
     for (const id of ["ready", "transcoding"]) {
       const row = within(table)
         .getByRole("link", { name: `${id}.mp4` })
