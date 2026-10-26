@@ -198,7 +198,8 @@ func smokeRun(ctx context.Context, bin, version string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "--version").CombinedOutput()
+	// the release was just unpacked: tried again while the system says the program is busy
+	out, err := layout.CombinedOutputFresh(func() *exec.Cmd { return exec.CommandContext(ctx, bin, "--version") })
 	if err != nil {
 		return Fail("smoke_failed", "%s --version: %v: %s", bin, err, strings.TrimSpace(string(out)))
 	}
