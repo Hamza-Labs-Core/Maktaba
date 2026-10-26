@@ -198,7 +198,7 @@ class ApiClient(
         }
         return Request.Builder().url(url).method(method, payload)
             .header("Accept", "application/json")
-            .header("X-Maktaba-Client", "native")
+            .header(ClientHeader.NAME, ClientHeader.value)
             .build()
     }
 

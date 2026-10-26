@@ -166,16 +166,16 @@ func TestEmptyHistoryAndDelete(t *testing.T) {
 }
 
 func TestHashIP(t *testing.T) {
-	h := &Handler{IPSalt: "s"}
+	const salt = "s"
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.RemoteAddr = "10.0.0.1:5555"
-	a := h.hashIP(r)
+	a := HashIP(salt, r)
 	r.RemoteAddr = "10.0.0.1"
-	if b := h.hashIP(r); a != b || len(a) != 16 {
+	if b := HashIP(salt, r); a != b || len(a) != 16 {
 		t.Fatalf("hash %q vs %q: same IP with or without port must hash alike", a, b)
 	}
 	r.RemoteAddr = ""
-	if h.hashIP(r) != "" {
+	if HashIP(salt, r) != "" {
 		t.Fatal("no address must hash to empty")
 	}
 	if truncate("abcdef", 3) != "abc" || truncate("ab", 3) != "ab" {

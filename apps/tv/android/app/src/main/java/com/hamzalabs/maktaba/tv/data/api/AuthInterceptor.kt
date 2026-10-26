@@ -19,6 +19,7 @@ import okhttp3.Response
 class AuthInterceptor(private val tokens: TokenStore) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request().newBuilder().apply {
+            header(ClientHeader.NAME, ClientHeader.value)
             tokens.accessToken?.let { header("Authorization", "Bearer $it") }
         }.build()
         return chain.proceed(request)
@@ -66,6 +67,7 @@ class TokenAuthenticator(
         val body = payload.toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
             .url("${baseUrl.trimEnd('/')}/api/auth/refresh")
+            .header(ClientHeader.NAME, ClientHeader.value)
             .post(body)
             .build()
         client.newCall(request).execute().use { resp ->

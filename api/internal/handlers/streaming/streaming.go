@@ -38,7 +38,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/client"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
@@ -625,6 +627,12 @@ func (h *Handler) CloseSession(w http.ResponseWriter, r *http.Request) {
 		}
 		if err == nil {
 			h.led().closeWritten(id)
+			// its play ends with it (Epic 44 story 44.3); best effort, the
+			// reaper interrupts one left open
+			if err := watch.StopStreamPlay(r.Context(), h.DB, id, h.now()); err != nil {
+				mlog.From(r.Context()).Warn("play not closed",
+					"session_id", id, "err", err.Error(), "event", "stream_play_stop_failed")
+			}
 		}
 	}
 	common.WriteNoContent(w)
@@ -724,6 +732,18 @@ func (h *Handler) PostProgress(w http.ResponseWriter, r *http.Request) {
 		}
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"debounced": true})
 		return
+	}
+
+	// The play (Epic 44 story 44.3): one watch_sessions row per stream session,
+	// kept by its progress. Before the upsert below, which it measures against.
+	// Best effort: the resume point matters more than the play's record.
+	if err := watch.RecordStreamProgress(r.Context(), h.DB, watch.StreamProgress{
+		StreamSessionID: sessionID, UserID: ownerID, VideoID: videoID,
+		PositionSec: req.PositionSec, VideoDurationSec: duration.Float64, Completed: completed,
+		Client: client.From(r.Context()), IPHash: watch.HashIP("", r), Now: h.now(),
+	}); err != nil {
+		mlog.From(r.Context()).Warn("play not recorded",
+			"session_id", sessionID, "err", err.Error(), "event", "stream_play_record_failed")
 	}
 
 	// Upsert. The (user, video) PK lets a closed-session POST still

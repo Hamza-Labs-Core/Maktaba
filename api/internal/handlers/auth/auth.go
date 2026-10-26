@@ -8,8 +8,11 @@
 //	GET   /api/security/audit     — Story 10.16 (admin-only)
 //
 // The handler picks the credential flow from the request:
-//   - `X-Maktaba-Client: native` or a JSON body that includes no
-//     `accept: cookie` ⇒ JWT + opaque refresh response, no cookies.
+//   - `X-Maktaba-Client` naming a native app (`native`, or
+//     `player/1.3 (ios; phone)` and the like: any app but the web
+//     bundle's web, desktop and mobile; Epic 44) or a JSON body that
+//     includes no `accept: cookie` ⇒ JWT + opaque refresh response, no
+//     cookies.
 //   - Otherwise ⇒ web cookie response (`mkt_sess` + `mkt_csrf`).
 //
 // Login enforces a minimum 500 ms latency floor for the failure path
@@ -24,10 +27,11 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/client"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/authz"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink"
@@ -50,7 +54,7 @@ const (
 )
 
 // Header that flips the login response into native mode.
-const HeaderClient = "X-Maktaba-Client"
+const HeaderClient = client.Header
 
 // FailDelay is the minimum wall-time on a failed login (Story 10.2
 // AC-3). Both unknown-user and wrong-password branches sleep up to this
@@ -946,7 +950,8 @@ func toUserResponse(u *users.User) userResponse {
 
 // isNativeClient reports whether the request prefers the JWT response.
 func isNativeClient(r *http.Request) bool {
-	if v := strings.ToLower(r.Header.Get(HeaderClient)); v == "native" {
+	// a native app: `native` (an old build) or any app but the web bundle's
+	if client.Parse(r.Header.Get(HeaderClient)).IsNative() {
 		return true
 	}
 	// Fallback: presence of `Authorization` header is enough to assume

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/client"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 )
 
@@ -308,7 +309,7 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 		return false
 	}
 	w.Header().Set(HomeStateHeader, "unreachable")
-	if strings.EqualFold(req.Header.Get("X-Maktaba-Client"), "native") {
+	if client.Parse(req.Header.Get(client.Header)).IsNative() {
 		writeUnreachable(w, true)
 		return true
 	}

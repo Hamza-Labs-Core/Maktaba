@@ -71,6 +71,24 @@ func CreditedSeconds(prev, now time.Time, staleTimeout time.Duration) int {
 	return int(gap.Seconds())
 }
 
+// StreamCreditedSeconds returns the watched time a stream session's progress
+// post adds (Epic 44 story 44.3): the wall time since the previous post, only
+// while the position moved forward, and never more than it moved (a seek
+// forward adds the gap, a paused or stalled player nothing, a player slower
+// than real time what it played). The gap is capped at staleTimeout, as a
+// heartbeat's is.
+func StreamCreditedSeconds(prevAt, now time.Time, prevPos, pos float64, staleTimeout time.Duration) int {
+	moved := pos - prevPos
+	if moved <= 0 {
+		return 0
+	}
+	gap := CreditedSeconds(prevAt, now, staleTimeout)
+	if moved < float64(gap) {
+		return int(moved)
+	}
+	return gap
+}
+
 // StopState maps a final percentage to the terminal state for a clean
 // stop: completed at/above the threshold, otherwise stopped.
 func StopState(percent float64) string {

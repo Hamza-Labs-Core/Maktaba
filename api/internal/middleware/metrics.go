@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/client"
+
 	metrics "github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go"
 )
 
@@ -33,6 +35,8 @@ func statusClass(code int) string {
 // is read from chi's RouteContext after the handler runs; for routes
 // chi can't classify (404 within a Group, error before Mount), we
 // fall back to the literal "unknown" so cardinality stays bounded.
+// http_requests_by_client_total counts the request under its app
+// (client.From, set by Client before this runs).
 func Metrics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		metrics.HTTPInFlight.Inc()
@@ -55,5 +59,8 @@ func Metrics(next http.Handler) http.Handler {
 		metrics.HTTPRequestDuration.
 			WithLabelValues(r.Method, route, statusClass(status)).
 			Observe(time.Since(t0).Seconds())
+		metrics.HTTPRequestsByClient.
+			WithLabelValues(client.From(r.Context()).MetricLabel(), statusClass(status)).
+			Inc()
 	})
 }
