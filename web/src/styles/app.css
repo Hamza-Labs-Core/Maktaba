@@ -3081,6 +3081,14 @@ a.mkt-guide__chanhead:hover {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }
+/* the starting screen: a dialog over the app's window while the server comes up */
+.mkt-setup--starting {
+  background: color-mix(in srgb, var(--color-bg) 70%, black);
+}
+.mkt-setup--starting .mkt-setup__card {
+  max-inline-size: 32rem;
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 0.45);
+}
 .mkt-setup__title {
   margin: 0;
   font-size: var(--font-size-h1);
