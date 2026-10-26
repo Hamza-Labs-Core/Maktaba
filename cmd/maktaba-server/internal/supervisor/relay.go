@@ -16,8 +16,9 @@ import (
 )
 
 // RoleRelay is the cloud relay agent (maktaba-cloudlink, Epic 25): it keeps the home's
-// tunnel to the cloud up, so the cloud's edge reaches this home's API on loopback (the
-// only peer the API takes X-Maktaba-Via from). It runs on the home only, while [cloud]
+// tunnel to the cloud up, so the cloud's edge reaches this home's web port on loopback
+// (relayLocal; loopback is the only peer the web port and the API take X-Maktaba-Via
+// from). It runs on the home only, while [cloud]
 // enabled and the home has the agent's credentials, or a claim code to get them: a
 // switch of the home moves them, and the agent with them (specs/epics/37-node-replica).
 const RoleRelay Role = "relay"
@@ -90,11 +91,23 @@ func relayKey() (string, error) {
 	return k, os.Rename(tmp, path)
 }
 
-// relayEnv is the agent's environment: this machine's API on loopback, its credentials
-// and key, the cloud's addresses when set, and the claim for its first run only.
+// relayLocal is where the agent sends what reaches the home through the cloud: the web
+// port on loopback, which serves the web UI, /api (to the API) and /stream/ (the
+// streaming service, behind its sign-in gate), so the relay subdomain is the whole home;
+// the API port when this machine runs no web UI.
+func relayLocal(cfg config.Config) string {
+	if strings.TrimSpace(cfg.Server.WebListen) != "" {
+		return "http://" + LocalAddr(cfg.Server.WebListen, "8088")
+	}
+	return "http://" + LocalAddr(cfg.Server.Listen, "8080")
+}
+
+// relayEnv is the agent's environment: this machine's web port on loopback, its
+// credentials and key, the cloud's addresses when set, and the claim for its first run
+// only.
 func relayEnv(cfg config.Config, key string) []string {
 	env := []string{
-		"MAKTABA_LOCAL_API=http://" + LocalAddr(cfg.Server.Listen, "8080"),
+		"MAKTABA_LOCAL_API=" + relayLocal(cfg),
 		"MAKTABA_CRED_FILE=" + RelayCredPath(),
 		"MAKTABA_CRED_KEY_HEX=" + key,
 		"MAKTABA_ADMIN_ADDR=" + RelayAdminAddr(cfg),

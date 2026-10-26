@@ -53,7 +53,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 
 	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg))
 
-	r.Get("/v1/relay/ws", relaypkg.ServeWS(registry, serversStore))
+	r.Get("/v1/relay/ws", relaypkg.ServeTunnels(registry, relaypkg.NewTunnelStore(serversStore), logger))
 
 	// All non-control paths fall through to the proxy. We deliberately
 	// don't restrict by route prefix — the proxied server's URL space

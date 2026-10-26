@@ -575,9 +575,7 @@ func webHandler(cfg config.Config, node *nodeServices) http.Handler {
 		apiDirector := proxy.Director
 		proxy.Director = func(r *http.Request) {
 			apiDirector(r)
-			// the web port is never the relay (Epic 32.9): only the relay
-			// agent marks its loopback calls X-Maktaba-Via: relay
-			r.Header.Del("X-Maktaba-Via")
+			keepRelayMark(r)
 		}
 		// this machine's API is down or restarting: a themed page for a browser
 		proxy.ErrorHandler = apiUnreachable
@@ -657,6 +655,25 @@ func newStreamProxy(streamAddr string) http.Handler {
 // page, a link) gets a themed page that retries; the web app's fetches
 // get a problem+json body they can show. Logged once per window per distinct error, and
 // not for a client that went away (logProxyError).
+// keepRelayMark keeps X-Maktaba-Via on a request to the API only when it came from
+// loopback: the relay agent (maktaba-cloudlink) reaches the home through this port on
+// loopback and marks what came from the internet (Epic 32.9: the API then reports
+// remote.via_relay and never takes the request for one of this machine's programs).
+// From any other peer the header is a client's own claim and is dropped, as the API's
+// StripVia does.
+func keepRelayMark(r *http.Request) {
+	if r.Header.Get("X-Maktaba-Via") == "" {
+		return
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		r.Header.Del("X-Maktaba-Via")
+	}
+}
+
 func apiUnreachable(w http.ResponseWriter, r *http.Request, err error) {
 	stderrProxyError(apiProxyErrs, "api proxy", r, err)
 	if pagetheme.WantsHTML(r) {
