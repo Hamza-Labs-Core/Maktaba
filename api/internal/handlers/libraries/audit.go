@@ -195,6 +195,11 @@ func WriteAudit(
 // real library (not admin, malformed or unknown id) writes nothing.
 func (h *Handler) AuditedDelete(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
+	// a non-admin is refused before the library is even read
+	if p == nil || !p.IsAdmin {
+		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+		return
+	}
 	id := chi.URLParam(r, "id")
 	lib, _ := h.loadLibrary(r.Context(), id)
 	purge := strings.EqualFold(r.URL.Query().Get("purge"), "true")
