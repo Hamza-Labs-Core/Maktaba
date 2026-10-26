@@ -12,8 +12,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -38,6 +41,11 @@ func (h *Handler) hasColumn(ctx context.Context, table, column string) bool {
 	}
 	_ = rows.Close()
 	return true
+}
+
+// isSQLite tells the two databases apart where their SQL differs.
+func isSQLite(db *sql.DB) bool {
+	return db != nil && strings.Contains(strings.ToLower(fmt.Sprintf("%T", db.Driver())), "sqlite")
 }
 
 // libraryID reads and checks the {id} path parameter.
@@ -170,6 +178,7 @@ type mergeTables struct {
 	moves                         []string
 	roots, statsCache             bool
 	collections, topics, channels bool
+	pins                          bool
 }
 
 // Merge merges library {id} into another one, in one transaction: each video
@@ -212,6 +221,7 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 	tables.collections = h.hasColumn(ctx, "collections", "name")
 	tables.topics = h.hasColumn(ctx, "topic_collections", "playlist_id")
 	tables.channels = h.hasColumn(ctx, "channels", "slug")
+	tables.pins = h.hasColumn(ctx, "user_library_pins", "position")
 
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -220,10 +230,26 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	from, err := loadLibraryTx(ctx, tx, id)
-	var into Library
+	// On Postgres both rows are locked until the commit, so a rename or a
+	// folder change made meanwhile waits and is not lost under the merge's
+	// write. Always in id order: two merges of the same pair never deadlock.
+	// SQLite's write lock already serialises the writers.
+	lock := !isSQLite(h.DB)
+	first, second := id, req.Into
+	if second < first {
+		first, second = second, first
+	}
+	var from, into Library
+	got := map[string]Library{}
+	for _, lid := range []string{first, second} {
+		var l Library
+		if l, err = loadLibraryTx(ctx, tx, lid, lock); err != nil {
+			break
+		}
+		got[lid] = l
+	}
 	if err == nil {
-		into, err = loadLibraryTx(ctx, tx, req.Into)
+		from, into = got[id], got[req.Into]
 	}
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -303,6 +329,17 @@ func (h *Handler) merge(ctx context.Context, tx *sql.Tx, from, into Library, tab
 			return resp, err
 		}
 	}
+	// a user who pinned the merged library keeps the target pinned in its
+	// place; one who pinned both keeps the target's pin
+	if tables.pins {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO user_library_pins (user_id, library_id, position, created_at)
+			SELECT user_id, $1, position, created_at FROM user_library_pins WHERE library_id = $2
+			ON CONFLICT (user_id, library_id) DO NOTHING
+		`, into.ID, from.ID); err != nil {
+			return resp, err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM libraries WHERE id = $1`, from.ID); err != nil {
 		return resp, err
 	}
@@ -340,13 +377,17 @@ func mergeRoots(into, from []string) ([]string, int) {
 	return out, added
 }
 
-func loadLibraryTx(ctx context.Context, q queryer, id string) (Library, error) {
+// loadLibraryTx reads one library; forUpdate (Postgres only) locks its row
+// until the transaction ends.
+func loadLibraryTx(ctx context.Context, q queryer, id string, forUpdate bool) (Library, error) {
 	var lib Library
 	var roots stringArray
 	var settings []byte
-	err := q.QueryRowContext(ctx, `
-		SELECT id, name, roots, settings, created_at, updated_at FROM libraries WHERE id = $1
-	`, id).Scan(&lib.ID, &lib.Name, &roots, &settings, &lib.CreatedAt, &lib.UpdatedAt)
+	query := `SELECT id, name, roots, settings, created_at, updated_at FROM libraries WHERE id = $1`
+	if forUpdate {
+		query += ` FOR UPDATE`
+	}
+	err := q.QueryRowContext(ctx, query, id).Scan(&lib.ID, &lib.Name, &roots, &settings, &lib.CreatedAt, &lib.UpdatedAt)
 	if err != nil {
 		return Library{}, err
 	}
@@ -370,12 +411,26 @@ func (h *Handler) EmptyTrash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if _, err := h.loadLibrary(ctx, id); err != nil {
+	lib, err := h.loadLibrary(ctx, id)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.Write(w, r, httperror.NotFound("library "+id))
 			return
 		}
 		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
+		return
+	}
+	// A share that was not mounted during the last scan marks every video
+	// under it missing: with a folder out of reach now, "missing" may mean
+	// "not mounted", so nothing is deleted.
+	if problems := h.checkRoots(lib.Roots); len(problems) > 0 {
+		var down []string
+		for root, e := range problems {
+			down = append(down, root+" ("+e.Error()+")")
+		}
+		sort.Strings(down)
+		httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/library-roots-unreachable",
+			"this machine cannot reach "+strings.Join(down, ", ")+"; reconnect it and scan again before emptying the trash"))
 		return
 	}
 	res, err := h.DB.ExecContext(ctx, `DELETE FROM videos WHERE library_id = $1 AND state = 'missing'`, id)

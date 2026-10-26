@@ -314,6 +314,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// the filters and the scope, without the cursor: sort=plays counts the
+	// plays of these videos only
+	scope := append([]string(nil), conds...)
+
 	cur, cerr := decodeListCursor(q.Get("cursor"), sort, order)
 	if cerr != nil {
 		httperror.Write(w, r, cerr)
@@ -337,9 +341,16 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	from := " FROM videos"
 	withPlays := sort == "plays"
 	if withPlays {
-		// One grouped pass over watch_sessions, not a count per row.
+		// One grouped pass over watch_sessions, not a count per row, and
+		// over the listed videos' sessions only (the same filters and scope;
+		// the inner videos shadows the outer one in them).
+		scoped := ""
+		if len(scope) > 0 {
+			scoped = " WHERE ws.video_id IN (SELECT id FROM videos WHERE " + strings.Join(scope, " AND ") + ")"
+		}
 		cols += ", COALESCE(wp.plays, 0)"
-		from += " LEFT JOIN (SELECT video_id, COUNT(*) AS plays FROM watch_sessions GROUP BY video_id) wp ON wp.video_id = videos.id"
+		from += " LEFT JOIN (SELECT ws.video_id, COUNT(*) AS plays FROM watch_sessions ws" + scoped +
+			" GROUP BY ws.video_id) wp ON wp.video_id = videos.id"
 	}
 	args = append(args, limit+1) // SELECT limit+1 to detect another page.
 	query := "SELECT " + cols + from + where +

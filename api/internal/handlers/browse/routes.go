@@ -233,6 +233,16 @@ func (h *Handler) PutPins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
+	// Two PUTs at once would both clear, then both insert, and the second
+	// insert would hit the primary key. On Postgres the user's row is locked
+	// first so they run one after the other; SQLite's write lock already does.
+	if !isSQLite(h.DB) {
+		var one int
+		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, uid).Scan(&one); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			internal(w, r, "lock user", err)
+			return
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM user_library_pins WHERE user_id = $1`, uid); err != nil {
 		internal(w, r, "clear pins", err)
 		return

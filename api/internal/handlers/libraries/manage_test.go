@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,6 +58,8 @@ func manageDB(t *testing.T) *sql.DB {
 		`CREATE TABLE channels (id TEXT PRIMARY KEY, library_id TEXT, number INTEGER NOT NULL, name TEXT NOT NULL,
 			slug TEXT NOT NULL, UNIQUE (library_id, number), UNIQUE (library_id, slug))`,
 		`CREATE TABLE library_acl (user_id TEXT, library_id TEXT, PRIMARY KEY (user_id, library_id))`,
+		`CREATE TABLE user_library_pins (user_id TEXT NOT NULL, library_id TEXT NOT NULL, position INTEGER NOT NULL,
+			created_at TEXT NOT NULL, PRIMARY KEY (user_id, library_id))`,
 		`CREATE TABLE audit_log (id INTEGER PRIMARY KEY, category TEXT, action TEXT, actor_user_id TEXT,
 			target_id TEXT, payload TEXT, ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
 	} {
@@ -220,6 +223,8 @@ func TestMerge(t *testing.T) {
 	mustExec(t, db, `INSERT INTO channels VALUES ('ch1', $1, 1, 'Quran', 'quran'), ('ch2', $1, 2, 'Kids', 'kids'),
 		('ch3', $2, 1, 'Talks', 'talks'), ('ch4', $2, 5, 'Quran', 'quran'), ('ch5', $2, 7, 'Misc', 'misc')`, libBig, libSmall)
 	mustExec(t, db, `INSERT INTO library_acl VALUES ('viewer', $1)`, libSmall)
+	// u1 pinned the merged library alone, u2 both
+	mustExec(t, db, `INSERT INTO user_library_pins VALUES ('u1', $1, 3, 'x'), ('u2', $1, 0, 'x'), ('u2', $2, 1, 'x')`, libSmall, libBig)
 	mustExec(t, db, `INSERT INTO processing_jobs (id, subject_kind, library_id, video_id, stage, state)
 		VALUES (1, 'video', $1, 's2', 'probe', 'pending'), (2, 'library', $1, NULL, 'scan', 'done')`, libSmall)
 	h := &Handler{DB: db, NowFunc: func() time.Time { return t0 }}
@@ -303,6 +308,10 @@ func TestMerge(t *testing.T) {
 	if n := count(t, db, `SELECT COUNT(*) FROM library_acl WHERE library_id = $1`, libBig); n != 0 {
 		t.Errorf("a grant was copied to the target")
 	}
+	// the merged library's pins point at the target, in their place
+	if got := names(`SELECT user_id || ':' || position FROM user_library_pins WHERE library_id = $1 ORDER BY user_id`); got != "u1:3,u2:1" {
+		t.Errorf("pins of the target = %s, want u1:3,u2:1", got)
+	}
 	if n := count(t, db, `SELECT COUNT(*) FROM processing_jobs WHERE library_id = $1`, libBig); n != 1 {
 		t.Errorf("the video job did not move (or the scan job did)")
 	}
@@ -318,8 +327,18 @@ func TestEmptyTrash(t *testing.T) {
 	addVideo(t, db, "b1", libBig, "h1", "missing")
 	addVideo(t, db, "b2", libBig, "h2", "ready")
 	addVideo(t, db, "o1", libOther, "h3", "missing")
-	h := &Handler{DB: db}
-	rec := call(t, h, "POST", "/api/libraries/"+libBig+"/empty-trash", "")
+	h := &Handler{DB: db, PathChecker: fakeChecker{"/m/b": errPathNotFound}}
+	// Other's folder is out of reach: its missing videos may be an unmounted
+	// share, so nothing goes
+	rec := call(t, h, "POST", "/api/libraries/"+libOther+"/empty-trash", "")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "library-roots-unreachable") ||
+		!strings.Contains(rec.Body.String(), "/m/b") {
+		t.Fatalf("unreachable folder: %d %s, want 409 naming /m/b", rec.Code, rec.Body.String())
+	}
+	if n := count(t, db, `SELECT COUNT(*) FROM videos WHERE library_id = $1`, libOther); n != 1 {
+		t.Fatalf("a video of the unreachable library was deleted")
+	}
+	rec = call(t, h, "POST", "/api/libraries/"+libBig+"/empty-trash", "")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"removed":1`) {
 		t.Fatalf("empty trash: %d %s", rec.Code, rec.Body.String())
 	}
@@ -367,6 +386,7 @@ func TestFolders(t *testing.T) {
 	}
 	t.Setenv(libpaths.EnvPathMap, "/Volumes/NAS/="+root+"/")
 	t.Setenv(EnvMediaRoots, "/Volumes/NAS/c")
+	t.Setenv("HOME", t.TempDir())
 	db := manageDB(t)
 	addLibrary(t, db, libBig, "Big", t0, "/Volumes/NAS/b/chan")
 	h := &Handler{DB: db}
@@ -389,8 +409,17 @@ func TestFolders(t *testing.T) {
 	if want := "A=/Volumes/NAS/A,b=/Volumes/NAS/b,c=/Volumes/NAS/c"; strings.Join(names, ",") != want {
 		t.Errorf("entries = %v, want %s", names, want)
 	}
-	if got.Parent == nil {
-		t.Errorf("no parent")
+	// a place's own folder has no parent: the picker never goes above its places
+	if got.Parent != nil {
+		t.Errorf("parent of a place = %q, want none", *got.Parent)
+	}
+	rec = call(t, h, "GET", "/api/libraries/folders?path=/Volumes/NAS/A", "")
+	got = FolderListing{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("A: %d %s", rec.Code, rec.Body.String())
+	}
+	if got.Parent == nil || *got.Parent != "/Volumes/NAS" {
+		t.Errorf("parent of A = %v, want /Volumes/NAS", got.Parent)
 	}
 
 	// the local form works too, and answers in the database's form
@@ -398,7 +427,12 @@ func TestFolders(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"path":"/Volumes/NAS/c/deeper"`) {
 		t.Errorf("local form: %d %s", rec.Code, rec.Body.String())
 	}
-	for _, p := range []string{"/Volumes/NAS/missing", "/Volumes/NAS/file.txt", "relative"} {
+	// a folder outside every place is not listed, though it is there
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(outside, "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"/Volumes/NAS/missing", "/Volumes/NAS/file.txt", "relative", outside, root + "/../" + filepath.Base(outside)} {
 		if rec := call(t, h, "GET", "/api/libraries/folders?path="+p, ""); rec.Code != http.StatusNotFound {
 			t.Errorf("%s: %d, want 404", p, rec.Code)
 		}
@@ -448,5 +482,85 @@ func TestOSPathCheckerUsesPathMap(t *testing.T) {
 	}
 	if err := (OSPathChecker{}).Check("/Volumes/NAS/gone"); !errors.Is(err, errPathNotFound) {
 		t.Errorf("missing mapped root: %v", err)
+	}
+}
+
+// A folder that does not answer (a share gone away) gives up after the
+// timeout instead of holding the request.
+func TestFoldersTimeout(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(libpaths.EnvPathMap, "/Volumes/NAS/="+root+"/")
+	release := make(chan struct{})
+	defer close(release)
+	oldList, oldTimeout := listFolders, folderListTimeout
+	listFolders = func(string) ([]string, error) { <-release; return nil, nil }
+	folderListTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { listFolders, folderListTimeout = oldList, oldTimeout })
+
+	rec := call(t, &Handler{DB: manageDB(t)}, "GET", "/api/libraries/folders?path=/Volumes/NAS", "")
+	if rec.Code != http.StatusGatewayTimeout || !strings.Contains(rec.Body.String(), "folder did not answer") {
+		t.Fatalf("hung folder: %d %s, want 504", rec.Code, rec.Body.String())
+	}
+}
+
+// blockingChecker never answers for its hung roots until released, and
+// counts the checks it was asked for.
+type blockingChecker struct {
+	hung    map[string]bool
+	release chan struct{}
+	mu      sync.Mutex
+	calls   int
+}
+
+func (b *blockingChecker) Check(root string) error {
+	b.mu.Lock()
+	b.calls++
+	b.mu.Unlock()
+	if b.hung[root] {
+		<-b.release
+	}
+	return nil
+}
+
+func (b *blockingChecker) count() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.calls
+}
+
+// A root that timed out is reported as such for a minute without a new
+// check, so page loads do not pile up checks stuck on the same mount.
+func TestCheckRootsRemembersATimeout(t *testing.T) {
+	hung := "/hung-" + t.Name()
+	ck := &blockingChecker{hung: map[string]bool{hung: true}, release: make(chan struct{})}
+	defer close(ck.release)
+	old := rootCheckTimeout
+	rootCheckTimeout = 20 * time.Millisecond
+	t.Cleanup(func() {
+		rootCheckTimeout = old
+		hungRoots.Lock()
+		delete(hungRoots.until, hung)
+		hungRoots.Unlock()
+	})
+	now := t0
+	h := &Handler{PathChecker: ck, NowFunc: func() time.Time { return now }}
+
+	if got := h.checkRoots([]string{hung, "/fine"}); got[hung] != errRootTimeout || got["/fine"] != nil {
+		t.Fatalf("first check = %v", got)
+	}
+	if n := ck.count(); n != 2 {
+		t.Fatalf("%d checks, want 2", n)
+	}
+	now = now.Add(30 * time.Second)
+	if got := h.checkRoots([]string{hung, "/fine"}); got[hung] != errRootTimeout {
+		t.Fatalf("second check = %v", got)
+	}
+	if n := ck.count(); n != 3 {
+		t.Errorf("%d checks, want 3: the hung root is not checked again", n)
+	}
+	now = now.Add(hungRootFor)
+	h.checkRoots([]string{hung})
+	if n := ck.count(); n != 4 {
+		t.Errorf("%d checks, want 4: after a minute the hung root is checked again", n)
 	}
 }

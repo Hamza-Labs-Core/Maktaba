@@ -295,6 +295,12 @@ func TestListFilters(t *testing.T) {
 		{"series of B, viewer of A", viewerA(), url.Values{"series": {extSeriesB}}, nil},
 		{"plays, viewer of A", viewerA(), url.Values{"sort": {"plays"}},
 			expectedOrder(extFixture()[:7], "plays", "desc")},
+		// the plays are counted over the filtered videos: the filters run
+		// inside the count too
+		{"plays, unwatched, viewer of A", viewerA(), url.Values{"sort": {"plays"}, "watched": {"unwatched"}},
+			expectedOrder(extFixture()[2:7], "plays", "desc")},
+		{"plays, series A", admin(), url.Values{"sort": {"plays"}, "series": {extSeriesA}, "order": {"asc"}},
+			[]string{xvid(6), xvid(1)}},
 		{"year and watched", admin(), url.Values{"year": {"2024"}, "watched": {"unwatched"}}, []string{xvid(4), xvid(7)}},
 		// the admin token has no user row: nothing is watched
 		{"no user", &principal.Principal{UserID: "admin-token", AccessAllLibraries: true}, url.Values{"watched": {"watched"}}, nil},

@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
@@ -272,13 +273,26 @@ func (h *Handler) latestScans(ctx context.Context) (map[string]ScanSummary, erro
 }
 
 // rootCheckTimeout bounds the folder checks: a NAS mount that stopped
-// answering would otherwise hold the page.
-const rootCheckTimeout = 3 * time.Second
+// answering would otherwise hold the page. A variable for the tests.
+var rootCheckTimeout = 3 * time.Second
+
+// hungRootFor is how long a root that timed out is reported as "timeout"
+// without being checked again: the abandoned check may still be stuck on the
+// mount, and every page load would add another one.
+const hungRootFor = time.Minute
 
 var errRootTimeout = errors.New("timeout")
 
+// hungRoots are the roots whose check timed out lately, with when to try
+// them again. One set for the process: the mounts are the machine's.
+var hungRoots = struct {
+	sync.Mutex
+	until map[string]time.Time
+}{until: map[string]time.Time{}}
+
 // checkRoots runs the PathChecker on every root at once and returns the
-// failing ones; a root that has not answered in time is "timeout".
+// failing ones; a root that has not answered in time is "timeout", and stays
+// so for hungRootFor without a new check.
 func (h *Handler) checkRoots(roots []string) map[string]error {
 	checker := h.PathChecker
 	if checker == nil {
@@ -288,10 +302,21 @@ func (h *Handler) checkRoots(roots []string) map[string]error {
 		root string
 		err  error
 	}
+	out := map[string]error{}
+	now := h.now()
 	uniq := map[string]bool{}
+	hungRoots.Lock()
 	for _, r := range roots {
+		if until, ok := hungRoots.until[r]; ok {
+			if now.Before(until) {
+				out[r] = errRootTimeout
+				continue
+			}
+			delete(hungRoots.until, r)
+		}
 		uniq[r] = true
 	}
+	hungRoots.Unlock()
 	ch := make(chan result, len(uniq))
 	sem := make(chan struct{}, 16)
 	for root := range uniq {
@@ -301,7 +326,6 @@ func (h *Handler) checkRoots(roots []string) map[string]error {
 			ch <- result{root, checker.Check(root)}
 		}(root)
 	}
-	out := map[string]error{}
 	pending := len(uniq)
 	timer := time.NewTimer(rootCheckTimeout)
 	defer timer.Stop()
@@ -314,9 +338,12 @@ func (h *Handler) checkRoots(roots []string) map[string]error {
 				out[res.root] = res.err
 			}
 		case <-timer.C:
+			hungRoots.Lock()
 			for root := range uniq {
 				out[root] = errRootTimeout
+				hungRoots.until[root] = now.Add(hungRootFor)
 			}
+			hungRoots.Unlock()
 			return out
 		}
 	}
@@ -468,11 +495,79 @@ func (h *Handler) Folders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	local = filepath.Clean(local)
-	ents, err := os.ReadDir(local)
+	places, err := h.places(r.Context())
 	if err != nil {
-		// not there, not a folder or not readable: the picker cannot open it
+		httperror.Write(w, r, httperror.Internal("load libraries").Wrap(err))
+		return
+	}
+	// the picker lists only folders inside its places, never the rest of the
+	// disk (a system folder is no library)
+	if !insidePlaces(local, places) {
 		httperror.Write(w, r, httperror.NotFound("folder "+q))
 		return
+	}
+	// a mount that stopped answering would hold the request (and the
+	// listing's goroutine) forever: the listing runs on its own and the
+	// request gives up on it after folderListTimeout
+	type listed struct {
+		names []string
+		err   error
+	}
+	ch := make(chan listed, 1)
+	go func() {
+		names, err := listFolders(local)
+		ch <- listed{names, err}
+	}()
+	timer := time.NewTimer(folderListTimeout)
+	defer timer.Stop()
+	var names []string
+	select {
+	case res := <-ch:
+		if res.err != nil {
+			// not there, not a folder or not readable: the picker cannot open it
+			httperror.Write(w, r, httperror.NotFound("folder "+q))
+			return
+		}
+		names = res.names
+	case <-timer.C:
+		httperror.Write(w, r, &httperror.Error{
+			Type:   "https://maktaba.dev/problems/folder-timeout",
+			Title:  "folder did not answer",
+			Status: http.StatusGatewayTimeout,
+			Detail: "folder " + q + " did not answer in time; its drive or share may be disconnected",
+		})
+		return
+	}
+	sort.Slice(names, func(i, j int) bool {
+		a, b := strings.ToLower(names[i]), strings.ToLower(names[j])
+		if a != b {
+			return a < b
+		}
+		return names[i] < names[j]
+	})
+	out := FolderListing{Path: libpaths.ToDB(local), LocalPath: local, Entries: []FolderEntry{}}
+	if len(names) > maxFolderEntries {
+		names, out.Truncated = names[:maxFolderEntries], true
+	}
+	for _, name := range names {
+		out.Entries = append(out.Entries, FolderEntry{Name: name, Path: libpaths.ToDB(filepath.Join(local, name))})
+	}
+	if parent := filepath.Dir(local); parent != local && insidePlaces(parent, places) {
+		p := libpaths.ToDB(parent)
+		out.Parent = &p
+	}
+	common.WriteJSON(w, r, http.StatusOK, out)
+}
+
+// folderListTimeout bounds a folder listing. A variable for the tests.
+var folderListTimeout = 5 * time.Second
+
+// listFolders is the sub-folders of local, hidden ones left out. A variable
+// so the tests can stand in a mount that does not answer.
+var listFolders = func(local string) ([]string, error) {
+	ents, err := os.ReadDir(local)
+	if err != nil {
+		return nil, err
 	}
 	var names []string
 	for _, e := range ents {
@@ -491,25 +586,19 @@ func (h *Handler) Folders(w http.ResponseWriter, r *http.Request) {
 			names = append(names, name)
 		}
 	}
-	sort.Slice(names, func(i, j int) bool {
-		a, b := strings.ToLower(names[i]), strings.ToLower(names[j])
-		if a != b {
-			return a < b
+	return names, nil
+}
+
+// insidePlaces reports whether the clean absolute path local is one of the
+// places or inside one.
+func insidePlaces(local string, places []Place) bool {
+	for _, p := range places {
+		base := filepath.Clean(p.LocalPath)
+		if local == base || strings.HasPrefix(local, strings.TrimSuffix(base, string(filepath.Separator))+string(filepath.Separator)) {
+			return true
 		}
-		return names[i] < names[j]
-	})
-	out := FolderListing{Path: libpaths.ToDB(local), LocalPath: local, Entries: []FolderEntry{}}
-	if len(names) > maxFolderEntries {
-		names, out.Truncated = names[:maxFolderEntries], true
 	}
-	for _, name := range names {
-		out.Entries = append(out.Entries, FolderEntry{Name: name, Path: libpaths.ToDB(filepath.Join(local, name))})
-	}
-	if parent := filepath.Dir(local); parent != local {
-		p := libpaths.ToDB(parent)
-		out.Parent = &p
-	}
-	common.WriteJSON(w, r, http.StatusOK, out)
+	return false
 }
 
 // places are the picker's starting folders, in this order: the path map's
