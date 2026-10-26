@@ -44,6 +44,8 @@ targetTemplates:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
+        # browsed by HomeBrowser and by the permissions walkthrough's Local Network check
+        NSBonjourServices: ["_maktaba._tcp"]
   IOSApp:
     templates: [App]
     platform: iOS
@@ -152,7 +154,6 @@ targets:
     info:
       path: ../tv/tvos/MaktabaTV/Info.plist
       properties:
-        NSBonjourServices: ["_maktaba._tcp"]
         UIAppFonts: [Amiri-Bold.ttf, IBMPlexSansArabic-Regular.ttf, IBMPlexSansArabic-Medium.ttf, IBMPlexSansArabic-SemiBold.ttf]
   Maktaba TV UITests:
     type: bundle.ui-testing
