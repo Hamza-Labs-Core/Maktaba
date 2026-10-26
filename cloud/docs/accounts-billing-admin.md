@@ -166,6 +166,7 @@ maktaba-cloud license unrevoke --id lic_… --reason "…" --config cloud.toml
 | `POST /v1/admin/abuse/block` | `{subject_kind, subject, reason, expires_in_hours?}` | `204` |
 | `POST /v1/admin/abuse/unblock` | `{subject_kind, subject, reason}` | `204` |
 | `GET /v1/admin/audit?actor=&action=&target=&limit=&offset=` | — | `{entries:[{id, actor_id?, actor_email?, action, target_kind?, target_id?, detail, ip?, created_at}], total}` newest first, ≤ 50 per page |
+| `GET /v1/admin/usage?days=30` | — | anonymous usage data (Epic 16.7): installs, versions, platforms, apps and features in use, top error groups, web-vitals p75 — see [usage-data.md](usage-data.md) |
 
 Every admin mutation, every account-detail view and every denied attempt
 writes an `audit_log` row (`actor`, `action`, `target`, `detail`, `ip`).
