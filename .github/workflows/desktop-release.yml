@@ -269,6 +269,11 @@ jobs:
       # The server payload (on a Mac signed when the identity is there) and the
       # tauri overlay that bundles it, then a smoke test of the payload alone.
       # Git Bash on Windows (make is MinGW's there).
+      - name: Embed the license-server key
+        env:
+          MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
+        run: tools/release/license-key.sh --require
+
       - name: Build the server payload
         if: matrix.payload
         shell: bash

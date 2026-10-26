@@ -26,6 +26,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/sessions"
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/entitlement"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/license"
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
@@ -85,6 +86,9 @@ func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 		Transcoding bool   `json:"includes_transcoding"`
 		FamilySeats int    `json:"family_seats"`
 		Purchasable bool   `json:"purchasable"`
+		// HomeTier is the plan the license gives the owner's homes
+		// (Epic 16: home or pro; "" for free).
+		HomeTier string `json:"home_tier"`
 	}
 	out := []viewTier{}
 	for _, id := range []string{billingpkg.PlanFree, billingpkg.PlanPro, billingpkg.PlanFamily} {
@@ -95,6 +99,7 @@ func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 			MaxStreams: t.MaxConcurrentStreams, RelayQoS: t.RelayQoS,
 			Transcoding: t.IncludesTranscoding, FamilySeats: t.FamilySeats,
 			Purchasable: d.Stripe.Configured() && d.priceFor(id) != "",
+			HomeTier:    license.TierForPlan(id),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"plans": out})

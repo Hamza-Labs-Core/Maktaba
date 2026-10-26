@@ -34,3 +34,23 @@ features.
   resumes; no data loss.
 - Migrating from premium back to free: any premium-only data (analytics
   history beyond 30 d) is preserved server-side but read-only.
+
+## Implementation (2026-10-26)
+
+**Status: done.** See [`docs/licensing.md`](../../../docs/licensing.md).
+
+- Free is the default with no license and no license server: every Epic 1–15
+  feature works; a home that cannot reach the license server, or a build without
+  the license key, stays on Free unaffected (`subscriptions.Store`, nil = Free).
+- Single user: `POST /api/users` and open registration after the first user are
+  refused on Free with a plain reason (`seat-limit`). Users that already exist
+  keep working (homes whose users predate the gate, or that went back to Free).
+- LAN-only: every request the cloud relay forwards is refused on Free
+  (`subscriptions.RelayGate`, health probes excepted); cloud backup and federation
+  are behind `subscriptions.RequireFeature`.
+- "Get Premium": Settings → Subscription shows **Get a plan** (a link to the cloud
+  billing page) and the plan's features; no modal, no nag.
+- Removing a license returns to Free; nothing is deleted. Analytics history stays
+  in the database; on Free the dashboard reads the last 30 days.
+- Not changed here: the bootstrap-admin sentinel user id of the AC predates this
+  work (Epic 10) and is unchanged.

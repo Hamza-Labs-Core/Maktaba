@@ -35,3 +35,24 @@ on [Story 16.4](story-16-04-license-validation.md) (license validation),
   immediately with a clear admin message.
 - A user is mid-backup when license expires: that backup completes; the
   next is blocked.
+
+## Implementation (2026-10-26)
+
+**Status: done** for the gates; see [`docs/licensing.md`](../../../docs/licensing.md).
+
+- Tiers free/home/pro with the spec's seats (1 / 4 / unlimited) and features
+  (`cloud_relay`, `multi_user`, `cloud_metadata_backup`, `advanced_analytics`,
+  `federation`); one table (`subscriptions.tierFeatures`) feeds every gate and the
+  feature flags (story 16.8).
+- Server-side gates: seats (admin create and open registration), the cloud relay,
+  analytics beyond 30 days / per-user / export. Refusals are `403` with
+  `feature`, `tier`, `required_tier` and a plain `detail`.
+- Clock skew: an expired license keeps working 72 h (`SkewGrace`).
+- Revocation: the signed revocation list (daily) and the cloud's `license_revoked`
+  lock at once; Settings shows _revoked by Maktaba_.
+- **Differences:** cloud backup (story 24.5) and federation (story 15.3) have no
+  routes yet; they mount behind `RequireFeature` when they ship, so the backup
+  schedule and the "federation pairings stay visible" TCs wait for them. Relay
+  quotas (200 GB / 1 TB) are the cloud's bandwidth meter's (Epic 25), by cloud
+  plan. The "visible read-only for 30 d after a downgrade" AC is not built: on a
+  downgrade existing users keep working and paid routes refuse with the reason.
