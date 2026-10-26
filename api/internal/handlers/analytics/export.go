@@ -7,21 +7,26 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
-// exportRow is a single watch_sessions record in export form.
+// exportRow is one play (watch_sessions) or one viewing of a channel (Live
+// TV in an app, through the tuner or on the remote TV) in export form.
 type exportRow struct {
+	Kind            string // "play" | "viewing"
 	ID              string
 	UserID          string
 	VideoID         string
+	ChannelID       string
+	Surface         string
 	StartedAt       string
 	EndedAt         string
 	DurationSec     int
 	PercentComplete float64
-	State           string
+	State           string // a play's state; a viewing's end reason, or "open"
+	ClientApp       string
+	ClientVersion   string
 	DeviceType      string
 	Platform        string
 	Quality         string
@@ -29,8 +34,9 @@ type exportRow struct {
 
 // exportHeader is the CSV header / JSON field order.
 var exportHeader = []string{
-	"session_id", "user_id", "video_id", "started_at", "ended_at",
-	"duration_sec", "percent_complete", "state", "device_type", "platform", "quality",
+	"kind", "session_id", "user_id", "video_id", "channel_id", "surface",
+	"started_at", "ended_at", "duration_sec", "percent_complete", "state",
+	"client_app", "client_version", "device_type", "platform", "quality",
 }
 
 // record renders the row as an ordered string slice (CSV record / JSON
@@ -38,15 +44,17 @@ var exportHeader = []string{
 // round-tripping.
 func (e exportRow) record() []string {
 	return []string{
-		e.ID, e.UserID, e.VideoID, e.StartedAt, e.EndedAt,
+		e.Kind, e.ID, e.UserID, e.VideoID, e.ChannelID, e.Surface,
+		e.StartedAt, e.EndedAt,
 		strconv.Itoa(e.DurationSec),
 		strconv.FormatFloat(e.PercentComplete, 'f', 2, 64),
-		e.State, e.DeviceType, e.Platform, e.Quality,
+		e.State, e.ClientApp, e.ClientVersion, e.DeviceType, e.Platform, e.Quality,
 	}
 }
 
-// Export implements GET /api/admin/analytics/export?format=csv|json&range=
-// (Story 29.6). Admin only; streams rather than buffering the result set.
+// Export implements GET /api/admin/analytics/export?format=csv|json plus the
+// range and filters (Story 29.6; Epic 44 adds the viewings). Admin only;
+// streams the plays, then the viewings, rather than buffering them.
 func (h *Handler) Export(w http.ResponseWriter, r *http.Request) {
 	if requireAdmin(w, r) == nil {
 		return
@@ -60,49 +68,70 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := h.now()
-	rng := ParseRange(r.URL.Query().Get("range"), now)
+	f, e := ParseFilters(r, now)
+	if e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
 
-	rows, err := h.repo().exportRows(r.Context(), rng)
+	rp := h.repo()
+	plays, err := rp.exportPlays(r.Context(), f)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("open export").Wrap(err))
 		return
 	}
-	defer rows.Close()
+	defer plays.Close()
 
-	filename := "maktaba-analytics-" + rng.Label + "-" + now.Format("2006-01-02")
+	// The viewings open once the plays are read and closed: a SQLite home
+	// may hold a single connection.
+	next := func(yield func(exportRow) bool) {
+		for plays.Next() {
+			rec, err := scanExportPlay(plays)
+			if err != nil || !yield(rec) {
+				return // header already flushed; truncate rather than 500 mid-stream
+			}
+		}
+		_ = plays.Close()
+		views, err := rp.exportViewings(r.Context(), f)
+		if err != nil {
+			return
+		}
+		defer views.Close()
+		for views.Next() {
+			rec, err := scanExportViewing(views)
+			if err != nil || !yield(rec) {
+				return
+			}
+		}
+	}
+
+	filename := "maktaba-analytics-" + f.Range.Label + "-" + now.Format("2006-01-02")
 	if format == "json" {
-		h.streamJSON(w, rows, filename)
+		streamJSON(w, next, filename)
 		return
 	}
-	h.streamCSV(w, rows, filename)
+	streamCSV(w, next, filename)
 }
 
-func (h *Handler) streamCSV(w http.ResponseWriter, rows *sql.Rows, filename string) {
+func streamCSV(w http.ResponseWriter, rows func(func(exportRow) bool), filename string) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`.csv"`)
 	cw := csv.NewWriter(w)
 	_ = cw.Write(exportHeader)
-	for rows.Next() {
-		rec, err := scanExportRow(rows)
-		if err != nil {
-			break // header already flushed; truncate rather than 500 mid-stream
-		}
+	rows(func(rec exportRow) bool {
 		_ = cw.Write(rec.record())
-	}
+		return true
+	})
 	cw.Flush()
 }
 
-func (h *Handler) streamJSON(w http.ResponseWriter, rows *sql.Rows, filename string) {
+func streamJSON(w http.ResponseWriter, rows func(func(exportRow) bool), filename string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`.json"`)
 	enc := json.NewEncoder(w)
 	_, _ = w.Write([]byte("["))
 	first := true
-	for rows.Next() {
-		rec, err := scanExportRow(rows)
-		if err != nil {
-			break
-		}
+	rows(func(rec exportRow) bool {
 		if !first {
 			_, _ = w.Write([]byte(","))
 		}
@@ -113,34 +142,63 @@ func (h *Handler) streamJSON(w http.ResponseWriter, rows *sql.Rows, filename str
 			obj[k] = vals[i]
 		}
 		_ = enc.Encode(obj)
-	}
+		return true
+	})
 	_, _ = w.Write([]byte("]"))
 }
 
-// exportRows opens the streaming cursor for the range.
-func (r *repo) exportRows(ctx context.Context, rng Range) (*sql.Rows, error) {
-	where, args := r.startedPredicate(rng)
-	q := `SELECT id, user_id, video_id, started_at, ended_at, duration_sec,
-	             percent_complete, state, device_type, platform, quality
-	      FROM watch_sessions ws` + where + ` ORDER BY started_at ASC`
-	return r.db.QueryContext(ctx, q, args...)
+// exportPlays opens the plays' cursor for the filters.
+func (r *repo) exportPlays(ctx context.Context, f Filters) (*sql.Rows, error) {
+	b := r.newQ()
+	q := `SELECT ws.id, CAST(ws.user_id AS TEXT), ws.video_id, ws.started_at, ws.ended_at, ws.duration_sec,
+	             ws.percent_complete, ws.state, ws.client_app, ws.client_version, ws.device_type,
+	             ws.platform, ws.quality
+	      FROM watch_sessions ws` + b.playWhere(f, true) + ` ORDER BY ` + r.ts("ws.started_at") + ` ASC`
+	return r.db.QueryContext(ctx, q, b.args...)
 }
 
-func scanExportRow(rows *sql.Rows) (exportRow, error) {
-	var e exportRow
-	var started time.Time
-	var ended sql.NullTime
-	var device, platform, quality sql.NullString
-	if err := rows.Scan(&e.ID, &e.UserID, &e.VideoID, &started, &ended,
-		&e.DurationSec, &e.PercentComplete, &e.State, &device, &platform, &quality); err != nil {
+// exportViewings opens the viewings' cursor for the filters.
+func (r *repo) exportViewings(ctx context.Context, f Filters) (*sql.Rows, error) {
+	b := r.newQ()
+	q := `WITH ` + b.tvvCTE() + `
+	      SELECT tvv.id, tvv.user_id, tvv.channel_id, tvv.surface, tvv.started_at, tvv.ended_at,
+	             tvv.seconds, tvv.end_reason, tvv.client_app, tvv.client_version, tvv.device_type,
+	             tvv.platform
+	      FROM tvv` + b.viewWhere(f, true) + ` ORDER BY ` + r.ts("tvv.started_at") + ` ASC`
+	return r.db.QueryContext(ctx, q, b.args...)
+}
+
+func scanExportPlay(rows *sql.Rows) (exportRow, error) {
+	e := exportRow{Kind: "play", Surface: SurfaceVideo}
+	var started, ended dbTime
+	var app, ver, device, platform, quality nullString
+	if err := rows.Scan(&e.ID, &e.UserID, &e.VideoID, &started, &ended, &e.DurationSec,
+		&e.PercentComplete, &e.State, &app, &ver, &device, &platform, &quality); err != nil {
 		return exportRow{}, err
 	}
-	e.StartedAt = started.UTC().Format(time.RFC3339)
-	if ended.Valid {
-		e.EndedAt = ended.Time.UTC().Format(time.RFC3339)
+	e.StartedAt, e.EndedAt = started.String(), ended.String()
+	e.ClientApp, e.ClientVersion, e.DeviceType, e.Platform, e.Quality = app.S, ver.S, device.S, platform.S, quality.S
+	return e, nil
+}
+
+func scanExportViewing(rows *sql.Rows) (exportRow, error) {
+	e := exportRow{Kind: "viewing"}
+	var started, ended dbTime
+	var user, reason, app, ver, device, platform nullString
+	if err := rows.Scan(&e.ID, &user, &e.ChannelID, &e.Surface, &started, &ended, &e.DurationSec,
+		&reason, &app, &ver, &device, &platform); err != nil {
+		return exportRow{}, err
 	}
-	e.DeviceType = device.String
-	e.Platform = platform.String
-	e.Quality = quality.String
+	e.UserID = user.S
+	e.StartedAt, e.EndedAt = started.String(), ended.String()
+	e.State = reason.S
+	if e.State == "" {
+		if ended.Valid {
+			e.State = "ended"
+		} else {
+			e.State = "open"
+		}
+	}
+	e.ClientApp, e.ClientVersion, e.DeviceType, e.Platform = app.S, ver.S, device.S, platform.S
 	return e, nil
 }
