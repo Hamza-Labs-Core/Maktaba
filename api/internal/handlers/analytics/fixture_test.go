@@ -170,7 +170,10 @@ func runScenario(t *testing.T, h *Handler) {
 		for _, a := range s.Apps {
 			apps[a.Label] = a.WatchSec
 		}
-		if apps["unknown"] != 8040 || apps["tv"] != 3600 || apps["player"] != 1800 || apps["web"] != 900 || s.Apps[0].Label != "unknown" {
+		// a tuner viewing is Plex's, a remote TV one the web's; the play that named no
+		// app is the one unknown
+		if apps["unknown"] != 300 || apps["plex"] != 4200 || apps["tv"] != 3600 || apps["player"] != 1800 ||
+			apps["web"] != 4440 || s.Apps[0].Label != "web" {
 			t.Errorf("apps: %+v", s.Apps)
 		}
 		if len(s.Platforms) == 0 || len(s.Devices) == 0 {
@@ -191,8 +194,12 @@ func runScenario(t *testing.T, h *Handler) {
 			t.Errorf("user: %+v", s)
 		}
 		get(t, r, A+"summary?client_app=unknown", &s)
-		if s.WatchSec != 8040 || s.Plays != 1 || s.Viewings != 3 {
+		if s.WatchSec != 300 || s.Plays != 1 || s.Viewings != 0 {
 			t.Errorf("unknown app: %+v", s)
+		}
+		get(t, r, A+"summary?client_app=plex", &s)
+		if s.WatchSec != 4200 || s.Viewings != 2 || s.Plays != 0 {
+			t.Errorf("plex: %+v", s)
 		}
 		get(t, r, A+"summary?range=today&client_app=player", &s)
 		if s.Range != "today" || s.WatchSec != 1800 || s.Plays != 1 {
@@ -321,7 +328,7 @@ func runScenario(t *testing.T, h *Handler) {
 			s.LastActiveDay != "2026-10-26" || s.LastWatchedAt == "" {
 			t.Errorf("sara: %+v", s)
 		}
-		if l.Username != "lina" || l.WatchSec != 3540 || strings.Join(l.Apps, ",") != "remote,unknown" {
+		if l.Username != "lina" || l.WatchSec != 3540 || strings.Join(l.Apps, ",") != "remote,web" {
 			t.Errorf("lina: %+v", l)
 		}
 		if o.Username != "omar" || o.WatchSec != 900 || strings.Join(o.Apps, ",") != "player,web" {
