@@ -12,6 +12,8 @@
 // pulled from `import.meta.env.VITE_API_BASE` so the dev proxy and the
 // production build both work without ifdefs.
 
+import { CLIENT_HEADER, clientHeaderValue } from "./clientHeader";
+
 const BASE = (import.meta.env.VITE_API_BASE ?? "") as string;
 
 /** The URL of an API path for something the browser loads itself (an iframe, a link). */
@@ -165,10 +167,13 @@ function noteHomeState(headers: Headers | null): void {
 }
 
 // csrfHeaders returns the double-submit header for a hand-rolled fetch
-// (e.g. a streaming POST that cannot go through request()).
+// (e.g. a streaming POST that cannot go through request()), with the app's
+// X-Maktaba-Client every request carries.
 export function csrfHeaders(): Record<string, string> {
   const tok = csrfToken();
-  return tok ? { [CSRF_HEADER]: tok } : {};
+  const h: Record<string, string> = { [CLIENT_HEADER]: clientHeaderValue() };
+  if (tok) h[CSRF_HEADER] = tok;
+  return h;
 }
 
 function csrfToken(): string | null {
@@ -186,6 +191,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json");
   }
+  headers.set(CLIENT_HEADER, clientHeaderValue());
 
   let body: BodyInit | null = null;
   if (opts.body !== undefined && opts.body !== null) {
@@ -273,7 +279,10 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
 export async function downloadBlob(path: string, fallbackName: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, { credentials: "include", headers: { Accept: "*/*" } });
+    res = await fetch(`${BASE}${path}`, {
+      credentials: "include",
+      headers: { Accept: "*/*", [CLIENT_HEADER]: clientHeaderValue() },
+    });
   } catch (e) {
     logApiError("GET", path, 0, e instanceof Error ? e.message : "network error");
     throw e;
@@ -326,7 +335,10 @@ export async function downloadBlob(path: string, fallbackName: string): Promise<
 // credentials, so the watch-session `stop` actually lands on `pagehide`.
 // Body is capped well under the 64 KB keepalive limit.
 export function postBeacon(path: string, body: unknown): void {
-  const headers = new Headers({ "Content-Type": "application/json" });
+  const headers = new Headers({
+    "Content-Type": "application/json",
+    [CLIENT_HEADER]: clientHeaderValue(),
+  });
   const tok = csrfToken();
   if (tok) headers.set(CSRF_HEADER, tok);
   try {
@@ -348,7 +360,7 @@ export function postBeacon(path: string, body: unknown): void {
 // (keepalive fetch with the CSRF header; navigator.sendBeacon can do neither
 // DELETE nor headers). Epic 32.9: a remote TV session ends on page unload.
 export function deleteBeacon(path: string): void {
-  const headers = new Headers();
+  const headers = new Headers({ [CLIENT_HEADER]: clientHeaderValue() });
   const tok = csrfToken();
   if (tok) headers.set(CSRF_HEADER, tok);
   try {
@@ -388,6 +400,7 @@ export function uploadWithProgress<T>(
     xhr.open("POST", `${BASE}${path}`);
     xhr.withCredentials = true;
     xhr.setRequestHeader("Accept", "application/json");
+    xhr.setRequestHeader(CLIENT_HEADER, clientHeaderValue());
     const tok = csrfToken();
     if (tok) xhr.setRequestHeader(CSRF_HEADER, tok);
     xhr.upload.onprogress = (e) => {
