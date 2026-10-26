@@ -213,3 +213,20 @@ func TestDeviceApprovalsRaceToOne(t *testing.T) {
 		t.Fatalf("%d approvals stood, want 1", ok)
 	}
 }
+
+// A sign-in through Maktaba Cloud cannot sign in a TV: the TV's tokens would outlive the
+// cloud link with the person's full role (Epic 42 story 42.7, as for a phone's pairing).
+func TestDeviceApproveRefusesACloudSession(t *testing.T) {
+	_, fm, r, _ := newDeviceHandler(t)
+	s := startDevice(t, r)
+	req := httptest.NewRequest(http.MethodPost, "/api/pairing/approve", strings.NewReader(`{"code":"`+s.Code+`"}`))
+	req = req.WithContext(principal.WithPrincipal(context.Background(), &principal.Principal{UserID: "viewer-1", CloudScope: "viewer"}))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("approve from a cloud session = %d, want 403", rec.Code)
+	}
+	if rec := poll(r, s.DeviceCode); rec.Code != http.StatusAccepted || fm.calls != 0 {
+		t.Fatalf("the TV was signed in (%d, %d mints)", rec.Code, fm.calls)
+	}
+}

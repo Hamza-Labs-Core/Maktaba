@@ -47,16 +47,21 @@ func (w *wsFrameConn) Close() error { return w.c.Close() }
 
 // authPayload is the body of the first frame the on-prem server sends.
 // Field shape is dictated by relay.AuthPayload (server side):
-// {"server_id":"...","secret":"..."}.
+// {"server_id":"...","secret":"...","flow":1}; flow announces that this
+// agent windows its response bodies (WINDOW_UPDATE, relay/protocol.go).
 type authPayload struct {
 	ServerID string `json:"server_id"`
 	Secret   string `json:"secret"`
+	Flow     int    `json:"flow,omitempty"`
 }
 
 // authOKPayload is what the cloud echoes on success (relay.AuthOKPayload).
 type authOKPayload struct {
 	Slug     string    `json:"slug"`
 	IssuedAt time.Time `json:"issued_at"`
+	// Flow is FlowVersion when the cloud agreed to window the tunnel; an
+	// older cloud omits it and the tunnel stays unwindowed.
+	Flow int `json:"flow,omitempty"`
 }
 
 var (
@@ -73,6 +78,8 @@ var (
 type DialResult struct {
 	Conn FrameConn
 	Slug string
+	// Flow: the cloud agreed to flow control (both ends announced it).
+	Flow bool
 }
 
 // Dialer opens a WSS tunnel to the cloud relay and performs the AUTH
@@ -129,7 +136,7 @@ func (d *Dialer) Dial(ctx context.Context) (DialResult, error) {
 // FrameConn. Factored out so unit tests can drive it with a pipe and
 // no real network.
 func authenticate(conn FrameConn, serverID, secret string) (DialResult, error) {
-	body, _ := json.Marshal(authPayload{ServerID: serverID, Secret: secret})
+	body, _ := json.Marshal(authPayload{ServerID: serverID, Secret: secret, Flow: FlowVersion})
 	if err := conn.WriteFrame(Frame{Kind: KindAuth, Payload: body}); err != nil {
 		return DialResult{}, fmt.Errorf("cloudlink: write AUTH: %w", err)
 	}
@@ -143,7 +150,7 @@ func authenticate(conn FrameConn, serverID, secret string) (DialResult, error) {
 		if err := json.Unmarshal(reply.Payload, &ok); err != nil {
 			return DialResult{}, fmt.Errorf("%w: bad AUTH_OK json: %v", ErrAuthProtocol, err)
 		}
-		return DialResult{Conn: conn, Slug: ok.Slug}, nil
+		return DialResult{Conn: conn, Slug: ok.Slug, Flow: ok.Flow >= FlowVersion}, nil
 	case KindAuthFail:
 		return DialResult{}, fmt.Errorf("%w: %s", ErrAuthRejected, string(reply.Payload))
 	default:

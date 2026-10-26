@@ -9,8 +9,11 @@
 package middleware
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -125,6 +128,29 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
+// The recorder must not hide what the writer under it can do: the relay's
+// tunnel accept upgrades the connection to a websocket (Hijack), and the
+// relay proxy flushes every chunk it streams (Flush). Unwrap serves
+// http.NewResponseController (per-response deadlines).
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := s.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("middleware: the response cannot be hijacked")
+	}
+	if s.status == 0 {
+		s.status = http.StatusSwitchingProtocols
+	}
+	return h.Hijack()
+}
+
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 // Logging emits a structured access log entry per request. Fields:
 // request_id, method, path, status, latency_ms, remote_ip.
 func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
@@ -178,7 +204,7 @@ func CORS(allowed []string) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Vary", "Origin")
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
-				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id")
 				w.Header().Set("Access-Control-Max-Age", "600")
 			}

@@ -29,7 +29,9 @@ type Meter struct {
 	counters map[string]*counter // keyed by server id
 
 	stop       chan struct{}
+	stopped    chan struct{} // closed when the flush loop has made its last flush
 	once       sync.Once
+	closeOnce  sync.Once
 	flushCount atomic.Int64
 }
 
@@ -45,6 +47,7 @@ func NewMeter(db *sql.DB) *Meter {
 		FlushInterval: 30 * time.Second,
 		counters:      make(map[string]*counter),
 		stop:          make(chan struct{}),
+		stopped:       make(chan struct{}),
 		now:           func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -57,6 +60,7 @@ func (m *Meter) Start(ctx context.Context) {
 }
 
 func (m *Meter) flushLoop(ctx context.Context) {
+	defer close(m.stopped)
 	tick := time.NewTicker(m.FlushInterval)
 	defer tick.Stop()
 	for {
@@ -73,8 +77,17 @@ func (m *Meter) flushLoop(ctx context.Context) {
 	}
 }
 
-// Close stops the flush loop and emits a final flush.
-func (m *Meter) Close() { close(m.stop) }
+// Close stops the flush loop and waits (up to 10s) for its final flush:
+// the relay calls it on shutdown, and a process that exits first loses
+// the bytes counted since the last tick (up to FlushInterval of them).
+func (m *Meter) Close() {
+	m.closeOnce.Do(func() { close(m.stop) })
+	m.once.Do(func() { close(m.stopped) }) // never started: nothing to wait for
+	select {
+	case <-m.stopped:
+	case <-time.After(10 * time.Second):
+	}
+}
 
 // Record adds to the in-memory counters. Called from the relay handler
 // after each proxied request.

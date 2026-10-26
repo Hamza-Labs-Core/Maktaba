@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:cloud": "vite --config vite.cloud.config.ts",
     "build": "tsc -p tsconfig.json && vite build",
+    "build:cloud": "tsc -p tsconfig.json && vite build --config vite.cloud.config.ts",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",

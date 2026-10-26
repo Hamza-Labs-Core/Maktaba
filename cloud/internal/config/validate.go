@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Role identifies which set of features this process is providing.
 type Role string
@@ -12,8 +15,7 @@ const (
 )
 
 // Validate applies role-specific required-field checks. The api role is
-// the strictest: it owns identity, billing, and admin surfaces, so it
-// needs oauth + stripe + admin domain configured.
+// the strictest: it owns identity, billing, and admin surfaces.
 func Validate(c Config, role Role) error {
 	if c.Database.URL == "" {
 		return fmt.Errorf("%w: [database].url", ErrMissing)
@@ -23,11 +25,11 @@ func Validate(c Config, role Role) error {
 		if c.Server.ListenAddr == "" {
 			return fmt.Errorf("%w: [server].listen_addr", ErrMissing)
 		}
-		if c.OAuthGoogle.ClientID == "" && c.OAuthApple.ClientID == "" {
-			return fmt.Errorf("%w: at least one of [oauth.google] or [oauth.apple]", ErrMissing)
+		if c.Mail.Driver != "log" {
+			return fmt.Errorf("config: [mail].driver %q: the only driver is \"log\"", c.Mail.Driver)
 		}
-		if c.Admin.AllowedEmailDomain == "" {
-			return fmt.Errorf("%w: [admin].allowed_email_domain", ErrMissing)
+		if err := validateStripe(c.Stripe); err != nil {
+			return err
 		}
 	case RoleRelay:
 		if c.Server.ListenAddr == "" {
@@ -40,6 +42,22 @@ func Validate(c Config, role Role) error {
 		// Worker uses control port only; no public listener required.
 	default:
 		return fmt.Errorf("config: unknown role %q", role)
+	}
+	return nil
+}
+
+// ErrLiveStripe refuses a live Stripe key the operator did not opt into.
+var ErrLiveStripe = fmt.Errorf("config: a live Stripe key needs [stripe].live_mode = true")
+
+// validateStripe keeps the api role on Stripe test mode unless live mode
+// is switched on explicitly, and keeps a test key out of live mode.
+func validateStripe(s StripeConfig) error {
+	live := strings.HasPrefix(s.SecretKey, "sk_live_") || strings.HasPrefix(s.SecretKey, "rk_live_")
+	switch {
+	case live && !s.LiveMode:
+		return ErrLiveStripe
+	case s.LiveMode && s.SecretKey != "" && !live:
+		return fmt.Errorf("config: [stripe].live_mode is on but the secret key is not a live key")
 	}
 	return nil
 }

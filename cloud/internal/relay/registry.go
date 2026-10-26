@@ -35,13 +35,15 @@ func (r *Registry) Register(slug string, t *Tunnel) {
 
 // Unregister removes a tunnel ONLY if it matches the one we know
 // about. This prevents a stale disconnect from evicting a freshly
-// reconnected tunnel.
-func (r *Registry) Unregister(slug string, t *Tunnel) {
+// reconnected tunnel. It reports whether t was the live tunnel.
+func (r *Registry) Unregister(slug string, t *Tunnel) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if cur, ok := r.conns[slug]; ok && cur == t {
 		delete(r.conns, slug)
+		return true
 	}
+	return false
 }
 
 // Lookup is the hot path used by the HTTP proxy.

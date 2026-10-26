@@ -17,16 +17,17 @@ import (
 )
 
 // StripeClient is a hand-rolled minimum-surface client for the Stripe
-// REST API. We only use two endpoints:
+// REST API. We use three endpoints:
 //   - POST /v1/checkout/sessions       — create a checkout session
 //   - POST /v1/billing_portal/sessions — open the customer portal
+//   - GET  /v1/charges/{id}            — resolve a disputed charge's customer
 //
 // Doing this by hand avoids pulling in stripe-go (large transitive deps)
-// for what amounts to two POSTs.
+// for what amounts to three calls. Tests point APIBase at a fake.
 type StripeClient struct {
 	SecretKey string
 	HTTP      *http.Client
-	APIBase   string // override in tests; "" → live API
+	APIBase   string
 }
 
 func NewStripeClient(secret string) *StripeClient {
@@ -37,23 +38,44 @@ func NewStripeClient(secret string) *StripeClient {
 	}
 }
 
+// Configured reports whether a secret key is set.
+func (c *StripeClient) Configured() bool { return c != nil && c.SecretKey != "" }
+
 // CheckoutSession is the trimmed-down response shape we care about.
 type CheckoutSession struct {
 	ID  string `json:"id"`
 	URL string `json:"url"`
 }
 
-// CreateCheckoutSession opens a hosted Stripe Checkout. `priceID` is
-// the price reference we configured in the Stripe dashboard; `successURL`
-// and `cancelURL` close the loop back to our SPA.
-func (c *StripeClient) CreateCheckoutSession(ctx context.Context, customerEmail, priceID, successURL, cancelURL, clientReferenceID string) (CheckoutSession, error) {
+// CheckoutParams describes a subscription checkout.
+type CheckoutParams struct {
+	PriceID string
+	// Exactly one of Customer (a returning payer) or CustomerEmail.
+	Customer      string
+	CustomerEmail string
+	SuccessURL    string
+	CancelURL     string
+	// UserID is stamped on the session (client_reference_id) and on the
+	// subscription's metadata, so every later subscription event names
+	// the account even before we know the Stripe customer.
+	UserID string
+}
+
+// CreateCheckoutSession opens a hosted Stripe Checkout.
+func (c *StripeClient) CreateCheckoutSession(ctx context.Context, p CheckoutParams) (CheckoutSession, error) {
 	form := url.Values{}
 	form.Set("mode", "subscription")
-	form.Set("customer_email", customerEmail)
-	form.Set("client_reference_id", clientReferenceID)
-	form.Set("success_url", successURL)
-	form.Set("cancel_url", cancelURL)
-	form.Set("line_items[0][price]", priceID)
+	if p.Customer != "" {
+		form.Set("customer", p.Customer)
+	} else {
+		form.Set("customer_email", p.CustomerEmail)
+	}
+	form.Set("client_reference_id", p.UserID)
+	form.Set("metadata[user_id]", p.UserID)
+	form.Set("subscription_data[metadata][user_id]", p.UserID)
+	form.Set("success_url", p.SuccessURL)
+	form.Set("cancel_url", p.CancelURL)
+	form.Set("line_items[0][price]", p.PriceID)
 	form.Set("line_items[0][quantity]", "1")
 	form.Set("allow_promotion_codes", "true")
 
@@ -65,21 +87,70 @@ func (c *StripeClient) CreateCheckoutSession(ctx context.Context, customerEmail,
 	return s, json.Unmarshal(body, &s)
 }
 
+// CreatePortalSession opens the Stripe customer portal, where the payer
+// changes plan, card, or cancels.
+func (c *StripeClient) CreatePortalSession(ctx context.Context, customer, returnURL string) (string, error) {
+	form := url.Values{}
+	form.Set("customer", customer)
+	form.Set("return_url", returnURL)
+	body, err := c.post(ctx, "/v1/billing_portal/sessions", form)
+	if err != nil {
+		return "", err
+	}
+	var s struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(body, &s); err != nil {
+		return "", err
+	}
+	return s.URL, nil
+}
+
+// ChargeCustomer returns the customer id of a charge (dispute events
+// carry only the charge).
+func (c *StripeClient) ChargeCustomer(ctx context.Context, chargeID string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.APIBase+"/v1/charges/"+url.PathEscape(chargeID), nil)
+	if err != nil {
+		return "", err
+	}
+	body, err := c.do(req)
+	if err != nil {
+		return "", err
+	}
+	var ch struct {
+		Customer string `json:"customer"`
+	}
+	if err := json.Unmarshal(body, &ch); err != nil {
+		return "", err
+	}
+	return ch.Customer, nil
+}
+
 func (c *StripeClient) post(ctx context.Context, path string, form url.Values) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.APIBase+path, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.SecretKey)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return c.do(req)
+}
+
+func (c *StripeClient) do(req *http.Request) ([]byte, error) {
+	req.Header.Set("Authorization", "Bearer "+c.SecretKey)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("stripe: %s %s: %s", req.Method, path, string(body))
+		var e struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(body, &e)
+		return nil, fmt.Errorf("stripe: %s %s: %d %s", req.Method, req.URL.Path, resp.StatusCode, e.Error.Message)
 	}
 	return body, nil
 }

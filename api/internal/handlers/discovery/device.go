@@ -121,6 +121,13 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
 		return
 	}
+	// a TV's tokens outlive a cloud link and carry the person's full role (Epic 42 story
+	// 42.7, as for a phone's pairing): only a sign-in on the home approves one
+	if p.ViaCloud() {
+		httperror.Write(w, r, httperror.Forbidden("https://maktaba.dev/problems/cloud-session",
+			"a sign-in through Maktaba Cloud cannot sign in a TV; sign in on the home"))
+		return
+	}
 	var req approveRequest
 	if e := common.ReadJSON(r, &req, 1<<10); e != nil {
 		httperror.Write(w, r, e)

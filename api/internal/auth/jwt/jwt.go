@@ -35,6 +35,10 @@ type Claims struct {
 	Usr     string   `json:"usr,omitempty"`
 	Lib     []string `json:"lib,omitempty"`
 	IsAdmin bool     `json:"is_admin,omitempty"`
+	// Scp is a Maktaba Cloud sign-in's link scope (Epic 42 story 42.7):
+	// "play" or "manage"; empty for every other token. A verifier caps
+	// the principal by it (principal.ApplyCloudScope).
+	Scp string `json:"scp,omitempty"`
 }
 
 // Errors exported by Verify.

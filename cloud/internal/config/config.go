@@ -25,7 +25,7 @@ type Config struct {
 	Stripe      StripeConfig
 	APNs        APNsConfig
 	FCM         FCMConfig
-	Admin       AdminConfig
+	Mail        MailConfig
 	Entitlement EntitlementConfig
 	Telemetry   TelemetryConfig
 	Relay       RelayConfig
@@ -33,11 +33,18 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	ListenAddr    string
-	PublicURL     string
-	ReadTimeout   time.Duration
-	WriteTimeout  time.Duration
-	ShutdownGrace time.Duration
+	ListenAddr string
+	PublicURL  string
+	// WebURL is the cloud web app's origin (mail links and OAuth
+	// landings point there). Defaults to PublicURL.
+	WebURL string
+	// TrustProxyHeaders makes the client IP come from CF-Connecting-IP /
+	// X-Forwarded-For. Only turn it on behind a proxy that overwrites
+	// them; otherwise any client can pick its own rate-limit key.
+	TrustProxyHeaders bool
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+	ShutdownGrace     time.Duration
 }
 
 // AuthConfig holds the HMAC secret used to sign short-lived access
@@ -75,6 +82,14 @@ type StripeConfig struct {
 	SecretKey      string // env
 	WebhookSecret  string // env
 	PublishableKey string
+	// Price ids of the monthly plans (env MAKTABA_CLOUD_PRICE_PRO /
+	// MAKTABA_CLOUD_PRICE_FAMILY override).
+	PriceProMonthly    string
+	PriceFamilyMonthly string
+	// LiveMode must be set explicitly before an sk_live_ key is
+	// accepted; without it the api role runs against Stripe test mode
+	// only.
+	LiveMode bool
 }
 
 type APNsConfig struct {
@@ -89,8 +104,10 @@ type FCMConfig struct {
 	ServiceAccountPath string
 }
 
-type AdminConfig struct {
-	AllowedEmailDomain string
+// MailConfig picks the mail driver. "log" (the default and, today, the
+// only driver) writes mails to the log instead of delivering them.
+type MailConfig struct {
+	Driver string
 }
 
 type EntitlementConfig struct {
@@ -123,7 +140,7 @@ func defaultConfig() Config {
 			MaxIdleConns:    5,
 			ConnMaxLifetime: 30 * time.Minute,
 		},
-		Admin: AdminConfig{AllowedEmailDomain: "hamzalabs.com"},
+		Mail: MailConfig{Driver: "log"},
 		Telemetry: TelemetryConfig{
 			LogFormat:          "json",
 			LogLevel:           "info",
@@ -149,6 +166,9 @@ func Load(path string) (Config, error) {
 		}
 	}
 	applyEnvOverrides(&cfg)
+	if cfg.Server.WebURL == "" {
+		cfg.Server.WebURL = cfg.Server.PublicURL
+	}
 	return cfg, nil
 }
 
@@ -173,6 +193,15 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_STRIPE_WEBHOOK_SECRET"); v != "" {
 		c.Stripe.WebhookSecret = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_WEB_URL"); v != "" {
+		c.Server.WebURL = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_PRICE_PRO"); v != "" {
+		c.Stripe.PriceProMonthly = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_PRICE_FAMILY"); v != "" {
+		c.Stripe.PriceFamilyMonthly = v
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_TOKEN_SECRET"); v != "" {
 		c.Auth.TokenSecret = v
@@ -271,8 +300,18 @@ func assign(c *Config, section, key, val string) error {
 		c.FCM.ProjectID = val
 	case "fcm.service_account_path":
 		c.FCM.ServiceAccountPath = val
-	case "admin.allowed_email_domain":
-		c.Admin.AllowedEmailDomain = val
+	case "server.web_url":
+		c.Server.WebURL = val
+	case "server.trust_proxy_headers":
+		return setBool(&c.Server.TrustProxyHeaders, val)
+	case "stripe.price_pro_monthly":
+		c.Stripe.PriceProMonthly = val
+	case "stripe.price_family_monthly":
+		c.Stripe.PriceFamilyMonthly = val
+	case "stripe.live_mode":
+		return setBool(&c.Stripe.LiveMode, val)
+	case "mail.driver":
+		c.Mail.Driver = val
 	case "entitlement.private_key_path":
 		c.Entitlement.PrivateKeyPath = val
 	case "telemetry.log_format":
@@ -295,6 +334,18 @@ func setDur(dst *time.Duration, v string) error {
 		return fmt.Errorf("duration %q: %w", v, err)
 	}
 	*dst = d
+	return nil
+}
+
+func setBool(dst *bool, v string) error {
+	switch v {
+	case "true":
+		*dst = true
+	case "false":
+		*dst = false
+	default:
+		return fmt.Errorf("bool %q: want true or false", v)
+	}
 	return nil
 }
 

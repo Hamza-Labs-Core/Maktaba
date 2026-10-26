@@ -2,8 +2,8 @@
 // dashboard and export (Epic 30, Stories 30.3/30.4) plus the Article 30
 // processing-records endpoint (30.2). It mounts on the api role inside
 // the authenticated group and reads the relay_metrics_* tables the relay
-// role writes (README D8). Access is gated on the caller's email domain,
-// mirroring handlers/admin.
+// role writes (README D8). Access is gated by Deps.Gate — in production
+// the cloud service-admin role check, the same gate as handlers/admin.
 package metrics
 
 import (
@@ -16,17 +16,21 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/audit"
+	authmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/middleware"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
-	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
 type Deps struct {
-	DB            *sql.DB
-	Users         *stores.Users
-	AllowedDomain string
-	Store         *metricspkg.Store
+	DB *sql.DB
+	// Gate admits service admins only (auth/middleware.RequireServiceAdmin).
+	// A nil Gate refuses everyone: the routes fail closed.
+	Gate func(http.Handler) http.Handler
+	// Audit records erasures. Optional.
+	Audit *audit.Log
+	Store *metricspkg.Store
 	// Live returns the live connection gauges: the collector's when the
 	// reader shares a process with the relay, else the relay's newest
 	// flushed sample (LiveFromStore). nil falls back to the newest sample
@@ -53,22 +57,14 @@ func Mount(r chi.Router, d Deps) {
 	}
 }
 
-// RequireAdmin gates a handler on the caller's email domain — identical
-// rule to handlers/admin so the operator allow-list stays consistent.
+// RequireAdmin wraps a handler in the service-admin gate.
 func (d *Deps) RequireAdmin(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		uid := middleware.GetUserID(r.Context())
-		u, err := d.Users.ByID(r.Context(), uid)
-		if err != nil {
-			writeErr(w, http.StatusUnauthorized, "unauthorized")
-			return
+	if d.Gate == nil {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			writeErr(w, http.StatusForbidden, "admin_access_denied")
 		}
-		if domainOf(u.Email) != strings.ToLower(d.AllowedDomain) {
-			writeErr(w, http.StatusForbidden, "forbidden")
-			return
-		}
-		h.ServeHTTP(w, r)
 	}
+	return d.Gate(h).ServeHTTP
 }
 
 // Overview — live connection gauges + range totals.
@@ -163,6 +159,14 @@ func (d *Deps) DeleteUserData(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "delete_failed")
 		return
 	}
+	if d.Audit != nil {
+		e := audit.Entry{Action: audit.ActionAdminErase, TargetKind: "user", TargetID: id,
+			Detail: map[string]any{"push_log_rows": rep.PushRows}, IP: middleware.GetClientIP(r.Context())}
+		if admin, ok := authmw.ServiceAdmin(r.Context()); ok {
+			e.ActorID, e.ActorEmail = admin.ID, admin.Email
+		}
+		_ = d.Audit.Write(r.Context(), e)
+	}
 	writeJSON(w, http.StatusOK, rep)
 }
 
@@ -209,14 +213,6 @@ func parseRange(r *http.Request) (time.Time, string) {
 	default:
 		return now.AddDate(0, 0, -7), "7d"
 	}
-}
-
-func domainOf(email string) string {
-	i := strings.LastIndex(email, "@")
-	if i < 0 {
-		return ""
-	}
-	return strings.ToLower(email[i+1:])
 }
 
 func writeJSON(w http.ResponseWriter, code int, body any) {

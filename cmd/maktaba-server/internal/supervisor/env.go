@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 )
 
@@ -129,6 +130,14 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	// server.toml. An operator's own MAKTABA_SECRETS_KEY is kept.
 	if os.Getenv("MAKTABA_SECRETS_KEY") == "" {
 		add("MAKTABA_SECRETS_KEY", SecretsKeyPath())
+	}
+
+	// Linked accounts (Epic 42 story 42.7): on the home that runs the relay
+	// agent, the api reads the agent's identity file (the cloud's pinned
+	// assertion key) and reports its linked cloud accounts through the agent.
+	if role == RoleAPI && RelayWanted(cfg) {
+		add("MAKTABA_CLOUD_IDENTITY", RelayIdentityPath())
+		add("MAKTABA_CLOUDLINK_ADMIN", RelayAdminAddr(cfg))
 	}
 
 	// This machine's stream signing key (Story 10.8): the api signs the video
@@ -321,7 +330,8 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		}
 	}
 
-	return env, nil
+	// a URL never carries the password: the child reads it from a passfile
+	return dsn.ProcessEnv(env, config.KeysDir())
 }
 
 // LocalAgentURL is a full node's loopback route to the home's channel over its cluster

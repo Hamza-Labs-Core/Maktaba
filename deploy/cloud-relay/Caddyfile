@@ -17,17 +17,13 @@
 	# and a single wildcard DNS A record (*.RELAY_DOMAIN -> this VPS).
 	#
 	# `ask` is queried before issuance: Caddy only requests a cert when
-	# the endpoint returns 2xx. We point it at the relay's /healthz,
-	# which 200s for any host.
-	#
-	# HARDENING: /healthz allows issuance for ANY hostname that resolves
-	# to this box. In practice only *.RELAY_DOMAIN does (your wildcard
-	# record), and Let's Encrypt rate limits cap abuse — but for a
-	# locked-down deployment either (a) replace this with a real
-	# allow-list endpoint that 200s only for known server slugs, or
-	# (b) switch to a DNS-01 wildcard cert (see README "Wildcard TLS").
+	# the endpoint returns 2xx. The relay's /v1/relay/tls-ask answers 200
+	# only for the bare RELAY_DOMAIN and the subdomain of a claimed server
+	# (Story 25.23), so a random name pointed at this box cannot burn the
+	# Let's Encrypt quota. For a wildcard cert instead see README
+	# "Wildcard TLS".
 	on_demand_tls {
-		ask http://maktaba-cloud:8443/healthz
+		ask http://maktaba-cloud:8443/v1/relay/tls-ask
 		interval 2m
 		burst 5
 	}

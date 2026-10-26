@@ -26,6 +26,26 @@ type User struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	LastLoginAt   sql.NullTime
+	// Role is the cloud role: RoleUser or RoleServiceAdmin. A home
+	// server's admin/viewer roles never appear here.
+	Role            string
+	SuspendedAt     sql.NullTime
+	SuspendedReason sql.NullString
+}
+
+// Cloud roles and account statuses (migration 0012 pins the sets).
+const (
+	RoleUser         = "user"
+	RoleServiceAdmin = "service_admin"
+
+	StatusActive    = "active"
+	StatusSuspended = "suspended"
+)
+
+// IsServiceAdmin reports whether the account may use /v1/admin/*: it
+// holds the service-admin role and is not suspended.
+func (u User) IsServiceAdmin() bool {
+	return u.Role == RoleServiceAdmin && u.Status == StatusActive
 }
 
 var ErrUserNotFound = errors.New("users: not found")
@@ -57,9 +77,9 @@ func (s *Users) Create(ctx context.Context, email, passwordHash, displayName str
 	err := s.DB.QueryRowContext(ctx, `
         INSERT INTO users (email, password_hash, display_name, email_verified)
         VALUES ($1, $2, $3, $4)
-        RETURNING id, email, email_verified, password_hash, display_name, locale, avatar_url, plan, status, created_at, updated_at, last_login_at
+        RETURNING id, email, email_verified, password_hash, display_name, locale, avatar_url, plan, status, created_at, updated_at, last_login_at, role, suspended_at, suspended_reason
     `, email, pwHash, dn, oauthVerified).Scan(
-		&u.ID, &u.Email, &u.EmailVerified, &u.PasswordHash, &u.DisplayName, &u.Locale, &u.AvatarURL, &u.Plan, &u.Status, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt,
+		&u.ID, &u.Email, &u.EmailVerified, &u.PasswordHash, &u.DisplayName, &u.Locale, &u.AvatarURL, &u.Plan, &u.Status, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt, &u.Role, &u.SuspendedAt, &u.SuspendedReason,
 	)
 	return u, err
 }
@@ -69,9 +89,9 @@ func (s *Users) ByEmail(ctx context.Context, email string) (User, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	var u User
 	err := s.DB.QueryRowContext(ctx, `
-        SELECT id, email, email_verified, password_hash, display_name, locale, avatar_url, plan, status, created_at, updated_at, last_login_at
+        SELECT id, email, email_verified, password_hash, display_name, locale, avatar_url, plan, status, created_at, updated_at, last_login_at, role, suspended_at, suspended_reason
         FROM users WHERE lower(email) = $1
-    `, email).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.PasswordHash, &u.DisplayName, &u.Locale, &u.AvatarURL, &u.Plan, &u.Status, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt)
+    `, email).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.PasswordHash, &u.DisplayName, &u.Locale, &u.AvatarURL, &u.Plan, &u.Status, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt, &u.Role, &u.SuspendedAt, &u.SuspendedReason)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrUserNotFound
 	}
@@ -83,9 +103,9 @@ func (s *Users) ByEmail(ctx context.Context, email string) (User, error) {
 func (s *Users) ByID(ctx context.Context, id string) (User, error) {
 	var u User
 	err := s.DB.QueryRowContext(ctx, `
-        SELECT id, email, email_verified, password_hash, display_name, locale, avatar_url, plan, status, created_at, updated_at, last_login_at
+        SELECT id, email, email_verified, password_hash, display_name, locale, avatar_url, plan, status, created_at, updated_at, last_login_at, role, suspended_at, suspended_reason
         FROM users WHERE id = $1
-    `, id).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.PasswordHash, &u.DisplayName, &u.Locale, &u.AvatarURL, &u.Plan, &u.Status, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt)
+    `, id).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.PasswordHash, &u.DisplayName, &u.Locale, &u.AvatarURL, &u.Plan, &u.Status, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt, &u.Role, &u.SuspendedAt, &u.SuspendedReason)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrUserNotFound
 	}
@@ -149,10 +169,10 @@ func (s *Users) LinkOAuth(ctx context.Context, userID, provider, subject, email 
 func (s *Users) UserByOAuth(ctx context.Context, provider, subject string) (User, error) {
 	var u User
 	err := s.DB.QueryRowContext(ctx, `
-        SELECT u.id, u.email, u.email_verified, u.password_hash, u.display_name, u.locale, u.avatar_url, u.plan, u.status, u.created_at, u.updated_at, u.last_login_at
+        SELECT u.id, u.email, u.email_verified, u.password_hash, u.display_name, u.locale, u.avatar_url, u.plan, u.status, u.created_at, u.updated_at, u.last_login_at, u.role, u.suspended_at, u.suspended_reason
         FROM users u JOIN oauth_links l ON l.user_id = u.id
         WHERE l.provider = $1 AND l.subject = $2
-    `, provider, subject).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.PasswordHash, &u.DisplayName, &u.Locale, &u.AvatarURL, &u.Plan, &u.Status, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt)
+    `, provider, subject).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.PasswordHash, &u.DisplayName, &u.Locale, &u.AvatarURL, &u.Plan, &u.Status, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt, &u.Role, &u.SuspendedAt, &u.SuspendedReason)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrUserNotFound
 	}

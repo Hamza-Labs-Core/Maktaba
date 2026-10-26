@@ -12,18 +12,20 @@ installer/distribution scaffolding for the on-prem agent.
 cloud/
   cmd/maktaba-cloud/      # single binary, --role api|relay|worker
   internal/
-    abuse/                # signal capture + blocklist
+    abuse/                # signal capture, blocklist, login lockout
+    audit/                # audit log (admin actions, account events)
     auth/                 # argon2id, password policy, sessions, JWT, OAuth (Google/Apple)
     billing/              # plan catalog, bandwidth meter, Stripe client
     clock/                # injectable time source
     config/               # cloud.toml loader + role-specific validator
     db/                   # *sql.DB pool + goose migrator
     entitlement/          # Ed25519 signing for offline feature gates
+    mail/                 # account mails (log driver)
     handlers/
-      account/            # /v1/account/me
-      admin/              # /v1/admin/*
-      auth/               # /v1/auth/{register,login,refresh,logout,oauth/*}
-      billing/            # /v1/billing/{plans,me,checkout,webhook}
+      account/            # /v1/account/{me,password,sessions,export,deletion}
+      admin/              # /v1/admin/* (service-admin console)
+      auth/               # /v1/auth/{register,verify-email,login,refresh,logout,password/*,oauth/*}
+      billing/            # /v1/billing/{plans,me,checkout,portal,usage,entitlement,webhook}
       health/             # /v1/dashboard/servers
       push/               # /v1/push/{devices,dispatch}
       relay/              # subdomain-routed HTTP proxy
@@ -35,7 +37,7 @@ cloud/
     server/               # chi router + health probes + graceful shutdown
     stores/               # data access layer
     tls/                  # ACME HostPolicy backed by subdomain table
-  migrations/             # goose-managed SQL slots 0001–0010
+  migrations/             # goose-managed SQL slots 0001–0012
   installers/             # macOS/Windows/Linux/Docker/NAS/RPi/cloud-VPS + auto-update + wizard + uninstaller
   configs/                # cloud.example.toml
 ```
@@ -46,13 +48,36 @@ cloud/
 # Provision a local Postgres:
 docker run --rm -d --name maktaba-cloud-pg -e POSTGRES_HOST_AUTH_METHOD=trust -p 5433:5432 postgres:16-alpine
 
-# Boot api role:
-MAKTABA_CLOUD_DB_URL='postgres://postgres@localhost:5433/postgres?sslmode=disable' \
-MAKTABA_CLOUD_TOKEN_SECRET='development-secret-must-be-at-least-32-bytes-long' \
-MAKTABA_CLOUD_OAUTH_GOOGLE_SECRET='dev' \
-  go run ./cmd/maktaba-cloud serve --role api --config configs/cloud.example.toml
+# Migrate and boot the api role on :8090 (:8080 is the home server's API
+# on a machine that runs Maktaba):
+export MAKTABA_CLOUD_DB_URL='postgres://postgres@localhost:5433/postgres?sslmode=disable'
+export MAKTABA_CLOUD_TOKEN_SECRET='development-secret-must-be-at-least-32-bytes-long'
+export MAKTABA_CLOUD_LISTEN_ADDR=127.0.0.1:8090
+export MAKTABA_CLOUD_PUBLIC_URL=http://localhost:5174   # the web app proxies /v1
+go run ./cmd/maktaba-cloud migrate up
+go run ./cmd/maktaba-cloud serve --role api
 
-curl http://localhost:8080/healthz
+curl http://localhost:8090/healthz
+
+# The cloud web app (account, billing, operator console) on :5174:
+pnpm -C ../web dev:cloud
+
+# Make an account a service admin (after it verified its email; the
+# verification link is in the api log — mail.driver is "log"):
+go run ./cmd/maktaba-cloud admin grant --email you@example.com
+```
+
+Stripe stays in test mode: set `MAKTABA_CLOUD_STRIPE_SECRET` to an
+`sk_test_` key and the price ids (`MAKTABA_CLOUD_PRICE_PRO`,
+`MAKTABA_CLOUD_PRICE_FAMILY`); an `sk_live_` key is refused unless
+`[stripe] live_mode = true`. Accounts, billing and the console are
+described in [docs/accounts-billing-admin.md](docs/accounts-billing-admin.md).
+
+Integration tests (real Postgres; each test creates and drops its own
+database):
+
+```sh
+MAKTABA_CLOUD_DB_URL=postgres://… go test -tags integration ./...
 ```
 
 ## Role wiring
@@ -115,10 +140,10 @@ automatically.
 | Story | Surface | Where |
 |---|---|---|
 | 25.1  | bootstrap | cmd/maktaba-cloud, internal/{config,server,db,middleware,clock} |
-| 25.2  | email/password | handlers/auth, auth/{argon2id,password,sessions,token} |
+| 25.2  | email/password, verification, reset, lockout | handlers/auth, auth/{argon2id,password,sessions,token}, stores/tokens.go |
 | 25.3  | Google OAuth | auth/oauth/google.go |
 | 25.4  | Apple OAuth | auth/oauth/{apple,jws}.go |
-| 25.5  | account mgmt | handlers/account |
+| 25.5  | account mgmt (profile, devices, export, delete) | handlers/account |
 | 25.6  | server claim | stores/servers.go, handlers/servers |
 | 25.7  | relay tunnel (server side) | docs/server-agent-side (see api/) |
 | 25.8  | relay tunnel (cloud side) | relay/{protocol,tunnel,registry,ws}.go |
@@ -126,15 +151,15 @@ automatically.
 | 25.10 | direct-connection probe | servers.direct_ip/port + dashboard payload |
 | 25.11 | bandwidth meter | billing/meter.go |
 | 25.12 | tier enforcement | billing/{plans,meter}.go + handlers/relay/proxy.go |
-| 25.13 | Stripe checkout | billing/stripe.go + handlers/billing |
-| 25.14 | Stripe webhook | handlers/billing/webhook |
+| 25.13 | Stripe checkout + portal | billing/stripe.go + handlers/billing |
+| 25.14 | Stripe webhook | handlers/billing/webhook.go |
 | 25.15 | plan comparison | handlers/billing/plans |
 | 25.16 | dashboard | handlers/health |
 | 25.17 | push ingest | handlers/push |
 | 25.18 | APNs dispatcher | push/apns.go |
 | 25.19 | FCM dispatcher | push/fcm.go |
-| 25.20 | admin fleet | handlers/admin/fleet |
-| 25.21 | admin revenue | handlers/admin/revenue |
+| 25.20 | admin console (accounts, suspend, servers, abuse, audit) | handlers/admin, auth/middleware.RequireServiceAdmin, web/cloud |
+| 25.21 | admin revenue | handlers/admin (Revenue) |
 | 25.22 | subdomain provisioning | handlers/servers/subdomain.go |
 | 25.23 | TLS/ACME edge | tls/acme.go |
 | 25.24 | rate limiting | ratelimit/ |
@@ -150,6 +175,54 @@ automatically.
 | 25.34 | auto-update | installers/auto-update.md |
 | 25.35 | first-run wizard | installers/first-run-wizard.md |
 | 25.36 | uninstaller | installers/uninstaller.md |
+| 42.7  | linked accounts: home assertions, home list | homeassert/, handlers/homes, stores/homelinks.go (home side: api/internal/auth/cloudlink) |
+
+## The relay and linked accounts (Epic 25, Epic 42 story 42.7)
+
+**Tunnel.** A home's agent (`maktaba-cloudlink`, run by the home's
+supervisor) dials `wss://<relay>/v1/relay/ws`, authenticates with the
+server id and secret it got at claim (`AUTH`, argon2id at rest), and
+carries every request for `<slug>.<relay host>` to the home's **web port**
+on loopback (the UI, `/api`, and `/stream/` behind its sign-in gate).
+Frames: `relay/protocol.go`. Per-stream credit flow control
+(`WINDOW_UPDATE` 0x0c, 1 MiB initial window) is used when both ends
+announce `"flow":1` in AUTH / AUTH_OK; one slow client never stalls the
+tunnel, and no frame is ever dropped (a stream is failed instead). Only
+the wait for the home's response head is bounded (60s): a video plays as
+long as its client reads. The agent pings every 25s and redials with
+backoff when the cloud is silent for 35s.
+
+**Claim.** `POST /v1/servers/claims` (owner, user auth) mints an 8-char
+code; the agent redeems it at `POST /v1/servers/claims/redeem` (no user
+token: the code is the credential), in one transaction with the server
+row (a reserved or taken slug answers 409 and leaves the code usable).
+The answer carries the cloud's **assertion public key**, which the home
+pins (`cloudlink.identity.json` beside the sealed credentials).
+
+**Linked accounts.** The cloud never grants anything inside a home:
+
+- `GET /v1/homes`: the homes a cloud account is linked to (reported by
+  each home, by cloud user id only: `PUT /v1/servers/{id}/links`, server
+  secret) or owns.
+- `POST /v1/homes/{id}/assertion` `{purpose}`: a one-use, one-minute
+  Ed25519 assertion naming the cloud account and the home (`homeassert`).
+  `signin` only for a home that linked the account; `link` for any home,
+  bound to the nonce the home user's own sign-in started.
+- The home verifies it with its pinned key, finds the home user it
+  linked, and issues its own tokens with that user's role capped by the
+  link's scope (`play` by default; `manage` only set by an admin, on the
+  home, for their own link). Every role rule is enforced by the home's
+  API (`POST /api/auth/cloud`, `/api/me/cloud-link`).
+
+The assertion key is derived from the entitlement key
+(`entitlement.private_key_path`), so no second secret is provisioned;
+without it the api role answers 503 to assertion requests.
+
+**Metering.** `billing.Meter` counts each home's relayed bytes while a
+response streams (every MiB), gates on the plan's monthly allowance, and
+flushes to `bandwidth_samples` / `bandwidth_monthly` every 30s and on
+shutdown. **TLS:** the edge's on-demand ask is `/v1/relay/tls-ask`
+(claimed slugs only).
 
 ## Test coverage (this PR)
 
@@ -168,6 +241,8 @@ Unit tests live next to their packages and exercise:
 - config TOML loader + env override + role-specific validation.
 - request-id middleware (mint v7, propagate valid, reject non-v7).
 
-Integration tests requiring a live Postgres are out of scope for this
-bootstrap PR; the schema migrations are exercised by `goose up` in
-each CI matrix entry that boots the binary.
+Integration tests against a live Postgres (`go test -tags=integration
+./...` with `MAKTABA_CLOUD_DB_URL`) cover the claim, agent auth, home links
+and assertions (`handlers/homes`), the meter's flush, relay metrics and the
+privacy purge. The relay's end to end test (`handlers/relay/e2e_test.go`)
+runs a real tunnel and agent behind the relay role's middleware.

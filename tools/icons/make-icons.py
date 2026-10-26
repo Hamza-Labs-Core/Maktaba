@@ -31,6 +31,7 @@ WEB_ROOT = ROOT / "web/public"
 TV_ANDROID = ROOT / "apps/tv/android/app/src/main/res"
 TV_OS = ROOT / "apps/tv/tvos/MaktabaTV/Resources/Assets.xcassets/AppIcon.brandassets"
 MOBILE = ROOT / "apps/mobile/icons"
+ANDROID_NATIVE = ROOT / "apps/android/core/src/main/res"
 LIBRARY_ART = ROOT / "web/public/art/library/dark-wide-1.jpg"
 
 # Android density buckets: launcher icons are 48 dp, adaptive layers 108 dp.
@@ -338,6 +339,18 @@ def mobile(master: Image.Image, mark: Image.Image) -> None:
     master.save(ios / "AppIcon-512@2x.png")  # opaque 1024: the App Store rejects alpha
 
 
+def android_native() -> None:
+    """The native Android apps (Player and Remote) share the phone icons, from their core: the
+    adaptive icon's layers only (minSdk 26 always takes the adaptive icon)."""
+    src = MOBILE / "android-res"
+    for d in src.glob("mipmap-*"):
+        out = ANDROID_NATIVE / d.name
+        out.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(d / "ic_launcher_foreground.png", out / "ic_launcher_foreground.png")
+    (ANDROID_NATIVE / "values").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src / "values" / "ic_launcher_background.xml", ANDROID_NATIVE / "values" / "ic_launcher_background.xml")
+
+
 def main() -> None:
     master = load_master()
     mark = mark_layer(master)
@@ -346,6 +359,7 @@ def main() -> None:
     tv_android(master, mark)
     tv_os(mark)
     mobile(master, mark)
+    android_native()
     print("icons written from", SOURCE.relative_to(ROOT))
 
 

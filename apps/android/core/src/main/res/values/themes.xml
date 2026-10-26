@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window behind Compose, until the first frame: the theme's background, no bar. -->
+    <style name="Theme.Maktaba" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/maktaba_background</item>
+        <item name="android:colorAccent">#8A6212</item>
+    </style>
+    <color name="maktaba_background">#FFFFFF</color>
+</resources>

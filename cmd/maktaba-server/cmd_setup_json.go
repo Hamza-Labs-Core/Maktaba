@@ -15,6 +15,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -263,6 +264,9 @@ func (s *setupRun) apiSub(dbURL string, stdin io.Reader, args ...string) ([]byte
 	env := append(base, os.Environ()...)
 	if dbURL != "" {
 		env = append(env, "DATABASE_URL="+dbURL)
+	}
+	if env, err = dsn.ProcessEnv(env, config.KeysDir()); err != nil {
+		return nil, -1, failStep("internal", "", "%v", err)
 	}
 	cmd.Env = env
 	cmd.Stdin = stdin

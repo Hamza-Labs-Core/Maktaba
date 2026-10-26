@@ -6,3 +6,4 @@ coverage
 wiki-app/node_modules
 wiki-app/dist
 mockups
+dist-cloud

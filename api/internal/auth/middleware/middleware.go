@@ -120,6 +120,9 @@ func JWTBearer(set *keys.Set, expectedAud string) func(http.Handler) http.Handle
 				AccessAllLibraries: c.IsAdmin,
 				Source:             principal.SourceJWT,
 			}
+			// a cloud sign-in's token: its link scope caps it (a play
+			// token is no admin, whatever is_admin says)
+			p.ApplyCloudScope(c.Scp, nil) // a play token lists its libraries itself
 			next.ServeHTTP(w, r.WithContext(principal.WithPrincipal(r.Context(), p)))
 		})
 	}
@@ -191,6 +194,10 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		"/.well-known/security.txt":  {},
 		"/api/auth/login":            {},
 		"/api/auth/refresh":          {},
+		// Epic 42 story 42.7 — a sign-in with a Maktaba Cloud assertion: the
+		// assertion (signed by the cloud's pinned key, one use) is the
+		// credential.
+		"/api/auth/cloud": {},
 		// web-pages-batch2 — self-service entry points the caller reaches
 		// before holding any credential.
 		"/api/auth/register": {},

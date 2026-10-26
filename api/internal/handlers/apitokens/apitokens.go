@@ -109,6 +109,13 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		writeUnauthorized(w, r)
 		return
 	}
+	// an API token outlives a cloud link (Epic 42 story 42.7): only a
+	// sign-in on the home makes one
+	if p.ViaCloud() {
+		httperror.Write(w, r, httperror.Forbidden("https://maktaba.dev/problems/cloud-session",
+			"a sign-in through Maktaba Cloud cannot make an API token; sign in on the home"))
+		return
+	}
 	var req createRequest
 	if e := common.ReadJSON(r, &req, 8<<10); e != nil {
 		httperror.Write(w, r, e)
