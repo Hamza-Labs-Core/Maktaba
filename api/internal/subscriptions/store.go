@@ -200,6 +200,45 @@ func (s *Store) SetLicense(ctx context.Context, lic *License, ent *Entitlements)
 	return s.saveState(ctx)
 }
 
+// ReloadActive takes up the active license as another process recorded it (the
+// `maktaba-api license apply` command, another replica): it reports whether the
+// license changed. One the build's key cannot verify is not taken up.
+func (s *Store) ReloadActive(ctx context.Context, v *Verifier) (bool, error) {
+	if s.persist == nil {
+		return false, nil
+	}
+	rec, err := s.persist.LoadActive(ctx)
+	if err != nil {
+		return false, err
+	}
+	s.mu.RLock()
+	cur := ""
+	if s.license != nil {
+		cur = s.license.LicenseID
+	}
+	s.mu.RUnlock()
+	if rec == nil {
+		if cur == "" {
+			return false, nil
+		}
+		s.mu.Lock()
+		s.license, s.raw = nil, nil
+		s.mu.Unlock()
+		return true, nil
+	}
+	if rec.LicenseID == cur {
+		return false, nil
+	}
+	lic, ent, err := s.recover(rec, v)
+	if err != nil {
+		return false, err
+	}
+	s.mu.Lock()
+	s.license, s.raw, s.lockReason = ent, lic, ""
+	s.mu.Unlock()
+	return true, nil
+}
+
 // Revoke durably reverts the instance to the free tier (an admin
 // removed the license, or the cloud says the plan ended). With no
 // persistence backend it is equivalent to Set(nil).
