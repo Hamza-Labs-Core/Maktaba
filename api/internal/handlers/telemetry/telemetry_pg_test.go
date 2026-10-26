@@ -2,65 +2,109 @@ package telemetry
 
 import (
 	"context"
-	"net/http"
 	"testing"
-
-	"github.com/go-chi/chi/v5"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 )
 
-// On Postgres, with every migration applied (slot 0156's JSONB payload, the
-// libraries' roots from library_roots): an event is stored redacted, the sweep
-// keeps what is in its window, and forgetting the device leaves none of its rows.
-func TestSinkOnPostgres(t *testing.T) {
+// On Postgres, with every migration applied (slot 0161 dropped the old sink and
+// made the outbox): the outbox keeps, puts off, prunes and drops as the sender
+// needs; the switch and the home's id live in app_settings; every query of the
+// report runs against the real tables.
+func TestOnPostgres(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)
-	if _, err := db.Exec(`WITH l AS (INSERT INTO libraries (name, roots) VALUES ('Lectures', ARRAY['/srv/Lectures'])
-		RETURNING id) INSERT INTO library_roots (library_id, path, path_canonical)
-		SELECT id, '/srv/Lectures', '/srv/Lectures' FROM l ON CONFLICT DO NOTHING`); err != nil {
-		t.Fatal(err)
-	}
-	h := New(db, true, nil)
-	r := chi.NewRouter()
-	h.Mount(r)
-	f := &fixture{db: db, h: h, r: r}
-
-	rec := f.do(t, http.MethodPost, "/api/telemetry", events(
-		ev("error.uncaught", map[string]any{"error_message": "cannot open /srv/Lectures/foo.mp4", "x": 1.0}),
-		ev("app.open", map[string]any{"cold_start": true}),
-	), "")
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body)
-	}
-	var msg string
-	if err := db.QueryRow(`SELECT payload->>'error_message' FROM telemetry_events WHERE event_kind = 'error.uncaught'`).Scan(&msg); err != nil {
-		t.Fatal(err)
-	}
-	if msg != "cannot open <library>/foo.mp4" {
-		t.Fatalf("error_message = %q", msg)
-	}
-	if rec := f.do(t, http.MethodPost, "/api/telemetry/web-vitals", map[string]any{
-		"device_pseudonym": pseud, "metrics": []any{map[string]any{"metric": "INP", "value": 64.0, "route": "/videos/123"}},
-	}, ""); rec.Code != http.StatusNoContent {
-		t.Fatalf("vitals: status %d: %s", rec.Code, rec.Body)
+	ctx := context.Background()
+	for _, old := range []string{"telemetry_events", "telemetry_web_vitals"} {
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.tables WHERE table_name = $1`, old).Scan(&n); err != nil || n != 0 {
+			t.Fatalf("%s is still there (%d, %v)", old, n, err)
+		}
 	}
 
-	// a row 91 days old goes, the fresh ones stay
-	if _, err := db.Exec(`INSERT INTO telemetry_events (received_at, device_pseudonym, event_kind) VALUES (now() - interval '91 days', $1, 'app.open')`, pseud); err != nil {
+	s := PGStore{DB: db}
+	now := time.Now().UTC()
+	if err := s.Add(ctx, KindApp, installID, map[string]string{"type": "app"}); err != nil {
 		t.Fatal(err)
 	}
-	evs, vit, err := (&Sweeper{DB: db}).RunOnce(context.Background())
-	if err != nil || evs != 1 || vit != 0 {
-		t.Fatalf("sweep: %d events, %d vitals, %v", evs, vit, err)
+	if err := s.Add(ctx, KindServer, "HOME0000000000000000", map[string]string{"type": "server"}); err != nil {
+		t.Fatal(err)
 	}
-	if n := f.count(t, "telemetry_events"); n != 2 {
-		t.Fatalf("%d events after the sweep, want 2", n)
+	rows, err := s.Due(ctx, now.Add(time.Second), 10)
+	if err != nil || len(rows) != 2 || rows[0].Kind != KindApp || string(rows[0].Body) != `{"type": "app"}` {
+		t.Fatalf("due = %+v, %v", rows, err)
+	}
+	if err := s.Retry(ctx, rows[0].ID, now.Add(time.Hour), "status 503"); err != nil {
+		t.Fatal(err)
+	}
+	if rows, _ := s.Due(ctx, now.Add(time.Second), 10); len(rows) != 1 || rows[0].Kind != KindServer {
+		t.Fatalf("a put-off row is due: %+v", rows)
+	}
+	if n, oldest, err := s.Pending(ctx, KindServer); err != nil || n != 1 || oldest == nil {
+		t.Fatalf("pending = %d %v %v", n, oldest, err)
+	}
+	if err := s.DropKind(ctx, KindServer); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Add(ctx, KindForget, installID, map[string]string{"type": "forget"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DropInstall(ctx, installID); err != nil {
+		t.Fatal(err)
+	}
+	if rows, _ := s.Due(ctx, now.Add(2*time.Hour), 10); len(rows) != 1 || rows[0].Kind != KindForget {
+		t.Fatalf("after the drops: %+v", rows)
+	}
+	if _, err := db.Exec(`UPDATE telemetry_outbox SET created_at = now() - interval '8 days'`); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.Prune(ctx, now.Add(-MaxAge)); err != nil || n != 1 {
+		t.Fatalf("prune = %d, %v", n, err)
+	}
+	if err := s.Sent(ctx, []int64{1, 2, 3}); err != nil {
+		t.Fatal(err)
 	}
 
-	if rec := f.do(t, http.MethodDelete, "/api/telemetry/devices/"+pseud, nil, ""); rec.Code != http.StatusNoContent {
-		t.Fatalf("delete: status %d: %s", rec.Code, rec.Body)
+	reader := runtimecfg.New(db)
+	st := PGState{DB: db, Settings: reader}
+	if st.Sharing(ctx) {
+		t.Fatal("sharing before the admin turned it on")
 	}
-	if n := f.count(t, "telemetry_events") + f.count(t, "telemetry_web_vitals"); n != 0 {
-		t.Fatalf("%d rows after forgetting the device", n)
+	if _, err := db.Exec(`INSERT INTO app_settings (key, value) VALUES ('telemetry.share_server_data', 'true')`); err != nil {
+		t.Fatal(err)
+	}
+	reader.Invalidate()
+	if !st.Sharing(ctx) {
+		t.Fatal("the switch is on but reads off")
+	}
+	id, err := st.InstallID(ctx)
+	if err != nil || !installIDRe.MatchString(id) {
+		t.Fatalf("id %q, %v", id, err)
+	}
+	if again, _ := st.InstallID(ctx); again != id {
+		t.Fatal("the home's id changed")
+	}
+	if fresh, _ := st.NewInstallID(ctx); fresh == id {
+		t.Fatal("NewInstallID kept the id")
+	}
+	if err := st.SetLastReportDay(ctx, "2026-10-26"); err != nil || st.LastReportDay(ctx) != "2026-10-26" {
+		t.Fatalf("last day %q, %v", st.LastReportDay(ctx), err)
+	}
+
+	if _, err := db.Exec(`INSERT INTO api_usage_daily (day, client_app, platform, requests, errors)
+		VALUES (current_date, 'web', 'macos', 1500, 3), (current_date - 30, 'tv', 'tvos', 9, 0)`); err != nil {
+		t.Fatal(err)
+	}
+	rep := (&Reporter{DB: db, Version: "1.2.3", Errors: &ErrorCounts{}}).Build(ctx, now, false)
+	if rep.LibrarySize != "0" || rep.Users == "" || rep.Libraries != "0" || rep.Machines == "" ||
+		len(rep.Apps) != 1 || rep.Apps[0] != (AppUse{App: "web", Platform: "macos", People: "0", Requests: "1k-10k", Errors: "2-5"}) {
+		t.Fatalf("report = %+v", rep)
+	}
+	for _, f := range []string{"channels", "collections", "transcripts", "subtitle_files", "access_tokens",
+		"paired_devices", "library_acl_rows", "extensions", "open_registration"} {
+		if _, ok := rep.Features[f]; !ok {
+			t.Errorf("feature %s missing: its query failed on the real schema", f)
+		}
 	}
 }

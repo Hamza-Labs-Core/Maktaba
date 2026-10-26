@@ -3,7 +3,6 @@ package telemetry
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"log/slog"
 	"math"
 	"net/http"
@@ -15,12 +14,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 )
 
-// Problem types of the sink (beside the httperror registry's own).
+// Problem types of the pipe (beside the httperror registry's own).
 const (
 	TypeUnknownEventKind = "https://maktaba.dev/problems/unknown-event-kind"
 	TypeUnknownMetric    = "https://maktaba.dev/problems/unknown-metric"
@@ -29,10 +29,10 @@ const (
 
 const (
 	// MaxEvents and MaxMetrics are the per-request caps; a request over them is
-	// refused whole (413), nothing of it stored.
+	// refused whole (413), nothing of it kept.
 	MaxEvents  = 100
 	MaxMetrics = 50
-	// MaxPayloadBytes caps one event's stored payload.
+	// MaxPayloadBytes caps one event's payload.
 	MaxPayloadBytes = 16 << 10
 	// maxBodyBytes caps a request body.
 	maxBodyBytes = 1 << 20
@@ -40,29 +40,41 @@ const (
 	maxStringRunes = 2048
 
 	// EventsPerMinute is the per-IP budget of events and metrics together;
-	// DeletesPerMinute that of "Forget my device" (a pseudonym is 80+ random
-	// bits, so guessing one is hopeless; the cap keeps it so).
+	// DeletesPerMinute that of "Delete what this app sent".
 	EventsPerMinute  = 1000
 	DeletesPerMinute = 30
 
 	// futureSkew is how far ahead of the server a device's clock may be before
-	// its time is truncated to the server's (and a warning logged).
+	// its time is truncated to the server's.
 	futureSkew = time.Minute
 )
 
-// pseudonymRe: 16 characters made at opt-in (the web client's are base32).
-var pseudonymRe = regexp.MustCompile(`^[A-Za-z0-9]{16}$`)
+// installIDRe: an install's random id. The web app's ids from before the
+// rework (16 base32 characters) are ones too.
+var installIDRe = regexp.MustCompile(`^[A-Za-z0-9]{16,32}$`)
 
-// Handler serves the sink. Enabled false is the server's opt-out
-// ([telemetry] enabled = false): the POSTs answer 204 and store nothing.
-// "Forget my device" works either way.
+// tokenRe is what an app's name, platform and form factor may be (the
+// X-Maktaba-Client header's parts, Epic 44).
+var tokenRe = regexp.MustCompile(`^[a-z0-9._-]{1,32}$`)
+
+// Handler serves the home's part of usage data: the pipe apps post through,
+// and the admin's view of the server's own report.
 type Handler struct {
-	DB      *sql.DB
+	DB *sql.DB
+	// Enabled false is server.toml's [telemetry] enabled = "off": nothing
+	// leaves this home, the server's data nor any app's (the POSTs answer 204
+	// and keep nothing).
 	Enabled bool
-	Logger  *slog.Logger
+	Store   Store
+	State   State
+	// Reporter builds the preview the admin sees (the day's report as of now).
+	Reporter *Reporter
+	// Sender is kicked when an app's batch arrives; its status is the admin's.
+	Sender *Sender
+	Logger *slog.Logger
 
 	// Events and Deletes are the per-IP budgets (nil: EventsPerMinute,
-	// DeletesPerMinute). The IP is read for them only, never stored.
+	// DeletesPerMinute). The IP is read for them only, never kept.
 	Events  *middleware.IPBudget
 	Deletes *middleware.IPBudget
 
@@ -72,15 +84,6 @@ type Handler struct {
 	NowFunc func() time.Time
 
 	cache *rootCache
-}
-
-// New is a Handler with its budgets made.
-func New(db *sql.DB, enabled bool, logger *slog.Logger) *Handler {
-	return &Handler{
-		DB: db, Enabled: enabled, Logger: logger,
-		Events:  middleware.NewIPBudget(EventsPerMinute),
-		Deletes: middleware.NewIPBudget(DeletesPerMinute),
-	}
 }
 
 func (h *Handler) now() time.Time {
@@ -97,9 +100,8 @@ func (h *Handler) logger() *slog.Logger {
 	return slog.Default()
 }
 
-// Mount wires the sink's routes. They are public (the auth gate's allowlist):
-// the device's pseudonym is its only identity, and a signed-in user is never
-// linked to it.
+// Mount wires the routes. Every one needs a signed-in user (the auth gate);
+// the server's own are an admin's. Who posted an app's batch is never kept.
 func (h *Handler) Mount(r chi.Router) {
 	if h.Events == nil {
 		h.Events = middleware.NewIPBudget(EventsPerMinute)
@@ -112,185 +114,148 @@ func (h *Handler) Mount(r chi.Router) {
 		loader = loadRoots(h.DB)
 	}
 	h.cache = &rootCache{loader: loader}
-	r.Post("/api/telemetry", h.PostEvents)
-	r.Post("/api/telemetry/web-vitals", h.PostWebVitals)
-	r.Delete("/api/telemetry/devices/{pseudonym}", h.DeleteDevice)
-}
-
-// context the device sends once per request
-type deviceContext struct {
-	Pseudonym  string `json:"device_pseudonym"`
-	AppVersion string `json:"app_version"`
-	OS         string `json:"os"`
-	OSVersion  string `json:"os_version"`
-	Locale     string `json:"locale"`
+	r.Post("/api/telemetry/app", h.PostApp)
+	r.Delete("/api/telemetry/app/{installID}", h.ForgetApp)
+	r.Get("/api/telemetry/server", h.ServerStatus)
+	r.Post("/api/telemetry/server/forget", h.ForgetServer)
 }
 
 type eventIn struct {
-	EventKind string         `json:"event_kind"`
-	Payload   map[string]any `json:"payload"`
-	TS        string         `json:"ts"`
-}
-
-type eventsBody struct {
-	deviceContext
-	Events []eventIn `json:"events"`
+	Kind    string         `json:"kind"`
+	Payload map[string]any `json:"payload"`
+	TS      string         `json:"ts"`
 }
 
 type metricIn struct {
 	Metric string  `json:"metric"`
 	Value  float64 `json:"value"`
 	Route  string  `json:"route"`
-	TS     string  `json:"ts"`
 }
 
-type vitalsBody struct {
-	Pseudonym string     `json:"device_pseudonym"`
-	Metrics   []metricIn `json:"metrics"`
+// appBody is an app's batch as it posts it.
+type appBody struct {
+	Consent    *bool      `json:"consent"`
+	InstallID  string     `json:"install_id"`
+	App        string     `json:"app"`
+	Platform   string     `json:"platform"`
+	FormFactor string     `json:"form_factor"`
+	AppVersion string     `json:"app_version"`
+	OSVersion  string     `json:"os_version"`
+	Locale     string     `json:"locale"`
+	Events     []eventIn  `json:"events"`
+	Vitals     []metricIn `json:"vitals"`
 }
 
-type eventRow struct {
-	occurred time.Time
-	kind     string
-	payload  []byte
+// AppBatch is an app's batch as it goes to Maktaba Cloud (type "app").
+type AppBatch struct {
+	Type       string      `json:"type"`
+	InstallID  string      `json:"install_id"`
+	App        string      `json:"app"`
+	Platform   string      `json:"platform"`
+	FormFactor string      `json:"form_factor"`
+	AppVersion string      `json:"app_version"`
+	OSVersion  string      `json:"os_version"`
+	Locale     string      `json:"locale"`
+	Events     []EventOut  `json:"events"`
+	Vitals     []MetricOut `json:"vitals"`
 }
 
-// PostEvents is POST /api/telemetry {device_pseudonym, app_version, os,
-// os_version, locale, events: [{event_kind, payload, ts}]}: 204 when every event
-// is stored, or none is (one transaction).
-func (h *Handler) PostEvents(w http.ResponseWriter, r *http.Request) {
-	if !h.Enabled {
-		common.WriteNoContent(w)
+// EventOut is an allowed event, its payload scrubbed.
+type EventOut struct {
+	Kind    string         `json:"kind"`
+	Payload map[string]any `json:"payload"`
+	TS      string         `json:"ts"`
+}
+
+// MetricOut is a Web Vital, its route a template.
+type MetricOut struct {
+	Metric string  `json:"metric"`
+	Value  float64 `json:"value"`
+	Route  string  `json:"route"`
+}
+
+func unauthorized() *httperror.Error {
+	return &httperror.Error{Type: httperror.TypeForbidden, Title: "unauthorized",
+		Status: http.StatusUnauthorized, Detail: "authentication required"}
+}
+
+func signedIn(w http.ResponseWriter, r *http.Request) bool {
+	if principal.FromContext(r.Context()) == nil {
+		httperror.Write(w, r, unauthorized())
+		return false
+	}
+	return true
+}
+
+func adminOnly(w http.ResponseWriter, r *http.Request) bool {
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		httperror.Write(w, r, unauthorized())
+		return false
+	}
+	if !p.IsAdmin {
+		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+		return false
+	}
+	return true
+}
+
+// PostApp is POST /api/telemetry/app: an app's batch, forwarded to Maktaba
+// Cloud when the body says its user agreed (consent: true). Without that, or
+// with server.toml's [telemetry] off, 204 and nothing is kept. The admin's
+// server switch plays no part: the app's user decided for the app.
+func (h *Handler) PostApp(w http.ResponseWriter, r *http.Request) {
+	if !signedIn(w, r) {
 		return
 	}
-	var b eventsBody
+	var b appBody
 	if perr := common.ReadJSON(r, &b, maxBodyBytes); perr != nil {
 		httperror.Write(w, r, perr)
+		return
+	}
+	if !h.Enabled || b.Consent == nil || !*b.Consent {
+		common.WriteNoContent(w)
 		return
 	}
 	if len(b.Events) > MaxEvents {
 		httperror.Write(w, r, tooMany("events", MaxEvents))
 		return
 	}
-	if len(b.Events) == 0 {
-		common.WriteNoContent(w)
-		return
-	}
-	if !pseudonymRe.MatchString(b.Pseudonym) {
-		httperror.Write(w, r, httperror.BadRequest("device_pseudonym must be 16 letters or digits"))
-		return
-	}
-	if !h.allow(w, r, h.Events, len(b.Events)) {
-		return
-	}
-	for _, e := range b.Events {
-		if !IsKindAllowed(e.EventKind) {
-			httperror.Write(w, r, &httperror.Error{
-				Type: TypeUnknownEventKind, Title: "unknown event kind", Status: http.StatusBadRequest,
-				Detail: clip(e.EventKind, 64),
-			})
-			return
-		}
-	}
-	now := h.now()
-	red, err := h.cache.get(r.Context(), now)
-	if err != nil {
-		// without the roots nothing is stored: a path could get through
-		httperror.Write(w, r, httperror.Internal("telemetry: library roots").Wrap(err))
-		return
-	}
-	rows := make([]eventRow, 0, len(b.Events))
-	skewed := 0
-	for _, e := range b.Events {
-		payload := StripUnknownFields(e.EventKind, e.Payload)
-		for k, v := range payload {
-			if s, ok := v.(string); ok {
-				payload[k] = clip(red.Apply(s), maxStringRunes)
-			}
-		}
-		raw, err := json.Marshal(payload)
-		if err != nil {
-			httperror.Write(w, r, httperror.Internal("telemetry: payload").Wrap(err))
-			return
-		}
-		if len(raw) > MaxPayloadBytes {
-			httperror.Write(w, r, &httperror.Error{
-				Type: httperror.TypeBodyTooLarge, Title: "payload too large",
-				Status: http.StatusRequestEntityTooLarge,
-				Detail: "an event's payload exceeds " + strconv.Itoa(MaxPayloadBytes) + " bytes",
-			})
-			return
-		}
-		occurred, ahead := occurredAt(e.TS, now)
-		if ahead {
-			skewed++
-		}
-		rows = append(rows, eventRow{occurred: occurred, kind: e.EventKind, payload: raw})
-	}
-	if skewed > 0 {
-		h.logger().Warn("telemetry: event times ahead of the server's; truncated to received_at",
-			"events", skewed, "event", "telemetry_clock_skew")
-	}
-	dc := b.deviceContext
-	if err := h.insertEvents(r.Context(), now, dc, rows); err != nil {
-		httperror.Write(w, r, httperror.Internal("telemetry: store events").Wrap(err))
-		return
-	}
-	common.WriteNoContent(w)
-}
-
-func (h *Handler) insertEvents(ctx context.Context, now time.Time, dc deviceContext, rows []eventRow) error {
-	tx, err := h.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO telemetry_events
-		(received_at, occurred_at, device_pseudonym, event_kind, app_version, os, os_version, locale, payload)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-	for _, row := range rows {
-		if _, err := stmt.ExecContext(ctx, now, row.occurred, dc.Pseudonym, row.kind,
-			nullable(clip(dc.AppVersion, 64)), nullable(clip(dc.OS, 32)),
-			nullable(clip(dc.OSVersion, 32)), nullable(clip(dc.Locale, 16)), string(row.payload)); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
-}
-
-// PostWebVitals is POST /api/telemetry/web-vitals {device_pseudonym, metrics:
-// [{metric, value, route, ts}]}: 204 when every metric is stored, or none is.
-// A route is stored as its template (an id in it becomes ":id").
-func (h *Handler) PostWebVitals(w http.ResponseWriter, r *http.Request) {
-	if !h.Enabled {
-		common.WriteNoContent(w)
-		return
-	}
-	var b vitalsBody
-	if perr := common.ReadJSON(r, &b, maxBodyBytes); perr != nil {
-		httperror.Write(w, r, perr)
-		return
-	}
-	if len(b.Metrics) > MaxMetrics {
+	if len(b.Vitals) > MaxMetrics {
 		httperror.Write(w, r, tooMany("metrics", MaxMetrics))
 		return
 	}
-	if len(b.Metrics) == 0 {
+	if len(b.Events)+len(b.Vitals) == 0 {
 		common.WriteNoContent(w)
 		return
 	}
-	if !pseudonymRe.MatchString(b.Pseudonym) {
-		httperror.Write(w, r, httperror.BadRequest("device_pseudonym must be 16 letters or digits"))
+	if !installIDRe.MatchString(b.InstallID) {
+		httperror.Write(w, r, httperror.BadRequest("install_id must be 16 to 32 letters or digits"))
 		return
 	}
-	if !h.allow(w, r, h.Events, len(b.Metrics)) {
+	for _, f := range []struct{ name, v string }{{"app", b.App}, {"platform", b.Platform}} {
+		if !tokenRe.MatchString(f.v) {
+			httperror.Write(w, r, httperror.BadRequest(f.name+" must be a short lowercase name"))
+			return
+		}
+	}
+	if b.FormFactor != "" && !tokenRe.MatchString(b.FormFactor) {
+		httperror.Write(w, r, httperror.BadRequest("form_factor must be a short lowercase name"))
 		return
 	}
-	for _, m := range b.Metrics {
+	if !h.allow(w, r, h.Events, len(b.Events)+len(b.Vitals)) {
+		return
+	}
+	for _, e := range b.Events {
+		if !IsKindAllowed(e.Kind) {
+			httperror.Write(w, r, &httperror.Error{
+				Type: TypeUnknownEventKind, Title: "unknown event kind", Status: http.StatusBadRequest,
+				Detail: clip(e.Kind, 64),
+			})
+			return
+		}
+	}
+	for _, m := range b.Vitals {
 		if _, ok := Metrics[m.Metric]; !ok {
 			httperror.Write(w, r, &httperror.Error{
 				Type: TypeUnknownMetric, Title: "unknown metric", Status: http.StatusBadRequest,
@@ -304,59 +269,144 @@ func (h *Handler) PostWebVitals(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	now := h.now()
-	tx, err := h.DB.BeginTx(r.Context(), nil)
+	red, err := h.cache.get(r.Context(), now)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("telemetry: store metrics").Wrap(err))
+		// without the roots nothing is kept: a path could get through
+		httperror.Write(w, r, httperror.Internal("telemetry: library roots").Wrap(err))
 		return
 	}
-	defer func() { _ = tx.Rollback() }()
-	for _, m := range b.Metrics {
-		if _, err := tx.ExecContext(r.Context(), `INSERT INTO telemetry_web_vitals
-			(received_at, device_pseudonym, metric, value, route) VALUES ($1, $2, $3, $4, $5)`,
-			now, b.Pseudonym, m.Metric, m.Value, nullable(RouteTemplate(m.Route))); err != nil {
-			httperror.Write(w, r, httperror.Internal("telemetry: store metrics").Wrap(err))
+	out := AppBatch{
+		Type: KindApp, InstallID: b.InstallID, App: b.App, Platform: b.Platform, FormFactor: b.FormFactor,
+		AppVersion: token(b.AppVersion, 32), OSVersion: token(b.OSVersion, 32), Locale: token(b.Locale, 16),
+		Events: make([]EventOut, 0, len(b.Events)), Vitals: make([]MetricOut, 0, len(b.Vitals)),
+	}
+	for _, e := range b.Events {
+		payload := StripUnknownFields(e.Kind, e.Payload)
+		size := 0
+		for k, v := range payload {
+			if s, ok := v.(string); ok {
+				s = clip(red.Apply(s), maxStringRunes)
+				payload[k] = s
+				size += len(s)
+			}
+		}
+		if size > MaxPayloadBytes {
+			httperror.Write(w, r, &httperror.Error{
+				Type: httperror.TypeBodyTooLarge, Title: "payload too large",
+				Status: http.StatusRequestEntityTooLarge,
+				Detail: "an event's payload exceeds " + strconv.Itoa(MaxPayloadBytes) + " bytes",
+			})
 			return
 		}
+		occurred, _ := occurredAt(e.TS, now)
+		out.Events = append(out.Events, EventOut{Kind: e.Kind, Payload: payload, TS: occurred.Format(time.RFC3339)})
 	}
-	if err := tx.Commit(); err != nil {
-		httperror.Write(w, r, httperror.Internal("telemetry: store metrics").Wrap(err))
+	for _, m := range b.Vitals {
+		out.Vitals = append(out.Vitals, MetricOut{Metric: m.Metric, Value: m.Value, Route: RouteTemplate(m.Route)})
+	}
+	if err := h.Store.Add(r.Context(), KindApp, b.InstallID, out); err != nil {
+		httperror.Write(w, r, httperror.Internal("telemetry: queue the batch").Wrap(err))
 		return
 	}
+	h.Sender.Kick()
 	common.WriteNoContent(w)
 }
 
-// DeleteDevice is DELETE /api/telemetry/devices/{pseudonym}: every row of the
-// pseudonym goes, events and metrics in one transaction. Anyone holding the
-// pseudonym may (it is the device's self-asserted bearer); 204 also when there
-// was nothing to delete, so the answer says nothing about which pseudonyms exist.
-func (h *Handler) DeleteDevice(w http.ResponseWriter, r *http.Request) {
-	p := chi.URLParam(r, "pseudonym")
-	if !pseudonymRe.MatchString(p) {
-		httperror.Write(w, r, httperror.BadRequest("pseudonym must be 16 letters or digits"))
+// ForgetApp is DELETE /api/telemetry/app/{installID}: "Delete what this app
+// sent". The install's waiting batches go at once, and Maktaba Cloud is asked
+// to delete what it holds of it. The id is the app's own secret (random, never
+// shown elsewhere); 204 also when there was nothing, so the answer says nothing
+// about which ids exist.
+func (h *Handler) ForgetApp(w http.ResponseWriter, r *http.Request) {
+	if !signedIn(w, r) {
+		return
+	}
+	id := chi.URLParam(r, "installID")
+	if !installIDRe.MatchString(id) {
+		httperror.Write(w, r, httperror.BadRequest("install id must be 16 to 32 letters or digits"))
 		return
 	}
 	if !h.allow(w, r, h.Deletes, 1) {
 		return
 	}
-	tx, err := h.DB.BeginTx(r.Context(), nil)
-	if err != nil {
-		httperror.Write(w, r, httperror.Internal("telemetry: forget device").Wrap(err))
+	if err := h.Store.DropInstall(r.Context(), id); err != nil {
+		httperror.Write(w, r, httperror.Internal("telemetry: forget the app").Wrap(err))
 		return
 	}
-	defer func() { _ = tx.Rollback() }()
-	for _, q := range []string{
-		`DELETE FROM telemetry_events WHERE device_pseudonym = $1`,
-		`DELETE FROM telemetry_web_vitals WHERE device_pseudonym = $1`,
-	} {
-		if _, err := tx.ExecContext(r.Context(), q, p); err != nil {
-			httperror.Write(w, r, httperror.Internal("telemetry: forget device").Wrap(err))
+	if h.Enabled {
+		if err := h.Store.Add(r.Context(), KindForget, id, map[string]string{"type": KindForget, "install_id": id}); err != nil {
+			httperror.Write(w, r, httperror.Internal("telemetry: forget the app").Wrap(err))
 			return
 		}
+		h.Sender.Kick()
 	}
-	if err := tx.Commit(); err != nil {
-		httperror.Write(w, r, httperror.Internal("telemetry: forget device").Wrap(err))
+	common.WriteNoContent(w)
+}
+
+// serverView is GET /api/telemetry/server.
+type serverView struct {
+	// Sharing is the admin's switch; Enabled false is server.toml's
+	// [telemetry] off, which overrides it (and every app's consent).
+	Sharing bool `json:"sharing"`
+	Enabled bool `json:"enabled"`
+	// Pending is how many of the server's reports wait to go, OldestPending
+	// since when.
+	Pending       int        `json:"pending"`
+	OldestPending *time.Time `json:"oldest_pending"`
+	LastSentAt    *time.Time `json:"last_sent_at"`
+	LastError     string     `json:"last_error"`
+	// Preview is the report as it would go now: what the admin agrees to.
+	Preview ServerReport `json:"preview"`
+}
+
+// ServerStatus is GET /api/telemetry/server (an admin's): the switch, how the
+// delivery goes, and exactly what the day's report holds.
+func (h *Handler) ServerStatus(w http.ResponseWriter, r *http.Request) {
+	if !adminOnly(w, r) {
 		return
 	}
+	v := serverView{Sharing: h.State.Sharing(r.Context()), Enabled: h.Enabled}
+	n, oldest, err := h.Store.Pending(r.Context(), KindServer)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("telemetry: the outbox").Wrap(err))
+		return
+	}
+	v.Pending, v.OldestPending = n, oldest
+	if h.Sender != nil {
+		st := h.Sender.Status()
+		v.LastSentAt, v.LastError = st.LastSentAt, st.LastError
+	}
+	if h.Reporter != nil {
+		v.Preview = h.Reporter.Build(r.Context(), h.now(), true)
+	}
+	common.WriteJSON(w, r, http.StatusOK, v)
+}
+
+// ForgetServer is POST /api/telemetry/server/forget (an admin's): "Delete what
+// this server sent". The server's waiting reports go, Maktaba Cloud is asked to
+// delete what it holds under the home's id, and the home takes a new id (a
+// later report is not linked to the earlier ones).
+func (h *Handler) ForgetServer(w http.ResponseWriter, r *http.Request) {
+	if !adminOnly(w, r) {
+		return
+	}
+	ctx := r.Context()
+	old, err := h.State.InstallID(ctx)
+	if err == nil {
+		err = h.Store.DropKind(ctx, KindServer)
+	}
+	if err == nil && h.Enabled {
+		err = h.Store.Add(ctx, KindForget, old, map[string]string{"type": KindForget, "install_id": old})
+	}
+	if err == nil {
+		_, err = h.State.NewInstallID(ctx)
+	}
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("telemetry: forget the server").Wrap(err))
+		return
+	}
+	h.logger().Info("telemetry: the admin deleted what this server sent", "event", "telemetry_server_forgotten")
+	h.Sender.Kick()
 	common.WriteNoContent(w)
 }
 
@@ -369,7 +419,7 @@ func (h *Handler) allow(w http.ResponseWriter, r *http.Request, b *middleware.IP
 	w.Header().Set("Retry-After", strconv.Itoa(retry))
 	httperror.Write(w, r, &httperror.Error{
 		Type: httperror.TypeRateLimited, Title: "too many requests", Status: http.StatusTooManyRequests,
-		Detail: "per-IP telemetry limit exceeded",
+		Detail: "per-IP usage data limit exceeded",
 	})
 	return false
 }
@@ -377,7 +427,7 @@ func (h *Handler) allow(w http.ResponseWriter, r *http.Request, b *middleware.IP
 func tooMany(what string, limit int) *httperror.Error {
 	return &httperror.Error{
 		Type: TypeTooManyEvents, Title: "too many " + what, Status: http.StatusRequestEntityTooLarge,
-		Detail: "at most " + strconv.Itoa(limit) + " " + what + " per request; none was stored",
+		Detail: "at most " + strconv.Itoa(limit) + " " + what + " per request; none was kept",
 	}
 }
 
@@ -426,6 +476,20 @@ func RouteTemplate(route string) string {
 	return clip(strings.Join(parts, "/"), 128)
 }
 
+// token keeps a version or a locale to [A-Za-z0-9._-] and n characters.
+func token(s string, n int) string {
+	var b strings.Builder
+	for _, c := range strings.TrimSpace(s) {
+		if b.Len() >= n {
+			break
+		}
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-' {
+			b.WriteRune(c)
+		}
+	}
+	return b.String()
+}
+
 // clip shortens s to n runes (on a rune boundary).
 func clip(s string, n int) string {
 	if utf8.RuneCountInString(s) <= n {
@@ -433,12 +497,4 @@ func clip(s string, n int) string {
 	}
 	r := []rune(s)
 	return string(r[:n])
-}
-
-func nullable(s string) any {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil
-	}
-	return s
 }

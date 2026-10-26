@@ -206,6 +206,11 @@ Commands:
 // drains them together.
 func runServe() error {
 	logger := initLogger()
+	// Epic 16 story 16.5: the server's errors are counted by kind for its daily
+	// report to Maktaba Cloud (sent only while the admin's switch is on)
+	serverErrors := &telemetry.ErrorCounts{}
+	logger = slog.New(serverErrors.Handler(logger.Handler()))
+	slog.SetDefault(logger)
 	processStart := time.Now()
 
 	// Epic 35 story 35.8: a full node (MAKTABA_NODE_MODE=1) never migrates and needs
@@ -669,10 +674,17 @@ func runServe() error {
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",
 				"event", "p29_mounted")
 
-			// Epic 16 (stories 16.5, 16.7): the opt-in telemetry sink and its nightly
-			// retention sweep (events 90 days, Web Vitals 30)
-			router.MountTelemetry(r, router.TelemetryDeps{DB: appDB, Enabled: router.TelemetryEnabled(), Logger: logger})
-			go (&telemetry.Sweeper{DB: appDB, Logger: logger}).Run(context.Background())
+			// Epic 16 (stories 16.5, 16.7): anonymous usage data to Maktaba Cloud: the
+			// home's daily report (the admin's switch) and the apps' batches their users
+			// agreed to (the home forwards them), delivered by the sender with retries
+			if sender := router.MountTelemetry(r, router.TelemetryDeps{
+				DB: appDB, Enabled: router.TelemetryEnabled(), Settings: runtimeSettings,
+				Version: version.Version, Errors: serverErrors, Logger: logger,
+				CloudURL:     telemetryURL(licCloud),
+				RemoteAccess: func() bool { return licCloud().Claimed },
+			}); sender != nil {
+				go sender.Run(context.Background())
+			}
 
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the

@@ -1,11 +1,24 @@
-// Package telemetry is the opt-in telemetry sink (Epic 16 story 16.7): the
-// endpoints a device that opted in (story 16.5) posts its events and Web Vitals
-// to, the redaction they pass through, "Forget my device", and the nightly
-// retention sweep. The sink is anonymous: rows carry a device pseudonym, never a
-// user, and no IP address is stored.
+// Package telemetry is the home's part of anonymous usage data (Epic 16 stories
+// 16.5 and 16.7): what goes to Maktaba Cloud to improve Maktaba, never to the
+// home's admin (who already has Epic 44's named analytics).
+//
+// Two consents, neither implying the other:
+//
+//   - the server's: the admin's switch (runtime setting
+//     telemetry.share_server_data, off by default). While on, the home sends
+//     Maktaba Cloud a report a day about itself (report.go): its version and
+//     platform, ranges of its size and use, and its errors scrubbed.
+//   - each app's: an app's user agrees on that device. The app posts its batch
+//     to the home (POST /api/telemetry/app) with that answer; the home scrubs it
+//     and forwards it whatever the server switch says. The home is a pipe.
+//
+// What goes waits in telemetry_outbox (slot 0161) until the sender (sender.go)
+// delivers it, with retries; a row a week old is dropped unsent. Ids are
+// random per install (the home's, each app's), never a user, and no address
+// is kept.
 package telemetry
 
-// AllowedKind is an event kind the sink accepts and the payload fields it keeps
+// AllowedKind is an event kind an app may send and the payload fields kept
 // for it. Declared in code, so the allow-list ships with the binary: a release
 // extends it, never the runtime.
 type AllowedKind struct {
@@ -16,22 +29,18 @@ type AllowedKind struct {
 // Allowed is the event allow-list. A kind not here is refused (400
 // unknown-event-kind); a field not listed for its kind is dropped.
 //
-// Nothing here can carry a filename, a transcript, a search query or a user:
-// counts, durations, flags and short enumerations, plus error.uncaught's
-// message and first stack frames, which are redacted (redact.go).
+// Nothing here can carry a filename, a title, a transcript, a search query or a
+// user: counts, durations, flags and short enumerations, plus error.uncaught's
+// message and first stack frames, which are scrubbed (redact.go).
 var Allowed = []AllowedKind{
-	{"app.open", []string{"cold_start", "route", "library_size_bucket"}},
+	{"app.open", []string{"cold_start"}},
 	{"feature.used", []string{"feature", "count"}},
-	{"search.run", []string{"result_count", "has_filters", "duration_ms"}},
-	{"search.suggest", []string{"suggestion_count"}},
-	{"player.start", []string{"source", "codec", "is_hdr"}},
+	{"player.start", []string{"source", "codec"}},
 	{"player.error", []string{"error_kind", "duration_ms"}},
-	{"library.scan_done", []string{"duration_ms", "added", "removed"}},
-	{"transcribe.done", []string{"duration_ms", "model"}},
 	{"error.uncaught", []string{"error_message", "stack_first_5"}},
 }
 
-// Metrics are the Web Vitals the sink accepts (FID for older clients; INP
+// Metrics are the Web Vitals an app may send (FID for older clients; INP
 // replaced it).
 var Metrics = map[string]struct{}{"LCP": {}, "FID": {}, "CLS": {}, "INP": {}, "TTFB": {}}
 

@@ -93,6 +93,7 @@ var runtimeKeys = map[string]func(json.RawMessage) bool{
 	runtimecfg.OpenRegistration:     isBool,              // self-service registration (off)
 	runtimecfg.GraphQLPersistedOnly: isBool,              // GraphQL persisted-query allowlist (off)
 	runtimecfg.HomeName:             isName,              // the home's name for people (the computer's name)
+	runtimecfg.ShareServerData:      isBool,              // the home's usage data to Maktaba Cloud (off)
 }
 
 // MaxHomeName is the longest home name, in characters.
