@@ -7,8 +7,8 @@ import androidx.compose.ui.graphics.Color
  * the single source of colour for the app: [MaktabaTvTheme] maps it onto
  * the TV Material colour scheme, and components that need a token the
  * scheme has no slot for (panel, faint text, live green) read it from
- * here. `res/values/colors.xml` mirrors the three colours the window
- * needs before Compose draws (background, gold, ink) — keep them in sync.
+ * here. `res/values/colors.xml` mirrors the background the window
+ * needs before Compose draws — keep the two in sync.
  *
  * Android TV is dark-only: the app has no light mode, and a dark room is
  * where a TV is watched. The light "gold on white" variant lives in the

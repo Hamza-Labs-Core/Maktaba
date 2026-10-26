@@ -1,0 +1,10 @@
+# The TV app's own libraries. Everything else (AGP, Kotlin, Compose, Media3, OkHttp) comes from
+# the phone apps' catalog (apps/android/gradle/libs.versions.toml, as `libs`), so the TV app and
+# the shared core it builds on stay on the same versions.
+[versions]
+tvMaterial = "1.1.0"
+zxing = "3.5.4"
+
+[libraries]
+tv-material = { module = "androidx.tv:tv-material", version.ref = "tvMaterial" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
