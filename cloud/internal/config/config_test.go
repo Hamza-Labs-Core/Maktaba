@@ -79,10 +79,36 @@ func TestValidate_RoleAPI(t *testing.T) {
 	}
 	c.Database.URL = "postgres://x"
 	c.Server.ListenAddr = ":8080"
-	c.OAuthGoogle.ClientID = "g"
-	c.Admin.AllowedEmailDomain = "x.com"
+	c.Mail.Driver = "log"
 	if err := Validate(c, RoleAPI); err != nil {
 		t.Errorf("Validate(api) ok config: %v", err)
+	}
+}
+
+// The api role runs against Stripe test mode unless live mode is turned
+// on explicitly; a live key without it is refused at startup.
+func TestValidate_StripeTestModeOnly(t *testing.T) {
+	c := Config{}
+	c.Database.URL = "postgres://x"
+	c.Server.ListenAddr = ":8080"
+	c.Mail.Driver = "log"
+	for _, tc := range []struct {
+		key  string
+		live bool
+		ok   bool
+	}{
+		{"sk_test_abc", false, true},
+		{"", false, true},
+		{"sk_live_abc", false, false},
+		{"rk_live_abc", false, false},
+		{"sk_live_abc", true, true},
+		{"sk_test_abc", true, false},
+	} {
+		c.Stripe.SecretKey, c.Stripe.LiveMode = tc.key, tc.live
+		err := Validate(c, RoleAPI)
+		if (err == nil) != tc.ok {
+			t.Errorf("key=%q live=%v: err=%v, want ok=%v", tc.key, tc.live, err, tc.ok)
+		}
 	}
 }
 

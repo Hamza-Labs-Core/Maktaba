@@ -141,7 +141,7 @@ func (d *Deps) Assertion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u, err := d.Users.ByID(r.Context(), uid)
-	if err != nil || u.Status != "active" {
+	if err != nil || u.Status != stores.StatusActive {
 		writeErr(w, http.StatusForbidden, "account_inactive", "")
 		return
 	}

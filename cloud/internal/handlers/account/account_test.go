@@ -14,7 +14,7 @@ import (
 // success. The other account routes stay.
 func TestEmailChangeRouteNotMounted(t *testing.T) {
 	r := chi.NewRouter()
-	Mount(r, Deps{})
+	Mount(r, &Deps{})
 	req := httptest.NewRequest(http.MethodPost, "/v1/account/email", nil)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)

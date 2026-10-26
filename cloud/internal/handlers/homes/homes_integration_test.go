@@ -68,7 +68,7 @@ func newWorld(t *testing.T) *world {
 	serversh.MountAgent(r, sd)
 	MountPublic(r, hd)
 	r.Group(func(g chi.Router) {
-		g.Use(authmw.RequireUser(w.tokens))
+		g.Use(authmw.RequireUser(w.tokens, authmw.UserStatus(pool.DB)))
 		serversh.MountUser(g, sd)
 		MountUser(g, hd)
 	})
@@ -84,7 +84,7 @@ func (w *world) user() (id, bearer string) {
 	if err != nil {
 		w.t.Fatal(err)
 	}
-	tok, err := w.tokens.Issue(u.ID, u.Email, "free", time.Now())
+	tok, err := w.tokens.Issue(u.ID, u.Email, "free", "", time.Now())
 	if err != nil {
 		w.t.Fatal(err)
 	}

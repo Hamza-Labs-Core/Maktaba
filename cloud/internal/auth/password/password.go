@@ -8,8 +8,6 @@
 package password
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"errors"
 	"strings"
 )
@@ -44,11 +42,13 @@ var CommonLeakedPasswords = []string{
 	"changeme123",
 }
 
-var commonLeakedSHA1 = func() map[string]bool {
+// commonLeaked is the list as a set. The comparison is on the
+// plaintext in memory; nothing here is stored, so there is no reason to
+// hash it.
+var commonLeaked = func() map[string]bool {
 	m := make(map[string]bool, len(CommonLeakedPasswords))
 	for _, p := range CommonLeakedPasswords {
-		sum := sha1.Sum([]byte(p))
-		m[hex.EncodeToString(sum[:])] = true
+		m[p] = true
 	}
 	return m
 }()
@@ -64,8 +64,7 @@ func Validate(p string) error {
 	if p != strings.TrimSpace(p) {
 		return ErrWhitespace
 	}
-	sum := sha1.Sum([]byte(p))
-	if commonLeakedSHA1[hex.EncodeToString(sum[:])] {
+	if commonLeaked[p] {
 		return ErrLeaked
 	}
 	return nil

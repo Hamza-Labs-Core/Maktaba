@@ -14,6 +14,12 @@
       "runtimeArgs": ["-C", "web", "exec", "vite", "--port", "5181", "--strictPort"],
       "port": 5181,
       "autoPort": true
+    },
+    {
+      "name": "cloud-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "web", "dev:cloud"],
+      "port": 5174
     }
   ]
 }

@@ -11,6 +11,7 @@ export default tseslint.config(
   {
     ignores: [
       "dist",
+      "dist-cloud",
       "node_modules",
       "mockups",
       "wiki-app",
@@ -20,7 +21,12 @@ export default tseslint.config(
     ],
   },
   {
-    files: ["src/**/*.{js,ts,tsx}", "design-system/**/*.{js,ts,tsx}", "packages/**/*.{js,ts,tsx}"],
+    files: [
+      "src/**/*.{js,ts,tsx}",
+      "cloud/**/*.{js,ts,tsx}",
+      "design-system/**/*.{js,ts,tsx}",
+      "packages/**/*.{js,ts,tsx}",
+    ],
     languageOptions: {
       parser: tseslint.parser,
       ecmaVersion: "latest",

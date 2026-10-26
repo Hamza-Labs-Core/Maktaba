@@ -23,6 +23,7 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     include: [
       "src/**/*.test.{ts,tsx}",
+      "cloud/src/**/*.test.{ts,tsx}",
       "design-system/**/*.test.{ts,tsx}",
       "packages/**/*.test.{ts,tsx}",
     ],

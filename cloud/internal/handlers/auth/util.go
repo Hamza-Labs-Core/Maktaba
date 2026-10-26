@@ -25,6 +25,7 @@ func userViewFrom(u stores.User) userView {
 		Email:         u.Email,
 		EmailVerified: u.EmailVerified,
 		Plan:          u.Plan,
+		Role:          u.Role,
 	}
 	if u.DisplayName.Valid {
 		v.DisplayName = u.DisplayName.String
@@ -32,9 +33,13 @@ func userViewFrom(u stores.User) userView {
 	return v
 }
 
+// refreshCookie carries the raw refresh token; it is scoped to
+// /v1/auth so no other route ever sees it.
+const refreshCookie = "maktaba_refresh"
+
 func setRefreshCookie(w http.ResponseWriter, value, domain string, secure bool, expires time.Time) {
 	c := &http.Cookie{
-		Name:     "maktaba_refresh",
+		Name:     refreshCookie,
 		Value:    value,
 		Path:     "/v1/auth",
 		Domain:   domain,
@@ -48,12 +53,13 @@ func setRefreshCookie(w http.ResponseWriter, value, domain string, secure bool, 
 
 func clearRefreshCookie(w http.ResponseWriter, domain string, secure bool) {
 	c := &http.Cookie{
-		Name:     "maktaba_refresh",
+		Name:     refreshCookie,
 		Value:    "",
 		Path:     "/v1/auth",
 		Domain:   domain,
 		HttpOnly: true,
 		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	}
 	http.SetCookie(w, c)
