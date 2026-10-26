@@ -33,8 +33,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use windows_sys::core::PWSTR;
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GetLastError, LocalFree, ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, HANDLE,
-    WAIT_ABANDONED_0, WAIT_OBJECT_0,
+    CloseHandle, GetLastError, LocalFree, ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS,
+    ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, HANDLE, WAIT_ABANDONED_0, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::Security::Authentication::Identity::{
     LsaFreeReturnBuffer, LsaGetLogonSessionData, SECURITY_LOGON_SESSION_DATA,
@@ -48,6 +48,9 @@ use windows_sys::Win32::System::JobObjects::{
     SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
+use windows_sys::Win32::System::Registry::{
+    RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ,
+};
 use windows_sys::Win32::System::Threading::{
     CreateEventW, CreateMutexW, GetCurrentProcess, OpenEventW, OpenMutexW, OpenProcessToken,
     ReleaseMutex, ResetEvent, SetEvent, WaitForMultipleObjects, WaitForSingleObject,
@@ -58,6 +61,7 @@ use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 use super::{Action, BundlePaths, LoginItem};
+use crate::run_entry;
 
 /// The sign-in task is named this, a space and the user's SID ("Maktaba
 /// Server S-1-5-21-…"), in the root folder: one task per user (a second
@@ -786,6 +790,11 @@ pub fn register() -> Result<(), String> {
     // one that cannot be moved is no reason not to register this one
     let _ = replace_old_task();
     create_task(&name)?;
+    // the tray at sign-in too; one that cannot be written is no reason not to
+    // run the server (the app's next start tries again)
+    if let Err(e) = sync_autostart() {
+        crate::attempts::log(&format!("the tray at sign-in: {e}"));
+    }
     clear_hold();
     start_task(&name, AGENT_MUTEX, STOP_EVENT)
 }
@@ -847,13 +856,14 @@ fn wait_mutex_held(name: &str, d: Duration) -> bool {
     }
 }
 
-/// Stop the server and remove the sign-in task (client mode, the
-/// uninstaller). The task is removed even when the server does not stop in
-/// time (it would run a program that is about to be removed); that error is
-/// reported after.
+/// Stop the server and remove the sign-in task and the tray's Run value
+/// (client mode, the uninstaller). The task is removed even when the server
+/// does not stop in time (it would run a program that is about to be
+/// removed); that error is reported after.
 pub fn unregister() -> Result<(), String> {
     let stopped = stop_and_wait();
     let removed = (|| {
+        let unrun = remove_autostart();
         let sid = user_sid().ok_or("cannot read this user's SID")?;
         delete_task(&task_name_for(&sid))?;
         if old_task_of_this_user(&sid).is_some() {
@@ -862,7 +872,7 @@ pub fn unregister() -> Result<(), String> {
         if let Some(root) = super::state_root() {
             let _ = std::fs::remove_file(task_file(&root));
         }
-        Ok::<(), String>(())
+        unrun
     })();
     match (stopped, removed) {
         (Err(s), Err(r)) => Err(format!("{s}; {r}")),
@@ -932,6 +942,13 @@ pub fn installer_hook(flag: &str) -> i32 {
             if let Err(e) = replace_old_task() {
                 problems.push(format!("cannot move the old sign-in task: {e}"));
             }
+            // an update of a PC set up to run the server: the tray at sign-in (an
+            // update from a release before it, which no window opens after)
+            if login_item() != LoginItem::NotRegistered {
+                if let Err(e) = sync_autostart() {
+                    problems.push(format!("the tray at sign-in: {e}"));
+                }
+            }
             if super::paused_flag() || login_item() != LoginItem::Enabled {
                 Ok(()) // a first install (setup registers it) or a paused server
             } else {
@@ -957,6 +974,113 @@ pub fn installer_hook(flag: &str) -> i32 {
         }
     }
     code
+}
+
+// --- the tray at sign-in (run_entry.rs) -------------------------------------------
+
+/// This user's registry (HKEY_CURRENT_USER).
+struct UserRegistry;
+
+fn reg_error(what: &str, key: &str, name: &str, code: u32) -> String {
+    format!(
+        "cannot {what} HKCU\\{key}\\{name}: {}",
+        std::io::Error::from_raw_os_error(code as i32)
+    )
+}
+
+impl run_entry::Values for UserRegistry {
+    fn get(&self, key: &str, name: &str) -> Option<String> {
+        let (k, n) = (wide(OsStr::new(key)), wide(OsStr::new(name)));
+        let mut size: u32 = 0;
+        // SAFETY: k and n are NUL-terminated UTF-16 that outlive the call; a null
+        // buffer asks only for the size.
+        let r = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                k.as_ptr(),
+                n.as_ptr(),
+                RRF_RT_REG_SZ,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut size,
+            )
+        };
+        if r != ERROR_SUCCESS {
+            return None;
+        }
+        let mut buf = vec![0u16; (size as usize).div_ceil(2) + 1];
+        let mut size = (buf.len() * 2) as u32;
+        // SAFETY: buf holds `size` bytes and outlives the call.
+        let r = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                k.as_ptr(),
+                n.as_ptr(),
+                RRF_RT_REG_SZ,
+                std::ptr::null_mut(),
+                buf.as_mut_ptr().cast(),
+                &mut size,
+            )
+        };
+        if r != ERROR_SUCCESS {
+            return None;
+        }
+        let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        Some(String::from_utf16_lossy(&buf[..len]))
+    }
+
+    fn set(&self, key: &str, name: &str, data: &str) -> Result<(), String> {
+        let (k, n, d) = (
+            wide(OsStr::new(key)),
+            wide(OsStr::new(name)),
+            wide(OsStr::new(data)),
+        );
+        // SAFETY: all three are NUL-terminated UTF-16 that outlive the call; the data's
+        // size counts its terminator, as REG_SZ wants.
+        let r = unsafe {
+            RegSetKeyValueW(
+                HKEY_CURRENT_USER,
+                k.as_ptr(),
+                n.as_ptr(),
+                REG_SZ,
+                d.as_ptr().cast(),
+                (d.len() * 2) as u32,
+            )
+        };
+        if r == ERROR_SUCCESS {
+            Ok(())
+        } else {
+            Err(reg_error("write", key, name, r))
+        }
+    }
+
+    fn delete(&self, key: &str, name: &str) -> Result<(), String> {
+        let (k, n) = (wide(OsStr::new(key)), wide(OsStr::new(name)));
+        // SAFETY: k and n are NUL-terminated UTF-16 that outlive the call.
+        let r = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, k.as_ptr(), n.as_ptr()) };
+        if r == ERROR_SUCCESS || r == ERROR_FILE_NOT_FOUND {
+            Ok(())
+        } else {
+            Err(reg_error("remove", key, name, r))
+        }
+    }
+}
+
+/// <state>\state\autostart-written: the Run value was written once (run_entry.rs).
+fn autostart_written_path() -> Option<PathBuf> {
+    super::state_root().map(|r| r.join("state").join("autostart-written"))
+}
+
+/// The tray at sign-in: the Run value for this program, when run_entry::decision says so.
+pub fn sync_autostart() -> Result<(), String> {
+    let written = autostart_written_path().ok_or("cannot find %LOCALAPPDATA%")?;
+    run_entry::sync(&UserRegistry, &written, &current_exe()?).map(|_| ())
+}
+
+/// The Run value removed (when it is ours), and its marker: a later setup writes it again.
+pub fn remove_autostart() -> Result<(), String> {
+    let written = autostart_written_path().ok_or("cannot find %LOCALAPPDATA%")?;
+    run_entry::remove(&UserRegistry, &written)
 }
 
 /// Open a folder or an address with its handler (Explorer, the browser).

@@ -31,6 +31,7 @@ use crate::mode::{self, AppMode, Target};
 use crate::setup::{self, Progress, StepError};
 use crate::status::{self, Probe, Quiet, ServerStatus, StatusView};
 use crate::tray::{self, Entry};
+use crate::webcache;
 
 const TRAY_ID: &str = "main";
 const POLL_EVERY: Duration = Duration::from_secs(3);
@@ -43,22 +44,35 @@ const DOWNLOAD_STALL: Duration = Duration::from_secs(120);
 #[cfg(target_os = "linux")]
 const CATCH_UP_EVERY: Duration = Duration::from_secs(10 * 60);
 
-/// Where mode.json is kept: the app's config folder; on Windows its local
-/// data folder (%LOCALAPPDATA%\com.hamzalabs.maktaba), not the roaming one,
-/// where it was before and is moved from once (mode::adopt).
-fn mode_path(app: &AppHandle) -> PathBuf {
-    let config = app
-        .path()
-        .app_config_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("mode.json");
+/// Where the app keeps its state (mode.json, the window's cache record): the
+/// app's config folder; on Windows its local data folder
+/// (%LOCALAPPDATA%\com.hamzalabs.maktaba), not the roaming one.
+fn state_dir(app: &AppHandle) -> PathBuf {
     #[cfg(windows)]
     if let Ok(local) = app.path().app_local_data_dir() {
-        let local = local.join("mode.json");
-        let _ = mode::adopt(&config, &local, agent::registered_here());
         return local;
     }
-    config
+    app.path()
+        .app_config_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+}
+
+/// Where mode.json is kept (state_dir); on Windows it was in the roaming
+/// config folder before, and is moved from there once (mode::adopt).
+fn mode_path(app: &AppHandle) -> PathBuf {
+    let path = state_dir(app).join("mode.json");
+    #[cfg(windows)]
+    if let Ok(roaming) = app.path().app_config_dir() {
+        let _ = mode::adopt(&roaming.join("mode.json"), &path, agent::registered_here());
+    }
+    path
+}
+
+/// Make the window (lib.rs setup, before init): its caches are cleared first on
+/// a release's first start (webcache.rs); hidden when the app starts in its tray.
+pub fn open_window(app: &AppHandle, hidden: bool) -> tauri::Result<()> {
+    let stamp = webcache::Stamp::new(state_dir(app).join(webcache::STAMP_FILE));
+    webcache::open_main(app, &bundled_url(app), stamp, &own_version(app), hidden)
 }
 
 pub struct Shell {
@@ -318,6 +332,11 @@ pub fn focus_main(app: &AppHandle) {
 fn navigate_main(app: &AppHandle, url: &str) -> Result<(), String> {
     let w = app.get_webview_window("main").ok_or("no main window")?;
     let url: tauri::Url = url.parse().map_err(|e| format!("bad address {url}: {e}"))?;
+    // while the window's caches are cleared (a release's first start) the load
+    // waits for the clear's end
+    let Some(url) = webcache::admit(app, url) else {
+        return Ok(());
+    };
     w.navigate(url).map_err(|e| e.to_string())
 }
 
@@ -1674,6 +1693,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     // that died; one ended by hand (Task Scheduler's End) also starts again
     // when the window opens, as does one an install left stopped (Resume ends
     // the install hold). A task of the old shared name becomes this user's.
+    // The Run value starts the app in its tray at sign-in (run_entry.rs).
     // (Off the main thread: schtasks takes a moment.)
     #[cfg(windows)]
     {
@@ -1685,6 +1705,11 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             }
             if let Err(e) = agent::replace_old_task() {
                 show_error(&handle, sh.lang.words().task_move_failed, &[&e]);
+            }
+            // the tray at sign-in: the Run value, for a PC set up before it (or an
+            // install that moved); written once, never back after the user removed it
+            if let Err(e) = agent::sync_autostart() {
+                attempts::log(&format!("the tray at sign-in: {e}"));
             }
             if !sh.paused.load(Ordering::SeqCst)
                 && agent::agent_alive() == Some(false)
@@ -2013,11 +2038,24 @@ pub fn server_status(app: AppHandle) -> StatusView {
     shell(&app).status.lock().unwrap().clone()
 }
 
-/// The starting screen calls this once the server is running.
+/// What open_local_server says while the server's processes run but its web app does not
+/// answer yet (the starting screen keeps waiting on it, then says so with a retry).
+const PAGE_NOT_ANSWERING: &str = "page_not_answering";
+
+/// The starting screen calls this once the server is running: the window opens the local
+/// web app once its page and its api answer (status::web_answers); until then it stays on
+/// the starting screen, never on a page that cannot load.
 #[tauri::command(async)]
 pub fn open_local_server(app: AppHandle) -> Result<(), String> {
     match shell(&app).mode() {
-        Some(AppMode::Server { web_url, .. }) => navigate_main(&app, &web_url),
+        Some(AppMode::Server { web_url, .. }) => {
+            if !status::web_answers(&web_url) {
+                return Err(format!(
+                    "{PAGE_NOT_ANSWERING}: the web app at {web_url} does not answer yet"
+                ));
+            }
+            navigate_main(&app, &web_url)
+        }
         _ => Err("this Mac does not run the server".into()),
     }
 }
