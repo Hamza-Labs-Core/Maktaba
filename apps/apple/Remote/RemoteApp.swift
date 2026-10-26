@@ -19,6 +19,7 @@ struct RemoteApp: App {
                 }
             }
             .maktabaTheme(theme)
+            .permissionsWalkthrough()
         }
     }
 }
