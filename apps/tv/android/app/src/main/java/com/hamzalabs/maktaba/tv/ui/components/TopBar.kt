@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
@@ -17,6 +18,7 @@ import androidx.tv.material3.TabDefaults
 import androidx.tv.material3.TabRow
 import androidx.tv.material3.TabRowDefaults
 import androidx.tv.material3.Text
+import com.hamzalabs.maktaba.tv.R
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 
 /**
@@ -45,7 +47,7 @@ fun TopBar(
         horizontalArrangement = Arrangement.spacedBy(32.dp),
     ) {
         Text(
-            text = "۞ Maktaba",
+            text = "۞ " + stringResource(R.string.app_name),
             style = MaterialTheme.typography.titleLarge,
             color = MaktabaPalette.Gold,
         )

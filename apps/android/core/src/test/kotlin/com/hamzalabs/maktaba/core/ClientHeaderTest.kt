@@ -13,6 +13,7 @@ class ClientHeaderTest {
         assertEquals("remote/0.1.0 (android; foldable)", ClientHeader.make("com.hamzalabs.maktaba.remote.foldable", "0.1.0"))
         assertEquals("remote/dev (android; phone)", ClientHeader.make("com.hamzalabs.maktaba.remote", null))
         assertEquals("player/dev (android; phone)", ClientHeader.make("com.hamzalabs.maktaba.player", " "))
+        assertEquals("tv/1.0.2 (androidtv; tv)", ClientHeader.make("com.hamzalabs.maktaba.tv", "1.0.2"))
     }
 
     @Test

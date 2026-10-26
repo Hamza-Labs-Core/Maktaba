@@ -104,6 +104,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "license":
+			if err := runLicense(os.Args[2:], os.Stdin, os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "license: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "hash-password":
 			if err := runHashPassword(os.Stdin, os.Stdout); err != nil {
 				fmt.Fprintf(os.Stderr, "hash-password: %v\n", err)
@@ -557,6 +563,11 @@ func runServe() error {
 			p10Deps.LicenseRefresher, p10Deps.LicenseCloud, p10Deps.LicenseManageURL = licRefresher, licCloud, licManage
 			if licRefresher != nil {
 				go licRefresher.Run(context.Background())
+			}
+			if licVerifier != nil {
+				// a license applied by `maktaba-api license apply` (or another replica) is
+				// taken up within a minute, without a restart
+				go reloadLicense(context.Background(), entStore, licVerifier, time.Minute, logger)
 			}
 
 			// Phase 9 (Epic 10 stories 10.2-10.5, 10.16) — auth surface.

@@ -398,3 +398,56 @@ func TestPersistentStore_LoadErrorKeepsAStore(t *testing.T) {
 		t.Fatalf("store %v err %v", s, err)
 	}
 }
+
+// A license another process recorded (`maktaba-api license apply`, another replica) is
+// taken up by the running store; one removed there goes; one the build's key cannot
+// verify is never taken up.
+func TestStore_ReloadActiveTakesUpAnotherProcesssLicense(t *testing.T) {
+	ctx := context.Background()
+	lic, pub := mintLicense(t)
+	v := &Verifier{PublicKey: pub}
+	db := &fakeLicenseDB{}
+	running, err := NewPersistentStore(ctx, db, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running.SetClock(func() time.Time { return time.Date(2026, 5, 18, 0, 0, 0, 0, time.UTC) })
+	if changed, err := running.ReloadActive(ctx, v); changed || err != nil {
+		t.Fatalf("nothing recorded: changed=%v err=%v", changed, err)
+	}
+
+	// the command applies it through its own store over the same database
+	cli, _ := NewPersistentStore(ctx, db, v)
+	ent, err := v.Verify(lic, time.Date(2026, 5, 17, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cli.SetLicense(ctx, lic, ent); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := running.ReloadActive(ctx, v); !changed || err != nil {
+		t.Fatalf("applied elsewhere: changed=%v err=%v", changed, err)
+	}
+	if cur := running.Current(); cur == nil || cur.LicenseID != "lic-persist-1" {
+		t.Fatalf("not taken up: %+v", cur)
+	}
+	if changed, _ := running.ReloadActive(ctx, v); changed {
+		t.Fatal("the same license again reads as a change")
+	}
+
+	// removed elsewhere: the free plan
+	if err := cli.Revoke(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if changed, _ := running.ReloadActive(ctx, v); !changed || running.Current() != nil {
+		t.Fatal("a license removed elsewhere stayed")
+	}
+
+	// a row signed by another key is not taken up
+	_, otherPriv, _ := ed25519.GenerateKey(rand.Reader)
+	db.rows = append(db.rows, signedRow(t, otherPriv, LicenseInner{LicenseID: "forged", Tier: TierPro,
+		IssuedAt: time.Date(2026, 5, 17, 0, 0, 0, 0, time.UTC), ExpiresAt: time.Date(2027, 5, 17, 0, 0, 0, 0, time.UTC)}))
+	if changed, err := running.ReloadActive(ctx, v); changed || err == nil || running.Current() != nil {
+		t.Fatalf("a forged row: changed=%v err=%v", changed, err)
+	}
+}

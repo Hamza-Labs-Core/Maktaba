@@ -41,6 +41,7 @@ jobs:
       win_app: ${{ steps.filter.outputs.win_app }}
       linux_app: ${{ steps.filter.outputs.linux_app }}
       android_apps: ${{ steps.filter.outputs.android_apps }}
+      android_tv: ${{ steps.filter.outputs.android_tv }}
     steps:
       - uses: actions/checkout@v6.0.2
       # A filter is true when at least one changed file matches it. Whether a file
@@ -132,6 +133,13 @@ jobs:
             android_apps:
               - 'apps/android/**'
               - '.github/workflows/_android-apps.yml'
+            # The Android TV app (~8 min): its project, the phone apps' core and catalog it
+            # builds on, and its gate.
+            android_tv:
+              - 'apps/tv/android/**'
+              - 'apps/android/core/**'
+              - 'apps/android/gradle/libs.versions.toml'
+              - '.github/workflows/_android-tv.yml'
 
   lint:
     needs: [changes]
@@ -212,6 +220,11 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.android_apps == 'true'
     uses: ./.github/workflows/_android-apps.yml
+
+  android-tv:
+    needs: [changes]
+    if: needs.changes.outputs.android_tv == 'true'
+    uses: ./.github/workflows/_android-tv.yml
 
   # The Linux app's pinned downloads (~150 MB a runner) in a cache on main: a pull
   # request's run restores main's caches but not another pull request's, so without
@@ -309,6 +322,7 @@ jobs:
       - win-app
       - linux-app
       - android-apps
+      - android-tv
       - pr-body-check
     if: always()
     runs-on: ubuntu-22.04
@@ -326,7 +340,7 @@ jobs:
           changes=$(echo "$RESULTS" | jq -r '.changes.result // "missing"')
           echo "  changes: $changes"
           if [ "$changes" != success ]; then fail=1; fi
-          for gate in lint unit integration replica e2e media-e2e perf-ci build-artifacts node-packaging launcher mac-app win-app linux-app android-apps pr-body-check; do
+          for gate in lint unit integration replica e2e media-e2e perf-ci build-artifacts node-packaging launcher mac-app win-app linux-app android-apps android-tv pr-body-check; do
             result=$(echo "$RESULTS" | jq -r ".\"$gate\".result // \"skipped\"")
             echo "  $gate: $result"
             case "$result" in

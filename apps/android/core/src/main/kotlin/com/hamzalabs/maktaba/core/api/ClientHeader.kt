@@ -24,17 +24,20 @@ object ClientHeader {
     }
 
     /**
-     * The value for a package: the app from its id (`…remote…` the Remote, else the Player),
-     * the device from its flavour's suffix (`.tablet`, `.foldable`, else a phone).
+     * The value for a package: the app from its id (`…tv` the Android TV app, `…remote…` the
+     * Remote, else the Player), the device from its flavour's suffix (`.tablet`, `.foldable`,
+     * else a phone).
      */
     fun make(packageName: String, version: String?): String {
         val parts = packageName.lowercase().split('.')
+        val v = version?.takeIf { it.isNotBlank() } ?: "dev"
+        if (parts.lastOrNull() == "tv") return "tv/$v (androidtv; tv)"
         val app = if ("remote" in parts) "remote" else "player"
         val device = when (parts.lastOrNull()) {
             "tablet" -> "tablet"
             "foldable" -> "foldable"
             else -> "phone"
         }
-        return "$app/${version?.takeIf { it.isNotBlank() } ?: "dev"} (android; $device)"
+        return "$app/$v (android; $device)"
     }
 }

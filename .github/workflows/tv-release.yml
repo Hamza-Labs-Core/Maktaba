@@ -69,10 +69,10 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         # The default package list includes the long-removed `tools`
-        # package, which current sdkmanager rejects. Gradle installs the
-        # platform + build-tools it needs on first build.
+        # package, which current sdkmanager rejects. compileSdk 37 (the
+        # shared core's) is installed here; AGP fetches its build-tools.
         with:
-          packages: platform-tools
+          packages: platform-tools platforms;android-37.0
 
       - name: Assemble release APK
         working-directory: apps/tv/android
