@@ -131,7 +131,9 @@ func TestPublicPushAlwaysOn(t *testing.T) {
 	if holds != `["public"]` {
 		t.Errorf("holds %s", holds)
 	}
-	fx.set(ch, tvremote.PublicChange{Public: ptr(false)})
+	if _, te := fx.set(ch, tvremote.PublicChange{Public: ptr(false)}); te != nil {
+		t.Fatal(te)
+	}
 	fx.reconcile()
 	fx.advance(4 * time.Minute)
 	fx.reconcile()
