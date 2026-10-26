@@ -3393,3 +3393,44 @@ button.mkt-video__hero {
   margin-inline-end: var(--space-2);
   border-radius: var(--radius-sm);
 }
+
+/* The Mac server's permissions (setup's Permissions step, the reminder) */
+.mkt-perms__list {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-perm {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.mkt-perm--missing {
+  border-inline-start: 4px solid var(--color-error);
+}
+.mkt-perm__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.mkt-perm__title {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+.mkt-perm__badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.mkt-perm__note {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-perm__steps {
+  margin-block: var(--space-2);
+  padding-inline-start: var(--space-5);
+}

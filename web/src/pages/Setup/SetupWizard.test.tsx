@@ -16,6 +16,7 @@ import {
 import { PLEX_POLL_MS, SetupWizard, parsePathMap, type Screen } from "./SetupWizard";
 import { PAGE_PATIENCE_MS, STARTING_POLL_MS, ServerStarting } from "./ServerStarting";
 import { DesktopGate } from "../../components/DesktopGate";
+import type { PermissionsApi, PermissionsReport } from "../../lib/macPermissions";
 
 const CHECK = {
   platform: "darwin",
@@ -105,7 +106,8 @@ describe("SetupWizard", () => {
     await userEvent.click(screen.getByRole("button", { name: "Set up this Mac" }));
     expect(await screen.findByText("Indexing, transcription and search")).toBeInTheDocument();
     expect(screen.getByText("96.0 GB (needs 16.0 GB)")).toBeInTheDocument();
-    expect(screen.getByText("Step 1 of 6")).toBeInTheDocument();
+    // a Mac asks for its permissions too
+    expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
 
@@ -156,7 +158,7 @@ describe("SetupWizard", () => {
         /RTX 2080 SUPER has 8\.0 GB: the second listen needs a graphics card with 9\.5 GB/
       )
     ).toBeInTheDocument();
-    expect(screen.getByText("Step 1 of 6")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     const [pw, again] = await screen.findAllByLabelText(/Password/);
     await userEvent.type(pw, "a long passphrase");
@@ -326,6 +328,111 @@ describe("SetupWizard", () => {
         expect.any(Function)
       )
     );
+  });
+
+  describe("permissions (a Mac)", () => {
+    const REPORT: PermissionsReport = {
+      platform: "macos",
+      server_mode: false,
+      seen: false,
+      items: [
+        { id: "full_disk_access", required: true, state: "denied", pane: "full_disk_access" },
+        { id: "local_network", required: true, state: "unknown", pane: "local_network" },
+        { id: "login_item", required: true, state: "not_asked", pane: "login_items" },
+        { id: "keep_awake", required: false, state: "granted", pane: "energy" },
+      ],
+    };
+    function perms(r: PermissionsReport | Error = REPORT) {
+      let current = r;
+      const api = {
+        report: vi.fn(async () => {
+          if (current instanceof Error) throw current;
+          return current;
+        }),
+        openPane: vi.fn(async () => {}),
+        markSeen: vi.fn(async () => {}),
+        set(next: PermissionsReport) {
+          current = next;
+        },
+      };
+      return api as typeof api & PermissionsApi;
+    }
+    function renderWith(api: SetupApi, p: PermissionsApi, initial: Screen) {
+      return render(
+        <I18nProvider>
+          <SetupWizard api={api} initial={initial} permissions={p} />
+        </I18nProvider>
+      );
+    }
+
+    it("comes after Plex and before the install, says each item and opens its pane", async () => {
+      const p = perms();
+      const plex = vi.fn(() => ({ linked: false }));
+      renderWith(fakeApi({ plex, venv: () => new Promise(() => {}) }), p, "plex");
+      await userEvent.click(await screen.findByRole("button", { name: "Skip" }));
+      expect(await screen.findByRole("heading", { name: "Permissions" })).toBeInTheDocument();
+      expect(screen.getByText("Step 6 of 7")).toBeInTheDocument();
+      const fda = screen.getByTestId("perm-full_disk_access");
+      expect(within(fda).getByText("Off")).toBeInTheDocument();
+      await userEvent.click(within(fda).getByRole("button", { name: "Open System Settings" }));
+      expect(p.openPane).toHaveBeenCalledWith("full_disk_access");
+      // the login item: turned on by the install
+      expect(
+        within(screen.getByTestId("perm-login_item")).getByText(
+          "Setup turns this on at its last step."
+        )
+      ).toBeInTheDocument();
+      // back from System Settings: checked again
+      p.set({
+        ...REPORT,
+        items: REPORT.items.map((i) =>
+          i.id === "full_disk_access" ? { ...i, state: "granted" as const } : i
+        ),
+      });
+      await act(async () => {
+        window.dispatchEvent(new Event("focus"));
+      });
+      expect(
+        await within(screen.getByTestId("perm-full_disk_access")).findByText("On")
+      ).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect(p.markSeen).toHaveBeenCalled();
+      expect(
+        await screen.findByRole("heading", { name: "Getting Maktaba ready" })
+      ).toBeInTheDocument();
+    });
+
+    it("Back goes to Plex", async () => {
+      renderWith(fakeApi(), perms(), "permissions");
+      await userEvent.click(await screen.findByRole("button", { name: "Back" }));
+      expect(await screen.findByRole("heading", { name: "Plex (optional)" })).toBeInTheDocument();
+    });
+
+    it("a shell that cannot say passes the user on, either way", async () => {
+      const failing = perms(new Error("command host_permissions not found"));
+      const plex = vi.fn(() => ({ linked: false }));
+      renderWith(fakeApi({ plex, venv: () => new Promise(() => {}) }), failing, "plex");
+      await userEvent.click(await screen.findByRole("button", { name: "Skip" }));
+      expect(
+        await screen.findByRole("heading", { name: "Getting Maktaba ready" })
+      ).toBeInTheDocument();
+    });
+
+    it("is not a step on Windows or Linux", async () => {
+      const p = perms();
+      const plex = vi.fn(() => ({ linked: false }));
+      renderWith(
+        fakeApi({ plex, venv: () => new Promise(() => {}) }, { platform: "windows" }),
+        p,
+        "plex"
+      );
+      expect(await screen.findByText("Step 5 of 6")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Skip" }));
+      expect(
+        await screen.findByRole("heading", { name: "Getting Maktaba ready" })
+      ).toBeInTheDocument();
+      expect(p.report).not.toHaveBeenCalled();
+    });
   });
 
   describe("plex", () => {
