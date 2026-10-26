@@ -26,6 +26,10 @@ func newAddUserCmd() *cobra.Command {
 	return delegateCmd("adduser", "Seed the first admin user (delegates to maktaba-api)")
 }
 
+func newLicenseCmd() *cobra.Command {
+	return delegateCmd("license", "Apply or show the home's license (delegates to maktaba-api)")
+}
+
 func newKeysCmd() *cobra.Command {
 	return delegateCmd("keys", "Generate or rotate JWT signing keys (delegates to maktaba-api)")
 }
