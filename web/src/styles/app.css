@@ -2855,21 +2855,6 @@ a.mkt-guide__chanhead:hover {
   gap: var(--space-1);
 }
 
-/* Epic 35: cluster sign-in on a node's Login page */
-.mkt-login__cluster {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.mkt-login__or {
-  margin: 0;
-  padding-block-start: var(--space-2);
-  border-block-start: 1px solid var(--color-border);
-  color: var(--color-muted);
-  font-size: var(--font-size-sm);
-  text-align: center;
-}
-
 /* Story 28.5 — the mobile app's update banner (only inside the Capacitor app) */
 .mkt-update-banner {
   display: flex;

@@ -80,7 +80,6 @@ describe("sign-in while this machine cannot reach its home", () => {
               role: "node",
               id: "n1",
               version: "1",
-              sso: true,
               home: { reachable: homeBack },
               copy: { state: "following", applied_at: new Date().toISOString() },
             },
