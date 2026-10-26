@@ -10,6 +10,7 @@ export type HomeDbCode =
   | "unreachable"
   | "no_database"
   | "tls"
+  | "cert_mismatch"
   | "other";
 
 export interface HomeDb {

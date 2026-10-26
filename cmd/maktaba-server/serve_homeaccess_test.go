@@ -2,8 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -119,6 +126,62 @@ func TestHomeDBWatchNeverAsksForTLS(t *testing.T) {
 	}
 	if st := w.State(); st.Code != "tls" || st.Fails < machineagent.ConfirmFails || asked != 0 {
 		t.Fatalf("state %+v, %d requests", st, asked)
+	}
+}
+
+// A refused password while this machine offers a certificate for another role than its
+// login's is cert_mismatch (Postgres says a failed CN check as the password's failure):
+// never asked for, as TLS; the same CN, or no certificate offered, stays auth_failed.
+func TestACertificateForAnotherRoleIsNotAPassword(t *testing.T) {
+	dir := t.TempDir()
+	certFor := func(cn string) string {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: cn},
+			NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := filepath.Join(dir, cn+".crt")
+		if err := os.WriteFile(p, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return filepath.ToSlash(p)
+	}
+	refused := errors.New(`pq: password authentication failed for user "maktaba_node_6f1c2a3b"`)
+	dsn := func(cert string) string {
+		q := url.Values{"sslmode": {"verify-ca"}, "sslrootcert": {"ca.crt"}}
+		if cert != "" {
+			q.Set("sslcert", cert)
+			q.Set("sslkey", "k")
+		}
+		return "postgres://maktaba_node_6f1c2a3b@192.168.50.177:54329/maktaba?" + q.Encode()
+	}
+	other := certFor("maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7")
+	err := withCertCheck(dsn(other), refused)
+	if classifyHomeDB(err) != "cert_mismatch" || !errors.Is(err, refused) || remakeMends(classifyHomeDB(err)) ||
+		!strings.Contains(err.Error(), "maktaba_node_6f1c2a3b4d5e4f608a7192b3c4d5e6f7") {
+		t.Fatalf("another role's certificate: %v (%s)", err, classifyHomeDB(err))
+	}
+	for _, c := range []struct {
+		dsn  string
+		err  error
+		want string
+	}{
+		{dsn(certFor("maktaba_node_6f1c2a3b")), refused, "auth_failed"},
+		{dsn(""), refused, "auth_failed"},
+		{dsn(other), errors.New("pq: connection requires a valid client certificate"), "tls"},
+		{dsn(filepath.ToSlash(filepath.Join(dir, "missing.crt"))), refused, "auth_failed"},
+	} {
+		if got := classifyHomeDB(withCertCheck(c.dsn, c.err)); got != c.want {
+			t.Errorf("%s / %v: %s, want %s", c.dsn, c.err, got, c.want)
+		}
+	}
+	if withCertCheck(dsn(other), nil) != nil {
+		t.Error("a login that worked")
 	}
 }
 

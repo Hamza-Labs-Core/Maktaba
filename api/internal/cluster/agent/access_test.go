@@ -275,6 +275,14 @@ func TestATLSFailureIsNotMadeAgainOnRequest(t *testing.T) {
 	if ans := a.recvType("access.answer"); ans["code"] != cluster.AccessNotMendable {
 		t.Fatalf("from its update.state: %v", ans)
 	}
+	// a certificate for another role than its login's: the same role re-made would not
+	// match it either
+	again()
+	a.send(map[string]any{"t": "access.request", "id": "ask-cn", "home_db": map[string]any{"ok": false,
+		"code": "cert_mismatch", "fails": 4, "target": "192.168.50.177:54329/maktaba"}})
+	if ans := a.recvType("access.answer"); ans["code"] != cluster.AccessNotMendable {
+		t.Fatalf("cert_mismatch: %v", ans)
+	}
 	if g.grants() != 0 {
 		t.Fatalf("a TLS failure rotated the access: %d", g.grants())
 	}

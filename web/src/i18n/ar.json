@@ -1788,6 +1788,7 @@
   "machines.homeDb.code.unreachable": "تعذّر الوصول إلى قاعدة بيانات الخادم الرئيسي عبر الشبكة",
   "machines.homeDb.code.no_database": "قاعدة بيانات المكتبة غير موجودة على الخادم الرئيسي",
   "machines.homeDb.code.tls": "فشل الاتصال الآمن بقاعدة بيانات الخادم الرئيسي",
+  "machines.homeDb.code.cert_mismatch": "شهادته لدور قاعدة بيانات غير الدور الذي يسجّل الدخول به",
   "machines.homeDb.code.other": "خطأ تذكره التفاصيل",
   "machines.homeDb.asked": "طلب من الخادم الرئيسي تسجيل دخول جديداً؛ لا ردّ بعد.",
   "machines.homeDb.answer": "لا يستطيع الخادم الرئيسي منح هذا الجهاز تسجيل دخول جديداً: {reason}",
