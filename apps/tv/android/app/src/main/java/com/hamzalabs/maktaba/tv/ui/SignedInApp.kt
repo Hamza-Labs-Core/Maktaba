@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -41,7 +42,7 @@ sealed interface Place {
 fun SignedInApp(app: MaktabaTVApp, user: User, client: ApiClient) {
     val api = remember(client) { TvApi(client) }
     val stack = remember(client) { mutableStateListOf<Place>(Place.Tabs) }
-    var tab by rememberSaveable { mutableStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     val signedOut = { app.session.signedOut() }
 
     fun open(p: Place) { stack.add(p) }

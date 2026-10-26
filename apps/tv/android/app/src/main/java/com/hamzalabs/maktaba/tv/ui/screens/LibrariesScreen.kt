@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -103,7 +104,7 @@ fun VideoGrid(
     var done by remember(key) { mutableStateOf(false) }
     var loading by remember(key) { mutableStateOf(true) }
     var problem by remember(key) { mutableStateOf<String?>(null) }
-    var want by remember(key) { mutableStateOf(0) }
+    var want by remember(key) { mutableIntStateOf(0) }
 
     LaunchedEffect(key, want) {
         if (done) return@LaunchedEffect

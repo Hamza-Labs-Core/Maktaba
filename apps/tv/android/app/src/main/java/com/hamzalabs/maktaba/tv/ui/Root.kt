@@ -15,8 +15,8 @@ fun Root(app: MaktabaTVApp) {
     val phase by session.phase.collectAsState()
     val home by session.current.collectAsState()
     when (val p = phase) {
-        AppSession.Phase.ChoosingHome -> HomePickerScreen(session)
-        AppSession.Phase.SigningIn -> home?.let { SignInScreen(app, it) } ?: HomePickerScreen(session)
+        AppSession.Phase.ChoosingHome -> HomePickerScreen(app)
+        AppSession.Phase.SigningIn -> home?.let { SignInScreen(app, it) } ?: HomePickerScreen(app)
         is AppSession.Phase.SignedIn -> SignedInApp(app, p.user, p.client)
     }
 }

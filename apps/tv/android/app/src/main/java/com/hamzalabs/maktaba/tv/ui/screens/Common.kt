@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,7 +40,7 @@ sealed interface Load<out T> {
 @Composable
 fun <T> rememberLoad(key: Any?, signedOut: () -> Unit, load: suspend () -> T): Pair<Load<T>, () -> Unit> {
     var state by remember(key) { mutableStateOf<Load<T>>(Load.Loading) }
-    var attempt by remember(key) { mutableStateOf(0) }
+    var attempt by remember(key) { mutableIntStateOf(0) }
     LaunchedEffect(key, attempt) {
         state = Load.Loading
         state = try {

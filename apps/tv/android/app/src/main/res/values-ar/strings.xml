@@ -28,7 +28,6 @@
     <string name="loading">جارٍ التحميل…</string>
     <string name="could_not_load">تعذّر التحميل: %1$s</string>
     <string name="try_again">حاول مجددًا</string>
-    <string name="more">المزيد</string>
 
     <string name="search_hint">ابحث في مكتبتك</string>
     <string name="search_none">لا توجد مقاطع تطابق «%1$s».</string>
@@ -37,7 +36,6 @@
     <string name="resume_from">المتابعة من %1$s</string>
     <string name="start_over">من البداية</string>
     <string name="watched">تمت المشاهدة</string>
-    <string name="minutes">%1$d دقيقة</string>
 
     <string name="preparing">جارٍ تجهيز المقطع…</string>
     <string name="playback_failed">تعذّر تشغيل المقطع: %1$s</string>

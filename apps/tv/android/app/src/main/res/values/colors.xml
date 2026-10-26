@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Window-level colours, drawn before Compose. Mirrors
-     ui/theme/Color.kt (MaktabaPalette), the single source of truth;
-     keep these three in sync with it. -->
+<!-- The window's colour, drawn before Compose: ui/theme/Color.kt's MaktabaPalette.Background,
+     the single source of truth. Keep the two in sync. -->
 <resources>
     <color name="background">#0B111C</color>
-    <color name="brand">#E3B252</color>
-    <color name="ink">#1A1408</color>
 </resources>

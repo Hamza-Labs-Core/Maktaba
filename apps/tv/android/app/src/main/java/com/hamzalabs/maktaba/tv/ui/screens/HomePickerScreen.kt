@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
@@ -23,19 +22,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ListItem
 import androidx.tv.material3.ListItemDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import com.hamzalabs.maktaba.core.session.AppSession
-import com.hamzalabs.maktaba.core.session.FoundHome
 import com.hamzalabs.maktaba.core.session.Home
-import com.hamzalabs.maktaba.core.session.HomeDiscovery
+import com.hamzalabs.maktaba.tv.MaktabaTVApp
 import com.hamzalabs.maktaba.tv.R
 import com.hamzalabs.maktaba.tv.ui.components.LibraryBackdrop
 import com.hamzalabs.maktaba.tv.ui.components.MaktabaButton
@@ -43,26 +40,25 @@ import com.hamzalabs.maktaba.tv.ui.components.ReadingPanel
 import com.hamzalabs.maktaba.tv.ui.components.SectionTitle
 import com.hamzalabs.maktaba.tv.ui.components.TvTextField
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
-import kotlinx.coroutines.flow.catch
 import com.hamzalabs.maktaba.core.R as CoreR
 
 /**
  * Choosing the home: the ones announcing themselves on this network (mDNS `_maktaba._tcp`, the
- * core's [HomeDiscovery]), the ones this TV used before, or an address typed with the remote.
+ * core's discovery, kept by the app: [MaktabaTVApp.homesFound]), the ones this TV used before, or an address typed with the remote.
  */
 @Composable
-fun HomePickerScreen(session: AppSession) {
-    val context = LocalContext.current
+fun HomePickerScreen(app: MaktabaTVApp) {
+    val session = app.session
     val saved by session.homes.collectAsState()
-    var found by remember { mutableStateOf<List<FoundHome>>(emptyList()) }
+    val found by app.homesFound.collectAsState()
     var address by remember { mutableStateOf("") }
     var invalid by remember { mutableStateOf(false) }
     val first = remember { FocusRequester() }
+    val connectButton = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) {
-        HomeDiscovery(context).homes().catch { }.collect { found = it }
-    }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    // a home in the list takes focus (never the text field: focus there opens the keyboard)
+    val anyHome = saved.isNotEmpty() || found.isNotEmpty()
+    LaunchedEffect(anyHome) { runCatching { if (anyHome) first.requestFocus() else connectButton.requestFocus() } }
 
     fun connect() {
         val url = Home.normalize(address)
@@ -80,7 +76,7 @@ fun HomePickerScreen(session: AppSession) {
             horizontalArrangement = Arrangement.spacedBy(48.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ReadingPanel(Modifier.weight(1f)) {
+            ReadingPanel(Modifier.weight(1.3f)) {
                 SectionTitle(stringResource(R.string.choose_home))
                 Text(
                     stringResource(R.string.choose_home_hint),
@@ -100,7 +96,7 @@ fun HomePickerScreen(session: AppSession) {
                             selected = false,
                             onClick = { session.use(Home(url, name)) },
                             modifier = if (rows.first().second == url) Modifier.focusRequester(first) else Modifier,
-                            headlineContent = { Text(name, style = MaterialTheme.typography.titleMedium) },
+                            headlineContent = { Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             supportingContent = { Text(url.substringAfter("://"), style = MaterialTheme.typography.labelMedium) },
                             trailingContent = {
                                 if (isSaved) Text(stringResource(CoreR.string.home_saved), style = MaterialTheme.typography.labelMedium)
@@ -114,21 +110,20 @@ fun HomePickerScreen(session: AppSession) {
                     }
                 }
             }
-            ReadingPanel(Modifier.width(460.dp)) {
+            ReadingPanel(Modifier.weight(1f)) {
                 Text(stringResource(R.string.enter_address), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text)
                 TvTextField(
                     value = address,
                     onValueChange = { address = it; invalid = false },
                     label = stringResource(CoreR.string.address_label),
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
-                        .then(if (saved.isEmpty() && found.isEmpty()) Modifier.focusRequester(first) else Modifier),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = { connect() }),
                 )
                 if (invalid) {
                     Text(stringResource(CoreR.string.address_invalid), color = MaktabaPalette.Gold, modifier = Modifier.padding(bottom = 8.dp))
                 }
-                Box { MaktabaButton(onClick = ::connect) { Text(stringResource(CoreR.string.connect)) } }
+                Box { MaktabaButton(onClick = ::connect, modifier = Modifier.focusRequester(connectButton)) { Text(stringResource(CoreR.string.connect)) } }
             }
         }
     }
