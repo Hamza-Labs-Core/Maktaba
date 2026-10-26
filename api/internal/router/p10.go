@@ -194,6 +194,7 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 		ph.Audit = pairAudit{w: securityaudit.NewWriter(d.DB)}
 	}
 	ph.Mount(r)
+	ph.MountDevice(r, 0)
 
 	// Security disclosure + SBOM.
 	policy := d.SecurityPolicy

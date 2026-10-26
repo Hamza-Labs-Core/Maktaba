@@ -1,44 +1,40 @@
+import MaktabaKit
 import SwiftUI
 
-/// The landing screen: a vertical stack of horizontally-scrolling
-/// rails. "Continue Watching" comes first (resume is the #1 TV action),
-/// followed by recommendation rails from `GET /api/recommendations`.
+/// The landing screen over the library scene: the home's rails (`GET
+/// /api/recommendations`), continue watching first, since resuming is the first thing a
+/// TV is for. A home with no rails yet shows its newest videos.
 struct HomeView: View {
-    @Environment(\.api) private var api
-    @State private var rails: [MediaRail] = []
-    @State private var error: String?
+    @Environment(\.client) private var client
+    @State private var rails: [Rail] = []
+    @State private var newest: [Video] = []
+    @State private var problem: String?
     @State private var loading = true
 
     var body: some View {
         ZStack {
-            // The library scene sits behind everything; every piece of
-            // text below is on a reading panel, never on the art itself.
             LibraryBackdrop()
-
             ScrollView {
                 VStack(alignment: .leading, spacing: 40) {
-                    // Headline in the calm middle of the scene, below the lamp.
-                    VStack(alignment: .leading, spacing: 8) {
-                        SectionTitle("Your library", size: 52)
-                        Text("Continue where you left off")
-                            .font(Theme.body(29))
-                            .foregroundStyle(Theme.muted)
-                    }
-                    .readingPanel(padding: 28)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 220)
+                    SectionTitle("Your library", size: 52)
+                        .readingPanel(padding: 28)
+                        .padding(.top, 160)
 
                     Group {
                         if loading {
-                            ProgressView()
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 60)
-                        } else if let error {
-                            ErrorBanner(message: error) { Task { await load() } }
+                            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 60)
+                        } else if let problem {
+                            ErrorBanner(message: problem) { Task { await load() } }
+                        } else if rails.isEmpty && newest.isEmpty {
+                            ContentUnavailableView("Nothing to watch yet", systemImage: "books.vertical",
+                                                   description: Text("Videos appear here once this home shares a library with you."))
+                        } else if rails.isEmpty {
+                            VideoRow(title: "Newly added", items: newest.map { RowItem(id: $0.id, title: $0.displayTitle) })
                         } else {
                             VStack(alignment: .leading, spacing: 48) {
                                 ForEach(rails) { rail in
-                                    RailRow(rail: rail)
+                                    VideoRow(title: Self.title(of: rail),
+                                             items: rail.items.map { RowItem(id: $0.videoID, progress: $0.progress) })
                                 }
                             }
                         }
@@ -49,47 +45,69 @@ struct HomeView: View {
                 .padding(.horizontal, 80) // 10-foot safe-area gutter
             }
         }
+        .ignoresSafeArea(edges: .top)
         .task { await load() }
+        .refreshable { await load() }
+    }
+
+    /// A rail's title is the app's to say (the home sends a kind, not words).
+    static func title(of rail: Rail) -> String {
+        switch rail.reasonKind {
+        case "continue_watching": "Continue watching"
+        case "for_you": "For you"
+        case "from_library": "From your libraries"
+        case "newly_added": "Newly added"
+        case "editor_picks": "Picks"
+        default: "More to watch"
+        }
     }
 
     private func load() async {
-        loading = true
-        defer { loading = false }
+        guard let client else { return }
         do {
-            let recs: Recommendations = try await api.get("/api/recommendations")
-            rails = recs.rails
-            error = nil
+            rails = try await client.recommendations().filter { !$0.items.isEmpty }
+            if rails.isEmpty {
+                newest = try await client.videos(library: nil).items
+            }
+            problem = nil
         } catch {
-            self.error = error.localizedDescription
+            problem = error.localizedDescription
         }
+        loading = false
     }
 }
 
-/// One labelled horizontal rail of poster cards.
-struct RailRow: View {
-    let rail: MediaRail
+struct RowItem: Identifiable, Hashable {
+    let id: String
+    var title: String?
+    var progress: Double = 0
+}
+
+/// One labelled horizontal row of video cards.
+struct VideoRow: View {
+    let title: String
+    let items: [RowItem]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            SectionTitle(rail.title, size: 40)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 40) {
-                    ForEach(rail.items) { item in
-                        PosterCard(
-                            title: rail.title,
-                            posterURL: item.posterURL,
-                            progress: item.progress
-                        )
+            SectionTitle(title, size: 40)
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: 48) {
+                    ForEach(items) { item in
+                        NavigationLink(value: VideoRoute(id: item.id)) {
+                            VideoCard(id: item.id, title: item.title, progress: item.progress)
+                        }
+                        .buttonStyle(.borderless)
                     }
                 }
-                .padding(.vertical, 24) // room for the focus scale to grow
+                .padding(.vertical, 32) // room for the focus scale to grow
             }
+            .scrollClipDisabled()
         }
     }
 }
 
-/// Lightweight inline error state with a retry affordance.
+/// Inline error with a retry.
 struct ErrorBanner: View {
     let message: String
     let retry: () -> Void
@@ -100,10 +118,10 @@ struct ErrorBanner: View {
                 .font(.system(size: 64))
                 .foregroundStyle(Theme.goldText)
             Text(message)
-                .font(Theme.body(38, relativeTo: .title3))
+                .font(Theme.body(34))
                 .foregroundStyle(Theme.text)
                 .multilineTextAlignment(.center)
-            Button("Try Again", action: retry)
+            Button("Try again", action: retry).buttonStyle(.gold)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)

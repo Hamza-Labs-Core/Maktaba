@@ -66,6 +66,10 @@ type Handler struct {
 	// Audit, when set, records pair.code-issued / pair.code-claimed.
 	// Optional: nil disables audit (the no-DB dev path).
 	Audit AuditSink
+
+	// DeviceKey signs the TVs' device codes (device.go); nil: a random key per process.
+	DeviceKey []byte
+	device    deviceKeys
 }
 
 // AuditSink is the minimal slice of securityaudit.Writer the pairing

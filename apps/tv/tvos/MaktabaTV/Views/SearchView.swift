@@ -1,59 +1,41 @@
+import MaktabaKit
 import SwiftUI
 
-/// Search screen. `.searchable` gives us the tvOS system keyboard and
-/// the Siri-remote dictation (voice) button with no extra work — both
-/// feed the same `query` binding. Results render in the shared poster
-/// grid. Deeper voice integration (a Siri intent that opens the app
-/// pre-searched) is a follow-up; see the README.
+/// Search with the TV's keyboard (or the Siri remote's dictation): the home's videos
+/// whose title or file matches, as you type, a moment after you stop.
 struct SearchView: View {
-    @Environment(\.api) private var api
+    @Environment(\.client) private var client
     @State private var query = ""
-    @State private var results: [SearchResult] = []
-    @State private var loading = false
+    @State private var results: [Video] = []
+    @State private var searched = ""
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 48), count: 5)
+    private let columns = Array(repeating: GridItem(.fixed(VideoCard.width), spacing: 56), count: 4)
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                if loading {
-                    ProgressView().padding(.top, 120)
-                } else if results.isEmpty && !query.isEmpty {
-                    ContentUnavailableView.search(text: query)
-                        .padding(.top, 120)
-                } else {
-                    LazyVGrid(columns: columns, spacing: 56) {
-                        ForEach(results) { result in
-                            NavigationLink {
-                                PlayerView(media: result.asMedia)
-                            } label: {
-                                PosterCard(title: result.title, posterURL: result.posterURL)
-                            }
-                            .buttonStyle(.plain)
+        ScrollView {
+            if !searched.isEmpty && results.isEmpty {
+                ContentUnavailableView.search(text: searched).padding(.top, 80)
+            } else {
+                LazyVGrid(columns: columns, spacing: 64) {
+                    ForEach(results) { v in
+                        NavigationLink(value: VideoRoute(id: v.id)) {
+                            VideoCard(id: v.id, title: v.displayTitle)
                         }
+                        .buttonStyle(.borderless)
                     }
-                    .padding(48)
                 }
+                .padding(.horizontal, 80)
+                .padding(.vertical, 48)
             }
-            .navigationTitle("Search")
-            .background(Theme.background.ignoresSafeArea())
         }
-        .searchable(text: $query, prompt: "Search libraries")
-        // Debounced by SwiftUI's submit; running on every keystroke on a
-        // remote keyboard would hammer the API, so we search on submit.
-        .onSubmit(of: .search) { Task { await runSearch() } }
-    }
-
-    private func runSearch() async {
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { results = []; return }
-        loading = true
-        defer { loading = false }
-        do {
-            let resp: SearchResponse = try await api.get("/api/search", query: ["q": trimmed])
-            results = resp.items
-        } catch {
-            results = []
+        .searchable(text: $query, prompt: "Search your libraries")
+        .task(id: query) {
+            let q = query.trimmingCharacters(in: .whitespaces)
+            guard !q.isEmpty else { results = []; searched = ""; return }
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled, let client else { return }
+            results = (try? await client.videos(library: nil, query: q).items) ?? []
+            searched = q
         }
     }
 }

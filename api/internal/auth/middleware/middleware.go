@@ -194,6 +194,11 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// web-pages-batch2 — self-service entry points the caller reaches
 		// before holding any credential.
 		"/api/auth/register": {},
+		// Epic 14 — a TV asks for a sign-in code and polls for its approval before it
+		// holds any credential; the poll needs the TV's own device code, and both are
+		// rate-limited per IP (handlers/discovery/device.go).
+		"/api/pairing/device":       {},
+		"/api/pairing/device/token": {},
 		// Epic 31 — a machine's join request and its poll.
 		"/api/cluster/join":   {},
 		"/api/cluster/join/*": {},

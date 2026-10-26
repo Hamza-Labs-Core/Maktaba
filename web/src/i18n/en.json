@@ -4522,5 +4522,14 @@
   "rules.search.recent_limit.help": "How many of each user's searches the Recent searches list keeps. The query stays after its results are no longer kept; opening it searches again.",
   "rules.group.Search results": "Search results",
   "rules.group.Search history": "Search history",
-  "health.peers": "Service probes"
+  "health.peers": "Service probes",
+  "pair.title": "Sign in a TV",
+  "pair.intro": "Sign in a TV as {name}: enter the code the TV shows.",
+  "pair.code": "TV code",
+  "pair.note": "The TV gets your own access. Approve only a TV in front of you.",
+  "pair.approve": "Approve",
+  "pair.approved": "Your TV is signed in. You can close this page.",
+  "pair.used": "This code was already used. Ask the TV for a new code.",
+  "pair.invalid": "Check the code: it is eight letters and digits, as the TV shows it.",
+  "devices.signInTv": "Sign in a TV"
 }
