@@ -24,6 +24,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.session.AppSession
+import com.hamzalabs.maktaba.core.permissions.PermissionsGate
+import com.hamzalabs.maktaba.core.permissions.permissionsHelpUrl
 import com.hamzalabs.maktaba.core.ui.MaktabaApp
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.SessionGate
@@ -41,8 +43,11 @@ class MainActivity : ComponentActivity() {
             val mode by app.themes.mode.collectAsState()
             MaktabaTheme(mode) {
                 Surface {
-                    SessionGate(app.session, MaktabaApp.Remote) { user, client ->
-                        if (user.isAdmin) RemoteHome(app.session, user, client, app.themes) else NotAnAdmin(app.session, user)
+                    // first run, and whenever a required permission is missing (checked on resume)
+                    PermissionsGate(MaktabaApp.Remote, helpUrl = { app.session.current.value?.url?.let(::permissionsHelpUrl) }) {
+                        SessionGate(app.session, MaktabaApp.Remote) { user, client ->
+                            if (user.isAdmin) RemoteHome(app.session, user, client, app.themes) else NotAnAdmin(app.session, user)
+                        }
                     }
                 }
             }

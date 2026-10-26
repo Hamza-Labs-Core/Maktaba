@@ -34,6 +34,7 @@ mod attempts;
 mod autoinstall;
 mod lang;
 mod mode;
+mod permissions;
 mod run_entry;
 mod setup;
 mod shell;
@@ -253,6 +254,9 @@ pub fn run() {
             shell::open_local_server,
             shell::use_remote_server,
             shell::open_external,
+            permissions::host_permissions,
+            permissions::open_privacy_pane,
+            permissions::permissions_seen,
         ])
         .run(tauri::generate_context!())
         .expect("error while running maktaba desktop");

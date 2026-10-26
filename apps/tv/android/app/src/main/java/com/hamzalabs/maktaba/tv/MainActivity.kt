@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.SurfaceDefaults
+import com.hamzalabs.maktaba.tv.permissions.TvPermissionsGate
 import com.hamzalabs.maktaba.tv.ui.Root
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaTvTheme
 
@@ -22,7 +23,8 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     colors = SurfaceDefaults.colors(containerColor = MaterialTheme.colorScheme.background),
                 ) {
-                    Root(app)
+                    // first run, and whenever a required permission is missing (checked on resume)
+                    TvPermissionsGate { Root(app) }
                 }
             }
         }

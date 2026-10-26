@@ -4,7 +4,8 @@
 // welcome (this machine or another Maktaba) → what will run + disk/RAM
 // check → admin account → library folders / NAS path map → models (Hugging
 // Face token for the gated Cohere model, or the NAS copy) → optional
-// Plex sign-in → install (pipeline venv, the models download, finish) →
+// Plex sign-in → on a Mac, the permissions macOS keeps until you allow them
+// (Full Disk Access, Local Network, …) → install (pipeline venv, the models download, finish) →
 // the server starts. On a PC that already runs Maktaba outside the app
 // (Epic 38 story 38.13) welcome offers to move it in instead: its plan →
 // the move (venv, the old install stopped, its settings, keys and files
@@ -41,6 +42,8 @@ import {
   type StepProgress,
 } from "../../lib/desktopSetup";
 import { ServerStarting } from "./ServerStarting";
+import { PermissionList, usePermissions } from "../../components/MacPermissions/PermissionList";
+import { tauriPermissionsApi, type PermissionsApi } from "../../lib/macPermissions";
 import { codedText, type Translate } from "./codedText";
 import { platformWords } from "./platform";
 
@@ -73,10 +76,27 @@ export type Screen =
   | "libraries"
   | "models"
   | "plex"
+  | "permissions"
   | "install"
   | "move"
   | "starting";
 const ORDER: Screen[] = ["check", "admin", "libraries", "models", "plex", "install"];
+/** A Mac asks for its permissions before the server first starts (a grant
+ * reaches only the processes started after it). */
+const MAC_ORDER: Screen[] = [
+  "check",
+  "admin",
+  "libraries",
+  "models",
+  "plex",
+  "permissions",
+  "install",
+];
+
+const orderOf = (platform: Platform): Screen[] => (platform === "macos" ? MAC_ORDER : ORDER);
+
+/** The steps on this platform (the step counter's total). */
+const OrderContext = createContext<Screen[]>(ORDER);
 
 interface CheckResult {
   ram_bytes: number;
@@ -135,12 +155,13 @@ function Frame({
   next?: ReactNode;
 }) {
   const { t } = useI18n();
+  const order = useContext(OrderContext);
   return (
     <main className="mkt-setup" aria-labelledby="mkt-setup-h">
       <section className="mkt-setup__card">
         {step !== undefined && (
           <p className="mkt-setup__step">
-            {t("setup.stepOf", { n: step + 1, total: ORDER.length })}
+            {t("setup.stepOf", { n: step + 1, total: order.length })}
           </p>
         )}
         <h1 id="mkt-setup-h" className="mkt-setup__title">
@@ -200,7 +221,16 @@ function Progress({ p, label }: { p: StepProgress | null; label: string }) {
   );
 }
 
-export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initial?: Screen }) {
+export function SetupWizard({
+  api,
+  initial = "welcome",
+  permissions = tauriPermissionsApi,
+}: {
+  api: SetupApi;
+  initial?: Screen;
+  /** the shell's permission states (a Mac) */
+  permissions?: PermissionsApi;
+}) {
   const [screen, setScreen] = useState<Screen>(initial);
   const [serverAvailable, setServerAvailable] = useState(true);
   const [platform, setPlatform] = useState<Platform>("macos");
@@ -219,18 +249,24 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
   // whether this machine runs the second listen (check says): the models step
   // asks for its Hugging Face sign-in only then
   const [secondListen, setSecondListen] = useState<boolean | undefined>(undefined);
-  const go = (dir: 1 | -1) => {
-    const i = ORDER.indexOf(screen);
-    if (dir === -1 && i <= 0) return setScreen("welcome");
-    setScreen(ORDER[i + dir] ?? "starting");
+  const order = orderOf(platform);
+  // the way the user went: a screen with nothing to show passes them on that way
+  const [dir, setDir] = useState<1 | -1>(1);
+  const go = (d: 1 | -1) => {
+    setDir(d);
+    const i = order.indexOf(screen);
+    if (d === -1 && i <= 0) return setScreen("welcome");
+    setScreen(order[i + d] ?? "starting");
   };
-  const step = ORDER.indexOf(screen);
+  const step = order.indexOf(screen);
   const props = { api, step, platform, next: () => go(1), back: () => go(-1) };
   const { t } = useI18n();
   return (
-    <WordsContext.Provider value={platformWords(t, platform)}>
-      {screenOf(screen)}
-    </WordsContext.Provider>
+    <OrderContext.Provider value={order}>
+      <WordsContext.Provider value={platformWords(t, platform)}>
+        {screenOf(screen)}
+      </WordsContext.Provider>
+    </OrderContext.Provider>
   );
 
   function screenOf(screen: Screen) {
@@ -274,6 +310,14 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
         return <Models {...props} secondListen={secondListen} />;
       case "plex":
         return <Plex {...props} />;
+      case "permissions":
+        return (
+          <Permissions
+            {...props}
+            permissions={permissions}
+            pass={dir === 1 ? props.next : props.back}
+          />
+        );
       case "install":
         return <Install {...props} />;
       case "starting":
@@ -981,6 +1025,50 @@ function Plex({ api, step, next, back }: StepProps) {
           {t("setup.plex.signIn")}
         </Button>
       )}
+    </Frame>
+  );
+}
+
+/** What macOS keeps until the user allows it, before the server first starts:
+ * each item's why, state, its System Settings pane and the steps, checked again
+ * when the window comes back. Nothing to show (not a Mac, an older shell): the
+ * screen passes the user on. */
+function Permissions({
+  step,
+  next,
+  back,
+  pass,
+  permissions,
+}: StepProps & { permissions: PermissionsApi; pass: () => void }) {
+  const { t } = useI18n();
+  const { report, failed, refresh } = usePermissions(permissions);
+  const passRef = useRef(pass);
+  passRef.current = pass;
+  const empty = failed || (report !== null && report.items.length === 0);
+  useEffect(() => {
+    if (empty) passRef.current();
+  }, [empty]);
+  if (!report || empty) return null;
+  return (
+    <Frame
+      title={t("perm.title")}
+      step={step}
+      onBack={back}
+      next={
+        <Button
+          type="button"
+          onClick={() => {
+            // shown: the reminder later says only what is still off
+            permissions.markSeen().catch(() => {});
+            next();
+          }}
+        >
+          {t("setup.next")}
+        </Button>
+      }
+    >
+      <PermissionList report={report} api={permissions} onRecheck={refresh} />
+      <p className="mkt-setup__note">{t("perm.setupLater")}</p>
     </Frame>
   );
 }

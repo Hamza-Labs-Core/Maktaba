@@ -16,6 +16,7 @@ struct PlayerApp: App {
                 LibraryBrowser(session: session, user: user, client: client, playing: $playing)
             }
             .maktabaTheme(theme, forceDark: playing)
+            .permissionsWalkthrough()
         }
         #if os(macOS)
         .defaultSize(width: 1200, height: 780)

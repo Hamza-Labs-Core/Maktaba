@@ -229,6 +229,7 @@ export const SYSTEM_HEALTH_KINDS = [
   "tv_change",
   "tv_slot",
   "tv_tuner",
+  "host_access",
 ] as const;
 
 export function systemHealthHelp(kind: string): HelpRef {
