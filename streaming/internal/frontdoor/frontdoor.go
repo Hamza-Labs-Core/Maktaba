@@ -25,6 +25,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/placement"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/viewing"
 )
 
 // Handler is the front door.
@@ -39,8 +40,11 @@ type Handler struct {
 	Engine  *channel.Engine
 	Keyring *cluster.Keyring
 	Tracker *Tracker
-	Client  *http.Client
-	Logger  *slog.Logger
+	// Viewings, when set, records who watches (Epic 44 story 44.4): each channel
+	// segment served moves its viewer's viewing on.
+	Viewings *viewing.Tracker
+	Client   *http.Client
+	Logger   *slog.Logger
 	// Metrics, when set, counts the bytes forwarded from nodes.
 	Bytes func(n int64)
 	// SpliceRetry is the pause between two attempts to reach a channel's source
@@ -200,6 +204,9 @@ func (h *Handler) serveSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.Tracker.TouchHLS(id, r)
+	sw := &segmentWriter{ResponseWriter: w}
+	defer h.segmentServed(id, r, sw)
+	w = sw
 	// a segment costs no query while the placement is cached (AC7)
 	p, ok := h.Svc.Cached(id)
 	if !ok {
@@ -278,6 +285,59 @@ func (h *Handler) forward(ctx context.Context, p placement.Placement, path strin
 		h.Svc.Hosts.OK(p.Host)
 	}
 	return resp, nil
+}
+
+// segmentWriter keeps a segment answer's status (a viewing counts a served one).
+type segmentWriter struct {
+	http.ResponseWriter
+	code int
+}
+
+func (w *segmentWriter) WriteHeader(code int) {
+	if w.code == 0 {
+		w.code = code
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *segmentWriter) Write(b []byte) (int, error) {
+	if w.code == 0 {
+		w.code = http.StatusOK
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// Flush passes through (segments are copied with a flush after each write).
+func (w *segmentWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap is the writer underneath (http.ResponseController).
+func (w *segmentWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// segmentServed records a segment served (or redirected to its node) for the
+// request's viewer; a failed one counts for no one.
+func (h *Handler) segmentServed(ch uuid.UUID, r *http.Request, w *segmentWriter) {
+	if h.Viewings == nil {
+		return
+	}
+	if w.code >= 200 && w.code < 300 || w.code == http.StatusTemporaryRedirect {
+		h.Viewings.Segment(ch, viewing.FromRequest(r))
+	}
+}
+
+// ChannelViewers is every channel's viewers now: its TS clients (tuners, live.ts)
+// and its app viewings (HLS). The front door sees every viewer of the home's
+// channels, wherever they encode, so it writes channel_runtime.viewer_count
+// (the engines behind it leave the column alone: channel.PGRepo.KeepViewers).
+func (h *Handler) ChannelViewers() map[uuid.UUID]int {
+	out := h.Tracker.TSClients()
+	for ch, n := range h.Viewings.AppViewers() {
+		out[ch] += n
+	}
+	return out
 }
 
 func (h *Handler) fail(p placement.Placement) {

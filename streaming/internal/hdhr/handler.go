@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -42,8 +43,17 @@ type Handler struct {
 	// PublicBase (MAKTABA_PUBLIC_BASE_URL) overrides the request-derived
 	// base in discover/lineup URLs, e.g. "http://192.168.1.10:8781".
 	PublicBase string
+	// Viewings, when set, records each tuner stream (Epic 44 story 44.4): a
+	// viewing from its start to its end, and the lease for the tuner page.
+	Viewings TunerViewings
 
 	leases *leaseRegistry
+}
+
+// TunerViewings records tuner streams (viewing.Tracker): OpenTuner when one
+// starts; the returned func when it ends.
+type TunerViewings interface {
+	OpenTuner(channelID uuid.UUID, clientAddr string) func()
 }
 
 // New builds a Handler with a tuner-lease registry sized to the device's
@@ -180,11 +190,23 @@ func (h *Handler) Auto(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "video/mp2t")
 	w.WriteHeader(http.StatusOK)
+	if h.Viewings != nil {
+		defer h.Viewings.OpenTuner(target.ID, clientAddr(r.RemoteAddr))()
+	}
 	// Blocks until the source ends or the consumer disconnects (ctx done).
 	if err := h.Streamer.StreamChannelTS(r.Context(), target.ID, w); err != nil && r.Context().Err() == nil {
 		slog.Warn("hdhr: channel stream ended with an error", "channel_id", target.ID.String(),
 			"number", target.Number, "err", err.Error(), "event", "hdhr_stream_failed")
 	}
+}
+
+// clientAddr is the tuner client's address without its port (Plex's server: it
+// connects to this port itself).
+func clientAddr(remote string) string {
+	if host, _, err := net.SplitHostPort(remote); err == nil {
+		return host
+	}
+	return remote
 }
 
 // parseChannelParam strips an optional "v" prefix and parses the number.

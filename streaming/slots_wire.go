@@ -132,9 +132,14 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 	// (and the automatic rollback) write for this host
 	b.bg.Go(slots.RunOps)
 
+	// Epic 44 story 44.4: who watches, and every channel's viewers (the slots'
+	// engines leave viewer_count to this count: cmd_slot.go)
+	viewings := b.newViewings()
 	fd := &frontdoor.Handler{Svc: svc, Settings: csettings, Self: ident.ID, Keyring: keyring, Tracker: tracker,
 		Logger: logger, Slots: slots, CacheRoot: b.cfg.Cache.Root,
-		PublicBase: publicBase, Client: linkClient(b.pool)}
+		PublicBase: publicBase, Client: linkClient(b.pool), Viewings: viewings}
+	viewings.Viewers = fd.ChannelViewers
+	b.bg.Go(viewings.Run)
 
 	liveStations := func() []uuid.UUID { return slots.LiveStations() }
 	b.loop = &cluster.HostLoop{Store: cluster.PGBeatStore{Pool: b.pool}, HostID: ident.ID, Keyring: keyring, Logger: logger,
@@ -182,6 +187,7 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 	hdhrRepo := hdhr.NewPGRepo(b.pool)
 	hdhrHandler := hdhr.New(hdhrRepo, fd)
 	hdhrHandler.PublicBase = publicBase
+	hdhrHandler.Viewings = viewings
 	mounts = append(mounts, hdhrHandler.Mount)
 	guideHandler := b.newGuideHandler(hdhrRepo, publicBase, nil)
 	assets.Guide = guideHandler // the guide's images for the nodes

@@ -21,6 +21,7 @@ type streamBackend struct {
 	paths   []string
 	cookies []string
 	authz   []string
+	viewers []string
 }
 
 func (b *streamBackend) server(t *testing.T) *httptest.Server {
@@ -29,6 +30,7 @@ func (b *streamBackend) server(t *testing.T) *httptest.Server {
 		b.paths = append(b.paths, r.URL.Path)
 		b.cookies = append(b.cookies, r.Header.Get("Cookie"))
 		b.authz = append(b.authz, r.Header.Get("Authorization"))
+		b.viewers = append(b.viewers, r.Header.Get(viewerHeader))
 		b.mu.Unlock()
 		_, _ = io.WriteString(w, "ok:"+r.URL.Path)
 	}))
@@ -224,6 +226,48 @@ func TestStreamGateSlotSegments(t *testing.T) {
 	}
 	if rec := get(mux, "/stream/channel/"+chanID+"/s/blue/seg-1.ts", nil); rec.Code != http.StatusUnauthorized {
 		t.Errorf("anonymous: %d, want 401", rec.Code)
+	}
+}
+
+// Epic 44 story 44.4: the streaming service learns who watches from the gate
+// (X-Maktaba-Viewer: the session's user_id), also from a cached session; one a
+// client sent never passes, signed in or not.
+func TestStreamGateNamesTheViewer(t *testing.T) {
+	mux, be, _, _ := webMux(t)
+	seg := "/stream/channel/" + chanID + "/seg-1.ts"
+	forged := map[string]string{"Cookie": "mkt_sess=good", viewerHeader: "someone-else"}
+	for i := 0; i < 2; i++ { // the API's answer, then the cached one
+		if rec := get(mux, seg, forged); rec.Code != 200 {
+			t.Fatalf("fetch %d: %d", i, rec.Code)
+		}
+	}
+	if rec := get(mux, seg, map[string]string{"Cookie": "mkt_sess=admin"}); rec.Code != 200 {
+		t.Fatalf("admin: %d", rec.Code)
+	}
+	if rec := get(mux, seg, map[string]string{viewerHeader: "u"}); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous with the header: %d", rec.Code)
+	}
+	be.mu.Lock()
+	defer be.mu.Unlock()
+	if len(be.viewers) != 3 || be.viewers[0] != "u" || be.viewers[1] != "u" || be.viewers[2] != "a" {
+		t.Fatalf("viewers reaching streaming: %q", be.viewers)
+	}
+}
+
+// A node's web port sends live TV to the home's front door: no session and no
+// viewer header leave the machine (the home trusts that header only from its own gate).
+func TestHomeStreamProxyStripsTheSession(t *testing.T) {
+	be := &streamBackend{}
+	bs := be.server(t)
+	p := homeStreamProxy(bs.URL)
+	hdr := map[string]string{"Cookie": "mkt_sess=good", "Authorization": "Bearer good", viewerHeader: "u"}
+	if rec := get(p, "/stream/channel/"+chanID+"/seg-1.ts", hdr); rec.Code != 200 {
+		t.Fatalf("proxied: %d", rec.Code)
+	}
+	be.mu.Lock()
+	defer be.mu.Unlock()
+	if be.cookies[0] != "" || be.authz[0] != "" || be.viewers[0] != "" {
+		t.Fatalf("reached the home with %q %q %q", be.cookies[0], be.authz[0], be.viewers[0])
 	}
 }
 
