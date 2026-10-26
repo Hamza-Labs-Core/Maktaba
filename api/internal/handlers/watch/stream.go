@@ -170,6 +170,10 @@ func (f *flexTime) parse(s string) error {
 // HashIP returns a salted, truncated SHA-256 of the client's address (D4). The
 // router runs chi's RealIP, so RemoteAddr is the resolved source.
 func HashIP(salt string, r *http.Request) string {
+	if salt == "" {
+		// unsalted, an address's hash is no secret (every IPv4 address can be tried)
+		return ""
+	}
 	ip := r.RemoteAddr
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		ip = host

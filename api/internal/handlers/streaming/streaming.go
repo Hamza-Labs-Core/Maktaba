@@ -149,7 +149,10 @@ var errNotInCatalog = errors.New("streaming: video not in this machine's catalog
 // Handler bundles deps. Service is mandatory in production; tests can
 // inject a fake. NowFunc / TTL are testable.
 type Handler struct {
-	DB         *sql.DB
+	DB *sql.DB
+	// IPSalt salts the viewer's address hashed into a play's record (the home's
+	// secret, router.AnalyticsSalt); empty keeps no hash.
+	IPSalt     string
 	Service    SessionService
 	Signer     URLSigner
 	SessionTTL time.Duration
@@ -740,7 +743,7 @@ func (h *Handler) PostProgress(w http.ResponseWriter, r *http.Request) {
 	if err := watch.RecordStreamProgress(r.Context(), h.DB, watch.StreamProgress{
 		StreamSessionID: sessionID, UserID: ownerID, VideoID: videoID,
 		PositionSec: req.PositionSec, VideoDurationSec: duration.Float64, Completed: completed,
-		Client: client.From(r.Context()), IPHash: watch.HashIP("", r), Now: h.now(),
+		Client: client.From(r.Context()), IPHash: watch.HashIP(h.IPSalt, r), Now: h.now(),
 	}); err != nil {
 		mlog.From(r.Context()).Warn("play not recorded",
 			"session_id", sessionID, "err", err.Error(), "event", "stream_play_record_failed")

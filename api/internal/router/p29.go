@@ -17,12 +17,14 @@
 package router
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/analytics"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 )
 
@@ -37,6 +39,10 @@ type P29Deps struct {
 	// License gates advanced analytics (Epic 16 story 16.2). Nil ⇒
 	// ungated (tests).
 	License *subscriptions.StoreRef
+
+	// Secrets holds the home's salt for the viewers' addresses (AnalyticsSalt). Nil:
+	// no address is hashed.
+	Secrets secrets.Store
 }
 
 // MountP29 attaches the Epic 29 route handlers onto r. Safe to skip when
@@ -45,7 +51,11 @@ func MountP29(r chi.Router, d P29Deps) {
 	if d.DB == nil {
 		return
 	}
-	(&watch.Handler{DB: d.DB}).Mount(r)
+	salt := ""
+	if d.Secrets != nil {
+		salt = AnalyticsSalt(context.Background(), d.Secrets, nil)
+	}
+	(&watch.Handler{DB: d.DB, IPSalt: salt}).Mount(r)
 	ah := &analytics.Handler{DB: d.DB, Driver: d.Driver}
 	if d.License != nil {
 		ah.Advanced = func() (bool, string) {

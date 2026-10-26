@@ -294,6 +294,16 @@ func TestPGUsagePerApp(t *testing.T) {
 	if _, err := e.db.Exec(`INSERT INTO api_usage_people_daily (day, client_app, user_id) VALUES (CURRENT_DATE - 400, 'web', $1)`, acOther); err != nil {
 		t.Fatal(err)
 	}
+	// and an ended Live TV viewing that old; an open one stays (its viewer is still there)
+	if _, err := e.db.Exec(`INSERT INTO channels (id, number, name, slug, mode)
+		VALUES ('0c0c0c0c-0000-4000-8000-000000000001', 901, 'Old', 'old', 'shuffle')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.db.Exec(`INSERT INTO tv_watch_sessions (channel_id, surface, started_at, last_seen_at, ended_at)
+		VALUES ('0c0c0c0c-0000-4000-8000-000000000001', 'tuner', now() - interval '400 days', now() - interval '400 days', now() - interval '400 days'),
+		       ('0c0c0c0c-0000-4000-8000-000000000001', 'tuner', now() - interval '400 days', now(), NULL)`); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := (&watch.Reaper{DB: e.db, RetentionDays: 365}).RunOnce(ctx, true); err != nil {
 		t.Fatal(err)
 	}
@@ -301,6 +311,11 @@ func TestPGUsagePerApp(t *testing.T) {
 	if err := e.db.QueryRow(`SELECT (SELECT count(*) FROM api_usage_daily WHERE day < CURRENT_DATE - 365) +
 		(SELECT count(*) FROM api_usage_people_daily WHERE day < CURRENT_DATE - 365)`).Scan(&old); err != nil || old != 0 {
 		t.Fatalf("rows past retention: %d (%v)", old, err)
+	}
+	var viewings int
+	if err := e.db.QueryRow(`SELECT count(*) FROM tv_watch_sessions WHERE started_at < now() - interval '365 days'`).
+		Scan(&viewings); err != nil || viewings != 1 {
+		t.Fatalf("old viewings left: %d (%v), want the open one only", viewings, err)
 	}
 	if err := e.db.QueryRow(`SELECT count(*) FROM api_usage_daily WHERE day = $1`, today).Scan(&requests); err != nil || requests == 0 {
 		t.Fatalf("today's rows went with the purge: %d (%v)", requests, err)

@@ -142,14 +142,22 @@ func (r *repo) reapStale(ctx context.Context, cutoff time.Time) (int64, error) {
 }
 
 // purgeOlderThan deletes sessions started before cutoff (retention,
-// Story 29.6). Returns the number deleted.
+// Story 29.6), and the ended Live TV viewings too (Epic 44). Returns the number
+// deleted.
 func (r *repo) purgeOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
-	res, err := r.db.ExecContext(ctx,
-		`DELETE FROM watch_sessions WHERE started_at < $1`, cutoff)
-	if err != nil {
-		return 0, err
+	var n int64
+	for _, q := range []string{
+		`DELETE FROM watch_sessions WHERE started_at < $1`,
+		`DELETE FROM tv_watch_sessions WHERE started_at < $1 AND ended_at IS NOT NULL`,
+	} {
+		res, err := r.db.ExecContext(ctx, q, cutoff)
+		if err != nil {
+			return n, err
+		}
+		got, _ := res.RowsAffected()
+		n += got
 	}
-	return res.RowsAffected()
+	return n, nil
 }
 
 // ─── history (Story 29.2) ──────────────────────────────────────────────
