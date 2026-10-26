@@ -58,6 +58,20 @@ func TestTheRelayRunsOnTheHomeWithItsCredentials(t *testing.T) {
 	}
 }
 
+// The relay reaches the whole home (web UI, /api, /stream/) through the web port on
+// loopback; the API port only on a machine with no web UI.
+func TestTheRelayReachesTheWebPort(t *testing.T) {
+	cfg := relayHome(t)
+	cfg.Server.WebListen = "0.0.0.0:8099"
+	if got := envMap(relayEnv(cfg, "k"))["MAKTABA_LOCAL_API"]; got != "http://127.0.0.1:8099" {
+		t.Fatalf("MAKTABA_LOCAL_API = %q, want the web port", got)
+	}
+	cfg.Server.WebListen = ""
+	if got := envMap(relayEnv(cfg, "k"))["MAKTABA_LOCAL_API"]; got != "http://127.0.0.1:8082" {
+		t.Fatalf("MAKTABA_LOCAL_API with no web UI = %q, want the API port", got)
+	}
+}
+
 // The agent's key is made once (0600) and kept; it reaches this machine's API on
 // loopback; the claim goes to its first run only.
 func TestTheRelaysEnvironment(t *testing.T) {

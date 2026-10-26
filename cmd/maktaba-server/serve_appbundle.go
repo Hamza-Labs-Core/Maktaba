@@ -480,7 +480,7 @@ func (g *migrationGate) dump(ctx context.Context, from, to string) (string, erro
 // reportDumpSize says how much of the dump is written, every dumpReportEvery while it
 // is taken: the update's watch sees the step make progress (a dump that stops growing is
 // stuck). The func it returns stops it.
-func (g *migrationGate) reportDumpSize(ctx context.Context, from, to string, report func(supervisor.Detail)) func() {
+func (g *migrationGate) reportDumpSize(ctx context.Context, from, to string, expect int64, report func(supervisor.Detail)) func() {
 	part := filepath.Join(g.backups(), pgbundle.UpdateDumpName(from, to)) + ".partial"
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -501,10 +501,33 @@ func (g *migrationGate) reportDumpSize(ctx context.Context, from, to string, rep
 			}
 			said = st.Size()
 			report(detail("db_dumping", fmt.Sprintf("Saving the library database before the update to %s (%d MB so far)",
-				to, said>>20), from, to))
+				to, said>>20), from, to, said>>20, expect))
 		}
 	}()
 	return func() { cancel(); <-done }
+}
+
+// expectedDumpMB is how big this dump will likely be: the newest finished dump in the
+// backups (a nightly one or the last update's), in MB; 0 when there is none. The
+// starting screen shows the dump's progress against it.
+func expectedDumpMB(dir string) int64 {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	var newest time.Time
+	var size int64
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".dump") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || !info.ModTime().After(newest) {
+			continue
+		}
+		newest, size = info.ModTime(), info.Size()
+	}
+	return size >> 20
 }
 
 // endSessions ends the other client sessions on the database before an update's
@@ -720,8 +743,10 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		update.From = held
 		g.attempt(held, func(a *attempts.Attempt) { a.Step = "dump" })
 		if g.keeps() {
-			report(detail("db_dumping", fmt.Sprintf("Saving the library database before the update to %s", cur), held, cur))
-			stop := g.reportDumpSize(ctx, held, cur, report)
+			expect := expectedDumpMB(g.backups())
+			report(detail("db_dumping", fmt.Sprintf("Saving the library database before the update to %s", cur),
+				held, cur, 0, expect))
+			stop := g.reportDumpSize(ctx, held, cur, expect, report)
 			dump, err := g.dump(ctx, held, cur)
 			stop()
 			if err != nil {

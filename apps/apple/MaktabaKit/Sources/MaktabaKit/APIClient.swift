@@ -9,7 +9,7 @@ public enum APIError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case let .transport(why): "Could not reach the home: \(why)"
-        case let .status(code, body): "The home answered \(code): \(body)"
+        case let .status(code, body): "The home answered \(code): \(body.prefix(300))"
         case let .decoding(why): "Unexpected answer from the home: \(why)"
         case .signedOut: "Signed out. Sign in again."
         }
@@ -158,6 +158,52 @@ public actor APIClient {
         try await sendRaw(request("GET", "/api/videos/\(video)/poster"))
     }
 
+    /// The home screen's rails (`GET /api/recommendations`): continue watching first.
+    public func recommendations(surface: String = "tv-home") async throws -> [Rail] {
+        let r: Recommendations = try await get("/api/recommendations", query: ["surface": surface, "limit": "20"])
+        return r.rails
+    }
+
+    // MARK: sign-in by code (a TV)
+
+    /// Asks the home for a code to show (`POST /api/pairing/device`). nil: this home signs
+    /// in by password only (one from before codes answers 401 or 404).
+    public func startDevicePairing() async throws -> DevicePairing? {
+        do {
+            return try await send(request("POST", "/api/pairing/device"), authorized: false)
+        } catch let APIError.status(code, _) where code == 401 || code == 404 || code == 405 {
+            return nil
+        }
+    }
+
+    /// Asks whether the code was approved; once it is, this device is signed in as the
+    /// person who approved it (the tokens are kept, as after `signIn`).
+    public func collectDevicePairing(_ p: DevicePairing, label: String) async throws -> DevicePairing.State {
+        var r = request("POST", "/api/pairing/device/token", body: ["device_code": p.deviceCode, "device_label": label])
+        r.timeoutInterval = 15
+        let data: Data, response: URLResponse
+        do {
+            (data, response) = try await session.data(for: r)
+        } catch {
+            throw APIError.transport(error.localizedDescription)
+        }
+        switch (response as? HTTPURLResponse)?.statusCode ?? 0 {
+        case 200:
+            do {
+                tokens.save(try JSONDecoder().decode(AuthTokens.self, from: data))
+            } catch {
+                throw APIError.decoding(String(describing: error))
+            }
+            return .approved
+        case 202, 429:
+            return .waiting
+        case 409, 410:
+            return .expired
+        case let code:
+            throw APIError.status(code, String(decoding: data.prefix(4096), as: UTF8.self))
+        }
+    }
+
     // MARK: remote (home admins; the home refuses anyone else)
 
     public func needsAttention() async throws -> [FailureGroup] {
@@ -166,10 +212,66 @@ public actor APIClient {
     }
 
     public func retry(stage: String, cause: String) async throws {
-        _ = try await sendRaw(request("POST", "/api/queues/\(stage)/retry", body: ["cause": cause]))
+        _ = try await sendRaw(request("POST", "/api/queues/\(Self.segment(stage))/retry", body: ["cause": cause]))
+    }
+
+    /// The processing queue: every stage, its counts, paused or not.
+    public func queues() async throws -> QueueSnapshot {
+        try await get("/api/queues")
+    }
+
+    /// One stage's failed jobs, grouped by cause.
+    public func failures(stage: String) async throws -> [FailureGroup] {
+        let r: FailureGroups = try await get("/api/queues/\(Self.segment(stage))/failures")
+        return r.groups
+    }
+
+    /// Pauses or resumes one stage (its running jobs finish; nothing new starts).
+    public func setPaused(stage: String, _ paused: Bool) async throws {
+        _ = try await sendRaw(request("POST", "/api/queues/\(Self.segment(stage))/\(paused ? "pause" : "resume")"))
+    }
+
+    /// Pauses or resumes every stage at once.
+    public func setPausedAll(_ paused: Bool) async throws {
+        _ = try await sendRaw(request("POST", paused ? "/api/queues/pause-all" : "/api/queues/resume-all"))
+    }
+
+    /// Looks for new and changed files in a library (the home answers 202 and scans).
+    public func scan(library: String) async throws {
+        _ = try await sendRaw(request("POST", "/api/libraries/\(Self.segment(library))/scan"))
+    }
+
+    /// The home and its machines.
+    public func cluster() async throws -> ClusterOverview {
+        try await get("/api/cluster")
+    }
+
+    /// Lets machines ask to join for the next hour, or stops them.
+    public func setAcceptJoins(_ open: Bool) async throws {
+        _ = try await sendRaw(request("PUT", "/api/cluster/settings", body: ["accept_joins": open]))
+    }
+
+    /// Approves a machine's request with the code it shows (a wrong code answers 400
+    /// `wrong_code` with `attempts_left`; see `APIError.problem`).
+    public func approve(machine: String, code: String) async throws {
+        _ = try await sendRaw(request("POST", "/api/cluster/nodes/\(Self.segment(machine))/approve", body: ["code": code]))
+    }
+
+    public func reject(machine: String) async throws {
+        _ = try await sendRaw(request("POST", "/api/cluster/nodes/\(Self.segment(machine))/reject"))
+    }
+
+    /// Lets an approved machine go: it stops working for the home at once.
+    public func revoke(machine: String) async throws {
+        _ = try await sendRaw(request("POST", "/api/cluster/nodes/\(Self.segment(machine))/revoke"))
     }
 
     // MARK: plumbing
+
+    /// An id or stage name as one path segment (a "/" in it cannot reach another route).
+    static func segment(_ s: String) -> String {
+        s.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_."))) ?? s
+    }
 
     func get<T: Decodable>(_ path: String, query: [String: String] = [:]) async throws -> T {
         try await send(request("GET", path, query: query))
@@ -194,7 +296,7 @@ public actor APIClient {
     private func send<T: Decodable>(_ r: URLRequest, authorized: Bool = true) async throws -> T {
         let data = try await sendRaw(r, authorized: authorized)
         do {
-            return try JSONDecoder().decode(T.self, from: data)
+            return try JSONDecoder.home.decode(T.self, from: data)
         } catch {
             throw APIError.decoding(String(describing: error))
         }
@@ -221,7 +323,7 @@ public actor APIClient {
             throw APIError.signedOut
         }
         guard (200..<300).contains(code) else {
-            throw APIError.status(code, String(decoding: data.prefix(300), as: UTF8.self))
+            throw APIError.status(code, String(decoding: data.prefix(4096), as: UTF8.self))
         }
         return data
     }

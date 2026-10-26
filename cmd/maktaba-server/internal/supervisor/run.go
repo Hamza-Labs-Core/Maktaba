@@ -608,12 +608,18 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	next := now.Add(delay)
 	c.status.State = state
 	c.status.NextRestartAt = &next
+	var failedEv *Event
+	if state == StateFailed && !wasFailed {
+		// recorded with the state: a snapshot never shows "failed" without its event
+		e := s.recordLocked(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: info.Reason,
+			DelaySec: delay.Seconds(), Message: fmt.Sprintf("%d exits in %s", s.policy.MaxRestarts, s.policy.Window)})
+		failedEv = &e
+	}
 	s.mu.Unlock()
 
 	if state == StateFailed {
-		if !wasFailed {
-			s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: info.Reason, DelaySec: delay.Seconds(),
-				Message: fmt.Sprintf("%d exits in %s", s.policy.MaxRestarts, s.policy.Window)})
+		if failedEv != nil {
+			s.publish(*failedEv)
 		}
 		s.errorf("%s exited (pid %d, %s); crash loop: %d exits in %s, marked failed, retrying in %s",
 			c.proc.Name(), info.PID, describeExit(info), s.policy.MaxRestarts, s.policy.Window, delay)
@@ -833,6 +839,14 @@ func (s *Supervisor) exitInfo(c *child, cmd *exec.Cmd, waitErr error, startedAt 
 
 func (s *Supervisor) emit(e Event) {
 	s.mu.Lock()
+	e = s.recordLocked(e)
+	s.mu.Unlock()
+	s.publish(e)
+}
+
+// recordLocked adds e to the events (s.mu held): with the state change it explains, in
+// one step, so no snapshot shows the one without the other. publish writes it out.
+func (s *Supervisor) recordLocked(e Event) Event {
 	s.seq++
 	e.Seq = s.seq
 	if e.At.IsZero() {
@@ -842,6 +856,12 @@ func (s *Supervisor) emit(e Event) {
 	if len(s.events) > maxEvents {
 		s.events = append([]Event(nil), s.events[len(s.events)-maxEvents:]...)
 	}
+	return e
+}
+
+// publish writes a recorded event to the event log (s.mu not held).
+func (s *Supervisor) publish(e Event) {
+	s.mu.Lock()
 	sink := s.sink
 	s.mu.Unlock()
 	if sink != nil {

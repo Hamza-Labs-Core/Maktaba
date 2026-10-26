@@ -1,21 +1,33 @@
-// Package billing (handlers) wires the billing HTTP surface:
+// Package billing (handlers) wires the billing HTTP surface
+// (docs/accounts-billing-admin.md):
 //
-//	POST /v1/billing/checkout    — start a Stripe checkout
-//	POST /v1/billing/webhook     — receive Stripe webhooks
-//	GET  /v1/billing/plans       — plan comparison
-//	GET  /v1/billing/me          — current subscription state
+//	GET  /v1/billing/plans        — plan comparison (public)
+//	GET  /v1/billing/me           — current subscription state
+//	POST /v1/billing/checkout     — start a Stripe checkout
+//	POST /v1/billing/portal       — open the Stripe customer portal
+//	GET  /v1/billing/usage        — this month's relay bandwidth
+//	POST /v1/billing/webhook      — Stripe webhooks (webhook.go)
 package billing
 
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/abuse"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/audit"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/sessions"
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/entitlement"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/license"
+	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
@@ -24,29 +36,44 @@ type Deps struct {
 	DB                 *sql.DB
 	Stripe             *billingpkg.StripeClient
 	Users              *stores.Users
+	Sessions           *sessions.Store
+	Abuse              *abuse.Detector
+	Audit              *audit.Log
+	Mailer             mailpkg.Mailer
+	Logger             *slog.Logger
+	Entitlements       *entitlement.Signer // nil: entitlement endpoints answer 503
 	WebhookSecret      string
-	PublicURL          string
+	WebURL             string
 	PriceIDProMonth    string
 	PriceIDFamilyMonth string
+	Now                func() time.Time
 }
 
-func Mount(r interface {
-	Get(pattern string, h http.HandlerFunc)
-	Post(pattern string, h http.HandlerFunc)
-}, d Deps) {
+func (d *Deps) now() time.Time {
+	if d.Now != nil {
+		return d.Now()
+	}
+	return time.Now()
+}
+
+// MountPublic registers the routes that need no bearer token: the plan
+// catalog, the entitlement verification key, and the Stripe webhook
+// (Stripe does not carry our token; it is authenticated by signature).
+func MountPublic(r chi.Router, d *Deps) {
 	r.Get("/v1/billing/plans", d.Plans)
+	r.Get("/.well-known/maktaba-entitlement-key", d.EntitlementKey)
+	r.Post("/v1/billing/webhook", d.Webhook)
+}
+
+// Mount registers the account routes inside the bearer-token group.
+func Mount(r chi.Router, d *Deps) {
 	r.Get("/v1/billing/me", d.Me)
 	r.Post("/v1/billing/checkout", d.Checkout)
-	// NOTE: /v1/billing/webhook is intentionally NOT registered here.
-	// Stripe does not carry our bearer token, so the webhook must be
-	// mounted OUTSIDE the RequireUser group (see cmd/maktaba-cloud/
-	// role_api.go). Registering it here too previously relied on chi's
-	// last-registration-wins behaviour to dodge the auth middleware — a
-	// reorder would have silently routed Stripe through RequireUser → 401.
+	r.Post("/v1/billing/portal", d.Portal)
+	r.Get("/v1/billing/usage", d.Usage)
 }
 
-// Plans returns the static catalog from billing.Tiers. We deliberately
-// surface a public-friendly subset and omit internal-only fields.
+// Plans returns the static catalog from billing.Tiers.
 func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 	type viewTier struct {
 		ID          string `json:"id"`
@@ -58,6 +85,10 @@ func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 		RelayQoS    string `json:"relay_qos"`
 		Transcoding bool   `json:"includes_transcoding"`
 		FamilySeats int    `json:"family_seats"`
+		Purchasable bool   `json:"purchasable"`
+		// HomeTier is the plan the license gives the owner's homes
+		// (Epic 16: home or pro; "" for free).
+		HomeTier string `json:"home_tier"`
 	}
 	out := []viewTier{}
 	for _, id := range []string{billingpkg.PlanFree, billingpkg.PlanPro, billingpkg.PlanFamily} {
@@ -67,79 +98,151 @@ func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 			Bandwidth: t.BandwidthBytesPerMo, MaxServers: t.MaxServers,
 			MaxStreams: t.MaxConcurrentStreams, RelayQoS: t.RelayQoS,
 			Transcoding: t.IncludesTranscoding, FamilySeats: t.FamilySeats,
+			Purchasable: d.Stripe.Configured() && d.priceFor(id) != "",
+			HomeTier:    license.TierForPlan(id),
 		})
 	}
-	writeJSON(w, 200, map[string]any{"plans": out})
+	writeJSON(w, http.StatusOK, map[string]any{"plans": out})
+}
+
+type subRow struct {
+	Plan              string
+	Interval          sql.NullString
+	Status            string
+	CustomerID        sql.NullString
+	SubscriptionID    sql.NullString
+	CurrentPeriodEnd  sql.NullTime
+	CancelAtPeriodEnd bool
+}
+
+func (d *Deps) subscription(r *http.Request, uid string) (subRow, bool, error) {
+	var s subRow
+	err := d.DB.QueryRowContext(r.Context(), `
+        SELECT plan, interval, status, stripe_customer_id, stripe_subscription_id, current_period_end, cancel_at_period_end
+        FROM subscriptions WHERE user_id = $1
+    `, uid).Scan(&s.Plan, &s.Interval, &s.Status, &s.CustomerID, &s.SubscriptionID, &s.CurrentPeriodEnd, &s.CancelAtPeriodEnd)
+	if errors.Is(err, sql.ErrNoRows) {
+		return subRow{Plan: billingpkg.PlanFree, Status: "none"}, false, nil
+	}
+	return s, err == nil, err
 }
 
 type meView struct {
 	Plan              string     `json:"plan"`
 	Status            string     `json:"status"`
+	Interval          string     `json:"interval,omitempty"`
 	CurrentPeriodEnd  *time.Time `json:"current_period_end,omitempty"`
 	CancelAtPeriodEnd bool       `json:"cancel_at_period_end"`
+	HasCustomer       bool       `json:"has_customer"`
 }
 
+// Me reports the caller's subscription. Plan is the effective plan
+// (users.plan), which falls back to free when the subscription lapses.
 func (d *Deps) Me(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.GetUserID(r.Context())
-	if uid == "" {
-		writeErr(w, 401, "unauthorized", "")
+	u, err := d.Users.ByID(r.Context(), uid)
+	if err != nil {
+		d.fail(w, r, "load account", err)
 		return
 	}
-	var v meView
-	var end sql.NullTime
-	err := d.DB.QueryRowContext(r.Context(), `
-        SELECT plan, status, current_period_end, cancel_at_period_end
-        FROM subscriptions WHERE user_id = $1
-    `, uid).Scan(&v.Plan, &v.Status, &end, &v.CancelAtPeriodEnd)
-	if errors.Is(err, sql.ErrNoRows) {
-		v = meView{Plan: billingpkg.PlanFree, Status: "active"}
-	} else if err != nil {
-		writeErr(w, 500, "lookup_failed", err.Error())
+	s, _, err := d.subscription(r, uid)
+	if err != nil {
+		d.fail(w, r, "load subscription", err)
 		return
 	}
-	if end.Valid {
-		t := end.Time
+	v := meView{Plan: u.Plan, Status: s.Status, Interval: s.Interval.String,
+		CancelAtPeriodEnd: s.CancelAtPeriodEnd, HasCustomer: s.CustomerID.Valid}
+	if s.CurrentPeriodEnd.Valid {
+		t := s.CurrentPeriodEnd.Time
 		v.CurrentPeriodEnd = &t
 	}
-	writeJSON(w, 200, v)
+	writeJSON(w, http.StatusOK, v)
 }
 
 type checkoutReq struct {
 	Plan string `json:"plan"`
 }
 
+// liveStatuses keep a paid plan in force. A second checkout while one
+// of these holds would create a second subscription; the portal is
+// where an existing payer changes plan.
+var liveStatuses = map[string]bool{"active": true, "trialing": true, "past_due": true}
+
 // Checkout creates a Stripe Checkout session for the requested plan
-// and returns the redirect URL. The SPA then navigates the browser
-// there and Stripe drives the rest of the flow.
+// and returns the redirect URL.
 func (d *Deps) Checkout(w http.ResponseWriter, r *http.Request) {
-	uid := middleware.GetUserID(r.Context())
-	if uid == "" {
-		writeErr(w, 401, "unauthorized", "")
+	if !d.Stripe.Configured() {
+		writeErr(w, http.StatusServiceUnavailable, "billing_disabled", "billing is not configured")
 		return
 	}
+	uid := middleware.GetUserID(r.Context())
 	var req checkoutReq
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, 400, "invalid_body", err.Error())
+		writeErr(w, http.StatusBadRequest, "invalid_body", "request body is not valid JSON")
 		return
 	}
 	priceID := d.priceFor(req.Plan)
 	if priceID == "" {
-		writeErr(w, 422, "bad_plan", "")
+		writeErr(w, http.StatusUnprocessableEntity, "bad_plan", "")
 		return
 	}
 	u, err := d.Users.ByID(r.Context(), uid)
 	if err != nil {
-		writeErr(w, 500, "lookup_failed", err.Error())
+		d.fail(w, r, "load account", err)
 		return
 	}
-	success := d.PublicURL + "/account?billing=ok&session_id={CHECKOUT_SESSION_ID}"
-	cancel := d.PublicURL + "/account?billing=cancel"
-	sess, err := d.Stripe.CreateCheckoutSession(r.Context(), u.Email, priceID, success, cancel, uid)
+	s, _, err := d.subscription(r, uid)
 	if err != nil {
-		writeErr(w, 502, "stripe_failed", err.Error())
+		d.fail(w, r, "load subscription", err)
 		return
 	}
-	writeJSON(w, 200, map[string]string{"checkout_url": sess.URL, "session_id": sess.ID})
+	if s.SubscriptionID.Valid && liveStatuses[s.Status] {
+		writeErr(w, http.StatusConflict, "already_subscribed", "manage your plan from the billing portal")
+		return
+	}
+	params := billingpkg.CheckoutParams{
+		PriceID:    priceID,
+		SuccessURL: d.WebURL + "/billing?billing=ok&session_id={CHECKOUT_SESSION_ID}",
+		CancelURL:  d.WebURL + "/billing?billing=cancel",
+		UserID:     uid,
+	}
+	if s.CustomerID.Valid {
+		params.Customer = s.CustomerID.String
+	} else {
+		params.CustomerEmail = u.Email
+	}
+	sess, err := d.Stripe.CreateCheckoutSession(r.Context(), params)
+	if err != nil {
+		d.Logger.Error("billing: create checkout", "err", err)
+		writeErr(w, http.StatusBadGateway, "stripe_failed", "the payment provider is unavailable; try again")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"checkout_url": sess.URL, "session_id": sess.ID})
+}
+
+// Portal opens the Stripe customer portal for a returning payer.
+func (d *Deps) Portal(w http.ResponseWriter, r *http.Request) {
+	if !d.Stripe.Configured() {
+		writeErr(w, http.StatusServiceUnavailable, "billing_disabled", "billing is not configured")
+		return
+	}
+	s, _, err := d.subscription(r, middleware.GetUserID(r.Context()))
+	if err != nil {
+		d.fail(w, r, "load subscription", err)
+		return
+	}
+	if !s.CustomerID.Valid {
+		writeErr(w, http.StatusConflict, "no_customer", "there is no billing account yet; choose a plan first")
+		return
+	}
+	u, err := d.Stripe.CreatePortalSession(r.Context(), s.CustomerID.String, d.WebURL+"/billing")
+	if err != nil {
+		d.Logger.Error("billing: create portal", "err", err)
+		writeErr(w, http.StatusBadGateway, "stripe_failed", "the payment provider is unavailable; try again")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"portal_url": u})
 }
 
 func (d *Deps) priceFor(plan string) string {
@@ -153,130 +256,87 @@ func (d *Deps) priceFor(plan string) string {
 	}
 }
 
-// Webhook handles Stripe events. We verify the signature, dedupe by
-// event id, then mutate the subscription state.
-func (d *Deps) Webhook(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+// ServerUsage is one server's relayed bytes for a month.
+type ServerUsage struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	BytesIn  int64  `json:"bytes_in"`
+	BytesOut int64  `json:"bytes_out"`
+}
+
+// Usage reports this month's relayed bytes for the caller's servers,
+// against the plan's allowance. The relay's bandwidth meter flushes
+// into bandwidth_monthly; this reads it.
+func (d *Deps) Usage(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.GetUserID(r.Context())
+	u, err := d.Users.ByID(r.Context(), uid)
 	if err != nil {
-		writeErr(w, 400, "read_failed", err.Error())
+		d.fail(w, r, "load account", err)
 		return
 	}
-	if _, err := billingpkg.VerifyWebhookSignature(body, r.Header.Get("Stripe-Signature"), d.WebhookSecret, time.Now(), 5*time.Minute); err != nil {
-		writeErr(w, 400, "bad_signature", err.Error())
+	month := billingpkg.MonthStart(d.now())
+	servers, used, err := AccountUsage(r.Context(), d.DB, uid, month)
+	if err != nil {
+		d.fail(w, r, "load usage", err)
 		return
 	}
-	var ev struct {
-		ID   string          `json:"id"`
-		Type string          `json:"type"`
-		Data json.RawMessage `json:"data"`
+	tier, ok := billingpkg.Tiers[u.Plan]
+	if !ok {
+		tier = billingpkg.Tiers[billingpkg.PlanFree]
 	}
-	if err := json.Unmarshal(body, &ev); err != nil {
-		writeErr(w, 400, "bad_json", err.Error())
-		return
-	}
-	// Dedupe via PK on stripe_events.event_id.
-	if _, err := d.DB.ExecContext(r.Context(), `
-        INSERT INTO stripe_events (event_id, type, payload) VALUES ($1,$2,$3)
-        ON CONFLICT (event_id) DO NOTHING
-    `, ev.ID, ev.Type, ev.Data); err != nil {
-		writeErr(w, 500, "store_failed", err.Error())
-		return
-	}
-	if err := d.applyEvent(r.Context(), ev.Type, ev.Data); err != nil {
-		writeErr(w, 500, "apply_failed", err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusOK)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"month":       month.Format("2006-01"),
+		"plan":        u.Plan,
+		"limit_bytes": tier.BandwidthBytesPerMo,
+		"used_bytes":  used,
+		"servers":     servers,
+	})
 }
 
-// applyEvent is the small switch over the event types we care about.
-// We deliberately ignore everything else — Stripe sends many events
-// we don't need to act on, and silently 200ing them keeps the webhook
-// retries from filling our error logs.
-func (d *Deps) applyEvent(ctx context.Context, t string, raw json.RawMessage) error {
-	type subShape struct {
-		Object struct {
-			ID                string `json:"id"`
-			Customer          string `json:"customer"`
-			Status            string `json:"status"`
-			CancelAtPeriodEnd bool   `json:"cancel_at_period_end"`
-			CurrentPeriodEnd  int64  `json:"current_period_end"`
-			ClientReferenceID string `json:"client_reference_id"`
-			Items             struct {
-				Data []struct {
-					Price struct {
-						Lookup string `json:"lookup_key"`
-						Nick   string `json:"nickname"`
-					} `json:"price"`
-				} `json:"data"`
-			} `json:"items"`
-			Metadata map[string]string `json:"metadata"`
-		} `json:"object"`
+// AccountUsage sums an account's relayed bytes for a month, per server.
+// The admin console reads it too.
+func AccountUsage(ctx context.Context, db *sql.DB, uid string, month time.Time) ([]ServerUsage, int64, error) {
+	rows, err := db.QueryContext(ctx, `
+        SELECT s.id, s.name, COALESCE(b.bytes_in,0), COALESCE(b.bytes_out,0)
+        FROM servers s
+        LEFT JOIN bandwidth_monthly b ON b.server_id = s.id AND b.month = $2
+        WHERE s.owner_user_id = $1
+        ORDER BY s.created_at
+    `, uid, month)
+	if err != nil {
+		return nil, 0, err
 	}
-	switch t {
-	case "checkout.session.completed",
-		"customer.subscription.created",
-		"customer.subscription.updated",
-		"customer.subscription.deleted":
-		var s subShape
-		if err := json.Unmarshal(raw, &s); err != nil {
-			return err
+	defer rows.Close()
+	out := []ServerUsage{}
+	var total int64
+	for rows.Next() {
+		var s ServerUsage
+		if err := rows.Scan(&s.ID, &s.Name, &s.BytesIn, &s.BytesOut); err != nil {
+			return nil, 0, err
 		}
-		uid := s.Object.ClientReferenceID
-		if uid == "" {
-			uid = s.Object.Metadata["user_id"]
-		}
-		if uid == "" {
-			return nil // can't resolve user; let Stripe retry isn't useful here.
-		}
-		plan := planFromPriceNick(s.Object.Items.Data)
-		_, err := d.DB.ExecContext(ctx, `
-            INSERT INTO subscriptions (user_id, plan, stripe_customer_id, stripe_subscription_id, status, current_period_end, cancel_at_period_end, updated_at)
-            VALUES ($1,$2,$3,$4,$5,to_timestamp($6),$7,now())
-            ON CONFLICT (user_id) DO UPDATE SET
-                plan = EXCLUDED.plan,
-                stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, subscriptions.stripe_customer_id),
-                stripe_subscription_id = COALESCE(EXCLUDED.stripe_subscription_id, subscriptions.stripe_subscription_id),
-                status = EXCLUDED.status,
-                current_period_end = EXCLUDED.current_period_end,
-                cancel_at_period_end = EXCLUDED.cancel_at_period_end,
-                updated_at = now()
-        `, uid, plan, s.Object.Customer, s.Object.ID, s.Object.Status, s.Object.CurrentPeriodEnd, s.Object.CancelAtPeriodEnd)
-		if err != nil {
-			return err
-		}
-		// Mirror the plan to users.plan so the access token's `plan`
-		// claim is fresh on next refresh.
-		_, _ = d.DB.ExecContext(ctx, `UPDATE users SET plan = $2 WHERE id = $1`, uid, plan)
+		total += s.BytesIn + s.BytesOut
+		out = append(out, s)
 	}
-	return nil
+	return out, total, rows.Err()
 }
 
-// planFromPriceNick reads either the Stripe price's `lookup_key`
-// (preferred) or its `nickname` (fallback) and maps it to one of the
-// three canonical tier values: free / pro / family (architecture.md
-// §13.10). Interval (monthly/yearly) is tracked separately in the
-// `subscriptions.interval` column; the `plan` column only carries
-// the tier.
-func planFromPriceNick(items []struct {
-	Price struct {
-		Lookup string `json:"lookup_key"`
-		Nick   string `json:"nickname"`
-	} `json:"price"`
-}) string {
-	for _, it := range items {
-		nick := it.Price.Lookup
-		if nick == "" {
-			nick = it.Price.Nick
-		}
-		switch nick {
-		case "pro", "pro_monthly", "pro_yearly":
-			return billingpkg.PlanPro
-		case "family", "family_monthly", "family_yearly":
-			return billingpkg.PlanFamily
-		}
+// EntitlementKey publishes the license-signing key: the public half
+// release builds of the home embed (Epic 16 story 16.4).
+func (d *Deps) EntitlementKey(w http.ResponseWriter, _ *http.Request) {
+	if d.Entitlements == nil {
+		writeErr(w, http.StatusServiceUnavailable, "entitlement_disabled", "")
+		return
 	}
-	return billingpkg.PlanFree
+	writeJSON(w, http.StatusOK, map[string]string{
+		"fingerprint": d.Entitlements.Fp,
+		"public_key":  base64.StdEncoding.EncodeToString(d.Entitlements.Public()),
+		"algorithm":   "ed25519",
+	})
+}
+
+func (d *Deps) fail(w http.ResponseWriter, r *http.Request, what string, err error) {
+	d.Logger.Error("billing: "+what, "err", err, "request_id", middleware.GetRequestID(r.Context()))
+	writeErr(w, http.StatusInternalServerError, "internal_error", "")
 }
 
 func writeJSON(w http.ResponseWriter, code int, body any) {

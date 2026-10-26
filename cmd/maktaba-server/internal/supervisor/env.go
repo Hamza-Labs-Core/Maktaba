@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 )
 
@@ -131,6 +132,14 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		add("MAKTABA_SECRETS_KEY", SecretsKeyPath())
 	}
 
+	// Linked accounts (Epic 42 story 42.7): on the home that runs the relay
+	// agent, the api reads the agent's identity file (the cloud's pinned
+	// assertion key) and reports its linked cloud accounts through the agent.
+	if role == RoleAPI && RelayWanted(cfg) {
+		add("MAKTABA_CLOUD_IDENTITY", RelayIdentityPath())
+		add("MAKTABA_CLOUDLINK_ADMIN", RelayAdminAddr(cfg))
+	}
+
 	// This machine's stream signing key (Story 10.8): the api signs the video
 	// sessions' stream URLs with it (creating it on first start) and the
 	// streaming role verifies them with it. Per install: a node signs and
@@ -197,6 +206,10 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// Epic 35 story 35.11: this machine's own web address (the Machines page, the
 		// cluster sign-in)
 		add("MAKTABA_WEB_URL", cfg.PublicWebURL())
+		// Epic 16 story 16.7: [telemetry] enabled = "off" stores no device's events
+		if !cfg.Telemetry.On() {
+			add("MAKTABA_TELEMETRY_ENABLED", "false")
+		}
 		// Epic 35 story 35.8: a full node's api runs in node mode against the home's
 		// database with the node's own role; it never migrates.
 		if NodeMode(cfg, n) {
@@ -321,7 +334,8 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		}
 	}
 
-	return env, nil
+	// a URL never carries the password: the child reads it from a passfile
+	return dsn.ProcessEnv(env, config.KeysDir())
 }
 
 // LocalAgentURL is a full node's loopback route to the home's channel over its cluster

@@ -22,7 +22,10 @@ func TestMetricsCarryTheSupervisors(t *testing.T) {
 			"maktaba_update_migration_duration_seconds_bucket{le=\"+Inf\"} 1\n"+
 			"maktaba_update_migration_duration_seconds_sum 12\n"+
 			"maktaba_update_migration_duration_seconds_count 1\n"+
-			"# TYPE go_goroutines gauge\ngo_goroutines 7\n")
+			// a family the API has of its own too (taken, it would repeat the
+			// API's) and one only the supervisor has: neither is taken
+			"# TYPE go_goroutines gauge\ngo_goroutines 7\n"+
+			"# TYPE maktaba_supervisor_children gauge\nmaktaba_supervisor_children 4\n")
 	}))
 	defer sup.Close()
 	scrape := func(url string) string {
@@ -38,7 +41,9 @@ func TestMetricsCarryTheSupervisors(t *testing.T) {
 	if !strings.Contains(body, "maktaba_update_migration_duration_seconds_count 1") {
 		t.Fatalf("the supervisor's migrations are missing:\n%s", body)
 	}
-	if strings.Contains(body, "go_goroutines 7") {
+	// go_goroutines is the API's own family too (its value may well be 7):
+	// the check is that the family appears once, and the supervisor-only one not at all
+	if strings.Contains(body, "maktaba_supervisor_children") || strings.Count(body, "# TYPE go_goroutines ") > 1 {
 		t.Fatal("a family of the supervisor's other than the update metrics was taken")
 	}
 	sup.Close()

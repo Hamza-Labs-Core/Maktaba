@@ -169,3 +169,91 @@ import Testing
         #expect((other as? HTTPURLResponse)?.statusCode == 404)
     }
 }
+
+@Suite struct TVHome {
+    @Test func railsKeepWhereThePersonStopped() throws {
+        let json = #"{"rails":[{"id":"r1","title":"x","reason_kind":"continue_watching","items":[{"video_id":"v1","position_sec":30,"duration_sec":120},{"video_id":"v2"}]}],"cache_hit":false}"#
+        let rails = try JSONDecoder().decode(Recommendations.self, from: Data(json.utf8)).rails
+        #expect(rails.first?.reasonKind == "continue_watching")
+        #expect(rails.first?.items.map(\.progress) == [0.25, 0])
+    }
+
+    @Test func aVideoSaysWhereThePersonStopped() throws {
+        let json = #"{"id":"v","library_id":"l","filename":"a.mp4","playback_state":{"position_sec":754.2,"completed":false,"updated_at":"2026-10-26T00:00:00Z"}}"#
+        #expect(try JSONDecoder().decode(Video.self, from: Data(json.utf8)).playbackState?.positionSec == 754.2)
+    }
+
+    @Test func aPairingCodeAndItsPage() throws {
+        let json = #"{"code":"ABCD-1234","device_code":"secret","expires_at":"2026-10-26T12:10:00Z","verify_path":"/pair?code=ABCD-1234","interval":2}"#
+        let p = try JSONDecoder().decode(DevicePairing.self, from: Data(json.utf8))
+        #expect(p.code == "ABCD-1234" && p.interval == 2)
+        #expect(p.verifyURL(home: URL(string: "http://192.168.50.177:8088")!)?.absoluteString == "http://192.168.50.177:8088/pair?code=ABCD-1234")
+    }
+
+    @Test(arguments: [
+        ("192.168.50.177", ["web": "8088", "role": "home"], "http://192.168.50.177:8088"),
+        ("MahmoudacStudio.local.", [:], "http://MahmoudacStudio.local:8080"),
+        ("Mahmouds-Mac-Studio.local.local.", ["web": "8088"], "http://Mahmouds-Mac-Studio.local:8088"),
+        ("box.LOCAL.local", [:], "http://box.LOCAL:8080"),
+        ("10.0.0.2", ["web": "443", "tls": "1"], "https://10.0.0.2:443"),
+    ])
+    func anAnnouncedHomesAddress(host: String, txt: [String: String], want: String) {
+        #expect(HomeBrowser.homeURL(host: host, apiPort: 8080, txt: txt)?.absoluteString == want)
+    }
+}
+
+/// Answers every request of a session from `StubProtocol.answer`.
+final class StubProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var answer: (Int, String) = (200, "{}")
+    nonisolated(unsafe) static var lastBody: Data?
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lastBody = request.httpBody ?? request.httpBodyStream.map { s in
+            s.open(); defer { s.close() }
+            var d = Data(); var buf = [UInt8](repeating: 0, count: 4096)
+            while s.hasBytesAvailable { let n = s.read(&buf, maxLength: buf.count); if n <= 0 { break }; d.append(buf, count: n) }
+            return d
+        }
+        let (code, body) = Self.answer
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+@Suite(.serialized) struct TVSignInByCode {
+    let home = URL(string: "http://stub.local:8088")!
+    func client(_ tokens: TokenStore) -> APIClient {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        return APIClient(home: home, tokens: tokens, session: URLSession(configuration: cfg))
+    }
+    let pairing = try! JSONDecoder().decode(DevicePairing.self, from: Data(#"{"code":"ABCD-1234","device_code":"dc","expires_at":"2026-10-26T12:10:00Z","verify_path":"/pair?code=ABCD-1234","interval":2}"#.utf8))
+
+    @Test func aHomeWithoutCodesSignsInByPassword() async throws {
+        StubProtocol.answer = (401, #"{"status":401}"#)
+        #expect(try await client(TokenStore(app: "test.pair.old", home: home)).startDevicePairing() == nil)
+    }
+
+    @Test func waitsThenKeepsTheApproversTokens() async throws {
+        let tokens = TokenStore(app: "test.pair.ok", home: home)
+        tokens.clear()
+        let c = client(tokens)
+        StubProtocol.answer = (202, #"{"status":"pending"}"#)
+        #expect(try await c.collectDevicePairing(pairing, label: "Living room") == .waiting)
+        let sent = try JSONSerialization.jsonObject(with: StubProtocol.lastBody ?? Data()) as? [String: String]
+        #expect(sent == ["device_code": "dc", "device_label": "Living room"])
+        StubProtocol.answer = (200, #"{"access_token":"a.b.c","refresh_token":"r","user_id":"u1"}"#)
+        #expect(try await c.collectDevicePairing(pairing, label: "Living room") == .approved)
+        #expect(tokens.access == "a.b.c" && tokens.refresh == "r")
+        tokens.clear()
+    }
+
+    @Test(arguments: [409, 410])
+    func anExpiredCodeAsksForANewOne(code: Int) async throws {
+        StubProtocol.answer = (code, #"{"status":\#(code)}"#)
+        #expect(try await client(TokenStore(app: "test.pair.gone", home: home)).collectDevicePairing(pairing, label: "") == .expired)
+    }
+}

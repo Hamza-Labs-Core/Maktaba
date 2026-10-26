@@ -74,6 +74,10 @@ mkdir -p "$OUT"/{bin,postgres,ffmpeg,ollama,pipeline,licenses} "$WORK"
 . "$SCRIPT_DIR/lib.sh"
 check_pins >&2 || die "pins.env is incomplete (above)"
 
+# the license-server key (Epic 16): a release's workflow writes it before this
+# script; a local build embeds it when MAKTABA_LICENSE_PUBKEY is set
+"$REPO_ROOT/tools/release/license-key.sh"
+
 # --- Go binaries (the release envelope: -trimpath, stamped, web UI embedded) -----------------
 log "building the Go binaries for darwin/arm64 ($VERSION)"
 make -C "$REPO_ROOT" --no-print-directory server build-go \

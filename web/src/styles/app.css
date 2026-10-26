@@ -2877,6 +2877,28 @@ a.mkt-guide__chanhead:hover {
   gap: var(--space-2) var(--space-3);
 }
 
+/* Story 16.5 — the usage-analytics question (the update banner's frame) */
+.mkt-telemetry {
+  align-items: flex-end;
+}
+.mkt-telemetry__body {
+  flex: 1 1 28rem;
+  min-width: 0;
+}
+.mkt-telemetry__title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-base);
+}
+.mkt-telemetry__label {
+  margin: var(--space-2) 0 0;
+  font-weight: 600;
+}
+.mkt-telemetry ul,
+.mkt-telemetry-settings ul {
+  margin: var(--space-1) 0;
+  padding-inline-start: var(--space-5);
+}
+
 /* A node that cannot reach its home: readable, changes refused */
 .mkt-home-offline {
   position: sticky;
@@ -3080,6 +3102,14 @@ a.mkt-guide__chanhead:hover {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
+}
+/* the starting screen: a dialog over the app's window while the server comes up */
+.mkt-setup--starting {
+  background: color-mix(in srgb, var(--color-bg) 70%, black);
+}
+.mkt-setup--starting .mkt-setup__card {
+  max-inline-size: 32rem;
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 0.45);
 }
 .mkt-setup__title {
   margin: 0;

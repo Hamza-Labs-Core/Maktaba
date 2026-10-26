@@ -7,7 +7,7 @@ view — but they talk to the **same REST API** as every other client.
 
 | Subdir | Platform | Stack | Build |
 |---|---|---|---|
-| [`tvos/`](tvos/) | Apple TV (tvOS 17+) | SwiftUI + AVKit | `make tv-build-ios` |
+| [`tvos/`](tvos/) | Apple TV (tvOS 26) | SwiftUI + AVKit, on `apps/apple/MaktabaKit`; the "Maktaba TV" target of `apps/apple/Maktaba.xcodeproj` | `make tv-build-ios` |
 | [`android/`](android/) | Android TV / Google TV (minSdk 28) | Compose-for-TV + Media3 | `make tv-build-android` |
 
 Bundle / application id: **`com.hamzalabs.maktaba.tv`** on both.

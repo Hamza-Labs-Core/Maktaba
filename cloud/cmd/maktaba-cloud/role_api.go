@@ -5,11 +5,13 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/abuse"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/audit"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/oauth"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/sessions"
@@ -17,15 +19,21 @@ import (
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/entitlement"
 	accounth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/account"
 	adminh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/admin"
 	authh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/auth"
 	billingh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/billing"
 	healthh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/health"
+	homesh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/homes"
 	metricsh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/metrics"
 	pushh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/push"
 	serversh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/servers"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/homeassert"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/license"
+	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
+	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	pushpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/push"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
@@ -34,22 +42,86 @@ import (
 )
 
 func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migrator, build server.BuildInfo) {
-	// Token signer for access tokens. The secret is required; we fail
-	// loud on missing because the api role can't function without it.
-	// config.Load layers MAKTABA_CLOUD_TOKEN_SECRET into cfg.Auth, so
-	// the env var remains the injection point but config is the single
-	// source of truth.
+	r, stop, err := newAPI(logger, cfg, pool, mig, build, apiOverrides{})
+	if err != nil {
+		logger.Error("api setup", "err", err)
+		os.Exit(2)
+	}
+	defer stop()
+	srv := httpServer(cfg.Server.ListenAddr, r, cfg.Server.ReadTimeout, cfg.Server.WriteTimeout)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := server.Run(ctx, logger, srv, cfg.Server.ShutdownGrace); err != nil {
+		logger.Error("server exited with error", "err", err)
+		os.Exit(1)
+	}
+}
+
+// apiOverrides swaps external collaborators for fakes in tests: a
+// recording mailer, a fake Stripe API, a fake OAuth provider. The zero
+// value is production.
+type apiOverrides struct {
+	Mailer        mailpkg.Mailer
+	StripeAPIBase string
+	Google        *oauth.GoogleConfig // endpoints only; ids come from cfg
+	Apple         *oauth.AppleConfig
+}
+
+// newAPI builds the api role's router. stop releases its background
+// goroutines.
+func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migrator, build server.BuildInfo, o apiOverrides) (*chi.Mux, func(), error) {
+	// Token signer for access tokens. The secret is required: the api
+	// role can't function without it. config.Load layers
+	// MAKTABA_CLOUD_TOKEN_SECRET into cfg.Auth.
 	secret, err := token.SecretFromEnv(cfg.Auth.TokenSecret)
 	if err != nil {
-		logger.Error("token secret", "err", err)
-		os.Exit(2)
+		return nil, nil, err
 	}
 	signer := token.NewSigner(secret)
 
 	users := stores.NewUsers(pool.DB)
 	servers := stores.NewServers(pool.DB)
 	sess := sessions.New(pool.DB)
-	_ = abuse.New(pool.DB) // wired into rate-limiter callbacks in a follow-up story.
+	detector := abuse.New(pool.DB)
+	auditLog := audit.New(pool.DB)
+	var mailer mailpkg.Mailer = mailpkg.LogMailer{Logger: logger}
+	if o.Mailer != nil {
+		mailer = o.Mailer
+	}
+	templates := mailpkg.Templates{WebURL: cfg.Server.WebURL}
+
+	// Entitlement signing is optional in development: without a key the
+	// entitlement endpoints answer 503.
+	var entSigner *entitlement.Signer
+	if cfg.Entitlement.PrivateKeyPath != "" {
+		s, err := entitlement.LoadSignerFromFile(cfg.Entitlement.PrivateKeyPath)
+		if err != nil {
+			logger.Warn("entitlement signing disabled", "path", cfg.Entitlement.PrivateKeyPath, "err", err)
+		} else if err := entitlement.RegisterKey(context.Background(), pool.DB, s); err != nil {
+			return nil, nil, err
+		} else {
+			entSigner = s
+		}
+	}
+	// Linked accounts (Epic 42 story 42.7): home assertions are signed with
+	// a key derived from the entitlement key, so the one key file covers
+	// both; without it, linked sign-in is off (503) and the rest runs.
+	var assertions *homeassert.Signer
+	if entSigner != nil {
+		assertions = homeassert.DeriveFromSeed(entSigner.Priv.Seed())
+	} else {
+		logger.Warn("no entitlement key: linked-account sign-in (home assertions) is off")
+	}
+	// Licenses (Epic 16 story 16.4): a paid plan becomes a license its
+	// homes verify, signed with the entitlement key (release builds of
+	// the home embed its public half); without it, licensing is off.
+	var licenses *license.Issuer
+	if entSigner != nil {
+		licenses = &license.Issuer{DB: pool.DB, Priv: entSigner.Priv}
+	}
+	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions, Licenses: licenses,
+		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
+	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost}
 
 	// Push dispatcher — both drivers may be nil in non-prod; the
 	// dispatcher will log no-driver and skip those rows safely.
@@ -73,86 +145,126 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	pushMetrics := metricspkg.NewCollector()
 	dispatcher.Metrics = pushMetrics
 	metricsCtx, stopMetrics := context.WithCancel(context.Background())
-	defer stopMetrics()
 	go metricspkg.NewRunner(pushMetrics, metricsStore, nil, nil, logger).RunFlushOnly(metricsCtx)
 
-	// OAuth flows — both optional in dev, validator catches missing
-	// config when at least one is required.
+	// OAuth flows — each is on only when its client id is configured.
 	var googleFlow *oauth.GoogleFlow
 	if cfg.OAuthGoogle.ClientID != "" {
-		googleFlow = oauth.NewGoogleFlow(oauth.GoogleConfig{
-			ClientID:     cfg.OAuthGoogle.ClientID,
-			ClientSecret: cfg.OAuthGoogle.ClientSecret,
-			RedirectURL:  cfg.Server.PublicURL + "/v1/auth/oauth/google/callback",
-		}, nil)
+		gc := oauth.GoogleConfig{}
+		if o.Google != nil {
+			gc = *o.Google
+		}
+		gc.ClientID = cfg.OAuthGoogle.ClientID
+		gc.ClientSecret = cfg.OAuthGoogle.ClientSecret
+		gc.RedirectURL = cfg.Server.PublicURL + "/v1/auth/oauth/google/callback"
+		googleFlow = oauth.NewGoogleFlow(gc)
 	}
 	var appleFlow *oauth.AppleFlow
 	if cfg.OAuthApple.ClientID != "" {
-		appleFlow = oauth.NewAppleFlow(oauth.AppleConfig{
-			TeamID:      cfg.OAuthApple.TeamID,
-			KeyID:       cfg.OAuthApple.KeyID,
-			ClientID:    cfg.OAuthApple.ClientID,
-			KeyPath:     cfg.OAuthApple.KeyPath,
-			RedirectURL: cfg.Server.PublicURL + "/v1/auth/oauth/apple/callback",
-		})
+		ac := oauth.AppleConfig{}
+		if o.Apple != nil {
+			ac = *o.Apple
+		}
+		ac.TeamID, ac.KeyID, ac.ClientID, ac.KeyPath = cfg.OAuthApple.TeamID, cfg.OAuthApple.KeyID, cfg.OAuthApple.ClientID, cfg.OAuthApple.KeyPath
+		ac.RedirectURL = cfg.Server.PublicURL + "/v1/auth/oauth/apple/callback"
+		appleFlow = oauth.NewAppleFlow(ac)
 	}
 
 	stripe := billingpkg.NewStripeClient(cfg.Stripe.SecretKey)
+	if o.StripeAPIBase != "" {
+		stripe.APIBase = o.StripeAPIBase
+	}
 
 	// Build the router. Order matters: health probes mount on the
 	// outer router before the auth-required group so they don't need
 	// a token.
 	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg))
+	// NewRouter has already registered the health probes, and chi
+	// refuses Use after a route, so the app routes and their middleware
+	// live in a group.
+	r.Group(func(app chi.Router) {
+		app.Use(cmw.WithClientIP(cfg.Server.TrustProxyHeaders))
 
-	// Per-IP rate limit on unauthenticated routes. Burst 30, refill
-	// 5/sec — plenty for the login form, harsh for credential stuffing.
-	rl := ratelimit.NewLimiter(30, 5)
-	r.Use(rl.Middleware(func(req *http.Request) string {
-		if req.URL.Path == "/v1/auth/login" || req.URL.Path == "/v1/auth/register" {
-			return ratelimit.IPKey(req)
-		}
-		return ""
-	}))
+		// Per-IP rate limits on the unauthenticated auth routes: burst 30,
+		// refill 5/s — plenty for the sign-in form, harsh for credential
+		// stuffing — and burst 5, one per 12 s for the routes that send mail.
+		// Per-account lockout (10 failures / 15 min) lives in the login
+		// handler.
+		app.Use(authRateLimit(ratelimit.NewLimiter(30, 5), authh.RateLimitedPaths))
+		app.Use(authRateLimit(ratelimit.NewLimiter(5, 1.0/12), authh.MailPaths))
+		app.Use(blockedIPs(detector, logger))
+		// a claim code is 8 characters: its redeem is limited per IP too
+		app.Use(authRateLimit(ratelimit.NewLimiter(30, 5), []string{"/v1/servers/claims/redeem"}))
 
-	authh.Mount(r, authh.Deps{
-		Users:        users,
-		Sessions:     sess,
-		Signer:       signer,
-		Logger:       logger,
-		Google:       googleFlow,
-		Apple:        appleFlow,
-		CookieDomain: extractCookieDomain(cfg.Server.PublicURL),
-		Secure:       true,
-	})
+		// A home's agent: the claim code or the server's own secret is its
+		// credential, never a user token.
+		serversh.MountAgent(app, serversDeps)
+		homesh.MountPublic(app, homes)
 
-	// Authenticated group.
-	r.Group(func(g chi.Router) {
-		g.Use(middleware.RequireUser(signer))
-		accounth.Mount(g, accounth.Deps{Users: users, Sessions: sess})
-		serversh.Mount(g, serversh.Deps{Servers: servers})
-		(&healthh.Deps{DB: pool.DB}).Mount(g)
-		billingh.Mount(g, billingh.Deps{
-			DB: pool.DB, Stripe: stripe, Users: users,
-			WebhookSecret:      cfg.Stripe.WebhookSecret,
-			PublicURL:          cfg.Server.PublicURL,
-			PriceIDProMonth:    os.Getenv("MAKTABA_CLOUD_PRICE_PRO"),
-			PriceIDFamilyMonth: os.Getenv("MAKTABA_CLOUD_PRICE_FAMILY"),
+		authh.Mount(app, &authh.Deps{
+			Users:     users,
+			Sessions:  sess,
+			Signer:    signer,
+			Tokens:    stores.NewMailTokens(pool.DB),
+			Mailer:    mailer,
+			Templates: templates,
+			Abuse:     detector,
+			Audit:     auditLog,
+			Logger:    logger,
+			Google:    googleFlow,
+			Apple:     appleFlow,
+			WebURL:    cfg.Server.WebURL,
+			// Host-only: a Domain=.maktaba.app cookie would also go to
+			// every home server behind *.relay.maktaba.app.
+			CookieDomain: "",
+			Secure:       true,
 		})
-		pushh.Mount(g, pushh.Deps{DB: pool.DB, Dispatcher: dispatcher})
-		adminh.Mount(g, adminh.Deps{DB: pool.DB, Users: users, AllowedDomain: cfg.Admin.AllowedEmailDomain})
 
-		// Epic 30 — relay-analytics dashboard + export + GDPR endpoints.
-		// Reads the relay_metrics_* tables the relay role writes (same DB);
-		// the api role owns auth, so the operator-gated surface lives here.
-		metricsh.Mount(g, metricsh.Deps{
-			DB:            pool.DB,
-			Users:         users,
-			AllowedDomain: cfg.Admin.AllowedEmailDomain,
-			Store:         metricsStore,
-			// the relay's registry lives in the relay role's process; read
-			// the gauges it flushes each minute
-			Live:     metricsh.LiveFromStore(metricsStore, time.Now),
-			Deletion: privacy.NewDataSubjectService(pool.DB),
+		billing := &billingh.Deps{
+			DB: pool.DB, Stripe: stripe, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
+			Mailer: mailer, Logger: logger, Entitlements: entSigner,
+			WebhookSecret:      cfg.Stripe.WebhookSecret,
+			WebURL:             cfg.Server.WebURL,
+			PriceIDProMonth:    cfg.Stripe.PriceProMonthly,
+			PriceIDFamilyMonth: cfg.Stripe.PriceFamilyMonthly,
+		}
+		// Public billing routes: the catalog, the entitlement key, and the
+		// Stripe webhook (authenticated by its signature, not our token).
+		billingh.MountPublic(app, billing)
+
+		adminGate := middleware.RequireServiceAdmin(users, auditLog, logger)
+		live := metricsh.LiveFromStore(metricsStore, time.Now)
+
+		// Authenticated group.
+		app.Group(func(g chi.Router) {
+			g.Use(middleware.RequireUser(signer, middleware.UserStatus(pool.DB)))
+			accounth.Mount(g, &accounth.Deps{Users: users, Sessions: sess, Audit: auditLog, Logger: logger})
+			serversh.MountUser(g, serversDeps)
+			homesh.MountUser(g, homes)
+			(&healthh.Deps{DB: pool.DB}).Mount(g)
+			billingh.Mount(g, billing)
+			pushh.Mount(g, pushh.Deps{DB: pool.DB, Dispatcher: dispatcher})
+
+			// Service-admin console: every /v1/admin/* route checks the cloud
+			// role in the database (never an email domain or a home role).
+			adminh.Mount(g, &adminh.Deps{
+				DB: pool.DB, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
+				Logger: logger, Gate: adminGate, LiveTunnels: live, Licenses: licenses,
+			})
+
+			// Epic 30 — relay-analytics dashboard + export + GDPR endpoints.
+			// Reads the relay_metrics_* tables the relay role writes (same DB);
+			// the api role owns auth, so the operator-gated surface lives here.
+			metricsh.Mount(g, metricsh.Deps{
+				DB:    pool.DB,
+				Gate:  adminGate,
+				Audit: auditLog,
+				Store: metricsStore,
+				// the relay's registry lives in the relay role's process; read
+				// the gauges it flushes each minute
+				Live:     live,
+				Deletion: privacy.NewDataSubjectService(pool.DB),
+			})
 		})
 	})
 
@@ -160,42 +272,43 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// the relay's /metrics).
 	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics))
 
-	// The Stripe webhook must NOT require auth — Stripe doesn't carry
-	// our bearer tokens. It also needs raw-body access for signature
-	// verification; mount it outside the auth group.
-	r.Post("/v1/billing/webhook", (&billingh.Deps{
-		DB: pool.DB, WebhookSecret: cfg.Stripe.WebhookSecret,
-	}).Webhook)
-
-	srv := httpServer(cfg.Server.ListenAddr, r, cfg.Server.ReadTimeout, cfg.Server.WriteTimeout)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	if err := server.Run(ctx, logger, srv, cfg.Server.ShutdownGrace); err != nil {
-		logger.Error("server exited with error", "err", err)
-		os.Exit(1)
-	}
-	_ = time.Now
+	return r, stopMetrics, nil
 }
 
-func extractCookieDomain(publicURL string) string {
-	// "https://api.maktaba.app" → ".maktaba.app" so the cookie is
-	// shared with web.maktaba.app. We do a tiny suffix split rather
-	// than pulling net/url for one host extraction.
-	const prefix = "https://"
-	host := publicURL
-	if len(host) >= len(prefix) && host[:len(prefix)] == prefix {
-		host = host[len(prefix):]
+// authRateLimit applies l, keyed by client IP, to the given paths only.
+func authRateLimit(l *ratelimit.Limiter, paths []string) func(http.Handler) http.Handler {
+	set := map[string]bool{}
+	for _, p := range paths {
+		set[p] = true
 	}
-	for i := len(host) - 1; i >= 0; i-- {
-		if host[i] == '.' {
-			// Find the dot before this one — last 2 labels.
-			for j := i - 1; j >= 0; j-- {
-				if host[j] == '.' {
-					return host[j:]
-				}
-			}
-			return "." + host
+	return l.Middleware(func(req *http.Request) string {
+		if set[req.URL.Path] {
+			return ratelimit.IPKey(req)
 		}
+		return ""
+	})
+}
+
+// blockedIPs refuses the auth routes to a blocklisted client IP.
+func blockedIPs(d *abuse.Detector, logger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := cmw.GetClientIP(r.Context())
+			if ip == "" || !strings.HasPrefix(r.URL.Path, "/v1/auth/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			blocked, err := d.IsBlocked(r.Context(), abuse.Subject{Kind: "ip", ID: ip})
+			if err != nil {
+				logger.Warn("blocklist check", "err", err)
+			}
+			if blocked {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"error":"blocked"}`))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
-	return ""
 }

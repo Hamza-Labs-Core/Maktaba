@@ -140,6 +140,7 @@ type fakeSource struct {
 	origins  []Origin
 	block    chan struct{} // after the last source: wait here
 	pace     time.Duration // between frames (a live source)
+	hang     bool          // after its frames a source goes silent, its connection open (a dead node)
 }
 
 func (f *fakeSource) Attach(uuid.UUID) func() {
@@ -178,6 +179,10 @@ func (f *fakeSource) Stream(ctx context.Context, _ uuid.UUID, w io.Writer, start
 		if f.pace > 0 {
 			time.Sleep(f.pace)
 		}
+	}
+	if f.hang {
+		<-ctx.Done()
+		return ctx.Err()
 	}
 	return errors.New("host gone")
 }
@@ -542,4 +547,96 @@ func bytesContain(b []byte, marker byte) bool {
 		}
 	}
 	return false
+}
+
+// 32.7 AC10 / 32.4: a node that dies without closing its connection (power
+// lost) leaves the source silent, not ended; the relay drops it after
+// SourceIdle and resolves the channel again on the same push session, long
+// before Cloudflare's 30 s timeoutSeconds would start a new video.
+func TestRelayDropsSilentSource(t *testing.T) {
+	src := &fakeSource{gens: []*tsGen{newGen(0x1000, 0x100, 0x101, 5_000_000), newGen(0x1000, 0x100, 0x101, 40_000)},
+		frames: []int{60, 60}, block: make(chan struct{}), hang: true}
+	run := &fakeRunner{}
+	s := &Session{PushID: "p1", Channel: uuid.New(), Creds: Credentials{URL: "rtmps://x/live/", Key: "secret-key-1", Ingest: "rtmps"},
+		Source: src, Runner: run, Restart: 10 * time.Millisecond, Idle: 150 * time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	start := time.Now()
+	waitUntil(t, "the silent source dropped and the channel resolved again", func() bool {
+		src.mu.Lock()
+		defer src.mu.Unlock()
+		return src.calls >= 2
+	})
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("the silent source was dropped after %v", took)
+	}
+	waitUntil(t, "the second source reached ffmpeg", func() bool {
+		return len(readTrack(t, run.procs[0].bytes()).dts[0x100]) >= 60+30
+	})
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if run.count() != 1 {
+		t.Fatalf("ffmpeg started %d times: the push session must stay up", run.count())
+	}
+	monotonic(t, "video", readTrack(t, run.procs[0].bytes()).dts[0x100], 6000)
+}
+
+// A fresh source that never sends a byte (the station does not start) is
+// dropped after SourceFirstByte, not held for ever.
+func TestRelayDropsSourceWithoutFirstByte(t *testing.T) {
+	src := &fakeSource{block: make(chan struct{})} // every call: connected, silent
+	s := &Session{PushID: "p1", Channel: uuid.New(), Creds: Credentials{URL: "rtmps://x/live/", Key: "k", Ingest: "rtmps"},
+		Source: src, Runner: &fakeRunner{}, Restart: 10 * time.Millisecond, Idle: 50 * time.Millisecond,
+		FirstByte: 150 * time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = s.Run(ctx) }()
+	waitUntil(t, "the silent source retried", func() bool {
+		src.mu.Lock()
+		defer src.mu.Unlock()
+		return src.calls >= 3
+	})
+}
+
+// timedRunner records when each ffmpeg started; each exits at once (the
+// uplink is down).
+type timedRunner struct {
+	fakeRunner
+	at []time.Time
+}
+
+func (r *timedRunner) Start(bin string, args []string) (Proc, error) {
+	r.mu.Lock()
+	r.at = append(r.at, time.Now())
+	r.stopAt = append(r.stopAt, 1)
+	r.mu.Unlock()
+	return r.fakeRunner.Start(bin, args)
+}
+
+// 32.7 EC1: an ffmpeg that keeps ending at once is restarted with a growing
+// delay (capped), not every RestartDelay.
+func TestRelayRestartBacksOff(t *testing.T) {
+	src := &fakeSource{gens: []*tsGen{newGen(0x1000, 0x100, 0x101, 100_000)}, frames: []int{1 << 20}, block: make(chan struct{}),
+		pace: time.Millisecond}
+	run := &timedRunner{}
+	s := &Session{PushID: "p1", Channel: uuid.New(), Creds: Credentials{URL: "rtmps://x/live/", Key: "k", Ingest: "rtmps"},
+		Source: src, Runner: run, Restart: 10 * time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = s.Run(ctx) }()
+	waitUntil(t, "six ffmpeg starts", func() bool { return run.count() >= 6 })
+	cancel()
+	run.mu.Lock()
+	defer run.mu.Unlock()
+	var gaps []time.Duration
+	for i := 1; i < 6; i++ {
+		gaps = append(gaps, run.at[i].Sub(run.at[i-1]))
+	}
+	// 10, 20, 40, 80, 100 ms (the cap is ten times the base delay here)
+	if gaps[3] < 60*time.Millisecond || gaps[4] < 80*time.Millisecond || gaps[4] > 400*time.Millisecond {
+		t.Errorf("restart gaps %v: no backoff", gaps)
+	}
 }

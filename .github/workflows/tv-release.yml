@@ -150,21 +150,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      # The SwiftPM manifest exists so the app sources compile on CI even
-      # without a tvOS SDK target (see apps/tv/tvos/Package.swift). This is
-      # the same check `make tv-build-ios` runs locally.
-      - name: Compile tvOS core (swift build)
-        working-directory: apps/tv/tvos
-        run: swift build
+      # The Apple TV app is the "Maktaba TV" target of apps/apple/Maktaba.xcodeproj (on
+      # MaktabaKit, the Apple apps' shared package): a simulator build, the same check
+      # `make tv-build-ios` runs locally.
+      - name: Build the Apple TV app (tvOS simulator)
+        run: make tv-build-ios
 
-      # DISTRIBUTION IS MANUAL. A shippable tvOS .ipa needs an Xcode app
-      # target (not just the SwiftPM core), an Apple Distribution cert +
-      # tvOS provisioning profile, and upload to App Store Connect /
+      # DISTRIBUTION IS MANUAL. A shippable tvOS .ipa needs an Apple
+      # Distribution cert + tvOS provisioning profile, and upload to App Store Connect /
       # TestFlight — Apple does not allow unsigned tvOS app distribution.
-      # Until that Xcode target + signing material is provisioned, the
+      # Until that signing material is provisioned, the
       # release artifact for tvOS is produced by a maintainer in Xcode
       # (Product ▸ Archive ▸ Distribute App ▸ TestFlight). This job only
       # guards that the SwiftUI sources still compile.
       - name: Note manual tvOS distribution
         run: |
-          echo "::notice::tvOS sources compiled. A distributable .ipa is built + uploaded MANUALLY via Xcode/TestFlight (Apple requires signed App Store/TestFlight distribution for tvOS) — see apps/tv/tvos/README.md."
+          echo "::notice::Apple TV app built. A distributable .ipa is built + uploaded MANUALLY via Xcode/TestFlight (Apple requires signed App Store/TestFlight distribution for tvOS) — see apps/tv/tvos/README.md."

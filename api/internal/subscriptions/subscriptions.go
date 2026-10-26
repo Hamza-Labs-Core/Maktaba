@@ -27,7 +27,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -111,6 +110,9 @@ const (
 	FeatureCloudBackup    Feature = "cloud_metadata_backup"
 )
 
+// AllFeatures lists every gated feature, in a stable order.
+var AllFeatures = []Feature{FeatureCloudRelay, FeatureMultiUser, FeatureCloudBackup, FeatureAdvancedMetric, FeatureFederation}
+
 // FreeFeatures are the features the free tier always grants. New
 // features default to premium-only; deliberately copy here to enable
 // for free.
@@ -122,8 +124,11 @@ type Entitlements struct {
 	Tier      Tier
 	LicenseID string
 	Seats     int
+	IssuedAt  time.Time
 	ExpiresAt time.Time
 	Features  map[Feature]bool
+	ServerID  string
+	Holder    string
 }
 
 // Allows reports whether feature f is enabled. The free tier matrix is
@@ -179,6 +184,13 @@ type LicenseInner struct {
 	IssuedAt  time.Time `json:"issued_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 	Features  []Feature `json:"features,omitempty"`
+	// ServerID binds a license to one home claimed in Maktaba Cloud
+	// (the cloud issues these from the owner's plan and the home
+	// refreshes them daily). Empty: an offline license, valid on any
+	// home until it expires or is revoked.
+	ServerID string `json:"server_id,omitempty"`
+	// Holder names who the license is for (shown in Settings).
+	Holder string `json:"holder,omitempty"`
 }
 
 // Verifier checks license signatures against a public key. Production
@@ -188,34 +200,48 @@ type Verifier struct {
 	PublicKey ed25519.PublicKey
 }
 
-// Verify returns the entitlement implied by lic, or an error.
-// Sub-checks: signature, expiry, seat-count > 0, tier in {free,premium}.
+// Verify returns the entitlement implied by lic, or an error: the
+// signature, the tier, the seats, and expiry against now.
 func (v *Verifier) Verify(lic *License, now time.Time) (*Entitlements, error) {
+	ent, err := v.VerifySignature(lic)
+	if err != nil {
+		return nil, err
+	}
+	if !now.Before(lic.License.ExpiresAt) {
+		return nil, ErrExpired
+	}
+	return ent, nil
+}
+
+// VerifySignature checks everything but expiry: the Store keeps an
+// expired license it loaded (to say "expired" in Settings) while
+// granting nothing from it.
+func (v *Verifier) VerifySignature(lic *License) (*Entitlements, error) {
 	if lic == nil {
 		return nil, errors.New("nil license")
 	}
 	sig, err := base64.StdEncoding.DecodeString(lic.Signature)
 	if err != nil {
-		return nil, fmt.Errorf("decode signature: %w", err)
+		return nil, ErrBadSignature
 	}
 	payload, err := canonicalJSON(lic.License)
 	if err != nil {
 		return nil, err
 	}
-	if v.PublicKey == nil {
+	if v == nil || v.PublicKey == nil {
 		return nil, errors.New("verifier has no public key")
 	}
 	if !ed25519.Verify(v.PublicKey, payload, sig) {
-		return nil, errors.New("signature verification failed")
-	}
-	if !now.Before(lic.License.ExpiresAt) {
-		return nil, ErrExpired
+		return nil, ErrBadSignature
 	}
 	if !validTiers[lic.License.Tier] {
 		return nil, fmt.Errorf("unknown tier %q (must be free/home/pro)", lic.License.Tier)
 	}
 	if lic.License.Seats < 0 {
 		return nil, errors.New("seats must be >= 0")
+	}
+	if lic.License.LicenseID == "" {
+		return nil, errors.New("license has no id")
 	}
 	// Start from any explicitly-granted features, then layer the tier
 	// matrix on top. The matrix is the source of truth; an explicit
@@ -232,10 +258,16 @@ func (v *Verifier) Verify(lic *License, now time.Time) (*Entitlements, error) {
 		Tier:      lic.License.Tier,
 		LicenseID: lic.License.LicenseID,
 		Seats:     lic.License.Seats,
+		IssuedAt:  lic.License.IssuedAt,
 		ExpiresAt: lic.License.ExpiresAt,
 		Features:  features,
+		ServerID:  lic.License.ServerID,
+		Holder:    lic.License.Holder,
 	}, nil
 }
+
+// ErrBadSignature: the license was altered, or another key signed it.
+var ErrBadSignature = errors.New("signature verification failed")
 
 // ErrExpired is returned when the license is past expiry; callers may
 // retain a grace period (story 16.4: 30 days) before locking.
@@ -262,74 +294,11 @@ func Sign(priv ed25519.PrivateKey, inner LicenseInner) (*License, error) {
 // reproduce encoding/json's struct-field-order output byte-for-byte;
 // substituting a JCS/RFC-8785 sorted-key canonicalizer here would
 // silently break every signature. Sign and verify share this function.
-func canonicalJSON(inner LicenseInner) ([]byte, error) {
+func canonicalJSON(inner any) ([]byte, error) {
 	b, err := json.Marshal(inner)
 	if err != nil {
 		return nil, err
 	}
 	// trim trailing newline if any
 	return []byte(strings.TrimRight(string(b), "\n")), nil
-}
-
-// Store is the runtime cache of the current entitlements. Handlers go
-// through Current() rather than reading the disk every request.
-type Store struct {
-	mu      sync.RWMutex
-	current *Entitlements
-
-	// persist, when non-nil, makes Set/Revoke durable so an applied
-	// license survives a process restart (HLB-287). Nil keeps the
-	// store in-memory only — the original behaviour, retained for
-	// tests and the no-DB dev path.
-	persist LicensePersistence
-}
-
-// NewStore creates a Store seeded with the free tier.
-func NewStore() *Store {
-	return &Store{current: nil}
-}
-
-// Set replaces the current entitlement. Pass nil to revert to free tier.
-func (s *Store) Set(e *Entitlements) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.current = e
-}
-
-// Current returns the active entitlement snapshot. nil means free tier.
-func (s *Store) Current() *Entitlements {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.current
-}
-
-// Allows is a convenience wrapper.
-func (s *Store) Allows(f Feature) bool {
-	return s.Current().Allows(f)
-}
-
-// SeatLimit reports the current entitlement's seat cap (Story 16.2). A
-// nil/free store is single-user (1). This is the value the user-create
-// gate enforces against.
-func (s *Store) SeatLimit() int {
-	return s.Current().SeatLimit()
-}
-
-// seatLimiter adapts a *Store to the auth handler's SeatLimiter seam
-// without that package importing concrete subscriptions types beyond
-// this constructor. It reads the live entitlement on every call so a
-// mid-process license change (apply/revoke) takes effect immediately.
-type seatLimiter struct{ s *Store }
-
-func (l seatLimiter) SeatLimit() int { return l.s.SeatLimit() }
-
-// NewSeatLimiter wraps the live entitlement Store as the seat-cap
-// source for Epic 16 Story 16.2 enforcement on POST /api/users. A nil
-// store yields a limiter that always reports the free-tier cap (1),
-// which fails closed rather than panicking.
-func NewSeatLimiter(s *Store) interface{ SeatLimit() int } {
-	if s == nil {
-		s = NewStore()
-	}
-	return seatLimiter{s: s}
 }

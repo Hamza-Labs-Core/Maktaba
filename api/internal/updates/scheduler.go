@@ -551,8 +551,14 @@ func (s *Service) RunNow(ctx context.Context, actor, version string) (Run, error
 	if err != nil {
 		return Run{}, err
 	}
-	if why != "" {
+	// a recent crash is the running release's: it holds an automatic run (the new one
+	// would be judged on a home already failing), not an admin's, whose update may be
+	// the cure; the new release is still judged on its own health and rolled back
+	if why != "" && why != BlockRecentCrash {
 		return Run{}, &BlockedError{Reason: why}
+	}
+	if why == BlockRecentCrash {
+		s.Store.Audit(ctx, actor, "admin", "update_past_recent_crash", target.Version, nil)
 	}
 	if target.BreaksPreviousHome() && target.ApprovedAt == nil {
 		if err := s.Store.Approve(ctx, target.Version, actor); err != nil {

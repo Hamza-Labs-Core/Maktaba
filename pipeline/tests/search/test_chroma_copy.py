@@ -382,3 +382,17 @@ async def test_no_pgvector_store_no_copy(pg: Any, tmp_path: Path) -> None:
     )
     cfg = _cfg(tmp_path / "chroma", tmp_path)
     assert await chroma_copy.copy_chroma(pg, cfg) == chroma_copy.EXIT_NOT_READY
+
+
+def test_ties_count_as_found() -> None:
+    """Many passages share one vector (a greeting): any ten of them is the exact top 10,
+    so a result as close as the exact 10th counts, whatever its id."""
+    from maktaba_pipeline.search.chroma_copy import tie_hits
+
+    truth = [0.0] * 10  # ten exact duplicates
+    assert tie_hits([0.0] * 10, truth) == 10  # other duplicates: all correct
+    assert tie_hits([0.0] * 9 + [0.2], truth) == 9  # one farther: a miss
+    near = [0.01, 0.02, 0.03, 0.0333, 0.0333, 0.0333, 0.0333, 0.0333, 0.0333, 0.0333]
+    assert tie_hits(near, near) == 10
+    assert tie_hits([0.5] * 10, near) == 0
+    assert tie_hits([], []) == 0

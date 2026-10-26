@@ -45,6 +45,10 @@ const (
 	EventPairCodeClaimed  Event = "pair.code-claimed"
 	EventSessionRevoked   Event = "session.revoked"
 	EventRefreshRevoked   Event = "refresh.revoked"
+	// Linked accounts (Epic 42 story 42.7).
+	EventCloudLinked    Event = "cloud.linked"
+	EventCloudUnlinked  Event = "cloud.unlinked"
+	EventCloudLinkScope Event = "cloud.link-scope"
 )
 
 // Category is the audit_log.category value for every security event.
@@ -219,7 +223,8 @@ func EventsAreCanonical(s string) bool {
 		EventPasswordChanged, EventKeyRotated, EventAdminTokenUsed,
 		EventPermissionDenied, EventStreamingDirect,
 		EventPairCodeIssued, EventPairCodeClaimed,
-		EventSessionRevoked, EventRefreshRevoked:
+		EventSessionRevoked, EventRefreshRevoked,
+		EventCloudLinked, EventCloudUnlinked, EventCloudLinkScope:
 		return true
 	}
 	return false

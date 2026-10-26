@@ -7,19 +7,25 @@
 //   Appearance  — theme light/dark/system (11.8), language en/ar (11.12),
 //                 density comfortable/compact (persisted)
 //   Privacy     — tracking switch, recent history, activity timeline (29.4)
+//   Advanced    — Experiments: beta cohorts the user may join (16.6)
+//   Subscription — the plan, users against seats, the license, Maktaba
+//                 Cloud (Epic 16; admins manage it, viewers read it)
 //   About       — app version and updates (Epic 28)
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { RadioGroup, Radio } from "@ds/components/Choice/Radio";
 import { Button } from "@ds/components/Button/Button";
 import { useAuth } from "../lib/auth";
-import { useI18n, type Locale } from "../lib/i18n";
+import { lookupMessage, useI18n, type Locale } from "../lib/i18n";
 import { readMode, setMode, type ThemeMode } from "../lib/theme";
 import { ModelsSection } from "./Settings/ModelsSection";
 import { RulesSection } from "./Settings/RulesSection";
 import { UpdatesSettings } from "./Settings/UpdatesSettings";
 import { AppUpdateSettings } from "./Settings/AppUpdateSettings";
 import { HomeNameSettings } from "./Settings/HomeNameSettings";
+import { ExperimentsSection } from "./Settings/ExperimentsSection";
+import { TelemetrySettings } from "./Settings/TelemetrySettings";
+import { SubscriptionSettings } from "./Settings/SubscriptionSettings";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, downloadBlob, ApiError } from "../lib/api";
@@ -76,6 +82,8 @@ export function Settings() {
         <NavLink to="/settings/privacy">{t("settings.section.privacy")}</NavLink>
         <NavLink to="/settings/models">{t("settings.section.models")}</NavLink>
         <NavLink to="/settings/rules">{t("settings.section.rules")}</NavLink>
+        <NavLink to="/settings/advanced">{t("settings.section.advanced")}</NavLink>
+        <NavLink to="/settings/subscription">{t("settings.section.subscription")}</NavLink>
         <NavLink
           to="/settings/about"
           className="mkt-settings__navlink"
@@ -99,6 +107,8 @@ export function Settings() {
         <Route path="privacy" element={<PrivacyTab />} />
         <Route path="models" element={<ModelsSection />} />
         <Route path="rules" element={<RulesSection />} />
+        <Route path="advanced" element={<AdvancedTab />} />
+        <Route path="subscription" element={<SubscriptionSettings />} />
         <Route path="about" element={<AboutTab />} />
         {/* an unknown tab (/settings/nope) opens Account instead of an empty panel */}
         <Route path="*" element={<Navigate to="/settings" replace />} />
@@ -296,8 +306,16 @@ type UpdatePhase = "idle" | "downloading" | "restarting" | "done" | "error" | "r
 // that can't work; the Docker image updates itself (`install: "docker"`, no
 // instructions) and keeps the button. An older server's 409 instruction still
 // shows after a click. A self-update the server undid (rolled_back) is reported.
+function AdvancedTab() {
+  return (
+    <div className="mkt-settings__panel">
+      <ExperimentsSection />
+    </div>
+  );
+}
+
 function AboutTab() {
-  const { t, formatDate } = useI18n();
+  const { t, formatDate, locale } = useI18n();
   const { user } = useAuth();
   const toast = useToast();
   const buildVersion = import.meta.env?.VITE_APP_VERSION ?? "dev";
@@ -372,11 +390,20 @@ function AboutTab() {
         return;
       }
       if (e instanceof ApiError && e.status === 409) {
-        // Docker/package-manager install: surface the instruction.
-        const hint =
-          (e.problem as unknown as { instructions?: string }).instructions ?? e.problem.detail;
+        // a container that cannot update itself sends its instruction (an older server's
+        // answer); any other 409 is a reason the update cannot start now, never a Docker
+        // install (a recent crash, a running update, a switch of the home)
+        const hint = (e.problem as unknown as { instructions?: string }).instructions;
         if (hint) {
           setDockerHint(hint);
+          setPhase("idle");
+          return;
+        }
+        const code = e.problem.code;
+        const key = code ? `updates.blocker.${code}` : "";
+        const reason = key && lookupMessage(locale, key) !== undefined ? t(key) : e.problem.detail;
+        if (reason) {
+          toast.show({ tone: "error", message: t("update.blocked", { reason }) });
           setPhase("idle");
           return;
         }
@@ -634,6 +661,9 @@ function PrivacyTab() {
           label={tracking ? t("settings.privacy.on") : t("settings.privacy.off")}
         />
       )}
+
+      <hr />
+      <TelemetrySettings />
 
       <hr />
       <h2>{t("settings.privacy.history")}</h2>

@@ -46,6 +46,8 @@ func DefaultAuthRouteLimits() []AuthRouteLimit {
 		{Path: "/api/auth/refresh", PerMin: 60},
 		{Path: "/api/auth/logout", PerMin: 30},
 		{Path: "/api/auth/logout-all", PerMin: 30},
+		// Epic 42 story 42.7: a cloud sign-in (one-use assertions)
+		{Path: "/api/auth/cloud", PerMin: 10},
 	}
 }
 

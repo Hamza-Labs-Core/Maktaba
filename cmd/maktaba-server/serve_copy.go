@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	dsnpkg "github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/nodecopy"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbin"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
@@ -90,7 +91,8 @@ func migrateWith(api supervisor.Process) func(ctx context.Context, dsn string) e
 		if api.Cmd == nil {
 			return fmt.Errorf("no api program to migrate with")
 		}
-		cmd := exec.CommandContext(ctx, api.Cmd.Path, "migrate", "--dsn", dsn, "up")
+		// the URL in the environment, never on the command line (ps shows that to anyone)
+		cmd := exec.CommandContext(ctx, api.Cmd.Path, "migrate", "up")
 		for _, kv := range api.Cmd.Env {
 			k, _, _ := strings.Cut(kv, "=")
 			switch k {
@@ -99,7 +101,11 @@ func migrateWith(api supervisor.Process) func(ctx context.Context, dsn string) e
 			}
 			cmd.Env = append(cmd.Env, kv)
 		}
-		cmd.Env = append(cmd.Env, "DATABASE_URL="+dsn)
+		env, err := dsnpkg.ProcessEnv(append(cmd.Env, "DATABASE_URL="+dsn), config.KeysDir())
+		if err != nil {
+			return err
+		}
+		cmd.Env = env
 		var out bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &out, &out
 		if err := cmd.Run(); err != nil {

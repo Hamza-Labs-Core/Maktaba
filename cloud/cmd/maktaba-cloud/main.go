@@ -8,6 +8,9 @@
 //	maktaba-cloud migrate up
 //	maktaba-cloud migrate down 1
 //	maktaba-cloud migrate status
+//	maktaba-cloud admin grant|revoke --email addr   # service-admin role
+//	maktaba-cloud admin list
+//	maktaba-cloud license issue|pubkey|revoke|unrevoke  # Epic 16 licenses
 //	maktaba-cloud version
 package main
 
@@ -46,6 +49,10 @@ func main() {
 		runServe(os.Args[2:])
 	case "migrate":
 		runMigrate(os.Args[2:])
+	case "admin":
+		runAdmin(os.Args[2:])
+	case "license":
+		runLicense(os.Args[2:])
 	case "version":
 		runVersion()
 	default:

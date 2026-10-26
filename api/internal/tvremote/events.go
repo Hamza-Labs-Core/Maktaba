@@ -28,7 +28,7 @@ type Event struct {
 // remoteEvent reports whether an event= value is one of the remote events.
 func remoteEvent(ev string) bool {
 	for _, p := range []string{"tv_push_", "tv_remote_", "tv_budget_", "tv_cf_", "tv_recording_deleted",
-		"tv_storage_full", "tv_input_", "tv_session_timeout", "tv_signing_key_rotated"} {
+		"tv_storage_full", "tv_input_", "tv_session_timeout", "tv_signing_key_rotated", "tv_simulcast_"} {
 		if strings.HasPrefix(ev, p) {
 			return true
 		}

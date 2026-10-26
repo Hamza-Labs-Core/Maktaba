@@ -116,14 +116,14 @@ open are `it.fails` / `it.todo` tests.
 
 ## Account and cloud
 
-| File                                       | Route               | Prefix | Cases | P1  | Covered (Yes / Partial) |
-| ------------------------------------------ | ------------------- | ------ | ----- | --- | ----------------------- |
-| [account.md](account.md)                   | `/account`          | ACC    | 24    | 9   | 18 / 2                  |
-| [account-devices.md](account-devices.md)   | `/account/devices`  | ADV    | 21    | 8   | 15 / 3                  |
-| [account-sessions.md](account-sessions.md) | `/account/sessions` | ASE    | 21    | 10  | 14 / 3                  |
-| [account-tokens.md](account-tokens.md)     | `/account/tokens`   | ATK    | 29    | 11  | 23 / 2                  |
-| [billing.md](billing.md)                   | `/billing`          | BIL    | 24    | 9   | 17 / 2                  |
-| [cloud-status.md](cloud-status.md)         | `/cloud/status`     | CST    | 23    | 11  | 17 / 1                  |
+| File                                       | Route                    | Prefix | Cases | P1  | Covered (Yes / Partial) |
+| ------------------------------------------ | ------------------------ | ------ | ----- | --- | ----------------------- |
+| [account.md](account.md)                   | `/account`               | ACC    | 24    | 9   | 18 / 2                  |
+| [account-devices.md](account-devices.md)   | `/account/devices`       | ADV    | 21    | 8   | 15 / 3                  |
+| [account-sessions.md](account-sessions.md) | `/account/sessions`      | ASE    | 21    | 10  | 14 / 3                  |
+| [account-tokens.md](account-tokens.md)     | `/account/tokens`        | ATK    | 29    | 11  | 23 / 2                  |
+| [subscription.md](subscription.md)         | `/settings/subscription` | SUB    | 12    | 11  | 0 / 0                   |
+| [cloud-status.md](cloud-status.md)         | `/cloud/status`          | CST    | 23    | 11  | 17 / 1                  |
 
 ## Admin
 

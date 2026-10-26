@@ -466,10 +466,12 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     ["Privacy", "/settings/privacy"],
     ["Models", "/settings/models"],
     ["Rules", "/settings/rules"],
+    ["Advanced", "/settings/advanced"],
+    ["Subscription", "/settings/subscription"],
     ["About", "/settings/about"],
   ];
 
-  it("SAC-12: the tab nav lists all seven tabs with the right hrefs", () => {
+  it("SAC-12: the tab nav lists all nine tabs with the right hrefs", () => {
     for (const path of ["/settings", "/settings/rules"]) {
       const { unmount } = renderSettings(path);
       const nav = screen.getByRole("navigation", { name: "Settings" });
@@ -500,6 +502,11 @@ describe("Settings account (test-cases/settings-account.md)", () => {
         "/settings/rules",
         () => screen.findByRole("heading", { level: 2, name: "Rules" }),
         ["/api/rules"],
+      ],
+      [
+        "/settings/advanced",
+        () => screen.findByRole("heading", { level: 2, name: "Experiments" }),
+        ["/api/me/cohorts"],
       ],
       [
         "/settings/about",
@@ -604,7 +611,17 @@ describe("Settings account (test-cases/settings-account.md)", () => {
       within(nav)
         .getAllByRole("link")
         .map((l) => l.textContent)
-    ).toEqual(["الحساب", "الجلسات", "المظهر", "الخصوصية", "النماذج", "القواعد", "حول"]);
+    ).toEqual([
+      "الحساب",
+      "الجلسات",
+      "المظهر",
+      "الخصوصية",
+      "النماذج",
+      "القواعد",
+      "متقدم",
+      "الاشتراك",
+      "حول",
+    ]);
     expect(screen.getByText("مها").closest("p")).toHaveTextContent("تسجيل الدخول باسم مها");
     expect(screen.getByRole("button", { name: "تسجيل الخروج من كل الأجهزة" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "جمع التشخيص" })).toBeInTheDocument();
@@ -973,7 +990,7 @@ describe("Settings privacy (test-cases/settings-privacy.md)", () => {
     get.mockImplementation(() => new Promise(() => {}));
     renderSettings("/settings/privacy");
     expect(screen.getByRole("heading", { name: "Activity tracking" })).toBeInTheDocument();
-    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: /^Tracking/ })).not.toBeInTheDocument();
     expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
 
@@ -983,7 +1000,7 @@ describe("Settings privacy (test-cases/settings-privacy.md)", () => {
       const { unmount } = renderSettings("/settings/privacy");
       expect(await screen.findByText("Something went wrong.")).toHaveAttribute("role", "alert");
       await screen.findByRole("table");
-      expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+      expect(screen.queryByRole("switch", { name: /^Tracking/ })).not.toBeInTheDocument();
       expect(request).not.toHaveBeenCalled();
       unmount();
     }
@@ -1446,15 +1463,28 @@ describe("Settings about (test-cases/settings-about.md)", () => {
   it("SAB-12: a Docker / package install 409 shows the instruction, no polling", async () => {
     const user = userEvent.setup();
     mockGets({ "/api/system/updates": AVAILABLE });
-    const runs: [Record<string, unknown>, string | null][] = [
+    // [the 409's fields, the Docker instruction shown, the reason the update cannot start]
+    const runs: [Record<string, unknown>, string | null, string | null][] = [
       [
         { instructions: "docker compose pull && docker compose up -d" },
         "docker compose pull && docker compose up -d",
+        null,
       ],
-      [{ detail: "apt upgrade maktaba" }, "apt upgrade maktaba"],
-      [{}, null],
+      // a blocked update is not a Docker install: its reason, in the page's words
+      [
+        { code: "recent_crash", detail: "an update cannot start now: recent_crash" },
+        null,
+        "The update can't start now: a part of the home's server crashed in the last ten minutes.",
+      ],
+      // a reason this page has no words for: the server's
+      [
+        { code: "something_new", detail: "an update cannot start now: something_new" },
+        null,
+        "The update can't start now: an update cannot start now: something_new.",
+      ],
+      [{}, null, null],
     ];
-    for (const [extra, hint] of runs) {
+    for (const [extra, hint, blocked] of runs) {
       get.mockClear();
       post.mockRejectedValueOnce(problem(409, "Conflict", extra));
       const { unmount } = renderSettings("/settings/about", { user: adminUser });
@@ -1464,6 +1494,11 @@ describe("Settings about (test-cases/settings-about.md)", () => {
         expect(screen.getByText(hint).tagName).toBe("PRE");
         expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
         expect(screen.queryByText("Update failed.")).not.toBeInTheDocument();
+      } else if (blocked) {
+        expect(await screen.findByText(blocked)).toBeInTheDocument();
+        expect(screen.queryByText("This is a Docker install. Run:")).not.toBeInTheDocument();
+        expect(screen.queryByText("Update failed.")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Update now" })).toBeEnabled();
       } else {
         expect(await screen.findByText("Update failed.")).toBeInTheDocument();
       }

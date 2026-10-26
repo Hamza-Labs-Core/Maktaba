@@ -1,6 +1,6 @@
 // Root component for the Maktaba web app.
 //
-// Provider order (outer→inner): i18n → theme-sync → toasts → node guard → auth →
+// Provider order (outer→inner): i18n → theme-sync → toasts → node guard → auth → flags →
 // router → shortcuts → shell. ThemeProvider from the Epic-17 design
 // system stamps <html data-theme>; ThemeSync keeps it tracking the
 // "system" OS preference live (Story 11.8).
@@ -14,6 +14,7 @@ import { NodeGuard } from "./components/NodeGuard";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { I18nProvider } from "./lib/i18n";
 import { AuthProvider, RequireAuth } from "./lib/auth";
+import { FlagsProvider } from "./lib/flags";
 import { ShortcutProvider } from "./lib/keyboard/shortcuts";
 import { applyResolvedTheme, readMode, watchSystemTheme } from "./lib/theme";
 import { LibraryBrowser } from "./pages/LibraryBrowser";
@@ -39,7 +40,6 @@ import { Machines } from "./pages/Admin/Machines";
 import { AdminUpdates } from "./pages/Admin/Updates";
 import { AdminLogs } from "./pages/Admin/Logs";
 import { CloudDevices } from "./pages/Cloud/Devices";
-import { Billing } from "./pages/Cloud/Billing";
 import { ConnectedDevices } from "./pages/Profile/ConnectedDevices";
 import { Sessions } from "./pages/Profile/Sessions";
 import { APITokens } from "./pages/Profile/APITokens";
@@ -58,6 +58,7 @@ import { ServerStatus } from "./pages/Cloud/ServerStatus";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Auth/Register";
 import { NotFound } from "./pages/NotFound";
+import { Pair } from "./pages/Pair";
 import { HelpIndex, HelpTopic } from "./help/Help";
 
 // ThemeSync re-applies the resolved theme whenever the OS preference
@@ -93,73 +94,79 @@ export function App() {
             {/* Epic 35: a paused node shows the paused page instead of the app */}
             <NodeGuard>
               <AuthProvider>
-                <BrowserRouter>
-                  <DesktopBridge />
-                  <ShortcutProvider>
-                    <Routes>
-                      <Route element={<PublicPages />}>
-                        <Route path="/login" element={<Login />} />
-                        <Route path="/register" element={<Register />} />
-                      </Route>
-                      <Route
-                        element={
-                          <RequireAuth>
-                            <AppShell />
-                          </RequireAuth>
-                        }
-                      >
-                        <Route index element={<Navigate to="/library" replace />} />
-                        <Route path="/library" element={<LibraryBrowser />} />
-                        <Route path="/library/:libraryId" element={<LibraryBrowser />} />
-                        <Route path="/series" element={<SeriesBrowser />} />
-                        <Route path="/series/:id" element={<SeriesDetail />} />
-                        <Route path="/videos/:videoId" element={<VideoDetail />} />
-                        <Route path="/videos/:videoId/watch" element={<VideoPlayer />} />
-                        <Route path="/search" element={<Search />} />
-                        <Route path="/search/video/:videoId" element={<SearchVideo />} />
-                        <Route path="/guide" element={<Guide />} />
-                        <Route path="/live/:number" element={<Player />} />
-                        <Route path="/queue" element={<QueueOverview />} />
-                        <Route path="/queue/items/:kind/:id" element={<ItemHistory />} />
-                        <Route path="/queue/reports" element={<Reports />} />
-                        <Route path="/queue/failures" element={<Failures />} />
-                        <Route path="/queue/:stage" element={<QueueDetail />} />
-                        <Route path="/transcription" element={<Transcription />} />
-                        <Route path="/settings/*" element={<Settings />} />
-                        <Route path="/more" element={<MoreMenu />} />
-                        <Route path="/help" element={<HelpIndex />} />
-                        <Route path="/help/:topic" element={<HelpTopic />} />
-                        <Route path="/account" element={<Account />} />
-                        <Route path="/account/devices" element={<ConnectedDevices />} />
-                        <Route path="/account/sessions" element={<Sessions />} />
-                        <Route path="/account/tokens" element={<APITokens />} />
-                        <Route path="/account/history" element={<WatchHistory />} />
-                        <Route path="/billing" element={<Billing />} />
-                        <Route path="/cloud/status" element={<ServerStatus />} />
-                        <Route path="/admin/users" element={<AdminUsers />} />
-                        <Route path="/admin/library-acl" element={<LibraryACL />} />
-                        <Route path="/admin/extensions" element={<AdminExtensions />} />
-                        <Route path="/admin/enrichment" element={<AdminEnrichment />} />
-                        <Route path="/admin/channels" element={<Channels />} />
-                        <Route path="/admin/filler" element={<FillerPools />} />
-                        <Route path="/admin/live-tv" element={<AdminLiveTV />} />
-                        <Route path="/admin/live-tv/changes" element={<AdminTvChanges />} />
+                <FlagsProvider>
+                  <BrowserRouter>
+                    <DesktopBridge />
+                    <ShortcutProvider>
+                      <Routes>
+                        <Route element={<PublicPages />}>
+                          <Route path="/login" element={<Login />} />
+                          <Route path="/register" element={<Register />} />
+                        </Route>
                         <Route
-                          path="/admin/live-tv/changes/:id"
-                          element={<AdminTvChangeDetail />}
-                        />
-                        <Route path="/admin/analytics" element={<AdminAnalytics />} />
-                        <Route path="/admin/audit" element={<AdminAuditLog />} />
-                        <Route path="/admin/health" element={<SystemHealth />} />
-                        <Route path="/admin/machines" element={<Machines />} />
-                        <Route path="/admin/updates" element={<AdminUpdates />} />
-                        <Route path="/admin/logs" element={<AdminLogs />} />
-                        <Route path="/admin/devices" element={<CloudDevices />} />
-                        <Route path="*" element={<NotFound />} />
-                      </Route>
-                    </Routes>
-                  </ShortcutProvider>
-                </BrowserRouter>
+                          element={
+                            <RequireAuth>
+                              <AppShell />
+                            </RequireAuth>
+                          }
+                        >
+                          <Route index element={<Navigate to="/library" replace />} />
+                          <Route path="/library" element={<LibraryBrowser />} />
+                          <Route path="/library/:libraryId" element={<LibraryBrowser />} />
+                          <Route path="/series" element={<SeriesBrowser />} />
+                          <Route path="/series/:id" element={<SeriesDetail />} />
+                          <Route path="/videos/:videoId" element={<VideoDetail />} />
+                          <Route path="/videos/:videoId/watch" element={<VideoPlayer />} />
+                          <Route path="/search" element={<Search />} />
+                          <Route path="/search/video/:videoId" element={<SearchVideo />} />
+                          <Route path="/guide" element={<Guide />} />
+                          <Route path="/live/:number" element={<Player />} />
+                          <Route path="/queue" element={<QueueOverview />} />
+                          <Route path="/queue/items/:kind/:id" element={<ItemHistory />} />
+                          <Route path="/queue/reports" element={<Reports />} />
+                          <Route path="/queue/failures" element={<Failures />} />
+                          <Route path="/queue/:stage" element={<QueueDetail />} />
+                          <Route path="/transcription" element={<Transcription />} />
+                          <Route path="/settings/*" element={<Settings />} />
+                          <Route path="/more" element={<MoreMenu />} />
+                          <Route path="/help" element={<HelpIndex />} />
+                          <Route path="/help/:topic" element={<HelpTopic />} />
+                          <Route path="/account" element={<Account />} />
+                          <Route path="/account/devices" element={<ConnectedDevices />} />
+                          <Route path="/account/sessions" element={<Sessions />} />
+                          <Route path="/account/tokens" element={<APITokens />} />
+                          <Route path="/account/history" element={<WatchHistory />} />
+                          <Route path="/pair" element={<Pair />} />
+                          <Route
+                            path="/billing"
+                            element={<Navigate to="/settings/subscription" replace />}
+                          />
+                          <Route path="/cloud/status" element={<ServerStatus />} />
+                          <Route path="/admin/users" element={<AdminUsers />} />
+                          <Route path="/admin/library-acl" element={<LibraryACL />} />
+                          <Route path="/admin/extensions" element={<AdminExtensions />} />
+                          <Route path="/admin/enrichment" element={<AdminEnrichment />} />
+                          <Route path="/admin/channels" element={<Channels />} />
+                          <Route path="/admin/filler" element={<FillerPools />} />
+                          <Route path="/admin/live-tv" element={<AdminLiveTV />} />
+                          <Route path="/admin/live-tv/changes" element={<AdminTvChanges />} />
+                          <Route
+                            path="/admin/live-tv/changes/:id"
+                            element={<AdminTvChangeDetail />}
+                          />
+                          <Route path="/admin/analytics" element={<AdminAnalytics />} />
+                          <Route path="/admin/audit" element={<AdminAuditLog />} />
+                          <Route path="/admin/health" element={<SystemHealth />} />
+                          <Route path="/admin/machines" element={<Machines />} />
+                          <Route path="/admin/updates" element={<AdminUpdates />} />
+                          <Route path="/admin/logs" element={<AdminLogs />} />
+                          <Route path="/admin/devices" element={<CloudDevices />} />
+                          <Route path="*" element={<NotFound />} />
+                        </Route>
+                      </Routes>
+                    </ShortcutProvider>
+                  </BrowserRouter>
+                </FlagsProvider>
               </AuthProvider>
             </NodeGuard>
           </DesktopGate>

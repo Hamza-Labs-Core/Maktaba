@@ -4,7 +4,9 @@ package metrics
 
 import (
 	"context"
+	neturl "net/url"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -22,23 +24,12 @@ func TestLatestGauges(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	pool, err := db.Open(url, 4, 2, time.Minute)
-	if err != nil {
+	// CI's MAKTABA_CLOUD_DB_URL is the database the home api's own
+	// integration tests migrate, whose users table is the api's; the cloud
+	// schema gets a scratch database of its own, dropped afterwards.
+	pool := scratchCloudDB(ctx, t, url)
+	if err := db.NewMigrator(pool, migrations.FS, ".").Up(ctx); err != nil {
 		t.Fatal(err)
-	}
-	defer func() { _ = pool.Close() }()
-	// integration packages run in parallel against one database; a
-	// migration that loses the race to another package succeeds on retry
-	mig := db.NewMigrator(pool, migrations.FS, ".")
-	for attempt := 1; ; attempt++ {
-		err := mig.Up(ctx)
-		if err == nil {
-			break
-		}
-		if attempt == 5 {
-			t.Fatal(err)
-		}
-		time.Sleep(time.Duration(attempt) * 300 * time.Millisecond)
 	}
 	st := NewStore(pool.DB)
 	// a far-future window keeps this test's rows apart from anything else
@@ -67,4 +58,31 @@ func TestLatestGauges(t *testing.T) {
 	if err != nil || ok || s != 0 || tu != 0 {
 		t.Fatalf("stale = %d/%d ok=%v err=%v, want 0/0 not ok", s, tu, ok, err)
 	}
+}
+
+func scratchCloudDB(ctx context.Context, t *testing.T, url string) *db.Pool {
+	t.Helper()
+	admin, err := db.Open(url, 2, 1, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	name := "cloud_metrics_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	if _, err := admin.DB.ExecContext(ctx, `CREATE DATABASE `+name); err != nil {
+		t.Fatal(err)
+	}
+	u, err := neturl.Parse(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.Path = "/" + name
+	pool, err := db.Open(u.String(), 4, 2, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = pool.Close()
+		_, _ = admin.DB.ExecContext(context.Background(), `DROP DATABASE IF EXISTS `+name+` WITH (FORCE)`)
+	})
+	return pool
 }

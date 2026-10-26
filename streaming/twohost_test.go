@@ -28,6 +28,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -38,14 +39,32 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgtest"
 )
 
+// handedOut are the ports freePort gave this test binary: the kernel may give a port
+// just closed again at once, and two of the processes started on one of them meant
+// "bind: address already in use" (the node, once on CI).
+var (
+	handedOutMu sync.Mutex
+	handedOut   = map[int]bool{}
+)
+
 func freePort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	handedOutMu.Lock()
+	defer handedOutMu.Unlock()
+	for range 100 {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := l.Addr().(*net.TCPAddr).Port
+		_ = l.Close()
+		if !handedOut[port] {
+			handedOut[port] = true
+			return port
+		}
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	t.Fatal("no free port not already handed out")
+	return 0
 }
 
 type proc struct {

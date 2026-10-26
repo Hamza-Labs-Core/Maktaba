@@ -120,6 +120,9 @@ func JWTBearer(set *keys.Set, expectedAud string) func(http.Handler) http.Handle
 				AccessAllLibraries: c.IsAdmin,
 				Source:             principal.SourceJWT,
 			}
+			// a cloud sign-in's token: its link scope caps it (a play
+			// token is no admin, whatever is_admin says)
+			p.ApplyCloudScope(c.Scp, nil) // a play token lists its libraries itself
 			next.ServeHTTP(w, r.WithContext(principal.WithPrincipal(r.Context(), p)))
 		})
 	}
@@ -175,6 +178,10 @@ func RequireAuth(next http.Handler) http.Handler {
 //   - /api/tv/remote/webhook (Epic 32.7) — Cloudflare Notifications cannot
 //     sign in; the handler checks the cf-webhook-auth secret and only
 //     asks the remote controller for a reconcile.
+//   - /api/telemetry, /api/telemetry/web-vitals and
+//     /api/telemetry/devices/{pseudonym} (Epic 16.7) — the opt-in telemetry
+//     sink is anonymous by design (a device pseudonym, never a user); the
+//     handler validates every field and rate-limits per IP.
 //
 // Deliberately NOT public: /api/system/sbom (internal artifact;
 // only security.txt is mandated public), /api/auth/logout[-all]
@@ -191,9 +198,18 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		"/.well-known/security.txt":  {},
 		"/api/auth/login":            {},
 		"/api/auth/refresh":          {},
+		// Epic 42 story 42.7 — a sign-in with a Maktaba Cloud assertion: the
+		// assertion (signed by the cloud's pinned key, one use) is the
+		// credential.
+		"/api/auth/cloud": {},
 		// web-pages-batch2 — self-service entry points the caller reaches
 		// before holding any credential.
 		"/api/auth/register": {},
+		// Epic 14 — a TV asks for a sign-in code and polls for its approval before it
+		// holds any credential; the poll needs the TV's own device code, and both are
+		// rate-limited per IP (handlers/discovery/device.go).
+		"/api/pairing/device":       {},
+		"/api/pairing/device/token": {},
 		// Epic 31 — a machine's join request and its poll.
 		"/api/cluster/join":   {},
 		"/api/cluster/join/*": {},
@@ -214,6 +230,13 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// Epic 35 story 35.11 — every machine's identity (never a library or
 		// user name): the apps and a typed address recognise the cluster.
 		"/api/cluster/self": {},
+		// Epic 16 story 16.7 — the opt-in telemetry sink: a device that opted in
+		// posts under its pseudonym, never as a user, and "Forget my device"
+		// takes the pseudonym as its bearer. Rate-limited per IP in the handler;
+		// [telemetry] enabled = false stores nothing.
+		"/api/telemetry":            {},
+		"/api/telemetry/web-vitals": {},
+		"/api/telemetry/devices/*":  {},
 		// Epic 37 — a switch's notice of the new home for a machine that was off; it is
 		// sealed to that machine (only it opens it).
 		"/api/cluster/moved/*": {},

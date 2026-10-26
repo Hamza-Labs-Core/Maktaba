@@ -133,13 +133,22 @@ func TestProxy_BodyCloseUnregistersStream(t *testing.T) {
 	// proving the read loop is not wedged.
 	conn.in <- Frame{Kind: KindResponseBody, StreamID: 1, Payload: []byte("late")}
 	conn.in <- Frame{Kind: KindPing, StreamID: 7}
-	select {
-	case f := <-conn.out:
-		if f.Kind != KindPong || f.StreamID != 7 {
-			t.Fatalf("got kind=%#x stream=%d, want PONG/7", f.Kind, f.StreamID)
+	// The early close also tells the home to stop the stream.
+	sawClose, sawPong := false, false
+	for !sawClose || !sawPong {
+		select {
+		case f := <-conn.out:
+			switch {
+			case f.Kind == KindCloseStream && f.StreamID == 1:
+				sawClose = true
+			case f.Kind == KindPong && f.StreamID == 7:
+				sawPong = true
+			default:
+				t.Fatalf("got kind=%#x stream=%d", f.Kind, f.StreamID)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("read loop wedged after body close (CLOSE_STREAM %v, PONG %v)", sawClose, sawPong)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("read loop wedged after body close")
 	}
 }
 
