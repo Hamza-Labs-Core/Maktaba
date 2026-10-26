@@ -52,6 +52,11 @@ func manageDB(t *testing.T) *sql.DB {
 		`CREATE TABLE collections (id TEXT PRIMARY KEY, library_id TEXT NOT NULL, name TEXT NOT NULL,
 			UNIQUE (library_id, name))`,
 		`CREATE TABLE playback_state (video_id TEXT, user_id TEXT)`,
+		`CREATE TABLE topic_collections (id TEXT PRIMARY KEY, library_id TEXT NOT NULL, playlist_id TEXT NOT NULL,
+			name TEXT NOT NULL, UNIQUE (library_id, playlist_id))`,
+		`CREATE TABLE channels (id TEXT PRIMARY KEY, library_id TEXT, number INTEGER NOT NULL, name TEXT NOT NULL,
+			slug TEXT NOT NULL, UNIQUE (library_id, number), UNIQUE (library_id, slug))`,
+		`CREATE TABLE library_acl (user_id TEXT, library_id TEXT, PRIMARY KEY (user_id, library_id))`,
 		`CREATE TABLE audit_log (id INTEGER PRIMARY KEY, category TEXT, action TEXT, actor_user_id TEXT,
 			target_id TEXT, payload TEXT, ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
 	} {
@@ -211,6 +216,10 @@ func TestMerge(t *testing.T) {
 	mustExec(t, db, `INSERT INTO library_stats_cache VALUES ($1), ($2)`, libBig, libSmall)
 	mustExec(t, db, `INSERT INTO series VALUES ('ser', $1)`, libSmall)
 	mustExec(t, db, `INSERT INTO collections VALUES ('c1', $1, 'Fav'), ('c2', $2, 'Fav'), ('c3', $2, 'Tafsir')`, libBig, libSmall)
+	mustExec(t, db, `INSERT INTO topic_collections VALUES ('t1', $1, 'PL1', 'Fiqh'), ('t2', $2, 'PL1', 'Fiqh'), ('t3', $2, 'PL2', 'Seerah')`, libBig, libSmall)
+	mustExec(t, db, `INSERT INTO channels VALUES ('ch1', $1, 1, 'Quran', 'quran'), ('ch2', $1, 2, 'Kids', 'kids'),
+		('ch3', $2, 1, 'Talks', 'talks'), ('ch4', $2, 5, 'Quran', 'quran'), ('ch5', $2, 7, 'Misc', 'misc')`, libBig, libSmall)
+	mustExec(t, db, `INSERT INTO library_acl VALUES ('viewer', $1)`, libSmall)
 	mustExec(t, db, `INSERT INTO processing_jobs (id, subject_kind, library_id, video_id, stage, state)
 		VALUES (1, 'video', $1, 's2', 'probe', 'pending'), (2, 'library', $1, NULL, 'scan', 'done')`, libSmall)
 	h := &Handler{DB: db, NowFunc: func() time.Time { return t0 }}
@@ -261,9 +270,38 @@ func TestMerge(t *testing.T) {
 	if n := count(t, db, `SELECT COUNT(*) FROM series WHERE library_id = $1`, libBig); n != 1 {
 		t.Errorf("the series did not move")
 	}
-	// the clashing "Fav" stays behind (it goes with the merged library); "Tafsir" moves
-	if n := count(t, db, `SELECT COUNT(*) FROM collections WHERE library_id = $1`, libBig); n != 2 {
-		t.Errorf("Big has %d collections, want 2", n)
+	// what clashes is renamed and kept, the rest moves as it is
+	names := func(q string) string {
+		t.Helper()
+		rows, err := db.Query(q, libBig)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var out []string
+		for rows.Next() {
+			var s string
+			if err := rows.Scan(&s); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, s)
+		}
+		return strings.Join(out, ",")
+	}
+	if got := names(`SELECT name FROM collections WHERE library_id = $1 ORDER BY id`); got != "Fav,Fav (Small),Tafsir" {
+		t.Errorf("collections = %s", got)
+	}
+	if got := names(`SELECT playlist_id || ':' || name FROM topic_collections WHERE library_id = $1 ORDER BY id`); got != "PL1:Fiqh,PL1-merged:Fiqh (Small),PL2:Seerah" {
+		t.Errorf("topic collections = %s", got)
+	}
+	// Talks clashes on number 1 (next free after 2, then 7 moving as is: 3);
+	// Quran on its slug; Misc moves untouched
+	if got := names(`SELECT number || ':' || slug || ':' || name FROM channels WHERE library_id = $1 ORDER BY id`); got != "1:quran:Quran,2:kids:Kids,3:talks:Talks (Small),5:quran-2:Quran (Small),7:misc:Misc" {
+		t.Errorf("channels = %s", got)
+	}
+	// a merge never widens access: the merged library's grant is not copied
+	if n := count(t, db, `SELECT COUNT(*) FROM library_acl WHERE library_id = $1`, libBig); n != 0 {
+		t.Errorf("a grant was copied to the target")
 	}
 	if n := count(t, db, `SELECT COUNT(*) FROM processing_jobs WHERE library_id = $1`, libBig); n != 1 {
 		t.Errorf("the video job did not move (or the scan job did)")
@@ -301,6 +339,7 @@ func TestImpact(t *testing.T) {
 	addVideo(t, db, "b2", libBig, "h2", "ready")
 	mustExec(t, db, `INSERT INTO playback_state VALUES ('b1', 'u1'), ('b1', 'u2'), ('x', 'u1')`)
 	mustExec(t, db, `INSERT INTO series VALUES ('ser', $1)`, libBig)
+	mustExec(t, db, `INSERT INTO library_acl VALUES ('u1', $1), ('u2', $1), ('u3', 'another')`, libBig)
 	rec := call(t, &Handler{DB: db}, "GET", "/api/libraries/"+libBig+"/impact", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("impact: %d %s", rec.Code, rec.Body.String())
@@ -309,7 +348,7 @@ func TestImpact(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if want := (ImpactResponse{Videos: 2, PlaybackStates: 2, Series: 1}); got != want {
+	if want := (ImpactResponse{Videos: 2, PlaybackStates: 2, Series: 1, Grants: 2}); got != want {
 		t.Errorf("impact = %+v, want %+v", got, want)
 	}
 }

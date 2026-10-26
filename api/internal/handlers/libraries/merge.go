@@ -13,10 +13,12 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/channels"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
@@ -57,12 +59,15 @@ type ImpactResponse struct {
 	Series         int `json:"series"`
 	Collections    int `json:"collections"`
 	ChannelBlocks  int `json:"channel_blocks"`
+	Grants         int `json:"grants"`
 }
 
 // Impact counts what removing (or merging) the library takes with it: its
 // videos, their transcripts, playback positions and watch history, its
 // series and collections, and the channels' upcoming blocks that play its
-// videos. A table this database does not have counts 0.
+// videos, and its grants (the library_acl rows: the users who lose access,
+// a merge included, since a merge never copies grants to the target). A
+// table this database does not have counts 0.
 func (h *Handler) Impact(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireAdmin(w, r); !ok {
 		return
@@ -100,6 +105,7 @@ func (h *Handler) Impact(w http.ResponseWriter, r *http.Request) {
 		{"channel_programs", "video_id", &out.ChannelBlocks,
 			`SELECT COUNT(*) FROM channel_programs cp JOIN videos v ON v.id = cp.video_id
 			 WHERE v.library_id = $1 AND cp.end_at > $2`, []any{h.now()}},
+		{"library_acl", "library_id", &out.Grants, `SELECT COUNT(*) FROM library_acl WHERE library_id = $1`, nil},
 	} {
 		if !h.hasColumn(ctx, c.table, c.column) {
 			continue
@@ -133,8 +139,12 @@ type MergeResponse struct {
 // Left to go with the merged library (ON DELETE CASCADE): its scan jobs and
 // library-wide jobs, topics (library_topics / video_topics: the next topic
 // pass groups the target's videos again), collection suggestions, sweeps,
-// scan state, STT usage, purge log, the stats cache and its viewers' grants
-// (library_acl: a viewer of the merged library is not given the target).
+// scan state, STT usage, purge log, the stats cache and its grants
+// (library_acl: a merge never widens access, so a viewer of the merged
+// library is not given the target; the impact's grants say who loses it).
+//
+// Collections, topic collections and channels are named per library; they
+// move in mergeNamed, renamed when the target has the same one.
 var mergeMoves = []struct{ table, column, query string }{
 	// rows of single videos: every video still in the merged library moves
 	// (the duplicates are gone by now), so all of these do
@@ -153,15 +163,13 @@ var mergeMoves = []struct{ table, column, query string }{
 	{"speakers", "library_id", `UPDATE speakers SET library_id = $1 WHERE library_id = $2`},
 	{"youtube_channels", "library_id", `UPDATE youtube_channels SET library_id = $1 WHERE library_id = $2`},
 	{"clip_groups", "library_id", `UPDATE clip_groups SET library_id = $1 WHERE library_id = $2`},
-	// named per library: moved unless the target already has that name;
-	// the clashing ones go with the merged library
-	{"collections", "library_id", `UPDATE collections SET library_id = $1 WHERE library_id = $2
-		AND NOT EXISTS (SELECT 1 FROM collections c WHERE c.library_id = $1 AND c.name = collections.name)`},
-	{"topic_collections", "library_id", `UPDATE topic_collections SET library_id = $1 WHERE library_id = $2
-		AND NOT EXISTS (SELECT 1 FROM topic_collections c WHERE c.library_id = $1 AND c.playlist_id = topic_collections.playlist_id)`},
-	{"channels", "library_id", `UPDATE channels SET library_id = $1 WHERE library_id = $2
-		AND NOT EXISTS (SELECT 1 FROM channels c WHERE c.library_id = $1
-			AND (c.number = channels.number OR c.slug = channels.slug))`},
+}
+
+// mergeTables is what this database has, asked before the transaction.
+type mergeTables struct {
+	moves                         []string
+	roots, statsCache             bool
+	collections, topics, channels bool
 }
 
 // Merge merges library {id} into another one, in one transaction: each video
@@ -193,14 +201,17 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// which tables this database has, asked before the transaction
-	var moves []string
+	var tables mergeTables
 	for _, m := range mergeMoves {
 		if h.hasColumn(ctx, m.table, m.column) {
-			moves = append(moves, m.query)
+			tables.moves = append(tables.moves, m.query)
 		}
 	}
-	hasRootsTable := h.hasColumn(ctx, "library_roots", "path_canonical")
-	hasStatsCache := h.hasColumn(ctx, "library_stats_cache", "library_id")
+	tables.roots = h.hasColumn(ctx, "library_roots", "path_canonical")
+	tables.statsCache = h.hasColumn(ctx, "library_stats_cache", "library_id")
+	tables.collections = h.hasColumn(ctx, "collections", "name")
+	tables.topics = h.hasColumn(ctx, "topic_collections", "playlist_id")
+	tables.channels = h.hasColumn(ctx, "channels", "slug")
 
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -231,7 +242,7 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	resp, err := h.merge(ctx, tx, from, into, moves, hasRootsTable, hasStatsCache)
+	resp, err := h.merge(ctx, tx, from, into, tables)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("merge").Wrap(err))
 		return
@@ -248,7 +259,7 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, resp)
 }
 
-func (h *Handler) merge(ctx context.Context, tx *sql.Tx, from, into Library, moves []string, hasRootsTable, hasStatsCache bool) (MergeResponse, error) {
+func (h *Handler) merge(ctx context.Context, tx *sql.Tx, from, into Library, tables mergeTables) (MergeResponse, error) {
 	var resp MergeResponse
 	res, err := tx.ExecContext(ctx, `
 		DELETE FROM videos WHERE library_id = $2
@@ -259,10 +270,13 @@ func (h *Handler) merge(ctx context.Context, tx *sql.Tx, from, into Library, mov
 	}
 	resp.DuplicatesRemoved, _ = res.RowsAffected()
 
-	for _, q := range moves {
+	for _, q := range tables.moves {
 		if _, err := tx.ExecContext(ctx, q, into.ID, from.ID); err != nil {
 			return resp, err
 		}
+	}
+	if err := mergeNamed(ctx, tx, from, into, tables); err != nil {
+		return resp, err
 	}
 	res, err = tx.ExecContext(ctx, `UPDATE videos SET library_id = $1 WHERE library_id = $2`, into.ID, from.ID)
 	if err != nil {
@@ -277,13 +291,13 @@ func (h *Handler) merge(ctx context.Context, tx *sql.Tx, from, into Library, mov
 		stringArray(roots), now, into.ID); err != nil {
 		return resp, err
 	}
-	if hasRootsTable {
+	if tables.roots {
 		if err := SyncLibraryRoots(ctx, tx, into.ID, roots); err != nil {
 			return resp, err
 		}
 	}
 	// both libraries' cached stats are wrong now: dropped, the next read recomputes
-	if hasStatsCache {
+	if tables.statsCache {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM library_stats_cache WHERE library_id IN ($1, $2)`,
 			into.ID, from.ID); err != nil {
 			return resp, err
@@ -376,4 +390,179 @@ func (h *Handler) EmptyTrash(w http.ResponseWriter, r *http.Request) {
 	}
 	WriteAudit(ctx, h.DB, EventTrashEmptied, ActorOf(p), id, map[string]any{"removed": removed})
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"removed": removed})
+}
+
+// mergeNamed moves the merged library's collections, topic collections and
+// channels to the target, keeping every one: one that clashes with the
+// target's (a collection's name, a topic collection's playlist, a channel's
+// slug or number, each unique per library) is renamed "<name> (<merged
+// library>)", and given the next free slug ("-2", "-3", as the channels
+// handler does), number (after the target's highest) or playlist key.
+func mergeNamed(ctx context.Context, tx *sql.Tx, from, into Library, tables mergeTables) error {
+	suffix := " (" + from.Name + ")"
+	if tables.collections {
+		taken, err := takenSet(ctx, tx, `SELECT name FROM collections WHERE library_id = $1`, into.ID)
+		if err != nil {
+			return err
+		}
+		rows, err := namedRows(ctx, tx, `SELECT id, name FROM collections WHERE library_id = $1`, from.ID)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			name := row[1]
+			if taken[name] {
+				name = freeName(taken, name+suffix)
+			}
+			taken[name] = true
+			if _, err := tx.ExecContext(ctx, `UPDATE collections SET library_id = $1, name = $2 WHERE id = $3`,
+				into.ID, name, row[0]); err != nil {
+				return err
+			}
+		}
+	}
+	if tables.topics {
+		taken, err := takenSet(ctx, tx, `SELECT playlist_id FROM topic_collections WHERE library_id = $1`, into.ID)
+		if err != nil {
+			return err
+		}
+		rows, err := namedRows(ctx, tx, `SELECT id, playlist_id, name FROM topic_collections WHERE library_id = $1`, from.ID)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			playlist, name := row[1], row[2]
+			if taken[playlist] {
+				playlist = freeKey(taken, playlist)
+				name += suffix
+			}
+			taken[playlist] = true
+			if _, err := tx.ExecContext(ctx, `UPDATE topic_collections SET library_id = $1, playlist_id = $2, name = $3 WHERE id = $4`,
+				into.ID, playlist, name, row[0]); err != nil {
+				return err
+			}
+		}
+	}
+	if tables.channels {
+		// every channel of the target counts, retired ones too: the index
+		// covers the live ones only, so this is the safe side
+		slugs, err := takenSet(ctx, tx, `SELECT slug FROM channels WHERE library_id = $1`, into.ID)
+		if err != nil {
+			return err
+		}
+		numbers, err := takenSet(ctx, tx, `SELECT number FROM channels WHERE library_id = $1`, into.ID)
+		if err != nil {
+			return err
+		}
+		maxNum := 0
+		for n := range numbers {
+			if v, _ := strconv.Atoi(n); v > maxNum {
+				maxNum = v
+			}
+		}
+		rows, err := namedRows(ctx, tx, `SELECT id, slug, number, name FROM channels WHERE library_id = $1 ORDER BY number, id`, from.ID)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			slug, number, name := row[1], row[2], row[3]
+			clash := false
+			if slugs[slug] {
+				clash = true
+				for n := 2; ; n++ {
+					if s := channels.SlugWithSuffix(slug, n); !slugs[s] {
+						slug = s
+						break
+					}
+				}
+			}
+			if numbers[number] {
+				clash = true
+				maxNum++
+				number = strconv.Itoa(maxNum)
+			}
+			if clash {
+				name += suffix
+			}
+			slugs[slug], numbers[number] = true, true
+			if v, _ := strconv.Atoi(number); v > maxNum {
+				maxNum = v
+			}
+			num, _ := strconv.Atoi(number)
+			if _, err := tx.ExecContext(ctx, `UPDATE channels SET library_id = $1, slug = $2, number = $3, name = $4 WHERE id = $5`,
+				into.ID, slug, num, name, row[0]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// takenSet reads one column of the target's rows as text.
+func takenSet(ctx context.Context, tx *sql.Tx, q, libraryID string) (map[string]bool, error) {
+	rows, err := namedRows(ctx, tx, q, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, r := range rows {
+		out[r[0]] = true
+	}
+	return out, nil
+}
+
+// namedRows reads every row of q as text columns (the merged library holds
+// few of these).
+func namedRows(ctx context.Context, tx *sql.Tx, q, libraryID string) ([][]string, error) {
+	rows, err := tx.QueryContext(ctx, q, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	var out [][]string
+	for rows.Next() {
+		vals := make([]sql.NullString, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+		row := make([]string, len(cols))
+		for i, v := range vals {
+			row[i] = v.String
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// freeName is name, or name with " 2", " 3"... when that is taken too.
+func freeName(taken map[string]bool, name string) string {
+	if !taken[name] {
+		return name
+	}
+	for n := 2; ; n++ {
+		if s := name + " " + strconv.Itoa(n); !taken[s] {
+			return s
+		}
+	}
+}
+
+// freeKey is key with "-merged", "-merged-2"... the first one not taken.
+func freeKey(taken map[string]bool, key string) string {
+	for n := 1; ; n++ {
+		s := key + "-merged"
+		if n > 1 {
+			s += "-" + strconv.Itoa(n)
+		}
+		if !taken[s] {
+			return s
+		}
+	}
 }
