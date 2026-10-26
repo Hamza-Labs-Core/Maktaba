@@ -46,15 +46,15 @@ const DOC = {
     {
       library_id: "l1",
       library_name: "Lectures",
-      path: "/Volumes/Originals/Lectures",
-      local_path: "/Users/me/nas-nfs/Originals/Lectures",
+      root: "/Volumes/Originals/Lectures",
+      local: "/Users/me/nas-nfs/Originals/Lectures",
       reachable: true,
     },
     {
       library_id: "l2",
       library_name: "Old",
-      path: "/srv/old",
-      local_path: "/srv/old",
+      root: "/srv/old",
+      local: "/srv/old",
       reachable: false,
       problem: "not-found",
     },
@@ -106,8 +106,9 @@ describe("StorageSettings", () => {
   });
 
   it("explains calmly when the server has no settings to change", async () => {
-    open({ available: false });
+    open({ available: false, reason: "no supervisor: this API runs without maktaba-server" });
     expect(await screen.findByText(/can only be changed when Maktaba runs/)).toBeInTheDocument();
+    expect(screen.getByText(/no supervisor/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   });
 
@@ -173,6 +174,7 @@ describe("StorageSettings", () => {
         errors: [
           { field: "server.web_listen", message: "must differ from listen" },
           { field: "media.path_map[0].local", message: "not a directory" },
+          { field: "media.path_map[1]", message: 'a path cannot hold ";" or "="' },
           { field: "media.roots[0]", message: "not absolute" },
         ],
       })
@@ -182,6 +184,9 @@ describe("StorageSettings", () => {
     await user.type(web, ":8080");
     await user.clear(screen.getByLabelText(/^Media folder 1/));
     await user.type(screen.getByLabelText(/^Media folder 1/), "relative");
+    await user.click(screen.getByRole("button", { name: "Add a translation" }));
+    await user.type(screen.getByLabelText(/^Library path 2/), "/Volumes/A=B");
+    await user.type(screen.getByLabelText(/^On this computer 2/), "/x");
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(screen.getByLabelText(/^Web app address/)).toHaveAccessibleDescription(
@@ -192,13 +197,17 @@ describe("StorageSettings", () => {
       /not a directory/
     );
     expect(screen.getByLabelText(/^Media folder 1/)).toHaveAccessibleDescription(/not absolute/);
+    // a pair refused as a whole shows on its local side
+    expect(screen.getByLabelText(/^On this computer 2/)).toHaveAccessibleDescription(/cannot hold/);
+    // nothing left over for the top of the form
+    expect(screen.queryByText(/media\./)).toBeNull();
   });
 
   it("restarts after asking, waits for the server to come back, then reloads", async () => {
     const user = userEvent.setup();
     const onReload = vi.fn();
     open({ ...DOC, restart_needed: true }, adminUser, { onReload });
-    post.mockResolvedValue(undefined);
+    post.mockResolvedValue({ restarting: true });
     let pings = 0;
     routeGet(get, {
       "/api/server/settings": { ...DOC, restart_needed: true },
@@ -226,7 +235,9 @@ describe("StorageSettings", () => {
   it("explains a refused restart (409)", async () => {
     const user = userEvent.setup();
     open({ ...DOC, restart_needed: true });
-    post.mockRejectedValue(problem(409, "conflict"));
+    post.mockRejectedValue(
+      problem(409, "no-supervisor", { detail: "no supervisor: restart the server yourself" })
+    );
     await user.click(await screen.findByRole("button", { name: "Restart the server" }));
     await user.click(
       within(screen.getByRole("dialog")).getByRole("button", { name: "Restart the server" })

@@ -4764,5 +4764,6 @@
   "help.topic.library-management.title": "إدارة المكتبات",
   "help.topic.library-management.summary": "أضف المكتبات واختر مجلداتها، وافحصها، وأفرغ المهملات، وادمجها وأزلها.",
   "help.topic.storage.title": "التخزين والاكتشاف",
-  "help.topic.storage.summary": "ترجمة المسارات ومجلدات الوسائط والاكتشاف والعناوين وإعادة تشغيل الخادم."
+  "help.topic.storage.summary": "ترجمة المسارات ومجلدات الوسائط والاكتشاف والعناوين وإعادة تشغيل الخادم.",
+  "libraryAdmin.impact.grants": "سيفقد {count} شخصًا الوصول إلى هذه المكتبة. امنحهم الوصول من جديد في صلاحيات المكتبات إن احتاجوه."
 }

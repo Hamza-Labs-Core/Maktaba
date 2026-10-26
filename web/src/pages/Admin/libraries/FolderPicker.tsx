@@ -9,6 +9,7 @@ import {
   libraryAdminApi,
   problemMessage,
   type FolderEntry,
+  type Place,
   type FolderListing,
 } from "../../../lib/libraryAdminApi";
 import { ApiError } from "../../../lib/api";
@@ -38,7 +39,7 @@ export function FolderPicker({
   onCancel: () => void;
 }) {
   const { t } = useI18n();
-  const [places, setPlaces] = useState<FolderEntry[] | null>(null);
+  const [places, setPlaces] = useState<Place[] | null>(null);
   const [listing, setListing] = useState<FolderListing | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,7 +158,16 @@ export function FolderPicker({
                 title={e.path}
               >
                 <span aria-hidden="true">▸ </span>
-                <bdi dir="ltr">{listing ? e.name : e.path}</bdi>
+                {listing ? (
+                  <bdi dir="ltr">{e.name}</bdi>
+                ) : (
+                  <>
+                    <bdi>{e.name}</bdi>{" "}
+                    <bdi dir="ltr" className="mkt-muted mkt-libadmin__path">
+                      {e.path}
+                    </bdi>
+                  </>
+                )}
               </button>
             </li>
           ))}

@@ -1,6 +1,6 @@
 // Epic 45 (story 45.5): Manage libraries (admin).
 //
-//   GET /api/libraries/manage   every library with its folders (reachable or why
+//   GET /api/libraries/manage   {items, conflict_groups}: every library with its folders (reachable or why
 //                               not), counts, last scan, a running scan, and the
 //                               folders two libraries claim (conflict_groups)
 //
@@ -65,7 +65,7 @@ function LibrariesInner() {
     setDialog(null);
     load();
   };
-  const libraries = data?.libraries ?? [];
+  const libraries = data?.items ?? [];
 
   return (
     <section className="mkt-page mkt-libadmin">
@@ -157,8 +157,7 @@ function Conflicts({
 }) {
   const { t, n } = useI18n();
   const byId = new Map(libraries.map((l) => [l.id, l]));
-  const shown = groups.filter((g) => g.library_ids.filter((id) => byId.has(id)).length > 1);
-  if (shown.length === 0) return null;
+  if (groups.length === 0) return null;
   return (
     <section
       className="mkt-libadmin__conflicts"
@@ -168,40 +167,48 @@ function Conflicts({
       <h2 id="mkt-libadmin-conflicts">{t("libraryAdmin.conflicts.title")}</h2>
       <p className="mkt-muted">{t("libraryAdmin.conflicts.desc")}</p>
       <ul>
-        {shown.map((g, gi) => {
-          const target = byId.get(g.target_id);
+        {groups.map((g) => {
+          const ids = new Set(g.libraries.map((m) => m.id));
+          const target = g.libraries.find((m) => m.id === g.suggested_target);
+          // the folders the group's libraries claim of each other
+          const folders = [
+            ...new Set(
+              g.libraries.flatMap((m) =>
+                (byId.get(m.id)?.conflicts ?? [])
+                  .filter((c) => ids.has(c.library_id))
+                  .map((c) => c.root)
+              )
+            ),
+          ];
           return (
-            <li key={`${g.root ?? ""}-${gi}`} className="mkt-libadmin__conflict">
-              {g.root && (
-                <p>
-                  <bdi dir="ltr" className="mkt-libadmin__path">
-                    {g.root}
-                  </bdi>{" "}
-                  {g.kind && (
-                    <Badge tone="warn">{t(`libraryAdmin.conflicts.kind.${g.kind}`)}</Badge>
-                  )}
-                </p>
-              )}
+            <li key={g.libraries.map((m) => m.id).join("|")} className="mkt-libadmin__conflict">
+              <p>
+                <Badge tone="warn">{t(`libraryAdmin.conflicts.kind.${g.kind}`)}</Badge>{" "}
+                {folders.map((f) => (
+                  <bdi key={f} dir="ltr" className="mkt-libadmin__path mkt-libadmin__local">
+                    {f}
+                  </bdi>
+                ))}
+              </p>
               <ul>
-                {g.library_ids.map((id) => {
-                  const lib = byId.get(id);
-                  if (!lib) return null;
+                {g.libraries.map((m) => {
+                  const lib = byId.get(m.id);
                   return (
-                    <li key={id} className="mkt-libadmin__conflict-lib">
+                    <li key={m.id} className="mkt-libadmin__conflict-lib">
                       <span>
-                        <bdi>{lib.name}</bdi>{" "}
+                        <bdi>{m.name}</bdi>{" "}
                         <span className="mkt-muted">
-                          ({t("libraryAdmin.counts.videos", { count: n(lib.counts.total) })})
+                          ({t("libraryAdmin.counts.videos", { count: n(m.videos) })})
                         </span>
                       </span>
-                      {target && id !== target.id && (
+                      {target && lib && m.id !== target.id && (
                         <Button type="button" size="sm" onClick={() => onMerge(lib, target.id)}>
                           {t("libraryAdmin.conflicts.mergeInto", {
                             name: bidiIsolate(target.name),
                           })}
                         </Button>
                       )}
-                      {target && id === target.id && (
+                      {m.id === g.suggested_target && (
                         <Badge tone="success">{t("libraryAdmin.conflicts.keeps")}</Badge>
                       )}
                     </li>
@@ -252,7 +259,7 @@ function LibraryCard({
       <h3 className="mkt-libadmin__label">{t("libraryAdmin.folders")}</h3>
       <ul className="mkt-libadmin__roots">
         {lib.roots.map((r) => {
-          const conflicts = (lib.conflicts ?? []).filter((x) => x.root === r.path);
+          const conflicts = lib.conflicts.filter((x) => x.root === r.path);
           return (
             <li key={r.path}>
               <bdi dir="ltr" className="mkt-libadmin__path">

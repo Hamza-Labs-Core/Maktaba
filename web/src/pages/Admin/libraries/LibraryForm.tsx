@@ -38,7 +38,8 @@ export function cleanRoots(rows: string[]): { roots: string[]; rowOf: number[] }
   return { roots, rowOf };
 }
 
-const prettySettings = (s: ManagedLibrary["settings"]) => JSON.stringify(s ?? {}, null, 2);
+const prettySettings = (s: ManagedLibrary["settings"] | undefined) =>
+  JSON.stringify(s ?? {}, null, 2);
 
 export function LibraryForm({
   library,

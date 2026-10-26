@@ -47,13 +47,21 @@ function ImpactList({ id }: { id: string }) {
     );
   if (!impact) return <p className="mkt-loading">{t("common.loading")}</p>;
   return (
-    <ul className="mkt-libadmin__impact" aria-label={t("libraryAdmin.impact.title")}>
-      {IMPACT_KEYS.map((k) => (
-        <li key={k}>
-          <strong>{n(impact[k] ?? 0)}</strong> {t(`libraryAdmin.impact.${k}`)}
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="mkt-libadmin__impact" aria-label={t("libraryAdmin.impact.title")}>
+        {IMPACT_KEYS.map((k) => (
+          <li key={k}>
+            <strong>{n(impact[k])}</strong> {t(`libraryAdmin.impact.${k}`)}
+          </li>
+        ))}
+      </ul>
+      {/* grants are never carried over, a merge included */}
+      {impact.grants > 0 && (
+        <p className="mkt-storage__warn">
+          {t("libraryAdmin.impact.grants", { count: n(impact.grants) })}
+        </p>
+      )}
+    </>
   );
 }
 

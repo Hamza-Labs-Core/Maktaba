@@ -22,7 +22,6 @@ import { reloadPage } from "../../lib/navigation";
 import {
   ADDRESS_KEYS,
   URL_KEYS,
-  normaliseSettings,
   serverSettingsApi,
   type PathMapPair,
   type ReachabilityRow,
@@ -99,7 +98,7 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
   const show = useCallback((d: ServerSettingsDoc) => {
     setDoc(d);
     if (d.available) {
-      const s = normaliseSettings(d.saved);
+      const s = structuredClone(d.saved);
       if (s.media.path_map.length === 0) s.media.path_map.push(blankPair());
       if (s.media.roots.length === 0) s.media.roots.push("");
       setForm(s);
@@ -110,7 +109,7 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
     setError(null);
     serverSettingsApi
       .get()
-      .then((d) => show(d ?? { available: false }))
+      .then(show)
       .catch((e) => setError(problemMessage(e, t("common.error"))));
   }, [show, t]);
 
@@ -136,12 +135,15 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
       <section className="mkt-storage" aria-labelledby="mkt-storage-title">
         <h2 id="mkt-storage-title">{t("storage.title")}</h2>
         <p>{t("storage.unavailable")}</p>
+        {!doc.available && doc.reason && (
+          <p className="mkt-muted mkt-libadmin__small">{doc.reason}</p>
+        )}
         <HelpLink to={{ topic: "storage", anchor: "not-available" }} />
       </section>
     );
   }
 
-  const saved = normaliseSettings(doc.saved);
+  const saved = doc.saved;
   const pairs = kept(form.media.path_map, (p) => p.db.trim() === "" && p.local.trim() === "");
   const roots = kept(form.media.roots, (r) => r.trim() === "");
   const pathMap = pairs.list.map((p) => ({ db: p.db.trim(), local: p.local.trim() }));
@@ -177,22 +179,24 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
       if (Object.keys(mediaChanges).length > 0) body.media = mediaChanges;
       if (Object.keys(serverChanges).length > 0) body.server = serverChanges;
       const d = await serverSettingsApi.save(body);
-      show(d ?? (await serverSettingsApi.get()));
+      show(d);
       toast.show({ tone: "success", message: t("storage.saved") });
     } catch (e) {
-      // each field error beside its field: path_map[i](.db|.local), roots[i], listen, …
+      // each field error beside its field: media.path_map[i] (a pair as a whole:
+      // shown on its local side), media.path_map[i].db|.local, media.roots[i],
+      // server.<key>; the indexes are of the list sent
       const next: Record<string, string> = {};
       const loose: string[] = [];
       for (const fe of fieldErrors(e)) {
-        const f = fe.field.replace(/^(media|server)\./, "");
-        const pm = /^path_map\[(\d+)\](?:\.(db|local))?$/.exec(f);
-        const rt = /^roots\[(\d+)\]$/.exec(f);
+        const pm = /^media\.path_map\[(\d+)\](?:\.(db|local))?$/.exec(fe.field);
+        const rt = /^media\.roots\[(\d+)\]$/.exec(fe.field);
+        const sv = /^server\.(\w+)$/.exec(fe.field);
         if (pm && pairs.rowOf[Number(pm[1])] !== undefined) {
           next[`path_map.${pairs.rowOf[Number(pm[1])]}.${pm[2] ?? "local"}`] = fe.message;
         } else if (rt && roots.rowOf[Number(rt[1])] !== undefined) {
           next[`roots.${roots.rowOf[Number(rt[1])]}`] = fe.message;
-        } else if (f in saved.server) {
-          next[f] = fe.message;
+        } else if (sv && sv[1] in saved.server) {
+          next[sv[1]] = fe.message;
         } else {
           loose.push(fe.field ? `${fe.field}: ${fe.message}` : fe.message);
         }
@@ -234,7 +238,7 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
       if (down) return onReload();
       if (i >= 4) {
         const d = await serverSettingsApi.get().catch(() => null);
-        if (d && !d.restart_needed) return onReload();
+        if (d?.available && !d.restart_needed) return onReload();
       }
     }
     if (alive.current) setPhase("slow");
@@ -460,7 +464,7 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
         </div>
       </form>
 
-      <Reachability rows={doc.reachability ?? []} />
+      <Reachability rows={doc.reachability} />
 
       <Modal
         open={phase === "confirm"}
@@ -504,17 +508,19 @@ function Reachability({ rows }: { rows: ReachabilityRow[] }) {
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={`${r.library_id ?? ""}-${r.path}-${i}`}>
-                  <td>{r.library_name ? <bdi>{r.library_name}</bdi> : "—"}</td>
+                <tr key={`${r.library_id}-${r.root}-${i}`}>
+                  <td>
+                    <bdi>{r.library_name}</bdi>
+                  </td>
                   <td>
                     <bdi dir="ltr" className="mkt-libadmin__path">
-                      {r.path}
+                      {r.root}
                     </bdi>
                   </td>
                   <td>
-                    {r.local_path ? (
+                    {r.local ? (
                       <bdi dir="ltr" className="mkt-libadmin__path">
-                        {r.local_path}
+                        {r.local}
                       </bdi>
                     ) : (
                       "—"

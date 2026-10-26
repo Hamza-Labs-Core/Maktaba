@@ -39,15 +39,19 @@ const BIG = {
       path: "/Volumes/Originals/Backup/Youtube/Othman",
       local_path: "/Users/me/nas-nfs/Backup/Youtube/Othman",
       reachable: true,
+      problem: null,
     },
   ],
   settings: { language: "ar" },
+  created_at: "2026-10-17T09:00:00Z",
+  updated_at: "2026-10-17T09:00:00Z",
   counts: counts(47273, 3),
   last_scan: {
     job_id: "j-old",
     state: "done",
     created_at: "2026-10-20T10:00:00Z",
     finished_at: "2026-10-20T10:05:00Z",
+    error: null,
   },
   scanning: false,
   conflicts: [
@@ -67,24 +71,38 @@ const SMALL = {
   roots: [
     {
       path: "/Volumes/Originals/Backup/Youtube/Othman",
+      local_path: "/Volumes/Originals/Backup/Youtube/Othman",
       reachable: false,
       problem: "not-found",
     },
   ],
   settings: {},
+  created_at: "2026-10-17T09:00:00Z",
+  updated_at: "2026-10-17T09:00:00Z",
   counts: counts(1),
   last_scan: null,
   scanning: false,
-  conflicts: [],
-};
-const DATA = {
-  libraries: [BIG, SMALL],
-  conflict_groups: [
+  conflicts: [
     {
       root: "/Volumes/Originals/Backup/Youtube/Othman",
+      other_root: "/Volumes/Originals/Backup/Youtube/Othman",
+      library_id: "big",
+      library_name: "Dr. Othman Alkamees",
       kind: "same",
-      library_ids: ["big", "small"],
-      target_id: "big",
+      other_count: 47273,
+    },
+  ],
+};
+const DATA = {
+  items: [BIG, SMALL],
+  conflict_groups: [
+    {
+      libraries: [
+        { id: "big", name: "Dr. Othman Alkamees", videos: 47273 },
+        { id: "small", name: "Othman (dup)", videos: 1 },
+      ],
+      kind: "same",
+      suggested_target: "big",
     },
   ],
 };
@@ -96,6 +114,7 @@ const IMPACT = {
   series: 0,
   collections: 0,
   channel_blocks: 0,
+  grants: 2,
 };
 
 function open(data: unknown = DATA, user: User | null = adminUser, extra = {}) {
@@ -146,6 +165,11 @@ describe("AdminLibraries", () => {
 
     const panel = screen.getByRole("region", { name: "Folders claimed twice" });
     expect(within(panel).getByText("Keeps the videos")).toBeInTheDocument();
+    expect(within(panel).getByText("Same folder")).toBeInTheDocument();
+    expect(within(panel).getByText("/Volumes/Originals/Backup/Youtube/Othman")).toHaveAttribute(
+      "dir",
+      "ltr"
+    );
     expect(
       within(panel).getByRole("button", { name: /Merge into .*Dr\. Othman Alkamees/ })
     ).toBeInTheDocument();
@@ -153,7 +177,20 @@ describe("AdminLibraries", () => {
 
   it("follows a scan already running after a reload", async () => {
     open({
-      libraries: [{ ...BIG, scanning: true, last_scan: { job_id: "j1", state: "running" } }, SMALL],
+      items: [
+        {
+          ...BIG,
+          scanning: true,
+          last_scan: {
+            job_id: "j1",
+            state: "running",
+            created_at: "2026-10-26T10:00:00Z",
+            finished_at: null,
+            error: null,
+          },
+        },
+        SMALL,
+      ],
       conflict_groups: [],
     });
     const big = await screen.findByRole("heading", { level: 2, name: "Dr. Othman Alkamees" });
@@ -190,14 +227,32 @@ describe("AdminLibraries", () => {
     open(DATA, adminUser, {
       "/api/libraries/folders": (url: string) => {
         const path = new URL(url, "http://x").searchParams.get("path");
-        if (!path) return { places: [{ name: "Originals", path: "/Volumes/Originals" }] };
+        if (!path)
+          return {
+            places: [
+              {
+                name: "Originals",
+                path: "/Volumes/Originals",
+                local_path: "/Users/me/nas-nfs/Originals",
+              },
+            ],
+          };
+        const local = path.replace("/Volumes/Originals", "/Users/me/nas-nfs/Originals");
         if (path === "/Volumes/Originals")
           return {
             path,
+            local_path: local,
             parent: "/Volumes",
             entries: [{ name: "Lectures", path: "/Volumes/Originals/Lectures" }],
+            truncated: false,
           };
-        return { path, parent: "/Volumes/Originals", entries: [] };
+        return {
+          path,
+          local_path: local,
+          parent: "/Volumes/Originals",
+          entries: [],
+          truncated: false,
+        };
       },
     });
     post.mockResolvedValue({ id: "new" });
@@ -302,13 +357,19 @@ describe("AdminLibraries", () => {
   it("merges from the conflicts panel only after the name is typed", async () => {
     const user = userEvent.setup();
     open();
-    post.mockResolvedValue({ moved: 0, duplicates_removed: 1, roots_added: 0 });
+    post.mockResolvedValue({
+      moved: 0,
+      duplicates_removed: 1,
+      roots_added: 0,
+      into: { ...BIG, roots: BIG.roots.map((r) => r.path) },
+    });
     const panel = await screen.findByRole("region", { name: "Folders claimed twice" });
     await user.click(within(panel).getByRole("button", { name: /Merge into/ }));
     const dialog = screen.getByRole("dialog", { name: /Merge .*Othman \(dup\)/ });
     expect(within(dialog).getByLabelText("Merge into")).toHaveValue("big");
     const impact = await within(dialog).findByRole("list", { name: "What goes with it" });
     expect(impact).toHaveTextContent("3 watch records");
+    expect(within(dialog).getByText(/2 people lose access/)).toBeInTheDocument();
     const go = within(dialog).getByRole("button", { name: "Merge" });
     expect(go).toBeDisabled();
     const confirm = within(dialog).getByLabelText(/^Type .*Othman \(dup\).* to confirm/);
@@ -348,6 +409,7 @@ describe("AdminLibraries", () => {
     expect(
       await within(dialog).findByRole("list", { name: "What goes with it" })
     ).toHaveTextContent("1 videos");
+    expect(within(dialog).getByText(/2 people lose access/)).toBeInTheDocument();
     const go = within(dialog).getByRole("button", { name: "Remove library" });
     expect(go).toBeDisabled();
     await user.type(within(dialog).getByLabelText(/to confirm/), "Othman (dup)");
@@ -373,7 +435,7 @@ describe("AdminLibraries", () => {
   });
 
   it("shows the empty state", async () => {
-    open({ libraries: [], conflict_groups: [] });
+    open({ items: [], conflict_groups: [] });
     expect(await screen.findByText("No libraries yet")).toBeInTheDocument();
   });
 });

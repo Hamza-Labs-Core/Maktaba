@@ -4751,5 +4751,6 @@
   "help.topic.library-management.title": "Managing libraries",
   "help.topic.library-management.summary": "Add libraries, choose their folders, scan, empty trash, merge and remove.",
   "help.topic.storage.title": "Storage & discovery",
-  "help.topic.storage.summary": "Folder translations, media folders, discovery, addresses and restarting the server."
+  "help.topic.storage.summary": "Folder translations, media folders, discovery, addresses and restarting the server.",
+  "libraryAdmin.impact.grants": "{count} people lose access to this library. Grant them access again on Library access if they need it."
 }
