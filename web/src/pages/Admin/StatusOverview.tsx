@@ -41,6 +41,7 @@ const NAMED = new Set([
   "tv_change",
   "tv_slot",
   "tv_tuner",
+  "host_access",
 ]);
 
 function dependencyName(name: string, t: T): string {

@@ -30,8 +30,23 @@ Setting up this Mac takes these steps (**Step N of N**, with **Back** and **Next
 3. **Your library folders**: the folders that hold your lectures, one per line. Maktaba reads them; it never moves or changes your files. If other machines see the same files under another path, fill in **NAS path map (optional)**, one `their path => this Mac's path` per line.
 4. **Transcription models**: choose **Download from Hugging Face** (paste a **Hugging Face token**; **Get a token** shows where to make one) or **Use the copy on the NAS** (give the **Folder with the models**). The models are a few GB.
 5. **Plex (optional)**: **Sign in with Plex**, type the code shown on the Plex page, and wait. Or click **Skip**; you can do it later in [Settings](/settings).
-6. **Getting Maktaba ready**: the app installs the transcription and search tools (about 2 GB, a few minutes) and creates the library database. If macOS asks, allow Maktaba to run in the background (see [Allow Maktaba to run in the background](/help/mac-app#background-item)).
-7. **Starting Maktaba**: the server starts and your library opens.
+6. **Permissions**: what Maktaba needs from macOS, whether each one is on, and **Open System Settings** to turn it on. See [Permissions](#permissions). You can go on without them and turn them on later.
+7. **Getting Maktaba ready**: the app installs the transcription and search tools (about 2 GB, a few minutes) and creates the library database. If macOS asks, allow Maktaba to run in the background (see [Allow Maktaba to run in the background](/help/mac-app#background-item)).
+8. **Starting Maktaba**: the server starts and your library opens.
+
+### Permissions {#permissions}
+
+macOS keeps some things private until you allow them. Maktaba asks only for what the server needs. The setup's **Permissions** step lists them, and the window reminds you (**Maktaba needs a permission on this Mac**) whenever a required one is off. It checks again each time you come back to the window. Each item says why it is needed, whether it is on, and has **Open System Settings**, which opens the right page.
+
+- **Full Disk Access** (required): lets the server read your library folders, a NAS share and the folders macOS protects. Without it, reading them fails with "operation not permitted" and nothing new is found or processed.
+  1. Click **Open System Settings**. It opens Privacy & Security → Full Disk Access.
+  2. Turn on **Maktaba**. If it is not in the list, click **+**, choose **Maktaba** in Applications and click **Open**.
+  3. The server started before you turned it on still cannot read: choose **Pause server**, then **Resume server** in the menu bar.
+- **Local Network** (required when you use Plex, a NAS by its address or other machines): lets the server reach devices on your network. macOS lists it as **maktaba-launcher**. The first time it reaches your network, macOS asks: choose **Allow**. If you chose **Don't Allow**: click **Open System Settings** (Privacy & Security → Local Network) and turn on **maktaba-launcher**. macOS does not tell apps whether this is on, so the item says **Cannot tell**; a Plex that does not answer with "no route to host" on [System health](/help/system-health#item-plex-livetv) is the sign it is off.
+- **Run in the background** (required): the server's login item, so it starts when you log in. Setup turns it on at the end. If it is off: click **Open System Settings** (General → Login Items & Extensions) and turn on **Maktaba** under **Allow in the Background**. See [Starting at login](#login-item).
+- **Keep this Mac awake** (optional): a Mac that sleeps stops serving, transcribing and airing channels until it wakes. Click **Open System Settings** (Energy) and turn on **Prevent automatic sleeping when the display is off**. On a laptop it is under Battery → Options, and works only on power.
+
+[System health](/help/system-health#item-host-access) shows every library folder the server cannot read and why.
 
 ### Closing the window {#closing-the-window}
 
@@ -146,6 +161,18 @@ Choose **Connect to another Maktaba…** in the menu bar. It takes you back to t
 - **What it means:** macOS turned off Maktaba's background item, so the server cannot start at login.
 - **Does Maktaba fix it itself?** No. macOS needs your permission.
 - **What you can do:** click **Open Login Items**, turn on **Maktaba**, come back and click **I turned it on**.
+
+### Maktaba cannot read a library folder {#full-disk-access}
+
+- **What it means:** macOS does not let the server read the folder ("operation not permitted"): Maktaba has no Full Disk Access, or the server started before it was turned on.
+- **Does Maktaba fix it itself?** No. Only you can allow it, in System Settings.
+- **What you can do:** turn on Full Disk Access for Maktaba (see [Permissions](#permissions)), then choose **Pause server** and **Resume server** in the menu bar. If the folder is on a NAS, check that the share is mounted (it appears in Finder under Locations).
+
+### Maktaba cannot reach Plex or a machine on the network {#local-network}
+
+- **What it means:** connecting to an address on your network fails with "no route to host". On a Mac that usually means Maktaba is not allowed on the Local Network.
+- **Does Maktaba fix it itself?** No. It tries again by itself once it is allowed.
+- **What you can do:** open System Settings → Privacy & Security → Local Network and turn on **maktaba-launcher** (see [Permissions](#permissions)). If it is on, check that the other machine is on and on the same network.
 
 ### The server is stopped {#server-stopped}
 

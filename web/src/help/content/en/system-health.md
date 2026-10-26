@@ -105,7 +105,18 @@ Something jobs need that Maktaba checks every minute (Queue health): the languag
 
 ### Plex Live TV {#item-plex-livetv}
 
-Maktaba's tuner in Plex: Plex answers, the tuner is registered, the channels are in sync, and the last error. See [Plex](/help/plex).
+Maktaba's tuner in Plex: Plex answers, the tuner is registered, the channels are in sync, and the last error. See [Plex](/help/plex). On the Mac app, Plex on your network that does not answer with "no route to host" usually means macOS keeps Maktaba off the Local Network: see [Local Network](/help/mac-app#local-network).
+
+### Folder access {#item-host-access}
+
+Whether the server can read each library folder, tried every time the page refreshes. Shown when maktaba-server runs the server (the Mac, Windows and Linux apps), not for a Docker install. One tile for all the folders, and one per folder:
+
+- **Can be read**: fine.
+- **macOS does not let Maktaba read this folder**: Maktaba has no Full Disk Access, or the server started before you turned it on. Turn it on in System Settings → Privacy & Security → Full Disk Access (click **+** and choose Maktaba in Applications if it is not listed), then choose **Pause server** and **Resume server** in the menu bar. See [Permissions](/help/mac-app#permissions).
+- **No permission to read this folder** (Windows, Linux): the account the server runs as cannot read it. Give that account read access to the folder.
+- **The volume is not mounted** / **The share is not mounted**: the NAS share is not connected on this machine. Connect it (on a Mac it appears in Finder under Locations), then wait for the next check.
+- **The folder does not exist**: it was moved, renamed or deleted. Put it back, or change the library to its new place.
+- **Did not answer**: the read is still waiting, often a NAS that is asleep or disconnected. Maktaba keeps one read waiting per folder and shows its answer when it comes.
 
 ### Queues {#item-queues}
 
