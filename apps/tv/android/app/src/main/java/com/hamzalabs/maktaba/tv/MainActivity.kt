@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
+import com.hamzalabs.maktaba.tv.permissions.TvPermissionsGate
 import com.hamzalabs.maktaba.tv.ui.navigation.NavGraph
 import com.hamzalabs.maktaba.tv.ui.navigation.Routes
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaTvTheme
@@ -35,11 +36,14 @@ class MainActivity : ComponentActivity() {
                         containerColor = MaterialTheme.colorScheme.background,
                     ),
                 ) {
-                    NavGraph(
-                        repository = container.repository,
-                        settings = container.settings,
-                        startDestination = start,
-                    )
+                    // first run, and whenever a required permission is missing (checked on resume)
+                    TvPermissionsGate {
+                        NavGraph(
+                            repository = container.repository,
+                            settings = container.settings,
+                            startDestination = start,
+                        )
+                    }
                 }
             }
         }

@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 17 and later: reaching a home on the local network is a runtime permission
+         (shown as «Nearby devices»); the permissions walkthrough asks for it (tv/permissions). -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <!-- This is a TV app: it needs Leanback and must NOT require a
          touchscreen, or Play Store will treat it as a handset app and
