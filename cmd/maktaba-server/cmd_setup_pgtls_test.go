@@ -41,7 +41,8 @@ func TestSetupPGTLSForAnOperatorPostgres(t *testing.T) {
 	if err := runSetupPGTLS(&out, cfg, keys, []string{"db.lan", "192.168.1.5"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "ssl_ca_file") || !strings.Contains(out.String(), "clientcert=verify-full") {
+	if !strings.Contains(out.String(), "ssl_ca_file") || !strings.Contains(out.String(), "clientcert=verify-full") ||
+		strings.Contains(out.String(), "+maktaba_worker  <the machines' networks>  scram-sha-256 clientcert") {
 		t.Fatalf("printed:\n%s", out.String())
 	}
 	b, err := os.ReadFile(filepath.Join(keys, pgServerCertFile))
