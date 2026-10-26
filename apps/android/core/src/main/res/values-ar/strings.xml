@@ -33,4 +33,22 @@
     <string name="other_home">اختيار جهاز رئيسي آخر</string>
     <string name="signin_kept_failed">تعذّر التحقق من تسجيل دخولك: %1$s</string>
     <string name="try_again">إعادة المحاولة</string>
+
+    <!-- مسار الأذونات (core/permissions) -->
+    <string name="permissions_title">قبل أن تبدأ</string>
+    <string name="permissions_intro">يحتاج تطبيق مكتبة إلى إذنك لما يلي. يوضح كل بند السبب، ويمكنك تغييره لاحقًا في إعدادات أندرويد.</string>
+    <string name="permission_local_network">الشبكة المحلية</string>
+    <string name="permission_required">مطلوب</string>
+    <string name="permission_optional">اختياري</string>
+    <string name="permission_state_granted">مسموح</string>
+    <string name="permission_state_denied">غير مسموح</string>
+    <string name="permission_state_denied_permanently">غير مسموح، ولن يسأل أندرويد مرة أخرى</string>
+    <string name="permission_state_not_asked">لم يُطلب بعد</string>
+    <string name="permission_state_not_applicable">غير مطلوب في إصدار أندرويد هذا</string>
+    <string name="permission_settings_hint">فعّله من الإعدادات: الأذونات، ثم الأجهزة المجاورة، ثم السماح.</string>
+    <string name="permission_open_settings">فتح الإعدادات</string>
+    <string name="permissions_continue">متابعة</string>
+    <string name="permissions_not_now">ليس الآن</string>
+    <string name="permissions_again">تعود هذه الشاشة كلما رجعت إلى التطبيق إلى أن تُمنح الأذونات المطلوبة.</string>
+    <string name="permissions_learn_more">اعرف المزيد</string>
 </resources>

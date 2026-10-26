@@ -47,8 +47,17 @@ reaches a home on the Mac's network by its address (`192.168.50.177:8088`).
   address is the fallback. Before sign-in a home shows the name its machine announces; once
   signed in, it shows the home's own name from `GET /api/auth/me`.
 - **Local network permission:** on Android 17 (API 37) and later, reaching a home on the
-  local network, by mDNS or by address, needs `ACCESS_LOCAL_NETWORK`, a runtime permission.
-  The picker asks for it. Without it, only an internet address works.
+  local network, by mDNS or by address, needs `ACCESS_LOCAL_NETWORK`, a runtime permission
+  (Android shows it as «Nearby devices»). Without it, only an internet address works.
+- **Permissions walkthrough** (`core/permissions`): the apps' only runtime permission is the
+  local network one (no notifications, no background playback or work, no foreground
+  service; NSD needs no Wi-Fi permission). `PermissionsGate` shows the walkthrough over the
+  app on the first run and again whenever a required permission is missing, read again on
+  every resume; «Not now» puts it away until the app next comes back to the foreground. Each
+  row asks (`RequestPermission`) while Android still will, else opens the app's settings
+  page. On an Android with none of the permissions (before 17) it never shows. The home
+  picker keeps an Allow button for the same permission. Help: `/help/android-apps#permissions`.
+  `./gradlew :core:connectedDebugAndroidTest` runs its Compose UI tests on a device.
 - **Start screens:** Ink & Brass with the logo and the web's library art. Text is set in IBM
   Plex Sans Arabic and headings in Amiri, as on the web. They are in English and Arabic (the
   web's terms, `web/src/i18n`), and Android's per-app language setting lists both. The
