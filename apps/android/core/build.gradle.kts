@@ -10,6 +10,7 @@ android {
 
     defaultConfig {
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildFeatures {
@@ -47,4 +48,13 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // Compose UI tests on a device or emulator (connectedDebugAndroidTest)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    // Compose's test rule idles through Espresso; Android 17 needs a current one
+    androidTestImplementation(libs.espresso.core)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

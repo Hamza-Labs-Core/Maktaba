@@ -1,9 +1,5 @@
 package com.hamzalabs.maktaba.core.ui
 
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -63,11 +59,17 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import com.hamzalabs.maktaba.core.R
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.User
+import com.hamzalabs.maktaba.core.permissions.AppPermissions
+import com.hamzalabs.maktaba.core.permissions.PermissionAction
+import com.hamzalabs.maktaba.core.permissions.PermissionState
+import com.hamzalabs.maktaba.core.permissions.action
+import com.hamzalabs.maktaba.core.permissions.ok
+import com.hamzalabs.maktaba.core.permissions.rememberPermissionMemory
+import com.hamzalabs.maktaba.core.permissions.rememberPermissions
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.FoundHome
 import com.hamzalabs.maktaba.core.session.Home
@@ -100,7 +102,27 @@ fun SessionGate(
  * scrim, the brand (the logo, «Maktaba» and the app), and a panel for the screen's content.
  */
 @Composable
-private fun StartFrame(app: MaktabaApp, content: @Composable ColumnScope.() -> Unit) {
+internal fun StartFrame(app: MaktabaApp, content: @Composable ColumnScope.() -> Unit) {
+    StartBackdrop {
+        Box(
+            Modifier.fillMaxSize().safeDrawingPadding().imePadding().verticalScroll(rememberScrollState()),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(
+                Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = 20.dp, vertical = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                StartBrand(app)
+                StartPanel(content = content)
+            }
+        }
+    }
+}
+
+/** The web's library art (light or dark, tall or wide) under a scrim, filling the screen. */
+@Composable
+internal fun StartBackdrop(content: @Composable () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val dark = colors.background.luminance() < 0.5f
     BoxWithConstraints(Modifier.fillMaxSize().background(colors.background)) {
@@ -117,35 +139,39 @@ private fun StartFrame(app: MaktabaApp, content: @Composable ColumnScope.() -> U
                 Brush.verticalGradient(listOf(colors.background.copy(alpha = 0.45f), colors.background.copy(alpha = 0.85f))),
             ),
         )
-        Box(
-            Modifier.fillMaxSize().safeDrawingPadding().imePadding().verticalScroll(rememberScrollState()),
-            contentAlignment = Alignment.TopCenter,
-        ) {
-            Column(
-                Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = 20.dp, vertical = 28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-                Image(
-                    painterResource(R.drawable.maktaba_logo),
-                    contentDescription = null,
-                    modifier = Modifier.size(96.dp).clip(RoundedCornerShape(22.dp)),
-                )
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(stringResource(R.string.brand), style = MaterialTheme.typography.displaySmall, color = colors.primary)
-                    Text(stringResource(app.nameRes), style = MaterialTheme.typography.titleMedium, color = colors.onSurfaceVariant)
-                }
-                Column(
-                    Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(colors.surface.copy(alpha = 0.86f))
-                        .border(1.dp, colors.outlineVariant, RoundedCornerShape(20.dp))
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) { content() }
-            }
+        content()
+    }
+}
+
+/** The logo, «Maktaba» and the app's name. */
+@Composable
+internal fun StartBrand(app: MaktabaApp) {
+    val colors = MaterialTheme.colorScheme
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Image(
+            painterResource(R.drawable.maktaba_logo),
+            contentDescription = null,
+            modifier = Modifier.size(96.dp).clip(RoundedCornerShape(22.dp)),
+        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(stringResource(R.string.brand), style = MaterialTheme.typography.displaySmall, color = colors.primary)
+            Text(stringResource(app.nameRes), style = MaterialTheme.typography.titleMedium, color = colors.onSurfaceVariant)
         }
     }
+}
+
+/** The start screens' panel: the surface, a hairline border, rounded. */
+@Composable
+internal fun StartPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Column(
+        modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(colors.surface.copy(alpha = 0.86f))
+            .border(1.dp, colors.outlineVariant, RoundedCornerShape(20.dp))
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) { content() }
 }
 
 @Composable
@@ -178,27 +204,6 @@ private fun HomeRow(name: String, address: String, saved: Boolean, onClick: () -
     }
 }
 
-/** Android 17 and later ask before an app reaches the local network, where a home is. */
-private const val LOCAL_NETWORK_SDK = 37
-private const val ACCESS_LOCAL_NETWORK = "android.permission.ACCESS_LOCAL_NETWORK"
-
-/** Whether this app may reach the local network, and a way to ask. */
-private class LocalNetwork(val granted: Boolean, val denied: Boolean, val ask: () -> Unit)
-
-@Composable
-private fun rememberLocalNetwork(): LocalNetwork {
-    val context = LocalContext.current
-    fun has() = Build.VERSION.SDK_INT < LOCAL_NETWORK_SDK ||
-        ContextCompat.checkSelfPermission(context, ACCESS_LOCAL_NETWORK) == PackageManager.PERMISSION_GRANTED
-    var granted by remember { mutableStateOf(has()) }
-    var denied by remember { mutableStateOf(false) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        granted = it
-        denied = !it
-    }
-    return LocalNetwork(granted, denied) { launcher.launch(ACCESS_LOCAL_NETWORK) }
-}
-
 /**
  * The homes on this network (they announce themselves over mDNS), the homes this app knows,
  * and an address to type when a home is elsewhere or does not answer.
@@ -207,7 +212,10 @@ private fun rememberLocalNetwork(): LocalNetwork {
 fun HomePicker(session: AppSession, app: MaktabaApp) {
     val context = LocalContext.current
     val saved by session.homes.collectAsState()
-    val network = rememberLocalNetwork()
+    // the walkthrough asks first (PermissionsGate); this keeps the way to allow it at hand
+    val permissions = rememberPermissions(listOf(AppPermissions.LocalNetwork), rememberPermissionMemory())
+    val network = permissions.rows.first()
+    val granted = network.state.ok
     var found by remember { mutableStateOf<List<FoundHome>>(emptyList()) }
     var searched by remember { mutableStateOf(false) }
     var typing by remember { mutableStateOf(false) }
@@ -215,9 +223,8 @@ fun HomePicker(session: AppSession, app: MaktabaApp) {
     var problem by remember { mutableStateOf<String?>(null) }
     val invalid = stringResource(R.string.address_invalid)
 
-    LaunchedEffect(Unit) { if (!network.granted) network.ask() }
-    LaunchedEffect(network.granted) {
-        if (!network.granted) return@LaunchedEffect
+    LaunchedEffect(granted) {
+        if (!granted) return@LaunchedEffect
         launch { delay(6_000); searched = true }
         runCatching { HomeDiscovery(context.applicationContext).homes().collect { found = it } }
         searched = true
@@ -241,16 +248,18 @@ fun HomePicker(session: AppSession, app: MaktabaApp) {
             modifier = Modifier.fillMaxWidth(),
         )
 
-        if (!network.granted) {
+        if (!granted) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
                 Icon(Icons.Outlined.Wifi, null, tint = MaterialTheme.colorScheme.primary)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(stringResource(R.string.local_network_title), style = MaterialTheme.typography.titleMedium)
                     Text(stringResource(R.string.local_network_body), style = MaterialTheme.typography.bodyMedium)
-                    if (network.denied) {
+                    if (network.state == PermissionState.Denied || network.state == PermissionState.DeniedPermanently) {
                         Text(stringResource(R.string.local_network_denied), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Button(onClick = network.ask) { Text(stringResource(R.string.local_network_allow)) }
+                    Button(onClick = { permissions.act(network.permission) }) {
+                        Text(stringResource(if (network.state.action == PermissionAction.OpenSettings) R.string.permission_open_settings else R.string.local_network_allow))
+                    }
                 }
             }
         } else {
