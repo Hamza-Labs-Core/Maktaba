@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
@@ -36,6 +37,7 @@ import com.hamzalabs.maktaba.tv.R
 import com.hamzalabs.maktaba.tv.data.TvApi
 import com.hamzalabs.maktaba.tv.data.TvVideo
 import com.hamzalabs.maktaba.tv.ui.components.CardCorner
+import com.hamzalabs.maktaba.tv.ui.components.MaktabaButton
 import com.hamzalabs.maktaba.tv.ui.components.MediaCard
 import com.hamzalabs.maktaba.tv.ui.components.SectionTitle
 import com.hamzalabs.maktaba.tv.ui.components.goldFocusBorder
@@ -136,7 +138,7 @@ fun VideoGrid(
 
     when {
         videos.isEmpty() && loading -> Centered { Text(stringResource(R.string.loading), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text) }
-        videos.isEmpty() && problem != null -> LoadState(Load.Failed(problem!!), retry = { want++ }) {}
+        videos.isEmpty() && problem != null -> LoadState(Load.Failed(problem!!), retry = { problem = null; want++ }) {}
         videos.isEmpty() -> Centered { Text(empty ?: stringResource(R.string.nothing_yet), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text) }
         else -> {
           val first = remember { FocusRequester() }
@@ -161,6 +163,15 @@ fun VideoGrid(
                     cardModifier = if (i == 0) Modifier.focusRequester(first) else Modifier,
                     onClick = { onOpen(v.id) },
                 )
+            }
+            if (problem != null) {
+                // a later page failed: say so, and let the remote ask again
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.could_not_load, problem!!), style = MaterialTheme.typography.bodyMedium, color = MaktabaPalette.Gold)
+                        MaktabaButton(onClick = { problem = null; want++ }) { Text(stringResource(R.string.try_again)) }
+                    }
+                }
             }
           }
         }

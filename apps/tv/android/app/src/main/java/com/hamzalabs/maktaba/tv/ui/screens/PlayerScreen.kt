@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,6 +21,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.MaterialTheme
@@ -52,6 +57,15 @@ fun PlayerScreen(
     DisposableEffect(playback) {
         playback.start()
         onDispose { playback.stop() }
+    }
+    // Home, standby or another app: leave the player (its position goes to the home, the
+    // session closes); coming back finds the video page with Resume
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val leave by rememberUpdatedState(onBack)
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) leave() }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {

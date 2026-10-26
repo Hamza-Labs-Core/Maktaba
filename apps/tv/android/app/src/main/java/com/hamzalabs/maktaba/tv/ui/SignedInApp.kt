@@ -27,6 +27,7 @@ import com.hamzalabs.maktaba.tv.ui.screens.LibrariesScreen
 import com.hamzalabs.maktaba.tv.ui.screens.LibraryScreen
 import com.hamzalabs.maktaba.tv.ui.screens.PlayerScreen
 import com.hamzalabs.maktaba.tv.ui.screens.SearchScreen
+import com.hamzalabs.maktaba.tv.ui.screens.SearchState
 import com.hamzalabs.maktaba.tv.ui.screens.VideoScreen
 
 /** A place in the app: the tabs, or one of the screens opened from them. Back goes up the stack. */
@@ -42,6 +43,7 @@ sealed interface Place {
 fun SignedInApp(app: MaktabaTVApp, user: User, client: ApiClient) {
     val api = remember(client) { TvApi(client) }
     val stack = remember(client) { mutableStateListOf<Place>(Place.Tabs) }
+    val search = remember(client) { SearchState() }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     // a tab's first item takes focus at launch and back from a screen; not while the tab bar has it
     var focusContent by remember(client) { mutableStateOf(true) }
@@ -69,7 +71,7 @@ fun SignedInApp(app: MaktabaTVApp, user: User, client: ApiClient) {
                 when (tab) {
                     0 -> HomeScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
                     1 -> LibrariesScreen(api, focusFirst = focusContent, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
-                    2 -> SearchScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+                    2 -> SearchScreen(api, search, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
                     else -> AccountScreen(app, user)
                 }
             }

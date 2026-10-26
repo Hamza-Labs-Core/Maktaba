@@ -42,7 +42,6 @@ class DeviceSignIn(
     }
 
     internal suspend fun start(): DeviceCode {
-        var busy = 0
         var unreachable = 0
         while (true) {
             val (status, text) = try {
@@ -57,8 +56,8 @@ class DeviceSignIn(
                 201, 200 -> return TvApi.json.decodeFromString(DeviceCode.serializer(), text)
                 // an older home's global gate (401), no route
                 401, 403, 404, 405, 501 -> throw Unsupported(status)
-                503 -> if (++busy < 3) sleep(RETRY_MS) else throw Unsupported(status)
-                429 -> sleep(RETRY_MS * 2)
+                // busy or restarting: a moment later
+                503, 429 -> sleep(RETRY_MS * 2)
                 else -> throw ApiException.Status(status, text.take(300))
             }
         }

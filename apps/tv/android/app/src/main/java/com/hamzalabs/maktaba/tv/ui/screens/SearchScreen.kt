@@ -11,7 +11,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -22,11 +21,17 @@ import com.hamzalabs.maktaba.tv.data.TvApi
 import com.hamzalabs.maktaba.tv.ui.components.TvTextField
 import kotlinx.coroutines.delay
 
+/** What was searched: kept by the signed-in app, so Back from a result finds it again. */
+class SearchState {
+    var text by mutableStateOf("")
+    var query by mutableStateOf("")
+}
+
 /** Search the videos by name: the results follow the typing (a short pause, then the home). */
 @Composable
-fun SearchScreen(api: TvApi, focusFirst: Boolean, onOpen: (String) -> Unit, signedOut: () -> Unit) {
-    var text by rememberSaveable { mutableStateOf("") }
-    var query by rememberSaveable { mutableStateOf("") }
+fun SearchScreen(api: TvApi, search: SearchState, focusFirst: Boolean, onOpen: (String) -> Unit, signedOut: () -> Unit) {
+    var text by search::text
+    var query by search::query
     // back from a video: its results take focus again, until a new search (typing keeps focus)
     val shownOnReturn = remember { query }
     LaunchedEffect(text) {
