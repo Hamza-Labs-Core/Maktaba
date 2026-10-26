@@ -41,7 +41,7 @@ var copyReviewed = []string{
 	"tv_release_channels", "tv_releases", "tv_remote_inputs", "tv_remote_pushes",
 	"tv_remote_sessions", "tv_remote_usage_daily", "tv_routing", "tv_simulcast_attachments",
 	"tv_simulcast_outputs", "tv_slot_events", "tv_slots", "tv_swap_ops", "update_run_steps",
-	"update_runs", "update_targets", "update_watermark", "user_analytics_prefs", "user_library_pins", "user_recs",
+	"update_runs", "update_targets", "update_watermark", "user_analytics_prefs", "user_recs",
 	"users", "video_classification", "video_embeddings", "video_entities", "video_repairs",
 	"video_signals", "video_tags", "video_topic_tags", "video_topics", "videos", "watch_sessions",
 	"web_metadata_cache", "web_session_keys", "worker_pools", "workers", "youtube_channels",
