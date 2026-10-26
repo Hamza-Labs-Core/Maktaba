@@ -216,6 +216,7 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    Retry. iPhone (iPhone Duo), iPad, Mac; Xcode automatic signing. (Started.)
 2. **42.2 Home picker:** mDNS (Bonjour on Apple, NSD on Android), by address, QR; several homes.
 3. **42.3 Android Player and Remote:** Compose, phone / foldable / tablet, sharing with Android TV.
+   (Started: `apps/android`, the Player and the Remote for each form factor on a shared `core`.)
 4. **42.4 Desktop Player on Windows and Linux:** Compose for Desktop, release legs,
    `latest-player.json`.
 5. **42.5 Web editions:** `VITE_MAKTABA_EDITION`, lazy server routes, "Manage" in `full`.
