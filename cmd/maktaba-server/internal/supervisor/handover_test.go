@@ -321,12 +321,20 @@ func TestUnadoptedRecordStays(t *testing.T) {
 	slot, _ := fakeProc(t, RoleTVSlot, "serve")
 	slot.Instance, slot.Survives = "blue", true
 	dir := t.TempDir()
-	start, err := layout.ProcessStart(os.Getpid())
+	// the record names a live process of its own, never this test's: were it adopted, the
+	// stop would kill it (on Windows the test binary went with no word)
+	held := exec.Command(os.Args[0], "-test.run=^$")
+	held.Env = append(os.Environ(), "MAKTABA_FAKE_CHILD=sleep")
+	if err := held.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = held.Process.Kill(); _ = held.Wait() })
+	start, err := layout.ProcessStart(held.Process.Pid)
 	if err != nil {
 		t.Skip("no process identity here")
 	}
 	rec := layout.Handover{BootID: layout.BootID(), Writer: 1, Handover: true, WrittenAt: time.Now(),
-		Children: []layout.HandoverChild{{Role: string(RoleTVSlot), Instance: "blue", PID: os.Getpid(), Start: start}}}
+		Children: []layout.HandoverChild{{Role: string(RoleTVSlot), Instance: "blue", PID: held.Process.Pid, Start: start}}}
 	if err := layout.WriteHandover(dir, rec); err != nil {
 		t.Fatal(err)
 	}
