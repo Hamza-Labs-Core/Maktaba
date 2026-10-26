@@ -408,7 +408,8 @@ func (h *Handler) remote(ctx context.Context) (map[string]*Push, map[string]int)
 	pushes, sessions := map[string]*Push{}, map[string]int{}
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT channel_id, id, state, ingest, live_at, COALESCE(detail, '')
-		FROM tv_remote_pushes WHERE state IN ('requested', 'connecting', 'live', 'stopping')`)
+		FROM tv_remote_pushes WHERE state IN ('requested', 'connecting', 'live', 'stopping')
+		ORDER BY CASE state WHEN 'live' THEN 0 WHEN 'connecting' THEN 1 WHEN 'requested' THEN 2 ELSE 3 END, started_at DESC`)
 	if err != nil {
 		return pushes, sessions
 	}
@@ -416,7 +417,9 @@ func (h *Handler) remote(ctx context.Context) (map[string]*Push, map[string]int)
 		var ch string
 		var p Push
 		var live dbTime
-		if rows.Scan(&ch, &p.ID, &p.State, &p.Ingest, &live, &p.Detail) == nil {
+		if rows.Scan(&ch, &p.ID, &p.State, &p.Ingest, &live, &p.Detail) == nil && pushes[ch] == nil {
+			// a rotation has the old push stopping and its successor starting:
+			// the first row (live first, then the newest) is the channel's
 			p.LiveAt = live.ptr()
 			pushes[ch] = &p
 		}

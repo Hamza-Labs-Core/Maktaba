@@ -141,6 +141,52 @@ func TestPublicPushAlwaysOn(t *testing.T) {
 	}
 }
 
+// 32.10: a used-up budget (block_new) stops new public pushes too.
+func TestPublicPushWaitsForBudget(t *testing.T) {
+	fx := newPub(t)
+	fx.makePublic(fx.chans[0])
+	fx.setting(tvremote.PublicSettingsKey, map[string]any{"enabled": true})
+	fx.rules(map[string]any{"monthly_budget_usd": 5}) // the storage plan alone is $5
+	fx.reconcile()
+	if ps := fx.pushes(fx.chans[0]); len(ps) != 0 {
+		t.Fatalf("a public push started with the budget used up: %+v", ps)
+	}
+	fx.rules(map[string]any{})
+	fx.reconcile()
+	if p := fx.last(fx.chans[0]); p.State != tvremote.PushRequested {
+		t.Fatalf("no push once the budget allows: %+v", p)
+	}
+}
+
+// Two posts in the same second (a wake right after a tick) carry strictly
+// increasing times: the Worker refuses a time it has seen.
+func TestPublisherTimesIncrease(t *testing.T) {
+	fx := newPub(t)
+	var mu sync.Mutex
+	var times []int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ts, _ := strconv.ParseInt(r.Header.Get(tvremote.HeaderHomeTime), 10, 64)
+		mu.Lock()
+		times = append(times, ts)
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	fx.setting(tvremote.PublicSettingsKey, map[string]any{"enabled": true, "site_url": srv.URL})
+	_ = fx.store.Put(context.Background(), tvremote.SecretSiteHMAC, []byte("s"), "")
+	pub := &tvremote.Publisher{Ctl: fx.c} // the fixture's clock does not move
+	for i := 0; i < 3; i++ {
+		if err := pub.PublishOnce(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(times) != 3 || times[1] <= times[0] || times[2] <= times[1] || times[0] != fx.clock().UnixMilli() {
+		t.Fatalf("times %v", times)
+	}
+}
+
 // 34.2 / 34.4: the home posts the public lineup and each live channel's
 // video id, signed; private channels are not in it.
 func TestPublisherPostsSignedState(t *testing.T) {

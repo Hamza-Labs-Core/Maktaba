@@ -172,10 +172,12 @@ func TestClusterOnAirRemote(t *testing.T) {
 	seed(t, db, now)
 	for _, q := range []string{
 		`CREATE TABLE tv_remote_pushes (id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, state TEXT NOT NULL,
-			ingest TEXT NOT NULL, live_at TEXT, detail TEXT)`,
+			ingest TEXT NOT NULL, live_at TEXT, detail TEXT, started_at TEXT)`,
 		`CREATE TABLE tv_remote_sessions (id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, ended_at TEXT)`,
-		`INSERT INTO tv_remote_pushes VALUES ('p0', 'c1', 'done', 'rtmps', NULL, NULL),
-			('p1', 'c1', 'live', 'rtmps', '` + ts(now.Add(-time.Minute)) + `', NULL)`,
+		// a rotation: p1 live is the channel's, not the stopping p2 nor the done p0
+		`INSERT INTO tv_remote_pushes VALUES ('p0', 'c1', 'done', 'rtmps', NULL, NULL, NULL),
+			('p2', 'c1', 'stopping', 'rtmps', NULL, NULL, '` + ts(now) + `'),
+			('p1', 'c1', 'live', 'rtmps', '` + ts(now.Add(-time.Minute)) + `', NULL, '` + ts(now.Add(-2*time.Minute)) + `')`,
 		`INSERT INTO tv_remote_sessions VALUES ('s1', 'c1', NULL), ('s2', 'c1', NULL), ('s3', 'c1', '` + ts(now) + `'),
 			('s4', 'c2', '` + ts(now) + `')`,
 	} {

@@ -51,7 +51,7 @@ async function homePost(
   opts: { ts?: number; secret?: string } = {}
 ): Promise<Response> {
   const raw = enc.encode(JSON.stringify(body));
-  const ts = opts.ts ?? Math.floor(Date.now() / 1000);
+  const ts = opts.ts ?? Date.now();
   const sig = await signHome(opts.secret ?? SECRET, "POST", "/_home/state", ts, raw);
   return worker.fetch(
     new Request("https://tv.example.com/_home/state", {
@@ -96,10 +96,8 @@ describe("the home's post", () => {
   it("is refused without the right signature, a fresh time, or once replayed", async () => {
     const env = fakeEnv();
     expect((await homePost(env, state(), { secret: "wrong" })).status).toBe(401);
-    expect((await homePost(env, state(), { ts: Math.floor(Date.now() / 1000) - 120 })).status).toBe(
-      401
-    );
-    const ts = Math.floor(Date.now() / 1000);
+    expect((await homePost(env, state(), { ts: Date.now() - 120_000 })).status).toBe(401);
+    const ts = Date.now();
     expect((await homePost(env, state(), { ts })).status).toBe(204);
     expect((await homePost(env, state(), { ts })).status).toBe(409);
     expect((await homePost(env, { schema: 2 }, { ts: ts + 1 })).status).toBe(400);

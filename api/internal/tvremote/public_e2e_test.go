@@ -147,7 +147,7 @@ func startPublicRig(t *testing.T, siteURL string) *publicRig {
 	stand := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		ts, _ := strconv.ParseInt(r.Header.Get(tvremote.HeaderHomeTime), 10, 64)
-		if r.URL.Path != tvremote.SiteStatePath || time.Since(time.Unix(ts, 0)).Abs() > time.Minute ||
+		if r.URL.Path != tvremote.SiteStatePath || time.Since(time.UnixMilli(ts)).Abs() > time.Minute ||
 			r.Header.Get(tvremote.HeaderHomeSignature) != tvremote.SignHome([]byte(sec.HomeHMAC), r.Method, r.URL.Path, ts, body) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return

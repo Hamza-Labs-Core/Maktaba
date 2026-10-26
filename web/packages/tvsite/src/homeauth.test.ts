@@ -11,7 +11,7 @@ describe("home post signatures", () => {
 
   it("match the home's", async () => {
     expect(await signHome(fx.secret, fx.method, fx.path, fx.ts, body)).toBe(fx.sig);
-    expect(await verifyHome(fx.secret, fx.method, fx.path, headers, body, fx.ts + 5)).toEqual({
+    expect(await verifyHome(fx.secret, fx.method, fx.path, headers, body, fx.ts + 5000)).toEqual({
       ok: true,
       ts: fx.ts,
     });
@@ -26,8 +26,8 @@ describe("home post signatures", () => {
     expect((await verifyHome("x" + fx.secret, fx.method, fx.path, headers, body, fx.ts)).ok).toBe(
       false
     );
-    expect((await verifyHome(fx.secret, fx.method, fx.path, headers, body, fx.ts + 61)).ok).toBe(
-      false
-    );
+    expect(
+      (await verifyHome(fx.secret, fx.method, fx.path, headers, body, fx.ts + 61_000)).ok
+    ).toBe(false);
   });
 });

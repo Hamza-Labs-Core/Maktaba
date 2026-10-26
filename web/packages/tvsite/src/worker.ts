@@ -40,7 +40,7 @@ export interface SiteState {
 export interface Stored {
   state: SiteState;
   received_at: number; // unix seconds
-  home_ts: number; // the accepted post's time (replay guard)
+  home_ts: number; // the accepted post's time, ms (replay guard)
 }
 
 // The parts of the Workers runtime this file uses (no @cloudflare/workers-types here).
@@ -150,7 +150,7 @@ async function homeState(req: Request, env: Env): Promise<Response> {
     new URL(req.url).pathname,
     req.headers,
     body,
-    now()
+    Date.now()
   );
   if (!check.ok) return problem(401, "unauthorized", check.why);
   try {

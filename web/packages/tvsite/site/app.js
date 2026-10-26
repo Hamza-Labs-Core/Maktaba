@@ -26,10 +26,31 @@ let refresh = 0;
 let current = "";
 
 const tokenOf = (url) => new URL(url).pathname.split("/")[1] || "";
+// the token's sub is the live video: a new one (a rotation, or Cloudflare
+// starting a new video) is a new stream, never spliced into the old one
+const subOf = (tok) => {
+  try {
+    return JSON.parse(atob(tok.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sub || "";
+  } catch {
+    return "";
+  }
+};
+// native HLS (Safari) cannot swap a token in place: it gets a new source,
+// so only shortly before the token expires
+const renewIn = (after) => (hls ? Math.max(30, after) : Math.max(30, after * 2 - 20)) * 1000;
+
+function stop() {
+  clearTimeout(refresh);
+  if (hls) hls.destroy();
+  hls = null;
+  token = "";
+  video.removeAttribute("src");
+  video.load();
+}
 
 async function play(slug) {
+  stop();
   current = slug;
-  clearTimeout(refresh);
   status.textContent = t.tuning;
   const r = await fetch("/api/v1/play", { method: "POST", body: JSON.stringify({ slug }) });
   if (current !== slug) return;
@@ -39,12 +60,10 @@ async function play(slug) {
     return;
   }
   const { url, refresh_after: after } = await r.json();
-  const fresh = !token || !hls;
   token = tokenOf(url);
-  refresh = setTimeout(() => renew(slug), Math.max(30, after) * 1000);
   status.textContent = "";
-  if (!fresh && hls) return;
   start(url);
+  refresh = setTimeout(() => renew(slug), renewIn(after));
 }
 
 // renew asks for a new token for the same channel; the loader uses it next.
@@ -52,13 +71,19 @@ async function renew(slug) {
   const r = await fetch("/api/v1/play", { method: "POST", body: JSON.stringify({ slug }) });
   if (current !== slug) return;
   if (!r.ok) {
+    if (r.status === 503) return play(slug); // off the air now: show it, retry
     refresh = setTimeout(() => renew(slug), 15000);
     return;
   }
   const { url, refresh_after: after } = await r.json();
-  token = tokenOf(url);
-  if (!hls) video.src = url; // native HLS (Safari): a new source
-  refresh = setTimeout(() => renew(slug), Math.max(30, after) * 1000);
+  const next = tokenOf(url);
+  if (subOf(next) !== subOf(token) || !hls) {
+    token = next;
+    start(url); // another video, or native HLS: a new source
+  } else {
+    token = next;
+  }
+  refresh = setTimeout(() => renew(slug), renewIn(after));
 }
 
 function start(url) {
@@ -71,7 +96,7 @@ function start(url) {
         // the token is the URL's first path segment: always the newest one
         const p = new URL(u);
         const parts = p.pathname.split("/");
-        if (parts[1] && parts[1] !== token && parts[1].split(".").length === 3) {
+        if (token && parts[1] && parts[1] !== token && parts[1].split(".").length === 3) {
           parts[1] = token;
           p.pathname = parts.join("/");
           xhr.open("GET", p.toString(), true);
@@ -104,7 +129,6 @@ async function lineup() {
       a.addEventListener("click", (e) => {
         e.preventDefault();
         history.pushState(null, "", a.href);
-        token = "";
         play(c.slug);
         lineup();
       });
@@ -117,7 +141,6 @@ async function lineup() {
 
 const fromPath = () => decodeURIComponent(location.pathname.match(/^\/watch\/([^/]+)/)?.[1] || "");
 window.addEventListener("popstate", () => {
-  token = "";
   if (fromPath()) play(fromPath());
 });
 lineup().then((channels) => {

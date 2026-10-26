@@ -1,11 +1,11 @@
 // The home's posts to the Worker are signed with the HMAC secret both hold
 // (api/internal/tvremote.SignHome): hex HMAC-SHA256 over
-// "<method>\n<path>\n<unix time>\n<hex sha256 of the body>". The time must be
-// within MAX_SKEW_SECONDS, and newer than the last post accepted (no replay).
+// "<method>\n<path>\n<unix time in ms>\n<hex sha256 of the body>". The time must
+// be within MAX_SKEW_MS, and newer than the last post accepted (no replay).
 
 export const HEADER_TIME = "X-Maktaba-Time";
 export const HEADER_SIGNATURE = "X-Maktaba-Signature";
-export const MAX_SKEW_SECONDS = 60;
+export const MAX_SKEW_MS = 60_000;
 
 const enc = new TextEncoder();
 
@@ -49,12 +49,12 @@ export async function verifyHome(
   path: string,
   headers: Headers,
   body: Uint8Array,
-  nowSeconds: number
+  nowMs: number
 ): Promise<HomeCheck> {
   if (!secret) return { ok: false, why: "the site has no HOME_HMAC secret" };
   const ts = Number(headers.get(HEADER_TIME));
   const sig = headers.get(HEADER_SIGNATURE) ?? "";
-  if (!Number.isInteger(ts) || Math.abs(nowSeconds - ts) > MAX_SKEW_SECONDS)
+  if (!Number.isInteger(ts) || Math.abs(nowMs - ts) > MAX_SKEW_MS)
     return { ok: false, why: "stale or missing time" };
   const want = await signHome(secret, method, path, ts, body);
   if (!sameText(want, sig.toLowerCase())) return { ok: false, why: "bad signature" };

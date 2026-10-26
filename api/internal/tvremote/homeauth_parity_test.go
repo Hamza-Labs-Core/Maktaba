@@ -27,7 +27,7 @@ func TestHomeSignatureParity(t *testing.T) {
 	}
 	fx := fixture{Note: "TEST-ONLY secret; see api/internal/tvremote/homeauth_parity_test.go",
 		Secret: "4f1c2a9e8b7d6c5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a",
-		Method: "POST", Path: tvremote.SiteStatePath, TS: 1_793_000_000,
+		Method: "POST", Path: tvremote.SiteStatePath, TS: 1_793_000_000_000,
 		Body: `{"schema":1,"at":"2026-10-26T12:00:00Z","customer_code":"abc123xyz","channels":[]}`}
 	fx.Sig = tvremote.SignHome([]byte(fx.Secret), fx.Method, fx.Path, fx.TS, []byte(fx.Body))
 	if os.Getenv("MAKTABA_UPDATE_PARITY") == "1" {

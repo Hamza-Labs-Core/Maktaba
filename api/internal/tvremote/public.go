@@ -339,6 +339,12 @@ func (c *Controller) publicTick(ctx context.Context, s Settings, now time.Time) 
 	if len(holds) == 0 {
 		return
 	}
+	// the budget's block_new holds here as for a tune (32.10): no new push
+	// once it is used up, though a running one keeps going
+	exhausted := false
+	if e, err := c.Estimate(ctx, s, now); err == nil && e.Exhausted {
+		exhausted = true
+	}
 	if ready, why := c.SimulcastReady(ctx); !ready {
 		c.noteOnce("public|"+why, func() {
 			c.log().Warn("tv_public: public channels wait for the Cloudflare integration", "why", why, "event", "tv_public_waiting")
@@ -347,6 +353,13 @@ func (c *Controller) publicTick(ctx context.Context, s Settings, now time.Time) 
 	}
 	for ch := range holds {
 		if _, running, err := c.st.runningPushFor(ctx, ch); err != nil || running || c.hasEndingPush(ctx, ch) {
+			continue
+		}
+		if exhausted {
+			c.noteOnce(ch+"|public|budget", func() {
+				c.log().Warn("tv_public: the monthly budget is used up; a public channel waits", "channel_id", ch,
+					"event", "tv_public_waiting")
+			})
 			continue
 		}
 		if _, err := c.lockedNewPush(ctx, s, ch, now); err != nil {
@@ -480,8 +493,9 @@ func (in *Integration) siteKey(ctx context.Context) (storedKey, error) {
 }
 
 // SignHome is the signature of a home post: hex HMAC-SHA256 over
-// "<method>\n<path>\n<unix time>\n<hex sha256 of the body>" (the Worker
-// checks the same, and the time within 60 s).
+// "<method>\n<path>\n<unix time in ms>\n<hex sha256 of the body>" (the
+// Worker checks the same, the time within 60 s, and that it is newer than the
+// last post it took).
 func SignHome(secret []byte, method, path string, ts int64, body []byte) string {
 	sum := sha256.Sum256(body)
 	m := hmac.New(sha256.New, secret)
@@ -506,6 +520,7 @@ type Publisher struct {
 	wake   chan struct{}
 	once   sync.Once
 	status PublishStatus
+	lastTS int64 // the last post's time (ms)
 }
 
 // PublishStatus is the publisher's last result (the admin page).
@@ -575,7 +590,15 @@ func (p *Publisher) PublishOnce(ctx context.Context) error {
 		return p.done(err)
 	}
 	body, _ := json.Marshal(st)
-	ts := c.now().Unix()
+	// milliseconds, strictly increasing: the Worker refuses a time it has
+	// seen (replay), and a wake can follow a tick within the same second
+	ts := c.now().UnixMilli()
+	p.mu.Lock()
+	if ts <= p.lastTS {
+		ts = p.lastTS + 1
+	}
+	p.lastTS = ts
+	p.mu.Unlock()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ps.SiteURL+SiteStatePath, bytes.NewReader(body))
 	if err != nil {
 		return p.done(err)
