@@ -9,6 +9,7 @@ const LINKS = [
   { to: "/admin/accounts", key: "admin.nav.accounts" },
   { to: "/admin/servers", key: "admin.nav.servers" },
   { to: "/admin/abuse", key: "admin.nav.abuse" },
+  { to: "/admin/usage", key: "admin.nav.usage" },
   { to: "/admin/audit", key: "admin.nav.audit" },
 ];
 

@@ -1,6 +1,7 @@
 // Package admin exposes the service-admin (operator) console API under
 // /v1/admin/*: account search and detail, suspension, fleet and server
-// health, revenue, abuse handling, and the audit log
+// health, revenue, abuse handling, the audit log and the anonymous
+// usage data (docs/usage-data.md)
 // (docs/accounts-billing-admin.md).
 //
 // Mount puts every route behind Deps.Gate — in production
@@ -86,6 +87,7 @@ func Mount(r chi.Router, d *Deps) {
 		g.Get("/v1/admin/licenses", d.ListLicenses)
 		g.Post("/v1/admin/licenses/{id}/revoke", d.RevokeLicense)
 		g.Post("/v1/admin/licenses/{id}/unrevoke", d.UnrevokeLicense)
+		g.Get("/v1/admin/usage", d.Usage)
 	})
 }
 

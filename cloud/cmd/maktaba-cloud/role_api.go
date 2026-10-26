@@ -39,6 +39,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/telemetry"
 )
 
 func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migrator, build server.BuildInfo) {
@@ -147,6 +148,12 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	metricsCtx, stopMetrics := context.WithCancel(context.Background())
 	go metricspkg.NewRunner(pushMetrics, metricsStore, nil, nil, logger).RunFlushOnly(metricsCtx)
 
+	// Anonymous usage data (Epic 16 story 16.7): this role owns its
+	// tables, so it also runs their daily retention sweep (idempotent
+	// deletes; several api pods sweeping is harmless).
+	telemetryStore := &telemetry.Store{DB: pool.DB}
+	go telemetry.RunSweeper(metricsCtx, telemetryStore, telemetry.DefaultRetention, logger)
+
 	// OAuth flows — each is on only when its client id is configured.
 	var googleFlow *oauth.GoogleFlow
 	if cfg.OAuthGoogle.ClientID != "" {
@@ -200,6 +207,10 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// credential, never a user token.
 		serversh.MountAgent(app, serversDeps)
 		homesh.MountPublic(app, homes)
+
+		// Anonymous usage data from homes: no account, no server secret.
+		// The address is read for the rate limit only, never stored.
+		telemetry.Mount(app, telemetry.NewHandler(telemetryStore, logger))
 
 		authh.Mount(app, &authh.Deps{
 			Users:     users,
