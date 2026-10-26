@@ -43,11 +43,15 @@ Both implement the same screens against the same endpoints:
 | Media grid (library contents) | `GET /api/libraries/{id}/items` |
 | Search | `GET /api/search?q=` |
 | Player (HLS) | `GET /api/stream/{id}/index.m3u8` |
+| Sign-in by code (the TV shows a code / QR; a phone or the web approves at `/link`) | `POST /api/auth/device/{start,token}` |
 | Sign-in / refresh | `POST /api/auth/{login,refresh}` |
 
-**Auth.** JWT access/refresh tokens, stored in the platform secure store
-(tvOS Keychain / Android `EncryptedSharedPreferences`), injected as a
-`Bearer` header, with a single-flight **401 → refresh → retry** path.
+**Auth.** A TV signs in with a code a signed-in person approves on a phone or
+the web (`<home>/link`), or with a password as the fallback. JWT
+access/refresh tokens, stored in the platform secure store (tvOS Keychain /
+an Android Keystore key), injected as a `Bearer` header, with a single-flight
+**401 → refresh → retry** path. The web port's `/stream/` wants the token on
+every playlist and segment request too.
 
 **Playback.** HLS via the platform-native player (AVKit `VideoPlayer` /
 Media3 `ExoPlayer`), so the OS supplies the transport bar, scrubbing, and
@@ -55,9 +59,8 @@ subtitle/audio selection.
 
 ## Server connection
 
-Neither app hard-codes a server. The base URL is set in-app under
-**Settings → Server URL** (default `https://demo.maktaba.app`) so a
-household can point the TV at a self-hosted or cloud Maktaba instance.
+Neither app hard-codes a server. The TV finds homes on its network (mDNS
+`_maktaba._tcp`) or takes a typed address, and remembers the homes it used.
 
 ## Per-platform details
 

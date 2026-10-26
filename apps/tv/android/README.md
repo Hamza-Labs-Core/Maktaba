@@ -1,88 +1,58 @@
 # Maktaba Android TV
 
-A Kotlin + Jetpack Compose app for Android TV / Google TV (minSdk 28,
-targetSdk 34). A 10-foot UI over the same Maktaba REST API the web and
-mobile clients use.
+The Android TV / Google TV app (minSdk 28, target 37): a 10-foot Compose-for-TV UI over the
+same Maktaba API as every other client, built on the phone apps' shared **core**
+([`apps/android/core`](../../android/core)): the API client with one token refresh at a time,
+Keystore-sealed tokens, the player's per-request stream token, and finding homes on the
+network. One set of versions: this build reads the phone apps' version catalog
+(`apps/android/gradle/libs.versions.toml`) plus its own extras (`gradle/tv.versions.toml`:
+TV Material, ZXing for the QR).
 
-## Layout
+## What it does
 
-```
-android/
-├── settings.gradle.kts
-├── build.gradle.kts                 # root: declares plugins (catalog versions)
-├── gradle/libs.versions.toml        # version catalog (single source of versions)
-├── gradle.properties
-├── gradlew / gradlew.bat            # Gradle 8.7 wrapper
-└── app/
-    ├── build.gradle.kts             # Compose-TV, Media3, Retrofit, Coil, security-crypto
-    ├── proguard-rules.pro
-    └── src/
-        ├── main/
-        │   ├── AndroidManifest.xml  # LEANBACK_LAUNCHER + leanback feature
-        │   ├── res/                 # banner, theme, strings, colors, font/, drawable-nodpi/library_dark.jpg
-        │   ├── assets/licenses/     # OFL licence texts for the bundled fonts
-        │   └── java/com/hamzalabs/maktaba/tv/
-        │       ├── MaktabaTVApp.kt          # Application + AppContainer
-        │       ├── MainActivity.kt          # single activity, sets Compose content
-        │       ├── AppContainer.kt          # hand-wired DI graph
-        │       ├── data/
-        │       │   ├── SettingsStore.kt     # server URL + language (prefs)
-        │       │   ├── api/
-        │       │   │   ├── MaktabaApi.kt     # Retrofit interface
-        │       │   │   ├── AuthInterceptor.kt# bearer inject + 401 refresh
-        │       │   │   ├── TokenStore.kt     # JWTs in EncryptedSharedPreferences
-        │       │   │   └── ApiProvider.kt    # builds OkHttp + Retrofit
-        │       │   ├── models/               # Media, Library, User, SearchResult
-        │       │   └── repository/MediaRepository.kt
-        │       └── ui/
-        │           ├── theme/                # MaktabaPalette (Color.kt), fonts (Type.kt), Theme.kt
-        │           ├── components/           # MediaCard (focusable), TopBar
-        │           ├── screens/              # Home, Library, MediaGrid, Player, Search, Settings
-        │           └── navigation/NavGraph.kt
-        └── test/java/.../RailItemTest.kt     # JVM unit test
-```
+| Screen | What | API |
+|---|---|---|
+| Choose a home | homes announcing `_maktaba._tcp` on the network (mDNS), saved homes, or a typed address | — |
+| Sign in | **a code**: the TV shows `ABCD-1234` and a QR of `<home>/link?code=…`; a person signed in on a phone or the web approves, and the TV is signed in as them. Fallback: username and password on the on-screen keyboard (and straight there on a home without sign-in by code) | `POST /api/auth/device/start`, `POST /api/auth/device/token`; `POST /api/auth/login` (`X-Maktaba-Client: native`) |
+| Home | Continue Watching (where you stopped), Recently added, For you; the library scene behind | `GET /api/recommendations`, `GET /api/videos?sort=created_at` |
+| Libraries | the libraries you can read, then a library's videos, a page at a time | `GET /api/libraries`, `GET /api/videos?library=` |
+| Search | videos by name, as you type | `GET /api/videos?q=` |
+| Video | picture, name, length, description; **Resume from 12:34** / Start over, or Play | `GET /api/videos/{id}` (`playback_state`) |
+| Player | Media3 HLS / direct play with the system transport; progress every 10 s | `POST /api/stream/sessions` (`start_sec`), `…/progress`, `DELETE …` |
+| Account | who, which home; switch home, sign out; English / العربية | — |
 
-## Design notes
+**Signing in.** Tokens: a 15-minute RS256 access token and a refresh token, sealed with an
+Android Keystore key (no backup, no device transfer). Every request carries the current
+token; a 401 takes the core's single refresh and retries once; a refused refresh signs out.
 
-- **Compose for TV.** Uses `androidx.tv:tv-material` (Material tuned for
-  focus) and `androidx.tv:tv-foundation` (`TvLazyRow` /
-  `TvLazyVerticalGrid`). The phone `androidx.compose.material3` is
-  deliberately avoided — its components have no D-pad focus visuals.
-- **Theme.** Dark-only "Ink & Brass": `ui/theme/Color.kt`
-  (`MaktabaPalette`) is the single colour source; `Type.kt` sets Amiri
-  Bold headings and IBM Plex Sans Arabic body text. Home draws the
-  library scene (`LibraryBackdrop`) with gradient fades; text over it sits
-  on a `ReadingPanel` (78% background, no blur — Compose can't blur what
-  is behind a view).
-- **Focus.** Cards are `tv-material` `Card`s with the theme's 3dp gold
-  focus ring (`goldFocusBorder()`) and scale; buttons turn gold when
-  focused (`MaktabaButton`).
-- **Leanback launcher.** `CATEGORY_LEANBACK_LAUNCHER` +
-  `uses-feature android.software.leanback` put the app on the TV home
-  row; `touchscreen required="false"` keeps it in the TV catalog.
-- **Auth.** JWTs live in `EncryptedSharedPreferences` (Keystore-backed).
-  An OkHttp `Authenticator` does single-flight 401 → refresh → retry.
-- **Playback.** Media3/ExoPlayer with the HLS extension; `PlayerView`
-  via `AndroidView`, released in a `DisposableEffect` to avoid leaks.
+**Playback.** The home's web port answers `/stream/` only with `Authorization: Bearer`. ExoPlayer
+reads every playlist and segment through the core's OkHttp stream client, whose interceptor
+puts the token as it is *now* on each request (refreshed before it ends, once more on a 401),
+so a two-hour film outlives many access tokens. A fresh transcode's rendition playlist answers
+404 until it is written: the TV waits for it (`ApiClient.waitUntilPlayable`) before playing. A
+resumed video opens its session at the position (`start_sec`; the stream keeps the video's
+times) and the player seeks there.
 
-## Build
+**10-foot UI.** Dark "Ink & Brass" (`ui/theme`), Amiri headings and IBM Plex Sans Arabic text
+(the core's fonts, SIL OFL, `assets/licenses/`), 56 dp overscan gutters, TV Material cards
+that scale up with a 3 dp gold ring on focus, buttons that turn gold. English and Arabic
+(`values-ar`, right to left; the system's per-app language setting lists both).
+
+## Build and test
 
 ```bash
 cd apps/tv/android
-./gradlew :app:assembleDebug      # build the APK
-./gradlew test                    # JVM unit tests
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-Or open `apps/tv/android` in Android Studio (Hedgehog+). You need the
-Android SDK (API 34) and an Android TV emulator or device. The repo's
-`make tv-build-android` wraps the assemble task.
+CI runs the same on every change to this app or the shared core (`_android-tv.yml`); a `v*`
+tag builds the release APK (`tv-release.yml`). JDK 17 and the Android SDK (platform 37).
 
-Set the server URL on first launch (Settings → Server URL); it defaults
-to `https://demo.maktaba.app`.
+On an emulator: create an Android TV or Google TV AVD (`system-images;android-36;google-tv;arm64-v8a`,
+device `tv_1080p`), install `app/build/outputs/apk/debug/app-debug.apk`. The emulator reaches
+a home on the LAN by its address, and its mDNS browse finds it too.
 
-## Next steps (not scaffolded)
+## Next steps (not built)
 
-- **Assistant voice search** — a `SearchManager` searchable config +
-  content provider so "Hey Google, search Maktaba for…" deep-links in.
-- A Home-screen **recommendation channel** (`androidx.tvprovider`).
-- Hilt for DI in place of the hand-wired `AppContainer`.
+- Assistant voice search and a Home-screen recommendation channel (`androidx.tvprovider`).
+- Live TV channels (see `../README.md`).
