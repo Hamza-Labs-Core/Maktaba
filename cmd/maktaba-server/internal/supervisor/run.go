@@ -63,6 +63,7 @@ type child struct {
 	exits      []time.Time  // exits that led to a restart, for the crash-loop window
 	killReason string       // set before the supervisor kills the child
 	failed     bool         // in a crash loop (state failed or retrying from it)
+	onceFails  int          // a job's (Process.Once) failed runs in a row
 	wanted     bool         // run it (an on-demand process is not until asked for)
 	binding    *SlotBinding // tv-slot: the TV release it runs (nil: the current binary)
 	basePath   string       // the binary the process was built with
@@ -564,8 +565,14 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 		return true
 	}
 
+	if c.proc.Once && s.onceEnded(c, info) {
+		return true
+	}
+
 	// Decide what happens next.
 	switch {
+	case c.proc.Once:
+		// a job's failure: started again below, whatever the policy
 	case s.policy.Restart == RestartNever:
 		s.logf("%s exited (pid %d, %s); restart = never, stopping the stack", c.proc.Name(), info.PID, describeExit(info))
 		s.setState(c, StateExited)
@@ -629,6 +636,40 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventRestarting, DelaySec: delay.Seconds(),
 		Message: fmt.Sprintf("restart #%d", n)})
 	return false
+}
+
+// onceEnded decides a job's end (Process.Once): true when it is not started again, a
+// clean exit (it is done: exited, no longer wanted) or its Tries-th failure in a row.
+func (s *Supervisor) onceEnded(c *child, info ExitInfo) bool {
+	s.mu.Lock()
+	if info.Reason == ReasonClean {
+		c.wanted = false
+		c.status.Wanted = false
+		c.status.State = StateExited
+		c.status.NextRestartAt = nil
+		c.status.Detail, c.status.DetailCode, c.status.DetailParams = "", "", nil
+		s.mu.Unlock()
+		s.logf("%s finished (pid %d, uptime %s)", c.proc.Name(), info.PID, uptime(info))
+		return true
+	}
+	if time.Duration(info.UptimeSec*float64(time.Second)) >= s.policy.HealthyAfter {
+		c.onceFails = 0
+	}
+	c.onceFails++
+	fails := c.onceFails
+	if c.proc.Tries <= 0 || fails < c.proc.Tries {
+		s.mu.Unlock()
+		return false
+	}
+	c.failed = true
+	c.status.State = StateFailed
+	c.status.NextRestartAt = nil
+	s.mu.Unlock()
+	msg := fmt.Sprintf("%d failed runs in a row, the last %s: not started again before the server's next start",
+		fails, describeExit(info))
+	s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: info.Reason, Message: msg})
+	s.logf("%s gave up: %s", c.proc.Name(), msg)
+	return true
 }
 
 // recentExits returns the exits inside the crash-loop window. Caller
