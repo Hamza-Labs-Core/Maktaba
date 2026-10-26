@@ -96,6 +96,13 @@ func (h *Handler) Request(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
 		return
 	}
+	// a paired device's tokens outlive a cloud link and carry the user's
+	// full role (Epic 42 story 42.7): only a sign-in on the home pairs
+	if p.ViaCloud() {
+		httperror.Write(w, r, httperror.Forbidden("https://maktaba.dev/problems/cloud-session",
+			"a sign-in through Maktaba Cloud cannot pair a device; sign in on the home"))
+		return
+	}
 	code, err := discovery.GenerateCode()
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("generate code").Wrap(err))

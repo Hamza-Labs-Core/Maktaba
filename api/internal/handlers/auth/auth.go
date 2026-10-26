@@ -30,6 +30,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/authz"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
@@ -129,6 +130,10 @@ type Handler struct {
 	// it from the request because the proxy strips HTTPS.
 	SecureCookies bool
 
+	// Cloud wires linked accounts (Epic 42 story 42.7). Nil ⇒ the cloud
+	// routes answer 404 and no credential is a cloud one.
+	Cloud *CloudLinking
+
 	// HomeName is the home's name for people, in GET /api/auth/me so every
 	// signed-in user's app can show it. Nil ⇒ no home_name in the answer.
 	HomeName func(context.Context) string
@@ -172,6 +177,16 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/users/{id}/unlock", h.AdminUnlockUser)
 	// No mailer, so a forgotten password is reset by an admin.
 	r.Post("/api/users/{id}/reset-password", h.AdminResetPassword)
+	// Linked accounts (Epic 42 story 42.7, cloud.go). /api/auth/cloud is
+	// public (DefaultPublicAllowlist): the assertion is the credential.
+	r.Post("/api/auth/cloud", h.CloudSignIn)
+	r.Get("/api/me/cloud-link", h.GetCloudLink)
+	r.Post("/api/me/cloud-link/start", h.StartCloudLink)
+	r.Post("/api/me/cloud-link", h.CompleteCloudLink)
+	r.Patch("/api/me/cloud-link", h.SetCloudLinkScope)
+	r.Delete("/api/me/cloud-link", h.UnlinkCloud)
+	r.Get("/api/users/{id}/cloud-link", h.AdminGetCloudLink)
+	r.Delete("/api/users/{id}/cloud-link", h.AdminUnlinkCloud)
 }
 
 // loginRequest is the JSON body shape for POST /api/auth/login.
@@ -337,6 +352,12 @@ func (h *Handler) respondWeb(w http.ResponseWriter, r *http.Request, u *users.Us
 		httperror.Write(w, r, httperror.Internal("create session").Wrap(err))
 		return
 	}
+	h.setSessionCookies(w, sess)
+	common.WriteJSON(w, r, http.StatusOK, webLoginResponse{User: toUserResponse(u)})
+}
+
+// setSessionCookies sets the SPA's session and CSRF cookies.
+func (h *Handler) setSessionCookies(w http.ResponseWriter, sess *sessions.Session) {
 	maxAge := int(time.Until(sess.ExpiresAt).Seconds())
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieSession,
@@ -356,7 +377,6 @@ func (h *Handler) respondWeb(w http.ResponseWriter, r *http.Request, u *users.Us
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteLaxMode,
 	})
-	common.WriteJSON(w, r, http.StatusOK, webLoginResponse{User: toUserResponse(u)})
 }
 
 // refreshRequest is the JSON body for POST /api/auth/refresh.
@@ -417,27 +437,51 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// a cloud sign-in's family keeps its scope, capped by the link now;
+	// its link gone, the family ends
+	scope, err := h.cloudScopeOfRefresh(r.Context(), next.FamilyID, u.ID)
+	if errors.Is(err, errNoLink) {
+		_ = h.RefreshTokens.RevokeFamily(r.Context(), next.FamilyID)
+		httperror.Write(w, r, h.refreshInvalid("the cloud link was removed"))
+		return
+	}
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("load cloud link").Wrap(err))
+		return
+	}
+
 	accessTTL := h.AccessTTL
 	if accessTTL == 0 {
 		accessTTL = DefaultAccessTTL
 	}
 	now := h.now()
-	libs, err := h.librariesFor(r.Context(), u)
+	var claims jwt.Claims
+	if scope != "" {
+		claims, err = h.cloudAccessClaims(r.Context(), u, scope, now, accessTTL)
+	} else {
+		var libs []string
+		libs, err = h.librariesFor(r.Context(), u)
+		claims = accessClaims(u, libs, now, accessTTL)
+	}
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("resolve library acl").Wrap(err))
 		return
 	}
-	access, err := jwt.Sign(h.Keys, accessClaims(u, libs, now, accessTTL))
+	access, err := jwt.Sign(h.Keys, claims)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("sign access token").Wrap(err))
 		return
+	}
+	user := toUserResponse(u)
+	if scope != "" {
+		user = cloudUser(u, scope)
 	}
 	common.WriteJSON(w, r, http.StatusOK, nativeLoginResponse{
 		AccessToken:      access,
 		AccessExpiresIn:  int(accessTTL.Seconds()),
 		RefreshToken:     next.Plaintext,
 		RefreshExpiresIn: int(time.Until(next.ExpiresAt).Seconds()),
-		User:             toUserResponse(u),
+		User:             user,
 	})
 }
 
@@ -535,6 +579,9 @@ type meResponse struct {
 	User      userResponse `json:"user"`
 	// HomeName is the home's name for people (an admin renames it in Settings).
 	HomeName string `json:"home_name,omitempty"`
+	// CloudScope: this sign-in came through Maktaba Cloud, with this link
+	// scope (play: watch only); absent for a sign-in on the home.
+	CloudScope string `json:"cloud_scope,omitempty"`
 }
 
 // Me returns the authenticated principal's projection. The global
@@ -576,12 +623,13 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		homeName = h.HomeName(r.Context())
 	}
 	common.WriteJSON(w, r, http.StatusOK, meResponse{
-		HomeName:  homeName,
-		UserID:    p.UserID,
-		IsAdmin:   p.IsAdmin,
-		Libraries: libs,
-		ID:        p.UserID,
-		Username:  username,
+		HomeName:   homeName,
+		CloudScope: p.CloudScope,
+		UserID:     p.UserID,
+		IsAdmin:    p.IsAdmin,
+		Libraries:  libs,
+		ID:         p.UserID,
+		Username:   username,
 		User: userResponse{
 			ID: p.UserID, Username: username, IsAdmin: p.IsAdmin, MustChangePassword: mustChange,
 		},
@@ -744,6 +792,16 @@ func (h *Handler) CookieAuth(next http.Handler) http.Handler {
 			AccessAllLibraries: u.IsAdmin,
 			Source:             principal.SourceCookie,
 			MustChangePassword: u.MustChangePassword,
+		}
+		if h.Cloud != nil && h.Cloud.Store != nil {
+			// a session a cloud sign-in made carries its link's scope; when
+			// that cannot be read the session counts for nothing
+			scope, err := h.Cloud.Store.ScopeOf(r.Context(), cloudlink.KindSession, sess.ID)
+			if err != nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+			p.ApplyCloudScope(scope)
 		}
 		next.ServeHTTP(w, r.WithContext(principal.WithPrincipal(r.Context(), p)))
 	})

@@ -22,6 +22,7 @@ import (
 	authh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/auth"
 	billingh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/billing"
 	healthh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/health"
+	homesh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/homes"
 	metricsh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/metrics"
 	pushh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/push"
 	serversh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/servers"
@@ -99,6 +100,13 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 
 	stripe := billingpkg.NewStripeClient(cfg.Stripe.SecretKey)
 
+	// Linked accounts (Epic 42 story 42.7): home assertions are signed
+	// with a key derived from the entitlement key; without one, linked
+	// sign-in is off (503) and everything else runs.
+	assertions := assertionSigner(logger, cfg)
+	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions}
+	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost}
+
 	// Build the router. Order matters: health probes mount on the
 	// outer router before the auth-required group so they don't need
 	// a token.
@@ -108,7 +116,8 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// 5/sec — plenty for the login form, harsh for credential stuffing.
 	rl := ratelimit.NewLimiter(30, 5)
 	r.Use(rl.Middleware(func(req *http.Request) string {
-		if req.URL.Path == "/v1/auth/login" || req.URL.Path == "/v1/auth/register" {
+		if req.URL.Path == "/v1/auth/login" || req.URL.Path == "/v1/auth/register" ||
+			req.URL.Path == "/v1/servers/claims/redeem" {
 			return ratelimit.IPKey(req)
 		}
 		return ""
@@ -125,11 +134,17 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		Secure:       true,
 	})
 
+	// A home's agent: the claim code or the server's own secret is its
+	// credential, never a user token.
+	serversh.MountAgent(r, serversDeps)
+	homesh.MountPublic(r, homes)
+
 	// Authenticated group.
 	r.Group(func(g chi.Router) {
 		g.Use(middleware.RequireUser(signer))
 		accounth.Mount(g, accounth.Deps{Users: users, Sessions: sess})
-		serversh.Mount(g, serversh.Deps{Servers: servers})
+		serversh.MountUser(g, serversDeps)
+		homesh.MountUser(g, homes)
 		(&healthh.Deps{DB: pool.DB}).Mount(g)
 		billingh.Mount(g, billingh.Deps{
 			DB: pool.DB, Stripe: stripe, Users: users,

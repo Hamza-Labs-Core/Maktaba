@@ -612,8 +612,10 @@ func (r *Resolver) verifyJWT(ctx context.Context, tok string) *principal.Princip
 	if err != nil {
 		return nil
 	}
-	return &principal.Principal{UserID: c.Usr, IsAdmin: c.IsAdmin, Libraries: c.Lib,
+	p := &principal.Principal{UserID: c.Usr, IsAdmin: c.IsAdmin, Libraries: c.Lib,
 		AccessAllLibraries: c.IsAdmin, Source: principal.SourceJWT}
+	p.ApplyCloudScope(c.Scp) // a cloud play token is no admin on a node either
+	return p
 }
 
 // ---------- middleware ----------

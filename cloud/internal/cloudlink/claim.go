@@ -29,9 +29,10 @@ type claimRequest struct {
 
 // claimResponse matches servers.go redeemResp EXACTLY.
 type claimResponse struct {
-	ServerID     string `json:"server_id"`
-	ServerSecret string `json:"server_secret"`
-	Slug         string `json:"slug"`
+	ServerID           string `json:"server_id"`
+	ServerSecret       string `json:"server_secret"`
+	Slug               string `json:"slug"`
+	AssertionPublicKey string `json:"assertion_public_key"`
 }
 
 // Credentials is what we persist on the on-prem box after a successful
@@ -42,6 +43,10 @@ type Credentials struct {
 	ServerID string `json:"server_id"`
 	Secret   string `json:"secret"`
 	Slug     string `json:"slug"`
+	// AssertionKey is the cloud's home-assertion public key (base64
+	// Ed25519), pinned at claim (Epic 42 story 42.7): the home's API
+	// verifies linked-account sign-ins with it.
+	AssertionKey string `json:"assertion_key,omitempty"`
 }
 
 var (
@@ -109,7 +114,8 @@ func (c *Claimer) Redeem(ctx context.Context, code, name, slug, version, pubKeyP
 	if cr.ServerID == "" || cr.ServerSecret == "" {
 		return Credentials{}, fmt.Errorf("%w: empty server_id/secret", ErrClaimRejected)
 	}
-	return Credentials{ServerID: cr.ServerID, Secret: cr.ServerSecret, Slug: cr.Slug}, nil
+	return Credentials{ServerID: cr.ServerID, Secret: cr.ServerSecret, Slug: cr.Slug,
+		AssertionKey: cr.AssertionPublicKey}, nil
 }
 
 // --- Encrypted-at-rest credential store (Story 25.6) -------------------
