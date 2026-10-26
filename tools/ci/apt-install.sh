@@ -22,9 +22,14 @@ for try in 1 2 3; do
     break
   fi
   [ "$try" = 3 ] && { echo "::error::apt-get update failed three times" >&2; exit 1; }
-  echo "::warning::apt-get update failed (try $try), trying again"
+  echo "::warning::apt-get update failed (try $try), trying again" >&2
   sleep 10
 done
+# man-db rebuilding its index after every install is the known stall of GitHub's
+# runners (minutes for ffmpeg's hundred packages): CI reads no man pages
+echo "man-db man-db/auto-update boolean false" | sudo debconf-set-selections
+sudo rm -f /var/lib/man-db/auto-update
+
 # the runner's mirror (azure.archive.ubuntu.com) has stalled a download for the whole
 # step: an install gets 4 minutes, and a second try reads Ubuntu's own archive
 for try in 1 2; do
@@ -32,7 +37,7 @@ for try in 1 2; do
     exit 0
   fi
   [ "$try" = 2 ] && { echo "::error::apt-get install failed twice" >&2; exit 1; }
-  echo "::warning::apt-get install failed or stalled (try $try), trying Ubuntu's own archive"
+  echo "::warning::apt-get install failed or stalled (try $try), trying Ubuntu's own archive" >&2
   for f in /etc/apt/sources.list "$parts"/*.sources; do
     [ -f "$f" ] && sudo sed -i 's#http://azure\.archive\.ubuntu\.com#http://archive.ubuntu.com#g' "$f"
   done

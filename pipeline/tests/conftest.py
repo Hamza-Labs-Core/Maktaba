@@ -179,3 +179,12 @@ def _search_index_open() -> None:
     from maktaba_pipeline.search import gate
 
     gate.reopen()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _migrated_sqlite_schema() -> None:
+    """The SQLite schema's kept steps, built once a process before any test is timed:
+    a migration test applies only the few slots before its own (tests/engine/migrate.py)."""
+    from tests.engine.migrate import warm_sqlite
+
+    warm_sqlite()
