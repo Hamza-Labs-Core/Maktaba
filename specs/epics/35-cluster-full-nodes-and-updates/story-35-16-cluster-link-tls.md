@@ -58,7 +58,9 @@ transport".
   the v2 session (only `cert.*` is allowed there in `require`).
 - **AC12** Postgres: `maktaba-server setup --pg-tls` configures the home's server TLS (cluster CA,
   `pg_server` certificate); nodes connect `sslmode=verify-full` with their certificate; in `require`
-  `pg_hba` uses `hostssl … clientcert=verify-full` for `maktaba_node_*`.
+  `pg_hba` uses `hostssl … clientcert=verify-full` for `maktaba_node_*`, per machine: only for the
+  role of a machine that said its processes present their certificate and holds a valid one (design
+  §18.8); every other machine keeps its password, never cut off its database.
 - **AC13** Mode: `cluster.link.mode` `prefer` by default, switched to `require` automatically after
   every approved machine held a control session for 24 h (shown on the Machines page; admin
   override); in `require` the legacy plain agent WebSocket from nodes, the delegation HMAC over HTTP

@@ -67,8 +67,12 @@ func runSetupPGTLS(out io.Writer, cfg config.Config, keysDir string, sans []stri
 	fmt.Fprintf(out, "the database server; the key stays readable by the postgres user only).\n\n")
 	fmt.Fprintf(out, "postgresql.conf:\n  ssl = on\n  ssl_cert_file = '%s'\n  ssl_key_file = '%s'\n  ssl_ca_file = '%s'\n\n",
 		filepath.ToSlash(certPath), filepath.ToSlash(keyPath), filepath.ToSlash(caPath))
-	fmt.Fprintln(out, "pg_hba.conf, once the cluster link is required (the machines' roles, their certificates):")
-	fmt.Fprintln(out, "  hostssl  <database>  +maktaba_worker  <the machines' networks>  scram-sha-256 clientcert=verify-full")
+	fmt.Fprintln(out, "pg_hba.conf, once the cluster link is required: the role of each machine whose processes present")
+	fmt.Fprintln(out, "their certificate (the Machines page says which do not yet), on its own line before the group's:")
+	fmt.Fprintln(out, "  hostssl  <database>  <that machine's role>  <the machines' networks>  scram-sha-256 clientcert=verify-full")
+	fmt.Fprintln(out, "  hostssl  <database>  +maktaba_worker        <the machines' networks>  scram-sha-256")
+	fmt.Fprintln(out, "Never ask it of the whole group: a machine whose processes do not present one (an older release)")
+	fmt.Fprintln(out, "would be cut off its database.")
 	fmt.Fprintln(out, "\nThen reload the server (SELECT pg_reload_conf();). The machines connect with their certificates already.")
 	return nil
 }

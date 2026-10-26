@@ -483,6 +483,10 @@ type LinkNode struct {
 	// Blocks is why this machine keeps the link from becoming required (EC3):
 	// worker_only, no_cert, not_connected, under_a_day, clock_skew; "" when it does not.
 	Blocks string `json:"blocks,omitempty"`
+	// DBCert: the machine said its processes present their certificate to this home's
+	// database (RecordDBClientCert), so once the link is required its role needs it there
+	// too; false: its database login keeps its password alone (an older release).
+	DBCert bool `json:"db_cert"`
 }
 
 // maxSkew is how far a machine's clock may be off before it is said (EC2).
@@ -515,7 +519,8 @@ func (hl *homeLink) info(ctx context.Context) any {
 	if hl.skews != nil {
 		skews = hl.skews()
 	}
-	rows, err := hl.db.QueryContext(ctx, `SELECT id::text, link_since, cert_not_after, cert_serial IS NOT NULL, full_node
+	rows, err := hl.db.QueryContext(ctx, `SELECT id::text, link_since, cert_not_after, cert_serial IS NOT NULL, full_node,
+		    COALESCE(update_state->>'db_client_cert', '') = 'true'
 		FROM cluster_nodes WHERE state = 'approved'`)
 	if err == nil {
 		defer rows.Close()
@@ -523,11 +528,11 @@ func (hl *homeLink) info(ctx context.Context) any {
 		for rows.Next() {
 			var id string
 			var since, notAfter sql.NullTime
-			var has, full bool
-			if rows.Scan(&id, &since, &notAfter, &has, &full) != nil {
+			var has, full, dbCert bool
+			if rows.Scan(&id, &since, &notAfter, &has, &full, &dbCert) != nil {
 				continue
 			}
-			n := LinkNode{Connected: hl.srv.Live(id), HasCert: has}
+			n := LinkNode{Connected: hl.srv.Live(id), HasCert: has, DBCert: dbCert}
 			if since.Valid {
 				n.Since = &since.Time
 			}
