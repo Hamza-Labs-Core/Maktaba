@@ -97,7 +97,6 @@ class HomeDiscovery(context: Context) {
      * Androids refuse a second while one runs).
      */
     private class Resolver(private val nsd: NsdManager, private val done: (String, FoundHome?) -> Unit) {
-        private val executor = Executors.newSingleThreadExecutor()
         private val callbacks = mutableMapOf<String, Any>()
         private val queue = ArrayDeque<NsdServiceInfo>()
         private var resolving = false
@@ -111,8 +110,8 @@ class HomeDiscovery(context: Context) {
         }
 
         fun close() {
+            // the executor stays: NsdManager still posts each unregistration to it
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) synchronized(callbacks) { callbacks.keys.toList() }.forEach(::unfollow)
-            executor.shutdown()
         }
 
         @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -163,6 +162,15 @@ class HomeDiscovery(context: Context) {
                     next()
                 }
             })
+        }
+
+        companion object {
+            /**
+             * Where NsdManager calls the service-info callbacks: one thread for the app, never
+             * shut down (it delivers `onServiceInfoCallbackUnregistered` after a search ends;
+             * a shut-down executor would refuse it and crash the app).
+             */
+            private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "maktaba-nsd").apply { isDaemon = true } }
         }
 
         private fun txt(s: NsdServiceInfo): Map<String, String> =
