@@ -979,7 +979,7 @@ describe("Settings privacy (test-cases/settings-privacy.md)", () => {
     get.mockImplementation(() => new Promise(() => {}));
     renderSettings("/settings/privacy");
     expect(screen.getByRole("heading", { name: "Activity tracking" })).toBeInTheDocument();
-    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: /^Tracking/ })).not.toBeInTheDocument();
     expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
 
@@ -989,7 +989,7 @@ describe("Settings privacy (test-cases/settings-privacy.md)", () => {
       const { unmount } = renderSettings("/settings/privacy");
       expect(await screen.findByText("Something went wrong.")).toHaveAttribute("role", "alert");
       await screen.findByRole("table");
-      expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+      expect(screen.queryByRole("switch", { name: /^Tracking/ })).not.toBeInTheDocument();
       expect(request).not.toHaveBeenCalled();
       unmount();
     }

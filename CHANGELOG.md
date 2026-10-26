@@ -12,6 +12,15 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Usage analytics, opt-in.** The web app asks once per device, "Help improve Maktaba",
+  listing what is shared (the app's version, OS and language, the library's size as a
+  range, how often each area is used, error reports without paths) and what never is (file
+  names, transcripts, searches, who you are, your IP address). Nothing is sent before a yes.
+  Settings → Privacy has the switch and "Forget my device", which deletes everything the
+  device sent. The server stores the events (slot 0156) under the device's random pseudonym
+  only: unknown kinds are refused, unknown fields dropped, library roots and home folders
+  removed, 1,000 events a minute per IP, 90 days (Web Vitals 30). `[telemetry] enabled =
+  "off"` in server.toml stores nothing.
 - **A home has a name.** An admin names the home in Settings → Account (empty: the
   computer's name, which is the default). Every signed-in user's Apple app shows that name in
   its home list and title instead of the address that was typed. The API refuses the rename to

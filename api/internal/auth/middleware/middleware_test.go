@@ -376,6 +376,8 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 		"/api/cluster/sso/authorize", "/api/cluster/sso/start", "/api/cluster/sso/callback",
 		"/api/cluster/sso/exchange", "/api/cluster/delegate/introspect", "/api/cluster/delegate/signout",
 		"/internal/updates/restored",
+		// Epic 16 story 16.7: the opt-in telemetry sink (a device pseudonym, never a user)
+		"/api/telemetry", "/api/telemetry/web-vitals", "/api/telemetry/devices/*",
 	}
 	got := DefaultPublicAllowlist()
 	if len(got) != len(want) {
