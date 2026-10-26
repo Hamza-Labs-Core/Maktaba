@@ -52,18 +52,17 @@ func SplitPassword(raw string) (bare, line string) {
 		field(strings.TrimPrefix(u.Path, "/")), field(user), field(pw)}, ":")
 }
 
-// WritePassFile writes the lines to a 0600 file in dir, named by their content (two
-// processes started at once write the same file, never one over another's), and returns
-// its path.
-func WritePassFile(dir string, lines []string) (string, error) {
+// WritePassFile writes the lines to a 0600 file in dir named "pgpass-<name>" and returns
+// its path. Callers name it by the connections it serves, never by a password (two
+// processes started at once for the same connections write the same file).
+func WritePassFile(dir, name string, lines []string) (string, error) {
 	if len(lines) == 0 {
 		return "", errors.New("dsn: no passfile lines")
 	}
 	sorted := append([]string(nil), lines...)
 	sort.Strings(sorted)
 	body := strings.Join(sorted, "\n") + "\n"
-	sum := sha256.Sum256([]byte(body))
-	path := filepath.Join(dir, "pgpass-"+hex.EncodeToString(sum[:6]))
+	path := filepath.Join(dir, "pgpass-"+name)
 	if b, err := os.ReadFile(path); err == nil && string(b) == body {
 		if st, err := os.Stat(path); err == nil && st.Mode().Perm() == 0o600 {
 			return path, nil
@@ -101,7 +100,7 @@ func Redact(s string) string { return redact(s) }
 // passfile in dir, and PGPASSFILE names that file. An environment with no password in
 // it comes back as it is.
 func ProcessEnv(env []string, dir string) ([]string, error) {
-	var lines []string
+	var lines, bares []string
 	seen := map[string]bool{}
 	out := make([]string, 0, len(env)+1)
 	for _, e := range env {
@@ -113,6 +112,7 @@ func ProcessEnv(env []string, dir string) ([]string, error) {
 				if !seen[line] {
 					seen[line] = true
 					lines = append(lines, line)
+					bares = append(bares, bare)
 				}
 			}
 		}
@@ -124,7 +124,10 @@ func ProcessEnv(env []string, dir string) ([]string, error) {
 	if len(lines) == 0 {
 		return out, nil
 	}
-	path, err := WritePassFile(dir, lines)
+	// named by the URLs without their passwords: no digest of a secret in a file name
+	sort.Strings(bares)
+	sum := sha256.Sum256([]byte(strings.Join(bares, "\n")))
+	path, err := WritePassFile(dir, hex.EncodeToString(sum[:6]), lines)
 	if err != nil {
 		return nil, err
 	}

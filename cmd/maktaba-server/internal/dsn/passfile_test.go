@@ -78,3 +78,24 @@ func TestProcessEnvWithoutPasswordsChangesNothing(t *testing.T) {
 		t.Fatalf("%v %v", out, err)
 	}
 }
+
+// The file's name comes from the connections, never the password: a new password keeps
+// the name and the file is rewritten with it.
+func TestPassFileNameIsNotDerivedFromThePassword(t *testing.T) {
+	dir := t.TempDir()
+	a, err := ProcessEnv([]string{"DATABASE_URL=postgres://maktaba:one@127.0.0.1:54329/maktaba"}, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := ProcessEnv([]string{"DATABASE_URL=postgres://maktaba:another@127.0.0.1:54329/maktaba"}, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a[len(a)-1] != b[len(b)-1] {
+		t.Errorf("the name follows the password: %s, %s", a[len(a)-1], b[len(b)-1])
+	}
+	path := strings.TrimPrefix(b[len(b)-1], "PGPASSFILE=")
+	if got, _ := os.ReadFile(path); string(got) != "127.0.0.1:54329:maktaba:maktaba:another\n" {
+		t.Errorf("not rewritten: %q", got)
+	}
+}
