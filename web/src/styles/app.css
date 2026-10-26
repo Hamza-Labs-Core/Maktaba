@@ -2441,8 +2441,15 @@ a.mkt-guide__chanhead:hover {
   gap: var(--space-2);
   flex-wrap: wrap;
 }
-.mkt-analytics__live {
+.mkt-analytics__filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  align-items: end;
+  gap: var(--space-3);
   margin-bottom: var(--space-4);
+}
+.mkt-analytics .mk-tabs__panel {
+  padding-top: var(--space-4);
 }
 .mkt-analytics__kpis {
   display: grid;

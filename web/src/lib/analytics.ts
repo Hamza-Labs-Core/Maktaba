@@ -3,7 +3,8 @@
 // Centralises the TypeScript shapes and the thin `analyticsApi` helpers
 // every analytics surface reuses: the watch-session lifecycle the player
 // drives (29.1), the per-user history (29.2) and activity/privacy (29.4),
-// the admin dashboard (29.3), the per-video stats (29.5) and the export
+// the admin analytics page (29.3, rebuilt by Epic 44: plays, Live TV
+// viewings and the apps' use), the per-video stats (29.5) and the export
 // (29.6). One place to reconcile against the Go handlers.
 import { api, request, postBeacon } from "./api";
 import { isDesktop } from "./desktop";
@@ -48,12 +49,55 @@ export interface PrivacySettings {
   track_enabled: boolean;
 }
 
-// ─── Dashboard (29.3) ──────────────────────────────────────────────────
+// ─── Admin analytics page (29.3, rebuilt by Epic 44 story 44.7) ───────
 
-export type RangeKey = "today" | "7d" | "30d" | "90d" | "1y" | "all";
-export type Bucket = "day" | "week" | "month";
+// The ranges the page offers; the server also takes 1y and all.
+export type RangeKey = "today" | "7d" | "30d" | "90d";
+export type Bucket = "hour" | "day" | "week" | "month";
+// The ways of watching: a play of a video in an app, a viewing of a channel
+// in an app, through Plex's Live TV (the tuner) or on the remote TV.
+export type Surface = "video" | "app" | "tuner" | "remote";
+export const SURFACES: Surface[] = ["video", "app", "tuner", "remote"];
 
-export interface LiveSession {
+// AnalyticsQuery is the range (a preset, or from/to dates) and the filters
+// every endpoint takes.
+export interface AnalyticsQuery {
+  range?: RangeKey;
+  from?: string; // YYYY-MM-DD
+  to?: string; // YYYY-MM-DD, inclusive
+  library?: string;
+  user?: string;
+  client_app?: string;
+  surface?: Surface | "";
+}
+
+export interface CountStat {
+  label: string;
+  sessions: number;
+  watch_sec: number;
+  people: number;
+}
+export interface LabelStat extends CountStat {
+  id: string;
+}
+export interface Summary {
+  range: string;
+  from?: string;
+  to?: string;
+  watch_sec: number;
+  video_sec: number;
+  tv_sec: number;
+  live_tv_hours: number;
+  plays: number;
+  viewings: number;
+  people: number;
+  completion_rate: number;
+  surfaces: CountStat[];
+  apps: CountStat[];
+  platforms: CountStat[];
+  devices: CountStat[];
+}
+export interface NowPlay {
   session_id: string;
   user_id: string;
   username: string;
@@ -62,30 +106,31 @@ export interface LiveSession {
   started_at: string;
   elapsed_sec: number;
   percent_complete: number;
-  device_type?: string;
-  platform?: string;
+  client_app: string;
+  client_version: string;
+  platform: string;
+  device_type: string;
 }
-export interface CountStat {
-  label: string;
-  sessions: number;
-  watch_sec: number;
-}
-export interface LabelStat {
+export interface NowViewing {
   id: string;
-  label: string;
-  sessions: number;
-  watch_sec: number;
+  surface: Surface;
+  channel_id: string;
+  channel_name: string;
+  channel_number: number;
+  user_id: string;
+  username: string;
+  started_at: string;
+  elapsed_sec: number;
+  client_app: string;
+  client_version: string;
+  platform: string;
+  device_type: string;
 }
-export interface Summary {
-  range: string;
-  total_watch_sec: number;
-  total_sessions: number;
-  unique_viewers: number;
-  completion_rate: number;
-  devices: CountStat[];
-  platforms: CountStat[];
-  libraries: LabelStat[];
-  genres: CountStat[];
+export interface NowResponse {
+  plays: NowPlay[];
+  viewings: NowViewing[];
+  counts: Partial<Record<Surface, number>>;
+  at: string;
 }
 export interface TopVideo {
   video_id: string;
@@ -93,23 +138,90 @@ export interface TopVideo {
   sessions: number;
   watch_sec: number;
   unique_viewers: number;
+  completion_rate: number;
+}
+export interface TopChannel {
+  channel_id: string;
+  name: string;
+  number: number;
+  viewings: number;
+  watch_sec: number;
+  people: number;
+  peak_viewers: number;
+  surfaces: CountStat[];
+}
+export interface TopChannelsResponse {
+  channels: TopChannel[];
+  surfaces: CountStat[];
+  peak_viewers: number;
+  peak_at?: string;
 }
 export interface TimePoint {
   bucket: string;
   watch_sec: number;
-  sessions: number;
+  video_sec: number;
+  tv_sec: number;
+  plays: number;
+  viewings: number;
 }
 export interface ActivityResponse {
   bucket: Bucket;
   series: TimePoint[];
   heatmap: number[][]; // [7][24]
 }
-export interface ActiveUser {
+export interface Person {
   user_id: string;
   username: string;
   watch_sec: number;
-  sessions: number;
-  last_seen_at: string;
+  video_sec: number;
+  tv_sec: number;
+  plays: number;
+  viewings: number;
+  channels: number;
+  apps: string[];
+  last_watched_at?: string;
+  last_active_day?: string;
+}
+export interface PlatformUsage {
+  platform: string;
+  requests: number;
+  errors: number;
+  error_rate: number;
+  slow: number;
+  avg_ms: number;
+}
+export interface AppUsage extends Omit<PlatformUsage, "platform"> {
+  client_app: string;
+  people: number;
+  versions: { version: string; people: number }[];
+  platforms: PlatformUsage[];
+}
+export interface UsagePoint {
+  day: string;
+  requests: number;
+  errors: number;
+  people: number;
+}
+export interface AppsResponse {
+  apps: AppUsage[];
+  trend: UsagePoint[];
+  platforms: CountStat[];
+  devices: CountStat[];
+}
+export interface RemoteDay {
+  day: string;
+  minutes_delivered: number;
+  simulcast_minutes: number;
+  cost_usd: number;
+}
+export interface RemoteTVResponse {
+  minutes_delivered: number;
+  simulcast_minutes: number;
+  cost_usd: number;
+  viewings: number;
+  watch_sec: number;
+  people: number;
+  days: RemoteDay[];
 }
 
 // ─── Per-video stats (29.5) ────────────────────────────────────────────
@@ -176,24 +288,29 @@ export const analyticsApi = {
       body: { track_enabled },
     }),
 
-  // admin dashboard
-  live: () => api.get<{ sessions: LiveSession[] }>("/api/admin/analytics/live"),
-  summary: (range: RangeKey, refresh = false) =>
+  // admin analytics page: every call takes the range and the filters
+  summary: (q: AnalyticsQuery, refresh = false) =>
     api.get<Summary>(
-      `/api/admin/analytics/summary${qs({ range, refresh: refresh ? "true" : undefined })}`
+      `/api/admin/analytics/summary${qs({ ...q, refresh: refresh ? "true" : undefined })}`
     ),
-  topVideos: (range: RangeKey, limit = 10) =>
-    api.get<{ videos: TopVideo[]; range: string }>(
-      `/api/admin/analytics/top-videos${qs({ range, limit })}`
-    ),
-  activityStats: (range: RangeKey, bucket: Bucket = "day") =>
-    api.get<ActivityResponse>(`/api/admin/analytics/activity${qs({ range, bucket })}`),
-  users: (range: RangeKey, limit = 10) =>
-    api.get<{ users: ActiveUser[]; range: string }>(
-      `/api/admin/analytics/users${qs({ range, limit })}`
-    ),
-  exportUrl: (format: "csv" | "json", range: RangeKey) =>
-    `/api/admin/analytics/export${qs({ format, range })}`,
+  now: (q: AnalyticsQuery) => api.get<NowResponse>(`/api/admin/analytics/now${qs({ ...q })}`),
+  activityStats: (q: AnalyticsQuery, bucket?: Bucket) =>
+    api.get<ActivityResponse>(`/api/admin/analytics/activity${qs({ ...q, bucket })}`),
+  topVideos: (q: AnalyticsQuery, limit = 10) =>
+    api.get<{ videos: TopVideo[] }>(`/api/admin/analytics/top-videos${qs({ ...q, limit })}`),
+  topChannels: (q: AnalyticsQuery, limit = 10) =>
+    api.get<TopChannelsResponse>(`/api/admin/analytics/top-channels${qs({ ...q, limit })}`),
+  libraries: (q: AnalyticsQuery) =>
+    api.get<{ libraries: LabelStat[] }>(`/api/admin/analytics/libraries${qs({ ...q })}`),
+  genres: (q: AnalyticsQuery) =>
+    api.get<{ genres: CountStat[] }>(`/api/admin/analytics/genres${qs({ ...q })}`),
+  people: (q: AnalyticsQuery, limit = 100) =>
+    api.get<{ people: Person[] }>(`/api/admin/analytics/people${qs({ ...q, limit })}`),
+  apps: (q: AnalyticsQuery) => api.get<AppsResponse>(`/api/admin/analytics/apps${qs({ ...q })}`),
+  remoteTV: (q: AnalyticsQuery) =>
+    api.get<RemoteTVResponse>(`/api/admin/analytics/remote-tv${qs({ ...q })}`),
+  exportUrl: (format: "csv" | "json", q: AnalyticsQuery) =>
+    `/api/admin/analytics/export${qs({ format, ...q })}`,
 
   // per-video
   videoStats: (videoId: string) => api.get<VideoStats>(`/api/videos/${videoId}/stats`),
