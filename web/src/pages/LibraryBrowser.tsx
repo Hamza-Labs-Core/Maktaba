@@ -92,8 +92,17 @@ const SCAN_TERMINAL = new Set(["done", "failed", "cancelled", "superseded"]);
 
 // ScanNow starts a library scan and follows it: a toast when it is queued
 // (or refused), a progress bar while the job is pending or running, and a
-// toast plus onDone() when it ends.
-export function ScanNow({ libraryId, onDone }: { libraryId: string; onDone: () => void }) {
+// toast plus onDone() when it ends. A scan already running (jobId, from
+// GET /api/libraries/manage after a reload) is followed the same way.
+export function ScanNow({
+  libraryId,
+  onDone,
+  jobId,
+}: {
+  libraryId: string;
+  onDone: () => void;
+  jobId?: string | null;
+}) {
   const { t } = useI18n();
   const toast = useToast();
   const [job, setJob] = useState<ScanJob | null>(null);
@@ -108,6 +117,13 @@ export function ScanNow({ libraryId, onDone }: { libraryId: string; onDone: () =
 
   const errMessage = (e: unknown) =>
     e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error");
+
+  useEffect(() => {
+    if (!jobId) return;
+    setJob({ id: jobId, state: "running" });
+    void follow(jobId);
+    // follow once per job id handed in (follow itself is rebuilt every render)
+  }, [jobId]);
 
   async function follow(id: string) {
     for (let i = 0; i < SCAN_POLL_MAX && alive.current; i++) {
