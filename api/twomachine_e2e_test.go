@@ -11,7 +11,7 @@ package main
 //     gone (404 on both machines);
 //   - local / any / home routes are served as classed (home ones proxied with the user's
 //     session, writes included, CSRF per address), the hub WebSocket through the proxy;
-//   - signing out on the home blocks the node's session within a second;
+//   - signing out everywhere on the home blocks the node's session within a second;
 //   - VOD on the node is opened on the node itself (no request reaches the home); a
 //     video this node cannot read falls back to the home, and the Machines page says so;
 //   - the Machines page lists every machine's web address;
@@ -735,12 +735,14 @@ slots = "off"
 		time.Sleep(time.Duration(hold) * time.Second)
 	}
 
-	t.Run("signing out on the home blocks the node within a second", func(t *testing.T) {
+	t.Run("signing out everywhere on the home blocks the node within a second", func(t *testing.T) {
 		resp, _ := user.do("GET", nodeWebURL+"/api/videos", nil, nil)
 		if resp.StatusCode != 200 {
 			t.Fatalf("before: %d", resp.StatusCode)
 		}
-		resp, _ = user.do("POST", homeWebURL+"/api/auth/logout", nil, map[string]string{"X-Maktaba-CSRF": user.cookie(homeWebURL, "mkt_csrf")})
+		// the node's session is its own (signed in there), not the home session's: the home
+		// ends it with "sign out everywhere", pushed to the node by user (auth.revoked)
+		resp, _ = user.do("POST", homeWebURL+"/api/auth/logout-all", nil, map[string]string{"X-Maktaba-CSRF": user.cookie(homeWebURL, "mkt_csrf")})
 		if resp.StatusCode != 204 {
 			t.Fatalf("logout: %d", resp.StatusCode)
 		}
