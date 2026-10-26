@@ -55,7 +55,7 @@ func BuildChromaCopy(opts Options) ([]Process, error) {
 	env := append(os.Environ(), base...)
 	dir := chromaDir(env)
 	url := envValue(env, "MAKTABA_DATABASE_URL")
-	if dir == "" || !(strings.HasPrefix(url, "postgres://") || strings.HasPrefix(url, "postgresql://")) {
+	if dir == "" || (!strings.HasPrefix(url, "postgres://") && !strings.HasPrefix(url, "postgresql://")) {
 		return nil, nil // SQLite: no semantic search to move
 	}
 	state := opts.Config.StateDir()

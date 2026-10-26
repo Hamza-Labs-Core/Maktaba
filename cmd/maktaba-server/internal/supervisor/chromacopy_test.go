@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,16 @@ func chromaConfig(t *testing.T) (config.Config, string) {
 	t.Setenv("MAKTABA_CHROMA_DIR", "")
 	cfg.Database.URL = "postgres://maktaba@127.0.0.1:54329/maktaba"
 	return cfg, filepath.Join(cfg.StateDir(), "chroma")
+}
+
+// copyMarker is the done marker the copy writes (JSON: a Windows path's backslashes escaped).
+func copyMarker(t *testing.T, dir string) []byte {
+	t.Helper()
+	b, err := json.Marshal(map[string]any{"chroma_dir": dir, "done_at": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 func makeChroma(t *testing.T, dir string) {
@@ -76,7 +87,7 @@ func TestTheChromaFolderGoesAStartAfterTheCopy(t *testing.T) {
 	makeChroma(t, dir)
 	done := filepath.Join(cfg.StateDir(), ChromaCopyDone)
 	other := filepath.Join(t.TempDir(), "chroma")
-	if err := os.WriteFile(done, []byte(`{"chroma_dir":"`+other+`"}`), 0o644); err != nil {
+	if err := os.WriteFile(done, copyMarker(t, other), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if procs, _ := BuildChromaCopy(Options{Config: cfg}); len(procs) != 0 {
@@ -86,7 +97,7 @@ func TestTheChromaFolderGoesAStartAfterTheCopy(t *testing.T) {
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("a folder the copy did not name is kept: %v", err)
 	}
-	if err := os.WriteFile(done, []byte(`{"chroma_dir":"`+dir+`","done_at":1}`), 0o644); err != nil {
+	if err := os.WriteFile(done, copyMarker(t, dir), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if procs, _ := BuildChromaCopy(Options{Config: cfg}); len(procs) != 0 {
