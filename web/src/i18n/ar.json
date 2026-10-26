@@ -3823,6 +3823,8 @@
   "setup.starting.apart.error": "الخطأ:",
   "setup.starting.apart.restore_error": "فشلت الإعادة بالخطأ:",
   "setup.starting.apart.log": "السجل:",
+  "setup.starting.progress.dump": "حُفظ {done} من نحو {total}",
+  "setup.starting.progress.dump_so_far": "حُفظ {done} حتى الآن",
   "setup.starting.note": "تعمل مكتبة في {tray}، وإغلاق هذه النافذة لا يوقفها.",
   "setup.error.hf_token_invalid": "لم يقبل Hugging Face الرمز.",
   "setup.error.hf_gated": "وافق أولًا على شروط النموذج في huggingface.co بهذا الحساب.",

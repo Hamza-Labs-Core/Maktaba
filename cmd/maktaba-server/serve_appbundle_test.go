@@ -843,7 +843,7 @@ func TestDetailCodesAreAFixedList(t *testing.T) {
 	want := map[string]string{
 		"db_waiting":               "",
 		"db_checking":              "release",
-		"db_dumping":               "from to",
+		"db_dumping":               "from to mb expected_mb",
 		"db_migrating":             "to",
 		"db_restoring":             "failed dump",
 		"db_restored":              "failed error dump release",
@@ -1136,25 +1136,38 @@ func TestAppBundleDumpProgressAndAGivenUpStart(t *testing.T) {
 		rec.State, rec.Failed = apppayload.DatabaseRestoring, rec.Version
 		return apppayload.WriteDatabase(cfg.StateDir(), rec)
 	}
-	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	// the newest finished dump (8 MB) is what this one is expected to come to
+	b := testBundle(cfg)
+	_ = os.MkdirAll(b.Backups, 0o700)
+	_ = os.WriteFile(filepath.Join(b.Backups, "maktaba-20260101-030000.dump"), make([]byte, 3<<20), 0o600)
+	newer := filepath.Join(b.Backups, "pre-v0.1.0-to-v0.2.0.dump")
+	_ = os.WriteFile(newer, make([]byte, 8<<20), 0o600)
+	_ = os.Chtimes(newer, time.Now(), time.Now().Add(time.Hour))
+	ps := appBundleGates(cfg, payload, b, gateProcs(true), io.Discard)
 	var mu sync.Mutex
-	var said []string
+	var said []supervisor.Detail
 	err := checkedStep(t, prepareOf(t, ps, supervisor.RoleAPI))(context.Background(), func(d supervisor.Detail) {
 		mu.Lock()
-		said = append(said, d.Text)
+		said = append(said, d)
 		mu.Unlock()
 	})
 	if d := supervisor.DetailOf(err); err == nil || d.Code != "db_restoring" {
 		t.Fatalf("a start given up on: %v", err)
 	}
 	grew := false
-	for _, s := range said {
-		if strings.Contains(s, "MB so far") {
+	for _, d := range said {
+		if d.Code != "db_dumping" {
+			continue
+		}
+		if d.Params["expected_mb"] != int64(8) {
+			t.Fatalf("expected_mb: %+v", d.Params)
+		}
+		if mb, _ := d.Params["mb"].(int64); strings.Contains(d.Text, "MB so far") && mb > 0 {
 			grew = true
 		}
 	}
 	if !grew {
-		t.Fatalf("the dump never said its size: %q", said)
+		t.Fatalf("the dump never said its size: %+v", said)
 	}
 	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseRestoring || rec.Failed != "v0.3.0" {
 		t.Fatalf("recorded over the restore: %+v", rec)

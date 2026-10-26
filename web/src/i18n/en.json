@@ -3810,6 +3810,8 @@
   "setup.starting.apart.error": "Error:",
   "setup.starting.apart.restore_error": "Putting it back failed with:",
   "setup.starting.apart.log": "Log:",
+  "setup.starting.progress.dump": "{done} of about {total} saved",
+  "setup.starting.progress.dump_so_far": "{done} saved so far",
   "setup.starting.note": "Maktaba runs in {tray}. Closing this window leaves it running.",
   "setup.error.hf_token_invalid": "Hugging Face did not accept the token.",
   "setup.error.hf_gated": "Accept the model's terms on huggingface.co with this account first.",
