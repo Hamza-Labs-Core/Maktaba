@@ -16,7 +16,7 @@ The window shows the same Maktaba you see in a browser.
 ### Install {#install}
 
 1. Open the downloaded disk image and drag **Maktaba** to **Applications**.
-2. Open Maktaba from Applications. It needs macOS 13 or later.
+2. Open Maktaba from Applications. It needs macOS 15 or later.
 3. If macOS says it cannot check the app, Control-click it in Applications, choose **Open**, then **Open** again.
 
 ### First-run setup {#first-run-setup}
