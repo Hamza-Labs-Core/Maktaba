@@ -316,8 +316,13 @@ func waitPIDFile(t *testing.T, file string) int {
 // runs) leaves the record of the TV processes it never adopted, for the launcher to stop
 // them or the next start to adopt them.
 func TestUnadoptedRecordStays(t *testing.T) {
-	first, _ := fakeProc(t, RolePostgres, "crash")
+	// the first process never answers its check, so the others (the slot's adoption) never
+	// start: a "crash" child with no check counted as running at once, and whether the
+	// adoption began before the stop was a race (on Windows a failed adoption ends the
+	// process and drops it from the record)
+	first, _ := fakeProc(t, RolePostgres, "sleep")
 	first.First = true
+	first.Probe = "http://" + freeAddr(t) + "/healthz"
 	slot, _ := fakeProc(t, RoleTVSlot, "serve")
 	slot.Instance, slot.Survives = "blue", true
 	dir := t.TempDir()

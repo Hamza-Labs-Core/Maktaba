@@ -722,10 +722,10 @@ def as_stored(v: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
 
 def _exact_top(
     files: ChromaFiles, fd: int, queries: npt.NDArray[np.float32], k: int, skip: set[int]
-) -> list[list[str]]:
+) -> list[list[tuple[str, float]]]:
     """Every query's ``k`` nearest ids among Chroma's live vectors, exactly, by cosine,
-    on the vectors as Postgres keeps them (16-bit): the check is then of the copy and
-    its index, not of near ties the rounding reorders."""
+    with their cosine distances, on the vectors as Postgres keeps them (16-bit): the
+    check is then of the copy and its index, not of near ties the rounding reorders."""
     nq = queries.shape[0]
     best_s = np.full((nq, k), -np.inf, dtype=np.float32)
     best_l = np.full((nq, k), -1, dtype=np.int64)
@@ -751,7 +751,14 @@ def _exact_top(
         order = np.argsort(-merged_s, axis=1)[:, :k]
         best_s = np.take_along_axis(merged_s, order, axis=1)
         best_l = np.take_along_axis(merged_l, order, axis=1)
-    return [[files.label_to_id[lb] for lb in row if lb >= 0] for row in best_l.tolist()]
+    return [
+        [
+            (files.label_to_id[lb], 1.0 - float(sc))
+            for lb, sc in zip(row_l, row_s, strict=True)
+            if lb >= 0
+        ]
+        for row_l, row_s in zip(best_l.tolist(), best_s.tolist(), strict=True)
+    ]
 
 
 def _sample(files: ChromaFiles, fd: int, n: int, skip: set[int]) -> npt.NDArray[np.float32]:
@@ -800,7 +807,7 @@ async def _verify(
         truth_ids = await asyncio.to_thread(_exact_top, files, fd, as_stored(queries), 30, skip)
     finally:
         os.close(fd)
-    keys = {eid: k for ids in truth_ids for eid in ids if (k := split_id(eid)) is not None}
+    keys = {eid: k for ids in truth_ids for eid, _ in ids if (k := split_id(eid)) is not None}
     found = await conn.fetch(
         "SELECT g.tid, g.seq, ts.id FROM unnest($1::uuid[], $2::int[]) AS g(tid, seq) "
         "JOIN transcript_segments ts ON ts.transcript_id = g.tid AND ts.seq = g.seq",
@@ -808,8 +815,11 @@ async def _verify(
         [k[1] for k in keys.values()],
     )
     seg = {(r["tid"], int(r["seq"])): int(r["id"]) for r in found}
-    # the exact neighbours that are in Postgres (an orphan is not)
-    truths = [[seg[keys[e]] for e in ids if e in keys and keys[e] in seg][:10] for ids in truth_ids]
+    # the exact neighbours that are in Postgres (an orphan is not), with their distances
+    truths = [
+        [(seg[keys[e]], d) for e, d in ids if e in keys and keys[e] in seg][:10]
+        for ids in truth_ids
+    ]
     recall, counted = await _recall(conn, queries, truths, cfg.ef_search)
     if not counted:
         return Verdict(False, "no sampled query has a neighbour in Postgres", rows, copied)
@@ -827,10 +837,27 @@ async def _verify(
     return Verdict(True, "", rows, copied, recall, counted, at_search)
 
 
+#: how much closer than the exact 10th neighbour a result may be counted: Postgres
+#: computes the distance in its own arithmetic on the same 16-bit values
+TIE_EPS = 1e-3
+
+
+def tie_hits(got: list[float], truth: list[float], eps: float = TIE_EPS) -> int:
+    """How many of the index's results are true nearest neighbours: as close as the exact
+    ``len(truth)``-th one. Transcripts repeat themselves (a greeting, an opening formula):
+    many passages share one vector, so the exact top 10 is any 10 of them and an id
+    overlap would count most of a perfect answer as missed."""
+    if not truth:
+        return 0
+    bound = max(truth) + eps
+    return min(len(truth), sum(1 for d in got if d <= bound))
+
+
 async def _recall(
-    conn: Any, queries: npt.NDArray[np.float32], truths: list[list[int]], ef: int
+    conn: Any, queries: npt.NDArray[np.float32], truths: list[list[tuple[int, float]]], ef: int
 ) -> tuple[float, int]:
-    """Mean share of each query's exact top 10 the HNSW index returns at ``ef``."""
+    """Mean share of each query's exact top 10 the HNSW index returns at ``ef``, ties
+    counted (tie_hits)."""
     total = 0.0
     counted = 0
     async with conn.transaction():
@@ -838,13 +865,14 @@ async def _recall(
         for q, truth in zip(queries, truths, strict=True):
             if not truth:
                 continue
+            vec = "[" + ",".join(repr(x) for x in q.tolist()) + "]"
             got = await conn.fetch(
-                "SELECT segment_id FROM segment_embeddings ORDER BY embedding <=> $1::halfvec "
-                "LIMIT 10",
-                "[" + ",".join(repr(x) for x in q.tolist()) + "]",
+                "SELECT embedding <=> $1::halfvec AS d FROM segment_embeddings "
+                "ORDER BY embedding <=> $1::halfvec LIMIT 10",
+                vec,
             )
-            hit = {int(r["segment_id"]) for r in got}
-            total += len(hit & set(truth)) / len(truth)
+            hits = tie_hits([float(r["d"]) for r in got], [d for _, d in truth])
+            total += hits / len(truth)
             counted += 1
     return (total / counted if counted else 0.0), counted
 
