@@ -31,13 +31,14 @@ from maktaba_pipeline.thumbnail.generator import (
 class _FakeFFmpeg:
     """Records argv and writes a stub output file (argv[-1])."""
 
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, fail_first: int = 0) -> None:
         self.calls: list[list[str]] = []
         self.fail = fail
+        self.fail_first = fail_first
 
     async def __call__(self, args: list[str]) -> None:
         self.calls.append(list(args))
-        if self.fail:
+        if self.fail or len(self.calls) <= self.fail_first:
             raise ThumbnailError("ffmpeg_thumbnail", returncode=1, stderr_tail="boom")
         out = Path(args[-1])
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -160,3 +161,45 @@ def test_generate_thumbnails_propagates_ffmpeg_failure(tmp_path: Path) -> None:
             )
         )
     assert ei.value.kind == "ffmpeg_thumbnail"
+
+
+def test_poster_tries_earlier_points_when_the_seek_finds_no_frame(tmp_path: Path) -> None:
+    """A video track shorter than the container (seen: 15 s of VP9 in a 3:51 file) or a
+    tiny clip: no frame at 25 %, so 1 s, then the start."""
+    from maktaba_pipeline.thumbnail.generator import generate_poster
+
+    fake = _FakeFFmpeg(fail_first=2)
+    out = _run(
+        generate_poster(
+            "/m/x.mp4", duration_sec=231.5, content_hash="h", root=tmp_path, runner=fake
+        )
+    )
+    assert out.exists()
+    seeks = [c[c.index("-ss") + 1] for c in fake.calls]
+    assert seeks == ["57.875", "1.000", "0.000"]
+
+
+def test_poster_failing_everywhere_still_fails(tmp_path: Path) -> None:
+    from maktaba_pipeline.thumbnail.generator import generate_poster
+
+    fake = _FakeFFmpeg(fail=True)
+    with pytest.raises(ThumbnailError):
+        _run(
+            generate_poster(
+                "/m/x.mp4", duration_sec=100.0, content_hash="h", root=tmp_path, runner=fake
+            )
+        )
+    assert len(fake.calls) == 3
+
+
+def test_sprite_decodes_every_frame_when_keyframes_give_none(tmp_path: Path) -> None:
+    """A 10-second clip has fewer keyframes than the 5x5 grid: the keyframes-only run
+    encodes nothing, the second decodes every frame."""
+    from maktaba_pipeline.thumbnail.generator import generate_sprite
+
+    fake = _FakeFFmpeg(fail_first=1)
+    out = _run(
+        generate_sprite("/m/x.mp4", duration_sec=9.8, content_hash="h", root=tmp_path, runner=fake)
+    )
+    assert out.exists()
+    assert "-skip_frame" in fake.calls[0] and "-skip_frame" not in fake.calls[1]
