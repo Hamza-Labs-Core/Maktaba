@@ -39,7 +39,7 @@ func (h *Handler) VideoStats(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("video "+videoID))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if !videos.CanRead(p, libraryID) {
@@ -49,13 +49,13 @@ func (h *Handler) VideoStats(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.repo().videoStats(r.Context(), videoID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load video stats"))
+		httperror.Write(w, r, httperror.Internal("load video stats").Wrap(err))
 		return
 	}
 	if p.IsAdmin {
 		viewers, err := h.repo().videoViewers(r.Context(), videoID)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("load video viewers"))
+			httperror.Write(w, r, httperror.Internal("load video viewers").Wrap(err))
 			return
 		}
 		stats.Viewers = viewers

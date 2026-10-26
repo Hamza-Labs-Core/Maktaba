@@ -124,7 +124,7 @@ func (h *Handler) ListPools(w http.ResponseWriter, r *http.Request) {
 			// from the channel is filtered after the projection
 			live, err := h.listLive(r, "")
 			if err != nil {
-				httperror.Write(w, r, httperror.Internal("list filler pools"))
+				httperror.Write(w, r, httperror.Internal("list filler pools").Wrap(err))
 				return
 			}
 			h.listDraft(w, r, channelID, live, dr)
@@ -133,7 +133,7 @@ func (h *Handler) ListPools(w http.ResponseWriter, r *http.Request) {
 	}
 	pools, err := h.listLive(r, channelID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list filler pools"))
+		httperror.Write(w, r, httperror.Internal("list filler pools").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": pools})
@@ -267,7 +267,7 @@ func (h *Handler) UpdatePool(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimSpace(*req.Name)
 		if _, err := h.DB.ExecContext(r.Context(),
 			`UPDATE filler_pools SET name=$1, updated_at=now() WHERE id=$2`, name, id); err != nil {
-			httperror.Write(w, r, httperror.Internal("update filler pool"))
+			httperror.Write(w, r, httperror.Internal("update filler pool").Wrap(err))
 			return
 		}
 	}
@@ -278,7 +278,7 @@ func (h *Handler) UpdatePool(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := h.DB.ExecContext(r.Context(),
 			`UPDATE filler_pools SET channel_id=$1, updated_at=now() WHERE id=$2`, chID, id); err != nil {
-			httperror.Write(w, r, httperror.Internal("update filler pool channel"))
+			httperror.Write(w, r, httperror.Internal("update filler pool channel").Wrap(err))
 			return
 		}
 	}
@@ -296,7 +296,7 @@ func (h *Handler) DeletePool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM filler_pools WHERE id=$1`, id); err != nil {
-		httperror.Write(w, r, httperror.Internal("delete filler pool"))
+		httperror.Write(w, r, httperror.Internal("delete filler pool").Wrap(err))
 		return
 	}
 	common.WriteNoContent(w)
@@ -368,7 +368,7 @@ func (h *Handler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM filler_items WHERE id=$1`, id); err != nil {
-		httperror.Write(w, r, httperror.Internal("delete filler item"))
+		httperror.Write(w, r, httperror.Internal("delete filler item").Wrap(err))
 		return
 	}
 	common.WriteNoContent(w)

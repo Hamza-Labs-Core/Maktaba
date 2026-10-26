@@ -45,7 +45,7 @@ func (h *Handler) Activity(w http.ResponseWriter, r *http.Request) {
 	if kinds["watched"] {
 		got, err := h.repo().watchedActivity(r.Context(), p.UserID, fetchN)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("load watched activity"))
+			httperror.Write(w, r, httperror.Internal("load watched activity").Wrap(err))
 			return
 		}
 		sources = append(sources, got)
@@ -79,7 +79,7 @@ func (h *Handler) GetPrivacy(w http.ResponseWriter, r *http.Request) {
 	}
 	prefs, err := h.repo().getPrefs(r.Context(), p.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load privacy settings"))
+		httperror.Write(w, r, httperror.Internal("load privacy settings").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, prefs)
@@ -98,7 +98,7 @@ func (h *Handler) PutPrivacy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.repo().setPrefs(r.Context(), p.UserID, req.TrackEnabled, h.now()); err != nil {
-		httperror.Write(w, r, httperror.Internal("save privacy settings"))
+		httperror.Write(w, r, httperror.Internal("save privacy settings").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, PrivacySettings{TrackEnabled: req.TrackEnabled})

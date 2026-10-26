@@ -287,6 +287,8 @@ func homeDatabase(cfg config.Config, pg *pgbundle.Bundle) *dbsafe.Target {
 	if pg != nil {
 		u, err := pg.SuperURL()
 		if err != nil {
+			// the error names the password file, never the password
+			fmt.Fprintf(os.Stderr, "[serve] level=warn update: the database's superuser URL: %v: no rehearsal or dump\n", err)
 			return nil
 		}
 		return &dbsafe.Target{URL: u, Bin: pg.Bin, Backups: pg.Backups, Data: pg.Data}
@@ -793,8 +795,8 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		return updater.Verdict{Healthy: true}
 	}
 	admin := "http://" + supervisor.LocalAddr(h.cfg.Server.AdminAddr, "9100")
-	if code := h.get(ctx, admin+"/readyz", nil); code != http.StatusOK {
-		return updater.Verdict{Why: fmt.Sprintf("api /readyz answers %d", code)}
+	if code, err := h.get(ctx, admin+"/readyz", nil); code != http.StatusOK {
+		return updater.Verdict{Why: answers("api /readyz", code, err)}
 	}
 	var self struct {
 		Version    string          `json:"version"`
@@ -802,8 +804,8 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		MachinesDB []selfMachineDB `json:"machines_db"`
 	}
 	api := "http://" + supervisor.LocalAddr(h.cfg.Server.Listen, "8080")
-	if code := h.getSelf(ctx, api+"/api/cluster/self", &self); code != http.StatusOK {
-		return updater.Verdict{Why: fmt.Sprintf("api /api/cluster/self answers %d", code)}
+	if code, err := h.getSelf(ctx, api+"/api/cluster/self", &self); code != http.StatusOK {
+		return updater.Verdict{Why: answers("api /api/cluster/self", code, err)}
 	}
 	if self.Version != "" && layout.CompareVersions(self.Version, want) != 0 {
 		return updater.Verdict{Fatal: true, Why: fmt.Sprintf("the api answers as %s, not %s", self.Version, want)}
@@ -840,8 +842,8 @@ func (h *machineHealth) pipelineVersion(ctx context.Context, procs []supervisor.
 		var hz struct {
 			Version string `json:"version"`
 		}
-		if code := h.get(ctx, p.ProbeURL, &hz); code != http.StatusOK {
-			return updater.Verdict{Why: fmt.Sprintf("%s /healthz answers %d", childName(p), code)}
+		if code, err := h.get(ctx, p.ProbeURL, &hz); code != http.StatusOK {
+			return updater.Verdict{Why: answers(childName(p)+" /healthz", code, err)}
 		}
 		if hz.Version != "" && hz.Version != want {
 			return updater.Verdict{Fatal: true, Why: fmt.Sprintf("%s runs the pipeline %s, not %s", childName(p), hz.Version, want)}
@@ -871,34 +873,45 @@ func (h *machineHealth) pipelineWant() string {
 	return appvenv.WheelVersion(wheel)
 }
 
-func (h *machineHealth) get(ctx context.Context, url string, out any) int {
+func (h *machineHealth) get(ctx context.Context, url string, out any) (int, error) {
 	return h.getAs(ctx, url, out, "")
 }
 
 // getSelf is get of the api's /api/cluster/self as this machine's supervisor (its local
 // token): the home's machines that cannot log in to its database are told to it alone.
-func (h *machineHealth) getSelf(ctx context.Context, url string, out any) int {
+func (h *machineHealth) getSelf(ctx context.Context, url string, out any) (int, error) {
 	tok, _ := os.ReadFile(supervisor.LocalTokenPath(h.cfg))
 	return h.getAs(ctx, url, out, strings.TrimSpace(string(tok)))
 }
 
-func (h *machineHealth) getAs(ctx context.Context, url string, out any, localToken string) int {
+// getAs is the status url answers (with the local token when given), or 0 and the
+// error when it did not answer at all (refused, timed out): a rollback's reason says which.
+func (h *machineHealth) getAs(ctx context.Context, url string, out any, localToken string) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	if localToken != "" {
 		req.Header.Set("X-Maktaba-Local-Token", localToken)
 	}
 	resp, err := h.client().Do(req)
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	defer resp.Body.Close()
 	if out != nil && resp.StatusCode == http.StatusOK {
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
 	}
-	return resp.StatusCode
+	return resp.StatusCode, nil
+}
+
+// answers is a verdict's words for what did not answer 200: its error when it did not
+// answer at all ("api /readyz: … connection refused"), else its status.
+func answers(what string, code int, err error) string {
+	if err != nil {
+		return what + ": " + err.Error()
+	}
+	return fmt.Sprintf("%s answers %d", what, code)
 }
 
 func childName(p supervisor.ChildStatus) string {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -171,6 +172,7 @@ func (h *Handler) Auto(w http.ResponseWriter, r *http.Request) {
 	lease, err := h.leases.acquire()
 	if err != nil {
 		// HDHomeRun "all tuners in use" — Plex shows the expected message.
+		slog.Info("hdhr: all tuners in use", "channel_id", target.ID.String(), "event", "hdhr_tuners_busy")
 		http.Error(w, "all tuners in use", http.StatusServiceUnavailable)
 		return
 	}
@@ -179,7 +181,10 @@ func (h *Handler) Auto(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "video/mp2t")
 	w.WriteHeader(http.StatusOK)
 	// Blocks until the source ends or the consumer disconnects (ctx done).
-	_ = h.Streamer.StreamChannelTS(r.Context(), target.ID, w)
+	if err := h.Streamer.StreamChannelTS(r.Context(), target.ID, w); err != nil && r.Context().Err() == nil {
+		slog.Warn("hdhr: channel stream ended with an error", "channel_id", target.ID.String(),
+			"number", target.Number, "err", err.Error(), "event", "hdhr_stream_failed")
+	}
 }
 
 // parseChannelParam strips an optional "v" prefix and parses the number.

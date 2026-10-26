@@ -73,7 +73,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			var lib string
 			err := h.DB.QueryRowContext(r.Context(), `SELECT library_id FROM videos WHERE id = $1`, v).Scan(&lib)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				httperror.Write(w, r, httperror.Internal("load video"))
+				httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 				return
 			}
 			if err != nil || !p.HasLibrary(lib) {
@@ -103,7 +103,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(),
 		"SELECT id, video_id, cluster_label, name FROM speakers"+where+" ORDER BY name", args...)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list speakers"))
+		httperror.Write(w, r, httperror.Internal("list speakers").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -184,7 +184,7 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 	}
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tx"))
+		httperror.Write(w, r, httperror.Internal("tx").Wrap(err))
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -210,7 +210,7 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		httperror.Write(w, r, httperror.Internal("commit"))
+		httperror.Write(w, r, httperror.Internal("commit").Wrap(err))
 		return
 	}
 	n, _ := res.RowsAffected()

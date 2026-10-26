@@ -29,7 +29,7 @@ func runPlexLink(argv []string, out io.Writer) error {
 	fs := flag.NewFlagSet("plex-link", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var dsn, tokenFile, clientID, server string
-	fs.StringVar(&dsn, "dsn", os.Getenv("DATABASE_URL"), "Database DSN (default: $DATABASE_URL)")
+	fs.StringVar(&dsn, "dsn", "", "Database DSN (default: $DATABASE_URL)")
 	fs.StringVar(&tokenFile, "token-file", "", "file holding the Plex account token (one line)")
 	fs.StringVar(&clientID, "client-id", "", "the plex.tv client id the PIN was made with (kept as this install's)")
 	fs.StringVar(&server, "server", "", "the Plex server to use when the account reaches several (default: the first on this network)")
@@ -41,6 +41,11 @@ func runPlexLink(argv []string, out io.Writer) error {
 	}
 	if tokenFile == "" || clientID == "" {
 		return errors.New("--token-file and --client-id are required")
+	}
+	if dsn == "" {
+		// read after parsing, not as the flag's default: --help and a flag
+		// error print defaults, and this one carries the password
+		dsn = os.Getenv("DATABASE_URL")
 	}
 	if dsn == "" {
 		return errors.New("DSN is empty: pass --dsn or set DATABASE_URL")

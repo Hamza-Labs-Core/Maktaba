@@ -119,8 +119,14 @@ func SlotExitReporter(streamAddr string) func(Process, ExitInfo) {
 		}
 		go func() {
 			resp, err := client.Post(base+"/internal/tv/slot-exited/"+p.Instance, "application/json", nil)
-			if err == nil {
-				_ = resp.Body.Close()
+			if err != nil {
+				// the front door learns it at its next probe instead
+				fmt.Fprintf(os.Stderr, "[supervisor] level=warn telling the front door %s ended: %v\n", p.Name(), err)
+				return
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode/100 != 2 {
+				fmt.Fprintf(os.Stderr, "[supervisor] level=warn telling the front door %s ended: it answered %s\n", p.Name(), resp.Status)
 			}
 		}()
 	}

@@ -369,5 +369,8 @@ func (h *Handler) serveLiveTS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "video/mp2t")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.WriteHeader(http.StatusOK)
-	_ = h.StreamChannelTS(r.Context(), id, w)
+	if err := h.StreamChannelTS(r.Context(), id, w); err != nil && r.Context().Err() == nil {
+		h.log().Warn("tv: live stream ended with an error", "channel_id", id.String(), "err", err.Error(),
+			"event", "channel_ts_ended")
+	}
 }

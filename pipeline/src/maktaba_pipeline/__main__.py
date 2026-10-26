@@ -38,6 +38,8 @@ from .db.jobs import Stage
 from .engine.workers import stable_hostname
 from .handlers import build_real_dispatch
 from .log import init as init_log
+from .log.hooks import asyncio_exception_handler
+from .log.hooks import install as install_log_hooks
 from .runtime import Database, RuntimeConfig, run
 
 # Only stages with a REAL handler in handlers.build_real_dispatch()
@@ -91,12 +93,16 @@ def _bootstrap_log() -> Any:
     ring_capacity = (
         int(ring_cap_raw) if ring_cap_raw and ring_cap_raw.lstrip("-").isdigit() else None
     )
-    return init_log(
+    log = init_log(
         service="pipeline",
         env=os.getenv("MAKTABA_ENV", "dev"),
         version=__version__,
         ring_capacity=ring_capacity,
     )
+    # library (stdlib logging) warnings and uncaught thread/process exceptions go
+    # through the same structured chain
+    install_log_hooks()
+    return log
 
 
 def _parse_stages(value: str | None) -> tuple[str, ...]:
@@ -155,6 +161,8 @@ def _build_runtime_config(
 
 
 async def _serve(args: argparse.Namespace, log: Any) -> int:
+    # "Task exception was never retrieved" and failing callbacks, as structured lines
+    asyncio.get_running_loop().set_exception_handler(asyncio_exception_handler)
     try:
         node = _node_for(args)
     except ValueError as exc:

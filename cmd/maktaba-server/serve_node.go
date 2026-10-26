@@ -114,7 +114,7 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 	})
 	tok, err := machineagent.WriteToken(supervisor.LocalTokenPath(cfg))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[serve] node: cannot write the local token (the API cannot reach the machine agent): %v\n", err)
+		fmt.Fprintf(os.Stderr, "[serve] level=error node: cannot write the local token (the API cannot reach the machine agent): %v\n", err)
 	}
 	ns.token = tok
 	host, _ := os.Hostname()
@@ -209,6 +209,7 @@ func homeStreamProxy(target string) http.Handler {
 	}
 	proxy.FlushInterval = -1
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		stderrProxyError(homeStreamProxyErrs, "home stream proxy", r, err)
 		webui.Error(w, r, http.StatusBadGateway, "This machine cannot reach its home",
 			"The home's live TV is not reachable ("+err.Error()+").")
 	}

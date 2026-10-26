@@ -104,13 +104,13 @@ func (h *Handler) Grid(w http.ResponseWriter, r *http.Request) {
 	}
 	chans, err := h.visibleChannels(r, p, r.URL.Query().Get("category"))
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list channels"))
+		httperror.Write(w, r, httperror.Internal("list channels").Wrap(err))
 		return
 	}
 	ids := metaIDs(chans)
 	rows, err := h.repo().programsOverlapping(r.Context(), ids, start, end)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read programs"))
+		httperror.Write(w, r, httperror.Internal("read programs").Wrap(err))
 		return
 	}
 	now := h.now()
@@ -176,7 +176,7 @@ func (h *Handler) ChannelGuide(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.repo().programsOverlapping(r.Context(), []string{id}, start, end)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read programs"))
+		httperror.Write(w, r, httperror.Internal("read programs").Wrap(err))
 		return
 	}
 	now := h.now()
@@ -207,7 +207,7 @@ func (h *Handler) Now(w http.ResponseWriter, r *http.Request) {
 	}
 	chans, err := h.visibleChannels(r, p, r.URL.Query().Get("category"))
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list channels"))
+		httperror.Write(w, r, httperror.Internal("list channels").Wrap(err))
 		return
 	}
 	now := h.now()

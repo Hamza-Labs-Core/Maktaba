@@ -376,7 +376,9 @@ async def release_stages(db: Any) -> list[str]:
     has another ``paused_by`` and stays as it is)."""
     try:
         held = await held_stages(db)
-    except Exception:  # noqa: BLE001 - an older schema: nothing held
+    except Exception as exc:  # noqa: BLE001 - an older schema: nothing held
+        if not _older_schema(exc):
+            _log.warning("storage_canonicalize_release_failed", error=str(exc), exc_info=True)
         return []
     if held:
         await db.execute(
@@ -389,6 +391,17 @@ async def release_stages(db: Any) -> list[str]:
         )
         _log.info("storage_canonicalize_stages_resumed", stages=held)
     return held
+
+
+def _older_schema(exc: BaseException) -> bool:
+    """``job_stages`` (or its ``paused_by``) is not there yet: Postgres undefined_table /
+    undefined_column (42P01 / 42703), SQLite's "no such table" / "no such column"."""
+    if getattr(exc, "sqlstate", None) in ("42P01", "42703"):
+        return True
+    if type(exc).__name__ in ("UndefinedTableError", "UndefinedColumnError"):
+        return True
+    text = str(exc).lower()
+    return "no such table" in text or "no such column" in text
 
 
 async def _running(db: Any, stages: Sequence[str]) -> int:

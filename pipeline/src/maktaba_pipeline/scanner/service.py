@@ -558,8 +558,10 @@ class Scanner:
             )
             self._log.error(
                 "scanner.save_failed",
+                library_id=str(lib.id),
                 path=candidate.path,
                 err=str(err),
+                exc_info=True,
             )
             return
 

@@ -128,7 +128,7 @@ func (h *Home) Introspect(w http.ResponseWriter, r *http.Request) {
 			unauthorized(w, r, no.Reason)
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("introspect"))
+		httperror.Write(w, r, httperror.Internal("introspect").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, ans)
@@ -168,13 +168,13 @@ func (h *Home) SignOut(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ids, err := h.sessionsThrough(ctx, node, req.SessionSHA256)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("signout"))
+		httperror.Write(w, r, httperror.Internal("signout").Wrap(err))
 		return
 	}
 	n := 0
 	for _, id := range ids {
 		if err := h.Sessions.Revoke(ctx, id); err != nil {
-			httperror.Write(w, r, httperror.Internal("signout"))
+			httperror.Write(w, r, httperror.Internal("signout").Wrap(err))
 			return
 		}
 		n++
@@ -182,7 +182,7 @@ func (h *Home) SignOut(w http.ResponseWriter, r *http.Request) {
 	if req.UserID != "" && req.Before != nil {
 		through, err := h.signedInThrough(ctx, node, req.UserID)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("signout"))
+			httperror.Write(w, r, httperror.Internal("signout").Wrap(err))
 			return
 		}
 		if !through {
@@ -191,13 +191,13 @@ func (h *Home) SignOut(w http.ResponseWriter, r *http.Request) {
 		} else {
 			m, err := h.Sessions.RevokeAllForUserBefore(ctx, req.UserID, *req.Before)
 			if err != nil {
-				httperror.Write(w, r, httperror.Internal("signout"))
+				httperror.Write(w, r, httperror.Internal("signout").Wrap(err))
 				return
 			}
 			n += int(m)
 			if _, err := h.DB.ExecContext(ctx, `UPDATE refresh_tokens SET revoked_at = now()
 			             WHERE user_id = $1 AND revoked_at IS NULL AND issued_at < $2`, req.UserID, *req.Before); err != nil {
-				httperror.Write(w, r, httperror.Internal("signout"))
+				httperror.Write(w, r, httperror.Internal("signout").Wrap(err))
 				return
 			}
 		}

@@ -476,9 +476,11 @@ class Watcher:
             except Exception as err:  # noqa: BLE001 — never tear down the loop
                 self._log.error(
                     "watcher.dispatch_failed",
+                    library_id=ev.library_id,
                     path=ev.path,
                     op=ev.op.value,
                     err=str(err),
+                    exc_info=True,
                 )
             finally:
                 queue.task_done()

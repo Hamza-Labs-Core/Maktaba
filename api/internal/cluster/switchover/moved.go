@@ -37,7 +37,7 @@ func MovedHandler(db *sql.DB) http.HandlerFunc {
 			httperror.Write(w, r, httperror.NotFound("no notice for that machine"))
 			return
 		case err != nil:
-			httperror.Write(w, r, httperror.Internal("the notices"))
+			httperror.Write(w, r, httperror.Internal("the notices").Wrap(err))
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")

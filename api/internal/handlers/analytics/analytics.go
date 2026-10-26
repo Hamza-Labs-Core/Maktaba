@@ -90,7 +90,7 @@ func (h *Handler) Live(w http.ResponseWriter, r *http.Request) {
 	now := h.now()
 	sessions, err := h.repo().live(r.Context(), now.Add(-h.staleTimeout()), now)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load live sessions"))
+		httperror.Write(w, r, httperror.Internal("load live sessions").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"sessions": sessions})
@@ -116,23 +116,23 @@ func (h *Handler) SummaryEndpoint(w http.ResponseWriter, r *http.Request) {
 	s := Summary{Range: rng.Label}
 	var err error
 	if s.TotalWatchSec, s.TotalSessions, s.UniqueViewers, s.CompletionRate, err = rp.summaryTotals(r.Context(), rng); err != nil {
-		httperror.Write(w, r, httperror.Internal("summary totals"))
+		httperror.Write(w, r, httperror.Internal("summary totals").Wrap(err))
 		return
 	}
 	if s.Devices, err = rp.breakdown(r.Context(), rng, "device_type"); err != nil {
-		httperror.Write(w, r, httperror.Internal("device breakdown"))
+		httperror.Write(w, r, httperror.Internal("device breakdown").Wrap(err))
 		return
 	}
 	if s.Platforms, err = rp.breakdown(r.Context(), rng, "platform"); err != nil {
-		httperror.Write(w, r, httperror.Internal("platform breakdown"))
+		httperror.Write(w, r, httperror.Internal("platform breakdown").Wrap(err))
 		return
 	}
 	if s.Libraries, err = rp.libraries(r.Context(), rng); err != nil {
-		httperror.Write(w, r, httperror.Internal("library breakdown"))
+		httperror.Write(w, r, httperror.Internal("library breakdown").Wrap(err))
 		return
 	}
 	if s.Genres, err = rp.genres(r.Context(), rng, 12); err != nil {
-		httperror.Write(w, r, httperror.Internal("genre breakdown"))
+		httperror.Write(w, r, httperror.Internal("genre breakdown").Wrap(err))
 		return
 	}
 	h.summaries().put(rng.Label, s, now)
@@ -153,7 +153,7 @@ func (h *Handler) TopVideos(w http.ResponseWriter, r *http.Request) {
 	rng := ParseRange(r.URL.Query().Get("range"), h.now())
 	items, err := h.repo().topVideos(r.Context(), rng, limit)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("top videos"))
+		httperror.Write(w, r, httperror.Internal("top videos").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"videos": items, "range": rng.Label})
@@ -169,12 +169,12 @@ func (h *Handler) Activity(w http.ResponseWriter, r *http.Request) {
 	rp := h.repo()
 	series, err := rp.series(r.Context(), rng, bucket)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("activity series"))
+		httperror.Write(w, r, httperror.Internal("activity series").Wrap(err))
 		return
 	}
 	cells, err := rp.heatCells(r.Context(), rng)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("activity heatmap"))
+		httperror.Write(w, r, httperror.Internal("activity heatmap").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, ActivityResponse{
@@ -196,7 +196,7 @@ func (h *Handler) Users(w http.ResponseWriter, r *http.Request) {
 	rng := ParseRange(r.URL.Query().Get("range"), h.now())
 	users, err := h.repo().activeUsers(r.Context(), rng, limit)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("active users"))
+		httperror.Write(w, r, httperror.Internal("active users").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"users": users, "range": rng.Label})

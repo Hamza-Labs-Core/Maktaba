@@ -101,10 +101,17 @@ type serveOptions struct {
 	grace  time.Duration
 }
 
-func runServe(cfg config.Config, opts serveOptions) error {
+func runServe(cfg config.Config, opts serveOptions) (err error) {
 	// serve's own lines carry their time (stderr_stamp.go): the logs page places them
 	stopStamp := stampStderr()
 	defer stopStamp()
+	// the error that ends serve, stamped and with its level while stderr still is (cobra
+	// prints it again after, on the plain stderr, for a terminal); errReload is no failure
+	defer func() {
+		if err != nil && !errors.Is(err, errReload) {
+			fmt.Fprintf(os.Stderr, "[serve] level=error fatal: %v\n", err)
+		}
+	}()
 	// Epic 35 story 35.8: a half-written node.json stops here, once, with its path,
 	// rather than as every node role's crash loop; one a write is still under way on is
 	// waited for first (nodeConfigSettles).
@@ -396,6 +403,9 @@ func runServe(cfg config.Config, opts serveOptions) error {
 		// the home's API calls the supervisor's switchover endpoints with it
 		if t, err := machineagent.WriteToken(supervisor.LocalTokenPath(cfg)); err == nil {
 			token = t
+		} else {
+			fmt.Fprintf(os.Stderr, "[serve] level=error cannot write the local token (the API's switchover calls, "+
+				"the logs page's files and the update endpoints are refused): %v\n", err)
 		}
 	}
 	sw.set(pg, cp, stopCopy, token, func(r supervisor.Role, on bool) error { return sup.Want(r, "", on) })
@@ -624,6 +634,7 @@ func newStreamProxy(streamAddr string) http.Handler {
 	}
 	proxy.FlushInterval = -1
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		stderrProxyError(streamProxyErrs, "stream proxy", r, err)
 		if pagetheme.WantsHTML(r) {
 			pagetheme.Write(w, pagetheme.Page{
 				Status:       http.StatusBadGateway,
@@ -644,9 +655,10 @@ func newStreamProxy(streamAddr string) http.Handler {
 // apiUnreachable answers a /api/ request the API did not take (it is
 // down, starting or restarting): a browser that navigated there (a report
 // page, a link) gets a themed page that retries; the web app's fetches
-// get a problem+json body they can show.
+// get a problem+json body they can show. Logged once per window per distinct error, and
+// not for a client that went away (logProxyError).
 func apiUnreachable(w http.ResponseWriter, r *http.Request, err error) {
-	fmt.Fprintf(os.Stderr, "[serve] api proxy: %s %s: %v\n", r.Method, r.URL.Path, err)
+	stderrProxyError(apiProxyErrs, "api proxy", r, err)
 	if pagetheme.WantsHTML(r) {
 		pagetheme.Write(w, pagetheme.Page{
 			Status:       http.StatusBadGateway,

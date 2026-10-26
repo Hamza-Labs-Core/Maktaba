@@ -53,8 +53,15 @@ def enumerate_devices() -> list[DeviceID]:
                 devices.append(DeviceID(f"cuda:{i}"))
         finally:
             pynvml.nvmlShutdown()
-    except Exception:
+    except ImportError:
         _log.debug("pynvml_unavailable")
+    except Exception as exc:  # noqa: BLE001 - a driver mismatch or no permission: no CUDA
+        name = type(exc).__name__
+        if "LibraryNotFound" in name or "DriverNotLoaded" in name:
+            # no NVIDIA driver on this machine at all: not a failure, just no CUDA
+            _log.debug("pynvml_unavailable", reason=name)
+        else:
+            _log.warning("nvml_init_failed", error=f"{name}: {exc}")
 
     # Apple Silicon — single MLX device. Only added when no CUDA
     # devices were detected; on the rare external-GPU-on-a-Mac setup

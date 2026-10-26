@@ -1,8 +1,10 @@
 package watchdog
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -125,5 +127,28 @@ func TestRunStopsWithContext(t *testing.T) {
 	defer mu.Unlock()
 	if beats < 2 {
 		t.Errorf("beats = %d", beats)
+	}
+}
+
+func TestBeat_LogsProbeTransitionsOnce(t *testing.T) {
+	var buf bytes.Buffer
+	w := New()
+	w.Logger = slog.New(slog.NewTextHandler(&buf, nil))
+	var fail error
+	w.Watch("db", func(context.Context) error { return fail })
+	w.Beat(context.Background())
+	if buf.Len() != 0 {
+		t.Fatalf("a healthy probe logged: %s", buf.String())
+	}
+	fail = errors.New("connection refused")
+	w.Beat(context.Background())
+	w.Beat(context.Background())
+	if n := strings.Count(buf.String(), "event=watchdog_probe_failed"); n != 1 {
+		t.Fatalf("want one failure line, got %d: %s", n, buf.String())
+	}
+	fail = nil
+	w.Beat(context.Background())
+	if !strings.Contains(buf.String(), "event=watchdog_probe_recovered") {
+		t.Fatalf("no recovery line: %s", buf.String())
 	}
 }

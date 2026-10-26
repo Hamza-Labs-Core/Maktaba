@@ -213,6 +213,8 @@ type Machine struct {
 	cancel  context.CancelFunc
 	running sync.WaitGroup
 	base    context.Context
+	// saveErr is the last journal write failure logged (one line per distinct one)
+	saveErr string
 }
 
 func (m *Machine) now() time.Time {
@@ -236,10 +238,18 @@ func (m *Machine) maxStarts() int {
 	return 3
 }
 
-func (m *Machine) logf(format string, args ...any) {
+func (m *Machine) logf(format string, args ...any) { m.leveledf("", format, args...) }
+
+// errorf and warnf are logf for a failure: the server log's line names its level first
+// ("[update] level=error …", what the logs page reads a plain line's level from); the
+// run log's line (the Updates page) stays as it was.
+func (m *Machine) errorf(format string, args ...any) { m.leveledf("error", format, args...) }
+func (m *Machine) warnf(format string, args ...any)  { m.leveledf("warn", format, args...) }
+
+func (m *Machine) leveledf(level, format string, args ...any) {
 	line := fmt.Sprintf("[update] "+format+"\n", args...)
 	if m.Log != nil {
-		_, _ = io.WriteString(m.Log, line)
+		_, _ = io.WriteString(m.Log, withLevel(level, line))
 	}
 	m.mu.Lock()
 	j := m.j
@@ -247,6 +257,14 @@ func (m *Machine) logf(format string, args ...any) {
 	if j != nil {
 		m.runLog(j.Job.RunID, line)
 	}
+}
+
+// withLevel puts "level=<level> " after a line's "[update] " (none: the line as it is).
+func withLevel(level, line string) string {
+	if level == "" {
+		return line
+	}
+	return strings.Replace(line, "[update] ", "[update] level="+level+" ", 1)
 }
 
 // runLog appends a line to logs/<run>.log (the Updates page's run log).
@@ -280,6 +298,22 @@ func safeName(s string) string {
 func (m *Machine) saveLocked() error {
 	m.j.UpdatedAt = m.now()
 	err := SaveJournal(m.Dir, m.j)
+	switch {
+	case err != nil && err.Error() != m.saveErr:
+		// logged here (most callers drop the error), once per distinct failure; not
+		// through logf, which takes m.mu
+		m.saveErr = err.Error()
+		line := fmt.Sprintf("[update] cannot write the journal: %v\n", err)
+		if m.Log != nil {
+			_, _ = io.WriteString(m.Log, withLevel("error", line))
+		}
+		m.runLog(m.j.Job.RunID, line)
+	case err == nil && m.saveErr != "":
+		m.saveErr = ""
+		if m.Log != nil {
+			_, _ = io.WriteString(m.Log, "[update] the journal is written again\n")
+		}
+	}
 	if m.OnChange != nil {
 		go m.OnChange()
 	}
@@ -510,7 +544,7 @@ func (m *Machine) prepare(ctx context.Context) {
 	}
 	for _, s := range steps {
 		if err := m.beginStep(s.name); err != nil {
-			m.logf("cannot write the journal: %v", err)
+			m.errorf("cannot write the journal: %v", err)
 			return
 		}
 		detail, err := s.run(ctx)
@@ -522,7 +556,7 @@ func (m *Machine) prepare(ctx context.Context) {
 			f := failure(s.name, err)
 			_ = m.endStep(s.name, "failed", f.Error())
 			_ = m.mutate(func(j *Journal) { j.State, j.Error = StatePrepareFailed, f })
-			m.logf("prepare failed at %s: %s", s.name, f.Error())
+			m.errorf("prepare failed at %s: %s", s.name, f.Error())
 			_ = m.withJournal(func(j *Journal) error { return m.Installer.Discard(context.Background(), j) })
 			return
 		}
@@ -755,9 +789,9 @@ func (m *Machine) apply(ctx context.Context) {
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Switch(ctx, j) }); err != nil {
 		f := failure(StepSwitch, err)
 		_ = m.endStep(StepSwitch, "failed", f.Error())
-		_ = m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) })
+		m.undoSwitch("switch failed")
 		_ = m.mutate(func(j *Journal) { j.State, j.Error = StateApplyFailed, f })
-		m.logf("switch failed: %s", f.Error())
+		m.errorf("switch failed: %s", f.Error())
 		return
 	}
 	_ = m.endStep(StepSwitch, "done", "")
@@ -778,9 +812,9 @@ func (m *Machine) apply(ctx context.Context) {
 		}
 		f := failure(StepRestart, err)
 		_ = m.endStep(StepRestart, "failed", f.Error())
-		_ = m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) })
+		m.undoSwitch("restart failed")
 		_ = m.mutate(func(j *Journal) { j.State, j.Error = StateApplyFailed, f })
-		m.logf("restart failed, nothing was installed: %s", f.Error())
+		m.errorf("restart failed, nothing was installed: %s", f.Error())
 	}
 }
 
@@ -915,12 +949,12 @@ func (m *Machine) Resume() {
 			return
 		}
 		// stopped before its restart: the previous release runs; nothing was installed
-		_ = m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) })
+		m.undoSwitch("an interrupted apply")
 		_ = m.mutate(func(j *Journal) {
 			j.State, j.Error = StateApplyFailed, &Failure{Step: StepRestart, Code: "interrupted",
 				Detail: "the machine stopped during the switch; it runs " + orNone(running) + " again"}
 		})
-		m.logf("the apply of %s was interrupted: %s runs", j.Job.Version, orNone(running))
+		m.warnf("the apply of %s was interrupted: %s runs", j.Job.Version, orNone(running))
 	case StateRestarting, StateWatching:
 		if newRel {
 			if j.State == StateRestarting {
@@ -943,10 +977,10 @@ func (m *Machine) Resume() {
 		if f := m.installFailure(j); f != nil && j.State == StateRestarting {
 			// the app said its install failed (after it had stopped the server for it):
 			// nothing was installed, and that is what the run says
-			_ = m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) })
+			m.undoSwitch("the app's install failed")
 			_ = m.endStep(StepRestart, "failed", f.Error())
 			_ = m.mutate(func(j *Journal) { j.State, j.Error = StateApplyFailed, f })
-			m.logf("the install of %s failed: %s", j.Job.Version, f.Error())
+			m.errorf("the install of %s failed: %s", j.Job.Version, f.Error())
 			return
 		}
 		// it came back on the previous release: the launcher's guard, or the app's
@@ -981,6 +1015,14 @@ func (m *Machine) installFailure(j *Journal) *Failure {
 	return nil
 }
 
+// undoSwitch reverts the switch after what went wrong (after names it) (the previous release runs
+// again): a revert that fails too is logged, as it leaves the new release half set up.
+func (m *Machine) undoSwitch(after string) {
+	if err := m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) }); err != nil {
+		m.errorf("undoing the switch after %s: %v", after, err)
+	}
+}
+
 // cameBackOld records a run whose new release did not stay running: the launcher's
 // guard (or the app) brought back the previous one, and the record was marked for the
 // dump to be put back where the migrations ran (by the launcher, or here when it could
@@ -989,12 +1031,12 @@ func (m *Machine) installFailure(j *Journal) *Failure {
 // tried, should it come later (the app's install finishing after all).
 func (m *Machine) cameBackOld(running, why string) {
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) }); err != nil {
-		m.logf("undoing the switch: %v", err)
+		m.errorf("undoing the switch: %v", err)
 	}
 	j := m.Status().Journal
 	if m.Records != nil && j.Job.Home {
 		if marked, err := m.Records.MarkRestore(j.Job.Version, j.From, why); err != nil {
-			m.logf("cannot mark the database record for the dump to be put back: %v", err)
+			m.errorf("cannot mark the database record for the dump to be put back: %v", err)
 		} else if marked {
 			m.logf("the database goes back to the dump taken before %s's migrations", j.Job.Version)
 		}
@@ -1004,7 +1046,7 @@ func (m *Machine) cameBackOld(running, why string) {
 		j.Error = &Failure{Step: StepWatch, Code: why, Detail: fmt.Sprintf("%s did not stay running; %s runs again",
 			j.Job.Version, orNone(running))}
 	})
-	m.logf("%s did not stay running (%s): %s runs again", j.Job.Version, why, orNone(running))
+	m.warnf("%s did not stay running (%s): %s runs again", j.Job.Version, why, orNone(running))
 }
 
 // beginWatch starts (or goes on with) the watch of the new release.
@@ -1078,7 +1120,7 @@ func (m *Machine) watch(ctx context.Context) {
 		}
 		switch {
 		case v.Fatal:
-			m.logf("the new release fails: %s", v.Why)
+			m.warnf("the new release fails: %s", v.Why)
 			m.rollback(v.Why)
 			return
 		case v.Pending:
@@ -1239,7 +1281,7 @@ func (m *Machine) rollback(reason string) {
 			j.State, j.Reason = StateFailed, reason
 			j.Error = &Failure{Step: StepRollback, Code: "no_previous", Detail: "no release to go back to: " + reason}
 		})
-		m.logf("cannot roll back (no previous release): %s", reason)
+		m.errorf("cannot roll back (no previous release): %s", reason)
 		return
 	}
 	if j.Rollbacks >= 2 {
@@ -1250,13 +1292,13 @@ func (m *Machine) rollback(reason string) {
 			j.Error = &Failure{Step: StepRollback, Code: "rollback_loop",
 				Detail: fmt.Sprintf("the switch back to %s did not take twice: %s", orNone(j.From), reason)}
 		})
-		m.logf("the switch back to %s did not take twice: a person is needed", orNone(j.From))
+		m.errorf("the switch back to %s did not take twice: a person is needed", orNone(j.From))
 		return
 	}
 	_ = m.endStep(StepWatch, "failed", reason)
 	_ = m.mutate(func(j *Journal) { j.State, j.Reason, j.Rollbacks = StateRollingBack, reason, j.Rollbacks+1 })
 	_ = m.beginStep(StepRollback)
-	m.logf("rolling back %s to %s: %s", j.Job.Version, orNone(j.From), reason)
+	m.warnf("rolling back %s to %s: %s", j.Job.Version, orNone(j.From), reason)
 	// the TV first (story 35.6 AC8): its change cancelled, or rolled back on the air
 	m.withdrawTV(reason)
 	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)
@@ -1265,11 +1307,11 @@ func (m *Machine) rollback(reason string) {
 			if p, err := m.Rehearser.DumpAside(context.Background(), "failed-"+j.Job.Version); err == nil {
 				m.logf("the database as %s left it is in %s", j.Job.Version, p)
 			} else {
-				m.logf("could not dump the failed state aside: %v", err)
+				m.warnf("could not dump the failed state aside: %v", err)
 			}
 		}
 		if _, err := m.Records.MarkRestore(j.Job.Version, j.From, reason); err != nil {
-			m.logf("cannot mark the database record for the dump to be put back: %v", err)
+			m.errorf("cannot mark the database record for the dump to be put back: %v", err)
 		}
 	}
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) }); err != nil {
@@ -1277,13 +1319,13 @@ func (m *Machine) rollback(reason string) {
 			// the new release stays, and so does its database: no start may put the dump
 			// back under it
 			if uerr := m.Records.Unmark(j.Job.Version); uerr != nil {
-				m.logf("cannot take the restore mark back: %v", uerr)
+				m.errorf("cannot take the restore mark back: %v", uerr)
 			}
 		}
 		f := failure(StepRollback, err)
 		_ = m.endStep(StepRollback, "failed", f.Error())
 		_ = m.mutate(func(j *Journal) { j.State, j.Error = StateFailed, f })
-		m.logf("the switch back failed: %s", f.Error())
+		m.errorf("the switch back failed: %s", f.Error())
 		return
 	}
 	m.armHandover(j.From)

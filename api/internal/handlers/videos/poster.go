@@ -67,7 +67,7 @@ func (h *Handler) Poster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load video"))
+		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
 		return
 	}
 	if herr := h.canRead(r.Context(), libraryID); herr != nil {

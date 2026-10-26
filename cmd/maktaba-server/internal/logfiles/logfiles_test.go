@@ -190,3 +190,27 @@ func readStampedAndZonedLines(t *testing.T) {
 		t.Fatalf("entries:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+// serve's, the supervisor's and the updater's failure lines name their level first
+// ("[serve] level=error …"): the page shows it, and the words without it.
+func TestReadLeadingLevelOnPlainLines(t *testing.T) {
+	d := Dirs{Logs: t.TempDir()}
+	write(t, filepath.Join(d.Logs, "server.log"), "2026-10-24T09:30:00.000Z [serve] level=error fatal: boom\n"+
+		"2026-10-24T09:30:01.000Z [update] level=warn undoing the switch after migrate failed: x\n"+
+		"2026-10-24T09:30:02.000Z [supervisor] api exited (exit status 1); restarting in 2s\n"+
+		"2026-10-24T09:30:03.000Z [serve] the level=error is only read first\n")
+	r := Read(d, Query{Files: []string{"server"}})
+	var got []string
+	for _, e := range r.Entries {
+		got = append(got, e.Service+"|"+e.Level+"|"+e.Msg)
+	}
+	want := []string{
+		"server|error|fatal: boom",
+		"server|warn|undoing the switch after migrate failed: x",
+		"supervisor||api exited (exit status 1); restarting in 2s",
+		"server||the level=error is only read first",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("entries:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}

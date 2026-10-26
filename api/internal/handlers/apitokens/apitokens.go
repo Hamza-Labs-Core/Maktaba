@@ -78,7 +78,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.Store.List(r.Context(), p.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list tokens"))
+		httperror.Write(w, r, httperror.Internal("list tokens").Wrap(err))
 		return
 	}
 	items := make([]tokenView, 0, len(rows))
@@ -134,7 +134,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	t, err := h.Store.Create(r.Context(), in)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("create token"))
+		httperror.Write(w, r, httperror.Internal("create token").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusCreated, createResponse{Token: t.Plaintext, PAT: toView(*t)})
@@ -157,7 +157,7 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("token"))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("revoke token"))
+		httperror.Write(w, r, httperror.Internal("revoke token").Wrap(err))
 		return
 	}
 	common.WriteNoContent(w)

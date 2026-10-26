@@ -252,14 +252,22 @@ func TestStreamGateCachesAcceptedSessions(t *testing.T) {
 	}
 }
 
-func TestStreamGateAPIDownIsUnauthorized(t *testing.T) {
+// the API down is not the viewer's sign-in: a 502 (nothing streamed), not a 401 that
+// sends them to sign in again.
+func TestStreamGateAPIDownIsBadGateway(t *testing.T) {
 	be := &streamBackend{}
 	bs := be.server(t)
 	bu, _ := url.Parse(bs.URL)
 	dead, _ := url.Parse("http://127.0.0.1:1")
 	gate := newStreamGate(newStreamProxy("0.0.0.0:"+bu.Port()), dead)
-	if rec := get(gate, "/stream/channel/"+chanID+"/index.m3u8", signedIn); rec.Code != http.StatusUnauthorized {
+	if rec := get(gate, "/stream/channel/"+chanID+"/index.m3u8", signedIn); rec.Code != http.StatusBadGateway {
 		t.Fatalf("code %d", rec.Code)
+	}
+	be.mu.Lock()
+	hits := len(be.paths)
+	be.mu.Unlock()
+	if hits != 0 {
+		t.Fatal("streamed without a sign-in check")
 	}
 }
 

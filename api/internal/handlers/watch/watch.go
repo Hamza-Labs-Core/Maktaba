@@ -86,7 +86,7 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 
 	enabled, err := h.repo().trackingEnabled(r.Context(), p.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load tracking pref"))
+		httperror.Write(w, r, httperror.Internal("load tracking pref").Wrap(err))
 		return
 	}
 	if !enabled {
@@ -98,7 +98,7 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 	// unknown one (no existence oracle, no stats for hidden videos).
 	libraryID, exists, err := h.repo().videoLibrary(r.Context(), req.VideoID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("verify video"))
+		httperror.Write(w, r, httperror.Internal("verify video").Wrap(err))
 		return
 	}
 	if !exists || !videos.CanRead(p, libraryID) {
@@ -117,7 +117,7 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 		now:        h.now(),
 	}
 	if err := h.repo().insertStart(r.Context(), row); err != nil {
-		httperror.Write(w, r, httperror.Internal("open session"))
+		httperror.Write(w, r, httperror.Internal("open session").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusCreated, StartResponse{SessionID: row.id, Tracking: true})
@@ -147,7 +147,7 @@ func (h *Handler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load session"))
+		httperror.Write(w, r, httperror.Internal("load session").Wrap(err))
 		return
 	}
 	if a.state != StateActive {
@@ -161,7 +161,7 @@ func (h *Handler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	pct := PercentComplete(req.PositionSec, a.videoDuration)
 
 	if _, err := h.repo().applyHeartbeat(r.Context(), req.SessionID, now, newDuration, pct); err != nil {
-		httperror.Write(w, r, httperror.Internal("apply heartbeat"))
+		httperror.Write(w, r, httperror.Internal("apply heartbeat").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, SessionView{
@@ -194,7 +194,7 @@ func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load session"))
+		httperror.Write(w, r, httperror.Internal("load session").Wrap(err))
 		return
 	}
 
@@ -202,7 +202,7 @@ func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
 	if a.state != StateActive {
 		v, err := h.repo().sessionView(r.Context(), req.SessionID, p.UserID)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("load session view"))
+			httperror.Write(w, r, httperror.Internal("load session view").Wrap(err))
 			return
 		}
 		common.WriteJSON(w, r, http.StatusOK, v)
@@ -224,7 +224,7 @@ func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
 	state := StopState(pct)
 
 	if _, err := h.repo().stop(r.Context(), req.SessionID, now, state, pct, newDuration); err != nil {
-		httperror.Write(w, r, httperror.Internal("stop session"))
+		httperror.Write(w, r, httperror.Internal("stop session").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, SessionView{

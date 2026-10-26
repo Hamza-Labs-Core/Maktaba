@@ -90,6 +90,7 @@ func TestPlacementExamples(t *testing.T) {
 		{"POST", "/api/cluster/sso/exchange", placement.Local},
 		{"POST", "/api/stream/sessions", placement.Local},
 		{"POST", "/api/stream/sessions/{id}/progress", placement.Home},
+		{"POST", "/api/stream/sessions/{id}/errors", placement.Local},
 		{"GET", "/api/videos", placement.Any},
 		{"GET", "/api/videos/{id}", placement.Any},
 		{"PATCH", "/api/videos/{id}", placement.Home},

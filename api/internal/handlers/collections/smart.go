@@ -133,7 +133,7 @@ func (h *Handler) Freeze(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tx"))
+		httperror.Write(w, r, httperror.Internal("tx").Wrap(err))
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -157,7 +157,7 @@ func (h *Handler) Freeze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		httperror.Write(w, r, httperror.Internal("commit"))
+		httperror.Write(w, r, httperror.Internal("commit").Wrap(err))
 		return
 	}
 	h.audit(r, p, "collection-frozen", c.LibraryID, map[string]any{"collection_id": id, "item_count": len(items)})

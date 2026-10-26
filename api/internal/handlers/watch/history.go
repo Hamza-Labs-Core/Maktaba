@@ -57,7 +57,7 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.repo().history(r.Context(), p.UserID, f)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load history"))
+		httperror.Write(w, r, httperror.Internal("load history").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{
@@ -79,7 +79,7 @@ func (h *Handler) VideoHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	vh, err := h.repo().videoHistory(r.Context(), p.UserID, videoID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load video history"))
+		httperror.Write(w, r, httperror.Internal("load video history").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, vh)
@@ -99,7 +99,7 @@ func (h *Handler) DeleteHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.repo().deleteHistory(r.Context(), p.UserID, videoID); err != nil {
-		httperror.Write(w, r, httperror.Internal("delete history"))
+		httperror.Write(w, r, httperror.Internal("delete history").Wrap(err))
 		return
 	}
 	common.WriteNoContent(w)

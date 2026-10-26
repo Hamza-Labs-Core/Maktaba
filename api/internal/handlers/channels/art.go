@@ -571,7 +571,7 @@ func (h *Handler) loadAdminChannel(w http.ResponseWriter, r *http.Request) (Chan
 			httperror.Write(w, r, httperror.NotFound("channel "+id))
 			return Channel{}, "", false
 		}
-		httperror.Write(w, r, httperror.Internal("load channel"))
+		httperror.Write(w, r, httperror.Internal("load channel").Wrap(err))
 		return Channel{}, "", false
 	}
 	return c, kind, true
@@ -584,7 +584,7 @@ func (h *Handler) writeChannel(w http.ResponseWriter, r *http.Request, id string
 	}
 	c, err := h.repo().get(r.Context(), id)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("reload channel"))
+		httperror.Write(w, r, httperror.Internal("reload channel").Wrap(err))
 		return
 	}
 	h.attachOverrides(r.Context(), &c)
@@ -691,7 +691,7 @@ func (h *Handler) ArtUpload(w http.ResponseWriter, r *http.Request) {
 	unlock := h.artLock(c.ID, kind)
 	defer unlock()
 	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // served images, world-readable is fine
-		httperror.Write(w, r, httperror.Internal("create art folder"))
+		httperror.Write(w, r, httperror.Internal("create art folder").Wrap(err))
 		return
 	}
 	// A re-upload of the same image lands on the file already in use: on
@@ -700,7 +700,7 @@ func (h *Handler) ArtUpload(w http.ResponseWriter, r *http.Request) {
 	existed := statErr == nil
 	tmp, err := os.CreateTemp(dir, ".upload-*")
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("store image"))
+		httperror.Write(w, r, httperror.Internal("store image").Wrap(err))
 		return
 	}
 	_, werr := tmp.Write(data)
@@ -712,7 +712,7 @@ func (h *Handler) ArtUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := os.Rename(tmp.Name(), dest); err != nil {
 		_ = os.Remove(tmp.Name())
-		httperror.Write(w, r, httperror.Internal("store image"))
+		httperror.Write(w, r, httperror.Internal("store image").Wrap(err))
 		return
 	}
 

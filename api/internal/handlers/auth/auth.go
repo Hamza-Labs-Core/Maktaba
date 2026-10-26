@@ -297,12 +297,12 @@ func (h *Handler) respondNative(w http.ResponseWriter, r *http.Request, u *users
 	now := h.now()
 	libs, err := h.librariesFor(r.Context(), u)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("resolve library acl"))
+		httperror.Write(w, r, httperror.Internal("resolve library acl").Wrap(err))
 		return
 	}
 	access, err := jwt.Sign(h.Keys, accessClaims(u, libs, now, accessTTL))
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("sign access token"))
+		httperror.Write(w, r, httperror.Internal("sign access token").Wrap(err))
 		return
 	}
 	rt, err := h.RefreshTokens.Issue(r.Context(), refresh.IssueInput{
@@ -310,7 +310,7 @@ func (h *Handler) respondNative(w http.ResponseWriter, r *http.Request, u *users
 		ClientMeta: map[string]any{"ip": remoteIP(r), "ua": r.UserAgent()},
 	})
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("issue refresh token"))
+		httperror.Write(w, r, httperror.Internal("issue refresh token").Wrap(err))
 		return
 	}
 	resp := nativeLoginResponse{
@@ -334,7 +334,7 @@ func (h *Handler) respondWeb(w http.ResponseWriter, r *http.Request, u *users.Us
 		OriginNodeID: delegation.NodeFrom(r.Context()),
 	})
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("create session"))
+		httperror.Write(w, r, httperror.Internal("create session").Wrap(err))
 		return
 	}
 	maxAge := int(time.Until(sess.ExpiresAt).Seconds())
@@ -405,7 +405,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	u, err := h.Users.GetByID(r.Context(), next.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load user"))
+		httperror.Write(w, r, httperror.Internal("load user").Wrap(err))
 		return
 	}
 	if u.MustChangePassword {
@@ -424,12 +424,12 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	now := h.now()
 	libs, err := h.librariesFor(r.Context(), u)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("resolve library acl"))
+		httperror.Write(w, r, httperror.Internal("resolve library acl").Wrap(err))
 		return
 	}
 	access, err := jwt.Sign(h.Keys, accessClaims(u, libs, now, accessTTL))
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("sign access token"))
+		httperror.Write(w, r, httperror.Internal("sign access token").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, nativeLoginResponse{
@@ -619,7 +619,7 @@ func (h *Handler) SecurityAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.Audit.ListRecent(r.Context(), cursor, limit)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("audit list"))
+		httperror.Write(w, r, httperror.Internal("audit list").Wrap(err))
 		return
 	}
 	type envelope struct {
@@ -655,7 +655,7 @@ func (h *Handler) AdminRevokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Sessions.Revoke(r.Context(), sessID); err != nil {
-		httperror.Write(w, r, httperror.Internal("revoke"))
+		httperror.Write(w, r, httperror.Internal("revoke").Wrap(err))
 		return
 	}
 	h.audit(r.Context(), securityaudit.Entry{
@@ -691,7 +691,7 @@ func (h *Handler) AdminRevokeRefreshFamily(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := h.RefreshTokens.RevokeFamily(r.Context(), fam); err != nil {
-		httperror.Write(w, r, httperror.Internal("revoke"))
+		httperror.Write(w, r, httperror.Internal("revoke").Wrap(err))
 		return
 	}
 	h.audit(r.Context(), securityaudit.Entry{

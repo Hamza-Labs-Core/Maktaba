@@ -5,7 +5,7 @@
 //   POST /api/stream/sessions/{session_id}/progress { position_sec }
 // and must NOT call the unmounted GET /api/videos/{id}/stream.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useNavigate } from "react-router-dom";
 
 const { post, get, del } = vi.hoisted(() => ({
@@ -18,7 +18,7 @@ vi.mock("../lib/api", async () => {
   return { ...actual, api: { ...actual.api, post, get, delete: del } };
 });
 
-import { VideoPlayer, nearEnd } from "./VideoPlayer";
+import { STALL_REPORT_MS, VideoPlayer, nearEnd } from "./VideoPlayer";
 import { I18nProvider } from "../lib/i18n";
 
 function renderPlayer(videoId = "11111111-1111-1111-1111-111111111111") {
@@ -88,6 +88,77 @@ describe("VideoPlayer", () => {
     renderPlayer();
     const video = await screen.findByTestId("mkt-video");
     await waitFor(() => expect(video).toHaveAttribute("src", "/files/original.mp4"));
+  });
+
+  it("reports a direct file's media error to the server's log", async () => {
+    post.mockResolvedValue({
+      session_id: "sess-direct",
+      mode: "direct",
+      manifest_url: "",
+      direct_url: "/files/original.mp4?sig=s",
+      expires_at: "2099-01-01T00:00:00Z",
+    });
+    renderPlayer();
+    const video = (await screen.findByTestId("mkt-video")) as HTMLVideoElement;
+    await waitFor(() => expect(video).toHaveAttribute("src", "/files/original.mp4?sig=s"));
+    Object.defineProperty(video, "error", {
+      value: { code: 4, message: "MEDIA_ELEMENT_ERROR: Format error" },
+      configurable: true,
+    });
+    act(() => {
+      video.dispatchEvent(new Event("error"));
+    });
+    await screen.findByRole("alert");
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/api/stream/sessions/sess-direct/errors",
+        expect.objectContaining({
+          video_id: "11111111-1111-1111-1111-111111111111",
+          mode: "direct",
+          engine: "direct",
+          outcome: "fatal",
+          code: "media_err_4",
+          message: "MEDIA_ELEMENT_ERROR: Format error",
+        })
+      )
+    );
+  });
+
+  it("reports a stream that stops making progress while playing", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      post.mockResolvedValue({
+        session_id: "sess-stall",
+        mode: "direct",
+        manifest_url: "",
+        direct_url: "/files/original.mp4",
+        expires_at: "2099-01-01T00:00:00Z",
+      });
+      renderPlayer();
+      const video = (await screen.findByTestId("mkt-video")) as HTMLVideoElement;
+      await waitFor(() => expect(video).toHaveAttribute("src", "/files/original.mp4"));
+      Object.defineProperty(video, "paused", { value: false, configurable: true });
+      act(() => {
+        video.dispatchEvent(new Event("play"));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(STALL_REPORT_MS + 100);
+      });
+      await waitFor(() =>
+        expect(post).toHaveBeenCalledWith(
+          "/api/stream/sessions/sess-stall/errors",
+          expect.objectContaining({ outcome: "stalled", engine: "direct", code: "stalled" })
+        )
+      );
+      // once per stream
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(STALL_REPORT_MS * 2);
+      });
+      const reports = post.mock.calls.filter((c) => String(c[0]).endsWith("/errors"));
+      expect(reports).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("plays direct_url on the element even when manifest_url carries it too", async () => {

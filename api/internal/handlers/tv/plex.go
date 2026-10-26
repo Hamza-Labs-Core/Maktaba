@@ -133,7 +133,7 @@ func (h *Handler) PlexStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := h.plexStatus(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load plex live tv status"))
+		httperror.Write(w, r, httperror.Internal("load plex live tv status").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, out)
@@ -242,7 +242,7 @@ func (h *Handler) PlexRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	d, err := h.device(ctx)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load hdhr device"))
+		httperror.Write(w, r, httperror.Internal("load hdhr device").Wrap(err))
 		return
 	}
 	if !d.Enabled {
@@ -252,7 +252,7 @@ func (h *Handler) PlexRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	cur, err := h.plexStatus(ctx)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load plex live tv status"))
+		httperror.Write(w, r, httperror.Internal("load plex live tv status").Wrap(err))
 		return
 	}
 	if mk, ok := cur.Status["maktaba"].(map[string]any); ok {
@@ -269,7 +269,7 @@ func (h *Handler) PlexRegister(w http.ResponseWriter, r *http.Request) {
 		ON CONFLICT (id) DO UPDATE SET register_requested_at = EXCLUDED.register_requested_at,
 		    requested_base_url = EXCLUDED.requested_base_url, updated_at = EXCLUDED.updated_at
 	`, at, h.info(r).StreamBaseURL); err != nil {
-		httperror.Write(w, r, httperror.Internal("save register request"))
+		httperror.Write(w, r, httperror.Internal("save register request").Wrap(err))
 		return
 	}
 	h.queuePlex(w, r, "plex_register")
@@ -278,7 +278,7 @@ func (h *Handler) PlexRegister(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) queuePlex(w http.ResponseWriter, r *http.Request, why string) {
 	outcome, id, err := h.enqueue(r.Context(), true, queues.ReasonFor(r.Context(), why, nil))
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("queue plex live tv"))
+		httperror.Write(w, r, httperror.Internal("queue plex live tv").Wrap(err))
 		return
 	}
 	switch outcome {

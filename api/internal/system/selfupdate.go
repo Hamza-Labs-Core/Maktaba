@@ -170,7 +170,7 @@ func (s *SelfUpdater) handle(w http.ResponseWriter, r *http.Request) {
 
 	self, err := s.selfPathFunc()
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("locate running binary"))
+		httperror.Write(w, r, httperror.Internal("locate running binary").Wrap(err))
 		return
 	}
 

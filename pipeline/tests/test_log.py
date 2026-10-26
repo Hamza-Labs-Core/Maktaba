@@ -160,3 +160,67 @@ def test_truncate_msg_processor_pure() -> None:
     assert isinstance(out["event"], str)
     assert len(out["event"]) <= MAX_MSG_BYTES
     assert out["event"].endswith(TRUNCATION_SUFFIX)
+
+
+@pytest.mark.unit
+def test_redaction_masks_keys_containing_secret_words() -> None:
+    """``plex_token`` / ``x_plex_token`` / ``database_url`` are masked; a numeric
+    ``max_tokens`` is a count and stays."""
+    init(service="pipeline", env="prod", version="v0")
+    log = get_logger()
+
+    rec = _emit_one(
+        lambda: log.info(
+            "cfg",
+            plex_token="abc",
+            X_Plex_Token="abc",
+            database_url="postgres://u:p@h/db",
+            smtp_password="pw",
+            max_tokens=512,
+            library="films",
+        )
+    )
+
+    for key in ("plex_token", "X_Plex_Token", "database_url", "smtp_password"):
+        assert rec[key] == REDACTED_VALUE, key
+    assert rec["max_tokens"] == 512
+    assert rec["library"] == "films"
+
+
+@pytest.mark.unit
+def test_redaction_scrubs_secrets_inside_strings() -> None:
+    init(service="pipeline", env="prod", version="v0")
+    log = get_logger()
+
+    rec = _emit_one(
+        lambda: log.warning(
+            "fetch failed http://plex:32400/library?X-Plex-Token=s3cr3t&type=1",
+            url="https://cdn/x.m3u8?sig=abcdef&exp=99",
+            error="GET /a?token=t0k failed",
+            detail="connect postgres://maktaba:hunter2@db:5432/maktaba",
+            path="/films/design=final.mkv",
+        )
+    )
+
+    assert rec["msg"] == "fetch failed http://plex:32400/library?X-Plex-Token=***&type=1"
+    assert rec["url"] == "https://cdn/x.m3u8?sig=***&exp=99"
+    assert rec["error"] == "GET /a?token=*** failed"
+    assert rec["detail"] == "connect postgres://maktaba:***@db:5432/maktaba"
+    assert rec["path"] == "/films/design=final.mkv"
+    assert "s3cr3t" not in json.dumps(rec) and "hunter2" not in json.dumps(rec)
+
+
+@pytest.mark.unit
+def test_redaction_scrubs_the_rendered_traceback() -> None:
+    init(service="pipeline", env="prod", version="v0")
+    log = get_logger()
+
+    def emit() -> None:
+        try:
+            raise RuntimeError("cannot reach postgres://maktaba:hunter2@db/maktaba")
+        except RuntimeError:
+            log.exception("db_failed")
+
+    rec = _emit_one(emit)
+    assert "hunter2" not in rec["exception"]
+    assert "postgres://maktaba:***@db/maktaba" in rec["exception"]

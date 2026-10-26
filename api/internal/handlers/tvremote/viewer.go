@@ -185,7 +185,7 @@ func (h *Handler) NewWebhookSecret(w http.ResponseWriter, r *http.Request) {
 	_, _ = rand.Read(b)
 	sec := hex.EncodeToString(b)
 	if err := h.Integration.Secrets.Put(r.Context(), remote.SecretWebhook, []byte(sec), principal.FromContext(r.Context()).UserID); err != nil {
-		httperror.Write(w, r, httperror.Internal("store webhook secret"))
+		httperror.Write(w, r, httperror.Internal("store webhook secret").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]string{"secret": sec, "header": WebhookHeader,

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"log/slog"
 	"sync/atomic"
 	"time"
 )
@@ -18,6 +19,8 @@ type ReaperConfig struct {
 	ActiveIdleAfter time.Duration
 	Interval        time.Duration // 30 s default
 	OnReap          func(*Row)
+	// Logger receives each reaped session and each failed sweep (nil: slog's default).
+	Logger *slog.Logger
 }
 
 // Reaper sweeps idle sessions on Interval and closes them.
@@ -36,6 +39,9 @@ func NewReaper(store Store, cfg ReaperConfig) *Reaper {
 	if cfg.Interval <= 0 {
 		cfg.Interval = 30 * time.Second
 	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
 	return &Reaper{store: store, cfg: cfg, now: time.Now}
 }
 
@@ -51,7 +57,9 @@ func (r *Reaper) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			_ = r.Sweep(ctx)
+			if err := r.Sweep(ctx); err != nil && ctx.Err() == nil {
+				r.cfg.Logger.Warn("vod session sweep failed", "err", err.Error(), "event", "vod_reap_failed")
+			}
 		}
 	}
 }
@@ -69,10 +77,21 @@ func (r *Reaper) Sweep(ctx context.Context) error {
 			row.LastSegmentAt.After(r.now().UTC().Add(-r.cfg.ActiveIdleAfter)) {
 			continue
 		}
+		active := row.Transcoder != nil && row.Transcoder.Active()
 		if row.Transcoder != nil {
-			_ = row.Transcoder.Stop(ctx)
+			if err := row.Transcoder.Stop(ctx); err != nil {
+				r.cfg.Logger.Warn("vod session's transcode not stopped", "session_id", row.ID.String(),
+					"err", err.Error(), "event", "vod_reap_stop_failed")
+			}
 		}
-		_ = r.store.Close(ctx, row.ID, ReasonIdle, r.now().UTC())
+		if err := r.store.Close(ctx, row.ID, ReasonIdle, r.now().UTC()); err != nil {
+			r.cfg.Logger.Warn("vod session not closed", "session_id", row.ID.String(),
+				"err", err.Error(), "event", "vod_session_close_failed")
+		}
+		r.cfg.Logger.Info("vod session closed: nothing fetched from it", "session_id", row.ID.String(),
+			"video_id", row.VideoID.String(), "reason", string(ReasonIdle),
+			"idle_ms", r.now().UTC().Sub(row.LastSegmentAt).Milliseconds(), "transcode_active", active,
+			"event", "vod_session_reaped")
 		r.reapedTot.Add(1)
 		if r.cfg.OnReap != nil {
 			r.cfg.OnReap(row)

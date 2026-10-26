@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
 )
 
@@ -43,14 +44,16 @@ func RecovererWithReporter(rep *errrpt.Reporter) func(http.Handler) http.Handler
 			defer func() {
 				if v := recover(); v != nil {
 					slog.ErrorContext(r.Context(), "panic",
-						"value", v, "stack", string(debug.Stack()))
+						"value", v, "method", r.Method, "path", r.URL.Path,
+						"request_id", reqid.FromContext(r.Context()).String(),
+						"stack", string(debug.Stack()), "event", "http_panic")
 					// Central HLB-300 hook: report the panic through the
 					// shared errrpt surface (structured event + optional
 					// sink). nil Reporter => no-op, so this never changes
 					// the recover/response/log behaviour above.
 					rep.Capture(r.Context(), errrpt.CategoryInternal,
 						panicError(v))
-					httperror.Write(w, r, httperror.Internal(""))
+					httperror.Write(w, r, httperror.Internal("").Wrap(panicError(v)))
 				}
 			}()
 			next.ServeHTTP(w, r)

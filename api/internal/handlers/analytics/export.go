@@ -64,7 +64,7 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.repo().exportRows(r.Context(), rng)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("open export"))
+		httperror.Write(w, r, httperror.Internal("open export").Wrap(err))
 		return
 	}
 	defer rows.Close()
