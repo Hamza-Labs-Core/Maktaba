@@ -21,6 +21,9 @@
     "allow-server-status",
     "allow-open-local-server",
     "allow-use-remote-server",
-    "allow-open-external"
+    "allow-open-external",
+    "allow-host-permissions",
+    "allow-open-privacy-pane",
+    "allow-permissions-seen"
   ]
 }
