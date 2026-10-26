@@ -53,6 +53,13 @@ Every target uses **automatic signing** with team `G58UVTKQPB` (Mahmoud Darwish)
 3. Archive (Product → Archive) and distribute from the Organizer: Xcode makes the
    distribution certificate and the App Store or Developer ID profile.
 
+The Mac Player keeps its tokens in the data-protection keychain (the login keychain asks the
+person again after every rebuild), which needs the `keychain-access-groups` entitlement and so
+a provisioning profile: the Mac you build on must be registered with the team (Xcode offers
+"Register Device"; `xcodebuild … -allowProvisioningDeviceRegistration` does it once).
+`xcodebuild test -scheme "Maktaba Player Mac"` runs its hosted tests (the player surface, the
+keychain).
+
 From the command line Xcode's account is used with `-allowProvisioningUpdates`:
 
 ```bash

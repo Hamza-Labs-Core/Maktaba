@@ -104,6 +104,9 @@ targets:
         com.apple.security.network.client: true
         # StreamProxy listens on the loopback (127.0.0.1 only) for the system player
         com.apple.security.network.server: true
+        # the tokens live in the data-protection keychain (no login-keychain prompts)
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.hamzalabs.maktaba.player.mac
     info:
       path: Player/Info-Mac.plist
 
