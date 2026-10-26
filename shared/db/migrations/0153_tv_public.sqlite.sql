@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS tv_public_channels (
     rights_confirmed_by  TEXT,
     rights_confirmed_at  TEXT,
     rights_note          TEXT    NOT NULL DEFAULT '',
+    rights_sig           TEXT,
     updated_at           TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_by           TEXT
 );

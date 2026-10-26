@@ -46,6 +46,10 @@ const (
 	SecretSiteSigningKey = "tv_public_signing_key"
 	// SecretSiteHMAC signs the home's posts to the Worker.
 	SecretSiteHMAC = "tv_public_home_hmac"
+	// SecretPublicRowKey signs each public decision (tv_public_channels.rights_sig):
+	// machines may write that table (slot 0153 keeps their default rights) but
+	// cannot read home_secrets, so a row they write is not taken as public.
+	SecretPublicRowKey = "tv_public_row_key"
 	// HoldPublic: the push is held by the public site (always on).
 	HoldPublic = "public"
 	// SiteStatePath is the Worker's endpoint for the home's state.
@@ -125,6 +129,39 @@ type PublicChannel struct {
 	RightsNote        string     `json:"rights_note"`
 	// OnAir: a live push the site can play now.
 	OnAir bool `json:"on_air"`
+	// Unsigned: the row says public but the home did not sign it (written
+	// around the API): it is treated as private until an admin sets it again.
+	Unsigned bool `json:"unsigned,omitempty"`
+}
+
+// rowKey is the key that signs public decisions, made on first use.
+func (c *Controller) rowKey(ctx context.Context) ([]byte, error) {
+	if c.Integration == nil || c.Integration.Secrets == nil {
+		return nil, errors.New("tv_public: no secret store")
+	}
+	k, err := c.Integration.Secrets.Get(ctx, SecretPublicRowKey)
+	if err == nil && len(k) > 0 {
+		return k, nil
+	}
+	k = make([]byte, 32)
+	if _, err := rand.Read(k); err != nil {
+		return nil, err
+	}
+	if err := c.Integration.Secrets.Put(ctx, SecretPublicRowKey, k, ""); err != nil {
+		return nil, err
+	}
+	return k, nil
+}
+
+// rowSig is the HMAC of one public decision.
+func rowSig(key []byte, channel string, public bool, slug, by string, at *time.Time) string {
+	var ms int64
+	if at != nil {
+		ms = at.UnixMilli()
+	}
+	m := hmac.New(sha256.New, key)
+	fmt.Fprintf(m, "tv_public_channels\n%s\n%t\n%s\n%s\n%d", channel, public, slug, by, ms)
+	return hex.EncodeToString(m.Sum(nil))
 }
 
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
@@ -155,7 +192,7 @@ func (c *Controller) PublicChannels(ctx context.Context) ([]PublicChannel, error
 	c.init()
 	rows, err := c.DB.QueryContext(ctx, `
 		SELECT c.id, c.number, c.name, c.slug, c.enabled, p.public, p.slug,
-		       p.rights_confirmed_by, p.rights_confirmed_at, COALESCE(p.rights_note, '')
+		       p.rights_confirmed_by, p.rights_confirmed_at, COALESCE(p.rights_note, ''), p.rights_sig
 		FROM channels c LEFT JOIN tv_public_channels p ON p.channel_id = c.id
 		ORDER BY c.number, c.id`)
 	if err != nil {
@@ -163,12 +200,13 @@ func (c *Controller) PublicChannels(ctx context.Context) ([]PublicChannel, error
 	}
 	defer rows.Close()
 	out := []PublicChannel{}
+	var key []byte
 	for rows.Next() {
 		var x PublicChannel
-		var id, chSlug, slug, by ns
+		var id, chSlug, slug, by, sig ns
 		var enabled, public any
 		var at nt
-		if err := rows.Scan(&id, &x.Number, &x.Name, &chSlug, &enabled, &public, &slug, &by, &at, &x.RightsNote); err != nil {
+		if err := rows.Scan(&id, &x.Number, &x.Name, &chSlug, &enabled, &public, &slug, &by, &at, &x.RightsNote, &sig); err != nil {
 			return nil, err
 		}
 		x.ChannelID, x.Enabled, x.Public, x.Slug = id.S, enabled == nil || boolOf(enabled), boolOf(public), slug.S
@@ -180,6 +218,21 @@ func (c *Controller) PublicChannels(ctx context.Context) ([]PublicChannel, error
 			x.RightsConfirmedBy = &v
 		}
 		x.RightsConfirmedAt = at.ptr()
+		if x.Public {
+			if key == nil {
+				if key, err = c.rowKey(ctx); err != nil {
+					return nil, err
+				}
+			}
+			want := rowSig(key, x.ChannelID, true, x.Slug, by.S, x.RightsConfirmedAt)
+			if !hmac.Equal([]byte(want), []byte(sig.S)) {
+				x.Public, x.Unsigned = false, true
+				c.noteOnce(x.ChannelID+"|public|unsigned|"+sig.S, func() {
+					c.log().Warn("tv_public: a channel's public row was not written by the home; it stays private",
+						"channel_id", x.ChannelID, "event", "tv_public_unsigned")
+				})
+			}
+		}
 		out = append(out, x)
 	}
 	if err := rows.Err(); err != nil {
@@ -264,14 +317,21 @@ func (c *Controller) SetPublic(ctx context.Context, actor, channelID string, ch 
 	if ch.Public != nil {
 		next.Public = *ch.Public
 	}
+	next.Unsigned = false
+	key, err := c.rowKey(ctx)
+	if err != nil {
+		return PublicChannel{}, err
+	}
+	sig := rowSig(key, channelID, next.Public, next.Slug, deref(next.RightsConfirmedBy), next.RightsConfirmedAt)
 	if _, err := c.DB.ExecContext(ctx, `
-		INSERT INTO tv_public_channels (channel_id, public, slug, rights_confirmed_by, rights_confirmed_at, rights_note, updated_at, updated_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO tv_public_channels (channel_id, public, slug, rights_confirmed_by, rights_confirmed_at, rights_note, rights_sig, updated_at, updated_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (channel_id) DO UPDATE SET public = EXCLUDED.public, slug = EXCLUDED.slug,
 		    rights_confirmed_by = EXCLUDED.rights_confirmed_by, rights_confirmed_at = EXCLUDED.rights_confirmed_at,
-		    rights_note = EXCLUDED.rights_note, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by`,
+		    rights_note = EXCLUDED.rights_note, rights_sig = EXCLUDED.rights_sig,
+		    updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by`,
 		channelID, c.boolParam(next.Public), next.Slug, nullable(deref(next.RightsConfirmedBy)), c.st.tp(next.RightsConfirmedAt),
-		next.RightsNote, c.st.t(now), nullable(actor)); err != nil {
+		next.RightsNote, sig, c.st.t(now), nullable(actor)); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return PublicChannel{}, refuse(http.StatusConflict, "slug_taken", "another channel has the slug "+next.Slug)
 		}

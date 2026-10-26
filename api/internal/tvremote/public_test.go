@@ -79,6 +79,39 @@ func TestPublicRequiresRights(t *testing.T) {
 	}
 }
 
+// A machine keeps the default rights on tv_public_channels (slot 0153), so a
+// row it writes, or a signed row it edits, must not make a channel public:
+// only the home's signature (its key in home_secrets) does.
+func TestPublicRowWrittenAroundTheAPI(t *testing.T) {
+	fx := newPub(t)
+	a, b := fx.chans[0], fx.chans[1]
+	fx.makePublic(a)
+	fx.exec(`INSERT INTO tv_public_channels (channel_id, public, slug, rights_confirmed_by, rights_confirmed_at)
+		VALUES ($1, 1, 'forged', 'admin-1', '2026-10-19T12:00:00Z')`, b)
+	fx.exec(`UPDATE tv_public_channels SET slug = 'renamed' WHERE channel_id = $1`, a)
+	all, err := fx.c.PublicChannels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range all {
+		if (x.ChannelID == a || x.ChannelID == b) && (x.Public || !x.Unsigned) {
+			t.Errorf("%s: a row the home did not sign counts as public: %+v", x.Slug, x)
+		}
+	}
+	fx.setting(tvremote.PublicSettingsKey, map[string]any{"enabled": true})
+	fx.reconcile()
+	if len(fx.pushes(a)) != 0 || len(fx.pushes(b)) != 0 {
+		t.Fatal("an unsigned public row was pushed")
+	}
+	// the admin makes it public again: confirmation asked, then signed
+	if _, te := fx.set(b, tvremote.PublicChange{Public: ptr(true)}); te == nil || te.Code != "rights_confirmation_required" {
+		t.Fatalf("an unsigned row skipped the confirmation: %v", te)
+	}
+	if x, te := fx.set(b, tvremote.PublicChange{Public: ptr(true), RightsConfirmed: true}); te != nil || !x.Public || x.Unsigned {
+		t.Fatalf("re-confirmed: %+v %v", x, te)
+	}
+}
+
 func TestPublicSlug(t *testing.T) {
 	fx := newPub(t)
 	if x, _ := fx.set(fx.chans[0], tvremote.PublicChange{Slug: ptr("news")}); x.Slug != "news" {

@@ -13,7 +13,11 @@
 --
 -- maktaba_worker keeps the default rights (slot 0103) on this table, as on every
 -- ordinary table: narrowing them here would be undone by an older release remaking
--- its worker group (compat-prev), as slot 0152 found. The rows hold no secret.
+-- its worker group (compat-prev), as slot 0152 found. The rows hold no secret. So that a
+-- machine cannot make a channel public by writing a row, `rights_sig` is an HMAC by the
+-- home (its key in home_secrets, which machines cannot read) over the channel, the flag,
+-- the slug and the confirmation: the home ignores a public row whose signature does not
+-- match.
 --
 CREATE TABLE IF NOT EXISTS tv_public_channels (
     channel_id           UUID        PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
@@ -22,6 +26,7 @@ CREATE TABLE IF NOT EXISTS tv_public_channels (
     rights_confirmed_by  TEXT,
     rights_confirmed_at  TIMESTAMPTZ,
     rights_note          TEXT        NOT NULL DEFAULT '',
+    rights_sig           TEXT,
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_by           TEXT
 );

@@ -36,7 +36,7 @@ def test_0153_up_down() -> None:
         apply_statement(conn, stmt)
     assert {
         "channel_id", "public", "slug", "rights_confirmed_by", "rights_confirmed_at",
-        "rights_note", "updated_at", "updated_by",
+        "rights_note", "rights_sig", "updated_at", "updated_by",
     } <= _cols(conn, "tv_public_channels")  # fmt: skip
     conn.execute(
         "INSERT INTO tv_public_channels (channel_id, public, slug, rights_confirmed_by)"
