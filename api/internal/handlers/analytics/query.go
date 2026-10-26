@@ -98,17 +98,22 @@ func (r *repo) remoteSeconds() string {
 
 // tvvCTE is every viewing of a channel, app and tuner rows and the remote
 // TV's sessions in one shape. tv_watch_sessions rows marked 'remote' are left
-// out: the remote TV is read from its own table.
+// out: the remote TV is read from its own table. A tuner viewing is Plex's (its
+// Live TV tunes the HDHomeRun emulation; it names no app), a remote TV one the
+// web's (a browser on the public site).
 func (b *sqlb) tvvCTE() string {
 	return `tvv AS (
 		SELECT tw.id AS id, tw.channel_id AS channel_id, CAST(tw.user_id AS TEXT) AS user_id,
-		       tw.surface AS surface, tw.client_app AS client_app, tw.client_version AS client_version,
+		       tw.surface AS surface,
+		       CASE WHEN tw.surface = 'tuner' AND COALESCE(tw.client_app, '') = '' THEN 'plex'
+		            ELSE tw.client_app END AS client_app,
+		       tw.client_version AS client_version,
 		       tw.platform AS platform, tw.device_type AS device_type, tw.started_at AS started_at,
 		       tw.last_seen_at AS last_seen_at, tw.ended_at AS ended_at, tw.seconds AS seconds,
 		       tw.end_reason AS end_reason
 		FROM tv_watch_sessions tw WHERE tw.surface <> 'remote'
 		UNION ALL
-		SELECT rs.id, rs.channel_id, rs.user_id, 'remote', NULL, NULL, NULL, NULLIF(rs.device,''),
+		SELECT rs.id, rs.channel_id, rs.user_id, 'remote', 'web', NULL, NULL, NULLIF(rs.device,''),
 		       rs.started_at, rs.last_beat_at, rs.ended_at, ` + b.r.remoteSeconds() + `, rs.end_reason
 		FROM tv_remote_sessions rs)`
 }

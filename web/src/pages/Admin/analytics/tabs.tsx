@@ -24,6 +24,7 @@ import {
   Kpi,
   Kpis,
   LoadError,
+  licenseRefused,
   Panel,
   cleanStats,
   list,
@@ -81,6 +82,7 @@ export function OverviewTab({ q, nonce }: TabProps) {
   const apps = cleanStats(s?.apps);
   const series = activity.data?.series ?? [];
   const nothing = !!s && num(s.watch_sec) === 0 && num(s.plays) === 0 && num(s.viewings) === 0;
+  if (licenseRefused([summary, activity])) return <LoadError loads={[summary, activity]} />;
   return (
     <>
       <LoadError loads={[summary, activity]} />
@@ -197,6 +199,7 @@ export function NowTab({ q, nonce }: TabProps) {
   );
   const rows = now.data ? nowRows(now.data, t("analytics.now.tuner")) : null;
   const counts = obj(obj(now.data).counts);
+  if (licenseRefused([now])) return <LoadError loads={[now]} />;
   return (
     <>
       <LoadError loads={[now]} />
@@ -272,6 +275,8 @@ export function VideosTab({ q, nonce }: TabProps) {
     nonce
   );
   const s = summary.data;
+  if (licenseRefused([summary, top, libs, genres]))
+    return <LoadError loads={[summary, top, libs, genres]} />;
   return (
     <>
       <LoadError loads={[summary, top, libs, genres]} />
@@ -292,6 +297,7 @@ export function VideosTab({ q, nonce }: TabProps) {
           loading={top.loading && !top.data}
           empty={!!top.data && top.data.length === 0}
           emptyText={t("analytics.empty.videos")}
+          wide
         >
           <table className="mkt-table" aria-label={t("analytics.topVideos")}>
             <thead>
@@ -363,6 +369,8 @@ export function LiveTVTab({ q, nonce }: TabProps) {
   const rows = list<TopChannel>(c?.channels);
   const days = list<RemoteDay>(r?.days);
   const peakAt = str(c?.peak_at);
+  if (licenseRefused([channels, remote, activity]))
+    return <LoadError loads={[channels, remote, activity]} />;
   return (
     <>
       <LoadError loads={[channels, remote, activity]} />
@@ -384,6 +392,7 @@ export function LiveTVTab({ q, nonce }: TabProps) {
           loading={channels.loading && !c}
           empty={!!c && rows.length === 0}
           emptyText={t("analytics.empty.channels")}
+          wide
         >
           <table className="mkt-table" aria-label={t("analytics.topChannels")}>
             <thead>
@@ -440,6 +449,7 @@ export function LiveTVTab({ q, nonce }: TabProps) {
           loading={remote.loading && !r}
           empty={!!r && days.length === 0}
           emptyText={t("analytics.empty.remote")}
+          wide
         >
           <table className="mkt-table" aria-label={t("analytics.remote.title")}>
             <thead>
@@ -475,6 +485,7 @@ export function PeopleTab({ q, nonce }: TabProps) {
     nonce
   );
   const rows = people.data;
+  if (licenseRefused([people])) return <LoadError loads={[people]} />;
   return (
     <>
       <LoadError loads={[people]} />
@@ -483,6 +494,7 @@ export function PeopleTab({ q, nonce }: TabProps) {
         loading={people.loading && !rows}
         empty={!!rows && rows.length === 0}
         emptyText={t("analytics.empty.people")}
+        wide
       >
         <table className="mkt-table" aria-label={t("analytics.people.title")}>
           <thead>
@@ -534,6 +546,7 @@ export function AppsTab({ q, nonce }: TabProps) {
   const people = trend.reduce((m, p) => Math.max(m, num(p.people)), 0);
   const pct = (v: unknown) => n(num(v), { style: "percent", maximumFractionDigits: 1 });
   const ms = (v: unknown) => t("analytics.ms", { n: n(num(v), { maximumFractionDigits: 0 }) });
+  if (licenseRefused([apps])) return <LoadError loads={[apps]} />;
   return (
     <>
       <LoadError loads={[apps]} />
@@ -548,6 +561,7 @@ export function AppsTab({ q, nonce }: TabProps) {
           loading={apps.loading && !a}
           empty={!!a && rows.length === 0}
           emptyText={t("analytics.empty.apps")}
+          wide
         >
           <table className="mkt-table" aria-label={t("analytics.apps.title")}>
             <thead>
@@ -587,6 +601,7 @@ export function AppsTab({ q, nonce }: TabProps) {
           loading={apps.loading && !a}
           empty={!!a && rows.length === 0}
           emptyText={t("analytics.empty.apps")}
+          wide
         >
           <table className="mkt-table" aria-label={t("analytics.apps.platforms")}>
             <thead>

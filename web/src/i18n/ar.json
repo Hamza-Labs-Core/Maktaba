@@ -1227,6 +1227,7 @@
   "analytics.surface.app": "البث المباشر في التطبيقات",
   "analytics.surface.tuner": "البث المباشر عبر Plex",
   "analytics.surface.remote": "التلفاز عن بُعد",
+  "analytics.app.plex": "Plex (البث المباشر)",
   "analytics.app.unknown": "تطبيق غير معروف",
   "analytics.unknown": "غير معروف",
   "analytics.export.csv": "تصدير CSV",

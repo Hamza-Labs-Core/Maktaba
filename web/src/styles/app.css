@@ -2463,6 +2463,12 @@ a.mkt-guide__chanhead:hover {
   gap: var(--space-1);
   padding: var(--space-4);
 }
+/* the design system's Card holds its content in mk-card__body */
+.mkt-kpi .mk-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
 .mkt-kpi__value {
   font-size: var(--font-size-h2);
   font-weight: 700;
@@ -2476,6 +2482,12 @@ a.mkt-guide__chanhead:hover {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: var(--space-4);
+}
+.mkt-analytics__wide {
+  grid-column: 1 / -1;
+}
+.mkt-analytics__wide .mk-card__body {
+  overflow-x: auto;
 }
 
 /* Charts */

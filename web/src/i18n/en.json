@@ -1227,6 +1227,7 @@
   "analytics.surface.app": "Live TV in apps",
   "analytics.surface.tuner": "Plex Live TV",
   "analytics.surface.remote": "Remote TV",
+  "analytics.app.plex": "Plex (Live TV)",
   "analytics.app.unknown": "Unknown app",
   "analytics.unknown": "Unknown",
   "analytics.export.csv": "Export CSV",

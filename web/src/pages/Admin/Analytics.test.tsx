@@ -492,6 +492,36 @@ describe("AdminAnalytics (test-cases/admin-analytics.md)", () => {
     expect(screen.getByRole("list", { name: "Devices watched on" })).toHaveTextContent("phone");
   });
 
+  it("ANL-10b: a tab the plan does not include shows its reason alone", async () => {
+    open({
+      apps: () => {
+        throw new ApiError({
+          type: "https://maktaba.dev/problems/license-required",
+          title: "Not included in this home's plan",
+          status: 403,
+          detail:
+            "Analytics older than 30 days, the per-user breakdown and export need the Home or Pro plan.",
+        });
+      },
+    });
+    await openTab("Apps");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Not included in this home's plan");
+    expect(screen.queryByRole("table", { name: "Apps" })).not.toBeInTheDocument();
+    expect(document.querySelector(".mkt-kpi")).toBeNull();
+  });
+
+  it("ANL-10c: Plex's Live TV is named, not an unknown app", async () => {
+    open({
+      summary: {
+        ...(SUMMARY as Record<string, unknown>),
+        apps: [{ label: "plex", sessions: 3, watch_sec: 7200, people: 0 }],
+      },
+    });
+    expect(await screen.findByRole("list", { name: "Watch time by app" })).toHaveTextContent(
+      "Plex (Live TV)"
+    );
+  });
+
   it.each([
     ["Videos", "No video was played in this range.", { "top-videos": { videos: [] } }],
     [

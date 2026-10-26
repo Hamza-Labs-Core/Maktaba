@@ -60,6 +60,14 @@ export function useLoad<T>(
   return state;
 }
 
+// licenseRefused reports whether the plan refused one of a tab's loads (Epic 16: a
+// range over 30 days, the people, the apps): the tab then shows the reason alone.
+export function licenseRefused(loads: Array<Loaded<unknown>>): boolean {
+  return loads.some(
+    (l) => l.error instanceof ApiError && (l.error.problem.type ?? "").includes("license-required")
+  );
+}
+
 // LoadError shows the first failure of a tab's loads, in the API's words.
 export function LoadError({ loads }: { loads: Array<Loaded<unknown>> }) {
   const { t } = useI18n();
@@ -93,17 +101,20 @@ export function Panel({
   loading,
   empty,
   emptyText,
+  wide,
   children,
 }: {
   title: string;
   loading?: boolean;
   empty?: boolean;
   emptyText?: string;
+  /** the whole row of the grid (a table) */
+  wide?: boolean;
   children: ReactNode;
 }) {
   const { t } = useI18n();
   return (
-    <Card header={<h2>{title}</h2>}>
+    <Card header={<h2>{title}</h2>} className={wide ? "mkt-analytics__wide" : undefined}>
       {loading ? (
         <p className="mkt-loading">{t("common.loading")}</p>
       ) : empty ? (
@@ -122,7 +133,12 @@ export function useLabels() {
   return {
     surface: (s: string) =>
       ["video", "app", "tuner", "remote"].includes(s) ? t(`analytics.surface.${s}`) : s,
-    app: (a: string) => (!a || a === "unknown" ? t("analytics.app.unknown") : a),
+    app: (a: string) =>
+      !a || a === "unknown"
+        ? t("analytics.app.unknown")
+        : a === "plex"
+          ? t("analytics.app.plex")
+          : a,
     value: (v: string) => (!v || v === "unknown" ? t("analytics.unknown") : v),
     dash: (s: string | undefined | null) => (s ? s : "—"),
   };
