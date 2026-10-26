@@ -67,6 +67,7 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("cloudlink credentials ready", "slug", creds.Slug)
+	creds = ensureIdentity(ctx, logger, cfg, creds)
 
 	sup := &cloudlink.Supervisor{
 		Dialer: &cloudlink.Dialer{
@@ -77,10 +78,11 @@ func main() {
 		Proxy: &cloudlink.LocalProxy{BaseURL: cfg.localAPI},
 	}
 
-	// Local admin surface: GET /admin/cloud-link.
+	// Local admin surface: GET /admin/cloud-link, POST /admin/cloud-link/links.
+	rep := &cloudlink.LinkReporter{CloudAPI: cfg.cloudAPI, Creds: creds}
 	adminSrv := &http.Server{
 		Addr:              cfg.adminAddr,
-		Handler:           adminMux(sup),
+		Handler:           adminMux(sup, rep),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
@@ -102,10 +104,36 @@ func main() {
 	logger.Info("cloudlink stopped")
 }
 
-func adminMux(sup *cloudlink.Supervisor) http.Handler {
+func adminMux(sup *cloudlink.Supervisor, rep *cloudlink.LinkReporter) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/admin/cloud-link", cloudlink.AdminHandler(sup))
+	mux.Handle("/admin/cloud-link/links", cloudlink.LinksHandler(rep))
 	return mux
+}
+
+// ensureIdentity pins the cloud's assertion key (from the claim, or, for
+// a home claimed before linked accounts, fetched once) and writes the
+// identity file the home's API reads. A failure leaves linked sign-in
+// off and the tunnel running; the next start tries again.
+func ensureIdentity(ctx context.Context, logger *slog.Logger, cfg config, creds cloudlink.Credentials) cloudlink.Credentials {
+	if !cloudlink.ValidAssertionKey(creds.AssertionKey) {
+		fctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		key, err := cloudlink.FetchAssertionKey(fctx, cfg.cloudAPI, nil)
+		cancel()
+		if err != nil {
+			logger.Warn("no cloud assertion key yet: linked-account sign-in is off", "err", err)
+		} else {
+			creds.AssertionKey = key
+			if serr := cloudlink.SaveCredentials(cfg.credFile, cfg.credKey, creds); serr != nil {
+				logger.Warn("persist the assertion key", "err", serr)
+			}
+		}
+	}
+	id := cloudlink.Identity{ServerID: creds.ServerID, Slug: creds.Slug, AssertionKey: creds.AssertionKey, CloudAPI: cfg.cloudAPI}
+	if err := cloudlink.WriteIdentity(cloudlink.IdentityPath(cfg.credFile), id); err != nil {
+		logger.Warn("write the cloud identity file", "err", err)
+	}
+	return creds
 }
 
 type config struct {

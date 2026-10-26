@@ -310,6 +310,10 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeUnauthorized(w, r)
 		return
 	}
+	// a password outlives a cloud link: only a sign-in on the home sets it
+	if RefuseCloudSession(w, r, p) {
+		return
+	}
 	var req changePasswordRequest
 	if e := common.ReadJSON(r, &req, 8<<10); e != nil {
 		httperror.Write(w, r, e)

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/authz"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/sessions"
@@ -76,6 +77,19 @@ func (c Copy) session(ctx context.Context, id string) (*delegation.IntrospectAns
 	if err != nil {
 		return nil, err
 	}
+	// a session a Maktaba Cloud sign-in made is not in the copy (slot 0153:
+	// web_session_keys leaves it out, cloud_sign_ins is the home's own), so
+	// it never gets here; the scope is checked all the same, should a
+	// copy ever hold it
+	scope, err := (&cloudlink.Store{DB: c.Home.DB}).ScopeOf(ctx, cloudlink.KindSession, u.String())
+	if err != nil {
+		return nil, err
+	}
+	if scope == principal.CloudScopePlay {
+		if err := capPlay(ctx, c.Home.DB, &p); err != nil {
+			return nil, err
+		}
+	}
 	a := &delegation.IntrospectAnswer{Principal: p, Source: string(principal.SourceCookie), CSRFSHA256: csrf,
 		ExpiresAt: expires}
 	if origin.Valid && origin.String != "" {
@@ -137,4 +151,18 @@ func (c Copy) SignedInThrough(ctx context.Context, userID string) (bool, error) 
 func NewCopy(db *sql.DB, node string) Copy {
 	return Copy{NodeID: node, Home: &Home{DB: db, Sessions: sessions.New(db), Users: users.New(db),
 		ACL: &authz.ACLStore{DB: db}, PAT: pat.New(db)}}
+}
+
+// capPlay caps a wire principal from a cloud play session: no admin, and
+// an admin's every library listed rather than "all" (principal.ApplyCloudScope).
+func capPlay(ctx context.Context, db *sql.DB, p *delegation.Principal) error {
+	if p.IsAdmin || p.AccessAllLibraries {
+		all, err := (&cloudlink.Store{DB: db}).AllLibraries(ctx)
+		if err != nil {
+			return err
+		}
+		p.Libraries = all
+	}
+	p.IsAdmin, p.AccessAllLibraries = false, false
+	return nil
 }

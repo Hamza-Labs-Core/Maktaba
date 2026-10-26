@@ -134,13 +134,11 @@ issued (via HTTP-01) the first time each `<slug>.<RELAY_DOMAIN>` is
 requested. This works with the stock `caddy:2-alpine` image and your
 wildcard DNS record, with no DNS-provider plugin.
 
-Issuance is gated by an `ask` to the relay's `/healthz`, which permits
-any host. Because only `*.RELAY_DOMAIN` resolves to your VPS and Let's
-Encrypt rate-limits issuance, this is acceptable for most deployments.
-To lock it down, either:
+Issuance is gated by an `ask` to the relay's `/v1/relay/tls-ask`, which
+answers `200` only for the bare `RELAY_DOMAIN` and the subdomain of a
+claimed server (story 25.23), so a random name pointed at your VPS cannot
+spend your Let's Encrypt quota. To avoid per-subdomain issuance entirely:
 
-- point `ask` at a real allow-list endpoint that returns `200` only for
-  known server slugs, or
 - switch to a **DNS-01 wildcard certificate** — build a Caddy image
   with your DNS provider module
   ([caddy-dns](https://github.com/caddy-dns)) and replace the catch-all

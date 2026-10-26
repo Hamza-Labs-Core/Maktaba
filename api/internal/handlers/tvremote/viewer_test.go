@@ -43,7 +43,7 @@ func remoteServer(t *testing.T) (http.Handler, *cftest.Server, *sql.DB, *remote.
 		`INSERT INTO channels (id, number, name, slug) VALUES ('` + chID + `', 101, 'One', 'one')`,
 		`INSERT INTO app_settings (key, value) VALUES ('tv_remote.enabled', 'true')`,
 	}
-	stmts = append(stmts, slotStatements(t, "0125_tv_remote.sqlite.sql", "0126_tv_simulcast.sqlite.sql", "0153_tv_public.sqlite.sql")...)
+	stmts = append(stmts, slotStatements(t, "0125_tv_remote.sqlite.sql", "0126_tv_simulcast.sqlite.sql", "0154_tv_public.sqlite.sql")...)
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
 			t.Fatalf("%v: %s", err, s)

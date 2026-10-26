@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0153 (Epic 34, story 34.1): the public site's channels
+-- SQLite parity sibling for slot 0154 (Epic 34, story 34.1): the public site's channels
 -- and their rights confirmation. A SQLite home is a single machine: no roles. UUID
 -- becomes TEXT, TIMESTAMPTZ TEXT, BOOLEAN INTEGER. The slug's pattern is checked by the
 -- API (SQLite has no regular expressions).

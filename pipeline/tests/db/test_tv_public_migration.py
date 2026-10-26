@@ -1,4 +1,4 @@
-"""Slot 0153 (SQLite twin): the public TV site's channels (story 34.1) - the public flag,
+"""Slot 0154 (SQLite twin): the public TV site's channels (story 34.1) - the public flag,
 the unique slug and the admin's rights confirmation, kept when a channel turns private.
 Both directions."""
 
@@ -18,16 +18,16 @@ from tests.engine.migrate import (
 
 pytestmark = pytest.mark.unit
 
-_MIG = MIGRATIONS_DIR / "0153_tv_public.sqlite.sql"
+_MIG = MIGRATIONS_DIR / "0154_tv_public.sqlite.sql"
 
 
 def _cols(conn: sqlite3.Connection, table: str) -> set[str]:
     return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
 
 
-def test_0153_up_down() -> None:
+def test_0154_up_down() -> None:
     conn = sqlite3.connect(":memory:")
-    apply_sqlite(conn, upto=152)
+    apply_sqlite(conn, upto=153)
     conn.execute(
         "INSERT INTO channels (id, number, name, slug, mode)"
         " VALUES ('c1', 101, 'One', 'one', 'shuffle'), ('c2', 102, 'Two', 'two', 'shuffle')"

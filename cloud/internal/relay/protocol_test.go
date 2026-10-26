@@ -46,3 +46,17 @@ func TestWriteFrame_TooLarge(t *testing.T) {
 		t.Errorf("WriteFrame(huge) = %v, want %v", err, ErrFrameTooLarge)
 	}
 }
+
+func TestEncodeFrameRefusesOversize(t *testing.T) {
+	if _, err := encodeFrame(Frame{Kind: KindResponseBody, Payload: make([]byte, MaxFrameBytes+1)}); err != ErrFrameTooLarge {
+		t.Fatalf("oversize frame: %v", err)
+	}
+	b, err := encodeFrame(Frame{Kind: KindPing, StreamID: 7, Payload: []byte("hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := ReadFrame(bytes.NewReader(b))
+	if err != nil || f.Kind != KindPing || f.StreamID != 7 || string(f.Payload) != "hi" {
+		t.Fatalf("round trip %+v %v", f, err)
+	}
+}

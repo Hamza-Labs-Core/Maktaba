@@ -2,6 +2,7 @@ package cloudlink
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sync"
 	"time"
@@ -145,7 +146,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		}
 		s.setOnline(res.Slug)
 		connectedAt := time.Now()
-		s.serveTunnel(ctx, res.Conn)
+		s.serveTunnel(ctx, res.Conn, res.Flow)
 		// Tunnel dropped. Only treat this as a "fresh start" (reset the
 		// backoff counter) if the tunnel actually stayed up for a
 		// meaningful period. A server that accepts then instantly drops
@@ -167,10 +168,21 @@ func (s *Supervisor) Run(ctx context.Context) error {
 // consider it healthy enough to reset the reconnect backoff counter.
 const stableThreshold = 30 * time.Second
 
+// ErrTunnelSilent: no frame (not even a PONG to our PING) arrived from the
+// cloud for PongWait, so the socket is dead (half-open TCP) and the
+// supervisor reconnects.
+var ErrTunnelSilent = errors.New("cloudlink: no word from the cloud; reconnecting")
+
 // serveTunnel runs one connected tunnel: the multiplexer read loop plus
-// a client-side PING keepalive, until the tunnel errors or ctx ends.
-func (s *Supervisor) serveTunnel(ctx context.Context, conn FrameConn) {
-	mux := NewMultiplexer(conn, s.Proxy)
+// a client-side PING keepalive and a liveness check, until the tunnel
+// errors, goes silent for PongWait, or ctx ends. flow: the cloud agreed
+// to window response bodies.
+func (s *Supervisor) serveTunnel(ctx context.Context, conn FrameConn, flow bool) {
+	var opts []MuxOption
+	if flow {
+		opts = append(opts, WithFlowControl())
+	}
+	mux := NewMultiplexer(conn, s.Proxy, opts...)
 	defer func() {
 		mux.Close()
 		s.setCounters(mux.Stats())
@@ -180,8 +192,14 @@ func (s *Supervisor) serveTunnel(ctx context.Context, conn FrameConn) {
 	if pingEvery <= 0 {
 		pingEvery = 25 * time.Second
 	}
+	pongWait := s.PongWait
+	if pongWait <= 0 {
+		pongWait = pingEvery + 10*time.Second
+	}
 	t := time.NewTicker(pingEvery)
 	defer t.Stop()
+	check := time.NewTicker(max(pongWait/4, time.Millisecond))
+	defer check.Stop()
 
 	for {
 		select {
@@ -192,6 +210,12 @@ func (s *Supervisor) serveTunnel(ctx context.Context, conn FrameConn) {
 				s.setStatus("reconnecting", err.Error(), 1)
 			}
 			return
+		case <-check.C:
+			if time.Since(mux.LastRead()) > pongWait {
+				mux.fatal(ErrTunnelSilent)
+				s.setStatus("reconnecting", ErrTunnelSilent.Error(), 1)
+				return
+			}
 		case <-t.C:
 			// Client-initiated keepalive. The cloud's tunnel.go
 			// dispatch answers KindPing with KindPong; a write failure

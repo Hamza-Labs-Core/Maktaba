@@ -47,7 +47,7 @@ const (
 	// SecretSiteHMAC signs the home's posts to the Worker.
 	SecretSiteHMAC = "tv_public_home_hmac"
 	// SecretPublicRowKey signs each public decision (tv_public_channels.rights_sig):
-	// machines may write that table (slot 0153 keeps their default rights) but
+	// machines may write that table (slot 0154 keeps their default rights) but
 	// cannot read home_secrets, so a row they write is not taken as public.
 	SecretPublicRowKey = "tv_public_row_key"
 	// SecretPublicState is the home's own record of which channels are public:

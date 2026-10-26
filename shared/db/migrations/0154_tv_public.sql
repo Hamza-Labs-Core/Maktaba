@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0153 (Epic 34, story 34.1) - the public TV site: which channels the owner made
+-- Slot 0154 (Epic 34, story 34.1) - the public TV site: which channels the owner made
 -- public, with the admin's rights confirmation (who, when, a note). A row exists for
 -- every channel that was ever public: making a channel private clears only `public`.
 -- The confirmation stays, for audit, and must be given again next time (design §2.1).
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS tv_public_channels (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- slot 0152's exclusion, with the public site's channels
+-- slot 0153's exclusion, with the public site's channels
 CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
 LANGUAGE sql IMMUTABLE AS $f$
     SELECT ARRAY[
@@ -57,8 +57,10 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- semantic search's vectors (never queried on a machine; a new home indexes
         -- again what it lacks) and which store search reads
         'segment_embeddings', 'semantic_store_state',
-        -- the public site's channels: read by the home's API only (a public decision is
-        -- the home's; a machine's copy has no use for it)
+        -- linked accounts (slot 0153): the home's own
+        'home_user_links', 'cloud_link_nonces', 'cloud_assertions_used', 'cloud_sign_ins',
+        -- the public site's channels (slot 0154): read by the home's API only (a public
+        -- decision is the home's; a machine's copy has no use for it)
         'tv_public_channels'
     ]::text[]
 $f$;
@@ -66,7 +68,7 @@ $f$;
 
 -- +goose Down
 -- +goose StatementBegin
--- slot 0152's exclusion, as it was
+-- slot 0153's exclusion, as it was
 CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
 LANGUAGE sql IMMUTABLE AS $f$
     SELECT ARRAY[
@@ -86,7 +88,9 @@ LANGUAGE sql IMMUTABLE AS $f$
         'goose_db_version', 'maktaba_schema_version',
         -- semantic search's vectors (never queried on a machine; a new home indexes
         -- again what it lacks) and which store search reads
-        'segment_embeddings', 'semantic_store_state'
+        'segment_embeddings', 'semantic_store_state',
+        -- linked accounts (slot 0153): the home's own
+        'home_user_links', 'cloud_link_nonces', 'cloud_assertions_used', 'cloud_sign_ins'
     ]::text[]
 $f$;
 -- +goose StatementEnd

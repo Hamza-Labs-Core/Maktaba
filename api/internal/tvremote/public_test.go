@@ -79,7 +79,7 @@ func TestPublicRequiresRights(t *testing.T) {
 	}
 }
 
-// A machine keeps the default rights on tv_public_channels (slot 0153), so a
+// A machine keeps the default rights on tv_public_channels (slot 0154), so a
 // row it writes, or a signed row it edits, must not make a channel public:
 // only the home's signature (its key in home_secrets) does.
 func TestPublicRowWrittenAroundTheAPI(t *testing.T) {
