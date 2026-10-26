@@ -58,6 +58,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/usage"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
@@ -309,7 +310,13 @@ func runServe() error {
 	statsDataDir, statsDB, statsClose := buildAggregatorStats(logger)
 	defer statsClose()
 
+	// Epic 44 story 44.5: the API's use per app and day. It counts once the
+	// app database is attached (below) and is written every minute and at
+	// shutdown.
+	usageCounter := &usage.Counter{Logger: logger}
+
 	r := router.New(router.Deps{
+		Usage:              usageCounter,
 		IdempotencyStore:   idemStore,
 		IPRatePerMin:       envIntDefault("MAKTABA_IP_RATE_PER_MIN", 6000),
 		UserRatePerMin:     envIntDefault("MAKTABA_USER_RATE_PER_MIN", 600),
@@ -627,6 +634,8 @@ func runServe() error {
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),
 				Logger:        logger,
 			}).Run(context.Background())
+			usageCounter.Attach(appDB)
+			go usageCounter.Run(context.Background(), usage.DefaultFlushEvery)
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",
 				"event", "p29_mounted")
 
@@ -734,6 +743,10 @@ func runServe() error {
 		defer cancel()
 		errPublic := publicSrv.Shutdown(shutdownCtx)
 		errAdmin := adminSrv.Shutdown(shutdownCtx)
+		// the API's use of the last minute (Epic 44 story 44.5)
+		if err := usageCounter.Flush(shutdownCtx); err != nil {
+			logger.Warn("usage: api use not written at shutdown", "err", err, "event", "api_usage_flush_failed")
+		}
 		_ = traceShutdown(shutdownCtx)
 		// EC: a request that exceeds the grace is forcibly dropped via
 		// Close so the listener doesn't linger past the budget.

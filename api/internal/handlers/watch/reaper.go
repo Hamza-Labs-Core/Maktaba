@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/usage"
 )
 
 // Reaper is the background loop that keeps watch_sessions honest and
@@ -27,7 +29,7 @@ type Reaper struct {
 	StaleTimeout time.Duration
 
 	// RetentionDays bounds the table; rows started before now-Retention
-	// are purged. <=0 disables the purge. When DB-backed app_settings
+	// are purged, and the API's use per app of the days before it (Epic 44). <=0 disables the purge. When DB-backed app_settings
 	// carries `analytics.retention_days`, that overrides this at purge
 	// time; this field is the env/default fallback.
 	RetentionDays int
@@ -79,6 +81,12 @@ func (rp *Reaper) RunOnce(ctx context.Context, purge bool) (reaped, purged int64
 		if days > 0 {
 			cutoff := now.Add(-time.Duration(days) * 24 * time.Hour)
 			purged, err = r.purgeOlderThan(ctx, cutoff)
+			if err != nil {
+				return reaped, purged, err
+			}
+			// the API's use per app (Epic 44 story 44.5) keeps as long
+			n, err := usage.Purge(ctx, rp.DB, cutoff)
+			purged += n
 			if err != nil {
 				return reaped, purged, err
 			}

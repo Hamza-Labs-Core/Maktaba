@@ -13,17 +13,21 @@
 //  4. Tracing       — attaches a Trace to ctx; reads inbound traceparent.
 //  5. SLogLogger    — one structured line per request, with the request
 //     id baked in via shared/log/go.
-//  6. Metrics       — records http_request_duration_seconds and
-//     in-flight gauge.
-//  7. PerIP rate    — DoS guard, keyed on remote IP.
-//  8. PerUser rate  — application rate, keyed on user (falls back to IP
+//  6. Client        — reads X-Maktaba-Client into the context (the
+//     app; a label, never a right).
+//  7. Metrics       — records http_request_duration_seconds, the
+//     in-flight gauge and http_requests_by_client_total.
+//  8. Usage         — counts the request for the API's use per app
+//     (api_usage_daily; Epic 44 story 44.5).
+//  9. PerIP rate    — DoS guard, keyed on remote IP.
+//  10. PerUser rate — application rate, keyed on user (falls back to IP
 //     when no user is on ctx).
-//  9. SingleWriteGuard
+//  11. SingleWriteGuard
 //     — drops second WriteHeader/Write so a buggy handler
 //     that double-writes still produces a coherent
 //     response.
 //
-// 10. Idempotency   — replays cached responses for retried mutations.
+// 12. Idempotency   — replays cached responses for retried mutations.
 //
 // New does not mount auth (Epic 10) or business handlers (Stories 7.3+).
 // Those land via Group + Mount in their respective packages.
@@ -40,6 +44,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/usage"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
 	tracing "github.com/Hamza-Labs-Core/Maktaba/shared/tracing/go"
 )
@@ -78,6 +83,10 @@ type Deps struct {
 	// errrpt capture) so unit tests that build a bare Deps are
 	// unaffected; main.go populates it from MAKTABA_ERROR_WEBHOOK.
 	ErrorReporter *errrpt.Reporter
+
+	// Usage counts the API's use per app and day (Epic 44 story 44.5);
+	// nil counts nothing (a bare-Deps unit test).
+	Usage *usage.Counter
 }
 
 // New builds the API's chi.Mux with the canonical middleware stack and
@@ -111,7 +120,9 @@ func New(d Deps) chi.Router {
 	r.Use(mw.RecovererWithReporter(d.ErrorReporter))
 	r.Use(tracing.HTTP)
 	r.Use(mw.SLogLogger)
+	r.Use(mw.Client)
 	r.Use(mw.Metrics)
+	r.Use(mw.Usage(d.Usage))
 
 	if d.IPRatePerMin > 0 {
 		r.Use(mw.PerIP(d.IPRatePerMin))
