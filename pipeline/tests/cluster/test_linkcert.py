@@ -58,8 +58,11 @@ def test_join_keeps_the_sealed_certificate(tmp_path: Path) -> None:
     fp = hashlib.sha256(ca.public_bytes(serialization.Encoding.DER)).hexdigest()
     pending = linkcert.new_request("n1")
     cert = _sign(ca_key, ca, pending.csr_pem)
+    # another CA's fingerprint: always differs in its first digit (a fingerprint starting
+    # "00" made "00" + fp[2:] the right one)
+    wrong = ("1" if fp[0] == "0" else "0") + fp[1:]
     with pytest.raises(linkcert.LinkCertError):
-        linkcert.save(tmp_path, pending, cert, ca_pem, "00" + fp[2:])
+        linkcert.save(tmp_path, pending, cert, ca_pem, wrong)
     other = linkcert.new_request("n1")
     with pytest.raises(linkcert.LinkCertError):
         linkcert.save(tmp_path, other, cert, ca_pem, fp)
