@@ -65,6 +65,80 @@ func TestAnAdminCallsASwitchOffBeforeThePromotion(t *testing.T) {
 	}
 }
 
+// A switch's change is kept before it is shown: while its row cannot be written (another
+// transaction holds it here), the switch shows what its row holds, and "cancelled" only
+// once the row says so; the row is read once after, no waiting.
+func TestASwitchsChangeIsKeptBeforeItIsShown(t *testing.T) {
+	o, h, _, b, _ := setup(t)
+	ctx := context.Background()
+	held, release := make(chan struct{}), make(chan struct{})
+	h.answers["switch.prepare"] = func(json.RawMessage) (bool, any) {
+		close(held)
+		<-release
+		return true, map[string]any{"marker": true}
+	}
+	id, err := o.Start(ctx, b, "system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-held
+	if state, err := o.Cancel(ctx, id, false, ""); err != nil || state != "calling_off" {
+		t.Fatalf("cancel: %q %v", state, err)
+	}
+	tx, err := o.DB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM cluster_switchovers WHERE id = $1 FOR UPDATE`, id); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	// the switch's next change waits on its row
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		var waiting bool
+		if err := o.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+		    WHERE datname = current_database() AND wait_event_type = 'Lock'
+		      AND query LIKE 'UPDATE cluster_switchovers SET state%')`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the switch's change never came to its row")
+		}
+	}
+	shown := o.Progress(id)
+	var state string
+	var raw []byte
+	if err := o.DB.QueryRowContext(ctx, `SELECT state, steps FROM cluster_switchovers WHERE id = $1`, id).
+		Scan(&state, &raw); err != nil {
+		t.Fatal(err)
+	}
+	var kept []Step
+	_ = json.Unmarshal(raw, &kept)
+	if shown.State != state || shown.State == "cancelled" {
+		t.Fatalf("shown %q while the row holds %q", shown.State, state)
+	}
+	if len(shown.Steps) != len(kept) {
+		t.Fatalf("shown steps %+v while the row holds %+v", shown.Steps, kept)
+	}
+	for i := range kept {
+		if s, k := shown.Steps[i], kept[i]; s.Name != k.Name || s.State != k.State || s.Detail != k.Detail {
+			t.Fatalf("shown step %+v while the row holds %+v", s, k)
+		}
+	}
+	_ = tx.Rollback()
+	if p := waitState(t, o, id, "cancelled", "failed", "handed_over"); p.State != "cancelled" {
+		t.Fatalf("the switch: %+v", p)
+	}
+	if err := o.DB.QueryRowContext(ctx, `SELECT state FROM cluster_switchovers WHERE id = $1`, id).Scan(&state); err != nil ||
+		state != "cancelled" {
+		t.Fatalf("the row: %q %v", state, err)
+	}
+}
+
 // A switch called off after its promotion was asked (the machine taking over not
 // answering) may have begun its term there: the next switch begins past it.
 func TestTheNextSwitchBeginsPastACancelledSwitchsTerm(t *testing.T) {

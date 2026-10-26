@@ -145,7 +145,10 @@ type Orchestrator struct {
 	RetryEvery time.Duration
 
 	// startMu makes a start's check and its row one step
-	startMu     sync.Mutex
+	startMu sync.Mutex
+	// keepMu makes the changes of a switch one at a time, each kept before it is shown
+	// (update)
+	keepMu      sync.Mutex
 	mu          sync.Mutex
 	progress    map[string]*Progress
 	standbyWake chan struct{}
@@ -358,78 +361,95 @@ func (o *Orchestrator) Start(ctx context.Context, node, by string) (string, erro
 	}
 	o.progress[p.ID] = p
 	o.mu.Unlock()
-	o.persist(ctx, p.ID)
+	o.persist(ctx, o.Progress(p.ID))
 	o.log().Info("switchover: starting", "id", p.ID, "to", target.Name, "term", p.Term, "by", by,
 		"event", "switchover_started")
 	go o.run(p.ID)
 	return p.ID, nil
 }
 
+// update changes switch id with fn: kept first (persist: the supervisor's record and,
+// while this home writes it, the switch's row), shown after (Progress: the admin's page,
+// whatever waits on the switch). A state is never told before it is kept: an admin told
+// "cancelled" while the row still said "frozen" had a home that stopped in between start
+// again believing it frozen. One change at a time (keepMu), so what is kept is what is
+// shown; fn runs on a copy, then on the switch itself, and changes only what it sets.
 func (o *Orchestrator) update(id string, fn func(p *Progress)) {
+	o.keepMu.Lock()
+	defer o.keepMu.Unlock()
+	next := o.Progress(id)
+	if next == nil {
+		return
+	}
+	fn(next)
+	o.persist(context.Background(), next)
 	o.mu.Lock()
-	p, ok := o.progress[id]
-	if ok {
+	if p, ok := o.progress[id]; ok {
 		fn(p)
 	}
 	o.mu.Unlock()
-	if ok {
-		o.persist(context.Background(), id)
-	}
 }
 
 func (o *Orchestrator) step(id, name, state, detail string) {
+	at := time.Now().UTC()
 	o.update(id, func(p *Progress) {
 		for i := range p.Steps {
 			if p.Steps[i].Name == name {
-				p.Steps[i].State, p.Steps[i].Detail, p.Steps[i].At = state, detail, time.Now().UTC()
+				p.Steps[i].State, p.Steps[i].Detail, p.Steps[i].At = state, detail, at
 				return
 			}
 		}
-		p.Steps = append(p.Steps, Step{Name: name, State: state, Detail: detail, At: time.Now().UTC()})
+		p.Steps = append(p.Steps, Step{Name: name, State: state, Detail: detail, At: at})
 	})
 }
 
-// persist keeps a switch where this home finds it after a restart (the supervisor's
+// persist keeps switch p where this home finds it after a restart (the supervisor's
 // record of it), and in its row while this home is the one that writes it: until the
 // promotion is asked (from then the row is the new home's), or once the switch is undone
 // (this home writable again).
-func (o *Orchestrator) persist(ctx context.Context, id string) {
-	p := o.Progress(id)
+func (o *Orchestrator) persist(ctx context.Context, p *Progress) {
 	if p == nil {
 		return
 	}
 	if o.Supervisor != nil {
-		if err := o.record(ctx, id); err != nil {
-			o.log().Warn("switchover: the switch's record could not be kept", "id", id, "err", err,
+		if err := o.record(ctx, p); err != nil {
+			o.log().Warn("switchover: the switch's record could not be kept", "id", p.ID, "err", err,
 				"event", "switchover_record_failed")
 		}
 	}
 	if p.PromoteSent && p.State != "failed" && p.State != "cancelled" {
 		return
 	}
+	if err := o.writeRow(ctx, p); err != nil {
+		o.log().Warn("switchover: the switch's row could not be written", "id", p.ID, "state", p.State, "err", err,
+			"event", "switchover_row_failed")
+	}
+}
+
+// writeRow writes switch p's state, steps and machines into its row.
+func (o *Orchestrator) writeRow(ctx context.Context, p *Progress) error {
 	steps, _ := json.Marshal(p.Steps)
 	machines, _ := json.Marshal(p.Machines)
 	// the database may be frozen already (its sessions read-only): this one writes
 	tx, err := o.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return
+		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `SET TRANSACTION READ WRITE`); err != nil {
-		return
+		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE cluster_switchovers SET state = $2, detail = NULLIF($3, ''),
 	    steps = $4::jsonb, machines = $5::jsonb, updated_at = now() WHERE id = $1`,
-		id, p.State, p.Detail, string(steps), string(machines)); err != nil {
-		return
+		p.ID, p.State, p.Detail, string(steps), string(machines)); err != nil {
+		return err
 	}
-	_ = tx.Commit()
+	return tx.Commit()
 }
 
-// record keeps switch id where this home finds it after a restart: the supervisor's
+// record keeps switch p where this home finds it after a restart: the supervisor's
 // record, on disk and synced once it answers.
-func (o *Orchestrator) record(ctx context.Context, id string) error {
-	p := o.Progress(id)
+func (o *Orchestrator) record(ctx context.Context, p *Progress) error {
 	if p == nil {
 		return nil
 	}
@@ -440,7 +460,7 @@ func (o *Orchestrator) record(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	return o.Supervisor.Call(ctx, "record", map[string]any{"id": id, "progress": json.RawMessage(b)}, nil)
+	return o.Supervisor.Call(ctx, "record", map[string]any{"id": p.ID, "progress": json.RawMessage(b)}, nil)
 }
 
 // command sends a command to a machine's agent and returns its detail.
@@ -649,7 +669,7 @@ func (o *Orchestrator) run(id string) {
 		o.end(ctx, id, StepPromote, errors.New("called off by an admin: everything is as it was"), true, "cancelled")
 		return
 	}
-	if err := o.record(ctx, id); err != nil {
+	if err := o.record(ctx, o.Progress(id)); err != nil {
 		o.mu.Lock()
 		if cur := o.progress[id]; cur != nil {
 			cur.PromoteSent = false
