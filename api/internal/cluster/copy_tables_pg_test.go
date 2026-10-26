@@ -38,7 +38,7 @@ var copyReviewed = []string{
 	"streaming_sessions", "stt_usage", "subtitle_files", "tag_checks", "tags", "topic_collections",
 	"topic_items", "transcribe_checkpoints", "transcript_segments", "transcript_units",
 	"transcript_words", "transcripts", "tv_change_events", "tv_changes", "tv_channel_switch",
-	"tv_public_channels", "tv_release_channels", "tv_releases", "tv_remote_inputs", "tv_remote_pushes",
+	"tv_release_channels", "tv_releases", "tv_remote_inputs", "tv_remote_pushes",
 	"tv_remote_sessions", "tv_remote_usage_daily", "tv_routing", "tv_simulcast_attachments",
 	"tv_simulcast_outputs", "tv_slot_events", "tv_slots", "tv_swap_ops", "update_run_steps",
 	"update_runs", "update_targets", "update_watermark", "user_analytics_prefs", "user_recs",

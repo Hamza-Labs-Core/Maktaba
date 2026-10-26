@@ -11,6 +11,9 @@
 -- (story 34.3, through Epic 32's push and relay). The site keeps its own state in the
 -- Worker, not here.
 --
+-- The table is not in a machine's copy (cluster_copy_excluded()): only the home's API
+-- reads it.
+--
 -- maktaba_worker keeps the default rights (slot 0103) on this table, as on every
 -- ordinary table: narrowing them here would be undone by an older release remaking
 -- its worker group (compat-prev), as slot 0152 found. The rows hold no secret. So that a
@@ -32,7 +35,62 @@ CREATE TABLE IF NOT EXISTS tv_public_channels (
 );
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- slot 0152's exclusion, with the public site's channels
+CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
+LANGUAGE sql IMMUTABLE AS $f$
+    SELECT ARRAY[
+        -- secrets
+        'home_secrets', 'tv_cluster_secret', 'tv_push_secrets', 'tv_simulcast_destinations',
+        'refresh_tokens', 'password_reset_tokens', 'pairing_tickets', 'cluster_sso_codes',
+        'idempotency_keys', 'licenses', 'devices', 'device_downloads', 'audit_log',
+        -- live cookies (their hashes are copied: web_session_keys)
+        'web_sessions',
+        -- the machines' own (a machine's row of cluster_nodes is published to it alone)
+        'cluster_nodes', 'cluster_node_stages', 'cluster_metrics_cache', 'cluster_log_cache',
+        'cluster_cache_files', 'cluster_certs',
+        -- what an old home wrote after an emergency took the home from it (the home's to
+        -- apply or not)
+        'cluster_kept_aside',
+        -- each database's own
+        'goose_db_version', 'maktaba_schema_version',
+        -- semantic search's vectors (never queried on a machine; a new home indexes
+        -- again what it lacks) and which store search reads
+        'segment_embeddings', 'semantic_store_state',
+        -- the public site's channels: read by the home's API only (a public decision is
+        -- the home's; a machine's copy has no use for it)
+        'tv_public_channels'
+    ]::text[]
+$f$;
+-- +goose StatementEnd
+
 -- +goose Down
+-- +goose StatementBegin
+-- slot 0152's exclusion, as it was
+CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
+LANGUAGE sql IMMUTABLE AS $f$
+    SELECT ARRAY[
+        -- secrets
+        'home_secrets', 'tv_cluster_secret', 'tv_push_secrets', 'tv_simulcast_destinations',
+        'refresh_tokens', 'password_reset_tokens', 'pairing_tickets', 'cluster_sso_codes',
+        'idempotency_keys', 'licenses', 'devices', 'device_downloads', 'audit_log',
+        -- live cookies (their hashes are copied: web_session_keys)
+        'web_sessions',
+        -- the machines' own (a machine's row of cluster_nodes is published to it alone)
+        'cluster_nodes', 'cluster_node_stages', 'cluster_metrics_cache', 'cluster_log_cache',
+        'cluster_cache_files', 'cluster_certs',
+        -- what an old home wrote after an emergency took the home from it (the home's to
+        -- apply or not)
+        'cluster_kept_aside',
+        -- each database's own
+        'goose_db_version', 'maktaba_schema_version',
+        -- semantic search's vectors (never queried on a machine; a new home indexes
+        -- again what it lacks) and which store search reads
+        'segment_embeddings', 'semantic_store_state'
+    ]::text[]
+$f$;
+-- +goose StatementEnd
+
 -- +goose StatementBegin
 DROP TABLE IF EXISTS tv_public_channels;
 -- +goose StatementEnd
