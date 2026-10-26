@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 )
 
@@ -321,7 +322,8 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		}
 	}
 
-	return env, nil
+	// a URL never carries the password: the child reads it from a passfile
+	return dsn.ProcessEnv(env, config.KeysDir())
 }
 
 // LocalAgentURL is a full node's loopback route to the home's channel over its cluster

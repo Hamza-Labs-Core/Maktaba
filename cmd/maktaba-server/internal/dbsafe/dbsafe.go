@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	_ "github.com/lib/pq" // the postgres driver
@@ -427,8 +429,13 @@ func (t Target) rehearse(ctx context.Context, api, dir string, maxBytes int64, l
 	}
 	mctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(mctx, api, "migrate", "--dir", dir, "--dsn", scratchURL, "--timeout", "30m", "up")
-	cmd.Env = withoutNodeMode(os.Environ())
+	// the URL in the environment without its password, never on the command line
+	cmd := exec.CommandContext(mctx, api, "migrate", "--dir", dir, "--timeout", "30m", "up")
+	env, err := dsn.ProcessEnv(append(withoutNodeMode(os.Environ()), "DATABASE_URL="+scratchURL), config.KeysDir())
+	if err != nil {
+		return r, err
+	}
+	cmd.Env = env
 	var out bytes.Buffer
 	cmd.Stdout = io.MultiWriter(&out, orDiscard(log))
 	cmd.Stderr = cmd.Stdout
