@@ -316,6 +316,17 @@ func (hl *homeLink) HasCert(ctx context.Context, nodeID string) bool {
 	return err == nil && cur != ""
 }
 
+// RecordDBClientCert keeps a machine's word on whether every one of its processes presents
+// its cluster certificate to this home's database (its update.state's db_client_cert;
+// agent.Config.DBClientCert) in its cluster_nodes row's update_state, where the bundled
+// Postgres reads it for pg_hba.conf (pgbundle Reach.CertRoles): once the link is required
+// only such a machine's role is asked for its certificate.
+func (hl *homeLink) RecordDBClientCert(ctx context.Context, nodeID string, presents bool) error {
+	_, err := hl.db.ExecContext(ctx, `UPDATE cluster_nodes SET update_state = COALESCE(update_state, '{}'::jsonb) ||
+	    jsonb_build_object('db_client_cert', $2::boolean) WHERE id = $1`, nodeID, presents)
+	return err
+}
+
 // JoinTLS signs a joining machine's CSR for its sealed credentials.
 func (hl *homeLink) JoinTLS(ctx context.Context, nodeID, csrPEM string) (*cluster.PayloadTLS, error) {
 	is, err := hl.ca.SignNode(ctx, []byte(csrPEM), nodeID, hl.linkRules().CertDays)
@@ -379,7 +390,10 @@ func (hl *homeLink) clearBroken(ctx context.Context) {
 const requireAfter = 24 * time.Hour
 
 // autoRequire switches prefer to require once every approved machine has held its link
-// for a day (design §18.7); an admin sets it back on the rules page.
+// for a day (design §18.7); an admin sets it back on the rules page. Requiring the link
+// never cuts a machine off its home's database: the home's Postgres asks for a machine
+// role's certificate only once that machine said its processes present it
+// (RecordDBClientCert, pgbundle Reach.CertRoles); any other keeps its password alone.
 func (hl *homeLink) autoRequire(ctx context.Context) {
 	lr := hl.linkRules()
 	if lr.Mode != linkctx.ModePrefer || !lr.AutoRequire {
