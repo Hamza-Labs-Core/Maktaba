@@ -146,6 +146,8 @@ func buildPlacement() placement.Table {
 		"/api/issues", "/api/recommendations", "/api/notifications", "/api/devices",
 		"/api/watch/", "/api/activity", "/api/entitlements", "/api/pairing/",
 		"/api/stream/", "/graphql", "/ws/",
+		// the home's server.toml and its restart (Epic 45 story 45.3)
+		"/api/server/",
 	))
 	return t
 }

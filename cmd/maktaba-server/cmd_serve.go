@@ -416,6 +416,8 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	if u := upd.Load(); u != nil {
 		admin = u.adminHandler(admin, token)
 	}
+	// the web's Storage & discovery settings (serve_config.go)
+	admin = newConfigAdmin(cfg, token, releaseDir).adminHandler(admin)
 	admin = logFilesAdmin(admin, token, logDirs)
 	admin = metricsAdmin(admin, logDirs.Updates)
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
