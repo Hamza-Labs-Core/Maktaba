@@ -57,18 +57,22 @@ const requireSQL = `SELECT COALESCE((SELECT value->>'link_mode' FROM app_setting
 // certRolesSQL reads Reach.CertRoles: the approved machines' roles whose machine said, in
 // its last update.state, that its processes present their cluster certificates
 // (cluster_nodes.update_state's db_client_cert, the home API's record of it), and whose
-// current certificate is valid and not revoked (cluster_certs, slot 0150). Asked apart: a
-// database without those (not migrated yet) answers none, and then no machine needs one.
+// current certificate is valid, not revoked, and names that role (its CN, cluster_certs'
+// subject: clientcert=verify-full lets a role in only with a certificate whose CN is the
+// role; a machine joined before 2026-10-18 has an 8-hex role while its certificate may name
+// the 32-hex one, and stays on its password). Asked apart: a database without those (not
+// migrated yet) answers none, and then no machine needs one.
 const certRolesSQL = `SELECT COALESCE((SELECT string_agg(n.db_role, ',' ORDER BY n.db_role) FROM cluster_nodes n
   WHERE n.state = 'approved' AND n.db_role IS NOT NULL AND n.db_role <> ''
     AND n.update_state->>'db_client_cert' = 'true'
     AND n.cert_serial IS NOT NULL AND n.cert_not_after > now()
     AND EXISTS (SELECT 1 FROM cluster_certs c WHERE c.serial = n.cert_serial AND c.revoked_at IS NULL
-                  AND c.not_before <= now() AND c.not_after > now())), '');`
+                  AND c.not_before <= now() AND c.not_after > now() AND c.subject = n.db_role)), '');`
 
-// machineRoleRe is a machine's database role (cluster.RoleName): only such a name goes into
-// pg_hba.conf as a role of its own.
-var machineRoleRe = regexp.MustCompile(`^maktaba_node_[0-9a-f]{32}$`)
+// machineRoleRe is a machine's database role (cluster.RoleName: the id's 32 hex digits; a
+// machine joined before 2026-10-18 keeps the 8-hex one its join recorded): only such a name
+// goes into pg_hba.conf as a role of its own.
+var machineRoleRe = regexp.MustCompile(`^maktaba_node_([0-9a-f]{8}|[0-9a-f]{32})$`)
 
 // reachFile keeps the last Reach the cluster asked for, which a start follows (none
 // yet: this machine only).
