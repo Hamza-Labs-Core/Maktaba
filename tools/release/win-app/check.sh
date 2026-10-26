@@ -5,7 +5,8 @@
 #
 #   every program starts (--version), every PE file is x86_64 and loads nothing from outside
 #   the payload but Windows, ffmpeg has NVENC, Postgres initdb + start on 127.0.0.1 + the
-#   extensions Maktaba creates (postgres.exe running on the payload's Visual C++ runtime),
+#   extensions Maktaba creates (postgres.exe running on the payload's Visual C++ runtime;
+#   pgvector's HNSW index answering a nearest-neighbour query, when payload.json has it),
 #   the payload's own migrations (maktaba-api migrate up from outside any checkout),
 #   the bundled Python builds a venv offline, and running it writes nothing into the payload
 #   (the uninstaller removes the files it installed: a new one would be left behind), the
@@ -390,6 +391,35 @@ if "$pg/initdb.exe" -D "$(win "$PGDATA_DIR")" -U maktaba --auth=trust -E UTF8 --
              AND encode(digest('maktaba', 'sha256'), 'hex') = '$(printf maktaba | sha256sum | awk '{print $1}')'
              AND unaccent(U&'H\00F4tel') = 'Hotel')::text;" 2>&1 | tr -d '\r' || true)"
     if [ "$got" = "$want" ]; then ok "$got"; else fail "extensions: $got"; fi
+    # semantic search's store (specs/epics/43-pgvector-search), when payload.sh could build
+    # it: the column type, the HNSW index and the query the pipeline uses (a row's nearest
+    # is itself, found by the index). Without it nothing of it may be in the payload.
+    pgv="$("$PY" -I -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); print((d.get("pgvector") or {}).get("version", ""))' \
+        "$(win "$PAYLOAD/payload.json")" 2>/dev/null | tr -d '\r' || true)"
+    if [ -n "$pgv" ]; then
+        rc=0
+        got="$(timeout 60 "$pg/psql.exe" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION vector;" \
+            -c "CREATE TABLE vec_check (id int PRIMARY KEY, e halfvec(384));" \
+            -c "INSERT INTO vec_check SELECT i, (SELECT array_agg(sin(i * j)::real ORDER BY j) FROM generate_series(1, 384) j)::halfvec
+                    FROM generate_series(1, 200) i;" \
+            -c "CREATE INDEX vec_check_hnsw ON vec_check USING hnsw (e halfvec_cosine_ops);" \
+            -c "SET enable_seqscan = off;" \
+            -c "SELECT 'vector ' || (SELECT extversion FROM pg_extension WHERE extname = 'vector') || ', nearest: ' ||
+                    string_agg(id::text, ',') FROM (SELECT id FROM vec_check
+                    ORDER BY e <=> (SELECT e FROM vec_check WHERE id = 42) LIMIT 3) n;" \
+            -c "EXPLAIN (COSTS OFF) SELECT id FROM vec_check ORDER BY e <=> (SELECT e FROM vec_check WHERE id = 42) LIMIT 3;" \
+            -c "DROP TABLE vec_check;" 2>&1)" || rc=$?
+        got="${got//$'\r'/}"
+        case "$rc:$got" in
+            0:*"vector $pgv, nearest: 42,"*"Index Scan using vec_check_hnsw"*) ok "pgvector: $(printf '%s\n' "$got" | grep -m1 '^vector ')" ;;
+            *) fail "pgvector $pgv (exit $rc): $(printf '%s\n' "$got" | tail -4)" ;;
+        esac
+    elif [ -e "$PAYLOAD/postgres/lib/vector.dll" ] || [ -e "$PAYLOAD/postgres/share/extension/vector.control" ]; then
+        fail "payload.json names no pgvector, but part of it is in the payload"
+    else
+        note "no pgvector in this payload (payload.sh could not build it): semantic search is off on it"
+    fi
     run "pg_dump" "$pg/pg_dump.exe" -h 127.0.0.1 -p "$port" -U maktaba -Fc -f "$(win "$SCRATCH/dump")" postgres
     # the schema from the payload alone: maktaba-api finds server\migrations beside its bin\,
     # run from a folder that is no checkout and without MAKTABA_MIGRATIONS_DIR

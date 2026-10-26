@@ -116,7 +116,19 @@ During the copy, search and the index stage keep using Chroma.
   locally: pgvector 0.8.7 against theseus-rs 16.15.0 arm64, HNSW plans and queries.
 - **Linux:** the same in `linux-app/payload_tool.py` (gcc, pgxs).
 - **Windows:** pgvector's `Makefile.win` with MSVC (`nmake`) in `win-app/payload_tool.py`.
-- **Node copies:** `pgbin.go`'s pinned bundle gets the same build.
+- **Node copies:** a machine with a desktop app runs its copy on the app's bundled Postgres
+  (`pgbundle.FindHome`), so it has pgvector. A machine without one runs the stock
+  theseus-rs archive `pgbin` fetches, which has no pgvector and no compiler to build it: its
+  copy does not need it (`segment_embeddings` is excluded), and if it becomes the home by a
+  switchover it runs with semantic search off (FTS only) until it runs a Postgres with
+  pgvector. Shipping prebuilt pgvector archives for `pgbin` (built in CI, pinned by SHA-256)
+  is a follow-up.
+- **Extension creation:** `vector` is not a trusted extension, so the app role's migrations
+  cannot create it on a bundled Postgres: the superuser does, in `pgbundle`'s bootstrap and in
+  the cluster grants (`clusterRev` 4, so a home made before runs it at its next start), only
+  when `pg_available_extensions` has it. Migration 0152 should therefore go by `pg_extension`
+  (installed) and try `CREATE EXTENSION IF NOT EXISTS vector` only where its role may (CI's and
+  Docker's superuser), never fail on it.
 - **CI / Docker:** `pgvector/pgvector:pg16` replaces `postgres:16.x` in `_integration.yml`,
   `_media-e2e.yml`, `relay.yml` and the compose files; `deploy/docker/postgres/init.sql` creates the
   extension; the Chroma service and its env go.

@@ -89,11 +89,12 @@ jobs:
     timeout-minutes: 15
 
     # The relay persists durable state (server registry, billing meter)
-    # in Postgres; its store + migration tests need a live DB. Tag pinned
-    # to match _integration.yml (bumped via Renovate, not by hand).
+    # in Postgres; its store + migration tests need a live DB. Image and tag
+    # pinned to match _integration.yml (Postgres 16 with pgvector; bumped via
+    # Renovate, not by hand).
     services:
       postgres:
-        image: postgres:16.4
+        image: pgvector/pgvector:0.8.7-pg16
         env:
           POSTGRES_USER: maktaba
           POSTGRES_PASSWORD: maktaba

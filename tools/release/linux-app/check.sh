@@ -6,7 +6,8 @@
 #   files.sha256 matches the tree (and no file is a hard link), every ELF file needs no glibc
 #   above the payload's limit and finds each library it links (in the payload or the
 #   baseline), every binary starts (--version), Postgres initdb + start + the extensions
-#   Maktaba creates + the payload's own migrations (maktaba-api migrate up from outside any
+#   Maktaba creates (pgvector too: a halfvec HNSW index answers a nearest-neighbour query)
+#   + the payload's own migrations (maktaba-api migrate up from outside any
 #   checkout) + pg_dump, the bundled Python makes a venv with pip offline, the pipeline's
 #   wheel and hashed constraints are there (and no torch), the venv bootstrap plans a build
 #   from them, and nothing the checks run writes into the payload.
@@ -108,6 +109,25 @@ if "$pg/initdb" -D "$SCRATCH/pgdata" -U maktaba --auth=trust -E UTF8 --locale=C 
         -c "CREATE EXTENSION pg_trgm; CREATE EXTENSION pgcrypto; CREATE EXTENSION unaccent;
             SELECT 'pg_trgm, pgcrypto (' || encode(digest('x', 'sha256'), 'hex') || '), unaccent ('
                    || unaccent('Mak' || chr(233)) || ') on ' || version();"
+    # semantic search's store (specs/epics/43-pgvector-search): the column type, the HNSW
+    # index and the query the pipeline uses; a row's nearest is itself, found by the index
+    rc=0
+    out="$(timeout 60 "$pg/psql" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq -v ON_ERROR_STOP=1 \
+        -c "CREATE EXTENSION vector;" \
+        -c "CREATE TABLE vec_check (id int PRIMARY KEY, e halfvec(384));" \
+        -c "INSERT INTO vec_check SELECT i, (SELECT array_agg(sin(i * j)::real ORDER BY j) FROM generate_series(1, 384) j)::halfvec
+                FROM generate_series(1, 200) i;" \
+        -c "CREATE INDEX vec_check_hnsw ON vec_check USING hnsw (e halfvec_cosine_ops);" \
+        -c "SET enable_seqscan = off;" \
+        -c "SELECT 'vector ' || (SELECT extversion FROM pg_extension WHERE extname = 'vector') || ', nearest: ' ||
+                string_agg(id::text, ',') FROM (SELECT id FROM vec_check
+                ORDER BY e <=> (SELECT e FROM vec_check WHERE id = 42) LIMIT 3) n;" \
+        -c "EXPLAIN (COSTS OFF) SELECT id FROM vec_check ORDER BY e <=> (SELECT e FROM vec_check WHERE id = 42) LIMIT 3;" \
+        -c "DROP TABLE vec_check;" 2>&1)" || rc=$?
+    case "$rc:$out" in
+        0:*"nearest: 42,"*"Index Scan using vec_check_hnsw"*) ok "pgvector: $(printf '%s\n' "$out" | grep -m1 '^vector ')" ;;
+        *) fail "pgvector (exit $rc): $(printf '%s\n' "$out" | tail -4)" ;;
+    esac
     run "TLS (OpenSSL in the server)" "$pg/psql" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq \
         -c "SELECT 'ssl library: ' || current_setting('ssl_library');"
     # the schema from the payload alone: maktaba-api finds payload/migrations beside its bin/,

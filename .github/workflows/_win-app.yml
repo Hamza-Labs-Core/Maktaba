@@ -93,10 +93,13 @@ jobs:
           path: build/win-app/downloads
           key: win-app-downloads-${{ hashFiles('tools/release/win-app/pins.env') }}
 
-      # make is MinGW's (C:\mingw64\bin) on the image; payload.sh builds the Go binaries with it
+      # make is MinGW's (C:\mingw64\bin) on the image; payload.sh builds the Go binaries with it,
+      # and pgvector with the image's Visual C++ (vcvars64, nmake). Here a pgvector that does
+      # not build fails the gate; a release (desktop-release) ships without it instead.
       - name: Build the Windows app with the payload, and check it
         env:
           VERSION: v0.0.0-ci.${{ github.run_number }}
+          WIN_APP_REQUIRE_PGVECTOR: "1"
         run: make win-app
 
       - name: Sizes

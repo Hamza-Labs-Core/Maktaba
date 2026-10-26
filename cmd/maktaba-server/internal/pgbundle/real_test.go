@@ -117,6 +117,24 @@ func TestRealPostgres(t *testing.T) {
 	if _, err := app.ExecContext(ctx, `SELECT pg_drop_replication_slot('maktaba_test')`); err != nil {
 		t.Fatalf("the app role drops a machine's slot: %v", err)
 	}
+	// pgvector is in the app's database exactly when this Postgres has it
+	var available, made bool
+	if err := app.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM pg_available_extensions WHERE name = 'vector'),
+		EXISTS (SELECT FROM pg_extension WHERE extname = 'vector')`).Scan(&available, &made); err != nil {
+		t.Fatal(err)
+	}
+	if available != made {
+		t.Fatalf("vector available %v, created %v", available, made)
+	}
+	t.Logf("pgvector in this Postgres: %v", available)
+	if made {
+		if _, err := app.ExecContext(ctx, `CREATE TABLE vec_check (e halfvec(3));
+			CREATE INDEX ON vec_check USING hnsw (e halfvec_cosine_ops);
+			INSERT INTO vec_check VALUES ('[1,0,0]'), ('[0,1,0]');
+			DROP TABLE vec_check`); err != nil {
+			t.Fatalf("the app role uses pgvector: %v", err)
+		}
+	}
 	if _, err := b.Backup(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}

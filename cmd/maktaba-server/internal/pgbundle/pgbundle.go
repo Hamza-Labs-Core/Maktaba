@@ -403,8 +403,16 @@ SELECT 'CREATE DATABASE ` + AppDatabase + ` OWNER ` + AppRole + `'
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS unaccent;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-`
+` + vectorSQL
 }
+
+// vectorSQL creates pgvector (semantic search, specs/epics/43-pgvector-search) in the
+// current database when this Postgres has it: an older bundle, or a machine's fetched
+// Postgres, starts without it (search is then full-text only). It is not a trusted
+// extension, so the superuser makes it, never the app role's migrations.
+const vectorSQL = `SELECT 'CREATE EXTENSION IF NOT EXISTS vector'
+  WHERE EXISTS (SELECT FROM pg_available_extensions WHERE name = 'vector')\gexec
+`
 
 // readyTimeout bounds how long the bootstrap server may take to come up.
 var readyTimeout = 2 * time.Minute

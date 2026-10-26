@@ -5,7 +5,8 @@
 #   bin\       maktaba-server.exe (web UI embedded) maktaba-api.exe maktaba-streaming.exe
 #              maktaba-launcher.exe maktaba-cloudlink.exe
 #   postgres\  bin\ lib\ share\           PostgreSQL 16: the programs, the DLLs they load and
-#                                         the Visual C++ runtime beside postgres.exe
+#                                         the Visual C++ runtime beside postgres.exe; pgvector
+#                                         when Visual C++'s build tools are here
 #   ffmpeg\    ffmpeg.exe ffprobe.exe     static
 #   python\    CPython 3.12               python-build-standalone, stdlib precompiled
 #   pipeline\  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt constraints-cuda.txt
@@ -35,6 +36,8 @@
 #   --msvc-runtime  the Visual C++ runtime folder (…\VC\Redist\MSVC\<v>\x64\Microsoft.VC14x.CRT;
 #                   default: $WIN_APP_MSVC_RUNTIME, else the one of pins.env's MSVC_RUNTIME_VERSION
 #                   among every Visual Studio installed, by vswhere)
+# WIN_APP_REQUIRE_PGVECTOR=1: a pgvector that does not build stops the build (else the
+# payload goes without it, semantic search off)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -204,6 +207,57 @@ rm -f "$OUT"/postgres/lib/plperl.dll "$OUT"/postgres/lib/plpython3.dll "$OUT"/po
 # decodes every table, past what is published to it (specs/epics/37-node-replica)
 find "$OUT/postgres/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_output_plugin_init {} + 2>/dev/null |
     while IFS= read -r f; do rm -f "$f"; done || true
+
+# --- pgvector (semantic search in Postgres, specs/epics/43-pgvector-search) ------------------
+# Built with Visual C++ (its Makefile.win, nmake, in vcvars64's environment) against the
+# PostgreSQL above (PGROOT: its include\server and lib\postgres.lib), before the DLL closure
+# so vector.dll's imports are gathered and checked like the other extensions'. OPTFLAGS
+# empty: no /arch, so it runs on any x86_64 CPU. When it cannot be built (no C++ build
+# tools here, a failed build) the payload goes without it and says so: Maktaba then runs
+# with semantic search off (full-text only), never with a half-installed extension.
+# WIN_APP_REQUIRE_PGVECTOR=1 makes that an error instead.
+log "pgvector $PGVECTOR_VERSION"
+# the download is checked like every other (a mismatch stops the build); only building it
+# may be skipped
+tar -xzf "$(fetch "$PGVECTOR_URL" "$PGVECTOR_SHA256" "pgvector-$PGVECTOR_VERSION.tar.gz")" -C "$WORK"
+pgv="$WORK/pgvector-$PGVECTOR_VERSION"
+[ -f "$pgv/Makefile.win" ] || die "unexpected pgvector archive layout"
+PGVECTOR_BUILT=""
+pgvector_build() {
+    local vswhere vs bat
+    vswhere="$(cygpath -u -F 42)/Microsoft Visual Studio/Installer/vswhere.exe"   # 42: Program Files (x86)
+    [ -f "$vswhere" ] || { log "pgvector: no Visual Studio (vswhere.exe)"; return 1; }
+    vs="$("$vswhere" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+        -property installationPath | tr -d '\r' | head -1)"
+    if [ -z "$vs" ] || [ ! -f "$vs/VC/Auxiliary/Build/vcvars64.bat" ]; then
+        log "pgvector: no Visual Studio with the C++ build tools (vcvars64.bat)"
+        return 1
+    fi
+    # the paths go in through the environment, in Windows form (cmd reads them as they are)
+    bat="$WORK/pgvector-build.bat"
+    printf '%s\r\n' '@echo off' \
+        'call "%PGV_VCVARS%" >nul || exit /b 1' \
+        'cd /d "%PGV_SRC%" || exit /b 1' \
+        'nmake /nologo /F Makefile.win PGROOT="%PGV_PGROOT%" OPTFLAGS= || exit /b 1' >"$bat"
+    PGV_VCVARS="$(win "$vs/VC/Auxiliary/Build/vcvars64.bat")" PGV_SRC="$(win "$pgv")" PGV_PGROOT="$(win "$pg")" \
+        cmd.exe //d //c "$(win "$bat")" >"$WORK/pgvector.log" 2>&1 ||
+        { tail -20 "$WORK/pgvector.log" >&2; log "pgvector: the build failed"; return 1; }
+    [ -f "$pgv/vector.dll" ] || { log "pgvector: the build made no vector.dll"; return 1; }
+    # (set -e does not hold in a function run as a condition: each step is checked)
+    cp "$pgv/vector.dll" "$OUT/postgres/lib/" &&
+        cp "$pgv/vector.control" "$pgv"/sql/vector--*.sql "$OUT/postgres/share/extension/" &&
+        cp "$pgv/LICENSE" "$OUT/licenses/pgvector.txt"
+}
+if pgvector_build; then
+    PGVECTOR_BUILT=1
+elif [ "${WIN_APP_REQUIRE_PGVECTOR:-}" = 1 ]; then
+    die "pgvector did not build (above) and WIN_APP_REQUIRE_PGVECTOR=1"
+else
+    rm -f "$OUT/postgres/lib/vector.dll" "$OUT"/postgres/share/extension/vector* "$OUT/licenses/pgvector.txt"
+    log "WARNING: no pgvector in this payload: Maktaba runs with semantic search off on it"
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::no pgvector in the Windows payload (semantic search off)"; fi
+fi
+
 # the DLLs the programs and the extensions load, found by reading their import tables:
 # OpenSSL, ICU, libxml2, zlib, ... from the archive's bin (not wxWidgets, StackBuilder's), and
 # the Visual C++ runtime
@@ -308,6 +362,7 @@ P_PG_VERSION="$POSTGRES_VERSION" P_PG_URL="$POSTGRES_URL" P_PG_SHA="$POSTGRES_SH
 P_PG_DLLS="$(printf '%s\n' "${pg_dlls[@]}")" P_MSVC_VERSION="$MSVC_VERSION" \
 P_FF_VERSION="$FFMPEG_VERSION" P_FF_URL="$FFMPEG_URL" P_FF_SHA="$FFMPEG_SHA256" \
 P_PY_VERSION="$PYTHON_VERSION" P_PY_URL="$PYTHON_URL" P_PY_SHA="$PYTHON_SHA256" \
+P_PGV_BUILT="$PGVECTOR_BUILT" P_PGV_VERSION="$PGVECTOR_VERSION" P_PGV_URL="$PGVECTOR_URL" P_PGV_SHA="$PGVECTOR_SHA256" \
 P_WHEEL="$WHEEL_NAME" P_WHEEL_SHA="$(sha256 "$OUT/pipeline/$WHEEL_NAME")" \
 P_CONS_SHA="$(sha256 "$OUT/pipeline/constraints.txt")" \
 P_CONS_CUDA_SHA="$(sha256 "$OUT/pipeline/constraints-cuda.txt")" \
@@ -320,6 +375,9 @@ doc = {
     "platform": "windows-x86_64",
     "postgres": {"version": e["P_PG_VERSION"], "source": e["P_PG_URL"], "sha256": e["P_PG_SHA"],
                  "libraries": sorted(e["P_PG_DLLS"].split())},
+    # null when it could not be built here (semantic search off: check.sh says so)
+    "pgvector": {"version": e["P_PGV_VERSION"], "source": e["P_PGV_URL"], "sha256": e["P_PGV_SHA"]}
+                if e["P_PGV_BUILT"] else None,
     "msvc_runtime": {"version": e["P_MSVC_VERSION"], "source": "Visual Studio redistributable"},
     # one archive holds both programs (the Mac's has two: the same fields, for the supervisor)
     "ffmpeg": {"version": e["P_FF_VERSION"], "source": e["P_FF_URL"], "sha256": e["P_FF_SHA"],

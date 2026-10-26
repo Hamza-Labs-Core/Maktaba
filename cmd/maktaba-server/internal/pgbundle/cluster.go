@@ -401,7 +401,7 @@ BEGIN
     END IF;
 END
 $$;
-` + roleAdminSQL
+` + vectorSQL + roleAdminSQL
 
 // roleAdminSQL gives the app role ADMIN OPTION on the machines' roles (maktaba_node_*,
 // their copies' maktaba_rep_*), their groups and the groups' members that it does not
@@ -434,8 +434,9 @@ $$;
 
 // clusterRev is clusterSQL's revision: a cluster whose marker names an older one (or
 // none: the first) runs it again. 3: the app role administers the roles the superuser
-// made (roleAdminSQL).
-const clusterRev = 3
+// made (roleAdminSQL). 4: pgvector in the app's database (vectorSQL), for a home made
+// before the bundle had it.
+const clusterRev = 4
 
 // MendClusterGrants runs the cluster bootstrap's grants again on the running server, as
 // its superuser: the home's API asks for it (its supervisor's mend-roles) when its user
