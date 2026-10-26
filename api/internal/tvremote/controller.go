@@ -79,6 +79,7 @@ type Controller struct {
 	// simulcast (32.13)
 	sched    map[string]schedCache // resolved windows per attachment
 	holds    map[string]bool       // channel -> its push is held by simulcast
+	pubHolds map[string]bool       // channel -> its push is held by the public site (Epic 34)
 	noted    map[string]bool       // notices given once
 	outPoll  map[string]time.Time  // output row -> last Cloudflare poll
 	outRetry map[string]time.Time  // errored output row -> last attempt
@@ -100,6 +101,7 @@ func (c *Controller) init() {
 		c.notLv = map[string]time.Time{}
 		c.sched = map[string]schedCache{}
 		c.holds = map[string]bool{}
+		c.pubHolds = map[string]bool{}
 		c.noted = map[string]bool{}
 		c.outPoll = map[string]time.Time{}
 		c.outRetry = map[string]time.Time{}
@@ -251,6 +253,8 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	} else {
 		c.simErr = ""
 	}
+	// the public site (Epic 34): its channels' pushes are held always on
+	c.publicTick(ctx, s, now)
 	pushes, err := c.st.activePushes(ctx)
 	if err != nil {
 		return err
@@ -278,14 +282,18 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		}
 	}
 	for _, p := range pushes {
-		hold := c.holdOf(p.ChannelID)
+		sim, pub := c.holdOf(p.ChannelID), c.publicHold(p.ChannelID)
+		hold := sim || pub
 		if Running(p.State) {
 			want := []string{}
 			if viewers[p.ID] > 0 {
 				want = append(want, HoldViewers)
 			}
-			if hold {
+			if sim {
 				want = append(want, HoldSimulcast)
+			}
+			if pub {
+				want = append(want, HoldPublic)
 			}
 			if strings.Join(want, ",") != strings.Join(p.Holds, ",") {
 				_ = c.st.setHolds(ctx, p.ID, want)
@@ -594,7 +602,7 @@ func (c *Controller) deleteRecordings(ctx context.Context, cl *cf.Client, now ti
 // input and moves its open sessions there ("" when nobody watches any more).
 func (c *Controller) rotateSuccessor(ctx context.Context, cl *cf.Client, s Settings, p Push, now time.Time) (string, error) {
 	xs, err := c.st.querySessions(ctx, `WHERE push_id = $1 AND ended_at IS NULL`, p.ID)
-	if err != nil || (len(xs) == 0 && !c.holdOf(p.ChannelID)) {
+	if err != nil || (len(xs) == 0 && !c.holdOf(p.ChannelID) && !c.publicHold(p.ChannelID)) {
 		return "", err
 	}
 	if cl == nil {

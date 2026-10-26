@@ -81,8 +81,11 @@ func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, *
 	}
 	in.StopPushes = ctl.StopAll
 	in.ForgetInputs = ctl.Forget
+	// Epic 34: the public site's state, posted outward to its Worker
+	pub := &tvremote.Publisher{Ctl: ctl}
 	if d.DB != nil && !d.NoLoop {
 		go ctl.Run(context.Background())
+		go pub.Run(context.Background())
 		// story 32.11: the TV numbers the control centre charts, every minute
 		go (&tvremote.HealthSampler{DB: d.DB, Remote: ctl, Logger: d.Logger}).Run(context.Background())
 	}
@@ -97,7 +100,7 @@ func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, *
 	}
 	q.Validators[queues.CloudflareExtension] = in.ValidateSettings
 	WireExtensionTesters(q, d.DB, d.Secrets, d.Logger)
-	return in, ctl, func(r chi.Router) { (&tvremoteh.Handler{Integration: in, Remote: ctl}).Mount(r) }
+	return in, ctl, func(r chi.Router) { (&tvremoteh.Handler{Integration: in, Remote: ctl, Publisher: pub}).Mount(r) }
 }
 
 // remoteAudit writes remote tunes, ends and key rotations to audit_log

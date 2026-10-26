@@ -91,7 +91,7 @@ type Integration struct {
 	// ForgetInputs closes the pushes and drops the tv_remote_inputs rows once
 	// the inputs are gone at Cloudflare (AC5); nil: none.
 	ForgetInputs func(ctx context.Context) error
-	Logger     *slog.Logger
+	Logger       *slog.Logger
 }
 
 func (in *Integration) now() time.Time {
@@ -613,11 +613,18 @@ func (in *Integration) Remove(ctx context.Context) (RemoveResult, error) {
 				res.DeletedSigningKey = k.ID
 			}
 		}
+		// the public site's own key (Epic 34): its tokens stop with the integration
+		if k, err := in.siteKey(ctx); err == nil && k.ID != "" {
+			if err := cl.DeleteSigningKey(ctx, k.ID); err != nil {
+				res.Errors = append(res.Errors, "delete the site's signing key: "+err.Error())
+			}
+		}
 	} else if c.account != "" {
 		res.Errors = append(res.Errors, "Cloudflare not cleaned up ("+tokenProblem(c.tokenErr)+"): delete Maktaba's live inputs and signing key in the dashboard")
 	}
 	if in.Secrets != nil {
-		for _, n := range []string{SecretAPIToken, SecretSigningKey, SecretSigningKey + "_prev", SecretWebhook} {
+		for _, n := range []string{SecretAPIToken, SecretSigningKey, SecretSigningKey + "_prev", SecretWebhook,
+			SecretSiteSigningKey, SecretSiteHMAC} {
 			if err := in.Secrets.Delete(ctx, n); err != nil {
 				return res, err
 			}
