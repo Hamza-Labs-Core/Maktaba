@@ -22,8 +22,8 @@ func TestTelemetryOnTheRealRouter(t *testing.T) {
 			"version": "0.3.26", "os": "darwin", "arch": "arm64", "install_kind": "mac-app",
 			"library_size": "1k-10k", "libraries": "2-5", "users": "2-5", "machines": "1",
 			"apps":     []any{map[string]any{"app": "web", "platform": "web", "people": "2-5", "requests": "101-1k"}},
-			"features": map[string]any{"live_tv": true},
-			"errors":   []any{map[string]any{"message": "open /Users/bob/x.db failed", "count": 2}},
+			"features": map[string]any{"remote_access": true},
+			"errors":   []any{map[string]any{"message": "db_timeout", "count": 2}},
 		}},
 		map[string]any{"type": "app", "install_id": "AppInstall00000001", "app": "web", "platform": "web",
 			"app_version": "1.2.3", "events": []any{
@@ -31,11 +31,35 @@ func TestTelemetryOnTheRealRouter(t *testing.T) {
 			"vitals": []any{map[string]any{"metric": "LCP", "value": 900, "route": "/videos/:id"}}},
 	}}
 	home.mustStatus(home.do("POST", "/v1/telemetry", env), http.StatusNoContent)
+	defer func() {
+		// nor logged: no line the ingest wrote, nor its access log line, names it
+		for _, line := range strings.Split(e.logs.String(), "\n") {
+			if strings.Contains(line, "/v1/telemetry") && strings.Contains(line, home.ip) {
+				t.Errorf("the ingest logged the sender's address: %s", line)
+			}
+		}
+	}()
 	if r := home.do("POST", "/v1/telemetry", map[string]any{"schema": 1, "batches": []any{map[string]any{"type": "app", "install_id": "x"}}}); r.code != http.StatusBadRequest {
 		t.Fatalf("invalid envelope: %d", r.code)
 	}
-	if n := e.count(`SELECT count(*) FROM telemetry_error_groups WHERE message LIKE '%bob%'`); n != 0 {
-		t.Fatal("a home folder reached the store")
+	// the hard rule: an error that is not a kind, or a field nobody allowed, is
+	// refused whole
+	for _, bad := range []map[string]any{
+		{"type": "server", "install_id": "HomeInstall0000002", "day": day, "home_name": "Sara's NAS", "report": map[string]any{}},
+		{"type": "app", "install_id": "AppInstall00000002", "app": "web", "platform": "web", "app_version": "1",
+			"user": "sara", "events": []any{}},
+	} {
+		if r := home.do("POST", "/v1/telemetry", map[string]any{"schema": 1, "batches": []any{bad}}); r.code != http.StatusBadRequest {
+			t.Fatalf("%v: %d", bad, r.code)
+		}
+	}
+	// nothing of the sender's address is stored, in any column of any table of
+	// the usage data
+	for _, table := range []string{"telemetry_server_reports", "telemetry_app_installs", "telemetry_app_events",
+		"telemetry_error_groups", "telemetry_error_occurrences", "telemetry_web_vitals"} {
+		if n := e.count(`SELECT count(*) FROM ` + table + ` t WHERE t::text LIKE '%` + home.ip + `%'`); n != 0 {
+			t.Fatalf("%s holds the sender's address", table)
+		}
 	}
 	// no table of the usage data has a column that could hold an address
 	if n := e.count(`SELECT count(*) FROM information_schema.columns
@@ -57,7 +81,7 @@ func TestTelemetryOnTheRealRouter(t *testing.T) {
 		t.Fatalf("installs %v", inst)
 	}
 	errs := u["errors"].([]any)
-	if len(errs) != 1 || !strings.Contains(errs[0].(map[string]any)["message"].(string), "<path>") {
+	if len(errs) != 1 || errs[0].(map[string]any)["message"] != "db_timeout" {
 		t.Fatalf("errors %v", errs)
 	}
 

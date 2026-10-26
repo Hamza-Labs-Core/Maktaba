@@ -12,6 +12,7 @@ package telemetry
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -152,12 +153,51 @@ var ErrTooManyBatches = &ValidationError{Msg: fmt.Sprintf("more than %d batches"
 
 func bad(format string, a ...any) error { return &ValidationError{Msg: fmt.Sprintf(format, a...)} }
 
+// strict decodes raw into v, refusing a field v does not name: the hard rule
+// (nothing about data, addresses or identities) is enforced by allow-list, so
+// a field nobody allowed is an error, never a silent drop.
+func strict(raw []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if dec.More() {
+		return errors.New("trailing data")
+	}
+	return nil
+}
+
+// batchFields are the fields each type of batch may have, and no other.
+var batchFields = map[string]map[string]bool{
+	"forget": {"type": true, "install_id": true},
+	"server": {"type": true, "install_id": true, "day": true, "report": true},
+	"app": {"type": true, "install_id": true, "app": true, "platform": true, "form_factor": true,
+		"app_version": true, "os_version": true, "locale": true, "events": true, "vitals": true},
+}
+
+// Features are the feature names a server report may carry.
+var Features = map[string]bool{
+	"channels": true, "collections": true, "transcripts": true, "subtitle_files": true,
+	"access_tokens": true, "paired_devices": true, "library_acl_rows": true, "extensions": true,
+	"open_registration": true, "remote_access": true,
+}
+
+var (
+	// a server error's kind: an event name of the home's logs
+	reServerErrorKind = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
+	// an app error's kind: its class (TypeError), never its message
+	reAppErrorKind = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$.]{0,63}$`)
+	// a code frame as the home sends it: "function (file.js:line:col)"
+	reCodeFrame = regexp.MustCompile(`^[A-Za-z0-9_$.<>]{1,80} \([A-Za-z0-9_.-]{1,80}\.(?:js|mjs|cjs|ts|tsx|jsx|swift|kt|java|go):\d{1,7}(?::\d{1,7})?\)$`)
+)
+
 // Parse validates an envelope body and returns its batches. now is the
 // clock used for the day window and the event-time clamp.
 func Parse(body []byte, now time.Time) ([]Batch, error) {
 	var env Envelope
-	if err := json.Unmarshal(body, &env); err != nil {
-		return nil, bad("body is not a JSON envelope")
+	if err := strict(body, &env); err != nil {
+		return nil, bad("body is not a JSON envelope of schema and batches only")
 	}
 	if env.Schema != 1 {
 		return nil, bad("schema must be 1")
@@ -197,8 +237,23 @@ type rawBatch struct {
 }
 
 func parseBatch(raw json.RawMessage, now time.Time) (Batch, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return Batch{}, bad("not a batch object")
+	}
+	var typ string
+	_ = json.Unmarshal(fields["type"], &typ)
+	allowed, known := batchFields[typ]
+	if !known {
+		return Batch{}, bad("unknown batch type %q", typ)
+	}
+	for k := range fields {
+		if !allowed[k] {
+			return Batch{}, bad("field %q is not allowed in a %s batch", k, typ)
+		}
+	}
 	var rb rawBatch
-	if err := json.Unmarshal(raw, &rb); err != nil {
+	if err := strict(raw, &rb); err != nil {
 		return Batch{}, bad("not a batch object")
 	}
 	if !reInstallID.MatchString(rb.InstallID) {
@@ -257,8 +312,8 @@ func parseServer(rb rawBatch, now time.Time) (*ServerReport, error) {
 		return nil, bad("report missing")
 	}
 	var rr rawReport
-	if err := json.Unmarshal(rb.Report, &rr); err != nil {
-		return nil, bad("report is malformed")
+	if err := strict(rb.Report, &rr); err != nil {
+		return nil, bad("report is malformed or has a field that is not allowed")
 	}
 	rep := &ServerReport{Day: day, Version: rr.Version, OS: rr.OS, Arch: rr.Arch, InstallKind: rr.InstallKind,
 		LibrarySize: rr.LibrarySize, Libraries: rr.Libraries, Users: rr.Users, Machines: rr.Machines,
@@ -296,8 +351,8 @@ func parseServer(rb rawBatch, now time.Time) (*ServerReport, error) {
 		return nil, bad("report.features has more than %d keys", MaxFeatures)
 	}
 	for name, raw := range rr.Features {
-		if !reFeature.MatchString(name) {
-			return nil, bad("report.features key %q is invalid", name)
+		if !Features[name] {
+			return nil, bad("report.features key %q is not allowed", name)
 		}
 		var v any
 		if err := json.Unmarshal(raw, &v); err != nil {
@@ -322,9 +377,9 @@ func parseServer(rb rawBatch, now time.Time) (*ServerReport, error) {
 		if e.Count < 0 || e.Count > MaxErrorCount {
 			return nil, bad("report.errors[%d].count is out of range", i)
 		}
-		msg := capRunes(Scrub(e.Message), MaxMessageLen)
-		if msg == "" {
-			return nil, bad("report.errors[%d].message is empty", i)
+		msg := e.Message
+		if !reServerErrorKind.MatchString(msg) {
+			return nil, bad("report.errors[%d].message is not an error kind", i)
 		}
 		rep.Errors = append(rep.Errors, ReportError{Message: msg, Count: e.Count})
 	}
@@ -375,8 +430,8 @@ func parseApp(rb rawBatch, now time.Time) (*AppBatch, error) {
 	}
 	for i, raw := range rb.Events {
 		var re rawEvent
-		if err := json.Unmarshal(raw, &re); err != nil {
-			return nil, bad("events[%d] is malformed", i)
+		if err := strict(raw, &re); err != nil {
+			return nil, bad("events[%d] is malformed or has a field that is not allowed", i)
 		}
 		ts, err := time.Parse(time.RFC3339Nano, re.TS)
 		if err != nil {
@@ -390,19 +445,24 @@ func parseApp(rb rawBatch, now time.Time) (*AppBatch, error) {
 		if re.Kind == "error.uncaught" {
 			msg, _ := payload["error_message"].(string)
 			stack, _ := payload["stack_first_5"].(string)
-			msg = capRunes(Scrub(msg), MaxMessageLen)
-			if msg == "" {
-				msg = "(no message)"
+			if !reAppErrorKind.MatchString(msg) {
+				return nil, bad("events[%d].payload.error_message is not an error kind", i)
 			}
-			ab.Errors = append(ab.Errors, AppError{Message: msg, FirstFrame: firstFrame(stack), TS: ts})
+			frames := strings.Split(stack, "\n")
+			for _, f := range frames {
+				if stack != "" && !reCodeFrame.MatchString(f) {
+					return nil, bad("events[%d].payload.stack_first_5 has a line that is not a code frame", i)
+				}
+			}
+			ab.Errors = append(ab.Errors, AppError{Message: msg, FirstFrame: frames[0], TS: ts})
 			continue
 		}
 		ab.Events = append(ab.Events, Event{Kind: re.Kind, Payload: payload, TS: ts})
 	}
 	for i, raw := range rb.Vitals {
 		var rv rawVital
-		if err := json.Unmarshal(raw, &rv); err != nil {
-			return nil, bad("vitals[%d] is malformed", i)
+		if err := strict(raw, &rv); err != nil {
+			return nil, bad("vitals[%d] is malformed or has a field that is not allowed", i)
 		}
 		if !VitalMetrics[rv.Metric] {
 			return nil, bad("vitals[%d].metric is unknown", i)
@@ -467,7 +527,7 @@ func parsePayload(kind string, raw map[string]json.RawMessage) (map[string]any, 
 		}
 		fk, known := fields[k]
 		if !known {
-			continue
+			return nil, bad("payload.%s is not allowed", k)
 		}
 		var x any
 		if err := json.Unmarshal(v, &x); err != nil {
@@ -542,16 +602,6 @@ func clampTS(ts, now time.Time) time.Time {
 		return oldest
 	}
 	return ts
-}
-
-// firstFrame is the first non-empty line of a stack, scrubbed.
-func firstFrame(stack string) string {
-	for _, line := range strings.Split(stack, "\n") {
-		if l := strings.TrimSpace(line); l != "" {
-			return capRunes(Scrub(l), MaxFrameLen)
-		}
-	}
-	return ""
 }
 
 func capRunes(s string, n int) string {

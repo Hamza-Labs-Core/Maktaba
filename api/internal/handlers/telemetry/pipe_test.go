@@ -143,7 +143,7 @@ type memState struct {
 }
 
 func (s *memState) Sharing(context.Context) bool { s.mu.Lock(); defer s.mu.Unlock(); return s.sharing }
-func (s *memState) InstallID(ctx context.Context) (string, error) {
+func (s *memState) InstallID(context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.id == "" {
@@ -272,9 +272,9 @@ func TestPostAppConsent(t *testing.T) {
 
 	// the server switch is off: the app's own consent is what counts
 	rec := p.do(t, http.MethodPost, "/api/telemetry/app", batch(true, open,
-		ev("error.uncaught", map[string]any{"error_message": "cannot open /srv/Lectures/Name/الدرس.mp4: x",
-			"stack_first_5": "at http://192.168.1.2:8088/assets/a.js:1:2", "user": "sara"}),
-		ev("feature.used", map[string]any{"feature": "library", "count": 3.0, "title": "secret"}),
+		ev("error.uncaught", map[string]any{"error_message": "Error: cannot open /srv/Lectures/Name/الدرس.mp4: x sara secret",
+			"stack_first_5": "at load (http://192.168.1.2:8088/assets/a.js:1:2)"}),
+		ev("feature.used", map[string]any{"feature": "library", "count": 3.0}),
 	), viewer)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
@@ -295,8 +295,11 @@ func TestPostAppConsent(t *testing.T) {
 	if out.Type != KindApp || out.InstallID != installID || out.App != "web" || out.Locale != "ar" || len(out.Events) != 3 {
 		t.Fatalf("batch = %+v", out)
 	}
-	if got := out.Events[1].Payload["error_message"]; got != "cannot open <library>/<file>.mp4: x" {
-		t.Fatalf("error_message = %q", got)
+	if got := out.Events[1].Payload["error_message"]; got != "Error" {
+		t.Fatalf("error_message = %q, want the error's kind only", got)
+	}
+	if got := out.Events[1].Payload["stack_first_5"]; got != "load (a.js:1:2)" {
+		t.Fatalf("stack_first_5 = %q", got)
 	}
 }
 
@@ -325,6 +328,25 @@ func TestPostAppValidation(t *testing.T) {
 	b["app"] = "Web App!"
 	bad("app", b, http.StatusBadRequest)
 	bad("kind", batch(true, ev("search.run", nil)), http.StatusBadRequest)
+	// the hard rule: a field the allow-list does not name is refused, not dropped
+	for _, payload := range []map[string]any{
+		{"feature": "library", "count": 1.0, "title": "Lecture 1"},
+		{"feature": "library", "count": 1.0, "user": "sara"},
+		{"feature": "library", "count": 1.0, "query": "fiqh"},
+		{"feature": "library", "count": map[string]any{"n": 1.0}},
+		{"feature": []any{"library"}, "count": 1.0},
+	} {
+		bad("field", batch(true, ev("feature.used", payload)), http.StatusBadRequest)
+	}
+	// and so is any field of the batch itself the contract does not name
+	for _, extra := range []string{"user", "user_id", "email", "home_name", "device_name", "ip", "account"} {
+		b := batch(true, open)
+		b[extra] = "x"
+		bad("batch field "+extra, b, http.StatusBadRequest)
+	}
+	b = batch(true)
+	b["events"] = []any{map[string]any{"kind": "app.open", "payload": map[string]any{}, "ts": "2026-10-26T10:00:00Z", "title": "x"}}
+	bad("event field", b, http.StatusBadRequest)
 	many := make([]map[string]any, MaxEvents+1)
 	for i := range many {
 		many[i] = open
@@ -378,7 +400,7 @@ func TestRoles(t *testing.T) {
 // preview leaves the errors counted for the real report.
 func TestServerStatusPreview(t *testing.T) {
 	p := newPipe(t, true)
-	p.h.Reporter.Errors.add("scan_failed: open /srv/x/y.mp4: denied")
+	p.h.Reporter.Errors.add("scan_failed")
 	rec := p.do(t, http.MethodGet, "/api/telemetry/server", nil, admin)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
@@ -389,7 +411,7 @@ func TestServerStatusPreview(t *testing.T) {
 	}
 	if v.Sharing || !v.Enabled || v.Preview.LibrarySize != "2-5" || v.Preview.Users != "2-5" ||
 		v.Preview.Libraries != "1" || v.Preview.Version != "1.2.3" || len(v.Preview.Errors) != 1 ||
-		v.Preview.Errors[0].Message != "scan_failed: open <path>/<file>.mp4: denied" {
+		v.Preview.Errors[0].Message != "scan_failed" {
 		t.Fatalf("status = %+v", v)
 	}
 	if len(p.h.Reporter.Errors.Take()) != 1 {

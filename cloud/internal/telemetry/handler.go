@@ -2,6 +2,10 @@ package telemetry
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -24,8 +28,9 @@ type Ingester interface {
 type Handler struct {
 	Store  Ingester
 	Logger *slog.Logger
-	// PerIP limits envelopes per client address (the address is read only
-	// for this and never kept). PerInstall limits batches per install id.
+	// PerIP limits envelopes per sender: keyed by a keyed hash of its address
+	// (senderKey), so the address itself is neither stored, logged nor held.
+	// PerInstall limits batches per install id.
 	PerIP      *ratelimit.Limiter
 	PerInstall *ratelimit.Limiter
 	Now        func() time.Time
@@ -63,7 +68,7 @@ func (h *Handler) now() time.Time {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.PerIP != nil && !h.PerIP.Allow(ratelimit.IPKey(r)) {
+	if h.PerIP != nil && !h.PerIP.Allow(senderKey(r)) {
 		tooMany(w, h.PerIP)
 		return
 	}
@@ -147,4 +152,22 @@ func RunSweeper(ctx context.Context, s *Store, ret Retention, logger *slog.Logge
 			sweep()
 		}
 	}
+}
+
+// addrKey is this process's random key for senderKey: made at start, never
+// written anywhere, so a limiter key cannot be turned back into an address,
+// not even by whoever reads the process's memory later.
+var addrKey = func() []byte {
+	k := make([]byte, 32)
+	if _, err := rand.Read(k); err != nil {
+		panic(err)
+	}
+	return k
+}()
+
+// senderKey is the rate limit's key for r's sender: an HMAC of its address.
+func senderKey(r *http.Request) string {
+	m := hmac.New(sha256.New, addrKey)
+	m.Write([]byte(ratelimit.IPKey(r)))
+	return "s:" + hex.EncodeToString(m.Sum(nil)[:16])
 }

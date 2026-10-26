@@ -148,3 +148,49 @@ describe("telemetry client", () => {
     expect(allPseudonyms()).toContain(p);
   });
 });
+
+describe("the hard rule", () => {
+  beforeEach(() => {
+    resetTelemetryForTests();
+    localStorage.clear();
+    post.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("an error is sent as its kind, never its message", async () => {
+    vi.useFakeTimers();
+    try {
+      optIn();
+      reportError(new TypeError("cannot read 'أسماء الله الحسنى' of /Users/sara/x.mp4"));
+      await vi.advanceTimersByTimeAsync(31_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    const body = JSON.stringify(post.mock.calls[0][1]);
+    expect(body).toContain('"error_message":"TypeError"');
+    for (const bad of ["أسماء", "sara", "x.mp4", "cannot read"]) expect(body).not.toContain(bad);
+  });
+
+  it("the batch names no user, home, device or address", async () => {
+    vi.useFakeTimers();
+    try {
+      optIn();
+      await vi.advanceTimersByTimeAsync(31_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    const body = post.mock.calls[0][1] as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(
+      [
+        "app",
+        "app_version",
+        "consent",
+        "events",
+        "form_factor",
+        "install_id",
+        "locale",
+        "os_version",
+        "platform",
+      ].sort()
+    );
+  });
+});

@@ -63,6 +63,26 @@ type env struct {
 	idp     *fakeIDP
 	entPath string
 	ipSeq   int
+	// logs is everything the api logged (the usage-data test reads it)
+	logs *syncBuffer
+}
+
+// syncBuffer is a bytes.Buffer the server's goroutines may write at once.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func newEnv(t *testing.T) *env {
@@ -105,7 +125,8 @@ func newEnv(t *testing.T) *env {
 	if err := config.Validate(cfg, config.RoleAPI); err != nil {
 		t.Fatal(err)
 	}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	e.logs = &syncBuffer{}
+	logger := slog.New(slog.NewTextHandler(e.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	r, stop, err := newAPI(logger, cfg, pool, mig, server.BuildInfo{Role: "api"}, apiOverrides{
 		Mailer:        e.mail,
 		StripeAPIBase: e.stripe.srv.URL,

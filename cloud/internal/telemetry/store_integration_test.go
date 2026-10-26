@@ -79,7 +79,7 @@ func TestIngestUpsertAndForget(t *testing.T) {
 	// a resend of the same day replaces the report and its errors
 	again := serverBatch()
 	again["report"].(map[string]any)["version"] = "0.3.27"
-	again["report"].(map[string]any)["errors"] = []any{map[string]any{"message": "db timeout", "count": 5}}
+	again["report"].(map[string]any)["errors"] = []any{map[string]any{"message": "db_timeout", "count": 5}}
 	ingest(ctx, t, s, testNow, again)
 	if n := count(t, s.DB, `SELECT count(*) FROM telemetry_server_reports`); n != 1 {
 		t.Fatalf("reports: %d", n)
@@ -178,14 +178,14 @@ func TestSweepRetention(t *testing.T) {
 func TestQueryUsage(t *testing.T) {
 	s, ctx := testStore(t)
 	ingest(ctx, t, s, testNow, serverBatch(), appBatch())
-	// a second home on an older version, without the live_tv feature
+	// a second home on an older version, without remote access or channels
 	h2 := serverBatch()
 	h2["install_id"] = "HomeInstall0000002"
 	h2["day"] = "2026-10-25"
 	r2 := h2["report"].(map[string]any)
 	r2["version"], r2["os"], r2["install_kind"] = "0.3.25", "linux", "docker"
-	r2["features"] = map[string]any{"live_tv": false, "transcoding": "0"}
-	r2["errors"] = []any{map[string]any{"message": "db timeout", "count": 2}}
+	r2["features"] = map[string]any{"remote_access": false, "channels": "0"}
+	r2["errors"] = []any{map[string]any{"message": "db_timeout", "count": 2}}
 	ingest(ctx, t, s, testNow, h2)
 	// a tv app install
 	tv := appBatch()
@@ -223,10 +223,10 @@ func TestQueryUsage(t *testing.T) {
 	for _, f := range u.Features {
 		shares[f.Feature] = f
 	}
-	if shares["live_tv"].Homes != 1 || shares["live_tv"].Share != 0.5 || shares["transcoding"].Homes != 1 {
+	if shares["remote_access"].Homes != 1 || shares["remote_access"].Share != 0.5 || shares["channels"].Homes != 1 {
 		t.Errorf("features %+v", u.Features)
 	}
-	if _, ok := shares["sync"]; ok {
+	if _, ok := shares["open_registration"]; ok {
 		t.Error("a feature no home uses is listed")
 	}
 	var lib int64

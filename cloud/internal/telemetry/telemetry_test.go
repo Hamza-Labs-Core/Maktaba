@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,8 +28,8 @@ func serverBatch() map[string]any {
 			"version": "0.3.26", "os": "darwin", "arch": "arm64", "install_kind": "mac-app",
 			"library_size": "1k-10k", "libraries": "2-5", "users": "2-5", "machines": "1",
 			"apps":     []any{map[string]any{"app": "web", "platform": "web", "people": "2-5", "requests": "101-1k", "errors": "0"}},
-			"features": map[string]any{"live_tv": true, "transcoding": "6-20", "sync": false},
-			"errors":   []any{map[string]any{"message": "db timeout", "count": 3}},
+			"features": map[string]any{"remote_access": true, "channels": "6-20", "open_registration": false},
+			"errors":   []any{map[string]any{"message": "db_timeout", "count": 3}},
 		},
 	}
 }
@@ -43,8 +44,8 @@ func appBatch() map[string]any {
 			map[string]any{"kind": "player.start", "payload": map[string]any{"source": "direct", "codec": "h264"}, "ts": "2026-10-26T11:00:00Z"},
 			map[string]any{"kind": "player.error", "payload": map[string]any{"error_kind": "net", "duration_ms": 1200}, "ts": "2026-10-26T11:00:00Z"},
 			map[string]any{"kind": "error.uncaught", "payload": map[string]any{
-				"error_message": "TypeError at https://nas.local:8088/x?token=abc",
-				"stack_first_5": "at f (/Users/bob/src/app.js:1:2)\nat g"}, "ts": "2026-10-26T11:00:00Z"},
+				"error_message": "TypeError",
+				"stack_first_5": "f (app.js:1:2)\ng (vendor.js:3)"}, "ts": "2026-10-26T11:00:00Z"},
 		},
 		"vitals": []any{map[string]any{"metric": "LCP", "value": 1234.5, "route": "/videos/:id"}},
 	}
@@ -71,13 +72,13 @@ func TestParseValid(t *testing.T) {
 	if len(a.Events) != 4 || len(a.Errors) != 1 || len(a.Vitals) != 1 {
 		t.Fatalf("app: %+v", a)
 	}
-	if got := a.Errors[0].Message; strings.Contains(got, "nas.local") || strings.Contains(got, "token") {
-		t.Errorf("error message not scrubbed: %q", got)
+	if got := a.Errors[0].Message; got != "TypeError" {
+		t.Errorf("error kind: %q", got)
 	}
-	if got := a.Errors[0].FirstFrame; strings.Contains(got, "bob") || !strings.Contains(got, "app.js") {
+	if got := a.Errors[0].FirstFrame; got != "f (app.js:1:2)" {
 		t.Errorf("first frame: %q", got)
 	}
-	if bs[0].Server.Features["transcoding"] != "6-20" || bs[0].Server.Features["live_tv"] != true {
+	if bs[0].Server.Features["channels"] != "6-20" || bs[0].Server.Features["remote_access"] != true {
 		t.Errorf("features: %v", bs[0].Server.Features)
 	}
 }
@@ -119,9 +120,13 @@ func TestParseRejections(t *testing.T) {
 			rep(s)["apps"] = []any{map[string]any{"app": "Web App", "platform": "web", "people": "1", "requests": "1"}}
 		},
 		"feature name":        func(s, _ map[string]any) { rep(s)["features"] = map[string]any{"Live TV": true} },
-		"feature value":       func(s, _ map[string]any) { rep(s)["features"] = map[string]any{"x": 3} },
-		"feature object":      func(s, _ map[string]any) { rep(s)["features"] = map[string]any{"x": map[string]any{}} },
+		"feature not allowed": func(s, _ map[string]any) { rep(s)["features"] = map[string]any{"sheikh_lectures": "1"} },
+		"feature value":       func(s, _ map[string]any) { rep(s)["features"] = map[string]any{"channels": 3} },
+		"feature object":      func(s, _ map[string]any) { rep(s)["features"] = map[string]any{"channels": map[string]any{}} },
 		"error count":         func(s, _ map[string]any) { rep(s)["errors"] = []any{map[string]any{"message": "x", "count": -1}} },
+		"error not a kind": func(s, _ map[string]any) {
+			rep(s)["errors"] = []any{map[string]any{"message": "open /srv/Sara/a.mp4 failed", "count": 1}}
+		},
 		"error message empty": func(s, _ map[string]any) { rep(s)["errors"] = []any{map[string]any{"message": "  ", "count": 1}} },
 		"app missing":         func(_, a map[string]any) { delete(a, "app") },
 		"platform bad":        func(_, a map[string]any) { a["platform"] = "iOS 18" },
@@ -161,6 +166,39 @@ func TestParseRejections(t *testing.T) {
 		"error message not str": func(_, a map[string]any) {
 			ev(a, map[string]any{"kind": "error.uncaught", "payload": map[string]any{"error_message": 5}, "ts": "2026-10-26T11:00:00Z"})
 		},
+		"error message not a kind": func(_, a map[string]any) {
+			ev(a, map[string]any{"kind": "error.uncaught", "payload": map[string]any{"error_message": "TypeError: cannot read 'Lecture 1'"}, "ts": "2026-10-26T11:00:00Z"})
+		},
+		"frame not code": func(_, a map[string]any) {
+			ev(a, map[string]any{"kind": "error.uncaught", "payload": map[string]any{"error_message": "Error",
+				"stack_first_5": "at f (https://nas.local/Users/sara/a.js:1:2)"}, "ts": "2026-10-26T11:00:00Z"})
+		},
+		// the hard rule: no identity, address or data, by allow-list at every level
+		"payload field not allowed": func(_, a map[string]any) {
+			ev(a, map[string]any{"kind": "app.open", "payload": map[string]any{"cold_start": true, "title": "secret film"}, "ts": "2026-10-26T11:00:00Z"})
+		},
+		"event field not allowed": func(_, a map[string]any) {
+			ev(a, map[string]any{"kind": "app.open", "payload": map[string]any{}, "ts": "2026-10-26T11:00:00Z", "user": "sara"})
+		},
+		"vital field not allowed": func(_, a map[string]any) {
+			a["vitals"] = []any{map[string]any{"metric": "LCP", "value": 1, "url": "https://nas.local/x"}}
+		},
+		"app user":         func(_, a map[string]any) { a["user"] = "sara" },
+		"app email":        func(_, a map[string]any) { a["email"] = "sara@example.org" },
+		"app ip":           func(_, a map[string]any) { a["ip"] = "192.0.2.1" },
+		"app device name":  func(_, a map[string]any) { a["device_name"] = "Sara's iPhone" },
+		"app server field": func(_, a map[string]any) { a["report"] = map[string]any{} },
+		"server home name": func(s, _ map[string]any) { s["home_name"] = "Sara's NAS" },
+		"server account":   func(s, _ map[string]any) { s["account_id"] = "a1" },
+		"server app field": func(s, _ map[string]any) { s["events"] = []any{} },
+		"report field":     func(s, _ map[string]any) { rep(s)["home_name"] = "Sara's NAS" },
+		"report library":   func(s, _ map[string]any) { rep(s)["library_names"] = []any{"Lectures"} },
+		"report app field": func(s, _ map[string]any) {
+			rep(s)["apps"] = []any{map[string]any{"app": "web", "platform": "web", "people": "1", "requests": "1", "user": "sara"}}
+		},
+		"report error field": func(s, _ map[string]any) {
+			rep(s)["errors"] = []any{map[string]any{"message": "db_timeout", "count": 1, "path": "/srv/x"}}
+		},
 		"vital metric":   func(_, a map[string]any) { a["vitals"] = []any{map[string]any{"metric": "XYZ", "value": 1}} },
 		"vital value":    func(_, a map[string]any) { a["vitals"] = []any{map[string]any{"metric": "LCP", "value": -1}} },
 		"vital no value": func(_, a map[string]any) { a["vitals"] = []any{map[string]any{"metric": "LCP"}} },
@@ -194,7 +232,9 @@ func TestParseRejections(t *testing.T) {
 	if _, err := Parse(envelope(many("vitals", MaxVitals+1, map[string]any{"metric": "LCP", "value": 1})), testNow); err == nil {
 		t.Error("51 vitals accepted")
 	}
-	for _, body := range []string{`{}`, `{"schema":2,"batches":[{}]}`, `{"schema":1,"batches":[]}`, `[`, `{"schema":1,"batches":[5]}`} {
+	for _, body := range []string{`{}`, `{"schema":2,"batches":[{}]}`, `{"schema":1,"batches":[]}`, `[`, `{"schema":1,"batches":[5]}`,
+		`{"schema":1,"batches":[{"type":"forget","install_id":"AppInstall00000001"}],"home":"Sara's NAS"}`,
+		`{"schema":1,"batches":[{"type":"forget","install_id":"AppInstall00000001","user":"sara"}]}`} {
 		if _, err := Parse([]byte(body), testNow); err == nil {
 			t.Errorf("%s accepted", body)
 		}
@@ -208,10 +248,10 @@ func TestParseRejections(t *testing.T) {
 	}
 }
 
-func TestParseDropsUnknownFieldsAndClampsTime(t *testing.T) {
+func TestParseClampsTime(t *testing.T) {
 	a := appBatch()
 	a["events"] = []any{
-		map[string]any{"kind": "app.open", "payload": map[string]any{"cold_start": false, "title": "secret film"}, "ts": "2030-01-01T00:00:00Z"},
+		map[string]any{"kind": "app.open", "payload": map[string]any{"cold_start": false}, "ts": "2030-01-01T00:00:00Z"},
 		map[string]any{"kind": "app.open", "payload": map[string]any{}, "ts": "2020-01-01T00:00:00Z"},
 	}
 	bs, err := Parse(envelope(a), testNow)
@@ -219,9 +259,6 @@ func TestParseDropsUnknownFieldsAndClampsTime(t *testing.T) {
 		t.Fatal(err)
 	}
 	ev := bs[0].App.Events
-	if _, ok := ev[0].Payload["title"]; ok {
-		t.Error("unknown field kept")
-	}
 	if !ev[0].TS.Equal(testNow) {
 		t.Errorf("future ts not clamped: %v", ev[0].TS)
 	}
@@ -356,5 +393,42 @@ func TestHandlerRateLimits(t *testing.T) {
 	}
 	if rec := post(h, envelope(map[string]any{"type": "forget", "install_id": appID}), "198.51.100.9"); rec.Code != 204 {
 		t.Fatalf("forget limited: %d", rec.Code)
+	}
+}
+
+// The hard rule: the ingest keeps no address. The rate limit's key is a keyed
+// hash, never the address; nothing the handler logs or hands the store names
+// the sender's address, whether it came as the connection's or in a header.
+func TestIngestRecordsNoAddress(t *testing.T) {
+	const addr, forwarded = "203.0.113.77", "198.51.100.66"
+	var logs bytes.Buffer
+	st := &fakeStore{}
+	h := newTestHandler(st)
+	h.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	for _, body := range [][]byte{envelope(serverBatch(), appBatch()), []byte(`{"schema":1,"batches":[{"type":"x"}]}`)} {
+		req := httptest.NewRequest(http.MethodPost, "/v1/telemetry", bytes.NewReader(body))
+		req.RemoteAddr = addr + ":5000"
+		req.Header.Set("X-Forwarded-For", forwarded)
+		req.Header.Set("X-Real-IP", forwarded)
+		h.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	if st.calls != 1 {
+		t.Fatalf("%d ingests", st.calls)
+	}
+	stored, _ := json.Marshal(st.batches)
+	for _, a := range []string{addr, forwarded, "203.0.113", "198.51.100"} {
+		if strings.Contains(string(stored), a) || strings.Contains(logs.String(), a) {
+			t.Errorf("the address %s reached the store or the log", a)
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/telemetry", nil)
+	req.RemoteAddr = addr + ":5000"
+	if k := senderKey(req); strings.Contains(k, addr) || strings.Contains(k, "203") {
+		t.Errorf("the limiter's key holds the address: %s", k)
+	}
+	other := httptest.NewRequest(http.MethodPost, "/v1/telemetry", nil)
+	other.RemoteAddr = "203.0.113.78:5000"
+	if senderKey(req) == senderKey(other) {
+		t.Error("two addresses share a limiter key")
 	}
 }

@@ -25,6 +25,7 @@ const (
 	TypeUnknownEventKind = "https://maktaba.dev/problems/unknown-event-kind"
 	TypeUnknownMetric    = "https://maktaba.dev/problems/unknown-metric"
 	TypeTooManyEvents    = "https://maktaba.dev/problems/too-many-events"
+	TypeUnknownField     = "https://maktaba.dev/problems/unknown-field"
 )
 
 const (
@@ -250,7 +251,8 @@ func (h *Handler) PostApp(w http.ResponseWriter, r *http.Request) {
 	if !h.allow(w, r, h.Events, len(b.Events)+len(b.Vitals)) {
 		return
 	}
-	for _, e := range b.Events {
+	checked := make([]map[string]any, len(b.Events))
+	for i, e := range b.Events {
 		if !IsKindAllowed(e.Kind) {
 			httperror.Write(w, r, &httperror.Error{
 				Type: TypeUnknownEventKind, Title: "unknown event kind", Status: http.StatusBadRequest,
@@ -258,6 +260,15 @@ func (h *Handler) PostApp(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		payload, field := CheckFields(e.Kind, e.Payload)
+		if field != "" {
+			httperror.Write(w, r, &httperror.Error{
+				Type: TypeUnknownField, Title: "field not allowed", Status: http.StatusBadRequest,
+				Detail: clip(e.Kind+"."+field, 96) + " is not on the allow-list (or is not a scalar)",
+			})
+			return
+		}
+		checked[i] = payload
 	}
 	for _, m := range b.Vitals {
 		if _, ok := Metrics[m.Metric]; !ok {
@@ -284,8 +295,8 @@ func (h *Handler) PostApp(w http.ResponseWriter, r *http.Request) {
 		AppVersion: version(b.AppVersion, "unknown"), OSVersion: version(b.OSVersion, ""), Locale: locale(b.Locale),
 		Events: make([]EventOut, 0, len(b.Events)), Vitals: make([]MetricOut, 0, len(b.Vitals)),
 	}
-	for _, e := range b.Events {
-		payload, ok := Normalize(e.Kind, e.Payload)
+	for i, e := range b.Events {
+		payload, ok := Normalize(e.Kind, checked[i])
 		if !ok {
 			continue
 		}

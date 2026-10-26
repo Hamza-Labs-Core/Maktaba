@@ -44,7 +44,7 @@ describe("TelemetryPrompt", () => {
     for (const text of [
       "The app's version, the kind of device, its system and language",
       "How often each part of the app is used",
-      "Error reports, with paths, file names and addresses removed",
+      "The kinds of errors that happen (never their messages, paths or file names)",
       "File names, titles, transcripts, searches, who you are, or your IP address",
     ]) {
       expect(screen.getByText(text)).toBeInTheDocument();

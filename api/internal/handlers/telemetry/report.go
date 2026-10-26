@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -125,15 +126,18 @@ func (r *Reporter) Build(ctx context.Context, now time.Time, peek bool) ServerRe
 	return rep
 }
 
-// scrubErrors scrubs each message, merges the ones that became the same, and
-// keeps the most frequent maxReportErrors.
+// scrubErrors keeps the kinds that are event names (anything else is counted
+// as "other"), the most frequent maxReportErrors.
 func scrubErrors(in []ErrorCount) []ErrorCount {
 	merged := map[string]int{}
 	var order []string
 	for _, e := range in {
-		m := strings.TrimSpace(clip(Scrub(e.Message), maxErrorRunes))
-		if m == "" || e.Count <= 0 {
+		if e.Count <= 0 {
 			continue
+		}
+		m := e.Message
+		if !ErrorKindRe.MatchString(m) {
+			m = OtherError
 		}
 		if _, ok := merged[m]; !ok {
 			order = append(order, m)
@@ -144,12 +148,7 @@ func scrubErrors(in []ErrorCount) []ErrorCount {
 	for _, m := range order {
 		out = append(out, ErrorCount{Message: m, Count: merged[m]})
 	}
-	// in was sorted by count; a merge can only raise one, so sort again
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j].Count > out[j-1].Count; j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Count > out[j].Count })
 	if len(out) > maxReportErrors {
 		out = out[:maxReportErrors]
 	}
@@ -195,19 +194,28 @@ func (r *Reporter) apps(ctx context.Context, now time.Time) []AppUse {
 	return out
 }
 
-// features are which parts of Maktaba the home uses, as flags and ranges.
+// FeatureCounts are the report's feature counts (ranges) and what each
+// counts: rows of the home's own tables, never what they hold.
+var FeatureCounts = map[string]string{
+	"channels":         `SELECT count(*) FROM channels`,
+	"collections":      `SELECT count(*) FROM collections`,
+	"transcripts":      `SELECT count(*) FROM transcripts`,
+	"subtitle_files":   `SELECT count(*) FROM subtitle_files`,
+	"access_tokens":    `SELECT count(*) FROM personal_access_tokens`,
+	"paired_devices":   `SELECT count(*) FROM devices`,
+	"library_acl_rows": `SELECT count(*) FROM library_acl`,
+	"extensions":       `SELECT count(*) FROM extensions`,
+}
+
+// FeatureFlags are the report's yes/no features.
+var FeatureFlags = []string{"open_registration", "remote_access"}
+
+// features are which parts of Maktaba the home uses: FeatureCounts as ranges
+// and FeatureFlags as booleans, nothing else (Maktaba Cloud refuses any other
+// name).
 func (r *Reporter) features(ctx context.Context) map[string]any {
 	f := map[string]any{}
-	for name, q := range map[string]string{
-		"channels":         `SELECT count(*) FROM channels`,
-		"collections":      `SELECT count(*) FROM collections`,
-		"transcripts":      `SELECT count(*) FROM transcripts`,
-		"subtitle_files":   `SELECT count(*) FROM subtitle_files`,
-		"access_tokens":    `SELECT count(*) FROM personal_access_tokens`,
-		"paired_devices":   `SELECT count(*) FROM devices`,
-		"library_acl_rows": `SELECT count(*) FROM library_acl`,
-		"extensions":       `SELECT count(*) FROM extensions`,
-	} {
+	for name, q := range FeatureCounts {
 		if v := r.count(ctx, q); v != "" {
 			f[name] = v
 		}

@@ -31,7 +31,7 @@ Changes apply at once and are kept in this browser.
 
 The **Activity tracking** switch and your recent history. See [Your account](/help/account#privacy).
 
-**Usage data: this app** is your own answer, for this app on this device: share anonymous usage data with Maktaba's makers, to help improve Maktaba, or not. It is off until you turn it on (the app asks once). What is shared: the app's version, the kind of device and its language, how often each part of the app is used, and error reports with paths, file names and addresses removed. Never shared: file names, titles, transcripts, searches, who you are, or your IP address. **Delete what this app sent** asks Maktaba to delete it.
+**Usage data: this app** is your own answer, for this app on this device: share anonymous usage data with Maktaba's makers, to help improve Maktaba, or not. It is off until you turn it on (the app asks once). What is shared: the app's version, the kind of device and its language, how often each part of the app is used, and the kinds of errors that happen (never their messages, paths or file names). Never shared: file names, titles, transcripts, searches, who you are, or your IP address. **Delete what this app sent** asks Maktaba to delete it.
 
 Admins also see **Usage data: this server**: the server's own anonymous report, sent to Maktaba once a day while the switch is on (off until an admin turns it on). **See exactly what is sent** shows the report as it would go now. See [Who gets the usage data?](#faq-usage-data).
 

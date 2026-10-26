@@ -54,11 +54,34 @@ server, per app for players and remote and so on". So:
   how often each part of the app is used (`feature.used`); player starts and errors
   (native apps); uncaught errors scrubbed (web); Web Vitals (web, when sent).
 
-### Never sent
+### Never sent: the hard rule
 
-File names, titles, transcripts, searches, user names, IP addresses. Ids are random per
-install (the home's for its report, each app install's for its batches) and linked to no
-account, user or home.
+The owner's words: "nothing about data or ips or identities". Enforced in code and tests
+at both ends, not only written down:
+
+- **No identities.** No user, account, home name, device name, email or cloud account.
+  Only a random install id, made anew when the user resets it (opt-out, "Delete what …
+  sent"), linked to nothing.
+- **No addresses.** Maktaba Cloud's ingest neither stores nor logs the sender's IP
+  address (its access log leaves it out for the ingest; its rate limit keys on a keyed
+  hash of it, never the address); the home's forwarder adds none (no forwarding header,
+  no credential).
+- **No data.** Nothing about the library's content or anyone's data: no titles, file
+  names, paths, transcripts, searches, channel or library names. Only ranges, counts,
+  flags from fixed lists, and error kinds (a server error's event name, an app error's
+  class, and frames of the app's own code), never an error's message.
+- **Allow-lists, not filters.** Every field of every batch, report, event and payload is
+  on a list at the home (`POST /api/telemetry/app` answers 400 `unknown-field`) and again
+  at the cloud (the envelope is refused whole); a field nobody allowed is an error, never
+  a silent drop.
+
+Tests: the home's `pipe_test.go` (unknown fields and identity-shaped fields refused),
+`sender_test.go` `TestNothingButTheAllowList` (the report's exact fields; no address or
+credential header on the request), `telemetry_pg_test.go` (a user's name and email, the
+home's name, a library's name and root, a video's title and a channel's name never reach
+the report), `scrub_test.go` (error kinds, code frames); the cloud's `telemetry_test.go`
+(`TestParseRejections`, `TestIngestRecordsNoAddress`) and `TestTelemetryOnTheRealRouter`
+(no stored row and no log line holds the sender's address).
 
 ## TC
 

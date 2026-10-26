@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -101,7 +102,7 @@ func TestSenderDailyReport(t *testing.T) {
 	now := time.Date(2026, 10, 26, 9, 0, 0, 0, time.UTC)
 	s, _, state := newSender(t, c.serve(t).URL, &now)
 	state.sharing = true
-	s.Reporter.Errors.add("scan_failed: open /srv/a/b.mp4: denied")
+	s.Reporter.Errors.add("scan_failed")
 	s.Tick(context.Background())
 	now = now.Add(3 * time.Hour)
 	s.Tick(context.Background())
@@ -114,8 +115,8 @@ func TestSenderDailyReport(t *testing.T) {
 		t.Fatalf("report %v", rep)
 	}
 	errs := rep["errors"].([]any)
-	if msg := errs[0].(map[string]any)["message"]; msg != "scan_failed: open <path>/<file>.mp4: denied" {
-		t.Fatalf("error not scrubbed: %v", msg)
+	if msg := errs[0].(map[string]any)["message"]; msg != "scan_failed" {
+		t.Fatalf("error kind: %v", msg)
 	}
 	now = now.Add(24 * time.Hour)
 	s.Tick(context.Background())
@@ -215,4 +216,89 @@ func TestFit(t *testing.T) {
 	if n := len(fit([]Row{{Body: json.RawMessage(`{}`)}, {Body: json.RawMessage(`{}`)}})); n != 2 {
 		t.Fatalf("fit kept %d small rows", n)
 	}
+}
+
+// The hard rule, in what leaves the home: a report holds exactly the allowed
+// fields (no name, no address, no content), and a request to Maktaba Cloud
+// carries no address, credential or identity of anyone: not the home's, not
+// the app's user's.
+func TestNothingButTheAllowList(t *testing.T) {
+	var headers http.Header
+	c := &cloud{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers = r.Header.Clone()
+		c.serve(t).Config.Handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	now := time.Date(2026, 10, 26, 9, 0, 0, 0, time.UTC)
+	s, store, state := newSender(t, srv.URL, &now)
+	state.sharing = true
+	s.Reporter.RemoteAccess = func() bool { return true }
+	_ = store.Add(context.Background(), KindApp, installID, map[string]string{"type": "app", "install_id": installID})
+	s.Tick(context.Background())
+
+	for _, h := range []string{"X-Forwarded-For", "X-Real-Ip", "Forwarded", "True-Client-Ip", "Cf-Connecting-Ip",
+		"Authorization", "Cookie", "X-Maktaba-Client", "X-Maktaba-Home"} {
+		if v := headers.Get(h); v != "" {
+			t.Errorf("the request to Maktaba Cloud carries %s: %q", h, v)
+		}
+	}
+	got := c.batches()
+	if len(got) != 2 {
+		t.Fatalf("sent %v", got)
+	}
+	var report map[string]any
+	for _, b := range got {
+		if b["type"] == "server" {
+			if keys := keysOf(b); keys != "day,install_id,report,type" {
+				t.Errorf("server batch fields %s", keys)
+			}
+			report = b["report"].(map[string]any)
+		}
+	}
+	if keys := keysOf(report); keys != "apps,arch,errors,features,install_kind,libraries,library_size,machines,os,users,version" {
+		t.Errorf("report fields %s", keys)
+	}
+	allowed := map[string]bool{}
+	for k := range FeatureCounts {
+		allowed[k] = true
+	}
+	for _, k := range FeatureFlags {
+		allowed[k] = true
+	}
+	for k, v := range report["features"].(map[string]any) {
+		if !allowed[k] {
+			t.Errorf("feature %s is not on the allow-list", k)
+		}
+		if _, isBool := v.(bool); !isBool && !isRange(v) {
+			t.Errorf("feature %s = %v: neither a flag nor a range", k, v)
+		}
+	}
+	for _, k := range []string{"library_size", "libraries", "users", "machines"} {
+		if !isRange(report[k]) {
+			t.Errorf("%s = %v is not a range", k, report[k])
+		}
+	}
+}
+
+func keysOf(m map[string]any) string {
+	var keys []string
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
+}
+
+func isRange(v any) bool {
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	for _, r := range Ranges {
+		if s == r {
+			return true
+		}
+	}
+	return false
 }

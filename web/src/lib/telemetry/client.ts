@@ -8,8 +8,8 @@
 //
 //   - app.open: once a launch
 //   - feature.used: how often each part of the app was opened (a count per area)
-//   - error.uncaught: an error's message and first five frames, without paths,
-//     addresses or query strings
+//   - error.uncaught: an error's kind (TypeError), never its message, and its
+//     first frames in the app's own code
 //
 // The app, its version, platform and kind of device are the X-Maktaba-Client
 // header's (Epic 44); the language is the page's. Never a file name, a title, a
@@ -27,7 +27,7 @@ import {
   writeConsent,
 } from "./consent";
 import { TelemetryQueue, type PayloadValue, type TelemetryEvent } from "./queue";
-import { firstFrames, routeFeature, sanitizeMessage } from "./sanitize";
+import { firstFrames, routeFeature } from "./sanitize";
 
 /** the event kinds the home allows (story 16.7's allow-list), with their fields */
 export const Events = {
@@ -135,8 +135,10 @@ export function reportError(err: unknown): void {
   errorsSent++;
   const e =
     err instanceof Error ? err : new Error(typeof err === "string" ? err : "non-error thrown");
+  // the error's kind only, never its message (which could name a title or a
+  // file); the home keeps of the frames only the app's own code
   track("ERROR_UNCAUGHT", {
-    error_message: sanitizeMessage(`${e.name}: ${e.message}`),
+    error_message: /^[A-Za-z_$][\w$.]{0,63}$/.test(e.name) ? e.name : "Error",
     stack_first_5: firstFrames(e.stack),
   });
 }

@@ -57,8 +57,9 @@ func TestRange(t *testing.T) {
 	}
 }
 
-// Error-level records are counted by their message and "event" attribute only
-// (never their other attributes); lower levels are not; every record still
+// Error-level records are counted by their "event" attribute alone (never their
+// message or other attributes, where a path or a title could be); one without
+// a usable event is "other"; lower levels are not counted; every record still
 // reaches the wrapped handler.
 func TestErrorCounts(t *testing.T) {
 	var buf strings.Builder
@@ -67,11 +68,13 @@ func TestErrorCounts(t *testing.T) {
 	log.Error("scan failed", "path", "/srv/secret/x.mp4", "event", "scan_failed")
 	log.Error("scan failed", "path", "/srv/other.mp4", "event", "scan_failed")
 	log.With("event", "db_down").Error("query failed")
+	log.Error("could not open Sheikh Name's lecture")
+	log.Error("x", "event", "Lecture by Sara")
 	log.Warn("slow")
 	log.Info("hello")
 	got := c.Take()
-	want := []ErrorCount{{"scan_failed: scan failed", 2}, {"db_down: query failed", 1}}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	want := []ErrorCount{{"other", 2}, {"scan_failed", 2}, {"db_down", 1}}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Fatalf("counts = %+v, want %+v", got, want)
 	}
 	if len(c.Take()) != 0 {
@@ -86,7 +89,7 @@ func TestErrorCounts(t *testing.T) {
 	}
 	// bounded: past maxErrorKinds, a new kind counts as "other"
 	for i := 0; i < maxErrorKinds+10; i++ {
-		c.add(strings.Repeat("x", i+1))
+		c.add("k" + strings.Repeat("x", i%60) + string(rune('a'+i/60)))
 	}
 	if n := len(c.Take()); n != maxErrorKinds+1 {
 		t.Fatalf("%d kinds, want %d", n, maxErrorKinds+1)
@@ -95,12 +98,12 @@ func TestErrorCounts(t *testing.T) {
 
 func TestScrubErrors(t *testing.T) {
 	got := scrubErrors([]ErrorCount{
-		{"open /srv/a/1.mp4: denied", 3},
-		{"dial tcp 10.0.0.1:5432: refused", 2},
-		{"open /srv/b/2.mp4: denied", 2},
+		{"scan_failed", 3},
+		{"open /srv/a/1.mp4: denied", 2},
+		{"Sara's NAS down", 4},
+		{"db_down", 0},
 	})
-	if len(got) != 2 || got[0] != (ErrorCount{"open <path>/<file>.mp4: denied", 5}) ||
-		got[1] != (ErrorCount{"dial tcp <address>: refused", 2}) {
+	if len(got) != 2 || got[0] != (ErrorCount{"other", 6}) || got[1] != (ErrorCount{"scan_failed", 3}) {
 		t.Fatalf("scrubErrors = %+v", got)
 	}
 }
@@ -122,7 +125,9 @@ func TestNormalize(t *testing.T) {
 		{"player.start", map[string]any{"source": "direct", "codec": "h264 (avc1)"}, map[string]any{"source": "direct", "codec": "h264avc1"}, true},
 		{"player.error", map[string]any{"error_kind": "http_404", "duration_ms": 1e12}, map[string]any{"error_kind": "http_404", "duration_ms": float64(maxDuration)}, true},
 		{"app.open", map[string]any{"cold_start": "yes"}, map[string]any{}, true},
-		{"error.uncaught", map[string]any{"error_message": "  "}, nil, false},
+		{"error.uncaught", map[string]any{"error_message": "  "}, map[string]any{"error_message": "Error"}, true},
+		{"error.uncaught", map[string]any{"error_message": "TypeError: cannot read 'أسماء الله' of undefined"}, map[string]any{"error_message": "TypeError"}, true},
+		{"error.uncaught", map[string]any{"error_message": "Uncaught ChunkLoadError: /Users/sara/x.js"}, map[string]any{"error_message": "ChunkLoadError"}, true},
 	} {
 		got, ok := Normalize(c.kind, c.in)
 		if ok != c.ok || len(got) != len(c.want) {
@@ -140,5 +145,35 @@ func TestNormalize(t *testing.T) {
 	}
 	if locale("ar") != "ar" || locale("en-US") != "en-US" || locale("123") != "" {
 		t.Error("locale")
+	}
+}
+
+// An error's frames keep the app's own code only: a function and a source
+// file's name, never its folder, origin, query, or a file that is not code.
+func TestCodeFrames(t *testing.T) {
+	in := strings.Join([]string{
+		"TypeError: boom",
+		"    at renderRow (http://192.168.1.5:8088/assets/index-3f2a.js:12:34)",
+		"    at http://nas.local:8088/assets/vendor.js?v=2:1:2",
+		"    at async loadLecture (file:///Users/sara/Videos/درس.mp4:1:1)",
+		"go@https://home.example.com/assets/app.mjs:9:8",
+		"    at Object.<anonymous> (/Users/sara/Library/Maktaba/server.js:5:6)",
+		"not a frame",
+		"    at a (x.js:1:1)", "    at b (x.js:1:1)", "    at c (x.js:1:1)",
+	}, "\n")
+	want := strings.Join([]string{
+		"renderRow (index-3f2a.js:12:34)",
+		"<anonymous> (vendor.js:1:2)",
+		"go (app.mjs:9:8)",
+		"Object.<anonymous> (server.js:5:6)",
+		"a (x.js:1:1)",
+	}, "\n")
+	if got := CodeFrames(in); got != want {
+		t.Fatalf("CodeFrames\n got %q\nwant %q", got, want)
+	}
+	for _, bad := range []string{"sara", "192.168", "nas.local", "درس", "home.example", "Users", "v=2"} {
+		if strings.Contains(CodeFrames(in), bad) {
+			t.Errorf("frames carry %q", bad)
+		}
 	}
 }

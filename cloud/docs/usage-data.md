@@ -11,6 +11,15 @@ Code: `internal/telemetry` (validation, scrubbing, store, retention,
 aggregates), `internal/handlers/admin/usage.go` (operator view),
 migration `00150001_usage_telemetry.sql`.
 
+## The hard rule
+
+"Nothing about data or IPs or identities." The ingest refuses any field not on its
+allow-lists (per batch type, report, app line, error line, event, payload, vital), any
+feature name not on its list, any server error that is not an event name, any app error
+that is not a class name, and any frame that is not `function (file.js:line:col)`. The
+sender's address is never stored or logged; the per-sender rate limit keys on an HMAC of
+it under a key made at start and kept nowhere.
+
 ## What is anonymous about it
 
 - Every row is keyed by an **install id**: 16–32 random letters/digits

@@ -3,9 +3,16 @@ package telemetry
 import (
 	"context"
 	"log/slog"
+	"regexp"
 	"sort"
 	"sync"
 )
+
+// ErrorKindRe is what a server error's kind may be: an event name.
+var ErrorKindRe = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
+
+// OtherError is the kind of an error logged without a usable event name.
+const OtherError = "other"
 
 // maxErrorKinds bounds the distinct errors held between two reports; past it,
 // a new kind is counted as "other".
@@ -14,13 +21,11 @@ const maxErrorKinds = 200
 // maxReportErrors is how many error kinds a report carries (the most frequent).
 const maxReportErrors = 50
 
-// maxErrorRunes caps an error's message in a report.
-const maxErrorRunes = 300
-
 // ErrorCounts counts the server's errors by kind between two reports: every
-// record logged at Error level, by its message and its "event" attribute (the
-// codebase's stable name for a log line), never its other attributes (where a
-// path, an id or a name would be). The report scrubs the message again.
+// record logged at Error level, by its "event" attribute alone (the codebase's
+// stable, lowercase name for a log line: scan_failed, telemetry_prune_failed).
+// Never its message or other attributes, where a path, a title or a name could
+// be; a record without a usable event counts as "other".
 type ErrorCounts struct {
 	mu     sync.Mutex
 	counts map[string]int
@@ -38,8 +43,11 @@ func (c *ErrorCounts) add(kind string) {
 	if c.counts == nil {
 		c.counts = map[string]int{}
 	}
+	if !ErrorKindRe.MatchString(kind) {
+		kind = OtherError
+	}
 	if _, ok := c.counts[kind]; !ok && len(c.counts) >= maxErrorKinds {
-		kind = "other"
+		kind = OtherError
 	}
 	c.counts[kind]++
 }
@@ -64,6 +72,7 @@ func (c *ErrorCounts) Take() []ErrorCount {
 }
 
 // Put adds counts back (a report that could not be built keeps them).
+// Only kinds Take gave are put back.
 func (c *ErrorCounts) Put(list []ErrorCount) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -102,11 +111,7 @@ func (h *countingHandler) Handle(ctx context.Context, r slog.Record) error {
 			}
 			return true
 		})
-		kind := r.Message
-		if event != "" {
-			kind = event + ": " + kind
-		}
-		h.counts.add(kind)
+		h.counts.add(event)
 	}
 	if !h.next.Enabled(ctx, r.Level) {
 		return nil

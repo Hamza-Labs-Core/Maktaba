@@ -2,6 +2,8 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,12 +94,43 @@ func TestOnPostgres(t *testing.T) {
 		t.Fatalf("last day %q, %v", st.LastReportDay(ctx), err)
 	}
 
+	// the hard rule: what names someone or something on this home never leaves
+	// it, however it is spelled in the database
+	secrets := []string{"fatima.sara", "fatima@example.org", "Sara's NAS", "Secret Lectures", "/srv/secret",
+		"درس سري", "Quran Channel"}
+	for _, q := range []string{
+		`INSERT INTO users (id, username, pw_hash, email) VALUES (gen_random_uuid(), 'fatima.sara', 'x', 'fatima@example.org')`,
+		`INSERT INTO app_settings (key, value) VALUES ('home.name', '"Sara''s NAS"')`,
+		`INSERT INTO libraries (name, roots) VALUES ('Secret Lectures', ARRAY['/srv/secret'])`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%v: %s", err, q)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO videos (library_id, path, filename, title, content_hash, size_bytes, mtime)
+		SELECT id, '/srv/secret/درس سري.mp4', 'درس سري.mp4', 'درس سري', repeat('a', 64), 1, now() FROM libraries LIMIT 1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO channels (name, number, slug, mode) VALUES ('Quran Channel', 7, 'quran-channel', 'shuffle')`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec(`INSERT INTO api_usage_daily (day, client_app, platform, requests, errors)
 		VALUES (current_date, 'web', 'macos', 1500, 3), (current_date - 30, 'tv', 'tvos', 9, 0)`); err != nil {
 		t.Fatal(err)
 	}
-	rep := (&Reporter{DB: db, Version: "1.2.3", Errors: &ErrorCounts{}}).Build(ctx, now, false)
-	if rep.LibrarySize != "0" || rep.Users == "" || rep.Libraries != "0" || rep.Machines == "" ||
+	errs := &ErrorCounts{}
+	errs.add("Secret Lectures failed")
+	rep := (&Reporter{DB: db, Version: "1.2.3", Errors: errs}).Build(ctx, now, false)
+	raw, _ := json.Marshal(rep)
+	for _, secret := range secrets {
+		if strings.Contains(string(raw), secret) {
+			t.Errorf("the report carries %q: %s", secret, raw)
+		}
+	}
+	if rep.LibrarySize != "1" || rep.Features["channels"] != "1" || len(rep.Errors) != 1 || rep.Errors[0].Message != OtherError {
+		t.Errorf("the counts: %+v", rep)
+	}
+	if rep.Users == "" || rep.Libraries != "1" || rep.Machines == "" ||
 		len(rep.Apps) != 1 || rep.Apps[0] != (AppUse{App: "web", Platform: "macos", People: "0", Requests: "1k-10k", Errors: "2-5"}) {
 		t.Fatalf("report = %+v", rep)
 	}
