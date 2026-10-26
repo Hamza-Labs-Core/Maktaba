@@ -13,8 +13,8 @@ import (
 )
 
 // Epic 16 story 16.2: on Free the dashboard covers 30 days; longer
-// ranges, the per-user breakdown and export are refused with a plain
-// reason, before any query runs (no DB here).
+// ranges (a custom one too), the per-person breakdown, the apps and export
+// are refused with a plain reason, before any query runs (no DB here).
 func TestAnalytics_FreeTierGate(t *testing.T) {
 	h := &Handler{Advanced: func() (bool, string) { return false, "free" }}
 	r := chi.NewRouter()
@@ -22,7 +22,8 @@ func TestAnalytics_FreeTierGate(t *testing.T) {
 	ctx := principal.WithPrincipal(context.Background(), &principal.Principal{UserID: "a", IsAdmin: true})
 	for _, path := range []string{
 		"/api/admin/analytics/summary?range=90d", "/api/admin/analytics/top-videos?range=1y",
-		"/api/admin/analytics/activity?range=all", "/api/admin/analytics/users", "/api/admin/analytics/export",
+		"/api/admin/analytics/activity?range=all", "/api/admin/analytics/people", "/api/admin/analytics/apps",
+		"/api/admin/analytics/export", "/api/admin/analytics/now?from=2026-01-01&to=2026-06-01",
 	} {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil).WithContext(ctx))
@@ -33,7 +34,7 @@ func TestAnalytics_FreeTierGate(t *testing.T) {
 	}
 	// a viewer is refused as before (the role gate runs first)
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/admin/analytics/users", nil).
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/admin/analytics/people", nil).
 		WithContext(principal.WithPrincipal(context.Background(), &principal.Principal{UserID: "v"})))
 	if rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), "license-required") {
 		t.Errorf("viewer: %d %s", rec.Code, rec.Body.String())

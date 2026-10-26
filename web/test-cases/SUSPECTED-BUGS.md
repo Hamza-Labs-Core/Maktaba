@@ -23,7 +23,7 @@ named with its case id.
   keys are not mirrored in RTL (SRL-29, VID-25).
 - `components/EnrichmentPanel.tsx`: write actions shown to non-admins (VID-08), the queue is
   not refetched after accept or dismiss (ENR-12), Enter in its search box does nothing (VID-23).
-- `components/charts`: `BarList` turns a negative value into a negative width (ANL-22).
+- `components/charts`: `BarList` turns a negative value into a negative width (ANL-23).
 - Queue pages show write controls to non-admins; the server refuses them (QOV-15, QDT-12,
   QIH-12). Needs a UX decision.
 

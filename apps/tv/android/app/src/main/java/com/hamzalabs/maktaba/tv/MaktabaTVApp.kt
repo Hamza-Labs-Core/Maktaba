@@ -1,6 +1,7 @@
 package com.hamzalabs.maktaba.tv
 
 import android.app.Application
+import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.FoundHome
 import com.hamzalabs.maktaba.core.session.HomeDiscovery
@@ -22,6 +23,11 @@ import kotlinx.coroutines.flow.stateIn
  * Keystore key ([keystoreTokens]).
  */
 class MaktabaTVApp : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        ClientHeader.init(this) // X-Maktaba-Client names this app (Epic 44)
+    }
+
     val session: AppSession by lazy { AppSession(PreferencesStore(this, "session"), MainScope(), ::tokens) }
 
     /** Work that outlives a screen (a stopped video's last position, its session's close). */

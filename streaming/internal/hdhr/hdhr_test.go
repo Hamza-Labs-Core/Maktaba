@@ -185,6 +185,46 @@ func TestHandler_AutoStreamsAndLeases(t *testing.T) {
 	}
 }
 
+// fakeViewings records the tuner viewings opened and ended.
+type fakeViewings struct {
+	opened []string
+	open   int
+}
+
+func (f *fakeViewings) OpenTuner(ch uuid.UUID, addr string) func() {
+	f.opened = append(f.opened, ch.String()+"@"+addr)
+	f.open++
+	return func() { f.open-- }
+}
+
+// A tuner stream is a viewing from its start to its end, by the client's address
+// (no port); a refused one (all tuners in use) is none.
+func TestHandler_AutoRecordsTheViewing(t *testing.T) {
+	chans := sampleChannels()
+	v := &fakeViewings{}
+	h := New(&fakeRepo{dev: enabledDevice(), channels: chans}, &fakeStreamer{})
+	h.Viewings = v
+	req := httptest.NewRequest(http.MethodGet, "/auto/v6", nil)
+	req.RemoteAddr = "192.168.1.20:41234"
+	rec := httptest.NewRecorder()
+	mux(h).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("auto code = %d", rec.Code)
+	}
+	if len(v.opened) != 1 || v.opened[0] != chans[1].ID.String()+"@192.168.1.20" || v.open != 0 {
+		t.Fatalf("viewings %v, open %d", v.opened, v.open)
+	}
+	h.leases.setCap(1)
+	l, _ := h.leases.acquire()
+	defer l.Release()
+	h.Repo = &fakeRepo{dev: Device{TunerCount: 1, Enabled: true}, channels: chans}
+	rec = httptest.NewRecorder()
+	mux(h).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/auto/v6", nil))
+	if rec.Code != http.StatusServiceUnavailable || len(v.opened) != 1 {
+		t.Fatalf("busy: %d, viewings %v", rec.Code, v.opened)
+	}
+}
+
 func TestHandler_AutoUnknownChannel404(t *testing.T) {
 	h := New(&fakeRepo{dev: enabledDevice(), channels: sampleChannels()}, &fakeStreamer{})
 	req := httptest.NewRequest(http.MethodGet, "/auto/v99", nil)

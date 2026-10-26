@@ -69,7 +69,7 @@ type Driver struct {
 	mu        sync.Mutex
 	wake      chan struct{}
 	stepMu    sync.Mutex
-	pending   map[string]time.Time // catch-ups recently tried, by node
+	pending   map[string]time.Time // catch-ups recently tried, by node and release (pendingKey)
 	rechecked map[string]time.Time // releases last re-read from GitHub, by version
 	lateLook  time.Time            // when reconcileHome last asked the home
 
@@ -212,7 +212,40 @@ func (d *Driver) Step(ctx context.Context) error {
 		d.reconcileHome(ctx)
 		return d.catchUp(ctx)
 	}
+	if run.Step == StepWaitingClick {
+		// the home runs a newer release than the run that waits for clicks (installed by
+		// hand, or committed by a run since): the run is superseded and the machines are
+		// caught up to the home's release instead. A scheduler's newer release does it
+		// when one is due; a home already on it would otherwise leave the run, and its
+		// order of an older release, waiting for good
+		if cur := d.homeRelease(ctx); cur != "" && CompareVersions(cur, run.Version) > 0 {
+			if done, err := d.supersede(ctx, cur); err != nil || done {
+				if err != nil {
+					return err
+				}
+				d.reconcileHome(ctx)
+				return d.catchUp(ctx)
+			}
+		}
+	}
 	return d.advance(ctx, *run)
+}
+
+// homeRelease is the release the home runs when the catalog verified it (and it is not
+// withdrawn); "" otherwise.
+func (d *Driver) homeRelease(ctx context.Context) string {
+	if d.Svc == nil {
+		return ""
+	}
+	cur := NormalizeVersion(d.Svc.Current)
+	if cur == "" || !ValidVersion(cur) {
+		return ""
+	}
+	rel, err := d.Store.Get(ctx, cur)
+	if err != nil || rel.VerifyState != VerifyVerified || rel.WithdrawnAt != nil {
+		return ""
+	}
+	return cur
 }
 
 // reconcileHome takes up a home that committed after its run gave up on it (home_timeout:
@@ -1879,6 +1912,11 @@ func (d *Driver) Supersedable(ctx context.Context, version string) bool {
 func (d *Driver) Supersede(ctx context.Context, version string) (bool, error) {
 	d.stepMu.Lock()
 	defer d.stepMu.Unlock()
+	return d.supersede(ctx, version)
+}
+
+// supersede is Supersede under stepMu.
+func (d *Driver) supersede(ctx context.Context, version string) (bool, error) {
 	run, err := d.Store.ActiveRun(ctx)
 	if err != nil || run == nil {
 		return false, err
@@ -1990,7 +2028,7 @@ func (d *Driver) catchUp(ctx context.Context) error {
 			continue
 		}
 		d.mu.Lock()
-		last, tried := d.pending[n.id]
+		last, tried := d.pending[pendingKey(n.id, wm)]
 		d.mu.Unlock()
 		if tried && d.now().Sub(last) < catchUpRetry {
 			continue
@@ -2002,7 +2040,7 @@ func (d *Driver) catchUp(ctx context.Context) error {
 		// inside the window, as their conversion restarts them
 		for _, id := range d.workerCatchUps(ctx, nodes, agents, wm) {
 			d.mu.Lock()
-			last, tried := d.pending[id]
+			last, tried := d.pending[pendingKey(id, wm)]
 			d.mu.Unlock()
 			if !tried || d.now().Sub(last) >= catchUpRetry {
 				ids = append(ids, id)
@@ -2018,7 +2056,7 @@ func (d *Driver) catchUp(ctx context.Context) error {
 		d.pending = map[string]time.Time{}
 	}
 	for _, id := range ids {
-		d.pending[id] = d.now()
+		d.pending[pendingKey(id, wm)] = d.now()
 	}
 	d.mu.Unlock()
 	run, err := d.Store.InsertRunWith(ctx, wm, wm, TriggerCatchUp, "", RunDetail{NoHome: true, Targets: ids})
@@ -2031,6 +2069,10 @@ func (d *Driver) catchUp(ctx context.Context) error {
 	d.audit(ctx, run, "run_planned", map[string]any{"trigger": TriggerCatchUp, "targets": ids})
 	return nil
 }
+
+// pendingKey keys a catch-up tried for a machine to a release: a newer release is not
+// held by the retry pause of an older one's.
+func pendingKey(node, release string) string { return node + "@" + release }
 
 // laterBuild reports whether a machine on installed runs a later build than version, the
 // run's release: version is newer but signed before it on its major.minor line

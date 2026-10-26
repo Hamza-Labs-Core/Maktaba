@@ -1,11 +1,8 @@
 package watch
 
 import (
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
-	"net"
 	"net/http"
 	"time"
 
@@ -13,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/client"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
@@ -106,15 +104,20 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// the app from X-Maktaba-Client (Epic 44); the device and platform the
+	// body names, else the header's
+	app := client.From(r.Context())
 	row := startRow{
-		id:         uuid.NewString(),
-		userID:     p.UserID,
-		videoID:    req.VideoID,
-		deviceType: truncate(req.DeviceType, 32),
-		platform:   truncate(req.Platform, 32),
-		quality:    truncate(req.Quality, 32),
-		ipHash:     h.hashIP(r),
-		now:        h.now(),
+		id:            uuid.NewString(),
+		userID:        p.UserID,
+		videoID:       req.VideoID,
+		deviceType:    orClient(truncate(req.DeviceType, 32), app.Device),
+		platform:      orClient(truncate(req.Platform, 32), app.Platform),
+		quality:       truncate(req.Quality, 32),
+		ipHash:        HashIP(h.IPSalt, r),
+		clientApp:     app.App,
+		clientVersion: app.Version,
+		now:           h.now(),
 	}
 	if err := h.repo().insertStart(r.Context(), row); err != nil {
 		httperror.Write(w, r, httperror.Internal("open session").Wrap(err))
@@ -233,18 +236,12 @@ func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// hashIP returns a salted, truncated SHA-256 of the client IP (D4). The
-// router runs chi's RealIP, so RemoteAddr is the resolved source.
-func (h *Handler) hashIP(r *http.Request) string {
-	ip := r.RemoteAddr
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		ip = host
+// orClient is the body's hint, or when it gives none the header's.
+func orClient(hint, fromHeader string) string {
+	if hint != "" {
+		return hint
 	}
-	if ip == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(h.IPSalt + "|" + ip))
-	return hex.EncodeToString(sum[:])[:16]
+	return fromHeader
 }
 
 func truncate(s string, n int) string {

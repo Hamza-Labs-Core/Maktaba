@@ -681,8 +681,11 @@ type ticket struct {
 	used     bool
 	// deliver hands the stream to the puller that asked for it (stream.offer)
 	deliver chan *streamConn
-	// body is the rest of a large answer (svc_body), taken closed when the stream opens
+	// body is the rest of a large answer (svc_body), taken closed when the stream opens;
+	// cut closes when its request is cancelled before the answer ended: the stream is cut
+	// at once, even while a write to a machine that stopped reading is blocked
 	body  io.Reader
+	cut   <-chan struct{}
 	taken chan struct{}
 }
 
@@ -693,9 +696,9 @@ func newID() string {
 }
 
 // issueBody makes the svc_body ticket of a large answer's rest.
-func (s *Server) issueBody(sess *ctrl, body io.Reader) (string, chan struct{}, string) {
+func (s *Server) issueBody(sess *ctrl, cut <-chan struct{}, body io.Reader) (string, chan struct{}, string) {
 	taken := make(chan struct{})
-	tok, reason := s.mint(sess, &ticket{purpose: PurposeSvcBody, body: body, taken: taken})
+	tok, reason := s.mint(sess, &ticket{purpose: PurposeSvcBody, body: body, cut: cut, taken: taken})
 	return tok, taken, reason
 }
 
@@ -881,6 +884,18 @@ func (s *Server) ServeStream(w http.ResponseWriter, r *http.Request) {
 			sc.closeNow(websocket.StatusNormalClosure, "nobody waits")
 		}
 	case t.body != nil:
+		if t.cut != nil {
+			// the request cancelled: the stream ends now, not when a blocked write returns
+			copied := make(chan struct{})
+			defer close(copied)
+			go func() {
+				select {
+				case <-t.cut:
+					sc.closeNow(websocket.StatusInternalError, "the answer was cut")
+				case <-copied:
+				}
+			}()
+		}
 		if _, err := io.Copy(sc, t.body); err != nil {
 			// the answer was cut (its request ended, or the machine went): the stream ends as
 			// an error, never as the body's end a reader would take for a complete answer
