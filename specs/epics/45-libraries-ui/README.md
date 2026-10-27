@@ -196,3 +196,158 @@ Help: `library.md` grows Home, Libraries, the library page and pinning; new topi
   needed", and the restart brings the server back with the new map; a bad value is refused with the
   field named.
 - vitest for each new page; Go tests for each new route; the help coverage test passes.
+
+## Phase 2: Plex and Jellyfin parity (review of 2026-10-27)
+
+Phase 1 (stories 45.1 to 45.7, PR 345) gave Maktaba a Plex-like shell: Home, library cards with pins,
+a library page with rows and a Browse grid, management and storage settings. The owner asked for more
+of what Plex and Jellyfin do. This review compares their library experience with Maktaba as the code
+stands (checked in the code, not from memory) and says what fits a library of lectures, lessons and
+sheikhs.
+
+### Review
+
+Have = done; Partly = some of it exists; Missing = nothing yet. Fit: how much it matters for a lecture
+library (long talks, numbered lessons, one channel per sheikh, Arabic and English, transcripts).
+
+| Feature (Plex / Jellyfin) | Maktaba before Phase 2 | Where | Fit |
+|---|---|---|---|
+| Continue watching | Have | `GET /api/home`, hub `continue_watching` (playback_state, 30 s to 95 %) | High |
+| On deck: the next lesson of each series one is in the middle of | Missing | Series detail has a "Continue" button for one series; no row across series | High: lessons are watched in order |
+| Up next at the end of a video, autoplay | Missing | The player stops at the end | High |
+| Recently added | Have | Home and hub rows | High |
+| Recently added grouped by series | Missing | A row of 20 lessons of one series floods it | Medium |
+| Recently watched, watch history | Have | Rows; `/account/history` (`/api/me/history`) | High |
+| Most watched | Have | Hub row (90 days) | Medium |
+| Mark watched / unwatched, one video | Missing | No route; only the player writes `playback_state` | High |
+| Mark watched / unwatched, many at once | Missing | | High: a sheikh's old lessons heard elsewhere |
+| Watched and progress badges on the grid | Partly | Rows show progress; the Browse grid shows nothing | High |
+| Collections | Partly | `/api/collections` (per library, smart ones too); no web page (a Phase 1 non-goal) | Medium |
+| Playlists (per user, ordered, across libraries) | Missing | | High: "my Ramadan list", a study plan |
+| Favorites / per-user ratings | Missing | | Favorites High; star ratings Low |
+| Filter by genre / tag | Missing in the grid | `tags`, `video_tags`, `GET /api/tags` exist | Medium |
+| Filter by speaker / sheikh | Missing in the grid | `speakers` (diarization names, renamed by admins); a library is usually one sheikh | Medium |
+| Filter by language | Partly | `?language=`; the chips list only the languages of the loaded page | High (Arabic / English) |
+| Filter by duration, resolution, added date | Missing | `duration_sec`, `media_info.width/height` exist | Low to Medium |
+| Filter unwatched / in progress / watched | Have | `?watched=` | High |
+| Sort options | Have | updated, added, published, title, duration, plays; asc / desc | High |
+| A to Z jump bar | Missing | | Medium (47k videos in one library) |
+| Poster / list views | Have | Grid / list toggle (kept per browser) | Medium |
+| Search within a library | Partly | `GET /api/videos?q=` (title, description); no box on the page. Global search (`/search`, transcripts) exists | High |
+| Rich detail page: chapters, transcript, people, related | Have | `/videos/:id` tabs (Chapters, Transcript), the context card (cast, related, more like this) | High |
+| Detail page: watched, favorite, add to a list, series position, next / previous | Missing | | High |
+| Series with seasons, episodes and progress | Have | `/series/:id` (Epic 26) | High |
+| Hero / featured | Missing | | Low (no artwork beyond posters) |
+| Trailers / hover previews | Missing | | Low (lectures have no trailers) |
+| Scrub thumbnails (trickplay) | Missing | Posters and chapters exist; no sprite sheet | Medium |
+| Resume points | Have | The player resumes from `playback_state` | High |
+| Intros / chapters | Partly | Chapter ticks in the player and the Chapters tab; no skip intro | Chapters High; intros Low |
+| Play all / Shuffle / Play from here | Missing | | High (a series, a playlist, a filtered grid) |
+| Multi-select actions | Missing | | High (bulk watched, favorites, playlists) |
+| Offline / download | Out of scope | The apps' (devices epic) | n/a |
+| Sharing libraries with users | Have | Library ACLs (`/admin/library-acl`) | High |
+| Managed users / profiles (switch with a PIN) | Partly | Users and roles; no profile switch | Low (each person signs in) |
+| Parental controls | Missing | Library ACLs limit what a user sees | Low |
+
+### Phase 2 design
+
+Migration **0162** (Postgres and SQLite), additive:
+
+```sql
+CREATE TABLE user_favorites (
+  user_id    UUID NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
+  video_id   UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, video_id)
+);
+CREATE INDEX user_favorites_user_created_idx ON user_favorites (user_id, created_at DESC);
+CREATE TABLE user_playlists (
+  id UUID PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX user_playlists_user_idx ON user_playlists (user_id, updated_at DESC);
+CREATE TABLE user_playlist_items (
+  playlist_id UUID NOT NULL REFERENCES user_playlists(id) ON DELETE CASCADE,
+  video_id    UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  position    INTEGER NOT NULL,
+  added_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (playlist_id, video_id)
+);
+CREATE INDEX user_playlist_items_order_idx ON user_playlist_items (playlist_id, position);
+CREATE INDEX videos_library_title_idx ON videos (library_id, (COALESCE(title, '')), id);
+```
+
+The three tables are a user's own and are left out of a machine's copy (`cluster_copy_excluded()`), as
+the pins are: their routes run on the home.
+
+Rules (every route below): the caller is signed in; a principal with no user row (the admin token) reads
+empty lists and gets 403 on writes. A user reads and changes only their own marks, favorites and
+playlists. A video in a library the caller may not see is 404, the same as one that does not exist; a
+request naming several videos is refused whole (nothing written) if one of them is. Another user's
+playlist is 404. A playlist keeps an item whose library its owner later loses, but never shows or
+counts it.
+
+| Route | What |
+|---|---|
+| `POST /api/me/watched` `{video_ids (1..500), watched}` | Marks watched (`playback_state`: completed, position 0, now) or unwatched (not completed, position 0; the time is kept, so it does not jump into Recently Watched). `{updated}` |
+| `POST /api/me/favorites` `{video_ids (1..500), favorite}` | Adds or removes favorites. `{updated}` |
+| `GET /api/me/videos/{id}` | The caller's state of one video: `{video_id, position_sec, completed, favorite, playlists: [{id, name}], series: {id, name} \| null}`. 404 when not visible. |
+| `GET /api/me/playlists` | `{items: [{id, name, description, videos, duration_sec, poster_video_ids (up to 4), created_at, updated_at}]}`, the newest change first. At most 200 playlists a user. |
+| `POST /api/me/playlists` `{name (1..200), description?, video_ids?}` | 201 and the playlist. |
+| `GET /api/me/playlists/{id}` | `{playlist, items: [card]}` in order. At most 5,000 items a playlist. |
+| `PATCH /api/me/playlists/{id}` `{name?, description?}`, `DELETE` | Rename, remove. |
+| `POST /api/me/playlists/{id}/items` `{video_ids}` | Appends the ones not already in it. `{added}` |
+| `DELETE /api/me/playlists/{id}/items/{video_id}` | Removes one. |
+| `PUT /api/me/playlists/{id}/order` `{video_ids}` | The new order of the visible items (exactly them, each once; else 422); hidden items keep their place after them. |
+| `GET /api/videos/facets?library=` | What the grid's filters offer, over the visible videos of the library (or of every visible library): `{languages: [{code, videos}], tags: [{id, name, videos}], speakers: [{name, videos}], letters: [{letter, videos}]}`. Speakers are the named ones (not a diarization label). Letters are the titles' first characters ("#" for any that is not a letter). 404 for a library the caller may not see. |
+| `GET /api/videos` (extended) | Filters `tag=<id>`, `speaker=<name>`, `letter=<a letter or #>`, `sort=random` (one page, no cursor: Shuffle); each item carries the caller's `playback_state` and `favorite`. |
+| `GET /api/me/videos` | The same list on the home, with `favorite=true` too. A machine serves `/api/videos` from its copy, which has no favorites: there `favorite=true` is 400 and the items carry no `favorite` mark. |
+| `GET /api/home`, the hub (extended) | `on_deck`: for each series the caller is in the middle of, the next lesson after the last one finished, the series' newest activity first; on Home also `favorites`, the newest first. |
+
+Web:
+
+- **Browse grid** (All videos and a library's Browse tab): a search box (`q`), Tag, Speaker and
+  Language filters from the facets, a Favorites toggle, an A to Z jump bar (sorted by title), watched
+  ticks and progress bars on the cards, Play all and Shuffle, and Select: check cards, then Mark
+  watched, Mark unwatched, Add to favorites, Remove from favorites, Add to playlist.
+- **Video page**: Play, or Resume where you stopped; Mark watched / unwatched; Favorite; Add to
+  playlist; for a lesson of a series, "Lesson n of m", the series' progress, Previous and Next.
+- **Playlists** (`/playlists`, `/playlists/:id`): create, rename, remove; Play all, Shuffle, Play from
+  here; move items up and down (keyboard), remove items.
+- **Up next**: the player plays a queue (Play all, Shuffle, Play from here, a playlist) and, without
+  one, the next lesson of the series. Near the end it shows "Up next" with a 10-second countdown, Play
+  now and Cancel. The queue lives in the browser tab (`sessionStorage`).
+- **Home**: On Deck and Favorites rows; **library page**: On Deck.
+- English and Arabic, RTL-safe (the jump bar follows the script; arrows swap); help: `library`
+  (filters, selecting, marks, favorites, up next) and a new `playlists` topic.
+
+### Phase 2 stories
+
+Built with this section:
+
+- **45.8** Mark watched / unwatched, one and many; watched ticks and progress bars on the grid.
+- **45.9** Favorites (per user): the route, the grid filter, the Home row, the button on the video page.
+- **45.10** Playlists (per user): the routes, the Playlists pages, Add to playlist from the video page
+  and from a selection.
+- **45.11** Facets and the grid's filters: the search box, Tag, Speaker and Language.
+- **45.12** The A to Z jump bar (`letter=`, the title index).
+- **45.13** Play all, Shuffle, Play from here, the queue and the player's Up next.
+- **45.14** The video page's actions and series position (previous, next, progress).
+- **45.15** On Deck (Home and the library page).
+- **45.16** Multi-select on the grid with the bulk actions.
+
+Left for later, by priority:
+
+- **45.17** Collections in the web (the API exists): a Collections row and page per library, curated
+  by admins; smart collections as saved filters.
+- **45.18** Recently Added grouped by series ("12 new lessons in Tafsir") on Home and the hub.
+- **45.19** Scrub thumbnails (trickplay): a sprite sheet per video from the thumbnail stage, shown over
+  the player's progress bar.
+- **45.20** Duration and added-date filters (short / medium / long; last week / month / year) and a
+  resolution filter from `media_info`.
+- **45.21** A featured hero on Home (the newest series, or a lesson an admin picks).
+- **45.22** Per-user star ratings, if favorites prove too coarse.
+- **45.23** Profiles with a PIN in the Mac app's window and parental limits beyond library ACLs (Low:
+  each person signs in).
+- Not planned: trailers and hover previews, skip intro (lectures have neither), offline (the apps').
