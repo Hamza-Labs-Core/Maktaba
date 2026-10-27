@@ -473,13 +473,13 @@ func (d *Discoverer) retagCheck(ctx context.Context, cur, fresh Release, waterma
 	if installed {
 		ve := &VerifyError{Kind: KindReplay, File: ChecksumsFile,
 			Detail: fmt.Sprintf("%s was installed with checksums %s, the release now has %s", cur.Version, cur.ChecksumsSHA256, sum)}
-		_ = d.Store.SetVerifyError(ctx, cur.Version, ve, "")
+		noteStore(d.log(), "SetVerifyError", d.Store.SetVerifyError(ctx, cur.Version, ve, ""))
 		d.Store.Audit(ctx, "", "system", "release_replay", cur.Version, params)
 		d.notify(ctx, NoticeReplay, notify.Payload{Severity: notify.SeverityError, Params: params,
 			Link: "/settings#updates", Subject: "release:" + cur.Version + ":" + sum, Every: notifyOnce})
 		return
 	}
-	_ = d.Store.ResetForReverify(ctx, cur.Version)
+	noteStore(d.log(), "ResetForReverify", d.Store.ResetForReverify(ctx, cur.Version))
 	d.Store.Audit(ctx, "", "system", "release_retagged", cur.Version, params)
 	_, _ = d.verify(ctx, fresh)
 }

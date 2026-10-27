@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
 // A machine's copy of the home's database (specs/epics/37-node-replica, slot 0147's
@@ -35,8 +37,15 @@ func (p *PGRoles) endCopy(ctx context.Context, role string, drop bool) {
 	if !ok {
 		return
 	}
+	// what is left undone is said: a slot not dropped keeps the database's WAL
+	failed := func(step string, err error) {
+		if err != nil && ctx.Err() == nil {
+			mlog.From(ctx).Warn("cluster: a machine's copy was not fully ended", "step", step, "slot", slot,
+				"err", err.Error(), "event", "cluster_copy_end_failed")
+		}
+	}
 	var exists bool
-	_ = p.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, copyRole).Scan(&exists)
+	failed("read_role", p.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, copyRole).Scan(&exists))
 	if exists {
 		// NOLOGIN in any case; a new password's verifier (never the password itself in a
 		// statement) when one can be made
@@ -46,8 +55,10 @@ func (p *PGRoles) endCopy(ctx context.Context, role string, drop bool) {
 				stmt += ` PASSWORD ` + pq.QuoteLiteral(verifier)
 			}
 		}
-		_, _ = p.DB.ExecContext(ctx, stmt)
-		_, _ = p.DB.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1`, copyRole)
+		_, err := p.DB.ExecContext(ctx, stmt)
+		failed("nologin", err)
+		_, err = p.DB.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1`, copyRole)
+		failed("end_sessions", err)
 	}
 	for i := 0; i < 5; i++ {
 		var active bool
@@ -56,19 +67,23 @@ func (p *PGRoles) endCopy(ctx context.Context, role string, drop bool) {
 			break // no such slot (or not readable)
 		}
 		if !active {
-			_, _ = p.DB.ExecContext(ctx, `SELECT pg_drop_replication_slot($1)`, slot)
+			_, err := p.DB.ExecContext(ctx, `SELECT pg_drop_replication_slot($1)`, slot)
+			failed("drop_slot", err)
 			break
 		}
-		_, _ = p.DB.ExecContext(ctx,
+		_, err = p.DB.ExecContext(ctx,
 			`SELECT pg_terminate_backend(active_pid) FROM pg_replication_slots WHERE slot_name = $1 AND active`, slot)
+		failed("end_replication", err)
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
-	_, _ = p.DB.ExecContext(ctx, `DROP PUBLICATION IF EXISTS `+pq.QuoteIdentifier(slot))
+	_, err := p.DB.ExecContext(ctx, `DROP PUBLICATION IF EXISTS `+pq.QuoteIdentifier(slot))
+	failed("drop_publication", err)
 	if drop && exists {
-		_, _ = p.DB.ExecContext(ctx, `DROP ROLE IF EXISTS `+pq.QuoteIdentifier(copyRole))
+		_, err = p.DB.ExecContext(ctx, `DROP ROLE IF EXISTS `+pq.QuoteIdentifier(copyRole))
+		failed("drop_role", err)
 	}
 }

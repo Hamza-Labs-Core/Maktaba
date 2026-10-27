@@ -63,8 +63,8 @@ func (d *Driver) Cancel(ctx context.Context, id, actor string) error {
 						t.State == TargetClicked {
 						d.withdraw(ctx, run, t) // its app forgets the order
 					}
-					_ = d.Store.UpdateTarget(ctx, id, t.NodeID, TargetChange{State: TargetSkipped,
-						Detail: map[string]any{"why": "cancelled", "by": actor}})
+					noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, id, t.NodeID, TargetChange{State: TargetSkipped,
+						Detail: map[string]any{"why": "cancelled", "by": actor}}))
 				}
 			}
 		}
@@ -173,8 +173,8 @@ func (d *Driver) TargetAction(ctx context.Context, id, node, action, actor strin
 		if !okc {
 			return nil, fmt.Errorf("%w: %s", ErrNoTarget, string(raw))
 		}
-		_ = d.Store.UpdateTarget(ctx, id, node, TargetChange{State: TargetRolledBack,
-			Error: map[string]any{"code": "admin_rollback", "by": actor}})
+		noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, id, node, TargetChange{State: TargetRolledBack,
+			Error: map[string]any{"code": "admin_rollback", "by": actor}}))
 		d.Store.Audit(ctx, actor, "admin", "target_rollback", t.ToVersion, map[string]any{"run_id": id, "node_id": node})
 		return map[string]any{"rolling_back": node}, nil
 	}
