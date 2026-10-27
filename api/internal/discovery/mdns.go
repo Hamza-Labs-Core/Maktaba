@@ -57,7 +57,7 @@ func (z *ZeroconfPublisher) Publish(_ context.Context, svc Service) error {
 		z.server.Shutdown()
 		z.server = nil
 	}
-	srv, err := zeroconf.Register(svc.Instance, ServiceType, svc.Domain, svc.Port, txt, nil)
+	srv, err := register(svc.Instance, ServiceType, svc.Domain, svc.Port, txt)
 	if err != nil {
 		return err
 	}
