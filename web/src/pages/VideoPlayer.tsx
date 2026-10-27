@@ -27,7 +27,7 @@
 // Epic 45 Phase 2: at the end, Up next (components/UpNext) offers the play
 // queue's next video or the series' next lesson, and starts it after 10 s.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
+import { useParams, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import {
@@ -40,6 +40,7 @@ import { useI18n } from "../lib/i18n";
 import { attachVod, carrySig } from "@maktaba/tvplayer";
 import { mediaError, reportPlaybackFailure, type PlaybackFailure } from "../lib/playbackReport";
 import { UpNext } from "../components/UpNext";
+import { BackButton } from "../components/BackButton";
 
 interface OpenSessionResponse {
   session_id: string;
@@ -131,9 +132,8 @@ export function VideoPlayer({
 }: VideoPlayerProps = {}) {
   const { videoId } = useParams();
   const [params] = useSearchParams();
-  const nav = useNavigate();
   const location = useLocation();
-  const { t, dir } = useI18n();
+  const { t } = useI18n();
   const [session, setSession] = useState<OpenSessionResponse | null>(null);
   const [err, setErr] = useState<{ message: string; status?: number } | null>(null);
   const [playError, setPlayError] = useState(false);
@@ -565,18 +565,9 @@ export function VideoPlayer({
     }
   }
 
-  // Back to where the viewer came from; a pasted link (no in-app history)
-  // goes to the video's page instead of leaving the app.
-  const goBack = () => {
-    if (location.key === "default") nav(videoId ? `/videos/${videoId}` : "/library");
-    else nav(-1);
-  };
+  // a pasted link (no in-app history) goes back to the video's page
   const backButton =
-    hideBack || bare ? null : (
-      <Button variant="ghost" onClick={goBack}>
-        {dir === "rtl" ? "→" : "←"} {t("player.back")}
-      </Button>
-    );
+    hideBack || bare ? null : <BackButton fallback={videoId ? `/videos/${videoId}` : "/library"} />;
 
   if (err) {
     const notFound = err.status === 404;

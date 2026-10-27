@@ -37,6 +37,7 @@ import { TitleRow } from "../help/HelpLink";
 import { VideoPoster } from "../components/VideoViews";
 import { VideoPlayer } from "./VideoPlayer";
 import { VideoActions } from "../components/VideoActions";
+import { BackButton } from "../components/BackButton";
 
 interface Video extends DisplayTitleVideo {
   id: string;
@@ -243,6 +244,8 @@ export function VideoDetail() {
 
   return (
     <section className="mkt-page mkt-video">
+      {/* the app's windows have no browser Back: to the series, the search, the list */}
+      <BackButton fallback="/library" className="mkt-video__back" />
       <header className="mkt-page__header mkt-video__header">
         {/* the video's picture until Play; then the player in its place, on this page */}
         {playing ? (
