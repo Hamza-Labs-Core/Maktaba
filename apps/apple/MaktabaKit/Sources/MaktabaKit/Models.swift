@@ -258,9 +258,16 @@ public struct StreamSession: Codable, Sendable {
         expiresAt.flatMap(homeTime)
     }
 
-    /// The URL the player opens, against the home's address.
+    /// The URL the player opens, against the home's address. A home served under a base path
+    /// (`https://example.com/maktaba`) that answers with a root path (`/stream/…`) is read
+    /// under its base path; a path already under it is kept.
     public func playbackURL(home: URL) -> URL? {
-        guard let path = directURL ?? manifestURL else { return nil }
+        guard var path = directURL ?? manifestURL else { return nil }
+        var base = home.path(percentEncoded: true)
+        while base.hasSuffix("/") { base.removeLast() }
+        if !base.isEmpty, path.hasPrefix("/"), !path.hasPrefix("//"), !path.hasPrefix(base + "/") {
+            path = base + path
+        }
         return URL(string: path, relativeTo: home)?.absoluteURL
     }
 }

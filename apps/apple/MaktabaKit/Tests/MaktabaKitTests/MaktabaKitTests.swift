@@ -34,6 +34,17 @@ import Testing
         #expect(s.playbackURL(home: URL(string: "http://h:8088")!)?.path() == "/stream/direct/s1")
     }
 
+    @Test func streamURLsStayUnderTheHomesBasePath() throws {
+        let home = URL(string: "https://example.com/maktaba")!
+        let root = try JSONDecoder().decode(StreamSession.self, from: Data(#"{"session_id":"s","mode":"transcode","manifest_url":"/stream/s/master.m3u8?sig=1"}"#.utf8))
+        #expect(root.playbackURL(home: home)?.absoluteString == "https://example.com/maktaba/stream/s/master.m3u8?sig=1")
+        #expect(root.playbackURL(home: URL(string: "https://example.com/maktaba/")!)?.absoluteString
+            == "https://example.com/maktaba/stream/s/master.m3u8?sig=1")
+        let under = try JSONDecoder().decode(StreamSession.self, from: Data(#"{"session_id":"s","mode":"direct","direct_url":"/maktaba/stream/s/a.mp4"}"#.utf8))
+        #expect(under.playbackURL(home: home)?.absoluteString == "https://example.com/maktaba/stream/s/a.mp4", "a path already under it is kept")
+        #expect(root.playbackURL(home: URL(string: "http://h:8088")!)?.absoluteString == "http://h:8088/stream/s/master.m3u8?sig=1")
+    }
+
     @Test func meDecodesAsUser() throws {
         let json = #"{"user_id":"u1","is_admin":true,"libraries":[],"id":"u1","username":"mahmoud","user":{"id":"u1","username":"mahmoud","is_admin":true}}"#
         let u = try JSONDecoder().decode(User.self, from: Data(json.utf8))
