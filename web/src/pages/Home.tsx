@@ -1,6 +1,7 @@
 // Epic 45 — Home (`/`): rows across every library the user may see
 // (GET /api/home): Continue Watching, On Deck (the next lesson of each series
-// the user is in the middle of), Recently Added, Recently Watched, Favorites, the
+// the user is in the middle of), Recently Added (grouped by series, story
+// 45.18), Recently Watched, Favorites, the
 // Live TV channels on now (WhatsOnNow, its own read), then one row per pinned
 // library (its title opens the library). An empty row is not shown; a home
 // with nothing at all says how to start (admins: Manage libraries).
@@ -16,7 +17,7 @@ import { useI18n } from "../lib/i18n";
 import { fetchHome, type HomeResponse } from "../lib/browse";
 import { TitleRow } from "../help/HelpLink";
 import { WhatsOnNow } from "../components/WhatsOnNow";
-import { VideoRow } from "../components/MediaRow";
+import { AddedRow, VideoRow } from "../components/MediaRow";
 
 export function Home() {
   const { t } = useI18n();
@@ -89,10 +90,11 @@ export function Home() {
             meta={(v) => (v.series?.name ? <bdi>{v.series.name}</bdi> : null)}
             testId="row-ondeck"
           />
-          <VideoRow
+          <AddedRow
             title={t("home.row.recentlyAdded")}
             seeAllTo="/videos?sort=created_at"
-            videos={home.recently_added}
+            entries={home.recently_added_grouped}
+            fallback={home.recently_added}
             testId="row-added"
           />
           <VideoRow

@@ -30,6 +30,18 @@ export interface VideoCard {
   series?: { id: string; name: string } | null;
 }
 
+/**
+ * Story 45.18: an entry of Recently Added grouped by series: a video, or a
+ * series with `count` new lessons (`video` is the newest of them). A video
+ * entry may name its series (the only new lesson of it).
+ */
+export interface AddedEntry {
+  kind: "video" | "series";
+  video: VideoCard;
+  series?: { id: string; name: string } | null;
+  count?: number;
+}
+
 export interface LibraryRef {
   id: string;
   name: string;
@@ -48,6 +60,8 @@ export interface HomeResponse {
   favorites: VideoCard[];
   continue_watching: VideoCard[];
   recently_added: VideoCard[];
+  /** Recently Added grouped by series (Phase 3); empty from an older server */
+  recently_added_grouped: AddedEntry[];
   recently_watched: VideoCard[];
   pinned: PinnedRows[];
 }
@@ -82,6 +96,7 @@ export interface LibraryHub {
     recently_added: VideoCard[];
     recently_watched: VideoCard[];
     most_watched: VideoCard[];
+    recently_added_grouped: AddedEntry[];
     series: HubSeries[];
     years: HubYear[];
   };
@@ -92,6 +107,15 @@ const cards = (v: unknown) =>
   list<VideoCard>(v).filter((c) => c && typeof c === "object" && typeof c.id === "string");
 const obj = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+const grouped = (v: unknown): AddedEntry[] =>
+  list<AddedEntry>(v).filter(
+    (e) =>
+      e &&
+      (e.kind === "video" || e.kind === "series") &&
+      e.video &&
+      typeof e.video.id === "string" &&
+      (e.kind === "video" || (!!e.series && typeof e.series.id === "string"))
+  );
 
 export async function fetchHome(): Promise<HomeResponse> {
   const r = obj(await api.get<unknown>("/api/home"));
@@ -100,6 +124,7 @@ export async function fetchHome(): Promise<HomeResponse> {
     favorites: cards(r.favorites),
     continue_watching: cards(r.continue_watching),
     recently_added: cards(r.recently_added),
+    recently_added_grouped: grouped(r.recently_added_grouped),
     recently_watched: cards(r.recently_watched),
     pinned: list<PinnedRows>(r.pinned)
       .filter((p) => p && p.library && typeof p.library.id === "string")
@@ -135,6 +160,7 @@ export async function fetchHub(id: string): Promise<LibraryHub> {
       recently_added: cards(rows.recently_added),
       recently_watched: cards(rows.recently_watched),
       most_watched: cards(rows.most_watched),
+      recently_added_grouped: grouped(rows.recently_added_grouped),
       series: list<HubSeries>(rows.series).filter((s) => s && typeof s.id === "string"),
       years: list<HubYear>(rows.years).filter((y) => y && typeof y.year === "number"),
     },

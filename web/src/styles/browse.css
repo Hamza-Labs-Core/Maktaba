@@ -289,3 +289,16 @@
 .mkt-upnext__title {
   font-weight: 600;
 }
+
+/* Epic 45 Phase 3 (story 45.18): a series' new lessons on Recently Added */
+.mkt-media-card__count {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-accent-fg, #fff);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}

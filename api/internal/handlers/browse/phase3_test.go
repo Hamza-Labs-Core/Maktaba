@@ -51,3 +51,56 @@ func TestBandFacets(t *testing.T) {
 		t.Errorf("admin, library B: durations %+v, want %+v", f.Durations, want)
 	}
 }
+
+func entryShape(es []AddedEntry) []string {
+	out := []string{}
+	for _, e := range es {
+		s := e.Kind + ":" + e.Video.ID
+		if e.Series != nil {
+			s += ":" + e.Series.Name + ":" + string(rune('0'+e.Count))
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func TestRecentlyAddedGrouped(t *testing.T) {
+	e := newEnv(t)
+	var home struct {
+		Grouped []AddedEntry `json:"recently_added_grouped"`
+		Added   []Card       `json:"recently_added"`
+	}
+	if code := e.do(asViewer(), "GET", "/api/home", nil, &home); code != 200 {
+		t.Fatal(code)
+	}
+	// a3 (no series), then Tafsir's two visible lessons as one entry at a2,
+	// its newest (a4 is missing: never counted)
+	want := []string{"video:" + v("a3"), "series:" + v("a2") + ":Tafsir:2"}
+	if got := entryShape(home.Grouped); !slices.Equal(got, want) {
+		t.Errorf("viewer grouped %v, want %v", got, want)
+	}
+	if len(home.Added) != 3 {
+		t.Errorf("recently_added stays as it was: %v", ids(home.Added))
+	}
+
+	home.Grouped = nil // a fresh decode: omitted fields would keep the viewer's
+	e.do(asAdmin(), "GET", "/api/home", nil, &home)
+	// b1 is the only new lesson of its series: a video entry that names it
+	want = []string{"video:" + v("b2"), "video:" + v("b1") + ":B renamed:0", "video:" + v("a3"), "series:" + v("a2") + ":Tafsir:2"}
+	if got := entryShape(home.Grouped); !slices.Equal(got, want) {
+		t.Errorf("admin grouped %v, want %v", got, want)
+	}
+
+	var hub struct {
+		Rows struct {
+			Grouped []AddedEntry `json:"recently_added_grouped"`
+		} `json:"rows"`
+	}
+	if code := e.do(asAdmin(), "GET", "/api/libraries/"+libB+"/hub", nil, &hub); code != 200 {
+		t.Fatal(code)
+	}
+	want = []string{"video:" + v("b2"), "video:" + v("b1") + ":B renamed:0"}
+	if got := entryShape(hub.Rows.Grouped); !slices.Equal(got, want) {
+		t.Errorf("hub B grouped %v, want %v", got, want)
+	}
+}

@@ -5376,5 +5376,7 @@
   "collections.saveAsDesc": "تحفظ المجموعة تصفيات هذا التبويب وترتيبه، وتعرض دائمًا ما يطابقها.",
   "collections.saved": "حُفظت «{name}»",
   "collections.saveFiltersTo": "احفظ التصفيات في المجموعة",
-  "collections.filtersSaved": "حُفظت التصفيات"
+  "collections.filtersSaved": "حُفظت التصفيات",
+  "home.newCount": "{n} جديد",
+  "home.newLessons": "دروس جديدة: {n}"
 }

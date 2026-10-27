@@ -21,7 +21,7 @@ Home opens when you sign in. Its rows scroll sideways: drag or swipe them, use t
 
 - **Continue Watching**: videos you started and have not finished (past the first 30 seconds, before the last 5%). The bar under a card shows how far you got.
 - **On Deck**: for each series you are in the middle of, its next lesson after the last one you finished, with the series' name under the card.
-- **Recently Added**: the newest videos across your libraries. **See all** opens [All videos](/videos) sorted by date added.
+- **Recently Added**: the newest videos across your libraries. New lessons of one series share a single card ("12 new lessons", with the newest lesson's picture) that opens the series; a lone new lesson shows its series' name under its card. **See all** opens [All videos](/videos) sorted by date added.
 - **Recently Watched**: what you watched last, one card per video.
 - **Favorites**: the videos you marked as favorites, newest first. **See all** opens [All videos](/videos?favorite=true) showing only them.
 - **What's On Now**: the Live TV channels on air, when there are any (see [Watch TV](/help/watch-tv)).
@@ -45,7 +45,7 @@ The page opens on **Overview**. **Browse** shows every video of the library with
 
 ### Overview rows {#overview-rows}
 
-- **Continue Watching**, **On Deck**, **Recently Added** and **Recently Watched**, as on Home, for this library only.
+- **Continue Watching**, **On Deck**, **Recently Added** (grouped by series) and **Recently Watched**, as on Home, for this library only.
 - **Most Watched**: the videos played most in this library over the last 90 days, by everyone.
 - **Series**: the series found in this library. Click one to open the series (see [Series](/help/series)).
 - **By year**: one chip per year with how many videos are from it. Click a year to open **Browse** with that year's videos. The year is the file's date, which for downloaded videos is the day they were published.

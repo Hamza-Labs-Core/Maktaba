@@ -5363,5 +5363,7 @@
   "collections.saveAsDesc": "The collection keeps this tab's filters and sort, and always lists what matches them.",
   "collections.saved": "Saved “{name}”",
   "collections.saveFiltersTo": "Save filters to the collection",
-  "collections.filtersSaved": "Filters saved"
+  "collections.filtersSaved": "Filters saved",
+  "home.newCount": "{n} new",
+  "home.newLessons": "{n} new lessons"
 }

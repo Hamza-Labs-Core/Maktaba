@@ -24,7 +24,7 @@ import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { fetchHub, type LibraryHub } from "../../lib/browse";
 import { TitleRow } from "../../help/HelpLink";
-import { MediaRow, VideoRow } from "../../components/MediaRow";
+import { AddedRow, MediaRow, VideoRow } from "../../components/MediaRow";
 import { LibraryBrowser, ScanNow } from "../LibraryBrowser";
 import { PinButton } from "./Libraries";
 import { fetchCollections, type Collection } from "../../lib/collections";
@@ -164,9 +164,10 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
         meta={(v) => (v.series?.name ? <bdi>{v.series.name}</bdi> : null)}
         testId="row-ondeck"
       />
-      <VideoRow
+      <AddedRow
         title={t("home.row.recentlyAdded")}
-        videos={rows.recently_added}
+        entries={rows.recently_added_grouped}
+        fallback={rows.recently_added}
         seeAllTo={`/library/${encodeURIComponent(libraryId)}?tab=browse&sort=created_at`}
         testId="row-added"
       />
