@@ -236,3 +236,33 @@
 .mkt-storage__reach {
   margin-block-start: var(--space-6);
 }
+/* where Maktaba keeps its data */
+.mkt-storage__facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin-block: var(--space-3);
+}
+.mkt-storage__facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mkt-storage__disks {
+  margin: 0 0 var(--space-3);
+  padding-inline-start: var(--space-4);
+}
+.mkt-storage__move {
+  margin-block-start: var(--space-3);
+}
+.mkt-storage__disk p {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+}
+.mkt-storage__check {
+  display: grid;
+  gap: var(--space-2);
+}
+.mkt-storage__check p {
+  margin: 0;
+}

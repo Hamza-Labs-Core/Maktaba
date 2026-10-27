@@ -34,6 +34,60 @@ const CHECK = {
   ],
 };
 
+const GB = 2 ** 30;
+const disk = (over: Record<string, unknown>) => ({
+  name: "",
+  fs_type: "apfs",
+  local: true,
+  suitable: true,
+  internal: false,
+  current: false,
+  ...over,
+});
+const STORAGE = {
+  current: "/Users/me/Library/Application Support/Maktaba",
+  default: "/Users/me/Library/Application Support/Maktaba",
+  need_bytes: 20 * GB,
+  comfortable_bytes: 200 * GB,
+  suggested: "/Volumes/Big/Maktaba",
+  disks: [
+    disk({
+      mount: "/",
+      name: "Macintosh HD",
+      free_bytes: 150 * GB,
+      total_bytes: 500 * GB,
+      internal: true,
+      current: true,
+      suggested_dir: "/Users/me/Library/Application Support/Maktaba",
+    }),
+    disk({
+      mount: "/Volumes/Big",
+      name: "Big",
+      free_bytes: 3000 * GB,
+      total_bytes: 4000 * GB,
+      suggested_dir: "/Volumes/Big/Maktaba",
+    }),
+    disk({
+      mount: "/Volumes/Tiny",
+      name: "Tiny",
+      free_bytes: 10 * GB,
+      total_bytes: 16 * GB,
+      suitable: false,
+      problem: "target_too_small",
+      suggested_dir: "/Volumes/Tiny/Maktaba",
+    }),
+  ],
+};
+
+/** The storage step: its check_only answer, and the folder chosen saved. */
+function storageStep(answer = STORAGE) {
+  return vi.fn((input: Record<string, unknown>) =>
+    input.check_only
+      ? answer
+      : { data_dir: input.data_dir, state_dir: `${String(input.data_dir)}/state`, warnings: [] }
+  );
+}
+
 type Handler = (input: Record<string, unknown>, onProgress?: (p: StepProgress) => void) => unknown;
 
 function stepError(code: string, message: string, field?: string): StepError {
@@ -107,7 +161,7 @@ describe("SetupWizard", () => {
     expect(await screen.findByText("Indexing, transcription and search")).toBeInTheDocument();
     expect(screen.getByText("96.0 GB (needs 16.0 GB)")).toBeInTheDocument();
     // a Mac asks for its permissions too
-    expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 8")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
 
@@ -152,13 +206,18 @@ describe("SetupWizard", () => {
       second_listen: { runs: false, code: "second_listen_gpu_small", params },
       warnings: [{ code: "second_listen_gpu_small", params, message: "en" }],
     });
-    renderWizard(fakeApi({ check, admin, libraries, models }), "check");
+    renderWizard(fakeApi({ check, storage: storageStep(), admin, libraries, models }), "check");
     expect(
       await screen.findByText(
         /RTX 2080 SUPER has 8\.0 GB: the second listen needs a graphics card with 9\.5 GB/
       )
     ).toBeInTheDocument();
-    expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 8")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    // where the data goes: the suggested folder, as it is
+    expect(await screen.findByRole("textbox", { name: /^Folder/ })).toHaveValue(
+      "/Volumes/Big/Maktaba"
+    );
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     const [pw, again] = await screen.findAllByLabelText(/Password/);
     await userEvent.type(pw, "a long passphrase");
@@ -195,6 +254,81 @@ describe("SetupWizard", () => {
       screen.getByText("الفهرسة والتفريغ (2 عمّال) والبحث، والتفريغ على RTX 2080")
     ).toBeInTheDocument();
     document.documentElement.dir = "ltr";
+  });
+
+  describe("storage", () => {
+    it("comes after the check, preselects the suggested folder and saves it", async () => {
+      const storage = storageStep();
+      renderWizard(fakeApi({ check: () => CHECK, storage }), "check");
+      await userEvent.click(await screen.findByRole("button", { name: "Next" }));
+      expect(
+        await screen.findByRole("heading", { name: "Where Maktaba keeps its data" })
+      ).toBeInTheDocument();
+      expect(screen.getByText("Step 2 of 8")).toBeInTheDocument();
+      expect(storage).toHaveBeenCalledWith({ check_only: true }, undefined);
+      expect(await screen.findByRole("textbox", { name: /^Folder/ })).toHaveValue(
+        "/Volumes/Big/Maktaba"
+      );
+      expect(screen.getByRole("radio", { name: /Big/ })).toBeChecked();
+      expect(screen.getByText("2.9 TB free of 3.9 TB")).toBeInTheDocument();
+      // a disk that cannot hold it is not offered
+      expect(screen.getByRole("radio", { name: /Tiny/ })).toBeDisabled();
+      expect(screen.getByText("Too little free space.")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() =>
+        expect(storage).toHaveBeenCalledWith(
+          { data_dir: "/Volumes/Big/Maktaba" },
+          expect.any(Function)
+        )
+      );
+      expect(
+        await screen.findByRole("heading", { name: "Your admin account" })
+      ).toBeInTheDocument();
+      expect(screen.getByText("Step 3 of 8")).toBeInTheDocument();
+    });
+
+    it("warns about a small disk and blocks one too small", async () => {
+      const storage = storageStep();
+      renderWizard(fakeApi({ storage }), "storage");
+      await userEvent.click(await screen.findByRole("radio", { name: /Macintosh HD/ }));
+      expect(screen.getByRole("textbox", { name: /^Folder/ })).toHaveValue(
+        "/Users/me/Library/Application Support/Maktaba"
+      );
+      expect(
+        screen.getByText(/150\.0 GB free is small for a library database plus backups/)
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+      // a folder typed on the small disk: blocked before the step runs
+      const folder = screen.getByRole("textbox", { name: /^Folder/ });
+      await userEvent.clear(folder);
+      await userEvent.type(folder, "/Volumes/Tiny/Maktaba");
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Only 10.0 GB free on that disk: Maktaba needs 20.0 GB."
+      );
+      expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+      expect(storage).toHaveBeenCalledTimes(1);
+    });
+
+    it("says why the step refused the folder", async () => {
+      const storage = vi.fn((input: Record<string, unknown>) => {
+        if (input.check_only) return STORAGE;
+        throw stepError("storage_not_empty", "/Volumes/Big/Maktaba is not empty");
+      });
+      renderWizard(fakeApi({ storage }), "storage");
+      await screen.findByRole("textbox", { name: /^Folder/ });
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "That folder is not empty: choose an empty folder or a new one."
+      );
+      expect(
+        screen.getByRole("heading", { name: "Where Maktaba keeps its data" })
+      ).toBeInTheDocument();
+    });
+
+    it("counts the step on Windows too", async () => {
+      renderWizard(fakeApi({ storage: storageStep() }, { platform: "windows" }), "storage");
+      expect(await screen.findByText("Step 2 of 7")).toBeInTheDocument();
+    });
   });
 
   it("admin: a password typo never reaches the server; a weak password lands on its field", async () => {
@@ -371,7 +505,7 @@ describe("SetupWizard", () => {
       renderWith(fakeApi({ plex, venv: () => new Promise(() => {}) }), p, "plex");
       await userEvent.click(await screen.findByRole("button", { name: "Skip" }));
       expect(await screen.findByRole("heading", { name: "Permissions" })).toBeInTheDocument();
-      expect(screen.getByText("Step 6 of 7")).toBeInTheDocument();
+      expect(screen.getByText("Step 7 of 8")).toBeInTheDocument();
       const fda = screen.getByTestId("perm-full_disk_access");
       expect(within(fda).getByText("Off")).toBeInTheDocument();
       await userEvent.click(within(fda).getByRole("button", { name: "Open System Settings" }));
@@ -426,7 +560,7 @@ describe("SetupWizard", () => {
         p,
         "plex"
       );
-      expect(await screen.findByText("Step 5 of 6")).toBeInTheDocument();
+      expect(await screen.findByText("Step 6 of 7")).toBeInTheDocument();
       await userEvent.click(screen.getByRole("button", { name: "Skip" }));
       expect(
         await screen.findByRole("heading", { name: "Getting Maktaba ready" })

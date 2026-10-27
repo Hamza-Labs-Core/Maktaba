@@ -64,6 +64,11 @@ func stepFinish(s *setupRun, _ json.RawMessage) (any, error) {
 	if code, msg, kv := nodeHere(); code != "" {
 		return nil, failStep(code, "", "%s", msg).with(kv...)
 	}
+	// the data folder chosen on a disk that is not connected: no database in its place
+	if path, missing := s.cfg.StorageMissing(); missing {
+		return nil, failStep("storage_missing_disk", "", "The disk that holds %s is not connected: connect it, then try again.",
+			path).with("path", path)
+	}
 	if p.Admin == nil || p.Admin.PasswordHash == "" {
 		return nil, failStep("admin_missing", "", "Create the admin account first (the admin step).")
 	}

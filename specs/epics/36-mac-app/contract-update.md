@@ -161,6 +161,9 @@ takes a new code.
 | `venv_building` | `step`, `done` (number), `total` (number), `percent` (number), `message` | Installing the transcription tools: `message` (`percent`%). `step` is the bootstrap's (`plan`, `venv`, `deps`, `wheel`, `verify`, `done`); on `deps`, `done` of `total` packages (else 0 of 0); `message` is pip's line |
 | `venv_interrupted` | `log` | The transcription tools' install was stopped; it goes on from where it was next time (log: `log`) |
 | `venv_failed` | `error`, `log` | The transcription tools could not be installed: `error` (log: `log`) |
+| `storage_waiting` | `path` | Waiting for the disk that holds Maktaba's data (`path`): the data folder the owner chose (story 36.15) is not there; nothing starts and no database is made in its place until it is |
+| `storage_moving` | `to`, `done` (number), `total` (number), `percent` (number) | Moving Maktaba's data to `to` (`percent`%): `done` of `total` bytes copied (story 36.15) |
+| `storage_move_failed` | `to`, `error` | Maktaba's data could not be moved to `to`: `error`. Nothing was changed: Maktaba starts from where it was |
 
 ### The rest
 

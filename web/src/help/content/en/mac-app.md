@@ -26,13 +26,14 @@ The first time you open the app, it shows **Welcome to Maktaba**. Choose **Run M
 Setting up this Mac takes these steps (**Step N of N**, with **Back** and **Next**):
 
 1. **What will run**: the app checks this Mac and lists what will run, the **Memory** and **Free disk space** (with what is needed) and the **Data folder**.
-2. **Your admin account**: a **Username** and a **Password**, twice. You sign in to Maktaba with it, so keep the password somewhere safe.
-3. **Your library folders**: the folders that hold your lectures, one per line. Maktaba reads them; it never moves or changes your files. If other machines see the same files under another path, fill in **NAS path map (optional)**, one `their path => this Mac's path` per line.
-4. **Transcription models**: choose **Download from Hugging Face** (paste a **Hugging Face token**; **Get a token** shows where to make one) or **Use the copy on the NAS** (give the **Folder with the models**). The models are a few GB.
-5. **Plex (optional)**: **Sign in with Plex**, type the code shown on the Plex page, and wait. Or click **Skip**; you can do it later in [Settings](/settings).
-6. **Permissions**: what Maktaba needs from macOS, whether each one is on, and **Open System Settings** to turn it on. See [Permissions](#permissions). You can go on without them and turn them on later.
-7. **Getting Maktaba ready**: the app installs the transcription and search tools (about 2 GB, a few minutes) and creates the library database. If macOS asks, allow Maktaba to run in the background (see [Allow Maktaba to run in the background](/help/mac-app#background-item)).
-8. **Starting Maktaba**: the server starts and your library opens.
+2. **Where Maktaba keeps its data**: the disks of this Mac with their free space. Maktaba picks a folder on the disk with the most room; choose another disk or type a folder. A disk too small cannot be chosen, and one that is small for a library database plus backups is flagged. You can move the data later from [Storage & discovery](/help/storage#move).
+3. **Your admin account**: a **Username** and a **Password**, twice. You sign in to Maktaba with it, so keep the password somewhere safe.
+4. **Your library folders**: the folders that hold your lectures, one per line. Maktaba reads them; it never moves or changes your files. If other machines see the same files under another path, fill in **NAS path map (optional)**, one `their path => this Mac's path` per line.
+5. **Transcription models**: choose **Download from Hugging Face** (paste a **Hugging Face token**; **Get a token** shows where to make one) or **Use the copy on the NAS** (give the **Folder with the models**). The models are a few GB.
+6. **Plex (optional)**: **Sign in with Plex**, type the code shown on the Plex page, and wait. Or click **Skip**; you can do it later in [Settings](/settings).
+7. **Permissions**: what Maktaba needs from macOS, whether each one is on, and **Open System Settings** to turn it on. See [Permissions](#permissions). You can go on without them and turn them on later.
+8. **Getting Maktaba ready**: the app installs the transcription and search tools (about 2 GB, a few minutes) and creates the library database. If macOS asks, allow Maktaba to run in the background (see [Allow Maktaba to run in the background](/help/mac-app#background-item)).
+9. **Starting Maktaba**: the server starts and your library opens.
 
 ### Permissions {#permissions}
 

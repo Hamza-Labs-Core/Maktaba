@@ -17,6 +17,8 @@ use serde_json::Value;
 pub const STEPS: &[&str] = &[
     "status",
     "check",
+    // where the data goes (Epic 36 story 36.15), before anything is made there
+    "storage",
     "admin",
     "libraries",
     "models",

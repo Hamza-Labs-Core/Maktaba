@@ -63,8 +63,10 @@ afresh) or a new move ends that. Nor while an install outside the app is here th
 home, or reads the app's own `server.toml` (an install on the default paths from before Epic 38,
 whose config and keys a newer command copied into `%LOCALAPPDATA%\Maktaba`, story 38.1): the
 welcome screen offers its move instead.
+An install whose chosen data folder is on a disk that is not connected is `configured` (the server
+waits for its disk), with `storage_missing` its path (`""` otherwise).
 ```json
-{"configured": false, "web_url": "http://127.0.0.1:8088", "supervisor_url": "http://127.0.0.1:9103"}
+{"configured": false, "storage_missing": "", "web_url": "http://127.0.0.1:8088", "supervisor_url": "http://127.0.0.1:9103"}
 ```
 
 ### `check` — what will run + disk/RAM
@@ -112,6 +114,19 @@ is not held against the GPU. The models step then asks for no Hugging Face sign-
 though the NAS copy can still be chosen there, and Whisper's words are kept. `runs` lines are `setup.check.run.<role>` (the pipeline by its `workers`: `pipeline`,
 `pipelineOne`, `pipelineWorkers`, then `onGpu`). A platform adds its own findings through
 `platformChecks` (setup_steps.go; Linux's glibc, systemd user manager and linger come with Epic 39).
+
+### `storage` — where the data goes (story 36.15)
+Input `{"check_only": true}` (or no `data_dir`): result `{"current", "default", "need_bytes",
+"comfortable_bytes", "disks": [{"mount", "name", "free_bytes", "total_bytes", "fs_type", "local",
+"suitable", "problem", "suggested_dir", "internal", "current"}], "suggested"}`: `suggested` is the
+folder on the suitable disk with the most room (the one chosen before when the user comes back).
+Input `{"data_dir": "/Volumes/Big/Maktaba"}`: the folder is made with its marker, `[server]
+data_dir` written to server.toml (the pending setup state moved with the state root) and the
+place recorded; result `{"data_dir", "state_dir", "warnings"}` (`storage_small`: `free_bytes`,
+`comfortable_bytes`). Errors, with `field: "data_dir"`: `storage_relative`, `storage_not_local`
+(`fs_type`), `storage_too_small` (`free_bytes`, `need_bytes`), `storage_not_empty` (`path`),
+`storage_unwritable` (`error`), `storage_database_exists` (a database is there already: `storage
+move` moves it). It runs before `admin`, so nothing is made in the default place first.
 
 ### `admin` — the first account
 Input `{"username": "admin", "password": "…"}`. Errors, with `field`: `password_short` (`min`: 8),

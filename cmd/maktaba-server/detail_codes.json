@@ -20,5 +20,8 @@
   "venv_waiting": [],
   "venv_building": ["step", "done", "total", "percent", "message"],
   "venv_interrupted": ["log"],
-  "venv_failed": ["error", "log"]
+  "venv_failed": ["error", "log"],
+  "storage_waiting": ["path"],
+  "storage_moving": ["to", "done", "total", "percent"],
+  "storage_move_failed": ["to", "error"]
 }

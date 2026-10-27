@@ -61,12 +61,16 @@ const DOC = {
   ],
 };
 
+// the data location section has its own tests (DataLocationSection.test.tsx)
+const NO_STORAGE = { available: false, reason: "no supervisor" };
+
 function open(
   doc: unknown = DOC,
   user: User | null = adminUser,
   props: { onReload?: () => void } = {}
 ) {
   routeGet(get, {
+    "/api/server/storage": NO_STORAGE,
     "/api/server/settings": () => doc,
     "/api/system/version": { version: "1.0.0" },
   });
@@ -121,6 +125,7 @@ describe("StorageSettings", () => {
   it("shows a load error with Try again", async () => {
     let fail = true;
     routeGet(get, {
+      "/api/server/storage": NO_STORAGE,
       "/api/server/settings": () => {
         if (fail) throw problem(502, "bad gateway", { detail: "supervisor not answering" });
         return DOC;
@@ -210,6 +215,7 @@ describe("StorageSettings", () => {
     post.mockResolvedValue({ restarting: true });
     let pings = 0;
     routeGet(get, {
+      "/api/server/storage": NO_STORAGE,
       "/api/server/settings": { ...DOC, restart_needed: true },
       "/api/system/version": () => {
         pings += 1;
