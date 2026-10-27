@@ -31,8 +31,11 @@ type configAdmin struct {
 	// restart asks the launcher to start serve again (nil: no launcher).
 	restart func() error
 	checks  config.Checks
-	// reload asks serve to stop every process and start again (a storage move)
+	// reload asks serve to stop every process and start again in-process, with
+	// server.toml read anew (a storage move; a restart where no launcher runs it)
 	reload func()
+	// runningBackups is [backups] as serve started with it (nil: as saved)
+	runningBackups *config.BackupSettings
 
 	mu sync.Mutex // one write at a time
 }
@@ -42,6 +45,8 @@ type configAdmin struct {
 func newConfigAdmin(cfg config.Config, token, releaseDir string) *configAdmin {
 	c := &configAdmin{path: config.Path(), running: config.EditableOf(cfg), token: token,
 		reload: func() { time.AfterFunc(answerFirst, requestReload) }}
+	bk := cfg.Backups.Settings()
+	c.runningBackups = &bk
 	if os.Getenv(layout.EnvLauncher) == "1" && releaseDir != "" {
 		l := layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir)))))
 		c.restart = l.RequestRestart
@@ -67,7 +72,7 @@ func (c *configAdmin) adminHandler(base http.Handler) http.Handler {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		if c.storageRoutes(w, r) {
+		if c.storageRoutes(w, r) || c.backupsRoutes(w, r) {
 			return
 		}
 		switch {
@@ -97,7 +102,7 @@ func (c *configAdmin) doc() (settingsDoc, error) {
 		Saved:         saved,
 		Running:       c.running,
 		RestartNeeded: !reflect.DeepEqual(saved, c.running),
-		CanRestart:    c.restart != nil,
+		CanRestart:    c.restart != nil || c.reload != nil,
 	}, nil
 }
 
@@ -150,6 +155,12 @@ func (c *configAdmin) put(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *configAdmin) postRestart(w http.ResponseWriter) {
+	if c.restart == nil && c.reload != nil {
+		// no launcher: serve starts again in-process, every process stopped first
+		c.reload()
+		writeConfigJSON(w, http.StatusAccepted, map[string]bool{"restarting": true})
+		return
+	}
 	if c.restart == nil {
 		writeConfigJSON(w, http.StatusConflict, map[string]string{
 			"error": "this server does not run under maktaba-launcher: restart the server yourself"})

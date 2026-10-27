@@ -127,6 +127,10 @@ place recorded; result `{"data_dir", "state_dir", "warnings"}` (`storage_small`:
 (`fs_type`), `storage_too_small` (`free_bytes`, `need_bytes`), `storage_not_empty` (`path`),
 `storage_unwritable` (`error`), `storage_database_exists` (a database is there already: `storage
 move` moves it). It runs before `admin`, so nothing is made in the default place first.
+The backups (story 36.16) go with it: the check-only result has `backups` (their settings), and
+the input may carry `backups_dir` (`""`: beside the database), `nightly` (bool) and `hour`
+(0–23); a folder that cannot hold them is `storage_backups_unusable` (field `backups_dir`,
+`error`). The result adds `backups` and `backups_dir`.
 
 ### `admin` — the first account
 Input `{"username": "admin", "password": "…"}`. Errors, with `field`: `password_short` (`min`: 8),

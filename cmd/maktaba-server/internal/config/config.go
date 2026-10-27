@@ -42,6 +42,7 @@ type Config struct {
 	Postgres      PostgresSection      `toml:"postgres"`
 	LLM           LLMSection           `toml:"llm"`
 	Telemetry     TelemetrySection     `toml:"telemetry"`
+	Backups       BackupsSection       `toml:"backups"`
 
 	// DatabaseURLSet: server.toml sets [database] url (Load), or a caller chose
 	// one to keep (setup); Save writes the url only then. Unset, a Mac with the
@@ -526,6 +527,10 @@ func (c Config) fileTOML() ([]byte, error) {
 	}
 	if !c.PipelineInstancesSet && c.Pipeline.Instances == 0 {
 		unset("pipeline", "instances")
+	}
+	// [backups] with every key at its default is no table at all
+	if t, ok := file["backups"].(map[string]any); ok && len(t) == 0 {
+		delete(file, "backups")
 	}
 	buf.Reset()
 	if err := toml.NewEncoder(&buf).Encode(file); err != nil {

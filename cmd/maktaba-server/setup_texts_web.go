@@ -111,6 +111,7 @@ var webSetupTexts = map[string][2]string{
 	"setup.error.runtime":                       {"Maktaba could not read or update its copy of the server.", "تعذّر على مكتبة قراءة نسختها من الخادم أو تحديثها."},
 	"setup.error.server_missing":                {"This copy of Maktaba cannot run the server.", "هذه النسخة من مكتبة لا تستطيع تشغيل الخادم."},
 	"setup.error.service":                       {"The server could not be stopped or started; it runs as it did before.", "تعذّر إيقاف الخادم أو تشغيله؛ وهو يعمل كما كان من قبل."},
+	"setup.error.storage_backups_unusable":      {"Maktaba cannot keep its backups in that folder: {error}", "لا تستطيع مكتبة حفظ نسخها الاحتياطية في هذا المجلد: {error}"},
 	"setup.error.storage_database_exists":       {"Maktaba already has a library database, so setup does not change where its data is. Once Maktaba runs, move it from Settings, Storage & discovery.", "لدى مكتبة قاعدة بيانات من قبل، فلا يغيّر الإعداد مكان بياناتها. بعد أن تعمل مكتبة، انقلها من الإعدادات، التخزين والاكتشاف."},
 	"setup.error.storage_missing_disk":          {"The disk of that folder is not connected. Connect it, then try again.", "قرص هذا المجلد غير متصل. صِله، ثم حاول مجددًا."},
 	"setup.error.storage_not_empty":             {"That folder is not empty: choose an empty folder or a new one.", "هذا المجلد ليس فارغًا: اختر مجلدًا فارغًا أو جديدًا."},

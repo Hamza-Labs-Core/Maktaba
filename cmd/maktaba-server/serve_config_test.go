@@ -32,6 +32,7 @@ func configAdminFixture(t *testing.T, body string) (*configAdmin, http.Handler, 
 		t.Fatal(err)
 	}
 	c := newConfigAdmin(cfg, "tok", "")
+	c.reload = nil // no in-process start again here (TestConfigRestartInProcess)
 	c.checks.PortFree = func(addr string) error {
 		if strings.HasSuffix(addr, ":7000") {
 			return errors.New("in use")
@@ -174,6 +175,21 @@ claim_code = "keep-me"
 	}
 	if rec := configCall(h, "DELETE", "/config/settings", "tok", ``); rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("delete: %d", rec.Code)
+	}
+}
+
+// Without a launcher (the desktop app's serve, one started by hand) a restart is serve
+// starting again in-process.
+func TestConfigRestartInProcess(t *testing.T) {
+	c, _, _ := configAdminFixture(t, "")
+	reloads := 0
+	c.reload = func() { reloads++ }
+	h := c.adminHandler(http.NotFoundHandler())
+	if rec := configCall(h, "GET", "/config/settings", "tok", ""); !strings.Contains(rec.Body.String(), `"can_restart":true`) {
+		t.Errorf("can_restart: %s", rec.Body)
+	}
+	if rec := configCall(h, "POST", "/config/restart", "tok", ""); rec.Code != http.StatusAccepted || reloads != 1 {
+		t.Fatalf("restart: %d %s (reloads %d)", rec.Code, rec.Body, reloads)
 	}
 }
 

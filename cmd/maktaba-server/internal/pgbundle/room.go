@@ -35,7 +35,34 @@ const backupsShare = 5 // 1/5
 // grows between two dumps).
 const dumpGrowth = 1.25
 
-func reserveOf(total uint64) uint64 { return max(total/reserveShare, reserveMin) }
+// RoomPolicy is what a dump leaves on its disk ([backups] reserve_percent,
+// reserve_min_gb, max_share_percent: Epic 36 story 36.16).
+type RoomPolicy struct {
+	// ReserveShare is the share of the disk a dump leaves free (0..1).
+	ReserveShare float64
+	// ReserveMin is the least it leaves free.
+	ReserveMin uint64
+	// MaxShare is the most of the disk the dumps take together (0..1).
+	MaxShare float64
+}
+
+// DefaultRoom is the room a dump leaves when nothing is set: 5% of the disk, at least
+// 2 GiB, the dumps within a fifth of it.
+func DefaultRoom() RoomPolicy {
+	return RoomPolicy{ReserveShare: 1.0 / reserveShare, ReserveMin: reserveMin, MaxShare: 1.0 / backupsShare}
+}
+
+func (p RoomPolicy) reserveOf(total uint64) uint64 {
+	return max(uint64(float64(total)*p.ReserveShare), p.ReserveMin)
+}
+
+func (p RoomPolicy) budget(total uint64) uint64 {
+	share := p.MaxShare
+	if share <= 0 || share > 1 {
+		share = 1.0 / backupsShare
+	}
+	return uint64(float64(total) * share)
+}
 
 // NoRoomError says a dump was not started: even with the old dumps gone it would
 // leave its disk without the reserve.
@@ -65,7 +92,10 @@ func dumpKind(name string) string {
 // the newest of a kind) while the dump would leave less than the disk's reserve
 // free or the dumps would take more than their share of the disk, and returns a
 // *NoRoomError when the reserve cannot be kept even so.
-func MakeRoom(dir string) error {
+func MakeRoom(dir string) error { return MakeRoomWith(dir, DefaultRoom()) }
+
+// MakeRoomWith is MakeRoom with the room p leaves.
+func MakeRoomWith(dir string, p RoomPolicy) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -107,8 +137,8 @@ func MakeRoom(dir string) error {
 			next = n
 		}
 	}
-	need := next + reserveOf(total)
-	budget := total / backupsShare
+	need := next + p.reserveOf(total)
+	budget := p.budget(total)
 	sort.Slice(all, func(i, j int) bool { return all[i].mod.Before(all[j].mod) })
 	for _, d := range all {
 		if free >= need && used+next <= budget {

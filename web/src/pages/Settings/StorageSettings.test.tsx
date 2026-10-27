@@ -61,8 +61,10 @@ const DOC = {
   ],
 };
 
-// the data location section has its own tests (DataLocationSection.test.tsx)
+// the data location and backups sections have their own tests
+// (DataLocationSection.test.tsx, BackupsSection.test.tsx)
 const NO_STORAGE = { available: false, reason: "no supervisor" };
+const NO_BACKUPS = { available: false, reason: "no supervisor" };
 
 function open(
   doc: unknown = DOC,
@@ -71,6 +73,7 @@ function open(
 ) {
   routeGet(get, {
     "/api/server/storage": NO_STORAGE,
+    "/api/server/backups": NO_BACKUPS,
     "/api/server/settings": () => doc,
     "/api/system/version": { version: "1.0.0" },
   });
@@ -126,6 +129,7 @@ describe("StorageSettings", () => {
     let fail = true;
     routeGet(get, {
       "/api/server/storage": NO_STORAGE,
+      "/api/server/backups": NO_BACKUPS,
       "/api/server/settings": () => {
         if (fail) throw problem(502, "bad gateway", { detail: "supervisor not answering" });
         return DOC;
@@ -216,6 +220,7 @@ describe("StorageSettings", () => {
     let pings = 0;
     routeGet(get, {
       "/api/server/storage": NO_STORAGE,
+      "/api/server/backups": NO_BACKUPS,
       "/api/server/settings": { ...DOC, restart_needed: true },
       "/api/system/version": () => {
         pings += 1;
@@ -230,6 +235,61 @@ describe("StorageSettings", () => {
     expect(post).toHaveBeenCalledWith("/api/server/restart");
     await waitFor(() => expect(onReload).toHaveBeenCalledTimes(1));
     expect(pings).toBe(2);
+  });
+
+  it("saved backup settings wait for the same restart", async () => {
+    const user = userEvent.setup();
+    const backups = {
+      available: true,
+      file: DOC.file,
+      saved: {
+        dir: "",
+        nightly: true,
+        every_days: 1,
+        hour: 4,
+        keep: 7,
+        update_keep: 0,
+        pre_update: true,
+        reserve_percent: 5,
+        reserve_min_gb: 2,
+        max_share_percent: 20,
+      },
+      running: {},
+      restart_needed: true,
+      can_restart: true,
+      dir: "/data/backups",
+      default_dir: "/data/backups",
+      dumps: [],
+      dumps_bytes: 0,
+      update_keep: 3,
+    };
+    const onReload = vi.fn();
+    post.mockResolvedValue({ restarting: true });
+    let pings = 0;
+    routeGet(get, {
+      "/api/server/storage": NO_STORAGE,
+      "/api/server/backups": backups,
+      "/api/server/settings": DOC,
+      "/api/system/version": () => {
+        pings += 1;
+        if (pings === 1) throw new TypeError("network error");
+        return { version: "1.0.0" };
+      },
+    });
+    renderPage(
+      <ToastProvider>
+        <StorageSettings pollMs={1} onReload={onReload} />
+      </ToastProvider>,
+      { path: "/settings/storage" }
+    );
+    // the server settings need no restart; the backups do
+    expect(await screen.findByText(/waiting for a restart/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Restart the server" }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Restart the server" })
+    );
+    expect(post).toHaveBeenCalledWith("/api/server/restart");
+    await waitFor(() => expect(onReload).toHaveBeenCalledTimes(1));
   });
 
   it("says to restart by hand when the server cannot restart itself", async () => {

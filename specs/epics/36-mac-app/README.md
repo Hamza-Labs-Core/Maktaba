@@ -92,6 +92,7 @@ Per-user state, all under **`~/Library/Application Support/Maktaba/`** (`data/`,
 | 36.10 | **Clean up** | drop the broken Mac compose overlay and stale plists/docs (`docs/wiki/deployment.md` §8–9, legacy `com.maktaba.*.plist`), README "Install on a Mac" → the app; keep `stack.sh` as the developer path only. |
 | 36.11 | **The language model in the app** | see below. |
 | 36.15 | **Where the data lives** | see below. |
+| 36.16 | **Backup settings** | see below. |
 
 ## 36.11 — The language model in the app
 
@@ -173,6 +174,38 @@ or failed move is recorded in `storage-moved.json` and the install starts where 
    (`storage_missing_disk`).
 6. The API enforces the admin role on every storage route (a role test); a move asked for is
    audited (`server` / `storage-move-requested`).
+
+## 36.16 — Backup settings
+
+The library database's dumps were fixed in code (backups/ beside the database, a nightly dump from
+03:00, 7 kept, the pre-update dumps by `rules.updates.backups_keep`, `MakeRoom`'s 5% / 2 GiB
+reserve and 1/5 share). They are `[backups]` in server.toml now (the server reads it before its
+database step), every key unset keeping that behaviour: `dir`, `nightly`, `every_days`, `hour`,
+`keep`, `update_keep`, `pre_update`, `reserve_percent`, `reserve_min_gb`, `max_share_percent`.
+
+**Where they are changed.** Settings → Storage & discovery → **Backups of the library database**
+(admin only: `GET/PUT /api/server/backups`, `DELETE /api/server/backups/dumps/{name}`, proxying the
+supervisor's `/config/backups`; kept in `app_settings` too as `rules.backups`, `update_keep` as
+`rules.updates.backups_keep`; audited `backups-changed`, `backup-deleted`), setup's `storage` step
+(`backups_dir`, `nightly`, `hour`), and `maktaba-server backups show|set|delete`. Without a
+launcher, the settings page's restart is serve starting again in-process.
+
+**Acceptance criteria.**
+1. Every value is range-checked (every_days 1–30, hour 0–23, keep 1–365, update_keep 0–50,
+   reserve 0–50% and 0–1000 GB, share 1–100%); a new folder must be a whole path (checked like a
+   storage target), local and suitable, not inside the database's folder, writable, with room.
+2. A new folder while the old one holds dumps asks for a choice (422 `backups.move_dumps` with
+   their count and size): moved (renamed, or copied and checked across disks, with the
+   pre-update keep record) or left (no longer listed, pruned or restored from here).
+3. The scheduled dump follows `nightly`, `every_days` and `hour`; the time of the last one is
+   recorded apart (`<state>/state/last-nightly-backup`), so moving or deleting dumps never makes
+   the next one due early. `keep` prunes the scheduled ones; `update_keep` the pre-update ones.
+4. `pre_update = "off"` takes no dump before an update's migrations and logs that a failed
+   migration then cannot be put back (the page and the command warn).
+5. `MakeRoom` uses the reserve and share settings, the defaults unchanged.
+6. The page lists the dumps (name, kind, size, date, disk) with the disk's free space; a dump is
+   deleted one at a time, never the one an update under way may put back (409).
+7. The API enforces the admin role on every backups route (a role test).
 
 ## Order and parallel tracks
 

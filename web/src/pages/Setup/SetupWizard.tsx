@@ -25,6 +25,8 @@ import {
 } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
+import { Select } from "@ds/components/Select/Select";
+import { Toggle } from "@ds/components/Choice/Toggle";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useI18n } from "../../lib/i18n";
 import {
@@ -42,7 +44,7 @@ import {
   type StepProgress,
   type StorageChoice,
 } from "../../lib/desktopSetup";
-import type { StorageDisk } from "../../lib/serverSettingsApi";
+import { HOURS, hourLabel, type StorageDisk } from "../../lib/serverSettingsApi";
 import { ServerStarting } from "./ServerStarting";
 import { PermissionList, usePermissions } from "../../components/MacPermissions/PermissionList";
 import { tauriPermissionsApi, type PermissionsApi } from "../../lib/macPermissions";
@@ -689,7 +691,9 @@ export function diskOf(disks: StorageDisk[], dir: string): StorageDisk | undefin
 
 /** Where Maktaba keeps its data (the database, backups, models, caches):
  * preset to a folder on the disk with the most room; another disk, or a
- * folder typed in. A disk too small or not fit for it blocks Next. */
+ * folder typed in. A disk too small or not fit for it blocks Next. Below,
+ * the backups: their folder (empty: beside the data), and whether and when
+ * the nightly one runs. */
 function Storage({ api, step, platform, next, back }: StepProps) {
   const { t } = useI18n();
   const words = platformWords(t, platform);
@@ -697,6 +701,9 @@ function Storage({ api, step, platform, next, back }: StepProps) {
   const [loadError, setLoadError] = useState<StepError | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [dir, setDir] = useState("");
+  const [backupsDir, setBackupsDir] = useState("");
+  const [nightly, setNightly] = useState(true);
+  const [hour, setHour] = useState(3);
   const s = useStep(api);
   useEffect(() => {
     let alive = true;
@@ -707,6 +714,11 @@ function Storage({ api, step, platform, next, back }: StepProps) {
         if (!alive) return;
         setRes(r);
         setDir(r.suggested || r.current);
+        if (r.backups) {
+          setBackupsDir(r.backups.dir);
+          setNightly(r.backups.nightly);
+          setHour(r.backups.hour);
+        }
       })
       .catch((e) => alive && setLoadError(asError(e)));
     return () => {
@@ -724,7 +736,9 @@ function Storage({ api, step, platform, next, back }: StepProps) {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (blocked) return;
-    if (await s.run("storage", { data_dir: chosen })) next();
+    // a step that does not say how backups are set takes no backup settings
+    const backups = res?.backups ? { backups_dir: backupsDir.trim(), nightly, hour } : {};
+    if (await s.run("storage", { data_dir: chosen, ...backups })) next();
   };
   return (
     <Frame
@@ -799,6 +813,35 @@ function Storage({ api, step, platform, next, back }: StepProps) {
                 comfortable: formatBytes(res.comfortable_bytes),
               })}
             </p>
+          )}
+          {res.backups && (
+            <fieldset className="mkt-setup__radios">
+              <legend className="mk-field__label">{t("setup.storage.backups")}</legend>
+              <Input
+                label={t("setup.storage.backupsDir")}
+                description={t("setup.storage.backupsDirNote")}
+                dir="ltr"
+                spellCheck={false}
+                autoComplete="off"
+                value={backupsDir}
+                onChange={(e) => setBackupsDir(e.target.value)}
+                error={s.fieldError("backups_dir")}
+              />
+              <Toggle
+                label={t("setup.storage.nightly")}
+                checked={nightly}
+                onChange={(e) => setNightly(e.target.checked)}
+              />
+              <Select
+                label={t("setup.storage.hour")}
+                description={t("setup.storage.hourNote", words)}
+                dir="ltr"
+                value={String(hour)}
+                disabled={!nightly}
+                onChange={(e) => setHour(Number(e.target.value))}
+                options={HOURS.map((h) => ({ value: String(h), label: hourLabel(h) }))}
+              />
+            </fieldset>
           )}
           <div className="mkt-setup__actions">
             <Button type="submit" loading={s.busy} disabled={blocked}>
