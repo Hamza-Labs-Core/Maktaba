@@ -1900,8 +1900,14 @@ func (s *switching) follow(ctx context.Context, id string, term int64, h newHome
 		}
 	}
 	if !moved && s.cp != nil {
-		// copied anew from the new home: the subscription to the old one paused (its slot
-		// is gone)
+		// copied anew from the new home once this machine starts again: its manager stops
+		// first, or it reads the new home in node.json below and starts the first copy
+		// the start stops (a table-sync worker stopped as it ends leaves its table copied
+		// with no slot to resume from on the home: nodecopy.Copy.Stranded); the
+		// subscription to the old one paused (its slot is gone)
+		if s.stopCopy != nil {
+			s.stopCopy()
+		}
 		if err := s.cp.copy.Pause(ctx); err != nil {
 			fmt.Fprintf(os.Stderr, "[switchover] pausing the copy of the old home: %v\n", err)
 		}

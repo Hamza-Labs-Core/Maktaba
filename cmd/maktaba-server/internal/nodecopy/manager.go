@@ -84,6 +84,9 @@ type Manager struct {
 	copyAuth        int
 	copyPausedUntil time.Time
 	copyLoginAt     time.Time
+	// strandedAt: when the copy was last looked at for a table whose first copy can never
+	// end (Copy.Stranded)
+	strandedAt time.Time
 
 	// CopyLoginEvery is how often a subscription that does not receive from the home has
 	// its login tried (0: 1 min); CopyAuthAfter is how many refused logins in a row pause
@@ -415,7 +418,11 @@ func (m *Manager) Run(ctx context.Context) {
 			}
 			continue
 		}
-		if why := m.resubscribeReason(g, local); why != "" {
+		why := m.resubscribeReason(g, local)
+		if why == "" {
+			why = m.strandedReason(ctx)
+		}
+		if why != "" {
 			if err := m.resubscribe(ctx, local, why); err != nil {
 				m.set(ctx, m.state(StateError, err.Error()))
 				if !sleep(ctx, backoff) {
@@ -570,6 +577,36 @@ func (m *Manager) resubscribeReason(g Grant, local int64) string {
 	return ""
 }
 
+// strandedSettle is how long a table's first copy stays copied with its table-sync slot
+// gone from the home before it is taken as stranded (Copy.Stranded).
+const strandedSettle = 3 * time.Second
+
+// strandedReason says why the copy must subscribe anew when a table's first copy can never
+// end (Copy.Stranded: its table-sync slot is gone from the home), or "". Postgres does
+// not mend such a table: only a subscription made anew copies it again.
+func (m *Manager) strandedReason(ctx context.Context) string {
+	m.mu.Lock()
+	m.strandedAt = m.now()
+	m.mu.Unlock()
+	tables, err := m.Copy.Stranded(ctx, strandedSettle)
+	if err != nil || len(tables) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("the first copy of %s cannot finish (the home no longer has the slot it resumes from)",
+		strings.Join(tables, ", "))
+}
+
+// strandedDue reports whether s, a first copy whose errors keep rising, is due a look for
+// a stranded table (at most once a Retry): the turn that follows makes it anew then.
+func (m *Manager) strandedDue(s Status, rising bool) bool {
+	if s.State != StateCopying || !rising {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.now().Sub(m.strandedAt) >= m.retry()
+}
+
 // resubscribe subscribes the copy (anew): every row copied again.
 func (m *Manager) resubscribe(ctx context.Context, local int64, why string) error {
 	state := StateRebuilding
@@ -636,10 +673,24 @@ func (m *Manager) watch(ctx context.Context, d time.Duration) bool {
 	end := m.now().Add(d)
 	for {
 		s := m.withSlot(m.Copy.Observe(ctx, m.homeNow()))
+		m.mu.Lock()
+		rising := s.Errors > m.lastErrs
+		m.mu.Unlock()
 		m.noteErrors(s)
+		due := m.strandedDue(s, rising) // as observed: a rebuild's first copy too
 		s = m.copyLogin(ctx, s)
 		s = m.asRebuild(s)
 		m.set(ctx, s)
+		if due {
+			// a first copy whose table-sync keeps failing: a stranded table ends the watch,
+			// and the turn after it makes the copy anew (strandedReason)
+			if tables, err := m.Copy.Stranded(ctx, strandedSettle); err == nil && len(tables) > 0 {
+				return true
+			}
+			m.mu.Lock()
+			m.strandedAt = m.now()
+			m.mu.Unlock()
+		}
 		left := end.Sub(m.now())
 		if left <= 0 {
 			return true

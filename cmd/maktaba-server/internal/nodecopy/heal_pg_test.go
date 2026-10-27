@@ -380,3 +380,60 @@ func TestCopyRebuildsALostSlot(t *testing.T) {
 		t.Fatalf("the copy was never said to be rebuilding for its lost slot\n%s", r.dump())
 	}
 }
+
+// A table's first copy is stranded: copied, but the table-sync slot it resumes from is
+// gone from the home (Postgres's table-sync worker drops it on the home before it commits
+// the table done, and was stopped in between). Its worker would ask the home for that
+// slot every few seconds, for ever; the copy is made anew instead, and follows.
+func TestCopyRebuildsAStrandedTable(t *testing.T) {
+	r := newRig(t)
+	r.following("the first copy")
+	r.follows("the first copy", "one")
+	first, _ := r.c.Mark()
+
+	// the table-sync worker stopped between dropping its slot on the home and committing
+	// app_settings done: the table is left copied ('f'), its slot gone
+	r.stopManager()
+	db, err := r.c.super()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := r.c.Pause(r.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(r.ctx, `UPDATE pg_subscription_rel SET srsubstate = 'f', srsublsn = NULL
+	    WHERE srrelid = 'public.app_settings'::regclass`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(r.ctx, `ALTER SUBSCRIPTION `+Subscription+` ENABLE`); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := r.c.Stranded(r.ctx, 100*time.Millisecond); err != nil || len(got) != 1 || got[0] != "app_settings" {
+		t.Fatalf("the stranded tables: %v %v", got, err)
+	}
+	// its worker asks the home for the slot that is not there
+	waitFor(t, "the table-sync worker failing", time.Minute, func() bool {
+		var n int64
+		_ = db.QueryRowContext(r.ctx, `SELECT sync_error_count FROM pg_stat_subscription_stats
+		    WHERE subname = $1`, Subscription).Scan(&n)
+		return n > 0
+	})
+
+	r.startManager()
+	waitFor(t, "the copy made anew", 3*time.Minute, func() bool {
+		mk, ok := r.c.Mark()
+		return ok && mk.Subscribed.After(first.Subscribed)
+	})
+	r.following("after the stranded table")
+	r.follows("after the stranded table", "two")
+	r.mlogMu.Lock()
+	log := r.mlog.String()
+	r.mlogMu.Unlock()
+	if !strings.Contains(log, "the first copy of app_settings cannot finish") {
+		t.Fatalf("the copy was not made anew for its stranded table\n%s", r.dump())
+	}
+	if got, err := r.c.Stranded(r.ctx, 0); err != nil || len(got) != 0 {
+		t.Fatalf("stranded after the rebuild: %v %v", got, err)
+	}
+}

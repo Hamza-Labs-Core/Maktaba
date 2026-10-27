@@ -867,6 +867,93 @@ func reusable(s sub, g Grant, mk Marker, conn string) bool {
 	return true
 }
 
+// Stranded lists the tables whose first copy can never end: copied (srsubstate 'f') but
+// the table-sync slot they resume from is not on the home. Postgres's table-sync worker
+// drops that slot on the home before it commits the table done; a worker stopped between
+// the two (the subscription paused or this machine's Postgres stopped at that moment)
+// leaves the table copied with no slot, and its worker then asks the home for it every
+// few seconds, for ever ("replication slot pg_..._sync_... does not exist"). A table is
+// stranded only when it still is settle after the home said its slot is gone (a worker
+// between the two steps commits within moments). Nil when there is none, or the home
+// could not be asked (err).
+func (c Copy) Stranded(ctx context.Context, settle time.Duration) ([]string, error) {
+	db, err := c.super()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	copied := func() (map[string]string, error) {
+		rows, err := db.QueryContext(ctx, `SELECT c.relname,
+		       format('pg_%s_sync_%s_%s', s.oid, r.srrelid, (SELECT system_identifier FROM pg_control_system()))
+		  FROM pg_subscription_rel r
+		  JOIN pg_subscription s ON s.oid = r.srsubid
+		  JOIN pg_class c ON c.oid = r.srrelid
+		 WHERE s.subname = $1 AND r.srsubstate = 'f'`, Subscription)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		out := map[string]string{} // slot: table
+		for rows.Next() {
+			var table, slot string
+			if err := rows.Scan(&table, &slot); err != nil {
+				return nil, err
+			}
+			out[slot] = table
+		}
+		return out, rows.Err()
+	}
+	before, err := copied()
+	if err != nil || len(before) == 0 {
+		return nil, err
+	}
+	slots := make([]string, 0, len(before))
+	for s := range before {
+		slots = append(slots, s)
+	}
+	home, err := c.openHome(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer home.Close()
+	hctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	// pg_replication_slots is anyone's to read
+	rows, err := home.QueryContext(hctx, `SELECT slot_name FROM pg_replication_slots WHERE slot_name = ANY($1)`,
+		pq.StringArray(slots))
+	if err != nil {
+		return nil, err
+	}
+	there := map[string]bool{}
+	for rows.Next() {
+		var s string
+		if rows.Scan(&s) == nil {
+			there[s] = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if len(there) == len(before) {
+		return nil, nil
+	}
+	if !sleep(ctx, settle) {
+		return nil, ctx.Err()
+	}
+	after, err := copied()
+	if err != nil {
+		return nil, err
+	}
+	var stranded []string
+	for slot, table := range before {
+		if !there[slot] && after[slot] == table {
+			stranded = append(stranded, table)
+		}
+	}
+	sort.Strings(stranded)
+	return stranded, nil
+}
+
 // Pause disables the subscription (the home's schema is ahead of this machine's: its
 // changes would not apply until this machine updates).
 func (c Copy) Pause(ctx context.Context) error {

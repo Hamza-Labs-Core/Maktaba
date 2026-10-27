@@ -215,7 +215,9 @@ func startMachine(t *testing.T, name, bin string, env []string) *machine {
 	}
 	t.Cleanup(func() {
 		m.stop()
-		if t.Failed() {
+		// MAKTABA_E2E_LOG_ALWAYS keeps the logs of a run that passed too (a flaky run's
+		// passing twin, to compare)
+		if t.Failed() || os.Getenv("MAKTABA_E2E_LOG_ALWAYS") != "" {
 			t.Logf("---- %s log (tail) ----\n%s", name, tail(m.log.String(), 20000))
 			// MAKTABA_E2E_LOG_DIR keeps each machine's whole log of a failed run (CI uploads
 			// it). The folder is made here: a step that never made it lost every log, and a
