@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from .. import progress_clock
 from . import claim_owner
 from .jobs import DBConn
 from .pubsub import JOBS_HEARTBEAT, JOBS_PROGRESS, get_bus
@@ -180,6 +181,7 @@ async def tick_progress(db: DBConn, t: ProgressTick) -> None:
     row = await db.fetchrow(sql, *args)
     if row is None:
         return
+    progress_clock.note_progress(t.job_id)
     if db.dialect == "sqlite":
         get_bus().publish(JOBS_PROGRESS, _build_progress_payload(row))
     if getattr(db, "engine_hooks", False):

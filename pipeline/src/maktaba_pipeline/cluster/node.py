@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from ..db import schema_compat
 from ..engine.graph import StageDef
 from ..engine.paths import PathMap, set_active_path_map
 from ..engine.sql import is_pg, loads
@@ -96,24 +97,9 @@ def stop_jobs_after(stale_claim_sec: float, heartbeat_sec: float) -> float:
     return max(stale_claim_sec - heartbeat_sec - STOP_JOBS_MARGIN_SEC, stale_claim_sec / 2)
 
 
-#: asyncpg's errors for a connection that failed, closed or is refused for now (by name,
-#: as :mod:`.exitcodes` matches the login refusals): class 08 and 57P03
-_CONNECTION_ERRORS = (
-    "PostgresConnectionError",
-    "CannotConnectNowError",
-    "ConnectionDoesNotExistError",
-)
-
-
 def home_unreachable(exc: BaseException) -> bool:
     """The home's database did not answer (as opposed to answering with an error)."""
-    if isinstance(exc, (OSError, TimeoutError, asyncio.TimeoutError)):  # noqa: UP041
-        return True
-    names = {c.__name__ for c in type(exc).__mro__}
-    if names.intersection(_CONNECTION_ERRORS):
-        return True
-    # asyncpg's "connection is closed" / "pool is closing"
-    return "InterfaceError" in names and "clos" in str(exc)
+    return schema_compat.connection_lost(exc)
 
 
 class InFlight(Protocol):
@@ -131,7 +117,8 @@ async def _home_admin_map(db: Any) -> dict[str, str] | None:
     """The home's "share -> local mount" override (``instance_identity.path_map``)."""
     try:
         row = await db.fetchrow("SELECT path_map FROM instance_identity WHERE id = 1")
-    except Exception:  # noqa: BLE001 - an older schema
+    except Exception as exc:  # noqa: BLE001 - an older schema
+        schema_compat.fallback(_log, "home_path_map_unavailable", exc)
         return None
     if row is None or row["path_map"] is None:
         return None
@@ -382,8 +369,8 @@ class WorkerAgent:
                 )
             if why is not None and await auto.enqueue(self.db, why.replace(":", "_")):
                 _log.info("storage_canonicalize_enqueued", why=why)
-        except Exception:  # noqa: BLE001 - an older schema, a busy database: next time
-            _log.debug("storage_canonicalize_check_failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - an older schema, a busy database: next time
+            schema_compat.fallback(_log, "storage_canonicalize_check_failed", exc)
 
     async def _report_home(self) -> None:
         storage = await self._check_storage()
@@ -394,7 +381,7 @@ class WorkerAgent:
                 json.dumps(storage),
             )
         except Exception as exc:  # noqa: BLE001 - an older schema: the check still ran
-            _log.debug("home_storage_report_skipped", error=str(exc))
+            schema_compat.fallback(_log, "home_storage_report_skipped", exc)
 
     async def _refresh_resolver(self) -> None:
         """Every storage check: servers may have been added, shares (re)mounted."""
@@ -508,8 +495,8 @@ class WorkerAgent:
 
         try:
             await sweep(self.db)
-        except Exception:  # noqa: BLE001 - an older schema, a busy database: next time
-            _log.debug("enrich_sweep_failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - an older schema, a busy database: next time
+            schema_compat.fallback(_log, "enrich_sweep_failed", exc)
 
     async def beat(self) -> None:
         """A node's heartbeat on its cluster row: revoked -> stop; drain -> claim nothing;

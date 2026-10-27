@@ -112,6 +112,10 @@ DEFAULT_CONFIG = ThumbnailConfig()
 # inject a fake that writes a stub file instead.
 FrameRunner = Callable[[list[str]], Awaitable[None]]
 
+#: The longest one ffmpeg run may take. A sprite of an hour-long file takes seconds
+#: (keyframes only); past this the source is not answering.
+FFMPEG_TIMEOUT_SEC = 600.0
+
 
 @dataclass(slots=True, frozen=True)
 class ThumbnailSet:
@@ -231,7 +235,7 @@ def build_sprite_args(
     ]
 
 
-async def _run_ffmpeg(args: list[str]) -> None:
+async def _run_ffmpeg(args: list[str], *, timeout_sec: float = FFMPEG_TIMEOUT_SEC) -> None:
     """Default runner: spawn ffmpeg, raise ThumbnailError on failure."""
     if shutil.which(args[0]) is None:
         raise ThumbnailError("ffmpeg_not_found", stderr_tail=args[0])
@@ -241,20 +245,33 @@ async def _run_ffmpeg(args: list[str]) -> None:
         stderr=asyncio.subprocess.PIPE,
         stdin=asyncio.subprocess.DEVNULL,
     )
-    rc = await proc.wait()
+    output = args[-1]
+    # communicate(), not wait(): wait() with stderr on a pipe deadlocks once ffmpeg
+    # fills the pipe (a damaged file logs a line per bad frame), and the job then
+    # hangs for ever while its heartbeat keeps it looking alive. The timeout bounds a
+    # read from a share that stopped answering the same way.
+    try:
+        _, tail = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+    except (TimeoutError, asyncio.TimeoutError) as exc:  # noqa: UP041
+        with suppress(ProcessLookupError):
+            proc.kill()
+        await proc.wait()
+        with suppress(FileNotFoundError, OSError):
+            Path(output).unlink()
+        raise ThumbnailError(
+            "ffmpeg_timeout",
+            stderr_tail=f"ffmpeg timed out after {timeout_sec:g}s",
+        ) from exc
+    rc = proc.returncode
     if rc != 0:
-        tail = b""
-        if proc.stderr is not None:
-            tail = await proc.stderr.read()
         # A partially-written frame is useless; drop it so a retry starts
         # clean and the cache never serves a truncated image.
-        output = args[-1]
         with suppress(FileNotFoundError, OSError):
             Path(output).unlink()
         raise ThumbnailError(
             "ffmpeg_thumbnail",
             returncode=rc,
-            stderr_tail=tail.decode("utf-8", "replace")[-2000:],
+            stderr_tail=(tail or b"").decode("utf-8", "replace")[-2000:],
         )
 
 
