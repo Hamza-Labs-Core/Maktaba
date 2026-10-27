@@ -97,6 +97,7 @@ import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.R
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.api.errorKind
 import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.permissions.AppPermissions
@@ -295,6 +296,7 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
         if (!granted) return@LaunchedEffect
         launch { delay(6_000); searched = true }
         runCatching { HomeDiscovery(context.applicationContext).homes().collect { found = it } }
+            .onFailure { if (it is CancellationException) throw it else AppLog.failure("home discovery", it) }
         searched = true
     }
 
@@ -308,6 +310,7 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                AppLog.failure("connect", e)
                 problem = failed.replace("%s", link.urls.joinToString { it.substringAfter("://") })
             } finally {
                 connecting = false
