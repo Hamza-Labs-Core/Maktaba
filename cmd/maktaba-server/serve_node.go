@@ -296,6 +296,10 @@ func advertiseMachine(ctx context.Context, cfg config.Config, ns *nodeServices) 
 	webPort := mdns.PortFromListen(cfg.Server.WebListen, 8088)
 	host, _ := os.Hostname()
 	m := mdns.Machine{Role: "home", Name: host, WebPort: webPort, Version: version.Version}
+	// the web base path (Epic 42 story 42.2: TXT path, sent only when it is not "/")
+	if u, err := url.Parse(cfg.PublicWebURL()); err == nil {
+		m.Path, m.TLS = u.Path, strings.EqualFold(u.Scheme, "https")
+	}
 	if ns != nil {
 		m.Role, m.ID, m.HomeID = "node", ns.node.NodeID, ns.node.Home.InstanceID
 		if ns.node.Name != "" {

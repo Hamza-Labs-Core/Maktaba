@@ -1,3 +1,6 @@
+#if os(iOS)
+import AVFoundation
+#endif
 import dnssd
 import Foundation
 import Network
@@ -10,8 +13,12 @@ import Observation
 ///   (`http://192.168.1.20:8088`, `mac.local`), and iOS 14+ and macOS 15+ block traffic to the
 ///   local network until the person allows it. tvOS has no such privilege (Apple's TN3179),
 ///   so the TV app needs nothing.
+/// - **Camera** (iPhone, iPad; optional): to scan a home's QR code in the home picker, or a
+///   device's sign-in QR code to approve it. Everything it scans can be typed instead; the
+///   Mac takes a pasted link.
 public enum PermissionKind: String, CaseIterable, Identifiable, Sendable {
     case localNetwork
+    case camera
 
     public var id: String { rawValue }
 
@@ -19,17 +26,68 @@ public enum PermissionKind: String, CaseIterable, Identifiable, Sendable {
     public var isRequired: Bool {
         switch self {
         case .localNetwork: true
+        case .camera: false
         }
     }
 
-    /// What this platform asks for: Local Network on iOS, iPadOS and macOS; nothing on tvOS.
+    /// What this platform asks for: Local Network on iOS, iPadOS and macOS, the camera on
+    /// iOS and iPadOS; nothing on tvOS.
     public static var forThisPlatform: [PermissionKind] {
         #if os(tvOS) || os(watchOS)
         []
+        #elseif os(iOS)
+        [.localNetwork, .camera]
         #else
         [.localNetwork]
         #endif
     }
+}
+
+/// The camera's permission (AVFoundation on iOS; a fake in tests).
+public protocol CameraAccess: Sendable {
+    func state() -> PermissionState
+    /// Asks (the system's question the first time); true when allowed.
+    func request() async -> Bool
+}
+
+/// The device's camera permission.
+public struct SystemCamera: CameraAccess {
+    public init() {}
+
+    public func state() -> PermissionState {
+        #if os(iOS)
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: .granted
+        case .denied, .restricted: .denied
+        case .notDetermined: .notAsked
+        @unknown default: .unknown
+        }
+        #else
+        .unknown
+        #endif
+    }
+
+    public func request() async -> Bool {
+        #if os(iOS)
+        await AVCaptureDevice.requestAccess(for: .video)
+        #else
+        false
+        #endif
+    }
+}
+
+/// A camera whose answers are given (tests, and the UI tests' scripted runs).
+public struct FakeCamera: CameraAccess {
+    let current: PermissionState
+    let answer: Bool
+
+    public init(_ current: PermissionState, answers answer: Bool = true) {
+        self.current = current
+        self.answer = answer
+    }
+
+    public func state() -> PermissionState { current }
+    public func request() async -> Bool { answer }
 }
 
 /// Where a permission stands, as the walkthrough shows it.
@@ -216,6 +274,7 @@ public final class PermissionsModel {
 
     private let defaults: UserDefaults
     private let probe: any LocalNetworkProbe
+    private let camera: any CameraAccess
     private let timing: Timing
     /// Closed this run while something required was refused: not shown again until the
     /// refusal is new (it was allowed, then refused) or the app starts again.
@@ -225,11 +284,13 @@ public final class PermissionsModel {
         kinds: [PermissionKind] = PermissionKind.forThisPlatform,
         defaults: UserDefaults = .standard,
         probe: any LocalNetworkProbe = BonjourProbe(),
+        camera: any CameraAccess = SystemCamera(),
         timing: Timing = .standard
     ) {
         self.items = kinds.map { Item(kind: $0, state: .notAsked) }
         self.defaults = defaults
         self.probe = probe
+        self.camera = camera
         self.timing = timing
     }
 
@@ -276,6 +337,8 @@ public final class PermissionsModel {
                 } else {
                     await browse(timing.check, until: nil)
                 }
+            case .camera:
+                set(.camera, camera.state())
             }
         }
         updatePresentation()
@@ -295,6 +358,11 @@ public final class PermissionsModel {
             } else {
                 await browse(timing.check, until: nil)
             }
+        case .camera:
+            busy.insert(.camera)
+            _ = await camera.request()
+            busy.remove(.camera)
+            set(.camera, camera.state())
         }
         updatePresentation()
     }

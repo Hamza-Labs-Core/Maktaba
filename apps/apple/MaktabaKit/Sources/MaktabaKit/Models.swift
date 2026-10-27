@@ -131,6 +131,9 @@ public struct DevicePairing: Codable, Sendable, Equatable {
     public let deviceCode: String
     public let expiresAt: Date
     public let verifyPath: String
+    /// The whole approve page's address, when the home gives it (Epic 42: a home that
+    /// knows its public address); the QR code holds it.
+    public let verifyLink: String?
     public let interval: Int
 
     public enum State: Sendable, Equatable {
@@ -142,22 +145,87 @@ public struct DevicePairing: Codable, Sendable, Equatable {
         case deviceCode = "device_code"
         case expiresAt = "expires_at"
         case verifyPath = "verify_path"
+        case verifyLink = "verify_url"
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         code = try c.decode(String.self, forKey: .code)
         deviceCode = try c.decode(String.self, forKey: .deviceCode)
-        verifyPath = try c.decode(String.self, forKey: .verifyPath)
+        verifyPath = try c.decodeIfPresent(String.self, forKey: .verifyPath) ?? "/pair?code=\(code)"
+        verifyLink = try c.decodeIfPresent(String.self, forKey: .verifyLink)
         interval = max(1, try c.decodeIfPresent(Int.self, forKey: .interval) ?? 2)
         let exp = try c.decode(String.self, forKey: .expiresAt)
-        expiresAt = (try? Date(exp, strategy: .iso8601)) ?? .now.addingTimeInterval(600)
+        expiresAt = homeTime(exp) ?? .now.addingTimeInterval(600)
     }
 
-    /// The page that approves it, on the address this device reached the home at.
+    /// The page that approves it: `verify_url` when the home gives one, else
+    /// `verify_path` on the address this device reached the home at (under its base path).
     public func verifyURL(home: URL) -> URL? {
-        URL(string: verifyPath, relativeTo: home)?.absoluteURL
+        if let verifyLink, let u = URL(string: verifyLink), let s = u.scheme?.lowercased(), s == "http" || s == "https", u.host() != nil {
+            return u
+        }
+        let base = home.path().hasSuffix("/") ? String(home.path().dropLast()) : home.path()
+        guard var c = URLComponents(url: home, resolvingAgainstBaseURL: false),
+              let rel = URLComponents(string: verifyPath) else { return nil }
+        c.path = base + (rel.path.hasPrefix("/") ? rel.path : "/" + rel.path)
+        c.percentEncodedQuery = rel.percentEncodedQuery
+        c.fragment = nil
+        return c.url
     }
+}
+
+/// `GET /api/pairing/device/{code}` (signed in): what is asking to be signed in with a
+/// code, for the person to check before approving.
+public struct PendingDevice: Decodable, Sendable, Equatable {
+    public let code: String
+    /// `player`, `remote`, `tv`, … (the asking app's `X-Maktaba-Client`).
+    public let clientApp: String?
+    public let platform: String?
+    public let device: String?
+    /// The name the device gave itself ("Living room").
+    public let deviceLabel: String?
+    public let expiresAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case code, platform, device
+        case clientApp = "client_app"
+        case deviceLabel = "device_label"
+        case expiresAt = "expires_at"
+    }
+
+    public init(code: String, clientApp: String? = nil, platform: String? = nil, device: String? = nil,
+                deviceLabel: String? = nil, expiresAt: Date? = nil) {
+        self.code = code
+        self.clientApp = clientApp
+        self.platform = platform
+        self.device = device
+        self.deviceLabel = deviceLabel
+        self.expiresAt = expiresAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        code = try c.decode(String.self, forKey: .code)
+        func text(_ k: CodingKeys) throws -> String? {
+            try c.decodeIfPresent(String.self, forKey: k)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        }
+        clientApp = try text(.clientApp)
+        platform = try text(.platform)
+        device = try text(.device)
+        deviceLabel = try text(.deviceLabel)
+        expiresAt = try text(.expiresAt).flatMap(homeTime)
+    }
+}
+
+/// What a code is, when the person looks it up to approve it.
+public enum DeviceLookup: Sendable, Equatable {
+    /// A device is waiting for this code.
+    case found(PendingDevice)
+    /// No device is waiting for it (a wrong code, or it expired).
+    case notFound
+    /// A home from before this lookup: it cannot say what asks (it may still be approved).
+    case unknownOnThisHome
 }
 
 /// A page of a list (`{"items": [...], "next": cursor}`).
@@ -190,9 +258,16 @@ public struct StreamSession: Codable, Sendable {
         expiresAt.flatMap(homeTime)
     }
 
-    /// The URL the player opens, against the home's address.
+    /// The URL the player opens, against the home's address. A home served under a base path
+    /// (`https://example.com/maktaba`) that answers with a root path (`/stream/…`) is read
+    /// under its base path; a path already under it is kept.
     public func playbackURL(home: URL) -> URL? {
-        guard let path = directURL ?? manifestURL else { return nil }
+        guard var path = directURL ?? manifestURL else { return nil }
+        var base = home.path(percentEncoded: true)
+        while base.hasSuffix("/") { base.removeLast() }
+        if !base.isEmpty, path.hasPrefix("/"), !path.hasPrefix("//"), !path.hasPrefix(base + "/") {
+            path = base + path
+        }
         return URL(string: path, relativeTo: home)?.absoluteURL
     }
 }

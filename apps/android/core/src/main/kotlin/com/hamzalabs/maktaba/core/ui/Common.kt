@@ -42,6 +42,14 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.outlined.PhonelinkLock
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.hamzalabs.maktaba.core.R
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.session.AppSession
@@ -78,17 +86,45 @@ fun Poster(client: ApiClient, video: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** The account menu: who, which home, the theme, switch home, sign out. */
+/**
+ * The account menu: who, which home, approving another device's sign-in (story 42.6), the
+ * theme, switch home, sign out.
+ */
 @Composable
 fun AccountMenu(session: AppSession, user: User, themes: ThemeStore) {
     var open by remember { mutableStateOf(false) }
+    var approving by rememberSaveable { mutableStateOf(false) }
     val home by session.current.collectAsState()
     val mode by themes.mode.collectAsState()
+    val client = session.client
+    if (approving && client != null) {
+        Dialog(
+            onDismissRequest = { approving = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        ) {
+            Surface(Modifier.fillMaxSize()) {
+                ApproveSignIn(
+                    client = client,
+                    username = user.username,
+                    homeName = home?.label ?: client.home.host,
+                    onClose = { approving = false },
+                    onSignedOut = { approving = false; session.signedOut() },
+                )
+            }
+        }
+    }
     Box {
         IconButton(onClick = { open = true }) { Icon(Icons.Filled.AccountCircle, "Account") }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(text = { Text(user.username, style = MaterialTheme.typography.titleSmall) }, onClick = {}, enabled = false)
-            home?.let { DropdownMenuItem(text = { Text(it.name) }, onClick = {}, enabled = false) }
+            home?.let { DropdownMenuItem(text = { Text(it.label) }, onClick = {}, enabled = false) }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.account_approve)) },
+                leadingIcon = { Icon(Icons.Outlined.PhonelinkLock, null) },
+                onClick = { open = false; approving = true },
+                modifier = Modifier.testTag("account-approve"),
+            )
             HorizontalDivider()
             ThemeMode.entries.forEach { m ->
                 DropdownMenuItem(

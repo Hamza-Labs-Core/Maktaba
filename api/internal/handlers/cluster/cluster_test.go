@@ -509,8 +509,13 @@ func TestSettingsAutoExpiryAndRename(t *testing.T) {
 		t.Errorf("home = %+v", home)
 	}
 	if last := f.pub.Last(); last.Instance != "Maktaba (Studio)" || last.TXT["join"] != "1" || last.Port != 8080 ||
-		last.TXT["schema_rev"] != "103" || last.TXT["version"] != "1.2.3" || len(last.TXT["id"]) != 8 {
+		last.TXT["schema_rev"] != "103" || last.TXT["version"] != "1.2.3" || last.TXT["id"] != strings.ToLower(home.InstanceID) ||
+		last.TXT["name"] != "Studio" {
 		t.Errorf("announce = %+v", last)
+	}
+	// the root path is not announced (Epic 42 story 42.2: path only when it is not "/")
+	if txt := f.pub.Last().TXT; txt["path"] != "" {
+		t.Errorf("path announced for the root: %v", txt)
 	}
 	f.now = t0.Add(59 * time.Minute)
 	f.join()

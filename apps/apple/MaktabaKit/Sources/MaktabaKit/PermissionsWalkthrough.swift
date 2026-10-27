@@ -13,7 +13,7 @@ public extension PermissionKind {
         #if os(iOS)
         URL(string: UIApplication.openSettingsURLString)
         #elseif os(macOS)
-        URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork")
+        URL(string: "x-apple.systempreferences:com.apple.preference.security?\(self == .camera ? "Privacy_Camera" : "Privacy_LocalNetwork")")
         #else
         nil
         #endif
@@ -138,7 +138,7 @@ struct PermissionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Label(words.name(item.kind), systemImage: "network")
+                Label(words.name(item.kind), systemImage: PermissionsStrings.symbol(item.kind))
                     .font(.title3.bold())
                 Text(words.text(item.isRequired ? .required : .optional))
                     .font(.caption.bold())
@@ -146,8 +146,8 @@ struct PermissionCard: View {
                     .background(Capsule().fill(Color.brass.opacity(0.25)))
             }
             stateLabel
-            Text(words.text(.localNetworkWhy))
-            Text(words.text(.localNetworkWithout)).foregroundStyle(.secondary)
+            Text(words.why(item.kind))
+            Text(words.without(item.kind)).foregroundStyle(.secondary)
             if let help {
                 Text(help).font(.callout).accessibilityIdentifier("\(id).help")
             }
@@ -197,9 +197,9 @@ struct PermissionCard: View {
     private var help: String? {
         switch item.state {
         case .granted: nil
-        case .notAsked: words.text(.localNetworkAsk)
-        case .denied: words.text(.localNetworkDeniedHow, appName, appName)
-        case .unknown: words.text(.localNetworkUnknown)
+        case .notAsked: words.ask(item.kind)
+        case .denied: words.deniedHow(item.kind, appName: appName)
+        case .unknown: words.unknownHelp(item.kind)
         }
     }
 

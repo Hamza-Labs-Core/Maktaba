@@ -369,6 +369,7 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 		"/.well-known/security.txt", "/api/auth/login", "/api/auth/refresh", "/api/auth/register",
 		"/api/auth/cloud", // Epic 42 story 42.7: the cloud assertion is the credential
 		"/api/pairing/device", "/api/pairing/device/token",
+		"/api/discovery/home", // Epic 42 story 42.2: the home's identity for the apps
 		"/api/cluster/join", "/api/cluster/join/*", "/api/cluster/agent",
 		"/api/cluster/link", "/api/cluster/link/stream", "/api/cluster/ca.crt", "/api/cluster/link/pull",
 		"/api/cluster/link/local/*", "/api/tv/remote/webhook", "/api/cluster/self", "/api/cluster/moved/*",
@@ -399,6 +400,8 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 		"/api/cluster", "/api/cluster/settings", "/api/cluster/nodes/x", "/api/cluster/nodes/x/approve",
 		"/api/cluster/nodes/x/revoke", "/api/users", "/api/settings", "/api/queues", "/api/admin/system/status",
 		"/api/telemetry/app", "/api/telemetry/server/forget",
+		// Epic 42 story 42.6: approving a code, and seeing what asks with it, need a sign-in
+		"/api/pairing/approve", "/api/pairing/device/ABCD-1234", "/api/discovery/home/x",
 	} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("POST", path, nil))

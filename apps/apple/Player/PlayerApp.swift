@@ -40,6 +40,8 @@ struct AccountCommands: Commands {
                 ForEach(ThemeMode.allCases) { Text($0.label).tag($0) }
             }
             Divider()
+            Button(ConnectStrings.forPreferredLanguages().text(.approveMenu)) { session.approvingSignIn = true }
+                .disabled(!session.signedIn)
             Button("Switch Home…") { session.switchHome() }
                 .keyboardShortcut("h", modifiers: [.command, .shift])
                 .disabled(session.phase == .choosingHome)
