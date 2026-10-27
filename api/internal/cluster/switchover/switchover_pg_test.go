@@ -454,9 +454,9 @@ func TestTheMovedNoticeIsServedPerMachine(t *testing.T) {
 }
 
 // Epic 35 review round 2 (A-N1): an update run past its plan holds a switch of the home
-// (update_under_way), unless it only waits for clicks on desktop apps (nothing drained,
-// nothing switching): the update ends that run when the switch starts.
-func TestAnUpdateHoldsTheSwitchUnlessItWaitsForClicks(t *testing.T) {
+// (update_under_way), unless it only waits for desktop apps to stage their orders (nothing
+// drained, nothing switching): the update ends that run when the switch starts.
+func TestAnUpdateHoldsTheSwitchUnlessItWaitsForItsApps(t *testing.T) {
 	o, _, _, _, _ := setup(t)
 	ctx := context.Background()
 	if _, err := o.DB.ExecContext(ctx, `INSERT INTO update_runs (id, version, from_version, trigger, state, step, detail)
