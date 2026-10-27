@@ -281,10 +281,10 @@ type LibraryRef struct {
 	Videos *int64 `json:"videos,omitempty"`
 }
 
-// Home implements GET /api/home. Five queries: the caller's resumable
-// videos (the overall row and each pinned library's are cut from them),
-// recently added, recently watched, the pins, and the pinned libraries'
-// recently added.
+// Home implements GET /api/home: the caller's resumable videos (the overall
+// row and each pinned library's are cut from them), recently added, recently
+// watched, On Deck, favorites, the pins, and the pinned libraries' recently
+// added.
 func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 	p := caller(w, r)
 	if p == nil {
@@ -294,6 +294,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 	doc := map[string]any{
 		"continue_watching": []Card{}, "recently_added": []Card{},
 		"recently_watched": []Card{}, "pinned": []PinnedRows{},
+		"on_deck": []Card{}, "favorites": []Card{},
 	}
 	if s.none() {
 		writeJSON(w, r, doc)
@@ -316,6 +317,17 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "recently watched", err)
 		return
 	}
+	deck, err := h.onDeck(ctx, uid, s, "", RowSize)
+	if err != nil {
+		internal(w, r, "on deck", err)
+		return
+	}
+	favs, err := h.favoriteCards(ctx, uid, s, RowSize)
+	if err != nil {
+		internal(w, r, "favorites", err)
+		return
+	}
+	doc["on_deck"], doc["favorites"] = deck, favs
 	pins, err := h.pinned(ctx, uid, s)
 	if err != nil {
 		internal(w, r, "pins", err)
@@ -429,11 +441,16 @@ func (h *Handler) Hub(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "years", err)
 		return
 	}
+	deck, err := h.onDeck(ctx, uid, s, id, RowSize)
+	if err != nil {
+		internal(w, r, "on deck", err)
+		return
+	}
 	writeJSON(w, r, map[string]any{
 		"library": lib,
 		"rows": map[string]any{
 			"continue_watching": cont, "recently_added": added, "recently_watched": watched,
-			"most_watched": most, "series": series, "years": years,
+			"most_watched": most, "series": series, "years": years, "on_deck": deck,
 		},
 	})
 }

@@ -12,6 +12,20 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Plex-like watching, Phase 2 (Epic 45 stories 45.8 to 45.16).** Mark a video watched or
+  unwatched, one at a time or many (**Select** on a library's grid); ticks and progress bars on
+  the grid's cards; **Favorites** (a heart on the video page and the grid, a Favorites row on
+  Home, a Favorites filter); **Playlists** (`/playlists`: make, rename, reorder, remove; add from a
+  video or from a selection); the grid's **search box**, **Tag**, **Speaker** and **Language**
+  filters and an **A to Z jump bar** (Arabic and Latin letters); **Play all**, **Shuffle** and
+  **Play from here**, with **Up next** at the end of a video (the queue's next, or the series'
+  next lesson, after a 10-second countdown); **On Deck** (the next lesson of each series you are
+  in the middle of) on Home and a library's page; and on the video page Resume, the lesson's
+  place in its series ("Lesson 4 of 40") with Previous and Next. Each user's marks, favorites
+  and playlists are their own and stay within the libraries they may see. Slot 0162. API:
+  `POST /api/me/watched`, `POST /api/me/favorites`, `GET /api/me/videos/{id}`,
+  `/api/me/playlists...`, `GET /api/videos/facets`, `GET /api/me/videos` (the list on the home,
+  `favorite=true`), and `GET /api/videos` gains `tag`, `speaker`, `letter` and `sort=random`.
 - **Backup settings (Epic 36 story 36.16).** Where the library database's dumps go, the schedule
   (on/off, daily, weekly or every N days, the hour), how many scheduled and pre-update dumps stay,
   the pre-update dump on/off, and the room the dumps leave on their disk (5% / 2 GB / a fifth by
