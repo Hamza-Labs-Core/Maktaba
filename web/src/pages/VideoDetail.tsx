@@ -10,6 +10,8 @@
 // Live updates via SSE /ws/library/{id} (the AC-3 {type,at,payload}
 // envelope). The transcript list is windowed (slice cap) rather than a
 // TanStack-Virtual integration — see report deferral note.
+// Epic 45 Phase 2: the header's VideoActions (resume, mark watched, favorite,
+// add to playlist, the lesson's place in its series with previous / next).
 import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -34,6 +36,7 @@ import {
 import { TitleRow } from "../help/HelpLink";
 import { VideoPoster } from "../components/VideoViews";
 import { VideoPlayer } from "./VideoPlayer";
+import { VideoActions } from "../components/VideoActions";
 
 interface Video extends DisplayTitleVideo {
   id: string;
@@ -274,6 +277,8 @@ export function VideoDetail() {
             setLoaded((cur) => (cur ? { ...cur, video: { ...cur.video, ...v } } : cur))
           }
         />
+        {/* Phase 2: resume, watched, favorite, add to playlist, the series' lessons */}
+        <VideoActions videoId={videoId} />
       </header>
       <Tabs label={video.title || video.filename} items={items} value={tab} onChange={selectTab} />
     </section>

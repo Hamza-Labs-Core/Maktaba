@@ -1,0 +1,291 @@
+/*
+ * Epic 45 Phase 2: the grid's search, extra filters, jump bar, marks and
+ * selection; the video page's actions and series panel; playlists; Up next.
+ * Logical properties throughout, so Arabic (dir="rtl") mirrors by itself.
+ */
+
+/* the grid's toolbar grows: let it wrap */
+.mkt-library .mkt-toolbar {
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+
+.mkt-browse-search {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+.mkt-browse-search input[type="search"] {
+  min-inline-size: 14rem;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-fg);
+}
+
+.mkt-browse-actions,
+.mkt-playlist__actions,
+.mkt-video__actions,
+.mkt-upnext__actions,
+.mkt-bulkbar__actions,
+.mkt-video__series-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.mkt-browse-actions {
+  margin-block: var(--space-2);
+}
+
+/* Select: the bar of bulk actions sticks under the toolbar */
+.mkt-bulkbar {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-block-end: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-panel, var(--color-bg));
+  backdrop-filter: blur(8px);
+}
+.mkt-bulkbar__count {
+  font-weight: 600;
+}
+.mkt-bulkbar__actions {
+  margin-inline-start: auto;
+}
+
+/* A to Z */
+.mkt-jumpbar ul {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.mkt-jumpbar__btn {
+  min-inline-size: 2rem;
+  min-block-size: 2rem;
+  padding: 0 var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  cursor: pointer;
+}
+.mkt-jumpbar__btn:hover {
+  border-color: var(--color-border);
+}
+.mkt-jumpbar__btn[aria-pressed="true"] {
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+}
+
+/* the marks on a grid card */
+.mkt-card__art {
+  position: relative;
+  display: block;
+}
+.mkt-card__art .mkt-card__poster {
+  display: block;
+  inline-size: 100%;
+}
+.mkt-card__watched,
+.mkt-card__fav {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  display: grid;
+  place-items: center;
+  inline-size: 1.6rem;
+  block-size: 1.6rem;
+  border-radius: 50%;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: #fff;
+}
+.mkt-card__watched {
+  inset-inline-end: var(--space-1);
+  background: var(--color-success);
+}
+.mkt-card__fav {
+  inset-inline-start: var(--space-1);
+  background: rgb(0 0 0 / 0.55);
+  color: #ff6b81;
+}
+.mkt-card__fav-inline {
+  color: var(--color-error);
+}
+.mkt-card__progress {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  height: 4px;
+  background: rgb(0 0 0 / 0.45);
+}
+.mkt-card__progress > span {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+}
+
+/* select mode: the whole card toggles its check box */
+.mkt-card__select {
+  display: block;
+  position: relative;
+  padding: var(--space-3);
+  cursor: pointer;
+}
+.mkt-card__select > input[type="checkbox"] {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: calc(var(--space-3) + var(--space-1));
+  inset-inline-start: calc(var(--space-3) + var(--space-1));
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+}
+.mkt-card--selected {
+  outline: 3px solid var(--color-accent);
+  outline-offset: -3px;
+}
+
+/* the video page */
+.mkt-video__mine {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+.mkt-video__series {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  max-inline-size: 40rem;
+}
+.mkt-video__series p {
+  margin: 0;
+}
+
+/* Add to playlist */
+.mkt-addpl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: min(28rem, 80vw);
+}
+.mkt-addpl__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-block-size: 40vh;
+  overflow-y: auto;
+}
+.mkt-addpl__item {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+.mkt-addpl__name {
+  flex: 1;
+  font-weight: 600;
+}
+.mkt-addpl__new,
+.mkt-playlists__new,
+.mkt-playlist__rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+/* a playlist's videos */
+.mkt-plitems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mkt-plitems__item {
+  display: grid;
+  grid-template-columns: 2rem 8rem 1fr auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-subtle);
+}
+.mkt-plitems__num {
+  text-align: center;
+  color: var(--color-muted);
+}
+.mkt-plitems__art .mkt-card__poster {
+  display: block;
+  inline-size: 100%;
+}
+.mkt-plitems__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+.mkt-plitems__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+}
+@media (max-width: 640px) {
+  .mkt-plitems__item {
+    grid-template-columns: 2rem 1fr;
+  }
+  .mkt-plitems__art {
+    display: none;
+  }
+  .mkt-plitems__actions {
+    grid-column: 1 / -1;
+  }
+  .mkt-browse-search input[type="search"] {
+    min-inline-size: 0;
+    inline-size: 100%;
+  }
+}
+
+/* Up next, over the end of the video */
+.mkt-upnext {
+  position: absolute;
+  z-index: 3;
+  inset-block-end: var(--space-6, 3rem);
+  inset-inline-end: var(--space-4);
+  max-inline-size: min(24rem, 90%);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: rgb(0 0 0 / 0.8);
+  color: #fff;
+  box-shadow: var(--shadow-md);
+}
+.mkt-upnext p {
+  margin: 0 0 var(--space-1);
+}
+.mkt-upnext__label {
+  font-size: var(--font-size-sm);
+  opacity: 0.85;
+}
+.mkt-upnext__title {
+  font-weight: 600;
+}

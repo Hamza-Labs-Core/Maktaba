@@ -109,6 +109,11 @@ export function MediaCard({ video, meta }: { video: VideoCard; meta?: ReactNode 
           {typeof video.duration_sec === "number" && video.duration_sec > 0 && (
             <span className="mkt-media-card__dur">{formatDuration(video.duration_sec)}</span>
           )}
+          {video.completed && (
+            <span className="mkt-card__watched" role="img" aria-label={t("browse.watchedMark")}>
+              ✓
+            </span>
+          )}
           {frac !== null && (
             <span
               className="mkt-media-card__progress"
@@ -137,17 +142,20 @@ export function VideoRow({
   seeAllTo,
   videos,
   testId,
+  meta,
 }: {
   title: ReactNode;
   titleTo?: string;
   seeAllTo?: string;
   videos: VideoCard[];
   testId?: string;
+  /** a line under each card's title (On Deck: the series) */
+  meta?: (v: VideoCard) => ReactNode;
 }) {
   return (
     <MediaRow title={title} titleTo={titleTo} seeAllTo={seeAllTo} testId={testId}>
       {videos.map((v) => (
-        <MediaCard key={v.id} video={v} />
+        <MediaCard key={v.id} video={v} meta={meta?.(v)} />
       ))}
     </MediaRow>
   );

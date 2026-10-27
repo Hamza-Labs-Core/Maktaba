@@ -22,6 +22,8 @@ import { Home } from "./pages/Home";
 import { Libraries } from "./pages/Library/Libraries";
 import { LibraryPage } from "./pages/Library/LibraryPage";
 import { SeriesBrowser } from "./pages/Library/SeriesBrowser";
+import { Playlists } from "./pages/Playlists/Playlists";
+import { PlaylistPage } from "./pages/Playlists/PlaylistPage";
 import { SeriesDetail } from "./pages/Library/SeriesDetail";
 import { AdminEnrichment } from "./pages/Admin/Enrichment";
 import { VideoDetail } from "./pages/VideoDetail";
@@ -119,6 +121,8 @@ export function App() {
                           <Route path="/library/:libraryId" element={<LibraryPage />} />
                           <Route path="/videos" element={<LibraryBrowser />} />
                           <Route path="/series" element={<SeriesBrowser />} />
+                          <Route path="/playlists" element={<Playlists />} />
+                          <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
                           <Route path="/series/:id" element={<SeriesDetail />} />
                           <Route path="/videos/:videoId" element={<VideoDetail />} />
                           <Route path="/videos/:videoId/watch" element={<VideoPlayer />} />

@@ -121,6 +121,16 @@ describe("LibraryPage", () => {
     expect(videoCalls()).toHaveLength(0);
   });
 
+  it("Overview shows On Deck, the next lesson of each series under way", async () => {
+    serve({
+      ...HUB,
+      rows: { ...HUB.rows, on_deck: [card("d1", { series: { id: "s1", name: "شرح الأصول" } })] },
+    });
+    renderLib();
+    const deck = await screen.findByRole("region", { name: en["home.row.onDeck"] });
+    expect(within(deck).getByRole("link", { name: /Video d1/ })).toHaveTextContent("شرح الأصول");
+  });
+
   it("a year chip opens Browse filtered by that year", async () => {
     serve(HUB, { items: [{ id: "v1", filename: "2019.mp4", state: "ready" }], next: null });
     renderLib();

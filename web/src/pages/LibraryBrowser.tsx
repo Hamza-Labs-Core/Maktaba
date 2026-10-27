@@ -10,15 +10,23 @@
 // new sort, order or filter always starts over from the first page.
 // (The server field is `next`, NOT `next_cursor`.)
 //
+// Phase 2 (stories 45.8, 45.11 to 45.13, 45.16): a search box (q), Tag,
+// Speaker and Language filters from GET /api/videos/facets, a Favorites
+// toggle, the A to Z jump bar (letter=, under the title sort), watched ticks,
+// progress bars and hearts on the cards, Play all / Shuffle (lib/playQueue)
+// and Select: check cards, then mark them watched or not, (un)favorite them or
+// add them to a playlist (lib/me).
+//
 // Grid/list view persists per-user in localStorage; the sort, order and
-// filters (year, watched, language) live in the URL; cursor "Load more"
+// filters (year, watched, language, q, tag, speaker, favorite, letter) live in
+// the URL; cursor "Load more"
 // appends pages; empty states distinguish first-run (admin "Scan now") vs
 // filtered-out ("Clear filters"). State badges + poster 404 fallback +
 // bidi-isolated titles. "Scan now" (admins) toasts the result, follows the
 // scan job (GET /api/jobs/{id}) with a progress bar, and reloads the list
 // when the scan is done.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Chip } from "@ds/components/Chip/Chip";
 import { Button } from "@ds/components/Button/Button";
@@ -32,6 +40,10 @@ import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { TitleRow } from "../help/HelpLink";
 import { VideoPoster, ViewToggle, formatDuration, useStoredView } from "../components/VideoViews";
+import { AddToPlaylist } from "../components/AddToPlaylist";
+import { EMPTY_FACETS, fetchFacets, markWatched, setFavorite, type Facets } from "../lib/me";
+import { startQueueFromQuery, watchPath } from "../lib/playQueue";
+import { videosUrl } from "../lib/browse";
 
 const VIEW_KEY = "mkt:lib:view";
 
@@ -48,6 +60,10 @@ interface Video {
   published_at?: string | null;
   /** everyone's plays; only under sort=plays */
   plays?: number | null;
+  /** the caller's own playback (Phase 2) */
+  playback_state?: { position_sec: number; completed: boolean; updated_at?: string } | null;
+  /** one of the caller's favorites (Phase 2) */
+  favorite?: boolean;
 }
 
 interface VideoListResponse {
@@ -223,12 +239,26 @@ interface LibraryBrowserProps {
   years?: number[];
 }
 
+// The filters kept in the URL; Clear filters removes them all.
+const FILTER_KEYS = ["language", "year", "watched", "q", "tag", "speaker", "favorite", "letter"];
+
+/** How far into a grid item the viewer is (0..1), null when nothing to show. */
+function progressOf(v: Video): number | null {
+  const ps = v.playback_state;
+  if (!ps || ps.completed) return null;
+  const dur = v.duration_sec ?? 0;
+  if (!(ps.position_sec > 0) || dur <= 0) return null;
+  return Math.min(1, ps.position_sec / dur);
+}
+
 export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   const params0 = useParams();
   const libraryId = props.libraryId ?? params0.libraryId;
   const { embedded, years } = props;
   const { t, n, formatDate } = useI18n();
   const { user } = useAuth();
+  const toast = useToast();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
   const [view, setView] = useStoredView(VIEW_KEY, "grid");
@@ -247,6 +277,14 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   const year = /^\d{4}$/.test(rawYear) ? rawYear : "";
   const rawWatched = params.get("watched") || "";
   const watched = (WATCHED as readonly string[]).includes(rawWatched) ? rawWatched : "";
+  const q = (params.get("q") || "").trim();
+  const rawTag = params.get("tag") || "";
+  const tag = UUID.test(rawTag) ? rawTag : "";
+  const speaker = params.get("speaker") || "";
+  const favorite = params.get("favorite") === "true";
+  const rawLetter = params.get("letter") || "";
+  // one character (a letter, or "#" for the rest)
+  const letter = [...rawLetter].length === 1 ? rawLetter : "";
 
   const [videos, setVideos] = useState<Video[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -256,21 +294,39 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   // retry): a Load more answer for an older list is dropped.
   const listGen = useRef(0);
   const [err, setErr] = useState<string | null>(null);
+  const [facets, setFacets] = useState<Facets>(EMPTY_FACETS);
+  // Select mode: the checked videos, in the order they were checked.
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [playlistOpen, setPlaylistOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+
+  // The list's filters and sort, without paging: Play all reads it too.
+  const filterQuery = useMemo(() => {
+    const qs = new URLSearchParams();
+    qs.set("sort", sort);
+    qs.set("order", order);
+    if (libraryId) qs.set("library", libraryId);
+    if (lang) qs.set("language", lang);
+    if (year) qs.set("year", year);
+    if (watched) qs.set("watched", watched);
+    if (q) qs.set("q", q);
+    if (tag) qs.set("tag", tag);
+    if (speaker) qs.set("speaker", speaker);
+    if (favorite) qs.set("favorite", "true");
+    if (letter) qs.set("letter", letter);
+    return qs.toString();
+  }, [sort, order, libraryId, lang, year, watched, q, tag, speaker, favorite, letter]);
 
   const buildQuery = useCallback(
     (after?: string | null) => {
-      const qs = new URLSearchParams();
-      qs.set("sort", sort);
-      qs.set("order", order);
+      const qs = new URLSearchParams(filterQuery);
       qs.set("limit", "60");
-      if (libraryId) qs.set("library", libraryId);
-      if (lang) qs.set("language", lang);
-      if (year) qs.set("year", year);
-      if (watched) qs.set("watched", watched);
       if (after) qs.set("cursor", after);
       return qs.toString();
     },
-    [sort, order, libraryId, lang, year, watched]
+    [filterQuery]
   );
 
   useEffect(() => {
@@ -281,12 +337,13 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
     setVideos(null);
     setErr(null);
     setCursor(null);
+    setSelected([]);
     if (badLibrary) {
       setVideos([]);
       return;
     }
     api
-      .get<VideoListResponse>(`/api/videos?${buildQuery()}`)
+      .get<VideoListResponse>(videosUrl(buildQuery()))
       .then((res) => {
         if (cancelled) return;
         setVideos(res.items ?? []);
@@ -302,6 +359,20 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
     };
   }, [buildQuery, t, badLibrary, reloads]);
 
+  // What the filters offer (the library's, or every visible library's). An
+  // older server without the route offers nothing more than before.
+  useEffect(() => {
+    let cancelled = false;
+    setFacets(EMPTY_FACETS);
+    if (badLibrary) return;
+    fetchFacets(libraryId || undefined)
+      .then((f) => !cancelled && setFacets(f))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [libraryId, badLibrary, reloads]);
+
   function loadMore() {
     // A ref, not the loadingMore state: two quick clicks run before React
     // re-renders, and both would see loadingMore === false.
@@ -310,7 +381,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
     setLoadingMore(true);
     const gen = listGen.current;
     api
-      .get<VideoListResponse>(`/api/videos?${buildQuery(cursor)}`)
+      .get<VideoListResponse>(videosUrl(buildQuery(cursor)))
       .then((res) => {
         if (gen !== listGen.current) return;
         // Skip ids already shown: a page that overlaps the last one (rows
@@ -341,24 +412,127 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
     setParams(nextParams, { replace: true });
   }
   const patchParam = (key: string, value: string | null) => patchParams({ [key]: value });
+  const clearFilters = () => patchParams(Object.fromEntries(FILTER_KEYS.map((k) => [k, null])));
 
+  // The facets' languages; before they come (or from an older server), the
+  // languages of the videos shown. A language picked by a link always shows.
   const languages = useMemo(() => {
-    const set = new Set<string>();
-    (videos ?? []).forEach((v) => v.detected_language && set.add(v.detected_language));
+    const set = new Set<string>(facets.languages.map((l) => l.code));
+    if (set.size === 0) {
+      (videos ?? []).forEach((v) => v.detected_language && set.add(v.detected_language));
+    }
+    if (lang) set.add(lang);
     return [...set].sort();
-  }, [videos]);
+  }, [facets.languages, videos, lang]);
 
-  const filtersActive = Boolean(lang || year || watched);
+  const filtersActive = Boolean(
+    lang || year || watched || q || tag || speaker || favorite || letter
+  );
   const listName = embedded ? t("libraryPage.tab.browse") : t("videosAll.title");
+  const speakers = facets.speakers;
+  const tags = facets.tags;
+  const showJump = sort === "title" && facets.letters.length > 0;
+
+  async function play(shuffle: boolean) {
+    setStarting(true);
+    try {
+      const first = await startQueueFromQuery(filterQuery, shuffle);
+      if (first) navigate(watchPath(first), { state: { autoplay: true } });
+      else toast.show({ tone: "info", message: t("browse.play.nothing") });
+    } catch (e) {
+      toast.show({
+        tone: "error",
+        message: e instanceof ApiError ? e.problem.title : t("common.error"),
+      });
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  function toggleSelected(id: string) {
+    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  }
+
+  function stopSelecting() {
+    setSelecting(false);
+    setSelected([]);
+  }
+
+  async function bulk(kind: "watched" | "unwatched" | "favorite" | "unfavorite") {
+    const ids = selected;
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      if (kind === "watched" || kind === "unwatched") {
+        const done = kind === "watched";
+        await markWatched(ids, done);
+        const now = new Date().toISOString();
+        setVideos((vs) =>
+          (vs ?? []).map((v) =>
+            ids.includes(v.id)
+              ? {
+                  ...v,
+                  playback_state: {
+                    position_sec: 0,
+                    completed: done,
+                    updated_at: v.playback_state?.updated_at ?? now,
+                  },
+                }
+              : v
+          )
+        );
+      } else {
+        const fav = kind === "favorite";
+        await setFavorite(ids, fav);
+        setVideos((vs) =>
+          (vs ?? []).map((v) => (ids.includes(v.id) ? { ...v, favorite: fav } : v))
+        );
+      }
+      toast.show({ tone: "success", message: t(`browse.bulk.done.${kind}`, { n: n(ids.length) }) });
+      setSelected([]);
+    } catch (e) {
+      toast.show({
+        tone: "error",
+        message: `${t("browse.bulk.error")}: ${
+          e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
+        }`,
+      });
+    } finally {
+      setBulkBusy(false);
+    }
+  }
 
   const toolbar = (
     <div className="mkt-toolbar" role="toolbar" aria-label={t("library.sort")}>
+      <form
+        className="mkt-browse-search"
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const input = e.currentTarget.elements.namedItem("q") as HTMLInputElement | null;
+          const v = (input?.value ?? "").trim();
+          if (v !== q) patchParam("q", v || null);
+        }}
+      >
+        <input
+          type="search"
+          name="q"
+          dir="auto"
+          key={q}
+          defaultValue={q}
+          aria-label={libraryId ? t("browse.search.library") : t("browse.search.all")}
+          placeholder={libraryId ? t("browse.search.library") : t("browse.search.all")}
+        />
+        <Button type="submit" variant="secondary" size="sm">
+          {t("browse.search.go")}
+        </Button>
+      </form>
       <label className="mkt-field">
         <span className="mkt-field__label">{t("library.sort")}</span>
         <select
           value={sort}
-          // a new sort starts in its own order
-          onChange={(e) => patchParams({ sort: e.target.value, order: null })}
+          // a new sort starts in its own order; the jump bar is the title sort's
+          onChange={(e) => patchParams({ sort: e.target.value, order: null, letter: null })}
           aria-label={t("library.sort")}
         >
           {(Object.keys(SORTS) as SortField[]).map((s) => (
@@ -430,8 +604,232 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
           />
         )}
       </label>
+      {(tags.length > 0 || tag) && (
+        <label className="mkt-field">
+          <span className="mkt-field__label">{t("browse.filter.tag")}</span>
+          <select
+            value={tag}
+            onChange={(e) => patchParam("tag", e.target.value || null)}
+            aria-label={t("browse.filter.tag")}
+          >
+            <option value="">{t("library.filter.all")}</option>
+            {tag && !tags.some((x) => x.id === tag) && <option value={tag}>{tag}</option>}
+            {tags.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name} ({n(x.videos)})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {(speakers.length > 0 || speaker) && (
+        <label className="mkt-field">
+          <span className="mkt-field__label">{t("browse.filter.speaker")}</span>
+          <select
+            value={speaker}
+            onChange={(e) => patchParam("speaker", e.target.value || null)}
+            aria-label={t("browse.filter.speaker")}
+          >
+            <option value="">{t("library.filter.all")}</option>
+            {speaker && !speakers.some((x) => x.name === speaker) && (
+              <option value={speaker}>{speaker}</option>
+            )}
+            {speakers.map((x) => (
+              <option key={x.name} value={x.name}>
+                {x.name} ({n(x.videos)})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <button
+        type="button"
+        className="mkt-btn mkt-btn--ghost"
+        aria-pressed={favorite}
+        onClick={() => patchParam("favorite", favorite ? null : "true")}
+      >
+        <span aria-hidden="true">{favorite ? "♥" : "♡"}</span> {t("browse.filter.favorites")}
+      </button>
       <ViewToggle view={view} onChange={setView} />
     </div>
+  );
+
+  const actions = (
+    <div className="mkt-browse-actions">
+      <Button
+        variant="primary"
+        size="sm"
+        onClick={() => void play(false)}
+        disabled={starting || !videos || videos.length === 0}
+      >
+        ▶ {t("browse.playAll")}
+      </Button>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => void play(true)}
+        disabled={starting || !videos || videos.length === 0}
+      >
+        ⇄ {t("browse.shuffle")}
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-pressed={selecting}
+        onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
+        disabled={!videos || videos.length === 0}
+      >
+        {selecting ? t("browse.select.done") : t("browse.select")}
+      </Button>
+    </div>
+  );
+
+  const bulkBar = selecting && (
+    <div className="mkt-bulkbar" role="region" aria-label={t("browse.select.region")}>
+      <span className="mkt-bulkbar__count" aria-live="polite">
+        {t("browse.select.count", { n: n(selected.length) })}
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setSelected((videos ?? []).map((v) => v.id))}
+        disabled={bulkBusy}
+      >
+        {t("browse.select.all")}
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setSelected([])}
+        disabled={bulkBusy || selected.length === 0}
+      >
+        {t("browse.select.none")}
+      </Button>
+      <span className="mkt-bulkbar__actions">
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={bulkBusy || selected.length === 0}
+          onClick={() => void bulk("watched")}
+        >
+          {t("browse.bulk.watched")}
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={bulkBusy || selected.length === 0}
+          onClick={() => void bulk("unwatched")}
+        >
+          {t("browse.bulk.unwatched")}
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={bulkBusy || selected.length === 0}
+          onClick={() => void bulk("favorite")}
+        >
+          {t("browse.bulk.favorite")}
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={bulkBusy || selected.length === 0}
+          onClick={() => void bulk("unfavorite")}
+        >
+          {t("browse.bulk.unfavorite")}
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={bulkBusy || selected.length === 0}
+          onClick={() => setPlaylistOpen(true)}
+        >
+          {t("browse.bulk.playlist")}
+        </Button>
+      </span>
+    </div>
+  );
+
+  const jumpBar = showJump && (
+    <nav className="mkt-jumpbar" aria-label={t("browse.jump")}>
+      <ul>
+        <li>
+          <button
+            type="button"
+            className="mkt-jumpbar__btn"
+            aria-pressed={!letter}
+            onClick={() => patchParam("letter", null)}
+          >
+            {t("browse.jump.all")}
+          </button>
+        </li>
+        {facets.letters.map((l) => (
+          <li key={l.letter}>
+            <button
+              type="button"
+              className="mkt-jumpbar__btn"
+              aria-pressed={letter === l.letter}
+              aria-label={t("browse.jump.letter", { letter: l.letter, n: n(l.videos) })}
+              onClick={() => patchParam("letter", letter === l.letter ? null : l.letter)}
+            >
+              {l.letter}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+
+  // A card's marks: the tick of a watched video, how far an unfinished one got
+  // and the heart of a favorite.
+  const marks = (v: Video) => {
+    const frac = progressOf(v);
+    return (
+      <>
+        {v.playback_state?.completed && (
+          <span className="mkt-card__watched" role="img" aria-label={t("browse.watchedMark")}>
+            ✓
+          </span>
+        )}
+        {v.favorite && (
+          <span className="mkt-card__fav" role="img" aria-label={t("browse.favoriteMark")}>
+            ♥
+          </span>
+        )}
+        {frac !== null && (
+          <span
+            className="mkt-card__progress"
+            role="progressbar"
+            aria-label={t("home.watched")}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(frac * 100)}
+            aria-valuetext={t("home.watchedPct", { pct: n(Math.round(frac * 100)) })}
+          >
+            <span style={{ inlineSize: `${frac * 100}%` }} />
+          </span>
+        )}
+      </>
+    );
+  };
+
+  const cardBody = (v: Video) => (
+    <>
+      <span className="mkt-card__art">
+        <VideoPoster videoId={v.id} />
+        {marks(v)}
+      </span>
+      <div className="mkt-card__title" dir="auto">
+        {v.title || v.filename}
+      </div>
+      <div className="mkt-card__meta">
+        {typeof v.duration_sec === "number" && <span>{formatDuration(v.duration_sec)}</span>}
+        {v.detected_language && <span> · {v.detected_language}</span>}
+        {sort === "published_at" && v.published_at && <span> · {formatDate(v.published_at)}</span>}
+        {typeof v.plays === "number" && <span> · {t("videosAll.plays", { n: n(v.plays) })}</span>}
+      </div>
+      <StateBadge state={v.state} />
+    </>
   );
 
   return (
@@ -462,6 +860,10 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
         </div>
       )}
 
+      {jumpBar}
+      {actions}
+      {bulkBar}
+
       {videos === null && (
         <ul className={view === "grid" ? "mkt-grid" : "mkt-list"} aria-busy="true">
           {Array.from({ length: 6 }, (_, i) => (
@@ -491,10 +893,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
           description={filtersActive ? undefined : t("library.empty.desc")}
           action={
             filtersActive ? (
-              <Button
-                variant="secondary"
-                onClick={() => patchParams({ language: null, year: null, watched: null })}
-              >
+              <Button variant="secondary" onClick={clearFilters}>
                 {t("common.clearFilters")}
               </Button>
             ) : user?.is_admin && libraryId ? (
@@ -507,26 +906,23 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
       {videos !== null && videos.length > 0 && view === "grid" && (
         <ul className="mkt-grid">
           {videos.map((v) => (
-            <li key={v.id} className="mkt-card">
-              <Link to={`/videos/${v.id}`}>
-                <VideoPoster videoId={v.id} />
-                <div className="mkt-card__title" dir="auto">
-                  {v.title || v.filename}
-                </div>
-                <div className="mkt-card__meta">
-                  {typeof v.duration_sec === "number" && (
-                    <span>{formatDuration(v.duration_sec)}</span>
-                  )}
-                  {v.detected_language && <span> · {v.detected_language}</span>}
-                  {sort === "published_at" && v.published_at && (
-                    <span> · {formatDate(v.published_at)}</span>
-                  )}
-                  {typeof v.plays === "number" && (
-                    <span> · {t("videosAll.plays", { n: n(v.plays) })}</span>
-                  )}
-                </div>
-                <StateBadge state={v.state} />
-              </Link>
+            <li
+              key={v.id}
+              className={`mkt-card${selecting && selected.includes(v.id) ? " mkt-card--selected" : ""}`}
+            >
+              {selecting ? (
+                <label className="mkt-card__select">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(v.id)}
+                    onChange={() => toggleSelected(v.id)}
+                    aria-label={t("browse.select.one", { name: v.title || v.filename })}
+                  />
+                  {cardBody(v)}
+                </label>
+              ) : (
+                <Link to={`/videos/${v.id}`}>{cardBody(v)}</Link>
+              )}
             </li>
           ))}
         </ul>
@@ -536,23 +932,61 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
         <table className="mkt-table" aria-label={listName}>
           <thead>
             <tr>
+              {selecting && (
+                <th>
+                  <span className="mkt-visually-hidden">{t("browse.select")}</span>
+                </th>
+              )}
               <th>{t("library.col.title")}</th>
               <th>{t("library.col.duration")}</th>
               <th>{t("library.col.language")}</th>
+              <th>{t("browse.col.watched")}</th>
               <th>{t("library.col.state")}</th>
             </tr>
           </thead>
           <tbody>
-            {videos.map((v) => (
-              <tr key={v.id}>
-                <td dir="auto">
-                  <Link to={`/videos/${v.id}`}>{v.title || v.filename}</Link>
-                </td>
-                <td>{typeof v.duration_sec === "number" ? formatDuration(v.duration_sec) : "—"}</td>
-                <td>{v.detected_language ?? "—"}</td>
-                <td>{PROBLEM_TONE[v.state] ? <StateBadge state={v.state} /> : "—"}</td>
-              </tr>
-            ))}
+            {videos.map((v) => {
+              const frac = progressOf(v);
+              return (
+                <tr key={v.id}>
+                  {selecting && (
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selected.includes(v.id)}
+                        onChange={() => toggleSelected(v.id)}
+                        aria-label={t("browse.select.one", { name: v.title || v.filename })}
+                      />
+                    </td>
+                  )}
+                  <td dir="auto">
+                    <Link to={`/videos/${v.id}`}>{v.title || v.filename}</Link>
+                    {v.favorite && (
+                      <span
+                        className="mkt-card__fav-inline"
+                        role="img"
+                        aria-label={t("browse.favoriteMark")}
+                      >
+                        {" "}
+                        ♥
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {typeof v.duration_sec === "number" ? formatDuration(v.duration_sec) : "—"}
+                  </td>
+                  <td>{v.detected_language ?? "—"}</td>
+                  <td>
+                    {v.playback_state?.completed
+                      ? t("browse.watchedMark")
+                      : frac !== null
+                        ? t("home.watchedPct", { pct: n(Math.round(frac * 100)) })
+                        : "—"}
+                  </td>
+                  <td>{PROBLEM_TONE[v.state] ? <StateBadge state={v.state} /> : "—"}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -564,6 +998,13 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
           </Button>
         </div>
       )}
+
+      <AddToPlaylist
+        open={playlistOpen}
+        videoIds={selected}
+        onClose={() => setPlaylistOpen(false)}
+        onAdded={() => setSelected([])}
+      />
     </section>
   );
 }

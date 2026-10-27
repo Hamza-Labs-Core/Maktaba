@@ -26,6 +26,8 @@ export interface VideoCard {
   completed?: boolean | null;
   last_watched_at?: string | null;
   plays?: number | null;
+  /** On Deck: the series this lesson is the next one of */
+  series?: { id: string; name: string } | null;
 }
 
 export interface LibraryRef {
@@ -40,6 +42,10 @@ export interface PinnedRows {
 }
 
 export interface HomeResponse {
+  /** the next lesson of each series the user is in the middle of (Phase 2) */
+  on_deck: VideoCard[];
+  /** the user's favorites, newest first (Phase 2) */
+  favorites: VideoCard[];
   continue_watching: VideoCard[];
   recently_added: VideoCard[];
   recently_watched: VideoCard[];
@@ -71,6 +77,7 @@ export interface HubYear {
 export interface LibraryHub {
   library: { id: string; name: string; videos: number };
   rows: {
+    on_deck: VideoCard[];
     continue_watching: VideoCard[];
     recently_added: VideoCard[];
     recently_watched: VideoCard[];
@@ -89,6 +96,8 @@ const obj = (v: unknown): Record<string, unknown> =>
 export async function fetchHome(): Promise<HomeResponse> {
   const r = obj(await api.get<unknown>("/api/home"));
   return {
+    on_deck: cards(r.on_deck),
+    favorites: cards(r.favorites),
     continue_watching: cards(r.continue_watching),
     recently_added: cards(r.recently_added),
     recently_watched: cards(r.recently_watched),
@@ -121,6 +130,7 @@ export async function fetchHub(id: string): Promise<LibraryHub> {
       videos: typeof lib.videos === "number" ? lib.videos : 0,
     },
     rows: {
+      on_deck: cards(rows.on_deck),
       continue_watching: cards(rows.continue_watching),
       recently_added: cards(rows.recently_added),
       recently_watched: cards(rows.recently_watched),
@@ -137,4 +147,15 @@ export function watchedFraction(c: VideoCard): number | null {
   const dur = c.duration_sec ?? 0;
   if (c.completed || pos <= 0 || dur <= 0) return null;
   return Math.min(1, pos / dur);
+}
+
+/**
+ * The video list's URL for a query string. The caller's favorites are a user's
+ * own table, which a machine's copy leaves out: ?favorite=true is read on the
+ * home's /api/me/videos (the same list); every other query on /api/videos,
+ * which a machine may serve.
+ */
+export function videosUrl(query: string): string {
+  const favorite = new URLSearchParams(query).get("favorite") === "true";
+  return `${favorite ? "/api/me/videos" : "/api/videos"}?${query}`;
 }
