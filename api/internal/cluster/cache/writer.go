@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // Run writes until ctx ends: logs every 2 s, metrics frames and health
@@ -26,6 +28,7 @@ func (c *Cache) Run(ctx context.Context) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer safego.Recover(c.log, "cluster_cache_loop")
 			if now {
 				f(ctx)
 			}

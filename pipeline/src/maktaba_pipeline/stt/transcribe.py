@@ -166,6 +166,20 @@ async def default_select_backend(
     return backend, trace.chosen, _backend_version(backend)
 
 
+def _not_registered(backend: str, exc: BaseException) -> None:
+    """A backend left out of the registry: its optional dependency is absent (DEBUG, the
+    usual case on a machine without it) or it failed to build (WARNING, with why)."""
+    from ..log import get_logger  # noqa: PLC0415
+
+    error = f"{type(exc).__name__}: {exc}"
+    if isinstance(exc, ImportError):
+        get_logger().debug("stt_backend_unavailable", backend=backend, error=error)
+    else:
+        get_logger().warning(
+            "stt_backend_register_failed", backend=backend, error=error, exc_info=exc
+        )
+
+
 def _build_registry(*, model: str) -> Any:
     """Register the whitelisted backends. Lazy heavy imports only."""
     from .registry import BackendRegistry  # noqa: PLC0415
@@ -178,14 +192,14 @@ def _build_registry(*, model: str) -> Any:
         from .mlx import WhisperMLXBackend  # noqa: PLC0415
 
         registry.register(WhisperMLXBackend(model=model))
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        _not_registered("whisper-mlx", exc)
     try:  # pragma: no cover
         from .faster_whisper import FasterWhisperBackend  # noqa: PLC0415
 
         registry.register(FasterWhisperBackend(model=model))
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        _not_registered("whisper-cpu", exc)
     try:  # pragma: no cover
         from typing import cast as _cast  # noqa: PLC0415
 
@@ -196,8 +210,8 @@ def _build_registry(*, model: str) -> Any:
         # (the Protocol declares ``float | None``); the cast bridges the
         # invariant-attribute mismatch — it is structurally a backend.
         registry.register(_cast("_STTBackend", OpenAIWhisperBackend()))
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        _not_registered("openai-api", exc)
     return registry
 
 

@@ -24,6 +24,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/ca"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/linkctx"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // Paths on the home's API.
@@ -339,7 +340,7 @@ func (s *Server) ServeLink(w http.ResponseWriter, r *http.Request) {
 			sess.closeWith(websocket.StatusGoingAway, "write failed")
 		}
 	}()
-	go sess.keepalive()
+	safego.Go(s.log(), "link_keepalive", sess.keepalive)
 	sess.readLoop()
 	sess.closeWith(websocket.StatusNormalClosure, "")
 	sess.failInflight()
@@ -488,13 +489,14 @@ func (c *ctrl) onEvent(b []byte) {
 		if json.Unmarshal(b, &cr) != nil {
 			return
 		}
-		go func() { _ = c.event(c.srv.Renew(c.ctx, c.node, cr)) }()
+		safego.Go(c.srv.log(), "link_renew", func() { _ = c.event(c.srv.Renew(c.ctx, c.node, cr)) })
 	case "cert.web":
 		var cr CertRenew
 		if json.Unmarshal(b, &cr) != nil {
 			return
 		}
 		go func() {
+			defer safego.Recover(c.srv.log(), "link_web_cert")
 			if c.srv.WebCert == nil {
 				_ = c.event(CertIssued{T: "cert.refused", ID: cr.ID, Reason: "no web certificates"})
 				return
@@ -825,7 +827,8 @@ func (s *Server) reused(node, detail string) {
 	s.log().Warn("link: stream ticket reused", "node_id", node, "detail", detail, "event", "link_ticket_reuse")
 	if len(s.reuse) >= 3 && s.Alert != nil {
 		n := len(s.reuse)
-		go s.Alert(node, fmt.Sprintf("%d stream tickets presented twice or by another machine in 10 minutes", n))
+		msg := fmt.Sprintf("%d stream tickets presented twice or by another machine in 10 minutes", n)
+		safego.Go(s.log(), "link_alert", func() { s.Alert(node, msg) })
 		s.reuse = s.reuse[:0]
 	}
 }

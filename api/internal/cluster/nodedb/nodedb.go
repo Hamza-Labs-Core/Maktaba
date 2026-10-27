@@ -25,6 +25,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 type copyKey struct{}
@@ -79,7 +81,7 @@ func (p *Pair) mark(s *Source, down bool) bool {
 		ups := append([]func(*Source){}, p.ups...)
 		p.upMu.Unlock()
 		for _, fn := range ups {
-			go fn(s)
+			safego.Go(p.Logger, "nodedb_when_up", func() { fn(s) })
 		}
 	}
 	return was
@@ -394,6 +396,7 @@ func (p *Pair) Recheck() {
 	}
 	go func() {
 		defer p.checking.Store(false)
+		defer safego.Recover(p.Logger, "nodedb_recheck")
 		p.CheckAll(context.Background())
 	}()
 }

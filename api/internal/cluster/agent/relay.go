@@ -11,6 +11,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // The extension service door over the channel (story 31.R):
@@ -68,6 +69,7 @@ func (h *Hub) onRelayRequest(s *Session, raw []byte) {
 	go func() {
 		defer cancel()
 		defer s.dropRelay(f.ID)
+		defer safego.Recover(h.log(), "cluster_relay")
 		var body []byte
 		if f.Body != "" {
 			b, err := base64.StdEncoding.DecodeString(f.Body)

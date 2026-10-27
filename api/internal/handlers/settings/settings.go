@@ -170,7 +170,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by
 		`, k, string(v), h.now(), p.UserID)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("patch setting: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("patch setting").Wrap(err))
 			return
 		}
 	}
@@ -190,7 +190,7 @@ func (h *Handler) STTBackends(w http.ResponseWriter, r *http.Request) {
 	}
 	b, err := h.Pipeline.ListBackends(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("backends: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("backends").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": b})
@@ -222,7 +222,7 @@ func (h *Handler) STTTest(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.Pipeline.STTTest(r.Context(), req.Backend, req.Config)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("stt-test: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("stt-test").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, res)

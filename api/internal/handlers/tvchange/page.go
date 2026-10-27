@@ -325,7 +325,7 @@ func (h *Handler) ScheduleDiff(w http.ResponseWriter, r *http.Request) {
 		}
 		live, staged, err := h.Store.Gens(r.Context(), c)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("generations: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("generations").Wrap(err))
 			return
 		}
 		from := time.Now().UTC()
@@ -338,13 +338,13 @@ func (h *Handler) ScheduleDiff(w http.ResponseWriter, r *http.Request) {
 		to := from.Add(24 * time.Hour)
 		before, err := h.Store.Programmes(r.Context(), id, live, from, to)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("schedule: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("schedule").Wrap(err))
 			return
 		}
 		after := []core.Programme{}
 		if staged >= 0 {
 			if after, err = h.Store.Programmes(r.Context(), id, staged, from, to); err != nil {
-				httperror.Write(w, r, httperror.Internal("schedule: "+err.Error()))
+				httperror.Write(w, r, httperror.Internal("schedule").Wrap(err))
 				return
 			}
 		}
@@ -389,7 +389,7 @@ func (h *Handler) Boundaries(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg, err := core.LoadConfig(r.Context(), h.DB)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tv_staging rules: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("tv_staging rules").Wrap(err))
 		return
 	}
 	at := time.Now().UTC()
@@ -414,7 +414,7 @@ func (h *Handler) Boundaries(w http.ResponseWriter, r *http.Request) {
 	maxWait := time.Duration(cfg.BoundaryMaxWaitMin) * time.Minute
 	bs, err := h.Store.Boundaries(r.Context(), c, at, wait, maxWait)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("boundaries: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("boundaries").Wrap(err))
 		return
 	}
 	var last *time.Time

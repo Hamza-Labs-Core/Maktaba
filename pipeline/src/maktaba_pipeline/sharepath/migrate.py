@@ -28,6 +28,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..db import schema_compat
 from ..engine.sql import is_pg, loads
 from .canonical import format_canonical, is_canonical, nfc, parse_canonical
 from .resolver import Resolver
@@ -177,10 +178,15 @@ async def _rows(db: Any, col: Column) -> list[tuple[str, Any, str | None, bool]]
 
 
 async def _table_exists(db: Any, table: str) -> bool:
+    """False only when the table is missing (an older schema). Any other failure is
+    raised: taken for a missing table it left the table out of a backup, a dry run or
+    a restore, silently."""
     try:
         await db.fetch(f"SELECT 1 FROM {table} LIMIT 1")
-    except Exception:  # noqa: BLE001
-        return False
+    except Exception as exc:
+        if schema_compat.older_schema(exc):
+            return False
+        raise
     return True
 
 

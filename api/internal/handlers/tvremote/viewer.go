@@ -73,7 +73,7 @@ func writeTuneError(w http.ResponseWriter, r *http.Request, err error, what stri
 		httperror.Write(w, r, e)
 		return
 	}
-	httperror.Write(w, r, httperror.Internal(what))
+	httperror.Write(w, r, httperror.Internal(what).Wrap(err))
 }
 
 func (h *Handler) remoteReady(w http.ResponseWriter, r *http.Request) bool {
@@ -165,7 +165,7 @@ func (h *Handler) RotateKey(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.Remote.RotateSigningKey(r.Context(), principal.FromContext(r.Context()).UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway("Cloudflare: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("Cloudflare").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, res)

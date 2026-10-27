@@ -65,6 +65,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from .. import settings
+from ..db import schema_compat
 from ..engine.paths import PathMap, _norm
 from ..engine.sql import dumps, is_pg, loads, now, to_ts
 from ..log import get_logger
@@ -237,7 +238,7 @@ async def load_state(db: Any) -> tuple[dict[str, Any], str | None]:
     try:
         row = await db.fetchrow("SELECT state, request FROM storage_canonicalize WHERE id = 1")
     except Exception as exc:  # noqa: BLE001 - no table: nothing to do here
-        _log.debug("storage_canonicalize_unavailable", error=str(exc))
+        schema_compat.fallback(_log, "storage_canonicalize_unavailable", exc)
         return {}, None
     if row is None:
         return {}, None
@@ -286,7 +287,7 @@ async def _notify(db: Any, state: dict[str, Any]) -> None:
             "storage_canonicalize",
         )
     except Exception as exc:  # noqa: BLE001 - no notification centre yet: the page shows it
-        _log.debug("storage_canonicalize_notify_skipped", error=str(exc))
+        schema_compat.fallback(_log, "storage_canonicalize_notify_skipped", exc)
         return
     state["notified"] = sig
 
@@ -377,8 +378,7 @@ async def release_stages(db: Any) -> list[str]:
     try:
         held = await held_stages(db)
     except Exception as exc:  # noqa: BLE001 - an older schema: nothing held
-        if not _older_schema(exc):
-            _log.warning("storage_canonicalize_release_failed", error=str(exc), exc_info=True)
+        schema_compat.fallback(_log, "storage_canonicalize_release_failed", exc)
         return []
     if held:
         await db.execute(
@@ -391,17 +391,6 @@ async def release_stages(db: Any) -> list[str]:
         )
         _log.info("storage_canonicalize_stages_resumed", stages=held)
     return held
-
-
-def _older_schema(exc: BaseException) -> bool:
-    """``job_stages`` (or its ``paused_by``) is not there yet: Postgres undefined_table /
-    undefined_column (42P01 / 42703), SQLite's "no such table" / "no such column"."""
-    if getattr(exc, "sqlstate", None) in ("42P01", "42703"):
-        return True
-    if type(exc).__name__ in ("UndefinedTableError", "UndefinedColumnError"):
-        return True
-    text = str(exc).lower()
-    return "no such table" in text or "no such column" in text
 
 
 async def _running(db: Any, stages: Sequence[str]) -> int:
@@ -437,7 +426,8 @@ async def ensure_plex_map(db: Any, resolver: Resolver) -> list[str]:
     extension's path map that is on a share; the entries added."""
     try:
         row = await db.fetchrow("SELECT settings FROM extensions WHERE name = 'plex'")
-    except Exception:  # noqa: BLE001 - no extensions table
+    except Exception as exc:  # noqa: BLE001 - no extensions table
+        schema_compat.fallback(_log, "plex_path_map_unavailable", exc)
         return []
     if row is None:
         return []
@@ -490,7 +480,8 @@ async def ensure_plex_map(db: Any, resolver: Resolver) -> list[str]:
 async def _home_admin_map(db: Any) -> dict[str, str] | None:
     try:
         row = await db.fetchrow("SELECT path_map FROM instance_identity WHERE id = 1")
-    except Exception:  # noqa: BLE001 - an older schema
+    except Exception as exc:  # noqa: BLE001 - an older schema
+        schema_compat.fallback(_log, "home_path_map_unavailable", exc)
         return None
     if row is None or row["path_map"] is None:
         return None
@@ -506,7 +497,8 @@ async def _legacy_roots(db: Any) -> list[str]:
     ):
         try:
             rows = await db.fetch(f"SELECT {column} AS v FROM {table} WHERE {column} IS NOT NULL")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - one of the two is an older schema's
+            schema_compat.fallback(_log, "storage_legacy_roots_unavailable", exc, table=table)
             continue
         for r in rows:
             values = mig._array(r["v"]) if array else [str(r["v"])]  # noqa: SLF001
@@ -578,7 +570,8 @@ async def _legacy_count(db: Any) -> int:
             )
             or 0
         )
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - a count for the page, not a decision
+        schema_compat.fallback(_log, "storage_legacy_count_unavailable", exc)
         return 0
 
 
@@ -782,7 +775,7 @@ async def _reported_shares(db: Any) -> set[str] | None:
     try:
         row = await db.fetchrow("SELECT storage FROM instance_identity WHERE id = 1")
     except Exception as exc:  # noqa: BLE001 - an older schema
-        _log.debug("home_storage_unavailable", error=str(exc))
+        schema_compat.fallback(_log, "home_storage_unavailable", exc)
         return None
     if row is None or row["storage"] is None:
         return set()

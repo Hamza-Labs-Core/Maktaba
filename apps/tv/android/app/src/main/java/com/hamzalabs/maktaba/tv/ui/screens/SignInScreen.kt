@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -42,6 +43,9 @@ import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.DeviceCode
 import com.hamzalabs.maktaba.core.api.DeviceSignIn
 import com.hamzalabs.maktaba.core.api.PairingCode
+import com.hamzalabs.maktaba.core.api.errorKind
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
+import com.hamzalabs.maktaba.core.ui.sentence
 import com.hamzalabs.maktaba.core.session.Home
 import com.hamzalabs.maktaba.tv.MaktabaTVApp
 import com.hamzalabs.maktaba.tv.R
@@ -82,7 +86,7 @@ fun SignInScreen(app: MaktabaTVApp, home: Home) {
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(stringResource(CoreR.string.signin_kept_failed, why), style = MaterialTheme.typography.bodyMedium, color = MaktabaPalette.Gold)
+                    Text(stringResource(CoreR.string.signin_kept_failed, stringResource(why.sentence())), style = MaterialTheme.typography.bodyMedium, color = MaktabaPalette.Gold)
                     MaktabaButton(onClick = { app.session.retryRestore() }) { Text(stringResource(R.string.try_again)) }
                 }
             }
@@ -110,6 +114,7 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
     var attempt by remember { mutableIntStateOf(0) }
     val focus = remember { FocusRequester() }
     val unreachable = stringResource(CoreR.string.signin_unreachable, home.name)
+    val resources = LocalResources.current
 
     // the core's flow: no token on the way, a new code when one runs out (410), then this
     // TV's own tokens kept for this home's exact address and the session signed in
@@ -125,9 +130,11 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
         } catch (e: DeviceSignIn.Unsupported) {
             onUnsupported()
         } catch (e: ApiException.Transport) {
+            AppLog.failure("tv sign-in by code", e)
             problem = unreachable
         } catch (e: Exception) {
-            problem = e.message ?: e.toString()
+            AppLog.failure("tv sign-in by code", e)
+            problem = resources.getString(e.errorKind().sentence())
         }
     }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -206,6 +213,7 @@ private fun PasswordSignIn(app: MaktabaTVApp, home: Home, unsupported: Boolean, 
     val passwordField = remember { FocusRequester() }
     val wrong = stringResource(CoreR.string.signin_wrong)
     val unreachable = stringResource(CoreR.string.signin_unreachable, home.name)
+    val resources = LocalResources.current
 
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
 
@@ -219,11 +227,14 @@ private fun PasswordSignIn(app: MaktabaTVApp, home: Home, unsupported: Boolean, 
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ApiException.Status) {
-                problem = if (e.code == 401) wrong else e.message
+                if (e.code != 401) AppLog.failure("tv sign-in", e)
+                problem = if (e.code == 401) wrong else resources.getString(e.errorKind().sentence())
             } catch (e: ApiException.Transport) {
+                AppLog.failure("tv sign-in", e)
                 problem = unreachable
             } catch (e: Exception) {
-                problem = e.message ?: e.toString()
+                AppLog.failure("tv sign-in", e)
+                problem = resources.getString(e.errorKind().sentence())
             } finally {
                 busy = false
             }

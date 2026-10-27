@@ -24,6 +24,7 @@ use tauri_plugin_notification::{Action as NoticeAction, ActionType, Notification
 use tauri_plugin_updater::{Updater, UpdaterExt};
 
 use crate::agent::{self, Action, BundlePaths, LoginItem};
+use crate::applog::{self, Locked};
 use crate::attempts::{self, Failure};
 use crate::autoinstall;
 use crate::lang::{self, Lang};
@@ -63,7 +64,9 @@ fn mode_path(app: &AppHandle) -> PathBuf {
     let path = state_dir(app).join("mode.json");
     #[cfg(windows)]
     if let Ok(roaming) = app.path().app_config_dir() {
-        let _ = mode::adopt(&roaming.join("mode.json"), &path, agent::registered_here());
+        if let Err(e) = mode::adopt(&roaming.join("mode.json"), &path, agent::registered_here()) {
+            applog::warn("mode.json could not be moved from the roaming folder", e);
+        }
     }
     path
 }
@@ -175,13 +178,13 @@ impl Shell {
     }
 
     fn mode(&self) -> Option<AppMode> {
-        self.mode.lock().unwrap().clone()
+        self.mode.locked().clone()
     }
 
     fn set_mode(&self, m: AppMode) -> Result<(), String> {
         mode::save(&self.mode_path, &m)
             .map_err(|e| format!("cannot save {}: {e}", self.mode_path.display()))?;
-        *self.mode.lock().unwrap() = Some(m);
+        *self.mode.locked() = Some(m);
         self.force_setup.store(false, Ordering::SeqCst);
         Ok(())
     }
@@ -193,7 +196,7 @@ impl Shell {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(format!("cannot remove {}: {e}", self.mode_path.display())),
         }
-        *self.mode.lock().unwrap() = None;
+        *self.mode.locked() = None;
         self.force_setup.store(true, Ordering::SeqCst);
         Ok(())
     }
@@ -223,7 +226,7 @@ impl Shell {
     /// "Unreachable" reads as starting again for a while (the server was
     /// switched to a new runtime), without touching a pause.
     fn restart_grace(&self) {
-        *self.started_at.lock().unwrap() = Instant::now();
+        *self.started_at.locked() = Instant::now();
     }
 
     fn mark_paused(&self) {
@@ -251,12 +254,11 @@ impl Shell {
         // a live agent (Windows, Linux) whose supervisor does not answer is
         // starting, until it has been quiet too long: then the log says why
         let alive = agent::agent_alive();
-        let since_start = self.started_at.lock().unwrap().elapsed();
+        let since_start = self.started_at.locked().elapsed();
         let answered = matches!(probe, Probe::Snapshot(_));
         let quiet_for = self
             .quiet
-            .lock()
-            .unwrap()
+            .locked()
             .poll(Instant::now(), answered, alive)
             .min(since_start);
         let waiting = status::waiting(since_start, alive, quiet_for, || {
@@ -357,6 +359,11 @@ fn bundled_url(app: &AppHandle) -> String {
 /// An error dialog in the tray's language: `sentence`, then the programs' own
 /// errors as they are (lang::error_message).
 fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
+    // the dialog goes once it is closed: app.log keeps what it said
+    applog::error(
+        "dialog",
+        lang::error_message(sentence, errors).replace("\n\n", ": "),
+    );
     let lang = shell(app).lang;
     app.dialog()
         .message(lang::error_message(sentence, errors))
@@ -393,6 +400,20 @@ fn notify_failed(app: &AppHandle, version: &str, code: &str) {
         attempts::log(&format!(
             "no notification for the failed update to {version}: {e}"
         ));
+    }
+}
+
+/// The home's order says `state` (autoinstall::write_state). A state that cannot be
+/// written leaves the home's run waiting on this machine: logged with its run and state.
+fn order_state(path: &std::path::Path, req: &autoinstall::Request, state: &str, why: &str) {
+    if let Err(e) = autoinstall::write_state(path, req, state, why) {
+        applog::warn(
+            &format!(
+                "the home's order {} could not be marked {state} for {}",
+                req.run_id, req.version
+            ),
+            e,
+        );
     }
 }
 
@@ -555,7 +576,7 @@ pub fn install_requested(app: &AppHandle) {
     };
     let path = autoinstall::request_path(&root);
     let req = autoinstall::read(&path);
-    *sh.order.lock().unwrap() = req.clone();
+    *sh.order.locked() = req.clone();
     let Some(r) = req else {
         // no order (withdrawn, or installed): what was staged goes
         autoinstall::clean_staged(&root, None);
@@ -574,13 +595,8 @@ pub fn install_requested(app: &AppHandle) {
         )
     {
         let f = attempts::local_build_failure(attempts::STEP_CHECK, &own_version(app));
-        let _ = autoinstall::write_state(&path, &r, autoinstall::FAILED, &order_error(&f));
-        if sh
-            .notified
-            .lock()
-            .unwrap()
-            .insert(format!("local:{}", r.run_id))
-        {
+        order_state(&path, &r, autoinstall::FAILED, &order_error(&f));
+        if sh.notified.locked().insert(format!("local:{}", r.run_id)) {
             if let Some(rec) = attempts_path() {
                 attempts::record_failed(
                     &rec,
@@ -608,10 +624,10 @@ pub fn install_requested(app: &AppHandle) {
     ) {
         autoinstall::Action::Nothing => {}
         autoinstall::Action::Refuse(why) => {
-            let _ = autoinstall::write_state(&path, &r, autoinstall::FAILED, &why);
+            order_state(&path, &r, autoinstall::FAILED, &why);
         }
         autoinstall::Action::Show => {
-            let _ = autoinstall::write_state(&path, &r, autoinstall::STAGED, "");
+            order_state(&path, &r, autoinstall::STAGED, "");
         }
         autoinstall::Action::Stage { .. } => {
             if sh.staging.swap(true, Ordering::SeqCst) {
@@ -624,7 +640,7 @@ pub fn install_requested(app: &AppHandle) {
             if sh.installing.swap(true, Ordering::SeqCst) {
                 return;
             }
-            let _ = autoinstall::write_state(&path, &r, autoinstall::INSTALLING, "");
+            order_state(&path, &r, autoinstall::INSTALLING, "");
             install_update_from(
                 app.clone(),
                 Source::Ordered(Box::new(Ordered {
@@ -643,7 +659,7 @@ pub fn install_requested(app: &AppHandle) {
 /// has no badge, and no tray says it unasked. Best effort: an error is only logged.
 fn notify_ready(app: &AppHandle, req: &autoinstall::Request) {
     let sh = shell(app);
-    let ready = autoinstall::to_notify(Some(req), &mut sh.notified.lock().unwrap());
+    let ready = autoinstall::to_notify(Some(req), &mut sh.notified.locked());
     let Some(autoinstall::Shown::Ready { version, home }) = ready else {
         return;
     };
@@ -654,7 +670,7 @@ fn notify_ready(app: &AppHandle, req: &autoinstall::Request) {
         .body(tray::order_notice(sh.lang, &version, home))
         .show();
     if let Err(e) = shown {
-        eprintln!("maktaba: no notification for Maktaba {version}: {e}");
+        applog::warn(&format!("no notification for Maktaba {version}"), e);
     }
 }
 
@@ -724,11 +740,10 @@ fn stage_order(app: AppHandle, path: PathBuf, req: autoinstall::Request, staged:
         };
         match run.await {
             Ok(()) => {
-                let _ = autoinstall::write_state(&path, &req, autoinstall::STAGED, "");
+                order_state(&path, &req, autoinstall::STAGED, "");
             }
             Err(f) => {
-                let _ =
-                    autoinstall::write_state(&path, &req, autoinstall::FAILED, &order_error(&f));
+                order_state(&path, &req, autoinstall::FAILED, &order_error(&f));
                 if let Some(rec) = attempts_path() {
                     attempts::record_failed(
                         &rec,
@@ -775,7 +790,7 @@ async fn download_watched(
     };
     let last = Arc::new(AtomicU64::new(now()));
     let version = update.version.clone();
-    *shell(app).downloading.lock().unwrap() = Some((version.clone(), 0, None));
+    *shell(app).downloading.locked() = Some((version.clone(), 0, None));
     let (task_app, task_last, task_update) = (app.clone(), last.clone(), update.clone());
     let task = tauri::async_runtime::spawn(async move {
         let mut got = 0u64;
@@ -784,8 +799,7 @@ async fn download_watched(
                 move |n, total| {
                     got += n as u64;
                     task_last.store(now(), Ordering::SeqCst);
-                    *shell(&task_app).downloading.lock().unwrap() =
-                        Some((version.clone(), got, total));
+                    *shell(&task_app).downloading.locked() = Some((version.clone(), got, total));
                 },
                 || {},
             )
@@ -803,7 +817,7 @@ async fn download_watched(
         let _ = tauri::async_runtime::spawn_blocking(|| std::thread::sleep(Duration::from_secs(1)))
             .await;
     };
-    *shell(app).downloading.lock().unwrap() = None;
+    *shell(app).downloading.locked() = None;
     if stalled {
         return Err(tauri_plugin_updater::Error::Network(format!(
             "the download stalled: no data for {} s (timed out)",
@@ -874,7 +888,7 @@ fn refresh(app: &AppHandle) {
     let sh = shell(app);
     // Held until the menu update is queued: two refreshes (the poller and
     // a tray click) must reach the main thread in the order they computed.
-    let _one_at_a_time = sh.refresh_lock.lock().unwrap();
+    let _one_at_a_time = sh.refresh_lock.locked();
     let server = sh.server_side();
     let (view, model) = if server {
         sh.compute_status()
@@ -889,7 +903,7 @@ fn refresh(app: &AppHandle) {
         install_requested(app);
     }
     let order = if server {
-        autoinstall::shown(sh.order.lock().unwrap().as_ref())
+        autoinstall::shown(sh.order.locked().as_ref())
     } else {
         None
     };
@@ -919,7 +933,7 @@ fn refresh(app: &AppHandle) {
         server && matches!(sh.mode(), Some(AppMode::Server { .. })),
     );
     // the portable app's update is a new zip, not the setup beside it
-    let entries = match sh.update_version.lock().unwrap().clone() {
+    let entries = match sh.update_version.locked().clone() {
         Some(v) if !server && sh.portable => tray::with_label(
             entries,
             "update",
@@ -929,7 +943,7 @@ fn refresh(app: &AppHandle) {
         _ => entries,
     };
     // a download under way: its progress in the update item
-    let entries = match sh.downloading.lock().unwrap().clone() {
+    let entries = match sh.downloading.locked().clone() {
         Some((v, got, total)) => tray::with_label(
             entries,
             "update",
@@ -952,9 +966,9 @@ fn refresh(app: &AppHandle) {
     } else {
         lang.words().brand.into()
     };
-    *sh.status.lock().unwrap() = view.clone();
-    let mut last = sh.menu.lock().unwrap();
-    let mut last_badge = sh.badge.lock().unwrap();
+    *sh.status.locked() = view.clone();
+    let mut last = sh.menu.locked();
+    let mut last_badge = sh.badge.locked();
     let new_badge = *last_badge != badge;
     if *last == entries && !new_badge {
         return;
@@ -964,7 +978,7 @@ fn refresh(app: &AppHandle) {
     drop((last, last_badge));
     // the icon with this badge (the plain icon without one)
     let icon = if new_badge {
-        let plain = sh.plain_icon.lock().unwrap();
+        let plain = sh.plain_icon.locked();
         plain.as_ref().map(|(rgba, w, h)| match badge {
             Some(c) => Image::new_owned(tray::badge(rgba, *w, *h, c), *w, *h),
             None => Image::new_owned(rgba.clone(), *w, *h),
@@ -985,11 +999,17 @@ fn refresh(app: &AppHandle) {
     let _ = app.run_on_main_thread(move || {
         #[cfg(target_os = "linux")]
         sync_window_menu(&handle, &entries, &window_line, &window_update);
-        if let (Some(t), Ok(menu)) = (
-            handle.tray_by_id(TRAY_ID),
-            build_tray_menu(&handle, &entries),
-        ) {
-            let _ = t.set_menu(Some(menu));
+        let menu = match build_tray_menu(&handle, &entries) {
+            Ok(menu) => Some(menu),
+            Err(e) => {
+                applog::warn("the tray's menu could not be rebuilt", e);
+                None
+            }
+        };
+        if let (Some(t), Some(menu)) = (handle.tray_by_id(TRAY_ID), menu) {
+            if let Err(e) = t.set_menu(Some(menu)) {
+                applog::warn("the tray's menu could not be set", e);
+            }
             let _ = t.set_tooltip(Some(tooltip));
             if let Some(icon) = icon {
                 let _ = t.set_icon(Some(icon));
@@ -1042,7 +1062,11 @@ pub fn on_window_menu(app: &AppHandle, tray_id: &str) {
 /// waits on it.
 fn on_tray_event(app: &AppHandle, id: &str) {
     let (app, id) = (app.clone(), id.to_string());
-    std::thread::spawn(move || handle_tray_event(&app, &id));
+    std::thread::spawn(move || {
+        applog::keep_going(&format!("the tray item {id}"), || {
+            handle_tray_event(&app, &id)
+        });
+    });
 }
 
 fn handle_tray_event(app: &AppHandle, id: &str) {
@@ -1105,8 +1129,8 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
 /// with exactly the server's release; a client installs its own feed's update.
 fn update_clicked(app: &AppHandle) -> Result<(), String> {
     let sh = shell(app);
-    let order = sh.order.lock().unwrap().clone();
-    let catch_up = sh.catch_up.lock().unwrap().clone();
+    let order = sh.order.locked().clone();
+    let catch_up = sh.catch_up.locked().clone();
     match autoinstall::click(order.as_ref(), sh.server_side(), catch_up.as_deref()) {
         autoinstall::Click::Order(r) => {
             let root = agent::state_root().ok_or("no state folder")?;
@@ -1372,12 +1396,7 @@ fn install_update_from(app: AppHandle, source: Source) {
                 if let Some(o) = source.ordered() {
                     // the server's run says it; no dialog at the update's hour (the
                     // notification and the menu say why)
-                    let _ = autoinstall::write_state(
-                        &o.path,
-                        &o.req,
-                        autoinstall::FAILED,
-                        &order_error(&f),
-                    );
+                    order_state(&o.path, &o.req, autoinstall::FAILED, &order_error(&f));
                     shell(&app).installing.store(false, Ordering::SeqCst);
                     #[cfg(any(windows, target_os = "macos"))]
                     if stopped.load(Ordering::SeqCst) {
@@ -1444,12 +1463,7 @@ fn install_update_from(app: AppHandle, source: Source) {
 fn client_update_found(app: &AppHandle, version: &str) {
     let sh = shell(app);
     sh.update_ready.store(true, Ordering::SeqCst);
-    let new = sh
-        .update_version
-        .lock()
-        .unwrap()
-        .replace(version.to_string())
-        != Some(version.to_string());
+    let new = sh.update_version.locked().replace(version.to_string()) != Some(version.to_string());
     if new && cfg!(target_os = "macos") {
         let shown = app
             .notification()
@@ -1483,7 +1497,7 @@ fn tell_the_order(failed: &attempts::Attempt) {
     if autoinstall::same_version(&r.version, &failed.to)
         && matches!(r.state.as_str(), autoinstall::GO | autoinstall::INSTALLING)
     {
-        let _ = autoinstall::write_state(
+        order_state(
             &path,
             &r,
             autoinstall::FAILED,
@@ -1578,7 +1592,7 @@ fn recheck_catch_up(app: &AppHandle) {
         return;
     }
     {
-        let mut at = sh.catch_up_at.lock().unwrap();
+        let mut at = sh.catch_up_at.locked();
         match *at {
             None => {
                 *at = Some(Instant::now());
@@ -1594,10 +1608,16 @@ fn recheck_catch_up(app: &AppHandle) {
     let release = match crate::agent::linux::runtime_older() {
         Ok(Some((app_v, server, running))) => autoinstall::catch_up(&app_v, &running, &server),
         Ok(None) => None,
-        Err(_) => return,
+        Err(e) => {
+            applog::warn(
+                "whether the server runs a newer release could not be read",
+                e,
+            );
+            return;
+        }
     };
     sh.update_ready.store(release.is_some(), Ordering::SeqCst);
-    *sh.catch_up.lock().unwrap() = release;
+    *sh.catch_up.locked() = release;
 }
 
 /// After an update that failed once the server was asked to stop (Windows):
@@ -1626,25 +1646,34 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     // the failed update's notification: its button and a click on it see the logs (the
     // plugin reports desktop clicks once a handler exists, before any notification shows)
     let notices = app.notification();
-    let _ = notices.register_action_types(vec![ActionType::builder(FAILED_NOTICE_ACTIONS)
-        .actions(vec![NoticeAction::builder(
-            SEE_LOGS_ACTION,
-            sh.lang.words().see_logs,
-        )
-        .build()])
-        .build()]);
+    let registered =
+        notices.register_action_types(vec![ActionType::builder(FAILED_NOTICE_ACTIONS)
+            .actions(vec![NoticeAction::builder(
+                SEE_LOGS_ACTION,
+                sh.lang.words().see_logs,
+            )
+            .build()])
+            .build()]);
+    if let Err(e) = registered {
+        applog::warn(
+            "the failed update's notification has no See the logs button",
+            e,
+        );
+    }
     let handle = app.clone();
-    let _ = notices.on_action(move |performed| {
+    if let Err(e) = notices.on_action(move |performed| {
         let notice = performed.notification().map(|n| n.id());
         notice_action(&handle, performed.action_id(), notice);
-    });
+    }) {
+        applog::warn("a click on a notification will not open the logs", e);
+    }
     let entries = tray::entries(sh.lang, sh.server_side(), &ServerStatus::Starting, false);
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&build_tray_menu(app, &entries)?)
         .tooltip(sh.lang.words().brand)
         .on_menu_event(|app, event| on_tray_event(app, event.id().as_ref()));
     if let Some(icon) = app.default_window_icon() {
-        *sh.plain_icon.lock().unwrap() = Some((icon.rgba().to_vec(), icon.width(), icon.height()));
+        *sh.plain_icon.locked() = Some((icon.rgba().to_vec(), icon.width(), icon.height()));
         tray = tray.icon(icon.clone());
     }
     // Windows: a left click opens the window (the menu is on the right
@@ -1773,10 +1802,12 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                     // this app catches up with exactly the release the server runs,
                     // offered in the tray (never the channel's newest, which can be
                     // newer than the server)
-                    eprintln!("maktaba: the server ran {server}, newer than this app ({app})");
+                    attempts::log(&format!(
+                        "the server runs {server}, newer than this app ({app})"
+                    ));
                     let release = autoinstall::catch_up(&app, &running, &server);
                     sh.update_ready.store(release.is_some(), Ordering::SeqCst);
-                    *sh.catch_up.lock().unwrap() = release;
+                    *sh.catch_up.locked() = release;
                     Some(true)
                 }
                 Err(e) => {
@@ -1795,7 +1826,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             }
             if let Some(older) = known {
                 if linux::tray_available() {
-                    let _ = linux::sync_autostart(older);
+                    if let Err(e) = linux::sync_autostart(older) {
+                        applog::warn("the tray at sign-in (autostart entry)", e);
+                    }
                 }
             }
         });
@@ -1877,11 +1910,15 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         }
     });
 
+    // a round that panics is logged and the next one runs: the tray never freezes on
+    // one bad poll (applog::keep_going)
     let handle = app.clone();
     std::thread::spawn(move || loop {
-        refresh(&handle);
-        #[cfg(target_os = "linux")]
-        recheck_catch_up(&handle);
+        applog::keep_going("the server's status poll", || {
+            refresh(&handle);
+            #[cfg(target_os = "linux")]
+            recheck_catch_up(&handle);
+        });
         std::thread::sleep(POLL_EVERY);
     });
 
@@ -1890,18 +1927,33 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     // older than the server, set above)
     let handle = app.clone();
     std::thread::spawn(move || loop {
-        // a locally built app can verify no release: it offers none
-        if !shell(&handle).server_side() && !attempts::local_build() {
-            let updater = handle.updater_builder().timeout(DOWNLOAD_TIMEOUT).build();
-            if let Ok(updater) = updater {
-                if let Ok(Some(u)) = tauri::async_runtime::block_on(updater.check()) {
-                    client_update_found(&handle, &u.version);
-                }
+        applog::keep_going("the app's update check", || {
+            // a locally built app can verify no release: it offers none
+            if !shell(&handle).server_side() && !attempts::local_build() {
+                check_own_feed(&handle);
             }
-        }
+        });
         std::thread::sleep(UPDATE_CHECK_EVERY);
     });
     Ok(())
+}
+
+/// A client's check of its own feed: an update found shows in the tray; a check that
+/// failed is logged (with the updater's error chain), and the next check is in
+/// UPDATE_CHECK_EVERY.
+fn check_own_feed(app: &AppHandle) {
+    let updater = match app.updater_builder().timeout(DOWNLOAD_TIMEOUT).build() {
+        Ok(u) => u,
+        Err(e) => {
+            applog::warn("the app's update check", attempts::error_chain(&e));
+            return;
+        }
+    };
+    match tauri::async_runtime::block_on(updater.check()) {
+        Ok(Some(u)) => client_update_found(app, &u.version),
+        Ok(None) => {}
+        Err(e) => applog::warn("the app's update check", attempts::error_chain(&e)),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1967,7 +2019,8 @@ pub async fn setup_step(
         details: Vec::new(),
     })?;
     let owner = setup::owner_env(owner_window(&app));
-    tauri::async_runtime::spawn_blocking(move || {
+    let name = step.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let send = |p: Progress| {
             let _ = on_progress.send(p);
         };
@@ -1995,7 +2048,16 @@ pub async fn setup_step(
             params: None,
             details: Vec::new(),
         })
-    })
+    });
+    // the screen shows it in the reader's words; app.log keeps the step's code and English
+    // (never its input, which may hold a password or token)
+    if let Err(e) = &result {
+        applog::warn(
+            &format!("setup step {name} failed ({})", e.code),
+            &e.message,
+        );
+    }
+    result
 }
 
 /// After the `finish` step: register the login item (which starts the
@@ -2042,7 +2104,7 @@ pub fn open_login_items(app: AppHandle) {
 
 #[tauri::command(async)]
 pub fn server_status(app: AppHandle) -> StatusView {
-    shell(&app).status.lock().unwrap().clone()
+    shell(&app).status.locked().clone()
 }
 
 /// What open_local_server says while the server's processes run but its web app does not

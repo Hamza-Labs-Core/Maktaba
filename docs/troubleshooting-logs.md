@@ -129,6 +129,22 @@ Every line logged while a job runs carries its `job_id`, `stage` and
   (`outcome=retry|parked|terminal`, `not_before`, `failure_class`,
   `parked_on`).
 - `dispatch_unknown_stage`: a job for a stage no handler serves.
+  `stage_context_failed`: a job whose stage settings could not be read; it
+  fails and retries.
+- `job_stalled` (`job_id`, `idle_sec`, `running_sec`, `progress_reported`): a
+  running job has reported no progress for 30 minutes (again every 30 more).
+  Its heartbeat keeps it claimed, so nothing else notices: look for a hung
+  ffmpeg or a share that stopped answering. `job_progress_resumed` when it
+  moves again. Thumbnails stop at `ffmpeg_timeout` after 10 minutes.
+- `background_task_failed` (`task`, `error`, traceback): a worker loop
+  (reconciler, pruner, watchers, reaper…) died; its work stopped until the
+  worker restarts.
+- Reads that fall back to "nothing there" on an older database
+  (`storage_servers_unavailable`, `storage_canonicalize_unavailable`,
+  `home_storage_unavailable`…) carry `cause`: `older_schema` (DEBUG, expected),
+  `connection_lost` (INFO) or `error` (WARNING with traceback: a real failure).
+- `stt_backend_health_failed` / `stt_backend_register_failed` (`backend`,
+  `error`): why a transcription backend counts as not ready.
 - `share_listing_failed` (`directory`, `errno`): a share's folder could not be
   listed, so files there look missing until it can.
   `share_root_unreachable` / `share_root_reachable`: a share root went away

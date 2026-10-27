@@ -13,6 +13,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // SelfInfo is GET /api/cluster/self (local on every machine, public): this machine,
@@ -172,7 +173,8 @@ func (c *HomeInfoCache) Get(ctx context.Context) (SelfInfo, bool) {
 	case c.ok && time.Since(c.at) < ttl, c.reading:
 	case c.ok:
 		c.reading = true
-		go c.read(context.WithoutCancel(ctx))
+		rctx := context.WithoutCancel(ctx)
+		safego.Go(nil, "clusterauth_node_read", func() { c.read(rctx) })
 	default:
 		c.reading = true
 		c.mu.Unlock()

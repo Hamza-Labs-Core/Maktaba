@@ -162,7 +162,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) writeDoc(w http.ResponseWriter, r *http.Request, body []byte) {
 	var out map[string]any
 	if err := json.Unmarshal(body, &out); err != nil {
-		httperror.Write(w, r, httperror.BadGateway("the supervisor's settings: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("the supervisor's settings").Wrap(err))
 		return
 	}
 	var doc document
@@ -193,7 +193,7 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 	}
 	code, out, err := h.Supervisor.call(r.Context(), http.MethodPut, "settings", body)
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway(err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("the server's supervisor did not answer").Wrap(err))
 		return
 	}
 	if code != http.StatusOK {
@@ -216,7 +216,7 @@ func (h *Handler) restart(w http.ResponseWriter, r *http.Request) {
 	}
 	code, out, err := h.Supervisor.call(r.Context(), http.MethodPost, "restart", []byte("{}"))
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway(err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("the server's supervisor did not answer").Wrap(err))
 		return
 	}
 	if code/100 == 2 {

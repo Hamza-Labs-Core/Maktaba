@@ -96,10 +96,10 @@ func (h *Handler) Files(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, e)
 		return
 	case errors.Is(err, ErrNodeNoAnswer):
-		httperror.Write(w, r, codeErr(httperror.BadGateway(err.Error()), "node_no_answer"))
+		httperror.Write(w, r, codeErr(httperror.BadGateway("the machine did not answer").Wrap(err), "node_no_answer"))
 		return
 	case err != nil:
-		httperror.Write(w, r, codeErr(httperror.BadGateway("the supervisor did not answer: "+err.Error()), "supervisor_unreachable"))
+		httperror.Write(w, r, codeErr(httperror.BadGateway("the supervisor did not answer").Wrap(err), "supervisor_unreachable"))
 		return
 	}
 	var doc map[string]json.RawMessage

@@ -135,9 +135,8 @@ closed as `transcode-failed`. Every step of that now has its own line.
     replication slot holds WAL).
   - Swallowed Cloudflare cleanup errors in tvremote.
   - Debug-level failures in homelink and sharepath.
-- **Pipeline:**
-  - No stalled-job detection: the heartbeat ticks independently of progress.
-  - The "older schema" handlers in sharepath/cluster catch every exception.
+- **Pipeline:** done in `fix/errors-pipeline` (`job_stalled`; the
+  "older schema" handlers go through `db/schema_compat.fallback`).
 - **Log context:** request ids are missing on most handler and background
   failure lines, which use `slog.*` rather than `mlog.From(ctx)`.
 - **Redaction (Go):** still by exact key only. `secret.RedactURL` exists but

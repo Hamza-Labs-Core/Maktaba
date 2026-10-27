@@ -225,3 +225,10 @@ export function videosUrl(query: string): string {
   const favorite = new URLSearchParams(query).get("favorite") === "true";
   return `${favorite ? "/api/me/videos" : "/api/videos"}?${query}`;
 }
+
+/** Home's featured hero: a picture narrower than 3:2 (a vertical, square or 4:3
+ *  video) would lose most of its frame to the wide hero's crop, so it is shown
+ *  whole instead, over a blurred copy of itself. */
+export function showsWhole(width: number, height: number): boolean {
+  return width > 0 && height > 0 && width < height * 1.5;
+}

@@ -140,7 +140,7 @@ func (h *Handler) Segments(w http.ResponseWriter, r *http.Request) {
 		LIMIT $4
 	`, transID, to, from, limit+1)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("query segments: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("query segments").Wrap(err))
 		return
 	}
 	defer rows.Close()

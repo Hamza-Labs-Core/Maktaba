@@ -18,6 +18,7 @@ import (
 
 	tvchangeapi "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvchange"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 )
 
@@ -58,7 +59,7 @@ func MountP33(r chi.Router, d P33Deps) *tvchange.Controller {
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		go ctl.Run(ctx)
+		safego.Go(d.Logger, "tvchange_controller", func() { ctl.Run(ctx) })
 	}
 	return ctl
 }

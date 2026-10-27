@@ -19,6 +19,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
 	tvremoteh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 )
@@ -84,10 +85,11 @@ func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, *
 	// Epic 34: the public site's state, posted outward to its Worker
 	pub := &tvremote.Publisher{Ctl: ctl}
 	if d.DB != nil && !d.NoLoop {
-		go ctl.Run(context.Background())
-		go pub.Run(context.Background())
+		safego.Go(d.Logger, "tvremote_controller", func() { ctl.Run(context.Background()) })
+		safego.Go(d.Logger, "tvremote_publisher", func() { pub.Run(context.Background()) })
 		// story 32.11: the TV numbers the control centre charts, every minute
-		go (&tvremote.HealthSampler{DB: d.DB, Remote: ctl, Logger: d.Logger}).Run(context.Background())
+		sampler := &tvremote.HealthSampler{DB: d.DB, Remote: ctl, Logger: d.Logger}
+		safego.Go(d.Logger, "tvremote_health_sampler", func() { sampler.Run(context.Background()) })
 	}
 	if q.Testers == nil {
 		q.Testers = map[string]queues.ExtensionTester{}

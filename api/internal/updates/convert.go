@@ -130,8 +130,8 @@ func (d *Driver) startConvert(ctx context.Context, run Run, pol Policy, t Target
 	ok, raw, err := d.Cluster.Command(ctx, w.Session, "update.convert", job, 30*time.Second)
 	switch {
 	case err == nil && !ok && unknownCommand(raw):
-		_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetWorkerOnly,
-			Detail: map[string]any{"why": WhyTooOld, "pipeline_version": w.Version}})
+		noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetWorkerOnly,
+			Detail: map[string]any{"why": WhyTooOld, "pipeline_version": w.Version}}), "run_id", run.ID)
 		d.audit(ctx, run, "node_worker_only", map[string]any{"node_id": t.NodeID, "pipeline_version": w.Version})
 		d.nodeUndrain(ctx, run, t.NodeID)
 	case err != nil || !ok:
@@ -141,8 +141,8 @@ func (d *Driver) startConvert(ctx context.Context, run Run, pol Policy, t Target
 			"detail": strings.TrimSpace(fmt.Sprint(errText(err), " ", st.Detail))})
 	default:
 		d.audit(ctx, run, "node_convert", map[string]any{"node_id": t.NodeID})
-		_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetConverting, Applied: true,
-			Attempt: true, Error: "clear", Detail: readConvertState(raw)})
+		noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetConverting, Applied: true,
+			Attempt: true, Error: "clear", Detail: readConvertState(raw)}), "run_id", run.ID)
 	}
 }
 
@@ -162,16 +162,16 @@ func (d *Driver) followConvert(ctx context.Context, run Run, pol Policy, t Targe
 	if _, ok := agents[t.NodeID]; ok {
 		s := states[t.NodeID]
 		if s.Version != "" && CompareVersions(s.Version, run.Version) == 0 {
-			_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHealthy, Healthy: true,
-				Kind: firstNonEmpty(s.Layout, KindWorker), Detail: map[string]any{"converted": true}})
+			noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHealthy, Healthy: true,
+				Kind: firstNonEmpty(s.Layout, KindWorker), Detail: map[string]any{"converted": true}}), "run_id", run.ID)
 			d.audit(ctx, run, "node_converted", map[string]any{"node_id": t.NodeID, "layout": s.Layout})
 			d.nodeUndrain(ctx, run, t.NodeID)
 			return true
 		}
 		if s.Version != "" {
 			// converted onto another release: the run takes it from here as a full node
-			_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetPending, Kind: firstNonEmpty(s.Layout, "self_managed"),
-				From: NormalizeVersion(s.Version), Detail: map[string]any{"converted": true}})
+			noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetPending, Kind: firstNonEmpty(s.Layout, "self_managed"),
+				From: NormalizeVersion(s.Version), Detail: map[string]any{"converted": true}}), "run_id", run.ID)
 			d.audit(ctx, run, "node_converted", map[string]any{"node_id": t.NodeID, "version": s.Version})
 			return true
 		}
@@ -188,7 +188,7 @@ func (d *Driver) followConvert(ctx context.Context, run Run, pol Policy, t Targe
 						"step": st.Step, "detail": st.Detail})
 					return true
 				}
-				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{Detail: st})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{Detail: st}), "run_id", run.ID)
 			}
 		}
 	}
@@ -208,7 +208,7 @@ func (d *Driver) adoptWorkers(ctx context.Context, run Run, targets []Target, wo
 			continue
 		}
 		if _, ok := workers[t.NodeID]; ok {
-			_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetPending, Error: "clear"})
+			noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetPending, Error: "clear"}), "run_id", run.ID)
 			d.audit(ctx, run, "node_back", map[string]any{"node_id": t.NodeID})
 		}
 	}

@@ -116,6 +116,18 @@ func (c *Controller) now() time.Time {
 	return time.Now().UTC()
 }
 
+// cleanupFailed logs a Cloudflare or secret cleanup step that did not go
+// through (tv_cf_cleanup_failed): an input left enabled or not deleted, or a
+// stream key kept, is otherwise found only on the Cloudflare bill.
+func (c *Controller) cleanupFailed(step string, err error, attrs ...any) {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return
+	}
+	args := append([]any{"step", step}, attrs...)
+	args = append(args, "err", err.Error(), "event", "tv_cf_cleanup_failed")
+	c.log().Warn("tv_remote: a cleanup step failed", args...)
+}
+
 func (c *Controller) log() *slog.Logger {
 	if c.Logger != nil {
 		return c.Logger
@@ -494,7 +506,7 @@ func (c *Controller) toCleanup(ctx context.Context, cl *cf.Client, p Push, now t
 			}
 		}
 	}
-	_ = c.st.deletePushSecret(ctx, p.ID)
+	c.cleanupFailed("delete_push_secret", c.st.deletePushSecret(ctx, p.ID), "push_id", p.ID)
 	cols := map[string]any{"state": PushCleanup, "state_at": now}
 	if p.EndedAt == nil {
 		cols["ended_at"] = now
@@ -595,7 +607,9 @@ func (c *Controller) deleteRecordings(ctx context.Context, cl *cf.Client, now ti
 		if p.State == PushCleanup {
 			continue // its own step
 		}
-		_, _ = c.deleteRecording(ctx, cl, p, now)
+		if _, err := c.deleteRecording(ctx, cl, p, now); err != nil {
+			c.cleanupFailed("delete_recording", err, "push_id", p.ID)
+		}
 	}
 }
 
@@ -636,7 +650,7 @@ func (c *Controller) retryOrFail(ctx context.Context, cl *cf.Client, s Settings,
 		"detail": why, "ended_at": now, "state_at": now}); err != nil {
 		return err
 	}
-	_ = c.st.deletePushSecret(ctx, p.ID)
+	c.cleanupFailed("delete_push_secret", c.st.deletePushSecret(ctx, p.ID), "push_id", p.ID)
 	c.st.notify(ctx, "tv_push", p.ID)
 	var in Input
 	var err error
@@ -645,7 +659,7 @@ func (c *Controller) retryOrFail(ctx context.Context, cl *cf.Client, s Settings,
 	} else {
 		in, err = c.st.input(ctx, p.InputID)
 		if err == nil {
-			_ = cl.SetLiveInputEnabled(ctx, in.CFUID, false)
+			c.cleanupFailed("disable_input", cl.SetLiveInputEnabled(ctx, in.CFUID, false), "input", in.CFUID)
 		}
 	}
 	if err != nil {
@@ -672,12 +686,12 @@ func (c *Controller) fail(ctx context.Context, cl *cf.Client, p Push, why string
 		"ended_at": now, "state_at": now}); err != nil {
 		return err
 	}
-	_ = c.st.deletePushSecret(ctx, p.ID)
+	c.cleanupFailed("delete_push_secret", c.st.deletePushSecret(ctx, p.ID), "push_id", p.ID)
 	c.st.notify(ctx, "tv_push", p.ID)
 	if p.InputID != "" {
 		if in, err := c.st.input(ctx, p.InputID); err == nil {
 			if cl != nil {
-				_ = cl.SetLiveInputEnabled(ctx, in.CFUID, false)
+				c.cleanupFailed("disable_input", cl.SetLiveInputEnabled(ctx, in.CFUID, false), "input", in.CFUID)
 			}
 			_ = c.dropOutputs(ctx, cl, in, "the broadcast failed", false)
 			if in.State != InputErrored {
@@ -723,7 +737,7 @@ func (c *Controller) inputErrors(ctx context.Context, cl *cf.Client, s Settings,
 		c.log().Error("tv_remote: remote viewing unavailable", "code", code, "event", "tv_cf_error")
 		return true, c.fail(ctx, cl, p, reason, now, false)
 	case ActionFreshInput:
-		_ = cl.SetLiveInputEnabled(ctx, in.CFUID, false)
+		c.cleanupFailed("disable_input", cl.SetLiveInputEnabled(ctx, in.CFUID, false), "input", in.CFUID)
 		_ = c.st.setInput(ctx, in.ID, map[string]any{"state": InputErrored, "error": code, "error_at": now,
 			"channel_id": nil})
 		c.retireInput(ctx, cl, in)
@@ -739,7 +753,7 @@ func (c *Controller) retireInput(ctx context.Context, cl *cf.Client, in Input) {
 		c.log().Warn("tv_remote: deleting an errored input failed", "input", in.CFUID, "err", err, "event", "tv_cf_error")
 	}
 	if c.Integration != nil && c.Integration.Secrets != nil {
-		_ = c.Integration.Secrets.Delete(ctx, SecretInputPrefix+in.CFUID)
+		c.cleanupFailed("delete_input_keys", c.Integration.Secrets.Delete(ctx, SecretInputPrefix+in.CFUID), "input", in.CFUID)
 	}
 }
 
@@ -897,7 +911,7 @@ func (c *Controller) assignInput(ctx context.Context, cl *cf.Client, s Settings,
 	}
 	k := keysOf(x)
 	if err := c.saveKeys(ctx, x.UID, k); err != nil {
-		_ = cl.DeleteLiveInput(ctx, x.UID)
+		c.cleanupFailed("delete_input", cl.DeleteLiveInput(ctx, x.UID), "input", x.UID)
 		return Input{}, err
 	}
 	in := Input{ID: uuid.NewString(), CFUID: x.UID, Name: name, State: InputIdle,
@@ -969,7 +983,7 @@ func (c *Controller) shrinkPool(ctx context.Context, s Settings) {
 			}
 		}
 		if c.Integration != nil && c.Integration.Secrets != nil {
-			_ = c.Integration.Secrets.Delete(ctx, SecretInputPrefix+in.CFUID)
+			c.cleanupFailed("delete_input_keys", c.Integration.Secrets.Delete(ctx, SecretInputPrefix+in.CFUID), "input", in.CFUID)
 		}
 		if err := c.st.deleteInput(ctx, in.ID); err == nil {
 			extra--

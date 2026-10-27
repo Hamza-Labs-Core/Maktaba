@@ -774,7 +774,7 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 			e.Detail = "too many wrong codes: the request was rejected"
 			e = e.With("state", cluster.StateRejected)
 		}
-		h.log().Warn("cluster: wrong pairing code", "node_id", n.ID, "attempts", attempts, "event", "cluster_wrong_code")
+		h.log().WarnContext(r.Context(), "cluster: wrong pairing code", "node_id", n.ID, "attempts", attempts, "event", "cluster_wrong_code")
 		httperror.Write(w, r, e)
 		return
 	}
@@ -786,7 +786,7 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.Store.Approve(ctx, n.ID, role, sealed, actor(r), now); err != nil {
 		if derr := h.Roles.Drop(ctx, role); derr != nil {
-			h.log().Warn("cluster: dropping role after failed approval", "err", derr, "role", role)
+			h.log().WarnContext(r.Context(), "cluster: dropping role after failed approval", "err", derr, "role", role)
 		}
 		errInternal(w, r, "approve", err)
 		return
@@ -863,7 +863,7 @@ func (h *Handler) provision(ctx context.Context, r *http.Request, n cluster.Node
 		if t, err := h.JoinTLS(ctx, n.ID, csr); err == nil {
 			linkTLS = t
 		} else {
-			h.log().Warn("cluster: the joining machine's certificate request was refused; it asks again on its channel",
+			h.log().WarnContext(ctx, "cluster: the joining machine's certificate request was refused; it asks again on its channel",
 				"node_id", n.ID, "err", err, "event", "cluster_join_csr_refused")
 		}
 	}
@@ -1059,7 +1059,7 @@ func (h *Handler) DeleteNode(w http.ResponseWriter, r *http.Request) {
 	}
 	if n.DBRole != nil && *n.DBRole != "" {
 		if err := h.Roles.Drop(ctx, *n.DBRole); err != nil {
-			h.log().Warn("cluster: dropping a removed machine's role failed", "role", *n.DBRole, "err", err)
+			h.log().WarnContext(r.Context(), "cluster: dropping a removed machine's role failed", "role", *n.DBRole, "err", err)
 		}
 	}
 	common.WriteNoContent(w)

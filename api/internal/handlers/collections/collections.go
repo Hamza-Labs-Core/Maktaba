@@ -263,7 +263,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, nameExists())
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("create: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("create").Wrap(err))
 		return
 	}
 	h.audit(r, p, "collection-created", req.LibraryID, map[string]any{"collection_id": id, "name": req.Name, "is_smart": req.IsSmart})
@@ -302,7 +302,7 @@ func (h *Handler) visibleCollection(w http.ResponseWriter, r *http.Request, id s
 			httperror.Write(w, r, httperror.NotFound("collection "+id))
 			return Collection{}, false
 		}
-		httperror.Write(w, r, httperror.Internal("load: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("load").Wrap(err))
 		return Collection{}, false
 	}
 	if !videos.CanRead(p, c.LibraryID) {
@@ -440,7 +440,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 				httperror.Write(w, r, nameExists())
 				return
 			}
-			httperror.Write(w, r, httperror.Internal("update: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("update").Wrap(err))
 			return
 		}
 	}
@@ -459,7 +459,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 				cargs = append(cargs, fargs...)
 			}
 			if _, err := tx.ExecContext(r.Context(), clearVisible+")", cargs...); err != nil {
-				httperror.Write(w, r, httperror.Internal("clear items: "+err.Error()))
+				httperror.Write(w, r, httperror.Internal("clear items").Wrap(err))
 				return
 			}
 		}
@@ -470,7 +470,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 				ON CONFLICT (collection_id, video_id) DO UPDATE SET position = EXCLUDED.position
 			`, id, it.VideoID, it.Position)
 			if err != nil {
-				httperror.Write(w, r, httperror.Internal("insert item: "+err.Error()))
+				httperror.Write(w, r, httperror.Internal("insert item").Wrap(err))
 				return
 			}
 		}
@@ -588,7 +588,7 @@ func (h *Handler) GetItems(w http.ResponseWriter, r *http.Request) {
 	q += " ORDER BY ci.position ASC, ci.video_id ASC LIMIT " + itoa(maxItems)
 	rows, err := h.DB.QueryContext(r.Context(), q, args...)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("items: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("items").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -661,7 +661,7 @@ func (h *Handler) AddItem(w http.ResponseWriter, r *http.Request) {
 		ON CONFLICT (collection_id, video_id) DO UPDATE SET position = EXCLUDED.position
 	`, id, req.VideoID, req.Position)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("add item: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("add item").Wrap(err))
 		return
 	}
 	h.audit(r, p, "collection-item-added", c.LibraryID, map[string]any{"collection_id": id, "video_id": req.VideoID})
