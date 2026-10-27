@@ -23,6 +23,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // Backup is one dump in the home's backups folder.
@@ -264,7 +265,8 @@ func (h *Handler) Restore(w http.ResponseWriter, r *http.Request) {
 	h.Svc.Store.Audit(r.Context(), p.UserID, "admin", "update.restore", name, map[string]any{
 		"release": pl.Release, "schema": pl.Schema, "running": pl.Running, "backup_at": pl.At})
 	if h.Driver != nil && h.Driver.Cluster != nil {
-		go h.Driver.disconnectMachines(context.WithoutCancel(r.Context()), "home_restore")
+		ctx := context.WithoutCancel(r.Context())
+		safego.Go(h.Driver.log(), "update_disconnect_machines", func() { h.Driver.disconnectMachines(ctx, "home_restore") })
 	}
 	common.WriteJSON(w, r, http.StatusAccepted, pl)
 }
@@ -296,7 +298,8 @@ func (h *Handler) RestoredNotice(w http.ResponseWriter, r *http.Request) {
 	h.Svc.Store.Audit(r.Context(), "", "cli", "update.restore", req.Backup, map[string]any{
 		"release": req.Release, "schema": req.Schema, "running": req.Running, "backup_at": req.BackupAt, "by": req.By})
 	if h.Driver != nil && h.Driver.Cluster != nil {
-		go h.Driver.disconnectMachines(context.WithoutCancel(r.Context()), "home_restore")
+		ctx := context.WithoutCancel(r.Context())
+		safego.Go(h.Driver.log(), "update_disconnect_machines", func() { h.Driver.disconnectMachines(ctx, "home_restore") })
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -306,7 +309,10 @@ func (h *Handler) RestoredNotice(w http.ResponseWriter, r *http.Request) {
 func (d *Driver) disconnectMachines(ctx context.Context, reason string) {
 	for _, sess := range d.Cluster.MachineAgents() {
 		cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		_, _, _ = d.Cluster.Command(cctx, sess, "disconnect", map[string]any{"reason": reason}, 2*time.Second)
+		if _, _, err := d.Cluster.Command(cctx, sess, "disconnect", map[string]any{"reason": reason}, 2*time.Second); err != nil {
+			d.log().Warn("update: a machine was not told to disconnect", "event", "update_disconnect_failed",
+				"reason", reason, "err", err.Error())
+		}
 		cancel()
 	}
 }

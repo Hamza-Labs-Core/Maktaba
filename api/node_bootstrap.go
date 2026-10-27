@@ -54,6 +54,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
@@ -306,12 +307,12 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 	if p := inDir(nodeauth.HomeSeenFile); p != "" {
 		rt.resolver.LoadHomeSeen(p)
 		rt.bg.Add(1)
-		go func() { defer rt.bg.Done(); rt.resolver.KeepHomeSeen(ctx, p) }()
+		safego.Go(logger, "node_keep_home_seen", func() { defer rt.bg.Done(); rt.resolver.KeepHomeSeen(ctx, p) })
 	}
 	rt.guard = &schemaguard.Guard{DB: dbs.app, Logger: logger}
 	rt.guard.Check(cctx)
 	if checkLater {
-		go rt.checkRoleLater(ctx)
+		safego.Go(logger, "node_check_role", func() { rt.checkRoleLater(ctx) })
 	}
 	// the home's database answers again: its schema is read at once (it may have been
 	// updated meanwhile), not at the next round
@@ -327,14 +328,14 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 
 	if cfg.AgentURL != "" && cfg.AgentTokenFile != "" {
 		rt.feed = &homelink.AgentFeed{URL: cfg.AgentURL, TokenFile: cfg.AgentTokenFile, Link: rt.link, Logger: logger}
-		go rt.feed.Run(ctx)
+		safego.Go(logger, "node_agent_feed", func() { rt.feed.Run(ctx) })
 	} else {
 		logger.Warn("node: no machine agent configured (MAKTABA_AGENT_URL); this machine cannot act for users",
 			"event", "node_no_agent")
 	}
-	go rt.resolver.Watch(ctx)
-	go rt.guard.Run(ctx)
-	go dbs.pair.Watch(ctx, 5*time.Second)
+	safego.Go(logger, "node_resolver_watch", func() { rt.resolver.Watch(ctx) })
+	safego.Go(logger, "node_schema_guard", func() { rt.guard.Run(ctx) })
+	safego.Go(logger, "node_db_watch", func() { dbs.pair.Watch(ctx, 5*time.Second) })
 	// media through this machine's own mounts (design §11.5): the map from the copy
 	// while the home's database does not answer
 	sharepath.StartNode(ctx, dbs.app, cfg.NodeID, logger)
@@ -356,10 +357,12 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 		},
 		HomeDown: func() bool { return rt.resolver.DownFor(homeDownAfter) },
 		Catalog:  rt.offline(),
-		OnChange: func(vodfallback.State) { go rt.report(context.Background()) },
+		OnChange: func(vodfallback.State) {
+			safego.Go(logger, "node_report", func() { rt.report(context.Background()) })
+		},
 	}
 	system.SetMachine(system.Machine{Role: "node", NodeID: cfg.NodeID, WebURL: cfg.WebURL})
-	go rt.reportLoop(ctx)
+	safego.Go(logger, "node_report_loop", func() { rt.reportLoop(ctx) })
 	logger.Info("node: full node mode", "node_id", cfg.NodeID, "home", cfg.HomeAPIURL, "web_url", cfg.WebURL,
 		"copy", dbs.copyDB != nil, "event", "node_mode_started")
 	return rt, nil
@@ -777,13 +780,14 @@ func mountHomeClusterAuth(r chi.Router, db *sql.DB, hubRef *router.HubRef, logge
 	// slots guarded; on a database that is not Maktaba's own Postgres, none without the rule
 	// (read at each beat, its errors told apart: a rule not read ends no copy)
 	rules := nodemode.CachedRules(db, time.Minute)
-	go (&cluster.Copies{DB: db, CAFile: os.Getenv("MAKTABA_CLUSTER_PG_CA"), Logger: logger,
+	copies := &cluster.Copies{DB: db, CAFile: os.Getenv("MAKTABA_CLUSTER_PG_CA"), Logger: logger,
 		Bundled: os.Getenv("MAKTABA_CLUSTER_PG_PORT") != "",
 		KeepGB:  func() int { return rules().ReplicaWALKeepGB },
 		OperatorPG: func(ctx context.Context) (bool, error) {
 			r, err := nodemode.LoadRules(ctx, db)
 			return r.CopiesOnOperatorPostgres, err
-		}}).Run(context.Background())
+		}}
+	safego.Go(logger, "cluster_copies", func() { copies.Run(context.Background()) })
 }
 
 // mountNode opens the home's database with the node's role, and this machine's copy of

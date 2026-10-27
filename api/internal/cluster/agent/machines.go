@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // ProcessSupervisor is hello.process of a node's machine agent.
@@ -199,7 +200,7 @@ func (h *Hub) onUpdateState(s *Session, raw []byte) {
 		(s.dbCertKept == nil || *s.dbCertKept != f.DBClientCert)
 	s.mu.Unlock()
 	if keep {
-		go h.keepDBClientCert(s)
+		safego.Go(h.log(), "cluster_keep_db_client_cert", func() { h.keepDBClientCert(s) })
 	}
 	h.event(map[string]any{"event": "update_state", "session": s.ID, "node_id": nullable(s.NodeID),
 		"version": f.Version, "platform": f.Platform})

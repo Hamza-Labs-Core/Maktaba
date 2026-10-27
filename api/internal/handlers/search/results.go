@@ -14,6 +14,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // maxVideoPassages bounds the passages one video's list reads (a transcript
@@ -310,12 +311,16 @@ func (h *Handler) compute(ctx context.Context, req Request, rl Rules) (*run, Res
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer safego.Recover(nil, "search_titles")
+			errTitles = errSearchPanicked
 			titles, errTitles = h.runTitles(ctx, req.Q, rl.MaxVideos, req.Filters)
 		}()
 		if req.Mode == "fts" || req.Mode == "hybrid" {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				defer safego.Recover(nil, "search_fts")
+				errFT = errSearchPanicked
 				ftsVideos, errFT = h.runFTSVideos(ctx, req.Q, rl.MaxVideos, req.Filters)
 				took.FTS = time.Since(t0).Milliseconds()
 			}()
@@ -325,6 +330,7 @@ func (h *Handler) compute(ctx context.Context, req Request, rl Rules) (*run, Res
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer safego.Recover(nil, "search_semantic")
 			t1 := time.Now()
 			sem, rn.Degraded = h.runSemantic(ctx, req.Q, rl.SemanticTopK, req.Filters)
 			took.Semantic = time.Since(t1).Milliseconds()

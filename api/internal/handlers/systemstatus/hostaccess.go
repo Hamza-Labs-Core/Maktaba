@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 )
 
@@ -243,6 +244,7 @@ func checkHostAccess(ctx context.Context, e *env) []Item {
 		wg.Add(1)
 		go func(i int, r libraryRoot, local string) {
 			defer wg.Done()
+			defer safego.Recover(nil, "systemstatus_root_probe")
 			if sharepath.IsCanonical(local) {
 				items[i] = rootItem(r, local, probeResult{answered: true}, stat)
 				return

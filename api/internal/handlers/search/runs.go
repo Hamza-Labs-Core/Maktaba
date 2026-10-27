@@ -32,6 +32,9 @@ const ProblemSearchExpired = "https://maktaba.dev/problems/search-expired"
 // expired.
 var errExpired = errors.New("search expired")
 
+// errSearchPanicked is a search part that stopped on a panic (logged as goroutine_panic).
+var errSearchPanicked = errors.New("the search stopped on an internal error")
+
 // searchIDPattern is what newSearchID makes (24 base64url characters).
 var searchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
 
