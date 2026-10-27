@@ -30,6 +30,7 @@ from typing import Any
 
 from ..db.jobs_reaper import REAPER_ADVISORY_LOCK_KEY, reap_once
 from ..log import get_logger
+from ..log.tasks import watch as watch_task
 
 __all__ = [
     "DEFAULT_REAPER_INTERVAL_SEC",
@@ -171,7 +172,7 @@ class Reaper:
     def start(self) -> None:
         if self._task is not None:
             raise RuntimeError("Reaper already started")
-        self._task = asyncio.create_task(self._run(), name="reaper")
+        self._task = watch_task(asyncio.create_task(self._run(), name="reaper"))
 
     async def stop(self) -> None:
         self._stop.set()
