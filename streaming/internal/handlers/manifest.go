@@ -85,8 +85,10 @@ func (h *ManifestHandler) writtenSoon(r *http.Request, base, path, sub string) s
 			return ""
 		case <-time.After(100 * time.Millisecond):
 		}
-		if _, err := os.Stat(path); err == nil {
-			return path
+		if clean := filepath.Clean(path); strings.HasPrefix(clean, filepath.Clean(base)+string(filepath.Separator)) {
+			if _, err := os.Stat(clean); err == nil {
+				return clean
+			}
 		}
 	}
 	return ""
@@ -141,7 +143,7 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		if p := h.writtenSoon(r, dir, path, sub); p != "" {
+		if p := filepath.Clean(h.writtenSoon(r, dir, path, sub)); strings.HasPrefix(p, filepath.Clean(dir)+string(filepath.Separator)) {
 			data, err = os.ReadFile(p)
 		}
 	}
@@ -209,7 +211,7 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		if p := h.writtenSoon(r, base, path, sub); p != "" {
+		if p := filepath.Clean(h.writtenSoon(r, base, path, sub)); strings.HasPrefix(p, filepath.Clean(base)+string(filepath.Separator)) {
 			data, err = os.ReadFile(p)
 		}
 	}
