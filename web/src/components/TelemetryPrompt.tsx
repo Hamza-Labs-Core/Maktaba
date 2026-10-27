@@ -15,7 +15,6 @@ import {
   startTelemetry,
   telemetryDecided,
 } from "../lib/telemetry/client";
-import { SERVER_PAGES } from "../lib/edition";
 
 /** the bullets of what is sent, and of what never is (shared with Settings → Privacy) */
 export function TelemetryScope() {
@@ -60,12 +59,11 @@ export function TelemetryPrompt() {
         </h2>
         <p>{t("telemetry.intro")}</p>
         <TelemetryScope />
-        {/* a player has no settings pages (Epic 42.5) */}
-        {SERVER_PAGES && (
-          <p className="mkt-muted">
-            {t("telemetry.later")} <Link to="/settings/privacy">{t("telemetry.settingsLink")}</Link>
-          </p>
-        )}
+        {/* Preferences, not Settings: every edition has it (Epic 42.5) */}
+        <p className="mkt-muted">
+          {t("telemetry.later")}{" "}
+          <Link to="/account/preferences/privacy">{t("telemetry.settingsLink")}</Link>
+        </p>
       </div>
       <span className="mkt-update-banner__actions">
         <button

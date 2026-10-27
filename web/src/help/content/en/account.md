@@ -4,7 +4,7 @@ Your profile and password, where you are signed in, your API tokens, your watch 
 
 ## What it is {#what-it-is}
 
-Your account pages are listed in the side menu (on a phone, under [More](/more)): **Account**, **Devices**, **Connect an app**, **Sessions**, **API tokens** and **History**. The **Privacy** tab in Settings controls whether your viewing is recorded.
+Your account pages are listed in the side menu (on a phone, under [More](/more)): **Account**, **Devices**, **Connect an app**, **Sessions**, **API tokens**, **History** and **Preferences**. [Preferences](/account/preferences) holds your own choices: how Maktaba looks, your privacy, and signing out everywhere. Every app has it, the player apps included.
 
 ## How to use it {#how-to-use}
 
@@ -25,7 +25,7 @@ On [Account](/account), in **Change password**:
 [Sessions](/account/sessions) lists every browser and device signed in to your account, with its IP address, when it signed in and when it was last active. Your own is marked **This session**.
 
 - Press **Revoke** on a session you do not recognise, or on a lost device. That device is signed out.
-- To sign out of every device at once, open [Settings → Account](/settings) and press **Sign out everywhere**. You are signed out here too.
+- To sign out of every device at once, open [Preferences → Account](/account/preferences/account) and press **Sign out everywhere**. You are signed out here too.
 
 ### Devices {#devices}
 
@@ -72,9 +72,19 @@ Later, the list shows only the token's **Prefix**, its **Scopes**, when it was *
 - **Watched**: every video you watched, newest first, with your progress, how many times, and when. **Remove** takes a video out of your history and also forgets where you stopped in it.
 - **Activity timeline**: what you watched and searched, day by day. Use **Show** to pick **Everything**, **Watched** or **Searched**.
 
+### Preferences {#preferences}
+
+[Preferences](/account/preferences) has three tabs, the same in every edition of Maktaba (the home's web page, the player apps and the remote):
+
+- **Appearance**: the **Theme** (light, dark or the system's), the **Language** (English or العربية) and the **Density** (comfortable or compact). These are kept in this browser or app, so set them on each device.
+- **Privacy**: whether your plays are recorded, whether this app sends anonymous usage data, and your recent history and activity (see [Privacy](#privacy)).
+- **Account**: **Sign out everywhere**, a link to your [API tokens](/account/tokens), and **Diagnostics**, a support bundle of your own activity.
+
+On the home's web page, admins also find these tabs in [Settings](/settings), beside the home's own settings. Changing them in one place changes them in the other.
+
 ### Privacy: pause tracking {#privacy}
 
-On [Settings → Privacy](/settings/privacy), the **Activity tracking** switch decides whether your plays are recorded in watch analytics.
+On [Preferences → Privacy](/account/preferences/privacy), the **Activity tracking** switch decides whether your plays are recorded in watch analytics.
 
 - **Tracking on**: your plays count in the statistics and in your history.
 - **Tracking paused**: new plays are not recorded. Searches and your existing history are not affected.
@@ -105,7 +115,7 @@ The same tab shows your recent **Watch history**, with **Remove** on each row, a
 
 ### I lost my phone. What do I do? {#faq-lost-device}
 
-Open [Sessions](/account/sessions) and press **Revoke** on that phone's session, or use **Sign out everywhere** in [Settings → Account](/settings). Then change your password.
+Open [Sessions](/account/sessions) and press **Revoke** on that phone's session, or use **Sign out everywhere** in [Preferences → Account](/account/preferences/account). Then change your password.
 
 ### I lost a token I created. Can I see it again? {#faq-lost-token}
 

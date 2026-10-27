@@ -113,6 +113,31 @@ describe("player edition", () => {
     await open("player", "/help", viewer);
     expect(await screen.findByRole("heading", { level: 1, name: en["help.title"] })).toBeVisible();
   });
+
+  // The player has no Settings: a viewer's own choices are Preferences, an account page
+  it("has Preferences in the nav, with the viewer's appearance, privacy and account", async () => {
+    await open("player", "/", viewer);
+    const side = await sidebar();
+    expect(within(side).getByRole("link", { name: en["nav.preferences"] })).toHaveAttribute(
+      "href",
+      "/account/preferences"
+    );
+  });
+
+  it.each([
+    ["/account/preferences", en["settings.theme"]],
+    ["/account/preferences/privacy", en["settings.privacy.title"]],
+    ["/account/preferences/account", en["settings.signOutEverywhere"]],
+  ])("opens %s", async (path, text) => {
+    await open("player", path, admin);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: en["nav.preferences"] })
+    ).toBeVisible();
+    expect((await screen.findAllByText(text))[0]).toBeVisible();
+    // an admin's server parts stay out of the player: the home's name, the server's usage data
+    expect(screen.queryByText(en["settings.homeName.title"])).not.toBeInTheDocument();
+    expect(screen.queryByText(en["telemetry.server.title"])).not.toBeInTheDocument();
+  });
 });
 
 describe("remote edition", () => {
@@ -150,5 +175,19 @@ describe("remote edition", () => {
     expect(
       await screen.findByRole("heading", { level: 1, name: en["admin.users.title"] })
     ).toBeVisible();
+  });
+});
+
+describe("Preferences in the full edition", () => {
+  // In full, Settings is under Manage: a viewer reaches their own choices here instead
+  it("is in a viewer's nav, and Settings' Account tab still adds the admin's home name", async () => {
+    await open("full", "/", viewer);
+    const side = await sidebar();
+    expect(within(side).getByRole("link", { name: en["nav.preferences"] })).toBeVisible();
+  });
+
+  it("shows an admin the home's name in Settings, not in Preferences", async () => {
+    await open("full", "/settings", admin);
+    expect(await screen.findByText(en["settings.homeName.title"])).toBeVisible();
   });
 });

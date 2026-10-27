@@ -319,8 +319,12 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    channels, the privacy settings link). The remote's `/` is the home's status
    (`pages/RemoteHome.tsx`: the health banner, Processing, Needs attention, Machines, System
    health); a non-admin there is told it is for the home's admins, with Watch instead. Tests:
-   `App.editions.test.tsx`. The API is unchanged. Open: the player has no Settings, so a
-   viewer's own privacy and appearance settings need a home outside `/settings/*`.)
+   `App.editions.test.tsx`. The API is unchanged. A viewer's own settings are
+   **Preferences** (`/account/preferences`: Appearance, Privacy, Account), an account page in
+   every edition (`pages/Profile/Preferences.tsx`, beside this app's usage-data switch,
+   `Profile/TelemetrySettings.tsx`); Settings shows the same panels and adds the admin parts
+   (the home's name, the server's usage data), so the player bundle carries none of them.
+   In the player `g c` opens Preferences and `g q` is gone.)
    *Android (`apps/android`, `feat/epic42-android`):* the picker lists Your homes (rename,
    remove), On this network (NSD, deduped by id else host:port, `tls`/`path` honoured), by
    address and by QR (CameraX + ZXing), and opens `maktaba://connect` links after asking;
