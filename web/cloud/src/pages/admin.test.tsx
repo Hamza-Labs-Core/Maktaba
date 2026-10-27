@@ -178,4 +178,72 @@ describe("admin console", () => {
     await u.click(within(dialog).getByRole("button", { name: "Suspend" }));
     expect(await within(dialog).findByText(/can't be suspended/)).toBeInTheDocument();
   });
+
+  it("renders Access denied on the usage page", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "user" })),
+      "GET /v1/admin/usage": DENIED,
+    });
+    renderAt("/admin/usage");
+    expect(await screen.findByText("Access denied")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("shows the usage tables and changes the period", async () => {
+    const usage = {
+      days: 30,
+      since: "2026-09-27T00:00:00Z",
+      installs: { homes: 12, app_installs: 40, by_app: [{ app: "web", installs: 30 }] },
+      server_versions: [{ version: "0.3.26", homes: 9 }],
+      app_versions: [{ app: "web", version: "1.2.3", installs: 30 }],
+      server_platforms: [{ os: "darwin", arch: "arm64", homes: 7 }],
+      install_kinds: [{ install_kind: "mac-app", homes: 7 }],
+      app_platforms: [{ app: "tv", platform: "tvos", form_factor: "tv", installs: 10 }],
+      apps_in_use: [{ app: "web", platform: "web", homes: 11, installs: 30 }],
+      features: [{ feature: "live_tv", homes: 6, share: 0.5 }],
+      feature_use: [{ app: "web", feature: "library", total: 321, installs: 20 }],
+      errors: [
+        {
+          fingerprint: "f1",
+          source: "server",
+          app: "server",
+          message: "db timeout",
+          count: 77,
+          installs: 4,
+          versions: ["0.3.26", "0.3.25"],
+          first_seen: "2026-10-01T00:00:00Z",
+          last_seen: "2026-10-25T00:00:00Z",
+        },
+      ],
+      vitals: [{ metric: "LCP", p75: 1834.4, samples: 90 }],
+    };
+    const f = stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "GET /v1/admin/usage": [200, usage],
+    });
+    renderAt("/admin/usage");
+    expect(await screen.findByText("db timeout")).toBeInTheDocument();
+    expect(screen.getByText("Homes", { selector: ".mkc-muted" })).toBeInTheDocument();
+    expect(screen.getByText("0.3.26, 0.3.25")).toBeInTheDocument();
+    expect(screen.getByText("50%")).toBeInTheDocument();
+    expect(screen.getByText("1,834")).toBeInTheDocument();
+    expect(screen.getByText("321")).toBeInTheDocument();
+    expect(f.find("GET", "/v1/admin/usage")[0].path).toContain("days=30");
+    const u = userEvent.setup();
+    await u.selectOptions(screen.getByLabelText("Period"), "90");
+    await waitFor(() => expect(f.find("GET", "/v1/admin/usage").at(-1)!.path).toContain("days=90"));
+  });
+
+  it("links the usage page from the admin nav", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "GET /v1/admin/usage": DENIED,
+    });
+    renderAt("/admin/usage");
+    const nav = await screen.findByRole("navigation", { name: "Admin" });
+    expect(within(nav).getByRole("link", { name: "Usage" })).toHaveAttribute(
+      "href",
+      "/admin/usage"
+    );
+  });
 });

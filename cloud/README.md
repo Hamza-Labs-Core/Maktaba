@@ -71,7 +71,8 @@ Stripe stays in test mode: set `MAKTABA_CLOUD_STRIPE_SECRET` to an
 `sk_test_` key and the price ids (`MAKTABA_CLOUD_PRICE_PRO`,
 `MAKTABA_CLOUD_PRICE_FAMILY`); an `sk_live_` key is refused unless
 `[stripe] live_mode = true`. Accounts, billing and the console are
-described in [docs/accounts-billing-admin.md](docs/accounts-billing-admin.md).
+described in [docs/accounts-billing-admin.md](docs/accounts-billing-admin.md);
+the anonymous usage data homes share in [docs/usage-data.md](docs/usage-data.md).
 
 Integration tests (real Postgres; each test creates and drops its own
 database):

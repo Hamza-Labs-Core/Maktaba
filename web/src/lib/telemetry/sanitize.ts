@@ -1,5 +1,6 @@
-// Story 16.5: what leaves the device in an error report. The server strips the
-// libraries' roots again (story 16.7); this removes what only the client sees:
+// Story 16.5: what leaves the app in an error report. The home strips the
+// libraries' roots, paths and addresses again (story 16.7); this removes what
+// only the client sees:
 // home folders, the server's address, query strings (a search query lives in
 // one), and every frame after the fifth.
 
@@ -55,13 +56,4 @@ export function routeFeature(pathname: string): string | null {
   const first = parts[0] ?? "";
   if (first === "videos" && parts[2] === "watch") return "player";
   return FEATURES.has(first) ? first : null;
-}
-
-/** librarySizeBucket is a coarse range for a video count (never the count itself). */
-export function librarySizeBucket(videos: number): string {
-  if (videos <= 0) return "0";
-  if (videos < 100) return "1-99";
-  if (videos < 1000) return "100-999";
-  if (videos < 10000) return "1k-10k";
-  return "10k+";
 }

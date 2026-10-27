@@ -151,6 +151,10 @@ func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
+// NoIPLogPaths are the paths whose access-log lines leave out the client
+// address: the anonymous usage-data ingest.
+var NoIPLogPaths = map[string]bool{"/v1/telemetry": true}
+
 // Logging emits a structured access log entry per request. Fields:
 // request_id, method, path, status, latency_ms, remote_ip.
 func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
@@ -163,15 +167,20 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 			if status == 0 {
 				status = http.StatusOK
 			}
-			logger.LogAttrs(r.Context(), slog.LevelInfo, "http",
+			attrs := []slog.Attr{
 				slog.String("request_id", GetRequestID(r.Context())),
 				slog.String("user_id", GetUserID(r.Context())),
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 				slog.Int("status", status),
 				slog.Int64("latency_ms", time.Since(start).Milliseconds()),
-				slog.String("remote_ip", clientIP(r)),
-			)
+			}
+			// Anonymous usage data is never tied to an address, not even
+			// in the access log (docs/usage-data.md).
+			if !NoIPLogPaths[r.URL.Path] {
+				attrs = append(attrs, slog.String("remote_ip", clientIP(r)))
+			}
+			logger.LogAttrs(r.Context(), slog.LevelInfo, "http", attrs...)
 		})
 	}
 }

@@ -111,7 +111,7 @@ func (s *rlStore) takeN(key string, n int) (allow bool, retryAfterSec int) {
 }
 
 // IPBudget is a per-IP token bucket a handler draws several tokens from in one
-// request: the telemetry sink (Epic 16 story 16.7) caps events per minute per IP,
+// request: the usage-data pipe (Epic 16 story 16.7) caps events per minute per IP,
 // and one request carries up to 100 of them. The IP lives in memory only, for as
 // long as the bucket is in use.
 type IPBudget struct{ s *rlStore }

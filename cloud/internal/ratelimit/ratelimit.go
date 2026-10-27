@@ -135,6 +135,10 @@ func (l *Limiter) Middleware(keyFn func(*http.Request) string) func(http.Handler
 	}
 }
 
+// RetryAfter is the whole seconds until one token refills, for a
+// Retry-After header on a refusal made with Allow.
+func (l *Limiter) RetryAfter() int { return l.retryAfter() }
+
 // retryAfter is the whole seconds until one token refills.
 func (l *Limiter) retryAfter() int {
 	if l.Rate <= 0 {

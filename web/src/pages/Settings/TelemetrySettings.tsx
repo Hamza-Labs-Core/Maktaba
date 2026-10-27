@@ -1,8 +1,9 @@
-// Settings → Privacy → Usage analytics (story 16.5): this device's opt-in
+// Settings → Privacy → Usage data (story 16.5). For everyone, this app's own
 // switch (the kill switch: off stops collection at once and drops what waits)
-// and "Forget my device", which deletes everything this device sent from the
-// server. Turning the switch off does not delete; forgetting is its own,
-// explicit step.
+// and "Delete what this app sent", which asks Maktaba to delete it (through the
+// home). Turning the switch off does not delete; deleting is its own, explicit
+// step. For an admin, the server's switch beside it (ServerUsageData): the two
+// are separate answers, and neither gives the other.
 import { useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Toggle } from "@ds/components/Choice/Toggle";
@@ -17,8 +18,9 @@ import {
   telemetryEnabled,
 } from "../../lib/telemetry/client";
 import { TelemetryScope } from "../../components/TelemetryPrompt";
+import { ServerUsageData } from "./ServerUsageData";
 
-export function TelemetrySettings() {
+export function TelemetrySettings({ isAdmin = false }: { isAdmin?: boolean }) {
   const { t } = useI18n();
   const toast = useToast();
   const [on, setOn] = useState(telemetryEnabled);
@@ -64,6 +66,7 @@ export function TelemetrySettings() {
       >
         {t("telemetry.settings.forget")}
       </Button>
+      {isAdmin && <ServerUsageData />}
     </section>
   );
 }

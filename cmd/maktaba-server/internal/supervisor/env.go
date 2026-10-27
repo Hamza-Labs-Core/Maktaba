@@ -206,7 +206,7 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// Epic 35 story 35.11: this machine's own web address (the Machines page, the
 		// cluster sign-in)
 		add("MAKTABA_WEB_URL", cfg.PublicWebURL())
-		// Epic 16 story 16.7: [telemetry] enabled = "off" stores no device's events
+		// Epic 16 story 16.7: [telemetry] enabled = "off" sends no usage data at all
 		if !cfg.Telemetry.On() {
 			add("MAKTABA_TELEMETRY_ENABLED", "false")
 		}
