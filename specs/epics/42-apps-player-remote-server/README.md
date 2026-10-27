@@ -299,6 +299,12 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    (Server and web built, 2026-10-27: TXT `home`/`id`/`name`/`tls`/`path`,
    `GET /api/discovery/home`, the `maktaba://connect` link and the Connect an app page; see
    Contract. Apps: tracks A and D.)
+   Apple (Player, Remote; iPhone, iPad, Mac): on this network (`role=home` only, deduped by TXT
+   `home`, `id`, host:port; web `path`), recent homes (rename, remove), by address or a pasted
+   `maktaba://connect` link (checked with `/api/discovery/home`, `/api/system/version` on older
+   homes), a scanned QR (iPhone, iPad); the `maktaba` URL scheme opens a home after asking.
+   Tokens stay bound to the origin that issued them (no move on a matching id, none sent
+   across a redirect to another origin).
 3. **42.3 Android Player and Remote:** Compose, phone / foldable / tablet, sharing with Android TV.
    (Started: `apps/android`, the Player and the Remote for each form factor on a shared `core`.)
 4. **42.4 Desktop Player on Windows and Linux:** Compose for Desktop, release legs,
@@ -309,6 +315,9 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    `GET /api/pairing/device/{code}`, `verify_url`, sessions labelled by app, the `/pair`
    page shows the device and needs an explicit Approve; role tests in
    `handlers/discovery/device42_test.go`. See Contract.)
+   Apple: sign-in offers a password or a code (large, with a QR of `verify_url`, renewed on
+   expiry); "Approve a sign-in" in the Remote's and the Player's account menus (type or scan the
+   code, see what asks, approve explicitly). The Apple TV app is unchanged (story 42.10).
 7. **42.7 Linked accounts and the cloud:** linking (home Account page, `home_user_links`), the
    cloud's home assertion, `POST /api/auth/cloud`, the app's cloud sign-in and home list, both
    addresses per home (local and relay).
