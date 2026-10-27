@@ -47,7 +47,7 @@ const CATCH_UP_EVERY: Duration = Duration::from_secs(10 * 60);
 /// Where the app keeps its state (mode.json, the window's cache record): the
 /// app's config folder; on Windows its local data folder
 /// (%LOCALAPPDATA%\com.hamzalabs.maktaba), not the roaming one.
-fn state_dir(app: &AppHandle) -> PathBuf {
+pub(crate) fn state_dir(app: &AppHandle) -> PathBuf {
     #[cfg(windows)]
     if let Ok(local) = app.path().app_local_data_dir() {
         return local;
@@ -1682,7 +1682,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     }
 
     if let Target::Remote(url) = sh.target() {
-        if let Err(e) = navigate_main(app, &url) {
+        // Epic 46: Start in Big Screen opens the page at /big
+        let start = app.state::<crate::bigscreen::BigScreen>().start();
+        if let Err(e) = navigate_main(app, &crate::bigscreen::entry_url(&url, start)) {
             let sentence = lang::fill(sh.lang.words().open_failed, &[("url", &url)]);
             show_error(app, &sentence, &[&e]);
         }
@@ -2059,7 +2061,9 @@ pub fn open_local_server(app: AppHandle) -> Result<(), String> {
                     "{PAGE_NOT_ANSWERING}: the web app at {web_url} does not answer yet"
                 ));
             }
-            navigate_main(&app, &web_url)
+            // Epic 46: Start in Big Screen opens the page at /big
+            let start = app.state::<crate::bigscreen::BigScreen>().start();
+            navigate_main(&app, &crate::bigscreen::entry_url(&web_url, start))
         }
         _ => Err("this Mac does not run the server".into()),
     }

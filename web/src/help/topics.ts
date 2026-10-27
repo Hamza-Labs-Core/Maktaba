@@ -6,7 +6,7 @@
 export const HELP_CATEGORIES = [
   { id: "start", topics: ["getting-started", "mac-app"] },
   { id: "apps", topics: ["apple-apps", "apple-tv", "android-apps", "android-tv"] },
-  { id: "watch", topics: ["library", "series", "videos", "search", "watch-tv"] },
+  { id: "watch", topics: ["library", "series", "videos", "search", "watch-tv", "big-screen"] },
   { id: "you", topics: ["account", "settings", "updates"] },
   { id: "processing", topics: ["processing", "stages", "failures", "transcription", "metadata"] },
   {

@@ -168,8 +168,9 @@ channels, digits, I for the guide), given a `base` prop so its own links stay un
 
 ### Strings and help
 
-Every string is in `en.json` and `ar.json` under `big.*` (the shell's menu words in `lang.rs`,
-English and Arabic). Help: a new topic `big-screen` (en / ar, the five standard sections) in *Watch*;
+Every string is in `en.json` and `ar.json` under `big.*`. The two desktop menu items are English,
+like the rest of the window's menu bar (File, Edit, View…: built in `lib.rs`, not from `lang.rs`).
+Help: a new topic `big-screen` (en / ar, the five standard sections) in *Watch*;
 `PAGE_HELP` maps `/big/*` to it; the desktop app's help (mac-app) links to it.
 
 ## Stories

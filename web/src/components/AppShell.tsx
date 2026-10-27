@@ -14,6 +14,7 @@ import { useShortcuts } from "../lib/keyboard/shortcuts";
 import { applyServiceWorkerUpdate, type SwUpdateDetail } from "../lib/pwa";
 import { ThemeToggle } from "./ThemeToggle";
 import { LangToggle } from "./LangToggle";
+import { BigScreenButton } from "./BigScreenButton";
 import { NotificationsBell } from "./NotificationsBell";
 import { updateAvailable, useUpdateStatus } from "../lib/updates";
 import { useSystemStatus } from "../lib/systemStatus";
@@ -213,6 +214,7 @@ export function AppShell() {
               <NotificationsBell />
             </QuietBoundary>
           )}
+          {user && <BigScreenButton />}
           <ThemeToggle />
           <LangToggle />
           {user && (

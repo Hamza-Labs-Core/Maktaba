@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     Emitter, Manager, WindowEvent,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -32,6 +32,7 @@ use tauri_plugin_deep_link::DeepLinkExt;
 mod agent;
 mod attempts;
 mod autoinstall;
+mod bigscreen;
 mod lang;
 mod mode;
 mod permissions;
@@ -196,6 +197,8 @@ pub fn run() {
 
             // Menu bar (Story 13.1 AC-1 / Story 13.7).
             let handle = app.handle();
+            // Epic 46: big screen's setting, read before the menu shows its mark
+            app.manage(bigscreen::BigScreen::new(&shell::state_dir(handle)));
             let menu = build_menu(handle, !keep_in_tray)?;
             app.set_menu(menu)?;
 
@@ -211,6 +214,15 @@ pub fn run() {
                     shell::on_window_menu(app, tray_id);
                     return;
                 }
+                // Epic 46: Start in Big Screen is the shell's own setting; Big
+                // Screen goes full screen here and the page opens /big on the event
+                if id == bigscreen::START_MENU_ID {
+                    bigscreen::on_start_menu(app);
+                    return;
+                }
+                if id == bigscreen::MENU_ID {
+                    bigscreen::on_menu(app);
+                }
                 let _ = app.emit("menu", id);
             });
 
@@ -218,6 +230,11 @@ pub fn run() {
             // start its web caches are cleared before it loads (webcache.rs),
             // whichever way the app started; hidden when started at sign-in.
             shell::open_window(handle, hidden)?;
+            // Epic 46: Start in Big Screen opens it full screen (the server's
+            // page loads at /big: bigscreen::entry_url)
+            if !hidden && app.state::<bigscreen::BigScreen>().start() {
+                let _ = bigscreen::set_full_screen(handle, true);
+            }
 
             // System tray / menu-bar item (Story 13.4, Epic 36 story
             // 36.5): server status, Open Maktaba, Pause/Resume server,
@@ -257,6 +274,9 @@ pub fn run() {
             permissions::host_permissions,
             permissions::open_privacy_pane,
             permissions::permissions_seen,
+            bigscreen::big_screen_state,
+            bigscreen::set_big_screen,
+            bigscreen::set_big_screen_start,
         ])
         .run(tauri::generate_context!())
         .expect("error while running maktaba desktop");
@@ -328,11 +348,35 @@ fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<
         true,
         Some("CmdOrCtrl+F"),
     )?;
+    // Epic 46: big-screen mode, and the app's start in it (bigscreen.rs)
+    let big_screen = MenuItem::with_id(
+        app,
+        bigscreen::MENU_ID,
+        "Big Screen",
+        true,
+        Some(bigscreen::ACCELERATOR),
+    )?;
+    let big_screen_start = CheckMenuItem::with_id(
+        app,
+        bigscreen::START_MENU_ID,
+        "Start in Big Screen",
+        true,
+        app.state::<bigscreen::BigScreen>().start(),
+        None::<&str>,
+    )?;
+    app.state::<bigscreen::BigScreen>()
+        .set_check_item(big_screen_start.clone());
     let view_menu = Submenu::with_items(
         app,
         "View",
         true,
-        &[&focus_search, &PredefinedMenuItem::fullscreen(app, None)?],
+        &[
+            &focus_search,
+            &PredefinedMenuItem::fullscreen(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &big_screen,
+            &big_screen_start,
+        ],
     )?;
 
     // Library menu — Scan (Cmd+R) + Cmd+1..9 library-slot switching

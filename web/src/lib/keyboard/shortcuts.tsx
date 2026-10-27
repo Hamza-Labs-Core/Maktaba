@@ -3,7 +3,9 @@
 //   g l   → Library          /  → focus the header search box
 //   g s   → Search           ?  → toggle the shortcut help overlay
 //   g q   → Processing       Esc → close help overlay
-//   g c   → Settings
+//   g c   → Settings         g b → big-screen mode (Epic 46)
+//
+// Big screen (/big) has its own keys: none of these act there.
 //
 // `g …` is a leader sequence: press `g`, then the target key within
 // 1.2 s. IME guard: while `isComposing` (CJK/Arabic composition) we
@@ -19,9 +21,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Modal } from "@ds/components/Modal/Modal";
 import { useI18n } from "../i18n";
+import { BIG_BASE, enterBigScreen, isBigPath } from "../bigScreen";
 
 interface ShortcutApi {
   focusSearchRef: (el: HTMLInputElement | null) => void;
@@ -43,6 +46,8 @@ function isTypingTarget(el: EventTarget | null): boolean {
 
 export function ShortcutProvider({ children }: { children: ReactNode }) {
   const nav = useNavigate();
+  const { pathname, search } = useLocation();
+  const big = isBigPath(pathname);
   const { t } = useI18n();
   const [helpOpen, setHelpOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -59,6 +64,8 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      // big screen has its own keys
+      if (big) return;
       // IME guard — never act on a composition keystroke.
       if (e.isComposing || e.keyCode === 229) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -76,6 +83,12 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
       if (leaderRef.current && !typing) {
         clearLeader();
         const k = e.key.toLowerCase();
+        if (k === "b") {
+          e.preventDefault();
+          enterBigScreen(pathname + search);
+          nav(BIG_BASE);
+          return;
+        }
         const dest: Record<string, string> = {
           l: "/library",
           s: "/search",
@@ -113,7 +126,7 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [nav, helpOpen, clearLeader]);
+  }, [nav, helpOpen, clearLeader, big, pathname, search]);
 
   const focusSearchRef = useCallback((el: HTMLInputElement | null) => {
     searchInputRef.current = el;
@@ -124,6 +137,7 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
     ["g s", t("shortcuts.goSearch")],
     ["g q", t("shortcuts.goQueue")],
     ["g c", t("shortcuts.goSettings")],
+    ["g b", t("shortcuts.bigScreen")],
     ["/", t("shortcuts.focusSearch")],
     ["?", t("shortcuts.help")],
     ["Esc", t("shortcuts.close")],

@@ -53,6 +53,8 @@ macOS keeps some things private until you allow them. Maktaba asks only for what
 
 Closing the window only hides it. The server keeps running, and people on your network can keep watching. Open the window again with **Open Maktaba** in the menu bar.
 
+On a TV or a big monitor, choose **View → Big Screen** for a full-screen view you drive with a remote or a game controller, and **View → Start in Big Screen** to open the app in it. See [Big screen](/help/big-screen).
+
 ### The menu bar {#menu-bar}
 
 The Maktaba item in the menu bar shows the server's state on its first line and offers:
