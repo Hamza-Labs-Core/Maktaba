@@ -31,8 +31,8 @@ func TestGoRecoversAndLogsPanic(t *testing.T) {
 	var buf syncBuf
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))
 	Go(logger, "test_worker", func() {
-		var m map[string]int
-		m["boom"] = 1 // a nil map write panics
+		var s []int
+		_ = s[len(s)] // an index out of range panics
 	})
 	deadline := time.Now().Add(5 * time.Second)
 	for !strings.Contains(buf.String(), "goroutine_panic") {
@@ -51,12 +51,12 @@ func TestGoRecoversAndLogsPanic(t *testing.T) {
 	if s, _ := line["stack"].(string); !strings.Contains(s, "safego") {
 		t.Fatalf("stack missing: %v", line["stack"])
 	}
-	if p, _ := line["panic"].(string); !strings.Contains(p, "nil map") {
+	if p, _ := line["panic"].(string); !strings.Contains(p, "index out of range") {
 		t.Fatalf("panic value missing: %v", line["panic"])
 	}
 }
 
-func TestRecoverWithWaitGroupAndNilLogger(t *testing.T) {
+func TestRecoverWithWaitGroupAndNilLogger(_ *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {

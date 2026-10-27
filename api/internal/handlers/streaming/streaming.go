@@ -44,6 +44,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
@@ -317,7 +318,7 @@ func (h *Handler) Mount(r chi.Router) {
 		// and tried again now and then (one that did not write then)
 		h.Offline.WhenDBBack(func() { h.Reconcile(context.Background()) })
 		h.reconcileOnce.Do(func() {
-			go func() {
+			safego.Go(nil, "streaming_reconcile", func() {
 				t := time.NewTicker(reconcileEvery)
 				defer t.Stop()
 				for range t.C {
@@ -325,7 +326,7 @@ func (h *Handler) Mount(r chi.Router) {
 						h.Reconcile(context.Background())
 					}
 				}
-			}()
+			})
 		})
 	}
 	r.Get("/api/stream/capabilities", h.GetCapabilities)

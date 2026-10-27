@@ -91,6 +91,7 @@ func (p *probes) probe(ctx context.Context, path string, wait time.Duration, rea
 			defer close(pr.done)
 			defer func() {
 				if r := recover(); r != nil {
+					safego.Log(nil, "systemstatus_probe", r)
 					pr.err = fmt.Errorf("the read failed: %v", r)
 				}
 			}()
