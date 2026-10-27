@@ -21,7 +21,10 @@ import (
 // (data_dir: the state root too), with the supervisor's admin on a free port.
 func storageEnv(t *testing.T) (cfgPath, data, admin string) {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", dir)
 	t.Setenv("MAKTABA_APP_BUNDLE", "")
 	t.Setenv("MAKTABA_POSTGRES_HOME", "")
@@ -210,6 +213,21 @@ func TestConfigAdminStorageRoutes(t *testing.T) {
 	}
 	if rec := call("POST", "/config/storage/move", `{"target":"rel"}`, "tok"); rec.Code != http.StatusUnprocessableEntity || reloads != 0 {
 		t.Errorf("bad move %d (reloads %d)", rec.Code, reloads)
+	}
+	// only a folder on a disk the server lists: the temp dir's, here
+	base := filepath.Dir(filepath.Dir(data))
+	prevList, prevOf := storageDiskList, storageDiskOf
+	t.Cleanup(func() { storageDiskList, storageDiskOf = prevList, prevOf })
+	storageDiskList = func(string, string) []storage.Disk { return []storage.Disk{{Mount: base}} }
+	storageDiskOf = func(string) (storage.Disk, error) { return storage.Disk{Mount: base}, nil }
+	for _, bad := range []string{"/elsewhere/Maktaba", base + "/../../etc/x", "/usr/local/m"} {
+		rec := call("POST", "/config/storage/move", `{"target":"`+bad+`"}`, "tok")
+		if rec.Code != http.StatusUnprocessableEntity || reloads != 0 {
+			t.Errorf("%s: %d %s", bad, rec.Code, rec.Body)
+		}
+	}
+	if rec := call("POST", "/config/storage/check", `{"target":"/elsewhere/Maktaba"}`, "tok"); !strings.Contains(rec.Body.String(), "target_not_on_disk") {
+		t.Errorf("check elsewhere: %s", rec.Body)
 	}
 	target := filepath.Join(filepath.Dir(filepath.Dir(data)), "Other")
 	rec = call("POST", "/config/storage/move", `{"target":"`+target+`","by":"admin"}`, "tok")

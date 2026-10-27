@@ -50,6 +50,7 @@ func TestSetupStorageOffersTheRoomiestDisk(t *testing.T) {
 // state root, with its marker; what an earlier step saved goes with it.
 func TestSetupStorageWritesTheDataDir(t *testing.T) {
 	e := newSetupEnv(t)
+	e.dir, _ = filepath.EvalSymlinks(e.dir)
 	fakeStorageDisks(t, e.dir, 60<<30, "apfs")
 	// the admin step ran first (the user came back to this screen)
 	if err := os.MkdirAll(filepath.Join(e.state, "state"), 0o700); err != nil {
@@ -123,6 +124,7 @@ func TestSetupStorageRefusals(t *testing.T) {
 // waits for it), and finish makes no database in its place.
 func TestSetupWithTheChosenDiskMissing(t *testing.T) {
 	e := newSetupEnv(t)
+	e.dir, _ = filepath.EvalSymlinks(e.dir)
 	fakeStorageDisks(t, e.dir, 900<<30, "apfs")
 	dir := filepath.Join(e.dir, "Big", "Maktaba")
 	if code, _, last := runStep(t, "storage", map[string]any{"data_dir": dir}); code != 0 {

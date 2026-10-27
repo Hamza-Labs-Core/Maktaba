@@ -347,15 +347,30 @@ const tightBelow = 20 << 30
 // to the same target cut short resumes (Plan.Resume); one to another target
 // refuses until it is finished.
 func PlanMove(in Install, target string) Plan {
+	return planMove(in, target, nil)
+}
+
+// PlanMoveOn is PlanMove for a target typed in the web: it must be on one of roots,
+// the mount points of the disks the server listed.
+func PlanMoveOn(in Install, target string, roots []string) Plan {
+	return planMove(in, target, roots)
+}
+
+func planMove(in Install, target string, roots []string) Plan {
 	p := Plan{Target: strings.TrimSpace(target), OK: true, Problems: []Note{}, Warnings: []Note{}, From: in.From}
-	if p.Target == "" || !filepath.IsAbs(p.Target) {
-		p.problem(note("target_relative", "the folder must be a whole path (one that starts at the top of a disk)"))
+	checked, err := CheckTarget(target, roots)
+	var te *TargetError
+	if errors.As(err, &te) {
+		p.problem(te.Note)
+		return p
+	} else if err != nil {
+		p.problem(note("target_unwritable", err.Error(), "error", err.Error()))
 		return p
 	}
-	p.Target = filepath.Clean(p.Target)
+	p.Target = checked
 	var j journal
 	hasJournal := readJSON(filepath.Join(in.ConfigDir, JournalFile), &j) && j.Target != ""
-	if hasJournal && filepath.Clean(j.Target) != p.Target {
+	if hasJournal && filepath.Clean(j.Target) != p.Target && resolvedOr(j.Target) != p.Target {
 		if j.Phase != phaseCopying {
 			// server.toml may point at it already: only that move can finish
 			p.problem(note("move_unfinished", "a move to "+j.Target+" is not finished: finish it first (move to it again)",
@@ -373,13 +388,15 @@ func PlanMove(in Install, target string) Plan {
 	} else {
 		p.To = in.ToLayout(p.Target)
 		switch {
-		case p.Target == p.From.Data:
+		case p.Target == p.From.Data || p.Target == resolvedOr(p.From.Data):
 			p.problem(note("target_same", "Maktaba's data is in "+p.Target+" already"))
 			return p
-		case config.Within(p.Target, p.From.Data) || config.Within(p.Target, p.From.Root):
+		case config.Within(p.Target, p.From.Data) || config.Within(p.Target, p.From.Root) ||
+			config.Within(p.Target, resolvedOr(p.From.Data)) || config.Within(p.Target, resolvedOr(p.From.Root)):
 			p.problem(note("target_inside_current", p.Target+" is inside the folder Maktaba keeps its data in now"))
 			return p
-		case config.Within(p.From.Data, p.Target) || config.Within(p.From.Root, p.To.Root):
+		case config.Within(p.From.Data, p.Target) || config.Within(p.From.Root, p.To.Root) ||
+			config.Within(resolvedOr(p.From.Data), p.Target):
 			p.problem(note("current_inside_target", "the folder Maktaba keeps its data in now is inside "+p.Target))
 			return p
 		}
@@ -429,6 +446,14 @@ func PlanMove(in Install, target string) Plan {
 	}
 	if err := writable(p.Target); err != nil {
 		p.problem(note("target_unwritable", "cannot write in "+nearestDir(p.Target)+": "+err.Error(), "error", err.Error()))
+	}
+	return p
+}
+
+// resolvedOr is p with its links resolved (p when they cannot be).
+func resolvedOr(p string) string {
+	if r, err := resolve(p); err == nil {
+		return r
 	}
 	return p
 }

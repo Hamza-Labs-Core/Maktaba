@@ -55,7 +55,7 @@ roots = ["/Volumes/Media"]
 // holds server.toml, data/ and the state folders beside it.
 func macInstall(t *testing.T) (Install, string) {
 	t.Helper()
-	base := t.TempDir()
+	base := realTemp(t)
 	root := filepath.Join(base, "Application Support", "Maktaba")
 	write(t, filepath.Join(root, "server.toml"), tomlBody)
 	write(t, filepath.Join(root, "data", "supervisor", "events.jsonl"), "{}\n")
@@ -157,7 +157,7 @@ func InstallFrom(in Install, target string) Install {
 
 func TestMoveBetweenTwoChosenFolders(t *testing.T) {
 	fakeDisk(t, 100<<30, "apfs", true)
-	base := t.TempDir()
+	base := realTemp(t)
 	from := filepath.Join(base, "One")
 	write(t, filepath.Join(base, "cfg", "server.toml"), "[server]\ndata_dir = \""+from+"\" # chosen\n")
 	write(t, filepath.Join(from, "postgres", "PG_VERSION"), "17\n")
@@ -318,6 +318,17 @@ func TestMoveFinishesAfterTheSwitch(t *testing.T) {
 	if exists(dataStays) || !exists(dataStays+".moved-20261026-093000") || len(res.Old) == 0 {
 		t.Errorf("the old data was not kept aside: %v", res.Old)
 	}
+}
+
+// realTemp is a temp dir with its links resolved (macOS's /var is /private/var): a
+// move's target is resolved so.
+func realTemp(t *testing.T) string {
+	t.Helper()
+	d, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
 }
 
 func mustResult(t *testing.T, in Install) Result {

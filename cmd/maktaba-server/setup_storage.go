@@ -64,11 +64,15 @@ func stepStorage(s *setupRun, in json.RawMessage) (any, error) {
 		return storageChoice{Current: cur, Default: def, NeedBytes: setupNeedDisk, ComfortableBytes: setupComfortDisk,
 			Disks: disks, Suggested: suggested}, nil
 	}
-	dir := strings.TrimSpace(req.DataDir)
-	if !filepath.IsAbs(dir) {
-		return nil, failStep("storage_relative", "data_dir", "Write the whole path of the folder (%s is not).", dir)
+	dir, err := storage.CheckTarget(req.DataDir, nil)
+	if err != nil {
+		code := "storage_relative"
+		var te *storage.TargetError
+		if errors.As(err, &te) && te.Note.Code != "target_relative" {
+			code = "storage_unwritable"
+		}
+		return nil, failStep(code, "data_dir", "%v", err)
 	}
-	dir = filepath.Clean(dir)
 	same := dir == cur
 	if !same && databaseExists(s.cfg) {
 		return nil, failStep("storage_database_exists", "data_dir", "This install has a library database already: "+

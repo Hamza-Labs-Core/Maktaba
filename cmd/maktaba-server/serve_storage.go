@@ -211,7 +211,7 @@ func (c *configAdmin) storageRoutes(w http.ResponseWriter, r *http.Request) bool
 		writeConfigJSON(w, http.StatusOK, storageDoc(cfg))
 	case r.URL.Path == "/config/storage/disks" && r.Method == http.MethodGet:
 		cfg, _, _ := config.LoadFrom(c.path)
-		writeConfigJSON(w, http.StatusOK, map[string]any{"disks": nonNil(storage.ListDisks(cfg.Server.DataDir,
+		writeConfigJSON(w, http.StatusOK, map[string]any{"disks": nonNil(storageDiskList(cfg.Server.DataDir,
 			config.DefaultDataDir()))})
 	case (r.URL.Path == "/config/storage/check" || r.URL.Path == "/config/storage/move") && r.Method == http.MethodPost:
 		var body struct {
@@ -227,7 +227,8 @@ func (c *configAdmin) storageRoutes(w http.ResponseWriter, r *http.Request) bool
 			writeConfigJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return true
 		}
-		plan := storage.PlanMove(storage.InstallOf(cfg, c.path), body.Target)
+		// a folder typed in the web: only on a disk the server itself lists
+		plan := storage.PlanMoveOn(storage.InstallOf(cfg, c.path), body.Target, diskRoots(cfg))
 		if reason := cannotMove(cfg); reason != "" {
 			plan.OK = false
 			plan.Problems = append(plan.Problems, storage.Note{Code: "cannot_move", Message: reason})
@@ -259,6 +260,21 @@ func (c *configAdmin) storageRoutes(w http.ResponseWriter, r *http.Request) bool
 func pgbundleAt(from storage.Layout) pgbundle.Bundle {
 	return pgbundle.Bundle{Data: filepath.Join(from.Root, "postgres")}
 }
+
+// diskRoots are the mount points of the disks a move may go to (storageDiskList's).
+func diskRoots(cfg config.Config) []string {
+	var roots []string
+	for _, d := range storageDiskList(cfg.Server.DataDir, config.DefaultDataDir()) {
+		roots = append(roots, d.Mount)
+	}
+	if d, err := storageDiskOf(cfg.Server.DataDir); err == nil {
+		roots = append(roots, d.Mount) // the disk it is on now, whatever the list says
+	}
+	return roots
+}
+
+// storageDiskList is the disks a move may go to (tests replace it).
+var storageDiskList = storage.ListDisks
 
 func nonNil(d []storage.Disk) []storage.Disk {
 	if d == nil {
