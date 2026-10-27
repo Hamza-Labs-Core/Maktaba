@@ -517,7 +517,7 @@
   "nav.devices": "Devices",
   "nav.connectApp": "Connect an app",
   "nav.billing": "Subscription",
-  "nav.admin": "Administration",
+  "nav.admin": "Manage",
   "nav.admin.users": "Users",
   "nav.admin.audit": "Audit log",
   "nav.admin.health": "System health",
@@ -5383,5 +5383,11 @@
   "libraries.pin.fullHelp": "You can pin up to {max} libraries. Unpin one first (on the Libraries page).",
   "libraries.pinnedDone": "Pinned {name} to the sidebar",
   "libraries.unpinned": "Unpinned {name}",
-  "video.state.processing": "Still processing"
+  "video.state.processing": "Still processing",
+  "nav.status": "Status",
+  "remote.title": "Home status",
+  "remote.attention": "Needs attention",
+  "remote.notAdmin.title": "This app is for the home's admins",
+  "remote.notAdmin.desc": "Maktaba Remote manages a home: processing, settings, users and machines. To watch, use the player.",
+  "remote.notAdmin.watch": "Watch instead"
 }

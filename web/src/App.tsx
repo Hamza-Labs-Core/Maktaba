@@ -4,7 +4,7 @@
 // router → shortcuts → shell. ThemeProvider from the Epic-17 design
 // system stamps <html data-theme>; ThemeSync keeps it tracking the
 // "system" OS preference live (Story 11.8).
-import { BrowserRouter, Outlet, Route, Routes, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import { AppShell, MoreMenu } from "./components/AppShell";
@@ -27,48 +27,26 @@ import { PlaylistPage } from "./pages/Playlists/PlaylistPage";
 import { Collections } from "./pages/Collections/Collections";
 import { CollectionPage } from "./pages/Collections/CollectionPage";
 import { SeriesDetail } from "./pages/Library/SeriesDetail";
-import { AdminEnrichment } from "./pages/Admin/Enrichment";
 import { VideoDetail } from "./pages/VideoDetail";
 import { VideoPlayer } from "./pages/VideoPlayer";
 import { Search } from "./pages/Search";
 import { SearchVideo } from "./pages/SearchVideo";
-import { QueueOverview } from "./pages/queue/QueueOverview";
-import { QueueDetail } from "./pages/queue/QueueDetail";
-import { ItemHistory } from "./pages/queue/ItemHistory";
-import { Reports } from "./pages/queue/Reports";
-import { Failures } from "./pages/queue/Failures";
-import { Transcription } from "./pages/transcription/Transcription";
-import { AdminExtensions } from "./pages/Admin/Extensions";
-import { Settings } from "./pages/Settings";
-import { AdminUsers } from "./pages/Admin/Users";
-import { AdminAuditLog } from "./pages/Admin/AuditLog";
-import { SystemHealth } from "./pages/Admin/SystemHealth";
-import { Machines } from "./pages/Admin/Machines";
-import { AdminUpdates } from "./pages/Admin/Updates";
-import { AdminLogs } from "./pages/Admin/Logs";
-import { CloudDevices } from "./pages/Cloud/Devices";
 import { ConnectedDevices } from "./pages/Profile/ConnectedDevices";
 import { Sessions } from "./pages/Profile/Sessions";
 import { APITokens } from "./pages/Profile/APITokens";
 import { WatchHistory } from "./pages/Profile/WatchHistory";
 import { Account } from "./pages/Profile/Account";
 import { ConnectApp } from "./pages/Profile/ConnectApp";
-import { LibraryACL } from "./pages/Admin/LibraryACL";
-import { AdminLibraries } from "./pages/Admin/Libraries";
-import { Channels } from "./pages/Admin/Channels";
-import { FillerPools } from "./pages/Admin/FillerPools";
-import { AdminLiveTV } from "./pages/Admin/LiveTV";
-import { AdminTvChanges } from "./pages/Admin/LiveTV/Changes";
-import { AdminTvChangeDetail } from "./pages/Admin/LiveTV/ChangeDetail";
-import { AdminAnalytics } from "./pages/Admin/Analytics";
 import { Guide } from "./pages/LiveTV/Guide";
 import { Player } from "./pages/LiveTV/Player";
-import { ServerStatus } from "./pages/Cloud/ServerStatus";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Auth/Register";
 import { NotFound } from "./pages/NotFound";
 import { Pair } from "./pages/Pair";
 import { HelpIndex, HelpTopic } from "./help/Help";
+import { IS_REMOTE, SERVER_PAGES } from "./lib/edition";
+import { serverRoutes } from "./serverRoutes";
+import { RemoteHome } from "./pages/RemoteHome";
 
 // Epic 46: big-screen mode, its own full-screen frame and chunk
 const BigScreen = lazy(() => import("./bigscreen/BigScreen"));
@@ -132,7 +110,7 @@ export function App() {
                             </RequireAuth>
                           }
                         >
-                          <Route path="/" element={<Home />} />
+                          <Route path="/" element={IS_REMOTE ? <RemoteHome /> : <Home />} />
                           <Route path="/library" element={<Libraries />} />
                           <Route path="/library/:libraryId" element={<LibraryPage />} />
                           <Route path="/library/:libraryId/collections" element={<Collections />} />
@@ -148,13 +126,6 @@ export function App() {
                           <Route path="/search/video/:videoId" element={<SearchVideo />} />
                           <Route path="/guide" element={<Guide />} />
                           <Route path="/live/:number" element={<Player />} />
-                          <Route path="/queue" element={<QueueOverview />} />
-                          <Route path="/queue/items/:kind/:id" element={<ItemHistory />} />
-                          <Route path="/queue/reports" element={<Reports />} />
-                          <Route path="/queue/failures" element={<Failures />} />
-                          <Route path="/queue/:stage" element={<QueueDetail />} />
-                          <Route path="/transcription" element={<Transcription />} />
-                          <Route path="/settings/*" element={<Settings />} />
                           <Route path="/more" element={<MoreMenu />} />
                           <Route path="/help" element={<HelpIndex />} />
                           <Route path="/help/:topic" element={<HelpTopic />} />
@@ -165,31 +136,7 @@ export function App() {
                           <Route path="/account/tokens" element={<APITokens />} />
                           <Route path="/account/history" element={<WatchHistory />} />
                           <Route path="/pair" element={<Pair />} />
-                          <Route
-                            path="/billing"
-                            element={<Navigate to="/settings/subscription" replace />}
-                          />
-                          <Route path="/cloud/status" element={<ServerStatus />} />
-                          <Route path="/admin/libraries" element={<AdminLibraries />} />
-                          <Route path="/admin/users" element={<AdminUsers />} />
-                          <Route path="/admin/library-acl" element={<LibraryACL />} />
-                          <Route path="/admin/extensions" element={<AdminExtensions />} />
-                          <Route path="/admin/enrichment" element={<AdminEnrichment />} />
-                          <Route path="/admin/channels" element={<Channels />} />
-                          <Route path="/admin/filler" element={<FillerPools />} />
-                          <Route path="/admin/live-tv" element={<AdminLiveTV />} />
-                          <Route path="/admin/live-tv/changes" element={<AdminTvChanges />} />
-                          <Route
-                            path="/admin/live-tv/changes/:id"
-                            element={<AdminTvChangeDetail />}
-                          />
-                          <Route path="/admin/analytics" element={<AdminAnalytics />} />
-                          <Route path="/admin/audit" element={<AdminAuditLog />} />
-                          <Route path="/admin/health" element={<SystemHealth />} />
-                          <Route path="/admin/machines" element={<Machines />} />
-                          <Route path="/admin/updates" element={<AdminUpdates />} />
-                          <Route path="/admin/logs" element={<AdminLogs />} />
-                          <Route path="/admin/devices" element={<CloudDevices />} />
+                          {SERVER_PAGES && serverRoutes()}
                           <Route path="*" element={<NotFound />} />
                         </Route>
                       </Routes>

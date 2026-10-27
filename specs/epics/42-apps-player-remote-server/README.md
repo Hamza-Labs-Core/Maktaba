@@ -75,7 +75,7 @@ epic offers service administration: the console stays a web surface of the cloud
 
 | Piece | Today | Gap |
 |---|---|---|
-| Web SPA (`web/`) | One build: every route, eagerly imported (`web/src/App.tsx`, no `React.lazy`); Processing, Transcription and Settings in every user's nav, the Administration section for admins (`components/AppShell.tsx` `NAV`, `ADMIN`) | No edition: a player cannot leave the admin code out; viewers see server pages |
+| Web SPA (`web/`) | One build: every route, eagerly imported (`web/src/App.tsx`, no `React.lazy`); Processing, Transcription and Settings in every user's nav, the Administration section for admins (`components/AppShell.tsx` `NAV`, `ADMIN`) | No edition: a player cannot leave the admin code out; viewers see server pages (closed by 42.5) |
 | Desktop (`apps/desktop`) | `mode.json`: Server or Client (a home's URL); client-only when no server payload is bundled (`src/mode.rs`, `agent.rs` `payload_present`); mDNS scan `discover_servers` exists (`src/lib.rs`) but nothing calls it; "Switch Server…" emits an event nothing listens for | No player identity, no server picker, one bundle id `com.hamzalabs.maktaba` and one updater feed for every desktop build |
 | Phone (`apps/mobile`) | Capacitor wrapping `web/dist`, bundle id `com.hamzalabs.maktaba` | **It cannot reach a home:** the API base is build-time `VITE_API_BASE`, which the release never sets, so a released app calls `/api` on its own origin; no picker, no discovery; no tablet or foldable layouts or listings |
 | TV (`apps/tv`) | Native players; the server URL typed in Settings; username and password sign-in | No discovery, no sign-in by code |
@@ -310,6 +310,17 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
 4. **42.4 Desktop Player on Windows and Linux:** Compose for Desktop, release legs,
    `latest-player.json`.
 5. **42.5 Web editions:** `VITE_MAKTABA_EDITION`, lazy server routes, "Manage" in `full`.
+   (Built, 2026-10-27: `web/src/lib/edition.ts`; `pnpm build` is `full`, unchanged for the
+   server; `pnpm build:player` and `build:remote` (`vite build --mode player|remote`, from
+   `web/.env.player|remote`); an unknown value fails the build. The server routes live in
+   `web/src/serverRoutes.tsx`, each page its own lazy chunk; the player build leaves the
+   module out and `vite.config.ts` fails it if any server page code is in the bundle (CI:
+   `_unit.yml`). The player hides the admin links on viewer pages too (Manage libraries,
+   channels, the privacy settings link). The remote's `/` is the home's status
+   (`pages/RemoteHome.tsx`: the health banner, Processing, Needs attention, Machines, System
+   health); a non-admin there is told it is for the home's admins, with Watch instead. Tests:
+   `App.editions.test.tsx`. The API is unchanged. Open: the player has no Settings, so a
+   viewer's own privacy and appearance settings need a home outside `/settings/*`.)
    *Android (`apps/android`, `feat/epic42-android`):* the picker lists Your homes (rename,
    remove), On this network (NSD, deduped by id else host:port, `tls`/`path` honoured), by
    address and by QR (CameraX + ZXing), and opens `maktaba://connect` links after asking;
@@ -330,6 +341,15 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    cloud's home assertion, `POST /api/auth/cloud`, the app's cloud sign-in and home list, both
    addresses per home (local and relay).
 8. **42.8 Tablet and foldable:** two-pane and fold-aware layouts, their own listings.
+   (Built, 2026-10-27. Android: `core/layout/Panes.kt` (one pane under 600 dp, the list
+   beside the page from 600 dp, tabletop and book split at the hinge, the book's halves
+   mirrored right to left), used by the Player's browser and every Remote screen;
+   `PanesTest`, instrumented `HingeSplitTest`; flavours `phone`, `foldable`, `tablet`.
+   Apple: the Player's `NavigationSplitView` (iPad, Mac; `ArrangementView` half folded); the
+   Remote's queue shows the stages beside a stage's page on a wide window (`QueueScreen`),
+   pushed on a narrow one; iPad UI test targets run `ConnectUITests` on the iPad apps.
+   The Apple apps' admin screens are English only for now: they mirror once they are
+   localized.)
 9. **42.9 Cloud web player and remote:** the cloud serves the SPA editions for a connected home.
 10. **42.10 TV:** the home picker and sign-in by code on tvOS and Android TV.
 

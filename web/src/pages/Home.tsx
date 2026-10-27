@@ -20,6 +20,7 @@ import { TitleRow } from "../help/HelpLink";
 import { WhatsOnNow } from "../components/WhatsOnNow";
 import { FeaturedHero } from "../components/FeaturedHero";
 import { AddedRow, VideoRow } from "../components/MediaRow";
+import { SERVER_PAGES } from "../lib/edition";
 
 export function Home() {
   const { t } = useI18n();
@@ -146,7 +147,7 @@ export function Home() {
               <Link className="mkt-btn mkt-btn--primary" to="/library">
                 {t("home.empty.libraries")}
               </Link>
-              {user?.is_admin && (
+              {SERVER_PAGES && user?.is_admin && (
                 <Link className="mkt-btn mkt-btn--ghost" to="/admin/libraries">
                   {t("home.empty.manage")}
                 </Link>

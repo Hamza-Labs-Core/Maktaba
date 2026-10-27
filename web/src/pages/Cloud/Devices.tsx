@@ -25,6 +25,7 @@ import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
 import { TitleRow } from "../../help/HelpLink";
+import { platformIcon } from "../../lib/platformIcon";
 
 export interface Device {
   id: string;
@@ -203,19 +204,6 @@ function platformLabel(t: (k: string) => string, platform: string): string {
   const key = `devices.platform.${platform}`;
   const v = t(key);
   return v === key ? String(platform ?? "") : v;
-}
-
-export function platformIcon(platform: string): string {
-  switch (platform) {
-    case "ios":
-      return "";
-    case "android":
-      return "🤖";
-    case "web":
-      return "🌐";
-    default:
-      return "📱";
-  }
 }
 
 function CategoryPicker({

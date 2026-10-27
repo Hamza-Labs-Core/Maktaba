@@ -57,6 +57,12 @@ jobs:
       - name: Run unit tier
         run: make test-unit
 
+      # Epic 42.5: the player edition of the web app builds with no server page
+      # code (vite.config.ts playerBundleCheck fails the build if any is left).
+      - name: Web player edition has no server pages
+        working-directory: web
+        run: pnpm build:player
+
       # The cloud module is a separate Go module outside the Makefile's
       # GO_MODULES set, so `make test-unit` does not reach it. Run its
       # unit tier explicitly so the relay/api/worker code is gated too.
