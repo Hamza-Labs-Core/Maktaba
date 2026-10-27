@@ -33,6 +33,8 @@ import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.Failure
+import com.hamzalabs.maktaba.core.ui.sentence
 import com.hamzalabs.maktaba.tv.R
 import com.hamzalabs.maktaba.tv.data.TvApi
 import com.hamzalabs.maktaba.tv.data.TvVideo
@@ -113,7 +115,7 @@ fun VideoGrid(
     var next by remember(key) { mutableStateOf<String?>(null) }
     var done by remember(key) { mutableStateOf(false) }
     var loading by remember(key) { mutableStateOf(true) }
-    var problem by remember(key) { mutableStateOf<String?>(null) }
+    var problem by remember(key) { mutableStateOf<Failure?>(null) }
     var want by remember(key) { mutableIntStateOf(0) }
 
     LaunchedEffect(key, want) {
@@ -130,7 +132,7 @@ fun VideoGrid(
         } catch (e: ApiException.SignedOut) {
             signedOut()
         } catch (e: Exception) {
-            problem = e.message ?: e.toString()
+            problem = Failure.of(e)
         } finally {
             loading = false
         }
@@ -168,7 +170,7 @@ fun VideoGrid(
                 // a later page failed: say so, and let the remote ask again
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.could_not_load, problem!!), style = MaterialTheme.typography.bodyMedium, color = MaktabaPalette.Gold)
+                        Text(stringResource(R.string.could_not_load, stringResource(problem!!.kind.sentence())), style = MaterialTheme.typography.bodyMedium, color = MaktabaPalette.Gold)
                         MaktabaButton(onClick = { problem = null; want++ }) { Text(stringResource(R.string.try_again)) }
                     }
                 }

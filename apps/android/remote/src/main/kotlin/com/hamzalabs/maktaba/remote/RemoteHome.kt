@@ -39,7 +39,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.ErrorKind
 import com.hamzalabs.maktaba.core.api.User
+import com.hamzalabs.maktaba.core.api.errorDetails
+import com.hamzalabs.maktaba.core.api.errorKind
+import com.hamzalabs.maktaba.core.ui.sentence
+import com.hamzalabs.maktaba.core.R as CoreR
+import android.util.Log
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.res.stringResource
 import com.hamzalabs.maktaba.core.layout.HingeSplit
 import com.hamzalabs.maktaba.core.layout.ListPaneWidth
 import com.hamzalabs.maktaba.core.layout.Panes
@@ -65,15 +73,16 @@ enum class Place(val label: String, val icon: ImageVector) {
  * failure, never an action's (that stays until another action, a refresh or another place).
  */
 class Remote(val client: ApiClient, private val session: AppSession) {
-    private var loadProblem by mutableStateOf<String?>(null)
-    private var actionProblem by mutableStateOf<String?>(null)
+    private var loadProblem by mutableStateOf<ErrorKind?>(null)
+    private var actionProblems by mutableStateOf<List<RemoteProblem>>(emptyList())
 
-    /** What went wrong, to show above the list. */
-    val problem: String? get() = actionProblem ?: loadProblem
+    /** What went wrong, to show above the list (null: nothing). */
+    val problem: List<RemoteProblem>?
+        get() = actionProblems.ifEmpty { null } ?: loadProblem?.let { listOf(RemoteProblem(null, it)) }
 
     fun clear() {
         loadProblem = null
-        actionProblem = null
+        actionProblems = emptyList()
     }
 
     /** Reads the home's state: a failure shows until a read works again. */
@@ -84,16 +93,16 @@ class Remote(val client: ApiClient, private val session: AppSession) {
     suspend fun act(what: String? = null, block: suspend ApiClient.() -> Unit): Boolean {
         if (attempt(block) != null) return true
         val why = lastError ?: return false
-        actionProblem = listOfNotNull(actionProblem, if (what != null) "$what: $why" else why).joinToString("\n")
+        actionProblems = actionProblems + RemoteProblem(what, why)
         return false
     }
 
     /** A new action starts with a clean slate. */
     fun startAction() {
-        actionProblem = null
+        actionProblems = emptyList()
     }
 
-    private var lastError: String? = null
+    private var lastError: ErrorKind? = null
 
     /** Runs [block]; a sign-out goes back to signing in, anything else is the last error. */
     private suspend fun <T> attempt(block: suspend ApiClient.() -> T): T? = try {
@@ -104,14 +113,15 @@ class Remote(val client: ApiClient, private val session: AppSession) {
         session.signedOut()
         lastError = null
         null
-    } catch (e: ApiException.Status) {
-        lastError = if (e.code == 403) "The home refused: only its admins can do this." else e.message
-        null
     } catch (e: Exception) {
-        lastError = e.message ?: e.toString()
+        Log.w("Maktaba", "remote: ${e.errorDetails()}", e)
+        lastError = e.errorKind()
         null
     }
 }
+
+/** A failure the Remote shows: what was being done ([what], null for a read) and why. */
+data class RemoteProblem(val what: String?, val kind: ErrorKind)
 
 /**
  * The Remote's frame: a bottom bar on a phone, a rail on a tablet or an open foldable (Material's
@@ -175,13 +185,20 @@ fun AdminScreen(
                 modifier = Modifier.padding(padding).fillMaxSize(),
             ) {
                 LazyColumn(Modifier.fillMaxSize()) {
-                    remote.problem?.let { p ->
+                    remote.problem?.let { ps ->
                         item {
-                            Text(
-                                p,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            )
+                            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                                ps.forEach { p ->
+                                    val why = stringResource(p.kind.sentence())
+                                    Text(
+                                        if (p.what != null) "${p.what}: $why" else why,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                                TextButton(onClick = { scope.launch { onRefresh() } }) {
+                                    Text(stringResource(CoreR.string.try_again))
+                                }
+                            }
                         }
                     }
                     rows()
