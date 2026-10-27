@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/url"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 )
 
 // Inputs handed to ffmpeg/ffprobe come from the database (video paths,
@@ -13,8 +15,9 @@ import (
 // file: protocol, and network inputs are limited to an allow-list.
 
 // LocalInput returns the ffmpeg input for a stored local path, forcing
-// the file: protocol. Values that look like URLs or protocol specs are
-// refused (a Windows drive letter "C:" is a path, not a protocol).
+// the file: protocol, as this machine's disk spells it (pathmap.OnDisk).
+// Values that look like URLs or protocol specs are refused (a Windows
+// drive letter "C:" is a path, not a protocol).
 func LocalInput(p string) (string, error) {
 	if p == "" {
 		return "", errors.New("channel: empty media path")
@@ -22,7 +25,7 @@ func LocalInput(p string) (string, error) {
 	if strings.Contains(p, "://") || hasProtocolPrefix(p) || strings.ContainsAny(p, "\x00\n\r") {
 		return "", errors.New("channel: media path is not a local file path")
 	}
-	return "file:" + p, nil
+	return "file:" + pathmap.OnDisk(p), nil
 }
 
 // hasProtocolPrefix reports "name:" prefixes longer than a drive letter.
