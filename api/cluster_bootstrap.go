@@ -24,6 +24,7 @@ import (
 	clusterh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
@@ -106,7 +107,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		// GET /api/discovery/home says the identity the announcement says (story 42.2)
 		homeDir.setStore(h.Store)
 	}
-	go h.Run(ctx, clusterTick)
+	safego.Go(logger, "cluster_housekeeping", func() { h.Run(ctx, clusterTick) })
 
 	// Epic 31 phase 2 — the cluster channel: every process's sealed
 	// WebSocket, the browsers' hub, the cluster files, the LLM router.
@@ -128,7 +129,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 			certs = hl
 			h.JoinTLS, h.Link = hl.JoinTLS, hl.info
 			hl.mount(r)
-			go hl.run(ctx)
+			safego.Go(logger, "home_link", func() { hl.run(ctx) })
 		}
 	}
 	hub := mountClusterHub(r, h, db, driver, store, keys, certs, logger)
@@ -159,20 +160,20 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	// machine channel (and sealed in a join's credentials); another database is said to
 	// have no TLS when it has none
 	if h.PGBundled {
-		go hub.PushDatabase(ctx, h.PGCA, 30*time.Second, logger)
+		safego.Go(logger, "cluster_push_database", func() { hub.PushDatabase(ctx, h.PGCA, 30*time.Second, logger) })
 	} else if driver == "postgres" {
-		go func() {
+		safego.Go(logger, "cluster_push_database", func() {
 			if plainDatabase(ctx, db, 30*time.Second) {
 				h.PGPlain.Store(true)
 				hub.PushDatabase(ctx, "", 30*time.Second, logger)
 			}
-		}()
+		})
 	}
 	// the home owns its machines' database access: a machine that cannot log in to it
 	// (its role missing or refused, the database moved to another cluster or port) gets
 	// its access made again and pushed over the machine channel
 	if driver == "postgres" {
-		go func() {
+		safego.Go(logger, "cluster_ensure_access", func() {
 			h.MendAtStart(ctx) // a home that may not give roles mends that before any machine asks
 			if os.Getenv("MAKTABA_E2E_NO_ACCESS_PUSH") == "1" {
 				// the end-to-end tests' home that never pushes: its machines ask
@@ -180,7 +181,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 				return
 			}
 			hub.EnsureAccess(ctx, h, 10*time.Second, logger)
-		}()
+		})
 	}
 	// every revocation on the home reaches the full nodes within the second (story
 	// 35.9 AC4): the session store reports it, the hub pushes auth.revoked
@@ -192,10 +193,10 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		return err == nil && n.State == cluster.StateApproved
 	}}
 	hubDone := make(chan struct{})
-	go func() {
+	safego.Go(logger, "cluster_hub", func() {
 		defer close(hubDone)
 		hub.Run(ctx)
-	}()
+	})
 	// switching the home to another machine (Epic 37): run here, finished on the new home
 	if driver == "postgres" {
 		sw := &switchover.Orchestrator{DB: db, Hub: hub, Logger: logger, HomeName: cluster.StableHostName(),
@@ -205,12 +206,13 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		}
 		sw.Mount(r)
 		// a switch this home was running when it stopped, taken up (Epic 37)
-		go sw.Resume(ctx)
+		safego.Go(logger, "switchover_resume", func() { sw.Resume(ctx) })
 		// the standby homes' kits of this home's secrets, kept current (Epic 37)
-		go sw.KeepStandbys(ctx)
+		safego.Go(logger, "switchover_keep_standbys", func() { sw.KeepStandbys(ctx) })
 		stream := os.Getenv("MAKTABA_PUBLIC_BASE_URL")
-		go sw.Finish(ctx, switchover.HomeIntegrations(db, store,
-			switchover.HFTokenPath(os.Getenv("MAKTABA_DATA_DIR")), func() string { return stream }))
+		integrations := switchover.HomeIntegrations(db, store,
+			switchover.HFTokenPath(os.Getenv("MAKTABA_DATA_DIR")), func() string { return stream })
+		safego.Go(logger, "switchover_finish", func() { sw.Finish(ctx, integrations) })
 	}
 	return func() {
 		cancel()

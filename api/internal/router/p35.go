@@ -25,6 +25,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/rules"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
 )
@@ -262,15 +263,15 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 			}
 		}
 		if svc.Discoverer != nil && interval > 0 {
-			go svc.Discoverer.Run(ctx, interval)
+			safego.Go(d.Logger, "updates_discoverer", func() { svc.Discoverer.Run(ctx, interval) })
 		}
-		go svc.RunScheduler(ctx)
-		go drv.Run(ctx)
+		safego.Go(d.Logger, "updates_scheduler", func() { svc.RunScheduler(ctx) })
+		safego.Go(d.Logger, "updates_driver", func() { drv.Run(ctx) })
 		sampler := &updates.HealthSampler{Metrics: upMetrics, Logger: d.Logger, Behind: func(ctx context.Context) bool {
 			pl, _, _, err := svc.Plan(ctx)
 			return err == nil && pl.Target != nil
 		}}
-		go sampler.Run(ctx)
+		safego.Go(d.Logger, "updates_health_sampler", func() { sampler.Run(ctx) })
 	}
 	return h
 }

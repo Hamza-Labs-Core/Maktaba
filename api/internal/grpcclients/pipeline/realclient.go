@@ -70,11 +70,13 @@ func NewRealClient(cfg Config) Client {
 			cfg:     cfg,
 		}
 	}
+	b := NewBreaker(cfg.CircuitWindow, cfg.CircuitOpenTime, cfg.FailureThreshold)
+	b.Name = "pipeline " + addr
 	return &realClient{
 		addr:    addr,
 		conn:    conn,
 		detail:  "configured",
-		breaker: NewBreaker(cfg.CircuitWindow, cfg.CircuitOpenTime, cfg.FailureThreshold),
+		breaker: b,
 		cfg:     cfg,
 	}
 }
@@ -91,10 +93,8 @@ type realClient struct {
 // as the maktaba-request-id metadata) onto the outbound call so the
 // pipeline can correlate logs.
 func withRequestID(ctx context.Context) context.Context {
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if v := md.Get(requestIDKey); len(v) > 0 && v[0] != "" {
-			return metadata.AppendToOutgoingContext(ctx, requestIDKey, v[0])
-		}
+	if id := OutgoingRequestID(ctx, requestIDKey); id != "" {
+		return metadata.AppendToOutgoingContext(ctx, requestIDKey, id)
 	}
 	return ctx
 }
@@ -117,7 +117,7 @@ func (c *realClient) invoke(ctx context.Context, method string, req map[string]a
 		return nil
 	})
 	if err != nil {
-		return err
+		return &CallError{Method: method, Target: c.addr, Err: err}
 	}
 	// In-band application errors arrive as {"error": ...} with an OK
 	// gRPC status. The value is conventionally a string, but a

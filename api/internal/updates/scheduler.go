@@ -464,7 +464,7 @@ func (s *Service) start(ctx context.Context, r Release, pol Policy, trigger, act
 		if errors.Is(err, ErrOrchestratorUnavailable) {
 			code = ErrOrchestratorUnavailable.Error()
 		}
-		_ = s.Store.FinishRun(ctx, run.ID, "failed", map[string]any{"code": code, "detail": err.Error()})
+		noteStore(s.log(), "FinishRun", s.Store.FinishRun(ctx, run.ID, "failed", map[string]any{"code": code, "detail": err.Error()}), "run_id", run.ID)
 		s.Store.Audit(ctx, actor, src, "run_failed", r.Version, map[string]any{"run_id": run.ID, "code": code})
 		s.notify(ctx, NoticeRunFailed, notify.Payload{Severity: notify.SeverityError,
 			Params:  map[string]any{"version": r.Version, "code": code},

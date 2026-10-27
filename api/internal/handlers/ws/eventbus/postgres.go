@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/lib/pq"
 )
 
@@ -186,6 +187,7 @@ func (p *PostgresBackend) Listen(ctx context.Context) (<-chan Notification, erro
 	go func() {
 		defer close(out)
 		defer func() { _ = l.Close() }()
+		defer safego.Recover(nil, "eventbus_listen")
 		for {
 			select {
 			case <-ctx.Done():

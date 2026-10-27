@@ -21,7 +21,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { useAuth } from "../../lib/auth";
 import { useI18n, type Locale } from "../../lib/i18n";
 import { readMode, setMode, type ThemeMode } from "../../lib/theme";
-import { downloadBlob, ApiError } from "../../lib/api";
+import { downloadBlob } from "../../lib/api";
 import {
   analyticsApi,
   formatPercent,
@@ -31,6 +31,7 @@ import {
 import { TitleRow } from "../../help/HelpLink";
 import { ActivityTimeline } from "./WatchHistory";
 import { TelemetrySettings } from "./TelemetrySettings";
+import { errorText } from "../../lib/errorText";
 
 /** Where a person's own preferences live, in every edition. */
 export const PREFERENCES_PATH = "/account/preferences";
@@ -158,7 +159,7 @@ function DiagnosticsSection() {
             await downloadBlob("/api/diagnostics/export", "maktaba-diagnostics.tar.gz");
             toast.show({ tone: "success", message: t("settings.diagnostics.success") });
           } catch (e) {
-            const detail = e instanceof ApiError ? e.message : t("common.error");
+            const detail = errorText(e, t);
             toast.show({ tone: "error", message: `${t("settings.diagnostics.error")}: ${detail}` });
           } finally {
             setBusy(false);
@@ -278,7 +279,7 @@ export function PrivacyPanel({ serverUsage }: { serverUsage?: ReactNode }) {
       setTracking(res.track_enabled);
       toast.show({ tone: "success", message: t("settings.privacy.saved") });
     } catch (e) {
-      toast.show({ tone: "error", message: e instanceof ApiError ? e.message : t("common.error") });
+      toast.show({ tone: "error", message: errorText(e, t) });
     } finally {
       setBusy(false);
     }
@@ -289,7 +290,7 @@ export function PrivacyPanel({ serverUsage }: { serverUsage?: ReactNode }) {
       await analyticsApi.deleteHistory(videoId);
       setHistory((h) => (h ? h.filter((it) => it.video_id !== videoId) : h));
     } catch (e) {
-      toast.show({ tone: "error", message: e instanceof ApiError ? e.message : t("common.error") });
+      toast.show({ tone: "error", message: errorText(e, t) });
     }
   }
 

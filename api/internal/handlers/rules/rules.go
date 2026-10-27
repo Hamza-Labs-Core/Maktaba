@@ -98,12 +98,12 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := h.loadSchema()
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("rules schema: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("rules schema").Wrap(err))
 		return
 	}
 	stored, err := h.loadAll(r.Context(), h.DB)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read rules: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("read rules").Wrap(err))
 		return
 	}
 	out := make([]map[string]any, 0, len(s.Sections))
@@ -169,7 +169,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := h.loadSchema()
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("rules schema: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("rules schema").Wrap(err))
 		return
 	}
 	sec := s.section(chi.URLParam(r, "section"))
@@ -223,19 +223,19 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	key := KeyPrefix + sec.Key
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("begin: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("begin").Wrap(err))
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
 	if !isSQLite(h.DB) {
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, key); err != nil {
-			httperror.Write(w, r, httperror.Internal("lock rules: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("lock rules").Wrap(err))
 			return
 		}
 	}
 	current, err := loadOne(ctx, tx, key)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("read rules: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("read rules").Wrap(err))
 		return
 	}
 
@@ -274,7 +274,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		_ = tx.Rollback()
 		id, num, derr := h.Staging.SaveSettingsDraft(ctx, p, sec.Key, next)
 		if derr != nil {
-			httperror.Write(w, r, httperror.Internal("save to draft: "+derr.Error()))
+			httperror.Write(w, r, httperror.Internal("save to draft").Wrap(derr))
 			return
 		}
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"section": sec.Key, "changed": changed,
@@ -299,11 +299,11 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("write rules: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("write rules").Wrap(err))
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		httperror.Write(w, r, httperror.Internal("commit: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("commit").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"section": sec.Key, "changed": changed})

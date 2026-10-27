@@ -181,7 +181,7 @@ func by(ctx context.Context) string {
 
 func (h *Handler) applyFix(ctx context.Context, tx *sql.Tx, req FixRequest, ts []fixTarget, res *FixResult) *httperror.Error {
 	internal := func(what string, err error) *httperror.Error {
-		return httperror.Internal(what + ": " + err.Error())
+		return httperror.Internal(what).Wrap(err)
 	}
 	videos := func() []fixTarget {
 		out := []fixTarget{}

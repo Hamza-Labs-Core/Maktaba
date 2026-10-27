@@ -11,6 +11,7 @@ vi.mock("../lib/api", async () => {
 });
 
 import { ApiError } from "../lib/api";
+import en from "../i18n/en.json";
 import { renderPage, memberUser } from "../test/pageHarness";
 import { Pair, normalizePairCode, type PairRequest } from "./Pair";
 
@@ -125,7 +126,7 @@ describe("Pair", () => {
     expect(screen.queryByText(/The device is signed in/)).toBeNull();
   });
 
-  it("403 on approve (a cloud sign-in): shows the server's reason", async () => {
+  it("403 on approve (a cloud sign-in): shows the home's plain reason", async () => {
     get.mockResolvedValue(PHONE);
     post.mockRejectedValue(
       problem(
@@ -137,6 +138,15 @@ describe("Pair", () => {
     open();
     await userEvent.setup().click(await screen.findByRole("button", { name: "Approve" }));
     expect(await screen.findByText(/cannot sign in a device/)).toBeInTheDocument();
+  });
+
+  it("a 403 whose detail names a path shows the generic error instead", async () => {
+    get.mockResolvedValue(PHONE);
+    post.mockRejectedValue(problem(403, "forbidden", "open /Volumes/x/pair.db: permission denied"));
+    open();
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Approve" }));
+    expect(await screen.findByText(en["common.error"])).toBeInTheDocument();
+    expect(screen.queryByText(/Volumes/)).toBeNull();
   });
 
   it("a malformed code is caught before it is sent", async () => {

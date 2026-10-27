@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"golang.org/x/time/rate"
 )
 
@@ -260,6 +261,7 @@ func (h *Hub) onCertCSR(s *Session, raw []byte) {
 		return
 	}
 	go func() {
+		defer safego.Recover(h.log(), "cluster_issue_cert")
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		is, err := h.cfg.Certs.IssueCert(ctx, s.NodeID, f.CSR)

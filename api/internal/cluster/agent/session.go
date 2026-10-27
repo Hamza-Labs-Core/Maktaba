@@ -19,6 +19,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/linkctx"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // Close codes of design-agent.md §4.6.
@@ -562,7 +563,12 @@ func (h *Hub) runSession(reqCtx context.Context, c *websocket.Conn, s *Session, 
 	defer readCancel()
 	lastRecv := make(chan struct{}, 1)
 	readDone := make(chan string, 1)
-	go func() { readDone <- h.readLoop(readCtx, s, c, c2s, lastRecv) }()
+	go func() {
+		reason := "read_panic"
+		defer func() { readDone <- reason }()
+		defer safego.Recover(h.log(), "cluster_session_read")
+		reason = h.readLoop(readCtx, s, c, c2s, lastRecv)
+	}()
 
 	reason := h.writeLoop(s, c, s2c, lastRecv, readDone)
 	s.closeWith(CloseNormal, "")

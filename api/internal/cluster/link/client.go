@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/coder/websocket"
 )
 
@@ -293,8 +294,8 @@ func (c *Client) session(ctx context.Context) error {
 			cancel()
 		}
 	}()
-	go s.renewWhenDue()
-	go s.keepWebCert(hello.WebHTTPS)
+	safego.Go(c.log(), "link_renew_cert", s.renewWhenDue)
+	safego.Go(c.log(), "link_keep_web_cert", func() { s.keepWebCert(hello.WebHTTPS) })
 	err = s.readLoop()
 	cancel()
 	s.out.close()
@@ -370,6 +371,7 @@ func (s *csess) dispatch(f Frame) {
 			switch {
 			case e.Moved != nil:
 				go func() {
+					defer safego.Recover(s.cl.log(), "link_dial_moved_stream")
 					conn, err := s.cl.dialStream(context.Background(), e.Moved.Ticket)
 					if err != nil {
 						cl.body.closeWith(err)
@@ -401,7 +403,7 @@ func (s *csess) onEvent(b []byte) {
 		if json.Unmarshal(b, &t) != nil || s.cl.Offer == nil {
 			return
 		}
-		go s.cl.serveOffer(t)
+		safego.Go(s.cl.log(), "link_serve_offer", func() { s.cl.serveOffer(t) })
 	default:
 		if h.ID == "" {
 			return

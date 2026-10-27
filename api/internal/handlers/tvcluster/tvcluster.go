@@ -567,7 +567,7 @@ func (h *Handler) PutHost(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.MoveNow {
 		if _, _, err := h.call(r.Context(), "/internal/tv/drain/"+url.PathEscape(id), nil); err != nil {
-			httperror.Write(w, r, httperror.BadGateway("the home's streaming service did not answer: "+err.Error()))
+			httperror.Write(w, r, httperror.BadGateway("the home's streaming service did not answer").Wrap(err))
 			return
 		}
 	}
@@ -680,7 +680,7 @@ func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
 	}
 	code, body, err := h.call(r.Context(), "/internal/tv/place/"+id.String(), map[string]string{"action": "stop"})
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway("the home's streaming service did not answer: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("the home's streaming service did not answer").Wrap(err))
 		return
 	}
 	if code >= 300 {
@@ -693,7 +693,7 @@ func (h *Handler) Stop(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) forward(w http.ResponseWriter, r *http.Request, path string, body any, okCode int) {
 	code, b, err := h.call(r.Context(), path, body)
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway("the home's streaming service did not answer: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("the home's streaming service did not answer").Wrap(err))
 		return
 	}
 	if code >= 300 {
@@ -715,7 +715,7 @@ func writeUpstreamError(w http.ResponseWriter, r *http.Request, code int, body [
 	case http.StatusBadRequest:
 		httperror.Write(w, r, httperror.BadRequest(msg))
 	default:
-		httperror.Write(w, r, httperror.BadGateway(msg))
+		httperror.Write(w, r, httperror.BadGateway("the home's streaming service answered an error").Wrap(fmt.Errorf("status %d: %s", code, msg)))
 	}
 }
 

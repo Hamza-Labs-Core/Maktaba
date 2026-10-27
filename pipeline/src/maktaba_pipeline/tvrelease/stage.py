@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import Any
 
 from .. import rules
+from ..db import schema_compat
 from ..engine.sql import is_pg, now
 from ..log import get_logger
 from .build import build_release
@@ -168,7 +169,8 @@ async def auto_restage(db: Any) -> bool:
     ``auto``, the default): a change an update reopened is then staged again."""
     try:
         row = await db.fetchrow("SELECT write_mode FROM job_stages WHERE stage = 'write_channels'")
-    except Exception:  # noqa: BLE001 - a database without job_stages: the default
+    except Exception as exc:  # noqa: BLE001 - a database without job_stages: the default
+        schema_compat.fallback(_log, "write_channels_mode_unavailable", exc)
         return True
     return row is None or str(row["write_mode"]) == "auto"
 

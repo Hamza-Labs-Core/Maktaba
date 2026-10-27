@@ -312,13 +312,21 @@ fn pause_text() -> String {
 
 pub fn set_paused_flag(on: bool) {
     let Some(p) = pause_flag_path() else { return };
-    if on {
-        if let Some(dir) = p.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let _ = std::fs::write(&p, pause_text());
+    // a flag that cannot be written or removed: the pause does not hold (or holds) across
+    // the app's restart; the server's own state is set either way, so it is logged
+    let res = if on {
+        p.parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| std::fs::write(&p, pause_text()))
     } else {
-        let _ = std::fs::remove_file(&p);
+        match std::fs::remove_file(&p) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        }
+    };
+    if let Err(e) = res {
+        let what = if on { "set" } else { "cleared" };
+        crate::applog::warn(&format!("the server's pause flag could not be {what}"), e);
     }
 }
 

@@ -18,8 +18,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ..db import schema_compat
 from ..engine.sql import loads
 from ..home_secrets import extension_secret_name, get_secret
+from ..log import get_logger
 from .config import EnrichConfig
 from .gating import INTERNAL_PROVIDER, ProviderKey
 from .reader import ClusterReader, LLMClient, OpenAICompatReader
@@ -32,6 +34,8 @@ from .web import (
     public_address,
     urllib_transport,
 )
+
+_log = get_logger()
 
 __all__ = [
     "WEB_SEARCH_EXTENSION",
@@ -85,7 +89,8 @@ async def load_web_search(db: Any) -> WebSearchSettings:
         row = await db.fetchrow(
             "SELECT enabled, settings FROM extensions WHERE name = $1", WEB_SEARCH_EXTENSION
         )
-    except Exception:  # noqa: BLE001 - an old schema: no extension, internal intel only
+    except Exception as exc:  # noqa: BLE001 - an old schema: no extension, internal intel only
+        schema_compat.fallback(_log, "web_search_settings_unavailable", exc)
         return WebSearchSettings()
     if row is None:
         return WebSearchSettings()

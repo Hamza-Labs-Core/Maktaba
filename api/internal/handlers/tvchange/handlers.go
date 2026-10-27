@@ -117,7 +117,7 @@ func (h *Handler) load(w http.ResponseWriter, r *http.Request) (*core.Change, bo
 		return nil, false
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load tv change: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("load tv change").Wrap(err))
 		return nil, false
 	}
 	return c, true
@@ -160,7 +160,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	items, err := h.Store.ListSummaries(r.Context(), states, limit)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list tv changes: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("list tv changes").Wrap(err))
 		return
 	}
 	inflight, _ := h.Store.InFlightID(r.Context(), h.DB)
@@ -202,7 +202,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Source: map[string]any{"kind": core.SourceManual}, Diff: map[string]any{"pending": map[string]any{}},
 		CreatedBy: actorOf(p)}
 	if err := h.Store.Insert(r.Context(), h.DB, c); err != nil {
-		httperror.Write(w, r, httperror.Internal("create tv change: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("create tv change").Wrap(err))
 		return
 	}
 	h.Store.Audit(r.Context(), h.DB, p.UserID, "create", c.ID, transition("", core.StateDraft, nil))
@@ -271,7 +271,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Store.Set(r.Context(), h.DB, c.ID, fields); err != nil {
-		httperror.Write(w, r, httperror.Internal("patch tv change: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("patch tv change").Wrap(err))
 		return
 	}
 	st := c.State
@@ -328,7 +328,7 @@ func (h *Handler) Stage(w http.ResponseWriter, r *http.Request) {
 		if conflict(w, r, err) {
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("stage: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("stage").Wrap(err))
 		return
 	}
 	st := c.State
@@ -360,7 +360,7 @@ func (h *Handler) Verify(w http.ResponseWriter, r *http.Request) {
 			if conflict(w, r, err) {
 				return
 			}
-			httperror.Write(w, r, httperror.Internal("verify: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("verify").Wrap(err))
 			return
 		}
 	}
@@ -402,14 +402,14 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg, err := core.LoadConfig(r.Context(), h.DB)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tv_staging rules: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("tv_staging rules").Wrap(err))
 		return
 	}
 	if cfg.RequireSecondAdmin {
 		// the creator and every admin who saved an edit into the change are its authors
 		authors, err := h.Store.Contributors(r.Context(), h.DB, c)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("tv change authors: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("tv change authors").Wrap(err))
 			return
 		}
 		for _, u := range authors {
@@ -441,13 +441,13 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := h.applyQueue(r.Context(), core.SourceWriteChannels, *c.Digest, c.ID); err != nil {
-			httperror.Write(w, r, httperror.Internal("apply: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("apply").Wrap(err))
 			return
 		}
 	}
 	if to == c.State {
 		if err := h.Store.Set(r.Context(), h.DB, c.ID, fields); err != nil {
-			httperror.Write(w, r, httperror.Internal("approve: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("approve").Wrap(err))
 			return
 		}
 		st := c.State
@@ -456,7 +456,7 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		if c.State == core.StateDraft && c.SourceKind() != core.SourceWriteChannels && h.Controller != nil {
 			c.ApprovedBy = append(c.ApprovedBy, p.UserID)
 			if err := h.Controller.RequestStage(r.Context(), c, actorOf(p)); err != nil && !isConflict(err) {
-				httperror.Write(w, r, httperror.Internal("stage: "+err.Error()))
+				httperror.Write(w, r, httperror.Internal("stage").Wrap(err))
 				return
 			}
 		}
@@ -464,7 +464,7 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		if conflict(w, r, err) {
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("approve: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("approve").Wrap(err))
 		return
 	}
 	h.Store.Audit(r.Context(), h.DB, p.UserID, "approve", c.ID,
@@ -539,7 +539,7 @@ func (h *Handler) Promote(w http.ResponseWriter, r *http.Request) {
 		if conflict(w, r, err) {
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("promote: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("promote").Wrap(err))
 		return
 	}
 	h.Store.Audit(r.Context(), h.DB, p.UserID, "promote", c.ID, transition(from, c.State, nil))
@@ -567,7 +567,7 @@ func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		if conflict(w, r, err) {
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("cancel: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("cancel").Wrap(err))
 		return
 	}
 	h.Store.Audit(r.Context(), h.DB, p.UserID, "cancel", c.ID, transition(from, c.State, nil))
@@ -656,7 +656,7 @@ func (h *Handler) Preview(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.DB.QueryContext(r.Context(), `SELECT channel_id, def FROM tv_release_channels WHERE release_id = $1`, *c.ReleaseID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("preview: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("preview").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -731,7 +731,7 @@ func (h *Handler) Rollback(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.Conflict("", ce.Error()).With("error", ce.Error()))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("rollback: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("rollback").Wrap(err))
 		return
 	}
 	audit := map[string]any{"mode": res.Mode, "op_id": res.OpID, "rollback_change_id": res.RollbackChangeID}
@@ -754,7 +754,7 @@ func (h *Handler) RollbackPoint(w http.ResponseWriter, r *http.Request) {
 	}
 	pt, err := h.Controller.Point(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("rollback point: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("rollback point").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, pt)
@@ -863,7 +863,7 @@ func (h *Handler) Releases(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `SELECT id, digest, kinds, sched_gen, streaming_version,
 		base_release_id, created_at FROM tv_releases ORDER BY sched_gen DESC LIMIT $1`, limit)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list releases: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("list releases").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -874,7 +874,7 @@ func (h *Handler) Releases(w http.ResponseWriter, r *http.Request) {
 		var base sql.NullString
 		var at timeScan
 		if err := rows.Scan(&rl.ID, &rl.Digest, &kinds, &rl.SchedGen, &rl.StreamingVersion, &base, &at); err != nil {
-			httperror.Write(w, r, httperror.Internal("list releases: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("list releases").Wrap(err))
 			return
 		}
 		rl.Kinds = []string{}
@@ -888,7 +888,7 @@ func (h *Handler) Releases(w http.ResponseWriter, r *http.Request) {
 		out = append(out, rl)
 	}
 	if err := rows.Err(); err != nil {
-		httperror.Write(w, r, httperror.Internal("list releases: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("list releases").Wrap(err))
 		return
 	}
 	for i := range out {

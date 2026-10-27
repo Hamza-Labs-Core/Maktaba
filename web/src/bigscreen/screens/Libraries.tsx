@@ -15,6 +15,7 @@ import {
 } from "../../lib/browse";
 import { bigPath, useBigNav } from "../nav";
 import { Empty, Failed, Grid, Loading, Picture, Row, Screen, VideoTile, posterOf } from "../ui";
+import { errorText } from "../../lib/errorText";
 
 export function BigLibraries() {
   const { t, n } = useI18n();
@@ -28,9 +29,7 @@ export function BigLibraries() {
     setErr(null);
     fetchLibrarySummary()
       .then((l) => !cancelled && setLibs(l))
-      .catch(
-        (e) => !cancelled && setErr(e instanceof ApiError ? e.problem.title : t("common.error"))
-      );
+      .catch((e) => !cancelled && setErr(errorText(e, t)));
     return () => {
       cancelled = true;
     };
@@ -145,8 +144,8 @@ export function BigLibrary() {
           !cancelled &&
           setErr(
             e instanceof ApiError
-              ? { message: e.problem.title, status: e.status }
-              : { message: t("common.error") }
+              ? { message: errorText(e, t), status: e.status }
+              : { message: errorText(e, t) }
           )
       );
     page(null)
