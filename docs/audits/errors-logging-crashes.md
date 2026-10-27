@@ -8,6 +8,7 @@ Android TV) and the desktop shell (Tauri). This audit builds on
 and fixes most of that audit's deferred list.
 
 What we looked for:
+
 - errors that are swallowed;
 - raw errors that reach people (JSON, Go errors, stack traces, server paths);
 - missing, noisy or leaky logging;
@@ -16,16 +17,16 @@ What we looked for:
 
 ## Fixes, by area
 
-| Area | PR | Critical | High | Medium | Low |
-|---|---|---|---|---|---|
-| Go API | #385 | 1 | 10 | 9 fixed, 3 deferred | 4 deferred |
-| Streaming and supervisor | #383 | 2 | 6 | 10 | 1 fixed, 5 deferred |
-| Python pipeline | #379 | — | 3 | 4 | 4 deferred |
-| Web (also the phone apps and the desktop window) | #384 | 1 | 6 | 8 fixed, 3 deferred | 1 deferred |
-| Apple apps | #382 (on #381) | — | 3, plus 1 in #381 | 9 | 2 fixed, 5 deferred |
-| Android apps | #380 | — | 6 | 8 fixed, 1 deferred | 4 deferred |
-| Desktop shell | #378 | 1 | 4 | 6 fixed, 2 deferred | 3 deferred |
-| CI flake found on the way | #386 | — | — | — | — |
+| Area                                             | PR             | Critical | High              | Medium              | Low                 |
+| ------------------------------------------------ | -------------- | -------- | ----------------- | ------------------- | ------------------- |
+| Go API                                           | #385           | 1        | 10                | 9 fixed, 3 deferred | 4 deferred          |
+| Streaming and supervisor                         | #383           | 2        | 6                 | 10                  | 1 fixed, 5 deferred |
+| Python pipeline                                  | #379           | —        | 3                 | 4                   | 4 deferred          |
+| Web (also the phone apps and the desktop window) | #384           | 1        | 6                 | 8 fixed, 3 deferred | 1 deferred          |
+| Apple apps                                       | #382 (on #381) | —        | 3, plus 1 in #381 | 9                   | 2 fixed, 5 deferred |
+| Android apps                                     | #380           | —        | 6                 | 8 fixed, 1 deferred | 4 deferred          |
+| Desktop shell                                    | #378           | 1        | 4                 | 6 fixed, 2 deferred | 3 deferred          |
+| CI flake found on the way                        | #386           | —        | —                 | —                   | —                   |
 
 Playback error screens in the web and native players are in #381
 (`fix/app-error-screens`) and the web player branch. NAS path leaks and the
@@ -129,13 +130,13 @@ Unicode form of NAS paths are in #373.
 
 ## Restarts and crash reporting, per part
 
-| Part | Restarted by | Reported in |
-|---|---|---|
-| API, streaming, pipeline, Postgres | the supervisor, with exponential backoff and crash-loop marking | System health (state, restarts, last exit), the event log, and `server.log` at error |
-| Supervisor | launchd `KeepAlive`, the Windows agent loop and Task Scheduler, systemd | `app.log` and `server.log` |
-| Web, phone and desktop windows | the error boundaries | the console |
-| Apple apps | the OS | MetricKit payloads and unified logging |
-| Android apps | the OS | `last-crash.txt` and logcat |
+| Part                               | Restarted by                                                            | Reported in                                                                          |
+| ---------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| API, streaming, pipeline, Postgres | the supervisor, with exponential backoff and crash-loop marking         | System health (state, restarts, last exit), the event log, and `server.log` at error |
+| Supervisor                         | launchd `KeepAlive`, the Windows agent loop and Task Scheduler, systemd | `app.log` and `server.log`                                                           |
+| Web, phone and desktop windows     | the error boundaries                                                    | the console                                                                          |
+| Apple apps                         | the OS                                                                  | MetricKit payloads and unified logging                                               |
+| Android apps                       | the OS                                                                  | `last-crash.txt` and logcat                                                          |
 
 ## Follow-ups
 
