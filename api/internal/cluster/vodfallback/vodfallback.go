@@ -342,28 +342,3 @@ func homeDidNotAnswer(status int, body []byte) bool {
 	return (status == http.StatusServiceUnavailable && p.Code == "home_unreachable") ||
 		(status == http.StatusGatewayTimeout && p.Code == "home_timeout")
 }
-
-// PrefixMap is the streaming role's MAKTABA_STREAM_PATH_MAP ("from=>to;from2=>to2",
-// longest prefix first, case- and slash-insensitive), so the node checks a file where
-// its streaming role will open it.
-func PrefixMap(spec string) func(string) string {
-	type rule struct{ from, to string }
-	var rules []rule
-	for _, part := range strings.Split(spec, ";") {
-		from, to, ok := strings.Cut(strings.TrimSpace(part), "=>")
-		if from = strings.TrimSpace(from); ok && from != "" {
-			rules = append(rules, rule{from, strings.TrimSpace(to)})
-		}
-	}
-	sort.SliceStable(rules, func(i, j int) bool { return len(rules[i].from) > len(rules[j].from) })
-	norm := func(s string) string { return strings.ToLower(strings.ReplaceAll(s, `\`, "/")) }
-	return func(p string) string {
-		np := norm(p)
-		for _, r := range rules {
-			if nf := norm(r.from); strings.HasPrefix(np, nf) {
-				return r.to + p[len(r.from):]
-			}
-		}
-		return p
-	}
-}
