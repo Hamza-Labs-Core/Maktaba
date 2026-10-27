@@ -170,7 +170,24 @@ function errorKey(e: SwitchError | null, path: Path): string {
 /** Telemetry of the switches (34.6 AC9), kept in memory for diagnostics. */
 export const switchLog = new SwitchLog();
 
-export function Player() {
+/**
+ * Where the player's own links go: the desk app's pages, or (Epic 46) big
+ * screen's, with the history state big screen keeps.
+ */
+export interface LiveRoutes {
+  channel: (n: number) => string;
+  guide: string;
+  watch: (videoId: string) => string;
+  state?: unknown;
+}
+
+const DESK_ROUTES: LiveRoutes = {
+  channel: (n) => `/live/${n}`,
+  guide: "/guide",
+  watch: (videoId) => `/videos/${encodeURIComponent(videoId)}/watch?t=0`,
+};
+
+export function Player({ routes = DESK_ROUTES }: { routes?: LiveRoutes } = {}) {
   const { number } = useParams();
   const nav = useNavigate();
   const { t } = useI18n();
@@ -268,16 +285,17 @@ export function Player() {
       const replace = !from || now - settledAt.current < SETTLED_PUSH_MS;
       settledAt.current = now;
       setBannerVisible(true);
-      if (c.number !== Number(number)) nav(`/live/${c.number}`, { replace });
+      if (c.number !== Number(number))
+        nav(routes.channel(c.number), { replace, state: routes.state });
     },
-    [nav, number]
+    [nav, number, routes]
   );
 
   const onAction = useCallback(
     (a: TvAction) => {
       switch (a.type) {
         case "guide":
-          nav("/guide");
+          nav(routes.guide, { state: routes.state });
           return;
         case "info":
           setMiniGuide((v) => !v);
@@ -290,7 +308,7 @@ export function Player() {
           return;
       }
     },
-    [nav]
+    [nav, routes]
   );
 
   // a LAN stream that died: is this device away now (EC1)? else count it (AC8)
@@ -362,8 +380,8 @@ export function Player() {
   );
   const watchFromStart = useCallback(() => {
     const vid = entry?.current?.video_id;
-    if (vid) nav(`/videos/${encodeURIComponent(vid)}/watch?t=0`);
-  }, [entry, nav]);
+    if (vid) nav(routes.watch(vid), { state: routes.state });
+  }, [entry, nav, routes]);
 
   async function togglePip() {
     const el = player.activeVideo() as
@@ -393,7 +411,11 @@ export function Player() {
           kind="not_found"
           title={t("live.notFound.title")}
           description={t("live.notFound.desc")}
-          action={<Button onClick={() => nav("/guide")}>{t("live.openGuide")}</Button>}
+          action={
+            <Button onClick={() => nav(routes.guide, { state: routes.state })}>
+              {t("live.openGuide")}
+            </Button>
+          }
         />
       </section>
     );
@@ -561,7 +583,7 @@ export function Player() {
       </div>
 
       <div className="mkt-live__controls" role="toolbar" aria-label={t("live.controls")}>
-        <Button variant="ghost" onClick={() => nav("/guide")}>
+        <Button variant="ghost" onClick={() => nav(routes.guide, { state: routes.state })}>
           ← {t("live.openGuide")}
         </Button>
         <Button variant="secondary" onClick={() => player.surf(1)} aria-label={t("live.channelUp")}>

@@ -12,8 +12,8 @@
 //
 // In a plain browser the register* helpers are inert no-ops, so this
 // component costs nothing in the web build.
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   registerMenuRouter,
   registerDropHandler,
@@ -21,6 +21,7 @@ import {
   type FilteredFiles,
 } from "../lib/desktop";
 import { DropOverlay } from "./DropOverlay";
+import { BIG_BASE, isBigPath, rememberReturn } from "../lib/bigScreen";
 
 function emit(name: string, detail?: unknown) {
   window.dispatchEvent(new CustomEvent(name, { detail }));
@@ -28,6 +29,10 @@ function emit(name: string, detail?: unknown) {
 
 export function DesktopBridge() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // the page to come back to when big screen is left (read when the menu acts)
+  const here = useRef("/");
+  here.current = location.pathname + location.search;
   const [drop, setDrop] = useState<FilteredFiles | null>(null);
 
   useEffect(() => {
@@ -52,6 +57,13 @@ export function DesktopBridge() {
           break;
         case "open-server-picker":
           emit("maktaba:open-server-picker");
+          break;
+        case "big-screen":
+          // the shell has made the window full screen; already there, nothing to do
+          if (!isBigPath(here.current.split("?")[0] ?? "")) {
+            rememberReturn(here.current);
+            navigate(BIG_BASE);
+          }
           break;
         case "external":
           // Native shell handles real opening; browser falls back.

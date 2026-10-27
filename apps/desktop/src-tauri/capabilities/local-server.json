@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "local-server",
-  "description": "Epic 36: in server mode the window loads this Mac's own web app (http://127.0.0.1:<web port>). It may listen to the shell's events (menu, deep links), read the app version, and read the permissions this Mac grants the server, open one of the allow-listed System Settings panes and mark the walkthrough seen (permissions.rs), nothing else; the setup commands stay with the bundled app (build.rs).",
+  "description": "Epic 36: in server mode the window loads this Mac's own web app (http://127.0.0.1:<web port>). It may listen to the shell's events (menu, deep links), read the app version, and read the permissions this Mac grants the server, open one of the allow-listed System Settings panes and mark the walkthrough seen (permissions.rs), and (Epic 46, bigscreen.rs) turn the window full screen and save Start in Big Screen, nothing else; the setup commands stay with the bundled app (build.rs).",
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:*/*", "http://localhost:*/*"]
@@ -11,6 +11,9 @@
     "allow-app-version",
     "allow-host-permissions",
     "allow-open-privacy-pane",
-    "allow-permissions-seen"
+    "allow-permissions-seen",
+    "allow-big-screen-state",
+    "allow-set-big-screen",
+    "allow-set-big-screen-start"
   ]
 }

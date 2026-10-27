@@ -129,6 +129,7 @@ describe("resolveMenuAction", () => {
         "new-window",
         "new-private",
         "open-docs",
+        "big-screen",
         "media-play",
         "media-pause",
       ].sort()
@@ -250,5 +251,12 @@ describe("registerMenuRouter", () => {
     expect(typeof dispose).toBe("function");
     expect(onAction).not.toHaveBeenCalled();
     dispose();
+  });
+});
+
+describe("big screen (Epic 46)", () => {
+  it("View → Big Screen opens big-screen mode; Start in Big Screen stays the shell's", () => {
+    expect(resolveMenuAction("big-screen")).toEqual({ kind: "big-screen" });
+    expect(resolveMenuAction("big-screen-start")).toBeNull();
   });
 });

@@ -113,6 +113,13 @@ export interface VideoPlayerProps {
   hideBack?: boolean;
   /** Starts playing as soon as the stream is attached (the viewer already pressed Play). */
   autoPlay?: boolean;
+  /**
+   * Epic 46 (big screen): the stream and its reports only — no desk bar, no
+   * native controls, no desk key map; the caller draws its own controls over
+   * the element (onVideoElement) and sets the subtitle size
+   * (--mkt-caption-scale) on an ancestor.
+   */
+  bare?: boolean;
 }
 
 export function VideoPlayer({
@@ -120,6 +127,7 @@ export function VideoPlayer({
   onVideoElement,
   hideBack = false,
   autoPlay = false,
+  bare = false,
 }: VideoPlayerProps = {}) {
   const { videoId } = useParams();
   const [params] = useSearchParams();
@@ -563,11 +571,12 @@ export function VideoPlayer({
     if (location.key === "default") nav(videoId ? `/videos/${videoId}` : "/library");
     else nav(-1);
   };
-  const backButton = hideBack ? null : (
-    <Button variant="ghost" onClick={goBack}>
-      {dir === "rtl" ? "→" : "←"} {t("player.back")}
-    </Button>
-  );
+  const backButton =
+    hideBack || bare ? null : (
+      <Button variant="ghost" onClick={goBack}>
+        {dir === "rtl" ? "→" : "←"} {t("player.back")}
+      </Button>
+    );
 
   if (err) {
     const notFound = err.status === 404;
@@ -601,50 +610,52 @@ export function VideoPlayer({
   return (
     <section
       className="mkt-player"
-      onKeyDown={onKeyDown}
-      tabIndex={0}
+      onKeyDown={bare ? undefined : onKeyDown}
+      tabIndex={bare ? -1 : 0}
       aria-label={t("video.tab.watch")}
     >
-      <div className="mkt-player__bar">
-        {backButton}
-        <div className="mkt-player__controls">
-          <label className="mkt-field">
-            <span className="mkt-field__label">{t("player.speed")}</span>
-            <select
-              value={speed}
-              aria-label={t("player.speed")}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                setSpeed(v);
-                if (videoRef.current) videoRef.current.playbackRate = v;
-              }}
-            >
-              {SPEEDS.map((s) => (
-                <option key={s} value={s}>
-                  {s}×
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="mkt-field">
-            <span className="mkt-field__label">{t("player.subtitleSize")}</span>
-            <select
-              value={captionScale}
-              aria-label={t("player.subtitleSize")}
-              onChange={(e) => setCaptionScale(Number(e.target.value))}
-            >
-              {CAPTION_SCALES.map((s) => (
-                <option key={s} value={s}>
-                  {Math.round(s * 100)}%
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button variant="secondary" onClick={togglePip}>
-            {t("player.pip")}
-          </Button>
+      {!bare && (
+        <div className="mkt-player__bar">
+          {backButton}
+          <div className="mkt-player__controls">
+            <label className="mkt-field">
+              <span className="mkt-field__label">{t("player.speed")}</span>
+              <select
+                value={speed}
+                aria-label={t("player.speed")}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setSpeed(v);
+                  if (videoRef.current) videoRef.current.playbackRate = v;
+                }}
+              >
+                {SPEEDS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}×
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mkt-field">
+              <span className="mkt-field__label">{t("player.subtitleSize")}</span>
+              <select
+                value={captionScale}
+                aria-label={t("player.subtitleSize")}
+                onChange={(e) => setCaptionScale(Number(e.target.value))}
+              >
+                {CAPTION_SCALES.map((s) => (
+                  <option key={s} value={s}>
+                    {Math.round(s * 100)}%
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button variant="secondary" onClick={togglePip}>
+              {t("player.pip")}
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
       {playError && (
         <div className="mkt-player__error" role="alert">
           <p>{t("common.error")}</p>
@@ -653,13 +664,13 @@ export function VideoPlayer({
       )}
       <div
         className="mkt-player__stage"
-        style={{ ["--mkt-caption-scale" as string]: String(captionScale) }}
+        style={bare ? undefined : { ["--mkt-caption-scale" as string]: String(captionScale) }}
       >
         <video
           ref={setVideoEl}
           data-testid="mkt-video"
           className="mkt-player__video"
-          controls
+          controls={!bare}
           playsInline
           autoPlay={autoplay}
           preload="metadata"
@@ -703,7 +714,7 @@ export function VideoPlayer({
             ))}
           </div>
         )}
-        {videoId && <UpNext videoId={videoId} el={videoEl} />}
+        {videoId && !bare && <UpNext videoId={videoId} el={videoEl} />}
       </div>
     </section>
   );

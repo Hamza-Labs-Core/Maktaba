@@ -24,6 +24,9 @@
     "allow-open-external",
     "allow-host-permissions",
     "allow-open-privacy-pane",
-    "allow-permissions-seen"
+    "allow-permissions-seen",
+    "allow-big-screen-state",
+    "allow-set-big-screen",
+    "allow-set-big-screen-start"
   ]
 }

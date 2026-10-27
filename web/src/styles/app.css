@@ -3795,3 +3795,10 @@ button.mkt-video__hero {
   margin-block: var(--space-2);
   padding-inline-start: var(--space-5);
 }
+
+/* Epic 46: the header's Big screen button has no room on a phone */
+@media (max-width: 720px) {
+  .mkt-shell__big {
+    display: none;
+  }
+}

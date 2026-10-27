@@ -5,7 +5,7 @@
 // system stamps <html data-theme>; ThemeSync keeps it tracking the
 // "system" OS preference live (Story 11.8).
 import { BrowserRouter, Outlet, Route, Routes, Navigate, useLocation } from "react-router-dom";
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import { AppShell, MoreMenu } from "./components/AppShell";
 import { DesktopBridge } from "./components/DesktopBridge";
@@ -68,6 +68,9 @@ import { NotFound } from "./pages/NotFound";
 import { Pair } from "./pages/Pair";
 import { HelpIndex, HelpTopic } from "./help/Help";
 
+// Epic 46: big-screen mode, its own full-screen frame and chunk
+const BigScreen = lazy(() => import("./bigscreen/BigScreen"));
+
 // ThemeSync re-applies the resolved theme whenever the OS preference
 // flips while the user is in "system" mode (Story 11.8 live-toggle AC).
 function ThemeSync({ children }: { children: ReactNode }) {
@@ -109,6 +112,16 @@ export function App() {
                         <Route element={<PublicPages />}>
                           <Route path="/login" element={<Login />} />
                           <Route path="/register" element={<Register />} />
+                          <Route
+                            path="/big/*"
+                            element={
+                              <RequireAuth>
+                                <Suspense fallback={null}>
+                                  <BigScreen />
+                                </Suspense>
+                              </RequireAuth>
+                            }
+                          />
                         </Route>
                         <Route
                           element={
