@@ -20,13 +20,52 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
 )
 
 // ErrCircuitOpen is returned by Call when the breaker is open.
 var ErrCircuitOpen = errors.New("circuit-open")
+
+// CallError is a gRPC call that did not get an answer (the transport, a
+// deadline, an open breaker): which method, on which address. The
+// in-band application errors a service answers are not CallErrors.
+type CallError struct {
+	Method string
+	Target string
+	Err    error
+}
+
+func (e *CallError) Error() string {
+	return fmt.Sprintf("gRPC %s at %s: %v", e.Method, e.Target, e.Err)
+}
+
+func (e *CallError) Unwrap() error { return e.Err }
+
+// OutgoingRequestID is the request id an outbound call carries under key:
+// an inbound gRPC call's own, else the HTTP request's ("" when neither).
+func OutgoingRequestID(ctx context.Context, key string) string {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if v := md.Get(key); len(v) > 0 && v[0] != "" {
+			return v[0]
+		}
+	}
+	if id := reqid.FromContext(ctx); id != uuid.Nil {
+		return id.String()
+	}
+	return ""
+}
 
 // Backend describes a registered STT backend (Story 7.15 AC-4).
 type Backend struct {
@@ -178,6 +217,11 @@ type Breaker struct {
 	threshold float64
 	openedAt  time.Time
 	history   []breakerEvent
+
+	// Name and Logger say which service's breaker opened (a nil Logger
+	// is slog.Default()).
+	Name   string
+	Logger *slog.Logger
 }
 
 type breakerEvent struct {
@@ -202,6 +246,8 @@ func (b *Breaker) Allow(now time.Time) bool {
 		// half-open: clear and let one through
 		b.openedAt = time.Time{}
 		b.history = nil
+		b.log().Info("grpc circuit half-open: trying the service again", "service", b.Name,
+			"event", "grpc_circuit_half_open")
 	}
 	return true
 }
@@ -231,8 +277,20 @@ func (b *Breaker) Record(now time.Time, ok bool) {
 	}
 	rate := float64(bad) / float64(len(b.history))
 	if rate >= b.threshold {
+		if b.openedAt.IsZero() {
+			b.log().Warn("grpc circuit open: calls fail fast for a while", "service", b.Name,
+				"failures", bad, "calls", len(b.history), "open_for_ms", b.openFor.Milliseconds(),
+				"event", "grpc_circuit_open")
+		}
 		b.openedAt = now
 	}
+}
+
+func (b *Breaker) log() *slog.Logger {
+	if b.Logger != nil {
+		return b.Logger
+	}
+	return slog.Default()
 }
 
 // CallWithRetry runs fn with the configured retry budget and the
@@ -267,25 +325,21 @@ func CallWithRetry(ctx context.Context, b *Breaker, maxRetries int, fn func(cont
 	return lastErr
 }
 
-// isRetryable matches the error code vocabulary from the gRPC client:
-// UNAVAILABLE and DEADLINE_EXCEEDED retry; INTERNAL / INVALID_ARGUMENT
-// surface immediately.
+// isRetryable: a gRPC status of Unavailable or DeadlineExceeded retries;
+// Internal / InvalidArgument and the like surface at once. An error with
+// no gRPC status is matched by its text (UNAVAILABLE, DEADLINE_EXCEEDED).
 func isRetryable(err error) bool {
 	if err == nil {
 		return false
 	}
-	s := err.Error()
-	if contains(s, "UNAVAILABLE") || contains(s, "DEADLINE_EXCEEDED") {
-		return true
-	}
-	return false
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
+	if st, ok := status.FromError(err); ok {
+		switch st.Code() {
+		case codes.Unavailable, codes.DeadlineExceeded:
 			return true
+		default:
+			return false
 		}
 	}
-	return false
+	s := err.Error()
+	return strings.Contains(s, "UNAVAILABLE") || strings.Contains(s, "DEADLINE_EXCEEDED")
 }

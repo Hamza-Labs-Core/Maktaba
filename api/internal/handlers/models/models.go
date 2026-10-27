@@ -21,6 +21,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
@@ -231,7 +232,14 @@ func (h *Handler) Activate(w http.ResponseWriter, r *http.Request) {
 	}
 	act, err := h.pipeline.ActivateModel(r.Context(), id, "")
 	if err != nil {
-		// The pipeline rejects activating a not-yet-installed model.
+		// The pipeline rejects activating a not-yet-installed model (its own
+		// answer, safe to show); a call that got no answer is the pipeline's
+		// failure, not the request's, and its address stays in the log.
+		var ce *grpcpipeline.CallError
+		if errors.As(err, &ce) {
+			httperror.Write(w, r, httperror.BadGateway("pipeline activate failed").Wrap(err))
+			return
+		}
 		httperror.Write(w, r, httperror.BadRequest("pipeline activate failed: "+err.Error()))
 		return
 	}
