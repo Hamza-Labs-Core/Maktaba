@@ -35,7 +35,10 @@ const HUB = {
     recently_added: [card("a1"), card("a2")],
     recently_watched: [],
     most_watched: [card("m1", { plays: 12 })],
-    series: [{ id: "s1", name: "شرح الأصول", episodes: 30 }],
+    series: [
+      { id: "s1", name: "شرح الأصول", episodes: 30, poster_video_id: "v-first" },
+      { id: "s2", name: "بلا صورة", episodes: 2 },
+    ],
     years: [
       { year: 2021, videos: 300 },
       { year: 2019, videos: 12 },
@@ -119,6 +122,19 @@ describe("LibraryPage", () => {
     );
     // Overview reads no grid
     expect(videoCalls()).toHaveLength(0);
+  });
+
+  it("a series tile shows its first episode's poster; one without has none", async () => {
+    serve();
+    renderLib();
+    const series = await screen.findByRole("region", { name: en["libraryPage.row.series"] });
+    const withPoster = within(series).getByRole("link", { name: /شرح الأصول/ });
+    expect(withPoster.querySelector("img")).toHaveAttribute("src", "/api/videos/v-first/poster");
+    expect(
+      within(series)
+        .getByRole("link", { name: /بلا صورة/ })
+        .querySelector("img")
+    ).toBeNull();
   });
 
   it("Overview shows On Deck, the next lesson of each series under way", async () => {

@@ -386,6 +386,9 @@ type SeriesRef struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Episodes int64  `json:"episodes"`
+	// PosterVideoID is its first visible episode in the library (the series page's
+	// order): the card shows that video's poster, as GET /api/series does.
+	PosterVideoID string `json:"poster_video_id,omitempty"`
 }
 
 // YearCount is the number of a library's videos published in a year (the
@@ -522,7 +525,46 @@ func (h *Handler) series(ctx context.Context, lib string) ([]SeriesRef, error) {
 		}
 		out = append(out, sr)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, h.seriesPosters(ctx, lib, out)
+}
+
+// seriesPosters gives each series its first visible episode in lib: by season then
+// episode (their overrides first), by absolute number for an absolute-numbered series,
+// as the series page orders them.
+func (h *Handler) seriesPosters(ctx context.Context, lib string, out []SeriesRef) error {
+	if len(out) == 0 {
+		return nil
+	}
+	at := make(map[string]int, len(out))
+	for i, sr := range out {
+		at[sr.ID] = i
+	}
+	rows, err := h.DB.QueryContext(ctx, `SELECT series_id, video_id FROM (
+		SELECT se.series_id, se.video_id, ROW_NUMBER() OVER (PARTITION BY se.series_id ORDER BY
+			CASE WHEN s.numbering = 'absolute' THEN 0 ELSE COALESCE(se.season_override, se.season, 0) END,
+			CASE WHEN s.numbering = 'absolute' THEN COALESCE(se.absolute_number, se.episode_override, se.episode, 0)
+			     ELSE COALESCE(se.episode_override, se.episode, 0) END,
+			v.id) AS n
+		FROM series_episodes se JOIN series s ON s.id = se.series_id
+		JOIN videos v ON v.id = se.video_id
+		WHERE v.library_id = $1 AND `+visible+`) firsts WHERE n = 1`, lib)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sid, vid string
+		if err := rows.Scan(&sid, &vid); err != nil {
+			return err
+		}
+		if i, ok := at[sid]; ok {
+			out[i].PosterVideoID = vid
+		}
+	}
+	return rows.Err()
 }
 
 // years is the library's visible videos per year of mtime, newest year

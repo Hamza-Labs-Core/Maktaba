@@ -193,6 +193,7 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
         {rows.series.map((s) => (
           <li key={s.id} className="mkt-row__item">
             <Link to={`/series/${encodeURIComponent(s.id)}`} className="mkt-series-tile">
+              <SeriesTilePicture videoId={s.poster_video_id} />
               <bdi className="mkt-series-tile__name">
                 {s.name || t("libraryPage.seriesUnnamed")}
               </bdi>
@@ -290,5 +291,21 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
         ]}
       />
     </section>
+  );
+}
+
+/** A series tile's picture: its first episode's poster, whole (a vertical video with
+ *  bars at its sides); nothing when it has none or it does not load. */
+function SeriesTilePicture({ videoId }: { videoId?: string | null }) {
+  const [broken, setBroken] = useState(false);
+  if (!videoId || broken) return null;
+  return (
+    <img
+      className="mkt-series-tile__picture"
+      src={`/api/videos/${encodeURIComponent(videoId)}/poster`}
+      alt=""
+      loading="lazy"
+      onError={() => setBroken(true)}
+    />
   );
 }
