@@ -100,19 +100,23 @@ func inOrder(m map[string]string) []string {
 
 // build makes a Map of m's keys taken in order: of two keys for one prefix
 // ("/Volumes/Originals" and "/Volumes/Originals/") the first wins, every time, as in
-// the streaming role. With stored, a key that is not canonical rewrites the stored
-// paths under it (a node's map); without, it is dropped (the home's).
+// the streaming role. With stored (a node's map), a key that is not canonical
+// rewrites the paths under it, and an empty target strips the prefix ("/mnt/nas=>");
+// without (the home's), both are dropped.
 func build(keys []string, m map[string]string, stored bool) Map {
 	out := Map{}
 	seen := map[string]bool{}
 	for _, raw := range keys {
 		from, l := strings.TrimSpace(raw), strings.TrimSpace(m[raw])
 		canon := IsCanonical(strings.TrimRight(from, "/"))
-		if from == "" || l == "" || (!canon && !stored) || seen[strings.ToLower(dir(from))] {
+		if from == "" || (!stored && (l == "" || !canon)) || seen[strings.ToLower(dir(from))] {
 			continue
 		}
 		seen[strings.ToLower(dir(from))] = true
-		e := Entry{Canonical: dir(from), Local: dir(l)}
+		e := Entry{Canonical: dir(from)}
+		if l != "" {
+			e.Local = dir(l) // "": the prefix is stripped
+		}
 		if canon {
 			out.entries = append(out.entries, e)
 		} else {
@@ -156,24 +160,44 @@ func (m Map) ToLocal(p string) string {
 		}
 		return "/" + rest
 	}
-	entries := m.entries
 	if !IsCanonical(p) {
 		if strings.Contains(p, "://") {
 			return p
 		}
-		entries = m.stored
+		if out, _, ok := match(m.stored, p); ok {
+			return out
+		}
+		return p
 	}
+	// the shares' entries and a node's other URL keys ("smb://nas", every share of a
+	// server): the longest prefix that matches, as in the streaming role
+	best, bestLen := p, -1
+	for _, es := range [][]Entry{m.entries, m.stored} {
+		if out, n, ok := match(es, p); ok && n > bestLen {
+			best, bestLen = out, n
+		}
+	}
+	return best
+}
+
+// match maps p with the first of es (longest first) whose prefix it is under, and
+// says how long that prefix is.
+func match(es []Entry, p string) (string, int, bool) {
 	low := strings.ToLower(slash(p))
-	for _, e := range entries {
+	for _, e := range es {
 		c := strings.ToLower(e.Canonical)
+		local := e.Local
+		if local == "" {
+			local = "/"
+		}
 		if low+"/" == c {
-			return root(e.Local)
+			return root(local), len(c), true
 		}
 		if strings.HasPrefix(low, c) {
-			return e.Local + slash(p)[len(e.Canonical):]
+			return local + slash(p)[len(e.Canonical):], len(c), true
 		}
 	}
-	return p
+	return "", 0, false
 }
 
 // ToCanonical maps a local path under one of the mounts to its canonical
@@ -184,6 +208,9 @@ func (m Map) ToCanonical(local string) (string, bool) {
 	var best *Entry
 	for i := range m.entries {
 		e := &m.entries[i]
+		if e.Local == "" {
+			continue // a stripped prefix is no mount
+		}
 		l := strings.ToLower(e.Local)
 		if (strings.HasPrefix(low, l) || low+"/" == l) && (best == nil || len(e.Local) > len(best.Local)) {
 			best = e

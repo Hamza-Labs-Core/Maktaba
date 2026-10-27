@@ -62,8 +62,8 @@ func TestNodeMapRewritesStoredPrefixes(t *testing.T) {
 		"smb://home-nas/Originals/": "O:/",
 		"/Volumes/Empty/":           " ",
 	})
-	if m.Len() != 3 {
-		t.Fatalf("len = %d, want 3", m.Len())
+	if m.Len() != 4 {
+		t.Fatalf("len = %d, want 4", m.Len())
 	}
 	for in, want := range map[string]string{
 		"/Volumes/Originals/Movies/a.webm":           "O:/Movies/a.webm",
@@ -72,7 +72,7 @@ func TestNodeMapRewritesStoredPrefixes(t *testing.T) {
 		"/Volumes/Originals":                         "O:/",
 		"/Volumes/Originals/Backup/Youtube/b.mp4":    "Y:/Youtube/b.mp4",
 		"/Volumes/OriginalsOld/c.mp4":                "/Volumes/OriginalsOld/c.mp4",
-		"/Volumes/Empty/d.mp4":                       "/Volumes/Empty/d.mp4",
+		"/Volumes/Empty/d.mp4":                       "/d.mp4", // an empty target strips, as in streaming
 		"smb://home-nas/Originals/Movies/e.mkv":      "O:/Movies/e.mkv",
 		"smb://other/share/f.mp4":                    "smb://other/share/f.mp4",
 		"http://example.com/Volumes/Originals/g.mp4": "http://example.com/Volumes/Originals/g.mp4",
@@ -115,6 +115,11 @@ func TestParseStreamMapAsTheStreamingRole(t *testing.T) {
 		{"/Volumes/O=>P:;/volumes/o=>Q:", "/Volumes/O/c.mp4", "P:/c.mp4"},
 		{"smb://nas/Originals=>O:", "smb://nas/Originals/d.mkv", "O:/d.mkv"},
 		{" ; nonsense ;=>X:; /Volumes/O => P: ", "/Volumes/O/e.mp4", "P:/e.mp4"},
+		{"smb://nas=>/Volumes", "smb://nas/Originals/Movies/f.mkv", "/Volumes/Originals/Movies/f.mkv"},
+		{"smb://nas=>//nas;smb://nas/Originals=>O:", "smb://nas/Originals/g.mkv", "O:/g.mkv"},
+		{"smb://nas=>//nas;smb://nas/Originals=>O:", "smb://nas/Backup/h.mkv", "//nas/Backup/h.mkv"},
+		{"/mnt/nas=>", "/mnt/nas/Movies/i.mkv", "/Movies/i.mkv"},
+		{"/Volumes/O/=>;/Volumes/O=>P:", "/Volumes/O/j.mkv", "/j.mkv"},
 	} {
 		if got := ParseStreamMap(c.spec).ToLocal(c.in); got != c.want {
 			t.Errorf("%q: ToLocal(%q) = %q, want %q", c.spec, c.in, got, c.want)
@@ -129,5 +134,19 @@ func TestDuplicateShareKeysPickOne(t *testing.T) {
 		if got := m.ToLocal("smb://nas/Originals/a.mkv"); got != "O:/a.mkv" {
 			t.Fatalf("run %d: ToLocal = %q, want O:/a.mkv", i, got)
 		}
+	}
+}
+
+// A stripped prefix (an empty target) is no mount: nothing local maps back to its share.
+func TestStrippedShareIsNoMount(t *testing.T) {
+	m := FromNodeEntries(map[string]string{"smb://nas/Originals/": "", "smb://nas/Backup/": "B:/"})
+	if got := m.ToLocal("smb://nas/Originals/a.mkv"); got != "/a.mkv" {
+		t.Errorf("ToLocal = %q, want /a.mkv", got)
+	}
+	if got, ok := m.ToCanonical("/Users/me/a.mkv"); ok {
+		t.Errorf("ToCanonical = %q: a stripped prefix took a local disk", got)
+	}
+	if got, ok := m.ToCanonical("B:/x"); !ok || got != "smb://nas/Backup/x" {
+		t.Errorf("ToCanonical(B:/x) = %q,%v", got, ok)
 	}
 }
