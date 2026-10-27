@@ -1,10 +1,11 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { serviceWorkerBuild, stampServiceWorker } from "./src/lib/swStamp";
+import { serverPageModules } from "./src/lib/editionBundle";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,6 +25,8 @@ function writeVersionJson(): Plugin {
     name: "maktaba-write-version-json",
     apply: "build",
     closeBundle() {
+      // a failed build (the player check, say) wrote nothing to stamp
+      if (!existsSync(path.resolve(__dirname, "dist", "index.html"))) return;
       const out = path.resolve(__dirname, "dist", "version.json");
       writeFileSync(
         out,
@@ -45,6 +48,8 @@ function stampServiceWorkerPlugin(): Plugin {
     apply: "build",
     closeBundle() {
       const dist = path.resolve(__dirname, "dist");
+      // a failed build (the player check, say) wrote nothing to stamp
+      if (!existsSync(path.join(dist, "index.html"))) return;
       const shell = readFileSync(path.join(dist, "index.html"));
       const build = serviceWorkerBuild(
         BUILD_VERSION,
@@ -56,11 +61,47 @@ function stampServiceWorkerPlugin(): Plugin {
   };
 }
 
-export default defineConfig({
+// The edition (Epic 42.5, src/lib/edition.ts): full (the default the server ships),
+// player or remote. An unknown value fails the build rather than shipping as full.
+function editionOf(mode: string): string {
+  const edition = loadEnv(mode, __dirname, "VITE_").VITE_MAKTABA_EDITION || "full";
+  if (!["full", "player", "remote"].includes(edition)) {
+    throw new Error(`VITE_MAKTABA_EDITION must be full, player or remote, not "${edition}"`);
+  }
+  return edition;
+}
+
+// A player bundle carries no server page code (processing, transcription, settings,
+// the admin pages): the build fails naming any such module that made it in.
+function playerBundleCheck(): Plugin {
+  return {
+    name: "maktaba-player-bundle-check",
+    apply: "build",
+    generateBundle(_, bundle) {
+      const found = serverPageModules(
+        Object.values(bundle).flatMap((out) =>
+          out.type === "chunk"
+            ? Object.entries(out.modules).map(([id, m]) => ({ id, size: m.renderedLength }))
+            : []
+        )
+      );
+      if (found.length > 0) {
+        this.error(`the player bundle has server page code:\n  ${found.join("\n  ")}`);
+      }
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => ({
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(BUILD_VERSION),
   },
-  plugins: [react(), writeVersionJson(), stampServiceWorkerPlugin()],
+  plugins: [
+    react(),
+    writeVersionJson(),
+    stampServiceWorkerPlugin(),
+    ...(editionOf(mode) === "player" ? [playerBundleCheck()] : []),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
@@ -99,4 +140,4 @@ export default defineConfig({
     outDir: "dist",
     sourcemap: true,
   },
-});
+}));

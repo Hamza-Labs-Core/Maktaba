@@ -25,7 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.window.core.layout.WindowSizeClass
 
@@ -94,6 +96,7 @@ fun HingeSplit(
     var origin by remember { mutableStateOf(Offset.Zero) }
     var size by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Box(
         modifier.fillMaxSize().onGloballyPositioned {
             origin = it.positionInWindow()
@@ -111,10 +114,11 @@ fun HingeSplit(
                 }
             }
             is Panes.Book -> {
-                val (a, b) = cut(panes.hinge, origin.x.toInt(), size.width)
+                // right to left, the Row starts at the right: the first pane is the hinge's right part
+                val (lead, gap) = bookCut(panes.hinge, origin.x.toInt(), size.width, rtl)
                 Row(Modifier.fillMaxSize()) {
-                    Box(Modifier.fillMaxHeight().width(with(density) { a.toDp() })) { first() }
-                    Box(Modifier.fillMaxHeight().width(with(density) { (b - a).toDp() }))
+                    Box(Modifier.fillMaxHeight().width(with(density) { lead.toDp() })) { first() }
+                    Box(Modifier.fillMaxHeight().width(with(density) { gap.toDp() }))
                     Box(Modifier.fillMaxHeight().weight(1f)) { second() }
                 }
             }
@@ -137,6 +141,17 @@ fun cut(hinge: IntRange, origin: Int, length: Int): Pair<Int, Int> {
     val b = hinge.last - origin
     if (length <= 0 || a <= 0 || b >= length || b < a) return (length / 2) to (length / 2)
     return a to b
+}
+
+/**
+ * A book posture's cut for a Row [length] px wide at [origin] (window px) with the hinge at
+ * [hinge]: the leading pane's width and the hinge's. A Row leads from the left, or from the
+ * right when [rtl], so right to left the leading pane is the part right of the hinge: the
+ * hinge's own pixels stay empty either way.
+ */
+fun bookCut(hinge: IntRange, origin: Int, length: Int, rtl: Boolean): Pair<Int, Int> {
+    val (a, b) = cut(hinge, origin, length)
+    return (if (rtl) length - b else a) to (b - a)
 }
 
 /** The list pane's width beside a page. */

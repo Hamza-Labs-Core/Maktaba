@@ -87,6 +87,40 @@ final class ConnectUITests: XCTestCase {
         XCTAssertTrue(recent.waitForExistence(timeout: 5))
     }
 
+    /// The Remote's queue on a wide window (story 42.8): the stages and the chosen stage's
+    /// page side by side; on a narrow one the page is pushed over the list (the phone).
+    func testQueueShowsTheStageBesideTheListWhenWide() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "the iPad's layout")
+        signInByCode()
+        let queue = app.buttons["Queue"].firstMatch
+        try XCTSkipUnless(queue.waitForExistence(timeout: 10), "the Remote's queue (the Player has none)")
+        queue.tap()
+        XCTAssertTrue(app.staticTexts["Choose a stage"].waitForExistence(timeout: 10), "nothing chosen yet")
+        let probe = app.staticTexts["Probe"].firstMatch
+        XCTAssertTrue(probe.waitForExistence(timeout: 10))
+        probe.tap()
+        XCTAssertTrue(app.staticTexts["Waiting"].waitForExistence(timeout: 10), "the stage's page")
+        let transcribe = app.staticTexts["Transcribe"].firstMatch
+        XCTAssertTrue(transcribe.exists, "the list stays beside it")
+        XCTAssertLessThan(transcribe.frame.maxX, app.staticTexts["Waiting"].frame.minX, "the list leads")
+        XCTAssertTrue(home.seen.contains("GET /api/queues/probe/failures"))
+        shot("queue-split")
+    }
+
+    /// A typed address and a code approved elsewhere: signed in to the mock home.
+    private func signInByCode() {
+        let field = app.textFields["picker.address"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText(home.url)
+        app.buttons["picker.connect"].tap()
+        let byCode = app.buttons["With a code"]
+        XCTAssertTrue(byCode.waitForExistence(timeout: 10))
+        byCode.tap()
+        home.approve()
+        XCTAssertTrue(byCode.waitForNonExistence(timeout: 20), "approved: signed in")
+    }
+
     private func shot(_ name: String) {
         let a = XCTAttachment(screenshot: app.screenshot())
         a.name = name

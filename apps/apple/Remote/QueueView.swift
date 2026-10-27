@@ -1,59 +1,99 @@
 import MaktabaKit
 import SwiftUI
 
+/// The queue tab (story 42.8): on a wide window (an iPad, full screen or a wide split) the
+/// stages beside the chosen stage's page; on a narrow one (an iPhone, an iPad in Slide Over
+/// or a narrow split) the stages, and a stage's page pushed over them.
+struct QueueScreen: View {
+    @Environment(\.horizontalSizeClass) private var width
+    @State private var chosen: String?
+
+    var body: some View {
+        if width == .regular {
+            NavigationSplitView {
+                QueueView(selection: $chosen)
+            } detail: {
+                NavigationStack {
+                    if let chosen {
+                        StageView(stage: chosen).id(chosen)
+                    } else {
+                        ContentUnavailableView("Choose a stage", systemImage: "list.bullet.rectangle")
+                    }
+                }
+            }
+        } else {
+            NavigationStack { QueueView() }
+        }
+    }
+}
+
 /// The processing queue: every stage with what waits, runs and failed; pause or resume one
-/// (a swipe, or its page) or all of them; a stage's page lists its failures.
+/// (a swipe, or its page) or all of them; a stage's page lists its failures. Given a
+/// [selection], a stage opens beside the list (QueueScreen); without one, it is pushed.
 struct QueueView: View {
+    var selection: Binding<String?>?
     @Environment(RemoteModel.self) private var model
 
     var body: some View {
-        List {
-            ProblemSection()
-            if model.queue?.pausedAll == true {
-                Section {
-                    Label("Every stage is paused. Running jobs finish; nothing new starts.", systemImage: "pause.circle")
-                        .foregroundStyle(Color.brass)
-                }
-            }
+        // a List with a selection turns its links into choosing (the split's detail); a plain
+        // one pushes them
+        if let selection {
+            decorated(List(selection: selection) { rows })
+        } else {
+            decorated(List { rows })
+                .navigationDestination(for: String.self) { StageView(stage: $0) }
+        }
+    }
+
+    @ViewBuilder private var rows: some View {
+        ProblemSection()
+        if model.queue?.pausedAll == true {
             Section {
-                ForEach(model.queue?.rows ?? []) { row in
-                    NavigationLink(value: row.id) {
-                        StageRow(row: row, busy: model.busy.contains(row.id))
+                Label("Every stage is paused. Running jobs finish; nothing new starts.", systemImage: "pause.circle")
+                    .foregroundStyle(Color.brass)
+            }
+        }
+        Section {
+            ForEach(model.queue?.rows ?? []) { row in
+                NavigationLink(value: row.id) {
+                    StageRow(row: row, busy: model.busy.contains(row.id))
+                }
+                .swipeActions {
+                    if row.info.paused {
+                        Button("Resume", systemImage: "play.fill") { Task { await model.setPaused(row, false) } }
+                            .tint(.green)
+                    } else {
+                        Button("Pause", systemImage: "pause.fill") { Task { await model.setPaused(row, true) } }
+                            .tint(Color.brass)
                     }
-                    .swipeActions {
-                        if row.info.paused {
-                            Button("Resume", systemImage: "play.fill") { Task { await model.setPaused(row, false) } }
-                                .tint(.green)
-                        } else {
-                            Button("Pause", systemImage: "pause.fill") { Task { await model.setPaused(row, true) } }
-                                .tint(Color.brass)
+                }
+            }
+        }
+    }
+
+    private func decorated(_ list: some View) -> some View {
+        list
+            .maktabaSurface()
+            .overlay {
+                if !model.loaded { ProgressView() }
+            }
+            .navigationTitle("Queue")
+            .refreshable { await model.load() }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    if model.queue?.pausedAll == true {
+                        BusyButton(title: "Resume all", systemImage: "play.fill", busy: model.busy.contains("all")) {
+                            await model.setPausedAll(false)
                         }
+                    } else {
+                        BusyButton(title: "Pause all", systemImage: "pause.fill", busy: model.busy.contains("all")) {
+                            await model.setPausedAll(true)
+                        }
+                        .disabled(model.queue == nil)
                     }
                 }
+                AccountMenu()
             }
-        }
-        .maktabaSurface()
-        .overlay {
-            if !model.loaded { ProgressView() }
-        }
-        .navigationTitle("Queue")
-        .navigationDestination(for: String.self) { StageView(stage: $0) }
-        .refreshable { await model.load() }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                if model.queue?.pausedAll == true {
-                    BusyButton(title: "Resume all", systemImage: "play.fill", busy: model.busy.contains("all")) {
-                        await model.setPausedAll(false)
-                    }
-                } else {
-                    BusyButton(title: "Pause all", systemImage: "pause.fill", busy: model.busy.contains("all")) {
-                        await model.setPausedAll(true)
-                    }
-                    .disabled(model.queue == nil)
-                }
-            }
-            AccountMenu()
-        }
     }
 }
 

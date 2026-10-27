@@ -39,7 +39,20 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "427C94871BC9A0ABBC72A251"
+               BuildableName = "Maktaba Remote iPad UITests.xctest"
+               BlueprintName = "Maktaba Remote iPad UITests"
+               ReferencedContainer = "container:Maktaba.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

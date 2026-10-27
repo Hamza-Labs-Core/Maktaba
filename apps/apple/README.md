@@ -40,7 +40,8 @@ calls the Remote makes (`Admin.swift`).
   ⌘. to stop, Esc to close; the **Account** menu has the theme, Switch Home (⇧⌘H), Sign Out.
 - **Remote** (iPhone, iPad; home admins only): tabs on iPhone, a sidebar on iPad.
   *Needs attention* (retry a group, retry all), *Queue* (every stage; pause/resume one by a
-  swipe or its page, pause/resume all; a stage's failures), *Libraries* (scan), *Machines*
+  swipe or its page, pause/resume all; a stage's failures; on a wide window, an iPad full
+  screen or in a wide Split View, the stages beside the chosen stage's page, story 42.8), *Libraries* (scan), *Machines*
   (let machines ask to join, approve one with the six-digit code it shows, turn one down,
   revoke an approved one), *Home* (name, release, queue state, machines online). The home
   enforces every one of these for its admins (403 to anyone else); a non-admin who signs in
@@ -72,7 +73,9 @@ person again after every rebuild), which needs the `keychain-access-groups` enti
 a provisioning profile: the Mac you build on must be registered with the team (Xcode offers
 "Register Device"; `xcodebuild … -allowProvisioningDeviceRegistration` does it once).
 `xcodebuild test -scheme "Maktaba Player Mac"` runs its hosted tests (the player surface, the
-keychain).
+keychain). The iPhone and iPad schemes run the UI tests (`UITests/`, against `MockHome` on
+127.0.0.1, no real home): `-scheme "Maktaba Remote iPad"` on an iPad simulator covers the
+queue's two panes.
 
 From the command line Xcode's account is used with `-allowProvisioningUpdates`:
 

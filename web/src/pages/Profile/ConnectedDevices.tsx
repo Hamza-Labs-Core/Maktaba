@@ -17,7 +17,8 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
-import { platformIcon, type Device } from "../Cloud/Devices";
+import { platformIcon } from "../../lib/platformIcon";
+import type { Device } from "../Cloud/Devices";
 import { TitleRow } from "../../help/HelpLink";
 
 export function ConnectedDevices() {

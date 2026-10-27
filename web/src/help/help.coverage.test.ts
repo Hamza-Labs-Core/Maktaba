@@ -125,8 +125,9 @@ describe("help topics", () => {
 });
 
 describe("help links from the app", () => {
-  it("every route of App.tsx has a help entry", () => {
-    const app = read("src/App.tsx");
+  it("every route of App.tsx and serverRoutes.tsx has a help entry", () => {
+    // the server pages' routes live in serverRoutes.tsx (Epic 42.5, lazily loaded)
+    const app = read("src/App.tsx") + read("src/serverRoutes.tsx");
     const paths = [...app.matchAll(/<Route\s+path="([^"]+)"/g)].map((m) => m[1]!);
     expect(paths.length).toBeGreaterThan(40);
     const known = new Set(PAGE_HELP.map(([p]) => p));
