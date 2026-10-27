@@ -130,6 +130,15 @@ jobs:
           for f in "$RUNNER_TEMP"/pg*.log; do echo "== $f"; tail -100 "$f"; done || true
           ls -la "$RUNNER_TEMP/e2e-logs" 2>/dev/null || true
 
+      - name: Keep the machines' logs
+        # the failed run prints only each machine's tail: its whole log is what says why
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: replica-machine-logs
+          path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: ignore
+
   updates:
     # Epic 35 phase B and D (specs/epics/35-cluster-full-nodes-and-updates/install-kinds.md):
     # the home's database safety around an update (a verified dump, the rehearsal on a
