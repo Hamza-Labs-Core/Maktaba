@@ -2,9 +2,11 @@
 // switch (the kill switch: off stops collection at once and drops what waits)
 // and "Delete what this app sent", which asks Maktaba to delete it (through the
 // home). Turning the switch off does not delete; deleting is its own, explicit
-// step. For an admin, the server's switch beside it (ServerUsageData): the two
-// are separate answers, and neither gives the other.
-import { useState } from "react";
+// step. For an admin, Settings puts the server's switch beside it (`server`,
+// Settings/ServerUsageData): the two are separate answers, and neither gives the
+// other. It lives here, not under pages/Settings, because the player's Preferences
+// shows it too (Epic 42.5: no server page code in a player bundle).
+import { useState, type ReactNode } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
@@ -18,9 +20,8 @@ import {
   telemetryEnabled,
 } from "../../lib/telemetry/client";
 import { TelemetryScope } from "../../components/TelemetryPrompt";
-import { ServerUsageData } from "./ServerUsageData";
 
-export function TelemetrySettings({ isAdmin = false }: { isAdmin?: boolean }) {
+export function TelemetrySettings({ server }: { server?: ReactNode }) {
   const { t } = useI18n();
   const toast = useToast();
   const [on, setOn] = useState(telemetryEnabled);
@@ -66,7 +67,7 @@ export function TelemetrySettings({ isAdmin = false }: { isAdmin?: boolean }) {
       >
         {t("telemetry.settings.forget")}
       </Button>
-      {isAdmin && <ServerUsageData />}
+      {server}
     </section>
   );
 }
