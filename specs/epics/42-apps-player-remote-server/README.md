@@ -309,6 +309,21 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    (Started: `apps/android`, the Player and the Remote for each form factor on a shared `core`.)
 4. **42.4 Desktop Player on Windows and Linux:** Compose for Desktop, release legs,
    `latest-player.json`.
+   (Built, 2026-10-27: `apps/desktop-player`, on `apps/android/client`, the plain-Kotlin part
+   of the Android core moved into a JVM module that the Android apps, Android TV and the
+   desktop player all build on (the API client, sign-in by password and code, token sealing,
+   the picker's rules, approving a sign-in, the stream's authorization). The picker (JmDNS,
+   saved homes, address or `maktaba://connect` link, confirmed first), sign-in, libraries and
+   search, watching (JavaFX through a loopback proxy that adds the user's token to the home's
+   `/stream/` only; the streaming profile `desktop-player`: H.264/AAC, MP4 or HLS, 1080p),
+   Approve a sign-in, big screen (Epic 46's couch mode, natively: F11, 1.75× larger, arrow-key
+   focus, "Start in big screen"), English and Arabic right to left. Tokens: DPAPI on Windows, a
+   user-only key file on Linux. Releases: `desktop-release.yml`'s `player` legs (.msi; .deb and
+   .rpm for x86_64 and aarch64), signed with the apps' updater key, their own feed
+   `latest-player.json` (`updater-feed --family player`: keys `windows-x86_64-player`,
+   `linux-<arch>-player[-deb|-rpm]`; each family refuses the other's bundles), a release is
+   the latest only when both feeds are complete; the player checks the minisign signature and
+   version before installing. CI: `_desktop-player.yml`. Help: `/help/desktop-player`.)
 5. **42.5 Web editions:** `VITE_MAKTABA_EDITION`, lazy server routes, "Manage" in `full`.
    (Built, 2026-10-27: `web/src/lib/edition.ts`; `pnpm build` is `full`, unchanged for the
    server; `pnpm build:player` and `build:remote` (`vite build --mode player|remote`, from

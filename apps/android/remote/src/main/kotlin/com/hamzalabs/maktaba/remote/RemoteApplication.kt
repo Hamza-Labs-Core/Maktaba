@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.remote
 
 import android.app.Application
 import com.hamzalabs.maktaba.core.api.ClientHeader
+import com.hamzalabs.maktaba.core.api.init
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.PreferencesStore
 import com.hamzalabs.maktaba.core.session.keystoreTokens

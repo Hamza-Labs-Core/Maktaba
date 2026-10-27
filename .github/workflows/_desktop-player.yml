@@ -1,0 +1,104 @@
+# Reusable gate for the desktop Player for Windows and Linux (Epic 42.4,
+# `apps/desktop-player`, Compose for Desktop on the apps' portable client): its tests (the
+# stream proxy's rules, the update signature check against the release's, the stores, both
+# languages) and an installer built on each system, as desktop-release.yml builds them.
+
+name: Desktop Player
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-player:
+    name: Desktop Player (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux
+            os: ubuntu-22.04
+            tasks: packageDeb packageRpm
+          - label: windows
+            os: windows-latest
+            tasks: packageMsi
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/desktop-player
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # The wrapper's jar runs the build: it must be Gradle's own for the version it names.
+      - name: Gradle wrapper is Gradle's
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's#.*/gradle-\(.*\)-bin.zip#\1#p' gradle/wrapper/gradle-wrapper.properties)
+          want=$(curl -fsSL "https://services.gradle.org/distributions/gradle-${version}-wrapper.jar.sha256")
+          got=$(sha256sum gradle/wrapper/gradle-wrapper.jar | cut -d' ' -f1)
+          [ "${want}" = "${got}" ] || { echo "::error::the Gradle wrapper jar is not Gradle's ${version}"; exit 1; }
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Packaging tools (rpm)
+        if: runner.os == 'Linux'
+        working-directory: .
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm fakeroot
+
+      - name: Gradle caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: desktop-player-${{ runner.os }}-${{ hashFiles('apps/android/gradle/libs.versions.toml', 'apps/desktop-player/gradle/*.toml', 'apps/desktop-player/gradle/wrapper/gradle-wrapper.properties', 'apps/desktop-player/**/*.gradle.kts', 'apps/android/client/build.gradle.kts') }}
+          restore-keys: desktop-player-${{ runner.os }}-
+
+      - name: Tests, installers
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace :client:test test ${{ matrix.tasks }} -Pmaktaba.version=0.0.1
+
+      - name: Check the installers
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          out=build/compose/binaries/main
+          ls -lR "$out"
+          case "$RUNNER_OS" in
+            Linux)
+              deb=("$out"/deb/*.deb); rpm=("$out"/rpm/*.rpm)
+              [ "${#deb[@]}" = 1 ] && [ "${#rpm[@]}" = 1 ] || { echo "::error::want one .deb and one .rpm"; exit 1; }
+              [ "$(dpkg-deb -f "${deb[0]}" Package)" = maktaba-player ]
+              # the launcher, the app's jars (with JavaFX's Linux natives) and its own runtime;
+              # listed once into a variable (grep -q on a pipe ends it early: tar's write fails)
+              files=$(dpkg-deb -c "${deb[0]}")
+              grep -q '/bin/maktaba-player$' <<<"${files}"
+              grep -q 'javafx-media-.*-linux\.jar$' <<<"${files}"
+              grep -q '/lib/runtime/' <<<"${files}"
+              info=$(rpm -qip "${rpm[0]}")
+              grep -q '^Name *: maktaba-player' <<<"${info}"
+              ;;
+            Windows)
+              msi=("$out"/msi/*.msi)
+              [ "${#msi[@]}" = 1 ] || { echo "::error::want one .msi"; exit 1; }
+              ;;
+          esac
+
+      - name: Reports
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: desktop-player-reports-${{ matrix.label }}
+          path: |
+            apps/desktop-player/build/reports/
+            apps/android/client/build/reports/

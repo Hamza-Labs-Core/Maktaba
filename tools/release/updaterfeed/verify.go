@@ -26,8 +26,14 @@ var Required = []string{"darwin-aarch64", "windows-x86_64", "linux-x86_64", "lin
 // feed, since a home or a machine on them updates from it.
 var ServerApps = []string{"darwin-aarch64", "windows-x86_64", "linux-x86_64", "linux-aarch64"}
 
+// PlayerRequired are the bare keys a release's latest-player.json must have (one per player
+// leg of desktop-release.yml) before it can be the latest: the players read the newest
+// release's feed, so a release without a player platform would strand those players. (The
+// Mac's player is the Apple app, apps/apple: not in this feed.)
+var PlayerRequired = []string{"windows-x86_64-player", "linux-x86_64-player", "linux-aarch64-player"}
+
 // Wanted is the platform keys a --require names: "desktop" (Required), "server-apps"
-// (ServerApps), or a comma list.
+// (ServerApps), "player" (PlayerRequired), or a comma list.
 func Wanted(require string) []string {
 	switch r := strings.TrimSpace(require); r {
 	case "":
@@ -36,6 +42,8 @@ func Wanted(require string) []string {
 		return Required
 	case "server-apps":
 		return ServerApps
+	case "player":
+		return PlayerRequired
 	default:
 		var want []string
 		for _, k := range strings.Split(r, ",") {

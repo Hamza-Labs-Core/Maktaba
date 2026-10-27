@@ -9,6 +9,11 @@
 // installer's key, and the bundle a platform installs by default also the bare
 // one. The bundles are recognised by the names tauri gives them; a signed file
 // no rule knows fails the feed rather than leaving a platform out unnoticed.
+//
+// The players (Epic 42.4: the desktop Player for Windows and Linux) have a feed of their
+// own, latest-player.json (--family player), with their own file names and keys
+// ({os}-{arch}-player, then -msi, -deb, -rpm), so a player never takes a server bundle and
+// a server app never takes a player's. Each family refuses the other's files.
 package updaterfeed
 
 import (
@@ -62,9 +67,42 @@ var rules = []rule{
 	{regexp.MustCompile(`\.aarch64\.rpm$`), []string{"linux-aarch64-rpm"}},
 }
 
-// keysFor is the updater keys of a bundle, or nil when no rule knows its name.
-func keysFor(name string) []string {
-	for _, r := range rules {
+// The players' bundles as desktop-release.yml names them (the player legs rename Compose's
+// installers): Maktaba-Player_<v>_x64.msi, maktaba-player_<v>_<amd64|arm64>.deb,
+// maktaba-player-<v>.<x86_64|aarch64>.rpm.
+var playerRules = []rule{
+	{regexp.MustCompile(`^Maktaba-Player_.+_x64\.msi$`), []string{"windows-x86_64-player-msi", "windows-x86_64-player"}},
+	{regexp.MustCompile(`^maktaba-player_.+_amd64\.deb$`), []string{"linux-x86_64-player-deb", "linux-x86_64-player"}},
+	{regexp.MustCompile(`^maktaba-player_.+_arm64\.deb$`), []string{"linux-aarch64-player-deb", "linux-aarch64-player"}},
+	{regexp.MustCompile(`^maktaba-player-.+\.x86_64\.rpm$`), []string{"linux-x86_64-player-rpm"}},
+	{regexp.MustCompile(`^maktaba-player-.+\.aarch64\.rpm$`), []string{"linux-aarch64-player-rpm"}},
+}
+
+// isPlayer is a player's bundle, by its name.
+func isPlayer(name string) bool {
+	return strings.HasPrefix(strings.ToLower(name), "maktaba-player")
+}
+
+// Family is which apps a feed is for: the server apps (latest.json) or the players
+// (latest-player.json).
+type Family string
+
+const (
+	ServerFamily Family = "server"
+	PlayerFamily Family = "player"
+)
+
+// keysFor is the updater keys of a bundle in family, or nil when no rule knows its name (a
+// player's bundle in the server feed, or a server bundle in the players').
+func keysFor(family Family, name string) []string {
+	list := rules
+	if family == PlayerFamily {
+		list = playerRules
+	}
+	if isPlayer(name) != (family == PlayerFamily) {
+		return nil
+	}
+	for _, r := range list {
 		if r.name.MatchString(name) {
 			return r.keys
 		}
@@ -72,9 +110,14 @@ func keysFor(name string) []string {
 	return nil
 }
 
-// Build is the feed of the signed bundles in dir (each <bundle> beside its
+// Build is the server apps' feed of the signed bundles in dir (each <bundle> beside its
 // <bundle>.sig), as attached to the release tag of repo ("owner/name").
 func Build(dir, repo, tag, notes string, now time.Time) (Feed, error) {
+	return BuildFamily(ServerFamily, dir, repo, tag, notes, now)
+}
+
+// BuildFamily is family's feed of the signed bundles in dir.
+func BuildFamily(family Family, dir, repo, tag, notes string, now time.Time) (Feed, error) {
 	f := Feed{Version: strings.TrimPrefix(tag, "v"), Notes: notes, PubDate: now.UTC().Format(time.RFC3339),
 		Platforms: map[string]Platform{}}
 	if f.Version == "" || strings.ContainsAny(tag, "/ ") {
@@ -106,9 +149,9 @@ func Build(dir, repo, tag, notes string, now time.Time) (Feed, error) {
 		if !names[bundle] {
 			return f, fmt.Errorf("%s has no %s beside it", sig, bundle)
 		}
-		keys := keysFor(bundle)
+		keys := keysFor(family, bundle)
 		if keys == nil {
-			return f, fmt.Errorf("a signed bundle no updater key names: %s", bundle)
+			return f, fmt.Errorf("a signed bundle no updater key names in the %s feed: %s", family, bundle)
 		}
 		b, err := os.ReadFile(filepath.Join(dir, sig))
 		if err != nil {
@@ -152,7 +195,8 @@ func Main(args []string, stdout, stderr io.Writer, now time.Time) int {
 	notes := fs.String("notes", "", "the notes the updater shows")
 	out := fs.String("out", "latest.json", "where to write the feed")
 	pubkey := fs.String("pubkey", "", "the apps' updater public key (TAURI_UPDATER_PUBKEY): every signature is checked against it")
-	require := fs.String("require", "", `platform keys the feed must have (comma list, "desktop" or "server-apps")`)
+	require := fs.String("require", "", `platform keys the feed must have (comma list, "desktop", "server-apps" or "player")`)
+	family := fs.String("family", "server", `whose feed: "server" (latest.json) or "player" (latest-player.json)`)
 	check := fs.String("check", "", "check this feed (a release's latest.json) has the --require platforms; write nothing")
 	verify := fs.Bool("verify", false, "check every signed bundle in --dir against --pubkey for --tag; write nothing")
 	if err := fs.Parse(args); err != nil {
@@ -164,11 +208,12 @@ func Main(args []string, stdout, stderr io.Writer, now time.Time) int {
 	if *verify {
 		return verifyBundles(*dir, *pubkey, *tag, stdout, stderr)
 	}
-	if *dir == "" || *repo == "" || *tag == "" || fs.NArg() != 0 {
-		_, _ = fmt.Fprintf(stderr, "updater-feed: %v: --dir DIR --repo OWNER/NAME --tag vX.Y.Z [--notes TEXT] [--out FILE]\n", errUsage)
+	if *dir == "" || *repo == "" || *tag == "" || fs.NArg() != 0 ||
+		(Family(*family) != ServerFamily && Family(*family) != PlayerFamily) {
+		_, _ = fmt.Fprintf(stderr, "updater-feed: %v: --dir DIR --repo OWNER/NAME --tag vX.Y.Z [--family server|player] [--notes TEXT] [--out FILE]\n", errUsage)
 		return 2
 	}
-	f, err := Build(*dir, *repo, *tag, *notes, now)
+	f, err := BuildFamily(Family(*family), *dir, *repo, *tag, *notes, now)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "updater-feed:", err)
 		return 1

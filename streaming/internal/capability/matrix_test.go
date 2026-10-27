@@ -109,6 +109,12 @@ func TestDecide_TableDriven(t *testing.T) {
 		// safari does not list mkv even though codecs match — chrome would remux it; safari falls to transcode by codec list shape.
 		{"androidtv direct h265 mkv", "androidtv",
 			Source{Container: "mkv", VideoCodec: "h265", AudioCodec: "ac3", Height: 2160, BitrateKbps: 30000}, ModeDirect},
+		{"desktop player direct mp4 1080p", "desktop-player",
+			Source{Container: "mov,mp4,m4a,3gp,3g2,mj2", VideoCodec: "h264", AudioCodec: "aac", Height: 1080, BitrateKbps: 8000}, ModeDirect},
+		{"desktop player transcodes h265", "desktop-player",
+			Source{Container: "mp4", VideoCodec: "h265", AudioCodec: "aac", Height: 1080, BitrateKbps: 8000}, ModeTranscode},
+		{"desktop player transcodes 4k", "desktop-player",
+			Source{Container: "mp4", VideoCodec: "h264", AudioCodec: "aac", Height: 2160, BitrateKbps: 8000}, ModeTranscode},
 		{"generic transcode 4k", "generic",
 			Source{Container: "mp4", VideoCodec: "h264", AudioCodec: "aac", Height: 2160, BitrateKbps: 8000}, ModeTranscode},
 	}

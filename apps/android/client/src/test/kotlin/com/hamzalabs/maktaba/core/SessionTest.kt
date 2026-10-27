@@ -3,11 +3,8 @@ package com.hamzalabs.maktaba.core
 import com.hamzalabs.maktaba.core.api.AuthTokens
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.Home
-import com.hamzalabs.maktaba.core.session.KeyValueStore
 import com.hamzalabs.maktaba.core.session.SealedTokenStore
 import com.hamzalabs.maktaba.core.session.SecretBox
-import com.hamzalabs.maktaba.core.ui.ThemeMode
-import com.hamzalabs.maktaba.core.ui.ThemeStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
@@ -15,14 +12,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-
-class MapStore : KeyValueStore {
-    val map = mutableMapOf<String, String>()
-    override fun get(key: String) = map[key]
-    override fun put(key: String, value: String?) {
-        if (value == null) map.remove(key) else map[key] = value
-    }
-}
 
 /** Reverses the bytes and adds a mark: enough to see that only sealed bytes are stored. */
 class FakeBox : SecretBox {
@@ -90,16 +79,5 @@ class SessionTest {
         assertTrue(again.homes.value.isEmpty())
         assertNull("forgetting a home drops its tokens", tokens.getValue("http://192.168.50.177:8088").access)
         assertEquals(AppSession.Phase.ChoosingHome, again.phase.value)
-    }
-
-    @Test
-    fun keepsTheThemeAsTheWebNamesIt() {
-        val store = MapStore()
-        assertEquals(ThemeMode.System, ThemeStore(store).mode.value)
-        ThemeStore(store).set(ThemeMode.Dark)
-        assertEquals("dark", store.map[ThemeMode.STORAGE_KEY])
-        assertEquals(ThemeMode.Dark, ThemeStore(store).mode.value)
-        assertEquals(ThemeMode.Light, ThemeMode.parse("light"))
-        assertEquals(ThemeMode.System, ThemeMode.parse("sepia"))
     }
 }
