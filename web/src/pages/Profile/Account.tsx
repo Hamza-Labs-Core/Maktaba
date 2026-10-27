@@ -17,6 +17,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { TitleRow } from "../../help/HelpLink";
+import { CloudLinkCard } from "./CloudLink";
 
 interface Profile {
   id: string;
@@ -77,6 +78,7 @@ export function Account() {
         <div className="mkt-account__grid">
           <ProfileForm profile={profile} onSaved={setProfile} />
           <PasswordForm />
+          <CloudLinkCard />
         </div>
       )}
     </section>

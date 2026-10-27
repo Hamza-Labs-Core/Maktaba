@@ -4,6 +4,8 @@
 //	GET  /v1/homes                 — the homes this account is linked to or owns
 //	POST /v1/homes/{id}/assertion  — a one-use home assertion for one of them
 //	GET  /v1/homes/assertion-key   — the cloud's assertion public key (public)
+//	GET  /v1/homes/{id}/link       — sends a browser linking on a home to the cloud web's
+//	                                 confirm page (public: a redirect to this cloud only)
 //
 // An assertion names the cloud account and the home, for one use, a
 // minute; it never says what the account may do there. The home
@@ -16,6 +18,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +41,9 @@ type Deps struct {
 	// RelayHost is the relay's public apex: a home's relay address is
 	// https://<slug>.<RelayHost>.
 	RelayHost string
+	// WebURL is the cloud web app's origin, where a person confirms a link
+	// (its /link-home page).
+	WebURL string
 }
 
 // MountUser registers the routes behind the user auth group.
@@ -48,6 +55,59 @@ func MountUser(r chi.Router, d *Deps) {
 // MountPublic registers the public key route (no auth).
 func MountPublic(r chi.Router, d *Deps) {
 	r.Get("/v1/homes/assertion-key", d.Key)
+	r.Get("/v1/homes/{id}/link", d.Link)
+}
+
+var (
+	serverIDShape = regexp.MustCompile(`^[0-9a-fA-F-]{8,64}$`)
+	nonceShape    = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
+)
+
+// linkReturn is the home page a confirmed link goes back to: an http(s) address with
+// a host and no credentials in it. (The assertion it carries is bound to the nonce of
+// the home user who started, so it links nothing for anyone else.)
+func linkReturn(raw string) (string, bool) {
+	if raw == "" || len(raw) > 2048 {
+		return "", false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return "", false
+	}
+	u.Fragment = ""
+	return u.String(), true
+}
+
+// Link starts linking from a home (its Account page): the home made a nonce for its
+// signed-in user (POST /api/me/cloud-link/start) and sends the browser here with it.
+// This answers a redirect to the cloud web's /link-home page, which signs the person
+// in to the cloud, asks them to confirm, then asks for the link assertion and hands it
+// back to the home. The redirect goes to this cloud's own web app only, so it is never
+// an open redirect; nothing is signed here.
+func (d *Deps) Link(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	q := r.URL.Query()
+	nonce := q.Get("nonce")
+	ret, ok := linkReturn(q.Get("return"))
+	switch {
+	case !serverIDShape.MatchString(id):
+		writeErr(w, http.StatusBadRequest, "bad_server", "not a server id")
+		return
+	case !nonceShape.MatchString(nonce):
+		writeErr(w, http.StatusBadRequest, "bad_nonce", "not a link nonce")
+		return
+	case !ok:
+		writeErr(w, http.StatusBadRequest, "bad_return", "the return address must be an http(s) address")
+		return
+	case d.WebURL == "":
+		writeErr(w, http.StatusServiceUnavailable, "link_unavailable", "this cloud has no web app to confirm a link")
+		return
+	}
+	target := strings.TrimRight(d.WebURL, "/") + "/link-home?" +
+		url.Values{"server": {id}, "nonce": {nonce}, "return": {ret}}.Encode()
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 type homeView struct {

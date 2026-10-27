@@ -53,6 +53,23 @@ An app can sign in without your password: it shows a code of eight letters and d
 
 A code can be approved once, within 10 minutes.
 
+### Linked accounts: Maktaba Cloud {#linked-accounts}
+
+When this home is connected to Maktaba Cloud, you can link your Maktaba Cloud account to your account here. Then the apps, and Maktaba Cloud's website, can sign you in to this home through the cloud, from anywhere, without your password.
+
+1. On [Account](/account), under **Linked accounts**, press **Link a Maktaba Cloud account**.
+2. Maktaba Cloud opens. Sign in to it if it asks, check the home's address, and press **Link**. (**Cancel** comes back without linking.)
+3. You come back here and see **Your Maktaba Cloud account is linked.** The card shows the cloud account and what it may do here.
+
+What a linked account may do:
+
+- **Watch**: the default. Through the cloud you are this account, with its libraries, and managing the home is refused, even for an admin. A stolen cloud account can watch, not manage.
+- **Watch and manage**: only an admin can choose it, for their own link, from a sign-in on the home itself: press **Allow managing through the cloud**. **Watch only through the cloud** goes back.
+
+The link gives the cloud account no rights by itself: the home always checks your own role. One cloud account can be linked to one person on each home. **Unlink** ends every sign-in through the cloud at once; signing in on the home itself is not affected. A home's admin can also unlink anyone (see [Users](/help/users#revoke-access)).
+
+When you signed in through Maktaba Cloud, you cannot link, change the link or approve a device from that sign-in; sign in on the home itself.
+
 ### API tokens {#api-tokens}
 
 A token lets a script or the command line use Maktaba as you, without your password.
@@ -108,6 +125,9 @@ The same tab shows your recent **Watch history**, with **Remove** on each row, a
 - **This code was already used.**: someone approved this code already. Ask the device for a new code.
 - **This code is not waiting for a sign-in**: the code expired, was already used, or the home restarted since the device asked. Ask the device for a new code.
 - **Check the code**: what you typed is not eight letters and digits.
+- **That Maktaba Cloud account is already linked to another user of this home.**: unlink it from that account first, or link another cloud account.
+- **The link step ran out or was already used. Start again.**: press **Link a Maktaba Cloud account** again.
+- **This home is not connected to Maktaba Cloud, so it has no linked accounts.**: an admin connects it to Maktaba Cloud first (see [Devices and cloud](/help/cloud)).
 - **Copied.** / **Couldn't copy.**: on Connect an app, the copy worked, or it did not; select the text and copy it by hand.
 - **This home has no address another device can use yet.**: the home does not know its address on the network. Type the address you use to open Maktaba in this browser into the app instead.
 

@@ -23,7 +23,7 @@
 // browser (persisted to localStorage) and the management actions work
 // against any user by ID. The user shape is {id, username, is_admin} —
 // no email/role-string/created-date/lock-status is returned by the API.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Modal } from "@ds/components/Modal/Modal";
@@ -37,6 +37,7 @@ import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
 import { RegistrationToggle } from "./RegistrationToggle";
 import { TitleRow } from "../../help/HelpLink";
+import type { CloudLinkInfo } from "../Profile/CloudLink";
 
 interface AdminUser {
   id: string;
@@ -442,7 +443,70 @@ function RevokeModal({ user, onClose }: { user: AdminUser; onClose: () => void }
           {t("admin.users.sessions.revokeFamily")}
         </Button>
       </div>
+      <UserCloudLink user={user} />
     </Modal>
+  );
+}
+
+// UserCloudLink is the user's Maktaba Cloud link (Epic 42.7: GET / DELETE
+// /api/users/{id}/cloud-link, admins only on the server): who it is linked to and its
+// scope, and Unlink, which ends that user's sign-ins through the cloud at once. Not shown
+// on a home without linked accounts.
+function UserCloudLink({ user }: { user: AdminUser }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [link, setLink] = useState<CloudLinkInfo | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const path = `/api/users/${encodeURIComponent(user.id)}/cloud-link`;
+
+  useEffect(() => {
+    let live = true;
+    api
+      .get<{ link: CloudLinkInfo | null }>(path)
+      .then((r) => live && setLink(r?.link ?? null))
+      .catch(() => live && setLink(undefined));
+    return () => {
+      live = false;
+    };
+  }, [path]);
+
+  if (link === undefined) return null;
+  return (
+    <section className="mkt-admin-cloud-link" aria-labelledby="mkt-admin-cloud-link-title">
+      <hr />
+      <h3 id="mkt-admin-cloud-link-title">{t("cloudLink.title")}</h3>
+      {link === null ? (
+        <p className="mkt-muted">{t("admin.users.cloud.none")}</p>
+      ) : (
+        <>
+          <p>
+            {t("cloudLink.linkedTo")} <bdi>{link.cloud_label || link.cloud_user_id}</bdi>{" "}
+            <Badge tone={link.scope === "manage" ? "warn" : "neutral"}>
+              {t(`cloudLink.scope.${link.scope}`)}
+            </Badge>
+          </p>
+          <Button
+            variant="destructive"
+            size="sm"
+            loading={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await api.delete(path);
+                setLink(null);
+                toast.show({ tone: "success", message: t("cloudLink.unlinked") });
+              } catch (e) {
+                toast.show({ tone: "error", message: errMessage(e, t) });
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {t("cloudLink.unlink")}
+          </Button>
+        </>
+      )}
+    </section>
   );
 }
 

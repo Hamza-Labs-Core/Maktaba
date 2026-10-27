@@ -51,6 +51,8 @@ After 5 wrong passwords in a row, an account is locked for 15 minutes. Click **U
 
 **Revoke access** ends one sign-in by its **Session ID** (**Revoke session**) or one app's sign-in by its **Refresh-token family ID** (**Revoke token family**). To sign a person out everywhere, it is simpler to use **Reset password**.
 
+The same dialog shows the person's **Linked accounts**: the Maktaba Cloud account linked to them and whether it may only watch or also manage. **Unlink** ends their sign-ins through Maktaba Cloud at once (see [Linked accounts](/help/account#linked-accounts)).
+
 ### Delete a user {#delete-a-user}
 
 Click **Delete**, then **Delete** again in the box. This cannot be undone.

@@ -209,6 +209,12 @@ pins (`cloudlink.identity.json` beside the sealed credentials).
   Ed25519 assertion naming the cloud account and the home (`homeassert`).
   `signin` only for a home that linked the account; `link` for any home,
   bound to the nonce the home user's own sign-in started.
+- `GET /v1/homes/{id}/link?nonce=&return=` (public): where a home's Account
+  page sends the browser to link. It answers a redirect to this cloud's own
+  web app (`server.web_url`, its `/link-home` page) and nowhere else; that
+  page signs the person in, asks them to confirm, asks for the `link`
+  assertion and goes back to `return` with it in the fragment
+  (`#cloud-link=…`), which no server sees.
 - The home verifies it with its pinned key, finds the home user it
   linked, and issues its own tokens with that user's role capped by the
   link's scope (`play` by default; `manage` only set by an admin, on the

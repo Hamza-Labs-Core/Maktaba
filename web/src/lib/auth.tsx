@@ -40,6 +40,11 @@ export interface User {
   must_change_password?: boolean;
   /** "node": signed in on this machine only, while its home was away. */
   session?: "home" | "node";
+  /**
+   * Signed in through Maktaba Cloud (Epic 42.7), with the link's scope: "play" watches
+   * only. Absent for a sign-in on the home. The home enforces it on every route.
+   */
+  cloud_scope?: "play" | "manage";
 }
 
 export interface AuthState {
@@ -70,9 +75,15 @@ export interface AuthState {
 export const AuthContext = createContext<AuthState | undefined>(undefined);
 
 /** The user from a login / register answer; an answer without one is an error. */
-function signedIn(res: { user?: User; session?: User["session"] } | null | undefined): User {
+function signedIn(
+  res:
+    | { user?: User; session?: User["session"]; cloud_scope?: User["cloud_scope"] }
+    | null
+    | undefined
+): User {
   if (!res?.user) throw new Error("the server's answer has no user");
-  return res.session ? { ...res.user, session: res.session } : res.user;
+  const u = res.session ? { ...res.user, session: res.session } : res.user;
+  return res.cloud_scope ? { ...u, cloud_scope: res.cloud_scope } : u;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -84,7 +95,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Probe the server for an existing session. Endpoint is best-effort:
     // a 401 means "no session", not an error.
     try {
-      const me = await api.get<{ user?: User; session?: User["session"] }>("/api/auth/me");
+      const me = await api.get<{
+        user?: User;
+        session?: User["session"];
+        cloud_scope?: User["cloud_scope"];
+      }>("/api/auth/me");
       if (live()) setUser(me?.user ? signedIn(me) : null);
     } catch (e) {
       if (!(e instanceof ApiError) || e.status !== 401) {

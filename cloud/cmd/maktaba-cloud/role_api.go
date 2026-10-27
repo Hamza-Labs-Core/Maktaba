@@ -122,7 +122,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	}
 	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions, Licenses: licenses,
 		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
-	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost}
+	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost,
+		WebURL: cfg.Server.WebURL}
 
 	// Push dispatcher — both drivers may be nil in non-prod; the
 	// dispatcher will log no-driver and skip those rows safely.

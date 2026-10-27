@@ -65,6 +65,8 @@ function row(name: string) {
 describe("AdminUsers (test-cases/admin-users.md)", () => {
   beforeEach(() => {
     for (const f of [get, post, put, patch, del]) f.mockReset();
+    // the page's only read: a user's cloud link (42.7); by default a home without linked accounts
+    get.mockRejectedValue(problem(404, "not linked to Maktaba Cloud"));
     badgeCrash.on = false;
   });
   afterEach(() => vi.restoreAllMocks());
@@ -419,6 +421,44 @@ describe("AdminUsers (test-cases/admin-users.md)", () => {
     expect(del).toHaveBeenLastCalledWith("/api/users/u2/refresh-tokens/f%2F1");
     expect(await screen.findByText("no such family")).toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Revoke sessions & tokens" })).toBeInTheDocument();
+  });
+
+  it("USR-42.7: shows the user's Maktaba Cloud link and unlinks it", async () => {
+    setRoster([bob]);
+    get.mockImplementation((path: string) =>
+      path === "/api/users/u2/cloud-link"
+        ? Promise.resolve({
+            link: {
+              user_id: "u2",
+              cloud_user_id: "c-9",
+              cloud_label: "bob@cloud.example",
+              scope: "play",
+            },
+          })
+        : Promise.reject(new Error(`unexpected GET ${path}`))
+    );
+    del.mockResolvedValueOnce(undefined);
+    open();
+    const user = userEvent.setup();
+    await user.click(within(row("bob")).getByRole("button", { name: "Revoke access" }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke sessions & tokens" });
+    expect(await within(dialog).findByText("bob@cloud.example")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    expect(del).toHaveBeenLastCalledWith("/api/users/u2/cloud-link");
+    expect(
+      await within(dialog).findByText("Not linked to a Maktaba Cloud account.")
+    ).toBeInTheDocument();
+  });
+
+  it("USR-42.7: no link section on a home without linked accounts", async () => {
+    setRoster([bob]);
+    get.mockRejectedValue(problem(404, "not linked to Maktaba Cloud"));
+    open();
+    const user = userEvent.setup();
+    await user.click(within(row("bob")).getByRole("button", { name: "Revoke access" }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke sessions & tokens" });
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/users/u2/cloud-link"));
+    expect(within(dialog).queryByText("Linked accounts")).not.toBeInTheDocument();
   });
 
   // Wanted: a 401 sends you to /login; today only a toast "unauthorized"
