@@ -5313,5 +5313,11 @@
   "video.series.next": "التالي",
   "player.upNext.in": "التالي خلال {n} ث",
   "player.upNext.untitled": "المقطع التالي",
-  "player.upNext.playNow": "شغّل الآن"
+  "player.upNext.playNow": "شغّل الآن",
+  "nav.status": "الحالة",
+  "remote.title": "حالة المنزل",
+  "remote.attention": "ما يحتاج إلى انتباه",
+  "remote.notAdmin.title": "هذا التطبيق لمسؤولي المنزل",
+  "remote.notAdmin.desc": "يدير Maktaba Remote المنزل: المعالجة والإعدادات والمستخدمين والأجهزة. للمشاهدة، استخدم المشغّل.",
+  "remote.notAdmin.watch": "شاهد بدلًا من ذلك"
 }

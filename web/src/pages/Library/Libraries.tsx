@@ -17,6 +17,7 @@ import { useI18n } from "../../lib/i18n";
 import { fetchLibrarySummary, type LibraryRef, type LibrarySummary } from "../../lib/browse";
 import { MAX_PINS, movePin, togglePin, usePins } from "../../lib/pins";
 import { TitleRow } from "../../help/HelpLink";
+import { SERVER_PAGES } from "../../lib/edition";
 
 /** The 2x2 poster mosaic of a library card; a library with fewer than four
  *  posters shows its newest one whole instead of blank tiles. */
@@ -208,7 +209,7 @@ export function Libraries() {
           title={t("libraries.empty.title")}
           description={user?.is_admin ? t("libraries.empty.descAdmin") : t("libraries.empty.desc")}
           action={
-            user?.is_admin ? (
+            SERVER_PAGES && user?.is_admin ? (
               <Link className="mkt-btn mkt-btn--primary" to="/admin/libraries">
                 {t("home.empty.manage")}
               </Link>
