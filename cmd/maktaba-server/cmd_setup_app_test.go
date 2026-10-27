@@ -102,7 +102,7 @@ var checkOK = map[string]any{"ok": true, "data_dir": "/home/me/.local/share/makt
 // "=>", then a good one), models (a token), Plex linked.
 func interactive(t *testing.T) *script {
 	return &script{t: t,
-		lines:   []string{"admin", "/media/x", "", "/media/y", "/mnt/media", "/mnt/media => /srv/media"},
+		lines:   []string{"", "admin", "/media/x", "", "/media/y", "/mnt/media", "/mnt/media => /srv/media"},
 		secrets: []string{"pw-one", "pw-two", "s3cret!", "s3cret!", "hf_token"},
 		yes:     []bool{true}}
 }
@@ -111,6 +111,12 @@ func interactiveSteps() *fakeSteps {
 	return &fakeSteps{answers: map[string][]any{
 		"status": {map[string]any{"configured": false}},
 		"check":  {checkOK},
+		"storage": {map[string]any{"current": "/home/me/.local/share/maktaba", "need_bytes": 20 << 30,
+			"comfortable_bytes": 100 << 30, "suggested": "/mnt/big/Maktaba", "disks": []map[string]any{
+				{"mount": "/", "name": "root", "free_bytes": 30 << 30, "total_bytes": 100 << 30, "suggested_dir": "/home/me/.local/share/maktaba"},
+				{"mount": "/mnt/big", "name": "big", "free_bytes": 60 << 30, "total_bytes": 200 << 30, "suggested_dir": "/mnt/big/Maktaba"}}},
+			map[string]any{"data_dir": "/mnt/big/Maktaba", "warnings": []map[string]any{{"code": "storage_small",
+				"params": map[string]any{"free_bytes": 60 << 30, "comfortable_bytes": 100 << 30}}}}},
 		"libraries": {&stepFailure{Code: "root_missing", Message: "/media/x is not a folder", Field: "roots",
 			Params: map[string]any{"path": "/media/x"}}, map[string]any{}},
 		"plex":   {map[string]any{"pin_id": 7, "code": "ABCD", "link_url": "https://plex.tv/link"}, map[string]any{"linked": false}, map[string]any{"linked": true}},
@@ -136,9 +142,19 @@ func TestAppSetupInteractive(t *testing.T) {
 	}
 	// the runtime is in place before anything is built on it; then the
 	// desktop's last screen: venv, the models' download, the language model, finish
-	want := "status check [runtime] admin libraries libraries models plex plex plex venv models llm finish"
+	want := "status check [runtime] storage storage admin libraries libraries models plex plex plex venv models llm finish"
 	if got := strings.Join(f.calls, " "); got != want {
 		t.Errorf("steps %q, want %q", got, want)
+	}
+	// the disks shown, the roomiest one's folder taken as offered, the small disk said
+	if got := f.inputs["storage"]; len(got) != 2 || got[0] != `{"check_only":true}` || got[1] != `{"data_dir":"/mnt/big/Maktaba"}` {
+		t.Errorf("storage inputs %v", got)
+	}
+	for _, w := range []string{" * /mnt/big (big): 60 GB free of 200 GB", "   / (root): 30 GB free of 100 GB",
+		"60 GB free is small for a library database plus backups (100 GB or more is better)."} {
+		if !strings.Contains(out.String(), w) {
+			t.Errorf("output lacks %q:\n%s", w, out.String())
+		}
 	}
 	if got := f.inputs["admin"][0]; got != `{"password":"s3cret!","username":"admin"}` {
 		t.Errorf("admin input %s", got)
@@ -228,12 +244,12 @@ func TestCodedTexts(t *testing.T) {
 // Ctrl-D at a question ends the setup instead of asking forever.
 func TestAppSetupEndOfInputCancels(t *testing.T) {
 	f := interactiveSteps()
-	sc := &script{t: t, lines: []string{"admin"}, eof: true}
+	sc := &script{t: t, lines: []string{"", "admin"}, eof: true}
 	a := &appSetup{run: f.run, ask: sc, out: &bytes.Buffer{}, t: textsFor("en")}
 	if err := a.Run(context.Background()); !errors.Is(err, errCancelled) {
 		t.Fatalf("err = %v", err)
 	}
-	if strings.Join(f.calls, " ") != "status check" {
+	if strings.Join(f.calls, " ") != "status check storage storage" {
 		t.Errorf("steps %v", f.calls)
 	}
 }
@@ -341,8 +357,8 @@ func TestAppSetupInstallsFFmpeg(t *testing.T) {
 	if strings.Join(ran, ";") != "sudo dnf install --allowerasing ffmpeg" {
 		t.Errorf("ran %q", ran)
 	}
-	// on to the admin question (the script ends there)
-	if got := strings.Join(f.calls, " "); got != "status check check [runtime]" {
+	// on to the storage question (the script ends there)
+	if got := strings.Join(f.calls, " "); got != "status check check [runtime] storage" {
 		t.Errorf("steps %s", got)
 	}
 	for _, want := range []string{"/usr/bin/ffmpeg (FFmpeg 6.1.2) lacks what Maktaba uses: encoder libx264.",

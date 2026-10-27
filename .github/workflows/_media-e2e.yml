@@ -55,11 +55,20 @@ jobs:
             api/go.sum
             streaming/go.sum
 
+      - name: Apt package cache
+        # the runner's Ubuntu mirror has stalled installs at 50 KB/s: packages are kept
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: apt-media-e2e-${{ hashFiles('tools/ci/apt-install.sh') }}-${{ github.run_id }}
+          restore-keys: apt-media-e2e-
+
       - name: Install ffmpeg and an Arabic font
         # a stuck mirror once took the job's whole 25 minutes (twice in a day)
         timeout-minutes: 15
         env:
           APT_INSTALL_TIMEOUT: "300" # two tries and the updates fit the step's 15 minutes
+          APT_CACHE_DIR: /home/runner/apt-cache
         run: |
           tools/ci/apt-install.sh ffmpeg fonts-noto-core >/dev/null
           v=$(ffmpeg -hide_banner -version | head -1)

@@ -42,6 +42,7 @@ type Config struct {
 	Postgres      PostgresSection      `toml:"postgres"`
 	LLM           LLMSection           `toml:"llm"`
 	Telemetry     TelemetrySection     `toml:"telemetry"`
+	Backups       BackupsSection       `toml:"backups"`
 
 	// DatabaseURLSet: server.toml sets [database] url (Load), or a caller chose
 	// one to keep (setup); Save writes the url only then. Unset, a Mac with the
@@ -268,9 +269,9 @@ type DatabaseSection struct {
 type MediaSection struct {
 	Roots []string `toml:"roots"`
 	// PathMap maps the paths the database stores to this machine's, in the
-	// workers' --path-map form ("/Volumes/Originals/=/Users/me/nas/", comma
-	// separated): MAKTABA_PATH_MAP for every role, MAKTABA_WORKER_PATH_MAP for
-	// the pipeline.
+	// workers' --path-map form ("/Volumes/Originals/=/Users/me/nas/", pairs
+	// separated by ";"): MAKTABA_PATH_MAP for every role, MAKTABA_WORKER_PATH_MAP
+	// for the pipeline.
 	PathMap string `toml:"path_map"`
 	// FFmpeg and FFprobe are the programs every role runs (a path, or a name on
 	// the PATH); empty: $MAKTABA_FFMPEG / $MAKTABA_FFPROBE, else the desktop app's
@@ -462,10 +463,14 @@ func (c Config) Save() error {
 }
 
 // SaveTo writes cfg to an explicit path, atomically (write-temp +
-// rename) so a crash mid-write can't truncate a live config.
+// rename) so a crash mid-write can't truncate a live config. The keys of
+// the file there that Config does not know (a newer release's) are kept.
 func (c Config) SaveTo(path string) error {
 	body, err := c.fileTOML()
 	if err != nil {
+		return err
+	}
+	if body, err = keepUnknownKeys(path, body); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -523,11 +528,81 @@ func (c Config) fileTOML() ([]byte, error) {
 	if !c.PipelineInstancesSet && c.Pipeline.Instances == 0 {
 		unset("pipeline", "instances")
 	}
+	// [backups] with every key at its default is no table at all
+	if t, ok := file["backups"].(map[string]any); ok && len(t) == 0 {
+		delete(file, "backups")
+	}
 	buf.Reset()
 	if err := toml.NewEncoder(&buf).Encode(file); err != nil {
 		return nil, fmt.Errorf("encode toml: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// keepUnknownKeys adds to body the keys of the file at path that Config does not
+// decode. A missing or unreadable file adds nothing: the save goes ahead.
+func keepUnknownKeys(path string, body []byte) ([]byte, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return body, nil
+	}
+	var probe Config
+	meta, err := toml.Decode(string(raw), &probe)
+	if err != nil || len(meta.Undecoded()) == 0 {
+		return body, nil
+	}
+	var old, out map[string]any
+	if _, err := toml.Decode(string(raw), &old); err != nil {
+		return body, nil
+	}
+	if _, err := toml.Decode(string(body), &out); err != nil {
+		return nil, fmt.Errorf("encode toml: %w", err)
+	}
+	for _, key := range meta.Undecoded() {
+		v, ok := lookupKey(old, key)
+		if !ok {
+			continue
+		}
+		dst := out
+		for _, part := range key[:len(key)-1] {
+			next, ok := dst[part].(map[string]any)
+			if !ok {
+				if _, taken := dst[part]; taken {
+					dst = nil
+					break
+				}
+				next = map[string]any{}
+				dst[part] = next
+			}
+			dst = next
+		}
+		if dst != nil {
+			if _, taken := dst[key[len(key)-1]]; !taken {
+				dst[key[len(key)-1]] = v
+			}
+		}
+	}
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(out); err != nil {
+		return nil, fmt.Errorf("encode toml: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// lookupKey is the value at key in a decoded file (tables only: a key inside an
+// array of tables is not looked up).
+func lookupKey(m map[string]any, key toml.Key) (any, bool) {
+	var cur any = m
+	for _, part := range key {
+		t, ok := cur.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		if cur, ok = t[part]; !ok {
+			return nil, false
+		}
+	}
+	return cur, true
 }
 
 // configDir resolves the platform config directory (parent of

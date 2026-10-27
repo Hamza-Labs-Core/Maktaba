@@ -29,7 +29,7 @@ const SESSION = {
 type Answer = unknown | ((body: unknown) => unknown);
 
 /** Routes api.post by path; the stream session answer may be a function. */
-function servePost(session: Answer = SESSION, watchStart: Answer = { tracking: false }) {
+function servePost(session: Answer = SESSION) {
   post.mockImplementation((url: string, body: unknown) => {
     const pick = (v: Answer) => {
       try {
@@ -39,7 +39,6 @@ function servePost(session: Answer = SESSION, watchStart: Answer = { tracking: f
       }
     };
     if (url === "/api/stream/sessions") return pick(session);
-    if (url === "/api/watch/start") return pick(watchStart);
     return Promise.resolve(undefined);
   });
 }
@@ -159,7 +158,6 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
       expect(alert).toHaveTextContent(title);
       expect(screen.queryByTestId("mkt-video")).toBeNull();
       expect(del).not.toHaveBeenCalled();
-      expect(posts("/api/watch/start")).toHaveLength(0);
       await userEvent.setup().click(within(alert).getByRole("button", { name: /Back/ }));
       expect(screen.getByText("library page")).toBeInTheDocument();
     }
@@ -303,54 +301,25 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
     expect(del).toHaveBeenCalledWith("/api/stream/sessions/late-1");
   });
 
-  it("VPL-13: watch analytics start on play, beat, stop on pause/end/unmount", async () => {
+  // Epic 44 story 44.3: the server records the play from the stream session's
+  // progress and its close; the player calls no /api/watch/* (one record a play).
+  it("VPL-13: the play is recorded from the stream session alone, never /api/watch/*", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    servePost(SESSION, { tracking: true, session_id: "w1" });
+    servePost(SESSION);
     const r = renderPlayer();
     const el = await video();
+    setDuration(el, 600);
     fireEvent.play(el);
-    await waitFor(() => expect(posts("/api/watch/start")).toHaveLength(1));
-    expect(posts("/api/watch/start")[0][1]).toMatchObject({
-      video_id: "vid-1",
-      quality: "transcode",
-      device_type: expect.any(String),
-      platform: expect.any(String),
-    });
-    await act(async () => {
-      vi.advanceTimersByTime(30_000);
-    });
-    expect(posts("/api/watch/heartbeat")).toHaveLength(1);
-    expect(posts("/api/watch/heartbeat")[0][1]).toMatchObject({ session_id: "w1" });
-    fireEvent.pause(el);
-    expect(posts("/api/watch/stop")).toHaveLength(1);
-    fireEvent.play(el);
-    await waitFor(() => expect(posts("/api/watch/start")).toHaveLength(2));
-    fireEvent.ended(el);
-    expect(posts("/api/watch/stop")).toHaveLength(2);
-    fireEvent.play(el);
-    await waitFor(() => expect(posts("/api/watch/start")).toHaveLength(3));
-    r.unmount();
-    expect(posts("/api/watch/stop")).toHaveLength(3);
-  });
-
-  it.each([
-    ["tracking paused", () => ({ tracking: false })],
-    ["start 500", () => Promise.reject(problem(500, "boom"))],
-  ])("VPL-14: analytics %s never breaks playback", async (_l, start) => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    servePost(SESSION, start);
-    renderPlayer();
-    const el = await video();
-    fireEvent.play(el);
-    await waitFor(() => expect(posts("/api/watch/start")).toHaveLength(1));
     await act(async () => {
       vi.advanceTimersByTime(60_000);
     });
     fireEvent.pause(el);
-    expect(posts("/api/watch/heartbeat")).toHaveLength(0);
-    expect(posts("/api/watch/stop")).toHaveLength(0);
+    fireEvent.play(el);
+    fireEvent.ended(el);
+    r.unmount();
     expect(posts("/api/stream/sessions/sess-abc/progress").length).toBeGreaterThan(0);
-    expect(screen.getByTestId("mkt-video")).toBeInTheDocument();
+    expect(del).toHaveBeenCalledWith("/api/stream/sessions/sess-abc");
+    expect(post.mock.calls.filter((c) => String(c[0]).startsWith("/api/watch/"))).toEqual([]);
   });
 
   it.each([

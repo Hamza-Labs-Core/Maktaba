@@ -749,9 +749,13 @@ func TestReplaceSelf(t *testing.T) {
 	if err := layout.CopyFile(selfBinary(t), newer); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(newer, "--replace-self", target)
-	cmd.Env = append(os.Environ(), envMain+"=1")
-	if out, err := cmd.CombinedOutput(); err != nil {
+	// newer was just written, and the parallel tests start processes meanwhile
+	out, err := layout.CombinedOutputFresh(func() *exec.Cmd {
+		cmd := exec.Command(newer, "--replace-self", target)
+		cmd.Env = append(os.Environ(), envMain+"=1")
+		return cmd
+	})
+	if err != nil {
 		t.Fatalf("replace-self: %v\n%s", err, out)
 	}
 	if b, _ := os.ReadFile(target + ".old"); string(b) != "old launcher" {

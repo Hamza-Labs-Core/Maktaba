@@ -26,6 +26,10 @@ type PGRepo struct {
 	host string
 	// HostID, when set, scopes ClearRuntime to this host's row.
 	HostID string
+	// KeepViewers leaves channel_runtime.viewer_count to the home's front door,
+	// which sees every viewer (TS and HLS) of every channel wherever it encodes
+	// (Epic 44 story 44.4); an engine behind it counts only its TS clients.
+	KeepViewers bool
 
 	mu            sync.Mutex
 	hasSourceURL  bool
@@ -138,6 +142,10 @@ func (r *PGRepo) SetRuntime(ctx context.Context, rt Runtime) error {
 	if rt.Host == "" {
 		rt.Host = r.host
 	}
+	viewers := "viewer_count = EXCLUDED.viewer_count,"
+	if r.KeepViewers {
+		rt.ViewerCount, viewers = 0, "" // a new row starts at none; the front door's next count fills it
+	}
 	if r.runtimeStatsColumns(ctx) {
 		_, err := r.pool.Exec(ctx, `
 			INSERT INTO channel_runtime
@@ -148,7 +156,7 @@ func (r *PGRepo) SetRuntime(ctx context.Context, rt Runtime) error {
 				host = EXCLUDED.host,
 				pid = EXCLUDED.pid,
 				state = EXCLUDED.state,
-				viewer_count = EXCLUDED.viewer_count,
+				`+viewers+`
 				started_at = CASE WHEN channel_runtime.host_id IS DISTINCT FROM EXCLUDED.host_id
 				                  THEN EXCLUDED.started_at ELSE channel_runtime.started_at END,
 				last_segment_at = EXCLUDED.last_segment_at,
@@ -172,7 +180,7 @@ func (r *PGRepo) SetRuntime(ctx context.Context, rt Runtime) error {
 			host = EXCLUDED.host,
 			pid = EXCLUDED.pid,
 			state = EXCLUDED.state,
-			viewer_count = EXCLUDED.viewer_count,
+			`+viewers+`
 			last_segment_at = EXCLUDED.last_segment_at
 	`, rt.ChannelID, rt.Host, nullablePID(rt.PID), rt.State, rt.ViewerCount,
 		nullableTime(rt.StartedAt), nullableTime(rt.LastSegmentAt))

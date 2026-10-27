@@ -81,10 +81,17 @@ func TestTheMachinesReachOnlyWhatTheClusterAsks(t *testing.T) {
 	b.WatchReach(ctx, time.Millisecond, func() error { t.Error("listen = loopback, yet started again"); return nil }, io.Discard)
 }
 
-// Once the home requires the cluster link (story 35.16 AC12), the machines' roles need
-// their client certificates from the cluster CA too (whose file the server is started
-// with); their copies' replication roles are unchanged.
+// Once the home requires the cluster link (story 35.16 AC12), the role of each machine
+// that presents its client certificate from the cluster CA (Reach.CertRoles; the server is
+// started with the CA's file) needs it too, on its own line before the group's; every
+// other machine's role keeps its password alone (one whose processes present none, an
+// older release, is never cut off its database), and so do the copies' replication roles.
+// Frozen lets no machine role in; TLS off asks no certificate.
 func TestRequiredLinkAsksForClientCertificates(t *testing.T) {
+	const (
+		presents = "maktaba_node_0b6f3c1e2a4d4e8f9c715d2a8b3e6f10"
+		another  = "maktaba_node_1c7a4d2f3b5e4f90ad826e3b9c4f7a21"
+	)
 	dir := t.TempDir()
 	b := Bundle{Data: filepath.Join(dir, "postgres"), Keys: filepath.Join(dir, "keys"), Port: DefaultPort, LAN: true, TLS: true}
 	for _, d := range []string{b.Data, b.Keys} {
@@ -92,9 +99,13 @@ func TestRequiredLinkAsksForClientCertificates(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := b.KeepReach(Reach{Open: true, Require: true}); err != nil {
-		t.Fatal(err)
+	keep := func(r Reach) {
+		t.Helper()
+		if err := b.KeepReach(r); err != nil {
+			t.Fatal(err)
+		}
 	}
+	keep(Reach{Open: true, Require: true, Addrs: []string{"192.168.1.7"}, CertRoles: []string{presents}})
 	if hba := b.hbaConf(); strings.Contains(hba, "clientcert") {
 		t.Fatalf("no cluster CA yet, but certificates asked:\n%s", hba)
 	}
@@ -102,13 +113,60 @@ func TestRequiredLinkAsksForClientCertificates(t *testing.T) {
 		t.Fatal(err)
 	}
 	hba := b.hbaConf()
-	if !strings.Contains(hba, "+maktaba_worker  samenet         scram-sha-256 clientcert=verify-full") ||
-		strings.Contains(hba, "+"+ReplicaGroup+" samenet         scram-sha-256 clientcert") {
-		t.Fatalf("required:\n%s", hba)
+	for _, want := range []string{
+		"hostssl maktaba      " + presents + " samenet         scram-sha-256 clientcert=verify-full",
+		"hostssl maktaba      " + presents + " 192.168.1.7/32  scram-sha-256 clientcert=verify-full",
+		"hostssl maktaba      +maktaba_worker  samenet         scram-sha-256\n",
+		"hostssl maktaba      +maktaba_worker  192.168.1.7/32  scram-sha-256\n",
+	} {
+		if !strings.Contains(hba, want) {
+			t.Fatalf("required, %s presenting its certificate: lacks %q:\n%s", presents, want, hba)
+		}
 	}
-	if err := b.KeepReach(Reach{Open: true}); err != nil {
+	if strings.Count(hba, "clientcert") != 2 || strings.Contains(hba, another) ||
+		strings.Contains(hba, "+"+ReplicaGroup+" samenet         scram-sha-256 clientcert") {
+		t.Fatalf("only the machine that presents its certificate needs it:\n%s", hba)
+	}
+	// the first line that matches decides: the machine's own lines come before the group's
+	if strings.LastIndex(hba, presents) > strings.Index(hba, "+"+WorkerGroup) {
+		t.Fatalf("a machine's own line after the group's (the group's would decide):\n%s", hba)
+	}
+
+	// required, and no machine says it presents one: none is asked for one
+	keep(Reach{Open: true, Require: true})
+	if hba := b.hbaConf(); strings.Contains(hba, "clientcert") || !strings.Contains(hba, "+"+WorkerGroup) {
+		t.Fatalf("required, but no machine presents a certificate:\n%s", hba)
+	}
+	// a machine joined before 2026-10-18 keeps its 8-hex role: its own line too
+	keep(Reach{Open: true, Require: true, CertRoles: []string{"maktaba_node_0b6f3c1e"}})
+	if hba := b.hbaConf(); !strings.Contains(hba, "maktaba_node_0b6f3c1e samenet         scram-sha-256 clientcert=verify-full") {
+		t.Fatalf("an 8-hex role:\n%s", hba)
+	}
+	// a name that is not a machine's role never goes in
+	keep(Reach{Open: true, Require: true, CertRoles: []string{"postgres", "all", "+maktaba_worker", "maktaba_node_0b6f3c1e2a"}})
+	if hba := b.hbaConf(); strings.Contains(hba, "clientcert") {
+		t.Fatalf("a name that is no machine's role:\n%s", hba)
+	}
+	// frozen: no machine role at all, the copies' only
+	keep(Reach{Open: true, Require: true, CertRoles: []string{presents}})
+	if err := b.SetFrozen(true); err != nil {
 		t.Fatal(err)
 	}
+	if hba := b.hbaConf(); strings.Contains(hba, presents) || strings.Contains(hba, "+"+WorkerGroup) ||
+		!strings.Contains(hba, "+"+ReplicaGroup) {
+		t.Fatalf("frozen:\n%s", hba)
+	}
+	if err := b.SetFrozen(false); err != nil {
+		t.Fatal(err)
+	}
+	// TLS off ([postgres] tls = "off"): no certificate can be asked
+	b.TLS = false
+	if hba := b.hbaConf(); strings.Contains(hba, "clientcert") || strings.Contains(hba, presents) {
+		t.Fatalf("TLS off, but certificates asked:\n%s", hba)
+	}
+	b.TLS = true
+	// prefer: none
+	keep(Reach{Open: true, CertRoles: []string{presents}})
 	if hba := b.hbaConf(); strings.Contains(hba, "clientcert") {
 		t.Fatalf("prefer, but certificates asked:\n%s", hba)
 	}

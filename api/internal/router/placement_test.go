@@ -30,6 +30,7 @@ func everyMount(t *testing.T) chi.Router {
 	r := New(Deps{IdempotencyStore: idempotency.NewMemoryStore()})
 	MountLogs(r, LogsDeps{})
 	MountProcesses(r, ProcessesDeps{})
+	MountServerSettings(r, nil)
 	MountP28(r, P28Deps{Updater: system.NewUpdater(system.UpdaterConfig{Disabled: true})})
 	var mountRemote func(chi.Router)
 	MountP6(r, P6Deps{DB: db, OnQueues: func(q *queues.Handler) {

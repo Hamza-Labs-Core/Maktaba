@@ -211,6 +211,15 @@ func TestStation_RealFFmpeg_ContinuousWallClock(t *testing.T) {
 	// segments carry the start-up latency and are skipped.)
 	// A segment file completes when the muxer receives the keyframe that
 	// ends it, so lag = completion time − segment end (timeline).
+	// when a segment was completed: the file's last write, which the muxer stamps, not
+	// when the 50 ms poll above saw it (on a loaded runner the poll's own delay was most
+	// of the step measured)
+	completed := func(n int) time.Time {
+		if fi, err := os.Stat(filepath.Join(dir, "seg-"+strconv.Itoa(n)+".ts")); err == nil {
+			return fi.ModTime()
+		}
+		return firstSeen[n]
+	}
 	minLag, maxLag := 1e9, -1e9
 	prevLag, maxStep := 0.0, 0.0
 	for i, n := range nums[3 : len(nums)-1] {
@@ -218,8 +227,9 @@ func TestStation_RealFFmpeg_ContinuousWallClock(t *testing.T) {
 		if !ok {
 			continue
 		}
-		lag := firstSeen[n].Sub(st.Epoch()).Seconds() - end
-		t.Logf("seg %d end_pts=%.3f completed=%.3f lag=%.3f", n, end, firstSeen[n].Sub(st.Epoch()).Seconds(), lag)
+		at := completed(n).Sub(st.Epoch()).Seconds()
+		lag := at - end
+		t.Logf("seg %d end_pts=%.3f completed=%.3f lag=%.3f", n, end, at, lag)
 		minLag, maxLag = min(minLag, lag), max(maxLag, lag)
 		if i > 0 {
 			maxStep = max(maxStep, abs(lag-prevLag))

@@ -13,8 +13,11 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"database/sql"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -223,6 +226,15 @@ func askAgainAfter(asks int) time.Duration {
 	return min(d, homeDBAskMax)
 }
 
+// remakeMends reports whether a re-made access may mend a failure of code: never TLS (the
+// home requiring the machine's certificate, this machine not verifying the home's, a
+// plain connection a TLS-only home refuses), nor a certificate for another role than the
+// login's (cert_mismatch: the home re-makes the same role): a new password changes none of
+// it, and asked
+// for it the home made one the roles then no longer had, again and again. The home decides
+// the rest (its remakeWhy: a refused password, or a database that moved).
+func remakeMends(code string) bool { return code != "tls" && code != "cert_mismatch" }
+
 // homeDBWatch keeps this machine's last login to its home's database (update.state's
 // home_db).
 type homeDBWatch struct {
@@ -348,6 +360,10 @@ func (w *homeDBWatch) check(ctx context.Context) {
 		return
 	}
 	switch {
+	case err != nil && !next.Healing && confirmed && !remakeMends(next.Code):
+		fmt.Fprintf(os.Stderr, "[serve] node: cannot log in to the home's database at %s (%s): %s; a new "+
+			"password would not mend it (its certificate, or the home's), so none is asked for\n",
+			next.Target, next.Code, next.Detail)
 	case err != nil && !next.Healing && confirmed:
 		fmt.Fprintf(os.Stderr, "[serve] node: cannot log in to the home's database at %s (%s): %s; the home "+
 			"re-makes this machine's access when it is its to mend, or this machine asks it for one\n",
@@ -381,7 +397,7 @@ func (w *homeDBWatch) maybeAsk() {
 	}
 	w.mu.Lock()
 	st := w.st
-	if st == nil || st.OK || st.Healing || st.Fails < machineagent.ConfirmFails {
+	if st == nil || st.OK || st.Healing || st.Fails < machineagent.ConfirmFails || !remakeMends(st.Code) {
 		w.mu.Unlock()
 		return
 	}
@@ -478,12 +494,61 @@ func probeHomeDB(ctx context.Context) error {
 	if !n.Joined() {
 		return nil
 	}
-	dsn, err := n.HomeDSN(config.KeysDir())
+	dsn, err := homeDBDSN(n)
 	if err != nil {
 		return fmt.Errorf("%s", noCreds(err.Error()))
 	}
-	return pingDSN(ctx, dsn)
+	return withCertCheck(dsn, pingDSN(ctx, dsn))
 }
+
+// certMismatch is a login the home refused while this machine offered a certificate for
+// another role than the login's: Postgres says its CN check (clientcert=verify-full) failed
+// as the password's failure, which no new password mends (the home re-makes the same role:
+// it is still not the certificate's).
+type certMismatch struct {
+	cn, role string
+	err      error
+}
+
+func (e *certMismatch) Error() string {
+	return fmt.Sprintf("this machine's certificate is for %s, not its database role %s (%v)", e.cn, e.role, e.err)
+}
+
+func (e *certMismatch) Unwrap() error { return e.err }
+
+// withCertCheck is err, or a certMismatch when err is a refused password (auth_failed)
+// while dsn offers a certificate whose CN is not dsn's user.
+func withCertCheck(dsn string, err error) error {
+	if err == nil || classifyHomeDB(err) != "auth_failed" {
+		return err
+	}
+	u, perr := url.Parse(dsn)
+	if perr != nil || u.User == nil || u.Query().Get("sslcert") == "" {
+		return err
+	}
+	b, rerr := os.ReadFile(u.Query().Get("sslcert"))
+	if rerr != nil {
+		return err
+	}
+	blk, _ := pem.Decode(b)
+	if blk == nil {
+		return err
+	}
+	c, cerr := x509.ParseCertificate(blk.Bytes)
+	if cerr != nil {
+		return err
+	}
+	if role := u.User.Username(); c.Subject.CommonName != role {
+		return &certMismatch{cn: c.Subject.CommonName, role: role, err: err}
+	}
+	return err
+}
+
+// homeDBDSN is how the check logs in: exactly as the roles do (supervisor.HomeDSN, the
+// machine's cluster-link certificate offered). Without it a home that requires the
+// certificate refused the check alone, and its failure had the home re-make a password
+// the roles then no longer had.
+func homeDBDSN(n config.NodeConfig) (string, error) { return supervisor.HomeDSNChecked(n) }
 
 // pingDSN opens dsn and pings it (lib/pq: a dsn that prefers TLS tries it, then none
 // when the server has no TLS).
@@ -536,6 +601,10 @@ func pingOnce(ctx context.Context, dsn string) error {
 
 // classifyHomeDB is why a login to the home's database failed.
 func classifyHomeDB(err error) string {
+	var cm *certMismatch
+	if errors.As(err, &cm) {
+		return "cert_mismatch"
+	}
 	msg := strings.ToLower(err.Error())
 	has := func(s ...string) bool {
 		for _, x := range s {
@@ -546,6 +615,13 @@ func classifyHomeDB(err error) string {
 		return false
 	}
 	switch {
+	case has("requires a valid client certificate", "certificate", "x509", "tls:", "ssl is not enabled"):
+		// the certificate (the home requires the machine's, or this machine cannot verify
+		// the home's), or TLS the home does not have: no password's, never mended by a
+		// re-made access. (A plain connection a TLS-only home has no line for is "no
+		// encryption" under no_hba: the check's is plain only when the home says it has no
+		// TLS, where that is its pg_hba's.)
+		return "tls"
 	case has("password authentication failed", "28p01", "is not permitted to log in") ||
 		(has("role ") && has("does not exist")):
 		return "auth_failed"
@@ -555,7 +631,7 @@ func classifyHomeDB(err error) string {
 		return "no_database"
 	case has("connection refused", "actively refused"):
 		return "refused"
-	case has("x509", "certificate", "tls:", "ssl"):
+	case has("ssl"):
 		return "tls"
 	case has("timeout", "deadline exceeded", "no route to host", "no such host", "network is unreachable",
 		"i/o timeout", "host is down"):

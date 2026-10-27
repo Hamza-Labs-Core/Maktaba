@@ -19,77 +19,74 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
-import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import coil.compose.AsyncImage
+import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 
 /**
- * A focusable poster tile — the building block of every grid and rail.
+ * A focusable video tile, the building block of every grid and rail: the video's 16:9 picture,
+ * a gold bar for how much is watched, its name under it.
  *
- * D-pad focus is driven by the TV focus engine. `tv-material`'s [Card]
- * applies the focused scale and border itself (the standard "lift
- * toward the viewer" affordance); we give it the theme's 3dp gold ring
- * and track focus to brighten the title label underneath.
+ * D-pad focus is the TV focus engine's; `tv-material`'s [Card] lifts the focused card toward the
+ * viewer (scale) and draws the theme's 3dp gold ring; the name brightens with it.
  */
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun MediaCard(
+    client: ApiClient,
+    video: String,
     title: String,
-    posterUrl: String?,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
     progress: Float = 0f,
+    width: Dp = 240.dp,
+    /** On the focusable card itself (a FocusRequester goes here). */
+    cardModifier: Modifier = Modifier,
     onClick: () -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
 
-    Column(modifier = modifier.width(220.dp)) {
+    Column(modifier = modifier.width(width)) {
         Card(
             onClick = onClick,
-            modifier = Modifier
+            modifier = cardModifier
                 .fillMaxWidth()
-                .aspectRatio(2f / 3f)
-                .onFocusChanged { focused = it.isFocused },
+                .aspectRatio(16f / 9f)
+                .onFocusChanged { focused = it.isFocused || it.hasFocus },
             shape = CardDefaults.shape(CardCorner),
             colors = maktabaCardColors(),
             scale = CardDefaults.scale(focusedScale = 1.08f),
             border = goldFocusBorder(),
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomStart) {
-                AsyncImage(
-                    model = posterUrl,
-                    contentDescription = title,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                Poster(client, video, Modifier.fillMaxSize())
                 if (progress > 0f) {
-                    // Hand-drawn resume bar; avoids pulling in phone Material.
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .background(MaktabaPalette.Raised),
-                    ) {
-                        Box(
-                            Modifier
-                                .fillMaxHeight()
-                                .fillMaxWidth(progress.coerceIn(0f, 1f))
-                                .background(MaktabaPalette.Gold),
-                        )
+                    Box(Modifier.fillMaxWidth().height(6.dp).background(MaktabaPalette.Background.copy(alpha = 0.7f))) {
+                        Box(Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(0f, 1f)).background(MaktabaPalette.Gold))
                     }
                 }
             }
         }
         Text(
             text = title,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.titleMedium,
             color = if (focused) MaktabaPalette.Text else MaktabaPalette.Muted,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 8.dp),
+            modifier = Modifier.padding(top = 10.dp),
         )
+        if (subtitle != null) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaktabaPalette.Faint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

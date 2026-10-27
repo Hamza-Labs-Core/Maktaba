@@ -18,6 +18,9 @@ import { FlagsProvider } from "./lib/flags";
 import { ShortcutProvider } from "./lib/keyboard/shortcuts";
 import { applyResolvedTheme, readMode, watchSystemTheme } from "./lib/theme";
 import { LibraryBrowser } from "./pages/LibraryBrowser";
+import { Home } from "./pages/Home";
+import { Libraries } from "./pages/Library/Libraries";
+import { LibraryPage } from "./pages/Library/LibraryPage";
 import { SeriesBrowser } from "./pages/Library/SeriesBrowser";
 import { SeriesDetail } from "./pages/Library/SeriesDetail";
 import { AdminEnrichment } from "./pages/Admin/Enrichment";
@@ -46,6 +49,7 @@ import { APITokens } from "./pages/Profile/APITokens";
 import { WatchHistory } from "./pages/Profile/WatchHistory";
 import { Account } from "./pages/Profile/Account";
 import { LibraryACL } from "./pages/Admin/LibraryACL";
+import { AdminLibraries } from "./pages/Admin/Libraries";
 import { Channels } from "./pages/Admin/Channels";
 import { FillerPools } from "./pages/Admin/FillerPools";
 import { AdminLiveTV } from "./pages/Admin/LiveTV";
@@ -110,9 +114,10 @@ export function App() {
                             </RequireAuth>
                           }
                         >
-                          <Route index element={<Navigate to="/library" replace />} />
-                          <Route path="/library" element={<LibraryBrowser />} />
-                          <Route path="/library/:libraryId" element={<LibraryBrowser />} />
+                          <Route path="/" element={<Home />} />
+                          <Route path="/library" element={<Libraries />} />
+                          <Route path="/library/:libraryId" element={<LibraryPage />} />
+                          <Route path="/videos" element={<LibraryBrowser />} />
                           <Route path="/series" element={<SeriesBrowser />} />
                           <Route path="/series/:id" element={<SeriesDetail />} />
                           <Route path="/videos/:videoId" element={<VideoDetail />} />
@@ -142,6 +147,7 @@ export function App() {
                             element={<Navigate to="/settings/subscription" replace />}
                           />
                           <Route path="/cloud/status" element={<ServerStatus />} />
+                          <Route path="/admin/libraries" element={<AdminLibraries />} />
                           <Route path="/admin/users" element={<AdminUsers />} />
                           <Route path="/admin/library-acl" element={<LibraryACL />} />
                           <Route path="/admin/extensions" element={<AdminExtensions />} />

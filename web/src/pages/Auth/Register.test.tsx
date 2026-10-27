@@ -61,7 +61,7 @@ afterEach(() => {
 });
 
 describe("Register (test-cases/register.md)", () => {
-  it("REG-01: creating an account signs in and goes to /library", async () => {
+  it("REG-01: creating an account signs in and goes to Home (/)", async () => {
     renderAuth(["/register"]);
     await submit();
     expect(post).toHaveBeenCalledTimes(1);
@@ -70,7 +70,7 @@ describe("Register (test-cases/register.md)", () => {
       email: "salma@example.com",
       password: "longpass1",
     });
-    expect(await screen.findByTestId("where")).toHaveTextContent(/^\/library$/);
+    expect(await screen.findByTestId("where")).toHaveTextContent(/^\/$/);
     expect(screen.getByText("signed in as salma")).toBeInTheDocument();
   });
 
@@ -222,13 +222,13 @@ describe("Register (test-cases/register.md)", () => {
     await user.click(busy);
     expect(post).toHaveBeenCalledTimes(2);
     await act(async () => held.resolve({ user: salma }));
-    expect(await screen.findByTestId("where")).toHaveTextContent("/library");
+    expect(await screen.findByTestId("where")).toHaveTextContent(/^\/$/);
   });
 
-  it("REG-16: already signed in, /register goes to /library without a render warning", async () => {
+  it("REG-16: already signed in, /register goes to Home (/) without a render warning", async () => {
     get.mockImplementation(publicGet(amal));
     renderAuth(["/register"]);
-    expect(await screen.findByTestId("where")).toHaveTextContent(/^\/library$/);
+    expect(await screen.findByTestId("where")).toHaveTextContent(/^\/$/);
     expect(screen.queryByLabelText(en["register.username"])).not.toBeInTheDocument();
     const warnings = [...errorSpy.mock.calls, ...warnSpy.mock.calls].map((c) => String(c[0]));
     expect(warnings.filter((w) => /while rendering|navigate\(\)/.test(w))).toEqual([]);

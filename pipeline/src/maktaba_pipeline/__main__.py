@@ -34,6 +34,7 @@ from . import __version__
 from .cluster import exitcodes
 from .cluster.config import NodeConfig
 from .cluster.config import load as load_node_config
+from .cluster.homedb import home_dsn
 from .db.jobs import Stage
 from .engine.workers import stable_hostname
 from .handlers import build_real_dispatch
@@ -82,7 +83,7 @@ def _doctor(args: argparse.Namespace, log: Any) -> int:
     url = args.database_url
     if not url:
         node = load_node_config()
-        url = node.database_url if node is not None and node.joined else None
+        url = home_dsn(node) if node is not None and node.joined else None
     code = asyncio.run(run_doctor(url, out=sys.stdout, quiet=args.quiet))
     log.info("doctor", version=__version__, healthy=code == 0)
     return code
@@ -137,7 +138,9 @@ def _build_runtime_config(
     host = args.host
     database_url = args.database_url or _FALLBACK_DATABASE_URL
     if node is not None:
-        database_url = node.database_url
+        # as the node's API connects: the home's CA verified, the machine's cluster-link
+        # certificate offered (a home that requires it refused the join's URL)
+        database_url = home_dsn(node)
         worker_id = worker_id or f"node-{node.node8}-{os.getpid()}"
         host = host or stable_hostname()
     return RuntimeConfig(

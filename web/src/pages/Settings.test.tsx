@@ -467,11 +467,12 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     ["Models", "/settings/models"],
     ["Rules", "/settings/rules"],
     ["Advanced", "/settings/advanced"],
+    ["Storage & discovery", "/settings/storage"],
     ["Subscription", "/settings/subscription"],
     ["About", "/settings/about"],
   ];
 
-  it("SAC-12: the tab nav lists all nine tabs with the right hrefs", () => {
+  it("SAC-12: the tab nav lists all ten tabs with the right hrefs", () => {
     for (const path of ["/settings", "/settings/rules"]) {
       const { unmount } = renderSettings(path);
       const nav = screen.getByRole("navigation", { name: "Settings" });
@@ -479,6 +480,15 @@ describe("Settings account (test-cases/settings-account.md)", () => {
       expect(links.map((l) => [l.textContent, l.getAttribute("href")])).toEqual(TABS);
       unmount();
     }
+  });
+
+  it("SAC-12b: Storage & discovery is an admin's tab only", () => {
+    renderSettings("/settings", { user: memberUser });
+    const nav = screen.getByRole("navigation", { name: "Settings" });
+    const links = within(nav).getAllByRole("link");
+    expect(links.map((l) => l.getAttribute("href"))).toEqual(
+      TABS.map(([, href]) => href).filter((h) => h !== "/settings/storage")
+    );
   });
 
   it("SAC-13: a deep link to each sub-route renders that tab and only its calls", async () => {

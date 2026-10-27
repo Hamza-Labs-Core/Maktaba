@@ -37,11 +37,21 @@ func TestParseRange(t *testing.T) {
 }
 
 func TestValidBucket(t *testing.T) {
-	if validBucket("week") != "week" || validBucket("month") != "month" {
-		t.Error("week/month should pass through")
+	now := time.Date(2026, 6, 17, 15, 30, 0, 0, time.UTC)
+	week := ParseRange("7d", now)
+	for _, b := range []string{"hour", "day", "week", "month"} {
+		if validBucket(b, week, now) != b {
+			t.Errorf("%s should pass through", b)
+		}
 	}
-	if validBucket("") != "day" || validBucket("hour") != "day" {
-		t.Error("unknown bucket should default to day")
+	if validBucket("", week, now) != "day" || validBucket("minute", week, now) != "day" {
+		t.Error("unknown bucket over a week should default to day")
+	}
+	if validBucket("", ParseRange("today", now), now) != "hour" {
+		t.Error("today should default to hour")
+	}
+	if validBucket("", ParseRange("all", now), now) != "day" {
+		t.Error("all time should default to day")
 	}
 }
 
@@ -69,6 +79,7 @@ func TestExportRecordRoundTrip(t *testing.T) {
 	// A field containing a comma, quote and newline must survive a CSV
 	// round-trip (RFC 4180 via encoding/csv).
 	row := exportRow{
+		Kind:            "play",
 		ID:              "s1",
 		UserID:          "u1",
 		VideoID:         "v1",
@@ -85,11 +96,11 @@ func TestExportRecordRoundTrip(t *testing.T) {
 	if len(rec) != len(exportHeader) {
 		t.Fatalf("record len=%d header len=%d", len(rec), len(exportHeader))
 	}
-	if rec[5] != "123" {
-		t.Errorf("duration field=%q want 123", rec[5])
+	if rec[8] != "123" {
+		t.Errorf("duration field=%q want 123", rec[8])
 	}
-	if rec[6] != "47.50" {
-		t.Errorf("percent field=%q want 47.50", rec[6])
+	if rec[9] != "47.50" {
+		t.Errorf("percent field=%q want 47.50", rec[9])
 	}
 
 	var buf strings.Builder
@@ -126,8 +137,8 @@ func TestSummaryCache(t *testing.T) {
 	if _, ok := c.get("7d", now); ok {
 		t.Error("empty cache should miss")
 	}
-	c.put("7d", Summary{Range: "7d", TotalSessions: 5}, now)
-	if v, ok := c.get("7d", now.Add(10*time.Second)); !ok || v.TotalSessions != 5 {
+	c.put("7d", Summary{Window: Window{Range: "7d"}, Plays: 5}, now)
+	if v, ok := c.get("7d", now.Add(10*time.Second)); !ok || v.Plays != 5 {
 		t.Error("fresh entry should hit")
 	}
 	if _, ok := c.get("7d", now.Add(31*time.Second)); ok {

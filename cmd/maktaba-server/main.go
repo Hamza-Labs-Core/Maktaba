@@ -69,11 +69,14 @@ func newRootCmd() *cobra.Command {
 		newSetupCmd(),
 		newUpdateCmd(),
 		newRestoreCmd(),
+		newStorageCmd(),
+		newBackupsCmd(),
 		newUninstallCmd(),
 		newModelsCmd(),
 		newMigrateCmd(),
 		newAddUserCmd(),
 		newKeysCmd(),
+		newLicenseCmd(),
 		newMigrateFromDevCmd(),
 		newAdoptCmd(),
 		newServiceCmd(),
@@ -90,11 +93,14 @@ const rootLong = `maktaba-server runs all of Maktaba from a single binary.
   maktaba-server serve     Start the API, streaming, pipeline, and web UI
   maktaba-server update    Self-update to the latest release
   maktaba-server restore   Put the library database back from a backup
+  maktaba-server storage   Where Maktaba keeps its data (show), its move to another disk (move <dir>)
+  maktaba-server backups   The library database's backups: their folder, schedule and dumps (show, set)
   maktaba-server uninstall Guided teardown
   maktaba-server models    Manage Whisper transcription models
   maktaba-server migrate   Run database migrations
   maktaba-server adduser   Seed the first admin user
   maktaba-server keys      Generate or rotate JWT signing keys
+  maktaba-server license   Apply or show the home's license (apply <file>, status)
   maktaba-server migrate-from-dev  Move the developer stack into Maktaba.app
   maktaba-server adopt     The Maktaba this PC runs outside the app (its move, undo)
   maktaba-server service   The systemd user service of the Linux app

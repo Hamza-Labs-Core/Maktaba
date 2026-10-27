@@ -60,6 +60,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/usage"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
@@ -100,6 +101,12 @@ func main() {
 				if errors.Is(err, errUserExists) {
 					os.Exit(3)
 				}
+				os.Exit(1)
+			}
+			return
+		case "license":
+			if err := runLicense(os.Args[2:], os.Stdin, os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "license: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -314,8 +321,14 @@ func runServe() error {
 	// Epic 16: the entitlement store is built with the app DB below; the
 	// relay gate in the router's chain reads it through this reference.
 	licRef := &subscriptions.StoreRef{}
+	// Epic 44 story 44.5: the API's use per app and day. It counts once the
+	// app database is attached (below) and is written every minute and at
+	// shutdown.
+	usageCounter := &usage.Counter{Logger: logger}
+
 	r := router.New(router.Deps{
 		License:            licRef,
+		Usage:              usageCounter,
 		IdempotencyStore:   idemStore,
 		IPRatePerMin:       envIntDefault("MAKTABA_IP_RATE_PER_MIN", 6000),
 		UserRatePerMin:     envIntDefault("MAKTABA_USER_RATE_PER_MIN", 600),
@@ -551,6 +564,11 @@ func runServe() error {
 			if licRefresher != nil {
 				go licRefresher.Run(context.Background())
 			}
+			if licVerifier != nil {
+				// a license applied by `maktaba-api license apply` (or another replica) is
+				// taken up within a minute, without a restart
+				go reloadLicense(context.Background(), entStore, licVerifier, time.Minute, logger)
+			}
 
 			// Phase 9 (Epic 10 stories 10.2-10.5, 10.16) — auth surface.
 			// Reuses the same app DB. SecureCookies tracks MAKTABA_HSTS
@@ -623,6 +641,9 @@ func runServe() error {
 				DB: appDB, Version: version.Version, StartTime: processStart,
 				PipelineAddr: pipelineAddr, SupervisorURL: supervisorURL, Secrets: homeSecrets,
 			})
+			// Epic 45 story 45.3: Settings, Storage & discovery (server.toml through the
+			// supervisor, and a restart)
+			router.MountServerSettings(r, appDB)
 			// Epic 33: TV changes (/api/tv/changes, releases, slots) and the change
 			// controller (staged -> verified -> approved -> swapped)
 			router.MountP33(r, router.P33Deps{DB: appDB, Logger: logger, RunController: true,
@@ -640,12 +661,14 @@ func runServe() error {
 			// stats + export (29.3/29.5/29.6). The session reaper is a
 			// boot goroutine (interrupted-session reap every minute +
 			// daily retention purge), mirroring runPairingSweep.
-			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef})
+			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef, Secrets: homeSecrets})
 			go (&watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),
 				Logger:        logger,
 			}).Run(context.Background())
+			usageCounter.Attach(appDB)
+			go usageCounter.Run(context.Background(), usage.DefaultFlushEvery)
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",
 				"event", "p29_mounted")
 
@@ -758,6 +781,10 @@ func runServe() error {
 		defer cancel()
 		errPublic := publicSrv.Shutdown(shutdownCtx)
 		errAdmin := adminSrv.Shutdown(shutdownCtx)
+		// the API's use of the last minute (Epic 44 story 44.5)
+		if err := usageCounter.Flush(shutdownCtx); err != nil {
+			logger.Warn("usage: api use not written at shutdown", "err", err, "event", "api_usage_flush_failed")
+		}
 		_ = traceShutdown(shutdownCtx)
 		// EC: a request that exceeds the grace is forcibly dropped via
 		// Close so the listener doesn't linger past the budget.

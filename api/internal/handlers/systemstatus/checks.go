@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -33,12 +34,19 @@ func (h *Handler) checks() []check {
 		cs = append(cs, check{Name: "processes",
 			Fallback: base("processes", GroupServices, KindProcess, "Processes"), Run: checkProcesses})
 	}
-	return append(cs,
+	cs = append(cs,
 		check{Name: "workers", Fallback: crit(base("workers", GroupWorkers, KindWorkers, "Workers")), Run: checkWorkers},
 		check{Name: "streaming_hosts", Fallback: base("streaming_hosts", GroupWorkers, KindStreamingHost, "Streaming machines"),
 			Run: checkStreamingHosts},
 		check{Name: "dependencies", Fallback: base("dependencies", GroupDependencies, KindDependency, "Dependencies"),
 			Run: checkDependencies},
+	)
+	if h.SupervisorURL != "" {
+		// the folders this machine reads: a Docker install's API never mounts them
+		cs = append(cs, check{Name: "host_access",
+			Fallback: base("host_access", GroupDependencies, KindHostAccess, "Folder access"), Run: checkHostAccess})
+	}
+	return append(cs,
 		check{Name: "plex", Fallback: base("plex_livetv", GroupIntegrations, KindPlexLiveTV, "Plex Live TV"), Run: checkPlex},
 		check{Name: "queues", Fallback: base("queues", GroupQueuesTV, KindQueues, "Queues"), Run: checkQueues},
 		check{Name: "tv_channels", Fallback: base("tv_channels", GroupQueuesTV, KindTVChannels, "Channels on air"),
@@ -267,7 +275,8 @@ func checkProcesses(ctx context.Context, e *env) []Item {
 			State     string `json:"state"`
 			Restarts  int    `json:"restarts"`
 			CrashLoop bool   `json:"crash_loop"`
-			UptimeSec int64  `json:"uptime_sec"`
+			// fractional seconds, as the supervisor's state reports them
+			UptimeSec float64 `json:"uptime_sec"`
 		} `json:"processes"`
 	}
 	raw, err := processes.Fetch(ctx, e.h.client(), e.h.SupervisorURL)
@@ -286,7 +295,7 @@ func checkProcesses(ctx context.Context, e *env) []Item {
 		it := base("process:"+p.Role, GroupServices, KindProcess, p.Role)
 		st, code := processState(p.State, p.CrashLoop)
 		it.set(st, code, map[string]any{"role": p.Role, "restarts": p.Restarts}, processReasons[code])
-		it.Details = map[string]any{"state": p.State, "restarts": p.Restarts, "uptime_seconds": p.UptimeSec}
+		it.Details = map[string]any{"state": p.State, "restarts": p.Restarts, "uptime_seconds": int64(p.UptimeSec)}
 		out = append(out, it)
 	}
 	return out
@@ -651,6 +660,12 @@ func checkPlex(ctx context.Context, e *env) []Item {
 		if detail == "" {
 			detail = lastErr
 		}
+		if localNetworkBlocked(e.h, st.Plex.URL, detail) {
+			it.set(StatusDown, "plex_unreachable_local_network", map[string]any{"detail": detail},
+				"Plex does not answer: "+detail+". On this Mac, macOS may block Maktaba from the local network: "+
+					"turn on maktaba-launcher in System Settings → Privacy & Security → Local Network.")
+			return one(it)
+		}
 		it.set(StatusDown, "plex_unreachable", map[string]any{"detail": detail},
 			"Plex does not answer: "+detail)
 		return one(it)
@@ -675,6 +690,25 @@ func checkPlex(ctx context.Context, e *env) []Item {
 	}
 	it.set(StatusOK, "plex_ok", p, fmt.Sprintf("Registered; %d channels in sync.", int(lineup)))
 	return one(it)
+}
+
+// localNetworkBlocked: a dial of an address on the local network failed with
+// "no route to host" on the Mac app's server, which is how macOS refuses a
+// process that is not allowed on the Local Network (Privacy & Security).
+func localNetworkBlocked(h *Handler, rawURL, detail string) bool {
+	if hostGOOS != "darwin" || h.SupervisorURL == "" ||
+		!strings.Contains(strings.ToLower(detail), "no route to host") {
+		return false
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsPrivate() || ip.IsLinkLocalUnicast()
+	}
+	return strings.HasSuffix(strings.ToLower(host), ".local")
 }
 
 // ---------- queues & TV ----------

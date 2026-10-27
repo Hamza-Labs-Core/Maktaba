@@ -5,6 +5,7 @@
 
 export const HELP_CATEGORIES = [
   { id: "start", topics: ["getting-started", "mac-app"] },
+  { id: "apps", topics: ["apple-apps", "apple-tv", "android-apps", "android-tv"] },
   { id: "watch", topics: ["library", "series", "videos", "search", "watch-tv"] },
   { id: "you", topics: ["account", "settings", "updates"] },
   { id: "processing", topics: ["processing", "stages", "failures", "transcription", "metadata"] },
@@ -16,6 +17,7 @@ export const HELP_CATEGORIES = [
     id: "admin",
     topics: [
       "users",
+      "library-management",
       "library-access",
       "machines",
       "system-health",
@@ -23,6 +25,7 @@ export const HELP_CATEGORIES = [
       "audit-log",
       "analytics",
       "cloud",
+      "storage",
     ],
   },
   { id: "connections", topics: ["extensions", "plex", "dizquetv"] },

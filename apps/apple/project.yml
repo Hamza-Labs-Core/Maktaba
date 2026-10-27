@@ -44,6 +44,8 @@ targetTemplates:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
+        # browsed by HomeBrowser and by the permissions walkthrough's Local Network check
+        NSBonjourServices: ["_maktaba._tcp"]
   IOSApp:
     templates: [App]
     platform: iOS
@@ -102,8 +104,31 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
+        # StreamProxy listens on the loopback (127.0.0.1 only) for the system player
+        com.apple.security.network.server: true
+        # the tokens live in the data-protection keychain (no login-keychain prompts)
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.hamzalabs.maktaba.player.mac
     info:
       path: Player/Info-Mac.plist
+
+  # the Mac player shows inside the app (SwiftUI's VideoPlayer aborts there on macOS 27):
+  #   xcodebuild test -scheme "Maktaba Player Mac" -destination platform=macOS
+  Maktaba Player Mac Tests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: PlayerMacTests
+    dependencies:
+      - target: Maktaba Player Mac
+      - package: MaktabaKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.mac.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Maktaba Player Mac.app/Contents/MacOS/Maktaba Player Mac"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        ARCHS: arm64
 
   # ---- Maktaba Remote: iPhone (iPhone Duo too), iPad -------------------------------------
   Maktaba Remote:
@@ -132,6 +157,26 @@ targets:
     info:
       path: Remote/Info-iPad.plist
 
+  # ---- the permissions walkthrough's UI tests on iPhone (UITests/) ----------------------
+  Maktaba Player UITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies: [{ target: Maktaba Player }]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.uitests
+        TEST_TARGET_NAME: Maktaba Player
+  Maktaba Remote UITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies: [{ target: Maktaba Remote }]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote.uitests
+        TEST_TARGET_NAME: Maktaba Remote
+
   # ---- Maktaba TV: Apple TV (Epic 14). Its sources stay with the other TV app in apps/tv. -
   Maktaba TV:
     templates: [App]
@@ -152,7 +197,6 @@ targets:
     info:
       path: ../tv/tvos/MaktabaTV/Info.plist
       properties:
-        NSBonjourServices: ["_maktaba._tcp"]
         UIAppFonts: [Amiri-Bold.ttf, IBMPlexSansArabic-Regular.ttf, IBMPlexSansArabic-Medium.ttf, IBMPlexSansArabic-SemiBold.ttf]
   Maktaba TV UITests:
     type: bundle.ui-testing
@@ -171,6 +215,8 @@ schemes:
     build:
       targets: { Maktaba Player: all }
     run: { config: Debug }
+    test:
+      targets: [Maktaba Player UITests]
     archive: { config: Release }
   Maktaba Player iPad:
     build:
@@ -181,11 +227,15 @@ schemes:
     build:
       targets: { Maktaba Player Mac: all }
     run: { config: Debug }
+    test:
+      targets: [Maktaba Player Mac Tests]
     archive: { config: Release }
   Maktaba Remote:
     build:
       targets: { Maktaba Remote: all }
     run: { config: Debug }
+    test:
+      targets: [Maktaba Remote UITests]
     archive: { config: Release }
   Maktaba Remote iPad:
     build:

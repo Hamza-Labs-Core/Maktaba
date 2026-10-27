@@ -1,10 +1,10 @@
 # Settings
 
-The Settings page: your account, sessions, appearance, privacy, AI models, rules and version.
+The Settings page: your account, sessions, appearance, privacy, AI models, rules, experiments, storage, subscription and version.
 
 ## What it is {#what-it-is}
 
-[Settings](/settings) gathers the choices for you and for the whole server. It has seven tabs: **Account**, **Sessions**, **Appearance**, **Privacy**, **Models**, **Rules** and **About**. Everyone can open every tab; changes that affect the whole server are for admins only.
+[Settings](/settings) gathers the choices for you and for the whole server. It has nine tabs: **Account**, **Sessions**, **Appearance**, **Privacy**, **Models**, **Rules**, **Advanced**, **Subscription** and **About**. Admins see a tenth, **Storage & discovery**, after **Advanced**. Everyone else can open every tab; changes that affect the whole server are for admins only.
 
 ## How to use it {#how-to-use}
 
@@ -49,6 +49,18 @@ Other users see the list without these buttons.
 ### Rules {#rules-tab}
 
 Every setting for planning channels, tagging, finding metadata, Live TV, updates and more. See [Rules](/help/rules).
+
+### Advanced {#advanced-tab}
+
+**Experiments**: early features you can choose to try before everyone gets them.
+
+### Storage & discovery {#storage-tab}
+
+Admins only: where the server finds your video folders, whether devices on your network find it by themselves, its addresses, and a button to restart it. See [Storage & discovery](/help/storage).
+
+### Subscription {#subscription-tab}
+
+Your plan, the license and Maktaba Cloud. See [Subscription](/help/cloud#billing).
 
 ### About {#about-tab}
 

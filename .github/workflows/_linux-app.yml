@@ -63,7 +63,17 @@ jobs:
             web/pnpm-lock.yaml
             apps/desktop/pnpm-lock.yaml
 
+      - name: Apt package cache
+        # the runner's Ubuntu mirror has stalled installs at 50 KB/s: packages are kept
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: apt-linux-app-${{ matrix.arch }}-${{ hashFiles('tools/ci/apt-install.sh') }}-${{ github.run_id }}
+          restore-keys: apt-linux-app-${{ matrix.arch }}-
+
       - name: Install web + desktop deps and the build tools
+        env:
+          APT_CACHE_DIR: /home/runner/apt-cache
         run: |
           pnpm -C web install --frozen-lockfile
           pnpm -C apps/desktop install --frozen-lockfile

@@ -134,6 +134,7 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 				u.agentState(&st)
 			}
 			st.HomeDB = ns.homeDB.State()
+			st.DBClientCert = supervisor.PresentsClientCert(supervisor.NodeConfig())
 			return st
 		},
 		// the home's switch to another machine (serve_switchover.go)
@@ -206,6 +207,8 @@ func homeStreamProxy(target string) http.Handler {
 		r.Header.Del("Cookie")
 		r.Header.Del("Authorization")
 		r.Header.Del("X-Maktaba-Via")
+		// the home's front door trusts it only from its own gate (loopback)
+		r.Header.Del(viewerHeader)
 	}
 	proxy.FlushInterval = -1
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {

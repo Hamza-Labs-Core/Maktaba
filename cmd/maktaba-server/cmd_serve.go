@@ -64,6 +64,11 @@ In container/orchestrated deployments, start one role per container:
 				if err != nil {
 					return err
 				}
+				// Epic 36 story 36.15: the move the web asked for, and the wait for a
+				// data folder whose disk is not connected yet (serve_storage.go)
+				if cfg, err = storageGate(cfg, strings.TrimSpace(strings.ToLower(role)), os.Stderr); err != nil {
+					return err
+				}
 				if err := servePorts(&cfg, found, strings.TrimSpace(strings.ToLower(role)), noWeb); err != nil {
 					return err
 				}
@@ -416,6 +421,8 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	if u := upd.Load(); u != nil {
 		admin = u.adminHandler(admin, token)
 	}
+	// the web's Storage & discovery settings (serve_config.go)
+	admin = newConfigAdmin(cfg, token, releaseDir).adminHandler(admin)
 	admin = logFilesAdmin(admin, token, logDirs)
 	admin = metricsAdmin(admin, logDirs.Updates)
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {

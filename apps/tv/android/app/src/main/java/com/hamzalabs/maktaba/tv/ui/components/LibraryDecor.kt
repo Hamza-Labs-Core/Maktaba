@@ -30,7 +30,7 @@ import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import com.hamzalabs.maktaba.tv.R
+import com.hamzalabs.maktaba.core.R
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 
 /** Corner radius shared by cards, panels and the focus ring. */
@@ -53,7 +53,7 @@ fun LibraryBackdrop(
 ) {
     Box(modifier.fillMaxSize().background(MaktabaPalette.Background)) {
         Image(
-            painter = painterResource(R.drawable.library_dark),
+            painter = painterResource(R.drawable.library_dark_wide),
             contentDescription = null, // decorative
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),

@@ -77,6 +77,7 @@ type Mirror struct {
 	Now   func() time.Time
 
 	mu           sync.Mutex
+	bg           sync.WaitGroup      // the prefetches and wheelhouse downloads under way
 	tokenKey     []byte              // the download tokens' key (<Dir>/.download-token.key)
 	checked      map[string]keptStat // kept files that verified in this process
 	fetching     map[string]*flight
@@ -759,7 +760,9 @@ func (m *Mirror) Prefetch(ctx context.Context, version string, platforms []strin
 	if m == nil {
 		return
 	}
+	m.bg.Add(1)
 	go func() {
+		defer m.bg.Done()
 		ctx := context.WithoutCancel(ctx)
 		rel, err := m.release(ctx, version)
 		if err != nil {
@@ -791,6 +794,14 @@ func (m *Mirror) Prefetch(ctx context.Context, version string, platforms []strin
 			m.startWheelhouse(ctx, rel, man, p)
 		}
 	}()
+}
+
+// Wait waits for the mirror's background downloads (the prefetches, the wheelhouses) to
+// end: a test before its folder goes, a home before it stops.
+func (m *Mirror) Wait() {
+	if m != nil {
+		m.bg.Wait()
+	}
 }
 
 // Prune deletes the copies of every release but keep (the releases the cluster runs or

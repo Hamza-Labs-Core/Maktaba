@@ -318,4 +318,8 @@ func TestStreamingGetsThePathMapInItsForm(t *testing.T) {
 	if got := StreamPathMap("bad, =/x, /a=/b"); got != "/a=>/b" {
 		t.Fatalf("StreamPathMap = %q", got)
 	}
+	// the separator the workers read (and server.toml's own, Epic 45's settings write it)
+	if got := StreamPathMap("/a=/b;/c=/d"); got != "/a=>/b;/c=>/d" {
+		t.Fatalf("StreamPathMap = %q", got)
+	}
 }

@@ -93,6 +93,7 @@ type setupStepFunc func(s *setupRun, in json.RawMessage) (any, error)
 var setupSteps = map[string]setupStepFunc{
 	"status":    func(*setupRun, json.RawMessage) (any, error) { return setupStatus() },
 	"check":     stepCheck,
+	"storage":   stepStorage,
 	"admin":     stepAdmin,
 	"libraries": stepLibraries,
 	"models":    stepModels,
@@ -217,7 +218,11 @@ func setupStatus() (map[string]any, error) {
 		return nil, err
 	}
 	node := supervisor.NodeJoined(cfg)
-	configured := found && (node || databaseExists(cfg)) && !adopt.UndoneHere(cfg.StateDir())
+	// a data folder on a disk that is not connected (Epic 36 story 36.15) is an
+	// install set up: the server waits for its disk, and setup never makes a new
+	// database in its place
+	missing, storageMissing := cfg.StorageMissing()
+	configured := found && (node || storageMissing || databaseExists(cfg)) && !adopt.UndoneHere(cfg.StateDir())
 	// a server.toml and node config in the app's place that are an install's
 	// outside the app (copied there by a newer command, story 38.1): not the
 	// app's own while that install is here (installHere)
@@ -225,9 +230,10 @@ func setupStatus() (map[string]any, error) {
 		configured = false
 	}
 	return map[string]any{
-		"configured":     configured,
-		"web_url":        "http://" + supervisor.LocalAddr(cfg.Server.WebListen, "8088"),
-		"supervisor_url": supervisor.StateURL(cfg),
+		"storage_missing": missing,
+		"configured":      configured,
+		"web_url":         "http://" + supervisor.LocalAddr(cfg.Server.WebListen, "8088"),
+		"supervisor_url":  supervisor.StateURL(cfg),
 	}, nil
 }
 

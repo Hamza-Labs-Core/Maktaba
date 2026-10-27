@@ -165,7 +165,7 @@ func TestAskFirstNewerRunReplacesTheOrder(t *testing.T) {
 		t.Fatalf("a newer run while the order waits: %v", err)
 	}
 	j := r.waitState(StatePrepared)
-	if j.Job.RunID != "run-2" || w.staged["1.5.0"] || !w.called("discard") {
+	if j.Job.RunID != "run-2" || !w.waitCalled(t, "discard") || w.staged["1.5.0"] {
 		t.Fatalf("run %s staged %v", j.Job.RunID, w.staged)
 	}
 	_ = r.m.Apply("run-2")
@@ -182,7 +182,7 @@ func TestAskFirstAppFailureChangesNothing(t *testing.T) {
 	if j.Error == nil || j.Error.Code != "app_install_failed" || j.Error.Step != StepAsk {
 		t.Fatalf("error %+v", j.Error)
 	}
-	if w.next != "1.4.0" || w.called(StepSwitch) || !w.called("discard") {
+	if !w.waitCalled(t, "discard") || w.next != "1.4.0" || w.called(StepSwitch) {
 		t.Fatalf("next %s calls %v", w.next, w.calls)
 	}
 }

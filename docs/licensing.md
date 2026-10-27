@@ -114,6 +114,17 @@ security find-generic-password -s maktaba-license-signing -w \
   | maktaba-cloud license issue --key-stdin --tier pro --days 365 --holder "Name" > license.json
 ```
 
-Paste the file's contents in the home's Settings → Subscription → License, then
-delete the file. Revoke one with `maktaba-cloud license revoke --id lic_… --reason …`
+Paste the file's contents in the home's Settings → Subscription → License, or apply
+it on the home from the command line, then delete the file:
+
+```sh
+maktaba-server license apply license.json   # or - to read standard input
+maktaba-server license status
+```
+
+On the Mac app the program is `/Applications/Maktaba.app/Contents/Resources/server/bin/maktaba-server`.
+The command checks the license with the key the release was built with, as Settings
+does, records it, and writes `license.applied` (`via: cli`) to the audit log; the
+running server takes it up within a minute (it reads the recorded license every
+minute), with no restart. Revoke one with `maktaba-cloud license revoke --id lic_… --reason …`
 (or the cloud admin API); homes lock at their next daily check.

@@ -68,7 +68,7 @@ After Maktaba is updated, the page you have open may show **A new version is ava
 
 ### First run on a Mac {#first-run}
 
-On a Mac, Maktaba.app walks you through setup the first time: what will run, your admin account, your library folders, the transcription models, Plex (optional), then the install. See [The Mac app](/help/mac-app) for each step.
+On a Mac, Maktaba.app walks you through setup the first time: what will run, where Maktaba keeps its data, your admin account, your library folders, the transcription models, Plex (optional), then the install. See [The Mac app](/help/mac-app) for each step.
 
 ## What the states and messages mean {#states}
 

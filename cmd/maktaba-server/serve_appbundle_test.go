@@ -863,6 +863,9 @@ func TestDetailCodesAreAFixedList(t *testing.T) {
 		"venv_building":            "step done total percent message",
 		"venv_interrupted":         "log",
 		"venv_failed":              "error log",
+		"storage_waiting":          "path",
+		"storage_moving":           "to done total percent",
+		"storage_move_failed":      "to error",
 	}
 	if len(detailCodes) != len(want) {
 		t.Errorf("%d codes, the list has %d", len(detailCodes), len(want))

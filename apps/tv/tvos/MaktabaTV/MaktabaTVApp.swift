@@ -26,6 +26,7 @@ struct MaktabaTVApp: App {
             RootView(session: session)
                 .font(Theme.body(29))
                 .maktabaTheme(theme)
+                .permissionsWalkthrough()
                 .tint(Theme.gold)
         }
     }

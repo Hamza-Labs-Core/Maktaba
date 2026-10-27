@@ -1,0 +1,59 @@
+# Reusable gate for the Android TV app (Epic 14, `apps/tv/android`): its unit tests (sign-in
+# by code, the authorized API calls, resume), Android lint, and a debug build. It builds on
+# the phone apps' shared core (apps/android/core), so a change there runs this gate too.
+
+name: Android TV app
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  android-tv:
+    name: Android TV app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/tv/android
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        # compileSdk 37, as the core's; AGP fetches its build-tools.
+        with:
+          packages: platform-tools platforms;android-37.0
+
+      - name: Gradle caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: android-tv-gradle-${{ hashFiles('apps/android/gradle/libs.versions.toml', 'apps/tv/android/gradle/*.toml', 'apps/tv/android/gradle/wrapper/gradle-wrapper.properties', 'apps/tv/android/**/*.gradle.kts', 'apps/android/core/build.gradle.kts') }}
+          restore-keys: android-tv-gradle-
+
+      - name: Unit tests, lint, build
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+
+      - name: Reports
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: android-tv-reports
+          path: |
+            apps/tv/android/app/build/reports/
+            apps/tv/android/app/build/test-results/
+          retention-days: 7

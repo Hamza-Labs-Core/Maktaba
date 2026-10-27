@@ -4,20 +4,20 @@
 - **Component:** `src/pages/Login.tsx` (the sign-in form is the only way in, on every machine: a node checks it against the home's accounts)
 - **API calls:** `POST /api/auth/login` `{ username, password }` → `{ user: { id, username, is_admin } }` via `useAuth().login` in `src/lib/auth.tsx`; `GET /api/auth/me` → `{ user }` (session probe in `AuthProvider`, 401 = signed out)
 - **Access:** public (outside `RequireAuth` and outside `AppShell`). A signed-in user is sent on at once.
-- **Existing tests:** `src/pages/Login.test.tsx` (mocks `useAuth`) — covers: `?next=/videos/42` opens with the router; already signed in with `?next=` goes there at once; unsafe `?next` values (`http://evil...`, `//evil`, `/\evil`, `javascript:`) fall back to `/library`; the sign-out-everywhere notes. `src/pages/Login.cases.test.tsx` (real `AuthProvider`) and `src/App.cases.test.tsx` cover the cases below.
+- **Existing tests:** `src/pages/Login.test.tsx` (mocks `useAuth`) — covers: `?next=/videos/42` opens with the router; already signed in with `?next=` goes there at once; unsafe `?next` values (`http://evil...`, `//evil`, `/\evil`, `javascript:`) fall back to `/`; the sign-out-everywhere notes. `src/pages/Login.cases.test.tsx` (real `AuthProvider`) and `src/App.cases.test.tsx` cover the cases below.
 
 ## Summary
 
 | ID     | Title                                                          | Category      | Priority | Covered by existing test?                                |
 | ------ | -------------------------------------------------------------- | ------------- | -------- | -------------------------------------------------------- |
-| LGN-01 | Sign in goes to /library by default                            | Happy path    | P1       | Yes (`Login.cases.test.tsx`)                             |
+| LGN-01 | Sign in goes to Home (`/`) by default                          | Happy path    | P1       | Yes (`Login.cases.test.tsx`)                             |
 | LGN-02 | Sign in returns to `state.from`                                | Navigation    | P1       | Yes (`Login.cases.test.tsx`)                             |
 | LGN-03 | Signed-out deep link round trip keeps the page (and its query) | Navigation    | P1       | Yes (`Login.cases.test.tsx`)                             |
 | LGN-04 | `?next=` app path wins over `state.from`                       | Navigation    | P2       | Yes (`Login.cases.test.tsx`)                             |
 | LGN-05 | Already signed in with `?next=`: goes there at once            | Navigation    | P1       | Yes (`Login.test.tsx`)                                   |
-| LGN-06 | Unsafe `?next=` falls back to /library                         | Permissions   | P1       | Yes (`Login.test.tsx`)                                   |
-| LGN-07 | Unsafe `state.from` falls back to /library                     | Permissions   | P1       | Yes (`Login.cases.test.tsx`)                             |
-| LGN-08 | Already signed in: /login redirects to /library at once        | Navigation    | P1       | Yes (`Login.cases.test.tsx`)                             |
+| LGN-06 | Unsafe `?next=` falls back to Home (`/`)                       | Permissions   | P1       | Yes (`Login.test.tsx`)                                   |
+| LGN-07 | Unsafe `state.from` falls back to Home (`/`)                   | Permissions   | P1       | Yes (`Login.cases.test.tsx`)                             |
+| LGN-08 | Already signed in: /login redirects to Home (`/`) at once      | Navigation    | P1       | Yes (`Login.cases.test.tsx`)                             |
 | LGN-09 | Already signed in with `state.from`: goes there                | Navigation    | P2       | Yes (`Login.cases.test.tsx`)                             |
 | LGN-10 | Session probe finishes after render: page moves on             | Loading       | P2       | Yes (`Login.cases.test.tsx`)                             |
 | LGN-11 | Wrong password (401) shows the invalid-credentials alert       | Error         | P1       | Yes (`Login.cases.test.tsx`)                             |
@@ -40,7 +40,7 @@
 
 ## Cases
 
-### LGN-01 — Sign in goes to /library by default
+### LGN-01 — Sign in goes to Home (`/`) by default
 
 - **Priority:** P1
 - **Category:** Happy path
@@ -50,7 +50,7 @@
   1. Open `/login`.
   2. Type `amal` in "Username" and `secret` in "Password".
   3. Click "Sign in".
-- **Expected:** `POST /api/auth/login` sent with body `{ "username": "amal", "password": "secret" }`. Location becomes `/library`. The form is gone.
+- **Expected:** `POST /api/auth/login` sent with body `{ "username": "amal", "password": "secret" }`. Location becomes `/` (Home). The form is gone.
 
 ### LGN-02 — Sign in returns to `state.from`
 
@@ -60,7 +60,7 @@
 - **Preconditions / data:** MemoryRouter initial entry `{ pathname: "/login", state: { from: "/videos/42" } }`; login resolves.
 - **Steps:**
   1. Sign in as in LGN-01.
-- **Expected:** Location becomes `/videos/42`, not `/library`. `assignLocation` not called.
+- **Expected:** Location becomes `/videos/42`, not `/`. `assignLocation` not called.
 
 ### LGN-03 — Signed-out deep link round trip keeps the page (and its query)
 
@@ -94,7 +94,7 @@
   1. Open `/login?next=%2Fvideos%2F42`.
 - **Expected:** The router goes to `/videos/42` without showing the form.
 
-### LGN-06 — Unsafe `?next=` falls back to /library
+### LGN-06 — Unsafe `?next=` falls back to Home (`/`)
 
 - **Priority:** P1
 - **Category:** Permissions
@@ -102,9 +102,9 @@
 - **Preconditions / data:** `next` values: `http://evil.example/x`, `//evil.example/x`, `/\evil.example/x`, `javascript:alert(1)`, and one with a newline (`/library%0A//evil`).
 - **Steps:**
   1. Sign in.
-- **Expected:** Location `/library`; `assignLocation` never called. Add the control-character value (not in the existing `it.each`).
+- **Expected:** Location `/` (Home); `assignLocation` never called. Add the control-character value (not in the existing `it.each`).
 
-### LGN-07 — Unsafe `state.from` falls back to /library
+### LGN-07 — Unsafe `state.from` falls back to Home (`/`)
 
 - **Priority:** P1
 - **Category:** Permissions
@@ -112,9 +112,9 @@
 - **Preconditions / data:** state `{ from: "//evil.example/x" }`, then `{ from: "https://evil.example" }`, then `{ from: 42 }` (non-string).
 - **Steps:**
   1. Sign in.
-- **Expected:** Location `/library` each time; no full-page navigation; no throw.
+- **Expected:** Location `/` (Home) each time; no full-page navigation; no throw.
 
-### LGN-08 — Already signed in: /login redirects to /library at once
+### LGN-08 — Already signed in: /login redirects to Home (`/`) at once
 
 - **Priority:** P1
 - **Category:** Navigation
@@ -122,7 +122,7 @@
 - **Preconditions / data:** `GET /api/auth/me` → `{ "user": { "id": "u1", "username": "amal", "is_admin": false } }`.
 - **Steps:**
   1. Open `/login` with no query.
-- **Expected:** Location becomes `/library` (replace). The login form is never visible (component returns `null` while `user` is set). Browser Back does not return to `/login`.
+- **Expected:** Location becomes `/` (Home) (replace). The login form is never visible (component returns `null` while `user` is set). Browser Back does not return to `/login`.
 
 ### LGN-09 — Already signed in with `state.from`: goes there
 
@@ -143,7 +143,7 @@
 - **Steps:**
   1. Open `/login`. Form shows (user is still null while the probe runs).
   2. Resolve `/me` with a user.
-- **Expected:** Page navigates to `/library` without the user doing anything; navigation happens once (the `left` ref guards a double `leave()`).
+- **Expected:** Page navigates to `/` (Home) without the user doing anything; navigation happens once (the `left` ref guards a double `leave()`).
 
 ### LGN-11 — Wrong password (401) shows the invalid-credentials alert
 
@@ -183,7 +183,7 @@
 - **Preconditions / data:** full App routes; login → `200` `application/json` `{}` (or `text/html` body).
 - **Steps:**
   1. Submit.
-- **Expected:** An error alert stays on `/login`. (Currently `setUser(undefined)` then `leave()` navigates to `/library`, `RequireAuth` bounces back to `/login`, and the user sees an empty form with no message — currently unhandled — likely bug.)
+- **Expected:** An error alert stays on `/login`. (Currently `setUser(undefined)` then `leave()` navigates to `/` (Home), `RequireAuth` bounces back to `/login`, and the user sees an empty form with no message — currently unhandled — likely bug.)
 
 ### LGN-15 — Submitting state: button disabled, one request only
 

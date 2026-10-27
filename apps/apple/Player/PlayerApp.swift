@@ -16,6 +16,35 @@ struct PlayerApp: App {
                 LibraryBrowser(session: session, user: user, client: client, playing: $playing)
             }
             .maktabaTheme(theme, forceDark: playing)
+            .permissionsWalkthrough()
+        }
+        #if os(macOS)
+        .defaultSize(width: 1200, height: 780)
+        #endif
+        .commands {
+            PlaybackCommands()
+            AccountCommands(session: session, theme: $theme)
+        }
+    }
+}
+
+/// The Account menu (the Mac's menu bar, an iPad's with a keyboard): the theme, switching
+/// home, signing out.
+struct AccountCommands: Commands {
+    let session: AppSession
+    @Binding var theme: ThemeMode
+
+    var body: some Commands {
+        CommandMenu("Account") {
+            Picker("Theme", selection: $theme) {
+                ForEach(ThemeMode.allCases) { Text($0.label).tag($0) }
+            }
+            Divider()
+            Button("Switch Home…") { session.switchHome() }
+                .keyboardShortcut("h", modifiers: [.command, .shift])
+                .disabled(session.phase == .choosingHome)
+            Button("Sign Out") { session.signOut() }
+                .disabled(!session.signedIn)
         }
     }
 }
