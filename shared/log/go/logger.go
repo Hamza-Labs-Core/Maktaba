@@ -192,8 +192,11 @@ func makeReplaceAttr(redact map[string]struct{}) func([]string, slog.Attr) slog.
 			}
 			return a
 		}
-		if _, ok := redact[strings.ToLower(a.Key)]; ok {
+		if keySensitive(redact, a.Key) {
 			return slog.String(a.Key, redactedValue)
+		}
+		if r, ok := redactValue(a.Value); ok {
+			return slog.String(a.Key, r)
 		}
 		return a
 	}
