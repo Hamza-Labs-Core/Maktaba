@@ -109,7 +109,7 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 				"the FFmpeg subprocess hasn't written the master playlist; client should retry")
 			return
 		}
-		httpx.Write(w, http.StatusInternalServerError, "read-failed", "manifest read failed", err.Error())
+		httpx.Write(w, http.StatusInternalServerError, "read-failed", "manifest read failed", "")
 		return
 	}
 	if !h.reloaded(w, r, row) {
@@ -166,7 +166,7 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 		if h.overBeforeWritten(w, r, sub) {
 			return
 		}
-		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", err.Error())
+		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", "")
 		return
 	}
 	id, err := uuid.Parse(sub)
