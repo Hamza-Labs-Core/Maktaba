@@ -247,7 +247,7 @@ fun SignIn(session: AppSession) {
                 modifier = Modifier.semantics { heading() },
             )
             restoreProblem?.let {
-                Problem(t["signin.restoreFailed", it])
+                Problem(t["signin.restoreFailed", t.sentence(it)])
                 TextButton(onClick = { session.retryRestore() }) { Text(t["common.retry"]) }
             }
             PrimaryTabRow(selectedTabIndex = tab) {
