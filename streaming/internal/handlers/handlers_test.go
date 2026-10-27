@@ -883,7 +883,7 @@ func TestManifestHandler_RenditionWaitedForWhileTheTranscodeStarts(t *testing.T)
 		store := &fakeSessionStore{rows: map[uuid.UUID]*session.Row{
 			sessID: {ID: sessID, Format: session.FormatHLS, Transcoder: tr},
 		}}
-		h := &ManifestHandler{Sessions: store, Layout: layout, FirstWrite: 3 * time.Second}
+		h := &ManifestHandler{Sessions: store, Layout: layout, FirstWrite: 300 * time.Millisecond}
 		r := chi.NewRouter()
 		r.With(injectSubject(sessID.String())).Get("/stream/{session_id}/{rendition}/index.m3u8", h.ServeRenditionIndex)
 		if write > 0 {
@@ -897,13 +897,13 @@ func TestManifestHandler_RenditionWaitedForWhileTheTranscodeStarts(t *testing.T)
 		r.ServeHTTP(rec, httptest.NewRequest("GET", "/stream/"+sessID.String()+"/v0/index.m3u8", nil))
 		return rec.Code, time.Since(start)
 	}
-	if code, _ := ask(fakeTranscode{active: true}, 400*time.Millisecond); code != 200 {
+	if code, _ := ask(fakeTranscode{active: true}, 100*time.Millisecond); code != 200 {
 		t.Fatalf("written a moment after the ask, while the transcode runs: %d, want 200", code)
 	}
-	if code, took := ask(fakeTranscode{}, 400*time.Millisecond); code != 404 || took > time.Second {
+	if code, took := ask(fakeTranscode{}, 100*time.Millisecond); code != 404 || took > 150*time.Millisecond {
 		t.Fatalf("no transcode running: %d after %v, want an immediate 404", code, took)
 	}
-	if code, took := ask(fakeTranscode{active: true}, 0); code != 404 || took < 3*time.Second {
+	if code, took := ask(fakeTranscode{active: true}, 0); code != 404 || took < 300*time.Millisecond {
 		t.Fatalf("never written: %d after %v, want 404 after the wait", code, took)
 	}
 }
