@@ -2,6 +2,7 @@ package pgbundle
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	_ "github.com/lib/pq" // the dump's snapshot session
 )
 
 // KeepBackups is how many nightly dumps stay in backups/ when [backups] keep is not
@@ -92,12 +95,25 @@ func (b Bundle) DumpTo(ctx context.Context, path string) error {
 	return b.dumpTo(ctx, path, DumpOptions{})
 }
 
+// openDB opens the dump's snapshot session (tests with fake programs open none).
+var openDB = sql.Open
+
 // dumpTo writes a dump of the app database to path (PgDump: written beside,
 // path.partial, and moved into place, so a dump cut short is never taken for one).
 func (b Bundle) dumpTo(ctx context.Context, path string, opts DumpOptions) error {
 	superPW, err := readPassword(b.passwordFile(SuperUser))
 	if err != nil {
 		return err
+	}
+	if opts.Open == nil {
+		opts.Open = func(context.Context) (*sql.DB, error) {
+			u, err := b.SuperURL()
+			if err != nil {
+				return nil, err
+			}
+			return openDB("postgres", u)
+		}
+		opts.PSQL = b.Bin("psql")
 	}
 	return PgDump(ctx, b.Bin("pg_dump"), []string{"-h", "127.0.0.1", "-p", strconv.Itoa(b.Port), "-U", SuperUser,
 		"--dbname=" + AppDatabase}, append(os.Environ(), "PGPASSWORD="+superPW), path, opts)

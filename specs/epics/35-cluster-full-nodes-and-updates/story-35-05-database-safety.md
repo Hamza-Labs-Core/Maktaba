@@ -25,8 +25,8 @@ Design: [design.md](design.md) §6; README decisions "Database rollback", "Contr
 
 - **AC1** `backup` step (only when the staged release has migrations the database lacks; taken
   while the running release serves, right before the switch, which alone waits for it): Postgres
-  `pg_dump --format=directory --jobs=N` (zstd:1, else lz4, else gzip:1) without
-  `segment_embeddings`' rows into `<data_dir>/backups/pre-<from>-to-<to>.dump` (a folder, mode
+  `pg_dump --format=directory --jobs=N` (zstd:1, else lz4, else gzip:1) of the whole database,
+  `segment_embeddings` in parallel binary chunks, into `<data_dir>/backups/pre-<from>-to-<to>.dump` (a folder, mode
   0700), never on the share; `pg_restore --list` must parse it and list every table; its size is
   the run's backup. SQLite: `VACUUM INTO`. (Amended 2026-10-27: see install-kinds.md "The
   database".)

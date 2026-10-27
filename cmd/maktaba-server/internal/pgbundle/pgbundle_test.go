@@ -4,6 +4,8 @@ package pgbundle
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -97,6 +99,11 @@ func fakeBundle(t *testing.T) (Bundle, string) {
 		return nil
 	}
 	t.Cleanup(func() { readyCheck = prev })
+	// no snapshot session for the dumps: no server listens (never reach a real one on the
+	// port); pg_dump writes every table
+	prevOpen := openDB
+	openDB = func(string, string) (*sql.DB, error) { return nil, errors.New("fake programs: no server") }
+	t.Cleanup(func() { openDB = prevOpen })
 	return Bundle{
 		Home:    filepath.Join(root, "pg"),
 		Data:    filepath.Join(root, "state", "postgres"),
@@ -575,12 +582,10 @@ func TestDumpBeforeUpdate(t *testing.T) {
 	if n := lines(t, filepath.Join(logDir, "pg_dump.calls")); n != 5 {
 		t.Fatalf("pg_dump ran %d times, want 5", n)
 	}
-	calls := strings.Split(strings.TrimSpace(read(t, filepath.Join(logDir, "pg_dump.calls"))), "\n")
-	for i, c := range calls {
-		// the nightly one whole; the pre-update ones without the rows the pipeline makes again
-		if skips := strings.Contains(c, "--exclude-table-data=public.segment_embeddings"); skips != (i > 0) {
-			t.Errorf("call %d: %s", i, c)
-		}
+	// every dump whole: with no snapshot session for the chunks, pg_dump writes every table
+	if calls := read(t, filepath.Join(logDir, "pg_dump.calls")); strings.Contains(calls, "--exclude-table-data") ||
+		strings.Contains(calls, "--snapshot") {
+		t.Errorf("pg_dump calls:\n%s", calls)
 	}
 }
 

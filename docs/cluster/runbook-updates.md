@@ -84,8 +84,7 @@ or a release you rolled back by hand that refuses the newer schema.
   as `backups/replaced-<version>-<time>.dump` (restore that one to undo). The machines copy the
   restored database anew.
 - **What it loses**: every change made since the backup was taken — added videos, watch history,
-  settings, jobs done. A `pre-<from>-to-<to>.dump` is from right before that update's switch, and
-  holds no semantic-search vectors: the pipeline embeds the transcripts again after it is put back.
+  settings, jobs done. A `pre-<from>-to-<to>.dump` is from right before that update's switch.
 - **Refusals**: `restore_not_confirmed` (no confirmation), `restore_update_under_way` (cancel the
   run, or wait for it), `restore_no_release` (no kept release has the backup's schema: install the
   release it names, then restore), `restore_bad_backup` / `restore_no_backup` (not a backup's

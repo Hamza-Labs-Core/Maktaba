@@ -70,8 +70,8 @@ func one(t *testing.T, q Querier, sql string) string {
 
 // The parallel dump and its parallel restore, on a real cluster: a directory-format dump
 // (several workers, one file per table) of a database of several tables, put back into
-// the running server whole; the pre-update one without the vectors, whose table and index
-// come back empty. A dump of before (one custom-format file) is put back the same way.
+// the running server whole, the vectors in binary chunks (dumped apart in the dump's
+// snapshot, loaded before the indexes). A dump of before (one custom-format file) too.
 func TestRealParallelDumpAndRestore(t *testing.T) {
 	b, q := realServer(t)
 	ctx := context.Background()
@@ -115,9 +115,10 @@ INSERT INTO segment_embeddings SELECT id, '`+lit+`' FROM transcript_segments;`);
 		if _, err := os.Stat(filepath.Join(d, "toc.dat")); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if DumpBytes(pre) >= DumpBytes(whole) {
-		t.Fatalf("the pre-update dump (%d bytes) is not smaller than the whole one (%d)", DumpBytes(pre), DumpBytes(whole))
+		// the vectors apart, in binary chunks of the dump's snapshot
+		if c := Chunks(d)["public.segment_embeddings"]; len(c) != DumpJobs() {
+			t.Fatalf("%s: chunks %v, want %d", d, c, DumpJobs())
+		}
 	}
 	// what a failed update did
 	if err := q.Exec(ctx, AppDatabase, `SET ROLE `+AppRole+`;
@@ -151,7 +152,7 @@ CREATE TABLE channels (id serial PRIMARY KEY);`); err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("the pre-update dump (%d bytes) put back in %s", DumpBytes(pre), time.Since(start))
-	check("the pre-update dump", "0")
+	check("the pre-update dump", "20000")
 	if err := b.RestoreRunning(ctx, whole, io.Discard); err != nil {
 		t.Fatal(err)
 	}

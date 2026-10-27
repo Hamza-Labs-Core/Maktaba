@@ -227,16 +227,25 @@ updated its runtime) offers its own update for its window and tray.
    compressed with `zstd:1`, else `lz4`, else `gzip:1` (else `-Z 1` for a `pg_dump` older than
    16), the first the `pg_dump` at hand takes (the bundled one has zlib only). A worker locks
    its table with NOWAIT: one locked out (a session asked for its table whole while the server
-   served) begins the dump again, twice at most. The dumps taken
-   before an update leave out the rows of `pgbundle.Regenerable`: `segment_embeddings`,
-   semantic search's vectors (31 of 47 GB on the home that measured it, the bulk of a 35 GB dump
-   one worker wrote for ten minutes); its definition and indexes stay, and once such a dump is
-   put back the pipeline's reconciler queues an `index` job for every video with no vectors
-   (`_semantic_sweep`), which embeds its transcript again. The nightly dumps keep them.
-   Measured on a scratch copy shaped like that home (its tables but the vectors at full scale,
-   the vectors at a tenth; the app's PostgreSQL 16, gzip:1, 8 workers): the pre-update dump
-   took 21 s for 3.3 GB where the single-file dump took 63 s plus 53 s per tenth of the
-   vectors (about 10 minutes for the whole home, as its log said), and it went back in 104 s.
+   served) begins the dump again, twice at most. Every dump is whole (owner, 2026-10-27: a
+   backup that left the vectors out would cost days of embedding after a restore). The
+   tables of `pgbundle.Chunked` are written apart: `segment_embeddings`, semantic search's
+   vectors (31 of 47 GB on the home that measured it), was the bulk of a 35 GB dump that one
+   pg_dump worker wrote as text for ten minutes (formatting each vector's 384 numbers is the
+   cost, not the compression). A session of the dump's role exports a snapshot and stays open;
+   `pg_dump --snapshot` leaves those rows out, and `DumpJobs` psql sessions set the same
+   snapshot and each COPY one range of the key out in binary
+   (`chunk.public.segment_embeddings.<n>.bin` in the dump's folder, which pg_restore does not
+   read). Putting a dump back runs pre-data and data, then loads the chunks as many at once
+   (`pgbundle.LoadChunks`; one `\copy` each in the in-place restore's single transaction),
+   then post-data, so the indexes are built once over the loaded rows. Without a snapshot
+   session (no psql) pg_dump writes every table itself, slower but whole.
+   Measured on a scratch copy shaped like that home at full scale (24 GB: its tables, and 17M
+   distinct halfvec(384) vectors; the app's PostgreSQL 16, gzip:1, 8 workers): the single-file
+   dump of before took 619 s for 35.8 GB (the home's own log said ten minutes for 35 GB); this
+   one took 25 s for 17.2 GB, the vectors' chunks written beside the other tables. Putting it
+   back took 5 min 21 s (tables and data 91 s, the vectors 185 s, indexes 45 s; the home's
+   HNSW index comes on top of that).
    The
    folder's rules (`MakeRoom`, `PruneBackups`, the Backups page, moving the backups, a restore
    by hand) take a dump's folder as they take a file, by its files' size; the single-file dumps

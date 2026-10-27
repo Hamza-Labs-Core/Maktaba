@@ -34,8 +34,8 @@ func UpdateDumpName(from, to string) string {
 
 // DumpBeforeUpdate writes a dump of the app database into backups/UpdateDumpName(from,
 // to) (beside and moved into place: a dump of that name there already is replaced, so
-// the dump is always the database as it is now), without the rows Maktaba makes again
-// (Regenerable), and keeps the newest keep pre-update dumps, this one always. Room is
+// the dump is always the database as it is now), whole, and keeps the newest keep
+// pre-update dumps, this one always. Room is
 // made for it first (MakeRoom). The server must be up; it goes on serving meanwhile
 // (pg_dump reads one snapshot).
 func (b Bundle) DumpBeforeUpdate(ctx context.Context, from, to string, keep int) (string, error) {
@@ -43,7 +43,7 @@ func (b Bundle) DumpBeforeUpdate(ctx context.Context, from, to string, keep int)
 		return "", err
 	}
 	path := filepath.Join(b.Backups, UpdateDumpName(from, to))
-	if err := b.dumpTo(ctx, path, DumpOptions{SkipData: Regenerable}); err != nil {
+	if err := b.dumpTo(ctx, path, DumpOptions{}); err != nil {
 		return "", err
 	}
 	return path, PruneBackups(b.Backups, path, BackupsKeep(b.Backups, keep))

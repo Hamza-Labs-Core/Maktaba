@@ -71,7 +71,7 @@ func PruneBackups(dir, keepPath string, keep int) error {
 			continue // gone meanwhile
 		}
 		stale := strings.HasPrefix(name, ".rehearse-") && e.IsDir() && time.Since(info.ModTime()) > staleRehearsal ||
-			strings.HasSuffix(name, backupSuffix+".partial") && time.Since(lastWrite(filepath.Join(dir, name), info)) > staleRehearsal
+			strings.Contains(name, backupSuffix+".partial") && time.Since(lastWrite(filepath.Join(dir, name), info)) > staleRehearsal
 		if stale {
 			if err := os.RemoveAll(filepath.Join(dir, name)); err != nil && firstErr == nil {
 				firstErr = err

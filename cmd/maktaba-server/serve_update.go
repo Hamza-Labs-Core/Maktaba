@@ -350,7 +350,7 @@ func (r rehearser) BackupBefore(ctx context.Context, from, to string, progress f
 	if r.off {
 		return nil, nil
 	}
-	part := filepath.Join(r.t.Backups, pgbundle.UpdateDumpName(from, to)) + ".partial"
+	dump := filepath.Join(r.t.Backups, pgbundle.UpdateDumpName(from, to))
 	pctx, stop := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
@@ -362,7 +362,7 @@ func (r rehearser) BackupBefore(ctx context.Context, from, to string, progress f
 			case <-pctx.Done():
 				return
 			case <-t.C:
-				if n := pgbundle.DumpBytes(part); n > 0 && progress != nil {
+				if n := pgbundle.PartialBytes(dump); n > 0 && progress != nil {
 					progress(n)
 				}
 			}

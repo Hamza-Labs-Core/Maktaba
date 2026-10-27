@@ -223,14 +223,13 @@ new release does not confirm in time (15 minutes) or stops three times in ten mi
   `pg_restore` workers, each file compressed with zstd at level 1, else lz4, else gzip at level 1
   (whichever the `pg_dump` at hand was built with: the bundled one has gzip only). A dump of before
   (one file) is still listed, restored, moved and pruned as it was.
-- **What the backup before an update leaves out.** Semantic search's vectors
-  (`segment_embeddings`, about 85% of a large library's dump): Maktaba makes them again. A backup
-  put back without them leaves the table and its index empty; the pipeline's reconciler then
-  queues an `index` job for every video whose last one succeeded and has no vectors (1000 a
-  minute), which embeds its transcript again. Full-text search works throughout; semantic search
-  fills back in as the jobs run (on the home that measured it, about 60 segments a second on its
-  GPU: three days or so for its 17 million). Only a failed update's rollback, or a restore by
-  hand of such a backup, puts one back. The nightly backups keep the vectors.
+- **Every backup is whole, the vectors too.** Semantic search's vectors (`segment_embeddings`,
+  most of a large library: 31 of 47 GB on the home that measured it) are what made a backup slow:
+  `pg_dump` writes a table with one worker, as text. So the dump writes them apart, in binary,
+  in as many ranges as it has workers, all read at once in the same snapshot as the rest
+  (`chunk.public.segment_embeddings.<n>.bin` files in the dump's folder); putting a backup back
+  loads them, as many at once, after the tables and before their indexes are built. Nothing is
+  left out, so nothing has to be made again after a restore.
 
 **Backups.** Before every update that migrates, the home dumps its database into
 `<data_dir>/backups/pre-<from>-to-<to>.dump`. It keeps `backups_keep` (3) of each kind: those, the

@@ -539,10 +539,10 @@ func TestOldSingleFileDumpStillRestores(t *testing.T) {
 	}
 }
 
-// The pre-update dump leaves semantic search's vectors out (their table and its indexes
-// stay, empty, for the pipeline to fill again); the whole dump keeps them. Both read back
-// in parallel.
-func TestDumpWithoutTheRegenerableRows(t *testing.T) {
+// Every dump keeps semantic search's vectors: written apart in binary chunks in the dump's
+// snapshot (pgbundle.Chunked), not by pg_dump, and put back between the tables and their
+// indexes, in place in one transaction and into another database in parallel.
+func TestDumpKeepsTheVectorsInChunks(t *testing.T) {
 	r := newPGRig(t)
 	ctx := context.Background()
 	if !r.has(t, "segment_embeddings") {
@@ -555,46 +555,66 @@ INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mt
 INSERT INTO audio_tracks (id, video_id, track_index) VALUES (1, '00000000-0000-0000-0000-0000000000b1', 0);
 INSERT INTO transcripts (id, video_id, audio_track_id, language, backend, model) VALUES
   ('00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000b1', 1, 'en', 'b', 'm');
-INSERT INTO transcript_segments (id, transcript_id, seq, start_sec, end_sec, text) VALUES
-  (1, '00000000-0000-0000-0000-0000000000c1', 0, 0, 1, 'hello');
-INSERT INTO segment_embeddings (segment_id, video_id, library_id, language, model, embedding) VALUES
-  (1, '00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a1', 'en', 'm',
-   ('[' || array_to_string(array_fill(0.5::real, ARRAY[384]), ',') || ']')::halfvec);`); err != nil {
+INSERT INTO transcript_segments (id, transcript_id, seq, start_sec, end_sec, text)
+  SELECT g, '00000000-0000-0000-0000-0000000000c1', g, g, g + 1, 'hello ' || g FROM generate_series(1, 300) g;
+INSERT INTO segment_embeddings (segment_id, video_id, library_id, language, model, embedding)
+  SELECT g, '00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a1', 'en', 'm',
+   ('[' || array_to_string(array_fill((g / 1000.0)::real, ARRAY[384]), ',') || ']')::halfvec FROM generate_series(1, 300) g;`); err != nil {
 		t.Fatalf("the fixture: %v", err)
 	}
-	whole, pre := filepath.Join(r.t.Backups, "maktaba-whole.dump"), filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
-	if err := r.t.Dump(ctx, whole); err != nil {
+	sum := func() string {
+		var s string
+		if err := r.db.QueryRow(`SELECT count(*) || ':' || sum(segment_id) || ':' || md5(string_agg(embedding::text, ',' ORDER BY segment_id))
+			FROM segment_embeddings`).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	want := sum()
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(ctx, dump); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.t.DumpWith(ctx, pre, pgbundle.DumpOptions{SkipData: pgbundle.Regenerable}); err != nil {
+	chunks := pgbundle.Chunks(dump)
+	if len(chunks["public.segment_embeddings"]) != pgbundle.DumpJobs() {
+		t.Fatalf("chunks %v, want %d of the vectors", chunks, pgbundle.DumpJobs())
+	}
+	// written after the dump began: not in it
+	if _, err := r.db.Exec(`DELETE FROM segment_embeddings WHERE segment_id > 250`); err != nil {
 		t.Fatal(err)
 	}
-	count := func() (segments, vectors int) {
+	reopen := func() {
 		db, err := r.t.open(ctx, "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer db.Close()
+		t.Cleanup(func() { _ = db.Close() })
 		r.db = db
-		_ = db.QueryRow(`SELECT (SELECT count(*) FROM transcript_segments), (SELECT count(*) FROM segment_embeddings)`).
-			Scan(&segments, &vectors)
-		if !r.has(t, "segment_embeddings_hnsw") {
-			t.Fatal("the vectors' index is not there")
-		}
-		return segments, vectors
 	}
 	var log bytes.Buffer
-	if err := r.t.Restore(ctx, pre, &log); err != nil {
+	if err := r.t.Restore(ctx, dump, &log); err != nil {
 		t.Fatalf("restore: %v\n%s", err, log.String())
 	}
-	if s, v := count(); s != 1 || v != 0 {
-		t.Fatalf("the pre-update dump put back %d segments, %d vectors (want 1, 0)", s, v)
+	reopen()
+	if got := sum(); got != want || !r.has(t, "segment_embeddings_hnsw") {
+		t.Fatalf("in place: vectors %s, want %s (index there: %v)", got, want, r.has(t, "segment_embeddings_hnsw"))
 	}
-	if err := r.t.Restore(ctx, whole, &log); err != nil {
-		t.Fatalf("restore: %v\n%s", err, log.String())
+	// into another database (a rehearsal's), in parallel
+	if _, err := r.db.Exec(`CREATE DATABASE chunk_check TEMPLATE template0`); err != nil {
+		t.Fatal(err)
 	}
-	if s, v := count(); s != 1 || v != 1 {
-		t.Fatalf("the whole dump put back %d segments, %d vectors (want 1, 1)", s, v)
+	t.Cleanup(func() { _, _ = r.db.Exec(`DROP DATABASE IF EXISTS chunk_check WITH (FORCE)`) })
+	if err := r.t.restoreInto(ctx, "chunk_check", dump); err != nil {
+		t.Fatal(err)
+	}
+	other, err := r.t.open(ctx, "chunk_check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	var n int
+	if err := other.QueryRow(`SELECT count(*) FROM segment_embeddings`).Scan(&n); err != nil || n != 300 {
+		t.Fatalf("another database: %d vectors, %v", n, err)
 	}
 }
 

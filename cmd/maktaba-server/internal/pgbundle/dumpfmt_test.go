@@ -9,6 +9,33 @@ import (
 	"time"
 )
 
+// A dump's chunks are found by table, in order, and only its own files count as chunks; the
+// in-place restore's script loads each with \copy, quoting the path.
+func TestChunksOfADump(t *testing.T) {
+	dir := t.TempDir()
+	d := dirDump(t, dir, "pre-a-to-b.dump", 5, time.Now())
+	for _, n := range []string{"chunk.public.segment_embeddings.001.bin", "chunk.public.segment_embeddings.000.bin",
+		"chunk.public.other.000.bin", "chunk.bad.bin", "chunk.public.x.y.bin", "3457.dat.gz"} {
+		if err := os.WriteFile(filepath.Join(d, n), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := Chunks(d)
+	if len(c) != 2 || len(c["public.segment_embeddings"]) != 2 || filepath.Base(c["public.segment_embeddings"][0]) !=
+		"chunk.public.segment_embeddings.000.bin" || len(c["public.other"]) != 1 {
+		t.Fatalf("chunks %v", c)
+	}
+	if Chunks(filepath.Join(dir, "none.dump")) != nil {
+		t.Fatal("chunks of no dump")
+	}
+	if s := CopyScript(map[string][]string{"public.t": {"/b/it's.bin"}}); s != `\copy public.t FROM '/b/it''s.bin' WITH (FORMAT binary)`+"\n" {
+		t.Fatalf("script %q", s)
+	}
+	if PartialBytes(filepath.Join(dir, "none.dump")) != 0 {
+		t.Fatal("PartialBytes of nothing")
+	}
+}
+
 // dirDump makes a directory-format dump named name in dir: its table of contents and a
 // table's file of n bytes, at mod.
 func dirDump(t *testing.T, dir, name string, n int, mod time.Time) string {

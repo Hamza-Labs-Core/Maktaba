@@ -431,15 +431,15 @@ var (
 )
 
 // dumpBeforeUpdateExternal is the pre-update dump of a database of the user's own (a plain
-// server install's, or the bundled one through its superuser URL): beside the others in
-// t.Backups (room made first), without the rows Maktaba makes again
-// (pgbundle.Regenerable), the dumps of its kind pruned to keep after it.
+// server install's, or the bundled one through its superuser URL): the whole database,
+// beside the others in t.Backups (room made first), the dumps of its kind pruned to keep
+// after it.
 func dumpBeforeUpdateExternal(ctx context.Context, t dbsafe.Target, from, to string, keep int, room pgbundle.RoomPolicy) (string, error) {
 	if err := pgbundle.MakeRoomWith(t.Backups, room); err != nil {
 		return "", err
 	}
 	path := filepath.Join(t.Backups, pgbundle.UpdateDumpName(from, to))
-	if err := t.DumpWith(ctx, path, pgbundle.DumpOptions{SkipData: pgbundle.Regenerable}); err != nil {
+	if err := t.Dump(ctx, path); err != nil {
 		return "", err
 	}
 	return path, pruneDumps(t.Backups, path, keep)
@@ -575,7 +575,7 @@ func (g *migrationGate) dump(ctx context.Context, from, to string) (string, erro
 // is taken: the update's watch sees the step make progress (a dump that stops growing is
 // stuck). The func it returns stops it.
 func (g *migrationGate) reportDumpSize(ctx context.Context, from, to string, expect int64, report func(supervisor.Detail)) func() {
-	part := filepath.Join(g.backups(), pgbundle.UpdateDumpName(from, to)) + ".partial"
+	dump := filepath.Join(g.backups(), pgbundle.UpdateDumpName(from, to))
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
@@ -589,7 +589,7 @@ func (g *migrationGate) reportDumpSize(ctx context.Context, from, to string, exp
 				return
 			case <-t.C:
 			}
-			n := pgbundle.DumpBytes(part)
+			n := pgbundle.PartialBytes(dump)
 			if n == 0 || n == said {
 				continue
 			}

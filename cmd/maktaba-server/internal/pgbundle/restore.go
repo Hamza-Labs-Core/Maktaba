@@ -102,13 +102,38 @@ func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts Re
 	// makes it while the tables come back, and the dump's own ALTER PUBLICATION ... ADD
 	// TABLE then failed the whole restore ("is already member of publication"; the owner's
 	// rollback of 2026-10-27), as the in-place restore of another Postgres never did.
-	cmd := exec.CommandContext(ctx, b.Bin("pg_restore"), "-h", "127.0.0.1", "-p", strconv.Itoa(b.Port),
-		"-U", SuperUser, "-d", AppDatabase, "--no-owner", "--role="+AppRole, "--exit-on-error", "--no-publications",
-		"-j", strconv.Itoa(jobs), "-L", list, dump)
-	cmd.Env = append(os.Environ(), "PGPASSWORD="+q.pw)
-	cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("pg_restore %s: %w", dump, err)
+	env := append(os.Environ(), "PGPASSWORD="+q.pw)
+	restore := func(sections ...string) error {
+		args := []string{"-h", "127.0.0.1", "-p", strconv.Itoa(b.Port), "-U", SuperUser, "-d", AppDatabase, "--no-owner",
+			"--role=" + AppRole, "--exit-on-error", "--no-publications", "-j", strconv.Itoa(jobs), "-L", list}
+		for _, s := range sections {
+			args = append(args, "--section="+s)
+		}
+		cmd := exec.CommandContext(ctx, b.Bin("pg_restore"), append(args, dump)...)
+		cmd.Env = env
+		cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("pg_restore %s: %w", dump, err)
+		}
+		return nil
+	}
+	chunks := Chunks(dump)
+	if len(chunks) == 0 {
+		if err := restore(); err != nil {
+			return err
+		}
+		return q.Exec(ctx, AppDatabase, "ANALYZE;")
+	}
+	// the chunked tables' rows between their tables and their indexes (dumpfmt.go)
+	if err := restore("pre-data", "data"); err != nil {
+		return err
+	}
+	if err := LoadChunks(ctx, b.Bin("psql"), []string{"-h", "127.0.0.1", "-p", strconv.Itoa(b.Port), "-U", SuperUser,
+		"--dbname=" + AppDatabase}, env, chunks, jobs); err != nil {
+		return err
+	}
+	if err := restore("post-data"); err != nil {
+		return err
 	}
 	return q.Exec(ctx, AppDatabase, "ANALYZE;")
 }

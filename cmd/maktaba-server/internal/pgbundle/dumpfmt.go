@@ -2,6 +2,7 @@ package pgbundle
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -22,26 +23,36 @@ import (
 // so its kind and name read as before; a dump of before (one custom-format file) is read
 // back as it always was (pg_restore tells the two apart).
 
-// Regenerable are the tables whose rows the dumps taken before an update leave out (their
-// definitions and indexes stay): rows Maktaba makes again by itself once such a dump is put
-// back. segment_embeddings holds semantic search's vectors (Epic 43): on the home that
-// measured it, 31 of the database's 47 GB, and as COPY text the bulk of a 35 GB dump that one
-// worker wrote for ten minutes. A dump put back without them leaves the table empty; the
-// pipeline's reconciler queues an index job for every video whose last one succeeded and
-// that has no vector there (engine/reconcile.py, _semantic_sweep, 1000 a minute), and the
-// index stage embeds its transcript again. Full-text search works meanwhile; semantic
-// search fills back in as the jobs run.
-var Regenerable = []string{"public.segment_embeddings"}
+// ChunkedTable is a table a dump writes apart from pg_dump: in binary COPY chunks, ranges
+// of its key read by as many sessions at once, in the dump's snapshot.
+type ChunkedTable struct {
+	Name string // schema.table
+	Key  string // a bigint column to split it by (its primary key)
+}
+
+// Chunked are the tables written in chunks. segment_embeddings holds semantic search's
+// vectors (Epic 43): on the home that measured it, 31 of the database's 47 GB. pg_dump
+// writes a table with one worker, and as COPY text (each vector's 384 numbers formatted
+// one by one), which made it the bulk of a 35 GB dump and nearly all of its ten minutes;
+// in binary chunks, eight at once, the same rows take seconds and less room, and they go
+// back as fast (before the table's indexes are built).
+var Chunked = []ChunkedTable{{Name: "public.segment_embeddings", Key: "segment_id"}}
 
 // DumpOptions shape a dump.
 type DumpOptions struct {
-	// Jobs is pg_dump's parallelism (0: DumpJobs).
+	// Jobs is pg_dump's parallelism, and the chunks read at once (0: DumpJobs).
 	Jobs int
-	// SkipData are tables whose rows are left out (Regenerable).
-	SkipData []string
+	// PgDumpArgs are more of pg_dump's arguments (--no-owner).
+	PgDumpArgs []string
 	// Check, when set, is run on the finished dump before it takes its name (it reads
 	// back); its error fails the dump.
 	Check func(part string) error
+	// Open opens the database (lib/pq) as the role the dump is taken as, and PSQL is the
+	// psql program beside pg_dump: the dump's snapshot is exported from Open's session and
+	// the Chunked tables are read through psql in it. Either unset: pg_dump writes every
+	// table itself.
+	Open func(ctx context.Context) (*sql.DB, error)
+	PSQL string
 }
 
 // DumpJobs is how many pg_dump workers a dump runs: half the machine's cores, 2 to 8 (the
@@ -68,17 +79,35 @@ func PgDump(ctx context.Context, bin string, conn, env []string, path string, op
 	if jobs <= 0 {
 		jobs = DumpJobs()
 	}
-	part := path + ".partial"
+	part, chunks := path+".partial", path+chunksSuffix
+	_ = os.RemoveAll(chunks)
+	defer func() { _ = os.RemoveAll(chunks) }()
+	snap, err := exportSnapshot(ctx, opts)
+	if err != nil {
+		// pg_dump writes every table itself then: whole all the same, the vectors slower
+		snap = &snapshot{}
+	}
+	defer snap.close()
+	// the chunked tables are read while pg_dump writes the others
+	chunkErr := make(chan error, 1)
+	if len(snap.tables) > 0 {
+		go func() { chunkErr <- dumpChunks(ctx, opts.PSQL, conn, env, chunks, snap, jobs) }()
+	} else {
+		chunkErr <- nil
+	}
 	first := 0
 	if v, ok := compressionOf.Load(bin); ok {
 		first = v.(int)
 	}
 	for i, locked := first, 0; ; {
 		_ = os.RemoveAll(part) // pg_dump -Fd makes the folder: none may be there
-		args := append(append([]string{}, conn...), "--format=directory", "--jobs="+strconv.Itoa(jobs),
-			"--compress="+compressions[i], "--file="+part)
-		for _, t := range opts.SkipData {
-			args = append(args, "--exclude-table-data="+t)
+		args := append(append(append([]string{}, conn...), opts.PgDumpArgs...), "--format=directory",
+			"--jobs="+strconv.Itoa(jobs), "--compress="+compressions[i], "--file="+part)
+		if snap.id != "" {
+			args = append(args, "--snapshot="+snap.id)
+		}
+		for _, t := range snap.tables {
+			args = append(args, "--exclude-table-data="+t.Name)
 		}
 		cmd := exec.CommandContext(ctx, bin, args...)
 		cmd.Env = env
@@ -99,7 +128,25 @@ func PgDump(ctx context.Context, bin string, conn, env []string, path string, op
 			locked++
 			continue
 		}
+		<-chunkErr
 		return fmt.Errorf("pg_dump: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	if err := <-chunkErr; err != nil {
+		_ = os.RemoveAll(part)
+		return err
+	}
+	if len(snap.tables) > 0 {
+		ents, err := os.ReadDir(chunks)
+		if err != nil {
+			_ = os.RemoveAll(part)
+			return err
+		}
+		for _, e := range ents {
+			if err := os.Rename(filepath.Join(chunks, e.Name()), filepath.Join(part, e.Name())); err != nil {
+				_ = os.RemoveAll(part)
+				return err
+			}
+		}
 	}
 	if opts.Check != nil {
 		if err := opts.Check(part); err != nil {
