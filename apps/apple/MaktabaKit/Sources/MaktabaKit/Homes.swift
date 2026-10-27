@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 /// A home this app knows: its address, a name to show (its address until the home says
 /// its name, or the one the person gave it), and the home's id when it said one (the same
@@ -124,6 +125,11 @@ public final class AppSession {
     public var connectProblem: ReachFailure?
     /// The "Approve a sign-in" sheet is up (the account menus open it).
     public var approvingSignIn = false
+    /// The saved sign-in is being checked with the home (at launch, on picking a home).
+    public private(set) var restoring = false
+    /// The saved sign-in could not be checked: the home did not answer, or failed. The
+    /// tokens stay; the sign-in screen says why and offers `retryRestore`.
+    public private(set) var restoreProblem: HomeFailure?
 
     /// Maktaba Cloud (story 42.7): its token in memory only, gone when the app quits.
     public private(set) var cloud: CloudClient
@@ -174,7 +180,7 @@ public final class AppSession {
             defaults.removeObject(forKey: "home")
         }
         #endif
-        homes = (defaults.data(forKey: "homes")).flatMap { try? JSONDecoder().decode([Home].self, from: $0) } ?? []
+        homes = Self.decodeHomes(defaults.data(forKey: "homes"), defaults: defaults)
         if let last = defaults.url(forKey: "home"), let h = homes.first(where: { $0.url == last }) {
             use(h)
         }
@@ -195,8 +201,11 @@ public final class AppSession {
         client = APIClient(home: home.url, tokens: tokens, session: homeSession)
         phase = .signingIn
         signInMethods = nil
-        if tokens.access != nil, quietCloud {
-            Task { await restore(thenCloud: true) }
+        restoreProblem = nil
+        // checked at once: no sign-in form flashes while it is
+        restoring = tokens.access != nil
+        if restoring {
+            Task { await restore(thenCloud: quietCloud) }
         } else if quietCloud {
             Task { await signInQuietlyThroughCloud() }
         }
@@ -300,6 +309,8 @@ public final class AppSession {
         current = nil
         client = nil
         signInMethods = nil
+        restoreProblem = nil
+        restoring = false
         phase = .choosingHome
         defaults.removeObject(forKey: "home")
     }
@@ -320,6 +331,7 @@ public final class AppSession {
     public func signOut() {
         if let current { TokenStore(app: app, home: current.url).clear() }
         approvingSignIn = false
+        restoreProblem = nil
         phase = .signingIn
     }
 
@@ -327,18 +339,40 @@ public final class AppSession {
     /// it vouches for this address and the person is signed in to it).
     public func signedOut() {
         approvingSignIn = false
+        restoreProblem = nil
         phase = .signingIn
         Task { await signInQuietlyThroughCloud() }
     }
 
-    /// The tokens kept for this address still work: signed in. Else (`thenCloud`) through
-    /// the cloud, when it vouches for the address.
+    /// Checks the saved sign-in again (the sign-in screen's Try again after `restoreProblem`).
+    public func retryRestore() async {
+        await restore()
+    }
+
+    /// Signed in with the saved tokens, when the home still takes them. A home that does
+    /// not answer leaves the tokens and says so (`restoreProblem`): the person is not
+    /// signed out because the home was off for a moment. `thenCloud`: tokens the home no
+    /// longer takes are followed by a sign-in through the cloud, when it vouches for the address.
     private func restore(thenCloud: Bool = false) async {
         guard let client else { return }
-        if let me = try? await client.whoami() {
-            if self.client?.home == client.home { signedIn(me) }
-        } else if thenCloud, self.client?.home == client.home {
-            await signInQuietlyThroughCloud()
+        restoring = true
+        restoreProblem = nil
+        defer { if self.client === client { restoring = false } }
+        do {
+            let me = try await client.whoami()
+            guard self.client === client else { return }
+            signedIn(me)
+        } catch {
+            guard self.client === client else { return }
+            Log.failure("restore sign-in", error, logger: Log.session)
+            // signed out: the client cleared the tokens, the sign-in screen it is (or the cloud's)
+            if case APIError.signedOut = error {
+                if thenCloud { await signInQuietlyThroughCloud() }
+                return
+            }
+            guard !Log.isCancellation(error) else { return }
+            let f = HomeFailure(error)
+            if f.kind != .signedOut { restoreProblem = f }
         }
     }
 
@@ -449,6 +483,7 @@ public final class AppSession {
     }
 
     private func signedIn(_ me: Me) {
+        restoreProblem = nil
         named(me.homeName)
         phase = .signedIn(me.user)
     }
@@ -497,6 +532,24 @@ public final class AppSession {
     }
 
     private func save() {
-        defaults.set(try? JSONEncoder().encode(homes), forKey: "homes")
+        do {
+            defaults.set(try JSONEncoder().encode(homes), forKey: "homes")
+        } catch {
+            // never write nothing over the list
+            Log.session.error("saving the homes failed: \(String(describing: error), privacy: .private)")
+        }
+    }
+
+    /// The saved homes. A list this release cannot read (one from a newer release, a
+    /// damaged one) is kept aside under `homes.unreadable` and logged, not lost silently.
+    nonisolated static func decodeHomes(_ data: Data?, defaults: UserDefaults = .standard) -> [Home] {
+        guard let data else { return [] }
+        do {
+            return try JSONDecoder().decode([Home].self, from: data)
+        } catch {
+            Log.session.fault("the saved homes could not be read (\(data.count, privacy: .public) bytes): \(String(describing: error), privacy: .private)")
+            defaults.set(data, forKey: "homes.unreadable")
+            return []
+        }
     }
 }

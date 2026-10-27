@@ -14,6 +14,7 @@ import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
@@ -90,6 +91,14 @@ class TvApiTest {
         // the list asks for a sort the home accepts
         assertEquals("created_at", seen.last().url.queryParameter("sort"))
         assertEquals("lib1", seen.last().url.queryParameter("library"))
+    }
+
+    @Test
+    fun aSearchSendsNoSortSoTheHomeRanksIt() = runBlocking {
+        val tokens = Tokens(fresh, "r1")
+        api(tokens).videos(query = "quran")
+        assertEquals("quran", seen.last().url.queryParameter("q"))
+        assertNull(seen.last().url.queryParameter("sort"))
     }
 
     @Test

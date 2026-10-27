@@ -102,7 +102,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(b).toHaveTextContent("1:02:05");
     expect(document.querySelectorAll("li.mkt-card")).toHaveLength(2);
     const url = videoCalls()[0];
-    expect(url).toContain("sort=updated_at");
+    expect(url).toContain("sort=created_at&order=desc");
     expect(url).toContain("limit=60");
     expect(url).not.toMatch(/library=|language=|cursor=/);
     expect(screen.queryByRole("button", { name: /load more/i })).toBeNull();
@@ -337,11 +337,51 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(screen.queryByText("No videos yet")).toBeNull();
   });
 
-  it("LIB-13: an unknown ?sort= falls back to updated_at instead of sending undefined", async () => {
+  it("LIB-13: an unknown ?sort= falls back to recently added instead of sending undefined", async () => {
     serve({ items: [], next: null });
     renderLib("/library?sort=bogus");
     await waitFor(() => expect(videoCalls()).toHaveLength(1));
-    expect(videoCalls()[0]).toContain("sort=updated_at");
+    expect(videoCalls()[0]).toContain("sort=created_at");
+  });
+
+  it("the default sort is Recently added, newest first", async () => {
+    serve({ items: [{ id: "v1", filename: "a.mp4", state: "ready" }], next: null });
+    renderLib();
+    await screen.findByText("a.mp4");
+    const select = screen.getByRole("combobox", { name: "Sort" });
+    expect(select).toHaveValue("created_at");
+    expect(within(select).getByRole("option", { selected: true })).toHaveTextContent(
+      "Recently added"
+    );
+    expect(videoCalls()[0]).toContain("sort=created_at&order=desc");
+  });
+
+  it("a search of the grid is by best match unless a sort was picked", async () => {
+    serve({ items: [], next: null });
+    const { unmount } = renderLib("/library?q=go");
+    await waitFor(() => expect(videoCalls()).toHaveLength(1));
+    const first = new URLSearchParams(videoCalls()[0].split("?")[1]);
+    expect(first.get("sort")).toBe("relevance");
+    expect(first.get("q")).toBe("go");
+    // best match has one direction: no order is sent and there is no arrow
+    expect(first.get("order")).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Sort" })).toHaveValue("relevance");
+    expect(screen.queryByRole("button", { name: /ascending|descending/i })).toBeNull();
+    unmount();
+
+    // a sort the person picked wins over best match
+    renderLib("/library?q=go&sort=title");
+    await waitFor(() => expect(videoCalls()).toHaveLength(2));
+    expect(videoCalls()[1]).toContain("sort=title&order=asc");
+  });
+
+  it("best match needs a search: ?sort=relevance alone is recently added", async () => {
+    serve({ items: [{ id: "v1", filename: "a.mp4", state: "ready" }], next: null });
+    renderLib("/library?sort=relevance");
+    await screen.findByText("a.mp4");
+    expect(videoCalls()[0]).toContain("sort=created_at&order=desc");
+    const select = screen.getByRole("combobox", { name: "Sort" });
+    expect(within(select).queryByRole("option", { name: "Best match" })).toBeNull();
   });
 
   it.each([
@@ -458,15 +498,16 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     const values = within(select)
       .getAllByRole("option")
       .map((o) => (o as HTMLOptionElement).value);
+    // Recently added first, the default; Best match only with a search
     expect(values).toEqual([
-      "updated_at",
       "created_at",
+      "updated_at",
       "published_at",
       "title",
       "duration_sec",
       "plays",
     ]);
-    for (const v of ["created_at", "published_at", "plays"]) {
+    for (const v of ["updated_at", "published_at", "plays"]) {
       await user.selectOptions(screen.getByRole("combobox", { name: "Sort" }), v);
       await waitFor(() => expect(videoCalls().at(-1)).toContain(`sort=${v}&order=desc`));
     }

@@ -44,7 +44,7 @@ struct LibraryView: View {
             libraries = try await client.libraries()
             problem = nil
         } catch {
-            problem = HomeFailure(error)
+            problem = HomeFailure.shown("load libraries", error) ?? problem
         }
         loading = false
     }
@@ -126,7 +126,8 @@ struct VideoGrid: View {
             next = page.next
             problem = nil
         } catch {
-            if !more { problem = HomeFailure(error) }
+            let f = HomeFailure.shown("load videos", error)
+            if !more { problem = f ?? problem }
         }
         loading = false
     }

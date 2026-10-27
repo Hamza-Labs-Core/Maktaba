@@ -543,7 +543,11 @@ paths:
           - created_at
           - title
           - duration_sec
-          default: updated_at
+          - relevance
+          default: created_at
+        description: Without one, the most recently added first (`created_at`); with `q`, `relevance`
+          (titles that start with `q`, then titles that hold it, then descriptions only, each newest-added
+          first). A sort the caller names always wins; `relevance` needs `q`.
       responses:
         '200':
           description: Page of videos.

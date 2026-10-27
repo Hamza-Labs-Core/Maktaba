@@ -352,6 +352,11 @@ public struct SignInView: View {
 
     private var shown: Method { offered.contains(method) ? method : offered[0] }
 
+    /// A code is asked for only while it shows, and not while the saved sign-in is checked.
+    private var codeShown: Bool {
+        shown == .code && !session.restoring && session.restoreProblem == nil
+    }
+
     public var body: some View {
         NavigationStack {
             Form {
@@ -368,6 +373,7 @@ public struct SignInView: View {
                 } header: {
                     Text(session.current?.name ?? "")
                 }
+                RestoreSection(session: session)
                 switch shown {
                 case .password:
                     passwordForm
@@ -386,9 +392,9 @@ public struct SignInView: View {
         }
         // one code at a time, asked for only while it shows (here, not on the Form's rows,
         // which come and go as the code's state changes)
-        .task(id: CodeFlowKey(home: session.current?.url, shown: shown == .code)) {
+        .task(id: CodeFlowKey(home: session.current?.url, shown: codeShown)) {
             codeFlow = nil
-            guard shown == .code, let client = session.client else { return }
+            guard codeShown, let client = session.client else { return }
             let m = CodeSignIn(client: client, label: CodeSignInSection.deviceLabel) { [session] in
                 try await session.signedInByCode()
             }
@@ -429,8 +435,32 @@ public struct SignInView: View {
             do {
                 try await session.signIn(username: username, password: password)
             } catch {
-                problem = words.signInProblem(error)
+                Log.failure("sign in", error, logger: Log.session)
+                problem = Log.isCancellation(error) ? nil : words.signInProblem(error)
             }
+        }
+    }
+}
+
+/// The saved sign-in being checked (a spinner), or why it could not be: the home did not
+/// answer, so the person is still signed in and can try again (or sign in afresh below).
+struct RestoreSection: View {
+    let session: AppSession
+
+    var body: some View {
+        if session.restoring {
+            Section { HStack { Spacer(); ProgressView(); Spacer() } }
+        } else if let f = session.restoreProblem {
+            let words = ErrorStrings.forPreferredLanguages()
+            Section {
+                Text(words.text(.restoreFailed))
+                Label(f.message(words), systemImage: f.symbol).foregroundStyle(.red)
+                Button(words.text(.tryAgain), systemImage: "arrow.clockwise") {
+                    Task { await session.retryRestore() }
+                }
+                .accessibilityIdentifier("signin.restore.retry")
+            }
+            .accessibilityIdentifier("signin.restoreProblem")
         }
     }
 }

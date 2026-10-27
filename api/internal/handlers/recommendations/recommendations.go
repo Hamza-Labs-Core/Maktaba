@@ -316,8 +316,9 @@ func (h *Handler) continueRail(r *http.Request, p *principal.Principal, limit in
 }
 
 // forYouRail reads from user_recs (Pipeline-populated nightly). Order
-// is deterministic: (score DESC, video_id ASC) so two equal-score
-// videos always sort the same way (Story 14.7 determinism AC).
+// is deterministic: (score DESC, created_at DESC, video_id ASC) so two
+// equal-score videos always sort the same way, the more recently added
+// first (Story 14.7 determinism AC).
 func (h *Handler) forYouRail(r *http.Request, p *principal.Principal, limit int) Rail {
 	rail := Rail{
 		ID:         "for-you",
@@ -334,7 +335,7 @@ func (h *Handler) forYouRail(r *http.Request, p *principal.Principal, limit int)
 		SELECT ur.video_id, ur.score FROM user_recs ur
 		JOIN videos v ON v.id = ur.video_id
 		WHERE ur.user_id = $1`+scope+`
-		ORDER BY ur.score DESC, ur.video_id ASC LIMIT $2
+		ORDER BY ur.score DESC, v.created_at DESC, ur.video_id ASC LIMIT $2
 	`, args...)
 	if err != nil {
 		return rail
@@ -371,7 +372,7 @@ func railScope(p *principal.Principal, args *[]any) (string, bool) {
 }
 
 // libraryRail is a minimal stand-in until Epic 9 Story 9.9 ships
-// topics: return the most-recent unwatched videos in the user's
+// topics: return the most recently added unwatched videos in the user's
 // accessible libraries.
 func (h *Handler) libraryRail(r *http.Request, p *principal.Principal, limit int) Rail {
 	rail := Rail{
@@ -400,7 +401,7 @@ func (h *Handler) libraryRail(r *http.Request, p *principal.Principal, limit int
 		WHERE v.state = 'ready' AND NOT EXISTS (
 		  SELECT 1 FROM playback_state ps WHERE ps.user_id = $1 AND ps.video_id = v.id
 		)`+scope+`
-		ORDER BY v.updated_at DESC, v.id ASC LIMIT $`+strconv.Itoa(len(args)), args...)
+		ORDER BY v.created_at DESC, v.id DESC LIMIT $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return rail
 	}

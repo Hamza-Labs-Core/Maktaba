@@ -25,6 +25,8 @@ public struct ErrorStrings: Sendable {
         case playerTitle, title
         case notFoundVideo, notFound, notReady, signedOut, noAccess, unreachable, busy, server
         case tryAgain, back, signInAgain, chooseAnotherHome, details
+        // the sign-in screen, when the saved sign-in could not be checked
+        case restoreFailed
     }
 
     /// The one sentence for `kind`; `video`: said about the video being played.
@@ -65,6 +67,7 @@ public struct ErrorStrings: Sendable {
         .signInAgain: "Sign in again",
         .chooseAnotherHome: "Choose another home",
         .details: "Details",
+        .restoreFailed: "You're still signed in, but your home couldn't be checked.",
     ]
 
     static let ar: [Key: String] = [
@@ -83,5 +86,6 @@ public struct ErrorStrings: Sendable {
         .signInAgain: "سجّل الدخول مجددًا",
         .chooseAnotherHome: "اختيار جهاز رئيسي آخر",
         .details: "التفاصيل",
+        .restoreFailed: "ما زلت مسجّل الدخول، لكن تعذّر التحقق من الجهاز الرئيسي.",
     ]
 }

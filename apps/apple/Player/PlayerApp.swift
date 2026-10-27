@@ -10,6 +10,11 @@ struct PlayerApp: App {
     /// A video plays: the whole app goes dark, whatever the theme.
     @State private var playing = false
 
+    init() {
+        // a crash at an earlier launch is logged and kept on this device
+        CrashReports.shared.start()
+    }
+
     var body: some Scene {
         WindowGroup {
             SessionGate(session: session, title: "Maktaba Player") { user, client in
