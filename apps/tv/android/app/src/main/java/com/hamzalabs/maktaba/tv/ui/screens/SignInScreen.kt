@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -23,6 +24,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -32,12 +39,13 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hamzalabs.maktaba.core.api.ApiException
-import com.hamzalabs.maktaba.core.api.AuthTokens
+import com.hamzalabs.maktaba.core.api.DeviceCode
+import com.hamzalabs.maktaba.core.api.DeviceSignIn
+import com.hamzalabs.maktaba.core.api.PairingCode
 import com.hamzalabs.maktaba.core.session.Home
 import com.hamzalabs.maktaba.tv.MaktabaTVApp
 import com.hamzalabs.maktaba.tv.R
-import com.hamzalabs.maktaba.tv.data.DeviceCode
-import com.hamzalabs.maktaba.tv.data.DeviceSignIn
+import com.hamzalabs.maktaba.tv.data.HomeChoices
 import com.hamzalabs.maktaba.tv.ui.components.LibraryBackdrop
 import com.hamzalabs.maktaba.tv.ui.components.MaktabaButton
 import com.hamzalabs.maktaba.tv.ui.components.QrCode
@@ -51,7 +59,7 @@ import com.hamzalabs.maktaba.core.R as CoreR
 
 /**
  * Signing the TV in to [home]. First choice: a code. The TV shows a short code and a QR of the
- * home's approve page (`<home>/pair?code=…`); a person signed in on their phone or the web
+ * home's approve page (its `verify_url`); a person signed in on their phone or the web
  * approves it, and the TV is signed in as them, no password typed with a remote. Fallback: the
  * username and password on the on-screen keyboard (a home without sign-in by code goes straight
  * there).
@@ -101,27 +109,30 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
     var problem by remember { mutableStateOf<String?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
     val focus = remember { FocusRequester() }
+    val unreachable = stringResource(CoreR.string.signin_unreachable, home.name)
 
-    val signIn = remember(home.url, label) { DeviceSignIn(home.httpUrl, label) }
+    // the core's flow: no token on the way, a new code when one runs out (410), then this
+    // TV's own tokens kept for this home's exact address and the session signed in
     LaunchedEffect(home.url, attempt) {
         problem = null
         try {
-            val tokens = signIn.run { c ->
+            app.session.signInWithCode(label, onCode = { c ->
                 renewed = code != null
                 code = c
-            }
-            app.tokens(home.url).save(AuthTokens(tokens.accessToken, tokens.refreshToken))
-            app.session.use(home) // signed in at once: the session finds the tokens kept
+            })
         } catch (e: CancellationException) {
             throw e
         } catch (e: DeviceSignIn.Unsupported) {
             onUnsupported()
+        } catch (e: ApiException.Transport) {
+            problem = unreachable
         } catch (e: Exception) {
             problem = e.message ?: e.toString()
         }
     }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
+    val approve = code?.let { c -> app.session.client?.let { c.approveUrl(it.home) } }
     Row(horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
         ReadingPanel(Modifier.weight(1f), contentPadding = 24.dp) {
             SectionTitle(stringResource(R.string.signin_code_title, home.name))
@@ -129,7 +140,7 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
             when {
                 problem != null -> {
                     Text(
-                        stringResource(CoreR.string.signin_unreachable, home.name) + "\n" + problem,
+                        problem ?: "",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaktabaPalette.Gold,
                         modifier = Modifier.padding(vertical = 16.dp),
@@ -143,14 +154,23 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
                         color = MaktabaPalette.Muted,
                         modifier = Modifier.padding(top = 12.dp),
                     )
-                    Text(signIn.approveUrl(c).newBuilder().query(null).build().toString(), style = MaterialTheme.typography.titleMedium, color = MaktabaPalette.Text)
+                    // addresses and the code read left to right in Arabic too
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Column {
+                            approve?.let { Text(HomeChoices.shownApprovePage(it), style = MaterialTheme.typography.titleMedium, color = MaktabaPalette.Text) }
+                        }
+                    }
                     Text(stringResource(R.string.signin_code_step2), style = MaterialTheme.typography.bodyMedium, color = MaktabaPalette.Muted)
-                    Text(
-                        c.code,
-                        style = MaterialTheme.typography.displayMedium.copy(letterSpacing = 6.sp),
-                        color = MaktabaPalette.Gold,
-                        modifier = Modifier.padding(vertical = 4.dp),
-                    )
+                    val shown = PairingCode.shown(c.code)
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Text(
+                            shown,
+                            style = MaterialTheme.typography.displayLarge.copy(fontFamily = FontFamily.Monospace, letterSpacing = 6.sp),
+                            color = MaktabaPalette.Gold,
+                            modifier = Modifier.padding(vertical = 4.dp).testTag("signin-code")
+                                .semantics { contentDescription = shown.toCharArray().joinToString(" ") },
+                        )
+                    }
                     Text(
                         stringResource(if (renewed) R.string.signin_code_new else R.string.signin_code_waiting),
                         style = MaterialTheme.typography.labelLarge,
@@ -171,7 +191,7 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
                 MaktabaButton(onClick = { app.session.switchHome() }) { Text(stringResource(CoreR.string.other_home)) }
             }
         }
-        code?.let { QrCode(signIn.approveUrl(it).toString(), size = 220.dp) }
+        approve?.let { url -> QrCode(url, size = 260.dp) }
     }
 }
 

@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.tv
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,6 +18,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as MaktabaTVApp
+        // a home's maktaba://connect link: offered, never followed before the person says so;
+        // not again when the activity is recreated or reopened from Recents with the same intent
+        val fromHistory = ((intent?.flags ?: 0) and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (savedInstanceState == null && !fromHistory) app.session.openLink(intent?.dataString)
         setContent {
             MaktabaTvTheme {
                 Surface(
@@ -28,5 +33,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        (application as MaktabaTVApp).session.openLink(intent.dataString)
     }
 }

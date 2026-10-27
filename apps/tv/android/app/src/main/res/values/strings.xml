@@ -12,6 +12,8 @@
     <string name="choose_home">Choose your home</string>
     <string name="choose_home_hint">Homes on this network appear here. Or enter a home\'s address.</string>
     <string name="enter_address">Enter an address</string>
+    <string name="home_hold_hint">Press and hold Select on a home to rename or remove it.</string>
+    <string name="address_hint">The address you open Maktaba at in a browser. A maktaba:// link the home shared works too.</string>
 
     <string name="signin_code_title">Sign in to %1$s</string>
     <string name="signin_code_step1">On your phone or computer, open</string>

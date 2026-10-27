@@ -333,7 +333,7 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    `handlers/discovery/device42_test.go`. See Contract.)
    Apple: sign-in offers a password or a code (large, with a QR of `verify_url`, renewed on
    expiry); "Approve a sign-in" in the Remote's and the Player's account menus (type or scan the
-   code, see what asks, approve explicitly). The Apple TV app is unchanged (story 42.10).
+   code, see what asks, approve explicitly). The TV apps: story 42.10.
    *Android:* the sign-in screen's With a code (code large, QR of `verify_url`, polling), and
    Approve a sign-in (type or scan, see what asks, explicit Approve) in the Player's and the
    Remote's account menu.
@@ -352,6 +352,17 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    localized.)
 9. **42.9 Cloud web player and remote:** the cloud serves the SPA editions for a connected home.
 10. **42.10 TV:** the home picker and sign-in by code on tvOS and Android TV.
+    (Built, 2026-10-27.) *Apple TV* (`apps/tv/tvos`, on MaktabaKit's `AppSession`,
+    `HomeBrowser`, `CodeSignIn`; TV words and choices in `MaktabaKit/TVStart.swift`): Recent
+    homes (hold Select: Rename, Remove), On this network (`role=home` only, one row per TXT
+    `home`), By address or a pasted `maktaba://connect` link (checked with
+    `/api/discovery/home`); the code first (large, a QR of `verify_url`, a new code on 410 or
+    expiry), Username & password as the home allows; the `maktaba` URL scheme asks first
+    (Cancel focused). English and Arabic, right to left. UI tests against a mock home
+    (`TVConnectUITests`). *Android TV* (`apps/tv/android`): the same on the core's session
+    (`HomeChoices`; the TV's own code client is gone for the core's `signInWithCode`, so the
+    base path, `X-Maktaba-Client` and same-origin credentials hold), D-pad focus, long-press
+    options, `maktaba://connect` intent filter with a confirm dialog (`TvConnectTest`).
 
 ## Open questions
 

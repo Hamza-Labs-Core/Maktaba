@@ -10,6 +10,8 @@
     <string name="choose_home">اختر جهازك الرئيسي</string>
     <string name="choose_home_hint">تظهر هنا الأجهزة الرئيسية على هذه الشبكة، أو أدخل عنوان جهازك الرئيسي.</string>
     <string name="enter_address">أدخل عنوانًا</string>
+    <string name="home_hold_hint">اضغط مطوّلًا على زر التحديد فوق جهاز رئيسي لإعادة تسميته أو إزالته.</string>
+    <string name="address_hint">العنوان الذي تفتح به مكتبة في المتصفح. يصلح أيضًا رابط maktaba:// شاركه الجهاز الرئيسي.</string>
 
     <string name="signin_code_title">تسجيل الدخول إلى %1$s</string>
     <string name="signin_code_step1">افتح على هاتفك أو حاسوبك</string>

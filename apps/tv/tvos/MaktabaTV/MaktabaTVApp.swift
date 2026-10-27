@@ -32,20 +32,44 @@ struct MaktabaTVApp: App {
     }
 }
 
-/// Choose a home, sign in, then the tabs.
+/// Choose a home, sign in, then the tabs. A home's connect link (`maktaba://connect?…`)
+/// opened from outside is asked about first: in the picker, which shows it inline, or here.
 struct RootView: View {
-    let session: AppSession
+    @Bindable var session: AppSession
+    private let words = ConnectStrings.forPreferredLanguages()
 
     var body: some View {
-        switch session.phase {
-        case .choosingHome:
-            TVHomePicker(session: session)
-        case .signingIn:
-            TVSignInView(session: session)
-        case let .signedIn(user):
-            if let client = session.client {
-                ContentView(session: session, user: user)
-                    .environment(\.client, client)
+        ZStack {
+            switch session.phase {
+            case .choosingHome:
+                TVHomePicker(session: session)
+            case .signingIn:
+                TVSignInView(session: session)
+            case let .signedIn(user):
+                if let client = session.client {
+                    ContentView(session: session, user: user)
+                        .environment(\.client, client)
+                }
+            }
+        }
+        .onOpenURL { session.open($0) }
+        .alert(words.text(session.pendingLink != nil ? .linkTitle : .connect), isPresented: Binding(
+            get: { session.phase != .choosingHome && (session.pendingLink != nil || session.connectProblem != nil) },
+            set: { if !$0 { session.dismissLink(); session.connectProblem = nil } })
+        ) {
+            if session.pendingLink != nil {
+                // on success the home is in use (signing in there); else the alert says why
+                Button(words.text(.connect)) { session.confirmLink() }
+                Button(words.text(.cancel), role: .cancel) { session.dismissLink() }
+            } else {
+                Button(words.text(.done)) { session.connectProblem = nil }
+            }
+        } message: {
+            if let link = session.pendingLink {
+                Text(words.text(.linkMessage, link.name ?? link.urls.first?.host() ?? "",
+                                link.urls.map { Home(url: $0, name: "").displayAddress }.joined(separator: ", ")))
+            } else {
+                Text(session.connectProblem.map(words.reach) ?? "")
             }
         }
     }
