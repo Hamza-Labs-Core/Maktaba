@@ -480,7 +480,8 @@ don't append a line here; docs-only PRs are exempt.
   role gets (a passfile instead), the api and the copy of the database on a Windows machine
   logged in with no password: lib/pq before v1.11 skips a passfile it takes for readable by
   others, which on Windows is every file. Videos, series and the TV guide answered "the home's
-  database is not reachable". lib/pq is v1.11.2 in the api and the server.
+  database is not reachable". lib/pq is v1.11.2 in the api and the server, and a `PGPASSWORD`
+  in the server's own environment no longer replaces every role's password.
 - **A viewer's web session now sees the libraries they are granted.** The session cookie's
   sign-in carried no library grants, so a non-admin user saw no library at all in the web app
   (the apps' tokens were right).
