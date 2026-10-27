@@ -222,6 +222,10 @@ func TestOpenReadsThePassfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PGPASSFILE", passfile)
+	// the api's environment has no PGPASSWORD (its supervisor drops it), unlike GitHub's
+	// Windows runners, which set one for their own Postgres
+	t.Setenv("PGPASSWORD", "")
+	_ = os.Unsetenv("PGPASSWORD")
 	db, err := Open(WithConnectTimeout("postgres://node_1e943eda@"+addr+"/maktaba?sslmode=disable", ConnectTimeout))
 	if err != nil {
 		t.Fatal(err)

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -20,19 +21,23 @@ import (
 // and every page that reads it answered home_unreachable.
 func TestTheDriverReadsThePassfile(t *testing.T) {
 	addr, sent := passwordCatcher(t)
-	env, err := ProcessEnv([]string{"DATABASE_URL=postgres://maktaba:s3cret@" + addr + "/maktaba?sslmode=disable"}, t.TempDir())
+	env, err := ProcessEnv([]string{"PGPASSWORD=inherited",
+		"DATABASE_URL=postgres://maktaba:s3cret@" + addr + "/maktaba?sslmode=disable"}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
+	// the child's environment is env alone, not this process's (GitHub's Windows runners
+	// set PGPASSWORD for their own Postgres)
+	t.Setenv("PGPASSWORD", "")
+	_ = os.Unsetenv("PGPASSWORD")
 	var bare string
 	for _, e := range env {
 		k, v, _ := strings.Cut(e, "=")
-		switch k {
-		case "DATABASE_URL":
+		if k == "DATABASE_URL" {
 			bare = v
-		case "PGPASSFILE":
-			t.Setenv("PGPASSFILE", v)
+			continue
 		}
+		t.Setenv(k, v)
 	}
 	db, err := sql.Open("postgres", bare)
 	if err != nil {

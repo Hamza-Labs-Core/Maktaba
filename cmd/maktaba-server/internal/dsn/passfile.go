@@ -120,8 +120,9 @@ func passfileName(bares []string) string {
 func Redact(s string) string { return redact(s) }
 
 // ProcessEnv readies a child's environment: every *DATABASE_URL loses its password to a
-// passfile in dir, and PGPASSFILE names that file. An environment with no password in
-// it comes back as it is.
+// passfile in dir, and PGPASSFILE names that file. An inherited PGPASSWORD goes: every
+// driver takes it before the passfile, for every connection. An environment with no
+// password in it comes back as it is.
 func ProcessEnv(env []string, dir string) ([]string, error) {
 	var lines, bares []string
 	seen := map[string]bool{}
@@ -154,7 +155,7 @@ func ProcessEnv(env []string, dir string) ([]string, error) {
 	}
 	filtered := out[:0]
 	for _, e := range out {
-		if !strings.HasPrefix(e, "PGPASSFILE=") {
+		if !strings.HasPrefix(e, "PGPASSFILE=") && !strings.HasPrefix(e, "PGPASSWORD=") {
 			filtered = append(filtered, e)
 		}
 	}
