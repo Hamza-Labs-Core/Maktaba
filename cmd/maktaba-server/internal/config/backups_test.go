@@ -55,7 +55,8 @@ func TestBackupsSavedAndRead(t *testing.T) {
 	if s := got.Backups.Settings(); s.Dir != "/b" || s.EveryDays != 2 || s.Hour != 0 || s.Keep != 3 {
 		t.Errorf("read back %+v", s)
 	}
-	if got.BackupsDir("/state/backups") != "/b" || (Config{}).BackupsDir("/state/backups") != "/state/backups" {
+	// the folder as this OS writes it (BackupsDir cleans it: a backslash on Windows)
+	if got.BackupsDir("/state/backups") != filepath.Clean("/b") || (Config{}).BackupsDir("/state/backups") != "/state/backups" {
 		t.Error("BackupsDir")
 	}
 }
