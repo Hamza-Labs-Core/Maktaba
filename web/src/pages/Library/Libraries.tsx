@@ -7,12 +7,9 @@
 // which the sidebar's Pinned group follows).
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
-import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { useToast } from "@ds/components/Toast/Toast";
-import { ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { fetchLibrarySummary, type LibrarySummary } from "../../lib/browse";
@@ -20,6 +17,8 @@ import { movePin, usePins } from "../../lib/pins";
 import { PinToggle } from "../../components/PinToggle";
 import { TitleRow } from "../../help/HelpLink";
 import { SERVER_PAGES } from "../../lib/edition";
+import { LoadError } from "../../components/LoadError";
+import { errorText } from "../../lib/errorText";
 
 /** The 2x2 poster mosaic of a library card; a library with fewer than four
  *  posters shows its newest one whole instead of blank tiles. */
@@ -76,7 +75,7 @@ export function Libraries() {
   const toast = useToast();
   const pins = usePins(user?.id);
   const [items, setItems] = useState<LibrarySummary[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null);
   const [reload, setReload] = useState(0);
   const [moving, setMoving] = useState(false);
 
@@ -88,7 +87,7 @@ export function Libraries() {
         if (!cancelled) setItems(r);
       })
       .catch((e) => {
-        if (!cancelled) setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        if (!cancelled) setErr(e);
       });
     return () => {
       cancelled = true;
@@ -103,9 +102,7 @@ export function Libraries() {
     } catch (e) {
       toast.show({
         tone: "error",
-        message: `${t("libraries.pin.error")}: ${
-          e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
-        }`,
+        message: `${t("libraries.pin.error")}: ${errorText(e, t)}`,
       });
     } finally {
       setMoving(false);
@@ -123,14 +120,7 @@ export function Libraries() {
         </Link>
       </header>
 
-      {err && (
-        <ErrorState
-          kind="server"
-          title={t("common.error")}
-          description={err}
-          action={<Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>}
-        />
-      )}
+      {err != null && <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />}
 
       {pins && pins.length > 0 && (
         <section className="mkt-libraries__pinned" aria-labelledby="mkt-libraries-pinned">

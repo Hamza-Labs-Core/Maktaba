@@ -10,15 +10,14 @@
 // RTL-correct for Arabic series names via dir="auto".
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { Badge } from "@ds/components/Badge/Badge";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
-import { ErrorState } from "@ds/components/ErrorState/ErrorState";
-import { api, ApiError } from "../../lib/api";
+import { api } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { TitleRow } from "../../help/HelpLink";
+import { LoadError } from "../../components/LoadError";
 
 interface SeriesItem {
   id: string;
@@ -39,7 +38,7 @@ type Sort = "name" | "progress";
 export function SeriesBrowser() {
   const { t, n } = useI18n();
   const [items, setItems] = useState<SeriesItem[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null);
   const [reload, setReload] = useState(0);
   // The sort lives in the URL so Back and a refresh keep it.
   const [params, setParams] = useSearchParams();
@@ -56,7 +55,7 @@ export function SeriesBrowser() {
         if (!cancelled) setItems(Array.isArray(r?.items) ? r.items : []);
       })
       .catch((e) => {
-        if (!cancelled) setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        if (!cancelled) setErr(e);
       });
     return () => {
       cancelled = true;
@@ -94,14 +93,7 @@ export function SeriesBrowser() {
         </label>
       </header>
 
-      {err && (
-        <ErrorState
-          kind="server"
-          title={t("common.error")}
-          description={err}
-          action={<Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>}
-        />
-      )}
+      {err != null && <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />}
       {!err && !items && (
         <p className="mkt-loading" role="status">
           {t("common.loading")}

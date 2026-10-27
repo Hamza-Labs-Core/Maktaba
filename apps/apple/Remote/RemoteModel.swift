@@ -69,7 +69,7 @@ final class RemoteModel {
             session.signedOut()
             return
         }
-        problem = (error as? APIError)?.message ?? error.localizedDescription
+        problem = HomeFailure(error).message()
     }
 
     // MARK: acting

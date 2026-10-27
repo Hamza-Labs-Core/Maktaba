@@ -41,7 +41,7 @@ import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useToast } from "@ds/components/Toast/Toast";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
-import { api, ApiError } from "../lib/api";
+import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { TitleRow } from "../help/HelpLink";
@@ -59,6 +59,7 @@ import {
 import { EMPTY_FACETS, fetchFacets, markWatched, setFavorite, type Facets } from "../lib/me";
 import { startQueueFromQuery, watchPath } from "../lib/playQueue";
 import { videosUrl } from "../lib/browse";
+import { errorText } from "../lib/errorText";
 
 const VIEW_KEY = "mkt:lib:view";
 
@@ -183,8 +184,7 @@ export function ScanNow({
     };
   }, []);
 
-  const errMessage = (e: unknown) =>
-    e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error");
+  const errMessage = (e: unknown) => errorText(e, t);
 
   useEffect(() => {
     if (!jobId) return;
@@ -431,7 +431,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        setErr(errorText(e, t));
         setVideos([]);
       });
     return () => {
@@ -474,7 +474,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
       })
       .catch((e) => {
         if (gen !== listGen.current) return;
-        setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        setErr(errorText(e, t));
       })
       .finally(() => {
         if (gen !== listGen.current) return;
@@ -533,7 +533,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
     } catch (e) {
       toast.show({
         tone: "error",
-        message: e instanceof ApiError ? e.problem.title : t("common.error"),
+        message: errorText(e, t),
       });
     } finally {
       setStarting(false);
@@ -564,9 +564,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
     } catch (e) {
       toast.show({
         tone: "error",
-        message: `${t("collections.createError")}: ${
-          e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
-        }`,
+        message: `${t("collections.createError")}: ${errorText(e, t)}`,
       });
     } finally {
       setSaving(false);
@@ -617,9 +615,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
     } catch (e) {
       toast.show({
         tone: "error",
-        message: `${t("browse.bulk.error")}: ${
-          e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
-        }`,
+        message: `${t("browse.bulk.error")}: ${errorText(e, t)}`,
       });
     } finally {
       setBulkBusy(false);

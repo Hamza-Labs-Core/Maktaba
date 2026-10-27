@@ -3,11 +3,8 @@ package com.hamzalabs.maktaba.tv.ui.screens
 import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -19,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -32,7 +28,7 @@ import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.tv.MaktabaTVApp
 import com.hamzalabs.maktaba.tv.R
 import com.hamzalabs.maktaba.tv.playback.TvPlayback
-import com.hamzalabs.maktaba.tv.ui.components.MaktabaButton
+import com.hamzalabs.maktaba.core.R as CoreR
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 
 /**
@@ -97,13 +93,15 @@ fun PlayerScreen(
         }
         val problem = playback.problem
         when {
-            problem != null -> Centered {
-                Text(stringResource(R.string.playback_failed, problem), style = MaterialTheme.typography.titleMedium, color = MaktabaPalette.Text)
-                Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    MaktabaButton(onClick = { playback.retry() }) { Text(stringResource(R.string.try_again)) }
-                    MaktabaButton(onClick = onBack) { Text(stringResource(R.string.back)) }
-                }
-            }
+            problem != null -> TvErrorState(
+                problem,
+                title = stringResource(CoreR.string.error_playback_title),
+                video = true,
+                onRetry = playback::retry,
+                onSignIn = signedOut,
+                onChooseHome = { app.session.switchHome() },
+                onBack = onBack,
+            )
             playback.opening -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     stringResource(R.string.preparing) + "\n" + title,

@@ -14,7 +14,6 @@ import { Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useToast } from "@ds/components/Toast/Toast";
-import { ApiError } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import {
   fetchMyVideo,
@@ -28,6 +27,7 @@ import { watchPath } from "../lib/playQueue";
 import { formatDuration } from "./VideoViews";
 import { AddToPlaylist } from "./AddToPlaylist";
 import { FeatureOnHome } from "./FeatureOnHome";
+import { errorText } from "../lib/errorText";
 
 /** Resume is offered past the first 30 seconds of an unfinished video. */
 export const RESUME_MIN_SEC = 30;
@@ -69,9 +69,7 @@ export function VideoActions({ videoId }: { videoId: string }) {
   const fail = (e: unknown) =>
     toast.show({
       tone: "error",
-      message: `${t("browse.bulk.error")}: ${
-        e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
-      }`,
+      message: `${t("browse.bulk.error")}: ${errorText(e, t)}`,
     });
 
   async function toggleWatched() {

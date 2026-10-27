@@ -360,6 +360,110 @@ describe("VideoPlayer — hls.js (no native HLS)", () => {
     }
   });
 
+  describe("a stream not ready yet (its transcode still starting)", () => {
+    const notReady = {
+      type: "networkError",
+      details: "manifestLoadError",
+      fatal: true,
+      url: SIGNED,
+      response: { code: 404, text: "Not Found" },
+    };
+    // VOD_NET_RETRIES backed-off reloads of the master playlist: 1 s, 2 s, 4 s
+    async function retriesOf(hls: FakeHlsLike) {
+      for (const wait of [1000, 2000, 4000]) {
+        act(() => hls.emit("hlsError", notReady));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(wait);
+        });
+      }
+    }
+
+    it("loads the master playlist again, backing off, until it is there", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        post.mockImplementation(() => Promise.resolve(session()));
+        renderPlayer();
+        const hls = await hlsReady();
+        expect(hls.loadSource).toHaveBeenCalledTimes(1);
+        // two 404s, then it loads (no further error)
+        for (const wait of [1000, 2000]) {
+          act(() => hls.emit("hlsError", notReady));
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(wait - 1);
+          });
+          const before = hls.loadSource.mock.calls.length;
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(1);
+          });
+          expect(hls.loadSource).toHaveBeenCalledTimes(before + 1);
+        }
+        expect(hls.loadSource).toHaveBeenLastCalledWith(SIGNED);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(60_000);
+        });
+        expect(opens()).toHaveLength(1);
+        expect(instances).toHaveLength(1);
+        expect(screen.queryByRole("alert")).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("never ready: says the home is still preparing it, after the retries and reopens", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        post.mockImplementation((url: string) =>
+          Promise.resolve(url === "/api/stream/sessions" ? session() : undefined)
+        );
+        renderPlayer();
+        for (let n = 1; n <= 4; n++) {
+          const hls = await hlsReady(n);
+          await retriesOf(hls);
+          expect(hls.loadSource).toHaveBeenCalledTimes(4);
+          expect(screen.queryByRole("alert")).toBeNull();
+          act(() => hls.emit("hlsError", notReady));
+          if (n < 4) await hlsReady(n + 1);
+        }
+        const alert = await screen.findByRole("alert");
+        expect(alert).toHaveTextContent("This video can't play right now");
+        expect(alert).toHaveTextContent(
+          "Your home is still preparing this video. Try again in a moment."
+        );
+        expect(alert).not.toHaveTextContent("manifestLoadError");
+        expect(alert).not.toHaveTextContent("Not Found");
+        // three reopens, then the error
+        expect(opens()).toHaveLength(4);
+        // the failure still goes to the server's log
+        await waitFor(() =>
+          expect(post).toHaveBeenCalledWith(
+            `/api/stream/sessions/${SID}/errors`,
+            expect.objectContaining({ outcome: "fatal", code: "reopen_limit" })
+          )
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("a 403 is not retried: the session is opened again for a fresh signature", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        post.mockImplementation(() => Promise.resolve(session({ manifest_url: RESIGNED })));
+        renderPlayer();
+        const hls = await hlsReady();
+        act(() => hls.emit("hlsError", { ...notReady, response: { code: 403 } }));
+        await hlsReady(2);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10_000);
+        });
+        expect(hls.loadSource).toHaveBeenCalledTimes(1);
+        expect(opens()).toHaveLength(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it("shows the error instead of opening the video again and again", async () => {
     post.mockImplementation(() => Promise.resolve(session()));
     renderPlayer();

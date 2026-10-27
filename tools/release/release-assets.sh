@@ -21,13 +21,14 @@
 # Every workflow runs publish after its upload: the last one to finish publishes. It becomes
 # GitHub's latest only as a stable version above every other published stable one
 # (releaseorder.Latest: never a pre-release or a maintenance release), with every desktop
-# platform in its feed.
+# platform in its feed and, with the updater key, every player platform in latest-player.json
+# (Epic 42.4: the players read the latest release's feed too).
 #
 # A published release is never rewritten (B5: a re-run of a tag replaced signed files homes
 # had verified, and they withdrew it): upload adds only the files it lacks. release.yml's
 # run refuses outright when its checksums.txt differs from the published one; --replace
-# names the files that may change on a published release (desktop's latest.json, as late
-# platforms land).
+# names the files that may change on a published release (desktop's latest.json and
+# latest-player.json, as late platforms land).
 #
 # Env: GH_TOKEN, GITHUB_REPOSITORY; NOTES (ensure); REQUIRE_FEED (publish).
 set -euo pipefail
@@ -143,6 +144,17 @@ publish() {
     elif [ "${REQUIRE_FEED:-false}" = true ]; then
         missing+=("latest.json (desktop-release.yml)")
     fi
+    # the players' feed: not needed to publish (no home updates from it), but a release is the
+    # latest only with every player platform in it, or the players would be stranded
+    if [ "${all}" = true ] && [ "${REQUIRE_FEED:-false}" = true ]; then
+        all=false
+        if grep -qx latest-player.json <<<"${names}"; then
+            gh release download "${tag}" --pattern latest-player.json --dir "${tmp}"
+            if (cd "${here}" && go run ./cmd/updater-feed --check "${tmp}/latest-player.json" --require player) >/dev/null 2>&1; then
+                all=true
+            fi
+        fi
+    fi
     if is_draft "${id}"; then
         if [ "${#missing[@]}" -gt 0 ]; then
             local list
@@ -167,7 +179,7 @@ publish() {
         gh release edit "${tag}" --latest
         echo "release ${tag}: the latest release"
     else
-        echo "release ${tag}: not the latest (highest stable: ${latest}; every desktop platform in its feed: ${all})"
+        echo "release ${tag}: not the latest (highest stable: ${latest}; every desktop and player platform in its feeds: ${all})"
     fi
 }
 
@@ -205,7 +217,7 @@ adopt() {
     for f in "${dir}"/*; do
         [ -f "${f}" ] || continue
         base="$(basename "${f}")"
-        case "${base}" in latest.json) continue ;; esac
+        case "${base}" in latest.json | latest-player.json) continue ;; esac
         case "${base}" in
             *.sig)
                 # a signature whose bundle is here goes with it (below); one alone, as before

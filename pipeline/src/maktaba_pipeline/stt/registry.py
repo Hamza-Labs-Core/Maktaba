@@ -24,7 +24,10 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
+from ..log import get_logger
 from .protocol import BackendHealth, STTBackend
+
+_log = get_logger()
 
 __all__ = [
     "BackendRegistry",
@@ -85,7 +88,8 @@ class BackendRegistry:
         for b in self._backends.values():
             try:
                 health = await b.health()
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 - one broken backend is not ready, said why
+                _health_raised(b.name, exc)
                 continue
             if health.ready:
                 out.append(b)
@@ -96,7 +100,8 @@ class BackendRegistry:
         for name, b in self._backends.items():
             try:
                 out[name] = await b.health()
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 - reported as not ready, said why
+                _health_raised(name, exc)
                 out[name] = BackendHealth(
                     ready=False,
                     model_loaded=False,
@@ -106,6 +111,17 @@ class BackendRegistry:
                     details={"error": "health() raised"},
                 )
         return out
+
+
+def _health_raised(backend: str, exc: BaseException) -> None:
+    """A backend whose health check raised counts as not ready; the reason is logged, or
+    "no backend ready" is all anyone sees."""
+    _log.warning(
+        "stt_backend_health_failed",
+        backend=backend,
+        error=f"{type(exc).__name__}: {exc}",
+        exc_info=exc,
+    )
 
 
 async def pick_backend(
@@ -124,7 +140,8 @@ async def pick_backend(
             continue
         try:
             health = await backend.health()
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - the next backend in the chain
+            _health_raised(name, exc)
             continue
         if health.ready:
             return backend, FallbackTrace(chosen=name, attempted=tuple(attempted))

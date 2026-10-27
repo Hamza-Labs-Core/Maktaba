@@ -164,7 +164,7 @@ public struct ApproveSignInView: View {
             do {
                 looked = (normalized, try await client.pendingDevice(code: normalized))
             } catch {
-                problem = (error as? APIError)?.message ?? error.localizedDescription
+                problem = HomeFailure(error).message()
             }
         }
     }
@@ -180,13 +180,13 @@ public struct ApproveSignInView: View {
                 looked = nil
             } catch let e as APIError {
                 switch e {
-                case .status(409, _): problem = words.text(.alreadyApproved)
-                case .status(404, _), .status(410, _): problem = words.text(.expired)
-                case .status(422, _): problem = words.text(.notACode)
+                case .status(409, _, _): problem = words.text(.alreadyApproved)
+                case .status(404, _, _), .status(410, _, _): problem = words.text(.expired)
+                case .status(422, _, _): problem = words.text(.notACode)
                 default: problem = e.message
                 }
             } catch {
-                problem = error.localizedDescription
+                problem = HomeFailure(error).message()
             }
         }
     }

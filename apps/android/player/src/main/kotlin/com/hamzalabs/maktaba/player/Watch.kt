@@ -27,12 +27,15 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,8 +52,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.Video
+import com.hamzalabs.maktaba.core.ui.ErrorState
 import com.hamzalabs.maktaba.core.ui.InkAndBrass
-import com.hamzalabs.maktaba.core.ui.Message
+import com.hamzalabs.maktaba.core.R as CoreR
 import com.hamzalabs.maktaba.core.ui.Poster
 import com.hamzalabs.maktaba.core.ui.formatDuration
 
@@ -60,7 +64,7 @@ import com.hamzalabs.maktaba.core.ui.formatDuration
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun WatchScreen(playback: Playback, fullScreen: Boolean) {
+fun WatchScreen(playback: Playback, fullScreen: Boolean, onSignIn: () -> Unit, onChooseHome: () -> Unit) {
     if (fullScreen) ImmersiveWhileShown()
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val player = playback.player
@@ -78,7 +82,18 @@ fun WatchScreen(playback: Playback, fullScreen: Boolean) {
                 onRelease = { it.player = null },
                 modifier = Modifier.fillMaxSize(),
             )
-            problem != null -> Message("Can't play", Modifier.background(Color.Black), detail = problem)
+            problem != null -> CompositionLocalProvider(LocalContentColor provides Color.White) {
+                ErrorState(
+                    problem,
+                    title = stringResource(CoreR.string.error_playback_title),
+                    modifier = Modifier.safeDrawingPadding().padding(top = 48.dp),
+                    video = true,
+                    onRetry = playback::retry,
+                    onSignIn = { playback.stop(); onSignIn() },
+                    onChooseHome = { playback.stop(); onChooseHome() },
+                    onBack = playback::stop,
+                )
+            }
             else -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = InkAndBrass.Brass)
         }
         Row(

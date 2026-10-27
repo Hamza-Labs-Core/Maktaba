@@ -58,7 +58,7 @@ public final class CodeSignIn {
             } catch is CancellationError {
                 return
             } catch {
-                problem = error.localizedDescription
+                problem = HomeFailure(error).message()
                 try? await sleep(.seconds(5))
             }
         }
@@ -88,7 +88,7 @@ public final class CodeSignIn {
                         status = .approved
                         return true
                     } catch {
-                        problem = error.localizedDescription
+                        problem = HomeFailure(error).message()
                         try await sleep(.seconds(3))
                     }
                 }

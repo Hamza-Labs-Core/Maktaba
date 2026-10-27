@@ -18,13 +18,14 @@ import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
-import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api, ApiError } from "../../lib/api";
+import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { TitleRow } from "../../help/HelpLink";
 import { seriesPictureUrl } from "./SeriesBrowser";
+import { errorText } from "../../lib/errorText";
+import { LoadError } from "../../components/LoadError";
 
 interface Episode {
   video_id: string;
@@ -72,7 +73,7 @@ export function SeriesDetail() {
   const [header, setHeader] = useState<SeriesHeader | null>(null);
   const [data, setData] = useState<EpisodesResponse | null>(null);
   const [gaps, setGaps] = useState<Gap[]>([]);
-  const [err, setErr] = useState<{ message: string; status?: number } | null>(null);
+  const [err, setErr] = useState<unknown>(null);
   const [accepting, setAccepting] = useState(false);
   const [reload, setReload] = useState(0);
   const [headerBroken, setHeaderBroken] = useState(false);
@@ -104,11 +105,7 @@ export function SeriesDetail() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(
-          e instanceof ApiError
-            ? { message: e.problem.title, status: e.status }
-            : { message: t("common.error") }
-        );
+        setErr(e);
       });
     api
       .get<{ gaps: Gap[] }>(`/api/series/${enc}/missing`)
@@ -161,7 +158,7 @@ export function SeriesDetail() {
       setReload((x) => x + 1);
     } catch (e) {
       toast.show({
-        message: e instanceof ApiError ? e.problem.title : t("common.error"),
+        message: errorText(e, t),
         tone: "error",
       });
     } finally {
@@ -169,22 +166,13 @@ export function SeriesDetail() {
     }
   }
 
-  if (err) {
-    const missing = err.status === 404 || err.status === 403;
+  if (err != null) {
     return (
-      <ErrorState
-        kind={err.status === 404 ? "not_found" : err.status === 403 ? "permission" : "server"}
-        title={t("common.error")}
-        description={err.message}
-        action={
-          missing ? (
-            <Link to="/series" className="mkt-btn mkt-btn--secondary">
-              {t("nav.series")}
-            </Link>
-          ) : (
-            <Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>
-          )
-        }
+      <LoadError
+        error={err}
+        onRetry={() => setReload((x) => x + 1)}
+        backTo="/series"
+        backLabel={t("nav.series")}
       />
     );
   }

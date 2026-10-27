@@ -208,7 +208,12 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(await screen.findByText("Scan started.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Scan now" }));
     expect(post).toHaveBeenCalledTimes(2);
-    expect(await screen.findByText("Could not start the scan: scan failed")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Could not start the scan: Something went wrong on your home. Try again in a moment."
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/scan failed/)).toBeNull();
     expect(screen.getByText("No videos yet")).toBeInTheDocument();
   });
 
@@ -234,12 +239,13 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(document.querySelectorAll("li.mkt-card")).toHaveLength(0);
   });
 
-  it("LIB-08: a 403 answer shows the ErrorState with the problem title", async () => {
+  it("LIB-08: a 403 answer shows the ErrorState saying the account has no access", async () => {
     serve(() => Promise.reject(problem(403, "forbidden")));
     renderLib("/library/3f1c2a4e-0000-4000-8000-00000000dead");
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Something went wrong.");
-    expect(alert).toHaveTextContent("forbidden");
+    expect(alert).toHaveTextContent("Your account doesn't have access to this.");
+    expect(alert).not.toHaveTextContent("forbidden");
     expect(screen.queryByText("No videos yet")).toBeNull();
   });
 
@@ -325,7 +331,8 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     renderLib();
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Something went wrong.");
-    expect(alert).toHaveTextContent("query videos failed");
+    expect(alert).toHaveTextContent("Something went wrong on your home. Try again in a moment.");
+    expect(alert).not.toHaveTextContent("query videos failed");
     expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
     expect(screen.queryByText("No videos yet")).toBeNull();
   });
@@ -378,13 +385,22 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
   });
 
   it.each([
-    ["network failure", new TypeError("Failed to fetch")],
-    ["malformed JSON", new SyntaxError("Unexpected token n in JSON")],
-  ])("LIB-14: %s shows the generic error", async (_label, err) => {
+    [
+      "network failure",
+      new TypeError("Failed to fetch"),
+      "Your home can't be reached. Check that it's on and connected to the network.",
+    ],
+    [
+      "malformed JSON",
+      new SyntaxError("Unexpected token n in JSON"),
+      "Something went wrong on your home. Try again in a moment.",
+    ],
+  ])("LIB-14: %s shows the generic error", async (_label, err, desc) => {
     serve(() => Promise.reject(err));
     renderLib();
     const alert = await screen.findByRole("alert");
-    expect(within(alert).getAllByText("Something went wrong.")).toHaveLength(2);
+    expect(within(alert).getByText("Something went wrong.")).toBeInTheDocument();
+    expect(within(alert).getByText(desc)).toBeInTheDocument();
     expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 

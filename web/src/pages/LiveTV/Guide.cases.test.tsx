@@ -19,6 +19,7 @@ vi.mock("../../lib/api", async () => {
 
 import { Guide } from "./Guide";
 import { ApiError } from "../../lib/api";
+import en from "../../i18n/en.json";
 import { memberUser, quietCrash, renderPage } from "../../test/pageHarness";
 
 let NOW = Date.now();
@@ -200,7 +201,7 @@ describe("Guide (test-cases/guide.md)", () => {
     get.mockResolvedValue(payload);
     openGuide();
     expect(await screen.findByText("Could not load the guide.")).toBeInTheDocument();
-    expect(screen.getByText("Something went wrong.")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
     expectNoCrash(); // no render crash
   });
 
@@ -216,18 +217,23 @@ describe("Guide (test-cases/guide.md)", () => {
     expect(screen.getByText("Movies")).toBeInTheDocument();
   });
 
-  it.each([500, 401, 403])(
+  it.each([
+    [500, en["error.kind.server"], "button", en["common.retry"]],
+    [401, en["error.kind.signedOut"], "link", en["error.signIn"]],
+    [403, en["error.kind.noAccess"], "button", en["error.back"]],
+  ] as const)(
     "GDE-13: first load failing with %i shows the error state; a later refresh recovers",
-    async (status) => {
+    async (status, desc, role, action) => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       get.mockRejectedValueOnce(new ApiError({ type: "about:blank", title: "x", status }));
       get.mockResolvedValue(basePayload());
       openGuide();
       expect(await screen.findByText("Could not load the guide.")).toBeInTheDocument();
-      expect(screen.getByText("Something went wrong.")).toBeInTheDocument();
+      const alert = screen.getByRole("alert");
+      expect(alert).toHaveTextContent(desc);
+      expect(within(alert).getByRole(role, { name: action })).toBeInTheDocument();
       expect(screen.queryByRole("toolbar")).toBeNull();
       expect(screen.queryByTestId("guide-grid")).toBeNull();
-      expect(screen.queryByRole("button", { name: /try again|retry/i })).toBeNull();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(30_000);
       });
@@ -434,9 +440,10 @@ describe("Guide (test-cases/guide.md)", () => {
     openGuide();
     expect(await screen.findByText("Could not load the guide.")).toBeInTheDocument();
     expectNoCrash();
-    expect(err.mock.calls.some((c) => String(c[0]).includes("GET /api/channels/guide?"))).toBe(
-      true
-    );
+    // the path is logged without its query
+    expect(
+      err.mock.calls.some((c) => String(c[0]).includes("GET /api/channels/guide failed"))
+    ).toBe(true);
   });
 
   it("GDE-14: a malformed JSON body shows the error state", async () => {

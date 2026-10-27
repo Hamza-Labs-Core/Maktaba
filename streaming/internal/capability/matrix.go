@@ -216,6 +216,20 @@ func defaultProfiles() []*Profile {
 			MaxAudioChannels: 2,
 			SupportsHLS:      true,
 		},
+		// The desktop player on Windows and Linux (Epic 42.4): JavaFX's media stack plays
+		// H.264 with AAC, in MP4 or as HLS, nothing else (no mkv, no HEVC), so anything else
+		// is remuxed or transcoded; a desktop screen takes 1080p.
+		{
+			Name:             "desktop-player",
+			Containers:       []string{"mp4", "ts", "m3u8"},
+			VideoCodecs:      []string{"h264"},
+			AudioCodecs:      []string{"aac"},
+			HDR:              []string{"sdr"},
+			MaxHeight:        1080,
+			MaxBitrateKbps:   20000,
+			MaxAudioChannels: 2,
+			SupportsHLS:      true,
+		},
 		{
 			Name:             "browser-chrome",
 			Containers:       []string{"mp4", "webm", "mkv"},

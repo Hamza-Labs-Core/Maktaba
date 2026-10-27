@@ -26,6 +26,13 @@ public struct ConnectStrings: Sendable {
         return s
     }
 
+    /// Why signing in by password did not work: the home's 401 is a wrong username or
+    /// password here (not a sign-in that ended); anything else is said as every screen says it.
+    public func signInProblem(_ error: Error) -> String {
+        if case .status(401, _, _)? = error as? APIError { return text(.wrongPassword) }
+        return HomeFailure(error).message(ErrorStrings(language))
+    }
+
     public enum Key: String, CaseIterable, Sendable {
         // the home picker
         case onThisNetwork, searching, onThisNetworkHint
@@ -36,7 +43,7 @@ public struct ConnectStrings: Sendable {
         // scanning
         case scanTitle, scanUnsupported, cameraDenied, openSettings, notAHomeCode, notASignInCode
         // signing in
-        case signInTitle, byPassword, byCode, username, password, signIn, homes
+        case signInTitle, byPassword, byCode, username, password, signIn, homes, wrongPassword
         case codeIntro, codeOrOpen, waiting, codeChangesIn, codeUnsupported, qrLabel
         // approving
         case approveMenu, approveTitle, approveIntro, codeField, lookUp, scanCode, notACode
@@ -81,6 +88,7 @@ public struct ConnectStrings: Sendable {
         .username: "Username",
         .password: "Password",
         .signIn: "Sign in",
+        .wrongPassword: "That username or password is not right.",
         .homes: "Homes",
         .codeIntro: "On a phone or computer already signed in to %@, open Approve a sign-in (in Maktaba Remote, or the Player's account menu) and enter this code, or scan the QR code.",
         .codeOrOpen: "Or open this page there:",
@@ -150,6 +158,7 @@ public struct ConnectStrings: Sendable {
         .username: "اسم المستخدم",
         .password: "كلمة المرور",
         .signIn: "تسجيل الدخول",
+        .wrongPassword: "اسم المستخدم أو كلمة المرور غير صحيحة.",
         .homes: "الأجهزة الرئيسية",
         .codeIntro: "على هاتف أو حاسوب مسجَّل الدخول إلى %@، افتح «الموافقة على تسجيل دخول» (في Maktaba Remote، أو قائمة الحساب في المشغّل) وأدخل هذا الرمز، أو امسح رمز QR.",
         .codeOrOpen: "أو افتح هذه الصفحة هناك:",

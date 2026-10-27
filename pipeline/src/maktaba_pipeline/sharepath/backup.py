@@ -17,6 +17,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
+from ..db import schema_compat
 from ..engine.sql import is_pg
 from ..log import get_logger
 from .migrate import COLUMNS, Column, _table_exists
@@ -104,7 +105,7 @@ async def list_backups(db: Any) -> list[dict[str, Any]]:
             META,
         )
     except Exception as exc:  # noqa: BLE001 - an older schema: no backups
-        _log.debug("storage_path_backups_unavailable", error=str(exc))
+        schema_compat.fallback(_log, "storage_path_backups_unavailable", exc)
         return []
     return [
         {

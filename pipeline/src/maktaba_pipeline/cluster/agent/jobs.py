@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from ... import progress_clock
+
 __all__ = [
     "EVENTS",
     "JobTracker",
@@ -256,6 +258,8 @@ def claimed(job: Any, *, title: str | None = None) -> None:
 def progress(
     job_id: int, *, step: str | None, done: float | None, total: float | None, force: bool = False
 ) -> None:
+    # every progress path passes here: the job heartbeat's stall check reads it
+    progress_clock.note_progress(job_id)
     _TRACKER.progress(job_id, step=step, done=done, total=total, force=force)
 
 

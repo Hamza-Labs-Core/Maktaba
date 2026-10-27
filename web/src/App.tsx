@@ -78,78 +78,85 @@ function PublicPages() {
 export function App() {
   return (
     <I18nProvider>
-      <ThemeSync>
-        <ToastProvider>
-          {/* Epic 36: Maktaba.app's first-run setup / server starting screens */}
-          <DesktopGate>
-            {/* Epic 35: a paused node shows the paused page instead of the app */}
-            <NodeGuard>
-              <AuthProvider>
-                <FlagsProvider>
-                  <BrowserRouter>
-                    <DesktopBridge />
-                    <ShortcutProvider>
-                      <Routes>
-                        <Route element={<PublicPages />}>
-                          <Route path="/login" element={<Login />} />
-                          <Route path="/register" element={<Register />} />
+      {/* the last net: a crash outside any page (the shell, a provider) shows
+          an error with Try again instead of a blank window */}
+      <RouteErrorBoundary resetKey="app">
+        <ThemeSync>
+          <ToastProvider>
+            {/* Epic 36: Maktaba.app's first-run setup / server starting screens */}
+            <DesktopGate>
+              {/* Epic 35: a paused node shows the paused page instead of the app */}
+              <NodeGuard>
+                <AuthProvider>
+                  <FlagsProvider>
+                    <BrowserRouter>
+                      <DesktopBridge />
+                      <ShortcutProvider>
+                        <Routes>
+                          <Route element={<PublicPages />}>
+                            <Route path="/login" element={<Login />} />
+                            <Route path="/register" element={<Register />} />
+                            <Route
+                              path="/big/*"
+                              element={
+                                <RequireAuth>
+                                  <Suspense fallback={null}>
+                                    <BigScreen />
+                                  </Suspense>
+                                </RequireAuth>
+                              }
+                            />
+                          </Route>
                           <Route
-                            path="/big/*"
                             element={
                               <RequireAuth>
-                                <Suspense fallback={null}>
-                                  <BigScreen />
-                                </Suspense>
+                                <AppShell />
                               </RequireAuth>
                             }
-                          />
-                        </Route>
-                        <Route
-                          element={
-                            <RequireAuth>
-                              <AppShell />
-                            </RequireAuth>
-                          }
-                        >
-                          <Route path="/" element={IS_REMOTE ? <RemoteHome /> : <Home />} />
-                          <Route path="/library" element={<Libraries />} />
-                          <Route path="/library/:libraryId" element={<LibraryPage />} />
-                          <Route path="/library/:libraryId/collections" element={<Collections />} />
-                          <Route path="/collections/:collectionId" element={<CollectionPage />} />
-                          <Route path="/videos" element={<LibraryBrowser />} />
-                          <Route path="/series" element={<SeriesBrowser />} />
-                          <Route path="/playlists" element={<Playlists />} />
-                          <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
-                          <Route path="/series/:id" element={<SeriesDetail />} />
-                          <Route path="/videos/:videoId" element={<VideoDetail />} />
-                          <Route path="/videos/:videoId/watch" element={<VideoPlayer />} />
-                          <Route path="/search" element={<Search />} />
-                          <Route path="/search/video/:videoId" element={<SearchVideo />} />
-                          <Route path="/guide" element={<Guide />} />
-                          <Route path="/live/:number" element={<Player />} />
-                          <Route path="/more" element={<MoreMenu />} />
-                          <Route path="/help" element={<HelpIndex />} />
-                          <Route path="/help/:topic" element={<HelpTopic />} />
-                          <Route path="/account" element={<Account />} />
-                          <Route path="/account/devices" element={<ConnectedDevices />} />
-                          <Route path="/account/connect" element={<ConnectApp />} />
-                          <Route path="/account/sessions" element={<Sessions />} />
-                          <Route path="/account/tokens" element={<APITokens />} />
-                          <Route path="/account/history" element={<WatchHistory />} />
-                          <Route path="/account/preferences/*" element={<Preferences />} />
-                          <Route path="/pair" element={<Pair />} />
-                          {SERVER_PAGES && serverRoutes()}
-                          <Route path="*" element={<NotFound />} />
-                        </Route>
-                      </Routes>
-                    </ShortcutProvider>
-                  </BrowserRouter>
-                </FlagsProvider>
-              </AuthProvider>
-            </NodeGuard>
-          </DesktopGate>
-        </ToastProvider>
-      </ThemeSync>
+                          >
+                            <Route path="/" element={IS_REMOTE ? <RemoteHome /> : <Home />} />
+                            <Route path="/library" element={<Libraries />} />
+                            <Route path="/library/:libraryId" element={<LibraryPage />} />
+                            <Route
+                              path="/library/:libraryId/collections"
+                              element={<Collections />}
+                            />
+                            <Route path="/collections/:collectionId" element={<CollectionPage />} />
+                            <Route path="/videos" element={<LibraryBrowser />} />
+                            <Route path="/series" element={<SeriesBrowser />} />
+                            <Route path="/playlists" element={<Playlists />} />
+                            <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
+                            <Route path="/series/:id" element={<SeriesDetail />} />
+                            <Route path="/videos/:videoId" element={<VideoDetail />} />
+                            <Route path="/videos/:videoId/watch" element={<VideoPlayer />} />
+                            <Route path="/search" element={<Search />} />
+                            <Route path="/search/video/:videoId" element={<SearchVideo />} />
+                            <Route path="/guide" element={<Guide />} />
+                            <Route path="/live/:number" element={<Player />} />
+                            <Route path="/more" element={<MoreMenu />} />
+                            <Route path="/help" element={<HelpIndex />} />
+                            <Route path="/help/:topic" element={<HelpTopic />} />
+                            <Route path="/account" element={<Account />} />
+                            <Route path="/account/devices" element={<ConnectedDevices />} />
+                            <Route path="/account/connect" element={<ConnectApp />} />
+                            <Route path="/account/sessions" element={<Sessions />} />
+                            <Route path="/account/tokens" element={<APITokens />} />
+                            <Route path="/account/history" element={<WatchHistory />} />
+                            <Route path="/account/preferences/*" element={<Preferences />} />
+                            <Route path="/pair" element={<Pair />} />
+                            {SERVER_PAGES && serverRoutes()}
+                            <Route path="*" element={<NotFound />} />
+                          </Route>
+                        </Routes>
+                      </ShortcutProvider>
+                    </BrowserRouter>
+                  </FlagsProvider>
+                </AuthProvider>
+              </NodeGuard>
+            </DesktopGate>
+          </ToastProvider>
+        </ThemeSync>
+      </RouteErrorBoundary>
     </I18nProvider>
   );
 }

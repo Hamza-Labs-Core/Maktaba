@@ -63,6 +63,7 @@ from .engine.workers import (
 from .extensions import discover
 from .extensions.store import ensure_rows, load_state
 from .log import get_logger
+from .log.tasks import watch as watch_task
 from .pipeline.heartbeat import DEFAULT_HEARTBEAT_SEC, heartbeat_for
 from .pipeline.reaper import Reaper
 from .pipeline.runner import ClaimLoop, WorkerConfig, default_worker_id, install_signal_handlers
@@ -430,6 +431,9 @@ async def run(
         stage_names = started.served
         # every graph stage: the served set changes while the worker runs
         stage_pools = {name: st.pool for name, st in engine_rt.graph.items()}
+    for task in background:
+        # a loop that dies says so when it does, not never (log/tasks.py)
+        watch_task(task)
 
     _log.info(
         "pipeline_runtime_starting",

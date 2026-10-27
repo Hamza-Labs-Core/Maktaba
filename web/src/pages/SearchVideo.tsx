@@ -38,6 +38,7 @@ import {
   ts,
   urlMode,
 } from "./searchShared";
+import { errorText } from "../lib/errorText";
 
 interface Matches {
   sid: string;
@@ -85,8 +86,8 @@ export function SearchVideo() {
   const failure = useCallback(
     (e: unknown) =>
       e instanceof ApiError
-        ? { message: e.problem.title, status: e.status }
-        : { message: t("common.error") },
+        ? { message: errorText(e, t), status: e.status }
+        : { message: errorText(e, t) },
     [t]
   );
 

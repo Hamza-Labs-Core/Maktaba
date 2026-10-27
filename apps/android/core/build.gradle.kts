@@ -49,10 +49,11 @@ dependencies {
     implementation(libs.camerax.view)
     implementation(libs.zxing.core)
 
-    api(libs.okhttp)
-    api(libs.kotlinx.serialization.json)
+    // the API client, sign-in and the home picker's rules, shared with the desktop player
+    api(project(":client"))
     api(libs.kotlinx.coroutines.android)
 
+    testImplementation(testFixtures(project(":client")))
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)

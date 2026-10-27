@@ -10,6 +10,7 @@ import { useI18n } from "../../lib/i18n";
 import { seriesPictureUrl } from "../../pages/Library/SeriesBrowser";
 import { bigPath, useBigNav } from "../nav";
 import { Empty, Failed, Grid, Loading, Picture, Progress, Screen, clock } from "../ui";
+import { errorText } from "../../lib/errorText";
 
 interface SeriesItem {
   id: string;
@@ -33,9 +34,7 @@ export function BigSeriesList() {
     api
       .get<{ items: SeriesItem[] }>("/api/series?sort=name")
       .then((r) => !cancelled && setItems(Array.isArray(r?.items) ? r.items : []))
-      .catch(
-        (e) => !cancelled && setErr(e instanceof ApiError ? e.problem.title : t("common.error"))
-      );
+      .catch((e) => !cancelled && setErr(errorText(e, t)));
     return () => {
       cancelled = true;
     };
@@ -170,8 +169,8 @@ export function BigSeries() {
           !cancelled &&
           setErr(
             e instanceof ApiError
-              ? { message: e.problem.title, status: e.status }
-              : { message: t("common.error") }
+              ? { message: errorText(e, t), status: e.status }
+              : { message: errorText(e, t) }
           )
       );
     return () => {

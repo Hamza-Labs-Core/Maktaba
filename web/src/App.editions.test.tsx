@@ -105,7 +105,9 @@ describe("player edition", () => {
     "has no route %s, even for an admin",
     async (path) => {
       await open("player", path, admin);
-      expect(await screen.findByRole("heading", { level: 1, name: "404" })).toBeVisible();
+      expect(
+        await screen.findByRole("heading", { level: 1, name: en["notFound.title"] })
+      ).toBeVisible();
     }
   );
 

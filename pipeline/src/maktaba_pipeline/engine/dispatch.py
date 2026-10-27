@@ -118,6 +118,22 @@ async def dispatch_job(
         job_events.finished(job.id, "done")
         await after_legacy_done(db, job.id, runtime.graph)
         return
-    ctx = await runtime.context_for(db, job)
+    try:
+        ctx = await runtime.context_for(db, job)
+    except Exception as exc:  # noqa: BLE001 - the job fails (and retries), the worker goes on
+        # raised to the claim loop it left the job claimed, unexplained, until the
+        # reaper took it back a lease later
+        _log.exception("stage_context_failed", job_id=job.id, stage=job.stage)
+        await mark_failed_or_retry(
+            db,
+            job_id=job.id,
+            error=StageError(
+                kind="stage_context_failed",
+                message=f"{type(exc).__name__}: {exc}",
+                traceback=traceback.format_exc(),
+                retryable=True,
+            ),
+        )
+        return
     async with heartbeat_for(db, job_id=job.id):
         await execute(db, job, stage=stage, graph=runtime.graph, ctx=ctx)

@@ -156,7 +156,10 @@ describe("LibraryBrowser", () => {
       renderLib();
       const more = await screen.findByRole("button", { name: /load more/i });
       await act(async () => more.click());
-      expect(await screen.findByText("boom")).toBeInTheDocument();
+      expect(
+        await screen.findByText("Something went wrong on your home. Try again in a moment.")
+      ).toBeInTheDocument();
+      expect(screen.queryByText("boom")).toBeNull();
       expect(screen.getByText("a.mp4")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /load more/i })).toBeInTheDocument();
     });
