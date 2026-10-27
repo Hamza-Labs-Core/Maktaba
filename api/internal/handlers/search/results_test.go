@@ -63,7 +63,8 @@ func searchDB(t *testing.T) *sql.DB {
 	for _, st := range []string{
 		`CREATE TABLE libraries (id TEXT PRIMARY KEY, name TEXT NOT NULL)`,
 		`CREATE TABLE videos (id TEXT PRIMARY KEY, library_id TEXT NOT NULL, title TEXT,
-			filename TEXT NOT NULL DEFAULT '', duration_sec REAL, detected_language TEXT, deleted_at TEXT)`,
+			filename TEXT NOT NULL DEFAULT '', duration_sec REAL, detected_language TEXT, deleted_at TEXT,
+			created_at TEXT NOT NULL DEFAULT '')`,
 		`CREATE TABLE transcripts (id TEXT PRIMARY KEY, video_id TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1)`,
 		`CREATE TABLE transcript_segments (id INTEGER PRIMARY KEY AUTOINCREMENT, transcript_id TEXT NOT NULL,
 			seq INTEGER NOT NULL, start_sec REAL NOT NULL, end_sec REAL NOT NULL, text TEXT NOT NULL)`,
@@ -268,6 +269,37 @@ func TestSearch_OrdersByScoreThenCount(t *testing.T) {
 	}
 	if resp.TranscriptVideos[0].BestScore <= resp.TranscriptVideos[1].BestScore {
 		t.Fatalf("scores %+v", resp.TranscriptVideos)
+	}
+}
+
+// A search ranks by relevance, and its ties come newest-added first (the
+// order of every list of videos), not by id: in titles (SQLite ranks a title
+// by its length) and in transcripts (as good a passage, as many of them).
+func TestSearch_TiesGoNewestAdded(t *testing.T) {
+	db := searchDB(t)
+	f := &fixture{t: t, db: db}
+	f.library(libA, "L")
+	for _, v := range []struct{ id, title, added string }{
+		{"v-a", "zakat one", "2026-10-01T00:00:00Z"},
+		{"v-b", "zakat two", "2026-10-03T00:00:00Z"}, // the newest of the ties
+		{"v-c", "zakat six", "2026-10-02T00:00:00Z"},
+		{"v-d", "zakat", "2026-09-01T00:00:00Z"}, // the best title match, the oldest
+	} {
+		f.video(v.id, libA, v.title, 60)
+		f.exec(`UPDATE videos SET created_at = $1 WHERE id = $2`, v.added, v.id)
+		f.transcript("t"+v.id, v.id, true, "zakat", "zakat")
+	}
+	// v-d's transcript holds better passages: first in transcripts too
+	f.exec(`UPDATE transcript_segments SET text = 'zakat zakat' WHERE transcript_id = 'tv-d'`)
+	h := router(&Handler{DB: db})
+	resp := decode[Response](t, call(t, h, admin, http.MethodPost, "/api/search", `{"q":"zakat","mode":"fts"}`), 200)
+	titles := videoIDs(resp.Videos, func(v TitleVideo) string { return v.VideoID })
+	if want := []string{"v-d", "v-b", "v-c", "v-a"}; !reflect.DeepEqual(titles, want) {
+		t.Errorf("in titles %v, want %v", titles, want)
+	}
+	inText := videoIDs(resp.TranscriptVideos, func(v TranscriptVideo) string { return v.VideoID })
+	if want := []string{"v-d", "v-b", "v-c", "v-a"}; !reflect.DeepEqual(inText, want) {
+		t.Errorf("in transcripts %v, want %v", inText, want)
 	}
 }
 

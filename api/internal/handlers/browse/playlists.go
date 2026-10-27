@@ -15,6 +15,10 @@ package browse
 // video the owner may not see is 404 when added or removed; an item whose
 // library they later lose (or that went missing) stays stored but is never
 // shown or counted, and keeps its place after the visible ones on a reorder.
+//
+// A playlist lists its items newest-added first (the videos' created_at, as
+// every list of videos) until its owner reorders it: from then on, in the
+// order they gave (hand_ordered, slot 0163).
 
 import (
 	"context"
@@ -66,7 +70,14 @@ type PlaylistSummary struct {
 	PosterVideoIDs []string  `json:"poster_video_ids"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+	// HandOrdered: the owner reordered it, and its items keep that order;
+	// otherwise they are newest-added first.
+	HandOrdered bool `json:"hand_ordered"`
 }
+
+// playlistOrder is the ORDER BY of a playlist's items i (videos v, playlist
+// p): their positions once the owner reordered it, else newest-added first.
+const playlistOrder = `CASE WHEN p.hand_ordered THEN i.position END, v.created_at DESC, v.id DESC`
 
 // summaries is the user's playlists (or the one named by only), the newest
 // change first, counting only the items the caller may see.
@@ -78,13 +89,13 @@ func (h *Handler) summaries(ctx context.Context, uid string, s scope, only strin
 		one = " AND p.id = " + pidx(len(args))
 	}
 	vis := and(visible, s.cond("v.library_id", &args))
-	rows, err := h.DB.QueryContext(ctx, `SELECT p.id, p.name, p.description, p.created_at, p.updated_at,
+	rows, err := h.DB.QueryContext(ctx, `SELECT p.id, p.name, p.description, p.created_at, p.updated_at, p.hand_ordered,
 			COUNT(v.id), COALESCE(SUM(v.duration_sec), 0)
 		FROM user_playlists p
 		LEFT JOIN user_playlist_items i ON i.playlist_id = p.id
 		LEFT JOIN videos v ON v.id = i.video_id AND `+vis+`
 		WHERE p.user_id = $1`+one+`
-		GROUP BY p.id, p.name, p.description, p.created_at, p.updated_at
+		GROUP BY p.id, p.name, p.description, p.created_at, p.updated_at, p.hand_ordered
 		ORDER BY p.updated_at DESC, p.id`, args...)
 	if err != nil {
 		return nil, err
@@ -94,7 +105,7 @@ func (h *Handler) summaries(ctx context.Context, uid string, s scope, only strin
 	for rows.Next() {
 		var ps PlaylistSummary
 		var created, updated nullTime
-		if err := rows.Scan(&ps.ID, &ps.Name, &ps.Description, &created, &updated, &ps.Videos, &ps.DurationSec); err != nil {
+		if err := rows.Scan(&ps.ID, &ps.Name, &ps.Description, &created, &updated, &ps.HandOrdered, &ps.Videos, &ps.DurationSec); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -109,7 +120,7 @@ func (h *Handler) summaries(ctx context.Context, uid string, s scope, only strin
 	if len(out) == 0 {
 		return out, nil
 	}
-	// the first visible items of each, by position
+	// the first visible items of each, in the playlist's order
 	args = []any{uid}
 	if only != "" {
 		args = append(args, only)
@@ -117,7 +128,7 @@ func (h *Handler) summaries(ctx context.Context, uid string, s scope, only strin
 	vis = and(visible, s.cond("v.library_id", &args))
 	args = append(args, posterCount)
 	prow, err := h.DB.QueryContext(ctx, `SELECT playlist_id, video_id FROM (
-			SELECT i.playlist_id, i.video_id, ROW_NUMBER() OVER (PARTITION BY i.playlist_id ORDER BY i.position, i.video_id) AS rn
+			SELECT i.playlist_id, i.video_id, ROW_NUMBER() OVER (PARTITION BY i.playlist_id ORDER BY `+playlistOrder+`) AS rn
 			FROM user_playlists p JOIN user_playlist_items i ON i.playlist_id = p.id
 			JOIN videos v ON v.id = i.video_id
 			WHERE p.user_id = $1`+one+` AND `+vis+`) x
@@ -302,16 +313,17 @@ func (h *Handler) ownPlaylist(ctx context.Context, q interface {
 	return nil, err
 }
 
-// playlistCards is a playlist's visible items in order, with the caller's
-// playback.
+// playlistCards is a playlist's visible items in its order (playlistOrder),
+// with the caller's playback.
 func (h *Handler) playlistCards(ctx context.Context, uid string, s scope, id string) ([]Card, error) {
 	args := []any{uid, id}
 	vis := and(visible, s.cond("v.library_id", &args))
 	return h.playbackCards(ctx, `SELECT `+cardColumns+`, ps.position_sec, ps.completed
-		FROM user_playlist_items i JOIN videos v ON v.id = i.video_id
+		FROM user_playlist_items i JOIN user_playlists p ON p.id = i.playlist_id
+		JOIN videos v ON v.id = i.video_id
 		LEFT JOIN playback_state ps ON ps.user_id = $1 AND ps.video_id = v.id
 		WHERE i.playlist_id = $2 AND `+vis+`
-		ORDER BY i.position, i.video_id`, args)
+		ORDER BY `+playlistOrder, args)
 }
 
 // playlistDoc writes {playlist, items}.
@@ -580,7 +592,8 @@ func (h *Handler) RemovePlaylistItem(w http.ResponseWriter, r *http.Request) {
 
 // OrderPlaylist implements PUT /api/me/playlists/{id}/order: video_ids is
 // the new order of the visible items, each exactly once (else 422); the items
-// the caller may not see keep their order after them. Answers {playlist, items}.
+// the caller may not see keep their order after them. The playlist is hand
+// ordered from then on. Answers {playlist, items}.
 func (h *Handler) OrderPlaylist(w http.ResponseWriter, r *http.Request) {
 	p, uid := writer(w, r)
 	if p == nil {
@@ -665,7 +678,7 @@ func (h *Handler) OrderPlaylist(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE user_playlists SET updated_at = $1 WHERE id = $2`, h.ts(h.now()), id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE user_playlists SET updated_at = $1, hand_ordered = $2 WHERE id = $3`, h.ts(h.now()), true, id); err != nil {
 		internal(w, r, "touch playlist", err)
 		return
 	}

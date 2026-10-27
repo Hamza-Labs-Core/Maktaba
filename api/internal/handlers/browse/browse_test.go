@@ -78,6 +78,9 @@ func testDB(t *testing.T) *sql.DB {
 		exec(s)
 	}
 	execMigration(t, db, "0162_user_favorites_playlists.sqlite.sql")
+	// slot 0163's column (its file runs through the SQLite migrator, which
+	// reads ADD COLUMN IF NOT EXISTS: TestSQLiteMigrate_AppliesEveryTwinToAFreshDatabase)
+	exec(`ALTER TABLE user_playlists ADD COLUMN hand_ordered INTEGER NOT NULL DEFAULT 0`)
 	exec(`INSERT INTO libraries (id, name) VALUES ($1,'Alpha'), ($2,'Beta'), ($3,'Gamma')`, libA, libB, libC)
 	day := func(d int) string { return iso(now.AddDate(0, 0, -d)) }
 	for _, r := range []struct {
@@ -403,11 +406,20 @@ func TestHub(t *testing.T) {
 		t.Errorf("recently watched %v", got)
 	}
 	// a3's five old plays are outside the 90 days (its one today counts,
-	// tied with a2's: the id breaks it); a4 is missing
+	// tied with a2's: the more recently added, a3, comes first); a4 is missing
 	if got := ids(rows.MostWatched); !slices.Equal(got, names("a1", "a3", "a2")) {
 		t.Errorf("most watched %v", got)
 	} else if *rows.MostWatched[0].Plays != 3 || *rows.MostWatched[1].Plays != 1 || *rows.MostWatched[2].Plays != 1 {
 		t.Errorf("plays %d, %d", *rows.MostWatched[0].Plays, *rows.MostWatched[1].Plays)
+	}
+	// added after a3, a2 now comes first of the two (the id would not move it)
+	if _, err := e.db.Exec(`UPDATE videos SET created_at = $1 WHERE id = $2`, iso(now), v("a2")); err != nil {
+		t.Fatal(err)
+	}
+	var again hubBody
+	e.do(asViewer(), "GET", "/api/libraries/"+libA+"/hub", nil, &again)
+	if got := ids(again.Rows.MostWatched); !slices.Equal(got, names("a1", "a2", "a3")) {
+		t.Errorf("most watched, a2 added last: %v", got)
 	}
 	if len(rows.Series) != 1 || rows.Series[0].ID != seriesA || rows.Series[0].Episodes != 2 || rows.Series[0].Name != "Tafsir" {
 		t.Errorf("series %+v: a4 is missing", rows.Series)

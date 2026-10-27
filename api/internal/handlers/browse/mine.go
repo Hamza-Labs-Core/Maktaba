@@ -306,7 +306,8 @@ func (h *Handler) MyVideo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, out)
 }
 
-// favoriteCards is the caller's favorites they may still see, newest first.
+// favoriteCards is the caller's favorites they may still see, the most
+// recently added to the library first (the order of every video list).
 func (h *Handler) favoriteCards(ctx context.Context, uid string, s scope, n int) ([]Card, error) {
 	if uid == "" {
 		return []Card{}, nil
@@ -318,7 +319,7 @@ func (h *Handler) favoriteCards(ctx context.Context, uid string, s scope, n int)
 		FROM user_favorites f JOIN videos v ON v.id = f.video_id
 		LEFT JOIN playback_state ps ON ps.user_id = $1 AND ps.video_id = v.id
 		WHERE f.user_id = $1 AND `+and(visible, libCond)+`
-		ORDER BY f.created_at DESC, v.id DESC LIMIT `+pidx(len(args)), args)
+		ORDER BY v.created_at DESC, v.id DESC LIMIT `+pidx(len(args)), args)
 }
 
 // playbackCards reads cards followed by the caller's position and completed
