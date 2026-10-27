@@ -207,6 +207,10 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// rate-limited per IP (handlers/discovery/device.go).
 		"/api/pairing/device":       {},
 		"/api/pairing/device/token": {},
+		// Epic 42 story 42.2 — the home's identity for the apps' home picker: its id,
+		// name, version and its own addresses, never a user or a library; rate-limited
+		// per IP (handlers/discovery/home.go).
+		"/api/discovery/home": {},
 		// Epic 31 — a machine's join request and its poll.
 		"/api/cluster/join":   {},
 		"/api/cluster/join/*": {},

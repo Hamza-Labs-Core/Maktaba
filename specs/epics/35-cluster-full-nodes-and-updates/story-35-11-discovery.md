@@ -20,7 +20,7 @@ Design: [design.md](design.md) §12; README R7.
 - **AC1** In node mode only the supervisor advertises (the API's advertiser is not started); on the
   home the two advertisers converge into one publication (no duplicate instance names).
 - **AC2** TXT keys on every machine: `protocol=1`, `role=home|node`, `id` (this machine's instance or
-  node id, 8 hex), `home` (the home's instance id, 8 hex; equal to `id` on the home), `web` (web port),
+  node id; full id since Epic 42 story 42.2, 8 hex before), `home` (the home's instance id, full; equal to `id` on the home), `web` (web port),
   `version`, `name` (machine name); the home keeps `schema_rev` and `join`. Never a library or user
   name (Epic 15 privacy rule).
 - **AC3** A node re-publishes when its version changes (after an update) or its web port changes;
@@ -39,7 +39,7 @@ Design: [design.md](design.md) §12; README R7.
 ## Test cases
 
 - **TC1** `TestAdvertiseTXTNodeMode` (`cmd/maktaba-server/internal/mdns`): node config present → TXT
-  has `role=node`, `home=<8 hex>`, `web`, no `join`.
+  has `role=node`, `home=<the home's instance id>`, `web`, no `join`.
 - **TC2** `TestAdvertiseHomeSinglePublisher`: home → one publication carrying `schema_rev`, `join`.
 - **TC3** `TestAdvertiseRepublishOnVersionChange`.
 - **TC4** `test_discover_skips_nodes` (`pipeline/tests/cluster/test_discover.py`): a fake zeroconf

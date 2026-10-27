@@ -566,6 +566,10 @@ func runServe() error {
 			licRef.Set(entStore)
 			licRefresher, licCloud, licManage := licenseRefresher(entStore, licVerifier, appDB, logger)
 			p10Deps.LicenseRefresher, p10Deps.LicenseCloud, p10Deps.LicenseManageURL = licRefresher, licCloud, licManage
+			// Epic 42 stories 42.2, 42.6: the home's identity for the apps (its instance
+			// identity once the cluster bootstrap below has it)
+			homeDir := newHomeDirectory(licCloud)
+			p10Deps.Home = homeDir.Info
 			if licRefresher != nil {
 				go licRefresher.Run(context.Background())
 			}
@@ -692,7 +696,7 @@ func runServe() error {
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the
 			// machine join/approve/revoke surface and its housekeeping.
-			clusterClose, verifier, hl := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, hubRef, updatesRef, notifyHub, logger)
+			clusterClose, verifier, hl := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, hubRef, updatesRef, notifyHub, homeDir, logger)
 			defer clusterClose()
 			nodeVerifier = verifier
 			homeLinkSrv = hl

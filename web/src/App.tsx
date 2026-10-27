@@ -48,6 +48,7 @@ import { Sessions } from "./pages/Profile/Sessions";
 import { APITokens } from "./pages/Profile/APITokens";
 import { WatchHistory } from "./pages/Profile/WatchHistory";
 import { Account } from "./pages/Profile/Account";
+import { ConnectApp } from "./pages/Profile/ConnectApp";
 import { LibraryACL } from "./pages/Admin/LibraryACL";
 import { AdminLibraries } from "./pages/Admin/Libraries";
 import { Channels } from "./pages/Admin/Channels";
@@ -138,6 +139,7 @@ export function App() {
                           <Route path="/help/:topic" element={<HelpTopic />} />
                           <Route path="/account" element={<Account />} />
                           <Route path="/account/devices" element={<ConnectedDevices />} />
+                          <Route path="/account/connect" element={<ConnectApp />} />
                           <Route path="/account/sessions" element={<Sessions />} />
                           <Route path="/account/tokens" element={<APITokens />} />
                           <Route path="/account/history" element={<WatchHistory />} />

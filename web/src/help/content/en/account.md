@@ -4,7 +4,7 @@ Your profile and password, where you are signed in, your API tokens, your watch 
 
 ## What it is {#what-it-is}
 
-Your account pages are listed in the side menu (on a phone, under [More](/more)): **Account**, **Devices**, **Sessions**, **API tokens** and **History**. The **Privacy** tab in Settings controls whether your viewing is recorded.
+Your account pages are listed in the side menu (on a phone, under [More](/more)): **Account**, **Devices**, **Connect an app**, **Sessions**, **API tokens** and **History**. The **Privacy** tab in Settings controls whether your viewing is recorded.
 
 ## How to use it {#how-to-use}
 
@@ -31,7 +31,27 @@ On [Account](/account), in **Change password**:
 
 [Devices](/account/devices) lists the phones and apps registered to receive push notifications for you, with their app version and when they were last seen. Press **Remove** to stop notifications to one of them.
 
-To sign in a TV, open the address the TV shows (or scan its QR code) and press **Approve** on [Sign in a TV](/pair). The TV is then signed in as you, with your own access, so approve only a TV in front of you.
+To sign in a phone, tablet, computer or TV with a code instead of your password, see [Sign in a device with a code](#sign-in-with-a-code).
+
+### Connect an app {#connect-app}
+
+[Connect an app](/account/connect) helps a Maktaba app on your phone, tablet, computer or TV find this home:
+
+1. Open the app. On a device on the same network, the app may already list this home: pick it.
+2. Otherwise, choose to add a home in the app and scan the QR code on this page with it.
+3. Or type one of the **Addresses** into the app. Press **Copy** next to an address to copy it, or **Copy the app link** to copy the link the QR code holds.
+
+The addresses on this network come first. When this home is connected to Maktaba Cloud, its address through the cloud comes last; that one works from anywhere. Then sign in on the app with your username and password, or with a code.
+
+### Sign in a device with a code {#sign-in-with-a-code}
+
+An app can sign in without your password: it shows a code of eight letters and digits, and a QR code.
+
+1. Scan the app's QR code with your phone's camera, or open [Sign in a device](/pair) here and type the code. Press **Continue**.
+2. The page shows what is asking: the app, the device and its name, and when the code expires. Check that it is the device in front of you.
+3. Press **Approve**. The device is signed in as you, with your own access and nothing more. Press **Cancel** if you do not recognise it.
+
+A code can be approved once, within 10 minutes.
 
 ### API tokens {#api-tokens}
 
@@ -74,6 +94,12 @@ The same tab shows your recent **Watch history**, with **Remove** on each row, a
 - **Removed from your history.**: the video is gone from your history.
 - **Nothing watched yet** / **No activity yet.**: there is nothing to show yet.
 - **Privacy settings saved.**: the tracking switch was changed.
+- **The device is signed in. You can close this page.**: you approved the code; the device is signed in as you.
+- **This code was already used.**: someone approved this code already. Ask the device for a new code.
+- **This code is not waiting for a sign-in**: the code expired, was already used, or the home restarted since the device asked. Ask the device for a new code.
+- **Check the code**: what you typed is not eight letters and digits.
+- **Copied.** / **Couldn't copy.**: on Connect an app, the copy worked, or it did not; select the text and copy it by hand.
+- **This home has no address another device can use yet.**: the home does not know its address on the network. Type the address you use to open Maktaba in this browser into the app instead.
 
 ## FAQ {#faq}
 
@@ -88,6 +114,10 @@ No. A token is shown once. Revoke the old one and create a new one.
 ### Does pausing tracking delete my history? {#faq-pause-deletes}
 
 No. It only stops new plays from being recorded. Remove old entries one by one on the [History](/account/history) page.
+
+### Can a device I approve do more than I can? {#faq-approve-rights}
+
+No. A device signed in with a code is signed in as you, with your own access. To stop it, revoke its session on [Sessions](/account/sessions).
 
 ### Can I delete my account? {#faq-delete-account}
 
@@ -112,6 +142,12 @@ Not by yourself. Ask an admin.
 - **What it means:** The token was revoked, it expired, or its scopes do not allow what the script does.
 - **Does Maktaba fix it itself?** No.
 - **What you can do:** Check the token's **Expires** and **Scopes** on [API tokens](/account/tokens). Create a new token if needed and put it in the script.
+
+### a sign-in through Maktaba Cloud cannot sign in a device {#cloud-cannot-approve}
+
+- **What it means:** You opened Maktaba through Maktaba Cloud. A device signed in with a code keeps working after the cloud link ends, so only a sign-in on the home itself can approve one.
+- **Does Maktaba fix it itself?** No.
+- **What you can do:** Open the home's own address (on the same network as the home) and approve the code there.
 
 ### Something went wrong. (a page does not load) {#load-error}
 

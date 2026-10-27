@@ -71,6 +71,10 @@ type P10Deps struct {
 	// PairingTTL bounds ticket lifetime. Zero defaults to 5 minutes.
 	PairingTTL time.Duration
 
+	// Home describes this home for the apps (GET /api/discovery/home, a device code's
+	// verify_url; Epic 42 stories 42.2, 42.6). Nil: only the request's own origin.
+	Home discoveryh.HomeFunc
+
 	// Keys is the RS256 signing set. When set (with a DB), pairing
 	// Exchange mints a real device access JWT + refresh token. Nil
 	// leaves Exchange disabled (503) rather than dead-ending with an
@@ -191,7 +195,7 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
-	ph := &discoveryh.Handler{Store: pstore, TTL: ttl}
+	ph := &discoveryh.Handler{Store: pstore, TTL: ttl, Home: d.Home}
 	// Exchange can only issue a working session when both a refresh
 	// store (DB) and a signing key set are available. Without them the
 	// handler returns 503 on Exchange instead of returning a body that
@@ -219,6 +223,7 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 	}
 	ph.Mount(r)
 	ph.MountDevice(r, 0)
+	ph.MountHome(r, 0)
 
 	// Security disclosure + SBOM.
 	policy := d.SecurityPolicy

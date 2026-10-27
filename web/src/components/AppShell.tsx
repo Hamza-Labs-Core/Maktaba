@@ -72,6 +72,7 @@ const SERIES = NAV[2];
 const SECONDARY = [
   { to: "/account", key: "nav.account", icon: "◐" },
   { to: "/account/devices", key: "nav.devices", icon: "▢" },
+  { to: "/account/connect", key: "nav.connectApp", icon: "⌗" },
   { to: "/account/sessions", key: "nav.sessions", icon: "⧉" },
   { to: "/account/tokens", key: "nav.tokens", icon: "⚿" },
   { to: "/account/history", key: "nav.history", icon: "◷" },

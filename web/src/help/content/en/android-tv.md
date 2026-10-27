@@ -12,7 +12,7 @@ Maktaba for Android TV is a ten-foot app for Android TV and Google TV (Android 9
 
 1. Open **Maktaba** from the TV's home screen. On Android 17 and later, the first time, it shows **Before you start** (see [Permissions](/help/android-tv#permissions)).
 2. **Choose your home**: homes on this network appear by themselves. If yours is not listed, choose **Enter an address** and type it, like `192.168.1.20:8088`.
-3. **Sign in to** your home with a code: the TV shows a code and a QR code. On your phone or computer, signed in to Maktaba, open the address the TV shows (or scan the QR code), check that the **TV code** matches, and press **Approve**. The TV signs in by itself. A code that runs out is replaced: **A new code. The last one ran out.**
+3. **Sign in to** your home with a code: the TV shows a code and a QR code. On your phone or computer, signed in to Maktaba, open the address the TV shows (or scan the QR code), check that the **Code** and the device shown are the TV, and press **Approve**. The TV signs in by itself. A code that runs out is replaced: **A new code. The last one ran out.**
 4. Or choose **Sign in with a password** and type your Maktaba username and password with the remote. A home that cannot sign a TV in with a code yet asks for the password.
 5. Move with the arrows; the item in focus has a gold ring. Press the centre button to open it, and **Back** to go back.
 
