@@ -34,9 +34,9 @@ import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
  * where this person stopped (and Start over), or Play.
  */
 @Composable
-fun VideoScreen(api: TvApi, id: String, onPlay: (title: String, startMs: Long) -> Unit, signedOut: () -> Unit) {
-    val (state, retry) = rememberLoad(id, signedOut) { api.video(id) }
-    LoadState(state, retry) { v ->
+fun VideoScreen(api: TvApi, id: String, onPlay: (title: String, startMs: Long) -> Unit, signedOut: () -> Unit, onBack: (() -> Unit)? = null) {
+    val (state, retry) = rememberLoad(id, signedOut, where = "tv video") { api.video(id) }
+    LoadState(state, retry, onBack) { v ->
         val focus = remember { FocusRequester() }
         LaunchedEffect(v.id) { runCatching { focus.requestFocus() } }
         Row(

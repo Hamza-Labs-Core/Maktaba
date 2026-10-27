@@ -534,10 +534,13 @@ public struct AuthorizedImage: View {
 
     public var body: some View {
         ZStack {
-            Rectangle().fill(.quaternary)
             if let image {
-                image.resizable().scaledToFill()
+                // the whole frame, as a player shows the video: a vertical or square one
+                // has black bars at its sides, an ultra-wide one above and below
+                Rectangle().fill(.black)
+                image.resizable().scaledToFit()
             } else {
+                Rectangle().fill(.quaternary)
                 Image(systemName: "film").foregroundStyle(.secondary)
             }
         }
