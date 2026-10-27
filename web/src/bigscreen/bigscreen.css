@@ -265,11 +265,14 @@
   overflow: hidden;
   background: var(--bs-ink-3);
 }
+/* every picture box is 16:9: the whole frame is shown, with bars where it is
+   narrower (a vertical video) or wider, as a player shows it */
 .bs-pic {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  background: #000;
 }
 .bs-pic--none {
   background: radial-gradient(circle at 30% 30%, rgba(227, 178, 82, 0.16), transparent 60%),
