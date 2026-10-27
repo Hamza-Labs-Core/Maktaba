@@ -211,9 +211,10 @@ type Journal struct {
 	Rehearsal *Rehearsal `json:"rehearsal,omitempty"`
 	// App is the app's last answer to the order (ordered, staged).
 	App string `json:"app,omitempty"`
-	// InstallAt is when the home means to give the go (its apply says it): the app's
-	// notice names it ("restart at …"); nil: as soon as it is staged and its turn comes.
-	InstallAt *time.Time `json:"install_at,omitempty"`
+	// InstallBy is the latest an automatic run gives the go (its window's end and overrun:
+	// its apply says it): the app's notice names it ("restart by …"); nil: an admin's
+	// run, which goes as soon as the app staged it and its turn comes.
+	InstallBy *time.Time `json:"install_by,omitempty"`
 	// LauncherProtocol is the release's launcher_protocol (its verified release.json).
 	LauncherProtocol int `json:"launcher_protocol,omitempty"`
 	// EdgeProtocol is the release's edge_protocol (its verified release.json): the TV

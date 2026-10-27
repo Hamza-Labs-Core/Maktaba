@@ -26,7 +26,7 @@ type world struct {
 	// the desktop app's side of an order (an installer that orders from its app)
 	order     string     // the run ordered ("" withdrawn)
 	answer    string     // ordered, staged
-	installAt *time.Time // when the order says the app installs
+	installBy *time.Time // when the order says the app installs
 	answerErr error
 	extends   int // the launcher's guard pushed on (Extender)
 }
@@ -167,7 +167,7 @@ func (f *fakeInst) ReplaceLauncher(*Journal) (bool, error) {
 func (f *fakeInst) Order(j *Journal) error {
 	return f.step(StepOrder, func() {
 		if f.w.order != j.Job.RunID {
-			f.w.order, f.w.answer, f.w.installAt = j.Job.RunID, RequestOrdered, j.InstallAt
+			f.w.order, f.w.answer, f.w.installBy = j.Job.RunID, RequestOrdered, j.InstallBy
 		}
 	})
 }

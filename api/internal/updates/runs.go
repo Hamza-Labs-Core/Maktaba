@@ -17,7 +17,7 @@ const (
 	RunHomePreparing = "home_preparing"
 	RunHomePrepared  = "home_prepared" // waits for its gates (window, TV) and the drain
 	RunDraining      = "draining"
-	RunHomeApplying  = "home_applying" // ordered (an app: waits for a click), switched, restarting, watching
+	RunHomeApplying  = "home_applying" // ordered (an app: stages it), switched, restarting, watching
 	RunHomeCommitted = "home_committed"
 	RunRollingOut    = "rolling_out"
 	RunDone          = "done"
@@ -31,12 +31,20 @@ const (
 	RunRolledBack      = "rolled_back"     // the home went back to the release before
 	RunFailedRollback  = "failed_rollback" // the home could not go back: needs a person
 	RunCancelled       = "cancelled"
-	RunSuperseded      = "superseded" // a newer release took the place of a run that waited for clicks
+	RunSuperseded      = "superseded" // a newer release took the place of a run that waited for desktop apps
 )
 
-// StepWaitingClick is a run's step while all it waits for is a click on a desktop app
-// (the home's, or the machines' still to go): a newer release may take its place.
+// StepWaitingApp is a run's step while all it waits for is desktop apps staging the
+// release they were ordered (the home's, or the machines' still to go): nothing is
+// drained, and a newer release may take its place.
+const StepWaitingApp = "waiting_app"
+
+// StepWaitingClick is that step as runs from before owner decision D1 was replaced
+// (2026-10-27) name it (they waited for clicks): read as StepWaitingApp.
 const StepWaitingClick = "waiting_click"
+
+// waitingApp reports whether a run's step is StepWaitingApp (or its older name).
+func waitingApp(step string) bool { return step == StepWaitingApp || step == StepWaitingClick }
 
 // Target states (README "Machine target").
 const (
@@ -55,8 +63,13 @@ const (
 	// TargetConverting: a worker-only machine becoming a full node on its turn (story 35.8
 	// AC8, convert.go)
 	TargetConverting = "converting"
-	// A desktop app that runs the server (owner decision D1): ordered, it waits for a
-	// click there (the rollout goes on with the others), then for its turn.
+	// A desktop app that runs the server: ordered, its app stages the release (the
+	// rollout goes on with the others), then it waits for its turn (app_staged) and
+	// installs at its go, with no click (owner decision D1, 2026-10-27).
+	TargetOrdered   = "ordered"
+	TargetAppStaged = "app_staged"
+	// TargetWaitingClick and TargetClicked are those two states as runs from before
+	// that decision name them: read as TargetOrdered and TargetAppStaged.
 	TargetWaitingClick = "waiting_click"
 	TargetClicked      = "clicked"
 	// TargetNeedsPerson: something on that machine only a person mends (an install that
@@ -74,6 +87,18 @@ func targetEnded(s string) bool {
 	}
 	return false
 }
+
+// targetAppOrdered reports whether a target is ordered and its app has not staged the
+// release yet (TargetOrdered, or its older name).
+func targetAppOrdered(s string) bool { return s == TargetOrdered || s == TargetWaitingClick }
+
+// targetAppStaged reports whether a target's app staged the release: it waits for its
+// turn (TargetAppStaged, or its older name).
+func targetAppStaged(s string) bool { return s == TargetAppStaged || s == TargetClicked }
+
+// targetBeforeGo reports whether a target is an order to its desktop app before its go:
+// nothing changed there, and the order is withdrawn when the run lets it go.
+func targetBeforeGo(s string) bool { return targetAppOrdered(s) || targetAppStaged(s) }
 
 // RunDetail is update_runs.detail: what the driver keeps of a run beside its state.
 type RunDetail struct {

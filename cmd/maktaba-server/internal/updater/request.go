@@ -40,7 +40,7 @@ const AppRequestFile = "app-install.json"
 const (
 	// RequestOrdered (server): the home ordered this release. The app stages it (kind
 	// app: its own update from Feed, verified with its key; kind runtime: nothing to
-	// fetch, the server has it) and tells the person when it installs (InstallAt).
+	// fetch, the server has it) and tells the person when it installs (InstallBy).
 	RequestOrdered = "ordered"
 	// RequestStaged (app): staged and shown; it waits for the home's go.
 	RequestStaged = "staged"
@@ -78,9 +78,10 @@ type AppRequest struct {
 	// Home: this machine is the home (the app says the home ordered it; on a node, that
 	// the cluster's update brings this machine to it).
 	Home bool `json:"home,omitempty"`
-	// InstallAt is when the home means to give the go (an automatic run's window that has
-	// not begun): the app's notice says "restart at …"; none: as soon as it is staged.
-	InstallAt *time.Time `json:"install_at,omitempty"`
+	// InstallBy is the latest an automatic run gives the go (its window's end and
+	// overrun): the app's notice says "restart by …"; none (an admin's run): it goes as
+	// soon as it is staged and its turn comes.
+	InstallBy *time.Time `json:"install_by,omitempty"`
 	State     string     `json:"state"`
 	Error     string     `json:"error,omitempty"`
 	At        time.Time  `json:"at"`
@@ -118,7 +119,7 @@ func (r requests) order(j *Journal, kind, feed string) error {
 		return nil
 	}
 	if err := r.write(AppRequest{RunID: j.Job.RunID, Version: layout.NormalizeVersion(j.Job.Version), Feed: feed,
-		Kind: kind, Home: j.Job.Home, InstallAt: j.InstallAt, State: RequestOrdered}); err != nil {
+		Kind: kind, Home: j.Job.Home, InstallBy: j.InstallBy, State: RequestOrdered}); err != nil {
 		return Fail("app_request_failed", "%v", err)
 	}
 	return nil

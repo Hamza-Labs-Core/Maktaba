@@ -433,14 +433,14 @@ func TestAppOrderProtocol(t *testing.T) {
 		t.Fatal("a desktop app is not ordered")
 	}
 	at := time.Date(2026, 10, 28, 3, 0, 0, 0, time.UTC)
-	j.InstallAt = &at
+	j.InstallBy = &at
 	if err := ai.Order(j); err != nil {
 		t.Fatal(err)
 	}
 	var q AppRequest
 	b, _ := os.ReadFile(path)
 	if err := json.Unmarshal(b, &q); err != nil || q.State != RequestOrdered || q.Kind != RequestKindApp || !q.Home ||
-		q.Feed != feed || q.RunID != j.Job.RunID || q.InstallAt == nil || !q.InstallAt.Equal(at) {
+		q.Feed != feed || q.RunID != j.Job.RunID || q.InstallBy == nil || !q.InstallBy.Equal(at) {
 		t.Fatalf("order %+v (%v)", q, err)
 	}
 	if s, err := ai.Answer(j); err != nil || s != RequestOrdered || opened.Load() != 0 {

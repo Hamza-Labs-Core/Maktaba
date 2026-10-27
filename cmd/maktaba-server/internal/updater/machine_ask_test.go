@@ -109,27 +109,27 @@ func TestOrderedInstallGoesAtTheHomesGoWithNoClick(t *testing.T) {
 		t.Fatalf("steps %+v committed %q", j.Steps, w.committed)
 	}
 }
-
-// TC (D1): the order names when the home means to give the go (an automatic run's
+// TC (D1): the order names the latest an automatic run gives the go (its window's end),
+// for the app's notice; set once, before the order.
 // window that has not begun), for the app's notice; set once, before the order.
 func TestOrderSaysWhenItInstalls(t *testing.T) {
 	w := newWorld("1.4.0")
 	r := askRig(t, w)
 	at := time.Date(2026, 10, 23, 3, 0, 0, 0, time.UTC)
-	r.m.SetInstallAt("run-1", at)
-	r.m.SetInstallAt("run-0", at.Add(time.Hour)) // another run's: ignored
+	r.m.SetInstallBy("run-1", at)
+	r.m.SetInstallBy("run-0", at.Add(time.Hour)) // another run's: ignored
 	_ = r.m.Apply("run-1")
 	r.waitState(StateOrdered)
 	r.waitOrder("run-1")
 	w.mu.Lock()
-	got := w.installAt
+	got := w.installBy
 	w.mu.Unlock()
 	if got == nil || !got.Equal(at) {
-		t.Fatalf("install at %v", got)
+		t.Fatalf("install by %v", got)
 	}
-	r.m.SetInstallAt("run-1", at.Add(time.Hour)) // after the order: the notice was said
-	if j := r.m.Status().Journal; !j.InstallAt.Equal(at) {
-		t.Fatalf("install at changed after the order: %v", j.InstallAt)
+	r.m.SetInstallBy("run-1", at.Add(time.Hour)) // after the order: the notice was said
+	if j := r.m.Status().Journal; !j.InstallBy.Equal(at) {
+		t.Fatalf("install by changed after the order: %v", j.InstallBy)
 	}
 }
 

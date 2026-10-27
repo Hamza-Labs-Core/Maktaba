@@ -50,8 +50,8 @@ func (d *Driver) Cancel(ctx context.Context, id, actor string) error {
 			_ = d.abortHome(ctx, run)
 		}
 	case RunHomeApplying:
-		// the home's app waits for its click (or its go): the order is withdrawn; once
-		// the home switched, the abort is refused
+		// the home's app stages its order (or waits for its go): the order is withdrawn;
+		// once the home switched, the abort is refused
 		if err := d.abortHome(ctx, run); err != nil {
 			return fmt.Errorf("%w: the run is %s", ErrPastSwitch, run.State)
 		}
@@ -59,8 +59,7 @@ func (d *Driver) Cancel(ctx context.Context, id, actor string) error {
 		if targets, err := d.Store.Targets(ctx, id); err == nil {
 			for _, t := range targets {
 				if !targetEnded(t.State) && t.State != TargetApplying {
-					if t.State == TargetPreparing || t.State == TargetPrepared || t.State == TargetWaitingClick ||
-						t.State == TargetClicked {
+					if t.State == TargetPreparing || t.State == TargetPrepared || targetBeforeGo(t.State) {
 						d.withdraw(ctx, run, t) // its app forgets the order
 					}
 					noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, id, t.NodeID, TargetChange{State: TargetSkipped,
@@ -144,8 +143,7 @@ func (d *Driver) TargetAction(ctx context.Context, id, node, action, actor strin
 		return d.Retry(ctx, id, []string{node}, actor)
 	case "skip":
 		if (!targetEnded(t.State) && t.State != TargetApplying) || t.State == TargetNeedsPerson {
-			if t.State == TargetWaitingClick || t.State == TargetClicked || t.State == TargetPreparing ||
-				t.State == TargetPrepared {
+			if targetBeforeGo(t.State) || t.State == TargetPreparing || t.State == TargetPrepared {
 				if run, err := d.Store.GetRun(ctx, id); err == nil {
 					d.withdraw(ctx, run, *t) // its app forgets the order
 				}

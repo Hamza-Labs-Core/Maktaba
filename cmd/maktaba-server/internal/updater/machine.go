@@ -819,14 +819,14 @@ func (m *Machine) apply(ctx context.Context) {
 	}
 }
 
-// SetInstallAt records when the home means to give the go (an automatic run's window
-// that has not begun: the home's apply says it); the app's order names it. Only before
-// the order is written: the app's notice is said once.
-func (m *Machine) SetInstallAt(runID string, at time.Time) {
+// SetInstallBy records the latest an automatic run gives the go (its window's end and
+// overrun: the home's apply says it); the app's order names it. Only before the order is
+// written: the app's notice is said once.
+func (m *Machine) SetInstallBy(runID string, at time.Time) {
 	_ = m.mutate(func(j *Journal) {
 		if j.Job.RunID == runID && j.State == StatePrepared && !at.IsZero() {
 			t := at.UTC()
-			j.InstallAt = &t
+			j.InstallBy = &t
 		}
 	})
 }

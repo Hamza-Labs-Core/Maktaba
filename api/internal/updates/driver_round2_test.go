@@ -59,13 +59,13 @@ func TestDriverNoRoomCountsNoAttempt(t *testing.T) {
 	}
 }
 
-// review round 2 (A-W): a release withdrawn upstream while the home's app waits for its
-// click is found when the run looks again before the go: the run ends, nothing installs.
+// review round 2 (A-W): a release withdrawn upstream while the home's app stages it is
+// found when the run looks again before the go: the run ends, nothing installs.
 func TestDriverRechecksTheReleaseBeforeTheGo(t *testing.T) {
 	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
-	r.home.asks = true
+	r.home.asks, r.home.appSlow = true, true
 	var mu sync.Mutex
 	gone, asked := false, 0
 	r.d.Recheck = func(ctx context.Context, rel Release, _ string) (string, error) {
@@ -80,31 +80,31 @@ func TestDriverRechecksTheReleaseBeforeTheGo(t *testing.T) {
 	_, _ = r.f.svc.Tick(ctx)
 	r.stepN(8)
 	run := r.active(t)
-	if r.home.state() != MAwaitingClick {
+	if r.home.state() != MOrdered {
 		t.Fatalf("home %s", r.home.state())
 	}
 	mu.Lock()
 	gone = true
 	mu.Unlock()
-	r.home.click()
-	r.stepN(10) // the click drains, then the go is due: the release is looked at again first
+	r.home.stage()
+	r.stepN(10) // staged, it drains, then the go is due: the release is looked at again first
 	got, _ := r.f.store.GetRun(ctx, run.ID)
 	if got.State != RunCancelled || !strings.Contains(string(got.Error), "withdrawn") || r.home.state() != MAborted {
 		t.Fatalf("run %s %s home %s (asked %d)", got.State, got.Error, r.home.state(), asked)
 	}
 }
 
-// review round 2 (A-N1): a run that only waits for a click does not hold a switch of the
-// home: once one starts, the order is withdrawn and the run ends.
+// review round 2 (A-N1): a run that only waits for a desktop app to stage its order does
+// not hold a switch of the home: once one starts, the order is withdrawn and the run ends.
 func TestDriverWaitingRunEndsForASwitchover(t *testing.T) {
 	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
-	r.home.asks = true
+	r.home.asks, r.home.appSlow = true, true
 	_, _ = r.f.svc.Tick(ctx)
 	r.stepN(8)
 	run := r.active(t)
-	if run.Step != StepWaitingClick {
+	if run.Step != StepWaitingApp {
 		t.Fatalf("run %s/%s", run.State, run.Step)
 	}
 	if _, err := r.f.db.Exec(`INSERT INTO cluster_switchovers (id, state) VALUES ('s1', 'fencing')`); err != nil {
