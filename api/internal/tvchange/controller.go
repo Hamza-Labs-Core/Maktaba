@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
@@ -56,6 +57,10 @@ type Controller struct {
 
 	lastGC     time.Time
 	interimWhy string
+	// asked is when this controller first asked for each staged change's slot
+	// (stageSlot: the slot's start timeout runs from then)
+	askedMu sync.Mutex
+	asked   map[string]time.Time
 }
 
 // NewController wires a controller over db.

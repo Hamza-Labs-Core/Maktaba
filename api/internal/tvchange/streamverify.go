@@ -163,7 +163,15 @@ func (c *Controller) stageSlot(ctx context.Context, cfg Config, ch *Change) erro
 	if ch.StagedAt != nil {
 		since = *ch.StagedAt
 	}
+	// the slot has slotStartTimeout from the first time this controller asked for it, not
+	// from the stage: a controller that first looks at the change later (an API that just
+	// started, its lock held a while longer by the process before) starts the slot then,
+	// and must not fail it on that very tick
+	if asked := c.slotAsked(ch.ID); asked.After(since) {
+		since = asked
+	}
 	if err == nil && slotHealthy(v, plan) {
+		c.forgetSlotAsked(ch.ID)
 		return c.moveQuiet(ctx, ch, StateVerifying, ActionStartVerify,
 			map[string]any{"slot": v.Slot, "release_id": plan.ReleaseID, "version": v.Status.Version}, nil)
 	}
@@ -181,7 +189,34 @@ func (c *Controller) stageSlot(ctx context.Context, cfg Config, ch *Change) erro
 	if err := c.Store.Set(ctx, c.DB, ch.ID, map[string]any{"verify_report": report}); err != nil {
 		return err
 	}
-	return c.failToDraft(ctx, ch, map[string]any{"report": why}, "slot_not_healthy")
+	if err := c.failToDraft(ctx, ch, map[string]any{"report": why}, "slot_not_healthy"); err != nil {
+		return err
+	}
+	c.forgetSlotAsked(ch.ID)
+	return nil
+}
+
+// slotAsked is when this controller first asked the front door for the staging slot of
+// change id (now, the first time).
+func (c *Controller) slotAsked(id string) time.Time {
+	c.askedMu.Lock()
+	defer c.askedMu.Unlock()
+	if c.asked == nil {
+		c.asked = map[string]time.Time{}
+	}
+	at, ok := c.asked[id]
+	if !ok {
+		at = c.now()
+		c.asked[id] = at
+	}
+	return at
+}
+
+// forgetSlotAsked ends the slot's start clock of change id (it moved on, or failed).
+func (c *Controller) forgetSlotAsked(id string) {
+	c.askedMu.Lock()
+	defer c.askedMu.Unlock()
+	delete(c.asked, id)
 }
 
 // moveQuiet is Move where a concurrent admin action (cancel) wins silently.
