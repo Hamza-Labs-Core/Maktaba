@@ -69,22 +69,36 @@ func (w *dbWatch) backCh() <-chan struct{} {
 	return w.back
 }
 
-func (w *dbWatch) check(ctx context.Context) {
+func (w *dbWatch) check(ctx context.Context) error {
 	pctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	err := w.ping(pctx)
 	cancel()
 	if ctx.Err() == nil {
 		w.set(err != nil, err)
 	}
+	return err
 }
 
+// dbWatchEvery is the watch's ping period.
+const dbWatchEvery = 5 * time.Second
+
+// run pings every dbWatchEvery; a login the home's database refused (a password it no
+// longer has) is tried again later and later (cluster.LoginBackoff), never every few
+// seconds for as long as this process runs.
 func (w *dbWatch) run(ctx context.Context) {
-	t := time.NewTicker(5 * time.Second)
-	defer t.Stop()
+	refused := 0
 	for {
-		w.check(ctx)
+		wait := dbWatchEvery
+		if err := w.check(ctx); cluster.LoginRefused(err) {
+			refused++
+			wait = cluster.LoginBackoff(dbWatchEvery, refused)
+		} else {
+			refused = 0
+		}
+		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return
 		case <-t.C:
 		}

@@ -78,6 +78,10 @@ type HandoverChild struct {
 	Binding json.RawMessage `json:"binding,omitempty"`
 	// Wanted: an on-demand process that was asked for (the staging slot).
 	Wanted bool `json:"wanted,omitempty"`
+	// Login is a fingerprint of the database login it started with (the server's
+	// supervisor.LoginOf, never a password): one that changed since (a machine's access
+	// re-made by its home) is not adopted, as it would be refused for ever.
+	Login string `json:"login,omitempty"`
 }
 
 // Handover is the record.

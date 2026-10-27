@@ -207,18 +207,30 @@ func (s *Supervisor) startHandover() {
 	var candidates []layout.HandoverChild
 	s.mu.Lock()
 	for _, e := range rec.Children {
-		taken := false
+		taken, stale := false, false
 		for _, c := range s.children {
 			if c.proc.Survives && string(c.proc.Role) == e.Role && c.proc.Instance == e.Instance && c.adopt == nil {
+				if login := c.proc.login(); login != "" && login != e.Login {
+					// it logs in to the database with what it started with: a password
+					// re-made since (a machine's access to its home's) it would be refused
+					// for, every few seconds, for as long as it ran
+					stale = true
+					break
+				}
 				e := e
 				c.adopt = &e
 				taken = true
 				break
 			}
 		}
-		if taken && layout.ProcessIs(e.PID, e.Start) {
+		switch {
+		case taken && layout.ProcessIs(e.PID, e.Start):
 			candidates = append(candidates, e)
-		} else if !taken {
+		case stale:
+			s.logf("%s (pid %d) is not adopted: its login to the database changed since it started; it is started afresh",
+				e.Role+map[bool]string{true: "/" + e.Instance, false: ""}[e.Instance != ""], e.PID)
+			go s.endEntry(e, "its login to the database changed since it started")
+		case !taken:
 			go s.endEntry(e, "this release runs no such process")
 		}
 	}
@@ -319,7 +331,7 @@ func (s *Supervisor) adoptRun(ctx context.Context, c *child, a layout.HandoverCh
 		}
 	}
 	s.mu.Lock()
-	c.cmd, c.tree, c.ident, c.job, c.detached = cmd, tree, a.Start, a.Job, true
+	c.cmd, c.tree, c.ident, c.job, c.detached, c.login = cmd, tree, a.Start, a.Job, true, a.Login
 	c.killReason = ""
 	if binding != nil {
 		c.binding = binding
@@ -404,6 +416,7 @@ func (s *Supervisor) saveRecord(handover bool) {
 		e := layout.HandoverChild{Role: string(c.proc.Role), Instance: c.proc.Instance, PID: c.cmd.Process.Pid,
 			Admin: adminOf(c.proc.Probe),
 			Start: c.ident, Job: c.job, Probe: c.proc.Probe, Binary: c.cmd.Path, Release: releaseOfPath(c.cmd.Path),
+			Login:  c.login,
 			Wanted: c.proc.OnDemand && c.wanted}
 		if runtime.GOOS != "windows" {
 			e.PGID = e.PID // it leads its own process group (prepareTree)

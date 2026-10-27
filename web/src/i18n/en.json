@@ -3978,6 +3978,7 @@
   "machines.copy.incompatible": "Can't keep a copy of this home's database: {detail}",
   "machines.copy.unavailable": "Keeps no copy of this home's database: {detail}",
   "machines.copy.error": "Its copy of this home's database has a problem: {detail}",
+  "machines.copy.unreserved": "It is about to fall too far behind: if it does, this home gives up on it and it is copied anew.",
   "machines.switch.title": "Switching the home",
   "machines.switch.term": "Term {n}",
   "machines.switch.home.initial": "{name} is this cluster's home, since it was set up.",

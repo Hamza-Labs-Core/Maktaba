@@ -166,6 +166,8 @@ export interface NodeCopy {
   built?: string;
   home_major?: string;
   checked?: string;
+  /** the home's slot for the copy: about to be given up (unreserved), or given up (lost: copied anew) */
+  slot?: "unreserved" | "lost";
 }
 
 export type NodeCopyState =

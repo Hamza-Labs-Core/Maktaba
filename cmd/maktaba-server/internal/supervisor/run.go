@@ -77,6 +77,8 @@ type child struct {
 	ident    uint64
 	job      string
 	detached bool
+	// login is the database login the running process started with (LoginOf)
+	login string
 }
 
 // Option tweaks a Supervisor (tests inject a clock, log and sink).
@@ -480,6 +482,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			}
 			if c.proc.Survives {
 				identify(c, pid)
+				c.login = LoginOf(cmd.Env)
 			}
 			c.cmd = cmd
 			c.tree = tree

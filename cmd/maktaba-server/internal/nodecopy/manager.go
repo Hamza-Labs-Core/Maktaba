@@ -70,6 +70,86 @@ type Manager struct {
 	slotAt  time.Time
 	// local is this machine's schema version, once migrated
 	local int64
+	// slotWAL: the wal_status of the home's slot for the copy, as the home last said it
+	// (Grant.SlotWAL); rebuilding: why the copy is being made anew ("": it is not)
+	slotWAL    string
+	rebuilding string
+	// homeAuth: the home refused this machine's own login that many times in a row
+	// (kindAuth); homeAuthUntil: nothing is asked or told of it before then
+	homeAuth      int
+	homeAuthUntil time.Time
+	// copyAuth: the home refused the copy's replication role that many times in a row;
+	// copyPausedUntil: its subscription stays paused until then (its worker would try
+	// again every few seconds, for ever); copyLoginAt: when it was last tried
+	copyAuth        int
+	copyPausedUntil time.Time
+	copyLoginAt     time.Time
+
+	// CopyLoginEvery is how often a subscription that does not receive from the home has
+	// its login tried (0: 1 min); CopyAuthAfter is how many refused logins in a row pause
+	// it (0: 3); AuthBackoffMax is the longest wait after refused logins (0: 30 min).
+	CopyLoginEvery time.Duration
+	CopyAuthAfter  int
+	AuthBackoffMax time.Duration
+}
+
+func (m *Manager) copyLoginEvery() time.Duration {
+	if m.CopyLoginEvery > 0 {
+		return m.CopyLoginEvery
+	}
+	return time.Minute
+}
+
+func (m *Manager) copyAuthAfter() int {
+	if m.CopyAuthAfter > 0 {
+		return m.CopyAuthAfter
+	}
+	return 3
+}
+
+// authBackoff is the wait after the n-th refused login in a row: Retry, twice as long
+// each time, up to AuthBackoffMax.
+func (m *Manager) authBackoff(n int) time.Duration {
+	most := m.AuthBackoffMax
+	if most <= 0 {
+		most = 30 * time.Minute
+	}
+	d := m.retry()
+	for i := 1; i < n && d < most; i++ {
+		d *= 2
+	}
+	return min(d, most)
+}
+
+// homeRefusedLogin notes the home refusing this machine's own login: its calls to the
+// home wait (authBackoff) rather than knock at the same door again. The wait.
+func (m *Manager) homeRefusedLogin() time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.homeAuth++
+	d := m.authBackoff(m.homeAuth)
+	m.homeAuthUntil = m.now().Add(d)
+	return d
+}
+
+// homeLoginOK forgets the refused logins (the home let this machine in).
+func (m *Manager) homeLoginOK() {
+	m.mu.Lock()
+	m.homeAuth, m.homeAuthUntil = 0, time.Time{}
+	m.mu.Unlock()
+}
+
+// homeLoginHeld reports whether the home's refusals hold this machine's calls back now.
+func (m *Manager) homeLoginHeld() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.homeAuth > 0 && m.now().Before(m.homeAuthUntil)
+}
+
+func (m *Manager) setSlotWAL(st string) {
+	m.mu.Lock()
+	m.slotWAL = st
+	m.mu.Unlock()
 }
 
 func (m *Manager) now() time.Time {
@@ -170,6 +250,13 @@ func (m *Manager) set(ctx context.Context, s Status) {
 	if s.LocalSchema == 0 {
 		s.LocalSchema = m.local
 	}
+	if (m.slotWAL == SlotUnreserved || m.slotWAL == SlotLost) && s.State != StateRevoked {
+		s.Slot = m.slotWAL
+		if m.slotWAL == SlotUnreserved && s.State != StateRebuilding && s.State != StateCopying {
+			s.Detail = joinDetail(s.Detail, "the home is about to give up on this copy (it keeps no more of the "+
+				"changes the copy has not applied than its cap): it is copied anew if it does")
+		}
+	}
 	prev := m.status
 	m.status = s
 	m.mu.Unlock()
@@ -194,6 +281,9 @@ func (m *Manager) set(ctx context.Context, s Status) {
 // a home that does not answer never holds the copy up. An unchanged one is told at most
 // every reportEvery.
 func (m *Manager) report(ctx context.Context, s Status) {
+	if m.homeLoginHeld() {
+		return // the home refuses this machine's login: told once it lets it in again
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if s.State == m.reported.State && s.Detail == m.reported.Detail && m.now().Sub(m.reportedAt) < reportEvery {
@@ -208,9 +298,12 @@ func (m *Manager) report(ctx context.Context, s Status) {
 	go func() {
 		for {
 			if seen, err := m.Copy.Report(ctx, s); err == nil {
+				m.homeLoginOK()
 				m.mu.Lock()
-				m.offset, m.slotLag, m.slotAt = seen.Offset, seen.SlotLag, m.now()
+				m.offset, m.slotLag, m.slotAt, m.slotWAL = seen.Offset, seen.SlotLag, m.now(), seen.SlotWAL
 				m.mu.Unlock()
+			} else if kindOf(err) == kindAuth {
+				m.homeRefusedLogin()
 			}
 			m.mu.Lock()
 			if m.pending == nil || ctx.Err() != nil {
@@ -288,6 +381,18 @@ func (m *Manager) Run(ctx context.Context) {
 					return
 				}
 				continue
+			case kindAuth:
+				// a password the home no longer has (it re-made this machine's access, which
+				// this machine follows: node.json, then a new start) or a pg_hba rule: asked
+				// again later and later, never at every turn
+				refused = 0
+				wait := m.homeRefusedLogin()
+				m.set(ctx, m.watchState(ctx, fmt.Sprintf("the home's database refused this machine's login (%v): "+
+					"asked again in %s, or as soon as the home re-makes this machine's access", err, wait.Round(time.Second))))
+				if !m.watch(ctx, wait) {
+					return
+				}
+				continue
 			default:
 				refused = 0
 				m.set(ctx, m.watchState(ctx, "the home's database does not answer"))
@@ -298,6 +403,8 @@ func (m *Manager) Run(ctx context.Context) {
 			continue
 		}
 		refused = 0
+		m.homeLoginOK()
+		m.setSlotWAL(g.SlotWAL)
 		if g.SchemaVersion > local {
 			// the home's changes would not apply until this machine updates
 			_ = m.Copy.Pause(ctx)
@@ -318,11 +425,16 @@ func (m *Manager) Run(ctx context.Context) {
 				continue
 			}
 			backoff = m.retry()
-		} else if kept, err := m.Copy.Follow(ctx, g); err != nil {
-			m.set(ctx, m.state(StateError, "keeping the subscription: "+err.Error()))
-		} else if !kept {
-			if err := m.resubscribe(ctx, local, "the subscription is not the home's any more"); err != nil {
-				m.set(ctx, m.state(StateError, err.Error()))
+		} else if !m.copyPaused() {
+			// (paused: the home refused the copy's own login again and again, and its
+			// subscription stays off a while: copyLogin; the grant just made its password
+			// the home's again)
+			if kept, err := m.Copy.Follow(ctx, g); err != nil {
+				m.set(ctx, m.state(StateError, "keeping the subscription: "+err.Error()))
+			} else if !kept {
+				if err := m.resubscribe(ctx, local, "the subscription is not the home's any more"); err != nil {
+					m.set(ctx, m.state(StateError, err.Error()))
+				}
 			}
 		}
 		if !m.watch(ctx, 4*m.retry()) {
@@ -439,6 +551,11 @@ func (m *Manager) resubscribeReason(g Grant, local int64) string {
 		return "this machine's Maktaba was updated"
 	case !g.SlotExists:
 		return "the home gave up on this copy (it fell too far behind)"
+	case g.SlotWAL == SlotLost:
+		// Postgres's own cap (max_slot_wal_keep_size) let go of the changes the copy had not
+		// applied while it was away or paused: the slot is there, and no subscription can
+		// follow it again
+		return "the home's slot for this copy lost the changes it had not applied yet (it was away or paused too long)"
 	}
 	m.mu.Lock()
 	stuck := !m.erring.IsZero() && m.now().Sub(m.erring) >= m.stuckAfter()
@@ -465,6 +582,19 @@ func (m *Manager) resubscribe(ctx context.Context, local int64, why string) erro
 	if err := m.Copy.Quiesce(ctx, 30*time.Second); err != nil {
 		return fmt.Errorf("stopping the copy before a fresh one: %w", err)
 	}
+	m.mu.Lock()
+	lost := m.slotWAL == SlotLost
+	if state == StateRebuilding {
+		m.rebuilding = why
+	}
+	m.mu.Unlock()
+	if lost {
+		// its slot is no use: the subscription goes without a word to the home
+		// (slot_name = NONE), and the grant below drops the slot
+		if err := m.Copy.Detach(ctx); err != nil {
+			return fmt.Errorf("leaving the lost slot: %w", err)
+		}
+	}
 	var g Grant
 	var err error
 	for i := 0; i < 10; i++ {
@@ -484,6 +614,7 @@ func (m *Manager) resubscribe(ctx context.Context, local int64, why string) erro
 	}
 	m.mu.Lock()
 	m.erring, m.lastErrs, m.stalled, m.lastReady = time.Time{}, 0, time.Time{}, 0
+	m.slotWAL = "" // a slot made anew
 	m.mu.Unlock()
 	m.logf("subscribed to the home's publication (%d tables): %s", len(g.Tables), why)
 	return m.Copy.writeMark(Marker{SystemID: g.SystemID, LocalSchema: local, Subscribed: m.now().UTC()})
@@ -506,6 +637,8 @@ func (m *Manager) watch(ctx context.Context, d time.Duration) bool {
 	for {
 		s := m.withSlot(m.Copy.Observe(ctx, m.homeNow()))
 		m.noteErrors(s)
+		s = m.copyLogin(ctx, s)
+		s = m.asRebuild(s)
 		m.set(ctx, s)
 		left := end.Sub(m.now())
 		if left <= 0 {
@@ -515,6 +648,96 @@ func (m *Manager) watch(ctx context.Context, d time.Duration) bool {
 			return false
 		}
 	}
+}
+
+// asRebuild is s while the copy is made anew (resubscribe): its first copy shows as the
+// rebuild it is, with why, until it follows again.
+func (m *Manager) asRebuild(s Status) Status {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	switch {
+	case m.rebuilding == "":
+	case s.State == StateFollowing:
+		m.rebuilding = ""
+	case s.State == StateCopying:
+		s.State, s.Detail = StateRebuilding, joinDetail(m.rebuilding, s.Detail)
+	}
+	return s
+}
+
+func joinDetail(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	}
+	return a + ": " + b
+}
+
+// copyPaused reports whether the copy's subscription is held paused after the home
+// refused its login (copyLogin).
+func (m *Manager) copyPaused() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.now().Before(m.copyPausedUntil)
+}
+
+// copyLogin tries the copy's own login to the home (Copy.CopyLogin) when its
+// subscription is on and does not receive from the home, at most every CopyLoginEvery:
+// a subscription the home does not let in says nothing, and its worker tries again
+// every few seconds, for ever. Refused CopyAuthAfter times in a row, the subscription is
+// paused for a while (authBackoff, longer each time), then the home is asked for the
+// copy again (its grant makes this machine's password the role's once more) and it is
+// on again: so a copy that cannot log in knocks at the home's door rarely, not every few
+// seconds. s is the status to show.
+func (m *Manager) copyLogin(ctx context.Context, s Status) Status {
+	m.mu.Lock()
+	paused := m.now().Before(m.copyPausedUntil)
+	// on again after a pause for refused logins: tried at once, not a minute of knocking later
+	due := m.now().Sub(m.copyLoginAt) >= m.copyLoginEvery() || m.copyAuth >= m.copyAuthAfter()
+	fails, until := m.copyAuth, m.copyPausedUntil
+	m.mu.Unlock()
+	if paused {
+		s.State = StateError
+		s.Detail = fmt.Sprintf("the home's database refused this copy's login %d times: it is paused until %s, "+
+			"then the home is asked for it again", fails, until.UTC().Format(time.RFC3339))
+		return s
+	}
+	if !s.enabled || !due {
+		return s
+	}
+	if ok, err := m.Copy.Receiving(ctx); err != nil || ok {
+		return s
+	}
+	err := m.Copy.CopyLogin(ctx, "")
+	m.mu.Lock()
+	m.copyLoginAt = m.now()
+	switch {
+	case err == nil:
+		m.copyAuth = 0
+	case kindOf(err) == kindAuth:
+		m.copyAuth++
+	}
+	fails = m.copyAuth
+	m.mu.Unlock()
+	if err == nil || kindOf(err) != kindAuth || fails < m.copyAuthAfter() {
+		return s // let in, or not refused (the home away): its worker's own retries are the home's to bear
+	}
+	if perr := m.Copy.Pause(ctx); perr != nil {
+		m.logf("pausing the copy that cannot log in: %v", perr)
+		return s
+	}
+	wait := m.authBackoff(fails - m.copyAuthAfter() + 1)
+	m.mu.Lock()
+	m.copyPausedUntil = m.now().Add(wait)
+	m.mu.Unlock()
+	m.logf("the home's database refused this copy's login %d times (%v): its subscription is paused for %s",
+		fails, err, wait.Round(time.Second))
+	s.State = StateError
+	s.Detail = fmt.Sprintf("the home's database refused this copy's login (%v): paused for %s, then the home is asked "+
+		"for it again", err, wait.Round(time.Second))
+	return s
 }
 
 func (m *Manager) noteErrors(s Status) {

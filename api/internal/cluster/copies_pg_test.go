@@ -329,6 +329,43 @@ func TestAMachineGetsItsCopy(t *testing.T) {
 	if g, err := ask(node, nodeID, pw, false); err != nil || g.SlotExists {
 		t.Fatalf("after the cap the grant says the slot is gone (the copy subscribes anew): %+v %v", g, err)
 	}
+	// Postgres's own cap gave a slot's changes up while its machine was away (wal_status
+	// lost): no subscription can follow it again, and dropOver does not see it (it has no
+	// restart_lsn). The home drops it, so the machine's next ask hears its slot is gone
+	// and its copy is made anew; the Machines page says the copy is rebuilding meanwhile
+	exec(sup, `SELECT pg_create_logical_replication_slot('`+slot+`', 'pgoutput')`)
+	exec(admin, `ALTER SYSTEM SET max_slot_wal_keep_size = '1MB'`)
+	exec(admin, `SELECT pg_reload_conf()`)
+	exec(sup, `CREATE TABLE IF NOT EXISTS wal_filler (x text)`)
+	lost := func() string {
+		var st sql.NullString
+		_ = home.QueryRow(`SELECT wal_status FROM pg_replication_slots WHERE slot_name = $1`, slot).Scan(&st)
+		return st.String
+	}
+	for i := 0; lost() != "lost"; i++ {
+		if i == 50 {
+			t.Fatalf("the slot is %q after 50 WAL segments, want lost", lost())
+		}
+		exec(sup, `INSERT INTO wal_filler SELECT repeat(md5(random()::text), 2000) FROM generate_series(1, 20)`)
+		exec(sup, `SELECT pg_switch_wal()`)
+		exec(admin, `CHECKPOINT`)
+	}
+	exec(sup, `DROP TABLE wal_filler`) // not the app's: no publication may hold it
+	exec(admin, `ALTER SYSTEM RESET max_slot_wal_keep_size`)
+	exec(admin, `SELECT pg_reload_conf()`)
+	c.dropLost(context.Background())
+	_ = home.QueryRow(`SELECT count(*) FROM pg_replication_slots WHERE slot_name = $1`, slot).Scan(&slots)
+	if slots != 0 {
+		t.Fatal("a lost slot was kept")
+	}
+	var copyState, copyDetail string
+	if err := home.QueryRow(`SELECT replica->>'state', replica->>'detail' FROM cluster_nodes WHERE id = $1`, nodeID).
+		Scan(&copyState, &copyDetail); err != nil || copyState != "rebuilding" || !strings.Contains(copyDetail, "lost") {
+		t.Fatalf("the machine's copy after its slot was lost: %q (%q) %v, want rebuilding", copyState, copyDetail, err)
+	}
+	if g, err := ask(node, nodeID, pw, false); err != nil || g.SlotExists {
+		t.Fatalf("after a lost slot the grant says the slot is gone (the copy subscribes anew): %+v %v", g, err)
+	}
 	// Postgres holds the cap too (it holds with the API down)
 	c.KeepGB = func() int { return 7 }
 	c.holdCap(context.Background())

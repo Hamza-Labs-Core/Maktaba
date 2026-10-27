@@ -26,13 +26,19 @@ func handoverSupervisorMain() {
 	launcher, _ := strconv.Atoi(os.Getenv("HO_LAUNCHER"))
 	child := func(mode string, env ...string) *exec.Cmd {
 		cmd := exec.Command(os.Args[0], "-test.run=^$")
-		cmd.Env = append(append(os.Environ(), "MAKTABA_FAKE_CHILD="+mode, "HO_DIR=", "HO_ADDR=", "HO_GRANDCHILD="), env...)
+		cmd.Env = append(append(os.Environ(), "MAKTABA_FAKE_CHILD="+mode, "HO_DIR=", "HO_ADDR=", "HO_GRANDCHILD=",
+			"HO_PASSFILE="), env...)
 		return cmd
 	}
 	other := freeAddrOrDie()
+	slotEnv := []string{"FAKE_ADDR=" + addr, "FAKE_GRANDCHILD_PIDFILE=" + gc} // its ffmpeg
+	if pf := os.Getenv("HO_PASSFILE"); pf != "" {
+		// a database login, its password in a passfile (as dsn.ProcessEnv gives one)
+		slotEnv = append(slotEnv, "DATABASE_URL=postgres://maktaba_node_x@home:5432/maktaba", "PGPASSFILE="+pf)
+	}
 	procs := []Process{
 		{Role: RoleTVSlot, Instance: "blue", Survives: true,
-			Cmd:   child("serve", "FAKE_ADDR="+addr, "FAKE_GRANDCHILD_PIDFILE="+gc), // its ffmpeg
+			Cmd:   child("serve", slotEnv...),
 			Probe: "http://" + addr + "/healthz"},
 		{Role: RoleAPI, Cmd: child("serve", "FAKE_ADDR="+other), Probe: "http://" + other + "/healthz"},
 	}
@@ -254,6 +260,77 @@ func TestAdoptRejectsReusedPid(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no %s event: %+v", EventAdoptFailed, snap.Events)
+	}
+}
+
+// A TV process handed over with a database login that is not its successor's (the home
+// re-made the machine's access: a new password in the passfile) is not adopted: it would
+// be refused by the home's database every few seconds for as long as it ran. It is ended
+// and a fresh one starts with the login of now. The same login is adopted as ever.
+func TestHandoverRestartsAStaleLogin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns child processes; runs without -short")
+	}
+	t.Setenv(layout.EnvLauncherHandover, "1")
+	for _, remade := range []bool{false, true} {
+		dir := t.TempDir()
+		addr := freeAddr(t)
+		probe := "http://" + addr + "/healthz"
+		pf := filepath.Join(t.TempDir(), "pgpass-maktaba_node_x")
+		if err := os.WriteFile(pf, []byte("home:5432:maktaba:maktaba_node_x:first-password\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		helper := exec.Command(os.Args[0], "-test.run=^$")
+		helper.Env = append(os.Environ(), "MAKTABA_FAKE_CHILD=handover-supervisor", "HO_DIR="+dir, "HO_ADDR="+addr,
+			"HO_LAUNCHER="+strconv.Itoa(os.Getpid()), "HO_GRANDCHILD="+filepath.Join(t.TempDir(), "ffmpeg.pid"),
+			"HO_PASSFILE="+pf)
+		helper.Stdout, helper.Stderr = io.Discard, os.Stderr
+		err := helper.Run()
+		if code := helper.ProcessState.ExitCode(); code != 75 {
+			t.Fatalf("the supervisor exited %d (%v)", code, err)
+		}
+		rec, err := layout.ReadHandover(dir)
+		if err != nil || rec == nil || len(rec.Children) != 1 || rec.Children[0].Login == "" {
+			t.Fatalf("record %+v, %v: want the slot with its login", rec, err)
+		}
+		slot := rec.Children[0]
+		t.Cleanup(func() {
+			if p, err := os.FindProcess(slot.PID); err == nil && layout.ProcessIs(slot.PID, slot.Start) {
+				_ = p.Kill()
+			}
+		})
+		if remade {
+			if err := os.WriteFile(pf, []byte("home:5432:maktaba:maktaba_node_x:re-made-password\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cmd := exec.Command(os.Args[0], "-test.run=^$")
+		cmd.Env = append(os.Environ(), "MAKTABA_FAKE_CHILD=serve", "FAKE_ADDR="+addr,
+			"DATABASE_URL=postgres://maktaba_node_x@home:5432/maktaba", "PGPASSFILE="+pf)
+		next := New([]Process{{Role: RoleTVSlot, Instance: "blue", Survives: true, Cmd: cmd, Probe: probe}}, testPolicy(),
+			WithLog(io.Discard), WithHandover(dir, os.Getpid()))
+		stop, _ := running(t, next)
+		snap := waitFor(t, next, "the slot running", func(s Snapshot) bool {
+			p := proc(s, RoleTVSlot)
+			return p.State == StateRunning && p.PID != 0 && (p.Adopted || p.PID != slot.PID)
+		})
+		p := proc(snap, RoleTVSlot)
+		switch {
+		case !remade && (!p.Adopted || p.PID != slot.PID):
+			t.Fatalf("the same login: %+v, want pid %d adopted", p, slot.PID)
+		case remade && (p.Adopted || p.PID == slot.PID):
+			t.Fatalf("a re-made login: %+v, want a fresh slot", p)
+		}
+		if remade {
+			for deadline := time.Now().Add(10 * time.Second); layout.ProcessIs(slot.PID, slot.Start); time.Sleep(20 * time.Millisecond) {
+				if time.Now().After(deadline) {
+					t.Fatal("the slot with the stale login runs on")
+				}
+			}
+		}
+		if err := stop(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
