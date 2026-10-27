@@ -290,4 +290,42 @@ class ApiClientTest {
         assertEquals("v0/index.m3u8", ApiClient.firstUri("#EXTM3U\n\n#EXT-X-STREAM-INF:BANDWIDTH=1\n  v0/index.m3u8 \nv1.m3u8"))
         assertNull(ApiClient.firstUri("#EXTM3U\n#EXT-X-ENDLIST\n"))
     }
+
+    @Test
+    fun aRedirectToAnotherOriginDropsTheToken() = runBlocking {
+        val elsewhere = MockWebServer()
+        val there = Collections.synchronizedList(mutableListOf<RecordedRequest>())
+        elsewhere.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                there += request
+                return json(200, """{"items":[],"next":null}""")
+            }
+        }
+        elsewhere.start()
+        try {
+            route = { r ->
+                when (r.url.encodedPath) {
+                    // same origin, another path: the token goes along
+                    "/api/libraries" -> MockResponse.Builder().code(302).setHeader("Location", "/api/libraries2").build()
+                    "/api/libraries2" -> MockResponse.Builder().code(302).setHeader("Location", elsewhere.url("/api/libraries").toString()).build()
+                    else -> json(404, "{}")
+                }
+            }
+            client(MemoryTokens(fresh, "r1")).libraries()
+            assertEquals("Bearer $fresh", seen[0].headers["Authorization"])
+            assertEquals("a same-origin redirect keeps it", "Bearer $fresh", seen[1].headers["Authorization"])
+            assertEquals(1, there.size)
+            assertNull("another origin never gets the token", there.single().headers["Authorization"])
+        } finally {
+            elsewhere.close()
+        }
+    }
+
+    @Test
+    fun anOriginIsSchemeHostAndPort() {
+        val a = okhttp3.HttpUrl.Builder().scheme("http").host("h").port(8088).build()
+        assertTrue(com.hamzalabs.maktaba.core.api.SameOriginCredentials.sameOrigin(a, a.newBuilder().encodedPath("/x").build()))
+        assertTrue(!com.hamzalabs.maktaba.core.api.SameOriginCredentials.sameOrigin(a, a.newBuilder().port(8089).build()))
+        assertTrue(!com.hamzalabs.maktaba.core.api.SameOriginCredentials.sameOrigin(a, a.newBuilder().scheme("https").port(8088).build()))
+    }
 }

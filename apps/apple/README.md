@@ -18,6 +18,20 @@ calls the Remote makes (`Admin.swift`).
 
 ## What each app does
 
+- **Starting** (Player and Remote, from `MaktabaKit`): the home picker lists the homes *on this
+  network* (Bonjour `_maktaba._tcp`, one row per home `id`), the *recent homes* (rename and
+  remove from a row's menu or swipe), a home *by address* (also takes a `maktaba://connect?…`
+  link, the Mac's way to "scan") and, on iPhone and iPad, *Scan a QR code* (VisionKit; the
+  camera is asked for then, and listed as optional in the permissions walkthrough). A typed or
+  scanned address must answer `/api/discovery/home` (or `/api/system/version` on an older
+  home); a link's addresses are tried in order. Opening a `maktaba://connect` link from
+  outside the app asks the person first. A home's tokens stay with the exact address
+  (origin) they were issued at: the same home id announced at another address is another
+  entry, signed in to afresh, and a redirect to another origin is followed without the
+  token (`Redirects.swift`). Signing in: a username and password, or **with a code** the app
+  shows (large, with a QR code) until a signed-in device approves it. Every account menu has
+  **Approve a sign-in**: type or scan another device's code, see what asks, approve it.
+  English and Arabic (right to left) after the person's first language.
 - **Player** (iPhone, iPad, Mac): libraries → videos → a video's page → play. Playback goes
   through `StreamProxy` (every `/stream/` request carries a fresh Bearer token). The layout is
   one `NavigationSplitView`: three columns on iPad and the Mac, one on an iPhone or an iPad in

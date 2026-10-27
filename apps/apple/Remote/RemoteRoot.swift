@@ -59,6 +59,11 @@ struct AccountMenu: ToolbarContent {
         ToolbarItem(placement: .secondaryAction) {
             Menu("Account", systemImage: "person.crop.circle") {
                 if let home = model.session.current { Text(home.name) }
+                // a TV, phone or computer showing a sign-in code (Epic 42 story 42.6)
+                Button(ConnectStrings.forPreferredLanguages().text(.approveMenu), systemImage: "checkmark.shield") {
+                    model.session.approvingSignIn = true
+                }
+                .accessibilityIdentifier("account.approve")
                 ThemePicker(mode: $theme)
                 Button("Switch home", systemImage: "house") { model.session.switchHome() }
                 Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { model.session.signOut() }

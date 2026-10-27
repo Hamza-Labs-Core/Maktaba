@@ -53,4 +53,66 @@
     <string name="permissions_not_now">Not now</string>
     <string name="permissions_again">This screen comes back each time you return to the app until the required permissions are allowed.</string>
     <string name="permissions_learn_more">Learn more</string>
+
+    <!-- The home picker (story 42.2) -->
+    <string name="home_on_network">On this network</string>
+    <string name="homes_all_saved">The homes on this network are in Your homes.</string>
+    <string name="home_menu">More for %1$s</string>
+    <string name="home_rename">Rename</string>
+    <string name="home_remove">Remove</string>
+    <string name="rename_title">Rename %1$s</string>
+    <string name="rename_label">Name on this device</string>
+    <string name="rename_hint">Leave it empty to use the home\'s own name.</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="add_home">Add a home</string>
+    <string name="scan_qr">Scan a QR code</string>
+    <string name="scan_home_title">Scan a home\'s QR code</string>
+    <string name="scan_home_hint">Point the camera at the QR code your home shows.</string>
+    <string name="connecting">Connecting…</string>
+    <string name="connect_failed">No Maktaba home answered at %1$s.</string>
+    <string name="scan_not_home">That QR code is not a Maktaba home\'s.</string>
+    <string name="link_title">Connect to %1$s?</string>
+    <string name="link_body">A link asks this app to connect to this home:</string>
+    <string name="link_unnamed">a home</string>
+
+    <string name="permission_camera">Camera</string>
+    <string name="camera_body">Allow the camera to scan a QR code, or type instead.</string>
+    <string name="camera_denied">Without the camera, type the address or the code.</string>
+    <string name="camera_allow">Allow camera</string>
+    <string name="camera_unavailable">This device has no camera to scan with. Type instead.</string>
+
+    <!-- Sign-in by code (story 42.6) -->
+    <string name="signin_password_tab">Password</string>
+    <string name="signin_code_tab">With a code</string>
+    <string name="code_starting">Asking %1$s for a code…</string>
+    <string name="code_intro">On a phone or computer signed in to %1$s, open Approve a sign-in and enter this code:</string>
+    <string name="code_scan">Or scan this with that device:</string>
+    <string name="code_qr_description">QR code of the page that approves %1$s</string>
+    <string name="code_waiting">Waiting for approval…</string>
+    <string name="code_renews">The code is renewed when it runs out.</string>
+    <string name="code_unsupported">%1$s cannot sign in with a code. Use your username and password.</string>
+
+    <string name="account_approve">Approve a sign-in</string>
+    <string name="approve_title">Approve a sign-in</string>
+    <string name="approve_intro">A device asking to sign in shows a code. Enter it, or scan its QR code.</string>
+    <string name="approve_code_label">Code, like ABCD-1234</string>
+    <string name="approve_code_invalid">A code is eight letters and digits, like ABCD-1234.</string>
+    <string name="approve_look">Continue</string>
+    <string name="approve_scan_title">Scan the sign-in QR code</string>
+    <string name="approve_scan_hint">Point the camera at the QR code the other device shows.</string>
+    <string name="not_a_code">That QR code holds no sign-in code.</string>
+    <string name="approve_asking">Asking to sign in</string>
+    <string name="approve_unknown_device">A device</string>
+    <string name="approve_code_line">Code %1$s</string>
+    <string name="approve_expires">Runs out in %1$d min</string>
+    <string name="approve_warning">Approve only if you started this sign-in yourself. That device will be signed in as %1$s, with your rights.</string>
+    <string name="approve_unsupported">%1$s cannot say which device is asking. Approve only if you see this exact code on your own device.</string>
+    <string name="approve_unknown">No device is waiting with this code on %1$s. Check it, or ask the device for a new one.</string>
+    <string name="approve_button">Approve</string>
+    <string name="approve_done">Approved. %1$s is signing in.</string>
+    <string name="approve_already">This code was already approved.</string>
+    <string name="approve_cloud">A sign-in through Maktaba Cloud cannot approve a device. Sign in on the home.</string>
+    <string name="approve_another">Approve another</string>
 </resources>

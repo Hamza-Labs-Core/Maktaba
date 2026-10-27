@@ -244,7 +244,7 @@ final class Stub: URLProtocol, @unchecked Sendable {
         let json = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: AnyHashable] }
         let (code, data) = Self.lock.withLock {
             Self.last = Seen(method: request.httpMethod ?? "GET", path: request.url?.path(percentEncoded: true) ?? "",
-                             native: request.value(forHTTPHeaderField: "X-Maktaba-Client") == "native", json: json)
+                             native: request.value(forHTTPHeaderField: "X-Maktaba-Client") == ClientHeader.value, json: json)
             return Self.canned
         }
         let resp = HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: "HTTP/1.1",

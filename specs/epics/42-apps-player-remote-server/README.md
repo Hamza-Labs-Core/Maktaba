@@ -126,6 +126,87 @@ mobile preferences). The app remembers several homes.
   app) approves it. New endpoints next to pairing (`/api/pairing/…`); the TV apps adopt it too.
 - **With a linked Maktaba Cloud account** (decided 2026-10-25): see Linked accounts.
 
+### Contract: home picker and sign-in by code (stories 42.2, 42.6)
+
+The server and web side is built (`api/internal/handlers/discovery/{home,device}.go`,
+`api/discovery_home.go`, `api/internal/cluster/advertise.go`,
+`cmd/maktaba-server/internal/mdns/machine.go`, web `pages/Profile/ConnectApp.tsx`,
+`pages/Pair.tsx`, `lib/qr.ts`). The Apple and Android apps build against exactly this.
+
+**mDNS `_maktaba._tcp`.** Every machine of a cluster announces (the home, and each full
+node, story 35.11); the home is the one with `role=home`. TXT:
+
+| Key | Value |
+|---|---|
+| `protocol` | `1` |
+| `role` | `home` or `node` |
+| `home` | the home's instance id (`instance_identity`, full UUID, lower case), on **every** machine |
+| `id` | the announcing machine's own id (on the home: the same as `home`; on a node: its node id) |
+| `name` | the machine's display name (the home's: its instance name) |
+| `version` | the release |
+| `web` | the web port (supervised machines) |
+| `tls` | `1` when the web address is https, else `0` (apps also accept `true`/`yes`) |
+| `path` | the web base path, only when it is not `/` (absent: `/`) |
+| `api` | `/api` |
+| home only: `schema_rev`, `join` | as story 35.11 |
+
+Apps list `role=home` entries and **dedupe by `home`, falling back to `id`, then host:port**.
+(Story 35.11 sent `id`/`home` as the first 8 hex digits; they are now the full ids, so they
+equal the identity route's `id` and the QR code's `id`.)
+
+**Home identity** — `GET /api/discovery/home`, public, 60 requests a minute per IP:
+
+```json
+{"id":"0a1b2c3d-0000-4000-8000-000000000000","name":"Kitchen","version":"1.6.0",
+ "urls":["http://192.168.1.5:8088","http://Studio.local:8088","https://kitchen.relay.maktaba.app"],
+ "sign_in":{"password":true,"code":true}}
+```
+
+`urls` are base URLs without a trailing slash: the home's web address (`MAKTABA_WEB_URL`,
+never loopback), the same port on its `.local` name, then the relay address
+`https://<slug>.<relay host>` when the home is claimed in Maktaba Cloud. With none known,
+the address the request reached. `sign_in.code` is false on a home that cannot mint device
+tokens. Nothing about users or libraries. Served by the home (placement `home`).
+
+**QR / app link:** `maktaba://connect?id=<id>&n=<urlencoded name>&u=<urlencoded base url>[&u=…]`,
+`u` repeated in `urls` order (LAN first). The web page **Connect an app**
+(`/account/connect`, every signed-in user, in the account menu) shows it as a QR code
+(drawn in the browser, no service), the addresses with Copy, and Copy the app link.
+
+**Sign-in by code** (the TV routes and their JSON unchanged; additions only):
+
+- `POST /api/pairing/device` (public, 20/min per IP). Optional body `{"device_label":"…"}`
+  (strict JSON, ≤1 KiB; an empty body is fine). What asks is read from `X-Maktaba-Client`
+  (`<app>/<ver> (<platform>; <device>)`). Response 201:
+  `{"code":"ABCD-1234","device_code":"…","expires_at":"…","verify_path":"/pair?code=ABCD-1234","verify_url":"http://192.168.1.5:8088/pair?code=ABCD-1234","interval":2}`;
+  `verify_url` is `urls[0]` + `verify_path` (apps draw it as a QR code). 503 when too many
+  codes wait at once.
+- `GET /api/pairing/device/{code}` (signed in; 401 anonymous): `{"code":"ABCD-1234",
+  "client_app":"player","platform":"ios","device":"phone","device_label":"Sara's iPhone",
+  "expires_at":"…"}`; a part the app did not send is `""`. Unknown, expired or collected
+  code: **404 with the problem+json body** (an older home without the route answers a plain
+  404).
+- `POST /api/pairing/approve` `{"code":"ABCD-1234"}` (signed in; 401 anonymous): 200
+  `{"status":"approved"}`; 404 (problem) a code the home does not hold; 409 already
+  approved; 422 malformed; 403 a sign-in through Maktaba Cloud. Unknown body fields (a
+  `user_id`) are refused: the device always gets the approver's own account and role, so a
+  viewer approves only for themselves.
+- `POST /api/pairing/device/token` (public, 60/min per IP): unchanged — 202 pending, 200
+  tokens once, 410 expired **or not held** (ask for a new code at once). The session is
+  labelled from the asker's `X-Maktaba-Client` (kind = the app, label = the given
+  `device_label`, else `"<app> (<platform>; <device>)"`); a TV that sends no header stays
+  `tv`.
+- Codes are normalised everywhere (case, spaces and the dash ignored; Crockford base-32):
+  the path may carry `abcd1234`, the body `ABCD-1234`.
+- What asked is kept in the home's API process until the code expires (no schema change):
+  a restart drops waiting codes (their apps get 410 and ask again); an approval already
+  stored is still collected. Approvals are pairing tickets under `device.<code>`; `tv.<code>`
+  from older homes is still collected.
+
+**Web `/pair`** ("Sign in a device"): a code from the URL (the app's QR code) is looked up at
+once and the page shows the app, platform, device, name and expiry; approving is always an
+explicit **Approve** click (Cancel goes back). A typed code is looked up on Continue.
+
 ### Linked accounts (a home account and a Maktaba Cloud account)
 
 Two kinds of account, kept apart:
@@ -215,12 +296,36 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    sign-in, libraries, a video, watching (stream sessions, progress), needs attention with
    Retry. iPhone (iPhone Duo), iPad, Mac; Xcode automatic signing. (Started.)
 2. **42.2 Home picker:** mDNS (Bonjour on Apple, NSD on Android), by address, QR; several homes.
+   (Server and web built, 2026-10-27: TXT `home`/`id`/`name`/`tls`/`path`,
+   `GET /api/discovery/home`, the `maktaba://connect` link and the Connect an app page; see
+   Contract. Apps: tracks A and D.)
+   Apple (Player, Remote; iPhone, iPad, Mac): on this network (`role=home` only, deduped by TXT
+   `home`, `id`, host:port; web `path`), recent homes (rename, remove), by address or a pasted
+   `maktaba://connect` link (checked with `/api/discovery/home`, `/api/system/version` on older
+   homes), a scanned QR (iPhone, iPad); the `maktaba` URL scheme opens a home after asking.
+   Tokens stay bound to the origin that issued them (no move on a matching id, none sent
+   across a redirect to another origin).
 3. **42.3 Android Player and Remote:** Compose, phone / foldable / tablet, sharing with Android TV.
    (Started: `apps/android`, the Player and the Remote for each form factor on a shared `core`.)
 4. **42.4 Desktop Player on Windows and Linux:** Compose for Desktop, release legs,
    `latest-player.json`.
 5. **42.5 Web editions:** `VITE_MAKTABA_EDITION`, lazy server routes, "Manage" in `full`.
+   *Android (`apps/android`, `feat/epic42-android`):* the picker lists Your homes (rename,
+   remove), On this network (NSD, deduped by id else host:port, `tls`/`path` honoured), by
+   address and by QR (CameraX + ZXing), and opens `maktaba://connect` links after asking;
+   addresses are checked with `/api/discovery/home` (else `/api/system/version`). Tokens stay
+   bound to the exact address; a known id at a new address signs in afresh.
 6. **42.6 Sign-in by code:** endpoints, the approve screen, mobile, desktop and TV.
+   (Server and web built, 2026-10-27: what asks recorded from `X-Maktaba-Client`,
+   `GET /api/pairing/device/{code}`, `verify_url`, sessions labelled by app, the `/pair`
+   page shows the device and needs an explicit Approve; role tests in
+   `handlers/discovery/device42_test.go`. See Contract.)
+   Apple: sign-in offers a password or a code (large, with a QR of `verify_url`, renewed on
+   expiry); "Approve a sign-in" in the Remote's and the Player's account menus (type or scan the
+   code, see what asks, approve explicitly). The Apple TV app is unchanged (story 42.10).
+   *Android:* the sign-in screen's With a code (code large, QR of `verify_url`, polling), and
+   Approve a sign-in (type or scan, see what asks, explicit Approve) in the Player's and the
+   Remote's account menu.
 7. **42.7 Linked accounts and the cloud:** linking (home Account page, `home_user_links`), the
    cloud's home assertion, `POST /api/auth/cloud`, the app's cloud sign-in and home list, both
    addresses per home (local and relay).

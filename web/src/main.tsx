@@ -21,6 +21,7 @@ import "./styles/tokens.css";
 import "./styles/app.css";
 import "./styles/library.css";
 import "./styles/browse.css";
+import "./styles/connect.css";
 
 applyResolvedTheme(readMode());
 

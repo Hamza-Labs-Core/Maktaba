@@ -67,9 +67,15 @@ type Handler struct {
 	// Optional: nil disables audit (the no-DB dev path).
 	Audit AuditSink
 
-	// DeviceKey signs the TVs' device codes (device.go); nil: a random key per process.
+	// DeviceKey signs the apps' device codes (device.go); nil: a random key per process.
 	DeviceKey []byte
 	device    deviceKeys
+	// requests are the codes waiting for an approval and what asked for each (device.go)
+	requests deviceRequests
+
+	// Home describes this home (GET /api/discovery/home, a device code's verify_url);
+	// nil: only the request's own origin is known.
+	Home HomeFunc
 }
 
 // AuditSink is the minimal slice of securityaudit.Writer the pairing

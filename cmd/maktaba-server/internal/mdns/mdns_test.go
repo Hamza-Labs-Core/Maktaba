@@ -27,16 +27,22 @@ func TestPortFromListen(t *testing.T) {
 	}
 }
 
-// TC1 of story 35.11: a node's TXT has role=node, home=<8 hex>, web, no join.
-func TestAdvertiseTXTNodeMode(t *testing.T) {
-	m := Machine{Role: "node", ID: "6F1C2A3B-4d5e-4f60-8a71-92b3c4d5e6f7", HomeID: "0a1b2c3d-0000-4000-8000-000000000000",
-		Name: "studio-linux", WebPort: 8088, Version: "1.5.0"}
+func txtMap(m Machine) map[string]string {
 	txt := map[string]string{}
 	for _, kv := range m.TXT() {
 		k, v, _ := strings.Cut(kv, "=")
 		txt[k] = v
 	}
-	if txt["role"] != "node" || txt["id"] != "6f1c2a3b" || txt["home"] != "0a1b2c3d" || txt["web"] != "8088" ||
+	return txt
+}
+
+// TC1 of story 35.11: a node's TXT has role=node, home=<the home's id>, web, no join.
+func TestAdvertiseTXTNodeMode(t *testing.T) {
+	m := Machine{Role: "node", ID: "6F1C2A3B-4d5e-4f60-8a71-92b3c4d5e6f7", HomeID: "0a1b2c3d-0000-4000-8000-000000000000",
+		Name: "studio-linux", WebPort: 8088, Version: "1.5.0"}
+	txt := txtMap(m)
+	if txt["role"] != "node" || txt["id"] != "6f1c2a3b-4d5e-4f60-8a71-92b3c4d5e6f7" ||
+		txt["home"] != "0a1b2c3d-0000-4000-8000-000000000000" || txt["web"] != "8088" ||
 		txt["protocol"] != "1" || txt["version"] != "1.5.0" || txt["name"] != "studio-linux" {
 		t.Fatalf("txt = %v", txt)
 	}
@@ -45,6 +51,38 @@ func TestAdvertiseTXTNodeMode(t *testing.T) {
 	}
 	if _, ok := txt["schema_rev"]; ok {
 		t.Fatal("schema_rev is the home's")
+	}
+}
+
+// Epic 42 story 42.2: the home's TXT carries its full instance id (the apps dedupe by
+// it, as GET /api/discovery/home and the QR code say it), its name, and path only when
+// the web is not at the root.
+func TestAdvertiseTXTForTheHomePicker(t *testing.T) {
+	home := Machine{Role: "home", ID: "0A1B2C3D-0000-4000-8000-000000000000", HomeID: "0A1B2C3D-0000-4000-8000-000000000000",
+		Name: "Kitchen Mac", WebPort: 8088, Version: "1.6.0", SchemaRev: 161}
+	txt := txtMap(home)
+	if txt["id"] != "0a1b2c3d-0000-4000-8000-000000000000" || txt["home"] != txt["id"] || txt["name"] != "Kitchen Mac" ||
+		txt["tls"] != "0" {
+		t.Fatalf("txt = %v", txt)
+	}
+	home.TLS = true
+	if v := txtMap(home)["tls"]; v != "1" {
+		t.Fatalf("tls = %q", v)
+	}
+	// a node of this home says the same home= (apps dedupe by it), with its own id=
+	node := Machine{Role: "node", ID: "6f1c2a3b-4d5e-4f60-8a71-92b3c4d5e6f7", HomeID: home.HomeID, Version: "1.6.0"}
+	if n := txtMap(node); n["home"] != txt["home"] || n["id"] == txt["id"] {
+		t.Fatalf("node txt = %v", n)
+	}
+	for _, root := range []string{"", "/"} {
+		home.Path = root
+		if p, ok := txtMap(home)["path"]; ok {
+			t.Fatalf("path %q announced as %q", root, p)
+		}
+	}
+	home.Path = "/maktaba/"
+	if p := txtMap(home)["path"]; p != "/maktaba" {
+		t.Fatalf("path = %q, want /maktaba", p)
 	}
 }
 

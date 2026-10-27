@@ -4,11 +4,17 @@ package mdns
 // supervisor is the one advertiser of a machine (the API's own advertiser runs only
 // when the API runs without a supervisor). TXT keys, never a library or user name:
 //
-//	protocol=1  role=home|node  id=<this machine, 8 hex>  home=<the home's instance, 8 hex>
+//	protocol=1  role=home|node  id=<this machine's id>  home=<the home's instance id>
 //	web=<web port>  version=<release>  name=<machine name>
 //	home only:  schema_rev=<n>  join=0|1
 //
-// plus the older api=/api and path=/ the apps already read.
+// plus the older api=/api, tls=1|0 (the web address is https), and path=<web base
+// path> only when it is not "/".
+//
+// The apps' home picker (Epic 42 story 42.2) dedupes by `home`: the home's full instance
+// id (lower case), on every machine of the cluster (the home and its nodes), the same as
+// GET /api/discovery/home's `id` and a QR code's `id`; it falls back to `id` (the
+// announcing machine's own), then host:port. (Story 35.11 sent the first 8 hex digits.)
 
 import (
 	"fmt"
@@ -23,22 +29,20 @@ import (
 // Machine is what a machine announces.
 type Machine struct {
 	Role      string // home | node
-	ID        string // this machine's id (instance id or node id); 8 hex are sent
+	ID        string // this machine's id (instance id or node id), sent in lower case
 	HomeID    string // the home's instance id (equal to ID on the home)
 	Name      string
 	WebPort   int
+	Path      string // the web base path ("" or "/": not sent)
+	TLS       bool   // the web address is https: tls=1, else tls=0
 	Version   string
 	SchemaRev int  // home only
 	Join      bool // home only
 }
 
-// Short is the first 8 hex digits of an id (dashes dropped, lower case).
-func Short(id string) string {
-	h := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(id), "-", ""))
-	if len(h) > 8 {
-		h = h[:8]
-	}
-	return h
+// ID is an id as announced: trimmed, lower case.
+func ID(id string) string {
+	return strings.ToLower(strings.TrimSpace(id))
 }
 
 // TXT is the machine's TXT record (sorted key=value).
@@ -48,13 +52,19 @@ func (m Machine) TXT() []string {
 		"role":     m.Role,
 		"version":  m.Version,
 		"api":      "/api",
-		"path":     "/",
+		"tls":      "0",
+	}
+	if m.TLS {
+		kv["tls"] = "1"
+	}
+	if p := strings.TrimRight(strings.TrimSpace(m.Path), "/"); p != "" {
+		kv["path"] = p
 	}
 	if m.ID != "" {
-		kv["id"] = Short(m.ID)
+		kv["id"] = ID(m.ID)
 	}
 	if m.HomeID != "" {
-		kv["home"] = Short(m.HomeID)
+		kv["home"] = ID(m.HomeID)
 	}
 	if m.WebPort > 0 {
 		kv["web"] = strconv.Itoa(m.WebPort)

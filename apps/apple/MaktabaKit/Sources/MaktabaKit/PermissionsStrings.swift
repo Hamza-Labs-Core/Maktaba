@@ -34,6 +34,16 @@ public struct PermissionsStrings: Sendable {
         case allow, openSettings, checkAgain, `continue`, notNow
         case localNetworkName, localNetworkWhy, localNetworkWithout
         case localNetworkAsk, localNetworkDeniedHow, localNetworkUnknown
+        case cameraName, cameraWhy, cameraWithout, cameraAsk, cameraDeniedHow, cameraUnknown
+    }
+
+    /// The card's words for each permission.
+    public func why(_ kind: PermissionKind) -> String { text(kind == .camera ? .cameraWhy : .localNetworkWhy) }
+    public func without(_ kind: PermissionKind) -> String { text(kind == .camera ? .cameraWithout : .localNetworkWithout) }
+    public func ask(_ kind: PermissionKind) -> String { text(kind == .camera ? .cameraAsk : .localNetworkAsk) }
+    public func unknownHelp(_ kind: PermissionKind) -> String { text(kind == .camera ? .cameraUnknown : .localNetworkUnknown) }
+    public func deniedHow(_ kind: PermissionKind, appName: String) -> String {
+        kind == .camera ? text(.cameraDeniedHow, appName) : text(.localNetworkDeniedHow, appName, appName)
     }
 
     // The Settings path differs per platform (Apple's own names for the panes).
@@ -71,6 +81,12 @@ public struct PermissionsStrings: Sendable {
         .localNetworkAsk: "Tap Allow access and the system asks you once: choose Allow.",
         .localNetworkDeniedHow: enDeniedHow,
         .localNetworkUnknown: "The app could not tell whether it may use the local network (no Wi-Fi, or the check took too long). Join your home's network and check again.",
+        .cameraName: "Camera",
+        .cameraWhy: "To scan your home's QR code to connect to it, or another device's sign-in QR code to approve it.",
+        .cameraWithout: "Without it you type the address or the code instead of scanning it.",
+        .cameraAsk: "Tap Allow access and the system asks you once, or leave it until you first scan a code.",
+        .cameraDeniedHow: "Turn it on in Settings → Apps → %@ → Camera, then come back.",
+        .cameraUnknown: "The app could not tell whether it may use the camera.",
     ]
 
     static let ar: [Key: String] = [
@@ -95,11 +111,26 @@ public struct PermissionsStrings: Sendable {
         .localNetworkAsk: "اضغط «السماح بالوصول» وسيسألك النظام مرة واحدة: اختر السماح.",
         .localNetworkDeniedHow: arDeniedHow,
         .localNetworkUnknown: "تعذّر على التطبيق معرفة ما إذا كان مسموحًا له باستخدام الشبكة المحلية (لا توجد شبكة Wi-Fi، أو استغرق التحقق وقتًا طويلًا). اتصل بشبكة جهازك الرئيسي ثم تحقّق مجددًا.",
+        .cameraName: "الكاميرا",
+        .cameraWhy: "لمسح رمز QR الخاص بجهازك الرئيسي للاتصال به، أو رمز QR لتسجيل دخول جهاز آخر للموافقة عليه.",
+        .cameraWithout: "بدونها يمكنك كتابة العنوان أو الرمز بدلًا من مسحه.",
+        .cameraAsk: "اضغط «السماح بالوصول» وسيسألك النظام مرة واحدة، أو اتركه حتى تمسح رمزًا لأول مرة.",
+        .cameraDeniedHow: "فعّلها من الإعدادات ← التطبيقات ← %@ ← الكاميرا، ثم عُد إلى التطبيق.",
+        .cameraUnknown: "تعذّر على التطبيق معرفة ما إذا كان مسموحًا له باستخدام الكاميرا.",
     ]
 
     public func name(_ kind: PermissionKind) -> String {
         switch kind {
         case .localNetwork: text(.localNetworkName)
+        case .camera: text(.cameraName)
+        }
+    }
+
+    /// The card's symbol.
+    public static func symbol(_ kind: PermissionKind) -> String {
+        switch kind {
+        case .localNetwork: "network"
+        case .camera: "camera"
         }
     }
 
