@@ -490,7 +490,18 @@ slots = "off"
 		t.Fatalf("login on the home: %d %s", resp.StatusCode, body)
 	}
 	t.Run("sign-in on the node", func(t *testing.T) {
-		resp, body := user.do("POST", nodeWebURL+"/api/auth/login", map[string]string{"username": "owner", "password": "owner-pass-123"}, nil)
+		// the node checks a sign-in with its home, which it may not reach yet (503
+		// home_unreachable: "it tries again"); every test after this one signs in here
+		var resp *http.Response
+		var body []byte
+		waitFor(t, "the node to reach its home for a sign-in", 60*time.Second, func() bool {
+			resp, body = user.do("POST", nodeWebURL+"/api/auth/login", map[string]string{"username": "owner", "password": "owner-pass-123"}, nil)
+			if resp.StatusCode == http.StatusServiceUnavailable && strings.Contains(string(body), "home_unreachable") {
+				time.Sleep(time.Second) // a sign-in a second: no limiter takes it for guessing
+				return false
+			}
+			return true
+		})
 		if resp.StatusCode != 200 {
 			t.Fatalf("login on the node: %d %s", resp.StatusCode, body)
 		}
