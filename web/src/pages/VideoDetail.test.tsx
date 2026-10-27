@@ -376,7 +376,8 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
       const alert = await screen.findByRole("alert");
       expect(alert).toHaveAttribute("data-kind", "not_found");
       expect(alert).toHaveTextContent("Video not found.");
-      expect(alert).toHaveTextContent("video not found");
+      expect(alert).toHaveTextContent(en["error.kind.notFound"]);
+      expect(alert).not.toHaveTextContent("video not found");
       expect(screen.queryByRole("tablist")).toBeNull();
       expect(get.mock.calls.map((c) => c[0])).toEqual(["/api/videos/v-secret"]);
       await userEvent.setup().click(within(alert).getByRole("link", { name: "Library" }));
@@ -447,17 +448,30 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
   });
 
   it.each([
-    ["500", problem(500, "db down"), "db down"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
-    ["malformed JSON", new SyntaxError("Unexpected token b"), "Something went wrong."],
-  ])("VID-11: %s is a server error with Try again, not not-found", async (_l, e, desc) => {
+    ["500", problem(500, "db down"), "server", en["error.kind.server"], "db down"],
+    [
+      "network failure",
+      new TypeError("Failed to fetch"),
+      "network",
+      en["error.kind.unreachable"],
+      "fetch",
+    ],
+    [
+      "malformed JSON",
+      new SyntaxError("Unexpected token b"),
+      "server",
+      en["error.kind.server"],
+      "token",
+    ],
+  ])("VID-11: %s is an error with Try again, not not-found", async (_l, e, kind, desc, raw) => {
     let fail = true;
     serve({ "/api/videos/v1": () => (fail ? Promise.reject(e) : V1) });
     renderVideo();
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveAttribute("data-kind", "server");
+    expect(alert).toHaveAttribute("data-kind", kind);
     expect(alert).not.toHaveTextContent("Video not found.");
     expect(alert).toHaveTextContent(desc);
+    expect(alert).not.toHaveTextContent(raw);
     fail = false;
     await userEvent.setup().click(within(alert).getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Lecture 1" })).toBeInTheDocument();
@@ -696,7 +710,8 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
     await openTab("Statistics");
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Something went wrong.");
-    expect(alert).toHaveTextContent("stats failed");
+    expect(alert).toHaveTextContent(en["error.kind.server"]);
+    expect(alert).not.toHaveTextContent("stats failed");
     expect(screen.getByRole("tabpanel")).toContainElement(alert);
     await openTab("Watch");
     expect(screen.queryByRole("alert")).toBeNull();

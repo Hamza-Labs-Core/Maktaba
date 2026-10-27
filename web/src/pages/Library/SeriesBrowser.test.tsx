@@ -3,6 +3,7 @@
 // renders right-to-left.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, within, fireEvent } from "@testing-library/react";
+import en from "../../i18n/en.json";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, useLocation } from "react-router-dom";
 import { ApiError } from "../../lib/api";
@@ -224,16 +225,17 @@ describe("SeriesBrowser (test-cases/series-browser.md)", () => {
   });
 
   it.each([
-    ["500", problem(500, "list series failed"), "list series failed"],
-    ["403", problem(403, "forbidden"), "forbidden"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
-    ["malformed JSON", new SyntaxError("Unexpected token <"), "Something went wrong."],
-  ])("SER-09/SER-10: %s shows the ErrorState", async (_label, err, desc) => {
+    ["500", problem(500, "list series failed"), en["error.kind.server"], "list series failed"],
+    ["403", problem(403, "forbidden"), en["error.kind.noAccess"], "forbidden"],
+    ["network failure", new TypeError("Failed to fetch"), en["error.kind.unreachable"], "fetch"],
+    ["malformed JSON", new SyntaxError("Unexpected token <"), en["error.kind.server"], "token"],
+  ])("SER-09/SER-10: %s shows the ErrorState", async (_label, err, desc, raw) => {
     get.mockRejectedValue(err);
     renderSeries();
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Something went wrong.");
     expect(alert).toHaveTextContent(desc);
+    expect(alert).not.toHaveTextContent(raw);
     expect(screen.queryByText("Loading…")).toBeNull();
     expect(screen.queryByText("No series detected yet")).toBeNull();
   });

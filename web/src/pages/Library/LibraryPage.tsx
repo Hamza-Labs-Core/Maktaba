@@ -15,7 +15,6 @@
 // the user may not see answers 404, the same as one that does not exist.
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Skeleton } from "@ds/components/Skeleton/Skeleton";
@@ -31,6 +30,7 @@ import { PinToggle } from "../../components/PinToggle";
 import { fetchCollections, type Collection } from "../../lib/collections";
 import { CollectionCard } from "../Collections/Collections";
 import { SERVER_PAGES } from "../../lib/edition";
+import { LoadError } from "../../components/LoadError";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -50,7 +50,7 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
   const tab: Tab = params.get("tab") === "browse" ? "browse" : "overview";
   const [hub, setHub] = useState<LibraryHub | null>(null);
   const [notFound, setNotFound] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null);
   const [reload, setReload] = useState(0);
   const [collections, setCollections] = useState<Collection[]>([]);
   const valid = UUID.test(libraryId);
@@ -85,7 +85,7 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
       .catch((e) => {
         if (cancelled) return;
         if (e instanceof ApiError && e.status === 404) setNotFound(true);
-        else setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        else setErr(e);
       });
     return () => {
       cancelled = true;
@@ -116,15 +116,10 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
     );
   }
 
-  if (err) {
+  if (err != null) {
     return (
       <section className="mkt-page mkt-library-page">
-        <ErrorState
-          kind="server"
-          title={t("common.error")}
-          description={err}
-          action={<Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>}
-        />
+        <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />
       </section>
     );
   }

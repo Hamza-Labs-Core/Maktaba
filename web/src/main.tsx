@@ -8,6 +8,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { applyResolvedTheme, readMode } from "./lib/theme";
 import { bootNative } from "./lib/native";
+import { installErrorLog } from "./lib/errorLog";
 import { registerServiceWorker, reloadOnStaleChunks } from "./lib/pwa";
 import { App } from "./App";
 // the theme's fonts, bundled (SIL OFL): Plex for text, Amiri for headings
@@ -22,6 +23,9 @@ import "./styles/app.css";
 import "./styles/library.css";
 import "./styles/browse.css";
 import "./styles/connect.css";
+
+// first, so a throw during boot is logged too
+installErrorLog();
 
 applyResolvedTheme(readMode());
 

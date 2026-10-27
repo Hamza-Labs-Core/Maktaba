@@ -59,6 +59,7 @@ import { watchSystemTheme } from "../lib/theme";
 import { adminUser, authState, memberUser, quietCrash, renderPage } from "../test/pageHarness";
 import { routeGet } from "../test/queueHarness";
 import { Settings, safeReleaseUrl } from "./Settings";
+import en from "../i18n/en.json";
 
 // ─── data ────────────────────────────────────────────────────────────────
 
@@ -436,18 +437,22 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     const user = userEvent.setup();
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     const answers = [
-      { status: 500, statusText: "Internal Server Error" },
-      { status: 403, statusText: "Forbidden" },
-      { status: 401, statusText: "Unauthorized" },
+      { status: 500, statusText: "Internal Server Error", kind: "server" },
+      { status: 403, statusText: "Forbidden", kind: "noAccess" },
+      { status: 401, statusText: "Unauthorized", kind: "signedOut" },
     ];
     let i = 0;
     const { names } = stubDownload(async () => new Response("boom", answers[i++]));
     renderSettings("/settings");
     for (const a of answers) {
       await user.click(screen.getByRole("button", { name: "Collect diagnostics" }));
+      // the kind's sentence, never the server's status text or body
       expect(
-        await screen.findByText(`Could not collect diagnostics: ${a.statusText}: boom`)
+        await screen.findByText(
+          `${en["settings.diagnostics.error"]}: ${en[`error.kind.${a.kind}` as keyof typeof en]}`
+        )
       ).toBeInTheDocument();
+      expect(screen.queryByText(/boom/)).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Collect diagnostics" })).toBeEnabled();
     }
     expect(screen.getAllByRole("alert")).toHaveLength(3);
@@ -464,7 +469,7 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     renderSettings("/settings");
     await user.click(screen.getByRole("button", { name: "Collect diagnostics" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Could not collect diagnostics: Something went wrong."
+      `${en["settings.diagnostics.error"]}: ${en["error.kind.unreachable"]}`
     );
     expect(screen.getByRole("button", { name: "Collect diagnostics" })).toBeEnabled();
   });
@@ -694,7 +699,7 @@ describe("Settings sessions (test-cases/settings-sessions.md)", () => {
     flags.throwKey = "settings.sessions.hint";
     renderSettings("/settings");
     await user.click(screen.getByRole("link", { name: "Sessions" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("boom");
+    expect(screen.getByRole("alert")).toHaveTextContent(en["common.pageError"]);
     await user.click(screen.getByRole("button", { name: "go back" }));
     expect(screen.getByText(/Signed in as/)).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -885,7 +890,7 @@ describe("Settings appearance (test-cases/settings-appearance.md)", () => {
     flags.throwReadMode = true;
     renderSettings("/settings");
     await user.click(screen.getByRole("link", { name: "Appearance" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("boom");
+    expect(screen.getByRole("alert")).toHaveTextContent(en["common.pageError"]);
     await user.click(screen.getByRole("button", { name: "go back" }));
     expect(screen.getByText(/Signed in as/)).toBeInTheDocument();
     await user.click(screen.getByRole("link", { name: "Privacy" }));
@@ -987,12 +992,9 @@ describe("Settings privacy (test-cases/settings-privacy.md)", () => {
   it("SPR-05: a failed save (500 / 403 / network) toasts and keeps the old value", async () => {
     const user = userEvent.setup();
     const fails: [unknown, string][] = [
-      [
-        problem(500, "Internal Server Error", { detail: "db down" }),
-        "Internal Server Error: db down",
-      ],
-      [problem(403, "Forbidden"), "Forbidden"],
-      [new TypeError("Failed to fetch"), "Something went wrong."],
+      [problem(500, "Internal Server Error", { detail: "db down" }), en["error.kind.server"]],
+      [problem(403, "Forbidden"), en["error.kind.noAccess"]],
+      [new TypeError("Failed to fetch"), en["error.kind.unreachable"]],
     ];
     renderSettings("/settings/privacy");
     for (const [err, text] of fails) {
@@ -1103,8 +1105,8 @@ describe("Settings privacy (test-cases/settings-privacy.md)", () => {
     renderSettings("/settings/privacy");
     const row = (await screen.findByRole("link", { name: "Tafsir 1" })).closest("tr")!;
     for (const [err, text] of [
-      [problem(404, "Not Found"), "Not Found"],
-      [new TypeError("Failed to fetch"), "Something went wrong."],
+      [problem(404, "Not Found"), en["error.kind.notFound"]],
+      [new TypeError("Failed to fetch"), en["error.kind.unreachable"]],
     ] as [unknown, string][]) {
       del.mockRejectedValueOnce(err);
       await user.click(within(row).getByRole("button", { name: "Remove" }));
@@ -1142,7 +1144,7 @@ describe("Settings privacy (test-cases/settings-privacy.md)", () => {
     historyWith([{ ...HISTORY.items[0], title: { bad: true } }]);
     renderSettings("/settings");
     await user.click(screen.getByRole("link", { name: "Privacy" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Objects are not valid");
+    expect(await screen.findByRole("alert")).toHaveTextContent(en["common.pageError"]);
     await user.click(screen.getByRole("button", { name: "go back" }));
     expect(screen.getByText(/Signed in as/)).toBeInTheDocument();
     mockGets();

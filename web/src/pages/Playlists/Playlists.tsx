@@ -7,10 +7,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
-import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { useToast } from "@ds/components/Toast/Toast";
-import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import {
   createPlaylist,
@@ -21,13 +19,15 @@ import {
 import { TitleRow } from "../../help/HelpLink";
 import { PosterMosaic } from "../Library/Libraries";
 import { formatDuration } from "../../components/VideoViews";
+import { LoadError } from "../../components/LoadError";
+import { errorText } from "../../lib/errorText";
 
 export function Playlists() {
   const { t, n } = useI18n();
   const toast = useToast();
   const navigate = useNavigate();
   const [items, setItems] = useState<PlaylistSummary[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null);
   const [reload, setReload] = useState(0);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -38,7 +38,7 @@ export function Playlists() {
     fetchPlaylists()
       .then((r) => !cancelled && setItems(r))
       .catch((e) => {
-        if (!cancelled) setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        if (!cancelled) setErr(e);
       });
     return () => {
       cancelled = true;
@@ -56,9 +56,7 @@ export function Playlists() {
     } catch (e) {
       toast.show({
         tone: "error",
-        message: `${t("playlists.createError")}: ${
-          e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
-        }`,
+        message: `${t("playlists.createError")}: ${errorText(e, t)}`,
       });
     } finally {
       setCreating(false);
@@ -94,14 +92,7 @@ export function Playlists() {
         </form>
       </header>
 
-      {err && (
-        <ErrorState
-          kind="server"
-          title={t("common.error")}
-          description={err}
-          action={<Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>}
-        />
-      )}
+      {err != null && <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />}
 
       {!items && !err && (
         <ul className="mkt-libgrid" aria-busy="true">

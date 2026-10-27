@@ -187,7 +187,8 @@ describe("Home", () => {
     });
     renderHome();
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("home failed");
+    expect(alert).toHaveTextContent(en["error.kind.server"]);
+    expect(alert).not.toHaveTextContent("home failed");
     await userEvent.setup().click(within(alert).getByRole("button", { name: en["common.retry"] }));
     expect(
       await screen.findByRole("region", { name: en["home.row.recentlyAdded"] })

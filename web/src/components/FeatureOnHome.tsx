@@ -5,10 +5,10 @@
 import { useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { useToast } from "@ds/components/Toast/Toast";
-import { ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { fetchFeaturedPick, setFeaturedPick } from "../lib/browse";
+import { errorText } from "../lib/errorText";
 
 export function FeatureOnHome({ videoId }: { videoId: string }) {
   const { t } = useI18n();
@@ -44,7 +44,7 @@ export function FeatureOnHome({ videoId }: { videoId: string }) {
     } catch (e) {
       toast.show({
         tone: "error",
-        message: e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"),
+        message: errorText(e, t),
       });
     } finally {
       setBusy(false);

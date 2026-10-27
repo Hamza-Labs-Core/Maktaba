@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import en from "../../i18n/en.json";
 import { Route } from "react-router-dom";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
@@ -272,17 +273,18 @@ describe("SeriesDetail (test-cases/series-detail.md)", () => {
   });
 
   it.each([
-    [404, "not_found"],
-    [403, "permission"],
+    [404, "not_found", en["error.kind.notFound"]],
+    [403, "permission", en["error.kind.noAccess"]],
   ])(
     "SED-07/SED-10: a %s answer leaks nothing and shows a not-found error with a link back",
-    async (status, kind) => {
+    async (status, kind, text) => {
       const e = problem(status, "series not found");
       serve({ header: reject(e), episodes: reject(e), missing: reject(e) }, "s-hidden");
       renderDetail("/series/s-hidden");
       const alert = await screen.findByRole("alert");
       expect(alert).toHaveAttribute("data-kind", kind);
-      expect(alert).toHaveTextContent("series not found");
+      expect(alert).toHaveTextContent(text);
+      expect(alert).not.toHaveTextContent("series not found");
       expect(document.querySelector(".mkt-episode")).toBeNull();
       await userEvent.setup().click(within(alert).getByRole("link", { name: "Series" }));
       expect(screen.getByText("series grid page")).toBeInTheDocument();
@@ -309,16 +311,17 @@ describe("SeriesDetail (test-cases/series-detail.md)", () => {
   });
 
   it.each([
-    ["500", problem(500, "boom"), "boom"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
-    ["malformed JSON", new SyntaxError("Unexpected token b"), "Something went wrong."],
-  ])("SED-11: episodes %s shows the ErrorState with Try again", async (_l, e, desc) => {
+    ["500", problem(500, "boom"), en["error.kind.server"], "boom"],
+    ["network failure", new TypeError("Failed to fetch"), en["error.kind.unreachable"], "fetch"],
+    ["malformed JSON", new SyntaxError("Unexpected token b"), en["error.kind.server"], "token"],
+  ])("SED-11: episodes %s shows the ErrorState with Try again", async (_l, e, desc, raw) => {
     let fail = true;
     serve({ episodes: () => (fail ? Promise.reject(e) : EPISODES) });
     renderDetail();
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Something went wrong.");
     expect(alert).toHaveTextContent(desc);
+    expect(alert).not.toHaveTextContent(raw);
     fail = false;
     await userEvent.setup().click(within(alert).getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Pilot")).toBeInTheDocument();
@@ -472,7 +475,8 @@ describe("SeriesDetail (test-cases/series-detail.md)", () => {
     await userEvent
       .setup()
       .click(await screen.findByRole("button", { name: "Accept all episode matches" }));
-    expect(await screen.findByText("accept failed")).toBeInTheDocument();
+    expect(await screen.findByText(en["error.kind.server"])).toBeInTheDocument();
+    expect(screen.queryByText("accept failed")).toBeNull();
   });
 
   it.todo("SED-18: accept-all asks for confirmation first");
