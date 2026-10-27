@@ -87,6 +87,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -97,6 +98,8 @@ import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.R
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
+import com.hamzalabs.maktaba.core.api.errorKind
 import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.permissions.AppPermissions
 import com.hamzalabs.maktaba.core.permissions.PermissionAction
@@ -295,6 +298,7 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
         if (!granted) return@LaunchedEffect
         launch { delay(6_000); searched = true }
         runCatching { HomeDiscovery(context.applicationContext).homes().collect { found = it } }
+            .onFailure { if (it is CancellationException) throw it else AppLog.failure("home discovery", it) }
         searched = true
     }
 
@@ -308,6 +312,7 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                AppLog.failure("connect", e)
                 problem = failed.replace("%s", link.urls.joinToString { it.substringAfter("://") })
             } finally {
                 connecting = false
@@ -546,7 +551,7 @@ fun SignIn(session: AppSession, app: MaktabaApp) {
     val kept by session.restoreProblem.collectAsState()
     StartFrame(app) {
         kept?.let { why ->
-            Text(stringResource(R.string.signin_kept_failed, why), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            Text(stringResource(R.string.signin_kept_failed, stringResource(why.sentence())), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
             TextButton(onClick = session::retryRestore) { Text(stringResource(R.string.try_again)) }
         }
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -593,6 +598,7 @@ private fun PasswordSignIn(session: AppSession, name: String) {
     val scope = rememberCoroutineScope()
     val wrong = stringResource(R.string.signin_wrong)
     val unreachable = stringResource(R.string.signin_unreachable, name)
+    val resources = LocalResources.current
     fun signIn() {
         if (username.isEmpty() || password.isEmpty() || busy) return
         busy = true
@@ -601,13 +607,13 @@ private fun PasswordSignIn(session: AppSession, name: String) {
             try {
                 session.signIn(username, password)
             } catch (e: ApiException.Status) {
-                problem = if (e.code in 400..403) wrong else e.message
+                problem = if (e.code in 400..403) wrong else resources.getString(e.errorKind().sentence())
             } catch (e: ApiException.Transport) {
                 problem = unreachable
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                problem = e.message
+                problem = resources.getString(e.errorKind().sentence())
             } finally {
                 busy = false
             }
@@ -649,6 +655,7 @@ private fun PasswordSignIn(session: AppSession, name: String) {
 @Composable
 private fun ColumnScope.CodeSignIn(session: AppSession, name: String, onUsePassword: () -> Unit) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     var code by remember { mutableStateOf<DeviceCode?>(null) }
     var unsupported by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
@@ -666,7 +673,7 @@ private fun ColumnScope.CodeSignIn(session: AppSession, name: String, onUsePassw
         } catch (e: ApiException.Transport) {
             problem = unreachable
         } catch (e: Exception) {
-            problem = e.message ?: e.toString()
+            problem = resources.getString(e.errorKind().sentence())
         }
     }
     val current = code

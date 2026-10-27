@@ -3,6 +3,8 @@ package com.hamzalabs.maktaba.tv
 import android.app.Application
 import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.api.init
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
+import com.hamzalabs.maktaba.core.diagnostics.CrashLog
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.FoundHome
 import com.hamzalabs.maktaba.core.session.HomeDiscovery
@@ -26,13 +28,14 @@ import kotlinx.coroutines.flow.stateIn
 class MaktabaTVApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this) // an uncaught exception is kept on the device, without anything personal
         ClientHeader.init(this) // X-Maktaba-Client names this app (Epic 44)
     }
 
     val session: AppSession by lazy { AppSession(PreferencesStore(this, "session"), MainScope(), ::tokens) }
 
     /** Work that outlives a screen (a stopped video's last position, its session's close). */
-    val background = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val background = CoroutineScope(SupervisorJob() + Dispatchers.Default + AppLog.handler("tv background"))
 
     /**
      * The homes announcing themselves on this network (mDNS), from the first time the picker
@@ -40,7 +43,7 @@ class MaktabaTVApp : Application() {
      * down mid-resolve (the core's discovery crashed closing on Android 14+).
      */
     val homesFound: StateFlow<List<FoundHome>> by lazy {
-        HomeDiscovery(this).homes().catch { }.stateIn(MainScope(), SharingStarted.Lazily, emptyList())
+        HomeDiscovery(this).homes().catch { AppLog.failure("tv home discovery", it) }.stateIn(MainScope(), SharingStarted.Lazily, emptyList())
     }
 
     /** A home's token store: the session's own (the same file and key). */
