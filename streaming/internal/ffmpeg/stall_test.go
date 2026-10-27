@@ -53,8 +53,13 @@ func TestExecRunner_StalledEncoderIsStopped(t *testing.T) {
 	}
 }
 
-// An encoder that keeps writing is left alone, however long it runs.
+// An encoder that keeps writing is left alone, however long it runs. It watches
+// for several stall limits (1.5 s), past the unit tier's cap: it runs in the
+// integration tier (`go test` without -short).
 func TestExecRunner_WritingEncoderRunsOn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("watches an encoder for 1.5 s; runs without -short")
+	}
 	dir := t.TempDir()
 	logs := &syncBuf{}
 	body := "while true; do date > '" + filepath.Join(dir, "progress") + "'; sleep 0.05; done\n"
