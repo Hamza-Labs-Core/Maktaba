@@ -29,6 +29,7 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+use crate::applog::Locked;
 use crate::attempts;
 
 /// The window (tauri.conf.json's only one, `create: false`: it is made here).
@@ -131,7 +132,7 @@ impl Gate {
     /// A load of `url`: Some(url) to load now; None while the clear runs (it
     /// loads when the clear is over, unless another is asked after it).
     pub fn admit(&self, url: Url) -> Option<Url> {
-        let mut held = self.0.lock().unwrap();
+        let mut held = self.0.locked();
         match held.as_mut() {
             Some(next) => {
                 *next = url;
@@ -143,7 +144,7 @@ impl Gate {
 
     /// The clear is over (or was waited for long enough): the load to make now, once.
     pub fn finish(&self) -> Option<Url> {
-        self.0.lock().unwrap().take()
+        self.0.locked().take()
     }
 }
 
@@ -297,7 +298,7 @@ impl OnceDone {
     }
 
     fn call(&self, res: Result<(), String>) {
-        let done = self.0.lock().unwrap().take();
+        let done = self.0.locked().take();
         if let Some(done) = done {
             done(res);
         }
