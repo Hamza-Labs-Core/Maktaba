@@ -28,7 +28,19 @@ calls the Remote makes (`Admin.swift`).
   outside the app asks the person first. A home's tokens stay with the exact address
   (origin) they were issued at: the same home id announced at another address is another
   entry, signed in to afresh, and a redirect to another origin is followed without the
-  token (`Redirects.swift`). Signing in: a username and password, or **with a code** the app
+  token (`Redirects.swift`; a request with a password, refresh token or assertion in its body
+  does not follow it at all). **Through Maktaba Cloud** (story 42.7, `Cloud.swift`,
+  `CloudViews.swift`): sign in to the cloud (email, password; its API address under
+  *Advanced*, `https://api.maktaba.app` by default, remembered in the defaults), see the homes
+  the account reaches (online or not; one not linked is shown with how to link it, never
+  offered), pick a linked one: the app reaches it at the cloud's `direct_url` or `relay_url`,
+  asks the cloud for a one-use assertion and trades it at that address (`POST
+  /api/auth/cloud`) for the home's own tokens, kept as after a password sign-in. The cloud's
+  token is kept in memory only (signed in to the cloud again after the app quits). A home
+  keeps all its addresses (LAN and relay) and uses whichever answers; another address is
+  signed in to afresh, silently with a new assertion when the person is signed in to the
+  cloud and the cloud itself gives that address for the home (an address the home announced
+  is never handed an assertion), else on the sign-in screen. Signing in: a username and password, or **with a code** the app
   shows (large, with a QR code) until a signed-in device approves it. Every account menu has
   **Approve a sign-in**: type or scan another device's code, see what asks, approve it.
   English and Arabic (right to left) after the person's first language.

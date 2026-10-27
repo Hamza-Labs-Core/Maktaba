@@ -52,6 +52,14 @@ public struct ConnectStrings: Sendable {
         case unknownOnThisHome, notFound, approved, alreadyApproved, expired
         case anotherDevice, code
         case linkTitle, linkMessage
+        // through Maktaba Cloud (story 42.7)
+        case throughCloud, throughCloudHint, cloudSignInTitle, email, cloudIntro
+        case advanced, cloudAddress, cloudAddressHint, useStandard, notACloudAddress
+        case signedInAs, yourHomes, online, offline, notLinked, notLinkedHint, noCloudHomes
+        case refresh, cloudSignOut, close, signingInTo
+        case cloudWrongCredentials, cloudTooMany, cloudTooManyLater, cloudSignedOut, cloudNotLinked
+        case cloudUnreachable, cloudRefused, cloudEmailNotVerified, cloudOther
+        case homeRefusedCloud, homeLocked, homeMustChangePassword, homeNotInCloud, homeOther
     }
 
     static let en: [Key: String] = [
@@ -122,6 +130,41 @@ public struct ConnectStrings: Sendable {
         .code: "Code",
         .linkTitle: "Connect to this home?",
         .linkMessage: "A link asks to open the home “%@” at %@. Connect only if you trust where the link came from; you sign in there yourself.",
+        .throughCloud: "Through Maktaba Cloud",
+        .throughCloudHint: "Away from home, or a home on another network: sign in with your Maktaba Cloud account and pick a home linked to it.",
+        .cloudSignInTitle: "Sign in to Maktaba Cloud",
+        .email: "Email",
+        .cloudIntro: "Your Maktaba Cloud account lists the homes linked to it. Each home decides what you can do there.",
+        .advanced: "Advanced",
+        .cloudAddress: "Maktaba Cloud address",
+        .cloudAddressHint: "Change it only to reach a test or self-hosted Maktaba Cloud. Empty: %@.",
+        .useStandard: "Use the standard address",
+        .notACloudAddress: "That is not an address.",
+        .signedInAs: "Signed in to Maktaba Cloud as %@",
+        .yourHomes: "Your homes",
+        .online: "Online",
+        .offline: "Offline",
+        .notLinked: "Not linked to your account",
+        .notLinkedHint: "To sign in to a home that is not linked: open the home in a browser, sign in there, and link your Maktaba Cloud account on its Account page (Linked accounts). Owning a home in Maktaba Cloud is not an account in it.",
+        .noCloudHomes: "No home is linked to this Maktaba Cloud account yet.",
+        .refresh: "Refresh",
+        .cloudSignOut: "Sign out of Maktaba Cloud",
+        .close: "Close",
+        .signingInTo: "Signing in to %@…",
+        .cloudWrongCredentials: "Wrong email or password.",
+        .cloudTooMany: "Too many attempts. Try again in %@ seconds.",
+        .cloudTooManyLater: "Too many attempts. Try again later.",
+        .cloudSignedOut: "Your Maktaba Cloud sign-in has ended. Sign in again.",
+        .cloudNotLinked: "This home is not linked to your Maktaba Cloud account.",
+        .cloudUnreachable: "Could not reach Maktaba Cloud: %@",
+        .cloudRefused: "Maktaba Cloud refused: %@",
+        .cloudEmailNotVerified: "Confirm your email address first: Maktaba Cloud sent you a link.",
+        .cloudOther: "Maktaba Cloud answered %@.",
+        .homeRefusedCloud: "The home refused the sign-in through Maktaba Cloud. The link may have been removed: sign in to the home another way, or ask its admin.",
+        .homeLocked: "Your account on this home is locked for now. Try again later.",
+        .homeMustChangePassword: "The home asks you to change your password first. Sign in to it in a browser, change it, then try again.",
+        .homeNotInCloud: "This home is not connected to Maktaba Cloud.",
+        .homeOther: "The home answered %@.",
     ]
 
     static let ar: [Key: String] = [
@@ -192,6 +235,41 @@ public struct ConnectStrings: Sendable {
         .code: "الرمز",
         .linkTitle: "الاتصال بهذا الجهاز الرئيسي؟",
         .linkMessage: "يطلب رابط فتح الجهاز الرئيسي «%@» على %@. اتصل فقط إن كنت تثق بمصدر الرابط؛ وستسجّل الدخول هناك بنفسك.",
+        .throughCloud: "عبر Maktaba Cloud",
+        .throughCloudHint: "بعيدًا عن المنزل، أو جهاز رئيسي على شبكة أخرى: سجّل الدخول بحساب Maktaba Cloud واختر جهازًا رئيسيًا مرتبطًا به.",
+        .cloudSignInTitle: "تسجيل الدخول إلى Maktaba Cloud",
+        .email: "البريد الإلكتروني",
+        .cloudIntro: "يعرض حسابك في Maktaba Cloud الأجهزة الرئيسية المرتبطة به. وكل جهاز رئيسي يقرّر ما يمكنك فعله فيه.",
+        .advanced: "متقدّم",
+        .cloudAddress: "عنوان Maktaba Cloud",
+        .cloudAddressHint: "غيّره فقط للوصول إلى Maktaba Cloud تجريبي أو مستضاف ذاتيًا. فارغًا: %@.",
+        .useStandard: "استخدام العنوان الافتراضي",
+        .notACloudAddress: "هذا ليس عنوانًا.",
+        .signedInAs: "مسجَّل الدخول إلى Maktaba Cloud باسم %@",
+        .yourHomes: "أجهزتك الرئيسية",
+        .online: "متصل",
+        .offline: "غير متصل",
+        .notLinked: "غير مرتبط بحسابك",
+        .notLinkedHint: "لتسجيل الدخول إلى جهاز رئيسي غير مرتبط: افتح الجهاز الرئيسي في المتصفح، وسجّل الدخول هناك، واربط حسابك في Maktaba Cloud من صفحة الحساب (الحسابات المرتبطة). امتلاك جهاز رئيسي في Maktaba Cloud لا يعني أن لك حسابًا فيه.",
+        .noCloudHomes: "لا يوجد جهاز رئيسي مرتبط بحساب Maktaba Cloud هذا بعد.",
+        .refresh: "تحديث",
+        .cloudSignOut: "تسجيل الخروج من Maktaba Cloud",
+        .close: "إغلاق",
+        .signingInTo: "جارٍ تسجيل الدخول إلى %@…",
+        .cloudWrongCredentials: "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+        .cloudTooMany: "محاولات كثيرة جدًا. حاول مرة أخرى بعد %@ ثانية.",
+        .cloudTooManyLater: "محاولات كثيرة جدًا. حاول مرة أخرى لاحقًا.",
+        .cloudSignedOut: "انتهى تسجيل دخولك إلى Maktaba Cloud. سجّل الدخول مرة أخرى.",
+        .cloudNotLinked: "هذا الجهاز الرئيسي غير مرتبط بحسابك في Maktaba Cloud.",
+        .cloudUnreachable: "تعذّر الوصول إلى Maktaba Cloud: %@",
+        .cloudRefused: "رفض Maktaba Cloud: %@",
+        .cloudEmailNotVerified: "أكّد بريدك الإلكتروني أولًا: أرسل إليك Maktaba Cloud رابطًا.",
+        .cloudOther: "أجاب Maktaba Cloud بـ %@.",
+        .homeRefusedCloud: "رفض الجهاز الرئيسي تسجيل الدخول عبر Maktaba Cloud. ربما أُزيل الربط: سجّل الدخول إلى الجهاز الرئيسي بطريقة أخرى، أو اسأل مسؤوله.",
+        .homeLocked: "حسابك على هذا الجهاز الرئيسي مقفل حاليًا. حاول مرة أخرى لاحقًا.",
+        .homeMustChangePassword: "يطلب الجهاز الرئيسي تغيير كلمة مرورك أولًا. سجّل الدخول إليه في المتصفح وغيّرها، ثم حاول مرة أخرى.",
+        .homeNotInCloud: "هذا الجهاز الرئيسي غير متصل بـ Maktaba Cloud.",
+        .homeOther: "أجاب الجهاز الرئيسي بـ %@.",
     ]
 
     /// Why an address did not lead to a home.
@@ -201,6 +279,39 @@ public struct ConnectStrings: Sendable {
         case .unreachable: ErrorStrings(language).text(.unreachable)
         case .notAHome: text(.notAHome)
         case .otherHome: text(.otherHome)
+        }
+    }
+
+    /// Why signing in through Maktaba Cloud did not work: the cloud's answer, the home's
+    /// (`POST /api/auth/cloud`: 401, 423, 403), or no address of the home answering.
+    public func cloudProblem(_ error: Error) -> String {
+        switch error {
+        case let e as CloudError:
+            switch e {
+            case .wrongCredentials: text(.cloudWrongCredentials)
+            case let .tooManyAttempts(after): after.map { text(.cloudTooMany, String($0)) } ?? text(.cloudTooManyLater)
+            case .signedOut: text(.cloudSignedOut)
+            case .notLinked: text(.cloudNotLinked)
+            case let .refused(code, message):
+                code == "email_not_verified" ? text(.cloudEmailNotVerified) : text(.cloudRefused, message.isEmpty ? code : message)
+            case let .transport(why): text(.cloudUnreachable, why)
+            case let .status(code, _): text(.cloudOther, String(code))
+            case let .decoding(why): text(.cloudUnreachable, why)
+            }
+        case let f as ReachFailure:
+            reach(f)
+        case let e as APIError:
+            switch e {
+            case .status(401, _, _), .signedOut: text(.homeRefusedCloud)
+            case .status(423, _, _): text(.homeLocked)
+            case .status(403, _, _): text(.homeMustChangePassword)
+            case .status(404, _, _): text(.homeNotInCloud)
+            case let .status(code, _, _): text(.homeOther, String(code))
+            case let .transport(why): text(.unreachable, why)
+            case .decoding, .notReady: text(.homeOther, "?")
+            }
+        default:
+            error.localizedDescription
         }
     }
 

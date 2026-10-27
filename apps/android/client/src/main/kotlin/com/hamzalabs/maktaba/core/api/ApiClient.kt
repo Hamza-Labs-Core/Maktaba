@@ -103,6 +103,19 @@ class ApiClient(
         return t.user
     }
 
+    /**
+     * Signs in with a Maktaba Cloud sign-in assertion (story 42.7, `POST /api/auth/cloud`): the
+     * home finds the user the cloud account is linked to and gives this app its own tokens, as
+     * a password sign-in does, with that user's role and the link's scope. Refused (401) when
+     * the link is gone, the assertion was used or another home's.
+     */
+    suspend fun signInWithAssertion(assertion: String): User? {
+        val body = buildJsonObject { put("assertion", assertion) }
+        val t: AuthTokens = decode(send(request("POST", "/api/auth/cloud", body = body), authorized = false))
+        tokens.save(t)
+        return t.user
+    }
+
     /** `GET /api/auth/me` with the home's name. */
     suspend fun whoami(): Me = get("/api/auth/me")
 

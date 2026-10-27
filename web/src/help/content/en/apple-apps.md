@@ -20,6 +20,17 @@ Both keep your sign-in for each home in the device's Keychain and remember the h
 
 A `maktaba://connect` link opened from elsewhere always asks before it adds or switches a home.
 
+### Through Maktaba Cloud {#through-cloud}
+
+Away from home, or for a home on another network, open it through Maktaba Cloud. Your account on the home must be linked to your Maktaba Cloud account first, from the home's web page (see [Linked accounts](/help/account#linked-accounts)).
+
+1. In the home picker, tap **Through Maktaba Cloud**.
+2. Sign in with your Maktaba Cloud **Email** and **Password**. (**Advanced** sets another **Maktaba Cloud address**, for a test or your own Maktaba Cloud; leave it empty for the usual one.)
+3. **Your homes** lists the homes linked to your cloud account, **Online** or **Offline**. A home marked **Not linked to your account** cannot be opened: link it on that home first. Owning a home in Maktaba Cloud is not an account in it.
+4. Tap a home. The app reaches it at its own address when you are on its network, otherwise through Maktaba Cloud, and signs you in there without your password.
+
+The home decides what you can do: you are your own account there, and through the cloud only watching, unless you are an admin of the home who allowed managing for your own link. The app keeps both of the home's addresses and uses whichever answers. A sign-in belongs to the address it was made at, so at the other address the app signs in again, through the cloud when the cloud gave that address and you are signed in to it, otherwise with your password or a code. The cloud sign-in lasts until the app quits; **Sign out of Maktaba Cloud** ends it sooner. Signing out of the cloud does not sign you out of your homes.
+
 ### Permissions {#permissions}
 
 The apps ask for Local Network, and on iPhone and iPad the camera only when you scan a QR code. They ask for no microphone, location, photos, contacts or notifications.

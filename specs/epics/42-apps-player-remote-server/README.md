@@ -359,6 +359,24 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
 7. **42.7 Linked accounts and the cloud:** linking (home Account page, `home_user_links`), the
    cloud's home assertion, `POST /api/auth/cloud`, the app's cloud sign-in and home list, both
    addresses per home (local and relay).
+   (Built, 2026-10-27. The home's and the cloud's API, with the role tests: PR 327
+   (`api/internal/handlers/auth/cloud.go`, `cloud_pg_test.go`; `cloud/internal/handlers/homes`).
+   *Linking:* Account → Linked accounts (`web/src/pages/Profile/CloudLink.tsx`): the home's
+   nonce, then `GET {cloud_api}/v1/homes/{id}/link`, which redirects to the cloud web's own
+   `/link-home` (never elsewhere): sign in, confirm, the `link` assertion back to the home in
+   the URL fragment, which the card hands to `POST /api/me/cloud-link`. Watch (play) by default;
+   Watch and manage only for an admin, for their own link, from a sign-in on the home. Unlink;
+   an admin sees and cuts a user's link in Users → Revoke access. *The apps* (Apple
+   `MaktabaKit/Cloud.swift`; Android and the desktop Player on the shared client's
+   `session/Cloud.kt`): Through Maktaba Cloud in the home picker (email and password, the
+   cloud's address under Advanced), the homes linked to the account (online, not linked),
+   opening one at its own address else the relay, signed in with a one-use assertion. The
+   cloud's token is in memory only. A home keeps every address it or the cloud gave and uses
+   whichever answers; a sign-in stays with its address, so another address signs in afresh,
+   through the cloud only at an address the cloud gave for that home (an address a home
+   announced about itself may be another machine elsewhere, and a caught assertion would work
+   at the real home for its minute), else by password or code. Moving to another address needs
+   the same home id. Help: `account#linked-accounts`, `users`, the apps' `#through-cloud`.)
 8. **42.8 Tablet and foldable:** two-pane and fold-aware layouts, their own listings.
    (Built, 2026-10-27. Android: `core/layout/Panes.kt` (one pane under 600 dp, the list
    beside the page from 600 dp, tabletop and book split at the hinge, the book's halves

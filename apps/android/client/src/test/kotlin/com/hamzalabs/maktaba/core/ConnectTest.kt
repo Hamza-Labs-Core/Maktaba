@@ -263,7 +263,8 @@ class ConnectTest {
         val link = ConnectLink("28e21b45", "From the link", listOf("http://down:8088", "https://relay.example"))
         s.offer(link)
         val home = s.connect(link, HomeProbe(homes::get))
-        assertEquals(Home("https://relay.example", "Darwish home", "28e21b45-1111"), home)
+        // its other addresses as the home said them; the link's that did not answer are not kept
+        assertEquals(Home("https://relay.example", "Darwish home", "28e21b45-1111", addresses = listOf("http://192.168.1.5:8088")), home)
         assertEquals(AppSession.Phase.SigningIn, s.phase.value)
         assertNull("the link was answered", s.link.value)
     }

@@ -310,5 +310,11 @@
   "admin.usage.vitals": "Web vitals (p75)",
   "admin.usage.metric": "Metric",
   "admin.usage.p75": "p75",
-  "admin.usage.samples": "Samples"
+  "admin.usage.samples": "Samples",
+  "linkHome.title": "Link a home account",
+  "linkHome.ask": "The home at {home} asks to link this Maktaba Cloud account ({account}) to your account on it. Then you can sign in to that home through Maktaba Cloud, from anywhere, as your home account.",
+  "linkHome.rights": "Linking gives this cloud account no rights in the home by itself: it signs you in as your home account, to watch. Only a home admin can allow managing the home through the cloud, for their own link, on the home. You can unlink it on the home's Account page at any time.",
+  "linkHome.link": "Link",
+  "linkHome.cancel": "Cancel",
+  "linkHome.broken": "This link is incomplete. Start again from the home's Account page."
 }

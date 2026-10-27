@@ -33,3 +33,22 @@ final class SameOriginRedirects: NSObject, URLSessionTaskDelegate, Sendable {
         return x == y
     }
 }
+
+/// For requests that carry a credential in their body (a password, a refresh token, a cloud
+/// assertion) or are sent to Maktaba Cloud: a redirect is followed only to the same origin.
+/// A 307 or 308 resends the body, so dropping the header would not be enough; to another
+/// origin the redirect is not followed at all (the request ends with the 3xx answer).
+final class SameOriginOnly: NSObject, URLSessionTaskDelegate, Sendable {
+    static let shared = SameOriginOnly()
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest) async -> URLRequest? {
+        Self.redirect(from: task.originalRequest ?? task.currentRequest, to: request)
+    }
+
+    /// The request to follow a redirect with, or nil (not followed: another origin).
+    static func redirect(from original: URLRequest?, to next: URLRequest) -> URLRequest? {
+        guard let from = original?.url, let to = next.url, SameOriginRedirects.sameOrigin(from, to) else { return nil }
+        return next
+    }
+}

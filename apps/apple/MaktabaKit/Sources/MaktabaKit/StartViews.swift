@@ -46,6 +46,12 @@ public struct SessionGate<Content: View>: View {
                     #endif
             }
         }
+        .sheet(isPresented: $session.choosingThroughCloud) {
+            CloudSheet(session: session, words: words)
+                #if os(macOS)
+                .frame(minWidth: 480, minHeight: 460)
+                #endif
+        }
         // away from the picker (which shows both itself): a link from outside the app, which
         // the person says yes to before anything is asked, or why the one they said yes to
         // did not lead to a home. One alert for both.
@@ -99,8 +105,8 @@ struct LinkPrompt: View {
 }
 
 /// The home picker (Epic 42 story 42.2): the homes on this network (Bonjour), the recent
-/// ones (rename, remove), a home by its address or connect link, and (iPhone, iPad) a home's
-/// QR code. A typed or scanned address is asked whether it is a Maktaba home first.
+/// ones (rename, remove), a home through Maktaba Cloud (story 42.7), a home by its address or
+/// connect link, and (iPhone, iPad) a home's QR code. A typed or scanned address is asked whether it is a Maktaba home first.
 public struct HomePickerView: View {
     @Bindable var session: AppSession
     let title: String
@@ -141,6 +147,7 @@ public struct HomePickerView: View {
                 }
                 nearby
                 recent
+                throughCloud
                 byAddress
                 #if os(iOS)
                 Section {
@@ -224,6 +231,20 @@ public struct HomePickerView: View {
                     #endif
                 }
             }
+        }
+    }
+
+    /// Story 42.7: a home reached through the person's Maktaba Cloud account.
+    private var throughCloud: some View {
+        Section {
+            Button(words.text(.throughCloud), systemImage: "cloud") {
+                problem = nil
+                session.connectProblem = nil
+                session.choosingThroughCloud = true
+            }
+            .accessibilityIdentifier("picker.cloud")
+        } footer: {
+            Text(words.text(.throughCloudHint))
         }
     }
 

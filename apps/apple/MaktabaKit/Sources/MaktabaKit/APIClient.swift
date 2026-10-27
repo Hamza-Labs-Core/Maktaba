@@ -40,7 +40,19 @@ public actor APIClient {
     public func signIn(username: String, password: String) async throws -> User? {
         let t: AuthTokens = try await send(
             request("POST", "/api/auth/login", body: ["username": username, "password": password]),
-            authorized: false)
+            authorized: false, redirects: SameOriginOnly.shared)
+        tokens.save(t)
+        return t.user
+    }
+
+    /// Signs in with a Maktaba Cloud sign-in assertion (`POST /api/auth/cloud`, story 42.7):
+    /// the home finds the home user the cloud account is linked to and issues its own tokens,
+    /// kept as after `signIn` (under this home's address only). The home refuses with 401 (no
+    /// reason given), 423 (the user is locked) or 403 (the password must be changed first).
+    public func signIn(assertion: String) async throws -> User? {
+        let t: AuthTokens = try await send(
+            request("POST", "/api/auth/cloud", body: ["assertion": assertion]),
+            authorized: false, redirects: SameOriginOnly.shared)
         tokens.save(t)
         return t.user
     }
@@ -367,8 +379,9 @@ public actor APIClient {
         return r
     }
 
-    private func send<T: Decodable>(_ r: URLRequest, authorized: Bool = true) async throws -> T {
-        let data = try await sendRaw(r, authorized: authorized)
+    private func send<T: Decodable>(_ r: URLRequest, authorized: Bool = true,
+                                    redirects: URLSessionTaskDelegate = SameOriginRedirects.shared) async throws -> T {
+        let data = try await sendRaw(r, authorized: authorized, redirects: redirects)
         do {
             return try JSONDecoder.home.decode(T.self, from: data)
         } catch {
@@ -383,14 +396,17 @@ public actor APIClient {
         "\(r.httpMethod ?? "GET") \(Log.route(r.url?.path() ?? ""))"
     }
 
-    private func sendRaw(_ r: URLRequest, authorized: Bool = true, retried: Bool = false) async throws -> Data {
+    /// `redirects`: `SameOriginRedirects` (a token header dropped to another origin), or
+    /// `SameOriginOnly` for a request with a credential in its body (not followed there at all).
+    private func sendRaw(_ r: URLRequest, authorized: Bool = true, retried: Bool = false,
+                         redirects: URLSessionTaskDelegate = SameOriginRedirects.shared) async throws -> Data {
         var r = r
         if authorized, let access = tokens.access {
             r.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization")
         }
         let data: Data, response: URLResponse
         do {
-            (data, response) = try await session.data(for: r, delegate: SameOriginRedirects.shared)
+            (data, response) = try await session.data(for: r, delegate: redirects)
         } catch {
             // the screen went away (its task was cancelled): nothing went wrong
             if Log.isCancellation(error) { throw CancellationError() }
@@ -400,7 +416,7 @@ public actor APIClient {
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401, authorized, !retried, tokens.refresh != nil {
             _ = try await refreshOnce()
-            return try await sendRaw(r, authorized: true, retried: true)
+            return try await sendRaw(r, authorized: true, retried: true, redirects: redirects)
         }
         if code == 401, authorized {
             Log.session.notice("\(Self.describe(r), privacy: .public): 401 after a refresh: signed out")
@@ -423,7 +439,8 @@ public actor APIClient {
         let task = Task<String, Error> {
             guard let refresh = tokens.refresh else { throw APIError.signedOut }
             let t: AuthTokens = try await send(
-                request("POST", "/api/auth/refresh", body: ["refresh_token": refresh]), authorized: false)
+                request("POST", "/api/auth/refresh", body: ["refresh_token": refresh]), authorized: false,
+                redirects: SameOriginOnly.shared)
             tokens.save(t)
             return t.accessToken
         }

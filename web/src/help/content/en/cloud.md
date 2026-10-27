@@ -69,7 +69,7 @@ No. Without a licence Maktaba runs on the free tier. The **Entitlements** table 
 
 ### Do I need Maktaba Cloud? {#faq-cloud}
 
-No. It is optional. To watch Live TV away from home, see [Remote TV](/help/remote-tv).
+No. It is optional. To watch Live TV away from home, see [Remote TV](/help/remote-tv). Once your home is connected, each person can link their own Maktaba Cloud account to sign in through it from anywhere: see [Linked accounts](/help/account#linked-accounts).
 
 ## When something goes wrong {#troubleshooting}
 

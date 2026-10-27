@@ -21,12 +21,32 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
- * A home this app knows: its address (under the web's base path when it has one), a name to
- * show (its address until it says its name), its instance id when it said it, and the name the
- * person gave it here ([nickname], shown before the home's own).
+ * A home this app knows: its address in use (under the web's base path when it has one), a
+ * name to show (its address until it says its name), its instance id when it said it, and the
+ * name the person gave it here ([nickname], shown before the home's own).
+ *
+ * [addresses] are its other addresses (story 42.7: the local one and the relay's through
+ * Maktaba Cloud, from `/api/discovery/home`, a link or the cloud), tried when the one in use
+ * does not answer. Tokens stay with the address that issued them: another address signs in
+ * afresh (through the cloud without a password, when [cloudServer] and a cloud sign-in allow).
  */
 @Serializable
-data class Home(val url: String, val name: String, val id: String? = null, val nickname: String? = null) {
+data class Home(
+    val url: String,
+    val name: String,
+    val id: String? = null,
+    val nickname: String? = null,
+    val addresses: List<String> = emptyList(),
+    /** The home's id in Maktaba Cloud, when the person chose it there. */
+    val cloudServer: String? = null,
+    /**
+     * The addresses Maktaba Cloud gave for it (its relay, its own): the only ones a cloud
+     * sign-in is sent to. An address the home announced about itself may be another machine
+     * on another network, and a cloud assertion caught there would work at the real home
+     * for its minute.
+     */
+    val cloudAddresses: List<String> = emptyList(),
+) {
     val httpUrl: HttpUrl get() = url.toHttpUrl()
 
     /** What the app shows: the person's name for it, else the home's. */
@@ -137,7 +157,10 @@ class AppSession(
     suspend fun connect(link: ConnectLink, probe: HomeProbe = HomeProbe()): Home {
         val r = probe.first(link.urls, link.id)
         val name = r.info.name?.trim()?.takeIf { it.isNotEmpty() } ?: link.name ?: r.url.substringAfter("://")
-        use(Home(r.url, name, r.info.id ?: link.id))
+        // its other addresses as the home that answered says them (a link's that did not answer
+        // are unchecked: never kept)
+        val others = r.info.urls.mapNotNull { Home.normalizeWithPath(it) }
+        use(Home(r.url, name, r.info.id ?: link.id, addresses = others))
         if (_link.value == link) _link.value = null
         return _current.value!!
     }
@@ -154,8 +177,17 @@ class AppSession(
      */
     fun use(home: Home) {
         val known = _homes.value
-        val previous = known.firstOrNull { it.url == home.url }
-        val chosen = previous?.let { it.copy(id = it.id ?: home.id) } ?: home
+        // the same entry: at this address, or one of its other addresses (then it moves there)
+        val previous = known.firstOrNull { it.url == home.url } ?: known.firstOrNull { home.url in it.addresses }
+        val chosen = (previous?.let {
+            it.copy(
+                url = home.url,
+                id = it.id ?: home.id,
+                addresses = it.addresses + it.url + home.addresses,
+                cloudServer = home.cloudServer ?: it.cloudServer,
+                cloudAddresses = (it.cloudAddresses + home.cloudAddresses).distinct(),
+            )
+        } ?: home).let { h -> h.copy(addresses = h.addresses.filter { it != h.url }.distinct()) }
         _homes.value = if (previous == null) known + chosen else known.map { if (it === previous) chosen else it }
         if (previous != chosen) saveHomes()
         _current.value = chosen
@@ -182,10 +214,90 @@ class AppSession(
                 _restoreProblem.value = null
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: ApiException.Transport) {
+                // this address does not answer (the local one, away from home): another might
+                if (c === client && !reachElsewhere()) _restoreProblem.value = e.errorKind()
             } catch (e: Exception) {
                 if (c === client) _restoreProblem.value = e.errorKind()
             }
         }
+    }
+
+    /** Checks an address before the app moves to it (replaceable in tests). */
+    internal var probe: HomeProbe = HomeProbe()
+
+    /**
+     * The home in use did not answer at its address: tries its other addresses, and moves to
+     * the first where the same home answers. There the app uses that address's own tokens, or
+     * signs in through Maktaba Cloud (no password) when it can, or asks the person to sign in.
+     * False when no other address answers.
+     */
+    suspend fun reachElsewhere(): Boolean {
+        val home = _current.value ?: return false
+        for (other in home.addresses) {
+            val info = try {
+                probe.probe(other)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                continue
+            }
+            // the same home only: an address this home gave may belong to another machine on
+            // another network (a local address away from home), and an unknown id proves nothing
+            if (home.id == null || info.id == null || !sameHome(home.id, info.id)) continue
+            if (_current.value?.url != home.url) return true
+            use(home.copy(url = other))
+            val cloud = this.cloud
+            if (tokensFor(other).access == null && cloud?.signedIn == true && other in home.cloudAddresses) {
+                runCatching { signInWithCloud() }
+            }
+            return true
+        }
+        return false
+    }
+
+    /** Signed in to Maktaba Cloud (in memory only: the app asks again after it restarts). */
+    var cloud: CloudSession? = null
+
+    /** The cloud's API address: the hosted one, or one the person chose. */
+    var cloudApi: String
+        get() = store.get(CloudSession.KEY_API) ?: CloudSession.DEFAULT_API
+        set(value) = store.put(CloudSession.KEY_API, value.takeIf { it != CloudSession.DEFAULT_API })
+
+    /**
+     * Uses a home chosen in Maktaba Cloud: its own address when it answers (on its network),
+     * else the relay's, both kept; then signs in there through the cloud.
+     */
+    suspend fun useCloudHome(home: CloudHome, probe: HomeProbe = this.probe) {
+        val r = probe.first(home.addresses)
+        val name = home.name.ifBlank { r.info.name ?: r.url.substringAfter("://") }
+        use(
+            Home(
+                r.url, name, r.info.id,
+                addresses = home.addresses + r.info.urls.mapNotNull { Home.normalizeWithPath(it) },
+                cloudServer = home.serverId,
+                cloudAddresses = home.addresses,
+            ),
+        )
+        if (phase.value !is Phase.SignedIn) signInWithCloud()
+    }
+
+    /**
+     * Signs in to the home in use through Maktaba Cloud: a one-use assertion for it, which the
+     * home turns into its own tokens for this address. The home decides who the person is
+     * there and what they may do.
+     */
+    suspend fun signInWithCloud() {
+        val c = client ?: return
+        val cloud = this.cloud ?: throw CloudException(401, "signed_out", "Sign in to Maktaba Cloud.")
+        val home = _current.value
+        val server = home?.cloudServer ?: throw CloudException(0, "not_in_cloud", "This home was not chosen in Maktaba Cloud.")
+        // only to an address the cloud gave for this home (Home.cloudAddresses)
+        if (home.url !in home.cloudAddresses) throw CloudException(0, "not_a_cloud_address", "Sign in at this address with your password or a code.")
+        val assertion = cloud.assertion(server)
+        if (c !== client) return
+        c.signInWithAssertion(assertion)
+        signedIn(c, c.whoami())
     }
 
     /** Names a known home for this app ([nickname] blank: back to the home's own name). */

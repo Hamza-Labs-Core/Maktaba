@@ -11,6 +11,7 @@ import { SignIn } from "./pages/SignIn";
 import { ForgotPassword, Register, ResetPassword, SignedIn, VerifyEmail } from "./pages/AuthFlows";
 import { Account } from "./pages/Account";
 import { Billing } from "./pages/Billing";
+import { LinkHome } from "./pages/LinkHome";
 import { AdminLayout } from "./pages/admin/AdminLayout";
 import { AdminOverview } from "./pages/admin/Overview";
 import { AdminAccounts } from "./pages/admin/Accounts";
@@ -121,6 +122,8 @@ export function AppRoutes() {
         <Route element={<RequireAuth />}>
           <Route path="account" element={<Account />} />
           <Route path="billing" element={<Billing />} />
+          {/* a home's Account page sends a person here to link their cloud account (42.7) */}
+          <Route path="link-home" element={<LinkHome />} />
           <Route path="admin" element={<AdminLayout />}>
             <Route index element={<AdminOverview />} />
             <Route path="accounts" element={<AdminAccounts />} />

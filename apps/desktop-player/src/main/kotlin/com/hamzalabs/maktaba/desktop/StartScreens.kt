@@ -20,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
@@ -88,6 +89,11 @@ fun HomePicker(session: AppSession, found: List<FoundHome>, probe: HomeProbe = r
     var connecting by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<Home?>(null) }
+    var throughCloud by remember { mutableStateOf(false) }
+    if (throughCloud) {
+        CloudHomes(session, onClose = { throughCloud = false })
+        return
+    }
 
     fun connect(link: ConnectLink) {
         connecting = true
@@ -149,6 +155,9 @@ fun HomePicker(session: AppSession, found: List<FoundHome>, probe: HomeProbe = r
             Button(onClick = { linkFor(address)?.let(::connect) }, enabled = !connecting && linkFor(address) != null) {
                 Text(if (connecting) t["picker.connecting"] else t["picker.connect"])
             }
+            HorizontalDivider()
+            // away from home: the homes linked to a Maktaba Cloud account (story 42.7)
+            OutlinedButton(onClick = { throughCloud = true }, enabled = !connecting) { Text(t["cloud.title"]) }
         }
     }
     renaming?.let { home ->
@@ -255,6 +264,9 @@ fun SignIn(session: AppSession) {
                 Tab(tab == 1, onClick = { tab = 1 }, text = { Text(t["signin.withCode"]) })
             }
             if (tab == 0) PasswordSignIn(session) else CodeSignIn(session, onUnsupported = { tab = 0 })
+            // a home chosen in Maktaba Cloud, at an address the cloud gave: no password needed
+            val h = home
+            if (h != null && session.cloud?.signedIn == true && h.url in h.cloudAddresses) CloudSignInButton(session)
             TextButton(onClick = { session.switchHome() }) { Text(t["signin.otherHome"]) }
         }
     }
