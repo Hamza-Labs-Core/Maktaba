@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -25,6 +26,7 @@ import com.hamzalabs.maktaba.tv.ui.screens.AccountScreen
 import com.hamzalabs.maktaba.tv.ui.screens.HomeScreen
 import com.hamzalabs.maktaba.tv.ui.screens.LibrariesScreen
 import com.hamzalabs.maktaba.tv.ui.screens.LibraryScreen
+import com.hamzalabs.maktaba.tv.ui.screens.LocalChooseHome
 import com.hamzalabs.maktaba.tv.ui.screens.PlayerScreen
 import com.hamzalabs.maktaba.tv.ui.screens.SearchScreen
 import com.hamzalabs.maktaba.tv.ui.screens.SearchState
@@ -63,26 +65,30 @@ fun SignedInApp(app: MaktabaTVApp, user: User, client: ApiClient) {
         stringResource(R.string.tab_account),
     )
 
-    when (val top = stack.last()) {
-        Place.Tabs -> Box(Modifier.fillMaxSize()) {
-            if (tab == 0) LibraryBackdrop()
-            Column(Modifier.fillMaxSize()) {
-                TopBar(tabs = tabs, selectedIndex = tab, onSelect = { if (it != tab) focusContent = false; tab = it })
-                when (tab) {
-                    0 -> HomeScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
-                    1 -> LibrariesScreen(api, focusFirst = focusContent, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
-                    2 -> SearchScreen(api, search, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
-                    else -> AccountScreen(app, user)
+    // a failure that says the home does not answer offers another home
+    CompositionLocalProvider(LocalChooseHome provides { app.session.switchHome() }) {
+        when (val top = stack.last()) {
+            Place.Tabs -> Box(Modifier.fillMaxSize()) {
+                if (tab == 0) LibraryBackdrop()
+                Column(Modifier.fillMaxSize()) {
+                    TopBar(tabs = tabs, selectedIndex = tab, onSelect = { if (it != tab) focusContent = false; tab = it })
+                    when (tab) {
+                        0 -> HomeScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+                        1 -> LibrariesScreen(api, focusFirst = focusContent, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
+                        2 -> SearchScreen(api, search, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+                        else -> AccountScreen(app, user)
+                    }
                 }
             }
+            is Place.Library -> LibraryScreen(api, top.id, top.name, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+            is Place.Video -> VideoScreen(
+                api,
+                top.id,
+                onPlay = { title, startMs -> open(Place.Player(top.id, title, startMs)) },
+                signedOut = signedOut,
+                onBack = ::back,
+            )
+            is Place.Player -> PlayerScreen(app, client, top.id, top.title, top.startMs, onBack = ::back, signedOut = signedOut)
         }
-        is Place.Library -> LibraryScreen(api, top.id, top.name, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
-        is Place.Video -> VideoScreen(
-            api,
-            top.id,
-            onPlay = { title, startMs -> open(Place.Player(top.id, title, startMs)) },
-            signedOut = signedOut,
-        )
-        is Place.Player -> PlayerScreen(app, client, top.id, top.title, top.startMs, onBack = ::back, signedOut = signedOut)
     }
 }

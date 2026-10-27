@@ -36,9 +36,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.Failure
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.layout.HingeSplit
 import com.hamzalabs.maktaba.core.layout.ListPaneWidth
@@ -48,6 +51,7 @@ import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.ui.AccountMenu
 import com.hamzalabs.maktaba.core.ui.Message
 import com.hamzalabs.maktaba.core.ui.ThemeStore
+import com.hamzalabs.maktaba.core.ui.sentence
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -65,38 +69,44 @@ enum class Place(val label: String, val icon: ImageVector) {
  * failure, never an action's (that stays until another action, a refresh or another place).
  */
 class Remote(val client: ApiClient, private val session: AppSession) {
-    private var loadProblem by mutableStateOf<String?>(null)
-    private var actionProblem by mutableStateOf<String?>(null)
+    private var loadProblem by mutableStateOf<Failure?>(null)
+    private var actionProblems by mutableStateOf<List<ActionProblem>>(emptyList())
 
-    /** What went wrong, to show above the list. */
-    val problem: String? get() = actionProblem ?: loadProblem
+    /**
+     * What went wrong, to show above the list: the actions' failures (each labelled by what it
+     * was), else the last load's. Each says its [Failure.kind]'s sentence, never the home's text.
+     */
+    val problems: List<ActionProblem>
+        get() = actionProblems.ifEmpty { listOfNotNull(loadProblem?.let { ActionProblem(null, it) }) }
+
+    val hasProblem: Boolean get() = problems.isNotEmpty()
 
     fun clear() {
         loadProblem = null
-        actionProblem = null
+        actionProblems = emptyList()
     }
 
     /** Reads the home's state: a failure shows until a read works again. */
     suspend fun <T> load(block: suspend ApiClient.() -> T): T? =
-        attempt(block).also { loadProblem = if (it != null) null else lastError }
+        attempt("remote load", block).also { loadProblem = if (it != null) null else lastError }
 
     /** Changes the home: each failure is kept and shown, labelled by [what] when given. */
     suspend fun act(what: String? = null, block: suspend ApiClient.() -> Unit): Boolean {
-        if (attempt(block) != null) return true
+        if (attempt("remote action", block) != null) return true
         val why = lastError ?: return false
-        actionProblem = listOfNotNull(actionProblem, if (what != null) "$what: $why" else why).joinToString("\n")
+        actionProblems = actionProblems + ActionProblem(what, why)
         return false
     }
 
     /** A new action starts with a clean slate. */
     fun startAction() {
-        actionProblem = null
+        actionProblems = emptyList()
     }
 
-    private var lastError: String? = null
+    private var lastError: Failure? = null
 
-    /** Runs [block]; a sign-out goes back to signing in, anything else is the last error. */
-    private suspend fun <T> attempt(block: suspend ApiClient.() -> T): T? = try {
+    /** Runs [block]; a sign-out goes back to signing in, anything else is logged and the last error. */
+    private suspend fun <T> attempt(where: String, block: suspend ApiClient.() -> T): T? = try {
         client.block().also { lastError = null }
     } catch (e: CancellationException) {
         throw e
@@ -104,14 +114,15 @@ class Remote(val client: ApiClient, private val session: AppSession) {
         session.signedOut()
         lastError = null
         null
-    } catch (e: ApiException.Status) {
-        lastError = if (e.code == 403) "The home refused: only its admins can do this." else e.message
-        null
     } catch (e: Exception) {
-        lastError = e.message ?: e.toString()
+        AppLog.failure(where, e)
+        lastError = Failure.of(e)
         null
     }
 }
+
+/** A failed load or action: [what] it was (null: a load), and why. */
+data class ActionProblem(val what: String?, val failure: Failure)
 
 /**
  * The Remote's frame: a bottom bar on a phone, a rail on a tablet or an open foldable (Material's
@@ -175,10 +186,13 @@ fun AdminScreen(
                 modifier = Modifier.padding(padding).fillMaxSize(),
             ) {
                 LazyColumn(Modifier.fillMaxSize()) {
-                    remote.problem?.let { p ->
+                    if (remote.hasProblem) {
                         item {
                             Text(
-                                p,
+                                remote.problems.map { p ->
+                                    val why = stringResource(p.failure.kind.sentence())
+                                    if (p.what != null) "${p.what}: $why" else why
+                                }.joinToString("\n"),
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                             )

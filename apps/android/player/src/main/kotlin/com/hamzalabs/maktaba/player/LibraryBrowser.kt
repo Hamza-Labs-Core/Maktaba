@@ -1,6 +1,5 @@
 package com.hamzalabs.maktaba.player
 
-import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -51,12 +51,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.Failure
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.api.Library
 import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.api.Video
@@ -65,7 +68,10 @@ import com.hamzalabs.maktaba.core.layout.ListPaneWidth
 import com.hamzalabs.maktaba.core.layout.Panes
 import com.hamzalabs.maktaba.core.layout.currentPanes
 import com.hamzalabs.maktaba.core.session.AppSession
+import com.hamzalabs.maktaba.core.R as CoreR
 import com.hamzalabs.maktaba.core.ui.AccountMenu
+import com.hamzalabs.maktaba.core.ui.ErrorState
+import com.hamzalabs.maktaba.core.ui.sentence
 import com.hamzalabs.maktaba.core.ui.Message
 import com.hamzalabs.maktaba.core.ui.Poster
 import com.hamzalabs.maktaba.core.ui.ThemeStore
@@ -74,7 +80,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** The libraries, their videos and the chosen one: what every layout of the browser shows. */
-class BrowserState(private val client: ApiClient, private val signedOut: () -> Unit) {
+class BrowserState(
+    private val client: ApiClient,
+    private val signedOut: () -> Unit,
+    /** "Choose another home", offered when this one does not answer. */
+    val chooseHome: (() -> Unit)? = null,
+) {
     var libraries by mutableStateOf<List<Library>>(emptyList())
     /** null: all videos. */
     var library by mutableStateOf<String?>(null)
@@ -82,7 +93,10 @@ class BrowserState(private val client: ApiClient, private val signedOut: () -> U
     var next by mutableStateOf<String?>(null)
     var video by mutableStateOf<Video?>(null)
     var query by mutableStateOf("")
-    var problem by mutableStateOf<String?>(null)
+    /** Why the last load failed (in a person's words through [Failure.kind]; never the home's raw answer). */
+    var problem by mutableStateOf<Failure?>(null)
+    /** The page that failed to load after the first: Try again asks for it once more. */
+    private var failedCursor: String? = null
     var loading by mutableStateOf(false)
     var loaded by mutableStateOf(false)
 
@@ -109,11 +123,30 @@ class BrowserState(private val client: ApiClient, private val signedOut: () -> U
     suspend fun loadMore() {
         val cursor = next ?: return
         next = null
+        failedCursor = null
         guard {
-            val page = client.videos(library, query, cursor)
-            videos.addAll(page.items.filter { v -> videos.none { it.id == v.id } })
-            next = page.next
+            try {
+                val page = client.videos(library, query, cursor)
+                videos.addAll(page.items.filter { v -> videos.none { it.id == v.id } })
+                next = page.next
+                problem = null
+            } catch (e: Exception) {
+                failedCursor = cursor
+                throw e
+            }
         }
+    }
+
+    /**
+     * Asks again for the page after the list's end, after it failed (its row's Try again);
+     * false when no page failed (a refresh did: reload instead).
+     */
+    fun retryMore(): Boolean {
+        val cursor = failedCursor ?: return false
+        failedCursor = null
+        problem = null
+        next = cursor
+        return true
     }
 
     private suspend fun guard(block: suspend () -> Unit) {
@@ -124,8 +157,8 @@ class BrowserState(private val client: ApiClient, private val signedOut: () -> U
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w("Maktaba", "browser: ${e.javaClass.simpleName}", e)
-            problem = e.message ?: e.toString()
+            AppLog.failure("player browser", e)
+            problem = Failure.of(e)
         }
     }
 }
@@ -151,7 +184,7 @@ fun LibraryBrowser(
     val scope = rememberCoroutineScope()
     val app = context.applicationContext as PlayerApplication
     val playback = remember(client) { Playback(app, client, scope, app.background, session::signedOut) }
-    val state = remember(client) { BrowserState(client, session::signedOut) }
+    val state = remember(client) { BrowserState(client, session::signedOut, session::switchHome) }
     val panes = currentPanes()
 
     DisposableEffect(playback) { onDispose { playback.stop() } }
@@ -323,7 +356,14 @@ private fun VideoList(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 when {
-                    state.problem != null && state.videos.isEmpty() -> Message("Can't load", detail = state.problem)
+                    state.problem != null && state.videos.isEmpty() -> state.problem?.let { f ->
+                        ErrorState(
+                            f,
+                            title = stringResource(CoreR.string.error_title),
+                            onRetry = { scope.launch { state.loadLibraries(); state.reload(pickFirst = false) } },
+                            onChooseHome = state.chooseHome,
+                        )
+                    }
                     state.loaded && state.videos.isEmpty() -> Message("No videos")
                     !state.loaded && state.videos.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
@@ -333,6 +373,23 @@ private fun VideoList(
                             VideoRow(client, v, chosen = v.id == chosen) { onOpen(v) }
                             if (i == state.videos.lastIndex && state.next != null) {
                                 LaunchedEffect(state.next) { state.loadMore() }
+                            }
+                        }
+                        // the next page failed: say so where the list ends, and ask again on a tap
+                        state.problem?.let { f ->
+                            item(key = "more-failed") {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        stringResource(f.kind.sentence()),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    TextButton(onClick = { if (!state.retryMore()) scope.launch { state.reload(pickFirst = false) } }) { Text(stringResource(CoreR.string.try_again)) }
+                                }
                             }
                         }
                     }
