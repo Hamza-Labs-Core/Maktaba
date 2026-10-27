@@ -32,7 +32,7 @@ describe("errorLog", () => {
     Object.defineProperty(ev, "reason", { value: new Error("nobody caught me") });
     window.dispatchEvent(ev);
     undo();
-    window.dispatchEvent(new ErrorEvent("error", { error: new Error("after undo") }));
+    window.dispatchEvent(new ErrorEvent("error", { message: "after undo" }));
     const lines = log.mock.calls.map((c) => c.join(" "));
     expect(lines.some((l) => l.includes("[uncaught] error") && l.includes("RangeError: bad"))).toBe(
       true

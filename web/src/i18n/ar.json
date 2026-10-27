@@ -3948,6 +3948,7 @@
   "setup.starting.problem": "بعض الأجزاء تتوقف مرارًا: {roles}. افتح السجلات من {tray} لمعرفة السبب.",
   "setup.starting.not_answering": "الخادم لا يبدأ. افتح السجلات من {tray} لمعرفة المزيد.",
   "setup.starting.page_not_answering": "الخادم يعمل، لكن صفحته لا تستجيب بعد. تواصل مكتبة المحاولة؛ يمكنك المحاولة الآن، أو فتح السجلات من {tray} لمعرفة السبب.",
+  "setup.starting.openFailed": "تعذّر على مكتبة فتح مكتبتك. حاول مجددًا، أو افتح السجلات من {tray} لمعرفة السبب.",
   "setup.starting.log_says": "يقول سجله:",
   "setup.starting.detail.db_waiting": "بانتظار قاعدة بيانات المكتبة.",
   "setup.starting.detail.db_checking": "جارٍ فحص قاعدة بيانات المكتبة.",
