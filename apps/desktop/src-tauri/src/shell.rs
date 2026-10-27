@@ -565,9 +565,9 @@ fn build_tray_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry
     Ok(menu)
 }
 
-/// The home's order to install a release (Epic 35, autoinstall.rs; owner decision D1:
-/// ask first): staged and shown when it comes, installed at the home's go once someone
-/// clicked here. Read on every status poll and when the server opens the app with
+/// The home's order to install a release (Epic 35, autoinstall.rs; owner decision D1 of
+/// 2026-10-27: no click): staged and said when it comes, installed at the home's go by
+/// itself. Read on every status poll and when the server opens the app with
 /// maktaba://install-update.
 pub fn install_requested(app: &AppHandle) {
     let sh = shell(app);
@@ -591,7 +591,7 @@ pub fn install_requested(app: &AppHandle) {
         && r.by_app()
         && matches!(
             r.state.as_str(),
-            autoinstall::ORDERED | autoinstall::STAGED | autoinstall::GO
+            autoinstall::ORDERED | autoinstall::STAGED | autoinstall::CLICKED | autoinstall::GO
         )
     {
         let f = attempts::local_build_failure(attempts::STEP_CHECK, &own_version(app));
@@ -655,22 +655,23 @@ pub fn install_requested(app: &AppHandle) {
     }
 }
 
-/// One OS notification per order once it is ready here (staged): the Mac's menu-bar item
-/// has no badge, and no tray says it unasked. Best effort: an error is only logged.
+/// The OS notifications of an order: once when it is staged here (Maktaba will update and
+/// restart, by the window's end or shortly) and once at the home's go (it updates now):
+/// the Mac's menu-bar item has no badge, and no tray says it unasked. Nothing to click:
+/// it installs by itself. Best effort: an error is only logged.
 fn notify_ready(app: &AppHandle, req: &autoinstall::Request) {
     let sh = shell(app);
-    let ready = autoinstall::to_notify(Some(req), &mut sh.notified.locked());
-    let Some(autoinstall::Shown::Ready { version, home }) = ready else {
+    let Some(order) = autoinstall::to_notify(Some(req), &mut sh.notified.locked()) else {
         return;
     };
     let shown = app
         .notification()
         .builder()
         .title(sh.lang.words().brand)
-        .body(tray::order_notice(sh.lang, &version, home))
+        .body(tray::order_label(sh.lang, &order))
         .show();
     if let Err(e) = shown {
-        applog::warn(&format!("no notification for Maktaba {version}"), e);
+        applog::warn(&format!("no notification for Maktaba {}", req.version), e);
     }
 }
 
@@ -1123,25 +1124,15 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
     refresh(app);
 }
 
-/// The tray's update item (autoinstall::click): the home's order, staged here, is
-/// clicked (it installs at the home's go). An app that runs the server installs
-/// nothing else of its own, but the Linux app older than its server, which catches up
-/// with exactly the server's release; a client installs its own feed's update.
+/// The tray's update item (autoinstall::click). The home's order is no button (it
+/// installs by itself at the home's go: owner decision D1, 2026-10-27), and an app that
+/// runs the server installs nothing else of its own, but the Linux app older than its
+/// server, which catches up with exactly the server's release; a client installs its
+/// own feed's update.
 fn update_clicked(app: &AppHandle) -> Result<(), String> {
     let sh = shell(app);
-    let order = sh.order.locked().clone();
     let catch_up = sh.catch_up.locked().clone();
-    match autoinstall::click(order.as_ref(), sh.server_side(), catch_up.as_deref()) {
-        autoinstall::Click::Order(r) => {
-            let root = agent::state_root().ok_or("no state folder")?;
-            autoinstall::write_state(
-                &autoinstall::request_path(&root),
-                &r,
-                autoinstall::CLICKED,
-                "",
-            )
-            .map_err(|e| e.to_string())
-        }
+    match autoinstall::click(sh.server_side(), catch_up.as_deref()) {
         // the portable app installs nothing: the release page has its new zip
         autoinstall::Click::OwnFeed if sh.portable => agent::open_path(std::ffi::OsStr::new(
             &format!("{}/releases/latest", sh.repo),

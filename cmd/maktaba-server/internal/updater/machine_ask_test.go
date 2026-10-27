@@ -109,9 +109,9 @@ func TestOrderedInstallGoesAtTheHomesGoWithNoClick(t *testing.T) {
 		t.Fatalf("steps %+v committed %q", j.Steps, w.committed)
 	}
 }
+
 // TC (D1): the order names the latest an automatic run gives the go (its window's end),
 // for the app's notice; set once, before the order.
-// window that has not begun), for the app's notice; set once, before the order.
 func TestOrderSaysWhenItInstalls(t *testing.T) {
 	w := newWorld("1.4.0")
 	r := askRig(t, w)

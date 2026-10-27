@@ -208,16 +208,13 @@ pub struct Words {
     pub window_menu: &'static str,
     /// Its update item: what it does from a menu.
     pub install_update: &'static str,
-    /// The release the home ordered (owner decision D1), ready to install with a click:
-    /// on the home itself, and on a machine the cluster's update waits for.
-    pub order_home: &'static str,
-    pub order_node: &'static str,
-    /// Someone clicked: it installs when the cluster is ready.
-    pub order_clicked: &'static str,
-    /// The OS notification once the home's order is ready to install (one per order):
-    /// on the home itself, and on a machine the cluster's update waits for.
-    pub order_ready_home: &'static str,
-    pub order_ready_node: &'static str,
+    /// The release the home ordered, staged here: it installs and restarts by itself, with
+    /// no click (owner decision D1, 2026-10-27): by {time} (an automatic run's window), or
+    /// shortly (an admin's run); then, at the home's go, now. The tray's item (no button)
+    /// and the OS notification (one each per order) say the same.
+    pub order_by: &'static str,
+    pub order_soon: &'static str,
+    pub order_now: &'static str,
     /// An update that failed (update-attempts.md): the menu's line until the next attempt,
     /// and the OS notification; {reason} is update_reason's.
     pub update_failed_line: &'static str,
@@ -295,11 +292,9 @@ pub static EN: Words = Words {
     action_failed: "That did not work.",
     window_menu: "Server",
     install_update: "Install update and restart",
-    order_home: "Install Maktaba {version} (this home's update) and restart",
-    order_node: "Install Maktaba {version}: the cluster's update waits for this machine",
-    order_clicked: "Installing Maktaba {version} when the cluster is ready…",
-    order_ready_home: "Maktaba {version} is ready to install on this home",
-    order_ready_node: "Maktaba {version} is ready: the cluster's update waits for this machine",
+    order_by: "Maktaba will update to {version} and restart by {time}",
+    order_soon: "Maktaba will update to {version} and restart shortly",
+    order_now: "Maktaba is updating to {version} now",
     update_failed_line: "Update to {version} failed: {reason}",
     update_failed_notice: "Maktaba could not update to {version}: {reason}",
     see_logs: "See the logs",
@@ -366,11 +361,9 @@ pub static AR: Words = Words {
     action_failed: "لم ينجح ذلك.",
     window_menu: "الخادم",
     install_update: "تثبيت التحديث وإعادة التشغيل",
-    order_home: "ثبّت الإصدار {version} من مكتبة (تحديث هذا الخادم الرئيسي) وأعد التشغيل",
-    order_node: "ثبّت الإصدار {version} من مكتبة: تحديث المجموعة ينتظر هذا الجهاز",
-    order_clicked: "يُثبَّت الإصدار {version} من مكتبة حين تصبح المجموعة جاهزة…",
-    order_ready_home: "الإصدار {version} من مكتبة جاهز للتثبيت على هذا الخادم الرئيسي",
-    order_ready_node: "الإصدار {version} من مكتبة جاهز: تحديث المجموعة ينتظر هذا الجهاز",
+    order_by: "ستُحدَّث مكتبة إلى الإصدار {version} ويُعاد تشغيلها قبل {time}",
+    order_soon: "ستُحدَّث مكتبة إلى الإصدار {version} ويُعاد تشغيلها قريباً",
+    order_now: "تُحدَّث مكتبة الآن إلى الإصدار {version}",
     update_failed_line: "فشل التحديث إلى {version}: {reason}",
     update_failed_notice: "تعذّر تحديث مكتبة إلى {version}: {reason}",
     see_logs: "عرض السجلات",
@@ -545,11 +538,9 @@ mod tests {
             ("action_failed", Some(w.action_failed)),
             ("window_menu", Some(w.window_menu)),
             ("install_update", Some(w.install_update)),
-            ("order_home", Some(w.order_home)),
-            ("order_node", Some(w.order_node)),
-            ("order_clicked", Some(w.order_clicked)),
-            ("order_ready_home", Some(w.order_ready_home)),
-            ("order_ready_node", Some(w.order_ready_node)),
+            ("order_by", Some(w.order_by)),
+            ("order_soon", Some(w.order_soon)),
+            ("order_now", Some(w.order_now)),
             ("update_failed_line", Some(w.update_failed_line)),
             ("update_failed_notice", Some(w.update_failed_notice)),
             ("see_logs", Some(w.see_logs)),

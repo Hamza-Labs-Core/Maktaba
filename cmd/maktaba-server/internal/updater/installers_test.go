@@ -440,7 +440,8 @@ func TestAppOrderProtocol(t *testing.T) {
 	var q AppRequest
 	b, _ := os.ReadFile(path)
 	if err := json.Unmarshal(b, &q); err != nil || q.State != RequestOrdered || q.Kind != RequestKindApp || !q.Home ||
-		q.Feed != feed || q.RunID != j.Job.RunID || q.InstallBy == nil || !q.InstallBy.Equal(at) {
+		q.Feed != feed || q.RunID != j.Job.RunID || q.InstallBy == nil || !q.InstallBy.Equal(at) ||
+		q.InstallByText != at.Local().Format("2006-01-02 15:04") {
 		t.Fatalf("order %+v (%v)", q, err)
 	}
 	if s, err := ai.Answer(j); err != nil || s != RequestOrdered || opened.Load() != 0 {
@@ -634,5 +635,22 @@ func TestAppRefusalNeedsAdminTouchedNothing(t *testing.T) {
 		if got := ai.appTouched(j); got != touched {
 			t.Errorf("%s %q: touched %v", st, why, got)
 		}
+	}
+}
+
+// The order's time for the app's words is this machine's clock: the time of day on the
+// day, with the date on another; none without a deadline (an admin's run).
+func TestOrderClockText(t *testing.T) {
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.Local)
+	same := time.Date(2026, 10, 27, 23, 5, 0, 0, time.Local)
+	next := time.Date(2026, 10, 28, 7, 0, 0, 0, time.Local)
+	if got := clockText(&same, now); got != "23:05" {
+		t.Fatalf("same day: %q", got)
+	}
+	if got := clockText(&next, now); got != "2026-10-28 07:00" {
+		t.Fatalf("next day: %q", got)
+	}
+	if got := clockText(nil, now); got != "" {
+		t.Fatalf("none: %q", got)
 	}
 }

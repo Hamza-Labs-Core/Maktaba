@@ -235,9 +235,10 @@ pub fn entries_with_model(
     entries_with_order(lang, server, status, update_ready, None, model, detail)
 }
 
-/// entries_with_model with the release the home ordered (owner decision D1): its item
-/// in the update's place, saying who waits (this home, or the cluster's update), and
-/// once clicked that it installs when the cluster is ready.
+/// entries_with_model with the release the home ordered: its item in the update's place,
+/// saying when Maktaba updates and restarts (by the window's end, shortly, or now at the
+/// home's go). It is no button: the order installs by itself (owner decision D1,
+/// 2026-10-27).
 pub fn entries_with_order(
     lang: Lang,
     server: bool,
@@ -259,8 +260,7 @@ pub fn entries_with_order(
             });
         }
         match order {
-            Some(o @ Shown::Ready { .. }) => out.push(item("update", order_label(lang, o))),
-            Some(o @ Shown::Clicked { .. }) => out.push(Entry::Item {
+            Some(o) => out.push(Entry::Item {
                 id: "update",
                 label: order_label(lang, o),
                 enabled: false,
@@ -306,29 +306,19 @@ pub fn entries_with_order(
     out
 }
 
-/// The update item's words for the home's order (the tray's, and the window menu's on
-/// Linux): ready, saying who waits (this home, or the cluster's update), or clicked.
-fn order_label(lang: Lang, order: &Shown) -> String {
+/// The words for the home's order (the tray's item, the window menu's on Linux, and the
+/// OS notification, once when it is staged here and once at its go: the Mac's menu-bar
+/// item has no badge to show it): Maktaba updates and restarts by itself, by the window's
+/// end, shortly, or now.
+pub fn order_label(lang: Lang, order: &Shown) -> String {
     let w = lang.words();
     match order {
-        Shown::Ready { version, home } => {
-            let line = if *home { w.order_home } else { w.order_node };
-            fill(line, &[("version", version)])
+        Shown::Ready { version, by } if by.is_empty() => {
+            fill(w.order_soon, &[("version", version)])
         }
-        Shown::Clicked { version } => fill(w.order_clicked, &[("version", version)]),
+        Shown::Ready { version, by } => fill(w.order_by, &[("version", version), ("time", by)]),
+        Shown::Installing { version } => fill(w.order_now, &[("version", version)]),
     }
-}
-
-/// The OS notification's text once the home's order of `version` is ready here (once
-/// per order; the Mac's menu-bar item has no badge to show it).
-pub fn order_notice(lang: Lang, version: &str, home: bool) -> String {
-    let w = lang.words();
-    let line = if home {
-        w.order_ready_home
-    } else {
-        w.order_ready_node
-    };
-    fill(line, &[("version", version)])
 }
 
 /// The menu's line about the last update attempt when it failed (update-attempts.md: until
@@ -687,8 +677,10 @@ mod tests {
         assert_eq!(ids(&e)[..2], ["status", "update"]);
     }
 
+    /// Owner decision D1 (2026-10-27): the home's order is said, never a button: Maktaba
+    /// updates and restarts by itself, by the window's end, shortly, or now at the go.
     #[test]
-    fn the_home_s_order_says_who_waits_and_is_clicked_once() {
+    fn the_home_s_order_says_when_it_installs_and_is_no_button() {
         let label = |e: &[Entry]| match &e[1] {
             Entry::Item { label, enabled, .. } => (label.clone(), *enabled),
             Entry::Separator => panic!("no item"),
@@ -704,39 +696,46 @@ mod tests {
                 None,
             )
         };
-        let home = on(Shown::Ready {
+        let by = on(Shown::Ready {
             version: "1.5.0".into(),
-            home: true,
+            by: "07:00".into(),
         });
-        assert_eq!(ids(&home)[..2], ["status", "update"]);
+        assert_eq!(ids(&by)[..2], ["status", "update"]);
         assert_eq!(
-            label(&home),
+            label(&by),
             (
-                "Install Maktaba 1.5.0 (this home's update) and restart".into(),
-                true
-            )
-        );
-        let node = on(Shown::Ready {
-            version: "1.5.0".into(),
-            home: false,
-        });
-        assert_eq!(
-            label(&node),
-            (
-                "Install Maktaba 1.5.0: the cluster's update waits for this machine".into(),
-                true
-            )
-        );
-        let clicked = on(Shown::Clicked {
-            version: "1.5.0".into(),
-        });
-        assert_eq!(
-            label(&clicked),
-            (
-                "Installing Maktaba 1.5.0 when the cluster is ready…".into(),
+                "Maktaba will update to 1.5.0 and restart by 07:00".into(),
                 false
             )
         );
+        let soon = on(Shown::Ready {
+            version: "1.5.0".into(),
+            by: String::new(),
+        });
+        assert_eq!(
+            label(&soon),
+            (
+                "Maktaba will update to 1.5.0 and restart shortly".into(),
+                false
+            )
+        );
+        let now = on(Shown::Installing {
+            version: "1.5.0".into(),
+        });
+        assert_eq!(
+            label(&now),
+            ("Maktaba is updating to 1.5.0 now".into(), false)
+        );
+        // no word of a click, in either language
+        for lang in [Lang::En, Lang::Ar] {
+            let w = lang.words();
+            for line in [w.order_by, w.order_soon, w.order_now] {
+                assert!(
+                    !line.to_lowercase().contains("click") && !line.contains("انقر"),
+                    "{line}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -745,13 +744,13 @@ mod tests {
             for order in [
                 Shown::Ready {
                     version: "1.5.0".into(),
-                    home: true,
+                    by: "07:00".into(),
                 },
                 Shown::Ready {
                     version: "1.5.0".into(),
-                    home: false,
+                    by: String::new(),
                 },
-                Shown::Clicked {
+                Shown::Installing {
                     version: "1.5.0".into(),
                 },
             ] {
@@ -777,6 +776,8 @@ mod tests {
                     tray_label,
                     "{lang:?} {order:?}"
                 );
+                // the window's item is no button either
+                assert!(!window_enabled(&tray, "update"), "{lang:?} {order:?}");
             }
             // no order: what the update does from a menu
             assert_eq!(
@@ -784,36 +785,30 @@ mod tests {
                 window_label(lang, "update").unwrap()
             );
         }
-        assert_eq!(
-            window_update_label(
-                Lang::En,
-                Some(&Shown::Ready {
-                    version: "1.5.0".into(),
-                    home: false
-                })
-            ),
-            "Install Maktaba 1.5.0: the cluster's update waits for this machine"
-        );
     }
 
     #[test]
-    fn the_notification_says_who_waits() {
+    fn the_notification_says_when_it_installs() {
+        let ready = Shown::Ready {
+            version: "1.5.0".into(),
+            by: "2026-10-28 07:00".into(),
+        };
         assert_eq!(
-            order_notice(Lang::En, "1.5.0", true),
-            "Maktaba 1.5.0 is ready to install on this home"
+            order_label(Lang::En, &ready),
+            "Maktaba will update to 1.5.0 and restart by 2026-10-28 07:00"
         );
-        assert_eq!(
-            order_notice(Lang::En, "1.5.0", false),
-            "Maktaba 1.5.0 is ready: the cluster's update waits for this machine"
+        let ar = order_label(Lang::Ar, &ready);
+        assert!(
+            ar.contains("1.5.0") && ar.contains("2026-10-28 07:00") && ar.contains("مكتبة"),
+            "{ar}"
         );
-        for home in [true, false] {
-            let ar = order_notice(Lang::Ar, "1.5.0", home);
-            assert!(ar.contains("1.5.0") && ar.contains("مكتبة"), "{ar}");
-        }
-        assert_ne!(
-            order_notice(Lang::Ar, "1.5.0", true),
-            order_notice(Lang::Ar, "1.5.0", false)
+        let now = order_label(
+            Lang::Ar,
+            &Shown::Installing {
+                version: "1.5.0".into(),
+            },
         );
+        assert!(now.contains("1.5.0") && now != ar, "{now}");
     }
 
     #[test]

@@ -60,7 +60,8 @@ func TestDriverCancelWithdrawsWaitingOrders(t *testing.T) {
 }
 
 // review A4: a machine offline when the rollout began, back while the run waits for
-// another machine's app to stage its order, is updated by that run (no catch-up can start meanwhile).
+// another machine's app to stage its order, is updated by that run (no catch-up can
+// start meanwhile).
 func TestDriverRolloutTakesBackAMachine(t *testing.T) {
 	t.Parallel()
 	r := newDriverRig(t)
@@ -225,8 +226,8 @@ func TestSchedulerWaitsForASwitchover(t *testing.T) {
 	}
 }
 
-// review A-R5: a run that waits for its desktop apps is superseded only when the newer release can
-// start: a blocker leaves it (and its orders) as they are.
+// review A-R5: a run that waits for its desktop apps is superseded only when the newer
+// release can start: a blocker leaves it (and its orders) as they are.
 func TestSupersedeOnlyWhenTheNewerRunStarts(t *testing.T) {
 	t.Parallel()
 	r := newDriverRig(t)

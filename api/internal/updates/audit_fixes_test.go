@@ -297,8 +297,8 @@ func TestCatchUpImmediateBehindAHandInstalledHome(t *testing.T) {
 	}
 }
 
-// A run that waits for desktop apps on a release older than the one the home now runs (the home
-// installed by hand meanwhile) is superseded at the driver's next step, and the machines
+// A run that waits for desktop apps on a release older than the one the home now runs
+// (the home installed by hand meanwhile) is superseded at the driver's next step, and the machines
 // are caught up to the home's release: the order of the older one waited for good before.
 func TestStepSupersedesAWaitingRunOlderThanTheHome(t *testing.T) {
 	t.Parallel()

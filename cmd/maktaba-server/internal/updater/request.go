@@ -82,9 +82,25 @@ type AppRequest struct {
 	// overrun): the app's notice says "restart by …"; none (an admin's run): it goes as
 	// soon as it is staged and its turn comes.
 	InstallBy *time.Time `json:"install_by,omitempty"`
-	State     string     `json:"state"`
-	Error     string     `json:"error,omitempty"`
-	At        time.Time  `json:"at"`
+	// InstallByText is InstallBy as this machine's clock says it, for the app's words
+	// ("07:00", or "2026-10-28 07:00" on another day): the app reads no time zone.
+	InstallByText string    `json:"install_by_text,omitempty"`
+	State         string    `json:"state"`
+	Error         string    `json:"error,omitempty"`
+	At            time.Time `json:"at"`
+}
+
+// clockText is at as this machine's clock says it: the time of day, with the date when it
+// is not now's day.
+func clockText(at *time.Time, now time.Time) string {
+	if at == nil {
+		return ""
+	}
+	local, today := at.In(time.Local), now.In(time.Local)
+	if local.Format("2006-01-02") == today.Format("2006-01-02") {
+		return local.Format("15:04")
+	}
+	return local.Format("2006-01-02 15:04")
 }
 
 // requests is the order file in an updates directory.
@@ -119,7 +135,8 @@ func (r requests) order(j *Journal, kind, feed string) error {
 		return nil
 	}
 	if err := r.write(AppRequest{RunID: j.Job.RunID, Version: layout.NormalizeVersion(j.Job.Version), Feed: feed,
-		Kind: kind, Home: j.Job.Home, InstallBy: j.InstallBy, State: RequestOrdered}); err != nil {
+		Kind: kind, Home: j.Job.Home, InstallBy: j.InstallBy, InstallByText: clockText(j.InstallBy, r.now()),
+		State: RequestOrdered}); err != nil {
 		return Fail("app_request_failed", "%v", err)
 	}
 	return nil
