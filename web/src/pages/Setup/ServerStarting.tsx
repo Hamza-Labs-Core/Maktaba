@@ -45,7 +45,7 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
   const asked = usePlatform(api);
   const words = platformWords(t, platform ?? asked);
   const [status, setStatus] = useState<ServerStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [openFailed, setOpenFailed] = useState(false);
   // the server runs but its page has not answered for PAGE_PATIENCE_MS
   const [pageSilent, setPageSilent] = useState(false);
   const opened = useRef(false);
@@ -61,7 +61,9 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
     api
       .openLocalServer()
       .then(() => {
-        if (alive.current) setPageSilent(false);
+        if (!alive.current) return;
+        setPageSilent(false);
+        setOpenFailed(false);
       })
       .catch((e) => {
         opened.current = false;
@@ -72,7 +74,9 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
           setPageSilent(Date.now() - silentSince.current >= PAGE_PATIENCE_MS);
           return;
         }
-        setError(said);
+        // the shell's own words go to the console; the screen says it in this language
+        console.error("[setup] opening the local server failed", said.slice(0, 300));
+        setOpenFailed(true);
       });
   }, [api]);
 
@@ -185,9 +189,9 @@ export function ServerStarting({ api, platform }: { api: SetupApi; platform?: Pl
             </Button>
           </p>
         )}
-        {error && (
+        {openFailed && (
           <p className="mkt-setup__warn" role="alert">
-            {error}
+            {t("setup.starting.openFailed", words)}
           </p>
         )}
         <p className="mkt-setup__note">{t("setup.starting.note", words)}</p>

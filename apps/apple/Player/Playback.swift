@@ -14,7 +14,8 @@ final class Playback {
     let client: APIClient
     private(set) var video: Video?
     private(set) var player: AVPlayer?
-    private(set) var problem: String?
+    /// Why it does not play (the watch screen says it and what can be done).
+    private(set) var failure: HomeFailure?
 
     private var session: String?
     /// When to reopen: just before the signed URL ends.
@@ -30,7 +31,7 @@ final class Playback {
     }
 
     func play(_ v: Video) {
-        if v.id == video?.id, problem == nil { return }
+        if v.id == video?.id, failure == nil { return }
         stop()
         #if os(iOS)
         // the app declares background audio: with the playback category the sound goes on
@@ -40,6 +41,11 @@ final class Playback {
         #endif
         video = v
         running = Task { await run() }
+    }
+
+    /// Opens the same video again, after it failed.
+    func retry() {
+        if let v = video { play(v) }
     }
 
     /// Play or pause what is open (the keyboard's space, the Playback menu).
@@ -71,7 +77,7 @@ final class Playback {
         }
         session = nil
         player = nil
-        problem = nil
+        failure = nil
         video = nil
         proxy?.stop()
         proxy = nil
@@ -91,7 +97,7 @@ final class Playback {
         do {
             let s = try await client.openStream(video: video.id, startSec: Int(start))
             guard let url = s.playbackURL(home: client.home) else {
-                problem = "The home gave no address to play."
+                failure = HomeFailure(kind: .server, detail: "The home gave no address to play.")
                 return
             }
             let auth = try await client.playbackHeaders()
@@ -99,7 +105,7 @@ final class Playback {
             self.proxy = proxy
             try await proxy.start()
             guard let local = proxy.local(url) else {
-                problem = "Could not start playback on this device."
+                failure = HomeFailure(kind: .server, detail: "Could not start playback on this device.")
                 return
             }
             if let old = session, old != s.sessionID {
@@ -120,7 +126,7 @@ final class Playback {
             return
         } catch {
             player = nil
-            problem = (error as? APIError)?.message ?? error.localizedDescription
+            failure = HomeFailure(error)
         }
     }
 
@@ -137,7 +143,7 @@ final class Playback {
             if failed, Date.now.timeIntervalSince(openedAt) < 30 {
                 p.pause()
                 player = nil
-                problem = p.currentItem?.error?.localizedDescription ?? "The video stopped playing."
+                failure = p.currentItem?.error.map(HomeFailure.init) ?? HomeFailure(kind: .server, detail: "The video stopped playing.")
                 return
             }
             if failed || Date.now >= renewAt {
@@ -154,6 +160,7 @@ final class Playback {
 /// iPhone Duo.
 struct WatchView: View {
     let playback: Playback
+    let session: AppSession
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -161,9 +168,10 @@ struct WatchView: View {
                 Color.black
                 if let player = playback.player {
                     PlayerSurface(player: player)
-                } else if let problem = playback.problem {
-                    ContentUnavailableView("Can't play", systemImage: "exclamationmark.triangle", description: Text(problem))
-                        .foregroundStyle(.white)
+                } else if let failure = playback.failure {
+                    HomeErrorView(failure) { act($0) }
+                        .environment(\.colorScheme, .dark)
+                        .accessibilityIdentifier("player.error")
                 } else {
                     ProgressView().tint(.white)
                 }
@@ -186,6 +194,19 @@ struct WatchView: View {
             .padding()
         }
         .background(.black)
+    }
+
+    private func act(_ a: ErrorAction) {
+        switch a {
+        case .tryAgain: playback.retry()
+        case .back: playback.stop()
+        case .signInAgain:
+            playback.stop()
+            session.signedOut()
+        case .chooseAnotherHome:
+            playback.stop()
+            session.switchHome()
+        }
     }
 }
 

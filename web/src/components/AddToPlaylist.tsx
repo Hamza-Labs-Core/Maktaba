@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { Modal } from "@ds/components/Modal/Modal";
 import { Button } from "@ds/components/Button/Button";
 import { useToast } from "@ds/components/Toast/Toast";
-import { ApiError } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import {
   addToPlaylist,
@@ -14,6 +13,7 @@ import {
   PLAYLIST_NAME_MAX,
   type PlaylistSummary,
 } from "../lib/me";
+import { errorText } from "../lib/errorText";
 
 export function AddToPlaylist({
   open,
@@ -45,7 +45,7 @@ export function AddToPlaylist({
       .catch((e) => {
         if (cancelled) return;
         setLists([]);
-        setLoadErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        setLoadErr(errorText(e, t));
       });
     return () => {
       cancelled = true;
@@ -55,9 +55,7 @@ export function AddToPlaylist({
   const fail = (e: unknown) =>
     toast.show({
       tone: "error",
-      message: `${t("playlists.addError")}: ${
-        e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
-      }`,
+      message: `${t("playlists.addError")}: ${errorText(e, t)}`,
     });
 
   async function addTo(p: { id: string; name: string }) {

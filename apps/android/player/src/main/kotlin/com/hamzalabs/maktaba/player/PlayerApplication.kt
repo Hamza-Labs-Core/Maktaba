@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.player
 
 import android.app.Application
 import com.hamzalabs.maktaba.core.api.ClientHeader
+import com.hamzalabs.maktaba.core.api.init
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.diagnostics.CrashLog
 import com.hamzalabs.maktaba.core.session.AppSession

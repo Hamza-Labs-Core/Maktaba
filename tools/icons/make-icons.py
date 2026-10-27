@@ -26,6 +26,8 @@ GOLD = (227, 178, 82)  # #E3B252, the brand gold
 AMIRI = ROOT / "apps/tv/tvos/MaktabaTV/Resources/Fonts/Amiri-Bold.ttf"
 
 DESKTOP = ROOT / "apps/desktop/src-tauri/icons"
+# the desktop Player for Windows and Linux (Epic 42.4): the same .ico and a 256 px PNG
+DESKTOP_PLAYER = ROOT / "apps/desktop-player/icons"
 WEB = ROOT / "web/public/icons"
 WEB_ROOT = ROOT / "web/public"
 TV_ANDROID = ROOT / "apps/tv/android/app/src/main/res"
@@ -150,6 +152,9 @@ def desktop(master: Image.Image) -> None:
     full_tile(small, 32).save(DESKTOP / "32x32.png")
     full_tile(master, 128).save(DESKTOP / "128x128.png")
     full_tile(master, 256).save(DESKTOP / "128x128@2x.png")
+    DESKTOP_PLAYER.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(DESKTOP / "icon.ico", DESKTOP_PLAYER / "maktaba-player.ico")
+    full_tile(master, 256).save(DESKTOP_PLAYER / "maktaba-player.png")
 
 
 def web(master: Image.Image, mark: Image.Image) -> None:

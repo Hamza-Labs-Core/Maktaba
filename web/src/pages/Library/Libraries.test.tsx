@@ -169,7 +169,9 @@ describe("Libraries", () => {
     const user = userEvent.setup();
     const pinned = await screen.findByRole("region", { name: en["libraries.pinned"] });
     await user.click(within(pinned).getByRole("button", { name: `Move ${B.name} up` }));
-    expect(await screen.findByText(`${en["libraries.pin.error"]}: no library`)).toBeInTheDocument();
+    expect(
+      await screen.findByText(`${en["libraries.pin.error"]}: ${en["error.kind.notFound"]}`)
+    ).toBeInTheDocument();
     expect(screen.getByTestId("probe")).toHaveTextContent(`${A.name},${B.name}`);
   });
 
@@ -196,7 +198,8 @@ describe("Libraries", () => {
     );
     renderLibraries();
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("boom");
+    expect(alert).toHaveTextContent(en["error.kind.server"]);
+    expect(alert).not.toHaveTextContent("boom");
     expect(within(alert).getByRole("button", { name: en["common.retry"] })).toBeInTheDocument();
   });
 });

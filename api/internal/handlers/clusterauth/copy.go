@@ -133,8 +133,8 @@ func (c Copy) SignIn(ctx context.Context, username, password string) (*delegatio
 }
 
 // Synced implements nodeauth.Local: the home's beat as the copy last applied it
-// (cluster_replica_beat, slot 0147), or zero while a table's first copy is not done
-// (srsubstate not 'r', as nodecopy counts it): each table is copied on its own, so the
+// (cluster_replica_beat, slot 0147), or zero while the first copy is not done (no
+// subscription yet, or srsubstate not 'r', as nodecopy counts it): each table is copied on its own, so the
 // beat can be in while users or sessions are not yet, and a sign-in checked there would
 // be refused as a wrong password.
 func (c Copy) Synced(ctx context.Context) (time.Time, error) {
@@ -150,15 +150,23 @@ func (c Copy) Synced(ctx context.Context) (time.Time, error) {
 	return at, err
 }
 
-// copying is whether a table of the copy's subscription has not finished its first copy
-// (Copying, when set, answers instead: tests).
+// copying is whether the copy has not finished its first copy: no subscription in this
+// database yet, or a table of it not copied (Copying, when set, answers instead: tests).
+//
+// A copy with no subscription is one whose schema was made (the migrations seed
+// cluster_replica_beat with now()) but whose copy has not begun: its beat looks
+// current and it has nobody in it. Counted synced, a node signed people in on it right
+// after it started and refused every one as a wrong password (TestTwoMachinesOnePC's
+// "sign-in on the node", 401 invalid credentials, when the home was a few seconds away).
 func (c Copy) copying(ctx context.Context) (bool, error) {
 	if c.Copying != nil {
 		return c.Copying(ctx)
 	}
-	var n int
-	err := c.Home.DB.QueryRowContext(ctx, `SELECT count(*) FROM pg_subscription_rel WHERE srsubstate <> 'r'`).Scan(&n)
-	return n > 0, err
+	var copying bool
+	err := c.Home.DB.QueryRowContext(ctx, `SELECT NOT EXISTS (SELECT 1 FROM pg_subscription
+	    WHERE subdbid = (SELECT oid FROM pg_database WHERE datname = current_database()))
+	  OR EXISTS (SELECT 1 FROM pg_subscription_rel WHERE srsubstate <> 'r')`).Scan(&copying)
+	return copying, err
 }
 
 // SignedInThrough implements nodeauth.Local: the home's own check of a sign-out

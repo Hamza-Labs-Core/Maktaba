@@ -17,6 +17,7 @@ vi.mock("../../lib/api", async () => {
 import { ApiError, type Problem } from "../../lib/api";
 import { memberUser, quietCrash, renderPage } from "../../test/pageHarness";
 import { ModelsSection } from "./ModelsSection";
+import en from "../../i18n/en.json";
 
 type M = Record<string, unknown>;
 const small: M = {
@@ -440,7 +441,7 @@ describe("Settings models (test-cases/settings-models.md)", () => {
     quietCrash();
     answers([{ ...small, name: { bad: true } }]);
     renderPage(<ModelsSection />, { path: "/settings/models", history: ["/elsewhere"] });
-    expect(await screen.findByRole("alert")).toHaveTextContent("Objects are not valid");
+    expect(await screen.findByRole("alert")).toHaveTextContent(en["common.pageError"]);
     await user.click(screen.getByRole("button", { name: "go back" }));
     expect(screen.getByText("elsewhere")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();

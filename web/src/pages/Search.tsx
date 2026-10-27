@@ -32,7 +32,7 @@ import { Pagination } from "@ds/components/Pagination/Pagination";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api, ApiError } from "../lib/api";
+import { api } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useAuth } from "../lib/auth";
 import { PageHelp } from "../help/HelpLink";
@@ -72,6 +72,7 @@ import {
   urlMode,
   watchHref,
 } from "./searchShared";
+import { errorText } from "../lib/errorText";
 
 const VIEW_KEY = "mkt:search:view";
 
@@ -392,7 +393,7 @@ export function Search() {
         void refreshRecent();
       } catch (e) {
         if (g !== gen.current) return;
-        setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        setErr(errorText(e, t));
         commit(null, 1, [], 1, []);
       } finally {
         if (g === gen.current) setPending(false);
@@ -453,7 +454,7 @@ export function Search() {
           void postSearch(query, m, want, { notice: true, youtube: yt });
           return;
         }
-        setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        setErr(errorText(e, t));
         commit(null, 1, [], 1, []);
       } finally {
         if (g === gen.current) setPending(false);
@@ -498,7 +499,7 @@ export function Search() {
         }
         toast.show({
           tone: "error",
-          message: e instanceof ApiError ? e.problem.title : t("common.error"),
+          message: errorText(e, t),
         });
       } finally {
         if (inflight.current[list] === key) {
@@ -608,7 +609,7 @@ export function Search() {
       .then(refreshSaved)
       .catch((e) =>
         toast.show({
-          message: e instanceof ApiError ? e.problem.title : t("common.error"),
+          message: errorText(e, t),
           tone: "error",
         })
       );
@@ -1076,7 +1077,7 @@ function PassageList({
       }
       toast.show({
         tone: "error",
-        message: e instanceof ApiError ? e.problem.title : t("common.error"),
+        message: errorText(e, t),
       });
     } finally {
       setLoading(false);
@@ -1348,7 +1349,7 @@ function ImportModal({
       setFound([]);
       toast.show({
         tone: "error",
-        message: err instanceof ApiError ? err.problem.title : t("common.error"),
+        message: errorText(err, t),
       });
     } finally {
       setFinding(false);
@@ -1377,8 +1378,7 @@ function ImportModal({
       setBusy(false);
       toast.show({
         tone: "error",
-        message:
-          err instanceof ApiError ? err.problem.detail || err.problem.title : t("common.error"),
+        message: errorText(err, t),
       });
     }
   }

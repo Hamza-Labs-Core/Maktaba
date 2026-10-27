@@ -12,6 +12,7 @@ import { type FormEvent, useState } from "react";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { api, ApiError } from "../../lib/api";
+import { errorText } from "../../lib/errorText";
 
 const MIN_PASSWORD = 8;
 
@@ -43,10 +44,8 @@ export function ChangePasswordRequired() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setError(t("mustChange.wrongCurrent"));
-      } else if (err instanceof ApiError) {
-        setError(err.problem.detail || err.problem.title);
       } else {
-        setError(t("common.error"));
+        setError(errorText(err, t));
       }
       setSubmitting(false);
     }

@@ -20,6 +20,7 @@ import { ToastProvider } from "@ds/components/Toast/Toast";
 import { renderPage, quietCrash } from "../../test/pageHarness";
 import { routeGet } from "../../test/queueHarness";
 import ar from "../../i18n/ar.json";
+import en from "../../i18n/en.json";
 import { ConnectedDevices } from "./ConnectedDevices";
 
 const IOS = {
@@ -143,17 +144,19 @@ describe("ConnectedDevices (test-cases/account-devices.md)", () => {
   });
 
   it.each([
-    ["404 with detail", problem(404, "Not Found", "device not found"), "device not found"],
-    ["403 without detail", problem(403, "Forbidden"), "Forbidden"],
-    ["500 without detail", problem(500, "Internal Server Error"), "Internal Server Error"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
+    ["404 with detail", problem(404, "Not Found", "device not found"), en["error.kind.notFound"]],
+    ["403 without detail", problem(403, "Forbidden"), en["error.kind.noAccess"]],
+    ["500 without detail", problem(500, "Internal Server Error"), en["error.kind.server"]],
+    ["network failure", new TypeError("Failed to fetch"), en["error.kind.unreachable"]],
   ])("ADV-04: remove fails (%s): error toast, dialog stays, device stays", async (_, err, msg) => {
     del.mockRejectedValue(err);
     open();
     const { user, dialog } = await openRemoveDialog();
     await user.click(within(dialog).getByRole("button", { name: "Remove" }));
 
-    expect(await screen.findByRole("alert", { hidden: true })).toHaveTextContent(msg);
+    const alert = await screen.findByRole("alert", { hidden: true });
+    expect(alert).toHaveTextContent(msg);
+    expect(alert).not.toHaveTextContent(/Internal Server Error|Forbidden|device not found/);
     expect(screen.getByRole("dialog", { name: "Remove device" })).toBeInTheDocument();
     expect(screen.getByText("iOS")).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(1);
@@ -277,16 +280,17 @@ describe("ConnectedDevices (test-cases/account-devices.md)", () => {
   });
 
   it.each([
-    ["500 with detail", problem(500, "Internal Server Error", "db down"), "db down"],
-    ["404", problem(404, "Not Found"), "Not Found"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
-    ["malformed JSON", new SyntaxError("Unexpected token"), "Something went wrong."],
+    ["500 with detail", problem(500, "Internal Server Error", "db down"), en["error.kind.server"]],
+    ["404", problem(404, "Not Found"), en["error.kind.notFound"]],
+    ["network failure", new TypeError("Failed to fetch"), en["error.kind.unreachable"]],
+    ["malformed JSON", new SyntaxError("Unexpected token"), en["error.kind.server"]],
   ])("ADV-13: list load error (%s) and Retry", async (_, err, msg) => {
     devicesSeq(err, { items: [IOS, ANDROID] });
     open();
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Something went wrong.");
     expect(alert).toHaveTextContent(msg);
+    expect(alert).not.toHaveTextContent(/db down|Not Found|Unexpected token/);
     expect(screen.queryByText("No devices")).toBeNull();
     await userEvent.setup().click(within(alert).getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("iOS")).toBeInTheDocument();
@@ -296,7 +300,7 @@ describe("ConnectedDevices (test-cases/account-devices.md)", () => {
   it("ADV-14: 401 mid-session never leaves a blank page", async () => {
     devicesSeq(problem(401, "Unauthorized"));
     open();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Unauthorized");
+    expect(await screen.findByRole("alert")).toHaveTextContent(en["error.kind.signedOut"]);
     expect(screen.getByRole("heading", { name: "Devices" })).toBeInTheDocument();
   });
 
