@@ -265,6 +265,7 @@ const USER_LINKS = [
   ["nav.home", "/"],
   ["nav.libraries", "/library"],
   ["nav.series", "/series"],
+  ["nav.playlists", "/playlists"],
   ["nav.guide", "/guide"],
   ["nav.search", "/search"],
   ["nav.account", "/account"],
@@ -278,9 +279,13 @@ const USER_LINKS = [
   ["nav.help", "/help"],
 ] as const;
 
-// Series (no room on the tab bar), the account pages, billing, cloud status and help:
-// everyone's half of the More page.
-const MORE_LINKS = [["nav.series", "/series"] as const, ...USER_LINKS.slice(5)];
+// Series and Playlists (no room on the tab bar), the account pages, billing, cloud
+// status and help: everyone's half of the More page.
+const MORE_LINKS = [
+  ["nav.series", "/series"] as const,
+  ["nav.playlists", "/playlists"] as const,
+  ...USER_LINKS.slice(6),
+];
 
 // Running the server is the admins' (the API refuses anyone else): these lead the
 // Administration group and never show for a normal user.
@@ -861,8 +866,8 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     expect(group.querySelector("bdi")).not.toBeNull();
     // the group sits between the watching links and the account links
     const hrefs = linkList(sidebar()).map(([, h]) => h);
-    expect(hrefs.indexOf("/library/11111111-1111-4111-8111-111111111111")).toBe(5);
-    expect(hrefs.indexOf("/account")).toBe(7);
+    expect(hrefs.indexOf("/library/11111111-1111-4111-8111-111111111111")).toBe(6);
+    expect(hrefs.indexOf("/account")).toBe(8);
     // not on the phone tab bar
     expect(within(tabbar()).getAllByRole("link")).toHaveLength(5);
     expect(get.mock.calls.filter(([p]) => p === "/api/me/pinned-libraries")).toHaveLength(1);

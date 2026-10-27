@@ -22,6 +22,8 @@ import { bigPath, useBigNav } from "../nav";
 import { readPrefs, SUBTITLE_SCALES } from "../prefs";
 import { Panel, clock } from "../ui";
 import { fetchEpisodes, lessonsInOrder, resumeAt } from "./Series";
+import { resolveNext } from "../../components/UpNext";
+import { advanceTo } from "../../lib/playQueue";
 import { lessonAfter, playerCommand, seekTo, type PlayerCommand } from "./playerKeys";
 
 export const CONTROLS_IDLE_MS = 4000;
@@ -37,6 +39,8 @@ interface NextLesson {
   progress_pct: number;
   watched: boolean;
   duration_sec?: number;
+  /** the play queue's next (Epic 45 phase 2): the queue moves on to it */
+  fromQueue?: boolean;
 }
 interface AudioTrackLike {
   id: string;
@@ -102,6 +106,23 @@ export function BigWatch() {
       fetchEpisodes(series)
         .then((d) => !cancelled && setNext(lessonAfter(lessonsInOrder(d.seasons), videoId)))
         .catch(() => undefined);
+    } else {
+      // no series named: the play queue's next, else the next lesson of the
+      // video's own series (the desk player's Up next, Epic 45 phase 2)
+      resolveNext(videoId)
+        .then(
+          (n) =>
+            !cancelled &&
+            n &&
+            setNext({
+              video_id: n.id,
+              title: n.title,
+              progress_pct: 0,
+              watched: false,
+              fromQueue: n.fromQueue,
+            })
+        )
+        .catch(() => undefined);
     }
     return () => {
       cancelled = true;
@@ -115,6 +136,7 @@ export function BigWatch() {
 
   const playNext = useCallback(() => {
     if (!next) return;
+    if (next.fromQueue) advanceTo(next.video_id);
     // replace: Back from the next lesson returns to where the first was opened
     go(bigPath.watch(next.video_id, { t: resumeAt(next), series }), { replace: true });
   }, [next, series, go]);

@@ -33,6 +33,7 @@ const VIDEO_TABS = [
   "stats",
 ] as const;
 import { I18nProvider } from "../lib/i18n";
+import { ToastProvider } from "@ds/components/Toast/Toast";
 
 function LocationProbe() {
   const loc = useLocation();
@@ -43,17 +44,19 @@ function renderAt(url: string) {
   return render(
     <MemoryRouter initialEntries={[url]}>
       <I18nProvider>
-        <Routes>
-          <Route
-            path="/videos/:videoId"
-            element={
-              <>
-                <VideoDetail />
-                <LocationProbe />
-              </>
-            }
-          />
-        </Routes>
+        <ToastProvider>
+          <Routes>
+            <Route
+              path="/videos/:videoId"
+              element={
+                <>
+                  <VideoDetail />
+                  <LocationProbe />
+                </>
+              }
+            />
+          </Routes>
+        </ToastProvider>
       </I18nProvider>
     </MemoryRouter>
   );

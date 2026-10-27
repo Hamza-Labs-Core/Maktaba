@@ -12,6 +12,20 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Plex-like watching, Phase 2 (Epic 45 stories 45.8 to 45.16).** Mark a video watched or
+  unwatched, one at a time or many (**Select** on a library's grid); ticks and progress bars on
+  the grid's cards; **Favorites** (a heart on the video page and the grid, a Favorites row on
+  Home, a Favorites filter); **Playlists** (`/playlists`: make, rename, reorder, remove; add from a
+  video or from a selection); the grid's **search box**, **Tag**, **Speaker** and **Language**
+  filters and an **A to Z jump bar** (Arabic and Latin letters); **Play all**, **Shuffle** and
+  **Play from here**, with **Up next** at the end of a video (the queue's next, or the series'
+  next lesson, after a 10-second countdown); **On Deck** (the next lesson of each series you are
+  in the middle of) on Home and a library's page; and on the video page Resume, the lesson's
+  place in its series ("Lesson 4 of 40") with Previous and Next. Each user's marks, favorites
+  and playlists are their own and stay within the libraries they may see. Slot 0162. API:
+  `POST /api/me/watched`, `POST /api/me/favorites`, `GET /api/me/videos/{id}`,
+  `/api/me/playlists...`, `GET /api/videos/facets`, `GET /api/me/videos` (the list on the home,
+  `favorite=true`), and `GET /api/videos` gains `tag`, `speaker`, `letter` and `sort=random`.
 - **Backup settings (Epic 36 story 36.16).** Where the library database's dumps go, the schedule
   (on/off, daily, weekly or every N days, the hour), how many scheduled and pre-update dumps stay,
   the pre-update dump on/off, and the room the dumps leave on their disk (5% / 2 GB / a fifth by
@@ -476,6 +490,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A Windows node logs in to the home's database again.** Since passwords left the URLs a
+  role gets (a passfile instead), the api and the copy of the database on a Windows machine
+  logged in with no password: lib/pq before v1.11 skips a passfile it takes for readable by
+  others, which on Windows is every file. Videos, series and the TV guide answered "the home's
+  database is not reachable". lib/pq is v1.11.2 in the api and the server, and a `PGPASSWORD`
+  in the server's own environment no longer replaces every role's password.
 - **A viewer's web session now sees the libraries they are granted.** The session cookie's
   sign-in carried no library grants, so a non-admin user saw no library at all in the web app
   (the apps' tokens were right).

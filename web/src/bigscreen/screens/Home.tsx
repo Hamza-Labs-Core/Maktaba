@@ -57,14 +57,25 @@ export function BigHome() {
   if (err) return <Failed message={err} onRetry={() => setReload((x) => x + 1)} />;
   if (!home) return <Loading />;
 
-  const hero = home.continue_watching[0] ?? home.recently_added[0] ?? null;
+  const hero = home.continue_watching[0] ?? home.on_deck[0] ?? home.recently_added[0] ?? null;
   const resuming = !!home.continue_watching[0];
+  // an On Deck lesson opens with its series, so the player knows the next one
+  const openLesson = (v: VideoCard) =>
+    go(
+      v.series
+        ? `${bigPath.video(v.id)}?series=${encodeURIComponent(v.series.id)}`
+        : bigPath.video(v.id)
+    );
   const open = (v: VideoCard) => go(bigPath.video(v.id));
   const pinned = home.pinned.filter(
     (p) => p.continue_watching.length > 0 || p.recently_added.length > 0
   );
   const empty =
-    !hero && home.recently_watched.length === 0 && pinned.length === 0 && live.length === 0;
+    !hero &&
+    home.recently_watched.length === 0 &&
+    home.favorites.length === 0 &&
+    pinned.length === 0 &&
+    live.length === 0;
 
   return (
     <Screen testId="big-home">
@@ -78,6 +89,17 @@ export function BigHome() {
           <VideoTile key={v.id} video={v} focusId={`continue:${v.id}`} onSelect={() => open(v)} />
         ))}
       </Row>
+      <Row id="ondeck" title={t("home.row.onDeck")} count={home.on_deck.length}>
+        {home.on_deck.map((v) => (
+          <VideoTile
+            key={v.id}
+            video={v}
+            focusId={`ondeck:${v.id}`}
+            meta={v.series ? <bdi>{v.series.name}</bdi> : undefined}
+            onSelect={() => openLesson(v)}
+          />
+        ))}
+      </Row>
       <Row id="added" title={t("home.row.recentlyAdded")} count={home.recently_added.length}>
         {home.recently_added.map((v) => (
           <VideoTile key={v.id} video={v} focusId={`added:${v.id}`} onSelect={() => open(v)} />
@@ -86,6 +108,11 @@ export function BigHome() {
       <Row id="watched" title={t("home.row.recentlyWatched")} count={home.recently_watched.length}>
         {home.recently_watched.map((v) => (
           <VideoTile key={v.id} video={v} focusId={`watched:${v.id}`} onSelect={() => open(v)} />
+        ))}
+      </Row>
+      <Row id="favorites" title={t("home.row.favorites")} count={home.favorites.length}>
+        {home.favorites.map((v) => (
+          <VideoTile key={v.id} video={v} focusId={`fav:${v.id}`} onSelect={() => open(v)} />
         ))}
       </Row>
       <Row id="live" title={t("won.title")} count={live.length}>

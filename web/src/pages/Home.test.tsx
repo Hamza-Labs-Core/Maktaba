@@ -113,6 +113,31 @@ describe("Home", () => {
     expect(screen.queryByText(en["home.empty.title"])).toBeNull();
   });
 
+  it("shows On Deck with each lesson's series, and Favorites with See all", async () => {
+    serve({
+      on_deck: [card("d1", { series: { id: "s1", name: "شرح الأربعين" } })],
+      favorites: [card("f1"), card("f2", { completed: true })],
+      continue_watching: [],
+      recently_added: [],
+      recently_watched: [],
+      pinned: [],
+    });
+    renderHome();
+    const deck = await screen.findByRole("region", { name: en["home.row.onDeck"] });
+    const lesson = within(deck).getByRole("link", { name: /Video d1/ });
+    expect(lesson).toHaveAttribute("href", "/videos/d1");
+    expect(lesson).toHaveTextContent("شرح الأربعين");
+    const favs = screen.getByRole("region", { name: en["home.row.favorites"] });
+    expect(within(favs).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(favs).getByRole("link", { name: en["home.seeAll"] })).toHaveAttribute(
+      "href",
+      "/videos?favorite=true"
+    );
+    // a finished one has the watched tick
+    expect(within(favs).getByRole("img", { name: en["browse.watchedMark"] })).toBeInTheDocument();
+    expect(screen.queryByText(en["home.empty.title"])).toBeNull();
+  });
+
   it("hides empty rows", async () => {
     serve({
       continue_watching: [],

@@ -39,8 +39,9 @@ type, a visible focus, rows of posters, and a player whose controls are made for
   works; anything else is out of scope.
 - The phone layout. Big screen targets a landscape screen 1280 px wide and up (it still renders on a
   smaller one).
-- Epic 45 phase 2 (favorites, playlists, On Deck, Up next, mark watched, facets): not on `main` when
-  this epic was built. See *Follow-ups*.
+- Epic 45 phase 2's playlists and facets pages in big screen (see *Follow-ups*). Its On Deck and
+  Favorites rows, the play queue's Up next, Favorite and Mark watched are used (*Epic 45 phase 2*
+  below).
 
 ## Design
 
@@ -205,11 +206,22 @@ Help: a new topic `big-screen` (en / ar, the five standard sections) in *Watch*;
 - vitest for the focus graph, the key and gamepad maps and each screen; `cargo test` for the shell's
   setting; the help coverage test passes; typecheck, lint and prettier pass.
 
+## Epic 45 phase 2
+
+Merged while this epic was built (PR 361), and used here through its own readers (`lib/browse`,
+`lib/me`, `lib/playQueue`, `components/UpNext`'s `resolveNext`):
+
+- Home's **On Deck** row (after Continue Watching; an On Deck lesson opens with its series, so the
+  player knows the next one) and **Favorites** row; a library's On Deck row.
+- The player's **Next lesson** and Up next: the series named in the URL when there is one, else the
+  play queue's next (which then moves on), else the next lesson of the video's own series. The desk
+  player's own Up next card is left out of the `bare` player.
+- A video's page: **Mark watched** and **Favorite** (`POST /api/me/watched`, `/api/me/favorites`).
+
 ## Follow-ups
 
-- **Epic 45 phase 2** (`feat/epic45-plex-parity`, not merged when this was built): once on `main`,
-  Home gains its **On Deck** row, the player's Next lesson uses the play queue / Up next (and a video
-  opened outside a series gets one), and a video's page gains Favorite and Mark watched.
+- Playlists in big screen (a Playlists screen and Play all through the play queue), and the
+  library grid's facets (language, speaker, A–Z).
 - A big-screen Guide (the desk `/guide` grid at 10-foot size); today Live TV lists what is on now and
   the live player's mini-guide shows what is next.
 - 4K type sizes (story 14.3's 36 pt): the sizes scale with the viewport already; a check on a 4K TV.

@@ -73,6 +73,8 @@ type Video struct {
 	// plays.
 	PublishedAt *time.Time `json:"published_at,omitempty"`
 	Plays       *int64     `json:"plays,omitempty"`
+	// List only (Epic 45 Phase 2): set when the caller marked it a favorite.
+	Favorite *bool `json:"favorite,omitempty"`
 
 	// Display titles (Story 27.11, slot 0122): the short on-air title the
 	// guide and the channel strip show. DisplayTitle is the effective one
@@ -185,6 +187,8 @@ func (h *Handler) audit(r *http.Request, action string, v Video, payload map[str
 // Mount attaches the routes on r.
 func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/videos", h.List)
+	// the same list on the home (a user's own tables: ?favorite=true)
+	r.Get("/api/me/videos", h.List)
 	r.Get("/api/videos/{id}", h.Detail)
 	r.Get("/api/videos/{id}/poster", h.Poster)
 	r.Patch("/api/videos/{id}", h.Patch)
@@ -197,8 +201,11 @@ func (h *Handler) Mount(r chi.Router) {
 }
 
 // List implements AC-1. Filters: library, language, q, year (the mtime's
-// year), watched (the caller's playback state), series, sort, order, limit
-// and cursor (`next` of the previous page).
+// year), watched (the caller's playback state), series, tag, speaker,
+// favorite (the caller's; on /api/me/videos, the home), letter (the jump
+// bar), sort (or random: one page), order, limit and cursor (`next` of the
+// previous page). Each item carries the caller's playback state and, where
+// the user tables are, favorite.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
@@ -222,7 +229,14 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if sort == "" {
 		sort = "updated_at"
 	}
-	if _, ok := listSorts[sort]; !ok {
+	// sort=random (Shuffle, Epic 45 story 45.13) is one page in a random
+	// order: no cursor, no next page.
+	random := sort == sortRandom
+	if random && q.Get("cursor") != "" {
+		httperror.Write(w, r, httperror.InvalidQuery("sort=random has no cursor"))
+		return
+	}
+	if _, ok := listSorts[sort]; !ok && !random {
 		httperror.Write(w, r, &httperror.Error{
 			Type:   "https://maktaba.dev/problems/invalid-sort",
 			Title:  "invalid sort",
@@ -300,6 +314,44 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		conds = append(conds, "id IN (SELECT video_id FROM series_episodes WHERE series_id = "+pidx(len(args)+1)+")")
 		args = append(args, seriesID)
 	}
+	// Epic 45 Phase 2 (stories 45.9, 45.11, 45.12): tag, speaker, the
+	// caller's favorites and the first letter of the title.
+	if tagID := q.Get("tag"); tagID != "" {
+		if _, err := uuid.Parse(tagID); err != nil {
+			httperror.Write(w, r, httperror.BadRequest("tag must be a UUID"))
+			return
+		}
+		conds = append(conds, "id IN (SELECT video_id FROM video_tags WHERE tag_id = "+pidx(len(args)+1)+")")
+		args = append(args, tagID)
+	}
+	if speaker := strings.TrimSpace(q.Get("speaker")); speaker != "" {
+		conds = append(conds, "id IN (SELECT video_id FROM speakers WHERE name = "+pidx(len(args)+1)+")")
+		args = append(args, speaker)
+	}
+	userTables := UserTablesHere(r.Context())
+	if fav := q.Get("favorite"); fav != "" {
+		if fav != "true" {
+			httperror.Write(w, r, httperror.InvalidQuery("favorite must be true"))
+			return
+		}
+		if !userTables {
+			// a machine's copy has no favorites (slot 0162): the home answers
+			// GET /api/me/videos, the same list
+			httperror.Write(w, r, httperror.InvalidQuery("favorite=true is read on /api/me/videos"))
+			return
+		}
+		uid := p.UserID
+		if _, err := uuid.Parse(uid); err != nil {
+			uid = uuid.Nil.String()
+		}
+		conds = append(conds, "id IN (SELECT video_id FROM user_favorites WHERE user_id = "+pidx(len(args)+1)+")")
+		args = append(args, uid)
+	}
+	letter := q.Get("letter")
+	if letter != "" && letter != "#" && utf8.RuneCountInString(letter) != 1 {
+		httperror.Write(w, r, httperror.InvalidQuery("letter must be one letter or #"))
+		return
+	}
 	// Authz scope: non-admin users only see videos in libraries they own.
 	if !p.AccessAllLibraries && len(p.Libraries) > 0 {
 		placeholders := make([]string, len(p.Libraries))
@@ -314,14 +366,28 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if letter != "" {
+		cond, largs, err := h.letterCond(r.Context(), letter, conds, args, len(args)+1)
+		if err != nil {
+			httperror.Write(w, r, httperror.Internal("letters").Wrap(err))
+			return
+		}
+		conds = append(conds, cond)
+		args = append(args, largs...)
+	}
+
 	// the filters and the scope, without the cursor: sort=plays counts the
 	// plays of these videos only
 	scope := append([]string(nil), conds...)
 
-	cur, cerr := decodeListCursor(q.Get("cursor"), sort, order)
-	if cerr != nil {
-		httperror.Write(w, r, cerr)
-		return
+	var cur *listCursor
+	if !random {
+		var cerr *httperror.Error
+		cur, cerr = decodeListCursor(q.Get("cursor"), sort, order)
+		if cerr != nil {
+			httperror.Write(w, r, cerr)
+			return
+		}
 	}
 	if cur != nil {
 		frag, cargs, werr := cur.where(sort, order, len(args)+1)
@@ -352,9 +418,16 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		from += " LEFT JOIN (SELECT ws.video_id, COUNT(*) AS plays FROM watch_sessions ws" + scoped +
 			" GROUP BY ws.video_id) wp ON wp.video_id = videos.id"
 	}
+	// the caller's marks, read in the same statement (GraphQL's videos page
+	// counts its statements: no N+1)
+	mine, withMine := mineColumns(p.UserID, userTables, &args)
+	cols += mine
 	args = append(args, limit+1) // SELECT limit+1 to detect another page.
-	query := "SELECT " + cols + from + where +
-		" ORDER BY " + orderBy(sort, order) + " LIMIT " + pidx(len(args))
+	ob := "random()"
+	if !random {
+		ob = orderBy(sort, order)
+	}
+	query := "SELECT " + cols + from + where + " ORDER BY " + ob + " LIMIT " + pidx(len(args))
 
 	rows, err := h.DB.QueryContext(r.Context(), query, args...)
 	if err != nil {
@@ -364,7 +437,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	items := []Video{}
 	for rows.Next() {
-		v, err := scanListRow(rows, withPlays)
+		v, err := scanListRow(rows, withPlays, withMine)
 		if err != nil {
 			httperror.Write(w, r, httperror.Internal("scan video: "+err.Error()))
 			return
@@ -380,8 +453,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if len(items) > limit {
 		items = items[:limit]
 		// Pass it back as ?cursor= (with the same sort and order) for the next page.
-		s := encodeListCursor(sort, order, items[len(items)-1])
-		next = &s
+		if !random {
+			s := encodeListCursor(sort, order, items[len(items)-1])
+			next = &s
+		}
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items, "next": next})
 }
@@ -888,9 +963,9 @@ func scanVideoRow(rs rowScanner) (Video, error) {
 	return v, nil
 }
 
-// scanListRow scans a List row: the video columns, mtime and, under
-// sort=plays, the play count.
-func scanListRow(rs rowScanner, withPlays bool) (Video, error) {
+// scanListRow scans a List row: the video columns, mtime, under sort=plays
+// the play count and, for a user, their marks (mineColumns).
+func scanListRow(rs rowScanner, withPlays, withMine bool) (Video, error) {
 	var v Video
 	var meta []byte
 	var mtime nullTime
@@ -904,8 +979,15 @@ func scanListRow(rs rowScanner, withPlays bool) (Video, error) {
 	if withPlays {
 		dest = append(dest, &plays)
 	}
+	var m mineRow
+	if withMine {
+		dest = append(dest, m.dest()...)
+	}
 	if err := rs.Scan(dest...); err != nil {
 		return Video{}, err
+	}
+	if withMine {
+		m.apply(&v)
 	}
 	if len(meta) > 0 {
 		v.Metadata = meta

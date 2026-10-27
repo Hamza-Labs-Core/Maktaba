@@ -20,8 +20,10 @@ Which libraries you see is set by an admin (see [Library access](/help/library-a
 Home opens when you sign in. Its rows scroll sideways: drag or swipe them, use the arrow buttons next to a row's title, or press Tab to move from card to card.
 
 - **Continue Watching**: videos you started and have not finished (past the first 30 seconds, before the last 5%). The bar under a card shows how far you got.
+- **On Deck**: for each series you are in the middle of, its next lesson after the last one you finished, with the series' name under the card.
 - **Recently Added**: the newest videos across your libraries. **See all** opens [All videos](/videos) sorted by date added.
 - **Recently Watched**: what you watched last, one card per video.
+- **Favorites**: the videos you marked as favorites, newest first. **See all** opens [All videos](/videos?favorite=true) showing only them.
 - **What's On Now**: the Live TV channels on air, when there are any (see [Watch TV](/help/watch-tv)).
 - A row for each pinned library, in your order: what you are in the middle of there, then what is new. The row's title opens the library.
 
@@ -43,7 +45,7 @@ The page opens on **Overview**. **Browse** shows every video of the library with
 
 ### Overview rows {#overview-rows}
 
-- **Continue Watching**, **Recently Added** and **Recently Watched**, as on Home, for this library only.
+- **Continue Watching**, **On Deck**, **Recently Added** and **Recently Watched**, as on Home, for this library only.
 - **Most Watched**: the videos played most in this library over the last 90 days, by everyone.
 - **Series**: the series found in this library. Click one to open the series (see [Series](/help/series)).
 - **By year**: one chip per year with how many videos are from it. Click a year to open **Browse** with that year's videos. The year is the file's date, which for downloaded videos is the day they were published.
@@ -71,7 +73,47 @@ Under **View**, choose **Grid** for cards with posters, or **List** for a table 
 
 ### Filter by language {#filter-language}
 
-When the videos have a detected language, small chips with the language codes appear above the list. Click one to show only that language; click it again to show all. **Clear filters** removes every filter (year, watched and language).
+When the videos have a detected language, small chips with the language codes appear above the list: every language the library (or your libraries) has. Click one to show only that language; click it again to show all. **Clear filters** removes every filter (search, year, watched, language, tag, speaker, favorites and letter).
+
+### Search a library {#search-library}
+
+The search box at the start of the toolbar finds videos by words in their title or description: type and press **Search** (or Enter). On a library's page it searches that library; on All videos, every library. To search inside what is said in the videos (the transcripts), use [Search](/help/search).
+
+### Filter by tag, speaker and favorites {#more-filters}
+
+- **Tag**: only the videos with that tag. The number after each tag is how many videos have it.
+- **Speaker**: only the videos where that speaker talks (the names an admin gave the voices Maktaba found).
+- **Favorites**: only your favorites (press it again to show everything).
+
+The lists only offer tags and speakers that this library (or your libraries) actually has.
+
+### Jump to a letter {#jump-bar}
+
+When the grid is sorted by **Title**, a bar of letters shows above it: each letter that starts a title, Arabic and Latin, with **#** for titles that start with a number or a sign. Click a letter to show only the titles that start with it; click **All** (or the letter again) to show everything.
+
+### Mark watched or not watched {#mark-watched}
+
+On a video's page, **Mark watched** marks it as seen without playing it (say, a lesson you heard elsewhere). Press it again (**Watched**) to mark it as not watched; that also forgets where you stopped. A watched video has a tick (**✓**) on its card, and one you started has a bar showing how far you got.
+
+### Favorites {#favorites}
+
+Press **Favorite** (the heart) on a video's page to keep it at hand; press it again to remove it. Your favorites have a heart on their card, their own row on Home, and the **Favorites** filter on the grid. They are yours alone.
+
+### Select several videos {#select}
+
+Press **Select** above the grid. Each card gets a check box: check the videos you want (**Select all shown** checks every video loaded so far). Then:
+
+- **Mark watched** or **Mark not watched**,
+- **Add to favorites** or **Remove from favorites**,
+- **Add to playlist** (see [Playlists](/help/playlists)).
+
+Press **Done** to leave. Changing a filter or the sort clears the selection.
+
+### Play all, Shuffle and Up next {#up-next}
+
+**Play all** plays every video the grid lists, with its sort and filters, one after the other. **Shuffle** plays them in a random order (up to 200 at a time). [Playlists](/help/playlists) have the same buttons, and **Play from here**.
+
+When a video ends, **Up next** shows what comes next and starts it after 10 seconds: the next video of what you are playing through, or, for a lesson of a [series](/help/series), the next lesson. Press **Play now** to start it at once, or **Cancel** to stay. What you play through is kept in this browser tab only.
 
 ### Load more {#load-more}
 
@@ -103,6 +145,8 @@ Cards only carry a badge when something needs your eye. A video still being proc
 - **Library not found**: the link points to a library that does not exist or that you cannot see.
 - **Could not change your pinned libraries**: the server did not save your pins; they stay as they were. The reason follows the message.
 - **Scan started.** / **Scan finished.**: the scan was queued, then ended.
+- **Marked 5 as watched.** (and the like): your selection was saved.
+- **Could not save the change**: marking watched or a favorite did not reach the server; the cards stay as they were.
 - **Scan failed**: the scan stopped; the reason follows the message.
 - **Could not start the scan**: the server refused to start it; the reason follows the message.
 
@@ -122,7 +166,7 @@ Rows with nothing in them are hidden. **Continue Watching** shows up once you st
 
 ### Can someone else see what I pinned or watched? {#faq-private}
 
-No. Pins, **Continue Watching**, **Recently Watched** and the **Watched** filter are yours. Only **Most Watched** counts everyone's plays, and it never says who watched.
+No. Pins, **Continue Watching**, **On Deck**, **Recently Watched**, what you marked watched, your favorites and your [playlists](/help/playlists) are yours. Only **Most Watched** counts everyone's plays, and it never says who watched.
 
 ### Does Maktaba move or change my files? {#faq-files-safe}
 

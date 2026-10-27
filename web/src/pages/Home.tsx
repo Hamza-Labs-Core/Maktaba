@@ -1,5 +1,6 @@
 // Epic 45 — Home (`/`): rows across every library the user may see
-// (GET /api/home): Continue Watching, Recently Added, Recently Watched, the
+// (GET /api/home): Continue Watching, On Deck (the next lesson of each series
+// the user is in the middle of), Recently Added, Recently Watched, Favorites, the
 // Live TV channels on now (WhatsOnNow, its own read), then one row per pinned
 // library (its title opens the library). An empty row is not shown; a home
 // with nothing at all says how to start (admins: Manage libraries).
@@ -45,6 +46,8 @@ export function Home() {
   const empty =
     !!home &&
     home.continue_watching.length === 0 &&
+    home.on_deck.length === 0 &&
+    home.favorites.length === 0 &&
     home.recently_added.length === 0 &&
     home.recently_watched.length === 0 &&
     pinned.length === 0;
@@ -81,6 +84,12 @@ export function Home() {
             testId="row-continue"
           />
           <VideoRow
+            title={t("home.row.onDeck")}
+            videos={home.on_deck}
+            meta={(v) => (v.series?.name ? <bdi>{v.series.name}</bdi> : null)}
+            testId="row-ondeck"
+          />
+          <VideoRow
             title={t("home.row.recentlyAdded")}
             seeAllTo="/videos?sort=created_at"
             videos={home.recently_added}
@@ -90,6 +99,12 @@ export function Home() {
             title={t("home.row.recentlyWatched")}
             videos={home.recently_watched}
             testId="row-watched"
+          />
+          <VideoRow
+            title={t("home.row.favorites")}
+            seeAllTo="/videos?favorite=true"
+            videos={home.favorites}
+            testId="row-favorites"
           />
         </>
       )}

@@ -30,6 +30,7 @@ jobs:
         with:
           go-version-file: cmd/maktaba-server/go.mod
           cache-dependency-path: |
+            api/go.sum
             cmd/maktaba-launcher/go.sum
             cmd/maktaba-server/go.sum
             shared/go/layout/go.sum
@@ -66,6 +67,19 @@ jobs:
         run: |
           go test -count=1 -v ./internal/config
           go test -count=1 -v . -run "PrivateFilesAreTheUsersAlone|PrivateWritesSweepTheirOldTempFiles|ASwitchFolderStaysInTheSwitchoverFolder|WriteNodeConfigKeepsThePipelinesFields|NodeConfigIsolated|ServeStartsNothingOfAHome|ServeWaitsOutAWrite"
+
+      # A role gets its database URLs without their passwords and PGPASSFILE naming the
+      # file that holds them (dsn.ProcessEnv): the server's and the api's driver read it on
+      # the OS itself. lib/pq before v1.11 skipped it on Windows (every file looks group
+      # and world readable there), so a Windows node's api logged in to the home's
+      # database with no password and its pages answered home_unreachable.
+      - name: maktaba-server and api (the drivers read the passfile)
+        shell: bash
+        env:
+          GOTOOLCHAIN: auto # the api's go.mod asks for a newer Go than the server's
+        run: |
+          (cd cmd/maktaba-server && go test -count=1 -v ./internal/dsn -run TheDriverReadsThePassfile)
+          (cd api && go test -count=1 -v ./internal/pgdsn -run OpenReadsThePassfile)
 
       # Epic 38 story 38.1: streaming's node config readers on the OS itself: which
       # node.json it reads (the roaming profile's, its leftovers, its encodings), and that

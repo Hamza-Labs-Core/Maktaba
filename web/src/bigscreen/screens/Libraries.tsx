@@ -191,6 +191,23 @@ export function BigLibrary() {
       subtitle={t("big.videoCount", { n: n(hub.library.videos) })}
       testId="big-library"
     >
+      <Row id="lib-ondeck" title={t("home.row.onDeck")} count={r.on_deck.length}>
+        {r.on_deck.map((v) => (
+          <VideoTile
+            key={v.id}
+            video={v}
+            focusId={`lo:${v.id}`}
+            meta={v.series ? <bdi>{v.series.name}</bdi> : undefined}
+            onSelect={() =>
+              go(
+                v.series
+                  ? `${bigPath.video(v.id)}?series=${encodeURIComponent(v.series.id)}`
+                  : bigPath.video(v.id)
+              )
+            }
+          />
+        ))}
+      </Row>
       <Row
         id="lib-continue"
         title={t("home.row.continueWatching")}

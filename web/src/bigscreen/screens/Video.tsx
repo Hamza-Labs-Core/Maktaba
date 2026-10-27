@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import { fetchMyVideo, markWatched, setFavorite, type MyVideo } from "../../lib/me";
 import { bigPath, useBigNav } from "../nav";
 import { Failed, Loading, Picture, Progress, Screen, clock, posterOf } from "../ui";
 
@@ -45,6 +46,8 @@ export function BigVideo() {
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [excerpt, setExcerpt] = useState<Segment[]>([]);
   const [reload, setReload] = useState(0);
+  // the caller's own marks (Epic 45 phase 2): watched, favorite
+  const [mine, setMine] = useState<MyVideo | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +86,10 @@ export function BigVideo() {
           )
       )
       .catch(() => !cancelled && setExcerpt([]));
+    setMine(null);
+    fetchMyVideo(id)
+      .then((m) => !cancelled && setMine(m))
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -142,6 +149,38 @@ export function BigVideo() {
               >
                 ⟲ {t("big.fromStart")}
               </button>
+            )}
+            {mine && (
+              <>
+                <button
+                  type="button"
+                  className="bs-btn"
+                  data-bs-focus="video:watched"
+                  aria-pressed={mine.completed}
+                  onClick={() => {
+                    const next = !mine.completed;
+                    void markWatched([id], next)
+                      .then(() => setMine((m) => (m ? { ...m, completed: next } : m)))
+                      .catch(() => undefined);
+                  }}
+                >
+                  {mine.completed ? `✓ ${t("video.watched")}` : t("video.markWatched")}
+                </button>
+                <button
+                  type="button"
+                  className="bs-btn"
+                  data-bs-focus="video:favorite"
+                  aria-pressed={mine.favorite}
+                  onClick={() => {
+                    const next = !mine.favorite;
+                    void setFavorite([id], next)
+                      .then(() => setMine((m) => (m ? { ...m, favorite: next } : m)))
+                      .catch(() => undefined);
+                  }}
+                >
+                  {mine.favorite ? `★ ${t("video.favorited")}` : `☆ ${t("video.favorite")}`}
+                </button>
+              </>
             )}
           </div>
           {video.description && (

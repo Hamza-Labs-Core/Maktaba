@@ -10,6 +10,12 @@
 //	GET /api/home
 //	GET /api/libraries/{id}/hub
 //
+// and Epic 45 Phase 2's (mine.go, playlists.go, facets.go, ondeck.go):
+//
+//	POST /api/me/watched, POST /api/me/favorites, GET /api/me/videos/{id}
+//	/api/me/playlists...
+//	GET /api/videos/facets
+//
 // Every row leaves out the hidden videos (state missing or superseded, or
 // soft-deleted). A library the caller may not see answers 404, as one that
 // does not exist.
@@ -67,6 +73,14 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/me/pinned-libraries", h.GetPins)
 	r.Put("/api/me/pinned-libraries", h.PutPins)
 	r.Get("/api/home", h.Home)
+	// Epic 45 Phase 2: a user's marks, favorites and playlists, and the
+	// grid's facets (/api/videos/facets is a static segment, which chi
+	// prefers to the videos handler's /api/videos/{id})
+	r.Post("/api/me/watched", h.Watched)
+	r.Post("/api/me/favorites", h.Favorites)
+	r.Get("/api/me/videos/{id}", h.MyVideo)
+	r.Get("/api/videos/facets", h.Facets)
+	h.mountPlaylists(r)
 }
 
 func (h *Handler) now() time.Time {
@@ -92,6 +106,8 @@ type Card struct {
 	LastWatchedAt *time.Time `json:"last_watched_at,omitempty"`
 	// Everyone's plays in the window, on Most Watched.
 	Plays *int64 `json:"plays,omitempty"`
+	// The series, on On Deck.
+	Series *SeriesName `json:"series,omitempty"`
 }
 
 // scope is the set of libraries a caller may see.

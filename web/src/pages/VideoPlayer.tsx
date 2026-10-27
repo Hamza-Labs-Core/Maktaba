@@ -24,6 +24,8 @@
 // stops making progress while it should be playing (STALL_REPORT_MS).
 // The rich control surface (speed, PiP, keyboard map, chapter ticks,
 // caption sizing, resume) works on top of the <video> either way.
+// Epic 45 Phase 2: at the end, Up next (components/UpNext) offers the play
+// queue's next video or the series' next lesson, and starts it after 10 s.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -37,6 +39,7 @@ import {
 import { useI18n } from "../lib/i18n";
 import { attachVod, carrySig } from "@maktaba/tvplayer";
 import { mediaError, reportPlaybackFailure, type PlaybackFailure } from "../lib/playbackReport";
+import { UpNext } from "../components/UpNext";
 
 interface OpenSessionResponse {
   session_id: string;
@@ -141,12 +144,17 @@ export function VideoPlayer({
   const [speed, setSpeed] = useState(1);
   const [captionScale, setCaptionScale] = useState(1);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // the element as state too: Up next listens to it
+  const [videoEl, setVideoElState] = useState<HTMLVideoElement | null>(null);
   const onVideoElementRef = useRef(onVideoElement);
   onVideoElementRef.current = onVideoElement;
   const setVideoEl = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el;
+    setVideoElState(el);
     onVideoElementRef.current?.(el);
   }, []);
+  // Up next (and Play all) open the next video already playing
+  const autoplay = autoPlay || (location.state as { autoplay?: boolean } | null)?.autoplay === true;
   const sessionIdRef = useRef<string | null>(null);
   // Where the next attachment starts: the ?t= deep link first, then the
   // position playback had reached when a signed URL had to be refreshed.
@@ -664,7 +672,7 @@ export function VideoPlayer({
           className="mkt-player__video"
           controls={!bare}
           playsInline
-          autoPlay={autoPlay}
+          autoPlay={autoplay}
           preload="metadata"
           // the video's picture until it plays (a missing one leaves the frame)
           poster={videoId ? carrySig(`/api/videos/${videoId}/poster`, sigSource) : undefined}
@@ -706,6 +714,7 @@ export function VideoPlayer({
             ))}
           </div>
         )}
+        {videoId && !bare && <UpNext videoId={videoId} el={videoEl} />}
       </div>
     </section>
   );

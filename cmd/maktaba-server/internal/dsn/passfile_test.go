@@ -33,6 +33,7 @@ func TestProcessEnvLeavesNoPasswordInTheEnvironment(t *testing.T) {
 		"MAKTABA_DATABASE_URL=postgres://maktaba:home-secret@127.0.0.1:54329/maktaba",
 		"MAKTABA_COPY_DATABASE_URL=postgres://reader:copy-secret@127.0.0.1:54330/maktaba",
 		"PGPASSFILE=/somewhere/else",
+		"PGPASSWORD=inherited",
 		"HOME=/Users/x",
 	}
 	out, err := ProcessEnv(env, dir)
@@ -43,6 +44,9 @@ func TestProcessEnvLeavesNoPasswordInTheEnvironment(t *testing.T) {
 	for _, e := range out {
 		if strings.Contains(e, "home-secret") || strings.Contains(e, "copy-secret") {
 			t.Errorf("a secret left in %q", e)
+		}
+		if strings.HasPrefix(e, "PGPASSWORD=") {
+			t.Errorf("%q kept: every driver takes it before the passfile", e)
 		}
 		if v, ok := strings.CutPrefix(e, "PGPASSFILE="); ok {
 			if passfile != "" {
@@ -72,7 +76,7 @@ func TestProcessEnvLeavesNoPasswordInTheEnvironment(t *testing.T) {
 }
 
 func TestProcessEnvWithoutPasswordsChangesNothing(t *testing.T) {
-	env := []string{"DATABASE_URL=postgres://maktaba@127.0.0.1:54329/maktaba", "PGPASSFILE=/mine"}
+	env := []string{"DATABASE_URL=postgres://maktaba@127.0.0.1:54329/maktaba", "PGPASSFILE=/mine", "PGPASSWORD=mine"}
 	out, err := ProcessEnv(env, t.TempDir())
 	if err != nil || strings.Join(out, "|") != strings.Join(env, "|") {
 		t.Fatalf("%v %v", out, err)

@@ -284,6 +284,51 @@ describe("Home", () => {
   });
 });
 
+describe("Epic 45 phase 2 in big screen", () => {
+  it("Home shows On Deck (opening a lesson with its series) and Favorites", async () => {
+    serve({
+      "/api/home": {
+        ...HOME,
+        on_deck: [card("e2", { series: { id: "S1", name: "Tafsir al-Fatiha" } })],
+        favorites: [card("v7", { title: "A favorite" })],
+      },
+    });
+    renderBig();
+    await screen.findByTestId("big-hero");
+    expect(screen.getByRole("heading", { name: E["home.row.onDeck"] })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: E["home.row.favorites"] })).toBeInTheDocument();
+    expect(screen.getByText("A favorite")).toBeInTheDocument();
+    fireEvent.click(document.querySelector('[data-bs-focus="ondeck:e2"]')!);
+    await waitFor(() => expect(where).toBe("/big/video/e2?series=S1"));
+  });
+
+  it("a video's page marks it watched and a favorite", async () => {
+    post.mockResolvedValue({ updated: 1 });
+    serve({
+      "/api/me/videos/v1": {
+        video_id: "v1",
+        position_sec: 120,
+        completed: false,
+        favorite: false,
+        playlists: [],
+        series: null,
+      },
+    });
+    renderBig("/big/video/v1");
+    const page = await screen.findByTestId("big-video");
+    const fav = await within(page).findByRole("button", { name: new RegExp(E["video.favorite"]!) });
+    fireEvent.click(fav);
+    await waitFor(() => expect(fav).toHaveAttribute("aria-pressed", "true"));
+    expect(post).toHaveBeenCalledWith(
+      "/api/me/favorites",
+      expect.objectContaining({ favorite: true })
+    );
+    const watched = within(page).getByRole("button", { name: E["video.markWatched"] });
+    fireEvent.click(watched);
+    await waitFor(() => expect(watched).toHaveAttribute("aria-pressed", "true"));
+  });
+});
+
 describe("Back and leaving", () => {
   it("Back on Home asks first; Stay keeps big screen, Leave goes back to where the user was", async () => {
     sessionStorage.setItem("mkt:big:return", "/library");

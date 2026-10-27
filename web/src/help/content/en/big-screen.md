@@ -35,7 +35,7 @@ The item you are on has a gold ring. Left and right move along a row; up and dow
 
 ### Home {#home}
 
-The top of Home is what you were watching last, with **Resume** and **Details**. Below are your rows: **Continue Watching**, **Recently Added**, **Recently Watched**, the Live TV channels on now, and a row for each library you pinned (pin libraries on the [Libraries page](/library) in the normal view).
+The top of Home is what you were watching last, with **Resume** and **Details**. Below are your rows: **Continue Watching**, **On Deck** (the next lesson of each series you are in), **Recently Added**, **Recently Watched**, **Favorites**, the Live TV channels on now, and a row for each library you pinned (pin libraries on the [Libraries page](/library) in the normal view).
 
 ### Libraries and series {#libraries-and-series}
 
@@ -45,7 +45,7 @@ The top of Home is what you were watching last, with **Resume** and **Details**.
 
 ### A video's page {#video-page}
 
-A video's page has **Resume** (where you stopped) or **Play**, **Play from the start**, its chapters (each plays from its start) and the opening of its transcript (each line plays from there).
+A video's page has **Resume** (where you stopped) or **Play**, **Play from the start**, its chapters (each plays from its start) the opening of its transcript (each line plays from there), **Mark watched** and **Favorite**.
 
 ### Search {#search}
 

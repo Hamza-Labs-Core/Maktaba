@@ -123,6 +123,7 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
     `/library/${encodeURIComponent(libraryId)}?tab=browse&year=${y}`;
   const overviewEmpty =
     rows.continue_watching.length === 0 &&
+    rows.on_deck.length === 0 &&
     rows.recently_added.length === 0 &&
     rows.recently_watched.length === 0 &&
     rows.most_watched.length === 0 &&
@@ -135,6 +136,12 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
         title={t("home.row.continueWatching")}
         videos={rows.continue_watching}
         testId="row-continue"
+      />
+      <VideoRow
+        title={t("home.row.onDeck")}
+        videos={rows.on_deck}
+        meta={(v) => (v.series?.name ? <bdi>{v.series.name}</bdi> : null)}
+        testId="row-ondeck"
       />
       <VideoRow
         title={t("home.row.recentlyAdded")}

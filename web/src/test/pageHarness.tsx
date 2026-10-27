@@ -20,6 +20,7 @@ import { vi } from "vitest";
 import { I18nProvider } from "../lib/i18n";
 import { AuthContext, RequireAuth, type AuthState, type User } from "../lib/auth";
 import { RouteErrorBoundary } from "../components/RouteErrorBoundary";
+import { ToastProvider } from "@ds/components/Toast/Toast";
 
 export const adminUser: User = { id: "u-admin", username: "admin", is_admin: true };
 export const memberUser: User = { id: "u-member", username: "member", is_admin: false };
@@ -91,24 +92,27 @@ export function renderPage(ui: ReactElement, opts: RenderPageOptions) {
   const user = opts.user === undefined ? adminUser : opts.user;
   return render(
     <I18nProvider>
-      <TestAuth user={user}>
-        <MemoryRouter initialEntries={[...(opts.history ?? []), opts.path]}>
-          <Routes>
-            <Route path="/login" element={<LoginProbe />} />
-            <Route
-              element={
-                <RequireAuth>
-                  <Shell />
-                </RequireAuth>
-              }
-            >
-              <Route path={opts.route ?? opts.path.split("?")[0]} element={ui} />
-              <Route path="/elsewhere" element={<p>elsewhere</p>} />
-              {opts.extraRoutes}
-            </Route>
-          </Routes>
-        </MemoryRouter>
-      </TestAuth>
+      {/* the app has one at its root (App.tsx) */}
+      <ToastProvider>
+        <TestAuth user={user}>
+          <MemoryRouter initialEntries={[...(opts.history ?? []), opts.path]}>
+            <Routes>
+              <Route path="/login" element={<LoginProbe />} />
+              <Route
+                element={
+                  <RequireAuth>
+                    <Shell />
+                  </RequireAuth>
+                }
+              >
+                <Route path={opts.route ?? opts.path.split("?")[0]} element={ui} />
+                <Route path="/elsewhere" element={<p>elsewhere</p>} />
+                {opts.extraRoutes}
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </TestAuth>
+      </ToastProvider>
     </I18nProvider>
   );
 }

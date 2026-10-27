@@ -47,6 +47,11 @@ func (d *Dispatcher) ClassOf(r *http.Request) Class {
 
 type classKey struct{}
 
+// WithClass is ctx served by class c (the dispatcher's mark; tests set it too).
+func WithClass(ctx context.Context, c Class) context.Context {
+	return context.WithValue(ctx, classKey{}, c)
+}
+
 // ClassFrom is the class the dispatcher served a request by ("" outside a node).
 func ClassFrom(ctx context.Context) Class {
 	c, _ := ctx.Value(classKey{}).(Class)
@@ -56,7 +61,7 @@ func ClassFrom(ctx context.Context) Class {
 func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := d.ClassOf(r)
 	w.Header().Set(HeaderPlacement, string(c))
-	r = r.WithContext(context.WithValue(r.Context(), classKey{}, c))
+	r = r.WithContext(WithClass(r.Context(), c))
 	if d.Served != nil {
 		sc := &statusCapture{ResponseWriter: w}
 		w = sc
