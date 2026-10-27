@@ -10,7 +10,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/attempts"
 )
 
-// askRig is a machine whose install asks first (a desktop app that runs the server,
+// askRig is a machine whose app installs the release (a desktop app that runs the server,
 // owner decision D1), prepared for run-1.
 func askRig(t *testing.T, w *world) *rig {
 	t.Helper()
@@ -23,7 +23,7 @@ func askRig(t *testing.T, w *world) *rig {
 	return r
 }
 
-// restartAsking is restart (healthy) on an install that asks.
+// restartAsking is restart (healthy) on an install its app installs.
 func (r *rig) restartAsking() *rig {
 	r.cancel()
 	// this process is gone before the next reads the journal (its wait may be saving it)
@@ -64,33 +64,31 @@ func (r *rig) noExit() {
 	}
 }
 
-// TC (D1): an install that asks is ordered from the app at apply; it switches only once
-// someone clicked there and the home said go.
-func TestAskFirstWaitsForTheClickAndTheGo(t *testing.T) {
+// TC (D1, 2026-10-27): an install its app installs is ordered from the app at apply;
+// once the app staged it, it switches at the home's go, with no click on the machine.
+func TestOrderedInstallGoesAtTheHomesGoWithNoClick(t *testing.T) {
 	w := newWorld("1.4.0")
 	r := askRig(t, w)
 	if st := r.m.Status(); !st.Asks {
-		t.Fatal("status does not say the machine asks")
+		t.Fatal("status does not say the machine's app installs it")
 	}
 	if err := r.m.Apply("run-1"); err != nil {
 		t.Fatal(err)
 	}
-	r.waitState(StateAwaitingClick)
+	r.waitState(StateOrdered)
 	r.waitOrder("run-1")
-	w.app(RequestStaged)
-	deadline := time.Now().Add(5 * time.Second)
-	for r.m.Status().App != RequestStaged && time.Now().Before(deadline) {
-		time.Sleep(2 * time.Millisecond)
-	}
-	// asked again before the click: still waiting
+	// asked again while the app stages it: still ordered, nothing switched
 	if err := r.m.Apply("run-1"); err != nil {
 		t.Fatal(err)
 	}
-	if j := r.m.Status().Journal; j.State != StateAwaitingClick || j.App != RequestStaged {
-		t.Fatalf("before the click: %s app %q", j.State, j.App)
+	if j := r.m.Status().Journal; j.State != StateOrdered {
+		t.Fatalf("before the app staged it: %s", j.State)
 	}
-	w.app(RequestClicked)
-	r.waitState(StateClicked)
+	w.app(RequestStaged)
+	j := r.waitState(StateAppStaged)
+	if j.App != RequestStaged {
+		t.Fatalf("app %q", j.App)
+	}
 	r.noExit()
 	if w.called(StepSwitch) || w.next != "1.4.0" {
 		t.Fatalf("switched before the go: calls %v", w.calls)
@@ -100,33 +98,56 @@ func TestAskFirstWaitsForTheClickAndTheGo(t *testing.T) {
 	}
 	r.waitExit()
 	n := r.restart(healthy)
-	j := n.waitState(StateCommitted)
-	ask := false
+	j = n.waitState(StateCommitted)
+	order := false
 	for _, s := range j.Steps {
-		if s.Step == StepAsk && s.State == "done" && s.Detail == "clicked" {
-			ask = true
+		if s.Step == StepOrder && s.State == "done" && s.Detail == "staged" {
+			order = true
 		}
 	}
-	if !ask || w.committed != "1.5.0" {
+	if !order || w.committed != "1.5.0" {
 		t.Fatalf("steps %+v committed %q", j.Steps, w.committed)
 	}
 }
 
+// TC (D1): the order names when the home means to give the go (an automatic run's
+// window that has not begun), for the app's notice; set once, before the order.
+func TestOrderSaysWhenItInstalls(t *testing.T) {
+	w := newWorld("1.4.0")
+	r := askRig(t, w)
+	at := time.Date(2026, 10, 23, 3, 0, 0, 0, time.UTC)
+	r.m.SetInstallAt("run-1", at)
+	r.m.SetInstallAt("run-0", at.Add(time.Hour)) // another run's: ignored
+	_ = r.m.Apply("run-1")
+	r.waitState(StateOrdered)
+	r.waitOrder("run-1")
+	w.mu.Lock()
+	got := w.installAt
+	w.mu.Unlock()
+	if got == nil || !got.Equal(at) {
+		t.Fatalf("install at %v", got)
+	}
+	r.m.SetInstallAt("run-1", at.Add(time.Hour)) // after the order: the notice was said
+	if j := r.m.Status().Journal; !j.InstallAt.Equal(at) {
+		t.Fatalf("install at changed after the order: %v", j.InstallAt)
+	}
+}
+
 // TC (D1): a machine that stops while its order waits takes it up where it was: the
-// order still waits for its click, a click it got still waits for the go.
-func TestAskFirstResumesWhereItWaited(t *testing.T) {
+// order still waits for the app, a staged one for the home's go.
+func TestOrderResumesWhereItWaited(t *testing.T) {
 	w := newWorld("1.4.0")
 	r := askRig(t, w)
 	_ = r.m.Apply("run-1")
-	r.waitState(StateAwaitingClick)
+	r.waitState(StateOrdered)
 	r.waitOrder("run-1")
 	n := r.restartAsking()
-	n.waitState(StateAwaitingClick)
-	w.app(RequestClicked) // clicked while the machine was down
+	n.waitState(StateOrdered)
+	w.app(RequestStaged) // staged while the machine was down
 	n = n.restartAsking()
-	n.waitState(StateClicked)
+	n.waitState(StateAppStaged)
 	n2 := n.restartAsking()
-	n2.waitState(StateClicked)
+	n2.waitState(StateAppStaged)
 	n2.noExit()
 	if err := n2.m.Apply("run-1"); err != nil {
 		t.Fatal(err)
@@ -135,30 +156,117 @@ func TestAskFirstResumesWhereItWaited(t *testing.T) {
 	n2.restart(healthy).waitState(StateCommitted)
 }
 
-// TC (D1): an order is taken back before its switch (Abort, or a newer run in its
-// place), and one the app cannot take fails with nothing changed.
-func TestAskFirstAbortWithdrawsTheOrder(t *testing.T) {
-	w := newWorld("1.4.0")
-	r := askRig(t, w)
-	_ = r.m.Apply("run-1")
-	r.waitState(StateAwaitingClick)
-	r.waitOrder("run-1")
-	w.app(RequestClicked)
-	r.waitState(StateClicked)
-	if err := r.m.Abort("run-1"); err != nil {
-		t.Fatal(err)
-	}
-	r.waitState(StateAborted)
-	if w.order != "" || w.staged["1.5.0"] || w.called(StepSwitch) {
-		t.Fatalf("order %q staged %v calls %v", w.order, w.staged, w.calls)
+// TC (D1): a journal from before the click was removed (awaiting_click, step ask) is
+// taken up with no click: the order waits for the app, then the home's go installs it;
+// one that says clicked waits for the go.
+func TestOrderFromBeforeTheClickWentGoesOn(t *testing.T) {
+	for _, tc := range []struct{ state, app, want string }{
+		{"awaiting_click", RequestStaged, StateAppStaged},
+		{"awaiting_click", "", StateOrdered},
+		{"clicked", "clicked", StateAppStaged},
+	} {
+		t.Run(tc.state+"/"+tc.app, func(t *testing.T) {
+			w := newWorld("1.4.0")
+			r := askRig(t, w)
+			_ = r.m.Apply("run-1")
+			r.waitState(StateOrdered)
+			r.waitOrder("run-1")
+			r.cancel()
+			r.m.Wait()
+			// the journal as a release from before wrote it
+			j, err := LoadJournal(r.dir)
+			if err != nil || j == nil {
+				t.Fatalf("journal: %v", err)
+			}
+			j.State, j.Step, j.App = tc.state, legacyStepAsk, tc.app
+			for i := range j.Steps {
+				if j.Steps[i].Step == StepOrder {
+					j.Steps[i].Step = legacyStepAsk
+				}
+			}
+			if tc.state == "clicked" {
+				j.Step = ""
+			}
+			if err := SaveJournal(r.dir, j); err != nil {
+				t.Fatal(err)
+			}
+			w.app(RequestStaged) // the app's order says staged (a clicked one reads so too)
+			n := startRig(t, r.dir, w, healthy)
+			n.inst.asks = true
+			n.m.Resume()
+			got := n.waitState(StateAppStaged)
+			for _, s := range got.Steps {
+				if s.Step == legacyStepAsk {
+					t.Fatalf("a step still says ask: %+v", got.Steps)
+				}
+			}
+			n.noExit()
+			if err := n.m.Apply("run-1"); err != nil { // the home's go: no click
+				t.Fatal(err)
+			}
+			n.waitExit()
+			n.restart(healthy).waitState(StateCommitted)
+		})
 	}
 }
 
-func TestAskFirstNewerRunReplacesTheOrder(t *testing.T) {
+// TC (D1): an order left waiting while a newer release was installed (by hand) is over:
+// withdrawn, never installed over the newer one.
+func TestOrderOverANewerReleaseIsWithdrawn(t *testing.T) {
 	w := newWorld("1.4.0")
 	r := askRig(t, w)
 	_ = r.m.Apply("run-1")
-	r.waitState(StateAwaitingClick)
+	r.waitState(StateOrdered)
+	r.waitOrder("run-1")
+	r.cancel()
+	r.m.Wait()
+	w.mu.Lock()
+	w.next = "1.6.0"
+	w.mu.Unlock()
+	n := startRig(t, r.dir, w, healthy)
+	n.inst.asks = true
+	n.m.Resume()
+	j := n.waitState(StateAborted)
+	if j.Error == nil || j.Error.Code != "replaced_by_newer" || !w.waitCalled(t, "discard") || w.order != "" {
+		t.Fatalf("error %+v order %q", j.Error, w.order)
+	}
+	if err := n.m.Apply("run-1"); err == nil {
+		t.Fatal("an aborted order took a go")
+	}
+}
+
+// TC (D1): an order is taken back before its switch (Abort, or a newer run in its
+// place), and one the app cannot take fails with nothing changed.
+func TestOrderAbortWithdrawsIt(t *testing.T) {
+	for _, staged := range []bool{false, true} {
+		w := newWorld("1.4.0")
+		r := askRig(t, w)
+		_ = r.m.Apply("run-1")
+		r.waitState(StateOrdered)
+		r.waitOrder("run-1")
+		if staged {
+			w.app(RequestStaged)
+			r.waitState(StateAppStaged)
+		}
+		if err := r.m.Abort("run-1"); err != nil {
+			t.Fatal(err)
+		}
+		r.waitState(StateAborted)
+		w.waitCalled(t, "discard")
+		if w.order != "" || w.staged["1.5.0"] || w.called(StepSwitch) {
+			t.Fatalf("staged %v: order %q staged %v calls %v", staged, w.order, w.staged, w.calls)
+		}
+		if err := r.m.Apply("run-1"); err == nil {
+			t.Fatalf("staged %v: a go after the abort was taken", staged)
+		}
+	}
+}
+
+func TestOrderNewerRunReplacesIt(t *testing.T) {
+	w := newWorld("1.4.0")
+	r := askRig(t, w)
+	_ = r.m.Apply("run-1")
+	r.waitState(StateOrdered)
 	next := homeJob()
 	next.RunID, next.Version, next.Tag = "run-2", "1.6.0", "v1.6.0"
 	if err := r.m.Prepare(next); err != nil {
@@ -169,17 +277,17 @@ func TestAskFirstNewerRunReplacesTheOrder(t *testing.T) {
 		t.Fatalf("run %s staged %v", j.Job.RunID, w.staged)
 	}
 	_ = r.m.Apply("run-2")
-	r.waitState(StateAwaitingClick)
+	r.waitState(StateOrdered)
 	r.waitOrder("run-2")
 }
 
-func TestAskFirstAppFailureChangesNothing(t *testing.T) {
+func TestOrderAppFailureChangesNothing(t *testing.T) {
 	w := newWorld("1.4.0")
 	r := askRig(t, w)
 	w.answerErr = Fail("app_install_failed", "no space to stage")
 	_ = r.m.Apply("run-1")
 	j := r.waitState(StateApplyFailed)
-	if j.Error == nil || j.Error.Code != "app_install_failed" || j.Error.Step != StepAsk {
+	if j.Error == nil || j.Error.Code != "app_install_failed" || j.Error.Step != StepOrder {
 		t.Fatalf("error %+v", j.Error)
 	}
 	if !w.waitCalled(t, "discard") || w.next != "1.4.0" || w.called(StepSwitch) {

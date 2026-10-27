@@ -31,19 +31,20 @@ const (
 	StatePrepared      = "prepared"       // staged and checked; waits for apply
 	StatePrepareFailed = "prepare_failed" // nothing changed
 	StateAborted       = "aborted"        // stopped before the switch; nothing changed
-	// An install a person updates (Asker): ordered from the app, it waits for a click
-	// on this machine, then for the home's go. Nothing changed yet, and a newer run
-	// takes its place.
-	StateAwaitingClick = "awaiting_click"
-	StateClicked       = "clicked"
-	StateApplying      = "applying"     // switching to the staged release
-	StateRestarting    = "restarting"   // switched; the machine restarts on it
-	StateWatching      = "watching"     // the new release runs; its health is watched
-	StateCommitted     = "committed"    // the new release stays
-	StateRollingBack   = "rolling_back" // switched back; the previous release finishes
-	StateRolledBack    = "rolled_back"  // the previous release runs again
-	StateApplyFailed   = "apply_failed" // failed before the restart; the previous release runs
-	StateFailed        = "failed"       // a rollback that could not be made: needs a person
+	// An install its desktop app installs (Orderer): ordered from the app, which stages
+	// the release and says when it installs (ordered); staged there, it waits for the
+	// home's go (app_staged). No click on the machine (owner decision D1, 2026-10-27).
+	// Nothing changed yet, and a newer run takes its place.
+	StateOrdered     = "ordered"
+	StateAppStaged   = "app_staged"
+	StateApplying    = "applying"     // switching to the staged release
+	StateRestarting  = "restarting"   // switched; the machine restarts on it
+	StateWatching    = "watching"     // the new release runs; its health is watched
+	StateCommitted   = "committed"    // the new release stays
+	StateRollingBack = "rolling_back" // switched back; the previous release finishes
+	StateRolledBack  = "rolled_back"  // the previous release runs again
+	StateApplyFailed = "apply_failed" // failed before the restart; the previous release runs
+	StateFailed      = "failed"       // a rollback that could not be made: needs a person
 )
 
 // Steps of a run (Journal.Step, StepRecord.Step).
@@ -52,7 +53,7 @@ const (
 	StepStage     = "stage"
 	StepSmoke     = "smoke"
 	StepRehearse  = "rehearse"
-	StepAsk       = "ask" // the app's order, until its click
+	StepOrder     = "order" // the app's order, until the app staged the release
 	StepSwitch    = "switch"
 	StepRestart   = "restart"
 	StepWatch     = "watch"
@@ -208,8 +209,11 @@ type Journal struct {
 	Staged    string     `json:"staged,omitempty"`
 	FromRef   string     `json:"from_ref,omitempty"`
 	Rehearsal *Rehearsal `json:"rehearsal,omitempty"`
-	// App is the app's last answer to the order (ordered, staged, clicked).
+	// App is the app's last answer to the order (ordered, staged).
 	App string `json:"app,omitempty"`
+	// InstallAt is when the home means to give the go (its apply says it): the app's
+	// notice names it ("restart at …"); nil: as soon as it is staged and its turn comes.
+	InstallAt *time.Time `json:"install_at,omitempty"`
 	// LauncherProtocol is the release's launcher_protocol (its verified release.json).
 	LauncherProtocol int `json:"launcher_protocol,omitempty"`
 	// EdgeProtocol is the release's edge_protocol (its verified release.json): the TV
@@ -316,7 +320,40 @@ func LoadJournal(dir string) (*Journal, error) {
 	if j.V != journalVersion {
 		return nil, fmt.Errorf("%w: %s: journal version %d, this release reads %d", ErrJournalUnreadable, path, j.V, journalVersion)
 	}
+	upgradeClickStates(&j)
 	return &j, nil
+}
+
+// What a journal from before owner decision D1 was replaced (2026-10-27) may say: its
+// order waited for a click on this machine (awaiting_click, step ask), then for the go
+// (clicked).
+const (
+	legacyAwaitingClick = "awaiting_click"
+	legacyClicked       = "clicked"
+	legacyStepAsk       = "ask"
+)
+
+// upgradeClickStates reads a journal that waited for a click as one that waits for the
+// app (ordered) or for the home's go (app_staged): a run left waiting goes on, with no
+// click.
+func upgradeClickStates(j *Journal) {
+	switch j.State {
+	case legacyAwaitingClick:
+		j.State = StateOrdered
+	case legacyClicked:
+		j.State = StateAppStaged
+	}
+	if j.Step == legacyStepAsk {
+		j.Step = StepOrder
+	}
+	if j.App == legacyClicked {
+		j.App = RequestStaged
+	}
+	for i := range j.Steps {
+		if j.Steps[i].Step == legacyStepAsk {
+			j.Steps[i].Step = StepOrder
+		}
+	}
 }
 
 // SaveJournal writes j to dir/journal.json atomically (a power cut leaves the old or the

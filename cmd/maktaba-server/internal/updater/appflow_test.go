@@ -139,10 +139,11 @@ func newAppFlow(t *testing.T) (*appFlow, Job) {
 
 // The app-bundle path end to end on one machine (install-kinds.md, D1), with every part
 // real but the app and the process restart: the signed release and its app feed read
-// over HTTP, the running payload kept, the order to the app, its staging and the
-// person's click, the go, the app's install (its payload becomes 1.5.0) stopping the
-// server, the server started again on 1.5.0 under the launcher's guard, watched and
-// committed: the order gone, the guard cleared, the copy to go back to kept.
+// over HTTP, the running payload kept, the order to the app, its staging (no click on
+// the machine: owner decision D1, 2026-10-27), the go, the app's install (its payload
+// becomes 1.5.0) stopping the server, the server started again on 1.5.0 under the
+// launcher's guard, watched and committed: the order gone, the guard cleared, the copy
+// to go back to kept.
 func TestAppBundleFlowEndToEnd(t *testing.T) {
 	f, job := newAppFlow(t)
 	f.start("1.4.0")
@@ -166,19 +167,12 @@ func TestAppBundleFlowEndToEnd(t *testing.T) {
 	if err := f.m.Apply("run-1"); err != nil {
 		t.Fatal(err)
 	}
-	f.waitState(StateAwaitingClick)
-	deadline := time.Now().Add(5 * time.Second)
-	for f.m.Status().App != RequestStaged && time.Now().Before(deadline) {
-		time.Sleep(2 * time.Millisecond)
-	}
+	// the app stages it by itself: nobody clicks on this machine
+	f.waitState(StateAppStaged)
 	q, _ := app.order()
 	if q.State != RequestStaged || q.Kind != RequestKindApp || q.Version != "1.5.0" {
 		t.Fatalf("the order: %+v", q)
 	}
-	app.mu.Lock()
-	app.answer(q, RequestClicked, "") // someone clicked Install on this machine
-	app.mu.Unlock()
-	f.waitState(StateClicked)
 	if g, _ := layout.ReadGuard(f.lroot); g != nil {
 		t.Fatalf("guarded before the go: %+v", g)
 	}

@@ -510,6 +510,9 @@ type updateRequest struct {
 	// TVDeadline (apply): how long the release's TV change may wait behind another change
 	// (the window's end and overrun, story 35.6 AC4)
 	TVDeadline *time.Time `json:"tv_deadline,omitempty"`
+	// InstallAt (apply, an order to a desktop app): when the home means to give the go
+	// (an automatic run's window that has not begun); the app's notice names it
+	InstallAt *time.Time `json:"install_at,omitempty"`
 }
 
 // handle runs a request of the home's; the answer is the machine's status.
@@ -530,6 +533,9 @@ func (u *updates) handle(name string, body json.RawMessage) (any, int, error) {
 	case "apply":
 		if req.TVDeadline != nil {
 			u.m.SetTVDeadline(req.Job.RunID, *req.TVDeadline)
+		}
+		if req.InstallAt != nil {
+			u.m.SetInstallAt(req.Job.RunID, *req.InstallAt)
 		}
 		err = u.m.ApplyGated(req.Job.RunID, req.TVBusy)
 	case "abort":

@@ -13,21 +13,22 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
-// Asker is an install a person updates (owner decision D1, install-kinds.md "Ask
-// first"): a desktop app that runs the server — Maktaba.app, the Windows app, the Linux
-// app's runtime — installs the release the home orders only when someone clicks
-// "Install" on that machine. Apply orders the release (Ask: the app stages it and shows
-// it); the machine waits for the click, then for the home's go (the home drains its
-// workers first; a node waits its turn), and only then switches.
-type Asker interface {
-	// Asks reports whether this install waits for a click (a Linux runtime the app owns
-	// does, a headless one does not).
-	Asks() bool
-	// Ask orders the release from the app; asked again for the same run, it leaves the
+// Orderer is an install its desktop app installs (owner decision D1, 2026-10-27,
+// install-kinds.md "No click"): a desktop app that runs the server — Maktaba.app, the
+// Windows app, the Linux app's runtime — installs the release the home orders without
+// anyone clicking on that machine. Apply orders the release (Order: the app stages it
+// and tells the person when it installs); once staged, the machine waits for the
+// home's go (the home drains its workers first and keeps an automatic run's window; a
+// node waits its turn), and only then switches.
+type Orderer interface {
+	// Orders reports whether this install goes through its app's order (a Linux runtime
+	// the app owns does, a headless one does not).
+	Orders() bool
+	// Order orders the release from the app; asked again for the same run, it leaves the
 	// app's answer as it is.
-	Ask(j *Journal) error
+	Order(j *Journal) error
 	// Answer is the app's answer to the run's order: RequestOrdered (not staged yet),
-	// RequestStaged, RequestClicked, or an error when it failed.
+	// RequestStaged, or an error when it failed.
 	Answer(j *Journal) (string, error)
 }
 
@@ -39,14 +40,16 @@ const AppRequestFile = "app-install.json"
 const (
 	// RequestOrdered (server): the home ordered this release. The app stages it (kind
 	// app: its own update from Feed, verified with its key; kind runtime: nothing to
-	// fetch, the server has it) and shows it ("Install …").
+	// fetch, the server has it) and tells the person when it installs (InstallAt).
 	RequestOrdered = "ordered"
-	// RequestStaged (app): staged and shown; it waits for a click.
+	// RequestStaged (app): staged and shown; it waits for the home's go.
 	RequestStaged = "staged"
-	// RequestClicked (app): someone chose to install it.
-	RequestClicked = "clicked"
-	// RequestGo (server, kind app): the home's run is ready; the app installs what it
-	// staged (verified again) and the server restarts on it.
+	// requestClicked (an app from before owner decision D1 was replaced, 2026-10-27):
+	// someone clicked Install. Read as staged: the go needs no click.
+	requestClicked = "clicked"
+	// RequestGo (server): the home's run is ready; the app installs what it staged
+	// (verified again) and the server restarts on it (kind runtime, server: the server
+	// switches by itself).
 	RequestGo = "go"
 	// RequestInstalling (app, or the server switching its runtime).
 	RequestInstalling = "installing"
@@ -73,11 +76,14 @@ type AppRequest struct {
 	Feed string `json:"feed,omitempty"`
 	Kind string `json:"kind"`
 	// Home: this machine is the home (the app says the home ordered it; on a node, that
-	// the cluster's update waits for this machine).
-	Home  bool      `json:"home,omitempty"`
-	State string    `json:"state"`
-	Error string    `json:"error,omitempty"`
-	At    time.Time `json:"at"`
+	// the cluster's update brings this machine to it).
+	Home bool `json:"home,omitempty"`
+	// InstallAt is when the home means to give the go (an automatic run's window that has
+	// not begun): the app's notice says "restart at …"; none: as soon as it is staged.
+	InstallAt *time.Time `json:"install_at,omitempty"`
+	State     string     `json:"state"`
+	Error     string     `json:"error,omitempty"`
+	At        time.Time  `json:"at"`
 }
 
 // requests is the order file in an updates directory.
@@ -112,7 +118,7 @@ func (r requests) order(j *Journal, kind, feed string) error {
 		return nil
 	}
 	if err := r.write(AppRequest{RunID: j.Job.RunID, Version: layout.NormalizeVersion(j.Job.Version), Feed: feed,
-		Kind: kind, Home: j.Job.Home, State: RequestOrdered}); err != nil {
+		Kind: kind, Home: j.Job.Home, InstallAt: j.InstallAt, State: RequestOrdered}); err != nil {
 		return Fail("app_request_failed", "%v", err)
 	}
 	return nil
@@ -130,9 +136,12 @@ func (r requests) answer(j *Journal) (string, error) {
 	if q.RunID != j.Job.RunID {
 		return "", Fail("app_order_gone", "the order of %s was replaced", j.Job.Version)
 	}
-	if q.State == RequestFailed {
+	switch q.State {
+	case RequestFailed:
 		code, detail := appFailure(q.Error)
 		return "", Fail(code, "%s", detail)
+	case requestClicked:
+		return RequestStaged, nil // an older app's click: staged, and the go needs none
 	}
 	return q.State, nil
 }
