@@ -139,6 +139,8 @@ func build(opts Options, ring *RingBuffer) *slog.Logger {
 	if ring != nil {
 		h = fanoutHandler{handlers: []slog.Handler{h, slog.NewJSONHandler(ring, hopts)}}
 	}
+	// a line logged with a context carries its request/session/job ids
+	h = ctxHandler{Handler: h}
 
 	return slog.New(h).With(
 		"service", opts.Service,

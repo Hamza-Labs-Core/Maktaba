@@ -241,7 +241,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	if h.DB != nil && p.UserID != "" && req.save() {
 		if err := h.saveRun(ctx, p.UserID, rn, rl); err != nil {
 			// The results are still answered; they just cannot be paged by id.
-			h.log().Warn("search: could not keep the results", "event", "search_save_failed", "err", err)
+			h.log().WarnContext(r.Context(), "search: could not keep the results", "event", "search_save_failed", "err", err)
 			rn.ID = ""
 		}
 	}

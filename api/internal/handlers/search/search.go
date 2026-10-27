@@ -219,7 +219,7 @@ func (h *Handler) runSemantic(ctx context.Context, q string, k int, f Filters) (
 	if err != nil {
 		// Deadline breach or backend error: log + continue FTS-only
 		// (Story 18.2 AC4). Previously this was silently swallowed.
-		h.log().Warn("search: semantic leg degraded; serving FTS-only",
+		h.log().WarnContext(ctx, "search: semantic leg degraded; serving FTS-only",
 			"event", "search_semantic_degraded",
 			"budget_ms", h.semanticBudget().Milliseconds(),
 			"err", err)

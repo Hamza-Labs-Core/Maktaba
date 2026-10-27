@@ -180,7 +180,7 @@ func (h *Handler) audit(r *http.Request, action string, v Video, payload map[str
 	}
 	payload["library_id"] = v.LibraryID
 	if err := h.Audit.Write(r.Context(), "library", action, actor, v.ID, payload); err != nil {
-		slog.Warn("videos: audit row not written", "video", v.ID, "action", action, "err", err.Error())
+		slog.WarnContext(r.Context(), "videos: audit row not written", "video", v.ID, "action", action, "err", err.Error())
 	}
 }
 
@@ -629,7 +629,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	if displayChanged && h.DisplayTitleRefresh != nil {
 		if err := h.DisplayTitleRefresh(r.Context(), v.LibraryID); err != nil {
-			slog.Warn("videos: display title refresh not queued", "video", id, "err", err.Error(),
+			slog.WarnContext(r.Context(), "videos: display title refresh not queued", "video", id, "err", err.Error(),
 				"event", "display_title_refresh_failed")
 		}
 	}

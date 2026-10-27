@@ -187,7 +187,7 @@ func (h *Home) SignOut(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !through {
-			h.log().Warn("home: a machine asked to sign out everywhere a person who never signed in through it; refused",
+			h.log().WarnContext(r.Context(), "home: a machine asked to sign out everywhere a person who never signed in through it; refused",
 				"node_id", node, "user_id", req.UserID, "event", "cluster_node_signout_refused")
 		} else {
 			m, err := h.Sessions.RevokeAllForUserBefore(ctx, req.UserID, *req.Before)
