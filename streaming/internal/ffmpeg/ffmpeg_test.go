@@ -381,7 +381,9 @@ func TestTranscodeArgs_ToneMap(t *testing.T) {
 		"dash": DASHArgs("/in.mkv", "/out", DefaultLadder(0), p),
 	} {
 		graph := argAfter(args, "-filter_complex")
-		if graph != "[0:v:0]"+p.ToneMap+",split=3[v0][v1][v2]" {
+		want := "[0:v:0]" + p.ToneMap + ",split=3[s0][s1][s2]" +
+			";[s0]" + FitScale(1080) + "[v0];[s1]" + FitScale(720) + "[v1];[s2]" + FitScale(480) + "[v2]"
+		if graph != want {
 			t.Errorf("%s: graph %q", name, graph)
 		}
 		joined := " " + strings.Join(args, " ") + " "
@@ -405,14 +407,14 @@ func TestTranscodeArgs_ToneMap(t *testing.T) {
 // none: "no path between colorspaces" otherwise), and uses Möbius' curve.
 func TestToneMapFilters(t *testing.T) {
 	got := ToneMapFilters(Colour{Transfer: "smpte2084"}, 1920, 1080)
-	want := `scale=w=min(iw\,1920):h=min(ih\,1080):force_original_aspect_ratio=decrease:force_divisible_by=2,` +
+	want := FitScale(1080) + "," +
 		"zscale=tin=smpte2084:min=2020_ncl:pin=2020:rin=limited:t=linear:npl=100:p=2020,format=gbrpf32le,zscale=p=709," +
 		"tonemap=tonemap=mobius:param=0.3:desat=0,zscale=t=709:m=709:r=limited,format=yuv420p"
 	if got != want {
 		t.Errorf("PQ without matrix or primaries:\n got %s\nwant %s", got, want)
 	}
 	hlg := ToneMapFilters(Colour{Transfer: "arib-std-b67", Matrix: "bt2020c", Primaries: "bt709", Range: "pc"}, 1280, 720)
-	for _, part := range []string{"min(iw\\,1280)", "tin=arib-std-b67:min=2020_cl:pin=709:rin=full"} {
+	for _, part := range []string{"min(720\\,iw)", "tin=arib-std-b67:min=2020_cl:pin=709:rin=full"} {
 		if !strings.Contains(hlg, part) {
 			t.Errorf("HLG: no %s in %s", part, hlg)
 		}
@@ -616,5 +618,37 @@ func TestToneMapForUsesTheCataloguesColour(t *testing.T) {
 	sdr := Colour{Transfer: "bt709"}
 	if got := e.toneMapFor(context.Background(), Job{InputPath: "/in.mkv", Ladder: DefaultLadder(0), Colour: &sdr}); got != "" {
 		t.Errorf("SDR from the catalogue: %q", got)
+	}
+}
+
+// A vertical video keeps its shape: each rung bounds the shorter side, never a forced
+// 854x480 (which squashed a 480x852 lecture sideways), and the master playlist says
+// the size each rung has.
+func TestRungsKeepTheSourcesShape(t *testing.T) {
+	args := HLSArgs("/in.webm", "/out", "master.m3u8", DefaultLadder(0), SoftwarePlan(3, true))
+	joined := " " + strings.Join(args, " ") + " "
+	if strings.Contains(joined, " -s:v:") {
+		t.Errorf("a rung forces a size: %s", joined)
+	}
+	for i, h := range []int{1080, 720, 480} {
+		if got := argAfter(args, "-filter:v:"+itoa(i)); got != FitScale(h) {
+			t.Errorf("rung %d: filter %q, want %q", i, got, FitScale(h))
+		}
+	}
+	for _, c := range []struct {
+		w, h int
+		want [][2]int
+	}{
+		{480, 852, [][2]int{{480, 852}, {480, 852}, {480, 852}}},      // portrait, small: never enlarged
+		{1080, 1920, [][2]int{{1080, 1920}, {720, 1280}, {480, 854}}}, // portrait
+		{1920, 1080, [][2]int{{1920, 1080}, {1280, 720}, {854, 480}}}, // landscape, as before
+		{1080, 1080, [][2]int{{1080, 1080}, {720, 720}, {480, 480}}},  // square
+		{0, 0, [][2]int{{1920, 1080}, {1280, 720}, {854, 480}}},       // unknown: the ladder
+	} {
+		for i, r := range FitLadder(DefaultLadder(0), c.w, c.h) {
+			if got := [2]int{r.Width, r.Height}; got != c.want[i] {
+				t.Errorf("%dx%d rung %d: %v, want %v", c.w, c.h, i, got, c.want[i])
+			}
+		}
 	}
 }
