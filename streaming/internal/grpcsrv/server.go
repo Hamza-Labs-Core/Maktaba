@@ -471,7 +471,8 @@ func ladderFor(row *probe.Row, req OpenSessionRequest) []ffmpeg.Rendition {
 	if kbps == 0 {
 		kbps = row.BitrateKbps
 	}
-	return ffmpeg.DefaultLadder(kbps)
+	// each rung at the size it has for this source (a vertical video's are portrait)
+	return ffmpeg.FitLadder(ffmpeg.DefaultLadder(kbps), row.Width, row.Height)
 }
 
 // CloseSession (AC-2) marks a session closed. Idempotent.

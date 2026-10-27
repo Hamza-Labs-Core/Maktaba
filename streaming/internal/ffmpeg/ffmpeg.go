@@ -275,7 +275,8 @@ func ToneMapFilters(c Colour, maxW, maxH int) string {
 	if c.Range == "pc" || c.Range == "jpeg" {
 		rng = "full"
 	}
-	return fmt.Sprintf("scale=w=min(iw\\,%d):h=min(ih\\,%d):force_original_aspect_ratio=decrease:force_divisible_by=2,", maxW, maxH) +
+	_ = maxW // the top rung's shorter side bounds either orientation
+	return FitScale(maxH) + "," +
 		"zscale=tin=" + transfer + ":min=" + matrix + ":pin=" + primaries + ":rin=" + rng + ":t=linear:npl=100:p=" + primaries + "," +
 		"format=gbrpf32le,zscale=p=709,tonemap=tonemap=mobius:param=0.3:desat=0," +
 		"zscale=t=709:m=709:r=limited,format=yuv420p"
@@ -328,12 +329,14 @@ func rungArgs(i int, rung Rendition, enc string, p EncodePlan) Args {
 		"-map", video,
 		"-c:v:" + n, enc,
 		"-b:v:" + n, itoa(rung.BitrateKbps) + "k",
-		"-s:v:" + n, fmt.Sprintf("%dx%d", rung.Width, rung.Height),
 		"-pix_fmt:v:" + n, "yuv420p",
 		// High, the profile the master playlist names (hlsVideoCodec): NVENC and
 		// QuickSync would otherwise pick their own
 		"-profile:v:" + n, "high",
 		"-force_key_frames:v:" + n, "expr:gte(t,n_forced*" + itoa(segmentSeconds) + ")",
+	}
+	if p.ToneMap == "" {
+		a = append(a, "-filter:v:"+n, FitScale(rung.Height))
 	}
 	if p := presetForEncoder(enc); p != "" {
 		a = append(a, "-preset:v:"+n, p)
@@ -356,16 +359,52 @@ func inputArgs(input string, p EncodePlan) Args {
 }
 
 // videoGraph is the HDR source's tone-mapping, once, split into one output a
-// rung ([v0], [v1], …): nothing for SDR.
-func videoGraph(rungs int, p EncodePlan) Args {
+// rung ([v0], [v1], …), each fitted to its rung (FitScale): nothing for SDR.
+func videoGraph(ladder []Rendition, p EncodePlan) Args {
+	rungs := len(ladder)
 	if p.ToneMap == "" || rungs == 0 {
 		return nil
 	}
-	outs := ""
-	for i := 0; i < rungs; i++ {
-		outs += "[v" + itoa(i) + "]"
+	splits, fits := "", ""
+	for i, rung := range ladder {
+		n := itoa(i)
+		splits += "[s" + n + "]"
+		fits += ";[s" + n + "]" + FitScale(rung.Height) + "[v" + n + "]"
 	}
-	return Args{"-filter_complex", "[0:v:0]" + p.ToneMap + ",split=" + itoa(rungs) + outs}
+	return Args{"-filter_complex", "[0:v:0]" + p.ToneMap + ",split=" + itoa(rungs) + splits + fits}
+}
+
+// FitScale is a rung's scale filter: its shorter side (a landscape frame's height, a
+// portrait one's width) at most short, the frame's shape kept, never enlarged, both
+// sides even. It reads the frame as ffmpeg hands it (a phone's rotated video already
+// upright), not the catalogue's size: a fixed 854x480 squashed every vertical video.
+func FitScale(short int) string {
+	h := itoa(short)
+	return "scale=w=if(gte(iw\\,ih)\\,-2\\,trunc(min(" + h + "\\,iw)/2)*2)" +
+		":h=if(gte(iw\\,ih)\\,trunc(min(" + h + "\\,ih)/2)*2\\,-2)"
+}
+
+// FitLadder gives each rung the size it has for a w×h source (FitScale's): the master
+// playlist's RESOLUTION. A source of unknown size keeps the ladder's landscape sizes.
+func FitLadder(ladder []Rendition, w, h int) []Rendition {
+	out := append([]Rendition(nil), ladder...)
+	if w <= 0 || h <= 0 {
+		return out
+	}
+	for i, r := range out {
+		short, long := w, h
+		if w >= h {
+			short, long = h, w
+		}
+		s := min(r.Height, short) / 2 * 2
+		l := (long*s/short + 1) / 2 * 2
+		if w >= h {
+			out[i].Width, out[i].Height = l, s
+		} else {
+			out[i].Width, out[i].Height = s, l
+		}
+	}
+	return out
 }
 
 func encoderAt(p EncodePlan, i int) string {
@@ -384,7 +423,7 @@ func encoderAt(p EncodePlan, i int) string {
 // player has yet to fetch. The segments stay until the session's folder goes
 // (the session closed: purgeVODSessions).
 func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePlan) Args {
-	args := append(inputArgs(input, p), videoGraph(len(ladder), p)...)
+	args := append(inputArgs(input, p), videoGraph(ladder, p)...)
 	variants := make([]string, len(ladder))
 	for i, rung := range ladder {
 		args = append(args, rungArgs(i, rung, encoderAt(p, i), p)...)
@@ -424,7 +463,7 @@ func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePl
 // dynamic while the transcode runs, static once it is done.
 func DASHArgs(input, outputDir string, ladder []Rendition, p EncodePlan) Args {
 	p.Start = 0 // a DASH transcode starts at the source's start
-	args := append(inputArgs(input, p), videoGraph(len(ladder), p)...)
+	args := append(inputArgs(input, p), videoGraph(ladder, p)...)
 	for i, rung := range ladder {
 		args = append(args, rungArgs(i, rung, encoderAt(p, i), p)...)
 	}
