@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // FollowWithin is how long the new home waits for the machines to follow it before it
@@ -26,12 +29,14 @@ func (o *Orchestrator) Finish(ctx context.Context, integrations Integrations) {
 	o.mu.Unlock()
 	t := time.NewTicker(15 * time.Second)
 	defer t.Stop()
+	// a step that keeps failing the same way is said once (Warn), again when it changes
+	var finishRepeat, forksRepeat safego.Repeat
 	for {
-		if err := o.finishOnce(ctx, integrations); err != nil && ctx.Err() == nil {
-			o.log().Debug("switchover: finishing", "err", err, "event", "switchover_finish_failed")
+		if err := o.finishOnce(ctx, integrations); finishRepeat.Level(err) == slog.LevelWarn && ctx.Err() == nil {
+			o.log().Warn("switchover: finishing", "err", err, "event", "switchover_finish_failed")
 		}
-		if err := o.dropOldForks(ctx); err != nil && ctx.Err() == nil {
-			o.log().Debug("switchover: the old forks", "err", err, "event", "switchover_fork_drop_failed")
+		if err := o.dropOldForks(ctx); forksRepeat.Level(err) == slog.LevelWarn && ctx.Err() == nil {
+			o.log().Warn("switchover: the old forks", "err", err, "event", "switchover_fork_drop_failed")
 		}
 		select {
 		case <-ctx.Done():
