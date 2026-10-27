@@ -371,3 +371,32 @@
     padding: var(--space-4);
   }
 }
+
+/* Epic 45 Phase 3 (story 45.19): the scrub preview over the progress bar.
+   Placed with a physical left: the browser's timeline runs left to right
+   in Arabic pages too. */
+.mkt-scrub {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  pointer-events: none;
+}
+.mkt-scrub__tile {
+  border: 2px solid #fff;
+  border-radius: var(--radius-sm);
+  background-color: #000;
+  background-repeat: no-repeat;
+  box-shadow: var(--shadow-md, 0 2px 8px rgb(0 0 0 / 0.4));
+}
+.mkt-scrub__time {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: rgb(0 0 0 / 0.75);
+  color: #fff;
+  font-size: var(--font-size-sm);
+  direction: ltr;
+  unicode-bidi: isolate;
+}

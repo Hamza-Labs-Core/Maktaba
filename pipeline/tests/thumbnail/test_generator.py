@@ -203,3 +203,52 @@ def test_sprite_decodes_every_frame_when_keyframes_give_none(tmp_path: Path) -> 
     )
     assert out.exists()
     assert "-skip_frame" in fake.calls[0] and "-skip_frame" not in fake.calls[1]
+
+
+def test_sprite_writes_its_index_beside_it(tmp_path: Path) -> None:
+    """Story 45.19: the player's scrub preview reads the grid and the seconds between
+    two tiles from ``sprite.json`` (served by the API)."""
+    import json
+
+    from maktaba_pipeline.thumbnail.generator import SPRITE_INDEX_VERSION, generate_sprite
+
+    fake = _FakeFFmpeg()
+    out = _run(
+        generate_sprite(
+            "/m/x.mp4", duration_sec=3600.0, content_hash="h", root=tmp_path, runner=fake
+        )
+    )
+    vf = fake.calls[0][fake.calls[0].index("-vf") + 1]
+    assert "tile=10x10" in vf and "fps=0.027778" in vf
+    index = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    assert index == {
+        "version": SPRITE_INDEX_VERSION,
+        "columns": 10,
+        "rows": 10,
+        "count": 100,
+        "interval_sec": 36.0,
+        "tile_width": 160,
+        "duration_sec": 3600.0,
+    }
+    assert not list(tmp_path.rglob("*.tmp"))
+
+
+def test_sprite_index_of_an_unknown_duration_is_one_a_second() -> None:
+    from maktaba_pipeline.thumbnail.generator import sprite_index
+
+    cfg = ThumbnailConfig(sprite_columns=5, sprite_rows=5)
+    assert sprite_index(0.0, cfg)["interval_sec"] == 1.0
+    assert sprite_index(100.0, cfg)["count"] == 25
+
+
+def test_a_failed_sprite_leaves_no_index(tmp_path: Path) -> None:
+    from maktaba_pipeline.thumbnail.generator import generate_sprite
+
+    fake = _FakeFFmpeg(fail=True)
+    with pytest.raises(ThumbnailError):
+        _run(
+            generate_sprite(
+                "/m/x.mp4", duration_sec=60.0, content_hash="h", root=tmp_path, runner=fake
+            )
+        )
+    assert not list(tmp_path.rglob("sprite.json"))

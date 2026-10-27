@@ -199,7 +199,7 @@ Builds a library's topics from all its transcribed videos and names each after i
 
 ### Poster and sprites {#thumbnail}
 
-Makes poster frames and the preview strip used when you scrub a video. Runs after **File identity**, on the main machine, and feeds **Small thumbnail**.
+Makes poster frames and the preview strip used when you scrub a video: 100 pictures spread over the whole video (videos done before October 2026 have 25; reprocess one to get the finer strip). Runs after **File identity**, on the main machine, and feeds **Small thumbnail**.
 
 ### Repair broken files {#repair-broken}
 

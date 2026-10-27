@@ -23,7 +23,8 @@
 // HLS failures that end in a reopen or the error screen, and a stream that
 // stops making progress while it should be playing (STALL_REPORT_MS).
 // The rich control surface (speed, PiP, keyboard map, chapter ticks,
-// caption sizing, resume) works on top of the <video> either way.
+// caption sizing, resume, scrub thumbnails: story 45.19) works on top of the
+// <video> either way.
 // Epic 45 Phase 2: at the end, Up next (components/UpNext) offers the play
 // queue's next video or the series' next lesson, and starts it after 10 s.
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -40,6 +41,7 @@ import { useI18n } from "../lib/i18n";
 import { attachVod, carrySig } from "@maktaba/tvplayer";
 import { mediaError, reportPlaybackFailure, type PlaybackFailure } from "../lib/playbackReport";
 import { UpNext } from "../components/UpNext";
+import { ScrubPreview } from "../components/ScrubPreview";
 
 interface OpenSessionResponse {
   session_id: string;
@@ -714,6 +716,7 @@ export function VideoPlayer({
             ))}
           </div>
         )}
+        {videoId && !bare && <ScrubPreview videoId={videoId} el={videoEl} />}
         {videoId && !bare && <UpNext videoId={videoId} el={videoEl} />}
       </div>
     </section>
