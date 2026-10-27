@@ -26,13 +26,15 @@ import {
   type LogFilters,
 } from "../../lib/logLinks";
 import {
+  APP_ORDER,
+  APP_ORDERED,
+  APP_STAGED,
   ATTEMPT_FAILED,
   compareVersions,
   RUN_ENDED,
   runCancellable,
   TARGET_RETRYABLE,
   TARGET_SKIPPABLE,
-  WAITING_CLICK,
   updatesApi,
   validVersion,
   type UpdateAttempt,
@@ -69,8 +71,6 @@ export function stateTone(state: string): Tone {
     case "done_with_failures":
     case "done_needs_person":
     case "cancelled":
-    case "waiting_click":
-    case "awaiting_click":
     case "needs_person":
       return "warn";
     case "superseded":
@@ -425,15 +425,13 @@ export function AdminUpdates() {
                 <td>{m.kind ? w.kind(m.kind) : "-"}</td>
                 <td>
                   <Badge tone={stateTone(m.state)}>{w.state(m.state)}</Badge>
-                  {m.target && WAITING_CLICK.has(m.state) && (
-                    <div className="mkt-muted" data-testid={`updates-machine-${m.id}-click`}>
+                  {m.target && APP_ORDER.has(m.state) && (
+                    <div className="mkt-muted" data-testid={`updates-machine-${m.id}-app`}>
                       {t(
-                        m.state === "clicked"
-                          ? "updates.page.clicked"
-                          : "updates.page.waitingClick",
-                        {
-                          version: m.target,
-                        }
+                        APP_STAGED.has(m.state)
+                          ? "updates.page.appStaged"
+                          : "updates.page.appOrdered",
+                        { version: m.target }
                       )}
                     </div>
                   )}
@@ -893,12 +891,12 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
         {view.detail?.waiting && (
           <span className="mkt-muted">{w.waiting(view.detail.waiting)}</span>
         )}
-        {!ended && view.step === "waiting_click" && (
-          <span className="mkt-muted" data-testid="updates-run-waiting-click">
-            {t("updates.page.runWaitingClick", {
+        {!ended && (view.step === "waiting_app" || view.step === "waiting_click") && (
+          <span className="mkt-muted" data-testid="updates-run-waiting-app">
+            {t("updates.page.runWaitingApp", {
               machines: [
                 ...(view.state === "home_applying" ? [t("updates.page.home")] : []),
-                ...view.targets.filter((x) => WAITING_CLICK.has(x.state)).map((x) => x.name),
+                ...view.targets.filter((x) => APP_ORDERED.has(x.state)).map((x) => x.name),
               ].join(", "),
             })}
           </span>

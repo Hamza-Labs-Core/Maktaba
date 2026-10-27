@@ -274,7 +274,7 @@ func (s *Service) Plan(ctx context.Context) (Plan, Policy, string, error) {
 	return MakePlan(s.now(), s.loc(), pol, cat, s.Current, wm), pol, wm, nil
 }
 
-// blockedFor runs the blockers for a run of version; the first reason wins: an active run that only waits for clicks
+// blockedFor runs the blockers for a run of version; the first reason wins: an active run that only waits for desktop apps
 // and that version supersedes does not block it (start supersedes it, once the release's
 // re-check passed).
 func (s *Service) blockedFor(ctx context.Context, version string) (string, error) {
@@ -444,7 +444,7 @@ func (s *Service) start(ctx context.Context, r Release, pol Policy, trigger, act
 			return Run{}, &withdrawnError{reason: reason}
 		}
 	}
-	// the release can start: a run that only waits for clicks gives way to it
+	// the release can start: a run that only waits for desktop apps gives way to it
 	s.supersede(ctx, r.Version)
 	run, err := s.Store.InsertRun(ctx, r.Version, NormalizeVersion(s.Current), trigger, actor)
 	if err != nil {
@@ -475,15 +475,15 @@ func (s *Service) start(ctx context.Context, r Release, pol Policy, trigger, act
 	return run, nil
 }
 
-// superseder is a Starter that ends a run waiting only for clicks on desktop apps when
-// a newer release is due (the Driver).
+// superseder is a Starter that ends a run waiting only for desktop apps to stage their
+// orders when a newer release is due (the Driver).
 type superseder interface {
 	Supersedable(ctx context.Context, version string) bool
 	Supersede(ctx context.Context, version string) (bool, error)
 }
 
-// supersede lets a newer release take the place of a run that only waits for clicks
-// (owner decision D1: nothing else waits for ever on a machine nobody clicks).
+// supersede lets a newer release take the place of a run that only waits for desktop apps
+// to stage their orders (nothing waits for ever on an app that never stages one).
 func (s *Service) supersede(ctx context.Context, version string) {
 	sp, ok := s.Starter.(superseder)
 	if !ok {

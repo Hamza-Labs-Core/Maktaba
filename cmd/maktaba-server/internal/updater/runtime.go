@@ -21,9 +21,10 @@ import (
 // signed Linux payload is installed as a new runtime directory, `current` moves to it
 // (`previous` keeps the one that ran) and the supervisor exits 75; the launcher starts
 // <runtime>/current again, and falls back to `previous` when it cannot stay up (its
-// guard, <launcher root>/updates/pending.json). The Linux app's runtime switches only
-// once someone clicks in the app (owner decision D1, request.go); a headless one by
-// itself (D3: the server updates its runtime either way, no root needed).
+// guard, <launcher root>/updates/pending.json). The Linux app's runtime is ordered from
+// the app first (it says when it installs) and switches at the home's go, with no click
+// (owner decision D1, request.go); a headless one by itself (D3: the server updates its
+// runtime either way, no root needed).
 type RuntimeInstaller struct {
 	Runtime appruntime.Runtime
 	Source  Source
@@ -31,7 +32,8 @@ type RuntimeInstaller struct {
 	// LauncherRoot is where the launcher keeps its lock and guard (MAKTABA_LAUNCHER_ROOT);
 	// the order to the app is in its updates directory (the app's state folder).
 	LauncherRoot string
-	// Owner is who owns the runtime (MAKTABA_RUNTIME_OWNER): "app" asks, "headless" not.
+	// Owner is who owns the runtime (MAKTABA_RUNTIME_OWNER): "app" orders it from the
+	// app first, "headless" not.
 	Owner string
 	// Record is the home's database record ("" on a node).
 	Record string
@@ -63,15 +65,15 @@ func (ri *RuntimeInstaller) requests() requests {
 	return requests{dir: filepath.Join(ri.LauncherRoot, "updates"), now: ri.now}
 }
 
-// Asks implements Asker: the Linux app's runtime does.
-func (ri *RuntimeInstaller) Asks() bool { return ri.Owner == "app" && ri.LauncherRoot != "" }
+// Orders implements Orderer: the Linux app's runtime does.
+func (ri *RuntimeInstaller) Orders() bool { return ri.Owner == "app" && ri.LauncherRoot != "" }
 
-// Ask implements Asker: the order (nothing for the app to fetch).
-func (ri *RuntimeInstaller) Ask(j *Journal) error {
+// Order implements Orderer: the order (nothing for the app to fetch).
+func (ri *RuntimeInstaller) Order(j *Journal) error {
 	return ri.requests().order(j, RequestKindRuntime, "")
 }
 
-// Answer implements Asker (the app started when it does not answer).
+// Answer implements Orderer (the app started when it does not answer).
 func (ri *RuntimeInstaller) Answer(j *Journal) (string, error) {
 	state, err := ri.requests().answer(j)
 	if err == nil && state == RequestOrdered {
@@ -339,7 +341,7 @@ func (ri *RuntimeInstaller) Extend(j *Journal, until time.Time) error {
 
 // Restart implements Installer (the app's order, when there is one, says installing).
 func (ri *RuntimeInstaller) Restart(_ context.Context, j *Journal, exit func(int)) error {
-	if ri.Asks() {
+	if ri.Orders() {
 		_ = ri.requests().set(j, RequestKindRuntime, "", RequestInstalling)
 	}
 	exit(75)

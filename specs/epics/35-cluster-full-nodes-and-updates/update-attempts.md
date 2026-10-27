@@ -148,7 +148,7 @@ attempt: "re-run the installer once").
 On a failure at any step the app says why: the menu (or tray) shows "Update to <v> failed:
 <reason>" until the next attempt, an OS notification says the same, and, for an install the
 person started there, the dialog shows the reason, the updater's own words and the fix (an
-install the home ordered goes at the home's go, maybe long after the click: no dialog waits for
+install the home ordered goes at the home's go, with nobody at the machine: no dialog waits for
 nobody, the notification and the menu say it). The order's own `error` keeps its `needs_admin: `
 prefix (the server's run reads it); every code is in `app-attempts.json`. A check that finds
 nothing newer leaves no attempt; a successful staging of an order neither (the attempt begins at

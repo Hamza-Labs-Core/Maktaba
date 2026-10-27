@@ -1,17 +1,19 @@
-// The home's order to install a release (Epic 35, install-kinds.md "Ask first", owner
-// decision D1): a desktop app that runs the server (the home, or a full node) installs
-// the release the home's update ordered only when someone clicks here. The server
-// writes <state>/updates/app-install.json ({run_id, version, feed, kind, home, state:
-// ordered}); this app's status poller reads it, stages the release (kind app: its own
-// update from the release's own feed, releases/download/v<version>/latest.json in the
-// app's own repository, so the channel, pin and skip the server applied hold;
-// downloaded and checked with this app's key, kept in updates/app-update-<version>.bin;
-// kind runtime or server: nothing to fetch, the server installs its own runtime or
-// switches to a release this app holds already) and shows it in the tray (staged) and
-// once in an OS notification. A click says clicked; the server answers go once the
-// home's run is ready (the home drains its workers first; a machine waits its turn), and
-// this app installs what it staged (checked again, and only while the order still says
-// go) and says how it went (installing, failed with the error). Pure decisions live
+// The home's order to install a release (Epic 35, install-kinds.md "No click", owner
+// decision D1 of 2026-10-27): a desktop app that runs the server (the home, or a full
+// node) installs the release the home's update ordered by itself, with no click here.
+// The server writes <state>/updates/app-install.json ({run_id, version, feed, kind,
+// home, install_by, state: ordered}); this app's status poller reads it, stages the
+// release (kind app: its own update from the release's own feed,
+// releases/download/v<version>/latest.json in the app's own repository, so the channel,
+// pin and skip the server applied hold; downloaded and checked with this app's key, kept
+// in updates/app-update-<version>.bin; kind runtime or server: nothing to fetch, the
+// server installs its own runtime or switches to a release this app holds already),
+// says staged, and tells the person in the tray and once in an OS notification that
+// Maktaba will update and restart (by install_by, an automatic run's window; else
+// shortly). The server answers go once the home's run is ready (an automatic run's
+// window, the home's drain; a machine waits its turn), and this app installs what it
+// staged (checked again, and only while the order still says go), says so ("is updating
+// now") and says how it went (installing, failed with the error). Pure decisions live
 // here; shell.rs runs the updater.
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -30,6 +32,8 @@ pub const INSTALL_URL: &str = "maktaba://install-update";
 /// The order's states (the server writes ordered and go, this app the others).
 pub const ORDERED: &str = "ordered";
 pub const STAGED: &str = "staged";
+/// What an app from before the click was removed (owner decision D1, 2026-10-27) wrote
+/// once someone clicked: read as staged (the go needs no click).
 pub const CLICKED: &str = "clicked";
 pub const GO: &str = "go";
 pub const INSTALLING: &str = "installing";
@@ -56,9 +60,16 @@ pub struct Request {
     pub feed: String,
     #[serde(default)]
     pub kind: String,
-    /// This machine is the home (else the cluster's update waits for it).
+    /// This machine is the home (else the cluster's update brings it to the release).
     #[serde(default)]
     pub home: bool,
+    /// The latest an automatic run gives the go (its window's end), as the server wrote
+    /// it, and as this machine's clock says it ("07:00", "2026-10-28 07:00") for the words:
+    /// empty for an admin's run, which goes as soon as this app staged it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub install_by: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub install_by_text: String,
     pub state: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub error: String,
@@ -125,7 +136,8 @@ pub fn still_go(path: &Path, run_id: &str) -> bool {
 /// What the app does about an order.
 #[derive(Debug, PartialEq)]
 pub enum Action {
-    /// Nothing to do now (none, not for this app, under way, or waiting for a click).
+    /// Nothing to do now (none, not for this app, under way, or staged and waiting for
+    /// the home's go).
     Nothing,
     /// Download this release's app update from this feed, check it and keep it.
     Stage { version: String, feed: String },
@@ -151,7 +163,7 @@ pub fn decide(
     let Some(req) = req else {
         return Action::Nothing;
     };
-    if busy || !server_side || !matches!(req.state.as_str(), ORDERED | STAGED | GO) {
+    if busy || !server_side || !matches!(req.state.as_str(), ORDERED | STAGED | CLICKED | GO) {
         return Action::Nothing;
     }
     if !valid_version(&req.version) {
@@ -171,8 +183,9 @@ pub fn decide(
         ORDERED if req.by_app() && !staged => stage,
         // kind runtime or server: the server has it; kind app: staged before a restart
         ORDERED => Action::Show,
-        // shown already; staged again when this app lost it (restarted, cleaned)
-        STAGED if req.by_app() && !staged => stage,
+        // shown already (or an older app's click: the same); staged again when this app
+        // lost it (restarted, cleaned). It waits for the go, with no click.
+        STAGED | CLICKED if req.by_app() && !staged => stage,
         GO if req.by_app() && paused => {
             // the user paused the server here: an install would start it
             Action::Refuse("the server is paused on this machine".into())
@@ -186,13 +199,15 @@ pub fn decide(
     }
 }
 
-/// What the tray shows of an order.
+/// What the tray and the notifications say of an order: never a thing to click (it
+/// installs by itself; owner decision D1, 2026-10-27).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Shown {
-    /// Ready: a click installs it (the home's own, or one the cluster waits for).
-    Ready { version: String, home: bool },
-    /// Clicked (or installing): it goes when the cluster is ready.
-    Clicked { version: String },
+    /// Staged here: Maktaba will update to it and restart, by `by` (an automatic run's
+    /// window, as this machine's clock says it) or, empty, shortly.
+    Ready { version: String, by: String },
+    /// The go came: Maktaba is updating to it now.
+    Installing { version: String },
 }
 
 /// shown is what the tray says of an order (None: nothing to show yet, or over).
@@ -204,30 +219,33 @@ pub fn shown(req: Option<&Request>) -> Option<Shown> {
         .unwrap_or(&req.version)
         .to_string();
     match req.state.as_str() {
-        STAGED => Some(Shown::Ready {
+        // an older app's click is a staged order too: it waits for the go
+        STAGED | CLICKED => Some(Shown::Ready {
             version,
-            home: req.home,
+            by: req.install_by_text.clone(),
         }),
-        CLICKED | GO | INSTALLING => Some(Shown::Clicked { version }),
+        GO | INSTALLING => Some(Shown::Installing { version }),
         _ => None,
     }
 }
 
-/// The order to notify of now: one that became ready (staged) and was not notified of
-/// yet; its run is remembered in notified (one notification per order).
+/// The order to notify of now: one that became ready (staged), then its go, each not
+/// notified of yet; each is remembered in notified by its run (one notification each per
+/// order).
 pub fn to_notify(req: Option<&Request>, notified: &mut HashSet<String>) -> Option<Shown> {
     let req = req?;
-    match shown(Some(req)) {
-        Some(ready @ Shown::Ready { .. }) if notified.insert(req.run_id.clone()) => Some(ready),
-        _ => None,
-    }
+    let shown = shown(Some(req))?;
+    let key = match shown {
+        Shown::Ready { .. } => format!("{}:ready", req.run_id),
+        Shown::Installing { .. } => format!("{}:go", req.run_id),
+    };
+    notified.insert(key).then_some(shown)
 }
 
-/// What a click on the tray's update item does.
+/// What a click on the tray's update item does (an order's item is no button: it
+/// installs by itself).
 #[derive(Debug, PartialEq)]
 pub enum Click {
-    /// The home's order, staged here: say clicked (it installs at the home's go).
-    Order(Request),
     /// The newest release of the app's own feed (an app in client mode).
     OwnFeed,
     /// Exactly this release, from its own feed (the Linux app older than its server).
@@ -240,12 +258,9 @@ pub enum Click {
 /// or a client; catch_up: the release the Linux app older than its server catches up
 /// with (catch_up below), the only update an app that runs the server installs of its
 /// own.
-pub fn click(order: Option<&Request>, server_side: bool, catch_up: Option<&str>) -> Click {
+pub fn click(server_side: bool, catch_up: Option<&str>) -> Click {
     if !server_side {
         return Click::OwnFeed;
-    }
-    if let Some(r) = order.filter(|r| r.state == STAGED) {
-        return Click::Order(r.clone());
     }
     match catch_up.filter(|v| valid_version(v)) {
         Some(v) => Click::Release(v.strip_prefix('v').unwrap_or(v).to_string()),
@@ -364,7 +379,7 @@ pub fn write_state(path: &Path, req: &Request, state: &str, error: &str) -> std:
     r.state = state.to_string();
     r.error = error.to_string();
     let raw = serde_json::to_vec_pretty(&r).map_err(std::io::Error::other)?;
-    // a name of this write's own: the poller and a tray click may answer at once
+    // a name of this write's own: the poller and an install of the order may answer at once
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let tmp = path.with_extension(format!(
         "json.{}-{}.tmp",
@@ -747,13 +762,18 @@ mod tests {
         assert_eq!(decide_on(&ordered, false, false), stage());
         // staged already (before a restart of this app): shown
         assert_eq!(decide_on(&ordered, false, true), Action::Show);
-        // shown: nothing until the click and the home's go
+        // shown: nothing until the home's go
         let staged = req(STAGED, "1.5.0", FEED);
         assert_eq!(decide_on(&staged, false, true), Action::Nothing);
         assert_eq!(decide_on(&staged, false, false), stage());
+        // an older app's click reads as staged: staged again when lost, then the go
         assert_eq!(
             decide_on(&req(CLICKED, "1.5.0", FEED), false, true),
             Action::Nothing
+        );
+        assert_eq!(
+            decide_on(&req(CLICKED, "1.5.0", FEED), false, false),
+            stage()
         );
         assert_eq!(
             decide_on(&req(GO, "1.5.0", FEED), false, true),
@@ -784,6 +804,64 @@ mod tests {
         let mut app = req(ORDERED, "1.5.0", FEED);
         app.kind = KIND_APP.into();
         assert_eq!(decide_on(&app, false, false), stage());
+    }
+
+    /// Owner decision D1 (2026-10-27): the order goes ordered, staged (this app), go (the
+    /// server), installing: the release is installed at the go with nobody clicking here,
+    /// and this app never writes clicked.
+    #[test]
+    fn installs_an_ordered_and_staged_release_at_the_go_without_a_click() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = request_path(dir.path());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut order = req(ORDERED, "1.5.0", FEED);
+        order.install_by_text = "07:00".into();
+        std::fs::write(&path, serde_json::to_vec(&order).unwrap()).unwrap();
+        // the poller reads the order and stages it
+        let r = read(&path).unwrap();
+        assert_eq!(decide_on(&r, false, false), stage());
+        write_state(&path, &r, STAGED, "").unwrap();
+        // staged: said, never a thing to click, and nothing to do until the go
+        let r = read(&path).unwrap();
+        assert_eq!(r.state, STAGED);
+        assert_eq!(
+            shown(Some(&r)),
+            Some(Shown::Ready {
+                version: "1.5.0".into(),
+                by: "07:00".into()
+            })
+        );
+        assert_eq!(decide_on(&r, false, true), Action::Nothing);
+        assert_eq!(click(true, None), Click::Nothing);
+        // the home's go (the server writes it): installed at once
+        write_state(&path, &r, GO, "").unwrap();
+        let r = read(&path).unwrap();
+        assert_eq!(
+            decide_on(&r, false, true),
+            Action::Install {
+                version: "1.5.0".into(),
+                feed: FEED.into()
+            }
+        );
+        assert!(still_go(&path, "r1"));
+        assert_eq!(
+            shown(Some(&r)),
+            Some(Shown::Installing {
+                version: "1.5.0".into()
+            })
+        );
+        // what it staged went in its place, and the order keeps what the server wrote
+        write_state(&path, &r, INSTALLING, "").unwrap();
+        let r = read(&path).unwrap();
+        assert_eq!(
+            (r.state.as_str(), r.install_by_text.as_str()),
+            (INSTALLING, "07:00")
+        );
+        // a go that comes before this app staged it installs too (downloaded then)
+        assert!(matches!(
+            decide_on(&req(GO, "1.5.0", FEED), false, false),
+            Action::Install { .. }
+        ));
     }
 
     #[test]
@@ -822,13 +900,13 @@ mod tests {
             shown(Some(&r)),
             Some(Shown::Ready {
                 version: "1.5.0".into(),
-                home: true
+                by: String::new()
             })
         );
         r.state = GO.into();
         assert_eq!(
             shown(Some(&r)),
-            Some(Shown::Clicked {
+            Some(Shown::Installing {
                 version: "1.5.0".into()
             })
         );
@@ -964,25 +1042,32 @@ mod tests {
     }
 
     #[test]
-    fn the_tray_says_who_waits() {
+    fn the_tray_says_when_it_installs() {
         let mut r = req(STAGED, "v1.5.0", FEED);
         assert_eq!(
             shown(Some(&r)),
             Some(Shown::Ready {
                 version: "1.5.0".into(),
-                home: false
+                by: String::new()
             })
         );
-        r.home = true;
-        assert!(matches!(
-            shown(Some(&r)),
-            Some(Shown::Ready { home: true, .. })
-        ));
-        for state in [CLICKED, GO, INSTALLING] {
+        r.install_by_text = "2026-10-28 07:00".into();
+        for state in [STAGED, CLICKED] {
             r.state = state.into();
             assert_eq!(
                 shown(Some(&r)),
-                Some(Shown::Clicked {
+                Some(Shown::Ready {
+                    version: "1.5.0".into(),
+                    by: "2026-10-28 07:00".into()
+                }),
+                "{state}"
+            );
+        }
+        for state in [GO, INSTALLING] {
+            r.state = state.into();
+            assert_eq!(
+                shown(Some(&r)),
+                Some(Shown::Installing {
                     version: "1.5.0".into()
                 })
             );
@@ -994,22 +1079,32 @@ mod tests {
     }
 
     #[test]
-    fn an_order_is_notified_once_when_it_is_ready() {
+    fn an_order_is_notified_once_when_it_is_ready_and_once_at_its_go() {
         let mut seen = HashSet::new();
         let mut r = req(ORDERED, "v1.5.0", FEED);
         assert_eq!(to_notify(Some(&r), &mut seen), None);
         r.state = STAGED.into();
-        r.home = true;
+        r.install_by_text = "07:00".into();
         assert_eq!(
             to_notify(Some(&r), &mut seen),
             Some(Shown::Ready {
                 version: "1.5.0".into(),
-                home: true
+                by: "07:00".into()
             })
         );
-        // the next polls, and the click that follows, say nothing more
+        // the next polls say nothing more (an older app's clicked is the same order)
         assert_eq!(to_notify(Some(&r), &mut seen), None);
         r.state = CLICKED.into();
+        assert_eq!(to_notify(Some(&r), &mut seen), None);
+        // the go: once, that it updates now
+        r.state = GO.into();
+        assert_eq!(
+            to_notify(Some(&r), &mut seen),
+            Some(Shown::Installing {
+                version: "1.5.0".into()
+            })
+        );
+        r.state = INSTALLING.into();
         assert_eq!(to_notify(Some(&r), &mut seen), None);
         // a newer run is another order
         let mut newer = req(STAGED, "1.6.0", FEED);
@@ -1019,32 +1114,15 @@ mod tests {
     }
 
     #[test]
-    fn a_click_installs_only_what_the_home_ordered_on_an_app_that_runs_the_server() {
-        let staged = req(STAGED, "1.5.0", FEED);
-        assert_eq!(
-            click(Some(&staged), true, None),
-            Click::Order(staged.clone())
-        );
-        // not staged (any more) at the click: nothing, never the app's own feed
-        for state in [ORDERED, CLICKED, GO, INSTALLING, FAILED] {
-            let r = req(state, "1.5.0", FEED);
-            assert_eq!(click(Some(&r), true, None), Click::Nothing, "{state}");
-        }
-        assert_eq!(click(None, true, None), Click::Nothing);
+    fn an_app_that_runs_the_server_installs_nothing_on_a_click_but_its_catch_up() {
+        // the home's orders install by themselves: the update item never takes one, and
+        // never the app's own feed
+        assert_eq!(click(true, None), Click::Nothing);
         // the Linux app older than its server catches up with exactly its release
-        assert_eq!(
-            click(None, true, Some("v1.5.0")),
-            Click::Release("1.5.0".into())
-        );
-        assert_eq!(click(None, true, Some("1.5")), Click::Nothing);
-        // the order comes first
-        assert_eq!(
-            click(Some(&staged), true, Some("1.4.0")),
-            Click::Order(staged.clone())
-        );
+        assert_eq!(click(true, Some("v1.5.0")), Click::Release("1.5.0".into()));
+        assert_eq!(click(true, Some("1.5")), Click::Nothing);
         // a client keeps its own updates
-        assert_eq!(click(None, false, None), Click::OwnFeed);
-        assert_eq!(click(Some(&staged), false, None), Click::OwnFeed);
+        assert_eq!(click(false, None), Click::OwnFeed);
     }
 
     #[test]
@@ -1122,7 +1200,7 @@ mod tests {
             .map(|i| {
                 let (path, r) = (path.clone(), r.clone());
                 std::thread::spawn(move || {
-                    let state = if i % 2 == 0 { CLICKED } else { STAGED };
+                    let state = if i % 2 == 0 { INSTALLING } else { STAGED };
                     write_state(&path, &r, state, "")
                 })
             })
@@ -1134,7 +1212,7 @@ mod tests {
         }
         let got = read(&path).expect("a whole order");
         assert_eq!(got.run_id, "r1");
-        assert!(matches!(got.state.as_str(), CLICKED | STAGED));
+        assert!(matches!(got.state.as_str(), INSTALLING | STAGED));
         assert!(
             leftovers(dir.path()).is_empty(),
             "{:?}",

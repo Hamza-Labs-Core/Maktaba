@@ -63,8 +63,9 @@ type MachineStatus struct {
 	Reason    string          `json:"reason,omitempty"`
 	Running   string          `json:"running,omitempty"`
 	Installer string          `json:"installer,omitempty"`
-	// Asks: a desktop app that runs the server, which installs only once someone clicks
-	// on it (owner decision D1); App is its answer to the order (ordered, staged, clicked).
+	// Asks: a desktop app that runs the server, whose app installs the release: ordered,
+	// staged there, installed at the home's go (no click: owner decision D1, 2026-10-27;
+	// the wire keeps the name); App is its answer to the order (ordered, staged).
 	Asks bool   `json:"asks,omitempty"`
 	App  string `json:"app,omitempty"`
 	// Pending: the release that came up is busy with a start step (the database step, the
@@ -104,8 +105,8 @@ const (
 	MPrepared      = "prepared"
 	MPrepareFailed = "prepare_failed"
 	MAborted       = "aborted"
-	MAwaitingClick = "awaiting_click" // ordered from the app: it waits for a click there
-	MClicked       = "clicked"        // someone clicked: it waits for the home's go
+	MOrdered       = "ordered"    // ordered from its desktop app: the app stages it
+	MAppStaged     = "app_staged" // the app staged it: it waits for the home's go
 	MApplying      = "applying"
 	MRestarting    = "restarting"
 	MWatching      = "watching"
@@ -114,7 +115,24 @@ const (
 	MRolledBack    = "rolled_back"
 	MApplyFailed   = "apply_failed"
 	MFailed        = "failed"
+	// What a supervisor from before owner decision D1 was replaced (2026-10-27) says of
+	// an order: it waits for a click on that machine, then (clicked) for the home's go.
+	// Read as MOrdered and MAppStaged: such a machine's click is its own, the go is not.
+	MAwaitingClick = "awaiting_click"
+	MClicked       = "clicked"
 )
+
+// appOrdered reports whether a machine's state is an order its desktop app has not
+// staged yet (or an older supervisor's, waiting for its click).
+func appOrdered(state string) bool { return state == MOrdered || state == MAwaitingClick }
+
+// appStaged reports whether a machine's state is an order its desktop app staged: it
+// waits for the home's go (or an older supervisor's that was clicked).
+func appStaged(state string) bool { return state == MAppStaged || state == MClicked }
+
+// beforeGo reports whether a machine's state is an order to its desktop app before the
+// home's go: nothing changed yet, and it can be withdrawn.
+func beforeGo(state string) bool { return appOrdered(state) || appStaged(state) }
 
 // Starter hands a planned run to whoever runs it (the Driver).
 type Starter interface {

@@ -23,9 +23,10 @@ type world struct {
 	marked    bool // the record says: put the dump back
 	committed string
 	exits     []int
-	// the desktop app's side of an order (an installer that asks)
-	order     string // the run ordered ("" withdrawn)
-	answer    string // ordered, staged, clicked
+	// the desktop app's side of an order (an installer that orders from its app)
+	order     string     // the run ordered ("" withdrawn)
+	answer    string     // ordered, staged
+	installBy *time.Time // when the order says the app installs
 	answerErr error
 	extends   int // the launcher's guard pushed on (Extender)
 }
@@ -79,7 +80,7 @@ type fakeInst struct {
 	dieAt             string
 	died              chan struct{}
 	once              sync.Once
-	// asks: a desktop app's install (Asker)
+	// asks: a desktop app's install (Orderer)
 	asks bool
 	// replaces: its launcher is replaced when a release needs a newer one
 	replaces bool
@@ -156,17 +157,17 @@ func (f *fakeInst) Commit(_ context.Context, j *Journal) error {
 func (f *fakeInst) Discard(_ context.Context, j *Journal) error {
 	return f.step("discard", func() { delete(f.w.staged, j.Job.Version); f.w.order, f.w.answer = "", "" })
 }
-func (f *fakeInst) Asks() bool { return f.asks }
+func (f *fakeInst) Orders() bool { return f.asks }
 func (f *fakeInst) ReplaceLauncher(*Journal) (bool, error) {
 	if !f.replaces {
 		return false, nil
 	}
 	return true, f.step("launcher", nil)
 }
-func (f *fakeInst) Ask(j *Journal) error {
-	return f.step(StepAsk, func() {
+func (f *fakeInst) Order(j *Journal) error {
+	return f.step(StepOrder, func() {
 		if f.w.order != j.Job.RunID {
-			f.w.order, f.w.answer = j.Job.RunID, RequestOrdered
+			f.w.order, f.w.answer, f.w.installBy = j.Job.RunID, RequestOrdered, j.InstallBy
 		}
 	})
 }

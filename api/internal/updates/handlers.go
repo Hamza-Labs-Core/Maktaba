@@ -116,8 +116,8 @@ type Machine struct {
 	Platform string `json:"platform,omitempty"`
 	// Kind is the machine's install kind (layout, runtime, appbundle, flat).
 	Kind string `json:"kind,omitempty"`
-	// Target is the release the active run brings it to (the one its app shows while it
-	// waits for a click).
+	// Target is the release the active run brings it to (the one its desktop app stages
+	// and installs).
 	Target string `json:"target,omitempty"`
 	// Attempts are its last update attempts, every failure with its reason: its own (the
 	// desktop app's updater, its releases' starts) and its last part in a run, newest
@@ -188,13 +188,13 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 				if !det.NoHome {
 					o.Machines[0].Target = NormalizeVersion(o.Run.Version)
 				}
-				// the home's desktop app waits for a click there (owner decision D1)
+				// the home's desktop app stages its order, then waits for the go
 				if o.Run.State == RunHomeApplying && det.Home != nil {
-					switch det.Home.State {
-					case MAwaitingClick:
-						o.Machines[0].State = TargetWaitingClick
-					case MClicked:
-						o.Machines[0].State = TargetClicked
+					switch {
+					case appOrdered(det.Home.State):
+						o.Machines[0].State = TargetOrdered
+					case appStaged(det.Home.State):
+						o.Machines[0].State = TargetAppStaged
 					}
 				}
 			}

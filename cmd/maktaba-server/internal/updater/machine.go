@@ -336,7 +336,8 @@ type Status struct {
 	*Journal
 	Running string `json:"running"`
 	Kind    string `json:"installer"`
-	// Asks: this machine installs only once someone clicks on it (Asker).
+	// Asks: this machine's desktop app installs the release, ordered and staged before
+	// the home's go (Orderer; the name is the wire's since owner decision D1).
 	Asks bool `json:"asks,omitempty"`
 	// BoundSec is how long this machine's own limits let the run go on from its switch
 	// (its start steps' cap and its watch's bound): the home's driver waits at least that
@@ -351,7 +352,7 @@ type Status struct {
 func (m *Machine) Status() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	st := Status{Journal: m.j.clone(), Running: m.Installer.Running(), Kind: m.Installer.Kind(), Asks: m.asker() != nil,
+	st := Status{Journal: m.j.clone(), Running: m.Installer.Running(), Kind: m.Installer.Kind(), Asks: m.orderer() != nil,
 		Attempts: attempts.Read(m.Dir)}
 	if st.Journal != nil {
 		st.BoundSec = int((pendingCap(st.Journal) + st.Journal.Job.WatchBound()).Seconds())
@@ -380,16 +381,16 @@ func (m *Machine) WatchAttempts(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// asker is the installer when it waits for a click.
-func (m *Machine) asker() Asker {
-	if a, ok := m.Installer.(Asker); ok && a.Asks() {
+// orderer is the installer when the release goes through its app's order.
+func (m *Machine) orderer() Orderer {
+	if a, ok := m.Installer.(Orderer); ok && a.Orders() {
 		return a
 	}
 	return nil
 }
 
-// waitsForClick reports whether state is an order waiting for its click or its go.
-func waitsForClick(state string) bool { return state == StateAwaitingClick || state == StateClicked }
+// ordered reports whether state is an order waiting for the app or for the home's go.
+func ordered(state string) bool { return state == StateOrdered || state == StateAppStaged }
 
 // Start makes the machine ready: ctx bounds every goroutine it starts (the supervisor's
 // life). Resume reads the journal of a run the last start left.
@@ -479,8 +480,8 @@ func (m *Machine) Prepare(job Job) error {
 	}
 	if old := m.j; old != nil {
 		switch old.State {
-		case StatePrepared, StateAwaitingClick, StateClicked, StateAborted, StatePrepareFailed:
-			// what the run it replaces staged goes (an order waiting for its click gives
+		case StatePrepared, StateOrdered, StateAppStaged, StateAborted, StatePrepareFailed:
+			// what the run it replaces staged goes (an order waiting for the home's go gives
 			// way to the newer run: the app forgets it)
 			_ = m.Installer.Discard(context.Background(), old.clone())
 		}
@@ -682,9 +683,9 @@ func (m *Machine) Abort(runID string) error {
 		}
 		m.mu.Unlock()
 		return nil
-	case StatePrepared, StateAwaitingClick, StateClicked:
-		if m.j.State != StatePrepared {
-			m.endStepLocked(StepAsk, "failed", "aborted")
+	case StatePrepared, StateOrdered, StateAppStaged:
+		if m.j.State == StateOrdered {
+			m.endStepLocked(StepOrder, "failed", "aborted")
 		}
 		m.j.State = StateAborted
 		err := m.saveLocked()
@@ -704,16 +705,16 @@ func (m *Machine) Abort(runID string) error {
 // ---------- apply ----------
 
 // Apply switches to the prepared release and restarts on it (in the background); the
-// release that comes up finishes the run (Resume). An install a person updates is
-// ordered from the app instead (awaiting_click); once someone clicked there, Apply again
-// is the home's go.
+// release that comes up finishes the run (Resume). An install its desktop app installs
+// is ordered from the app instead (ordered: the app stages it and says when it
+// installs); once the app staged it (app_staged), Apply again is the home's go.
 // ApplyGated is Apply for a run the home ordered while the TV is watched (tvBusy: it
 // skipped its TV gate because this machine's prepared report said it hands its TV over):
 // when it cannot hand over now, it refuses (ErrTVBusy) and says so in its report, so the
 // run's TV gate holds it.
 func (m *Machine) ApplyGated(runID string, tvBusy bool) error {
 	if j := m.Status().Journal; tvBusy && m.TVHandover != nil && j != nil && j.Job.RunID == runID &&
-		(j.State == StatePrepared || j.State == StateClicked) && j.Staged != "running" {
+		(j.State == StatePrepared || j.State == StateAppStaged) && j.Staged != "running" {
 		if ok, why := m.TVHandover(j, j.Job.Version, false); !ok {
 			_ = m.mutate(func(j *Journal) { j.HandsOver, j.HandoverWhy = false, why })
 			return fmt.Errorf("%w: the TV processes cannot be handed over now (%s) and the TV is watched", ErrTVBusy, why)
@@ -731,19 +732,19 @@ func (m *Machine) Apply(runID string) error {
 	}
 	switch m.j.State {
 	case StateApplying, StateRestarting, StateWatching, StateCommitted, StateRollingBack, StateRolledBack, StateApplyFailed,
-		StateAwaitingClick:
+		StateOrdered:
 		m.mu.Unlock()
-		return nil // asked again: under way, done, or waiting for its click
-	case StatePrepared, StateClicked:
+		return nil // asked again: under way, done, or the app still staging it
+	case StatePrepared, StateAppStaged:
 	default:
 		state := m.j.State
 		m.mu.Unlock()
 		return fmt.Errorf("%w: the run is %s", ErrNotReady, state)
 	}
-	if m.j.State == StatePrepared && m.j.Staged != "running" && m.asker() != nil {
+	if m.j.State == StatePrepared && m.j.Staged != "running" && m.orderer() != nil {
 		now := m.now()
-		m.j.State, m.j.Step, m.j.App = StateAwaitingClick, StepAsk, ""
-		m.j.Steps = append(m.j.Steps, StepRecord{Step: StepAsk, State: "running", StartedAt: now})
+		m.j.State, m.j.Step, m.j.App = StateOrdered, StepOrder, ""
+		m.j.Steps = append(m.j.Steps, StepRecord{Step: StepOrder, State: "running", StartedAt: now})
 		if err := m.saveLocked(); err != nil {
 			m.mu.Unlock()
 			return err
@@ -818,51 +819,61 @@ func (m *Machine) apply(ctx context.Context) {
 	}
 }
 
-// await orders the release from the app and follows its answer until someone clicks
-// (clicked: the home's go switches) or it fails (nothing changed).
+// SetInstallBy records the latest an automatic run gives the go (its window's end and
+// overrun: the home's apply says it); the app's order names it. Only before the order is
+// written: the app's notice is said once.
+func (m *Machine) SetInstallBy(runID string, at time.Time) {
+	_ = m.mutate(func(j *Journal) {
+		if j.Job.RunID == runID && j.State == StatePrepared && !at.IsZero() {
+			t := at.UTC()
+			j.InstallBy = &t
+		}
+	})
+}
+
+// await orders the release from the app and follows its answer until the app staged it
+// (app_staged: the home's go switches; no click on this machine) or it fails (nothing
+// changed).
 func (m *Machine) await(ctx context.Context, runID string) {
-	a := m.asker()
+	a := m.orderer()
 	j := m.Status().Journal
 	if a == nil || j == nil || j.Job.RunID != runID {
 		return
 	}
-	if err := a.Ask(j); err != nil {
-		m.askFailed(runID, err)
+	if err := a.Order(j); err != nil {
+		m.orderFailed(runID, err)
 		return
 	}
-	m.logf("ordered %s from the app: it installs once someone clicks on this machine", j.Job.Version)
+	m.logf("ordered %s from the app: it stages it, then installs it at the home's go", j.Job.Version)
 	t := time.NewTicker(m.checkEvery())
 	defer t.Stop()
 	for {
 		cur := m.Status().Journal
-		if cur == nil || cur.Job.RunID != runID || cur.State != StateAwaitingClick {
+		if cur == nil || cur.Job.RunID != runID || cur.State != StateOrdered {
 			return // withdrawn, replaced, or answered
 		}
 		state, err := a.Answer(cur)
 		if err != nil {
-			m.askFailed(runID, err)
+			m.orderFailed(runID, err)
 			return
 		}
 		switch {
-		case state == RequestClicked:
+		case state == RequestStaged:
 			m.mu.Lock()
-			if m.j != nil && m.j.Job.RunID == runID && m.j.State == StateAwaitingClick {
-				m.j.State, m.j.Step, m.j.App = StateClicked, "", RequestClicked
-				m.endStepLocked(StepAsk, "done", "clicked")
+			if m.j != nil && m.j.Job.RunID == runID && m.j.State == StateOrdered {
+				m.j.State, m.j.Step, m.j.App = StateAppStaged, "", RequestStaged
+				m.endStepLocked(StepOrder, "done", "staged")
 				_ = m.saveLocked()
 			}
 			m.mu.Unlock()
-			m.logf("someone chose to install %s here: it waits for the home's go", cur.Job.Version)
+			m.logf("the app staged %s: it installs at the home's go", cur.Job.Version)
 			return
-		case state != cur.App && (state == RequestOrdered || state == RequestStaged):
+		case state != cur.App && state == RequestOrdered:
 			_ = m.mutate(func(j *Journal) {
 				if j.Job.RunID == runID {
 					j.App = state
 				}
 			})
-			if state == RequestStaged {
-				m.logf("the app staged %s and shows it: it waits for a click", cur.Job.Version)
-			}
 		}
 		select {
 		case <-ctx.Done():
@@ -872,13 +883,13 @@ func (m *Machine) await(ctx context.Context, runID string) {
 	}
 }
 
-// askFailed ends an order the app could not take (nothing changed).
-func (m *Machine) askFailed(runID string, err error) {
-	f := failure(StepAsk, err)
+// orderFailed ends an order the app could not take (nothing changed).
+func (m *Machine) orderFailed(runID string, err error) {
+	f := failure(StepOrder, err)
 	var withdraw *Journal
 	m.mu.Lock()
-	if m.j != nil && m.j.Job.RunID == runID && waitsForClick(m.j.State) {
-		m.endStepLocked(StepAsk, "failed", f.Error())
+	if m.j != nil && m.j.Job.RunID == runID && ordered(m.j.State) {
+		m.endStepLocked(StepOrder, "failed", f.Error())
 		m.j.State, m.j.Error = StateApplyFailed, f
 		_ = m.saveLocked()
 		withdraw = m.j.clone()
@@ -916,13 +927,30 @@ func (m *Machine) Resume() {
 	m.j = j
 	m.mu.Unlock()
 	switch j.State {
-	case StateAwaitingClick, StateClicked:
+	case StateOrdered, StateAppStaged:
+		// (a journal from before owner decision D1 was replaced says awaiting_click or
+		// clicked: LoadJournal read them as these two, so such a run goes on with no click)
 		if newRel {
 			// installed while it waited (the app's own way): watched like a switch
-			m.beginWatch("installed while the order waited for its click")
+			m.beginWatch("installed while the order waited for the home's go")
 			return
 		}
-		if j.State == StateAwaitingClick {
+		if running != "" && layout.CompareVersions(running, j.Job.Version) > 0 {
+			// a newer release runs (installed by hand meanwhile): the order is over, and
+			// never installed over it
+			_ = m.mutate(func(j *Journal) {
+				if j.State == StateOrdered {
+					m.endStepLocked(StepOrder, "failed", "replaced_by_newer")
+				}
+				j.State, j.Step = StateAborted, ""
+				j.Error = &Failure{Step: StepOrder, Code: "replaced_by_newer",
+					Detail: fmt.Sprintf("%s runs now, newer than %s", running, j.Job.Version)}
+			})
+			_ = m.withJournal(func(j *Journal) error { return m.Installer.Discard(context.Background(), j) })
+			m.logf("%s runs now, newer than %s: its order is withdrawn", running, j.Job.Version)
+			return
+		}
+		if j.State == StateOrdered {
 			ctx := m.ctx()
 			m.running.Add(1)
 			go func() {
@@ -930,7 +958,7 @@ func (m *Machine) Resume() {
 				m.await(ctx, j.Job.RunID)
 			}()
 		}
-		// clicked: it waits for the home's go
+		// app_staged: it waits for the home's go
 	case StatePreparing:
 		// cut short: prepared again (every step is idempotent)
 		m.mu.Lock()

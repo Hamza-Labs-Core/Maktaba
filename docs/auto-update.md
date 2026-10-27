@@ -14,7 +14,7 @@ an update, the machines, restore, the settings — are in [updates.md](updates.m
 | Server | Checks GitHub Releases and serves `GET /api/system/updates`; installs each release by itself in the quiet window, the home first, then every machine ([updates.md](updates.md)). |
 | Server (admin) | Admin -> Updates (`/admin/updates`): Update now, Check now, Skip, Pause, a run's steps on the home and on each machine, Retry, Skip, Roll back, the backups and Restore ([updates.md](updates.md#update-now-skip-defer-pin)). |
 | CLI | `maktaba-server update` reads the same feed and verifies with the same code (`--check`, `--version vX.Y.Z`, `--rollback`). |
-| Desktop (Tauri) | Built-in updater reads the Release's `latest.json`, applies on relaunch (signature-verified). An app that runs the server stages the release the home's update orders and installs it on a click there; a client-only app keeps its own "restart to install" badge. |
+| Desktop (Tauri) | Built-in updater reads the Release's `latest.json`, applies on relaunch (signature-verified). An app that runs the server stages the release the home's update orders and installs it by itself at the home's go (no click there); a client-only app keeps its own "restart to install" badge. |
 | Mobile | The sideloaded Android app: an in-app banner → the release's `.apk`; store builds are updated by their store ([below](#the-mobile-apps-update-banner-story-285)). |
 
 ## Channels

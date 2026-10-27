@@ -38,17 +38,17 @@ func TestDriverHomeCeiling(t *testing.T) {
 	}
 }
 
-// review A3: Cancel during a rollout withdraws the orders waiting for a click.
+// review A3: Cancel during a rollout withdraws the orders before their go.
 func TestDriverCancelWithdrawsWaitingOrders(t *testing.T) {
 	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "darwin-arm64", "1.4.0")
-	a.asks = true
+	a.asks, a.appSlow = true, true
 	_, _ = r.f.svc.Tick(ctx)
 	r.stepN(40)
 	run := r.active(t)
-	if a.state() != MAwaitingClick {
+	if a.state() != MOrdered {
 		t.Fatalf("machine %s", a.state())
 	}
 	if err := r.d.Cancel(ctx, run.ID, "admin"); err != nil {
@@ -60,24 +60,25 @@ func TestDriverCancelWithdrawsWaitingOrders(t *testing.T) {
 }
 
 // review A4: a machine offline when the rollout began, back while the run waits for
-// another machine's click, is updated by that run (no catch-up can start meanwhile).
+// another machine's app to stage its order, is updated by that run (no catch-up can
+// start meanwhile).
 func TestDriverRolloutTakesBackAMachine(t *testing.T) {
 	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "darwin-arm64", "1.4.0")
-	a.asks = true
+	a.asks, a.appSlow = true, true
 	b := r.node(t, "n2", "bravo", "linux-amd64", "1.4.0")
 	r.cluster.offline["n2"] = true
 	_, _ = r.f.svc.Tick(ctx)
 	// only the steps it takes (the unit tier's time cap)
 	r.stepUntil(40, func() bool {
 		run, _ := r.f.store.ActiveRun(ctx)
-		return run != nil && run.Step == StepWaitingClick &&
+		return run != nil && run.Step == StepWaitingApp &&
 			targetsByName(t, r.f.store, run.ID)["bravo"].State == TargetOffline
 	})
 	run := r.active(t)
-	if ts := targetsByName(t, r.f.store, run.ID); run.Step != StepWaitingClick || ts["bravo"].State != TargetOffline {
+	if ts := targetsByName(t, r.f.store, run.ID); run.Step != StepWaitingApp || ts["bravo"].State != TargetOffline {
 		t.Fatalf("run %s/%s bravo %s", run.State, run.Step, ts["bravo"].State)
 	}
 	r.cluster.offline["n2"] = false
@@ -141,13 +142,13 @@ func TestDriverNodeStartStepHoldsTheTimeout(t *testing.T) {
 	}
 }
 
-// review A8: a release withdrawn while the home's app waits for its click ends the run
+// review A8: a release withdrawn while the home's app stages it ends the run
 // (the order withdrawn); a catch-up never spreads a withdrawn release.
 func TestDriverWithdrawnReleaseStops(t *testing.T) {
 	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
-	r.home.asks = true
+	r.home.asks, r.home.appSlow = true, true
 	_, _ = r.f.svc.Tick(ctx)
 	r.stepN(8)
 	run := r.active(t)
@@ -225,14 +226,14 @@ func TestSchedulerWaitsForASwitchover(t *testing.T) {
 	}
 }
 
-// review A-R5: a run that waits for clicks is superseded only when the newer release can
-// start: a blocker leaves it (and its orders) as they are.
+// review A-R5: a run that waits for its desktop apps is superseded only when the newer
+// release can start: a blocker leaves it (and its orders) as they are.
 func TestSupersedeOnlyWhenTheNewerRunStarts(t *testing.T) {
 	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	a := r.node(t, "n1", "alpha", "darwin-arm64", "1.4.0")
-	a.asks = true
+	a.asks, a.appSlow = true, true
 	_, _ = r.f.svc.Tick(ctx)
 	r.stepN(40)
 	old := r.active(t)
@@ -245,31 +246,35 @@ func TestSupersedeOnlyWhenTheNewerRunStarts(t *testing.T) {
 	if d, _ := r.f.svc.Tick(ctx); d.Action != "blocked" {
 		t.Fatalf("tick %+v", d)
 	}
-	if got, _ := r.f.store.GetRun(ctx, old.ID); got.FinishedAt != nil || a.state() != MAwaitingClick {
+	if got, _ := r.f.store.GetRun(ctx, old.ID); got.FinishedAt != nil || a.state() != MOrdered {
 		t.Fatalf("superseded under a blocker: run %s machine %s", got.State, a.state())
 	}
 }
 
-// review: a home's app clicked outside the window leaves its automatic machines waiting
-// for the next window, not held.
-func TestDriverHomeClickedOutsideTheWindow(t *testing.T) {
+// D1 (2026-10-27): a home's desktop app that staged its order only after an automatic
+// run's window (and its overrun) is not installed outside it: the order is withdrawn
+// (nothing drained, nothing installed) and the next window's run installs it.
+func TestDriverHomeAppStagedPastTheWindowWaitsForTheNext(t *testing.T) {
 	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
-	r.home.asks = true
+	r.home.asks, r.home.appSlow = true, true
 	n := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
 	_, _ = r.f.svc.Tick(ctx)
 	r.stepN(5)
-	r.f.now = r.f.now.Add(7 * time.Hour) // 10:00, outside 03:00-05:00
-	r.home.click()
-	r.stepN(20)
-	run := r.active(t)
-	if ts := targetsByName(t, r.f.store, run.ID); ts["alpha"].State != TargetPrepared || n.applies != 0 {
-		t.Fatalf("run %s alpha %s", run.State, ts["alpha"].State)
+	r.f.now = r.f.now.Add(7 * time.Hour) // 10:00, past 03:00-05:00 and its overrun
+	r.home.stage()
+	got := r.drive(t, 5)
+	if got.State != RunFailed || readErr(got.Error).Code != "outside_window" || r.home.applies != 0 ||
+		r.home.state() != MAborted || r.drainedMachines() != 0 {
+		t.Fatalf("run %s %s home %s applies %d", got.State, got.Error, r.home.state(), r.home.applies)
 	}
 	r.f.now = r.f.now.Add(17 * time.Hour) // the next night
-	if got := r.drive(t, 30); got.State != RunDone || n.version != "1.5.0" {
-		t.Fatalf("run %s alpha %s", got.State, n.version)
+	if d, err := r.f.svc.Tick(ctx); err != nil || d.Action != "started" {
+		t.Fatalf("tick: %+v %v", d, err)
+	}
+	if got := r.drive(t, 40); got.State != RunDone || r.home.applies != 1 || n.version != "1.5.0" {
+		t.Fatalf("run %s home applies %d alpha %s", got.State, r.home.applies, n.version)
 	}
 }
 

@@ -297,8 +297,8 @@ func TestCatchUpImmediateBehindAHandInstalledHome(t *testing.T) {
 	}
 }
 
-// A run that waits for clicks on a release older than the one the home now runs (the home
-// installed by hand meanwhile) is superseded at the driver's next step, and the machines
+// A run that waits for desktop apps on a release older than the one the home now runs
+// (the home installed by hand meanwhile) is superseded at the driver's next step, and the machines
 // are caught up to the home's release: the order of the older one waited for good before.
 func TestStepSupersedesAWaitingRunOlderThanTheHome(t *testing.T) {
 	t.Parallel()
@@ -306,11 +306,11 @@ func TestStepSupersedesAWaitingRunOlderThanTheHome(t *testing.T) {
 	ctx := context.Background()
 	r.f.svc.Current = "1.5.0" // the home installed 1.5.0 by hand
 	a := r.node(t, "n1", "alpha", "windows-amd64", "1.4.0")
-	a.asks = true
+	a.asks, a.appSlow = true, true
 	r.f.now = time.Date(2026, 10, 22, 14, 0, 0, 0, r.f.loc)
 	r.stepUntil(40, func() bool {
 		run, _ := r.f.store.ActiveRun(ctx)
-		return run != nil && run.Version == "1.5.0" && run.Step == StepWaitingClick && a.state() == MAwaitingClick
+		return run != nil && run.Version == "1.5.0" && run.Step == StepWaitingApp && a.state() == MOrdered
 	})
 	old := r.active(t)
 	if old.Trigger != TriggerCatchUp {

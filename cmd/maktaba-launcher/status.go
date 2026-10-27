@@ -151,7 +151,7 @@ func printBundleStatus(w io.Writer, bundle, runtimeRoot, root string, asJSON boo
 		LauncherLog: layout.New(root).LauncherLog(),
 		StopEvent:   stopEventName,
 		// "with the app" / "by this machine" first: the app checks (tools/release) read them
-		Updates:          "with the app (the cluster's update: staged here, installed when someone clicks Install in the app)",
+		Updates:          "with the app (the cluster's update: staged here by the app, installed at the home's go)",
 		LauncherVersion:  Version,
 		LauncherProtocol: LauncherProtocol,
 	}

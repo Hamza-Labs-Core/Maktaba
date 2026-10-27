@@ -22,8 +22,8 @@ import (
 // Windows app; Epics 36, 38): the app's own updater replaces the whole app. The server
 // orders the exact release it verified (app-install.json, which the app's status poller
 // reads; the app is started with maktaba://install-update when it does not answer); the
-// app stages it and shows it, and installs it once someone clicks there and the home
-// says go (owner decision D1: ask first; request.go). Tauri keeps no previous app, so
+// app stages it and says when it installs, and installs it at the home's go with no
+// click (owner decision D1, 2026-10-27; request.go). Tauri keeps no previous app, so
 // before the install the server keeps a copy of the payload it runs
 // (<launcher root>/updates/payloads/<v>); a rollback makes the launcher run that copy
 // (payload-override), and the launcher's guard does the same when the new server cannot
@@ -92,8 +92,8 @@ func (ai *AppInstaller) nudgeAfter() time.Duration {
 	return 90 * time.Second
 }
 
-// Asks implements Asker: a desktop app always asks.
-func (ai *AppInstaller) Asks() bool { return true }
+// Orders implements Orderer: a desktop app installs through its order.
+func (ai *AppInstaller) Orders() bool { return true }
 
 // holds reports whether the app's own payload is the job's release already (a retry
 // after a rollback of it: the launcher runs the kept copy of the release before).
@@ -111,13 +111,13 @@ func (ai *AppInstaller) orderKind(j *Journal) (kind, feed string) {
 	return RequestKindApp, j.Job.Assets["latest.json"]
 }
 
-// Ask implements Asker: the order, the release's own feed named.
-func (ai *AppInstaller) Ask(j *Journal) error {
+// Order implements Orderer: the order, the release's own feed named.
+func (ai *AppInstaller) Order(j *Journal) error {
 	kind, feed := ai.orderKind(j)
 	return ai.requests().order(j, kind, feed)
 }
 
-// Answer implements Asker; an app that has not answered within NudgeAfter is started
+// Answer implements Orderer; an app that has not answered within NudgeAfter is started
 // with the order's deep link (once per NudgeAfter: a running app takes it too).
 func (ai *AppInstaller) Answer(j *Journal) (string, error) {
 	state, err := ai.requests().answer(j)

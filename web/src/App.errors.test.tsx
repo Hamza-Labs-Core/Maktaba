@@ -2,7 +2,7 @@
 // a page that throws, a crash outside any page, an unknown address, a failed
 // load (with Try again), a sign-in that ended (Sign in again), and no network.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -144,11 +144,15 @@ describe("App error screens", () => {
     act(() => {
       window.dispatchEvent(new Event("offline"));
     });
-    expect(screen.getByTestId("offline-banner")).toHaveTextContent(en["error.offlineBanner"]);
+    // the banner's state is set by the event's listener; on a loaded runner its render can
+    // land a moment after act returns, so wait for it rather than look once
+    expect(await screen.findByTestId("offline-banner")).toHaveTextContent(
+      en["error.offlineBanner"]
+    );
     vi.stubGlobal("navigator", { ...navigator, onLine: true });
     act(() => {
       window.dispatchEvent(new Event("online"));
     });
-    expect(screen.queryByTestId("offline-banner")).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId("offline-banner")).toBeNull());
   });
 });

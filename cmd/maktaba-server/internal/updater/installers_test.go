@@ -400,8 +400,9 @@ func TestAppInstaller(t *testing.T) {
 func appOfForTest(payload string) string { return filepath.Dir(filepath.Dir(filepath.Dir(payload))) }
 
 // The order the server and the desktop app share (D1, request.go): ordered with the
-// release's own feed, the app's answers read back (staged, clicked), the app started
-// when it does not answer, go at the home's word, withdrawn by a revert.
+// release's own feed and when it installs, the app's answers read back (staged; an older
+// app's clicked read as staged), the app started when it does not answer, go at the
+// home's word, withdrawn by a revert.
 func TestAppOrderProtocol(t *testing.T) {
 	lroot := t.TempDir()
 	// the installer's clock is the test's (review round 2: no real-time window to miss
@@ -428,16 +429,19 @@ func TestAppOrderProtocol(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if !ai.Asks() {
-		t.Fatal("a desktop app does not ask")
+	if !ai.Orders() {
+		t.Fatal("a desktop app is not ordered")
 	}
-	if err := ai.Ask(j); err != nil {
+	at := time.Date(2026, 10, 28, 3, 0, 0, 0, time.UTC)
+	j.InstallBy = &at
+	if err := ai.Order(j); err != nil {
 		t.Fatal(err)
 	}
 	var q AppRequest
 	b, _ := os.ReadFile(path)
 	if err := json.Unmarshal(b, &q); err != nil || q.State != RequestOrdered || q.Kind != RequestKindApp || !q.Home ||
-		q.Feed != feed || q.RunID != j.Job.RunID {
+		q.Feed != feed || q.RunID != j.Job.RunID || q.InstallBy == nil || !q.InstallBy.Equal(at) ||
+		q.InstallByText != at.Local().Format("2006-01-02 15:04") {
 		t.Fatalf("order %+v (%v)", q, err)
 	}
 	if s, err := ai.Answer(j); err != nil || s != RequestOrdered || opened.Load() != 0 {
@@ -448,13 +452,14 @@ func TestAppOrderProtocol(t *testing.T) {
 		t.Fatalf("no answer for a while: %q opened %d", s, opened.Load())
 	}
 	appSays(RequestStaged, "")
-	_ = ai.Ask(j) // asked again (a restart): the app's answer stays
+	_ = ai.Order(j) // asked again (a restart): the app's answer stays
 	if s, _ := ai.Answer(j); s != RequestStaged {
 		t.Fatalf("answer %q", s)
 	}
-	appSays(RequestClicked, "")
-	if s, _ := ai.Answer(j); s != RequestClicked {
-		t.Fatalf("answer %q", s)
+	// an app from before the click was removed says clicked: staged, the go needs no more
+	appSays("clicked", "")
+	if s, _ := ai.Answer(j); s != RequestStaged {
+		t.Fatalf("an older app's clicked: answer %q", s)
 	}
 	// the home's go: the app takes it (installing), then cannot install
 	done := make(chan error, 1)
@@ -495,16 +500,16 @@ func TestAppOrderProtocol(t *testing.T) {
 		t.Fatalf("answer without an order: %v", err)
 	}
 
-	// the Linux runtime: only the app's asks, and its order names nothing to fetch
+	// the Linux runtime: only the app runtime is ordered, and its order names nothing to fetch
 	ri := &RuntimeInstaller{LauncherRoot: lroot, Owner: "headless"}
-	if ri.Asks() {
-		t.Fatal("a headless runtime asks")
+	if ri.Orders() {
+		t.Fatal("a headless runtime is ordered")
 	}
 	ri.Owner = "app"
-	if !ri.Asks() {
-		t.Fatal("the app's runtime does not ask")
+	if !ri.Orders() {
+		t.Fatal("the app's runtime is not ordered")
 	}
-	if err := ri.Ask(j); err != nil {
+	if err := ri.Order(j); err != nil {
 		t.Fatal(err)
 	}
 	var rq AppRequest
@@ -620,7 +625,7 @@ func TestAppRefusalNeedsAdminTouchedNothing(t *testing.T) {
 		RequestFailed + "|needs_admin: /Applications is not this user's to change": false,
 		RequestFailed + "|the installer exited 2":                                  true,
 		RequestInstalling + "|":                                                    true,
-		RequestClicked + "|":                                                       false,
+		"clicked|":                                                                 false,
 	} {
 		st, why, _ := strings.Cut(state, "|")
 		b, _ := json.Marshal(AppRequest{RunID: j.Job.RunID, Version: "1.5.0", State: st, Error: why})
@@ -630,5 +635,22 @@ func TestAppRefusalNeedsAdminTouchedNothing(t *testing.T) {
 		if got := ai.appTouched(j); got != touched {
 			t.Errorf("%s %q: touched %v", st, why, got)
 		}
+	}
+}
+
+// The order's time for the app's words is this machine's clock: the time of day on the
+// day, with the date on another; none without a deadline (an admin's run).
+func TestOrderClockText(t *testing.T) {
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.Local)
+	same := time.Date(2026, 10, 27, 23, 5, 0, 0, time.Local)
+	next := time.Date(2026, 10, 28, 7, 0, 0, 0, time.Local)
+	if got := clockText(&same, now); got != "23:05" {
+		t.Fatalf("same day: %q", got)
+	}
+	if got := clockText(&next, now); got != "2026-10-28 07:00" {
+		t.Fatalf("next day: %q", got)
+	}
+	if got := clockText(nil, now); got != "" {
+		t.Fatalf("none: %q", got)
 	}
 }

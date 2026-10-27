@@ -59,7 +59,7 @@ On a TV or a big monitor, choose **View → Big Screen** for a full-screen view 
 
 The Maktaba item in the menu bar shows the server's state on its first line and offers:
 
-- **Update ready: restart to install** (only when an update is waiting).
+- **Maktaba will update to … and restart by …** (only while an update is on its way; nothing to click, see [Updates](/help/mac-app#updates)).
 - **Open Maktaba**: shows the window.
 - **Pause server** / **Resume server**: stops the server or starts it again.
 - **Open logs**: opens the folder with the server's log files in Finder.
@@ -78,7 +78,11 @@ When setup finishes, the server is added to your Mac's login items. It appears a
 
 ### Updates {#updates}
 
-The app checks for a new version when it starts and every 6 hours. When one is ready, the menu bar shows **Update ready: restart to install**. Click it: the app downloads the update, restarts the server on the new version and opens again. A paused server stays paused and runs the new version when you resume it.
+Maktaba updates itself: there is nothing to click on the Mac. The update comes from [Updates](/help/updates), which decides the version for every machine. An update an admin starts with **Update now** installs at once; an automatic one installs in the quiet window.
+
+Before it installs, the app downloads and checks the new version, and the menu bar and a notification tell you what will happen: **Maktaba will update to … and restart by …** (an automatic update, by the end of the quiet window) or **Maktaba will update to … and restart shortly** (an update an admin started). When it begins, they say **Maktaba is updating to … now**: the server restarts on the new version and the app opens again. A paused server stays paused and runs the new version when you resume it.
+
+When the app is connected to another Maktaba, it updates from its own feed instead: the menu bar shows **Update ready: restart to install**, and clicking it installs the update.
 
 ## What the states and messages mean {#states}
 
@@ -192,5 +196,5 @@ Choose **Connect to another Maktaba…** in the menu bar. It takes you back to t
 ### The update could not be installed {#update-failed}
 
 - **What it means:** downloading or installing the new version failed. The message gives the reason.
-- **Does Maktaba fix it itself?** It checks again later and shows **Update ready** again.
-- **What you can do:** check your internet connection and click **Update ready: restart to install** again.
+- **Does Maktaba fix it itself?** Yes: the next update tries again (see [Updates](/help/updates)). An app connected to another Maktaba checks again later and shows **Update ready** again.
+- **What you can do:** check your internet connection. An admin can try again at once with **Retry** on [Admin → Updates](/admin/updates); an app connected to another Maktaba: click **Update ready: restart to install** again.

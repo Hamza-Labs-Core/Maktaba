@@ -23,8 +23,14 @@ type fakeMachine struct {
 	applies   int
 	onApply   func()
 	installer string
-	// asks: a desktop app (owner decision D1): apply orders, a click, then apply again
-	asks bool
+	// asks: a desktop app: apply orders, the app stages it (on the next status, unless
+	// appSlow), then apply again is the go (no click: owner decision D1, 2026-10-27)
+	asks, appSlow bool
+	// legacy: a supervisor from before that decision: apply orders (awaiting_click), a
+	// click there (clicked), then apply again
+	legacy bool
+	// orders are the bodies of the applies that ordered it from its app
+	orders []map[string]any
 	// pendingFor: status reports a start step (watching, pending) this many times after
 	// the apply before the outcome
 	pendingFor int
@@ -41,13 +47,33 @@ type fakeMachine struct {
 	applyBody any
 }
 
-// click is someone choosing to install on the machine's desktop app.
+// stage is the machine's desktop app staging the release it was ordered (appSlow).
+func (m *fakeMachine) stage() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.appSlow = false
+	if m.st != nil && m.st.State == MOrdered {
+		m.st.State, m.st.App = MAppStaged, "staged"
+	}
+}
+
+// click is someone clicking Install on a legacy supervisor's desktop app.
 func (m *fakeMachine) click() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.st != nil && m.st.State == MAwaitingClick {
 		m.st.State, m.st.App = MClicked, "clicked"
 	}
+}
+
+// ordersMade is how many applies ordered it from its app, and the last one's body.
+func (m *fakeMachine) ordersMade() (int, map[string]any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.orders) == 0 {
+		return 0, nil
+	}
+	return len(m.orders), m.orders[len(m.orders)-1]
 }
 
 func (m *fakeMachine) state() string {
@@ -70,7 +96,7 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 		if m.st != nil && m.st.RunID() == j.RunID {
 			return m.copy(), nil
 		}
-		m.st = &MachineStatus{Job: &j, State: MPreparing, From: m.version, Installer: m.installer, Asks: m.asks,
+		m.st = &MachineStatus{Job: &j, State: MPreparing, From: m.version, Installer: m.installer, Asks: m.asks || m.legacy,
 			Steps: []MachineStep{{Step: "preflight", State: "done"}}}
 	case "apply":
 		if b, _ := json.Marshal(body); m.lostHandover && m.st != nil && m.st.State == MPrepared {
@@ -83,14 +109,21 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 				return m.copy(), errors.New("tv_busy: the TV processes cannot be handed over now")
 			}
 		}
-		if m.st != nil && m.st.State == MAwaitingClick {
-			return m.copy(), nil // asked again: waits for its click
+		if m.st != nil && (m.st.State == MAwaitingClick || m.st.State == MOrdered) {
+			return m.copy(), nil // asked again: its app stages it (or, legacy, waits for its click)
 		}
-		if m.st != nil && m.st.State == MPrepared && m.asks {
-			m.st.State, m.st.App = MAwaitingClick, "ordered"
+		if m.st != nil && m.st.State == MPrepared && (m.asks || m.legacy) {
+			b, _ := json.Marshal(body)
+			var order map[string]any
+			_ = json.Unmarshal(b, &order)
+			m.orders = append(m.orders, order)
+			m.st.State, m.st.App = MOrdered, "ordered"
+			if m.legacy {
+				m.st.State = MAwaitingClick
+			}
 			return m.copy(), nil
 		}
-		if m.st == nil || (m.st.State != MPrepared && m.st.State != MClicked) {
+		if m.st == nil || (m.st.State != MPrepared && m.st.State != MAppStaged && m.st.State != MClicked) {
 			return m.copy(), errors.New("update_not_ready")
 		}
 		m.st.State = MApplying
@@ -102,7 +135,7 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 	case "abort":
 		if m.st != nil {
 			switch m.st.State {
-			case MPreparing, MPrepared, MAwaitingClick, MClicked:
+			case MPreparing, MPrepared, MOrdered, MAppStaged, MAwaitingClick, MClicked:
 				m.st.State = MAborted
 			case MAborted, MPrepareFailed:
 			default:
@@ -118,6 +151,10 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 			return nil, nil
 		}
 		switch m.st.State {
+		case MOrdered:
+			if !m.appSlow {
+				m.st.State, m.st.App = MAppStaged, "staged" // its app staged it
+			}
 		case MPreparing:
 			if m.prepFail != "" {
 				m.st.State, m.st.Error = MPrepareFailed, &MachineError{Step: "stage", Code: m.prepFail}
@@ -245,7 +282,7 @@ func (c *clusterFake) Command(_ context.Context, sid, name string, args any, _ t
 	c.mu.Unlock()
 	st, err := m.do(strings.TrimPrefix(name, "update."), args)
 	if st != nil && (st.State == MCommitted || st.State == MRolledBack || st.State == MApplyFailed ||
-		st.State == MAwaitingClick || st.State == MClicked || st.State == MAborted) {
+		beforeGo(st.State) || st.State == MAborted) {
 		c.mu.Lock()
 		c.applying[id] = false
 		c.mu.Unlock()
