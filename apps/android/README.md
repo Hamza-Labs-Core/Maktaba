@@ -46,6 +46,27 @@ reaches a home on the Mac's network by its address (`192.168.50.177:8088`).
   the TXT record; the service's own port is the API's). Saved homes come next, and typing an
   address is the fallback. Before sign-in a home shows the name its machine announces; once
   signed in, it shows the home's own name from `GET /api/auth/me`.
+- **Home picker (story 42.2):** Your homes (every home this app knows: rename on this device,
+  remove), On this network (NSD; `tls=1` means https, `path=` a web base path; one row per
+  home by its id, else host and port), Add a home: by address (checked to be a Maktaba home by
+  `GET /api/discovery/home`, or `GET /api/system/version` on an older home; a typed path is
+  tried, then the root) or by scanning a QR (CameraX and ZXing, no Play services). A
+  `maktaba://connect?id=…&n=…&u=…[&u=…]` link (QR or intent) tries its addresses in order and
+  keeps the first that answers as the home it names; one opened from outside always asks
+  first. **Security:** a home's id is self-reported; tokens are bound to the exact address
+  (`SealedTokenStore` per URL) and never move to another address with the same id: that is a
+  new entry and a fresh sign-in. `SameOriginCredentials` drops `Authorization` on any redirect
+  that leaves the origin.
+- **Sign-in by code (story 42.6):** the sign-in screen has Password and With a code. With a
+  code: `POST /api/pairing/device` (this device's name as `device_label`), the code shown
+  large with a QR of `verify_url` (else the home's `verify_path`), polling
+  `/api/pairing/device/token` until approved, a new code when one runs out (`DeviceSignIn`).
+  **Approve a sign-in** is in the account menu of both apps: type or scan the code,
+  `GET /api/pairing/device/{code}` shows what is asking (app, platform, device, its name), then
+  an explicit Approve (`POST /api/pairing/approve`). An older home without the lookup is
+  approved only after a warning to check the code on one's own device.
+- **Camera permission:** asked when the person taps Scan (optional; typing always works), with
+  the walkthrough's rules (Android's dialog while it will, else Settings).
 - **Local network permission:** on Android 17 (API 37) and later, reaching a home on the
   local network, by mDNS or by address, needs `ACCESS_LOCAL_NETWORK`, a runtime permission
   (Android shows it as «Nearby devices»). Without it, only an internet address works.

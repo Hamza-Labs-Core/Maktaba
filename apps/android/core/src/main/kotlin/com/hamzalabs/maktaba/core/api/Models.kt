@@ -83,8 +83,16 @@ data class StreamSession(
     val expiresMillis: Long?
         get() = expiresAt?.let { runCatching { OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }
 
-    /** The URL the player opens, against the home's address. */
-    fun playbackUrl(home: HttpUrl): HttpUrl? = (directUrl ?: manifestUrl)?.let { home.resolve(it) }
+    /**
+     * The URL the player opens, against the home's address. A home served under a base path
+     * (`https://example.com/maktaba`) that answers with a root path (`/stream/…`) is read
+     * under its base path.
+     */
+    fun playbackUrl(home: HttpUrl): HttpUrl? = (directUrl ?: manifestUrl)?.let {
+        val base = home.encodedPath.trimEnd('/')
+        val path = if (base.isNotEmpty() && it.startsWith("/") && !it.startsWith("//") && !it.startsWith("$base/")) base + it else it
+        home.resolve(path)
+    }
 
     val isHls: Boolean get() = directUrl == null && manifestUrl != null
 }

@@ -51,4 +51,66 @@
     <string name="permissions_not_now">ليس الآن</string>
     <string name="permissions_again">تعود هذه الشاشة كلما رجعت إلى التطبيق إلى أن تُمنح الأذونات المطلوبة.</string>
     <string name="permissions_learn_more">اعرف المزيد</string>
+
+    <!-- منتقي الجهاز الرئيسي (القصة 42.2) -->
+    <string name="home_on_network">على هذه الشبكة</string>
+    <string name="homes_all_saved">الأجهزة الرئيسية على هذه الشبكة موجودة في «أجهزتك الرئيسية».</string>
+    <string name="home_menu">خيارات %1$s</string>
+    <string name="home_rename">إعادة التسمية</string>
+    <string name="home_remove">إزالة</string>
+    <string name="rename_title">إعادة تسمية %1$s</string>
+    <string name="rename_label">الاسم على هذا الجهاز</string>
+    <string name="rename_hint">اتركه فارغًا لاستخدام اسم الجهاز الرئيسي نفسه.</string>
+    <string name="save">حفظ</string>
+    <string name="cancel">إلغاء</string>
+    <string name="close">إغلاق</string>
+    <string name="add_home">إضافة جهاز رئيسي</string>
+    <string name="scan_qr">مسح رمز QR</string>
+    <string name="scan_home_title">امسح رمز QR للجهاز الرئيسي</string>
+    <string name="scan_home_hint">وجّه الكاميرا إلى رمز QR الذي يعرضه جهازك الرئيسي.</string>
+    <string name="connecting">جارٍ الاتصال…</string>
+    <string name="connect_failed">لم يستجب أي جهاز رئيسي لمكتبة على %1$s.</string>
+    <string name="scan_not_home">رمز QR هذا ليس لجهاز رئيسي لمكتبة.</string>
+    <string name="link_title">الاتصال بـ %1$s؟</string>
+    <string name="link_body">يطلب رابط من هذا التطبيق الاتصال بهذا الجهاز الرئيسي:</string>
+    <string name="link_unnamed">جهاز رئيسي</string>
+
+    <string name="permission_camera">الكاميرا</string>
+    <string name="camera_body">اسمح باستخدام الكاميرا لمسح رمز QR، أو اكتب بدلًا من ذلك.</string>
+    <string name="camera_denied">من دون الكاميرا، اكتب العنوان أو الرمز.</string>
+    <string name="camera_allow">السماح باستخدام الكاميرا</string>
+    <string name="camera_unavailable">لا توجد كاميرا في هذا الجهاز للمسح. اكتب بدلًا من ذلك.</string>
+
+    <!-- تسجيل الدخول برمز (القصة 42.6) -->
+    <string name="signin_password_tab">كلمة المرور</string>
+    <string name="signin_code_tab">برمز</string>
+    <string name="code_starting">جارٍ طلب رمز من %1$s…</string>
+    <string name="code_intro">على هاتف أو حاسوب مسجّل الدخول إلى %1$s، افتح «الموافقة على تسجيل دخول» وأدخل هذا الرمز:</string>
+    <string name="code_scan">أو امسح هذا الرمز بذلك الجهاز:</string>
+    <string name="code_qr_description">رمز QR لصفحة الموافقة على %1$s</string>
+    <string name="code_waiting">بانتظار الموافقة…</string>
+    <string name="code_renews">يتجدد الرمز عند انتهاء صلاحيته.</string>
+    <string name="code_unsupported">لا يدعم %1$s تسجيل الدخول برمز. استخدم اسم المستخدم وكلمة المرور.</string>
+
+    <string name="account_approve">الموافقة على تسجيل دخول</string>
+    <string name="approve_title">الموافقة على تسجيل دخول</string>
+    <string name="approve_intro">يعرض الجهاز الذي يطلب تسجيل الدخول رمزًا. أدخله أو امسح رمز QR الخاص به.</string>
+    <string name="approve_code_label">الرمز، مثل ABCD-1234</string>
+    <string name="approve_code_invalid">الرمز ثمانية أحرف وأرقام، مثل ABCD-1234.</string>
+    <string name="approve_look">متابعة</string>
+    <string name="approve_scan_title">امسح رمز QR لتسجيل الدخول</string>
+    <string name="approve_scan_hint">وجّه الكاميرا إلى رمز QR الذي يعرضه الجهاز الآخر.</string>
+    <string name="not_a_code">لا يحمل رمز QR هذا رمز تسجيل دخول.</string>
+    <string name="approve_asking">يطلب تسجيل الدخول</string>
+    <string name="approve_unknown_device">جهاز</string>
+    <string name="approve_code_line">الرمز %1$s</string>
+    <string name="approve_expires">تنتهي صلاحيته خلال %1$d دقيقة</string>
+    <string name="approve_warning">وافق فقط إذا بدأت تسجيل الدخول هذا بنفسك. سيُسجَّل دخول ذلك الجهاز باسم %1$s، وبصلاحياتك.</string>
+    <string name="approve_unsupported">لا يستطيع %1$s أن يحدد الجهاز الذي يطلب. وافق فقط إذا كنت ترى هذا الرمز نفسه على جهازك.</string>
+    <string name="approve_unknown">لا يوجد جهاز ينتظر بهذا الرمز على %1$s. تحقّق منه، أو اطلب رمزًا جديدًا من الجهاز.</string>
+    <string name="approve_button">موافقة</string>
+    <string name="approve_done">تمت الموافقة. يجري تسجيل دخول %1$s.</string>
+    <string name="approve_already">تمت الموافقة على هذا الرمز من قبل.</string>
+    <string name="approve_cloud">لا يمكن لتسجيل دخول عبر مكتبة السحابية الموافقة على جهاز. سجّل الدخول على الجهاز الرئيسي.</string>
+    <string name="approve_another">الموافقة على جهاز آخر</string>
 </resources>
