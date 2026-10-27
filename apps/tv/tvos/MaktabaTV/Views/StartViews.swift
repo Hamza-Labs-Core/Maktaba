@@ -79,7 +79,7 @@ struct TVHomePicker: View {
             TVSection(words.text(.recentHomes), footer: tv.text(.holdHint)) {
                 ForEach(session.recentHomes) { home in
                     TVHomeRow(name: home.name, address: home.displayAddress, systemImage: "house") {
-                        problem = nil
+                        clearProblems()
                         session.open(home)
                     }
                     .contextMenu {
@@ -100,7 +100,7 @@ struct TVHomePicker: View {
             let list = TVStart.nearby(browser.found, known: session.homes)
             ForEach(list) { home in
                 TVHomeRow(name: home.name, address: Home(url: home.url, name: home.name).displayAddress, systemImage: "wifi") {
-                    problem = nil
+                    clearProblems()
                     session.use(Home(url: home.url, name: home.name, homeID: home.homeID))
                 }
                 .accessibilityIdentifier("picker.nearby.\(home.id)")
@@ -131,6 +131,13 @@ struct TVHomePicker: View {
                     .accessibilityIdentifier("picker.connect")
             }
         }
+    }
+
+    /// A row was chosen: an earlier address's failure is not this home's (the sign-in screen
+    /// would show it as an alert).
+    private func clearProblems() {
+        problem = nil
+        session.connectProblem = nil
     }
 
     /// A typed address, or a pasted connect link (the person gave it here: no second ask).
