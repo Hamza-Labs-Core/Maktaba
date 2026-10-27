@@ -5300,5 +5300,18 @@
   "video.series.next": "Next",
   "player.upNext.in": "Up next in {n} s",
   "player.upNext.untitled": "The next video",
-  "player.upNext.playNow": "Play now"
+  "player.upNext.playNow": "Play now",
+  "browse.filter.duration": "Length",
+  "browse.filter.added": "Added",
+  "browse.filter.resolution": "Resolution",
+  "browse.duration.short": "Short (under 15 min)",
+  "browse.duration.medium": "Medium (15 to 60 min)",
+  "browse.duration.long": "Long (over an hour)",
+  "browse.added.week": "In the last week",
+  "browse.added.month": "In the last month",
+  "browse.added.year": "In the last year",
+  "browse.resolution.sd": "SD (under 720p)",
+  "browse.resolution.hd": "HD (720p)",
+  "browse.resolution.fhd": "Full HD (1080p)",
+  "browse.resolution.uhd": "4K (2160p and up)"
 }

@@ -184,9 +184,31 @@ export interface Facets {
   tags: Array<{ id: string; name: string; videos: number }>;
   speakers: Array<{ name: string; videos: number }>;
   letters: Array<{ letter: string; videos: number }>;
+  /** Phase 3 (story 45.20): the length, added-date and resolution bands with videos */
+  durations: BandFacet[];
+  added: BandFacet[];
+  resolutions: BandFacet[];
 }
 
-export const EMPTY_FACETS: Facets = { languages: [], tags: [], speakers: [], letters: [] };
+export interface BandFacet {
+  value: string;
+  videos: number;
+}
+
+export const EMPTY_FACETS: Facets = {
+  languages: [],
+  tags: [],
+  speakers: [],
+  letters: [],
+  durations: [],
+  added: [],
+  resolutions: [],
+};
+
+const bands = (v: unknown): BandFacet[] =>
+  list<BandFacet>(v).filter(
+    (x) => x && typeof x.value === "string" && typeof x.videos === "number"
+  );
 
 export async function fetchFacets(libraryId?: string): Promise<Facets> {
   const qs = libraryId ? `?library=${encodeURIComponent(libraryId)}` : "";
@@ -204,6 +226,9 @@ export async function fetchFacets(libraryId?: string): Promise<Facets> {
     letters: list<Facets["letters"][number]>(r.letters).filter(
       (x) => x && typeof x.letter === "string" && x.letter !== ""
     ),
+    durations: bands(r.durations),
+    added: bands(r.added),
+    resolutions: bands(r.resolutions),
   };
 }
 

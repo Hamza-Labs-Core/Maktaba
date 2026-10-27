@@ -69,6 +69,7 @@ func testDB(t *testing.T) *sql.DB {
 		`CREATE TABLE video_tags (video_id TEXT, tag_id TEXT, PRIMARY KEY (video_id, tag_id))`,
 		`CREATE TABLE speakers (id TEXT PRIMARY KEY, video_id TEXT, cluster_label TEXT, name TEXT NOT NULL)`,
 		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE media_info (video_id TEXT PRIMARY KEY, width INTEGER, height INTEGER)`,
 		`CREATE TABLE user_library_pins (user_id TEXT NOT NULL, library_id TEXT NOT NULL, position INTEGER NOT NULL,
 			created_at TEXT NOT NULL, PRIMARY KEY (user_id, library_id))`,
 	} {

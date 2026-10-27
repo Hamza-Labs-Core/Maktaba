@@ -5313,5 +5313,18 @@
   "video.series.next": "التالي",
   "player.upNext.in": "التالي خلال {n} ث",
   "player.upNext.untitled": "المقطع التالي",
-  "player.upNext.playNow": "شغّل الآن"
+  "player.upNext.playNow": "شغّل الآن",
+  "browse.filter.duration": "المدة",
+  "browse.filter.added": "تاريخ الإضافة",
+  "browse.filter.resolution": "الدقة",
+  "browse.duration.short": "قصير (أقل من ١٥ دقيقة)",
+  "browse.duration.medium": "متوسط (من ١٥ إلى ٦٠ دقيقة)",
+  "browse.duration.long": "طويل (أكثر من ساعة)",
+  "browse.added.week": "في الأسبوع الأخير",
+  "browse.added.month": "في الشهر الأخير",
+  "browse.added.year": "في السنة الأخيرة",
+  "browse.resolution.sd": "دقة عادية (أقل من 720p)",
+  "browse.resolution.hd": "HD (720p)",
+  "browse.resolution.fhd": "Full HD (1080p)",
+  "browse.resolution.uhd": "4K (2160p فأعلى)"
 }

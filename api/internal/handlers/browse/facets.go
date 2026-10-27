@@ -8,6 +8,10 @@ package browse
 // see: their languages, tags and named speakers with counts, and the first
 // characters of their titles (the A to Z jump bar). Another library's facets
 // are 404, as an unknown library's.
+//
+// Phase 3 (story 45.20): the videos in each length, added-date and resolution
+// band (videos.DurationBands, AddedWindows, ResolutionBands), a band with none
+// left out.
 
 import (
 	"context"
@@ -43,6 +47,13 @@ type SpeakerFacet struct {
 	Videos int64  `json:"videos"`
 }
 
+// BandFacet is a band of a banded filter (duration, added, resolution) and
+// its videos.
+type BandFacet struct {
+	Value  string `json:"value"`
+	Videos int64  `json:"videos"`
+}
+
 // LetterFacet is a jump bar entry: a first letter ("#" for the rest).
 type LetterFacet struct {
 	Letter string `json:"letter"`
@@ -64,7 +75,8 @@ func (h *Handler) Facets(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	doc := map[string]any{"languages": []LanguageFacet{}, "tags": []TagFacet{},
-		"speakers": []SpeakerFacet{}, "letters": []LetterFacet{}}
+		"speakers": []SpeakerFacet{}, "letters": []LetterFacet{},
+		"durations": []BandFacet{}, "added": []BandFacet{}, "resolutions": []BandFacet{}}
 	if s.none() {
 		writeJSON(w, r, doc)
 		return
@@ -90,7 +102,13 @@ func (h *Handler) Facets(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "letters", err)
 		return
 	}
+	durations, added, resolutions, err := h.bandFacets(ctx, s, lib)
+	if err != nil {
+		internal(w, r, "bands", err)
+		return
+	}
 	doc["languages"], doc["tags"], doc["speakers"], doc["letters"] = langs, tags, speakers, letters
+	doc["durations"], doc["added"], doc["resolutions"] = durations, added, resolutions
 	writeJSON(w, r, doc)
 }
 
@@ -207,4 +225,58 @@ func (h *Handler) letterFacets(ctx context.Context, s scope, lib string) ([]Lett
 		out = []LetterFacet{}
 	}
 	return out, nil
+}
+
+// bandFacets counts the videos of every length, added-date and resolution
+// band in one pass.
+func (h *Handler) bandFacets(ctx context.Context, s scope, lib string) (durations, added, resolutions []BandFacet, err error) {
+	var args []any
+	cond := libFilter(s, lib, &args)
+	var cols []string
+	count := func(pred string) {
+		cols = append(cols, "COALESCE(SUM(CASE WHEN "+pred+" THEN 1 ELSE 0 END), 0)")
+	}
+	for _, b := range videos.DurationBands {
+		count(videos.BandCond("v.duration_sec", b))
+	}
+	now := h.now()
+	for _, w := range videos.AddedWindows {
+		args = append(args, h.ts(now.AddDate(0, 0, -w.Days)))
+		count("v.created_at >= " + pidx(len(args)))
+	}
+	for _, b := range videos.ResolutionBands {
+		count(videos.BandCond("mi.height", b))
+	}
+	n := make([]int64, len(cols))
+	dest := make([]any, len(cols))
+	for i := range n {
+		dest[i] = &n[i]
+	}
+	err = h.DB.QueryRowContext(ctx, `SELECT `+strings.Join(cols, ", ")+` FROM videos v
+		LEFT JOIN media_info mi ON mi.video_id = v.id
+		WHERE `+and(visible, cond), args...).Scan(dest...)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	pick := func(values []string, counts []int64) []BandFacet {
+		out := []BandFacet{}
+		for i, v := range values {
+			if counts[i] > 0 {
+				out = append(out, BandFacet{Value: v, Videos: counts[i]})
+			}
+		}
+		return out
+	}
+	var dv, av, rv []string
+	for _, b := range videos.DurationBands {
+		dv = append(dv, b.Value)
+	}
+	for _, w := range videos.AddedWindows {
+		av = append(av, w.Value)
+	}
+	for _, b := range videos.ResolutionBands {
+		rv = append(rv, b.Value)
+	}
+	nd, na := len(dv), len(av)
+	return pick(dv, n[:nd]), pick(av, n[nd:nd+na]), pick(rv, n[nd+na:]), nil
 }

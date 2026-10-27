@@ -17,9 +17,12 @@
 // and Select: check cards, then mark them watched or not, (un)favorite them or
 // add them to a playlist (lib/me).
 //
+// Phase 3 (story 45.20): Length, Added and Resolution filters (bands the
+// server defines; the facets say which have videos).
+//
 // Grid/list view persists per-user in localStorage; the sort, order and
-// filters (year, watched, language, q, tag, speaker, favorite, letter) live in
-// the URL; cursor "Load more"
+// filters (year, watched, language, q, tag, speaker, favorite, letter,
+// duration, added, resolution) live in the URL; cursor "Load more"
 // appends pages; empty states distinguish first-run (admin "Scan now") vs
 // filtered-out ("Clear filters"). State badges + poster 404 fallback +
 // bidi-isolated titles. "Scan now" (admins) toasts the result, follows the
@@ -92,6 +95,19 @@ const SORT_LABEL: Record<SortField, string> = {
 };
 
 const WATCHED = ["unwatched", "in_progress", "watched"] as const;
+
+// Story 45.20's bands, in the server's order (videos/bands.go).
+export const BAND_FILTERS = {
+  duration: ["short", "medium", "long"],
+  added: ["week", "month", "year"],
+  resolution: ["sd", "hd", "fhd", "uhd"],
+} as const;
+type BandKey = keyof typeof BAND_FILTERS;
+const BAND_FACET: Record<BandKey, "durations" | "added" | "resolutions"> = {
+  duration: "durations",
+  added: "added",
+  resolution: "resolutions",
+};
 
 // Library ids are UUIDs; the server ignores any other `library` value and
 // would list every video, so a malformed id is "not found" here.
@@ -240,7 +256,19 @@ interface LibraryBrowserProps {
 }
 
 // The filters kept in the URL; Clear filters removes them all.
-const FILTER_KEYS = ["language", "year", "watched", "q", "tag", "speaker", "favorite", "letter"];
+export const FILTER_KEYS = [
+  "language",
+  "year",
+  "watched",
+  "q",
+  "tag",
+  "speaker",
+  "favorite",
+  "letter",
+  "duration",
+  "added",
+  "resolution",
+];
 
 /** How far into a grid item the viewer is (0..1), null when nothing to show. */
 function progressOf(v: Video): number | null {
@@ -285,6 +313,13 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   const rawLetter = params.get("letter") || "";
   // one character (a letter, or "#" for the rest)
   const letter = [...rawLetter].length === 1 ? rawLetter : "";
+  const bandValue = (key: BandKey) => {
+    const v = params.get(key) || "";
+    return (BAND_FILTERS[key] as readonly string[]).includes(v) ? v : "";
+  };
+  const duration = bandValue("duration");
+  const added = bandValue("added");
+  const resolution = bandValue("resolution");
 
   const [videos, setVideos] = useState<Video[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -316,8 +351,26 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
     if (speaker) qs.set("speaker", speaker);
     if (favorite) qs.set("favorite", "true");
     if (letter) qs.set("letter", letter);
+    if (duration) qs.set("duration", duration);
+    if (added) qs.set("added", added);
+    if (resolution) qs.set("resolution", resolution);
     return qs.toString();
-  }, [sort, order, libraryId, lang, year, watched, q, tag, speaker, favorite, letter]);
+  }, [
+    sort,
+    order,
+    libraryId,
+    lang,
+    year,
+    watched,
+    q,
+    tag,
+    speaker,
+    favorite,
+    letter,
+    duration,
+    added,
+    resolution,
+  ]);
 
   const buildQuery = useCallback(
     (after?: string | null) => {
@@ -426,8 +479,19 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   }, [facets.languages, videos, lang]);
 
   const filtersActive = Boolean(
-    lang || year || watched || q || tag || speaker || favorite || letter
+    lang ||
+      year ||
+      watched ||
+      q ||
+      tag ||
+      speaker ||
+      favorite ||
+      letter ||
+      duration ||
+      added ||
+      resolution
   );
+  const bandValues: Record<BandKey, string> = { duration, added, resolution };
   const listName = embedded ? t("libraryPage.tab.browse") : t("videosAll.title");
   const speakers = facets.speakers;
   const tags = facets.tags;
@@ -642,6 +706,33 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
           </select>
         </label>
       )}
+      {(Object.keys(BAND_FILTERS) as BandKey[]).map((key) => {
+        const offered = facets[BAND_FACET[key]];
+        const current = bandValues[key];
+        // a filter whose bands have no videos is left out, unless a link set it
+        if (offered.length === 0 && !current) return null;
+        const count = new Map(offered.map((b) => [b.value, b.videos]));
+        return (
+          <label key={key} className="mkt-field">
+            <span className="mkt-field__label">{t(`browse.filter.${key}`)}</span>
+            <select
+              value={current}
+              onChange={(e) => patchParam(key, e.target.value || null)}
+              aria-label={t(`browse.filter.${key}`)}
+            >
+              <option value="">{t("library.filter.all")}</option>
+              {BAND_FILTERS[key]
+                .filter((b) => count.has(b) || b === current)
+                .map((b) => (
+                  <option key={b} value={b}>
+                    {t(`browse.${key}.${b}`)}
+                    {count.has(b) ? ` (${n(count.get(b) ?? 0)})` : ""}
+                  </option>
+                ))}
+            </select>
+          </label>
+        );
+      })}
       <button
         type="button"
         className="mkt-btn mkt-btn--ghost"

@@ -73,7 +73,7 @@ Under **View**, choose **Grid** for cards with posters, or **List** for a table 
 
 ### Filter by language {#filter-language}
 
-When the videos have a detected language, small chips with the language codes appear above the list: every language the library (or your libraries) has. Click one to show only that language; click it again to show all. **Clear filters** removes every filter (search, year, watched, language, tag, speaker, favorites and letter).
+When the videos have a detected language, small chips with the language codes appear above the list: every language the library (or your libraries) has. Click one to show only that language; click it again to show all. **Clear filters** removes every filter (search, year, watched, language, tag, speaker, favorites, letter, length, added and resolution).
 
 ### Search a library {#search-library}
 
@@ -86,6 +86,14 @@ The search box at the start of the toolbar finds videos by words in their title 
 - **Favorites**: only your favorites (press it again to show everything).
 
 The lists only offer tags and speakers that this library (or your libraries) actually has.
+
+### Filter by length, date added and resolution {#band-filters}
+
+- **Length**: **Short** (under 15 minutes), **Medium** (15 to 60 minutes) or **Long** (over an hour). A video whose length is not known yet is in none of them.
+- **Added**: the videos Maktaba added in the last week, month or year.
+- **Resolution**: the picture's height: **SD** (under 720p), **HD** (720p), **Full HD** (1080p) or **4K** (2160p and up). A video not probed yet has none.
+
+Each list only offers what the library has, with the number of videos after each choice. You can combine them with every other filter.
 
 ### Jump to a letter {#jump-bar}
 
