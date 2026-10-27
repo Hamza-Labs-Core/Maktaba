@@ -23,7 +23,7 @@ What we looked for:
 | Streaming and supervisor                         | #383           | 2        | 6                 | 10                  | 1 fixed, 5 deferred |
 | Python pipeline                                  | #379           | —        | 3                 | 4                   | 4 deferred          |
 | Web (also the phone apps and the desktop window) | #384           | 1        | 6                 | 8 fixed, 3 deferred | 1 deferred          |
-| Apple apps                                       | #382 (on #381) | —        | 3, plus 1 in #381 | 9                   | 2 fixed, 5 deferred |
+| Apple apps                                       | #382 (on #381) | —        | 2, plus 2 in #381 | 9                   | 2 fixed, 5 deferred |
 | Android apps                                     | #380           | —        | 6                 | 8 fixed, 1 deferred | 4 deferred          |
 | Desktop shell                                    | #378           | 1        | 4                 | 6 fixed, 2 deferred | 3 deferred          |
 | CI flake found on the way                        | #386           | —        | —                 | —                   | —                   |
