@@ -296,6 +296,15 @@ func ReadNodeConfigFile(path string, readFile func(string) ([]byte, error)) ([]b
 		// the write ended, look again
 		vanished := held != path && (errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission))
 		if !vanished && !writeUnderWay(path, err) {
+			// missing, and no write's signs: but a write that moved node.json aside when it
+			// was read can have ended (its lock and leftovers gone) by the time they are
+			// looked at, with the file back. Missing only when a second read misses it too
+			// and still no write is under way; else look again.
+			if held == path && errors.Is(err, fs.ErrNotExist) && time.Now().Before(deadline) {
+				if _, again := readFile(path); !errors.Is(again, fs.ErrNotExist) || writeUnderWay(path, again) {
+					continue
+				}
+			}
 			return b, err
 		}
 		if !time.Now().Before(deadline) {

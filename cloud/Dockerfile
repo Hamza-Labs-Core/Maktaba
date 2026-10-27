@@ -10,6 +10,11 @@
 #   2. gcr.io/distroless/static runtime — just the binary + a tiny Go
 #      healthcheck probe (distroless has no shell/curl for HEALTHCHECK).
 #
+# A third stage builds the web app's player and remote editions (Epic 42.9), which the
+# relay serves at /play/ and /manage/ on each connected home's address
+# (relay.editions_dir). Static files, so it runs once on the build platform for every
+# target architecture.
+#
 # DB migrations are embedded in the binary (cloud/migrations is an
 # embed.FS), so — unlike the api image — there is no migrations dir to
 # copy. The cloud go.mod has no `replace` directives, so the build
@@ -24,6 +29,24 @@
 #     -t ghcr.io/hamza-labs-core/maktaba-cloud:dev .
 
 ARG GO_VERSION=1.26
+ARG NODE_VERSION=20
+
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-bookworm-slim AS web
+WORKDIR /src/web
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG SOURCE_DATE_EPOCH=0
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+COPY web ./
+RUN node design-system/build/build-tokens.mjs \
+    && VERSION=${VERSION} COMMIT=${COMMIT} SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} pnpm build:player:cloud \
+    && VERSION=${VERSION} COMMIT=${COMMIT} SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} pnpm build:remote:cloud \
+    && mkdir -p /out/editions \
+    && cp -R dist-play /out/editions/play \
+    && cp -R dist-manage /out/editions/manage
 
 FROM golang:${GO_VERSION}-bookworm AS builder
 WORKDIR /src
@@ -77,6 +100,9 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 COPY --from=builder /out/maktaba-cloud /usr/local/bin/maktaba-cloud
 COPY --from=builder /out/healthcheck /usr/local/bin/healthcheck
+# the player and remote the relay serves for each connected home (Epic 42.9)
+COPY --from=web /out/editions /usr/share/maktaba-cloud/editions
+ENV MAKTABA_CLOUD_RELAY_EDITIONS_DIR=/usr/share/maktaba-cloud/editions
 
 # 8443 = relay's default public listener. EXPOSE-only; the runtime addr
 # comes from $MAKTABA_CLOUD_LISTEN_ADDR (compose sets it to :8443). The

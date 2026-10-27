@@ -105,16 +105,22 @@ func (w *dbWatch) run(ctx context.Context) {
 	}
 }
 
-// wait returns once the database answers (nil) or ctx ends.
+// wait returns once the database answers (nil) or ctx ends. The channel is taken
+// before Down is read: set flips down before it closes the channel, so the database
+// coming back either closes the channel held here or is seen by Down. (Read the other
+// way round, a set between the two left wait on a new channel no one closes.)
 func (w *dbWatch) wait(ctx context.Context) error {
-	for w.Down() {
+	for {
+		back := w.backCh()
+		if !w.Down() {
+			return nil
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-w.backCh():
+		case <-back:
 		}
 	}
-	return nil
 }
 
 // copyEnv is this machine's copy of the home's database (its supervisor sets it).

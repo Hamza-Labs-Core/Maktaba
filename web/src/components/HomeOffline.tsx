@@ -9,6 +9,7 @@ import { clusterApi, type NodeCopy } from "../lib/clusterApi";
 import { useFmt } from "./queue/format";
 import { useI18n } from "../lib/i18n";
 import { SERVER_PAGES } from "../lib/edition";
+import { BASE } from "../lib/basePath";
 
 export const HOME_OFFLINE_POLL_MS = 5_000;
 
@@ -88,7 +89,7 @@ export function HomeOffline({ onBack }: { onBack: () => void }) {
       {SERVER_PAGES && standby && (
         <span className="mkt-home-offline__standby">
           {" "}
-          <a href="/admin/machines">{t("homeOffline.standby")}</a>
+          <a href={`${BASE}/admin/machines`}>{t("homeOffline.standby")}</a>
         </span>
       )}
     </div>

@@ -12,6 +12,7 @@ import { ForgotPassword, Register, ResetPassword, SignedIn, VerifyEmail } from "
 import { Account } from "./pages/Account";
 import { Billing } from "./pages/Billing";
 import { LinkHome } from "./pages/LinkHome";
+import { Homes } from "./pages/Homes";
 import { AdminLayout } from "./pages/admin/AdminLayout";
 import { AdminOverview } from "./pages/admin/Overview";
 import { AdminAccounts } from "./pages/admin/Accounts";
@@ -55,6 +56,9 @@ function Shell() {
           <nav className="mkc-shell__nav" aria-label={t("shell.nav")}>
             <NavLink to="/account" className="mkc-shell__link">
               {t("nav.account")}
+            </NavLink>
+            <NavLink to="/homes" className="mkc-shell__link">
+              {t("nav.homes")}
             </NavLink>
             <NavLink to="/billing" className="mkc-shell__link">
               {t("nav.billing")}
@@ -122,6 +126,8 @@ export function AppRoutes() {
         <Route element={<RequireAuth />}>
           <Route path="account" element={<Account />} />
           <Route path="billing" element={<Billing />} />
+          {/* a linked home's player and remote, served by the cloud (42.9) */}
+          <Route path="homes" element={<Homes />} />
           {/* a home's Account page sends a person here to link their cloud account (42.7) */}
           <Route path="link-home" element={<LinkHome />} />
           <Route path="admin" element={<AdminLayout />}>

@@ -31,6 +31,19 @@ func tlsAsk(policy tlspkg.HostPolicy) http.HandlerFunc {
 	}
 }
 
+// editions is the web app's player and remote editions in dir (Epic 42.9), or nil when
+// the relay has none.
+func editions(logger *slog.Logger, dir string) *relayh.Editions {
+	if dir == "" {
+		return nil
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		logger.Warn("relay: no web editions", "dir", dir, "error", err)
+		return nil
+	}
+	return &relayh.Editions{Root: os.DirFS(dir)}
+}
+
 // runRelay binds the relay role: a single listener that accepts both
 // WebSocket upgrade requests from server agents at /v1/relay/ws AND
 // HTTPS traffic at any other path, which is proxied through the
@@ -78,6 +91,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 		Meter:      meter,
 		PublicHost: cfg.Relay.PublicHost,
 		Collector:  collector,
+		Editions:   editions(logger, cfg.Relay.EditionsDir),
 	}).Handler()
 
 	// Observability + transparency endpoints, mounted BEFORE the proxy

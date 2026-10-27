@@ -52,6 +52,9 @@ type Deps struct {
 	Lookup     ServerLookup
 	Meter      Metering
 	PublicHost string // e.g. "relay.maktaba.app"
+	// Editions serves the web app's player and remote editions at /play/ and /manage/ on
+	// a home's relay address (Epic 42.9); nil: those paths go to the home like any other.
+	Editions *Editions
 	// HeadTimeout bounds the wait for the home's response head (0 ⇒
 	// DefaultHeadTimeout). The body is bounded by its client alone.
 	HeadTimeout time.Duration
@@ -84,6 +87,13 @@ func (d *Deps) Handler() http.Handler {
 		sv, err := d.lookup().BySlug(r.Context(), slug)
 		if err != nil {
 			writeErr(w, r, http.StatusNotFound, "no_server", "")
+			return
+		}
+		// the cloud's own files for a claimed home's player and remote (42.9): not the
+		// home's bytes, so neither metered nor needing the home online (the app then says
+		// it cannot reach the home)
+		if d.Editions.Serves(r) {
+			d.Editions.ServeHTTP(w, r)
 			return
 		}
 		t, err := d.Registry.Lookup(slug)

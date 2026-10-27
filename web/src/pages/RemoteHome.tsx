@@ -29,7 +29,11 @@ export function RemoteHome() {
         <h1>{t("remote.title")}</h1>
         <EmptyState
           title={t("remote.notAdmin.title")}
-          description={t("remote.notAdmin.desc")}
+          description={
+            // through Maktaba Cloud on a watch-only link the home makes even an admin a
+            // viewer (42.7): say so, rather than that the remote is for admins
+            user?.cloud_scope === "play" ? t("remote.cloudPlay") : t("remote.notAdmin.desc")
+          }
           action={
             <Link className="mkt-btn mkt-btn--primary" to="/library">
               {t("remote.notAdmin.watch")}

@@ -388,6 +388,22 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    The Apple apps' admin screens are English only for now: they mirror once they are
    localized.)
 9. **42.9 Cloud web player and remote:** the cloud serves the SPA editions for a connected home.
+   (Built, 2026-10-27. The relay serves the web app's player and remote editions on each
+   claimed home's own relay address, `https://<slug>.<relay>/play/` and `/manage/`
+   (`cloud/internal/handlers/relay/editions.go`, `relay.editions_dir`; the image builds them in
+   a web stage: `pnpm build:player:cloud`, `build:remote:cloud`, Vite's `--base`, the router's
+   `basename` from `web/src/lib/basePath.ts`, no service worker under a base). Every other path
+   on that host (`/api`, `/stream/`, the home's own UI at the root) goes on to the home as
+   before, so an edition talks to its home at the same origin, with the home's own cookie
+   session: no CORS, no cloud cookie (the relay strips those). The cloud's own files are not
+   the home's bytes, so neither metered nor waiting for the home. Caching and headers as the
+   home's web UI (assets a year, the page revalidated, a missing file a 404, the home SPA's
+   CSP). The cloud web's **Homes** (`web/cloud/src/pages/Homes.tsx`): Watch and Manage for a
+   linked home, each with a fresh one-use sign-in assertion to the edition's `/cloud-sign-in`
+   in the fragment, which hands it to the home (`POST /api/auth/cloud`, a web session) and
+   takes it out of the address bar. The surface grants nothing: the remote on a watch-only
+   link shows why it cannot manage, and the home refuses the admin routes whatever the
+   surface. Help: `cloud#cloud-web`.)
 10. **42.10 TV:** the home picker and sign-in by code on tvOS and Android TV.
     (Built, 2026-10-27.) *Apple TV* (`apps/tv/tvos`, on MaktabaKit's `AppSession`,
     `HomeBrowser`, `CodeSignIn`; TV words and choices in `MaktabaKit/TVStart.swift`): Recent

@@ -316,5 +316,17 @@
   "linkHome.rights": "Linking gives this cloud account no rights in the home by itself: it signs you in as your home account, to watch. Only a home admin can allow managing the home through the cloud, for their own link, on the home. You can unlink it on the home's Account page at any time.",
   "linkHome.link": "Link",
   "linkHome.cancel": "Cancel",
-  "linkHome.broken": "This link is incomplete. Start again from the home's Account page."
+  "linkHome.broken": "This link is incomplete. Start again from the home's Account page.",
+  "nav.homes": "Homes",
+  "homes.title": "Your homes",
+  "homes.intro": "Watch or manage the homes your account is linked to, from anywhere, through Maktaba Cloud.",
+  "homes.none": "No home is linked to this account yet. On a home, open Account → Linked accounts and link this Maktaba Cloud account.",
+  "homes.online": "Online",
+  "homes.offline": "Offline",
+  "homes.owned": "Yours",
+  "homes.watch": "Watch",
+  "homes.manage": "Manage",
+  "homes.notLinked": "Your account here is not linked to an account on this home: owning a home is not an account in it. Sign in on the home and link this account from its Account page.",
+  "homes.openHome": "Open the home",
+  "homes.rights": "The home decides what you can do there: you are your own account on it, watching only through the cloud unless you are an admin of the home who allowed managing for your own link."
 }

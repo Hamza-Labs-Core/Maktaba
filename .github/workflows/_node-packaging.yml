@@ -195,13 +195,17 @@ jobs:
           go-version-file: tools/release/go.mod
           cache-dependency-path: tools/release/go.sum
       - name: Install the repository tools
+        timeout-minutes: 8
         # GOTOOLCHAIN=auto: nfpm needs a newer Go than the runner's (as release.yml's
         # package-nfpm installs it)
         env:
           GOTOOLCHAIN: auto
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends apt-utils createrepo-c rpm
+          # a mirror that stalls fails over (Acquire retries, per-request timeouts) instead of
+          # holding the job until its 20 minutes run out (it did: apt-get update hung 20 min)
+          apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          sudo apt-get "${apt_opts[@]}" update -q
+          sudo apt-get "${apt_opts[@]}" install -y -q --no-install-recommends apt-utils createrepo-c rpm
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
           echo "$(go env GOPATH)/bin" >>"${GITHUB_PATH}"
       - name: apt and dnf repositories
