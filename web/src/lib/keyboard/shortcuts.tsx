@@ -25,6 +25,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Modal } from "@ds/components/Modal/Modal";
 import { useI18n } from "../i18n";
 import { BIG_BASE, enterBigScreen, isBigPath } from "../bigScreen";
+import { SERVER_PAGES } from "../edition";
 
 interface ShortcutApi {
   focusSearchRef: (el: HTMLInputElement | null) => void;
@@ -92,8 +93,8 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
         const dest: Record<string, string> = {
           l: "/library",
           s: "/search",
-          q: "/queue",
-          c: "/settings",
+          // a player has no Processing or Settings (Epic 42.5): c opens Preferences
+          ...(SERVER_PAGES ? { q: "/queue", c: "/settings" } : { c: "/account/preferences" }),
         };
         if (dest[k]) {
           e.preventDefault();
@@ -135,8 +136,12 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
   const rows: Array<[string, string]> = [
     ["g l", t("shortcuts.goLibrary")],
     ["g s", t("shortcuts.goSearch")],
-    ["g q", t("shortcuts.goQueue")],
-    ["g c", t("shortcuts.goSettings")],
+    ...(SERVER_PAGES
+      ? ([
+          ["g q", t("shortcuts.goQueue")],
+          ["g c", t("shortcuts.goSettings")],
+        ] as Array<[string, string]>)
+      : ([["g c", t("shortcuts.goPreferences")]] as Array<[string, string]>)),
     ["g b", t("shortcuts.bigScreen")],
     ["/", t("shortcuts.focusSearch")],
     ["?", t("shortcuts.help")],

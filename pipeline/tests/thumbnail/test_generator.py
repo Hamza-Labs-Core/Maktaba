@@ -9,6 +9,9 @@ that each artifact landed on disk without spawning ffmpeg.
 from __future__ import annotations
 
 import asyncio
+import json
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +22,10 @@ from maktaba_pipeline.thumbnail.generator import (
     ThumbnailError,
     build_poster_args,
     build_sprite_args,
+    generate_poster,
+    generate_sprite,
     generate_thumbnails,
+    scale_to_width,
     thumbnail_dir_for,
 )
 
@@ -55,7 +61,7 @@ def test_build_poster_args_seeks_before_input() -> None:
     assert args.index("-ss") < args.index("-i")
     assert args[args.index("-ss") + 1] == "90.000"
     assert "-frames:v" in args and args[args.index("-frames:v") + 1] == "1"
-    assert "scale=640:-2" in args
+    assert args[args.index("-vf") + 1] == "scale=640:trunc(ow/dar/2)*2,setsar=1"
     assert args[-1] == "/out/poster.jpg"
 
 
@@ -66,7 +72,7 @@ def test_build_sprite_args_tiles_grid_across_duration() -> None:
     vf = args[args.index("-vf") + 1]
     # 25 tiles over 100 s → one frame every 4 s → fps 0.25.
     assert "fps=0.250000" in vf
-    assert "scale=160:-2" in vf
+    assert "scale=160:trunc(ow/dar/2)*2,setsar=1" in vf
     assert "tile=5x5" in vf
     # Exactly one packed sheet is emitted.
     assert args[args.index("-frames:v") + 1] == "1"
@@ -252,3 +258,76 @@ def test_a_failed_sprite_leaves_no_index(tmp_path: Path) -> None:
             )
         )
     assert not list(tmp_path.rglob("sprite.json"))
+
+
+def test_pictures_keep_the_displayed_shape_and_never_skip_the_rotation() -> None:
+    """The clients show the picture whole in a 16:9 box, with bars where the video is
+    narrower or wider, so the image has the video's displayed shape: ffmpeg's own
+    rotation is left on (a phone's portrait video stored as rotated landscape pixels)
+    and non-square pixels are stretched by ``dar``."""
+    poster = build_poster_args("/m/phone.mp4", 3.0, "/out/poster.jpg", width=640)
+    sprite = build_sprite_args("/m/phone.mp4", "/out/sprite.jpg", duration_sec=60.0)
+    for args in (poster, sprite):
+        assert "-noautorotate" not in args
+        assert "-autorotate" not in args
+        assert "dar" in args[args.index("-vf") + 1]
+    assert scale_to_width(160) == "scale=160:trunc(ow/dar/2)*2,setsar=1"
+
+
+# Real ffmpeg on generated clips: (testsrc size, extra encode args, displayed size of
+# the 640 px poster). Run wherever ffmpeg is installed (the pipeline's own machines);
+# the CI unit runner has none, and the argv tests above cover it there.
+_CLIPS = {
+    "portrait": ("1080x1920", [], (640, 1136)),
+    "square": ("1080x1080", [], (640, 640)),
+    "landscape": ("1920x1080", [], (640, 360)),
+    "ultrawide": ("2560x1080", [], (640, 270)),
+    # a phone's portrait video: landscape pixels and a 90° rotation in the stream
+    "rotated": ("1920x1080", ["rotate"], (640, 1136)),
+    # DVD 16:9: 720x480 stored, pixels 32:27 wide
+    "anamorphic": ("720x480", ["-vf", "setsar=32/27"], (640, 360)),
+}
+
+_FFMPEG = shutil.which("ffmpeg")
+_FFPROBE = shutil.which("ffprobe")
+
+
+def _clip(tmp: Path, name: str) -> Path:
+    size, extra, _ = _CLIPS[name]
+    assert _FFMPEG is not None
+    out = tmp / f"{name}.mp4"
+    encode = [_FFMPEG, "-v", "error", "-y", "-f", "lavfi"]
+    encode += ["-i", f"testsrc=size={size}:rate=25:duration=3", "-c:v", "libx264"]
+    encode += ["-pix_fmt", "yuv420p", "-g", "25"]
+    if extra == ["rotate"]:
+        flat = tmp / f"{name}-flat.mp4"
+        subprocess.run([*encode, str(flat)], check=True)
+        # the rotation is metadata only: the pixels stay landscape
+        turn = [_FFMPEG, "-v", "error", "-y", "-display_rotation", "90", "-i", str(flat)]
+        subprocess.run([*turn, "-c", "copy", str(out)], check=True)
+    else:
+        subprocess.run([*encode, *extra, str(out)], check=True)
+    return out
+
+
+def _size(image: Path) -> tuple[int, int]:
+    assert _FFPROBE is not None
+    probe = [_FFPROBE, "-v", "error", "-show_entries", "stream=width,height", "-of", "json"]
+    res = subprocess.run([*probe, str(image)], check=True, capture_output=True, text=True)
+    stream = json.loads(res.stdout)["streams"][0]
+    return int(stream["width"]), int(stream["height"])
+
+
+@pytest.mark.skipif(_FFMPEG is None or _FFPROBE is None, reason="needs ffmpeg and ffprobe")
+@pytest.mark.parametrize("name", list(_CLIPS))
+def test_real_poster_and_sprite_have_the_displayed_shape(tmp_path: Path, name: str) -> None:
+    src = _clip(tmp_path, name)
+    poster = _run(generate_poster(str(src), duration_sec=3.0, content_hash=name, root=tmp_path))
+    assert _size(poster) == _CLIPS[name][2]
+    cfg = ThumbnailConfig(sprite_columns=2, sprite_rows=2)
+    sprite = _run(
+        generate_sprite(str(src), duration_sec=3.0, content_hash=name, cfg=cfg, root=tmp_path)
+    )
+    w, h = _CLIPS[name][2]
+    # four 160 px tiles, two by two, each the poster's shape
+    assert _size(sprite) == (320, 2 * (((160 * h) // w) // 2 * 2))

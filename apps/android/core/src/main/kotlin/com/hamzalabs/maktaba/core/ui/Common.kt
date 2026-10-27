@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
@@ -73,13 +74,17 @@ fun Poster(client: ApiClient, video: String, modifier: Modifier = Modifier) {
             image = bmp
         }
     }
+    val img = image
     Box(
-        modifier.aspectRatio(16f / 9f).background(MaterialTheme.colorScheme.surfaceVariant),
+        // the whole frame, as a player shows the video: a vertical or square one has black
+        // bars at its sides, an ultra-wide one above and below
+        modifier
+            .aspectRatio(16f / 9f)
+            .background(if (img != null) Color.Black else MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
-        val img = image
         if (img != null) {
-            Image(img, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            Image(img, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
         } else {
             Icon(Icons.Outlined.Movie, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
