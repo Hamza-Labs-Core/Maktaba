@@ -50,6 +50,19 @@ The page opens on **Overview**. **Browse** shows every video of the library with
 - **Series**: the series found in this library. Click one to open the series (see [Series](/help/series)).
 - **By year**: one chip per year with how many videos are from it. Click a year to open **Browse** with that year's videos. The year is the file's date, which for downloaded videos is the day they were published.
 
+### Collections {#collections}
+
+A collection is a group of a library's videos an admin put together: the **Collections** row on **Overview** shows them, and **See all** (or **Collections** at the top of the page) opens the library's Collections page. Everyone who can see the library sees its collections; only admins make and change them.
+
+- **A list**: the videos in the order the admin chose. Open it to play everything (**Play all**, **Shuffle**) or **Play from here**.
+- **A saved filter** (marked so): it keeps the filters and sort of the **Browse** tab and always lists whatever matches them, as videos are added. **Show the videos** opens Browse with those filters.
+
+Admins:
+
+- **New collection** on the Collections page makes an empty list. To fill it, go to **Browse**, press **Select**, check videos, then **Add to collection**.
+- On a list's page, **↑** and **↓** move a video (with the keyboard too), **✕** takes it out, **Rename** and **Delete collection** change the collection itself. Deleting a collection never deletes its videos.
+- **Save as collection** on **Browse** saves the current filters and sort as a saved filter. **Edit filters** on its page opens Browse with them; change them and press **Save filters to the collection**.
+
 ### Browse and All videos {#all-videos}
 
 **Browse** on a library's page and the [All videos](/videos) page are the same grid: the first covers one library, the second all of them. Everything you choose (sort, order and filters) is kept in the page's address, so Back, a refresh or a shared link keep it.

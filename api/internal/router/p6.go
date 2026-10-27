@@ -224,7 +224,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	jobsHandler := &jobs.Handler{DB: d.DB, Settings: runtimeSettings}
 	jobsHandler.Mount(r)
 
-	colHandler := &collections.Handler{DB: d.DB}
+	colHandler := &collections.Handler{DB: d.DB, ListVideos: videoHandler.List}
 	colHandler.Mount(r)
 	// Phase 8 / Story 9.14: smart-collection ?freeze convert endpoint.
 	colHandler.MountSmart(r)

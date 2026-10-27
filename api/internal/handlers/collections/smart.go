@@ -19,6 +19,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -41,6 +42,74 @@ type SmartFilter struct {
 	Tags         []string `json:"tag,omitempty"`
 	OrderBy      string   `json:"order_by,omitempty"`
 	Limit        int      `json:"limit,omitempty"`
+	// Filters is a saved grid filter (Epic 45 story 45.17): GET /api/videos's
+	// query (FilterKeys) over the collection's library. When set, the other
+	// fields are not read.
+	Filters map[string]string `json:"filters,omitempty"`
+}
+
+// FilterKeys are the GET /api/videos parameters a saved filter may hold:
+// the grid's filters, sort and order. favorite is the caller's own and
+// read on the home only, so it is not one.
+var FilterKeys = map[string]bool{
+	"q": true, "language": true, "year": true, "watched": true, "series": true,
+	"tag": true, "speaker": true, "letter": true, "duration": true, "added": true,
+	"resolution": true, "sort": true, "order": true,
+}
+
+// validateSmartQuery refuses a smart_query that is not JSON of the
+// SmartFilter shape, or a saved filter with an unknown key or an empty or
+// overlong value. The values themselves are GET /api/videos's to judge: a
+// bad one lists nothing (the list answers 400, the items a warning).
+func validateSmartQuery(raw json.RawMessage) *httperror.Error {
+	bad := func(msg string) *httperror.Error {
+		return httperror.Unprocessable([]httperror.FieldError{{Field: "smart_query", Message: msg}})
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	var f SmartFilter
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return bad("not a smart query")
+	}
+	if f.Filters == nil {
+		return nil
+	}
+	if len(f.Filters) == 0 {
+		return bad("filters is empty")
+	}
+	for k, v := range f.Filters {
+		if !FilterKeys[k] {
+			return bad("unknown filter " + k)
+		}
+		if strings.TrimSpace(v) == "" || len(v) > 200 {
+			return bad("filter " + k + " needs a value")
+		}
+	}
+	return nil
+}
+
+// filterItems answers a saved-filter collection's items: GET /api/videos
+// with the filters over the collection's library, its page (limit, cursor)
+// passed through, for the caller (their library scope and playback marks).
+// The answer is that list's: {items: [video], next}.
+func (h *Handler) filterItems(w http.ResponseWriter, r *http.Request, c Collection, f SmartFilter) {
+	in := r.URL.Query()
+	qs := url.Values{}
+	for k, v := range f.Filters {
+		qs.Set(k, v)
+	}
+	qs.Set("library", c.LibraryID)
+	for _, k := range []string{"limit", "cursor"} {
+		if v := in.Get(k); v != "" {
+			qs.Set(k, v)
+		}
+	}
+	r2 := r.Clone(r.Context())
+	u := *r.URL
+	u.RawQuery = qs.Encode()
+	r2.URL = &u
+	h.ListVideos(w, r2)
 }
 
 // MountSmart registers the freeze endpoint. The base routes are still

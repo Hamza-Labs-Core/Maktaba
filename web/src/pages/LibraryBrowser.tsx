@@ -18,7 +18,10 @@
 // add them to a playlist (lib/me).
 //
 // Phase 3 (story 45.20): Length, Added and Resolution filters (bands the
-// server defines; the facets say which have videos).
+// server defines; the facets say which have videos). Story 45.17, admins on a
+// library's grid: Add to collection (a selection) and Save as collection (the
+// filters and sort as a smart collection); with ?collection=<id> (Edit filters
+// on a smart collection's page) the button saves them to that collection.
 //
 // Grid/list view persists per-user in localStorage; the sort, order and
 // filters (year, watched, language, q, tag, speaker, favorite, letter,
@@ -44,6 +47,15 @@ import { useI18n } from "../lib/i18n";
 import { TitleRow } from "../help/HelpLink";
 import { VideoPoster, ViewToggle, formatDuration, useStoredView } from "../components/VideoViews";
 import { AddToPlaylist } from "../components/AddToPlaylist";
+import { AddToCollection } from "../components/AddToCollection";
+import { Modal } from "@ds/components/Modal/Modal";
+import {
+  COLLECTION_NAME_MAX,
+  collectionPath,
+  createCollection,
+  pickFilters,
+  saveCollectionFilters,
+} from "../lib/collections";
 import { EMPTY_FACETS, fetchFacets, markWatched, setFavorite, type Facets } from "../lib/me";
 import { startQueueFromQuery, watchPath } from "../lib/playQueue";
 import { videosUrl } from "../lib/browse";
@@ -335,6 +347,12 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [playlistOpen, setPlaylistOpen] = useState(false);
+  const [collectionOpen, setCollectionOpen] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const editCollection = params.get("collection") || "";
+  const curator = !!user?.is_admin && !!libraryId && !badLibrary;
   const [starting, setStarting] = useState(false);
 
   // The list's filters and sort, without paging: Play all reads it too.
@@ -510,6 +528,37 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
       });
     } finally {
       setStarting(false);
+    }
+  }
+
+  // a saved filter is the grid's filters and sort, as the URL has them
+  async function saveFilters() {
+    if (!libraryId) return;
+    const filters = pickFilters(params);
+    setSaving(true);
+    try {
+      if (editCollection) {
+        await saveCollectionFilters(editCollection, filters);
+        toast.show({ tone: "success", message: t("collections.filtersSaved") });
+        navigate(`/collections/${encodeURIComponent(editCollection)}`);
+        return;
+      }
+      const nm = saveName.trim();
+      if (!nm) return;
+      const c = await createCollection(libraryId, nm, filters);
+      setSaveOpen(false);
+      setSaveName("");
+      toast.show({ tone: "success", message: t("collections.saved", { name: c.name }) });
+      navigate(collectionPath(c));
+    } catch (e) {
+      toast.show({
+        tone: "error",
+        message: `${t("collections.createError")}: ${
+          e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
+        }`,
+      });
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -772,6 +821,17 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
       >
         {selecting ? t("browse.select.done") : t("browse.select")}
       </Button>
+      {curator && (
+        <Button
+          variant="ghost"
+          size="sm"
+          loading={saving}
+          disabled={saving}
+          onClick={() => (editCollection ? void saveFilters() : setSaveOpen(true))}
+        >
+          {editCollection ? t("collections.saveFiltersTo") : t("collections.saveAs")}
+        </Button>
+      )}
     </div>
   );
 
@@ -837,6 +897,16 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
         >
           {t("browse.bulk.playlist")}
         </Button>
+        {curator && (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={bulkBusy || selected.length === 0}
+            onClick={() => setCollectionOpen(true)}
+          >
+            {t("collections.bulkAdd")}
+          </Button>
+        )}
       </span>
     </div>
   );
@@ -1096,6 +1166,51 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
         onClose={() => setPlaylistOpen(false)}
         onAdded={() => setSelected([])}
       />
+      {curator && libraryId && (
+        <AddToCollection
+          open={collectionOpen}
+          libraryId={libraryId}
+          videoIds={selected}
+          onClose={() => setCollectionOpen(false)}
+          onAdded={() => setSelected([])}
+        />
+      )}
+      {curator && (
+        <Modal
+          open={saveOpen}
+          onClose={() => setSaveOpen(false)}
+          title={t("collections.saveAsTitle")}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setSaveOpen(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                disabled={saving || !saveName.trim()}
+                loading={saving}
+                onClick={() => void saveFilters()}
+              >
+                {t("common.save")}
+              </Button>
+            </>
+          }
+        >
+          <p className="mkt-muted">{t("collections.saveAsDesc")}</p>
+          <label className="mkt-field">
+            <span className="mkt-field__label">{t("collections.name")}</span>
+            <input
+              type="text"
+              dir="auto"
+              value={saveName}
+              maxLength={COLLECTION_NAME_MAX}
+              onChange={(e) => setSaveName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void saveFilters();
+              }}
+            />
+          </label>
+        </Modal>
+      )}
     </section>
   );
 }
