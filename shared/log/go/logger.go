@@ -139,6 +139,8 @@ func build(opts Options, ring *RingBuffer) *slog.Logger {
 	if ring != nil {
 		h = fanoutHandler{handlers: []slog.Handler{h, slog.NewJSONHandler(ring, hopts)}}
 	}
+	// a line logged with a context carries its request/session/job ids
+	h = ctxHandler{Handler: h}
 
 	return slog.New(h).With(
 		"service", opts.Service,
@@ -192,8 +194,11 @@ func makeReplaceAttr(redact map[string]struct{}) func([]string, slog.Attr) slog.
 			}
 			return a
 		}
-		if _, ok := redact[strings.ToLower(a.Key)]; ok {
+		if keySensitive(redact, a.Key) {
 			return slog.String(a.Key, redactedValue)
+		}
+		if r, ok := redactValue(a.Value); ok {
+			return slog.String(a.Key, r)
 		}
 		return a
 	}

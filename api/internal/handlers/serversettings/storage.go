@@ -67,7 +67,7 @@ func (h *Handler) storageGet(path string) http.HandlerFunc {
 		}
 		var out map[string]any
 		if err := json.Unmarshal(body, &out); err != nil {
-			httperror.Write(w, r, httperror.BadGateway("the supervisor's answer: "+err.Error()))
+			httperror.Write(w, r, httperror.BadGateway("the supervisor's answer").Wrap(err))
 			return
 		}
 		out["available"] = true
@@ -109,7 +109,7 @@ func (h *Handler) storagePost(path string) http.HandlerFunc {
 		body, _ := json.Marshal(map[string]string{"target": in.Target, "by": by})
 		code, out, err := h.storageSupervisor().call(r.Context(), http.MethodPost, path, body)
 		if err != nil {
-			httperror.Write(w, r, httperror.BadGateway(err.Error()))
+			httperror.Write(w, r, httperror.BadGateway("the server's supervisor did not answer").Wrap(err))
 			return
 		}
 		if path == "storage/move" && code == http.StatusAccepted {

@@ -205,7 +205,7 @@ func (c *Controller) CreateDestination(ctx context.Context, actor string, in Des
 		return Destination{}, err
 	}
 	if err := c.st.insertDestination(ctx, d); err != nil {
-		_ = c.Integration.Secrets.Delete(ctx, d.KeySecret)
+		c.cleanupFailed("delete_simulcast_key", c.Integration.Secrets.Delete(ctx, d.KeySecret), "destination", d.ID)
 		return Destination{}, err
 	}
 	c.log().Info("tv_simulcast: destination added", "destination_id", d.ID, "kind", d.Kind, "event", "tv_simulcast_destination")
@@ -290,7 +290,7 @@ func (c *Controller) DeleteDestination(ctx context.Context, actor, id string) er
 		return err
 	}
 	if c.Integration != nil && c.Integration.Secrets != nil {
-		_ = c.Integration.Secrets.Delete(ctx, d.KeySecret)
+		c.cleanupFailed("delete_simulcast_key", c.Integration.Secrets.Delete(ctx, d.KeySecret), "destination", d.ID)
 	}
 	c.audit(ctx, "tv_simulcast.destination_deleted", actor, id, map[string]any{"name": d.Name})
 	c.forget("")

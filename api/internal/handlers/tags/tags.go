@@ -110,7 +110,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	id, name, err := h.upsertTag(r, req.Name)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("upsert tag: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("upsert tag").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusCreated, Tag{ID: id, Name: name})
@@ -159,14 +159,14 @@ func (h *Handler) PatchVideoTags(w http.ResponseWriter, r *http.Request) {
 		}
 		tagID, _, err := upsertTagTx(tx, r, name)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("upsert tag: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("upsert tag").Wrap(err))
 			return
 		}
 		if _, err := tx.ExecContext(r.Context(), `
 			INSERT INTO video_tags (video_id, tag_id) VALUES ($1, $2)
 			ON CONFLICT (video_id, tag_id) DO NOTHING
 		`, videoID, tagID); err != nil {
-			httperror.Write(w, r, httperror.Internal("attach tag: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("attach tag").Wrap(err))
 			return
 		}
 	}
@@ -180,7 +180,7 @@ func (h *Handler) PatchVideoTags(w http.ResponseWriter, r *http.Request) {
 			DELETE FROM video_tags WHERE video_id = $1
 			  AND tag_id IN (SELECT id FROM tags WHERE name_norm = $2)
 		`, videoID, norm); err != nil {
-			httperror.Write(w, r, httperror.Internal("detach tag: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("detach tag").Wrap(err))
 			return
 		}
 	}

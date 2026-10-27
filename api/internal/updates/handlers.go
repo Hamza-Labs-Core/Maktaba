@@ -178,7 +178,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	o, err := h.Svc.Overview(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("updates: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("updates").Wrap(err))
 		return
 	}
 	if h.Driver != nil && len(o.Machines) > 0 {
@@ -252,7 +252,7 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request, p *principal.Prin
 	ctx := r.Context()
 	cur, err := h.Svc.Policy(ctx)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("updates policy: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("updates policy").Wrap(err))
 		return
 	}
 	if raw, ok := set["deferred_until"]; ok {
@@ -269,7 +269,7 @@ func (h *Handler) save(w http.ResponseWriter, r *http.Request, p *principal.Prin
 	next := cur.ApplyOverrides(set)
 	inst, err := h.Svc.installed(ctx)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("updates watermark: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("updates watermark").Wrap(err))
 		return
 	}
 	if err := next.Validate(inst); err != nil {
@@ -362,7 +362,7 @@ func (h *Handler) runNow(w http.ResponseWriter, r *http.Request, p *principal.Pr
 			Status: http.StatusServiceUnavailable, Detail: "this build cannot install updates by itself yet"}).
 			With("code", ErrOrchestratorUnavailable.Error()).With("run_id", run.ID))
 	default:
-		httperror.Write(w, r, httperror.Internal("update now: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("update now").Wrap(err))
 	}
 }
 
@@ -388,7 +388,7 @@ func (h *Handler) Unblock(w http.ResponseWriter, r *http.Request) {
 	}
 	done, err := h.Svc.Unblock(r.Context(), p.UserID, v)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("unblock: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("unblock").Wrap(err))
 		return
 	}
 	if !done {
@@ -419,7 +419,7 @@ func (h *Handler) Skip(w http.ResponseWriter, r *http.Request) {
 	}
 	pol, err := h.Svc.Policy(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("updates policy: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("updates policy").Wrap(err))
 		return
 	}
 	list := append([]string{}, pol.SkippedVersions...)
@@ -463,7 +463,7 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.Unavailable(60))
 			return
 		}
-		httperror.Write(w, r, httperror.BadGateway("check GitHub: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("check GitHub").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, res)
@@ -481,7 +481,7 @@ func (h *Handler) Runs(w http.ResponseWriter, r *http.Request) {
 	}
 	runs, err := h.Svc.Store.Runs(r.Context(), limit)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("update runs: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("update runs").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": runs})

@@ -6,6 +6,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // SniffTimeout bounds the wait for a connection's first byte.
@@ -55,7 +57,7 @@ func (s *SniffListener) loop() {
 			return
 		}
 		delay = 0
-		go s.classify(c)
+		safego.Go(nil, "link_classify", func() { s.classify(c) })
 	}
 }
 

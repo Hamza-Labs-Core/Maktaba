@@ -657,6 +657,6 @@ func (h *Handler) audit(ctx context.Context, action, actor, target string, paylo
 	blob, _ := json.Marshal(payload)
 	if _, err := h.DB.ExecContext(ctx, `INSERT INTO audit_log (category, action, actor_user_id, target_id, payload)
 		VALUES ('flags', $1, $2, $3, $4)`, action, who, target, string(blob)); err != nil {
-		h.Logger.Warn("flags: audit row not written", "action", action, "err", err, "event", "flags_audit_failed")
+		h.Logger.WarnContext(ctx, "flags: audit row not written", "action", action, "err", err, "event", "flags_audit_failed")
 	}
 }

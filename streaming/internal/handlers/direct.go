@@ -160,7 +160,7 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		h.log().Log(r.Context(), level, "direct play: the video file could not be opened",
 			"video_id", videoID.String(), "path", mediaPath, "err", err.Error(), "event", "vod_direct_open_failed")
-		httpx.Write(w, http.StatusNotFound, "video-bytes-missing", "video file not on disk", err.Error())
+		httpx.Write(w, http.StatusNotFound, "video-bytes-missing", "video file not on disk", "")
 		return
 	}
 	defer f.Close()
@@ -168,7 +168,7 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.log().Error("direct play: the video file could not be read", "video_id", videoID.String(),
 			"path", mediaPath, "err", err.Error(), "event", "vod_direct_read_failed")
-		httpx.Write(w, http.StatusInternalServerError, "stat-failed", "stat failed", err.Error())
+		httpx.Write(w, http.StatusInternalServerError, "stat-failed", "stat failed", "")
 		return
 	}
 

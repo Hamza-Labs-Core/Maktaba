@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // AccessGranter is the home's side of its machines' database access (the home owns it).
@@ -311,7 +312,7 @@ func (h *Hub) onAccessRequest(s *Session, raw []byte) {
 		h.accessAnswered(s, logger, false, cluster.AccessRateLimited, fmt.Sprintf("asked again too soon: "+
 			"ask again in %s", (accessAskEvery-now.Sub(last)).Round(time.Second)), answer)
 	default:
-		go h.grantRequested(s, g, f.HomeDB, logger, answer)
+		safego.Go(logger, "cluster_grant_access", func() { h.grantRequested(s, g, f.HomeDB, logger, answer) })
 	}
 }
 
