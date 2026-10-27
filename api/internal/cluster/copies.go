@@ -50,6 +50,9 @@ type Copies struct {
 	// said; onTold: that copies on an operator's Postgres are on was said
 	refusedTold      map[string]bool
 	doorTold, onTold bool
+	// unreservedTold are the slots already warned about as about to be lost (once while
+	// they are)
+	unreservedTold map[string]bool
 }
 
 // BeatEvery is how often the home writes its beat while a machine follows it.
@@ -434,6 +437,7 @@ func (c *Copies) Run(ctx context.Context) {
 			minute = time.Now()
 			c.publishCA(ctx)
 			c.holdCap(ctx)
+			c.dropLost(ctx)
 		}
 		select {
 		case <-ctx.Done():
@@ -508,6 +512,72 @@ func (c *Copies) keepAtMost(ctx context.Context, gb int) {
 		return
 	}
 	c.set, c.kept = true, gb
+}
+
+// lostDetail is what the Machines page says of a machine whose slot the home dropped as
+// lost, until the machine says how its copy is.
+const lostDetail = "the home's slot for this copy lost the changes it had not applied yet (the machine was away " +
+	"or its copy paused past the home's cap): the copy is made anew when the machine next asks for it"
+
+// dropLost drops the machines' slots Postgres has given up on (wal_status lost: its own
+// cap, max_slot_wal_keep_size, let go of the changes they had not sent), theirs and the
+// ones their subscriptions made to copy a table at first, which no subscription can follow
+// again. dropOver misses them (a lost slot has no restart_lsn; and it runs only with the
+// rule's cap set). A machine of any version asking for its copy then hears its slot is
+// gone, and copies the database anew.
+// Each machine's copy is said to be rebuilding (cluster_nodes.replica) until it reports.
+// Slots about to be lost (unreserved) are warned about, once each while they are.
+func (c *Copies) dropLost(ctx context.Context) {
+	lctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	rows, err := c.DB.QueryContext(lctx, `SELECT slot_name, wal_status FROM pg_replication_slots
+	 WHERE (slot_name LIKE $1 OR slot_name ~ $2) AND NOT active AND wal_status IN ('lost', 'unreserved')
+	   AND database = current_database()`, copySlots, tableSyncName.String())
+	if err != nil {
+		return
+	}
+	type slot struct{ name, status string }
+	var slots []slot
+	for rows.Next() {
+		var s slot
+		if rows.Scan(&s.name, &s.status) == nil {
+			slots = append(slots, s)
+		}
+	}
+	_ = rows.Close()
+	unreserved := map[string]bool{}
+	for _, s := range slots {
+		if s.status == "unreserved" {
+			unreserved[s.name] = true
+			if !c.unreservedTold[s.name] {
+				if c.unreservedTold == nil {
+					c.unreservedTold = map[string]bool{}
+				}
+				c.unreservedTold[s.name] = true
+				c.log().Warn("cluster: a machine's copy is about to fall too far behind: the home will give up on it "+
+					"and it is copied anew when the machine is back", "slot", s.name, "event", "cluster_copy_unreserved")
+			}
+			continue
+		}
+		if _, err := c.DB.ExecContext(lctx, `SELECT pg_drop_replication_slot($1)`, s.name); err != nil {
+			c.log().Warn("cluster: a machine's copy lost its slot's changes, and the slot could not be dropped",
+				"slot", s.name, "err", err, "event", "cluster_copy_lost_failed")
+			continue
+		}
+		c.log().Warn("cluster: a machine's copy fell too far behind (its slot lost the changes it had not applied); "+
+			"it is copied anew when the machine is back", "slot", s.name, "event", "cluster_copy_lost")
+		if m := copySlotName.FindStringSubmatch(s.name); m != nil {
+			_, _ = c.DB.ExecContext(lctx, `UPDATE cluster_nodes SET replica = COALESCE(replica, '{}'::jsonb) ||
+			    jsonb_build_object('state', 'rebuilding', 'detail', $2::text, 'slot', 'lost'),
+			    replica_reported_at = now()
+			  WHERE replace(id::text, '-', '') = $1`, m[1], lostDetail)
+		}
+	}
+	for name := range c.unreservedTold {
+		if !unreserved[name] {
+			delete(c.unreservedTold, name)
+		}
+	}
 }
 
 // dropOver drops the slots of the machines that do not follow (theirs, and the ones their

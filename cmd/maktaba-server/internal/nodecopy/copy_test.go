@@ -228,11 +228,12 @@ func TestKindOf(t *testing.T) {
 		{&pq.Error{Code: "08006"}, kindUnreachable},
 		// refused: the home says this machine may have no copy, or its role may no longer
 		// sign in (a revocation); a permission error elsewhere, a password or a pg_hba
-		// rule is not that
+		// rule is not that: a refused login (a password the home no longer has, a pg_hba
+		// rule) is asked again later and later
 		{&pq.Error{Code: "MK403"}, kindRefused},
 		{&pq.Error{Code: "28000", Message: `role "maktaba_node_x" is not permitted to log in`}, kindRefused},
-		{&pq.Error{Code: "28000", Message: `no pg_hba.conf entry for host "10.0.0.5"`}, kindOther},
-		{&pq.Error{Code: "28P01"}, kindOther},
+		{&pq.Error{Code: "28000", Message: `no pg_hba.conf entry for host "10.0.0.5"`}, kindAuth},
+		{&pq.Error{Code: "28P01"}, kindAuth},
 		{&pq.Error{Code: "42501"}, kindOther},
 		// the grant itself denied: the home keeps no copies on its database (not Maktaba's
 		// own Postgres, the rule off), as Ask names it

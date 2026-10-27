@@ -922,9 +922,12 @@ function useCopyNote(copy: NodeCopy | undefined): { text: string; warn: boolean 
   const fmt = useFmt();
   if (!copy?.state || !COPY_STATES.has(copy.state)) return null;
   const ago = copy.applied_at ? fmt.ago(copy.applied_at) : t("machines.copy.never");
+  const text = t(`machines.copy.${copy.state}`, { ago, detail: copy.detail ?? "" });
+  // the home is about to give up on this copy's slot (it is then copied anew)
+  const unreserved = copy.slot === "unreserved" && copy.state !== "rebuilding" && copy.state !== "copying";
   return {
-    text: t(`machines.copy.${copy.state}`, { ago, detail: copy.detail ?? "" }),
-    warn: COPY_WARN.has(copy.state),
+    text: unreserved ? `${text} ${t("machines.copy.unreserved")}` : text,
+    warn: COPY_WARN.has(copy.state) || unreserved,
   };
 }
 

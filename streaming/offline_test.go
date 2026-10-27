@@ -25,20 +25,20 @@ func TestDBWatchFollowsTheDatabase(t *testing.T) {
 		return nil
 	}}
 	ctx := context.Background()
-	w.check(ctx)
+	_ = w.check(ctx)
 	if w.Down() {
 		t.Fatal("down with the database answering")
 	}
 	back := w.backCh()
 	down.Store(true)
-	w.check(ctx)
+	_ = w.check(ctx)
 	if !w.Down() {
 		t.Fatal("up with the database gone")
 	}
 	waited := make(chan error, 1)
 	go func() { waited <- w.wait(ctx) }()
 	down.Store(false)
-	w.check(ctx)
+	_ = w.check(ctx)
 	select {
 	case <-back:
 	case <-time.After(time.Second):

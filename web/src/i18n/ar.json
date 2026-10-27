@@ -3973,6 +3973,7 @@
   "machines.copy.incompatible": "لا يستطيع الاحتفاظ بنسخة من قاعدة بيانات هذا الجهاز الرئيسي: {detail}",
   "machines.copy.unavailable": "لا يحتفظ بنسخة من قاعدة بيانات هذا الجهاز الرئيسي: {detail}",
   "machines.copy.error": "في نسخته من قاعدة بيانات هذا الجهاز الرئيسي مشكلة: {detail}",
+  "machines.copy.unreserved": "توشك نسخته أن تتأخر أكثر مما يحتمل: إن تأخرت تخلّى عنها هذا الجهاز الرئيسي ونُسخت من جديد.",
   "machines.switch.title": "تبديل الجهاز الرئيسي",
   "machines.switch.term": "الدورة {n}",
   "machines.switch.home.initial": "{name} هو الجهاز الرئيسي لهذه المجموعة منذ إعدادها.",

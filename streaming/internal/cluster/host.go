@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
@@ -171,23 +172,51 @@ func (l *HostLoop) BeatOnce(ctx context.Context) error {
 	return nil
 }
 
-// Run beats until ctx ends.
+// Run beats until ctx ends. A beat the home's database refused the login for (a password
+// it no longer has: the machine's access re-made since this process started) is tried
+// again later and later (LoginBackoff), never every Interval for ever.
 func (l *HostLoop) Run(ctx context.Context) {
 	iv := l.Interval
 	if iv <= 0 {
 		iv = BeatInterval
 	}
-	_ = l.BeatOnce(ctx)
-	t := time.NewTicker(iv)
-	defer t.Stop()
+	refused := 0
 	for {
+		wait := iv
+		if err := l.BeatOnce(ctx); LoginRefused(err) {
+			refused++
+			wait = LoginBackoff(iv, refused)
+		} else {
+			refused = 0
+		}
+		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return
 		case <-t.C:
-			_ = l.BeatOnce(ctx)
 		}
 	}
+}
+
+// MaxLoginBackoff is the longest wait between logins the home's database refused.
+const MaxLoginBackoff = 2 * time.Minute
+
+// LoginBackoff is the wait after the n-th refused login in a row, from every: twice as
+// long each time, up to MaxLoginBackoff.
+func LoginBackoff(every time.Duration, n int) time.Duration {
+	d := every
+	for i := 0; i < n && d < MaxLoginBackoff; i++ {
+		d *= 2
+	}
+	return min(d, MaxLoginBackoff)
+}
+
+// LoginRefused reports whether err is the database refusing the login: a password it
+// does not have (28P01), or a role or pg_hba rule that lets it not in (28000).
+func LoginRefused(err error) bool {
+	var pe *pgconn.PgError
+	return err != nil && errors.As(err, &pe) && (pe.Code == "28P01" || pe.Code == "28000")
 }
 
 // NodeSettings is how a streaming node runs from its Epic 31 node config.

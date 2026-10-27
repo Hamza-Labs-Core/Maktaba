@@ -148,6 +148,12 @@ behaves as a node did before #145: its own routes answer, anything else is 503 w
   holds more than `rules.cluster.replica_wal_keep_gb` of changes is dropped — the home's disk
   never fills for a machine that is off; that machine subscribes anew when it is back. Postgres's
   own cap (`max_slot_wal_keep_size`) is kept at the rule too, so it holds while the API is down.
+  A slot Postgres's cap gave up on (`wal_status = 'lost'`: it no longer has the changes its copy
+  had not applied, so no subscription can follow it again, and it has no `restart_lsn` for the
+  home's own cap to see) is dropped too, every minute; the machine's copy is said to be
+  `rebuilding` on the Machines page until the machine reports, and a machine of any version
+  then hears its slot is gone and copies anew. A slot about to be lost (`unreserved`) is logged
+  once, and the machine's card says so.
 - Revoking a machine ends its copy: the machine is revoked first (a grant after that is
   refused), then its replication role may no longer sign in, its sessions are ended, its slot
   and publication are dropped; a revocation that failed half way is done again by revoking
@@ -181,6 +187,32 @@ this epic converts at its first start on this version:
 6. the home refusing this machine three times over three minutes (revoked: `MK403`, or its role
    may not sign in) ends the subscription and wipes the copy and its secrets; approved again, the
    machine copies anew by itself.
+
+**A copy that cannot follow** (seen live: a machine off and on an older schema for a day, its
+access re-made by the home many times meanwhile) mends itself:
+
+- *Its slot lost.* The grant's answer is read with the slot's `wal_status` (from
+  `pg_replication_slots`, on a home of any version). A `lost` slot is a reason to copy anew: the
+  subscription is dropped without a word to the home (`slot_name = NONE`), the fresh grant drops
+  the slot, and the copy is made again, shown as `rebuilding` (with why) until it follows. An
+  `unreserved` slot is said on the copy's status (`slot`), and on the Machines page.
+- *Its access re-made.* The copy's calls to the home (the grant, the reports) log in with
+  node.json as it is at each call, not as it was at the start. Its subscription logs in as its own
+  replication role with this machine's password, which every grant sets again: a re-made access
+  (the machine's `maktaba_node_*` password) never touches it.
+- *A login the home refuses.* The grant or a report refused (`28P01`, `28000`) is asked again
+  later and later (from a minute, doubling, up to 30 minutes), the reports held back meanwhile. A
+  subscription that is on and does not receive from the home has its own login tried once a
+  minute; refused three times in a row, it is paused (its worker would knock every few seconds
+  for ever) for a while that doubles each time, then the home is asked for the copy again and it
+  is on again.
+- *A TV process with yesterday's password.* The streaming role (and the TV slots) outlive an
+  update's restart of the supervisor (the handover) with the login they started with, read once:
+  the record now keeps a fingerprint of it (`login`: the database URLs and the passfile they
+  read, hashed), and a process whose login is not its successor's (or that has none: a record
+  from before this) is ended and started afresh rather than adopted. The streaming role's beat
+  and its watch of the home's database back off a refused login the same way (5 s, doubling, up
+  to 2 minutes) rather than knock every 5 s.
 
 The copy's directory is readable by this account only (0700 on Unix; on Windows its ACL keeps
 only this account and SYSTEM). `MAKTABA_NODE_COPY=off` exists for tests that run a node without
@@ -575,6 +607,9 @@ applies on its own: what this home changed since is not known any more).
 | Home off for days, node on | The copy stays at its last applied change; sign-ins keep working (freshness is measured at the outage's start); the slot holds WAL on the home only while the home runs. |
 | Home switched off (connections hang) | Detected by the probes and the bounded connections; nothing waits on it past a request's bound. |
 | Node off for long | The home drops its slot past the cap; the node subscribes anew on its next start. |
+| Node off (or its copy paused) past Postgres's own cap | The slot is `lost`: the home drops it within a minute and says the copy is rebuilding; the node, back, copies anew (it sees a lost slot itself too). |
+| The home re-makes a machine's access | Its copy's calls use the new password at once; a TV process that kept the old one is not adopted at the next restart; a refused login is retried later and later, never every few seconds. |
+| The home refuses the copy's own login | Its subscription is paused after three refusals, then on again after a wait that doubles. |
 | Home restored from a backup / re-initialized | New system identifier: the node subscribes anew. |
 | The home updated first | The node's subscription pauses until this machine is updated too (its schema follows its code). |
 | Home's database starting up at the node's start | The node starts on its copy and checks its role once the home answers. |
