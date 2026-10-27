@@ -14,8 +14,8 @@
 --
 -- Not in a machine's copy: cluster_copy_excluded() is slot 0161's list and the three tables
 -- (a user's own; the routes run on the home, /api/me, as the pins of slot 0159).
--- maktaba_worker: the default rights. Additive. NO TRANSACTION for the indexes on videos
--- (CONCURRENTLY: the table is large), as slot 0159.
+-- maktaba_worker: the default rights. Additive. NO TRANSACTION: every index is built
+-- CONCURRENTLY (videos is large), as slot 0159.
 --
 CREATE TABLE IF NOT EXISTS user_favorites (
     user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -23,9 +23,14 @@ CREATE TABLE IF NOT EXISTS user_favorites (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, video_id)
 );
-CREATE INDEX IF NOT EXISTS user_favorites_user_created_idx
-    ON user_favorites (user_id, created_at DESC);
+-- +goose StatementEnd
 
+-- +goose StatementBegin
+CREATE INDEX CONCURRENTLY IF NOT EXISTS user_favorites_user_created_idx
+    ON user_favorites (user_id, created_at DESC);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS user_playlists (
     id          UUID        PRIMARY KEY,
     user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -34,9 +39,14 @@ CREATE TABLE IF NOT EXISTS user_playlists (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS user_playlists_user_idx
-    ON user_playlists (user_id, updated_at DESC);
+-- +goose StatementEnd
 
+-- +goose StatementBegin
+CREATE INDEX CONCURRENTLY IF NOT EXISTS user_playlists_user_idx
+    ON user_playlists (user_id, updated_at DESC);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS user_playlist_items (
     playlist_id UUID        NOT NULL REFERENCES user_playlists(id) ON DELETE CASCADE,
     video_id    UUID        NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
@@ -44,7 +54,10 @@ CREATE TABLE IF NOT EXISTS user_playlist_items (
     added_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (playlist_id, video_id)
 );
-CREATE INDEX IF NOT EXISTS user_playlist_items_order_idx
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE INDEX CONCURRENTLY IF NOT EXISTS user_playlist_items_order_idx
     ON user_playlist_items (playlist_id, position);
 -- +goose StatementEnd
 
