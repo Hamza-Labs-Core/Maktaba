@@ -19,6 +19,18 @@
 //   POST /api/server/storage/check      {target} -> MoveCheck
 //   POST /api/server/storage/move       {target} -> 202 {state: "requested", target};
 //                                       422 the MoveCheck (ok: false); 409 no supervisor
+//
+// The nightly backups of the library database (pg_dump), saved in server.toml
+// and used from the next restart:
+//
+//   GET    /api/server/backups               BackupsDoc
+//   PUT    /api/server/backups               partial BackupSettings (+ move_dumps) -> the
+//                                            GET document; 422 {errors: [{field: "backups.<key>",
+//                                            message}]}; "backups.move_dumps" when the folder
+//                                            changes and the old one holds dumps ({dumps,
+//                                            dumps_bytes, from}): send again with move_dumps
+//   DELETE /api/server/backups/dumps/{name}  the GET document; 404; 409 a dump an update
+//                                            under way may still put back
 import { api } from "./api";
 
 export interface PathMapPair {
@@ -135,6 +147,78 @@ export interface MoveCheck {
   warnings: StorageNote[];
 }
 
+/** How the library database is backed up (server.toml [backups]). */
+export interface BackupSettings {
+  /** where the dumps go; "" = beside the database (default_dir) */
+  dir: string;
+  nightly: boolean;
+  /** 1 daily, 7 weekly, else every N days (1..30) */
+  every_days: number;
+  /** 0..23, local time */
+  hour: number;
+  /** scheduled dumps kept, 1..365 */
+  keep: number;
+  /** pre-update dumps kept; 0 = as the Updates settings say */
+  update_keep: number;
+  /** a dump before each update, so a failed migration can be undone */
+  pre_update: boolean;
+  /** room left free on the disk: a share of it (0..50) and at least this many GB (0..1000) */
+  reserve_percent: number;
+  reserve_min_gb: number;
+  /** the most of the disk the dumps may take, in percent (1..100) */
+  max_share_percent: number;
+}
+
+export type BackupKind = "nightly" | "update" | "failed" | "replaced" | "other";
+
+export interface BackupDump {
+  name: string;
+  kind: BackupKind;
+  bytes: number;
+  /** RFC 3339 */
+  at: string;
+}
+
+export type BackupsDoc =
+  | { available: false; reason: string }
+  | {
+      available: true;
+      file: string;
+      saved: BackupSettings;
+      running: BackupSettings;
+      restart_needed: boolean;
+      can_restart: boolean;
+      /** where the dumps are now */
+      dir: string;
+      /** beside the database: where dir "" puts them */
+      default_dir: string;
+      disk?: Omit<StorageDisk, "problem">;
+      dumps: BackupDump[];
+      dumps_bytes: number;
+      /** the pre-update dumps kept now (update_keep, or the Updates settings' count) */
+      update_keep: number;
+    };
+
+/** The hours a backup can run at, and how one reads (24-hour, local). */
+export const HOURS = Array.from({ length: 24 }, (_, h) => h);
+export const hourLabel = (h: number) => `${String(h).padStart(2, "0")}:00`;
+
+/** A change to the backups: only the keys changed, and what to do with the old folder's dumps. */
+export type BackupsChange = Partial<BackupSettings> & { move_dumps?: boolean };
+
+/** The 422 of a folder change whose old folder holds dumps. */
+export interface MoveDumpsAsk {
+  dumps?: number;
+  dumps_bytes?: number;
+  from?: string;
+}
+
+/** A PUT/DELETE answer is the GET document (available may be left out). */
+function asBackupsDoc(d: unknown): BackupsDoc {
+  const o = (d ?? {}) as Record<string, unknown>;
+  return ("available" in o ? o : { ...o, available: true }) as BackupsDoc;
+}
+
 /** The addresses and public URLs, in the order the page shows them. */
 export const ADDRESS_KEYS = ["listen", "web_listen", "stream_addr"] as const;
 export const URL_KEYS = ["public_url", "web_public_url"] as const;
@@ -153,6 +237,13 @@ export const serverSettingsApi = {
   checkMove: async (target: string) => api.post<MoveCheck>("/api/server/storage/check", { target }),
   move: async (target: string) =>
     api.post<{ state: MoveState; target: string }>("/api/server/storage/move", { target }),
+  backups: async () => api.get<BackupsDoc>("/api/server/backups"),
+  saveBackups: async (body: BackupsChange) =>
+    asBackupsDoc(await api.put<unknown>("/api/server/backups", body)),
+  deleteDump: async (name: string) =>
+    asBackupsDoc(
+      await api.delete<unknown>(`/api/server/backups/dumps/${encodeURIComponent(name)}`)
+    ),
   /** Answers while the server is up (public; used to see it come back). */
   ping: async () => api.get<unknown>("/api/system/version"),
 };

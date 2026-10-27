@@ -15,6 +15,8 @@ The table **Library folders from this computer** shows each library folder, wher
 
 Below it, **Where Maktaba keeps its data** shows Maktaba's own folders (the library database, its backups, the models, the caches), how big each one is and which disk it is on, with each disk's free space. From there you can move all of it to another disk.
 
+Last, **Backups of the library database** sets where the database's backup copies (dumps) go, when they are made and how many are kept, and lists the dumps there are.
+
 ## How to use it {#how-to-use}
 
 ### Change a setting {#change}
@@ -50,6 +52,33 @@ Your videos are not in it: they stay in your library folders.
 If the move fails, Maktaba keeps running from where it was; the page says so, with the reason under **Details**.
 
 You can also move the data from a terminal, with Maktaba stopped: `maktaba-server storage show` lists the folders and disks, and `maktaba-server storage move /Volumes/Big/Maktaba` moves them.
+
+### Backups of the library database {#backups}
+
+Maktaba copies the library database to a dump file on a schedule (every night by default) and before each update, so an update whose migrations fail can put the database back. It keeps the latest dumps and deletes older ones by itself.
+
+The table **Database dumps** lists each dump with its **Kind** (**Scheduled**, **Before an update**, **Unfinished**, **Replaced by a restore**), its size, when it was made and its disk, with the disk's free space and the size of all of them together. **Delete** removes one dump after you confirm. A dump an update under way may still need cannot be deleted until it ends.
+
+### Change the backups {#backup-settings}
+
+1. **Backups folder**: leave it empty to keep the dumps beside the database, or type another folder (for example on a larger disk).
+2. **Back up the database on a schedule**, **How often** (every day, every week, or every few days) and **At** (the hour, on this computer's clock).
+3. **Scheduled dumps to keep**: the oldest is deleted when there are more.
+4. **Back up the database before each update**, and **Pre-update dumps to keep** (0 keeps as many as the Updates settings say). Without the dump before an update, an update whose migrations fail cannot put the database back.
+5. **Advanced: room on the disk**: how much of the disk to keep free (a percent, and at least some GB; 5% and 2 GB by default) and the most of the disk the dumps may take (20% by default).
+6. Click **Save**, then restart the server: the new settings are used from the restart.
+
+When you change the folder and the old one holds dumps, Maktaba asks: **Move them to the new folder**, or **Leave them where they are**. Dumps left there are no longer listed, deleted when old, or used to put the database back from here.
+
+You can do the same from a terminal:
+
+```
+maktaba-server backups show
+maktaba-server backups set --dir <folder> --move-dumps yes|no --nightly on|off \
+  --every-days N --hour H --keep N --update-keep N --pre-update on|off \
+  --reserve-percent P --reserve-min-gb G --max-share-percent P
+maktaba-server backups delete <name>
+```
 
 ## What the states and messages mean {#states}
 
@@ -96,6 +125,12 @@ The server reads these settings when it starts. Restart it to use them.
 - **What it means:** the copy could not finish (the disk filled up, was unplugged, or could not be written to).
 - **Does Maktaba fix it itself?** It keeps running from where it was; nothing is lost. The move is not tried again by itself.
 - **What you can do:** read the reason under **Details**, fix it (free space, connect the disk), then move again. Moving again to the same folder goes on from where the copy stopped; if you choose another folder instead, delete the half-copied one on the first disk yourself.
+
+### A backup was skipped: not enough room {#backup-no-room}
+
+- **What it means:** the disk of the backups folder would have less free space than the room kept free, or the dumps would take more than their share of the disk.
+- **Does Maktaba fix it itself?** Partly: it deletes the oldest dumps first, always keeping the newest of each kind. If there is still not enough room, the backup is skipped and tried again at the next one.
+- **What you can do:** free space on that disk, delete old dumps from the table, keep fewer dumps, or choose a backups folder on a larger disk under **Advanced: room on the disk** and **Backups folder**.
 
 ### The server does not come back after a restart {#not-back}
 

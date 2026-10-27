@@ -31,6 +31,8 @@ type storageChoice struct {
 	ComfortableBytes uint64         `json:"comfortable_bytes"`
 	Disks            []storage.Disk `json:"disks"`
 	Suggested        string         `json:"suggested"`
+	// Backups are the backups' settings now (the defaults on a first setup).
+	Backups config.BackupSettings `json:"backups"`
 }
 
 // stepStorage: the `storage` step (Epic 36 story 36.15), where this install keeps
@@ -46,6 +48,11 @@ func stepStorage(s *setupRun, in json.RawMessage) (any, error) {
 	var req struct {
 		CheckOnly bool   `json:"check_only"`
 		DataDir   string `json:"data_dir"`
+		// the backups (story 36.16): their folder ("": beside the database), the
+		// scheduled dump on or off and its hour
+		BackupsDir *string `json:"backups_dir"`
+		Nightly    *bool   `json:"nightly"`
+		Hour       *int    `json:"hour"`
 	}
 	if err := decodeInput(in, &req); err != nil {
 		return nil, err
@@ -62,7 +69,7 @@ func stepStorage(s *setupRun, in json.RawMessage) (any, error) {
 			suggested = cur // chosen before (the user came back to this screen)
 		}
 		return storageChoice{Current: cur, Default: def, NeedBytes: setupNeedDisk, ComfortableBytes: setupComfortDisk,
-			Disks: disks, Suggested: suggested}, nil
+			Disks: disks, Suggested: suggested, Backups: s.cfg.Backups.Settings()}, nil
 	}
 	dir, err := storage.CheckTarget(req.DataDir, nil)
 	if err != nil {
@@ -111,6 +118,24 @@ func stepStorage(s *setupRun, in json.RawMessage) (any, error) {
 	oldPending := s.pendingPath()
 	next := s.cfg
 	next.Server.DataDir = dir
+	// the backups' folder, checked before anything is written
+	bch := backupsChange{BackupPatch: config.BackupPatch{Dir: req.BackupsDir, Nightly: req.Nightly, Hour: req.Hour}}
+	if req.BackupsDir != nil && strings.TrimSpace(*req.BackupsDir) != "" {
+		bdir, err := storage.CheckTarget(*req.BackupsDir, nil)
+		if err == nil {
+			if msg := backupsFolderProblem(bdir, next); msg != "" {
+				err = errors.New(msg)
+			}
+		}
+		if err != nil {
+			return nil, failStep("storage_backups_unusable", "backups_dir", "The backups cannot go to %s: %v",
+				strings.TrimSpace(*req.BackupsDir), err).with("error", err.Error())
+		}
+		bch.Dir = &bdir
+	}
+	if req.Hour != nil && (*req.Hour < 0 || *req.Hour > 23) {
+		return nil, failStep("bad_input", "hour", "The hour is 0 to 23.")
+	}
 	if err := config.SetDataDir(config.Path(), dir); err != nil {
 		return nil, err
 	}
@@ -124,6 +149,16 @@ func stepStorage(s *setupRun, in json.RawMessage) (any, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	if bch.Dir != nil || bch.Nightly != nil || bch.Hour != nil {
+		no := false
+		bch.MoveDumps = &no // a first setup has no dumps to move
+		if _, err := applyBackups(config.Path(), bch); err != nil {
+			return nil, failStep("storage_backups_unusable", "backups_dir", "%v", err).with("error", err.Error())
+		}
+		if reloaded, _, err := config.Load(); err == nil {
+			next.Backups = reloaded.Backups
+		}
 	}
 	s.cfg = next
 	if newPending := s.pendingPath(); newPending != oldPending {
@@ -142,7 +177,8 @@ func stepStorage(s *setupRun, in json.RawMessage) (any, error) {
 			"for a library database plus its backups", humanBytes(disk.FreeBytes), disk.Mount),
 			Params: map[string]any{"free_bytes": disk.FreeBytes, "comfortable_bytes": uint64(setupComfortDisk)}})
 	}
-	return map[string]any{"data_dir": dir, "state_dir": next.StateDir(), "warnings": warnings}, nil
+	return map[string]any{"data_dir": dir, "state_dir": next.StateDir(), "warnings": warnings,
+		"backups": next.Backups.Settings(), "backups_dir": backupsDirOf(next)}, nil
 }
 
 // emptyFolder: dir is not there, or holds nothing but a storage marker.

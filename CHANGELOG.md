@@ -12,6 +12,15 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Backup settings (Epic 36 story 36.16).** Where the library database's dumps go, the schedule
+  (on/off, daily, weekly or every N days, the hour), how many scheduled and pre-update dumps stay,
+  the pre-update dump on/off, and the room the dumps leave on their disk (5% / 2 GB / a fifth by
+  default) are `[backups]` in server.toml, changed from **Settings → Storage & discovery →
+  Backups of the library database** (which also lists and deletes dumps), setup's storage screen,
+  or `maktaba-server backups show|set|delete`. Moving the folder asks whether to move the dumps.
+  The time of the last scheduled dump is recorded apart, so moving or deleting dumps never makes
+  an extra one. API: `GET/PUT /api/server/backups`, `DELETE /api/server/backups/dumps/{name}`
+  (admin only, audited).
 - **Maktaba's data on another disk (Epic 36 story 36.15).** First-time setup has a **Where
   Maktaba keeps its data** screen (the disks with their free space, the roomiest one offered, a
   warning when it is small) that sets `[server] data_dir` before anything is made. Later,

@@ -325,6 +325,83 @@ describe("SetupWizard", () => {
       ).toBeInTheDocument();
     });
 
+    const WITH_BACKUPS = {
+      ...STORAGE,
+      backups: {
+        dir: "",
+        nightly: true,
+        every_days: 1,
+        hour: 3,
+        keep: 7,
+        update_keep: 0,
+        pre_update: true,
+        reserve_percent: 5,
+        reserve_min_gb: 2,
+        max_share_percent: 20,
+      },
+    };
+
+    it("sets where the backups go and when the nightly one runs, with the data folder", async () => {
+      const storage = storageStep(WITH_BACKUPS);
+      renderWizard(fakeApi({ storage }), "storage");
+      const backupsDir = await screen.findByRole("textbox", { name: /^Backups folder/ });
+      expect(backupsDir).toHaveValue("");
+      const nightly = screen.getByRole("switch", { name: /every night/ });
+      expect(nightly).toBeChecked();
+      const hour = screen.getByRole("combobox", { name: /^At/ });
+      expect(hour).toHaveValue("3");
+      await userEvent.type(backupsDir, "/Volumes/Backup/Maktaba");
+      await userEvent.selectOptions(hour, "22");
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() =>
+        expect(storage).toHaveBeenCalledWith(
+          {
+            data_dir: "/Volumes/Big/Maktaba",
+            backups_dir: "/Volumes/Backup/Maktaba",
+            nightly: true,
+            hour: 22,
+          },
+          expect.any(Function)
+        )
+      );
+    });
+
+    it("turns the nightly backup off; empty keeps the backups beside the data", async () => {
+      const storage = storageStep(WITH_BACKUPS);
+      renderWizard(fakeApi({ storage }), "storage");
+      await userEvent.click(await screen.findByRole("switch", { name: /every night/ }));
+      expect(screen.getByRole("combobox", { name: /^At/ })).toBeDisabled();
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() =>
+        expect(storage).toHaveBeenCalledWith(
+          { data_dir: "/Volumes/Big/Maktaba", backups_dir: "", nightly: false, hour: 3 },
+          expect.any(Function)
+        )
+      );
+    });
+
+    it("says under the backups folder why the step refused it", async () => {
+      const storage = vi.fn((input: Record<string, unknown>) => {
+        if (input.check_only) return WITH_BACKUPS;
+        throw {
+          ...stepError("storage_backups_unusable", "cannot write there", "backups_dir"),
+          params: { error: "permission denied" },
+        };
+      });
+      renderWizard(fakeApi({ storage }), "storage");
+      const backupsDir = await screen.findByRole("textbox", { name: /^Backups folder/ });
+      await userEvent.type(backupsDir, "/System/Backups");
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() =>
+        expect(backupsDir).toHaveAccessibleDescription(
+          /Maktaba cannot keep its backups in that folder: permission denied/
+        )
+      );
+      expect(
+        screen.getByRole("heading", { name: "Where Maktaba keeps its data" })
+      ).toBeInTheDocument();
+    });
+
     it("counts the step on Windows too", async () => {
       renderWizard(fakeApi({ storage: storageStep() }, { platform: "windows" }), "storage");
       expect(await screen.findByText("Step 2 of 7")).toBeInTheDocument();

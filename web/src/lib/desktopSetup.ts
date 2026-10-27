@@ -6,7 +6,7 @@
 // (specs/epics/36-mac-app/contract-setup.md). The screens take a
 // SetupApi so tests can drive them with a fake.
 import { isDesktop } from "./desktop";
-import type { StorageDisk } from "./serverSettingsApi";
+import type { BackupSettings, StorageDisk } from "./serverSettingsApi";
 
 /** What the main window should show, from the shell's saved mode. */
 export type AppTarget =
@@ -110,6 +110,8 @@ export interface StorageChoice {
   disks: StorageDisk[];
   /** a folder on the disk with the most room */
   suggested: string;
+  /** the backups as they are set now (the apply input takes backups_dir, nightly, hour) */
+  backups?: BackupSettings;
 }
 
 /** A Maktaba this PC runs outside the app (the adopt step, Epic 38 story 38.13). */

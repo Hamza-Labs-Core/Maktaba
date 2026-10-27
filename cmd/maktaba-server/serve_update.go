@@ -297,7 +297,7 @@ func homeDatabase(cfg config.Config, pg *pgbundle.Bundle) *dbsafe.Target {
 	if u == "" || (!strings.HasPrefix(u, "postgres://") && !strings.HasPrefix(u, "postgresql://")) {
 		return nil
 	}
-	return &dbsafe.Target{URL: u, Bin: pgProgram, Backups: filepath.Join(cfg.Server.DataDir, "backups")}
+	return &dbsafe.Target{URL: u, Bin: pgProgram, Backups: cfg.BackupsDir(filepath.Join(cfg.Server.DataDir, "backups"))}
 }
 
 // pgProgram finds a PostgreSQL client program: MAKTABA_PG_BIN (a directory), else PATH.

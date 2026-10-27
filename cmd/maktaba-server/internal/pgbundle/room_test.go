@@ -144,10 +144,10 @@ func TestMakeRoomLeavesWhatIsNotADumpAlone(t *testing.T) {
 }
 
 func TestReserveIsAShareOfTheDiskWithAFloor(t *testing.T) {
-	if got := reserveOf(1000 << 30); got != 50<<30 {
+	if got := DefaultRoom().reserveOf(1000 << 30); got != 50<<30 {
 		t.Fatalf("1000 GiB disk: reserve %d GiB", got>>30)
 	}
-	if got := reserveOf(16 << 30); got != reserveMin || reserveMin != 2<<30 {
+	if got := DefaultRoom().reserveOf(16 << 30); got != reserveMin || reserveMin != 2<<30 {
 		t.Fatalf("16 GiB disk: reserve %d", got)
 	}
 }

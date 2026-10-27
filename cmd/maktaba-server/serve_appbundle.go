@@ -112,7 +112,8 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 		fmt.Fprintf(log, "[serve] this machine is a full node of %s: the home updates the library database\n", n.HomeURL())
 	} else {
 		db := &migrationGate{stateDir: cfg.StateDir(), version: cur.Version, pg: pg,
-			keep: cfg.Postgres.KeepUpdateDumps(), log: log, updates: updatesDirOf(cfg, "")}
+			keep: updateKeep(cfg), log: log, updates: updatesDirOf(cfg, ""), noDump: !cfg.Backups.PreUpdateOn(),
+			room: roomOf(cfg)}
 		for _, p := range procs {
 			if p.Role == supervisor.RoleAPI && p.Cmd != nil {
 				db.api = p.Cmd
@@ -163,7 +164,7 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 func layoutHomeGates(cfg config.Config, version string, pg *pgbundle.Bundle, ext *dbsafe.Target, procs []supervisor.Process,
 	updates string, log io.Writer) []supervisor.Process {
 	db := &migrationGate{stateDir: cfg.StateDir(), version: version, pg: pg, ext: ext,
-		keep: cfg.Postgres.KeepUpdateDumps(), log: log, updates: updates}
+		keep: updateKeep(cfg), log: log, updates: updates, noDump: !cfg.Backups.PreUpdateOn(), room: roomOf(cfg)}
 	for _, p := range procs {
 		if p.Role == supervisor.RoleAPI && p.Cmd != nil {
 			db.api = p.Cmd
@@ -323,8 +324,12 @@ type migrationGate struct {
 	// no dump, no restore
 	ext  *dbsafe.Target
 	api  *exec.Cmd // the api's command: its binary and environment run the migrations; nil: no api here
-	keep int       // pre-update dumps kept ([postgres] update_dumps)
-	log  io.Writer
+	keep int       // pre-update dumps kept ([backups] update_keep, else [postgres] update_dumps)
+	// noDump: [backups] pre_update = "off", no dump before an update's migrations (and
+	// so no way back when they fail); room is what a dump leaves on its disk
+	noDump bool
+	room   pgbundle.RoomPolicy
+	log    io.Writer
 	// updates is the machine's updates folder: a release's start is recorded there
 	// (server-attempts.json), so the Updates page says why it failed ("": not recorded)
 	updates string
@@ -401,8 +406,8 @@ var (
 	migrateUp = runMigrateUp
 	// a database of the user's own (a plain server install's): its dump beside the
 	// data, and putting it back in place
-	dumpExternal = func(ctx context.Context, t dbsafe.Target, from, to string, keep int) (string, error) {
-		if err := pgbundle.MakeRoom(t.Backups); err != nil {
+	dumpExternal = func(ctx context.Context, t dbsafe.Target, from, to string, keep int, room pgbundle.RoomPolicy) (string, error) {
+		if err := pgbundle.MakeRoomWith(t.Backups, room); err != nil {
 			return "", err
 		}
 		path := filepath.Join(t.Backups, pgbundle.UpdateDumpName(from, to))
@@ -457,7 +462,7 @@ func (g *migrationGate) dumpAside(ctx context.Context, rec apppayload.Database) 
 		}
 	}
 	path := filepath.Join(dir, prefix+time.Now().UTC().Format("20060102T150405")+".dump")
-	err := pgbundle.MakeRoom(dir)
+	err := pgbundle.MakeRoomWith(dir, g.room)
 	if err != nil {
 		fmt.Fprintf(g.log, "[serve] could not set the library database aside as %s left it: %v\n", rec.Failed, err)
 		return
@@ -481,7 +486,7 @@ func (g *migrationGate) dump(ctx context.Context, from, to string) (string, erro
 	if g.pg != nil {
 		return dumpBeforeUpdate(ctx, *g.pg, from, to, g.keep)
 	}
-	return dumpExternal(ctx, *g.ext, from, to, g.keep)
+	return dumpExternal(ctx, *g.ext, from, to, g.keep, g.room)
 }
 
 // reportDumpSize says how much of the dump is written, every dumpReportEvery while it
@@ -749,7 +754,11 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	case held == "" || held != cur:
 		update.From = held
 		g.attempt(held, func(a *attempts.Attempt) { a.Step = "dump" })
-		if g.keeps() {
+		if g.keeps() && g.noDump {
+			fmt.Fprintf(g.log, "[serve] level=warn update %s -> %s: no dump before the migrations ([backups] "+
+				"pre_update = \"off\"): if they fail, the database cannot be put back as it was\n", orUnknown(held), cur)
+		}
+		if g.keeps() && !g.noDump {
 			expect := expectedDumpMB(g.backups())
 			report(detail("db_dumping", fmt.Sprintf("Saving the library database before the update to %s", cur),
 				held, cur, 0, expect))

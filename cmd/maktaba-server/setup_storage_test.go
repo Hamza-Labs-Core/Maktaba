@@ -149,3 +149,30 @@ func TestSetupWithTheChosenDiskMissing(t *testing.T) {
 		t.Errorf("message %v", last["message"])
 	}
 }
+
+// The storage screen sets the backups too: their folder, the schedule and its hour.
+func TestSetupStorageSetsTheBackups(t *testing.T) {
+	e := newSetupEnv(t)
+	e.dir, _ = filepath.EvalSymlinks(e.dir)
+	fakeStorageDisks(t, e.dir, 900<<30, "apfs")
+	dir := filepath.Join(e.dir, "Big", "Maktaba")
+	code, _, last := runStep(t, "storage", map[string]any{"data_dir": dir, "backups_dir": "rel/b"})
+	if code != 1 || last["code"] != "storage_backups_unusable" || last["field"] != "backups_dir" {
+		t.Fatalf("a relative backups folder: %d %v", code, last)
+	}
+	bdir := filepath.Join(e.dir, "Other", "backups")
+	code, _, last = runStep(t, "storage", map[string]any{"data_dir": dir, "backups_dir": bdir, "nightly": false, "hour": 1})
+	if code != 0 {
+		t.Fatalf("%d %v", code, last)
+	}
+	if d := data(t, last); d["backups_dir"] != bdir {
+		t.Errorf("result %v", d)
+	}
+	cfg, _, err := config.LoadFrom(e.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := cfg.Backups.Settings(); s.Dir != bdir || s.Nightly || s.Hour != 1 || cfg.Server.DataDir != dir {
+		t.Errorf("saved %+v data_dir %s", s, cfg.Server.DataDir)
+	}
+}

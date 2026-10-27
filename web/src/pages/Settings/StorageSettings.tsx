@@ -6,7 +6,8 @@
 // page waits for the server to answer again, then reloads. The reachability
 // table says which library folders this machine reaches through the saved map.
 // Below it, where Maktaba keeps its own data and moving it to another disk
-// (DataLocationSection).
+// (DataLocationSection), and the backups of the library database
+// (BackupsSection), whose saved changes wait for the same restart.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
@@ -31,6 +32,7 @@ import {
   type ServerSettingsDoc,
 } from "../../lib/serverSettingsApi";
 import { HelpLink } from "../../help/HelpLink";
+import { BackupsSection } from "./BackupsSection";
 import { DataLocationSection } from "./DataLocationSection";
 import "../../styles/libraryAdmin.css";
 
@@ -90,6 +92,8 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
   const [formError, setFormError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [restartError, setRestartError] = useState<string | null>(null);
+  // saved backup settings wait for the same restart
+  const [backupsRestart, setBackupsRestart] = useState(false);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -241,7 +245,10 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
       if (down) return onReload();
       if (i >= 4) {
         const d = await serverSettingsApi.get().catch(() => null);
-        if (d?.available && !d.restart_needed) return onReload();
+        const b = await serverSettingsApi.backups().catch(() => null);
+        if (d?.available && !d.restart_needed && !(b?.available && b.restart_needed)) {
+          return onReload();
+        }
       }
     }
     if (alive.current) setPhase("slow");
@@ -261,7 +268,7 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
         </p>
       )}
 
-      {(doc.restart_needed || phase !== "idle" || restartError) && (
+      {(doc.restart_needed || backupsRestart || phase !== "idle" || restartError) && (
         <div className="mkt-storage__banner" role="status">
           {phase === "restarting" ? (
             <>
@@ -470,6 +477,8 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
       <Reachability rows={doc.reachability} />
 
       <DataLocationSection pollMs={pollMs} />
+
+      <BackupsSection onRestartNeeded={setBackupsRestart} />
 
       <Modal
         open={phase === "confirm"}

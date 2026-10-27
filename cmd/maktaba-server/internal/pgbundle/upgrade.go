@@ -38,7 +38,7 @@ func UpdateDumpName(from, to string) string {
 // it is now) and keeps the newest keep pre-update dumps, this one always. Room
 // is made for it first (MakeRoom). The server must be up.
 func (b Bundle) DumpBeforeUpdate(ctx context.Context, from, to string, keep int) (string, error) {
-	if err := MakeRoom(b.Backups); err != nil {
+	if err := MakeRoomWith(b.Backups, b.room()); err != nil {
 		return "", err
 	}
 	path := filepath.Join(b.Backups, UpdateDumpName(from, to))
