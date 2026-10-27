@@ -8,7 +8,7 @@
 //
 // A server without these routes (or a video the caller may not see) shows
 // nothing here: the page keeps its Play button.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
@@ -37,6 +37,10 @@ export function VideoActions({ videoId }: { videoId: string }) {
   const [pos, setPos] = useState<SeriesPosition | null>(null);
   const [busy, setBusy] = useState(false);
   const [playlistOpen, setPlaylistOpen] = useState(false);
+  // the video shown now: an answer for a video navigated away from (Next lesson
+  // clicked before Mark watched came back) never lands on the next one
+  const shown = useRef(videoId);
+  shown.current = videoId;
 
   useEffect(() => {
     let cancelled = false;
@@ -70,15 +74,18 @@ export function VideoActions({ videoId }: { videoId: string }) {
 
   async function toggleWatched() {
     if (!mine) return;
+    const id = videoId;
+    const series = mine.series;
     const next = !mine.completed;
     setBusy(true);
     try {
-      await markWatched([videoId], next);
-      setMine({ ...mine, completed: next, position_sec: 0 });
+      await markWatched([id], next);
+      if (shown.current !== id) return;
+      setMine((m) => (m && m.video_id === id ? { ...m, completed: next, position_sec: 0 } : m));
       // the series' "n of m watched" counts this lesson now
-      if (mine.series) {
-        seriesPosition(mine.series, videoId)
-          .then(setPos)
+      if (series) {
+        seriesPosition(series, id)
+          .then((p) => shown.current === id && setPos(p))
           .catch(() => {});
       }
       toast.show({
@@ -94,11 +101,12 @@ export function VideoActions({ videoId }: { videoId: string }) {
 
   async function toggleFavorite() {
     if (!mine) return;
+    const id = videoId;
     const next = !mine.favorite;
     setBusy(true);
     try {
-      await setFavorite([videoId], next);
-      setMine({ ...mine, favorite: next });
+      await setFavorite([id], next);
+      setMine((m) => (m && m.video_id === id ? { ...m, favorite: next } : m));
     } catch (e) {
       fail(e);
     } finally {

@@ -3,7 +3,7 @@
 -- +goose StatementBegin
 --
 -- Slot 0162 (Epic 45 Phase 2, stories 45.9, 45.10 and 45.12) - a user's own favorites and
--- playlists, and the index the grid's title sort and A to Z jump bar read.
+-- playlists, and the indexes the grid's title sort and A to Z jump bar read.
 --
 --   user_favorites       the videos a user marked as favorites (newest first on Home)
 --   user_playlists       a user's playlists: a name, a description, when made and changed
@@ -14,7 +14,7 @@
 --
 -- Not in a machine's copy: cluster_copy_excluded() is slot 0161's list and the three tables
 -- (a user's own; the routes run on the home, /api/me, as the pins of slot 0159).
--- maktaba_worker: the default rights. Additive. NO TRANSACTION for the index on videos
+-- maktaba_worker: the default rights. Additive. NO TRANSACTION for the indexes on videos
 -- (CONCURRENTLY: the table is large), as slot 0159.
 --
 CREATE TABLE IF NOT EXISTS user_favorites (
@@ -49,9 +49,15 @@ CREATE INDEX IF NOT EXISTS user_playlist_items_order_idx
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- the grid sorted by title in one library, and the jump bar's letter ranges
+-- the grid sorted by title in one library
 CREATE INDEX CONCURRENTLY IF NOT EXISTS videos_library_title_idx
     ON videos (library_id, (COALESCE(title, '')), id);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- the jump bar: a title's first character (an exact match, whatever the collation)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS videos_library_initial_idx
+    ON videos (library_id, (substr(COALESCE(title, ''), 1, 1)));
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -142,6 +148,7 @@ $f$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+DROP INDEX IF EXISTS videos_library_initial_idx;
 DROP INDEX IF EXISTS videos_library_title_idx;
 DROP TABLE IF EXISTS user_playlist_items;
 DROP TABLE IF EXISTS user_playlists;

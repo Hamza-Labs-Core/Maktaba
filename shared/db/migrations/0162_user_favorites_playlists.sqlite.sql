@@ -2,7 +2,8 @@
 -- +goose StatementBegin
 --
 -- SQLite parity sibling for slot 0162 (Epic 45 Phase 2): each user's favorites and
--- playlists, and the index the grid's title sort reads. UUID becomes TEXT, TIMESTAMPTZ TEXT.
+-- playlists, and the indexes the grid's title sort and jump bar read. UUID becomes TEXT,
+-- TIMESTAMPTZ TEXT.
 --
 CREATE TABLE IF NOT EXISTS user_favorites (
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -33,10 +34,13 @@ CREATE INDEX IF NOT EXISTS user_playlist_items_order_idx
     ON user_playlist_items (playlist_id, position);
 CREATE INDEX IF NOT EXISTS videos_library_title_idx
     ON videos (library_id, (COALESCE(title, '')), id);
+CREATE INDEX IF NOT EXISTS videos_library_initial_idx
+    ON videos (library_id, (substr(COALESCE(title, ''), 1, 1)));
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
+DROP INDEX IF EXISTS videos_library_initial_idx;
 DROP INDEX IF EXISTS videos_library_title_idx;
 DROP TABLE IF EXISTS user_playlist_items;
 DROP TABLE IF EXISTS user_playlists;

@@ -276,7 +276,11 @@ CREATE TABLE user_playlist_items (
 );
 CREATE INDEX user_playlist_items_order_idx ON user_playlist_items (playlist_id, position);
 CREATE INDEX videos_library_title_idx ON videos (library_id, (COALESCE(title, '')), id);
+CREATE INDEX videos_library_initial_idx ON videos (library_id, (substr(COALESCE(title, ''), 1, 1)));
 ```
+
+`letter=` is an exact match on a title's first character (the second index), never a range on the
+title: under a linguistic collation the code point after a letter can sort before it.
 
 The three tables are a user's own and are left out of a machine's copy (`cluster_copy_excluded()`), as
 the pins are: their routes run on the home.
@@ -331,7 +335,7 @@ Built with this section:
 - **45.10** Playlists (per user): the routes, the Playlists pages, Add to playlist from the video page
   and from a selection.
 - **45.11** Facets and the grid's filters: the search box, Tag, Speaker and Language.
-- **45.12** The A to Z jump bar (`letter=`, the title index).
+- **45.12** The A to Z jump bar (`letter=`, the first-character index).
 - **45.13** Play all, Shuffle, Play from here, the queue and the player's Up next.
 - **45.14** The video page's actions and series position (previous, next, progress).
 - **45.15** On Deck (Home and the library page).

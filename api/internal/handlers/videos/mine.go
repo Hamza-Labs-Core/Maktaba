@@ -36,11 +36,16 @@ func IsLetterFirst(first string) bool {
 	return first != "" && r != utf8.RuneError && unicode.IsLetter(r)
 }
 
+// initialKey is a title's first character (videos_library_initial_idx).
+const initialKey = "substr(" + titleKey + ", 1, 1)"
+
 // letterCond is the WHERE fragment of ?letter=: titles whose first character
-// is the letter (in any case), or for "#" whose first character is not a
-// letter (an empty title among them). A letter is a range on the title (the
-// index reads it) and the exact first character (any collation's order).
-// "#" lists the scope's first characters that are not letters first.
+// is the letter (in either case), or for "#" whose first character is not a
+// letter (an empty title among them). An exact match on the first character,
+// never a range on the title: under a linguistic collation the code point
+// after a letter can sort before it (Z and "[", a combining mark after ي), and
+// the range would come out empty. "#" lists the scope's first characters that
+// are not letters first.
 func (h *Handler) letterCond(ctx context.Context, letter string, conds []string, args []any, next int) (string, []any, error) {
 	firsts := []string{}
 	if letter == "#" {
@@ -48,7 +53,7 @@ func (h *Handler) letterCond(ctx context.Context, letter string, conds []string,
 		if len(conds) > 0 {
 			where = " WHERE " + strings.Join(conds, " AND ")
 		}
-		rows, err := h.DB.QueryContext(ctx, `SELECT DISTINCT substr(`+titleKey+`, 1, 1) FROM videos`+where, args...)
+		rows, err := h.DB.QueryContext(ctx, `SELECT DISTINCT `+initialKey+` FROM videos`+where, args...)
 		if err != nil {
 			return "", nil, err
 		}
@@ -68,35 +73,23 @@ func (h *Handler) letterCond(ctx context.Context, letter string, conds []string,
 		if len(firsts) == 0 {
 			return "1 = 0", nil, nil
 		}
-		ph := make([]string, len(firsts))
-		out := make([]any, len(firsts))
-		for i, f := range firsts {
-			ph[i] = pidx(next + i)
-			out[i] = f
-		}
-		return "substr(" + titleKey + ", 1, 1) IN (" + strings.Join(ph, ",") + ")", out, nil
-	}
-	r, _ := utf8.DecodeRuneInString(letter)
-	seen := map[rune]bool{}
-	for _, c := range []rune{r, unicode.ToUpper(r), unicode.ToLower(r)} {
-		if !seen[c] {
-			seen[c] = true
-			firsts = append(firsts, string(c))
+	} else {
+		r, _ := utf8.DecodeRuneInString(letter)
+		seen := map[rune]bool{}
+		for _, c := range []rune{r, unicode.ToUpper(r), unicode.ToLower(r)} {
+			if !seen[c] {
+				seen[c] = true
+				firsts = append(firsts, string(c))
+			}
 		}
 	}
-	var out []any
-	ranges := make([]string, len(firsts))
-	in := make([]string, len(firsts))
+	ph := make([]string, len(firsts))
+	out := make([]any, len(firsts))
 	for i, f := range firsts {
-		c, _ := utf8.DecodeRuneInString(f)
-		ranges[i] = "(" + titleKey + " >= " + pidx(next+len(out)) + " AND " + titleKey + " < " + pidx(next+len(out)+1) + ")"
-		out = append(out, f, string(c+1))
+		ph[i] = pidx(next + i)
+		out[i] = f
 	}
-	for i, f := range firsts {
-		in[i] = pidx(next + len(out))
-		out = append(out, f)
-	}
-	return "((" + strings.Join(ranges, " OR ") + ") AND substr(" + titleKey + ", 1, 1) IN (" + strings.Join(in, ",") + "))", out, nil
+	return initialKey + " IN (" + strings.Join(ph, ",") + ")", out, nil
 }
 
 // mineColumns are the list's extra columns for the caller's own marks: their

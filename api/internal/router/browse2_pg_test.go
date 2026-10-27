@@ -57,8 +57,19 @@ func TestPGBrowsePhase2(t *testing.T) {
 	if it := list["items"].([]any)[0].(map[string]any); it["favorite"] != true {
 		t.Errorf("the list's favorite mark %v", it)
 	}
+	// letters whose next code point sorts before them under a linguistic
+	// collation ("[" after Z, a combining fatha after ي, أ after آ)
+	for i, title := range []string{"zakat", "يوم عرفة", "آداب"} {
+		exec(`INSERT INTO videos (id, library_id, path, filename, content_hash, size_bytes, mtime, state, title, updated_at, created_at)
+			VALUES ($1,$2,$3,$3,repeat($4,64),1,now(),'ready',$5,now(),now())`,
+			uuid.NewString(), acLibA, "/media/ac/l"+string(rune('0'+i))+".mp4", string(rune('b'+i)), title)
+	}
+	for _, letter := range []string{"Z", "ي", "آ"} {
+		list = e.want(http.StatusOK, "member", "GET", "/api/videos?"+url.Values{"letter": {letter}}.Encode(), nil)
+		assertOnlyLib(t, "letter "+letter, list["items"], acLibA, 1)
+	}
 	list = e.want(http.StatusOK, "admin", "GET", "/api/videos?sort=random&limit=10", nil)
-	if n := len(list["items"].([]any)); n != 3 || list["next"] != nil {
+	if n := len(list["items"].([]any)); n != 6 || list["next"] != nil { // A1, B1, a2 and the three above
 		t.Errorf("random: %d items, next %v", n, list["next"])
 	}
 	home := e.want(http.StatusOK, "member", "GET", "/api/home", nil)
