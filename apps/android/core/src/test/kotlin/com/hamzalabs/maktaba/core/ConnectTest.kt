@@ -63,6 +63,25 @@ class ConnectTest {
     }
 
     @Test
+    fun onlyTheHomeIsListedNotTheMachinesThatWorkForIt() {
+        val home = "28e21b45-1111-2222-3333-444455556666"
+        val txt = mapOf("protocol" to "1", "home" to home, "name" to "Studio", "web" to "8088", "version" to "v0.4.0")
+        val announced = listOfNotNull(
+            foundHome("Maktaba (studio)", mac, 8080, txt + ("role" to "home") + ("id" to home)),
+            // a full node of the same home, and a machine of a kind this app does not know
+            foundHome("Maktaba (gpu-box)", InetAddress.getByName("192.168.50.20"), 8780, txt + ("role" to "node") + ("id" to "9f9f9f9f-0000")),
+            foundHome("Maktaba (later)", InetAddress.getByName("192.168.50.21"), 8780, txt + ("role" to "relay") + ("id" to "abababab-0000")),
+            // the same home again on another interface
+            foundHome("Maktaba (studio)", InetAddress.getByName("fe80::1"), 8080, txt + ("role" to "home") + ("id" to home)),
+            // an older home: no role, and no home= (its id= stands in)
+            foundHome("Maktaba (attic)", InetAddress.getByName("192.168.50.9"), 8080, mapOf("id" to "77777777", "version" to "v0.2.0")),
+        )
+        val homes = dedupeHomes(announced)
+        assertEquals(listOf("http://192.168.50.177:8088", "http://192.168.50.9:8080"), homes.map { it.url })
+        assertEquals("the home's id from home=, not the machine's", home, homes.first().id)
+    }
+
+    @Test
     fun idsCompareByTheirShortForm() {
         assertEquals("28e21b45", homeIdKey("28E21B45-aaaa-bbbb"))
         assertTrue(sameHome("28e21b45", "28E21B45-1111-2222-3333-444455556666"))

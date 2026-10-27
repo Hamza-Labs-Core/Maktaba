@@ -121,6 +121,27 @@ class PairingTest {
     }
 
     @Test
+    fun aHomeThatRestartedAnswers410AtOnceAndANewCodeIsAskedFor() = runBlocking {
+        val home = FakePairing(
+            201 to codeJson("ABCD-1234", "secret-1"),
+            // the first poll after a restart: the old device code is gone
+            410 to """{"title":"gone","detail":"code expired: ask for a new one"}""",
+            201 to codeJson("WXYZ-5678", "secret-2"),
+            202 to """{"status":"pending"}""",
+            200 to """{"access_token":"a2","refresh_token":"r2"}""",
+        )
+        val shown = mutableListOf<String>()
+        val start = clock[0]
+        assertEquals("a2", signIn(home).run { shown += it.code }.accessToken)
+        assertEquals(listOf("ABCD-1234", "WXYZ-5678"), shown)
+        assertEquals(
+            listOf("/api/pairing/device", "/api/pairing/device/token", "/api/pairing/device", "/api/pairing/device/token", "/api/pairing/device/token"),
+            home.sent.map { it.first },
+        )
+        assertTrue("no waiting out the old code's ten minutes", clock[0] - start < 30_000L)
+    }
+
+    @Test
     fun aBlinkWhilePollingIsRidden() = runBlocking {
         val home = FakePairing(201 to codeJson("ABCD-1234", "s"), 503 to "", 429 to "", 200 to """{"access_token":"a","refresh_token":"r"}""")
         assertEquals("a", signIn(home).run {}.accessToken)

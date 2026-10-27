@@ -20,7 +20,10 @@ data class FoundHome(
     val name: String,
     /** The web port's address, under the web's base path when it is not `/`: what the apps talk to (`/api` and `/stream/`). */
     val url: String,
-    /** The home's instance id (`home=`, else `id=`), when it says. */
+    /**
+     * The home's instance id: `home=` (a full UUID, on every machine of a cluster), else `id=`
+     * (an older home, where it is the home's own). Self-reported: never a reason to reuse a sign-in.
+     */
     val id: String?,
     val version: String?,
 )
