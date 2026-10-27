@@ -868,3 +868,42 @@ var (
 	_ = io.EOF
 	_ = errors.New
 )
+
+// A player asks for the rendition playlist within milliseconds of the session, before the
+// transcode wrote it: it is waited for (Safari's own HLS gave up on the 404, the video
+// "errored" though its playlist was a second away). A transcode not running is not
+// waited on.
+func TestManifestHandler_RenditionWaitedForWhileTheTranscodeStarts(t *testing.T) {
+	layout := cache.New(t.TempDir())
+	_ = layout.EnsureTiers()
+	ask := func(tr fakeTranscode, write time.Duration) (int, time.Duration) {
+		sessID := uuid.New()
+		rendDir := filepath.Join(layout.HLSDir(sessID.String()), "v0")
+		_ = os.MkdirAll(rendDir, 0o755)
+		store := &fakeSessionStore{rows: map[uuid.UUID]*session.Row{
+			sessID: {ID: sessID, Format: session.FormatHLS, Transcoder: tr},
+		}}
+		h := &ManifestHandler{Sessions: store, Layout: layout, FirstWrite: 300 * time.Millisecond}
+		r := chi.NewRouter()
+		r.With(injectSubject(sessID.String())).Get("/stream/{session_id}/{rendition}/index.m3u8", h.ServeRenditionIndex)
+		if write > 0 {
+			go func() {
+				time.Sleep(write)
+				_ = os.WriteFile(filepath.Join(rendDir, "index.m3u8"), []byte("#EXTM3U\n#EXTINF:2,\nseg-0.ts\n"), 0o644)
+			}()
+		}
+		start := time.Now()
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest("GET", "/stream/"+sessID.String()+"/v0/index.m3u8", nil))
+		return rec.Code, time.Since(start)
+	}
+	if code, _ := ask(fakeTranscode{active: true}, 100*time.Millisecond); code != 200 {
+		t.Fatalf("written a moment after the ask, while the transcode runs: %d, want 200", code)
+	}
+	if code, took := ask(fakeTranscode{}, 100*time.Millisecond); code != 404 || took > 150*time.Millisecond {
+		t.Fatalf("no transcode running: %d after %v, want an immediate 404", code, took)
+	}
+	if code, took := ask(fakeTranscode{active: true}, 0); code != 404 || took < 300*time.Millisecond {
+		t.Fatalf("never written: %d after %v, want 404 after the wait", code, took)
+	}
+}

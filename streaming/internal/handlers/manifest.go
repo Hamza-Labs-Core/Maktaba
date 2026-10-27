@@ -48,6 +48,50 @@ type ManifestHandler struct {
 	// Logger receives the session's files that are there and cannot be read
 	// (nil: slog's default).
 	Logger *slog.Logger
+	// FirstWrite is how long a playlist not yet on disk is waited for while its
+	// transcode runs (0: answered at once). A session is handed out the moment its
+	// transcode starts, and a player asks for the playlist within milliseconds: a
+	// 404 then ends playback in a player that does not retry it (Safari's own HLS,
+	// AVPlayer), though the playlist is a second away.
+	FirstWrite time.Duration
+}
+
+// writtenSoon waits up to FirstWrite for path (under base) while sub's transcode
+// runs: the path, read-safe, once it is on disk ("" when it is not).
+func (h *ManifestHandler) writtenSoon(r *http.Request, base, path, sub string) string {
+	if h.FirstWrite <= 0 {
+		return ""
+	}
+	// the path is checked again here, right before the filesystem is asked
+	path, err := httpx.EnsureUnder(base, path)
+	if err != nil {
+		return ""
+	}
+	id, err := uuid.Parse(sub)
+	if err != nil {
+		return ""
+	}
+	deadline := time.Now().Add(h.FirstWrite)
+	for tick := 0; time.Now().Before(deadline); tick++ {
+		if tick%10 == 0 { // its transcode still running (every second)
+			row, ok, err := h.Sessions.Get(r.Context(), id)
+			if err != nil || !ok || row.Transcoder == nil || !row.Transcoder.Active() ||
+				row.TranscodeCut() || row.TranscodeFinished() {
+				return ""
+			}
+		}
+		select {
+		case <-r.Context().Done():
+			return ""
+		case <-time.After(100 * time.Millisecond):
+		}
+		if clean := filepath.Clean(path); strings.HasPrefix(clean, filepath.Clean(base)+string(filepath.Separator)) {
+			if _, err := os.Stat(clean); err == nil {
+				return clean
+			}
+		}
+	}
+	return ""
 }
 
 // readFailed logs a failed read of a session's playlist or segment that is
@@ -98,6 +142,11 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 		path = filepath.Join(dir, "master.m3u8")
 	}
 	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if p := filepath.Clean(h.writtenSoon(r, dir, path, sub)); strings.HasPrefix(p, filepath.Clean(dir)+string(filepath.Separator)) {
+			data, err = os.ReadFile(p)
+		}
+	}
 	if err != nil {
 		h.readFailed(r, path, err)
 		if errors.Is(err, os.ErrNotExist) {
@@ -161,6 +210,11 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 		return
 	}
 	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if p := filepath.Clean(h.writtenSoon(r, base, path, sub)); strings.HasPrefix(p, filepath.Clean(base)+string(filepath.Separator)) {
+			data, err = os.ReadFile(p)
+		}
+	}
 	if err != nil {
 		h.readFailed(r, path, err)
 		if h.overBeforeWritten(w, r, sub) {
