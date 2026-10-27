@@ -71,12 +71,27 @@ func FromEntries(m map[string]string) Map {
 // machine's), so this API opens a file where its streaming role does.
 func FromNodeEntries(m map[string]string) Map {
 	out := FromEntries(m)
-	for from, l := range m {
-		if from = strings.TrimSpace(from); from == "" || IsCanonical(strings.TrimRight(from, "/")) ||
-			strings.TrimSpace(l) == "" {
+	// in the streaming role's order (the longer key first): of two keys for one prefix
+	// ("/Volumes/Originals" and "/Volumes/Originals/") the first wins, every time
+	froms := make([]string, 0, len(m))
+	for from := range m {
+		froms = append(froms, from)
+	}
+	sort.Slice(froms, func(i, j int) bool {
+		a, b := strings.TrimSpace(froms[i]), strings.TrimSpace(froms[j])
+		if len(a) != len(b) {
+			return len(a) > len(b)
+		}
+		return a < b
+	})
+	seen := map[string]bool{}
+	for _, raw := range froms {
+		from, l := strings.TrimSpace(raw), strings.TrimSpace(m[raw])
+		if from == "" || IsCanonical(strings.TrimRight(from, "/")) || l == "" || seen[strings.ToLower(dir(from))] {
 			continue
 		}
-		out.stored = append(out.stored, Entry{Canonical: dir(from), Local: dir(strings.TrimSpace(l))})
+		seen[strings.ToLower(dir(from))] = true
+		out.stored = append(out.stored, Entry{Canonical: dir(from), Local: dir(l)})
 	}
 	longestFirst(out.stored)
 	return out

@@ -89,6 +89,13 @@ func TestNodeMapRewritesStoredPrefixes(t *testing.T) {
 	if _, ok := m.ToCanonical("Y:/Youtube/b.mp4"); ok {
 		t.Error("a stored prefix's mount is on no share")
 	}
+	// two keys for one prefix: the longer wins, as in the streaming role, every time
+	for i := 0; i < 50; i++ {
+		dup := FromNodeEntries(map[string]string{"/Volumes/Originals": "P:/", "/Volumes/Originals/": "O:/"})
+		if got := dup.ToLocal("/Volumes/Originals/a.mkv"); got != "O:/a.mkv" {
+			t.Fatalf("run %d: ToLocal = %q, want O:/a.mkv", i, got)
+		}
+	}
 	// the home's own map keeps only shares
 	if FromEntries(map[string]string{"/Volumes/Originals/": "O:/"}).ToLocal("/Volumes/Originals/a") != "/Volumes/Originals/a" {
 		t.Error("the home's map rewrote a stored path")

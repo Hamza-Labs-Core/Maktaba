@@ -338,11 +338,17 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 	// media through this machine's own mounts (design §11.5): the map from the copy
 	// while the home's database does not answer
 	sharepath.StartNode(ctx, dbs.app, cfg.NodeID, logger)
-	streamMap := vodfallback.PrefixMap(os.Getenv("MAKTABA_STREAM_PATH_MAP"))
+	// a file is checked where the streaming role opens it: through the node's own map,
+	// or an operator's MAKTABA_STREAM_PATH_MAP alone (the role then reads no other)
+	toLocal := sharepath.ToLocal
+	if spec := os.Getenv("MAKTABA_STREAM_PATH_MAP"); spec != "" {
+		streamMap := vodfallback.PrefixMap(spec)
+		toLocal = func(p string) string { return streamMap(sharepath.Map{}.ToLocal(p)) } // file:/// only
+	}
 	// what the home serves goes through the resolver's front (a node-local sign-in is
 	// answered here, never sent to the home, which would sign the person out)
 	rt.vod = &vodfallback.Fallback{DB: dbs.app, Home: rt.resolver.Home(rt.proxy), Logger: logger,
-		ToLocal: func(p string) string { return streamMap(sharepath.ToLocal(p)) },
+		ToLocal: toLocal,
 		HomeName: func() string {
 			if s, ok := rt.home.Get(context.Background()); ok {
 				return s.Name
