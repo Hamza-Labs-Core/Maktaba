@@ -799,6 +799,40 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Lecture 1" })).toBeInTheDocument();
   });
 
+  // the app's windows have no browser Back
+  it("VID-22: Back returns to the page the video was opened from", async () => {
+    serve();
+    renderVideo("/videos/v1", { history: ["/elsewhere"] });
+    await screen.findByRole("heading", { level: 1, name: "Lecture 1" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "← Back" }));
+    expect(await screen.findByText("elsewhere")).toBeInTheDocument();
+  });
+
+  it("VID-22: Back from a pasted link goes to the library, not out of the app", async () => {
+    serve();
+    renderVideo();
+    await screen.findByRole("heading", { level: 1, name: "Lecture 1" });
+    await userEvent.setup().click(screen.getByRole("button", { name: "← Back" }));
+    expect(await screen.findByText("library page")).toBeInTheDocument();
+  });
+
+  // a tab is a replace of the page's entry: a pasted link's page stays first
+  it("VID-22: Back from a pasted link after a tab switch still goes to the library", async () => {
+    serve();
+    renderVideo();
+    await openTab("Chapters");
+    await userEvent.setup().click(screen.getByRole("button", { name: "← Back" }));
+    expect(await screen.findByText("library page")).toBeInTheDocument();
+  });
+
+  it("VID-22: Back after a tab switch still returns where the video was opened from", async () => {
+    serve();
+    renderVideo("/videos/v1", { history: ["/elsewhere"] });
+    await openTab("Chapters");
+    await userEvent.setup().click(screen.getByRole("button", { name: "← Back" }));
+    expect(await screen.findByText("elsewhere")).toBeInTheDocument();
+  });
+
   it("VID-23: enrichment accept / dismiss / manual search", async () => {
     const candidate = {
       id: "c1",

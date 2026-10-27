@@ -27,8 +27,14 @@ type Entry struct {
 	Local     string // "/Volumes/Originals/"
 }
 
-// Map is a set of entries, longest canonical prefix first.
-type Map struct{ entries []Entry }
+// Map is a set of entries, longest canonical prefix first; a full node's also
+// rewrites the prefixes the database stores (FromNodeEntries).
+type Map struct {
+	entries []Entry
+	// Canonical is a prefix as the database stores it ("/Volumes/Originals/", the
+	// home's own mount), longest first
+	stored []Entry
+}
 
 var canonRE = regexp.MustCompile(`(?i)^(?:(?:smb|nfs)://[^/]+/[^/]+|file:///)`)
 
@@ -46,22 +52,93 @@ func dir(p string) string {
 }
 
 // FromEntries builds a Map from {canonical prefix: local prefix}.
-func FromEntries(m map[string]string) Map {
-	out := Map{}
-	for c, l := range m {
-		if !IsCanonical(strings.TrimRight(c, "/")) || l == "" {
+func FromEntries(m map[string]string) Map { return build(inOrder(m), m, false) }
+
+// FromNodeEntries builds a full node's Map from cluster_nodes.path_map, which its
+// streaming role reads as {db_prefix: local_prefix}: a canonical prefix as in
+// FromEntries, and any other the prefix of the paths the database stores
+// ({"/Volumes/Originals/": "O:/"}, inferred from the home's mounts and this
+// machine's), so this API opens a file where its streaming role does.
+func FromNodeEntries(m map[string]string) Map { return build(inOrder(m), m, true) }
+
+// ParseStreamMap reads MAKTABA_STREAM_PATH_MAP ("from=>to;from2=>to2") as a node's
+// streaming role does when an operator sets it (pathmap.Parse, the only map it then
+// reads): the longer prefix first, and of two rules for one prefix the first given.
+func ParseStreamMap(spec string) Map {
+	m := map[string]string{}
+	var keys []string
+	for _, part := range strings.Split(spec, ";") {
+		from, to, ok := strings.Cut(strings.TrimSpace(part), "=>")
+		if from = strings.TrimSpace(from); !ok || from == "" {
 			continue
 		}
-		out.entries = append(out.entries, Entry{Canonical: dir(c), Local: dir(l)})
+		if _, dup := m[from]; !dup {
+			m[from] = strings.TrimSpace(to)
+			keys = append(keys, from)
+		}
 	}
-	sort.Slice(out.entries, func(i, j int) bool {
-		return len(out.entries[i].Canonical) > len(out.entries[j].Canonical)
+	sort.SliceStable(keys, func(i, j int) bool { return len(keys[i]) > len(keys[j]) })
+	return build(keys, m, true)
+}
+
+// inOrder is m's keys in the streaming role's order (pathmap.FromJSON: the longer
+// first, then by text).
+func inOrder(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := strings.TrimSpace(keys[i]), strings.TrimSpace(keys[j])
+		if len(a) != len(b) {
+			return len(a) > len(b)
+		}
+		return a < b
 	})
+	return keys
+}
+
+// build makes a Map of m's keys taken in order: of two keys for one prefix
+// ("/Volumes/Originals" and "/Volumes/Originals/") the first wins, every time, as in
+// the streaming role. With stored (a node's map), a key that is not canonical
+// rewrites the paths under it, and an empty target strips the prefix ("/mnt/nas=>");
+// without (the home's), both are dropped.
+func build(keys []string, m map[string]string, stored bool) Map {
+	out := Map{}
+	seen := map[string]bool{}
+	for _, raw := range keys {
+		from, l := strings.TrimSpace(raw), strings.TrimSpace(m[raw])
+		canon := IsCanonical(strings.TrimRight(from, "/"))
+		if from == "" || (!stored && (l == "" || !canon)) || seen[strings.ToLower(dir(from))] {
+			continue
+		}
+		seen[strings.ToLower(dir(from))] = true
+		e := Entry{Canonical: dir(from)}
+		if l != "" {
+			e.Local = dir(l) // "": the prefix is stripped
+		}
+		if canon {
+			out.entries = append(out.entries, e)
+		} else {
+			out.stored = append(out.stored, e)
+		}
+	}
+	longestFirst(out.entries)
+	longestFirst(out.stored)
 	return out
 }
 
+func longestFirst(es []Entry) {
+	sort.Slice(es, func(i, j int) bool {
+		if len(es[i].Canonical) != len(es[j].Canonical) {
+			return len(es[i].Canonical) > len(es[j].Canonical)
+		}
+		return es[i].Canonical < es[j].Canonical
+	})
+}
+
 // Len is the number of entries.
-func (m Map) Len() int { return len(m.entries) }
+func (m Map) Len() int { return len(m.entries) + len(m.stored) }
 
 var driveRE = regexp.MustCompile(`^[A-Za-z]:/$`)
 
@@ -72,8 +149,9 @@ func root(local string) string {
 	return strings.TrimRight(local, "/")
 }
 
-// ToLocal maps a canonical path to this machine's path; anything else
-// (a legacy local path, an unmounted share) is returned unchanged.
+// ToLocal maps a canonical path to this machine's path, and on a full node a
+// stored path under one of its stored prefixes; anything else (a legacy local
+// path, an unmounted share) is returned unchanged.
 func (m Map) ToLocal(p string) string {
 	if len(p) >= 8 && strings.EqualFold(p[:8], "file:///") {
 		rest := p[8:]
@@ -83,19 +161,43 @@ func (m Map) ToLocal(p string) string {
 		return "/" + rest
 	}
 	if !IsCanonical(p) {
+		if strings.Contains(p, "://") {
+			return p
+		}
+		if out, _, ok := match(m.stored, p); ok {
+			return out
+		}
 		return p
 	}
-	low := strings.ToLower(slash(p))
-	for _, e := range m.entries {
-		c := strings.ToLower(e.Canonical)
-		if low+"/" == c {
-			return root(e.Local)
-		}
-		if strings.HasPrefix(low, c) {
-			return e.Local + slash(p)[len(e.Canonical):]
+	// the shares' entries and a node's other URL keys ("smb://nas", every share of a
+	// server): the longest prefix that matches, as in the streaming role
+	best, bestLen := p, -1
+	for _, es := range [][]Entry{m.entries, m.stored} {
+		if out, n, ok := match(es, p); ok && n > bestLen {
+			best, bestLen = out, n
 		}
 	}
-	return p
+	return best
+}
+
+// match maps p with the first of es (longest first) whose prefix it is under, and
+// says how long that prefix is.
+func match(es []Entry, p string) (string, int, bool) {
+	low := strings.ToLower(slash(p))
+	for _, e := range es {
+		c := strings.ToLower(e.Canonical)
+		local := e.Local
+		if local == "" {
+			local = "/"
+		}
+		if low+"/" == c {
+			return root(local), len(c), true
+		}
+		if strings.HasPrefix(low, c) {
+			return local + slash(p)[len(e.Canonical):], len(c), true
+		}
+	}
+	return "", 0, false
 }
 
 // ToCanonical maps a local path under one of the mounts to its canonical
@@ -106,6 +208,9 @@ func (m Map) ToCanonical(local string) (string, bool) {
 	var best *Entry
 	for i := range m.entries {
 		e := &m.entries[i]
+		if e.Local == "" {
+			continue // a stripped prefix is no mount
+		}
 		l := strings.ToLower(e.Local)
 		if (strings.HasPrefix(low, l) || low+"/" == l) && (best == nil || len(e.Local) > len(best.Local)) {
 			best = e
@@ -207,7 +312,7 @@ func LoadNode(ctx context.Context, db *sql.DB, nodeID string) (Map, error) {
 	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
 		return Map{}, err
 	}
-	return FromEntries(entries), nil
+	return FromNodeEntries(entries), nil
 }
 
 // StartNode is Start for a full node: media is read through this machine's own mounts
