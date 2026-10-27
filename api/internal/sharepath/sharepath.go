@@ -52,47 +52,74 @@ func dir(p string) string {
 }
 
 // FromEntries builds a Map from {canonical prefix: local prefix}.
-func FromEntries(m map[string]string) Map {
-	out := Map{}
-	for c, l := range m {
-		if !IsCanonical(strings.TrimRight(c, "/")) || l == "" {
-			continue
-		}
-		out.entries = append(out.entries, Entry{Canonical: dir(c), Local: dir(l)})
-	}
-	longestFirst(out.entries)
-	return out
-}
+func FromEntries(m map[string]string) Map { return build(inOrder(m), m, false) }
 
 // FromNodeEntries builds a full node's Map from cluster_nodes.path_map, which its
 // streaming role reads as {db_prefix: local_prefix}: a canonical prefix as in
 // FromEntries, and any other the prefix of the paths the database stores
 // ({"/Volumes/Originals/": "O:/"}, inferred from the home's mounts and this
 // machine's), so this API opens a file where its streaming role does.
-func FromNodeEntries(m map[string]string) Map {
-	out := FromEntries(m)
-	// in the streaming role's order (the longer key first): of two keys for one prefix
-	// ("/Volumes/Originals" and "/Volumes/Originals/") the first wins, every time
-	froms := make([]string, 0, len(m))
-	for from := range m {
-		froms = append(froms, from)
+func FromNodeEntries(m map[string]string) Map { return build(inOrder(m), m, true) }
+
+// ParseStreamMap reads MAKTABA_STREAM_PATH_MAP ("from=>to;from2=>to2") as a node's
+// streaming role does when an operator sets it (pathmap.Parse, the only map it then
+// reads): the longer prefix first, and of two rules for one prefix the first given.
+func ParseStreamMap(spec string) Map {
+	m := map[string]string{}
+	var keys []string
+	for _, part := range strings.Split(spec, ";") {
+		from, to, ok := strings.Cut(strings.TrimSpace(part), "=>")
+		if from = strings.TrimSpace(from); !ok || from == "" {
+			continue
+		}
+		if _, dup := m[from]; !dup {
+			m[from] = strings.TrimSpace(to)
+			keys = append(keys, from)
+		}
 	}
-	sort.Slice(froms, func(i, j int) bool {
-		a, b := strings.TrimSpace(froms[i]), strings.TrimSpace(froms[j])
+	sort.SliceStable(keys, func(i, j int) bool { return len(keys[i]) > len(keys[j]) })
+	return build(keys, m, true)
+}
+
+// inOrder is m's keys in the streaming role's order (pathmap.FromJSON: the longer
+// first, then by text).
+func inOrder(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := strings.TrimSpace(keys[i]), strings.TrimSpace(keys[j])
 		if len(a) != len(b) {
 			return len(a) > len(b)
 		}
 		return a < b
 	})
+	return keys
+}
+
+// build makes a Map of m's keys taken in order: of two keys for one prefix
+// ("/Volumes/Originals" and "/Volumes/Originals/") the first wins, every time, as in
+// the streaming role. With stored, a key that is not canonical rewrites the stored
+// paths under it (a node's map); without, it is dropped (the home's).
+func build(keys []string, m map[string]string, stored bool) Map {
+	out := Map{}
 	seen := map[string]bool{}
-	for _, raw := range froms {
+	for _, raw := range keys {
 		from, l := strings.TrimSpace(raw), strings.TrimSpace(m[raw])
-		if from == "" || IsCanonical(strings.TrimRight(from, "/")) || l == "" || seen[strings.ToLower(dir(from))] {
+		canon := IsCanonical(strings.TrimRight(from, "/"))
+		if from == "" || l == "" || (!canon && !stored) || seen[strings.ToLower(dir(from))] {
 			continue
 		}
 		seen[strings.ToLower(dir(from))] = true
-		out.stored = append(out.stored, Entry{Canonical: dir(from), Local: dir(l)})
+		e := Entry{Canonical: dir(from), Local: dir(l)}
+		if canon {
+			out.entries = append(out.entries, e)
+		} else {
+			out.stored = append(out.stored, e)
+		}
 	}
+	longestFirst(out.entries)
 	longestFirst(out.stored)
 	return out
 }

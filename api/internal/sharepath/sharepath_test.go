@@ -101,3 +101,33 @@ func TestNodeMapRewritesStoredPrefixes(t *testing.T) {
 		t.Error("the home's map rewrote a stored path")
 	}
 }
+
+// An operator's MAKTABA_STREAM_PATH_MAP is read as the node's streaming role reads it
+// (pathmap.Parse + Apply): on a path boundary, the rest's separators made "/", nothing
+// rewritten after file:///, the longer prefix first and of two for one prefix the first.
+func TestParseStreamMapAsTheStreamingRole(t *testing.T) {
+	for _, c := range []struct{ spec, in, want string }{
+		{"/Volumes/Media=>/mnt/media", "/Volumes/Media/a.mkv", "/mnt/media/a.mkv"},
+		{"/Volumes/Media=>/mnt/media", "/Volumes/Media2/c.mkv", "/Volumes/Media2/c.mkv"},
+		{`Y:\=>/Volumes/Y/`, `Y:\Shows\a.mp4`, "/Volumes/Y/Shows/a.mp4"},
+		{"/Volumes/Originals=>P:", "file:///Volumes/Originals/a.mkv", "/Volumes/Originals/a.mkv"},
+		{"/Volumes/O=>P:;/Volumes/O/Backup=>Y:", "/Volumes/O/Backup/b.mp4", "Y:/b.mp4"},
+		{"/Volumes/O=>P:;/volumes/o=>Q:", "/Volumes/O/c.mp4", "P:/c.mp4"},
+		{"smb://nas/Originals=>O:", "smb://nas/Originals/d.mkv", "O:/d.mkv"},
+		{" ; nonsense ;=>X:; /Volumes/O => P: ", "/Volumes/O/e.mp4", "P:/e.mp4"},
+	} {
+		if got := ParseStreamMap(c.spec).ToLocal(c.in); got != c.want {
+			t.Errorf("%q: ToLocal(%q) = %q, want %q", c.spec, c.in, got, c.want)
+		}
+	}
+}
+
+// Two canonical keys for one share: the longer wins, every time, as in the streaming role.
+func TestDuplicateShareKeysPickOne(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		m := FromNodeEntries(map[string]string{"smb://nas/Originals": "P:/", "smb://nas/Originals/": "O:/"})
+		if got := m.ToLocal("smb://nas/Originals/a.mkv"); got != "O:/a.mkv" {
+			t.Fatalf("run %d: ToLocal = %q, want O:/a.mkv", i, got)
+		}
+	}
+}

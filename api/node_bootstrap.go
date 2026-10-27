@@ -342,8 +342,7 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 	// or an operator's MAKTABA_STREAM_PATH_MAP alone (the role then reads no other)
 	toLocal := sharepath.ToLocal
 	if spec := os.Getenv("MAKTABA_STREAM_PATH_MAP"); spec != "" {
-		streamMap := vodfallback.PrefixMap(spec)
-		toLocal = func(p string) string { return streamMap(sharepath.Map{}.ToLocal(p)) } // file:/// only
+		toLocal = sharepath.ParseStreamMap(spec).ToLocal
 	}
 	// what the home serves goes through the resolver's front (a node-local sign-in is
 	// answered here, never sent to the home, which would sign the person out)
