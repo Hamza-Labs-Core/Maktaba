@@ -90,7 +90,9 @@ func runSlot(args []string) error {
 
 	cfg := config.Load()
 	layout := cache.New(cfg.Cache.Root)
-	_ = layout.EnsureTiers()
+	if err := layout.EnsureTiers(); err != nil {
+		logger.Warn("cache layout init failed", "root", layout.Root, "err", err.Error(), "event", "cache_init_warn")
+	}
 	b := newTVBase(bg, logger, cfg, pool, layout)
 	publicBase := os.Getenv("MAKTABA_PUBLIC_BASE_URL")
 	ident, err := channel.LocalIdentity(ctx, pool, b.hostname, publicBase)

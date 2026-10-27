@@ -66,8 +66,22 @@ Direct play (the file itself): **`event=vod_direct_open_failed`** (the file
 could not be opened: `path`, `err`; ERROR for a permission denial or an
 unmounted share, WARN when it is missing) and **`event=vod_direct_read_failed`**
 (a read failed mid-stream: `offset`, `written`, `err`, e.g. a NAS I/O
-error). A segment or playlist that exists but cannot be read is
-**`event=vod_file_read_failed`**.
+error). **`event=vod_direct_read_stalled`**: one read of the file took longer
+than 30 s (a share that stopped answering); the response was ended so the
+player can retry (`offset`, `written`, `stall_ms`).
+**`event=vod_direct_lookup_failed`**: the video's probe row could not be read
+(the database; the player gets a 503 it may retry). A segment or playlist that
+exists but cannot be read is **`event=vod_file_read_failed`**. An encoder
+that wrote nothing for 2 minutes (its input is stuck, typically a NAS read)
+is stopped as **`event=vod_transcode_stalled`** (`idle_ms`); its playlist then
+answers 410 and the player reopens. A closed
+session whose ffmpeg would not stop is **`event=vod_transcode_stop_failed`**
+(`pid`). Posters and sprites: **`event=static_asset_read_failed`**; chapters:
+**`event=chapters_read_failed`**. Players never get a server path or error
+text in a problem `detail`; these lines have them.
+**`event=jwks_refresh_failed`** (once per outage, then
+`jwks_refresh_recovered`): the API's stream keys could not be fetched, so a
+token signed with a new key is refused (a 401 on playback).
 
 A quick filter for one session:
 
@@ -97,6 +111,12 @@ grep -E 'level=(WARN|ERROR)|"level": ?"(warning|error)"|level=error|level=warn' 
   with an error (not the viewer leaving).
 - `event=hdhr_stream_failed` / `hdhr_tuners_busy`: HDHomeRun (Plex) tunes.
 - `event=stream_request_failed` covers the TV routes too.
+- `event=channel_runtime_write_failed`, `tv_host_status_write_failed`,
+  `tv_placement_write_failed`: a write of the channel's runtime row, this
+  host's status or a placement's ack/release did not reach the database
+  (once per outage for the first two, with a `…_recovered` line after).
+- `event=tv_slate_caption_unavailable`: this ffmpeg has no `drawtext` filter;
+  slates air without their caption.
 
 ## The pipeline (scans, transcription, enrichment)
 
@@ -126,8 +146,14 @@ Every line logged while a job runs carries its `job_id`, `stage` and
 
 Lines start with `[supervisor]`, `[serve]`, `[update]`, `[postgres]`. A child
 that exits says how (`exit code`, signal, uptime) and when it restarts
-(`restart #n, k/max exits in <window>`); a crash loop ends with
-`marked failed`. Update runs also keep their own log under the app's data
+(`restart #n, k/max exits in <window>`), at `level=error` for a crash or a
+hang (warn for a clean exit restarted); a crash loop ends with
+`marked failed`, a job that gives up with `gave up`, both at error level. The
+System health page shows each process's state, restarts and last exit. A
+child's own crash (a Go `panic:` / `fatal error:`, a Python `Traceback`) is
+an error on the logs page too. A panic in the supervisor's own loop is logged
+with its stack (`the supervisor's loop panicked`) and stops the stack
+cleanly; the service manager starts it again. Update runs also keep their own log under the app's data
 folder, `updates/logs/<run>.log`.
 
 ## The playback failure report (for client authors)

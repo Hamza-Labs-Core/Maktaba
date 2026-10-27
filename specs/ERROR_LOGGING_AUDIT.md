@@ -117,17 +117,15 @@ closed as `transcode-failed`. Every step of that now has its own line.
   like the web does, or report without one.
 - **Live TV web player** (`web/src/pages/LiveTV`): errors are not posted.
   `reportPlaybackFailure` could be reused with a channel variant.
-- **VOD stall watchdogs:** no stall watchdog on VOD ffmpeg (a hung NAS read
-  produces no segments until the idle reap), and no read deadline on
-  direct-play copies.
-- **Session close under the store mutex:** `session.Close` calls `Stop`
-  while holding the store mutex.
-- **Supervisor secrets:**
-  - `dbsafe` passes the superuser DSN on `maktaba-api migrate`'s command line,
-    where `ps` can see it.
-  - The pgbundle bootstrap SQL has the role password inline, and Postgres
-    echoes the statement on error.
-  - The LLM `Status.URL` is served unredacted.
+- ~~**VOD stall watchdogs**~~ (done, errors audit: `vod_transcode_stalled`
+  stops an encoder that wrote nothing for 2 min; `vod_direct_read_stalled`
+  ends a direct-play response whose file read took over 30 s).
+- ~~**Session close under the store mutex**~~ (done: the transcode stops
+  after the lock is let go; a stop that fails is `vod_transcode_stop_failed`).
+- ~~**Supervisor secrets**~~ (done: `dbsafe` already passed the URL in the
+  environment; the bootstrap SQL sets the app role's SCRAM secret, never its
+  password, with `log_min_error_statement = panic`; the LLM status is served
+  through `llmserver.RedactURL`).
 - **API (medium):**
   - gRPC client errors lack method and target, and the circuit breaker opens
     silently.
@@ -144,8 +142,7 @@ closed as `transcode-failed`. Every step of that now has its own line.
   failure lines, which use `slog.*` rather than `mlog.From(ctx)`.
 - **Redaction (Go):** still by exact key only. `secret.RedactURL` exists but
   is unused.
-- **Streaming bug to check:** `ffmpeg/transcode.go` hard-codes
-  `CODECS="avc1.4d4028,…"` (Main profile, level 4.0) in the master playlist,
-  while libx264 and VideoToolbox usually emit High profile. A strict MSE
-  player may refuse the stream. Check it against the next
-  `vod_transcode_exited` / `playback_failed` lines for the failing video.
+- ~~**Streaming bug to check:** the master playlist's `CODECS="avc1.4d4028"`~~
+  (done: confirmed wrong — libx264 and VideoToolbox wrote High; every rung is
+  now encoded `-profile:v high` and the playlist names `avc1.64002a`, High
+  4.2, checked against the real encoders' output).

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -93,6 +94,62 @@ func TestStore_CloseStopsTranscoder(t *testing.T) {
 	_ = s.Close(context.Background(), row.ID, ReasonAPI, time.Now())
 	if !tc.stopped.Load() {
 		t.Fatal("transcoder not stopped")
+	}
+}
+
+// slowTranscoder's Stop waits for release (an ffmpeg slow to exit), then fails with err.
+type slowTranscoder struct {
+	entered chan struct{}
+	release chan struct{}
+	err     error
+}
+
+func (s *slowTranscoder) Stop(context.Context) error {
+	close(s.entered)
+	<-s.release
+	return s.err
+}
+func (s *slowTranscoder) PID() int     { return 1 }
+func (s *slowTranscoder) Active() bool { return true }
+
+// A transcode slow to stop holds up only its own Close: the store answers every other
+// session (each playlist and segment fetch) meanwhile, and a stop that failed is
+// returned, the session closed all the same.
+func TestStore_CloseStopsOutsideTheLock(t *testing.T) {
+	ctx := context.Background()
+	s := NewMemoryStore(time.Second)
+	slow := &slowTranscoder{entered: make(chan struct{}), release: make(chan struct{}), err: errors.New("ffmpeg: stop timeout")}
+	row := &Row{Mode: ModeTranscode, Format: FormatHLS, Transcoder: slow}
+	other := &Row{Mode: ModeDirect, Format: FormatHLS}
+	if err := s.Insert(ctx, row); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Insert(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- s.Close(ctx, row.ID, ReasonAPI, time.Now()) }()
+	<-slow.entered
+	got := make(chan struct{})
+	go func() {
+		_, _, _ = s.Get(ctx, other.ID)
+		_ = s.Touch(ctx, other.ID, time.Now())
+		close(got)
+	}()
+	select {
+	case <-got:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the store waited on a transcode's stop")
+	}
+	if r, _, _ := s.Get(ctx, row.ID); r.ClosedAt == nil {
+		t.Error("the session is not closed while its transcode stops")
+	}
+	close(slow.release)
+	if err := <-closed; !errors.Is(err, ErrTranscodeNotStopped) {
+		t.Errorf("Close = %v, want ErrTranscodeNotStopped", err)
+	}
+	if err := s.Close(ctx, row.ID, ReasonAPI, time.Now()); err != nil {
+		t.Errorf("closing again = %v, want nil", err)
 	}
 }
 

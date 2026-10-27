@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime/debug"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
@@ -40,6 +42,9 @@ type Supervisor struct {
 
 	fatal     chan error
 	fatalOnce sync.Once
+	// panicStop, once a loop panicked (recoverLoop), exits the launcher if the stop it
+	// started never ends; Run's return stops it.
+	panicStop atomic.Pointer[time.Timer]
 	// onExit, when set, hears every child exit (the TV front door's slot report).
 	onExit func(Process, ExitInfo)
 	// noConsole: the first child that could not be asked to stop for want of a
@@ -168,6 +173,11 @@ func (s *Supervisor) Run(ctx context.Context, grace time.Duration) error {
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	defer func() {
+		if t := s.panicStop.Load(); t != nil {
+			t.Stop()
+		}
+	}()
 	s.startHandover()
 
 	var first, rest []*child
@@ -185,6 +195,7 @@ func (s *Supervisor) Run(ctx context.Context, grace time.Duration) error {
 			go func(c *child) {
 				defer wg.Done()
 				defer close(c.done)
+				defer s.recoverLoop(c)
 				s.loop(runCtx, c)
 			}(c)
 		}
@@ -508,7 +519,10 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 
 			probeCtx, stopProbe := context.WithCancel(ctx)
 			if c.proc.Probe != "" {
-				go s.probe(probeCtx, c, cmd, startedAt)
+				go func() {
+					defer s.recoverLoop(c)
+					s.probe(probeCtx, c, cmd, startedAt)
+				}()
 			}
 			waitErr := cmd.Wait()
 			stopProbe()
@@ -627,7 +641,13 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 		s.errorf("%s exited (pid %d, %s); crash loop: %d exits in %s, marked failed, retrying in %s",
 			c.proc.Name(), info.PID, describeExit(info), s.policy.MaxRestarts, s.policy.Window, delay)
 	} else {
-		s.warnf("%s exited (pid %d, %s); restarting in %s (restart #%d, %d/%d exits in %s)", c.proc.Name(), info.PID,
+		// a crash, a hang or a failed start is a failure (error: the logs page's
+		// errors-only view shows it); a clean exit restarted by restart = always a warning
+		logAt := s.errorf
+		if info.Reason == ReasonClean {
+			logAt = s.warnf
+		}
+		logAt("%s exited (pid %d, %s); restarting in %s (restart #%d, %d/%d exits in %s)", c.proc.Name(), info.PID,
 			describeExit(info), delay, restartN, exitsN, s.policy.MaxRestarts, s.policy.Window)
 	}
 
@@ -680,7 +700,7 @@ func (s *Supervisor) onceEnded(c *child, info ExitInfo) bool {
 	msg := fmt.Sprintf("%d failed runs in a row, the last %s: not started again before the server's next start",
 		fails, describeExit(info))
 	s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: info.Reason, Message: msg})
-	s.logf("%s gave up: %s", c.proc.Name(), msg)
+	s.errorf("%s gave up: %s", c.proc.Name(), msg)
 	return true
 }
 
@@ -873,6 +893,32 @@ func (s *Supervisor) publish(e Event) {
 		}
 	}
 }
+
+// recoverLoop ends a panic in a child's loop or probe goroutine (a bug of the
+// supervisor's own, not the child's): logged at error level with the role and the
+// stack, it stops the stack as a fatal exit does, every child asked to drain.
+// Unrecovered, it would kill the launcher at once and leave the children running
+// unsupervised until the service manager starts the launcher again.
+func (s *Supervisor) recoverLoop(c *child) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	s.errorf("%s: the supervisor's loop panicked (%v); stopping the stack\n%s", c.proc.Name(), r, debug.Stack())
+	s.fatalOnce.Do(func() {
+		s.fatal <- fmt.Errorf("supervisor: %s's loop panicked: %v", c.proc.Name(), r)
+		// a panic with s.mu held would leave the stop waiting for it forever: the
+		// launcher then exits, and the service manager starts it again
+		s.panicStop.Store(time.AfterFunc(panicStopLimit, func() {
+			s.errorf("the stack did not stop within %s of a panic; exiting", panicStopLimit)
+			os.Exit(70)
+		}))
+	})
+}
+
+// panicStopLimit bounds the stop a panic in the supervisor's loop starts (recoverLoop):
+// past the longest grace a child is given to drain.
+const panicStopLimit = 3 * time.Minute
 
 func (s *Supervisor) logf(format string, args ...any) {
 	fmt.Fprintf(s.log, "[supervisor] "+format+"\n", args...)

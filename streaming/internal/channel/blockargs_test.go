@@ -238,9 +238,9 @@ func TestBlockArgs_RealFFmpegVariants(t *testing.T) {
 			Watermark: &Watermark{Path: png, Position: "bottom-right", WidthPct: 20, MarginPct: 2}},
 		"live-as-file":    {Kind: "live", Source: withAudio, DurationSec: 1, HasVideo: true, HasAudio: true, Loudnorm: &Loudnorm{Enabled: true, Filter: "dynaudnorm"}},
 		"slate-black":     {Kind: "slate", DurationSec: 1},
-		"slate-logo":      {Kind: "slate", DurationSec: 1, SlateLogo: png, SlateText: "Live stream unavailable", FontFile: FindFont()},
+		"slate-logo":      {Kind: "slate", DurationSec: 1, SlateLogo: png, SlateText: "Live stream unavailable", FontFile: SlateFont(context.Background(), "ffmpeg")},
 		"slate-loading":   {Kind: "slate", DurationSec: 1, SlateImage: png},
-		"slate-text-only": {Kind: "slate", DurationSec: 1, SlateText: "It's 10:30 — 100%", FontFile: FindFont()},
+		"slate-text-only": {Kind: "slate", DurationSec: 1, SlateText: "It's 10:30 — 100%", FontFile: SlateFont(context.Background(), "ffmpeg")},
 	}
 	nvenc := DetectEncoder(context.Background(), "ffmpeg", "auto") == EncoderNVENC
 	if nvenc {
