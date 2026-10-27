@@ -557,7 +557,9 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     await waitFor(() =>
       expect(screen.getByRole("link", { name: /a\.mp4/ })).not.toHaveTextContent("plays")
     );
-    expect(screen.getByRole("link", { name: /a\.mp4/ })).toHaveTextContent("2019");
+    // the day itself (midnight UTC), whatever the viewer's time zone, and no time
+    expect(screen.getByRole("link", { name: /a\.mp4/ })).toHaveTextContent("Mar 4, 2019");
+    expect(screen.getByRole("link", { name: /a\.mp4/ })).not.toHaveTextContent(/AM|PM/);
   });
 
   it("LIB-26: typing a year filters; a bad ?year= or ?watched= is not sent", async () => {

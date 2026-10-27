@@ -2,7 +2,7 @@ package router_test
 
 // The browsing routes (Epic 45 story 45.4) against a real migrated Postgres
 // behind the production router: the Postgres SQL (LATERAL posters, the year
-// of mtime), the routes beside the libraries handler's {id}, and a viewer
+// of the publish date), the routes beside the libraries handler's {id}, and a viewer
 // of library A never seeing library B. Runs when MAKTABA_TEST_PG_URL is set
 // (see access_pg_test.go).
 

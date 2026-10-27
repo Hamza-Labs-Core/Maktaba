@@ -45,13 +45,17 @@ type listSort struct {
 	nullable bool
 }
 
+// PublishedExpr is a video's publish date: its YouTube upload date (slot
+// 0164), else the file's mtime.
+const PublishedExpr = "COALESCE(published_at, mtime)"
+
 var listSorts = map[string]listSort{
 	"updated_at": {expr: "updated_at", kind: keyTime},
 	"created_at": {expr: "created_at", kind: keyTime},
 	// A missing title is "" so the order and the cursor agree on NULLs.
 	"title": {expr: "COALESCE(title, '')", kind: keyText},
-	// The publish date is the file's mtime (yt-dlp sets it to the upload date).
-	"published_at": {expr: "mtime", kind: keyTime, nullable: true},
+	// The publish date (PublishedExpr).
+	"published_at": {expr: PublishedExpr, kind: keyTime, nullable: true},
 	"duration_sec": {expr: "duration_sec", kind: keyFloat, nullable: true},
 	// Everyone's plays (watch_sessions rows), from the join List adds.
 	"plays": {expr: "COALESCE(wp.plays, 0)", kind: keyInt},

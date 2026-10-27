@@ -68,9 +68,8 @@ type Video struct {
 	LatestTrans   *string         `json:"latest_transcript_id,omitempty"`
 	PlaybackState *PlaybackState  `json:"playback_state,omitempty"`
 
-	// List only (Epic 45): the publish date (the file's mtime, which
-	// yt-dlp sets to the upload date) and, under sort=plays, everyone's
-	// plays.
+	// List only (Epic 45): the publish date (PublishedExpr) and, under
+	// sort=plays, everyone's plays.
 	PublishedAt *time.Time `json:"published_at,omitempty"`
 	Plays       *int64     `json:"plays,omitempty"`
 	// List only (Epic 45 Phase 2): set when the caller marked it a favorite.
@@ -205,8 +204,8 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/videos/{id}/chapters", h.Chapters)
 }
 
-// List implements AC-1. Filters: library, language, q, year (the mtime's
-// year), watched (the caller's playback state), series, tag, speaker,
+// List implements AC-1. Filters: library, language, q, year (the year of
+// PublishedExpr), watched (the caller's playback state), series, tag, speaker,
 // favorite (the caller's; on /api/me/videos, the home), letter (the jump
 // bar), duration, added and resolution (bands.go), sort (created_at, newest
 // added first, when none is given; relevance with q; random: one page),
@@ -298,10 +297,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.InvalidQuery("year must be a year, e.g. 2024"))
 			return
 		}
-		// A range on mtime, not a year function: the same SQL on both
-		// databases, and it can use the mtime index.
+		// A range on the publish date, not a year function: the same SQL on
+		// both databases, and it can use videos_library_published_idx.
 		from := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
-		conds = append(conds, "mtime >= "+pidx(len(args)+1)+" AND mtime < "+pidx(len(args)+2))
+		conds = append(conds, PublishedExpr+" >= "+pidx(len(args)+1)+" AND "+PublishedExpr+" < "+pidx(len(args)+2))
 		args = append(args, from, from.AddDate(1, 0, 0))
 	}
 	if watched := q.Get("watched"); watched != "" {
@@ -460,7 +459,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if len(conds) > 0 {
 		where = " WHERE " + strings.Join(conds, " AND ")
 	}
-	cols := videoColumns + ", mtime"
+	cols := videoColumns + ", " + PublishedExpr
 	from := " FROM videos"
 	withPlays := sort == "plays"
 	if withPlays {
@@ -1024,17 +1023,17 @@ func scanVideoRow(rs rowScanner) (Video, error) {
 	return v, nil
 }
 
-// scanListRow scans a List row: the video columns, mtime, under sort=plays
+// scanListRow scans a List row: the video columns, the publish date, under sort=plays
 // the play count and, for a user, their marks (mineColumns).
 func scanListRow(rs rowScanner, withPlays, withRank, withMine bool) (Video, error) {
 	var v Video
 	var meta []byte
-	var mtime nullTime
+	var published nullTime
 	dest := []any{
 		&v.ID, &v.LibraryID, &v.Path, &v.Filename,
 		&v.Title, &v.Description, &v.State,
 		&v.DetectedLang, &v.DurationSec, &v.SizeBytes, &v.ContentHash,
-		&meta, &v.CreatedAt, &v.UpdatedAt, &mtime,
+		&meta, &v.CreatedAt, &v.UpdatedAt, &published,
 	}
 	var plays int64
 	if withPlays {
@@ -1056,8 +1055,8 @@ func scanListRow(rs rowScanner, withPlays, withRank, withMine bool) (Video, erro
 	if len(meta) > 0 {
 		v.Metadata = meta
 	}
-	if mtime.Valid {
-		t := mtime.T
+	if published.Valid {
+		t := published.T
 		v.PublishedAt = &t
 	}
 	if withPlays {

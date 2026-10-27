@@ -12,6 +12,10 @@
 // crashing the page.
 import { api } from "./api";
 
+/** A publish date is a day (an upload date is midnight UTC): no time, and the
+ * day in UTC so a viewer west of Greenwich does not see the day before. */
+export const PUBLISH_DATE: Intl.DateTimeFormatOptions = { dateStyle: "medium", timeZone: "UTC" };
+
 export interface VideoCard {
   id: string;
   title?: string | null;
@@ -20,7 +24,7 @@ export interface VideoCard {
   duration_sec?: number | null;
   state?: string;
   created_at?: string;
-  /** the file's mtime: a download's upload date */
+  /** when it came out: its YouTube upload date (midnight UTC), else the file's mtime */
   published_at?: string | null;
   position_sec?: number | null;
   completed?: boolean | null;

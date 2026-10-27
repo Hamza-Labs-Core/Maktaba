@@ -56,8 +56,13 @@ const (
 // visible is the predicate on videos v that keeps a video in the rows.
 const visible = `v.deleted_at IS NULL AND v.state NOT IN ('missing', 'superseded')`
 
+// publishedAt is a video's publish date: its YouTube upload date (slot 0164),
+// else the file's mtime.
+const publishedAt = `COALESCE(v.published_at, v.mtime)`
+
 // cardColumns are the card's columns of videos v, as scanCard reads them.
-const cardColumns = `v.id, v.title, v.filename, v.library_id, v.duration_sec, v.state, v.created_at, v.mtime`
+const cardColumns = `v.id, v.title, v.filename, v.library_id, v.duration_sec, v.state, v.created_at, ` +
+	publishedAt + ` AS published_at`
 
 // Handler serves the browsing routes.
 type Handler struct {
@@ -102,7 +107,7 @@ type Card struct {
 	DurationSec *float64   `json:"duration_sec"`
 	State       string     `json:"state"`
 	CreatedAt   time.Time  `json:"created_at"`
-	PublishedAt *time.Time `json:"published_at"` // the file's mtime
+	PublishedAt *time.Time `json:"published_at"` // publishedAt
 	// The caller's own playback, on the rows that read it.
 	PositionSec   *float64   `json:"position_sec,omitempty"`
 	Completed     *bool      `json:"completed,omitempty"`
@@ -225,13 +230,13 @@ type rowScanner interface{ Scan(...any) error }
 // scanCard reads cardColumns, then extra.
 func scanCard(rs rowScanner, extra ...any) (Card, error) {
 	var c Card
-	var created, mtime nullTime
-	dest := append([]any{&c.ID, &c.Title, &c.Filename, &c.LibraryID, &c.DurationSec, &c.State, &created, &mtime}, extra...)
+	var created, published nullTime
+	dest := append([]any{&c.ID, &c.Title, &c.Filename, &c.LibraryID, &c.DurationSec, &c.State, &created, &published}, extra...)
 	if err := rs.Scan(dest...); err != nil {
 		return Card{}, err
 	}
 	c.CreatedAt = created.T
-	c.PublishedAt = mtime.ptr()
+	c.PublishedAt = published.ptr()
 	return c, nil
 }
 
@@ -274,7 +279,7 @@ func (h *Handler) recentPerLibrary(ctx context.Context, libs []string, n int) (m
 	args = append(args, n)
 	var q string
 	if isSQLite(h.DB) {
-		q = `SELECT id, title, filename, library_id, duration_sec, state, created_at, mtime FROM (
+		q = `SELECT id, title, filename, library_id, duration_sec, state, created_at, published_at FROM (
 			SELECT ` + cardColumns + `, ROW_NUMBER() OVER (PARTITION BY v.library_id
 				ORDER BY v.created_at DESC, v.mtime DESC, v.id DESC) AS rn
 			FROM videos v WHERE v.library_id IN (` + in + `) AND ` + visible + `) x

@@ -58,7 +58,7 @@ func newEnv(t *testing.T) *env {
 		`CREATE TABLE libraries (id TEXT PRIMARY KEY, name TEXT)`,
 		`CREATE TABLE videos (id TEXT PRIMARY KEY, library_id TEXT, path TEXT, filename TEXT, title TEXT,
 			description TEXT, state TEXT, detected_language TEXT, duration_sec REAL, size_bytes INTEGER,
-			content_hash TEXT, metadata BLOB, created_at DATETIME, updated_at DATETIME, mtime DATETIME, deleted_at TEXT)`,
+			content_hash TEXT, metadata BLOB, created_at DATETIME, updated_at DATETIME, mtime DATETIME, published_at DATETIME, deleted_at TEXT)`,
 		`CREATE TABLE collections (id TEXT PRIMARY KEY, library_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT,
 			is_smart INTEGER NOT NULL DEFAULT 0, smart_query TEXT, created_by TEXT,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')),
