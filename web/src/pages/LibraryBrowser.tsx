@@ -87,10 +87,12 @@ interface VideoListResponse {
 }
 
 // The server's sort keys, each with the order it starts in (newest, longest,
-// most played first; titles A to Z).
+// most played first; titles A to Z). Recently added is every app's default;
+// relevance (best match first) is a search's, offered only with a search.
 const SORTS = {
-  updated_at: "desc",
   created_at: "desc",
+  relevance: "desc",
+  updated_at: "desc",
   published_at: "desc",
   title: "asc",
   duration_sec: "desc",
@@ -98,8 +100,9 @@ const SORTS = {
 } as const;
 type SortField = keyof typeof SORTS;
 const SORT_LABEL: Record<SortField, string> = {
+  created_at: "library.sort.added",
+  relevance: "library.sort.relevance",
   updated_at: "library.sort.recent",
-  created_at: "videosAll.sort.added",
   published_at: "videosAll.sort.published",
   title: "library.sort.title",
   duration_sec: "library.sort.duration",
@@ -303,11 +306,17 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
 
   const [view, setView] = useStoredView(VIEW_KEY, "grid");
   const rawSort = params.get("sort");
-  // An unknown ?sort= (a stale or hand-typed link) falls back to the default.
+  const q = (params.get("q") || "").trim();
+  // No ?sort= (or an unknown one: a stale or hand-typed link) is the default:
+  // recently added, or best match while searching. Relevance needs a search.
   const sort: SortField =
-    rawSort && Object.prototype.hasOwnProperty.call(SORTS, rawSort)
+    rawSort &&
+    Object.prototype.hasOwnProperty.call(SORTS, rawSort) &&
+    (rawSort !== "relevance" || q)
       ? (rawSort as SortField)
-      : "updated_at";
+      : q
+        ? "relevance"
+        : "created_at";
   const rawOrder = params.get("order");
   const order: "asc" | "desc" = rawOrder === "asc" || rawOrder === "desc" ? rawOrder : SORTS[sort];
   const badLibrary = !!libraryId && !UUID.test(libraryId);
@@ -317,7 +326,6 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   const year = /^\d{4}$/.test(rawYear) ? rawYear : "";
   const rawWatched = params.get("watched") || "";
   const watched = (WATCHED as readonly string[]).includes(rawWatched) ? rawWatched : "";
-  const q = (params.get("q") || "").trim();
   const rawTag = params.get("tag") || "";
   const tag = UUID.test(rawTag) ? rawTag : "";
   const speaker = params.get("speaker") || "";
@@ -359,7 +367,8 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   const filterQuery = useMemo(() => {
     const qs = new URLSearchParams();
     qs.set("sort", sort);
-    qs.set("order", order);
+    // best match has one direction
+    if (sort !== "relevance") qs.set("order", order);
     if (libraryId) qs.set("library", libraryId);
     if (lang) qs.set("language", lang);
     if (year) qs.set("year", year);
@@ -650,21 +659,25 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
           onChange={(e) => patchParams({ sort: e.target.value, order: null, letter: null })}
           aria-label={t("library.sort")}
         >
-          {(Object.keys(SORTS) as SortField[]).map((s) => (
-            <option key={s} value={s}>
-              {t(SORT_LABEL[s])}
-            </option>
-          ))}
+          {(Object.keys(SORTS) as SortField[])
+            .filter((s) => s !== "relevance" || q)
+            .map((s) => (
+              <option key={s} value={s}>
+                {t(SORT_LABEL[s])}
+              </option>
+            ))}
         </select>
       </label>
-      <button
-        type="button"
-        className="mkt-btn mkt-btn--ghost"
-        aria-label={order === "desc" ? t("library.order.asc") : t("library.order.desc")}
-        onClick={() => patchParam("order", order === "desc" ? "asc" : "desc")}
-      >
-        {order === "desc" ? "↓" : "↑"}
-      </button>
+      {sort !== "relevance" && (
+        <button
+          type="button"
+          className="mkt-btn mkt-btn--ghost"
+          aria-label={order === "desc" ? t("library.order.asc") : t("library.order.desc")}
+          onClick={() => patchParam("order", order === "desc" ? "asc" : "desc")}
+        >
+          {order === "desc" ? "↓" : "↑"}
+        </button>
+      )}
       <label className="mkt-field">
         <span className="mkt-field__label">{t("videosAll.filter.watched")}</span>
         <select

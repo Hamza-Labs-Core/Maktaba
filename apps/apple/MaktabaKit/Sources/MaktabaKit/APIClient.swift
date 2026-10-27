@@ -61,12 +61,18 @@ public actor APIClient {
         try await get("/api/videos", query: Self.videoListQuery(library: library, query: query, cursor: cursor))
     }
 
-    /// The video list's query: the newest first. The home's sorts are updated_at,
+    /// The video list's query: the most recently added first. A search sends no
+    /// sort: the home orders it by best match, then the most recently added (an
+    /// older home, by its own default). The home's sorts are updated_at,
     /// created_at or title (it answers 400 to anything else).
     static func videoListQuery(library: String?, query: String?, cursor: String?) -> [String: String] {
-        var q = ["limit": "60", "sort": "created_at"]
+        var q = ["limit": "60"]
+        if let query, !query.isEmpty {
+            q["q"] = query
+        } else {
+            q["sort"] = "created_at"
+        }
         if let library { q["library"] = library }
-        if let query, !query.isEmpty { q["q"] = query }
         if let cursor { q["cursor"] = cursor }
         return q
     }

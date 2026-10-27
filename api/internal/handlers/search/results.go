@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
@@ -360,6 +362,9 @@ func (h *Handler) compute(ctx context.Context, req Request, rl Rules) (*run, Res
 	if rn.Set.Videos == nil {
 		rn.Set.Videos = []savedVideo{}
 	}
+	if err := h.tiesByAdded(ctx, rn); err != nil {
+		return nil, took, fmt.Errorf("ties: %w", err)
+	}
 	if len(rn.Set.Videos) > rl.MaxVideos {
 		rn.Set.Videos = rn.Set.Videos[:rl.MaxVideos]
 	}
@@ -378,6 +383,91 @@ func sortVideos(vs []savedVideo) {
 		}
 		return vs[i].V < vs[j].V
 	})
+}
+
+// tiesByAdded orders the matches of equal quality (and, for the transcript
+// matches, of as many matches) newest-added first, then by id: a search
+// ranks by relevance, and its ties follow the order of every list of videos.
+func (h *Handler) tiesByAdded(ctx context.Context, rn *run) error {
+	if h.DB == nil || (len(rn.Set.Titles) == 0 && len(rn.Set.Videos) == 0) {
+		return nil
+	}
+	seen := map[string]bool{}
+	ids := []string{}
+	// on Postgres a semantic hit's id that is no UUID would fail the whole
+	// statement: it is left out and ends its ties
+	pg := !isSQLite(h.DB)
+	for _, t := range rn.Set.Titles {
+		if !seen[t.V] {
+			seen[t.V] = true
+			ids = append(ids, t.V)
+		}
+	}
+	for _, v := range rn.Set.Videos {
+		if !seen[v.V] {
+			seen[v.V] = true
+			ids = append(ids, v.V)
+		}
+	}
+	if pg {
+		kept := ids[:0]
+		for _, id := range ids {
+			if _, err := uuid.Parse(id); err == nil {
+				kept = append(kept, id)
+			}
+		}
+		ids = kept
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	idCol := "id::text"
+	if isSQLite(h.DB) {
+		idCol = "id"
+	}
+	var args []any
+	rows, err := h.DB.QueryContext(ctx, `SELECT `+idCol+` FROM videos WHERE id IN (`+placeholders(ids, &args)+`)
+		ORDER BY created_at DESC, id DESC`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	newer := make(map[string]int, len(ids)) // 0 is the most recently added
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		newer[id] = len(newer)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	// a video gone since is last among its ties
+	at := func(id string) int {
+		if n, ok := newer[id]; ok {
+			return n
+		}
+		return len(ids)
+	}
+	ts := rn.Set.Titles
+	sort.SliceStable(ts, func(i, j int) bool {
+		if ts[i].S != ts[j].S {
+			return ts[i].S > ts[j].S
+		}
+		return at(ts[i].V) < at(ts[j].V)
+	})
+	vs := rn.Set.Videos
+	sort.SliceStable(vs, func(i, j int) bool {
+		if vs[i].S != vs[j].S {
+			return vs[i].S > vs[j].S
+		}
+		if vs[i].N != vs[j].N {
+			return vs[i].N > vs[j].N
+		}
+		return at(vs[i].V) < at(vs[j].V)
+	})
+	return nil
 }
 
 // groupSemantic groups the meaning search's passages per video: its best
@@ -501,7 +591,7 @@ func (h *Handler) runFTSVideos(ctx context.Context, q string, limit int, f Filte
 			JOIN videos v ON v.id = t.video_id AND v.deleted_at IS NULL
 			WHERE ` + strings.Join(where, " AND ") + `
 			GROUP BY t.video_id
-			ORDER BY best DESC, count(*) DESC, t.video_id
+			ORDER BY best DESC, count(*) DESC, max(v.created_at) DESC, t.video_id
 			LIMIT $` + strconv.Itoa(len(args))
 	} else {
 		args = []any{q}
@@ -515,7 +605,7 @@ func (h *Handler) runFTSVideos(ctx context.Context, q string, limit int, f Filte
 			JOIN videos v ON v.id = t.video_id AND v.deleted_at IS NULL
 			WHERE ` + strings.Join(where, " AND ") + `
 			GROUP BY t.video_id
-			ORDER BY best DESC, count(*) DESC, t.video_id
+			ORDER BY best DESC, count(*) DESC, max(v.created_at) DESC, t.video_id
 			LIMIT $` + strconv.Itoa(len(args))
 	}
 	rows, err := h.DB.QueryContext(ctx, query, args...)
@@ -576,7 +666,7 @@ func (h *Handler) ftsMatching(ctx context.Context, q string, sem []Hit) (map[int
 }
 
 // runTitles matches video titles by substring (case-insensitive), most similar
-// first. On Postgres the trigram index (0098) serves both the ILIKE and the
+// first, then the most recently added. On Postgres the trigram index (0098) serves both the ILIKE and the
 // ordering; SQLite scans with LIKE, shortest title first.
 func (h *Handler) runTitles(ctx context.Context, q string, limit int, f Filters) ([]savedTitle, error) {
 	args := []any{"%" + escapeLike(q) + "%", q}
@@ -586,11 +676,11 @@ func (h *Handler) runTitles(ctx context.Context, q string, limit int, f Filters)
 	if isSQLite(h.DB) {
 		query = `SELECT v.id, 1.0 / (1 + length(v.title)) + 0 * length($2) AS score FROM videos v
 			WHERE v.title LIKE $1 ESCAPE '\' AND ` + strings.Join(where, " AND ") + `
-			ORDER BY length(v.title), v.title LIMIT $` + strconv.Itoa(len(args))
+			ORDER BY length(v.title), v.created_at DESC, v.id LIMIT $` + strconv.Itoa(len(args))
 	} else {
 		query = `SELECT v.id::text, similarity(v.title, $2) AS score FROM videos v
 			WHERE v.title ILIKE $1 ESCAPE '\' AND ` + strings.Join(where, " AND ") + `
-			ORDER BY score DESC, v.title LIMIT $` + strconv.Itoa(len(args))
+			ORDER BY score DESC, v.created_at DESC, v.id LIMIT $` + strconv.Itoa(len(args))
 	}
 	rows, err := h.DB.QueryContext(ctx, query, args...)
 	if err != nil {

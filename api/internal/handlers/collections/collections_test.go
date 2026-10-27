@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -61,7 +62,8 @@ func newEnv(t *testing.T) *env {
 		`CREATE TABLE collections (id TEXT PRIMARY KEY, library_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT,
 			is_smart INTEGER NOT NULL DEFAULT 0, smart_query TEXT, created_by TEXT,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-			origin TEXT NOT NULL DEFAULT 'user', auto_rule TEXT, dismissed_at TEXT, UNIQUE (library_id, name))`,
+			origin TEXT NOT NULL DEFAULT 'user', auto_rule TEXT, dismissed_at TEXT,
+			hand_ordered INTEGER NOT NULL DEFAULT 0, UNIQUE (library_id, name))`,
 		`CREATE TABLE collection_items (collection_id TEXT NOT NULL, video_id TEXT NOT NULL,
 			position INTEGER NOT NULL DEFAULT 0, added_at TEXT NOT NULL DEFAULT (datetime('now')),
 			PRIMARY KEY (collection_id, video_id))`,
@@ -73,16 +75,20 @@ func newEnv(t *testing.T) *env {
 			t.Fatalf("%s: %v", q, err)
 		}
 	}
-	// 1..4 in A (4 missing), 5 in B; 1 and 2 are long, 3 short
+	// 1..4 in A (4 missing), 5 in B; 1 and 2 are long, 3 short. Added to
+	// the library 2, then 3, then 1 (day), so newest-added first (1, 3, 2) is
+	// neither the id order nor the order they are put in a collection
 	for _, v := range []struct {
 		n     int
 		lib   string
 		state string
 		dur   float64
-	}{{1, libA, "ready", 4000}, {2, libA, "ready", 3700}, {3, libA, "ready", 60}, {4, libA, "missing", 4000}, {5, libB, "ready", 4000}} {
+		day   int
+	}{{1, libA, "ready", 4000, 3}, {2, libA, "ready", 3700, 1}, {3, libA, "ready", 60, 2}, {4, libA, "missing", 4000, 4}, {5, libB, "ready", 4000, 5}} {
 		if _, err := db.Exec(`INSERT INTO videos (id, library_id, path, filename, title, state, duration_sec, size_bytes, content_hash, created_at, updated_at)
-			VALUES ($1,$2,'p',$3,$4,$5,$6,0,'h','2026-10-01T00:00:00Z','2026-10-01T00:00:00Z')`,
-			vid(v.n), v.lib, "f"+vid(v.n), "Lesson "+string(rune('0'+v.n)), v.state, v.dur); err != nil {
+			VALUES ($1,$2,'p',$3,$4,$5,$6,0,'h',$7,'2026-10-01T00:00:00Z')`,
+			vid(v.n), v.lib, "f"+vid(v.n), "Lesson "+string(rune('0'+v.n)), v.state, v.dur,
+			fmt.Sprintf("2026-10-%02dT00:00:00Z", v.day)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -161,12 +167,13 @@ func TestCuration(t *testing.T) {
 		map[string]any{"video_ids": []string{vid(1), vid(3)}}, &added); code != 200 || added.Added != 1 {
 		t.Fatalf("append again: %d %+v (1 is in it already)", code, added)
 	}
+	// never reordered: newest-added first, whatever order they were put in
 	var items itemsBody
 	e.do(asViewer(), "GET", "/api/collections/"+c.ID+"/items", nil, &items)
-	if got, want := itemIDs(items.Items), []string{vid(2), vid(1), vid(3)}; !slices.Equal(got, want) {
+	if got, want := itemIDs(items.Items), []string{vid(1), vid(3), vid(2)}; !slices.Equal(got, want) {
 		t.Fatalf("items %v, want %v", got, want)
 	}
-	if v := items.Items[0].Video; v == nil || v.Title == nil || *v.Title != "Lesson 2" || v.DurationSec == nil {
+	if v := items.Items[0].Video; v == nil || v.Title == nil || *v.Title != "Lesson 1" || v.DurationSec == nil {
 		t.Errorf("item card %+v", items.Items[0].Video)
 	}
 
@@ -175,12 +182,12 @@ func TestCuration(t *testing.T) {
 	if code := e.do(asViewer(), "GET", "/api/collections?library="+libA, nil, &list); code != 200 || len(list.Items) != 1 {
 		t.Fatalf("viewer list A: %d %+v", code, list)
 	}
-	if got := list.Items[0]; got.Videos == nil || *got.Videos != 3 || !slices.Equal(got.PosterVideoIDs, []string{vid(2), vid(1), vid(3)}) {
+	if got := list.Items[0]; got.Videos == nil || *got.Videos != 3 || !slices.Equal(got.PosterVideoIDs, []string{vid(1), vid(3), vid(2)}) || got.HandOrdered {
 		t.Errorf("counts %+v", got)
 	}
 
 	// reorder (the replace-all PATCH), rename, remove one
-	order := []map[string]any{{"video_id": vid(3), "position": 10}, {"video_id": vid(1), "position": 20}, {"video_id": vid(2), "position": 30}}
+	order := []map[string]any{{"video_id": vid(2), "position": 10}, {"video_id": vid(1), "position": 20}, {"video_id": vid(3), "position": 30}}
 	if code := e.do(asAdmin(), "PATCH", "/api/collections/"+c.ID, map[string]any{"items": order, "name": " Ramadan 1447 "}, nil); code != 200 {
 		t.Fatalf("patch: %d", code)
 	}
@@ -192,14 +199,15 @@ func TestCuration(t *testing.T) {
 	if code := e.do(asAdmin(), "DELETE", "/api/collections/"+c.ID+"/items/"+vid(1), nil, nil); code != http.StatusNoContent {
 		t.Fatalf("remove: %d", code)
 	}
+	// reordered by hand: that order from now on
 	e.do(asViewer(), "GET", "/api/collections/"+c.ID+"/items", nil, &items)
-	if got, want := itemIDs(items.Items), []string{vid(3), vid(2)}; !slices.Equal(got, want) {
+	if got, want := itemIDs(items.Items), []string{vid(2), vid(3)}; !slices.Equal(got, want) {
 		t.Errorf("after reorder and remove: %v, want %v", got, want)
 	}
 	var got Collection
 	e.do(asViewer(), "GET", "/api/collections/"+c.ID, nil, &got)
-	if got.Name != "Ramadan 1447" {
-		t.Errorf("renamed to %q", got.Name)
+	if got.Name != "Ramadan 1447" || !got.HandOrdered {
+		t.Errorf("renamed to %q (hand ordered %v)", got.Name, got.HandOrdered)
 	}
 	if code := e.do(asAdmin(), "PATCH", "/api/collections/"+c.ID, map[string]any{"name": "  "}, nil); code != http.StatusUnprocessableEntity {
 		t.Errorf("empty name: %d", code)

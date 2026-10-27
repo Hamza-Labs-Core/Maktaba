@@ -33,7 +33,10 @@ class TvApi(
 
     suspend fun recommendations(): Recommendations = get("/api/recommendations")
 
-    /** The newest first (the home's sorts are updated_at, created_at or title, never `-…`). */
+    /**
+     * The most recently added first; a search, by best match then the most recently added (the
+     * home's sorts are updated_at, created_at or title, never `-…`).
+     */
     suspend fun videos(library: String? = null, query: String? = null, cursor: String? = null): Page<TvVideo> =
         get("/api/videos", ApiClient.videoListQuery(library, query, cursor))
 

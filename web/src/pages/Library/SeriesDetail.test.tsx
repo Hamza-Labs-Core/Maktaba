@@ -61,7 +61,7 @@ const EPISODES = {
   ],
 };
 
-/** Serves the three series GETs for any id; values may be functions that throw or return promises. */
+/** Serves the three series GETs for any id (whatever their query); values may be functions that throw or return promises. */
 function serve(over: { header?: Answer; episodes?: Answer; missing?: Answer } = {}, id = "s1") {
   const table: Record<string, Answer> = {
     [`/api/series/${id}`]: over.header ?? HEADER,
@@ -70,8 +70,9 @@ function serve(over: { header?: Answer; episodes?: Answer; missing?: Answer } = 
   };
   const prev = get.getMockImplementation();
   get.mockImplementation((url: string) => {
-    if (url in table) {
-      const v = table[url];
+    const path = url.split("?")[0];
+    if (path in table) {
+      const v = table[path];
       try {
         return Promise.resolve(typeof v === "function" ? (v as (u: string) => unknown)(url) : v);
       } catch (e) {
@@ -344,14 +345,15 @@ describe("SeriesDetail (test-cases/series-detail.md)", () => {
     expect(screen.queryByText("No episodes in this series yet.")).toBeNull();
   });
 
-  it("SED-14: missing episodes show as ghost cells in order, incl. a gap-only season", async () => {
+  const gappy = () =>
     serve({
       episodes: {
         numbering: "season",
         seasons: [
           {
             season: 1,
-            episodes: [1, 2, 4].map((e) => ({
+            // the server's order
+            episodes: [4, 1, 2].map((e) => ({
               video_id: `e${e}`,
               episode: e,
               title: `Ep ${e}`,
@@ -363,13 +365,41 @@ describe("SeriesDetail (test-cases/series-detail.md)", () => {
       },
       missing: {
         gaps: [
-          { season: 1, episode: 3 },
           { season: 1, episode: 5 },
+          { season: 1, episode: 3 },
           { season: 4, episode: 1 },
         ],
       },
     });
+
+  it("lists the episodes newest-added first (the server's order), the ghost cells after them", async () => {
+    gappy();
     renderDetail();
+    await screen.findByText("Ep 1");
+    await waitFor(() => expect(seasonCells("Season 1")).toHaveLength(5));
+    expect(seasonCells("Season 1").map((li) => li.textContent)).toEqual([
+      "▤E04Ep 4",
+      "▤E01Ep 1",
+      "▤E02Ep 2",
+      "?E03Missing",
+      "?E05Missing",
+    ]);
+    expect(get).toHaveBeenCalledWith("/api/series/s1/episodes");
+    expect(screen.getByRole("combobox", { name: "Sort" })).toHaveValue("added");
+  });
+
+  it("Episode order asks the server for the lesson order and keeps the URL", async () => {
+    gappy();
+    renderDetail();
+    await screen.findByText("Ep 1");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Sort" }), "episode");
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/series/s1/episodes?sort=episode"));
+    expect(screen.getByRole("combobox", { name: "Sort" })).toHaveValue("episode");
+  });
+
+  it("SED-14: missing episodes show as ghost cells in order, incl. a gap-only season", async () => {
+    gappy();
+    renderDetail("/series/s1?sort=episode");
     await screen.findByText("Ep 1");
     await waitFor(() => expect(seasonCells("Season 1")).toHaveLength(5));
     expect(seasonCells("Season 1").map((li) => li.textContent)).toEqual([
@@ -411,12 +441,12 @@ describe("SeriesDetail (test-cases/series-detail.md)", () => {
       {},
     ].map((x, i) => ({ video_id: `e${i}`, title: `T${i}`, progress_pct: 0, ...x }));
     serve({ episodes: { numbering: "season", seasons: [{ season: 1, episodes: eps }] } });
-    renderDetail();
+    renderDetail("/series/s1?sort=episode");
     await screen.findByText("T0");
     const labels = Array.from(document.querySelectorAll(".mkt-episode__no")).map(
       (e) => e.textContent
     );
-    // ghost-free: the label without a number sorts last
+    // in episode order, ghost-free: the label without a number sorts last
     expect(labels).toEqual(["E00", "E01", "E12", "#12", ""]);
     expect(document.body.textContent).not.toMatch(/undefined|null/);
   });

@@ -6,12 +6,14 @@
 //   GET  /api/series/{id}/missing          -> { gaps:[{season,episode}], numbering }
 //   POST /api/series/{id}/enrichment/accept-all  (26.6 batch-accept)
 //
-// Each season renders an episode grid; gaps from /missing render as
-// ghost cells ("Episode N — missing"). A "Continue watching" button
-// targets the next unwatched/in-progress episode. Season 0 is a
-// "Specials" row. RTL-correct for Arabic.
+// Each season renders an episode grid, newest-added first as every list of
+// videos (the server's order), or in episode order with ?sort=episode; gaps
+// from /missing render as ghost cells ("Episode N — missing"), among the
+// episodes in episode order and after them otherwise. A "Continue watching"
+// button targets the next unwatched/in-progress episode in lesson order,
+// whatever the sort. Season 0 is a "Specials" row. RTL-correct for Arabic.
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
@@ -74,6 +76,9 @@ export function SeriesDetail() {
   const [accepting, setAccepting] = useState(false);
   const [reload, setReload] = useState(0);
   const [headerBroken, setHeaderBroken] = useState(false);
+  const [params, setParams] = useSearchParams();
+  // the person's pick; without one, the server's newest-added order
+  const byEpisode = params.get("sort") === "episode";
 
   useEffect(() => {
     if (!id) return;
@@ -89,7 +94,7 @@ export function SeriesDetail() {
       .then((h) => !cancelled && setHeader(h))
       .catch(() => !cancelled && setHeader(null));
     api
-      .get<EpisodesResponse>(`/api/series/${enc}/episodes`)
+      .get<EpisodesResponse>(`/api/series/${enc}/episodes${byEpisode ? "?sort=episode" : ""}`)
       .then((r) => {
         if (cancelled) return;
         const seasons = (Array.isArray(r?.seasons) ? r.seasons : [])
@@ -112,7 +117,7 @@ export function SeriesDetail() {
     return () => {
       cancelled = true;
     };
-  }, [id, t, reload]);
+  }, [id, t, reload, byEpisode]);
 
   // Index gaps by season so each season row can render its ghost cells.
   const gapsBySeason = useMemo(() => {
@@ -125,7 +130,8 @@ export function SeriesDetail() {
   }, [gaps]);
 
   // Seasons with episodes plus seasons that only have gaps, each as one
-  // list of cells in episode order (ghost cells sit among the real ones).
+  // list of cells: the episodes in the server's order, the ghost cells
+  // among them in episode order and after them otherwise.
   const seasons = useMemo(() => {
     if (!data) return [];
     const bySeason = new Map<number, Episode[]>();
@@ -134,14 +140,17 @@ export function SeriesDetail() {
     return [...bySeason.entries()]
       .sort(([a], [b]) => a - b)
       .map(([season, eps]) => {
+        const ghosts = (gapsBySeason.get(season) ?? [])
+          .map((no): Cell => ({ kind: "gap", no }))
+          .sort((a, b) => cellNo(a) - cellNo(b));
         const cells: Cell[] = [
           ...eps.filter((ep) => ep != null).map((ep): Cell => ({ kind: "ep", ep })),
-          ...(gapsBySeason.get(season) ?? []).map((no): Cell => ({ kind: "gap", no })),
+          ...ghosts,
         ];
-        cells.sort((a, b) => cellNo(a) - cellNo(b));
+        if (byEpisode) cells.sort((a, b) => cellNo(a) - cellNo(b));
         return { season, cells };
       });
-  }, [data, gapsBySeason]);
+  }, [data, gapsBySeason, byEpisode]);
 
   async function acceptAll() {
     if (!id || accepting) return;
@@ -214,6 +223,27 @@ export function SeriesDetail() {
                 ▶ {t("series.continue")}
               </Link>
             )}
+            <label className="mkt-field">
+              <span className="mkt-field__label">{t("library.sort")}</span>
+              <select
+                value={byEpisode ? "episode" : "added"}
+                onChange={(e) =>
+                  setParams(
+                    (p) => {
+                      const next = new URLSearchParams(p);
+                      if (e.target.value === "episode") next.set("sort", "episode");
+                      else next.delete("sort");
+                      return next;
+                    },
+                    { replace: true }
+                  )
+                }
+                aria-label={t("library.sort")}
+              >
+                <option value="added">{t("library.sort.added")}</option>
+                <option value="episode">{t("series.sort.episode")}</option>
+              </select>
+            </label>
             {/* Accepting matches is an editor (admin) write; the server refuses others. */}
             {user?.is_admin && (
               <Button variant="secondary" onClick={acceptAll} loading={accepting}>

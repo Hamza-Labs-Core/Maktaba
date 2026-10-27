@@ -106,13 +106,21 @@ class ApiClientTest {
 
     @Test
     fun theVideoListAsksNewestFirstWithASortTheHomeAccepts() {
-        val q = ApiClient.videoListQuery("lib1", "quran", "c2")
-        assertEquals("created_at", q["sort"])
-        assertEquals(mapOf("limit" to "60", "sort" to "created_at", "library" to "lib1", "q" to "quran", "cursor" to "c2"), q)
+        val q = ApiClient.videoListQuery("lib1", null, "c2")
+        assertEquals(mapOf("limit" to "60", "sort" to "created_at", "library" to "lib1", "cursor" to "c2"), q)
         assertEquals(mapOf("limit" to "60", "sort" to "created_at"), ApiClient.videoListQuery(null, "", null))
         val r = client(MemoryTokens()).request("GET", "/api/videos", q)
         assertEquals("created_at", r.url.queryParameter("sort"))
         assertEquals("native", r.header("X-Maktaba-Client"))
+    }
+
+    @Test
+    fun aSearchSendsNoSortSoTheHomeRanksIt() {
+        // best match, then the most recently added: the home's order for a search
+        assertEquals(
+            mapOf("limit" to "60", "q" to "quran", "library" to "lib1", "cursor" to "c2"),
+            ApiClient.videoListQuery("lib1", "quran", "c2"),
+        )
     }
 
     @Test

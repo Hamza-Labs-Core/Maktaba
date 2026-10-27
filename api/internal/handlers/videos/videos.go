@@ -75,6 +75,8 @@ type Video struct {
 	Plays       *int64     `json:"plays,omitempty"`
 	// List only (Epic 45 Phase 2): set when the caller marked it a favorite.
 	Favorite *bool `json:"favorite,omitempty"`
+	// rank is its relevanceRank under sort=relevance (never sent).
+	rank int
 
 	// Display titles (Story 27.11, slot 0122): the short on-air title the
 	// guide and the channel strip show. DisplayTitle is the effective one
@@ -206,9 +208,10 @@ func (h *Handler) Mount(r chi.Router) {
 // List implements AC-1. Filters: library, language, q, year (the mtime's
 // year), watched (the caller's playback state), series, tag, speaker,
 // favorite (the caller's; on /api/me/videos, the home), letter (the jump
-// bar), duration, added and resolution (bands.go), sort (or random: one
-// page), order, limit and cursor (`next` of the previous page). Each item carries the caller's playback state and, where
-// the user tables are, favorite.
+// bar), duration, added and resolution (bands.go), sort (created_at, newest
+// added first, when none is given; relevance with q; random: one page),
+// order, limit and cursor (`next` of the previous page). Each item carries
+// the caller's playback state and, where the user tables are, favorite.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
@@ -228,9 +231,19 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if limit > 200 {
 		limit = 200
 	}
+	qstr := strings.TrimSpace(q.Get("q"))
 	sort := q.Get("sort")
 	if sort == "" {
-		sort = "updated_at"
+		// Every app's lists open newest-added first unless the person
+		// picked a sort (DefaultSort); a search, best match first.
+		sort = DefaultSort
+		if qstr != "" {
+			sort = sortRelevance
+		}
+	}
+	if sort == sortRelevance && qstr == "" {
+		httperror.Write(w, r, httperror.InvalidQuery("sort=relevance needs q"))
+		return
 	}
 	// sort=random (Shuffle, Epic 45 story 45.13) is one page in a random
 	// order: no cursor, no next page.
@@ -239,7 +252,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.InvalidQuery("sort=random has no cursor"))
 		return
 	}
-	if _, ok := listSorts[sort]; !ok && !random {
+	if _, ok := listSorts[sort]; !ok && !random && sort != sortRelevance {
 		httperror.Write(w, r, &httperror.Error{
 			Type:   "https://maktaba.dev/problems/invalid-sort",
 			Title:  "invalid sort",
@@ -252,6 +265,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		httperror.Write(w, r, httperror.InvalidQuery("order must be asc or desc"))
 		return
+	}
+	if sort == sortRelevance {
+		order = "desc" // best match first, whatever order says
 	}
 
 	var args []any
@@ -269,10 +285,12 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		conds = append(conds, placeholder("detected_language = ", len(args)+1))
 		args = append(args, lang)
 	}
-	if qstr := strings.TrimSpace(q.Get("q")); qstr != "" {
+	qArg := "" // the placeholder of q's pattern
+	if qstr != "" {
 		// Cheap LIKE search — Story 7.8 owns the real FTS path.
 		conds = append(conds, placeholder("(title LIKE ", len(args)+1)+" OR description LIKE "+pidx(len(args)+1)+")")
 		args = append(args, "%"+qstr+"%")
+		qArg = pidx(len(args))
 	}
 	if ys := q.Get("year"); ys != "" {
 		year, err := strconv.Atoi(ys)
@@ -410,6 +428,15 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	// plays of these videos only
 	scope := append([]string(nil), conds...)
 
+	// sort=relevance's rank (relevanceRank); its prefix argument comes after
+	// the filters' so the statements that read only the filters (the letters,
+	// the plays) are not handed an argument they do not use
+	rank := ""
+	if sort == sortRelevance {
+		args = append(args, qstr+"%")
+		rank = relevanceRank(pidx(len(args)), qArg)
+	}
+
 	var cur *listCursor
 	if !random {
 		var cerr *httperror.Error
@@ -420,7 +447,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if cur != nil {
-		frag, cargs, werr := cur.where(sort, order, len(args)+1)
+		frag, cargs, werr := cur.where(sort, order, rank, len(args)+1)
 		if werr != nil {
 			httperror.Write(w, r, werr)
 			return
@@ -448,6 +475,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		from += " LEFT JOIN (SELECT ws.video_id, COUNT(*) AS plays FROM watch_sessions ws" + scoped +
 			" GROUP BY ws.video_id) wp ON wp.video_id = videos.id"
 	}
+	withRank := sort == sortRelevance
+	if withRank {
+		cols += ", " + rank // the next page's cursor carries it
+	}
 	// the caller's marks, read in the same statement (GraphQL's videos page
 	// counts its statements: no N+1)
 	mine, withMine := mineColumns(p.UserID, userTables, &args)
@@ -455,7 +486,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	args = append(args, limit+1) // SELECT limit+1 to detect another page.
 	ob := "random()"
 	if !random {
-		ob = orderBy(sort, order)
+		ob = orderBy(sort, order, rank)
 	}
 	query := "SELECT " + cols + from + where + " ORDER BY " + ob + " LIMIT " + pidx(len(args))
 
@@ -467,7 +498,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	items := []Video{}
 	for rows.Next() {
-		v, err := scanListRow(rows, withPlays, withMine)
+		v, err := scanListRow(rows, withPlays, withRank, withMine)
 		if err != nil {
 			httperror.Write(w, r, httperror.Internal("scan video: "+err.Error()))
 			return
@@ -995,7 +1026,7 @@ func scanVideoRow(rs rowScanner) (Video, error) {
 
 // scanListRow scans a List row: the video columns, mtime, under sort=plays
 // the play count and, for a user, their marks (mineColumns).
-func scanListRow(rs rowScanner, withPlays, withMine bool) (Video, error) {
+func scanListRow(rs rowScanner, withPlays, withRank, withMine bool) (Video, error) {
 	var v Video
 	var meta []byte
 	var mtime nullTime
@@ -1008,6 +1039,9 @@ func scanListRow(rs rowScanner, withPlays, withMine bool) (Video, error) {
 	var plays int64
 	if withPlays {
 		dest = append(dest, &plays)
+	}
+	if withRank {
+		dest = append(dest, &v.rank)
 	}
 	var m mineRow
 	if withMine {

@@ -47,7 +47,8 @@ function serve(mine: unknown = MINE) {
     if (url === "/api/videos/v2") return Promise.resolve(VIDEO);
     if (url === "/api/me/videos/v2")
       return mine instanceof Error ? Promise.reject(mine) : Promise.resolve(mine);
-    if (url === "/api/series/s1/episodes") return Promise.resolve(EPISODES);
+    // the lesson order (the series page lists newest-added first)
+    if (url === "/api/series/s1/episodes?sort=episode") return Promise.resolve(EPISODES);
     if (url === "/api/me/playlists") return Promise.resolve({ items: [] });
     return Promise.resolve({ items: [] });
   });

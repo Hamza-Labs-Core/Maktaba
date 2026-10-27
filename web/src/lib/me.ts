@@ -7,7 +7,7 @@
 //   POST /api/me/playlists/{id}/items, DELETE …/items/{video_id},
 //   PUT /api/me/playlists/{id}/order
 //   GET /api/videos/facets?library=               -> Facets
-//   GET /api/series/{id}/episodes                 -> the series' lessons, in order
+//   GET /api/series/{id}/episodes?sort=episode    -> the series' lessons, in order
 //
 // The server takes at most 500 videos a call; a bigger selection is sent in
 // chunks. Every reader is defensive: a missing list is an empty one.
@@ -243,7 +243,11 @@ export interface Lesson {
 
 /** A series' lessons in order (its seasons one after the other). */
 export async function fetchLessons(seriesId: string): Promise<Lesson[]> {
-  const r = obj(await api.get<unknown>(`/api/series/${encodeURIComponent(seriesId)}/episodes`));
+  // the lesson order (the page itself lists newest-added first): Previous,
+  // Next and Up next follow the lessons
+  const r = obj(
+    await api.get<unknown>(`/api/series/${encodeURIComponent(seriesId)}/episodes?sort=episode`)
+  );
   const out: Lesson[] = [];
   for (const s of list<unknown>(r.seasons)) {
     for (const e of list<unknown>(obj(s).episodes)) {
