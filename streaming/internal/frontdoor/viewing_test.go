@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -11,6 +12,20 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/placement"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/viewing"
 )
+
+// appViewers waits for ch's app viewers to be want and returns them: a segment's
+// viewing is recorded as its handler returns (segmentServed is deferred), which a
+// client that has read the whole segment may see a moment later.
+func appViewers(vt *viewing.Tracker, ch uuid.UUID, want int) int {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		n := vt.AppViewers()[ch]
+		if n == want || time.Now().After(deadline) {
+			return n
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
 
 // Epic 44 story 44.4: a segment served (proxied, or redirected to its node) opens
 // and moves its viewer's viewing; a playlist (the web player prefetches its
@@ -50,7 +65,7 @@ func TestSegmentsMakeViewings(t *testing.T) {
 				t.Fatalf("%s segment: %d", mode, code)
 			}
 		}
-		if n := vt.AppViewers()[ch]; n != 1 {
+		if n := appViewers(vt, ch, 1); n != 1 {
 			t.Fatalf("%s: viewers %d, want 1 (one person, one app)", mode, n)
 		}
 		g.fd.Tracker.AttachTS(ch) // a tuner on the same channel
@@ -95,7 +110,7 @@ func TestSlotSegmentsMakeViewings(t *testing.T) {
 	if code, _ := g.get(t, "/stream/channel/"+g.ch.String()+"/"+uri); code != 200 {
 		t.Fatalf("segment %s: %d", uri, code)
 	}
-	if n := vt.AppViewers()[g.ch]; n != 1 {
+	if n := appViewers(vt, g.ch, 1); n != 1 {
 		t.Fatalf("viewers %d, want 1", n)
 	}
 	if code, _ := g.get(t, "/stream/channel/"+g.ch.String()+"/s/blue/seg-1.ts.x"); code == 200 {
