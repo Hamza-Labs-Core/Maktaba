@@ -10,11 +10,11 @@
 import { useState } from "react";
 import { Tooltip } from "@ds/components/Tooltip/Tooltip";
 import { useToast } from "@ds/components/Toast/Toast";
-import { ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import type { LibraryRef } from "../lib/browse";
 import { MAX_PINS, togglePin, usePins } from "../lib/pins";
+import { errorText } from "../lib/errorText";
 
 export function PinIcon({ filled }: { filled: boolean }) {
   return (
@@ -68,9 +68,7 @@ export function PinToggle({ lib, className }: { lib: LibraryRef; className?: str
     } catch (e) {
       toast.show({
         tone: "error",
-        message: `${t("libraries.pin.error")}: ${
-          e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
-        }`,
+        message: `${t("libraries.pin.error")}: ${errorText(e, t)}`,
       });
     } finally {
       setBusy(false);

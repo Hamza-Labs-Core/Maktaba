@@ -3,7 +3,6 @@
 // now, one per pinned library. GET /api/home and GET /api/channels/now, the
 // same reads as the desk Home; empty rows are hidden.
 import { useEffect, useState } from "react";
-import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { fetchHome, watchedFraction, type HomeResponse, type VideoCard } from "../../lib/browse";
 import { channelsApi, type NowEntry } from "../../lib/channels";
@@ -22,6 +21,7 @@ import {
   posterOf,
 } from "../ui";
 import { ChannelTile } from "./Live";
+import { errorText } from "../../lib/errorText";
 
 export function BigHome() {
   const { t } = useI18n();
@@ -36,9 +36,7 @@ export function BigHome() {
     setErr(null);
     fetchHome()
       .then((h) => !cancelled && setHome(h))
-      .catch(
-        (e) => !cancelled && setErr(e instanceof ApiError ? e.problem.title : t("common.error"))
-      );
+      .catch((e) => !cancelled && setErr(errorText(e, t)));
     channelsApi
       .now()
       .then((r) => {

@@ -66,8 +66,11 @@ export function retryAfterSeconds(value: string | null | undefined): number | un
 // troubleshooting (and the diagnostics export) has a client-side trail.
 // Kept to console.error with a stable "[api]" prefix so it is greppable
 // in a captured console log.
+// The path is logged without its query: a search's words, a pairing code or a
+// token in a link stay out of the console (and any log it is copied into).
 function logApiError(method: string, path: string, status: number, detail: string): void {
-  console.error(`[api] ${method} ${path} failed (${status}): ${detail}`);
+  const where = path.split("?")[0];
+  console.error(`[api] ${method} ${where} failed (${status}): ${detail}`);
 }
 
 // Epic 35 (story 35.10): a node answers 503 {code: "paused"} when its code

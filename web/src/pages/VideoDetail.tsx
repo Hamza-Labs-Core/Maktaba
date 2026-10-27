@@ -22,6 +22,7 @@ import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { api, ApiError } from "../lib/api";
 import { subscribe } from "../lib/ws";
 import { useI18n } from "../lib/i18n";
+import { LoadError } from "../components/LoadError";
 import { MediaContextCard } from "../components/MediaContextCard";
 import { EnrichmentPanel } from "../components/EnrichmentPanel";
 import { useAuth } from "../lib/auth";
@@ -124,7 +125,7 @@ export function VideoDetail() {
   // another video, the old one is never shown under the new id.
   const [loaded, setLoaded] = useState<{ id: string; video: Video } | null>(null);
   const video = loaded && loaded.id === videoId ? loaded.video : null;
-  const [err, setErr] = useState<{ message: string; status?: number } | null>(null);
+  const [err, setErr] = useState<unknown>(null);
   const [reload, setReload] = useState(0);
   // The open tab lives in ?tab= so "Find metadata" (?tab=enrichment) and
   // deep links open the right one.
@@ -154,11 +155,7 @@ export function VideoDetail() {
       .then((v) => !cancelled && setLoaded({ id: videoId, video: v }))
       .catch((e) => {
         if (cancelled) return;
-        setErr(
-          e instanceof ApiError
-            ? { message: e.problem.title, status: e.status }
-            : { message: t("common.error") }
-        );
+        setErr(e);
       });
     return () => {
       cancelled = true;
@@ -173,14 +170,15 @@ export function VideoDetail() {
     setParams(next, { replace: true, state: keepFirst(location) });
   }
 
-  if (err) {
-    // Only a 404 / 403 means "not found"; anything else is a failure to retry.
-    if (err.status === 404 || err.status === 403) {
+  if (err != null) {
+    // Only a 404 / 403 means "not found" (a 403 does not say the video exists);
+    // anything else is a failure to retry.
+    if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
       return (
         <ErrorState
           kind="not_found"
           title={t("video.notFound")}
-          description={err.message}
+          description={t("error.kind.notFound")}
           action={
             <Link to="/library" className="mkt-btn mkt-btn--secondary">
               {t("nav.library")}
@@ -189,14 +187,7 @@ export function VideoDetail() {
         />
       );
     }
-    return (
-      <ErrorState
-        kind="server"
-        title={t("common.error")}
-        description={err.message}
-        action={<Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>}
-      />
-    );
+    return <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />;
   }
   if (!video || !videoId) return <p className="mkt-loading">{t("common.loading")}</p>;
 
@@ -479,20 +470,22 @@ function StatsTab({ videoId }: { videoId: string }) {
   const { t } = useI18n();
   const { user } = useAuth();
   const [stats, setStats] = useState<VideoStats | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let alive = true;
+    setErr(null);
     analyticsApi
       .videoStats(videoId)
       .then((s) => alive && setStats(s))
-      .catch((e) => alive && setErr(e instanceof ApiError ? e.message : String(e)));
+      .catch((e: unknown) => alive && setErr(e));
     return () => {
       alive = false;
     };
-  }, [videoId]);
+  }, [videoId, reload]);
 
-  if (err) return <ErrorState kind="server" title={t("common.error")} description={err} />;
+  if (err != null) return <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />;
   if (!stats) return <p className="mkt-loading">{t("common.loading")}</p>;
 
   return (

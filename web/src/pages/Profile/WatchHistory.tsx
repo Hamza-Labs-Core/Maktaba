@@ -17,7 +17,6 @@ import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
-import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import {
   analyticsApi,
@@ -28,6 +27,7 @@ import {
 } from "../../lib/analytics";
 import { TitleRow } from "../../help/HelpLink";
 import { VideoPoster } from "../../components/VideoViews";
+import { inputDetail } from "../../lib/errorText";
 
 export const HISTORY_PAGE = 50;
 export const ACTIVITY_PAGE = 50;
@@ -73,7 +73,7 @@ export function WatchHistory() {
 }
 
 function errText(e: unknown, fallback: string): string {
-  return e instanceof ApiError ? e.problem.detail || e.problem.title : fallback;
+  return inputDetail(e) ?? fallback;
 }
 
 function HistoryList() {

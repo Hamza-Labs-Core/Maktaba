@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { screen } from "@testing-library/react";
+import en from "../i18n/en.json";
 import userEvent from "@testing-library/user-event";
 import { renderPage, memberUser, quietCrash } from "./pageHarness";
 
@@ -21,7 +22,9 @@ describe("pageHarness", () => {
     quietCrash();
     broken = true;
     renderPage(<Page />, { path: "/x", user: memberUser });
-    expect(screen.getByRole("alert")).toHaveTextContent("boom");
+    expect(screen.getByRole("alert")).toHaveTextContent(en["common.pageError"]);
+    // the thrown message stays in the console
+    expect(screen.getByRole("alert")).not.toHaveTextContent("boom");
     const user = userEvent.setup();
     await user.click(screen.getByRole("link", { name: "go elsewhere" }));
     expect(screen.getByText("elsewhere")).toBeInTheDocument();

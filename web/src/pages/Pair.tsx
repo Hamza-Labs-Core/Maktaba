@@ -20,6 +20,7 @@ import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { bidiIsolate, useI18n } from "../lib/i18n";
 import { TitleRow } from "../help/HelpLink";
+import { inputDetail } from "../lib/errorText";
 
 // Crockford base-32: digits and A-Z without I, L, O, U.
 const CODE_RE = /^[0-9A-HJKMNP-TV-Z]{8}$/;
@@ -56,7 +57,7 @@ const PLATFORMS: Record<string, string> = {
 type Outcome = "approved" | "used" | "invalid" | "notHeld" | { error: string } | null;
 
 function problemText(err: unknown, fallback: string): string {
-  return err instanceof ApiError ? err.problem.detail || err.problem.title : fallback;
+  return inputDetail(err, { refusals: true }) ?? fallback;
 }
 
 export function Pair() {

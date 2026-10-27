@@ -322,24 +322,23 @@ const named = (links: ReadonlyArray<readonly [string, string]>, cat: Record<stri
 describe("AppShell (test-cases/app-shell.md)", () => {
   it("SHL-02: an unknown route shows NotFound inside the shell", async () => {
     renderShell(["/does-not-exist/42"]);
-    expect(await screen.findByRole("heading", { name: "404" })).toBeInTheDocument();
-    expect(screen.getByText("This route doesn't exist.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: en["notFound.title"] })).toBeInTheDocument();
+    expect(screen.getByText(en["notFound.desc"])).toBeInTheDocument();
     expect(screen.getByRole("banner")).toBeInTheDocument();
     expect(sidebar()).toBeInTheDocument();
-    const back = screen.getByRole("link", { name: "Back to library" });
-    expect(back).toHaveAttribute("href", "/library");
-    await userEvent.setup().click(back);
+    const home = screen.getByRole("link", { name: en["error.goHome"] });
+    expect(home).toHaveAttribute("href", "/");
+    await userEvent.setup().click(home);
+    // the test shell's / goes on to /library
     expect(await screen.findByRole("heading", { name: "page /library" })).toBeInTheDocument();
   });
 
-  // Bug: NotFound.tsx has hardcoded English. Fix needs new i18n keys
-  // (e.g. notFound.text / notFound.back) in i18n/en.json + ar.json.
-  it.fails("SHL-02: NotFound is translated in Arabic", async () => {
+  it("SHL-02: NotFound is translated in Arabic", async () => {
     localStorage.setItem("mkt:locale", "ar");
     renderShell(["/does-not-exist"]);
-    await screen.findByRole("heading", { name: "404" });
-    expect(screen.queryByText("This route doesn't exist.")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Back to library" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: ar["notFound.title"] })).toBeInTheDocument();
+    expect(screen.getByText(ar["notFound.desc"])).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: ar["error.goHome"] })).toBeInTheDocument();
   });
 
   it("SHL-03: an unknown route while signed out goes to /login, then the 404", async () => {
@@ -350,7 +349,7 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     expect(where()).toHaveTextContent(/^\/login$/);
     expect(screen.getByTestId("from")).toHaveTextContent("/does-not-exist");
     await user.type(screen.getByLabelText(en["login.password"]), "secret{Enter}");
-    expect(await screen.findByRole("heading", { name: "404" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: en["notFound.title"] })).toBeInTheDocument();
   });
 
   it.each([["/library"], ["/videos/42"], ["/admin/users"], ["/more"]])(

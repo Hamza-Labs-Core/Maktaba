@@ -107,7 +107,10 @@ describe("LibraryBrowser Scan now", () => {
     );
     renderLib();
     fireEvent.click(await screen.findByRole("button", { name: en["library.scanNow"] }));
-    expect(await screen.findByText(`${en["library.scan.error"]}: no queue`)).toBeInTheDocument();
+    expect(
+      await screen.findByText(`${en["library.scan.error"]}: ${en["error.kind.server"]}`)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/no queue/)).toBeNull();
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
 });

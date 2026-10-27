@@ -6,12 +6,13 @@
 // so Back from a result returns to it.
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
-import { api, ApiError } from "../../lib/api";
+import { api } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { renderSnippet, type SearchResponse } from "../../pages/searchShared";
 import { bigPath, useBigNav } from "../nav";
 import { Empty, Failed, Screen, VideoTile, clock } from "../ui";
 import { LAYOUTS, applyKey, searchable, type KeyEdit, type KeyboardLayout } from "./keyboard";
+import { errorText } from "../../lib/errorText";
 
 export const SEARCH_DELAY_MS = 600;
 
@@ -55,7 +56,7 @@ export function BigSearch() {
         })
         .catch((e) => {
           if (s !== seq.current) return;
-          setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+          setErr(errorText(e, t));
         })
         .finally(() => s === seq.current && setPending(false));
     }, SEARCH_DELAY_MS);

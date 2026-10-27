@@ -11,7 +11,6 @@ import { Button } from "@ds/components/Button/Button";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useI18n } from "../../lib/i18n";
-import { ApiError } from "../../lib/api";
 import {
   forgetDevice,
   hasDeviceData,
@@ -20,6 +19,7 @@ import {
   telemetryEnabled,
 } from "../../lib/telemetry/client";
 import { TelemetryScope } from "../../components/TelemetryPrompt";
+import { errorText } from "../../lib/errorText";
 
 export function TelemetrySettings({ server }: { server?: ReactNode }) {
   const { t } = useI18n();
@@ -41,7 +41,7 @@ export function TelemetrySettings({ server }: { server?: ReactNode }) {
       await forgetDevice();
       toast.show({ tone: "success", message: t("telemetry.forgotten") });
     } catch (e) {
-      toast.show({ tone: "error", message: e instanceof ApiError ? e.message : t("common.error") });
+      toast.show({ tone: "error", message: errorText(e, t) });
     } finally {
       setBusy(false);
       setCanForget(hasDeviceData());

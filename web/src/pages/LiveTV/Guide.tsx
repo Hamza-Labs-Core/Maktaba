@@ -19,7 +19,7 @@ import { Card } from "@ds/components/Card/Card";
 import { Modal } from "@ds/components/Modal/Modal";
 import { Badge } from "@ds/components/Badge/Badge";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
-import { ErrorState } from "@ds/components/ErrorState/ErrorState";
+import { LoadError } from "../../components/LoadError";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useI18n } from "../../lib/i18n";
 import { useOptionalAuth } from "../../lib/auth";
@@ -84,7 +84,7 @@ export function Guide() {
   // only admins can create channels: the empty-state CTA is theirs
   const isAdmin = useOptionalAuth()?.user?.is_admin === true;
   const [guide, setGuide] = useState<GuideResponse | null>(null);
-  const [err, setErr] = useState(false);
+  const [err, setErr] = useState<unknown>(null);
   const [category, setCategory] = useState("");
   const [compact, setCompact] = useState(() =>
     // `?? false`: without matchMedia this was undefined and the toggle lost aria-pressed
@@ -108,9 +108,9 @@ export function Guide() {
         const srv = Date.parse(g.server_time);
         if (!Number.isNaN(srv)) offsetRef.current = srv - Date.now();
         setGuide(g);
-        setErr(false);
+        setErr(null);
       })
-      .catch(() => setErr(true));
+      .catch((e: unknown) => setErr(e));
   }, [category]);
 
   useEffect(() => {
@@ -160,10 +160,10 @@ export function Guide() {
     }
   }
 
-  if (err && !guide) {
+  if (err != null && !guide) {
     return (
       <section className="mkt-page">
-        <ErrorState kind="server" title={t("common.error")} description={t("guide.loadError")} />
+        <LoadError error={err} title={t("guide.loadError")} onRetry={load} />
       </section>
     );
   }
