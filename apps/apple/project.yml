@@ -214,6 +214,8 @@ targets:
     platform: tvOS
     sources:
       - path: ../tv/tvos/MaktabaTVUITests
+      # the mock home the iPhone's connect tests use (no real home, no real account)
+      - path: UITests/MockHome.swift
     dependencies:
       - target: Maktaba TV
     settings:

@@ -34,6 +34,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode">
 
             <!-- CATEGORY_LEANBACK_LAUNCHER is what places the app on the
@@ -41,6 +42,14 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <!-- A home's connect link (maktaba://connect?…, Epic 42): the app asks before it
+                 connects (AppSession.openLink). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="maktaba" android:host="connect" />
             </intent-filter>
         </activity>
     </application>

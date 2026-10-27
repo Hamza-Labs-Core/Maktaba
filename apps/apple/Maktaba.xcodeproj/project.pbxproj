@@ -46,12 +46,14 @@
 		7C874EA6DC3BEA7710430857 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 		7DFA2B5C4FAFA9F7ED3A279A /* KeychainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A77E2E5208591C8EF02AE1D /* KeychainTests.swift */; };
 		80E256576FD19547D635B132 /* RemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7C782FE57543EEFC505FBD /* RemoteApp.swift */; };
+		85E5B2FC99B75D16A052750C /* MockHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD93EAD5692107A496A1FDD3 /* MockHome.swift */; };
 		9029E7DCCA4E29D0826D9786 /* RemoteRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5BE31D685ECEDF892595AD /* RemoteRoot.swift */; };
 		995B345BB6121E2D68015188 /* RemoteModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FE31850DAA6C8094E0C331 /* RemoteModel.swift */; };
 		9D69FC4E72A41D2D33139B3D /* AttentionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A0D10E805B91C6DF487118 /* AttentionView.swift */; };
 		A2238941ECE21FBB30DE48CA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 		A382431DD2D7A1BB74017B3F /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */; };
 		A5753F2E48C3030B374C0BCB /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
+		A60FE7308932BEE8359595FF /* TVConnectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2921E190B765E8F2F9A3C332 /* TVConnectUITests.swift */; };
 		B5B5B81C34A046D316FB37C4 /* ConnectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */; };
 		BC05734168F2524810868806 /* Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6629068B08CFDCF4BEA7DB9 /* Playback.swift */; };
 		C16C4AC8969FD4372611DCFB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
@@ -115,6 +117,7 @@
 		1AB8DED5864DCE439AEB8ADA /* Info-iPhone.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPhone.plist"; sourceTree = "<group>"; };
 		26B8917AAB897DEB44B6AF68 /* MaktabaTVApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaktabaTVApp.swift; sourceTree = "<group>"; };
 		26FE31850DAA6C8094E0C331 /* RemoteModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModel.swift; sourceTree = "<group>"; };
+		2921E190B765E8F2F9A3C332 /* TVConnectUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVConnectUITests.swift; sourceTree = "<group>"; };
 		2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectUITests.swift; sourceTree = "<group>"; };
 		30EA3603E36B3BB4C0350807 /* PlayerSurfaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSurfaceTests.swift; sourceTree = "<group>"; };
 		31F751DD280EC1E10E13F594 /* MachinesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachinesView.swift; sourceTree = "<group>"; };
@@ -260,6 +263,7 @@
 			children = (
 				87F4B5ABCCB67B2EADC26918 /* MaktabaTVUITests.swift */,
 				D5A393205A7EEE149BDDD305 /* PermissionsUITests.swift */,
+				2921E190B765E8F2F9A3C332 /* TVConnectUITests.swift */,
 			);
 			path = MaktabaTVUITests;
 			sourceTree = "<group>";
@@ -840,7 +844,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				C733528FB55DB086C905C807 /* MaktabaTVUITests.swift in Sources */,
+				85E5B2FC99B75D16A052750C /* MockHome.swift in Sources */,
 				090BCDAE9625A4DF362699A5 /* PermissionsUITests.swift in Sources */,
+				A60FE7308932BEE8359595FF /* TVConnectUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

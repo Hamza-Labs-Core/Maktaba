@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.tv
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,6 +18,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as MaktabaTVApp
+        // a home's maktaba://connect link: offered, never followed before the person says so
+        if (savedInstanceState == null) app.session.openLink(intent?.dataString)
         setContent {
             MaktabaTvTheme {
                 Surface(
@@ -28,5 +31,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        (application as MaktabaTVApp).session.openLink(intent.dataString)
     }
 }

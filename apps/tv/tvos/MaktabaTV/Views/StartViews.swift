@@ -1,100 +1,181 @@
-import CoreImage.CIFilterBuiltins
 import MaktabaKit
 import SwiftUI
 import UIKit
 
-/// The homes on this network (they announce themselves), the ones this TV knows, and one
-/// by its address as the fallback.
+// Epic 42 story 42.10: the home picker and sign-in by code on Apple TV, on MaktabaKit's
+// session (homes known by their exact address, tokens bound to it, a link asked about
+// first) and words (`ConnectStrings`, `TVConnectStrings`). Everything is reached with the
+// remote: rows are focusable buttons, a row's other actions are under a long press.
+
+/// The homes this TV knows (Recent homes: rename, remove), the ones announcing themselves on
+/// this network (Bonjour `_maktaba._tcp`, `role=home` only, one per home id), and one by its
+/// address or a pasted `maktaba://connect` link, asked whether it is a Maktaba home first.
 struct TVHomePicker: View {
-    let session: AppSession
+    @Bindable var session: AppSession
     @State private var browser = HomeBrowser()
     @State private var address = ""
     @State private var problem: String?
+    @State private var renaming: Home?
+    @State private var newName = ""
+    private let words = ConnectStrings.forPreferredLanguages()
+    private let tv = TVConnectStrings.forPreferredLanguages()
 
     var body: some View {
         ZStack {
             LibraryBackdrop()
             ScrollView {
-                VStack(alignment: .leading, spacing: 40) {
+                VStack(alignment: .leading, spacing: 44) {
                     VStack(alignment: .leading, spacing: 8) {
-                        SectionTitle("Maktaba", size: 64)
-                        Text("Choose your home")
+                        SectionTitle(tv.text(.brand), size: 64)
+                        Text(tv.text(.chooseHome))
                             .font(Theme.body(32))
                             .foregroundStyle(Theme.muted)
                     }
-                    VStack(alignment: .leading, spacing: 20) {
-                        Text("On this network")
-                            .font(Theme.body(29, weight: .semibold))
-                            .foregroundStyle(Theme.goldText)
-                        if browser.found.isEmpty {
-                            HStack(spacing: 16) {
-                                ProgressView()
-                                Text("Looking for homes…").foregroundStyle(Theme.muted)
-                            }
-                        }
-                        ForEach(browser.found) { home in
-                            HomeRow(name: home.name, address: home.url.host() ?? "", systemImage: "wifi") {
-                                session.use(Home(url: home.url, name: home.name))
-                            }
-                        }
+                    if let link = session.pendingLink {
+                        TVLinkPrompt(session: session, link: link, words: words)
                     }
-                    let others = session.homes.filter { h in !browser.found.contains { $0.url == h.url } }
-                    if !others.isEmpty {
-                        VStack(alignment: .leading, spacing: 20) {
-                            Text("Your homes")
-                                .font(Theme.body(29, weight: .semibold))
-                                .foregroundStyle(Theme.goldText)
-                            ForEach(others) { home in
-                                HomeRow(name: home.name, address: home.url.host() ?? "", systemImage: "house") {
-                                    session.use(home)
-                                }
-                                .contextMenu {
-                                    Button("Forget", systemImage: "trash", role: .destructive) { session.forget(home) }
-                                }
-                            }
+                    if session.connecting {
+                        HStack(spacing: 16) {
+                            ProgressView()
+                            Text(words.text(.connecting)).foregroundStyle(Theme.muted)
                         }
+                        .accessibilityIdentifier("picker.connecting")
                     }
-                    VStack(alignment: .leading, spacing: 20) {
-                        Text("Another home")
-                            .font(Theme.body(29, weight: .semibold))
-                            .foregroundStyle(Theme.goldText)
-                        HStack(spacing: 24) {
-                            TextField("Address, like 192.168.1.20:8088", text: $address)
-                                .keyboardType(.URL)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                                .onSubmit(add)
-                                .frame(maxWidth: 900)
-                            Button("Connect", action: add)
-                                .buttonStyle(.gold)
-                                .disabled(address.isEmpty)
-                        }
-                        if let problem {
-                            Text(problem).foregroundStyle(.red)
-                        }
+                    if let shown = problem ?? session.connectProblem.map(words.reach) {
+                        Label(shown, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("picker.problem")
                     }
+                    recent
+                    nearby
+                    byAddress
                 }
+                .disabled(session.connecting)
                 .readingPanel(padding: 48)
                 .frame(maxWidth: 1300)
                 .padding(.vertical, 80)
                 .frame(maxWidth: .infinity)
             }
         }
+        .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
         .onAppear { browser.start() }
         .onDisappear { browser.stop() }
+        .alert(words.text(.renameTitle), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField(tv.text(.renamed), text: $newName)
+            Button(words.text(.save)) {
+                if let renaming { session.rename(renaming, to: newName) }
+                renaming = nil
+            }
+            Button(words.text(.cancel), role: .cancel) { renaming = nil }
+        } message: {
+            Text(words.text(.renameHint))
+        }
     }
 
-    private func add() {
-        guard let url = Home.normalize(address) else {
-            problem = "That is not a home's address."
-            return
+    // MARK: sections
+
+    @ViewBuilder private var recent: some View {
+        if !session.homes.isEmpty {
+            TVSection(words.text(.recentHomes), footer: tv.text(.holdHint)) {
+                ForEach(session.recentHomes) { home in
+                    TVHomeRow(name: home.name, address: home.displayAddress, systemImage: "house") {
+                        problem = nil
+                        session.open(home)
+                    }
+                    .contextMenu {
+                        Button(words.text(.rename), systemImage: "pencil") {
+                            newName = home.renamed == true ? home.name : ""
+                            renaming = home
+                        }
+                        Button(words.text(.remove), systemImage: "trash", role: .destructive) { session.forget(home) }
+                    }
+                    .accessibilityIdentifier("picker.recent.\(home.displayAddress)")
+                }
+            }
         }
+    }
+
+    private var nearby: some View {
+        TVSection(words.text(.onThisNetwork), footer: tv.text(.nearbyHint)) {
+            let list = TVStart.nearby(browser.found, known: session.homes)
+            ForEach(list) { home in
+                TVHomeRow(name: home.name, address: Home(url: home.url, name: home.name).displayAddress, systemImage: "wifi") {
+                    problem = nil
+                    session.use(Home(url: home.url, name: home.name, homeID: home.homeID))
+                }
+                .accessibilityIdentifier("picker.nearby.\(home.id)")
+            }
+            if list.isEmpty {
+                HStack(spacing: 16) {
+                    ProgressView()
+                    Text(words.text(.searching)).foregroundStyle(Theme.muted)
+                }
+            }
+        }
+    }
+
+    private var byAddress: some View {
+        TVSection(words.text(.byAddress), footer: words.text(.addressHint)) {
+            HStack(spacing: 24) {
+                TextField(words.text(.addressPlaceholder), text: $address)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .environment(\.layoutDirection, .leftToRight)
+                    .onSubmit(add)
+                    .frame(maxWidth: 900)
+                    .accessibilityIdentifier("picker.address")
+                Button(words.text(.connect), action: add)
+                    .buttonStyle(.gold)
+                    .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("picker.connect")
+            }
+        }
+    }
+
+    /// A typed address, or a pasted connect link (the person gave it here: no second ask).
+    private func add() {
         problem = nil
-        session.use(Home(url: url, name: url.host() ?? url.absoluteString))
+        session.connectProblem = nil
+        switch TVStart.typed(address) {
+        case let .link(link):
+            session.open(link)
+        case let .addresses(candidates):
+            Task { await session.connect(to: candidates) }
+        case .invalid:
+            problem = words.text(.notAnAddress)
+        }
     }
 }
 
-private struct HomeRow: View {
+/// A heading, its rows and a line under them.
+private struct TVSection<Content: View>: View {
+    let title: String
+    let footer: String?
+    @ViewBuilder let content: Content
+
+    init(_ title: String, footer: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.footer = footer
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text(title)
+                .font(Theme.body(29, weight: .semibold))
+                .foregroundStyle(Theme.goldText)
+            content
+            if let footer {
+                Text(footer)
+                    .font(Theme.body(24))
+                    .foregroundStyle(Theme.faint)
+            }
+        }
+    }
+}
+
+private struct TVHomeRow: View {
     let name: String
     let address: String
     let systemImage: String
@@ -106,7 +187,10 @@ private struct HomeRow: View {
                 Image(systemName: systemImage).font(.system(size: 40))
                 VStack(alignment: .leading, spacing: 4) {
                     Text(name).font(Theme.heading(40))
-                    Text(address).font(Theme.body(26)).opacity(0.75)
+                    Text(verbatim: address)
+                        .font(Theme.body(26))
+                        .opacity(0.75)
+                        .environment(\.layoutDirection, .leftToRight)
                 }
                 Spacer()
             }
@@ -116,137 +200,165 @@ private struct HomeRow: View {
     }
 }
 
-/// Signing in on a TV: the TV shows a code (and a QR code of the page that approves it);
-/// a person signed in on a phone or a computer approves it, and the TV is signed in as
-/// them. Typing a password with the remote is the other way, and the only one on a home
-/// from before codes.
-struct TVSignInView: View {
+/// A `maktaba://connect` link opened from outside the app: nothing is asked of its addresses
+/// until the person says Connect here.
+struct TVLinkPrompt: View {
     let session: AppSession
-    @State private var pairing: DevicePairing?
-    /// nil: not known yet; false: this home signs in by password only.
-    @State private var codes: Bool?
-    @State private var byPassword = false
-    @State private var problem: String?
+    let link: ConnectLink
+    let words: ConnectStrings
+    /// Cancel has the focus first: connecting is a choice the person makes.
+    @FocusState private var cancelFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text(words.text(.linkTitle))
+                .font(Theme.heading(40))
+                .foregroundStyle(Theme.text)
+            Text(words.text(.linkMessage, link.name ?? link.urls.first?.host() ?? "",
+                            link.urls.map { Home(url: $0, name: "").displayAddress }.joined(separator: ", ")))
+                .font(Theme.body(28))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 32) {
+                Button(words.text(.connect)) { session.confirmLink() }
+                    .accessibilityIdentifier("link.connect")
+                Button(words.text(.cancel)) { session.dismissLink() }
+                    .focused($cancelFocused)
+                    .accessibilityIdentifier("link.cancel")
+            }
+            .buttonStyle(.gold)
+        }
+        .onAppear { cancelFocused = true }
+        .padding(32)
+        .background(Theme.raised, in: .rect(cornerRadius: Theme.cornerRadius))
+    }
+}
+
+/// Signing in on a TV, as the home allows: a code first (shown large, with a QR code of the
+/// approve page; a person signed in on a phone or computer approves it and the TV is signed
+/// in as them; a new code when one expires), or a username and password typed with the remote.
+struct TVSignInView: View {
+    @Bindable var session: AppSession
+    @State private var method = TVStart.Method.code
+    @State private var codeFlow: CodeSignIn?
+    private let words = ConnectStrings.forPreferredLanguages()
+    private let tv = TVConnectStrings.forPreferredLanguages()
+
+    private var offered: [TVStart.Method] { TVStart.offered(session.signInMethods) }
+    private var shown: TVStart.Method { offered.contains(method) ? method : offered[0] }
 
     var body: some View {
         ZStack {
             LibraryBackdrop()
-            HStack(alignment: .top, spacing: 60) {
-                if codes != false && !byPassword {
+            Group {
+                switch shown {
+                case .code:
                     codePanel
-                } else {
-                    PasswordPanel(session: session)
+                case .password:
+                    TVPasswordPanel(session: session, words: words, tv: tv,
+                                    useCode: offered.contains(.code) ? { method = .code } : nil)
                 }
             }
             .padding(80)
         }
-        // the code is asked for only while it shows
-        .task(id: CodeTask(home: session.current?.url, shown: !byPassword)) {
-            if !byPassword { await pair() }
+        .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
+        // one code at a time, asked for only while it shows
+        .task(id: CodeFlowKey(home: session.current?.url, shown: shown == .code)) {
+            codeFlow = nil
+            guard shown == .code, let client = session.client else { return }
+            let m = CodeSignIn(client: client, label: UIDevice.current.name) { [session] in
+                try await session.signedInByCode()
+            }
+            codeFlow = m
+            await m.run()
         }
+    }
+
+    private struct CodeFlowKey: Equatable {
+        let home: URL?
+        let shown: Bool
     }
 
     private var codePanel: some View {
         HStack(alignment: .center, spacing: 64) {
             VStack(alignment: .leading, spacing: 28) {
-                SectionTitle("Sign in to \(session.current?.name ?? "your home")", size: 52)
-                Text("On a phone or computer signed in to Maktaba, scan the code or open")
-                    .font(Theme.body(30))
-                    .foregroundStyle(Theme.muted)
-                if let pairing, let home = session.current?.url {
-                    Text(verbatim: "\(home.host() ?? "")\(home.port.map { ":\($0)" } ?? "")/pair")
-                        .font(Theme.body(34, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("and enter")
+                SectionTitle(tv.text(.codeTitle, session.current?.name ?? ""), size: 52)
+                switch codeFlow?.status {
+                case let .showing(p)?:
+                    Text(words.text(.codeIntro, session.current?.name ?? ""))
                         .font(Theme.body(30))
                         .foregroundStyle(Theme.muted)
-                    Text(pairing.code)
-                        .font(.system(size: 96, weight: .bold, design: .monospaced))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(verbatim: p.code)
+                        .font(.system(size: 110, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.goldText)
-                        .accessibilityLabel(pairing.code.map(String.init).joined(separator: " "))
+                        .environment(\.layoutDirection, .leftToRight)
+                        .accessibilityLabel(p.code.map(String.init).joined(separator: " "))
                         .accessibilityIdentifier("pairing-code")
+                    if let url = verifyURL(p) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(words.text(.codeOrOpen)).foregroundStyle(Theme.muted)
+                            Text(verbatim: url.absoluteString)
+                                .font(Theme.body(30, weight: .semibold))
+                                .foregroundStyle(Theme.text)
+                                .environment(\.layoutDirection, .leftToRight)
+                        }
+                    }
                     HStack(spacing: 16) {
                         ProgressView()
-                        Text("Waiting for approval…").foregroundStyle(Theme.muted)
+                        Text(words.text(.waiting)).foregroundStyle(Theme.muted)
                     }
-                } else {
+                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                        let left = max(0, Int(p.expiresAt.timeIntervalSince(ctx.date)))
+                        Text(words.text(.codeChangesIn, String(format: "%d:%02d", left / 60, left % 60)))
+                            .font(Theme.body(24).monospacedDigit())
+                            .foregroundStyle(Theme.faint)
+                    }
+                case .unsupported?:
+                    Text(words.text(.codeUnsupported))
+                        .font(Theme.body(30))
+                        .foregroundStyle(Theme.muted)
+                        .accessibilityIdentifier("signin.code.unsupported")
+                default:
                     ProgressView()
                 }
-                if let problem {
+                if let problem = codeFlow?.problem {
                     Text(problem).foregroundStyle(.red)
                 }
                 HStack(spacing: 32) {
-                    Button("Use a password instead", systemImage: "keyboard") { byPassword = true }
-                    Button("Choose another home", systemImage: "house") { session.switchHome() }
+                    if offered.contains(.password) || codeFlow?.status == .unsupported {
+                        Button(words.text(.byPassword), systemImage: "keyboard") { method = .password }
+                            .accessibilityIdentifier("signin.password")
+                    }
+                    Button(tv.text(.otherHome), systemImage: "house") { session.switchHome() }
+                        .accessibilityIdentifier("signin.homes")
                 }
                 .buttonStyle(.gold)
                 .padding(.top, 20)
             }
-            if let pairing, let url = session.current.flatMap({ pairing.verifyURL(home: $0.url) }),
-               let qr = QRCode.image(url.absoluteString) {
-                qr.interpolation(.none)
-                    .resizable()
-                    .frame(width: 420, height: 420)
-                    .padding(24)
-                    .background(.white, in: .rect(cornerRadius: Theme.cornerRadius))
-                    .accessibilityLabel("QR code for the sign-in page")
+            .frame(maxWidth: 1050, alignment: .leading)
+            if let p = codeFlow?.pairing, let url = verifyURL(p) {
+                QRCodeView(text: url.absoluteString)
+                    .frame(width: 440, height: 440)
+                    .accessibilityLabel(words.text(.qrLabel))
+                    .accessibilityHint(tv.text(.codeAlt))
             }
         }
         .readingPanel(padding: 56)
     }
 
-    /// Shows a code until it is approved (then signed in) or expires (then a new one).
-    private func pair() async {
-        guard let client = session.client else { return }
-        while !Task.isCancelled {
-            do {
-                guard let p = try await client.startDevicePairing() else {
-                    codes = false
-                    return
-                }
-                codes = true
-                pairing = p
-                problem = nil
-                waiting: while Date.now < p.expiresAt {
-                    try await Task.sleep(for: .seconds(p.interval))
-                    switch try await client.collectDevicePairing(p, label: UIDevice.current.name) {
-                    case .waiting:
-                        continue
-                    case .approved:
-                        // this TV holds the tokens now: keep asking who it is, never for a new code
-                        while !Task.isCancelled {
-                            do {
-                                try await session.signedInByCode()
-                                return
-                            } catch {
-                                problem = error.localizedDescription
-                                try await Task.sleep(for: .seconds(3))
-                            }
-                        }
-                        return
-                    case .expired:
-                        break waiting
-                    }
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                problem = error.localizedDescription
-                try? await Task.sleep(for: .seconds(5))
-            }
-        }
+    private func verifyURL(_ p: DevicePairing) -> URL? {
+        session.current.flatMap { p.verifyURL(home: $0.url) }
     }
 }
 
-/// What the code task runs for: this home, while its code shows.
-private struct CodeTask: Equatable {
-    let home: URL?
-    let shown: Bool
-}
-
 /// Username and password with the TV's keyboard.
-private struct PasswordPanel: View {
+private struct TVPasswordPanel: View {
     let session: AppSession
+    let words: ConnectStrings
+    let tv: TVConnectStrings
+    /// Back to the code (nil: this home has none).
+    let useCode: (() -> Void)?
     @State private var username = ""
     @State private var password = ""
     @State private var busy = false
@@ -254,27 +366,35 @@ private struct PasswordPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
-            SectionTitle("Sign in to \(session.current?.name ?? "your home")", size: 52)
-            TextField("Username", text: $username)
+            SectionTitle(tv.text(.codeTitle, session.current?.name ?? ""), size: 52)
+            TextField(words.text(.username), text: $username)
                 .textContentType(.username)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
-            SecureField("Password", text: $password)
+                .accessibilityIdentifier("signin.username")
+            SecureField(words.text(.password), text: $password)
                 .textContentType(.password)
                 .onSubmit(signIn)
+                .accessibilityIdentifier("signin.password.field")
             if let problem {
                 Text(problem).foregroundStyle(.red)
             }
             HStack(spacing: 32) {
                 Button(action: signIn) {
-                    if busy { ProgressView() } else { Text("Sign in") }
+                    if busy { ProgressView() } else { Text(words.text(.signIn)) }
                 }
                 .disabled(username.isEmpty || password.isEmpty || busy)
-                Button("Choose another home", systemImage: "house") { session.switchHome() }
+                .accessibilityIdentifier("signin.submit")
+                if let useCode {
+                    Button(tv.text(.withCode), systemImage: "qrcode", action: useCode)
+                        .accessibilityIdentifier("signin.code")
+                }
+                Button(tv.text(.otherHome), systemImage: "house") { session.switchHome() }
+                    .accessibilityIdentifier("signin.homes")
             }
             .buttonStyle(.gold)
         }
-        .frame(maxWidth: 1000)
+        .frame(maxWidth: 1200)
         .readingPanel(padding: 56)
     }
 
@@ -289,17 +409,5 @@ private struct PasswordPanel: View {
                 problem = error.localizedDescription
             }
         }
-    }
-}
-
-enum QRCode {
-    /// A QR code of `text`, one point per module (draw it with `.interpolation(.none)`).
-    static func image(_ text: String) -> Image? {
-        let f = CIFilter.qrCodeGenerator()
-        f.message = Data(text.utf8)
-        f.correctionLevel = "M"
-        guard let out = f.outputImage,
-              let cg = CIContext().createCGImage(out, from: out.extent) else { return nil }
-        return Image(uiImage: UIImage(cgImage: cg))
     }
 }

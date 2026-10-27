@@ -135,19 +135,19 @@ final class MaktabaTVUITests: XCTestCase {
     // MARK: steps
 
     func chooseHome() throws {
-        let address = app.textFields.firstMatch
+        let address = app.textFields["picker.address"]
         XCTAssertTrue(address.waitForExistence(timeout: 20))
         moveFocus(to: address, with: .down)
         remote.press(.select)
         app.typeText(try XCTUnwrap(env["MAKTABA_HOME"]))
         finishTyping() // submits the field: Connect
-        pressIfStillThere(app.buttons["Connect"], with: .right)
+        pressIfStillThere(app.buttons["picker.connect"], with: .right)
     }
 
     func signIn() throws {
         try chooseHome()
-        let usePassword = app.buttons["Use a password instead"]
-        let username = app.textFields["Username"]
+        let usePassword = app.buttons["signin.password"]
+        let username = app.textFields["signin.username"]
         _ = username.waitForExistence(timeout: 10) || usePassword.waitForExistence(timeout: 10)
         shot("sign-in")
         if !username.exists {
@@ -161,7 +161,7 @@ final class MaktabaTVUITests: XCTestCase {
         finishTyping() // "next": the keyboard goes on to the password
         app.typeText(try XCTUnwrap(env["MAKTABA_PASSWORD"]))
         finishTyping() // submits the field: Sign in
-        pressIfStillThere(app.buttons["Sign in"], with: .down)
+        pressIfStillThere(app.buttons["signin.submit"], with: .down)
     }
 
     // MARK: helpers
