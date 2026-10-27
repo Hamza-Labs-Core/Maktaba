@@ -196,7 +196,7 @@ func (h *Handler) Freeze(w http.ResponseWriter, r *http.Request) {
 
 	items, _, err := h.LiveItemsFor(r.Context(), p, c, 0, 10000)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("evaluate: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("evaluate").Wrap(err))
 		return
 	}
 
@@ -214,7 +214,7 @@ func (h *Handler) Freeze(w http.ResponseWriter, r *http.Request) {
 			ON CONFLICT (collection_id, video_id) DO UPDATE SET position = EXCLUDED.position
 		`, id, it.VideoID, (i+1)*10)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("insert item: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("insert item").Wrap(err))
 			return
 		}
 	}
@@ -222,7 +222,7 @@ func (h *Handler) Freeze(w http.ResponseWriter, r *http.Request) {
 		UPDATE collections SET is_smart = false, smart_query = NULL,
 		       updated_at = $1 WHERE id = $2
 	`, h.now(), id); err != nil {
-		httperror.Write(w, r, httperror.Internal("flip is_smart: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("flip is_smart").Wrap(err))
 		return
 	}
 	if err := tx.Commit(); err != nil {

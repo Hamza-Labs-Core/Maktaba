@@ -20,6 +20,7 @@ import { ToastProvider } from "@ds/components/Toast/Toast";
 import { renderPage, quietCrash } from "../../test/pageHarness";
 import { routeGet } from "../../test/queueHarness";
 import ar from "../../i18n/ar.json";
+import en from "../../i18n/en.json";
 import { APITokens } from "./APITokens";
 
 const T1 = {
@@ -340,10 +341,10 @@ describe("APITokens (test-cases/account-tokens.md)", () => {
     [
       "403 with detail",
       problem(403, "Forbidden", "admin scope not allowed"),
-      "admin scope not allowed",
+      en["error.kind.noAccess"],
     ],
-    ["500 without detail", problem(500, "Internal Server Error"), "Internal Server Error"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
+    ["500 without detail", problem(500, "Internal Server Error"), en["error.kind.server"]],
+    ["network failure", new TypeError("Failed to fetch"), en["error.kind.unreachable"]],
   ])("ATK-10: create fails (%s): toast, dialog keeps its inputs", async (_, err, msg) => {
     post.mockRejectedValue(err);
     open();
@@ -425,8 +426,8 @@ describe("APITokens (test-cases/account-tokens.md)", () => {
   });
 
   it.each([
-    ["404 with detail", problem(404, "Not Found", "token not found"), "token not found"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
+    ["404 with detail", problem(404, "Not Found", "token not found"), en["error.kind.notFound"]],
+    ["network failure", new TypeError("Failed to fetch"), en["error.kind.unreachable"]],
   ])("ATK-15: revoke fails (%s): toast, dialog stays", async (_, err, msg) => {
     del.mockRejectedValue(err);
     open();
@@ -534,15 +535,16 @@ describe("APITokens (test-cases/account-tokens.md)", () => {
   });
 
   it.each([
-    ["500 with detail", problem(500, "Internal Server Error", "db down"), "db down"],
-    ["404", problem(404, "Not Found"), "Not Found"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
-    ["malformed JSON", new SyntaxError("Unexpected token"), "Something went wrong."],
+    ["500 with detail", problem(500, "Internal Server Error", "db down"), en["error.kind.server"]],
+    ["404", problem(404, "Not Found"), en["error.kind.notFound"]],
+    ["network failure", new TypeError("Failed to fetch"), en["error.kind.unreachable"]],
+    ["malformed JSON", new SyntaxError("Unexpected token"), en["error.kind.server"]],
   ])("ATK-21: list load error (%s) and Retry", async (_, err, msg) => {
     tokensSeq(err, { items: [T1] });
     open();
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(msg);
+    expect(alert).not.toHaveTextContent(/db down|Not Found|Unexpected token/);
     await userEvent.setup().click(within(alert).getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("table")).toBeInTheDocument();
   });
@@ -550,7 +552,7 @@ describe("APITokens (test-cases/account-tokens.md)", () => {
   it("ATK-22: 401 mid-session never leaves a blank page", async () => {
     tokensSeq(problem(401, "Unauthorized"));
     open();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Unauthorized");
+    expect(await screen.findByRole("alert")).toHaveTextContent(en["error.kind.signedOut"]);
   });
 
   // Desired: redirect to /login (shared 401 handling, src/lib/api.ts / auth.tsx).

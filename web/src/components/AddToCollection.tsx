@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { Modal } from "@ds/components/Modal/Modal";
 import { Button } from "@ds/components/Button/Button";
 import { useToast } from "@ds/components/Toast/Toast";
-import { ApiError } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import {
   addToCollection,
@@ -14,6 +13,7 @@ import {
   fetchCollections,
   type Collection,
 } from "../lib/collections";
+import { errorText } from "../lib/errorText";
 
 export function AddToCollection({
   open,
@@ -46,7 +46,7 @@ export function AddToCollection({
       .catch((e) => {
         if (cancelled) return;
         setLists([]);
-        setLoadErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        setLoadErr(errorText(e, t));
       });
     return () => {
       cancelled = true;
@@ -66,9 +66,7 @@ export function AddToCollection({
     } catch (e) {
       toast.show({
         tone: "error",
-        message: `${t("collections.addError")}: ${
-          e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
-        }`,
+        message: `${t("collections.addError")}: ${errorText(e, t)}`,
       });
     } finally {
       setBusy(false);
@@ -86,9 +84,7 @@ export function AddToCollection({
     } catch (e) {
       toast.show({
         tone: "error",
-        message: `${t("collections.createError")}: ${
-          e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
-        }`,
+        message: `${t("collections.createError")}: ${errorText(e, t)}`,
       });
       setBusy(false);
     }

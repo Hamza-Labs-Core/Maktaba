@@ -15,11 +15,12 @@ import { Modal } from "@ds/components/Modal/Modal";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api, ApiError } from "../../lib/api";
+import { api } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { platformIcon } from "../../lib/platformIcon";
 import type { Device } from "../Cloud/Devices";
 import { TitleRow } from "../../help/HelpLink";
+import { errorText } from "../../lib/errorText";
 
 export function ConnectedDevices() {
   const { t, formatDate } = useI18n();
@@ -44,7 +45,7 @@ export function ConnectedDevices() {
       .get<{ items: Device[] }>("/api/me/devices")
       .then((r) => setDevices(r.items ?? []))
       .catch((e) => {
-        setError(e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"));
+        setError(errorText(e, t));
         setDevices([]);
       });
   }
@@ -62,7 +63,7 @@ export function ConnectedDevices() {
     } catch (e) {
       toast.show({
         tone: "error",
-        message: e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"),
+        message: errorText(e, t),
       });
     } finally {
       setRemoving(false);

@@ -143,12 +143,12 @@ func (d *Driver) nodeDrained(ctx context.Context, run Run, det *RunDetail, pol P
 	nd, ok := det.NodeDrains[t.NodeID]
 	if !ok {
 		var prior boolScan
-		_ = d.Store.DB.QueryRowContext(ctx, `SELECT drain FROM cluster_nodes WHERE id = $1`, t.NodeID).Scan(&prior)
+		noteStore(d.log(), "read_drain", d.Store.DB.QueryRowContext(ctx, `SELECT drain FROM cluster_nodes WHERE id = $1`, t.NodeID).Scan(&prior))
 		nd = NodeDrain{Prior: prior.v, Since: d.now()}
 		det.NodeDrains[t.NodeID] = nd
 		// what to put back is saved before the flag changes
-		_ = d.Store.SetRunDetail(ctx, run.ID, "", *det)
-		_, _ = d.Store.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = true WHERE id = $1`, t.NodeID)
+		noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
+		storeExec(d.log(), "drain")(d.Store.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = true WHERE id = $1`, t.NodeID))
 		d.audit(ctx, run, "node_drain", map[string]any{"node_id": t.NodeID})
 	}
 	return d.nodeJobs(ctx, t.NodeID, t.Name) == 0 || d.now().Sub(nd.Since) >= time.Duration(pol.DrainTimeoutMinutes)*time.Minute
@@ -225,10 +225,10 @@ func (d *Driver) nodeUndrain(ctx context.Context, run Run, nodeID string) {
 		return
 	}
 	if !nd.Prior {
-		_, _ = d.Store.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = false WHERE id = $1`, nodeID)
+		storeExec(d.log(), "undrain")(d.Store.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = false WHERE id = $1`, nodeID))
 	}
 	delete(det.NodeDrains, nodeID)
-	_ = d.Store.SetRunDetail(ctx, run.ID, "", det)
+	noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
 }
 
 // releaseNodeDrains puts back, at the run's end, the drain of the machines it drained
@@ -251,9 +251,9 @@ func (d *Driver) releaseNodeDrains(ctx context.Context, run Run, det *RunDetail)
 			continue
 		}
 		if !nd.Prior {
-			_, _ = d.Store.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = false WHERE id = $1`, id)
+			storeExec(d.log(), "undrain")(d.Store.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = false WHERE id = $1`, id))
 		}
 		delete(det.NodeDrains, id)
 	}
-	_ = d.Store.SetRunDetail(ctx, run.ID, "", *det)
+	noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
 }

@@ -6,8 +6,9 @@ import { useEffect, useState } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
-import { api, ApiError } from "../lib/api";
+import { api } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { errorText } from "../lib/errorText";
 
 export interface DisplayTitleVideo {
   id: string;
@@ -55,7 +56,7 @@ export function DisplayTitle({
       onSaved(v);
       setEditing(false);
     } catch (e) {
-      setError(e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"));
+      setError(errorText(e, t));
     } finally {
       setBusy(false);
     }

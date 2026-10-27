@@ -54,6 +54,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
@@ -314,7 +315,7 @@ func runServe() error {
 	// same isolation reason P6 does — the replay path must not contend
 	// with handler or readiness pools.
 	idemStore, idemSweep, idemClose := buildIdempotencyStore(logger, nodeCfg.Enabled)
-	go idemSweep()
+	safego.Go(logger, "idempotency_sweep", idemSweep)
 	defer idemClose()
 
 	// Health-aggregator stats: a dedicated small pool for the live
@@ -371,7 +372,7 @@ func runServe() error {
 	supervisorURL := os.Getenv("MAKTABA_SUPERVISOR_URL")
 	router.MountProcesses(r, router.ProcessesDeps{SupervisorURL: supervisorURL})
 	if recorder := processRecorder(supervisorURL, statsDB, nodeCfg.Enabled, logger); recorder != nil {
-		go recorder.Run(context.Background())
+		safego.Go(logger, "process_recorder", func() { recorder.Run(context.Background()) })
 	}
 
 	// Epic 28 (Auto-Update) — the update-check service (Story 28.2) and
@@ -385,7 +386,7 @@ func runServe() error {
 	var updater *system.Updater
 	if !nodeCfg.Enabled {
 		updater = buildUpdater(logger)
-		go updater.Run(context.Background())
+		safego.Go(logger, "update_checker", func() { updater.Run(context.Background()) })
 		router.MountP28(r, router.P28Deps{Updater: updater, Updates: updatesRef})
 		logger.Info("p28: auto-update surface mounted", "event", "p28_mounted")
 	}
@@ -571,12 +572,12 @@ func runServe() error {
 			homeDir := newHomeDirectory(licCloud)
 			p10Deps.Home = homeDir.Info
 			if licRefresher != nil {
-				go licRefresher.Run(context.Background())
+				safego.Go(logger, "license_refresher", func() { licRefresher.Run(context.Background()) })
 			}
 			if licVerifier != nil {
 				// a license applied by `maktaba-api license apply` (or another replica) is
 				// taken up within a minute, without a restart
-				go reloadLicense(context.Background(), entStore, licVerifier, time.Minute, logger)
+				safego.Go(logger, "license_reload", func() { reloadLicense(context.Background(), entStore, licVerifier, time.Minute, logger) })
 			}
 
 			// Phase 9 (Epic 10 stories 10.2-10.5, 10.16) — auth surface.
@@ -606,7 +607,7 @@ func runServe() error {
 				if agent := os.Getenv("MAKTABA_CLOUDLINK_ADMIN"); agent != "" {
 					rep := cloudlink.NewReporter(agent, p9.Cloud.Store, logger)
 					p9.Cloud.Store.Changed = rep.Kick
-					go rep.Run(context.Background(), 30*time.Minute)
+					safego.Go(logger, "cloudlink_reporter", func() { rep.Run(context.Background(), 30*time.Minute) })
 				}
 				csrf = p9.CSRF
 				logger.Info("p9: auth handlers mounted", "event", "p9_mounted")
@@ -671,13 +672,14 @@ func runServe() error {
 			// boot goroutine (interrupted-session reap every minute +
 			// daily retention purge), mirroring runPairingSweep.
 			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef, Secrets: homeSecrets})
-			go (&watch.Reaper{
+			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),
 				Logger:        logger,
-			}).Run(context.Background())
+			}
+			safego.Go(logger, "watch_reaper", func() { reaper.Run(context.Background()) })
 			usageCounter.Attach(appDB)
-			go usageCounter.Run(context.Background(), usage.DefaultFlushEvery)
+			safego.Go(logger, "usage_counter", func() { usageCounter.Run(context.Background(), usage.DefaultFlushEvery) })
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",
 				"event", "p29_mounted")
 
@@ -690,7 +692,7 @@ func runServe() error {
 				CloudURL:     telemetryURL(licCloud),
 				RemoteAccess: func() bool { return licCloud().Claimed },
 			}); sender != nil {
-				go sender.Run(context.Background())
+				safego.Go(logger, "telemetry_sender", func() { sender.Run(context.Background()) })
 			}
 
 			// Epic 31 (multi-instance) — instance identity, the LAN
@@ -709,7 +711,7 @@ func runServe() error {
 			// hard-deletes them past the 7-day retention horizon so
 			// `pairing_tickets` cannot grow unbounded. Same context/log
 			// convention as runIdempotencySweep.
-			go runPairingSweep(pairingStore, logger)
+			safego.Go(logger, "pairing_sweep", func() { runPairingSweep(pairingStore, logger) })
 		}
 	} else {
 		logger.Info("p6: DATABASE_URL unset; handlers unwired",
@@ -774,7 +776,7 @@ func runServe() error {
 	// `rotation_overlap_sec` has elapsed since the previous-key was
 	// added, drop it. 60s tick is much finer than the 24h overlap so
 	// the reaper is essentially free.
-	go func() {
+	safego.Go(logger, "jwt_key_reaper", func() {
 		t := time.NewTicker(60 * time.Second)
 		defer t.Stop()
 		for {
@@ -788,7 +790,7 @@ func runServe() error {
 				}
 			}
 		}
-	}()
+	})
 
 	select {
 	case <-ctx.Done():

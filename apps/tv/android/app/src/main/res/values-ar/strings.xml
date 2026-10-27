@@ -40,8 +40,6 @@
     <string name="watched">تمت المشاهدة</string>
 
     <string name="preparing">جارٍ تجهيز المقطع…</string>
-    <string name="playback_failed">تعذّر تشغيل المقطع: %1$s</string>
-    <string name="back">رجوع</string>
 
     <string name="signed_in_as">مسجّل الدخول باسم %1$s</string>
     <string name="home_label">الجهاز الرئيسي: %1$s</string>

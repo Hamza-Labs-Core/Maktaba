@@ -11,11 +11,12 @@ import { Card } from "@ds/components/Card/Card";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api, ApiError } from "../../lib/api";
+import { api } from "../../lib/api";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { copyText } from "../../lib/clipboard";
 import { QRCode } from "../../components/QRCode";
 import { TitleRow } from "../../help/HelpLink";
+import { errorText } from "../../lib/errorText";
 
 export interface DiscoveryHome {
   id: string;
@@ -45,9 +46,7 @@ export function ConnectApp() {
     api
       .get<DiscoveryHome>("/api/discovery/home")
       .then((h) => setHome({ ...h, urls: h.urls ?? [] }))
-      .catch((e) =>
-        setError(e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"))
-      );
+      .catch((e) => setError(errorText(e, t)));
   }
 
   useEffect(load, []);

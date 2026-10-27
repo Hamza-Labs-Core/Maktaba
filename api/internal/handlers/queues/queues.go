@@ -220,7 +220,7 @@ func (h *Handler) publish(ctx context.Context, typ string, payload map[string]an
 }
 
 func writeErr(w http.ResponseWriter, r *http.Request, what string, err error) {
-	httperror.Write(w, r, httperror.Internal(what+": "+err.Error()))
+	httperror.Write(w, r, httperror.Internal(what).Wrap(err))
 }
 
 // ---------- stages & pools ----------

@@ -20,6 +20,7 @@ import { ToastProvider } from "@ds/components/Toast/Toast";
 import { renderPage, quietCrash } from "../../test/pageHarness";
 import { routeGet } from "../../test/queueHarness";
 import ar from "../../i18n/ar.json";
+import en from "../../i18n/en.json";
 import { Account } from "./Account";
 
 const PROFILE = {
@@ -125,9 +126,9 @@ describe("Account (test-cases/account.md)", () => {
 
   it.each([
     ["409 with detail", problem(409, "Conflict", "email already in use"), "email already in use"],
-    ["400 without detail", problem(400, "Bad Request"), "Bad Request"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
-    ["500 text body", problem(500, "Internal Server Error", "boom"), "boom"],
+    ["400 without detail", problem(400, "Bad Request"), en["error.kind.server"]],
+    ["network failure", new TypeError("Failed to fetch"), en["error.kind.unreachable"]],
+    ["500 text body", problem(500, "Internal Server Error", "boom"), en["error.kind.server"]],
   ])(
     "ACC-04: profile save error (%s) shows an error toast and keeps the edits",
     async (_, err, msg) => {
@@ -139,7 +140,11 @@ describe("Account (test-cases/account.md)", () => {
       await user.type(email, "taken@example.com");
       await user.click(screen.getByRole("button", { name: "Save" }));
 
-      expect(await screen.findByRole("alert")).toHaveTextContent(msg);
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(msg);
+      // never the server's 5xx text or its title
+      expect(alert).not.toHaveTextContent("boom");
+      expect(alert).not.toHaveTextContent("Bad Request");
       expect(email).toHaveValue("taken@example.com");
       expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
       expect(screen.queryByRole("status")).toBeNull();
@@ -165,13 +170,13 @@ describe("Account (test-cases/account.md)", () => {
     expect(screen.queryByText(/login page/)).toBeNull();
   });
 
-  it("ACC-06: wrong current password shows the server message", async () => {
-    post.mockRejectedValue(problem(403, "Forbidden", "current password is incorrect"));
+  it("ACC-06: wrong current password says so (the home's 401, not an ended sign-in)", async () => {
+    post.mockRejectedValue(problem(401, "invalid credentials", "current password is incorrect"));
     open();
     const user = await fillPasswords("wrongpass", "newpass12", "newpass12");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("current password is incorrect");
+    expect(await screen.findByRole("alert")).toHaveTextContent(en["account.wrongCurrent"]);
     expect(screen.getByLabelText(/^Current password/)).toHaveValue("wrongpass");
     expect(screen.getByLabelText(/^New password/)).toHaveValue("newpass12");
     expect(screen.getByLabelText(/^Confirm password/)).toHaveValue("newpass12");
@@ -227,16 +232,19 @@ describe("Account (test-cases/account.md)", () => {
     open();
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Something went wrong.");
-    expect(alert).toHaveTextContent("db down");
+    expect(alert).toHaveTextContent(en["error.kind.server"]);
+    expect(alert).not.toHaveTextContent("db down");
     await userEvent.setup().click(within(alert).getByRole("button", { name: "Try again" }));
     expect(await screen.findByLabelText("Display name")).toHaveValue("Mona");
     expect(meCalls()).toBe(2);
   });
 
-  it("ACC-11: /api/me 404 shows the problem title", async () => {
+  it("ACC-11: /api/me 404 says it is gone, not the problem title", async () => {
     get.mockRejectedValueOnce(problem(404, "Not Found"));
     open();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Not Found");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(en["error.kind.notFound"]);
+    expect(alert).not.toHaveTextContent("Not Found");
   });
 
   it.each([
@@ -255,7 +263,7 @@ describe("Account (test-cases/account.md)", () => {
   it("ACC-13: /api/me 401 mid-session never leaves a blank page", async () => {
     get.mockRejectedValue(problem(401, "Unauthorized"));
     open();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Unauthorized");
+    expect(await screen.findByRole("alert")).toHaveTextContent(en["error.kind.signedOut"]);
     expect(screen.getByRole("heading", { name: "Account" })).toBeInTheDocument();
   });
 

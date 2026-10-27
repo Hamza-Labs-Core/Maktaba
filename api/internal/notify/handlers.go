@@ -50,12 +50,12 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	unreadOnly := r.URL.Query().Get("unread") == "1" || r.URL.Query().Get("unread") == "true"
 	items, err := h.Store.List(r.Context(), p.UserID, p.IsAdmin, limit, unreadOnly)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list notifications: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("list notifications").Wrap(err))
 		return
 	}
 	n, err := h.Store.Unread(r.Context(), p.UserID, p.IsAdmin)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("count notifications: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("count notifications").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items, "unread": n})
@@ -73,7 +73,7 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("notification "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("mark read: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("mark read").Wrap(err))
 		return
 	}
 	h.unread(w, r, p)
@@ -86,7 +86,7 @@ func (h *Handler) ReadAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.Store.MarkAllRead(r.Context(), p.UserID, p.IsAdmin); err != nil {
-		httperror.Write(w, r, httperror.Internal("mark all read: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("mark all read").Wrap(err))
 		return
 	}
 	h.unread(w, r, p)
@@ -95,7 +95,7 @@ func (h *Handler) ReadAll(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) unread(w http.ResponseWriter, r *http.Request, p *principal.Principal) {
 	n, err := h.Store.Unread(r.Context(), p.UserID, p.IsAdmin)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("count notifications: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("count notifications").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"unread": n})

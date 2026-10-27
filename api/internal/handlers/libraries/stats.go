@@ -90,14 +90,14 @@ func (h *Handler) StatsCached(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := readCacheRow(r.Context(), h.DB, id)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("stats cache read: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("stats cache read").Wrap(err))
 		return
 	}
 	if resp == nil {
 		// Cache miss → recompute from source tables and upsert.
 		resp, err = recomputeStats(r.Context(), h.DB, id)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("stats recompute: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("stats recompute").Wrap(err))
 			return
 		}
 		if err := upsertCacheRow(r.Context(), h.DB, id, resp); err != nil {

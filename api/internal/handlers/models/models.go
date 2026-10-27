@@ -21,6 +21,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
@@ -187,7 +188,7 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID, err := h.pipeline.DownloadModel(r.Context(), id)
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway("pipeline download failed: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("pipeline download failed").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusAccepted, map[string]string{"job_id": jobID})
@@ -207,7 +208,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	deleted, err := h.pipeline.DeleteModel(r.Context(), id)
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway("pipeline delete failed: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("pipeline delete failed").Wrap(err))
 		return
 	}
 	if !deleted {
@@ -231,7 +232,14 @@ func (h *Handler) Activate(w http.ResponseWriter, r *http.Request) {
 	}
 	act, err := h.pipeline.ActivateModel(r.Context(), id, "")
 	if err != nil {
-		// The pipeline rejects activating a not-yet-installed model.
+		// The pipeline rejects activating a not-yet-installed model (its own
+		// answer, safe to show); a call that got no answer is the pipeline's
+		// failure, not the request's, and its address stays in the log.
+		var ce *grpcpipeline.CallError
+		if errors.As(err, &ce) {
+			httperror.Write(w, r, httperror.BadGateway("pipeline activate failed").Wrap(err))
+			return
+		}
 		httperror.Write(w, r, httperror.BadRequest("pipeline activate failed: "+err.Error()))
 		return
 	}
@@ -251,7 +259,7 @@ func (h *Handler) Test(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.pipeline.TestModel(r.Context(), id)
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway("pipeline test failed: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("pipeline test failed").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, TestResult{

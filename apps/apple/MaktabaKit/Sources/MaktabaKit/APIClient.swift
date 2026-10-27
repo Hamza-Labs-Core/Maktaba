@@ -1,18 +1,21 @@
 import Foundation
 
+/// What went wrong talking to the home. `errorDescription` is the one friendly sentence for
+/// its `kind` (see `HomeErrors.swift`); what the home answered is kept for the Details and
+/// the logs, never shown as the message.
 public enum APIError: LocalizedError, Equatable {
     case transport(String)
-    case status(Int, String)
+    /// The home answered `code` with `body` (a problem+json, usually), and `retryAfter`
+    /// seconds when it said when to ask again (a 429 or 503).
+    case status(Int, String, retryAfter: Int? = nil)
     case decoding(String)
     case signedOut
+    /// The stream's playlist was still not there when the wait ran out (`body`: the home's
+    /// last answer).
+    case notReady(String)
 
     public var errorDescription: String? {
-        switch self {
-        case let .transport(why): "Could not reach the home: \(why)"
-        case let .status(code, body): "The home answered \(code): \(body.prefix(300))"
-        case let .decoding(why): "Unexpected answer from the home: \(why)"
-        case .signedOut: "Signed out. Sign in again."
-        }
+        ErrorStrings.forPreferredLanguages().sentence(kind)
     }
 }
 
@@ -106,12 +109,18 @@ public actor APIClient {
         return (["Authorization": "Bearer \(access)"], until)
     }
 
-    /// Waits until an HLS stream can start: a transcode writes its rendition playlist a
-    /// moment after the session opens, while the master playlist names it at once. hls.js
-    /// retries the 404 in between; AVPlayer gives up, so the player waits here first.
-    public func waitUntilPlayable(_ url: URL, headers: [String: String], timeout: Duration = .seconds(30)) async throws {
+    /// Waits until an HLS stream can start: a transcode writes its playlists a moment after
+    /// the session opens (the home answers 404 `manifest-not-found` / `rendition-not-found`
+    /// until then). hls.js retries those; AVPlayer gives up, so the player waits here first:
+    /// the master, then its first rendition, asked again after 0.5 s, 1 s, then every 2 s
+    /// for `timeout` in all (then `APIError.notReady`). Any other answer fails at once.
+    public func waitUntilPlayable(_ url: URL, headers: [String: String], timeout: Duration = .seconds(30),
+                                  sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) async throws {
         guard url.path().hasSuffix(".m3u8") else { return }
-        func fetch(_ u: URL) async throws -> (Int, Data) {
+        let started = ContinuousClock.now
+        var waited = Duration.zero
+        var delay = Duration.milliseconds(500)
+        func fetch(_ u: URL) async throws -> (Int, Data, Int?) {
             var r = URLRequest(url: u)
             // the token goes only to the home it was issued by
             if SameOriginRedirects.sameOrigin(u, home) {
@@ -119,24 +128,48 @@ public actor APIClient {
             }
             do {
                 let (d, resp) = try await session.data(for: r, delegate: SameOriginRedirects.shared)
-                return ((resp as? HTTPURLResponse)?.statusCode ?? 0, d)
+                let http = resp as? HTTPURLResponse
+                return (http?.statusCode ?? 0, d, http.flatMap(Self.retryAfter))
             } catch {
                 throw APIError.transport(error.localizedDescription)
             }
         }
-        let (code, master) = try await fetch(url)
-        guard code == 200 else { throw APIError.status(code, String(decoding: master.prefix(300), as: UTF8.self)) }
-        guard let first = Self.firstURI(inPlaylist: String(decoding: master, as: UTF8.self)),
-              let rendition = URL(string: first, relativeTo: url)?.absoluteURL else { return }
-        let deadline = ContinuousClock.now + timeout
+        // the master first, then its first rendition
+        var target = url
+        var master = true
         while true {
-            let (code, body) = try await fetch(rendition)
-            if code == 200 { return }
-            guard code == 404, ContinuousClock.now < deadline else {
-                throw APIError.status(code, String(decoding: body.prefix(300), as: UTF8.self))
+            let (code, body, retryAfter) = try await fetch(target)
+            if code == 200 {
+                guard master, let first = Self.firstURI(inPlaylist: String(decoding: body, as: UTF8.self)),
+                      let rendition = URL(string: first, relativeTo: url)?.absoluteURL else { return }
+                target = rendition
+                master = false
+                continue
             }
-            try await Task.sleep(for: .milliseconds(500))
+            let text = String(decoding: body.prefix(4096), as: UTF8.self)
+            let answer = APIError.status(code, text, retryAfter: retryAfter)
+            // not written yet (or a plain 404 from something in between): ask again
+            guard code == 404, answer.kind == .notReady || answer.problem == nil else { throw answer }
+            guard waited + delay <= timeout, ContinuousClock.now - started < timeout else {
+                throw APIError.notReady(text)
+            }
+            try await sleep(delay)
+            waited += delay
+            delay = min(delay * 2, .seconds(2))
         }
+    }
+
+    /// A Retry-After in seconds: a number, or an HTTP date from now.
+    static func retryAfter(_ r: HTTPURLResponse) -> Int? {
+        guard let v = r.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespaces), !v.isEmpty else {
+            return nil
+        }
+        if let s = Int(v) { return max(0, s) }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "GMT")
+        f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return f.date(from: v).map { max(0, Int($0.timeIntervalSinceNow.rounded(.up))) }
     }
 
     /// The first URI line of an HLS playlist (its first variant or segment).
@@ -188,7 +221,7 @@ public actor APIClient {
         let body: [String: Any]? = label.flatMap { $0.isEmpty ? nil : ["device_label": $0] }
         do {
             return try await send(request("POST", "/api/pairing/device", body: body), authorized: false)
-        } catch let APIError.status(code, _) where code == 401 || code == 404 || code == 405 {
+        } catch let APIError.status(code, _, _) where code == 401 || code == 404 || code == 405 {
             return nil
         }
     }
@@ -200,7 +233,7 @@ public actor APIClient {
         do {
             let d: PendingDevice = try await get("/api/pairing/device/\(Self.segment(compact))")
             return .found(d)
-        } catch let APIError.status(status, body) where status == 404 || status == 405 || status == 501 {
+        } catch let APIError.status(status, body, _) where status == 404 || status == 405 || status == 501 {
             // the home's own 404 is a problem+json; a home from before the lookup has no
             // such route (its router's plain 404 or 405)
             let problem = (try? JSONSerialization.jsonObject(with: Data(body.utf8))) is [String: Any]
@@ -365,7 +398,8 @@ public actor APIClient {
             throw APIError.signedOut
         }
         guard (200..<300).contains(code) else {
-            throw APIError.status(code, String(decoding: data.prefix(4096), as: UTF8.self))
+            throw APIError.status(code, String(decoding: data.prefix(4096), as: UTF8.self),
+                                  retryAfter: (response as? HTTPURLResponse).flatMap(Self.retryAfter))
         }
         return data
     }

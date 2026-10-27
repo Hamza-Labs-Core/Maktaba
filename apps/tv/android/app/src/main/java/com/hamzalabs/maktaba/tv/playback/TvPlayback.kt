@@ -1,6 +1,7 @@
 package com.hamzalabs.maktaba.tv.playback
 
 import android.content.Context
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,6 +17,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.Failure
+import com.hamzalabs.maktaba.core.api.errorDetails
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -53,7 +56,8 @@ class TvPlayback(
 ) {
     var player by mutableStateOf<ExoPlayer?>(null)
         private set
-    var problem by mutableStateOf<String?>(null)
+    /** Why nothing plays (the error screen): what it means to a person, and the home's own words. */
+    var problem by mutableStateOf<Failure?>(null)
         private set
     /** Opening (or waiting for a fresh transcode): show that something is happening. */
     var opening by mutableStateOf(true)
@@ -139,9 +143,10 @@ class TvPlayback(
             signedOut()
         } catch (e: Exception) {
             if (old != null && player?.playerError == null) return // the old stream still plays
+            Log.w("MaktabaTV", "playback: ${e.errorDetails()}", e)
             player?.release()
             player = null
-            problem = e.message ?: e.toString()
+            problem = Failure.of(e)
         } finally {
             opening = false
         }
@@ -174,7 +179,8 @@ class TvPlayback(
             if (failed != null && System.currentTimeMillis() - openedAt < 30_000) {
                 p.release()
                 player = null
-                problem = failed.message ?: "The video stopped playing."
+                Log.w("MaktabaTV", "player: ${failed.errorCodeName}", failed)
+                problem = tvPlaybackFailure(failed)
                 return
             }
             if (failed != null || System.currentTimeMillis() >= renewAt) {

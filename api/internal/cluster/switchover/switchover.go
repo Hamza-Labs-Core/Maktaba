@@ -28,6 +28,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // Hub is the cluster channel as a switch uses it (agent.Hub).
@@ -364,7 +365,7 @@ func (o *Orchestrator) Start(ctx context.Context, node, by string) (string, erro
 	o.persist(ctx, o.Progress(p.ID))
 	o.log().Info("switchover: starting", "id", p.ID, "to", target.Name, "term", p.Term, "by", by,
 		"event", "switchover_started")
-	go o.run(p.ID)
+	safego.Go(o.log(), "switchover_run", func() { o.run(p.ID) })
 	return p.ID, nil
 }
 
@@ -858,7 +859,7 @@ func (o *Orchestrator) waitNewHome(ctx context.Context, id string, why error) (N
 		if c := o.cancelOf(id); c != nil && c.force {
 			o.end(ctx, id, StepPromote, errors.New("called off by an admin although the machine taking over did not "+
 				"answer: should it be the home after all, this home stops writing once it hears of it"), true, "cancelled")
-			go o.afterForcedCancel(context.Background(), id)
+			safego.Go(o.log(), "switchover_after_cancel", func() { o.afterForcedCancel(context.Background(), id) })
 			return NewHome{}, false
 		}
 		select {
@@ -1027,7 +1028,8 @@ func (o *Orchestrator) Resume(ctx context.Context) {
 		o.mu.Unlock()
 		o.log().Warn("switchover: this home started again during a switch: taking it up", "id", p.ID, "state", p.State,
 			"event", "switchover_resumed")
-		go o.resume(p.ID)
+		id := p.ID
+		safego.Go(o.log(), "switchover_resume", func() { o.resume(id) })
 	}
 }
 
@@ -1102,9 +1104,19 @@ func (o *Orchestrator) undo(ctx context.Context, id string) {
 		o.log().Error("switchover: this home could not be made writable again; asking again", "id", id, "err", err,
 			"event", "switchover_thaw_failed")
 		o.update(id, func(p *Progress) { p.Detail, p.ThawPending = "this home stays read-only: "+err.Error(), true })
-		go o.retryThaw(context.Background(), id)
+		safego.Go(o.log(), "switchover_retry_thaw", func() { o.retryThaw(context.Background(), id) })
 	}
-	_ = o.Supervisor.Call(ctx, "relay", map[string]any{"id": id, "on": true}, nil)
+	// each step left undone is said (switchover_undo_failed): a machine left drained
+	// takes no work until an admin undrains it
+	undoFailed := func(step string, err error, attrs ...any) {
+		if err == nil {
+			return
+		}
+		args := append([]any{"id", id, "step", step}, attrs...)
+		args = append(args, "err", err.Error(), "event", "switchover_undo_failed")
+		o.log().Warn("switchover: a step of putting things back failed", args...)
+	}
+	undoFailed("relay_on", o.Supervisor.Call(ctx, "relay", map[string]any{"id": id, "on": true}, nil))
 	p := o.Progress(id)
 	if p == nil {
 		return
@@ -1114,13 +1126,16 @@ func (o *Orchestrator) undo(ctx context.Context, id string) {
 	// not answer now drops it when it is asked again (Cancel), or calls the switch off
 	// itself when its promotion fails
 	if p.ToNode != "" {
-		_, _ = o.command(ctx, p.ToNode, "switch.status", map[string]any{"id": id, "term": p.Term, "abort": true}, 30*time.Second)
+		_, err := o.command(ctx, p.ToNode, "switch.status", map[string]any{"id": id, "term": p.Term, "abort": true}, 30*time.Second)
+		undoFailed("abort_on_target", err, "node_id", p.ToNode)
 	}
 	for node, m := range p.Machines {
-		_, _ = o.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = $2, updated_at = now() WHERE id = $1`, node, m.PriorDrain)
+		_, err := o.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = $2, updated_at = now() WHERE id = $1`, node, m.PriorDrain)
+		undoFailed("restore_drain", err, "node_id", node)
 	}
 	for _, sid := range o.Hub.HomeProcesses() {
-		_, _ = o.Hub.CommandWithin(ctx, sid, "undrain", json.RawMessage("{}"), "switchover", 10*time.Second)
+		_, err := o.Hub.CommandWithin(ctx, sid, "undrain", json.RawMessage("{}"), "switchover", 10*time.Second)
+		undoFailed("undrain_home_process", err, "session", sid)
 	}
 }
 

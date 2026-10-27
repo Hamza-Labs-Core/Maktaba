@@ -95,6 +95,9 @@ describe("attachVod native path", () => {
       const onFatal = vi.fn();
       const probe = vi.fn(() => Promise.resolve(status));
       const h = attachVod(v, M, { onGone, onFatal, isExpired: () => false, probe });
+      // it played (and was paused): a 404 now is a stream cleaned up, not one still starting
+      v.dispatchEvent(new Event("playing"));
+      v.dispatchEvent(new Event("pause"));
       v.dispatchEvent(new Event("error"));
       v.dispatchEvent(new Event("error"));
       await vi.waitFor(() => expect(onGone).toHaveBeenCalledTimes(1));
@@ -103,6 +106,94 @@ describe("attachVod native path", () => {
       h.detach();
     }
   );
+  it("loads a native stream that 404s before it ever played again, backing off", async () => {
+    vi.useFakeTimers();
+    try {
+      const v = nativeVideo();
+      const onGone = vi.fn();
+      const onAuthError = vi.fn();
+      const probe = vi.fn(() => Promise.resolve(404));
+      const h = attachVod(v, M, { onGone, onAuthError, isExpired: () => false, probe });
+      const srcSet = vi.spyOn(v, "src", "set");
+      // a transcode still starting: VOD_NET_RETRIES reloads at 1 s, 2 s, 4 s
+      for (const [n, wait] of [1000, 2000, 4000].entries()) {
+        v.dispatchEvent(new Event("error"));
+        await vi.advanceTimersByTimeAsync(wait - 1);
+        expect(srcSet).toHaveBeenCalledTimes(n);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(srcSet).toHaveBeenCalledTimes(n + 1);
+      }
+      expect(srcSet).toHaveBeenCalledTimes(3);
+      expect(srcSet).toHaveBeenLastCalledWith(M);
+      expect(onGone).not.toHaveBeenCalled();
+      // never ready within the budget: the owner opens it again (and in the
+      // end shows the error)
+      v.dispatchEvent(new Event("error"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onGone).toHaveBeenCalledTimes(1);
+      expect(onAuthError).not.toHaveBeenCalled();
+      h.detach();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("a native stream that becomes ready after its 404s plays on", async () => {
+    vi.useFakeTimers();
+    try {
+      const v = nativeVideo();
+      const onGone = vi.fn();
+      const onFatal = vi.fn();
+      const probe = vi.fn(() => Promise.resolve(404));
+      const h = attachVod(v, M, { onGone, onFatal, isExpired: () => false, probe });
+      v.dispatchEvent(new Event("error"));
+      await vi.advanceTimersByTimeAsync(1000);
+      v.dispatchEvent(new Event("error"));
+      await vi.advanceTimersByTimeAsync(2000);
+      v.dispatchEvent(new Event("playing"));
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(onGone).not.toHaveBeenCalled();
+      expect(onFatal).not.toHaveBeenCalled();
+      h.detach();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("a 403 before the stream played is not retried: the signature is refreshed", async () => {
+    vi.useFakeTimers();
+    try {
+      const v = nativeVideo();
+      const onAuthError = vi.fn();
+      const probe = vi.fn(() => Promise.resolve(403));
+      const h = attachVod(v, M, { onAuthError, isExpired: () => false, probe });
+      const srcSet = vi.spyOn(v, "src", "set");
+      v.dispatchEvent(new Event("error"));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(onAuthError).toHaveBeenCalledTimes(1);
+      expect(srcSet).not.toHaveBeenCalled();
+      h.detach();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("detach cancels a pending not-ready reload", async () => {
+    vi.useFakeTimers();
+    try {
+      const v = nativeVideo();
+      const h = attachVod(v, M, {
+        onGone: vi.fn(),
+        isExpired: () => false,
+        probe: () => Promise.resolve(404),
+      });
+      const srcSet = vi.spyOn(v, "src", "set");
+      v.dispatchEvent(new Event("error"));
+      await vi.advanceTimersByTimeAsync(0);
+      h.detach();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(srcSet).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("without onGone, a stream gone is fatal", async () => {
     const v = nativeVideo();
     const onFatal = vi.fn();
@@ -209,6 +300,7 @@ describe("attachVod onError", () => {
       isExpired: () => false,
       probe: () => Promise.resolve(404),
     });
+    v.dispatchEvent(new Event("playing"));
     v.dispatchEvent(new Event("error"));
     await vi.waitFor(() => expect(onGone).toHaveBeenCalledTimes(1));
     expect(onError).toHaveBeenCalledWith(
@@ -227,6 +319,7 @@ describe("attachVod onError", () => {
 
   // A stand-in for hls.js: records its error handler so a test can fire it.
   function fakeHls() {
+    const loads = { source: 0, start: 0 };
     let onErr: ((evt: string, data: unknown) => void) | null = null;
     class FakeHls {
       static Events = { ERROR: "hlsError" };
@@ -236,12 +329,16 @@ describe("attachVod onError", () => {
         onErr = fn;
       }
       attachMedia() {}
-      loadSource() {}
-      startLoad() {}
+      loadSource() {
+        loads.source += 1;
+      }
+      startLoad() {
+        loads.start += 1;
+      }
       recoverMediaError() {}
       destroy() {}
     }
-    return { Hls: FakeHls, fire: (data: unknown) => onErr?.("hlsError", data) };
+    return { Hls: FakeHls, loads, fire: (data: unknown) => onErr?.("hlsError", data) };
   }
   async function attachHls(opts: Parameters<typeof attachVod>[2]) {
     const v = document.createElement("video");
@@ -249,8 +346,34 @@ describe("attachVod onError", () => {
     const fake = fakeHls();
     const h = attachVod(v, M, { ...opts, loadHls: () => Promise.resolve(fake.Hls as never) });
     await vi.waitFor(() => expect(h.mode).toBe("hls"));
-    return { h, fire: fake.fire };
+    return { h, fire: fake.fire, loads: fake.loads };
   }
+  it("loads a master playlist that 404s again with loadSource (startLoad would not)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onGone = vi.fn();
+      const { h, fire, loads } = await attachHls({ onGone });
+      const notReady = {
+        fatal: true,
+        type: "networkError",
+        details: "manifestLoadError",
+        response: { code: 404 },
+      };
+      expect(loads.source).toBe(1);
+      for (const wait of [1000, 2000, 4000]) {
+        fire(notReady);
+        await vi.advanceTimersByTimeAsync(wait);
+      }
+      expect(loads.source).toBe(4);
+      expect(loads.start).toBe(0);
+      expect(onGone).not.toHaveBeenCalled();
+      fire(notReady);
+      expect(onGone).toHaveBeenCalledTimes(1);
+      h.detach();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("describes a fatal hls.js media error with its details", async () => {
     const onError = vi.fn<(e: VodError) => void>();
     const onFatal = vi.fn();

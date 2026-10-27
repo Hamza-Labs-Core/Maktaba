@@ -7,12 +7,12 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { useToast } from "@ds/components/Toast/Toast";
-import { ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { setFeaturedPick, showsWhole, type Featured } from "../lib/browse";
 import { watchPath } from "../lib/playQueue";
 import { formatDuration } from "./VideoViews";
+import { errorText } from "../lib/errorText";
 
 export function FeaturedHero({ featured, onChange }: { featured: Featured; onChange: () => void }) {
   const { t, n } = useI18n();
@@ -36,7 +36,7 @@ export function FeaturedHero({ featured, onChange }: { featured: Featured; onCha
     } catch (e) {
       toast.show({
         tone: "error",
-        message: e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"),
+        message: errorText(e, t),
       });
     } finally {
       setBusy(false);

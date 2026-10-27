@@ -402,8 +402,8 @@ func (d *Driver) finish(ctx context.Context, run Run, det RunDetail, state strin
 		for _, t := range targets {
 			if t.State == TargetWaitingClick || t.State == TargetClicked {
 				d.withdraw(ctx, run, t)
-				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetSkipped,
-					Detail: map[string]any{"why": state}})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetSkipped,
+					Detail: map[string]any{"why": state}}), "run_id", run.ID)
 			}
 		}
 	}
@@ -502,8 +502,8 @@ func (d *Driver) stopWithdrawn(ctx context.Context, run Run, det RunDetail) (boo
 			for _, t := range targets {
 				if !targetEnded(t.State) && t.State != TargetApplying {
 					d.withdraw(ctx, run, t)
-					_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetSkipped,
-						Detail: map[string]any{"why": "withdrawn"}})
+					noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetSkipped,
+						Detail: map[string]any{"why": "withdrawn"}}), "run_id", run.ID)
 				}
 			}
 		}
@@ -518,8 +518,8 @@ func (d *Driver) stopWithdrawn(ctx context.Context, run Run, det RunDetail) (boo
 // switches release meanwhile.
 func (d *Driver) switchoverOpen(ctx context.Context) bool {
 	var open bool
-	_ = d.Store.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cluster_switchovers
-	    WHERE state NOT IN ('done', 'failed', 'cancelled', 'handed_over'))`).Scan(&open)
+	noteStore(d.log(), "read_switchover_open", d.Store.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cluster_switchovers
+	    WHERE state NOT IN ('done', 'failed', 'cancelled', 'handed_over'))`).Scan(&open))
 	return open
 }
 
@@ -565,9 +565,9 @@ func (d *Driver) homeStatus(ctx context.Context, run Run, det *RunDetail) (*Mach
 		return nil, err
 	}
 	if st.RunID() == run.ID {
-		_ = d.Store.ReplaceSteps(ctx, run.ID, "home", stepSeqBase(0, true), st.Steps)
+		noteStore(d.log(), "ReplaceSteps", d.Store.ReplaceSteps(ctx, run.ID, "home", stepSeqBase(0, true), st.Steps), "run_id", run.ID)
 		det.Home = st
-		_ = d.Store.SetRunDetail(ctx, run.ID, st.Installer, *det)
+		noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, st.Installer, *det), "run_id", run.ID)
 	}
 	return st, nil
 }
@@ -619,14 +619,14 @@ func (d *Driver) blockFor(ctx context.Context, run Run, doc map[string]any) {
 		// which the catalog could not tell (its running release unknown to it): never a
 		// candidate here, so set aside quietly (blocked "older_build": no attempt counted,
 		// no verification alarm, no notice), and passed by from now on
-		_ = d.Store.Block(ctx, run.Version, KindOlderBuild)
+		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, KindOlderBuild))
 		d.audit(ctx, run, "older_build_passed", map[string]any{"detail": doc["detail"]})
 	case classPerson:
 		// a person mends the machine: no attempt counted
 	case classVerify:
-		_ = d.Store.Block(ctx, run.Version, "verify")
+		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, "verify"))
 	case classRehearsal:
-		_ = d.Store.Block(ctx, run.Version, "rehearsal")
+		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, "rehearsal"))
 	default:
 		if d.countedInWindow(ctx, run) {
 			d.audit(ctx, run, "attempt_counted_already", map[string]any{"code": code})
@@ -755,7 +755,7 @@ func (d *Driver) handsOverNoMore(ctx context.Context, run Run, t Target) {
 		return
 	}
 	st.HandsOver = false
-	_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{Detail: st})
+	noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{Detail: st}), "run_id", run.ID)
 }
 
 // tvBusy reports whether more watch the TV than tv_staging.quiet_max_viewers.
@@ -799,7 +799,7 @@ func (d *Driver) homeGates(ctx context.Context, run Run, det RunDetail) error {
 		if busy, n := d.tvBusy(ctx); busy {
 			if det.Waiting != "tv_busy" {
 				det.Waiting = "tv_busy"
-				_ = d.Store.SetRunDetail(ctx, run.ID, "", det)
+				noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
 				d.log().Info("update waits for the TV to be quiet", "event", "update_tv_busy", "viewers", n, "run_id", run.ID)
 			}
 			return d.Store.SetRunState(ctx, run.ID, RunHomePrepared, "waiting_tv")
@@ -832,8 +832,8 @@ func (d *Driver) drain(ctx context.Context, run Run, det *RunDetail) {
 		}
 		// what to put back is saved before the flags change (a crash between the two
 		// would leave every machine drained for good)
-		_ = d.Store.SetRunDetail(ctx, run.ID, "", *det)
-		_, _ = d.Store.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = true WHERE state = 'approved'`)
+		noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
+		storeExec(d.log(), "drain")(d.Store.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = true WHERE state = 'approved'`))
 	}
 	if d.Cluster != nil && !det.HomeDrained {
 		for _, sid := range d.Cluster.HomeProcesses() {
@@ -852,7 +852,7 @@ func (d *Driver) undrain(ctx context.Context, run Run, det *RunDetail) {
 	}
 	for id, was := range det.PriorDrain {
 		if !was {
-			_, _ = d.Store.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = false WHERE id = $1`, id)
+			storeExec(d.log(), "undrain")(d.Store.DB.ExecContext(ctx, `UPDATE cluster_nodes SET drain = false WHERE id = $1`, id))
 		}
 	}
 	if d.Cluster != nil && det.HomeDrained {
@@ -861,7 +861,7 @@ func (d *Driver) undrain(ctx context.Context, run Run, det *RunDetail) {
 		}
 	}
 	det.PriorDrain, det.HomeDrained, det.DrainSince = nil, false, nil
-	_ = d.Store.SetRunDetail(ctx, run.ID, "", *det)
+	noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
 }
 
 // runningJobs is how many jobs run now anywhere in the cluster.
@@ -891,7 +891,7 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 			}
 			if det.Waiting != "tv_busy" {
 				det.Waiting = "tv_busy"
-				_ = d.Store.SetRunDetail(ctx, run.ID, "", det)
+				noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
 				d.log().Info("update waits for the TV to be quiet", "event", "update_tv_busy", "viewers", n, "run_id", run.ID)
 			}
 			return nil
@@ -900,7 +900,7 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 	if d.switchoverOpen(ctx) {
 		if det.Waiting != "switchover_open" {
 			det.Waiting = "switchover_open"
-			_ = d.Store.SetRunDetail(ctx, run.ID, "", det)
+			noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
 		}
 		return nil
 	}
@@ -931,7 +931,7 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 	}
 	now := d.now()
 	det.Waiting, det.ApplySince = "", &now
-	_ = d.Store.SetRunDetail(ctx, run.ID, "", det)
+	noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
 	d.audit(ctx, run, "home_apply", nil)
 	return d.Store.SetRunState(ctx, run.ID, RunHomeApplying, "apply")
 }
@@ -978,7 +978,7 @@ func (d *Driver) homeClicked(ctx context.Context, run Run, det RunDetail) error 
 	}
 	now := d.now()
 	det.ApplySince = &now
-	_ = d.Store.SetRunDetail(ctx, run.ID, "", det)
+	noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
 	d.audit(ctx, run, "home_go", nil)
 	return d.Store.SetRunState(ctx, run.ID, RunHomeApplying, "apply")
 }
@@ -1002,18 +1002,18 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 	switch st.State {
 	case MAwaitingClick:
 		if run.Step != StepWaitingClick {
-			_ = d.Store.SetRunState(ctx, run.ID, RunHomeApplying, StepWaitingClick)
+			noteStore(d.log(), "SetRunState", d.Store.SetRunState(ctx, run.ID, RunHomeApplying, StepWaitingClick), "run_id", run.ID)
 		}
 		d.notify(ctx, NoticeWaitingClick, notify.SeverityInfo, run, map[string]any{"machine": "home"})
 		return nil
 	case MClicked:
 		return d.homeClicked(ctx, run, det)
 	case MApplying, MRestarting, MWatching, MRollingBack:
-		_ = d.Store.SetRunState(ctx, run.ID, RunHomeApplying, st.State)
+		noteStore(d.log(), "SetRunState", d.Store.SetRunState(ctx, run.ID, RunHomeApplying, st.State), "run_id", run.ID)
 		return nil
 	case MCommitted:
 		if st.Backup != nil && st.Backup.Path != "" {
-			_ = d.Store.SetRunBackup(ctx, run.ID, map[string]any{"path": st.Backup.Path, "bytes": st.Backup.Bytes})
+			noteStore(d.log(), "SetRunBackup", d.Store.SetRunBackup(ctx, run.ID, map[string]any{"path": st.Backup.Path, "bytes": st.Backup.Bytes}), "run_id", run.ID)
 		}
 		return d.homeCommitted(ctx, run, det)
 	case MRolledBack:
@@ -1024,7 +1024,7 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 		if tvCodes[st.Reason] {
 			return d.tvRolledBack(ctx, run, det, st.Reason, doc)
 		}
-		_ = d.Store.Block(ctx, run.Version, "rolled_back")
+		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, "rolled_back"))
 		d.notify(ctx, NoticeRolledBack, notify.SeverityError, run, map[string]any{"reason": st.Reason})
 		return d.finish(ctx, run, det, RunRolledBack, doc)
 	case MApplyFailed:
@@ -1034,7 +1034,7 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 		return d.finish(ctx, run, det, RunFailed, doc)
 	case MFailed:
 		doc := machineErr(st, "rollback_failed")
-		_ = d.Store.Block(ctx, run.Version, "rolled_back")
+		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, "rolled_back"))
 		d.notify(ctx, NoticeNeedsPerson, notify.SeverityError, run, map[string]any{"code": doc["code"]})
 		return d.finish(ctx, run, det, RunFailedRollback, doc)
 	}
@@ -1073,10 +1073,10 @@ func (d *Driver) tvRolledBack(ctx context.Context, run Run, det RunDetail, code 
 		d.blockFor(ctx, run, doc)
 		d.notifyFailure(ctx, run, doc)
 	case CodeTVChangeCancelled:
-		_ = d.Store.Block(ctx, run.Version, "tv_cancelled")
+		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, "tv_cancelled"))
 		d.notify(ctx, NoticeRolledBack, notify.SeverityError, run, map[string]any{"reason": code})
 	default: // failed_tv
-		_ = d.Store.Block(ctx, run.Version, CodeFailedTV)
+		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, CodeFailedTV))
 		d.notify(ctx, NoticeRolledBack, notify.SeverityError, run, map[string]any{"reason": code,
 			"detail": doc["detail"]})
 	}
@@ -1257,15 +1257,15 @@ func (d *Driver) planTargets(ctx context.Context, run Run, det RunDetail) error 
 			return err
 		}
 		if tooOld {
-			_ = d.Store.UpdateTarget(ctx, run.ID, n.id, TargetChange{Detail: map[string]any{"why": WhyTooOld,
-				"pipeline_version": w.Version}})
+			noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, n.id, TargetChange{Detail: map[string]any{"why": WhyTooOld,
+				"pipeline_version": w.Version}}), "run_id", run.ID)
 		}
 		if t.State == TargetSkipped {
 			why := "ahead_of_home"
 			if later {
 				why = KindOlderBuild // a later build of the release's line
 			}
-			_ = d.Store.UpdateTarget(ctx, run.ID, n.id, TargetChange{Detail: map[string]any{"why": why}})
+			noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, n.id, TargetChange{Detail: map[string]any{"why": why}}), "run_id", run.ID)
 		}
 		ord++
 	}
@@ -1355,7 +1355,7 @@ func (d *Driver) adoptBehind(ctx context.Context, run Run, targets []Target, age
 		}
 		if t, ok := have[n.id]; ok {
 			if t.State == TargetOffline {
-				_ = d.Store.UpdateTarget(ctx, run.ID, n.id, TargetChange{State: TargetPending, Error: "clear"})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, n.id, TargetChange{State: TargetPending, Error: "clear"}), "run_id", run.ID)
 				d.audit(ctx, run, "node_back", map[string]any{"node_id": n.id})
 			}
 			continue
@@ -1457,12 +1457,12 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 			if t.Kind == KindWorker {
 				// a worker-only machine is converted on its turn (below), never prepared
 				if _, ok := workers[t.NodeID]; !ok {
-					_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetOffline})
+					noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetOffline}), "run_id", run.ID)
 				}
 				continue
 			}
 			if !connected {
-				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetOffline})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetOffline}), "run_id", run.ID)
 				continue
 			}
 			if preparing >= prepareConcurrency {
@@ -1475,7 +1475,7 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 		case TargetPreparing:
 			if !connected {
 				// gone mid-prepare: offline (a catch-up takes it when it is back)
-				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetOffline})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetOffline}), "run_id", run.ID)
 				continue
 			}
 			st := d.nodeStatus(ctx, sid)
@@ -1488,11 +1488,11 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 				d.prepareTimedOut(ctx, run, pol, t)
 				continue
 			}
-			_ = d.Store.ReplaceSteps(ctx, run.ID, t.NodeID, stepSeqBase(t.Ord, false), st.Steps)
+			noteStore(d.log(), "ReplaceSteps", d.Store.ReplaceSteps(ctx, run.ID, t.NodeID, stepSeqBase(t.Ord, false), st.Steps), "run_id", run.ID)
 			switch st.State {
 			case MPrepared:
-				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetPrepared, Prepared: true,
-					Kind: st.Installer, Detail: st})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetPrepared, Prepared: true,
+					Kind: st.Installer, Detail: st}), "run_id", run.ID)
 				if st.Asks {
 					// a desktop app: ordered now; it waits for a click there while the
 					// rollout goes on with the others
@@ -1505,13 +1505,13 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 			}
 		case TargetPrepared:
 			if !connected {
-				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetOffline})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetOffline}), "run_id", run.ID)
 			}
 		case TargetWaitingClick, TargetClicked:
 			if !connected {
 				// its order waits on its disk; a click it got goes when it is back
 				if t.State == TargetClicked {
-					_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetWaitingClick})
+					noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetWaitingClick}), "run_id", run.ID)
 				}
 				continue
 			}
@@ -1519,23 +1519,23 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 			if st == nil || st.RunID() != run.ID {
 				continue
 			}
-			_ = d.Store.ReplaceSteps(ctx, run.ID, t.NodeID, stepSeqBase(t.Ord, false), st.Steps)
+			noteStore(d.log(), "ReplaceSteps", d.Store.ReplaceSteps(ctx, run.ID, t.NodeID, stepSeqBase(t.Ord, false), st.Steps), "run_id", run.ID)
 			switch st.State {
 			case MAwaitingClick:
 				if t.State != TargetWaitingClick {
-					_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetWaitingClick, Detail: st})
+					noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetWaitingClick, Detail: st}), "run_id", run.ID)
 				}
 			case MClicked:
 				if t.State != TargetClicked {
-					_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetClicked, Detail: st})
+					noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetClicked, Detail: st}), "run_id", run.ID)
 				}
 				clicked = append(clicked, t)
 			case MApplying, MRestarting, MWatching, MRollingBack:
 				// its go was given before this API restarted
-				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetApplying, Applied: true})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetApplying, Applied: true}), "run_id", run.ID)
 				busy = true
 			case MCommitted:
-				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHealthy, Healthy: true, Detail: st})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHealthy, Healthy: true, Detail: st}), "run_id", run.ID)
 				d.nodeUndrain(ctx, run, t.NodeID)
 			case MRolledBack:
 				d.targetFailed(ctx, run, pol, t, TargetRolledBack, machineErr(st, st.State))
@@ -1560,7 +1560,7 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 				"detail": strings.TrimSpace(fmt.Sprint(err, " ", string(raw)))})
 		} else {
 			d.audit(ctx, run, "node_go", map[string]any{"node_id": t.NodeID})
-			_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetApplying, Applied: true})
+			noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetApplying, Applied: true}), "run_id", run.ID)
 		}
 		held = true
 	}
@@ -1608,7 +1608,7 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 				continue
 			}
 			d.audit(ctx, run, "node_apply", map[string]any{"node_id": t.NodeID})
-			_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetApplying, Applied: true})
+			noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetApplying, Applied: true}), "run_id", run.ID)
 			break
 		}
 	}
@@ -1627,7 +1627,7 @@ func (d *Driver) prepareNode(ctx context.Context, run Run, pol Policy, t Target,
 			"detail": strings.TrimSpace(fmt.Sprint(err, " ", string(raw)))})
 		return false
 	}
-	_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetPreparing, Attempt: true, Error: "clear"})
+	noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetPreparing, Attempt: true, Error: "clear"}), "run_id", run.ID)
 	return true
 }
 
@@ -1647,7 +1647,7 @@ func (d *Driver) orderNode(ctx context.Context, run Run, t Target, sid string) {
 		return
 	}
 	d.audit(ctx, run, "node_order", map[string]any{"node_id": t.NodeID})
-	_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetWaitingClick})
+	noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetWaitingClick}), "run_id", run.ID)
 	d.notifyAbout(ctx, NoticeWaitingClick, notify.SeverityInfo, run, "run:"+run.ID+":"+t.NodeID,
 		map[string]any{"machine": t.Name})
 }
@@ -1672,11 +1672,11 @@ func (d *Driver) followApply(ctx context.Context, run Run, pol Policy, t Target,
 	}
 	if sid, ok := agents[t.NodeID]; ok {
 		if st := d.nodeStatus(ctx, sid); st != nil && st.RunID() == run.ID {
-			_ = d.Store.ReplaceSteps(ctx, run.ID, t.NodeID, stepSeqBase(t.Ord, false), st.Steps)
+			noteStore(d.log(), "ReplaceSteps", d.Store.ReplaceSteps(ctx, run.ID, t.NodeID, stepSeqBase(t.Ord, false), st.Steps), "run_id", run.ID)
 			if st.Pending != "" && (st.State == MWatching || st.State == MRestarting) {
 				// busy with a start step (its Python environment, say): its own watch waits,
 				// and so does this timeout
-				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{Applied: true})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{Applied: true}), "run_id", run.ID)
 				return false, nil
 			}
 			switch st.State {
@@ -1685,12 +1685,12 @@ func (d *Driver) followApply(ctx context.Context, run Run, pol Policy, t Target,
 				if st.State == MClicked {
 					state = TargetClicked
 				}
-				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: state, Detail: st})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: state, Detail: st}), "run_id", run.ID)
 				d.notifyAbout(ctx, NoticeWaitingClick, notify.SeverityInfo, run, "run:"+run.ID+":"+t.NodeID,
 					map[string]any{"machine": t.Name})
 				return true, nil
 			case MCommitted:
-				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHealthy, Healthy: true, Detail: st})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHealthy, Healthy: true, Detail: st}), "run_id", run.ID)
 				d.audit(ctx, run, "node_healthy", map[string]any{"node_id": t.NodeID})
 				d.nodeUndrain(ctx, run, t.NodeID)
 				return true, nil
@@ -1719,22 +1719,22 @@ func (d *Driver) targetFailed(ctx context.Context, run Run, pol Policy, t Target
 	if code, _ := doc["code"].(string); code == KindOlderBuild {
 		// the machine runs a later build of the release's line (the release is an rc's
 		// older build): it is ahead, as one on a higher version is
-		_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetSkipped,
-			Detail: map[string]any{"why": KindOlderBuild}})
+		noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetSkipped,
+			Detail: map[string]any{"why": KindOlderBuild}}), "run_id", run.ID)
 		d.audit(ctx, run, "node_older_build", map[string]any{"node_id": t.NodeID, "error": doc})
 		return
 	}
 	if needsPerson(doc) {
 		// nothing another try mends, and nothing about the release: no machine is held
 		// for it (node_failure_policy is about releases that fail)
-		_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetNeedsPerson, Error: doc})
+		noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetNeedsPerson, Error: doc}), "run_id", run.ID)
 		d.audit(ctx, run, "node_needs_person", map[string]any{"node_id": t.NodeID, "error": doc})
 		code, _ := doc["code"].(string)
 		d.notifyAbout(ctx, NoticeNeedsPerson, notify.SeverityWarn, run, "machine:"+t.NodeID+":"+code,
 			map[string]any{"machine": t.Name, "code": code})
 		return
 	}
-	_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: state, Error: doc})
+	noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: state, Error: doc}), "run_id", run.ID)
 	d.audit(ctx, run, "node_"+state, map[string]any{"node_id": t.NodeID, "error": doc})
 	d.notify(ctx, NoticeNodeFailed, notify.SeverityWarn, run, map[string]any{"machine": t.Name, "code": doc["code"]})
 	if pol.NodeFailurePolicy == FailureContinue {
@@ -1752,8 +1752,8 @@ func (d *Driver) targetFailed(ctx context.Context, run Run, pol Policy, t Target
 			if o.State == TargetWaitingClick || o.State == TargetClicked {
 				d.withdraw(ctx, run, o)
 			}
-			_ = d.Store.UpdateTarget(ctx, run.ID, o.NodeID, TargetChange{State: TargetHeld,
-				Error: map[string]any{"code": "held", "held_by": t.Name, "platform": t.Platform}})
+			noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, o.NodeID, TargetChange{State: TargetHeld,
+				Error: map[string]any{"code": "held", "held_by": t.Name, "platform": t.Platform}}), "run_id", run.ID)
 		}
 	}
 }
@@ -1812,8 +1812,8 @@ func (d *Driver) maybeFinishRollout(ctx context.Context, run Run, det RunDetail)
 				busy = true
 				continue
 			}
-			_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHeld,
-				Error: map[string]any{"code": "window_over"}})
+			noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHeld,
+				Error: map[string]any{"code": "window_over"}}), "run_id", run.ID)
 			held++
 		case TargetPreparing:
 			if !pastWindow {
@@ -1821,14 +1821,14 @@ func (d *Driver) maybeFinishRollout(ctx context.Context, run Run, det RunDetail)
 				continue
 			}
 			d.withdraw(ctx, run, t)
-			_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHeld,
-				Error: map[string]any{"code": "window_over"}})
+			noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHeld,
+				Error: map[string]any{"code": "window_over"}}), "run_id", run.ID)
 			held++
 		case TargetPending:
 			if t.Kind == KindWorker && pastWindow {
 				// a worker-only machine whose turn did not come in the window: next window
-				_ = d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHeld,
-					Error: map[string]any{"code": "window_over"}})
+				noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, run.ID, t.NodeID, TargetChange{State: TargetHeld,
+					Error: map[string]any{"code": "window_over"}}), "run_id", run.ID)
 				held++
 				continue
 			}
@@ -1850,7 +1850,7 @@ func (d *Driver) maybeFinishRollout(ctx context.Context, run Run, det RunDetail)
 		step = StepWaitingClick
 	}
 	if run.Step != step {
-		_ = d.Store.SetRunState(ctx, run.ID, RunRollingOut, step)
+		noteStore(d.log(), "SetRunState", d.Store.SetRunState(ctx, run.ID, RunRollingOut, step), "run_id", run.ID)
 	}
 	if busy || waiting > 0 {
 		return nil

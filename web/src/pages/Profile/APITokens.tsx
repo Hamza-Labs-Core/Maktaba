@@ -19,10 +19,11 @@ import { Checkbox } from "@ds/components/Choice/Checkbox";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api, ApiError } from "../../lib/api";
+import { api } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { copyText } from "../../lib/clipboard";
 import { TitleRow } from "../../help/HelpLink";
+import { errorText } from "../../lib/errorText";
 
 interface TokenView {
   id: string;
@@ -56,7 +57,7 @@ export function APITokens() {
       .get<{ items: TokenView[] }>("/api/me/tokens")
       .then((r) => setTokens(r.items ?? []))
       .catch((e) => {
-        setError(e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"));
+        setError(errorText(e, t));
         setTokens([]);
       });
   }
@@ -74,7 +75,7 @@ export function APITokens() {
     } catch (e) {
       toast.show({
         tone: "error",
-        message: e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"),
+        message: errorText(e, t),
       });
     } finally {
       setRevokeBusy(false);
@@ -196,8 +197,7 @@ export function APITokens() {
 }
 
 function errMessage(e: unknown, t: (k: string) => string): string {
-  if (e instanceof ApiError) return e.problem.detail || e.problem.title;
-  return t("common.error");
+  return errorText(e, t);
 }
 
 function CreateTokenModal({
