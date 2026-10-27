@@ -36,6 +36,8 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/library/:libraryId", { topic: "library", anchor: "library-page" }],
   ["/videos", { topic: "library", anchor: "all-videos" }],
   ["/series", { topic: "series" }],
+  ["/playlists", { topic: "playlists" }],
+  ["/playlists/:playlistId", { topic: "playlists", anchor: "playlist-page" }],
   ["/series/:id", { topic: "series", anchor: "series-page" }],
   ["/videos/:videoId", { topic: "videos", anchor: "video-page" }],
   ["/videos/:videoId/watch", { topic: "videos", anchor: "play" }],

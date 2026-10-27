@@ -50,6 +50,7 @@ const NAV = [
   { to: "/", key: "nav.home", icon: "⌂" },
   { to: "/library", key: "nav.libraries", icon: "▦" },
   { to: "/series", key: "nav.series", icon: "▤" },
+  { to: "/playlists", key: "nav.playlists", icon: "≡" },
   { to: "/guide", key: "nav.guide", icon: "▥" },
   { to: "/search", key: "nav.search", icon: "⌕" },
 ] as const;
@@ -64,8 +65,9 @@ const TABS = [
   { to: "/more", key: "nav.more", icon: "⋯" },
 ] as const;
 
-// Series has no room on the phone tab bar: the More page lists it first.
+// Series and Playlists have no room on the phone tab bar: the More page lists them first.
 const SERIES = NAV[2];
+const PLAYLISTS = NAV[3];
 
 // Secondary nav is sidebar-only (kept out of the compact bottom tab bar);
 // these surfaces are reachable by every authenticated user.
@@ -394,7 +396,7 @@ export function MoreMenu() {
   const groups: Array<{
     title?: string;
     items: ReadonlyArray<{ to: string; key: string; icon: string }>;
-  }> = [{ items: [SERIES, ...SECONDARY] }];
+  }> = [{ items: [SERIES, PLAYLISTS, ...SECONDARY] }];
   if (user?.is_admin) groups.push({ title: t("nav.admin"), items: ADMIN });
   return (
     <section className="mkt-page mkt-more">

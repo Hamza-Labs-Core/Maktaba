@@ -37,7 +37,7 @@ function serve(videos: Payload, now: Payload = { server_time: "", items: [] }) {
 }
 
 function videoCalls(): string[] {
-  return get.mock.calls.map((c) => c[0] as string).filter((u) => u.startsWith("/api/videos"));
+  return get.mock.calls.map((c) => c[0] as string).filter((u) => u.startsWith("/api/videos?"));
 }
 
 function Loc() {
@@ -163,7 +163,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     await user.click(screen.getByRole("radio", { name: "List" }));
     const table = screen.getByRole("table", { name: "All videos" });
     const row = within(table).getByRole("link", { name: "x.mp4" }).closest("tr")!;
-    expect(within(row).getAllByText("—")).toHaveLength(3);
+    expect(within(row).getAllByText("—")).toHaveLength(4);
     await user.selectOptions(screen.getByRole("combobox", { name: "Sort" }), "title");
     await user.selectOptions(screen.getByRole("combobox", { name: "Sort" }), "duration_sec");
     const again = await screen.findByRole("table", { name: "All videos" });
@@ -381,7 +381,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
       within(table)
         .getAllByRole("columnheader")
         .map((h) => h.textContent)
-    ).toEqual(["Title", "Duration", "Language", "State"]);
+    ).toEqual(["Title", "Duration", "Language", "Watched", "State"]);
     expect(localStorage.getItem("mkt:lib:view")).toBe("list");
     first.unmount();
     renderLib();

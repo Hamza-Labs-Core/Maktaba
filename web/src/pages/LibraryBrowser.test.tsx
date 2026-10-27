@@ -17,14 +17,17 @@ vi.mock("../lib/auth", () => ({
 
 import { LibraryBrowser } from "./LibraryBrowser";
 import { I18nProvider } from "../lib/i18n";
+import { ToastProvider } from "@ds/components/Toast/Toast";
 
 function renderLib() {
   return render(
     <MemoryRouter initialEntries={["/library"]}>
       <I18nProvider>
-        <Routes>
-          <Route path="/library" element={<LibraryBrowser />} />
-        </Routes>
+        <ToastProvider>
+          <Routes>
+            <Route path="/library" element={<LibraryBrowser />} />
+          </Routes>
+        </ToastProvider>
       </I18nProvider>
     </MemoryRouter>
   );
@@ -172,10 +175,12 @@ describe("LibraryBrowser", () => {
       render(
         <MemoryRouter initialEntries={["/library"]}>
           <I18nProvider>
-            <Routes>
-              <Route path="/library" element={<LibraryBrowser />} />
-            </Routes>
-            <SortLink />
+            <ToastProvider>
+              <Routes>
+                <Route path="/library" element={<LibraryBrowser />} />
+              </Routes>
+              <SortLink />
+            </ToastProvider>
           </I18nProvider>
         </MemoryRouter>
       );
@@ -193,9 +198,11 @@ describe("LibraryBrowser", () => {
       render(
         <MemoryRouter initialEntries={["/library?sort=constructor"]}>
           <I18nProvider>
-            <Routes>
-              <Route path="/library" element={<LibraryBrowser />} />
-            </Routes>
+            <ToastProvider>
+              <Routes>
+                <Route path="/library" element={<LibraryBrowser />} />
+              </Routes>
+            </ToastProvider>
           </I18nProvider>
         </MemoryRouter>
       );

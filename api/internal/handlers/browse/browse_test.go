@@ -58,17 +58,23 @@ func testDB(t *testing.T) *sql.DB {
 	for _, s := range []string{
 		`CREATE TABLE libraries (id TEXT PRIMARY KEY, name TEXT NOT NULL, roots TEXT, settings TEXT, created_at TEXT, updated_at TEXT)`,
 		`CREATE TABLE videos (id TEXT PRIMARY KEY, library_id TEXT, title TEXT, filename TEXT, duration_sec REAL,
-			state TEXT, created_at TEXT, mtime TEXT, deleted_at TEXT)`,
+			state TEXT, created_at TEXT, mtime TEXT, deleted_at TEXT, detected_language TEXT)`,
 		`CREATE TABLE playback_state (user_id TEXT, video_id TEXT, position_sec REAL, completed INTEGER, updated_at TEXT,
 			PRIMARY KEY (user_id, video_id))`,
 		`CREATE TABLE watch_sessions (id TEXT PRIMARY KEY, user_id TEXT, video_id TEXT, started_at TEXT)`,
-		`CREATE TABLE series (id TEXT PRIMARY KEY, name TEXT, name_override TEXT)`,
-		`CREATE TABLE series_episodes (series_id TEXT, video_id TEXT)`,
+		`CREATE TABLE series (id TEXT PRIMARY KEY, name TEXT, name_override TEXT, numbering TEXT NOT NULL DEFAULT 'season')`,
+		`CREATE TABLE series_episodes (series_id TEXT, video_id TEXT, season INTEGER, episode INTEGER, absolute_number INTEGER,
+			season_override INTEGER, episode_override INTEGER)`,
+		`CREATE TABLE tags (id TEXT PRIMARY KEY, name TEXT NOT NULL)`,
+		`CREATE TABLE video_tags (video_id TEXT, tag_id TEXT, PRIMARY KEY (video_id, tag_id))`,
+		`CREATE TABLE speakers (id TEXT PRIMARY KEY, video_id TEXT, cluster_label TEXT, name TEXT NOT NULL)`,
+		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
 		`CREATE TABLE user_library_pins (user_id TEXT NOT NULL, library_id TEXT NOT NULL, position INTEGER NOT NULL,
 			created_at TEXT NOT NULL, PRIMARY KEY (user_id, library_id))`,
 	} {
 		exec(s)
 	}
+	execMigration(t, db, "0162_user_favorites_playlists.sqlite.sql")
 	exec(`INSERT INTO libraries (id, name) VALUES ($1,'Alpha'), ($2,'Beta'), ($3,'Gamma')`, libA, libB, libC)
 	day := func(d int) string { return iso(now.AddDate(0, 0, -d)) }
 	for _, r := range []struct {
@@ -86,7 +92,7 @@ func testDB(t *testing.T) *sql.DB {
 		{"b1", libB, "ready", 1000.0, day(2), "2019-06-01T00:00:00.000Z", nil},
 		{"b2", libB, "ready", 1000.0, day(0), "2019-06-01T00:00:00.000Z", nil},
 	} {
-		exec(`INSERT INTO videos VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		exec(`INSERT INTO videos (id, library_id, title, filename, duration_sec, state, created_at, mtime, deleted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 			v(r.name), r.lib, "Title "+r.name, r.name+".mp4", r.dur, r.state, r.created, r.mtime, r.deleted)
 	}
 	// the viewer: a1 under way, a2 done, a3 barely started, b1 under way
@@ -111,8 +117,9 @@ func testDB(t *testing.T) *sql.DB {
 	session(other, v("a4"), day(1)) // missing: never listed
 	session(viewer, v("b2"), day(0))
 	session(viewer, v("a3"), day(0)) // newer than a3's playback state
-	exec(`INSERT INTO series VALUES ($1,'Tafsir',NULL), ($2,'B series','B renamed')`, seriesA, seriesB)
-	exec(`INSERT INTO series_episodes VALUES ($1,$2), ($1,$3), ($1,$4), ($5,$6)`, seriesA, v("a1"), v("a2"), v("a4"), seriesB, v("b1"))
+	exec(`INSERT INTO series (id, name, name_override) VALUES ($1,'Tafsir',NULL), ($2,'B series','B renamed')`, seriesA, seriesB)
+	exec(`INSERT INTO series_episodes (series_id, video_id, episode) VALUES ($1,$2,1), ($1,$3,2), ($1,$4,3), ($5,$6,1)`,
+		seriesA, v("a1"), v("a2"), v("a4"), seriesB, v("b1"))
 	return db
 }
 

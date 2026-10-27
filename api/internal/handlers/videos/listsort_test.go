@@ -84,6 +84,7 @@ func extDB(t *testing.T) *sql.DB {
 	exec(`CREATE TABLE playback_state (user_id TEXT, video_id TEXT, position_sec REAL, completed BOOLEAN, updated_at DATETIME)`)
 	exec(`CREATE TABLE watch_sessions (id TEXT, user_id TEXT, video_id TEXT, started_at DATETIME)`)
 	exec(`CREATE TABLE series_episodes (series_id TEXT, video_id TEXT)`)
+	exec(`CREATE TABLE user_favorites (user_id TEXT, video_id TEXT, created_at TEXT)`)
 	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	for i, v := range extFixture() {
 		var mt, dur any
