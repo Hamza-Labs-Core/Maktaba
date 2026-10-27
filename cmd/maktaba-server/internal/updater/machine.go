@@ -99,6 +99,34 @@ func (m *Machine) extendGuard(until time.Time) {
 	}
 }
 
+// keepGuard keeps the launcher's guard guardMargin ahead (pushed at once, then at most
+// once a minute, checked every checkEvery) until the returned stop is called; stop
+// returns once nothing pushes it any more.
+func (m *Machine) keepGuard() (stop func()) {
+	done, finished := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(finished)
+		t := time.NewTicker(m.checkEvery())
+		defer t.Stop()
+		var extended time.Time
+		for {
+			if now := m.now(); extended.IsZero() || now.Sub(extended) >= time.Minute {
+				extended = now
+				m.extendGuard(now.Add(guardMargin))
+			}
+			select {
+			case <-done:
+				return
+			case <-t.C:
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		<-finished
+	}
+}
+
 // Verdict is the watch's view of the release that came up.
 type Verdict struct {
 	Healthy bool
@@ -1327,6 +1355,11 @@ func (m *Machine) rollback(reason string) {
 	_ = m.mutate(func(j *Journal) { j.State, j.Reason, j.Rollbacks = StateRollingBack, reason, j.Rollbacks+1 })
 	_ = m.beginStep(StepRollback)
 	m.warnf("rolling back %s to %s: %s", j.Job.Version, orNone(j.From), reason)
+	// the launcher's guard is kept ahead of the rollback until its switch back: the dump
+	// of the failed state below takes as long as the database is large (a quarter of an
+	// hour for 33 GB), and a guard whose deadline passed meanwhile made the launcher stop
+	// this server in the middle of it and switch back by itself (2026-10-27)
+	stopKeeping := m.keepGuard()
 	// the TV first (story 35.6 AC8): its change cancelled, or rolled back on the air
 	m.withdrawTV(reason)
 	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)
@@ -1342,6 +1375,9 @@ func (m *Machine) rollback(reason string) {
 			m.errorf("cannot mark the database record for the dump to be put back: %v", err)
 		}
 	}
+	// stopped before the switch back: a push after it would write back the guard the
+	// switch back cleared
+	stopKeeping()
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) }); err != nil {
 		if migrated {
 			// the new release stays, and so does its database: no start may put the dump

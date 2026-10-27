@@ -270,6 +270,59 @@ func TestStagingSlotMustRunTheRelease(t *testing.T) {
 	}
 }
 
+// A controller that first looks at a staged change well after its stage (an API that
+// just started, its lock held a while longer by the process before: an automatic
+// update's TV step on 2026-10-27 first ticked 4.5 minutes after the stage) starts the
+// slot then: the slot gets its whole start timeout from that tick, and is not failed on
+// the tick that started it (which rolled the home's update back, failed_tv).
+func TestStagingSlotTimeoutRunsFromTheFirstAsk(t *testing.T) {
+	be := tvchangetest.Backends(t)[0]
+	w := newSVWorld(t, be.DB)
+	w.results = passing()
+	healthy := w.fs.view
+	starts := 0
+	w.fs.view = func(p StagingPlan) *StagingView {
+		starts++
+		if starts == 1 { // just started: not answering yet
+			return &StagingView{Active: true, Plan: &p, Slot: "amber"}
+		}
+		return healthy(p)
+	}
+	c := w.staged("v2")
+	w.now = w.now.Add(4*time.Minute + 30*time.Second) // the controller's first look
+	w.sampled = w.now
+	w.tick()
+	if got := w.get(c.ID); got.State != StateStaged {
+		t.Fatalf("failed on the tick that started its slot: %s (%v)", got.State, got.VerifyReport)
+	}
+	w.now = w.now.Add(5 * time.Second)
+	w.sampled = w.now
+	w.tick()
+	if got := w.get(c.ID); got.State != StateVerifying && got.State != StateReady {
+		t.Fatalf("a healthy slot did not move it on: %s (%v)", got.State, got.VerifyReport)
+	}
+}
+
+// A slot that never answers still fails once its start timeout from the first ask ends.
+func TestStagingSlotFailsAfterItsTimeoutFromTheFirstAsk(t *testing.T) {
+	be := tvchangetest.Backends(t)[0]
+	w := newSVWorld(t, be.DB)
+	w.fs.view = func(p StagingPlan) *StagingView { return &StagingView{Active: true, Plan: &p, Slot: "amber"} }
+	c := w.staged("v2")
+	w.now = w.now.Add(4 * time.Minute)
+	w.tick()
+	w.now = w.now.Add(slotStartTimeout - time.Second)
+	w.tick()
+	if got := w.get(c.ID); got.State != StateStaged {
+		t.Fatalf("failed within its start timeout: %s", got.State)
+	}
+	w.now = w.now.Add(2 * time.Second)
+	w.tick()
+	if got := w.get(c.ID); got.State != StateDraft || failReason(t, w, c.ID) != "slot_not_healthy" {
+		t.Fatalf("%s %v", got.State, got.EndReason)
+	}
+}
+
 // Without a staging runtime (one process, or staging not built) the database checks
 // verify, slot.health is skipped with the reason.
 func TestNoStagingRuntimeKeepsDatabaseChecks(t *testing.T) {
