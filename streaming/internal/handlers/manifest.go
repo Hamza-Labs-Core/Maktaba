@@ -48,6 +48,43 @@ type ManifestHandler struct {
 	// Logger receives the session's files that are there and cannot be read
 	// (nil: slog's default).
 	Logger *slog.Logger
+	// FirstWrite is how long a playlist not yet on disk is waited for while its
+	// transcode runs (0: answered at once). A session is handed out the moment its
+	// transcode starts, and a player asks for the playlist within milliseconds: a
+	// 404 then ends playback in a player that does not retry it (Safari's own HLS,
+	// AVPlayer), though the playlist is a second away.
+	FirstWrite time.Duration
+}
+
+// writtenSoon waits up to FirstWrite for path while sub's transcode runs: true
+// once it is on disk.
+func (h *ManifestHandler) writtenSoon(r *http.Request, path, sub string) bool {
+	if h.FirstWrite <= 0 {
+		return false
+	}
+	id, err := uuid.Parse(sub)
+	if err != nil {
+		return false
+	}
+	deadline := time.Now().Add(h.FirstWrite)
+	for tick := 0; time.Now().Before(deadline); tick++ {
+		if tick%10 == 0 { // its transcode still running (every second)
+			row, ok, err := h.Sessions.Get(r.Context(), id)
+			if err != nil || !ok || row.Transcoder == nil || !row.Transcoder.Active() ||
+				row.TranscodeCut() || row.TranscodeFinished() {
+				return false
+			}
+		}
+		select {
+		case <-r.Context().Done():
+			return false
+		case <-time.After(100 * time.Millisecond):
+		}
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // readFailed logs a failed read of a session's playlist or segment that is
@@ -98,6 +135,9 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 		path = filepath.Join(dir, "master.m3u8")
 	}
 	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) && h.writtenSoon(r, path, sub) {
+		data, err = os.ReadFile(path)
+	}
 	if err != nil {
 		h.readFailed(r, path, err)
 		if errors.Is(err, os.ErrNotExist) {
@@ -161,6 +201,9 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 		return
 	}
 	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) && h.writtenSoon(r, path, sub) {
+		data, err = os.ReadFile(path)
+	}
 	if err != nil {
 		h.readFailed(r, path, err)
 		if h.overBeforeWritten(w, r, sub) {

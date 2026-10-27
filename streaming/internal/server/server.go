@@ -91,6 +91,8 @@ func New(deps Deps) http.Handler {
 		Sessions: sessionStreamReaderAdapter{deps.Sessions},
 		Layout:   deps.Layout,
 		Now:      deps.Now,
+		// a transcode's first playlist is a second or two away when the player asks
+		FirstWrite: 15 * time.Second,
 	}
 	sessLib := auth.LibraryGuard(libResolverForSession(deps.Probe, deps.Sessions))
 	r.Route("/stream/{session_id}", func(sub chi.Router) {
