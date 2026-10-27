@@ -30,6 +30,7 @@ use tauri::{
 use tauri_plugin_deep_link::DeepLinkExt;
 
 mod agent;
+mod applog;
 mod attempts;
 mod autoinstall;
 mod bigscreen;
@@ -101,6 +102,10 @@ async fn discover_servers(timeout_ms: Option<u64>) -> Result<Vec<DiscoveredServe
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // every panic, in any mode and any thread, is a line in app.log (applog.rs): a Windows
+    // release has no console, and a thread's panic otherwise ends it without a word
+    applog::install_panic_hook();
+
     // The LaunchAgent (macOS) or the sign-in task (Windows) runs this
     // executable as `Maktaba --server-agent`: become the server's agent
     // instead of opening a window. The Windows installer's hooks run it with
@@ -109,7 +114,9 @@ pub fn run() {
         Some(agent::AGENT_FLAG) => match agent::run_server_agent() {
             Ok(code) => std::process::exit(code),
             Err(e) => {
+                // launchd and Task Scheduler keep no stderr: app.log says why
                 eprintln!("maktaba --server-agent: {e}");
+                applog::error("the server agent could not start the server", &e);
                 std::process::exit(1);
             }
         },
@@ -181,7 +188,9 @@ pub fn run() {
                 // mobile the scheme is declared in the manifest). Best-
                 // effort: dev builds may lack registration rights.
                 #[cfg(desktop)]
-                let _ = app.deep_link().register_all();
+                if let Err(e) = app.deep_link().register_all() {
+                    applog::warn("maktaba:// links could not be registered", e);
+                }
                 app.deep_link().on_open_url(move |event| {
                     let urls: Vec<String> = event.urls().iter().map(|u| u.to_string()).collect();
                     if urls.iter().any(|u| u.starts_with(autoinstall::INSTALL_URL)) {
@@ -190,7 +199,9 @@ pub fn run() {
                     }
                     if !urls.is_empty() {
                         focus_main(&handle);
-                        let _ = handle.emit("deep-link", urls);
+                        if let Err(e) = handle.emit("deep-link", urls) {
+                            applog::warn("a maktaba:// link could not reach the window", e);
+                        }
                     }
                 });
             }
@@ -223,7 +234,9 @@ pub fn run() {
                 if id == bigscreen::MENU_ID {
                     bigscreen::on_menu(app);
                 }
-                let _ = app.emit("menu", id);
+                if let Err(e) = app.emit("menu", &id) {
+                    applog::warn(&format!("the menu item {id} could not reach the window"), e);
+                }
             });
 
             // The window (tauri.conf.json's, made here): on a release's first
@@ -233,7 +246,9 @@ pub fn run() {
             // Epic 46: Start in Big Screen opens it full screen (the server's
             // page loads at /big: bigscreen::entry_url)
             if !hidden && app.state::<bigscreen::BigScreen>().start() {
-                let _ = bigscreen::set_full_screen(handle, true);
+                if let Err(e) = bigscreen::set_full_screen(handle, true) {
+                    applog::warn("Start in Big Screen could not go full screen", e);
+                }
             }
 
             // System tray / menu-bar item (Story 13.4, Epic 36 story
@@ -279,7 +294,12 @@ pub fn run() {
             bigscreen::set_big_screen_start,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running maktaba desktop");
+        .unwrap_or_else(|e| {
+            // the app could not start (its window, its tray, a plugin): app.log says why
+            applog::error("Maktaba could not start", &e);
+            eprintln!("maktaba: {e}");
+            std::process::exit(1);
+        });
 }
 
 /// The window's menu bar. `server_items`: add the tray's server items as a
