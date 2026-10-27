@@ -92,13 +92,24 @@ type Database struct {
 	// Version is the release whose migrations the database holds: once
 	// migrating, the release being updated to (its migrations may have run in
 	// part); once restored, the release from before the failed update. "" when
-	// that is not known (an install from before this record).
+	// that is not known (an install from before this record). A release that adds
+	// no migration leaves it as it was (Release says it runs): the release before
+	// it knows the database as well, and runs on it again with no dump put back.
 	Version string `json:"version"`
 	State   string `json:"state"`
+	// Release is the release that last started on the database when it is not
+	// Version (an update that added no migration); "": Version.
+	Release string `json:"release,omitempty"`
 	// From is the release before the update and Dump the dump taken before its
 	// migrations (backups/pre-<from>-to-<version>.dump).
 	From string `json:"from,omitempty"`
 	Dump string `json:"dump,omitempty"`
+	// Next is the release the running one switches to and NextDump the dump it took
+	// for it while it served, at NextAt (the update's backup step: internal/updater):
+	// Next's start takes it as its pre-update dump instead of taking one.
+	Next     string     `json:"next,omitempty"`
+	NextDump string     `json:"next_dump,omitempty"`
+	NextAt   *time.Time `json:"next_at,omitempty"`
 	// Failed is the release whose migrations failed (restoring, restored) and
 	// Error what they said.
 	Failed string `json:"failed,omitempty"`
@@ -109,6 +120,14 @@ type Database struct {
 	// for.
 	By string    `json:"by,omitempty"`
 	At time.Time `json:"at"`
+}
+
+// Ran is the release that last started on the database: Release, else Version.
+func (d Database) Ran() string {
+	if d.Release != "" {
+		return d.Release
+	}
+	return d.Version
 }
 
 // The states of a Database record.

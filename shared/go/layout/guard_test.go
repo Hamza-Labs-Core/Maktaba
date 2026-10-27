@@ -5,7 +5,44 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+// A release that added no migration leaves Version as it was (release says it runs): no
+// fallback marks a dump to put back, and it does not count as migrated.
+func TestRecordOfAReleaseWithoutMigrations(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "database.json")
+	_ = os.WriteFile(path, []byte(`{"version":"1.4.0","release":"1.5.0","state":"migrated","from":"1.4.0"}`), 0o644)
+	if ok, err := MarkRecordRestoring(path, "1.5.0", "launcher_pending_timeout"); err != nil || ok {
+		t.Fatalf("marked: %v %v", ok, err)
+	}
+	if RecordMigrated(path, "1.5.0") {
+		t.Fatal("1.5.0 counted as having migrated the database")
+	}
+}
+
+// The backup step notes the dump it took for the next release, keeping what the record
+// holds (or making one as the start would read the install).
+func TestNoteRecordNext(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "database.json")
+	at := time.Date(2026, 10, 27, 21, 0, 0, 0, time.UTC)
+	if err := NoteRecordNext(path, "1.4.0", "1.5.0", "/b/pre-1.4.0-to-1.5.0.dump", at); err != nil {
+		t.Fatal(err)
+	}
+	rec := readRecord(t, path)
+	if rec["version"] != "1.4.0" || rec["state"] != "migrated" || rec["next"] != "1.5.0" ||
+		rec["next_dump"] != "/b/pre-1.4.0-to-1.5.0.dump" || rec["next_at"] != "2026-10-27T21:00:00Z" {
+		t.Fatalf("made record %v", rec)
+	}
+	_ = os.WriteFile(path, []byte(`{"version":"1.3.0","release":"1.4.0","state":"migrated","other":"kept"}`), 0o644)
+	if err := NoteRecordNext(path, "1.4.0", "1.5.0", "/b/d.dump", at); err != nil {
+		t.Fatal(err)
+	}
+	rec = readRecord(t, path)
+	if rec["version"] != "1.3.0" || rec["release"] != "1.4.0" || rec["other"] != "kept" || rec["next_dump"] != "/b/d.dump" {
+		t.Fatalf("noted record %v", rec)
+	}
+}
 
 func readRecord(t *testing.T, path string) map[string]any {
 	t.Helper()

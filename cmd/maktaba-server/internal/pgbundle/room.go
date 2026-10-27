@@ -116,14 +116,15 @@ func MakeRoomWith(dir string, p RoomPolicy) error {
 	var used uint64
 	newest := map[string]dump{}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), backupSuffix) {
+		if !isDump(e) {
 			continue
 		}
 		info, err := e.Info()
 		if err != nil {
 			continue // gone meanwhile
 		}
-		d := dump{filepath.Join(dir, e.Name()), uint64(info.Size()), info.ModTime()}
+		p := filepath.Join(dir, e.Name())
+		d := dump{p, uint64(DumpBytes(p)), info.ModTime()}
 		all = append(all, d)
 		used += d.size
 		k := dumpKind(e.Name())
@@ -147,7 +148,7 @@ func MakeRoomWith(dir string, p RoomPolicy) error {
 		if newest[dumpKind(filepath.Base(d.path))].path == d.path {
 			continue
 		}
-		if err := os.Remove(d.path); err != nil && !os.IsNotExist(err) {
+		if err := RemoveDump(d.path); err != nil {
 			return err
 		}
 		free += d.size

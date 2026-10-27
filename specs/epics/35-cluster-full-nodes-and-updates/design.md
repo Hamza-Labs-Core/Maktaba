@@ -356,10 +356,16 @@ failing check.
 
 ### 6.1 Backup
 
-Postgres: `pg_dump --format=custom --compress=zstd:3` (Postgres 16+; else gzip 6) of the home's
-database with the API's migration user, to `<data_dir>/backups/pre-<version>-<utc>.dump` (mode 0600,
-never the share); then `pg_restore --list` must parse it and list every table of the schema; size and
-SHA-256 recorded in `update_runs.backup`. `pg_dump` is the one matching the server's major version
+Only for a release with migrations the database lacks (the staged release's migrations against
+goose's table; none: no backup, and the switch and its rollback are restarts), taken by the
+running release while it serves, right before the switch: only the switch waits for it (owner
+rule, 2026-10-27; install-kinds.md "The database" item 2). Postgres: `pg_dump --format=directory
+--jobs=<half the cores, 2-8> --compress=zstd:1` (else lz4, else gzip:1: what the `pg_dump` takes)
+of the home's database, without the rows the pipeline makes again (`segment_embeddings`,
+`pgbundle.Regenerable`), to `<data_dir>/backups/pre-<from>-to-<to>.dump` (a folder, mode 0700,
+never the share); then `pg_restore --list` must parse it and list every table of the schema; its
+size recorded as the run's backup. A rollback never dumps: after migrations it puts this backup
+back (in parallel, `pg_restore --jobs`), else it is a restart. `pg_dump` is the one matching the server's major version
 (`pg_config`/bundled; a mismatch fails the step with `pg_dump_version`). SQLite homes (tests,
 single-machine): `VACUUM INTO`. Kept: `backups_keep` (3), oldest pruned after a commit. Before
 any dump the oldest dumps go until it fits (its size guessed as the newest dump's x1.25): it leaves

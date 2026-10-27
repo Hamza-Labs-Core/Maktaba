@@ -126,11 +126,11 @@ func (r *restorer) list() backupList {
 	ents, _ := os.ReadDir(r.db.Backups)
 	for _, e := range ents {
 		info, err := e.Info()
-		if err != nil || !info.Mode().IsRegular() {
+		if err != nil || !pgbundle.IsDump(info) {
 			continue
 		}
 		if b, ok := backupOf(e.Name()); ok {
-			b.Bytes, b.At = info.Size(), info.ModTime().UTC()
+			b.Bytes, b.At = pgbundle.DumpBytes(filepath.Join(r.db.Backups, e.Name())), info.ModTime().UTC()
 			out.Backups = append(out.Backups, b)
 		}
 	}
@@ -191,8 +191,8 @@ func (r *restorer) path(name string) (string, os.FileInfo, error) {
 	if err != nil || !strings.HasPrefix(p, dir+string(filepath.Separator)) {
 		return "", nil, refuse("restore_bad_backup", "%q is not the name of a backup in %s", name, r.db.Backups)
 	}
-	st, err := os.Stat(p)
-	if err != nil || !st.Mode().IsRegular() {
+	st, err := os.Lstat(p)
+	if err != nil || !pgbundle.IsDump(st) {
 		return "", nil, refuse("restore_no_backup", "there is no backup %s in %s", name, r.db.Backups)
 	}
 	return p, st, nil
@@ -320,8 +320,8 @@ func (r *restorer) mark(pl restorePlan, by string) error {
 			return refuse("restore_under_way", "the library database is being put back from %s already: its next "+
 				"start finishes that", old.Dump)
 		}
-		if old.Version != "" {
-			held = old.Version
+		if old.Ran() != "" {
+			held = old.Ran()
 		}
 	}
 	var target updater.KeptRelease

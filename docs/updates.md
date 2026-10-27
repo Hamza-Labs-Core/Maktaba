@@ -18,7 +18,7 @@ The desktop and mobile apps' own updates (their badge, the signing key, the mobi
 | Installing on the home | In the quiet window, once the release is old enough, with its migrations rehearsed first. | Turning it off, a pin, a deferral, skipping a version, **Update now**. |
 | Installing on the machines | After the home commits the release: downloaded from the home, verified on each machine, switched one at a time. | What a machine's failure does to the others (`node_failure_policy`), when a machine that was offline catches up (`catch_up`). |
 | TV | Plain server installs keep TV playing across the restart; the streaming software then moves to the new release at programme boundaries, without an approval. | The viewers a restart may interrupt (`tv_staging.quiet_max_viewers`, 0) on installs that restart whole. |
-| Going back | A release that does not stay healthy is rolled back, its database put back from the dump taken before its migrations. | Rolling back by hand, restoring an older backup. |
+| Going back | A release that does not stay healthy is rolled back: a restart onto the previous release, its database put back first from the dump taken before the failed release's migrations when they ran. Nothing is dumped on the way back. | Rolling back by hand, restoring an older backup. |
 | A desktop app that runs the server (Maktaba.app, the Windows or Linux app) | It downloads and stages the release the home orders, says when it installs, and installs and restarts by itself: at once for an **Update now**, in the window for an automatic update. No click on the machine (owner decision D1, 2026-10-27). | The same as any machine. |
 
 Automatic installs are on by default (`rules.updates.auto_install`). With them off (Admin →
@@ -82,9 +82,13 @@ cluster stays where it is until stable passes it.
    (`drain_timeout_minutes`; transcriptions resume from their checkpoints). A plain server
    install's TV keeps playing across its restart, so it waits for nothing more; any other install
    restarts live TV with it, so it waits until nobody watches ([TV](#what-happens-to-tv)).
-3. **The home switches** to it and restarts. The new release's start dumps the database
-   (`backups/pre-<old>-to-<new>.dump`, checked to read back), migrates it, and puts the dump back
-   if a migration fails. Its health is watched (every role running, the API ready and answering as
+3. **The home backs its database up, then switches** to the release and restarts
+   ([the database during an update](#the-database-during-an-update)). A release that adds no
+   migration takes no backup at all: the switch is a restart of seconds. One that adds migrations
+   is backed up while the running release keeps serving (`backups/pre-<old>-to-<new>.dump`, checked
+   to read back; Admin → Updates shows the **Back up** step and how much it wrote); only the
+   switch waits for it. The new release's start then migrates at once, and puts the backup back if
+   a migration fails. Its health is watched (every role running, the API ready and answering as
    the new version) for 10 minutes, and its TV change goes on the air; then the release is kept
    (committed).
 4. **Every machine follows**, after the home commits: they download and verify in parallel (at
@@ -187,19 +191,51 @@ the next start from the update's journal (`updates/journal.json`).
 
 ## When a release does not hold: rollback, backups, restore
 
-A release that does not stay healthy is **rolled back**: the previous release runs again. When it
-had already migrated the database, the dump taken before its migrations is put back first (every
-release refuses a database a newer one migrated); writes made between that dump and the rollback
-are lost — minutes, inside the window, with the jobs drained — and the failed state is dumped
-aside (`backups/failed-<version>-<time>.dump`). The release is then blocked until a newer one
-appears or an admin unblocks it (Admin → Updates → **Try it again**, or **Update now** naming it).
-On a machine, the launcher's guard does the same when the new release does not confirm in time
-(15 minutes) or stops three times in ten minutes.
+A release that does not stay healthy is **rolled back**: the previous release runs again, at once.
+Nothing is dumped before it starts. When the failed release added no migration, or its migrations
+never ran, that is all: a restart onto the previous release, which knows the database as it is.
+When its migrations ran, the backup taken before them is put back first (every release refuses a
+database a newer one migrated); writes made between that backup and the rollback are lost —
+minutes, inside the window, with the jobs drained — and the failed state is not kept. The release
+is then blocked until a newer one appears or an admin unblocks it (Admin → Updates → **Try it
+again**, or **Update now** naming it). On a machine, the launcher's guard does the same when the
+new release does not confirm in time (15 minutes) or stops three times in ten minutes.
+
+### The database during an update
+
+| The release | Before the switch | The switch | Its rollback |
+|---|---|---|---|
+| adds no migration (none of its migrations is one the database lacks) | nothing | a restart | a restart |
+| adds migrations | the backup, taken while the release before keeps serving | a restart, then its migrations | the backup put back, then a restart |
+
+- **Which releases add migrations.** Right before the switch the home compares the staged
+  release's migrations (the verified `maktaba-migrations-<v>.tar.gz` of its `release.json`) with
+  the newest migration the database holds. A release whose start finds none to run records that
+  the database still holds the previous release's migrations, so the previous release can run on
+  it again as it is; the launcher's guard then finds no backup to put back.
+- **The backup is taken on the side.** `pg_dump` reads one snapshot, so the library keeps serving
+  while it runs. Writes made between its start and the switch (a minute or two, with the jobs
+  drained) are not in it. A backup that fails switches nothing (`db_dump_failed`: the release
+  before goes on, and the run says why). A release installed some other way (the app's own
+  updater, by hand) that adds migrations still backs up at its start, as before.
+- **The backup format.** Every dump is a directory (still named `*.dump`): one file per table,
+  written by up to 8 `pg_dump` workers at once (half the machine's cores) and read back by as many
+  `pg_restore` workers, each file compressed with zstd at level 1, else lz4, else gzip at level 1
+  (whichever the `pg_dump` at hand was built with: the bundled one has gzip only). A dump of before
+  (one file) is still listed, restored, moved and pruned as it was.
+- **What the backup before an update leaves out.** Semantic search's vectors
+  (`segment_embeddings`, about 85% of a large library's dump): Maktaba makes them again. A backup
+  put back without them leaves the table and its index empty; the pipeline's reconciler then
+  queues an `index` job for every video whose last one succeeded and has no vectors (1000 a
+  minute), which embeds its transcript again. Full-text search works throughout; semantic search
+  fills back in as the jobs run (on the home that measured it, about 60 segments a second on its
+  GPU: three days or so for its 17 million). Only a failed update's rollback, or a restore by
+  hand of such a backup, puts one back. The nightly backups keep the vectors.
 
 **Backups.** Before every update that migrates, the home dumps its database into
 `<data_dir>/backups/pre-<from>-to-<to>.dump`. It keeps `backups_keep` (3) of each kind: those, the
-bundled database's daily `maktaba-<time>.dump`, the database a failed update left (`failed-*`) and
-the one a restore replaced (`replaced-*`).
+bundled database's daily `maktaba-<time>.dump`, the database a failed update left in releases
+before this rule (`failed-*`) and the one a restore replaced (`replaced-*`).
 
 **Restoring a backup** (story 35.5 AC8) puts the home back as it was when a backup was taken:
 Admin → Updates → *Backups of the library database* → **Restore** (type the backup's name to
@@ -247,8 +283,9 @@ GitHub lists them.
   rehearsal that could not run is an attempt.
 - **A home whose window always has a viewer** (or is always outside it) is told after three
   windows ("stuck"), and the page offers **Install now**.
-- The dumps are kept to `backups_keep`; scratch copies a crash left behind go after an hour.
-- **Before any dump** (nightly, before an update, a failed update's set aside) the oldest dumps go
+- The dumps are kept to `backups_keep`; scratch copies and dumps a crash cut short
+  (`*.dump.partial`) go once nothing was written to them for an hour.
+- **Before any dump** (nightly, before an update, a restore's set aside) the oldest dumps go
   until the new one fits: it must leave 5% of the disk free (at least 2 GiB), and all the dumps
   together stay within a fifth of the disk. The newest dump of each kind always stays. When it
   cannot fit even so, the dump is not started and the update stops at its database step with the

@@ -96,8 +96,14 @@ func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts Re
 	if jobs <= 0 {
 		jobs = max(1, runtime.NumCPU()/2)
 	}
+	// not the dump's publications (the machines' copies, Epic 37): their slots went with the
+	// database, each machine copies it anew, and its next grant makes its publication again
+	// with the tables there then (cluster_copy_publication). A machine that asks meanwhile
+	// makes it while the tables come back, and the dump's own ALTER PUBLICATION ... ADD
+	// TABLE then failed the whole restore ("is already member of publication"; the owner's
+	// rollback of 2026-10-27), as the in-place restore of another Postgres never did.
 	cmd := exec.CommandContext(ctx, b.Bin("pg_restore"), "-h", "127.0.0.1", "-p", strconv.Itoa(b.Port),
-		"-U", SuperUser, "-d", AppDatabase, "--no-owner", "--role="+AppRole, "--exit-on-error",
+		"-U", SuperUser, "-d", AppDatabase, "--no-owner", "--role="+AppRole, "--exit-on-error", "--no-publications",
 		"-j", strconv.Itoa(jobs), "-L", list, dump)
 	cmd.Env = append(os.Environ(), "PGPASSWORD="+q.pw)
 	cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)

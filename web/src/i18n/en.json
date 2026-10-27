@@ -3474,6 +3474,7 @@
   "updates.step.stage": "Download and verify",
   "updates.step.smoke": "Test run",
   "updates.step.rehearse": "Rehearse the database changes",
+  "updates.step.backup": "Back up the library database (it keeps serving)",
   "updates.step.switch": "Switch",
   "updates.step.restart": "Restart",
   "updates.step.watch": "Watch",

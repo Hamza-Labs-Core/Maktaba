@@ -23,10 +23,13 @@ Design: [design.md](design.md) §6; README decisions "Database rollback", "Contr
 
 ## Acceptance criteria
 
-- **AC1** `backup` step (only when `migrate status` lists pending migrations): Postgres `pg_dump
-  --format=custom` (zstd:3 on Postgres 16+, else gzip 6) with the migration user into
-  `<data_dir>/backups/pre-<version>-<utc>.dump`, mode 0600, never on the share; `pg_restore --list` must
-  parse it and list every table; size and SHA-256 in `update_runs.backup`. SQLite: `VACUUM INTO`.
+- **AC1** `backup` step (only when the staged release has migrations the database lacks; taken
+  while the running release serves, right before the switch, which alone waits for it): Postgres
+  `pg_dump --format=directory --jobs=N` (zstd:1, else lz4, else gzip:1) without
+  `segment_embeddings`' rows into `<data_dir>/backups/pre-<from>-to-<to>.dump` (a folder, mode
+  0700), never on the share; `pg_restore --list` must parse it and list every table; its size is
+  the run's backup. SQLite: `VACUUM INTO`. (Amended 2026-10-27: see install-kinds.md "The
+  database".)
 - **AC2** `pg_dump` must match the server's major version; a mismatch fails the step (`pg_dump_version`)
   before anything changed.
 - **AC3** `rehearse` step (pending migrations and `rehearse_migrations`): `CREATE DATABASE

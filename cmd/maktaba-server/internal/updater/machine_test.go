@@ -233,9 +233,6 @@ func (r *fakeRehearser) Rehearse(context.Context, string, string, int, io.Writer
 	r.n++
 	return Rehearsal{Pending: 2, MigrateSec: 0.5}, r.err
 }
-func (r *fakeRehearser) DumpAside(context.Context, string) (string, error) {
-	return "/fake/failed.dump", nil
-}
 func (r *fakeRehearser) Check(context.Context, bool, int) error { return nil }
 
 type fakeHealth struct {

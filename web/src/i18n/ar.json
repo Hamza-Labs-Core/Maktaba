@@ -3474,6 +3474,7 @@
   "updates.step.stage": "التنزيل والتحقق",
   "updates.step.smoke": "تشغيل تجريبي",
   "updates.step.rehearse": "تجربة تغييرات قاعدة البيانات",
+  "updates.step.backup": "نسخ قاعدة بيانات المكتبة احتياطيًا (وهي تواصل العمل)",
   "updates.step.switch": "التبديل",
   "updates.step.restart": "إعادة التشغيل",
   "updates.step.watch": "المراقبة",

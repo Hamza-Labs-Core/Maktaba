@@ -90,6 +90,38 @@ func TestBundleGuardRunsTheKeptPayload(t *testing.T) {
 	}
 }
 
+// The fallback from a release that added no migration (its start took no dump, and the
+// record keeps the release before as the one whose migrations the database holds): the
+// kept payload runs at once and the record is not marked, so its start puts nothing back.
+func TestBundleGuardWithoutMigrationsPutsNothingBack(t *testing.T) {
+	t.Parallel()
+	processTest(t)
+	bundle, root := mkBundle(t, "crash")
+	mkPayload(t, bundle, "2.0.0", "crash", "new")
+	kept := filepath.Join(root, "updates", "payloads", "1.0.0")
+	mkPayload(t, kept, "1.0.0", "run", "old")
+	record := filepath.Join(root, "database.json")
+	b, _ := json.Marshal(map[string]any{"version": "1.0.0", "release": "2.0.0", "state": "migrated", "from": "1.0.0"})
+	if err := os.WriteFile(record, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := layout.WriteGuard(root, layout.Guard{Version: "2.0.0", RunID: "run-1", Since: time.Now(),
+		PreviousPayload: kept, Record: record}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig(root)
+	cfg.Bundle = bundle
+	startLauncher(t, cfg)
+	l := layout.New(root)
+	waitFor(t, "the kept payload runs", func() bool { return countAct(readTrace(l), "old", "run") == 1 })
+	if st, failed := recordState(t, record); st != "migrated" || failed != "" {
+		t.Fatalf("record %s failed %s: marked for a dump that was never taken", st, failed)
+	}
+	if ev := events(l, "launcher_record_restore"); len(ev) != 0 {
+		t.Fatalf("launcher_record_restore = %+v", ev)
+	}
+}
+
 // The override runs the kept payload with the app's own named beside it, and the
 // launcher's root for the server's guard; a guard naming another release is not this
 // payload's (no fallback).

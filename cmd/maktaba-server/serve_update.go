@@ -308,8 +308,15 @@ func pgProgram(name string) string {
 	return ""
 }
 
-// rehearser is updater.Rehearser over a dbsafe.Target.
-type rehearser struct{ t dbsafe.Target }
+// rehearser is updater.Rehearser over a dbsafe.Target, and the home's pre-update dump
+// taken while it serves (updater.SideBackup): keep and room are the dumps' rules
+// ([backups] update_keep, its room), off [backups] pre_update = "off".
+type rehearser struct {
+	t    dbsafe.Target
+	keep int
+	room pgbundle.RoomPolicy
+	off  bool
+}
 
 func (r rehearser) Check(ctx context.Context, rehearse bool, maxGB int) error {
 	if err := r.t.Check(ctx); err != nil {
@@ -324,9 +331,50 @@ func (r rehearser) Rehearse(ctx context.Context, api, migrations string, maxGB i
 		codedFailure(err)
 }
 
-func (r rehearser) DumpAside(ctx context.Context, label string) (string, error) {
-	p := filepath.Join(r.t.Backups, label+"-"+time.Now().UTC().Format("20060102T150405")+".dump")
-	return p, r.t.Dump(ctx, p)
+// Pending implements updater.SideBackup: the staged release's migrations (dir) the
+// database lacks.
+func (r rehearser) Pending(ctx context.Context, dir string) (int, bool) {
+	if dir == "" {
+		return 0, false
+	}
+	return r.t.Pending(ctx, dir)
+}
+
+// backupProgressEvery is how often the backup step says how much it wrote.
+var backupProgressEvery = 10 * time.Second
+
+// BackupBefore implements updater.SideBackup: the pre-update dump (dumpBeforeUpdateExternal:
+// room made first, the rows Maktaba makes again left out, the dumps of its kind pruned),
+// while this release serves.
+func (r rehearser) BackupBefore(ctx context.Context, from, to string, progress func(int64)) (*updater.Backup, error) {
+	if r.off {
+		return nil, nil
+	}
+	part := filepath.Join(r.t.Backups, pgbundle.UpdateDumpName(from, to)) + ".partial"
+	pctx, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTicker(backupProgressEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-pctx.Done():
+				return
+			case <-t.C:
+				if n := pgbundle.DumpBytes(part); n > 0 && progress != nil {
+					progress(n)
+				}
+			}
+		}
+	}()
+	p, err := dumpBeforeUpdateExternal(ctx, r.t, from, to, r.keep, r.room)
+	stop()
+	<-done
+	if err != nil {
+		return nil, err
+	}
+	return &updater.Backup{Path: p, Bytes: pgbundle.DumpBytes(p)}, nil
 }
 
 // UpdateDump is the dump a release's start took before its migrations
@@ -338,8 +386,8 @@ func (r rehearser) UpdateDump(from, to string) *updater.Backup {
 	for _, f := range []string{from, "v" + strings.TrimPrefix(from, "v"), strings.TrimPrefix(from, "v")} {
 		for _, t := range []string{to, "v" + strings.TrimPrefix(to, "v"), strings.TrimPrefix(to, "v")} {
 			p := filepath.Join(r.t.Backups, pgbundle.UpdateDumpName(f, t))
-			if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && (best == nil || st.ModTime().After(at)) {
-				best, at = &updater.Backup{Path: p, Bytes: st.Size()}, st.ModTime()
+			if st, err := os.Lstat(p); err == nil && pgbundle.IsDump(st) && (best == nil || st.ModTime().After(at)) {
+				best, at = &updater.Backup{Path: p, Bytes: pgbundle.DumpBytes(p)}, st.ModTime()
 			}
 		}
 	}
@@ -374,6 +422,9 @@ func (r recordFile) MarkRestore(version, _, reason string) (bool, error) {
 	return layout.MarkRecordRestoring(string(r), version, reason)
 }
 func (r recordFile) Migrated(version string) bool { return layout.RecordMigrated(string(r), version) }
+func (r recordFile) NoteNext(running, next, dump string) error {
+	return layout.NoteRecordNext(string(r), running, next, dump, time.Now())
+}
 func (r recordFile) Unmark(version string) error {
 	_, err := layout.UnmarkRecordRestoring(string(r), version)
 	return err
@@ -415,7 +466,7 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 		u.r = newRestorer(cfg, homeDatabase(cfg, pg), inst, exit)
 		u.r.run = func() *updater.Journal { return m.Status().Journal }
 		if t := homeDatabase(cfg, pg); t != nil {
-			m.Rehearser = rehearser{*t}
+			m.Rehearser = rehearser{t: *t, keep: updateKeep(cfg), room: roomOf(cfg), off: !cfg.Backups.PreUpdateOn()}
 			go func() { // a crash during a rehearsal left its scratch database
 				dctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 				defer cancel()

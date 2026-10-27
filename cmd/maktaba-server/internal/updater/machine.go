@@ -142,9 +142,6 @@ type Rehearser interface {
 	// a home that could not take its pre-update dump fails its preflight, not its start.
 	Check(ctx context.Context, rehearse bool, maxGB int) error
 	Rehearse(ctx context.Context, api, migrations string, maxGB int, log io.Writer) (Rehearsal, error)
-	// DumpAside dumps the database as it is (a failed release's state) beside the
-	// backups; best effort.
-	DumpAside(ctx context.Context, label string) (string, error)
 }
 
 // BackupPruner is a Rehearser that also keeps the home's dumps to
@@ -786,6 +783,21 @@ func (m *Machine) Apply(runID string) error {
 func (m *Machine) apply(ctx context.Context) {
 	j := m.Status().Journal
 	m.logf("applying %s (from %s)", j.Job.Version, orNone(j.From))
+	// the home's pre-update dump while this release serves (backup.go): only the switch
+	// waits for it
+	if err := m.backupBeforeSwitch(ctx); err != nil {
+		if ctx.Err() != nil {
+			// this process is being stopped: the journal says applying, and the next start
+			// ends the run with nothing switched
+			m.logf("stopped while saving the library database: nothing was switched")
+			return
+		}
+		f := failure(StepBackup, err)
+		m.undoSwitch("the backup failed")
+		_ = m.mutate(func(j *Journal) { j.State, j.Error = StateApplyFailed, f })
+		m.errorf("the backup before the switch failed, nothing was switched: %s", f.Error())
+		return
+	}
 	_ = m.beginStep(StepSwitch)
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Switch(ctx, j) }); err != nil {
 		f := failure(StepSwitch, err)
@@ -1299,9 +1311,10 @@ func (m *Machine) replaceLauncher() {
 	}
 }
 
-// rollback switches back to the release that ran before and restarts on it; where the
-// new release's migrations ran, the record is marked for the dump taken before them to
-// be put back first (the failed state dumped aside).
+// rollback switches back to the release that ran before and restarts on it at once:
+// nothing is dumped first. Where the new release's migrations ran, the record is marked
+// for the dump taken before them to be put back by that start, before any role runs; a
+// release that added no migration left the database as the one before knows it.
 func (m *Machine) rollback(reason string) {
 	j := m.Status().Journal
 	if j.FromRef == "" && j.From == "" {
@@ -1331,13 +1344,6 @@ func (m *Machine) rollback(reason string) {
 	m.withdrawTV(reason)
 	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)
 	if migrated {
-		if m.Rehearser != nil {
-			if p, err := m.Rehearser.DumpAside(context.Background(), "failed-"+j.Job.Version); err == nil {
-				m.logf("the database as %s left it is in %s", j.Job.Version, p)
-			} else {
-				m.warnf("could not dump the failed state aside: %v", err)
-			}
-		}
 		if _, err := m.Records.MarkRestore(j.Job.Version, j.From, reason); err != nil {
 			m.errorf("cannot mark the database record for the dump to be put back: %v", err)
 		}

@@ -246,28 +246,27 @@ func majorOf(versionOut string) int {
 	return n
 }
 
-// Dump writes a custom-format dump of the database to path (beside, then renamed: a
-// dump cut short is never taken for one), mode 0600, and checks it reads back.
+// Dump writes a dump of the whole database to path (DumpWith).
 func (t Target) Dump(ctx context.Context, path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	part := path + ".partial"
-	_ = os.Remove(part)
-	cmd, err := t.command(ctx, "pg_dump", "", "--format=custom", "--no-owner", "--file="+part)
+	return t.DumpWith(ctx, path, pgbundle.DumpOptions{})
+}
+
+// DumpWith writes a directory-format dump of the database to path (pgbundle.PgDump: its
+// workers, its compression, written beside and moved into place once it reads back, so a
+// dump cut short or unreadable is never taken for one), its owners left out, its folder
+// mode 0700.
+func (t Target) DumpWith(ctx context.Context, path string, opts pgbundle.DumpOptions) error {
+	conn, pw, err := t.parts("")
 	if err != nil {
 		return err
 	}
-	if out, err := cmd.CombinedOutput(); err != nil {
-		_ = os.Remove(part)
-		return fmt.Errorf("pg_dump: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	_ = os.Chmod(part, 0o600)
-	if _, err := t.VerifyDump(ctx, part); err != nil {
-		_ = os.Remove(part)
+	opts.Check = func(part string) error {
+		_ = os.Chmod(part, 0o700)
+		_, err := t.VerifyDump(ctx, part)
 		return err
 	}
-	return os.Rename(part, path)
+	return pgbundle.PgDump(ctx, t.bin("pg_dump"), []string{"--dbname=" + conn, "--no-owner"},
+		append(os.Environ(), "PGPASSWORD="+pw, "PGCONNECT_TIMEOUT=15"), path, opts)
 }
 
 // EndSessions ends the other client sessions on the database that its role may end
@@ -416,7 +415,8 @@ func (t Target) rehearse(ctx context.Context, api, dir string, maxBytes int64, l
 		defer cancel()
 		_, _ = d.ExecContext(dctx, `DROP DATABASE IF EXISTS `+scratch+` WITH (FORCE)`)
 	}()
-	restore, err := t.command(ctx, "pg_restore", scratch, "--no-owner", "--exit-on-error", dump)
+	restore, err := t.command(ctx, "pg_restore", scratch, "--no-owner", "--exit-on-error",
+		"--jobs="+strconv.Itoa(pgbundle.DumpJobs()), dump)
 	if err != nil {
 		return r, err
 	}
@@ -620,6 +620,31 @@ func appliedVersion(ctx context.Context, d *sql.DB) (int64, error) {
 	var v int64
 	err := d.QueryRowContext(ctx, `SELECT COALESCE(MAX(version_id), 0) FROM goose_db_version WHERE is_applied`).Scan(&v)
 	return v, err
+}
+
+// Applied is the newest migration the database holds (goose's table; 0 before the
+// first).
+func (t Target) Applied(ctx context.Context) (int64, error) {
+	d, err := t.open(ctx, "")
+	if err != nil {
+		return 0, err
+	}
+	defer d.Close()
+	return appliedVersion(ctx, d)
+}
+
+// Pending counts the release's migrations (the folder dir) the database does not hold:
+// what its start would run. ok is false when that cannot be told (no folder, the database
+// not reachable).
+func (t Target) Pending(ctx context.Context, dir string) (n int, ok bool) {
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return 0, false
+	}
+	applied, err := t.Applied(ctx)
+	if err != nil {
+		return 0, false
+	}
+	return pendingIn(dir, applied), true
 }
 
 // pendingIn counts dir's Postgres migrations above applied.
