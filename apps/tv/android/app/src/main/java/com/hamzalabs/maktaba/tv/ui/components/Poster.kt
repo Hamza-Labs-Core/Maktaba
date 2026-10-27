@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -48,10 +49,15 @@ fun Poster(client: ApiClient, video: String, modifier: Modifier = Modifier) {
             image = bmp
         }
     }
-    Box(modifier.background(MaktabaPalette.Raised), contentAlignment = Alignment.Center) {
-        val img = image
+    val img = image
+    // the whole frame, as a player shows the video: a vertical or square one has black bars
+    // at its sides, an ultra-wide one above and below
+    Box(
+        modifier.background(if (img != null) Color.Black else MaktabaPalette.Raised),
+        contentAlignment = Alignment.Center,
+    ) {
         if (img != null) {
-            Image(img, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            Image(img, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
         } else {
             Text("۞", style = MaterialTheme.typography.headlineLarge, color = MaktabaPalette.Gold.copy(alpha = 0.5f))
         }

@@ -9,7 +9,7 @@ import { Button } from "@ds/components/Button/Button";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
-import { setFeaturedPick, type Featured } from "../lib/browse";
+import { setFeaturedPick, showsWhole, type Featured } from "../lib/browse";
 import { watchPath } from "../lib/playQueue";
 import { formatDuration } from "./VideoViews";
 import { errorText } from "../lib/errorText";
@@ -19,9 +19,11 @@ export function FeaturedHero({ featured, onChange }: { featured: Featured; onCha
   const { user } = useAuth();
   const toast = useToast();
   const [broken, setBroken] = useState(false);
+  const [whole, setWhole] = useState(false);
   const [busy, setBusy] = useState(false);
   const { video, series } = featured;
   const isSeries = featured.kind === "series" && !!series;
+  const art = `/api/videos/${encodeURIComponent(video.id)}/poster`;
   const title = isSeries
     ? series!.name || t("libraryPage.seriesUnnamed")
     : video.title || video.filename || video.id;
@@ -43,11 +45,15 @@ export function FeaturedHero({ featured, onChange }: { featured: Featured; onCha
 
   return (
     <section className="mkt-hero" aria-labelledby="mkt-hero-title" data-testid="featured-hero">
+      {!broken && whole && <img className="mkt-hero__backdrop" src={art} alt="" />}
       {!broken && (
         <img
-          className="mkt-hero__art"
-          src={`/api/videos/${encodeURIComponent(video.id)}/poster`}
+          className={whole ? "mkt-hero__art mkt-hero__art--whole" : "mkt-hero__art"}
+          src={art}
           alt=""
+          onLoad={(e) =>
+            setWhole(showsWhole(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight))
+          }
           onError={() => setBroken(true)}
         />
       )}

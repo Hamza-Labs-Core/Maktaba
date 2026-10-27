@@ -863,10 +863,13 @@ html {
   display: flex;
   background: var(--color-subtle);
 }
+/* the whole frame, as a player shows it: a vertical or square video gets bars
+   at its sides, an ultra-wide one above and below */
 img.mkt-card__poster {
   width: 100%;
   aspect-ratio: 16 / 9;
-  object-fit: cover;
+  object-fit: contain;
+  background: #000;
 }
 
 .mkt-loadmore {
@@ -1815,12 +1818,14 @@ a.mkt-guide__chanhead:hover {
   overflow: hidden;
   background: var(--color-subtle);
 }
-/* the programme's poster fills the 16:9 box; the channel logo (square,
-   often with the channel's name under its emblem) is never cropped */
+/* the programme's poster is shown whole in the 16:9 box, with bars where it is
+   narrower (a vertical video); the channel logo (square, often with the
+   channel's name under its emblem) is never cropped */
 .mkt-won__poster img:not(.mkt-won__logo) {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  background: #000;
 }
 .mkt-won__poster-empty {
   display: block;
@@ -2120,7 +2125,8 @@ a.mkt-guide__chanhead:hover {
   flex: 0 0 auto;
   width: min(320px, 40%);
   aspect-ratio: 16 / 9;
-  object-fit: cover;
+  object-fit: contain;
+  background: #000;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
 }
@@ -2172,7 +2178,8 @@ a.mkt-guide__chanhead:hover {
 .mkt-episode__thumb img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  background: #000;
 }
 .mkt-episode__watched {
   position: absolute;
@@ -3639,6 +3646,10 @@ button.mkt-video__hero {
   min-height: 0;
   object-fit: cover;
   background: var(--color-neutral-300);
+}
+.mkt-libcard__mosaic > img {
+  object-fit: contain;
+  background: #000;
 }
 .mkt-libcard__name {
   font-weight: 600;
