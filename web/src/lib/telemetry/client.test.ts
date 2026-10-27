@@ -50,6 +50,28 @@ describe("telemetry client", () => {
     expect(localStorage.getItem("mkt:telemetry:pseudonym")).toBeNull();
   });
 
+  // the popup answered "Not now" before the rework is not asked again after it
+  it("keeps a no given before the rework, with its date", async () => {
+    const at = "2026-10-27T02:02:28.815Z";
+    localStorage.setItem("mkt:telemetry:consent", JSON.stringify({ granted: false, at }));
+    vi.resetModules();
+    const fresh = await import("./client");
+    const consent = await import("./consent");
+    expect(fresh.telemetryDecided()).toBe(true);
+    expect(fresh.telemetryEnabled()).toBe(false);
+    expect(consent.readConsent()).toEqual({ granted: false, at });
+    expect(localStorage.getItem("mkt:telemetry:consent")).toBeNull();
+  });
+
+  it("keeps the answer given since the rework over an old one", async () => {
+    localStorage.setItem("mkt:usage:consent", JSON.stringify({ granted: true, at: "new" }));
+    localStorage.setItem("mkt:telemetry:consent", JSON.stringify({ granted: false, at: "old" }));
+    vi.resetModules();
+    const consent = await import("./consent");
+    consent.forgetLegacyConsent();
+    expect(consent.readConsent()).toEqual({ granted: true, at: "new" });
+  });
+
   it("collects nothing before an opt-in, nor after a decline", () => {
     startTelemetry();
     track("APP_OPEN", { cold_start: true });

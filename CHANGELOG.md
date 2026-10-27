@@ -490,6 +490,21 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A full node plays the videos it can read itself again.** A node's path map keys the prefix
+  the database stores (`{"/Volumes/Originals/": "O:/"}`, inferred from the home's mounts and the
+  node's), and its streaming role opens files through it, but the api's check of whether this
+  machine can read a video kept only `smb://` keys. Every video looked unreadable on a Windows
+  node with the share on `O:`, every session went to the home instead, and playback buffered
+  there. The api now reads a node's map as its streaming role does. And a transcode that ends
+  before it writes its playlists answers 410 for them, not a 404 the player waited on for good:
+  it opens the video again, or says it cannot play it.
+- **The video page has a Back button.** The desktop and TV apps' windows have no browser Back:
+  the video page now goes back to the series, search or list it was opened from (a pasted link:
+  the library).
+- **"Help improve Maktaba" keeps an earlier "Not now".** Since the usage data goes to Maktaba
+  rather than the home's admin, the old answer was forgotten so a yes would be asked again; a no
+  was forgotten too, and the notice came back for people who had already declined. A no now
+  carries over, dated as it was.
 - **A Windows node logs in to the home's database again.** Since passwords left the URLs a
   role gets (a passfile instead), the api and the copy of the database on a Windows machine
   logged in with no password: lib/pq before v1.11 skips a passfile it takes for readable by

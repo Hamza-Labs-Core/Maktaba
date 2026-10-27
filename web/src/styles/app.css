@@ -3361,6 +3361,11 @@ a.mkt-guide__chanhead:hover {
 }
 
 /* the video page: its picture on top (it plays the video), the title under it */
+.mkt-video__back {
+  align-self: flex-start;
+  justify-self: start;
+  width: fit-content;
+}
 .mkt-video__header {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
