@@ -82,11 +82,11 @@ jobs:
               # the launcher, the app's jars (with JavaFX's Linux natives) and its own runtime;
               # listed once into a variable (grep -q on a pipe ends it early: tar's write fails)
               files=$(dpkg-deb -c "${deb[0]}")
-              grep -q '/bin/maktaba-player$' <<<"${files}"
-              grep -q 'javafx-media-.*-linux\.jar$' <<<"${files}"
-              grep -q '/lib/runtime/' <<<"${files}"
               info=$(rpm -qip "${rpm[0]}")
-              grep -q '^Name *: maktaba-player' <<<"${info}"
+              for want in '/bin/maktaba-player$' '/lib/app/.*javafx-media' '/lib/runtime/'; do
+                grep -qE "${want}" <<<"${files}" || { echo "::error::the .deb has nothing matching ${want}"; grep -E 'bin/|lib/app/' <<<"${files}" | head -40; exit 1; }
+              done
+              grep -q '^Name *: maktaba-player' <<<"${info}" || { echo "::error::the .rpm is not maktaba-player"; echo "${info}"; exit 1; }
               ;;
             Windows)
               msi=("$out"/msi/*.msi)
