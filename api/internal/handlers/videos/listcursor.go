@@ -24,6 +24,7 @@ type listCursor struct {
 	Order string `json:"o,omitempty"` // "asc" or "desc"; "" is desc (cursors made before order existed)
 	Key   string `json:"k"`           // RFC3339Nano for the time sorts, a number or the title otherwise
 	Null  bool   `json:"n,omitempty"` // the last row's key was NULL (nullable sorts only)
+	Rank  int    `json:"r,omitempty"` // sort=relevance: the last row's rank (its key is created_at)
 	ID    string `json:"i"`
 }
 
@@ -56,12 +57,33 @@ var listSorts = map[string]listSort{
 	"plays": {expr: "COALESCE(wp.plays, 0)", kind: keyInt},
 }
 
+// DefaultSort is the order of a list nobody sorted: recently added first
+// (created_at, the row's insert, is when the video joined the library).
+const DefaultSort = "created_at"
+
+// sortRelevance is the order of a search of the list (?q= without a sort):
+// the titles that start with q, then the titles that hold it, then the videos
+// it is only in the description of, each rank newest-added first. order does
+// not apply to it.
+const sortRelevance = "relevance"
+
+// relevanceRank is the rank sortRelevance orders by: pfx is the placeholder of
+// q's prefix pattern ("q%"), contains that of the list's q filter ("%q%"). The same
+// LIKE as the filter, so a rank never disagrees with what it matched.
+func relevanceRank(pfx, contains string) string {
+	return "(CASE WHEN title LIKE " + pfx + " THEN 0 WHEN title LIKE " + contains + " THEN 1 ELSE 2 END)"
+}
+
 // listSortNames is the order the 400 names the sorts in.
-const listSortNames = "updated_at, created_at, title, published_at, duration_sec, plays"
+const listSortNames = "updated_at, created_at, title, published_at, duration_sec, plays, relevance (with q)"
 
 // orderBy is the ORDER BY list for a sort and direction: NULL keys last,
-// then the key, then the id as the tie-break.
-func orderBy(sort, order string) string {
+// then the key, then the id as the tie-break. rank is relevanceRank's
+// expression under sort=relevance.
+func orderBy(sort, order, rank string) string {
+	if sort == sortRelevance {
+		return rank + " ASC, created_at DESC, id DESC"
+	}
 	s := listSorts[sort]
 	dir := " DESC"
 	if order == "asc" {
@@ -78,6 +100,9 @@ func orderBy(sort, order string) string {
 func encodeListCursor(sort, order string, v Video) string {
 	c := listCursor{Sort: sort, Order: order, ID: v.ID}
 	switch sort {
+	case sortRelevance:
+		c.Rank = v.rank
+		c.Key = v.CreatedAt.UTC().Format(time.RFC3339Nano)
 	case "created_at":
 		c.Key = v.CreatedAt.UTC().Format(time.RFC3339Nano)
 	case "title":
@@ -167,8 +192,18 @@ func (c *listCursor) parseKey(kind keyKind) (any, error) {
 }
 
 // where returns the predicate that resumes after the cursor, using $n and
-// $n+1, and its arguments.
-func (c *listCursor) where(sort, order string, n int) (string, []any, *httperror.Error) {
+// $n+1 ($n+2 under sort=relevance, whose rank expression it is given), and
+// its arguments.
+func (c *listCursor) where(sort, order, rank string, n int) (string, []any, *httperror.Error) {
+	if sort == sortRelevance {
+		at, err := time.Parse(time.RFC3339Nano, c.Key)
+		if err != nil || c.Rank < 0 || c.Rank > 2 {
+			return "", nil, invalidCursor("malformed cursor key for relevance")
+		}
+		return "(" + rank + " > " + pidx(n) + " OR (" + rank + " = " + pidx(n) +
+				" AND (created_at < " + pidx(n+1) + " OR (created_at = " + pidx(n+1) + " AND id < " + pidx(n+2) + "))))",
+			[]any{c.Rank, at, c.ID}, nil
+	}
 	s := listSorts[sort]
 	op := " < "
 	if order == "asc" {

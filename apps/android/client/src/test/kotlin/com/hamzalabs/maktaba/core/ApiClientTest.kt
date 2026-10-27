@@ -15,6 +15,7 @@ import mockwebserver3.RecordedRequest
 import okhttp3.Request
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -23,29 +24,6 @@ import org.junit.Test
 import java.util.Base64
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
-
-/** A JWT the client can read the expiry of (its signature is not checked on the device). */
-fun jwt(expSec: Long, tag: String = "t"): String {
-    val enc = Base64.getUrlEncoder().withoutPadding()
-    val head = enc.encodeToString("""{"alg":"RS256"}""".toByteArray())
-    val body = enc.encodeToString("""{"sub":"u1","exp":$expSec,"tag":"$tag"}""".toByteArray())
-    return "$head.$body.sig"
-}
-
-/** The tokens in memory. */
-class MemoryTokens(var accessToken: String? = null, var refreshToken: String? = null) :
-    com.hamzalabs.maktaba.core.session.TokenStore {
-    override val access get() = accessToken
-    override val refresh get() = refreshToken
-    override fun save(tokens: AuthTokens) {
-        accessToken = tokens.accessToken
-        refreshToken = tokens.refreshToken
-    }
-    override fun clear() {
-        accessToken = null
-        refreshToken = null
-    }
-}
 
 class ApiClientTest {
     private lateinit var server: MockWebServer
@@ -107,14 +85,33 @@ class ApiClientTest {
     }
 
     @Test
+    fun aStreamSaysWhatThePlayerCanPlay() = runBlocking {
+        route = { json(201, """{"session_id":"s1","mode":"direct","direct_url":"/stream/direct/v1?sig=x"}""") }
+        val c = client(MemoryTokens(fresh, "r1"))
+        c.openStream("v1", 30, profile = "desktop-player")
+        assertTrue(seen.last().body!!.utf8().contains("\"client_profile\":\"desktop-player\""))
+        // the Android players leave it to the home, as before
+        c.openStream("v1")
+        assertFalse(seen.last().body!!.utf8().contains("client_profile"))
+    }
+
+    @Test
     fun theVideoListAsksNewestFirstWithASortTheHomeAccepts() {
-        val q = ApiClient.videoListQuery("lib1", "quran", "c2")
-        assertEquals("created_at", q["sort"])
-        assertEquals(mapOf("limit" to "60", "sort" to "created_at", "library" to "lib1", "q" to "quran", "cursor" to "c2"), q)
+        val q = ApiClient.videoListQuery("lib1", null, "c2")
+        assertEquals(mapOf("limit" to "60", "sort" to "created_at", "library" to "lib1", "cursor" to "c2"), q)
         assertEquals(mapOf("limit" to "60", "sort" to "created_at"), ApiClient.videoListQuery(null, "", null))
         val r = client(MemoryTokens()).request("GET", "/api/videos", q)
         assertEquals("created_at", r.url.queryParameter("sort"))
         assertEquals("native", r.header("X-Maktaba-Client"))
+    }
+
+    @Test
+    fun aSearchSendsNoSortSoTheHomeRanksIt() {
+        // best match, then the most recently added: the home's order for a search
+        assertEquals(
+            mapOf("limit" to "60", "q" to "quran", "library" to "lib1", "cursor" to "c2"),
+            ApiClient.videoListQuery("lib1", "quran", "c2"),
+        )
     }
 
     @Test

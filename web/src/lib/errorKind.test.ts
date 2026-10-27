@@ -81,7 +81,18 @@ describe("classifyError", () => {
   });
 
   it("no answer at all (fetch's TypeError) is unreachable; anything else is server", () => {
-    expect(classifyError(new TypeError("Failed to fetch")).kind).toBe("unreachable");
+    for (const m of [
+      "Failed to fetch",
+      "NetworkError when attempting to fetch resource.",
+      "Load failed",
+      "fetch failed",
+    ]) {
+      expect(classifyError(new TypeError(m)).kind).toBe("unreachable");
+    }
+    // bad data in an answer is a TypeError too, and not the network
+    expect(
+      classifyError(new TypeError("Cannot read properties of undefined (reading 'items')")).kind
+    ).toBe("server");
     expect(classifyError(new SyntaxError("Unexpected token <")).kind).toBe("server");
     expect(classifyError("boom").kind).toBe("server");
     expect(classifyError(null)).toMatchObject({ kind: "server", status: 0 });

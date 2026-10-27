@@ -56,7 +56,8 @@ describe("LibraryBrowser", () => {
     await waitFor(() => expect(get).toHaveBeenCalled());
     const url = get.mock.calls.map((c) => c[0] as string).find((u) => u.includes("/api/videos?"));
     expect(url).toBeDefined();
-    expect(url).toContain("sort=updated_at");
+    // every app's default: recently added first
+    expect(url).toContain("sort=created_at");
     expect(url).toContain("limit=60");
     await waitFor(() => expect(screen.getByText("أهلا")).toBeInTheDocument());
   });
@@ -125,7 +126,7 @@ describe("LibraryBrowser", () => {
       });
       expect(videoCalls().filter((u) => u.includes("cursor=CURSOR_2"))).toHaveLength(1);
       const page2 = new URLSearchParams(videoCalls()[1].split("?")[1]);
-      expect(page2.get("sort")).toBe("updated_at");
+      expect(page2.get("sort")).toBe("created_at");
       expect(page2.get("limit")).toBe("60");
       await act(async () => release({ items: [v2], next: null }));
       expect(await screen.findByText("b.mp4")).toBeInTheDocument();
@@ -196,7 +197,7 @@ describe("LibraryBrowser", () => {
       expect(screen.queryByRole("button", { name: /load more/i })).not.toBeInTheDocument();
     });
 
-    it("LIB-13: ?sort=constructor falls back to updated_at", async () => {
+    it("LIB-13: ?sort=constructor falls back to recently added", async () => {
       serve({ items: [], next: null }, () => Promise.resolve({ items: [], next: null }));
       render(
         <MemoryRouter initialEntries={["/library?sort=constructor"]}>
@@ -210,7 +211,7 @@ describe("LibraryBrowser", () => {
         </MemoryRouter>
       );
       await waitFor(() => expect(videoCalls()).toHaveLength(1));
-      expect(videoCalls()[0]).toContain("sort=updated_at");
+      expect(videoCalls()[0]).toContain("sort=created_at");
     });
   });
 });

@@ -216,23 +216,36 @@ func (m *MemoryStore) Touch(_ context.Context, id uuid.UUID, at time.Time) error
 	return nil
 }
 
-// Close marks a session closed. Idempotent — re-closing a closed
-// session is a no-op (the API may close after the reaper already did).
+// ErrTranscodeNotStopped: Close marked the session closed, but its encoder did not
+// stop (ffmpeg ignored SIGTERM and SIGKILL past their wait).
+var ErrTranscodeNotStopped = errors.New("session closed; its transcode did not stop")
+
+// Close marks a session closed and stops its transcode. Idempotent — re-closing a
+// closed session is a no-op (the API may close after the reaper already did).
+//
+// The transcode is stopped after the store's lock is let go: a stop waits up to
+// ffmpeg's grace and its kill (15 s), and every other session's Get and Touch (each
+// playlist and segment a player fetches) would wait with it.
 func (m *MemoryStore) Close(_ context.Context, id uuid.UUID, reason CloseReason, at time.Time) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	row, ok := m.rows[id]
 	if !ok {
+		m.mu.Unlock()
 		return errors.New("session not found")
 	}
 	if row.ClosedAt != nil {
+		m.mu.Unlock()
 		return nil
 	}
 	t := at
 	row.ClosedAt = &t
 	row.ClosedReason = reason
-	if row.Transcoder != nil {
-		_ = row.Transcoder.Stop(context.Background())
+	tc := row.Transcoder
+	m.mu.Unlock()
+	if tc != nil {
+		if err := tc.Stop(context.Background()); err != nil {
+			return fmt.Errorf("%w: %w", ErrTranscodeNotStopped, err)
+		}
 	}
 	return nil
 }

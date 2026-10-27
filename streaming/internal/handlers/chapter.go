@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -32,6 +33,15 @@ type ChapterReader interface {
 type ChapterHandler struct {
 	Reader  ChapterReader
 	Resolve VideoIDFromSession
+	// Logger receives a failed read of the chapters (nil: slog's default).
+	Logger *slog.Logger
+}
+
+func (h *ChapterHandler) log() *slog.Logger {
+	if h.Logger == nil {
+		return slog.Default()
+	}
+	return h.Logger
 }
 
 // ServeJSON serves GET /stream/{session_id}/chapters.json.
@@ -39,12 +49,15 @@ func (h *ChapterHandler) ServeJSON(w http.ResponseWriter, r *http.Request) {
 	sub := auth.SubjectFromContext(r.Context())
 	videoID, err := h.Resolve(r.Context(), sub)
 	if err != nil {
-		httpx.Write(w, http.StatusNotFound, "video-not-found", "video not found", err.Error())
+		httpx.Write(w, http.StatusNotFound, "video-not-found", "video not found", "")
 		return
 	}
 	chs, err := h.Reader.List(r.Context(), videoID)
 	if err != nil {
-		httpx.Write(w, http.StatusInternalServerError, "chapter-read-failed", "chapter read failed", err.Error())
+		// a database error: logged, never sent to the player
+		h.log().Error("chapters could not be read", "video_id", videoID, "err", err.Error(),
+			"event", "chapters_read_failed")
+		httpx.Write(w, http.StatusInternalServerError, "chapter-read-failed", "chapter read failed", "")
 		return
 	}
 	chs = MergeChapters(chs)

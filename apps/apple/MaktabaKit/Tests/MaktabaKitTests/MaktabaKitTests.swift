@@ -116,12 +116,18 @@ import Testing
 }
 
 @Suite struct VideoList {
-    /// The home accepts only updated_at, created_at or title (a "-created_at" answered 400
-    /// and the Player showed nothing after signing in).
-    @Test func asksWithASortTheHomeKnows() {
+    /// The list opens recently added first, with a sort the home accepts (only updated_at,
+    /// created_at or title: a "-created_at" answered 400 and the Player showed nothing after
+    /// signing in).
+    @Test func asksRecentlyAddedFirst() {
         let q = APIClient.videoListQuery(library: "L", query: "", cursor: nil)
-        #expect(["updated_at", "created_at", "title"].contains(q["sort"] ?? ""))
-        #expect(q["library"] == "L" && q["q"] == nil && q["limit"] == "60")
+        #expect(q == ["limit": "60", "sort": "created_at", "library": "L"])
+    }
+
+    /// A search sends no sort: the home ranks it by best match, then the most recently added.
+    @Test func aSearchLetsTheHomeRankIt() {
+        let q = APIClient.videoListQuery(library: "L", query: "quran", cursor: "c2")
+        #expect(q == ["limit": "60", "q": "quran", "library": "L", "cursor": "c2"])
     }
 }
 

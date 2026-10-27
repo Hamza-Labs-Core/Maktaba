@@ -49,11 +49,19 @@ type Collection struct {
 	SmartQuery  json.RawMessage `json:"smart_query,omitempty"`
 	CreatedAt   time.Time       `json:"created_at"`
 	UpdatedAt   time.Time       `json:"updated_at"`
+	// HandOrdered: someone reordered this manual collection, and its items
+	// keep that order; otherwise they are newest-added first (slot 0163).
+	HandOrdered bool `json:"hand_ordered"`
 	// On the list: a manual collection's visible videos and the first four
 	// of them (its poster mosaic). A smart one's are its query's.
 	Videos         *int64   `json:"videos,omitempty"`
 	PosterVideoIDs []string `json:"poster_video_ids,omitempty"`
 }
+
+// itemOrder is the ORDER BY of a manual collection's items ci (videos v,
+// collection c): their positions once someone reordered it, else
+// newest-added first (the order of every list of videos).
+const itemOrder = `CASE WHEN c.hand_ordered THEN ci.position END, v.created_at DESC, v.id DESC`
 
 // visibleVideo is the predicate on videos v that keeps a video listed (the
 // browsing rows' rule): not soft-deleted, not missing, not superseded.
@@ -118,7 +126,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lib := r.URL.Query().Get("library")
-	q := `SELECT id, library_id, name, description, is_smart, smart_query, created_at, updated_at
+	q := `SELECT id, library_id, name, description, is_smart, smart_query, created_at, updated_at, hand_ordered
 		FROM collections ORDER BY created_at DESC`
 	var args []any
 	if lib != "" {
@@ -126,7 +134,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("library "+lib))
 			return
 		}
-		q = `SELECT id, library_id, name, description, is_smart, smart_query, created_at, updated_at
+		q = `SELECT id, library_id, name, description, is_smart, smart_query, created_at, updated_at, hand_ordered
 			FROM collections WHERE library_id = $1 AND dismissed_at IS NULL ORDER BY name, id`
 		args = append(args, lib)
 	}
@@ -192,8 +200,9 @@ func (h *Handler) addCounts(r *http.Request, p *principal.Principal, items []Col
 		args = append(args, fargs...)
 	}
 	rows, err := h.DB.QueryContext(r.Context(), `SELECT ci.collection_id, ci.video_id FROM collection_items ci
+		JOIN collections c ON c.id = ci.collection_id
 		JOIN videos v ON v.id = ci.video_id WHERE `+cond+`
-		ORDER BY ci.collection_id, ci.position, ci.video_id`, args...)
+		ORDER BY ci.collection_id, `+itemOrder, args...)
 	if err != nil {
 		return err
 	}
@@ -429,6 +438,12 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		args = append(args, string(req.SmartQuery))
 		idx++
 	}
+	if req.Items != nil {
+		// the items in the order given: the collection keeps it from now on
+		sets = append(sets, "hand_ordered = $"+itoa(idx))
+		args = append(args, true)
+		idx++
+	}
 	if len(sets) > 0 {
 		sets = append(sets, "updated_at = $"+itoa(idx))
 		args = append(args, h.now())
@@ -573,6 +588,7 @@ func (h *Handler) GetItems(w http.ResponseWriter, r *http.Request) {
 	// collection may hold videos of other libraries) and is not hidden.
 	q := `SELECT ci.video_id, ci.position, ci.added_at, v.title, v.filename, v.library_id, v.duration_sec, v.state
 		FROM collection_items ci
+		JOIN collections c ON c.id = ci.collection_id
 		JOIN videos v ON v.id = ci.video_id
 		WHERE ci.collection_id = $1 AND ` + visibleVideo
 	args := []any{id}
@@ -585,7 +601,7 @@ func (h *Handler) GetItems(w http.ResponseWriter, r *http.Request) {
 		q += " AND " + frag
 		args = append(args, fargs...)
 	}
-	q += " ORDER BY ci.position ASC, ci.video_id ASC LIMIT " + itoa(maxItems)
+	q += " ORDER BY " + itemOrder + " LIMIT " + itoa(maxItems)
 	rows, err := h.DB.QueryContext(r.Context(), q, args...)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("items").Wrap(err))
@@ -742,7 +758,7 @@ func (h *Handler) RemoveItem(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) loadCollection(r *http.Request, id string) (Collection, error) {
 	row := h.DB.QueryRowContext(r.Context(), `
-		SELECT id, library_id, name, description, is_smart, smart_query, created_at, updated_at
+		SELECT id, library_id, name, description, is_smart, smart_query, created_at, updated_at, hand_ordered
 		FROM collections WHERE id = $1
 	`, id)
 	return scanCollection(row)
@@ -775,7 +791,7 @@ func scanCollection(rs rowScanner) (Collection, error) {
 	var desc sql.NullString
 	var sq []byte
 	var created, updated nullTime
-	if err := rs.Scan(&c.ID, &c.LibraryID, &c.Name, &desc, &c.IsSmart, &sq, &created, &updated); err != nil {
+	if err := rs.Scan(&c.ID, &c.LibraryID, &c.Name, &desc, &c.IsSmart, &sq, &created, &updated, &c.HandOrdered); err != nil {
 		return Collection{}, err
 	}
 	c.CreatedAt, c.UpdatedAt = created.T, updated.T

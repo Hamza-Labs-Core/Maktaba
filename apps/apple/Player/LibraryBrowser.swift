@@ -25,7 +25,9 @@ struct LibraryBrowser: View {
     @State private var next: String?
     @State private var video: Video?
     @State private var query = ""
-    @State private var problem: String?
+    @State private var problem: HomeFailure?
+    /// The list is being read (the first page of a library or a search).
+    @State private var loading = true
     /// Pages opened from the list while the player holds the other half.
     @State private var browsing: [Video] = []
 
@@ -97,13 +99,13 @@ struct LibraryBrowser: View {
             page
         }
         #if os(iOS)
-        .fullScreenCover(isPresented: watching) { WatchView(playback: playback) }
+        .fullScreenCover(isPresented: watching) { WatchView(playback: playback, session: session) }
         #else
         // the Mac: the video fills the window (it resizes with it; the green button or
         // Control-Command-F makes it full screen), the toolbar out of the way
         .overlay {
             if playback.video != nil {
-                WatchView(playback: playback).transition(.opacity)
+                WatchView(playback: playback, session: session).transition(.opacity)
             }
         }
         .toolbar(playback.video != nil ? .hidden : .automatic, for: .windowToolbar)
@@ -123,7 +125,7 @@ struct LibraryBrowser: View {
     private var split: some View {
         ArrangementView {
             if playback.video != nil {
-                WatchView(playback: playback)
+                WatchView(playback: playback, session: session)
             } else if video != nil {
                 NavigationStack {
                     page.toolbar {
@@ -197,8 +199,18 @@ struct LibraryBrowser: View {
     }
 
     @ViewBuilder private var listState: some View {
-        if videos.isEmpty, problem == nil { ContentUnavailableView("No videos", systemImage: "film") }
-        if let problem { ContentUnavailableView("Can't load", systemImage: "wifi.exclamationmark", description: Text(problem)) }
+        if let problem {
+            HomeErrorView(problem, video: false) { _ in Task { await loadLibraries(); await reload() } }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if loading, videos.isEmpty {
+            ProgressView()
+        } else if videos.isEmpty {
+            if query.isEmpty {
+                ContentUnavailableView("No videos", systemImage: "film")
+            } else {
+                ContentUnavailableView.search(text: query)
+            }
+        }
     }
 
     /// The full-screen player is up while something plays (and the screen is not split).
@@ -233,14 +245,14 @@ struct LibraryBrowser: View {
     private func loadLibraries() async {
         do {
             libraries = try await client.libraries()
-        } catch APIError.signedOut {
-            session.signedOut()
         } catch {
-            problem = error.localizedDescription
+            failed("load libraries", error)
         }
     }
 
     private func reload() async {
+        loading = true
+        defer { loading = false }
         do {
             let page = try await client.videos(library: library == Self.all ? nil : library, query: query)
             videos = page.items
@@ -251,20 +263,36 @@ struct LibraryBrowser: View {
             if width != .compact, !halfFolded, video == nil || !videos.contains(where: { $0.id == video?.id }) {
                 video = videos.first
             }
-        } catch APIError.signedOut {
-            session.signedOut()
         } catch {
-            problem = error.localizedDescription
+            failed("load videos", error)
         }
     }
 
     private func loadMore() async {
         guard let next else { return }
         self.next = nil
-        if let page = try? await client.videos(library: library == Self.all ? nil : library, query: query, cursor: next) {
+        do {
+            let page = try await client.videos(library: library == Self.all ? nil : library, query: query, cursor: next)
             videos += page.items
             self.next = page.next
+        } catch {
+            // the list so far stays; the next time its end shows, it asks again
+            self.next = next
+            Log.failure("load more videos", error)
+            if case APIError.signedOut = error { session.signedOut() }
         }
+    }
+
+    /// A read that did not work: signed out goes back to signing in; a cancelled one (the
+    /// library or the search changed) is nothing; anything else is the list's error screen.
+    private func failed(_ what: StaticString, _ error: Error) {
+        if case APIError.signedOut = error {
+            session.signedOut()
+            return
+        }
+        guard !Log.isCancellation(error) else { return }
+        Log.failure(what, error)
+        problem = HomeFailure(error)
     }
 }
 

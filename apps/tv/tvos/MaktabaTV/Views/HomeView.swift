@@ -8,7 +8,7 @@ struct HomeView: View {
     @Environment(\.client) private var client
     @State private var rails: [Rail] = []
     @State private var newest: [Video] = []
-    @State private var problem: String?
+    @State private var problem: HomeFailure?
     @State private var loading = true
 
     var body: some View {
@@ -24,7 +24,7 @@ struct HomeView: View {
                         if loading {
                             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 60)
                         } else if let problem {
-                            ErrorBanner(message: problem) { Task { await load() } }
+                            ErrorBanner(failure: problem) { Task { await load() } }
                         } else if rails.isEmpty && newest.isEmpty {
                             ContentUnavailableView("Nothing to watch yet", systemImage: "books.vertical",
                                                    description: Text("Videos appear here once this home shares a library with you."))
@@ -71,7 +71,7 @@ struct HomeView: View {
             }
             problem = nil
         } catch {
-            problem = error.localizedDescription
+            problem = HomeFailure.shown("load home rails", error) ?? problem
         }
         loading = false
     }
@@ -109,23 +109,43 @@ struct VideoRow: View {
     }
 }
 
-/// Inline error with a retry.
+/// Inline error with a retry (focused first): what went wrong in a sentence, never what
+/// the home answered (that is behind Details).
 struct ErrorBanner: View {
-    let message: String
+    let failure: HomeFailure
     let retry: () -> Void
 
+    @Environment(\.appSession) private var session
+
     var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 64))
-                .foregroundStyle(Theme.goldText)
-            Text(message)
-                .font(Theme.body(34))
-                .foregroundStyle(Theme.text)
-                .multilineTextAlignment(.center)
-            Button("Try again", action: retry).buttonStyle(.gold)
+        HomeErrorView(failure, video: false, actions: Self.actions(failure)) { action in
+            switch action {
+            case .signInAgain: session?.signedOut()
+            case .chooseAnotherHome: session?.switchHome()
+            default: retry()
+            }
         }
+        .buttonStyle(.gold)
+        .foregroundStyle(Theme.text)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
+    }
+
+    /// A list's actions: the failure's own (Sign in again after a 401, another home when
+    /// this one does not answer), Try again where waiting may help; never Back (a tab has
+    /// nowhere to go back to).
+    static func actions(_ f: HomeFailure) -> [ErrorAction] {
+        let own = f.actions.filter { $0 != .back }
+        return own.isEmpty ? [.tryAgain] : own
+    }
+}
+
+extension HomeFailure {
+    /// What a TV screen shows for a failed load: nil when there is nothing to say (the
+    /// screen moved on). Logged.
+    static func shown(_ what: StaticString, _ error: Error) -> HomeFailure? {
+        guard !Log.isCancellation(error) else { return nil }
+        Log.failure(what, error)
+        return HomeFailure(error)
     }
 }

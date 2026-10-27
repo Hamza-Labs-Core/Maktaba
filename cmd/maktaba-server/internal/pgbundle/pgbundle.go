@@ -346,7 +346,11 @@ func (b Bundle) Prepare(ctx context.Context, log io.Writer) error {
 		if err != nil {
 			return err
 		}
-		sql = bootstrapSQL(appPW)
+		verifier, err := scramVerifier(appPW)
+		if err != nil {
+			return err
+		}
+		sql = bootstrapSQL(verifier)
 	}
 	if needCluster {
 		sql += clusterSQL
@@ -398,15 +402,19 @@ func (b Bundle) initdb(ctx context.Context, superPW string, log io.Writer) error
 }
 
 // bootstrapSQL creates (or re-keys) the app role, its database and the
-// extensions; every statement is safe to run again.
-func bootstrapSQL(appPW string) string {
+// extensions; every statement is safe to run again. verifier is the app role's
+// password as its SCRAM secret (scramVerifier), never the password itself: Postgres
+// and psql echo a failed statement, and the server's log keeps it. The session also
+// keeps failed statements out of the server's log.
+func bootstrapSQL(verifier string) string {
 	return `\set ON_ERROR_STOP on
+SET log_min_error_statement = panic;
 DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '` + AppRole + `') THEN
     CREATE ROLE ` + AppRole + ` LOGIN;
   END IF;
 END $$;
-ALTER ROLE ` + AppRole + ` WITH LOGIN PASSWORD '` + appPW + `';
+ALTER ROLE ` + AppRole + ` WITH LOGIN PASSWORD '` + verifier + `';
 SELECT 'CREATE DATABASE ` + AppDatabase + ` OWNER ` + AppRole + `'
   WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '` + AppDatabase + `')\gexec
 \c ` + AppDatabase + `

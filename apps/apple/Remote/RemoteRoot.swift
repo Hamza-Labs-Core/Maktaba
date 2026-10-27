@@ -82,6 +82,10 @@ struct ProblemSection: View {
             Section {
                 Label(problem, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
+                Button(ErrorStrings.forPreferredLanguages().text(.tryAgain), systemImage: "arrow.clockwise") {
+                    Task { await model.load() }
+                }
+                .accessibilityIdentifier("problem.retry")
             }
         }
     }

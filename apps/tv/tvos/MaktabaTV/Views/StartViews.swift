@@ -258,21 +258,28 @@ struct TVSignInView: View {
         ZStack {
             LibraryBackdrop()
             Group {
-                switch shown {
-                case .code:
-                    codePanel
-                case .password:
-                    TVPasswordPanel(session: session, words: words, tv: tv,
-                                    useCode: offered.contains(.code) ? { method = .code } : nil)
+                if session.restoring {
+                    // the saved sign-in is being checked: no code asked for meanwhile
+                    ProgressView()
+                } else if let f = session.restoreProblem {
+                    restorePanel(f)
+                } else {
+                    switch shown {
+                    case .code:
+                        codePanel
+                    case .password:
+                        TVPasswordPanel(session: session, words: words, tv: tv,
+                                        useCode: offered.contains(.code) ? { method = .code } : nil)
+                    }
                 }
             }
             .padding(80)
         }
         .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
         // one code at a time, asked for only while it shows
-        .task(id: CodeFlowKey(home: session.current?.url, shown: shown == .code)) {
+        .task(id: CodeFlowKey(home: session.current?.url, shown: codeShown)) {
             codeFlow = nil
-            guard shown == .code, let client = session.client else { return }
+            guard codeShown, let client = session.client else { return }
             let m = CodeSignIn(client: client, label: UIDevice.current.name) { [session] in
                 try await session.signedInByCode()
             }
@@ -284,6 +291,24 @@ struct TVSignInView: View {
     private struct CodeFlowKey: Equatable {
         let home: URL?
         let shown: Bool
+    }
+
+    private var codeShown: Bool {
+        shown == .code && !session.restoring && session.restoreProblem == nil
+    }
+
+    /// Still signed in, but the home did not answer the check: why, Try again, another home.
+    private func restorePanel(_ f: HomeFailure) -> some View {
+        VStack(alignment: .leading, spacing: 28) {
+            SectionTitle(session.current?.name ?? "", size: 52)
+            Text(ErrorStrings.forPreferredLanguages().text(.restoreFailed))
+                .font(Theme.body(30))
+                .foregroundStyle(Theme.muted)
+            ErrorBanner(failure: f) { Task { await session.retryRestore() } }
+        }
+        .frame(maxWidth: 1200)
+        .readingPanel(padding: 56)
+        .accessibilityIdentifier("signin.restoreProblem")
     }
 
     private var codePanel: some View {
@@ -413,7 +438,8 @@ private struct TVPasswordPanel: View {
             do {
                 try await session.signIn(username: username, password: password)
             } catch {
-                problem = error.localizedDescription
+                Log.failure("sign in", error, logger: Log.session)
+                problem = Log.isCancellation(error) ? nil : words.signInProblem(error)
             }
         }
     }

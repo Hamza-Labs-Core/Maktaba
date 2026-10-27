@@ -17,15 +17,10 @@ export function isOnline(): boolean {
   return typeof navigator === "undefined" || navigator.onLine !== false;
 }
 
-// fetch's own TypeError when no answer came (Chrome, Firefox, Safari wordings);
-// any other TypeError is a bug or bad data in the answer, not the network
-const NO_ANSWER = /fetch|network|load failed/i;
-
 /** The kind a screen shows for a failed call. */
 export function userErrorKind(e: unknown): UserErrorKind {
   const kind = classifyError(e).kind;
   if (kind !== "unreachable") return kind;
-  if (e instanceof TypeError && !NO_ANSWER.test(e.message)) return "server";
   return isOnline() ? "unreachable" : "offline";
 }
 

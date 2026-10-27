@@ -152,7 +152,7 @@ func (b *tvBase) stationConfig(repo channel.Repo) channel.StationConfig {
 		Prober:   channel.NewFFprobe(b.cfg.FFmpeg.ProbeBinary),
 		Resolver: b.liveResolver(),
 		PathMap:  pathmap.FromEnv(),
-		FontFile: channel.FindFont(),
+		FontFile: channel.SlateFont(context.Background(), b.cfg.FFmpeg.Binary),
 		Logger:   b.logger,
 		Gate:     channel.DefaultEncoderGate(),
 		VTGate:   channel.DefaultVTGate(),

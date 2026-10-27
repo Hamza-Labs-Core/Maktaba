@@ -29,5 +29,6 @@ rootProject.name = "MaktabaTV"
 include(":app")
 // The phone apps' shared core (Epic 42.3): the API client, sign-in, Keystore token storage, the
 // stream's authorization, finding homes on the network. Built from its own folder, not copied.
-include(":core")
+include(":client", ":core")
+project(":client").projectDir = file("../../android/client")
 project(":core").projectDir = file("../../android/core")

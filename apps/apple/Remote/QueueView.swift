@@ -171,6 +171,8 @@ struct StageView: View {
     @Environment(RemoteModel.self) private var model
     @State private var failures: [FailureGroup] = []
     @State private var loaded = false
+    /// The last read of the failures did not work (the problem above says why).
+    @State private var readFailed = false
 
     private var row: QueueRow? { model.queue?.rows.first { $0.id == stage } }
 
@@ -208,7 +210,11 @@ struct StageView: View {
                 }
             }
             Section("Failures") {
-                if loaded, failures.isEmpty {
+                if readFailed {
+                    Button("Try again", systemImage: "arrow.clockwise") { Task { await loadFailures() } }
+                } else if !loaded {
+                    HStack { Spacer(); ProgressView(); Spacer() }
+                } else if failures.isEmpty {
                     Label("No failures", systemImage: "checkmark.seal").foregroundStyle(.secondary)
                 }
                 ForEach(failures) { g in
@@ -232,7 +238,13 @@ struct StageView: View {
     }
 
     private func loadFailures() async {
-        if let f = await model.failures(stage: stage) { failures = f }
-        loaded = true
+        // a failed read leaves what was shown (the problem says why), never "No failures"
+        if let f = await model.failures(stage: stage) {
+            failures = f
+            loaded = true
+            readFailed = false
+        } else {
+            readFailed = true
+        }
     }
 }

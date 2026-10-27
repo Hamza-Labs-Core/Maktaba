@@ -7,7 +7,7 @@ struct VideoPage: View {
     let id: String
     @Environment(\.client) private var client
     @State private var video: Video?
-    @State private var problem: String?
+    @State private var problem: HomeFailure?
     @State private var playing: TVPlayback?
     /// What played last: stopped when the player closes.
     @State private var played: TVPlayback?
@@ -47,7 +47,7 @@ struct VideoPage: View {
                 .padding(80)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if let problem {
-                ErrorBanner(message: problem) { Task { await load() } }
+                ErrorBanner(failure: problem) { Task { await load() } }
             } else {
                 ProgressView()
             }
@@ -83,7 +83,7 @@ struct VideoPage: View {
             video = try await client.video(id)
             problem = nil
         } catch {
-            problem = error.localizedDescription
+            problem = HomeFailure.shown("load video", error) ?? problem
         }
     }
 

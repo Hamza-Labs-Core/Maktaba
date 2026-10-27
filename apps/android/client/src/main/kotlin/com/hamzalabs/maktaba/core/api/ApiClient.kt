@@ -154,10 +154,16 @@ class ApiClient(
     suspend fun video(id: String): Video = get("/api/videos/$id")
 
     /** Opens a stream session (the home picks direct, remux or transcode). */
-    suspend fun openStream(video: String, startSec: Int = 0): StreamSession {
+    /**
+     * Opens a stream session. [profile] names what this player can play (the streaming
+     * service's profiles: the desktop player's JavaFX `desktop-player`); none lets the home
+     * pick for a generic player.
+     */
+    suspend fun openStream(video: String, startSec: Int = 0, profile: String? = null): StreamSession {
         val body = buildJsonObject {
             put("video_id", video)
             if (startSec > 0) put("start_sec", startSec)
+            if (profile != null) put("client_profile", profile)
         }
         return decode(send(request("POST", "/api/stream/sessions", body = body)))
     }
@@ -387,14 +393,15 @@ class ApiClient(
             .build()
 
         /**
-         * The video list's query: the newest first. The home's sorts are updated_at, created_at
-         * or title (it answers 400 to anything else, `-created_at` included).
+         * The video list's query: the most recently added first. A search sends no sort: the home
+         * orders it by best match, then the most recently added (an older home, by its own
+         * default). The home's sorts are updated_at, created_at or title (it answers 400 to
+         * anything else, `-created_at` included).
          */
         fun videoListQuery(library: String?, query: String?, cursor: String?): Map<String, String> = buildMap {
             put("limit", "60")
-            put("sort", "created_at")
+            if (query.isNullOrEmpty()) put("sort", "created_at") else put("q", query)
             if (library != null) put("library", library)
-            if (!query.isNullOrEmpty()) put("q", query)
             if (cursor != null) put("cursor", cursor)
         }
 

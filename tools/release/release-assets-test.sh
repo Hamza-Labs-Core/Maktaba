@@ -73,6 +73,17 @@ else
     fail "pair taken: $(cat "${work}/log")"
 fi
 
+# the players' bundles and feed (Epic 42.4) go the same way
+msi=Maktaba-Player_0.3.2_x64.msi
+stage "${msi}" "${msi}.sig" latest-player.json
+if adopt false "${msi}"$'\n'"${msi}.sig"$'\n'latest-player.json &&
+    [ "$(content "${msi}")" = "published ${msi}" ] && [ "$(content "${msi}.sig")" = "published ${msi}.sig" ] &&
+    [ "$(content latest-player.json)" = "built latest-player.json" ]; then
+    ok "a published player pair is taken together; latest-player.json keeps this run's"
+else
+    fail "player pair: $(cat "${work}/log")"
+fi
+
 stage "${app}" "${app}.sig"
 if adopt false "${app}"; then
     fail "a published bundle without its signature was adopted: $(cat "${work}/log")"

@@ -475,7 +475,8 @@ func (h *Handler) Hub(w http.ResponseWriter, r *http.Request) {
 }
 
 // mostWatched is the library's videos by everyone's plays (watch_sessions
-// rows) in the last 90 days. Only counts are shown, never who played.
+// rows) in the last 90 days, the most recently added first among equal
+// counts. Only counts are shown, never who played.
 func (h *Handler) mostWatched(ctx context.Context, lib string, n int) ([]Card, error) {
 	since := h.ts(h.now().AddDate(0, 0, -mostWatchedDays))
 	rows, err := h.DB.QueryContext(ctx, `SELECT `+cardColumns+`, c.plays
@@ -484,7 +485,7 @@ func (h *Handler) mostWatched(ctx context.Context, lib string, n int) ([]Card, e
 		      WHERE wv.library_id = $1 AND ws.started_at >= $2 GROUP BY ws.video_id) c
 		JOIN videos v ON v.id = c.video_id
 		WHERE `+visible+`
-		ORDER BY c.plays DESC, v.id DESC LIMIT $3`, lib, since, n)
+		ORDER BY c.plays DESC, v.created_at DESC, v.id DESC LIMIT $3`, lib, since, n)
 	if err != nil {
 		return nil, err
 	}

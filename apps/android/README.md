@@ -6,7 +6,8 @@ Jetpack Compose apps that talk to a home's REST API, like the Apple apps in `app
 |---|---|---|
 | `player` | `com.hamzalabs.maktaba.player`, `.player.foldable`, `.player.tablet` | **Maktaba Player**: browse and watch |
 | `remote` | `com.hamzalabs.maktaba.remote`, `.remote.foldable`, `.remote.tablet` | **Maktaba Remote**: run a home (its admins only) |
-| `core` | (a library) | the API client, sign-in, token storage, the stream's authorization, the Ink & Brass theme, the fold-aware layout, the home picker and sign-in screens |
+| `client` | (a JVM library) | the API client, sign-in, token sealing, the home picker's rules, the stream's authorization: plain Kotlin, shared with the desktop Player (`apps/desktop-player`) |
+| `core` | (an Android library, on `client`) | Android's side: the Keystore and preferences, NSD discovery, the Ink & Brass theme, the fold-aware layout, the home picker and sign-in screens |
 
 Each app has three product flavours, `phone`, `foldable` and `tablet`: the three store listings
 the epic decided. They are one code base. The layout comes from the window, not from the flavour.
@@ -18,6 +19,7 @@ JDK 17 and the Android SDK (platform 37) are needed; `local.properties` names th
 
 ```bash
 cd apps/android
+./gradlew :client:test                 # the portable client's tests (JVM)
 ./gradlew :core:testDebugUnitTest      # the core's unit tests (JVM, no device)
 ./gradlew assembleDebug                # both apps, every form factor
 ./gradlew :player:installFoldableDebug # onto a running emulator or device

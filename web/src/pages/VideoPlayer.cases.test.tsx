@@ -18,6 +18,17 @@ import { VideoPlayer } from "./VideoPlayer";
 const problem = (status: number, title: string) =>
   new ApiError({ type: "about:blank", title, status });
 
+const CANT_PLAY = "This video can't play right now";
+const SENTENCE = {
+  notFound: "This video or its file is no longer on your home.",
+  notReady: "Your home is still preparing this video. Try again in a moment.",
+  signedOut: "Your sign-in has ended. Sign in again to keep watching.",
+  noAccess: "Your account doesn't have access to this.",
+  unreachable: "Your home can't be reached. Check that it's on and connected to the network.",
+  busy: "Your home is busy right now. Try again in a moment.",
+  server: "Something went wrong on your home. Try again in a moment.",
+};
+
 const SESSION = {
   session_id: "sess-abc",
   mode: "transcode",
@@ -112,7 +123,8 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
     servePost(s);
     renderPlayer();
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Something went wrong.");
+    expect(alert).toHaveTextContent(CANT_PLAY);
+    expect(alert).toHaveTextContent(SENTENCE.server);
     expect(screen.queryByTestId("mkt-video")).toBeNull();
     expect(post.mock.calls.some((c) => String(c[0]).includes("undefined"))).toBe(false);
   });
@@ -124,7 +136,9 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
     Object.defineProperty(el, "error", { configurable: true, value: { code: 2 } });
     fireEvent.error(el);
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Something went wrong.");
+    expect(alert).toHaveTextContent(CANT_PLAY);
+    // MEDIA_ERR_NETWORK: the file stopped arriving from the home
+    expect(alert).toHaveTextContent(SENTENCE.unreachable);
     await userEvent.setup().click(within(alert).getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(posts("/api/stream/sessions")).toHaveLength(2));
     expect(await video()).toBeInTheDocument();
@@ -140,22 +154,29 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
     renderPlayer();
     const el = await video();
     fireEvent.error(el);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong.");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(CANT_PLAY);
+    expect(alert).toHaveTextContent(SENTENCE.server);
+    expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
 
   it.each([
-    [403, "forbidden", "Something went wrong.", "permission"],
-    [404, "video not found", "Video not found.", "not_found"],
+    [403, "forbidden", SENTENCE.noAccess, "permission"],
+    [404, "video not found", SENTENCE.notFound, "not_found"],
   ])(
     "VPL-07: session open %s shows an error with a way back",
-    async (status, title, heading, kind) => {
+    async (status, title, sentence, kind) => {
       servePost(() => Promise.reject(problem(status, title)));
       renderPlayer("/videos/vid-1/watch", { history: ["/library"] });
       const alert = await screen.findByRole("alert");
       expect(alert).toHaveAttribute("data-kind", kind);
-      expect(alert).toHaveTextContent(heading);
-      expect(alert).toHaveTextContent(title);
+      expect(alert).toHaveTextContent(CANT_PLAY);
+      expect(alert).toHaveTextContent(sentence);
+      // the server's title only under Details
+      expect(alert).not.toHaveTextContent(title);
+      // trying again would get the same answer
+      expect(within(alert).queryByRole("button", { name: "Try again" })).toBeNull();
       expect(screen.queryByTestId("mkt-video")).toBeNull();
       expect(del).not.toHaveBeenCalled();
       await userEvent.setup().click(within(alert).getByRole("button", { name: /Back/ }));
@@ -373,12 +394,8 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
   it("VPL-16: render crash shows route error fallback; Back still works", async () => {
     quietCrash();
     let bad = true;
-    // an object where the error description string is rendered
-    servePost(() =>
-      bad
-        ? Promise.reject(new ApiError({ type: "x", title: {} as unknown as string, status: 500 }))
-        : SESSION
-    );
+    // an object where the subtitle list is mapped
+    servePost(() => (bad ? { ...SESSION, subtitles: {} } : SESSION));
     renderPlayer();
     expect(
       await screen.findByText("This page hit an error and could not be shown.")
@@ -402,16 +419,17 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
   });
 
   it.each([
-    ["500", problem(500, "transcoder busy"), "transcoder busy"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
-    ["malformed JSON", new SyntaxError("Unexpected token b"), "Something went wrong."],
+    ["500", problem(500, "transcoder busy"), SENTENCE.server],
+    ["network failure", new TypeError("Failed to fetch"), SENTENCE.unreachable],
+    ["malformed JSON", new SyntaxError("Unexpected token b"), SENTENCE.server],
   ])("VPL-18: session open %s shows the error with Try again", async (_l, e, desc) => {
     let fail = true;
     servePost(() => (fail ? Promise.reject(e) : SESSION));
     renderPlayer();
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Something went wrong.");
+    expect(alert).toHaveTextContent(CANT_PLAY);
     expect(alert).toHaveTextContent(desc);
+    expect(alert).not.toHaveTextContent("transcoder busy");
     fail = false;
     await userEvent.setup().click(within(alert).getByRole("button", { name: "Try again" }));
     expect(await video()).toHaveAttribute("src", SESSION.manifest_url);
@@ -424,10 +442,134 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
         : { ...SESSION, session_id: "s2", manifest_url: "/stream/s2/manifest.m3u8" }
     );
     renderPlayer("/videos/vid-1/watch", { history: ["/videos/vid-2/watch"] });
-    expect(await screen.findByRole("alert")).toHaveTextContent("forbidden");
+    expect(await screen.findByRole("alert")).toHaveTextContent(SENTENCE.noAccess);
     await userEvent.setup().click(screen.getByRole("button", { name: "go back" }));
     expect(await video()).toHaveAttribute("src", "/stream/s2/manifest.m3u8");
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  describe("the error state never shows the server's own words", () => {
+    const renditionMissing = () =>
+      new ApiError({
+        type: "https://maktaba.invalid/problems/rendition-not-found",
+        title: "rendition index not on disk",
+        status: 404,
+        detail: "open /Volumes/x/index.m3u8: no such file or directory",
+      });
+
+    it("a rendition not on disk yet says the home is still preparing it", async () => {
+      servePost(() => Promise.reject(renditionMissing()));
+      renderPlayer("/videos/vid-1/watch", { history: ["/library"] });
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(CANT_PLAY);
+      expect(alert).toHaveTextContent(SENTENCE.notReady);
+      for (const leak of ["rendition index", "/Volumes", "{", "index.m3u8"]) {
+        expect(alert).not.toHaveTextContent(leak);
+      }
+      expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+      expect(within(alert).getByRole("button", { name: /Back/ })).toBeInTheDocument();
+      // the facts only under Details, closed
+      const details = screen.getByText("Details").closest("details") as HTMLDetailsElement;
+      expect(details.open).toBe(false);
+      expect(details).toHaveTextContent("404");
+      expect(details).toHaveTextContent("rendition-not-found");
+      expect(details).toHaveTextContent("rendition index not on disk");
+      expect(details).toHaveTextContent("/Volumes/x/index.m3u8");
+      expect(alert.contains(details)).toBe(false);
+    });
+
+    it.each([
+      [
+        "401",
+        new ApiError({ type: "about:blank", title: "unauthorized", status: 401 }),
+        SENTENCE.signedOut,
+        ["Sign in again", "← Back"],
+      ],
+      [
+        "403",
+        new ApiError({ type: "about:blank", title: "forbidden", status: 403 }),
+        SENTENCE.noAccess,
+        ["← Back"],
+      ],
+      [
+        "404",
+        new ApiError({ type: "about:blank", title: "video not found", status: 404 }),
+        SENTENCE.notFound,
+        ["← Back"],
+      ],
+      [
+        "503 home_unreachable",
+        new ApiError({
+          type: "about:blank",
+          title: "home unreachable",
+          status: 503,
+          code: "home_unreachable",
+        }),
+        SENTENCE.unreachable,
+        ["Try again", "← Back"],
+      ],
+      [
+        "429",
+        new ApiError({ type: "about:blank", title: "too many requests", status: 429 }, 30),
+        SENTENCE.busy,
+        ["Try again", "← Back"],
+      ],
+      [
+        "503",
+        new ApiError({ type: "about:blank", title: "overloaded", status: 503 }, 5),
+        SENTENCE.busy,
+        ["Try again", "← Back"],
+      ],
+      [
+        "500",
+        new ApiError({
+          type: "about:blank",
+          title: "internal",
+          status: 500,
+          detail: '{"panic":"nil map"}',
+        }),
+        SENTENCE.server,
+        ["Try again", "← Back"],
+      ],
+    ])("%s: the kind's sentence and buttons", async (_l, e, sentence, buttons) => {
+      servePost(() => Promise.reject(e));
+      renderPlayer("/videos/vid-1/watch", { history: ["/library"] });
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(CANT_PLAY);
+      expect(alert).toHaveTextContent(sentence);
+      expect(alert).not.toHaveTextContent(e.problem.title);
+      expect(alert).not.toHaveTextContent("{");
+      expect(
+        within(alert)
+          .getAllByRole("button")
+          .map((b) => b.textContent)
+      ).toEqual(buttons);
+    });
+
+    it("Sign in again goes to the sign-in page, back to this video after", async () => {
+      servePost(() =>
+        Promise.reject(new ApiError({ type: "about:blank", title: "unauthorized", status: 401 }))
+      );
+      renderPlayer("/videos/vid-1/watch?t=30");
+      const alert = await screen.findByRole("alert");
+      await userEvent.setup().click(within(alert).getByRole("button", { name: "Sign in again" }));
+      expect(screen.getByText("login page (from /videos/vid-1/watch?t=30)")).toBeInTheDocument();
+    });
+
+    it("a playback failure in Arabic uses the Arabic strings", async () => {
+      servePost(() => Promise.reject(renditionMissing()));
+      localStorage.setItem("mkt:locale", "ar");
+      try {
+        renderPlayer();
+        const alert = await screen.findByRole("alert");
+        expect(alert).toHaveTextContent("لا يمكن تشغيل هذا الفيديو الآن");
+        expect(alert).toHaveTextContent(
+          "ما زال الجهاز الرئيسي يجهّز هذا الفيديو. حاول مجددًا بعد قليل."
+        );
+      } finally {
+        localStorage.removeItem("mkt:locale");
+      }
+    });
   });
 
   it("VPL-20: Back goes to the previous page and closes the session", async () => {

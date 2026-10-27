@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -81,6 +82,9 @@ type Engine struct {
 	started  map[uuid.UUID]time.Time
 	reg      *registry
 	now      func() time.Time
+
+	// hostStatusFailing: the last streaming_hosts write failed (logged once per run)
+	hostStatusFailing atomic.Bool
 }
 
 // NewEngine builds an Engine. A nil clock uses time.Now; cap <= 0 uses
@@ -304,8 +308,20 @@ func (e *Engine) SyncRuntime(ctx context.Context) {
 		st.ActiveChannels = e.reg.size()
 		st.MaxActive = e.reg.capacity()
 		wctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		_ = w.SetHostStatus(wctx, st)
+		err := w.SetHostStatus(wctx, st)
 		cancel()
+		// once per run of failures (each refresh fails while the database is down)
+		log := e.Logger
+		if log == nil {
+			log = slog.Default()
+		}
+		if err != nil && !e.hostStatusFailing.Swap(true) && ctx.Err() == nil {
+			log.Warn("tv: this host's status row could not be written (placement sees it stale)",
+				"host", st.Identity.Host, "err", err.Error(), "event", "tv_host_status_write_failed")
+		} else if err == nil && e.hostStatusFailing.Swap(false) {
+			log.Info("tv: this host's status row is written again", "host", st.Identity.Host,
+				"event", "tv_host_status_write_recovered")
+		}
 	}
 }
 

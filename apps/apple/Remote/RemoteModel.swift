@@ -69,7 +69,10 @@ final class RemoteModel {
             session.signedOut()
             return
         }
-        problem = (error as? APIError)?.message ?? error.localizedDescription
+        // a read cut short by leaving the screen is not a problem
+        guard !Log.isCancellation(error) else { return }
+        Log.failure("remote read or action", error)
+        problem = HomeFailure(error).message()
     }
 
     // MARK: acting
