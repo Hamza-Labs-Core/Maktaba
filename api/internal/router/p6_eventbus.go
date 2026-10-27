@@ -6,6 +6,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws/eventbus"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // wireEventBus stands up the cross-replica WS event bus (Epic 19
@@ -32,13 +33,13 @@ func wireEventBus(d P6Deps, hub *ws.Hub, wsHandler *ws.Handler) *eventbus.Bus {
 	backend.Resettle = d.BusResettle
 	bus := eventbus.New(backend, hub, slog.Default())
 
-	go func() {
+	safego.Go(nil, "eventbus_run", func() {
 		if err := bus.Run(d.BusCtx); err != nil && d.BusCtx.Err() == nil {
 			slog.Default().Warn("eventbus: Run loop exited",
 				"err", err, "event", "eventbus_run_exited")
 		}
-	}()
-	go bus.Pruner(d.BusCtx, eventbus.DefaultRetention, eventbus.DefaultPruneEvery)
+	})
+	safego.Go(nil, "eventbus_pruner", func() { bus.Pruner(d.BusCtx, eventbus.DefaultRetention, eventbus.DefaultPruneEvery) })
 
 	wsHandler.Replay = busReplayAdapter{bus: bus}
 	return bus

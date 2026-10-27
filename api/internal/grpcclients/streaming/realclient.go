@@ -57,11 +57,13 @@ func NewRealClient(cfg Config) Client {
 			cfg:     cfg,
 		}
 	}
+	b := pipeline.NewBreaker(cfg.CircuitWindow, cfg.CircuitOpenTime, cfg.FailureThreshold)
+	b.Name = "streaming " + addr
 	return &realClient{
 		addr:    addr,
 		conn:    conn,
 		detail:  "configured",
-		breaker: pipeline.NewBreaker(cfg.CircuitWindow, cfg.CircuitOpenTime, cfg.FailureThreshold),
+		breaker: b,
 		cfg:     cfg,
 	}
 }
@@ -75,10 +77,8 @@ type realClient struct {
 }
 
 func withRequestID(ctx context.Context) context.Context {
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if v := md.Get(streamingRequestIDKey); len(v) > 0 && v[0] != "" {
-			return metadata.AppendToOutgoingContext(ctx, streamingRequestIDKey, v[0])
-		}
+	if id := pipeline.OutgoingRequestID(ctx, streamingRequestIDKey); id != "" {
+		return metadata.AppendToOutgoingContext(ctx, streamingRequestIDKey, id)
 	}
 	return ctx
 }
@@ -101,7 +101,7 @@ func (c *realClient) invoke(ctx context.Context, method string, req map[string]a
 		return nil
 	})
 	if err != nil {
-		return err
+		return &pipeline.CallError{Method: method, Target: c.addr, Err: err}
 	}
 	// In-band application errors arrive as {"error": ...} with an OK
 	// gRPC status. The value is conventionally a string, but a

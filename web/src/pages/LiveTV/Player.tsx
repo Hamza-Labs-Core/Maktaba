@@ -64,6 +64,7 @@ import {
   type TvInfo,
 } from "../../lib/channels";
 import { RemoteSession } from "../../lib/remoteTv";
+import { plainDetail } from "../../lib/errorText";
 
 const BANNER_MS = 5000;
 /** A channel that played this long is a history entry of its own (push, not replace). */
@@ -349,9 +350,16 @@ export function Player({ routes = DESK_ROUTES }: { routes?: LiveRoutes } = {}) {
   useEffect(() => {
     if (state.phase === "error" && state.error && state.error !== lastErr.current) {
       lastErr.current = state.error;
+      // the only trail of a failed tune (no server report for channels yet)
+      console.warn("[live] channel failed", {
+        channel: number,
+        path,
+        code: state.error.code,
+        retryable: state.error.retryable,
+      });
       onLanTrouble();
     }
-  }, [state.phase, state.error, onLanTrouble]);
+  }, [state.phase, state.error, onLanTrouble, number, path]);
 
   // Auto-hide the banner ~5s after it appears (suppressed while the
   // mini-guide is open to avoid stacked overlays, EC3).
@@ -438,7 +446,12 @@ export function Player({ routes = DESK_ROUTES }: { routes?: LiveRoutes } = {}) {
   let statusLine: string | null = null;
   if (state.phase === "error") {
     statusLine = t(errorKey(state.error, path ?? "lan"));
-    if (state.error?.code === "remote_unavailable" && state.error.message !== state.error.code) {
+    // the home's reason, when it is a plain sentence (never a path or a Go error)
+    if (
+      state.error?.code === "remote_unavailable" &&
+      state.error.message !== state.error.code &&
+      plainDetail(state.error.message)
+    ) {
       statusLine += ` (${state.error.message})`;
     }
   } else if (state.status === "remote_starting") statusLine = t("live.remote.starting");

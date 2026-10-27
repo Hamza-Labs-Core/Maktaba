@@ -18,6 +18,7 @@ import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { TitleRow } from "../../help/HelpLink";
 import { CloudLinkCard } from "./CloudLink";
+import { errorText } from "../../lib/errorText";
 
 interface Profile {
   id: string;
@@ -28,8 +29,7 @@ interface Profile {
 }
 
 function errMessage(e: unknown, t: (k: string) => string): string {
-  if (e instanceof ApiError) return e.problem.detail || e.problem.title;
-  return t("common.error");
+  return errorText(e, t);
 }
 
 export function Account() {
@@ -166,7 +166,12 @@ function PasswordForm() {
       setConfirm("");
       toast.show({ tone: "success", message: t("account.passwordChanged") });
     } catch (err) {
-      toast.show({ tone: "error", message: errMessage(err, t) });
+      // the home answers a wrong current password with 401 (not a sign-in that ended)
+      const wrong = err instanceof ApiError && err.status === 401;
+      toast.show({
+        tone: "error",
+        message: wrong ? t("account.wrongCurrent") : errMessage(err, t),
+      });
     } finally {
       setBusy(false);
     }

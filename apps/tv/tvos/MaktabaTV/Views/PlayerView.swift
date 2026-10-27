@@ -12,13 +12,16 @@ final class TVPlayback {
     let client: APIClient
     let video: Video
     private(set) var player: AVPlayer?
-    private(set) var problem: String?
+    /// Why it does not play (the player screen says it and what can be done).
+    private(set) var failure: HomeFailure?
 
     private var session: String?
     private var renewAt = Date.distantFuture
     private var openedAt = Date.distantPast
     private var running: Task<Void, Never>?
     private var proxy: StreamProxy?
+    /// Where the stream last opened: Try again starts there.
+    private var lastStart: Double = 0
 
     init(client: APIClient, video: Video) {
         self.client = client
@@ -27,8 +30,14 @@ final class TVPlayback {
 
     /// Plays from `start` seconds (0: the beginning).
     func start(at start: Double) {
+        failure = nil
         running?.cancel()
         running = Task { await run(from: start) }
+    }
+
+    /// Starts again after a failure, from where it last opened.
+    func retry() {
+        start(at: lastStart)
     }
 
     /// Stops, and returns once the home has where it stopped (so a page shown next offers
@@ -61,10 +70,11 @@ final class TVPlayback {
     }
 
     private func open(from start: Double) async {
+        lastStart = start
         do {
             let s = try await client.openStream(video: video.id, startSec: Int(start))
             guard let url = s.playbackURL(home: client.home) else {
-                problem = "The home gave no address to play."
+                failure = HomeFailure(kind: .server, detail: "The home gave no address to play.")
                 return
             }
             let auth = try await client.playbackHeaders()
@@ -72,7 +82,7 @@ final class TVPlayback {
             self.proxy = proxy
             try await proxy.start()
             guard let local = proxy.local(url) else {
-                problem = "Could not start playback on this TV."
+                failure = HomeFailure(kind: .server, detail: "Could not start playback on this TV.")
                 return
             }
             if let old = session, old != s.sessionID {
@@ -91,13 +101,13 @@ final class TVPlayback {
             if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
             try Task.checkCancellation()
             player = p
-            problem = nil
+            failure = nil
             p.play()
         } catch is CancellationError {
             return
         } catch {
             player = nil
-            problem = error.localizedDescription
+            failure = HomeFailure(error)
         }
     }
 
@@ -111,7 +121,7 @@ final class TVPlayback {
             if failed, Date.now.timeIntervalSince(openedAt) < 30 {
                 p.pause()
                 player = nil
-                problem = p.currentItem?.error?.localizedDescription ?? "The video stopped playing."
+                failure = p.currentItem?.error.map(HomeFailure.init) ?? HomeFailure(kind: .server, detail: "The video stopped playing.")
                 return
             }
             if failed || Date.now >= renewAt {
@@ -142,18 +152,20 @@ final class TVPlayback {
 struct PlayerScreen: View {
     let playback: TVPlayback
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appSession) private var session
 
     var body: some View {
         ZStack {
             Color.black
             if let player = playback.player {
                 SystemPlayer(player: player)
-            } else if let problem = playback.problem {
-                VStack(spacing: 32) {
-                    ContentUnavailableView("Can't play", systemImage: "exclamationmark.triangle", description: Text(problem))
-                    Button("Close") { dismiss() }.buttonStyle(.gold)
-                }
-                .foregroundStyle(.white)
+            } else if let failure = playback.failure {
+                // the first action has the focus: Try again, or Sign in again after a 401
+                HomeErrorView(failure) { act($0) }
+                    .buttonStyle(.gold)
+                    .foregroundStyle(.white)
+                    .environment(\.colorScheme, .dark)
+                    .accessibilityIdentifier("player.error")
             } else {
                 VStack(spacing: 24) {
                     ProgressView().tint(.white)
@@ -164,6 +176,21 @@ struct PlayerScreen: View {
         .ignoresSafeArea()
         .onReceive(NotificationCenter.default.publisher(for: AVPlayerItem.didPlayToEndTimeNotification)) { note in
             if (note.object as? AVPlayerItem) === playback.player?.currentItem { dismiss() }
+        }
+    }
+}
+
+extension PlayerScreen {
+    private func act(_ a: ErrorAction) {
+        switch a {
+        case .tryAgain: playback.retry()
+        case .back: dismiss()
+        case .signInAgain:
+            dismiss()
+            session?.signedOut()
+        case .chooseAnotherHome:
+            dismiss()
+            session?.switchHome()
         }
     }
 }

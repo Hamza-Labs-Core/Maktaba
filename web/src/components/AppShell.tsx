@@ -14,6 +14,7 @@ import {
 } from "react";
 import { Outlet, NavLink, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
+import { OfflineBanner } from "./OfflineBanner";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useAuth } from "../lib/auth";
 import { usePins } from "../lib/pins";
@@ -364,6 +365,8 @@ export function AppShell() {
           <MacPermissionsReminder />
           {/* story 16.5: the opt-in question, and the collection once opted in */}
           <TelemetryPrompt />
+          {/* this device has no network: say so (pages that failed retry once it is back) */}
+          <OfflineBanner />
           <RouteErrorBoundary resetKey={pathname}>
             {/* the server pages load on first visit (serverRoutes.tsx) */}
             <Suspense fallback={null}>

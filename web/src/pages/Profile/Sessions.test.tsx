@@ -20,6 +20,7 @@ import { ToastProvider } from "@ds/components/Toast/Toast";
 import { renderPage, quietCrash } from "../../test/pageHarness";
 import { routeGet } from "../../test/queueHarness";
 import ar from "../../i18n/ar.json";
+import en from "../../i18n/en.json";
 import { Sessions } from "./Sessions";
 
 const S1 = {
@@ -129,17 +130,20 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
   });
 
   it.each([
-    ["404 with detail", problem(404, "Not Found", "session not found"), "session not found"],
-    ["403 without detail", problem(403, "Forbidden"), "Forbidden"],
-    ["500 without detail", problem(500, "Internal Server Error"), "Internal Server Error"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
+    ["404 with detail", problem(404, "Not Found", "session not found"), en["error.kind.notFound"]],
+    ["403 without detail", problem(403, "Forbidden"), en["error.kind.noAccess"]],
+    ["500 without detail", problem(500, "Internal Server Error"), en["error.kind.server"]],
+    ["network failure", new TypeError("Failed to fetch"), en["error.kind.unreachable"]],
   ])("ASE-05: revoke fails (%s): toast, row stays, button usable", async (_, err, msg) => {
     del.mockRejectedValue(err);
     open();
     await screen.findByRole("table");
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Revoke" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(msg);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(msg);
+    // the server's title / detail is never the message
+    expect(alert).not.toHaveTextContent(/Internal Server Error|Forbidden|session not found/);
     const button = within(row("Maktaba-iOS/1.4")).getByRole("button", { name: "Revoke" });
     expect(button).toBeEnabled();
     expect(button).not.toHaveAttribute("aria-busy");
@@ -153,7 +157,7 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
     open();
     await screen.findByRole("table");
     await userEvent.setup().click(screen.getByRole("button", { name: "Revoke" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Unauthorized");
+    expect(await screen.findByRole("alert")).toHaveTextContent(en["error.kind.signedOut"]);
     expect(screen.getByRole("table")).toBeInTheDocument();
   });
 
@@ -257,16 +261,17 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
   });
 
   it.each([
-    ["500 with detail", problem(500, "Internal Server Error", "db down"), "db down"],
-    ["404", problem(404, "Not Found"), "Not Found"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
-    ["malformed JSON", new SyntaxError("Unexpected token"), "Something went wrong."],
+    ["500 with detail", problem(500, "Internal Server Error", "db down"), en["error.kind.server"]],
+    ["404", problem(404, "Not Found"), en["error.kind.notFound"]],
+    ["network failure", new TypeError("Failed to fetch"), en["error.kind.unreachable"]],
+    ["malformed JSON", new SyntaxError("Unexpected token"), en["error.kind.server"]],
   ])("ASE-13: list load error (%s) and Retry", async (_, err, msg) => {
     sessionsSeq(err, { items: [S1, S2] });
     open();
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Something went wrong.");
     expect(alert).toHaveTextContent(msg);
+    expect(alert).not.toHaveTextContent(/db down|Not Found|Unexpected token/);
     await userEvent.setup().click(within(alert).getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
@@ -275,7 +280,7 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
   it("ASE-14: 401 on list load never leaves a blank page", async () => {
     sessionsSeq(problem(401, "Unauthorized"));
     open();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Unauthorized");
+    expect(await screen.findByRole("alert")).toHaveTextContent(en["error.kind.signedOut"]);
   });
 
   // Desired: redirect to /login (shared 401 handling, src/lib/api.ts / auth.tsx).

@@ -201,7 +201,7 @@ fun LibraryBrowser(
 
     val account: @Composable () -> Unit = { AccountMenu(session, user, themes) }
     when (panes) {
-        is Panes.Tabletop, is Panes.Book -> SplitBrowser(panes, state, playback, client, account)
+        is Panes.Tabletop, is Panes.Book -> SplitBrowser(panes, state, playback, client, account, session)
         else -> Box(Modifier.fillMaxSize()) {
             if (panes == Panes.ListDetail) {
                 Row(Modifier.fillMaxSize()) {
@@ -223,7 +223,7 @@ fun LibraryBrowser(
             }
             if (playback.video != null) {
                 BackHandler { playback.stop() }
-                WatchScreen(playback, fullScreen = true)
+                WatchScreen(playback, fullScreen = true, onSignIn = session::signedOut, onChooseHome = session::switchHome)
             }
         }
     }
@@ -236,6 +236,7 @@ private fun SplitBrowser(
     playback: Playback,
     client: ApiClient,
     account: @Composable () -> Unit,
+    session: AppSession,
 ) {
     /** A page opened from the list while the player holds the other half. */
     var browsing by remember { mutableStateOf<Video?>(null) }
@@ -251,7 +252,7 @@ private fun SplitBrowser(
             when {
                 playback.video != null -> {
                     BackHandler { playback.stop() }
-                    WatchScreen(playback, fullScreen = false)
+                    WatchScreen(playback, fullScreen = false, onSignIn = session::signedOut, onChooseHome = session::switchHome)
                 }
                 v != null -> {
                     BackHandler { state.video = null }

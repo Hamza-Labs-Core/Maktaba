@@ -17,6 +17,7 @@ import { memberUser, quietCrash, renderPage } from "../../test/pageHarness";
 import { routeGet } from "../../test/queueHarness";
 import rulesJson from "../../test/fixtures/rules.json";
 import { RulesSection } from "./RulesSection";
+import en from "../../i18n/en.json";
 
 const fixture = () => structuredClone(rulesJson) as unknown as RulesResponse;
 
@@ -488,7 +489,7 @@ describe("Settings rules (test-cases/settings-rules.md)", { timeout: 20_000 }, (
     bad.sections[0].title = { bad: true } as unknown as string;
     let data: RulesResponse = bad;
     setup(() => structuredClone(data), { history: ["/elsewhere"] });
-    expect(await screen.findByRole("alert")).toHaveTextContent("Objects are not valid");
+    expect(await screen.findByRole("alert")).toHaveTextContent(en["common.pageError"]);
     await userEvent.click(screen.getByRole("button", { name: "go back" }));
     expect(screen.getByText("elsewhere")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();

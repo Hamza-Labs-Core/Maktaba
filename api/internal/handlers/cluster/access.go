@@ -155,7 +155,7 @@ func (h *Handler) MendRoles(ctx context.Context, why string) (bool, string) {
 	}
 	if why == cluster.ReasonNoGroup && h.RolesDB != nil {
 		if err := cluster.EnsureWorkerGroup(ctx, h.RolesDB); err != nil {
-			logger.Warn("cluster: the machines' group role could not be made again", "err", err,
+			logger.WarnContext(ctx, "cluster: the machines' group role could not be made again", "err", err,
 				"event", "cluster_group_mend_failed")
 			return false, why
 		}
@@ -174,7 +174,7 @@ func (h *Handler) mendBundled(ctx context.Context) bool {
 		return false
 	}
 	if err := h.MendBundled(ctx); err != nil {
-		h.log().Warn("cluster: this home's database grants could not be made again", "err", err,
+		h.log().WarnContext(ctx, "cluster: this home's database grants could not be made again", "err", err,
 			"event", "cluster_roles_mend_failed")
 		return false
 	}

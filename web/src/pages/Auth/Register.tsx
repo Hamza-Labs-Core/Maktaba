@@ -14,6 +14,7 @@ import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { ApiError } from "../../lib/api";
+import { errorText, inputDetail } from "../../lib/errorText";
 
 export function Register() {
   const { register, user } = useAuth();
@@ -49,12 +50,12 @@ export function Register() {
         if ((err.problem.type ?? "").includes("registration-closed")) {
           setClosed(true);
         } else if (err.status === 409) {
-          setError(err.problem.detail || t("register.conflict"));
+          setError(inputDetail(err) ?? t("register.conflict"));
         } else {
-          setError(err.problem.detail || t("common.error"));
+          setError(errorText(err, t));
         }
       } else {
-        setError(t("common.error"));
+        setError(errorText(err, t));
       }
     } finally {
       setSubmitting(false);

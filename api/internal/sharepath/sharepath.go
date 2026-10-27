@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // Entry is one canonical prefix and this machine's mount of it.
@@ -276,14 +278,14 @@ func Start(ctx context.Context, db *sql.DB, logger *slog.Logger) {
 		m, err := Load(c, db)
 		if err != nil {
 			if logger != nil {
-				logger.Debug("share map not read", "err", err)
+				logger.Warn("share map not read", "event", "sharepath_load_failed", "err", err)
 			}
 			return
 		}
 		Set(m)
 	}
 	load()
-	go func() {
+	safego.Go(logger, "sharepath_reload", func() {
 		t := time.NewTicker(5 * time.Minute)
 		defer t.Stop()
 		for {
@@ -294,7 +296,7 @@ func Start(ctx context.Context, db *sql.DB, logger *slog.Logger) {
 				load()
 			}
 		}
-	}()
+	})
 }
 
 // nodeMapSQL is a full node's own map (Epic 35 story 35.8): the node's database role
@@ -327,14 +329,14 @@ func StartNode(ctx context.Context, db *sql.DB, nodeID string, logger *slog.Logg
 		m, err := LoadNode(c, db, nodeID)
 		if err != nil {
 			if logger != nil {
-				logger.Debug("node share map not read", "err", err)
+				logger.Warn("node share map not read", "event", "sharepath_load_failed", "node_id", nodeID, "err", err)
 			}
 			return
 		}
 		Set(m)
 	}
 	load()
-	go func() {
+	safego.Go(logger, "sharepath_reload", func() {
 		t := time.NewTicker(5 * time.Minute)
 		defer t.Stop()
 		for {
@@ -345,5 +347,5 @@ func StartNode(ctx context.Context, db *sql.DB, nodeID string, logger *slog.Logg
 				load()
 			}
 		}
-	}()
+	})
 }

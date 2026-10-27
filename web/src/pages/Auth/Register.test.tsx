@@ -139,7 +139,9 @@ describe("Register (test-cases/register.md)", () => {
     post.mockRejectedValue(problem(403, { detail: "csrf token missing" }));
     renderAuth(["/register"]);
     await submit();
-    expect(await screen.findByRole("alert")).toHaveTextContent("csrf token missing");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(en["error.kind.noAccess"]);
+    expect(alert).not.toHaveTextContent("csrf token missing");
     expect(field("register.username")).toBeInTheDocument();
   });
 
@@ -164,13 +166,15 @@ describe("Register (test-cases/register.md)", () => {
   });
 
   it.each([
-    ["with detail", { detail: "db down" }, "db down"],
-    ["without detail", {}, en["common.error"]],
-  ])("REG-10: 500 %s", async (_name, over, text) => {
+    ["with detail", { detail: "db down" }],
+    ["without detail", {}],
+  ])("REG-10: 500 %s shows the friendly server text, never the server's", async (_name, over) => {
     post.mockRejectedValue(problem(500, { title: "Internal", ...over }));
     renderAuth(["/register"]);
     await submit();
-    expect(await screen.findByRole("alert")).toHaveTextContent(text);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(en["error.kind.server"]);
+    expect(alert).not.toHaveTextContent(/db down|Internal/);
     expect(field("register.username")).toHaveValue("salma");
   });
 
@@ -179,7 +183,7 @@ describe("Register (test-cases/register.md)", () => {
     renderAuth(["/register"]);
     await submit();
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(en["common.error"]);
+    expect(alert).toHaveTextContent(en["error.kind.server"]);
     expect(alert).not.toHaveTextContent(/html|Bad Gateway/);
   });
 
@@ -195,7 +199,7 @@ describe("Register (test-cases/register.md)", () => {
     post.mockRejectedValue(new TypeError("Failed to fetch"));
     renderAuth(["/register"]);
     await submit();
-    expect(await screen.findByRole("alert")).toHaveTextContent(en["common.error"]);
+    expect(await screen.findByRole("alert")).toHaveTextContent(en["error.kind.unreachable"]);
     expect(submitButton()).toBeEnabled();
     expect(field("register.email")).toHaveValue("salma@example.com");
   });
@@ -212,7 +216,7 @@ describe("Register (test-cases/register.md)", () => {
     post.mockRejectedValueOnce(problem(500, { detail: "db down" }));
     renderAuth(["/register"]);
     const user = await submit();
-    expect(await screen.findByRole("alert")).toHaveTextContent("db down");
+    expect(await screen.findByRole("alert")).toHaveTextContent(en["error.kind.server"]);
     const held = deferred<unknown>();
     post.mockReturnValueOnce(held.promise);
     await user.click(submitButton());

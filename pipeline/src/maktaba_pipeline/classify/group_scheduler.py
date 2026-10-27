@@ -24,6 +24,8 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
+from ..log.tasks import watch as watch_task
+
 __all__ = [
     "GroupScheduler",
     "mark_group_pending",
@@ -129,7 +131,9 @@ class GroupScheduler:
         existing = self._timers.get(library_id)
         if existing is not None and not existing.done():
             existing.cancel()
-        self._timers[library_id] = asyncio.create_task(self._fire_after(library_id))
+        self._timers[library_id] = watch_task(
+            asyncio.create_task(self._fire_after(library_id), name=f"group-pass-{library_id}")
+        )
 
     async def _fire_after(self, library_id: UUID) -> None:
         try:

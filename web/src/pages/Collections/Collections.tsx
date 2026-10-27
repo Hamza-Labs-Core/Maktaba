@@ -24,6 +24,8 @@ import {
 } from "../../lib/collections";
 import { TitleRow } from "../../help/HelpLink";
 import { PosterMosaic } from "../Library/Libraries";
+import { LoadError } from "../../components/LoadError";
+import { errorText } from "../../lib/errorText";
 
 /** A collection's card: its mosaic, name and size (a row item or a grid cell). */
 export function CollectionCard({ c, className }: { c: Collection; className: string }) {
@@ -58,7 +60,7 @@ function CollectionsOf({ libraryId }: { libraryId: string }) {
   const [items, setItems] = useState<Collection[] | null>(null);
   const [libName, setLibName] = useState("");
   const [notFound, setNotFound] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null);
   const [reload, setReload] = useState(0);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -79,7 +81,7 @@ function CollectionsOf({ libraryId }: { libraryId: string }) {
       .catch((e) => {
         if (cancelled) return;
         if (e instanceof ApiError && e.status === 404) setNotFound(true);
-        else setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        else setErr(e);
       });
     return () => {
       cancelled = true;
@@ -97,9 +99,7 @@ function CollectionsOf({ libraryId }: { libraryId: string }) {
     } catch (e) {
       toast.show({
         tone: "error",
-        message: `${t("collections.createError")}: ${
-          e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
-        }`,
+        message: `${t("collections.createError")}: ${errorText(e, t)}`,
       });
     } finally {
       setCreating(false);
@@ -162,14 +162,7 @@ function CollectionsOf({ libraryId }: { libraryId: string }) {
         </div>
       )}
 
-      {err && (
-        <ErrorState
-          kind="server"
-          title={t("common.error")}
-          description={err}
-          action={<Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>}
-        />
-      )}
+      {err != null && <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />}
 
       {!items && !err && (
         <ul className="mkt-libgrid" aria-busy="true">

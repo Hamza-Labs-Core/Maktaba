@@ -179,7 +179,7 @@ func (h *Handler) SetDownloaded(w http.ResponseWriter, r *http.Request) {
 	`, devID, vid, nullIfEmpty(strings.ToLower(strings.TrimSpace(req.Quality))),
 		req.SizeBytes, nullIfEmpty(req.Checksum), now)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("set downloaded: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("set downloaded").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{
@@ -239,7 +239,7 @@ func (h *Handler) ListDownloaded(w http.ResponseWriter, r *http.Request) {
 		ORDER BY dd.updated_at DESC
 	`, vid, p.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list downloaded: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("list downloaded").Wrap(err))
 		return
 	}
 	defer rows.Close()

@@ -16,6 +16,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // Defaults of design-agent.md §3, §4, §6 and §7.
@@ -244,7 +245,11 @@ func (h *Hub) Run(ctx context.Context) {
 	var wg sync.WaitGroup
 	start := func(f func(context.Context)) {
 		wg.Add(1)
-		go func() { defer wg.Done(); f(ctx) }()
+		go func() {
+			defer wg.Done()
+			defer safego.Recover(h.log(), "cluster_hub_loop")
+			f(ctx)
+		}()
 	}
 	loc := h.Locate(ctx)
 	start(h.files.Run)

@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ..db import schema_compat
 from ..engine.paths import PathMap
 from ..engine.sql import is_pg, loads
 from ..log import get_logger
@@ -41,7 +42,7 @@ async def load_servers(db: Any) -> list[StorageServer]:
             "SELECT id, name, addresses, char_map, exports FROM storage_servers ORDER BY name"
         )
     except Exception as exc:  # noqa: BLE001 - no table yet: nothing is canonical
-        _log.debug("storage_servers_unavailable", error=str(exc))
+        schema_compat.fallback(_log, "storage_servers_unavailable", exc)
         return []
     return [
         StorageServer(

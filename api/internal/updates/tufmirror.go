@@ -70,7 +70,7 @@ func (m *Mirror) serveTUF(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		m.log().Warn("update mirror: the TUF repository could not be read", "event", "update_mirror_failed",
 			"file", name, "err", err.Error())
-		httperror.Write(w, r, httperror.BadGateway(err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("the update file could not be fetched").Wrap(err))
 	case code != http.StatusOK:
 		// the TUF client looks for the next root until a 404: it must get one
 		httperror.Write(w, r, &httperror.Error{Type: "about:blank#tuf", Title: http.StatusText(code), Status: code})

@@ -300,6 +300,41 @@ input[type="search"]:focus {
   background: #000;
   border-radius: var(--radius-md);
 }
+/* Why the video can't play: the error state, then its Details (closed) */
+.mkt-player__failed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.mkt-player__failed .mk-state__action {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.mkt-player__details {
+  max-width: 42rem;
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+.mkt-player__details summary {
+  cursor: pointer;
+  text-align: center;
+}
+.mkt-player__details dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0 0;
+}
+.mkt-player__details dl > div {
+  display: contents;
+}
+.mkt-player__details dt {
+  font-weight: 600;
+}
+.mkt-player__details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 
 /* More (the phone's menu for what the tab bar has no room for) */
 .mkt-more__group h2 {
@@ -3817,4 +3852,14 @@ button.mkt-video__hero {
   .mkt-shell__big {
     display: none;
   }
+}
+/* LoadError (errors audit): the error state's buttons, side by side */
+.mkt-load-error__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+}
+.mkt-load-error__actions--start {
+  justify-content: flex-start;
 }

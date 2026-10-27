@@ -98,7 +98,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("job "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal(err.Error()))
+		httperror.Write(w, r, httperror.Internal("").Wrap(err))
 		return
 	}
 	// A job of a library the caller cannot read (or of no library: a
@@ -189,7 +189,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	      FROM processing_jobs` + where + ` ORDER BY created_at DESC, id DESC LIMIT $` + strconv.Itoa(len(args))
 	rows, err := h.DB.QueryContext(r.Context(), q, args...)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list jobs: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("list jobs").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -276,7 +276,7 @@ func (h *Handler) Pause(w http.ResponseWriter, r *http.Request) {
 		`, id, now)
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("pause: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("pause").Wrap(err))
 		return
 	}
 	j, err := h.loadJob(r, id)
@@ -285,7 +285,7 @@ func (h *Handler) Pause(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("job "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal(err.Error()))
+		httperror.Write(w, r, httperror.Internal("").Wrap(err))
 		return
 	}
 	if isTerminal(j.State) {
@@ -312,7 +312,7 @@ func (h *Handler) Resume(w http.ResponseWriter, r *http.Request) {
 		WHERE id=$1 AND state='paused'
 	`, id, h.now())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("resume: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("resume").Wrap(err))
 		return
 	}
 	j, err := h.loadJob(r, id)
@@ -321,7 +321,7 @@ func (h *Handler) Resume(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("job "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal(err.Error()))
+		httperror.Write(w, r, httperror.Internal("").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, j)
@@ -338,7 +338,7 @@ func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		WHERE id=$1 AND state NOT IN ('done','failed','cancelled','superseded')
 	`, id, h.now())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("cancel: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("cancel").Wrap(err))
 		return
 	}
 	j, err := h.loadJob(r, id)
@@ -347,7 +347,7 @@ func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("job "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal(err.Error()))
+		httperror.Write(w, r, httperror.Internal("").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, j)
@@ -365,7 +365,7 @@ func (h *Handler) Retry(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("job "+id))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal(err.Error()))
+		httperror.Write(w, r, httperror.Internal("").Wrap(err))
 		return
 	}
 	if j.State != "failed" {
@@ -386,7 +386,7 @@ func (h *Handler) Retry(w http.ResponseWriter, r *http.Request) {
 		Reason: queues.ReasonFor(r.Context(), "retry", map[string]any{"of_job": id}),
 	})
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("retry: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("retry").Wrap(err))
 		return
 	}
 	if !res.Accepted() || res.JobID == nil {
@@ -395,7 +395,7 @@ func (h *Handler) Retry(w http.ResponseWriter, r *http.Request) {
 	}
 	j2, err := h.loadJob(r, strconv.FormatInt(*res.JobID, 10))
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("retry: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("retry").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, j2)
@@ -412,7 +412,7 @@ func (h *Handler) PauseVideo(w http.ResponseWriter, r *http.Request) {
 		WHERE video_id=$1 AND state IN ('running','pending')
 	`, id, h.now())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("pause video: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("pause video").Wrap(err))
 		return
 	}
 	n, _ := res.RowsAffected()
@@ -430,7 +430,7 @@ func (h *Handler) ResumeVideo(w http.ResponseWriter, r *http.Request) {
 		WHERE video_id=$1 AND state='paused'
 	`, id, h.now())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("resume video: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("resume video").Wrap(err))
 		return
 	}
 	n, _ := res.RowsAffected()
@@ -447,7 +447,7 @@ func (h *Handler) CancelVideo(w http.ResponseWriter, r *http.Request) {
 		WHERE video_id=$1 AND state NOT IN ('done','failed','cancelled','superseded')
 	`, id, h.now())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("cancel video: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("cancel video").Wrap(err))
 		return
 	}
 	n, _ := res.RowsAffected()
@@ -551,7 +551,7 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		SELECT stage, state, COUNT(*) FROM processing_jobs GROUP BY stage, state
 	`)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("stats: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("stats").Wrap(err))
 		return
 	}
 	defer rows.Close()

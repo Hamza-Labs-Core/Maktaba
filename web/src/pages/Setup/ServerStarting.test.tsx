@@ -289,3 +289,32 @@ describe("the backup's progress", () => {
     expect(dumpProgress({ kind: "running" })).toBeNull();
   });
 });
+
+describe("ServerStarting: the shell cannot open the local server", () => {
+  it("says so in this language, never the shell's own English", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const a = api({ kind: "running" } as ServerStatus);
+    (a.openLocalServer as ReturnType<typeof vi.fn>).mockRejectedValue(
+      "open_local_server: navigate to http://127.0.0.1:8088 failed: os error 61"
+    );
+    render(
+      <I18nProvider>
+        <ServerStarting api={a} />
+      </I18nProvider>
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(en["setup.starting.openFailed"].split("{")[0].trim());
+    expect(alert).not.toHaveTextContent("os error");
+    expect(alert).not.toHaveTextContent("127.0.0.1");
+    expect(log).toHaveBeenCalledWith(
+      "[setup] opening the local server failed",
+      expect.stringContaining("os error 61")
+    );
+    log.mockRestore();
+  });
+
+  it("has the sentence in Arabic too", () => {
+    expect(ar["setup.starting.openFailed"]).toBeTruthy();
+    expect(names(ar["setup.starting.openFailed"])).toEqual(names(en["setup.starting.openFailed"]));
+  });
+});

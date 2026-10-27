@@ -20,6 +20,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
@@ -186,6 +187,14 @@ func (m *Mirror) startWheelhouse(ctx context.Context, rel Release, man *releasev
 		// one wheelhouse at a time: each is a large download
 		wheelSlot <- struct{}{}
 		defer func() { <-wheelSlot }()
+		// a panic still ends the build: its waiters get an error, not a hang
+		defer func() {
+			if v := recover(); v != nil {
+				safego.Log(m.log(), "update_wheelhouse", v)
+				b.err = errFetchPanicked
+				close(b.done)
+			}
+		}()
 		b.err = m.buildWheelhouse(context.WithoutCancel(ctx), rel, man, platform)
 		m.mu.Lock()
 		b.at = m.now()

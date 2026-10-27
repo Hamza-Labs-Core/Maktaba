@@ -25,10 +25,16 @@
 // The rich control surface (speed, PiP, keyboard map, chapter ticks,
 // caption sizing, resume, scrub thumbnails: story 45.19) works on top of the
 // <video> either way.
+// What went wrong (the session would not open, or playback failed for good)
+// shows as one error state: "This video can't play right now", the sentence
+// of its kind (lib/errorKind) and that kind's actions, with the status and
+// the problem's type, title and detail under a Details disclosure only — the
+// server's words (which can name files on the home's disk) never in the
+// message itself.
 // Epic 45 Phase 2: at the end, Up next (components/UpNext) offers the play
 // queue's next video or the series' next lesson, and starts it after 10 s.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useSearchParams, useLocation } from "react-router-dom";
+import { useParams, useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import {
@@ -37,6 +43,13 @@ import {
   PROBLEM_INSUFFICIENT_STORAGE,
   PROBLEM_VIDEO_UNAVAILABLE_OFFLINE,
 } from "../lib/api";
+import {
+  classifyError,
+  classifyPlayback,
+  errorStateKind,
+  type ClassifiedError,
+  type PlaybackFault,
+} from "../lib/errorKind";
 import { useI18n } from "../lib/i18n";
 import { attachVod, carrySig } from "@maktaba/tvplayer";
 import { mediaError, reportPlaybackFailure, type PlaybackFailure } from "../lib/playbackReport";
@@ -69,6 +82,13 @@ interface Chapter {
   id: number;
   start_sec: number;
   title: string;
+}
+
+/** Why the video cannot play: its kind, and a more precise sentence when the app has one. */
+interface Failure {
+  error: ClassifiedError;
+  /** i18n key of a sentence that says more than the kind's (a full disk). */
+  sentence?: string;
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -136,9 +156,13 @@ export function VideoPlayer({
   const [params] = useSearchParams();
   const location = useLocation();
   const { t } = useI18n();
+  const nav = useNavigate();
   const [session, setSession] = useState<OpenSessionResponse | null>(null);
-  const [err, setErr] = useState<{ message: string; status?: number } | null>(null);
-  const [playError, setPlayError] = useState(false);
+  const [err, setErr] = useState<Failure | null>(null);
+  const [playError, setPlayError] = useState<Failure | null>(null);
+  // The last playback failure heard of: what the error screen says when the
+  // stream cannot be recovered.
+  const faultRef = useRef<PlaybackFault | null>(null);
   const [reload, setReload] = useState(0);
   const leaderUntil = useRef(0);
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -173,6 +197,8 @@ export function VideoPlayer({
   // Posts a playback failure of the stream now attached to the server's log.
   const report = useCallback(
     (s: OpenSessionResponse, f: PlaybackFailure) => {
+      // a stall ends nothing; the reopen limit's cause is the failure before it
+      if (f.outcome !== "stalled" && f.code !== "reopen_limit") faultRef.current = f;
       if (!videoId) return;
       reportPlaybackFailure(
         {
@@ -191,20 +217,20 @@ export function VideoPlayer({
   const startAt = Number.isFinite(tParam) && tParam > 0 ? tParam : 0;
 
   const failure = useCallback(
-    (e: unknown) =>
-      e instanceof ApiError
-        ? {
-            message:
-              e.problem.type === PROBLEM_VIDEO_UNAVAILABLE_OFFLINE
-                ? t("homeOffline.video")
-                : e.problem.type === PROBLEM_INSUFFICIENT_STORAGE
-                  ? t("player.diskFull")
-                  : e.problem.title,
-            status: e.status,
-          }
-        : { message: t("common.error") },
-    [t]
+    (e: unknown): Failure => ({
+      error: classifyError(e),
+      ...(e instanceof ApiError && e.problem.type === PROBLEM_VIDEO_UNAVAILABLE_OFFLINE
+        ? { sentence: "homeOffline.video" }
+        : e instanceof ApiError && e.problem.type === PROBLEM_INSUFFICIENT_STORAGE
+          ? { sentence: "player.diskFull" }
+          : {}),
+    }),
+    []
   );
+  // The stream could not be recovered: why, from the last failure heard of.
+  const playFailed = useCallback(() => {
+    setPlayError({ error: classifyPlayback(faultRef.current) });
+  }, []);
 
   // Open a streaming session for this video.
   useEffect(() => {
@@ -212,7 +238,8 @@ export function VideoPlayer({
     let cancelled = false;
     // A new video (or a retry) starts clean: no old error, no old stream.
     setErr(null);
-    setPlayError(false);
+    setPlayError(null);
+    faultRef.current = null;
     setSession(null);
     api
       .post<OpenSessionResponse>("/api/stream/sessions", {
@@ -237,7 +264,7 @@ export function VideoPlayer({
               .delete(`/api/stream/sessions/${encodeURIComponent(s.session_id)}`)
               .catch(() => {});
           }
-          setErr({ message: t("common.error") });
+          setErr({ error: classifyError(null) });
           return;
         }
         sessionIdRef.current = s.session_id;
@@ -255,7 +282,7 @@ export function VideoPlayer({
         void api.delete(`/api/stream/sessions/${encodeURIComponent(id)}`).catch(() => {});
       }
     };
-  }, [videoId, startAt, t, failure, reload]);
+  }, [videoId, startAt, failure, reload]);
 
   // Chapter ticks for the scrubber.
   useEffect(() => {
@@ -353,7 +380,7 @@ export function VideoPlayer({
           ...mediaError(el),
           url: el.currentSrc || session.direct_url,
         });
-        setPlayError(true);
+        playFailed();
       };
       el.addEventListener("loadedmetadata", onMeta, { once: true });
       el.addEventListener("error", onError);
@@ -411,7 +438,7 @@ export function VideoPlayer({
             code: "reopen_limit",
             message: `stream gone ${recent.length + 1} times in ${GONE_WINDOW_MS / 1000}s`,
           });
-          setPlayError(true);
+          playFailed();
         }
         return;
       }
@@ -424,7 +451,7 @@ export function VideoPlayer({
       onAuthError: refresh,
       onGone: gone,
       onFatal: () => {
-        if (!cancelled) setPlayError(true);
+        if (!cancelled) playFailed();
       },
       onError: (e) => {
         if (!cancelled) report(session, e);
@@ -449,7 +476,7 @@ export function VideoPlayer({
       h.detach();
     };
     // speed is applied on attach only; the controls set it live.
-  }, [session, videoId, startAt, t, failure, report]);
+  }, [session, videoId, startAt, failure, report, playFailed]);
 
   // A stream that stops arriving while it should play (a direct file whose
   // reads stall on the NAS, segments that never come) raises no error of its
@@ -571,24 +598,62 @@ export function VideoPlayer({
   const backButton =
     hideBack || bare ? null : <BackButton fallback={videoId ? `/videos/${videoId}` : "/library"} />;
 
-  if (err) {
-    const notFound = err.status === 404;
+  // The error state: the kind's sentence and actions; the server's own words
+  // only under Details.
+  const failedView = ({ error: e, sentence }: Failure) => {
+    const retry = e.kind !== "notFound" && e.kind !== "noAccess" && e.kind !== "signedOut";
+    const facts: [string, string][] = [
+      ["player.error.status", e.status > 0 ? String(e.status) : ""],
+      ["player.error.type", e.slug],
+      ["player.error.problem", e.title],
+      ["player.error.detail", e.detail],
+    ];
+    const shown = facts.filter(([, v]) => v !== "");
     return (
-      <ErrorState
-        kind={notFound ? "not_found" : err.status === 403 ? "permission" : "server"}
-        title={notFound ? t("video.notFound") : t("common.error")}
-        description={err.message}
-        action={
-          <>
-            {backButton}
-            {!notFound && err.status !== 403 && (
-              <Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>
-            )}
-          </>
-        }
-      />
+      <div className="mkt-player__failed" data-error-kind={e.kind}>
+        <ErrorState
+          kind={errorStateKind(e.kind)}
+          icon={<ErrorIcon />}
+          title={t("player.error.title")}
+          description={t(sentence ?? `player.error.${e.kind}`)}
+          action={
+            <>
+              {e.kind === "signedOut" && (
+                <Button
+                  onClick={() =>
+                    nav("/login", { state: { from: location.pathname + location.search } })
+                  }
+                >
+                  {t("player.error.signIn")}
+                </Button>
+              )}
+              {retry && (
+                <Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>
+              )}
+              {backButton}
+            </>
+          }
+        />
+        {shown.length > 0 && (
+          <details className="mkt-player__details">
+            <summary>{t("player.error.details")}</summary>
+            <dl>
+              {shown.map(([k, v]) => (
+                <div key={k}>
+                  <dt>{t(k)}</dt>
+                  <dd>
+                    <bdi>{v}</bdi>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+        )}
+      </div>
     );
-  }
+  };
+
+  if (err) return failedView(err);
   if (!session)
     return (
       <div className="mkt-player__loading">
@@ -649,12 +714,7 @@ export function VideoPlayer({
           </div>
         </div>
       )}
-      {playError && (
-        <div className="mkt-player__error" role="alert">
-          <p>{t("common.error")}</p>
-          <Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>
-        </div>
-      )}
+      {playError && <div className="mkt-player__error">{failedView(playError)}</div>}
       <div
         className="mkt-player__stage"
         style={bare ? undefined : { ["--mkt-caption-scale" as string]: String(captionScale) }}
@@ -711,5 +771,23 @@ export function VideoPlayer({
         {videoId && !bare && <UpNext videoId={videoId} el={videoEl} />}
       </div>
     </section>
+  );
+}
+
+/** The error state's mark: a circled exclamation (nothing in it mirrors in RTL). */
+function ErrorIcon() {
+  return (
+    <svg
+      width="40"
+      height="40"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="7" x2="12" y2="13" />
+      <circle cx="12" cy="17" r="0.5" fill="currentColor" />
+    </svg>
   );
 }

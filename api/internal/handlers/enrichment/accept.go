@@ -411,7 +411,7 @@ func (h *Handler) queueEnrich(r *http.Request, videoID, origin, query string, ye
 	}
 	if h.Enqueue != nil {
 		if err := h.Enqueue(ctx, videoID, map[string]any{"origin": origin}); err != nil && h.Logger != nil {
-			h.Logger.Warn("enrichment: engine enqueue failed; the sweep picks the job up",
+			h.Logger.WarnContext(r.Context(), "enrichment: engine enqueue failed; the sweep picks the job up",
 				"video_id", videoID, "err", err)
 		}
 	}

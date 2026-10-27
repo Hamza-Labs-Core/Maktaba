@@ -91,23 +91,25 @@ import Testing
         #expect(ApproveFailure(APIError.status(400, #"{"code":"wrong_code"}"#)).message == "That is not the code the machine shows.")
         #expect(ApproveFailure(APIError.status(410, #"{"title":"request expired","code":"expired"}"#)) == .expired)
         #expect(ApproveFailure(APIError.status(410, "gone")) == .expired)
+        // anything else in the one sentence every screen says, never the home's own words
         #expect(ApproveFailure(APIError.status(409, #"{"title":"not pending","detail":"the machine is approved","code":"not_pending"}"#))
-            == .other("the machine is approved"))
-        #expect(ApproveFailure(URLError(.timedOut)) == .other(URLError(.timedOut).localizedDescription))
+            == .other(ErrorStrings.forPreferredLanguages().sentence(.server)))
+        #expect(ApproveFailure(URLError(.timedOut)) == .other(ErrorStrings.forPreferredLanguages().sentence(.unreachable)))
     }
 }
 
 @Suite struct Problems {
     @Test func readsTheHomesProblem() {
         let e = APIError.status(400, #"{"type":"about:blank","title":"wrong code","status":422,"detail":"the code does not match","code":"wrong_code","attempts_left":2}"#)
-        #expect(e.problem == Problem(code: "wrong_code", title: "wrong code", detail: "the code does not match", attemptsLeft: 2))
-        #expect(e.message == "the code does not match")
+        #expect(e.problem == Problem(code: "wrong_code", title: "wrong code", detail: "the code does not match", attemptsLeft: 2,
+                                     type: "about:blank", status: 422))
+        #expect(e.message == ErrorStrings.forPreferredLanguages().sentence(.server))
     }
 
     @Test func fallsBackToTheErrorsOwnWords() {
         #expect(APIError.status(502, "<html>bad gateway</html>").problem == nil)
-        #expect(APIError.status(502, "<html>bad gateway</html>").message.hasPrefix("The home answered 502"))
-        #expect(APIError.signedOut.message == "Signed out. Sign in again.")
+        #expect(APIError.status(502, "<html>bad gateway</html>").message == ErrorStrings.forPreferredLanguages().sentence(.server))
+        #expect(APIError.signedOut.message == ErrorStrings.forPreferredLanguages().sentence(.signedOut))
     }
 }
 
@@ -167,14 +169,15 @@ import Testing
         }
     }
 
-    /// A viewer who reaches the Remote anyway: the home's 403 is what they see.
+    /// A viewer who reaches the Remote anyway: the home's 403, said as no access.
     @Test func aNonAdminIsRefusedByTheHome() async throws {
         Stub.answer(403, #"{"title":"Forbidden","status":403,"detail":"admin-only"}"#)
         do {
             _ = try await client().queues()
             Issue.record("a 403 decoded as a snapshot")
         } catch let e as APIError {
-            #expect(e.message == "admin-only")
+            #expect(e.kind == .noAccess && e.problem?.detail == "admin-only")
+            #expect(e.message == ErrorStrings.forPreferredLanguages().sentence(.noAccess))
         }
     }
 
@@ -187,7 +190,8 @@ import Testing
             _ = try await client().queues()
             Issue.record("a 507 decoded")
         } catch let e as APIError {
-            #expect(e.message == "the server that streams it has too little free on its disk to transcode it")
+            #expect(e.problem?.detail == "the server that streams it has too little free on its disk to transcode it")
+            #expect(HomeFailure(e).details?.contains("507 · insufficient-storage") == true)
         }
     }
 

@@ -2,7 +2,12 @@
 // taking the whole app down with it (React unmounts the tree on an uncaught
 // render error: the menu, the Back button and every other page stop working
 // until a reload). The boundary clears itself when the route changes, so
-// leaving the broken page brings the app back.
+// leaving the broken page brings the app back. App wraps the whole app in one
+// too (a fixed resetKey), so a crash outside a page (the shell, a provider)
+// shows the same screen instead of a blank window.
+//
+// The screen never shows the error's message or stack (they can name a title,
+// a path or a value from the server): they go to the console only.
 import { Component, type ReactNode } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { useI18n } from "../lib/i18n";
@@ -34,22 +39,26 @@ export class RouteErrorBoundary extends Component<Props, State> {
   }
 
   render() {
-    return this.state.error ? <PageError error={this.state.error} /> : this.props.children;
+    return this.state.error ? (
+      <PageError onRetry={() => this.setState({ error: null })} />
+    ) : (
+      this.props.children
+    );
   }
 }
 
-function PageError({ error }: { error: Error }) {
+function PageError({ onRetry }: { onRetry: () => void }) {
   const { t } = useI18n();
   return (
-    <section className="mkt-page" role="alert">
+    <section className="mkt-page" role="alert" data-testid="page-error">
       <h1>{t("common.error")}</h1>
       <p>{t("common.pageError")}</p>
-      <p className="mkt-muted">
-        <code>{error.message}</code>
-      </p>
-      <Button variant="secondary" onClick={() => window.location.reload()}>
-        {t("common.reloadPage")}
-      </Button>
+      <div className="mkt-load-error__actions mkt-load-error__actions--start">
+        <Button onClick={onRetry}>{t("common.retry")}</Button>
+        <Button variant="secondary" onClick={() => window.location.reload()}>
+          {t("common.reloadPage")}
+        </Button>
+      </div>
     </section>
   );
 }
