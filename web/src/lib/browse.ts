@@ -94,6 +94,8 @@ export interface HubSeries {
   id: string;
   name: string | null;
   episodes: number;
+  /** Its first visible episode: the tile shows that video's poster. */
+  poster_video_id?: string | null;
 }
 
 export interface HubYear {

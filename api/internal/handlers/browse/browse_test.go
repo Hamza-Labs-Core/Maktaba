@@ -424,6 +424,10 @@ func TestHub(t *testing.T) {
 	if len(rows.Series) != 1 || rows.Series[0].ID != seriesA || rows.Series[0].Episodes != 2 || rows.Series[0].Name != "Tafsir" {
 		t.Errorf("series %+v: a4 is missing", rows.Series)
 	}
+	// the card's picture: its first visible episode, as GET /api/series gives it
+	if len(rows.Series) == 1 && rows.Series[0].PosterVideoID != v("a1") {
+		t.Errorf("series poster %q, want episode 1 (%s)", rows.Series[0].PosterVideoID, v("a1"))
+	}
 	if want := []YearCount{{2024, 2}, {2023, 1}}; !slices.Equal(rows.Years, want) {
 		t.Errorf("years %+v, want %+v", rows.Years, want)
 	}

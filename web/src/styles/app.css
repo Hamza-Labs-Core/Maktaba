@@ -3750,6 +3750,8 @@ button.mkt-video__hero {
   inline-size: 7rem;
 }
 .mkt-series-tile {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -3765,12 +3767,37 @@ button.mkt-video__hero {
   color: var(--color-fg);
   text-decoration: none;
 }
+/* the first episode's poster, whole as a player shows it, under the name and count
+   (a shade at the foot keeps them legible on any picture) */
+.mkt-series-tile__picture {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+  background: #000;
+}
+.mkt-series-tile:has(.mkt-series-tile__picture)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.75), transparent 60%);
+}
+.mkt-series-tile__name,
+.mkt-series-tile__meta {
+  position: relative;
+  z-index: 1;
+}
 .mkt-series-tile__name {
   font-weight: 600;
 }
 .mkt-series-tile__meta {
   font-size: var(--font-size-sm);
   color: var(--color-muted);
+}
+.mkt-series-tile:has(.mkt-series-tile__picture) .mkt-series-tile__name,
+.mkt-series-tile:has(.mkt-series-tile__picture) .mkt-series-tile__meta {
+  color: #fff;
 }
 .mkt-year-chips {
   list-style: none;
