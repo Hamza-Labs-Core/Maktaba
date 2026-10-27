@@ -5365,5 +5365,17 @@
   "collections.saveFiltersTo": "Save filters to the collection",
   "collections.filtersSaved": "Filters saved",
   "home.newCount": "{n} new",
-  "home.newLessons": "{n} new lessons"
+  "home.newLessons": "{n} new lessons",
+  "home.hero.newSeries": "New series",
+  "home.hero.picked": "Featured",
+  "home.hero.lessons": "{n} lessons",
+  "home.hero.playFirst": "Play the first lesson",
+  "home.hero.play": "Play",
+  "home.hero.openSeries": "Open the series",
+  "home.hero.more": "More",
+  "home.hero.reset": "Feature the newest series",
+  "video.feature": "Feature on Home",
+  "video.featured": "Featured on Home",
+  "video.featured.on": "This lesson is now on Home",
+  "video.featured.off": "Home features the newest series again"
 }

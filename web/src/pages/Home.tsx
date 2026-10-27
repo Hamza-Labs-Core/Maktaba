@@ -1,5 +1,6 @@
 // Epic 45 — Home (`/`): rows across every library the user may see
-// (GET /api/home): Continue Watching, On Deck (the next lesson of each series
+// (GET /api/home): the featured hero (story 45.21: the newest series or an
+// admin's pick), Continue Watching, On Deck (the next lesson of each series
 // the user is in the middle of), Recently Added (grouped by series, story
 // 45.18), Recently Watched, Favorites, the
 // Live TV channels on now (WhatsOnNow, its own read), then one row per pinned
@@ -17,6 +18,7 @@ import { useI18n } from "../lib/i18n";
 import { fetchHome, type HomeResponse } from "../lib/browse";
 import { TitleRow } from "../help/HelpLink";
 import { WhatsOnNow } from "../components/WhatsOnNow";
+import { FeaturedHero } from "../components/FeaturedHero";
 import { AddedRow, VideoRow } from "../components/MediaRow";
 
 export function Home() {
@@ -75,6 +77,10 @@ export function Home() {
           <Skeleton variant="rect" height={140} />
           <Skeleton variant="rect" height={140} />
         </div>
+      )}
+
+      {home?.featured && (
+        <FeaturedHero featured={home.featured} onChange={() => setReload((x) => x + 1)} />
       )}
 
       {home && (

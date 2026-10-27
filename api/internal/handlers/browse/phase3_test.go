@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"slices"
 	"testing"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
 type bandFacetsBody struct {
@@ -102,5 +104,79 @@ func TestRecentlyAddedGrouped(t *testing.T) {
 	want = []string{"video:" + v("b2"), "video:" + v("b1") + ":B renamed:0"}
 	if got := entryShape(hub.Rows.Grouped); !slices.Equal(got, want) {
 		t.Errorf("hub B grouped %v, want %v", got, want)
+	}
+}
+
+func TestFeatured(t *testing.T) {
+	e := newEnv(t)
+	if _, err := e.db.Exec(`UPDATE series SET created_at = CASE id WHEN $1 THEN '2026-01-01T00:00:00Z' ELSE '2026-06-01T00:00:00Z' END`, seriesA); err != nil {
+		t.Fatal(err)
+	}
+	type homeDoc struct {
+		Featured *Featured `json:"featured"`
+	}
+	hero := func(p *principal.Principal) *Featured {
+		t.Helper()
+		var h homeDoc
+		if code := e.do(p, "GET", "/api/home", nil, &h); code != 200 {
+			t.Fatal(code)
+		}
+		return h.Featured
+	}
+	// the newest series the caller may see, from its first lesson
+	if f := hero(asViewer()); f == nil || f.Kind != "series" || f.Series.ID != seriesA || f.Video.ID != v("a1") || f.Series.Episodes != 2 || f.Picked {
+		t.Errorf("viewer default %+v", f)
+	}
+	if f := hero(asAdmin()); f == nil || f.Series == nil || f.Series.ID != seriesB || f.Series.Name != "B renamed" || f.Video.ID != v("b1") {
+		t.Errorf("admin default %+v", f)
+	}
+
+	// only admins read or pick
+	for _, p := range []*principal.Principal{asViewer(), nil} {
+		want := http.StatusForbidden
+		if p == nil {
+			want = http.StatusUnauthorized
+		}
+		if code := e.do(p, "GET", "/api/home/featured", nil, nil); code != want {
+			t.Errorf("GET featured as %v: %d, want %d", p, code, want)
+		}
+		if code := e.do(p, "PUT", "/api/home/featured", map[string]any{"video_id": v("a2")}, nil); code != want {
+			t.Errorf("PUT featured as %v: %d, want %d", p, code, want)
+		}
+	}
+	for _, id := range []string{v("a4"), unknownL, "nope"} { // missing, unknown, malformed
+		if code := e.do(asAdmin(), "PUT", "/api/home/featured", map[string]any{"video_id": id}, nil); code != http.StatusNotFound {
+			t.Errorf("pick %s: %d, want 404", id, code)
+		}
+	}
+
+	// a pick in library B: the admin sees it, the viewer of A keeps the default
+	var got struct {
+		VideoID *string `json:"video_id"`
+		Video   *Card   `json:"video"`
+	}
+	if code := e.do(asAdmin(), "PUT", "/api/home/featured", map[string]any{"video_id": v("b2")}, &got); code != 200 || got.VideoID == nil || *got.VideoID != v("b2") || got.Video == nil {
+		t.Fatalf("pick b2: %d %+v", code, got)
+	}
+	if f := hero(asAdmin()); f == nil || f.Kind != "video" || f.Video.ID != v("b2") || !f.Picked || f.Series != nil {
+		t.Errorf("admin picked %+v", f)
+	}
+	if f := hero(asViewer()); f == nil || f.Kind != "series" || f.Video.ID != v("a1") {
+		t.Errorf("viewer with a pick they may not see: %+v", f)
+	}
+
+	// a pick in a series names it
+	e.do(asAdmin(), "PUT", "/api/home/featured", map[string]any{"video_id": v("a2")}, nil)
+	if f := hero(asViewer()); f == nil || f.Kind != "video" || f.Video.ID != v("a2") || f.Series == nil || f.Series.Name != "Tafsir" {
+		t.Errorf("viewer picked %+v", f)
+	}
+
+	// null goes back to the newest series
+	got.VideoID = nil
+	if code := e.do(asAdmin(), "PUT", "/api/home/featured", map[string]any{"video_id": nil}, &got); code != 200 || got.VideoID != nil {
+		t.Errorf("clear: %d %+v", code, got)
+	}
+	if f := hero(asViewer()); f == nil || f.Picked {
+		t.Errorf("after clearing %+v", f)
 	}
 }

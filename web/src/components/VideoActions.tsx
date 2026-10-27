@@ -2,7 +2,8 @@
 // a series:
 //
 //   Resume (when you stopped part-way), Mark watched / unwatched, Favorite and
-//   Add to playlist, from GET /api/me/videos/{id} (the caller's marks);
+//   Add to playlist, from GET /api/me/videos/{id} (the caller's marks); admins
+//   also Feature on Home (story 45.21);
 //   for a lesson of a series, "Lesson n of m", the series' progress and the
 //   Previous / Next lessons (GET /api/series/{id}/episodes).
 //
@@ -26,6 +27,7 @@ import {
 import { watchPath } from "../lib/playQueue";
 import { formatDuration } from "./VideoViews";
 import { AddToPlaylist } from "./AddToPlaylist";
+import { FeatureOnHome } from "./FeatureOnHome";
 
 /** Resume is offered past the first 30 seconds of an unfinished video. */
 export const RESUME_MIN_SEC = 30;
@@ -145,6 +147,7 @@ export function VideoActions({ videoId }: { videoId: string }) {
         <Button variant="ghost" onClick={() => setPlaylistOpen(true)}>
           + {t("video.addToPlaylist")}
         </Button>
+        <FeatureOnHome videoId={videoId} />
       </div>
       {mine.playlists.length > 0 && (
         <p className="mkt-muted mkt-video__inlists">

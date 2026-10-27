@@ -134,6 +134,8 @@ func buildPlacement() placement.Table {
 		// Epic 45: the home rows read the caller's playback and pins (viewing data;
 		// /api/libraries/summary and /hub are home by their prefix)
 		"/api/home",
+		// Epic 45 story 45.21: the admin's pick for Home's hero (app_settings)
+		"/api/home/featured",
 	))
 	// every write of an `any` family, and the reads that need the home
 	add([]placement.Rule{

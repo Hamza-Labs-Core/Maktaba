@@ -295,7 +295,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		"continue_watching": []Card{}, "recently_added": []Card{},
 		"recently_watched": []Card{}, "pinned": []PinnedRows{},
 		"on_deck": []Card{}, "favorites": []Card{},
-		"recently_added_grouped": []AddedEntry{},
+		"recently_added_grouped": []AddedEntry{}, "featured": nil,
 	}
 	if s.none() {
 		writeJSON(w, r, doc)
@@ -324,6 +324,12 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	doc["recently_added_grouped"] = grouped
+	feat, err := h.featured(ctx, s)
+	if err != nil {
+		internal(w, r, "featured", err)
+		return
+	}
+	doc["featured"] = feat
 	deck, err := h.onDeck(ctx, uid, s, "", RowSize)
 	if err != nil {
 		internal(w, r, "on deck", err)

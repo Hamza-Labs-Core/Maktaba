@@ -5378,5 +5378,17 @@
   "collections.saveFiltersTo": "احفظ التصفيات في المجموعة",
   "collections.filtersSaved": "حُفظت التصفيات",
   "home.newCount": "{n} جديد",
-  "home.newLessons": "دروس جديدة: {n}"
+  "home.newLessons": "دروس جديدة: {n}",
+  "home.hero.newSeries": "سلسلة جديدة",
+  "home.hero.picked": "مختار",
+  "home.hero.lessons": "عدد الدروس: {n}",
+  "home.hero.playFirst": "شغّل الدرس الأول",
+  "home.hero.play": "شغّل",
+  "home.hero.openSeries": "افتح السلسلة",
+  "home.hero.more": "المزيد",
+  "home.hero.reset": "اعرض أحدث سلسلة",
+  "video.feature": "اعرضه في الرئيسية",
+  "video.featured": "معروض في الرئيسية",
+  "video.featured.on": "صار هذا الدرس في الرئيسية",
+  "video.featured.off": "تعرض الرئيسية أحدث سلسلة من جديد"
 }

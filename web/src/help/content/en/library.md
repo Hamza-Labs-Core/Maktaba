@@ -17,7 +17,9 @@ Which libraries you see is set by an admin (see [Library access](/help/library-a
 
 ### Home {#home}
 
-Home opens when you sign in. Its rows scroll sideways: drag or swipe them, use the arrow buttons next to a row's title, or press Tab to move from card to card.
+Home opens when you sign in. At the top, a large **featured** card shows the newest series in your libraries, with **Play the first lesson** and **Open the series**, or a lesson an admin chose to feature. Admins choose it on a video's page with **Feature on Home** (press it again, or **Feature the newest series** on Home, to go back). If you cannot see the chosen lesson's library, you get the newest series instead.
+
+Its rows scroll sideways: drag or swipe them, use the arrow buttons next to a row's title, or press Tab to move from card to card.
 
 - **Continue Watching**: videos you started and have not finished (past the first 30 seconds, before the last 5%). The bar under a card shows how far you got.
 - **On Deck**: for each series you are in the middle of, its next lesson after the last one you finished, with the series' name under the card.

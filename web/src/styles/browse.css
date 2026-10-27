@@ -302,3 +302,72 @@
   font-size: var(--font-size-sm);
   font-weight: 600;
 }
+
+/* Epic 45 Phase 3 (story 45.21): Home's featured hero. The shade runs bottom
+   to top, so it reads the same left to right and right to left. */
+.mkt-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-block-size: clamp(200px, 32vw, 360px);
+  margin-block-end: var(--space-5);
+  border-radius: var(--radius-lg, var(--radius-md));
+  overflow: hidden;
+  background: linear-gradient(160deg, var(--color-accent-soft), var(--color-subtle));
+  isolation: isolate;
+}
+.mkt-hero__art {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  z-index: -2;
+}
+.mkt-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.78), rgb(0 0 0 / 0.15) 70%, transparent);
+}
+.mkt-hero__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  max-inline-size: 48rem;
+  color: #fff;
+}
+.mkt-hero__label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+.mkt-hero__title {
+  margin: 0;
+  font-size: clamp(1.4rem, 3.2vw, 2.25rem);
+  line-height: 1.2;
+}
+.mkt-hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.mkt-hero__meta a {
+  color: inherit;
+}
+.mkt-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+@media (max-width: 600px) {
+  .mkt-hero__body {
+    padding: var(--space-4);
+  }
+}

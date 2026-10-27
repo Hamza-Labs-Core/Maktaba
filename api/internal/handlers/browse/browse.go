@@ -73,6 +73,9 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/me/pinned-libraries", h.GetPins)
 	r.Put("/api/me/pinned-libraries", h.PutPins)
 	r.Get("/api/home", h.Home)
+	// Epic 45 Phase 3 (story 45.21): the admin's pick for Home's hero
+	r.Get("/api/home/featured", h.GetFeatured)
+	r.Put("/api/home/featured", h.PutFeatured)
 	// Epic 45 Phase 2: a user's marks, favorites and playlists, and the
 	// grid's facets (/api/videos/facets is a static segment, which chi
 	// prefers to the videos handler's /api/videos/{id})
