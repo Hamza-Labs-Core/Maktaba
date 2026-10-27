@@ -51,6 +51,7 @@ __all__ = [
     "generate_poster",
     "generate_sprite",
     "generate_thumbnails",
+    "scale_to_width",
     "sprite_index",
     "thumbnail_dir_for",
     "write_sprite_index",
@@ -145,6 +146,22 @@ def _poster_timestamp(duration_sec: float, cfg: ThumbnailConfig) -> float:
     return cfg.fallback_seek_sec
 
 
+def scale_to_width(width: int) -> str:
+    """The ``scale`` filter that makes a frame ``width`` px wide in its displayed shape.
+
+    The clients show the picture whole in a 16:9 box, with bars where it is
+    narrower or wider (a vertical, square or ultra-wide video), so the image
+    must have the shape the video plays in. ffmpeg turns a frame by the
+    stream's rotation before the filters (a phone's video stored as
+    landscape pixels with a 90° rotation comes out portrait; nothing here
+    may pass ``-noautorotate``), and ``dar`` (``iw/ih*sar``) puts the
+    stretch of non-square pixels into the height: an anamorphic 720x480
+    16:9 video is 640x360, not 640x426. The height is kept even
+    (libjpeg/yuv420), and ``setsar=1`` marks the result square-pixelled.
+    """
+    return f"scale={width}:trunc(ow/dar/2)*2,setsar=1"
+
+
 def build_poster_args(
     src: str,
     timestamp_sec: float,
@@ -156,10 +173,9 @@ def build_poster_args(
     """Compose the single-frame ffmpeg command line.
 
     ``-ss`` precedes ``-i`` for fast (keyframe-accurate) input seek;
-    ``-frames:v 1`` grabs exactly one frame. ``scale=W:-2`` keeps the
-    aspect ratio with an even height (libjpeg/yuv420 requirement), and
-    ``-q:v 2`` is near-visually-lossless JPEG. ``-y`` overwrites so a
-    re-run is idempotent.
+    ``-frames:v 1`` grabs exactly one frame. :func:`scale_to_width` keeps
+    the displayed aspect ratio, and ``-q:v 2`` is near-visually-lossless
+    JPEG. ``-y`` overwrites so a re-run is idempotent.
     """
     return [
         ffmpeg_binary(binary),
@@ -174,7 +190,7 @@ def build_poster_args(
         "-frames:v",
         "1",
         "-vf",
-        f"scale={width}:-2",
+        scale_to_width(width),
         "-q:v",
         "2",
         "-y",
@@ -210,7 +226,7 @@ def build_sprite_args(
     """
     count = max(1, columns * rows)
     fps = (count / duration_sec) if duration_sec > 0 else 1.0
-    vf = f"fps={fps:.6f},scale={tile_width}:-2,tile={columns}x{rows}"
+    vf = f"fps={fps:.6f},{scale_to_width(tile_width)},tile={columns}x{rows}"
     return [
         ffmpeg_binary(binary),
         "-hide_banner",
@@ -332,8 +348,8 @@ def sprite_index(duration_sec: float, cfg: ThumbnailConfig = DEFAULT_CONFIG) -> 
 
     Tile ``i`` (row-major) is the frame at ``i * interval_sec``, the time the
     ``fps`` filter of :func:`build_sprite_args` sampled; an unknown duration
-    sampled at 1 fps. The tile's height is the image's (``scale=W:-2``), so the
-    reader takes it from the sheet's size.
+    sampled at 1 fps. The tile's height follows the video's shape
+    (:func:`scale_to_width`), so the reader takes it from the sheet's size.
     """
     count = max(1, cfg.sprite_columns * cfg.sprite_rows)
     interval = (duration_sec / count) if duration_sec > 0 else 1.0

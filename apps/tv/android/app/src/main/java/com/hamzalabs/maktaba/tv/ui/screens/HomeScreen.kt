@@ -17,12 +17,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.tv.R
 import com.hamzalabs.maktaba.tv.data.TvApi
 import com.hamzalabs.maktaba.tv.data.TvVideo
 import com.hamzalabs.maktaba.tv.ui.components.MediaCard
 import com.hamzalabs.maktaba.tv.ui.components.SectionTitle
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
@@ -38,9 +40,10 @@ fun HomeScreen(api: TvApi, focusFirst: Boolean, onOpen: (String) -> Unit, signed
     val cw = stringResource(R.string.continue_watching)
     val recent = stringResource(R.string.recently_added)
     val forYou = stringResource(R.string.for_you)
-    val (state, retry) = rememberLoad(api, signedOut) {
+    val (state, retry) = rememberLoad(api, signedOut, where = "tv home") {
         coroutineScope {
-            val recs = async { runCatching { api.recommendations() }.getOrNull() }
+            // the suggestions are extra: without them Home still shows the newest videos
+            val recs = async { runCatching { api.recommendations() }.onFailure { if (it is CancellationException) throw it else AppLog.failure("tv recommendations", it) }.getOrNull() }
             val newest = async { api.videos().items }
             val rails = recs.await()?.rails.orEmpty()
             val cont = rails.firstOrNull { it.id == "continue" }?.let { rail ->

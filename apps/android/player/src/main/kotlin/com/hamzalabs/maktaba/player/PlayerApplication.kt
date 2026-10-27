@@ -3,6 +3,8 @@ package com.hamzalabs.maktaba.player
 import android.app.Application
 import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.api.init
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
+import com.hamzalabs.maktaba.core.diagnostics.CrashLog
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.PreferencesStore
 import com.hamzalabs.maktaba.core.session.keystoreTokens
@@ -16,6 +18,7 @@ import kotlinx.coroutines.SupervisorJob
 class PlayerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this) // an uncaught exception is kept on the device, without anything personal
         ClientHeader.init(this) // X-Maktaba-Client names this app (Epic 44)
     }
 
@@ -23,6 +26,6 @@ class PlayerApplication : Application() {
         AppSession(PreferencesStore(this, "session"), MainScope(), { home -> keystoreTokens(this, packageName, home) })
     }
     /** Work that outlives a screen (closing a stream session). */
-    val background = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val background = CoroutineScope(SupervisorJob() + Dispatchers.Default + AppLog.handler("player background"))
     val themes: ThemeStore by lazy { ThemeStore(PreferencesStore(this, "settings")) }
 }

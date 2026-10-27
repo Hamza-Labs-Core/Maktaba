@@ -54,6 +54,7 @@ import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.hamzalabs.maktaba.core.R as CoreR
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
 
 /**
  * Choosing the home (Epic 42 story 42.10): the homes this TV used (Your homes; hold Select on
@@ -92,6 +93,7 @@ fun HomePickerScreen(app: MaktabaTVApp, probe: HomeProbe = remember { HomeProbe(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                AppLog.failure("tv connect", e)
                 problem = failed.replace("%s", link.urls.joinToString { it.substringAfter("://") })
             } finally {
                 connecting = false
@@ -290,6 +292,7 @@ fun ConnectLinkDialog(session: AppSession, link: ConnectLink, probe: HomeProbe =
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
+                                AppLog.failure("tv connect link", e)
                                 problem = failed
                             } finally {
                                 busy = false

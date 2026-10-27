@@ -25,9 +25,24 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+/**
+ * A request that failed. Its message is for the log and never carries the home's raw answer (a
+ * screen shows the sentence for [errorKind]; the body is kept for the error screen's Details).
+ */
 sealed class ApiException(message: String) : Exception(message) {
     class Transport(why: String) : ApiException("Could not reach the home: $why")
-    class Status(val code: Int, val body: String) : ApiException("The home answered $code: $body")
+
+    /** The home answered [code]; [body] is its answer (problem JSON, at most [BODY_KEPT] chars). */
+    class Status(val code: Int, val body: String, val retryAfterSec: Long? = null) :
+        ApiException("The home answered $code" + (Problem.parse(body)?.slug?.takeIf { it.isNotEmpty() }?.let { " ($it)" } ?: "")) {
+        /** The home's problem JSON, when [body] is one. */
+        val problem: Problem? by lazy { Problem.parse(body) }
+    }
+
+    /** A stream whose playlist did not come in time: a transcode still starting ([body]: the last answer). */
+    class NotReady(val code: Int, val body: String) :
+        ApiException("The stream was not ready in time (the home answered $code)")
+
     class Decoding(why: String) : ApiException("Unexpected answer from the home: $why")
     object SignedOut : ApiException("Signed out. Sign in again.") {
         private fun readResolve(): Any = SignedOut
@@ -39,7 +54,7 @@ sealed class ApiException(message: String) : Exception(message) {
  * thread, where Android forbids network reads (a chunked body is read as it comes). A failure
  * to reach the home is [ApiException.Transport].
  */
-suspend fun OkHttpClient.exchange(r: Request): Pair<Int, ByteArray> = suspendCancellableCoroutine { cont ->
+suspend fun OkHttpClient.exchange(r: Request): HttpAnswer = suspendCancellableCoroutine { cont ->
     val call = newCall(r)
     cont.invokeOnCancellation { call.cancel() }
     call.enqueue(object : Callback {
@@ -48,12 +63,23 @@ suspend fun OkHttpClient.exchange(r: Request): Pair<Int, ByteArray> = suspendCan
         }
 
         override fun onResponse(call: Call, response: Response) {
-            val read = runCatching { response.use { it.code to it.body.bytes() } }
+            val read = runCatching {
+                response.use { HttpAnswer(it.code, it.body.bytes(), retryAfterSeconds(it.header("Retry-After"))) }
+            }
             read.onSuccess { cont.resume(it) }
             read.onFailure { cont.resumeWithException(ApiException.Transport(it.message ?: it.toString())) }
         }
     })
 }
+
+/** An answer: its status, its body and, on a 429 or 503, `Retry-After` in seconds. */
+class HttpAnswer(val code: Int, val body: ByteArray, val retryAfterSec: Long? = null) {
+    operator fun component1() = code
+    operator fun component2() = body
+}
+
+/** How much of a failed answer is kept (for Details and the log). */
+const val BODY_KEPT = 2000
 
 /** The REST client for one home: base URL, Bearer tokens, one refresh at a time on a 401. */
 class ApiClient(
@@ -187,23 +213,36 @@ class ApiClient(
     val basePath: String get() = home.encodedPath.trimEnd('/')
 
     /**
-     * Waits until an HLS stream can start: a transcode writes its rendition playlist a moment
-     * after the session opens, while the master playlist names it at once (the rendition
-     * answers 404 until then). Polls every [intervalMs] up to [timeoutMs].
+     * Waits until an HLS stream can start: a transcode writes its playlists a moment after the
+     * session opens, while the master playlist names the rendition at once (each answers 404,
+     * `manifest-not-found` or `rendition-not-found`, until then). A 404 is asked again after
+     * [intervalMs], then twice that, and so on up to [maxIntervalMs], for up to [timeoutMs] in
+     * all; then it is [ApiException.NotReady]. Any other failure is at once.
      */
-    suspend fun waitUntilPlayable(url: HttpUrl, timeoutMs: Long = 30_000, intervalMs: Long = 500) {
+    suspend fun waitUntilPlayable(
+        url: HttpUrl,
+        timeoutMs: Long = 30_000,
+        intervalMs: Long = 500,
+        maxIntervalMs: Long = 2_000,
+    ) {
         if (!url.encodedPath.endsWith(".m3u8")) return
-        val (code, master) = fetchStream(url)
-        if (code != 200) throw ApiException.Status(code, master.take(300))
-        val rendition = firstUri(master)?.let { url.resolve(it) } ?: return
         var waited = 0L
-        while (true) {
-            val (c, body) = fetchStream(rendition)
-            if (c == 200) return
-            if (c != 404 || waited >= timeoutMs) throw ApiException.Status(c, body.take(300))
-            delay(intervalMs)
-            waited += intervalMs
+        var step = intervalMs
+        // the playlist at [target] once it answers 200, waiting out its 404s
+        suspend fun ready(target: HttpUrl): String {
+            while (true) {
+                val (c, body) = fetchStream(target)
+                if (c == 200) return body
+                if (c != 404) throw ApiException.Status(c, body.take(BODY_KEPT))
+                if (waited >= timeoutMs) throw ApiException.NotReady(c, body.take(BODY_KEPT))
+                delay(step)
+                waited += step
+                step = (step * 2).coerceAtMost(maxIntervalMs)
+            }
         }
+        val master = ready(url)
+        val rendition = firstUri(master)?.let { url.resolve(it) } ?: return
+        ready(rendition)
     }
 
     /** A `/stream/` GET of this home with the token, refreshed once on a 401 (as the player's). */
@@ -212,7 +251,7 @@ class ApiClient(
         suspend fun get(token: String) = execute(Request.Builder().url(url).header("Authorization", "Bearer $token").build())
         val token = playbackToken(60)
         var (code, body) = get(token)
-        if (code == 401) get(refreshAfter(token)).let { code = it.first; body = it.second }
+        if (code == 401) get(refreshAfter(token)).let { code = it.code; body = it.body }
         return code to String(body)
     }
 
@@ -272,28 +311,28 @@ class ApiClient(
 
     private suspend fun send(r: Request, authorized: Boolean = true): ByteArray {
         val sentWith = if (authorized) tokens.access else null
-        val (code, body) = exchange(r, sentWith)
-        if (code == 401 && authorized) {
+        val first = exchange(r, sentWith)
+        if (first.code == 401 && authorized) {
             if (tokens.refresh == null) {
                 tokens.clear()
                 throw ApiException.SignedOut
             }
-            val (again, body2) = exchange(r, refreshAfter(sentWith))
-            if (again == 401) {
+            val again = exchange(r, refreshAfter(sentWith))
+            if (again.code == 401) {
                 tokens.clear()
                 throw ApiException.SignedOut
             }
-            return checked(again, body2)
+            return checked(again)
         }
-        return checked(code, body)
+        return checked(first)
     }
 
-    private fun checked(code: Int, body: ByteArray): ByteArray {
-        if (code !in 200..299) throw ApiException.Status(code, String(body).take(300))
-        return body
+    private fun checked(a: HttpAnswer): ByteArray {
+        if (a.code !in 200..299) throw ApiException.Status(a.code, String(a.body).take(BODY_KEPT), a.retryAfterSec)
+        return a.body
     }
 
-    private suspend fun exchange(r: Request, access: String?): Pair<Int, ByteArray> {
+    private suspend fun exchange(r: Request, access: String?): HttpAnswer {
         val req = if (access != null) r.newBuilder().header("Authorization", "Bearer $access").build() else r
         return execute(req)
     }
@@ -307,13 +346,13 @@ class ApiClient(
         tokens.access?.let { if (it != stale) return it }
         val refresh = tokens.refresh ?: throw ApiException.SignedOut
         val body = buildJsonObject { put("refresh_token", JsonPrimitive(refresh)) }
-        val (code, bytes) = exchange(request("POST", "/api/auth/refresh", body = body), null)
+        val answer = exchange(request("POST", "/api/auth/refresh", body = body), null)
         // the home refused the refresh token; a busy (429) or failing home keeps the tokens
-        if (code == 400 || code == 401 || code == 403) {
+        if (answer.code == 400 || answer.code == 401 || answer.code == 403) {
             tokens.clear()
             throw ApiException.SignedOut
         }
-        val t: AuthTokens = decode(checked(code, bytes))
+        val t: AuthTokens = decode(checked(answer))
         tokens.save(t)
         lastRefresh = t.accessToken to now()
         t.accessToken
@@ -323,7 +362,7 @@ class ApiClient(
      * Sends [r] and reads the whole answer on OkHttp's own thread: the caller may be the main
      * thread, where Android forbids network reads (a chunked body is read as it comes).
      */
-    private suspend fun execute(r: Request): Pair<Int, ByteArray> = http.exchange(r)
+    private suspend fun execute(r: Request): HttpAnswer = http.exchange(r)
 
     /**
      * An OkHttp client for the player: this home's `/stream/` requests carry the token. Its own
