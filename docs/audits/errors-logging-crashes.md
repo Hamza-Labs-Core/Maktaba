@@ -20,7 +20,7 @@ What we looked for:
 | Area                                             | PR             | Critical | High              | Medium              | Low                 |
 | ------------------------------------------------ | -------------- | -------- | ----------------- | ------------------- | ------------------- |
 | Go API                                           | #385           | 1        | 10                | 9 fixed, 3 deferred | 4 deferred          |
-| Streaming and supervisor                         | #383           | 2        | 6                 | 10                  | 1 fixed, 5 deferred |
+| Streaming and supervisor                         | #383           | 2        | 6                 | 11                  | 5 deferred          |
 | Python pipeline                                  | #379           | —        | 3                 | 4                   | 4 deferred          |
 | Web (also the phone apps and the desktop window) | #384           | 1        | 6                 | 8 fixed, 3 deferred | 1 deferred          |
 | Apple apps                                       | #382 (on #381) | —        | 2, plus 2 in #381 | 9                   | 2 fixed, 5 deferred |
