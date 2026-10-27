@@ -364,8 +364,7 @@ fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<
         app.state::<bigscreen::BigScreen>().start(),
         None::<&str>,
     )?;
-    app.state::<bigscreen::BigScreen>()
-        .set_check_item(big_screen_start.clone());
+    app.manage(bigscreen::StartCheck(big_screen_start.clone()));
     let view_menu = Submenu::with_items(
         app,
         "View",

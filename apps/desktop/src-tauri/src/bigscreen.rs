@@ -108,11 +108,13 @@ pub fn menu_target(current: &Url) -> Option<Url> {
     Some(u)
 }
 
-/// The shell's big-screen state: the settings file and the menu's check item.
+/// The shell's big-screen setting (the settings file). Pure file state: the
+/// unit tests build it on every OS, so the menu's check item lives apart
+/// (StartCheck), out of what they link (a menu item pulls in Windows menu
+/// entry points a test binary cannot load).
 pub struct BigScreen {
     path: PathBuf,
     prefs: Mutex<Prefs>,
-    check: Mutex<Option<CheckMenuItem<Wry>>>,
 }
 
 impl BigScreen {
@@ -121,7 +123,6 @@ impl BigScreen {
         Self {
             prefs: Mutex::new(load(&path)),
             path,
-            check: Mutex::new(None),
         }
     }
 
@@ -129,25 +130,30 @@ impl BigScreen {
         self.prefs.lock().unwrap().start
     }
 
-    /// Saves "Start in big screen" and keeps the menu's check mark in step.
+    /// Saves "Start in big screen".
     pub fn set_start(&self, on: bool) -> Result<(), String> {
         let mut prefs = self.prefs.lock().unwrap();
         let next = Prefs { start: on };
         save(&self.path, &next).map_err(|e| format!("{}: {e}", self.path.display()))?;
         *prefs = next;
-        if let Some(item) = self.check.lock().unwrap().as_ref() {
-            let _ = item.set_checked(on);
-        }
         Ok(())
-    }
-
-    pub fn set_check_item(&self, item: CheckMenuItem<Wry>) {
-        *self.check.lock().unwrap() = Some(item);
     }
 }
 
+/// View → Start in Big Screen, the menu's check item (lib.rs manages it).
+pub struct StartCheck(pub CheckMenuItem<Wry>);
+
 fn state(app: &AppHandle) -> tauri::State<'_, BigScreen> {
     app.state::<BigScreen>()
+}
+
+/// Saves the setting and keeps the menu's check mark in step.
+fn set_start(app: &AppHandle, on: bool) -> Result<(), String> {
+    state(app).set_start(on)?;
+    if let Some(check) = app.try_state::<StartCheck>() {
+        let _ = check.0.set_checked(on);
+    }
+    Ok(())
 }
 
 /// The main window full screen, or not.
@@ -173,15 +179,11 @@ pub fn on_menu(app: &AppHandle) {
 
 /// View → Start in Big Screen was clicked: the item has toggled its own mark.
 pub fn on_start_menu(app: &AppHandle) {
-    let bs = state(app);
-    let on = bs
-        .check
-        .lock()
-        .unwrap()
-        .as_ref()
-        .and_then(|i| i.is_checked().ok())
-        .unwrap_or(!bs.start());
-    if let Err(e) = bs.set_start(on) {
+    let on = app
+        .try_state::<StartCheck>()
+        .and_then(|c| c.0.is_checked().ok())
+        .unwrap_or(!state(app).start());
+    if let Err(e) = set_start(app, on) {
         crate::attempts::log(&format!("big screen: the setting was not saved: {e}"));
     }
 }
@@ -211,7 +213,7 @@ pub fn set_big_screen(app: AppHandle, on: bool) -> Result<(), String> {
 
 #[tauri::command]
 pub fn set_big_screen_start(app: AppHandle, on: bool) -> Result<(), String> {
-    state(&app).set_start(on)
+    set_start(&app, on)
 }
 
 #[cfg(test)]
