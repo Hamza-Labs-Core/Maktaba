@@ -78,12 +78,15 @@ jobs:
             Linux)
               deb=("$out"/deb/*.deb); rpm=("$out"/rpm/*.rpm)
               [ "${#deb[@]}" = 1 ] && [ "${#rpm[@]}" = 1 ] || { echo "::error::want one .deb and one .rpm"; exit 1; }
-              dpkg-deb -f "${deb[0]}" Package | grep -qx maktaba-player
-              # the launcher, the app's jars (with JavaFX's Linux natives) and its own runtime
-              dpkg-deb -c "${deb[0]}" | grep -q '/bin/maktaba-player$'
-              dpkg-deb -c "${deb[0]}" | grep -q 'javafx-media-.*-linux\.jar$'
-              dpkg-deb -c "${deb[0]}" | grep -q '/lib/runtime/'
-              rpm -qip "${rpm[0]}" | grep -q '^Name *: maktaba-player'
+              [ "$(dpkg-deb -f "${deb[0]}" Package)" = maktaba-player ]
+              # the launcher, the app's jars (with JavaFX's Linux natives) and its own runtime;
+              # listed once into a variable (grep -q on a pipe ends it early: tar's write fails)
+              files=$(dpkg-deb -c "${deb[0]}")
+              grep -q '/bin/maktaba-player$' <<<"${files}"
+              grep -q 'javafx-media-.*-linux\.jar$' <<<"${files}"
+              grep -q '/lib/runtime/' <<<"${files}"
+              info=$(rpm -qip "${rpm[0]}")
+              grep -q '^Name *: maktaba-player' <<<"${info}"
               ;;
             Windows)
               msi=("$out"/msi/*.msi)

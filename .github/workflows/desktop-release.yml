@@ -624,9 +624,12 @@ jobs:
           ./gradlew --no-daemon --stacktrace :client:test test ${{ matrix.tasks }} "${args[@]}"
           out=build/compose/binaries/main
           if [ "$RUNNER_OS" = Linux ]; then
-            dpkg-deb -c "$out"/deb/*.deb | grep -q '/bin/maktaba-player$'
-            dpkg-deb -c "$out"/deb/*.deb | grep -q '/lib/runtime/'
-            rpm -qip "$out"/rpm/*.rpm | grep -q '^Name *: maktaba-player'
+            # listed once (grep -q on a pipe ends it early, and tar's write then fails)
+            files=$(dpkg-deb -c "$out"/deb/*.deb)
+            grep -q '/bin/maktaba-player$' <<<"${files}"
+            grep -q '/lib/runtime/' <<<"${files}"
+            info=$(rpm -qip "$out"/rpm/*.rpm)
+            grep -q '^Name *: maktaba-player' <<<"${info}"
           fi
 
       # Named as the feed's rules know them (tools/release/updaterfeed: playerRules).
