@@ -316,13 +316,23 @@
   background: linear-gradient(160deg, var(--color-accent-soft), var(--color-subtle));
   isolation: isolate;
 }
-.mkt-hero__art {
+.mkt-hero__art,
+.mkt-hero__backdrop {
   position: absolute;
   inset: 0;
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
   z-index: -2;
+}
+/* a vertical or square picture: the whole frame, over a blurred copy */
+.mkt-hero__art--whole {
+  object-fit: contain;
+}
+.mkt-hero__backdrop {
+  z-index: -3;
+  filter: blur(24px) brightness(0.55);
+  transform: scale(1.15);
 }
 .mkt-hero::after {
   content: "";
