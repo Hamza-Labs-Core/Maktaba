@@ -63,7 +63,7 @@ func (h *Handler) backupsPut(w http.ResponseWriter, r *http.Request) {
 	}
 	code, out, err := h.storageSupervisor().call(r.Context(), http.MethodPut, "backups", body)
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway(err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("the server's supervisor did not answer").Wrap(err))
 		return
 	}
 	if code == http.StatusOK {
@@ -95,7 +95,7 @@ func (h *Handler) backupDelete(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	code, out, err := h.storageSupervisor().call(r.Context(), http.MethodDelete, "backups/dumps/"+url.PathEscape(name), nil)
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway(err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("the server's supervisor did not answer").Wrap(err))
 		return
 	}
 	if code == http.StatusOK {

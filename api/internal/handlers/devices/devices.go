@@ -222,11 +222,11 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 			nullIfEmpty(req.AppVersion), nullIfEmpty(req.OSVersion),
 			nullIfEmpty(req.Locale), catsJSON, now)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("insert device: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("insert device").Wrap(err))
 			return
 		}
 	} else if err != nil {
-		httperror.Write(w, r, httperror.Internal("query device: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("query device").Wrap(err))
 		return
 	} else {
 		_, err = tx.ExecContext(r.Context(), `
@@ -236,7 +236,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		`, nullIfEmpty(req.AppVersion), nullIfEmpty(req.OSVersion),
 			nullIfEmpty(req.Locale), catsJSON, now, existingID)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("update device: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("update device").Wrap(err))
 			return
 		}
 	}
@@ -310,7 +310,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	args = append(args, id, p.UserID)
 	res, err := h.DB.ExecContext(r.Context(), q, args...)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("patch device: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("patch device").Wrap(err))
 		return
 	}
 	if rows, _ := res.RowsAffected(); rows == 0 {

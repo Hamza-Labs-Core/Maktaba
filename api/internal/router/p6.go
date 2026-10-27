@@ -45,6 +45,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 )
@@ -283,7 +284,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	enrichHandler.Mount(r)
 	if d.EnrichAutoAcceptCtx != nil && d.DB != nil {
-		go enrichHandler.RunAutoAccept(d.EnrichAutoAcceptCtx, enrichment.DefaultAutoAcceptInterval, nil)
+		safego.Go(nil, "enrichment_auto_accept", func() {
+			enrichHandler.RunAutoAccept(d.EnrichAutoAcceptCtx, enrichment.DefaultAutoAcceptInterval, nil)
+		})
 	}
 
 	contextHandler := &contextcard.Handler{DB: d.DB}
@@ -338,7 +341,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	queuesHandler.Mount(r)
 	wsHandler.Initial = queuesHandler.InitialFrame
 	if d.BusCtx != nil {
-		go queuesHandler.PublishSnapshots(d.BusCtx, queues.DefaultSnapshotInterval)
+		safego.Go(nil, "queues_snapshots", func() { queuesHandler.PublishSnapshots(d.BusCtx, queues.DefaultSnapshotInterval) })
 	}
 	wsHandler.Mount(r)
 

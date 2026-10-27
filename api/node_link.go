@@ -21,6 +21,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // startNodeLink starts the machine's link client (nil without a certificate folder: an
@@ -33,7 +34,7 @@ func startNodeLink(ctx context.Context, home, nodeID, certDir, streamURL string,
 	if u, err := url.Parse(streamURL); err == nil && u.Host != "" {
 		c.Offer = spliceTo(u.Host)
 	}
-	go c.Run(ctx)
+	safego.Go(logger, "node_link_client", func() { c.Run(ctx) })
 	return c
 }
 

@@ -204,7 +204,7 @@ func (h *Handler) saveDraft(w http.ResponseWriter, r *http.Request, what string,
 			httperror.Write(w, r, he)
 			return ref, false
 		}
-		httperror.Write(w, r, httperror.Internal("save to draft change: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("save to draft change").Wrap(err))
 		return ref, false
 	}
 	return ref, true

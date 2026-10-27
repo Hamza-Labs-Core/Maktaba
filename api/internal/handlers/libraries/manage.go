@@ -26,6 +26,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libpaths"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // ManagedRoot is one library folder as this machine sees it.
@@ -321,6 +322,7 @@ func (h *Handler) checkRoots(roots []string) map[string]error {
 	sem := make(chan struct{}, 16)
 	for root := range uniq {
 		go func(root string) {
+			defer safego.Recover(nil, "library_root_check")
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			ch <- result{root, checker.Check(root)}
@@ -516,6 +518,7 @@ func (h *Handler) Folders(w http.ResponseWriter, r *http.Request) {
 	ch := make(chan listed, 1)
 	list := listFolders // read once here: the goroutine may outlive the request
 	go func() {
+		defer safego.Recover(nil, "library_folder_list")
 		names, err := list(local, places)
 		ch <- listed{names, err}
 	}()

@@ -23,6 +23,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates/dltoken"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
@@ -101,6 +102,9 @@ const mirrorFileLimit int64 = 4 << 30
 
 // errNotMirrored: the release or the file is not one the mirror serves (a 404).
 var errNotMirrored = errors.New("not mirrored")
+
+// errFetchPanicked is what the waiters on a fetch or a wheelhouse get when it panicked.
+var errFetchPanicked = errors.New("the download stopped on an internal error")
 
 func (m *Mirror) log() *slog.Logger {
 	if m.Log != nil {
@@ -372,7 +376,7 @@ func (m *Mirror) fail(w http.ResponseWriter, r *http.Request, err error) {
 		m.log().Warn("update mirror: a file could not be fetched", "event", "update_mirror_failed",
 			"path", r.URL.Path, "err", err.Error())
 	}
-	httperror.Write(w, r, httperror.BadGateway(err.Error()))
+	httperror.Write(w, r, httperror.BadGateway(err.Error())) // the machine logs why and goes to GitHub itself
 }
 
 // serveFile serves a kept file with range requests (http.ServeContent); its ETag is its
@@ -386,7 +390,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, path, name, sum string) {
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal(err.Error()))
+		httperror.Write(w, r, httperror.Internal("").Wrap(err))
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
@@ -542,11 +546,16 @@ func (m *Mirror) ensure(ctx context.Context, rel Release, name, want string) (st
 	// the check or the fetch outlives the request that started it (the other machines wait
 	// for it)
 	go func() {
+		// the waiters are always let go, with an error should the fetch panic
+		defer func() {
+			m.mu.Lock()
+			delete(m.fetching, path)
+			m.mu.Unlock()
+			close(f.done)
+		}()
+		defer safego.Recover(m.log(), "update_mirror_fetch")
+		f.err = errFetchPanicked
 		f.err = m.keepOrFetch(context.WithoutCancel(ctx), rel, name, want, filepath.Dir(path), path)
-		m.mu.Lock()
-		delete(m.fetching, path)
-		m.mu.Unlock()
-		close(f.done)
 	}()
 	select {
 	case <-f.done:
@@ -763,6 +772,7 @@ func (m *Mirror) Prefetch(ctx context.Context, version string, platforms []strin
 	m.bg.Add(1)
 	go func() {
 		defer m.bg.Done()
+		defer safego.Recover(m.log(), "update_mirror_prefetch")
 		ctx := context.WithoutCancel(ctx)
 		rel, err := m.release(ctx, version)
 		if err != nil {
