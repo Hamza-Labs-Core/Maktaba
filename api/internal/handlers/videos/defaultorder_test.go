@@ -32,12 +32,12 @@ func orderDB(t *testing.T, rows []orderRow) *sql.DB {
 		id TEXT PRIMARY KEY, library_id TEXT, path TEXT, filename TEXT,
 		title TEXT, description TEXT, state TEXT, detected_language TEXT,
 		duration_sec REAL, size_bytes INTEGER, content_hash TEXT, metadata BLOB,
-		created_at DATETIME, updated_at DATETIME, mtime DATETIME)`); err != nil {
+		created_at DATETIME, updated_at DATETIME, mtime DATETIME, published_at DATETIME)`); err != nil {
 		t.Fatal(err)
 	}
 	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	for i, r := range rows {
-		if _, err := db.Exec(`INSERT INTO videos VALUES ($1,'lib','p','f',$2,$3,'ready',NULL,NULL,0,$4,NULL,$5,$6,$5)`,
+		if _, err := db.Exec(`INSERT INTO videos VALUES ($1,'lib','p','f',$2,$3,'ready',NULL,NULL,0,$4,NULL,$5,$6,$5,NULL)`,
 			orderID(i), r.title, r.description, fmt.Sprintf("h%d", i),
 			base.Add(time.Duration(r.added)*time.Minute), base.Add(time.Duration(r.changed)*time.Minute)); err != nil {
 			t.Fatal(err)

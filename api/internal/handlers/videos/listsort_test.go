@@ -34,6 +34,17 @@ type extVideo struct {
 	mtime    *time.Time
 	duration *float64
 	plays    int
+	// published is its YouTube upload date (videos.published_at): the
+	// publish date over mtime when set
+	published *time.Time
+}
+
+// publishDate is the date the list sorts and filters by: published, else mtime.
+func (v extVideo) publishDate() *time.Time {
+	if v.published != nil {
+		return v.published
+	}
+	return v.mtime
 }
 
 func tp(y, m, d int) *time.Time {
@@ -49,17 +60,19 @@ func xvid(n int) string {
 
 // extFixture: library A has rows with NULL mtimes and durations, ties on
 // duration and plays; library B has one of everything the filters match.
+// alpha, charlie and foxtrot have a YouTube upload date: alpha's file is from
+// 2024 but it came out in 2016, foxtrot's is from 2025 and it came out in 2024.
 func extFixture() []extVideo {
 	return []extVideo{
-		{xvid(1), extLibA, "alpha", tp(2024, 3, 1), fp(60), 3},
-		{xvid(2), extLibA, "bravo", tp(2023, 7, 9), fp(60), 0},
-		{xvid(3), extLibA, "charlie", nil, fp(120), 1},
-		{xvid(4), extLibA, "delta", tp(2024, 12, 31), nil, 3},
-		{xvid(5), extLibA, "echo", nil, nil, 0},
-		{xvid(6), extLibA, "foxtrot", tp(2025, 1, 1), fp(5), 2},
-		{xvid(7), extLibA, "golf", tp(2024, 1, 1), fp(30), 0},
-		{xvid(8), extLibB, "hotel", tp(2024, 6, 1), fp(90), 9},
-		{xvid(9), extLibB, "india", tp(2022, 6, 1), fp(10), 0},
+		{xvid(1), extLibA, "alpha", tp(2024, 3, 1), fp(60), 3, tp(2016, 2, 2)},
+		{xvid(2), extLibA, "bravo", tp(2023, 7, 9), fp(60), 0, nil},
+		{xvid(3), extLibA, "charlie", nil, fp(120), 1, tp(2020, 8, 8)},
+		{xvid(4), extLibA, "delta", tp(2024, 12, 31), nil, 3, nil},
+		{xvid(5), extLibA, "echo", nil, nil, 0, nil},
+		{xvid(6), extLibA, "foxtrot", tp(2025, 1, 1), fp(5), 2, tp(2024, 5, 5)},
+		{xvid(7), extLibA, "golf", tp(2024, 1, 1), fp(30), 0, nil},
+		{xvid(8), extLibB, "hotel", tp(2024, 6, 1), fp(90), 9, nil},
+		{xvid(9), extLibB, "india", tp(2022, 6, 1), fp(10), 0, nil},
 	}
 }
 
@@ -80,23 +93,26 @@ func extDB(t *testing.T) *sql.DB {
 		id TEXT PRIMARY KEY, library_id TEXT, path TEXT, filename TEXT,
 		title TEXT, description TEXT, state TEXT, detected_language TEXT,
 		duration_sec REAL, size_bytes INTEGER, content_hash TEXT, metadata BLOB,
-		created_at DATETIME, updated_at DATETIME, mtime DATETIME)`)
+		created_at DATETIME, updated_at DATETIME, mtime DATETIME, published_at DATETIME)`)
 	exec(`CREATE TABLE playback_state (user_id TEXT, video_id TEXT, position_sec REAL, completed BOOLEAN, updated_at DATETIME)`)
 	exec(`CREATE TABLE watch_sessions (id TEXT, user_id TEXT, video_id TEXT, started_at DATETIME)`)
 	exec(`CREATE TABLE series_episodes (series_id TEXT, video_id TEXT)`)
 	exec(`CREATE TABLE user_favorites (user_id TEXT, video_id TEXT, created_at TEXT)`)
 	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	for i, v := range extFixture() {
-		var mt, dur any
+		var mt, pub, dur any
 		if v.mtime != nil {
 			mt = *v.mtime
+		}
+		if v.published != nil {
+			pub = *v.published
 		}
 		if v.duration != nil {
 			dur = *v.duration
 		}
 		ts := base.Add(time.Duration(i) * time.Minute)
-		exec(`INSERT INTO videos VALUES ($1,$2,'p','f',$3,NULL,'ready',NULL,$4,0,$5,NULL,$6,$6,$7)`,
-			v.id, v.lib, v.title, dur, "h"+v.id, ts, mt)
+		exec(`INSERT INTO videos VALUES ($1,$2,'p','f',$3,NULL,'ready',NULL,$4,0,$5,NULL,$6,$6,$7,$8)`,
+			v.id, v.lib, v.title, dur, "h"+v.id, ts, mt, pub)
 		for j := 0; j < v.plays; j++ {
 			exec(`INSERT INTO watch_sessions VALUES ($1,'someone',$2,$3)`, v.id+string(rune('a'+j)), v.id, ts)
 		}
@@ -172,10 +188,10 @@ func expectedOrder(rows []extVideo, sortBy, order string) []string {
 		k := keyed{id: v.id}
 		switch sortBy {
 		case "published_at":
-			if v.mtime == nil {
+			if d := v.publishDate(); d == nil {
 				k.null = true
 			} else {
-				k.key = float64(v.mtime.Unix())
+				k.key = float64(d.Unix())
 			}
 		case "duration_sec":
 			if v.duration == nil {
@@ -284,8 +300,12 @@ func TestListFilters(t *testing.T) {
 		qs   url.Values
 		want []string
 	}{
-		{"year", admin(), url.Values{"year": {"2024"}}, []string{xvid(1), xvid(4), xvid(7), xvid(8)}},
-		{"year, viewer of A", viewerA(), url.Values{"year": {"2024"}}, []string{xvid(1), xvid(4), xvid(7)}},
+		// the year of the publish date: alpha (a 2024 file) came out in 2016,
+		// foxtrot (a 2025 file) in 2024
+		{"year", admin(), url.Values{"year": {"2024"}}, []string{xvid(4), xvid(6), xvid(7), xvid(8)}},
+		{"year, viewer of A", viewerA(), url.Values{"year": {"2024"}}, []string{xvid(4), xvid(6), xvid(7)}},
+		{"year of an upload date", admin(), url.Values{"year": {"2016"}}, []string{xvid(1)}},
+		{"year of an mtime, no upload date", admin(), url.Values{"year": {"2023"}}, []string{xvid(2)}},
 		{"watched", admin(), url.Values{"watched": {"watched"}}, []string{xvid(1), xvid(8)}},
 		{"watched, viewer of A", viewerA(), url.Values{"watched": {"watched"}}, []string{xvid(1)}},
 		{"in progress", admin(), url.Values{"watched": {"in_progress"}}, []string{xvid(2)}},
@@ -302,7 +322,7 @@ func TestListFilters(t *testing.T) {
 			expectedOrder(extFixture()[2:7], "plays", "desc")},
 		{"plays, series A", admin(), url.Values{"sort": {"plays"}, "series": {extSeriesA}, "order": {"asc"}},
 			[]string{xvid(6), xvid(1)}},
-		{"year and watched", admin(), url.Values{"year": {"2024"}, "watched": {"unwatched"}}, []string{xvid(4), xvid(7)}},
+		{"year and watched", admin(), url.Values{"year": {"2024"}, "watched": {"unwatched"}}, []string{xvid(4), xvid(6), xvid(7)}},
 		// the admin token has no user row: nothing is watched
 		{"no user", &principal.Principal{UserID: "admin-token", AccessAllLibraries: true}, url.Values{"watched": {"watched"}}, nil},
 	} {

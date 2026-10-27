@@ -58,7 +58,7 @@ import {
 } from "../lib/collections";
 import { EMPTY_FACETS, fetchFacets, markWatched, setFavorite, type Facets } from "../lib/me";
 import { startQueueFromQuery, watchPath } from "../lib/playQueue";
-import { videosUrl } from "../lib/browse";
+import { PUBLISH_DATE, videosUrl } from "../lib/browse";
 import { errorText } from "../lib/errorText";
 
 const VIEW_KEY = "mkt:lib:view";
@@ -72,7 +72,7 @@ interface Video {
   duration_sec?: number | null;
   size_bytes?: number;
   updated_at?: string;
-  /** the file's mtime (a download's upload date) */
+  /** when it came out: its YouTube upload date (midnight UTC), else the file's mtime */
   published_at?: string | null;
   /** everyone's plays; only under sort=plays */
   plays?: number | null;
@@ -999,7 +999,9 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
       <div className="mkt-card__meta">
         {typeof v.duration_sec === "number" && <span>{formatDuration(v.duration_sec)}</span>}
         {v.detected_language && <span> · {v.detected_language}</span>}
-        {sort === "published_at" && v.published_at && <span> · {formatDate(v.published_at)}</span>}
+        {sort === "published_at" && v.published_at && (
+          <span> · {formatDate(v.published_at, PUBLISH_DATE)}</span>
+        )}
         {typeof v.plays === "number" && <span> · {t("videosAll.plays", { n: n(v.plays) })}</span>}
       </div>
       <StateBadge state={v.state} />

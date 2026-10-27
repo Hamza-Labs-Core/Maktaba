@@ -58,7 +58,7 @@ func testDB(t *testing.T) *sql.DB {
 	for _, s := range []string{
 		`CREATE TABLE libraries (id TEXT PRIMARY KEY, name TEXT NOT NULL, roots TEXT, settings TEXT, created_at TEXT, updated_at TEXT)`,
 		`CREATE TABLE videos (id TEXT PRIMARY KEY, library_id TEXT, title TEXT, filename TEXT, duration_sec REAL,
-			state TEXT, created_at TEXT, mtime TEXT, deleted_at TEXT, detected_language TEXT)`,
+			state TEXT, created_at TEXT, mtime TEXT, published_at TEXT, deleted_at TEXT, detected_language TEXT)`,
 		`CREATE TABLE playback_state (user_id TEXT, video_id TEXT, position_sec REAL, completed INTEGER, updated_at TEXT,
 			PRIMARY KEY (user_id, video_id))`,
 		`CREATE TABLE watch_sessions (id TEXT PRIMARY KEY, user_id TEXT, video_id TEXT, started_at TEXT)`,
