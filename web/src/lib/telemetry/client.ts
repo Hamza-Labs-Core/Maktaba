@@ -1,7 +1,7 @@
 // Story 16.5: this app's anonymous usage data for Maktaba (its makers, to
 // improve it), strictly opt-in and this app's own: the home's admin cannot turn
 // it on for anyone, and the admin's switch for the server's own data does not
-// cover it. Until this app's user agrees (the ask, or Settings → Privacy),
+// cover it. Until this app's user agrees (the ask, or Preferences → Privacy),
 // nothing is collected or sent. Once in, the app posts its batches to its home
 // (POST /api/telemetry/app, with the consent in the body); the home scrubs them
 // and forwards them to Maktaba Cloud. The app itself never reaches the cloud.

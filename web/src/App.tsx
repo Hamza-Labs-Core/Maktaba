@@ -42,6 +42,8 @@ import { Guide } from "./pages/LiveTV/Guide";
 import { Player } from "./pages/LiveTV/Player";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Auth/Register";
+import { CloudSignIn } from "./pages/Auth/CloudSignIn";
+import { ROUTER_BASENAME } from "./lib/basePath";
 import { NotFound } from "./pages/NotFound";
 import { Pair } from "./pages/Pair";
 import { HelpIndex, HelpTopic } from "./help/Help";
@@ -86,13 +88,15 @@ export function App() {
             <NodeGuard>
               <AuthProvider>
                 <FlagsProvider>
-                  <BrowserRouter>
+                  <BrowserRouter basename={ROUTER_BASENAME}>
                     <DesktopBridge />
                     <ShortcutProvider>
                       <Routes>
                         <Route element={<PublicPages />}>
                           <Route path="/login" element={<Login />} />
                           <Route path="/register" element={<Register />} />
+                          {/* Maktaba Cloud opens a connected home here, signed in (42.9) */}
+                          <Route path="/cloud-sign-in" element={<CloudSignIn />} />
                           <Route
                             path="/big/*"
                             element={

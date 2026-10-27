@@ -11,6 +11,8 @@
     "build:cloud": "tsc -p tsconfig.json && vite build --config vite.cloud.config.ts",
     "build:player": "tsc -p tsconfig.json && vite build --mode player",
     "build:remote": "tsc -p tsconfig.json && vite build --mode remote",
+    "build:player:cloud": "tsc -p tsconfig.json && vite build --mode player --base /play/ --outDir dist-play",
+    "build:remote:cloud": "tsc -p tsconfig.json && vite build --mode remote --base /manage/ --outDir dist-manage",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",

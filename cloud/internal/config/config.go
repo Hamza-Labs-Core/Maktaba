@@ -123,6 +123,10 @@ type TelemetryConfig struct {
 
 type RelayConfig struct {
 	PublicHost string
+	// EditionsDir holds the web app's player and remote editions the relay serves at
+	// /play/ and /manage/ on each home's address (Epic 42.9): play/ and manage/, each a
+	// build of web/ (`pnpm build:player:cloud`, `build:remote:cloud`). Empty: none.
+	EditionsDir string
 }
 
 // Default values per the bootstrap plan; the loader fills these for any
@@ -210,6 +214,9 @@ func applyEnvOverrides(c *Config) {
 	// VPS deploy can drive it purely from env without a config file.
 	if v := os.Getenv("MAKTABA_CLOUD_RELAY_PUBLIC_HOST"); v != "" {
 		c.Relay.PublicHost = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_RELAY_EDITIONS_DIR"); v != "" {
+		c.Relay.EditionsDir = v
 	}
 }
 
@@ -324,6 +331,8 @@ func assign(c *Config, section, key, val string) error {
 		return setFloat(&c.Telemetry.Sample2xxRate, val)
 	case "relay.public_host":
 		c.Relay.PublicHost = val
+	case "relay.editions_dir":
+		c.Relay.EditionsDir = val
 	}
 	return nil
 }

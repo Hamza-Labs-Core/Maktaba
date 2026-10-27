@@ -26,11 +26,16 @@ const SERVER_NAV = [
   en["nav.cloudStatus"],
 ];
 
-async function open(edition: Edition | undefined, path: string, user: typeof admin) {
+async function open(
+  edition: Edition | undefined,
+  path: string,
+  user: typeof admin,
+  cloudScope?: "play" | "manage"
+) {
   vi.resetModules();
   if (edition) vi.stubEnv("VITE_MAKTABA_EDITION", edition);
   get.mockImplementation((p: string) => {
-    if (p === "/api/auth/me") return Promise.resolve({ user });
+    if (p === "/api/auth/me") return Promise.resolve({ user, cloud_scope: cloudScope });
     if (p === "/api/cluster/self") return Promise.reject(new Error("no cluster"));
     if (p.startsWith("/api/notifications")) return Promise.resolve({ items: [], unread: 0 });
     return Promise.resolve({ items: [], libraries: [], users: [], next_cursor: null });
@@ -158,6 +163,13 @@ describe("remote edition", () => {
       "/queue/failures"
     );
     expect(get).toHaveBeenCalledWith("/api/admin/system/status");
+  });
+
+  // through Maktaba Cloud on a watch-only link the home makes even an admin a viewer (42.7)
+  it("tells a watch-only cloud sign-in why it cannot manage here", async () => {
+    await open("remote", "/", viewer, "play");
+    expect(await screen.findByText(en["remote.cloudPlay"])).toBeVisible();
+    expect(screen.queryByText(en["remote.notAdmin.desc"])).not.toBeInTheDocument();
   });
 
   it("tells a viewer it is for the home's admins, with the way to watch", async () => {

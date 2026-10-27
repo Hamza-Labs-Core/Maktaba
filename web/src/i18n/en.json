@@ -1363,7 +1363,7 @@
   "telemetry.never": "Never shared:",
   "telemetry.bullet.never": "File names, titles, transcripts, searches, who you are, or your IP address",
   "telemetry.later": "You can change this at any time in",
-  "telemetry.settingsLink": "Settings → Privacy",
+  "telemetry.settingsLink": "Preferences → Privacy",
   "telemetry.optIn": "Share",
   "telemetry.decline": "Not now",
   "telemetry.forgotten": "Asked Maktaba to delete what this app sent.",
@@ -2279,7 +2279,7 @@
   "history.tab.watched": "Watched",
   "history.tab.activity": "Activity timeline",
   "history.desc": "Everything you watched and searched on this server, newest first. Removing a video also clears where you stopped.",
-  "history.privacyLink": "Privacy settings",
+  "history.privacyLink": "Privacy preferences",
   "history.col.lastWatched": "Last watched",
   "history.col.times": "Times",
   "history.col.actions": "Actions",
@@ -5415,5 +5415,11 @@
   "cloudLink.taken": "That Maktaba Cloud account is already linked to another user of this home.",
   "cloudLink.expired": "The link step ran out or was already used. Start again.",
   "cloudLink.onHome": "You signed in through Maktaba Cloud: link or change the link from a sign-in on the home itself.",
-  "admin.users.cloud.none": "Not linked to a Maktaba Cloud account."
+  "admin.users.cloud.none": "Not linked to a Maktaba Cloud account.",
+  "cloudSignIn.title": "Signing in through Maktaba Cloud",
+  "cloudSignIn.working": "Signing you in…",
+  "cloudSignIn.refused": "The home refused the sign-in: the link may have been removed, or this sign-in ran out. Start again from Maktaba Cloud, or sign in with your password.",
+  "cloudSignIn.missing": "This page was opened without a sign-in from Maktaba Cloud.",
+  "cloudSignIn.password": "Sign in with a password",
+  "remote.cloudPlay": "You signed in through Maktaba Cloud with a link that may only watch, so managing this home is refused here. An admin allows managing for their own link on the home's Account page, from a sign-in on the home itself."
 }

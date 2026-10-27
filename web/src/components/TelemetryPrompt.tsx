@@ -2,7 +2,7 @@
 // anonymous usage data with Maktaba (its makers, not the home's admin). Not a
 // dialog: a notice at the top of the page that the app stays usable around,
 // asked once per app install until answered ("Not now" is an answer: off).
-// Nothing is collected before "Share"; Settings → Privacy changes the answer
+// Nothing is collected before "Share"; Preferences → Privacy changes the answer
 // later. It also starts the collection where the user agreed, and counts the
 // areas of the app it visits.
 import { useEffect, useState } from "react";
@@ -16,7 +16,7 @@ import {
   telemetryDecided,
 } from "../lib/telemetry/client";
 
-/** the bullets of what is sent, and of what never is (shared with Settings → Privacy) */
+/** the bullets of what is sent, and of what never is (shared with Preferences → Privacy) */
 export function TelemetryScope() {
   const { t } = useI18n();
   return (

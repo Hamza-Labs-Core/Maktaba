@@ -18,6 +18,7 @@ import {
   type UpdatesOverview,
   type UpdatesPlan,
 } from "../../lib/updatesApi";
+import { BASE } from "../../lib/basePath";
 
 interface Draft {
   auto_install: boolean;
@@ -123,7 +124,7 @@ export function UpdatesSettings() {
         {next}
       </p>
       <p>
-        <a href="/admin/updates">{t("updates.settings.page")}</a>
+        <a href={`${BASE}/admin/updates`}>{t("updates.settings.page")}</a>
       </p>
       {!ov.auto_install_available && (
         <p className="mkt-muted" data-testid="updates-phase-a">

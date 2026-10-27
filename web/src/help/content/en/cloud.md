@@ -36,6 +36,16 @@ For administrators:
 - **License**: to use a license you received, paste it into **Paste a license** and click **Apply license**. It is checked, applied and never shown again. **Remove license** asks first, then returns the home to Free.
 - A cloud license that cannot be renewed keeps working for about a month; then the home shows _Reconnect to validate the license_ and returns to Free until it can reach Maktaba Cloud again. A license Maktaba revokes stops at once.
 
+### Watch and manage through Maktaba Cloud {#cloud-web}
+
+Maktaba Cloud's website shows a home you are linked to, from any browser: sign in there and open **Homes**.
+
+- **Watch** opens the home's player (`https://<your home>.<the relay>/play/`), signed in as your account on the home: libraries, series, search, Live TV and watching.
+- **Manage** opens its remote (`…/manage/`): the home's status, processing and the admin pages. Only a home admin whose own link allows managing can use it; anyone else is told it is for the home's admins, and a watch-only link says so.
+- A home marked as not linked offers **Open the home** instead: sign in there and link your cloud account from its Account page (see [Linked accounts](/help/account#linked-accounts)).
+
+Maktaba Cloud serves the player and the remote; the home serves everything they show. The video goes from the home through the cloud to your browser. The cloud never sees your home's password, and you are signed in to the home with the home's own session on that address.
+
 ### Cloud status {#cloud-status}
 
 When this server is connected to a Maktaba Cloud relay, the page shows the **Tunnel** (**Connected** or **Disconnected**), the **Server ID** and the **Last heartbeat**. It refreshes every 30 seconds.

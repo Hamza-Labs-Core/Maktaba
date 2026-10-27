@@ -28,6 +28,7 @@ export const codeAnchor = (code: string) => code.toLowerCase().replace(/[^a-z0-9
 export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/login", { topic: "getting-started", anchor: "sign-in" }],
   ["/register", { topic: "getting-started", anchor: "register" }],
+  ["/cloud-sign-in", { topic: "cloud", anchor: "cloud-web" }],
   ["/more", { topic: "getting-started", anchor: "find-your-way" }],
   ["/help", { topic: "getting-started" }],
   ["/help/:topic", { topic: "getting-started" }],

@@ -209,6 +209,11 @@ pins (`cloudlink.identity.json` beside the sealed credentials).
   Ed25519 assertion naming the cloud account and the home (`homeassert`).
   `signin` only for a home that linked the account; `link` for any home,
   bound to the nonce the home user's own sign-in started.
+- The relay serves the web app's player and remote editions (Epic 42.9) on each
+  claimed home's address, `https://<slug>.<relay>/play/` and `/manage/`, from
+  `relay.editions_dir` (`MAKTABA_CLOUD_RELAY_EDITIONS_DIR`; the image sets it to the
+  builds its web stage makes); every other path on that host goes to the home. The
+  cloud web's Homes page opens them signed in with a one-use assertion.
 - `GET /v1/homes/{id}/link?nonce=&return=` (public): where a home's Account
   page sends the browser to link. It answers a redirect to this cloud's own
   web app (`server.web_url`, its `/link-home` page) and nowhere else; that

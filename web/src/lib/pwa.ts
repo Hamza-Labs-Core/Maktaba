@@ -13,6 +13,8 @@
 // "Reload" action. The page is never reloaded behind the user's back (a
 // video playing, a form half filled), and a page that is the current
 // release already (it loaded network-first just now) is not offered one.
+import { IN_CLOUD } from "./basePath";
+
 export interface SwUpdateDetail {
   registration?: ServiceWorkerRegistration;
 }
@@ -94,6 +96,9 @@ export function watchTakeovers(
 }
 
 export function registerServiceWorker(): void {
+  // the cloud's editions (under /play/, /manage/ on a home's relay address) have no worker:
+  // that origin's root is the home's own app, with its own
+  if (IN_CLOUD) return;
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
   if (import.meta.env?.DEV) return;
 
