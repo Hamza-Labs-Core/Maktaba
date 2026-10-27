@@ -44,7 +44,8 @@ const clusterTick = 30 * time.Second
 // It also returns the verifier of the full nodes' signed requests (Epic 35 story 35.9:
 // their delegation keys are issued on the channel and sealed in store).
 func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secrets.Store, hubRef *router.HubRef,
-	updatesRef *router.UpdatesRef, notifier notify.Notifier, logger *slog.Logger) (func(), *delegation.Verifier, *homeLink) {
+	updatesRef *router.UpdatesRef, notifier notify.Notifier, homeDir *homeDirectory,
+	logger *slog.Logger) (func(), *delegation.Verifier, *homeLink) {
 	driver := "postgres"
 	if isSQLiteDSN(dsn) {
 		driver = "sqlite"
@@ -62,6 +63,8 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 			Port:      portOf(publicAddr, 8080),
 			Version:   version.Version,
 			SchemaRev: schemaRev(db, driver),
+			Path:      webBasePath(os.Getenv("MAKTABA_WEB_URL")),
+			TLS:       strings.HasPrefix(strings.ToLower(os.Getenv("MAKTABA_WEB_URL")), "https://"),
 		}
 	}
 	h := router.MountP31(r, router.P31Deps{
@@ -100,6 +103,8 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 			"event", "p31_mounted")
 		system.SetMachine(system.Machine{Role: "home", HomeInstanceID: id.InstanceID,
 			WebURL: os.Getenv("MAKTABA_WEB_URL")})
+		// GET /api/discovery/home says the identity the announcement says (story 42.2)
+		homeDir.setStore(h.Store)
 	}
 	go h.Run(ctx, clusterTick)
 

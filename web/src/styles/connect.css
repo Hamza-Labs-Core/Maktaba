@@ -1,0 +1,68 @@
+/* Connect an app (Epic 42 story 42.2) and sign in a device by code (story 42.6).
+   Logical properties only: the pages read the same in Arabic (RTL). */
+.mkt-qr {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.mkt-connect__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-start;
+  margin-block: var(--space-3);
+}
+/* the code stays dark on white in the dark theme too: that is what a camera reads */
+.mkt-connect__qr {
+  flex: 0 0 auto;
+  padding: var(--space-2);
+  background: #fff;
+  border-radius: var(--radius-md);
+}
+.mkt-connect__details {
+  flex: 1 1 16rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+.mkt-connect__heading {
+  font-size: var(--font-size-base);
+  margin: 0;
+}
+.mkt-connect__urls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  inline-size: 100%;
+}
+.mkt-connect__urls li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.mkt-connect__urls .mkt-mono {
+  overflow-wrap: anywhere;
+}
+.mkt-pair__details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin-block: var(--space-3);
+}
+.mkt-pair__details dt {
+  color: var(--color-muted);
+}
+.mkt-pair__details dd {
+  margin: 0;
+}
+.mkt-pair__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

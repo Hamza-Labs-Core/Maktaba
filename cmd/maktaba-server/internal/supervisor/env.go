@@ -138,6 +138,11 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	if role == RoleAPI && RelayWanted(cfg) {
 		add("MAKTABA_CLOUD_IDENTITY", RelayIdentityPath())
 		add("MAKTABA_CLOUDLINK_ADMIN", RelayAdminAddr(cfg))
+		// Epic 42 story 42.2: the home's relay address (https://<slug>.<relay host>) is
+		// on the tunnel's host; the api assumes Maktaba Cloud's own unless told
+		if v := strings.TrimSpace(cfg.Cloud.RelayWS); v != "" {
+			add("MAKTABA_RELAY_WS", v)
+		}
 	}
 
 	// This machine's stream signing key (Story 10.8): the api signs the video

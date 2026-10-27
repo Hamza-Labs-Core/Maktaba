@@ -102,8 +102,9 @@ func TestDeviceApprovalIsTheRequestingTVsOnly(t *testing.T) {
 	}
 	raw, _ := base64.RawURLEncoding.DecodeString(s.DeviceCode)
 	raw[len(raw)-1] ^= 1
-	if rec := poll(r, base64.RawURLEncoding.EncodeToString(raw)); rec.Code != http.StatusAccepted {
-		t.Fatalf("an altered device code = %d, want 202", rec.Code)
+	// an altered device code shows another code, one nobody asked for: 410, ask anew
+	if rec := poll(r, base64.RawURLEncoding.EncodeToString(raw)); rec.Code != http.StatusGone {
+		t.Fatalf("an altered device code = %d, want 410", rec.Code)
 	}
 	if rec := poll(r, strings.ReplaceAll(s.Code, "-", "")); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("the shown code as a device code = %d, want 422", rec.Code)
@@ -121,8 +122,8 @@ func TestDeviceApprovalIsTheRequestingTVsOnly(t *testing.T) {
 func TestDeviceApproveRules(t *testing.T) {
 	_, _, r, _ := newDeviceHandler(t)
 	s := startDevice(t, r)
-	if rec := do(r, http.MethodPost, "/api/pairing/approve", `{"code":"`+s.Code+`"}`, ""); rec.Code != http.StatusForbidden {
-		t.Fatalf("anonymous approve = %d, want 403", rec.Code)
+	if rec := do(r, http.MethodPost, "/api/pairing/approve", `{"code":"`+s.Code+`"}`, ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous approve = %d, want 401", rec.Code)
 	}
 	if rec := do(r, http.MethodPost, "/api/pairing/approve", `{"code":"ILOU-1234"}`, "viewer-1"); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("approve of a malformed code = %d, want 422", rec.Code)
