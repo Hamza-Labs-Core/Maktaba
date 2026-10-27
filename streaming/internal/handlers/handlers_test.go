@@ -115,6 +115,37 @@ func (f fakeTranscode) Active() bool               { return f.active }
 func (f fakeTranscode) Ended() bool                { return f.ended }
 func (f fakeTranscode) Finished() bool             { return f.finished }
 
+// A transcode over before it wrote its playlists (it failed at once, as a session the
+// home served a node did): 410, so the player opens the video again or says it cannot,
+// not a 404 it waits on, buffering. While it runs, the 404 is "not yet".
+func TestManifestHandler_PlaylistNeverWritten(t *testing.T) {
+	layout := cache.New(t.TempDir())
+	_ = layout.EnsureTiers()
+	for name, c := range map[string]struct {
+		tr   fakeTranscode
+		code int
+	}{
+		"running": {fakeTranscode{active: true}, 404},
+		"stopped": {fakeTranscode{ended: true}, 410},
+	} {
+		id := uuid.New()
+		store := &fakeSessionStore{rows: map[uuid.UUID]*session.Row{
+			id: {ID: id, Format: session.FormatHLS, Mode: session.ModeTranscode, Transcoder: c.tr},
+		}}
+		h := &ManifestHandler{Sessions: store, Layout: layout}
+		r := chi.NewRouter()
+		r.With(injectSubject(id.String())).Get("/stream/{session_id}/manifest.m3u8", h.ServeMaster)
+		r.With(injectSubject(id.String())).Get("/stream/{session_id}/{rendition}/index.m3u8", h.ServeRenditionIndex)
+		for _, p := range []string{"/manifest.m3u8", "/v0/index.m3u8"} {
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest("GET", "/stream/"+id.String()+p, nil))
+			if rec.Code != c.code {
+				t.Errorf("%s %s: %d %s; want %d", name, p, rec.Code, rec.Body.String(), c.code)
+			}
+		}
+	}
+}
+
 // A playlist or MPD reload: activity while the transcode runs (a paused
 // player keeps its session), not once it is over; a transcode over short of
 // the end (stopped, failed) answers 410 so the player opens the video again,
