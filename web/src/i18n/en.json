@@ -5377,5 +5377,6 @@
   "video.feature": "Feature on Home",
   "video.featured": "Featured on Home",
   "video.featured.on": "This lesson is now on Home",
-  "video.featured.off": "Home features the newest series again"
+  "video.featured.off": "Home features the newest series again",
+  "collections.noFavorites": "Favorites are your own: turn the Favorites filter off to save a collection."
 }

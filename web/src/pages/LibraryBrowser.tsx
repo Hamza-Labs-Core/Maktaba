@@ -534,7 +534,9 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   // a saved filter is the grid's filters and sort, as the URL has them
   async function saveFilters() {
     if (!libraryId) return;
-    const filters = pickFilters(params);
+    // the sort and order the grid shows, even when the URL leaves them to the
+    // defaults: a saved filter is never empty
+    const filters = { ...pickFilters(params), sort, order };
     setSaving(true);
     try {
       if (editCollection) {
@@ -826,7 +828,9 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
           variant="ghost"
           size="sm"
           loading={saving}
-          disabled={saving}
+          // favorites are the viewer's own: a collection cannot keep them
+          disabled={saving || favorite}
+          title={favorite ? t("collections.noFavorites") : undefined}
           onClick={() => (editCollection ? void saveFilters() : setSaveOpen(true))}
         >
           {editCollection ? t("collections.saveFiltersTo") : t("collections.saveAs")}

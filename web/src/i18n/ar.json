@@ -5390,5 +5390,6 @@
   "video.feature": "اعرضه في الرئيسية",
   "video.featured": "معروض في الرئيسية",
   "video.featured.on": "صار هذا الدرس في الرئيسية",
-  "video.featured.off": "تعرض الرئيسية أحدث سلسلة من جديد"
+  "video.featured.off": "تعرض الرئيسية أحدث سلسلة من جديد",
+  "collections.noFavorites": "المفضلة خاصة بك: أوقف تصفية المفضلة لتحفظ مجموعة."
 }

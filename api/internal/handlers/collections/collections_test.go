@@ -184,6 +184,11 @@ func TestCuration(t *testing.T) {
 	if code := e.do(asAdmin(), "PATCH", "/api/collections/"+c.ID, map[string]any{"items": order, "name": " Ramadan 1447 "}, nil); code != 200 {
 		t.Fatalf("patch: %d", code)
 	}
+	// the missing video was not in the list the admin reordered: it keeps its row
+	var kept int
+	if err := e.db.QueryRow(`SELECT COUNT(*) FROM collection_items WHERE collection_id = $1 AND video_id = $2`, c.ID, vid(4)).Scan(&kept); err != nil || kept != 1 {
+		t.Errorf("a hidden item was dropped by the reorder: %d %v", kept, err)
+	}
 	if code := e.do(asAdmin(), "DELETE", "/api/collections/"+c.ID+"/items/"+vid(1), nil, nil); code != http.StatusNoContent {
 		t.Fatalf("remove: %d", code)
 	}

@@ -367,7 +367,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		conds = append(conds, "created_at >= "+pidx(len(args)+1))
-		args = append(args, since)
+		args = append(args, h.timeArg(since))
 	}
 	if res := q.Get("resolution"); res != "" {
 		b, ok := FindBand(ResolutionBands, res)

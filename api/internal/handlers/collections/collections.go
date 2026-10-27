@@ -79,7 +79,8 @@ type PatchRequest struct {
 	Items       []ItemEntry     `json:"items,omitempty"`
 }
 
-// ItemEntry is the replace-all PATCH semantic for manual collections.
+// ItemEntry is one item of PATCH's items: the list replaces the items the
+// caller can see (hidden ones keep their place).
 type ItemEntry struct {
 	VideoID  string `json:"video_id"`
 	Position int    `json:"position"`
@@ -444,10 +445,23 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.Items != nil {
-		// Replace-all items semantic.
-		if _, err := tx.ExecContext(r.Context(), `DELETE FROM collection_items WHERE collection_id = $1`, id); err != nil {
-			httperror.Write(w, r, httperror.Internal("clear items: "+err.Error()))
-			return
+		// Replace the items the caller can see. An item they cannot see (a
+		// video now missing, soft-deleted, or in a library outside their
+		// scope) was never shown to them, so leaving it out of the list is
+		// not a removal: it keeps its row and its place.
+		clear := `DELETE FROM collection_items WHERE collection_id = $1
+			AND video_id IN (SELECT v.id FROM videos v WHERE ` + visibleVideo
+		cargs := []any{id}
+		frag, fargs, none := libraryScope(p, "v.library_id", 2)
+		if !none {
+			if frag != "" {
+				clear += " AND " + frag
+				cargs = append(cargs, fargs...)
+			}
+			if _, err := tx.ExecContext(r.Context(), clear+")", cargs...); err != nil {
+				httperror.Write(w, r, httperror.Internal("clear items: "+err.Error()))
+				return
+			}
 		}
 		for _, it := range req.Items {
 			_, err := tx.ExecContext(r.Context(), `

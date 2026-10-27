@@ -127,9 +127,15 @@ describe("LibraryBrowser, collections (story 45.17)", () => {
         library_id: LIB,
         name: "Long",
         is_smart: true,
-        smart_query: { filters: { q: "tafsir", duration: "long", sort: "title" } },
+        smart_query: { filters: { q: "tafsir", duration: "long", sort: "title", order: "asc" } },
       })
     );
+  });
+
+  it("offers no save while the grid shows the viewer's own favorites", async () => {
+    serve();
+    renderGrid(`/library/${LIB}?favorite=true`, adminUser);
+    expect(await screen.findByRole("button", { name: en["collections.saveAs"] })).toBeDisabled();
   });
 
   it("saves the filters to the collection being edited", async () => {
@@ -141,7 +147,7 @@ describe("LibraryBrowser, collections (story 45.17)", () => {
     );
     await waitFor(() =>
       expect(patch).toHaveBeenCalledWith("/api/collections/c7", {
-        smart_query: { filters: { added: "year" } },
+        smart_query: { filters: { added: "year", sort: "updated_at", order: "desc" } },
       })
     );
   });

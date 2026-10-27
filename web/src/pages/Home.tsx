@@ -80,7 +80,12 @@ export function Home() {
       )}
 
       {home?.featured && (
-        <FeaturedHero featured={home.featured} onChange={() => setReload((x) => x + 1)} />
+        <FeaturedHero
+          // a new hero starts afresh (its picture's failure was the old one's)
+          key={home.featured.video.id}
+          featured={home.featured}
+          onChange={() => setReload((x) => x + 1)}
+        />
       )}
 
       {home && (

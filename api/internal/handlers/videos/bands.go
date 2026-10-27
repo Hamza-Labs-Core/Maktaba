@@ -11,7 +11,9 @@ package videos
 // A video with no known duration (or no media_info row) is in no band.
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -77,4 +79,14 @@ func BandCond(col string, b Band) string {
 // the resolution band b.
 func ResolutionCond(idCol string, b Band) string {
 	return idCol + " IN (SELECT mi.video_id FROM media_info mi WHERE " + BandCond("mi.height", b) + ")"
+}
+
+// timeArg is a timestamp parameter: native on Postgres; on SQLite the text
+// the columns hold (2006-01-02T15:04:05.000Z), so a comparison on the same
+// day compares the hour too (the driver's own form sorts before it).
+func (h *Handler) timeArg(t time.Time) any {
+	if h.DB != nil && strings.Contains(strings.ToLower(fmt.Sprintf("%T", h.DB.Driver())), "sqlite") {
+		return t.UTC().Format("2006-01-02T15:04:05.000Z")
+	}
+	return t.UTC()
 }
