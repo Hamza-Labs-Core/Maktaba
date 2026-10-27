@@ -413,7 +413,7 @@ private struct TVPasswordPanel: View {
             do {
                 try await session.signIn(username: username, password: password)
             } catch {
-                problem = error.localizedDescription
+                problem = words.signInProblem(error)
             }
         }
     }

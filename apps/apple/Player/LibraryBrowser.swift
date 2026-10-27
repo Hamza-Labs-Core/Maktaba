@@ -25,7 +25,7 @@ struct LibraryBrowser: View {
     @State private var next: String?
     @State private var video: Video?
     @State private var query = ""
-    @State private var problem: String?
+    @State private var problem: HomeFailure?
     /// Pages opened from the list while the player holds the other half.
     @State private var browsing: [Video] = []
 
@@ -97,13 +97,13 @@ struct LibraryBrowser: View {
             page
         }
         #if os(iOS)
-        .fullScreenCover(isPresented: watching) { WatchView(playback: playback) }
+        .fullScreenCover(isPresented: watching) { WatchView(playback: playback, session: session) }
         #else
         // the Mac: the video fills the window (it resizes with it; the green button or
         // Control-Command-F makes it full screen), the toolbar out of the way
         .overlay {
             if playback.video != nil {
-                WatchView(playback: playback).transition(.opacity)
+                WatchView(playback: playback, session: session).transition(.opacity)
             }
         }
         .toolbar(playback.video != nil ? .hidden : .automatic, for: .windowToolbar)
@@ -123,7 +123,7 @@ struct LibraryBrowser: View {
     private var split: some View {
         ArrangementView {
             if playback.video != nil {
-                WatchView(playback: playback)
+                WatchView(playback: playback, session: session)
             } else if video != nil {
                 NavigationStack {
                     page.toolbar {
@@ -198,7 +198,10 @@ struct LibraryBrowser: View {
 
     @ViewBuilder private var listState: some View {
         if videos.isEmpty, problem == nil { ContentUnavailableView("No videos", systemImage: "film") }
-        if let problem { ContentUnavailableView("Can't load", systemImage: "wifi.exclamationmark", description: Text(problem)) }
+        if let problem {
+            HomeErrorView(problem, video: false) { _ in Task { await loadLibraries(); await reload() } }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     /// The full-screen player is up while something plays (and the screen is not split).
@@ -236,7 +239,7 @@ struct LibraryBrowser: View {
         } catch APIError.signedOut {
             session.signedOut()
         } catch {
-            problem = error.localizedDescription
+            problem = HomeFailure(error)
         }
     }
 
@@ -254,7 +257,7 @@ struct LibraryBrowser: View {
         } catch APIError.signedOut {
             session.signedOut()
         } catch {
-            problem = error.localizedDescription
+            problem = HomeFailure(error)
         }
     }
 

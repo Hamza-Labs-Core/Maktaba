@@ -219,12 +219,12 @@ public enum ApproveFailure: Equatable, Sendable {
 
     public init(_ error: Error) {
         guard let e = error as? APIError else {
-            self = .other(error.localizedDescription)
+            self = .other(HomeFailure(error).message())
             return
         }
         switch (e.problem?.code, e) {
         case ("wrong_code", _): self = .wrongCode(attemptsLeft: e.problem?.attemptsLeft)
-        case ("expired", _), (_, .status(410, _)): self = .expired
+        case ("expired", _), (_, .status(410, _, _)): self = .expired
         default: self = .other(e.message)
         }
     }
@@ -238,36 +238,6 @@ public enum ApproveFailure: Equatable, Sendable {
         case .expired: "The request has expired. Ask again from the machine."
         case let .other(why): why
         }
-    }
-}
-
-// MARK: the home's answers when it refuses
-
-/// A problem+json answer (`{"title", "detail", "code", "attempts_left"}`), read from
-/// `APIError.status`.
-public struct Problem: Decodable, Equatable, Sendable {
-    public let code: String?
-    public let title: String?
-    public let detail: String?
-    public let attemptsLeft: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case code, title, detail
-        case attemptsLeft = "attempts_left"
-    }
-}
-
-public extension APIError {
-    /// The home's problem, when it answered with one.
-    var problem: Problem? {
-        guard case let .status(_, body) = self else { return nil }
-        return try? JSONDecoder().decode(Problem.self, from: Data(body.utf8))
-    }
-
-    /// What to tell a person: the home's own words when it gave them.
-    var message: String {
-        if let p = problem, let words = p.detail ?? p.title, !words.isEmpty { return words }
-        return errorDescription ?? "Something went wrong."
     }
 }
 

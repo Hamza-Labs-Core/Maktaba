@@ -42,8 +42,6 @@
     <string name="watched">Watched</string>
 
     <string name="preparing">Preparing the video…</string>
-    <string name="playback_failed">The video could not play: %1$s</string>
-    <string name="back">Back</string>
 
     <string name="signed_in_as">Signed in as %1$s</string>
     <string name="home_label">Home: %1$s</string>
