@@ -17,11 +17,13 @@ Which libraries you see is set by an admin (see [Library access](/help/library-a
 
 ### Home {#home}
 
-Home opens when you sign in. Its rows scroll sideways: drag or swipe them, use the arrow buttons next to a row's title, or press Tab to move from card to card.
+Home opens when you sign in. At the top, a large **featured** card shows the newest series in your libraries, with **Play the first lesson** and **Open the series**, or a lesson an admin chose to feature. Admins choose it on a video's page with **Feature on Home** (press it again, or **Feature the newest series** on Home, to go back). If you cannot see the chosen lesson's library, you get the newest series instead.
+
+Its rows scroll sideways: drag or swipe them, use the arrow buttons next to a row's title, or press Tab to move from card to card.
 
 - **Continue Watching**: videos you started and have not finished (past the first 30 seconds, before the last 5%). The bar under a card shows how far you got.
 - **On Deck**: for each series you are in the middle of, its next lesson after the last one you finished, with the series' name under the card.
-- **Recently Added**: the newest videos across your libraries. **See all** opens [All videos](/videos) sorted by date added.
+- **Recently Added**: the newest videos across your libraries. New lessons of one series share a single card ("12 new lessons", with the newest lesson's picture) that opens the series; a lone new lesson shows its series' name under its card. **See all** opens [All videos](/videos) sorted by date added.
 - **Recently Watched**: what you watched last, one card per video.
 - **Favorites**: the videos you marked as favorites, newest first. **See all** opens [All videos](/videos?favorite=true) showing only them.
 - **What's On Now**: the Live TV channels on air, when there are any (see [Watch TV](/help/watch-tv)).
@@ -45,10 +47,23 @@ The page opens on **Overview**. **Browse** shows every video of the library with
 
 ### Overview rows {#overview-rows}
 
-- **Continue Watching**, **On Deck**, **Recently Added** and **Recently Watched**, as on Home, for this library only.
+- **Continue Watching**, **On Deck**, **Recently Added** (grouped by series) and **Recently Watched**, as on Home, for this library only.
 - **Most Watched**: the videos played most in this library over the last 90 days, by everyone.
 - **Series**: the series found in this library. Click one to open the series (see [Series](/help/series)).
 - **By year**: one chip per year with how many videos are from it. Click a year to open **Browse** with that year's videos. The year is the file's date, which for downloaded videos is the day they were published.
+
+### Collections {#collections}
+
+A collection is a group of a library's videos an admin put together: the **Collections** row on **Overview** shows them, and **See all** (or **Collections** at the top of the page) opens the library's Collections page. Everyone who can see the library sees its collections; only admins make and change them.
+
+- **A list**: the videos in the order the admin chose. Open it to play everything (**Play all**, **Shuffle**) or **Play from here**.
+- **A saved filter** (marked so): it keeps the filters and sort of the **Browse** tab and always lists whatever matches them, as videos are added. **Show the videos** opens Browse with those filters.
+
+Admins:
+
+- **New collection** on the Collections page makes an empty list. To fill it, go to **Browse**, press **Select**, check videos, then **Add to collection**.
+- On a list's page, **↑** and **↓** move a video (with the keyboard too), **✕** takes it out, **Rename** and **Delete collection** change the collection itself. Deleting a collection never deletes its videos.
+- **Save as collection** on **Browse** saves the current filters and sort as a saved filter. **Edit filters** on its page opens Browse with them; change them and press **Save filters to the collection**.
 
 ### Browse and All videos {#all-videos}
 
@@ -73,7 +88,7 @@ Under **View**, choose **Grid** for cards with posters, or **List** for a table 
 
 ### Filter by language {#filter-language}
 
-When the videos have a detected language, small chips with the language codes appear above the list: every language the library (or your libraries) has. Click one to show only that language; click it again to show all. **Clear filters** removes every filter (search, year, watched, language, tag, speaker, favorites and letter).
+When the videos have a detected language, small chips with the language codes appear above the list: every language the library (or your libraries) has. Click one to show only that language; click it again to show all. **Clear filters** removes every filter (search, year, watched, language, tag, speaker, favorites, letter, length, added and resolution).
 
 ### Search a library {#search-library}
 
@@ -86,6 +101,14 @@ The search box at the start of the toolbar finds videos by words in their title 
 - **Favorites**: only your favorites (press it again to show everything).
 
 The lists only offer tags and speakers that this library (or your libraries) actually has.
+
+### Filter by length, date added and resolution {#band-filters}
+
+- **Length**: **Short** (under 15 minutes), **Medium** (15 to 60 minutes) or **Long** (over an hour). A video whose length is not known yet is in none of them.
+- **Added**: the videos Maktaba added in the last week, month or year.
+- **Resolution**: the picture's height: **SD** (under 720p), **HD** (720p), **Full HD** (1080p) or **4K** (2160p and up). A video not probed yet has none.
+
+Each list only offers what the library has, with the number of videos after each choice. You can combine them with every other filter.
 
 ### Jump to a letter {#jump-bar}
 

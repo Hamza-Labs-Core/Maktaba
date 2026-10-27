@@ -295,6 +295,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		"continue_watching": []Card{}, "recently_added": []Card{},
 		"recently_watched": []Card{}, "pinned": []PinnedRows{},
 		"on_deck": []Card{}, "favorites": []Card{},
+		"recently_added_grouped": []AddedEntry{}, "featured": nil,
 	}
 	if s.none() {
 		writeJSON(w, r, doc)
@@ -317,6 +318,18 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "recently watched", err)
 		return
 	}
+	grouped, err := h.recentlyAddedGrouped(ctx, s, "", RowSize)
+	if err != nil {
+		internal(w, r, "recently added by series", err)
+		return
+	}
+	doc["recently_added_grouped"] = grouped
+	feat, err := h.featured(ctx, s)
+	if err != nil {
+		internal(w, r, "featured", err)
+		return
+	}
+	doc["featured"] = feat
 	deck, err := h.onDeck(ctx, uid, s, "", RowSize)
 	if err != nil {
 		internal(w, r, "on deck", err)
@@ -446,11 +459,17 @@ func (h *Handler) Hub(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "on deck", err)
 		return
 	}
+	grouped, err := h.recentlyAddedGrouped(ctx, s, id, RowSize)
+	if err != nil {
+		internal(w, r, "recently added by series", err)
+		return
+	}
 	writeJSON(w, r, map[string]any{
 		"library": lib,
 		"rows": map[string]any{
 			"continue_watching": cont, "recently_added": added, "recently_watched": watched,
 			"most_watched": most, "series": series, "years": years, "on_deck": deck,
+			"recently_added_grouped": grouped,
 		},
 	})
 }

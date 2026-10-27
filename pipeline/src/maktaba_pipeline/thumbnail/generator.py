@@ -5,7 +5,9 @@ Produces three artifact families from a source video:
 - **poster** — one representative frame at a configurable fraction of
   the duration (default 25 %), the card image the library grid shows.
 - **sprite sheet** — a grid of ``columns × rows`` frames sampled evenly
-  across the whole video, used by the player's scrubber-preview overlay.
+  across the whole video, used by the player's scrubber-preview overlay
+  (trickplay, Epic 45 story 45.19), with its index ``sprite.json`` beside
+  it: the grid and the seconds between two tiles, which the API serves.
 - **chapter thumbnails** — one frame at each chapter's start, so the
   chapter list can render a strip of previews.
 
@@ -25,6 +27,7 @@ use).
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 from collections.abc import Awaitable, Callable, Sequence
@@ -37,6 +40,7 @@ from ..binaries import ffmpeg_binary
 
 __all__ = [
     "DEFAULT_CONFIG",
+    "SPRITE_INDEX_VERSION",
     "FrameRunner",
     "ThumbnailConfig",
     "ThumbnailError",
@@ -47,8 +51,13 @@ __all__ = [
     "generate_poster",
     "generate_sprite",
     "generate_thumbnails",
+    "sprite_index",
     "thumbnail_dir_for",
+    "write_sprite_index",
 ]
+
+# The index's shape; the API reads version 1.
+SPRITE_INDEX_VERSION = 1
 
 
 class ThumbnailError(RuntimeError):
@@ -85,8 +94,10 @@ class ThumbnailConfig:
 
     poster_timestamp_pct: float = 0.25
     poster_width: int = 640
-    sprite_columns: int = 5
-    sprite_rows: int = 5
+    # 100 tiles: one every 36 s of an hour-long lesson (story 45.19; the
+    # sheets made before it are 5x5 and have no index)
+    sprite_columns: int = 10
+    sprite_rows: int = 10
     sprite_tile_width: int = 160
     # ``jpg`` keeps the sheet small; the player decodes it once.
     image_format: str = "jpg"
@@ -308,10 +319,41 @@ async def generate_sprite(
                     binary=binary,
                 )
             )
+            write_sprite_index(out, duration_sec, cfg)
             return out
         except ThumbnailError as exc:
             if exc.kind != "ffmpeg_thumbnail" or not keyframes_only:
                 raise
+    return out
+
+
+def sprite_index(duration_sec: float, cfg: ThumbnailConfig = DEFAULT_CONFIG) -> dict[str, Any]:
+    """The sheet's index: its grid and the seconds between two tiles.
+
+    Tile ``i`` (row-major) is the frame at ``i * interval_sec``, the time the
+    ``fps`` filter of :func:`build_sprite_args` sampled; an unknown duration
+    sampled at 1 fps. The tile's height is the image's (``scale=W:-2``), so the
+    reader takes it from the sheet's size.
+    """
+    count = max(1, cfg.sprite_columns * cfg.sprite_rows)
+    interval = (duration_sec / count) if duration_sec > 0 else 1.0
+    return {
+        "version": SPRITE_INDEX_VERSION,
+        "columns": cfg.sprite_columns,
+        "rows": cfg.sprite_rows,
+        "count": count,
+        "interval_sec": round(interval, 6),
+        "tile_width": cfg.sprite_tile_width,
+        "duration_sec": round(max(0.0, duration_sec), 3),
+    }
+
+
+def write_sprite_index(sprite: Path, duration_sec: float, cfg: ThumbnailConfig) -> Path:
+    """Write ``sprite.json`` beside the sheet (atomically: a reader never sees half)."""
+    out = sprite.with_suffix(".json")
+    tmp = out.with_name(out.name + ".tmp")
+    tmp.write_text(json.dumps(sprite_index(duration_sec, cfg)), encoding="utf-8")
+    tmp.replace(out)
     return out
 
 

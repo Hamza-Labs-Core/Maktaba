@@ -24,6 +24,8 @@ import { LibraryPage } from "./pages/Library/LibraryPage";
 import { SeriesBrowser } from "./pages/Library/SeriesBrowser";
 import { Playlists } from "./pages/Playlists/Playlists";
 import { PlaylistPage } from "./pages/Playlists/PlaylistPage";
+import { Collections } from "./pages/Collections/Collections";
+import { CollectionPage } from "./pages/Collections/CollectionPage";
 import { SeriesDetail } from "./pages/Library/SeriesDetail";
 import { VideoDetail } from "./pages/VideoDetail";
 import { VideoPlayer } from "./pages/VideoPlayer";
@@ -111,6 +113,8 @@ export function App() {
                           <Route path="/" element={IS_REMOTE ? <RemoteHome /> : <Home />} />
                           <Route path="/library" element={<Libraries />} />
                           <Route path="/library/:libraryId" element={<LibraryPage />} />
+                          <Route path="/library/:libraryId/collections" element={<Collections />} />
+                          <Route path="/collections/:collectionId" element={<CollectionPage />} />
                           <Route path="/videos" element={<LibraryBrowser />} />
                           <Route path="/series" element={<SeriesBrowser />} />
                           <Route path="/playlists" element={<Playlists />} />

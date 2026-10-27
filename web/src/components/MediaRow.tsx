@@ -7,7 +7,7 @@
 import { Children, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useI18n } from "../lib/i18n";
-import { watchedFraction, type VideoCard } from "../lib/browse";
+import { watchedFraction, type AddedEntry, type VideoCard } from "../lib/browse";
 import { VideoPoster, formatDuration } from "./VideoViews";
 
 interface MediaRowProps {
@@ -158,5 +158,65 @@ export function VideoRow({
         <MediaCard key={v.id} video={v} meta={meta?.(v)} />
       ))}
     </MediaRow>
+  );
+}
+
+/**
+ * Story 45.18: Recently Added grouped by series. A series with several new
+ * lessons is one card ("12 new lessons"), its newest lesson's picture, that
+ * opens the series; every other entry is a video's card (naming its series
+ * when it has one). Without grouped entries (an older server) the plain
+ * cards show.
+ */
+export function AddedRow({
+  title,
+  entries,
+  fallback,
+  seeAllTo,
+  testId,
+}: {
+  title: ReactNode;
+  entries: AddedEntry[];
+  fallback: VideoCard[];
+  seeAllTo?: string;
+  testId?: string;
+}) {
+  if (entries.length === 0) {
+    return <VideoRow title={title} videos={fallback} seeAllTo={seeAllTo} testId={testId} />;
+  }
+  return (
+    <MediaRow title={title} seeAllTo={seeAllTo} testId={testId}>
+      {entries.map((e) =>
+        e.kind === "series" && e.series ? (
+          <SeriesGroupCard key={`s:${e.series.id}`} entry={e} />
+        ) : (
+          <MediaCard
+            key={e.video.id}
+            video={e.video}
+            meta={e.series?.name ? <bdi>{e.series.name}</bdi> : undefined}
+          />
+        )
+      )}
+    </MediaRow>
+  );
+}
+
+function SeriesGroupCard({ entry }: { entry: AddedEntry }) {
+  const { t, n } = useI18n();
+  const series = entry.series!;
+  const count = entry.count ?? 0;
+  return (
+    <li className="mkt-row__item">
+      <Link to={`/series/${encodeURIComponent(series.id)}`} className="mkt-media-card">
+        <span className="mkt-media-card__art">
+          <VideoPoster videoId={entry.video.id} />
+          <span className="mkt-media-card__count" aria-hidden="true">
+            {t("home.newCount", { n: n(count) })}
+          </span>
+        </span>
+        <bdi className="mkt-media-card__title">{series.name || t("libraryPage.seriesUnnamed")}</bdi>
+        <span className="mkt-media-card__meta">{t("home.newLessons", { n: n(count) })}</span>
+      </Link>
+    </li>
   );
 }

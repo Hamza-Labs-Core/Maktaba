@@ -4,6 +4,9 @@
 //     Continue Watching, Recently Added, Recently Watched, Most Watched,
 //     Series (each opens /series/:id) and By year (a chip opens Browse
 //     filtered to that year). Empty rows are not shown.
+//   Collections (story 45.17): the library's collections (GET
+//     /api/collections?library=), each opening its page; See all is
+//     /library/:id/collections.
 //   Browse (?tab=browse): the full grid (LibraryBrowser, embedded) with its
 //     sort and filters in the URL.
 //
@@ -21,9 +24,11 @@ import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { fetchHub, type LibraryHub } from "../../lib/browse";
 import { TitleRow } from "../../help/HelpLink";
-import { MediaRow, VideoRow } from "../../components/MediaRow";
+import { AddedRow, MediaRow, VideoRow } from "../../components/MediaRow";
 import { LibraryBrowser, ScanNow } from "../LibraryBrowser";
 import { PinButton } from "./Libraries";
+import { fetchCollections, type Collection } from "../../lib/collections";
+import { CollectionCard } from "../Collections/Collections";
 import { SERVER_PAGES } from "../../lib/edition";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -46,7 +51,21 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
   const [notFound, setNotFound] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const [collections, setCollections] = useState<Collection[]>([]);
   const valid = UUID.test(libraryId);
+
+  // its own read: a failure only leaves the row out
+  useEffect(() => {
+    let cancelled = false;
+    setCollections([]);
+    if (!valid) return;
+    fetchCollections(libraryId)
+      .then((cs) => !cancelled && setCollections(cs))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [libraryId, valid, reload]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,7 +148,9 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
     rows.recently_watched.length === 0 &&
     rows.most_watched.length === 0 &&
     rows.series.length === 0 &&
-    rows.years.length === 0;
+    rows.years.length === 0 &&
+    collections.length === 0;
+  const collectionsPath = `/library/${encodeURIComponent(libraryId)}/collections`;
 
   const overview = (
     <div className="mkt-library-page__overview">
@@ -144,9 +165,10 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
         meta={(v) => (v.series?.name ? <bdi>{v.series.name}</bdi> : null)}
         testId="row-ondeck"
       />
-      <VideoRow
+      <AddedRow
         title={t("home.row.recentlyAdded")}
-        videos={rows.recently_added}
+        entries={rows.recently_added_grouped}
+        fallback={rows.recently_added}
         seeAllTo={`/library/${encodeURIComponent(libraryId)}?tab=browse&sort=created_at`}
         testId="row-added"
       />
@@ -161,6 +183,16 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
         seeAllTo={`/library/${encodeURIComponent(libraryId)}?tab=browse&sort=plays`}
         testId="row-most"
       />
+      <MediaRow
+        title={t("collections.title")}
+        titleTo={collectionsPath}
+        seeAllTo={collectionsPath}
+        testId="row-collections"
+      >
+        {collections.map((c) => (
+          <CollectionCard key={c.id} c={c} className="mkt-row__item mkt-libcard" />
+        ))}
+      </MediaRow>
       <MediaRow title={t("libraryPage.row.series")} seeAllTo="/series" testId="row-series">
         {rows.series.map((s) => (
           <li key={s.id} className="mkt-row__item">
@@ -232,6 +264,11 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
                 </Link>
               )}
             </>
+          )}
+          {(user?.is_admin || collections.length > 0) && (
+            <Link className="mkt-btn mkt-btn--ghost" to={collectionsPath}>
+              {t("collections.title")}
+            </Link>
           )}
         </div>
       </header>

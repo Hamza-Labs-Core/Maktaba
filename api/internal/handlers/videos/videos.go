@@ -191,6 +191,9 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/me/videos", h.List)
 	r.Get("/api/videos/{id}", h.Detail)
 	r.Get("/api/videos/{id}/poster", h.Poster)
+	// Epic 45 story 45.19: scrub thumbnails (trickplay.go)
+	r.Get("/api/videos/{id}/trickplay", h.TrickplayIndex)
+	r.Get("/api/videos/{id}/trickplay/sprite", h.TrickplaySprite)
 	r.Patch("/api/videos/{id}", h.Patch)
 	r.Delete("/api/videos/{id}", h.Delete)
 	r.Post("/api/videos/{id}/process", h.Process)
@@ -203,8 +206,8 @@ func (h *Handler) Mount(r chi.Router) {
 // List implements AC-1. Filters: library, language, q, year (the mtime's
 // year), watched (the caller's playback state), series, tag, speaker,
 // favorite (the caller's; on /api/me/videos, the home), letter (the jump
-// bar), sort (or random: one page), order, limit and cursor (`next` of the
-// previous page). Each item carries the caller's playback state and, where
+// bar), duration, added and resolution (bands.go), sort (or random: one
+// page), order, limit and cursor (`next` of the previous page). Each item carries the caller's playback state and, where
 // the user tables are, favorite.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
@@ -346,6 +349,33 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		conds = append(conds, "id IN (SELECT video_id FROM user_favorites WHERE user_id = "+pidx(len(args)+1)+")")
 		args = append(args, uid)
+	}
+	// Epic 45 Phase 3 (story 45.20): length, added date and resolution
+	// (bands.go).
+	if d := q.Get("duration"); d != "" {
+		b, ok := FindBand(DurationBands, d)
+		if !ok {
+			httperror.Write(w, r, httperror.InvalidQuery("duration must be short, medium or long"))
+			return
+		}
+		conds = append(conds, BandCond("duration_sec", b))
+	}
+	if a := q.Get("added"); a != "" {
+		since, ok := AddedSince(h.now(), a)
+		if !ok {
+			httperror.Write(w, r, httperror.InvalidQuery("added must be week, month or year"))
+			return
+		}
+		conds = append(conds, "created_at >= "+pidx(len(args)+1))
+		args = append(args, h.timeArg(since))
+	}
+	if res := q.Get("resolution"); res != "" {
+		b, ok := FindBand(ResolutionBands, res)
+		if !ok {
+			httperror.Write(w, r, httperror.InvalidQuery("resolution must be sd, hd, fhd or uhd"))
+			return
+		}
+		conds = append(conds, ResolutionCond("id", b))
 	}
 	letter := q.Get("letter")
 	if letter != "" && letter != "#" && utf8.RuneCountInString(letter) != 1 {

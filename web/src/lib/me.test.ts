@@ -11,6 +11,7 @@ vi.mock("./api", async () => {
 
 import {
   createPlaylist,
+  EMPTY_FACETS,
   fetchFacets,
   fetchMyVideo,
   fetchPlaylists,
@@ -55,7 +56,7 @@ describe("lib/me", () => {
 
   it("readers survive missing fields", async () => {
     get.mockResolvedValue({});
-    expect(await fetchFacets("L")).toEqual({ languages: [], tags: [], speakers: [], letters: [] });
+    expect(await fetchFacets("L")).toEqual(EMPTY_FACETS);
     expect(get).toHaveBeenLastCalledWith("/api/videos/facets?library=L");
     expect(await fetchPlaylists()).toEqual([]);
     const mine = await fetchMyVideo("v1");

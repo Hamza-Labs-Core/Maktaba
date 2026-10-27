@@ -30,6 +30,29 @@ export interface VideoCard {
   series?: { id: string; name: string } | null;
 }
 
+/**
+ * Story 45.18: an entry of Recently Added grouped by series: a video, or a
+ * series with `count` new lessons (`video` is the newest of them). A video
+ * entry may name its series (the only new lesson of it).
+ */
+export interface AddedEntry {
+  kind: "video" | "series";
+  video: VideoCard;
+  series?: { id: string; name: string } | null;
+  count?: number;
+}
+
+/**
+ * Story 45.21: Home's hero: the newest series (shown from its first lesson)
+ * or the lesson an admin picked (`picked`, with its series when it has one).
+ */
+export interface Featured {
+  kind: "series" | "video";
+  video: VideoCard;
+  series?: { id: string; name: string; episodes?: number } | null;
+  picked: boolean;
+}
+
 export interface LibraryRef {
   id: string;
   name: string;
@@ -48,8 +71,12 @@ export interface HomeResponse {
   favorites: VideoCard[];
   continue_watching: VideoCard[];
   recently_added: VideoCard[];
+  /** Recently Added grouped by series (Phase 3); empty from an older server */
+  recently_added_grouped: AddedEntry[];
   recently_watched: VideoCard[];
   pinned: PinnedRows[];
+  /** the hero (Phase 3); null when there is nothing to feature */
+  featured: Featured | null;
 }
 
 export interface LibrarySummary {
@@ -82,6 +109,7 @@ export interface LibraryHub {
     recently_added: VideoCard[];
     recently_watched: VideoCard[];
     most_watched: VideoCard[];
+    recently_added_grouped: AddedEntry[];
     series: HubSeries[];
     years: HubYear[];
   };
@@ -92,6 +120,41 @@ const cards = (v: unknown) =>
   list<VideoCard>(v).filter((c) => c && typeof c === "object" && typeof c.id === "string");
 const obj = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+const grouped = (v: unknown): AddedEntry[] =>
+  list<AddedEntry>(v).filter(
+    (e) =>
+      e &&
+      (e.kind === "video" || e.kind === "series") &&
+      e.video &&
+      typeof e.video.id === "string" &&
+      (e.kind === "video" || (!!e.series && typeof e.series.id === "string"))
+  );
+
+function featuredOf(v: unknown): Featured | null {
+  const f = obj(v);
+  const video = obj(f.video);
+  if ((f.kind !== "series" && f.kind !== "video") || typeof video.id !== "string") return null;
+  const series = obj(f.series);
+  if (f.kind === "series" && typeof series.id !== "string") return null;
+  return {
+    kind: f.kind,
+    video: video as unknown as VideoCard,
+    series: typeof series.id === "string" ? (series as unknown as Featured["series"]) : null,
+    picked: f.picked === true,
+  };
+}
+
+/** The admin's pick for the hero (admins only). */
+export async function fetchFeaturedPick(): Promise<string | null> {
+  const r = obj(await api.get<unknown>("/api/home/featured"));
+  return typeof r.video_id === "string" ? r.video_id : null;
+}
+
+/** Picks the lesson Home features; null goes back to the newest series. */
+export async function setFeaturedPick(videoId: string | null): Promise<string | null> {
+  const r = obj(await api.put<unknown>("/api/home/featured", { video_id: videoId }));
+  return typeof r.video_id === "string" ? r.video_id : null;
+}
 
 export async function fetchHome(): Promise<HomeResponse> {
   const r = obj(await api.get<unknown>("/api/home"));
@@ -100,6 +163,8 @@ export async function fetchHome(): Promise<HomeResponse> {
     favorites: cards(r.favorites),
     continue_watching: cards(r.continue_watching),
     recently_added: cards(r.recently_added),
+    recently_added_grouped: grouped(r.recently_added_grouped),
+    featured: featuredOf(r.featured),
     recently_watched: cards(r.recently_watched),
     pinned: list<PinnedRows>(r.pinned)
       .filter((p) => p && p.library && typeof p.library.id === "string")
@@ -135,6 +200,7 @@ export async function fetchHub(id: string): Promise<LibraryHub> {
       recently_added: cards(rows.recently_added),
       recently_watched: cards(rows.recently_watched),
       most_watched: cards(rows.most_watched),
+      recently_added_grouped: grouped(rows.recently_added_grouped),
       series: list<HubSeries>(rows.series).filter((s) => s && typeof s.id === "string"),
       years: list<HubYear>(rows.years).filter((y) => y && typeof y.year === "number"),
     },

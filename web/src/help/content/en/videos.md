@@ -28,7 +28,7 @@ Press **Play** on the **Watch** tab. The player opens with the usual controls (p
 - **Subtitle size**: 75 % to 150 %.
 - **Picture in picture**: keeps the video in a small window while you use other apps.
 
-Marks on the time bar show where chapters start. **Back** returns to the video's page. Maktaba records how far you watched, for your history and the series progress.
+Marks on the time bar show where chapters start. Move the pointer along the time bar, or drag it, and a small picture above it shows that moment of the video with its time (scrub thumbnails). Videos processed before this was added show fewer, coarser pictures until they are processed again; a video without them plays normally. **Back** returns to the video's page. Maktaba records how far you watched, for your history and the series progress.
 
 ### Turn on subtitles {#subtitles}
 

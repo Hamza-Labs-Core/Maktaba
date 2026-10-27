@@ -1,0 +1,176 @@
+// Epic 45 Phase 3 (story 45.20) — the grid's Length, Added and Resolution
+// filters: offered from the facets' bands, kept in the URL, sent to the server.
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useLocation } from "react-router-dom";
+import { renderPage, memberUser, adminUser } from "../test/pageHarness";
+import en from "../i18n/en.json";
+
+const { get, post, patch } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn() }));
+vi.mock("../lib/api", async () => {
+  const actual = await vi.importActual<typeof import("../lib/api")>("../lib/api");
+  return { ...actual, api: { ...actual.api, get, post, patch } };
+});
+
+import { LibraryBrowser } from "./LibraryBrowser";
+
+const LIB = "11111111-1111-4111-8111-111111111111";
+
+const FACETS = {
+  languages: [],
+  tags: [],
+  speakers: [],
+  letters: [],
+  durations: [
+    { value: "short", videos: 3 },
+    { value: "long", videos: 9 },
+  ],
+  added: [{ value: "year", videos: 4 }],
+  resolutions: [],
+};
+
+const VIDEOS = {
+  items: [{ id: "v1", title: "Lesson one", filename: "1.mp4", state: "ready", duration_sec: 100 }],
+  next: null,
+};
+
+function serve(over: Record<string, unknown> = {}) {
+  get.mockImplementation((url: string) => {
+    if (url in over) return Promise.resolve(over[url]);
+    if (url.startsWith("/api/videos/facets")) return Promise.resolve(FACETS);
+    if (url.startsWith("/api/videos?")) return Promise.resolve(VIDEOS);
+    return Promise.reject(new Error(`unmocked GET ${url}`));
+  });
+}
+
+const lastQuery = () => {
+  const calls = get.mock.calls
+    .map((c) => c[0] as string)
+    .filter((u) => u.startsWith("/api/videos?"));
+  return new URLSearchParams(calls.at(-1)!.split("?")[1]);
+};
+
+function Loc() {
+  const { search } = useLocation();
+  return <span data-testid="loc">{search}</span>;
+}
+
+function renderGrid(path = `/library/${LIB}`, user = memberUser) {
+  return renderPage(
+    <>
+      <LibraryBrowser />
+      <Loc />
+    </>,
+    { path, route: "/library/:libraryId", user }
+  );
+}
+
+describe("LibraryBrowser, Phase 3 filters", () => {
+  beforeEach(() => {
+    get.mockReset();
+    localStorage.clear();
+  });
+
+  it("offers only the bands with videos, and filters by them", async () => {
+    serve();
+    renderGrid();
+    await screen.findByText("Lesson one");
+    const length = await screen.findByRole("combobox", { name: en["browse.filter.duration"] });
+    const options = [...(length as HTMLSelectElement).options].map((o) => o.value);
+    expect(options).toEqual(["", "short", "long"]);
+    // no resolution has videos: no Resolution filter
+    expect(screen.queryByRole("combobox", { name: en["browse.filter.resolution"] })).toBeNull();
+
+    await userEvent.selectOptions(length, "long");
+    await waitFor(() => expect(lastQuery().get("duration")).toBe("long"));
+    expect(screen.getByTestId("loc").textContent).toContain("duration=long");
+
+    const addedSel = screen.getByRole("combobox", { name: en["browse.filter.added"] });
+    await userEvent.selectOptions(addedSel, "year");
+    await waitFor(() => expect(lastQuery().get("added")).toBe("year"));
+  });
+
+  it("keeps a band from a link, even one the facets do not list, and ignores an unknown one", async () => {
+    serve();
+    renderGrid(`/library/${LIB}?resolution=uhd&duration=tiny`);
+    await screen.findByText("Lesson one");
+    expect(lastQuery().get("resolution")).toBe("uhd");
+    expect(lastQuery().get("duration")).toBeNull();
+    const res = await screen.findByRole("combobox", { name: en["browse.filter.resolution"] });
+    expect((res as HTMLSelectElement).value).toBe("uhd");
+  });
+});
+
+describe("LibraryBrowser, collections (story 45.17)", () => {
+  beforeEach(() => {
+    get.mockReset();
+    post.mockReset();
+    patch.mockReset();
+    localStorage.clear();
+  });
+
+  it("offers Save as collection to admins only, and saves the filters and sort", async () => {
+    serve();
+    const { unmount } = renderGrid(`/library/${LIB}?duration=long&sort=title&q=tafsir`);
+    await screen.findByText("Lesson one");
+    expect(screen.queryByRole("button", { name: en["collections.saveAs"] })).toBeNull();
+    unmount();
+
+    post.mockResolvedValue({ id: "c7", library_id: LIB, name: "Long", is_smart: true });
+    renderGrid(`/library/${LIB}?duration=long&sort=title&q=tafsir`, adminUser);
+    await userEvent.click(await screen.findByRole("button", { name: en["collections.saveAs"] }));
+    await userEvent.type(screen.getByLabelText(en["collections.name"]), "Long");
+    await userEvent.click(screen.getByRole("button", { name: en["common.save"] }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/collections", {
+        library_id: LIB,
+        name: "Long",
+        is_smart: true,
+        smart_query: { filters: { q: "tafsir", duration: "long", sort: "title", order: "asc" } },
+      })
+    );
+  });
+
+  it("offers no save while the grid shows the viewer's own favorites", async () => {
+    serve();
+    renderGrid(`/library/${LIB}?favorite=true`, adminUser);
+    expect(await screen.findByRole("button", { name: en["collections.saveAs"] })).toBeDisabled();
+  });
+
+  it("saves the filters to the collection being edited", async () => {
+    serve();
+    patch.mockResolvedValue({});
+    renderGrid(`/library/${LIB}?added=year&collection=c7`, adminUser);
+    await userEvent.click(
+      await screen.findByRole("button", { name: en["collections.saveFiltersTo"] })
+    );
+    await waitFor(() =>
+      expect(patch).toHaveBeenCalledWith("/api/collections/c7", {
+        smart_query: { filters: { added: "year", sort: "updated_at", order: "desc" } },
+      })
+    );
+  });
+
+  it("adds a selection to a collection (admins)", async () => {
+    serve({
+      [`/api/collections?library=${LIB}`]: {
+        items: [{ id: "c1", library_id: LIB, name: "Ramadan", is_smart: false, videos: 0 }],
+      },
+    });
+    post.mockResolvedValue({ added: 1 });
+    renderGrid(`/library/${LIB}`, adminUser);
+    await screen.findByText("Lesson one");
+    await userEvent.click(screen.getByRole("button", { name: en["browse.select"] }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /Lesson one/ }));
+    await userEvent.click(screen.getByRole("button", { name: en["collections.bulkAdd"] }));
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: en["collections.addToNamed"].replace("{name}", "Ramadan"),
+      })
+    );
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/collections/c1/items", { video_ids: ["v1"] })
+    );
+  });
+});
