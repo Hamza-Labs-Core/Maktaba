@@ -46,6 +46,17 @@ public final class TokenStore: @unchecked Sendable {
         }
     }
 
+    /// The same home reached at a new address: its tokens move over from the old one's
+    /// entry (one read and one write each; nothing when this one has its own already).
+    func adopt(_ other: TokenStore) {
+        guard access == nil, let a = other.access, let r = other.refresh else { return }
+        lock.withLock {
+            write("access", a)
+            write("refresh", r)
+        }
+        other.clear()
+    }
+
     public func clear() {
         lock.withLock {
             for kind in ["access", "refresh"] {
@@ -146,149 +157,3 @@ struct KeychainSecrets: SecretStore {
     }
 }
 
-/// A home this app knows: its address and a name to show (its address until the home
-/// says its name, after signing in).
-public struct Home: Codable, Hashable, Identifiable, Sendable {
-    public var id: URL { url }
-    public let url: URL
-    public var name: String
-
-    public init(url: URL, name: String) {
-        self.url = url
-        self.name = name
-    }
-
-    /// The home's address from what a person types: a scheme added when missing
-    /// (http on a local address, else https), no path, no trailing slash.
-    public static func normalize(_ text: String) -> URL? {
-        var s = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !s.isEmpty else { return nil }
-        if !s.contains("://") {
-            let host = s.split(separator: "/").first.map(String.init) ?? s
-            s = (isLocal(host) ? "http://" : "https://") + s
-        }
-        guard var c = URLComponents(string: s), let host = c.host, !host.isEmpty,
-              c.scheme == "http" || c.scheme == "https" else { return nil }
-        c.path = ""
-        c.query = nil
-        c.fragment = nil
-        return c.url
-    }
-
-    static func isLocal(_ hostPort: String) -> Bool {
-        let host = hostPort.split(separator: ":").first.map(String.init) ?? hostPort
-        return host == "localhost" || host.hasSuffix(".local") || host.hasPrefix("192.168.")
-            || host.hasPrefix("10.") || host.hasPrefix("127.") || host.range(of: #"^172\.(1[6-9]|2\d|3[01])\."#, options: .regularExpression) != nil
-    }
-}
-
-/// The app's state the screens bind to: the homes it knows, the one in use, who is signed
-/// in there. One per app (`AppSession(app: "com.hamzalabs.maktaba.player")`).
-@MainActor @Observable
-public final class AppSession {
-    public enum Phase: Equatable {
-        case choosingHome
-        case signingIn
-        case signedIn(User)
-    }
-
-    public private(set) var homes: [Home]
-    public private(set) var current: Home?
-    public private(set) var phase: Phase = .choosingHome
-    public private(set) var client: APIClient?
-
-    public var signedIn: Bool {
-        if case .signedIn = phase { true } else { false }
-    }
-
-    private let app: String
-    private let defaults: UserDefaults
-
-    public init(app: String, defaults: UserDefaults = .standard) {
-        self.app = app
-        self.defaults = defaults
-        homes = (defaults.data(forKey: "homes")).flatMap { try? JSONDecoder().decode([Home].self, from: $0) } ?? []
-        if let last = defaults.url(forKey: "home"), let h = homes.first(where: { $0.url == last }) {
-            use(h)
-        }
-    }
-
-    /// Picks a home: its client, and signed in at once when the Keychain still has tokens.
-    public func use(_ home: Home) {
-        if !homes.contains(where: { $0.url == home.url }) {
-            homes.append(home)
-            save()
-        }
-        current = home
-        defaults.set(home.url, forKey: "home")
-        let tokens = TokenStore(app: app, home: home.url)
-        client = APIClient(home: home.url, tokens: tokens)
-        phase = .signingIn
-        if tokens.access != nil {
-            Task { await restore() }
-        }
-    }
-
-    public func forget(_ home: Home) {
-        TokenStore(app: app, home: home.url).clear()
-        homes.removeAll { $0.url == home.url }
-        save()
-        if current?.url == home.url { switchHome() }
-    }
-
-    public func switchHome() {
-        current = nil
-        client = nil
-        phase = .choosingHome
-        defaults.removeObject(forKey: "home")
-    }
-
-    public func signIn(username: String, password: String) async throws {
-        guard let client else { return }
-        _ = try await client.signIn(username: username, password: password)
-        signedIn(try await client.whoami())
-    }
-
-    /// This device was signed in some other way (a TV's code, approved on a phone): who
-    /// is it now.
-    public func signedInByCode() async throws {
-        guard let client else { return }
-        signedIn(try await client.whoami())
-    }
-
-    public func signOut() {
-        if let current { TokenStore(app: app, home: current.url).clear() }
-        phase = .signingIn
-    }
-
-    /// A screen saw `APIError.signedOut`: back to signing in.
-    public func signedOut() {
-        phase = .signingIn
-    }
-
-    private func restore() async {
-        guard let client else { return }
-        if let me = try? await client.whoami() { signedIn(me) }
-    }
-
-    private func signedIn(_ me: Me) {
-        named(me.homeName)
-        phase = .signedIn(me.user)
-    }
-
-    /// The current home's name, as the home says it (nil: it did not say, so the name
-    /// stays), kept with the homes this app knows.
-    func named(_ name: String?) {
-        guard let name, var home = current, home.name != name else { return }
-        home.name = name
-        current = home
-        if let i = homes.firstIndex(where: { $0.url == home.url }) {
-            homes[i] = home
-        }
-        save()
-    }
-
-    private func save() {
-        defaults.set(try? JSONEncoder().encode(homes), forKey: "homes")
-    }
-}

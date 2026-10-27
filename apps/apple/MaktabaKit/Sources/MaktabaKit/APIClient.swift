@@ -164,16 +164,39 @@ public actor APIClient {
         return r.rails
     }
 
-    // MARK: sign-in by code (a TV)
+    // MARK: sign-in by code (a TV, a phone, a computer)
 
-    /// Asks the home for a code to show (`POST /api/pairing/device`). nil: this home signs
-    /// in by password only (one from before codes answers 401 or 404).
-    public func startDevicePairing() async throws -> DevicePairing? {
+    /// Asks the home for a code to show (`POST /api/pairing/device`), naming this device
+    /// (`label`, shown to the person who approves it). nil: this home signs in by password
+    /// only (one from before codes answers 401 or 404).
+    public func startDevicePairing(label: String? = nil) async throws -> DevicePairing? {
+        let body: [String: Any]? = label.flatMap { $0.isEmpty ? nil : ["device_label": $0] }
         do {
-            return try await send(request("POST", "/api/pairing/device"), authorized: false)
+            return try await send(request("POST", "/api/pairing/device", body: body), authorized: false)
         } catch let APIError.status(code, _) where code == 401 || code == 404 || code == 405 {
             return nil
         }
+    }
+
+    /// What is asking to be signed in with `code` (`GET /api/pairing/device/{code}`, signed
+    /// in), for the person to check before approving it.
+    public func pendingDevice(code: String) async throws -> DeviceLookup {
+        let compact = code.filter { $0 != "-" }
+        do {
+            let d: PendingDevice = try await get("/api/pairing/device/\(Self.segment(compact))")
+            return .found(d)
+        } catch let APIError.status(status, body) where status == 404 || status == 405 || status == 501 {
+            // the home's own 404 is a problem+json; a home from before the lookup has no
+            // such route (its router's plain 404 or 405)
+            let problem = (try? JSONSerialization.jsonObject(with: Data(body.utf8))) is [String: Any]
+            return status == 404 && problem ? .notFound : .unknownOnThisHome
+        }
+    }
+
+    /// Signs the device showing `code` in as the person signed in here
+    /// (`POST /api/pairing/approve`).
+    public func approveDevice(code: String) async throws {
+        _ = try await sendRaw(request("POST", "/api/pairing/approve", body: ["code": code.filter { $0 != "-" }]))
     }
 
     /// Asks whether the code was approved; once it is, this device is signed in as the

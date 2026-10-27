@@ -939,6 +939,7 @@
 				INFOPLIST_FILE = "Player/Info-iPad.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Maktaba;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -1025,6 +1026,7 @@
 				INFOPLIST_FILE = "Remote/Info-iPhone.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -1049,6 +1051,7 @@
 				INFOPLIST_FILE = "Player/Info-iPhone.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Maktaba;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -1074,6 +1077,7 @@
 				INFOPLIST_FILE = "Player/Info-iPhone.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Maktaba;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -1099,6 +1103,7 @@
 				INFOPLIST_FILE = "Remote/Info-iPhone.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -1206,6 +1211,7 @@
 				INFOPLIST_FILE = "Player/Info-iPad.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Maktaba;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -1287,6 +1293,7 @@
 				INFOPLIST_FILE = "Remote/Info-iPad.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -1422,6 +1429,7 @@
 				INFOPLIST_FILE = "Remote/Info-iPad.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Maktaba connects to your home server on this network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
