@@ -23,6 +23,7 @@ vi.mock("../lib/api", async () => {
 import { Search } from "./Search";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import { ApiError } from "../lib/api";
+import en from "../i18n/en.json";
 import { adminUser, memberUser, quietCrash, renderPage } from "../test/pageHarness";
 import {
   type Corpus,
@@ -465,10 +466,11 @@ describe("Search (test-cases/search.md)", () => {
   });
 
   it.each([
-    ["500", problem(500, "search backend down"), "search backend down"],
-    ["400", problem(400, "query too long"), "query too long"],
-    ["network failure", new TypeError("Failed to fetch"), "Something went wrong."],
-    ["malformed JSON", new SyntaxError("Unexpected token b"), "Something went wrong."],
+    ["500", problem(500, "search backend down"), en["error.kind.server"]],
+    // a 400 with only a title: the title is the server's words, not shown
+    ["400", problem(400, "query too long"), en["error.kind.server"]],
+    ["network failure", new TypeError("Failed to fetch"), en["error.kind.unreachable"]],
+    ["malformed JSON", new SyntaxError("Unexpected token b"), en["error.kind.server"]],
   ])("SRC-16: search %s shows the ErrorState and clears results", async (_l, e, desc) => {
     let fail = false;
     serveSearch(() => (fail ? Promise.reject(e) : oneHit("v1", "old result")));
@@ -634,7 +636,8 @@ describe("Search (test-cases/search.md)", () => {
     const user = userEvent.setup();
     await user.type(screen.getByRole("combobox", { name: "Search" }), "dog");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByText("save failed")).toBeInTheDocument();
+    expect(await screen.findByText(en["error.kind.server"])).toBeInTheDocument();
+    expect(screen.queryByText("save failed")).toBeNull();
     await user.click(await screen.findByRole("button", { name: "odd" }));
     expect(screen.getByRole("combobox", { name: "Mode" })).toHaveValue("hybrid");
   });
@@ -754,7 +757,7 @@ describe("Search (test-cases/search.md)", () => {
     dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByLabelText(/Lesson/));
     await user.click(within(dialog).getByRole("button", { name: "Import" }));
-    expect(await screen.findByText("video not found")).toBeInTheDocument();
+    expect(await screen.findByText(en["error.kind.notFound"])).toBeInTheDocument();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(prompt).not.toHaveBeenCalled();
 

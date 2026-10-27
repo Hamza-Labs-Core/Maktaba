@@ -8,11 +8,8 @@
 // with nothing at all says how to start (admins: Manage libraries).
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
-import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Skeleton } from "@ds/components/Skeleton/Skeleton";
-import { ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { fetchHome, type HomeResponse } from "../lib/browse";
@@ -21,12 +18,13 @@ import { WhatsOnNow } from "../components/WhatsOnNow";
 import { FeaturedHero } from "../components/FeaturedHero";
 import { AddedRow, VideoRow } from "../components/MediaRow";
 import { SERVER_PAGES } from "../lib/edition";
+import { LoadError } from "../components/LoadError";
 
 export function Home() {
   const { t } = useI18n();
   const { user } = useAuth();
   const [home, setHome] = useState<HomeResponse | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -37,7 +35,7 @@ export function Home() {
         if (!cancelled) setHome(h);
       })
       .catch((e) => {
-        if (!cancelled) setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        if (!cancelled) setErr(e);
       });
     return () => {
       cancelled = true;
@@ -64,14 +62,7 @@ export function Home() {
         </TitleRow>
       </header>
 
-      {err && (
-        <ErrorState
-          kind="server"
-          title={t("common.error")}
-          description={err}
-          action={<Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>}
-        />
-      )}
+      {err != null && <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />}
 
       {!home && !err && (
         <div aria-busy="true" className="mkt-home__loading">

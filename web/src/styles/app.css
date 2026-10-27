@@ -3807,3 +3807,13 @@ button.mkt-video__hero {
     display: none;
   }
 }
+/* LoadError (errors audit): the error state's buttons, side by side */
+.mkt-load-error__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+}
+.mkt-load-error__actions--start {
+  justify-content: flex-start;
+}

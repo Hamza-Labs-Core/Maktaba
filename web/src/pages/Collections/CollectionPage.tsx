@@ -39,6 +39,8 @@ import {
 import { shuffled, startQueue, startQueueFromQuery, watchPath } from "../../lib/playQueue";
 import { TitleRow } from "../../help/HelpLink";
 import { VideoPoster, formatDuration } from "../../components/VideoViews";
+import { LoadError } from "../../components/LoadError";
+import { errorText } from "../../lib/errorText";
 
 export function CollectionPage() {
   const { collectionId = "" } = useParams();
@@ -54,7 +56,7 @@ function CollectionOf({ id }: { id: string }) {
   const [col, setCol] = useState<Collection | null>(null);
   const [items, setItems] = useState<VideoCard[] | null>(null);
   const [notFound, setNotFound] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null);
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -91,7 +93,7 @@ function CollectionOf({ id }: { id: string }) {
       .catch((e) => {
         if (cancelled) return;
         if (e instanceof ApiError && (e.status === 404 || e.status === 400)) setNotFound(true);
-        else setErr(e instanceof ApiError ? e.problem.title : t("common.error"));
+        else setErr(e);
       });
     return () => {
       cancelled = true;
@@ -101,9 +103,7 @@ function CollectionOf({ id }: { id: string }) {
   const fail = (e: unknown) =>
     toast.show({
       tone: "error",
-      message: `${t("collections.changeError")}: ${
-        e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error")
-      }`,
+      message: `${t("collections.changeError")}: ${errorText(e, t)}`,
     });
 
   if (notFound) {
@@ -121,15 +121,10 @@ function CollectionOf({ id }: { id: string }) {
       </section>
     );
   }
-  if (err) {
+  if (err != null) {
     return (
       <section className="mkt-page mkt-collection">
-        <ErrorState
-          kind="server"
-          title={t("common.error")}
-          description={err}
-          action={<Button onClick={() => setReload((x) => x + 1)}>{t("common.retry")}</Button>}
-        />
+        <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />
       </section>
     );
   }

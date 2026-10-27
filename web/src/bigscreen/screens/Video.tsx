@@ -11,6 +11,7 @@ import { useI18n } from "../../lib/i18n";
 import { fetchMyVideo, markWatched, setFavorite, type MyVideo } from "../../lib/me";
 import { bigPath, useBigNav } from "../nav";
 import { Failed, Loading, Picture, Progress, Screen, clock, posterOf } from "../ui";
+import { errorText } from "../../lib/errorText";
 
 interface Video {
   id: string;
@@ -62,8 +63,8 @@ export function BigVideo() {
           !cancelled &&
           setErr(
             e instanceof ApiError
-              ? { message: e.problem.title, status: e.status }
-              : { message: t("common.error") }
+              ? { message: errorText(e, t), status: e.status }
+              : { message: errorText(e, t) }
           )
       );
     api
