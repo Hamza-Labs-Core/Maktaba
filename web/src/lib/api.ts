@@ -38,12 +38,28 @@ export interface Problem {
 export class ApiError extends Error {
   status: number;
   problem: Problem;
-  constructor(problem: Problem) {
+  /** The answer's Retry-After in seconds (a 429 / 503), when it sent one. */
+  retryAfter?: number;
+  constructor(problem: Problem, retryAfter?: number) {
     super(problem.title + (problem.detail ? `: ${problem.detail}` : ""));
     this.name = "ApiError";
     this.status = problem.status;
     this.problem = problem;
+    if (retryAfter !== undefined) this.retryAfter = retryAfter;
   }
+}
+
+/**
+ * A Retry-After header in seconds: delta-seconds, or an HTTP date from now
+ * (undefined when absent or unreadable).
+ */
+export function retryAfterSeconds(value: string | null | undefined): number | undefined {
+  if (!value) return undefined;
+  const v = value.trim();
+  if (/^\d+$/.test(v)) return Number(v);
+  const at = Date.parse(v);
+  if (Number.isNaN(at)) return undefined;
+  return Math.max(0, Math.ceil((at - Date.now()) / 1000));
 }
 
 // logApiError surfaces every failed API call to the browser console so
@@ -238,12 +254,13 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   const ct = res.headers.get("Content-Type") ?? "";
 
   if (!res.ok) {
+    const retryAfter = retryAfterSeconds(res.headers.get("Retry-After"));
     if (ct.includes("problem+json") || ct.includes("json")) {
       try {
         const parsed = JSON.parse(text) as Problem;
         noteUnavailable(res.status, parsed);
         noteSignInRequired(res.status, parsed);
-        const err = new ApiError({ ...parsed, status: parsed.status || res.status });
+        const err = new ApiError({ ...parsed, status: parsed.status || res.status }, retryAfter);
         logApiError(method, path, err.status, err.message);
         throw err;
       } catch (e) {
@@ -255,12 +272,15 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     // (a proxy's 502, a dev server's error page) is not something to show the
     // user, so it only goes to the console log.
     const html = ct.includes("html") || /^\s*</.test(text);
-    const err = new ApiError({
-      type: "about:blank",
-      title: res.statusText || "request failed",
-      status: res.status,
-      ...(html || !text ? {} : { detail: text.slice(0, 256) }),
-    });
+    const err = new ApiError(
+      {
+        type: "about:blank",
+        title: res.statusText || "request failed",
+        status: res.status,
+        ...(html || !text ? {} : { detail: text.slice(0, 256) }),
+      },
+      retryAfter
+    );
     logApiError(method, path, err.status, html ? text.slice(0, 256) : err.message);
     throw err;
   }

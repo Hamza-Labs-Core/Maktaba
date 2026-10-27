@@ -21,6 +21,12 @@
 // video again there. Other fatal errors get bounded network retries and
 // media-error recovery before `onFatal`.
 //
+// A stream not ready yet (its transcode still starting: the master or a
+// rendition playlist answers 404) gets the same backed-off network retries
+// before anything is reopened: hls.js loads a failed master playlist again
+// only from loadSource (startLoad reloads the levels it already knows), and
+// native HLS from a fresh src while nothing has played yet.
+//
 // Every failure that ends in a reopen or in `onFatal` is also described to
 // `onError` (the engine, hls.js's error details or the element's MediaError,
 // the HTTP status and URL of the failing load): the browser is the only place
@@ -184,6 +190,9 @@ interface LoaderLike {
 }
 type LoaderCtor = new (config: unknown) => LoaderLike;
 
+/** hls.js's details for a master playlist that did not load. */
+const MANIFEST_LOAD_ERRORS = new Set(["manifestLoadError", "manifestLoadTimeOut"]);
+
 function sigLoader(Hls: typeof HlsType, manifest: string): LoaderCtor | null {
   const Base = (Hls as unknown as { DefaultConfig?: { loader?: LoaderCtor } }).DefaultConfig
     ?.loader;
@@ -204,6 +213,7 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
   let netRetries = 0;
   let mediaRecoveries = 0;
   let authReported = false;
+  let played = false;
   let netTimer: ReturnType<typeof setTimeout> | null = null;
   const startAt = opts.startAt && opts.startAt > 0 ? opts.startAt : 0;
 
@@ -288,7 +298,18 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
       .then((status) => {
         if (disposed) return;
         if (status === 401 || status === 403) authError(at, playing);
-        else if (status === 404 || status === 410)
+        else if (status === 404 && !played && netRetries < VOD_NET_RETRIES) {
+          // not ready yet (a transcode starting): load it again in a while
+          const delay = VOD_NET_RETRY_BASE_MS * 2 ** netRetries;
+          netRetries += 1;
+          clearNet();
+          netTimer = setTimeout(() => {
+            netTimer = null;
+            if (disposed || authReported) return;
+            video.src = src;
+            if (playing) void video.play?.()?.catch?.(() => {});
+          }, delay);
+        } else if (status === 404 || status === 410)
           gone(
             { ...mediaErrorOf(video), code: "manifest_gone", httpStatus: status, url: src },
             at,
@@ -360,8 +381,12 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
         const delay = VOD_NET_RETRY_BASE_MS * 2 ** netRetries;
         netRetries += 1;
         clearNet();
+        // a master playlist that never loaded is only fetched again by loadSource
+        const manifest = MANIFEST_LOAD_ERRORS.has(data.details ?? "");
         netTimer = setTimeout(() => {
-          if (!disposed && hls === inst) inst.startLoad(position());
+          if (disposed || hls !== inst) return;
+          if (manifest) inst.loadSource(src);
+          else inst.startLoad(position());
         }, delay);
         return;
       }
@@ -383,6 +408,7 @@ export function attachVod(video: HTMLVideoElement, src: string, opts: VodOptions
   };
 
   const onPlaying = () => {
+    played = true;
     netRetries = 0;
     mediaRecoveries = 0;
   };
