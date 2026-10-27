@@ -305,10 +305,14 @@ export function FocusProvider({
 function toNodes(els: HTMLElement[]): FocusNode[] {
   return els.map((el) => {
     const r = el.getBoundingClientRect();
+    // in the screen's own vertical scroller, the content's place (not the
+    // viewport's): a row scrolled up under the fixed tab row still lies below it
+    const scroller = el.closest<HTMLElement>("[data-bs-scroll]");
+    const top = r.top + (scroller?.scrollTop ?? 0);
     return {
       id: idOf(el),
       group: groupOf(el),
-      rect: { x: r.left, y: r.top, w: r.width, h: r.height },
+      rect: { x: r.left, y: top, w: r.width, h: r.height },
     };
   });
 }

@@ -158,6 +158,9 @@
   font-size: var(--bs-small);
   color: var(--bs-muted);
   pointer-events: none;
+  padding: 0.25em 0.9em;
+  border-radius: 999px;
+  background: rgba(11, 17, 28, 0.88);
 }
 
 /* buttons */
@@ -524,7 +527,7 @@
   align-items: start;
   padding-block-start: var(--bs-gap);
 }
-.bs-search__field {
+.bs .bs-search__field {
   inline-size: 100%;
   box-sizing: border-box;
   font: inherit;
@@ -536,7 +539,7 @@
   padding: 0.35em 0.7em;
   margin-block-end: var(--bs-gap);
 }
-.bs-search__field:focus {
+.bs .bs-search__field:focus {
   border-color: var(--bs-gold);
 }
 .bs-kbd {

@@ -115,10 +115,13 @@ export function next(
     return best(from, toward, dir);
   }
 
-  // up / down: the nearest group that way, then the node to land on
+  // up / down: the nearest line of another group that way (the next row, even
+  // when its cards lie off to the side), then the node to land on
+  const others = toward.filter((n) => groupOf(n) !== group);
+  const gap = Math.min(...others.map((n) => alongGap(from, n.rect, dir)));
   const nearest = best(
     from,
-    toward.filter((n) => groupOf(n) !== group),
+    others.filter((n) => alongGap(from, n.rect, dir) <= gap + 1),
     dir
   );
   // within one group (a grid's lines share it): plain spatial move
@@ -153,6 +156,13 @@ function isCloser(from: Rect, inGroup: FocusNode[], other: FocusNode, dir: Direc
   const along = (r: Rect) => (dir === "down" ? r.y - (from.y + from.h) : from.y - (r.y + r.h));
   const mine = Math.min(...inGroup.map((n) => along(n.rect)));
   return mine <= along(other.rect);
+}
+
+// The edge-to-edge distance from `from` to `to` along a vertical move.
+function alongGap(from: Rect, to: Rect, dir: Direction): number {
+  return dir === "down"
+    ? Math.max(0, to.y - (from.y + from.h))
+    : Math.max(0, from.y - (to.y + to.h));
 }
 
 // For a horizontal move: whether `to` shares the line `from` sits on.

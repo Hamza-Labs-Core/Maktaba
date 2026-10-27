@@ -197,7 +197,7 @@ function Frame() {
   return (
     <>
       {!player && <Tabs />}
-      <main className={`bs-main${player ? " bs-main--player" : ""}`}>
+      <main className={`bs-main${player ? " bs-main--player" : ""}`} data-bs-scroll>
         <Routes>
           <Route index element={<BigHome />} />
           <Route path="libraries" element={<BigLibraries />} />

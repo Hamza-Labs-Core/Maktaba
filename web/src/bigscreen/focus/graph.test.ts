@@ -81,6 +81,17 @@ describe("next", () => {
     expect(id(next(page, "b0", "up", new Map([["a", "gone"]])))).toBe("a0");
   });
 
+  it("down reaches the next row even when its cards lie off to the side", () => {
+    // a hero button on the right; a short row below it on the left; a long row further down
+    const page2: FocusNode[] = [
+      { id: "resume", group: "hero", rect: { x: 900, y: 0, w: 200, h: 60 } },
+      ...row("short", 200, 2),
+      ...row("long", 400, 12),
+    ];
+    expect(id(next(page2, "resume", "down"))).toBe("short1");
+    expect(id(next(page2, "long8", "up"))).toBe("short1");
+  });
+
   it("a shorter row below lands on its nearest card", () => {
     const short = [...row("a", 0, 6), ...row("b", 100, 2)];
     expect(id(next(short, "a5", "down"))).toBe("b1");
