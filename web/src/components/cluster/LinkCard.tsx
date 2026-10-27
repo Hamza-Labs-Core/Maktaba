@@ -2,7 +2,9 @@
 // home (prefer, require, off), how many held their link for a day (the home requires it
 // by itself once all of them did), each machine's link and certificate, and the cluster
 // CA's fingerprint with its certificate to download (to install it for browser HTTPS on
-// 8443). The link's settings are on the rules page (Machines, Cluster link).
+// 8443). The link's settings are on the rules page (Machines, Cluster link). While the
+// link is required, a machine whose processes do not present their certificate to the
+// home's database yet (an older release) is said: its database login keeps its password.
 import { useI18n } from "../../lib/i18n";
 import type { ClusterLink, ClusterNode } from "../../lib/clusterApi";
 import { useFmt } from "../queue/format";
@@ -53,6 +55,9 @@ export function LinkCard({ link, nodes }: { link: ClusterLink; nodes: ClusterNod
                       t("machines.link.clockSkew", { time: f.dur(Math.abs(n.clock_skew_seconds)) })
                     : ""}
                   {n.blocks ? " · " + t(`machines.link.block.${n.blocks}`) : ""}
+                  {link.mode === "require" && n.has_cert && !n.db_cert
+                    ? " · " + t("machines.link.dbPassword")
+                    : ""}
                 </span>
               </li>
             );

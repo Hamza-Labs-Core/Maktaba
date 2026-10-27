@@ -27,3 +27,11 @@ export function codedText(
   const text = t(key, vars);
   return text === key ? fallback : text;
 }
+
+/** Why a disk cannot hold Maktaba's data, in a few words
+ * (`storage.location.diskProblem.<code>`, a general text for any other code). */
+export function diskProblem(t: Translate, code: string | undefined): string {
+  const key = `storage.location.diskProblem.${code ?? ""}`;
+  const text = code ? t(key) : key;
+  return text === key ? t("storage.location.diskProblem.other") : text;
+}

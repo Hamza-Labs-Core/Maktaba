@@ -35,4 +35,22 @@
     <string name="other_home">Choose another home</string>
     <string name="signin_kept_failed">Could not check your sign-in: %1$s</string>
     <string name="try_again">Try again</string>
+
+    <!-- The permissions walkthrough (core/permissions) -->
+    <string name="permissions_title">Before you start</string>
+    <string name="permissions_intro">Maktaba needs your permission for these. Each one says why, and you can change it later in Android\'s settings.</string>
+    <string name="permission_local_network">Local network</string>
+    <string name="permission_required">Required</string>
+    <string name="permission_optional">Optional</string>
+    <string name="permission_state_granted">Allowed</string>
+    <string name="permission_state_denied">Not allowed</string>
+    <string name="permission_state_denied_permanently">Not allowed, and Android will not ask again</string>
+    <string name="permission_state_not_asked">Not asked yet</string>
+    <string name="permission_state_not_applicable">Not needed on this Android version</string>
+    <string name="permission_settings_hint">Turn it on in Settings: Permissions, then Nearby devices, then Allow.</string>
+    <string name="permission_open_settings">Open settings</string>
+    <string name="permissions_continue">Continue</string>
+    <string name="permissions_not_now">Not now</string>
+    <string name="permissions_again">This screen comes back each time you return to the app until the required permissions are allowed.</string>
+    <string name="permissions_learn_more">Learn more</string>
 </resources>

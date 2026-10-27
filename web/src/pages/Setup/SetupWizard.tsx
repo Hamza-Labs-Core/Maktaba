@@ -2,9 +2,10 @@
 // story 38.6 on Windows and Linux; the words follow the platform).
 //
 // welcome (this machine or another Maktaba) → what will run + disk/RAM
-// check → admin account → library folders / NAS path map → models (Hugging
+// check → where its data goes (which disk) → admin account → library folders / NAS path map → models (Hugging
 // Face token for the gated Cohere model, or the NAS copy) → optional
-// Plex sign-in → install (pipeline venv, the models download, finish) →
+// Plex sign-in → on a Mac, the permissions macOS keeps until you allow them
+// (Full Disk Access, Local Network, …) → install (pipeline venv, the models download, finish) →
 // the server starts. On a PC that already runs Maktaba outside the app
 // (Epic 38 story 38.13) welcome offers to move it in instead: its plan →
 // the move (venv, the old install stopped, its settings, keys and files
@@ -24,6 +25,8 @@ import {
 } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
+import { Select } from "@ds/components/Select/Select";
+import { Toggle } from "@ds/components/Choice/Toggle";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useI18n } from "../../lib/i18n";
 import {
@@ -39,9 +42,13 @@ import {
   type SetupApi,
   type StepError,
   type StepProgress,
+  type StorageChoice,
 } from "../../lib/desktopSetup";
+import { HOURS, hourLabel, type StorageDisk } from "../../lib/serverSettingsApi";
 import { ServerStarting } from "./ServerStarting";
-import { codedText, type Translate } from "./codedText";
+import { PermissionList, usePermissions } from "../../components/MacPermissions/PermissionList";
+import { tauriPermissionsApi, type PermissionsApi } from "../../lib/macPermissions";
+import { codedText, diskProblem, type Translate } from "./codedText";
 import { platformWords } from "./platform";
 
 export const PLEX_POLL_MS = 3000;
@@ -69,14 +76,33 @@ const EXAMPLE_PATHS: Record<Platform, { roots: string; map: string; nas: string 
 export type Screen =
   | "welcome"
   | "check"
+  | "storage"
   | "admin"
   | "libraries"
   | "models"
   | "plex"
+  | "permissions"
   | "install"
   | "move"
   | "starting";
-const ORDER: Screen[] = ["check", "admin", "libraries", "models", "plex", "install"];
+const ORDER: Screen[] = ["check", "storage", "admin", "libraries", "models", "plex", "install"];
+/** A Mac asks for its permissions before the server first starts (a grant
+ * reaches only the processes started after it). */
+const MAC_ORDER: Screen[] = [
+  "check",
+  "storage",
+  "admin",
+  "libraries",
+  "models",
+  "plex",
+  "permissions",
+  "install",
+];
+
+const orderOf = (platform: Platform): Screen[] => (platform === "macos" ? MAC_ORDER : ORDER);
+
+/** The steps on this platform (the step counter's total). */
+const OrderContext = createContext<Screen[]>(ORDER);
 
 interface CheckResult {
   ram_bytes: number;
@@ -135,12 +161,13 @@ function Frame({
   next?: ReactNode;
 }) {
   const { t } = useI18n();
+  const order = useContext(OrderContext);
   return (
     <main className="mkt-setup" aria-labelledby="mkt-setup-h">
       <section className="mkt-setup__card">
         {step !== undefined && (
           <p className="mkt-setup__step">
-            {t("setup.stepOf", { n: step + 1, total: ORDER.length })}
+            {t("setup.stepOf", { n: step + 1, total: order.length })}
           </p>
         )}
         <h1 id="mkt-setup-h" className="mkt-setup__title">
@@ -200,7 +227,16 @@ function Progress({ p, label }: { p: StepProgress | null; label: string }) {
   );
 }
 
-export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initial?: Screen }) {
+export function SetupWizard({
+  api,
+  initial = "welcome",
+  permissions = tauriPermissionsApi,
+}: {
+  api: SetupApi;
+  initial?: Screen;
+  /** the shell's permission states (a Mac) */
+  permissions?: PermissionsApi;
+}) {
   const [screen, setScreen] = useState<Screen>(initial);
   const [serverAvailable, setServerAvailable] = useState(true);
   const [platform, setPlatform] = useState<Platform>("macos");
@@ -219,18 +255,24 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
   // whether this machine runs the second listen (check says): the models step
   // asks for its Hugging Face sign-in only then
   const [secondListen, setSecondListen] = useState<boolean | undefined>(undefined);
-  const go = (dir: 1 | -1) => {
-    const i = ORDER.indexOf(screen);
-    if (dir === -1 && i <= 0) return setScreen("welcome");
-    setScreen(ORDER[i + dir] ?? "starting");
+  const order = orderOf(platform);
+  // the way the user went: a screen with nothing to show passes them on that way
+  const [dir, setDir] = useState<1 | -1>(1);
+  const go = (d: 1 | -1) => {
+    setDir(d);
+    const i = order.indexOf(screen);
+    if (d === -1 && i <= 0) return setScreen("welcome");
+    setScreen(order[i + d] ?? "starting");
   };
-  const step = ORDER.indexOf(screen);
+  const step = order.indexOf(screen);
   const props = { api, step, platform, next: () => go(1), back: () => go(-1) };
   const { t } = useI18n();
   return (
-    <WordsContext.Provider value={platformWords(t, platform)}>
-      {screenOf(screen)}
-    </WordsContext.Provider>
+    <OrderContext.Provider value={order}>
+      <WordsContext.Provider value={platformWords(t, platform)}>
+        {screenOf(screen)}
+      </WordsContext.Provider>
+    </OrderContext.Provider>
   );
 
   function screenOf(screen: Screen) {
@@ -266,6 +308,8 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
         );
       case "check":
         return <Check {...props} onChecked={(r) => setSecondListen(r.second_listen?.runs)} />;
+      case "storage":
+        return <Storage {...props} />;
       case "admin":
         return <Admin {...props} />;
       case "libraries":
@@ -274,6 +318,14 @@ export function SetupWizard({ api, initial = "welcome" }: { api: SetupApi; initi
         return <Models {...props} secondListen={secondListen} />;
       case "plex":
         return <Plex {...props} />;
+      case "permissions":
+        return (
+          <Permissions
+            {...props}
+            permissions={permissions}
+            pass={dir === 1 ? props.next : props.back}
+          />
+        );
       case "install":
         return <Install {...props} />;
       case "starting":
@@ -619,6 +671,184 @@ function Check({
             </div>
           )}
         </>
+      )}
+    </Frame>
+  );
+}
+
+/** The disk a folder is on: the one whose mount point starts its path the longest way. */
+export function diskOf(disks: StorageDisk[], dir: string): StorageDisk | undefined {
+  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const d = norm(dir);
+  let best: StorageDisk | undefined;
+  for (const disk of disks) {
+    const m = norm(disk.mount);
+    const under = m === "" ? d.startsWith("/") : d === m || d.startsWith(`${m}/`);
+    if (under && (!best || norm(best.mount).length < m.length)) best = disk;
+  }
+  return best;
+}
+
+/** Where Maktaba keeps its data (the database, backups, models, caches):
+ * preset to a folder on the disk with the most room; another disk, or a
+ * folder typed in. A disk too small or not fit for it blocks Next. Below,
+ * the backups: their folder (empty: beside the data), and whether and when
+ * the nightly one runs. */
+function Storage({ api, step, platform, next, back }: StepProps) {
+  const { t } = useI18n();
+  const words = platformWords(t, platform);
+  const [res, setRes] = useState<StorageChoice | null>(null);
+  const [loadError, setLoadError] = useState<StepError | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [dir, setDir] = useState("");
+  const [backupsDir, setBackupsDir] = useState("");
+  const [nightly, setNightly] = useState(true);
+  const [hour, setHour] = useState(3);
+  const s = useStep(api);
+  useEffect(() => {
+    let alive = true;
+    setLoadError(null);
+    api
+      .runStep<StorageChoice>("storage", { check_only: true })
+      .then((r) => {
+        if (!alive) return;
+        setRes(r);
+        setDir(r.suggested || r.current);
+        if (r.backups) {
+          setBackupsDir(r.backups.dir);
+          setNightly(r.backups.nightly);
+          setHour(r.backups.hour);
+        }
+      })
+      .catch((e) => alive && setLoadError(asError(e)));
+    return () => {
+      alive = false;
+    };
+  }, [api, attempt]);
+  const disks = res?.disks ?? [];
+  const chosen = dir.trim();
+  const disk = chosen ? diskOf(disks, chosen) : undefined;
+  // what the app can tell before the step does (the step checks again)
+  const tooSmall = !!res && !!disk && disk.free_bytes < res.need_bytes;
+  const unfit = !!disk && !disk.suitable;
+  const small = !!res && !!disk && !tooSmall && disk.free_bytes < res.comfortable_bytes;
+  const blocked = !chosen || tooSmall || unfit;
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (blocked) return;
+    // a step that does not say how backups are set takes no backup settings
+    const backups = res?.backups ? { backups_dir: backupsDir.trim(), nightly, hour } : {};
+    if (await s.run("storage", { data_dir: chosen, ...backups })) next();
+  };
+  return (
+    <Frame
+      title={t("setup.storage.title")}
+      step={step}
+      error={loadError ?? s.formError}
+      onBack={back}
+      next={
+        loadError ? (
+          <Button type="button" onClick={() => setAttempt((n) => n + 1)}>
+            {t("common.retry")}
+          </Button>
+        ) : undefined
+      }
+    >
+      {!res && !loadError && <p role="status">{t("setup.storage.reading", words)}</p>}
+      {res && (
+        <form className="mkt-setup__form" onSubmit={submit}>
+          <p>{t("setup.storage.intro", words)}</p>
+          <fieldset className="mkt-setup__radios">
+            <legend className="mk-field__label">{t("setup.storage.disks")}</legend>
+            {disks.map((d) => (
+              <label key={d.mount}>
+                <input
+                  type="radio"
+                  name="setup-storage-disk"
+                  checked={disk?.mount === d.mount}
+                  disabled={!d.suitable}
+                  onChange={() => setDir(d.suggested_dir)}
+                />{" "}
+                <bdi>{d.name || d.mount}</bdi>{" "}
+                <span className="mkt-setup__note" dir="ltr">
+                  {t("setup.storage.free", {
+                    free: formatBytes(d.free_bytes),
+                    total: formatBytes(d.total_bytes),
+                  })}
+                </span>
+                {!d.suitable && (
+                  <span className="mkt-setup__note"> {diskProblem(t, d.problem)}</span>
+                )}
+              </label>
+            ))}
+          </fieldset>
+          <Input
+            label={t("setup.storage.folder")}
+            description={t("setup.storage.folderNote")}
+            dir="ltr"
+            spellCheck={false}
+            autoComplete="off"
+            value={dir}
+            onChange={(e) => setDir(e.target.value)}
+            error={s.fieldError("data_dir")}
+            required
+          />
+          {disk && tooSmall && (
+            <p className="mkt-setup__warn" role="alert">
+              {t("setup.storage.tooSmall", {
+                free: formatBytes(disk.free_bytes),
+                need: formatBytes(res.need_bytes),
+              })}
+            </p>
+          )}
+          {disk && unfit && !tooSmall && (
+            <p className="mkt-setup__warn" role="alert">
+              {diskProblem(t, disk.problem)}
+            </p>
+          )}
+          {disk && small && (
+            <p className="mkt-setup__warn">
+              {t("setup.storage.small", {
+                free: formatBytes(disk.free_bytes),
+                comfortable: formatBytes(res.comfortable_bytes),
+              })}
+            </p>
+          )}
+          {res.backups && (
+            <fieldset className="mkt-setup__radios">
+              <legend className="mk-field__label">{t("setup.storage.backups")}</legend>
+              <Input
+                label={t("setup.storage.backupsDir")}
+                description={t("setup.storage.backupsDirNote")}
+                dir="ltr"
+                spellCheck={false}
+                autoComplete="off"
+                value={backupsDir}
+                onChange={(e) => setBackupsDir(e.target.value)}
+                error={s.fieldError("backups_dir")}
+              />
+              <Toggle
+                label={t("setup.storage.nightly")}
+                checked={nightly}
+                onChange={(e) => setNightly(e.target.checked)}
+              />
+              <Select
+                label={t("setup.storage.hour")}
+                description={t("setup.storage.hourNote", words)}
+                dir="ltr"
+                value={String(hour)}
+                disabled={!nightly}
+                onChange={(e) => setHour(Number(e.target.value))}
+                options={HOURS.map((h) => ({ value: String(h), label: hourLabel(h) }))}
+              />
+            </fieldset>
+          )}
+          <div className="mkt-setup__actions">
+            <Button type="submit" loading={s.busy} disabled={blocked}>
+              {t("setup.next")}
+            </Button>
+          </div>
+        </form>
       )}
     </Frame>
   );
@@ -981,6 +1211,50 @@ function Plex({ api, step, next, back }: StepProps) {
           {t("setup.plex.signIn")}
         </Button>
       )}
+    </Frame>
+  );
+}
+
+/** What macOS keeps until the user allows it, before the server first starts:
+ * each item's why, state, its System Settings pane and the steps, checked again
+ * when the window comes back. Nothing to show (not a Mac, an older shell): the
+ * screen passes the user on. */
+function Permissions({
+  step,
+  next,
+  back,
+  pass,
+  permissions,
+}: StepProps & { permissions: PermissionsApi; pass: () => void }) {
+  const { t } = useI18n();
+  const { report, failed, refresh } = usePermissions(permissions);
+  const passRef = useRef(pass);
+  passRef.current = pass;
+  const empty = failed || (report !== null && report.items.length === 0);
+  useEffect(() => {
+    if (empty) passRef.current();
+  }, [empty]);
+  if (!report || empty) return null;
+  return (
+    <Frame
+      title={t("perm.title")}
+      step={step}
+      onBack={back}
+      next={
+        <Button
+          type="button"
+          onClick={() => {
+            // shown: the reminder later says only what is still off
+            permissions.markSeen().catch(() => {});
+            next();
+          }}
+        >
+          {t("setup.next")}
+        </Button>
+      }
+    >
+      <PermissionList report={report} api={permissions} onRecheck={refresh} />
+      <p className="mkt-setup__note">{t("perm.setupLater")}</p>
     </Frame>
   );
 }

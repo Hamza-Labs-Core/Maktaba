@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The permissions walkthrough (tv/permissions), in its own file beside the app's strings.
+     English and Arabic (values-ar), with the web's terms (web/src/i18n). -->
+<resources>
+    <string name="tv_perm_title">Before you start</string>
+    <string name="tv_perm_intro">Maktaba needs your permission for these. Each one says why, and you can change it later in the TV\'s settings.</string>
+    <string name="tv_perm_local_network">Local network</string>
+    <string name="tv_perm_local_network_why">To find your home on this network and play from it.</string>
+    <string name="tv_perm_local_network_without">Without it, only a home\'s internet address works.</string>
+    <string name="tv_perm_required">Required</string>
+    <string name="tv_perm_optional">Optional</string>
+    <string name="tv_perm_state_granted">Allowed</string>
+    <string name="tv_perm_state_denied">Not allowed</string>
+    <string name="tv_perm_state_denied_permanently">Not allowed, and Android will not ask again</string>
+    <string name="tv_perm_state_not_asked">Not asked yet</string>
+    <string name="tv_perm_state_not_applicable">Not needed on this Android version</string>
+    <string name="tv_perm_settings_hint">Turn it on in Settings: Apps, Maktaba, Permissions, Nearby devices, then Allow.</string>
+    <string name="tv_perm_allow">Allow</string>
+    <string name="tv_perm_open_settings">Open settings</string>
+    <string name="tv_perm_continue">Continue</string>
+    <string name="tv_perm_not_now">Not now</string>
+    <string name="tv_perm_again">This screen comes back each time you return to the app until the required permissions are allowed.</string>
+    <string name="tv_perm_help">More in Maktaba\'s help on your home: The Android TV app, Permissions.</string>
+</resources>

@@ -8,6 +8,8 @@
 //                 density comfortable/compact (persisted)
 //   Privacy     — tracking switch, recent history, activity timeline (29.4)
 //   Advanced    — Experiments: beta cohorts the user may join (16.6)
+//   Storage & discovery — server.toml's path map, roots, mdns, addresses,
+//                 public URLs and a restart (admins; Epic 45)
 //   Subscription — the plan, users against seats, the license, Maktaba
 //                 Cloud (Epic 16; admins manage it, viewers read it)
 //   About       — app version and updates (Epic 28)
@@ -26,6 +28,7 @@ import { HomeNameSettings } from "./Settings/HomeNameSettings";
 import { ExperimentsSection } from "./Settings/ExperimentsSection";
 import { TelemetrySettings } from "./Settings/TelemetrySettings";
 import { SubscriptionSettings } from "./Settings/SubscriptionSettings";
+import { StorageSettings } from "./Settings/StorageSettings";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, downloadBlob, ApiError } from "../lib/api";
@@ -64,6 +67,7 @@ function applyDensity(d: Density) {
 
 export function Settings() {
   const { t } = useI18n();
+  const { user } = useAuth();
   const hasUpdate = updateAvailable(useUpdateStatus());
   return (
     <section className="mkt-page mkt-settings">
@@ -83,6 +87,9 @@ export function Settings() {
         <NavLink to="/settings/models">{t("settings.section.models")}</NavLink>
         <NavLink to="/settings/rules">{t("settings.section.rules")}</NavLink>
         <NavLink to="/settings/advanced">{t("settings.section.advanced")}</NavLink>
+        {user?.is_admin && (
+          <NavLink to="/settings/storage">{t("settings.section.storage")}</NavLink>
+        )}
         <NavLink to="/settings/subscription">{t("settings.section.subscription")}</NavLink>
         <NavLink
           to="/settings/about"
@@ -108,6 +115,7 @@ export function Settings() {
         <Route path="models" element={<ModelsSection />} />
         <Route path="rules" element={<RulesSection />} />
         <Route path="advanced" element={<AdvancedTab />} />
+        <Route path="storage" element={<StorageSettings />} />
         <Route path="subscription" element={<SubscriptionSettings />} />
         <Route path="about" element={<AboutTab />} />
         {/* an unknown tab (/settings/nope) opens Account instead of an empty panel */}

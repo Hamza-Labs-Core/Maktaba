@@ -70,13 +70,20 @@ func TestDriverRolloutTakesBackAMachine(t *testing.T) {
 	b := r.node(t, "n2", "bravo", "linux-amd64", "1.4.0")
 	r.cluster.offline["n2"] = true
 	_, _ = r.f.svc.Tick(ctx)
-	r.stepN(40)
+	// only the steps it takes (the unit tier's time cap)
+	r.stepUntil(40, func() bool {
+		run, _ := r.f.store.ActiveRun(ctx)
+		return run != nil && run.Step == StepWaitingClick &&
+			targetsByName(t, r.f.store, run.ID)["bravo"].State == TargetOffline
+	})
 	run := r.active(t)
 	if ts := targetsByName(t, r.f.store, run.ID); run.Step != StepWaitingClick || ts["bravo"].State != TargetOffline {
 		t.Fatalf("run %s/%s bravo %s", run.State, run.Step, ts["bravo"].State)
 	}
 	r.cluster.offline["n2"] = false
-	r.stepN(20)
+	r.stepUntil(20, func() bool {
+		return targetsByName(t, r.f.store, run.ID)["bravo"].State == TargetHealthy && b.version == "1.5.0"
+	})
 	if ts := targetsByName(t, r.f.store, run.ID); ts["bravo"].State != TargetHealthy || b.version != "1.5.0" {
 		t.Fatalf("bravo %s on %s", ts["bravo"].State, b.version)
 	}

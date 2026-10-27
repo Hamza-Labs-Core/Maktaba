@@ -798,6 +798,16 @@ func (h *Handler) CookieAuth(next http.Handler) http.Handler {
 			Source:             principal.SourceCookie,
 			MustChangePassword: u.MustChangePassword,
 		}
+		// a viewer's session reads the libraries they are granted now, as a
+		// token's lib[] does at its mint (without it the web showed a viewer
+		// no library at all); when they cannot be read the session counts for
+		// nothing
+		libs, err := h.librariesFor(r.Context(), u)
+		if err != nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		p.Libraries = libs
 		if h.Cloud != nil && h.Cloud.Store != nil {
 			// a session a cloud sign-in made carries its link's scope; when
 			// that cannot be read the session counts for nothing

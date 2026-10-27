@@ -131,6 +131,9 @@ func buildPlacement() placement.Table {
 		// story 35.9: the home's half of delegation
 		"/api/cluster/delegate/introspect",
 		"/api/cluster/delegate/signout",
+		// Epic 45: the home rows read the caller's playback and pins (viewing data;
+		// /api/libraries/summary and /hub are home by their prefix)
+		"/api/home",
 	))
 	// every write of an `any` family, and the reads that need the home
 	add([]placement.Rule{
@@ -146,6 +149,8 @@ func buildPlacement() placement.Table {
 		"/api/issues", "/api/recommendations", "/api/notifications", "/api/devices",
 		"/api/watch/", "/api/activity", "/api/entitlements", "/api/pairing/",
 		"/api/stream/", "/graphql", "/ws/",
+		// the home's server.toml and its restart (Epic 45 story 45.3)
+		"/api/server/",
 	))
 	return t
 }

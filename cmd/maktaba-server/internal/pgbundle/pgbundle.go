@@ -53,6 +53,11 @@ type Bundle struct {
 	LAN          bool
 	TLS          bool
 	MachinesFrom string
+	// Nightly and Room are [backups]' schedule and the room a dump leaves (nil: the
+	// defaults); LastNightly records when the last scheduled dump was taken ("": none).
+	Nightly     *NightlyPolicy
+	Room        *RoomPolicy
+	LastNightly string
 }
 
 // Resolve reports whether this install runs the bundled Postgres, and where.
@@ -89,14 +94,19 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 		port = DefaultPort
 	}
 	root := cfg.StateDir()
+	bk := cfg.Backups
 	return Bundle{
 		Home:    home,
 		Data:    filepath.Join(root, "postgres"),
 		Keys:    config.KeysDir(),
-		Backups: filepath.Join(root, "backups"),
-		Port:    port,
-		LAN:     !strings.EqualFold(strings.TrimSpace(cfg.Postgres.Listen), "loopback"),
-		TLS:     !strings.EqualFold(strings.TrimSpace(cfg.Postgres.TLS), "off"),
+		Backups: cfg.BackupsDir(filepath.Join(root, "backups")),
+		Nightly: &NightlyPolicy{Off: !bk.NightlyOn(), EveryDays: bk.EveryDaysOr(), Hour: bk.HourOr(), Keep: bk.KeepOr()},
+		Room: &RoomPolicy{ReserveShare: bk.ReserveShare(), ReserveMin: bk.ReserveMinBytes(),
+			MaxShare: bk.MaxShare()},
+		LastNightly: filepath.Join(root, "state", "last-nightly-backup"),
+		Port:        port,
+		LAN:         !strings.EqualFold(strings.TrimSpace(cfg.Postgres.Listen), "loopback"),
+		TLS:         !strings.EqualFold(strings.TrimSpace(cfg.Postgres.TLS), "off"),
 		// the networks the machines connect from
 		MachinesFrom: cfg.Postgres.MachinesFrom,
 	}, true, nil

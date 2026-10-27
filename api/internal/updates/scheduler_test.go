@@ -89,8 +89,10 @@ func TestSchedulerBlockers(t *testing.T) {
 	t.Parallel()
 	enableAutoInstall(t)
 	ctx := context.Background()
+	// each case has its own fixture: they run side by side (the unit tier's time cap)
 
 	t.Run("tv change in flight", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t, sqliteDB(t))
 		seed(t, f.store, rel("1.5.0"))
 		if _, err := f.db.Exec(`INSERT INTO tv_changes (id, number, state, kinds) VALUES ('c1', 1, 'swapping', '["binary"]')`); err != nil {
@@ -106,6 +108,7 @@ func TestSchedulerBlockers(t *testing.T) {
 	})
 
 	t.Run("crashed role", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t, sqliteDB(t))
 		seed(t, f.store, rel("1.5.0"))
 		snap := map[string]any{
@@ -141,6 +144,7 @@ func TestSchedulerBlockers(t *testing.T) {
 	})
 
 	t.Run("deferral", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t, sqliteDB(t))
 		seed(t, f.store, rel("1.5.0"))
 		until := f.now.Add(48 * time.Hour).UTC().Format(time.RFC3339)
@@ -157,6 +161,7 @@ func TestSchedulerBlockers(t *testing.T) {
 	})
 
 	t.Run("outside the window", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t, sqliteDB(t))
 		seed(t, f.store, rel("1.5.0"))
 		f.now = time.Date(2026, 10, 22, 4, 40, 0, 0, f.loc) // inside the last 30 minutes
@@ -166,6 +171,7 @@ func TestSchedulerBlockers(t *testing.T) {
 	})
 
 	t.Run("contract release held and notified once", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t, sqliteDB(t))
 		seed(t, f.store, rel("2.0.0", contract))
 		for i := 0; i < 2; i++ {
@@ -188,6 +194,7 @@ func TestSchedulerBlockers(t *testing.T) {
 	})
 
 	t.Run("supervisor without an orchestrator fails the run", func(t *testing.T) {
+		t.Parallel()
 		f := newFixture(t, sqliteDB(t))
 		seed(t, f.store, rel("1.5.0"))
 		f.svc.Starter = &Driver{Store: f.store, Svc: f.svc, Home: &SupervisorClient{BaseURL: ""}}

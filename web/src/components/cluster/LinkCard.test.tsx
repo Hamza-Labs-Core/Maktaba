@@ -39,6 +39,32 @@ describe("LinkCard", () => {
     expect(screen.getByRole("link")).toHaveAttribute("href", "/api/cluster/ca.crt");
   });
 
+  it("says, while the link is required, which machine's database login keeps its password", () => {
+    const nodes = [
+      { id: "n1", name: "studio" },
+      { id: "n2", name: "lounge" },
+    ] as ClusterNode[];
+    const later = new Date(Date.now() + 86_400_000 * 20).toISOString();
+    render(
+      <I18nProvider>
+        <LinkCard
+          link={{
+            ...link,
+            mode: "require",
+            nodes: {
+              n1: { connected: true, has_cert: true, cert_not_after: later, db_cert: true },
+              n2: { connected: true, has_cert: true, cert_not_after: later },
+            },
+          }}
+          nodes={nodes}
+        />
+      </I18nProvider>
+    );
+    const said = screen.getAllByText(/database login still uses its password alone/);
+    expect(said).toHaveLength(1);
+    expect(said[0].closest("li")).toHaveTextContent("lounge");
+  });
+
   it("groups a fingerprint in pairs", () => {
     expect(fingerprint("0a1b2c")).toBe("0A:1B:2C");
   });

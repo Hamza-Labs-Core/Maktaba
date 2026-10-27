@@ -73,14 +73,18 @@ afterEach(() => {
 });
 
 describe("App routes (test-cases/app-shell.md)", () => {
-  it("SHL-01: / redirects to /library and Back does not land on / again", async () => {
+  it("SHL-01: / is Home (Epic 45), and only Home is current there", async () => {
     signedIn = true;
     window.history.replaceState({}, "", "/elsewhere-before");
     open("/");
     expect(
-      await screen.findAllByRole("link", { name: en["nav.library"], current: "page" })
+      await screen.findAllByRole("link", { name: en["nav.home"], current: "page" })
     ).toHaveLength(2); // sidebar + tab bar
-    expect(window.location.pathname).toBe("/library");
+    expect(await screen.findByRole("heading", { level: 1, name: en["home.title"] })).toBeVisible();
+    expect(window.location.pathname).toBe("/");
+    expect(
+      screen.queryAllByRole("link", { name: en["nav.libraries"], current: "page" })
+    ).toHaveLength(0);
     await browserBack();
     expect(window.location.pathname).toBe("/elsewhere-before");
   });

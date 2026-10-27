@@ -64,6 +64,12 @@ type Handler struct {
 	Now  func() time.Time
 	// Rules overrides rules.system_health (tests); nil reads app_settings.
 	Rules *Rules
+	// ReadDir lists a library folder (host access); nil opens it and reads
+	// one name. Stat answers whether a path exists; nil os.Stat.
+	ReadDir func(path string) error
+	Stat    func(path string) error
+
+	probes probes // the folders' reads in flight (host access)
 
 	mu       sync.Mutex // guards cached / cachedAt
 	cached   *Report

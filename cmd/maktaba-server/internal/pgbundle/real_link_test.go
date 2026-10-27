@@ -63,9 +63,11 @@ func lanIP(t *testing.T) string {
 }
 
 // TestRealPostgresClientCertificates (story 35.16 TC9): once the cluster link is
-// required, a machine's role logs in to the home's Postgres only with its certificate
-// from the cluster CA, whose CN is that role: a stolen password alone, or another
-// machine's certificate, is refused.
+// required, the role of a machine that presents its certificate (Reach.CertRoles) logs in
+// to the home's Postgres only with its certificate from the cluster CA, whose CN is that
+// role: a stolen password alone, or another machine's certificate, is refused. A machine
+// that does not present one (an older release) still logs in with its password: requiring
+// the link does not cut it off its database.
 func TestRealPostgresClientCertificates(t *testing.T) {
 	home := linkPGHome(t)
 	if os.Geteuid() == 0 {
@@ -121,8 +123,11 @@ func TestRealPostgresClientCertificates(t *testing.T) {
 	if err := b.Prepare(ctx, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	// a machine is approved and the link is required: the reach the watcher would keep
-	if err := b.KeepReach(Reach{Open: true, Require: true}); err != nil {
+	const role = "maktaba_node_0b6f3c1e2a4d4e8f9c715d2a8b3e6f10"
+	const older = "maktaba_node_1c7a4d2f3b5e4f90ad826e3b9c4f7a21"
+	// machines are approved and the link is required, one of them presenting its
+	// certificate: the reach the watcher would keep
+	if err := b.KeepReach(Reach{Open: true, Require: true, CertRoles: []string{role}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.writeHBA(); err != nil {
@@ -158,16 +163,17 @@ func TestRealPostgresClientCertificates(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer super.Close()
-	const role = "maktaba_node_0b6f3c1e2a4d4e8f9c715d2a8b3e6f10"
 	// the machines' group (its migration makes it on a real home)
 	if _, err := super.ExecContext(ctx, `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '`+WorkerGroup+
 		`') THEN CREATE ROLE `+WorkerGroup+` NOLOGIN; END IF; END $$`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := super.ExecContext(ctx, `CREATE ROLE `+role+` LOGIN PASSWORD 'node-pass' IN ROLE `+WorkerGroup); err != nil {
-		t.Fatal(err)
+	for _, r := range []string{role, older} {
+		if _, err := super.ExecContext(ctx, `CREATE ROLE `+r+` LOGIN PASSWORD 'node-pass' IN ROLE `+WorkerGroup); err != nil {
+			t.Fatal(err)
+		}
 	}
-	login := func(cert, key string) error {
+	loginAs := func(role, cert, key string) error {
 		q := url.Values{"sslmode": {"require"}, "connect_timeout": {"5"}}
 		if cert != "" {
 			q.Set("sslcert", filepath.ToSlash(cert))
@@ -182,6 +188,7 @@ func TestRealPostgresClientCertificates(t *testing.T) {
 		defer db.Close()
 		return db.PingContext(ctx)
 	}
+	login := func(cert, key string) error { return loginAs(role, cert, key) }
 	cert, key := clientCert(role)
 	if err := login(cert, key); err != nil {
 		t.Fatalf("the machine with its certificate: %v", err)
@@ -192,5 +199,9 @@ func TestRealPostgresClientCertificates(t *testing.T) {
 	other, okey := clientCert("maktaba_node_ffffffffffffffffffffffffffffffff")
 	if err := login(other, okey); err == nil {
 		t.Fatal("another machine's certificate was let in")
+	}
+	// the machine that does not present its certificate: its password, over TLS
+	if err := loginAs(older, "", ""); err != nil {
+		t.Fatalf("a machine that does not present its certificate was cut off: %v", err)
 	}
 }

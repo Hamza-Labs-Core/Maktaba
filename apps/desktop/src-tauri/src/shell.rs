@@ -2023,6 +2023,11 @@ pub fn finish_setup(
     Ok(agent::login_item())
 }
 
+/// This app runs the server (its saved mode): the permissions reminder shows only then.
+pub fn server_mode(app: &AppHandle) -> bool {
+    matches!(shell(app).mode(), Some(AppMode::Server { .. }))
+}
+
 #[tauri::command(async)]
 pub fn open_login_items(app: AppHandle) {
     // Windows: this turns the task on and starts the server, a Resume

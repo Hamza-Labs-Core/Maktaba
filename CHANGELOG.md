@@ -12,6 +12,52 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Backup settings (Epic 36 story 36.16).** Where the library database's dumps go, the schedule
+  (on/off, daily, weekly or every N days, the hour), how many scheduled and pre-update dumps stay,
+  the pre-update dump on/off, and the room the dumps leave on their disk (5% / 2 GB / a fifth by
+  default) are `[backups]` in server.toml, changed from **Settings → Storage & discovery →
+  Backups of the library database** (which also lists and deletes dumps), setup's storage screen,
+  or `maktaba-server backups show|set|delete`. Moving the folder asks whether to move the dumps.
+  The time of the last scheduled dump is recorded apart, so moving or deleting dumps never makes
+  an extra one. API: `GET/PUT /api/server/backups`, `DELETE /api/server/backups/dumps/{name}`
+  (admin only, audited).
+- **Maktaba's data on another disk (Epic 36 story 36.15).** First-time setup has a **Where
+  Maktaba keeps its data** screen (the disks with their free space, the roomiest one offered, a
+  warning when it is small) that sets `[server] data_dir` before anything is made. Later,
+  `maktaba-server storage show` and `maktaba-server storage move <dir> [--dry-run]` (Maktaba
+  stopped), or **Settings → Storage & discovery → Move to another disk** (admins; the server stops,
+  copies, verifies and starts again), copy the database, backups, models and caches to another
+  local disk, verify the copy (the database starts on it), point server.toml there and keep the
+  old folders as `*.moved-<stamp>`. A cut-short move resumes. A start whose chosen disk is not
+  connected waits and says so (`storage_waiting`) and never makes a new empty database in its
+  place. API: `GET /api/server/storage`, `GET /api/server/storage/disks`,
+  `POST /api/server/storage/check`, `POST /api/server/storage/move` (admin only, audited).
+- **Libraries you can manage, browse and pin (Epic 45).** A **Home** page (`/`) across the
+  libraries you may see: Continue Watching, Recently Added, Recently Watched, Live TV on now,
+  and a row per pinned library. **Libraries** (`/library`) shows each library as a card with
+  its posters and count; a library's page has an Overview (Continue Watching, Recently Added,
+  Recently Watched, Most Watched, Series, By year) and a Browse grid that sorts by date added,
+  date published, title, length or plays and filters by year, watched and language
+  (`/api/videos` gains `sort=published_at|duration_sec|plays`, `order`, `year`, `watched`,
+  `series`). Pin libraries to keep them in the sidebar, in your own order (stored per user on
+  the server, slot 0159 `user_library_pins`). New API: `GET /api/home`,
+  `GET /api/libraries/summary`, `GET /api/libraries/{id}/hub`,
+  `GET/PUT /api/me/pinned-libraries`; every row and count is the caller's libraries only.
+- **Manage libraries** (`/admin/libraries`, admins): every library with its folders (and
+  whether this computer reaches them), counts, last scan and a live scan; add a library with a
+  folder picker that browses the server's disk; rename, change folders, empty trash (the
+  videos whose files are gone), merge into another library, and remove (files on disk are
+  never touched), each confirmed with what it takes along. Folders that two libraries share
+  are listed with a one-click merge into the library that holds the videos. New API:
+  `GET /api/libraries/manage`, `GET /api/libraries/folders`, `GET /api/libraries/{id}/impact`,
+  `POST /api/libraries/{id}/merge`, `POST /api/libraries/{id}/empty-trash`.
+- **Settings → Storage & discovery** (admins): the path map, media folders, LAN discovery,
+  the listen addresses and public URLs that lived only in `server.toml`, checked before they
+  are saved, written by the server (every other key kept), and applied by a restart started
+  from the page; a table shows each library folder and where this computer finds it. New API:
+  `GET/PUT /api/server/settings`, `POST /api/server/restart` (slot 0160: the `server` audit
+  category); the supervisor's loopback admin gains `/config/`.
+
 - **Usage analytics, opt-in.** The web app asks once per device, "Help improve Maktaba",
   listing what is shared (the app's version, OS and language, the library's size as a
   range, how often each area is used, error reports without paths) and what never is (file
@@ -429,6 +475,13 @@ don't append a line here; docs-only PRs are exempt.
   longer raise `UnicodeEncodeError`.
 
 ### Fixed
+
+- **A viewer's web session now sees the libraries they are granted.** The session cookie's
+  sign-in carried no library grants, so a non-admin user saw no library at all in the web app
+  (the apps' tokens were right).
+- **A library folder entered as the database stores it is found through the path map.**
+  Adding `/Volumes/Originals/...` on a Mac that mounts the share elsewhere was refused as
+  `not-found`.
 
 - **Indexing for search is about 3 to 5 times faster again.** Chroma, by default,
   rewrites its whole index to disk every 1000 vectors: on the home Mac's 12 million

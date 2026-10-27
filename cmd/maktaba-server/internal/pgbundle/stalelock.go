@@ -38,3 +38,20 @@ func isPostgres(name string) bool {
 	base := strings.ToLower(filepath.Base(name))
 	return base == "postgres" || base == "postgres.exe" || strings.HasPrefix(base, "postgres:")
 }
+
+// Running reports whether a postmaster of this cluster runs: its postmaster.pid
+// names a live process that is a postgres (or one this system cannot name). A
+// storage move copies the cluster only while none does.
+func (b Bundle) Running() bool {
+	raw, err := os.ReadFile(filepath.Join(b.Data, "postmaster.pid"))
+	if err != nil {
+		return false
+	}
+	first, _, _ := strings.Cut(string(raw), "\n")
+	pid, err := strconv.Atoi(strings.TrimSpace(first))
+	if err != nil || pid <= 0 {
+		return false
+	}
+	name, alive := processName(pid)
+	return alive && (name == "" || isPostgres(name))
+}

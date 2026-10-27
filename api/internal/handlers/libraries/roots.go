@@ -165,7 +165,7 @@ func CheckRootsOverlapV2(
 					Type:   "https://maktaba.dev/problems/library-roots-overlap",
 					Title:  "library roots overlap",
 					Status: http.StatusUnprocessableEntity,
-					Detail: p + " overlaps existing library root " + existing,
+					Detail: overlapDetail(p, existing),
 				}
 			}
 		}

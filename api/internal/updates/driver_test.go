@@ -424,6 +424,7 @@ func TestDriverFailurePolicies(t *testing.T) {
 		{FailureContinue, RunDoneFailures, TargetHealthy, TargetHealthy, 3},
 	} {
 		t.Run(tc.policy, func(t *testing.T) {
+			t.Parallel() // each its own rig: side by side (the unit tier's time cap)
 			r := newDriverRig(t)
 			ctx := context.Background()
 			a := r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")

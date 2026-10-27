@@ -96,6 +96,11 @@ type UpdateState struct {
 	// HomeDB is whether this machine logs in to its home's database: the home re-makes
 	// its access when it cannot (its role refused, the database moved), and shows why.
 	HomeDB *HomeDB `json:"home_db,omitempty"`
+	// DBClientCert: every process of this machine presents its cluster certificate to the
+	// home's database (supervisor.PresentsClientCert). Only then does the home, once the
+	// cluster link is required, ask this machine's role for it (an older release says
+	// nothing: its role keeps its password alone, never cut off).
+	DBClientCert bool `json:"db_client_cert,omitempty"`
 }
 
 // HomeDB is a machine's login to its home's database, as it last tried it.
@@ -128,7 +133,7 @@ type HomeDB struct {
 // AccessAnswer is the home's answer to this machine's request for its database access: ok
 // (the access was made again and sent), else why not, with its code (the home's
 // cluster.AccessError codes: not_approved, unknown, cannot_create_roles, cannot_alter_role,
-// no_worker_group, term, database_ca, rate_limited, not_taken, other).
+// no_worker_group, term, database_ca, rate_limited, not_taken, not_mendable, other).
 type AccessAnswer struct {
 	OK     bool      `json:"ok"`
 	Code   string    `json:"code,omitempty"`

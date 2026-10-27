@@ -2,7 +2,9 @@
 // (`allow-<command>`), so a capability grants exactly the commands it
 // lists. capabilities/default.json (the bundled pages) gets them all;
 // capabilities/local-server.json (this Mac's server's web app, Epic 36)
-// gets only app_version — never the setup commands.
+// gets only app_version and the permissions walkthrough's read-only grant
+// states, its allow-listed System Settings panes and its "seen" flag —
+// never the setup commands.
 const COMMANDS: &[&str] = &[
     "app_version",
     "discover_servers",
@@ -14,6 +16,9 @@ const COMMANDS: &[&str] = &[
     "open_local_server",
     "use_remote_server",
     "open_external",
+    "host_permissions",
+    "open_privacy_pane",
+    "permissions_seen",
 ];
 
 fn main() {

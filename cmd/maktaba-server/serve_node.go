@@ -134,6 +134,7 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 				u.agentState(&st)
 			}
 			st.HomeDB = ns.homeDB.State()
+			st.DBClientCert = supervisor.PresentsClientCert(supervisor.NodeConfig())
 			return st
 		},
 		// the home's switch to another machine (serve_switchover.go)

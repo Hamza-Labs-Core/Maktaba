@@ -119,6 +119,13 @@ type Config struct {
 	// machine's plain session is cert-only while the link is required (one that never got
 	// one — a worker-only machine, an older release — keeps its channel); nil: none does.
 	HasCert func(ctx context.Context, nodeID string) bool
+	// DBClientCert keeps a machine's word, from its machine agent's update.state
+	// (db_client_cert), on whether every one of its processes presents its cluster
+	// certificate to this home's database: once the link is required the home's Postgres
+	// asks only such a machine's role for it (pgbundle Reach.CertRoles), so requiring the
+	// link never cuts a machine off its database. Called when a session first says it and
+	// when it changes; nil: not kept.
+	DBClientCert func(ctx context.Context, nodeID string, presents bool) error
 
 	Now    func() time.Time
 	Logger *slog.Logger

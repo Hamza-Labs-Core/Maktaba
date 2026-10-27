@@ -44,6 +44,8 @@ targetTemplates:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
+        # browsed by HomeBrowser and by the permissions walkthrough's Local Network check
+        NSBonjourServices: ["_maktaba._tcp"]
   IOSApp:
     templates: [App]
     platform: iOS
@@ -155,6 +157,26 @@ targets:
     info:
       path: Remote/Info-iPad.plist
 
+  # ---- the permissions walkthrough's UI tests on iPhone (UITests/) ----------------------
+  Maktaba Player UITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies: [{ target: Maktaba Player }]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.uitests
+        TEST_TARGET_NAME: Maktaba Player
+  Maktaba Remote UITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies: [{ target: Maktaba Remote }]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote.uitests
+        TEST_TARGET_NAME: Maktaba Remote
+
   # ---- Maktaba TV: Apple TV (Epic 14). Its sources stay with the other TV app in apps/tv. -
   Maktaba TV:
     templates: [App]
@@ -175,7 +197,6 @@ targets:
     info:
       path: ../tv/tvos/MaktabaTV/Info.plist
       properties:
-        NSBonjourServices: ["_maktaba._tcp"]
         UIAppFonts: [Amiri-Bold.ttf, IBMPlexSansArabic-Regular.ttf, IBMPlexSansArabic-Medium.ttf, IBMPlexSansArabic-SemiBold.ttf]
   Maktaba TV UITests:
     type: bundle.ui-testing
@@ -194,6 +215,8 @@ schemes:
     build:
       targets: { Maktaba Player: all }
     run: { config: Debug }
+    test:
+      targets: [Maktaba Player UITests]
     archive: { config: Release }
   Maktaba Player iPad:
     build:
@@ -211,6 +234,8 @@ schemes:
     build:
       targets: { Maktaba Remote: all }
     run: { config: Debug }
+    test:
+      targets: [Maktaba Remote UITests]
     archive: { config: Release }
   Maktaba Remote iPad:
     build:

@@ -16,6 +16,7 @@ import {
 import { PLEX_POLL_MS, SetupWizard, parsePathMap, type Screen } from "./SetupWizard";
 import { PAGE_PATIENCE_MS, STARTING_POLL_MS, ServerStarting } from "./ServerStarting";
 import { DesktopGate } from "../../components/DesktopGate";
+import type { PermissionsApi, PermissionsReport } from "../../lib/macPermissions";
 
 const CHECK = {
   platform: "darwin",
@@ -32,6 +33,60 @@ const CHECK = {
     { role: "pipeline", what: "Indexing, transcription and search" },
   ],
 };
+
+const GB = 2 ** 30;
+const disk = (over: Record<string, unknown>) => ({
+  name: "",
+  fs_type: "apfs",
+  local: true,
+  suitable: true,
+  internal: false,
+  current: false,
+  ...over,
+});
+const STORAGE = {
+  current: "/Users/me/Library/Application Support/Maktaba",
+  default: "/Users/me/Library/Application Support/Maktaba",
+  need_bytes: 20 * GB,
+  comfortable_bytes: 200 * GB,
+  suggested: "/Volumes/Big/Maktaba",
+  disks: [
+    disk({
+      mount: "/",
+      name: "Macintosh HD",
+      free_bytes: 150 * GB,
+      total_bytes: 500 * GB,
+      internal: true,
+      current: true,
+      suggested_dir: "/Users/me/Library/Application Support/Maktaba",
+    }),
+    disk({
+      mount: "/Volumes/Big",
+      name: "Big",
+      free_bytes: 3000 * GB,
+      total_bytes: 4000 * GB,
+      suggested_dir: "/Volumes/Big/Maktaba",
+    }),
+    disk({
+      mount: "/Volumes/Tiny",
+      name: "Tiny",
+      free_bytes: 10 * GB,
+      total_bytes: 16 * GB,
+      suitable: false,
+      problem: "target_too_small",
+      suggested_dir: "/Volumes/Tiny/Maktaba",
+    }),
+  ],
+};
+
+/** The storage step: its check_only answer, and the folder chosen saved. */
+function storageStep(answer = STORAGE) {
+  return vi.fn((input: Record<string, unknown>) =>
+    input.check_only
+      ? answer
+      : { data_dir: input.data_dir, state_dir: `${String(input.data_dir)}/state`, warnings: [] }
+  );
+}
 
 type Handler = (input: Record<string, unknown>, onProgress?: (p: StepProgress) => void) => unknown;
 
@@ -105,7 +160,8 @@ describe("SetupWizard", () => {
     await userEvent.click(screen.getByRole("button", { name: "Set up this Mac" }));
     expect(await screen.findByText("Indexing, transcription and search")).toBeInTheDocument();
     expect(screen.getByText("96.0 GB (needs 16.0 GB)")).toBeInTheDocument();
-    expect(screen.getByText("Step 1 of 6")).toBeInTheDocument();
+    // a Mac asks for its permissions too
+    expect(screen.getByText("Step 1 of 8")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
 
@@ -150,13 +206,18 @@ describe("SetupWizard", () => {
       second_listen: { runs: false, code: "second_listen_gpu_small", params },
       warnings: [{ code: "second_listen_gpu_small", params, message: "en" }],
     });
-    renderWizard(fakeApi({ check, admin, libraries, models }), "check");
+    renderWizard(fakeApi({ check, storage: storageStep(), admin, libraries, models }), "check");
     expect(
       await screen.findByText(
         /RTX 2080 SUPER has 8\.0 GB: the second listen needs a graphics card with 9\.5 GB/
       )
     ).toBeInTheDocument();
-    expect(screen.getByText("Step 1 of 6")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 8")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    // where the data goes: the suggested folder, as it is
+    expect(await screen.findByRole("textbox", { name: /^Folder/ })).toHaveValue(
+      "/Volumes/Big/Maktaba"
+    );
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     const [pw, again] = await screen.findAllByLabelText(/Password/);
     await userEvent.type(pw, "a long passphrase");
@@ -193,6 +254,158 @@ describe("SetupWizard", () => {
       screen.getByText("الفهرسة والتفريغ (2 عمّال) والبحث، والتفريغ على RTX 2080")
     ).toBeInTheDocument();
     document.documentElement.dir = "ltr";
+  });
+
+  describe("storage", () => {
+    it("comes after the check, preselects the suggested folder and saves it", async () => {
+      const storage = storageStep();
+      renderWizard(fakeApi({ check: () => CHECK, storage }), "check");
+      await userEvent.click(await screen.findByRole("button", { name: "Next" }));
+      expect(
+        await screen.findByRole("heading", { name: "Where Maktaba keeps its data" })
+      ).toBeInTheDocument();
+      expect(screen.getByText("Step 2 of 8")).toBeInTheDocument();
+      expect(storage).toHaveBeenCalledWith({ check_only: true }, undefined);
+      expect(await screen.findByRole("textbox", { name: /^Folder/ })).toHaveValue(
+        "/Volumes/Big/Maktaba"
+      );
+      expect(screen.getByRole("radio", { name: /Big/ })).toBeChecked();
+      expect(screen.getByText("2.9 TB free of 3.9 TB")).toBeInTheDocument();
+      // a disk that cannot hold it is not offered
+      expect(screen.getByRole("radio", { name: /Tiny/ })).toBeDisabled();
+      expect(screen.getByText("Too little free space.")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() =>
+        expect(storage).toHaveBeenCalledWith(
+          { data_dir: "/Volumes/Big/Maktaba" },
+          expect.any(Function)
+        )
+      );
+      expect(
+        await screen.findByRole("heading", { name: "Your admin account" })
+      ).toBeInTheDocument();
+      expect(screen.getByText("Step 3 of 8")).toBeInTheDocument();
+    });
+
+    it("warns about a small disk and blocks one too small", async () => {
+      const storage = storageStep();
+      renderWizard(fakeApi({ storage }), "storage");
+      await userEvent.click(await screen.findByRole("radio", { name: /Macintosh HD/ }));
+      expect(screen.getByRole("textbox", { name: /^Folder/ })).toHaveValue(
+        "/Users/me/Library/Application Support/Maktaba"
+      );
+      expect(
+        screen.getByText(/150\.0 GB free is small for a library database plus backups/)
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+      // a folder typed on the small disk: blocked before the step runs
+      const folder = screen.getByRole("textbox", { name: /^Folder/ });
+      await userEvent.clear(folder);
+      await userEvent.type(folder, "/Volumes/Tiny/Maktaba");
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Only 10.0 GB free on that disk: Maktaba needs 20.0 GB."
+      );
+      expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+      expect(storage).toHaveBeenCalledTimes(1);
+    });
+
+    it("says why the step refused the folder", async () => {
+      const storage = vi.fn((input: Record<string, unknown>) => {
+        if (input.check_only) return STORAGE;
+        throw stepError("storage_not_empty", "/Volumes/Big/Maktaba is not empty");
+      });
+      renderWizard(fakeApi({ storage }), "storage");
+      await screen.findByRole("textbox", { name: /^Folder/ });
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "That folder is not empty: choose an empty folder or a new one."
+      );
+      expect(
+        screen.getByRole("heading", { name: "Where Maktaba keeps its data" })
+      ).toBeInTheDocument();
+    });
+
+    const WITH_BACKUPS = {
+      ...STORAGE,
+      backups: {
+        dir: "",
+        nightly: true,
+        every_days: 1,
+        hour: 3,
+        keep: 7,
+        update_keep: 0,
+        pre_update: true,
+        reserve_percent: 5,
+        reserve_min_gb: 2,
+        max_share_percent: 20,
+      },
+    };
+
+    it("sets where the backups go and when the nightly one runs, with the data folder", async () => {
+      const storage = storageStep(WITH_BACKUPS);
+      renderWizard(fakeApi({ storage }), "storage");
+      const backupsDir = await screen.findByRole("textbox", { name: /^Backups folder/ });
+      expect(backupsDir).toHaveValue("");
+      const nightly = screen.getByRole("switch", { name: /every night/ });
+      expect(nightly).toBeChecked();
+      const hour = screen.getByRole("combobox", { name: /^At/ });
+      expect(hour).toHaveValue("3");
+      await userEvent.type(backupsDir, "/Volumes/Backup/Maktaba");
+      await userEvent.selectOptions(hour, "22");
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() =>
+        expect(storage).toHaveBeenCalledWith(
+          {
+            data_dir: "/Volumes/Big/Maktaba",
+            backups_dir: "/Volumes/Backup/Maktaba",
+            nightly: true,
+            hour: 22,
+          },
+          expect.any(Function)
+        )
+      );
+    });
+
+    it("turns the nightly backup off; empty keeps the backups beside the data", async () => {
+      const storage = storageStep(WITH_BACKUPS);
+      renderWizard(fakeApi({ storage }), "storage");
+      await userEvent.click(await screen.findByRole("switch", { name: /every night/ }));
+      expect(screen.getByRole("combobox", { name: /^At/ })).toBeDisabled();
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() =>
+        expect(storage).toHaveBeenCalledWith(
+          { data_dir: "/Volumes/Big/Maktaba", backups_dir: "", nightly: false, hour: 3 },
+          expect.any(Function)
+        )
+      );
+    });
+
+    it("says under the backups folder why the step refused it", async () => {
+      const storage = vi.fn((input: Record<string, unknown>) => {
+        if (input.check_only) return WITH_BACKUPS;
+        throw {
+          ...stepError("storage_backups_unusable", "cannot write there", "backups_dir"),
+          params: { error: "permission denied" },
+        };
+      });
+      renderWizard(fakeApi({ storage }), "storage");
+      const backupsDir = await screen.findByRole("textbox", { name: /^Backups folder/ });
+      await userEvent.type(backupsDir, "/System/Backups");
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() =>
+        expect(backupsDir).toHaveAccessibleDescription(
+          /Maktaba cannot keep its backups in that folder: permission denied/
+        )
+      );
+      expect(
+        screen.getByRole("heading", { name: "Where Maktaba keeps its data" })
+      ).toBeInTheDocument();
+    });
+
+    it("counts the step on Windows too", async () => {
+      renderWizard(fakeApi({ storage: storageStep() }, { platform: "windows" }), "storage");
+      expect(await screen.findByText("Step 2 of 7")).toBeInTheDocument();
+    });
   });
 
   it("admin: a password typo never reaches the server; a weak password lands on its field", async () => {
@@ -326,6 +539,111 @@ describe("SetupWizard", () => {
         expect.any(Function)
       )
     );
+  });
+
+  describe("permissions (a Mac)", () => {
+    const REPORT: PermissionsReport = {
+      platform: "macos",
+      server_mode: false,
+      seen: false,
+      items: [
+        { id: "full_disk_access", required: true, state: "denied", pane: "full_disk_access" },
+        { id: "local_network", required: true, state: "unknown", pane: "local_network" },
+        { id: "login_item", required: true, state: "not_asked", pane: "login_items" },
+        { id: "keep_awake", required: false, state: "granted", pane: "energy" },
+      ],
+    };
+    function perms(r: PermissionsReport | Error = REPORT) {
+      let current = r;
+      const api = {
+        report: vi.fn(async () => {
+          if (current instanceof Error) throw current;
+          return current;
+        }),
+        openPane: vi.fn(async () => {}),
+        markSeen: vi.fn(async () => {}),
+        set(next: PermissionsReport) {
+          current = next;
+        },
+      };
+      return api as typeof api & PermissionsApi;
+    }
+    function renderWith(api: SetupApi, p: PermissionsApi, initial: Screen) {
+      return render(
+        <I18nProvider>
+          <SetupWizard api={api} initial={initial} permissions={p} />
+        </I18nProvider>
+      );
+    }
+
+    it("comes after Plex and before the install, says each item and opens its pane", async () => {
+      const p = perms();
+      const plex = vi.fn(() => ({ linked: false }));
+      renderWith(fakeApi({ plex, venv: () => new Promise(() => {}) }), p, "plex");
+      await userEvent.click(await screen.findByRole("button", { name: "Skip" }));
+      expect(await screen.findByRole("heading", { name: "Permissions" })).toBeInTheDocument();
+      expect(screen.getByText("Step 7 of 8")).toBeInTheDocument();
+      const fda = screen.getByTestId("perm-full_disk_access");
+      expect(within(fda).getByText("Off")).toBeInTheDocument();
+      await userEvent.click(within(fda).getByRole("button", { name: "Open System Settings" }));
+      expect(p.openPane).toHaveBeenCalledWith("full_disk_access");
+      // the login item: turned on by the install
+      expect(
+        within(screen.getByTestId("perm-login_item")).getByText(
+          "Setup turns this on at its last step."
+        )
+      ).toBeInTheDocument();
+      // back from System Settings: checked again
+      p.set({
+        ...REPORT,
+        items: REPORT.items.map((i) =>
+          i.id === "full_disk_access" ? { ...i, state: "granted" as const } : i
+        ),
+      });
+      await act(async () => {
+        window.dispatchEvent(new Event("focus"));
+      });
+      expect(
+        await within(screen.getByTestId("perm-full_disk_access")).findByText("On")
+      ).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect(p.markSeen).toHaveBeenCalled();
+      expect(
+        await screen.findByRole("heading", { name: "Getting Maktaba ready" })
+      ).toBeInTheDocument();
+    });
+
+    it("Back goes to Plex", async () => {
+      renderWith(fakeApi(), perms(), "permissions");
+      await userEvent.click(await screen.findByRole("button", { name: "Back" }));
+      expect(await screen.findByRole("heading", { name: "Plex (optional)" })).toBeInTheDocument();
+    });
+
+    it("a shell that cannot say passes the user on, either way", async () => {
+      const failing = perms(new Error("command host_permissions not found"));
+      const plex = vi.fn(() => ({ linked: false }));
+      renderWith(fakeApi({ plex, venv: () => new Promise(() => {}) }), failing, "plex");
+      await userEvent.click(await screen.findByRole("button", { name: "Skip" }));
+      expect(
+        await screen.findByRole("heading", { name: "Getting Maktaba ready" })
+      ).toBeInTheDocument();
+    });
+
+    it("is not a step on Windows or Linux", async () => {
+      const p = perms();
+      const plex = vi.fn(() => ({ linked: false }));
+      renderWith(
+        fakeApi({ plex, venv: () => new Promise(() => {}) }, { platform: "windows" }),
+        p,
+        "plex"
+      );
+      expect(await screen.findByText("Step 6 of 7")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Skip" }));
+      expect(
+        await screen.findByRole("heading", { name: "Getting Maktaba ready" })
+      ).toBeInTheDocument();
+      expect(p.report).not.toHaveBeenCalled();
+    });
   });
 
   describe("plex", () => {

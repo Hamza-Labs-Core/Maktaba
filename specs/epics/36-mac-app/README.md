@@ -91,6 +91,8 @@ Per-user state, all under **`~/Library/Application Support/Maktaba/`** (`data/`,
 | 36.9 | **Move the home Mac in** | `maktaba-server migrate-from-dev`: stop stack.sh services, `pg_dump` the Docker Postgres → restore into the bundled one, copy `~/.maktaba/{chroma,stream-signing.key,…}` and HF models, carry `MAKTABA_PATH_MAP` and the STT settings into `server.toml`, verify (library count, transcripts, Live TV host check-in), then retire Docker Postgres. Reversible (the Docker volume is kept until confirmed). |
 | 36.10 | **Clean up** | drop the broken Mac compose overlay and stale plists/docs (`docs/wiki/deployment.md` §8–9, legacy `com.maktaba.*.plist`), README "Install on a Mac" → the app; keep `stack.sh` as the developer path only. |
 | 36.11 | **The language model in the app** | see below. |
+| 36.15 | **Where the data lives** | see below. |
+| 36.16 | **Backup settings** | see below. |
 
 ## 36.11 — The language model in the app
 
@@ -127,6 +129,83 @@ state and progress); `GET /llm` on the supervisor's admin port answers 200 when 
 otherwise. The menu bar shows "Language model: ready" or "downloading qwen2.5:7b (42%)". The
 queue-health dependency watcher (Epic 40, `dependency:model:tagcheck`) reads the model server
 from `rules.tagcheck` like the stages do, so it probes the bundled server with no extra wiring.
+
+## 36.15 — Where the data lives (another disk)
+
+The large state (the bundled Postgres, its backups, the models, the caches, the venv, the data
+folder) can live on another local disk, e.g. `/Volumes/Big/Maktaba`, chosen at setup or moved
+later. It is `[server] data_dir`: for any data_dir the owner chose the state root is data_dir
+itself (`Config.StateDir`); server.toml, the keys and the logs stay where they are.
+
+**Setup.** A `storage` screen after `check` (contract-setup.md): the disks with their free space,
+the folder on the suitable disk with the most room offered, a warning under 100 GB free. It writes
+data_dir (and the marker, below) before anything is made in the state root, so nothing has to move
+later; the CLI's terminal setup asks the same.
+
+**The move.** `maktaba-server storage show` (each folder, its size, its disk's free space, the last
+move, the old copies kept) and `maktaba-server storage move <dir> [--dry-run]` with Maktaba stopped
+(it refuses while the supervisor answers, a launcher holds its lock or the cluster's postmaster
+runs). Settings → Storage & discovery (admin only, `/api/server/storage*` proxying the supervisor's
+`/config/storage*`) asks for the same move: the server writes `storage-move-request.json` beside
+server.toml and starts again in-process; before anything runs, the next start does the move while
+`/processes` says `storage_moving` (contract-update.md), then starts from the new place (a refused
+or failed move is recorded in `storage-moved.json` and the install starts where it was).
+
+**Acceptance criteria.**
+1. A target is refused (nothing written) when it is relative, the current folder, inside it or
+   around it, not empty, on a disk that is not local or whose file system Postgres cannot live on
+   (FAT, exFAT, NTFS on a Mac, network shares, tmpfs), or without room for the copy plus a margin
+   (5%, at least 1 GiB); a tight disk (under 20 GiB left) is a warning.
+2. Every folder is copied (never renamed across volumes) under the paths move lock, files through a
+   part file that takes its name once flushed, links made again; the copy is verified (every file
+   with its size, no extra file) and the bundled Postgres must start on the copy before anything
+   changes.
+3. Then server.toml's data_dir is rewritten as text (comments kept), and the old folders are kept as
+   `<folder>.moved-<stamp>`, never deleted (show and the page say how to remove them). `state/` is
+   copied and left in place (the desktop app keeps files of its own there).
+4. A move cut short (journal `storage-move.json`) resumes with the same target and mirrors again
+   (files the server removed meanwhile are dropped from the copy); another target replaces a copy
+   cut short (its partial copy is left, said as `partial_copy_left`) but is refused once server.toml
+   may point at the first; until server.toml is switched the install runs from where it was.
+5. Once chosen, the place is recorded (`storage.json` beside server.toml, a `.maktaba-storage`
+   marker with the same id in the data folder). A start whose marker is missing (an external disk
+   not mounted yet, an empty mount point) waits and says so (`storage_waiting`) and never makes a
+   new database in its place; setup's `status` counts it as set up and `finish` refuses
+   (`storage_missing_disk`).
+6. The API enforces the admin role on every storage route (a role test); a move asked for is
+   audited (`server` / `storage-move-requested`).
+
+## 36.16 — Backup settings
+
+The library database's dumps were fixed in code (backups/ beside the database, a nightly dump from
+03:00, 7 kept, the pre-update dumps by `rules.updates.backups_keep`, `MakeRoom`'s 5% / 2 GiB
+reserve and 1/5 share). They are `[backups]` in server.toml now (the server reads it before its
+database step), every key unset keeping that behaviour: `dir`, `nightly`, `every_days`, `hour`,
+`keep`, `update_keep`, `pre_update`, `reserve_percent`, `reserve_min_gb`, `max_share_percent`.
+
+**Where they are changed.** Settings → Storage & discovery → **Backups of the library database**
+(admin only: `GET/PUT /api/server/backups`, `DELETE /api/server/backups/dumps/{name}`, proxying the
+supervisor's `/config/backups`; kept in `app_settings` too as `rules.backups`, `update_keep` as
+`rules.updates.backups_keep`; audited `backups-changed`, `backup-deleted`), setup's `storage` step
+(`backups_dir`, `nightly`, `hour`), and `maktaba-server backups show|set|delete`. Without a
+launcher, the settings page's restart is serve starting again in-process.
+
+**Acceptance criteria.**
+1. Every value is range-checked (every_days 1–30, hour 0–23, keep 1–365, update_keep 0–50,
+   reserve 0–50% and 0–1000 GB, share 1–100%); a new folder must be a whole path (checked like a
+   storage target), local and suitable, not inside the database's folder, writable, with room.
+2. A new folder while the old one holds dumps asks for a choice (422 `backups.move_dumps` with
+   their count and size): moved (renamed, or copied and checked across disks, with the
+   pre-update keep record) or left (no longer listed, pruned or restored from here).
+3. The scheduled dump follows `nightly`, `every_days` and `hour`; the time of the last one is
+   recorded apart (`<state>/state/last-nightly-backup`), so moving or deleting dumps never makes
+   the next one due early. `keep` prunes the scheduled ones; `update_keep` the pre-update ones.
+4. `pre_update = "off"` takes no dump before an update's migrations and logs that a failed
+   migration then cannot be put back (the page and the command warn).
+5. `MakeRoom` uses the reserve and share settings, the defaults unchanged.
+6. The page lists the dumps (name, kind, size, date, disk) with the disk's free space; a dump is
+   deleted one at a time, never the one an update under way may put back (409).
+7. The API enforces the admin role on every backups route (a role test).
 
 ## Order and parallel tracks
 

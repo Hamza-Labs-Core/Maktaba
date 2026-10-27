@@ -56,13 +56,16 @@ const (
 	KindTVChange      = "tv_change"
 	KindTVSlot        = "tv_slot"
 	KindTVTuner       = "tv_tuner"
+	// KindHostAccess: can the server read the library folders (macOS's
+	// Full Disk Access, a share that is not mounted).
+	KindHostAccess = "host_access"
 )
 
 // Kinds lists every kind (the help coverage test).
 var Kinds = []string{
 	KindAPI, KindPostgres, KindStreaming, KindPipeline, KindProcess, KindWorkers, KindWorker,
 	KindStreamingHost, KindDependency, KindPlexLiveTV, KindQueues, KindTVChannels, KindTVChange,
-	KindTVSlot, KindTVTuner,
+	KindTVSlot, KindTVTuner, KindHostAccess,
 }
 
 // Item is one part of Maktaba on the page.

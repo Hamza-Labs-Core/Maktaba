@@ -45,11 +45,11 @@ beforeEach(() => {
 });
 
 describe("Login (test-cases/login.md)", () => {
-  it("LGN-01: sign in posts the credentials and goes to /library", async () => {
+  it("LGN-01: sign in posts the credentials and goes to Home (/)", async () => {
     renderAuth(["/login"]);
     await signIn();
     expect(post).toHaveBeenCalledWith("/api/auth/login", { username: "amal", password: "secret" });
-    expect(await where()).toHaveTextContent("/library");
+    expect(await where()).toHaveTextContent(/^\/$/);
     expect(screen.queryByLabelText(en["login.username"])).not.toBeInTheDocument();
     expect(screen.getByText("signed in as amal")).toBeInTheDocument();
   });
@@ -79,21 +79,21 @@ describe("Login (test-cases/login.md)", () => {
   });
 
   it.each([["//evil.example/x"], ["https://evil.example"], [42]])(
-    "LGN-07: unsafe state.from %s falls back to /library",
+    "LGN-07: unsafe state.from %s falls back to Home (/)",
     async (from) => {
       renderAuth([{ pathname: "/login", state: { from } }]);
       await signIn();
-      expect(await where()).toHaveTextContent(/^\/library$/);
+      expect(await where()).toHaveTextContent(/^\/$/);
     }
   );
 
-  it("LGN-08: already signed in, /login goes to /library and Back does not return", async () => {
+  it("LGN-08: already signed in, /login goes to Home (/) and Back does not return", async () => {
     get.mockImplementation(publicGet(amal));
     renderAuth(["/register", "/login"]);
-    expect(await where()).toHaveTextContent(/^\/library$/);
+    expect(await where()).toHaveTextContent(/^\/$/);
     expect(screen.queryByLabelText(en["login.username"])).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("button", { name: "go back" }));
-    expect(await where()).toHaveTextContent(/^\/library$/);
+    expect(await where()).toHaveTextContent(/^\/$/);
   });
 
   it("LGN-09: already signed in with state.from goes there", async () => {
@@ -108,7 +108,7 @@ describe("Login (test-cases/login.md)", () => {
     renderAuth(["/login"]);
     expect(await screen.findByLabelText(en["login.username"])).toBeInTheDocument();
     await act(async () => me.resolve({ user: amal }));
-    expect(await where()).toHaveTextContent(/^\/library$/);
+    expect(await where()).toHaveTextContent(/^\/$/);
     expect(screen.getAllByTestId("where")).toHaveLength(1);
   });
 
@@ -162,7 +162,7 @@ describe("Login (test-cases/login.md)", () => {
     await user.type(screen.getByLabelText(en["login.password"]), "{Enter}");
     expect(post).toHaveBeenCalledTimes(1);
     await act(async () => held.resolve({ user: amal }));
-    expect(await where()).toHaveTextContent("/library");
+    expect(await where()).toHaveTextContent(/^\/$/);
   });
 
   it("LGN-17: empty username or password does not submit", async () => {
@@ -220,12 +220,12 @@ describe("Login (test-cases/login.md)", () => {
   });
 
   it("LGN-22: Back after sign-in does not return to /login", async () => {
-    renderAuth(["/register", "/library"]);
+    renderAuth(["/register", "/"]);
     const user = await signIn();
-    expect(await where()).toHaveTextContent(/^\/library$/);
+    expect(await where()).toHaveTextContent(/^\/$/);
     await user.click(screen.getByRole("button", { name: "go back" }));
-    // /register sends a signed-in user on to /library: never the login form
-    expect(await where()).toHaveTextContent(/^\/library$/);
+    // /register sends a signed-in user on to Home: never the login form
+    expect(await where()).toHaveTextContent(/^\/$/);
     expect(screen.queryByLabelText(en["login.username"])).not.toBeInTheDocument();
   });
 

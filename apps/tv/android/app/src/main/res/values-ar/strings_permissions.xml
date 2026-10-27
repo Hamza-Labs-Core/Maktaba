@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- مسار الأذونات (tv/permissions) -->
+<resources>
+    <string name="tv_perm_title">قبل أن تبدأ</string>
+    <string name="tv_perm_intro">يحتاج تطبيق مكتبة إلى إذنك لما يلي. يوضح كل بند السبب، ويمكنك تغييره لاحقًا في إعدادات التلفزيون.</string>
+    <string name="tv_perm_local_network">الشبكة المحلية</string>
+    <string name="tv_perm_local_network_why">للعثور على جهازك الرئيسي على هذه الشبكة والتشغيل منه.</string>
+    <string name="tv_perm_local_network_without">من دونه، يعمل عنوان الجهاز الرئيسي على الإنترنت فقط.</string>
+    <string name="tv_perm_required">مطلوب</string>
+    <string name="tv_perm_optional">اختياري</string>
+    <string name="tv_perm_state_granted">مسموح</string>
+    <string name="tv_perm_state_denied">غير مسموح</string>
+    <string name="tv_perm_state_denied_permanently">غير مسموح، ولن يسأل أندرويد مرة أخرى</string>
+    <string name="tv_perm_state_not_asked">لم يُطلب بعد</string>
+    <string name="tv_perm_state_not_applicable">غير مطلوب في إصدار أندرويد هذا</string>
+    <string name="tv_perm_settings_hint">فعّله من الإعدادات: التطبيقات، مكتبة، الأذونات، الأجهزة المجاورة، ثم السماح.</string>
+    <string name="tv_perm_allow">السماح</string>
+    <string name="tv_perm_open_settings">فتح الإعدادات</string>
+    <string name="tv_perm_continue">متابعة</string>
+    <string name="tv_perm_not_now">ليس الآن</string>
+    <string name="tv_perm_again">تعود هذه الشاشة كلما رجعت إلى التطبيق إلى أن تُمنح الأذونات المطلوبة.</string>
+    <string name="tv_perm_help">المزيد في مساعدة مكتبة على جهازك الرئيسي: تطبيق Android TV، الأذونات.</string>
+</resources>

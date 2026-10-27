@@ -28,6 +28,10 @@ const (
 	// AccessNotTaken: the machine refused the access it was given (its answer in the
 	// reason: a home of an earlier term, a switch under way).
 	AccessNotTaken = "not_taken"
+	// AccessNotMendable: a re-made access would not mend the machine's login (TLS at the
+	// right address: its certificate, the home's), so none is made: a new password would
+	// only be one its roles no longer have.
+	AccessNotMendable = "not_mendable"
 	// AccessOther: anything else (the database's error in the reason).
 	AccessOther = "other"
 )
