@@ -491,10 +491,20 @@ func (s *Server) CloseSession(ctx context.Context, sessionID string) error {
 		return nil
 	}
 	err = s.Sessions.Close(ctx, id, session.ReasonAPI, s.Now().UTC())
-	if err != nil {
+	switch {
+	case errors.Is(err, session.ErrTranscodeNotStopped):
+		// closed for the player (nothing it can do about it): the server's failure
+		pid := 0
+		if row.Transcoder != nil {
+			pid = row.Transcoder.PID()
+		}
+		s.log().Error("vod session closed, but its ffmpeg did not stop", "session_id", sessionID,
+			"video_id", row.VideoID.String(), "pid", pid, "err", err.Error(), "event", "vod_transcode_stop_failed")
+		err = nil
+	case err != nil:
 		s.log().Warn("vod session not closed", "session_id", sessionID, "err", err.Error(),
 			"event", "vod_session_close_failed")
-	} else {
+	default:
 		s.log().Info("vod session closed", "session_id", sessionID, "reason", string(session.ReasonAPI),
 			"event", "vod_session_closed")
 	}

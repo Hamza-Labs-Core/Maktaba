@@ -330,6 +330,9 @@ func rungArgs(i int, rung Rendition, enc string, p EncodePlan) Args {
 		"-b:v:" + n, itoa(rung.BitrateKbps) + "k",
 		"-s:v:" + n, fmt.Sprintf("%dx%d", rung.Width, rung.Height),
 		"-pix_fmt:v:" + n, "yuv420p",
+		// High, the profile the master playlist names (hlsVideoCodec): NVENC and
+		// QuickSync would otherwise pick their own
+		"-profile:v:" + n, "high",
 		"-force_key_frames:v:" + n, "expr:gte(t,n_forced*" + itoa(segmentSeconds) + ")",
 	}
 	if p := presetForEncoder(enc); p != "" {

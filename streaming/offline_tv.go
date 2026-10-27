@@ -55,7 +55,9 @@ func buildOfflineTV(bg *background, logger *slog.Logger, cfg config.Config, copy
 		return nil
 	}
 	layout := cache.New(filepath.Join(cfg.Cache.Root, "offline"))
-	_ = layout.EnsureTiers()
+	if err := layout.EnsureTiers(); err != nil {
+		logger.Warn("cache layout init failed", "root", layout.Root, "err", err.Error(), "event", "cache_init_warn")
+	}
 	b := newTVBase(bg, logger, cfg, copyPool, layout)
 	b.readOnly = true
 	repo := channel.NewPGRepo(copyPool, b.hostname)

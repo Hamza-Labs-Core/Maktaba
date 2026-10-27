@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,6 +29,15 @@ type StaticHandler struct {
 	Resolver StaticAssetResolver
 	// Files is the file opener so tests inject in-memory readers.
 	Files FileOpener
+	// Logger receives a read failure other than a missing asset (nil: slog's default).
+	Logger *slog.Logger
+}
+
+func (h *StaticHandler) log() *slog.Logger {
+	if h.Logger == nil {
+		return slog.Default()
+	}
+	return h.Logger
 }
 
 // ServePoster handles GET /stream/posters/{video_id}.jpg.
@@ -128,20 +138,25 @@ func contentTypeForThumb(name string) string {
 	return "application/octet-stream"
 }
 
+// serveFile serves one cached asset. The response never names the server's path or
+// its error (the player has no use for them); a failure other than a missing asset
+// is logged with both.
 func (h *StaticHandler) serveFile(w http.ResponseWriter, _ *http.Request, path, contentType string) {
 	f, err := h.Files.Open(path)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			httpx.Write(w, http.StatusNotFound, "asset-not-found", "asset not found", path)
-			return
+		if !errors.Is(err, os.ErrNotExist) {
+			h.log().Error("static asset could not be opened", "path", path, "err", err.Error(),
+				"event", "static_asset_read_failed")
 		}
-		httpx.Write(w, http.StatusNotFound, "asset-not-found", "asset not found", err.Error())
+		httpx.Write(w, http.StatusNotFound, "asset-not-found", "asset not found", "")
 		return
 	}
 	defer f.Close()
 	stat, err := f.Stat()
 	if err != nil {
-		httpx.Write(w, http.StatusInternalServerError, "stat-failed", "stat failed", err.Error())
+		h.log().Error("static asset could not be read", "path", path, "err", err.Error(),
+			"event", "static_asset_read_failed")
+		httpx.Write(w, http.StatusInternalServerError, "stat-failed", "stat failed", "")
 		return
 	}
 	w.Header().Set("Content-Type", contentType)

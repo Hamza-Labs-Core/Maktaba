@@ -86,11 +86,13 @@ func Setup(ctx context.Context, o SetupOptions) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	url := runningURL(ctx, o.SupervisorURL)
+	// [llm] url first: the running supervisor serves it without its login (RedactURL)
+	url := ExternalURL(o.Config)
+	if url == "" {
+		url = runningURL(ctx, o.SupervisorURL)
+	}
 	switch {
 	case url != "":
-	case ExternalURL(o.Config) != "":
-		url = ExternalURL(o.Config)
 	case bundled:
 		progress(Event{Stage: "start", Message: "Starting the language model server"})
 		wait := o.StartWait

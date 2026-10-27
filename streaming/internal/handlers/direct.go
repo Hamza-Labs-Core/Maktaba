@@ -60,6 +60,16 @@ type DirectHandler struct {
 	AllowAllProfiles bool
 	// Logger receives the file's open and read failures (nil: slog's default).
 	Logger *slog.Logger
+	// ReadStall bounds one read of the file (0: defaultReadStall): a NAS that stops
+	// answering ends the response, logged, instead of holding it open forever.
+	ReadStall time.Duration
+}
+
+func (h *DirectHandler) readStall() time.Duration {
+	if h.ReadStall <= 0 {
+		return defaultReadStall
+	}
+	return h.ReadStall
 }
 
 func (h *DirectHandler) log() *slog.Logger {
@@ -81,6 +91,12 @@ func (e errSourceRead) Unwrap() error { return e.err }
 func (h *DirectHandler) copyFailed(videoID uuid.UUID, path string, offset, written int64, err error) {
 	var src errSourceRead
 	if err == nil || !errors.As(err, &src) {
+		return
+	}
+	if errors.Is(src.err, errReadStalled) {
+		h.log().Error("direct play: a read of the video file stalled; the response was ended",
+			"video_id", videoID.String(), "path", path, "offset", offset, "written", written,
+			"stall_ms", h.readStall().Milliseconds(), "event", "vod_direct_read_stalled")
 		return
 	}
 	h.log().Error("direct play: the video file could not be read", "video_id", videoID.String(),
@@ -112,7 +128,14 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"video has no media_info row", "Pipeline must probe before streaming")
 			return
 		}
-		httpx.Write(w, http.StatusNotFound, "video-not-found", "video not found", err.Error())
+		if errors.Is(err, probe.ErrNotFound) {
+			httpx.Write(w, http.StatusNotFound, "video-not-found", "video not found", "")
+			return
+		}
+		// the database's failure, not a missing video: logged, and the player may retry
+		h.log().Error("direct play: the video's probe could not be looked up", "video_id", videoID.String(),
+			"err", err.Error(), "event", "vod_direct_lookup_failed")
+		httpx.Write(w, http.StatusServiceUnavailable, "lookup-failed", "the video could not be looked up", "")
 		return
 	}
 
@@ -163,7 +186,9 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.Write(w, http.StatusNotFound, "video-bytes-missing", "video file not on disk", "")
 		return
 	}
-	defer f.Close()
+	// the copy's reads give up on a stalled share; a read still stalled closes the file
+	src := watchStalls(f, h.readStall())
+	defer src.Close()
 	stat, err := f.Stat()
 	if err != nil {
 		h.log().Error("direct play: the video file could not be read", "video_id", videoID.String(),
@@ -185,7 +210,7 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		n, cerr := copyReader(w, f, 0, stat.Size())
+		n, cerr := copyReader(w, src, 0, stat.Size())
 		h.copyFailed(videoID, mediaPath, 0, n, cerr)
 		return
 	}
@@ -214,7 +239,7 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusPartialContent)
 	// a client that went away ends the copy too: only a source failure is logged
-	n, cerr := copyReader(w, f, start, length)
+	n, cerr := copyReader(w, src, start, length)
 	h.copyFailed(videoID, mediaPath, start, n, cerr)
 }
 
