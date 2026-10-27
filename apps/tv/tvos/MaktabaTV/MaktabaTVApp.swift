@@ -49,6 +49,7 @@ struct RootView: View {
                 if let client = session.client {
                     ContentView(session: session, user: user)
                         .environment(\.client, client)
+                        .environment(\.appSession, session)
                 }
             }
         }
@@ -78,4 +79,6 @@ struct RootView: View {
 extension EnvironmentValues {
     /// The signed-in home's client (set under `RootView` once signed in).
     @Entry var client: APIClient?
+    /// The session, for a screen that sends the person back to signing in or to the homes.
+    @Entry var appSession: AppSession?
 }
