@@ -10,7 +10,7 @@ struct AttentionView: View {
         List {
             ProblemSection()
             Section {
-                if model.loaded, model.attention.isEmpty {
+                if model.loaded, model.problem == nil, model.attention.isEmpty {
                     Label("Nothing needs attention", systemImage: "checkmark.seal")
                         .foregroundStyle(.secondary)
                 }
@@ -22,6 +22,7 @@ struct AttentionView: View {
             }
         }
         .maktabaSurface()
+        .overlay { if !model.loaded { ProgressView() } }
         .navigationTitle("Needs attention")
         .refreshable { await model.load() }
         .toolbar {

@@ -1,18 +1,24 @@
 import Foundation
+import os
 
 public enum APIError: LocalizedError, Equatable {
-    case transport(String)
+    /// No answer came (the URLSession failure's code).
+    case transport(URLError.Code)
+    /// The home answered this status, with this body (a problem+json, or a proxy's page):
+    /// for `problem` and the logs, never for a screen.
     case status(Int, String)
+    /// An answer this app could not read (the decoder's words, for the logs).
     case decoding(String)
     case signedOut
 
+    /// What to tell a person: the kind's sentence (`AppError`), never the home's own body.
     public var errorDescription: String? {
-        switch self {
-        case let .transport(why): "Could not reach the home: \(why)"
-        case let .status(code, body): "The home answered \(code): \(body.prefix(300))"
-        case let .decoding(why): "Unexpected answer from the home: \(why)"
-        case .signedOut: "Signed out. Sign in again."
-        }
+        AppError(self).message()
+    }
+
+    /// The URLSession failure's code (`.unknown` for anything else).
+    static func transport(_ error: Error) -> APIError {
+        .transport((error as? URLError)?.code ?? .unknown)
     }
 }
 
@@ -109,7 +115,7 @@ public actor APIClient {
                 let (d, resp) = try await session.data(for: r, delegate: SameOriginRedirects.shared)
                 return ((resp as? HTTPURLResponse)?.statusCode ?? 0, d)
             } catch {
-                throw APIError.transport(error.localizedDescription)
+                throw APIError.transport(error)
             }
         }
         let (code, master) = try await fetch(url)
@@ -146,10 +152,12 @@ public actor APIClient {
         return Date(timeIntervalSince1970: exp)
     }
 
+    /// Best effort (the home reaps an idle session itself): a failure is logged by `sendRaw`.
     public func closeStream(_ session: String) async {
         _ = try? await sendRaw(request("DELETE", "/api/stream/sessions/\(session)"))
     }
 
+    /// Best effort (the next report carries the position): a failure is logged by `sendRaw`.
     public func reportProgress(session: String, positionSec: Int, completed: Bool = false) async {
         var body: [String: Any] = ["position_sec": positionSec]
         if completed { body["completed"] = true }
@@ -211,7 +219,7 @@ public actor APIClient {
         do {
             (data, response) = try await session.data(for: r, delegate: SameOriginRedirects.shared)
         } catch {
-            throw APIError.transport(error.localizedDescription)
+            throw APIError.transport(error)
         }
         switch (response as? HTTPURLResponse)?.statusCode ?? 0 {
         case 200:
@@ -304,16 +312,22 @@ public actor APIClient {
     }
 
     func request(_ method: String, _ path: String, query: [String: String] = [:], body: [String: Any]? = nil) -> URLRequest {
-        var c = URLComponents(url: home.appending(path: path), resolvingAgainstBaseURL: false)!
+        let url = home.appending(path: path)
+        var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
         if !query.isEmpty {
-            c.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+            c?.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         }
-        var r = URLRequest(url: c.url!)
+        var r = URLRequest(url: c?.url ?? url)
         r.httpMethod = method
         r.setValue("application/json", forHTTPHeaderField: "Accept")
         r.setValue(ClientHeader.value, forHTTPHeaderField: ClientHeader.name)
         if let body {
-            r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            do {
+                r.httpBody = try JSONSerialization.data(withJSONObject: body)
+            } catch {
+                // a body made in this file from strings, numbers and bools: a bug if it fails
+                Log.network.fault("\(method, privacy: .public) \(Log.route(path), privacy: .public): body not JSON")
+            }
             r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         return r
@@ -324,8 +338,15 @@ public actor APIClient {
         do {
             return try JSONDecoder.home.decode(T.self, from: data)
         } catch {
-            throw APIError.decoding(String(describing: error))
+            let what = String(describing: error)
+            Log.network.error("\(Self.describe(r), privacy: .public): answer not \(String(describing: T.self), privacy: .public): \(what, privacy: .private)")
+            throw APIError.decoding(what)
         }
+    }
+
+    /// A request for the logs: its method and route (ids taken out), never its query.
+    nonisolated static func describe(_ r: URLRequest) -> String {
+        "\(r.httpMethod ?? "GET") \(Log.route(r.url?.path() ?? ""))"
     }
 
     private func sendRaw(_ r: URLRequest, authorized: Bool = true, retried: Bool = false) async throws -> Data {
@@ -337,7 +358,11 @@ public actor APIClient {
         do {
             (data, response) = try await session.data(for: r, delegate: SameOriginRedirects.shared)
         } catch {
-            throw APIError.transport(error.localizedDescription)
+            let e = APIError.transport(error)
+            if case let .transport(c) = e, c != .cancelled {
+                Log.network.error("\(Self.describe(r), privacy: .public): no answer (URLError \(c.rawValue, privacy: .public))")
+            }
+            throw e
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401, authorized, !retried, tokens.refresh != nil {
@@ -345,11 +370,15 @@ public actor APIClient {
             return try await sendRaw(r, authorized: true, retried: true)
         }
         if code == 401, authorized {
+            Log.session.notice("\(Self.describe(r), privacy: .public): 401 after a refresh: signed out")
             tokens.clear()
             throw APIError.signedOut
         }
         guard (200..<300).contains(code) else {
-            throw APIError.status(code, String(decoding: data.prefix(4096), as: UTF8.self))
+            let e = APIError.status(code, String(decoding: data.prefix(4096), as: UTF8.self))
+            let p = e.problem
+            Log.network.error("\(Self.describe(r), privacy: .public) -> \(code, privacy: .public) code=\(p?.code ?? "-", privacy: .public) type=\(AppError.problemSlug(p?.type), privacy: .public) detail=\(p?.detail ?? "", privacy: .private)")
+            throw e
         }
         return data
     }
@@ -368,9 +397,18 @@ public actor APIClient {
         defer { refreshing = nil }
         do {
             return try await task.value
-        } catch {
+        } catch let APIError.status(code, _) where (400..<500).contains(code) && code != 408 && code != 429 {
+            // the home turned the refresh token down: this sign-in is over
+            Log.session.notice("refresh refused (\(code, privacy: .public)): signed out")
             tokens.clear()
             throw APIError.signedOut
+        } catch APIError.signedOut {
+            tokens.clear()
+            throw APIError.signedOut
+        } catch {
+            // the home could not be reached, or failed: the sign-in stays, for the next try
+            Log.failure("token refresh", error, logger: Log.session)
+            throw error
         }
     }
 }

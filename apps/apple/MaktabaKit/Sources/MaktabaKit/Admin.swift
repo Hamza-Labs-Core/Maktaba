@@ -215,17 +215,18 @@ public enum ApproveFailure: Equatable, Sendable {
     case wrongCode(attemptsLeft: Int?)
     /// The request is too old (or used its tries up): the machine must ask again.
     case expired
-    case other(String)
+    /// Anything else, in the app's words (`AppError`).
+    case other(AppError)
 
     public init(_ error: Error) {
         guard let e = error as? APIError else {
-            self = .other(error.localizedDescription)
+            self = .other(AppError(error))
             return
         }
         switch (e.problem?.code, e) {
         case ("wrong_code", _): self = .wrongCode(attemptsLeft: e.problem?.attemptsLeft)
         case ("expired", _), (_, .status(410, _)): self = .expired
-        default: self = .other(e.message)
+        default: self = .other(AppError(e))
         }
     }
 
@@ -236,23 +237,25 @@ public enum ApproveFailure: Equatable, Sendable {
         case .wrongCode(0): "Too many wrong codes: the request was turned down. Ask again from the machine."
         case .wrongCode: "That is not the code the machine shows."
         case .expired: "The request has expired. Ask again from the machine."
-        case let .other(why): why
+        case let .other(e): e.message()
         }
     }
 }
 
 // MARK: the home's answers when it refuses
 
-/// A problem+json answer (`{"title", "detail", "code", "attempts_left"}`), read from
-/// `APIError.status`.
+/// A problem+json answer (`{"type", "title", "detail", "code", "attempts_left"}`), read from
+/// `APIError.status`: for sorting a failure (`AppError`) and the logs. Its title and detail
+/// are the home's English words (they can name paths on its disk), never shown.
 public struct Problem: Decodable, Equatable, Sendable {
+    public let type: String?
     public let code: String?
     public let title: String?
     public let detail: String?
     public let attemptsLeft: Int?
 
     enum CodingKeys: String, CodingKey {
-        case code, title, detail
+        case type, code, title, detail
         case attemptsLeft = "attempts_left"
     }
 }
@@ -264,10 +267,10 @@ public extension APIError {
         return try? JSONDecoder().decode(Problem.self, from: Data(body.utf8))
     }
 
-    /// What to tell a person: the home's own words when it gave them.
+    /// What to tell a person, in their language: the kind's sentence (`AppError`), never
+    /// the home's own words.
     var message: String {
-        if let p = problem, let words = p.detail ?? p.title, !words.isEmpty { return words }
-        return errorDescription ?? "Something went wrong."
+        AppError(self).message()
     }
 }
 

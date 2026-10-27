@@ -80,8 +80,7 @@ struct ProblemSection: View {
     var body: some View {
         if let problem = model.problem {
             Section {
-                Label(problem, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.red)
+                ErrorNote(problem) { Task { await model.load() } }
             }
         }
     }

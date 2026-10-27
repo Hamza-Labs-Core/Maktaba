@@ -164,7 +164,7 @@ public struct ApproveSignInView: View {
             do {
                 looked = (normalized, try await client.pendingDevice(code: normalized))
             } catch {
-                problem = (error as? APIError)?.message ?? error.localizedDescription
+                problem = AppError(error).message(ErrorStrings(words.language))
             }
         }
     }
@@ -183,10 +183,10 @@ public struct ApproveSignInView: View {
                 case .status(409, _): problem = words.text(.alreadyApproved)
                 case .status(404, _), .status(410, _): problem = words.text(.expired)
                 case .status(422, _): problem = words.text(.notACode)
-                default: problem = e.message
+                default: problem = AppError(e).message(ErrorStrings(words.language))
                 }
             } catch {
-                problem = error.localizedDescription
+                problem = AppError(error).message(ErrorStrings(words.language))
             }
         }
     }

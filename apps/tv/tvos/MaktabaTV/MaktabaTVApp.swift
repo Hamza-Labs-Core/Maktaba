@@ -52,6 +52,7 @@ struct RootView: View {
                 }
             }
         }
+        .environment(\.appSession, session)
         .onOpenURL { session.open($0) }
         .alert(words.text(session.pendingLink != nil ? .linkTitle : .connect), isPresented: Binding(
             get: { session.phase != .choosingHome && (session.pendingLink != nil || session.connectProblem != nil) },

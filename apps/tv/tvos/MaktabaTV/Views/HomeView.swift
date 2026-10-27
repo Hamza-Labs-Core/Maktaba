@@ -8,7 +8,7 @@ struct HomeView: View {
     @Environment(\.client) private var client
     @State private var rails: [Rail] = []
     @State private var newest: [Video] = []
-    @State private var problem: String?
+    @State private var problem: AppError?
     @State private var loading = true
 
     var body: some View {
@@ -24,7 +24,7 @@ struct HomeView: View {
                         if loading {
                             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 60)
                         } else if let problem {
-                            ErrorBanner(message: problem) { Task { await load() } }
+                            ErrorBanner(error: problem) { Task { await load() } }
                         } else if rails.isEmpty && newest.isEmpty {
                             ContentUnavailableView("Nothing to watch yet", systemImage: "books.vertical",
                                                    description: Text("Videos appear here once this home shares a library with you."))
@@ -71,7 +71,7 @@ struct HomeView: View {
             }
             problem = nil
         } catch {
-            problem = error.localizedDescription
+            problem = AppError.shown("load home rails", error) ?? problem
         }
         loading = false
     }
@@ -109,23 +109,28 @@ struct VideoRow: View {
     }
 }
 
-/// Inline error with a retry.
+/// A screen that could not load: MaktabaKit's error screen (what went wrong in the
+/// person's words, Try again, Sign in again, Choose another home), in the TV's gold.
 struct ErrorBanner: View {
-    let message: String
+    let error: AppError
     let retry: () -> Void
 
     var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 64))
-                .foregroundStyle(Theme.goldText)
-            Text(message)
-                .font(Theme.body(34))
-                .foregroundStyle(Theme.text)
-                .multilineTextAlignment(.center)
-            Button("Try again", action: retry).buttonStyle(.gold)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
+        ErrorStateView(error, retry: retry)
+            .buttonStyle(.gold)
+            .foregroundStyle(Theme.text)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 60)
+    }
+}
+
+extension AppError {
+    /// What a TV screen shows for a failed load: nil when there is nothing to say (the
+    /// screen moved on). Logged.
+    static func shown(_ what: StaticString, _ error: Error) -> AppError? {
+        let e = AppError(error)
+        guard !e.isCancellation else { return nil }
+        Log.failure(what, error)
+        return e
     }
 }

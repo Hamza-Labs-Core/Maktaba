@@ -8,12 +8,18 @@ struct SearchView: View {
     @State private var query = ""
     @State private var results: [Video] = []
     @State private var searched = ""
+    /// The last search did not work (not "no results": the home did not answer, say).
+    @State private var problem: AppError?
+    /// Asks again after a failure.
+    @State private var attempt = 0
 
     private let columns = Array(repeating: GridItem(.fixed(VideoCard.width), spacing: 56), count: 4)
 
     var body: some View {
         ScrollView {
-            if !searched.isEmpty && results.isEmpty {
+            if let problem {
+                ErrorBanner(error: problem) { attempt += 1 }.padding(.horizontal, 80)
+            } else if !searched.isEmpty && results.isEmpty {
                 ContentUnavailableView.search(text: searched).padding(.top, 80)
             } else {
                 LazyVGrid(columns: columns, spacing: 64) {
@@ -31,13 +37,22 @@ struct SearchView: View {
             }
         }
         .searchable(text: $query, prompt: "Search your libraries")
-        .task(id: query) {
+        .task(id: "\(attempt)|\(query)") {
             let q = query.trimmingCharacters(in: .whitespaces)
-            guard !q.isEmpty else { results = []; searched = ""; return }
-            try? await Task.sleep(for: .milliseconds(400))
-            guard !Task.isCancelled, let client else { return }
-            results = (try? await client.videos(library: nil, query: q).items) ?? []
-            searched = q
+            guard !q.isEmpty else { results = []; searched = ""; problem = nil; return }
+            // typing goes on: the cancelled wait ends this search
+            do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+            guard let client else { return }
+            do {
+                results = try await client.videos(library: nil, query: q).items
+                searched = q
+                problem = nil
+            } catch {
+                if let e = AppError.shown("search", error) {
+                    problem = e
+                    results = []
+                }
+            }
         }
     }
 }

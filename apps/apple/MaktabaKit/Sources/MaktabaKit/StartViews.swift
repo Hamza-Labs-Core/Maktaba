@@ -33,6 +33,7 @@ public struct SessionGate<Content: View>: View {
                 }
             }
         }
+        .environment(\.appSession, session)
         .onOpenURL { session.open($0) }
         #if os(macOS)
         // a link opened on the Mac goes to the window already open, not a new one
@@ -307,7 +308,7 @@ public struct SignInView: View {
     @State private var username = ""
     @State private var password = ""
     @State private var busy = false
-    @State private var problem: String?
+    @State private var problem: AppError?
     @State private var codeFlow: CodeSignIn?
     private let words = ConnectStrings.forPreferredLanguages()
 
@@ -331,6 +332,11 @@ public struct SignInView: View {
 
     private var shown: Method { offered.contains(method) ? method : offered[0] }
 
+    /// A code is asked for only while it shows, and not while the saved sign-in is checked.
+    private var codeShown: Bool {
+        shown == .code && !session.restoring && session.restoreProblem == nil
+    }
+
     public var body: some View {
         NavigationStack {
             Form {
@@ -347,6 +353,7 @@ public struct SignInView: View {
                 } header: {
                     Text(session.current?.name ?? "")
                 }
+                RestoreSection(session: session)
                 switch shown {
                 case .password:
                     passwordForm
@@ -365,9 +372,9 @@ public struct SignInView: View {
         }
         // one code at a time, asked for only while it shows (here, not on the Form's rows,
         // which come and go as the code's state changes)
-        .task(id: CodeFlowKey(home: session.current?.url, shown: shown == .code)) {
+        .task(id: CodeFlowKey(home: session.current?.url, shown: codeShown)) {
             codeFlow = nil
-            guard shown == .code, let client = session.client else { return }
+            guard codeShown, let client = session.client else { return }
             let m = CodeSignIn(client: client, label: CodeSignInSection.deviceLabel) { [session] in
                 try await session.signedInByCode()
             }
@@ -391,7 +398,11 @@ public struct SignInView: View {
                 .onSubmit(signIn)
                 .accessibilityIdentifier("signin.password")
         } footer: {
-            if let problem { Text(problem).foregroundStyle(.red) }
+            if let problem {
+                Text(problem.message(ErrorStrings(words.language)))
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("signin.problem")
+            }
         }
         Button(action: signIn) {
             if busy { ProgressView() } else { Text(words.text(.signIn)) }
@@ -408,8 +419,29 @@ public struct SignInView: View {
             do {
                 try await session.signIn(username: username, password: password)
             } catch {
-                problem = error.localizedDescription
+                Log.failure("sign in", error, logger: Log.session)
+                let e = AppError.signingIn(error)
+                problem = e.isCancellation ? nil : e
             }
+        }
+    }
+}
+
+/// The saved sign-in being checked (a spinner), or why it could not be (the home did not
+/// answer: the person is still signed in, and can try again or sign in afresh below).
+struct RestoreSection: View {
+    let session: AppSession
+
+    var body: some View {
+        if session.restoring {
+            Section { HStack { Spacer(); ProgressView(); Spacer() } }
+        } else if let e = session.restoreProblem {
+            let words = ErrorStrings.forPreferredLanguages()
+            Section {
+                Text(words.text(.restoreFailed))
+                ErrorNote(e, words: words) { Task { await session.retryRestore() } }
+            }
+            .accessibilityIdentifier("signin.restoreProblem")
         }
     }
 }

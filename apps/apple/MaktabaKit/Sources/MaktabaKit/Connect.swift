@@ -179,7 +179,7 @@ public struct ReachedHome: Equatable, Sendable {
 /// Why no address of a home could be used.
 public enum ReachFailure: Error, Equatable, Sendable {
     /// Nothing answered (off, another network, a wrong port).
-    case unreachable(String)
+    case unreachable(AppError.Kind)
     /// Something answered, but not a Maktaba home.
     case notAHome
     /// A home answered, but another one than the link names.
@@ -200,7 +200,7 @@ public struct HomeProbe: Sendable {
     /// The first of `candidates` that is a home (and is the home `expectedID` names, when
     /// it says its id), tried one after the other.
     public func reach(_ candidates: [URL], expectedID: String? = nil) async -> Result<ReachedHome, ReachFailure> {
-        var failure = ReachFailure.unreachable("no address")
+        var failure = ReachFailure.unreachable(.unreachable)
         for url in candidates {
             if Task.isCancelled { break }
             switch await check(url) {
@@ -225,7 +225,7 @@ public struct HomeProbe: Sendable {
         do {
             (code, data) = try await get(url, "/api/discovery/home")
         } catch {
-            return .failure(.unreachable(error.localizedDescription))
+            return .failure(.unreachable(AppError(error).kind))
         }
         if code == 200 {
             guard let d = try? JSONDecoder().decode(HomeDiscovery.self, from: data) else { return .failure(.notAHome) }
