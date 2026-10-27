@@ -41,6 +41,14 @@ dependencies {
     api(libs.adaptive)
     api(libs.window)
 
+    // scanning a home's QR code (CameraX, ZXing's decoder: no Google Play services needed) and
+    // drawing the sign-in code's QR
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
+    implementation(libs.zxing.core)
+
     api(libs.okhttp)
     api(libs.kotlinx.serialization.json)
     api(libs.kotlinx.coroutines.android)

@@ -122,7 +122,7 @@ public final class StreamProxy: @unchecked Sendable {
             r.httpMethod = req.method
             for name in ["Range", "If-Range", "Accept"] { if let v = req.headers[name.lowercased()] { r.setValue(v, forHTTPHeaderField: name) } }
             for (k, v) in try await client.playbackHeaders(minLife: 60).headers { r.setValue(v, forHTTPHeaderField: k) }
-            let (bytes, response) = try await session.bytes(for: r)
+            let (bytes, response) = try await session.bytes(for: r, delegate: SameOriginRedirects.shared)
             let http = response as? HTTPURLResponse
             var out = "HTTP/1.1 \(http?.statusCode ?? 502) \(HTTPURLResponse.localizedString(forStatusCode: http?.statusCode ?? 502))\r\n"
             for name in ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control", "ETag", "Last-Modified"] {

@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.player
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -22,6 +23,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val app = application as PlayerApplication
+        // opened by a home's link (maktaba://connect…): the app asks before it connects
+        if (savedInstanceState == null) app.session.openLink(intent?.dataString)
         setContent {
             val mode by app.themes.mode.collectAsState()
             var playing by remember { mutableStateOf(false) }
@@ -37,5 +40,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        (application as PlayerApplication).session.openLink(intent.dataString)
     }
 }

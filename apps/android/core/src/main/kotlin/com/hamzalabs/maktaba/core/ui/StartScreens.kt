@@ -1,6 +1,40 @@
 package com.hamzalabs.maktaba.core.ui
 
+import android.content.Context
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.sp
+import com.hamzalabs.maktaba.core.api.DeviceCode
+import com.hamzalabs.maktaba.core.api.DeviceSignIn
+import com.hamzalabs.maktaba.core.api.PairingCode
+import com.hamzalabs.maktaba.core.session.ConnectLink
+import com.hamzalabs.maktaba.core.session.HomeProbe
+import com.hamzalabs.maktaba.core.session.addressCandidates
+import kotlinx.coroutines.CancellationException
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -95,6 +129,8 @@ fun SessionGate(
         AppSession.Phase.SigningIn -> SignIn(session, app)
         is AppSession.Phase.SignedIn -> content(phase.user, phase.client)
     }
+    // a home's link the app was opened with: over whatever shows, until confirmed or dismissed
+    session.link.collectAsState().value?.let { ConnectLinkDialog(session, it) }
 }
 
 /**
@@ -176,14 +212,27 @@ internal fun StartPanel(modifier: Modifier = Modifier, content: @Composable Colu
 
 @Composable
 private fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.semantics { heading() })
 }
 
-/** A home to tap: its name, its address, and a mark when it is saved; a forget button for a saved one. */
+/**
+ * A home to tap: its name and address; for a home this app knows, a menu to rename or remove
+ * it, and a mark when it is also on this network.
+ */
 @Composable
-private fun HomeRow(name: String, address: String, saved: Boolean, onClick: () -> Unit, onForget: (() -> Unit)? = null) {
+private fun HomeRow(
+    name: String,
+    address: String,
+    onClick: () -> Unit,
+    nearby: Boolean = false,
+    onRename: (() -> Unit)? = null,
+    onRemove: (() -> Unit)? = null,
+    enabled: Boolean = true,
+) {
+    var menu by remember { mutableStateOf(false) }
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 8.dp, horizontal = 4.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 4.dp).testTag("home-row"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -193,23 +242,34 @@ private fun HomeRow(name: String, address: String, saved: Boolean, onClick: () -
         ) { Icon(Icons.Outlined.Home, null, tint = MaterialTheme.colorScheme.onPrimaryContainer) }
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.titleMedium)
-            Text(address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // an address reads left to right in Arabic too
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Text(address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (nearby) {
+                Text(stringResource(R.string.home_on_network), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
         }
-        if (saved && onForget == null) {
-            Text(stringResource(R.string.home_saved), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-        }
-        if (onForget != null) {
-            IconButton(onClick = onForget) { Icon(Icons.Filled.Close, stringResource(R.string.home_forget, name)) }
+        if (onRename != null || onRemove != null) {
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.home_menu, name)) }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    onRename?.let { DropdownMenuItem(text = { Text(stringResource(R.string.home_rename)) }, onClick = { menu = false; it() }) }
+                    onRemove?.let { DropdownMenuItem(text = { Text(stringResource(R.string.home_remove)) }, onClick = { menu = false; it() }) }
+                }
+            }
         }
     }
 }
 
 /**
- * The homes on this network (they announce themselves over mDNS), the homes this app knows,
- * and an address to type when a home is elsewhere or does not answer.
+ * The home picker (story 42.2), on first start and from "Switch home": the homes on this
+ * network (they announce themselves over mDNS), the homes this app knows (rename, remove),
+ * and adding one by its address or its QR code. A typed or scanned address is checked to be a
+ * Maktaba home before the app uses it.
  */
 @Composable
-fun HomePicker(session: AppSession, app: MaktabaApp) {
+fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember { HomeProbe() }) {
     val context = LocalContext.current
     val saved by session.homes.collectAsState()
     // the walkthrough asks first (PermissionsGate); this keeps the way to allow it at hand
@@ -218,10 +278,16 @@ fun HomePicker(session: AppSession, app: MaktabaApp) {
     val granted = network.state.ok
     var found by remember { mutableStateOf<List<FoundHome>>(emptyList()) }
     var searched by remember { mutableStateOf(false) }
-    var typing by remember { mutableStateOf(false) }
-    var address by remember { mutableStateOf("") }
+    var typing by rememberSaveable { mutableStateOf(false) }
+    var address by rememberSaveable { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
+    var connecting by remember { mutableStateOf(false) }
+    var scanning by rememberSaveable { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<Home?>(null) }
+    val scope = rememberCoroutineScope()
     val invalid = stringResource(R.string.address_invalid)
+    val notHome = stringResource(R.string.scan_not_home)
+    val failed = stringResource(R.string.connect_failed, "%s")
 
     LaunchedEffect(granted) {
         if (!granted) return@LaunchedEffect
@@ -230,15 +296,53 @@ fun HomePicker(session: AppSession, app: MaktabaApp) {
         searched = true
     }
 
+    fun connect(link: ConnectLink) {
+        if (connecting) return
+        connecting = true
+        problem = null
+        scope.launch {
+            try {
+                session.connect(link, probe)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                problem = failed.replace("%s", link.urls.joinToString { it.substringAfter("://") })
+            } finally {
+                connecting = false
+            }
+        }
+    }
+
     fun add() {
-        val url = Home.normalize(address)
-        if (url == null) {
+        val urls = addressCandidates(address)
+        if (urls.isEmpty()) {
             problem = invalid
             return
         }
-        problem = null
-        session.use(saved.firstOrNull { it.url == url } ?: Home(url, url.substringAfter("://")))
+        connect(ConnectLink(null, null, urls))
     }
+
+    if (scanning) {
+        BackHandler { scanning = false }
+        QrScanner(
+            title = stringResource(R.string.scan_home_title),
+            hint = stringResource(R.string.scan_home_hint),
+            onScan = { text ->
+                scanning = false
+                val link = ConnectLink.parse(text)
+                if (link == null) problem = notHome else connect(link)
+            },
+            onClose = { scanning = false },
+        )
+        return
+    }
+
+    renaming?.let { home ->
+        RenameDialog(home, onDismiss = { renaming = null }, onSave = { session.rename(home, it); renaming = null })
+    }
+
+    /** The saved home a found one is: by its exact address only (an announced id is not proof). */
+    fun savedFor(f: FoundHome): Home? = saved.firstOrNull { it.url == f.url }
 
     StartFrame(app) {
         Text(
@@ -247,6 +351,23 @@ fun HomePicker(session: AppSession, app: MaktabaApp) {
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
+
+        if (saved.isNotEmpty()) {
+            SectionTitle(stringResource(R.string.homes_saved))
+            saved.forEach { home ->
+                val nearby = found.any { f -> f.url == home.url }
+                HomeRow(
+                    home.label,
+                    home.address,
+                    onClick = { session.use(home) },
+                    nearby = nearby,
+                    onRename = { renaming = home },
+                    onRemove = { session.forget(home) },
+                    enabled = !connecting,
+                )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
 
         if (!granted) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
@@ -264,17 +385,21 @@ fun HomePicker(session: AppSession, app: MaktabaApp) {
             }
         } else {
             SectionTitle(stringResource(R.string.homes_on_network))
-            val fresh = found.filter { f -> saved.none { it.url == f.url } }
-            found.filter { f -> saved.any { it.url == f.url } }.forEach { f ->
-                val home = saved.first { it.url == f.url }
-                HomeRow(home.name, f.url.substringAfter("://"), saved = true, onClick = { session.use(home) })
+            val fresh = found.filter { savedFor(it) == null }
+            fresh.forEach { f ->
+                HomeRow(f.name, f.url.substringAfter("://"), onClick = { session.use(Home(f.url, f.name, f.id)) }, enabled = !connecting)
             }
-            fresh.forEach { f -> HomeRow(f.name, f.url.substringAfter("://"), saved = false, onClick = { session.use(Home(f.url, f.name)) }) }
-            if (found.isEmpty()) {
+            if (fresh.isEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (!searched) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     Text(
-                        stringResource(if (searched) R.string.homes_none else R.string.homes_looking),
+                        stringResource(
+                            when {
+                                found.isNotEmpty() -> R.string.homes_all_saved
+                                searched -> R.string.homes_none
+                                else -> R.string.homes_looking
+                            },
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -282,46 +407,174 @@ fun HomePicker(session: AppSession, app: MaktabaApp) {
             }
         }
 
-        val elsewhere = saved.filter { s -> found.none { it.url == s.url } }
-        if (elsewhere.isNotEmpty()) {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            SectionTitle(stringResource(R.string.homes_saved))
-            elsewhere.forEach { home ->
-                HomeRow(home.name, home.url.substringAfter("://"), saved = true, onClick = { session.use(home) }, onForget = { session.forget(home) })
-            }
-        }
-
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        if (!typing && (found.isNotEmpty() || saved.isNotEmpty() || !searched)) {
-            TextButton(onClick = { typing = true }) { Text(stringResource(R.string.address_title)) }
-        } else {
-            SectionTitle(stringResource(R.string.address_title))
+        SectionTitle(stringResource(R.string.add_home))
+        if (typing || (saved.isEmpty() && found.isEmpty() && searched)) {
             OutlinedTextField(
                 value = address,
-                onValueChange = { address = it },
+                onValueChange = { address = it; problem = null },
                 label = { Text(stringResource(R.string.address_label)) },
                 singleLine = true,
+                enabled = !connecting,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
                 keyboardActions = KeyboardActions(onGo = { add() }),
-                isError = problem != null,
-                supportingText = problem?.let { { Text(it) } },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("address-field"),
             )
-            Button(onClick = ::add, enabled = address.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.connect)) }
+            Button(onClick = ::add, enabled = address.isNotBlank() && !connecting, modifier = Modifier.fillMaxWidth().testTag("address-connect")) {
+                Text(stringResource(R.string.connect))
+            }
+        } else {
+            OutlinedButton(onClick = { typing = true }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.Edit, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.address_title))
+            }
+        }
+        OutlinedButton(onClick = { problem = null; scanning = true }, enabled = !connecting, modifier = Modifier.fillMaxWidth().testTag("scan-home")) {
+            Icon(Icons.Outlined.QrCodeScanner, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.scan_qr))
+        }
+        if (connecting) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Text(stringResource(R.string.connecting), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        problem?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         }
     }
 }
 
-/** Sign in to the chosen home, by its name (the home's own once it has said it). */
+/** A name for a home on this device; empty goes back to the home's own name. */
+@Composable
+private fun RenameDialog(home: Home, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var text by remember(home.url) { mutableStateOf(home.nickname ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.rename_title, home.label)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.take(60) },
+                    label = { Text(stringResource(R.string.rename_label)) },
+                    placeholder = { Text(home.name) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onSave(text) }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(stringResource(R.string.rename_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(text) }) { Text(stringResource(R.string.save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+/**
+ * A `maktaba://connect` link the app was opened with: the home it names and its addresses,
+ * and Connect (opening a link never switches homes by itself).
+ */
+@Composable
+fun ConnectLinkDialog(session: AppSession, link: ConnectLink, probe: HomeProbe = remember { HomeProbe() }) {
+    var busy by remember(link) { mutableStateOf(false) }
+    var problem by remember(link) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val failed = stringResource(R.string.connect_failed, link.urls.joinToString { it.substringAfter("://") })
+    AlertDialog(
+        onDismissRequest = { if (!busy) session.dismissLink() },
+        title = { Text(stringResource(R.string.link_title, link.name ?: stringResource(R.string.link_unnamed))) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(stringResource(R.string.link_body))
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Column { link.urls.forEach { Text(it.substringAfter("://"), style = MaterialTheme.typography.bodySmall) } }
+                }
+                if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                problem?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy,
+                onClick = {
+                    busy = true
+                    problem = null
+                    scope.launch {
+                        try {
+                            session.connect(link, probe)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            problem = failed
+                        } finally {
+                            busy = false
+                        }
+                    }
+                },
+            ) { Text(stringResource(R.string.connect)) }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = session::dismissLink) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+/**
+ * Sign in to the chosen home, by its name (the home's own once it has said it): with a
+ * username and password, or with a code a person signed in elsewhere approves (story 42.6).
+ */
 @Composable
 fun SignIn(session: AppSession, app: MaktabaApp) {
     val home by session.current.collectAsState()
-    var username by remember { mutableStateOf("") }
+    var byCode by rememberSaveable { mutableStateOf(false) }
+    val name = home?.label ?: ""
+    val kept by session.restoreProblem.collectAsState()
+    StartFrame(app) {
+        kept?.let { why ->
+            Text(stringResource(R.string.signin_kept_failed, why), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = session::retryRestore) { Text(stringResource(R.string.try_again)) }
+        }
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(stringResource(R.string.signin_to, name), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Text(home?.address ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            SegmentedButton(
+                selected = !byCode,
+                onClick = { byCode = false },
+                shape = SegmentedButtonDefaults.itemShape(0, 2),
+                modifier = Modifier.testTag("signin-password-tab"),
+            ) { Text(stringResource(R.string.signin_password_tab)) }
+            SegmentedButton(
+                selected = byCode,
+                onClick = { byCode = true },
+                shape = SegmentedButtonDefaults.itemShape(1, 2),
+                modifier = Modifier.testTag("signin-code-tab"),
+            ) { Text(stringResource(R.string.signin_code_tab)) }
+        }
+        if (byCode) {
+            CodeSignIn(session, name, onUsePassword = { byCode = false })
+        } else {
+            PasswordSignIn(session, name)
+        }
+        Spacer(Modifier.height(4.dp))
+        TextButton(onClick = session::switchHome, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            Text(stringResource(R.string.other_home))
+        }
+    }
+}
+
+@Composable
+private fun PasswordSignIn(session: AppSession, name: String) {
+    var username by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val name = home?.name ?: ""
     val wrong = stringResource(R.string.signin_wrong)
     val unreachable = stringResource(R.string.signin_unreachable, name)
     fun signIn() {
@@ -335,6 +588,8 @@ fun SignIn(session: AppSession, app: MaktabaApp) {
                 problem = if (e.code in 400..403) wrong else e.message
             } catch (e: ApiException.Transport) {
                 problem = unreachable
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 problem = e.message
             } finally {
@@ -342,46 +597,111 @@ fun SignIn(session: AppSession, app: MaktabaApp) {
             }
         }
     }
-    val kept by session.restoreProblem.collectAsState()
-    StartFrame(app) {
-        kept?.let { why ->
-            Text(stringResource(R.string.signin_kept_failed, why), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-            TextButton(onClick = session::retryRestore) { Text(stringResource(R.string.try_again)) }
-        }
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(stringResource(R.string.signin_to, name), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
-            Text(home?.url?.substringAfter("://") ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        OutlinedTextField(
-            value = username,
-            onValueChange = { username = it },
-            label = { Text(stringResource(R.string.username)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next, autoCorrectEnabled = false),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text(stringResource(R.string.password)) },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { signIn() }),
-            isError = problem != null,
-            supportingText = problem?.let { { Text(it) } },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Button(
-            onClick = ::signIn,
-            enabled = username.isNotEmpty() && password.isNotEmpty() && !busy,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-        ) {
-            if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(stringResource(R.string.signin_submit))
-        }
-        Spacer(Modifier.height(4.dp))
-        TextButton(onClick = session::switchHome, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-            Text(stringResource(R.string.other_home))
+    OutlinedTextField(
+        value = username,
+        onValueChange = { username = it },
+        label = { Text(stringResource(R.string.username)) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next, autoCorrectEnabled = false),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = password,
+        onValueChange = { password = it },
+        label = { Text(stringResource(R.string.password)) },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { signIn() }),
+        isError = problem != null,
+        supportingText = problem?.let { { Text(it) } },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Button(
+        onClick = ::signIn,
+        enabled = username.isNotEmpty() && password.isNotEmpty() && !busy,
+        modifier = Modifier.fillMaxWidth().height(48.dp),
+    ) {
+        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(stringResource(R.string.signin_submit))
+    }
+}
+
+/**
+ * Sign-in by code: the home's code, large, and a QR of the page that approves it; this device
+ * waits (polling) until a person signed in elsewhere approves, then it is signed in as them.
+ */
+@Composable
+private fun ColumnScope.CodeSignIn(session: AppSession, name: String, onUsePassword: () -> Unit) {
+    val context = LocalContext.current
+    var code by remember { mutableStateOf<DeviceCode?>(null) }
+    var unsupported by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    var attempt by remember { mutableStateOf(0) }
+    val unreachable = stringResource(R.string.signin_unreachable, name)
+    LaunchedEffect(attempt) {
+        code = null
+        problem = null
+        try {
+            session.signInWithCode(deviceLabel(context), onCode = { code = it })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: DeviceSignIn.Unsupported) {
+            unsupported = true
+        } catch (e: ApiException.Transport) {
+            problem = unreachable
+        } catch (e: Exception) {
+            problem = e.message ?: e.toString()
         }
     }
+    val current = code
+    when {
+        unsupported -> {
+            Text(stringResource(R.string.code_unsupported, name), style = MaterialTheme.typography.bodyMedium)
+            Button(onClick = onUsePassword, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.signin_password_tab)) }
+        }
+        problem != null -> {
+            Text(problem ?: "", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            Button(onClick = { attempt++ }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.try_again)) }
+        }
+        current == null -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            Text(stringResource(R.string.code_starting, name), style = MaterialTheme.typography.bodyMedium)
+        }
+        else -> {
+            val shown = PairingCode.shown(current.code)
+            Text(stringResource(R.string.code_intro, name), style = MaterialTheme.typography.bodyMedium)
+            // the code reads left to right in Arabic too, one character at a time for TalkBack
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Text(
+                    shown,
+                    style = MaterialTheme.typography.displayMedium.copy(fontFamily = FontFamily.Monospace, letterSpacing = 4.sp),
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().testTag("signin-code")
+                        .semantics { contentDescription = shown.toCharArray().joinToString(" ") },
+                )
+            }
+            val target = session.client?.let { current.approveUrl(it.home) }
+            if (target != null) {
+                Text(stringResource(R.string.code_scan), style = MaterialTheme.typography.bodyMedium)
+                QrCode(
+                    target,
+                    stringResource(R.string.code_qr_description, shown),
+                    Modifier.align(Alignment.CenterHorizontally).widthIn(max = 220.dp).fillMaxWidth(0.6f),
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Text(stringResource(R.string.code_waiting), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            }
+            Text(stringResource(R.string.code_renews), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** This device's name for the home's list of signed-in devices: the one its owner gave it, else its model. */
+fun deviceLabel(context: Context): String {
+    val named = runCatching { Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME) }.getOrNull()
+    return named?.trim()?.takeIf { it.isNotEmpty() }
+        ?: listOf(Build.MANUFACTURER, Build.MODEL).filterNot { it.isNullOrBlank() }.joinToString(" ").ifBlank { "Android" }
 }

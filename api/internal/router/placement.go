@@ -148,6 +148,8 @@ func buildPlacement() placement.Table {
 		"/api/extensions", "/api/models", "/api/settings/", "/api/reports", "/api/explain",
 		"/api/issues", "/api/recommendations", "/api/notifications", "/api/devices",
 		"/api/watch/", "/api/activity", "/api/entitlements", "/api/pairing/",
+		// the home's identity for the apps (Epic 42 story 42.2): the home's, from any machine
+		"/api/discovery/",
 		"/api/stream/", "/graphql", "/ws/",
 		// the home's server.toml and its restart (Epic 45 story 45.3)
 		"/api/server/",

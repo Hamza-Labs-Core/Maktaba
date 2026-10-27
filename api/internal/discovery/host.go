@@ -27,6 +27,13 @@ func register(instance, service, domain string, port int, txt []string) (*zeroco
 	return zeroconf.RegisterProxy(instance, service, domain, port, bareHost(h), ips, txt, nil)
 }
 
+// LocalHostName is the name the announcement's target resolves as: this machine's bare
+// host name in .local ("Studio.local").
+func LocalHostName() string {
+	h, _ := os.Hostname()
+	return bareHost(h) + ".local"
+}
+
 // bareHost is a host name without its domain ("Studio.local." → "Studio"); an empty
 // one is "maktaba".
 func bareHost(h string) string {
