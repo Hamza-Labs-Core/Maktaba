@@ -245,15 +245,15 @@ describe("Admin Updates", () => {
     expect(screen.queryByRole("button", { name: "Cancel this update" })).toBeNull();
   });
 
-  it("desktop apps that wait for a click: each with its version, the run naming them, Cancel before the go", async () => {
-    const waiting = { ...liveRun, state: "home_applying", step: "waiting_click" };
+  it("desktop apps install by themselves: each with its version, no click step, Cancel before the go", async () => {
+    const waiting = { ...liveRun, state: "home_applying", step: "waiting_app" };
     const machines = [
       {
         id: "home",
         name: "home",
         role: "home",
         version: "1.4.0",
-        state: "waiting_click",
+        state: "ordered",
         kind: "appbundle",
         target: "1.5.0",
       },
@@ -262,7 +262,7 @@ describe("Admin Updates", () => {
         name: "studio-pc",
         role: "node",
         version: "1.4.0",
-        state: "clicked",
+        state: "app_staged",
         kind: "appbundle",
         target: "1.5.0",
       },
@@ -270,25 +270,50 @@ describe("Admin Updates", () => {
     routes(overview({ run: waiting, machines }), {
       ...runView,
       ...waiting,
-      detail: { home: { state: "awaiting_click" } },
+      detail: { home: { state: "ordered" } },
     });
     post.mockResolvedValue({ cancelled: true });
     const user = userEvent.setup();
     renderPage();
-    expect(await screen.findByTestId("updates-machine-home-click")).toHaveTextContent(
-      "Maktaba 1.5.0 is ready on this machine: it installs when someone clicks Install in Maktaba there"
+    expect(await screen.findByTestId("updates-machine-home-app")).toHaveTextContent(
+      "Maktaba on this machine downloads 1.5.0: it installs and restarts by itself"
     );
-    expect(screen.getByTestId("updates-machine-home")).toHaveTextContent("waiting for a click");
-    expect(screen.getByTestId("updates-machine-n1-click")).toHaveTextContent(
-      "Someone chose to install 1.5.0 there"
+    expect(screen.getByTestId("updates-machine-home")).toHaveTextContent("downloading the update");
+    expect(screen.getByTestId("updates-machine-n1-app")).toHaveTextContent(
+      "Maktaba 1.5.0 is ready on this machine: it installs and restarts by itself at its turn"
     );
-    expect(await screen.findByTestId("updates-run-waiting-click")).toHaveTextContent(
-      "Waiting for a click in Maktaba on: The home"
+    expect(await screen.findByTestId("updates-run-waiting-app")).toHaveTextContent(
+      "Waiting for Maktaba to download the update on: The home"
     );
+    // nothing on the page sends anyone to click on the machine
+    expect(screen.queryByText(/click/i)).toBeNull();
+    expect(screen.queryByTestId("updates-run-waiting-click")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Cancel this update" }));
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith("/api/cluster/updates/runs/run-1/cancel", {})
     );
+  });
+
+  it("a run from before the click was removed reads as one that installs by itself", async () => {
+    const waiting = { ...liveRun, state: "rolling_out", step: "waiting_click" };
+    routes(overview({ run: waiting }), {
+      ...runView,
+      ...waiting,
+      detail: {},
+      targets: [
+        machine("n1", "studio-pc", "waiting_click"),
+        machine("n3", "office-pc", "clicked", { ord: 1 }),
+      ],
+    });
+    renderPage();
+    expect(await screen.findByTestId("updates-run-waiting-app")).toHaveTextContent(
+      "Waiting for Maktaba to download the update on: studio-pc"
+    );
+    expect(screen.getByTestId("updates-target-n1")).toHaveTextContent("downloading the update");
+    expect(screen.getByTestId("updates-target-n3")).toHaveTextContent(
+      "ready: installs at its turn"
+    );
+    expect(screen.queryByText(/click/i)).toBeNull();
   });
 
   it("a held rollout: the failed machine and the held one, Retry and Resume", async () => {
@@ -349,15 +374,15 @@ describe("Admin Updates", () => {
     expect(screen.getByTestId("updates-history")).toHaveTextContent("1.4.0 → 1.5.0");
   });
 
-  it("a desktop app waiting for its click, or clicked, may be skipped (its order is withdrawn)", async () => {
-    const rolling = { ...liveRun, state: "rolling_out", step: "waiting_click" };
+  it("a desktop app ordered, or staged and waiting for its turn, may be skipped (its order is withdrawn)", async () => {
+    const rolling = { ...liveRun, state: "rolling_out", step: "waiting_app" };
     routes(overview({ run: rolling }), {
       ...runView,
       ...rolling,
       detail: {},
       targets: [
-        machine("n1", "studio-pc", "waiting_click"),
-        machine("n3", "office-pc", "clicked", { ord: 1 }),
+        machine("n1", "studio-pc", "ordered"),
+        machine("n3", "office-pc", "app_staged", { ord: 1 }),
         machine("n4", "den-pc", "applying", { ord: 2 }),
       ],
     });
@@ -365,9 +390,9 @@ describe("Admin Updates", () => {
     const user = userEvent.setup();
     renderPage();
     const waiting = await screen.findByTestId("updates-target-n1");
-    expect(waiting).toHaveTextContent("waiting for a click");
-    const clicked = screen.getByTestId("updates-target-n3");
-    expect(within(clicked).getByRole("button", { name: "Skip" })).toBeEnabled();
+    expect(waiting).toHaveTextContent("downloading the update");
+    const staged = screen.getByTestId("updates-target-n3");
+    expect(within(staged).getByRole("button", { name: "Skip" })).toBeEnabled();
     // one already installing finishes on its own
     expect(
       within(screen.getByTestId("updates-target-n4")).queryByRole("button", { name: "Skip" })
@@ -463,7 +488,7 @@ describe("Admin Updates", () => {
     detail: { home: { state: "applying" } },
     steps: [
       ...runView.steps,
-      { seq: 3, host: "home", step: "ask", state: "done", started_at: "2026-10-23T03:02:00Z" },
+      { seq: 3, host: "home", step: "order", state: "done", started_at: "2026-10-23T03:02:00Z" },
       {
         seq: 4,
         host: "home",
@@ -478,12 +503,12 @@ describe("Admin Updates", () => {
     { id: "home", name: "home", role: "home", version: "1.4.0", state: "updating", kind: "layout" },
   ];
 
-  it("names the home's click step and its updating state", async () => {
+  it("names the home's order step (no click) and its updating state", async () => {
     routes(overview({ run: applying, machines: updatingHome }), applyingView);
     renderPage();
-    expect(await screen.findByTestId("updates-home-steps")).toHaveTextContent(
-      "Wait for a click in Maktaba on this machine"
-    );
+    const steps = await screen.findByTestId("updates-home-steps");
+    expect(steps).toHaveTextContent("Maktaba on this machine downloads and checks the release");
+    expect(steps).not.toHaveTextContent(/click/i);
     expect(screen.getByTestId("updates-machine-home")).toHaveTextContent("updating");
   });
 
@@ -491,7 +516,7 @@ describe("Admin Updates", () => {
     routes(overview({ run: applying, machines: updatingHome }), applyingView);
     renderPage("ar");
     const steps = await screen.findByTestId("updates-home-steps");
-    expect(steps).toHaveTextContent("انتظار نقرة في مكتبة على هذا الجهاز");
+    expect(steps).toHaveTextContent("مكتبة على هذا الجهاز تُنزّل الإصدار وتتحقق منه");
     expect(screen.getByTestId("updates-machine-home")).toHaveTextContent("قيد التحديث");
     const row = screen.getByTestId("updates-target-n2");
     expect(row).toHaveTextContent("يحتاجك");

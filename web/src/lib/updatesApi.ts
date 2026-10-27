@@ -88,7 +88,7 @@ export interface UpdateMachine {
   platform?: string;
   /** the install kind: layout, runtime, appbundle, flat */
   kind?: string;
-  /** the release the active run brings it to (its desktop app shows it while it waits for a click) */
+  /** the release the active run brings it to (the one its desktop app downloads and installs) */
   target?: string;
   /** its last update attempts, newest first (at most 5): see UpdateAttempt */
   attempts?: UpdateAttempt[];
@@ -160,7 +160,7 @@ export interface UpdateTarget {
   ord: number;
   platform: string;
   kind: string;
-  /** pending, preparing, prepared, waiting_click, clicked, applying, healthy, failed_prepare, failed,
+  /** pending, preparing, prepared, ordered, app_staged, applying, healthy, failed_prepare, failed,
    * rolled_back, held, skipped, offline, worker_only, needs_person (an install that cannot update
    * itself as it is: its error's detail says what to do) */
   state: string;
@@ -223,8 +223,13 @@ export const RUN_CANCELLABLE = new Set([
   "rolling_out",
 ]);
 
-/** The states of a desktop app that runs the server and waits for a click there (owner decision D1). */
-export const WAITING_CLICK = new Set(["waiting_click", "clicked", "awaiting_click"]);
+/** The states of a desktop app that runs the server, ordered the release before its go: its app
+ * downloads it (ordered), then it waits for its turn (app_staged). It installs and restarts by
+ * itself, with no click there (owner decision D1, 2026-10-27); the click states are those two as
+ * older runs name them. */
+export const APP_ORDERED = new Set(["ordered", "waiting_click", "awaiting_click"]);
+export const APP_STAGED = new Set(["app_staged", "clicked"]);
+export const APP_ORDER = new Set([...APP_ORDERED, ...APP_STAGED]);
 
 /** A machine of a run that is over may be retried in these states (a new run for it): it failed,
  * was held or offline, or needs a person (an install that cannot update itself as it is: the
@@ -238,15 +243,14 @@ export const TARGET_RETRYABLE = new Set([
   "needs_person",
 ]);
 
-/** A machine of a run under way may be skipped in these states: not yet updating (a desktop app
- * waiting for its click, or clicked, has its order withdrawn), or needing a person. */
+/** A machine of a run under way may be skipped in these states: not yet updating (a desktop app's
+ * order before its go is withdrawn), or needing a person. */
 export const TARGET_SKIPPABLE = new Set([
   "pending",
   "preparing",
   "prepared",
   "held",
-  "waiting_click",
-  "clicked",
+  ...APP_ORDER,
   "needs_person",
 ]);
 
@@ -254,7 +258,7 @@ export const TARGET_SKIPPABLE = new Set([
  * until its go), or during the rollout. */
 export function runCancellable(view: Pick<UpdateRunView, "state" | "detail">): boolean {
   if (RUN_CANCELLABLE.has(view.state)) return true;
-  return view.state === "home_applying" && WAITING_CLICK.has(view.detail?.home?.state ?? "");
+  return view.state === "home_applying" && APP_ORDER.has(view.detail?.home?.state ?? "");
 }
 
 /** One dump in the home's backups folder. */
