@@ -361,7 +361,10 @@ database with the API's migration user, to `<data_dir>/backups/pre-<version>-<ut
 never the share); then `pg_restore --list` must parse it and list every table of the schema; size and
 SHA-256 recorded in `update_runs.backup`. `pg_dump` is the one matching the server's major version
 (`pg_config`/bundled; a mismatch fails the step with `pg_dump_version`). SQLite homes (tests,
-single-machine): `VACUUM INTO`. Kept: `backups_keep` (3), oldest pruned after a commit.
+single-machine): `VACUUM INTO`. Kept: `backups_keep` (3), oldest pruned after a commit. Before
+any dump the oldest dumps go until it fits (its size guessed as the newest dump's x1.25): it leaves
+5% of the disk free (at least 2 GiB) and the dumps stay within a fifth of the disk, the newest of
+each kind kept; a dump that cannot fit is not started (`db_dump_failed`, not enough free space).
 
 ### 6.2 Rehearsal
 

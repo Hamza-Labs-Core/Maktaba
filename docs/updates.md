@@ -247,6 +247,11 @@ GitHub lists them.
 - **A home whose window always has a viewer** (or is always outside it) is told after three
   windows ("stuck"), and the page offers **Install now**.
 - The dumps are kept to `backups_keep`; scratch copies a crash left behind go after an hour.
+- **Before any dump** (nightly, before an update, a failed update's set aside) the oldest dumps go
+  until the new one fits: it must leave 5% of the disk free (at least 2 GiB), and all the dumps
+  together stay within a fifth of the disk. The newest dump of each kind always stays. When it
+  cannot fit even so, the dump is not started and the update stops at its database step with the
+  reason (`db_dump_failed`: not enough free space): free some space or move the data to a bigger disk.
 
 ## How each kind of install takes a release
 
