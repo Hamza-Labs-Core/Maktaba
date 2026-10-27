@@ -55,7 +55,8 @@ We take what fits a library of lectures and channels, not a clone.
 - Changing the database URL, ports of the internal roles, `[postgres]`, `[transcription]` or `[cloud]`
   from the web (other pages own the last two; the rest stay in `server.toml`).
 - Restarting a single role with a new environment: every setting here applies at a server restart.
-- Smart collections UI (the API has them; nothing in the home uses them yet: 0 collections).
+- Smart collections UI (the API has them; nothing in the home uses them yet: 0 collections). Built
+  in Phase 3 (story 45.17) as saved grid filters.
 
 ## Design
 
@@ -216,19 +217,19 @@ library (long talks, numbered lessons, one channel per sheikh, Arabic and Englis
 | On deck: the next lesson of each series one is in the middle of | Missing | Series detail has a "Continue" button for one series; no row across series | High: lessons are watched in order |
 | Up next at the end of a video, autoplay | Missing | The player stops at the end | High |
 | Recently added | Have | Home and hub rows | High |
-| Recently added grouped by series | Missing | A row of 20 lessons of one series floods it | Medium |
+| Recently added grouped by series | Missing (Have since 45.18) | A row of 20 lessons of one series floods it | Medium |
 | Recently watched, watch history | Have | Rows; `/account/history` (`/api/me/history`) | High |
 | Most watched | Have | Hub row (90 days) | Medium |
 | Mark watched / unwatched, one video | Missing | No route; only the player writes `playback_state` | High |
 | Mark watched / unwatched, many at once | Missing | | High: a sheikh's old lessons heard elsewhere |
 | Watched and progress badges on the grid | Partly | Rows show progress; the Browse grid shows nothing | High |
-| Collections | Partly | `/api/collections` (per library, smart ones too); no web page (a Phase 1 non-goal) | Medium |
+| Collections | Partly (Have since 45.17) | `/api/collections` (per library, smart ones too); no web page (a Phase 1 non-goal) | Medium |
 | Playlists (per user, ordered, across libraries) | Missing | | High: "my Ramadan list", a study plan |
 | Favorites / per-user ratings | Missing | | Favorites High; star ratings Low |
 | Filter by genre / tag | Missing in the grid | `tags`, `video_tags`, `GET /api/tags` exist | Medium |
 | Filter by speaker / sheikh | Missing in the grid | `speakers` (diarization names, renamed by admins); a library is usually one sheikh | Medium |
 | Filter by language | Partly | `?language=`; the chips list only the languages of the loaded page | High (Arabic / English) |
-| Filter by duration, resolution, added date | Missing | `duration_sec`, `media_info.width/height` exist | Low to Medium |
+| Filter by duration, resolution, added date | Missing (Have since 45.20) | `duration_sec`, `media_info.width/height` exist | Low to Medium |
 | Filter unwatched / in progress / watched | Have | `?watched=` | High |
 | Sort options | Have | updated, added, published, title, duration, plays; asc / desc | High |
 | A to Z jump bar | Missing | | Medium (47k videos in one library) |
@@ -237,9 +238,9 @@ library (long talks, numbered lessons, one channel per sheikh, Arabic and Englis
 | Rich detail page: chapters, transcript, people, related | Have | `/videos/:id` tabs (Chapters, Transcript), the context card (cast, related, more like this) | High |
 | Detail page: watched, favorite, add to a list, series position, next / previous | Missing | | High |
 | Series with seasons, episodes and progress | Have | `/series/:id` (Epic 26) | High |
-| Hero / featured | Missing | | Low (no artwork beyond posters) |
+| Hero / featured | Missing (Have since 45.21) | | Low (no artwork beyond posters) |
 | Trailers / hover previews | Missing | | Low (lectures have no trailers) |
-| Scrub thumbnails (trickplay) | Missing | Posters and chapters exist; no sprite sheet | Medium |
+| Scrub thumbnails (trickplay) | Missing (Have since 45.19) | Posters and chapters exist; no sprite sheet | Medium |
 | Resume points | Have | The player resumes from `playback_state` | High |
 | Intros / chapters | Partly | Chapter ticks in the player and the Chapters tab; no skip intro | Chapters High; intros Low |
 | Play all / Shuffle / Play from here | Missing | | High (a series, a playlist, a filtered grid) |
@@ -341,17 +342,58 @@ Built with this section:
 - **45.15** On Deck (Home and the library page).
 - **45.16** Multi-select on the grid with the bulk actions.
 
+Built in Phase 3 (below): 45.17 to 45.21.
+
 Left for later, by priority:
 
-- **45.17** Collections in the web (the API exists): a Collections row and page per library, curated
-  by admins; smart collections as saved filters.
-- **45.18** Recently Added grouped by series ("12 new lessons in Tafsir") on Home and the hub.
-- **45.19** Scrub thumbnails (trickplay): a sprite sheet per video from the thumbnail stage, shown over
-  the player's progress bar.
-- **45.20** Duration and added-date filters (short / medium / long; last week / month / year) and a
-  resolution filter from `media_info`.
-- **45.21** A featured hero on Home (the newest series, or a lesson an admin picks).
 - **45.22** Per-user star ratings, if favorites prove too coarse.
 - **45.23** Profiles with a PIN in the Mac app's window and parental limits beyond library ACLs (Low:
   each person signs in).
 - Not planned: trailers and hover previews, skip intro (lectures have neither), offline (the apps').
+
+## Phase 3: collections, grouped additions, scrub thumbnails, more filters, a hero
+
+### Phase 3 stories (built)
+
+- **45.17** Collections in the web: a Collections row and page per library and a page per collection,
+  curated by admins (create, rename, add, remove, reorder, delete); smart collections as saved filters.
+- **45.18** Recently Added grouped by series ("12 new lessons in Tafsir") on Home and the hub.
+- **45.19** Scrub thumbnails (trickplay): a sprite sheet and its index per video from the thumbnail
+  stage, served by the API, shown over the player's progress bar.
+- **45.20** Length and added-date filters (short / medium / long; last week / month / year) and a
+  resolution filter from `media_info`.
+- **45.21** A featured hero on Home: the newest series, or a lesson an admin picks.
+
+No migration: they use `collections` (slot 0033, 0076), `series`,
+`media_info` (0009), `app_settings` (0042) and the thumbnail cache as they are.
+
+| Route | What |
+|---|---|
+| `GET /api/collections?library=` | One library's collections, by name, each with `videos` (a list's visible videos) and up to four `poster_video_ids`; a dismissed auto collection is left out. 404 for a library the caller may not see. Without `library`, every visible library's, as before. |
+| `GET /api/collections/{id}/items` | A list's items carry their video's card (`video`); hidden videos (missing, superseded, deleted) are left out. A saved filter's items are `GET /api/videos` with its filters over its library, for the caller (`{items, next}`). |
+| `POST /api/collections/{id}/items` `{video_ids}` | Appends 1..500 videos at the end, in order; ones already in it keep their place; one unknown or hidden video refuses all. `{added}`. (`{video_id, position}` as before.) |
+| `POST`/`PATCH /api/collections` `smart_query: {"filters": {...}}` | A saved filter: the keys `GET /api/videos` takes (`q, language, year, watched, series, tag, speaker, letter, duration, added, resolution, sort, order`; never `favorite`, the caller's own), non-empty; else 422. A list refuses `smart_query`, a smart collection refuses items. |
+| `GET /api/videos` | Adds `duration=short\|medium\|long` (under 15 min, 15 to 60, over an hour), `added=week\|month\|year` (`created_at` in the last 7, 30, 365 days) and `resolution=sd\|hd\|fhd\|uhd` (`media_info.height` under 720, 720 to 1079, 1080 to 2159, 2160 and up). |
+| `GET /api/videos/facets` | Adds `durations`, `added`, `resolutions`: `[{value, videos}]`, the bands with videos. |
+| `GET /api/home`, the hub | Add `recently_added_grouped`: the newest additions (300 at most) with a series' new lessons as one entry `{kind: "series", video (the newest), series, count}` where its newest stood; every other `{kind: "video", video, series?}`. `recently_added` is unchanged. Home adds `featured`: `{kind: "series", video (its first lesson), series: {id, name, episodes}, picked: false}` for the newest series the caller may see, or `{kind: "video", video, series?, picked: true}` for the admin's pick when the caller may see it; `null` when there is nothing. |
+| `GET`/`PUT /api/home/featured` `{video_id \| null}` | Admins only (403 for anyone else, 401 signed out). The pick (`app_settings` `home.featured`); an unknown or hidden video is 404; `null` goes back to the newest series. Audited (`home.featured-set`). |
+| `GET /api/videos/{id}/trickplay`, `…/trickplay/sprite` | The scrub sheet's index `{sprite_url, columns, rows, count, interval_sec, tile_width, tile_height, sheet_width, sheet_height}` and the sheet; 404 without one. The poster's read rule and lookup (`sprite_path`, else the cache folder of the content hash). |
+
+Pipeline: the thumbnail stage's sheet is 10 by 10 (was 5 by 5) and gets `sprite.json` beside it
+(`{version: 1, columns, rows, count, interval_sec, tile_width, duration_sec}`; tile `i` is the frame at
+`i * interval_sec`). A sheet made before has no index: the API reads it as 5 by 5 over the duration.
+
+Web: a Collections row on a library's Overview and `/library/:id/collections` (cards; admins: New
+collection), `/collections/:id` (a list: Play all, Shuffle, Play from here; admins move, remove,
+rename, delete; a saved filter: its filters, Show the videos, Edit filters); on a library's Browse tab,
+admins get Save as collection (the filters and sort) and, on a selection, Add to collection. Length,
+Added and Resolution filters on the grid. Recently Added on Home and Overview shows a series' new
+lessons as one card ("12 new lessons") that opens the series. Home opens with the featured hero; admins
+pick a lesson with Feature on Home on its page. The player shows the tile under the pointer over the
+bottom of the video (and the seek's tile while dragging); the browser's timeline runs left to right in
+Arabic pages too, so the preview is placed from the left.
+
+Role tests: a viewer reads only their libraries' collections (404 for another's list, collection or
+items) and every collection write is an admin's (403); the featured pick is admin-only; a viewer's hero
+and grouped row never show another library's video; trickplay follows the poster's rule.
+
