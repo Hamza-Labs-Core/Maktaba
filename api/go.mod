@@ -15,7 +15,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/graph-gophers/graphql-go v1.9.0
-	github.com/lib/pq v1.10.9
+	github.com/lib/pq v1.11.2
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/sigstore/sigstore-go v1.3.0
 	github.com/vektah/gqlparser/v2 v2.5.30
