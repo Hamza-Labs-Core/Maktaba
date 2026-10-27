@@ -801,8 +801,10 @@ func StopServing(ctx context.Context, super *sql.DB) error {
 		    WHERE slot_name LIKE 'maktaba\_copy\_%' AND active`); err != nil {
 			return err
 		}
+		// a machine ended a moment ago may be back between the look and the drop (its
+		// subscription reconnects at once): the slot is in use again (55006), so try again
 		if _, err := super.ExecContext(ctx, `SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots
-		    WHERE slot_name LIKE 'maktaba\_copy\_%' AND NOT active`); err != nil {
+		    WHERE slot_name LIKE 'maktaba\_copy\_%' AND NOT active`); err != nil && !slotInUse(err) {
 			return fmt.Errorf("switchover: the old home's slots: %w", err)
 		}
 		var left int
@@ -859,4 +861,11 @@ $$`); err != nil {
 		return fmt.Errorf("switchover: the home's machines: %w", err)
 	}
 	return tx.Commit()
+}
+
+// slotInUse is Postgres refusing to drop a replication slot a connection holds
+// (object_in_use).
+func slotInUse(err error) bool {
+	var pe *pq.Error
+	return errors.As(err, &pe) && pe.Code == "55006"
 }
