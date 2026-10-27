@@ -4358,6 +4358,8 @@
   "help.topic.android-apps.summary": "Maktaba Player and Maktaba Remote on Android phones, foldables and tablets, and the permissions they need",
   "help.topic.android-tv.title": "The Android TV app",
   "help.topic.android-tv.summary": "Maktaba on Android TV and Google TV, and the permissions it needs",
+  "help.topic.desktop-player.title": "Maktaba Player for Windows and Linux",
+  "help.topic.desktop-player.summary": "Watch your home on a Windows or Linux computer, in a window or in big screen.",
   "help.topic.library.title": "Library",
   "help.topic.library.summary": "Browse your videos, sort, filter by language, switch views, and scan a library",
   "help.topic.series.title": "Series",

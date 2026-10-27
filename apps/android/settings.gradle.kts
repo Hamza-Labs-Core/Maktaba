@@ -21,4 +21,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Maktaba"
-include(":core", ":player", ":remote")
+include(":client", ":core", ":player", ":remote")

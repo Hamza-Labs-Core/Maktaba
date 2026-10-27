@@ -1,12 +1,11 @@
 package com.hamzalabs.maktaba.core.api
 
-import android.content.Context
-
 /**
  * `X-Maktaba-Client` (Epic 44 story 44.2): every request says which app sent it,
  * `<app>/<version> (<platform>; <device>)`, e.g. `player/1.3.0 (android; phone)`. The home
  * reads it as a label (analytics, its use per app), never for rights; any app but the web's
- * still signs in for tokens, as `native` did. Until the app calls [init] it is `native`.
+ * still signs in for tokens, as `native` did. Until the app sets it ([use]; on Android
+ * `ClientHeader.init(context)`, from its package) it is `native`.
  */
 object ClientHeader {
     const val NAME = "X-Maktaba-Client"
@@ -15,12 +14,9 @@ object ClientHeader {
     var value: String = "native"
         private set
 
-    /** Works out this app's value from its package (once, at start). */
-    fun init(context: Context) {
-        val version = runCatching {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        }.getOrNull()
-        value = make(context.packageName, version)
+    /** This app's value (once, at start). */
+    fun use(value: String) {
+        this.value = value
     }
 
     /**

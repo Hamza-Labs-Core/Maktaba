@@ -1,5 +1,5 @@
-# Reusable gate for the native Android apps (Epic 42.3, `apps/android`): the core module's
-# unit tests (the API client, token storage, the stream's authorization, the fold layout),
+# Reusable gate for the native Android apps (Epic 42.3, `apps/android`): the portable client's
+# tests (the module the desktop Player shares) and the core module's unit tests (the API client, token storage, the stream's authorization, the fold layout),
 # Android lint on every module, and a debug build of each app for each form factor
 # (Maktaba Player and Maktaba Remote; phone, foldable and tablet).
 
@@ -57,7 +57,7 @@ jobs:
           set -euo pipefail
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace \
-            :core:testDebugUnitTest \
+            :client:test :core:testDebugUnitTest \
             :core:lintDebug :player:lintPhoneDebug :remote:lintPhoneDebug \
             assembleDebug
 

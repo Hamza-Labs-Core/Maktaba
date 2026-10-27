@@ -5,7 +5,10 @@
 
 export const HELP_CATEGORIES = [
   { id: "start", topics: ["getting-started", "mac-app"] },
-  { id: "apps", topics: ["apple-apps", "apple-tv", "android-apps", "android-tv"] },
+  {
+    id: "apps",
+    topics: ["apple-apps", "apple-tv", "android-apps", "android-tv", "desktop-player"],
+  },
   {
     id: "watch",
     topics: ["library", "series", "playlists", "videos", "search", "watch-tv", "big-screen"],
