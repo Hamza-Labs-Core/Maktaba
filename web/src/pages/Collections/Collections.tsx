@@ -127,14 +127,16 @@ function CollectionsOf({ libraryId }: { libraryId: string }) {
 
   return (
     <section className="mkt-page mkt-collections">
+      <Link className="mkt-crumb" to={`/library/${encodeURIComponent(libraryId)}`}>
+        <bdi>{libName || t("libraryPage.tab.overview")}</bdi>
+      </Link>
       <header className="mkt-page__header">
-        <Link className="mkt-muted" to={`/library/${encodeURIComponent(libraryId)}`}>
-          <bdi>{libName || t("libraryPage.tab.overview")}</bdi>
-        </Link>
         <TitleRow>
           <h1>{t("collections.title")}</h1>
         </TitleRow>
-        {user?.is_admin && (
+      </header>
+      {user?.is_admin && (
+        <div className="mkt-collections__admin">
           <form
             className="mkt-playlists__new"
             onSubmit={(e) => {
@@ -156,9 +158,9 @@ function CollectionsOf({ libraryId }: { libraryId: string }) {
               {t("collections.create")}
             </Button>
           </form>
-        )}
-        {user?.is_admin && <p className="mkt-muted">{t("collections.smartHint")}</p>}
-      </header>
+          <p className="mkt-muted">{t("collections.smartHint")}</p>
+        </div>
+      )}
 
       {err && (
         <ErrorState

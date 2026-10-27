@@ -235,13 +235,10 @@ function CollectionOf({ id }: { id: string }) {
 
   return (
     <section className="mkt-page mkt-collection">
-      <header className="mkt-page__header">
-        <Link
-          className="mkt-muted"
-          to={`/library/${encodeURIComponent(col.library_id)}/collections`}
-        >
-          {t("collections.title")}
-        </Link>
+      <Link className="mkt-crumb" to={`/library/${encodeURIComponent(col.library_id)}/collections`}>
+        {t("collections.title")}
+      </Link>
+      <header className="mkt-page__header mkt-collection__header">
         {renaming ? (
           <form
             className="mkt-playlist__rename"
@@ -281,7 +278,7 @@ function CollectionOf({ id }: { id: string }) {
             : t("libraries.videos", { n: n(items.length) })}
         </span>
         {col.is_smart && filterChips.length > 0 && (
-          <ul className="mkt-chips" aria-label={t("collections.filters")}>
+          <ul className="mkt-chips mkt-collection__filters" aria-label={t("collections.filters")}>
             {filterChips.map(([k, v]) => (
               <li key={k}>
                 <Chip>
