@@ -44,6 +44,7 @@ public struct ConnectStrings: Sendable {
         case approveWarning, approve, notThis, done
         case unknownOnThisHome, notFound, approved, alreadyApproved, expired
         case anotherDevice, code
+        case linkTitle, linkMessage
     }
 
     static let en: [Key: String] = [
@@ -111,6 +112,8 @@ public struct ConnectStrings: Sendable {
         .expired: "The code has expired. Ask the device for a new one.",
         .anotherDevice: "The device",
         .code: "Code",
+        .linkTitle: "Connect to this home?",
+        .linkMessage: "A link asks to open the home “%@” at %@. Connect only if you trust where the link came from; you sign in there yourself.",
     ]
 
     static let ar: [Key: String] = [
@@ -178,6 +181,8 @@ public struct ConnectStrings: Sendable {
         .expired: "انتهت صلاحية الرمز. اطلب من الجهاز رمزًا جديدًا.",
         .anotherDevice: "الجهاز",
         .code: "الرمز",
+        .linkTitle: "الاتصال بهذا الجهاز الرئيسي؟",
+        .linkMessage: "يطلب رابط فتح الجهاز الرئيسي «%@» على %@. اتصل فقط إن كنت تثق بمصدر الرابط؛ وستسجّل الدخول هناك بنفسك.",
     ]
 
     /// Why an address did not lead to a home.

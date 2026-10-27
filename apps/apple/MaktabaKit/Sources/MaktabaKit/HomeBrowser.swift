@@ -5,10 +5,12 @@ import Observation
 
 /// The homes that announce themselves on this network: a home publishes `_maktaba._tcp`
 /// (its API port; in the TXT record `protocol`, `version`, `schema_rev`, `tls`, its `role`,
-/// its web port `web`, and from Epic 42 its instance `id`, `name` and web base `path`).
-/// The address an app uses is the web port on the host the announcement resolves to (its
-/// `.local` name), the address a person would type. One home announced twice (two
-/// interfaces, IPv4 and IPv6, a restart) is listed once: by its `id`, else its address.
+/// its web port `web`, and from Epic 42 the home's instance id `home`, the machine's own
+/// `id`, `name` and web base `path`). Every machine of a cluster announces; only `role=home`
+/// (or no role: an older home) is listed. The address an app uses is the web port on the
+/// host the announcement resolves to (its `.local` name), the address a person would type.
+/// One home announced twice (two interfaces, IPv4 and IPv6, a restart) is listed once: by
+/// `home`, else `id`, else its address.
 /// An app that browses lists `_maktaba._tcp` under `NSBonjourServices`.
 @MainActor @Observable
 public final class HomeBrowser {
@@ -103,11 +105,14 @@ public final class HomeBrowser {
         txt["role"].map { $0 == "home" } ?? true
     }
 
-    /// The home an announcement stands for (nil: no address).
+    /// The home an announcement stands for (nil: a machine of a home, or no address). Its
+    /// id is TXT `home` (the home's instance id, on every machine of it), else `id` (an
+    /// older home announces only its own), lower-cased as the identity route says it.
     nonisolated static func found(instance: String, host: String, apiPort: Int, txt: [String: String]) -> Found? {
-        guard let url = homeURL(host: host, apiPort: apiPort, txt: txt) else { return nil }
+        guard isHome(txt), let url = homeURL(host: host, apiPort: apiPort, txt: txt) else { return nil }
         let name = txt["name"]?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? instance
-        return Found(name: name, url: url, homeID: txt["id"]?.trimmingCharacters(in: .whitespaces).nilIfEmpty)
+        let id = (txt["home"] ?? txt["id"])?.trimmingCharacters(in: .whitespaces).lowercased().nilIfEmpty
+        return Found(name: name, url: url, homeID: id)
     }
 
     /// The address to use for a home announced at `host`: its web port (TXT `web`), else
@@ -120,7 +125,7 @@ public final class HomeBrowser {
         while bare.lowercased().hasSuffix(".local.local") { bare.removeLast(".local".count) }
         guard !bare.isEmpty else { return nil }
         var c = URLComponents()
-        c.scheme = txt["tls"] == "1" || txt["tls"]?.lowercased() == "true" ? "https" : "http"
+        c.scheme = ["1", "true", "yes"].contains(txt["tls"]?.lowercased() ?? "") ? "https" : "http"
         c.host = bare
         c.port = txt["web"].flatMap(Int.init) ?? apiPort
         c.path = basePath(txt["path"]) ?? ""

@@ -161,6 +161,10 @@ public final class AppSession {
 
     /// Picks a home: its client, and signed in at once when the Keychain still has tokens.
     public func use(_ home: Home) {
+        use(home, ask: asksHomes)
+    }
+
+    private func use(_ home: Home, ask: Bool) {
         let home = remember(home)
         current = home
         defaults.set(home.url, forKey: "home")
@@ -171,7 +175,7 @@ public final class AppSession {
         if tokens.access != nil {
             Task { await restore() }
         }
-        if asksHomes {
+        if ask {
             // how it signs in, and its id when the list did not say
             Task { [probe] in
                 guard case let .success(r) = await probe.check(home.url), current?.url == r.url else { return }
@@ -201,7 +205,7 @@ public final class AppSession {
             for u in r.addresses + candidates where u != r.url && !others.contains(u) { others.append(u) }
             let fallback = r.url.host() ?? r.url.absoluteString
             use(Home(url: r.url, name: r.name ?? name ?? fallback, homeID: r.id ?? homeID,
-                     addresses: others.isEmpty ? nil : others))
+                     addresses: others.isEmpty ? nil : others), ask: false)
             signInMethods = r.signIn
             return nil
         case let .failure(f):
@@ -210,15 +214,34 @@ public final class AppSession {
         }
     }
 
-    /// A home's connect link (`maktaba://connect?…`, opened or scanned): adds or picks the
-    /// home. false: not a connect link.
+    /// A connect link opened from outside the app, waiting for the person to say yes
+    /// (`confirmLink`) or no (`dismissLink`). Nothing is fetched or switched before that.
+    public private(set) var pendingLink: ConnectLink?
+
+    /// A home's connect link (`maktaba://connect?…`) opened from outside the app (another
+    /// app, a web page, the camera): kept for the person to confirm first, since anyone can
+    /// make one. false: not a connect link.
     @discardableResult
     public func open(_ url: URL) -> Bool {
         guard let link = ConnectLink(url) else { return false }
-        open(link)
+        pendingLink = link
         return true
     }
 
+    /// The person said yes to the link opened from outside.
+    public func confirmLink() {
+        guard let link = pendingLink else { return }
+        pendingLink = nil
+        open(link)
+    }
+
+    public func dismissLink() {
+        pendingLink = nil
+    }
+
+    /// A connect link the person gave in the app (scanned or pasted in the home picker):
+    /// adds or picks the home. Only the public `/api/discovery/home` is asked at each address;
+    /// no token goes anywhere, and a new address is signed in to afresh.
     public func open(_ link: ConnectLink) {
         // already there
         if let id = link.homeID, current?.homeID == id, phase != .choosingHome { return }
@@ -298,21 +321,15 @@ public final class AppSession {
         update(home.url) { $0.name = name }
     }
 
-    /// Adds `home` to the list, or merges it into the entry for the same address or the
-    /// same home id (the same home at a new address: its tokens move to it). What the
-    /// person named stays; a placeholder name gives way to a real one.
+    /// Adds `home` to the list, or merges it into the entry for the same address. Never by
+    /// its id alone: an id is what the address says of itself (mDNS, `/api/discovery/home`, a
+    /// link), so anyone on the network can claim one. Tokens stay with the exact address they
+    /// were issued at; the same id at another address is another entry, signed in afresh.
+    /// What the person named stays; a placeholder name gives way to a real one.
     private func remember(_ home: Home) -> Home {
         var entry: Home
         if let i = homes.firstIndex(where: { $0.url == home.url }) {
             entry = homes.remove(at: i)
-        } else if let id = home.homeID, let i = homes.firstIndex(where: { $0.homeID == id }) {
-            entry = homes.remove(at: i)
-            TokenStore(app: app, home: home.url).adopt(TokenStore(app: app, home: entry.url))
-            let old = entry.url
-            entry.url = home.url
-            entry.addresses = merged([old] + (entry.addresses ?? []), home.addresses ?? [], without: home.url)
-            // a removed duplicate at the new address (picked before its id was known)
-            homes.removeAll { $0.url == home.url }
         } else {
             entry = home
             entry.renamed = nil

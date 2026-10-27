@@ -90,6 +90,17 @@ import Testing
         #expect(HomeBrowser.isHome([:]) && HomeBrowser.isHome(["role": "home"]) && !HomeBrowser.isHome(["role": "node"]))
     }
 
+    /// Every machine of a cluster announces; `home` names the home on each, `id` the machine.
+    @Test func aHomeIsKnownByItsHomeKeyAndANodeIsNotListed() throws {
+        let home = try #require(HomeBrowser.found(instance: "Kitchen", host: "studio.local.", apiPort: 8080,
+                                                  txt: ["role": "home", "home": "0A1B2C3D-0000-4000-8000-000000000000", "id": "0a1b2c3d-0000-4000-8000-000000000000", "web": "8088", "tls": "yes"]))
+        #expect(home.homeID == "0a1b2c3d-0000-4000-8000-000000000000" && home.url.scheme == "https")
+        #expect(HomeBrowser.found(instance: "Basement", host: "basement.local.", apiPort: 8080,
+                                  txt: ["role": "node", "home": "0a1b2c3d-0000-4000-8000-000000000000", "id": "node-7", "web": "8088"]) == nil)
+        // an announcement with only its own id (35.11): the id it is
+        #expect(HomeBrowser.found(instance: "x", host: "x.local.", apiPort: 8080, txt: ["id": "abc"])?.homeID == "abc")
+    }
+
     @Test func oneHomeAnnouncedTwiceIsListedOnce() {
         var homes = FoundHomes()
         let url = URL(string: "http://nas.local:8088")!
@@ -158,12 +169,15 @@ final class RouteStub: URLProtocol, @unchecked Sendable {
         let status: Int
         let body: String
         var contentType = "application/json"
+        /// Answer with a redirect to this address instead.
+        var redirect: String?
     }
 
     struct Seen: Sendable {
         let route: String
         let body: [String: String]?
         let client: String?
+        var auth: String? = nil
     }
 
     nonisolated(unsafe) private static var routes: [String: [Answer]] = [:]
@@ -210,7 +224,8 @@ final class RouteStub: URLProtocol, @unchecked Sendable {
         let route = "\(request.httpMethod ?? "GET") \(url.host() ?? "")\(url.path())"
         let body = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: String] }
         let answer: Answer? = Self.lock.withLock {
-            Self.seenList.append(Seen(route: route, body: body, client: request.value(forHTTPHeaderField: ClientHeader.name)))
+            Self.seenList.append(Seen(route: route, body: body, client: request.value(forHTTPHeaderField: ClientHeader.name),
+                                      auth: request.value(forHTTPHeaderField: "Authorization")))
             guard var list = Self.routes[route], !list.isEmpty else { return nil }
             let first = list.count > 1 ? list.removeFirst() : list[0]
             Self.routes[route] = list
@@ -218,6 +233,14 @@ final class RouteStub: URLProtocol, @unchecked Sendable {
         }
         guard let answer else {
             client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
+            return
+        }
+        if let to = answer.redirect, let next = URL(string: to) {
+            var r = request
+            r.url = next
+            let moved = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1", headerFields: ["Location": to])!
+            client?.urlProtocol(self, wasRedirectedTo: r, redirectResponse: moved)
+            client?.urlProtocolDidFinishLoading(self)
             return
         }
         let resp = HTTPURLResponse(url: url, statusCode: answer.status, httpVersion: "HTTP/1.1",
@@ -312,23 +335,55 @@ extension RouteStub.Answer {
             #expect(f != nil && s.connectProblem == f && s.current == nil && s.phase == .choosingHome)
         }
 
-        @Test func theSameHomeAtANewAddressStaysOneHomeWithItsName() throws {
+        /// An id is what an address says of itself: anyone on the network can announce the
+        /// same one. Tokens stay with the address they were issued at.
+        @Test func theSameIdAtANewAddressGetsNoTokens() throws {
             let (s, _) = try session()
-            let lan = URL(string: "http://lan.test:8088")!, relay = URL(string: "https://relay.test")!
-            s.use(Home(url: lan, name: "lan.test", homeID: "home-1"))
+            let lan = URL(string: "http://lan.test:8088")!, rogue = URL(string: "http://rogue.test:8088")!
+            let real = TokenStore(app: "test.homes", home: lan)
+            let other = TokenStore(app: "test.homes", home: rogue)
+            other.clear()
+            real.save(AuthTokens(accessToken: "issued.by.lan", refreshToken: "r", user: nil))
+            defer { real.clear(); other.clear() }
+            s.use(Home(url: lan, name: "Living room", homeID: "home-1"))
+            s.use(Home(url: rogue, name: "Living room", homeID: "home-1"))
+            #expect(other.access == nil && other.refresh == nil, "nothing moved to the new address")
+            #expect(real.access == "issued.by.lan", "the old address keeps its own")
+            #expect(s.homes.map(\.url).sorted { $0.absoluteString < $1.absoluteString } == [lan, rogue])
+            #expect(s.phase == .signingIn, "signed in afresh at the new address")
+        }
+
+        @Test func thePersonsNameStays() throws {
+            let (s, _) = try session()
+            s.use(Home(url: URL(string: "http://lan.test:8088")!, name: "lan.test", homeID: "home-1"))
             s.rename(s.current!, to: "Grandma's")
-            s.use(Home(url: relay, name: "Living room", homeID: "home-1"))
-            #expect(s.homes.count == 1)
-            #expect(s.current?.url == relay && s.current?.name == "Grandma's" && s.current?.renamed == true)
-            #expect(s.current?.addresses == [lan])
             // the home's own name does not replace the person's
             s.named("Living room")
-            #expect(s.current?.name == "Grandma's")
+            #expect(s.current?.name == "Grandma's" && s.current?.renamed == true)
             // an empty name gives the home's back
             s.rename(s.current!, to: "  ")
             #expect(s.current?.renamed == nil)
             s.named("Living room")
             #expect(s.current?.name == "Living room")
+        }
+
+        /// A link opened from outside asks first: nothing is fetched or switched before yes.
+        @Test func aLinkFromOutsideNeedsConfirmation() async throws {
+            RouteStub.reset()
+            RouteStub.on("GET relay.test/api/discovery/home", .json(200, AgainstAStubHome.discovery))
+            let (s, _) = try session()
+            #expect(s.open(URL(string: "maktaba://connect?id=home-1&u=https://relay.test")!))
+            #expect(s.pendingLink?.urls.map(\.absoluteString) == ["https://relay.test"])
+            try await Task.sleep(for: .milliseconds(200))
+            #expect(RouteStub.seen.isEmpty && s.current == nil && s.phase == .choosingHome)
+            s.dismissLink()
+            #expect(s.pendingLink == nil && s.current == nil)
+            // yes: then it connects
+            s.open(URL(string: "maktaba://connect?id=home-1&u=https://relay.test")!)
+            s.confirmLink()
+            for _ in 0..<50 where s.current == nil { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(s.current?.url.absoluteString == "https://relay.test")
+            #expect(!s.open(URL(string: "https://example.com")!))
         }
 
         @Test func theLastUsedComesFirst() throws {
@@ -395,6 +450,45 @@ extension RouteStub.Answer {
             let f = flow(TokenStore(app: "test.code.none", home: home)) {}
             await f.run()
             #expect(f.status == .unsupported)
+        }
+    }
+
+    /// A home's token goes only to the origin it was issued by, redirects included.
+    @Suite struct Credentials {
+        let home = URL(string: "http://tokens.test:8088")!
+
+        @Test func aRedirectToAnotherOriginDropsTheToken() async throws {
+            RouteStub.reset()
+            RouteStub.on("GET tokens.test/api/libraries", .init(status: 302, body: "", redirect: "http://evil.test/api/libraries"))
+            RouteStub.on("GET evil.test/api/libraries", .json(200, #"{"items":[],"next":null}"#))
+            RouteStub.on("GET tokens.test/api/videos/a", .init(status: 302, body: "", redirect: "http://tokens.test:8088/api/videos/b"))
+            RouteStub.on("GET tokens.test/api/videos/b", .json(200, #"{"id":"b","library_id":"l","filename":"b.mp4"}"#))
+            let tokens = TokenStore(app: "test.redirect", home: home)
+            tokens.save(AuthTokens(accessToken: "secret.access.token", refreshToken: "r", user: nil))
+            defer { tokens.clear() }
+            let c = APIClient(home: home, tokens: tokens, session: RouteStub.session())
+            _ = try await c.libraries()
+            let seen = RouteStub.seen
+            #expect(seen.first { $0.route == "GET tokens.test/api/libraries" }?.auth == "Bearer secret.access.token")
+            let evil = try #require(seen.first { $0.route == "GET evil.test/api/libraries" }, "the redirect was followed")
+            #expect(evil.auth == nil, "no token to another origin")
+            // the same origin keeps it
+            _ = try await c.video("a")
+            #expect(RouteStub.seen.first { $0.route == "GET tokens.test/api/videos/b" }?.auth == "Bearer secret.access.token")
+        }
+
+        @Test func theRuleItself() {
+            var r = URLRequest(url: URL(string: "http://h.test:8088/api/x")!)
+            r.setValue("Bearer t", forHTTPHeaderField: "Authorization")
+            for other in ["https://h.test:8088/api/x", "http://h.test:8089/api/x", "http://evil.test:8088/api/x"] {
+                var next = r
+                next.url = URL(string: other)!
+                #expect(SameOriginRedirects.redirect(from: r, to: next).value(forHTTPHeaderField: "Authorization") == nil, "\(other)")
+            }
+            var same = r
+            same.url = URL(string: "http://H.TEST:8088/api/y")!
+            #expect(SameOriginRedirects.redirect(from: r, to: same).value(forHTTPHeaderField: "Authorization") == "Bearer t")
+            #expect(SameOriginRedirects.sameOrigin(URL(string: "https://a.test")!, URL(string: "https://a.test:443/x")!))
         }
     }
 

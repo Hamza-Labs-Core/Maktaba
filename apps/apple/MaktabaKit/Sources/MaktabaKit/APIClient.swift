@@ -101,9 +101,12 @@ public actor APIClient {
         guard url.path().hasSuffix(".m3u8") else { return }
         func fetch(_ u: URL) async throws -> (Int, Data) {
             var r = URLRequest(url: u)
-            headers.forEach { r.setValue($1, forHTTPHeaderField: $0) }
+            // the token goes only to the home it was issued by
+            if SameOriginRedirects.sameOrigin(u, home) {
+                headers.forEach { r.setValue($1, forHTTPHeaderField: $0) }
+            }
             do {
-                let (d, resp) = try await session.data(for: r)
+                let (d, resp) = try await session.data(for: r, delegate: SameOriginRedirects.shared)
                 return ((resp as? HTTPURLResponse)?.statusCode ?? 0, d)
             } catch {
                 throw APIError.transport(error.localizedDescription)
@@ -206,7 +209,7 @@ public actor APIClient {
         r.timeoutInterval = 15
         let data: Data, response: URLResponse
         do {
-            (data, response) = try await session.data(for: r)
+            (data, response) = try await session.data(for: r, delegate: SameOriginRedirects.shared)
         } catch {
             throw APIError.transport(error.localizedDescription)
         }
@@ -332,7 +335,7 @@ public actor APIClient {
         }
         let data: Data, response: URLResponse
         do {
-            (data, response) = try await session.data(for: r)
+            (data, response) = try await session.data(for: r, delegate: SameOriginRedirects.shared)
         } catch {
             throw APIError.transport(error.localizedDescription)
         }

@@ -215,12 +215,21 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    sign-in, libraries, a video, watching (stream sessions, progress), needs attention with
    Retry. iPhone (iPhone Duo), iPad, Mac; Xcode automatic signing. (Started.)
 2. **42.2 Home picker:** mDNS (Bonjour on Apple, NSD on Android), by address, QR; several homes.
+   Apple (Player, Remote; iPhone, iPad, Mac): on this network (`role=home` only, deduped by TXT
+   `home`, `id`, host:port; web `path`), recent homes (rename, remove), by address or a pasted
+   `maktaba://connect` link (checked with `/api/discovery/home`, `/api/system/version` on older
+   homes), a scanned QR (iPhone, iPad); the `maktaba` URL scheme opens a home after asking.
+   Tokens stay bound to the origin that issued them (no move on a matching id, none sent
+   across a redirect to another origin).
 3. **42.3 Android Player and Remote:** Compose, phone / foldable / tablet, sharing with Android TV.
    (Started: `apps/android`, the Player and the Remote for each form factor on a shared `core`.)
 4. **42.4 Desktop Player on Windows and Linux:** Compose for Desktop, release legs,
    `latest-player.json`.
 5. **42.5 Web editions:** `VITE_MAKTABA_EDITION`, lazy server routes, "Manage" in `full`.
 6. **42.6 Sign-in by code:** endpoints, the approve screen, mobile, desktop and TV.
+   Apple: sign-in offers a password or a code (large, with a QR of `verify_url`, renewed on
+   expiry); "Approve a sign-in" in the Remote's and the Player's account menus (type or scan the
+   code, see what asks, approve explicitly). The Apple TV app is unchanged (story 42.10).
 7. **42.7 Linked accounts and the cloud:** linking (home Account page, `home_user_links`), the
    cloud's home assertion, `POST /api/auth/cloud`, the app's cloud sign-in and home list, both
    addresses per home (local and relay).

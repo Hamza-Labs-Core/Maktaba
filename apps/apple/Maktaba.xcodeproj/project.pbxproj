@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		046E5277127F36955FABBE5D /* MockHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD93EAD5692107A496A1FDD3 /* MockHome.swift */; };
 		08792A39621BC0D1AD8FD83D /* Info-iPad.plist in Resources */ = {isa = PBXBuildFile; fileRef = BA377D873DB5DE610F6F4CAD /* Info-iPad.plist */; };
 		090BCDAE9625A4DF362699A5 /* PermissionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A393205A7EEE149BDDD305 /* PermissionsUITests.swift */; };
 		1041FCA639CA3B5FF05E1C8A /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
@@ -51,6 +52,7 @@
 		A2238941ECE21FBB30DE48CA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 		A382431DD2D7A1BB74017B3F /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */; };
 		A5753F2E48C3030B374C0BCB /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
+		B5B5B81C34A046D316FB37C4 /* ConnectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */; };
 		BC05734168F2524810868806 /* Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6629068B08CFDCF4BEA7DB9 /* Playback.swift */; };
 		C16C4AC8969FD4372611DCFB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 		C27D09630EE20C32BCEEF775 /* VideoPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF83B2D1152B80EC31E57E84 /* VideoPage.swift */; };
@@ -72,7 +74,9 @@
 		E874C97168BF20243A33317A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 		E91EF9BB0082BACB13E84403 /* MaktabaTVApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26B8917AAB897DEB44B6AF68 /* MaktabaTVApp.swift */; };
 		FB1FE4D62972E3F2358248E3 /* PlayerSurfaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30EA3603E36B3BB4C0350807 /* PlayerSurfaceTests.swift */; };
+		FBCFB9883DF7B05B34BBD213 /* ConnectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */; };
 		FC58B9763E8F4FDCF266BFAB /* PermissionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D278F13E0FB225131B9188 /* PermissionsUITests.swift */; };
+		FF72737A4C43DE6E7FF3F57F /* MockHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD93EAD5692107A496A1FDD3 /* MockHome.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -111,6 +115,7 @@
 		1AB8DED5864DCE439AEB8ADA /* Info-iPhone.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPhone.plist"; sourceTree = "<group>"; };
 		26B8917AAB897DEB44B6AF68 /* MaktabaTVApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaktabaTVApp.swift; sourceTree = "<group>"; };
 		26FE31850DAA6C8094E0C331 /* RemoteModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModel.swift; sourceTree = "<group>"; };
+		2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectUITests.swift; sourceTree = "<group>"; };
 		30EA3603E36B3BB4C0350807 /* PlayerSurfaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSurfaceTests.swift; sourceTree = "<group>"; };
 		31F751DD280EC1E10E13F594 /* MachinesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachinesView.swift; sourceTree = "<group>"; };
 		3B2C483BC88DC3A0AB619751 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -139,6 +144,7 @@
 		A131A888F4586F376E30AAFC /* Maktaba Player iPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Maktaba Player iPad.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABCBF5747692F36353AED506 /* Maktaba Player UITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "Maktaba Player UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AD2EE657B05C62BB473F4249 /* Player-Mac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Player-Mac.entitlements"; sourceTree = "<group>"; };
+		AD93EAD5692107A496A1FDD3 /* MockHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockHome.swift; sourceTree = "<group>"; };
 		B05F2853C3A8F998DD0A2B31 /* Maktaba Player.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Maktaba Player.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B4308B97DA9C3C82928D74F9 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		B722A47D46B320D8C9C4466E /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
@@ -311,6 +317,8 @@
 		75D11543C0E70A51E384CBF8 /* UITests */ = {
 			isa = PBXGroup;
 			children = (
+				2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */,
+				AD93EAD5692107A496A1FDD3 /* MockHome.swift */,
 				72D278F13E0FB225131B9188 /* PermissionsUITests.swift */,
 			);
 			path = UITests;
@@ -810,6 +818,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B5B5B81C34A046D316FB37C4 /* ConnectUITests.swift in Sources */,
+				FF72737A4C43DE6E7FF3F57F /* MockHome.swift in Sources */,
 				5EDF4E204C072B79FFF3200A /* PermissionsUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -838,6 +848,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FBCFB9883DF7B05B34BBD213 /* ConnectUITests.swift in Sources */,
+				046E5277127F36955FABBE5D /* MockHome.swift in Sources */,
 				FC58B9763E8F4FDCF266BFAB /* PermissionsUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

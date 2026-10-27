@@ -19,7 +19,9 @@ public struct SessionGate<Content: View>: View {
     }
 
     public var body: some View {
-        Group {
+        // a container (not a Group, which would hand these modifiers to the screen, whose own
+        // alerts would then hide them)
+        ZStack {
             switch session.phase {
             case .choosingHome:
                 HomePickerView(session: session, title: title)
@@ -32,6 +34,10 @@ public struct SessionGate<Content: View>: View {
             }
         }
         .onOpenURL { session.open($0) }
+        #if os(macOS)
+        // a link opened on the Mac goes to the window already open, not a new one
+        .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+        #endif
         .sheet(isPresented: $session.approvingSignIn) {
             if case let .signedIn(user) = session.phase, let client = session.client {
                 ApproveSignInView(client: client, user: user, homeName: session.current?.name ?? "")
@@ -40,14 +46,54 @@ public struct SessionGate<Content: View>: View {
                     #endif
             }
         }
-        // a link opened while a home is in use: the picker shows its own problems
-        .alert(words.text(.connect), isPresented: Binding(
-            get: { session.connectProblem != nil && session.phase != .choosingHome },
-            set: { if !$0 { session.connectProblem = nil } })
+        // away from the picker (which shows both itself): a link from outside the app, which
+        // the person says yes to before anything is asked, or why the one they said yes to
+        // did not lead to a home. One alert for both.
+        .alert(alertTitle, isPresented: Binding(
+            get: { session.phase != .choosingHome && (session.pendingLink != nil || session.connectProblem != nil) },
+            set: { if !$0 { session.dismissLink(); session.connectProblem = nil } })
         ) {
-            Button(words.text(.done)) { session.connectProblem = nil }
+            if session.pendingLink != nil {
+                Button(words.text(.connect)) { session.confirmLink() }
+                Button(words.text(.cancel), role: .cancel) { session.dismissLink() }
+            } else {
+                Button(words.text(.done)) { session.connectProblem = nil }
+            }
         } message: {
-            Text(session.connectProblem.map(words.reach) ?? "")
+            if let link = session.pendingLink {
+                Text(LinkPrompt.message(link, words))
+            } else {
+                Text(session.connectProblem.map(words.reach) ?? "")
+            }
+        }
+    }
+
+    private var alertTitle: String {
+        words.text(session.pendingLink != nil ? .linkTitle : .connect)
+    }
+}
+
+/// Asking before a connect link opened from outside the app is followed.
+struct LinkPrompt: View {
+    let session: AppSession
+    let link: ConnectLink
+    let words: ConnectStrings
+
+    static func message(_ link: ConnectLink, _ words: ConnectStrings) -> String {
+        words.text(.linkMessage, link.name ?? link.urls.first?.host() ?? "",
+                   link.urls.map { Home(url: $0, name: "").displayAddress }.joined(separator: ", "))
+    }
+
+    var body: some View {
+        Section {
+            Text(Self.message(link, words))
+            Button(words.text(.connect)) { session.confirmLink() }
+                .bold()
+                .accessibilityIdentifier("link.connect")
+            Button(words.text(.cancel), role: .cancel) { session.dismissLink() }
+                .accessibilityIdentifier("link.cancel")
+        } header: {
+            Text(words.text(.linkTitle))
         }
     }
 }
@@ -74,6 +120,9 @@ public struct HomePickerView: View {
     public var body: some View {
         NavigationStack {
             Form {
+                if let link = session.pendingLink {
+                    LinkPrompt(session: session, link: link, words: words)
+                }
                 if session.connecting {
                     Section {
                         HStack(spacing: 10) {
@@ -259,9 +308,15 @@ public struct SignInView: View {
     @State private var password = ""
     @State private var busy = false
     @State private var problem: String?
+    @State private var codeFlow: CodeSignIn?
     private let words = ConnectStrings.forPreferredLanguages()
 
     enum Method: Hashable { case password, code }
+
+    struct CodeFlowKey: Equatable {
+        let home: URL?
+        let shown: Bool
+    }
 
     public init(session: AppSession) {
         self.session = session
@@ -296,7 +351,7 @@ public struct SignInView: View {
                 case .password:
                     passwordForm
                 case .code:
-                    CodeSignInSection(session: session, words: words) { method = .password }
+                    CodeSignInSection(session: session, words: words, model: codeFlow) { method = .password }
                 }
             }
             .formStyle(.grouped)
@@ -307,6 +362,17 @@ public struct SignInView: View {
                         .accessibilityIdentifier("signin.homes")
                 }
             }
+        }
+        // one code at a time, asked for only while it shows (here, not on the Form's rows,
+        // which come and go as the code's state changes)
+        .task(id: CodeFlowKey(home: session.current?.url, shown: shown == .code)) {
+            codeFlow = nil
+            guard shown == .code, let client = session.client else { return }
+            let m = CodeSignIn(client: client, label: CodeSignInSection.deviceLabel) { [session] in
+                try await session.signedInByCode()
+            }
+            codeFlow = m
+            await m.run()
         }
         .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
     }
@@ -353,8 +419,8 @@ public struct SignInView: View {
 struct CodeSignInSection: View {
     let session: AppSession
     let words: ConnectStrings
+    let model: CodeSignIn?
     let usePassword: () -> Void
-    @State private var model: CodeSignIn?
 
     var body: some View {
         Group {
@@ -373,14 +439,6 @@ struct CodeSignInSection: View {
             if let problem = model?.problem {
                 Section { Text(problem).foregroundStyle(.red) }
             }
-        }
-        .task(id: session.current?.url) {
-            guard let client = session.client else { return }
-            let m = CodeSignIn(client: client, label: Self.deviceLabel) { [session] in
-                try await session.signedInByCode()
-            }
-            model = m
-            await m.run()
         }
     }
 
@@ -426,6 +484,7 @@ struct CodeSignInSection: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
+            .accessibilityElement(children: .contain)
         }
     }
 

@@ -205,7 +205,7 @@ public struct HomeProbe: Sendable {
             if Task.isCancelled { break }
             switch await check(url) {
             case let .success(home):
-                if let expectedID, let id = home.id, id != expectedID {
+                if let expectedID, let id = home.id, id.lowercased() != expectedID.lowercased() {
                     failure = .otherHome
                     continue
                 }

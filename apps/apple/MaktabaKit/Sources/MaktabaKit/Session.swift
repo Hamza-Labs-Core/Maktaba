@@ -46,17 +46,6 @@ public final class TokenStore: @unchecked Sendable {
         }
     }
 
-    /// The same home reached at a new address: its tokens move over from the old one's
-    /// entry (one read and one write each; nothing when this one has its own already).
-    func adopt(_ other: TokenStore) {
-        guard access == nil, let a = other.access, let r = other.refresh else { return }
-        lock.withLock {
-            write("access", a)
-            write("refresh", r)
-        }
-        other.clear()
-    }
-
     public func clear() {
         lock.withLock {
             for kind in ["access", "refresh"] {
