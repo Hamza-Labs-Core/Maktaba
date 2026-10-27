@@ -623,18 +623,26 @@ func TestSearchID_SameSearchTwiceKeepsBoth(t *testing.T) {
 // The history keeps the newest rules.search.recent_limit searches.
 func TestRecentSearches_Bounded(t *testing.T) {
 	db := searchDB(t)
+	// a limit of 3 (the default is 20): five searches prove the bound, at a fifth of
+	// the cost of 25 (each search is a write; the unit budget is per test)
+	if _, err := db.Exec(`CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT, updated_by TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO app_settings (key, value) VALUES ('rules.search', '{"recent_limit": 3}')`); err != nil {
+		t.Fatal(err)
+	}
 	c := &clock{t: time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)}
 	h := router(&Handler{DB: db, NowFunc: c.now})
-	for i := 0; i < 25; i++ {
+	for i := 0; i < 5; i++ {
 		c.t = c.t.Add(time.Second)
 		decode[Response](t, call(t, h, admin, http.MethodPost, "/api/search", fmt.Sprintf(`{"q":"q%d","mode":"fts"}`, i)), 200)
 	}
 	got := decode[recentList](t, call(t, h, admin, http.MethodGet, "/api/search/recent", ""), 200).Items
-	if len(got) != 20 || got[0].Q != "q24" || got[19].Q != "q5" {
+	if len(got) != 3 || got[0].Q != "q4" || got[2].Q != "q2" {
 		t.Fatalf("recent %d: first %q", len(got), got[0].Q)
 	}
 	var rows int
-	if err := db.QueryRow(`SELECT count(*) FROM search_runs`).Scan(&rows); err != nil || rows != 20 {
+	if err := db.QueryRow(`SELECT count(*) FROM search_runs`).Scan(&rows); err != nil || rows != 3 {
 		t.Fatalf("rows kept %d %v", rows, err)
 	}
 }
