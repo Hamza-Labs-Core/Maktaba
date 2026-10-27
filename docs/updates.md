@@ -19,7 +19,7 @@ The desktop and mobile apps' own updates (their badge, the signing key, the mobi
 | Installing on the machines | After the home commits the release: downloaded from the home, verified on each machine, switched one at a time. | What a machine's failure does to the others (`node_failure_policy`), when a machine that was offline catches up (`catch_up`). |
 | TV | Plain server installs keep TV playing across the restart; the streaming software then moves to the new release at programme boundaries, without an approval. | The viewers a restart may interrupt (`tv_staging.quiet_max_viewers`, 0) on installs that restart whole. |
 | Going back | A release that does not stay healthy is rolled back, its database put back from the dump taken before its migrations. | Rolling back by hand, restoring an older backup. |
-| A desktop app that runs the server (Maktaba.app, the Windows or Linux app) | It downloads and stages the release the home orders. | **The click** that installs it (owner decision D1). |
+| A desktop app that runs the server (Maktaba.app, the Windows or Linux app) | It downloads and stages the release the home orders, says when it installs, and installs and restarts by itself: at once for an **Update now**, in the window for an automatic update. No click on the machine (owner decision D1, 2026-10-27). | The same as any machine. |
 
 Automatic installs are on by default (`rules.updates.auto_install`). With them off (Admin →
 Updates → Pause, or Settings → About) the home only checks and notifies. `MAKTABA_UPDATE_DISABLE=1`
@@ -97,8 +97,9 @@ cluster stays where it is until stable passes it.
    any time except a machine carrying TV streams; `window`, only inside the window), and so is one
    whose part failed for a reason since mended, or one its new release's schema paused.
 
-A desktop app's machine waits for its click while the others go; its click takes the next turn. A
-run waiting only for clicks gives way to a newer release. A power cut at any step is recovered at
+A desktop app's machine is ordered as soon as it is prepared; its app downloads the release while
+the others go, and it takes its turn once staged, with no click. A run waiting only for apps to
+download gives way to a newer release. A power cut at any step is recovered at
 the next start from the update's journal (`updates/journal.json`).
 
 ## What happens to TV
@@ -260,9 +261,9 @@ details.)
 
 | Install | Automatically | Still needs a person |
 |---|---|---|
-| **Maktaba.app** (Mac) | The server orders the release from the app (`updates/app-install.json`); the app downloads and checks exactly that release from its own updater feed and shows it ("Install Maktaba <v>"). After the click, the home's go: the app installs what it staged and restarts the server. Before, the server keeps a copy of the payload it ran, which the launcher runs if the new one cannot stay up. | **The click** in the app. The first update from a release before automatic updates. An app in a folder this user cannot change (`/Applications` for a standard user): reported as needing an administrator, nothing changed. |
-| **Windows app** | The same; the installer stops and starts the server. | The click. The first update from a release before automatic updates. |
-| **Linux app** (AppImage, `.deb`, `.rpm`) | The server installs the release's signed Linux payload as a new runtime directory, and switches to it after the click in the app (no root needed); `previous` is kept for the rollback. | The click. The first update from a release before automatic updates. The app's own window updates with its updater. |
+| **Maktaba.app** (Mac) | The server orders the release from the app (`updates/app-install.json`); the app downloads and checks exactly that release from its own updater feed and says when it installs ("Maktaba will update to <v> and restart by <time>", or "shortly"). At the home's go, with no click: the app installs what it staged ("Maktaba is updating to <v> now") and restarts the server. Before, the server keeps a copy of the payload it ran, which the launcher runs if the new one cannot stay up. | The first update from a release before automatic updates. An app in a folder this user cannot change (`/Applications` for a standard user): reported as needing an administrator, nothing changed. |
+| **Windows app** | The same; the installer stops and starts the server. | The first update from a release before automatic updates. |
+| **Linux app** (AppImage, `.deb`, `.rpm`) | The server installs the release's signed Linux payload as a new runtime directory, and switches to it at the home's go, with no click in the app (no root needed); `previous` is kept for the rollback. | The first update from a release before automatic updates. The app's own window updates with its updater. |
 | **Headless** (`install.sh --app`) | The same runtime switch, by itself in the window. | The first update from a release before automatic updates. |
 | **Docker** (`ghcr.io/hamza-labs-core/maktaba-server`, [cloud/installers/docker](../cloud/installers/docker/docker-compose.yml)) | The headless runtime switch, on the image's volume, by itself in the window: the image only puts its payload there the first time, and the server updates it from then on. A newer image pulled later is switched to at the container's start under the launcher's guard, kept once its server has run for 3 minutes; one that cannot start is gone back from and not tried again (the image before still runs). An older image never replaces what the volume runs. | Nothing (no image to pull, no Docker socket). An image managed elsewhere (Watchtower, a tag you move): set `MAKTABA_UPDATE_DISABLE=1` (or Pause on Admin > Updates) so only one thing updates it. |
 | **Plain server** on the side-by-side layout (`setup --self-managed`, the `.deb`/`.rpm`, the Homebrew formula) | Staged in `bin/releases/<v>` with its migrations and its own pipeline environment (`venv`, built from the release's wheel and the home's wheelhouse with the machine's Python 3.12), switched to under the launcher's guard, TV handed over. A release that needs a newer launcher replaces it after its commit (a package-owned launcher: the package manager brings it, and the run names the command). | A Python 3.12 for the pipeline (or `MAKTABA_PIPELINE_PYTHON`). |
