@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	neturl "net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -81,7 +83,53 @@ func (m *Manager) Status() Status {
 	defer m.mu.Unlock()
 	s := m.status
 	s.Models = append([]ModelStatus(nil), s.Models...)
+	// served (the supervisor's /llm and /processes, the System health page) and
+	// logged: an [llm] url's login or api_key never with it
+	raw := s.URL
+	s.URL = RedactURL(raw)
+	s.Error = scrubURL(s.Error, raw)
+	for i := range s.Models {
+		s.Models[i].Error = scrubURL(s.Models[i].Error, raw)
+	}
 	return s
+}
+
+// RedactURL is a model server's URL without its userinfo or query (a remote server's
+// login, an api_key=…), for a log line or a page.
+func RedactURL(s string) string {
+	u, err := neturl.Parse(s)
+	if err != nil {
+		return "…"
+	}
+	login := u.User != nil
+	u.User, u.Fragment = nil, ""
+	if u.RawQuery != "" {
+		u.RawQuery = "…"
+	}
+	out := u.String()
+	if login {
+		out = strings.Replace(out, "://", "://…@", 1)
+	}
+	return out
+}
+
+// scrubURL is msg (an error, which may quote the URL it fetched) without raw's
+// password or query.
+func scrubURL(msg, raw string) string {
+	if msg == "" {
+		return msg
+	}
+	u, err := neturl.Parse(raw)
+	if err != nil {
+		return msg
+	}
+	if pw, ok := u.User.Password(); ok && pw != "" {
+		msg = strings.ReplaceAll(msg, pw, "…")
+	}
+	if u.RawQuery != "" {
+		msg = strings.ReplaceAll(msg, u.RawQuery, "…")
+	}
+	return msg
 }
 
 func (m *Manager) set(f func(*Status)) {

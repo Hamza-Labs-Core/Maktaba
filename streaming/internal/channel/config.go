@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
@@ -214,6 +215,41 @@ func FindFont() string {
 		}
 	}
 	return ""
+}
+
+// SlateFont is FindFont when ffmpeg can draw text, else "": a slate's caption
+// needs the drawtext filter (libfreetype), which some builds lack (Homebrew's
+// default ffmpeg), and a slate asked to draw its caption with one of those fails
+// whole, leaving the channel with no picture at all. Without the font it airs
+// without its caption.
+func SlateFont(ctx context.Context, ffmpeg string) string {
+	if !HasFilter(ctx, ffmpeg, "drawtext") {
+		slog.Warn("tv: this ffmpeg has no drawtext filter: slates air without their caption",
+			"ffmpeg", ffmpeg, "event", "tv_slate_caption_unavailable")
+		return ""
+	}
+	return FindFont()
+}
+
+var filterCache sync.Map // ffmpeg + "\x00" + filter → bool
+
+// HasFilter reports whether this ffmpeg has the filter (cached per binary). ffmpeg
+// answers -h filter=<an unknown one> with "Unknown filter" and exit status 0, so
+// its help's first line is what tells.
+func HasFilter(ctx context.Context, ffmpeg, filter string) bool {
+	key := ffmpeg + "\x00" + filter
+	if v, ok := filterCache.Load(key); ok {
+		return v.(bool)
+	}
+	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(cctx, ffmpeg, "-hide_banner", "-h", "filter="+filter).CombinedOutput()
+	if err != nil {
+		return false // not cached: the binary may be there next time
+	}
+	ok := strings.HasPrefix(strings.TrimSpace(string(out)), "Filter "+filter)
+	filterCache.Store(key, ok)
+	return ok
 }
 
 // StationStarter adapts StartStation to the engine's StartFunc.

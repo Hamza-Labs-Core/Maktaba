@@ -304,7 +304,8 @@ func probeShaping(ctx context.Context, ffmpeg, fontFile string) shapingResult {
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	help, err := exec.CommandContext(cctx, ffmpeg, "-hide_banner", "-h", "filter=drawtext").CombinedOutput()
-	if err != nil || !strings.Contains(string(help), "drawtext") {
+	// "Unknown filter 'drawtext'." (exit status 0) names it too: the help's first line tells
+	if err != nil || !strings.HasPrefix(strings.TrimSpace(string(help)), "Filter drawtext") {
 		return shapingResult{false, "this ffmpeg has no drawtext filter"}
 	}
 	if !strings.Contains(string(help), "text_shaping") {

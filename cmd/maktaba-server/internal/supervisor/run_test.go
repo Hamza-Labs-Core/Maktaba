@@ -76,6 +76,19 @@ func TestCrashRestartsOnlyThatChild(t *testing.T) {
 	if !strings.Contains(logs.String(), "streaming exited (pid") || !strings.Contains(logs.String(), "code 3") {
 		t.Errorf("exit not logged with its code:\n%s", logs.String())
 	}
+	// a crash is a failure: error level (the logs page's errors-only view), with the
+	// service, its exit code and the restart count on the one line
+	crashLine := ""
+	for _, l := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(l, "streaming exited (pid") {
+			crashLine = l
+		}
+	}
+	for _, want := range []string{"[supervisor] level=error ", "code 3", "reason crash", "restart #1"} {
+		if !strings.Contains(crashLine, want) {
+			t.Errorf("crash line %q lacks %q", crashLine, want)
+		}
+	}
 	for _, p := range s.Snapshot().Processes {
 		if p.State != StateStopped || p.PID != 0 {
 			t.Errorf("%s after shutdown: %+v", p.Role, p)

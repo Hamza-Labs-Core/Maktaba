@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -321,6 +322,14 @@ func (o *Orchestrator) Start(ctx context.Context, job Job) (*Handle, error) {
 	return o.Runner.Start(ctx, job)
 }
 
+// hlsVideoCodec is the video codec the master playlist names: H.264 High profile
+// (rungArgs asks every encoder for it), level 4.2, the most any rung may need (1080p
+// at 60 fps). It was Main 4.0 (avc1.4d4028), which libx264 and VideoToolbox never
+// wrote (both default to High) and which under-states a 1080p60 rung: a player that
+// takes the CODECS at its word (MSE's isTypeSupported, a TV's decoder setup) could
+// refuse or mis-set up the stream. Naming a higher level than the stream's is safe.
+const hlsVideoCodec = "avc1.64002a"
+
 // BuildMasterPlaylistFor emits the §4.3 HLS master playlist for the
 // ladder. Kept here (not in handlers) so the ffmpeg package has no
 // import cycle with handlers; handlers.BuildMasterPlaylist delegates.
@@ -331,7 +340,7 @@ func BuildMasterPlaylistFor(ladder []Rendition) []byte {
 	sb.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
 	for i, r := range ladder {
 		fmt.Fprintf(&sb,
-			"#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d,CODECS=\"avc1.4d4028,mp4a.40.2\"\n",
+			"#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d,CODECS=\""+hlsVideoCodec+",mp4a.40.2\"\n",
 			r.BitrateKbps*1000, r.Width, r.Height,
 		)
 		// FFmpeg's HLS muxer names the variant folders by variant index
@@ -371,6 +380,8 @@ type execRunner struct {
 	// what tests replace: the source's colour, and the filters this ffmpeg has
 	colour  func(ctx context.Context, ffprobe, input string) (Colour, error)
 	filters func(ctx context.Context, ffmpeg string) (map[string]bool, error)
+	// poll and stall override outputPoll and outputStall (the tests)
+	poll, stall time.Duration
 	// toneMapMu guards canToneMap, known once a look at the filters succeeded
 	toneMapMu  sync.Mutex
 	toneKnown  bool
@@ -625,6 +636,8 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 		return nil
 	}
 	started := time.Now()
+	poll, stall := e.stallLimits()
+	go e.watchOutput(proc, job, hw, started, poll, stall)
 	go func() {
 		werr := proc.Wait()
 		stderr := proc.stderrAfterExit(2 * time.Second)
@@ -662,6 +675,72 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 		}
 	}()
 	return nil
+}
+
+// outputStall is how long an encoder may run without writing anything (a segment,
+// a playlist) before it is taken for stuck and stopped. A VOD encode never waits
+// on its reader, so a run that writes nothing is one whose input stopped answering
+// (a NAS read that hangs): the player would wait on a playlist that never grows
+// until the idle reap. Stopped, its playlist answers 410 and the player reopens.
+// The slowest real encode (4K HEVC in software on a weak CPU) still writes a 6 s
+// segment well inside it. execRunner.stall overrides it (the tests).
+const outputStall = 2 * time.Minute
+
+// outputPoll is how often watchOutput looks at the output (execRunner.poll overrides).
+const outputPoll = 10 * time.Second
+
+// stallLimits are the runner's output poll and stall limit.
+func (e *execRunner) stallLimits() (poll, stall time.Duration) {
+	poll, stall = outputPoll, outputStall
+	if e.poll > 0 {
+		poll = e.poll
+	}
+	if e.stall > 0 {
+		stall = e.stall
+	}
+	return poll, stall
+}
+
+// watchOutput stops proc when its output has not changed for outputStall, logged
+// as `vod_transcode_stalled`; it returns when proc exits.
+func (e *execRunner) watchOutput(proc *Process, job Job, hw string, started time.Time, poll, stall time.Duration) {
+	t := time.NewTicker(poll)
+	defer t.Stop()
+	last := started
+	for range t.C {
+		if !proc.Active() {
+			return
+		}
+		if w := newestWrite(job.OutputDir); w.After(last) {
+			last = w
+		}
+		if idle := time.Since(last); idle >= stall {
+			e.logger().Error("vod transcode wrote nothing for too long: its input is likely stuck; stopping it",
+				"session_id", job.SessionID, "input", job.InputPath, "hwaccel", hw,
+				"idle_ms", idle.Milliseconds(), "ran_ms", time.Since(started).Milliseconds(),
+				"event", "vod_transcode_stalled")
+			if err := proc.Stop(context.Background()); err != nil {
+				e.logger().Error("vod transcode did not stop", "session_id", job.SessionID, "pid", proc.PID(),
+					"err", err.Error(), "event", "vod_transcode_stop_failed")
+			}
+			return
+		}
+	}
+}
+
+// newestWrite is the latest modification time of a file under dir (zero for none).
+func newestWrite(dir string) time.Time {
+	var newest time.Time
+	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil //nolint:nilerr // a file that went (a deleted segment) is no write
+		}
+		if info, ierr := d.Info(); ierr == nil && info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+		return nil
+	})
+	return newest
 }
 
 // logExit writes how a session's encoder ended: `vod_transcode_exited`, Info

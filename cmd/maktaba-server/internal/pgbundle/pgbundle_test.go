@@ -143,7 +143,13 @@ func TestPrepareFirstStart(t *testing.T) {
 	}
 	sql := read(t, filepath.Join(logDir, "psql.sql"))
 	app := strings.TrimSpace(read(t, b.passwordFile(AppRole)))
-	for _, want := range []string{"PASSWORD '" + app + "'", "CREATE DATABASE maktaba OWNER maktaba", "CREATE EXTENSION IF NOT EXISTS pg_trgm", vectorSQL} {
+	if !setsPassword(t, sql, app) {
+		t.Errorf("bootstrap SQL does not set the app password as its SCRAM secret:\n%s", sql)
+	}
+	if strings.Contains(sql, app) {
+		t.Error("the bootstrap SQL carries the app password itself: Postgres echoes a failed statement")
+	}
+	for _, want := range []string{"SET log_min_error_statement = panic;", "CREATE DATABASE maktaba OWNER maktaba", "CREATE EXTENSION IF NOT EXISTS pg_trgm", vectorSQL} {
 		if !strings.Contains(sql, want) {
 			t.Errorf("bootstrap SQL lacks %q:\n%s", want, sql)
 		}
@@ -188,7 +194,7 @@ func TestPrepareRekeysALostAppPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := strings.TrimSpace(read(t, b.passwordFile(AppRole)))
-	if now == strings.TrimSpace(old) || !strings.Contains(read(t, filepath.Join(logDir, "psql.sql")), "PASSWORD '"+now+"'") {
+	if now == strings.TrimSpace(old) || !setsPassword(t, read(t, filepath.Join(logDir, "psql.sql")), now) {
 		t.Fatal("a lost app password must be replaced and set on the role")
 	}
 	if n := lines(t, filepath.Join(logDir, "initdb.calls")); n != 1 {

@@ -251,7 +251,9 @@ func runServe() error {
 		}
 		cfg := config.Load()
 		layout := cache.New(cfg.Cache.Root)
-		_ = layout.EnsureTiers()
+		if err := layout.EnsureTiers(); err != nil {
+			logger.Warn("cache layout init failed", "root", layout.Root, "err", err.Error(), "event", "cache_init_warn")
+		}
 		if watch != nil && watch.Down() {
 			// the channels need the home's database: they start once it answers
 			sw := newSwapHandler(homeDBDownHandler())
