@@ -5,7 +5,7 @@ import SwiftUI
 struct LibraryView: View {
     @Environment(\.client) private var client
     @State private var libraries: [Library] = []
-    @State private var problem: AppError?
+    @State private var problem: HomeFailure?
     @State private var loading = true
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 48), count: 4)
@@ -15,7 +15,7 @@ struct LibraryView: View {
             if loading {
                 ProgressView().padding(.top, 120)
             } else if let problem {
-                ErrorBanner(error: problem) { Task { await load() } }
+                ErrorBanner(failure: problem) { Task { await load() } }
             } else if libraries.isEmpty {
                 ContentUnavailableView("No libraries", systemImage: "books.vertical",
                                        description: Text("This home shares no library with you yet."))
@@ -44,7 +44,7 @@ struct LibraryView: View {
             libraries = try await client.libraries()
             problem = nil
         } catch {
-            problem = AppError.shown("load libraries", error) ?? problem
+            problem = HomeFailure.shown("load libraries", error) ?? problem
         }
         loading = false
     }
@@ -82,7 +82,7 @@ struct VideoGrid: View {
     @Environment(\.client) private var client
     @State private var videos: [Video] = []
     @State private var next: String?
-    @State private var problem: AppError?
+    @State private var problem: HomeFailure?
     @State private var loading = true
 
     private let columns = Array(repeating: GridItem(.fixed(VideoCard.width), spacing: 56), count: 4)
@@ -92,7 +92,7 @@ struct VideoGrid: View {
             if loading {
                 ProgressView().padding(.top, 120)
             } else if let problem {
-                ErrorBanner(error: problem) { Task { await load(more: false) } }
+                ErrorBanner(failure: problem) { Task { await load(more: false) } }
             } else if videos.isEmpty {
                 ContentUnavailableView("No videos yet", systemImage: "film")
             } else {
@@ -126,8 +126,8 @@ struct VideoGrid: View {
             next = page.next
             problem = nil
         } catch {
-            let e = AppError.shown("load videos", error)
-            if !more { problem = e ?? problem }
+            let f = HomeFailure.shown("load videos", error)
+            if !more { problem = f ?? problem }
         }
         loading = false
     }

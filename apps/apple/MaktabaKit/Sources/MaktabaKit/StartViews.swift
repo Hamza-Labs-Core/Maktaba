@@ -33,7 +33,6 @@ public struct SessionGate<Content: View>: View {
                 }
             }
         }
-        .environment(\.appSession, session)
         .onOpenURL { session.open($0) }
         #if os(macOS)
         // a link opened on the Mac goes to the window already open, not a new one
@@ -308,7 +307,7 @@ public struct SignInView: View {
     @State private var username = ""
     @State private var password = ""
     @State private var busy = false
-    @State private var problem: AppError?
+    @State private var problem: String?
     @State private var codeFlow: CodeSignIn?
     private let words = ConnectStrings.forPreferredLanguages()
 
@@ -398,11 +397,7 @@ public struct SignInView: View {
                 .onSubmit(signIn)
                 .accessibilityIdentifier("signin.password")
         } footer: {
-            if let problem {
-                Text(problem.message(ErrorStrings(words.language)))
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("signin.problem")
-            }
+            if let problem { Text(problem).foregroundStyle(.red) }
         }
         Button(action: signIn) {
             if busy { ProgressView() } else { Text(words.text(.signIn)) }
@@ -420,26 +415,29 @@ public struct SignInView: View {
                 try await session.signIn(username: username, password: password)
             } catch {
                 Log.failure("sign in", error, logger: Log.session)
-                let e = AppError.signingIn(error)
-                problem = e.isCancellation ? nil : e
+                problem = Log.isCancellation(error) ? nil : words.signInProblem(error)
             }
         }
     }
 }
 
-/// The saved sign-in being checked (a spinner), or why it could not be (the home did not
-/// answer: the person is still signed in, and can try again or sign in afresh below).
+/// The saved sign-in being checked (a spinner), or why it could not be: the home did not
+/// answer, so the person is still signed in and can try again (or sign in afresh below).
 struct RestoreSection: View {
     let session: AppSession
 
     var body: some View {
         if session.restoring {
             Section { HStack { Spacer(); ProgressView(); Spacer() } }
-        } else if let e = session.restoreProblem {
+        } else if let f = session.restoreProblem {
             let words = ErrorStrings.forPreferredLanguages()
             Section {
                 Text(words.text(.restoreFailed))
-                ErrorNote(e, words: words) { Task { await session.retryRestore() } }
+                Label(f.message(words), systemImage: f.symbol).foregroundStyle(.red)
+                Button(words.text(.tryAgain), systemImage: "arrow.clockwise") {
+                    Task { await session.retryRestore() }
+                }
+                .accessibilityIdentifier("signin.restore.retry")
             }
             .accessibilityIdentifier("signin.restoreProblem")
         }

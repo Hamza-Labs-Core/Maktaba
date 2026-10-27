@@ -9,7 +9,7 @@ struct SearchView: View {
     @State private var results: [Video] = []
     @State private var searched = ""
     /// The last search did not work (not "no results": the home did not answer, say).
-    @State private var problem: AppError?
+    @State private var problem: HomeFailure?
     /// Asks again after a failure.
     @State private var attempt = 0
 
@@ -18,7 +18,7 @@ struct SearchView: View {
     var body: some View {
         ScrollView {
             if let problem {
-                ErrorBanner(error: problem) { attempt += 1 }.padding(.horizontal, 80)
+                ErrorBanner(failure: problem) { attempt += 1 }.padding(.horizontal, 80)
             } else if !searched.isEmpty && results.isEmpty {
                 ContentUnavailableView.search(text: searched).padding(.top, 80)
             } else {
@@ -48,7 +48,7 @@ struct SearchView: View {
                 searched = q
                 problem = nil
             } catch {
-                if let e = AppError.shown("search", error) {
+                if let e = HomeFailure.shown("search", error) {
                     problem = e
                     results = []
                 }

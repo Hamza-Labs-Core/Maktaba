@@ -261,8 +261,8 @@ struct TVSignInView: View {
                 if session.restoring {
                     // the saved sign-in is being checked: no code asked for meanwhile
                     ProgressView()
-                } else if let e = session.restoreProblem {
-                    restorePanel(e)
+                } else if let f = session.restoreProblem {
+                    restorePanel(f)
                 } else {
                     switch shown {
                     case .code:
@@ -298,14 +298,13 @@ struct TVSignInView: View {
     }
 
     /// Still signed in, but the home did not answer the check: why, Try again, another home.
-    private func restorePanel(_ e: AppError) -> some View {
-        let errors = ErrorStrings.forPreferredLanguages()
-        return VStack(alignment: .leading, spacing: 28) {
+    private func restorePanel(_ f: HomeFailure) -> some View {
+        VStack(alignment: .leading, spacing: 28) {
             SectionTitle(session.current?.name ?? "", size: 52)
-            Text(errors.text(.restoreFailed))
+            Text(ErrorStrings.forPreferredLanguages().text(.restoreFailed))
                 .font(Theme.body(30))
                 .foregroundStyle(Theme.muted)
-            ErrorBanner(error: e) { Task { await session.retryRestore() } }
+            ErrorBanner(failure: f) { Task { await session.retryRestore() } }
         }
         .frame(maxWidth: 1200)
         .readingPanel(padding: 56)
@@ -395,7 +394,7 @@ private struct TVPasswordPanel: View {
     @State private var username = ""
     @State private var password = ""
     @State private var busy = false
-    @State private var problem: AppError?
+    @State private var problem: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
@@ -410,9 +409,7 @@ private struct TVPasswordPanel: View {
                 .onSubmit(signIn)
                 .accessibilityIdentifier("signin.password.field")
             if let problem {
-                Text(problem.message(ErrorStrings(words.language)))
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("signin.problem")
+                Text(problem).foregroundStyle(.red)
             }
             HStack(spacing: 32) {
                 Button(action: signIn) {
@@ -442,8 +439,7 @@ private struct TVPasswordPanel: View {
                 try await session.signIn(username: username, password: password)
             } catch {
                 Log.failure("sign in", error, logger: Log.session)
-                let e = AppError.signingIn(error)
-                problem = e.isCancellation ? nil : e
+                problem = Log.isCancellation(error) ? nil : words.signInProblem(error)
             }
         }
     }

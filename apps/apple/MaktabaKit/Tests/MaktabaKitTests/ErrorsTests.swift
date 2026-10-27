@@ -2,143 +2,30 @@ import Foundation
 import Testing
 @testable import MaktabaKit
 
-/// Every failure a screen shows is one of a few kinds, said in the app's words (English and
-/// Arabic), with its actions; never the home's body, problem detail or a system error's text.
-@Suite struct ErrorKinds {
-    @Test(arguments: [
-        (401, "", "", AppError.Kind.signedOut),
-        (403, "", "", .noAccess),
-        (404, "", "", .notFound),
-        (404, "rendition-not-found", "", .notReady),
-        (404, "manifest-not-found", "", .notReady),
-        (410, "", "", .notFound),
-        (429, "", "", .busy),
-        (503, "", "", .busy),
-        (503, "", "home_unreachable", .unreachable),
-        (502, "", "", .unreachable),
-        (504, "", "", .timedOut),
-        (504, "", "home_timeout", .timedOut),
-        (507, "", "", .diskFull),
-        (500, "", "insufficient_storage", .diskFull),
-        (400, "", "", .invalid),
-        (409, "", "", .invalid),
-        (422, "", "", .invalid),
-        (500, "", "", .server),
-        (418, "", "", .server),
-        (200, "home-unreachable", "", .unreachable),
-        (0, "", "", .unreachable),
-    ])
-    func anAnswersKind(status: Int, slug: String, code: String, kind: AppError.Kind) {
-        #expect(AppError.kind(status: status, slug: slug, code: code) == kind)
-    }
-
-    @Test(arguments: [
-        (URLError.Code.notConnectedToInternet, AppError.Kind.offline),
-        (.dataNotAllowed, .offline),
-        (.timedOut, .timedOut),
-        (.cannotFindHost, .unreachable),
-        (.cannotConnectToHost, .unreachable),
-        (.networkConnectionLost, .unreachable),
-        (.dnsLookupFailed, .unreachable),
-        (.secureConnectionFailed, .insecure),
-        (.serverCertificateUntrusted, .insecure),
-        (.appTransportSecurityRequiresSecureConnection, .insecure),
-        (.badServerResponse, .badAnswer),
-        (.cancelled, .cancelled),
-        (.unknown, .unreachable),
-    ])
-    func aNetworkFailuresKind(code: URLError.Code, kind: AppError.Kind) {
-        #expect(AppError(URLError(code)).kind == kind)
-        #expect(AppError(APIError.transport(code)).kind == kind)
-        #expect(AppError(APIError.transport(URLError(code))).kind == kind)
-    }
-
-    @Test func theProblemsTypeAndCodeSortIt() {
-        let notReady = APIError.status(404, #"{"type":"https://maktaba.dev/problems/rendition-not-found","title":"x","detail":"open /Volumes/media/a.m3u8: no such file"}"#)
-        #expect(AppError(notReady) == AppError(kind: .notReady, status: 404, code: "rendition-not-found"))
-        let disk = APIError.status(507, #"{"code":"insufficient_storage","type":"https://maktaba.dev/problems/insufficient-storage"}"#)
-        #expect(AppError(disk) == AppError(kind: .diskFull, status: 507, code: "insufficient_storage"))
-        // a proxy's HTML page: the status alone
-        #expect(AppError(APIError.status(500, "<html>oops</html>")) == AppError(kind: .server, status: 500))
-    }
-
-    @Test func otherErrors() {
-        #expect(AppError(APIError.signedOut).kind == .signedOut)
-        #expect(AppError(APIError.decoding("keyNotFound")).kind == .badAnswer)
-        #expect(AppError(CancellationError()).isCancellation)
-        #expect(AppError(DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "x"))).kind == .badAnswer)
-        struct Odd: Error {}
-        #expect(AppError(Odd()).kind == .server)
-        let e = AppError(kind: .busy, status: 429)
-        #expect(AppError(e) == e)
-    }
-
-    @Test func aWrongPasswordIsNotASignInThatEnded() {
-        #expect(AppError.signingIn(APIError.status(401, #"{"title":"invalid credentials"}"#)).kind == .wrongCredentials)
-        #expect(AppError.signingIn(APIError.status(429, "")).kind == .busy)
-        #expect(AppError.signingIn(URLError(.timedOut)).kind == .timedOut)
-    }
-
-    @Test func problemSlugs() {
-        #expect(AppError.problemSlug("https://maktaba.dev/problems/rendition-not-found") == "rendition-not-found")
-        #expect(AppError.problemSlug("https://maktaba.invalid/problems/home-unreachable?x=1") == "home-unreachable")
-        #expect(AppError.problemSlug("about:blank") == "")
-        #expect(AppError.problemSlug(nil) == "")
-    }
-
-    @Test func actions() {
-        #expect(AppError(kind: .unreachable).actions == [.retry, .chooseHome])
-        #expect(AppError(kind: .signedOut).actions == [.signIn])
-        #expect(AppError(kind: .notFound).actions == [.back])
-        #expect(AppError(kind: .server).actions == [.retry])
-        for kind in AppError.Kind.allCases where kind != .cancelled {
-            #expect(!AppError(kind: kind).systemImage.isEmpty)
+/// The words this audit added to ErrorStrings, and the home picker's "no answer".
+@Suite struct ErrorWordsMore {
+    @Test func theSavedSignInCheckIsSaidInBothLanguages() {
+        #expect(ErrorStrings(.en).text(.restoreFailed) == "You're still signed in, but your home couldn't be checked.")
+        #expect(ErrorStrings(.ar).text(.restoreFailed) == "ما زلت مسجّل الدخول، لكن تعذّر التحقق من الجهاز الرئيسي.")
+        for key in ErrorStrings.Key.allCases {
+            #expect(ErrorStrings.en[key] != nil && ErrorStrings.ar[key] != nil, "\(key)")
         }
     }
 
-    /// The screen offers the actions it can take: a retry it was given, the session's own.
-    @Test func offeredActions() {
-        #expect(ErrorStateView.offered([.retry, .chooseHome], retry: true, back: false, session: true) == [.retry, .chooseHome])
-        #expect(ErrorStateView.offered([.retry, .chooseHome], retry: true, back: false, session: false) == [.retry])
-        #expect(ErrorStateView.offered([.signIn], retry: true, back: false, session: true) == [.signIn])
-        // nothing of its own: it can still be tried again, but a sign-in is never retried
-        #expect(ErrorStateView.offered([.back], retry: true, back: false, session: true) == [.retry])
-        #expect(ErrorStateView.offered([.signIn], retry: true, back: false, session: false) == [])
+    /// Not "Could not reach the home: The request timed out." in English inside Arabic.
+    @Test func aHomeThatDoesNotAnswerIsSaidInTheAppsWords() {
+        #expect(ConnectStrings(.en).reach(.unreachable("The request timed out.")) == ErrorStrings(.en).text(.unreachable))
+        #expect(ConnectStrings(.ar).reach(.unreachable("The request timed out.")) == ErrorStrings(.ar).text(.unreachable))
     }
 }
 
-@Suite struct ErrorWords {
-    @Test func everyKindIsSaidInBothLanguages() {
-        for lang in [ErrorStrings.Language.en, .ar] {
-            let w = ErrorStrings(lang)
-            for kind in AppError.Kind.allCases where kind != .cancelled {
-                #expect(!w.message(kind).isEmpty, "\(lang) \(kind)")
-                #expect(!w.title(kind).isEmpty)
-            }
-            for a in [AppError.Action.retry, .signIn, .chooseHome, .back] {
-                #expect(!w.action(a).isEmpty)
-            }
-        }
-        for key in ErrorStrings.Key.allCases where key != .cancelled {
-            #expect(ErrorStrings.en[key] != nil, "en \(key)")
-            #expect(ErrorStrings.ar[key] != nil, "ar \(key)")
-            #expect(ErrorStrings.en[key] != ErrorStrings.ar[key], "\(key) is not translated")
-        }
-        // a key per kind
-        for kind in AppError.Kind.allCases { #expect(ErrorStrings.Key(rawValue: kind.rawValue) != nil) }
-    }
-
-    @Test func arabicForArabicSpeakers() {
-        #expect(ErrorStrings.forPreferredLanguages(["ar-EG", "en"]).language == .ar)
-        #expect(ErrorStrings.forPreferredLanguages(["en-GB", "ar"]).language == .en)
-        #expect(ErrorStrings(.ar).message(.unreachable) == "تعذّر الوصول إلى الجهاز الرئيسي. تأكد من أنه يعمل ومتصل بالشبكة.")
-    }
-
-    @Test func aHomeThatDoesNotAnswerIsSaidInTheAppsWords() {
-        let en = ConnectStrings(.en)
-        #expect(en.reach(.unreachable(.offline)) == ErrorStrings(.en).message(.offline))
-        #expect(en.reach(.unreachable(.cancelled)) == ErrorStrings(.en).message(.unreachable))
-        #expect(ConnectStrings(.ar).reach(.unreachable(.timedOut)) == ErrorStrings(.ar).message(.timedOut))
+@Suite struct Cancelling {
+    @Test func aCancelledRequestIsNotAFailure() {
+        #expect(Log.isCancellation(CancellationError()))
+        #expect(Log.isCancellation(URLError(.cancelled)))
+        #expect(Log.isCancellation(NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)))
+        #expect(!Log.isCancellation(URLError(.timedOut)))
+        #expect(!Log.isCancellation(APIError.signedOut))
     }
 }
 
@@ -218,7 +105,7 @@ extension AgainstAStubHome {
                 _ = try await c.libraries()
                 Issue.record("a 401 read as libraries")
             } catch {
-                #expect(AppError(error).kind == .unreachable)
+                #expect(HomeFailure(error).kind == .unreachable)
             }
             #expect(tokens.refresh == "r1")
         }

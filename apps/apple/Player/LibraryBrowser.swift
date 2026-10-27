@@ -25,7 +25,7 @@ struct LibraryBrowser: View {
     @State private var next: String?
     @State private var video: Video?
     @State private var query = ""
-    @State private var problem: AppError?
+    @State private var problem: HomeFailure?
     /// The list is being read (the first page of a library or a search).
     @State private var loading = true
     /// Pages opened from the list while the player holds the other half.
@@ -99,13 +99,13 @@ struct LibraryBrowser: View {
             page
         }
         #if os(iOS)
-        .fullScreenCover(isPresented: watching) { WatchView(playback: playback) }
+        .fullScreenCover(isPresented: watching) { WatchView(playback: playback, session: session) }
         #else
         // the Mac: the video fills the window (it resizes with it; the green button or
         // Control-Command-F makes it full screen), the toolbar out of the way
         .overlay {
             if playback.video != nil {
-                WatchView(playback: playback).transition(.opacity)
+                WatchView(playback: playback, session: session).transition(.opacity)
             }
         }
         .toolbar(playback.video != nil ? .hidden : .automatic, for: .windowToolbar)
@@ -125,7 +125,7 @@ struct LibraryBrowser: View {
     private var split: some View {
         ArrangementView {
             if playback.video != nil {
-                WatchView(playback: playback)
+                WatchView(playback: playback, session: session)
             } else if video != nil {
                 NavigationStack {
                     page.toolbar {
@@ -200,7 +200,8 @@ struct LibraryBrowser: View {
 
     @ViewBuilder private var listState: some View {
         if let problem {
-            ErrorStateView(problem) { Task { await retry() } }
+            HomeErrorView(problem, video: false) { _ in Task { await loadLibraries(); await reload() } }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if loading, videos.isEmpty {
             ProgressView()
         } else if videos.isEmpty {
@@ -239,13 +240,6 @@ struct LibraryBrowser: View {
                 Label("Account", systemImage: "person.crop.circle")
             }
         }
-    }
-
-    /// The error screen's Try again: the libraries (when they did not load) and the list.
-    private func retry() async {
-        problem = nil
-        if libraries.isEmpty { await loadLibraries() }
-        await reload()
     }
 
     private func loadLibraries() async {
@@ -296,10 +290,9 @@ struct LibraryBrowser: View {
             session.signedOut()
             return
         }
-        let e = AppError(error)
-        guard !e.isCancellation else { return }
+        guard !Log.isCancellation(error) else { return }
         Log.failure(what, error)
-        problem = e
+        problem = HomeFailure(error)
     }
 }
 

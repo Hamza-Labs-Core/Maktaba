@@ -16,7 +16,7 @@ final class RemoteModel {
     private(set) var cluster: ClusterOverview?
     private(set) var loaded = false
     /// Why the last read or action did not work (nil once one works again).
-    var problem: AppError?
+    var problem: String?
     /// What is under way: a group, a stage, a library, a machine, or "all".
     private(set) var busy: Set<String> = []
     /// Libraries whose scan the home took, for a moment's "Scan started".
@@ -69,10 +69,10 @@ final class RemoteModel {
             session.signedOut()
             return
         }
-        let e = AppError(error)
-        guard !e.isCancellation else { return }
+        // a read cut short by leaving the screen is not a problem
+        guard !Log.isCancellation(error) else { return }
         Log.failure("remote read or action", error)
-        problem = e
+        problem = HomeFailure(error).message()
     }
 
     // MARK: acting

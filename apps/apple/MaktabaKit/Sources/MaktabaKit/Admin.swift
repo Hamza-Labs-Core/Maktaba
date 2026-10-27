@@ -215,18 +215,17 @@ public enum ApproveFailure: Equatable, Sendable {
     case wrongCode(attemptsLeft: Int?)
     /// The request is too old (or used its tries up): the machine must ask again.
     case expired
-    /// Anything else, in the app's words (`AppError`).
-    case other(AppError)
+    case other(String)
 
     public init(_ error: Error) {
         guard let e = error as? APIError else {
-            self = .other(AppError(error))
+            self = .other(HomeFailure(error).message())
             return
         }
         switch (e.problem?.code, e) {
         case ("wrong_code", _): self = .wrongCode(attemptsLeft: e.problem?.attemptsLeft)
-        case ("expired", _), (_, .status(410, _)): self = .expired
-        default: self = .other(AppError(e))
+        case ("expired", _), (_, .status(410, _, _)): self = .expired
+        default: self = .other(e.message)
         }
     }
 
@@ -237,40 +236,8 @@ public enum ApproveFailure: Equatable, Sendable {
         case .wrongCode(0): "Too many wrong codes: the request was turned down. Ask again from the machine."
         case .wrongCode: "That is not the code the machine shows."
         case .expired: "The request has expired. Ask again from the machine."
-        case let .other(e): e.message()
+        case let .other(why): why
         }
-    }
-}
-
-// MARK: the home's answers when it refuses
-
-/// A problem+json answer (`{"type", "title", "detail", "code", "attempts_left"}`), read from
-/// `APIError.status`: for sorting a failure (`AppError`) and the logs. Its title and detail
-/// are the home's English words (they can name paths on its disk), never shown.
-public struct Problem: Decodable, Equatable, Sendable {
-    public let type: String?
-    public let code: String?
-    public let title: String?
-    public let detail: String?
-    public let attemptsLeft: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case type, code, title, detail
-        case attemptsLeft = "attempts_left"
-    }
-}
-
-public extension APIError {
-    /// The home's problem, when it answered with one.
-    var problem: Problem? {
-        guard case let .status(_, body) = self else { return nil }
-        return try? JSONDecoder().decode(Problem.self, from: Data(body.utf8))
-    }
-
-    /// What to tell a person, in their language: the kind's sentence (`AppError`), never
-    /// the home's own words.
-    var message: String {
-        AppError(self).message()
     }
 }
 

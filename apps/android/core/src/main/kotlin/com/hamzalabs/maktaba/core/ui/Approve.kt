@@ -57,9 +57,11 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalResources
 import com.hamzalabs.maktaba.core.R
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.errorKind
 import com.hamzalabs.maktaba.core.api.PairingCode
 import com.hamzalabs.maktaba.core.api.PairingLookup
 import com.hamzalabs.maktaba.core.api.PairingRequest
@@ -98,6 +100,7 @@ fun ApproveSignIn(client: ApiClient, username: String, homeName: String, onClose
     val cloud = stringResource(R.string.approve_cloud)
     val unreachable = stringResource(R.string.signin_unreachable, homeName)
     val someDevice = stringResource(R.string.approve_unknown_device)
+    val resources = LocalResources.current
 
     fun failed(e: Exception): String = when (e) {
         is ApiException.Transport -> unreachable
@@ -105,9 +108,9 @@ fun ApproveSignIn(client: ApiClient, username: String, homeName: String, onClose
             409 -> already
             403 -> cloud
             404, 410, 422 -> unknown
-            else -> e.message ?: e.toString()
+            else -> resources.getString(e.errorKind().sentence())
         }
-        else -> e.message ?: e.toString()
+        else -> resources.getString(e.errorKind().sentence())
     }
 
     fun look(raw: String) {

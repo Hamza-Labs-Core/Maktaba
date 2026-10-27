@@ -49,10 +49,10 @@ struct RootView: View {
                 if let client = session.client {
                     ContentView(session: session, user: user)
                         .environment(\.client, client)
+                        .environment(\.appSession, session)
                 }
             }
         }
-        .environment(\.appSession, session)
         .onOpenURL { session.open($0) }
         .alert(words.text(session.pendingLink != nil ? .linkTitle : .connect), isPresented: Binding(
             get: { session.phase != .choosingHome && (session.pendingLink != nil || session.connectProblem != nil) },
@@ -79,4 +79,6 @@ struct RootView: View {
 extension EnvironmentValues {
     /// The signed-in home's client (set under `RootView` once signed in).
     @Entry var client: APIClient?
+    /// The session, for a screen that sends the person back to signing in or to the homes.
+    @Entry var appSession: AppSession?
 }

@@ -126,7 +126,7 @@ public final class AppSession {
     public private(set) var restoring = false
     /// The saved sign-in could not be checked: the home did not answer, or failed. The
     /// tokens stay; the sign-in screen says why and offers `retryRestore`.
-    public private(set) var restoreProblem: AppError?
+    public private(set) var restoreProblem: HomeFailure?
 
     public var signedIn: Bool {
         if case .signedIn = phase { true } else { false }
@@ -339,8 +339,9 @@ public final class AppSession {
             Log.failure("restore sign-in", error, logger: Log.session)
             // signed out: the client cleared the tokens, the sign-in screen it is
             if case APIError.signedOut = error { return }
-            let e = AppError(error)
-            if !e.isCancellation, e.kind != .signedOut { restoreProblem = e }
+            guard !Log.isCancellation(error) else { return }
+            let f = HomeFailure(error)
+            if f.kind != .signedOut { restoreProblem = f }
         }
     }
 

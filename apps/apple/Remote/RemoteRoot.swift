@@ -80,7 +80,12 @@ struct ProblemSection: View {
     var body: some View {
         if let problem = model.problem {
             Section {
-                ErrorNote(problem) { Task { await model.load() } }
+                Label(problem, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                Button(ErrorStrings.forPreferredLanguages().text(.tryAgain), systemImage: "arrow.clockwise") {
+                    Task { await model.load() }
+                }
+                .accessibilityIdentifier("problem.retry")
             }
         }
     }

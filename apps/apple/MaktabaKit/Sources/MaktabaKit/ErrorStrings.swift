@@ -1,8 +1,8 @@
 import Foundation
 
-/// What every app says when something goes wrong (`AppError`), in English and Arabic with
-/// the web's words (web/src/i18n `player.error.*`: a home is "الجهاز الرئيسي"), kept here as
-/// `PermissionsStrings` is.
+/// What a screen says when the home did not give what it asked for, in English and Arabic
+/// (the same words as the web, Android and the TV apps; a home is "الجهاز الرئيسي"), kept
+/// here as `PermissionsStrings` and `ConnectStrings` are.
 public struct ErrorStrings: Sendable {
     public typealias Language = PermissionsStrings.Language
 
@@ -21,87 +21,71 @@ public struct ErrorStrings: Sendable {
         (language == .ar ? Self.ar : Self.en)[key] ?? Self.en[key] ?? key.rawValue
     }
 
-    public func message(_ kind: AppError.Kind) -> String {
-        text(Key(rawValue: kind.rawValue) ?? .server)
-    }
-
-    public func title(_ kind: AppError.Kind) -> String {
-        switch kind {
-        case .offline, .unreachable, .timedOut, .insecure: text(.titleUnreachable)
-        case .signedOut, .wrongCredentials, .noAccess: text(.titleAccount)
-        default: text(.titleLoad)
-        }
-    }
-
-    public func action(_ action: AppError.Action) -> String {
-        switch action {
-        case .retry: text(.retry)
-        case .signIn: text(.signIn)
-        case .chooseHome: text(.chooseHome)
-        case .back: text(.back)
-        }
-    }
-
     public enum Key: String, CaseIterable, Sendable {
-        // one per AppError.Kind (cancelled is never shown)
-        case offline, unreachable, timedOut, insecure, signedOut, wrongCredentials, noAccess
-        case notFound, notReady, busy, diskFull, invalid, badAnswer, server, cancelled
-        // titles and actions
-        case titleLoad, titleUnreachable, titleAccount
-        case retry, signIn, chooseHome, back
-        // the sign-in screen when a saved sign-in could not be checked
+        case playerTitle, title
+        case notFoundVideo, notFound, notReady, signedOut, noAccess, unreachable, busy, server
+        case tryAgain, back, signInAgain, chooseAnotherHome, details
+        // the sign-in screen, when the saved sign-in could not be checked
         case restoreFailed
     }
 
+    /// The one sentence for `kind`; `video`: said about the video being played.
+    public func sentence(_ kind: ErrorKind, video: Bool = false) -> String {
+        switch kind {
+        case .notFound: text(video ? .notFoundVideo : .notFound)
+        case .notReady: text(.notReady)
+        case .signedOut: text(.signedOut)
+        case .noAccess: text(.noAccess)
+        case .unreachable: text(.unreachable)
+        case .busy: text(.busy)
+        case .server: text(.server)
+        }
+    }
+
+    public func action(_ a: ErrorAction) -> String {
+        switch a {
+        case .tryAgain: text(.tryAgain)
+        case .back: text(.back)
+        case .signInAgain: text(.signInAgain)
+        case .chooseAnotherHome: text(.chooseAnotherHome)
+        }
+    }
+
     static let en: [Key: String] = [
-        .offline: "This device is offline. Check its Wi-Fi or network connection.",
-        .unreachable: "Your home can't be reached. Check that it's on and connected to the network.",
-        .timedOut: "Your home took too long to answer. Try again in a moment.",
-        .insecure: "A secure connection to your home couldn't be made. Check its address, or choose another home.",
-        .signedOut: "Your sign-in has ended. Sign in again to continue.",
-        .wrongCredentials: "That username and password don't match an account on this home.",
+        .playerTitle: "This video can't play right now",
+        .title: "Something went wrong",
+        .notFoundVideo: "This video or its file is no longer on your home.",
+        .notFound: "We couldn't find what you were looking for.",
+        .notReady: "Your home is still preparing this video. Try again in a moment.",
+        .signedOut: "Your sign-in has ended. Sign in again to keep watching.",
         .noAccess: "Your account doesn't have access to this.",
-        .notFound: "This is no longer on your home.",
-        .notReady: "Your home is still preparing this. Try again in a moment.",
+        .unreachable: "Your home can't be reached. Check that it's on and connected to the network.",
         .busy: "Your home is busy right now. Try again in a moment.",
-        .diskFull: "There isn't enough free disk space on the server to prepare this. Free some space there and try again.",
-        .invalid: "Your home couldn't do that. Check and try again.",
-        .badAnswer: "Your home sent an answer this app doesn't understand. Update the app or the home, then try again.",
         .server: "Something went wrong on your home. Try again in a moment.",
-        .cancelled: "",
-        .titleLoad: "Can't load this",
-        .titleUnreachable: "Can't reach your home",
-        .titleAccount: "Sign-in needed",
-        .retry: "Try again",
-        .signIn: "Sign in again",
-        .chooseHome: "Choose another home",
-        .back: "Go back",
+        .tryAgain: "Try again",
+        .back: "Back",
+        .signInAgain: "Sign in again",
+        .chooseAnotherHome: "Choose another home",
+        .details: "Details",
         .restoreFailed: "You're still signed in, but your home couldn't be checked.",
     ]
 
     static let ar: [Key: String] = [
-        .offline: "هذا الجهاز غير متصل بالشبكة. تحقق من اتصال Wi-Fi أو الشبكة.",
-        .unreachable: "تعذّر الوصول إلى الجهاز الرئيسي. تأكد من أنه يعمل ومتصل بالشبكة.",
-        .timedOut: "استغرق الجهاز الرئيسي وقتًا طويلًا في الرد. حاول مجددًا بعد قليل.",
-        .insecure: "تعذّر إنشاء اتصال آمن بالجهاز الرئيسي. تحقق من عنوانه، أو اختر جهازًا رئيسيًا آخر.",
-        .signedOut: "انتهت جلسة تسجيل الدخول. سجّل الدخول مجددًا للمتابعة.",
-        .wrongCredentials: "اسم المستخدم وكلمة المرور لا يطابقان أي حساب على هذا الجهاز الرئيسي.",
+        .playerTitle: "لا يمكن تشغيل هذا الفيديو الآن",
+        .title: "حدث خطأ ما",
+        .notFoundVideo: "لم يعد هذا الفيديو أو ملفه موجودًا على الجهاز الرئيسي.",
+        .notFound: "لم نعثر على ما تبحث عنه.",
+        .notReady: "ما زال الجهاز الرئيسي يجهّز هذا الفيديو. حاول مجددًا بعد قليل.",
+        .signedOut: "انتهت جلسة تسجيل الدخول. سجّل الدخول مجددًا لمتابعة المشاهدة.",
         .noAccess: "لا يملك حسابك صلاحية الوصول إلى هذا.",
-        .notFound: "لم يعد هذا موجودًا على الجهاز الرئيسي.",
-        .notReady: "ما زال الجهاز الرئيسي يجهّز هذا. حاول مجددًا بعد قليل.",
+        .unreachable: "تعذّر الوصول إلى الجهاز الرئيسي. تأكد من أنه يعمل ومتصل بالشبكة.",
         .busy: "الجهاز الرئيسي مشغول الآن. حاول مجددًا بعد قليل.",
-        .diskFull: "لا توجد مساحة كافية على قرص الخادم لتجهيز هذا. أفرغ بعض المساحة هناك ثم أعد المحاولة.",
-        .invalid: "تعذّر على الجهاز الرئيسي تنفيذ ذلك. تحقق وحاول مجددًا.",
-        .badAnswer: "أرسل الجهاز الرئيسي ردًا لا يفهمه هذا التطبيق. حدّث التطبيق أو الجهاز الرئيسي ثم حاول مجددًا.",
         .server: "حدث خطأ في الجهاز الرئيسي. حاول مجددًا بعد قليل.",
-        .cancelled: "",
-        .titleLoad: "تعذّر التحميل",
-        .titleUnreachable: "تعذّر الوصول إلى الجهاز الرئيسي",
-        .titleAccount: "يلزم تسجيل الدخول",
-        .retry: "حاول مجددًا",
-        .signIn: "سجّل الدخول مجددًا",
-        .chooseHome: "اختر جهازًا رئيسيًا آخر",
+        .tryAgain: "إعادة المحاولة",
         .back: "رجوع",
+        .signInAgain: "سجّل الدخول مجددًا",
+        .chooseAnotherHome: "اختيار جهاز رئيسي آخر",
+        .details: "التفاصيل",
         .restoreFailed: "ما زلت مسجّل الدخول، لكن تعذّر التحقق من الجهاز الرئيسي.",
     ]
 }

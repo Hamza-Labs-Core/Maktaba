@@ -58,7 +58,7 @@ public final class CodeSignIn {
             } catch is CancellationError {
                 return
             } catch {
-                problem = Self.say(error)
+                problem = HomeFailure(error).message()
                 try? await sleep(.seconds(5))
             }
         }
@@ -74,7 +74,7 @@ public final class CodeSignIn {
                 state = try await client.collectDevicePairing(p, label: label)
             } catch let e as APIError {
                 // a blip: keep the code and ask again
-                problem = Self.say(e)
+                problem = e.message
                 continue
             }
             switch state {
@@ -88,7 +88,7 @@ public final class CodeSignIn {
                         status = .approved
                         return true
                     } catch {
-                        problem = Self.say(error)
+                        problem = HomeFailure(error).message()
                         try await sleep(.seconds(3))
                     }
                 }
@@ -98,13 +98,5 @@ public final class CodeSignIn {
             }
         }
         return false
-    }
-
-    /// What went wrong in the person's words (it keeps trying, so no action), logged.
-    static func say(_ error: Error) -> String? {
-        let e = AppError(error)
-        guard !e.isCancellation else { return nil }
-        Log.failure("sign in by code", error, logger: Log.session)
-        return e.message()
     }
 }

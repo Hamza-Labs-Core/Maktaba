@@ -65,8 +65,13 @@ import com.hamzalabs.maktaba.core.layout.ListPaneWidth
 import com.hamzalabs.maktaba.core.layout.Panes
 import com.hamzalabs.maktaba.core.layout.currentPanes
 import com.hamzalabs.maktaba.core.session.AppSession
+import com.hamzalabs.maktaba.core.api.Failure
+import com.hamzalabs.maktaba.core.api.errorDetails
 import com.hamzalabs.maktaba.core.ui.AccountMenu
+import com.hamzalabs.maktaba.core.ui.ErrorState
 import com.hamzalabs.maktaba.core.ui.Message
+import com.hamzalabs.maktaba.core.R as CoreR
+import androidx.compose.ui.res.stringResource
 import com.hamzalabs.maktaba.core.ui.Poster
 import com.hamzalabs.maktaba.core.ui.ThemeStore
 import com.hamzalabs.maktaba.core.ui.formatDuration
@@ -82,7 +87,8 @@ class BrowserState(private val client: ApiClient, private val signedOut: () -> U
     var next by mutableStateOf<String?>(null)
     var video by mutableStateOf<Video?>(null)
     var query by mutableStateOf("")
-    var problem by mutableStateOf<String?>(null)
+    /** Why the list did not load (shown when there is nothing else to show). */
+    var problem by mutableStateOf<Failure?>(null)
     var loading by mutableStateOf(false)
     var loaded by mutableStateOf(false)
 
@@ -124,8 +130,8 @@ class BrowserState(private val client: ApiClient, private val signedOut: () -> U
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w("Maktaba", "browser: ${e.javaClass.simpleName}", e)
-            problem = e.message ?: e.toString()
+            Log.w("Maktaba", "browser: ${e.errorDetails()}", e)
+            problem = Failure.of(e)
         }
     }
 }
@@ -165,7 +171,7 @@ fun LibraryBrowser(
 
     val account: @Composable () -> Unit = { AccountMenu(session, user, themes) }
     when (panes) {
-        is Panes.Tabletop, is Panes.Book -> SplitBrowser(panes, state, playback, client, account)
+        is Panes.Tabletop, is Panes.Book -> SplitBrowser(panes, session, state, playback, client, account)
         else -> Box(Modifier.fillMaxSize()) {
             if (panes == Panes.ListDetail) {
                 Row(Modifier.fillMaxSize()) {
@@ -187,7 +193,7 @@ fun LibraryBrowser(
             }
             if (playback.video != null) {
                 BackHandler { playback.stop() }
-                WatchScreen(playback, fullScreen = true)
+                WatchScreen(playback, fullScreen = true, onSignIn = session::signedOut, onChooseHome = session::switchHome)
             }
         }
     }
@@ -196,6 +202,7 @@ fun LibraryBrowser(
 @Composable
 private fun SplitBrowser(
     panes: Panes,
+    session: AppSession,
     state: BrowserState,
     playback: Playback,
     client: ApiClient,
@@ -215,7 +222,7 @@ private fun SplitBrowser(
             when {
                 playback.video != null -> {
                     BackHandler { playback.stop() }
-                    WatchScreen(playback, fullScreen = false)
+                    WatchScreen(playback, fullScreen = false, onSignIn = session::signedOut, onChooseHome = session::switchHome)
                 }
                 v != null -> {
                     BackHandler { state.video = null }
@@ -323,7 +330,11 @@ private fun VideoList(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 when {
-                    state.problem != null && state.videos.isEmpty() -> Message("Can't load", detail = state.problem)
+                    state.problem != null && state.videos.isEmpty() -> ErrorState(
+                        state.problem!!,
+                        title = stringResource(CoreR.string.error_title),
+                        onRetry = { scope.launch { state.loadLibraries(); state.reload(pickFirst = false) } },
+                    )
                     state.loaded && state.videos.isEmpty() -> Message("No videos")
                     !state.loaded && state.videos.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()

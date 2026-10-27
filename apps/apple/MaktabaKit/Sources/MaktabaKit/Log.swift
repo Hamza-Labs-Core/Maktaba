@@ -34,9 +34,18 @@ public enum Log {
     /// A screen's failure: where, and the error's kind, status and code (nothing private).
     /// A cancelled load (the screen moved on) is not a failure.
     public static func failure(_ what: StaticString, _ error: Error, logger: Logger = Log.ui) {
-        let e = AppError(error)
-        guard !e.isCancellation else { return }
+        guard !isCancellation(error) else { return }
+        let f = HomeFailure(error)
         let w = "\(what)"
-        logger.error("\(w, privacy: .public) failed: \(e.kind.rawValue, privacy: .public) status=\(e.status, privacy: .public) code=\(e.code ?? "-", privacy: .public)")
+        let kind = "\(f.kind)"
+        logger.error("\(w, privacy: .public) failed: \(kind, privacy: .public) status=\(f.status ?? 0, privacy: .public) type=\(f.slug ?? "-", privacy: .public)")
+    }
+
+    /// The request was cancelled because the screen that asked moved on (a search typed
+    /// further, a tab left): nothing to show or log.
+    public static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        let e = error as NSError
+        return e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled
     }
 }
