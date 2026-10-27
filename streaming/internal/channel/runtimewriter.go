@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -19,6 +20,8 @@ type runtimeWriter struct {
 	queue    []rtOp
 	inflight bool
 	wake     chan struct{}
+	log      *slog.Logger // nil: slog's default
+	failing  bool         // the last write failed (run's goroutine only)
 }
 
 const maxRuntimeQueue = 1000
@@ -32,7 +35,7 @@ type rtOp struct {
 
 func (e *Engine) runtimeWrites() *runtimeWriter {
 	e.rtwOnce.Do(func() {
-		e.rtw = &runtimeWriter{wake: make(chan struct{}, 1)}
+		e.rtw = &runtimeWriter{wake: make(chan struct{}, 1), log: e.Logger}
 		go e.rtw.run()
 	})
 	return e.rtw
@@ -87,16 +90,36 @@ func (w *runtimeWriter) run() {
 			w.inflight = true
 			w.mu.Unlock()
 			ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+			var err error
 			if op.clear {
-				_ = op.repo.ClearRuntime(ctx, op.id)
+				err = op.repo.ClearRuntime(ctx, op.id)
 			} else {
-				_ = op.repo.SetRuntime(ctx, op.rt)
+				err = op.repo.SetRuntime(ctx, op.rt)
 			}
 			cancel()
+			w.report(op, err)
 			w.mu.Lock()
 			w.inflight = false
 			w.mu.Unlock()
 		}
+	}
+}
+
+// report logs a write's failure once per run of them (a database that is down fails
+// every refresh of every channel) and the first success after it.
+func (w *runtimeWriter) report(op rtOp, err error) {
+	log := w.log
+	if log == nil {
+		log = slog.Default()
+	}
+	switch {
+	case err != nil && !w.failing:
+		w.failing = true
+		log.Warn("tv: a channel's runtime row could not be written (the admin pages show it stale)",
+			"channel_id", op.id.String(), "clear", op.clear, "err", err.Error(), "event", "channel_runtime_write_failed")
+	case err == nil && w.failing:
+		w.failing = false
+		log.Info("tv: channel runtime rows are written again", "event", "channel_runtime_write_recovered")
 	}
 }
 

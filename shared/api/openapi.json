@@ -799,10 +799,12 @@
                 "updated_at",
                 "created_at",
                 "title",
-                "duration_sec"
+                "duration_sec",
+                "relevance"
               ],
-              "default": "updated_at"
-            }
+              "default": "created_at"
+            },
+            "description": "Without one, the most recently added first (`created_at`); with `q`, `relevance` (titles that start with `q`, then titles that hold it, then descriptions only, each newest-added first). A sort the caller names always wins; `relevance` needs `q`."
           }
         ],
         "responses": {

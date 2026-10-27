@@ -88,14 +88,16 @@ func (f Fence) Check(ctx context.Context, ch uuid.UUID, gen int64) (bool, int64)
 // Ack implements channel.Fence (the live slot only).
 func (f Fence) Ack(ctx context.Context, ch uuid.UUID, gen int64) {
 	if f.State.Live() {
-		_, _ = f.Store.Ack(ctx, ch, gen)
+		_, err := f.Store.Ack(ctx, ch, gen)
+		placement.LogFenceWrite("ack", ch, gen, err)
 	}
 }
 
 // Release implements channel.Fence (the live slot only).
 func (f Fence) Release(ctx context.Context, ch uuid.UUID, gen int64) {
 	if f.State.Live() {
-		_, _ = f.Store.Release(ctx, ch, gen)
+		_, err := f.Store.Release(ctx, ch, gen)
+		placement.LogFenceWrite("release", ch, gen, err)
 	}
 }
 

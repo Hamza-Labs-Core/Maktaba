@@ -242,6 +242,8 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 						if src.name != "h264" {
 							continue
 						}
+						// what the master playlist's CODECS names: High, at most level 4.2
+						checkProfile(ctx, t, filepath.Join(dir, v, "seg-0.ts"), string(hw)+" "+v)
 						// every rung cut on the same 6 s boundaries (its key frames)
 						durs := regexp.MustCompile(`#EXTINF:([0-9.]+)`).FindAllStringSubmatch(string(pl), -1)
 						for i, d := range durs {
@@ -285,6 +287,23 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 	// opened 6 s into the 13 s source: the segments' timestamps are the
 	// source's (from 6 s, plus MPEG-TS's 1.4 s), the playlist the 7 s after
 	startTranscodeAt(ctx, t, sources[0].path, 6)
+}
+
+// checkProfile fails unless seg's video is the H.264 the master playlist names
+// (hlsVideoCodec): High profile, a level no higher than 4.2.
+func checkProfile(ctx context.Context, t *testing.T, seg, what string) {
+	t.Helper()
+	out, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0",
+		"-show_entries", "stream=profile,level", "-of", "csv=p=0", seg).Output()
+	if err != nil {
+		t.Errorf("%s: ffprobe %s: %v", what, seg, err)
+		return
+	}
+	f := strings.Split(strings.TrimSpace(string(out)), ",")
+	level, _ := strconv.Atoi(f[len(f)-1])
+	if f[0] != "High" || level <= 0 || level > 42 {
+		t.Errorf("%s: profile,level %q; the master playlist says %s (High, up to 4.2)", what, out, hlsVideoCodec)
+	}
 }
 
 // startTranscodeAt runs an HLS transcode of input opened start seconds in and

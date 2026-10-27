@@ -359,14 +359,29 @@ func (f HomeFence) Check(ctx context.Context, ch uuid.UUID, gen int64) (bool, in
 }
 
 func (f HomeFence) Ack(ctx context.Context, ch uuid.UUID, gen int64) {
-	if ok, _ := f.Svc.Store.Ack(ctx, ch, gen); ok {
+	ok, err := f.Svc.Store.Ack(ctx, ch, gen)
+	LogFenceWrite("ack", ch, gen, err)
+	if ok {
 		f.Svc.Invalidate(ch)
 	}
 }
 
 func (f HomeFence) Release(ctx context.Context, ch uuid.UUID, gen int64) {
-	_, _ = f.Svc.Store.Release(ctx, ch, gen)
+	_, err := f.Svc.Store.Release(ctx, ch, gen)
+	LogFenceWrite("release", ch, gen, err)
 	f.Svc.Invalidate(ch)
+}
+
+// LogFenceWrite logs a fence's acknowledgement or release of a placement that the
+// database did not take (the engine's Fence has no error to return): the placement
+// then stays pending, or held by this host after its station ended, until the next
+// heal.
+func LogFenceWrite(op string, ch uuid.UUID, gen int64, err error) {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return
+	}
+	slog.Warn("tv: a placement could not be written", "op", op, "channel_id", ch.String(), "gen", gen,
+		"err", err.Error(), "event", "tv_placement_write_failed")
 }
 
 // checkRow: keep while the row names self (adopting a newer generation for self).
@@ -411,9 +426,11 @@ func (f NodeFence) Check(ctx context.Context, ch uuid.UUID, gen int64) (bool, in
 }
 
 func (f NodeFence) Ack(ctx context.Context, ch uuid.UUID, gen int64) {
-	_, _ = f.Store.Ack(ctx, ch, gen)
+	_, err := f.Store.Ack(ctx, ch, gen)
+	LogFenceWrite("ack", ch, gen, err)
 }
 
 func (f NodeFence) Release(ctx context.Context, ch uuid.UUID, gen int64) {
-	_, _ = f.Store.Release(ctx, ch, gen)
+	_, err := f.Store.Release(ctx, ch, gen)
+	LogFenceWrite("release", ch, gen, err)
 }

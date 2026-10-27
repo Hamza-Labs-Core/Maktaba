@@ -393,14 +393,15 @@ class ApiClient(
             .build()
 
         /**
-         * The video list's query: the newest first. The home's sorts are updated_at, created_at
-         * or title (it answers 400 to anything else, `-created_at` included).
+         * The video list's query: the most recently added first. A search sends no sort: the home
+         * orders it by best match, then the most recently added (an older home, by its own
+         * default). The home's sorts are updated_at, created_at or title (it answers 400 to
+         * anything else, `-created_at` included).
          */
         fun videoListQuery(library: String?, query: String?, cursor: String?): Map<String, String> = buildMap {
             put("limit", "60")
-            put("sort", "created_at")
+            if (query.isNullOrEmpty()) put("sort", "created_at") else put("q", query)
             if (library != null) put("library", library)
-            if (!query.isNullOrEmpty()) put("q", query)
             if (cursor != null) put("cursor", cursor)
         }
 

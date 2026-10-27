@@ -128,7 +128,7 @@ func TestStation_RealFFmpeg_ContinuousWallClock(t *testing.T) {
 	dir := filepath.Join(tmp, "hls")
 	st, err := StartStation(StationConfig{
 		FFmpeg: "ffmpeg", Profile: prof, Repo: repo, Prober: NewFFprobe("ffprobe"),
-		Resolver: NewYtDlp(""), PathMap: pathmap.Parse(""), FontFile: FindFont(),
+		Resolver: NewYtDlp(""), PathMap: pathmap.Parse(""), FontFile: SlateFont(context.Background(), "ffmpeg"),
 		Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})),
 	}, uuid.New(), dir)
 	if err != nil {

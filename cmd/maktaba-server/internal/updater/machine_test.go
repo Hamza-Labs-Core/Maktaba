@@ -317,16 +317,7 @@ func startRig(t *testing.T, dir string, w *world, health Verdict) *rig {
 		}}
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
-	t.Cleanup(func() {
-		cancel()
-		// the goroutines that did not "die" end at once; a dead one never writes again
-		done := make(chan struct{})
-		go func() { r.m.Wait(); close(done) }()
-		select {
-		case <-done:
-		case <-time.After(time.Second):
-		}
-	})
+	t.Cleanup(r.stop)
 	r.m.Start(ctx)
 	return r
 }
@@ -335,9 +326,24 @@ func startRig(t *testing.T, dir string, w *world, health Verdict) *rig {
 // on the world's next release, resuming the journal.
 func (r *rig) restart(health Verdict) *rig { return r.restartDying(health, "") }
 
-// restartDying is restart with the next process dying at dieAt.
-func (r *rig) restartDying(health Verdict, dieAt string) *rig {
+// stop ends this process: the goroutines that did not "die" end at once (a dead one
+// never writes again).
+func (r *rig) stop() {
 	r.cancel()
+	done := make(chan struct{})
+	go func() { r.m.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+	}
+}
+
+// restartDying is restart with the next process dying at dieAt. The next process starts
+// once this one stopped, as a real one exits before the launcher starts the next: a
+// watch still running here could otherwise save its journal over the next process's
+// (its count of starts went back, and the restarts never rolled back).
+func (r *rig) restartDying(health Verdict, dieAt string) *rig {
+	r.stop()
 	n := startRig(r.t, r.dir, r.w, health)
 	n.inst.dieAt = dieAt
 	n.m.Resume()

@@ -38,6 +38,7 @@ struct MachinesView: View {
             }
         }
         .maktabaSurface()
+        .overlay { if !model.loaded { ProgressView() } }
         .navigationTitle("Machines")
         .refreshable { await model.load() }
         .toolbar { AccountMenu() }

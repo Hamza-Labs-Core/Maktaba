@@ -1,5 +1,6 @@
 import CoreImage
 import CoreImage.CIFilterBuiltins
+import os
 import SwiftUI
 #if os(iOS)
 import AVFoundation
@@ -104,7 +105,14 @@ struct QRScanner: UIViewControllerRepresentable {
 
     func updateUIViewController(_ vc: DataScannerViewController, context: Context) {
         if !vc.isScanning, !context.coordinator.done {
-            DispatchQueue.main.async { try? vc.startScanning() }
+            DispatchQueue.main.async {
+                do {
+                    try vc.startScanning()
+                } catch {
+                    // the camera is busy or not allowed: the sheet's own words say what to do
+                    Log.ui.error("QR scanning did not start: \(String(describing: error), privacy: .public)")
+                }
+            }
         }
     }
 

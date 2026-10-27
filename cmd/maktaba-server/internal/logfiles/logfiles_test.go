@@ -198,7 +198,11 @@ func TestReadLeadingLevelOnPlainLines(t *testing.T) {
 	write(t, filepath.Join(d.Logs, "server.log"), "2026-10-24T09:30:00.000Z [serve] level=error fatal: boom\n"+
 		"2026-10-24T09:30:01.000Z [update] level=warn undoing the switch after migrate failed: x\n"+
 		"2026-10-24T09:30:02.000Z [supervisor] api exited (exit status 1); restarting in 2s\n"+
-		"2026-10-24T09:30:03.000Z [serve] the level=error is only read first\n")
+		"2026-10-24T09:30:03.000Z [serve] the level=error is only read first\n"+
+		"2026-10-24T09:30:04.000Z [streaming] panic: runtime error: index out of range [3] with length 3\n"+
+		"2026-10-24T09:30:05.000Z [api] fatal error: concurrent map writes\n"+
+		"2026-10-24T09:30:06.000Z [worker] Traceback (most recent call last):\n"+
+		"2026-10-24T09:30:07.000Z [serve] no panic: here\n")
 	r := Read(d, Query{Files: []string{"server"}})
 	var got []string
 	for _, e := range r.Entries {
@@ -209,6 +213,10 @@ func TestReadLeadingLevelOnPlainLines(t *testing.T) {
 		"server|warn|undoing the switch after migrate failed: x",
 		"supervisor||api exited (exit status 1); restarting in 2s",
 		"server||the level=error is only read first",
+		"streaming|error|panic: runtime error: index out of range [3] with length 3",
+		"api|error|fatal error: concurrent map writes",
+		"worker|error|Traceback (most recent call last):",
+		"server||no panic: here",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("entries:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

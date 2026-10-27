@@ -191,7 +191,7 @@ func TestTwoStationsAligned_RealFFmpeg(t *testing.T) {
 	start := func(name string) *Station {
 		st, err := StartStation(StationConfig{
 			FFmpeg: "ffmpeg", Profile: prof, Repo: repo, Prober: NewFFprobe("ffprobe"),
-			Resolver: NewYtDlp(""), PathMap: pathmap.Parse(""), FontFile: FindFont(), AlignSegments: true,
+			Resolver: NewYtDlp(""), PathMap: pathmap.Parse(""), FontFile: SlateFont(context.Background(), "ffmpeg"), AlignSegments: true,
 			Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})),
 		}, ch, filepath.Join(tmp, name))
 		if err != nil {

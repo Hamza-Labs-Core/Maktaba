@@ -273,6 +273,9 @@ var (
 	// leadLvl is the level a plain "[serve] level=error …" line names first (serve's,
 	// the supervisor's and the updater's failure lines): read, then dropped from its words
 	leadLvl = regexp.MustCompile(`^level=(error|warn|info|debug) `)
+	// crashRe is the first line of a crash a program writes to its stderr: the Go
+	// runtime's panic or fatal error, a Python traceback
+	crashRe = regexp.MustCompile(`^(?:panic: |fatal error: |Traceback \(most recent call last\):)`)
 )
 
 // zonedLayouts are the times a line may carry with their zone; localLayouts the ones with
@@ -364,6 +367,10 @@ func parse(line, name string) Entry {
 	if m := leadLvl.FindStringSubmatch(rest); m != nil {
 		e.Level = m[1]
 		rest = rest[len(m[0]):]
+	} else if crashRe.MatchString(rest) {
+		// a role's crash on its stderr (a Go panic, a Python traceback): no level of its
+		// own, and the errors-only view must still show it
+		e.Level = "error"
 	}
 	if strings.HasPrefix(strings.TrimSpace(rest), "{") && json.Valid([]byte(strings.TrimSpace(rest))) {
 		stamped := e.t

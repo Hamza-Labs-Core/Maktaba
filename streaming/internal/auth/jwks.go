@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"sync"
@@ -47,6 +48,8 @@ type JWKSCache struct {
 	keys     map[string]*rsa.PublicKey
 	lastOK   atomic.Int64 // unix nanos
 	failures atomic.Uint64
+	// refreshFailing: the last refresh failed (noteRefresh logs once per run)
+	refreshFailing atomic.Bool
 
 	// inflight serializes refresh attempts so 1000 concurrent
 	// requests during a refresh window only fire one HTTP fetch
@@ -222,7 +225,22 @@ func (c *JWKSCache) tryRefresh(ctx context.Context) error {
 		return nil
 	}
 	defer c.inflight.Unlock()
-	return c.fetchOnce(ctx)
+	err := c.fetchOnce(ctx)
+	c.noteRefresh(ctx, err)
+	return err
+}
+
+// noteRefresh logs a failed refresh of the API's keys once per run of failures, and
+// the first success after: until it answers, a token signed with a key this cache
+// lacks is refused (a player's 401), and the metric alone does not say why.
+func (c *JWKSCache) noteRefresh(ctx context.Context, err error) {
+	switch {
+	case err != nil && ctx.Err() == nil && !c.refreshFailing.Swap(true):
+		slog.Warn("stream keys could not be fetched from the API; tokens signed with a new key are refused",
+			"url", c.url, "err", err.Error(), "event", "jwks_refresh_failed")
+	case err == nil && c.refreshFailing.Swap(false):
+		slog.Info("stream keys fetched from the API again", "url", c.url, "event", "jwks_refresh_recovered")
+	}
 }
 
 func (c *JWKSCache) fetchOnce(ctx context.Context) error {

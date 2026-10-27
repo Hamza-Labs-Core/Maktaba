@@ -75,7 +75,7 @@ Click a card (or a title in the list) to open the video's page. See [Videos and 
 
 ### Sort {#sort}
 
-Pick **Sort**: **Recently changed**, **Date added**, **Date published**, **Title**, **Duration** or **Most played**. The arrow button next to it switches between **Ascending** and **Descending**. Each sort starts in its natural order: newest, longest and most played first, titles from A.
+Videos are listed **Recently added** first unless you pick another sort. Pick **Sort**: **Recently added**, **Recently changed**, **Date published**, **Title**, **Duration** or **Most played**. The arrow button next to it switches between **Ascending** and **Descending**. Each sort starts in its natural order: newest, longest and most played first, titles from A. While you search the grid, the default is **Best match**: titles that start with your words, then titles that contain them, then the descriptions, the most recently added first in each.
 
 ### Filter by year and by what you watched {#filters}
 
