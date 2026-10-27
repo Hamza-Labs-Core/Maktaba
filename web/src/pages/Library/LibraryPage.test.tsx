@@ -188,14 +188,20 @@ describe("LibraryPage", () => {
     serve();
     renderLib();
     const user = userEvent.setup();
-    const pin = await screen.findByRole("button", { name: "Pin Dr. Othman Alkamees" });
+    const pin = await screen.findByRole("button", {
+      name: "Pin Dr. Othman Alkamees to the sidebar",
+    });
+    // by the title, not among the header's actions
+    expect(pin.closest(".mkt-titlerow")).not.toBeNull();
     await waitFor(() => expect(pin).toBeEnabled());
     await user.click(pin);
     await waitFor(() =>
       expect(put).toHaveBeenCalledWith("/api/me/pinned-libraries", { library_ids: [ID] })
     );
     expect(
-      await screen.findByRole("button", { name: "Unpin Dr. Othman Alkamees" })
+      await screen.findByRole("button", {
+        name: "Dr. Othman Alkamees is pinned to the sidebar; click to unpin",
+      })
     ).toHaveAttribute("aria-pressed", "true");
   });
 

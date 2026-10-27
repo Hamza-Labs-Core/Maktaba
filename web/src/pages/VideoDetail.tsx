@@ -106,6 +106,15 @@ const TS = (s: number) => {
 
 const TAB_IDS = ["watch", "enrichment", "transcript", "chapters", "files", "processing", "stats"];
 
+// The states a viewer should notice, with their badge's tone (as the grid's).
+const PROBLEM_STATES: Record<string, "warn" | "error"> = {
+  missing: "error",
+  corrupted: "error",
+  failed: "error",
+  ready_no_audio: "warn",
+  superseded: "warn",
+};
+
 export function VideoDetail() {
   const { videoId } = useParams();
   const { t } = useI18n();
@@ -268,7 +277,15 @@ export function VideoDetail() {
         </TitleRow>
         <div className="mkt-video__flags">
           {video.detected_language && <Badge>{video.detected_language}</Badge>}
-          <Badge tone={video.state === "ready" ? "success" : "neutral"}>{video.state}</Badge>
+          {video.state !== "ready" && (
+            // the grid's rule: a ready video needs no badge; a problem says
+            // which, in the viewer's language; any other state is processing
+            <Badge tone={PROBLEM_STATES[video.state] ?? "neutral"}>
+              {PROBLEM_STATES[video.state]
+                ? t(`video.state.${video.state}`)
+                : t("video.state.processing")}
+            </Badge>
+          )}
         </div>
         <DisplayTitle
           video={video}

@@ -100,9 +100,9 @@ describe("Libraries", () => {
       "/api/videos/p3/poster",
       "/api/videos/p4/poster",
     ]);
-    // a short mosaic is filled with blank tiles
+    // a library with no posters gets one quiet placeholder, not blank tiles
     const kids = screen.getByText("Kids").closest("li")!;
-    expect(kids.querySelectorAll(".mkt-libcard__mosaic > *")).toHaveLength(4);
+    expect(kids.querySelector(".mkt-libcard__mosaic--empty")).not.toBeNull();
     expect(kids.querySelectorAll(".mkt-libcard__mosaic img")).toHaveLength(0);
     // nothing pinned: no Pinned section
     expect(screen.queryByRole("region", { name: en["libraries.pinned"] })).toBeNull();
@@ -113,7 +113,7 @@ describe("Libraries", () => {
     serve(summary([A.id]));
     renderLibraries();
     const user = userEvent.setup();
-    const pinB = await screen.findByRole("button", { name: `Pin ${B.name}` });
+    const pinB = await screen.findByRole("button", { name: `Pin ${B.name} to the sidebar` });
     expect(pinB).toHaveAttribute("aria-pressed", "false");
     await user.click(pinB);
     await waitFor(() => expect(putCalls()).toEqual([[A.id, B.id]]));
@@ -121,7 +121,11 @@ describe("Libraries", () => {
     expect(screen.getByTestId("probe")).toHaveTextContent(`${A.name},${B.name}`);
     const pinned = screen.getByRole("region", { name: en["libraries.pinned"] });
     expect(within(pinned).getAllByRole("listitem")).toHaveLength(2);
-    const unpinA = screen.getAllByRole("button", { name: `Unpin ${A.name}` })[0];
+    // a toast says what happened
+    expect(await screen.findByText(`Pinned ${B.name} to the sidebar`)).toBeInTheDocument();
+    const unpinA = screen.getAllByRole("button", {
+      name: `${A.name} is pinned to the sidebar; click to unpin`,
+    })[0];
     expect(unpinA).toHaveAttribute("aria-pressed", "true");
     await user.click(unpinA);
     await waitFor(() => expect(putCalls().at(-1)).toEqual([B.id]));

@@ -423,3 +423,153 @@
   padding: 0;
   inline-size: 100%;
 }
+
+/* Epic 45 UI pass: the pin toggle. A compact icon, outline when not pinned,
+   filled in the accent when pinned. */
+.mkt-pin {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 32px;
+  block-size: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.mkt-pin:hover {
+  background: var(--color-subtle);
+  color: var(--color-fg);
+}
+.mkt-pin--on,
+.mkt-pin--on:hover {
+  color: var(--color-accent-text);
+}
+.mkt-pin[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.mkt-pin:focus-visible {
+  outline: 2px solid var(--color-accent-text);
+  outline-offset: 2px;
+}
+
+/* A library's page: the title (with its pin) and the count on one side, the
+   library's actions on the other; on a phone they stack, left-aligned. */
+.mkt-library-page__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  margin-block-end: var(--space-4);
+}
+.mkt-library-page__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+.mkt-library-page__heading h1 {
+  margin: 0;
+}
+.mkt-library-page__header .mkt-library-page__actions {
+  align-items: flex-start;
+}
+.mkt-library-page__actions .mkt-scan-now {
+  min-inline-size: 0;
+  align-items: stretch;
+}
+
+/* A library's card: the pin in the poster's corner, on hover or focus, and
+   always once pinned (or where there is no hover: phones). */
+.mkt-libcard {
+  position: relative;
+}
+.mkt-libcard__pin {
+  position: absolute;
+  inset-block-start: calc(var(--space-3) + 6px);
+  inset-inline-end: calc(var(--space-3) + 6px);
+  margin: 0;
+  align-self: auto;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.mkt-libcard__pin .mkt-pin {
+  background: color-mix(in srgb, var(--color-card, var(--color-bg)) 88%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+.mkt-libcard:hover .mkt-libcard__pin,
+.mkt-libcard:focus-within .mkt-libcard__pin,
+.mkt-libcard--pinned .mkt-libcard__pin {
+  opacity: 1;
+}
+@media (hover: none) {
+  .mkt-libcard__pin {
+    opacity: 1;
+  }
+}
+
+/* A library with no posters yet: a quiet placeholder. */
+.mkt-libcard__mosaic--empty {
+  display: grid;
+  place-items: center;
+  color: var(--color-muted);
+}
+.mkt-libcard__mosaic--empty > svg {
+  inline-size: 40px;
+  block-size: 40px;
+  background: none;
+}
+
+/* Two cards a row on a phone, not one tall card each. */
+@media (max-width: 600px) {
+  .mkt-libgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+  .mkt-libcard__link {
+    padding: var(--space-2);
+  }
+  .mkt-libcard__pin {
+    inset-block-start: calc(var(--space-2) + 4px);
+    inset-inline-end: calc(var(--space-2) + 4px);
+  }
+}
+.mkt-libcard__mosaic--empty {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* Epic 45 UI pass: the grid's toolbar. The search box has a row of its own;
+   the filters below it line up on their fields' bottom edge. */
+.mkt-browse-toolbar {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-block-end: var(--space-2);
+}
+.mkt-browse-toolbar .mkt-browse-search {
+  flex: 1 1 100%;
+}
+.mkt-browse-toolbar .mkt-browse-search input[type="search"] {
+  flex: 1 1 auto;
+  max-inline-size: 32rem;
+  min-inline-size: 0;
+}
+.mkt-browse-toolbar select {
+  min-inline-size: 8.5rem;
+}
+@media (max-width: 600px) {
+  .mkt-browse-toolbar > .mkt-field {
+    flex: 1 1 calc(50% - var(--space-3));
+  }
+  .mkt-browse-toolbar select {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+}

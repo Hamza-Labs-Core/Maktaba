@@ -1,4 +1,5 @@
 // Video detail cases from web/test-cases/video-detail.md.
+import en from "../i18n/en.json";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -125,7 +126,8 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
     const h1 = await screen.findByRole("heading", { level: 1, name: "Lecture 1" });
     expect(h1).toHaveAttribute("dir", "auto");
     expect(screen.getByText("en", { selector: ".mk-badge" })).toBeInTheDocument();
-    expect(screen.getByText("ready", { selector: ".mk-badge" })).toHaveClass("mk-badge--success");
+    // a ready video needs no state badge (the grid's rule); a problem gets one
+    expect(screen.queryByText("ready", { selector: ".mk-badge" })).toBeNull();
     const display = screen.getByTestId("display-title");
     expect(display).toHaveTextContent("On-air title:");
     expect(display).toHaveTextContent("Lecture 1");
@@ -139,6 +141,20 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
     expect(screen.getByRole("tab", { name: "Watch" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Intro talk")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "▶ Play" })).toBeInTheDocument();
+  });
+
+  it("VID-01: a problem state gets a badge in the viewer's words; processing is one word", async () => {
+    serve({ "/api/videos/v1": { ...V1, state: "missing" } });
+    const first = renderVideo();
+    expect(
+      await screen.findByText(en["video.state.missing"], { selector: ".mk-badge" })
+    ).toHaveClass("mk-badge--error");
+    first.unmount();
+    serve({ "/api/videos/v1": { ...V1, state: "transcribed" } });
+    renderVideo();
+    expect(
+      await screen.findByText(en["video.state.processing"], { selector: ".mk-badge" })
+    ).toBeInTheDocument();
   });
 
   it("VID-01: the video's picture leads the header", async () => {

@@ -37,7 +37,7 @@ Each card shows four recent posters, the library's name and how many videos it h
 
 ### Pin your libraries {#pinning}
 
-Press **Pin** on a library's card or on its page to keep it at hand: pinned libraries show under **Pinned** in the side menu and get their own row on Home. Press **Unpin** to remove it. You can pin up to 20.
+Press the **pin** icon to keep a library at hand: it is next to the library's name on its page, and in the corner of its card on the Libraries page (it shows when you point at the card, and stays once pinned). The pin turns solid, a short message confirms it, and the library shows under **Pinned** in the side menu with its own row on Home. Press the solid pin again to unpin it. You can pin up to 20; with 20 pinned, the pin tells you to unpin one first.
 
 The **Pinned** list at the top of the Libraries page sets their order: use the up and down arrow buttons beside each one (they work with the keyboard too). The side menu and Home follow the new order at once. Your pins are saved on the server, so they follow you to every browser.
 
@@ -219,9 +219,9 @@ Until a video has a title, Maktaba shows its file name. [Finding metadata](/help
 - **Does Maktaba fix it itself?** No, the page waits for you.
 - **What you can do:** Press **Try again**. If it keeps failing, check [System health](/help/system-health) or ask an admin.
 
-### Pin or Unpin did nothing {#pin-failed}
+### The pin went back, or nothing was pinned {#pin-failed}
 
-- **What it means:** The server refused the change (for example, the library was removed or you can no longer see it) or could not be reached.
+- **What it means:** The server refused the change (for example, the library was removed or you can no longer see it) or could not be reached; an error message says so. If you already have 20 pinned libraries, the pin says so instead.
 - **Does Maktaba fix it itself?** No. Your pins stay as they were.
 - **What you can do:** Reload the page and try again. If the library is gone, it drops off your pins by itself.
 

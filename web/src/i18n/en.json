@@ -4831,10 +4831,6 @@
   "libraries.pinned.hint": "Pinned libraries show in the side menu and on Home, in this order.",
   "libraries.moveUp": "Move {name} up",
   "libraries.moveDown": "Move {name} down",
-  "libraries.pin": "Pin",
-  "libraries.unpin": "Unpin",
-  "libraries.pinNamed": "Pin {name}",
-  "libraries.unpinNamed": "Unpin {name}",
   "libraries.pin.full": "You can pin up to {max} libraries.",
   "libraries.pin.error": "Could not change your pinned libraries",
   "libraries.empty.title": "No libraries yet",
@@ -5378,5 +5374,14 @@
   "video.featured": "Featured on Home",
   "video.featured.on": "This lesson is now on Home",
   "video.featured.off": "Home features the newest series again",
-  "collections.noFavorites": "Favorites are your own: turn the Favorites filter off to save a collection."
+  "collections.noFavorites": "Favorites are your own: turn the Favorites filter off to save a collection.",
+  "libraries.pinToSidebar": "Pin {name} to the sidebar",
+  "libraries.pinnedNamed": "{name} is pinned to the sidebar; click to unpin",
+  "libraries.pin.tip": "Pin to sidebar",
+  "libraries.pinned.tip": "Pinned to sidebar. Click to unpin",
+  "libraries.pin.fullNamed": "Pin {name}: you already have {max} pinned libraries",
+  "libraries.pin.fullHelp": "You can pin up to {max} libraries. Unpin one first (on the Libraries page).",
+  "libraries.pinnedDone": "Pinned {name} to the sidebar",
+  "libraries.unpinned": "Unpinned {name}",
+  "video.state.processing": "Still processing"
 }

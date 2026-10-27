@@ -4844,10 +4844,6 @@
   "libraries.pinned.hint": "تظهر المكتبات المثبّتة في القائمة الجانبية وفي الرئيسية، بهذا الترتيب.",
   "libraries.moveUp": "انقل {name} إلى الأعلى",
   "libraries.moveDown": "انقل {name} إلى الأسفل",
-  "libraries.pin": "تثبيت",
-  "libraries.unpin": "إلغاء التثبيت",
-  "libraries.pinNamed": "ثبّت {name}",
-  "libraries.unpinNamed": "ألغِ تثبيت {name}",
   "libraries.pin.full": "يمكنك تثبيت {max} مكتبة على الأكثر.",
   "libraries.pin.error": "تعذّر تغيير مكتباتك المثبّتة",
   "libraries.empty.title": "لا توجد مكتبات بعد",
@@ -5391,5 +5387,14 @@
   "video.featured": "معروض في الرئيسية",
   "video.featured.on": "صار هذا الدرس في الرئيسية",
   "video.featured.off": "تعرض الرئيسية أحدث سلسلة من جديد",
-  "collections.noFavorites": "المفضلة خاصة بك: أوقف تصفية المفضلة لتحفظ مجموعة."
+  "collections.noFavorites": "المفضلة خاصة بك: أوقف تصفية المفضلة لتحفظ مجموعة.",
+  "libraries.pinToSidebar": "ثبّت {name} في القائمة الجانبية",
+  "libraries.pinnedNamed": "{name} مثبّتة في القائمة الجانبية؛ اضغط لإلغاء تثبيتها",
+  "libraries.pin.tip": "ثبّت في القائمة الجانبية",
+  "libraries.pinned.tip": "مثبّتة في القائمة الجانبية. اضغط لإلغاء التثبيت",
+  "libraries.pin.fullNamed": "تثبيت {name}: لديك {max} مكتبة مثبّتة بالفعل",
+  "libraries.pin.fullHelp": "يمكنك تثبيت {max} مكتبة على الأكثر. ألغِ تثبيت إحداها أولًا (في صفحة المكتبات).",
+  "libraries.pinnedDone": "ثُبّتت {name} في القائمة الجانبية",
+  "libraries.unpinned": "أُلغي تثبيت {name}",
+  "video.state.processing": "قيد المعالجة"
 }
