@@ -10,7 +10,8 @@
 //   Browse (?tab=browse): the full grid (LibraryBrowser, embedded) with its
 //     sort and filters in the URL.
 //
-// Pin / Unpin for everyone; admins also get Scan now and Manage. A library
+// A pin icon by the title for everyone (pin to the sidebar); admins also get
+// Scan now and Manage, at the header's end. A library
 // the user may not see answers 404, the same as one that does not exist.
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
@@ -26,7 +27,7 @@ import { fetchHub, type LibraryHub } from "../../lib/browse";
 import { TitleRow } from "../../help/HelpLink";
 import { AddedRow, MediaRow, VideoRow } from "../../components/MediaRow";
 import { LibraryBrowser, ScanNow } from "../LibraryBrowser";
-import { PinButton } from "./Libraries";
+import { PinToggle } from "../../components/PinToggle";
 import { fetchCollections, type Collection } from "../../lib/collections";
 import { CollectionCard } from "../Collections/Collections";
 import { SERVER_PAGES } from "../../lib/edition";
@@ -246,29 +247,31 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
 
   return (
     <section className="mkt-page mkt-library-page">
-      <header className="mkt-page__header">
-        <TitleRow>
-          <h1>
-            <bdi>{name}</bdi>
-          </h1>
-        </TitleRow>
-        <span className="mkt-muted">{t("libraries.videos", { n: n(hub.library.videos) })}</span>
+      <header className="mkt-library-page__header">
+        <div className="mkt-library-page__heading">
+          <TitleRow>
+            <h1>
+              <bdi>{name}</bdi>
+            </h1>
+            <PinToggle lib={{ id: libraryId, name }} />
+          </TitleRow>
+          <span className="mkt-muted">{t("libraries.videos", { n: n(hub.library.videos) })}</span>
+        </div>
         <div className="mkt-library-page__actions">
-          <PinButton lib={{ id: libraryId, name }} />
+          {(user?.is_admin || collections.length > 0) && (
+            <Link className="mkt-btn mkt-btn--ghost" to={collectionsPath}>
+              {t("collections.title")}
+            </Link>
+          )}
           {user?.is_admin && (
             <>
-              <ScanNow libraryId={libraryId} onDone={() => setReload((x) => x + 1)} />
               {SERVER_PAGES && (
                 <Link className="mkt-btn mkt-btn--ghost" to="/admin/libraries">
                   {t("libraryPage.manage")}
                 </Link>
               )}
+              <ScanNow libraryId={libraryId} onDone={() => setReload((x) => x + 1)} />
             </>
-          )}
-          {(user?.is_admin || collections.length > 0) && (
-            <Link className="mkt-btn mkt-btn--ghost" to={collectionsPath}>
-              {t("collections.title")}
-            </Link>
           )}
         </div>
       </header>

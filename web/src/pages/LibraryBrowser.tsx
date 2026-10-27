@@ -618,7 +618,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   }
 
   const toolbar = (
-    <div className="mkt-toolbar" role="toolbar" aria-label={t("library.sort")}>
+    <div className="mkt-toolbar mkt-browse-toolbar" role="toolbar" aria-label={t("library.sort")}>
       <form
         className="mkt-browse-search"
         role="search"
