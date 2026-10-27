@@ -171,6 +171,10 @@ final class RouteStub: URLProtocol, @unchecked Sendable {
         var contentType = "application/json"
         /// Answer with a redirect to this address instead.
         var redirect: String?
+        /// More response headers (`Retry-After`).
+        var headers: [String: String] = [:]
+        /// The redirect's status (302, or 307 that resends the body).
+        var redirectStatus = 302
     }
 
     struct Seen: Sendable {
@@ -238,13 +242,15 @@ final class RouteStub: URLProtocol, @unchecked Sendable {
         if let to = answer.redirect, let next = URL(string: to) {
             var r = request
             r.url = next
-            let moved = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1", headerFields: ["Location": to])!
+            let moved = HTTPURLResponse(url: url, statusCode: answer.redirectStatus, httpVersion: "HTTP/1.1", headerFields: ["Location": to])!
             client?.urlProtocol(self, wasRedirectedTo: r, redirectResponse: moved)
+            // a redirect not followed ends with the 3xx answer itself
+            client?.urlProtocol(self, didReceive: moved, cacheStoragePolicy: .notAllowed)
             client?.urlProtocolDidFinishLoading(self)
             return
         }
         let resp = HTTPURLResponse(url: url, statusCode: answer.status, httpVersion: "HTTP/1.1",
-                                   headerFields: ["Content-Type": answer.contentType])!
+                                   headerFields: answer.headers.merging(["Content-Type": answer.contentType]) { a, _ in a })!
         client?.urlProtocol(self, didReceive: resp, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(answer.body.utf8))
         client?.urlProtocolDidFinishLoading(self)

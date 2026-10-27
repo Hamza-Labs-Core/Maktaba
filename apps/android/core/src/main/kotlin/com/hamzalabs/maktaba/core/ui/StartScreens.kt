@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -284,6 +285,7 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
     var connecting by remember { mutableStateOf(false) }
     var scanning by rememberSaveable { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<Home?>(null) }
+    var throughCloud by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val invalid = stringResource(R.string.address_invalid)
     val notHome = stringResource(R.string.scan_not_home)
@@ -334,6 +336,11 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
             },
             onClose = { scanning = false },
         )
+        return
+    }
+
+    if (throughCloud) {
+        CloudHomes(app, session, onClose = { throughCloud = false })
         return
     }
 
@@ -434,6 +441,12 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
             Icon(Icons.Outlined.QrCodeScanner, null, Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.scan_qr))
+        }
+        // away from home: the homes linked to a Maktaba Cloud account (story 42.7)
+        OutlinedButton(onClick = { problem = null; throughCloud = true }, enabled = !connecting, modifier = Modifier.fillMaxWidth().testTag("through-cloud")) {
+            Icon(Icons.Outlined.Cloud, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.cloud_title))
         }
         if (connecting) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -561,6 +574,9 @@ fun SignIn(session: AppSession, app: MaktabaApp) {
         } else {
             PasswordSignIn(session, name)
         }
+        // a home chosen in Maktaba Cloud, at an address the cloud gave: no password needed
+        val h = home
+        if (h != null && session.cloud?.signedIn == true && h.url in h.cloudAddresses) CloudSignInButton(session)
         Spacer(Modifier.height(4.dp))
         TextButton(onClick = session::switchHome, modifier = Modifier.align(Alignment.CenterHorizontally)) {
             Text(stringResource(R.string.other_home))

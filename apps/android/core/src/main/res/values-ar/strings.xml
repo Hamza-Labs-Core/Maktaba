@@ -113,4 +113,29 @@
     <string name="approve_already">تمت الموافقة على هذا الرمز من قبل.</string>
     <string name="approve_cloud">لا يمكن لتسجيل دخول عبر مكتبة السحابية الموافقة على جهاز. سجّل الدخول على الجهاز الرئيسي.</string>
     <string name="approve_another">الموافقة على جهاز آخر</string>
+    <!-- story 42.7: through Maktaba Cloud -->
+    <string name="cloud_title">عبر سحابة مكتبة</string>
+    <string name="cloud_intro">بعيدًا عن المنزل، أو منزل على شبكة أخرى: سجّل الدخول بحساب سحابة مكتبة وافتح منزلًا مرتبطًا به. وكل منزل يقرّر ما يمكنك فعله فيه.</string>
+    <string name="cloud_email">البريد الإلكتروني</string>
+    <string name="cloud_sign_in">تسجيل الدخول إلى سحابة مكتبة</string>
+    <string name="cloud_advanced">متقدم</string>
+    <string name="cloud_address">عنوان سحابة مكتبة</string>
+    <string name="cloud_address_hint">لا تغيّره إلا للوصول إلى سحابة مكتبة تجريبية أو خاصة بك. فارغ: api.maktaba.app.</string>
+    <string name="cloud_address_invalid">هذا ليس عنوانًا.</string>
+    <string name="cloud_wrong">البريد الإلكتروني أو كلمة المرور غير صحيحة.</string>
+    <string name="cloud_too_many">محاولات كثيرة. انتظر دقيقة ثم حاول مرة أخرى.</string>
+    <string name="cloud_signed_in_as">مسجّل الدخول إلى سحابة مكتبة باسم %1$s</string>
+    <string name="cloud_your_homes">منازلك</string>
+    <string name="cloud_no_homes">لا منزل مرتبط بحساب سحابة مكتبة هذا بعد.</string>
+    <string name="cloud_online">متصل</string>
+    <string name="cloud_offline">غير متصل</string>
+    <string name="cloud_not_linked">غير مرتبط بحسابك</string>
+    <string name="cloud_how_to_link">لفتح منزل غير مرتبط: افتح المنزل في متصفح، وسجّل الدخول فيه، واربط حساب سحابة مكتبة من صفحة الحساب فيه (الحسابات المرتبطة). وامتلاك منزل في سحابة مكتبة ليس حسابًا فيه.</string>
+    <string name="cloud_refresh">تحديث</string>
+    <string name="cloud_sign_out">تسجيل الخروج من سحابة مكتبة</string>
+    <string name="cloud_home_unreachable">لم يُجب المنزل، لا على عنوانه ولا عبر السحابة.</string>
+    <string name="cloud_home_refused">رفض المنزل تسجيل الدخول: ربما أُلغي الربط. اربط مرة أخرى من صفحة الحساب في المنزل.</string>
+    <string name="cloud_home_locked">حسابك في ذلك المنزل مقفل. اسأل مسؤوله.</string>
+    <string name="cloud_home_change_password">يطلب ذلك المنزل أن تغيّر كلمة مرورك أولًا: سجّل الدخول فيه بها.</string>
+    <string name="cloud_sign_in_here">تسجيل الدخول عبر سحابة مكتبة</string>
 </resources>

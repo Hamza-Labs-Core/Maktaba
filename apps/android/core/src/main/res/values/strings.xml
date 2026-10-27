@@ -115,4 +115,29 @@
     <string name="approve_already">This code was already approved.</string>
     <string name="approve_cloud">A sign-in through Maktaba Cloud cannot approve a device. Sign in on the home.</string>
     <string name="approve_another">Approve another</string>
+    <!-- story 42.7: through Maktaba Cloud -->
+    <string name="cloud_title">Through Maktaba Cloud</string>
+    <string name="cloud_intro">Away from home, or a home on another network: sign in with your Maktaba Cloud account and open a home linked to it. Each home decides what you can do there.</string>
+    <string name="cloud_email">Email</string>
+    <string name="cloud_sign_in">Sign in to Maktaba Cloud</string>
+    <string name="cloud_advanced">Advanced</string>
+    <string name="cloud_address">Maktaba Cloud address</string>
+    <string name="cloud_address_hint">Change it only to reach a test or your own Maktaba Cloud. Empty: api.maktaba.app.</string>
+    <string name="cloud_address_invalid">That is not an address.</string>
+    <string name="cloud_wrong">The email or the password is wrong.</string>
+    <string name="cloud_too_many">Too many tries. Wait a minute and try again.</string>
+    <string name="cloud_signed_in_as">Signed in to Maktaba Cloud as %1$s</string>
+    <string name="cloud_your_homes">Your homes</string>
+    <string name="cloud_no_homes">No home is linked to this Maktaba Cloud account yet.</string>
+    <string name="cloud_online">Online</string>
+    <string name="cloud_offline">Offline</string>
+    <string name="cloud_not_linked">Not linked to your account</string>
+    <string name="cloud_how_to_link">To open a home that is not linked: open the home in a browser, sign in there, and link your Maktaba Cloud account on its Account page (Linked accounts). Owning a home in Maktaba Cloud is not an account in it.</string>
+    <string name="cloud_refresh">Refresh</string>
+    <string name="cloud_sign_out">Sign out of Maktaba Cloud</string>
+    <string name="cloud_home_unreachable">The home did not answer, at its own address or through the cloud.</string>
+    <string name="cloud_home_refused">The home refused the sign-in: the link may have been removed. Link again on the home\'s Account page.</string>
+    <string name="cloud_home_locked">Your account on that home is locked. Ask its admin.</string>
+    <string name="cloud_home_change_password">That home wants you to change your password first: sign in there with it.</string>
+    <string name="cloud_sign_in_here">Sign in through Maktaba Cloud</string>
 </resources>
