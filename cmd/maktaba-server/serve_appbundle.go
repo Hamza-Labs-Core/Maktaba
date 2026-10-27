@@ -402,6 +402,9 @@ var (
 	// a database of the user's own (a plain server install's): its dump beside the
 	// data, and putting it back in place
 	dumpExternal = func(ctx context.Context, t dbsafe.Target, from, to string, keep int) (string, error) {
+		if err := pgbundle.MakeRoom(t.Backups); err != nil {
+			return "", err
+		}
 		path := filepath.Join(t.Backups, pgbundle.UpdateDumpName(from, to))
 		if err := t.Dump(ctx, path); err != nil {
 			return "", err
@@ -454,7 +457,11 @@ func (g *migrationGate) dumpAside(ctx context.Context, rec apppayload.Database) 
 		}
 	}
 	path := filepath.Join(dir, prefix+time.Now().UTC().Format("20060102T150405")+".dump")
-	var err error
+	err := pgbundle.MakeRoom(dir)
+	if err != nil {
+		fmt.Fprintf(g.log, "[serve] could not set the library database aside as %s left it: %v\n", rec.Failed, err)
+		return
+	}
 	if g.pg != nil {
 		err = dumpAsideBundled(ctx, *g.pg, path)
 	} else {

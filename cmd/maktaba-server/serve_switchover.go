@@ -960,9 +960,10 @@ func (s *switching) demote(req homeRequest) error {
 			RawQuery: "sslmode=prefer&connect_timeout=10"}).String(),
 		Home: config.HomeRef{URL: h.APIURL, APIURL: h.APIURL, InstanceID: h.InstanceID, Name: h.Name,
 			ClusterPub: base64.StdEncoding.EncodeToString(clusterPub), Term: req.Term}}
-	// the new home's database, verified with the CA it handed over
+	// the new home's database, verified with the CA it handed over, offering this
+	// machine's cluster-link certificate as the roles do
 	h.database(&n)
-	dsn, err := n.HomeDSN(config.KeysDir())
+	dsn, err := supervisor.HomeDSNChecked(n)
 	if err != nil {
 		return fmt.Errorf("the new home's database: %w", err)
 	}
@@ -1865,9 +1866,10 @@ func (s *switching) follow(ctx context.Context, id string, term int64, h newHome
 	}
 	u.Host = net.JoinHostPort(h.DBHost, strconv.Itoa(h.DBPort))
 	n.DatabaseURL = u.String()
-	// the new home's database, verified with the CA it handed over
+	// the new home's database, verified with the CA it handed over, offering this
+	// machine's cluster-link certificate as the roles do
 	h.database(&n)
-	dsn, err := n.HomeDSN(config.KeysDir())
+	dsn, err := supervisor.HomeDSNChecked(n)
 	if err != nil {
 		return nil, fmt.Errorf("the new home's database: %w", err)
 	}

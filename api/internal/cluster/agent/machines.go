@@ -182,6 +182,9 @@ func (h *Hub) onUpdateState(s *Session, raw []byte) {
 		Version  string    `json:"version"`
 		Platform string    `json:"platform"`
 		Clock    time.Time `json:"clock"`
+		// DBClientCert: every process of the machine presents its cluster certificate to
+		// this home's database (absent: an older release, whose processes do not)
+		DBClientCert bool `json:"db_client_cert"`
 	}
 	if json.Unmarshal(raw, &f) != nil {
 		return
@@ -191,9 +194,43 @@ func (h *Hub) onUpdateState(s *Session, raw []byte) {
 	if !f.Clock.IsZero() {
 		s.clockSkew, s.hasSkew = f.Clock.Sub(h.now()), true
 	}
+	s.dbCertSaid = f.DBClientCert
+	keep := s.Kind == "node" && s.Process == "supervisor" && s.NodeID != "" && h.cfg.DBClientCert != nil &&
+		(s.dbCertKept == nil || *s.dbCertKept != f.DBClientCert)
 	s.mu.Unlock()
+	if keep {
+		go h.keepDBClientCert(s)
+	}
 	h.event(map[string]any{"event": "update_state", "session": s.ID, "node_id": nullable(s.NodeID),
 		"version": f.Version, "platform": f.Platform})
+}
+
+// keepDBClientCert keeps a machine's word on its processes' certificates on this home's
+// database (Config.DBClientCert), off the session's reader: its latest word wins (a machine
+// back on an older release says nothing, which is "no"). One keep at a time per session,
+// each of the word as it is then, so the last one kept is the last one said; once kept,
+// an unchanged word is not written again (a failed keep is tried at the next update.state).
+func (h *Hub) keepDBClientCert(s *Session) {
+	s.dbCertKeep.Lock()
+	defer s.dbCertKeep.Unlock()
+	s.mu.Lock()
+	presents, kept := s.dbCertSaid, s.dbCertKept
+	s.mu.Unlock()
+	if kept != nil && *kept == presents {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := h.cfg.DBClientCert(ctx, s.NodeID, presents); err != nil {
+		h.cfg.Logger.Warn("p31: a machine's word on its database certificate could not be kept", "node_id", s.NodeID,
+			"presents", presents, "err", err, "event", "cluster_db_client_cert_failed")
+		return
+	}
+	s.mu.Lock()
+	s.dbCertKept = &presents
+	s.mu.Unlock()
+	h.cfg.Logger.Info("p31: a machine's word on its database certificate kept", "node_id", s.NodeID,
+		"presents", presents, "event", "cluster_db_client_cert")
 }
 
 // ClockSkews are the connected machine agents' clocks minus the home's, by node id (story

@@ -361,7 +361,10 @@ database with the API's migration user, to `<data_dir>/backups/pre-<version>-<ut
 never the share); then `pg_restore --list` must parse it and list every table of the schema; size and
 SHA-256 recorded in `update_runs.backup`. `pg_dump` is the one matching the server's major version
 (`pg_config`/bundled; a mismatch fails the step with `pg_dump_version`). SQLite homes (tests,
-single-machine): `VACUUM INTO`. Kept: `backups_keep` (3), oldest pruned after a commit.
+single-machine): `VACUUM INTO`. Kept: `backups_keep` (3), oldest pruned after a commit. Before
+any dump the oldest dumps go until it fits (its size guessed as the newest dump's x1.25): it leaves
+5% of the disk free (at least 2 GiB) and the dumps stay within a fifth of the disk, the newest of
+each kind kept; a dump that cannot fit is not started (`db_dump_failed`, not enough free space).
 
 ### 6.2 Rehearsal
 
@@ -1094,6 +1097,14 @@ certificate, `ssl_ca_file` = the cluster CA (`maktaba-server setup --pg-tls` wri
 admin), and `pg_hba.conf` `hostssl … clientcert=verify-full` for the `maktaba_node_*` roles once
 `require`. Nodes connect with `sslmode=verify-full sslrootcert=<ca> sslcert=<cert> sslkey=<key>`;
 the certificate's CN is the node's role, so a stolen password alone is useless.
+**Per machine, never all at once** (2026-10-26, after a home cut its machines off): the certificate
+is asked only of the role of a machine that said, in its `update.state` (`db_client_cert`), that
+every one of its processes presents it, and whose current certificate is valid and not revoked
+(pgbundle `Reach.CertRoles`; the home keeps the word in `cluster_nodes.update_state`). Each such
+role gets its own `hostssl … clientcert=verify-full` line before the group's; the group keeps its
+password. A machine that never said so (an older release) keeps its password alone, so requiring
+the link, by hand or automatically, never cuts a machine off its database; the Machines page says
+which machines' logins still use their password.
 **Tunnelling Postgres through the link** was weighed and not chosen: it would put the database behind
 the same TCP connection as control traffic (or need one more stream per pooled connection), add a hop
 and a failure mode to every query, and break the drivers' own reconnect and `LISTEN` behaviour, for

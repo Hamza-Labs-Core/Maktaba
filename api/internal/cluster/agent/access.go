@@ -269,9 +269,17 @@ func (h *Hub) requestGranted(nodeID string) time.Time {
 func (h *Hub) onAccessRequest(s *Session, raw []byte) {
 	var f struct {
 		ID string `json:"id"`
+		// HomeDB is the machine's failed login it asks for (its update.state's when the
+		// frame has none)
+		HomeDB *homeDBState `json:"home_db"`
 	}
 	if json.Unmarshal(raw, &f) != nil {
 		return
+	}
+	if f.HomeDB == nil {
+		if db, said := homeDBOf(s); said {
+			f.HomeDB = &db
+		}
 	}
 	answer := func(ok bool, code, reason string) {
 		s.send(map[string]any{"t": "access.answer", "id": f.ID, "ok": ok, "code": code, "reason": reason})
@@ -303,14 +311,48 @@ func (h *Hub) onAccessRequest(s *Session, raw []byte) {
 		h.accessAnswered(s, logger, false, cluster.AccessRateLimited, fmt.Sprintf("asked again too soon: "+
 			"ask again in %s", (accessAskEvery-now.Sub(last)).Round(time.Second)), answer)
 	default:
-		go h.grantRequested(s, g, logger, answer)
+		go h.grantRequested(s, g, f.HomeDB, logger, answer)
 	}
 }
 
-// grantRequested re-makes a machine's access at its own request and sends it (home.access).
-func (h *Hub) grantRequested(s *Session, g AccessGranter, logger *slog.Logger, answer func(ok bool, code, reason string)) {
+// requestMends is why a machine's own request (its failed login db) is met with a re-made
+// access ("": it is not): as the push re-makes one (remakeWhy: a refused password, a
+// database that moved), or a role that does not log in on this home's database
+// (role_unusable). A TLS failure at the right address is neither: the home requiring the
+// machine's certificate, the machine not verifying the home's. A new password mends none
+// of it, and made anyway it was one the machine's roles then no longer had (they log in
+// as before, the failed check alone took it): every request one more.
+func requestMends(ctx context.Context, g AccessGranter, nodeID string, db homeDBState) string {
+	if host, port, name, err := g.AccessTarget(ctx, nodeID); err == nil {
+		if why := remakeWhy(db, host, port, name); why != "" {
+			return why
+		}
+	} else if !notMendable(db.Code) {
+		return "requested" // where it points is not known here: made again, as asked
+	}
+	if usable, err := g.AccessUsable(ctx, nodeID); err == nil && !usable {
+		return "role_unusable"
+	}
+	return ""
+}
+
+// notMendable reports a machine's failed login no re-made access mends wherever the
+// database is: TLS (its certificate, the home's), or a certificate for another role than
+// its login's (cert_mismatch: a re-made access keeps the same role).
+func notMendable(code string) bool { return code == "tls" || code == "cert_mismatch" }
+
+// grantRequested re-makes a machine's access at its own request (db: the failed login it
+// asks for, nil when it does not say) and sends it (home.access), when a re-made access
+// mends it (requestMends).
+func (h *Hub) grantRequested(s *Session, g AccessGranter, db *homeDBState, logger *slog.Logger,
+	answer func(ok bool, code, reason string)) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	if db != nil && requestMends(ctx, g, s.NodeID, *db) == "" {
+		h.accessAnswered(s, logger, false, cluster.AccessNotMendable, fmt.Sprintf("a new login would not mend "+
+			"this machine's (%s at the right address): its roles keep the one they have", db.Code), answer)
+		return
+	}
 	args, err := g.GrantAccess(ctx, s.NodeID)
 	if err != nil {
 		h.accessAnswered(s, logger, false, cluster.AccessCode(err), err.Error(), answer)

@@ -260,6 +260,11 @@ func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver strin
 	}); ok {
 		cfg.HasCert = hc.HasCert
 	}
+	if rc, ok := certs.(interface {
+		RecordDBClientCert(ctx context.Context, nodeID string, presents bool) error
+	}); ok && driver != "sqlite" {
+		cfg.DBClientCert = rc.RecordDBClientCert
+	}
 	if db != nil {
 		// the extension service door (story 31.R): nodes run the Plex
 		// stages without the token; rules.relay switches it
