@@ -67,6 +67,14 @@ reaches a home on the Mac's network by its address (`192.168.50.177:8088`).
   `GET /api/pairing/device/{code}` shows what is asking (app, platform, device, its name), then
   an explicit Approve (`POST /api/pairing/approve`). An older home without the lookup is
   approved only after a warning to check the code on one's own device.
+- **Through Maktaba Cloud (story 42.7):** the picker's Through Maktaba Cloud signs in to the
+  cloud (the client's `CloudSession`: `POST /v1/auth/login`, its token in memory only, no
+  redirect followed with it), lists the account's homes (`GET /v1/homes`) and opens a linked one
+  at its own address, else the relay, signing in with a one-use assertion
+  (`POST /v1/homes/{id}/assertion`, then the home's `POST /api/auth/cloud`). A home keeps every
+  address it or the cloud gave (`Home.addresses`) and moves to another when the one in use does
+  not answer and the same home id answers there; a cloud sign-in is sent only to an address the
+  cloud gave (`Home.cloudAddresses`).
 - **Camera permission:** asked when the person taps Scan (optional; typing always works), with
   the walkthrough's rules (Android's dialog while it will, else Settings).
 - **Local network permission:** on Android 17 (API 37) and later, reaching a home on the
