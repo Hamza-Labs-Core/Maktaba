@@ -42,7 +42,6 @@ The apps ask for Local Network, and on iPhone and iPad the camera only when you 
 - **Without it:** type the address or the code instead; everything else works.
 - **To change it:** Settings → Apps → Maktaba (or Maktaba Remote) → Camera.
 
-
   Come back to the app: it checks again by itself and shows **Allowed**.
 
 Playing sound with the screen locked (iPhone and iPad) is part of the Player and needs no permission.
