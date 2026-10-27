@@ -187,6 +187,27 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote.uitests
         TEST_TARGET_NAME: Maktaba Remote
+  # the same tests on the iPad apps: the wide layouts (story 42.8) and signing in there
+  Maktaba Player iPad UITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies: [{ target: Maktaba Player iPad }]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.tablet.uitests
+        TEST_TARGET_NAME: Maktaba Player iPad
+        TARGETED_DEVICE_FAMILY: "2"
+  Maktaba Remote iPad UITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies: [{ target: Maktaba Remote iPad }]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote.tablet.uitests
+        TEST_TARGET_NAME: Maktaba Remote iPad
+        TARGETED_DEVICE_FAMILY: "2"
 
   # ---- Maktaba TV: Apple TV (Epic 14). Its sources stay with the other TV app in apps/tv. -
   Maktaba TV:
@@ -233,6 +254,8 @@ schemes:
     build:
       targets: { Maktaba Player iPad: all }
     run: { config: Debug }
+    test:
+      targets: [Maktaba Player iPad UITests]
     archive: { config: Release }
   Maktaba Player Mac:
     build:
@@ -252,6 +275,8 @@ schemes:
     build:
       targets: { Maktaba Remote iPad: all }
     run: { config: Debug }
+    test:
+      targets: [Maktaba Remote iPad UITests]
     archive: { config: Release }
   Maktaba TV:
     build:
