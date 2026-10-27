@@ -23,6 +23,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // eventEnvelope is the JSON a libraryEvents / playbackUpdates
@@ -49,6 +50,7 @@ func subscribe[T any](ctx context.Context, hub *ws.Hub, channel string, fn func(
 	go func() {
 		defer close(out)
 		defer hub.Unsubscribe(channel, sub)
+		defer safego.Recover(nil, "graphql_subscribe")
 		for {
 			select {
 			case <-ctx.Done():
@@ -235,6 +237,7 @@ func (h *Handler) serveWS(w http.ResponseWriter, r *http.Request) {
 					subsMu.Unlock()
 					subCancel()
 				}()
+				defer safego.Recover(nil, "graphql_subscription")
 				h.runSubscription(subCtx, id, p, send)
 			}(m.ID, p)
 		case "complete":

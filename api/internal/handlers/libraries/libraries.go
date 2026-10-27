@@ -561,7 +561,7 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID, err := h.JobEnqueuer.EnqueueScan(r.Context(), id, 50)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("enqueue scan: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("enqueue scan").Wrap(err))
 		return
 	}
 	WriteAudit(r.Context(), h.DB, EventScanTriggered, ActorOf(p), id, map[string]any{"job_id": jobID})

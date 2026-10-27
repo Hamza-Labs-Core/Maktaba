@@ -727,7 +727,7 @@ func (h *Handler) ArtUpload(w http.ResponseWriter, r *http.Request) {
 		if !existed {
 			_ = os.Remove(dest)
 		}
-		httperror.Write(w, r, httperror.Internal("save channel art: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("save channel art").Wrap(err))
 		return
 	}
 	removeArtFiles(dir, kind, dest)
@@ -827,7 +827,7 @@ func (h *Handler) ArtRevert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.revertArt(r.Context(), c, kind); err != nil {
-		httperror.Write(w, r, httperror.Internal("revert channel art: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("revert channel art").Wrap(err))
 		return
 	}
 	h.writeChannel(w, r, c.ID)
@@ -888,7 +888,7 @@ func (h *Handler) ArtSettings(w http.ResponseWriter, r *http.Request) {
 	// The stored settings are merged so a later PATCH of one field keeps the others.
 	o, err := h.loadOverride(r.Context(), h.DB, c.ID, kind)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load channel art: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("load channel art").Wrap(err))
 		return
 	}
 	merged := map[string]any{}
@@ -899,7 +899,7 @@ func (h *Handler) ArtSettings(w http.ResponseWriter, r *http.Request) {
 		merged[k] = v
 	}
 	if err := h.setOverride(r.Context(), c, kind, nil, merged); err != nil {
-		httperror.Write(w, r, httperror.Internal("save watermark settings: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("save watermark settings").Wrap(err))
 		return
 	}
 	h.writeChannel(w, r, c.ID)

@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // Errors of a Link call.
@@ -277,6 +278,7 @@ type agentKeys struct {
 // Run follows the feed until ctx ends.
 func (f *AgentFeed) Run(ctx context.Context) {
 	delay := time.Second
+	var repeat safego.Repeat // a feed that keeps failing the same way is said once at Warn
 	for ctx.Err() == nil {
 		start := time.Now()
 		err := f.once(ctx)
@@ -286,9 +288,11 @@ func (f *AgentFeed) Run(ctx context.Context) {
 		}
 		if time.Since(start) > time.Minute {
 			delay = time.Second
+			repeat.Level(nil) // it ran a while: the next failure is news
 		}
 		if f.Logger != nil && err != nil {
-			f.Logger.Debug("node: machine agent feed ended; reconnecting", "err", err, "event", "node_agent_feed_retry")
+			f.Logger.Log(ctx, repeat.Level(err), "node: machine agent feed ended; reconnecting", "err", err,
+				"event", "node_agent_feed_retry")
 		}
 		select {
 		case <-ctx.Done():

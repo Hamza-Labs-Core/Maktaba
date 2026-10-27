@@ -2,7 +2,10 @@ package com.hamzalabs.maktaba.tv.data
 
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.BODY_KEPT
 import com.hamzalabs.maktaba.core.api.Page
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -48,7 +51,13 @@ class TvApi(
      */
     suspend fun railVideos(rail: Rail, limit: Int = 20): List<Pair<RailItem, TvVideo>> = coroutineScope {
         rail.items.take(limit)
-            .map { item -> async { runCatching { item to video(item.videoId) }.getOrNull() } }
+            .map { item ->
+                async {
+                    runCatching { item to video(item.videoId) }
+                        .onFailure { if (it is CancellationException) throw it else AppLog.failure("tv rail video", it) }
+                        .getOrNull()
+                }
+            }
             .mapNotNull { it.await() }
     }
 
@@ -90,7 +99,7 @@ class TvApi(
         internal val JSON = "application/json".toMediaType()
 
         fun checked(code: Int, body: String): String {
-            if (code !in 200..299) throw ApiException.Status(code, body.take(300))
+            if (code !in 200..299) throw ApiException.Status(code, body.take(BODY_KEPT))
             return body
         }
 

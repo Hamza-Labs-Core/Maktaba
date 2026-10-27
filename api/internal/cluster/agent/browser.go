@@ -13,6 +13,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // Browser topics (design-agent.md §5). logs:<ip|node_id|session>:<level>
@@ -373,6 +374,7 @@ func (h *Hub) ServeBrowser(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	go func() {
 		defer cancel()
+		defer safego.Recover(h.log(), "cluster_browser_read")
 		h.browserRead(ctx, c, b)
 	}()
 	h.browserWrite(ctx, c, b)
@@ -438,7 +440,7 @@ func (h *Hub) browserRead(ctx context.Context, c *websocket.Conn, b *browser) {
 				b.send("cmd.result", "", map[string]any{"id": m.ID, "ok": false, "detail": "forbidden"})
 				continue
 			}
-			go h.browserCmd(ctx, b, m)
+			safego.Go(h.log(), "cluster_browser_cmd", func() { h.browserCmd(ctx, b, m) })
 		default:
 			b.send("error", "", map[string]any{"code": "unknown_op", "op": m.Op})
 		}

@@ -175,8 +175,9 @@ func Default() Map {
 }
 
 // Resolve maps a stored media path to this machine's path with the
-// default map (canonical paths; legacy paths are returned unchanged).
-func Resolve(p string) string { return Default().Apply(p) }
+// default map (canonical paths; legacy paths are returned unchanged), as
+// this machine's disk spells it (OnDisk).
+func Resolve(p string) string { return OnDisk(Default().Apply(p)) }
 
 var canonRE = regexp.MustCompile(`(?i)^(smb|nfs)://[^/]+/[^/]+|^(?i)file:///`)
 

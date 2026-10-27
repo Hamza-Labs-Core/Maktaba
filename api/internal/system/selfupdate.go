@@ -478,14 +478,15 @@ func (s *SelfUpdater) writeApplyError(w http.ResponseWriter, r *http.Request, er
 			Type:   "about:blank#insufficient-storage",
 			Title:  "insufficient storage",
 			Status: http.StatusInsufficientStorage,
-			Detail: err.Error(),
+			Detail: "there is not enough free disk space for the update",
+			Cause:  err,
 		})
 	case errors.Is(err, errDowngrade):
 		httperror.Write(w, r, httperror.Conflict("downgrade_refused", err.Error()))
 	case errors.Is(err, errDownload), errors.Is(err, errVerify):
 		httperror.Write(w, r, httperror.BadGateway(err.Error()))
 	default:
-		httperror.Write(w, r, httperror.Internal(err.Error()))
+		httperror.Write(w, r, httperror.Internal("").Wrap(err))
 	}
 }
 

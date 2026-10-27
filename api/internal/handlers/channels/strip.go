@@ -297,7 +297,7 @@ func (h *Handler) StripPatch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := h.writeStrip(r, c, merged); err != nil {
-		httperror.Write(w, r, httperror.Internal("save strip: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("save strip").Wrap(err))
 		return
 	}
 	h.writeChannel(w, r, c.ID)
@@ -310,7 +310,7 @@ func (h *Handler) StripReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.writeStrip(r, c, nil); err != nil {
-		httperror.Write(w, r, httperror.Internal("reset strip: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("reset strip").Wrap(err))
 		return
 	}
 	h.writeChannel(w, r, c.ID)

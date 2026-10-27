@@ -18,6 +18,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvcluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // QueueHealth is Epic 40's tile health rollup (queues.Handler).
@@ -196,6 +197,7 @@ func runChecks(ctx context.Context, e *env, checks []check, timeout time.Duratio
 			go func() {
 				defer func() {
 					if p := recover(); p != nil {
+						safego.Log(nil, "systemstatus_check", p)
 						done <- []Item{notAnswering(c.Fallback, e.now, fmt.Sprint(p))}
 					}
 				}()

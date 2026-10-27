@@ -182,7 +182,7 @@ func (h *Handler) audit(r *http.Request, action string, v Video, payload map[str
 	}
 	payload["library_id"] = v.LibraryID
 	if err := h.Audit.Write(r.Context(), "library", action, actor, v.ID, payload); err != nil {
-		slog.Warn("videos: audit row not written", "video", v.ID, "action", action, "err", err.Error())
+		slog.WarnContext(r.Context(), "videos: audit row not written", "video", v.ID, "action", action, "err", err.Error())
 	}
 }
 
@@ -492,7 +492,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.DB.QueryContext(r.Context(), query, args...)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("query videos: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("query videos").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -500,13 +500,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		v, err := scanListRow(rows, withPlays, withRank, withMine)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("scan video: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("scan video").Wrap(err))
 			return
 		}
 		items = append(items, v)
 	}
 	if err := rows.Err(); err != nil {
-		httperror.Write(w, r, httperror.Internal("read videos: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("read videos").Wrap(err))
 		return
 	}
 
@@ -660,7 +660,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	if displayChanged && h.DisplayTitleRefresh != nil {
 		if err := h.DisplayTitleRefresh(r.Context(), v.LibraryID); err != nil {
-			slog.Warn("videos: display title refresh not queued", "video", id, "err", err.Error(),
+			slog.WarnContext(r.Context(), "videos: display title refresh not queued", "video", id, "err", err.Error(),
 				"event", "display_title_refresh_failed")
 		}
 	}
@@ -790,7 +790,7 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID, err := h.JobQ.BumpOrEnqueue(r.Context(), id, stage, prio)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("enqueue: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("enqueue").Wrap(err))
 		return
 	}
 	h.audit(r, AuditVideoProcessed, v, map[string]any{"stage": stage, "priority": prio, "job_id": jobID})
@@ -842,7 +842,7 @@ func (h *Handler) Reprocess(w http.ResponseWriter, r *http.Request) {
 	}
 	ids, err := h.JobQ.RollbackToStage(r.Context(), id, req.FromStage, 200)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("reprocess: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("reprocess").Wrap(err))
 		return
 	}
 	h.audit(r, AuditVideoReprocessed, v, map[string]any{"from_stage": req.FromStage, "job_ids": ids})

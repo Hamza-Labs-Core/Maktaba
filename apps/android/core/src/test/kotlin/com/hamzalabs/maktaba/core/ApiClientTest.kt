@@ -3,6 +3,8 @@ package com.hamzalabs.maktaba.core
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.AuthTokens
+import com.hamzalabs.maktaba.core.api.ErrorKind
+import com.hamzalabs.maktaba.core.api.errorKind
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
@@ -206,9 +208,59 @@ class ApiClientTest {
         }
         try {
             client(MemoryTokens(fresh, "r1")).waitUntilPlayable(server.url("/stream/s1/master.m3u8"), timeoutMs = 5, intervalMs = 1)
-            fail("expected a 404")
-        } catch (e: ApiException.Status) {
+            fail("expected not ready")
+        } catch (e: ApiException.NotReady) {
             assertEquals(404, e.code)
+            assertEquals(ErrorKind.NotReady, e.errorKind())
+        }
+    }
+
+    @Test
+    fun waitUntilPlayableWaitsForTheMasterTooWithBackoff() = runBlocking {
+        val master = AtomicInteger()
+        val notYet = """{"type":"https://maktaba.invalid/problems/manifest-not-found","title":"no manifest","status":404}"""
+        route = { r ->
+            when (r.url.encodedPath) {
+                "/stream/s1/master.m3u8" ->
+                    if (master.incrementAndGet() < 4) json(404, notYet) else json(200, "#EXTM3U\nv0/index.m3u8\n")
+                "/stream/s1/v0/index.m3u8" -> json(200, "#EXTM3U\n")
+                else -> json(500, "")
+            }
+        }
+        val started = System.nanoTime()
+        client(MemoryTokens(fresh, "r1")).waitUntilPlayable(server.url("/stream/s1/master.m3u8"), intervalMs = 10, maxIntervalMs = 40)
+        val tookMs = (System.nanoTime() - started) / 1_000_000
+        assertEquals(4, master.get())
+        assertTrue("waited 10 + 20 + 40 ms between the asks, not more: $tookMs", tookMs >= 70)
+    }
+
+    @Test
+    fun waitUntilPlayableDoesNotRetryARefusal() = runBlocking {
+        val asks = AtomicInteger()
+        route = { r ->
+            if (r.url.encodedPath.endsWith("master.m3u8")) json(200, "#EXTM3U\nv0.m3u8\n")
+            else { asks.incrementAndGet(); json(403, """{"type":"https://maktaba.dev/problems/forbidden","status":403}""") }
+        }
+        try {
+            client(MemoryTokens(fresh, "r1")).waitUntilPlayable(server.url("/stream/s1/master.m3u8"), intervalMs = 1)
+            fail("expected a 403")
+        } catch (e: ApiException.Status) {
+            assertEquals(403, e.code)
+            assertEquals(ErrorKind.NoAccess, e.errorKind())
+        }
+        assertEquals("asked once", 1, asks.get())
+    }
+
+    @Test
+    fun aBusyHomeSaysWhenToComeBack() = runBlocking {
+        route = { MockResponse.Builder().code(503).setHeader("Retry-After", "7").body("""{"title":"busy","status":503}""").build() }
+        try {
+            client(MemoryTokens(fresh, "r1")).libraries()
+            fail("expected a 503")
+        } catch (e: ApiException.Status) {
+            assertEquals(7L, e.retryAfterSec)
+            assertEquals(ErrorKind.Busy, e.errorKind())
+            assertTrue(e.message!!, !e.message!!.contains("{"))
         }
     }
 

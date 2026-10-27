@@ -238,7 +238,7 @@ func (h *Handler) CreatePool(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.DB.ExecContext(r.Context(),
 		`INSERT INTO filler_pools (id, channel_id, name) VALUES ($1, $2, $3)`,
 		id, chID, req.Name); err != nil {
-		httperror.Write(w, r, httperror.Internal("create filler pool: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("create filler pool").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusCreated, Pool{ID: id, ChannelID: req.ChannelID, Name: req.Name, Items: []Item{}})
@@ -349,7 +349,7 @@ func (h *Handler) AddItems(w http.ResponseWriter, r *http.Request) {
 			        (SELECT (v.duration_sec * 1000)::bigint FROM videos v WHERE v.id = $3 LIMIT 1))
 			ON CONFLICT (pool_id, video_id) DO NOTHING`,
 			id, poolID, vid, kind); err != nil {
-			httperror.Write(w, r, httperror.Internal("add filler item: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("add filler item").Wrap(err))
 			return
 		}
 		created = append(created, Item{ID: id, PoolID: poolID, VideoID: vid, Type: kind})

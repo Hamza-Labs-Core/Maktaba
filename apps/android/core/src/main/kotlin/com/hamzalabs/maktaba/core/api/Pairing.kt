@@ -152,7 +152,7 @@ class DeviceSignIn(
                 401, 403, 404, 405, 501 -> throw Unsupported(status)
                 // busy or restarting: a moment later
                 429, 503 -> sleep(RETRY_MS * 2)
-                else -> throw ApiException.Status(status, text.take(300))
+                else -> throw ApiException.Status(status, text.take(BODY_KEPT))
             }
         }
     }

@@ -32,6 +32,9 @@ const ProblemSearchExpired = "https://maktaba.dev/problems/search-expired"
 // expired.
 var errExpired = errors.New("search expired")
 
+// errSearchPanicked is a search part that stopped on a panic (logged as goroutine_panic).
+var errSearchPanicked = errors.New("the search stopped on an internal error")
+
 // searchIDPattern is what newSearchID makes (24 base64url characters).
 var searchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
 
@@ -162,7 +165,7 @@ func (h *Handler) runFromRequest(w http.ResponseWriter, r *http.Request, id stri
 		return nil
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("search: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("search").Wrap(err))
 		return nil
 	}
 	return rn
@@ -232,7 +235,7 @@ func (h *Handler) Results(w http.ResponseWriter, r *http.Request) {
 		page.Items, err = h.transcriptPage(ctx, p, rn, offset, limit, rl.PassagesPerVideo)
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("search: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("search").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, page)
@@ -284,7 +287,7 @@ func (h *Handler) Passages(w http.ResponseWriter, r *http.Request) {
 	}
 	cards, err := h.cards(ctx, principal.FromContext(ctx), []string{videoID})
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("search: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("search").Wrap(err))
 		return
 	}
 	card, ok := cards[videoID]
@@ -296,7 +299,7 @@ func (h *Handler) Passages(w http.ResponseWriter, r *http.Request) {
 	if inVideos {
 		ps, err := h.passagesOf(ctx, rn, []string{videoID}, 0)
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("search: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("search").Wrap(err))
 			return
 		}
 		all = ps[videoID]
@@ -362,7 +365,7 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 		FROM search_runs WHERE user_id = $1
 		ORDER BY created_at_ms DESC, id DESC LIMIT $2`, p.UserID, rl.RecentLimit)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("recent searches: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("recent searches").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -375,7 +378,7 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 		var filters string
 		if err := rows.Scan(&it.SearchID, &it.Q, &it.Mode, &filters, &it.TitleCount, &it.TranscriptCount,
 			&created, &used, &expires, &kept); err != nil {
-			httperror.Write(w, r, httperror.Internal("recent searches: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("recent searches").Wrap(err))
 			return
 		}
 		it.CreatedAt = time.UnixMilli(created).UTC()
@@ -389,7 +392,7 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := rows.Err(); err != nil {
-		httperror.Write(w, r, httperror.Internal("recent searches: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("recent searches").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
@@ -413,7 +416,7 @@ func (h *Handler) DeleteRecent(w http.ResponseWriter, r *http.Request) {
 			SELECT 1 FROM search_runs o WHERE o.id = $1 AND o.user_id = $2 AND o.query = search_runs.query
 			AND o.mode = search_runs.mode AND o.filters = search_runs.filters)`, id, p.UserID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("recent searches: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("recent searches").Wrap(err))
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
@@ -433,7 +436,7 @@ func (h *Handler) ClearRecent(w http.ResponseWriter, r *http.Request) {
 	if h.DB != nil && p.UserID != "" {
 		if _, err := h.DB.ExecContext(r.Context(),
 			`DELETE FROM search_runs WHERE user_id = $1`, p.UserID); err != nil {
-			httperror.Write(w, r, httperror.Internal("recent searches: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("recent searches").Wrap(err))
 			return
 		}
 	}

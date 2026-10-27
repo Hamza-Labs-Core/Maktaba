@@ -22,6 +22,8 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{menu::CheckMenuItem, AppHandle, Manager, Url, Wry};
 
+use crate::applog::Locked;
+
 /// The settings file, beside mode.json.
 pub const FILE: &str = "big-screen.json";
 /// View → Big Screen.
@@ -127,12 +129,12 @@ impl BigScreen {
     }
 
     pub fn start(&self) -> bool {
-        self.prefs.lock().unwrap().start
+        self.prefs.locked().start
     }
 
     /// Saves "Start in big screen".
     pub fn set_start(&self, on: bool) -> Result<(), String> {
-        let mut prefs = self.prefs.lock().unwrap();
+        let mut prefs = self.prefs.locked();
         let next = Prefs { start: on };
         save(&self.path, &next).map_err(|e| format!("{}: {e}", self.path.display()))?;
         *prefs = next;

@@ -106,7 +106,7 @@ func (h *Handler) Audit(w http.ResponseWriter, r *http.Request) {
 		where + " ORDER BY id DESC LIMIT " + itoa(limit)
 	rows, err := h.DB.QueryContext(r.Context(), q, args...)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("audit list: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("audit list").Wrap(err))
 		return
 	}
 	defer rows.Close()
@@ -117,7 +117,7 @@ func (h *Handler) Audit(w http.ResponseWriter, r *http.Request) {
 		var target sql.NullString
 		var payload []byte
 		if err := rows.Scan(&e.ID, &e.Event, &actor, &target, &payload, &e.Timestamp); err != nil {
-			httperror.Write(w, r, httperror.Internal("audit scan: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("audit scan").Wrap(err))
 			return
 		}
 		if actor.Valid {

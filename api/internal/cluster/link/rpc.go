@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/linkctx"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
 // ReqHead is a proxied request's first frame (kind req): chunks of its body follow when
@@ -174,6 +175,7 @@ func (c *ctrl) onReq(f Frame) {
 	go func() {
 		defer cancel()
 		defer c.forget(f.ID)
+		defer safego.Recover(c.srv.log(), "link_rpc")
 		w := &rpcWriter{c: c, id: f.ID, ctx: ctx, header: http.Header{}}
 		h := c.srv.Handler
 		if h == nil {

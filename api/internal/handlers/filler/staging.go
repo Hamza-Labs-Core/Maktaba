@@ -64,7 +64,7 @@ func (h *Handler) saveDraft(w http.ResponseWriter, r *http.Request, what string,
 			httperror.Write(w, r, he)
 			return ref, false
 		}
-		httperror.Write(w, r, httperror.Internal("save to draft change: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("save to draft change").Wrap(err))
 		return ref, false
 	}
 	return ref, true
@@ -231,7 +231,7 @@ func nullable(s string) any {
 }
 
 func writeLiveErr(w http.ResponseWriter, r *http.Request, err error) {
-	httperror.Write(w, r, httperror.Internal("load filler pool: "+err.Error()))
+	httperror.Write(w, r, httperror.Internal("load filler pool").Wrap(err))
 }
 
 // createPoolDraft is CreatePool while staging is on.
