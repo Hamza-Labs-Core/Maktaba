@@ -30,7 +30,8 @@ type Local interface {
 	// wrong pair, ErrLocked for an account the home locked.
 	SignIn(ctx context.Context, username, password string) (*delegation.Principal, error)
 	// Synced is the home's time of the last change the copy applied (the home's beat,
-	// written every few seconds while a machine follows it).
+	// written every few seconds while a machine follows it); zero while the copy is still
+	// being made (a table's first copy not done: the beat may be in, a person not yet).
 	Synced(ctx context.Context) (time.Time, error)
 	// SignedInThrough reports whether the user has a home session made through this
 	// machine (live or not): the home takes a "sign out everywhere" this machine hands
