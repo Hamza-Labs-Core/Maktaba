@@ -5391,5 +5391,11 @@
   "video.featured": "معروض في الرئيسية",
   "video.featured.on": "صار هذا الدرس في الرئيسية",
   "video.featured.off": "تعرض الرئيسية أحدث سلسلة من جديد",
-  "collections.noFavorites": "المفضلة خاصة بك: أوقف تصفية المفضلة لتحفظ مجموعة."
+  "collections.noFavorites": "المفضلة خاصة بك: أوقف تصفية المفضلة لتحفظ مجموعة.",
+  "nav.status": "الحالة",
+  "remote.title": "حالة المنزل",
+  "remote.attention": "ما يحتاج إلى انتباه",
+  "remote.notAdmin.title": "هذا التطبيق لمسؤولي المنزل",
+  "remote.notAdmin.desc": "يدير Maktaba Remote المنزل: المعالجة والإعدادات والمستخدمين والأجهزة. للمشاهدة، استخدم المشغّل.",
+  "remote.notAdmin.watch": "شاهد بدلًا من ذلك"
 }

@@ -33,6 +33,7 @@ import {
   type Program,
 } from "../../lib/channels";
 import { TitleRow } from "../../help/HelpLink";
+import { SERVER_PAGES } from "../../lib/edition";
 
 // Pixels per minute on the time axis. The ratio between cells is what AC1
 // guarantees, so the absolute value is cosmetic — 4px/min gives a 1-hour
@@ -203,7 +204,7 @@ export function Guide() {
           title={t("guide.empty.title")}
           description={t("guide.empty.desc")}
           action={
-            isAdmin ? (
+            SERVER_PAGES && isAdmin ? (
               <Button onClick={() => nav("/admin/channels")}>{t("guide.empty.cta")}</Button>
             ) : undefined
           }

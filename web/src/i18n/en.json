@@ -517,7 +517,7 @@
   "nav.devices": "Devices",
   "nav.connectApp": "Connect an app",
   "nav.billing": "Subscription",
-  "nav.admin": "Administration",
+  "nav.admin": "Manage",
   "nav.admin.users": "Users",
   "nav.admin.audit": "Audit log",
   "nav.admin.health": "System health",
@@ -5378,5 +5378,11 @@
   "video.featured": "Featured on Home",
   "video.featured.on": "This lesson is now on Home",
   "video.featured.off": "Home features the newest series again",
-  "collections.noFavorites": "Favorites are your own: turn the Favorites filter off to save a collection."
+  "collections.noFavorites": "Favorites are your own: turn the Favorites filter off to save a collection.",
+  "nav.status": "Status",
+  "remote.title": "Home status",
+  "remote.attention": "Needs attention",
+  "remote.notAdmin.title": "This app is for the home's admins",
+  "remote.notAdmin.desc": "Maktaba Remote manages a home: processing, settings, users and machines. To watch, use the player.",
+  "remote.notAdmin.watch": "Watch instead"
 }

@@ -3,7 +3,15 @@
 // content outlet. Lives inside <RequireAuth> so it never renders
 // without a user. Stories 11.7 (responsive), 11.9 (search focus ref),
 // 11.10 (update toast), 11.11 (skip-link + landmarks).
-import { Component, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  Component,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Outlet, NavLink, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { useToast } from "@ds/components/Toast/Toast";
@@ -21,6 +29,7 @@ import { useSystemStatus } from "../lib/systemStatus";
 import { UpdateBanner } from "./UpdateBanner";
 import { MacPermissionsReminder } from "./MacPermissions/MacPermissionsReminder";
 import { TelemetryPrompt } from "./TelemetryPrompt";
+import { IS_REMOTE, SERVER_PAGES } from "../lib/edition";
 
 // Where the update badge sits (Story 28.6): Settings in the sidebar and
 // the More menu, and More in the phone tab bar (Settings lives behind it).
@@ -44,11 +53,17 @@ function HealthDot() {
   );
 }
 
+// Where "/" opens (Epic 42.5): the remote edition opens on the home's status
+// (pages/RemoteHome), every other edition on Home.
+const HOME = IS_REMOTE
+  ? ({ to: "/", key: "nav.status", icon: "♥" } as const)
+  : ({ to: "/", key: "nav.home", icon: "⌂" } as const);
+
 // Everyone's pages: watching. Running the server (processing, transcription, settings)
 // is the admins' (ADMIN below), and the API refuses anyone else on those routes.
 // Home ("/") matches only itself (`end`), or it would be current on every page.
 const NAV = [
-  { to: "/", key: "nav.home", icon: "⌂" },
+  HOME,
   { to: "/library", key: "nav.libraries", icon: "▦" },
   { to: "/series", key: "nav.series", icon: "▤" },
   { to: "/playlists", key: "nav.playlists", icon: "≡" },
@@ -59,7 +74,7 @@ const NAV = [
 // The phone tab bar: Home, Libraries, Guide, Search and "More" (Series, the account
 // pages and, for admins, the admin pages live behind More: /more).
 const TABS = [
-  { to: "/", key: "nav.home", icon: "⌂" },
+  HOME,
   { to: "/library", key: "nav.libraries", icon: "▦" },
   { to: "/guide", key: "nav.guide", icon: "▥" },
   { to: "/search", key: "nav.search", icon: "⌕" },
@@ -71,7 +86,9 @@ const SERIES = NAV[2];
 const PLAYLISTS = NAV[3];
 
 // Secondary nav is sidebar-only (kept out of the compact bottom tab bar);
-// these surfaces are reachable by every authenticated user.
+// these surfaces are reachable by every authenticated user. The billing and cloud
+// status entries are server pages, so a player build (Epic 42.5) leaves them out.
+const SERVER_SECONDARY: ReadonlySet<string> = new Set(["/settings/subscription", "/cloud/status"]);
 const SECONDARY = [
   { to: "/account", key: "nav.account", icon: "◐" },
   { to: "/account/devices", key: "nav.devices", icon: "▢" },
@@ -82,10 +99,11 @@ const SECONDARY = [
   { to: "/settings/subscription", key: "nav.billing", icon: "◈" },
   { to: "/cloud/status", key: "nav.cloudStatus", icon: "☁" },
   { to: "/help", key: "nav.help", icon: "?" },
-] as const;
+].filter((item) => SERVER_PAGES || !SERVER_SECONDARY.has(item.to));
 
-// Admin nav is sidebar-only and rendered only for admins. The pages
-// re-check the principal server-side, so this is purely a UX affordance.
+// Admin nav ("Manage") is sidebar-only and rendered only for admins, in the editions
+// that have the server pages (not the player, Epic 42.5). The pages re-check the
+// principal server-side, so this is purely a UX affordance.
 // Live TV's own page only: TV changes (/admin/live-tv/changes) has its own entry
 const LIVE_TV_PATH = "/admin/live-tv";
 
@@ -150,9 +168,12 @@ export function AppShell() {
   const nav = useNavigate();
   const [q, setQ] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const hasUpdate = updateAvailable(useUpdateStatus());
+  // the badges point at server pages, which a player does not have
+  const updateStatus = useUpdateStatus();
+  const hasUpdate = SERVER_PAGES && updateAvailable(updateStatus);
   const badged = (to: string) => hasUpdate && BADGED.has(to);
-  const healthDown = useSystemStatus(!!user?.is_admin) === "down";
+  const manage = SERVER_PAGES && !!user?.is_admin;
+  const healthDown = useSystemStatus(manage) === "down";
   const pins = usePins(user?.id);
 
   useEffect(() => {
@@ -303,7 +324,7 @@ export function AppShell() {
               <span className="mkt-nav-link__label">{t(item.key)}</span>
             </NavLink>
           ))}
-          {user?.is_admin && (
+          {manage && (
             <>
               <span className="mkt-nav-group" aria-hidden="true">
                 {t("nav.admin")}
@@ -343,7 +364,10 @@ export function AppShell() {
           {/* story 16.5: the opt-in question, and the collection once opted in */}
           <TelemetryPrompt />
           <RouteErrorBoundary resetKey={pathname}>
-            <Outlet />
+            {/* the server pages load on first visit (serverRoutes.tsx) */}
+            <Suspense fallback={null}>
+              <Outlet />
+            </Suspense>
           </RouteErrorBoundary>
         </main>
       </div>
@@ -393,13 +417,15 @@ export function MoreMenu() {
   const { t } = useI18n();
   const nav = useNavigate();
   const [signOutRefused, setSignOutRefused] = useState(false);
-  const hasUpdate = updateAvailable(useUpdateStatus());
-  const healthDown = useSystemStatus(!!user?.is_admin) === "down";
+  const updateStatus = useUpdateStatus();
+  const hasUpdate = SERVER_PAGES && updateAvailable(updateStatus);
+  const manage = SERVER_PAGES && !!user?.is_admin;
+  const healthDown = useSystemStatus(manage) === "down";
   const groups: Array<{
     title?: string;
     items: ReadonlyArray<{ to: string; key: string; icon: string }>;
   }> = [{ items: [SERIES, PLAYLISTS, ...SECONDARY] }];
-  if (user?.is_admin) groups.push({ title: t("nav.admin"), items: ADMIN });
+  if (manage) groups.push({ title: t("nav.admin"), items: ADMIN });
   return (
     <section className="mkt-page mkt-more">
       {/* the menu lists Help itself, so no "?" beside the title */}

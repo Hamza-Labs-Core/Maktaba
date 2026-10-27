@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		046E5277127F36955FABBE5D /* MockHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD93EAD5692107A496A1FDD3 /* MockHome.swift */; };
+		07292044789854794DE7F4E3 /* ConnectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */; };
 		08792A39621BC0D1AD8FD83D /* Info-iPad.plist in Resources */ = {isa = PBXBuildFile; fileRef = BA377D873DB5DE610F6F4CAD /* Info-iPad.plist */; };
 		090BCDAE9625A4DF362699A5 /* PermissionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A393205A7EEE149BDDD305 /* PermissionsUITests.swift */; };
 		1041FCA639CA3B5FF05E1C8A /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
@@ -43,7 +44,9 @@
 		76084C98EF3BF9F0A31F1054 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D41DCD8360915712BC0B6FED /* HomeView.swift */; };
 		77DBE1D2EBC0622197D1EC25 /* LibrariesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FB3DD8C7BC6D1057F2AAAE /* LibrariesView.swift */; };
 		783B7E264D1E8DF50A367901 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50CED999F23DF99657A01AF7 /* SettingsView.swift */; };
+		7C311BAD1C896D3F80D2D3A7 /* MockHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD93EAD5692107A496A1FDD3 /* MockHome.swift */; };
 		7C874EA6DC3BEA7710430857 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
+		7DDF356149C71BA9C59805A1 /* MockHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD93EAD5692107A496A1FDD3 /* MockHome.swift */; };
 		7DFA2B5C4FAFA9F7ED3A279A /* KeychainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A77E2E5208591C8EF02AE1D /* KeychainTests.swift */; };
 		80E256576FD19547D635B132 /* RemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7C782FE57543EEFC505FBD /* RemoteApp.swift */; };
 		9029E7DCCA4E29D0826D9786 /* RemoteRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5BE31D685ECEDF892595AD /* RemoteRoot.swift */; };
@@ -52,6 +55,7 @@
 		A2238941ECE21FBB30DE48CA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 		A382431DD2D7A1BB74017B3F /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */; };
 		A5753F2E48C3030B374C0BCB /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
+		B05CF1D466C71A9E40A8EDF0 /* PermissionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D278F13E0FB225131B9188 /* PermissionsUITests.swift */; };
 		B5B5B81C34A046D316FB37C4 /* ConnectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */; };
 		BC05734168F2524810868806 /* Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6629068B08CFDCF4BEA7DB9 /* Playback.swift */; };
 		C16C4AC8969FD4372611DCFB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
@@ -67,10 +71,12 @@
 		D37D6697BF44C16D12BDB2F0 /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = A9EEAB3D015E479C9E4F8105 /* MaktabaKit */; };
 		D71932B2D7081414CEC9D39D /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71D0BD9C991F1F77C46F98E6 /* LibraryBrowser.swift */; };
 		DA70F8CCD0140FFCE32849A5 /* VideoDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98AED34220C815DD101BEDF /* VideoDetail.swift */; };
+		DB2C1B46BBAE48B1F7C89E05 /* ConnectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */; };
 		DDE4B2D43AC0A96ACE16B184 /* IBMPlexSansArabic-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = EF8A504D2033AFF469413F98 /* IBMPlexSansArabic-Regular.ttf */; };
 		DF1960A04258227E2586DAB7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D67BA4BCABE542CE40ED51C6 /* Assets.xcassets */; };
 		E087CBF011108E4B80A65DA6 /* Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6629068B08CFDCF4BEA7DB9 /* Playback.swift */; };
 		E0A70A830327B0968EAA194D /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
+		E0C8E56F117951469BE45911 /* PermissionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D278F13E0FB225131B9188 /* PermissionsUITests.swift */; };
 		E874C97168BF20243A33317A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 		E91EF9BB0082BACB13E84403 /* MaktabaTVApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26B8917AAB897DEB44B6AF68 /* MaktabaTVApp.swift */; };
 		FB1FE4D62972E3F2358248E3 /* PlayerSurfaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30EA3603E36B3BB4C0350807 /* PlayerSurfaceTests.swift */; };
@@ -80,6 +86,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		16BA831E1FEC7F891A53BB49 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 565A916276171556EA608FB1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7C97571B22891477D2B9E7DB;
+			remoteInfo = "Maktaba Remote iPad";
+		};
 		3D46BC7956CF6F1694C81C51 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 565A916276171556EA608FB1 /* Project object */;
@@ -93,6 +106,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 80CFDCA447097901D79C125D;
 			remoteInfo = "Maktaba Remote";
+		};
+		4F9C47FB53D6266E4A602685 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 565A916276171556EA608FB1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C62322D47BDA0B73AC07226D;
+			remoteInfo = "Maktaba Player iPad";
 		};
 		568A69F145D29D22F1738C0D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -113,6 +133,7 @@
 /* Begin PBXFileReference section */
 		0383452500957C67748FAE90 /* Amiri-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Amiri-Bold.ttf"; sourceTree = "<group>"; };
 		1AB8DED5864DCE439AEB8ADA /* Info-iPhone.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPhone.plist"; sourceTree = "<group>"; };
+		1E9880EAD92D59ACC788DAAE /* Maktaba Remote iPad UITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "Maktaba Remote iPad UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		26B8917AAB897DEB44B6AF68 /* MaktabaTVApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaktabaTVApp.swift; sourceTree = "<group>"; };
 		26FE31850DAA6C8094E0C331 /* RemoteModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModel.swift; sourceTree = "<group>"; };
 		2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectUITests.swift; sourceTree = "<group>"; };
@@ -159,6 +180,7 @@
 		D67BA4BCABE542CE40ED51C6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D6EF9139DE50E1C308E4DB14 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		DAF3CAFAC26F273EE47A236C /* Maktaba Player iPad UITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "Maktaba Player iPad UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		DC679090CA731E4A1C7852B5 /* Maktaba Player Mac Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Maktaba Player Mac Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E6AC62B2E29B7931B3D836B6 /* Info-iPad.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPad.plist"; sourceTree = "<group>"; };
 		EF8A504D2033AFF469413F98 /* IBMPlexSansArabic-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSansArabic-Regular.ttf"; sourceTree = "<group>"; };
@@ -230,11 +252,13 @@
 		155580AAB36074A87709BE50 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				DAF3CAFAC26F273EE47A236C /* Maktaba Player iPad UITests.xctest */,
 				A131A888F4586F376E30AAFC /* Maktaba Player iPad.app */,
 				DC679090CA731E4A1C7852B5 /* Maktaba Player Mac Tests.xctest */,
 				417287D5058D2F24320D219E /* Maktaba Player Mac.app */,
 				ABCBF5747692F36353AED506 /* Maktaba Player UITests.xctest */,
 				B05F2853C3A8F998DD0A2B31 /* Maktaba Player.app */,
+				1E9880EAD92D59ACC788DAAE /* Maktaba Remote iPad UITests.xctest */,
 				F2E7A424529D8DE1BCD5975E /* Maktaba Remote iPad.app */,
 				88AF2AD5588B11860DE76B07 /* Maktaba Remote UITests.xctest */,
 				421935020FD51F16B047EBB2 /* Maktaba Remote.app */,
@@ -447,6 +471,24 @@
 			productReference = B05F2853C3A8F998DD0A2B31 /* Maktaba Player.app */;
 			productType = "com.apple.product-type.application";
 		};
+		427C94871BC9A0ABBC72A251 /* Maktaba Remote iPad UITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E0E1A206E0A7AB75E605A7F2 /* Build configuration list for PBXNativeTarget "Maktaba Remote iPad UITests" */;
+			buildPhases = (
+				A66B3C2832A8F968F5853986 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				284F9AB4B960F00AAD661DE6 /* PBXTargetDependency */,
+			);
+			name = "Maktaba Remote iPad UITests";
+			packageProductDependencies = (
+			);
+			productName = "Maktaba Remote iPad UITests";
+			productReference = 1E9880EAD92D59ACC788DAAE /* Maktaba Remote iPad UITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		4F275B6763364021C9F7D784 /* Maktaba Player UITests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C49A8BDB05F88158F3F2806A /* Build configuration list for PBXNativeTarget "Maktaba Player UITests" */;
@@ -543,6 +585,24 @@
 			productReference = 3CEC1D617A468557771E79EF /* Maktaba TV UITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		8811CEC0645B418C9358D2A9 /* Maktaba Player iPad UITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 783FE129FFEEE5279BFF54A6 /* Build configuration list for PBXNativeTarget "Maktaba Player iPad UITests" */;
+			buildPhases = (
+				FEEC6BBE48BE1F2159ABE923 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E09543F545B2EB11EBA3A1C1 /* PBXTargetDependency */,
+			);
+			name = "Maktaba Player iPad UITests";
+			packageProductDependencies = (
+			);
+			productName = "Maktaba Player iPad UITests";
+			productReference = DAF3CAFAC26F273EE47A236C /* Maktaba Player iPad UITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		998C97D132F9518E0C09BF06 /* Maktaba TV */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 70A6DBEA454EF5907B92D4F1 /* Build configuration list for PBXNativeTarget "Maktaba TV" */;
@@ -634,6 +694,11 @@
 						DevelopmentTeam = G58UVTKQPB;
 						ProvisioningStyle = Automatic;
 					};
+					427C94871BC9A0ABBC72A251 = {
+						DevelopmentTeam = G58UVTKQPB;
+						ProvisioningStyle = Automatic;
+						TestTargetID = 7C97571B22891477D2B9E7DB;
+					};
 					4F275B6763364021C9F7D784 = {
 						DevelopmentTeam = G58UVTKQPB;
 						ProvisioningStyle = Automatic;
@@ -655,6 +720,11 @@
 						DevelopmentTeam = G58UVTKQPB;
 						ProvisioningStyle = Automatic;
 						TestTargetID = 998C97D132F9518E0C09BF06;
+					};
+					8811CEC0645B418C9358D2A9 = {
+						DevelopmentTeam = G58UVTKQPB;
+						ProvisioningStyle = Automatic;
+						TestTargetID = C62322D47BDA0B73AC07226D;
 					};
 					998C97D132F9518E0C09BF06 = {
 						DevelopmentTeam = G58UVTKQPB;
@@ -697,9 +767,11 @@
 				F9372326F767E484BCCB05FE /* Maktaba Player Mac Tests */,
 				4F275B6763364021C9F7D784 /* Maktaba Player UITests */,
 				C62322D47BDA0B73AC07226D /* Maktaba Player iPad */,
+				8811CEC0645B418C9358D2A9 /* Maktaba Player iPad UITests */,
 				80CFDCA447097901D79C125D /* Maktaba Remote */,
 				A9192EEB7F757AC5BDAB239A /* Maktaba Remote UITests */,
 				7C97571B22891477D2B9E7DB /* Maktaba Remote iPad */,
+				427C94871BC9A0ABBC72A251 /* Maktaba Remote iPad UITests */,
 				998C97D132F9518E0C09BF06 /* Maktaba TV */,
 				84A3B9722202BA01414F1F42 /* Maktaba TV UITests */,
 			);
@@ -863,6 +935,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A66B3C2832A8F968F5853986 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DB2C1B46BBAE48B1F7C89E05 /* ConnectUITests.swift in Sources */,
+				7C311BAD1C896D3F80D2D3A7 /* MockHome.swift in Sources */,
+				E0C8E56F117951469BE45911 /* PermissionsUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AF9AA44745BFD5ED3F5BE9D6 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -885,6 +967,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FEEC6BBE48BE1F2159ABE923 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				07292044789854794DE7F4E3 /* ConnectUITests.swift in Sources */,
+				7DDF356149C71BA9C59805A1 /* MockHome.swift in Sources */,
+				B05CF1D466C71A9E40A8EDF0 /* PermissionsUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -892,6 +984,11 @@
 			isa = PBXTargetDependency;
 			target = 33A1FFA6329335B5C388C656 /* Maktaba Player */;
 			targetProxy = 568A69F145D29D22F1738C0D /* PBXContainerItemProxy */;
+		};
+		284F9AB4B960F00AAD661DE6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7C97571B22891477D2B9E7DB /* Maktaba Remote iPad */;
+			targetProxy = 16BA831E1FEC7F891A53BB49 /* PBXContainerItemProxy */;
 		};
 		759148001DEC2584BF04BF5B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -902,6 +999,11 @@
 			isa = PBXTargetDependency;
 			target = 657EF104AFC0393639910185 /* Maktaba Player Mac */;
 			targetProxy = 3D46BC7956CF6F1694C81C51 /* PBXContainerItemProxy */;
+		};
+		E09543F545B2EB11EBA3A1C1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C62322D47BDA0B73AC07226D /* Maktaba Player iPad */;
+			targetProxy = 4F9C47FB53D6266E4A602685 /* PBXContainerItemProxy */;
 		};
 		FDC615F3D46F3C7893AB8A0B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -990,6 +1092,22 @@
 				TARGETED_DEVICE_FAMILY = 3;
 			};
 			name = Release;
+		};
+		2E5067652812C82A6967F6C1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.player.tablet.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = "Maktaba Player iPad";
+			};
+			name = Debug;
 		};
 		39F3EB43126B094BB797E66B /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -1106,6 +1224,22 @@
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
+		};
+		78ECC1EC1587E8B48A9F8EC6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.player.tablet.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = "Maktaba Player iPad";
+			};
+			name = Release;
 		};
 		A3178D3F96AD3E12441C4801 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -1433,6 +1567,38 @@
 			};
 			name = Release;
 		};
+		EC7F1230C5FB96FFED5A1CDB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.remote.tablet.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = "Maktaba Remote iPad";
+			};
+			name = Debug;
+		};
+		F299D69251F8C57E30D148C8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.hamzalabs.maktaba.remote.tablet.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = "Maktaba Remote iPad";
+			};
+			name = Release;
+		};
 		F55D674A7E7FCD2954FE6C99 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1531,6 +1697,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		783FE129FFEEE5279BFF54A6 /* Build configuration list for PBXNativeTarget "Maktaba Player iPad UITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2E5067652812C82A6967F6C1 /* Debug */,
+				78ECC1EC1587E8B48A9F8EC6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		7D45300EE3ED6868B944CDFF /* Build configuration list for PBXNativeTarget "Maktaba Player iPad" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1563,6 +1738,15 @@
 			buildConfigurations = (
 				AA7017D2C0F2B613CE5EADB3 /* Debug */,
 				C0F14B2F32DE3E6A81F827C9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E0E1A206E0A7AB75E605A7F2 /* Build configuration list for PBXNativeTarget "Maktaba Remote iPad UITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EC7F1230C5FB96FFED5A1CDB /* Debug */,
+				F299D69251F8C57E30D148C8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

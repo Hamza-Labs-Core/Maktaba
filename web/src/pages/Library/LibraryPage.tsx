@@ -29,6 +29,7 @@ import { LibraryBrowser, ScanNow } from "../LibraryBrowser";
 import { PinButton } from "./Libraries";
 import { fetchCollections, type Collection } from "../../lib/collections";
 import { CollectionCard } from "../Collections/Collections";
+import { SERVER_PAGES } from "../../lib/edition";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -257,9 +258,11 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
           {user?.is_admin && (
             <>
               <ScanNow libraryId={libraryId} onDone={() => setReload((x) => x + 1)} />
-              <Link className="mkt-btn mkt-btn--ghost" to="/admin/libraries">
-                {t("libraryPage.manage")}
-              </Link>
+              {SERVER_PAGES && (
+                <Link className="mkt-btn mkt-btn--ghost" to="/admin/libraries">
+                  {t("libraryPage.manage")}
+                </Link>
+              )}
             </>
           )}
           {(user?.is_admin || collections.length > 0) && (
