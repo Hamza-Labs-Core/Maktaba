@@ -147,7 +147,7 @@ fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
     ) {
         val gs = groups
         when {
-            gs == null -> item { if (remote.problem == null) Message("Loading…") }
+            gs == null -> item { if (!remote.hasProblem) Message("Loading…") }
             gs.isEmpty() -> item {
                 ListItem(
                     headlineContent = { Text("Nothing needs attention") },
@@ -224,7 +224,7 @@ fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
     ) {
         val s = snap
         when {
-            s == null -> item { if (remote.problem == null) Message("Loading…") }
+            s == null -> item { if (!remote.hasProblem) Message("Loading…") }
             else -> {
                 if (s.pausedAll) {
                     item {
@@ -336,7 +336,7 @@ fun LibrariesScreen(remote: Remote, account: @Composable () -> Unit) {
     ) {
         val ls = libraries
         when {
-            ls == null -> item { if (remote.problem == null) Message("Loading…") }
+            ls == null -> item { if (!remote.hasProblem) Message("Loading…") }
             ls.isEmpty() -> item { Message("No libraries yet", detail = "Add one from the home's web Settings.") }
             else -> items(ls, key = { it.id }) { l ->
                 ListItem(
@@ -395,7 +395,7 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
     ) {
         val o = overview
         when {
-            o == null -> item { if (remote.problem == null) Message("Loading…") }
+            o == null -> item { if (!remote.hasProblem) Message("Loading…") }
             else -> {
                 item {
                     ListItem(

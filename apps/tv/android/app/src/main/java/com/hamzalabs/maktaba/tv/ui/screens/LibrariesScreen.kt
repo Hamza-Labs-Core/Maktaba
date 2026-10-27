@@ -34,6 +34,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.Failure
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.ui.sentence
 import com.hamzalabs.maktaba.tv.R
 import com.hamzalabs.maktaba.tv.data.TvApi
@@ -50,7 +51,7 @@ import kotlinx.coroutines.CancellationException
 /** The libraries this person can read (the home lists only those). */
 @Composable
 fun LibrariesScreen(api: TvApi, focusFirst: Boolean, onOpen: (String, String) -> Unit, signedOut: () -> Unit) {
-    val (state, retry) = rememberLoad(api, signedOut) { api.client.libraries() }
+    val (state, retry) = rememberLoad(api, signedOut, where = "tv libraries") { api.client.libraries() }
     LoadState(state, retry) { libs ->
         if (libs.isEmpty()) {
             Centered { Text(stringResource(R.string.nothing_yet), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text) }
@@ -132,6 +133,7 @@ fun VideoGrid(
         } catch (e: ApiException.SignedOut) {
             signedOut()
         } catch (e: Exception) {
+            AppLog.failure("tv video page", e)
             problem = Failure.of(e)
         } finally {
             loading = false
@@ -140,7 +142,7 @@ fun VideoGrid(
 
     when {
         videos.isEmpty() && loading -> Centered { Text(stringResource(R.string.loading), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text) }
-        videos.isEmpty() && problem != null -> LoadState(Load.Failed(problem!!), retry = { problem = null; want++ }) {}
+        videos.isEmpty() && problem != null -> problem?.let { f -> LoadState(Load.Failed(f), retry = { problem = null; want++ }) {} }
         videos.isEmpty() -> Centered { Text(empty ?: stringResource(R.string.nothing_yet), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text) }
         else -> {
           val first = remember { FocusRequester() }
@@ -166,11 +168,11 @@ fun VideoGrid(
                     onClick = { onOpen(v.id) },
                 )
             }
-            if (problem != null) {
+            problem?.let { f ->
                 // a later page failed: say so, and let the remote ask again
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.could_not_load, stringResource(problem!!.kind.sentence())), style = MaterialTheme.typography.bodyMedium, color = MaktabaPalette.Gold)
+                        Text(stringResource(R.string.could_not_load, stringResource(f.kind.sentence())), style = MaterialTheme.typography.bodyMedium, color = MaktabaPalette.Gold)
                         MaktabaButton(onClick = { problem = null; want++ }) { Text(stringResource(R.string.try_again)) }
                     }
                 }

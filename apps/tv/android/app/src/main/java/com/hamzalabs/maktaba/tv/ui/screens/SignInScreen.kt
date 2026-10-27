@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -43,8 +44,8 @@ import com.hamzalabs.maktaba.core.api.DeviceCode
 import com.hamzalabs.maktaba.core.api.DeviceSignIn
 import com.hamzalabs.maktaba.core.api.PairingCode
 import com.hamzalabs.maktaba.core.api.errorKind
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.ui.sentence
-import androidx.compose.ui.platform.LocalResources
 import com.hamzalabs.maktaba.core.session.Home
 import com.hamzalabs.maktaba.tv.MaktabaTVApp
 import com.hamzalabs.maktaba.tv.R
@@ -129,8 +130,10 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
         } catch (e: DeviceSignIn.Unsupported) {
             onUnsupported()
         } catch (e: ApiException.Transport) {
+            AppLog.failure("tv sign-in by code", e)
             problem = unreachable
         } catch (e: Exception) {
+            AppLog.failure("tv sign-in by code", e)
             problem = resources.getString(e.errorKind().sentence())
         }
     }
@@ -224,10 +227,13 @@ private fun PasswordSignIn(app: MaktabaTVApp, home: Home, unsupported: Boolean, 
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ApiException.Status) {
+                if (e.code != 401) AppLog.failure("tv sign-in", e)
                 problem = if (e.code == 401) wrong else resources.getString(e.errorKind().sentence())
             } catch (e: ApiException.Transport) {
+                AppLog.failure("tv sign-in", e)
                 problem = unreachable
             } catch (e: Exception) {
+                AppLog.failure("tv sign-in", e)
                 problem = resources.getString(e.errorKind().sentence())
             } finally {
                 busy = false
