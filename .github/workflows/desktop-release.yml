@@ -434,9 +434,12 @@ jobs:
 
       # A silent install of the installer tauri built into a temporary
       # folder (with a state already there), the checks on the installed payload,
-      # then a silent uninstall that must leave that state alone.
+      # then a silent uninstall that must leave that state alone. It takes about
+      # 2 minutes; twice (v0.3.27, v0.3.32) it hung until GitHub lost the runner,
+      # which keeps no log. Ended at 15 minutes, a hang fails here with its log.
       - name: Check the Windows installer
         if: matrix.payload == 'win-app'
+        timeout-minutes: 15
         shell: bash
         run: |
           set -euo pipefail
