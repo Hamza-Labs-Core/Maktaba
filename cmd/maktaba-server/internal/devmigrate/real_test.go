@@ -5,6 +5,7 @@ package devmigrate
 import (
 	"context"
 	"io"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -36,6 +37,27 @@ func pgHome(t *testing.T) string {
 	}
 	t.Skip("no Postgres (initdb, pg_restore) on this machine")
 	return ""
+}
+
+// idlePort is a port nothing listens on, for the stack's ports the move checks are
+// free: below the ephemeral range (Linux 32768-, macOS 49152-), where no other test's
+// listener on :0 can take it between this choice and that check (freePort's ports are
+// handed out again).
+func idlePort(t *testing.T) int {
+	t.Helper()
+	r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), uint64(os.Getpid())))
+	for range 200 {
+		p := 20000 + r.IntN(10000)
+		if len(PortsInUse([]string{strconv.Itoa(p)})) > 0 {
+			continue
+		}
+		if ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(p)); err == nil {
+			_ = ln.Close()
+			return p
+		}
+	}
+	t.Fatal("no idle port in 20000-29999")
+	return 0
 }
 
 func freePort(t *testing.T) int {
@@ -196,7 +218,7 @@ INSERT INTO streaming_hosts (host_id, host, role) VALUES ('1e943eda-0064-42e9-86
 	target := pgbundle.Bundle{Home: home, Data: filepath.Join(appRoot, "postgres"), Keys: filepath.Join(appRoot, "keys"),
 		Backups: filepath.Join(appRoot, "backups"), Port: freePort(t)}
 	var out strings.Builder
-	m := &Migration{Sys: sys, Container: DefaultContainer, Repo: repo, Out: &out, Ports: []string{strconv.Itoa(freePort(t))}, Target: Target{
+	m := &Migration{Sys: sys, Container: DefaultContainer, Repo: repo, Out: &out, Ports: []string{strconv.Itoa(idlePort(t))}, Target: Target{
 		Config: cfg, ConfigPath: cfgPath, State: appRoot, Keys: target.Keys, Bundle: &target}}
 
 	p := m.MakePlan(ctx)
