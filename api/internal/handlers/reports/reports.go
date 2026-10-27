@@ -266,7 +266,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	files, err := h.listing()
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list reports: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("list reports").Wrap(err))
 		return
 	}
 	p := principal.FromContext(r.Context())
@@ -321,7 +321,7 @@ func (h *Handler) Page(w http.ResponseWriter, r *http.Request) {
 	}
 	files, err := h.listing()
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("list reports: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("list reports").Wrap(err))
 		return
 	}
 	info, ok := files[name]
@@ -433,7 +433,7 @@ func (h *Handler) PreviewStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	st, err := p.PlanPreviewStatus(r.Context())
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway("pipeline: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("pipeline").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, st)
@@ -469,7 +469,7 @@ func (h *Handler) PreviewStart(w http.ResponseWriter, r *http.Request) {
 	}
 	busy, err := p.PlanPreviewStart(r.Context(), body.Kind)
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway("pipeline: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("pipeline").Wrap(err))
 		return
 	}
 	if busy {

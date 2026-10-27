@@ -481,7 +481,7 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 		case h.failed(r.Context(), err):
 			// the node's own record holds it, and writes it once the database answers
 		case err != nil:
-			httperror.Write(w, r, httperror.Internal("persist session: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("persist session").Wrap(err))
 			return
 		default:
 			if n, nerr := res.RowsAffected(); nerr == nil && n == 0 {
@@ -654,7 +654,7 @@ func (h *Handler) GetCapabilities(w http.ResponseWriter, r *http.Request) {
 	}
 	caps, fresh, err := h.CapCache.GetOrFetch(r.Context(), h.Service.Capabilities, h.now)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("capabilities: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("capabilities").Wrap(err))
 		return
 	}
 	if !fresh {
@@ -760,7 +760,7 @@ func (h *Handler) PostProgress(w http.ResponseWriter, r *http.Request) {
 		  updated_at   = EXCLUDED.updated_at
 	`, ownerID, videoID, req.PositionSec, completed, h.now())
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("upsert progress: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("upsert progress").Wrap(err))
 		return
 	}
 

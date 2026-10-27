@@ -376,7 +376,7 @@ func (m *Mirror) fail(w http.ResponseWriter, r *http.Request, err error) {
 		m.log().Warn("update mirror: a file could not be fetched", "event", "update_mirror_failed",
 			"path", r.URL.Path, "err", err.Error())
 	}
-	httperror.Write(w, r, httperror.BadGateway(err.Error()))
+	httperror.Write(w, r, httperror.BadGateway(err.Error())) // the machine logs why and goes to GitHub itself
 }
 
 // serveFile serves a kept file with range requests (http.ServeContent); its ETag is its
@@ -390,7 +390,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, path, name, sum string) {
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal(err.Error()))
+		httperror.Write(w, r, httperror.Internal("").Wrap(err))
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")

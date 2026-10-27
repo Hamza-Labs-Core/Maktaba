@@ -141,7 +141,7 @@ type plexStatusError struct{ status int }
 func (e *plexStatusError) Error() string { return "plex.tv answered " + strconv.Itoa(e.status) }
 
 func plexUpstream(w http.ResponseWriter, r *http.Request, err error) {
-	httperror.Write(w, r, httperror.BadGateway("plex.tv: "+err.Error()))
+	httperror.Write(w, r, httperror.BadGateway("plex.tv").Wrap(err))
 }
 
 // plexClientID returns the stable per-install client identifier, creating

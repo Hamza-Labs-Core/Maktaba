@@ -235,7 +235,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 
 	rn, took, err := h.compute(ctx, req, rl)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal(err.Error()))
+		httperror.Write(w, r, httperror.Internal("").Wrap(err))
 		return
 	}
 	if h.DB != nil && p.UserID != "" && req.save() {
@@ -249,12 +249,12 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	pageSize := rl.pageSize(req.View)
 	titles, err := h.titlePage(ctx, p, rn, 0, pageSize)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("titles: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("titles").Wrap(err))
 		return
 	}
 	videos, err := h.transcriptPage(ctx, p, rn, 0, pageSize, rl.PassagesPerVideo)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("passages: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("passages").Wrap(err))
 		return
 	}
 	hits := flatHits(videos, req.Limit)

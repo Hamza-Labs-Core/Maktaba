@@ -287,7 +287,7 @@ func (h *Handler) RunView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("update run: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("update run").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, v)
@@ -331,7 +331,7 @@ func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, ErrPastSwitch):
 		httperror.Write(w, r, httperror.Conflict("about:blank#past_switch", err.Error()).With("code", "past_switch"))
 	default:
-		httperror.Write(w, r, httperror.Internal("cancel: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("cancel").Wrap(err))
 	}
 }
 
@@ -365,7 +365,7 @@ func (h *Handler) retryAnswer(w http.ResponseWriter, r *http.Request, run Run, e
 	case errors.Is(err, ErrOffline):
 		httperror.Write(w, r, httperror.Conflict("about:blank#machine_offline", "the machine is not connected").With("code", "machine_offline"))
 	default:
-		httperror.Write(w, r, httperror.Internal("update: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("update").Wrap(err))
 	}
 }
 

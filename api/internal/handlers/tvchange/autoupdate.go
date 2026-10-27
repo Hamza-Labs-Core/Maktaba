@@ -50,7 +50,7 @@ func (h *Handler) autoBegin(w http.ResponseWriter, r *http.Request) {
 		if conflict(w, r, err) {
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("tv change for the update: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("tv change for the update").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, st)
@@ -62,7 +62,7 @@ func (h *Handler) autoStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	st, err := h.Controller.AutoUpdate(r.Context(), chi.URLParam(r, "run"))
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("tv change of the update: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("tv change of the update").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, st)
@@ -81,7 +81,7 @@ func (h *Handler) autoWithdraw(w http.ResponseWriter, r *http.Request) {
 	}
 	st, err := h.Controller.WithdrawAutoUpdate(r.Context(), chi.URLParam(r, "run"), body.Reason)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("withdraw the update's tv change: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("withdraw the update's tv change").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, st)

@@ -154,7 +154,7 @@ func (h *Handler) watermarkDraft(w http.ResponseWriter, r *http.Request, c Chann
 	}
 	o, err := h.currentOverride(r.Context(), cur, c, ArtWatermark)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("load channel art: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("load channel art").Wrap(err))
 		return false
 	}
 	merged := map[string]any{}

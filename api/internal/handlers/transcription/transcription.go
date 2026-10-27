@@ -312,7 +312,7 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := h.cached(r.Context(), h.now(), CacheTTL)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("transcription summary: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("transcription summary").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, visibleTo(s, p))

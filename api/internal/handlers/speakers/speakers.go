@@ -159,7 +159,7 @@ func (h *Handler) Rename(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("rename: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("rename").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"id": id, "name": req.Name})
@@ -197,16 +197,16 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 		  )
 	`, req.Keep, req.Drop)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("merge update: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("merge update").Wrap(err))
 		return
 	}
 	// Drop any leftover dupes that collided with existing keep links.
 	if _, err := tx.ExecContext(r.Context(), `DELETE FROM segment_speakers WHERE speaker_id = $1`, req.Drop); err != nil {
-		httperror.Write(w, r, httperror.Internal("merge clean: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("merge clean").Wrap(err))
 		return
 	}
 	if _, err := tx.ExecContext(r.Context(), `DELETE FROM speakers WHERE id = $1`, req.Drop); err != nil {
-		httperror.Write(w, r, httperror.Internal("merge drop: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("merge drop").Wrap(err))
 		return
 	}
 	if err := tx.Commit(); err != nil {

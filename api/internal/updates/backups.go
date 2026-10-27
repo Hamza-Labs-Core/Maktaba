@@ -190,10 +190,12 @@ func writeRestoreErr(w http.ResponseWriter, r *http.Request, err error) {
 		httperror.Write(w, r, e)
 	case errors.Is(err, ErrOrchestratorUnavailable):
 		httperror.Write(w, r, (&httperror.Error{Type: "about:blank#orchestrator_unavailable", Title: "service unavailable",
-			Status: http.StatusServiceUnavailable, Detail: err.Error()}).With("code", ErrOrchestratorUnavailable.Error()))
+			Status: http.StatusServiceUnavailable, Detail: "this server cannot restore its backups now", Cause: err}).
+			With("code", ErrOrchestratorUnavailable.Error()))
 	default:
 		httperror.Write(w, r, (&httperror.Error{Type: "about:blank#supervisor_unreachable", Title: "bad gateway",
-			Status: http.StatusBadGateway, Detail: err.Error()}).With("code", "supervisor_unreachable"))
+			Status: http.StatusBadGateway, Detail: "the server's supervisor did not answer", Cause: err}).
+			With("code", "supervisor_unreachable"))
 	}
 }
 

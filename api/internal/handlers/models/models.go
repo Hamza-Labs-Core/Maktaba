@@ -187,7 +187,7 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID, err := h.pipeline.DownloadModel(r.Context(), id)
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway("pipeline download failed: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("pipeline download failed").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusAccepted, map[string]string{"job_id": jobID})
@@ -207,7 +207,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	deleted, err := h.pipeline.DeleteModel(r.Context(), id)
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway("pipeline delete failed: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("pipeline delete failed").Wrap(err))
 		return
 	}
 	if !deleted {
@@ -251,7 +251,7 @@ func (h *Handler) Test(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.pipeline.TestModel(r.Context(), id)
 	if err != nil {
-		httperror.Write(w, r, httperror.BadGateway("pipeline test failed: "+err.Error()))
+		httperror.Write(w, r, httperror.BadGateway("pipeline test failed").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, TestResult{

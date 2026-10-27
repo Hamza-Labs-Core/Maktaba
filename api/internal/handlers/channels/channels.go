@@ -218,7 +218,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 				"a channel with that number already exists in this library"))
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("create channel: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("create channel").Wrap(err))
 		return
 	}
 	h.lineupChanged(r.Context())
@@ -411,7 +411,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 					"a channel with that number already exists in this library"))
 				return
 			}
-			httperror.Write(w, r, httperror.Internal("update channel: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("update channel").Wrap(err))
 			return
 		}
 		// a definition change by a person (art is not one: see art.go)
@@ -425,7 +425,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 			removeArtFiles(h.artDir(existing.ID), ArtLogo, newLogo)
 		}
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("update logo: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("update logo").Wrap(err))
 			return
 		}
 	}
@@ -527,7 +527,7 @@ func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 				httperror.Write(w, r, httperror.NotFound("channel "+e.ID))
 				return
 			}
-			httperror.Write(w, r, httperror.Internal("reorder: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("reorder").Wrap(err))
 			return
 		}
 		if cur != e.Number {
@@ -537,7 +537,7 @@ func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 	for i, e := range moved {
 		if _, err := tx.ExecContext(r.Context(),
 			`UPDATE channels SET number = $1 WHERE id = $2`, -(i + 1), e.ID); err != nil {
-			httperror.Write(w, r, httperror.Internal("reorder: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("reorder").Wrap(err))
 			return
 		}
 	}
@@ -551,7 +551,7 @@ func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 					"reorder would collide on a channel number"))
 				return
 			}
-			httperror.Write(w, r, httperror.Internal("reorder: "+err.Error()))
+			httperror.Write(w, r, httperror.Internal("reorder").Wrap(err))
 			return
 		}
 	}

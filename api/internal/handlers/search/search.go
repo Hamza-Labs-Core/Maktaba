@@ -347,7 +347,7 @@ func (h *Handler) SaveSearch(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		httperror.Write(w, r, httperror.Internal("save: "+err.Error()))
+		httperror.Write(w, r, httperror.Internal("save").Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusCreated, map[string]any{"id": id, "name": req.Name})
