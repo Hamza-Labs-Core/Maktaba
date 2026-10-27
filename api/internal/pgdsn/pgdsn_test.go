@@ -9,6 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -183,6 +185,56 @@ func TestOpenPreferPerConnection(t *testing.T) {
 	}
 	if got := strings.Join(seen(), ","); got != "ssl,plain,ssl,plain" {
 		t.Fatalf("connections opened with %s, want ssl,plain,ssl,plain", got)
+	}
+}
+
+// TestOpenReadsThePassfile: a node's api gets its database URLs without their passwords
+// and PGPASSFILE naming the file that holds them (its supervisor's dsn.ProcessEnv), on
+// every OS. lib/pq before v1.11 skipped a passfile whose mode has group or world bits,
+// which is every file on Windows (Go reports rw-rw-rw-): a Windows node logged in to the
+// home's database with no password, and every page that reads it answered
+// home_unreachable.
+func TestOpenReadsThePassfile(t *testing.T) {
+	shortConnectTimeout(t)
+	sent := make(chan string, 1)
+	addr := listen(t, func(c net.Conn) {
+		var head [8]byte
+		if _, err := io.ReadFull(c, head[:]); err != nil {
+			return
+		}
+		if _, err := io.CopyN(io.Discard, c, int64(binary.BigEndian.Uint32(head[:4]))-8); err != nil {
+			return
+		}
+		_, _ = c.Write([]byte{'R', 0, 0, 0, 8, 0, 0, 0, 3}) // AuthenticationCleartextPassword
+		var msg [5]byte
+		if _, err := io.ReadFull(c, msg[:]); err != nil || msg[0] != 'p' {
+			return
+		}
+		pw := make([]byte, binary.BigEndian.Uint32(msg[1:])-4)
+		if _, err := io.ReadFull(c, pw); err != nil {
+			return
+		}
+		sent <- strings.TrimSuffix(string(pw), "\x00")
+	})
+	host, port, _ := net.SplitHostPort(addr)
+	passfile := filepath.Join(t.TempDir(), "pgpass")
+	if err := os.WriteFile(passfile, []byte(host+":"+port+":maktaba:node_1e943eda:s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PGPASSFILE", passfile)
+	db, err := Open(WithConnectTimeout("postgres://node_1e943eda@"+addr+"/maktaba?sslmode=disable", ConnectTimeout))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_ = db.Ping()
+	select {
+	case pw := <-sent:
+		if pw != "s3cret" {
+			t.Fatalf("the api sent %q, not the passfile's password", pw)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the api never answered the password request")
 	}
 }
 
