@@ -232,7 +232,12 @@ updated its runtime) offers its own update for its window and tray.
    semantic search's vectors (31 of 47 GB on the home that measured it, the bulk of a 35 GB dump
    one worker wrote for ten minutes); its definition and indexes stay, and once such a dump is
    put back the pipeline's reconciler queues an `index` job for every video with no vectors
-   (`_semantic_sweep`), which embeds its transcript again. The nightly dumps keep them. The
+   (`_semantic_sweep`), which embeds its transcript again. The nightly dumps keep them.
+   Measured on a scratch copy shaped like that home (its tables but the vectors at full scale,
+   the vectors at a tenth; the app's PostgreSQL 16, gzip:1, 8 workers): the pre-update dump
+   took 21 s for 3.3 GB where the single-file dump took 63 s plus 53 s per tenth of the
+   vectors (about 10 minutes for the whole home, as its log said), and it went back in 104 s.
+   The
    folder's rules (`MakeRoom`, `PruneBackups`, the Backups page, moving the backups, a restore
    by hand) take a dump's folder as they take a file, by its files' size; the single-file dumps
    of before are read, restored, moved and pruned as they were; a dump a crash cut short
