@@ -27,6 +27,8 @@ type Copy struct {
 	Home *Home
 	// NodeID is this machine's id (SignedInThrough).
 	NodeID string
+	// Copying overrides the check that the copy is still being made (tests).
+	Copying func(context.Context) (bool, error)
 }
 
 var _ nodeauth.Local = Copy{}
@@ -131,14 +133,32 @@ func (c Copy) SignIn(ctx context.Context, username, password string) (*delegatio
 }
 
 // Synced implements nodeauth.Local: the home's beat as the copy last applied it
-// (cluster_replica_beat, slot 0147).
+// (cluster_replica_beat, slot 0147), or zero while a table's first copy is not done
+// (srsubstate not 'r', as nodecopy counts it): each table is copied on its own, so the
+// beat can be in while users or sessions are not yet, and a sign-in checked there would
+// be refused as a wrong password.
 func (c Copy) Synced(ctx context.Context) (time.Time, error) {
+	copying, err := c.copying(ctx)
+	if err != nil || copying {
+		return time.Time{}, err
+	}
 	var at time.Time
-	err := c.Home.DB.QueryRowContext(ctx, `SELECT at FROM cluster_replica_beat WHERE id = 1`).Scan(&at)
+	err = c.Home.DB.QueryRowContext(ctx, `SELECT at FROM cluster_replica_beat WHERE id = 1`).Scan(&at)
 	if errors.Is(err, sql.ErrNoRows) {
 		return time.Time{}, nil
 	}
 	return at, err
+}
+
+// copying is whether a table of the copy's subscription has not finished its first copy
+// (Copying, when set, answers instead: tests).
+func (c Copy) copying(ctx context.Context) (bool, error) {
+	if c.Copying != nil {
+		return c.Copying(ctx)
+	}
+	var n int
+	err := c.Home.DB.QueryRowContext(ctx, `SELECT count(*) FROM pg_subscription_rel WHERE srsubstate <> 'r'`).Scan(&n)
+	return n > 0, err
 }
 
 // SignedInThrough implements nodeauth.Local: the home's own check of a sign-out
