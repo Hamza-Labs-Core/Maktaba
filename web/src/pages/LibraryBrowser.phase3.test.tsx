@@ -147,7 +147,7 @@ describe("LibraryBrowser, collections (story 45.17)", () => {
     );
     await waitFor(() =>
       expect(patch).toHaveBeenCalledWith("/api/collections/c7", {
-        smart_query: { filters: { added: "year", sort: "updated_at", order: "desc" } },
+        smart_query: { filters: { added: "year", sort: "created_at", order: "desc" } },
       })
     );
   });

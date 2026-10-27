@@ -271,7 +271,11 @@ type Season struct {
 }
 
 // Episodes returns seasons→episodes with the caller's watch state plus
-// the next unwatched/in-progress episode (continue watching).
+// the next unwatched/in-progress episode (continue watching). The seasons
+// come in their order; a season's episodes newest-added first, as every list
+// of videos, or with ?sort=episode in the lesson order (season, episode or
+// absolute number), the order Play all, Up next and next_episode follow
+// whatever the list's sort.
 func (h *Handler) Episodes(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
@@ -283,7 +287,16 @@ func (h *Handler) Episodes(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
 		return
 	}
-	resp := map[string]any{"seasons": []Season{}, "numbering": "season"}
+	sortKey := r.URL.Query().Get("sort")
+	switch sortKey {
+	case "":
+		sortKey = episodesByAdded
+	case episodesByAdded, episodesByLesson:
+	default:
+		httperror.Write(w, r, httperror.InvalidQuery("sort must be added or episode"))
+		return
+	}
+	resp := map[string]any{"seasons": []Season{}, "numbering": "season", "sort": sortKey}
 	if h.DB == nil {
 		common.WriteJSON(w, r, http.StatusOK, resp)
 		return
@@ -300,20 +313,26 @@ func (h *Handler) Episodes(w http.ResponseWriter, r *http.Request) {
 	bySeason := map[int][]Episode{}
 	ordered := make([]epRow, len(rows))
 	copy(ordered, rows)
-	sort.Slice(ordered, func(i, j int) bool { return lessEpisode(ordered[i], ordered[j], numbering) })
+	sort.SliceStable(ordered, func(i, j int) bool { return lessEpisode(ordered[i], ordered[j], numbering) })
 
+	// the next episode is the lesson order's, whatever the list's sort
 	var next *Episode
 	for _, e := range ordered {
-		ep := toEpisode(e)
+		if ep := toEpisode(e); !ep.Watched {
+			next = &ep
+			break
+		}
+	}
+	listed := rows // newest-added first (loadEpisodes)
+	if sortKey == episodesByLesson {
+		listed = ordered
+	}
+	for _, e := range listed {
 		season := 0
 		if s, ok := e.effSeason(); ok {
 			season = s
 		}
-		bySeason[season] = append(bySeason[season], ep)
-		if next == nil && !ep.Watched {
-			cp := ep
-			next = &cp
-		}
+		bySeason[season] = append(bySeason[season], toEpisode(e))
 	}
 	seasons := []Season{}
 	keys := []int{}
@@ -331,6 +350,12 @@ func (h *Handler) Episodes(w http.ResponseWriter, r *http.Request) {
 	}
 	common.WriteJSON(w, r, http.StatusOK, resp)
 }
+
+// The sorts of a series' episodes (GET /api/series/{id}/episodes?sort=).
+const (
+	episodesByAdded  = "added"   // newest-added first, the default
+	episodesByLesson = "episode" // the lesson order: season, then episode (or absolute number)
+)
 
 // Gap is one missing episode.
 type Gap struct {
@@ -497,7 +522,8 @@ func (h *Handler) loadSeriesHeaders(r *http.Request, libraryFilter string) ([]It
 
 // loadEpisodes returns episodes grouped by series id, ACL-filtered to
 // libraries the principal can read and joined to the caller's playback
-// state. When seriesID is non-empty only that series is loaded.
+// state, newest-added first. When seriesID is non-empty only that series is
+// loaded.
 func (h *Handler) loadEpisodes(r *http.Request, p *principal.Principal, seriesID, userID string) map[string][]epRow {
 	q := `
 		SELECT se.series_id, se.video_id, v.library_id,
@@ -515,6 +541,8 @@ func (h *Handler) loadEpisodes(r *http.Request, p *principal.Principal, seriesID
 		q += ` WHERE se.series_id = $2`
 		args = append(args, seriesID)
 	}
+	// each series' episodes come newest-added first (Episodes' default)
+	q += ` ORDER BY v.created_at DESC, v.id DESC`
 	out := map[string][]epRow{}
 	rows, err := h.DB.QueryContext(r.Context(), q, args...)
 	if err != nil {

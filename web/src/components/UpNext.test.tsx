@@ -74,7 +74,8 @@ describe("UpNext", () => {
     get.mockImplementation((url: string) => {
       if (url === "/api/me/videos/a")
         return Promise.resolve({ video_id: "a", series: { id: "s1", name: "S" } });
-      if (url === "/api/series/s1/episodes")
+      // the lesson order, whatever order the series page lists them in
+      if (url === "/api/series/s1/episodes?sort=episode")
         return Promise.resolve({
           seasons: [
             {

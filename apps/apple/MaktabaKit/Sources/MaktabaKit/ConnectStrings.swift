@@ -275,7 +275,8 @@ public struct ConnectStrings: Sendable {
     /// Why an address did not lead to a home.
     public func reach(_ f: ReachFailure) -> String {
         switch f {
-        case let .unreachable(why): text(.unreachable, why)
+        // the app's sentence, not the system's English words for the failure
+        case .unreachable: ErrorStrings(language).text(.unreachable)
         case .notAHome: text(.notAHome)
         case .otherHome: text(.otherHome)
         }
@@ -301,13 +302,13 @@ public struct ConnectStrings: Sendable {
             reach(f)
         case let e as APIError:
             switch e {
-            case .status(401, _), .signedOut: text(.homeRefusedCloud)
-            case .status(423, _): text(.homeLocked)
-            case .status(403, _): text(.homeMustChangePassword)
-            case .status(404, _): text(.homeNotInCloud)
-            case let .status(code, _): text(.homeOther, String(code))
+            case .status(401, _, _), .signedOut: text(.homeRefusedCloud)
+            case .status(423, _, _): text(.homeLocked)
+            case .status(403, _, _): text(.homeMustChangePassword)
+            case .status(404, _, _): text(.homeNotInCloud)
+            case let .status(code, _, _): text(.homeOther, String(code))
             case let .transport(why): text(.unreachable, why)
-            case .decoding: text(.homeOther, "?")
+            case .decoding, .notReady: text(.homeOther, "?")
             }
         default:
             error.localizedDescription

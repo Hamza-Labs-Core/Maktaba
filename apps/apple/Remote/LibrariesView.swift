@@ -9,7 +9,7 @@ struct LibrariesView: View {
         List {
             ProblemSection()
             Section {
-                if model.loaded, model.libraries.isEmpty {
+                if model.loaded, model.problem == nil, model.libraries.isEmpty {
                     Label("No libraries yet. Add one in the home's web pages.", systemImage: "books.vertical")
                         .foregroundStyle(.secondary)
                 }
@@ -41,6 +41,7 @@ struct LibrariesView: View {
             }
         }
         .maktabaSurface()
+        .overlay { if !model.loaded { ProgressView() } }
         .navigationTitle("Libraries")
         .refreshable { await model.load() }
         .toolbar { AccountMenu() }

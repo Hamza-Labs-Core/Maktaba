@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 import Security
 
 /// A home's tokens in the Keychain, one entry per home and app (the service names the app;
@@ -63,6 +64,10 @@ public final class TokenStore: @unchecked Sendable {
         if let known = TokenCache.get(cacheKey(kind)) { return known }
         var (value, status) = primary.read(account(kind))
         if status == errSecMissingEntitlement { useLegacyOnly() }
+        if status != errSecSuccess, status != errSecItemNotFound, status != errSecMissingEntitlement {
+            // a locked or broken keychain: the person will look signed out
+            Log.keychain.error("read \(kind, privacy: .public) token failed: OSStatus \(status, privacy: .public)")
+        }
         if value == nil, let legacy, let old = legacy.read(account(kind)).value {
             // moved once from the login keychain (it asks no more after this)
             switch primary.write(account(kind), old) {
@@ -79,9 +84,14 @@ public final class TokenStore: @unchecked Sendable {
     }
 
     private func write(_ kind: String, _ value: String) {
-        if primary.write(account(kind), value) == errSecMissingEntitlement {
+        var status = primary.write(account(kind), value)
+        if status == errSecMissingEntitlement {
             useLegacyOnly()
-            _ = primary.write(account(kind), value)
+            status = primary.write(account(kind), value)
+        }
+        if status != errSecSuccess {
+            // signed in for now (the token is kept in memory), signed out at the next launch
+            Log.keychain.error("save \(kind, privacy: .public) token failed: OSStatus \(status, privacy: .public)")
         }
         TokenCache.set(cacheKey(kind), value)
     }

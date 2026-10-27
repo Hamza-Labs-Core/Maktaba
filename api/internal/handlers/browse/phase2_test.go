@@ -154,9 +154,14 @@ func TestFavoritesAndMyVideo(t *testing.T) {
 	var h struct {
 		Favorites []Card `json:"favorites"`
 	}
+	// a2 was a favorite long before a1, but joined the library after it: the
+	// row is newest-added first, as every list of videos
+	if _, err := e.db.Exec(`UPDATE user_favorites SET created_at = '2000-01-01T00:00:00.000Z' WHERE video_id = $1`, v("a2")); err != nil {
+		t.Fatal(err)
+	}
 	e.do(asViewer(), "GET", "/api/home", nil, &h)
-	if got := ids(h.Favorites); len(got) != 2 || !slices.Contains(got, v("a1")) || !slices.Contains(got, v("a2")) {
-		t.Errorf("home favorites %v: a1 and a2, never the other user's a3", got)
+	if got := ids(h.Favorites); !slices.Equal(got, names("a2", "a1")) {
+		t.Errorf("home favorites %v: a2 then a1, never the other user's a3", got)
 	}
 	// a favorite in a library the user lost is not shown
 	if _, err := e.db.Exec(`INSERT INTO user_favorites (user_id, video_id, created_at) VALUES ($1,$2,'2099-01-01T00:00:00.000Z')`, viewer, v("b1")); err != nil {
@@ -201,11 +206,12 @@ func TestPlaylists(t *testing.T) {
 	if code := e.do(asViewer(), "POST", "/api/me/playlists", map[string]any{"name": "  Ramadan  ", "video_ids": []string{v("a1"), v("a2")}}, &created); code != http.StatusCreated {
 		t.Fatalf("create: %d", code)
 	}
-	// 201 is not decoded by do: read it back
+	// 201 is not decoded by do: read it back. Not reordered yet: its
+	// pictures are its newest-added videos (a2 joined the library after a1)
 	var list struct{ Items []PlaylistSummary }
 	e.do(asViewer(), "GET", "/api/me/playlists", nil, &list)
 	if len(list.Items) != 1 || list.Items[0].Name != "Ramadan" || list.Items[0].Videos != 2 || list.Items[0].DurationSec != 1600 ||
-		!slices.Equal(list.Items[0].PosterVideoIDs, names("a1", "a2")) {
+		!slices.Equal(list.Items[0].PosterVideoIDs, names("a2", "a1")) || list.Items[0].HandOrdered {
 		t.Fatalf("playlists %+v", list.Items)
 	}
 	id := list.Items[0].ID
@@ -255,12 +261,13 @@ func TestPlaylists(t *testing.T) {
 	if _, err := e.db.Exec(`INSERT INTO user_playlist_items (playlist_id, video_id, position, added_at) VALUES ($1,$2,1,'x')`, id, v("b1")); err != nil {
 		t.Fatal(err)
 	}
+	// never reordered: newest-added first, whatever order they were put in
 	var doc playlistDoc
 	e.do(asViewer(), "GET", base, nil, &doc)
-	if got := ids(doc.Items); !slices.Equal(got, names("a1", "a2", "a3")) || doc.Playlist.Videos != 3 {
+	if got := ids(doc.Items); !slices.Equal(got, names("a3", "a2", "a1")) || doc.Playlist.Videos != 3 {
 		t.Fatalf("items %v (%d)", got, doc.Playlist.Videos)
 	}
-	if c := doc.Items[0]; c.PositionSec == nil || *c.PositionSec != 100 {
+	if c := doc.Items[2]; c.PositionSec == nil || *c.PositionSec != 100 {
 		t.Errorf("item playback %+v", c)
 	}
 
@@ -272,11 +279,16 @@ func TestPlaylists(t *testing.T) {
 			t.Errorf("order %s: %d", name, code)
 		}
 	}
-	if code := e.do(asViewer(), "PUT", base+"/order", map[string]any{"video_ids": names("a3", "a1", "a2")}, &doc); code != 200 {
+	if code := e.do(asViewer(), "PUT", base+"/order", map[string]any{"video_ids": names("a1", "a3", "a2")}, &doc); code != 200 {
 		t.Fatal(code)
 	}
-	if got := ids(doc.Items); !slices.Equal(got, names("a3", "a1", "a2")) {
-		t.Errorf("reordered %v", got)
+	// ordered by hand: the owner's order from now on
+	if got := ids(doc.Items); !slices.Equal(got, names("a1", "a3", "a2")) || !doc.Playlist.HandOrdered {
+		t.Errorf("reordered %v (hand ordered %v)", got, doc.Playlist.HandOrdered)
+	}
+	e.do(asViewer(), "GET", "/api/me/playlists", nil, &list)
+	if len(list.Items) != 1 || !slices.Equal(list.Items[0].PosterVideoIDs, names("a1", "a3", "a2")) || !list.Items[0].HandOrdered {
+		t.Errorf("reordered playlist %+v", list.Items)
 	}
 	var lastPos int
 	if err := e.db.QueryRow(`SELECT position FROM user_playlist_items WHERE playlist_id = $1 AND video_id = $2`, id, v("b1")).Scan(&lastPos); err != nil || lastPos != 3 {

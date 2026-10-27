@@ -19,7 +19,7 @@ func TestRunTitles_MatchesTitlesLiterally(t *testing.T) {
 	defer db.Close()
 	if _, err := db.Exec(`CREATE TABLE videos (
 		id TEXT PRIMARY KEY, library_id TEXT, title TEXT, filename TEXT, duration_sec REAL,
-		detected_language TEXT, deleted_at TEXT)`); err != nil {
+		detected_language TEXT, deleted_at TEXT, created_at TEXT NOT NULL DEFAULT '')`); err != nil {
 		t.Fatal(err)
 	}
 	for _, row := range [][]any{
