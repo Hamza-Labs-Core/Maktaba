@@ -5,6 +5,7 @@ import com.hamzalabs.maktaba.core.api.QueueSnapshot
 import com.hamzalabs.maktaba.core.api.StreamSession
 import com.hamzalabs.maktaba.core.layout.Fold
 import com.hamzalabs.maktaba.core.layout.Panes
+import com.hamzalabs.maktaba.core.layout.bookCut
 import com.hamzalabs.maktaba.core.layout.cut
 import com.hamzalabs.maktaba.core.layout.panesFor
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -42,6 +43,15 @@ class PanesTest {
         assertEquals(1000 to 1040, cut(1100..1140, 100, 2000))
         assertEquals("a hinge outside the pane: halves", 500 to 500, cut(3000..3040, 0, 1000))
         assertEquals("not measured yet: halves", 0 to 0, cut(10..20, 0, 0))
+    }
+
+    @Test
+    fun aBookCutKeepsTheHingeEmptyInBothDirections() {
+        // a pane from x=100 to 2100, the hinge at window x 1000..1040 (pane x 900..940)
+        assertEquals("left to right: the left part leads", 900 to 40, bookCut(1000..1040, 100, 2000, rtl = false))
+        assertEquals("right to left: the right part leads", 1060 to 40, bookCut(1000..1040, 100, 2000, rtl = true))
+        assertEquals("a centred hinge is the same both ways", 1000 to 0, bookCut(1000..1000, 0, 2000, rtl = true))
+        assertEquals("not measured yet: halves", 500 to 0, bookCut(3000..3040, 0, 1000, rtl = true))
     }
 
     @Test

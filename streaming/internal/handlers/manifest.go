@@ -101,6 +101,9 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.readFailed(r, path, err)
 		if errors.Is(err, os.ErrNotExist) {
+			if !h.reloaded(w, r, row) {
+				return // over before it wrote it: never coming
+			}
 			httpx.Write(w, http.StatusNotFound, "manifest-not-found",
 				"manifest not yet on disk",
 				"the FFmpeg subprocess hasn't written the master playlist; client should retry")
@@ -160,6 +163,9 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 	data, err := os.ReadFile(path)
 	if err != nil {
 		h.readFailed(r, path, err)
+		if h.overBeforeWritten(w, r, sub) {
+			return
+		}
 		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", err.Error())
 		return
 	}
@@ -352,6 +358,21 @@ func (h *ManifestHandler) reloaded(w http.ResponseWriter, r *http.Request, row *
 		_ = h.Sessions.Touch(r.Context(), row.ID, h.now())
 	}
 	return true
+}
+
+// overBeforeWritten answers 410 for a playlist not on disk whose transcode is over
+// short of the end (it failed before its first segment): a 404 would have the player
+// wait for it, buffering, where a 410 has it open the video again or say it cannot.
+func (h *ManifestHandler) overBeforeWritten(w http.ResponseWriter, r *http.Request, sub string) bool {
+	id, err := uuid.Parse(sub)
+	if err != nil {
+		return false
+	}
+	row, ok, err := h.Sessions.Get(r.Context(), id)
+	if err != nil || !ok || !row.TranscodeCut() {
+		return false
+	}
+	return !h.reloaded(w, r, row)
 }
 
 func (h *ManifestHandler) now() time.Time {

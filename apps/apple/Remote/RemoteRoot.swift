@@ -2,7 +2,8 @@ import MaktabaKit
 import SwiftUI
 
 /// The admin's screens: tabs on iPhone, a sidebar on iPad (and tabs again when the iPad's
-/// window is narrow), each a NavigationStack of its own.
+/// window is narrow), each a NavigationStack of its own; the queue shows a stage's page
+/// beside the list when the window is wide (QueueScreen, story 42.8).
 struct RemoteRoot: View {
     let session: AppSession
     let user: User
@@ -22,7 +23,7 @@ struct RemoteRoot: View {
             }
             .badge(model.attentionCount)
             Tab("Queue", systemImage: "list.bullet.rectangle", value: .queue) {
-                screen { QueueView() }
+                QueueScreen()
             }
             Tab("Libraries", systemImage: "books.vertical", value: .libraries) {
                 screen { LibrariesView() }

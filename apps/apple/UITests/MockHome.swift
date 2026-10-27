@@ -94,6 +94,13 @@ final class MockHome: @unchecked Sendable {
             return (200, #"{"rails":[]}"#)
         case ("GET", "/api/issues"):
             return (200, #"{"groups":[]}"#)
+        case ("GET", "/api/queues"):
+            // two stages for the Remote's queue (story 42.8: the list beside a stage's page)
+            return (200, #"{"paused_all":false,"issues_count":0,"stages":[{"stage":"probe","label":"Probe","lane":"a","lane_order":1,"hidden":false,"enabled":true,"paused":false},{"stage":"transcribe","label":"Transcribe","lane":"a","lane_order":2,"hidden":false,"enabled":true,"paused":false}],"queues":[{"stage":"probe","counts":{"pending":3,"ready":1,"running":1,"failed_open":0,"done_24h":12},"rate_per_min":0,"no_worker":false}]}"#)
+        case ("GET", "/api/queues/probe/failures"), ("GET", "/api/queues/transcribe/failures"):
+            return (200, #"{"groups":[]}"#)
+        case ("GET", "/api/cluster"):
+            return (200, #"{"home":{"name":"UI Test Home","accept_joins":false,"roles_supported":true},"nodes":[]}"#)
         default:
             return (404, #"{"title":"not found","status":404}"#)
         }

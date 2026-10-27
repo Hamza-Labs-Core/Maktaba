@@ -103,7 +103,9 @@ reaches a home on the Mac's network by its address (`192.168.50.177:8088`).
   - the list beside the page: 600 dp and wider (a tablet, a foldable open flat);
   - half folded: split at the hinge. Tabletop puts the upright half on top; book puts the
     halves side by side. The video (or a video's page, or the libraries) goes on the first
-    half and the list on the second, as the iPhone Duo Player does.
+    half and the list on the second, as the iPhone Duo Player does. Right to left, the book's
+    first half is the right one, cut at the hinge all the same (`bookCut`; the instrumented
+    `HingeSplitTest` checks both directions with the hinge off centre).
 
   The activity handles folding and turning itself, so a playing video keeps playing.
 - **Theme:** Ink & Brass from `web/src/styles/tokens.css`: light, dark or the system's (per

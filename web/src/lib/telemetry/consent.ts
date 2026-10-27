@@ -10,9 +10,10 @@ const PSEUDONYM_KEY = "mkt:usage:install-id";
 // deletes them too
 const PAST_KEY = "mkt:usage:past";
 // before the rework the data went to the home's admin: a yes to that is not a yes
-// to Maktaba, so it is forgotten and the user is asked again
+// to Maktaba, so it is forgotten and the user is asked again; a no stays a no
+const LEGACY_CONSENT_KEY = "mkt:telemetry:consent";
 const LEGACY_KEYS = [
-  "mkt:telemetry:consent",
+  LEGACY_CONSENT_KEY,
   "mkt:telemetry:pseudonym",
   "mkt:telemetry:past",
   "mkt:telemetry:queue",
@@ -41,14 +42,19 @@ function write(key: string, value: string | null): void {
   }
 }
 
-/** forgetLegacyConsent drops the decision and ids from before the rework. */
+/**
+ * forgetLegacyConsent drops the decision and ids from before the rework. A
+ * refusal carries over, dated as it was: the user who said no is not asked again.
+ */
 export function forgetLegacyConsent(): void {
+  const legacy = parseConsent(read(LEGACY_CONSENT_KEY));
+  if (legacy?.granted === false && readConsent() === null) {
+    write(CONSENT_KEY, JSON.stringify(legacy));
+  }
   for (const k of LEGACY_KEYS) write(k, null);
 }
 
-/** readConsent is the recorded decision, or null when the user has not decided. */
-export function readConsent(): Consent | null {
-  const raw = read(CONSENT_KEY);
+function parseConsent(raw: string | null): Consent | null {
   if (!raw) return null;
   try {
     const c = JSON.parse(raw) as Partial<Consent>;
@@ -56,6 +62,11 @@ export function readConsent(): Consent | null {
   } catch {
     return null;
   }
+}
+
+/** readConsent is the recorded decision, or null when the user has not decided. */
+export function readConsent(): Consent | null {
+  return parseConsent(read(CONSENT_KEY));
 }
 
 export function writeConsent(granted: boolean, now: Date = new Date()): Consent {
