@@ -34,6 +34,27 @@ sealed class ApiException(message: String) : Exception(message) {
     }
 }
 
+/**
+ * Sends [r] and reads the whole answer on OkHttp's own thread: the caller may be the main
+ * thread, where Android forbids network reads (a chunked body is read as it comes). A failure
+ * to reach the home is [ApiException.Transport].
+ */
+suspend fun OkHttpClient.exchange(r: Request): Pair<Int, ByteArray> = suspendCancellableCoroutine { cont ->
+    val call = newCall(r)
+    cont.invokeOnCancellation { call.cancel() }
+    call.enqueue(object : Callback {
+        override fun onFailure(call: Call, e: IOException) {
+            cont.resumeWithException(ApiException.Transport(e.message ?: e.toString()))
+        }
+
+        override fun onResponse(call: Call, response: Response) {
+            val read = runCatching { response.use { it.code to it.body.bytes() } }
+            read.onSuccess { cont.resume(it) }
+            read.onFailure { cont.resumeWithException(ApiException.Transport(it.message ?: it.toString())) }
+        }
+    })
+}
+
 /** The REST client for one home: base URL, Bearer tokens, one refresh at a time on a 401. */
 class ApiClient(
     val home: HttpUrl,
@@ -58,6 +79,44 @@ class ApiClient(
 
     /** `GET /api/auth/me` with the home's name. */
     suspend fun whoami(): Me = get("/api/auth/me")
+
+    /** Keeps tokens a sign-in by code collected (`DeviceSignIn`). */
+    fun keep(t: AuthTokens) = tokens.save(t)
+
+    /**
+     * A request that carries no token (sign-in by code: asking for a code and polling): the
+     * status and body, whatever the status. Unreachable is [ApiException.Transport].
+     */
+    suspend fun publicPost(path: String, body: JsonObject?): Pair<Int, String> =
+        execute(request("POST", path, body = body)).let { (code, bytes) -> code to String(bytes) }
+
+    // ---------- approving a sign-in by code (a signed-in person, for another device) ----------
+
+    /**
+     * What is asking to sign in with [code] (`GET /api/pairing/device/{code}`): who to show
+     * before Approve. A home that does not know the code (or it ran out) is [PairingLookup.Unknown];
+     * a home too old to say is [PairingLookup.Unsupported] (no such route: a plain 404 or 405,
+     * not the home's JSON problem).
+     */
+    suspend fun pairingRequest(code: String): PairingLookup {
+        val c = PairingCode.normalize(code) ?: return PairingLookup.Unknown
+        return try {
+            PairingLookup.Waiting(decode(send(request("GET", "/api/pairing/device/$c"))))
+        } catch (e: ApiException.Status) {
+            when {
+                e.code == 405 || e.code == 501 -> PairingLookup.Unsupported
+                e.code == 404 && !e.body.trimStart().startsWith("{") -> PairingLookup.Unsupported
+                e.code == 404 || e.code == 410 || e.code == 422 -> PairingLookup.Unknown
+                else -> throw e
+            }
+        }
+    }
+
+    /** Approves [code]: the device showing it is signed in as this person (`POST /api/pairing/approve`). */
+    suspend fun approvePairing(code: String) {
+        val c = PairingCode.normalize(code) ?: throw ApiException.Status(422, "not a sign-in code")
+        send(request("POST", "/api/pairing/approve", body = buildJsonObject { put("code", PairingCode.shown(c)) }))
+    }
 
     // ---------- viewer ----------
 
@@ -116,7 +175,10 @@ class ApiClient(
     /** Whether [url] is this home's `/stream/`: the only place the player sends the token. */
     fun isStream(url: HttpUrl): Boolean =
         url.scheme == home.scheme && url.host == home.host && url.port == home.port &&
-            url.encodedPath.startsWith("/stream/")
+            url.encodedPath.startsWith("$basePath/stream/")
+
+    /** The home's web base path ("" at the root, else like `/maktaba`): every route is under it. */
+    val basePath: String get() = home.encodedPath.trimEnd('/')
 
     /**
      * Waits until an HLS stream can start: a transcode writes its rendition playlist a moment
@@ -188,7 +250,7 @@ class ApiClient(
         query: Map<String, String> = emptyMap(),
         body: JsonObject? = null,
     ): Request {
-        val url = home.newBuilder().encodedPath(path).apply {
+        val url = home.newBuilder().encodedPath(basePath + path).apply {
             query.toSortedMap().forEach { (k, v) -> addQueryParameter(k, v) }
         }.build()
         val payload = when {
@@ -255,21 +317,7 @@ class ApiClient(
      * Sends [r] and reads the whole answer on OkHttp's own thread: the caller may be the main
      * thread, where Android forbids network reads (a chunked body is read as it comes).
      */
-    private suspend fun execute(r: Request): Pair<Int, ByteArray> = suspendCancellableCoroutine { cont ->
-        val call = http.newCall(r)
-        cont.invokeOnCancellation { call.cancel() }
-        call.enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                cont.resumeWithException(ApiException.Transport(e.message ?: e.toString()))
-            }
-
-            override fun onResponse(call: Call, response: Response) {
-                val read = runCatching { response.use { it.code to it.body.bytes() } }
-                read.onSuccess { cont.resume(it) }
-                read.onFailure { cont.resumeWithException(ApiException.Transport(it.message ?: it.toString())) }
-            }
-        })
-    }
+    private suspend fun execute(r: Request): Pair<Int, ByteArray> = http.exchange(r)
 
     /**
      * An OkHttp client for the player: this home's `/stream/` requests carry the token. Its own
@@ -282,7 +330,7 @@ class ApiClient(
         .build()
 
     companion object {
-        private val JSON = "application/json".toMediaType()
+        internal val JSON = "application/json".toMediaType()
 
         /** How long a just-refreshed access token counts as fresh (it lasts 15 minutes). */
         private const val FRESH_MS = 10 * 60_000L
@@ -296,6 +344,7 @@ class ApiClient(
         val defaultHttp: OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
+            .addNetworkInterceptor(SameOriginCredentials)
             .build()
 
         /**

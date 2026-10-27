@@ -68,7 +68,19 @@ object AppPermissions {
         need = Need.Required,
     )
 
-    /** What Maktaba Player and Maktaba Remote ask for. */
+    /**
+     * Scanning a QR code: a home's (Connect), or another device's sign-in code (Approve).
+     * Optional, and asked for when the person taps Scan, not in the first-run walkthrough:
+     * typing the address or the code works without it.
+     */
+    val Camera = AppPermission(
+        id = "camera",
+        permission = "android.permission.CAMERA",
+        sinceSdk = 23,
+        need = Need.Optional,
+    )
+
+    /** What Maktaba Player and Maktaba Remote ask for at first run (the camera is asked for when scanning). */
     val phoneApps: List<AppPermission> = listOf(LocalNetwork)
 
     /** What the Android TV app asks for: no notifications, no background work, no microphone. */

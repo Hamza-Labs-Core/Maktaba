@@ -30,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -176,6 +177,7 @@ private class PermissionText(val title: Int, val why: Int, val without: Int, val
 
 private fun textFor(p: AppPermission) = when (p.id) {
     AppPermissions.LocalNetwork.id -> PermissionText(R.string.permission_local_network, R.string.local_network_body, R.string.local_network_denied, Icons.Outlined.Wifi)
+    AppPermissions.Camera.id -> PermissionText(R.string.permission_camera, R.string.camera_body, R.string.camera_denied, Icons.Outlined.QrCodeScanner)
     else -> error("the walkthrough has no words for ${p.id}")
 }
 

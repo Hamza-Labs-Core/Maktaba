@@ -8,6 +8,7 @@ import androidx.annotation.RequiresApi
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
@@ -17,9 +18,9 @@ import java.util.concurrent.Executors
 data class FoundHome(
     /** The machine's name as it announces it (the home's own name comes after signing in). */
     val name: String,
-    /** The web port's address: what the apps talk to (`/api` and `/stream/`). */
+    /** The web port's address, under the web's base path when it is not `/`: what the apps talk to (`/api` and `/stream/`). */
     val url: String,
-    /** The home's short id (8 hex), when it says. */
+    /** The home's instance id (`home=`, else `id=`), when it says. */
     val id: String?,
     val version: String?,
 )
@@ -29,9 +30,10 @@ const val MAKTABA_SERVICE = "_maktaba._tcp"
 
 /**
  * What a `_maktaba._tcp` announcement means to an app: a home (`role=home`, or no role from an
- * older home) at its web port (`web=`, else the service's port), named by `name=` (else the
- * instance name without "Maktaba (…)"). A machine that works for a home (`role=node`) is not a
- * home to connect to: null.
+ * older home) at its web port (`web=`, else the service's port), over https when it says
+ * `tls=1`, under its web base path (`path=`, when not `/`), named by `name=` (else the
+ * instance name without "Maktaba (…)"). A machine that works for a home (`role=node`) is not
+ * a home to connect to: null.
  */
 fun foundHome(instance: String, host: InetAddress?, port: Int, txt: Map<String, String>): FoundHome? {
     val role = txt["role"]
@@ -46,7 +48,24 @@ fun foundHome(instance: String, host: InetAddress?, port: Int, txt: Map<String, 
     val name = txt["name"]?.takeIf { it.isNotBlank() }
         ?: Regex("""^Maktaba \((.*)\)$""").find(instance)?.groupValues?.get(1)
         ?: instance
-    return FoundHome(name, "http://$address:$webPort", txt["home"] ?: txt["id"], txt["version"])
+    val scheme = if (txt["tls"]?.trim()?.lowercase() in setOf("1", "true", "yes")) "https" else "http"
+    val id = (txt["home"] ?: txt["id"])?.takeIf { it.isNotBlank() }
+    return FoundHome(name, "$scheme://$address:$webPort${basePath(txt["path"])}", id, txt["version"])
+}
+
+/** A web base path as a URL's tail: "" for none or `/`, else like `/maktaba` (no trailing slash). */
+fun basePath(path: String?): String {
+    val p = path?.trim()?.trim('/') ?: return ""
+    if (p.isEmpty() || p.any { it.isWhitespace() || it == '?' || it == '#' || it == '\\' }) return ""
+    return "/$p"
+}
+
+/**
+ * One row per home: the same home announced twice (two interfaces, IPv4 and IPv6, a rename)
+ * is one, by its id, else by its host and port. The first announcement stays.
+ */
+fun dedupeHomes(homes: List<FoundHome>): List<FoundHome> = homes.distinctBy { h ->
+    h.id?.let { "id:" + homeIdKey(it) } ?: h.url.toHttpUrlOrNull()?.let { "at:${it.host}:${it.port}" } ?: h.url
 }
 
 /**
@@ -61,7 +80,7 @@ class HomeDiscovery(context: Context) {
         /** Services announced and not lost: a resolve that ends after its service left is dropped. */
         val present = mutableSetOf<String>()
         val lock = Any()
-        fun publish() = trySend(synchronized(lock) { found.values.distinctBy { it.id ?: it.url } })
+        fun publish() = trySend(synchronized(lock) { dedupeHomes(found.values.toList()) })
         val resolver = Resolver(nsd) { instance, home ->
             synchronized(lock) { if (home != null && instance in present) found[instance] = home else found.remove(instance) }
             publish()

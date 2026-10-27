@@ -220,7 +220,15 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
 4. **42.4 Desktop Player on Windows and Linux:** Compose for Desktop, release legs,
    `latest-player.json`.
 5. **42.5 Web editions:** `VITE_MAKTABA_EDITION`, lazy server routes, "Manage" in `full`.
+   *Android (`apps/android`, `feat/epic42-android`):* the picker lists Your homes (rename,
+   remove), On this network (NSD, deduped by id else host:port, `tls`/`path` honoured), by
+   address and by QR (CameraX + ZXing), and opens `maktaba://connect` links after asking;
+   addresses are checked with `/api/discovery/home` (else `/api/system/version`). Tokens stay
+   bound to the exact address; a known id at a new address signs in afresh.
 6. **42.6 Sign-in by code:** endpoints, the approve screen, mobile, desktop and TV.
+   *Android:* the sign-in screen's With a code (code large, QR of `verify_url`, polling), and
+   Approve a sign-in (type or scan, see what asks, explicit Approve) in the Player's and the
+   Remote's account menu.
 7. **42.7 Linked accounts and the cloud:** linking (home Account page, `home_user_links`), the
    cloud's home assertion, `POST /api/auth/cloud`, the app's cloud sign-in and home list, both
    addresses per home (local and relay).

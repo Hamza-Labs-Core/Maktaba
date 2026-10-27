@@ -2,10 +2,13 @@ package com.hamzalabs.maktaba.core.session
 
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.DeviceCode
+import com.hamzalabs.maktaba.core.api.DeviceSignIn
 import com.hamzalabs.maktaba.core.api.Me
 import com.hamzalabs.maktaba.core.api.User
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,10 +18,20 @@ import kotlinx.serialization.builtins.ListSerializer
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-/** A home this app knows: its address and a name to show (its address until it says its name). */
+/**
+ * A home this app knows: its address (under the web's base path when it has one), a name to
+ * show (its address until it says its name), its instance id when it said it, and the name the
+ * person gave it here ([nickname], shown before the home's own).
+ */
 @Serializable
-data class Home(val url: String, val name: String) {
+data class Home(val url: String, val name: String, val id: String? = null, val nickname: String? = null) {
     val httpUrl: HttpUrl get() = url.toHttpUrl()
+
+    /** What the app shows: the person's name for it, else the home's. */
+    val label: String get() = nickname?.takeIf { it.isNotBlank() } ?: name
+
+    /** The address without its scheme, as a row shows it under the name. */
+    val address: String get() = url.substringAfter("://")
 
     companion object {
         /**
@@ -35,6 +48,18 @@ data class Home(val url: String, val name: String) {
             val u = s.toHttpUrlOrNull() ?: return null
             if (u.host.isEmpty()) return null
             return u.newBuilder().encodedPath("/").query(null).fragment(null).build().toString().trimEnd('/')
+        }
+
+        /**
+         * As [normalize], keeping the path: a home served under a base path
+         * (`https://example.com/maktaba`), as a home's link or `path=` gives it.
+         */
+        fun normalizeWithPath(text: String): String? {
+            val root = normalize(text) ?: return null
+            var s = text.trim()
+            if (!s.contains("://")) s = root.substringBefore("://") + "://" + s
+            val u = s.toHttpUrlOrNull() ?: return root
+            return u.newBuilder().query(null).fragment(null).build().toString().trimEnd('/')
         }
 
         fun isLocal(hostPort: String): Boolean {
@@ -81,20 +106,60 @@ class AppSession(
     var client: ApiClient? = null
         private set
 
+    private val _link = MutableStateFlow<ConnectLink?>(null)
+    /** A home's link the app was opened with (`maktaba://connect`), waiting for the person to confirm. */
+    val link: StateFlow<ConnectLink?> = _link.asStateFlow()
+
+    /** Shows [link] for the person to confirm (opening it never switches homes by itself). */
+    fun offer(link: ConnectLink) {
+        _link.value = link
+    }
+
+    /** The link an activity was opened with (`Intent.dataString`), when it is a `maktaba:` home link: offered. */
+    fun openLink(data: String?): Boolean {
+        if (data == null || !data.trim().startsWith(ConnectLink.SCHEME + ":", ignoreCase = true)) return false
+        val link = ConnectLink.parse(data) ?: return false
+        offer(link)
+        return true
+    }
+
+    fun dismissLink() {
+        _link.value = null
+    }
+
+    /**
+     * Connects to the home [link] names (a typed address, a scanned QR, a `maktaba://` link):
+     * tries its addresses in order, keeps the first where a Maktaba home answers (the home
+     * the link names, when it names one), and uses it. [NotAHome] when none answers.
+     */
+    suspend fun connect(link: ConnectLink, probe: HomeProbe = HomeProbe()): Home {
+        val r = probe.first(link.urls, link.id)
+        val name = r.info.name?.trim()?.takeIf { it.isNotEmpty() } ?: link.name ?: r.url.substringAfter("://")
+        use(Home(r.url, name, r.info.id ?: link.id))
+        if (_link.value == link) _link.value = null
+        return _current.value!!
+    }
+
     init {
         store.get(KEY_HOME)?.let { last -> _homes.value.firstOrNull { it.url == last }?.let(::use) }
     }
 
-    /** Picks a home: its client, and signed in at once when its tokens are still kept. */
+    /**
+     * Picks a home: its client, and signed in at once when its tokens are still kept. Homes
+     * are known by their exact address: a home's id (mDNS, `/api/discovery/home`, a link) is
+     * what it says of itself, unauthenticated, so the same id at another address is another
+     * entry and signs in afresh; tokens never move to another address.
+     */
     fun use(home: Home) {
-        if (_homes.value.none { it.url == home.url }) {
-            _homes.value = _homes.value + home
-            saveHomes()
-        }
-        _current.value = home
-        store.put(KEY_HOME, home.url)
-        val tokens = tokensFor(home.url)
-        val c = clientFor(home.httpUrl, tokens)
+        val known = _homes.value
+        val previous = known.firstOrNull { it.url == home.url }
+        val chosen = previous?.let { it.copy(id = it.id ?: home.id) } ?: home
+        _homes.value = if (previous == null) known + chosen else known.map { if (it === previous) chosen else it }
+        if (previous != chosen) saveHomes()
+        _current.value = chosen
+        store.put(KEY_HOME, chosen.url)
+        val tokens = tokensFor(chosen.url)
+        val c = clientFor(chosen.httpUrl, tokens)
         client = c
         _phase.value = Phase.SigningIn
         _restoreProblem.value = null
@@ -121,6 +186,15 @@ class AppSession(
         }
     }
 
+    /** Names a known home for this app ([nickname] blank: back to the home's own name). */
+    fun rename(home: Home, nickname: String) {
+        val n = nickname.trim().takeIf { it.isNotEmpty() }
+        val renamed = { h: Home -> if (h.url == home.url) h.copy(nickname = n) else h }
+        _homes.value = _homes.value.map(renamed)
+        _current.value = _current.value?.let(renamed)
+        saveHomes()
+    }
+
     fun forget(home: Home) {
         tokensFor(home.url).clear()
         _homes.value = _homes.value.filterNot { it.url == home.url }
@@ -138,6 +212,19 @@ class AppSession(
     suspend fun signIn(username: String, password: String) {
         val c = client ?: return
         c.signIn(username, password)
+        signedIn(c, c.whoami())
+    }
+
+    /**
+     * Signs in with a code (story 42.6): shows each code the home gives ([onCode]) until a
+     * person signed in elsewhere approves it, then keeps this device's tokens.
+     * [DeviceSignIn.Unsupported] when the home has no sign-in by code.
+     */
+    suspend fun signInWithCode(label: String, onCode: (DeviceCode) -> Unit, sleep: suspend (Long) -> Unit = { delay(it) }) {
+        val c = client ?: return
+        val tokens = DeviceSignIn({ path, body -> c.publicPost(path, body) }, label, sleep = sleep).run(onCode)
+        if (c !== client) return
+        c.keep(tokens)
         signedIn(c, c.whoami())
     }
 
