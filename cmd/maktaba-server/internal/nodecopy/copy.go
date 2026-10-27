@@ -70,6 +70,10 @@ type Copy struct {
 	NodeID string
 	// HomeDSN is this machine's own role on the home's database (node.json).
 	HomeDSN string
+	// HomeDSNOf, when set, is node.json's HomeDSN now (a re-made access changes its
+	// password): the copy's calls to the home log in with it, never with a password
+	// node.json no longer has. "" from it: HomeDSN.
+	HomeDSNOf func() string
 	// DB is this machine's own Postgres, which holds the copy.
 	DB pgbundle.Bundle
 	// Migrate runs this machine's migrations on its own database (maktaba-api migrate).
@@ -77,6 +81,16 @@ type Copy struct {
 }
 
 func (c Copy) id() string { return strings.ReplaceAll(strings.ToLower(c.NodeID), "-", "") }
+
+// homeDSN is this machine's own role on the home's database as node.json has it now.
+func (c Copy) homeDSN() string {
+	if c.HomeDSNOf != nil {
+		if d := c.HomeDSNOf(); d != "" {
+			return d
+		}
+	}
+	return c.HomeDSN
+}
 
 // Role is this machine's replication role on the home.
 func (c Copy) Role() string { return "maktaba_rep_" + c.id() }
@@ -138,6 +152,27 @@ type Grant struct {
 	Version       int      `json:"server_version_num"`
 	Database      string   `json:"database"`
 	CA            *string  `json:"ca_pem"`
+	// SlotWAL is the slot's wal_status on the home ("" when it has none, or it could not
+	// be read): "lost" is a slot that no longer has the changes the copy has not applied
+	// (it was away, or paused, past the home's cap: max_slot_wal_keep_size), which no
+	// subscription can follow again; "unreserved", one about to be.
+	SlotWAL string `json:"-"`
+}
+
+// The wal_status of a slot that cannot be followed any more, and of one about to be.
+const (
+	SlotLost       = "lost"
+	SlotUnreserved = "unreserved"
+)
+
+// slotWAL is a slot's wal_status on the home ("": none, or unreadable). Its view is
+// anyone's to read, on a home of any version (the grant's answer has no wal_status).
+func slotWAL(ctx context.Context, db *sql.DB, slot string) string {
+	var st sql.NullString
+	if err := db.QueryRowContext(ctx, `SELECT wal_status FROM pg_replication_slots WHERE slot_name = $1`, slot).Scan(&st); err != nil {
+		return ""
+	}
+	return st.String
 }
 
 // Ask asks the home for the copy: its replication role (with this machine's password)
@@ -174,6 +209,9 @@ func (c Copy) Ask(ctx context.Context, fresh bool) (Grant, error) {
 	if g.Role != c.Role() || g.Slot != c.Slot() || g.Publication != c.Publication() {
 		return Grant{}, fmt.Errorf("nodecopy: the home named %s/%s, not this machine's copy", g.Role, g.Publication)
 	}
+	if g.SlotExists {
+		g.SlotWAL = slotWAL(actx, db, g.Slot)
+	}
 	return g, nil
 }
 
@@ -188,7 +226,7 @@ func (c Copy) openHome(_ context.Context) (*sql.DB, error) {
 	if _, err := c.homeTLS(); err != nil {
 		return nil, err
 	}
-	return openBounded(c.HomeDSN)
+	return openBounded(c.homeDSN())
 }
 
 // ErrCopiesOff: the home lets no machine ask for a copy (the grant is not the machines' to
@@ -220,7 +258,7 @@ func (c Copy) Verified() bool {
 // pinned CA (verify-ca), or plain on the home's word that it has no TLS. A home this
 // machine cannot verify gets no subscription (ErrNotVerified).
 func (c Copy) homeTLS() ([][2]string, error) {
-	u, err := url.Parse(c.HomeDSN)
+	u, err := url.Parse(c.homeDSN())
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +333,7 @@ func (c Copy) Report(ctx context.Context, s Status) (Seen, error) {
 		return Seen{}, err
 	}
 	t1 := time.Now()
-	seen := Seen{Offset: home.Sub(t0.Add(t1.Sub(t0) / 2)), SlotLag: -1}
+	seen := Seen{Offset: home.Sub(t0.Add(t1.Sub(t0) / 2)), SlotLag: -1, SlotWAL: slotWAL(rctx, db, c.Slot())}
 	// pg_replication_slots and the WAL position are anyone's to read
 	if err := db.QueryRowContext(rctx, `SELECT COALESCE((SELECT (pg_current_wal_lsn() - confirmed_flush_lsn)::bigint
 	    FROM pg_replication_slots WHERE slot_name = $1 AND confirmed_flush_lsn IS NOT NULL), -1)`, c.Slot()).Scan(&seen.SlotLag); err != nil {
@@ -309,6 +347,8 @@ func (c Copy) Report(ctx context.Context, s Status) (Seen, error) {
 type Seen struct {
 	Offset  time.Duration
 	SlotLag int64
+	// SlotWAL is the slot's wal_status (Grant.SlotWAL)
+	SlotWAL string
 }
 
 // CaughtUp: a copy whose slot is within this of the home's WAL has applied every change
@@ -362,7 +402,7 @@ func (c Copy) Claim(now time.Time) (string, error) {
 
 // homeAddr is the home database's host and port (the node's DSN's).
 func (c Copy) homeAddr() (host, port string, err error) {
-	u, err := url.Parse(c.HomeDSN)
+	u, err := url.Parse(c.homeDSN())
 	if err != nil || u.Hostname() == "" {
 		return "", "", fmt.Errorf("nodecopy: the home's database address: %v", err)
 	}
@@ -381,7 +421,7 @@ func (c Copy) conninfo(database string) (string, error) {
 		return "", err
 	}
 	if database == "" {
-		if u, err := url.Parse(c.HomeDSN); err == nil {
+		if u, err := url.Parse(c.homeDSN()); err == nil {
 			database = strings.Trim(u.Path, "/")
 		}
 	}
@@ -643,12 +683,8 @@ func (c Copy) Handover(ctx context.Context, g Grant, local int64) error {
 		return err
 	}
 	if s.exists {
-		name := pq.QuoteIdentifier(Subscription)
-		for _, q := range []string{`ALTER SUBSCRIPTION ` + name + ` DISABLE`,
-			`ALTER SUBSCRIPTION ` + name + ` SET (slot_name = NONE)`, `DROP SUBSCRIPTION ` + name} {
-			if _, err := db.ExecContext(ctx, q); err != nil {
-				return fmt.Errorf("nodecopy: leaving the old home: %w", err)
-			}
+		if err := detach(ctx, db); err != nil {
+			return fmt.Errorf("nodecopy: leaving the old home: %w", err)
 		}
 	}
 	if err := c.writeAccess(); err != nil {
@@ -669,6 +705,73 @@ func (c Copy) Handover(ctx context.Context, g Grant, local int64) error {
 		return fmt.Errorf("nodecopy: following the new home: %w", err)
 	}
 	return c.writeMark(Marker{SystemID: g.SystemID, LocalSchema: local, Subscribed: time.Now().UTC()})
+}
+
+// detach drops the subscription without a word to the home (slot_name = NONE): its slot
+// there is left as it is, for the home's grant to drop (a fresh copy asks it to). It never
+// waits on a home that cannot be reached or logged in to, nor fails on a slot it lost.
+func detach(ctx context.Context, db *sql.DB) error {
+	name := pq.QuoteIdentifier(Subscription)
+	for _, q := range []string{`ALTER SUBSCRIPTION ` + name + ` DISABLE`,
+		`ALTER SUBSCRIPTION ` + name + ` SET (slot_name = NONE)`, `DROP SUBSCRIPTION ` + name} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Detach drops the subscription, leaving its slot on the home (detach): a copy whose
+// slot is lost is made anew this way.
+func (c Copy) Detach(ctx context.Context) error {
+	db, err := c.super()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	s, err := c.subscription(ctx, db)
+	if err != nil || !s.exists {
+		return err
+	}
+	return detach(ctx, db)
+}
+
+// CopyLogin logs in to the home's database once as the copy's replication role, as its
+// subscription does (this machine's password for it, TLS as this machine verifies the
+// home): nil when it can. A subscription that cannot log in says nothing of it here (its
+// worker tries again every few seconds on its own): this is how its manager knows.
+func (c Copy) CopyLogin(ctx context.Context, database string) error {
+	host, port, err := c.homeAddr()
+	if err != nil {
+		return err
+	}
+	pw, err := c.Password()
+	if err != nil {
+		return err
+	}
+	tls, err := c.homeTLS()
+	if err != nil {
+		return err
+	}
+	if database == "" {
+		if u, err := url.Parse(c.homeDSN()); err == nil {
+			database = strings.Trim(u.Path, "/")
+		}
+	}
+	q := url.Values{"connect_timeout": {"10"}, "application_name": {c.Slot() + "_login"}}
+	for _, kv := range tls {
+		q.Set(kv[0], kv[1])
+	}
+	u := url.URL{Scheme: "postgres", User: url.UserPassword(c.Role(), pw), Host: net.JoinHostPort(host, port),
+		Path: "/" + database, RawQuery: q.Encode()}
+	lctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	db, err := openBounded(u.String())
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return db.PingContext(lctx)
 }
 
 // unsubscribe drops the subscription: with the home's slot when the home answers, else
@@ -845,9 +948,14 @@ type Status struct {
 	// LocalSchema is this machine's database's schema version (a switch of the home
 	// takes only a machine at the home's)
 	LocalSchema int64 `json:"local_schema,omitempty"`
+	// Slot is the wal_status of the home's slot for the copy when it is about to be given
+	// up (unreserved) or was (lost: the copy is made anew), as the home last said it
+	Slot string `json:"slot,omitempty"`
 	// late: behind only because its beat is late (the subscription enabled, its tables
 	// copied): its slot's position may still show it caught up (Manager.withSlot)
 	late bool
+	// enabled: the subscription is on (Observe)
+	enabled bool
 }
 
 // The copy's states.
@@ -903,7 +1011,7 @@ func (c Copy) Observe(ctx context.Context, now time.Time) Status {
 	default:
 		found = true
 	}
-	s.Errors = errs.Int64
+	s.Errors, s.enabled = errs.Int64, enabled
 	if err := db.QueryRowContext(octx, `SELECT at FROM cluster_replica_beat WHERE id = 1`).Scan(&at); err == nil && at.Valid &&
 		at.Time.After(time.Unix(0, 0)) {
 		t := at.Time.UTC()
@@ -949,6 +1057,7 @@ const (
 	kindRefused                // this machine may not sign in, or is not the home's any more
 	kindUnsupported            // the home keeps no copies (an older home, or a database that cannot)
 	kindBusy                   // the slot is in use (a copy still follows on it)
+	kindAuth                   // the home refused the login: a password it no longer has (a re-made access), or a pg_hba rule
 	kindOther
 )
 
@@ -993,6 +1102,8 @@ func kindOf(err error) int {
 			return kindUnsupported
 		case pe.Code == "55006":
 			return kindBusy
+		case pe.Code == "28P01" || pe.Code == "28000":
+			return kindAuth
 		case strings.HasPrefix(string(pe.Code), "08") || strings.HasPrefix(string(pe.Code), "53") ||
 			strings.HasPrefix(string(pe.Code), "57P"):
 			return kindUnreachable

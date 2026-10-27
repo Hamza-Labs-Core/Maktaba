@@ -58,6 +58,8 @@ func TestEveryRouteIsAdminOnly(t *testing.T) {
 		{http.MethodGet, "/api/settings", ""},
 		{http.MethodPatch, "/api/settings", `{"search.fts_weight": 2}`},
 		{http.MethodPatch, "/api/settings", `{"home.name": "Living room"}`}, // renaming the home
+		// the home's usage data to Maktaba Cloud (Epic 16 story 16.5)
+		{http.MethodPatch, "/api/settings", `{"telemetry.share_server_data": true}`},
 		{http.MethodGet, "/api/settings/stt-backends", ""},
 		{http.MethodPost, "/api/settings/stt-test", `{"backend":"openai"}`},
 	} {

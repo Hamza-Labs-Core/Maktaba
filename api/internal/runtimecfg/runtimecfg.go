@@ -35,6 +35,10 @@ const (
 	// HomeName is the home's name for people (every signed-in user's app shows
 	// it); unset or empty, the computer's name.
 	HomeName = "home.name"
+	// ShareServerData is the admin's switch for the home's own anonymous usage
+	// data to Maktaba Cloud (Epic 16 story 16.5). Default off. Apps ask their
+	// own users; this never covers them.
+	ShareServerData = "telemetry.share_server_data"
 )
 
 // DefaultTTL is how long a read is cached.

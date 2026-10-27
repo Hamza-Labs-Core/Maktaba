@@ -1,13 +1,22 @@
-// Story 16.5: this device's telemetry decision and its pseudonym. Both live in
-// localStorage, per device: consent is not synced to the account (each device
-// has its own pseudonym, and its own say). The dated decision is the consent
-// record (the EU case).
+// Story 16.5: this app install's decision about sharing anonymous usage data
+// with Maktaba, and its install id. Both live in localStorage, per install:
+// consent is not synced to the account (each install has its own id, and its
+// user's own say), and the home's admin cannot give it. The dated decision is
+// the consent record (the EU case).
 
-const CONSENT_KEY = "mkt:telemetry:consent";
-const PSEUDONYM_KEY = "mkt:telemetry:pseudonym";
-// pseudonyms this device sent under before an opt-out: "Forget my device"
+const CONSENT_KEY = "mkt:usage:consent";
+const PSEUDONYM_KEY = "mkt:usage:install-id";
+// ids this install sent under before an opt-out: "Delete what this app sent"
 // deletes them too
-const PAST_KEY = "mkt:telemetry:past";
+const PAST_KEY = "mkt:usage:past";
+// before the rework the data went to the home's admin: a yes to that is not a yes
+// to Maktaba, so it is forgotten and the user is asked again
+const LEGACY_KEYS = [
+  "mkt:telemetry:consent",
+  "mkt:telemetry:pseudonym",
+  "mkt:telemetry:past",
+  "mkt:telemetry:queue",
+];
 
 export interface Consent {
   granted: boolean;
@@ -32,6 +41,11 @@ function write(key: string, value: string | null): void {
   }
 }
 
+/** forgetLegacyConsent drops the decision and ids from before the rework. */
+export function forgetLegacyConsent(): void {
+  for (const k of LEGACY_KEYS) write(k, null);
+}
+
 /** readConsent is the recorded decision, or null when the user has not decided. */
 export function readConsent(): Consent | null {
   const raw = read(CONSENT_KEY);
@@ -52,9 +66,9 @@ export function writeConsent(granted: boolean, now: Date = new Date()): Consent 
 
 const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
-/** makePseudonym is 16 base32 characters from 80 random bits. */
+/** makePseudonym is an install id: 24 base32 characters from 120 random bits. */
 export function makePseudonym(): string {
-  const bytes = new Uint8Array(10);
+  const bytes = new Uint8Array(15);
   crypto.getRandomValues(bytes);
   let bits = 0;
   let value = 0;
@@ -70,7 +84,7 @@ export function makePseudonym(): string {
   return out;
 }
 
-/** pseudonym is this device's current pseudonym, or null (not opted in, or forgotten). */
+/** pseudonym is this install's current id, or null (not opted in, or forgotten). */
 export function pseudonym(): string | null {
   return read(PSEUDONYM_KEY);
 }
@@ -86,9 +100,9 @@ export function ensurePseudonym(): string {
 }
 
 /**
- * retirePseudonym ends the current pseudonym (at opt-out): the next opt-in
- * makes a fresh one, so the two periods are not linked. The old one is kept
- * aside for "Forget my device".
+ * retirePseudonym ends the current id (at opt-out): the next opt-in makes a
+ * fresh one, so the two periods are not linked. The old one is kept aside for
+ * "Delete what this app sent".
  */
 export function retirePseudonym(): void {
   const p = pseudonym();
@@ -106,13 +120,13 @@ export function pastPseudonyms(): string[] {
   }
 }
 
-/** allPseudonyms are every pseudonym this device has sent under. */
+/** allPseudonyms are every id this install has sent under. */
 export function allPseudonyms(): string[] {
   const p = pseudonym();
   return p ? [...pastPseudonyms(), p] : pastPseudonyms();
 }
 
-/** dropPseudonyms forgets the given pseudonyms locally (after the server deleted them). */
+/** dropPseudonyms forgets the given ids locally (after the home took the deletes). */
 export function dropPseudonyms(done: string[]): void {
   const gone = new Set(done);
   write(PAST_KEY, JSON.stringify(pastPseudonyms().filter((p) => !gone.has(p))));

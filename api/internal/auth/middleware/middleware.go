@@ -178,12 +178,9 @@ func RequireAuth(next http.Handler) http.Handler {
 //   - /api/tv/remote/webhook (Epic 32.7) — Cloudflare Notifications cannot
 //     sign in; the handler checks the cf-webhook-auth secret and only
 //     asks the remote controller for a reconcile.
-//   - /api/telemetry, /api/telemetry/web-vitals and
-//     /api/telemetry/devices/{pseudonym} (Epic 16.7) — the opt-in telemetry
-//     sink is anonymous by design (a device pseudonym, never a user); the
-//     handler validates every field and rate-limits per IP.
 //
-// Deliberately NOT public: /api/system/sbom (internal artifact;
+// Deliberately NOT public: /api/telemetry/* (Epic 16.5's usage data: only a
+// signed-in app's batch is forwarded, though the user is never kept), /api/system/sbom (internal artifact;
 // only security.txt is mandated public), /api/auth/logout[-all]
 // (operate on an authenticated identity), and every /api/stream/*
 // route (each already enforces a principal in-handler). The api
@@ -230,13 +227,6 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// Epic 35 story 35.11 — every machine's identity (never a library or
 		// user name): the apps and a typed address recognise the cluster.
 		"/api/cluster/self": {},
-		// Epic 16 story 16.7 — the opt-in telemetry sink: a device that opted in
-		// posts under its pseudonym, never as a user, and "Forget my device"
-		// takes the pseudonym as its bearer. Rate-limited per IP in the handler;
-		// [telemetry] enabled = false stores nothing.
-		"/api/telemetry":            {},
-		"/api/telemetry/web-vitals": {},
-		"/api/telemetry/devices/*":  {},
 		// Epic 37 — a switch's notice of the new home for a machine that was off; it is
 		// sealed to that machine (only it opens it).
 		"/api/cluster/moved/*": {},

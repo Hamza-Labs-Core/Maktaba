@@ -18,6 +18,7 @@ import { AdminAccountDetail } from "./pages/admin/AccountDetail";
 import { AdminServers } from "./pages/admin/Servers";
 import { AdminAbuse } from "./pages/admin/Abuse";
 import { AdminAudit } from "./pages/admin/Audit";
+import { AdminUsage } from "./pages/admin/Usage";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -127,6 +128,7 @@ export function AppRoutes() {
             <Route path="servers" element={<AdminServers />} />
             <Route path="abuse" element={<AdminAbuse />} />
             <Route path="audit" element={<AdminAudit />} />
+            <Route path="usage" element={<AdminUsage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

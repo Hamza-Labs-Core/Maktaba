@@ -35,19 +35,7 @@ func licenseRefresher(store *subscriptions.Store, v *subscriptions.Verifier, db 
 		}
 		return subh.CloudLink{Claimed: true, ServerID: id.ServerID, Slug: id.Slug, CloudAPI: id.CloudAPI}
 	}
-	server := strings.TrimSpace(os.Getenv("MAKTABA_LICENSE_SERVER"))
-	if server == "" {
-		server = defaultLicenseServer
-	}
-	serverURL := func() string {
-		if c := cloud(); c.CloudAPI != "" {
-			return c.CloudAPI
-		}
-		if server == "off" {
-			return ""
-		}
-		return server
-	}
+	serverURL := cloudAPIURL(cloud)
 	manage := os.Getenv("MAKTABA_CLOUD_WEB_URL")
 	if manage == "" {
 		manage = cloudWebFromAPI(serverURL())
@@ -71,6 +59,39 @@ func licenseRefresher(store *subscriptions.Store, v *subscriptions.Verifier, db 
 		r.Event = func(ctx context.Context, event string, detail map[string]any) { audit(ctx, "", event, detail) }
 	}
 	return r, cloud, manage
+}
+
+// cloudAPIURL is Maktaba Cloud's API for this home: the cloud it is claimed in,
+// else MAKTABA_LICENSE_SERVER, else defaultLicenseServer; "" when that says
+// "off".
+func cloudAPIURL(cloud func() subh.CloudLink) func() string {
+	server := strings.TrimSpace(os.Getenv("MAKTABA_LICENSE_SERVER"))
+	if server == "" {
+		server = defaultLicenseServer
+	}
+	return func() string {
+		if c := cloud(); c.CloudAPI != "" {
+			return c.CloudAPI
+		}
+		if server == "off" {
+			return ""
+		}
+		return server
+	}
+}
+
+// telemetryURL is where usage data goes (Epic 16 story 16.5): Maktaba Cloud's
+// API as the license server finds it, unless MAKTABA_TELEMETRY_URL names
+// another ("off": nowhere; what waits ages out).
+func telemetryURL(cloud func() subh.CloudLink) func() string {
+	switch v := strings.TrimSpace(os.Getenv("MAKTABA_TELEMETRY_URL")); v {
+	case "":
+		return cloudAPIURL(cloud)
+	case "off":
+		return func() string { return "" }
+	default:
+		return func() string { return v }
+	}
 }
 
 // cloudWebFromAPI guesses the cloud web app from its API origin

@@ -1,15 +1,16 @@
-// Story 16.5: the device's telemetry queue. Events wait here (and in
+// Story 16.5: the app's usage-data queue. Events wait here (and in
 // localStorage, so a closed tab or a dropped network keeps them) until a flush
 // sends them, at most 100 a request. At most 1,000 wait: the oldest go first.
 // A send that fails on the network, a 5xx or a 429 is put back and retried with
-// exponential backoff (2 s, 4 s, ... 60 s); a 4xx means the server refused the
-// batch itself, which resending cannot fix, so it is dropped. Nothing here
+// exponential backoff (2 s, 4 s, ... 5 min), and so is one refused because no
+// one is signed in (401: it goes once someone is); any other 4xx means the
+// home refused the batch itself, which resending cannot fix, so it is dropped. Nothing here
 // awaits on the UI's path: enqueue only schedules.
 
 export type PayloadValue = string | number | boolean;
 
 export interface TelemetryEvent {
-  event_kind: string;
+  kind: string;
   payload: Record<string, PayloadValue>;
   ts: string;
 }
@@ -44,7 +45,7 @@ export class TelemetryQueue {
       max: QUEUE_MAX,
       batch: BATCH_MAX,
       flushMs: 30_000,
-      maxBackoffMs: 60_000,
+      maxBackoffMs: 300_000,
       ...opts,
     };
     this.events = this.load();
@@ -81,10 +82,10 @@ export class TelemetryQueue {
       this.failures = 0;
     } catch (e) {
       const status = (e as { status?: number } | null)?.status ?? 0;
-      if (status >= 400 && status < 500 && status !== 429) {
+      if (status >= 400 && status < 500 && status !== 429 && status !== 401) {
         // refused as it is: sending it again would be refused again
         this.failures = 0;
-        console.warn(`[telemetry] the server refused a batch (${status}); dropped`);
+        console.warn(`[usage data] the home refused a batch (${status}); dropped`);
       } else if (!this.stopped) {
         this.events = [...batch, ...this.events].slice(-this.opts.max);
         this.failures++;

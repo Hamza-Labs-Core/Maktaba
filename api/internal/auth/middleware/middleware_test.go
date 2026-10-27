@@ -376,8 +376,6 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 		"/api/cluster/sso/authorize", "/api/cluster/sso/start", "/api/cluster/sso/callback",
 		"/api/cluster/sso/exchange", "/api/cluster/delegate/introspect", "/api/cluster/delegate/signout",
 		"/internal/updates/restored",
-		// Epic 16 story 16.7: the opt-in telemetry sink (a device pseudonym, never a user)
-		"/api/telemetry", "/api/telemetry/web-vitals", "/api/telemetry/devices/*",
 	}
 	got := DefaultPublicAllowlist()
 	if len(got) != len(want) {
@@ -400,6 +398,7 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 	for _, path := range []string{
 		"/api/cluster", "/api/cluster/settings", "/api/cluster/nodes/x", "/api/cluster/nodes/x/approve",
 		"/api/cluster/nodes/x/revoke", "/api/users", "/api/settings", "/api/queues", "/api/admin/system/status",
+		"/api/telemetry/app", "/api/telemetry/server/forget",
 	} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("POST", path, nil))

@@ -93,15 +93,13 @@ type Publisher struct {
 	published bool
 	last      Machine
 	port      int
-	// register is zeroconf.Register (tests replace it)
+	// register is the package's register (tests replace it)
 	register func(instance, service, domain string, port int, txt []string) (*zeroconf.Server, error)
 }
 
 // NewPublisher returns a publisher that has announced nothing yet.
 func NewPublisher() *Publisher {
-	return &Publisher{register: func(instance, service, domain string, port int, txt []string) (*zeroconf.Server, error) {
-		return zeroconf.Register(instance, service, domain, port, txt, nil)
-	}}
+	return &Publisher{register: register}
 }
 
 // Publish announces m on port (the API port), replacing the TXT when only it changed.

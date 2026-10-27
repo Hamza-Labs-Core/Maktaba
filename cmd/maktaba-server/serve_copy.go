@@ -56,6 +56,15 @@ func resolveNodeCopy(cfg *config.Config, wholeMachine bool) (*nodeCopy, error) {
 	}
 	root := cfg.StateDir()
 	c := nodecopy.Copy{NodeID: n.NodeID, HomeDSN: supervisor.HomeDSN(n),
+		// node.json as it is at each call: an access the home re-made is the copy's at once
+		HomeDSNOf: func() string {
+			now := supervisor.NodeConfig()
+			if !now.Joined() || now.NodeID != n.NodeID {
+				return "" // another machine's, or none: the start's, until serve starts again
+			}
+			dsn, _ := supervisor.HomeDSNChecked(now)
+			return dsn
+		},
 		DB: pgbundle.Bundle{Data: filepath.Join(root, "postgres"), Keys: config.KeysDir(),
 			Backups: filepath.Join(root, "backups"), Port: port}}
 	nc := &nodeCopy{}

@@ -92,3 +92,35 @@ func TestPatchHomeName(t *testing.T) {
 		t.Fatalf("a cleared name reads as set: %q", n)
 	}
 }
+
+// The home's usage data to Maktaba Cloud is the admin's switch (Epic 16 story
+// 16.5): off unless set, an admin turns it on and off, and nobody else may
+// (TestEveryRouteIsAdminOnly holds the PATCH for everyone else). The sender's own
+// keys (the home's id, the last report's day) are not runtime settings.
+func TestShareServerDataSwitch(t *testing.T) {
+	db := runtimecfgtest.DB(t)
+	reader := runtimecfg.New(db)
+	h := &Handler{DB: db, Settings: reader}
+	r := chi.NewRouter()
+	h.Mount(r)
+	ctx := context.Background()
+	if on, _ := reader.Bool(ctx, runtimecfg.ShareServerData); on {
+		t.Fatal("on before the admin turned it on")
+	}
+	for _, v := range []string{"true", "false"} {
+		if rec := patch(t, r, `{"telemetry.share_server_data": `+v+`}`); rec.Code != 200 {
+			t.Fatalf("patch %s: %d %s", v, rec.Code, rec.Body.String())
+		}
+		if on, ok := reader.Bool(ctx, runtimecfg.ShareServerData); !ok || on != (v == "true") {
+			t.Fatalf("after %s the switch reads %v %v", v, on, ok)
+		}
+	}
+	if rec := patch(t, r, `{"telemetry.share_server_data": "on"}`); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("a non-bool: %d", rec.Code)
+	}
+	for _, k := range []string{"telemetry.server_install_id", "telemetry.server_last_report_day"} {
+		if rec := patch(t, r, `{"`+k+`": "x"}`); rec.Code != http.StatusForbidden {
+			t.Errorf("%s: %d", k, rec.Code)
+		}
+	}
+}
