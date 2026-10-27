@@ -192,7 +192,16 @@ func heldNodeConfig(path string) string {
 		}
 		underWay := writeUnderWay(path, fs.ErrNotExist)
 		if held == path && !underWay {
-			return ""
+			// a write that ended between the two looks (node.json missing in its gap,
+			// its lock gone by the second) left the file in place: "not joined" only
+			// when a second look at both says so too
+			if again := nodeConfigFile(path, os.ReadFile); isFile(again) {
+				return again
+			}
+			if !writeUnderWay(path, fs.ErrNotExist) {
+				return ""
+			}
+			underWay = true
 		}
 		if !time.Now().Before(deadline) {
 			if underWay {
