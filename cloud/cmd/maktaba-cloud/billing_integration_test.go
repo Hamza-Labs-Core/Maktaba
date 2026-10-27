@@ -54,7 +54,7 @@ func TestStripeCheckoutAndWebhooks(t *testing.T) {
 	stripe := e.client()
 	// A forged event is refused and recorded.
 	body, sig := signedEvent("evt_forged", "customer.subscription.created", time.Now(), subscriptionObj("sub_1", "cus_test_1", uid, "active", testPricePro, time.Now()))
-	if r := stripe.webhook(body, sig[:len(sig)-2]+"00"); r.code != 400 || r.errCode() != "invalid_signature" {
+	if r := stripe.webhook(body, forge(sig)); r.code != 400 || r.errCode() != "invalid_signature" {
 		t.Fatalf("forged: %d %s", r.code, r.body)
 	}
 	if e.count(`SELECT count(*) FROM abuse_signals WHERE kind = 'stripe_signature_forgery'`) != 1 {
@@ -170,4 +170,16 @@ func TestUsage(t *testing.T) {
 	if u["used_bytes"].(float64) != 6000 || u["plan"] != "pro" || u["limit_bytes"].(float64) != float64(100<<30) {
 		t.Fatalf("usage: %v", u)
 	}
+}
+
+// forge changes the signature's last hex digit to another one, so it never matches. (Setting
+// the last two digits to "00" left a signature that already ended in "00" valid: one run in
+// 256 failed.)
+func forge(sig string) string {
+	last := sig[len(sig)-1]
+	repl := byte('0')
+	if last == '0' {
+		repl = '1'
+	}
+	return sig[:len(sig)-1] + string(repl)
 }
