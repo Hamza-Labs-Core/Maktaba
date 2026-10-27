@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.desktop
 
 import androidx.compose.ui.unit.LayoutDirection
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StringsTest {
@@ -19,6 +20,14 @@ class StringsTest {
         assertEquals("تسجيل الدخول إلى البيت", Texts(Lang.Ar)["signin.title", "البيت"])
         assertEquals(Lang.Ar, Lang.of("ar"))
         assertEquals(Lang.En, Lang.of("en"))
+    }
+
+    @Test
+    fun everyErrorKindHasASentence() {
+        for (lang in Lang.entries) for (kind in com.hamzalabs.maktaba.core.api.ErrorKind.entries) {
+            val s = Texts(lang).sentence(kind)
+            assertTrue("$lang $kind: $s", s.isNotBlank() && !s.startsWith("error."))
+        }
     }
 
     @Test

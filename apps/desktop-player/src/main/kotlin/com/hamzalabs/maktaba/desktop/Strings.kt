@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.desktop
 
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.LayoutDirection
+import com.hamzalabs.maktaba.core.api.ErrorKind
 
 /** The player's languages: English, and Arabic laid out right to left. */
 enum class Lang(val code: String, val direction: LayoutDirection) {
@@ -27,6 +28,9 @@ class Texts(val lang: Lang) {
 }
 
 val LocalTexts = staticCompositionLocalOf { Texts(Lang.En) }
+
+/** What went wrong with the home, in a sentence (the Android apps' `ErrorKind.sentence`). */
+fun Texts.sentence(kind: ErrorKind): String = this["error." + kind.name.replaceFirstChar { it.lowercase() }]
 
 object Strings {
     val EN: Map<String, String> = mapOf(
@@ -68,7 +72,7 @@ object Strings {
         "signin.codeHint" to "On a device signed in to this home, open Sign in a device (or scan this QR code) and enter the code:",
         "signin.codeRenew" to "A new code appears when this one runs out.",
         "signin.codeUnsupported" to "This home has no sign-in by code. Use your password.",
-        "signin.restoreFailed" to "The home did not answer: {0}",
+        "signin.restoreFailed" to "Your kept sign-in could not be checked: {0}",
         "signin.otherHome" to "Choose another home",
 
         "nav.home" to "Home",
@@ -152,6 +156,13 @@ object Strings {
         "cloud.locked" to "Your account on that home is locked. Ask its admin.",
         "cloud.changePassword" to "That home wants you to change your password first: sign in there with it.",
         "cloud.signInHere" to "Sign in through Maktaba Cloud",
+        "error.notFound" to "We couldn't find what you were looking for.",
+        "error.notReady" to "Your home is still preparing this video. Try again in a moment.",
+        "error.signedOut" to "Your sign-in has ended. Sign in again to keep watching.",
+        "error.noAccess" to "Your account doesn't have access to this.",
+        "error.unreachable" to "Couldn't reach your home. Check that it is on and on the network.",
+        "error.busy" to "Your home is busy right now. Try again in a moment.",
+        "error.server" to "Something went wrong on your home. Try again in a moment.",
     )
 
     val AR: Map<String, String> = mapOf(
@@ -193,7 +204,7 @@ object Strings {
         "signin.codeHint" to "على جهاز مسجّل الدخول إلى هذا المنزل، افتح «تسجيل دخول جهاز» (أو امسح رمز QR هذا) وأدخل الرمز:",
         "signin.codeRenew" to "يظهر رمز جديد عند انتهاء صلاحية هذا الرمز.",
         "signin.codeUnsupported" to "لا يتيح هذا المنزل تسجيل الدخول برمز. استخدم كلمة المرور.",
-        "signin.restoreFailed" to "لم يُجب المنزل: {0}",
+        "signin.restoreFailed" to "تعذّر التحقق من تسجيل دخولك المحفوظ: {0}",
         "signin.otherHome" to "اختر منزلًا آخر",
 
         "nav.home" to "الرئيسية",
@@ -277,5 +288,12 @@ object Strings {
         "cloud.locked" to "حسابك في ذلك المنزل مقفل. اسأل مسؤوله.",
         "cloud.changePassword" to "يطلب ذلك المنزل أن تغيّر كلمة مرورك أولًا: سجّل الدخول فيه بها.",
         "cloud.signInHere" to "تسجيل الدخول عبر سحابة مكتبة",
+        "error.notFound" to "لم نعثر على ما تبحث عنه.",
+        "error.notReady" to "ما زال المنزل يجهّز هذا المقطع. حاول مجددًا بعد قليل.",
+        "error.signedOut" to "انتهت جلسة تسجيل الدخول. سجّل الدخول مجددًا لمتابعة المشاهدة.",
+        "error.noAccess" to "لا يملك حسابك صلاحية الوصول إلى هذا.",
+        "error.unreachable" to "تعذّر الوصول إلى منزلك. تأكد من أنه يعمل ومتصل بالشبكة.",
+        "error.busy" to "منزلك مشغول الآن. حاول مجددًا بعد قليل.",
+        "error.server" to "حدث خطأ في منزلك. حاول مجددًا بعد قليل.",
     )
 }
