@@ -4,6 +4,8 @@ import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.DeviceCode
 import com.hamzalabs.maktaba.core.api.DeviceSignIn
+import com.hamzalabs.maktaba.core.api.ErrorKind
+import com.hamzalabs.maktaba.core.api.errorKind
 import com.hamzalabs.maktaba.core.api.Me
 import com.hamzalabs.maktaba.core.api.User
 import kotlinx.coroutines.CancellationException
@@ -98,9 +100,9 @@ class AppSession(
     private val _phase = MutableStateFlow<Phase>(Phase.ChoosingHome)
     val phase: StateFlow<Phase> = _phase.asStateFlow()
 
-    private val _restoreProblem = MutableStateFlow<String?>(null)
+    private val _restoreProblem = MutableStateFlow<ErrorKind?>(null)
     /** Why the kept sign-in could not be checked (the home did not answer): try again, or sign in. */
-    val restoreProblem: StateFlow<String?> = _restoreProblem.asStateFlow()
+    val restoreProblem: StateFlow<ErrorKind?> = _restoreProblem.asStateFlow()
 
     /** The client for the current home (null while choosing one). */
     var client: ApiClient? = null
@@ -181,7 +183,7 @@ class AppSession(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (c === client) _restoreProblem.value = e.message ?: e.toString()
+                if (c === client) _restoreProblem.value = e.errorKind()
             }
         }
     }

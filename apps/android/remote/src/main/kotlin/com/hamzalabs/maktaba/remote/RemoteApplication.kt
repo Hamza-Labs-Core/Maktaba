@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.remote
 
 import android.app.Application
 import com.hamzalabs.maktaba.core.api.ClientHeader
+import com.hamzalabs.maktaba.core.diagnostics.CrashLog
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.PreferencesStore
 import com.hamzalabs.maktaba.core.session.keystoreTokens
@@ -12,6 +13,7 @@ import kotlinx.coroutines.MainScope
 class RemoteApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this) // an uncaught exception is kept on the device, without anything personal
         ClientHeader.init(this) // X-Maktaba-Client names this app (Epic 44)
     }
 

@@ -113,4 +113,18 @@
     <string name="approve_already">تمت الموافقة على هذا الرمز من قبل.</string>
     <string name="approve_cloud">لا يمكن لتسجيل دخول عبر مكتبة السحابية الموافقة على جهاز. سجّل الدخول على الجهاز الرئيسي.</string>
     <string name="approve_another">الموافقة على جهاز آخر</string>
+
+    <string name="error_playback_title">لا يمكن تشغيل هذا الفيديو الآن</string>
+    <string name="error_title">حدث خطأ ما</string>
+    <string name="error_not_found_video">لم يعد هذا الفيديو أو ملفه موجودًا على الجهاز الرئيسي.</string>
+    <string name="error_not_found">لم نعثر على ما تبحث عنه.</string>
+    <string name="error_not_ready">ما زال الجهاز الرئيسي يجهّز هذا الفيديو. حاول مجددًا بعد قليل.</string>
+    <string name="error_signed_out">انتهت جلسة تسجيل الدخول. سجّل الدخول مجددًا لمتابعة المشاهدة.</string>
+    <string name="error_no_access">لا يملك حسابك صلاحية الوصول إلى هذا.</string>
+    <string name="error_unreachable">تعذّر الوصول إلى الجهاز الرئيسي. تأكد من أنه يعمل ومتصل بالشبكة.</string>
+    <string name="error_busy">الجهاز الرئيسي مشغول الآن. حاول مجددًا بعد قليل.</string>
+    <string name="error_server">حدث خطأ في الجهاز الرئيسي. حاول مجددًا بعد قليل.</string>
+    <string name="error_back">رجوع</string>
+    <string name="error_sign_in_again">سجّل الدخول مجددًا</string>
+    <string name="error_details">التفاصيل</string>
 </resources>
