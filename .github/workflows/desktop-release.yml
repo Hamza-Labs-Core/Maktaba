@@ -24,6 +24,18 @@
 #                (Epic 39): usr/share/maktaba/server built by tools/release/linux-app/payload.sh
 #                (no ffmpeg: the distribution's; the .deb and the .rpm depend on it)
 #
+# THE PLAYERS (Epic 42.4)
+# -----------------------
+# Maktaba Player for Windows and Linux (apps/desktop-player, Compose for Desktop): the
+# `player` legs build Maktaba-Player_<v>_x64.msi (a current-user install), and
+# maktaba-player_<v>_<amd64|arm64>.deb + maktaba-player-<v>.<x86_64|aarch64>.rpm, each with
+# its own Java runtime. They are signed with the same updater key as the server apps
+# (`tauri signer sign --app-version`: the version is in the signed trusted comment) and get
+# their own feed, latest-player.json (updater-feed --family player), whose platform keys
+# (windows-x86_64-player, linux-x86_64-player-deb, ...) no server app reads, so a player
+# never takes a server bundle nor the other way round. (The Mac's player is the Apple app,
+# apps/apple.) A release is marked the latest only once both feeds have every platform.
+#
 # NOTHING IS PUBLIC BEFORE IT IS CHECKED
 # --------------------------------------
 # The tag-order guard runs first (_tag-guard.yml). Each leg builds (`tauri build`:
@@ -550,6 +562,136 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # The desktop Player for Windows and Linux (Epic 42.4): build, check, name and sign; the
+  # publish job attaches what passed and writes latest-player.json.
+  player:
+    name: player (${{ matrix.label }})
+    needs: [guard]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows
+            os: windows-latest
+            tasks: packageMsi
+          - label: linux-x86_64
+            os: ubuntu-22.04
+            tasks: packageDeb packageRpm
+          - label: linux-aarch64
+            os: ubuntu-22.04-arm
+            tasks: packageDeb packageRpm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      SIGN: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Gradle wrapper is Gradle's
+        working-directory: apps/desktop-player
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's#.*/gradle-\(.*\)-bin.zip#\1#p' gradle/wrapper/gradle-wrapper.properties)
+          want=$(curl -fsSL "https://services.gradle.org/distributions/gradle-${version}-wrapper.jar.sha256")
+          got=$(sha256sum gradle/wrapper/gradle-wrapper.jar | cut -d' ' -f1)
+          [ "${want}" = "${got}" ] || { echo "::error::the Gradle wrapper jar is not Gradle's ${version}"; exit 1; }
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Packaging tools (rpm)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm fakeroot
+
+      # the version from the tag (the installers take its numeric core) and the apps' updater
+      # key, against which the player checks its updates
+      - name: Build and check the installers
+        working-directory: apps/desktop-player
+        env:
+          TAG: ${{ github.ref_name }}
+          UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          args=(-Pmaktaba.version="${TAG#v}")
+          [ -z "${UPDATER_PUBKEY}" ] || args+=(-Pmaktaba.updaterPubkey="${UPDATER_PUBKEY}")
+          ./gradlew --no-daemon --stacktrace :client:test test ${{ matrix.tasks }} "${args[@]}"
+          out=build/compose/binaries/main
+          if [ "$RUNNER_OS" = Linux ]; then
+            dpkg-deb -c "$out"/deb/*.deb | grep -q '/bin/maktaba-player$'
+            dpkg-deb -c "$out"/deb/*.deb | grep -q '/lib/runtime/'
+            rpm -qip "$out"/rpm/*.rpm | grep -q '^Name *: maktaba-player'
+          fi
+
+      # Named as the feed's rules know them (tools/release/updaterfeed: playerRules).
+      - name: Stage the checked installers
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          v="${TAG#v}"
+          out=apps/desktop-player/build/compose/binaries/main
+          mkdir -p out/player
+          case "$RUNNER_OS" in
+            Windows)
+              cp "$out"/msi/*.msi "out/player/Maktaba-Player_${v}_x64.msi"
+              ;;
+            Linux)
+              deb_arch=amd64 rpm_arch=x86_64
+              [ "$(uname -m)" != aarch64 ] || { deb_arch=arm64; rpm_arch=aarch64; }
+              cp "$out"/deb/*.deb "out/player/maktaba-player_${v}_${deb_arch}.deb"
+              cp "$out"/rpm/*.rpm "out/player/maktaba-player-${v}.${rpm_arch}.rpm"
+              ;;
+          esac
+          ls -l out/player
+
+      - name: Set up pnpm
+        if: ${{ env.SIGN == 'true' }}
+        uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - name: Set up Node
+        if: ${{ env.SIGN == 'true' }}
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+
+      # the same updater key and tool as the server apps' bundles; without the key the
+      # installers are attached unsigned and no latest-player.json is written
+      - name: Sign the installers for the updater
+        env:
+          TAG: ${{ github.ref_name }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
+            echo "::notice::no TAURI_SIGNING_PRIVATE_KEY: the players are not signed (no latest-player.json)"
+            exit 0
+          fi
+          (cd apps/desktop && pnpm install --frozen-lockfile)
+          for f in out/player/*; do
+            (cd apps/desktop && pnpm exec tauri signer sign --app-version "${TAG#v}" "${GITHUB_WORKSPACE}/${f}")
+          done
+          ls -l out/player
+
+      - name: Hand them to the publish job
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: player-${{ matrix.label }}
+          path: out/player/*
+          if-no-files-found: error
+          retention-days: 7
+
   # Only now is anything public: every leg's checked files are attached to the
   # tag's release, then latest.json is written once, over all of them (no two legs
   # race on it, and it is made from the files, not from a listing of the release).
@@ -564,7 +706,7 @@ jobs:
   # job writes the feed again from every leg's kept files and marks the release then.
   publish:
     name: publish the checked bundles
-    needs: [guard, desktop]
+    needs: [guard, desktop, player]
     # not for a tag the guard refused (no leg ran)
     if: ${{ !cancelled() && needs.guard.result == 'success' }}
     runs-on: ubuntu-22.04
@@ -584,6 +726,13 @@ jobs:
         with:
           pattern: desktop-*
           path: staged
+          merge-multiple: true
+
+      - name: Download the checked players
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: player-*
+          path: staged-player
           merge-multiple: true
 
       - name: Attach them to the release, then write latest.json
@@ -617,10 +766,30 @@ jobs:
             # the feed may change on a published release, as late platforms land
             tools/release/release-assets.sh upload "$TAG" --replace latest.json latest.json
           fi
+          # the players (Epic 42.4): their own files and feed, latest-player.json
+          player_feed=0
+          if [ -d staged-player ] && [ -n "$(ls -A staged-player)" ]; then
+            tools/release/release-assets.sh adopt "$TAG" staged-player
+            tools/release/release-assets.sh upload "$TAG" staged-player/*
+            (cd tools/release && go run ./cmd/updater-feed --family player --dir ../../staged-player \
+              --repo "$GITHUB_REPOSITORY" --tag "$TAG" --out ../../latest-player.json --require player "${check[@]}") || player_feed=$?
+            [ "$player_feed" = 0 ] || [ "$player_feed" = 3 ] || exit "$player_feed"
+            if [ -f latest-player.json ]; then
+              cat latest-player.json
+              tools/release/release-assets.sh upload "$TAG" --replace latest-player.json latest-player.json
+            fi
+          else
+            echo "::warning::no player leg staged an installer"
+            player_feed=3
+          fi
           # published once complete (release.yml's signed set, the server apps in the feed);
           # the latest only as the highest stable version with every desktop platform
           tools/release/release-assets.sh publish "$TAG"
           if [ "$feed" = 3 ]; then
             echo "::error::not every desktop leg published: $TAG is not marked the latest release (rerun the failed legs: gh run rerun $GITHUB_RUN_ID --failed)"
+            exit 1
+          fi
+          if [ "$player_feed" = 3 ] && [ "$REQUIRE_FEED" = true ]; then
+            echo "::error::not every player leg published: $TAG is not marked the latest release (rerun the failed legs: gh run rerun $GITHUB_RUN_ID --failed)"
             exit 1
           fi
