@@ -56,15 +56,20 @@ type ManifestHandler struct {
 	FirstWrite time.Duration
 }
 
-// writtenSoon waits up to FirstWrite for path while sub's transcode runs: true
-// once it is on disk.
-func (h *ManifestHandler) writtenSoon(r *http.Request, path, sub string) bool {
+// writtenSoon waits up to FirstWrite for path (under base) while sub's transcode
+// runs: the path, read-safe, once it is on disk ("" when it is not).
+func (h *ManifestHandler) writtenSoon(r *http.Request, base, path, sub string) string {
 	if h.FirstWrite <= 0 {
-		return false
+		return ""
+	}
+	// the path is checked again here, right before the filesystem is asked
+	path, err := httpx.EnsureUnder(base, path)
+	if err != nil {
+		return ""
 	}
 	id, err := uuid.Parse(sub)
 	if err != nil {
-		return false
+		return ""
 	}
 	deadline := time.Now().Add(h.FirstWrite)
 	for tick := 0; time.Now().Before(deadline); tick++ {
@@ -72,19 +77,19 @@ func (h *ManifestHandler) writtenSoon(r *http.Request, path, sub string) bool {
 			row, ok, err := h.Sessions.Get(r.Context(), id)
 			if err != nil || !ok || row.Transcoder == nil || !row.Transcoder.Active() ||
 				row.TranscodeCut() || row.TranscodeFinished() {
-				return false
+				return ""
 			}
 		}
 		select {
 		case <-r.Context().Done():
-			return false
+			return ""
 		case <-time.After(100 * time.Millisecond):
 		}
 		if _, err := os.Stat(path); err == nil {
-			return true
+			return path
 		}
 	}
-	return false
+	return ""
 }
 
 // readFailed logs a failed read of a session's playlist or segment that is
@@ -135,8 +140,10 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 		path = filepath.Join(dir, "master.m3u8")
 	}
 	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) && h.writtenSoon(r, path, sub) {
-		data, err = os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if p := h.writtenSoon(r, dir, path, sub); p != "" {
+			data, err = os.ReadFile(p)
+		}
 	}
 	if err != nil {
 		h.readFailed(r, path, err)
@@ -201,8 +208,10 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 		return
 	}
 	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) && h.writtenSoon(r, path, sub) {
-		data, err = os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if p := h.writtenSoon(r, base, path, sub); p != "" {
+			data, err = os.ReadFile(p)
+		}
 	}
 	if err != nil {
 		h.readFailed(r, path, err)
