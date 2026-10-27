@@ -10,6 +10,11 @@ struct RemoteApp: App {
     @State private var session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.remote")
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.system
 
+    init() {
+        // a crash at an earlier launch is logged and kept on this device
+        CrashReports.shared.start()
+    }
+
     var body: some Scene {
         WindowGroup {
             SessionGate(session: session, title: "Maktaba Remote") { user, client in

@@ -71,7 +71,7 @@ struct HomeView: View {
             }
             problem = nil
         } catch {
-            problem = HomeFailure(error)
+            problem = HomeFailure.shown("load home rails", error) ?? problem
         }
         loading = false
     }
@@ -115,11 +115,37 @@ struct ErrorBanner: View {
     let failure: HomeFailure
     let retry: () -> Void
 
+    @Environment(\.appSession) private var session
+
     var body: some View {
-        HomeErrorView(failure, video: false) { _ in retry() }
-            .buttonStyle(.gold)
-            .foregroundStyle(Theme.text)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 60)
+        HomeErrorView(failure, video: false, actions: Self.actions(failure)) { action in
+            switch action {
+            case .signInAgain: session?.signedOut()
+            case .chooseAnotherHome: session?.switchHome()
+            default: retry()
+            }
+        }
+        .buttonStyle(.gold)
+        .foregroundStyle(Theme.text)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 60)
+    }
+
+    /// A list's actions: the failure's own (Sign in again after a 401, another home when
+    /// this one does not answer), Try again where waiting may help; never Back (a tab has
+    /// nowhere to go back to).
+    static func actions(_ f: HomeFailure) -> [ErrorAction] {
+        let own = f.actions.filter { $0 != .back }
+        return own.isEmpty ? [.tryAgain] : own
+    }
+}
+
+extension HomeFailure {
+    /// What a TV screen shows for a failed load: nil when there is nothing to say (the
+    /// screen moved on). Logged.
+    static func shown(_ what: StaticString, _ error: Error) -> HomeFailure? {
+        guard !Log.isCancellation(error) else { return nil }
+        Log.failure(what, error)
+        return HomeFailure(error)
     }
 }

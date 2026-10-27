@@ -83,7 +83,7 @@ struct VideoPage: View {
             video = try await client.video(id)
             problem = nil
         } catch {
-            problem = HomeFailure(error)
+            problem = HomeFailure.shown("load video", error) ?? problem
         }
     }
 

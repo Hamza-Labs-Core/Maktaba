@@ -197,7 +197,8 @@ public struct ConnectStrings: Sendable {
     /// Why an address did not lead to a home.
     public func reach(_ f: ReachFailure) -> String {
         switch f {
-        case let .unreachable(why): text(.unreachable, why)
+        // the app's sentence, not the system's English words for the failure
+        case .unreachable: ErrorStrings(language).text(.unreachable)
         case .notAHome: text(.notAHome)
         case .otherHome: text(.otherHome)
         }
