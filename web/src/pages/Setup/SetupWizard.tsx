@@ -2,7 +2,7 @@
 // story 38.6 on Windows and Linux; the words follow the platform).
 //
 // welcome (this machine or another Maktaba) → what will run + disk/RAM
-// check → admin account → library folders / NAS path map → models (Hugging
+// check → where its data goes (which disk) → admin account → library folders / NAS path map → models (Hugging
 // Face token for the gated Cohere model, or the NAS copy) → optional
 // Plex sign-in → on a Mac, the permissions macOS keeps until you allow them
 // (Full Disk Access, Local Network, …) → install (pipeline venv, the models download, finish) →
@@ -40,11 +40,13 @@ import {
   type SetupApi,
   type StepError,
   type StepProgress,
+  type StorageChoice,
 } from "../../lib/desktopSetup";
+import type { StorageDisk } from "../../lib/serverSettingsApi";
 import { ServerStarting } from "./ServerStarting";
 import { PermissionList, usePermissions } from "../../components/MacPermissions/PermissionList";
 import { tauriPermissionsApi, type PermissionsApi } from "../../lib/macPermissions";
-import { codedText, type Translate } from "./codedText";
+import { codedText, diskProblem, type Translate } from "./codedText";
 import { platformWords } from "./platform";
 
 export const PLEX_POLL_MS = 3000;
@@ -72,6 +74,7 @@ const EXAMPLE_PATHS: Record<Platform, { roots: string; map: string; nas: string 
 export type Screen =
   | "welcome"
   | "check"
+  | "storage"
   | "admin"
   | "libraries"
   | "models"
@@ -80,11 +83,12 @@ export type Screen =
   | "install"
   | "move"
   | "starting";
-const ORDER: Screen[] = ["check", "admin", "libraries", "models", "plex", "install"];
+const ORDER: Screen[] = ["check", "storage", "admin", "libraries", "models", "plex", "install"];
 /** A Mac asks for its permissions before the server first starts (a grant
  * reaches only the processes started after it). */
 const MAC_ORDER: Screen[] = [
   "check",
+  "storage",
   "admin",
   "libraries",
   "models",
@@ -302,6 +306,8 @@ export function SetupWizard({
         );
       case "check":
         return <Check {...props} onChecked={(r) => setSecondListen(r.second_listen?.runs)} />;
+      case "storage":
+        return <Storage {...props} />;
       case "admin":
         return <Admin {...props} />;
       case "libraries":
@@ -663,6 +669,143 @@ function Check({
             </div>
           )}
         </>
+      )}
+    </Frame>
+  );
+}
+
+/** The disk a folder is on: the one whose mount point starts its path the longest way. */
+export function diskOf(disks: StorageDisk[], dir: string): StorageDisk | undefined {
+  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const d = norm(dir);
+  let best: StorageDisk | undefined;
+  for (const disk of disks) {
+    const m = norm(disk.mount);
+    const under = m === "" ? d.startsWith("/") : d === m || d.startsWith(`${m}/`);
+    if (under && (!best || norm(best.mount).length < m.length)) best = disk;
+  }
+  return best;
+}
+
+/** Where Maktaba keeps its data (the database, backups, models, caches):
+ * preset to a folder on the disk with the most room; another disk, or a
+ * folder typed in. A disk too small or not fit for it blocks Next. */
+function Storage({ api, step, platform, next, back }: StepProps) {
+  const { t } = useI18n();
+  const words = platformWords(t, platform);
+  const [res, setRes] = useState<StorageChoice | null>(null);
+  const [loadError, setLoadError] = useState<StepError | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [dir, setDir] = useState("");
+  const s = useStep(api);
+  useEffect(() => {
+    let alive = true;
+    setLoadError(null);
+    api
+      .runStep<StorageChoice>("storage", { check_only: true })
+      .then((r) => {
+        if (!alive) return;
+        setRes(r);
+        setDir(r.suggested || r.current);
+      })
+      .catch((e) => alive && setLoadError(asError(e)));
+    return () => {
+      alive = false;
+    };
+  }, [api, attempt]);
+  const disks = res?.disks ?? [];
+  const chosen = dir.trim();
+  const disk = chosen ? diskOf(disks, chosen) : undefined;
+  // what the app can tell before the step does (the step checks again)
+  const tooSmall = !!res && !!disk && disk.free_bytes < res.need_bytes;
+  const unfit = !!disk && !disk.suitable;
+  const small = !!res && !!disk && !tooSmall && disk.free_bytes < res.comfortable_bytes;
+  const blocked = !chosen || tooSmall || unfit;
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (blocked) return;
+    if (await s.run("storage", { data_dir: chosen })) next();
+  };
+  return (
+    <Frame
+      title={t("setup.storage.title")}
+      step={step}
+      error={loadError ?? s.formError}
+      onBack={back}
+      next={
+        loadError ? (
+          <Button type="button" onClick={() => setAttempt((n) => n + 1)}>
+            {t("common.retry")}
+          </Button>
+        ) : undefined
+      }
+    >
+      {!res && !loadError && <p role="status">{t("setup.storage.reading", words)}</p>}
+      {res && (
+        <form className="mkt-setup__form" onSubmit={submit}>
+          <p>{t("setup.storage.intro", words)}</p>
+          <fieldset className="mkt-setup__radios">
+            <legend className="mk-field__label">{t("setup.storage.disks")}</legend>
+            {disks.map((d) => (
+              <label key={d.mount}>
+                <input
+                  type="radio"
+                  name="setup-storage-disk"
+                  checked={disk?.mount === d.mount}
+                  disabled={!d.suitable}
+                  onChange={() => setDir(d.suggested_dir)}
+                />{" "}
+                <bdi>{d.name || d.mount}</bdi>{" "}
+                <span className="mkt-setup__note" dir="ltr">
+                  {t("setup.storage.free", {
+                    free: formatBytes(d.free_bytes),
+                    total: formatBytes(d.total_bytes),
+                  })}
+                </span>
+                {!d.suitable && (
+                  <span className="mkt-setup__note"> {diskProblem(t, d.problem)}</span>
+                )}
+              </label>
+            ))}
+          </fieldset>
+          <Input
+            label={t("setup.storage.folder")}
+            description={t("setup.storage.folderNote")}
+            dir="ltr"
+            spellCheck={false}
+            autoComplete="off"
+            value={dir}
+            onChange={(e) => setDir(e.target.value)}
+            error={s.fieldError("data_dir")}
+            required
+          />
+          {disk && tooSmall && (
+            <p className="mkt-setup__warn" role="alert">
+              {t("setup.storage.tooSmall", {
+                free: formatBytes(disk.free_bytes),
+                need: formatBytes(res.need_bytes),
+              })}
+            </p>
+          )}
+          {disk && unfit && !tooSmall && (
+            <p className="mkt-setup__warn" role="alert">
+              {diskProblem(t, disk.problem)}
+            </p>
+          )}
+          {disk && small && (
+            <p className="mkt-setup__warn">
+              {t("setup.storage.small", {
+                free: formatBytes(disk.free_bytes),
+                comfortable: formatBytes(res.comfortable_bytes),
+              })}
+            </p>
+          )}
+          <div className="mkt-setup__actions">
+            <Button type="submit" loading={s.busy} disabled={blocked}>
+              {t("setup.next")}
+            </Button>
+          </div>
+        </form>
       )}
     </Frame>
   );

@@ -35,6 +35,12 @@ func bundledPostgres(ctx context.Context, cfg *config.Config, prepare bool) (*pg
 	if n.Joined() {
 		return nil, nil
 	}
+	// a data folder on a disk that is not connected: never a new cluster in its place
+	// (Epic 36 story 36.15; a whole machine's serve waits for it first, storageGate)
+	if path, missing := cfg.StorageMissing(); missing {
+		return nil, fmt.Errorf("the disk that holds Maktaba's data (%s) is not connected: connect it and start "+
+			"Maktaba again (no new database is made in its place)", path)
+	}
 	exe, _ := os.Executable()
 	b, ok, err := pgbundle.Resolve(*cfg, exe)
 	if err != nil {

@@ -6,7 +6,6 @@ package main
 // token is required on every route.
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,12 +14,14 @@ import (
 	"path/filepath"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
-// configAdmin serves /config/settings and /config/restart.
+// configAdmin serves /config/settings, /config/restart and /config/storage
+// (serve_storage.go).
 type configAdmin struct {
 	// path is the server.toml serve reads.
 	path string
@@ -30,6 +31,8 @@ type configAdmin struct {
 	// restart asks the launcher to start serve again (nil: no launcher).
 	restart func() error
 	checks  config.Checks
+	// reload asks serve to stop every process and start again (a storage move)
+	reload func()
 
 	mu sync.Mutex // one write at a time
 }
@@ -37,7 +40,8 @@ type configAdmin struct {
 // newConfigAdmin: restarts go through the launcher's restart request when serve
 // runs under it (the file watchLauncher takes).
 func newConfigAdmin(cfg config.Config, token, releaseDir string) *configAdmin {
-	c := &configAdmin{path: config.Path(), running: config.EditableOf(cfg), token: token}
+	c := &configAdmin{path: config.Path(), running: config.EditableOf(cfg), token: token,
+		reload: func() { time.AfterFunc(answerFirst, requestReload) }}
 	if os.Getenv(layout.EnvLauncher) == "1" && releaseDir != "" {
 		l := layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir)))))
 		c.restart = l.RequestRestart
@@ -59,8 +63,11 @@ func (c *configAdmin) adminHandler(base http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", base)
 	mux.HandleFunc("/config/", func(w http.ResponseWriter, r *http.Request) {
-		if c.token == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+c.token)) != 1 {
+		if !c.authorized(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if c.storageRoutes(w, r) {
 			return
 		}
 		switch {

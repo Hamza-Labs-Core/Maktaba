@@ -727,7 +727,8 @@ var haltCodes = map[string]bool{"db_restored": true, "db_restore_failed": true, 
 // dump and migrations, the Python environment being built. While they make progress the
 // release is starting, not unhealthy (the watch bounds them: updater.pendingCap).
 var startingCodes = map[string]bool{"db_waiting": true, "db_dumping": true, "db_migrating": true,
-	"db_checking": true, "db_restoring": true, "venv_waiting": true, "venv_building": true}
+	"db_checking": true, "db_restoring": true, "venv_waiting": true, "venv_building": true,
+	"storage_waiting": true, "storage_moving": true}
 
 // unmeasuredCodes are the start steps whose progress cannot be seen while they work: a
 // migration's statement (an index built for an hour on a large home), a dump put back.

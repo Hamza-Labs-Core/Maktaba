@@ -5,6 +5,8 @@
 // admin starts here (when the server runs under the launcher) and watches: the
 // page waits for the server to answer again, then reloads. The reachability
 // table says which library folders this machine reaches through the saved map.
+// Below it, where Maktaba keeps its own data and moving it to another disk
+// (DataLocationSection).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
@@ -29,6 +31,7 @@ import {
   type ServerSettingsDoc,
 } from "../../lib/serverSettingsApi";
 import { HelpLink } from "../../help/HelpLink";
+import { DataLocationSection } from "./DataLocationSection";
 import "../../styles/libraryAdmin.css";
 
 /** How often the page looks whether the restarted server answers, and for how long. */
@@ -465,6 +468,8 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
       </form>
 
       <Reachability rows={doc.reachability} />
+
+      <DataLocationSection pollMs={pollMs} />
 
       <Modal
         open={phase === "confirm"}

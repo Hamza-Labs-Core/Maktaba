@@ -12,6 +12,17 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Maktaba's data on another disk (Epic 36 story 36.15).** First-time setup has a **Where
+  Maktaba keeps its data** screen (the disks with their free space, the roomiest one offered, a
+  warning when it is small) that sets `[server] data_dir` before anything is made. Later,
+  `maktaba-server storage show` and `maktaba-server storage move <dir> [--dry-run]` (Maktaba
+  stopped), or **Settings → Storage & discovery → Move to another disk** (admins; the server stops,
+  copies, verifies and starts again), copy the database, backups, models and caches to another
+  local disk, verify the copy (the database starts on it), point server.toml there and keep the
+  old folders as `*.moved-<stamp>`. A cut-short move resumes. A start whose chosen disk is not
+  connected waits and says so (`storage_waiting`) and never makes a new empty database in its
+  place. API: `GET /api/server/storage`, `GET /api/server/storage/disks`,
+  `POST /api/server/storage/check`, `POST /api/server/storage/move` (admin only, audited).
 - **Libraries you can manage, browse and pin (Epic 45).** A **Home** page (`/`) across the
   libraries you may see: Continue Watching, Recently Added, Recently Watched, Live TV on now,
   and a row per pinned library. **Libraries** (`/library`) shows each library as a card with

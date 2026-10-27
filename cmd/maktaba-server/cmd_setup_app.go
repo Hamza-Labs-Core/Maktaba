@@ -368,6 +368,12 @@ func (a *appSetup) Run(ctx context.Context) error {
 		return err
 	}
 
+	// where the data goes, before anything is made there (Epic 36 story 36.15)
+	a.printf("\n%s\n", a.t.get("setup.storage.title"))
+	if err := a.storage(ctx); err != nil {
+		return err
+	}
+
 	a.printf("\n%s\n", a.t.get("setup.admin.title"))
 	a.say("setup.admin.intro")
 	if _, err := a.step(ctx, "admin", a.askAdmin); err != nil {
@@ -437,6 +443,59 @@ func (a *appSetup) Run(ctx context.Context) error {
 	}
 	a.printf("\n")
 	a.say("terminal.done", "url", fin.WebURL)
+	return nil
+}
+
+// storage shows the disks with their free space and asks where the data goes,
+// the folder on the disk with the most room offered (the storage step).
+func (a *appSetup) storage(ctx context.Context) error {
+	_, answered := a.answers["storage"]
+	if len(a.answers) > 0 && !answered {
+		return nil // an answers file without one keeps the default place
+	}
+	a.say("setup.storage.intro", "machine", a.t.get("setup.machine.linux"))
+	suggested := ""
+	if !answered {
+		res, err := a.run(ctx, "storage", map[string]any{"check_only": true}, nil)
+		if err != nil {
+			return wrapStep("storage", err)
+		}
+		var c storageChoice
+		if err := json.Unmarshal(res, &c); err != nil {
+			return wrapStep("storage", err)
+		}
+		suggested = c.Suggested
+		for _, d := range c.Disks {
+			mark := " "
+			if strings.HasPrefix(c.Suggested, d.SuggestedDir) || c.Suggested == d.SuggestedDir {
+				mark = "*"
+			}
+			free := a.t.get("setup.storage.free", "free", humanBytes(d.FreeBytes), "total", humanBytes(d.TotalBytes))
+			a.printf(" %s %s (%s): %s\n", mark, d.Mount, d.Name, free)
+		}
+	}
+	res, err := a.step(ctx, "storage", func(string) (any, error) {
+		dir, err := a.ask.line(a.t.get("setup.storage.folder"), suggested)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"data_dir": dir}, nil
+	})
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Warnings []struct {
+			Params map[string]any `json:"params"`
+		} `json:"warnings"`
+	}
+	_ = json.Unmarshal(res, &out)
+	for _, w := range out.Warnings {
+		free, _ := w.Params["free_bytes"].(float64)
+		comfortable, _ := w.Params["comfortable_bytes"].(float64)
+		a.printf("  %s\n", a.t.get("setup.storage.small", "free", humanBytes(uint64(free)),
+			"comfortable", humanBytes(uint64(comfortable))))
+	}
 	return nil
 }
 

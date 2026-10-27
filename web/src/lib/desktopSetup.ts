@@ -6,6 +6,7 @@
 // (specs/epics/36-mac-app/contract-setup.md). The screens take a
 // SetupApi so tests can drive them with a fake.
 import { isDesktop } from "./desktop";
+import type { StorageDisk } from "./serverSettingsApi";
 
 /** What the main window should show, from the shell's saved mode. */
 export type AppTarget =
@@ -88,6 +89,7 @@ export function isStepError(e: unknown): e is StepError {
 export type StepName =
   | "status"
   | "check"
+  | "storage"
   | "admin"
   | "libraries"
   | "models"
@@ -96,6 +98,19 @@ export type StepName =
   | "llm"
   | "finish"
   | "adopt";
+
+/** Where Maktaba will keep its data: the storage step's check_only answer. */
+export interface StorageChoice {
+  /** the data folder now */
+  current: string;
+  default: string;
+  /** below this a disk cannot hold Maktaba; below comfortable_bytes it is small */
+  need_bytes: number;
+  comfortable_bytes: number;
+  disks: StorageDisk[];
+  /** a folder on the disk with the most room */
+  suggested: string;
+}
 
 /** A Maktaba this PC runs outside the app (the adopt step, Epic 38 story 38.13). */
 export interface AdoptSource {
