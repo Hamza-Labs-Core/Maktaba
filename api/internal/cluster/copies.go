@@ -554,8 +554,9 @@ func (c *Copies) dropLost(ctx context.Context) {
 					c.unreservedTold = map[string]bool{}
 				}
 				c.unreservedTold[s.name] = true
-				c.log().Warn("cluster: a machine's copy is about to fall too far behind: the home will give up on it "+
-					"and it is copied anew when the machine is back", "slot", s.name, "event", "cluster_copy_unreserved")
+				c.log().Warn("cluster: a machine's copy is about to fall too far behind", "slot", s.name,
+					"then", "the home gives up on it and it is copied anew when the machine is back",
+					"event", "cluster_copy_unreserved")
 			}
 			continue
 		}
@@ -564,8 +565,8 @@ func (c *Copies) dropLost(ctx context.Context) {
 				"slot", s.name, "err", err, "event", "cluster_copy_lost_failed")
 			continue
 		}
-		c.log().Warn("cluster: a machine's copy fell too far behind (its slot lost the changes it had not applied); "+
-			"it is copied anew when the machine is back", "slot", s.name, "event", "cluster_copy_lost")
+		c.log().Warn("cluster: a machine's copy fell too far behind; it is copied anew when the machine is back",
+			"slot", s.name, "why", "its slot lost the changes it had not applied", "event", "cluster_copy_lost")
 		if m := copySlotName.FindStringSubmatch(s.name); m != nil {
 			_, _ = c.DB.ExecContext(lctx, `UPDATE cluster_nodes SET replica = COALESCE(replica, '{}'::jsonb) ||
 			    jsonb_build_object('state', 'rebuilding', 'detail', $2::text, 'slot', 'lost'),
