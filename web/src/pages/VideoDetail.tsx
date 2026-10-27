@@ -13,7 +13,7 @@
 // Epic 45 Phase 2: the header's VideoActions (resume, mark watched, favorite,
 // add to playlist, the lesson's place in its series with previous / next).
 import { useEffect, useRef, useState } from "react";
-import { useParams, useSearchParams, Link } from "react-router-dom";
+import { useParams, useSearchParams, useLocation, Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Tabs } from "@ds/components/Tabs/Tabs";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -37,7 +37,7 @@ import { TitleRow } from "../help/HelpLink";
 import { VideoPoster } from "../components/VideoViews";
 import { VideoPlayer } from "./VideoPlayer";
 import { VideoActions } from "../components/VideoActions";
-import { BackButton } from "../components/BackButton";
+import { BackButton, keepFirst } from "../components/BackButton";
 
 interface Video extends DisplayTitleVideo {
   id: string;
@@ -120,6 +120,7 @@ export function VideoDetail() {
   // The open tab lives in ?tab= so "Find metadata" (?tab=enrichment) and
   // deep links open the right one.
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const tabParam = params.get("tab") ?? "";
   const tab = TAB_IDS.includes(tabParam) ? tabParam : "watch";
   // Play opens the player in the picture's place (for this video only): the
@@ -159,7 +160,8 @@ export function VideoDetail() {
     const next = new URLSearchParams(params);
     if (id === "watch") next.delete("tab");
     else next.set("tab", id);
-    setParams(next, { replace: true });
+    // a first page (a pasted link) stays first for its Back
+    setParams(next, { replace: true, state: keepFirst(location) });
   }
 
   if (err) {
