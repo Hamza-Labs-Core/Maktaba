@@ -1,7 +1,7 @@
 // Epic 45 Phase 3 (story 45.21) — Home's featured hero (the newest series or
 // an admin's pick) and the admin's Feature on Home on a video's page.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderPage, memberUser, adminUser } from "../test/pageHarness";
 import en from "../i18n/en.json";
@@ -14,6 +14,7 @@ vi.mock("../lib/api", async () => {
 
 import { Home } from "./Home";
 import { FeatureOnHome } from "../components/FeatureOnHome";
+import { showsWhole } from "../lib/browse";
 
 const card = (id: string) => ({
   id,
@@ -106,6 +107,45 @@ describe("Featured hero", () => {
     renderPage(<Home />, { path: "/", user: memberUser });
     await screen.findByTestId("row-added");
     expect(screen.queryByTestId("featured-hero")).toBeNull();
+  });
+});
+
+describe("Featured hero picture", () => {
+  beforeEach(() => {
+    get.mockReset();
+    put.mockReset();
+  });
+
+  // the picture's own pixels: a jsdom image has none, so the test gives it some
+  function loadAs(img: HTMLImageElement, width: number, height: number) {
+    Object.defineProperty(img, "naturalWidth", { value: width, configurable: true });
+    Object.defineProperty(img, "naturalHeight", { value: height, configurable: true });
+    fireEvent.load(img);
+  }
+
+  it("shows only pictures narrower than 3:2 whole", () => {
+    expect(showsWhole(1080, 1920)).toBe(true); // vertical
+    expect(showsWhole(1080, 1080)).toBe(true); // square
+    expect(showsWhole(640, 480)).toBe(true); // 4:3
+    expect(showsWhole(640, 360)).toBe(false); // 16:9
+    expect(showsWhole(2560, 1080)).toBe(false); // ultra-wide
+    expect(showsWhole(0, 0)).toBe(false); // not decoded
+  });
+
+  it("shows a vertical video's picture whole over a blurred copy, a landscape one filling the hero", async () => {
+    serve({ ...BASE, featured: { kind: "video", video: card("v7"), picked: false } });
+    renderPage(<Home />, { path: "/", user: memberUser });
+    const hero = await screen.findByTestId("featured-hero");
+    const art = () => hero.querySelector<HTMLImageElement>(".mkt-hero__art")!;
+    const backdrop = () => hero.querySelector(".mkt-hero__backdrop");
+
+    loadAs(art(), 640, 1138);
+    await waitFor(() => expect(art()).toHaveClass("mkt-hero__art--whole"));
+    expect(backdrop()).toHaveAttribute("src", "/api/videos/v7/poster");
+
+    loadAs(art(), 640, 360);
+    await waitFor(() => expect(art()).not.toHaveClass("mkt-hero__art--whole"));
+    expect(backdrop()).toBeNull();
   });
 });
 

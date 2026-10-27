@@ -37,6 +37,7 @@ import { APITokens } from "./pages/Profile/APITokens";
 import { WatchHistory } from "./pages/Profile/WatchHistory";
 import { Account } from "./pages/Profile/Account";
 import { ConnectApp } from "./pages/Profile/ConnectApp";
+import { Preferences } from "./pages/Profile/Preferences";
 import { Guide } from "./pages/LiveTV/Guide";
 import { Player } from "./pages/LiveTV/Player";
 import { Login } from "./pages/Login";
@@ -135,6 +136,7 @@ export function App() {
                           <Route path="/account/sessions" element={<Sessions />} />
                           <Route path="/account/tokens" element={<APITokens />} />
                           <Route path="/account/history" element={<WatchHistory />} />
+                          <Route path="/account/preferences/*" element={<Preferences />} />
                           <Route path="/pair" element={<Pair />} />
                           {SERVER_PAGES && serverRoutes()}
                           <Route path="*" element={<NotFound />} />

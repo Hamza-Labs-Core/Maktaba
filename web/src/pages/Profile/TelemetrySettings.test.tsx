@@ -21,6 +21,7 @@ vi.mock("../../lib/api", async () => {
 });
 
 import { TelemetrySettings } from "./TelemetrySettings";
+import { ServerUsageData } from "../Settings/ServerUsageData";
 import { pseudonym, readConsent } from "../../lib/telemetry/consent";
 import { resetTelemetryForTests } from "../../lib/telemetry/client";
 
@@ -29,7 +30,7 @@ function renderSection(isAdmin = false) {
     <I18nProvider>
       <ToastProvider>
         <MemoryRouter>
-          <TelemetrySettings isAdmin={isAdmin} />
+          <TelemetrySettings server={isAdmin ? <ServerUsageData /> : undefined} />
         </MemoryRouter>
       </ToastProvider>
     </I18nProvider>

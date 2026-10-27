@@ -28,7 +28,6 @@ import {
 } from "../../lib/analytics";
 import { TitleRow } from "../../help/HelpLink";
 import { VideoPoster } from "../../components/VideoViews";
-import { SERVER_PAGES } from "../../lib/edition";
 
 export const HISTORY_PAGE = 50;
 export const ACTIVITY_PAGE = 50;
@@ -46,13 +45,8 @@ export function WatchHistory() {
           <h1>{t("history.title")}</h1>
         </TitleRow>
         <p className="mkt-muted">
-          {t("history.desc")}
-          {SERVER_PAGES && (
-            <>
-              {" "}
-              <Link to="/settings/privacy">{t("history.privacyLink")}</Link>
-            </>
-          )}
+          {t("history.desc")}{" "}
+          <Link to="/account/preferences/privacy">{t("history.privacyLink")}</Link>
         </p>
       </header>
       <Tabs
