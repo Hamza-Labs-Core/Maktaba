@@ -8,7 +8,7 @@ Maktaba runs live channels made from your library. Each channel plays its schedu
 
 There are three places to watch from:
 
-- **TV Guide** at [/guide](/guide): every channel with what is on now and over the next three hours.
+- **TV Guide** at [/guide](/guide): every channel with what is on now and over the next hour and a half.
 - **What's On Now** on the Library page: a row of cards with each channel's current programme and a **Tune In** button. It only appears when there are channels you can watch.
 - The live player at /live/ followed by the channel number (for example /live/101). This is the address to bookmark or share for a channel.
 

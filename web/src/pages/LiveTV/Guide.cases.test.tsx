@@ -185,7 +185,7 @@ describe("Guide (test-cases/guide.md)", () => {
     expect(within(grid).queryAllByTestId("guide-cell")).toHaveLength(0);
     const empty = grid.querySelector(".mkt-guide__cell--empty") as HTMLElement;
     expect(empty).toHaveTextContent("No content");
-    expect(empty.style.width).toBe("840px"); // full width: 210 min × 4 px
+    expect(empty.style.width).toBe("480px"); // full width: 120 min × 4 px
 
     await user.click(screen.getByRole("button", { name: "What's on now" }));
     const card = within(screen.getByTestId("whats-on-now")).getByRole("button");
