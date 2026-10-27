@@ -64,7 +64,17 @@ function text(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
 
-/** Sorts what a call threw into a kind (fetch's TypeError: the home can't be reached). */
+// fetch's own TypeError when no answer came, in Chrome's, Firefox's, Safari's and
+// Node's wordings ("Failed to fetch", "NetworkError when attempting to fetch
+// resource.", "Load failed", "fetch failed")
+const NO_ANSWER = /fetch|network|load failed/i;
+
+/** Whether e is fetch saying no answer came (not any TypeError). */
+export function isNoAnswer(e: unknown): e is TypeError {
+  return e instanceof TypeError && NO_ANSWER.test(e.message);
+}
+
+/** Sorts what a call threw into a kind (fetch's no-answer TypeError: the home can't be reached). */
 export function classifyError(e: unknown): ClassifiedError {
   if (e instanceof ApiError) {
     const slug = problemSlug(e.problem.type);
@@ -79,8 +89,9 @@ export function classifyError(e: unknown): ClassifiedError {
       ...(kind === "busy" && e.retryAfter !== undefined ? { retryAfter: e.retryAfter } : {}),
     };
   }
-  // fetch rejects with a TypeError when no answer came (offline, DNS, CORS)
-  if (e instanceof TypeError) {
+  // fetch rejects with a TypeError when no answer came (offline, DNS, CORS); any
+  // other TypeError is a bug or bad data in an answer, not the network
+  if (isNoAnswer(e)) {
     return { kind: "unreachable", status: 0, slug: "", title: "", detail: e.message };
   }
   return {
