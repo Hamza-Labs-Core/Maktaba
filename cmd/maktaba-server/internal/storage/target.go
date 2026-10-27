@@ -69,6 +69,11 @@ func CheckTarget(raw string, roots []string) (string, error) {
 				"path", resolved)}
 		}
 	}
+	// the links resolved, the path is checked again as it is used
+	resolved = filepath.Clean(resolved)
+	if strings.Contains(resolved, "..") || !filepath.IsAbs(resolved) {
+		return "", &TargetError{note("target_relative", "the folder must not go up with \"..\"")}
+	}
 	return resolved, nil
 }
 

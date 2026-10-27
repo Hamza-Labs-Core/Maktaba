@@ -357,8 +357,10 @@ func PlanMoveOn(in Install, target string, roots []string) Plan {
 }
 
 func planMove(in Install, target string, roots []string) Plan {
-	p := Plan{Target: strings.TrimSpace(target), OK: true, Problems: []Note{}, Warnings: []Note{}, From: in.From}
+	// what the user typed goes no further than CheckTarget: a refused plan names no
+	// target, an accepted one the checked path
 	checked, err := CheckTarget(target, roots)
+	p := Plan{Target: checked, OK: true, Problems: []Note{}, Warnings: []Note{}, From: in.From}
 	var te *TargetError
 	if errors.As(err, &te) {
 		p.problem(te.Note)
@@ -367,7 +369,6 @@ func planMove(in Install, target string, roots []string) Plan {
 		p.problem(note("target_unwritable", err.Error(), "error", err.Error()))
 		return p
 	}
-	p.Target = checked
 	var j journal
 	hasJournal := readJSON(filepath.Join(in.ConfigDir, JournalFile), &j) && j.Target != ""
 	if hasJournal && filepath.Clean(j.Target) != p.Target && resolvedOr(j.Target) != p.Target {
