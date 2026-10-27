@@ -38,7 +38,7 @@ func phase2Handler(t *testing.T) *Handler {
 	return &Handler{DB: db}
 }
 
-func listBody(t *testing.T, h *Handler, ctx context.Context, p *principal.Principal, qs url.Values) (int, []Video, *string) {
+func listBody(ctx context.Context, t *testing.T, h *Handler, p *principal.Principal, qs url.Values) (int, []Video, *string) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/videos?"+qs.Encode(), nil)
 	req = req.WithContext(principal.WithPrincipal(ctx, p))
@@ -90,7 +90,7 @@ func TestListPhase2Filters(t *testing.T) {
 		{"letter #: a digit and no title", viewerA(), q("letter", "#"), []string{xvid(7), xvid(6)}},
 		{"letter # and a tag", viewerA(), q("letter", "#", "tag", "00000000-0000-4000-8000-0000000000c1"), []string{}},
 	} {
-		code, items, _ := listBody(t, h, ctx, c.p, c.qs)
+		code, items, _ := listBody(ctx, t, h, c.p, c.qs)
 		if code != http.StatusOK {
 			t.Errorf("%s: status %d", c.name, code)
 			continue
@@ -105,7 +105,7 @@ func TestListPhase2Filters(t *testing.T) {
 		"two letters":          q("letter", "ab"),
 		"random with a cursor": {"sort": {"random"}, "cursor": {"abc"}},
 	} {
-		if code, _, _ := listBody(t, h, ctx, viewerA(), qs); code != http.StatusBadRequest {
+		if code, _, _ := listBody(ctx, t, h, viewerA(), qs); code != http.StatusBadRequest {
 			t.Errorf("%s: %d, want 400", name, code)
 		}
 	}
@@ -114,7 +114,7 @@ func TestListPhase2Filters(t *testing.T) {
 func TestListRandomAndMarks(t *testing.T) {
 	h := phase2Handler(t)
 	ctx := context.Background()
-	code, items, next := listBody(t, h, ctx, viewerA(), url.Values{"sort": {"random"}, "limit": {"3"}})
+	code, items, next := listBody(ctx, t, h, viewerA(), url.Values{"sort": {"random"}, "limit": {"3"}})
 	if code != http.StatusOK || len(items) != 3 || next != nil {
 		t.Fatalf("random: %d %d items, next %v", code, len(items), next)
 	}
@@ -123,7 +123,7 @@ func TestListRandomAndMarks(t *testing.T) {
 			t.Errorf("random lists library B's %s", v.ID)
 		}
 	}
-	code, items, _ = listBody(t, h, ctx, viewerA(), url.Values{"sort": {"title"}, "order": {"asc"}, "limit": {"50"}})
+	code, items, _ = listBody(ctx, t, h, viewerA(), url.Values{"sort": {"title"}, "order": {"asc"}, "limit": {"50"}})
 	if code != http.StatusOK {
 		t.Fatal(code)
 	}
@@ -152,10 +152,10 @@ func TestListFavoriteOnANode(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := placement.WithClass(context.Background(), placement.Any)
-	if code, _, _ := listBody(t, h, ctx, viewerA(), url.Values{"favorite": {"true"}}); code != http.StatusBadRequest {
+	if code, _, _ := listBody(ctx, t, h, viewerA(), url.Values{"favorite": {"true"}}); code != http.StatusBadRequest {
 		t.Errorf("favorite on a node: %d, want 400", code)
 	}
-	code, items, _ := listBody(t, h, ctx, viewerA(), url.Values{"sort": {"title"}})
+	code, items, _ := listBody(ctx, t, h, viewerA(), url.Values{"sort": {"title"}})
 	if code != http.StatusOK || len(items) == 0 {
 		t.Fatalf("plain list on a node: %d", code)
 	}
