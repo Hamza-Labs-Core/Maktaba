@@ -130,6 +130,9 @@ class BrowserState(
                 videos.addAll(page.items.filter { v -> videos.none { it.id == v.id } })
                 next = page.next
                 problem = null
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                next = cursor // left mid-page: the list's end asks again when it shows
+                throw e
             } catch (e: Exception) {
                 failedCursor = cursor
                 throw e
