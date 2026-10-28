@@ -114,7 +114,10 @@ function EnrichmentInner() {
       : loadErr instanceof ApiError
         ? loadErr.problem.title
         : t("common.error");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [chosen, setSelected] = useState<string | null>(null);
+  // the queue's first row until one is chosen: the render that shows the
+  // queue already has a selection (the effect below follows on later queues)
+  const selected = chosen ?? items?.[0]?.video_id ?? null;
   const listRef = useRef<HTMLUListElement | null>(null);
   const itemsRef = useRef<Pending[] | null>(null);
 
