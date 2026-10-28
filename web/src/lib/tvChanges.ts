@@ -211,6 +211,9 @@ export interface TvChange {
   diff: ChangeDiff;
   verify_report: VerifyReport;
   auto_rule?: string;
+  /** Who made it (slot 0169): an automatic change goes on by its rule, a manual one waits
+   * for an admin's approval. */
+  origin?: "auto" | "manual";
   approved_by: string[];
   approved_at?: string;
   anchor_at?: string;

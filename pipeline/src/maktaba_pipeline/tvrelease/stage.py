@@ -140,7 +140,7 @@ async def stage_change(
                 # (4.5 on 2026-10-27), and the controller times the staging slot's start
                 # from it, so a staged_at from the job's start failed the slot at once
                 staged_at=now(),
-                auto_rule=_strictest(cfg, kinds, cur.source.get("kind", "")),
+                auto_rule=_strictest(cfg, kinds, cur.source.get("kind", ""), cur.row.get("origin")),
             )  # fmt: skip
         _log.info(
             "tv_change_staged", change_id=change_id, release=rel.id, gen=rel.sched_gen,
@@ -159,10 +159,10 @@ async def stage_change(
 _STAGE_ATTEMPTS = 3
 
 
-def _strictest(cfg: Any, kinds: list[str], source_kind: str = "") -> str:
+def _strictest(cfg: Any, kinds: list[str], source_kind: str = "", origin: str | None = None) -> str:
     from .config import auto_rule
 
-    return auto_rule(cfg, kinds, source_kind)
+    return auto_rule(cfg, kinds, source_kind, origin or "manual")
 
 
 # --- the open change ----------------------------------------------------------------
@@ -229,6 +229,9 @@ async def collapse_open(db: Any, *, actor_source: str = "system") -> Change | No
     stamp = now()
     for n in opens[1:]:
         pending = merge_pending(pending, with_plan_layer(n.pending, n.row.get("digest")), live)
+        if n.row.get("origin") != "auto" and target.row.get("origin") != "manual":
+            # a person's change joined: the open change waits for an approval now
+            fields["origin"] = "manual"
         if n.row.get("digest"):
             # the newer plan's: its approval is the queue's Apply of that digest
             fields.update(digest=n.row["digest"], source=n.source)

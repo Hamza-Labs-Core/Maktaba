@@ -37,6 +37,7 @@ import {
   StateChip,
   actionError,
   sourceLabel,
+  OriginTag,
   useTk,
   useVisiblePoll,
   userName,
@@ -288,7 +289,7 @@ function DetailInner() {
         </dd>
         <dt>{t("tvchanges.col.source")}</dt>
         <dd>
-          {sourceLabel(tk, change)}
+          {sourceLabel(tk, change)} <OriginTag change={change} />
           {typeof change.source?.stage === "string" && (
             <>
               {" · "}

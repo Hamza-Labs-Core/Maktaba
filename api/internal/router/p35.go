@@ -247,11 +247,7 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 	}
 	upMetrics := updates.NewMetrics(drv, func() string { return d.Current })
 	updates.Expose(upMetrics)
-	svc.Blockers = []updates.Blocker{
-		updates.TVChangeBlocker{DB: d.DB},
-		updates.SwitchoverBlocker{DB: d.DB},
-		&updates.HomeHealth{BaseURL: sup, HTTP: d.HTTPClient},
-	}
+	svc.Blockers = updates.HomeBlockers(d.DB, sup, d.HTTPClient)
 	rulesHandler := &rules.Handler{DB: d.DB, Staging: tvchange.NewDrafts(d.DB)}
 	h := &updates.Handler{Svc: svc, Driver: drv, RulesPatch: rulesHandler.Patch, Mirror: drv.Mirror}
 	h.Mount(r)
