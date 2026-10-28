@@ -20,8 +20,9 @@
 //	dedup-scan, youtube/{refresh,backfill,retry,tartube}}, the YouTube sources
 //	(/api/libraries/{id}/youtube/sources[/{sid}]), GET /api/libraries/{id}/
 //	offline-summary, /api/queues/{offline-summary,offline-items,youtube-downloads,
-//	file-actions}, POST /api/queues/file-actions/{id}/restore (offline*.go,
-//	ytsources.go, fileactions.go)
+//	file-actions,duplicates}, POST /api/queues/file-actions/{id}/restore,
+//	POST /api/queues/duplicates/{gid}/{apply,dismiss} (offline*.go,
+//	ytsources.go, fileactions.go, duplicates.go)
 //
 // All enqueueing goes through the processing_jobs_enqueue SQL function
 // (see Enqueue) so Go and the Python engine cannot disagree about
@@ -156,6 +157,9 @@ func (h *Handler) mount(r chi.Router) {
 	r.Get("/api/queues/youtube-downloads", h.YouTubeDownloads)
 	r.Get("/api/queues/file-actions", h.FileActions)
 	r.Post("/api/queues/file-actions/{id}/restore", h.RestoreFileAction)
+	r.Get("/api/queues/duplicates", h.Duplicates)
+	r.Post("/api/queues/duplicates/{gid}/apply", h.ApplyDuplicate)
+	r.Post("/api/queues/duplicates/{gid}/dismiss", h.DismissDuplicate)
 	r.Post("/api/queues/failures/actions", h.FailureActions)
 	r.Post("/api/queues/pause-all", h.PauseAll)
 	r.Post("/api/queues/resume-all", h.ResumeAll)

@@ -40,6 +40,8 @@ const (
 	oPurged = "4700000d-0000-4000-8000-000000000002" // purged: not restorable
 	oFetch  = "4700000d-0000-4000-8000-000000000003" // a download: no undo
 	oFailed = "4700000d-0000-4000-8000-000000000004" // a failed verification
+	oGroup  = "4700000f-0000-4000-8000-000000000001"
+	oGroup2 = "4700000f-0000-4000-8000-000000000002"
 )
 
 type fakeResolver struct {
@@ -180,6 +182,10 @@ func TestOffline_EveryEndpointIsAdminOnly(t *testing.T) {
 	e.exec(`INSERT INTO file_actions (id, library_id, video_id, kind, state, old_path, new_path, trash_path, old_size,
 		purge_after) VALUES ($1, $2, $3, 'convert', 'done', '/media/a/x.mkv', '/media/a/one.mkv',
 		'/media/a/.maktaba/trash/convert/2026-10-28/x.mkv', 5, now() + interval '30 days')`, oDone, oLibA, oMKV)
+	e.exec(`INSERT INTO duplicate_groups (id, library_id, tier, status, members_key) VALUES ($1, $2, 'same_video', 'open', 'k')`,
+		oGroup, oLibA)
+	e.exec(`INSERT INTO duplicate_members (group_id, video_id, path) VALUES ($1, $2, '/media/a/one.mkv'), ($1, $3, '/media/a/two.MP4')`,
+		oGroup, oMKV, oMP4)
 	src := "/api/libraries/" + oLibA + "/youtube/sources/4700000e-0000-4000-8000-000000000001"
 	for _, c := range []struct {
 		method, path, body string
@@ -201,6 +207,9 @@ func TestOffline_EveryEndpointIsAdminOnly(t *testing.T) {
 		{"GET", "/api/queues/file-actions", "", 200},
 		{"POST", "/api/queues/file-actions/" + oDone + "/restore", "", 200},
 		{"DELETE", src, "", 204},
+		{"GET", "/api/queues/duplicates", "", 200},
+		{"POST", "/api/queues/duplicates/" + oGroup + "/apply", `{"keeper_video_id":"` + oMP4 + `"}`, 200},
+		{"POST", "/api/queues/duplicates/" + oGroup + "/dismiss", "", 200},
 	} {
 		if rec := e.do("", c.method, c.path, c.body); rec.Code != http.StatusUnauthorized {
 			t.Errorf("signed out %s %s = %d", c.method, c.path, rec.Code)
@@ -219,7 +228,7 @@ func TestOffline_EveryEndpointIsAdminOnly(t *testing.T) {
 	for _, a := range []string{"queue.library.convert", "queue.library.dedup_scan", "queue.library.youtube_refresh",
 		"queue.library.youtube_backfill", "queue.library.youtube_retry", "queue.library.youtube_tartube",
 		"queue.youtube_source.add", "queue.youtube_source.patch", "queue.youtube_source.delete",
-		"queue.file_action.restore"} {
+		"queue.file_action.restore", "queue.duplicates.apply", "queue.duplicates.dismiss"} {
 		e.audited(a, "")
 	}
 }
@@ -597,4 +606,94 @@ func TestOffline_FailuresShowTheNewKinds(t *testing.T) {
 		list.Items[0].FileAction.ID != oFailed || list.Items[0].FileAction.Restorable {
 		t.Fatalf("failures = %+v", list.Items)
 	}
+}
+
+func TestOffline_Duplicates(t *testing.T) {
+	e := newOfflineEnv(t)
+	e.exec(`INSERT INTO duplicate_groups (id, library_id, tier, status, members_key, created_at) VALUES
+		($1, $3, 'same_video', 'open', 'k1', now() - interval '1 hour'),
+		($2, NULL, 'exact', 'open', 'k2', now())`, oGroup, oGroup2, oLibA)
+	e.exec(`INSERT INTO duplicate_members (group_id, video_id, path, is_copy, score) VALUES
+		($1, $3, '/media/a/one.mkv', false, '{"pixels":2073600}'), ($1, $4, '/media/a/two.MP4', false, NULL),
+		($2, $3, '/media/a/one.mkv', false, NULL), ($2, $3, '/media/a/copy/one.mkv', true, NULL)`, oGroup, oGroup2, oMKV, oMP4)
+	e.exec(`INSERT INTO media_info (video_id, container, video_codec, width, height, bitrate_kbps) VALUES ($1, 'matroska', 'h264', 1920, 1080, 4000)`, oMKV)
+	e.exec(`INSERT INTO playback_state (user_id, video_id, position_sec, completed) VALUES ($1, $2, 30, true)`, oAdmin, oMKV)
+	type page struct {
+		Items []DuplicateGroup `json:"items"`
+		Next  *string          `json:"next"`
+	}
+	var p page
+	e.want(200, "GET", "/api/queues/duplicates?limit=1", "", &p)
+	if len(p.Items) != 1 || p.Items[0].ID != oGroup2 || p.Next == nil || p.Items[0].LibraryID != nil ||
+		len(p.Items[0].Members) != 2 || !p.Items[0].Members[1].IsCopy {
+		t.Fatalf("page 1 = %+v", p)
+	}
+	var next page
+	e.want(200, "GET", "/api/queues/duplicates?limit=1&cursor="+*p.Next, "", &next)
+	if len(next.Items) != 1 || next.Items[0].ID != oGroup || next.Next != nil {
+		t.Fatalf("page 2 = %+v", next)
+	}
+	var p2 page
+	e.want(200, "GET", "/api/queues/duplicates?library_id="+oLibA, "", &p2)
+	g := p2.Items[0]
+	if g.ID != oGroup || *g.LibraryName != "Alpha" || len(g.Members) != 2 {
+		t.Fatalf("library page = %+v", p2)
+	}
+	m := g.Members[0]
+	if m.VideoID != oMKV || *m.Width != 1920 || *m.VideoCodec != "h264" || m.Viewers != 1 || m.Completed != 1 ||
+		!strings.Contains(string(m.Score), "2073600") {
+		t.Fatalf("member = %+v %s", m, m.Score)
+	}
+	var cross page
+	e.want(200, "GET", "/api/queues/duplicates?library_id=cross", "", &cross)
+	if len(cross.Items) != 1 || cross.Items[0].ID != oGroup2 {
+		t.Fatalf("cross = %+v", cross.Items)
+	}
+	for _, q := range []string{"status=x", "tier=x", "library_id=x", "cursor=abc"} {
+		if rec := e.do("admin", "GET", "/api/queues/duplicates?"+q, ""); rec.Code != 400 {
+			t.Errorf("duplicates?%s = %d", q, rec.Code)
+		}
+	}
+
+	// Apply with a keeper: the group's keeper, and an approved dedup_apply at 150
+	var out map[string]any
+	if rec := e.do("admin", "POST", "/api/queues/duplicates/"+oGroup+"/apply", `{"keeper_video_id":"`+oOldMP4+`"}`); rec.Code != 422 {
+		t.Fatalf("a keeper that is no member = %d", rec.Code)
+	}
+	e.want(200, "POST", "/api/queues/duplicates/"+oGroup+"/apply", `{"keeper_video_id":"`+oMP4+`"}`, &out)
+	j := e.job(StageDedupApply, "dup_group", oGroup)
+	if j.priority != 150 || !j.force || j.payload["apply"] != true || j.payload["group_id"] != oGroup ||
+		j.payload["keeper_video_id"] != oMP4 || j.payload["decided_by"] != "user:"+oAdmin {
+		t.Fatalf("apply job = %+v", j)
+	}
+	if n := e.count(`SELECT count(*) FROM duplicate_groups WHERE id = $1 AND keeper_video_id = $2`, oGroup, oMP4); n != 1 {
+		t.Fatal("keeper not recorded")
+	}
+	// applied again without a keeper: one approval, the keeper the group now records
+	out = nil
+	e.want(200, "POST", "/api/queues/duplicates/"+oGroup+"/apply", "", &out)
+	if j := e.job(StageDedupApply, "dup_group", oGroup); out["outcome"] != OutcomeCoalesced || j.payload["keeper_video_id"] != nil {
+		t.Fatalf("second apply = %v %+v", out, j)
+	}
+	p2 = page{}
+	e.want(200, "GET", "/api/queues/duplicates?library_id="+oLibA, "", &p2)
+	if p2.Items[0].Job == nil || p2.Items[0].Job.State != "pending" || p2.Items[0].Job.SubjectLabel != "Two" ||
+		*p2.Items[0].KeeperVideoID != oMP4 {
+		t.Fatalf("group job = %+v", p2.Items[0])
+	}
+
+	// Dismiss: remembered, and no longer open
+	e.want(200, "POST", "/api/queues/duplicates/"+oGroup2+"/dismiss", "", &out)
+	if n := e.count(`SELECT count(*) FROM duplicate_groups WHERE id = $1 AND status = 'dismissed' AND decided_by = $2
+		AND decided_at IS NOT NULL`, oGroup2, "user:"+oAdmin); n != 1 {
+		t.Fatal("not dismissed")
+	}
+	for path, want := range map[string]int{"/" + oGroup2 + "/dismiss": 409, "/" + oGroup2 + "/apply": 409,
+		"/" + oViewer + "/apply": 404, "/nope/apply": 400} {
+		if rec := e.do("admin", "POST", "/api/queues/duplicates"+path, ""); rec.Code != want {
+			t.Errorf("%s = %d, want %d", path, rec.Code, want)
+		}
+	}
+	e.audited("queue.duplicates.apply", oGroup)
+	e.audited("queue.duplicates.dismiss", oGroup2)
 }

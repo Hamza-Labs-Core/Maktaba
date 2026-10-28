@@ -208,6 +208,42 @@ not swapped.
 **Unicode paths.** Opening goes through the FileUtilities fallback: the path as given, then NFC,
 then NFD, then on macOS a `ditto` copy into the work folder.
 
+### Pipeline order: download, convert, dedup, one item at a time
+
+The owner's rule (2026-10-28) is "convert first, then dedup; one item at a time, not all".
+Duplicates are compared as converted files, and no pair is merged while one of them is about
+to be converted. The queue enforces the order, the same way it orders every other stage:
+
+- **A chain per video**, wired with graph edges and no library-wide barrier:
+  download (`youtube_fetch` / `youtube_backfill`) → `convert_mp4` → `dedup_scan` → `dedup_apply`.
+  `convert_mp4` declares `Edge("dedup_scan", "same_video", when="always")`. When video A's
+  conversion finishes, A's duplicate check is queued, whatever the outcome (`changed`,
+  `unchanged`, or `skipped_unchanged` for a file that is already MP4). This happens even while
+  video B is still waiting for its own conversion. The engine fires a `when="always"` edge on
+  every finished run, though not while a run is awaiting review or waiting for inputs. A
+  download asks for its new video's `convert_mp4`, so the chain starts there (wired by the
+  YouTube stages).
+- **A check compares converted files only.** `dedup_scan` on a video compares it with the
+  library's files whose latest `convert_mp4` job is `done`; dry runs don't count. This is a
+  filter on the data, not a wait. A file still queued for conversion is not a candidate. Its
+  own check runs after its conversion and finds A then. A check that runs before its own
+  video's conversion compares nothing (`summary.skipped = "not_converted"`).
+- **"Find duplicates" on a library only fans out.** The library `dedup_scan` queues each
+  converted video's check, and queues `convert_mp4` for every video that was never planned
+  for conversion. An MP4 finishes that conversion at once, and its edge queues its check, so a
+  library with nothing to convert never waits. It leaves alone a video whose conversion is
+  queued or running (that conversion's edge brings the check) and one whose conversion
+  failed (counted).
+- **No double decisions.** Group writes take one lock: `pg_advisory_xact_lock` on Postgres,
+  and SQLite's write transaction. So two items' checks that see one pair at once converge on
+  one group (by `members_key`). An open group whose members change, such as a third copy
+  appearing, keeps its id and gets the new members. `dedup_apply` (subject `dup_group`) runs at
+  most once per group at a time, by the queue's one-live-job-per-subject rule. Its own last
+  check stays: the keeper must be readable and an exact group's hashes unchanged.
+- **The Queues page** shows the chain per item: a video's `dedup_scan` job appears only after
+  its `convert_mp4` job is done (`processing_jobs.triggered_by` and `reasons` name the
+  conversion).
+
 ### A. Convert to MP4
 
 **Stage `convert_mp4`.** Subject: video. A new pool, `convert`, size 1 by default, placed on the
@@ -284,7 +320,8 @@ never moves files between libraries.
 
 **Stages:**
 
-- **`dedup_scan`.** Subject: library. Pool `nas_read`. Priority 150. It finds the candidate groups,
+- **`dedup_scan`.** Subject: a video (its check, after its conversion: see "Pipeline order")
+  or a library (fans out). Pool `nas_read`. Priority 150. It finds the candidate groups,
   computes `full_hash` for exact candidates (sequential reads, progress in bytes), and writes:
   - `duplicate_groups(id, library_id, tier, status: open|applied|dismissed|failed, keeper_video_id,
     reason, created_at, decided_by, decided_at)`

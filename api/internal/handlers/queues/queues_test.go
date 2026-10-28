@@ -181,6 +181,9 @@ func TestEveryRouteIsAdminOnly(t *testing.T) {
 		{"GET", "/api/queues/youtube-downloads", "/api/queues/youtube-downloads", ""},
 		{"GET", "/api/queues/file-actions", "/api/queues/file-actions", ""},
 		{"POST", "/api/queues/file-actions/{id}/restore", "/api/queues/file-actions/" + uidA + "/restore", ""},
+		{"GET", "/api/queues/duplicates", "/api/queues/duplicates", ""},
+		{"POST", "/api/queues/duplicates/{gid}/apply", "/api/queues/duplicates/" + uidA + "/apply", `{}`},
+		{"POST", "/api/queues/duplicates/{gid}/dismiss", "/api/queues/duplicates/" + uidA + "/dismiss", ""},
 	}
 
 	// the table covers every registered route, no more, no less
