@@ -39,9 +39,10 @@ import { SERVER_PAGES } from "../../lib/edition";
 // guarantees, so the absolute value is cosmetic — 4px/min gives a 1-hour
 // column of 240px and keeps a 30-min vs 120-min pair at the spec's 1:4.
 const PX_PER_MIN = 4;
-// Guide window: now − 30 min … now + 3 h (AC1).
+// Guide window: two hours, now − 30 min … now + 90 min (the owner's choice,
+// 2026-10-27: what is on now and next, not a long scroll).
 const WINDOW_BACK_MIN = 30;
-const WINDOW_FWD_MIN = 180;
+const WINDOW_FWD_MIN = 90;
 const REFRESH_MS = 30_000;
 
 function minutesBetween(a: number, b: number): number {

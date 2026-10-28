@@ -29,7 +29,7 @@ func listDB(t *testing.T, titles []string, sameTime bool) *sql.DB {
 		id TEXT PRIMARY KEY, library_id TEXT, path TEXT, filename TEXT,
 		title TEXT, description TEXT, state TEXT, detected_language TEXT,
 		duration_sec REAL, size_bytes INTEGER, content_hash TEXT, metadata BLOB,
-		created_at DATETIME, updated_at DATETIME, mtime DATETIME)`); err != nil {
+		created_at DATETIME, updated_at DATETIME, mtime DATETIME, published_at DATETIME)`); err != nil {
 		t.Fatal(err)
 	}
 	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
@@ -42,7 +42,7 @@ func listDB(t *testing.T, titles []string, sameTime bool) *sql.DB {
 		if title == "" {
 			tv = nil
 		}
-		if _, err := db.Exec(`INSERT INTO videos VALUES ($1,'lib','p','f',$2,NULL,'ready',NULL,NULL,0,$3,NULL,$4,$4,$4)`,
+		if _, err := db.Exec(`INSERT INTO videos VALUES ($1,'lib','p','f',$2,NULL,'ready',NULL,NULL,0,$3,NULL,$4,$4,$4,NULL)`,
 			fmt.Sprintf("00000000-0000-0000-0000-%012d", i), tv, fmt.Sprintf("h%d", i), ts); err != nil {
 			t.Fatal(err)
 		}

@@ -392,7 +392,7 @@ type SeriesRef struct {
 }
 
 // YearCount is the number of a library's videos published in a year (the
-// mtime's year).
+// year of publishedAt).
 type YearCount struct {
 	Year   int   `json:"year"`
 	Videos int64 `json:"videos"`
@@ -567,16 +567,17 @@ func (h *Handler) seriesPosters(ctx context.Context, lib string, out []SeriesRef
 	return rows.Err()
 }
 
-// years is the library's visible videos per year of mtime, newest year
-// first.
+// years is the library's visible videos per year of publishedAt, newest
+// year first.
 func (h *Handler) years(ctx context.Context, lib string) ([]YearCount, error) {
-	// SQLite keeps the time as text that starts with the year.
-	yearExpr := `CAST(EXTRACT(YEAR FROM v.mtime) AS INTEGER)`
+	// SQLite keeps the time as text that starts with the year. The year is
+	// taken in UTC, as the year filter's range is.
+	yearExpr := `CAST(EXTRACT(YEAR FROM ` + publishedAt + ` AT TIME ZONE 'UTC') AS INTEGER)`
 	if isSQLite(h.DB) {
-		yearExpr = `CAST(substr(v.mtime, 1, 4) AS INTEGER)`
+		yearExpr = `CAST(substr(` + publishedAt + `, 1, 4) AS INTEGER)`
 	}
 	rows, err := h.DB.QueryContext(ctx, `SELECT `+yearExpr+` AS y, COUNT(*)
-		FROM videos v WHERE v.library_id = $1 AND v.mtime IS NOT NULL AND `+visible+`
+		FROM videos v WHERE v.library_id = $1 AND `+publishedAt+` IS NOT NULL AND `+visible+`
 		GROUP BY y ORDER BY y DESC`, lib)
 	if err != nil {
 		return nil, err

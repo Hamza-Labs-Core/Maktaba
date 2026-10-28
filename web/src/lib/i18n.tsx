@@ -10,7 +10,8 @@
 //                         <html dir> + <html lang>.
 //   - `n(value)`          Intl.NumberFormat in the active locale
 //                         (Arabic-Indic digits under `ar`).
-//   - `formatDate(d)`     Intl.DateTimeFormat in the active locale.
+//   - `formatDate(d)`     Intl.DateTimeFormat in the active locale (a
+//                         date and time unless opts say otherwise).
 //
 // Catalogs are imported statically so a missing key in `ar` is a build
 // /test-time concern, not a runtime fetch.
@@ -53,7 +54,8 @@ export interface I18nState {
   t: (key: string, vars?: Record<string, string | number>) => string;
   /** A number in the locale's digits; years pass `{ useGrouping: false }`. */
   n: (value: number, opts?: Intl.NumberFormatOptions) => string;
-  formatDate: (value: string | number | Date) => string;
+  /** A date and time; opts replace that (a publish date: browse.ts's `PUBLISH_DATE`). */
+  formatDate: (value: string | number | Date, opts?: Intl.DateTimeFormatOptions) => string;
   setLocale: (l: Locale) => void;
 }
 
@@ -114,13 +116,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   );
 
   const formatDate = useCallback(
-    (value: string | number | Date) => {
+    (value: string | number | Date, opts?: Intl.DateTimeFormatOptions) => {
       const d = value instanceof Date ? value : new Date(value);
       if (Number.isNaN(d.getTime())) return String(value);
-      return new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(d);
+      return new Intl.DateTimeFormat(
+        locale === "ar" ? "ar-EG" : "en",
+        opts ?? { dateStyle: "medium", timeStyle: "short" }
+      ).format(d);
     },
     [locale]
   );
