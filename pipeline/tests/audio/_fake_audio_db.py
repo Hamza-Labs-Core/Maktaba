@@ -198,6 +198,8 @@ class FakeAudioDB:
     dialect: str = "postgres"
     libraries: dict[UUID, _LibraryRow] = field(default_factory=dict)
     videos: dict[UUID, _VideoRow] = field(default_factory=dict)
+    #: story 47.5: (video_id, path) -> (size_bytes, mtime)
+    video_copies: dict[tuple[UUID, str], tuple[Any, Any]] = field(default_factory=dict)
     media_info: dict[UUID, _MediaInfoRow] = field(default_factory=dict)
     audio_tracks: dict[int, _AudioTrackRow] = field(default_factory=dict)
     audio_cache: dict[str, _AudioCacheRow] = field(default_factory=dict)
@@ -463,12 +465,40 @@ class FakeAudioDB:
                     )
             return None
 
-        # --- SqlScanStore: SQLite pre-check (insert vs update) ----------
-        if s.startswith("SELECT id FROM videos WHERE library_id"):
+        # --- SqlScanStore: pre-check (insert / move / copy) -------------
+        if s.startswith("SELECT id, path FROM videos WHERE library_id"):
             library_id, content_hash = args
             for vid_row in self.videos.values():
                 if vid_row.library_id == library_id and vid_row.content_hash == content_hash:
-                    return _Row({"id": vid_row.id})
+                    return _Row({"id": vid_row.id, "path": vid_row.path})
+            return None
+
+        # --- SqlScanStore: video_copies (story 47.5) --------------------
+        if s.startswith("SELECT c.video_id AS id, c.size_bytes AS size_bytes"):
+            library_id, path = args
+            for (video_id, cpath), (size, mtime) in self.video_copies.items():
+                v = self.videos.get(video_id)
+                if v is not None and v.library_id == library_id and cpath == path:
+                    return _Row(
+                        {
+                            "id": video_id,
+                            "size_bytes": size,
+                            "mtime": mtime,
+                            "content_hash": v.content_hash,
+                        }
+                    )
+            return None
+        if s.startswith("INSERT INTO video_copies"):
+            video_id, path, size, mtime, _seen = args
+            self.video_copies[(UUID(str(video_id)), path)] = (size, mtime)
+            return None
+        if s.startswith("DELETE FROM video_copies WHERE video_id = $1 AND path = $2"):
+            self.video_copies.pop((UUID(str(args[0])), args[1]), None)
+            return None
+        if s.startswith("UPDATE videos SET last_seen_at = $2 WHERE id = $1"):
+            v = self.videos.get(UUID(str(args[0])))
+            if v is not None:
+                v.last_seen_at = args[1]
             return None
 
         # --- SqlScanStore: content-addressed UPSERT --------------------
@@ -481,7 +511,7 @@ class FakeAudioDB:
                 size_bytes,
                 mtime,
                 last_seen_at,
-            ) = args
+            ) = args[:7]  # the SQLite twin passes the new row's id 8th
             video_match = next(
                 (
                     vr

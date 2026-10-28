@@ -261,9 +261,14 @@ def test_the_graph_has_the_epic47_stages() -> None:
     assert by["trash_purge"].pool == "nas_write" and not by["trash_purge"].unreleased
     assert by["youtube_backfill"].pool == by["youtube_fetch"].pool == "network_yt"
     for name in EPIC47_STAGES:
-        # no automatic trigger yet: nothing points at them and they point at nothing
+        # no edges: an admin enqueues them
         assert not by[name].edges and not by[name].entry_for
-        assert all(name not in s.may_request for s in GRAPH)
+        # story 47.6: dedup_scan requests dedup_apply (auto_exact); nothing else yet
+        assert all(
+            name not in s.may_request
+            for s in GRAPH
+            if (s.name, name) != ("dedup_scan", "dedup_apply")
+        )
         assert all(e.to != name for s in GRAPH for e in s.edges)
         assert get_impl(name) is not None and get_impl(name).run is not None  # type: ignore[union-attr]
     assert EPIC47_PRIORITIES["youtube_fetch"] < 150 < EPIC47_PRIORITIES["youtube_backfill"]
@@ -297,7 +302,9 @@ async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> No
             s.external_write,
             s.placement,
         )
-        assert bool(r["enabled"]) == (not s.unreleased)
+        # the migration seeds every stage but trash_purge off; a shipped one is turned
+        # on by the next graph sync
+        assert bool(r["enabled"]) == (name == "trash_purge")
     # a worker's graph sync keeps the unreleased ones off and trash_purge on
     await sync_graph(db, GRAPH)
     after = {
@@ -307,6 +314,7 @@ async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> No
     assert after["convert_mp4"] == (False, "not_configured")
     assert after["youtube_backfill"] == (False, "not_configured")
     assert after["trash_purge"] == (True, None)
+    assert after["dedup_scan"] == after["dedup_apply"] == (True, None)  # stories 47.6/47.7
     pool = await db.fetchrow("SELECT scope, size FROM worker_pools WHERE pool = 'convert'")
     assert (pool["scope"], pool["size"]) == ("global", 1)
 

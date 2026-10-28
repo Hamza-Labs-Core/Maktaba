@@ -17,7 +17,9 @@ modules already established:
 - ``find_video_by_path`` is the slot 0001 ``videos_library_path_idx``
   lookup the orchestrator's skip-rehash optimisation needs.
 - ``save_candidate`` UPSERTs the ``videos`` row on the slot 0003
-  ``UNIQUE (library_id, content_hash)`` index and, when the library is
+  ``UNIQUE (library_id, content_hash)`` index (a byte-identical file at a
+  second path, while the first is still there, is recorded in
+  ``video_copies`` instead: story 47.5, :mod:`.copies`) and, when the library is
   enabled, enqueues a **per-video** ``PROBE`` job via the *existing*
   :func:`maktaba_pipeline.db.jobs.enqueue` — that part is unchanged by
   gap-closure (PROBE jobs are per-video; only SCAN itself is
@@ -35,10 +37,11 @@ from __future__ import annotations
 
 import json
 from typing import Any, Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from ..db.jobs import DBConn as JobDBConn
 from ..db.jobs import Stage, enqueue
+from .copies import Exists, path_exists, record_copy
 from .service import (
     ExistingVideo,
     LibraryRecord,
@@ -90,11 +93,12 @@ SELECT id, size_bytes, mtime, content_hash
 
 # Content-addressed UPSERT on the slot 0003
 # UNIQUE (library_id, content_hash) index. On conflict we refresh the
-# path/filename/signature (a duplicate file may have moved within the
-# library) and bump last_seen_at so the slot 0007 straggler-sweep sees
-# the row as live. ``xmax = 0`` is the Postgres idiom for "this row was
-# INSERTed, not UPDATEd" — it drives the per-video PROBE enqueue + the
-# orchestrator's inserted/skipped bookkeeping.
+# path/filename/signature (the file moved within the library: story 47.5
+# records a second identical file whose first is still there as a
+# ``video_copies`` row before reaching this) and bump last_seen_at so the
+# slot 0007 straggler-sweep sees the row as live. ``xmax = 0`` is the
+# Postgres idiom for "this row was INSERTed, not UPDATEd" — it drives the
+# per-video PROBE enqueue + the orchestrator's inserted/skipped bookkeeping.
 _UPSERT_VIDEO = """
 INSERT INTO videos
        (library_id, content_hash, path, filename, size_bytes, mtime,
@@ -110,29 +114,51 @@ ON CONFLICT (library_id, content_hash) DO UPDATE SET
 RETURNING id, (xmax = 0) AS inserted
 """
 
+# SQLite's twin of videos has no id default and is UNIQUE (content_hash) alone (no composite
+# index for ON CONFLICT to name): the update is limited to the same library,
+# and a file whose bytes another library holds returns no row (refused).
+#
 # SQLite has no xmax. ``ON CONFLICT DO UPDATE`` still fires, but we
 # detect insert-vs-update by comparing the returned row's created_at to
 # its updated_at after the upsert is impractical; instead SQLite uses a
 # pre-check SELECT inside the same transaction (see save_candidate).
 _SELECT_VIDEO_ID_BY_HASH = """
-SELECT id FROM videos
+SELECT id, path FROM videos
  WHERE library_id = $1
    AND content_hash = $2
  LIMIT 1
 """
 
+# Story 47.5: a path that is a recorded copy of a video (the skip-rehash lookup's
+# fallback, so an unchanged copy is not hashed again on every scan).
+_SELECT_COPY_BY_PATH = """
+SELECT c.video_id AS id, c.size_bytes AS size_bytes, c.mtime AS mtime,
+       v.content_hash AS content_hash
+  FROM video_copies c
+  JOIN videos v ON v.id = c.video_id
+ WHERE v.library_id = $1
+   AND c.path       = $2
+ LIMIT 1
+"""
+
+_TOUCH_VIDEO = "UPDATE videos SET last_seen_at = $2 WHERE id = $1"
+
+# the row moved to a path that was one of its copies: that path is no copy any more
+_FORGET_COPY = "DELETE FROM video_copies WHERE video_id = $1 AND path = $2"
+
 _UPSERT_VIDEO_SQLITE = """
 INSERT INTO videos
        (library_id, content_hash, path, filename, size_bytes, mtime,
-        last_seen_at, state)
-VALUES ($1, $2, $3, $4, $5, $6, $7, 'discovered')
-ON CONFLICT (library_id, content_hash) DO UPDATE SET
+        last_seen_at, state, id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, 'discovered', $8)
+ON CONFLICT (content_hash) DO UPDATE SET
     path         = excluded.path,
     filename     = excluded.filename,
     size_bytes   = excluded.size_bytes,
     mtime        = excluded.mtime,
     last_seen_at = excluded.last_seen_at,
     updated_at   = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+ WHERE videos.library_id = excluded.library_id
 RETURNING id
 """
 
@@ -146,9 +172,12 @@ class SqlScanStore:
     index and the ``library_scan_state`` cancel columns.
     """
 
-    def __init__(self, db: _ScanDB) -> None:
+    def __init__(self, db: _ScanDB, *, exists: Exists = path_exists) -> None:
         self._db = db
         self.dialect = db.dialect
+        #: whether a database path is a file here (story 47.5: a second identical file
+        #: is a copy only while the row's own file is still there)
+        self._exists = exists
 
     async def get_library(self, library_id: UUID) -> LibraryRecord | None:
         row = await self._db.fetchrow(_SELECT_LIBRARY, library_id)
@@ -172,6 +201,8 @@ class SqlScanStore:
     ) -> ExistingVideo | None:
         row = await self._db.fetchrow(_SELECT_VIDEO_BY_PATH, library_id, path)
         if row is None:
+            row = await self._db.fetchrow(_SELECT_COPY_BY_PATH, library_id, path)
+        if row is None:
             return None
         return ExistingVideo(
             id=_to_uuid(row["id"]),
@@ -193,6 +224,32 @@ class SqlScanStore:
         per-video.
         """
         async with self._db.transaction():
+            pre = await self._db.fetchrow(
+                _SELECT_VIDEO_ID_BY_HASH,
+                params.library_id,
+                params.content_hash,
+            )
+            if (
+                pre is not None
+                and str(pre["path"]) != params.path
+                and self._exists(str(pre["path"]))
+            ):
+                # Story 47.5: the same bytes at a second path while the row's own file
+                # is still there: a copy, recorded; the row keeps its path.
+                video_id = _to_uuid(pre["id"])
+                await record_copy(
+                    self._db,
+                    video_id,
+                    params.path,
+                    params.size_bytes,
+                    params.mtime,
+                    seen_at=params.last_seen_at,
+                )
+                await self._db.execute(_TOUCH_VIDEO, str(video_id), params.last_seen_at)
+                return SaveCandidateResult(
+                    video_id=video_id, inserted=False, job_id=None, copy=True
+                )
+            # new content, or the row's file moved here (its old path is gone)
             if self._db.dialect == "postgres":
                 row = await self._db.fetchrow(
                     _UPSERT_VIDEO,
@@ -207,11 +264,6 @@ class SqlScanStore:
                 video_id = _to_uuid(row["id"])
                 inserted = bool(row["inserted"])
             else:
-                pre = await self._db.fetchrow(
-                    _SELECT_VIDEO_ID_BY_HASH,
-                    params.library_id,
-                    params.content_hash,
-                )
                 inserted = pre is None
                 row = await self._db.fetchrow(
                     _UPSERT_VIDEO_SQLITE,
@@ -222,8 +274,17 @@ class SqlScanStore:
                     params.size_bytes,
                     params.mtime,
                     params.last_seen_at,
+                    # SQLite's videos.id has no default: a new row's id is made here
+                    str(uuid4()),
                 )
+                if row is None:
+                    raise ValueError(
+                        "another library holds a file with the same content hash"
+                        " (SQLite keeps one video per content hash)"
+                    )
                 video_id = _to_uuid(row["id"])
+            if pre is not None and str(pre["path"]) != params.path:
+                await self._db.execute(_FORGET_COPY, str(video_id), params.path)
 
             job_id: int | None = None
             if inserted and params.enqueue_probe:

@@ -909,7 +909,8 @@ GRAPH: tuple[StageDef, ...] = (
         lane="media",
         lane_order=15,
         version=DEDUP_SCAN_VERSION,
-        unreleased=True,
+        # an exact group of a library with auto_exact on is merged at once
+        may_request=("dedup_apply",),
     ),
     # merges one duplicate group: user data to the keeper, the loser's file to the trash
     StageDef(
@@ -921,7 +922,6 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=16,
         version=DEDUP_APPLY_VERSION,
         external_write=True,
-        unreleased=True,
     ),
     # deletes the trash entries whose grace period has passed (library_mgmt/trash.py)
     StageDef(

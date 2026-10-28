@@ -564,3 +564,48 @@ func TestCheckRootsRemembersATimeout(t *testing.T) {
 		t.Errorf("%d checks, want 4: after a minute the hung root is checked again", n)
 	}
 }
+
+// Epic 47 (story 47.5): a merged video whose file the target already holds
+// leaves its path, and the copies it had, as copies of the target's video.
+func TestMergeKeepsTheDuplicatePathsAsCopies(t *testing.T) {
+	db := manageDB(t)
+	for _, s := range []string{
+		`ALTER TABLE videos ADD COLUMN size_bytes INTEGER NOT NULL DEFAULT 7`,
+		`ALTER TABLE videos ADD COLUMN mtime TIMESTAMP`,
+		`CREATE TABLE video_copies (video_id TEXT NOT NULL, path TEXT NOT NULL, size_bytes INTEGER NOT NULL,
+			mtime TIMESTAMP, seen_at TIMESTAMP NOT NULL, PRIMARY KEY (video_id, path))`,
+	} {
+		mustExec(t, db, s)
+	}
+	addLibrary(t, db, libBig, "Big", t0, "/m/a")
+	addLibrary(t, db, libSmall, "Small", t0, "/m/b")
+	addVideo(t, db, "b1", libBig, "h1", "ready")
+	addVideo(t, db, "s1", libSmall, "h1", "ready") // the same file as b1
+	addVideo(t, db, "s2", libSmall, "h2", "ready")
+	mustExec(t, db, `INSERT INTO video_copies VALUES ('s1', '/m/b/again.mp4', 7, NULL, $1), ('s2', '/m/b/s2-copy.mp4', 7, NULL, $1)`, t0)
+	h := &Handler{DB: db, NowFunc: func() time.Time { return t0 }}
+	rec := call(t, h, "POST", "/api/libraries/"+libSmall+"/merge", `{"into":"`+libBig+`","confirm":"Small"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("merge: %d %s", rec.Code, rec.Body.String())
+	}
+	rows, err := db.Query(`SELECT video_id || ' ' || path FROM video_copies ORDER BY 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, s)
+	}
+	want := "b1 /m/b/again.mp4,b1 /m/s1.mp4,s2 /m/b/s2-copy.mp4"
+	if strings.Join(got, ",") != want {
+		t.Errorf("copies = %v, want %s", got, want)
+	}
+	if n := count(t, db, `SELECT COUNT(*) FROM videos WHERE id = 's1'`); n != 0 {
+		t.Errorf("the duplicate row is still there")
+	}
+}

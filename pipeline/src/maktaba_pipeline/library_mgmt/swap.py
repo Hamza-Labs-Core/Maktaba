@@ -487,9 +487,21 @@ async def _restore_convert(db: Any, orig: FileAction, row: FileAction, l_orig: s
 
 async def _restore_dedup(db: Any, orig: FileAction, row: FileAction, l_orig: str) -> None:
     """The loser is a video again. ``dedup_apply`` records the state it had in the
-    ledger's ``verify.prior_state``; the user data it moved stays with the keeper (story
-    47.7 may register a fuller hook)."""
+    ledger's ``verify.prior_state``; the user data it moved stays with the keeper. A
+    restored copy of a video (``verify.copy_of``) is a recorded copy again."""
     if orig.video_id is None:
+        return
+    copy_of = (orig.verify or {}).get("copy_of")
+    if copy_of and orig.old_path is not None:
+        await db.execute(
+            "INSERT INTO video_copies (video_id, path, size_bytes, mtime, seen_at)"
+            " VALUES ($1, $2, $3, $4, $5) ON CONFLICT (video_id, path) DO NOTHING",
+            str(copy_of),
+            orig.old_path,
+            os.path.getsize(l_orig),
+            _mtime(db, l_orig),
+            to_ts(db, datetime.now(UTC)),
+        )
         return
     prior = (orig.verify or {}).get("prior_state") or "discovered"
     await db.execute(
