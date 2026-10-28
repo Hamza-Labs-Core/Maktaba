@@ -490,6 +490,16 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **An update's TV check no longer overloads the host it measures.** TV change #55 (0.3.39 →
+  0.3.40, 2026-10-28) failed channel.position and channel.wallclock on all 28 channels, 38–50 s
+  behind the wall clock, and held the TV on 0.3.39. The measurement was right and the release's
+  encoding was the same as live's: a binary change changes every channel, the staging budget was
+  the whole quiet host, and the staging slot started all 28 channels at once. Their output then ran
+  at 0.2–0.7x real time and fell further behind every second (−80 s at 100 s on a later run), so
+  no settle time could have passed it. The changed channels are now probed in a window that
+  starts at 4, doubles only while every staging station is on the wall clock, halves as soon as a
+  station's output runs slower than real time, and never again reaches the size that overloaded
+  the host. The checks are unchanged: a release that cannot keep up even alone still fails.
 - **An update's TV check no longer fails a Mac's new streaming software on its warm-up.** The
   staging check of TV change #53 (0.3.37 → 0.3.38, 2026-10-28) failed 27 s in and rolled the
   update back, for three reasons none of which was the release: the staging slot's channels, all

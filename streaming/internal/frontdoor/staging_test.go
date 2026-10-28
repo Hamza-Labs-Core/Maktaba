@@ -50,7 +50,7 @@ func TestWarmSetDemandProbeRolling(t *testing.T) {
 	plan := StagingPlan{Probe: ids[2].String(), Changed: []string{ids[3].String(), ids[4].String(), ids[5].String()},
 		Removed: []string{ids[6].String()}}
 	demands := []ChannelDemand{{Channel: ids[1], Humans: 1}, {Channel: ids[0], Humans: 3}, {Channel: ids[6], Humans: 2}}
-	warm, deferred := planStagingWarm(plan, demands, nil, map[uuid.UUID]bool{ids[3]: true}, 4)
+	warm, deferred := planStagingWarm(plan, demands, nil, map[uuid.UUID]bool{ids[3]: true}, 4, 4)
 	got := []string{}
 	for _, w := range warm {
 		got = append(got, w.Channel[len(w.Channel)-1:]+":"+w.Why)
@@ -62,12 +62,12 @@ func TestWarmSetDemandProbeRolling(t *testing.T) {
 		t.Fatalf("deferred %v", deferred)
 	}
 	// a quiet night (EC1): only the probe and the rolling probes
-	warm, _ = planStagingWarm(plan, nil, nil, map[uuid.UUID]bool{}, 2)
+	warm, _ = planStagingWarm(plan, nil, nil, map[uuid.UUID]bool{}, 2, 2)
 	if len(warm) != 2 || warm[0].Why != WhyProbe || warm[1].Why != WhyRolling {
 		t.Fatalf("quiet %v", warm)
 	}
 	// a preview viewer comes before the probe
-	warm, _ = planStagingWarm(plan, nil, []uuid.UUID{ids[5]}, map[uuid.UUID]bool{}, 1)
+	warm, _ = planStagingWarm(plan, nil, []uuid.UUID{ids[5]}, map[uuid.UUID]bool{}, 1, 1)
 	if len(warm) != 1 || warm[0].Why != WhyPreview {
 		t.Fatalf("preview %v", warm)
 	}
