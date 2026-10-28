@@ -97,14 +97,20 @@ func (h *Handler) featured(ctx context.Context, s scope) (*Featured, error) {
 			return f, nil
 		}
 	}
+	// The newest series with a visible lesson in the scope, and its count of
+	// them: the series are walked newest first (series_created_idx) and the
+	// first with a lesson stops the walk, so only that one's lessons are
+	// counted, not every series' lessons.
 	var args []any
-	cond := s.cond("v.library_id", &args)
+	count := s.cond("v.library_id", &args)
+	has := s.cond("v.library_id", &args)
 	var fs FeaturedSeries
-	err := h.DB.QueryRowContext(ctx, `SELECT s.id, COALESCE(s.name_override, s.name, ''), COUNT(v.id)
-		FROM series s JOIN series_episodes se ON se.series_id = s.id
-		JOIN videos v ON v.id = se.video_id
-		WHERE `+and(visible, cond)+`
-		GROUP BY s.id, s.name, s.name_override, s.created_at
+	err := h.DB.QueryRowContext(ctx, `SELECT s.id, COALESCE(s.name_override, s.name, ''),
+			(SELECT COUNT(v.id) FROM series_episodes se JOIN videos v ON v.id = se.video_id
+			  WHERE se.series_id = s.id AND `+and(visible, count)+`)
+		FROM series s
+		WHERE EXISTS (SELECT 1 FROM series_episodes se JOIN videos v ON v.id = se.video_id
+		               WHERE se.series_id = s.id AND `+and(visible, has)+`)
 		ORDER BY s.created_at DESC, s.id DESC LIMIT 1`, args...).Scan(&fs.ID, &fs.Name, &fs.Episodes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -113,7 +119,7 @@ func (h *Handler) featured(ctx context.Context, s scope) (*Featured, error) {
 		return nil, err
 	}
 	args = []any{fs.ID}
-	cond = s.cond("v.library_id", &args)
+	cond := s.cond("v.library_id", &args)
 	cs, err := h.cards(ctx, `SELECT `+cardColumns+` FROM series_episodes se JOIN videos v ON v.id = se.video_id
 		WHERE se.series_id = $1 AND `+and(visible, cond)+`
 		ORDER BY COALESCE(se.season_override, se.season, 0),
