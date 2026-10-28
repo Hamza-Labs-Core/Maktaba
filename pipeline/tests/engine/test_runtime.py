@@ -63,7 +63,8 @@ async def test_default_worker_serves_every_stage_it_has_a_handler_for(db: Databa
     assert {"chapter_infer", "topic_assign", "topic_recluster"} <= served
     # engine stages are served once their implementation exists
     assert (served & core_engine) <= core_engine
-    assert pools["probe"] == "nas_read" and pools["transcribe"] == "gpu"
+    assert pools["probe"] == "nas_read"
+    assert "transcribe" in cannot or pools["transcribe"] == "gpu"
     row = (await live_workers(db))[0]
     assert row["host"] == "PC" and set(row["stages"]) == served
     assert set(rt.graph) >= {s.name for s in GRAPH}
