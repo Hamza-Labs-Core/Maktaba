@@ -3,6 +3,7 @@ package tvchange
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -27,6 +28,14 @@ const (
 // controllerLock is the advisory lock that keeps the controller to one API process
 // (story 33.10 AC9).
 const controllerLock = "tv_change_controller"
+
+// TVJobPriority is the queue priority of the jobs that move a change (tv_stage, tv_swap,
+// tv_rollback): lower runs first, the queue's default is 100. They share the cpu pool
+// with the library's backlog, which after a restart is thousands of older jobs: at the
+// default priority the 0.3.36 update's tv_stage waited 4 min 48 s behind them
+// (2026-10-27, enqueued 21:20:00, dispatched 21:24:48) while the update's watch ran.
+// The daily clean-up (tv_gc) keeps the default.
+const TVJobPriority = 10
 
 // EnqueueFunc queues a pipeline stage for the catalog subject with a payload.
 type EnqueueFunc func(ctx context.Context, stage string, payload map[string]any, why string) error
@@ -83,8 +92,13 @@ func (c *Controller) now() time.Time {
 // enqueueQueue calls processing_jobs_enqueue; a pending job that coalesced is pointed
 // at this change (one change in flight at a time, so the newest request wins).
 func (c *Controller) enqueueQueue(ctx context.Context, stage string, payload map[string]any, why string) error {
+	var prio *int
+	if stage != StageTVGC {
+		p := TVJobPriority
+		prio = &p
+	}
 	res, err := queues.Enqueue(ctx, c.DB, queues.EnqueueParams{
-		SubjectKind: "catalog", SubjectID: CatalogID, Stage: stage, Force: true,
+		SubjectKind: "catalog", SubjectID: CatalogID, Stage: stage, Force: true, Priority: prio,
 		Reason: map[string]any{"why": why, "by": "tv_change_controller"}, Payload: payload,
 	})
 	if err != nil {
@@ -109,27 +123,23 @@ func (c *Controller) Run(ctx context.Context) {
 	if iv <= 0 {
 		iv = 5 * time.Second
 	}
-	var conn *sql.Conn
-	defer func() {
-		if conn != nil {
-			_ = conn.Close()
-		}
-	}()
+	var lead *sql.Conn // the connection that holds the lock
+	defer func() { releaseLead(lead) }()
 	t := time.NewTicker(iv)
 	defer t.Stop()
 	for {
-		if !IsSQLite(c.DB) && conn == nil {
-			cn, err := c.DB.Conn(ctx)
-			if err == nil {
-				var got bool
-				if err := cn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(hashtext($1))`, controllerLock).Scan(&got); err == nil && got {
-					conn = cn
-				} else {
-					_ = cn.Close()
-				}
+		if !IsSQLite(c.DB) {
+			// a lead whose connection died (a restarted or terminated backend) holds no
+			// lock any more: take it again rather than act without it
+			if lead != nil && lead.PingContext(ctx) != nil {
+				discardConn(lead)
+				lead = nil
+			}
+			if lead == nil {
+				lead = c.takeLead(ctx)
 			}
 		}
-		if IsSQLite(c.DB) || conn != nil {
+		if IsSQLite(c.DB) || lead != nil {
 			if err := c.Tick(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				c.Logger.Warn("tv change controller tick failed", "event", "tv_change_controller_failed", "error", err.Error())
 			}
@@ -140,6 +150,47 @@ func (c *Controller) Run(ctx context.Context) {
 		case <-t.C:
 		}
 	}
+}
+
+// takeLead takes the controller's session advisory lock on a connection of its own
+// (nil: another process holds it). The lock belongs to that Postgres session, so the
+// connection is kept out of the pool for as long as it holds it.
+func (c *Controller) takeLead(ctx context.Context) *sql.Conn {
+	cn, err := c.DB.Conn(ctx)
+	if err != nil {
+		return nil
+	}
+	var got bool
+	if err := cn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(hashtext($1))`, controllerLock).Scan(&got); err != nil || !got {
+		_ = cn.Close() // it holds nothing: back to the pool
+		return nil
+	}
+	return cn
+}
+
+// releaseLead gives the lock back on the connection that took it, and only then lets
+// the connection go: closing a *sql.Conn returns it to the pool, so a lock never
+// released would stay with whatever borrows that connection next (and an unlock on
+// any other connection only warns "you don't own a lock of type ExclusiveLock").
+// A connection whose unlock fails is closed, which ends its session and its lock.
+func releaseLead(cn *sql.Conn) {
+	if cn == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var released bool
+	if err := cn.QueryRowContext(ctx, `SELECT pg_advisory_unlock(hashtext($1))`, controllerLock).Scan(&released); err != nil || !released {
+		discardConn(cn)
+		return
+	}
+	_ = cn.Close()
+}
+
+// discardConn closes cn's database connection instead of returning it to the pool.
+func discardConn(cn *sql.Conn) {
+	_ = cn.Raw(func(any) error { return driver.ErrBadConn })
+	_ = cn.Close()
 }
 
 // Tick runs one pass over the open changes.

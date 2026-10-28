@@ -164,9 +164,10 @@ func (c *Controller) stageSlot(ctx context.Context, cfg Config, ch *Change) erro
 		since = *ch.StagedAt
 	}
 	// the slot has slotStartTimeout from the first time this controller asked for it, not
-	// from the stage: a controller that first looks at the change later (an API that just
-	// started, its lock held a while longer by the process before) starts the slot then,
-	// and must not fail it on that very tick
+	// from the stage: staged_at can be well before the change became staged (until
+	// 0.3.37 the pipeline wrote its stage job's start, 4.5 minutes early on 2026-10-27),
+	// and a controller that first looks at the change later (an API that just started)
+	// starts the slot then: neither may fail it on that very tick
 	if asked := c.slotAsked(ch.ID); asked.After(since) {
 		since = asked
 	}

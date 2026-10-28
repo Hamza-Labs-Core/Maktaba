@@ -4,8 +4,11 @@ promoted without an approval."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
+from maktaba_pipeline.engine.sql import parse_ts
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.tvrelease.config import MaktabaTvStagingConfig, auto_rule
 from maktaba_pipeline.tvrelease.stage import collapse_open, stage_change
@@ -64,3 +67,26 @@ async def test_the_updaters_change_stages_binary_only(db: Database) -> None:
     )
     assert rel is not None
     assert (rel["streaming_version"], rel["streaming_sha256"]) == ("v1.5.0", _SHA)
+
+
+@pytest.mark.asyncio
+async def test_staged_at_is_when_the_change_became_staged(db: Database) -> None:
+    """The 0.3.36 update (2026-10-27): its tv_stage job began at 21:24:48 and staged the
+    change at 21:29:17, but staged_at said 21:24:48 (the job's clock). The controller
+    times the staging slot's start from staged_at, so it failed the slot on its first
+    look. staged_at is when the change became staged."""
+    await set_staging(db, enabled=True)
+    lib = await library_with(db, 4)
+    await add_channel(db, lib, 101)
+    upd = await create_change(
+        db, state="draft", title="Maktaba 0.3.36", source={"kind": "auto_update", "run_id": "r1"},
+        pending={"streaming": ["v0.3.36", _SHA]}, actor_source="auto_update",
+    )  # fmt: skip
+    job_began = datetime.now(UTC) - timedelta(minutes=4, seconds=30)  # a long build
+    before = datetime.now(UTC)
+    assert await stage_change(db, upd, clock=job_began) == "staged"
+    ch = await get_change(db, upd)
+    assert ch is not None
+    staged_at = parse_ts(ch.row["staged_at"])
+    assert staged_at is not None
+    assert staged_at >= before - timedelta(seconds=1), (staged_at, job_began)
