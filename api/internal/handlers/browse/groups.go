@@ -250,10 +250,10 @@ type LibraryCollection struct {
 var collectionFilters = []string{KindTopic, SubFiller, SubStandalone, KindCurated}
 
 func (c LibraryCollection) filter() string {
-	switch {
-	case c.Kind == KindClip:
+	switch c.Kind {
+	case KindClip:
 		return c.Subkind
-	case c.Kind == KindSmart:
+	case KindSmart:
 		return KindCurated
 	}
 	return c.Kind
