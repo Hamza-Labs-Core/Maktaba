@@ -164,6 +164,26 @@ func TestEveryRouteIsAdminOnly(t *testing.T) {
 		{"GET", "/api/seasons/styles", "/api/seasons/styles", ""},
 		{"PUT", "/api/seasons/{id}/style", "/api/seasons/" + uidA + "/style", `{"style":"talk"}`},
 		{"PUT", "/api/series/{id}/style", "/api/series/" + uidB + "/style", `{"style":"talk"}`},
+		// Epic 47
+		{"POST", "/api/libraries/{id}/convert", "/api/libraries/" + uidA + "/convert", `{}`},
+		{"POST", "/api/libraries/{id}/dedup-scan", "/api/libraries/" + uidA + "/dedup-scan", `{}`},
+		{"POST", "/api/libraries/{id}/youtube/refresh", "/api/libraries/" + uidA + "/youtube/refresh", `{}`},
+		{"POST", "/api/libraries/{id}/youtube/backfill", "/api/libraries/" + uidA + "/youtube/backfill", ""},
+		{"POST", "/api/libraries/{id}/youtube/retry", "/api/libraries/" + uidA + "/youtube/retry", `{}`},
+		{"POST", "/api/libraries/{id}/youtube/tartube", "/api/libraries/" + uidA + "/youtube/tartube", `{"path":"/x.json"}`},
+		{"GET", "/api/libraries/{id}/youtube/sources", "/api/libraries/" + uidA + "/youtube/sources", ""},
+		{"POST", "/api/libraries/{id}/youtube/sources", "/api/libraries/" + uidA + "/youtube/sources", `{"url":"https://www.youtube.com/@x"}`},
+		{"PATCH", "/api/libraries/{id}/youtube/sources/{sid}", "/api/libraries/" + uidA + "/youtube/sources/" + uidB, `{"mode":"off"}`},
+		{"DELETE", "/api/libraries/{id}/youtube/sources/{sid}", "/api/libraries/" + uidA + "/youtube/sources/" + uidB, ""},
+		{"GET", "/api/libraries/{id}/offline-summary", "/api/libraries/" + uidA + "/offline-summary", ""},
+		{"GET", "/api/queues/offline-summary", "/api/queues/offline-summary", ""},
+		{"GET", "/api/queues/offline-items", "/api/queues/offline-items", ""},
+		{"GET", "/api/queues/youtube-downloads", "/api/queues/youtube-downloads", ""},
+		{"GET", "/api/queues/file-actions", "/api/queues/file-actions", ""},
+		{"POST", "/api/queues/file-actions/{id}/restore", "/api/queues/file-actions/" + uidA + "/restore", ""},
+		{"GET", "/api/queues/duplicates", "/api/queues/duplicates", ""},
+		{"POST", "/api/queues/duplicates/{gid}/apply", "/api/queues/duplicates/" + uidA + "/apply", `{}`},
+		{"POST", "/api/queues/duplicates/{gid}/dismiss", "/api/queues/duplicates/" + uidA + "/dismiss", ""},
 	}
 
 	// the table covers every registered route, no more, no less

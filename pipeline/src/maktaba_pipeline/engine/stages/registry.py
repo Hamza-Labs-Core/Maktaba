@@ -86,6 +86,7 @@ CORE_MODULES: dict[str, str] = {
     "youtube_fetch": "maktaba_pipeline.engine.stages.youtube_fetch",
     "youtube_backfill": "maktaba_pipeline.engine.stages.youtube_backfill",
     "trash_purge": "maktaba_pipeline.engine.stages.trash_purge",
+    "file_restore": "maktaba_pipeline.engine.stages.file_restore",
 }
 _LEGACY_MODULE = "maktaba_pipeline.engine.stages.legacy"
 

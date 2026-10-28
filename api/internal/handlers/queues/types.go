@@ -20,6 +20,8 @@ const (
 	KindSeries  = "series"
 	KindSeason  = "season"
 	KindCatalog = "catalog"
+	// KindDupGroup is an Epic 47 duplicate group (dedup_apply); not a retrigger subject
+	KindDupGroup = "dup_group"
 )
 
 var subjectKinds = map[string]bool{

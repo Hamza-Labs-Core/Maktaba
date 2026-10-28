@@ -29,8 +29,14 @@ func labelSQL(kindCol, idCol string) (joins, expr string) {
 	LEFT JOIN libraries ll ON %[1]s = 'library' AND ll.id = %[2]s
 	LEFT JOIN series_seasons lss ON %[1]s = 'season' AND lss.id = %[2]s
 	LEFT JOIN series lsr ON %[1]s = 'series' AND lsr.id = %[2]s`, kindCol, idCol)
+	// a duplicate group is named by its keeper, else its first member (pipeline
+	// engine/subjects.py label_of)
 	expr = fmt.Sprintf(`COALESCE(CASE %[1]s
 		WHEN 'video' THEN COALESCE(lv.title, lv.filename)
+		WHEN 'dup_group' THEN (SELECT COALESCE(gkv.title, gkv.filename) FROM duplicate_groups gk
+			JOIN videos gkv ON gkv.id = COALESCE(gk.keeper_video_id,
+				(SELECT gkm.video_id FROM duplicate_members gkm WHERE gkm.group_id = gk.id ORDER BY gkm.video_id LIMIT 1))
+			WHERE gk.id = %[2]s)
 		WHEN 'library' THEN ll.name
 		WHEN 'season' THEN CASE WHEN lss.kind = 'ongoing'
 			THEN lss.name || ' · ' || COALESCE(to_char(lss.first_air, 'YYYY'), 'S' || lss.season::text)

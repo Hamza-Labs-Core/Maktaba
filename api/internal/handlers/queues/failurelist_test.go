@@ -13,12 +13,12 @@ const uidL = "44444444-4444-4444-4444-444444444444"
 
 var itemCols = []string{"id", "stage", "kind", "sid", "label", "path", "lib", "lib_name", "state", "status",
 	"error", "cause", "class", "parked", "attempts", "max", "first", "last", "missing", "yt",
-	"chk_ok", "chk_err", "chk_host", "chk_at"}
+	"chk_ok", "chk_err", "chk_host", "chk_at", "fa_id", "fa_kind", "fa_state", "fa_restorable"}
 
 func itemRow(id int64, status, cause, class string) []driver.Value {
 	return []driver.Value{id, "content_hash", "video", uidV, "Lesson 1", "smb://nas/O/a.mp4", uidL, "Lessons",
 		"failed", status, `{"kind":"file_missing","message":"a.mp4: not found"}`, cause, class, nil,
-		int64(1), int64(3), t0, t0, t0, "yt123", false, "PermissionError: denied", "mac", t0}
+		int64(1), int64(3), t0, t0, t0, "yt123", false, "PermissionError: denied", "mac", t0, nil, nil, nil, false}
 }
 
 func listRules(rows ...[]driver.Value) []*queuestest.Rule {

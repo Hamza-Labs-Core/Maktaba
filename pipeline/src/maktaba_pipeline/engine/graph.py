@@ -99,13 +99,14 @@ TOPIC_RECLUSTER_VERSION = 1
 #: enrich (stages/enrich.py): the metadata provider
 ENRICH_VERSION = 1
 #: Epic 47 (offline, MP4, no duplicates): stages/convert_mp4.py, dedup_scan.py,
-#: dedup_apply.py, youtube_fetch.py, youtube_backfill.py, trash_purge.py
+#: dedup_apply.py, youtube_fetch.py, youtube_backfill.py, trash_purge.py, file_restore.py
 CONVERT_VERSION = 1
 DEDUP_SCAN_VERSION = 1
 DEDUP_APPLY_VERSION = 1
 YT_FETCH_VERSION = 1
 YT_BACKFILL_VERSION = 1
 TRASH_PURGE_VERSION = 1
+FILE_RESTORE_VERSION = 1
 
 #: Epic 47's enqueue priorities (lower runs first; normal pipeline work is 100): a
 #: library conversion or dedup never starves new videos, new uploads beat them, and the
@@ -119,6 +120,8 @@ EPIC47_PRIORITIES: dict[str, int] = {
     "youtube_fetch": 120,
     "youtube_backfill": 300,
     "trash_purge": 200,
+    #: a Restore someone asked for on the file-actions page
+    "file_restore": 50,
 }
 
 EdgeMap = Literal[
@@ -952,6 +955,19 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=17,
         version=TRASH_PURGE_VERSION,
         external_write=True,
+    ),
+    # undoes ledger rows from the file-actions page (library_mgmt/swap.py restore): the
+    # trashed file goes back and the DB change is reversed; the API only queues it
+    StageDef(
+        name="file_restore",
+        label="Restore from trash",
+        subject_kinds=("library",),
+        pool="nas_write",
+        lane="media",
+        lane_order=18,
+        version=FILE_RESTORE_VERSION,
+        external_write=True,
+        max_attempts=2,
     ),
     _legacy("categorize", "Categorize", ("video",), "cpu", 8),
     # Stub audit #4 (Story 26.5): a video's metadata suggestions from Maktaba's own intel

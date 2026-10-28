@@ -237,6 +237,10 @@ Merges one group of duplicates into the copy that is kept: watch history, playli
 
 Deletes the files in a library's trash (`.maktaba/trash` in each library folder) once their grace period has passed: 30 days unless the library says otherwise. Until then a converted original or a merged duplicate can be restored. A trashed file whose size changed is not deleted: the step stops and says so.
 
+### Restore from trash {#file-restore}
+
+Puts back what the File actions page's **Restore** asked for: a converted original returns to its place (its MP4 goes to the trash instead), and a merged duplicate comes back as its own video. It runs once per library for every row asked, and only while the file is still in the trash. The trash is emptied once a day of what is past its grace period.
+
 ### YouTube downloads {#youtube-fetch}
 
 Downloads the new uploads of a library's YouTube channels and playlists, with their subtitles and thumbnails, one at a time. Not set up yet: it arrives in a later version.

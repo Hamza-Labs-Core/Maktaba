@@ -151,6 +151,18 @@ Every failure gets a class that says what Maktaba does with it. The first name o
 - **What Maktaba does:** the job waits and spends no try. Every **Check every (seconds)** it looks at each library folder; once it lists again, the waiting jobs go back to work.
 - **What you can do:** mount the share or wake the NAS. Nothing else is needed.
 
+### Waits on a service or share: YouTube asked for a bot check (dependency:youtube) {#class-dependency-youtube}
+
+- **What it means:** YouTube asked Maktaba to prove it is not a bot.
+- **What Maktaba does:** the YouTube jobs wait and spend no try; the source shows **bot check** in its YouTube sources. They try again after a day at the latest.
+- **What you can do:** wait, or set **Cookies from browser** on the source in **YouTube sources…** on the Queues page. See [YouTube asked for a bot check](#youtube-bot-check).
+
+### Waits on disk or memory: YouTube's rate limit (resource:youtube_rate_limit) {#class-resource-youtube-rate-limit}
+
+- **What it means:** YouTube answered "Too Many Requests" (HTTP 429).
+- **What Maktaba does:** the downloads wait and spend no try, and go back to work an hour later. The items stay wanted.
+- **What you can do:** nothing; see [YouTube is limiting requests](#youtube-rate-limited).
+
 ### Waits on disk or memory: out of disk space (resource:disk) {#class-resource-disk}
 
 - **What it means:** the machine ran out of disk space while working.
@@ -265,6 +277,12 @@ The cause labels come from the server and are in English for now. The Arabic pag
 - **What it means:** YouTube says the video is unavailable or the channel does not exist: it was removed, made private or renamed.
 - **Does Maktaba fix it itself?** No, [retrying cannot help](#class-item-permanent), so it fails at once.
 - **What you can do:** check the link in a browser. If it is really gone, there is nothing to fetch; your local file stays as it is. Press **Retry** only if it is back; otherwise [Ignore](#action-ignore) the item on [Failing items](#failing-items).
+
+### YouTube is limiting requests {#youtube-rate-limited}
+
+- **What it means:** YouTube answered "Too Many Requests" (HTTP 429): this home asked too much too fast.
+- **Does Maktaba fix it itself?** Yes. The downloads [wait an hour](#class-resource-youtube-rate-limit) and carry on; nothing is lost and no try is spent.
+- **What you can do:** nothing. If it keeps happening, set a **Limit rate** on the source in **YouTube sources…** on the Queues page.
 
 ### Plex is unreachable {#plex-unreachable}
 

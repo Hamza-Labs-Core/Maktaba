@@ -16,6 +16,13 @@
 //	GET  /api/issues, /api/activity, /api/jobs/{id}/events
 //	GET  /api/items/{kind}/{id}/history
 //	GET  /api/queues/libraries, /api/queues/health
+//	Epic 47 (offline, MP4, no duplicates): POST /api/libraries/{id}/{convert,
+//	dedup-scan, youtube/{refresh,backfill,retry,tartube}}, the YouTube sources
+//	(/api/libraries/{id}/youtube/sources[/{sid}]), GET /api/libraries/{id}/
+//	offline-summary, /api/queues/{offline-summary,offline-items,youtube-downloads,
+//	file-actions,duplicates}, POST /api/queues/file-actions/{id}/restore,
+//	POST /api/queues/duplicates/{gid}/{apply,dismiss} (offline*.go,
+//	ytsources.go, fileactions.go, duplicates.go)
 //
 // All enqueueing goes through the processing_jobs_enqueue SQL function
 // (see Enqueue) so Go and the Python engine cannot disagree about
@@ -88,6 +95,10 @@ type Handler struct {
 	// Validators check an extension's settings change before it is saved.
 	Validators map[string]ExtensionValidator
 
+	// Sources resolves a pasted YouTube channel or playlist URL (Epic 47's
+	// sources dialog; search.YtDlpSearcher). nil: adding a source answers 503.
+	Sources SourceResolver
+
 	// extMu serialises the read-modify-write of an extension row's
 	// settings (PUT, the Plex client id, the Plex sign-in's server pick)
 	// so one cannot overwrite the other's keys.
@@ -128,6 +139,27 @@ func (h *Handler) mount(r chi.Router) {
 	r.Get("/api/queues/pulse", h.Pulse)
 	r.Get("/api/queues/running", h.Running)
 	r.Get("/api/queues/failures", h.Failures)
+	// Epic 47: keep libraries offline, in MP4 and without duplicates (offline*.go,
+	// ytsources.go, fileactions.go, duplicates.go)
+	r.Post("/api/libraries/{id}/convert", h.ConvertLibrary)
+	r.Post("/api/libraries/{id}/dedup-scan", h.DedupScanLibrary)
+	r.Post("/api/libraries/{id}/youtube/refresh", h.RefreshYouTube)
+	r.Post("/api/libraries/{id}/youtube/backfill", h.ResumeBackfill)
+	r.Post("/api/libraries/{id}/youtube/retry", h.RetryDownloads)
+	r.Post("/api/libraries/{id}/youtube/tartube", h.ImportTartube)
+	r.Get("/api/libraries/{id}/youtube/sources", h.ListSources)
+	r.Post("/api/libraries/{id}/youtube/sources", h.AddSource)
+	r.Patch("/api/libraries/{id}/youtube/sources/{sid}", h.PatchSource)
+	r.Delete("/api/libraries/{id}/youtube/sources/{sid}", h.DeleteSource)
+	r.Get("/api/libraries/{id}/offline-summary", h.OfflineSummary)
+	r.Get("/api/queues/offline-summary", h.OfflineSummaries)
+	r.Get("/api/queues/offline-items", h.OfflineItems)
+	r.Get("/api/queues/youtube-downloads", h.YouTubeDownloads)
+	r.Get("/api/queues/file-actions", h.FileActions)
+	r.Post("/api/queues/file-actions/{id}/restore", h.RestoreFileAction)
+	r.Get("/api/queues/duplicates", h.Duplicates)
+	r.Post("/api/queues/duplicates/{gid}/apply", h.ApplyDuplicate)
+	r.Post("/api/queues/duplicates/{gid}/dismiss", h.DismissDuplicate)
 	r.Post("/api/queues/failures/actions", h.FailureActions)
 	r.Post("/api/queues/pause-all", h.PauseAll)
 	r.Post("/api/queues/resume-all", h.ResumeAll)
