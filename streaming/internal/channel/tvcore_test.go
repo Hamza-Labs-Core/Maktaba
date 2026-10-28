@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -123,14 +124,36 @@ func TestBlockArgs_VideoToolboxLive(t *testing.T) {
 	prof := OutputProfile{Encoder: EncoderVideoToolbox, VideoKbps: 4000, FPS: 25, SegmentSeconds: 4, VTPrioSpeed: true}
 	got := joined(BlockArgs(prof, in))
 	for _, want := range []string{"-hwaccel videotoolbox", "-c:v h264_videotoolbox", "-realtime 1", "-allow_sw 0",
-		"-prio_speed 1", "-b:v 4000k", "-maxrate 4000k", "-bufsize 8000k", "-g 100", "-bf 0",
-		"-force_key_frames expr:gte(t,n_forced*4)"} {
+		"-prio_speed 1", "-b:v 4000k", "-maxrate 4000k", "-bufsize 8000k", "-g 50", "-bf 0",
+		"-force_key_frames expr:gte(t,n_forced*2)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in %s", want, got)
 		}
 	}
 	if strings.Contains(got, "nvenc") || strings.Contains(got, "libx264") || strings.Contains(got, "cuda") {
 		t.Errorf("wrong encoder flags: %s", got)
+	}
+	// TV change #53 (2026-10-28): VideoToolbox's GOP was one 4 s segment, so its IDRs
+	// fell on every other point of the 2 s splice grid and the staging verification
+	// failed ts.conformity ("IDRs 4.00 s apart (want every 2 s)"). It keeps the
+	// keyframe interval like libx264 and NVENC, at the grid's phase.
+	start := time.Date(2026, 10, 28, 4, 41, 43, 300_000_000, time.UTC)
+	wall := BlockInput{Kind: "file", Source: "/m/a.mp4", DurationSec: 10, HasVideo: true, HasAudio: true,
+		WallStart: start}
+	for _, enc := range []string{EncoderVideoToolbox, EncoderSoftware, EncoderNVENC} {
+		for _, k := range []int{0, 2, 4} {
+			a := BlockArgs(OutputProfile{Encoder: enc, FPS: 30, SegmentSeconds: 4, KeyintSeconds: k}, wall)
+			want := k
+			if want == 0 {
+				want = DefaultKeyintSeconds
+			}
+			if g := argAfter(a, "-g"); g != strconv.Itoa(30*want) {
+				t.Errorf("%s keyint %d: -g %s, want %d", enc, k, g, 30*want)
+			}
+			if kf := argAfter(a, "-force_key_frames"); kf != KeyframeExpr(KeyframePhase(start, want, 30), want, 30) {
+				t.Errorf("%s keyint %d: -force_key_frames %s, not the %d s wall-clock grid", enc, k, kf, want)
+			}
+		}
 	}
 	// no hardware encoder answered: Apple's software path; an older ffmpeg: no -prio_speed
 	got = joined(BlockArgs(OutputProfile{Encoder: EncoderVideoToolbox, VTSoftware: true, SegmentSeconds: 2, FPS: 30}, in))

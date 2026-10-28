@@ -36,6 +36,12 @@ const (
 	firstSegmentTimeout = 75 * time.Second
 	recheckEvery        = 60 * time.Second
 	slotCrashLoop       = 3
+	// outputSettle: how long after its first segment a channel's output may still be
+	// behind the wall clock, catching up (channel.wallclock and channel.position warn
+	// meanwhile and hold the soak). TV change #53 (2026-10-28): the staging slot's 28
+	// stations opened their encoders 7-15 s late and were failed 10 s after their
+	// first segment, rolling the home's update back.
+	outputSettle = 30 * time.Second
 )
 
 // planFor builds the staging plan of a change from its release and diff.
@@ -324,6 +330,7 @@ func (c *Controller) pushedChannels(ctx context.Context) map[string]bool {
 
 // fullBlock is a block of a generation at an instant with its title.
 type fullBlock struct {
+	seq   int64
 	video sql.NullString
 	start nullTime
 	end   nullTime
@@ -334,9 +341,9 @@ type fullBlock struct {
 func (c *Controller) blockWithTitle(ctx context.Context, channelID string, gen int64, at time.Time) (*fullBlock, error) {
 	var b fullBlock
 	var snap sql.NullString
-	err := c.DB.QueryRowContext(ctx, `SELECT video_id, start_at, end_at, kind, CAST(title_snapshot AS TEXT) FROM channel_programs
+	err := c.DB.QueryRowContext(ctx, `SELECT seq, video_id, start_at, end_at, kind, CAST(title_snapshot AS TEXT) FROM channel_programs
 		WHERE channel_id = $1 AND sched_gen = $2 AND start_at <= $3 AND end_at > $3
-		ORDER BY start_at DESC LIMIT 1`, channelID, gen, tsParam(c.DB, at)).Scan(&b.video, &b.start, &b.end, &b.kind, &snap)
+		ORDER BY start_at DESC LIMIT 1`, channelID, gen, tsParam(c.DB, at)).Scan(&b.seq, &b.video, &b.start, &b.end, &b.kind, &snap)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -428,8 +435,29 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 			continue
 		}
 		sampled := smp.At
+		// a station's output starts behind the wall clock by the time its encoder took
+		// to open and catches up (the input read faster, story 33.5): the clock checks
+		// judge it once it had outputSettle from its first segment to do so
+		settle := func(k *Check) {
+			first := smp.WarmSince
+			if first.IsZero() {
+				first = w.Since
+			}
+			first = first.Add(time.Duration(smp.FirstSegmentAfter * float64(time.Second)))
+			if k.Result != ResultFail || smp.FirstSegmentAfter <= 0 || sampled.Sub(first) >= outputSettle {
+				return
+			}
+			k.Result = ResultWarn
+			k.Value += fmt.Sprintf(" (settling: %.0f s after the first segment)", sampled.Sub(first).Seconds())
+			if !sj.probed { // a rolling probe that ended is not measured again
+				ev.pending = append(ev.pending, k.Check+" of "+short(id)+" (settling)")
+			}
+		}
 		for _, r := range smp.Results {
 			k := Check{Check: r.Check, ChannelID: id, Result: r.Result, Value: r.Value}
+			if k.Check == "channel.wallclock" {
+				settle(&k)
+			}
 			if r.Result == "pending" {
 				if sj.probed {
 					continue
@@ -478,6 +506,7 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 					Value: fmt.Sprintf("output at %+.3f s from the wall clock", -d)}
 				if math.Abs(d) > 2 {
 					pos.Result = ResultFail
+					settle(&pos)
 				}
 				add(pos)
 			}
@@ -493,6 +522,21 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 			case nb == nil:
 				add(Check{Check: "channel.block", ChannelID: id, Result: ResultFail,
 					Value: fmt.Sprintf("airs %q but generation %d has nothing at %s", blk.Title, gen, at.Format(time.RFC3339))})
+			case blk.Synthetic && blk.StandInFor != 0 && blk.StandInFor == nb.seq:
+				// the scheduled block's file cannot be read on this host: a filler (or a
+				// slate) airs in its place, as on live (Feeder.standIn). A host matter,
+				// not the release's — unless live reads that very file.
+				k := Check{Check: "channel.block", ChannelID: id, Result: ResultWarn,
+					Value: fmt.Sprintf("the file of %q (seq %d, generation %d) cannot be read on this host: %q airs in its place",
+						nb.title, nb.seq, gen, blk.Title)}
+				if smp.LiveStation != nil && smp.LiveStation.Block != nil {
+					lb := smp.LiveStation.Block
+					if !lb.Synthetic && lb.VideoID == nb.video.String && lb.StartAt.Equal(nb.start.T) {
+						k.Result = ResultFail
+						k.Value = fmt.Sprintf("airs %q in place of %q, whose file live reads", blk.Title, nb.title)
+					}
+				}
+				add(k)
 			case !sameBlock(blk, nb.video.String, nb.start.T, nb.end.T):
 				if blk.Synthetic && nb.video.String == "" {
 					add(Check{Check: "channel.block", ChannelID: id, Result: ResultPass, Value: "a slate, as scheduled"})

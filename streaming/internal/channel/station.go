@@ -181,6 +181,9 @@ func StartStation(cfg StationConfig, channelID uuid.UUID, dir string) (*Station,
 	if cfg.Profile.HLSSegmentOption == "" {
 		cfg.Profile.HLSSegmentOption = HLSSegmentOptionFor(cfg.FFmpeg)
 	}
+	if !cfg.Profile.ReadrateCatchup {
+		cfg.Profile.ReadrateCatchup = ReadrateCatchupFor(cfg.FFmpeg)
+	}
 	if err := resetDir(dir); err != nil {
 		return nil, err
 	}

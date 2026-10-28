@@ -119,6 +119,10 @@ func TestFeeder_UnreadableFileAirsFillerUntilBlockEnd(t *testing.T) {
 		if w.seq >= 90 && (!s.Synthetic || s.Next == nil || s.Next.Seq != 3) {
 			t.Fatalf("stand-in %d: synthetic %v next %+v", i, s.Synthetic, s.Next)
 		}
+		// the slot reports what it stands in for (the staging verification's channel.block)
+		if want := map[bool]int64{true: 2, false: 0}[w.seq >= 90]; s.StandInFor != want {
+			t.Fatalf("segment %d stands in for %d, want %d", i, s.StandInFor, want)
+		}
 	}
 	if !segs[5].Start.Equal(missing.EndAt) {
 		t.Fatalf("next programme starts %v, scheduled %v", segs[5].Start, missing.EndAt)
@@ -140,7 +144,7 @@ func TestFeeder_UnreadableFileSlateRule(t *testing.T) {
 	segs, reported := unreadableRun(t, repo, clk, 4, FillSlate, nil, nil)
 	assertContiguous(t, segs)
 	for i, d := range []time.Duration{maxGapSlate, maxGapSlate, 2 * time.Minute} {
-		if segs[i].Kind != KindSlate || !segs[i].Synthetic || segs[i].Duration() != d {
+		if segs[i].Kind != KindSlate || !segs[i].Synthetic || segs[i].Duration() != d || segs[i].StandInFor != 1 {
 			t.Fatalf("segment %d = %+v, want a %v slate", i, segs[i], d)
 		}
 	}

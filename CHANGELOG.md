@@ -490,6 +490,20 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **An update's TV check no longer fails a Mac's new streaming software on its warm-up.** The
+  staging check of TV change #53 (0.3.37 → 0.3.38, 2026-10-28) failed 27 s in and rolled the
+  update back, for three reasons none of which was the release: the staging slot's channels, all
+  started at once, opened their encoders 7–15 s late and were judged 10 s after their first
+  segment, when ffmpeg 7.1+ (`-re`) makes such a lag up at only 1.05× (four minutes); VideoToolbox
+  put a keyframe every 4 s where the 2 s splice grid (and the check) want one every 2 s; and a
+  filler airing in place of a programme whose file is missing on this machine counted as the wrong
+  programme. Now a lagging input catches up at 2× (`-readrate_catchup`, when the ffmpeg has it),
+  VideoToolbox keeps the keyframe interval like libx264 and NVENC, `channel.wallclock` and
+  `channel.position` give a channel 30 s from its first segment to settle (they warn and hold the
+  soak meanwhile, and still fail a channel that stays behind), and the slot says which programme
+  a filler stands in for, so `channel.block` warns about the missing file instead (and still fails
+  when live reads that file). The TV staging end-to-end test waits for a failed change in draft,
+  where a failure has gone since story 33.12.
 - **A full node plays the videos it can read itself again.** A node's path map keys the prefix
   the database stores (`{"/Volumes/Originals/": "O:/"}`, inferred from the home's mounts and the
   node's), and its streaming role opens files through it, but the api's check of whether this

@@ -218,7 +218,8 @@ func (f *Feeder) standIn(ctx context.Context, seg Segment) Segment {
 	}
 	// A slate is re-planned within maxGapSlate: a filler list that could
 	// not be read now may be readable then.
-	slate := Segment{Kind: KindSlate, Block: seg.Block, Start: seg.Start, End: seg.End, Synthetic: true, Next: seg.Next}
+	slate := Segment{Kind: KindSlate, Block: seg.Block, Start: seg.Start, End: seg.End, Synthetic: true, Next: seg.Next,
+		StandInFor: seg.Block.Seq}
 	if slate.End.Sub(slate.Start) > maxGapSlate {
 		slate.End = slate.Start.Add(maxGapSlate)
 	}
@@ -258,7 +259,7 @@ func (f *Feeder) standIn(ctx context.Context, seg Segment) Segment {
 			end = seg.End
 		}
 		return Segment{Kind: c.Kind, Block: c, Start: seg.Start, End: end, SeekMS: c.SourceOffsetMS,
-			Synthetic: true, Next: seg.Next}
+			Synthetic: true, Next: seg.Next, StandInFor: seg.Block.Seq}
 	}
 	return slate
 }
