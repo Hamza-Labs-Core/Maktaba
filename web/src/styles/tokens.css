@@ -136,31 +136,46 @@
 /* The design-system surfaces paint with --color-neutral-0 / -200, which
    also serve as white label text (Button, Toast) and as greys on the
    always-black player, so the dark theme cannot remap them; their
-   surfaces follow the app tokens here instead. */
-[data-theme="dark"] .mk-card,
-[data-theme="dark"] .mk-modal,
-[data-theme="dark"] .mk-drawer,
-[data-theme="dark"] .mk-menu__list,
-[data-theme="dark"] .mk-context-menu {
+   surfaces follow the app tokens here instead. Each rule names the dark theme the way
+   the tokens above do: chosen ([data-theme="dark"]) or the default when nothing is
+   chosen yet (no data-theme, as the desktop apps start), or the apps showed the dark
+   page with light cards and loading boxes. */
+:is([data-theme="dark"], :root:not([data-theme])) .mk-card,
+:is([data-theme="dark"], :root:not([data-theme])) .mk-modal,
+:is([data-theme="dark"], :root:not([data-theme])) .mk-drawer,
+:is([data-theme="dark"], :root:not([data-theme])) .mk-menu__list,
+:is([data-theme="dark"], :root:not([data-theme])) .mk-context-menu {
   background-color: var(--color-subtle);
   border-color: var(--color-border);
   color: var(--color-fg);
 }
-[data-theme="dark"] .mk-control,
-[data-theme="dark"] .mk-choice__control {
+:is([data-theme="dark"], :root:not([data-theme])) .mk-control,
+:is([data-theme="dark"], :root:not([data-theme])) .mk-choice__control {
   background-color: var(--color-bg);
   border-color: var(--color-neutral-700);
 }
-[data-theme="dark"] .mk-progress,
-[data-theme="dark"] .mkt-state--queued {
+:is([data-theme="dark"], :root:not([data-theme])) .mk-progress,
+:is([data-theme="dark"], :root:not([data-theme])) .mkt-state--queued {
   background-color: var(--color-border);
+}
+
+/* The loading placeholders (Skeleton) shimmer between the app's dark surfaces, not the
+   design system's light greys: a white box on the dark Home and library pages. */
+:is([data-theme="dark"], :root:not([data-theme])) .mk-skeleton {
+  background-color: var(--color-subtle);
+  background-image: linear-gradient(
+    90deg,
+    var(--color-subtle) 0%,
+    var(--color-border) 50%,
+    var(--color-subtle) 100%
+  );
 }
 
 /* Solid semantic fills in app.css pair these tokens with a hard-coded
    white label; the brighter dark-theme values need a dark label. */
-[data-theme="dark"] .mkt-alert,
-[data-theme="dark"] .mkt-state--completed,
-[data-theme="dark"] .mkt-state--failed {
+:is([data-theme="dark"], :root:not([data-theme])) .mkt-alert,
+:is([data-theme="dark"], :root:not([data-theme])) .mkt-state--completed,
+:is([data-theme="dark"], :root:not([data-theme])) .mkt-state--failed {
   color: var(--color-bg);
 }
 
