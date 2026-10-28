@@ -243,11 +243,28 @@ func hlsConformity(pl Playlist, _ Expect) Result {
 		Value: fmt.Sprintf("target %d s, program dates, independent segments, segments start with an IDR", pl.Target)}
 }
 
+// LiveTSJudgeSpan is how much stream clock a live.ts read must span before a missing
+// PAT/PMT is the stream's fault: twice the 0.5 s they must repeat within. A shorter
+// read (a station starting, or restarting under the read: TV change #54, 2026-10-28)
+// proves nothing either way.
+const LiveTSJudgeSpan = 1.0
+
+// liveTSJudgeBytes stands in for the span of a read without PCRs (≈ 1.4 s at 6 Mb/s).
+const liveTSJudgeBytes = 1 << 20
+
+// LiveTSJudged reports whether a live.ts read is long enough to judge its PAT/PMT.
+func LiveTSJudged(st TSReport) bool {
+	return st.PCRSpan >= LiveTSJudgeSpan || st.Bytes >= liveTSJudgeBytes
+}
+
 // tsConformity checks the sampled segments (t) and, when sampled, a stretch of
 // the continuous TS (st, live.ts: what an HDHomeRun client reads), where PAT/PMT
-// must repeat every 0.5 s and continuity and PCR hold across segment cuts.
+// must repeat every 0.5 s and continuity and PCR hold across segment cuts. A live.ts
+// read too short to hold a PAT (LiveTSJudged) leaves the check pending: it is
+// measured again at the next sample.
 func tsConformity(t, st TSReport, exp Expect) Result {
 	var bad []string
+	short := ""
 	if t.Packets == 0 {
 		return Result{Check: "ts.conformity", Result: Pending, Value: "no TS sampled yet"}
 	}
@@ -259,8 +276,11 @@ func tsConformity(t, st TSReport, exp Expect) Result {
 	}
 	if st.Packets > 0 {
 		switch {
+		case (st.PATs == 0 || st.PMTs == 0) && !LiveTSJudged(st):
+			short = fmt.Sprintf("live.ts: %d packets over %.2f s read, too short to judge its PAT/PMT",
+				st.Packets, st.PCRSpan)
 		case st.PATs == 0 || st.PMTs == 0:
-			bad = append(bad, "live.ts: no PAT/PMT")
+			bad = append(bad, fmt.Sprintf("live.ts: no PAT/PMT in %.1f s", st.PCRSpan))
 		case st.MaxPATGap > 0.5:
 			bad = append(bad, fmt.Sprintf("live.ts: PAT every %.2f s (> 0.5 s)", st.MaxPATGap))
 		}
@@ -316,6 +336,9 @@ func tsConformity(t, st TSReport, exp Expect) Result {
 	}
 	if len(bad) > 0 {
 		return Result{Check: "ts.conformity", Result: Fail, Value: strings.Join(bad, "; ")}
+	}
+	if short != "" {
+		return Result{Check: "ts.conformity", Result: Pending, Value: short}
 	}
 	v := fmt.Sprintf(
 		"%.1f s: H.264 profile %d level %d %dx%d %.2f fps, IDR every %.2f s on the grid, no B-frames, CC 0, PCR monotonic, PIDs 0x%x/0x%x/0x%x",

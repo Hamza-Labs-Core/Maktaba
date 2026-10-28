@@ -19,6 +19,8 @@ type coldStart struct {
 	lag        func(at time.Time) float64
 	block      *OnAir
 	live       *OnAir
+	// ts, when set, is the front door's ts.conformity of the sample at at
+	ts func(at time.Time) ProbeResult
 }
 
 func (cs *coldStart) install() {
@@ -47,6 +49,13 @@ func (cs *coldStart) install() {
 				wc.Result = "fail"
 			}
 			smp.Results = append(passing(), wc)
+			if cs.ts != nil {
+				for i := range smp.Results {
+					if smp.Results[i].Check == "ts.conformity" {
+						smp.Results[i] = cs.ts(at)
+					}
+				}
+			}
 		}
 		return &StagingView{Active: true, Plan: &p, Slot: "amber", Healthy: true,
 			Status: &SlotStatus{Slot: "amber", Role: "staging", Release: p.ReleaseID, Version: "v2", PID: 92139,
@@ -196,5 +205,66 @@ func TestStreamVerificationStandInForAnUnreadableFile(t *testing.T) {
 				t.Fatalf("channel.block %v", blk)
 			}
 		})
+	}
+}
+
+// TV change #54 (2026-10-28): a station's first sample read its live.ts while the station
+// started and kept a few packets without a PAT. The front door now reads on for the
+// first PAT/PMT and calls a read cut short pending ("too short to judge"): the soak waits
+// for the next sample, and the change is ready once the stream shows its PAT/PMT.
+func TestStreamVerificationWaitsOutALiveTSReadCutShort(t *testing.T) {
+	for _, be := range tvchangetest.Backends(t) {
+		t.Run(be.Name, func(t *testing.T) {
+			w := newSVWorld(t, be.DB)
+			start := w.now
+			cs := &coldStart{w: w, warm: start, firstAfter: 2, lag: func(time.Time) float64 { return 0.2 },
+				ts: func(at time.Time) ProbeResult {
+					if at.Sub(start) < 15*time.Second { // the station's first samples
+						return ProbeResult{Check: "ts.conformity", Result: "pending",
+							Value: "live.ts: 56 packets over 0.07 s read, too short to judge its PAT/PMT"}
+					}
+					return ProbeResult{Check: "ts.conformity", Result: "pass", Value: "ok"}
+				}}
+			cs.install()
+			c := w.staged("v2")
+			w.sampled = w.now
+			w.tick()
+			w.step(5 * time.Second)
+			got := w.get(c.ID)
+			if got.State != StateVerifying {
+				t.Fatalf("a read cut short: %s %v", got.State, got.VerifyReport["reasons"])
+			}
+			if s, _ := got.VerifyReport["status"].(string); !strings.Contains(s, "ts.conformity") {
+				t.Fatalf("the soak does not wait for ts.conformity: %q", s)
+			}
+			for i := 0; i < 20 && w.get(c.ID).State == StateVerifying; i++ {
+				w.step(10 * time.Second)
+			}
+			if got := w.get(c.ID); got.State != StateReady {
+				t.Fatalf("a stream that shows its PAT/PMT: %s %v", got.State, got.VerifyReport["reasons"])
+			}
+		})
+	}
+}
+
+// Not weaker: a live.ts that carries no PAT/PMT over a whole read fails ts.conformity on
+// two samples in a row.
+func TestStreamVerificationFailsALiveTSWithoutPSI(t *testing.T) {
+	w := newSVWorld(t, tvchangetest.Backends(t)[0].DB)
+	cs := &coldStart{w: w, warm: w.now, firstAfter: 2, lag: func(time.Time) float64 { return 0.2 },
+		ts: func(time.Time) ProbeResult {
+			return ProbeResult{Check: "ts.conformity", Result: "fail", Value: "live.ts: no PAT/PMT in 6.0 s"}
+		}}
+	cs.install()
+	c := w.staged("v2")
+	w.sampled = w.now
+	w.tick()
+	for i := 0; i < 6 && w.get(c.ID).State == StateVerifying; i++ {
+		w.step(10 * time.Second)
+	}
+	got := w.get(c.ID)
+	if got.State != StateDraft || failReason(t, w, c.ID) != "verification_failed" ||
+		!strings.Contains(fmt.Sprint(got.VerifyReport["reasons"]), "live.ts: no PAT/PMT") {
+		t.Fatalf("a stream without PAT/PMT: %s %v", got.State, got.VerifyReport["reasons"])
 	}
 }

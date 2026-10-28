@@ -60,6 +60,9 @@ type Slots struct {
 	// StreamSample is how much of a staging channel's live.ts a sample reads
 	// (0: 3 s; tests shorten it).
 	StreamSample time.Duration
+	// StreamPSIWait is how much longer a live.ts read goes on for its first PAT and
+	// PMT when StreamSample brought none (0: 3 s; tests shorten it).
+	StreamPSIWait time.Duration
 	// OnEvent receives the failover and staging crash-loop events for the bell
 	// (story 33.13 AC1; nil: they are written to tv_slot_events when Pool is set,
 	// where the API's TV change controller turns them into notices).
