@@ -110,6 +110,7 @@ type fakeSlot struct {
 	used     int                // the encoder sessions the status reports
 	refuse   bool               // its warm route answers 503 (a slot restarting)
 	chans    []slot.StationInfo // what its stations air (output position, block)
+	reads    atomic.Int32       // live.ts reads open now
 }
 
 func newFakeSlot(t *testing.T, name string, first int64, stations ...string) *fakeSlot {
@@ -150,6 +151,8 @@ func newFakeSlot(t *testing.T, name string, first int64, stations ...string) *fa
 			_, _ = io.WriteString(w, f.name+":"+seg)
 			return
 		}
+		f.reads.Add(1)
+		defer f.reads.Add(-1)
 		w.Header().Set("Content-Type", "video/mp2t")
 		w.WriteHeader(200)
 		fl := w.(http.Flusher)

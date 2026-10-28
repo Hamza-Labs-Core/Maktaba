@@ -104,11 +104,25 @@ func (cp *ChannelProbe) settled() bool {
 	return true
 }
 
+// retry marks a sample read while its station was stopped: what it found failing or
+// wrong is pending (measured again), not a verdict.
+func (cp *ChannelProbe) retry() {
+	for i, r := range cp.Results {
+		if r.Result == verify.Fail || r.Result == verify.Warn {
+			cp.Results[i].Result = verify.Pending
+			cp.Results[i].Value = "retry: the station was stopped during the read (" + r.Value + ")"
+		}
+	}
+}
+
 // WarmEntry is one channel of the staging warm set.
 type WarmEntry struct {
 	Channel string    `json:"channel"`
 	Why     string    `json:"why"`
 	Since   time.Time `json:"since"`
+	// Draining: a rolling probe past the window, kept warm only until the read in
+	// progress on it ends (no new read starts on it).
+	Draining bool `json:"draining,omitempty"`
 }
 
 // StagingView is GET /internal/tv/staging.
@@ -157,6 +171,8 @@ type stagingRun struct {
 	window  int
 	ceiling int
 	pace    map[uuid.UUID]*stationPace
+	// reading: the channels a sample is reading now (the window keeps their stations)
+	reading map[uuid.UUID]bool
 }
 
 func parseIDs(in []string) []uuid.UUID {
@@ -411,9 +427,12 @@ func stagingBudget(capacity, nvencMax, vtMax, liveOn, standbyWarm, maxExtra int)
 // planStagingWarm orders the staging warm set (design §6.1): demand first, then
 // preview viewers, the probe channel, then the rolling window over the changed
 // channels not probed yet (at most window of them at once); removed channels never;
-// cut to the budget.
+// cut to the budget. A window that shrinks keeps the rolling probes a sample is reading
+// (reading) first, and keeps those past it warm, draining, until their read ends (TV
+// change #56: the window halved from 14 to 6 and stopped a station under its live.ts
+// read); it drops the ones not being read. Only the budget cuts a read short.
 func planStagingWarm(plan StagingPlan, demands []ChannelDemand, previews []uuid.UUID, probed map[uuid.UUID]bool,
-	budget, window int) (warm []WarmEntry, deferred []string) {
+	budget, window int, reading map[uuid.UUID]bool) (warm []WarmEntry, deferred []string) {
 	removed := map[uuid.UUID]bool{}
 	for _, id := range parseIDs(plan.Removed) {
 		removed[id] = true
@@ -443,16 +462,26 @@ func planStagingWarm(plan StagingPlan, demands []ChannelDemand, previews []uuid.
 	if p, err := uuid.Parse(plan.Probe); err == nil {
 		add(p, WhyProbe)
 	}
-	for _, id := range parseIDs(plan.Changed) {
-		if !probed[id] {
-			add(id, WhyRolling)
+	changed := parseIDs(plan.Changed)
+	for _, read := range []bool{true, false} {
+		for _, id := range changed {
+			if !probed[id] && reading[id] == read {
+				add(id, WhyRolling)
+			}
 		}
 	}
 	rolling := 0
 	for _, c := range cands {
-		if len(warm) >= budget || (c.Why == WhyRolling && rolling >= window) {
+		if len(warm) >= budget {
 			deferred = append(deferred, c.Channel)
 			continue
+		}
+		if c.Why == WhyRolling && rolling >= window {
+			if id, _ := uuid.Parse(c.Channel); !reading[id] {
+				deferred = append(deferred, c.Channel)
+				continue
+			}
+			c.Draining = true
 		}
 		if c.Why == WhyRolling {
 			rolling++
@@ -511,8 +540,12 @@ func (s *Slots) syncStaging(ctx context.Context, staging string, epoch int64, ca
 	}
 	s.rampLocked(run, staging, budget)
 	window := run.window
+	reading := map[uuid.UUID]bool{}
+	for k, v := range run.reading {
+		reading[k] = v
+	}
 	s.mu.Unlock()
-	warm, deferred := planStagingWarm(plan, demands, previews, probed, budget, window)
+	warm, deferred := planStagingWarm(plan, demands, previews, probed, budget, window, reading)
 	s.mu.Lock()
 	keep := map[uuid.UUID]time.Time{}
 	for i := range warm {
@@ -626,7 +659,18 @@ func (s *Slots) sampleStaging(ctx context.Context) {
 		return
 	}
 	run.sampling = true
-	warm := append([]WarmEntry(nil), run.warm...)
+	var warm []WarmEntry
+	if run.reading == nil {
+		run.reading = map[uuid.UUID]bool{}
+	}
+	for _, w := range run.warm {
+		id, err := uuid.Parse(w.Channel)
+		if err != nil || w.Draining { // a draining probe starts no new read
+			continue
+		}
+		run.reading[id] = true
+		warm = append(warm, w)
+	}
 	exp := run.expect
 	s.mu.Unlock()
 	defer func() {
@@ -636,16 +680,25 @@ func (s *Slots) sampleStaging(ctx context.Context) {
 	}()
 	var wg sync.WaitGroup
 	for _, w := range warm {
-		id, err := uuid.Parse(w.Channel)
-		if err != nil {
-			continue
-		}
+		id, _ := uuid.Parse(w.Channel)
 		wg.Add(1)
 		go func(w WarmEntry, id uuid.UUID) {
 			defer wg.Done()
 			cp := s.probeChannel(ctx, staging, live, id, exp)
 			cp.Why, cp.WarmSince = w.Why, w.Since
 			s.mu.Lock()
+			delete(run.reading, id)
+			// the station was stopped under the read (the budget cut it, or it left
+			// the warm set and came back): the read is broken, not the release. Its
+			// findings are redone at a later sample, never scored; a probe already
+			// done keeps the sample it ended on.
+			if at, ok := run.since[id]; s.stage == run && (!ok || !at.Equal(w.Since)) {
+				if run.probed[id] && run.samples[id] != nil {
+					s.mu.Unlock()
+					return
+				}
+				cp.retry()
+			}
 			if s.stage == run {
 				if cp.Staging.Have() {
 					if _, ok := run.firstSeg[id]; !ok {
