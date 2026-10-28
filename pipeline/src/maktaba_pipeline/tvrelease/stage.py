@@ -135,7 +135,11 @@ async def stage_change(
                 actor_source=actor_source,
                 detail={"release_id": rel.id, "sched_gen": rel.sched_gen, "reused": rel.reused},
                 release_id=rel.id, base_release_id=None if live is None else str(live),
-                kinds=kinds, diff={**diff, "pending": pending}, anchor_at=at, staged_at=clock,
+                kinds=kinds, diff={**diff, "pending": pending}, anchor_at=at,
+                # when it became staged, not when the job began: the build takes minutes
+                # (4.5 on 2026-10-27), and the controller times the staging slot's start
+                # from it, so a staged_at from the job's start failed the slot at once
+                staged_at=now(),
                 auto_rule=_strictest(cfg, kinds, cur.source.get("kind", "")),
             )  # fmt: skip
         _log.info(

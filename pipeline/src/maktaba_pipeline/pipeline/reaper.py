@@ -25,7 +25,8 @@ recovery) sweep.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+import contextlib
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 from ..db.jobs_reaper import REAPER_ADVISORY_LOCK_KEY, reap_once
@@ -93,34 +94,56 @@ class Reaper:
         self._local_lock: asyncio.Lock | None = None
         self._paused = paused
 
-    async def _try_lock(self) -> bool:
-        """Postgres ``pg_try_advisory_lock`` / SQLite local mutex.
+    @contextlib.asynccontextmanager
+    async def _locked(self) -> AsyncIterator[bool]:
+        """Hold the sweep's lock for one tick; yields ``False`` when it is busy.
 
-        Non-blocking: a busy lock means another instance (or the
-        previous tick of this instance) is still running — return
-        False and let the caller skip rather than queue up.
+        Postgres: ``pg_try_advisory_lock`` and its ``pg_advisory_unlock`` on *one*
+        connection of the pool, held for the whole tick. A session lock belongs to the
+        connection that took it: taken through the pool's ``fetchrow`` (any connection)
+        it was unlocked on another one ("WARNING: you don't own a lock of type
+        ExclusiveLock" every 30 s from every worker process) and stayed with the first,
+        so the other processes' sweeps found it busy for good. SQLite: a local mutex.
+        Non-blocking either way: a busy lock means another instance (or the previous
+        tick of this instance) is still running.
         """
         if getattr(self.db, "dialect", "sqlite") == "postgres":
-            row = await self.db.fetchrow(
-                "SELECT pg_try_advisory_lock($1) AS got",
-                REAPER_ADVISORY_LOCK_KEY,
-            )
-            return bool(row["got"]) if row is not None else False
+            pool = getattr(self.db, "_pool", None)
+            if pool is None:  # a stand-in database without a pool (tests)
+                row = await self.db.fetchrow(
+                    "SELECT pg_try_advisory_lock($1) AS got", REAPER_ADVISORY_LOCK_KEY
+                )
+                got = bool(row["got"]) if row is not None else False
+                try:
+                    yield got
+                finally:
+                    if got:
+                        await self.db.fetchrow(
+                            "SELECT pg_advisory_unlock($1) AS released", REAPER_ADVISORY_LOCK_KEY
+                        )
+                return
+            async with pool.acquire() as conn:
+                got = bool(
+                    await conn.fetchval("SELECT pg_try_advisory_lock($1)", REAPER_ADVISORY_LOCK_KEY)
+                )
+                try:
+                    yield got
+                finally:
+                    if got:
+                        await conn.fetchval(
+                            "SELECT pg_advisory_unlock($1)", REAPER_ADVISORY_LOCK_KEY
+                        )
+            return
 
         if self._local_lock is None:
             self._local_lock = asyncio.Lock()
         if self._local_lock.locked():
-            return False
+            yield False
+            return
         await self._local_lock.acquire()
-        return True
-
-    async def _release_lock(self) -> None:
-        if getattr(self.db, "dialect", "sqlite") == "postgres":
-            await self.db.fetchrow(
-                "SELECT pg_advisory_unlock($1) AS released",
-                REAPER_ADVISORY_LOCK_KEY,
-            )
-        elif self._local_lock is not None and self._local_lock.locked():
+        try:
+            yield True
+        finally:
             self._local_lock.release()
 
     async def tick(self) -> int:
@@ -131,10 +154,10 @@ class Reaper:
         """
         if self._paused is not None and self._paused():
             return 0
-        if not await self._try_lock():
-            _log.debug("reaper_lock_busy")
-            return 0
-        try:
+        async with self._locked() as got:
+            if not got:
+                _log.debug("reaper_lock_busy")
+                return 0
             reaped = await reap_once(
                 self.db,
                 stale_claim_sec=self.stale_claim_sec,
@@ -146,8 +169,6 @@ class Reaper:
                     ids=[r.id for r in reaped],
                 )
             return len(reaped)
-        finally:
-            await self._release_lock()
 
     async def _run(self) -> None:
         _log.info(
