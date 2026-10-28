@@ -128,7 +128,7 @@ live and upcoming streams, and progress parsing through `--progress-template`.
   - **C. Refresh from YouTube**
 - **No file is ever lost.** Nothing is deleted before its replacement or keeper is verified. A
   removed file goes to a **trash folder on the same volume** and is purged only after a grace period
-  (the owner decides the period; see Decisions). Every move is recorded in `file_actions` and can be
+  (30 days, see Decided). Every move is recorded in `file_actions` and can be
   undone until the purge.
 - **No user data is lost.** A converted video keeps its `videos.id`, so every row that points at it
   keeps pointing at it. A merged duplicate's user data is moved to the keeper before its own row is
@@ -223,9 +223,9 @@ then NFD, then on macOS a `ditto` copy into the work folder.
 - **Audio only** (`-c:v copy -c:a aac -b:a 192k`): MP4-ready video with Opus or Vorbis audio, the
   usual YouTube `.webm`/`.mkv` case.
 - **Re-encode** (lossy): VP9, AV1 (where the owner's devices don't decode it), MPEG-4 Part 2,
-  WMV and so on. Uses the FileUtilities VideoToolbox preset (H.264 or HEVC, see Decisions), with
-  `libx264 -crf 20 -preset medium` as the fallback. Only when `settings.convert.allow_reencode` is
-  on; otherwise the outcome is `skipped` with the reason `needs_reencode`.
+  WMV and so on. Uses the FileUtilities VideoToolbox H.264 preset (see Decided), with
+  `libx264 -crf 20 -preset medium` as the fallback. Only when the library's `settings.convert.allow_reencode` is
+  on (off by default; H.264 only); otherwise the outcome is `skipped` with the reason `needs_reencode`.
 
 **Subtitle and attachment streams.** MKV text subtitles become `mov_text` inside the MP4 **and** are
 written as `<name>.<lang>.srt` beside it, so nothing is lost. Image subtitles (PGS, VobSub) can't go
@@ -268,7 +268,7 @@ MP4 to the trash.
 
 | Tier | Signal | Confidence | Applied |
 |---|---|---|---|
-| **Exact** | same `content_hash` **and** the same full-file BLAKE3 (`videos.full_hash`, new, computed on demand by `dedup_scan` for candidates only) | certain | automatically, if `settings.dedup.auto_exact` |
+| **Exact** | same `content_hash` **and** the same full-file BLAKE3 (`videos.full_hash`, new, computed on demand by `dedup_scan` for candidates only) | certain | automatically (`settings.dedup.auto_exact`, on by default, within a library) |
 | **Same video, other file** | same `media_metadata_enrichment.external_id` (YouTube id), or the same title once normalised, with a duration within 1 s **and** a `video_signals.frame_hashes` dHash distance ≤ 6 on at least 80 % of sampled frames | probable | always reviewed |
 | **Converted pair** | the ledger says so (A's own original), so it is never reported | — | — |
 
@@ -351,8 +351,8 @@ youtube_sources(
   id uuid PK, library_id → libraries ON DELETE CASCADE,
   kind text CHECK (kind IN ('channel','playlist')), url text, external_id text,
   folder text,                 -- relative to the library's first root; default: the source's sanitised title
-  mode text CHECK (mode IN ('off','new_only','all')) DEFAULT 'new_only',
-  date_after date,             -- 'new_only' sets it to the day the source is added
+  mode text CHECK (mode IN ('off','new_and_backfill','new_only')) DEFAULT 'new_and_backfill',
+  added_at timestamptz,        -- uploads after this are "new"; older ones are back catalogue
   options jsonb,               -- max_height, sub_langs, audio_only, cookies_from_browser
   status text, error text, last_checked_at, last_fetched_at,
   UNIQUE (library_id, kind, external_id)
@@ -360,13 +360,16 @@ youtube_sources(
 ```
 
 A migration backfills one `channel` row for each existing `youtube_channels` row, with
-`mode = 'off'`. Nothing starts downloading until the owner turns a source on.
+`mode = 'off'`. Nothing starts downloading until the owner turns a source on. A newly added or
+turned-on source defaults to `new_and_backfill`: new uploads download automatically and the back
+catalogue is queued as low-priority backfill (below).
 
 ```
 youtube_downloads(
   library_id, youtube_id, PK (library_id, youtube_id),
   source_id → youtube_sources ON DELETE SET NULL,
   state text CHECK (state IN ('wanted','downloading','done','skipped','gone','failed')),
+  backfill bool NOT NULL,      -- true: back catalogue (uploaded before the source's added_at)
   reason text,                 -- members_only, private, age_gate, geo, live, removed, too_old …
   video_id → videos ON DELETE SET NULL,
   attempts int, failure_class text, error text, not_before timestamptz,
@@ -379,12 +382,14 @@ youtube_downloads(
 - **`youtube_sync`** (exists; this is the **check**). Extend it to:
   - list `youtube_sources` playlists as well as channels, using `--flat-playlist` plus
     `--break-on-existing` against the archive, so a refresh reads only the new head of each list;
-  - after listing, mark `wanted` every listed id that is in an enabled source, passes `date_after`,
-    and has no local video. "Local" means a `media_metadata_enrichment` row with `provider =
+  - after listing, mark `wanted` every listed id that is in an enabled source and has no local
+    video, with `backfill = upload_date < added_at`. "Local" means a `media_metadata_enrichment` row with `provider =
     'youtube'` for that id in this library, or a `youtube_downloads` row that is `done`;
-  - enqueue `youtube_fetch` when anything is wanted.
+  - enqueue `youtube_fetch` when a new item is wanted, and `youtube_backfill` when a back-catalogue
+    item is.
 - **`youtube_fetch`** (new; this is the **download**). Subject: library. Pool `network_yt` (size
-  1). Priority 120. One job per library drains its `wanted` list in upload order. This keeps one
+  1). Priority 120. One job per library drains its **new** `wanted` items (`backfill = false`),
+  newest first. This keeps one
   stream of requests per home, which is what YouTube's limits want. Progress shows "12 of 40" plus
   the bytes of the current item.
 
@@ -414,6 +419,21 @@ youtube_downloads(
   `.part` file in the work folder. yt-dlp's own `--continue` resumes it on the next run, while the
   work folder is kept for 24 h.
 
+- **`youtube_backfill`** (new; the back catalogue). The same code as `youtube_fetch`, but a
+  separate stage, so it has its own tile on the Queues page and can be paused, resumed or
+  cancelled without touching new uploads. Subject: library. Pool `network_yt`, shared with
+  `youtube_fetch`, so the two never download at once and the rate limits hold across both.
+  Priority **300**: below new uploads (120), below normal pipeline work (100) and below
+  conversion and dedup (150), so it only runs when nothing else wants the pool.
+  - Each job takes a **batch of 25** back-catalogue items, oldest first, then re-queues itself
+    while any are left. Pausing the stage stops between batches, and a running batch stops at the
+    next item. Cancel stops the job; the items stay `wanted`, so *Resume backfill* carries on
+    where it left off.
+  - A new upload that is listed while a backfill runs goes first: `youtube_fetch` has the lower
+    priority number, so it claims the pool when the current backfill item ends.
+  - Progress shows "backfill: 1,240 of 6,191" per library, and the LibrariesTable column shows
+    the back catalogue still waiting.
+
 **Rate limits and errors.** The MIO table is ported as an ordered regex list in
 `integrations/youtube_errors.py`:
 
@@ -435,10 +455,16 @@ yt-dlp shows up as one failure, not 400.
 read by the existing scheduler that queues `youtube_sync`. A *Refresh now* on the Queues page queues
 `youtube_sync` with `force` for that library, or for all of them.
 
-**Seeding** (story 47.11). Before a source's first refresh, the archive is seeded from the
-library's existing videos that have a YouTube id. Optionally it is also seeded from a Tartube
-database the owner points at (the MIO import, ported with a stub-only unpickler), so the first
-refresh doesn't download the channel again.
+**Seeding** (story 47.12). Before a source's first refresh, the archive is seeded from the
+library's existing videos that have a YouTube id, so the backfill doesn't download them again. It
+is also seeded from the home's **Tartube database**, found read-only on 2026-10-28 at
+`/Volumes/Originals/Backup/Youtube/tartube.db` (this Mac: `~/nas-nfs/Backup/Youtube/tartube.db`,
+335 MB, modified 2026-10-21). It was not opened. Beside it are `tartube - Copy.db` and Tartube's
+own exports `tartube_db_export.json`, `tartube_db_export2.json` and `tartube_db_export.csv`. The
+import **reads the JSON export first**: it is plain data, with no unpickling. It falls back to
+the stub-only unpickler (MIO's `convert_tartube_db.py`, without its real-import path) only for
+fields the export lacks. Every video with `dl_flag` and an existing file becomes an archive line
+and a `youtube_downloads` row `done`.
 
 ### The Queues page (the only UI)
 
@@ -484,7 +510,9 @@ Every endpoint is `requireAdmin`, audited, and has a non-admin 403 test.
 - `subject_kind` gains `dup_group`.
 - New `worker_pools` row `convert` (size 1, placement `home`). New `job_stages` rows:
   `convert_mp4`, `dedup_scan`, `dedup_apply`, `youtube_fetch`, `trash_purge`.
-- Backfill: one `youtube_sources` row per `youtube_channels` row, with `mode = 'off'`.
+- Backfill: one `youtube_sources` row per `youtube_channels` row, with `mode = 'off'` (the owner
+  turns each one on; turning one on queues its refresh and back catalogue).
+- `job_stages` also gets `youtube_backfill` (pool `network_yt`).
 - Grants to `maktaba_worker`. A `MANIFEST.md` row. Bump `SCHEMA_REV` (pipeline) and `SchemaRev`
   (streaming).
 - Purely additive: no existing data changes except the backfill, which writes new rows only.
@@ -536,10 +564,11 @@ Every endpoint is `requireAdmin`, audited, and has a non-admin 403 test.
 | 47.7 | **`dedup_apply` and the merge** | keeper rule, user-data merge table, derived-data move, `superseded_by`, the loser to the trash, the foreign-key coverage guard, undo. **AC:** the merge fixture's union; the guard test fails on an uncovered FK; Restore revives the loser. |
 | 47.8 | **YouTube sources and errors** | `youtube_sources` (backfilled `off`), `youtube_downloads`, the MIO error table as `integrations/youtube_errors.py` mapped to Epic 40 classes, `youtube_sync` extended (playlists, `--flat-playlist --break-on-existing`, marking `wanted`). **AC:** recorded listings mark only new, in-range items; each error class lands right. |
 | 47.9 | **`youtube_fetch` stage** | per-library drain, the yt-dlp argv above, the archive rebuilt from the DB, verify, file-and-sidecar placement, the single-file scan, park on bot check and 429, early stop on a failure run. **AC:** faked runs for every class; a second refresh downloads nothing; the opt-in real smoke test passes. |
-| 47.10 | **API** | the endpoints above with audit and admin-only role tests; `dry_run`; URL resolution for a new source. **AC:** handler tests, admin 200 / non-admin 403 each. |
-| 47.11 | **Seeding and Tartube import** | seed the archive from linked videos; the stub-only Tartube unpickler (from MIO's `convert_tartube_db.py`) behind an admin action that takes a path on the home. **AC:** a fixture `tartube.db` seeds the archive with no import of Tartube code; a malicious pickle fixture runs nothing. |
-| 47.12 | **Web: the Queues page** | LibrariesTable menu and columns, the YouTube sources dialog, `/queue/duplicates`, `/queue/file-actions`, failures-page reasons; en + ar strings. **AC:** vitest per state and action, a11y, dark-theme screenshots on a branch stack. |
-| 47.13 | **Help and rollout** | Epic 41 help pages for the three jobs; a dry run on one library on the live home (read-only plan), then one real library, then the rest by the owner. **AC:** the owner has read the dry-run plans. |
+| 47.10 | **Back-catalogue backfill** | the `youtube_backfill` stage (pool `network_yt`, priority 300), `youtube_downloads.backfill`, batches of 25 that re-queue themselves, pause and cancel between items, new uploads claiming the pool first, progress per library. **AC:** with 100 back-catalogue and 2 new items wanted, the 2 new ones finish first; pausing the stage stops after the current item and leaves the rest `wanted`; cancel and resume carry on without re-downloading; `youtube_fetch` and `youtube_backfill` never run at once. |
+| 47.11 | **API** | the endpoints above with audit and admin-only role tests; `dry_run`; URL resolution for a new source. **AC:** handler tests, admin 200 / non-admin 403 each. |
+| 47.12 | **Seeding and Tartube import** | seed the archive from linked videos; read Tartube's JSON export (`tartube_db_export.json`), with the stub-only unpickler (from MIO's `convert_tartube_db.py`) as a fallback, behind an admin action that takes a path on the home; run before the first backfill. **AC:** fixture export and `tartube.db` both seed the archive with no import of Tartube code; a malicious pickle fixture runs nothing; a seeded video is never backfilled. |
+| 47.13 | **Web: the Queues page** | LibrariesTable menu and columns, the YouTube sources dialog, `/queue/duplicates`, `/queue/file-actions`, failures-page reasons; en + ar strings. **AC:** vitest per state and action, a11y, dark-theme screenshots on a branch stack. |
+| 47.14 | **Help and rollout** | Epic 41 help pages for the three jobs; a dry run on one library on the live home (read-only plan), then one real library, then the rest by the owner. **AC:** the owner has read the dry-run plans. |
 
 ## Order
 
@@ -547,39 +576,33 @@ Every endpoint is `requireAdmin`, audited, and has a non-admin 403 test.
 
 - **A:** 47.4
 - **B:** 47.5 → 47.6 → 47.7
-- **C:** 47.8 → 47.9 → 47.11
+- **C:** 47.8 → 47.9 → 47.12 → 47.10 (seeding goes before the first backfill)
 
-After the tracks: 47.10 → 47.12 → 47.13.
+After the tracks: 47.11 → 47.13 → 47.14.
 
-47.1–47.9 and 47.11 are pipeline and migration work. 47.10 is Go. 47.12 is web. The migration is
+47.1–47.10 and 47.12 are pipeline and migration work. 47.11 is Go. 47.13 is web. The migration is
 applied to the live database by the main session, after review.
 
-## Decisions for the owner
+## Decided (owner, 2026-10-28)
 
-1. **What happens to a converted original:**
-   - trash for N days, then delete (**proposed: 30 days**);
-   - trash forever, purged only by hand;
-   - delete as soon as the MP4 verifies (not proposed).
-2. **What happens to a duplicate's file:** the same three choices (**proposed: trash for 30 days**).
-3. **Re-encoding.**
-   - Allow lossy re-encodes for files whose codec MP4 can't hold (VP9, AV1, old MPEG-4), or remux
-     and audio-only conversions only (**proposed: remux and audio only at first; re-encode
-     opt-in per library**).
-   - If re-encoding: **H.264 or HEVC** (HEVC is half the size; H.264 plays everywhere, including
-     the browser on every OS).
-4. **Image subtitles** (PGS/VobSub): skip those files (**proposed**), or convert and drop the
-   subtitles.
-5. **Exact duplicates:** merge automatically (**proposed**), or review every group.
-6. **Duplicate scope:** within each library only (**proposed by default**), or across all
-   libraries.
-7. **YouTube defaults:**
-   - maximum height (**proposed 1080**);
-   - subtitle languages (**proposed `ar,en` plus auto-subs**);
-   - a new source downloads **new uploads only** from the day it's added (**proposed**), or the
-     whole back catalogue;
-   - refresh every **24 h** (**proposed**);
-   - cookies from which browser, if any.
-8. **Tartube.** Is there a Tartube database on the home to seed the archive from, and where?
+1. **Converted originals and removed duplicates** go to the trash for **30 days**, then
+   `trash_purge` deletes them automatically. Restore works until the purge.
+2. **Conversion** is remux and audio-only everywhere. A lossy re-encode happens only in a library
+   where `allow_reencode` is turned on, and always to **H.264** (VideoToolbox, with a libx264
+   fallback).
+3. **Image subtitles** (PGS/VobSub): those files are skipped.
+4. **Duplicates:** byte-identical copies merge automatically, **within a library**. Near-matches
+   wait for review on `/queue/duplicates`.
+5. **YouTube, a newly added source:** new uploads download automatically, and the whole back
+   catalogue is queued as low-priority backfill that can be paused and cancelled
+   (`youtube_backfill`, story 47.10).
+6. **YouTube defaults:**
+   - maximum height 1080;
+   - subtitles `ar,en` plus auto-subs;
+   - refresh every 24 h;
+   - no browser cookies (they can be set per source).
+7. **Tartube:** the home's database is at `/Volumes/Originals/Backup/Youtube/tartube.db`, with
+   JSON exports beside it. Seeding (47.12) uses the export first.
 
 ## Out of scope
 
