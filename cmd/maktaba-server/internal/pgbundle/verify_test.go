@@ -94,6 +94,19 @@ func TestRestoreListsSplitTheGrants(t *testing.T) {
 	}
 }
 
+// The cluster's grants on Postgres's own functions belong to a database: a restore makes
+// them in its scratch database (the one renamed into place), never in the app database it
+// replaces (clusterSQL connects to that one itself: TestRealMove, 2026-10-28).
+func TestClusterSQLForTheScratchDatabase(t *testing.T) {
+	s := clusterSQLFor(restoringDatabase)
+	if !strings.Contains(s, "\\c "+restoringDatabase+"\n") || strings.Contains(s, "\\c "+AppDatabase+"\n") {
+		t.Fatalf("the restore's cluster SQL connects to:\n%s", s)
+	}
+	if !strings.Contains(s, "pg_drop_replication_slot") || !strings.Contains(s, "pg_reload_conf") {
+		t.Fatal("the restore's cluster SQL lost its grants")
+	}
+}
+
 // What is missing is said by kind, the first names of each, and the rows short.
 func TestMissingSaysWhat(t *testing.T) {
 	m := &Missing{}

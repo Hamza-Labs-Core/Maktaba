@@ -210,6 +210,10 @@ func TestRealRestoreKeepsOtherLoginsOutAndIsWhole(t *testing.T) {
 		`SELECT has_column_privilege('maktaba_replicas', 't059', 'note', 'SELECT')`:                "t",
 		`SELECT count(*) FROM pg_default_acl`:                                                      "2",
 		`SELECT has_function_privilege('maktaba_worker', 'copy_grant()', 'EXECUTE')`:               "t",
+		// the cluster's own grants, made in the database renamed into place
+		`SELECT has_function_privilege('maktaba_worker', 'pg_catalog.pg_drop_replication_slot(name)', 'EXECUTE')`: "f",
+		`SELECT has_function_privilege('maktaba', 'pg_catalog.pg_drop_replication_slot(name)', 'EXECUTE')`:        "t",
+		`SELECT has_function_privilege('maktaba', 'pg_catalog.pg_reload_conf()', 'EXECUTE')`:                      "t",
 	} {
 		if got := one(t, q, sql); got != want {
 			t.Errorf("%s = %s, want %s", sql, got, want)

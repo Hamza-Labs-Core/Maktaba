@@ -172,7 +172,7 @@ func (b Bundle) makeRoomBeside(ctx context.Context, q Querier, dump string, log 
 // restoreOnce is one try of restoreInto, with jobs workers.
 func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts RestoreOptions, jobs int,
 	log io.Writer) error {
-	if err := q.Exec(ctx, "postgres", recreateSQL(opts, restoringDatabase)+clusterSQL); err != nil {
+	if err := q.Exec(ctx, "postgres", recreateSQL(opts, restoringDatabase)+clusterSQLFor(restoringDatabase)); err != nil {
 		return fmt.Errorf("make a fresh %s database: %w", restoringDatabase, err)
 	}
 	_, _ = fmt.Fprintf(log, "[postgres] putting %s back into a fresh database of its own (%s, %d workers): no other "+
@@ -425,6 +425,13 @@ func ValidRoleName(r string) bool { return roleName.MatchString(r) }
 // Restore; vector when the bundle has it); a dump that needs another cannot be
 // restored as the app role.
 var Extensions = []string{"plpgsql", "pg_trgm", "unaccent", "pgcrypto", "vector"}
+
+// clusterSQLFor is clusterSQL made in database db: its grants on Postgres's own functions
+// (the slots' to the app role alone, pg_reload_conf) belong to a database, and clusterSQL
+// connects to the app database itself, which a restore's scratch database is not yet.
+func clusterSQLFor(db string) string {
+	return strings.Replace(clusterSQL, "\\c "+AppDatabase+"\n", "\\c "+db+"\n", 1)
+}
 
 // recreateSQL drops database db (and anything connected to it) and makes it again, owned
 // by the app role, with the extensions and the source's other roles: a restore's scratch
