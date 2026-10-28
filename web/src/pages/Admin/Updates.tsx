@@ -17,6 +17,24 @@ import { lookupMessage, useI18n } from "../../lib/i18n";
 import { CopyField } from "../../components/CopyField";
 import { hrefOf, updateCodeHelp } from "../../help/registry";
 import { UpdatesBackups } from "./UpdatesBackups";
+import { UpdatesSettings } from "../Settings/UpdatesSettings";
+import { useUpdateStatus } from "../../lib/updates";
+import {
+  homeNext,
+  homeOf,
+  lastUpdateHow,
+  lastUpdateOf,
+  machineNext,
+  machineStatus,
+  releaseMigrates,
+  runActive,
+  safeReleaseUrl,
+  statusTone,
+  windowEnds,
+  type Words,
+} from "../../lib/updatesView";
+import { Markdown } from "../../lib/markdown";
+import "../../styles/updates.css";
 import { accessAnswerWords, type HomeDb } from "../../lib/homeDb";
 import {
   logsExportURL,
@@ -121,6 +139,10 @@ function useWords() {
     kind: (k: string) => word("kind", k),
     trigger: (s: string) => word("trigger", s),
     waiting: (s: string) => word("waiting", s),
+    /** How an update that completed came: a run of the cluster, the desktop app, or the
+     * release's first start (installed outside a run: by hand). */
+    lastHow: (a: UpdateAttempt, m: UpdateMachine, ov: UpdatesOverview) =>
+      t(`updates.last.how.${lastUpdateHow(a, m, ov)}`),
     word,
   };
 }
@@ -169,6 +191,8 @@ export function AdminUpdates() {
   const toast = useToast();
   const w = useWords();
   const { t } = w;
+  const { locale } = useI18n();
+  const sysStatus = useUpdateStatus();
   const [ov, setOv] = useState<UpdatesOverview | null>(null);
   const [view, setView] = useState<UpdateRunView | null>(null);
   const [history, setHistory] = useState<UpdateRun[]>([]);
@@ -195,7 +219,7 @@ export function AdminUpdates() {
 
   // a run under way is followed live (the home's API restarts during it: a failed read
   // is tried again at the next tick)
-  const running = Boolean(ov?.run && !RUN_ENDED.has(ov.run.state));
+  const running = Boolean(ov && runActive(ov));
   useEffect(() => {
     if (!running) return undefined;
     const id = setInterval(() => void load(), 5000);
@@ -231,7 +255,9 @@ export function AdminUpdates() {
   if (error && !ov) {
     return (
       <section className="mkt-page mkt-updates">
-        <h1>{t("updates.page.title")}</h1>
+        <header className="mkt-updates__head">
+          <h1 id="updates-page-title">{t("updates.page.title")}</h1>
+        </header>
         <p className="mkt-error" role="alert">
           {t("updates.page.unavailable")}
         </p>
@@ -241,23 +267,21 @@ export function AdminUpdates() {
   if (!ov) {
     return (
       <section className="mkt-page mkt-updates" aria-busy="true">
-        <h1>{t("updates.page.title")}</h1>
+        <header className="mkt-updates__head">
+          <h1 id="updates-page-title">{t("updates.page.title")}</h1>
+        </header>
       </section>
     );
   }
 
+  const now = Date.now();
+  const say = (x: Words | null) => (x ? t(x.key, x.vars) : "");
   const target = ov.plan?.target;
-  let next = t("updates.plan.none");
-  if (target && ov.plan.held) next = t("updates.plan.held", { version: target.version });
-  else if (target && ov.plan.next_run_at)
-    next = t("updates.plan.at", { version: target.version, at: when(ov.plan.next_run_at) });
-  else if (target) {
-    const key = `updates.plan.waiting.${ov.plan.waiting ?? "auto_install_off"}`;
-    next = t(key, { version: target.version });
-    if (next === key)
-      next = t("updates.plan.waiting.automatic_installs_not_built", { version: target.version });
-  }
+  const next = say(homeNext(ov, now, locale, t));
   const machines: UpdateMachine[] = ov.machines ?? [];
+  const home = homeOf(ov);
+  const homeStatus = machineStatus(home, ov);
+  const nodes = machines.filter((m) => m.role === "node");
   const paused = !ov.policy.auto_install;
   // why a due release does not start now: a blocker, a retry's pause, a person's failure
   const tick = ov.last_tick;
@@ -269,9 +293,14 @@ export function AdminUpdates() {
       : "";
   const blocked = ov.catalog.filter((r) => r.blocked_reason && !r.withdrawn_at);
   const last = ov.last_run;
+  // a failed run is worth trying again only while the home is still below its release (a
+  // home that reached it, or a later one, another way has nothing to retry)
+  const lastStillDue =
+    !!last && !(validVersion(home.version) && compareVersions(home.version, last.version) >= 0);
   const lastFailed =
     !running &&
     last &&
+    lastStillDue &&
     (last.state === "failed" || last.state === "rolled_back") &&
     !blocked.some((r) => r.version === last.version) &&
     (last.trigger === "auto" || last.trigger === "manual");
@@ -281,28 +310,53 @@ export function AdminUpdates() {
   })();
   const installNow = (version: string) =>
     act(() => updatesApi.runNow(version), t("updates.held.started", { version }));
+  // an ended run stays up front only while it needs someone: machines held, to retry, or
+  // that need a person; anything else is history
+  const viewEnded = Boolean(view && RUN_ENDED.has(view.state));
+  const needsYou =
+    viewEnded &&
+    !!view &&
+    (view.state === "done_needs_person" ||
+      view.targets.some((x) => TARGET_RETRYABLE.has(x.state)) ||
+      (view.state !== "superseded" &&
+        view.state !== "cancelled" &&
+        !!view.error?.code &&
+        lastStillDue));
+  const lastText = (m: UpdateMachine) => {
+    const a = lastUpdateOf(m);
+    return a
+      ? t("updates.last.text", {
+          version: a.to,
+          ago: ago(a.ended_at ?? a.at, locale),
+          how: w.lastHow(a, m, ov),
+        })
+      : t("updates.last.none");
+  };
+  const ends = windowEnds(ov.policy.window);
+  const migrates = releaseMigrates(target, ov);
+  const releaseUrl = safeReleaseUrl(target?.release_url);
 
   return (
     <section className="mkt-page mkt-updates" aria-labelledby="updates-page-title">
-      <h1 id="updates-page-title">{t("updates.page.title")}</h1>
-      <p data-testid="updates-cluster-version">
-        {t("updates.page.version", { version: ov.watermark || ov.current_version })}
-      </p>
-      <p className="mkt-muted" data-testid="updates-next">
-        {next}
-      </p>
-      {tickWhy && target && (
-        <p className="mkt-muted" data-testid="updates-tick">
-          {t("updates.tick.notStarted", { reason: tickWhy })}
-        </p>
-      )}
-      {paused && (
-        <p className="mkt-muted" data-testid="updates-paused">
-          {t("updates.page.paused")}
+      <header className="mkt-updates__head">
+        <h1 id="updates-page-title">{t("updates.page.title")}</h1>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={busy}
+          onClick={() => act(() => updatesApi.check(), t("updates.page.checked"))}
+        >
+          {t("updates.page.check")}
+        </Button>
+      </header>
+
+      {ov.check_stale && (
+        <p className="mkt-updates__alert mkt-error" role="alert">
+          {t("updates.settings.stale")}
         </p>
       )}
       {ov.stuck && !running && (
-        <div className="mkt-callout" role="alert" data-testid="updates-stuck">
+        <div className="mkt-updates__callout" role="alert" data-testid="updates-stuck">
           <p>
             {t("updates.stuck.title", {
               version: ov.stuck.version,
@@ -311,163 +365,212 @@ export function AdminUpdates() {
             })}
           </p>
           <p className="mkt-muted">{t("updates.stuck.body")}</p>
-          <Button variant="primary" disabled={busy} onClick={() => installNow(ov.stuck!.version)}>
-            {t("updates.blocked.install")}
-          </Button>
+          <div className="mkt-updates__actions">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy}
+              onClick={() => installNow(ov.stuck!.version)}
+            >
+              {t("updates.blocked.install")}
+            </Button>
+          </div>
         </div>
       )}
       {blocked.map((r) => (
-        <div className="mkt-callout" key={r.version} data-testid={`updates-blocked-${r.version}`}>
+        <div
+          className="mkt-updates__callout"
+          key={r.version}
+          data-testid={`updates-blocked-${r.version}`}
+        >
           <p>
             {t("updates.blocked.title", {
               version: r.version,
               reason: w.word("blocked.reason", r.blocked_reason ?? ""),
             })}
           </p>
-          <Button
-            variant="secondary"
-            disabled={busy || running}
-            onClick={() =>
-              act(
-                () => updatesApi.unblock(r.version),
-                t("updates.blocked.unblocked", { version: r.version })
-              )
-            }
-          >
-            {t("updates.blocked.unblock")}
-          </Button>
-          <Button
-            variant="primary"
-            disabled={busy || running}
-            onClick={() => installNow(r.version)}
-          >
-            {t("updates.blocked.install")}
-          </Button>
+          <div className="mkt-updates__actions">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || running}
+              onClick={() =>
+                act(
+                  () => updatesApi.unblock(r.version),
+                  t("updates.blocked.unblocked", { version: r.version })
+                )
+              }
+            >
+              {t("updates.blocked.unblock")}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy || running}
+              onClick={() => installNow(r.version)}
+            >
+              {t("updates.blocked.install")}
+            </Button>
+          </div>
         </div>
       ))}
       {lastFailed && last && (
-        <div className="mkt-callout" data-testid="updates-last-failed">
+        <div className="mkt-updates__callout" data-testid="updates-last-failed">
           <p>
             {t("updates.lastRun.failed", { version: last.version, reason: w.reason(lastCode) })}
           </p>
-          <Button variant="secondary" disabled={busy} onClick={() => installNow(last.version)}>
-            {t("updates.lastRun.retry", { version: last.version })}
-          </Button>
+          <div className="mkt-updates__actions">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={() => installNow(last.version)}
+            >
+              {t("updates.lastRun.retry", { version: last.version })}
+            </Button>
+          </div>
         </div>
       )}
-      {ov.check_stale && (
-        <p className="mkt-error" role="alert">
-          {t("updates.settings.stale")}
-        </p>
-      )}
-      <div className="mkt-updates__actions">
-        <Button
-          variant="primary"
-          disabled={busy || running || !target}
-          onClick={() => setConfirmNow(true)}
-        >
-          {t("updates.page.updateNow")}
-        </Button>
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onClick={() => act(() => updatesApi.check(), t("updates.page.checked"))}
-        >
-          {t("updates.page.check")}
-        </Button>
-        {target && !running && (
-          <Button
-            variant="secondary"
-            disabled={busy}
-            onClick={() =>
-              act(
-                () => updatesApi.skip(target.version),
-                t("updates.held.skipped", { version: target.version })
-              )
-            }
-          >
-            {t("updates.held.skip")}
-          </Button>
-        )}
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onClick={() =>
-            act(
-              () => updatesApi.saveSettings({ auto_install: paused }),
-              paused ? t("updates.page.resumedAuto") : t("updates.page.pausedAuto")
-            )
-          }
-        >
-          {paused ? t("updates.page.resumeAuto") : t("updates.page.pauseAuto")}
-        </Button>
-      </div>
 
-      <h2>{t("updates.page.machines")}</h2>
-      <table className="mkt-table" data-testid="updates-machines">
-        <thead>
-          <tr>
-            <th scope="col">{t("updates.page.col.machine")}</th>
-            <th scope="col">{t("updates.page.col.version")}</th>
-            <th scope="col">{t("updates.page.col.install")}</th>
-            <th scope="col">{t("updates.page.col.state")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {machines.map((m) => (
-            <Fragment key={m.id}>
-              <tr data-testid={`updates-machine-${m.id}`}>
-                <td>
-                  {m.role === "home" ? t("updates.page.home") : m.name}
-                  {m.platform ? <span className="mkt-muted"> · {m.platform}</span> : null}
-                </td>
-                <td dir="ltr">{m.version || "-"}</td>
-                <td>{m.kind ? w.kind(m.kind) : "-"}</td>
-                <td>
-                  <Badge tone={stateTone(m.state)}>{w.state(m.state)}</Badge>
-                  {m.target && APP_ORDER.has(m.state) && (
-                    <div className="mkt-muted" data-testid={`updates-machine-${m.id}-app`}>
-                      {t(
-                        APP_STAGED.has(m.state)
-                          ? "updates.page.appStaged"
-                          : "updates.page.appOrdered",
-                        { version: m.target }
-                      )}
-                    </div>
-                  )}
-                  {m.role === "node" && m.home_db && m.home_db.ok === false && (
-                    <HomeDbNote machineId={m.id} homeDb={m.home_db} />
-                  )}
-                  {m.state === "worker_only" && m.convert && (
-                    <div className="mkt-muted" data-testid={`updates-machine-${m.id}-convert`}>
-                      {t(`updates.convert.${m.convert}`)}
-                    </div>
-                  )}
-                </td>
-              </tr>
-              {(m.attempts?.length ?? 0) > 0 && (
-                <tr className="mkt-updates__attempt-row">
-                  <td colSpan={4}>
-                    <AttemptBlock
-                      machine={m}
-                      busy={busy}
-                      onRetry={(runId) =>
-                        act(
-                          () => updatesApi.targetAction(runId, m.id, "retry"),
-                          t("updates.page.target.retryDone")
-                        )
-                      }
-                      onLogs={(f) => void downloadLogs(f)}
-                    />
-                  </td>
-                </tr>
+      <section
+        className="mkt-updates__card"
+        aria-labelledby="updates-home-title"
+        data-testid="updates-home"
+      >
+        <div className="mkt-updates__card-head">
+          <h2 id="updates-home-title">{t("updates.home.title")}</h2>
+          <Badge tone={statusTone(homeStatus)}>{t(`updates.status.${homeStatus}`)}</Badge>
+        </div>
+        <dl className="mkt-updates__facts">
+          <div>
+            <dt>{t("updates.home.version")}</dt>
+            <dd>
+              <strong dir="ltr" data-testid="updates-home-version">
+                {home.version || ov.current_version || "-"}
+              </strong>
+            </dd>
+          </div>
+          <div>
+            <dt>{t("updates.home.last")}</dt>
+            <dd data-testid="updates-home-last">{lastText(home)}</dd>
+          </div>
+          <div>
+            <dt>{t("updates.home.next")}</dt>
+            <dd data-testid="updates-next">
+              {next}
+              {tickWhy && target && (
+                <span className="mkt-updates__sub mkt-muted" data-testid="updates-tick">
+                  {t("updates.tick.notStarted", { reason: tickWhy })}
+                </span>
               )}
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
+            </dd>
+          </div>
+          <div>
+            <dt>{t("updates.home.auto")}</dt>
+            <dd>
+              <span className="mkt-updates__inline">
+                <span data-testid={paused ? "updates-paused" : "updates-auto-on"}>
+                  {paused
+                    ? t("updates.home.autoPaused")
+                    : ends
+                      ? t("updates.home.autoOn", {
+                          channel: t(`update.channel.${ov.policy.channel}`),
+                          from: `\u2066${ends[0]}`,
+                          to: `${ends[1]}\u2069`,
+                        })
+                      : t("updates.home.autoOnNoWindow", {
+                          channel: t(`update.channel.${ov.policy.channel}`),
+                        })}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() =>
+                    act(
+                      () => updatesApi.saveSettings({ auto_install: paused }),
+                      paused ? t("updates.page.resumedAuto") : t("updates.page.pausedAuto")
+                    )
+                  }
+                >
+                  {paused ? t("updates.page.resumeAuto") : t("updates.page.pauseAuto")}
+                </Button>
+              </span>
+              {paused && (
+                <span className="mkt-updates__sub mkt-muted">{t("updates.page.paused")}</span>
+              )}
+            </dd>
+          </div>
+        </dl>
+      </section>
 
-      {view && (
+      {target && !running && (
+        <section
+          className="mkt-updates__card"
+          aria-labelledby="updates-release-title"
+          data-testid="updates-release"
+        >
+          <div className="mkt-updates__card-head">
+            <h2 id="updates-release-title">
+              {t("updates.release.title", { version: target.version })}
+            </h2>
+            <Badge tone="accent">{t("updates.status.update_available")}</Badge>
+          </div>
+          {(target.published_at || releaseUrl) && (
+            <p className="mkt-muted">
+              {target.published_at
+                ? t("updates.release.published", { at: when(target.published_at) })
+                : null}
+              {target.published_at && releaseUrl ? " · " : null}
+              {releaseUrl ? (
+                <a href={releaseUrl} target="_blank" rel="noreferrer">
+                  {t("update.viewRelease")}
+                </a>
+              ) : null}
+            </p>
+          )}
+          {target.notes && (
+            <details className="mkt-about__notes" data-testid="updates-release-notes">
+              <summary>{t("update.banner.notes")}</summary>
+              {/* Markdown as React elements: release-note HTML is shown as text, never injected. */}
+              <Markdown className="mkt-about__notes-body mkt-markdown" source={target.notes} />
+            </details>
+          )}
+          <h3>{t("updates.release.what")}</h3>
+          <ol className="mkt-updates__plan" data-testid="updates-what-happens">
+            {migrates && <li data-testid="updates-what-backup">{t("updates.release.backup")}</li>}
+            <li>{t("updates.release.home", { version: target.version })}</li>
+            {nodes.length > 0 && <li>{t("updates.release.machines", { count: nodes.length })}</li>}
+          </ol>
+          {sysStatus?.instructions && (
+            <div className="mkt-about__docker">
+              <p>{t("update.docker.instructions")}</p>
+              <pre dir="ltr">
+                <code>{sysStatus.instructions}</code>
+              </pre>
+            </div>
+          )}
+          <div className="mkt-updates__actions">
+            <Button variant="primary" disabled={busy} onClick={() => setConfirmNow(true)}>
+              {t("updates.page.updateNow")}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() =>
+                act(
+                  () => updatesApi.skip(target.version),
+                  t("updates.held.skipped", { version: target.version })
+                )
+              }
+            >
+              {t("updates.held.skip")}
+            </Button>
+          </div>
+        </section>
+      )}
+
+      {view && (running || needsYou) && (
         <RunPanel
           view={view}
           live={running}
@@ -483,38 +586,172 @@ export function AdminUpdates() {
         />
       )}
 
-      <h2>{t("updates.page.history")}</h2>
-      {history.length === 0 ? (
-        <p className="mkt-muted">{t("updates.page.noHistory")}</p>
-      ) : (
-        <table className="mkt-table" data-testid="updates-history">
+      <section className="mkt-updates__section" aria-labelledby="updates-machines-title">
+        <h2 id="updates-machines-title">{t("updates.page.machines")}</h2>
+        <table className="mkt-table mkt-updates__table" data-testid="updates-machines">
           <thead>
             <tr>
+              <th scope="col">{t("updates.page.col.machine")}</th>
               <th scope="col">{t("updates.page.col.version")}</th>
-              <th scope="col">{t("updates.page.col.trigger")}</th>
               <th scope="col">{t("updates.page.col.state")}</th>
-              <th scope="col">{t("updates.page.col.started")}</th>
-              <th scope="col">{t("updates.page.col.took")}</th>
+              <th scope="col">{t("updates.page.col.last")}</th>
+              <th scope="col">{t("updates.page.col.next")}</th>
             </tr>
           </thead>
           <tbody>
-            {history.map((r) => (
-              <tr key={r.id}>
-                <td dir="ltr">
-                  {r.from_version ? `${r.from_version} → ` : ""}
-                  {r.version}
-                </td>
-                <td>{w.trigger(r.trigger)}</td>
-                <td>
-                  <Badge tone={stateTone(r.state)}>{w.state(r.state)}</Badge>
-                </td>
-                <td>{when(r.started_at)}</td>
-                <td>{duration(r)}</td>
-              </tr>
-            ))}
+            {machines.map((m) => {
+              const status = machineStatus(m, ov);
+              const detailState = !["up_to_date", "behind", "offline", "updating"].includes(
+                m.state
+              );
+              const mNext =
+                m.role === "home"
+                  ? status === "up_to_date"
+                    ? ""
+                    : next
+                  : say(machineNext(m, ov, now, locale, t));
+              return (
+                <Fragment key={m.id}>
+                  <tr data-testid={`updates-machine-${m.id}`}>
+                    <td data-label={t("updates.page.col.machine")}>
+                      <span className="mkt-updates__name">
+                        {m.role === "home" ? t("updates.page.home") : m.name}
+                      </span>
+                      <span className="mkt-updates__sub mkt-muted">
+                        {[m.platform, m.kind ? w.kind(m.kind) : ""].filter(Boolean).join(" · ")}
+                      </span>
+                    </td>
+                    <td data-label={t("updates.page.col.version")} className="mkt-updates__ver">
+                      <span dir="ltr">{m.version || "-"}</span>
+                    </td>
+                    <td data-label={t("updates.page.col.state")}>
+                      <Badge tone={statusTone(status)}>{t(`updates.status.${status}`)}</Badge>
+                      {detailState && (
+                        <span className="mkt-updates__sub mkt-muted">{w.state(m.state)}</span>
+                      )}
+                      {m.target && APP_ORDER.has(m.state) && (
+                        <span
+                          className="mkt-updates__sub mkt-muted"
+                          data-testid={`updates-machine-${m.id}-app`}
+                        >
+                          {t(
+                            APP_STAGED.has(m.state)
+                              ? "updates.page.appStaged"
+                              : "updates.page.appOrdered",
+                            { version: m.target }
+                          )}
+                        </span>
+                      )}
+                      {m.role === "node" && m.home_db && m.home_db.ok === false && (
+                        <HomeDbNote machineId={m.id} homeDb={m.home_db} />
+                      )}
+                      {m.state === "worker_only" && m.convert && (
+                        <span
+                          className="mkt-updates__sub mkt-muted"
+                          data-testid={`updates-machine-${m.id}-convert`}
+                        >
+                          {t(`updates.convert.${m.convert}`)}
+                        </span>
+                      )}
+                    </td>
+                    <td
+                      data-label={t("updates.page.col.last")}
+                      data-testid={`updates-machine-${m.id}-last`}
+                    >
+                      {lastText(m)}
+                    </td>
+                    <td
+                      data-label={t("updates.page.col.next")}
+                      data-testid={`updates-machine-${m.id}-next`}
+                    >
+                      {mNext || <span className="mkt-muted">{t("updates.next.nothing")}</span>}
+                    </td>
+                  </tr>
+                  {(m.attempts?.length ?? 0) > 0 && (
+                    <tr className="mkt-updates__attempt-row">
+                      <td colSpan={5}>
+                        <AttemptBlock
+                          machine={m}
+                          busy={busy}
+                          onRetry={(runId) =>
+                            act(
+                              () => updatesApi.targetAction(runId, m.id, "retry"),
+                              t("updates.page.target.retryDone")
+                            )
+                          }
+                          onLogs={(f) => void downloadLogs(f)}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
-      )}
+      </section>
+
+      <details className="mkt-updates__fold" data-testid="updates-history-fold">
+        <summary>
+          <h2>{t("updates.page.history")}</h2>
+          <span className="mkt-muted">{t("updates.history.count", { count: history.length })}</span>
+        </summary>
+        {history.length === 0 ? (
+          <p className="mkt-muted">{t("updates.page.noHistory")}</p>
+        ) : (
+          <table className="mkt-table mkt-updates__table" data-testid="updates-history">
+            <thead>
+              <tr>
+                <th scope="col">{t("updates.page.col.version")}</th>
+                <th scope="col">{t("updates.page.col.outcome")}</th>
+                <th scope="col">{t("updates.page.col.trigger")}</th>
+                <th scope="col">{t("updates.page.col.started")}</th>
+                <th scope="col">{t("updates.page.col.took")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((r) => (
+                <tr key={r.id}>
+                  <td data-label={t("updates.page.col.version")} className="mkt-updates__ver">
+                    <span dir="ltr">
+                      {r.from_version && r.from_version !== r.version ? `${r.from_version} → ` : ""}
+                      {r.version}
+                    </span>
+                  </td>
+                  <td data-label={t("updates.page.col.outcome")}>
+                    <Badge tone={stateTone(r.state)}>{w.state(r.state)}</Badge>
+                  </td>
+                  <td data-label={t("updates.page.col.trigger")}>{w.trigger(r.trigger)}</td>
+                  <td data-label={t("updates.page.col.started")}>{when(r.started_at)}</td>
+                  <td data-label={t("updates.page.col.took")}>{duration(r)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {view && !running && !needsYou && (
+          <RunPanel
+            view={view}
+            live={false}
+            busy={busy}
+            onCancel={() => undefined}
+            onResume={() => act(() => updatesApi.resume(view.id), t("updates.page.resumed"))}
+            onTarget={(node, action) =>
+              act(
+                () => updatesApi.targetAction(view.id, node, action),
+                t(`updates.page.target.${action}Done`)
+              )
+            }
+          />
+        )}
+      </details>
+
+      <details className="mkt-updates__fold" data-testid="updates-settings-fold">
+        <summary>
+          <h2>{t("updates.settings.title")}</h2>
+        </summary>
+        <UpdatesSettings onSaved={() => void load()} />
+      </details>
 
       <UpdatesBackups />
 
@@ -738,16 +975,18 @@ function AttemptBlock({
   const fixKey = last.code ? `updates.fix.${last.code}` : "";
   const fixWords = fixKey && has(fixKey) ? t(fixKey) : "";
   const command = last.code ? FIX_COMMANDS[last.code] : undefined;
-  return (
-    <div className="mkt-updates__attempt" data-testid={id}>
-      <div>
-        <strong>{t("updates.attempt.title")}</strong>{" "}
-        {superseded ? (
-          <Badge tone="neutral">{t("updates.attempt.reached")}</Badge>
-        ) : (
-          <Badge tone={outcomeTone(last.outcome)}>{w.outcome(last.outcome)}</Badge>
-        )}
-      </div>
+  const head = (
+    <>
+      <strong>{t("updates.attempt.title")}</strong>{" "}
+      {superseded ? (
+        <Badge tone="neutral">{t("updates.attempt.reached")}</Badge>
+      ) : (
+        <Badge tone={outcomeTone(last.outcome)}>{w.outcome(last.outcome)}</Badge>
+      )}
+    </>
+  );
+  const body = (
+    <>
       <p className={failed ? "mkt-error" : undefined} data-testid={`${id}-headline`}>
         {headline(last)}
       </p>
@@ -840,7 +1079,24 @@ function AttemptBlock({
           </ul>
         </details>
       )}
-    </div>
+    </>
+  );
+  // a failure that still holds, or an attempt under way, is open; anything else (it
+  // installed, was cancelled, or the machine got past it) is folded: the machines table
+  // already says its last update
+  if (failed || last.outcome === "running") {
+    return (
+      <div className="mkt-updates__attempt" data-testid={id}>
+        <div>{head}</div>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <details className="mkt-updates__attempt mkt-updates__attempt--quiet" data-testid={id}>
+      <summary>{head}</summary>
+      {body}
+    </details>
   );
 }
 
@@ -868,7 +1124,11 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
       ? view.targets.filter((x) => x.state === "needs_person")
       : [];
   return (
-    <section aria-labelledby="updates-run-title" data-testid="updates-run">
+    <section
+      className="mkt-updates__card"
+      aria-labelledby="updates-run-title"
+      data-testid="updates-run"
+    >
       <h2 id="updates-run-title">
         {live
           ? t("updates.page.runLive", { version: view.version })
@@ -956,7 +1216,7 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
       {view.targets.length > 0 && (
         <>
           <h3>{t("updates.page.targets")}</h3>
-          <table className="mkt-table" data-testid="updates-targets">
+          <table className="mkt-table mkt-updates__table" data-testid="updates-targets">
             <tbody>
               {view.targets.map((x) => (
                 <TargetRow

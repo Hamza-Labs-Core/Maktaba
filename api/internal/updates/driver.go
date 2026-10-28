@@ -2051,23 +2051,11 @@ func (d *Driver) catchUp(ctx context.Context) error {
 	if err != nil || wm == "" {
 		return err
 	}
-	rel, err := d.Store.Get(ctx, wm)
-	if err != nil || rel.VerifyState != VerifyVerified || rel.WithdrawnAt != nil {
+	sc := d.scopeFor(ctx, pol, wm)
+	if !sc.relOK {
 		return nil // the home's release is not one the catalog verified (installed by hand), or withdrawn
 	}
-	// it restarts machines: catch_up "immediate" any time, but a machine that keeps TV
-	// streams on air (and every machine with catch_up "window") inside the window only; a
-	// machine the release's schema pauses (its local routes answer 503 until it runs the
-	// release) at once, always (README, rules.updates.catch_up)
-	inWindow := true
-	if w, err := ParseWindow(pol.Window); err == nil {
-		_, _, inWindow = w.Containing(d.now(), d.Svc.loc())
-	}
-	immediate := pol.CatchUp != "window"
-	streams := map[string]bool{}
-	if !inWindow {
-		streams = d.streamingHosts(ctx)
-	}
+	inWindow := sc.inWindow
 	agents, states := d.agentStates()
 	nodes, err := d.nodes(ctx)
 	if err != nil {
@@ -2075,7 +2063,8 @@ func (d *Driver) catchUp(ctx context.Context) error {
 	}
 	ids := make([]string, 0, len(nodes))
 	for _, n := range nodes {
-		if _, ok := agents[n.id]; !ok {
+		_, online := agents[n.id]
+		if !online {
 			continue
 		}
 		s := states[n.id]
@@ -2086,23 +2075,8 @@ func (d *Driver) catchUp(ctx context.Context) error {
 		if ver == "" || CompareVersions(ver, wm) >= 0 {
 			continue
 		}
-		if s.Run != nil && (s.Run.State == MPreparing || s.Run.State == MApplying || s.Run.State == MRestarting ||
-			s.Run.State == MWatching || beforeGo(s.Run.State)) {
-			continue // it is busy with a run of its own
-		}
-		if !inWindow && !d.schemaPaused(ctx, rel, ver) && (!immediate || streams[n.id]) {
-			continue // the window, for this one
-		}
-		// the release failed or was rolled back on it (by itself, or by an admin): it waits
-		// for a newer release or an admin's Retry (a part a person mends is tried again once
-		// the machine changed, or after catchUpRetry: heldBack)
-		if d.heldBack(ctx, n.id, wm, ver, s.Layout, s.Attempts) {
-			continue
-		}
-		d.mu.Lock()
-		last, tried := d.pending[pendingKey(n.id, wm)]
-		d.mu.Unlock()
-		if tried && d.now().Sub(last) < catchUpRetry {
+		// the same decision the Updates page shows (catchUpFor)
+		if d.catchUpFor(ctx, sc, n, s, ver, online).Reason != NextCatchUpNow {
 			continue
 		}
 		ids = append(ids, n.id)

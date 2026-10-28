@@ -1,8 +1,9 @@
-// Settings -> About -> Automatic updates (Epic 35, story 35.3): the home installs new
-// signed releases by itself in the quiet window. The card shows the next planned update
-// and edits the main rules.updates settings (the full list is also on the rules page):
-// install automatically, channel, quiet window, release age, pin. The window and the pin
-// are checked here first (the API refuses them too: 400 bad_window / pin_below_installed).
+// Admin -> Updates -> Automatic updates (Epic 35, story 35.3): the home installs new
+// signed releases by itself in the quiet window. The form edits the main rules.updates
+// settings (the full list is also on the rules page): install automatically, channel,
+// quiet window, release age, pin. The window and the pin are checked here first (the API
+// refuses them too: 400 bad_window / pin_below_installed). What is planned is the Updates
+// page's own (lib/updatesView), so it is said once, in one place.
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
@@ -11,14 +12,7 @@ import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
-import {
-  pinProblem,
-  updatesApi,
-  validWindow,
-  type UpdatesOverview,
-  type UpdatesPlan,
-} from "../../lib/updatesApi";
-import { BASE } from "../../lib/basePath";
+import { pinProblem, updatesApi, validWindow, type UpdatesOverview } from "../../lib/updatesApi";
 
 interface Draft {
   auto_install: boolean;
@@ -38,7 +32,7 @@ function draftOf(o: UpdatesOverview): Draft {
   };
 }
 
-export function UpdatesSettings() {
+export function UpdatesSettings({ onSaved }: { onSaved?: () => void } = {}) {
   const { t } = useI18n();
   const toast = useToast();
   const [ov, setOv] = useState<UpdatesOverview | null>(null);
@@ -91,6 +85,7 @@ export function UpdatesSettings() {
       });
       toast.show({ tone: "success", message: t("updates.settings.saved") });
       await load();
+      onSaved?.();
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : t("common.error");
       toast.show({ tone: "error", message: msg });
@@ -99,41 +94,11 @@ export function UpdatesSettings() {
     }
   };
 
-  // plan null or missing: nothing planned (it must not take the About tab down)
-  const plan: Partial<UpdatesPlan> = ov.plan ?? {};
-  const target = plan.target;
-  let next = t("updates.plan.none");
-  if (target && plan.held) next = t("updates.plan.held", { version: target.version });
-  else if (target && plan.next_run_at)
-    next = t("updates.plan.at", {
-      version: target.version,
-      at: new Date(plan.next_run_at).toLocaleString(),
-    });
-  else if (target) {
-    const key = `updates.plan.waiting.${plan.waiting ?? "auto_install_off"}`;
-    next = t(key, { version: target.version });
-    // a reason this build has no text for: say the version is there, not the raw key
-    if (next === key)
-      next = t("updates.plan.waiting.automatic_installs_not_built", { version: target.version });
-  }
-
   return (
-    <section className="mkt-about__updates" aria-labelledby="updates-settings-title" id="updates">
-      <h2 id="updates-settings-title">{t("updates.settings.title")}</h2>
-      <p className="mkt-muted" data-testid="updates-next">
-        {next}
-      </p>
-      <p>
-        <a href={`${BASE}/admin/updates`}>{t("updates.settings.page")}</a>
-      </p>
+    <div className="mkt-updates__settings" id="updates-settings">
       {!ov.auto_install_available && (
         <p className="mkt-muted" data-testid="updates-phase-a">
           {t("updates.settings.notBuilt")}
-        </p>
-      )}
-      {ov.check_stale && (
-        <p className="mkt-error" role="alert">
-          {t("updates.settings.stale")}
         </p>
       )}
       <Toggle
@@ -170,11 +135,11 @@ export function UpdatesSettings() {
         error={pinError || undefined}
         onChange={(e) => setDraft({ ...draft, pinned_version: e.currentTarget.value })}
       />
-      <div className="mkt-about__actions">
+      <div className="mkt-updates__actions">
         <Button variant="primary" disabled={busy || invalid} onClick={save}>
           {t("updates.settings.save")}
         </Button>
       </div>
-    </section>
+    </div>
   );
 }

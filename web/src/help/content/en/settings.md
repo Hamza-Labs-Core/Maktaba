@@ -68,7 +68,7 @@ Your plan, the license and Maktaba Cloud. See [Subscription](/help/cloud#billing
 
 ### About {#about-tab}
 
-Shows the **Current version**, the **Update channel** and when Maktaba **Last checked** for updates. **Check now** looks for a new release right away. Admins also see **Automatic updates** here. See [Updates](/help/updates).
+What Maktaba is: its version and build (commit and date), the update channel, this machine (the home, or a machine joined to it), your plan, links to the project, help and privacy, and the open-source software it is built on. **Copy version info** copies these for a support request. One line says whether it is **up to date**; admins follow **Open Updates** to [Admin → Updates](/admin/updates), where everything else about updates is. See [Updates](/help/updates).
 
 ## What the states and messages mean {#states}
 

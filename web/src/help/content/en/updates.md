@@ -6,31 +6,29 @@ How Maktaba finds new releases and installs them, and how to control when.
 
 Maktaba checks for new releases by itself. Every release is signed, and Maktaba checks the signature before it installs anything. With automatic updates on, a new release installs by itself in the quiet window you choose: first on the home (the main machine), then on every other machine one by one, each checked before the next. If a new version cannot start, Maktaba puts the previous one back.
 
-You see the version and any update on [Settings → About](/settings/about). A dot on **Settings** (or **More** on a phone) means an update is available.
+Admins see everything about updates on one page, [Admin → Updates](/admin/updates). [Settings → About](/settings/about) says it in one line (**up to date**, **update available**, **updating** or **behind**) with a link there. A dot on **Settings** (or **More** on a phone) means an update is available.
 
 ## How to use it {#how-to-use}
 
 ### See your version and check now {#check-now}
 
-Open [Settings → About](/settings/about). You see the **Current version**, the **Update channel**, and when Maktaba **Last checked**. Press **Check now** to look for a new release right away.
+Open [Admin → Updates](/admin/updates). The **This home** card shows the version the home **Running**, its **Last update** (the version, when, and how: by an update run, by the desktop app, or installed by hand), what happens **Next**, and whether **Automatic updates** are on. Press **Check now** at the top to look for a new release right away.
 
-When there is one, **Update available: …** shows with its **Release notes** and a **View release** link.
+A run that failed or was rolled back is never the last update: it shows under **Earlier updates**.
+
+When a release is available, its card shows **Release …**, its **Release notes**, a **View release** link and **What happens**: the backup of the library database (only when the release changes it), the home's restart, then each machine one at a time.
+
+Everyone else sees the version on [Settings → About](/settings/about), with one line saying **up to date** or **update available**.
 
 ### Update now {#update-now}
 
-Admins see **Update now** under an available update.
+Admins press **Update now** on the release's card, and confirm. It does not wait for the quiet window or the release age. The update shows step by step on the page while it runs.
 
-1. Press **Update now**.
-2. The page shows **Downloading…**, then **Restarting…** while Maktaba restarts.
-3. When it is back you see **Updated. Now running …**.
-
-**Update now** does not wait for the quiet window or the release age.
-
-The one-container Docker install updates itself like any other. A container of the stack built from source has no button: the page shows **This is a Docker install. Run:** and the command to run on the server instead.
+The one-container Docker install updates itself like any other. A container of the stack built from source cannot: the release's card shows **This is a Docker install. Run:** and the command to run on the server instead.
 
 ### Automatic updates {#automatic-updates}
 
-Admins see **Automatic updates** at the bottom of [Settings → About](/settings/about). The first line says what happens next, for example **Version … installs on …**.
+**Pause automatic updates** (and **Resume automatic updates**) is on the **This home** card. The rest is under **Automatic updates** on [Admin → Updates](/admin/updates); open it to change:
 
 - **Install updates automatically (home first, then every machine)**: off means Maktaba only checks and tells you.
 - **Release channel**: **Stable** gets releases only; **Beta** also gets pre-releases. Going back to **Stable** never installs a lower version.
@@ -56,11 +54,13 @@ Some releases change the database in a way that cannot be undone by going back t
 
 ### The Updates page {#updates-page}
 
-Admins open [Admin → Updates](/admin/updates). It shows:
+Admins open [Admin → Updates](/admin/updates). It shows, in this order:
 
+- **This home**: its version, last update, what happens next and automatic updates.
+- **Release …**: the release available, and what will happen when it installs, with **Update now** and **Skip this version**.
 - **The update under way**: the version being installed and its step on the home and on each machine. **Cancel this update** stops it before the home switches. On a machine's row: **Retry**, **Skip** and **Roll back**. **Update the held machines** goes on with a rollout a failure held.
-- **Each machine's last update**: when, from which version to which, the step it stopped at, the reason in plain words with **Learn more**, the error as the machine wrote it, what to do next, **See the logs** and **Download the logs**.
-- **Backups of the library database**: the copies taken before each update, each with **Restore**.
+- **Machines**: each machine's **Version** (the one it runs), its **State** (**up to date**, **update available**, **updating**, **behind** or **offline**), its **Last update** and what happens **Next**: for a machine behind the home, when it catches up (now, in the next quiet window, after a retry wait, or why not). Under it, its last attempt: when, from which version to which, the step it stopped at, the reason in plain words with **Learn more**, what to do next, **See the logs** and **Download the logs**.
+- **Earlier updates**, **Automatic updates** and **Backups of the library database**: folded; open them to see the past runs, change the settings, or **Restore** a backup.
 
 ### Put a backup back {#restore-backup}
 
@@ -70,22 +70,22 @@ Admins open [Admin → Updates](/admin/updates). It shows:
 
 ### On Settings → About {#about-messages}
 
-- **You're up to date.**: no newer release on your channel.
+- **up to date**: no newer release on your channel; on a joined machine, it runs the home's release.
+- **update available …**: a newer release is ready. Admins open **Open Updates**.
+- **updating …**: an update is under way.
+- **behind …**: this machine runs an older release than the home; it catches up by itself (see its **Next** on [Admin → Updates](/admin/updates)).
 - **Automatic update checks are off.**: Maktaba does not check for releases on this server.
-- **Update failed.**: the update could not run. Press **Update now** to try again.
-- **Update failed and was rolled back.**: the new version did not start, so the previous one was put back. You are still on your old version.
-- **The last update, to …, could not start and was rolled back.**: the same, reported after the fact, with the reason.
-- **Automatic install arrives with the update orchestrator.**: this server can check for updates but cannot install them by itself yet.
-- **No successful update check for 14 days. Check the network or GitHub access.**: see below.
+- **No successful update check for 14 days. Check the network or GitHub access.**: shown on Admin → Updates; see below.
 
 ### What happens next {#plan-messages}
 
-- **No update planned: you are up to date.**: nothing to install.
-- **Version … installs on ….**: the time it will start.
+- **Nothing to install: up to date.**: nothing to install.
+- **… installs tomorrow between 03:00 and 05:00 (in 9 hours).**: the day, the quiet window, and how long until then.
 - **Version … installs in the next quiet window.**: it waits for the window.
 - **Version … installs once it is old enough.**: it waits for the release age.
 - **Version … is deferred.**: it waits for the date you set in **No automatic update before**.
 - **Version … is available; automatic install is off.**: install it with **Update now**, or turn automatic updates on.
+- **Updating to … now.**: an update is under way; its steps show below.
 - **Version … waits for your approval (Live TV -> Changes).**: see [A release that needs your approval](/help/updates#held-release).
 - **Version … cannot be installed from this version.**: you need a newer version first before this one can install.
 
@@ -116,7 +116,7 @@ Maktaba goes back by itself when a new version fails. To go back further, [put a
 
 ### Why is there a dot on Settings? {#faq-dot}
 
-An update is available. Open [Settings → About](/settings/about) to see it.
+An update is available. Admins open [Admin → Updates](/admin/updates) to see it.
 
 ## When something goes wrong {#troubleshooting}
 
@@ -124,7 +124,7 @@ An update is available. Open [Settings → About](/settings/about) to see it.
 
 - **What it means:** The new version was installed but did not start properly, so Maktaba put the previous version back.
 - **Does Maktaba fix it itself?** Yes, it already restored the version that worked.
-- **What you can do:** Read the reason on [Settings → About](/settings/about). Check [System health](/help/system-health) and the [Logs](/help/logs). Try **Update now** again later, or wait for the next release.
+- **What you can do:** Read the reason on [Admin → Updates](/admin/updates). Check [System health](/help/system-health) and the [Logs](/help/logs). Try **Update now** again later, or wait for the next release.
 
 ### Release … failed its signature check {#verify-failed}
 
@@ -148,7 +148,7 @@ An update is available. Open [Settings → About](/settings/about) to see it.
 
 - **What it means:** The part of Maktaba that installs updates did not accept the update. The code in brackets says why.
 - **Does Maktaba fix it itself?** No. Nothing was changed: you are still on your current version.
-- **What you can do:** Check [System health](/help/system-health) and the [Logs](/help/logs), then press **Update now** on [Settings → About](/settings/about) to try again.
+- **What you can do:** Check [System health](/help/system-health) and the [Logs](/help/logs), then press **Update now** on [Admin → Updates](/admin/updates) to try again.
 
 ### The library database could not be updated {#code-database}
 

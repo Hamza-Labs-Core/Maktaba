@@ -101,11 +101,6 @@ describe("validators", () => {
 });
 
 describe("UpdatesSettings", () => {
-  it("shows the next planned update", async () => {
-    renderCard();
-    expect(await screen.findByTestId("updates-next")).toHaveTextContent("1.6.0");
-  });
-
   it("refuses a bad window and a pin below the installed version before saving", async () => {
     const user = userEvent.setup();
     renderCard();
@@ -138,11 +133,13 @@ describe("UpdatesSettings", () => {
     });
   });
 
-  it("says when this build only checks (phase A) and when the check is stale", async () => {
+  it("says when this build only checks (phase A); a stale check is the Updates page's to say", async () => {
     get.mockResolvedValue(overview({ auto_install_available: false, check_stale: true }));
     renderCard();
     expect(await screen.findByTestId("updates-phase-a")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("14 days");
+    expect(screen.queryByRole("alert")).toBeNull();
+    // what is planned is said once, on the Updates page (lib/updatesView)
+    expect(screen.queryByTestId("updates-next")).toBeNull();
   });
 
   it("renders nothing without the updates API", async () => {
@@ -154,30 +151,7 @@ describe("UpdatesSettings", () => {
 });
 
 describe("UpdatesSettings (test-cases/settings-about.md)", () => {
-  const next = () => screen.findByTestId("updates-next");
-  const target = overview().plan.target;
-
-  it("SAB-15: the next update texts (at / held / waiting / none)", async () => {
-    const at = new Date("2026-10-22T03:00:00Z").toLocaleString();
-    const cases: [Partial<UpdatesOverview["plan"]>, string][] = [
-      [{}, `Version 1.6.0 installs on ${at}.`],
-      [{ held: true }, "Version 1.6.0 waits for your approval (Live TV -> Changes)."],
-      [
-        { next_run_at: undefined, waiting: "release_age" },
-        "Version 1.6.0 installs once it is old enough.",
-      ],
-      [{ next_run_at: undefined }, "Version 1.6.0 is available; automatic install is off."],
-      // a reason this build has no text for: a generic line, not the raw key
-      [{ next_run_at: undefined, waiting: "something_new" }, "Version 1.6.0 is available."],
-      [{ target: undefined }, "No update planned: you are up to date."],
-    ];
-    for (const [plan, text] of cases) {
-      get.mockResolvedValue(overview({ plan: { ...overview().plan, target, ...plan } }));
-      const { unmount } = renderCard();
-      expect(await next()).toHaveTextContent(text);
-      unmount();
-    }
-  });
+  const form = () => screen.findByRole("button", { name: "Save update settings" });
 
   it("SAB-16: the window, age and pin are checked before saving", async () => {
     const user = userEvent.setup();
@@ -279,14 +253,13 @@ describe("UpdatesSettings (test-cases/settings-about.md)", () => {
     }
   });
 
-  it("SAB-18: plan null or missing shows No update planned and the form", async () => {
+  it("SAB-18: plan null or missing still shows the form", async () => {
     const noPlan = overview();
     delete (noPlan as Partial<UpdatesOverview>).plan;
     for (const o of [overview({ plan: null as unknown as UpdatesOverview["plan"] }), noPlan]) {
       get.mockResolvedValue(o);
       const { unmount } = renderCard();
-      expect(await next()).toHaveTextContent("No update planned: you are up to date.");
-      expect(screen.getByRole("button", { name: "Save update settings" })).toBeInTheDocument();
+      expect(await form()).toBeInTheDocument();
       unmount();
     }
   });
@@ -311,7 +284,7 @@ describe("UpdatesSettings (test-cases/settings-about.md)", () => {
     for (const [name, o] of variants) {
       get.mockResolvedValue(o);
       const { unmount } = renderCard();
-      expect(await next(), name).toBeInTheDocument();
+      expect(await form(), name).toBeInTheDocument();
       if (name === "pin null") expect(screen.getByLabelText(/Stay at or below/)).toHaveValue("");
       if (name === "window null") {
         expect(screen.getByLabelText(/Quiet window/)).toHaveValue("");

@@ -126,6 +126,12 @@ type Machine struct {
 	// HomeDB is a node's login to the home's database (nil: it has not said): "this
 	// machine can't reach the home's database: <reason>" when not ok.
 	HomeDB *HomeDB `json:"home_db,omitempty"`
+	// LastUpdate is its last update that completed (nil: none known): the newest installed
+	// attempt, never a rolled-back, failed, cancelled or superseded one (lastUpdate).
+	LastUpdate *Attempt `json:"last_update,omitempty"`
+	// Next is what happens next to a machine behind the cluster's release (the catch-up's
+	// decision: catchUpFor); nil when it is not behind, or a run brings it now.
+	Next *NextStep `json:"next,omitempty"`
 	// Convert is what becomes of a worker-only machine (story 35.8 AC8): next_update (its
 	// next update makes it a full node) or installer ("worker-only — re-run the installer
 	// once": its pipeline is too old for that).

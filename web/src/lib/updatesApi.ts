@@ -43,7 +43,13 @@ export interface CatalogRelease {
    * admin tries it again (unblock) or installs it now */
   blocked_reason?: string;
   attempts?: number;
-  manifest?: { breaks_previous_home?: boolean; min_upgrade_from?: string };
+  manifest?: {
+    breaks_previous_home?: boolean;
+    min_upgrade_from?: string;
+    /** the library database's schema the release runs (newer than the home's: the update
+     * migrates the database, and backs it up first) */
+    schema_rev?: number;
+  };
 }
 
 /** The scheduler's last decision: why a due release does not start now. */
@@ -97,6 +103,19 @@ export interface UpdateMachine {
   /** a worker-only machine (story 35.8 AC8): next_update (its next update makes it a full
    * node) or installer (its pipeline is too old for that: re-run the installer once) */
   convert?: "next_update" | "installer";
+  /** its last update that completed (never a rolled-back, failed or cancelled try) */
+  last_update?: UpdateAttempt;
+  /** a machine behind the cluster's release: what happens next (the catch-up's decision) */
+  next?: UpdateNext;
+}
+
+/** What happens next to a machine behind the cluster's release (api updates.NextStep). */
+export interface UpdateNext {
+  version: string;
+  /** catch_up_now, catch_up_window (at: the window's start), catch_up_retry (at), held_back,
+   * busy, offline, auto_install_off, not_verified */
+  reason: string;
+  at?: string;
 }
 
 /** One try at bringing a machine to a release, whoever made it (update-attempts.md): the

@@ -48,33 +48,42 @@ func (d *Driver) clusterRelease(ctx context.Context) (string, error) {
 // another install kind), else catchUpRetry after it (catchUpPersonRetry, a day, for one a
 // person must mend: its reason has not changed).
 func (d *Driver) heldBack(ctx context.Context, nodeID, version, curVersion, curKind string, curAttempts []Attempt) bool {
+	held, _ := d.heldBackUntil(ctx, nodeID, version, curVersion, curKind, curAttempts)
+	return held
+}
+
+// heldBackUntil is heldBack with when the hold ends by itself: zero when it does not (a
+// newer release or an admin's Retry ends it), else the end of its retry wait.
+func (d *Driver) heldBackUntil(ctx context.Context, nodeID, version, curVersion, curKind string, curAttempts []Attempt) (bool, time.Time) {
 	t, ok, err := d.Store.LastTargetOf(ctx, nodeID, version)
 	if err != nil || !ok {
-		return false
+		return false, time.Time{}
 	}
 	switch t.State {
 	case TargetRolledBack, TargetFailed:
-		return true
+		return true, time.Time{}
 	case TargetSkipped:
 		_, why, _ := d.Store.LastTargetState(ctx, nodeID, version)
-		return why == "skipped"
+		return why == "skipped", time.Time{}
 	case TargetNeedsPerson, TargetFailedPrepare:
 		if curKind != "" && t.Kind != "" && curKind != t.Kind {
-			return false // its install changed (converted to a self-managed one, say)
+			return false, time.Time{} // its install changed (converted to a self-managed one, say)
 		}
 		if curVersion != "" && t.FromVersion != "" && CompareVersions(curVersion, t.FromVersion) != 0 {
-			return false
+			return false, time.Time{}
 		}
 		if reasonChanged(t, curAttempts) {
-			return false // the machine says something else since (its own newer attempt)
+			return false, time.Time{} // the machine says something else since (its own newer attempt)
 		}
 		wait := catchUpRetry
 		if t.State == TargetNeedsPerson {
 			wait = catchUpPersonRetry
 		}
-		return t.UpdatedAt != nil && d.now().Sub(*t.UpdatedAt) < wait
+		if t.UpdatedAt != nil && d.now().Sub(*t.UpdatedAt) < wait {
+			return true, t.UpdatedAt.Add(wait)
+		}
 	}
-	return false
+	return false, time.Time{}
 }
 
 // reasonChanged reports whether a machine's own newest attempt, made after its held part

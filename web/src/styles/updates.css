@@ -1,0 +1,324 @@
+/* Admin -> Updates and Settings -> About. Colours, spacing and radii come only from the
+   app tokens (tokens.css), so dark mode follows; logical properties keep it right in
+   Arabic; every track can shrink, so nothing overflows a 360 px phone. */
+
+.mkt-updates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-inline-size: 0;
+}
+.mkt-updates h1,
+.mkt-updates h2,
+.mkt-updates h3,
+.mkt-updates p {
+  margin: 0;
+}
+.mkt-updates h2 {
+  font-size: var(--font-size-lg);
+}
+.mkt-updates h3 {
+  font-size: var(--font-size-base);
+}
+
+.mkt-updates__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* one card per subject: this home, the release, the run */
+.mkt-updates__card,
+.mkt-updates__callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-card);
+}
+.mkt-updates__callout {
+  gap: var(--space-2);
+  border-inline-start: 3px solid var(--color-warn);
+  background: color-mix(in srgb, var(--color-warn) 8%, var(--color-card));
+}
+.mkt-updates__alert {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+}
+.mkt-updates__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* label | value, aligned in two columns (one under the other on a phone) */
+.mkt-updates__facts,
+.mkt-about__facts {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr);
+  column-gap: var(--space-6);
+  row-gap: var(--space-3);
+  margin: 0;
+}
+.mkt-updates__facts > div,
+.mkt-about__facts > div {
+  display: contents;
+}
+.mkt-updates__facts dt,
+.mkt-about__facts dt {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  padding-block-start: 2px;
+}
+.mkt-updates__facts dd,
+.mkt-about__facts dd {
+  margin: 0;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.mkt-updates__facts strong {
+  font-size: var(--font-size-lg);
+}
+
+.mkt-updates__sub {
+  display: block;
+  margin-block-start: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+.mkt-updates__inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.mkt-updates__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  flex-wrap: wrap;
+}
+
+.mkt-updates__plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-inline-start: var(--space-6);
+}
+
+.mkt-updates__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+/* the tables: aligned columns, numbers on one baseline */
+.mkt-updates__table th {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mkt-updates__table td {
+  vertical-align: top;
+}
+.mkt-updates__ver {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mkt-updates__name {
+  font-weight: 600;
+}
+.mkt-updates__attempt-row > td {
+  padding-block: 0 var(--space-3);
+}
+.mkt-updates__attempt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-subtle);
+}
+.mkt-updates__attempt p {
+  margin: 0;
+}
+.mkt-updates__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-inline-start: var(--space-6);
+}
+
+/* history, settings and backups: folded until opened */
+.mkt-updates__fold {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-card);
+  padding: 0 var(--space-5);
+}
+.mkt-updates__fold > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding-block: var(--space-4);
+  cursor: pointer;
+  list-style: none;
+}
+.mkt-updates__fold > summary::-webkit-details-marker {
+  display: none;
+}
+.mkt-updates__fold > summary::before {
+  content: "▸";
+  color: var(--color-muted);
+  transition: transform 120ms ease-out;
+}
+[dir="rtl"] .mkt-updates__fold > summary::before {
+  content: "◂";
+}
+.mkt-updates__fold[open] > summary::before {
+  transform: rotate(90deg);
+}
+[dir="rtl"] .mkt-updates__fold[open] > summary::before {
+  transform: rotate(-90deg);
+}
+.mkt-updates__fold[open] {
+  padding-block-end: var(--space-5);
+}
+.mkt-updates__fold[open] > :not(summary) + :not(summary) {
+  margin-block-start: var(--space-4);
+}
+.mkt-updates__settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-inline-size: 36rem;
+}
+
+@media (max-width: 640px) {
+  .mkt-updates__card,
+  .mkt-updates__callout {
+    padding: var(--space-4);
+  }
+  .mkt-updates__fold {
+    padding-inline: var(--space-4);
+  }
+  .mkt-updates__facts,
+  .mkt-about__facts {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-1);
+  }
+  .mkt-updates__facts dd,
+  .mkt-about__facts dd {
+    margin-block-end: var(--space-2);
+  }
+  /* a table row becomes a card: each cell under its column's name */
+  .mkt-updates__table thead {
+    display: none;
+  }
+  .mkt-updates__table,
+  .mkt-updates__table tbody,
+  .mkt-updates__table tr,
+  .mkt-updates__table td {
+    display: block;
+    inline-size: 100%;
+  }
+  .mkt-updates__table tr:not(.mkt-updates__attempt-row) {
+    padding-block: var(--space-3);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .mkt-updates__table td {
+    padding: var(--space-1) 0;
+    border: 0;
+  }
+  .mkt-updates__table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+}
+
+/* ---------- About ---------- */
+.mkt-about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-inline-size: 0;
+}
+.mkt-about h2,
+.mkt-about h3,
+.mkt-about p {
+  margin: 0;
+}
+.mkt-about__hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.mkt-about__icon {
+  flex: none;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.mkt-about__name {
+  font-size: var(--font-size-h2);
+}
+.mkt-about__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-subtle);
+}
+.mkt-about__status-version {
+  font-variant-numeric: tabular-nums;
+}
+.mkt-about__aside {
+  font-size: var(--font-size-sm);
+}
+.mkt-about__block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mkt-about__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-about__credits {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-about__credits li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-block: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+}
+.mkt-about__copyright {
+  font-size: var(--font-size-sm);
+}
