@@ -6,7 +6,10 @@ import type { ReactNode } from "react";
 import { Card } from "@ds/components/Card/Card";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ApiError } from "../../../lib/api";
+import { useOptionalAuth } from "../../../lib/auth";
 import { useI18n } from "../../../lib/i18n";
+import { cachedAnswer, keepAnswer } from "../../../lib/pageCache";
+import { LinesPlaceholder, Loading } from "../../../components/Placeholders";
 import type { AnalyticsQuery, CountStat, Surface } from "../../../lib/analytics";
 
 // The server (or a misrouted proxy) may send null lists, missing keys or
@@ -34,19 +37,32 @@ export interface Loaded<T> {
 // useLoad runs load whenever it (or nonce) changes. Only the latest run may
 // write: a late answer for an old range never wins. A failed run clears the
 // data (so a card never shows the old range's numbers), unless keepOnError
-// (the live Now tab keeps what it last showed).
+// (the live Now tab keeps what it last showed). With a `key` (what is read,
+// and for which range and filters) the answer is kept for the user
+// (lib/pageCache): a return, or going back to a range, shows it at once
+// while the run reads it again.
 export function useLoad<T>(
   load: () => Promise<T>,
   nonce: number | string,
-  keepOnError = false
+  keepOnError = false,
+  key?: string
 ): Loaded<T> {
-  const [state, setState] = useState<Loaded<T>>({ data: null, error: null, loading: true });
+  const user = useOptionalAuth()?.user?.id;
+  const kept = key == null ? null : `admin:analytics:${key}`;
+  const [state, setState] = useState<Loaded<T>>(() => ({
+    data: kept ? (cachedAnswer<T>(user, kept) ?? null) : null,
+    error: null,
+    loading: true,
+  }));
   useEffect(() => {
     let current = true;
-    setState((s) => ({ ...s, loading: true }));
+    const start = kept ? cachedAnswer<T>(user, kept) : undefined;
+    setState((s) => ({ ...s, data: start ?? s.data, loading: true }));
     load().then(
       (data) => {
-        if (current) setState({ data, error: null, loading: false });
+        if (!current) return;
+        if (kept) keepAnswer(user, kept, data);
+        setState({ data, error: null, loading: false });
       },
       (error: unknown) => {
         if (current)
@@ -56,7 +72,8 @@ export function useLoad<T>(
     return () => {
       current = false;
     };
-  }, [load, nonce, keepOnError]);
+    // `load` changes with what it reads, and `kept` with it
+  }, [load, nonce, keepOnError, kept, user]);
   return state;
 }
 
@@ -116,7 +133,9 @@ export function Panel({
   return (
     <Card header={<h2>{title}</h2>} className={wide ? "mkt-analytics__wide" : undefined}>
       {loading ? (
-        <p className="mkt-loading">{t("common.loading")}</p>
+        <Loading loading>
+          <LinesPlaceholder />
+        </Loading>
       ) : empty ? (
         <EmptyState kind="filtered_out" title={emptyText ?? t("analytics.empty")} />
       ) : (

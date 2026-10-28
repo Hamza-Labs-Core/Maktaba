@@ -8,8 +8,9 @@
 //
 // The raw token is shown exactly once after creation with a copy button;
 // thereafter only the prefix is visible. Revoked tokens stay in the list
-// (greyed) so an audit trail remains.
-import { useEffect, useState } from "react";
+// (greyed) so an audit trail remains. A return to the page shows the last
+// list at once and reads it again quietly (lib/usePageData).
+import { useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Modal } from "@ds/components/Modal/Modal";
@@ -24,6 +25,12 @@ import { useI18n } from "../../lib/i18n";
 import { copyText } from "../../lib/clipboard";
 import { TitleRow } from "../../help/HelpLink";
 import { errorText } from "../../lib/errorText";
+import { usePageData } from "../../lib/usePageData";
+import { forgetAnswers } from "../../lib/pageCache";
+import { Loading, TablePlaceholder } from "../../components/Placeholders";
+
+/** The kept answer's key (lib/pageCache). */
+const TOKENS_KEY = "account:tokens";
 
 interface TokenView {
   id: string;
@@ -41,28 +48,25 @@ interface TokenView {
 const SCOPES = ["read", "write", "admin"] as const;
 const EXPIRY_DAYS = [0, 30, 90, 365] as const;
 
+function loadTokens() {
+  return api.get<{ items: TokenView[] }>("/api/me/tokens").then((r) => r.items ?? []);
+}
+
 export function APITokens() {
   const { t, formatDate } = useI18n();
   const toast = useToast();
-  const [tokens, setTokens] = useState<TokenView[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: tokens,
+    err,
+    loading,
+    reload,
+    setData: setTokens,
+  } = usePageData<TokenView[]>(TOKENS_KEY, loadTokens);
+  const error = err != null ? errorText(err, t) : null;
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<TokenView | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
-
-  function load() {
-    setError(null);
-    api
-      .get<{ items: TokenView[] }>("/api/me/tokens")
-      .then((r) => setTokens(r.items ?? []))
-      .catch((e) => {
-        setError(errorText(e, t));
-        setTokens([]);
-      });
-  }
-
-  useEffect(load, []);
 
   async function revoke(tok: TokenView) {
     if (revokeBusy) return;
@@ -71,7 +75,12 @@ export function APITokens() {
       await api.delete(`/api/me/tokens/${encodeURIComponent(tok.id)}`);
       toast.show({ tone: "success", message: t("tokens.revoked") });
       setRevoking(null);
-      load();
+      // revoked on the page and in its kept answer at once, then read again
+      const at = new Date().toISOString();
+      setTokens((cur) =>
+        cur ? cur.map((x) => (x.id === tok.id ? { ...x, revoked_at: x.revoked_at ?? at } : x)) : cur
+      );
+      reload();
     } catch (e) {
       toast.show({
         tone: "error",
@@ -98,13 +107,15 @@ export function APITokens() {
           title={t("common.error")}
           description={error}
           action={
-            <Button variant="secondary" onClick={load}>
+            <Button variant="secondary" onClick={reload}>
               {t("common.retry")}
             </Button>
           }
         />
       ) : tokens === null ? (
-        <p className="mkt-loading">{t("common.loading")}</p>
+        <Loading loading={loading}>
+          <TablePlaceholder head columns={6} rows={3} />
+        </Loading>
       ) : tokens.length === 0 ? (
         <EmptyState title={t("tokens.empty.title")} description={t("tokens.empty.desc")} />
       ) : (
@@ -165,7 +176,9 @@ export function APITokens() {
           onCreated={(raw) => {
             setCreateOpen(false);
             setCreated(raw);
-            load();
+            // the kept list lacks the new token: drop it, then read again
+            forgetAnswers(TOKENS_KEY);
+            reload();
           }}
         />
       )}

@@ -6,6 +6,9 @@ import { Modal } from "@ds/components/Modal/Modal";
 import { Button } from "@ds/components/Button/Button";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useI18n } from "../lib/i18n";
+import { useOptionalAuth } from "../lib/auth";
+import { cachedAnswer, keepAnswer } from "../lib/pageCache";
+import { LinesPlaceholder, Loading } from "./Placeholders";
 import {
   addToPlaylist,
   createPlaylist,
@@ -33,15 +36,21 @@ export function AddToPlaylist({
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const userId = useOptionalAuth()?.user?.id ?? null;
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setLists(null);
+    // the playlists the Playlists page kept show at once, read again behind them
+    setLists(cachedAnswer<PlaylistSummary[]>(userId, "playlists") ?? null);
     setLoadErr(null);
     setName("");
     fetchPlaylists()
-      .then((ls) => !cancelled && setLists(ls))
+      .then((ls) => {
+        if (cancelled) return;
+        keepAnswer(userId, "playlists", ls);
+        setLists(ls);
+      })
       .catch((e) => {
         if (cancelled) return;
         setLists([]);
@@ -50,7 +59,7 @@ export function AddToPlaylist({
     return () => {
       cancelled = true;
     };
-  }, [open, t]);
+  }, [open, t, userId]);
 
   const fail = (e: unknown) =>
     toast.show({
@@ -97,7 +106,9 @@ export function AddToPlaylist({
   return (
     <Modal open={open} onClose={onClose} title={t("playlists.addTitle", { n: n(videoIds.length) })}>
       <div className="mkt-addpl">
-        {lists === null && <p className="mkt-loading">{t("common.loading")}</p>}
+        <Loading loading={lists === null}>
+          <LinesPlaceholder lines={3} />
+        </Loading>
         {loadErr && <p className="mkt-muted">{loadErr}</p>}
         {lists && lists.length > 0 && (
           <ul className="mkt-addpl__list" aria-label={t("playlists.title")}>

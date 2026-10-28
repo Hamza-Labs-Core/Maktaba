@@ -35,6 +35,7 @@ import { HelpLink } from "../../help/HelpLink";
 import { BackupsSection } from "./BackupsSection";
 import { DataLocationSection } from "./DataLocationSection";
 import "../../styles/libraryAdmin.css";
+import { LinesPlaceholder, Loading } from "../../components/Placeholders";
 
 /** How often the page looks whether the restarted server answers, and for how long. */
 export const RESTART_POLL_MS = 2000;
@@ -136,7 +137,15 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
       />
     );
   }
-  if (!doc) return <p className="mkt-loading">{t("common.loading")}</p>;
+  // live server state (a move, a restart, a backup): read each time, its
+  // placeholder only after 0.4 s
+  if (!doc) {
+    return (
+      <Loading loading>
+        <LinesPlaceholder lines={6} />
+      </Loading>
+    );
+  }
   if (!doc.available || !form) {
     return (
       <section className="mkt-storage" aria-labelledby="mkt-storage-title">

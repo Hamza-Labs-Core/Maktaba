@@ -59,7 +59,8 @@ import { EMPTY_FACETS, fetchFacets, markWatched, setFavorite, type Facets } from
 import { startQueueFromQuery, watchPath } from "../lib/playQueue";
 import { PUBLISH_DATE, videosUrl } from "../lib/browse";
 import { errorText } from "../lib/errorText";
-import { Loading, VideoGridPlaceholder, VideoListPlaceholder } from "../components/Placeholders";
+import { Loading, VideoGridPlaceholder, TablePlaceholder } from "../components/Placeholders";
+import { VIDEO_ANSWERS, cachedAnswer, forgetAnswers, keepAnswer } from "../lib/pageCache";
 
 const VIEW_KEY = "mkt:lib:view";
 
@@ -85,6 +86,17 @@ interface Video {
 interface VideoListResponse {
   items: Video[];
   next: string | null;
+}
+
+/** A page of the grid, and the most the server gives at a time. */
+const PAGE_SIZE = 60;
+const MAX_PAGE = 200;
+
+/** A list kept for a return (lib/pageCache): its pages so far and where it was scrolled. */
+interface KeptList {
+  videos: Video[];
+  cursor: string | null;
+  scroll: number;
 }
 
 // The server's sort keys, each with the order it starts in (newest, longest,
@@ -215,6 +227,8 @@ export function ScanNow({
           });
         }
         setJob(null);
+        // what the scan found shows on every list of the library's videos
+        forgetAnswers("libraries", ...VIDEO_ANSWERS);
         onDone();
         return;
       }
@@ -342,6 +356,8 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   const resolution = bandValue("resolution");
 
   const [videos, setVideos] = useState<Video[] | null>(null);
+  // the list `videos` belongs to (its listKey): only that list is kept
+  const [videosKey, setVideosKey] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingMoreRef = useRef(false);
@@ -400,44 +416,110 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   ]);
 
   const buildQuery = useCallback(
-    (after?: string | null) => {
+    (after?: string | null, limit = PAGE_SIZE) => {
       const qs = new URLSearchParams(filterQuery);
-      qs.set("limit", "60");
+      qs.set("limit", String(limit));
       if (after) qs.set("cursor", after);
       return qs.toString();
     },
     [filterQuery]
   );
 
+  // A return to a list already seen (the same library, filters and sort)
+  // shows it at once, with the pages loaded then and where it was scrolled,
+  // and reads it again quietly (lib/pageCache).
+  const listKey = `videos:${filterQuery}`;
+  const userId = user?.id ?? null;
+  const scrollPos = useRef(0);
+  const firstList = useRef(true);
+  const restoreTo = useRef<number | null>(null);
+
+  // the kept list is on screen: scroll to where it was (after the shell's own
+  // scroll to the top of a new page)
+  useEffect(() => {
+    const to = restoreTo.current;
+    if (to == null || videos === null || videosKey !== listKey) return;
+    restoreTo.current = null;
+    document.getElementById("mkt-main")?.scrollTo?.(0, to);
+    window.scrollTo?.(0, to);
+  }, [videos, videosKey, listKey]);
+
+  useEffect(() => {
+    if (videos === null || videosKey !== listKey) return;
+    keepAnswer(userId, listKey, { videos, cursor, scroll: scrollPos.current } satisfies KeptList);
+  }, [videos, videosKey, cursor, listKey, userId]);
+
+  // where the page is scrolled (the shell's main, or the window on a phone),
+  // kept with the list when the page is left
+  useEffect(() => {
+    const main = document.getElementById("mkt-main");
+    const read = () => {
+      scrollPos.current = Math.max(main?.scrollTop ?? 0, window.scrollY);
+    };
+    main?.addEventListener("scroll", read, { passive: true });
+    window.addEventListener("scroll", read, { passive: true });
+    return () => {
+      main?.removeEventListener("scroll", read);
+      window.removeEventListener("scroll", read);
+      const kept = cachedAnswer<KeptList>(userId, listKey);
+      if (kept) keepAnswer(userId, listKey, { ...kept, scroll: scrollPos.current });
+    };
+  }, [userId, listKey]);
+
   useEffect(() => {
     let cancelled = false;
     listGen.current += 1;
     loadingMoreRef.current = false;
     setLoadingMore(false);
-    setVideos(null);
     setErr(null);
-    setCursor(null);
     setSelected([]);
     if (badLibrary) {
       setVideos([]);
+      setVideosKey(null);
+      setCursor(null);
       return;
     }
+    const kept = cachedAnswer<KeptList>(userId, listKey);
+    setVideos(kept?.videos ?? null);
+    setVideosKey(kept ? listKey : null);
+    setCursor(kept?.cursor ?? null);
+    // back on the page: where it was, once the kept cards are drawn
+    if (kept && firstList.current && kept.scroll > 0) restoreTo.current = kept.scroll;
+    firstList.current = false;
+    // as many as were shown (the server gives up to 200 at a time); a longer
+    // kept list keeps its later pages
+    const shown = kept?.videos.length ?? 0;
+    const limit = Math.min(MAX_PAGE, Math.max(PAGE_SIZE, shown));
     api
-      .get<VideoListResponse>(videosUrl(buildQuery()))
+      .get<VideoListResponse>(videosUrl(buildQuery(null, limit)))
       .then((res) => {
         if (cancelled) return;
-        setVideos(res.items ?? []);
-        setCursor(res.next ?? null);
+        const fresh = res.items ?? [];
+        let next = fresh;
+        let nextCursor = res.next ?? null;
+        if (kept && shown > limit) {
+          const seen = new Set(fresh.map((v) => v.id));
+          next = [...fresh, ...kept.videos.slice(limit).filter((v) => !seen.has(v.id))];
+          nextCursor = kept.cursor;
+        }
+        // a Load more asked for before this answer belongs to the old list
+        listGen.current += 1;
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+        setVideos(next);
+        setVideosKey(listKey);
+        setCursor(nextCursor);
       })
       .catch((e) => {
         if (cancelled) return;
         setErr(errorText(e, t));
-        setVideos([]);
+        if (!kept) setVideos([]);
       });
     return () => {
       cancelled = true;
     };
-  }, [buildQuery, t, badLibrary, reloads]);
+    // listKey and userId follow filterQuery (buildQuery) and the user
+  }, [buildQuery, t, badLibrary, reloads, userId]);
 
   // What the filters offer (the library's, or every visible library's). An
   // older server without the route offers nothing more than before.
@@ -550,6 +632,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
     try {
       if (editCollection) {
         await saveCollectionFilters(editCollection, filters);
+        forgetAnswers(`collection:${editCollection}`, `collections:${libraryId}`);
         toast.show({ tone: "success", message: t("collections.filtersSaved") });
         navigate(`/collections/${encodeURIComponent(editCollection)}`);
         return;
@@ -557,6 +640,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
       const nm = saveName.trim();
       if (!nm) return;
       const c = await createCollection(libraryId, nm, filters);
+      forgetAnswers(`collections:${libraryId}`, `library-collections:${libraryId}`);
       setSaveOpen(false);
       setSaveName("");
       toast.show({ tone: "success", message: t("collections.saved", { name: c.name }) });
@@ -610,6 +694,8 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
           (vs ?? []).map((v) => (ids.includes(v.id) ? { ...v, favorite: fav } : v))
         );
       }
+      // every other view of these videos is stale (this list keeps itself)
+      forgetAnswers(...VIDEO_ANSWERS);
       toast.show({ tone: "success", message: t(`browse.bulk.done.${kind}`, { n: n(ids.length) }) });
       setSelected([]);
     } catch (e) {
@@ -1041,7 +1127,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
       {bulkBar}
 
       <Loading loading={videos === null}>
-        {view === "grid" ? <VideoGridPlaceholder /> : <VideoListPlaceholder />}
+        {view === "grid" ? <VideoGridPlaceholder /> : <TablePlaceholder />}
       </Loading>
 
       {badLibrary && <ErrorState kind="not_found" title={t("library.notFound")} />}

@@ -11,8 +11,10 @@
 // is no cross-user "all devices" query, so this admin view is honestly
 // account-scoped — surfaced via the note copy. The push token is redacted
 // at the response boundary; PATCH can only change categories/locale (no
-// device name field exists).
-import { useEffect, useRef, useState } from "react";
+// device name field exists). A return to the page shows the last list at
+// once and reads it again quietly (lib/usePageData); Account → Devices
+// (account:devices) lists the same devices, so a change drops its answer too.
+import { useRef, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Modal } from "@ds/components/Modal/Modal";
 import { Input } from "@ds/components/Input/Input";
@@ -26,6 +28,18 @@ import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
 import { TitleRow } from "../../help/HelpLink";
 import { platformIcon } from "../../lib/platformIcon";
+import { usePageData } from "../../lib/usePageData";
+import { forgetAnswers } from "../../lib/pageCache";
+import { Loading, TablePlaceholder } from "../../components/Placeholders";
+
+/** The kept answer's key (lib/pageCache). */
+const DEVICES_KEY = "cloud:devices";
+
+function loadDevices() {
+  return api
+    .get<{ items?: Device[] | null }>("/api/devices")
+    .then((r) => (Array.isArray(r?.items) ? r.items : []));
+}
 
 export interface Device {
   id: string;
@@ -53,26 +67,29 @@ export function CloudDevices() {
 function DevicesInner() {
   const { t, formatDate } = useI18n();
   const toast = useToast();
-  const [devices, setDevices] = useState<Device[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: devices,
+    err,
+    loading,
+    reload,
+    setData: setDevices,
+  } = usePageData<Device[]>(DEVICES_KEY, loadDevices);
+  const error =
+    err == null
+      ? null
+      : err instanceof ApiError
+        ? err.problem.detail || err.problem.title
+        : t("common.error");
   const [registerOpen, setRegisterOpen] = useState(false);
   const [editing, setEditing] = useState<Device | null>(null);
   const [deleting, setDeleting] = useState<Device | null>(null);
   const [removing, setRemoving] = useState(false);
 
-  function load() {
-    setError(null);
-    setDevices(null);
-    api
-      .get<{ items?: Device[] | null }>("/api/devices")
-      .then((r) => setDevices(Array.isArray(r?.items) ? r.items : []))
-      .catch((e) => {
-        setError(e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"));
-        setDevices([]);
-      });
+  // a device added or changed: neither kept list has it yet
+  function changed() {
+    forgetAnswers(DEVICES_KEY, "account:devices");
+    reload();
   }
-
-  useEffect(load, []);
 
   async function remove(d: Device) {
     if (removing) return;
@@ -81,7 +98,10 @@ function DevicesInner() {
       await api.delete(`/api/devices/${encodeURIComponent(d.id)}`);
       toast.show({ tone: "success", message: t("devices.removed") });
       setDeleting(null);
-      load();
+      // gone from the page and its kept answer at once, then read again
+      forgetAnswers("account:devices");
+      setDevices((cur) => (cur ? cur.filter((x) => x.id !== d.id) : cur));
+      reload();
     } catch (e) {
       toast.show({
         tone: "error",
@@ -110,13 +130,15 @@ function DevicesInner() {
           title={t("common.error")}
           description={error}
           action={
-            <Button variant="secondary" onClick={load}>
+            <Button variant="secondary" onClick={reload}>
               {t("common.retry")}
             </Button>
           }
         />
       ) : devices === null ? (
-        <p className="mkt-loading">{t("common.loading")}</p>
+        <Loading loading={loading}>
+          <TablePlaceholder head columns={6} rows={3} />
+        </Loading>
       ) : devices.length === 0 ? (
         <EmptyState title={t("devices.empty.title")} description={t("devices.empty.desc")} />
       ) : (
@@ -160,7 +182,7 @@ function DevicesInner() {
           onClose={() => setRegisterOpen(false)}
           onDone={() => {
             setRegisterOpen(false);
-            load();
+            changed();
           }}
         />
       )}
@@ -170,7 +192,7 @@ function DevicesInner() {
           onClose={() => setEditing(null)}
           onDone={() => {
             setEditing(null);
-            load();
+            changed();
           }}
         />
       )}

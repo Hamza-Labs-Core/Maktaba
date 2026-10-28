@@ -8,8 +8,9 @@
 // A table of every active session with a per-row revoke. The session
 // backing the current request is badged and cannot be revoked from here
 // (use Sign out for that), so a user can't accidentally lock themselves
-// out mid-action.
-import { useEffect, useState } from "react";
+// out mid-action. A return to the page shows the last list at once and
+// reads it again quietly (lib/usePageData).
+import { useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
@@ -19,6 +20,8 @@ import { api } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { TitleRow } from "../../help/HelpLink";
 import { errorText } from "../../lib/errorText";
+import { usePageData } from "../../lib/usePageData";
+import { Loading, TablePlaceholder } from "../../components/Placeholders";
 
 interface Session {
   id: string;
@@ -30,26 +33,23 @@ interface Session {
   current: boolean;
 }
 
+function loadSessions() {
+  return api.get<{ items: Session[] }>("/api/me/sessions").then((r) => r.items ?? []);
+}
+
 export function Sessions() {
   const { t, formatDate } = useI18n();
   const toast = useToast();
-  const [sessions, setSessions] = useState<Session[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: sessions,
+    err,
+    loading,
+    reload,
+    setData: setSessions,
+  } = usePageData<Session[]>("account:sessions", loadSessions);
+  const error = err != null ? errorText(err, t) : null;
   // Ids with a revoke in flight: each row keeps its own busy state.
   const [revoking, setRevoking] = useState<ReadonlySet<string>>(new Set());
-
-  function load() {
-    setError(null);
-    api
-      .get<{ items: Session[] }>("/api/me/sessions")
-      .then((r) => setSessions(r.items ?? []))
-      .catch((e) => {
-        setError(errorText(e, t));
-        setSessions([]);
-      });
-  }
-
-  useEffect(load, []);
 
   function setBusy(id: string, on: boolean) {
     setRevoking((cur) => {
@@ -66,7 +66,9 @@ export function Sessions() {
     try {
       await api.delete(`/api/me/sessions/${encodeURIComponent(s.id)}`);
       toast.show({ tone: "success", message: t("sessions.revoked") });
-      load();
+      // gone from the page and its kept answer at once, then read again
+      setSessions((cur) => (cur ? cur.filter((x) => x.id !== s.id) : cur));
+      reload();
     } catch (e) {
       toast.show({
         tone: "error",
@@ -92,13 +94,15 @@ export function Sessions() {
           title={t("common.error")}
           description={error}
           action={
-            <Button variant="secondary" onClick={load}>
+            <Button variant="secondary" onClick={reload}>
               {t("common.retry")}
             </Button>
           }
         />
       ) : sessions === null ? (
-        <p className="mkt-loading">{t("common.loading")}</p>
+        <Loading loading={loading}>
+          <TablePlaceholder head columns={5} rows={3} />
+        </Loading>
       ) : sessions.length === 0 ? (
         <EmptyState title={t("sessions.empty.title")} description={t("sessions.empty.desc")} />
       ) : (

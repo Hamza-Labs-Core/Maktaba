@@ -39,6 +39,9 @@ import {
   urlMode,
 } from "./searchShared";
 import { errorText } from "../lib/errorText";
+import { useOptionalAuth } from "../lib/auth";
+import { cachedAnswer, keepAnswer } from "../lib/pageCache";
+import { LinesPlaceholder, Loading } from "../components/Placeholders";
 
 interface Matches {
   sid: string;
@@ -75,6 +78,13 @@ export function SearchVideo() {
   const paramsRef = useRef(params);
   paramsRef.current = params;
   const videoEl = useRef<HTMLVideoElement | null>(null);
+  // a video's matches in a saved search, kept for a return (lib/pageCache)
+  const userId = useOptionalAuth()?.user?.id ?? null;
+  const matchesKey = (s: string) => `search:${s}:video:${videoId}`;
+
+  useEffect(() => {
+    if (data) keepAnswer(userId, `search:${data.sid}:video:${videoId}`, data);
+  }, [data, userId, videoId]);
 
   useEffect(() => {
     alive.current = true;
@@ -188,7 +198,8 @@ export function SearchVideo() {
     const key = `${videoId}\n${sid}\n${q}\n${mode}`;
     if (lastKey.current === key) return;
     lastKey.current = key;
-    setData(null);
+    // back to matches already seen: shown at once, read again quietly
+    setData(sid ? (cachedAnswer<Matches>(userId, matchesKey(sid)) ?? null) : null);
     setErr(null);
     if (!sid) {
       // A link without a saved search: run it (nothing was refreshed).
@@ -346,7 +357,9 @@ export function SearchVideo() {
           />
         ))}
 
-      {!data && !err && <p className="mkt-loading">{t("common.loading")}</p>}
+      <Loading loading={!data && !err}>
+        <LinesPlaceholder lines={6} />
+      </Loading>
 
       {data && (
         <section aria-labelledby="mkt-matches-list">
