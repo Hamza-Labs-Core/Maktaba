@@ -161,6 +161,14 @@ func readChange(t *testing.T, db *sql.DB, id string) changeRow {
 	}
 	c.reason = reason.String
 	_ = json.Unmarshal(rep, &c.report)
+	if c.state == "draft" {
+		// a failed verification goes back to draft (story 33.12): its reason is the
+		// fail event's
+		var why sql.NullString
+		_ = db.QueryRow(`SELECT detail->>'reason' FROM tv_change_events WHERE change_id = $1 AND action = 'fail'
+			ORDER BY at DESC LIMIT 1`, id).Scan(&why)
+		c.reason = why.String
+	}
 	return c
 }
 
@@ -368,9 +376,9 @@ func TestStagingVerifyEndToEnd(t *testing.T) {
 	rel1 := release("e33-good", good(gen+1, ch1, ch2), map[string]bool{ch2: true})
 	c1 := stage(rel1, "rename 102")
 	tStage := time.Now()
-	waitState(c1, []string{"verifying", "failed"}, 90*time.Second)
+	waitState(c1, []string{"verifying", "draft"}, 90*time.Second)
 	verifyingAfter := time.Since(tStage)
-	if c := readChange(t, db, c1); c.state == "failed" {
+	if c := readChange(t, db, c1); c.state == "draft" {
 		t.Fatalf("the good change failed at the slot start: %v", c.report)
 	}
 	st, _ := getSlotStatus(amberBase)
@@ -381,7 +389,7 @@ func TestStagingVerifyEndToEnd(t *testing.T) {
 	}
 	t.Logf("33.5: staged → verifying in %v (amber started on release %s, version e33-good)",
 		verifyingAfter.Round(100*time.Millisecond), rel1[:8])
-	c := waitState(c1, []string{"ready", "failed"}, 4*time.Minute)
+	c := waitState(c1, []string{"ready", "draft"}, 4*time.Minute)
 	readyAfter := time.Since(tStage)
 	checks := checksOf(c)
 	if c.state != "ready" {
@@ -566,9 +574,9 @@ func TestStagingVerifyEndToEnd(t *testing.T) {
 		rel := release(bc.version, good(gen+1, bc.chans...), map[string]bool{ch2: true})
 		id := stage(rel, bc.name)
 		t1 := time.Now()
-		c := waitState(id, []string{"failed", "ready"}, 4*time.Minute)
-		if c.state != "failed" {
-			t.Errorf("%s: the change is %s, want failed", bc.name, c.state)
+		c := waitState(id, []string{"draft", "ready"}, 4*time.Minute)
+		if c.state != "draft" {
+			t.Errorf("%s: the change is %s, want failed back to draft", bc.name, c.state)
 			continue
 		}
 		failed := map[string]string{}
@@ -590,6 +598,10 @@ func TestStagingVerifyEndToEnd(t *testing.T) {
 		}
 		t.Logf("33.5: %s → failed in %v: %v", bc.name, time.Since(t1).Round(100*time.Millisecond), c.report["reasons"])
 		e2eWait(t, "amber to stop after the failure", 30*time.Second, func() bool { return !sup.running("amber") })
+		// the failed change is the open draft: the next one would join it (story 33.12 AC3)
+		if code, b := post("/api/tv/changes/"+id+"/cancel", true); code != 200 {
+			t.Fatalf("%s: cancel the failed draft: %d %s", bc.name, code, b)
+		}
 	}
 
 	// staging never pushed and never took the live slot's place

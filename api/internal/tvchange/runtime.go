@@ -83,6 +83,9 @@ type OnAir struct {
 	EndAt     time.Time `json:"end_at"`
 	Title     string    `json:"title"`
 	Synthetic bool      `json:"synthetic"`
+	// StandInFor is the seq of the schedule block this one airs in place of, its
+	// file unreadable on the slot's host (a filler or a slate); 0: none.
+	StandInFor int64 `json:"stand_in_for"`
 }
 
 // ProbeResult is one front-door check of a channel.

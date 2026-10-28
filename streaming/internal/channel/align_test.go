@@ -67,7 +67,7 @@ func TestForceKeyFramesGrid(t *testing.T) {
 		{0, 2, 2},                          // on the grid: the next one k later
 		{300 * time.Millisecond, 2, 1.7},   // 0.3 s past a grid point
 		{1900 * time.Millisecond, 2, 0.1},  // just before the next
-		{3100 * time.Millisecond, 4, 0.9},  // a 4 s grid (VideoToolbox: one GOP per segment)
+		{3100 * time.Millisecond, 4, 0.9},  // a 4 s grid (keyint_seconds 4)
 		{59500 * time.Millisecond, 2, 0.5}, // a minute in
 	} {
 		st := AlignStart(base.Add(c.off), 30)

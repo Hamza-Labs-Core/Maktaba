@@ -37,6 +37,11 @@ type OutputProfile struct {
 	// KeyintSeconds is the wall-clock IDR grid (story 33.4; default 2, 1-10;
 	// lowered to a divisor of SegmentSeconds when it is not one).
 	KeyintSeconds int
+	// ReadrateCatchup: this ffmpeg has -readrate_catchup (7.1+; ReadrateCatchupFor
+	// detects it). Its -re then reads a lagging input at only 1.05x until it has
+	// caught up: a block whose encoder took 12 s to open stays 12 s behind the wall
+	// clock for four minutes. With it, the input catches up at readrateCatchup.
+	ReadrateCatchup bool
 }
 
 // Encoder names.
@@ -142,6 +147,14 @@ func BlockArgs(p OutputProfile, in BlockInput) []string {
 	fitPad := "scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease,pad=" + W + ":" + H +
 		":(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"
 
+	// -re: an input read in real time; one that fell behind (an encoder that took
+	// seconds to open, a stalled share) catches up at readrateCatchup
+	re := []string{"-re"}
+	if p.ReadrateCatchup {
+		re = append(re, "-readrate_catchup", readrateCatchup)
+	}
+	withRe := func(a ...string) []string { return append(append([]string{}, re...), a...) }
+
 	var vLabel, aMap string
 	switch in.Kind {
 	case "file", "live":
@@ -167,12 +180,12 @@ func BlockArgs(p OutputProfile, in BlockInput) []string {
 		if in.DurationSec > 0 {
 			main = append(main, "-t", formatSec(in.DurationSec))
 		}
-		main = append(main, "-re", "-i", in.Source)
+		main = append(main, withRe("-i", in.Source)...)
 		src := addInput(main...)
 
 		vIn := itoa(src) + ":v:0"
 		if !in.HasVideo {
-			vIn = itoa(addInput("-re", "-f", "lavfi", "-i", blackSrc)) + ":v"
+			vIn = itoa(addInput(withRe("-f", "lavfi", "-i", blackSrc)...)) + ":v"
 		}
 		// the first frame at t = 0 whatever the seek: the frames, and the
 		// keyframe grid, then sit on the wall-clock frame grid (story 33.4)
@@ -207,17 +220,17 @@ func BlockArgs(p OutputProfile, in BlockInput) []string {
 	default: // slate
 		switch {
 		case in.SlateImage != "":
-			bi := addInput(append([]string{"-re"}, imageInput(in.SlateImage)...)...)
+			bi := addInput(withRe(imageInput(in.SlateImage)...)...)
 			filters = append(filters, "["+itoa(bi)+":v]"+fitPad+",fps="+fps+",format=yuv420p[vb]")
 		case in.SlateLogo != "":
-			bi := addInput("-re", "-f", "lavfi", "-i", blackSrc)
+			bi := addInput(withRe("-f", "lavfi", "-i", blackSrc)...)
 			li := addInput(imageInput(in.SlateLogo)...)
 			box := itoa((p.Width*2/5)&^1) + ":" + itoa((p.Height*2/5)&^1)
 			filters = append(filters,
 				"["+itoa(li)+":v]scale="+box+":force_original_aspect_ratio=decrease,format=rgba[logo]",
 				"["+itoa(bi)+":v][logo]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1,fps="+fps+",format=yuv420p[vb]")
 		default:
-			bi := addInput("-re", "-f", "lavfi", "-i", blackSrc)
+			bi := addInput(withRe("-f", "lavfi", "-i", blackSrc)...)
 			filters = append(filters, "["+itoa(bi)+":v]format=yuv420p[vb]")
 		}
 		vLabel = "vb"
@@ -309,12 +322,15 @@ func keyframeArg(start time.Time, k, fps int) string {
 // videoToolboxArgs: Apple's hardware encoder for live output: real-time
 // priority (and speed over quality where this ffmpeg has -prio_speed),
 // the hardware encoder only unless none answered (-allow_sw), bitrate held
-// near constant by -b:v / -maxrate / -bufsize, no B-frames, and a keyframe
-// at every HLS segment boundary (the GOP is one segment long).
+// near constant by -b:v / -maxrate / -bufsize, no B-frames, and an IDR on
+// every wall-clock multiple of the keyframe interval like the other encoders
+// (story 33.4: the splice grid, and so at every HLS segment boundary). The GOP
+// was one segment long (4 s) before: half the grid's IDRs missing, so every
+// staging verification on a Mac failed ts.conformity (2026-10-28, TV change #53).
 func videoToolboxArgs(p OutputProfile, rate, buf string, start time.Time) []string {
-	seg := p.SegmentSeconds
-	if seg <= 0 {
-		seg = DefaultKeyintSeconds
+	k := p.KeyintSeconds
+	if k <= 0 {
+		k = effectiveKeyint(0, p.SegmentSeconds)
 	}
 	allowSW := "0"
 	if p.VTSoftware {
@@ -324,9 +340,9 @@ func videoToolboxArgs(p OutputProfile, rate, buf string, start time.Time) []stri
 	if p.VTPrioSpeed {
 		args = append(args, "-prio_speed", "1")
 	}
-	gop := itoa(p.FPS * seg)
+	gop := itoa(p.FPS * k)
 	return append(args, "-b:v", rate, "-maxrate", rate, "-bufsize", buf, "-profile:v", "high",
-		"-g", gop, "-bf", "0", "-force_key_frames", keyframeArg(start, seg, p.FPS))
+		"-g", gop, "-bf", "0", "-force_key_frames", keyframeArg(start, k, p.FPS))
 }
 
 func audioEncoderArgs(p OutputProfile) []string {
@@ -471,6 +487,28 @@ var (
 	hlsOptMu    sync.Mutex
 	hlsOptCache = map[string]string{}
 )
+
+// readrateCatchup is the input rate while an input catches up with the wall clock.
+const readrateCatchup = "2"
+
+var (
+	catchupMu    sync.Mutex
+	catchupCache = map[string]bool{}
+)
+
+// ReadrateCatchupFor reports whether the ffmpeg binary has -readrate_catchup (7.1+;
+// before it, -re read a lagging input as fast as it could, so it caught up anyway).
+func ReadrateCatchupFor(ffmpeg string) bool {
+	catchupMu.Lock()
+	defer catchupMu.Unlock()
+	if v, ok := catchupCache[ffmpeg]; ok {
+		return v
+	}
+	out, err := exec.Command(ffmpeg, "-hide_banner", "-h", "long").CombinedOutput() //nolint:gosec // the configured ffmpeg
+	v := err == nil && strings.Contains(string(out), "-readrate_catchup ")
+	catchupCache[ffmpeg] = v
+	return v
+}
 
 // HLSSegmentOptionFor is the name the ffmpeg binary gives the HLS muxer's
 // segment options (asked once per binary): hls_segment_options, or the older

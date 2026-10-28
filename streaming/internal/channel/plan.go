@@ -19,6 +19,9 @@ type Segment struct {
 	// Next is the next programme after this segment (the strip's «التالي»),
 	// nil when the look-ahead holds none.
 	Next *ProgramBlock
+	// StandInFor is the seq of the schedule block this segment airs in place of,
+	// its file unreadable on this host (Feeder.standIn); 0 otherwise.
+	StandInFor int64
 }
 
 // Duration is the planned on-air length.

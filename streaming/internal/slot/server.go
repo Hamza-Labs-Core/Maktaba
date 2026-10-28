@@ -142,6 +142,9 @@ type BlockInfo struct {
 	EndAt     time.Time `json:"end_at"`
 	Title     string    `json:"title,omitempty"`
 	Synthetic bool      `json:"synthetic,omitempty"`
+	// StandInFor: the seq of the schedule block this one airs in place of, its
+	// file unreadable on this host (a filler or a slate); 0: none.
+	StandInFor int64 `json:"stand_in_for,omitempty"`
 }
 
 // StatsSource is an engine that reports per-station stats (*channel.Engine).
@@ -157,7 +160,8 @@ func stationInfo(id uuid.UUID, st channel.StationStats) StationInfo {
 	}
 	if seg := st.OnAir; seg != nil {
 		b := &BlockInfo{Seq: seg.Block.Seq, Kind: seg.Kind, StartAt: seg.Block.StartAt.UTC(),
-			EndAt: seg.Block.EndAt.UTC(), Title: seg.Block.Info.Title, Synthetic: seg.Synthetic}
+			EndAt: seg.Block.EndAt.UTC(), Title: seg.Block.Info.Title, Synthetic: seg.Synthetic,
+			StandInFor: seg.StandInFor}
 		if seg.Block.VideoID != uuid.Nil {
 			b.VideoID = seg.Block.VideoID.String()
 		}
