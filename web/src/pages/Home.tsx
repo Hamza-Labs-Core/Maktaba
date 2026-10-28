@@ -6,10 +6,8 @@
 // Live TV channels on now (WhatsOnNow, its own read), then one row per pinned
 // library (its title opens the library). An empty row is not shown; a home
 // with nothing at all says how to start (admins: Manage libraries).
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
-import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { fetchHome, type HomeResponse } from "../lib/browse";
@@ -19,28 +17,14 @@ import { FeaturedHero } from "../components/FeaturedHero";
 import { AddedRow, VideoRow } from "../components/MediaRow";
 import { SERVER_PAGES } from "../lib/edition";
 import { LoadError } from "../components/LoadError";
+import { HomePlaceholder, Loading } from "../components/Placeholders";
+import { usePageData } from "../lib/usePageData";
 
 export function Home() {
   const { t } = useI18n();
   const { user } = useAuth();
-  const [home, setHome] = useState<HomeResponse | null>(null);
-  const [err, setErr] = useState<unknown>(null);
-  const [reload, setReload] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    setErr(null);
-    fetchHome()
-      .then((h) => {
-        if (!cancelled) setHome(h);
-      })
-      .catch((e) => {
-        if (!cancelled) setErr(e);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [reload, t]);
+  // a return to Home shows the last rows at once and reads them again quietly
+  const { data: home, err, loading, reload } = usePageData<HomeResponse>("home", fetchHome, [t]);
 
   const pinned = (home?.pinned ?? []).filter(
     (p) => p.continue_watching.length > 0 || p.recently_added.length > 0
@@ -62,21 +46,18 @@ export function Home() {
         </TitleRow>
       </header>
 
-      {err != null && <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />}
+      {err != null && <LoadError error={err} onRetry={reload} />}
 
-      {!home && !err && (
-        <div aria-busy="true" className="mkt-home__loading">
-          <Skeleton variant="rect" height={140} />
-          <Skeleton variant="rect" height={140} />
-        </div>
-      )}
+      <Loading loading={loading}>
+        <HomePlaceholder />
+      </Loading>
 
       {home?.featured && (
         <FeaturedHero
           // a new hero starts afresh (its picture's failure was the old one's)
           key={home.featured.video.id}
           featured={home.featured}
-          onChange={() => setReload((x) => x + 1)}
+          onChange={reload}
         />
       )}
 

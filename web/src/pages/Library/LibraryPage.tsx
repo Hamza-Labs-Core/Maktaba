@@ -13,11 +13,10 @@
 // A pin icon by the title for everyone (pin to the sidebar); admins also get
 // Scan now and Manage, at the header's end. A library
 // the user may not see answers 404, the same as one that does not exist.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
-import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { Tabs } from "@ds/components/Tabs/Tabs";
 import { ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
@@ -31,6 +30,8 @@ import { fetchCollections, type Collection } from "../../lib/collections";
 import { CollectionCard } from "../Collections/Collections";
 import { SERVER_PAGES } from "../../lib/edition";
 import { LoadError } from "../../components/LoadError";
+import { LibraryPagePlaceholder, Loading } from "../../components/Placeholders";
+import { usePageData } from "../../lib/usePageData";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -48,49 +49,25 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const tab: Tab = params.get("tab") === "browse" ? "browse" : "overview";
-  const [hub, setHub] = useState<LibraryHub | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [err, setErr] = useState<unknown>(null);
-  const [reload, setReload] = useState(0);
-  const [collections, setCollections] = useState<Collection[]>([]);
   const valid = UUID.test(libraryId);
-
+  // the server ignores a malformed id elsewhere; here it is simply not found
+  const page = usePageData<LibraryHub>(
+    valid ? `hub:${libraryId}` : null,
+    () => fetchHub(libraryId),
+    [t]
+  );
   // its own read: a failure only leaves the row out
-  useEffect(() => {
-    let cancelled = false;
-    setCollections([]);
-    if (!valid) return;
+  const cols = usePageData<Collection[]>(valid ? `library-collections:${libraryId}` : null, () =>
     fetchCollections(libraryId)
-      .then((cs) => !cancelled && setCollections(cs))
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [libraryId, valid, reload]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setHub(null);
-    setErr(null);
-    setNotFound(false);
-    // the server ignores a malformed id elsewhere; here it is simply not found
-    if (!valid) {
-      setNotFound(true);
-      return;
-    }
-    fetchHub(libraryId)
-      .then((h) => {
-        if (!cancelled) setHub(h);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        if (e instanceof ApiError && e.status === 404) setNotFound(true);
-        else setErr(e);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [libraryId, valid, reload, t]);
+  );
+  const { data: hub, err: hubErr, loading } = page;
+  const collections = cols.data ?? [];
+  const notFound = !valid || (hubErr instanceof ApiError && hubErr.status === 404);
+  const err = notFound ? null : hubErr;
+  function reload() {
+    page.reload();
+    cols.reload();
+  }
 
   function selectTab(next: string) {
     const p = new URLSearchParams(params);
@@ -119,16 +96,17 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
   if (err != null) {
     return (
       <section className="mkt-page mkt-library-page">
-        <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />
+        <LoadError error={err} onRetry={reload} />
       </section>
     );
   }
 
   if (!hub) {
     return (
-      <section className="mkt-page mkt-library-page" aria-busy="true">
-        <Skeleton variant="text" lines={1} />
-        <Skeleton variant="rect" height={140} />
+      <section className="mkt-page mkt-library-page">
+        <Loading loading={loading}>
+          <LibraryPagePlaceholder />
+        </Loading>
       </section>
     );
   }
@@ -266,7 +244,7 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
                   {t("libraryPage.manage")}
                 </Link>
               )}
-              <ScanNow libraryId={libraryId} onDone={() => setReload((x) => x + 1)} />
+              <ScanNow libraryId={libraryId} onDone={reload} />
             </>
           )}
         </div>

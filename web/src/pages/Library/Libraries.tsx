@@ -5,10 +5,9 @@
 // library. The pinned ones lead the page in the user's order, with up / down
 // buttons to reorder them (PUT /api/me/pinned-libraries through lib/pins,
 // which the sidebar's Pinned group follows).
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
-import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
@@ -19,6 +18,8 @@ import { TitleRow } from "../../help/HelpLink";
 import { SERVER_PAGES } from "../../lib/edition";
 import { LoadError } from "../../components/LoadError";
 import { errorText } from "../../lib/errorText";
+import { usePageData } from "../../lib/usePageData";
+import { CardGridPlaceholder, Loading } from "../../components/Placeholders";
 
 /** The 2x2 poster mosaic of a library card; a library with fewer than four
  *  posters shows its newest one whole instead of blank tiles. */
@@ -74,25 +75,13 @@ export function Libraries() {
   const { user } = useAuth();
   const toast = useToast();
   const pins = usePins(user?.id);
-  const [items, setItems] = useState<LibrarySummary[] | null>(null);
-  const [err, setErr] = useState<unknown>(null);
-  const [reload, setReload] = useState(0);
+  const {
+    data: items,
+    err,
+    loading,
+    reload,
+  } = usePageData<LibrarySummary[]>("libraries", fetchLibrarySummary, [t]);
   const [moving, setMoving] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setErr(null);
-    fetchLibrarySummary()
-      .then((r) => {
-        if (!cancelled) setItems(r);
-      })
-      .catch((e) => {
-        if (!cancelled) setErr(e);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [reload, t]);
 
   async function move(index: number, delta: number) {
     if (!pins) return;
@@ -120,7 +109,7 @@ export function Libraries() {
         </Link>
       </header>
 
-      {err != null && <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />}
+      {err != null && <LoadError error={err} onRetry={reload} />}
 
       {pins && pins.length > 0 && (
         <section className="mkt-libraries__pinned" aria-labelledby="mkt-libraries-pinned">
@@ -159,16 +148,9 @@ export function Libraries() {
         </section>
       )}
 
-      {!items && !err && (
-        <ul className="mkt-libgrid" aria-busy="true">
-          {Array.from({ length: 4 }, (_, i) => (
-            <li key={i} className="mkt-libcard">
-              <Skeleton variant="rect" height={140} />
-              <Skeleton variant="text" lines={1} />
-            </li>
-          ))}
-        </ul>
-      )}
+      <Loading loading={loading}>
+        <CardGridPlaceholder heading="mkt-libraries__all" />
+      </Loading>
 
       {items && items.length === 0 && !err && (
         <EmptyState

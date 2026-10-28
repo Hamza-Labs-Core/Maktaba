@@ -18,7 +18,6 @@ import { Chip } from "@ds/components/Chip/Chip";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Modal } from "@ds/components/Modal/Modal";
-import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
@@ -41,6 +40,8 @@ import { TitleRow } from "../../help/HelpLink";
 import { VideoPoster, formatDuration } from "../../components/VideoViews";
 import { LoadError } from "../../components/LoadError";
 import { errorText } from "../../lib/errorText";
+import { usePageData } from "../../lib/usePageData";
+import { ItemListPlaceholder, Loading } from "../../components/Placeholders";
 
 export function CollectionPage() {
   const { collectionId = "" } = useParams();
@@ -53,11 +54,29 @@ function CollectionOf({ id }: { id: string }) {
   const admin = !!user?.is_admin;
   const toast = useToast();
   const navigate = useNavigate();
-  const [col, setCol] = useState<Collection | null>(null);
-  const [items, setItems] = useState<VideoCard[] | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [err, setErr] = useState<unknown>(null);
-  const [reload, setReload] = useState(0);
+  const {
+    data,
+    err: loadErr,
+    loading,
+    reload,
+    setData,
+  } = usePageData<{ col: Collection; items: VideoCard[] }>(
+    `collection:${id}`,
+    async () => {
+      const col = await fetchCollection(id);
+      const items = col.is_smart ? [] : await fetchCollectionItems(id);
+      return { col, items };
+    },
+    [t]
+  );
+  const col = data?.col ?? null;
+  const items = data?.items ?? null;
+  const setCol = (c: Collection) => setData((d) => (d ? { ...d, col: c } : d));
+  const setItems = (f: (vs: VideoCard[]) => VideoCard[]) =>
+    setData((d) => (d ? { ...d, items: f(d.items) } : d));
+  const notFound =
+    loadErr instanceof ApiError && (loadErr.status === 404 || loadErr.status === 400);
+  const err = notFound ? null : loadErr;
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState("");
@@ -78,27 +97,6 @@ function CollectionOf({ id }: { id: string }) {
       cancelled = true;
     };
   }, [col]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setErr(null);
-    setNotFound(false);
-    fetchCollection(id)
-      .then(async (c) => {
-        const vs = c.is_smart ? [] : await fetchCollectionItems(id);
-        if (cancelled) return;
-        setCol(c);
-        setItems(vs);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        if (e instanceof ApiError && (e.status === 404 || e.status === 400)) setNotFound(true);
-        else setErr(e);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, reload, t]);
 
   const fail = (e: unknown) =>
     toast.show({
@@ -124,15 +122,16 @@ function CollectionOf({ id }: { id: string }) {
   if (err != null) {
     return (
       <section className="mkt-page mkt-collection">
-        <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />
+        <LoadError error={err} onRetry={reload} />
       </section>
     );
   }
   if (!col || !items) {
     return (
-      <section className="mkt-page mkt-collection" aria-busy="true">
-        <Skeleton variant="text" lines={1} />
-        <Skeleton variant="rect" height={140} />
+      <section className="mkt-page mkt-collection">
+        <Loading loading={loading}>
+          <ItemListPlaceholder />
+        </Loading>
       </section>
     );
   }
@@ -172,7 +171,7 @@ function CollectionOf({ id }: { id: string }) {
         id,
         next.map((v) => v.id)
       );
-      setItems(next);
+      setItems(() => next);
     } catch (e) {
       fail(e);
     } finally {
@@ -184,7 +183,7 @@ function CollectionOf({ id }: { id: string }) {
     setBusy(true);
     try {
       await removeFromCollection(id, videoId);
-      setItems((vs) => (vs ?? []).filter((v) => v.id !== videoId));
+      setItems((vs) => vs.filter((v) => v.id !== videoId));
     } catch (e) {
       fail(e);
     } finally {

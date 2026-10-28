@@ -2,7 +2,7 @@
 // The "Load more" / cursor paging cases (LIB-16, LIB-17, LIB-18) live in
 // LibraryBrowser.test.tsx.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route, useLocation } from "react-router-dom";
 import { ApiError } from "../lib/api";
@@ -314,12 +314,22 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("LIB-12: loading skeleton while the list is pending", async () => {
-    serve(() => new Promise(() => {}));
-    renderLib();
-    const busy = document.querySelector('ul[aria-busy="true"]')!;
-    expect(busy).not.toBeNull();
-    expect(busy.querySelectorAll("li.mkt-card")).toHaveLength(6);
+  it("LIB-12: loading placeholder (after 0.4 s) while the list is pending", async () => {
+    vi.useFakeTimers();
+    try {
+      serve(() => new Promise(() => {}));
+      renderLib();
+      const busy = document.querySelector('[aria-busy="true"]')!;
+      expect(busy).not.toBeNull();
+      // a quick load never flashes the placeholder
+      expect(busy.querySelectorAll("li.mkt-card")).toHaveLength(0);
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      expect(busy.querySelectorAll("ul.mkt-grid > li.mkt-card")).toHaveLength(6);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(screen.queryByText("No videos yet")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("button", { name: /load more/i })).toBeNull();

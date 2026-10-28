@@ -6,6 +6,7 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach } from "vitest";
 import { cleanup } from "@testing-library/react";
+import { forgetAnswers } from "../lib/pageCache";
 
 class MemoryStorage implements Storage {
   private map = new Map<string, string>();
@@ -49,4 +50,6 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  // the pages' kept answers (lib/pageCache) are per test, like storage
+  forgetAnswers();
 });

@@ -30,6 +30,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { api, ApiError, isHomeTimeout, isHomeUnreachable, SIGNIN_REQUIRED_EVENT } from "./api";
 import { useI18n } from "./i18n";
 import { purgeApiCacheOnLogout } from "./sw";
+import { forgetAnswers } from "./pageCache";
 import { ChangePasswordRequired } from "../pages/Auth/ChangePasswordRequired";
 
 export interface User {
@@ -119,6 +120,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [probe]);
+
+  // the pages' kept answers are this user's alone: drop them on a sign-out
+  // or another user
+  const userId = user?.id ?? null;
+  useEffect(() => forgetAnswers(), [userId]);
 
   useEffect(() => {
     const ended = () => {

@@ -3707,9 +3707,56 @@ button.mkt-video__hero {
   gap: var(--space-2);
   justify-content: center;
 }
-.mkt-home__loading {
-  display: grid;
-  gap: var(--space-4);
+/* Loading placeholders (components/Placeholders): the real rows', cards' and
+   hero's classes give the layout; these only size the grey shapes in them */
+.mk-skeleton.mkt-ph-fill {
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: 0;
+}
+.mk-skeleton.mkt-ph-mosaic {
+  border-radius: var(--radius-sm);
+}
+.mkt-ph-head {
+  /* the real head is as tall as its back / forward buttons */
+  min-block-size: 44px;
+}
+.mkt-ph-title {
+  inline-size: 10rem;
+  max-inline-size: 60%;
+}
+.mkt-ph-line {
+  block-size: 1em;
+  margin-block: 0.25em;
+}
+.mkt-ph-hero .mkt-hero__body {
+  inline-size: 100%;
+}
+.mkt-ph-hero-title {
+  block-size: 1.8rem;
+  max-inline-size: 70%;
+}
+.mk-skeleton.mkt-ph-button {
+  height: 2.6rem;
+}
+.mkt-ph-heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block-end: var(--space-4);
+}
+.mkt-ph-heading h1 {
+  margin: 0;
+}
+.mk-skeleton.mkt-ph-inline {
+  display: inline-block;
+  vertical-align: middle;
+  max-inline-size: 80%;
+  margin: 0;
+}
+.mkt-ph-card {
+  display: block;
+  padding: var(--space-3);
 }
 
 /* Libraries: the cards with a 2x2 poster mosaic, and the pinned list */
