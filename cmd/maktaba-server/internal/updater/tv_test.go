@@ -3,6 +3,7 @@ package updater
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -123,24 +124,59 @@ func TestTVStepSkippedCommits(t *testing.T) {
 	}
 }
 
-// TC3: a failed verification rolls the release back (failed_tv, the checks named) and
-// takes the change back; the release that comes back says rolled_back.
+// TC3, as the owner decided it (2026-10-28): a swap that fails, and a TV that fails on
+// the air after it switched (Epic 33.9 rolled it back), roll the release back (failed_tv)
+// and take the change back; the release that comes back says rolled_back.
 func TestTVStepFailedTVRollsBack(t *testing.T) {
-	tv := &fakeTV{script: []TVStatus{{Outcome: TVInProgress, ChangeID: "c1", Number: 7},
-		{Outcome: TVFailed, ChangeID: "c1", Number: 7, Reason: "verify_failed", Failed: []string{"stream_plays"}}}}
+	for _, reason := range []string{"swap_failed", "rolled_back"} {
+		t.Run(reason, func(t *testing.T) {
+			tv := &fakeTV{script: []TVStatus{{Outcome: TVInProgress, ChangeID: "c1", Number: 7, State: "swapping"},
+				{Outcome: TVFailed, ChangeID: "c1", Number: 7, Reason: reason}}}
+			n, w := appliedRig(t, tv, nil)
+			n.waitExit()
+			j := n.waitState(StateRollingBack)
+			if j.Reason != CodeFailedTV || j.Error == nil || j.Error.Code != CodeFailedTV || j.Error.Step != StepTV {
+				t.Fatalf("reason %q error %+v", j.Reason, j.Error)
+			}
+			if _, withdrawn := tv.took(); len(withdrawn) != 1 || withdrawn[0] != CodeFailedTV {
+				t.Fatalf("withdrawn %v", withdrawn)
+			}
+			back := n.restart(healthy)
+			j = back.waitState(StateRolledBack)
+			if j.Error == nil || j.Error.Code != CodeFailedTV || w.committed != "" {
+				t.Fatalf("rolled back: error %+v committed %q", j.Error, w.committed)
+			}
+		})
+	}
+}
+
+// The owner's decision (2026-10-28): a check that fails before any swap holds the TV on
+// the streaming software it runs, and the release commits all the same: no rollback, the
+// change not taken back, the TV step held with the checks that failed, and the release the
+// live TV runs recorded for the commit's pruning to keep.
+func TestTVStepHeldCommits(t *testing.T) {
+	tv := &fakeTV{script: []TVStatus{{Outcome: TVInProgress, ChangeID: "c1", Number: 7, State: "verifying",
+		LiveStreaming: "v1.4.0"},
+		{Outcome: TVHeld, ChangeID: "c1", Number: 7, State: "draft", Reason: "verify_failed",
+			Failed: []string{"stream_plays"}, LiveStreaming: "v1.4.0"}}}
 	n, w := appliedRig(t, tv, nil)
-	n.waitExit()
-	j := n.waitState(StateRollingBack)
-	if j.Reason != CodeFailedTV || j.Error == nil || j.Error.Code != CodeFailedTV || j.Error.Step != StepTV {
-		t.Fatalf("reason %q error %+v", j.Reason, j.Error)
+	j := n.waitState(StateCommitted)
+	if w.committed != "1.5.0" || j.Error != nil || j.Reason != "" {
+		t.Fatalf("committed %q error %+v reason %q", w.committed, j.Error, j.Reason)
 	}
-	if _, withdrawn := tv.took(); len(withdrawn) != 1 || withdrawn[0] != CodeFailedTV {
-		t.Fatalf("withdrawn %v", withdrawn)
+	if _, withdrawn := tv.took(); len(withdrawn) != 0 {
+		t.Fatalf("the held change was taken back: %v", withdrawn)
 	}
-	back := n.restart(healthy)
-	j = back.waitState(StateRolledBack)
-	if j.Error == nil || j.Error.Code != CodeFailedTV || w.committed != "" {
-		t.Fatalf("rolled back: error %+v committed %q", j.Error, w.committed)
+	if j.TV == nil || j.TV.Outcome != TVHeld || j.TV.LiveStreaming != "v1.4.0" ||
+		len(j.TV.Failed) != 1 || j.TV.Failed[0] != "stream_plays" {
+		t.Fatalf("tv %+v", j.TV)
+	}
+	s := stepOf(j, StepTV)
+	if s == nil || s.State != "held" || !strings.Contains(s.Detail, "stream_plays") || !strings.Contains(s.Detail, "v1.4.0") {
+		t.Fatalf("tv step %+v", s)
+	}
+	if got := j.TV.keeps(); len(got) != 1 || got[0] != "v1.4.0" {
+		t.Fatalf("keeps %v", got)
 	}
 }
 

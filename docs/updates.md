@@ -129,9 +129,21 @@ the next start from the update's journal (`updates/journal.json`).
   goes on the air (Live TV → Changes): a change of the streaming binary alone, from the updater
   (`source.kind = auto_update`), staged next to what airs, checked, and swapped at programme
   boundaries. Only this change goes on the air without an approval; every other change keeps its
-  rule. The release commits once the change is live. What can stop it:
-  - `failed_tv`: its check or its swap failed, or the TV change was rolled back. The release rolls
-    back and is blocked; the notice lists the checks that failed.
+  rule. The release commits once the change is live.
+  - **Its check fails** (the owner's decision, 2026-10-28): the update stays installed, and only
+    the TV waits. The new server, web app and pipeline run; the live TV stays on the streaming
+    software it ran; the change stays a draft with its report; the release is not blocked. The run
+    ends as done, and Admin → Updates says "Installed. TV held on <old version>: its check
+    failed", with what failed, **Retry** (check it again: a pass swaps at a programme boundary as
+    usual) and **Drop** (withdraw it: the TV stays on the old streaming software until a later
+    release, whose change replaces a held one by itself). The home's row says "TV held on …", and
+    the notice `update.tv_held` links there. Both actions are admin-only. That release's streaming
+    software is kept on disk while the TV runs it (`keep_versions`, a desktop app's kept payload, a
+    runtime directory).
+
+  What still rolls the release back:
+  - `failed_tv`: the swap itself failed, or the TV failed on the air after it switched (rolled
+    back, Epic 33.9). The release rolls back and is blocked; the admin is told.
   - `tv_change_pending`: it waited behind another change awaiting your approval until the window
     and its overrun ended. Nothing counts against the release; the next window tries again.
   - `tv_timeout`: not on the air within `boundary_max_wait_minutes` + 10 minutes of its staging.

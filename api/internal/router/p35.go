@@ -163,6 +163,9 @@ type P35Deps struct {
 	// (<data_dir>/updates/mirror, story 35.12 AC3); "" keeps none (the machines download
 	// from GitHub and PyPI themselves).
 	DataDir string
+	// TV is the TV change controller (MountP33's): a run's TV held at its commit is
+	// retried or dropped through it (nil: no Retry or Drop).
+	TV *tvchange.Controller
 }
 
 // homeReleaseCopies are the folders of a release the home staged itself (a side-by-side
@@ -230,6 +233,10 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 				return err != nil || p.Wheelhouse
 			},
 			Local: homeReleaseCopies(getenv("MAKTABA_RELEASE_DIR"))}
+	}
+	if d.TV != nil {
+		// a TV held at an update (its change's check failed): Retry and Drop
+		drv.TV = d.TV
 	}
 	svc.Starter = drv
 	// story 35.15: the update events in the hub's events file, the numbers on /metrics

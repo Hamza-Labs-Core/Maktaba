@@ -656,13 +656,13 @@ func runServe() error {
 			router.MountServerSettings(r, appDB)
 			// Epic 33: TV changes (/api/tv/changes, releases, slots) and the change
 			// controller (staged -> verified -> approved -> swapped)
-			router.MountP33(r, router.P33Deps{DB: appDB, Logger: logger, RunController: true,
+			tvChanges := router.MountP33(r, router.P33Deps{DB: appDB, Logger: logger, RunController: true,
 				Notifier: notifyHub})
 			// Epic 35 story 35.3: update policy, release catalog and the quiet-window
 			// scheduler (/api/cluster/updates). Verification is story 35.1's.
 			router.MountP35(r, router.P35Deps{DB: appDB, Logger: logger, Current: version.Version, Notifier: notifyHub,
 				BaseChannel: version.Channel(), Ref: updatesRef, RunLoops: true, Hub: hubRef, GitHubBaseURL: e2eGitHubAPI(),
-				Verifier: updates.ReleaseVerifier{Trust: updater}, DataDir: statsDataDir})
+				Verifier: updates.ReleaseVerifier{Trust: updater}, DataDir: statsDataDir, TV: tvChanges})
 			logger.Info("p27: live-channel + guide handlers mounted",
 				"event", "p27_mounted")
 

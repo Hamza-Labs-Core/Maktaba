@@ -83,7 +83,23 @@ type MachineStatus struct {
 	// restart cuts no TV and need not wait for it to be quiet; HandoverWhy says why not.
 	HandsOver   bool   `json:"hands_over,omitempty"`
 	HandoverWhy string `json:"handover_why,omitempty"`
+	// TV is the home's TV step (story 35.6): its change and how it ended.
+	TV *MachineTV `json:"tv,omitempty"`
 }
+
+// MachineTV is the home's TV step as its supervisor reports it (updater.TVRun).
+type MachineTV struct {
+	ChangeID string `json:"change_id,omitempty"`
+	Number   int64  `json:"number,omitempty"`
+	// Outcome: live, skipped, held (its check failed before any swap: the TV stays on
+	// LiveStreaming and the release commits all the same), failed, cancelled.
+	Outcome       string   `json:"outcome,omitempty"`
+	LiveStreaming string   `json:"live_streaming,omitempty"`
+	Failed        []string `json:"failed,omitempty"`
+}
+
+// TVHeld is MachineTV.Outcome for a TV held on the streaming software it ran.
+const TVHeld = "held"
 
 // RunBackup is a dump of the home's database a run took (update_runs.backup).
 type RunBackup struct {

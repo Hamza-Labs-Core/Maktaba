@@ -192,12 +192,48 @@ export interface UpdateTarget {
   healthy_at?: string;
 }
 
+/** A failed check of a TV change's report (its channel and value). */
+export interface TVCheck {
+  check: string;
+  channel_id?: string;
+  result: string;
+  value?: string;
+}
+
+/** What a TV held at an update is now: held (Retry or Drop), retrying (checked again),
+ * live (a retry passed and swapped), dropped, replaced (a later release's change), failed
+ * (a retry's swap failed), gone. */
+export type RunTVState = "held" | "retrying" | "live" | "dropped" | "replaced" | "failed" | "gone";
+
+/** A TV held at the home's commit (the owner's decision, 2026-10-28): its change's check
+ * failed before any swap, so the release installed and the live TV stayed on `held_on`. */
+export interface RunTV {
+  outcome: "held";
+  change_id?: string;
+  number?: number;
+  held_on?: string;
+  failed?: string[];
+  state?: RunTVState;
+  checks?: TVCheck[];
+}
+
 /** GET /api/cluster/updates/runs/{id}. */
 export interface UpdateRunView extends UpdateRun {
   install_kind: string;
-  detail: { waiting?: string; no_home?: boolean; home?: { state?: string } };
+  detail: { waiting?: string; no_home?: boolean; home?: { state?: string }; tv?: RunTV };
   steps: UpdateRunStep[];
   targets: UpdateTarget[];
+}
+
+/** The run whose TV is held now (GET /api/cluster/updates: tv_held). */
+export interface TVHeldNow extends RunTV {
+  run_id: string;
+  version: string;
+}
+
+/** A held TV that Retry and Drop act on (one checked again waits for its check). */
+export function tvHeld(tv?: RunTV | null): boolean {
+  return !!tv && (tv.state ?? "held") === "held";
 }
 
 export interface UpdatesOverview {
@@ -216,6 +252,7 @@ export interface UpdatesOverview {
   machines?: UpdateMachine[];
   last_tick?: UpdatesTick;
   stuck?: UpdatesStuck;
+  tv_held?: TVHeldNow;
 }
 
 /** The states of a run that are over. */
@@ -336,6 +373,9 @@ export const updatesApi = {
       `/api/cluster/updates/runs/${encodeURIComponent(id)}/targets/${encodeURIComponent(node)}/${action}`,
       {}
     ),
+  /** A TV held at the update: check its change again (retry), or withdraw it (drop). */
+  tvAction: (id: string, action: "retry" | "drop") =>
+    api.post<RunTV>(`/api/cluster/updates/runs/${encodeURIComponent(id)}/tv/${action}`, {}),
   logURL: (id: string) => `/api/cluster/updates/runs/${encodeURIComponent(id)}/log`,
   backups: () => api.get<HomeBackups>("/api/cluster/updates/backups"),
   restorePlan: (name: string) =>

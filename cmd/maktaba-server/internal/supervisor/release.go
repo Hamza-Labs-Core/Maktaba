@@ -47,6 +47,16 @@ func streamingExe() string {
 // version (release 1, before side-by-side installs: plan 33.2 step 4) the current
 // binary (fallback, may be "") is used. A non-empty want SHA-256 must match the file.
 func ResolveReleaseBinary(binRoot, version, wantSHA256, currentVersion, fallback string) (ReleaseBinary, error) {
+	return resolveReleaseBinary(binRoot, version, wantSHA256, currentVersion, fallback, nil)
+}
+
+// resolveReleaseBinary is ResolveReleaseBinary that also looks at kept(version): the
+// streaming binaries of that release this install keeps elsewhere (a desktop app's copy
+// kept before its update, another runtime directory), the first whose SHA-256 is the
+// release's. A TV held on the release before (story 35.6, the owner's decision of
+// 2026-10-28) restarts its slots on that release's binary from there.
+func resolveReleaseBinary(binRoot, version, wantSHA256, currentVersion, fallback string,
+	kept func(version string) []string) (ReleaseBinary, error) {
 	v := strings.TrimSpace(version)
 	if v == "" || strings.ContainsAny(v, `/\`) || v == "." || v == ".." {
 		return ReleaseBinary{}, fmt.Errorf("%w: bad version %q", ErrReleaseBinaryMissing, version)
@@ -55,10 +65,13 @@ func ResolveReleaseBinary(binRoot, version, wantSHA256, currentVersion, fallback
 	// records the binary's own spelling (a release build says "v1.5.0")
 	path := filepath.Join(binRoot, "releases", bareVersion(v), streamingExe())
 	if _, err := os.Stat(path); err != nil {
-		if bareVersion(v) != bareVersion(currentVersion) || fallback == "" {
+		if found := keptBinary(kept, v, wantSHA256); found != "" {
+			path = found
+		} else if bareVersion(v) != bareVersion(currentVersion) || fallback == "" {
 			return ReleaseBinary{}, fmt.Errorf("%w: %s", ErrReleaseBinaryMissing, path)
+		} else {
+			path = fallback
 		}
-		path = fallback
 	}
 	sum, err := fileSHA256(path)
 	if err != nil {
@@ -68,6 +81,27 @@ func ResolveReleaseBinary(binRoot, version, wantSHA256, currentVersion, fallback
 		return ReleaseBinary{}, fmt.Errorf("%w: %s is %s, the release wants %s", ErrReleaseChecksum, path, sum, w)
 	}
 	return ReleaseBinary{Path: path, Version: v, SHA256: sum}, nil
+}
+
+// keptBinary is the first of kept(version) that exists (and, with a want SHA-256, is that
+// file): "" when none.
+func keptBinary(kept func(string) []string, version, wantSHA256 string) string {
+	if kept == nil {
+		return ""
+	}
+	want := strings.ToLower(strings.TrimSpace(wantSHA256))
+	for _, p := range kept(version) {
+		if st, err := os.Stat(p); err != nil || st.IsDir() {
+			continue
+		}
+		if want != "" {
+			if sum, err := fileSHA256(p); err != nil || sum != want {
+				continue
+			}
+		}
+		return p
+	}
+	return ""
 }
 
 // bareVersion is a version without its "v" (a release directory's name).
@@ -118,11 +152,13 @@ func (s *Supervisor) ReleasesInUse() []string {
 		}
 	}
 	for _, c := range s.children {
-		if c.cmd == nil {
-			continue
-		}
+		// a slot's binding counts while it is bound, running or not (between two starts:
+		// a slot restarting must find its release's binary)
 		if c.binding != nil && c.binding.Version != "" {
 			add(c.binding.Version)
+		}
+		if c.cmd == nil {
+			continue
 		}
 		add(releaseOfPath(c.cmd.Path))
 	}

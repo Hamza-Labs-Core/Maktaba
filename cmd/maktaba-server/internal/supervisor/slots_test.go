@@ -244,6 +244,60 @@ func TestSlotReleaseBinding(t *testing.T) {
 	}
 }
 
+// A TV held on the release before (story 35.6, the owner's decision of 2026-10-28): a
+// slot bound to it restarts on its binary where the install keeps it (a desktop app's
+// kept payload), checked against its SHA-256, and that release counts as in use while the
+// slot is bound, running or not, so no commit prunes it.
+func TestSlotBindingFindsTheKeptBinary(t *testing.T) {
+	dir := fakeStreamingBin(t)
+	base := filepath.Join(dir, filepath.Base(mustBin(t, dir)))
+	kept := filepath.Join(t.TempDir(), "payloads", "1.4.0", "bin", filepath.Base(base))
+	if err := os.MkdirAll(filepath.Dir(kept), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(kept, []byte("streaming 1.4.0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum, _ := fileSHA256(kept)
+	finder := func(v string) []string {
+		if bareVersion(v) == "1.4.0" {
+			return []string{filepath.Join(t.TempDir(), "missing"), kept}
+		}
+		return nil
+	}
+	p, err := BuildSlot("blue", Options{Config: slotCfg(), BinDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &SlotBinding{ReleaseID: "r-held", Version: "v1.4.0", SHA256: sum}
+	cmd := cloneCmd(p.Cmd)
+	if err := applyBinding(cmd, b, p.Cmd.Path); err == nil {
+		t.Fatal("without the kept binaries the release resolved")
+	}
+	cmd = cloneCmd(p.Cmd)
+	if err := applyBindingKept(cmd, b, p.Cmd.Path, finder); err != nil || cmd.Path != kept ||
+		envMap(cmd.Env)["MAKTABA_TV_RELEASE"] != "r-held" {
+		t.Fatalf("kept binary: %s %v", cmd.Path, err)
+	}
+	cmd = cloneCmd(p.Cmd)
+	wrong := &SlotBinding{ReleaseID: "r-held", Version: "1.4.0", SHA256: strings.Repeat("0", 64)}
+	if err := applyBindingKept(cmd, wrong, p.Cmd.Path, finder); err == nil {
+		t.Fatal("a kept binary of another checksum started")
+	}
+
+	s := New([]Process{p}, testPolicy(), WithKeptStreaming(finder))
+	if s.keptStreaming == nil {
+		t.Fatal("WithKeptStreaming")
+	}
+	if err := s.Bind("blue", b); err != nil {
+		t.Fatal(err)
+	}
+	// bound, not running (between two starts): its release is still in use
+	if got := s.ReleasesInUse(); len(got) != 1 || got[0] != "1.4.0" {
+		t.Fatalf("in use %v", got)
+	}
+}
+
 func mustBin(t *testing.T, dir string) string {
 	t.Helper()
 	ents, err := os.ReadDir(dir)

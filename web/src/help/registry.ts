@@ -297,6 +297,8 @@ export const UPDATE_CODE_HELP: ReadonlyMap<string, string> = new Map([
   ["tv_timeout", "code-tv"],
   ["failed_tv", "code-tv"],
   ["tv_change_cancelled", "code-tv"],
+  // updates#tv-held
+  ["tv_held", "tv-held"],
   // updates#code-machine
   ["failed_prepare", "code-machine"],
   ["prepare_failed", "code-machine"],

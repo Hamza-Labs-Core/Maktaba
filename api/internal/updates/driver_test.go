@@ -45,6 +45,8 @@ type fakeMachine struct {
 	rbErr    *MachineError
 	// applyBody is the last apply's request
 	applyBody any
+	// tv: the TV step its commit reports (a TV held: its change's check failed)
+	tv *MachineTV
 }
 
 // stage is the machine's desktop app staging the release it was ordered (appSlow).
@@ -180,7 +182,7 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 				m.st.State, m.st.Error = MApplyFailed, &MachineError{Step: "restart", Code: "app_install_failed"}
 			default:
 				m.st.State = MCommitted
-				m.st.Backup = m.backup
+				m.st.Backup, m.st.TV = m.backup, m.tv
 				m.version = m.st.Job.Version
 			}
 		}

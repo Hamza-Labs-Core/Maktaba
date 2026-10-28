@@ -10,9 +10,13 @@ import (
 // The TV step of the home's update (story 35.6, design §7.1). Once the new release runs,
 // its streaming binary goes on the air through the TV change controller (Epic 33): a
 // change of the binary alone (source auto_update), staged, verified and swapped at
-// programme boundaries without an approval. The release commits only once that change is
-// live (or there was nothing to swap); a change that fails rolls the release back, and a
-// rollback for any reason takes the change back (cancelled, or rolled back on the air).
+// programme boundaries without an approval. The release commits once that change is live
+// (or there was nothing to swap), or once its check failed before any swap: then the TV is
+// held on the streaming software it runs and the release commits all the same (the
+// owner's decision, 2026-10-28: the admin retries or drops the change from the Updates
+// page). A change whose swap fails, or that fails on the air after it switched, rolls the
+// release back; a rollback for any reason takes the change back (cancelled, or rolled back
+// on the air).
 // The step runs after the restart because the new release's migrations run at its start
 // (the database step): the new streaming binary never meets an older schema.
 
@@ -23,6 +27,7 @@ const (
 	TVQueued     = "queued"
 	TVInProgress = "in_progress"
 	TVLive       = "live"
+	TVHeld       = "held" // its check failed before any swap: the TV stays on its software
 	TVFailed     = "failed"
 	TVCancelled  = "cancelled"
 )
@@ -69,6 +74,8 @@ type TVStatus struct {
 	StagedAt       *time.Time  `json:"staged_at,omitempty"`
 	TimeoutMinutes int         `json:"timeout_minutes,omitempty"`
 	QueuedBehind   *TVQueueRef `json:"queued_behind,omitempty"`
+	// LiveStreaming is the streaming software the live TV runs (its TV release's).
+	LiveStreaming string `json:"live_streaming,omitempty"`
 }
 
 // TVQueueRef is the change a queued one waits for.
@@ -89,6 +96,21 @@ type TVRun struct {
 	LastOK *time.Time `json:"last_ok,omitempty"`
 	// Withdrawn is why the run took the change back.
 	Withdrawn string `json:"withdrawn,omitempty"`
+	// LiveStreaming is the streaming software the live TV ran when the API last answered:
+	// the release that ships it is kept from pruning (a held TV stays on it).
+	LiveStreaming string `json:"live_streaming,omitempty"`
+	// Failed is the checks that failed (a held change's).
+	Failed []string `json:"failed,omitempty"`
+}
+
+// keeps are the releases the TV step needs kept at the commit: the one whose streaming
+// software the live TV ran at its last answer (a held TV stays on it until a later change
+// swaps it; a change that went live may still go back to it, Epic 33.9).
+func (t *TVRun) keeps() []string {
+	if t == nil || strings.TrimSpace(t.LiveStreaming) == "" {
+		return nil
+	}
+	return []string{strings.TrimSpace(t.LiveStreaming)}
 }
 
 // SetTVDeadline records how long the run's TV change may wait behind another (the
@@ -109,7 +131,7 @@ func (m *Machine) tvStep(ctx context.Context) (done bool, code, detail string) {
 	if m.TV == nil || j == nil || !j.Job.Home {
 		return true, "", ""
 	}
-	if j.TV != nil && (j.TV.Outcome == TVLive || j.TV.Outcome == TVSkipped) {
+	if j.TV != nil && (j.TV.Outcome == TVLive || j.TV.Outcome == TVSkipped || j.TV.Outcome == TVHeld) {
 		return true, "", ""
 	}
 	now := m.now()
@@ -142,6 +164,9 @@ func (m *Machine) tvStep(ctx context.Context) (done bool, code, detail string) {
 	_ = m.mutate(func(j *Journal) {
 		if j.TV != nil {
 			j.TV.LastOK, j.TV.ChangeID, j.TV.Number = &now, st.ChangeID, st.Number
+			if st.LiveStreaming != "" {
+				j.TV.LiveStreaming = st.LiveStreaming
+			}
 		}
 	})
 	name := "the TV change"
@@ -158,6 +183,24 @@ func (m *Machine) tvStep(ctx context.Context) (done bool, code, detail string) {
 		_ = m.mutate(func(j *Journal) { j.TV.Outcome = TVSkipped })
 		_ = m.endStep(StepTV, "skipped", tvSkipWhy(st.Skipped))
 		m.logf("no TV change: %s", tvSkipWhy(st.Skipped))
+		return true, "", ""
+	case TVHeld:
+		// its check failed before any swap: the TV stays on the streaming software it
+		// runs, the release commits all the same, and the admin retries or drops the
+		// change (the owner's decision, 2026-10-28)
+		on := st.LiveStreaming
+		if on == "" {
+			on = "its streaming software"
+		}
+		why := "its check failed"
+		if len(st.Failed) > 0 {
+			why += " (" + strings.Join(st.Failed, ", ") + ")"
+		}
+		failed := append([]string(nil), st.Failed...)
+		_ = m.mutate(func(j *Journal) { j.TV.Outcome, j.TV.Failed = TVHeld, failed })
+		_ = m.endStep(StepTV, "held", fmt.Sprintf("%s: %s; the TV stays on %s", name, why, on))
+		m.warnf("%s: %s; the TV stays on %s and %s commits (retry or drop it on the Updates page)",
+			name, why, on, j.Job.Version)
 		return true, "", ""
 	case TVFailed:
 		why := st.Reason

@@ -1399,3 +1399,138 @@ describe("Admin Updates: blocked, stuck and waiting releases", () => {
     expect(screen.getByTestId("updates-tick")).toHaveTextContent("يجري تحديث بالفعل");
   });
 });
+
+// The owner's decision (2026-10-28): when only the TV change's check fails, the update
+// installs, the TV stays on the streaming software it ran, and the admin retries or
+// drops the change from here.
+describe("Admin Updates: a TV held at an update", () => {
+  const heldTV = {
+    outcome: "held",
+    change_id: "ch-9",
+    number: 9,
+    held_on: "1.4.0",
+    failed: ["stream_probe"],
+    state: "held",
+    checks: [{ check: "stream_probe", channel_id: "c1", result: "fail", value: "no video" }],
+  };
+  const done = {
+    ...runView,
+    id: "run-9",
+    state: "done",
+    step: "",
+    finished_at: finishedAt,
+    detail: { tv: heldTV },
+    steps: [
+      { seq: 0, host: "home", step: "tv", state: "held", started_at: finishedAt },
+      { seq: 1, host: "home", step: "commit", state: "done", started_at: finishedAt },
+    ],
+  };
+  const home = {
+    id: "home",
+    name: "home",
+    role: "home",
+    version: "1.5.0",
+    state: "up_to_date",
+    kind: "layout",
+  };
+
+  it("the run says installed and TV held, with what failed, Retry and Drop; the home's row says held", async () => {
+    routes(
+      overview({
+        current_version: "1.5.0",
+        plan: { auto_install: true, due: false },
+        machines: [home],
+        last_run: { ...liveRun, id: "run-9", state: "done", finished_at: finishedAt },
+        tv_held: { run_id: "run-9", version: "1.5.0", ...heldTV },
+      }),
+      done,
+      [done]
+    );
+    post.mockResolvedValue({ ...heldTV, state: "retrying" });
+    const user = userEvent.setup();
+    renderPage();
+    const block = await screen.findByTestId("updates-run-tv");
+    expect(within(block).getByTestId("updates-run-tv-title")).toHaveTextContent(
+      "Installed. TV held on 1.4.0: its check failed"
+    );
+    expect(within(block).getByTestId("updates-run-tv-report")).toHaveTextContent("stream probe");
+    expect(within(block).getByTestId("updates-run-tv-report")).toHaveTextContent("no video");
+    expect(block).toHaveTextContent("TV change #9");
+    // the run's own block carries the actions: no second callout up front
+    expect(screen.queryByTestId("updates-tv-held")).not.toBeInTheDocument();
+    expect(screen.getByTestId("updates-machine-home-tv")).toHaveTextContent(
+      "TV held on 1.4.0: its check failed"
+    );
+    // not a failure: no rolled-back callout, no red error
+    expect(screen.queryByTestId("updates-last-failed")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("updates-run-error")).not.toBeInTheDocument();
+
+    await user.click(within(block).getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/runs/run-9/tv/retry", {})
+    );
+    await user.click(within(block).getByRole("button", { name: "Drop" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/runs/run-9/tv/drop", {})
+    );
+  });
+
+  it("a held TV of an earlier run is offered up front when another run is shown", async () => {
+    const later = { ...done, id: "run-10", version: "1.5.1", detail: {}, state: "rolled_back" };
+    routes(
+      overview({
+        current_version: "1.5.0",
+        machines: [home],
+        last_run: { ...liveRun, id: "run-10", state: "rolled_back", finished_at: finishedAt },
+        tv_held: { run_id: "run-9", version: "1.5.0", ...heldTV },
+      }),
+      later,
+      [later, done]
+    );
+    post.mockResolvedValue({ ...heldTV, state: "dropped" });
+    const user = userEvent.setup();
+    renderPage();
+    const box = await screen.findByTestId("updates-tv-held");
+    expect(box).toHaveTextContent("Installed. TV held on 1.4.0: its check failed");
+    await user.click(within(box).getByRole("button", { name: "Drop" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/cluster/updates/runs/run-9/tv/drop", {})
+    );
+  });
+
+  it("once retried or dropped it says what became of it, without the actions", async () => {
+    const dropped = { ...done, detail: { tv: { ...heldTV, state: "dropped" } } };
+    routes(
+      overview({ current_version: "1.5.0", machines: [home], last_run: { ...done } }),
+      dropped,
+      [dropped]
+    );
+    renderPage();
+    await screen.findByTestId("updates-history-fold");
+    const block = await screen.findByTestId("updates-run-tv");
+    expect(block).toHaveTextContent("Installed. The TV change was dropped: the TV stayed on 1.4.0");
+    expect(within(block).queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("updates-machine-home-tv")).not.toBeInTheDocument();
+  });
+
+  it("reads in Arabic", async () => {
+    routes(
+      overview({
+        current_version: "1.5.0",
+        machines: [home],
+        last_run: { ...liveRun, id: "run-9", state: "done", finished_at: finishedAt },
+        tv_held: { run_id: "run-9", version: "1.5.0", ...heldTV },
+      }),
+      done,
+      [done]
+    );
+    renderPage("ar");
+    const block = await screen.findByTestId("updates-run-tv");
+    expect(block).toHaveTextContent("ثُبِّت التحديث. بقي التلفاز على 1.4.0: فشل فحصه");
+    expect(within(block).getByRole("button", { name: "إعادة المحاولة" })).toBeInTheDocument();
+    expect(within(block).getByRole("button", { name: "إسقاط" })).toBeInTheDocument();
+    expect(screen.getByTestId("updates-machine-home-tv")).toHaveTextContent(
+      "بقي التلفاز على 1.4.0"
+    );
+  });
+});

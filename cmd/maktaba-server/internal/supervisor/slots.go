@@ -144,6 +144,12 @@ type SlotBinding struct {
 // applyBinding points a slot's command at its release's binary (at each start:
 // a restart re-checks the file). No binding: the command as built.
 func applyBinding(cmd *exec.Cmd, b *SlotBinding, base string) error {
+	return applyBindingKept(cmd, b, base, nil)
+}
+
+// applyBindingKept is applyBinding that also finds the release's binary among kept(version)
+// (WithKeptStreaming).
+func applyBindingKept(cmd *exec.Cmd, b *SlotBinding, base string, kept func(string) []string) error {
 	if b == nil || b.ReleaseID == "" {
 		if base != "" && cmd.Path != base { // unbound again: the binary built with
 			cmd.Path = base
@@ -153,7 +159,7 @@ func applyBinding(cmd *exec.Cmd, b *SlotBinding, base string) error {
 		}
 		return nil
 	}
-	rb, err := ResolveReleaseBinary(releaseBinRoot(base), b.Version, b.SHA256, version.Version, base)
+	rb, err := resolveReleaseBinary(releaseBinRoot(base), b.Version, b.SHA256, version.Version, base, kept)
 	if err != nil {
 		return fmt.Errorf("tv_slot_refused: %w", err)
 	}
@@ -169,6 +175,14 @@ func applyBinding(cmd *exec.Cmd, b *SlotBinding, base string) error {
 	}
 	cmd.Env = append(env, "MAKTABA_TV_RELEASE="+b.ReleaseID)
 	return nil
+}
+
+// WithKeptStreaming lets a slot bound to a release whose binary is not under
+// bin/releases/<version> run it from where this install keeps it (kept: the paths of
+// that release's streaming binary; a desktop app's copy kept before its update, another
+// runtime directory). A TV held on the release before stays on it across restarts.
+func WithKeptStreaming(kept func(version string) []string) Option {
+	return func(s *Supervisor) { s.keptStreaming = kept }
 }
 
 // Bind sets (nil: clears) the TV release a slot instance runs from its next

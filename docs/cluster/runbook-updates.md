@@ -233,9 +233,13 @@ running release was not touched. Free space on the disk of the install root (old
 - `tv_change_pending`: the release's TV change waited behind another change awaiting your approval
   (Live TV > Changes) until the window and its overrun ended. Approve or reject that change; the
   next window tries again. Nothing counts against the release.
-- `failed_tv`: the TV change's checks or its swap failed, or the change was rolled back. The
-  release rolled back and is blocked; the notice lists the failing checks (Live TV > Changes has
-  the change's report). Skip the release or **Try it again** once the cause is fixed.
+- **TV held** (`update.tv_held`): the TV change's check failed before any swap. The release is
+  installed and not blocked; the TV stays on the previous streaming software (the owner's decision,
+  2026-10-28). On Admin → Updates, read what failed (Live TV > Changes has the full report), then
+  **Retry** once the cause is fixed, or **Drop** to leave the TV where it is until a later release.
+- `failed_tv`: the TV change's swap failed, or the TV failed on the air after it switched (it was
+  rolled back). The release rolled back and is blocked; the admin is told (Live TV > Changes has the
+  change's report). Skip the release or **Try it again** once the cause is fixed.
 - `tv_timeout`: the change did not reach the air within `boundary_max_wait_minutes` + 10 minutes.
   The release rolled back; the attempt counts. Check the TV slots on System health.
 - `tv_change_cancelled`: an admin cancelled the change; the release rolled back and stays blocked

@@ -175,6 +175,25 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 	return flatInstaller{}, filepath.Join(cfg.StateDir(), "updates")
 }
 
+// keptStreaming finds a release's streaming binary where this install keeps it besides
+// bin/releases (nil: nowhere else): a desktop app's payloads kept before its updates, a
+// runtime copy's other directories. A TV slot bound to the release before (a TV held there
+// when its change's check failed, story 35.6) starts again on it from there.
+func keptStreaming(cfg config.Config) func(version string) []string {
+	bundle := config.AppBundle()
+	if bundle == "" {
+		return nil
+	}
+	if rt, ok := appruntime.Of(bundle); ok || filepath.Base(bundle) == appruntime.CurrentLink {
+		if !ok {
+			rt = appruntime.New(filepath.Dir(bundle))
+		}
+		return (&updater.RuntimeInstaller{Runtime: rt}).StreamingOf
+	}
+	root := orDir(strings.TrimSpace(os.Getenv(envLauncherRoot)), cfg.StateDir())
+	return func(version string) []string { return updater.KeptStreaming(root, version) }
+}
+
 // wheelhouseFolder is where, in the updates folder, a desktop app's or a runtime copy's
 // staged release keeps the home's wheelhouse (updater.WheelhouseDir).
 const wheelhouseFolder = "wheelhouse"
@@ -493,8 +512,15 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 		// (story 35.6): its TV change goes through the API's change controller
 		m.TV = &apiTV{cfg: cfg, releaseDir: releaseDir}
 	}
-	if li, ok := inst.(*updater.LayoutInstaller); ok {
-		li.InUse = u.releasesInUse // a front door or a TV slot keeps the release it runs
+	// a front door or a TV slot keeps the release it runs (a TV held on the release before
+	// when its change's check failed: story 35.6, the owner's decision of 2026-10-28)
+	switch in := inst.(type) {
+	case *updater.LayoutInstaller:
+		in.InUse = u.releasesInUse
+	case *updater.AppInstaller:
+		in.InUse = u.releasesInUse
+	case *updater.RuntimeInstaller:
+		in.InUse = u.releasesInUse
 	}
 	u.m = m
 	m.Start(ctx)

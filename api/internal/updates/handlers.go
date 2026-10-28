@@ -30,6 +30,7 @@ const maxBody = 64 << 10
 //	POST /api/cluster/updates/defer      {until}  (RFC 3339; "" clears)
 //	POST /api/cluster/updates/check      check GitHub now
 //	GET  /api/cluster/updates/runs       history (?limit=)
+//	POST /api/cluster/updates/runs/{id}/tv/retry|drop   a TV held at the update (tvheld.go)
 //	GET  /api/cluster/updates/backups    the home's backups and kept releases (story 35.5 AC8)
 //	GET  /api/cluster/updates/backups/{name}/restore   what restoring it does
 //	POST /api/cluster/updates/backups/{name}/restore   {confirm:"<name>"}  -> 202 (the home restarts)
@@ -59,6 +60,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/cluster/updates/runs/{id}/cancel", h.Cancel)
 	r.Post("/api/cluster/updates/runs/{id}/resume", h.Resume)
 	r.Post("/api/cluster/updates/runs/{id}/targets/{node}/{action}", h.TargetAction)
+	r.Post("/api/cluster/updates/runs/{id}/tv/{action}", h.TVAction)
 	r.Get("/api/cluster/updates/backups", h.BackupsList)
 	r.Get("/api/cluster/updates/backups/{name}/restore", h.RestorePlanView)
 	r.Post("/api/cluster/updates/backups/{name}/restore", h.Restore)
@@ -104,6 +106,9 @@ type Overview struct {
 	// row for the same reason (the TV watched every night, say): an admin may install it
 	// now (nil: none).
 	Stuck *Stuck `json:"stuck,omitempty"`
+	// TVHeld is the run whose TV is held now: the release installed, the live TV stayed on
+	// its streaming software when the change's check failed (nil: none).
+	TVHeld *TVHeldNow `json:"tv_held,omitempty"`
 }
 
 // Machine is one row of the Updates page's machines table.
@@ -215,6 +220,8 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// a TV held at an update: the home's row says so, with Retry and Drop
+	o.TVHeld = h.Driver.TVHeld(r.Context())
 	common.WriteJSON(w, r, http.StatusOK, o)
 }
 

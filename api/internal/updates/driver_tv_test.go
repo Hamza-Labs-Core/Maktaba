@@ -9,17 +9,19 @@ import (
 // Story 35.6: the home's new release moves the TV to its streaming binary before it
 // commits; how the run ends when that fails.
 
-// AC3: a failed TV change blocks the release and tells the admin which checks failed.
+// AC3, as the owner decided it (2026-10-28): a TV change whose swap failed, or that
+// failed on the air after it switched, rolls the release back, blocks it and tells the
+// admin (a check that fails before any swap holds the TV instead: driver_tvheld_test.go).
 func TestDriverFailedTVBlocksTheRelease(t *testing.T) {
 	t.Parallel()
 	r := newDriverRig(t)
 	ctx := context.Background()
 	r.home.outcome, r.home.rbReason = MRolledBack, CodeFailedTV
-	r.home.rbErr = &MachineError{Step: "tv", Code: CodeFailedTV, Detail: "TV change #7: verify_failed (stream_plays)"}
+	r.home.rbErr = &MachineError{Step: "tv", Code: CodeFailedTV, Detail: "TV change #7: swap_failed"}
 	_, _ = r.f.svc.Tick(ctx)
 	run := r.drive(t, 8)
 	if run.State != RunRolledBack || !strings.Contains(string(run.Error), CodeFailedTV) ||
-		!strings.Contains(string(run.Error), "stream_plays") {
+		!strings.Contains(string(run.Error), "swap_failed") {
 		t.Fatalf("run %s %s", run.State, run.Error)
 	}
 	if rel, _ := r.f.store.Get(ctx, "1.5.0"); rel.BlockedReason != CodeFailedTV {

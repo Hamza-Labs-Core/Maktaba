@@ -328,6 +328,10 @@ func (h *Handler) RunView(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("update run").Wrap(err))
 		return
 	}
+	if h.Driver != nil {
+		// a TV held at the commit: what its change is now (held, checked again, live, dropped)
+		v.Detail.TV.fill(r.Context(), h.Driver.TV, v.ID)
+	}
 	common.WriteJSON(w, r, http.StatusOK, v)
 }
 
