@@ -264,13 +264,6 @@ func TestPins(t *testing.T) {
 			t.Errorf("%s: %d, want 404", name, code)
 		}
 	}
-	var many []string
-	for i := range MaxPins + 1 {
-		many = append(many, fmt.Sprintf("00000000-0000-4000-8000-%012d", i))
-	}
-	if code := e.do(asAdmin(), "PUT", "/api/me/pinned-libraries", map[string]any{"library_ids": many}, nil); code != 422 {
-		t.Errorf("21 pins: %d, want 422", code)
-	}
 	// a refused PUT changed nothing
 	if code := e.do(asViewer(), "GET", "/api/me/pinned-libraries", nil, &body); code != 200 || !slices.Equal(body.LibraryIDs, []string{libA}) {
 		t.Fatalf("after refusals: %d %+v", code, body)
@@ -321,6 +314,43 @@ type homeBody struct {
 	RecentlyAdded    []Card       `json:"recently_added"`
 	RecentlyWatched  []Card       `json:"recently_watched"`
 	Pinned           []PinnedRows `json:"pinned"`
+}
+
+// A user may pin any number of libraries, each one they may see; one they
+// may not see among many is still 404 and changes nothing.
+func TestPinsHaveNoCap(t *testing.T) {
+	e := newEnv(t)
+	var many []string
+	for i := range 60 {
+		id := fmt.Sprintf("00000000-0000-4000-8000-%012d", 100+i)
+		if _, err := e.db.Exec(`INSERT INTO libraries (id, name) VALUES ($1,$2)`, id, fmt.Sprintf("L%02d", i)); err != nil {
+			t.Fatal(err)
+		}
+		many = append(many, id)
+	}
+	var body pinsBody
+	if code := e.do(asAdmin(), "PUT", "/api/me/pinned-libraries", map[string]any{"library_ids": many}, &body); code != 200 ||
+		!slices.Equal(body.LibraryIDs, many) {
+		t.Fatalf("60 pins: %d, %d kept", code, len(body.LibraryIDs))
+	}
+	var home struct{ Pinned []PinnedRows }
+	if code := e.do(asAdmin(), "GET", "/api/home", nil, &home); code != 200 || len(home.Pinned) != 60 {
+		t.Fatalf("home: %d, %d pinned rows", code, len(home.Pinned))
+	}
+
+	// the viewer sees library A and the first 59 of them, not the last
+	p := asViewer()
+	p.Libraries = append([]string{libA}, many[:59]...)
+	if code := e.do(p, "PUT", "/api/me/pinned-libraries", map[string]any{"library_ids": p.Libraries}, &body); code != 200 ||
+		len(body.LibraryIDs) != 60 {
+		t.Fatalf("viewer's 60 pins: %d, %d kept", code, len(body.LibraryIDs))
+	}
+	if code := e.do(p, "PUT", "/api/me/pinned-libraries", map[string]any{"library_ids": many}, nil); code != 404 {
+		t.Errorf("a library the viewer may not see among 60: %d, want 404", code)
+	}
+	if e.do(p, "GET", "/api/me/pinned-libraries", nil, &body); len(body.LibraryIDs) != 60 || body.LibraryIDs[0] != libA {
+		t.Errorf("after the refusal: %d pins, first %v", len(body.LibraryIDs), body.LibraryIDs)
+	}
 }
 
 func TestHome(t *testing.T) {
