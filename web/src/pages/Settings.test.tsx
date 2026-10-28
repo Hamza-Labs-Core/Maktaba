@@ -1013,7 +1013,8 @@ describe("Settings privacy (test-cases/settings-privacy.md)", () => {
     renderSettings("/settings/privacy");
     expect(screen.getByRole("heading", { name: "Activity tracking" })).toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: /^Tracking/ })).not.toBeInTheDocument();
-    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    // busy at once; its placeholder only after 0.4 s
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
   });
 
   it("SPR-07: a failed settings load says so instead of showing Tracking on", async () => {

@@ -11,6 +11,7 @@
 // row, so an older server (or a half-built answer) hides rows instead of
 // crashing the page.
 import { api } from "./api";
+import { forgetAnswers } from "./pageCache";
 
 /** A publish date is a day (an upload date is midnight UTC): no time, and the
  * day in UTC so a viewer west of Greenwich does not see the day before. */
@@ -159,6 +160,7 @@ export async function fetchFeaturedPick(): Promise<string | null> {
 /** Picks the lesson Home features; null goes back to the newest series. */
 export async function setFeaturedPick(videoId: string | null): Promise<string | null> {
   const r = obj(await api.put<unknown>("/api/home/featured", { video_id: videoId }));
+  forgetAnswers("home");
   return typeof r.video_id === "string" ? r.video_id : null;
 }
 

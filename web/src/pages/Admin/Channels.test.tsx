@@ -20,7 +20,7 @@ const { authState } = vi.hoisted(() => ({
     user: { username: "admin", is_admin: true } as { username: string; is_admin: boolean },
   },
 }));
-vi.mock("../../lib/auth", () => ({ useAuth: () => authState }));
+vi.mock("../../lib/auth", () => ({ useAuth: () => authState, useOptionalAuth: () => null }));
 
 import { Channels } from "./Channels";
 

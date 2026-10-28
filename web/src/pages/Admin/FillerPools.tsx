@@ -3,8 +3,10 @@
 // (not by typing ids), removed, and previewed. The lineup plan's own pools
 // (external_key) are rewritten by the plan writer, which the page says.
 // With TV staging on an edit is saved into the editor's draft change (story
-// 33.12 AC6): the page says so, and marks the pools and clips it holds.
-import { useCallback, useEffect, useMemo, useState } from "react";
+// 33.12 AC6): the page says so, and marks the pools and clips it holds. A
+// return shows the last pools at once (lib/usePageData) and reads them again
+// quietly; a change drops the TV changes kept from before (it may be a draft).
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
@@ -25,6 +27,9 @@ import {
 } from "../../lib/channels";
 import { SourceSearch, useDuration } from "./channels/pickers";
 import { TitleRow } from "../../help/HelpLink";
+import { usePageData } from "../../lib/usePageData";
+import { forgetAnswers } from "../../lib/pageCache";
+import { LinesPlaceholder, Loading } from "../../components/Placeholders";
 import "./channels/channels.css";
 import { VideoPoster } from "../../components/VideoViews";
 
@@ -42,24 +47,28 @@ function FillerPoolsInner() {
   const { t, n } = useI18n();
   const toast = useToast();
   const dur = useDuration();
-  const [pools, setPools] = useState<FillerPool[] | null>(null);
+  // A failed first load is an error, not "No filler pools".
+  const {
+    data: pools,
+    err,
+    loading,
+    reload,
+    setData: setPools,
+  } = usePageData<FillerPool[]>("admin:filler-pools", () =>
+    fillerApi.pools().then((r) => r.items ?? [])
+  );
+  const loadError = err == null ? null : err instanceof ApiError ? err.problem.title : "";
   const [name, setName] = useState("");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [kind, setKind] = useState<FillerKind>("filler");
-  // A failed first load is an error, not "No filler pools".
-  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    fillerApi
-      .pools()
-      .then((r) => {
-        setLoadError(null);
-        setPools(r.items ?? []);
-      })
-      .catch((e: unknown) => setLoadError(e instanceof ApiError ? e.problem.title : ""));
-  }, []);
-  useEffect(load, [load]);
+  // a pool changed: read them again; the TV changes kept from before (a
+  // draft holds the edit) and the channels' filler are stale
+  const load = () => {
+    forgetAnswers("admin:tv-change", "admin:channels");
+    reload();
+  };
 
   function fail(e: unknown) {
     toast.show({
@@ -94,7 +103,10 @@ function FillerPoolsInner() {
   async function removePool(p: FillerPool) {
     if (!window.confirm(t("fillerPools.confirmDelete", { name: p.name }))) return;
     try {
-      drafted(draftOf(await fillerApi.deletePool(p.id)));
+      const draft = draftOf(await fillerApi.deletePool(p.id));
+      drafted(draft);
+      // gone now (a draft keeps it until the change goes live)
+      if (draft == null) setPools((ps) => ps && ps.filter((x) => x.id !== p.id));
       load();
     } catch (e) {
       fail(e);
@@ -135,21 +147,31 @@ function FillerPoolsInner() {
         <ErrorState
           kind="server"
           title={loadError || t("common.error")}
-          action={
-            <Button
-              onClick={() => {
-                setLoadError(null);
-                load();
-              }}
-            >
-              {t("common.retry")}
-            </Button>
-          }
+          action={<Button onClick={reload}>{t("common.retry")}</Button>}
         />
       </section>
     );
   }
-  if (!pools) return <p className="mkt-loading">{t("common.loading")}</p>;
+  if (!pools) {
+    return (
+      <section className="mkt-page mkt-fillerpools">
+        <header className="mkt-page__header">
+          <TitleRow>
+            <h1>{t("fillerPools.title")}</h1>
+          </TitleRow>
+        </header>
+        <Loading loading={loading}>
+          <div className="mkt-fillerpools__list">
+            {[0, 1, 2].map((i) => (
+              <Card key={i} className="mkt-fillerpools__pool">
+                <LinesPlaceholder lines={2} />
+              </Card>
+            ))}
+          </div>
+        </Loading>
+      </section>
+    );
+  }
 
   return (
     <section className="mkt-page mkt-fillerpools">

@@ -12,12 +12,16 @@
 // episodes in episode order and after them otherwise. A "Continue watching"
 // button targets the next unwatched/in-progress episode in lesson order,
 // whatever the sort. Season 0 is a "Specials" row. RTL-correct for Arabic.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
+import { Skeleton } from "@ds/components/Skeleton/Skeleton";
+import { HeadingPlaceholder, Loading } from "../../components/Placeholders";
+import { usePageData } from "../../lib/usePageData";
+import { VIDEO_ANSWERS, forgetAnswers } from "../../lib/pageCache";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
@@ -70,51 +74,54 @@ export function SeriesDetail() {
   const { t, n } = useI18n();
   const { user } = useAuth();
   const toast = useToast();
-  const [header, setHeader] = useState<SeriesHeader | null>(null);
-  const [data, setData] = useState<EpisodesResponse | null>(null);
-  const [gaps, setGaps] = useState<Gap[]>([]);
-  const [err, setErr] = useState<unknown>(null);
   const [accepting, setAccepting] = useState(false);
-  const [reload, setReload] = useState(0);
   const [headerBroken, setHeaderBroken] = useState(false);
   const [params, setParams] = useSearchParams();
   // the person's pick; without one, the server's newest-added order
   const byEpisode = params.get("sort") === "episode";
 
-  useEffect(() => {
-    if (!id) return;
-    // Answers for a series we already left must not land on the new one.
-    let cancelled = false;
-    setHeader(null);
-    setData(null);
-    setGaps([]);
-    setErr(null);
-    const enc = encodeURIComponent(id);
-    api
-      .get<SeriesHeader>(`/api/series/${enc}`)
-      .then((h) => !cancelled && setHeader(h))
-      .catch(() => !cancelled && setHeader(null));
-    api
-      .get<EpisodesResponse>(`/api/series/${enc}/episodes${byEpisode ? "?sort=episode" : ""}`)
-      .then((r) => {
-        if (cancelled) return;
-        const seasons = (Array.isArray(r?.seasons) ? r.seasons : [])
-          .filter((s): s is Season => s != null && typeof s === "object")
-          .map((s) => ({ ...s, episodes: Array.isArray(s.episodes) ? s.episodes : [] }));
-        setData({ seasons, numbering: r?.numbering ?? "", next_episode: r?.next_episode });
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setErr(e);
-      });
-    api
-      .get<{ gaps: Gap[] }>(`/api/series/${enc}/missing`)
-      .then((r) => !cancelled && setGaps(Array.isArray(r?.gaps) ? r.gaps : []))
-      .catch(() => !cancelled && setGaps([]));
-    return () => {
-      cancelled = true;
-    };
-  }, [id, t, reload, byEpisode]);
+  // Three reads, each kept for a return (answers for a series already left
+  // never land on the new one): the header and the gaps are extras, their
+  // failure only leaves them out.
+  const enc = encodeURIComponent(id ?? "");
+  const headerRead = usePageData<SeriesHeader>(
+    id ? `series:${id}:header` : null,
+    () => api.get<SeriesHeader>(`/api/series/${enc}`),
+    [t]
+  );
+  const episodesRead = usePageData<EpisodesResponse>(
+    id ? `series:${id}:episodes:${byEpisode ? "episode" : "added"}` : null,
+    () =>
+      api
+        .get<EpisodesResponse>(`/api/series/${enc}/episodes${byEpisode ? "?sort=episode" : ""}`)
+        .then((r) => {
+          const seasons = (Array.isArray(r?.seasons) ? r.seasons : [])
+            .filter((s): s is Season => s != null && typeof s === "object")
+            .map((s) => ({ ...s, episodes: Array.isArray(s.episodes) ? s.episodes : [] }));
+          return { seasons, numbering: r?.numbering ?? "", next_episode: r?.next_episode };
+        }),
+    [t]
+  );
+  const gapsRead = usePageData<Gap[]>(
+    id ? `series:${id}:missing` : null,
+    () =>
+      api
+        .get<{ gaps: Gap[] }>(`/api/series/${enc}/missing`)
+        .then((r) => (Array.isArray(r?.gaps) ? r.gaps : [])),
+    [t]
+  );
+  const header = headerRead.err == null ? headerRead.data : null;
+  const data = episodesRead.data;
+  const err = episodesRead.err;
+  const gaps = useMemo(
+    () => (gapsRead.err == null ? (gapsRead.data ?? []) : []),
+    [gapsRead.data, gapsRead.err]
+  );
+  function reload() {
+    headerRead.reload();
+    episodesRead.reload();
+    gapsRead.reload();
+  }
 
   // Index gaps by season so each season row can render its ghost cells.
   const gapsBySeason = useMemo(() => {
@@ -155,7 +162,9 @@ export function SeriesDetail() {
     try {
       await api.post(`/api/series/${encodeURIComponent(id)}/enrichment/accept-all`);
       toast.show({ message: t("series.acceptAll.done"), tone: "success" });
-      setReload((x) => x + 1);
+      // the lessons' titles and pictures, everywhere they show
+      forgetAnswers(...VIDEO_ANSWERS);
+      reload();
     } catch (e) {
       toast.show({
         message: errorText(e, t),
@@ -167,16 +176,36 @@ export function SeriesDetail() {
   }
 
   if (err != null) {
+    return <LoadError error={err} onRetry={reload} backTo="/series" backLabel={t("nav.series")} />;
+  }
+  if (!data || !id) {
     return (
-      <LoadError
-        error={err}
-        onRetry={() => setReload((x) => x + 1)}
-        backTo="/series"
-        backLabel={t("nav.series")}
-      />
+      <section className="mkt-page mkt-series-detail">
+        <Loading loading={episodesRead.loading}>
+          <HeadingPlaceholder />
+          <section className="mkt-season" aria-hidden="true">
+            <h2 className="mkt-season__title">
+              <Skeleton variant="text" className="mkt-ph-title mkt-ph-inline" />
+              {"\u00a0"}
+            </h2>
+            <ul className="mkt-episode-grid">
+              {Array.from({ length: 8 }, (_, i) => (
+                <li key={i}>
+                  <div className="mkt-episode">
+                    <div className="mkt-episode__thumb">
+                      <Skeleton variant="rect" className="mkt-ph-full" />
+                    </div>
+                    <Skeleton variant="text" className="mkt-ph-line" width="2.5rem" />
+                    <Skeleton variant="text" className="mkt-ph-line" width="80%" />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </Loading>
+      </section>
     );
   }
-  if (!data || !id) return <p className="mkt-loading">{t("common.loading")}</p>;
 
   const title = header?.name ?? t("series.title");
   const headerPicture = header ? seriesPictureUrl(header) : null;

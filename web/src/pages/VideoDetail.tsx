@@ -12,6 +12,8 @@
 // TanStack-Virtual integration — see report deferral note.
 // Epic 45 Phase 2: the header's VideoActions (resume, mark watched, favorite,
 // add to playlist, the lesson's place in its series with previous / next).
+// The video and its transcript, chapters, files and stats are kept for a
+// return (lib/usePageData); the processing tab and the resume point stay live.
 import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams, useLocation, Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -39,6 +41,10 @@ import { VideoPoster } from "../components/VideoViews";
 import { VideoPlayer } from "./VideoPlayer";
 import { VideoActions } from "../components/VideoActions";
 import { BackButton, keepFirst } from "../components/BackButton";
+import { Skeleton } from "@ds/components/Skeleton/Skeleton";
+import { LinesPlaceholder, Loading, TablePlaceholder } from "../components/Placeholders";
+import { usePageData } from "../lib/usePageData";
+import { VIDEO_ANSWERS, forgetAnswers } from "../lib/pageCache";
 
 interface Video extends DisplayTitleVideo {
   id: string;
@@ -121,12 +127,19 @@ export function VideoDetail() {
   const { videoId } = useParams();
   const { t } = useI18n();
   const { user } = useAuth();
-  // The loaded video and the route id it was loaded for: after a switch to
-  // another video, the old one is never shown under the new id.
-  const [loaded, setLoaded] = useState<{ id: string; video: Video } | null>(null);
-  const video = loaded && loaded.id === videoId ? loaded.video : null;
-  const [err, setErr] = useState<unknown>(null);
-  const [reload, setReload] = useState(0);
+  // The video, kept per id: after a switch to another video, the old one is
+  // never shown under the new id.
+  const {
+    data: video,
+    err,
+    loading,
+    reload,
+    setData: setVideo,
+  } = usePageData<Video>(
+    videoId ? `video:${videoId}` : null,
+    () => api.get<Video>(`/api/videos/${encodeURIComponent(videoId ?? "")}`),
+    [t]
+  );
   // The open tab lives in ?tab= so "Find metadata" (?tab=enrichment) and
   // deep links open the right one.
   const [params, setParams] = useSearchParams();
@@ -145,22 +158,6 @@ export function VideoDetail() {
     setPlayingId(videoId ?? null);
     heroRef.current?.scrollIntoView?.({ block: "nearest" });
   };
-
-  useEffect(() => {
-    if (!videoId) return;
-    let cancelled = false;
-    setErr(null);
-    api
-      .get<Video>(`/api/videos/${encodeURIComponent(videoId)}`)
-      .then((v) => !cancelled && setLoaded({ id: videoId, video: v }))
-      .catch((e) => {
-        if (cancelled) return;
-        setErr(e);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [videoId, t, reload]);
 
   function selectTab(id: string) {
     const next = new URLSearchParams(params);
@@ -187,9 +184,25 @@ export function VideoDetail() {
         />
       );
     }
-    return <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />;
+    return <LoadError error={err} onRetry={reload} />;
   }
-  if (!video || !videoId) return <p className="mkt-loading">{t("common.loading")}</p>;
+  if (!video || !videoId) {
+    return (
+      <section className="mkt-page mkt-video">
+        <Loading loading={loading}>
+          <header className="mkt-page__header mkt-video__header" aria-hidden="true">
+            <div className="mkt-video__hero">
+              <Skeleton variant="rect" className="mkt-ph-fill" />
+            </div>
+            <h1>
+              <Skeleton variant="text" className="mkt-ph-inline" width="20rem" />
+              {"\u00a0"}
+            </h1>
+          </header>
+        </Loading>
+      </section>
+    );
+  }
 
   const items = [
     {
@@ -286,9 +299,11 @@ export function VideoDetail() {
         <DisplayTitle
           video={video}
           canEdit={Boolean(user?.is_admin)}
-          onSaved={(v) =>
-            setLoaded((cur) => (cur ? { ...cur, video: { ...cur.video, ...v } } : cur))
-          }
+          onSaved={(v) => {
+            // the title shows on every list of videos
+            forgetAnswers(...VIDEO_ANSWERS);
+            setVideo((cur) => (cur ? { ...cur, ...v } : cur));
+          }}
         />
         {/* Phase 2: resume, watched, favorite, add to playlist, the series' lessons */}
         <VideoActions videoId={videoId} />
@@ -300,14 +315,20 @@ export function VideoDetail() {
 
 function ChaptersTab({ videoId }: { videoId: string }) {
   const { t } = useI18n();
-  const [rows, setRows] = useState<Chapter[] | null>(null);
-  useEffect(() => {
+  const read = usePageData<Chapter[]>(`video:${videoId}:chapters`, () =>
     api
       .get<{ items: Chapter[] }>(`/api/videos/${encodeURIComponent(videoId)}/chapters`)
-      .then((r) => setRows(r.items ?? []))
-      .catch(() => setRows([]));
-  }, [videoId]);
-  if (!rows) return <p className="mkt-loading">{t("common.loading")}</p>;
+      .then((r) => r.items ?? [])
+  );
+  // a failed read is no chapters
+  const rows = read.err != null ? [] : read.data;
+  if (!rows) {
+    return (
+      <Loading loading={read.loading}>
+        <LinesPlaceholder lines={5} />
+      </Loading>
+    );
+  }
   if (rows.length === 0) return <EmptyState title={t("common.empty")} />;
   return (
     <ol className="mkt-chapters">
@@ -325,14 +346,19 @@ function ChaptersTab({ videoId }: { videoId: string }) {
 
 function FilesTab({ videoId }: { videoId: string }) {
   const { t } = useI18n();
-  const [subs, setSubs] = useState<Subtitle[] | null>(null);
-  useEffect(() => {
+  const read = usePageData<Subtitle[]>(`video:${videoId}:subtitles`, () =>
     api
       .get<{ items: Subtitle[] }>(`/api/videos/${encodeURIComponent(videoId)}/subtitles`)
-      .then((r) => setSubs(r.items ?? []))
-      .catch(() => setSubs([]));
-  }, [videoId]);
-  if (!subs) return <p className="mkt-loading">{t("common.loading")}</p>;
+      .then((r) => r.items ?? [])
+  );
+  const subs = read.err != null ? [] : read.data;
+  if (!subs) {
+    return (
+      <Loading loading={read.loading}>
+        <LinesPlaceholder lines={3} />
+      </Loading>
+    );
+  }
   return (
     <div>
       <h2>{t("video.subtitles")}</h2>
@@ -358,15 +384,20 @@ const TRANSCRIPT_WINDOW = 400;
 
 function TranscriptTab({ videoId }: { videoId: string }) {
   const { t } = useI18n();
-  const [segs, setSegs] = useState<Segment[] | null>(null);
   const [limit, setLimit] = useState(TRANSCRIPT_WINDOW);
-  useEffect(() => {
+  const read = usePageData<Segment[]>(`video:${videoId}:segments`, () =>
     api
       .get<{ items: Segment[] }>(`/api/videos/${encodeURIComponent(videoId)}/segments`)
-      .then((r) => setSegs(r.items ?? []))
-      .catch(() => setSegs([]));
-  }, [videoId]);
-  if (!segs) return <p className="mkt-loading">{t("common.loading")}</p>;
+      .then((r) => r.items ?? [])
+  );
+  const segs = read.err != null ? [] : read.data;
+  if (!segs) {
+    return (
+      <Loading loading={read.loading}>
+        <LinesPlaceholder lines={8} />
+      </Loading>
+    );
+  }
   if (segs.length === 0) return <EmptyState title={t("video.transcript.empty")} />;
   // Window cap: render at most TRANSCRIPT_WINDOW rows to bound DOM size
   // on long transcripts (true virtualization deferred — see report).
@@ -430,7 +461,14 @@ function ProcessingTab({ videoId, libraryId }: { videoId: string; libraryId: str
     };
   }, [videoId, libraryId]);
 
-  if (!jobs) return <p className="mkt-loading">{t("common.loading")}</p>;
+  // live (the library's stream): not kept, only its placeholder waits
+  if (!jobs) {
+    return (
+      <Loading loading>
+        <TablePlaceholder rows={3} columns={4} head />
+      </Loading>
+    );
+  }
   if (jobs.length === 0) return <EmptyState title={t("common.empty")} />;
 
   return (
@@ -469,24 +507,28 @@ function ProcessingTab({ videoId, libraryId }: { videoId: string; libraryId: str
 function StatsTab({ videoId }: { videoId: string }) {
   const { t } = useI18n();
   const { user } = useAuth();
-  const [stats, setStats] = useState<VideoStats | null>(null);
-  const [err, setErr] = useState<unknown>(null);
-  const [reload, setReload] = useState(0);
+  const {
+    data: stats,
+    err,
+    loading,
+    reload,
+  } = usePageData<VideoStats>(`video:${videoId}:stats`, () => analyticsApi.videoStats(videoId));
 
-  useEffect(() => {
-    let alive = true;
-    setErr(null);
-    analyticsApi
-      .videoStats(videoId)
-      .then((s) => alive && setStats(s))
-      .catch((e: unknown) => alive && setErr(e));
-    return () => {
-      alive = false;
-    };
-  }, [videoId, reload]);
-
-  if (err != null) return <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />;
-  if (!stats) return <p className="mkt-loading">{t("common.loading")}</p>;
+  if (err != null) return <LoadError error={err} onRetry={reload} />;
+  if (!stats) {
+    return (
+      <Loading loading={loading}>
+        <div className="mkt-analytics__kpis" aria-hidden="true">
+          {Array.from({ length: 5 }, (_, i) => (
+            <div key={i} className="mkt-kpi mk-card mk-card--e1">
+              <Skeleton variant="text" className="mkt-ph-line" width="3rem" />
+              <Skeleton variant="text" className="mkt-ph-line" width="70%" />
+            </div>
+          ))}
+        </div>
+      </Loading>
+    );
+  }
 
   return (
     <div className="mkt-video__stats">

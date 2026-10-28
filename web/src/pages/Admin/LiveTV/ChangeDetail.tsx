@@ -4,8 +4,10 @@
 // never re-implements the state machine).
 //
 // Re-read every 2 s while visible (AC5); the header, the action bar (fixed order) and the
-// tabs stay where they are, values change in place.
-import { useCallback, useMemo, useState } from "react";
+// tabs stay where they are, values change in place. A return shows the change as last read
+// at once (lib/pageCache) until the first poll answers; an action drops the kept list of
+// changes, and a roll back the channels and the guide too.
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Tabs } from "@ds/components/Tabs/Tabs";
@@ -14,6 +16,8 @@ import { AdminGate } from "../../../components/AdminGate";
 import { useAuth } from "../../../lib/auth";
 import { ApiError } from "../../../lib/api";
 import { useI18n } from "../../../lib/i18n";
+import { cachedAnswer, forgetAnswers, keepAnswer } from "../../../lib/pageCache";
+import { Loading } from "../../../components/Placeholders";
 import {
   ACTION_ORDER,
   checksSummary,
@@ -91,7 +95,10 @@ function DetailInner() {
   const { t, n, formatDate } = useI18n();
   const { user } = useAuth();
   const tk = useTk();
-  const [change, setChange] = useState<TvChangeDetail | null>(null);
+  const kept = `admin:tv-change:${id}`;
+  const [change, setChange] = useState<TvChangeDetail | null>(
+    () => cachedAnswer<TvChangeDetail>(user?.id, kept) ?? null
+  );
   const [cfg, setCfg] = useState<StagingConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -108,10 +115,21 @@ function DetailInner() {
       setChange((prev) => reconcile(prev, c));
       setError(null);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 404) setGone(true);
+      if (e instanceof ApiError && e.status === 404) {
+        // gone: not what a return shows either
+        setGone(true);
+        setChange(null);
+        forgetAnswers(kept);
+      }
       setError(actionError(t, e));
     }
-  }, [id, t]);
+  }, [id, t, kept]);
+
+  // what a return shows first; an action changed the list of changes too
+  useEffect(() => {
+    if (change && !gone) keepAnswer(user?.id, kept, change);
+  }, [user?.id, kept, change, gone]);
+  const acted = () => forgetAnswers("admin:tv-changes");
 
   useVisiblePoll(load, CHANGES_POLL_MS, !gone);
   // the staging settings (second admin, swap wait): once, with the list call
@@ -164,6 +182,7 @@ function DetailInner() {
         a === "stage" ? await tvChangesApi.stage(change.id) : await tvChangesApi.verify(change.id);
       if (out && typeof out === "object" && "id" in (out as object))
         setChange(out as TvChangeDetail);
+      acted();
       setMsg({ ok: true, text: t(`tvchanges.done.${a}`) });
     } catch (e) {
       setMsg({ ok: false, text: actionError(t, e) });
@@ -177,6 +196,8 @@ function DetailInner() {
     setBusy("rollback");
     try {
       const r = await tvChangesApi.rollback();
+      // the lineup went back: every kept change, channel and guide is stale
+      forgetAnswers("admin:tv-change", "admin:channels", "admin:filler-pools", "guide:");
       // degraded: only the database was rolled back (no TV slot is live)
       setMsg(
         r.degraded
@@ -197,6 +218,7 @@ function DetailInner() {
     setBusy("cancel");
     try {
       setChange(await tvChangesApi.cancel(change.id));
+      acted();
       setMsg({ ok: true, text: t("tvchanges.done.cancel") });
       setDialog(null);
     } catch (e) {
@@ -220,7 +242,9 @@ function DetailInner() {
   if (!change) {
     return (
       <section className="mkt-page mkt-tvx">
-        <div className="mkt-tvx-skeleton mkt-tvx-skeleton--tall" aria-hidden="true" />
+        <Loading loading>
+          <div className="mkt-tvx-skeleton mkt-tvx-skeleton--tall" aria-hidden="true" />
+        </Loading>
       </section>
     );
   }
@@ -444,6 +468,7 @@ function DetailInner() {
           onClose={() => setDialog(null)}
           onDone={(c) => {
             setChange(c);
+            acted();
             setDialog(null);
             setMsg({ ok: true, text: t(`tvchanges.done.${dialog.mode}`) });
           }}

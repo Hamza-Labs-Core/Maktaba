@@ -7,18 +7,24 @@
 //
 // Two independent sections: a profile form (display name + email) and a
 // change-password form (current + new + confirm). Account deletion is
-// intentionally absent — that is an admin-only action elsewhere.
-import { type FormEvent, useEffect, useState } from "react";
+// intentionally absent — that is an admin-only action elsewhere. A return
+// to the page shows the last profile at once and reads it again quietly
+// (lib/usePageData).
+import { type FormEvent, useState } from "react";
 import { Card } from "@ds/components/Card/Card";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
+import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { TitleRow } from "../../help/HelpLink";
 import { CloudLinkCard } from "./CloudLink";
 import { errorText } from "../../lib/errorText";
+import { usePageData } from "../../lib/usePageData";
+import { forgetAnswers } from "../../lib/pageCache";
+import { LinesPlaceholder, Loading } from "../../components/Placeholders";
 
 interface Profile {
   id: string;
@@ -32,26 +38,38 @@ function errMessage(e: unknown, t: (k: string) => string): string {
   return errorText(e, t);
 }
 
+async function loadProfile(): Promise<Profile> {
+  const p = await api.get<Profile>("/api/me");
+  // A misrouted proxy can answer 200 with an HTML page (the api
+  // client hands back the raw string): treat anything that is not
+  // a profile object as a failed load instead of rendering it.
+  if (!p || typeof p !== "object") throw new Error("not a profile");
+  return p;
+}
+
+/** The two forms' cards while the first read is slow: the grid's own classes. */
+function AccountPlaceholder() {
+  return (
+    <div className="mkt-account__grid" aria-hidden="true">
+      {[3, 4].map((lines) => (
+        <Card key={lines} header={<Skeleton variant="text" className="mkt-ph-line" width="8rem" />}>
+          <LinesPlaceholder lines={lines} />
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export function Account() {
   const { t } = useI18n();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  function load() {
-    setError(null);
-    api
-      .get<Profile>("/api/me")
-      .then((p) => {
-        // A misrouted proxy can answer 200 with an HTML page (the api
-        // client hands back the raw string): treat anything that is not
-        // a profile object as a failed load instead of rendering it.
-        if (!p || typeof p !== "object") throw new Error("not a profile");
-        setProfile(p);
-      })
-      .catch((e) => setError(errMessage(e, t)));
-  }
-
-  useEffect(load, []);
+  const {
+    data: profile,
+    err,
+    loading,
+    reload,
+    setData: setProfile,
+  } = usePageData<Profile>("account:profile", loadProfile);
+  const error = err != null ? errMessage(err, t) : null;
 
   return (
     <section className="mkt-page mkt-account">
@@ -67,16 +85,25 @@ export function Account() {
           title={t("common.error")}
           description={error}
           action={
-            <Button variant="secondary" onClick={load}>
+            <Button variant="secondary" onClick={reload}>
               {t("common.retry")}
             </Button>
           }
         />
       ) : profile === null ? (
-        <p className="mkt-loading">{t("common.loading")}</p>
+        <Loading loading={loading}>
+          <AccountPlaceholder />
+        </Loading>
       ) : (
         <div className="mkt-account__grid">
-          <ProfileForm profile={profile} onSaved={setProfile} />
+          <ProfileForm
+            profile={profile}
+            onSaved={(p) => {
+              // the admin's Users list shows names and emails too
+              forgetAnswers("admin:users");
+              setProfile(p);
+            }}
+          />
           <PasswordForm />
           <CloudLinkCard />
         </div>
@@ -94,6 +121,14 @@ function ProfileForm({ profile, onSaved }: { profile: Profile; onSaved: (p: Prof
   const [displayName, setDisplayName] = useState(savedName);
   const [email, setEmail] = useState(savedEmail);
   const [busy, setBusy] = useState(false);
+  // the kept profile shows first: a quiet re-read that brings other values
+  // updates the fields the user has not touched
+  const [base, setBase] = useState({ name: savedName, email: savedEmail });
+  if (base.name !== savedName || base.email !== savedEmail) {
+    setBase({ name: savedName, email: savedEmail });
+    if (displayName === base.name) setDisplayName(savedName);
+    if (email === base.email) setEmail(savedEmail);
+  }
 
   const dirty = displayName !== savedName || email !== savedEmail;
 

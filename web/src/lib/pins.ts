@@ -9,6 +9,7 @@
 // publishes the new list so the nav follows at once without another read.
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { forgetAnswers } from "./pageCache";
 import type { LibraryRef } from "./browse";
 
 export const PINS_PATH = "/api/me/pinned-libraries";
@@ -80,6 +81,8 @@ export function savePins(next: LibraryRef[]): Promise<LibraryRef[]> {
       // the server's list wins (its names; a pin it no longer shows drops out)
       const final = parse(r);
       confirmed = final;
+      // Home has a row per pinned library
+      forgetAnswers("home");
       if (pins === next) publish(final);
       return final;
     } catch (e) {

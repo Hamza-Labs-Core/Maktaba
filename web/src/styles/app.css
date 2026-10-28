@@ -3714,6 +3714,11 @@ button.mkt-video__hero {
   aspect-ratio: 16 / 9;
   border-radius: 0;
 }
+.mk-skeleton.mkt-ph-full {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
 .mk-skeleton.mkt-ph-mosaic {
   border-radius: var(--radius-sm);
 }
@@ -3757,6 +3762,11 @@ button.mkt-video__hero {
 .mkt-ph-card {
   display: block;
   padding: var(--space-3);
+}
+.mkt-ph-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 /* Libraries: the cards with a 2x2 poster mosaic, and the pinned list */

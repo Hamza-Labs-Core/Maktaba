@@ -8,8 +8,10 @@
 //
 // Rows = users, columns = libraries, each cell a permission-level select
 // (none/read/write/admin). Only cells that changed from their loaded
-// value are sent on Save; "none" revokes the (user, library) row.
-import { useEffect, useMemo, useState } from "react";
+// value are sent on Save; "none" revokes the (user, library) row. A return
+// shows the last matrix at once (lib/usePageData); a quiet re-read keeps
+// the cells changed and not saved yet.
+import { useMemo, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Select } from "@ds/components/Select/Select";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
@@ -19,6 +21,9 @@ import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
 import { TitleRow } from "../../help/HelpLink";
+import { usePageData } from "../../lib/usePageData";
+import { forgetAnswers } from "../../lib/pageCache";
+import { Loading, TablePlaceholder } from "../../components/Placeholders";
 
 interface UserRef {
   id: string;
@@ -51,6 +56,22 @@ function toRoleMap(grants: Grant[]): Record<string, string> {
   return m;
 }
 
+interface Cells {
+  of: Matrix | null;
+  original: Record<string, string>;
+  current: Record<string, string>;
+}
+
+/** The cells of `matrix`, with the edits `prev` has not saved yet. */
+function cellsOf(matrix: Matrix | null, prev: Cells | null): Cells {
+  const roles = toRoleMap(matrix?.grants ?? []);
+  const edits: Record<string, string> = {};
+  for (const [k, role] of Object.entries(prev?.current ?? {})) {
+    if (role !== (prev?.original[k] ?? "none")) edits[k] = role;
+  }
+  return { of: matrix, original: roles, current: { ...roles, ...edits } };
+}
+
 export function LibraryACL() {
   return (
     <AdminGate>
@@ -62,39 +83,47 @@ export function LibraryACL() {
 function LibraryACLInner() {
   const { t } = useI18n();
   const toast = useToast();
-  const [matrix, setMatrix] = useState<Matrix | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [original, setOriginal] = useState<Record<string, string>>({});
-  const [current, setCurrent] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-
-  function load() {
-    setError(null);
-    setMatrix(null);
-    api
-      .get<Partial<Matrix> | null>("/api/admin/library-acl")
-      .then((m) => {
-        // Any list may come back null or missing; treat it as empty.
-        const grants = m?.grants ?? [];
-        setMatrix({ users: m?.users ?? [], libraries: m?.libraries ?? [], grants });
-        const roles = toRoleMap(grants);
-        setOriginal(roles);
-        setCurrent(roles);
-      })
-      .catch((e) => {
-        setError(e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"));
-        setMatrix({ users: [], libraries: [], grants: [] });
-      });
+  const {
+    data: matrix,
+    err,
+    loading,
+    reload,
+    setData: setMatrix,
+  } = usePageData<Matrix>("admin:library-acl", () =>
+    api.get<Partial<Matrix> | null>("/api/admin/library-acl").then((m) => ({
+      // Any list may come back null or missing; treat it as empty.
+      users: m?.users ?? [],
+      libraries: m?.libraries ?? [],
+      grants: m?.grants ?? [],
+    }))
+  );
+  const error =
+    err == null
+      ? null
+      : err instanceof ApiError
+        ? err.problem.detail || err.problem.title
+        : t("common.error");
+  // the roles as loaded and as edited, together, and the matrix they came
+  // from: a new matrix replaces the first and keeps the edits not saved yet
+  // (in the same render, so a cell never shows "none" in between)
+  const [cells, setCells] = useState<Cells>(() => cellsOf(matrix, null));
+  let now = cells;
+  if (matrix && cells.of !== matrix) {
+    now = cellsOf(matrix, cells);
+    setCells(now);
   }
-
-  useEffect(load, []);
+  const { original, current } = now;
+  const [saving, setSaving] = useState(false);
 
   function roleAt(userId: string, libId: string): string {
     return current[cellKey(userId, libId)] ?? "none";
   }
 
   function setRole(userId: string, libId: string, role: string) {
-    setCurrent((prev) => ({ ...prev, [cellKey(userId, libId)]: role }));
+    setCells((prev) => ({
+      ...prev,
+      current: { ...prev.current, [cellKey(userId, libId)]: role },
+    }));
   }
 
   // Diff current vs original → the batch we send on Save.
@@ -117,9 +146,13 @@ function LibraryACLInner() {
     setSaving(true);
     try {
       const res = await api.put<{ grants: Grant[] }>("/api/admin/library-acl", { grants: changes });
-      const roles = toRoleMap(res.grants ?? []);
-      setOriginal(roles);
-      setCurrent(roles);
+      const grants = res.grants ?? [];
+      const roles = toRoleMap(grants);
+      // saved: no edits left; the kept matrix holds the new grants
+      setCells({ of: null, original: roles, current: roles });
+      setMatrix((m) => m && { ...m, grants });
+      // who sees which library changed: the libraries' pages are stale
+      forgetAnswers("libraries", "home");
       toast.show({ tone: "success", message: t("acl.saved") });
     } catch (e) {
       toast.show({
@@ -149,13 +182,17 @@ function LibraryACLInner() {
           title={t("common.error")}
           description={error}
           action={
-            <Button variant="secondary" onClick={load}>
+            <Button variant="secondary" onClick={reload}>
               {t("common.retry")}
             </Button>
           }
         />
       ) : matrix === null ? (
-        <p className="mkt-loading">{t("common.loading")}</p>
+        <Loading loading={loading}>
+          <div className="mkt-acl__scroll">
+            <TablePlaceholder rows={4} columns={4} head className="mkt-table mkt-acl__table" />
+          </div>
+        </Loading>
       ) : matrix.users.length === 0 || matrix.libraries.length === 0 ? (
         <EmptyState title={t("acl.empty.title")} description={t("acl.empty.desc")} />
       ) : (

@@ -73,6 +73,7 @@ import {
   watchHref,
 } from "./searchShared";
 import { errorText } from "../lib/errorText";
+import { cachedAnswer, keepAnswer } from "../lib/pageCache";
 
 const VIEW_KEY = "mkt:search:view";
 
@@ -119,6 +120,16 @@ interface Snapshot {
   titlesTotal: number;
   transcriptsTotal: number;
 }
+/** The pages on screen of a saved search, kept for a return (lib/pageCache). */
+interface KeptSearch {
+  s: Snapshot;
+  vPage: number;
+  vItems: TitleVideo[];
+  tPage: number;
+  tItems: TranscriptVideo[];
+}
+const keptKey = (sid: string, vp: number, tp: number) => `search:${sid}:${vp}:${tp}`;
+
 /** One page of a list, and the saved search it came from. */
 interface Loaded<T> {
   sid: string;
@@ -183,8 +194,28 @@ export function Search() {
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [saved, setSaved] = useState<SavedSearch[]>([]);
-  const [recent, setRecent] = useState<RecentSearch[]>([]);
+  const userId = user?.id ?? null;
+  // the saved and recent lists come back at once too, and are read again
+  const [saved, setSavedState] = useState<SavedSearch[]>(
+    () => cachedAnswer<SavedSearch[]>(userId, "search:saved") ?? []
+  );
+  const [recent, setRecentState] = useState<RecentSearch[]>(
+    () => cachedAnswer<RecentSearch[]>(userId, "search:recent") ?? []
+  );
+  const setSaved = useCallback(
+    (v: SavedSearch[]) => {
+      keepAnswer(userId, "search:saved", v);
+      setSavedState(v);
+    },
+    [userId]
+  );
+  const setRecent = useCallback(
+    (v: RecentSearch[]) => {
+      keepAnswer(userId, "search:recent", v);
+      setRecentState(v);
+    },
+    [userId]
+  );
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Only the newest search (or open-by-sid) may land; page loads of an older
   // one are dropped too.
@@ -237,7 +268,7 @@ export function Search() {
         .get<{ items: RecentSearch[] }>("/api/search/recent")
         .then((r) => setRecent(listOf(r?.items).filter((x) => typeof x.search_id === "string")))
         .catch(() => setRecent([])),
-    []
+    [setRecent]
   );
 
   useEffect(() => {
@@ -281,8 +312,17 @@ export function Search() {
       setTranscripts(b);
       inflight.current = { titles: "", transcripts: "" };
       setBusy({ titles: false, transcripts: false });
+      if (s?.sid) {
+        keepAnswer(userId, keptKey(s.sid, vPage, tPage), {
+          s,
+          vPage,
+          vItems,
+          tPage,
+          tItems,
+        } satisfies KeptSearch);
+      }
     },
-    []
+    [userId]
   );
 
   const clearResults = useCallback(() => {
@@ -407,10 +447,17 @@ export function Search() {
 
   /** Opens a saved search by its sid (a reload, Back, a recent search). */
   const openBySid = useCallback(
-    async (query: string, m: Mode, s: string, want: { vp: number; tp: number }, yt: boolean) => {
+    async (
+      query: string,
+      m: Mode,
+      s: string,
+      want: { vp: number; tp: number },
+      yt: boolean,
+      quiet = false
+    ) => {
       const g = ++gen.current;
       lastSearch.current = { term: query, mode: m, yt };
-      setPending(true);
+      if (!quiet) setPending(true);
       setErr(null);
       const sizes = recallSizes(s) ?? {
         pageSize: defaultPageSize(viewRef.current),
@@ -540,9 +587,15 @@ export function Search() {
     lastRun.current = key;
     setQ(urlQ);
     if (uMode) setMode(uMode);
-    if (sid) void openBySid(urlQ, m, sid, { vp, tp }, ytRef.current);
-    else void postSearch(urlQ, m, { vp: 1, tp: 1 }, { youtube: ytRef.current });
-  }, [urlQ, uMode, sid, vp, tp, clearResults, loadPage, openBySid, postSearch]);
+    if (sid) {
+      // a return to a search already seen: its pages at once, read again quietly
+      const kept = cachedAnswer<KeptSearch>(userId, keptKey(sid, vp, tp));
+      if (kept && kept.s.q === urlQ && kept.s.mode === m) {
+        commit(kept.s, kept.vPage, kept.vItems, kept.tPage, kept.tItems);
+      }
+      void openBySid(urlQ, m, sid, { vp, tp }, ytRef.current, Boolean(kept));
+    } else void postSearch(urlQ, m, { vp: 1, tp: 1 }, { youtube: ytRef.current });
+  }, [urlQ, uMode, sid, vp, tp, clearResults, loadPage, openBySid, postSearch, commit, userId]);
 
   // Re-run the last search (after a YouTube import, so the result shows
   // its new state).

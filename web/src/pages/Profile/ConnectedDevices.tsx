@@ -6,8 +6,10 @@
 //
 // A card list rather than the admin table — this is the "my devices"
 // surface. Removal is confirmed because it stops push delivery to that
-// device. Shares the Device shape + platform icon with the admin view.
-import { useEffect, useState } from "react";
+// device. Shares the Device shape + platform icon with the admin view. A
+// return to the page shows the last list at once and reads it again quietly
+// (lib/usePageData).
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
 import { Button } from "@ds/components/Button/Button";
@@ -21,12 +23,47 @@ import { platformIcon } from "../../lib/platformIcon";
 import type { Device } from "../Cloud/Devices";
 import { TitleRow } from "../../help/HelpLink";
 import { errorText } from "../../lib/errorText";
+import { usePageData } from "../../lib/usePageData";
+import { forgetAnswers } from "../../lib/pageCache";
+import { Skeleton } from "@ds/components/Skeleton/Skeleton";
+import { Loading } from "../../components/Placeholders";
+
+function loadDevices() {
+  return api.get<{ items: Device[] }>("/api/me/devices").then((r) => r.items ?? []);
+}
+
+/** The device cards while the first read is slow: the cards' own classes. */
+function DeviceCardsPlaceholder({ cards = 3 }: { cards?: number }) {
+  return (
+    <div className="mkt-device-cards" aria-hidden="true">
+      {Array.from({ length: cards }, (_, i) => (
+        <Card key={i} className="mkt-device-card">
+          <div className="mkt-device-card__head">
+            <Skeleton variant="circle" width={28} height={28} />
+            <div>
+              <Skeleton variant="text" className="mkt-ph-line" width="6rem" />
+              <Skeleton variant="text" className="mkt-ph-line" width="10rem" />
+            </div>
+          </div>
+          <Skeleton variant="text" className="mkt-ph-line" width="60%" />
+          <Skeleton variant="rect" className="mkt-ph-button" width="6rem" />
+        </Card>
+      ))}
+    </div>
+  );
+}
 
 export function ConnectedDevices() {
   const { t, formatDate } = useI18n();
   const toast = useToast();
-  const [devices, setDevices] = useState<Device[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: devices,
+    err,
+    loading,
+    reload,
+    setData: setDevices,
+  } = usePageData<Device[]>("account:devices", loadDevices);
+  const error = err != null ? errorText(err, t) : null;
   const [deleting, setDeleting] = useState<Device | null>(null);
   const [removing, setRemoving] = useState(false);
 
@@ -39,19 +76,6 @@ export function ConnectedDevices() {
     return label === key ? platform : label;
   }
 
-  function load() {
-    setError(null);
-    api
-      .get<{ items: Device[] }>("/api/me/devices")
-      .then((r) => setDevices(r.items ?? []))
-      .catch((e) => {
-        setError(errorText(e, t));
-        setDevices([]);
-      });
-  }
-
-  useEffect(load, []);
-
   async function remove(d: Device) {
     if (removing) return;
     setRemoving(true);
@@ -59,7 +83,11 @@ export function ConnectedDevices() {
       await api.delete(`/api/devices/${encodeURIComponent(d.id)}`);
       toast.show({ tone: "success", message: t("devices.removed") });
       setDeleting(null);
-      load();
+      // gone from the page and its kept answer at once, then read again;
+      // Cloud → Devices lists the same devices
+      forgetAnswers("cloud:devices");
+      setDevices((cur) => (cur ? cur.filter((x) => x.id !== d.id) : cur));
+      reload();
     } catch (e) {
       toast.show({
         tone: "error",
@@ -87,13 +115,15 @@ export function ConnectedDevices() {
           title={t("common.error")}
           description={error}
           action={
-            <Button variant="secondary" onClick={load}>
+            <Button variant="secondary" onClick={reload}>
               {t("common.retry")}
             </Button>
           }
         />
       ) : devices === null ? (
-        <p className="mkt-loading">{t("common.loading")}</p>
+        <Loading loading={loading}>
+          <DeviceCardsPlaceholder />
+        </Loading>
       ) : devices.length === 0 ? (
         <EmptyState title={t("devices.empty.title")} description={t("devices.empty.desc")} />
       ) : (

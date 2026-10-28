@@ -134,7 +134,7 @@ describe("Settings rules (test-cases/settings-rules.md)", { timeout: 20_000 }, (
     get.mockReturnValue(new Promise(() => {}));
     renderPage(<RulesSection />, { path: "/settings/rules" });
     expect(screen.getByRole("heading", { level: 2, name: "Rules" })).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
   });

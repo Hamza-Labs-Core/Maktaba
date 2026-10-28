@@ -9,13 +9,16 @@
 //
 // Two tabs (`?tab=history|activity`): every video watched, newest first,
 // with a per-row remove; and the merged timeline of watches and searches,
-// grouped by day and filterable by kind. Both page with "Load more".
-import { useCallback, useEffect, useState } from "react";
+// grouped by day and filterable by kind. Both page with "Load more". A
+// return shows every page read so far at once and reads them again quietly
+// (lib/usePageData: history:watched, history:activity:<kind>).
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Tabs } from "@ds/components/Tabs/Tabs";
 import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
+import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useI18n } from "../../lib/i18n";
 import {
@@ -28,6 +31,12 @@ import {
 import { TitleRow } from "../../help/HelpLink";
 import { VideoPoster } from "../../components/VideoViews";
 import { inputDetail } from "../../lib/errorText";
+import { usePageData, type PageData } from "../../lib/usePageData";
+import { forgetAnswers, VIDEO_ANSWERS } from "../../lib/pageCache";
+import { Loading, TablePlaceholder } from "../../components/Placeholders";
+
+// beside the inline bar, the day's heading keeps its real line height
+const NBSP = " ";
 
 export const HISTORY_PAGE = 50;
 export const ACTIVITY_PAGE = 50;
@@ -76,48 +85,113 @@ function errText(e: unknown, fallback: string): string {
   return inputDetail(e) ?? fallback;
 }
 
+/** A list read page by page, as far as it was read: what a return shows. */
+interface Paged<T> {
+  items: T[];
+  /** another page may follow ("Load more") */
+  more: boolean;
+}
+
+/**
+ * Reads the list from its start, `page` items at a time, until `upTo` are in
+ * or it ends: a return reads again as many as were shown, not just the first
+ * page.
+ */
+async function readPages<T>(
+  read: (offset: number) => Promise<T[] | null | undefined>,
+  page: number,
+  upTo: number
+): Promise<Paged<T>> {
+  const items: T[] = [];
+  for (;;) {
+    const got = (await read(items.length)) ?? [];
+    items.push(...got);
+    if (got.length < page) return { items, more: false };
+    if (items.length >= Math.max(page, upTo)) return { items, more: true };
+  }
+}
+
+/**
+ * The next page, added to the list on the page and in its kept answer (`key`,
+ * the list's: a page that comes after the list changed, another kind, is
+ * dropped).
+ */
+function useLoadMore<T>(
+  key: string,
+  list: PageData<Paged<T>>,
+  read: (offset: number) => Promise<T[] | null | undefined>,
+  page: number
+) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<unknown>(null);
+  const shown = useRef(key);
+  useEffect(() => {
+    shown.current = key;
+  }, [key]);
+  async function loadMore() {
+    const offset = list.data?.items.length ?? 0;
+    setBusy(true);
+    setErr(null);
+    try {
+      const got = (await read(offset)) ?? [];
+      if (shown.current !== key) return;
+      list.setData((d) => d && { items: [...d.items, ...got], more: got.length === page });
+    } catch (e) {
+      setErr(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return { busy, err, setErr, loadMore };
+}
+
+/** The history table while the first read is slow: the table's own wrappers. */
+function HistoryPlaceholder() {
+  return (
+    <div className="mkt-history__panel">
+      <div className="mkt-history__table">
+        <TablePlaceholder head columns={6} />
+      </div>
+    </div>
+  );
+}
+
+function readHistory(offset: number) {
+  return analyticsApi.history({ limit: HISTORY_PAGE, offset }).then((r) => r.items);
+}
+
 function HistoryList() {
   const { t, formatDate } = useI18n();
   const toast = useToast();
-  const [items, setItems] = useState<HistoryItem[] | null>(null);
-  const [more, setMore] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchPage = useCallback(
-    async (offset: number) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const r = await analyticsApi.history({ limit: HISTORY_PAGE, offset });
-        const got = r.items ?? [];
-        setItems((cur) => (offset === 0 ? got : [...(cur ?? []), ...got]));
-        setMore(got.length === HISTORY_PAGE);
-      } catch (e) {
-        setError(errText(e, t("common.error")));
-        setItems((cur) => cur ?? []);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [t]
+  const key = "history:watched";
+  const list: PageData<Paged<HistoryItem>> = usePageData(key, () =>
+    readPages(readHistory, HISTORY_PAGE, list.data?.items.length ?? 0)
   );
-
-  useEffect(() => {
-    void fetchPage(0);
-  }, [fetchPage]);
+  const next = useLoadMore(key, list, readHistory, HISTORY_PAGE);
+  const failed = next.err ?? list.err;
+  const error = failed != null ? errText(failed, t("common.error")) : null;
+  const items = list.data?.items ?? (error ? [] : null);
+  const more = list.data?.more ?? false;
 
   async function remove(videoId: string) {
     try {
       await analyticsApi.deleteHistory(videoId);
-      setItems((h) => (h ? h.filter((it) => it.video_id !== videoId) : h));
+      // the resume point went with it: every kept answer showing the
+      // video's progress (Continue watching, the video, the timeline) is stale
+      forgetAnswers(...VIDEO_ANSWERS);
+      list.setData((d) => d && { ...d, items: d.items.filter((it) => it.video_id !== videoId) });
       toast.show({ tone: "success", message: t("history.removed") });
     } catch (e) {
       toast.show({ tone: "error", message: errText(e, t("common.error")) });
     }
   }
 
-  if (items === null) return <p className="mkt-loading">{t("common.loading")}</p>;
+  if (items === null)
+    return (
+      <Loading loading={list.loading}>
+        <HistoryPlaceholder />
+      </Loading>
+    );
   return (
     <div className="mkt-history__panel">
       {error && <ErrorState kind="server" title={t("common.error")} description={error} />}
@@ -165,7 +239,7 @@ function HistoryList() {
         )
       )}
       {more && (
-        <Button variant="secondary" loading={loading} onClick={() => void fetchPage(items.length)}>
+        <Button variant="secondary" loading={next.busy} onClick={() => void next.loadMore()}>
           {t("history.loadMore")}
         </Button>
       )}
@@ -182,39 +256,23 @@ function dayKey(iso: string): string {
 export function ActivityTimeline({ limit }: { limit?: number }) {
   const { t, locale } = useI18n();
   const [kind, setKind] = useState<Kind>("all");
-  const [items, setItems] = useState<ActivityItem[] | null>(null);
-  const [more, setMore] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const page = limit ?? ACTIVITY_PAGE;
-
-  const fetchPage = useCallback(
-    async (offset: number, k: Kind) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const r = await analyticsApi.activity({
-          limit: page,
-          offset,
-          types: k === "all" ? undefined : k,
-        });
-        const got = r.items ?? [];
-        setItems((cur) => (offset === 0 ? got : [...(cur ?? []), ...got]));
-        setMore(limit === undefined && got.length === page);
-      } catch (e) {
-        setError(errText(e, t("common.error")));
-        setItems((cur) => cur ?? []);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [page, limit, t]
+  const read = (offset: number) =>
+    analyticsApi
+      .activity({ limit: page, offset, types: kind === "all" ? undefined : kind })
+      .then((r) => r.items);
+  // kept per kind, and apart for the short timeline (Preferences → Privacy)
+  const key = `history:activity:${kind}${limit === undefined ? "" : `:${limit}`}`;
+  const list: PageData<Paged<ActivityItem>> = usePageData(key, () =>
+    limit === undefined
+      ? readPages(read, page, list.data?.items.length ?? 0)
+      : readPages(read, page, page).then((p) => ({ ...p, more: false }))
   );
-
-  useEffect(() => {
-    setItems(null);
-    void fetchPage(0, kind);
-  }, [fetchPage, kind]);
+  const next = useLoadMore(key, list, read, page);
+  const failed = next.err ?? list.err;
+  const error = failed != null ? errText(failed, t("common.error")) : null;
+  const items = list.data?.items ?? (error ? [] : null);
+  const more = list.data?.more ?? false;
 
   const tag = locale === "ar" ? "ar-EG" : "en";
   const timeFmt = new Intl.DateTimeFormat(tag, { hour: "numeric", minute: "2-digit" });
@@ -237,7 +295,10 @@ export function ActivityTimeline({ limit }: { limit?: number }) {
               size="sm"
               variant={kind === k ? "primary" : "ghost"}
               aria-pressed={kind === k}
-              onClick={() => setKind(k)}
+              onClick={() => {
+                next.setErr(null);
+                setKind(k);
+              }}
             >
               {t(`history.kind.${k}`)}
             </Button>
@@ -251,9 +312,9 @@ export function ActivityTimeline({ limit }: { limit?: number }) {
           <p className="mkt-muted">{t("history.activity.loadFailed")}</p>
         ))}
       {items === null ? (
-        <p className="mkt-loading">
-          {limit === undefined ? t("common.loading") : t("history.activity.loading")}
-        </p>
+        <Loading loading={list.loading}>
+          <ActivityPlaceholder rows={limit === undefined ? 6 : 3} />
+        </Loading>
       ) : items.length === 0 && !error ? (
         <p className="mkt-muted">{t("history.activity.empty")}</p>
       ) : (
@@ -279,15 +340,37 @@ export function ActivityTimeline({ limit }: { limit?: number }) {
         </ol>
       )}
       {more && items && (
-        <Button
-          variant="secondary"
-          loading={loading}
-          onClick={() => void fetchPage(items.length, kind)}
-        >
+        <Button variant="secondary" loading={next.busy} onClick={() => void next.loadMore()}>
           {t("history.loadMore")}
         </Button>
       )}
     </div>
+  );
+}
+
+/** The timeline while the first read is slow: a day of rows, the timeline's own classes. */
+function ActivityPlaceholder({ rows }: { rows: number }) {
+  return (
+    <ol className="mkt-activity__days" aria-hidden="true">
+      <li className="mkt-activity__day">
+        <h3 className="mkt-activity__date">
+          <Skeleton variant="text" className="mkt-ph-inline" width="12rem" />
+          {NBSP}
+        </h3>
+        <ol className="mkt-activity__list">
+          {Array.from({ length: rows }, (_, i) => (
+            <li key={i} className="mkt-activity__row">
+              <span className="mkt-activity__time">
+                <Skeleton variant="text" className="mkt-ph-line" width="3.5rem" />
+              </span>
+              <span className="mkt-activity__text">
+                <Skeleton variant="text" className="mkt-ph-line" width="60%" />
+              </span>
+            </li>
+          ))}
+        </ol>
+      </li>
+    </ol>
   );
 }
 

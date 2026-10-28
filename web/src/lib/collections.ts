@@ -15,6 +15,11 @@
 // {"filters": {...}}), opened as the library's Browse tab with those filters.
 import { api } from "./api";
 import type { VideoCard } from "./browse";
+import { forgetAnswers } from "./pageCache";
+
+// a change to a collection: its page, the lists of collections, and a video's
+// page (which names its collections)
+const forgetCollections = () => forgetAnswers("collection", "library-collections:", "video:");
 
 export const COLLECTION_NAME_MAX = 200;
 
@@ -124,11 +129,13 @@ export async function createCollection(
   }
   const c = readCollection(await api.post<unknown>("/api/collections", body));
   if (!c) throw new Error("malformed collection");
+  forgetCollections();
   return c;
 }
 
 export async function renameCollection(id: string, name: string): Promise<void> {
   await api.patch(`/api/collections/${encodeURIComponent(id)}`, { name });
+  forgetCollections();
 }
 
 export async function saveCollectionFilters(
@@ -136,6 +143,7 @@ export async function saveCollectionFilters(
   filters: Record<string, string>
 ): Promise<void> {
   await api.patch(`/api/collections/${encodeURIComponent(id)}`, { smart_query: { filters } });
+  forgetCollections();
 }
 
 /** The new order of a manual collection: positions 10, 20, 30 … */
@@ -143,10 +151,12 @@ export async function reorderCollection(id: string, videoIds: string[]): Promise
   await api.patch(`/api/collections/${encodeURIComponent(id)}`, {
     items: videoIds.map((video_id, i) => ({ video_id, position: (i + 1) * 10 })),
   });
+  forgetCollections();
 }
 
 export async function deleteCollection(id: string): Promise<void> {
   await api.delete(`/api/collections/${encodeURIComponent(id)}`);
+  forgetCollections();
 }
 
 /** Appends videos at the end (500 a call); how many went in. */
@@ -160,6 +170,7 @@ export async function addToCollection(id: string, videoIds: string[]): Promise<n
     );
     added += typeof r.added === "number" ? r.added : 0;
   }
+  forgetCollections();
   return added;
 }
 
@@ -167,6 +178,7 @@ export async function removeFromCollection(id: string, videoId: string): Promise
   await api.delete(
     `/api/collections/${encodeURIComponent(id)}/items/${encodeURIComponent(videoId)}`
   );
+  forgetCollections();
 }
 
 /** The grid parameters of a saved filter, kept to the ones the server takes. */

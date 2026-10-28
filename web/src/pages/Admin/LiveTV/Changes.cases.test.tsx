@@ -332,7 +332,8 @@ describe("Changes page (test-cases/admin-live-tv-changes.md)", () => {
         expect(alert).toHaveTextContent(`Could not load the changes: ${text}`);
         expect(alert.parentElement).toHaveAttribute("aria-live", "polite");
         expect(screen.getByRole("button", { name: /^All\s*0$/ })).toBeInTheDocument();
-        expect(document.querySelector(".mkt-tvx-card > .mkt-tvx-skeleton")).not.toBeNull();
+        // the list's place is still loading (its skeleton shows after 0.4 s)
+        expect(document.querySelector('.mkt-tvx-card > [aria-busy="true"]')).not.toBeNull();
         fail = false;
         await act(async () => {
           await vi.advanceTimersByTimeAsync(2100);
@@ -631,7 +632,8 @@ describe("Changes page (test-cases/admin-live-tv-changes.md)", () => {
     routeGets({ "/api/tv/changes": () => new Promise((r) => (resolve = r)) });
     open();
     const skeleton = await waitFor(() => {
-      const s = document.querySelector(".mkt-tvx-card > .mkt-tvx-skeleton");
+      // in the list's busy region, after 0.4 s
+      const s = document.querySelector('.mkt-tvx-card > [aria-busy="true"] > .mkt-tvx-skeleton');
       expect(s).not.toBeNull();
       return s!;
     });

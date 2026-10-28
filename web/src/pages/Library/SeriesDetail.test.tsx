@@ -338,12 +338,12 @@ describe("SeriesDetail (test-cases/series-detail.md)", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Season 2" })).toBeInTheDocument();
   });
 
-  it("SED-13: loading text until episodes arrive", async () => {
+  it("SED-13: busy (an episode grid's shape after 0.4 s) until episodes arrive", async () => {
     serve({ episodes: () => new Promise(() => {}) });
     renderDetail();
-    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
     await new Promise((r) => setTimeout(r, 0));
-    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
     expect(screen.queryByText("No episodes in this series yet.")).toBeNull();
   });

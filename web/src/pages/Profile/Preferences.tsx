@@ -32,6 +32,9 @@ import { TitleRow } from "../../help/HelpLink";
 import { ActivityTimeline } from "./WatchHistory";
 import { TelemetrySettings } from "./TelemetrySettings";
 import { errorText } from "../../lib/errorText";
+import { usePageData } from "../../lib/usePageData";
+import { forgetAnswers, VIDEO_ANSWERS } from "../../lib/pageCache";
+import { Loading, TablePlaceholder } from "../../components/Placeholders";
 
 /** Where a person's own preferences live, in every edition. */
 export const PREFERENCES_PATH = "/account/preferences";
@@ -247,28 +250,31 @@ export function AppearancePanel() {
 export function PrivacyPanel({ serverUsage }: { serverUsage?: ReactNode }) {
   const { t } = useI18n();
   const toast = useToast();
-  const [tracking, setTracking] = useState<boolean | null>(null);
-  const [history, setHistory] = useState<HistoryItem[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  // a failed load is said, not guessed: no "Tracking on" when it may be off,
-  // no "Nothing here yet." when the history could not be read
-  const [privacyFailed, setPrivacyFailed] = useState(false);
-  const [historyFailed, setHistoryFailed] = useState(false);
-
-  useEffect(() => {
-    analyticsApi
-      .getPrivacy()
-      .then((p) => setTracking(Boolean(p?.track_enabled)))
-      .catch(() => setPrivacyFailed(true));
+  // a return shows the last switch and history at once and reads them
+  // again quietly (lib/usePageData)
+  const {
+    data: tracking,
+    err: privacyErr,
+    setData: setTracking,
+  } = usePageData<boolean>("account:privacy", () =>
+    analyticsApi.getPrivacy().then((p) => Boolean(p?.track_enabled))
+  );
+  const {
+    data: history,
+    err: historyErr,
+    loading: historyLoading,
+    setData: setHistory,
+  } = usePageData<HistoryItem[]>("history:recent", () =>
     analyticsApi
       .history({ limit: 20 })
       // items null or missing is an empty history
-      .then((r) => setHistory(Array.isArray(r?.items) ? r.items : []))
-      .catch(() => {
-        setHistoryFailed(true);
-        setHistory([]);
-      });
-  }, []);
+      .then((r) => (Array.isArray(r?.items) ? r.items : []))
+  );
+  const [busy, setBusy] = useState(false);
+  // a failed load is said, not guessed: no "Tracking on" when it may be off,
+  // no "Nothing here yet." when the history could not be read
+  const privacyFailed = privacyErr != null;
+  const historyFailed = historyErr != null;
 
   async function toggle() {
     if (tracking === null || busy) return;
@@ -288,6 +294,9 @@ export function PrivacyPanel({ serverUsage }: { serverUsage?: ReactNode }) {
   async function remove(videoId: string) {
     try {
       await analyticsApi.deleteHistory(videoId);
+      // the resume point went with it: every kept answer showing the
+      // video's progress (Continue watching, the video, the history) is stale
+      forgetAnswers(...VIDEO_ANSWERS);
       setHistory((h) => (h ? h.filter((it) => it.video_id !== videoId) : h));
     } catch (e) {
       toast.show({ tone: "error", message: errorText(e, t) });
@@ -322,7 +331,9 @@ export function PrivacyPanel({ serverUsage }: { serverUsage?: ReactNode }) {
           {t("common.error")}
         </p>
       ) : history === null ? (
-        <p className="mkt-loading">{t("common.loading")}</p>
+        <Loading loading={historyLoading}>
+          <TablePlaceholder head columns={4} rows={3} />
+        </Loading>
       ) : history.length === 0 ? (
         <p className="mkt-muted">{t("common.empty")}</p>
       ) : (

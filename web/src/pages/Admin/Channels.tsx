@@ -9,7 +9,10 @@
 //
 // ACL: only admins reach this surface; the server re-checks the principal on
 // every mutation, so the AdminGate here is purely a UX guard.
-import { useCallback, useEffect, useMemo, useState } from "react";
+//
+// A return shows the last list at once (lib/usePageData) and reads it again
+// quietly; a change drops the guide and the TV changes kept from before.
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
@@ -31,7 +34,13 @@ import {
 import { ChannelEditor } from "./channels/ChannelEditor";
 import { ChannelList, renumber } from "./channels/ChannelList";
 import { TitleRow } from "../../help/HelpLink";
+import { usePageData } from "../../lib/usePageData";
+import { forgetAnswers } from "../../lib/pageCache";
+import { Loading, TablePlaceholder } from "../../components/Placeholders";
 import "./channels/channels.css";
+
+/** What a channel change makes stale besides the list: the guide, the TV changes. */
+const CHANNEL_ANSWERS = ["guide:", "admin:tv-change"];
 
 // A new channel starts as a schedule channel, off until it has a slot.
 function blankChannel(nextNumber: number): Partial<Channel> {
@@ -59,26 +68,30 @@ type OriginFilter = "all" | ChannelOrigin;
 function ChannelsInner() {
   const { t } = useI18n();
   const toast = useToast();
-  const [channels, setChannels] = useState<Channel[] | null>(null);
+  // A failed first load is an error, not an empty lineup (an admin told
+  // "No channels yet" would create duplicates).
+  const {
+    data: channels,
+    err,
+    loading,
+    reload,
+    setData: setChannels,
+  } = usePageData<Channel[]>("admin:channels", () =>
+    channelsApi.list().then((r) => [...(r.items ?? [])].sort((a, b) => a.number - b.number))
+  );
+  const loadError = err == null ? null : err instanceof ApiError ? err.problem.title : "";
   const [editing, setEditing] = useState<{ draft: Partial<Channel>; tab?: string } | null>(null);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
   const [origin, setOrigin] = useState<OriginFilter>("all");
   const [nowMs, setNowMs] = useState(() => Date.now());
-  // A failed first load is an error, not an empty lineup (an admin told
-  // "No channels yet" would create duplicates).
-  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    channelsApi
-      .list()
-      .then((r) => {
-        setLoadError(null);
-        setChannels([...(r.items ?? [])].sort((a, b) => a.number - b.number));
-      })
-      .catch((e: unknown) => setLoadError(e instanceof ApiError ? e.problem.title : ""));
-  }, []);
-  useEffect(load, [load]);
+  // a channel changed: read the list again; the guide and the TV changes
+  // kept from before are stale
+  const load = () => {
+    forgetAnswers(...CHANNEL_ANSWERS);
+    reload();
+  };
   useEffect(() => {
     const id = setInterval(() => setNowMs(Date.now()), 30_000);
     return () => clearInterval(id);
@@ -153,6 +166,7 @@ function ChannelsInner() {
     if (!window.confirm(t("channels.confirmDelete", { name: c.name }))) return;
     try {
       await channelsApi.remove(c.id);
+      setChannels((cs) => cs && cs.filter((x) => x.id !== c.id));
       load();
     } catch (e) {
       showError(e, t("common.error"));
@@ -165,21 +179,25 @@ function ChannelsInner() {
         <ErrorState
           kind="server"
           title={loadError || t("common.error")}
-          action={
-            <Button
-              onClick={() => {
-                setLoadError(null);
-                load();
-              }}
-            >
-              {t("common.retry")}
-            </Button>
-          }
+          action={<Button onClick={reload}>{t("common.retry")}</Button>}
         />
       </section>
     );
   }
-  if (!channels) return <p className="mkt-loading">{t("common.loading")}</p>;
+  if (!channels) {
+    return (
+      <section className="mkt-page mkt-channels">
+        <header className="mkt-page__header">
+          <TitleRow>
+            <h1>{t("channels.title")}</h1>
+          </TitleRow>
+        </header>
+        <Loading loading={loading}>
+          <TablePlaceholder columns={8} head className="mkt-table mkt-cb-list" />
+        </Loading>
+      </section>
+    );
+  }
 
   return (
     <section className="mkt-page mkt-channels">

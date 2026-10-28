@@ -7,9 +7,12 @@
 // Each library has Scan (with progress, followed after a reload too), Edit,
 // Empty trash, Merge and Remove; "Folders claimed twice" offers a one-click
 // Merge into the library that holds the videos. The dialogs live in
-// ./libraries/. The API refuses all of it to anyone but an admin.
-import { useCallback, useEffect, useState } from "react";
+// ./libraries/. The API refuses all of it to anyone but an admin. A return
+// shows the last answer at once (lib/usePageData); a change drops the
+// answers it makes stale, the members' views of the libraries too.
+import { useState } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
+import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
@@ -24,6 +27,9 @@ import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
 import { TitleRow } from "../../help/HelpLink";
 import { ScanNow } from "../LibraryBrowser";
+import { usePageData } from "../../lib/usePageData";
+import { forgetAnswers } from "../../lib/pageCache";
+import { Loading } from "../../components/Placeholders";
 import { LibraryForm } from "./libraries/LibraryForm";
 import { EmptyTrashDialog, MergeDialog, RemoveDialog } from "./libraries/ConfirmDialogs";
 import "../../styles/libraryAdmin.css";
@@ -47,23 +53,23 @@ export function AdminLibraries() {
 
 function LibrariesInner() {
   const { t } = useI18n();
-  const [data, setData] = useState<ManageResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data, err, loading, reload } = usePageData<ManageResponse>(
+    "admin:libraries",
+    () => libraryAdminApi.manage(),
+    [t]
+  );
+  const error = err == null ? null : problemMessage(err, t("common.error"));
   const [dialog, setDialog] = useState<Dialog | null>(null);
 
-  const load = useCallback(() => {
-    setError(null);
-    libraryAdminApi
-      .manage()
-      .then(setData)
-      .catch((e) => setError(problemMessage(e, t("common.error"))));
-  }, [t]);
-
-  useEffect(load, [load]);
-
+  // a library added, edited, emptied, merged, removed or scanned: what every
+  // page showed of the libraries and their videos is stale
+  const changed = () => {
+    forgetAnswers("libraries", "hub:", "home", "videos:", "admin:library-acl");
+    reload();
+  };
   const done = () => {
     setDialog(null);
-    load();
+    changed();
   };
   const libraries = data?.items ?? [];
 
@@ -85,13 +91,15 @@ function LibrariesInner() {
           title={t("common.error")}
           description={error}
           action={
-            <Button type="button" variant="secondary" onClick={load}>
+            <Button type="button" variant="secondary" onClick={reload}>
               {t("common.retry")}
             </Button>
           }
         />
       ) : data === null ? (
-        <p className="mkt-loading">{t("common.loading")}</p>
+        <Loading loading={loading}>
+          <LibrariesPlaceholder />
+        </Loading>
       ) : libraries.length === 0 ? (
         <EmptyState
           title={t("libraryAdmin.empty.title")}
@@ -114,7 +122,7 @@ function LibrariesInner() {
               <LibraryCard
                 key={lib.id}
                 library={lib}
-                onReload={load}
+                onReload={changed}
                 canMerge={libraries.length > 1}
                 onAction={(kind) => setDialog({ kind, library: lib })}
               />
@@ -143,6 +151,36 @@ function LibrariesInner() {
         <RemoveDialog library={dialog.library} onClose={() => setDialog(null)} onDone={done} />
       )}
     </section>
+  );
+}
+
+/** The library cards while the first read runs, on the cards' own classes. */
+function LibrariesPlaceholder() {
+  return (
+    <ul className="mkt-libadmin__list" aria-hidden="true">
+      {[0, 1].map((i) => (
+        <li key={i} className="mkt-libadmin__card">
+          <div className="mkt-libadmin__card-head">
+            <h2>
+              <Skeleton variant="text" className="mkt-ph-inline" width="10rem" />
+            </h2>
+            <Skeleton variant="text" className="mkt-ph-line" width="14rem" />
+          </div>
+          <Skeleton variant="text" className="mkt-ph-line" width="5rem" />
+          <ul className="mkt-libadmin__roots">
+            <li>
+              <Skeleton variant="text" className="mkt-ph-line" width="60%" />
+            </li>
+          </ul>
+          <Skeleton variant="text" className="mkt-ph-line" width="40%" />
+          <div className="mkt-libadmin__actions">
+            {[0, 1, 2, 3, 4].map((b) => (
+              <Skeleton key={b} variant="rect" className="mkt-ph-button" width="6rem" />
+            ))}
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
