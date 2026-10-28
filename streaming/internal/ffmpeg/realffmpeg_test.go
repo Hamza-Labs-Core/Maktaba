@@ -216,11 +216,13 @@ func TestTranscodeArgs_RealFFmpeg(t *testing.T) {
 				if err != nil {
 					t.Fatalf("%q %s %s: start: %v", hw, src.name, format, err)
 				}
+				// Ended, not Active: the process stops being active a moment before the
+				// handle records how it ended (Finished)
 				deadline := time.Now().Add(2 * time.Minute)
-				for h.Active() && time.Now().Before(deadline) {
+				for !h.Ended() && time.Now().Before(deadline) {
 					time.Sleep(100 * time.Millisecond)
 				}
-				if h.Active() {
+				if !h.Ended() {
 					_ = h.Stop(ctx)
 					t.Fatalf("%q %s %s: still running after 2 min", hw, src.name, format)
 				}
@@ -316,7 +318,8 @@ func startTranscodeAt(ctx context.Context, t *testing.T, input string, start int
 	if err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.Now().Add(2 * time.Minute); h.Active() && time.Now().Before(deadline); {
+	// Ended, not Active: Finished is recorded a moment after the process exits
+	for deadline := time.Now().Add(2 * time.Minute); !h.Ended() && time.Now().Before(deadline); {
 		time.Sleep(100 * time.Millisecond)
 	}
 	pl, err := os.ReadFile(filepath.Join(dir, "v0", "index.m3u8"))
