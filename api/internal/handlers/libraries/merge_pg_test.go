@@ -21,6 +21,13 @@ func TestMergePostgres(t *testing.T) {
 		// u1 pinned the merged library alone, u2 both
 		`INSERT INTO user_library_pins (user_id, library_id, position) VALUES
 			('` + u1 + `', '` + libSmall + `', 3), ('` + u2 + `', '` + libSmall + `', 0), ('` + u2 + `', '` + libBig + `', 1)`,
+		// Epic 47: the same file in both: the merged one's path (and its copy) become
+		// copies of the target's video
+		`INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime) VALUES
+			('00000000-0000-4000-8000-0000000000b1', '` + libBig + `', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '/m/a/x.mp4', 'x.mp4', 7, now()),
+			('00000000-0000-4000-8000-0000000000b2', '` + libSmall + `', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '/m/b/x.mp4', 'x.mp4', 7, now())`,
+		`INSERT INTO video_copies (video_id, path, size_bytes) VALUES
+			('00000000-0000-4000-8000-0000000000b2', '/m/b/x (copy).mp4', 7)`,
 	} {
 		if _, err := db.Exec(q); err != nil {
 			t.Fatalf("%s: %v", q, err)
@@ -87,6 +94,13 @@ func TestMergePostgres(t *testing.T) {
 	}
 	if len(pins) != 2 || pins[u1] != 3 || pins[u2] != 1 {
 		t.Errorf("pins = %v, want u1 at 3 and u2 at 1", pins)
+	}
+	var copies string
+	if err := db.QueryRow(`SELECT string_agg(video_id::text || ' ' || path, ',' ORDER BY path) FROM video_copies`).Scan(&copies); err != nil {
+		t.Fatal(err)
+	}
+	if want := "00000000-0000-4000-8000-0000000000b1 /m/b/x (copy).mp4,00000000-0000-4000-8000-0000000000b1 /m/b/x.mp4"; copies != want {
+		t.Errorf("copies = %q, want %q", copies, want)
 	}
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM libraries WHERE id = $1`, libSmall).Scan(&n); err != nil || n != 0 {

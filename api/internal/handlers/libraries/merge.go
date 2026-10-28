@@ -174,11 +174,11 @@ var mergeMoves = []struct{ table, column, query string }{
 }
 
 // copyQueries record the merged library's files of a target video's bytes as
-// copies of that video ($1 the target, $2 the merged library, $3 now), before
+// copies of that video ($1 the target, $2 the merged library), before
 // the merged rows are deleted.
 var copyQueries = []string{
 	`INSERT INTO video_copies (video_id, path, size_bytes, mtime, seen_at)
-	 SELECT t.id, f.path, f.size_bytes, f.mtime, $3 FROM videos f
+	 SELECT t.id, f.path, f.size_bytes, f.mtime, CURRENT_TIMESTAMP FROM videos f
 	   JOIN videos t ON t.library_id = $1 AND t.content_hash = f.content_hash
 	  WHERE f.library_id = $2 AND f.path <> t.path
 	 ON CONFLICT (video_id, path) DO NOTHING`,
@@ -320,7 +320,7 @@ func (h *Handler) merge(ctx context.Context, tx *sql.Tx, from, into Library, tab
 		// become copies of the target's video, which "Find duplicates" reports and
 		// can merge into one file. Its user data still goes with its row.
 		for _, q := range copyQueries {
-			if _, err := tx.ExecContext(ctx, q, into.ID, from.ID, h.now()); err != nil {
+			if _, err := tx.ExecContext(ctx, q, into.ID, from.ID); err != nil {
 				return resp, err
 			}
 		}
