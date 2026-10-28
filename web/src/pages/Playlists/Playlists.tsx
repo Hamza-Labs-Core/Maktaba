@@ -3,11 +3,10 @@
 // playlist (a poster mosaic, the name, how many videos and how long), and a
 // form to make a new, empty one. Videos go in from a video's page (Add to
 // playlist) or from a selection on the grid.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
-import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useI18n } from "../../lib/i18n";
 import {
@@ -21,29 +20,21 @@ import { PosterMosaic } from "../Library/Libraries";
 import { formatDuration } from "../../components/VideoViews";
 import { LoadError } from "../../components/LoadError";
 import { errorText } from "../../lib/errorText";
+import { usePageData } from "../../lib/usePageData";
+import { CardGridPlaceholder, Loading } from "../../components/Placeholders";
 
 export function Playlists() {
   const { t, n } = useI18n();
   const toast = useToast();
   const navigate = useNavigate();
-  const [items, setItems] = useState<PlaylistSummary[] | null>(null);
-  const [err, setErr] = useState<unknown>(null);
-  const [reload, setReload] = useState(0);
+  const {
+    data: items,
+    err,
+    loading,
+    reload,
+  } = usePageData<PlaylistSummary[]>("playlists", fetchPlaylists, [t]);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setErr(null);
-    fetchPlaylists()
-      .then((r) => !cancelled && setItems(r))
-      .catch((e) => {
-        if (!cancelled) setErr(e);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [reload, t]);
 
   async function create() {
     const nm = name.trim();
@@ -92,17 +83,11 @@ export function Playlists() {
         </form>
       </header>
 
-      {err != null && <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />}
+      {err != null && <LoadError error={err} onRetry={reload} />}
 
-      {!items && !err && (
-        <ul className="mkt-libgrid" aria-busy="true">
-          {Array.from({ length: 3 }, (_, i) => (
-            <li key={i} className="mkt-libcard">
-              <Skeleton variant="rect" height={140} />
-            </li>
-          ))}
-        </ul>
-      )}
+      <Loading loading={loading}>
+        <CardGridPlaceholder cards={3} />
+      </Loading>
 
       {items && items.length === 0 && (
         <EmptyState

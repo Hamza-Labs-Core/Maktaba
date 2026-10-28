@@ -4,13 +4,12 @@
 // …/order: buttons, so the keyboard reorders too); remove one; rename the
 // playlist; delete it after a confirmation. Another user's playlist answers
 // 404, the same as one that does not exist.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Modal } from "@ds/components/Modal/Modal";
-import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
@@ -29,6 +28,8 @@ import { TitleRow } from "../../help/HelpLink";
 import { VideoPoster, formatDuration } from "../../components/VideoViews";
 import { LoadError } from "../../components/LoadError";
 import { errorText } from "../../lib/errorText";
+import { usePageData } from "../../lib/usePageData";
+import { ItemListPlaceholder, Loading } from "../../components/Placeholders";
 
 export function PlaylistPage() {
   const { playlistId = "" } = useParams();
@@ -39,30 +40,19 @@ function PlaylistOf({ id }: { id: string }) {
   const { t, n } = useI18n();
   const toast = useToast();
   const navigate = useNavigate();
-  const [doc, setDoc] = useState<PlaylistDetail | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [err, setErr] = useState<unknown>(null);
-  const [reload, setReload] = useState(0);
+  const {
+    data: doc,
+    err: loadErr,
+    loading,
+    reload,
+    setData: setDoc,
+  } = usePageData<PlaylistDetail>(`playlist:${id}`, () => fetchPlaylist(id), [t]);
+  const notFound = loadErr instanceof ApiError && loadErr.status === 404;
+  const err = notFound ? null : loadErr;
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setErr(null);
-    setNotFound(false);
-    fetchPlaylist(id)
-      .then((d) => !cancelled && setDoc(d))
-      .catch((e) => {
-        if (cancelled) return;
-        if (e instanceof ApiError && e.status === 404) setNotFound(true);
-        else setErr(e);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, reload, t]);
 
   const fail = (e: unknown) =>
     toast.show({
@@ -88,15 +78,16 @@ function PlaylistOf({ id }: { id: string }) {
   if (err != null) {
     return (
       <section className="mkt-page mkt-playlist">
-        <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />
+        <LoadError error={err} onRetry={reload} />
       </section>
     );
   }
   if (!doc) {
     return (
-      <section className="mkt-page mkt-playlist" aria-busy="true">
-        <Skeleton variant="text" lines={1} />
-        <Skeleton variant="rect" height={140} />
+      <section className="mkt-page mkt-playlist">
+        <Loading loading={loading}>
+          <ItemListPlaceholder />
+        </Loading>
       </section>
     );
   }

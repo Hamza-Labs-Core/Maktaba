@@ -4,13 +4,12 @@
 // get a form to make a new, empty collection; a smart one is saved from the
 // Browse tab's filters (LibraryBrowser, "Save as collection"). A library the
 // user may not see answers 404, the same as one that does not exist.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
-import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
@@ -26,6 +25,8 @@ import { TitleRow } from "../../help/HelpLink";
 import { PosterMosaic } from "../Library/Libraries";
 import { LoadError } from "../../components/LoadError";
 import { errorText } from "../../lib/errorText";
+import { usePageData } from "../../lib/usePageData";
+import { CardGridPlaceholder, Loading } from "../../components/Placeholders";
 
 /** A collection's card: its mosaic, name and size (a row item or a grid cell). */
 export function CollectionCard({ c, className }: { c: Collection; className: string }) {
@@ -57,36 +58,28 @@ function CollectionsOf({ libraryId }: { libraryId: string }) {
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
-  const [items, setItems] = useState<Collection[] | null>(null);
-  const [libName, setLibName] = useState("");
-  const [notFound, setNotFound] = useState(false);
-  const [err, setErr] = useState<unknown>(null);
-  const [reload, setReload] = useState(0);
+  const {
+    data,
+    err: loadErr,
+    loading,
+    reload,
+  } = usePageData(
+    `collections:${libraryId}`,
+    async () => {
+      const [items, lib] = await Promise.all([
+        fetchCollections(libraryId),
+        api.get<{ name?: string }>(`/api/libraries/${encodeURIComponent(libraryId)}`),
+      ]);
+      return { items, libName: lib?.name ?? "" };
+    },
+    [t]
+  );
+  const items = data?.items ?? null;
+  const libName = data?.libName ?? "";
+  const notFound = loadErr instanceof ApiError && loadErr.status === 404;
+  const err = notFound ? null : loadErr;
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setErr(null);
-    setNotFound(false);
-    Promise.all([
-      fetchCollections(libraryId),
-      api.get<{ name?: string }>(`/api/libraries/${encodeURIComponent(libraryId)}`),
-    ])
-      .then(([cs, lib]) => {
-        if (cancelled) return;
-        setItems(cs);
-        setLibName(lib?.name ?? "");
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        if (e instanceof ApiError && e.status === 404) setNotFound(true);
-        else setErr(e);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [libraryId, reload, t]);
 
   async function create() {
     const nm = name.trim();
@@ -162,17 +155,11 @@ function CollectionsOf({ libraryId }: { libraryId: string }) {
         </div>
       )}
 
-      {err != null && <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />}
+      {err != null && <LoadError error={err} onRetry={reload} />}
 
-      {!items && !err && (
-        <ul className="mkt-libgrid" aria-busy="true">
-          {Array.from({ length: 3 }, (_, i) => (
-            <li key={i} className="mkt-libcard">
-              <Skeleton variant="rect" height={140} />
-            </li>
-          ))}
-        </ul>
-      )}
+      <Loading loading={loading}>
+        <CardGridPlaceholder cards={3} />
+      </Loading>
 
       {items && items.length === 0 && (
         <EmptyState

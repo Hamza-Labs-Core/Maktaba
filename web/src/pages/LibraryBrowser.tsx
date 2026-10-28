@@ -36,7 +36,6 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { Badge } from "@ds/components/Badge/Badge";
 import { Chip } from "@ds/components/Chip/Chip";
 import { Button } from "@ds/components/Button/Button";
-import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useToast } from "@ds/components/Toast/Toast";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
@@ -60,6 +59,7 @@ import { EMPTY_FACETS, fetchFacets, markWatched, setFavorite, type Facets } from
 import { startQueueFromQuery, watchPath } from "../lib/playQueue";
 import { PUBLISH_DATE, videosUrl } from "../lib/browse";
 import { errorText } from "../lib/errorText";
+import { Loading, VideoGridPlaceholder, VideoListPlaceholder } from "../components/Placeholders";
 
 const VIEW_KEY = "mkt:lib:view";
 
@@ -1040,16 +1040,9 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
       {actions}
       {bulkBar}
 
-      {videos === null && (
-        <ul className={view === "grid" ? "mkt-grid" : "mkt-list"} aria-busy="true">
-          {Array.from({ length: 6 }, (_, i) => (
-            <li key={i} className="mkt-card">
-              <Skeleton variant="rect" height={120} />
-              <Skeleton variant="text" lines={2} />
-            </li>
-          ))}
-        </ul>
-      )}
+      <Loading loading={videos === null}>
+        {view === "grid" ? <VideoGridPlaceholder /> : <VideoListPlaceholder />}
+      </Loading>
 
       {badLibrary && <ErrorState kind="not_found" title={t("library.notFound")} />}
 
