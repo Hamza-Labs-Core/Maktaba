@@ -100,3 +100,6 @@ Admin only (the API answers 403 to anyone else, 401 signed out), audited, and qu
 | `GET` | `/api/queues/youtube-downloads` | Queue | YouTube downloads by state (keyset paged) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
 | `GET` | `/api/queues/file-actions` | Queue | The file-action ledger (filters, keyset paged) and each library's trash | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
 | `POST` | `/api/queues/file-actions/{id}/restore` | Queue | Queue a ledger row's undo (file_restore) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `GET` | `/api/queues/duplicates` | Queue | Duplicate groups with their members (filters, keyset paged) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `POST` | `/api/queues/duplicates/{gid}/apply` | Queue | Merge a group (dedup_apply), optionally with the keeper chosen | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `POST` | `/api/queues/duplicates/{gid}/dismiss` | Queue | Dismiss a group: the scan never makes it again | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |

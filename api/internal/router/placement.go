@@ -132,6 +132,7 @@ func buildPlacement() placement.Table {
 		"/api/queues/offline-items",
 		"/api/queues/youtube-downloads",
 		"/api/queues/file-actions",
+		"/api/queues/duplicates",
 		"/api/workers",
 		// story 35.9: the home's half of delegation
 		"/api/cluster/delegate/introspect",

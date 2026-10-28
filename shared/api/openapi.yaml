@@ -3263,6 +3263,78 @@ paths:
         '429': *id002
         '401': *id003
       operationId: restoreFileAction
+  /queues/duplicates:
+    get:
+      tags:
+      - Queue
+      summary: "Duplicate groups with their members (filters, keyset paged)"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: listDuplicateGroups
+  /queues/duplicates/{gid}/apply:
+    post:
+      tags:
+      - Queue
+      summary: "Merge a group (dedup_apply), optionally with the keeper chosen"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: gid
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: "{keeper_video_id?: uuid}"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: applyDuplicateGroup
+  /queues/duplicates/{gid}/dismiss:
+    post:
+      tags:
+      - Queue
+      summary: "Dismiss a group: the scan never makes it again"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: gid
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: dismissDuplicateGroup
   /pools:
     get:
       tags:
