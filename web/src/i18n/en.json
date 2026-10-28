@@ -5553,5 +5553,9 @@
   "about.link.license": "License (MIT)",
   "about.credits": "Acknowledgements",
   "about.creditsIntro": "Maktaba is built on open-source software. Thank you to its authors.",
-  "about.copyright": "© {year} Hamza Labs Core. Released under the MIT License."
+  "about.copyright": "© {year} Hamza Labs Core. Released under the MIT License.",
+  "libraryAdmin.confirm.typeExactly": "To confirm, type this library's name:",
+  "libraryAdmin.confirm.copy": "Copy",
+  "libraryAdmin.confirm.copied": "Copied",
+  "libraryAdmin.confirm.typedOther": "That's the library you're merging into. Type the name of the one being removed: {name}."
 }

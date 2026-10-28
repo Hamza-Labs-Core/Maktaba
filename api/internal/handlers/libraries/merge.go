@@ -259,7 +259,7 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
 		return
 	}
-	if req.Confirm != from.Name {
+	if !sameName(req.Confirm, from.Name) {
 		httperror.Write(w, r, &httperror.Error{
 			Type:   httperror.TypeConfirmationReq,
 			Title:  "confirmation required",

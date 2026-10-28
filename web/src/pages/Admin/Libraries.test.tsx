@@ -378,8 +378,18 @@ describe("AdminLibraries", () => {
     const confirm = within(dialog).getByLabelText(/^Type .*Othman \(dup\).* to confirm/);
     await user.type(confirm, "othman (dup)");
     expect(go).toBeDisabled();
+    // the name to type is shown whole, with Copy
+    expect(within(dialog).getByText("Othman (dup)", { selector: "code" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Copy" })).toBeInTheDocument();
+    // the library merged into is the wrong name, and the dialog says so
     await user.clear(confirm);
-    await user.type(confirm, "Othman (dup)");
+    await user.type(confirm, BIG.name);
+    expect(go).toBeDisabled();
+    expect(within(dialog).getByRole("status")).toHaveTextContent("the library you're merging into");
+    // spaces don't count against it
+    await user.clear(confirm);
+    await user.type(confirm, "  Othman   (dup) ");
+    expect(go).toBeEnabled();
     await user.click(go);
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith("/api/libraries/small/merge", {
