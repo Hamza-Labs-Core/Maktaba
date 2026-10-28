@@ -23,6 +23,10 @@ func TestMain(m *testing.M) {
 	if code, ok := runFakeProgram(); ok {
 		os.Exit(code)
 	}
+	// ...and for the TV slots' streaming binary (serve_tvheld_test.go)
+	if code, ok := runFakeSlot(); ok {
+		os.Exit(code)
+	}
 	dir, err := os.MkdirTemp("", "maktaba-nodecfg-")
 	if err != nil {
 		panic(err)

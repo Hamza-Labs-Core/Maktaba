@@ -106,6 +106,10 @@ type Process struct {
 	// Progress, when set, is the Detail /processes shows while the process runs (how far
 	// its job is). Called outside the supervisor's lock; it must be quick.
 	Progress func() Detail
+	// Held, on a TV slot, is the streaming software the live TV is held on ("" when it
+	// is not: held.go): asked once, at the first slot's start; while it is held the
+	// slots the front door has not bound run that release's binary.
+	Held func(ctx context.Context) (string, error)
 }
 
 // graceFor is how long p has to stop once asked: grace, or its own StopGrace when
