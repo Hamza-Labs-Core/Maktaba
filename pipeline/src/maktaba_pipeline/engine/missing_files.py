@@ -66,7 +66,13 @@ async def confirm_missing(db: Any, library_id: UUID) -> MissingReport:
     t = to_ts(db, now())
     for r in await db.fetch(_OPEN_MISSING, uid(library_id)):
         vid = UUID(str(r["id"]))
-        if await asyncio.to_thread(_exists, str(r["path"])):
+        found = await asyncio.to_thread(_exists, str(r["path"]))
+        if not found:
+            # story 47.5: a byte-identical copy still on disk takes the row's place
+            from ..scanner.copies import promote_copy
+
+            found = await promote_copy(db, vid) is not None
+        if found:
             await db.execute(
                 "UPDATE videos SET missing_confirmed_at = NULL WHERE id = $1", uid(vid)
             )

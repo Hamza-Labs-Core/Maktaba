@@ -436,6 +436,21 @@ async def scan_handler(
             errors=len(result.errors),
         )
         if getattr(db, "engine_hooks", False):
+            # Story 47.5: a copy whose file is gone is forgotten; a video whose own file
+            # is gone while a copy is still there moves to the copy
+            try:
+                from .scanner.copies import reconcile_copies
+
+                copies = await reconcile_copies(db, job.library_id)
+                if copies.promoted or copies.forgotten:
+                    _log.info(
+                        "scan_copies_reconciled",
+                        library_id=str(job.library_id),
+                        promoted=len(copies.promoted),
+                        forgotten=len(copies.forgotten),
+                    )
+            except Exception:  # noqa: BLE001 - a follow-up check, never a reason to fail the scan
+                _log.exception("scan_copies_failed", library_id=str(job.library_id))
             # Epic 40: the files a job found missing are looked at again now
             try:
                 from .engine.missing_files import confirm_missing

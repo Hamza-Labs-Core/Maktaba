@@ -80,6 +80,8 @@ async def resolve_edge(
     m = edge.map
     if m == "same":
         return [(subj.kind, subj.id)]
+    if m == "same_video":
+        return [(subj.kind, subj.id)] if subj.kind == "video" else []
     if m == "catalog":
         return [("catalog", CATALOG_ID)]
     if m == "library_of":
@@ -202,9 +204,12 @@ async def finalize_success(
             "by": f"job:{job.id}",
             "from_stage": stage.name,
         }
-        if changed:
+        # an edge declared when="always" fires on every finished run, changed or not
+        # (not while a run waits for review or inputs)
+        settled = final_outcome not in ("awaiting_review", "waiting_inputs")
+        if changed or settled:
             for edge in stage.edges:
-                if edge.legacy:
+                if edge.legacy or not (changed or edge.when == "always"):
                     continue
                 target = graph.get(edge.to)
                 if target is None:

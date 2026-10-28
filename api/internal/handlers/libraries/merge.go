@@ -173,9 +173,33 @@ var mergeMoves = []struct{ table, column, query string }{
 	{"clip_groups", "library_id", `UPDATE clip_groups SET library_id = $1 WHERE library_id = $2`},
 }
 
+// copyQueries record the merged library's files of a target video's bytes as
+// copies of that video ($1 the target, $2 the merged library), before
+// the merged rows are deleted.
+var copyQueries = []string{
+	`INSERT INTO video_copies (video_id, path, size_bytes, mtime, seen_at)
+	 SELECT t.id, f.path, f.size_bytes, f.mtime, CURRENT_TIMESTAMP FROM videos f
+	   JOIN videos t ON t.library_id = $1 AND t.content_hash = f.content_hash
+	  WHERE f.library_id = $2 AND f.path <> t.path
+	 ON CONFLICT (video_id, path) DO NOTHING`,
+	`INSERT INTO video_copies (video_id, path, size_bytes, mtime, seen_at)
+	 SELECT t.id, c.path, c.size_bytes, c.mtime, c.seen_at FROM video_copies c
+	   JOIN videos f ON f.id = c.video_id
+	   JOIN videos t ON t.library_id = $1 AND t.content_hash = f.content_hash
+	  WHERE f.library_id = $2 AND c.path <> t.path
+	 ON CONFLICT (video_id, path) DO NOTHING`,
+}
+
+// forgetCopiesQuery drops the copies of the rows deleted next (ON DELETE
+// CASCADE does the same; said here so they never outlive their row).
+const forgetCopiesQuery = `DELETE FROM video_copies WHERE video_id IN (
+	SELECT f.id FROM videos f JOIN videos t ON t.library_id = $1 AND t.content_hash = f.content_hash
+	 WHERE f.library_id = $2)`
+
 // mergeTables is what this database has, asked before the transaction.
 type mergeTables struct {
 	moves                         []string
+	copies                        bool
 	roots, statsCache             bool
 	collections, topics, channels bool
 	pins                          bool
@@ -183,8 +207,10 @@ type mergeTables struct {
 
 // Merge merges library {id} into another one, in one transaction: each video
 // moves unless the target already holds the same file (content_hash, unique
-// per library), in which case it is deleted with its data; the folders the
-// target does not cover are added to it; the merged library is deleted.
+// per library), in which case it is deleted with its data (its path and its
+// own copies become copies of the target's video: video_copies, Epic 47); the
+// folders the target does not cover are added to it; the merged library is
+// deleted.
 func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 	p, ok := requireAdmin(w, r)
 	if !ok {
@@ -216,6 +242,7 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 			tables.moves = append(tables.moves, m.query)
 		}
 	}
+	tables.copies = h.hasColumn(ctx, "video_copies", "path")
 	tables.roots = h.hasColumn(ctx, "library_roots", "path_canonical")
 	tables.statsCache = h.hasColumn(ctx, "library_stats_cache", "library_id")
 	tables.collections = h.hasColumn(ctx, "collections", "name")
@@ -287,6 +314,20 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) merge(ctx context.Context, tx *sql.Tx, from, into Library, tables mergeTables) (MergeResponse, error) {
 	var resp MergeResponse
+	if tables.copies {
+		// Epic 47 (story 47.5): a merged video whose file the target already holds
+		// (the same content_hash) is not a lost path: its file, and the copies it had,
+		// become copies of the target's video, which "Find duplicates" reports and
+		// can merge into one file. Its user data still goes with its row.
+		for _, q := range copyQueries {
+			if _, err := tx.ExecContext(ctx, q, into.ID, from.ID); err != nil {
+				return resp, err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, forgetCopiesQuery, into.ID, from.ID); err != nil {
+			return resp, err
+		}
+	}
 	res, err := tx.ExecContext(ctx, `
 		DELETE FROM videos WHERE library_id = $2
 		AND content_hash IN (SELECT content_hash FROM videos WHERE library_id = $1)
