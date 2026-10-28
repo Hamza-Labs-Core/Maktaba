@@ -96,7 +96,16 @@ type MachineTV struct {
 	Outcome       string   `json:"outcome,omitempty"`
 	LiveStreaming string   `json:"live_streaming,omitempty"`
 	Failed        []string `json:"failed,omitempty"`
+	// StreamingVersion and StreamingSHA256: the binary the run's change carries, said when
+	// the change could not be had at all (held, Failed = [no_change], no ChangeID): a Retry
+	// asks for the change with them.
+	StreamingVersion string `json:"streaming_version,omitempty"`
+	StreamingSHA256  string `json:"streaming_sha256,omitempty"`
 }
+
+// TVNoChange is the failed check of a TV held with no change behind it (its change could
+// not be had at all).
+const TVNoChange = "no_change"
 
 // TVHeld is MachineTV.Outcome for a TV held on the streaming software it ran.
 const TVHeld = "held"

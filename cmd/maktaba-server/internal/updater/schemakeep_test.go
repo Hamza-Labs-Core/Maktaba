@@ -66,7 +66,22 @@ func TestRollbackSafe(t *testing.T) {
 		"rename":       {sql: "ALTER TABLE t RENAME COLUMN a TO b;", says: "RENAME"},
 		"retype":       {sql: "ALTER TABLE t ALTER COLUMN a TYPE bigint;", says: "TYPE"},
 		"tighten":      {sql: "ALTER TABLE t ALTER COLUMN a SET NOT NULL;", says: "SET NOT NULL"},
-		"dropped view": {sql: "DROP VIEW IF EXISTS v;", says: "DROP VIEW v"},
+		"dropped view": {sql: "DROP VIEW IF EXISTS v;", says: "DROP VIEW"},
+		// the review of #433: forms the first classifier missed
+		"drop, no COLUMN":           {sql: "ALTER TABLE t DROP c;", says: "DROP c"},
+		"drop if exists, no COLUMN": {sql: "ALTER TABLE t DROP IF EXISTS c;", says: "DROP IF"},
+		"retype, no COLUMN":         {sql: "ALTER TABLE t ALTER c TYPE bigint;", says: "ALTER c TYPE"},
+		"drop default":              {sql: "ALTER TABLE t ALTER COLUMN c DROP DEFAULT;", says: "DROP DEFAULT"},
+		"drop index":                {sql: "DROP INDEX IF EXISTS t_c;", says: "DROP INDEX"},
+		"drop constraint":           {sql: "ALTER TABLE t DROP CONSTRAINT IF EXISTS t_c_check;", says: "DROP CONSTRAINT"},
+		"add check":                 {sql: "ALTER TABLE t ADD CONSTRAINT t_n CHECK (n >= 0);", says: "ADD CONSTRAINT"},
+		"add unique":                {sql: "ALTER TABLE t ADD UNIQUE (c);", says: "ADD UNIQUE"},
+		"unique index":              {sql: "CREATE UNIQUE INDEX IF NOT EXISTS t_c_u ON t (c);", says: "CREATE UNIQUE INDEX"},
+		"function, new signature":   {sql: "DROP FUNCTION IF EXISTS h(int);\nCREATE OR REPLACE FUNCTION h(int, text) RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;", says: "DROP FUNCTION"},
+		"function, no signature":    {sql: "DROP FUNCTION IF EXISTS h;\nCREATE FUNCTION h() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;", says: "DROP FUNCTION"},
+		"trigger, other table":      {sql: "DROP TRIGGER IF EXISTS x ON t;\nCREATE TRIGGER x AFTER INSERT ON u FOR EACH ROW EXECUTE FUNCTION f();", says: "DROP TRIGGER"},
+		"not null, no default":      {sql: "ALTER TABLE t ADD COLUMN IF NOT EXISTS d int NOT NULL;", says: "no default"},
+		"column with a key":         {sql: "ALTER TABLE t ADD COLUMN v int REFERENCES videos(id);", says: "a constraint"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			files := map[string]string{}
@@ -107,12 +122,16 @@ func TestKeepsSchemaFrom(t *testing.T) {
 }
 
 // The repository's own migrations: 0.3.41 to 0.3.42 (slot 0168, the outage's: one row in
-// job_stages) and 0169 are rollback-safe; 0128 (breaking for older nodes) is not.
+// job_stages) is rollback-safe; 0169 (a CHECK constraint added) and 0128 (breaking for
+// older nodes) are not.
 func TestRollbackSafeRepositoryMigrations(t *testing.T) {
 	_, self, _, _ := runtime.Caller(0)
 	dir := filepath.Join(filepath.Dir(self), "..", "..", "..", "..", "shared", "db", "migrations")
-	if ok, why := RollbackSafe(dir, 167, 169); !ok {
-		t.Fatalf("0168-0169: %s", why)
+	if ok, why := RollbackSafe(dir, 167, 168); !ok {
+		t.Fatalf("0168: %s", why)
+	}
+	if ok, why := RollbackSafe(dir, 167, 169); ok || !strings.Contains(why, "0169") || !strings.Contains(why, "ADD CONSTRAINT") {
+		t.Fatalf("0168-0169 = %v (%s)", ok, why)
 	}
 	if ok, why := RollbackSafe(dir, 127, 128); ok || !strings.Contains(why, "0128") {
 		t.Fatalf("0128 = %v (%s)", ok, why)

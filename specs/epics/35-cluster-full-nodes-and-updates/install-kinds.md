@@ -228,10 +228,17 @@ updated its runtime) offers its own update for its window and tray.
    compat-prev`): the release before runs on the schema the new one made. So the rollback (the
    new release's watch, `updater.Machine.rollback`) puts the dump back only when a migration
    since the release before is not rollback-safe (`updater/schemakeep.go`): its MANIFEST row says
-   "Breaking for the previous release" or "Breaking for older nodes", or its Up section drops a
-   table, column, schema or sequence, renames, retypes, sets NOT NULL or truncates (a function,
-   view, trigger or type dropped and made again in the same file is fine; a DROP in the Down
-   section or a comment is not read). Otherwise the record stays `migrated` with `kept_for` =
+   "Breaking for the previous release" or "Breaking for older nodes", or its Up section drops
+   anything (a table, a column with or without the `COLUMN` keyword, a default, an index, a
+   constraint, a view, a type…), renames, retypes (with or without `COLUMN`), sets NOT NULL,
+   adds a constraint (CHECK, UNIQUE, a key) or a unique index, adds a NOT NULL column with no
+   default or a column with a constraint, or truncates. Only two drops are not destructive by
+   themselves: `DROP NOT NULL`, and a trigger or a function dropped and made again in the same
+   file (the same trigger on the same table; the same function with exactly the same
+   parameter list: another signature is another function). Anything uncertain counts as
+   destructive (review of #433: the cost is only a restore); a DROP in the Down section or in
+   a comment is not read. By that rule 0168 keeps the schema and 0169 (its CHECK) does not.
+   Otherwise the record stays `migrated` with `kept_for` =
    the release before (`layout.MarkRecordKept`), nothing is put back and nothing is lost: that
    release's database step accepts the newer schema for itself (no `db_refused_older`, no
    migration to run, `kept_for` carried until another release migrates) and tells its api so
@@ -241,6 +248,10 @@ updated its runtime) offers its own update for its window and tray.
    release without it, a plain server's layout (its migrations archive carries no `meta/`), and
    the launcher's own guard (the new release is not up to judge) put the dump back as before.
    Installing the newer release again finds its migrations there: a restart, no dump.
+   `kept_for` follows the schema: a start with no migration keeps it; an update that migrates
+   notes it on its dump (`dump_kept_for`), and a restore of that dump says it again
+   (`kept_for` of the `restored` record, which the database step accepts as it accepts
+   `migrated`): the release a schema was kept for starts on it after a later rollback too.
 
    **A restore that is needed is whole, or says what it lacks (2026-10-28).** The outage's
    restore failed part way (`tuple concurrently updated`, then "a worker process died"): a joined
@@ -251,30 +262,52 @@ updated its runtime) offers its own update for its window and tray.
    `pg_class` rows (reproduced on a scratch cluster: five tries out of five). It left every
    table's rows but no vectors, none of the 630 post-data items and none of the 286 grants, and
    the database's own `GRANT CONNECT … TO maktaba_worker` (a dump never holds a database's
-   grants) was gone too. Putting a dump back into the bundled Postgres (`pgbundle.restoreInto`)
-   now: reads the database's own grants first (kept in `backups/.restore-database-grants.json`
-   until the restore is whole, for one cut short); makes the database afresh with `REVOKE ALL …
-   FROM PUBLIC` and ends any session on it, so no other login reaches it until it is whole;
-   restores pre-data with one worker, the rows in parallel, the chunks in parallel, post-data in
+   grants) was gone too. And 0.3.41's own code did that restore: the rollback marked the record
+   and the release before put the dump back at its start.
+
+   Now **the new release puts the dump back itself, before it switches back** (review of #433:
+   `updater.Machine.RestoreBack`, after the TV change is taken back): the record marked
+   `restoring` first, the roles that use the database stopped (the api, the pipeline, the
+   streaming role; the TV slots run on, on the database being replaced), the dump put back
+   with this release's restore, and the record `restored` for the release before, which then
+   starts on a finished database (a release from before 2026-10-28 reads `restored` as it
+   always did). A restore that fails there leaves the record `restoring` and the switch back
+   goes on: the release before puts it back at its start, as before. Putting a dump back into
+   the bundled Postgres (`pgbundle.restoreInto`): into a database of its own
+   (`maktaba_restoring`, `REVOKE ALL … FROM PUBLIC`), whose name no client knows, so nothing
+   but the restore reaches it — not a machine's login, nor a process that runs on across the
+   restart as the database's owner (the TV slots handed over), which taking CONNECT from PUBLIC
+   never stopped; whatever they write meanwhile goes to the database being replaced, as before
+   the rollback. Once whole and checked it is renamed into place in one transaction with the
+   grants of the database it replaces (read from it then; the machines' CONNECT), which is
+   renamed `maktaba_replaced` in that transaction (closed to new sessions, its sessions and its
+   copies' slots ended first) and dropped after. A restore that fails leaves the app database
+   as it was (the scratch database dropped); one with no room for both drops the old one first
+   (logged). It restores pre-data with one worker, the rows in parallel, the chunks in parallel, post-data in
    parallel, then the grants and default privileges alone, last, with one worker (every object
    they name is there); checks the result against the dump (`pgbundle.VerifyRestore`: every
    table, view, sequence, index, constraint, trigger and function of `public`, every grant
    (table, column, function, schema) and default privilege, and every table's rows against the
    dump's `counts.json`, counted in the dump's own snapshot while it is taken; a dump from
-   before it: the chunked tables at least hold rows when their chunks do); runs `ANALYZE`; and
-   only then gives the database its grants back. A parallel try that fails or comes out
+   before it: the chunked tables at least hold rows when their chunks do; a `counts.json` there
+   but damaged refuses the dump before anything changes); runs `ANALYZE`; and only then renames
+   it into place. A parallel try that fails or comes out
    incomplete is done again whole with one worker; one that fails again halts with what failed
    or exactly what is missing (`the restored database is not whole: missing 3 indexes (…); 1
    tables without all their rows (public.segment_embeddings: 0 of 17000000 rows)`), the record
    still `restoring`, and the record is set `restored` only after the check. The in-place
    restore of another Postgres (`dbsafe.Target.Restore`, one transaction: nothing outside it
-   sees the restored objects before its commit) is checked the same way.
+   sees the restored objects before its commit) is checked the same way. Every start that finds
+   the record `migrated` or `restored` gives the workers' group its CONNECT back when the
+   database lacks it (`pgbundle.GrantWorkersConnectSQL`: a restore of a release from before
+   dropped it with the database).
 
    **A halt has a way out (2026-10-28).** The database step's halts (`db_restore_failed`,
    `db_restored`, `db_refused_older`, `db_ahead`, …) last until the database's record changes
-   (`supervisor.HaltUntil`, looked at every 5 s): put right by hand (as the owner did: the
-   record set `restored`) or by `maktaba-server restore`, the step runs again and every role
-   that waits on it starts, with no restart of the server.
+   to `migrated` or `restored` (`supervisor.HaltUntil`, looked at every 5 s): put right by hand
+   (as the owner did: the record set `restored`), the step runs again and every role that
+   waits on it starts, with no restart of the server. A restore a person asks for (`restoring`
+   with `by`) is not a way out: `maktaba-server restore` restarts the server for it.
 4. **The dumps' format** (`pgbundle/dumpfmt.go`). Every dump is a directory-format dump
    (`pg_dump -Fd`, still named `*.dump`): one file per table, written by `DumpJobs` workers (half
    the cores, 2 to 8) in one snapshot and put back by as many `pg_restore` workers; each file
@@ -335,8 +368,11 @@ updated its runtime) offers its own update for its window and tray.
   catch up to its release. A watch has a bound of its own (3 × the watch + the health limit,
   outside the start steps): a release whose health keeps flapping is rolled back
   (`watch_timeout`); the start steps have theirs ("The database" step 2, `start_timeout`).
-  The watch judges the home's own health only (2026-10-28): the TV slots are the TV step's
-  (a staging slot starting, a slot its swap stops), and a release that stayed healthy for its
+  The watch judges the home's own health only (2026-10-28): a TV slot starting, stopped or
+  between two starts (a staging slot starting, a slot a swap stops) is never the home
+  unhealthy, but a slot that crash-loops or cannot start is the live TV off the air: fatal,
+  unless the release's TV change is under way (its staging slot runs the new binary: its check
+  failing holds the TV, its swap failing rolls back; the TV step's). A release that stayed healthy for its
   whole watch has passed: it commits at once, whatever its TV change waits for (the TV step
   ends `pending`, "The TV step" item 3), and no later check undoes the pass. The bound never
   counts the TV's waiting: a healthy check never times the watch out.
@@ -525,6 +561,12 @@ its watch, where the new streaming binary never meets an older schema:
    no notice, nothing blocked or counted; the Updates page says the change goes on by itself,
    with Drop); the release the live TV runs is kept from pruning meanwhile. The home's health
    leaves the TV slots to the TV step (a staging slot starting is not the home starting).
+   A change that could not be had at all (the API never answered: no change behind the step)
+   has nothing to go on by itself: the TV step ends **held** instead (review of #433), with
+   the check `no_change` and the binary the change would carry (`streaming_version`,
+   `streaming_sha256`); the Updates page's **Retry** makes the change with them (then it is
+   staged and checked as any), and **Drop** leaves the TV on its software with nothing to
+   cancel.
 4. **The owner's decision (2026-10-28):** *"when only the TV test fails, keep the update
    installed, leave TV on the old version, and notify me with Retry / Drop. Undo everything only
    if TV breaks after it has switched."*

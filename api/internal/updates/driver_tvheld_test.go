@@ -26,6 +26,7 @@ type fakeTVChanges struct {
 	dropped  []string
 	actors   []string
 	replaced []string
+	begun    []string
 }
 
 func (f *fakeTVChanges) AutoUpdate(_ context.Context, runID string) (tvchange.AutoUpdateStatus, error) {
@@ -62,6 +63,14 @@ func (f *fakeTVChanges) RetryAutoUpdate(_ context.Context, runID string, actor *
 
 func (f *fakeTVChanges) DropAutoUpdate(_ context.Context, runID string, actor *string) (tvchange.AutoUpdateStatus, error) {
 	return f.act(runID, actor, tvchange.AutoOutcomeCancelled, &f.dropped)
+}
+
+func (f *fakeTVChanges) BeginAutoUpdate(_ context.Context, runID, version, sha256 string) (tvchange.AutoUpdateStatus, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.begun = append(f.begun, runID+" "+version+" "+sha256)
+	f.st = tvchange.AutoUpdateStatus{RunID: runID, Outcome: tvchange.AutoOutcomeQueued, ChangeID: "ch-9", Number: 9}
+	return f.st, nil
 }
 
 func (f *fakeTVChanges) ReplaceOlderAutoUpdates(_ context.Context, runID string) error {
@@ -178,6 +187,49 @@ func TestDriverTVPendingCommitsTheRelease(t *testing.T) {
 	}
 	if held := r.d.TVHeld(ctx); held != nil {
 		t.Fatalf("a pending TV shown held: %+v", held)
+	}
+}
+
+// The review of #433: a home whose TV change could not be had at all commits with the TV
+// held (no change behind it, check no_change). The overview shows it held; Retry makes the
+// change with the binary the home said (then it goes on as any), and Drop leaves the TV as
+// it is with nothing to cancel.
+func TestDriverTVHeldWithNoChange(t *testing.T) {
+	t.Parallel()
+	for _, action := range []string{"retry", "drop"} {
+		t.Run(action, func(t *testing.T) {
+			r := newDriverRig(t)
+			tv := &fakeTVChanges{st: tvchange.AutoUpdateStatus{Outcome: tvchange.AutoOutcomeNone}}
+			r.d.TV = tv
+			r.home.tv = &MachineTV{Outcome: TVHeld, Failed: []string{TVNoChange}, LiveStreaming: "v1.4.0",
+				StreamingVersion: "v1.5.0", StreamingSHA256: "ab12"}
+			_, _ = r.f.svc.Tick(context.Background())
+			run := r.drive(t, 12)
+			ctx := context.Background()
+			if run.State != RunDone {
+				t.Fatalf("run %s %s", run.State, run.Error)
+			}
+			held := r.d.TVHeld(ctx)
+			if held == nil || held.RunID != run.ID || held.State != TVStateHeld || held.ChangeID != "" {
+				t.Fatalf("tv held %+v", held)
+			}
+			got, err := r.d.TVAction(ctx, run.ID, action, "admin-1")
+			if err != nil {
+				t.Fatalf("%s: %v", action, err)
+			}
+			_, det, _ := r.f.store.RunDetailOf(ctx, run.ID)
+			switch action {
+			case "retry":
+				if len(tv.begun) != 1 || tv.begun[0] != run.ID+" v1.5.0 ab12" || got.State != TVStateRetrying ||
+					det.TV.ChangeID != "ch-9" {
+					t.Fatalf("retry: begun %v state %q detail %+v", tv.begun, got.State, det.TV)
+				}
+			case "drop":
+				if len(tv.begun) != 0 || got.State != TVStateDropped || !det.TV.Dropped || r.d.TVHeld(ctx) != nil {
+					t.Fatalf("drop: begun %v state %q detail %+v", tv.begun, got.State, det.TV)
+				}
+			}
+		})
 	}
 }
 

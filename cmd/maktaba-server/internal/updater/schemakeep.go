@@ -81,21 +81,35 @@ func KeepsSchemaFrom(from, to string) (bool, string) {
 var manifestRow = regexp.MustCompile("^\\|\\s*`(\\d{4,6})`\\s*\\|")
 
 // Destructive statements of a migration's Up section: what the release before may not
-// run on, or what a dump would be needed to undo.
+// run on (a column, a default, an index, a constraint, a type it relies on gone; a
+// constraint or a unique index its writes may break), or what a dump would be needed to
+// undo. Anything uncertain counts as destructive: the cost is only a restore.
 var destructive = []*regexp.Regexp{
-	// (not ALTER PUBLICATION ... DROP TABLE: a table leaving a machine's copy)
-	regexp.MustCompile(`(?is)\bDROP\s+(TABLE|COLUMN|SCHEMA|SEQUENCE)\b`),
 	regexp.MustCompile(`(?is)\bRENAME\b`),
-	regexp.MustCompile(`(?is)\bALTER\s+COLUMN\s+\S+\s+(SET\s+DATA\s+)?TYPE\b`),
+	// a column's type changed, with or without the COLUMN keyword
+	regexp.MustCompile(`(?is)\bALTER\s+(COLUMN\s+)?("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s+(SET\s+DATA\s+)?TYPE\b`),
 	regexp.MustCompile(`(?is)\bSET\s+NOT\s+NULL\b`),
+	// a constraint added (the release before may write what it refuses)
+	regexp.MustCompile(`(?is)\bADD\s+(CONSTRAINT|CHECK|UNIQUE|PRIMARY\s+KEY|FOREIGN\s+KEY|EXCLUDE)\b`),
+	regexp.MustCompile(`(?is)\bCREATE\s+UNIQUE\s+INDEX\b`),
 	// a TRUNCATE statement (not a trigger's AFTER TRUNCATE, a grant's or a TG_OP's word)
 	regexp.MustCompile(`(?im)(^|;)\s*TRUNCATE\s+(TABLE\s+)?(ONLY\s+)?["A-Za-z_]`),
 }
 
-// dropped are the drops of objects a migration may make again in the same file (a
-// trigger, a function, a view, a type dropped and created anew): destructive only when the
-// file does not create them again.
-var dropped = regexp.MustCompile(`(?is)\bDROP\s+(FUNCTION|VIEW|MATERIALIZED\s+VIEW|TRIGGER|TYPE)\s+(IF\s+EXISTS\s+)?([A-Za-z0-9_."]+)`)
+// dropWord is every DROP of the Up section with the word after it (a column dropped
+// without the COLUMN keyword: ALTER TABLE t DROP c). Only three are not destructive by
+// themselves: DROP NOT NULL (it loosens), and a trigger or a function dropped and made
+// again in the same file (the same trigger on the same table, the same signature).
+var dropWord = regexp.MustCompile(`(?is)\bDROP\s+("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)`)
+
+// droppedTrigger and droppedFunction are those two drops.
+var (
+	droppedTrigger  = regexp.MustCompile(`(?is)^DROP\s+TRIGGER\s+(IF\s+EXISTS\s+)?("?[A-Za-z0-9_]+"?)\s+ON\s+([A-Za-z0-9_."]+)`)
+	droppedFunction = regexp.MustCompile(`(?is)^DROP\s+FUNCTION\s+(IF\s+EXISTS\s+)?([A-Za-z0-9_."]+)\s*\(`)
+	// notNullNoDefault: a column added NOT NULL with no default (the release before's
+	// inserts, which do not name it, fail)
+	addColumn = regexp.MustCompile(`(?is)\bADD\s+(COLUMN\s+)?(IF\s+NOT\s+EXISTS\s+)?("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s+[^,;]*`)
+)
 
 // RollbackSafe reports whether the migrations of the folder dir in the slots above
 // fromSchema up to toSchema leave a database the release at fromSchema runs on: none
@@ -173,21 +187,103 @@ func destructiveIn(sql string) string {
 		code.WriteString(l + "\n")
 	}
 	body := code.String()
+	said := func(m string) string { return "is destructive (" + strings.Join(strings.Fields(m), " ") + ")" }
 	for _, re := range destructive {
 		if m := re.FindString(body); m != "" {
-			return "is destructive (" + strings.Join(strings.Fields(m), " ") + ")"
+			return said(m)
 		}
 	}
-	for _, m := range dropped.FindAllStringSubmatch(body, -1) {
-		kind, name := strings.Join(strings.Fields(strings.ToUpper(m[1])), " "), strings.Trim(m[3], `"`)
-		if i := strings.LastIndexByte(name, '.'); i >= 0 {
-			name = name[i+1:]
+	for _, loc := range dropWord.FindAllStringSubmatchIndex(body, -1) {
+		word := strings.ToUpper(strings.Trim(body[loc[2]:loc[3]], `"`))
+		rest := body[loc[0]:]
+		switch word {
+		case "NOT":
+			if regexp.MustCompile(`(?is)^DROP\s+NOT\s+NULL\b`).MatchString(rest) {
+				continue // loosens
+			}
+		case "TRIGGER":
+			if m := droppedTrigger.FindStringSubmatch(rest); m != nil && triggerMadeAgain(body, m[2], m[3]) {
+				continue
+			}
+		case "FUNCTION":
+			if m := droppedFunction.FindStringSubmatchIndex(rest); m != nil {
+				name := rest[m[4]:m[5]]
+				if sig, ok := parenthesized(rest[m[1]-1:]); ok && functionMadeAgain(body, name, sig) {
+					continue
+				}
+			}
 		}
-		again := regexp.MustCompile(`(?is)\bCREATE\s+(OR\s+REPLACE\s+)?` + strings.ReplaceAll(regexp.QuoteMeta(kind), ` `, `\s+`) +
-			`\s+(IF\s+NOT\s+EXISTS\s+)?("?[A-Za-z0-9_]+"?\.)?"?` + regexp.QuoteMeta(name) + `"?\b`)
-		if !again.MatchString(body) {
-			return fmt.Sprintf("is destructive (DROP %s %s)", kind, name)
+		end := min(len(rest), loc[3]-loc[0]+40)
+		return said(strings.SplitN(rest[:end], ";", 2)[0])
+	}
+	for _, m := range addColumn.FindAllString(body, -1) {
+		up := strings.ToUpper(m)
+		if regexp.MustCompile(`\bNOT\s+NULL\b`).MatchString(up) && !strings.Contains(up, "DEFAULT") {
+			return said(m) + ": NOT NULL with no default"
+		}
+		if regexp.MustCompile(`\b(REFERENCES|CHECK|UNIQUE|PRIMARY\s+KEY)\b`).MatchString(up) {
+			return said(m) + ": a constraint"
 		}
 	}
 	return ""
+}
+
+// unqualified is a name without its schema or quotes, in lower case.
+func unqualified(name string) string {
+	name = strings.ToLower(strings.ReplaceAll(name, `"`, ""))
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		name = name[i+1:]
+	}
+	return name
+}
+
+// triggerMadeAgain reports whether body creates the trigger name on table again.
+func triggerMadeAgain(body, name, table string) bool {
+	re := regexp.MustCompile(`(?is)\bCREATE\s+(OR\s+REPLACE\s+)?(CONSTRAINT\s+)?TRIGGER\s+"?` + regexp.QuoteMeta(unqualified(name)) +
+		`"?\s[^;]*?\bON\s+([A-Za-z0-9_."]+)`)
+	for _, m := range re.FindAllStringSubmatch(body, -1) {
+		if unqualified(m[3]) == unqualified(table) {
+			return true
+		}
+	}
+	return false
+}
+
+// parenthesized is the text from s's opening parenthesis to its matching one (both
+// included).
+func parenthesized(s string) (string, bool) {
+	depth := 0
+	for i, r := range s {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return s[:i+1], true
+			}
+		}
+	}
+	return "", false
+}
+
+// signature is a parameter list as it compares: lower case, no spaces or quotes.
+func signature(params string) string {
+	return strings.ToLower(strings.NewReplacer(" ", "", "\t", "", "\n", "", `"`, "").Replace(params))
+}
+
+// functionMadeAgain reports whether body creates the function name with exactly the
+// parameter list sig again (another signature is another function: the release before's
+// calls to the dropped one fail).
+func functionMadeAgain(body, name, sig string) bool {
+	re := regexp.MustCompile(`(?is)\bCREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+([A-Za-z0-9_."]+)\s*\(`)
+	for _, loc := range re.FindAllStringSubmatchIndex(body, -1) {
+		if unqualified(body[loc[4]:loc[5]]) != unqualified(name) {
+			continue
+		}
+		if got, ok := parenthesized(body[loc[1]-1:]); ok && signature(got) == signature(sig) {
+			return true
+		}
+	}
+	return false
 }

@@ -115,6 +115,43 @@ type TVRun struct {
 	LiveStreaming string `json:"live_streaming,omitempty"`
 	// Failed is the checks that failed (a held change's).
 	Failed []string `json:"failed,omitempty"`
+	// StreamingVersion and StreamingSHA256 are the binary the run's change carries, kept
+	// when the change could not be had at all (TVHeld with no ChangeID): the Updates page's
+	// Retry asks for it with them (TVBinary).
+	StreamingVersion string `json:"streaming_version,omitempty"`
+	StreamingSHA256  string `json:"streaming_sha256,omitempty"`
+}
+
+// TVBinary is a TVSwapper that can say which binary the run's change carries (its
+// version and its file's sha256), without asking the API.
+type TVBinary interface {
+	Binary(j *Journal) (version, sha256 string, err error)
+}
+
+// NoTVChange is the check a TV held with no change behind it names: the change could not
+// be had at all (the API never answered about it).
+const NoTVChange = "no_change"
+
+// tvHeldNoChange ends the TV step held when the home passed its watch and its change could
+// not be had at all (why): there is no change to go on by itself, so the TV is held on the
+// software it runs and the Updates page's Retry asks for the change again (with the binary
+// recorded here), as it retries a held change.
+func (m *Machine) tvHeldNoChange(why string) {
+	j := m.Status().Journal
+	if j == nil || j.TV == nil || j.TV.Outcome != "" {
+		return
+	}
+	var ver, sum string
+	if b, ok := m.TV.(TVBinary); ok {
+		ver, sum, _ = b.Binary(j)
+	}
+	_ = m.mutate(func(j *Journal) {
+		j.TV.Outcome, j.TV.Failed = TVHeld, []string{NoTVChange}
+		j.TV.StreamingVersion, j.TV.StreamingSHA256 = ver, sum
+	})
+	_ = m.endStep(StepTV, "held", "no TV change could be had ("+why+"): the TV stays on its software; Retry asks for it again")
+	m.warnf("%s passed its watch but its TV change could not be had (%s): it commits with the TV held "+
+		"(retry it on the Updates page)", j.Job.Version, why)
 }
 
 // keeps are the releases the TV step needs kept at the commit: the one whose streaming

@@ -168,6 +168,36 @@ func TestDumpVerifiedAndRestoredInPlace(t *testing.T) {
 // from a dump, in place and bundled. Their slots go (DROP DATABASE refuses to outlive
 // them, and they would stream what the dump replaced), so each machine copies the
 // restored database anew; the dump's publications do not collide with those still there.
+// The review of #433: a database a release before 2026-10-28 put back lost the workers'
+// CONNECT (a dump never holds a database's grants); a start gives it back, once.
+func TestGrantWorkersConnect(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	has := func() bool {
+		var ok bool
+		if err := r.db.QueryRow(`SELECT coalesce(datacl::text, '') LIKE '%maktaba_worker=c/%' FROM pg_database
+			WHERE datname = current_database()`).Scan(&ok); err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if _, err := r.db.Exec(`DO $$ BEGIN EXECUTE format('REVOKE CONNECT ON DATABASE %I FROM maktaba_worker',
+		current_database()); END $$`); err != nil {
+		t.Fatal(err)
+	}
+	if has() {
+		t.Fatal("the workers' CONNECT is still there")
+	}
+	for i := 0; i < 2; i++ {
+		if err := r.t.GrantWorkersConnect(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !has() {
+		t.Fatal("the workers' CONNECT is not back")
+	}
+}
+
 func TestRestoreWithMachineCopies(t *testing.T) {
 	r := newPGRig(t)
 	ctx := context.Background()

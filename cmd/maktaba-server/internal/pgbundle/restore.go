@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -77,59 +76,107 @@ func (b Bundle) Restore(ctx context.Context, dump string, opts RestoreOptions, l
 	})
 }
 
-// restoreInto makes the app database afresh on q's running server and restores dump
-// into it (Restore's work, and RestoreRunning's), checks it whole (VerifyRestore), and
-// only then lets the other logins in again. A parallel restore that fails, or comes out
-// incomplete, is done again with one worker (the whole of it: the database is made afresh
-// each time); one that fails again says what failed or what is missing.
+// The databases of a restore: the dump is put back into restoringDatabase, which no
+// client knows the name of and no login but the superuser's and the app role's may enter,
+// checked whole there, and renamed into place in one transaction; the database it replaces
+// is renamed replacedDatabase in that same transaction and dropped after it.
+const (
+	restoringDatabase = AppDatabase + "_restoring"
+	replacedDatabase  = AppDatabase + "_replaced"
+)
+
+// restoreInto puts dump back as the app database on q's running server (Restore's work,
+// and RestoreRunning's): into a scratch database of its own, checked whole there
+// (VerifyRestore), then renamed into place with the database's own grants. A parallel try
+// that fails, or comes out incomplete, is done again with one worker; one that fails again
+// says what failed or what is missing, and leaves the app database as it was.
 //
 // The outage of 2026-10-28: a joined machine kept logging in while its home's database
 // was put back, and as soon as the restore had made its functions it asked for its copy
 // (cluster_node_replica_grant), whose GRANTs on every table met pg_restore's own grants
 // ("tuple concurrently updated"): the restore stopped with every table's rows but none of
-// its indexes, keys, triggers or grants. Now no other login reaches the database while it
-// is put back (CONNECT is taken from PUBLIC, and the grants of the database itself, which
-// a dump does not hold, are put back at the end); the schema, the grants and the default
-// privileges go in one worker at a time, the rows, the chunks and the indexes in parallel.
+// its indexes, keys, triggers or grants. A login kept out of the fresh database is not
+// enough (the review of #433): the app role owns it, and processes that run on across a
+// restart (the TV slots handed over, story 35.7) log in as it. Under a name nobody uses,
+// nothing but the restore reaches it; whatever they write meanwhile goes to the database
+// being replaced, as it would have before the rollback. The schema, the grants and the
+// default privileges go in one worker at a time, the rows, the chunks and the indexes in
+// parallel.
 func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts RestoreOptions, log io.Writer) error {
-	// a damaged dump is refused before the database is touched
+	// a damaged dump is refused before anything is touched
 	if err := CheckCounts(dump); err != nil {
 		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
-	}
-	grants, err := b.databaseGrants(ctx, q)
-	if err != nil {
-		return err
 	}
 	jobs := opts.Jobs
 	if jobs <= 0 {
 		jobs = max(1, runtime.NumCPU()/2)
 	}
-	err = b.restoreOnce(ctx, q, dump, opts, jobs, grants, log)
+	if err := b.makeRoomBeside(ctx, q, dump, log); err != nil {
+		return err
+	}
+	err := b.restoreOnce(ctx, q, dump, opts, jobs, log)
 	if err != nil && ctx.Err() == nil && jobs > 1 {
 		_, _ = fmt.Fprintf(log, "[postgres] the restore of %s with %d workers failed (%v): it is done again with one\n",
 			dump, jobs, err)
-		err = b.restoreOnce(ctx, q, dump, opts, 1, grants, log)
+		err = b.restoreOnce(ctx, q, dump, opts, 1, log)
 	}
 	if err != nil {
+		// the scratch database goes; the app database is the one before the restore
+		_ = q.Exec(context.WithoutCancel(ctx), "postgres", "DROP DATABASE IF EXISTS "+restoringDatabase+" WITH (FORCE);")
 		return err
 	}
-	_ = os.Remove(b.grantsFile())
 	return nil
+}
+
+// databaseExists reports whether database db is on q's server.
+func (q Querier) databaseExists(ctx context.Context, db string) (bool, error) {
+	rows, err := q.Query(ctx, "postgres", "SELECT 1 FROM pg_database WHERE datname = '"+db+"'")
+	return len(rows) > 0, err
+}
+
+// roomFor is how much room the scratch database wants beside the one it replaces: the
+// size of the one it replaces, with a quarter more (its indexes are built afresh) and a
+// GiB.
+func roomFor(size int64) uint64 { return uint64(size)*5/4 + 1<<30 }
+
+// makeRoomBeside makes sure the scratch database fits beside the app database; when it
+// does not, the app database (whose state the restore replaces anyway) is dropped first,
+// with the machines' copy slots (logged: a restore that fails then leaves no database).
+func (b Bundle) makeRoomBeside(ctx context.Context, q Querier, dump string, log io.Writer) error {
+	// what a restore before this one left
+	if err := q.Exec(ctx, "postgres", "DROP DATABASE IF EXISTS "+replacedDatabase+" WITH (FORCE);\n"+
+		"DROP DATABASE IF EXISTS "+restoringDatabase+" WITH (FORCE);"); err != nil {
+		return fmt.Errorf("drop what a restore before left: %w", err)
+	}
+	there, err := q.databaseExists(ctx, AppDatabase)
+	if err != nil || !there {
+		return err
+	}
+	rows, err := q.Query(ctx, "postgres", "SELECT pg_database_size('"+AppDatabase+"')")
+	if err != nil || len(rows) == 0 {
+		return err
+	}
+	size, _ := strconv.ParseInt(strings.TrimSpace(rows[0]), 10, 64)
+	free, _, err := diskSpaceOf(b.Data)
+	if err != nil || free >= roomFor(size) {
+		return nil
+	}
+	_, _ = fmt.Fprintf(log, "[postgres] level=warn not enough room to put %s back beside the %s database (%d MB free, "+
+		"%d MB wanted): the database it replaces is dropped first\n", dump, AppDatabase, free>>20, roomFor(size)>>20)
+	if err := q.Exec(ctx, "postgres", DropSlotsSQL(AppDatabase)); err != nil {
+		return fmt.Errorf("drop the machines' copy slots on %s: %w", AppDatabase, err)
+	}
+	return q.Exec(ctx, "postgres", "DROP DATABASE IF EXISTS "+AppDatabase+" WITH (FORCE);")
 }
 
 // restoreOnce is one try of restoreInto, with jobs workers.
 func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts RestoreOptions, jobs int,
-	grants []string, log io.Writer) error {
-	// the machines' copies decode the database through logical slots, which DROP
-	// DATABASE refuses to outlive
-	if err := q.Exec(ctx, "postgres", DropSlotsSQL(AppDatabase)); err != nil {
-		return fmt.Errorf("drop the machines' copy slots on %s: %w", AppDatabase, err)
+	log io.Writer) error {
+	if err := q.Exec(ctx, "postgres", recreateSQL(opts, restoringDatabase)+clusterSQL); err != nil {
+		return fmt.Errorf("make a fresh %s database: %w", restoringDatabase, err)
 	}
-	if err := q.Exec(ctx, "postgres", recreateSQL(opts)+clusterSQL); err != nil {
-		return fmt.Errorf("make a fresh %s database: %w", AppDatabase, err)
-	}
-	_, _ = fmt.Fprintf(log, "[postgres] putting %s back into a fresh %s database (%d workers): no other login "+
-		"reaches it until it is whole\n", dump, AppDatabase, jobs)
+	_, _ = fmt.Fprintf(log, "[postgres] putting %s back into a fresh database of its own (%s, %d workers): no other "+
+		"process reaches it until it is whole\n", dump, restoringDatabase, jobs)
 	toc, err := b.tableOfContents(ctx, dump, q.pw)
 	if err != nil {
 		return err
@@ -139,16 +186,15 @@ func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts Re
 		return err
 	}
 	defer func() { _ = os.Remove(main); _ = os.Remove(acls) }()
-	// not the dump's publications (the machines' copies, Epic 37): their slots went with the
-	// database, each machine copies it anew, and its next grant makes its publication again
-	// with the tables there then (cluster_copy_publication). A machine that asks meanwhile
-	// made it while the tables came back, and the dump's own ALTER PUBLICATION ... ADD
-	// TABLE then failed the whole restore ("is already member of publication"; the owner's
-	// rollback of 2026-10-27), as the in-place restore of another Postgres never did.
+	// not the dump's publications (the machines' copies, Epic 37): their slots go with the
+	// database replaced, each machine copies it anew, and its next grant makes its
+	// publication again with the tables there then (cluster_copy_publication). The dump's
+	// own ALTER PUBLICATION ... ADD TABLE failed the whole restore once ("is already member
+	// of publication"; the owner's rollback of 2026-10-27).
 	env := append(os.Environ(), "PGPASSWORD="+q.pw)
 	restore := func(list string, workers int, sections ...string) error {
-		args := []string{"-h", "127.0.0.1", "-p", strconv.Itoa(b.Port), "-U", SuperUser, "-d", AppDatabase, "--no-owner",
-			"--role=" + AppRole, "--exit-on-error", "--no-publications", "-j", strconv.Itoa(workers), "-L", list}
+		args := []string{"-h", "127.0.0.1", "-p", strconv.Itoa(b.Port), "-U", SuperUser, "-d", restoringDatabase,
+			"--no-owner", "--role=" + AppRole, "--exit-on-error", "--no-publications", "-j", strconv.Itoa(workers), "-L", list}
 		for _, s := range sections {
 			args = append(args, "--section="+s)
 		}
@@ -180,7 +226,7 @@ func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts Re
 	// the chunked tables' rows between their tables and their indexes (dumpfmt.go)
 	if chunks := Chunks(dump); len(chunks) > 0 {
 		if err := LoadChunks(ctx, b.Bin("psql"), []string{"-h", "127.0.0.1", "-p", strconv.Itoa(b.Port), "-U", SuperUser,
-			"--dbname=" + AppDatabase}, env, chunks, jobs); err != nil {
+			"--dbname=" + restoringDatabase}, env, chunks, jobs); err != nil {
 			return err
 		}
 	}
@@ -192,16 +238,60 @@ func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts Re
 	if err := restore(acls, 1); err != nil {
 		return err
 	}
-	if err := VerifyRestore(ctx, dump, toc, q.queryFunc(AppDatabase)); err != nil {
+	if err := VerifyRestore(ctx, dump, toc, q.queryFunc(restoringDatabase)); err != nil {
 		return fmt.Errorf("restore %s: %w", dump, err)
 	}
-	if err := q.Exec(ctx, AppDatabase, "ANALYZE;"); err != nil {
+	if err := q.Exec(ctx, restoringDatabase, "ANALYZE;"); err != nil {
 		return err
 	}
-	// whole: the other logins may use it again, with the database's own grants as they were
 	_, _ = fmt.Fprintf(log, "[postgres] %s is put back whole: every table, index, key, trigger and grant, and its rows\n", dump)
-	if err := q.Exec(ctx, "postgres", strings.Join(grants, "\n")); err != nil {
-		return fmt.Errorf("give the database's grants back after the restore: %w", err)
+	return b.swapIn(ctx, q, log)
+}
+
+// swapIn renames the whole scratch database into place as the app database, with the app
+// database's own grants (CONNECT, TEMPORARY: a dump never holds them; the workers' group's
+// CONNECT is the machines' way in), in one transaction, and drops the one it replaced
+// (with the machines' copy slots, which DROP DATABASE refuses to outlive). The database
+// replaced takes no new session meanwhile; those on it are ended.
+func (b Bundle) swapIn(ctx context.Context, q Querier, log io.Writer) error {
+	there, err := q.databaseExists(ctx, AppDatabase)
+	if err != nil {
+		return err
+	}
+	grants := []string{"GRANT CONNECT, TEMPORARY ON DATABASE " + AppDatabase + " TO PUBLIC;"}
+	if there {
+		if grants, err = databaseGrants(ctx, q); err != nil {
+			return err
+		}
+		if err := q.Exec(ctx, "postgres", DropSlotsSQL(AppDatabase)); err != nil {
+			return fmt.Errorf("drop the machines' copy slots on %s: %w", AppDatabase, err)
+		}
+		if err := q.Exec(ctx, "postgres", "ALTER DATABASE "+AppDatabase+" ALLOW_CONNECTIONS false;\n"+
+			"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '"+AppDatabase+
+			"' AND pid <> pg_backend_pid();"); err != nil {
+			return fmt.Errorf("close the %s database to new sessions: %w", AppDatabase, err)
+		}
+	}
+	var sb strings.Builder
+	sb.WriteString("BEGIN;\n")
+	if there {
+		sb.WriteString("ALTER DATABASE " + AppDatabase + " RENAME TO " + replacedDatabase + ";\n")
+	}
+	sb.WriteString("ALTER DATABASE " + restoringDatabase + " RENAME TO " + AppDatabase + ";\n")
+	sb.WriteString(strings.Join(grants, "\n") + "\n")
+	sb.WriteString("COMMIT;\n")
+	if err := q.Exec(ctx, "postgres", sb.String()); err != nil {
+		if there {
+			_ = q.Exec(context.WithoutCancel(ctx), "postgres", "ALTER DATABASE "+AppDatabase+" ALLOW_CONNECTIONS true;")
+		}
+		return fmt.Errorf("put the restored database in place of %s: %w", AppDatabase, err)
+	}
+	if there {
+		if err := q.Exec(ctx, "postgres", "DROP DATABASE IF EXISTS "+replacedDatabase+" WITH (FORCE);"); err != nil {
+			// in place all the same; the next restore drops it
+			_, _ = fmt.Fprintf(log, "[postgres] level=warn the database the restore replaced (%s) could not be dropped: %v\n",
+				replacedDatabase, err)
+		}
 	}
 	return nil
 }
@@ -211,20 +301,11 @@ func (q Querier) queryFunc(database string) QueryFunc {
 	return func(ctx context.Context, sql string) ([]string, error) { return q.Query(ctx, database, sql) }
 }
 
-// grantsFile keeps the app database's own grants (CONNECT, TEMPORARY: a dump does not hold
-// them) while a restore runs, for one that is cut short and done again by the next start
-// (the database then has CONNECT taken from PUBLIC).
-func (b Bundle) grantsFile() string { return filepath.Join(b.Backups, ".restore-database-grants.json") }
-
-// databaseGrants are the statements that give the app database its grants back as they
-// are before the restore (the grants file a restore cut short left, else the database's
-// own): those to PUBLIC (none said: the default, CONNECT and TEMPORARY) and to the other
-// roles (maktaba_worker's CONNECT, which the machines' logins come through).
-func (b Bundle) databaseGrants(ctx context.Context, q Querier) ([]string, error) {
-	var grants []string
-	if raw, err := os.ReadFile(b.grantsFile()); err == nil && json.Unmarshal(raw, &grants) == nil && len(grants) > 0 {
-		return grants, nil
-	}
+// databaseGrants are the statements that give the restored app database the grants of
+// the one it replaces: those to PUBLIC (none said: the default, CONNECT and TEMPORARY) and
+// to the other roles (the workers' group's CONNECT, which the machines' logins come
+// through).
+func databaseGrants(ctx context.Context, q Querier) ([]string, error) {
 	rows, err := q.Query(ctx, "postgres", `SELECT CASE WHEN d.datacl IS NULL THEN 'default'
 		ELSE coalesce((SELECT string_agg(CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(r.rolname) END
 		                                 || ':' || a.privilege_type, ',')
@@ -239,34 +320,33 @@ func (b Bundle) databaseGrants(ctx context.Context, q Querier) ([]string, error)
 		spec = rows[0]
 	}
 	if spec == "default" {
-		grants = []string{"GRANT CONNECT, TEMPORARY ON DATABASE " + AppDatabase + " TO PUBLIC;"}
-	} else {
-		for _, g := range strings.Split(spec, ",") {
-			who, priv, ok := strings.Cut(g, ":")
-			if !ok || (who != "PUBLIC" && !ValidRoleName(strings.Trim(who, `"`))) {
-				continue
-			}
-			// a role named in the grants may not be there (gone since): skipped, not failed
-			stmt := "GRANT " + priv + " ON DATABASE " + AppDatabase + " TO " + who + ";"
-			if who != "PUBLIC" {
-				stmt = "SELECT $$" + stmt + "$$ WHERE EXISTS (SELECT FROM pg_roles WHERE rolname = '" +
-					strings.Trim(who, `"`) + "')\\gexec"
-			}
-			grants = append(grants, stmt)
+		return []string{"GRANT CONNECT, TEMPORARY ON DATABASE " + AppDatabase + " TO PUBLIC;"}, nil
+	}
+	var grants []string
+	for _, g := range strings.Split(spec, ",") {
+		who, priv, ok := strings.Cut(g, ":")
+		if !ok || (who != "PUBLIC" && !ValidRoleName(strings.Trim(who, `"`))) {
+			continue
 		}
-	}
-	raw, err := json.Marshal(grants)
-	if err == nil {
-		err = os.MkdirAll(b.Backups, 0o700)
-	}
-	if err == nil {
-		err = os.WriteFile(b.grantsFile(), raw, 0o600)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("keep the %s database's grants while it is put back: %w", AppDatabase, err)
+		grants = append(grants, "GRANT "+priv+" ON DATABASE "+AppDatabase+" TO "+who+";")
 	}
 	return grants, nil
 }
+
+// GrantWorkersConnectSQL gives the workers' group (the machines' logins) CONNECT on the
+// database it runs in when the group is there: what a restore by a release before
+// 2026-10-28 dropped with the database (its dump never held it), and a start finds missing.
+const GrantWorkersConnectSQL = `DO $$
+BEGIN
+    -- its own grant (PUBLIC's CONNECT may be taken away; the machines' must not go with it)
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = '` + WorkerGroup + `')
+       AND NOT EXISTS (SELECT FROM pg_database d, aclexplode(d.datacl) a
+                        WHERE d.datname = current_database() AND a.privilege_type = 'CONNECT'
+                          AND a.grantee = '` + WorkerGroup + `'::regrole) THEN
+        EXECUTE format('GRANT CONNECT ON DATABASE %I TO ` + WorkerGroup + `', current_database());
+    END IF;
+END
+$$;`
 
 // EndSessionsSQL ends every other client session on database db ("": the one it runs
 // in) that its role may end, and selects how many it ended: the machines' api sessions
@@ -346,17 +426,15 @@ func ValidRoleName(r string) bool { return roleName.MatchString(r) }
 // restored as the app role.
 var Extensions = []string{"plpgsql", "pg_trgm", "unaccent", "pgcrypto", "vector"}
 
-// recreateSQL drops the app database (and anything connected to it) and makes it
-// again, with the extensions and the source's other roles.
-func recreateSQL(opts RestoreOptions) string {
+// recreateSQL drops database db (and anything connected to it) and makes it again, owned
+// by the app role, with the extensions and the source's other roles: a restore's scratch
+// database (restoringDatabase), which no client knows the name of, and no login but its
+// owner's and the superuser's may enter (restoreInto renames it into place once whole).
+func recreateSQL(opts RestoreOptions, db string) string {
 	var sb strings.Builder
-	sb.WriteString("DROP DATABASE IF EXISTS " + AppDatabase + " WITH (FORCE);\n")
-	sb.WriteString("CREATE DATABASE " + AppDatabase + " OWNER " + AppRole + " TEMPLATE template0 ENCODING 'UTF8';\n")
-	// no other login reaches it until it is put back whole (restoreInto gives its grants
-	// back then): its owner and the superuser only, and anything that came in first goes
-	sb.WriteString("REVOKE ALL ON DATABASE " + AppDatabase + " FROM PUBLIC;\n")
-	sb.WriteString("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '" + AppDatabase +
-		"' AND pid <> pg_backend_pid();\n")
+	sb.WriteString("DROP DATABASE IF EXISTS " + db + " WITH (FORCE);\n")
+	sb.WriteString("CREATE DATABASE " + db + " OWNER " + AppRole + " TEMPLATE template0 ENCODING 'UTF8';\n")
+	sb.WriteString("REVOKE ALL ON DATABASE " + db + " FROM PUBLIC;\n")
 	for _, r := range opts.Roles {
 		if !ValidRoleName(r) || r == AppRole || r == SuperUser {
 			continue
@@ -368,7 +446,7 @@ func recreateSQL(opts RestoreOptions) string {
 			sb.WriteString("GRANT " + m[1] + " TO " + m[0] + ";\n")
 		}
 	}
-	sb.WriteString("\\c " + AppDatabase + "\n")
+	sb.WriteString("\\c " + db + "\n")
 	sb.WriteString("CREATE EXTENSION IF NOT EXISTS pg_trgm;\nCREATE EXTENSION IF NOT EXISTS unaccent;\nCREATE EXTENSION IF NOT EXISTS pgcrypto;\n")
 	sb.WriteString(vectorSQL)
 	return sb.String()

@@ -18,21 +18,26 @@ don't append a line here; docs-only PRs are exempt.
   hour for an approval; the watch's bound ran out meanwhile (`watch_timeout`), the rollback put
   the whole database back for one added row, and that restore failed part way (a joined machine
   asking for its copy collided with the restore's grants: `tuple concurrently updated`), leaving
-  the library down for a quarter of an hour. Now: the watch judges the home's own health (the TV
-  slots are the TV step's), and a release healthy for its whole watch commits at once with its
-  TV change **pending** (it goes on by itself; never `watch_timeout`, `tv_change_pending` or
-  `tv_timeout`). A rollback whose migrations are all rollback-safe keeps the schema and puts
-  nothing back, for a previous release that says it runs on a kept schema
-  (`shared/db/migrations/meta/schema-keep.json`; its api is told with
-  `MAKTABA_SCHEMA_AHEAD_OK`); only a destructive migration puts the dump back. That restore
-  keeps every other login out until it is whole, restores the schema and the grants one at a
-  time and the rows, vectors and indexes in parallel, gives the database its own grants back
-  (the machines' CONNECT), is checked against the dump (every table, index, key, trigger,
+  the library down for a quarter of an hour. Now: the watch judges the home's own health (a TV
+  slot starting or stopped by a swap is the TV step's; a live slot that crash-loops still rolls
+  back), and a release healthy for its whole watch commits at once with its TV change
+  **pending** (it goes on by itself; never `watch_timeout`, `tv_change_pending` or
+  `tv_timeout`), or **held** with Retry when no change could be had at all. A rollback whose
+  migrations are all rollback-safe keeps the schema and puts nothing back, for a previous
+  release that says it runs on a kept schema (`shared/db/migrations/meta/schema-keep.json`; its
+  api is told with `MAKTABA_SCHEMA_AHEAD_OK`); anything else that may break the previous
+  release (a drop of any kind, a rename, a retype, a constraint or unique index added, a
+  function's signature changed) puts the dump back. The new release puts it back itself before
+  it switches back, so the previous one starts on a finished database: into a database of its
+  own that nothing else reaches, the schema and the grants one at a time and the rows, vectors
+  and indexes in parallel, checked against the dump (every table, index, key, trigger,
   function, grant and default privilege, and every table's rows: dumps now record them,
-  `counts.json`) before the record says `restored`, retries with one worker, and says exactly
-  what is missing when it cannot. The roles halted by the database step start again by
-  themselves once its record changes (put right by hand or by `maktaba-server restore`), and a
-  restart written by hand (`updates/restart`) is taken under the app's launcher too.
+  `counts.json`), then renamed into place in one transaction with the database's own grants
+  (the machines' CONNECT); a failure leaves the database as it was, retries with one worker,
+  and says exactly what is missing. The roles halted by the database step start again by
+  themselves once its record is put right (`migrated` or `restored`), a start gives the
+  machines their CONNECT back when a restore dropped it, and a restart written by hand
+  (`updates/restart`) is taken under the app's launcher too.
 
 ### Added
 

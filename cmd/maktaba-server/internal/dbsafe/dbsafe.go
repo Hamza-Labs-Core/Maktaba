@@ -288,6 +288,19 @@ func (t Target) EndSessions(ctx context.Context) (int, error) {
 	return n, d.QueryRowContext(ctx, pgbundle.EndSessionsSQL("")).Scan(&n)
 }
 
+// GrantWorkersConnect gives the workers' group (the machines' logins) CONNECT on the
+// database when it lacks it (pgbundle.GrantWorkersConnectSQL): a restore by a release
+// before 2026-10-28 dropped that grant with the database.
+func (t Target) GrantWorkersConnect(ctx context.Context) error {
+	d, err := t.open(ctx, "")
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	_, err = d.ExecContext(ctx, pgbundle.GrantWorkersConnectSQL)
+	return err
+}
+
 // VerifyDump checks a dump reads back: pg_restore --list parses it and names every
 // table the database has now in public (a dump of an empty database lists none). It
 // returns how many tables the dump holds.

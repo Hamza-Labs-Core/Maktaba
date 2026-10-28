@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"strconv"
 	"strings"
@@ -101,10 +102,13 @@ func (u untilWhole) Write(p []byte) (int, error) {
 // The outage of 2026-10-28, put back again on a real cluster: while the home's database
 // is restored, a joined machine keeps logging in and asking for its copy (its GRANTs on
 // every table met pg_restore's: "tuple concurrently updated", and the restore stopped with
-// no indexes, keys, triggers or grants). The restore keeps every other login out until
-// it is whole, completes in parallel, is checked against the dump (every object, every
-// grant, every table's rows: the dump's counts), and gives the database its own grants
-// back (the workers' CONNECT, which a dump does not hold) so the machine logs in again.
+// no indexes, keys, triggers or grants), and (the review of #433) a process that runs on
+// across the restart as the database's owner keeps writing, which taking CONNECT from
+// PUBLIC never stops. The restore goes into a database of its own nobody reaches (the
+// machine cannot log in to it), completes in parallel, is checked against the dump (every
+// object, every grant, every table's rows: the dump's counts), and is renamed into place
+// with the database's own grants (the workers' CONNECT, which a dump does not hold) so the
+// machine logs in again.
 func TestRealRestoreKeepsOtherLoginsOutAndIsWhole(t *testing.T) {
 	b, q := realServer(t)
 	ctx := context.Background()
@@ -123,27 +127,28 @@ func TestRealRestoreKeepsOtherLoginsOutAndIsWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// the joined machine: logs in and asks for its copy, again and again
-	node := func(ctx context.Context) error {
+	psql := func(ctx context.Context, user, pw, db, sql string) error {
 		cmd := exec.CommandContext(ctx, b.Bin("psql"), "-X", "-q", "-At", "-v", "ON_ERROR_STOP=1", "-h", "127.0.0.1",
-			"-p", strconv.Itoa(b.Port), "-U", "node_login", "-d", AppDatabase, "-c", "SELECT copy_grant()")
-		cmd.Env = append(os.Environ(), "PGPASSWORD=node-pw", "PGCONNECT_TIMEOUT=2")
+			"-p", strconv.Itoa(b.Port), "-U", user, "-d", db, "-c", sql)
+		cmd.Env = append(os.Environ(), "PGPASSWORD="+pw, "PGCONNECT_TIMEOUT=2")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("%v: %s", err, out)
 		}
 		return nil
 	}
-	if err := node(ctx); err != nil {
+	// the joined machine: logs in and asks for its copy, again and again
+	node := func(ctx context.Context, db string) error {
+		return psql(ctx, "node_login", "node-pw", db, "SELECT copy_grant()")
+	}
+	if err := node(ctx, AppDatabase); err != nil {
 		t.Fatalf("the machine cannot log in before the restore: %v", err)
 	}
 	var restoring atomic.Bool
-	var tries, during atomic.Int32
-	var mu sync.Mutex
-	var reached []string
+	var tries, scratch, writes atomic.Int32
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
-	for w := 0; w < 3; w++ {
+	loop := func(fn func()) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -153,36 +158,43 @@ func TestRealRestoreKeepsOtherLoginsOutAndIsWhole(t *testing.T) {
 					return
 				default:
 				}
-				was := restoring.Load()
-				err := node(ctx)
-				if was && restoring.Load() {
-					tries.Add(1)
-					if err == nil {
-						during.Add(1)
-						mu.Lock()
-						reached = append(reached, "logged in and granted")
-						mu.Unlock()
-					}
-				}
+				fn()
 			}
 		}()
 	}
+	for w := 0; w < 2; w++ {
+		loop(func() {
+			_ = node(ctx, AppDatabase) // the database being replaced: as before the rollback
+			if restoring.Load() {
+				tries.Add(1)
+				if node(ctx, restoringDatabase) == nil { // the one being put back: never
+					scratch.Add(1)
+				}
+			}
+		})
+	}
+	// the owner's process that runs on (a TV slot handed over): it writes all along
+	loop(func() {
+		if psql(ctx, SuperUser, q.pw, AppDatabase, `SET ROLE `+AppRole+`;
+			INSERT INTO t000 (note, n) VALUES ('written meanwhile', 1)`) == nil {
+			writes.Add(1)
+		}
+	})
 	start := time.Now()
-	// the restore is over for the machine once it says it is whole (its grants come
-	// back right after): a login that got in before then got into a database put back
 	err = b.RestoreRunning(ctx, dump, untilWhole{&restoring})
 	restoring.Store(false)
 	close(stop)
 	wg.Wait()
 	if err != nil {
-		t.Fatalf("the restore with a machine asking meanwhile: %v", err)
+		t.Fatalf("the restore with a machine and the owner's process at it meanwhile: %v", err)
 	}
-	t.Logf("put back in %s; the machine tried %d times meanwhile", time.Since(start), tries.Load())
-	if tries.Load() == 0 {
-		t.Fatal("the machine never tried while the database was put back")
+	t.Logf("put back in %s; the machine tried %d times meanwhile, the owner's process wrote %d times",
+		time.Since(start), tries.Load(), writes.Load())
+	if tries.Load() == 0 || writes.Load() == 0 {
+		t.Fatal("the machine or the owner's process never tried while the database was put back")
 	}
-	if n := during.Load(); n > 0 {
-		t.Fatalf("another login reached the database %d times while it was put back (%v)", n, reached[:1])
+	if n := scratch.Load(); n > 0 {
+		t.Fatalf("the machine logged in to the database being put back %d times", n)
 	}
 
 	// whole: what the dump held, the update's change gone
@@ -208,11 +220,50 @@ func TestRealRestoreKeepsOtherLoginsOutAndIsWhole(t *testing.T) {
 	if !strings.Contains(acl, "maktaba_worker=c/") || !strings.Contains(acl, "=Tc/") {
 		t.Fatalf("the database's grants after the restore = %s", acl)
 	}
-	if err := node(ctx); err != nil {
+	if err := node(ctx, AppDatabase); err != nil {
 		t.Fatalf("the machine cannot log in after the restore: %v", err)
 	}
-	if _, err := os.Stat(b.grantsFile()); err == nil {
-		t.Error("the kept grants outlive a restore that finished")
+	if left := one(t, q, `SELECT count(*) FROM pg_database WHERE datname IN ('`+restoringDatabase+`', '`+
+		replacedDatabase+`')`); left != "0" {
+		t.Fatalf("%s databases of the restore left", left)
+	}
+}
+
+// A restore whose dump cannot be put back whole leaves the app database as it was: the
+// scratch database goes, the one before stays with its rows and its grants.
+func TestRealFailedRestoreLeavesTheDatabase(t *testing.T) {
+	b, q := realServer(t)
+	ctx := context.Background()
+	outageDatabase(t, q, 2)
+	dump, err := b.DumpBeforeUpdate(ctx, "v0.3.41", "v0.3.42", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Exec(ctx, AppDatabase, `SET ROLE `+AppRole+`; CREATE TABLE after_update (id int);`); err != nil {
+		t.Fatal(err)
+	}
+	// a dump whose counts say a table had rows it does not hold
+	raw, err := os.ReadFile(filepath.Join(dump, CountsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dump, CountsFile),
+		[]byte(strings.Replace(string(raw), `"public.t001":21`, `"public.t001":99`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = b.RestoreRunning(ctx, dump, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "public.t001: 21 of 99 rows") {
+		t.Fatalf("an incomplete restore = %v", err)
+	}
+	if one(t, q, `SELECT to_regclass('after_update') IS NOT NULL`) != "t" {
+		t.Fatal("the database before the restore is gone")
+	}
+	if left := one(t, q, `SELECT count(*) FROM pg_database WHERE datname IN ('`+restoringDatabase+`', '`+
+		replacedDatabase+`')`); left != "0" {
+		t.Fatalf("%s databases of the restore left", left)
+	}
+	if acl := one(t, q, `SELECT datacl::text FROM pg_database WHERE datname = '`+AppDatabase+`'`); !strings.Contains(acl, "maktaba_worker=c/") {
+		t.Fatalf("the database's grants after a failed restore = %s", acl)
 	}
 }
 

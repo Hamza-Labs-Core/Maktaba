@@ -40,6 +40,9 @@ func (f *fakeTV) Begin(context.Context, *Journal) (TVStatus, error) {
 
 func (f *fakeTV) Status(context.Context, *Journal) (TVStatus, error) { return f.next() }
 
+// Binary implements TVBinary.
+func (f *fakeTV) Binary(j *Journal) (string, string, error) { return "v" + j.Job.Version, "ab12", nil }
+
 func (f *fakeTV) Withdraw(_ context.Context, _ *Journal, reason string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -167,7 +170,6 @@ func TestTVStepWaitingCommitsPending(t *testing.T) {
 			says: CodeTVChangePending},
 		"slow staging": {tv: &fakeTV{script: []TVStatus{{Outcome: TVInProgress, ChangeID: "c1", Number: 7,
 			State: "swapping", StagedAt: &staged, TimeoutMinutes: 10}}}, says: CodeTVTimeout},
-		"silent API": {tv: &fakeTV{err: errors.New("connection refused")}, says: "connection refused"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			n, w := appliedRig(t, c.tv, c.deadline)
@@ -296,6 +298,26 @@ func TestRollbackTakesTheTVChangeBack(t *testing.T) {
 	}
 	if j.TV == nil || j.TV.Withdrawn == "" {
 		t.Fatalf("tv %+v", j.TV)
+	}
+}
+
+// The review of #433: an API that never answered about the change leaves no change behind
+// the TV step to go on by itself. The release commits with the TV held (not pending), the
+// check named no_change, and the binary the change carries recorded for the Updates page's
+// Retry to ask for it.
+func TestTVStepNoChangeIsHeldNotPending(t *testing.T) {
+	tv := &fakeTV{err: errors.New("connection refused")}
+	n, w := appliedRig(t, tv, nil)
+	j := n.waitState(StateCommitted)
+	if w.committed != "1.5.0" || j.Error != nil {
+		t.Fatalf("committed %q error %+v", w.committed, j.Error)
+	}
+	if j.TV == nil || j.TV.Outcome != TVHeld || j.TV.ChangeID != "" || len(j.TV.Failed) != 1 ||
+		j.TV.Failed[0] != NoTVChange || j.TV.StreamingVersion != "v1.5.0" || j.TV.StreamingSHA256 != "ab12" {
+		t.Fatalf("tv %+v", j.TV)
+	}
+	if s := stepOf(j, StepTV); s == nil || s.State != "held" || !strings.Contains(s.Detail, "connection refused") {
+		t.Fatalf("tv step %+v", s)
 	}
 }
 

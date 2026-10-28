@@ -47,6 +47,8 @@ const (
 type TVChanges interface {
 	AutoUpdate(ctx context.Context, runID string) (tvchange.AutoUpdateStatus, error)
 	RetryAutoUpdate(ctx context.Context, runID string, actor *string) (tvchange.AutoUpdateStatus, error)
+	// BeginAutoUpdate makes the run's change (a Retry of a TV held with no change behind it)
+	BeginAutoUpdate(ctx context.Context, runID, version, sha256 string) (tvchange.AutoUpdateStatus, error)
 	DropAutoUpdate(ctx context.Context, runID string, actor *string) (tvchange.AutoUpdateStatus, error)
 	ReplaceOlderAutoUpdates(ctx context.Context, runID string) error
 }
@@ -67,7 +69,16 @@ type RunTV struct {
 	// Checks are the failed checks with their channel and value (the report's summary;
 	// set when the run is read while held).
 	Checks []tvchange.Check `json:"checks,omitempty"`
+	// StreamingVersion and StreamingSHA256: the binary the change carries, for a TV held
+	// with no change behind it (Failed = [no_change]): its Retry makes the change with them.
+	StreamingVersion string `json:"streaming_version,omitempty"`
+	StreamingSHA256  string `json:"streaming_sha256,omitempty"`
+	// Dropped: an admin dropped a TV held with no change behind it (nothing to cancel).
+	Dropped bool `json:"dropped,omitempty"`
 }
+
+// noChange reports whether the run's TV was held with no change behind it.
+func (t *RunTV) noChange() bool { return t.ChangeID == "" && t.Outcome == TVHeld }
 
 // TVHeldNow is the run whose TV is held now (GET /api/cluster/updates: tv_held).
 type TVHeldNow struct {
@@ -110,6 +121,14 @@ func (t *RunTV) fill(ctx context.Context, tv TVChanges, runID string) {
 	if err != nil {
 		return
 	}
+	if t.noChange() && st.Outcome == tvchange.AutoOutcomeNone {
+		// held with no change behind it: Retry makes it, Drop leaves the TV as it is
+		t.State = TVStateHeld
+		if t.Dropped {
+			t.State = TVStateDropped
+		}
+		return
+	}
 	t.State = tvState(st)
 	if t.Outcome == TVPending && t.State == TVStateRetrying {
 		t.State = TVStatePending // still on its first way to the air, not a retry
@@ -140,7 +159,8 @@ func (d *Driver) tvHeldAtCommit(ctx context.Context, run Run, det *RunDetail, st
 		return
 	}
 	det.TV = &RunTV{Outcome: TVHeld, ChangeID: st.TV.ChangeID, Number: st.TV.Number,
-		HeldOn: st.TV.LiveStreaming, Failed: st.TV.Failed}
+		HeldOn: st.TV.LiveStreaming, Failed: st.TV.Failed,
+		StreamingVersion: st.TV.StreamingVersion, StreamingSHA256: st.TV.StreamingSHA256}
 	noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
 	d.audit(ctx, run, "tv_held", map[string]any{"change_id": st.TV.ChangeID, "held_on": st.TV.LiveStreaming,
 		"failed": st.TV.Failed})
@@ -183,8 +203,31 @@ func (d *Driver) TVAction(ctx context.Context, runID, action, actor string) (Run
 		} else if active != nil {
 			return RunTV{}, ErrRunActive
 		}
+		if det.TV.noChange() {
+			// held with no change behind it (it could not be had at the update): Retry makes
+			// it now, with the binary the home said; it is staged and checked as any
+			if det.TV.Dropped || det.TV.StreamingVersion == "" || det.TV.StreamingSHA256 == "" {
+				return RunTV{}, ErrTVNotHeld
+			}
+			st, err = d.TV.BeginAutoUpdate(ctx, runID, det.TV.StreamingVersion, det.TV.StreamingSHA256)
+			if err == nil && st.ChangeID != "" {
+				det.TV.ChangeID, det.TV.Number = st.ChangeID, st.Number
+				noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, runID, "", det), "run_id", runID)
+			}
+			break
+		}
 		st, err = d.TV.RetryAutoUpdate(ctx, runID, who)
 	case "drop":
+		if det.TV.noChange() {
+			// nothing to cancel: the TV stays on the software it runs until a later release
+			if det.TV.Dropped {
+				return RunTV{}, ErrTVNotHeld
+			}
+			det.TV.Dropped = true
+			noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, runID, "", det), "run_id", runID)
+			st = tvchange.AutoUpdateStatus{Outcome: tvchange.AutoOutcomeCancelled, EndReason: tvchange.EndDropped}
+			break
+		}
 		st, err = d.TV.DropAutoUpdate(ctx, runID, who)
 	default:
 		return RunTV{}, errors.New("unknown action")

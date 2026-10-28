@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -523,6 +524,55 @@ func TestRollbackOfAdditiveMigrationsKeepsTheSchema(t *testing.T) {
 			w.mu.Unlock()
 			if marked == keeps || kept != keeps || next != "1.4.0" {
 				t.Fatalf("restore marked %v, kept %v, next %s", marked, kept, next)
+			}
+		})
+	}
+}
+
+// The review of #433: a rollback that puts the dump back does it with the new release's
+// own code, before it switches back (the record marked first, the switch still the new
+// release's), so the release before starts on a finished database. One that fails leaves
+// the record marked, and the switch back goes on (the release before puts it back).
+func TestRollbackPutsTheDumpBackBeforeItsSwitchBack(t *testing.T) {
+	for _, fails := range []bool{false, true} {
+		t.Run(map[bool]string{false: "put back", true: "fails"}[fails], func(t *testing.T) {
+			w := newWorld("1.4.0")
+			r := startRig(t, t.TempDir(), w, healthy)
+			_ = r.m.Prepare(homeJob())
+			r.waitState(StatePrepared)
+			_ = r.m.Apply("run-1")
+			r.waitExit()
+			w.migrated = true
+			r.stop()
+			n := startRig(t, r.dir, w, Verdict{Why: "api /readyz 503"})
+			var called atomic.Int32
+			var markedThen bool
+			var nextThen string
+			n.m.RestoreBack = func(_ context.Context, j *Journal, reason string) error {
+				called.Add(1)
+				w.mu.Lock()
+				markedThen, nextThen = w.marked, w.next
+				w.mu.Unlock()
+				if j.Job.Version != "1.5.0" || j.From != "1.4.0" || reason != "api /readyz 503" {
+					t.Errorf("RestoreBack(%s from %s, %q)", j.Job.Version, j.From, reason)
+				}
+				if fails {
+					return errors.New("pg_restore: disk full")
+				}
+				return nil
+			}
+			n.m.Resume()
+			n.waitExit()
+			n.waitState(StateRollingBack)
+			if called.Load() != 1 || !markedThen || nextThen != "1.5.0" {
+				t.Fatalf("RestoreBack called %d times (record marked %v, the next start %s then)", called.Load(),
+					markedThen, nextThen)
+			}
+			w.mu.Lock()
+			next := w.next
+			w.mu.Unlock()
+			if next != "1.4.0" {
+				t.Fatalf("switched back to %s", next)
 			}
 		})
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
@@ -198,15 +199,29 @@ type fakeDB struct {
 	// (not known: the update dumps as it always did)
 	pending int
 	known   bool
+	// ahead: the database's schema is newer than the payload's (the api refuses it unless
+	// MAKTABA_SCHEMA_AHEAD_OK)
+	ahead bool
+	// connects: the record's state each time the workers' CONNECT was checked
+	connects []string
 }
 
 func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 	t.Helper()
 	f := &fakeDB{cfg: cfg}
 	prevD, prevR, prevM, prevA, prevP := dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations
+	prevG := grantWorkersConnect
 	t.Cleanup(func() {
 		dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations = prevD, prevR, prevM, prevA, prevP
+		grantWorkersConnect = prevG
 	})
+	grantWorkersConnect = func(context.Context, *migrationGate) error {
+		rec, _, _ := apppayload.ReadDatabase(cfg.StateDir())
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.connects = append(f.connects, rec.State)
+		return nil
+	}
 	pendingMigrations = func(context.Context, *migrationGate) (int, bool) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -225,11 +240,16 @@ func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 		f.keep = keep
 		return filepath.Join(b.Backups, pgbundle.UpdateDumpName(from, to)), nil
 	}
-	migrateUp = func(ctx context.Context, _ *exec.Cmd, _ io.Writer) error {
+	migrateUp = func(ctx context.Context, api *exec.Cmd, _ io.Writer) error {
 		rec, _, _ := apppayload.ReadDatabase(cfg.StateDir())
 		f.mu.Lock()
 		f.migrates = append(f.migrates, rec.State)
 		block, err := f.block, f.migrateErr
+		if f.ahead && (api == nil || !contains(api.Env, envSchemaAheadOK+"=1")) {
+			// the database holds a newer schema than this release's, which its api refuses
+			// unless told it is kept for it
+			err = errSchemaAhead
+		}
 		f.mu.Unlock()
 		if block != nil {
 			select {
@@ -533,6 +553,13 @@ func TestAppBundleHaltEndsWhenTheRecordIsPutRight(t *testing.T) {
 	if _, _, r := f.counts(); r != 1 {
 		t.Fatalf("%d restores: a halt is not tried again by itself", r)
 	}
+	// a restore a person asks for meanwhile (`maktaba-server restore`: restoring, by) is
+	// not a way out: that command restarts the server for it
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
+		Dump: dump, By: "admin"})
+	if supervisor.HaltCleared(err) {
+		t.Fatal("a restore asked by a person ended the halt")
+	}
 	// put right by hand, as the owner did: the database back, the record restored
 	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseRestored, From: "v0.2.0",
 		Dump: dump, Failed: "v0.3.0", Error: "watch_timeout"})
@@ -550,6 +577,14 @@ func TestAppBundleHaltEndsWhenTheRecordIsPutRight(t *testing.T) {
 	}
 	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.State != apppayload.DatabaseMigrated {
 		t.Fatalf("record = %+v", rec)
+	}
+	// the review of #433: a database put right by hand after a restore of a release before
+	// 2026-10-28 lacks the machines' CONNECT: a start that finds it restored gives it back
+	f.mu.Lock()
+	connects := append([]string(nil), f.connects...)
+	f.mu.Unlock()
+	if len(connects) == 0 || connects[0] != apppayload.DatabaseRestored {
+		t.Fatalf("the workers' CONNECT checked at %v, want at the start on the restored record", connects)
 	}
 }
 
@@ -609,7 +644,8 @@ func TestAppBundleRollbackKeepsAnAdditiveSchema(t *testing.T) {
 	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
 		t.Fatalf("v0.3.0 again = %v", err)
 	}
-	if rec := recorded(t, cfg); rec.Version != "v0.3.0" || rec.Release != "" || rec.KeptFor != "" {
+	// (no migration ran: the schema is the same one, which v0.2.0 still runs on)
+	if rec := recorded(t, cfg); rec.Version != "v0.3.0" || rec.Release != "" || rec.KeptFor != "0.2.0" {
 		t.Fatalf("record after v0.3.0 again = %+v", rec)
 	}
 	// a release older than the one kept for is still refused
@@ -619,6 +655,115 @@ func TestAppBundleRollbackKeepsAnAdditiveSchema(t *testing.T) {
 	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); !supervisor.Halted(err) ||
 		supervisor.DetailOf(err).Code != "db_refused_older" {
 		t.Fatalf("an older release than the one kept for = %v", err)
+	}
+}
+
+// The review of #433, today's exact path: 0.3.41 runs, 0.3.42 migrated (with its dump)
+// and rolls back. 0.3.41 (code from before 2026-10-28) would put the dump back with its
+// own restore; now 0.3.42 does it before it switches back: the roles that use the database
+// stopped first (the TV's run on), the record marked, put back, and restored for 0.3.41,
+// whose start then finds a finished database: nothing put back, the record migrated.
+func TestAppBundleRollbackRestoresWithTheNewReleasesCode(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.41", "")
+	backups := filepath.Join(cfg.StateDir(), "backups")
+	_ = os.MkdirAll(backups, 0o700)
+	dump := filepath.Join(backups, "pre-v0.3.41-to-v0.3.42.dump")
+	_ = os.WriteFile(dump, []byte("dump"), 0o600)
+	record(t, cfg, apppayload.Database{Version: "v0.3.42", State: apppayload.DatabaseMigrated, From: "v0.3.41", Dump: dump})
+	f := installFakeDB(t, cfg)
+	// the new release's supervisor: the api, the pipeline and the streaming role stop; the
+	// TV slots and postgres do not
+	procs := []supervisor.ChildStatus{{Role: supervisor.RolePostgres, Wanted: true, PID: 1},
+		{Role: supervisor.RoleAPI, Wanted: true, PID: 2}, {Role: supervisor.RolePipeline, Instance: "stt-1", Wanted: true, PID: 3},
+		{Role: supervisor.RoleStreaming, Wanted: true, PID: 4}, {Role: supervisor.RoleTVSlot, Instance: "blue", Wanted: true, PID: 5}}
+	var mu sync.Mutex
+	var stopped []string
+	u := &updates{}
+	u.snap = func() supervisor.Snapshot {
+		mu.Lock()
+		defer mu.Unlock()
+		return supervisor.Snapshot{Processes: append([]supervisor.ChildStatus(nil), procs...)}
+	}
+	u.want = func(role supervisor.Role, instance string, on bool) error {
+		mu.Lock()
+		defer mu.Unlock()
+		for i := range procs {
+			if procs[i].Role == role && procs[i].Instance == instance && !on {
+				procs[i].PID, procs[i].Wanted = 0, false
+				stopped = append(stopped, childName(procs[i]))
+			}
+		}
+		return nil
+	}
+	path := apppayload.DatabasePath(cfg.StateDir())
+	if marked, err := layout.MarkRecordRestoring(path, "v0.3.42", "watch_timeout"); err != nil || !marked {
+		t.Fatalf("marked %v %v", marked, err)
+	}
+	j := &updater.Journal{Job: updater.Job{RunID: "run-1", Version: "v0.3.42", Home: true}, From: "v0.3.41"}
+	if err := u.restoreBack(cfg, "", testBundle(cfg))(context.Background(), j, "watch_timeout"); err != nil {
+		t.Fatalf("the new release's restore = %v", err)
+	}
+	mu.Lock()
+	got := strings.Join(stopped, ",")
+	mu.Unlock()
+	if got != "api,pipeline/stt-1,streaming" {
+		t.Fatalf("stopped %s", got)
+	}
+	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseRestored || rec.Version != "v0.3.41" {
+		t.Fatalf("record after the new release's restore = %+v", rec)
+	}
+	// 0.3.41 starts (as its own code would: the record says restored)
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("0.3.41 on the database put back = %v", err)
+	}
+	if _, _, r := f.counts(); r != 1 {
+		t.Fatalf("%d restores: 0.3.41 put it back again", r)
+	}
+	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseMigrated || rec.Version != "v0.3.41" {
+		t.Fatalf("record after 0.3.41's start = %+v", rec)
+	}
+	// a record not marked for that release's dump is not put back
+	if err := u.restoreBack(cfg, "", testBundle(cfg))(context.Background(), j, "x"); err == nil {
+		t.Fatal("a restore of a record not marked")
+	}
+}
+
+// The review of #433: A (v0.2.0) runs on B's (v0.3.0) schema, kept for it; A updates to C
+// (v0.4.0), whose migrations fail, and C's dump (of B's schema) is put back for A. The
+// restored database is B's schema again, kept for A: A starts on it (its api told), never
+// halted with db_ahead, and still does on its next start.
+func TestAppBundleRestoreKeepsTheKeptSchemaOfItsDump(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.4.0", "")
+	backups := filepath.Join(cfg.StateDir(), "backups")
+	_ = os.MkdirAll(backups, 0o700)
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", Release: "v0.2.0", State: apppayload.DatabaseMigrated,
+		KeptFor: "0.2.0", KeptReason: "watch_timeout"})
+	f := installFakeDB(t, cfg)
+	f.pending, f.known = 2, true
+	f.migrateErr = errors.New("ERROR 0170_x.sql")
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); !supervisor.Halted(err) ||
+		supervisor.DetailOf(err).Code != "db_restored" {
+		t.Fatalf("C's failed migrations = %v", err)
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.State != apppayload.DatabaseRestored || rec.KeptFor != "0.2.0" {
+		t.Fatalf("restored record = %+v", rec)
+	}
+	// A again, on the database put back (B's schema)
+	f.migrateErr, f.ahead = nil, true
+	newPayload(t, payload, "v0.2.0")
+	for i := 0; i < 2; i++ {
+		ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+		if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+			t.Fatalf("A on the restored, kept schema (start %d) = %v", i+1, err)
+		}
+		if rec := recorded(t, cfg); rec.KeptFor != "0.2.0" || rec.State != apppayload.DatabaseMigrated {
+			t.Fatalf("record after A's start %d = %+v", i+1, rec)
+		}
+	}
+	if _, _, r := f.counts(); r != 1 {
+		t.Fatalf("%d restores", r)
 	}
 }
 

@@ -232,6 +232,14 @@ type Machine struct {
 	// TV moves the home's TV to the new release's streaming binary before the commit
 	// (story 35.6, tv.go); nil: no TV slots here (a node, a SQLite home), nothing to move.
 	TV TVSwapper
+	// RestoreBack puts the dump taken before the new release's migrations back with this
+	// release's own code before its rollback switches back (the record is marked restoring
+	// first): the database's roles stopped, the dump put back whole and checked, the record
+	// restored for the release before, which then starts on a finished database. The
+	// release before's own restore (code from before 2026-10-28: no lockout, its grants in
+	// parallel, nothing checked) is what failed on 2026-10-28. An error leaves the record
+	// restoring, and the release before puts it back at its start, as before (nil: always so).
+	RestoreBack func(ctx context.Context, j *Journal, reason string) error
 
 	mu      sync.Mutex
 	j       *Journal
@@ -1283,7 +1291,12 @@ func (m *Machine) commitPassed(why string) bool {
 		if why == "" {
 			why = "its TV change is not on the air yet"
 		}
-		m.tvPending(why)
+		if j.TV.ChangeID == "" {
+			// no change behind it to go on by itself: held, with Retry (review of #433)
+			m.tvHeldNoChange(why)
+		} else {
+			m.tvPending(why)
+		}
 	}
 	return m.commit()
 }
@@ -1407,8 +1420,21 @@ func (m *Machine) rollback(reason string) {
 	m.withdrawTV(reason)
 	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)
 	if migrated && !m.keepSchema(j, reason) {
-		if _, err := m.Records.MarkRestore(j.Job.Version, j.From, reason); err != nil {
+		marked, err := m.Records.MarkRestore(j.Job.Version, j.From, reason)
+		if err != nil {
 			m.errorf("cannot mark the database record for the dump to be put back: %v", err)
+		}
+		if marked && m.RestoreBack != nil {
+			// this release puts it back now, with its own code (review of #433)
+			m.logf("putting the database back as it was before %s's migrations, before switching back to %s",
+				j.Job.Version, orNone(j.From))
+			if err := m.RestoreBack(m.ctx(), j, reason); err != nil {
+				m.errorf("this release could not put the database back (%v): %s puts it back at its start", err,
+					orNone(j.From))
+			} else {
+				m.logf("the database is back as it was before %s's migrations: %s starts on it", j.Job.Version,
+					orNone(j.From))
+			}
 		}
 	}
 	// stopped before the switch back: a push after it would write back the guard the
