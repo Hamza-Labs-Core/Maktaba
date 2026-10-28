@@ -66,7 +66,7 @@ async def enqueue(db: Any, lib: UUID, stage: str, priority: int) -> int:
     return res.job_id
 
 
-async def work(db: Any, rt: EngineRuntime, max_jobs: int = 50) -> list[str]:
+async def work(db: Any, rt: EngineRuntime, max_jobs: int = 400) -> list[str]:
     """Claim and run ``network_yt`` jobs until none is claimable; the stages in order."""
     ran: list[str] = []
     for _ in range(max_jobs):
@@ -87,7 +87,7 @@ async def busy(db: Any) -> int:
 
 
 @pytest.mark.asyncio
-async def test_batches_of_25_oldest_first_that_queue_themselves(
+async def test_one_video_a_job_oldest_first_queueing_itself_at_300(
     db: Database, tmp_path: Path, fake: FakeYtDlp
 ) -> None:
     lib = await make_lib(db, tmp_path)
@@ -97,20 +97,39 @@ async def test_batches_of_25_oldest_first_that_queue_themselves(
     rt = await setup_runtime(db, [])
     job = await run_stage(db, rt, "youtube_backfill", "library", lib)
     assert job["state"] == "done", error_of(job)
-    assert fake.downloaded == ids[:25]  # oldest first, one batch
-    assert summary_of(job)["remaining"] == 5
+    assert fake.downloaded == ids[:1]  # one video, the oldest; it goes on to convert
+    assert summary_of(job)["remaining"] == 29
     nxt = await db.fetchrow(
         "SELECT * FROM processing_jobs WHERE stage = 'youtube_backfill' AND state = 'pending'"
     )
-    assert nxt is not None and nxt["priority"] == 300
+    assert nxt is not None and nxt["priority"] == 300  # through the graph (a request)
     progress = json.loads(job["progress"]) if isinstance(job["progress"], str) else job["progress"]
-    assert progress["message"].startswith("backfill: 25 of 30")
-    assert await work(db, rt) == ["youtube_backfill"]
+    assert progress["message"].startswith("backfill: 1 of 30")
+    ran = await work(db, rt)
+    assert ran == ["youtube_backfill"] * 29
     assert fake.downloaded == ids
     assert await db.fetchval(
         "SELECT count(*) FROM processing_jobs WHERE stage = 'youtube_backfill'"
         " AND state = 'pending'"
     ) == 0  # fmt: skip
+    converts = await db.fetchval("SELECT count(*) FROM processing_jobs WHERE stage = 'convert_mp4'")
+    assert converts == 30
+
+
+@pytest.mark.asyncio
+async def test_a_batch_examines_at_most_25_items(
+    db: Database, tmp_path: Path, fake: FakeYtDlp
+) -> None:
+    lib = await make_lib(db, tmp_path)
+    sid = await add_source(db, lib)
+    ids = [yid(n) for n in range(30)]
+    for i in ids:
+        fake.downloads[i] = ["members_only"]  # nothing lands: a job goes through 25
+    await want_old(db, lib, sid, ids)
+    rt = await setup_runtime(db, [])
+    job = await run_stage(db, rt, "youtube_backfill", "library", lib)
+    assert summary_of(job)["skipped"] == 25 and summary_of(job)["remaining"] == 5
+    assert await work(db, rt) == ["youtube_backfill"]
 
 
 @pytest.mark.asyncio
@@ -142,7 +161,7 @@ async def test_new_uploads_go_first_and_never_alongside(
     # the late upload comes right after the back-catalogue item that was running
     assert fake.downloaded[2:6] == [back[0], back[1], back[2], late]
     assert sorted(fake.downloaded) == sorted([*back, *new, late])
-    assert ran[0] == "youtube_fetch" and ran.count("youtube_fetch") == 2
+    assert ran[:2] == ["youtube_fetch", "youtube_fetch"] and ran.count("youtube_fetch") == 3
     got = await rows(db, lib)
     assert all(r["state"] == "done" for r in got.values())
 
@@ -175,29 +194,32 @@ async def test_pausing_the_stage_stops_after_the_current_item(
     ids = [yid(n) for n in range(10)]
     await want_old(db, lib, sid, ids)
     rt = await setup_runtime(db, [])
+    yes, no = (True, False) if is_pg(db) else (1, 0)
 
     async def pause(y: str) -> None:
         if y == ids[2]:
             await db.execute(
-                "UPDATE job_stages SET paused = $1 WHERE stage = 'youtube_backfill'",
-                True if is_pg(db) else 1,
+                "UPDATE job_stages SET paused = $1 WHERE stage = 'youtube_backfill'", yes
             )
 
     fake.before_download = pause
-    job = await run_stage(db, rt, "youtube_backfill", "library", lib)
-    assert job["state"] == "done" and summary_of(job)["stopped"] == "stage paused"
+    await enqueue(db, lib, "youtube_backfill", 300)
+    assert await work(db, rt) == ["youtube_backfill"] * 3  # the item it was on finished
     assert fake.downloaded == ids[:3]
     states = await rows(db, lib)
     assert sorted(i for i, r in states.items() if r["state"] == "wanted") == ids[3:]
-    assert await work(db, rt) == []  # paused: the next batch waits
+    assert await live_backfill(db) is not None  # the next one waits for the resume
 
     fake.before_download = None
-    await db.execute(
-        "UPDATE job_stages SET paused = $1 WHERE stage = 'youtube_backfill'",
-        False if is_pg(db) else 0,
-    )
-    assert await work(db, rt) == ["youtube_backfill"]
+    await db.execute("UPDATE job_stages SET paused = $1 WHERE stage = 'youtube_backfill'", no)
+    assert await work(db, rt) == ["youtube_backfill"] * 7
     assert fake.downloaded == ids  # each once
+
+
+async def live_backfill(db: Any) -> Any:
+    return await db.fetchrow(
+        "SELECT id FROM processing_jobs WHERE stage = 'youtube_backfill' AND state = 'pending'"
+    )
 
 
 @pytest.mark.asyncio
@@ -220,15 +242,19 @@ async def test_cancel_then_resume_carries_on_without_downloading_again(
 
     fake.before_download = cancel
     rt = await setup_runtime(db, [])
-    job = await run_stage(db, rt, "youtube_backfill", "library", lib)
-    assert job["state"] == "cancelled"
+    await enqueue(db, lib, "youtube_backfill", 300)
+    assert await work(db, rt) == ["youtube_backfill"] * 3
+    last = await db.fetchrow(
+        "SELECT state FROM processing_jobs WHERE stage = 'youtube_backfill' ORDER BY id DESC"
+    )
+    assert last["state"] == "cancelled"
     got = await rows(db, lib)
     assert [got[i]["state"] for i in ids] == ["done", "done", "wanted", "wanted", "wanted"]
-    assert await work(db, rt) == []  # cancel queues no next batch
+    assert await live_backfill(db) is None  # cancel queues no next job
 
     fake.before_download = None
-    resumed = await run_stage(db, rt, "youtube_backfill", "library", lib)  # Resume backfill
-    assert resumed["state"] == "done", error_of(resumed)
+    await enqueue(db, lib, "youtube_backfill", 300)  # Resume backfill
+    assert await work(db, rt) == ["youtube_backfill"] * 3
     assert fake.downloaded == ids  # the two done ones were not fetched again
 
 

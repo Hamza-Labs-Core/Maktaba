@@ -1,8 +1,10 @@
 """The download loop shared by ``youtube_fetch`` and ``youtube_backfill`` (Epic 47).
 
-One job per library drains its ``wanted`` items: the new uploads newest first
-(``youtube_fetch``), or a batch of :data:`BACKFILL_BATCH` of the back catalogue oldest first
-(``youtube_backfill``, which queues itself again while any are left). Per item:
+A job takes a library's ``wanted`` items in order (the new uploads newest first for
+``youtube_fetch``; the back catalogue oldest first, at most :data:`BACKFILL_BATCH`, for
+``youtube_backfill``) until **one video lands**; it then requests ``convert_mp4`` for that
+video and its own stage for the next item (``StageResult.requests``, the graph's own
+enqueue). Per item:
 
 1. yt-dlp downloads into a local work folder (``~/.maktaba/work/yt/<library>/<id>/``,
    kept for 24 h so a ``.part`` resumes), with the sidecars;
@@ -60,8 +62,7 @@ from ...scanner.service import SaveCandidateParams
 from ...scanner.store import SqlScanStore
 from .. import media
 from ..context import JobCancelled, StageContext, StageFailure
-from ..enqueue import enqueue_job
-from ..graph import EPIC47_PRIORITIES, StageResult
+from ..graph import EPIC47_PRIORITIES, Request, StageResult
 from ..hashing import canonical_hash
 from ..sql import is_pg, loads, now, to_ts, uid
 
@@ -595,6 +596,7 @@ async def drain(db: Any, job: Any, ctx: StageContext, *, backfill: bool) -> Stag
     total = len(items)
     run_class: str | None = None
     run_items: set[str] = set()
+    landed: list[tuple[str, UUID]] = []
     stopped_why: str | None = None
     #: (done, of) for the progress line: this job's items, or the library's back catalogue
     counts = [0, total]
@@ -662,6 +664,8 @@ async def drain(db: Any, job: Any, ctx: StageContext, *, backfill: bool) -> Stag
             tally.done += 1
             tally.bytes += out.bytes or 0
             tally.ids.append(item.youtube_id)
+            if out.video_id is not None:
+                landed.append((item.youtube_id, out.video_id))
             await _set_item(
                 db, library_id, item.youtube_id, "done",
                 reason=out.reason, video_id=out.video_id, bytes=out.bytes, done_at=t,
@@ -726,26 +730,30 @@ async def drain(db: Any, job: Any, ctx: StageContext, *, backfill: bool) -> Stag
                 f" the last: {(out.message or '')[:200]}",
                 retryable=run_class == "transient",
             )
+        if landed:
+            break  # one video per job: it goes on to convert while the next downloads
 
     await count()
     await show(force=True)
     remaining = await ys.wanted_count(db, library_id, backfill=backfill)
-    if backfill and remaining:
-        # the next batch: this job's own follow-up once it ends (``rerun_requested``),
-        # behind anything more urgent in the pool
-        await enqueue_job(
-            db,
-            subject_kind="library",
-            subject_id=library_id,
-            stage=stage,
-            priority=priority,
-            reason={"why": "next back-catalogue batch", "by": f"job:{job.id}"},
-            triggered_by=job.id,
+    # one item at a time, through the graph: the video that landed goes on to
+    # ``convert_mp4`` (and from there to dedup) while this stage's next job downloads the
+    # next one, queued behind anything more urgent in the pool
+    requests = [
+        Request(
+            "convert_mp4", "video", vid, f"downloaded from YouTube ({yid_})",
+            priority=EPIC47_PRIORITIES["convert_mp4"],
         )
+        for yid_, vid in landed
+    ]  # fmt: skip
+    if remaining:
+        why = "next back-catalogue item" if backfill else "next new upload"
+        requests.append(Request(stage, "library", library_id, why, priority=priority))
     summary: dict[str, Any] = {**tally.as_json(), "items": total, "remaining": remaining}
     if stopped_why:
         summary["stopped"] = stopped_why
     return StageResult(
         output_hash=canonical_hash({"done": sorted(tally.ids)}),
+        requests=tuple(requests),
         summary=summary,
     )

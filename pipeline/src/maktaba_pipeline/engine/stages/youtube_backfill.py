@@ -5,11 +5,13 @@ has its own tile on the Queues page and pauses, resumes and cancels without touc
 uploads. Pool ``network_yt`` (shared with ``youtube_fetch``: the two never run at once),
 priority 300: below new uploads (120), normal pipeline work (100) and conversion (150).
 
-Each job takes a batch of 25 back-catalogue items, oldest first, and queues itself again
-while any are left. Before each item after the first it checks whether its job or stage was
-paused, or more urgent work waits for the pool (a new upload): then it stops after the item
-it is on, and the next batch waits behind that work. Cancel stops the job; the items stay
-``wanted``, and *Resume backfill* (a new job) carries on where it stopped.
+One item at a time (the owner's rule): each job goes through the back catalogue oldest
+first until one video lands (at most 25 items: skipped and gone ones do not count), asks
+``convert_mp4`` for that video and itself for the next one (graph requests), so a video
+converts while the next one downloads. A new upload's ``youtube_fetch`` (120) claims the
+pool before the next back-catalogue job (300). A paused stage leaves the next job waiting;
+cancel stops the job and queues nothing, the items stay ``wanted``, and *Resume backfill*
+(a new job) carries on where it stopped.
 """
 
 from __future__ import annotations

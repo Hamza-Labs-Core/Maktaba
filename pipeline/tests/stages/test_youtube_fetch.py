@@ -17,7 +17,10 @@ from uuid import UUID
 
 import pytest
 
-from maktaba_pipeline.engine.graph import GRAPH
+from maktaba_pipeline.engine.claim import claim_for_pool
+from maktaba_pipeline.engine.dispatch import dispatch_job
+from maktaba_pipeline.engine.enqueue import enqueue_job
+from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES, GRAPH
 from maktaba_pipeline.engine.reconcile import reconcile_once
 from maktaba_pipeline.engine.sql import dumps, is_pg, loads, parse_ts, to_ts
 from maktaba_pipeline.engine.stages import _youtube_drain as drain
@@ -136,6 +139,23 @@ async def link(db: Any, lib: UUID, youtube_id: str) -> None:
 async def rows(db: Any, lib: UUID) -> dict[str, Any]:
     got = await db.fetch("SELECT * FROM youtube_downloads WHERE library_id = $1", str(lib))
     return {str(r["youtube_id"]): r for r in got}
+
+
+async def run_all(db: Any, rt: Any, lib: UUID, stage: str = "youtube_fetch") -> list[Any]:
+    """Queue ``stage`` for the library and run its jobs (it queues itself, one video a
+    job) until none is left; the finished rows."""
+    await enqueue_job(
+        db, subject_kind="library", subject_id=lib, stage=stage,
+        priority=EPIC47_PRIORITIES[stage],
+    )  # fmt: skip
+    done: list[Any] = []
+    for _ in range(100):
+        job = await claim_for_pool(db, worker_id="w1", pool="network_yt", stages=[stage])
+        if job is None:
+            return done
+        await dispatch_job(db, job, runtime=rt, legacy_handlers={})
+        done.append(await db.fetchrow("SELECT * FROM processing_jobs WHERE id = $1", job.id))
+    raise AssertionError("the stage kept queueing itself")
 
 
 async def live_job(db: Any, stage: str) -> Any:
@@ -325,6 +345,11 @@ async def test_fetch_places_the_file_and_sidecars_and_scans_it(
     assert f"youtube {yid(1)}" in archive
     assert not (tmp_path / "work" / str(lib) / f"v-{yid(1)}").exists()  # cleaned
     assert summary_of(job)["downloaded"] == 1
+    convert = await db.fetchrow(
+        "SELECT * FROM processing_jobs WHERE stage = 'convert_mp4' AND state = 'pending'"
+    )
+    assert convert is not None and convert["priority"] == 150
+    assert (convert["subject_kind"], str(convert["subject_id"])) == ("video", str(row["video_id"]))
     # the download asked for the library's archive
     argv = next(a for a in fake.calls if "--flat-playlist" not in a)
     assert argv[argv.index("--download-archive") + 1].endswith(".maktaba/yt-dlp-archive.txt")
@@ -339,8 +364,9 @@ async def test_fetch_takes_new_items_newest_first(
     await want(db, lib, sid, [yid(1), yid(2), yid(3)])  # dated 07-01, 07-02, 07-03
     await want(db, lib, sid, [yid(9)], backfill=True)
     rt = await setup_runtime(db, [])
-    await run_stage(db, rt, "youtube_fetch", "library", lib)
+    jobs = await run_all(db, rt, lib)
     assert fake.downloaded == [yid(3), yid(2), yid(1)]  # never the back catalogue
+    assert len(jobs) == 3  # one video a job
     assert (await rows(db, lib))[yid(9)]["state"] == "wanted"
 
 
@@ -368,8 +394,8 @@ async def test_each_error_class_lands_right(db: Database, tmp_path: Path, fake: 
 
     drain.set_verifier(verify)
     rt = await setup_runtime(db, [])
-    job = await run_stage(db, rt, "youtube_fetch", "library", lib)
-    assert job["state"] == "done", error_of(job)
+    jobs = await run_all(db, rt, lib)
+    assert all(j["state"] == "done" for j in jobs), [error_of(j) for j in jobs]
     got = await rows(db, lib)
     states = {k: (r["state"], r["reason"]) for k, r in got.items()}
     assert states[yid(1)] == ("skipped", "members_only")
@@ -387,8 +413,10 @@ async def test_each_error_class_lands_right(db: Database, tmp_path: Path, fake: 
     assert fmts[0] != "b" and fmts[1] == "b"
     # the failed check keeps its work file for a look
     assert (tmp_path / "work" / str(lib) / f"v-{yid(7)}" / f"v-{yid(7)}.mp4").exists()
-    s = summary_of(job)
-    assert (s["downloaded"], s["skipped"], s["gone"], s["failed"]) == (2, 4, 1, 2)
+    tot = {
+        k: sum(summary_of(j)[k] for j in jobs) for k in ("downloaded", "skipped", "gone", "failed")
+    }
+    assert tuple(tot.values()) == (2, 4, 1, 2)
 
 
 @pytest.mark.asyncio
@@ -401,11 +429,11 @@ async def test_network_errors_give_up_after_five_tries(
     fake.downloads[yid(2)] = ["ok"]
     await want(db, lib, sid, [yid(1), yid(2)])
     rt = await setup_runtime(db, [])
-    job = await run_stage(db, rt, "youtube_fetch", "library", lib)
+    jobs = await run_all(db, rt, lib)
     got = await rows(db, lib)
     assert fake.tries[yid(1)] == 5
     assert got[yid(1)]["state"] == "failed" and got[yid(1)]["failure_class"] == "transient"
-    assert got[yid(2)]["state"] == "done" and job["state"] == "done"
+    assert got[yid(2)]["state"] == "done" and all(j["state"] == "done" for j in jobs)
 
 
 @pytest.mark.asyncio
@@ -514,8 +542,7 @@ async def test_second_refresh_downloads_nothing(
     await run_stage(db, rt, "youtube_sync", "library", lib)
     fetch = await live_job(db, "youtube_fetch")
     assert fetch is not None
-    await db.execute("DELETE FROM processing_jobs WHERE id = $1", fetch["id"])
-    await run_stage(db, rt, "youtube_fetch", "library", lib)
+    await run_all(db, rt, lib)
     assert sorted(fake.downloaded) == [yid(1), yid(2)]
 
     fake.listed.clear()
@@ -535,8 +562,7 @@ async def test_second_refresh_downloads_nothing(
     assert summary_of(third)["youtube_sources"]["new"] == 1
     fetch = await live_job(db, "youtube_fetch")
     assert fetch is not None
-    await db.execute("DELETE FROM processing_jobs WHERE id = $1", fetch["id"])
-    await run_stage(db, rt, "youtube_fetch", "library", lib)
+    await run_all(db, rt, lib)
     assert sorted(fake.downloaded) == [yid(1), yid(2), yid(3)]
 
 
@@ -643,3 +669,48 @@ async def test_real_ytdlp_smoke(
     assert any(p.suffix == ".mp4" for p in files) and any(
         p.name.endswith(".info.json") for p in files
     )
+
+
+@pytest.mark.asyncio
+async def test_each_video_goes_on_to_convert_while_the_next_downloads(
+    db: Database, tmp_path: Path, fake: FakeYtDlp
+) -> None:
+    """Owner, 2026-10-28: download, convert, dedup, one item at a time, through the graph:
+    video 1's convert job exists while video 2 is still downloading."""
+    lib = await make_lib(db, tmp_path)
+    sid = await add_source(db, lib)
+    await want(db, lib, sid, [yid(1), yid(2)])  # newest first: yid(2), then yid(1)
+    seen: dict[str, int] = {}
+
+    async def during(y: str) -> None:
+        seen[y] = int(
+            await db.fetchval(
+                "SELECT count(*) FROM processing_jobs WHERE stage = 'convert_mp4'"
+                " AND state = 'pending' AND subject_kind = 'video'"
+            )
+        )
+
+    fake.before_download = during
+    rt = await setup_runtime(db, [])
+    await run_all(db, rt, lib)
+    assert fake.downloaded == [yid(2), yid(1)]
+    assert seen == {yid(2): 0, yid(1): 1}  # the first one's convert waits while yid(1) downloads
+    got = await rows(db, lib)
+    converts = await db.fetch(
+        "SELECT subject_id FROM processing_jobs WHERE stage = 'convert_mp4' ORDER BY id"
+    )
+    assert [str(r["subject_id"]) for r in converts] == [
+        str(got[yid(2)]["video_id"]),
+        str(got[yid(1)]["video_id"]),
+    ]
+    # the second hop (convert_mp4 -> dedup_scan) is the dedup track's edge (PR #421):
+    # checked here once the graph has it
+    by = {s.name: s for s in GRAPH}
+    if any(e.to == "dedup_scan" for e in by["convert_mp4"].edges):
+        from maktaba_pipeline.engine.propagate import resolve_edge
+
+        edge = next(e for e in by["convert_mp4"].edges if e.to == "dedup_scan")
+        job = await claim_for_pool(db, worker_id="w1", pool="convert", stages=["convert_mp4"])
+        assert job is not None
+        targets = await resolve_edge(db, edge, job, [])
+        assert ("library", lib) in targets or any(k == "video" for k, _ in targets)

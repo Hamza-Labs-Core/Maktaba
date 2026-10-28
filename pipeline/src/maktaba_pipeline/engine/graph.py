@@ -341,6 +341,9 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=2,
         version=YT_FETCH_VERSION,
         external_write=True,
+        # one video per job: it goes on to convert (then dedup) while the next job
+        # downloads the next one (owner, 2026-10-28: download, convert, dedup)
+        may_request=("convert_mp4", "youtube_fetch"),
     ),
     StageDef(
         name="youtube_backfill",
@@ -351,6 +354,9 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=3,
         version=YT_BACKFILL_VERSION,
         external_write=True,
+        # one video per job: it goes on to convert (then dedup) while the next job
+        # downloads the next one (owner, 2026-10-28: download, convert, dedup)
+        may_request=("convert_mp4", "youtube_backfill"),
     ),
     # Exact upload dates per video for series members (mediaintel "exact"); off until the
     # "exactdates" rules enable it. Detect runs again on the dates it finds.
@@ -958,7 +964,17 @@ GRAPH: tuple[StageDef, ...] = (
 #: Stages on which a request cycle (detect -> fingerprint -> detect ...) is allowed,
 #: because their input fingerprints are monotone (plan 06-11 section 3.4).
 MONOTONE_STAGES: frozenset[str] = frozenset(
-    {"detect", "fingerprint", "fp_gate", "rate_style", "style_sample"}
+    {
+        "detect",
+        "fingerprint",
+        "fp_gate",
+        "rate_style",
+        "style_sample",
+        # Epic 47: each job takes at least one wanted item off the list before it asks
+        # for the next job, so the self-request ends when the list is empty
+        "youtube_fetch",
+        "youtube_backfill",
+    }  # fmt: skip
 )
 
 _BY_NAME: dict[str, StageDef] = {s.name: s for s in GRAPH}

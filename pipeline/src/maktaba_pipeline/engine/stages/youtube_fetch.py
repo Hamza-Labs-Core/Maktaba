@@ -2,8 +2,10 @@
 
 Subject: a library. Pool ``network_yt`` (size 1, shared with the listing and the back
 catalogue: one stream of requests per home). Queued by ``youtube_sync`` at priority 120
-when it marks a new upload ``wanted``. One job drains the library's new items, newest
-first; the work is :func:`._youtube_drain.drain`.
+when it marks a new upload ``wanted``. One video a job, newest first: the job asks
+``convert_mp4`` for the video it landed and itself for the next one (graph requests), so
+download, convert and dedup follow each other per item. The work is
+:func:`._youtube_drain.drain`.
 """
 
 from __future__ import annotations

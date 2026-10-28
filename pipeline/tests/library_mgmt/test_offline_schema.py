@@ -273,9 +273,15 @@ def test_the_graph_has_the_epic47_stages() -> None:
     for name in EPIC47_STAGES:
         # no automatic trigger yet: nothing points at them and they point at nothing
         assert not by[name].edges and not by[name].entry_for
-        # the YouTube downloads are queued by the listing (story 47.8)
+        # the YouTube downloads are queued by the listing (story 47.8) and by themselves,
+        # one video a job; each landed video goes on to convert_mp4
         requesters = {s.name for s in GRAPH if name in s.may_request}
-        assert requesters <= ({"youtube_sync"} if name.startswith("youtube_") else set())
+        allowed = {
+            "youtube_fetch": {"youtube_sync", "youtube_fetch"},
+            "youtube_backfill": {"youtube_sync", "youtube_backfill"},
+            "convert_mp4": {"youtube_fetch", "youtube_backfill"},
+        }
+        assert requesters <= allowed.get(name, set())
         assert all(e.to != name for s in GRAPH for e in s.edges)
         assert get_impl(name) is not None and get_impl(name).run is not None  # type: ignore[union-attr]
     assert EPIC47_PRIORITIES["youtube_fetch"] < 150 < EPIC47_PRIORITIES["youtube_backfill"]

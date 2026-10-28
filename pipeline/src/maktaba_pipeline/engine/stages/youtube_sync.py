@@ -59,8 +59,7 @@ from ...library_mgmt import tartube_import
 from ...library_mgmt import youtube_sources as ys
 from ...scanner.walker import DEFAULT_IGNORE_DIRNAMES, DEFAULT_VIDEO_EXTENSIONS
 from ..context import StageContext, StageFailure
-from ..enqueue import enqueue_job
-from ..graph import EPIC47_PRIORITIES, StageResult, SubjectKind
+from ..graph import EPIC47_PRIORITIES, Request, StageResult, SubjectKind
 from ..hashing import canonical_hash
 from ..sql import is_pg, loads, now, to_ts, uid
 from .registry import StageImpl
@@ -514,17 +513,7 @@ async def _check_sources(
     queued: list[str] = []
     for stage, backfill in (("youtube_fetch", False), ("youtube_backfill", True)):
         if await ys.wanted_count(db, library_id, backfill=backfill):
-            res = await enqueue_job(
-                db,
-                subject_kind="library",
-                subject_id=library_id,
-                stage=stage,
-                priority=EPIC47_PRIORITIES[stage],
-                reason={"why": "youtube items wanted", "by": f"job:{job.id}"},
-                triggered_by=job.id,
-            )
-            if res.enqueued:
-                queued.append(stage)
+            queued.append(stage)
     report["queued"] = queued
     return report
 
@@ -603,9 +592,15 @@ async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
     subjects: tuple[tuple[SubjectKind, UUID], ...] = tuple(
         ("video", v) for v in sorted(changed_videos, key=str)
     )
+    library_requests = tuple(
+        Request(stage, "library", library_id, "youtube items wanted",
+                priority=EPIC47_PRIORITIES[stage])
+        for stage in sources.get("queued", ())
+    )  # fmt: skip
     return StageResult(
         output_hash=after.digest(),
         changed_subjects=subjects,
+        requests=library_requests,
         summary={
             "channels": len(channels),
             **counts,
