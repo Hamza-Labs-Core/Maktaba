@@ -3966,3 +3966,29 @@ button.mkt-video__hero {
 .mkt-load-error__actions--start {
   justify-content: flex-start;
 }
+
+/* Manage libraries: the name a merge or remove asks to be typed, shown whole with Copy */
+.mkt-typename {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mkt-typename__ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+.mkt-typename__name {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-subtle);
+  font-weight: 600;
+  unicode-bidi: isolate;
+}
+.mkt-typename__hint {
+  margin: 0;
+  color: var(--color-warning-fg, var(--color-fg));
+  font-size: var(--font-size-sm);
+}

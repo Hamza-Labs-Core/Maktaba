@@ -5566,5 +5566,9 @@
   "about.link.license": "الرخصة (MIT)",
   "about.credits": "شكر وتقدير",
   "about.creditsIntro": "بُنيت مكتبة على برمجيات مفتوحة المصدر. شكرًا لمؤلفيها.",
-  "about.copyright": "© {year} Hamza Labs Core. صادر بموجب رخصة MIT."
+  "about.copyright": "© {year} Hamza Labs Core. صادر بموجب رخصة MIT.",
+  "libraryAdmin.confirm.typeExactly": "للتأكيد، اكتب اسم هذه المكتبة:",
+  "libraryAdmin.confirm.copy": "نسخ",
+  "libraryAdmin.confirm.copied": "تم النسخ",
+  "libraryAdmin.confirm.typedOther": "هذه هي المكتبة التي تدمج فيها. اكتب اسم المكتبة التي ستُحذف: {name}."
 }

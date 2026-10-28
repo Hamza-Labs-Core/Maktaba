@@ -66,24 +66,74 @@ function ImpactList({ id }: { id: string }) {
 }
 
 /** The "type the name to confirm" field; matches only the name exactly. */
+// A typed name as a person means it: the same letters whatever their Unicode spelling,
+// spaces at the ends or between words, or the invisible direction marks a right-to-left
+// name picks up when copied (the server reads it the same way: handlers/libraries
+// sameName). Letter case still counts.
+export function nameKey(s: string): string {
+  return s
+    .normalize("NFC")
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, "")
+    .trim()
+    .split(/\s+/)
+    .join(" ");
+}
+
+export function sameName(typed: string, name: string): boolean {
+  return nameKey(typed) === nameKey(name);
+}
+
 function TypeName({
   name,
   value,
   onChange,
+  other,
 }: {
   name: string;
   value: string;
   onChange: (v: string) => void;
+  /** the library the action goes to, whose name is the wrong one to type */
+  other?: string;
 }) {
   const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const typedOther =
+    !!other && value.trim() !== "" && sameName(value, other) && !sameName(value, name);
   return (
-    <Input
-      label={t("libraryAdmin.confirm.typeName", { name: bidiIsolate(name) })}
-      value={value}
-      autoComplete="off"
-      spellCheck={false}
-      onChange={(e) => onChange(e.target.value)}
-    />
+    <div className="mkt-typename">
+      <p className="mkt-typename__ask">
+        {t("libraryAdmin.confirm.typeExactly")}{" "}
+        <code className="mkt-typename__name" dir="auto">
+          {name}
+        </code>{" "}
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            void navigator.clipboard?.writeText(name).then(
+              () => setCopied(true),
+              () => undefined
+            );
+          }}
+        >
+          {copied ? t("libraryAdmin.confirm.copied") : t("libraryAdmin.confirm.copy")}
+        </Button>
+      </p>
+      <Input
+        label={t("libraryAdmin.confirm.typeName", { name: bidiIsolate(name) })}
+        value={value}
+        autoComplete="off"
+        spellCheck={false}
+        dir="auto"
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {typedOther && (
+        <p className="mkt-typename__hint" role="status">
+          {t("libraryAdmin.confirm.typedOther", { name: bidiIsolate(name) })}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -167,7 +217,7 @@ export function MergeDialog({
     setBusy(true);
     setError(null);
     try {
-      const r = await libraryAdminApi.merge(library.id, into, typed);
+      const r = await libraryAdminApi.merge(library.id, into, nameKey(typed));
       toast.show({
         tone: "success",
         message: t("libraryAdmin.merge.done", {
@@ -199,7 +249,7 @@ export function MergeDialog({
             variant="destructive"
             onClick={() => void confirm()}
             loading={busy}
-            disabled={!into || typed !== library.name}
+            disabled={!into || !sameName(typed, library.name)}
           >
             {t("libraryAdmin.merge.confirm")}
           </Button>
@@ -223,7 +273,7 @@ export function MergeDialog({
           })}
         </p>
         <ImpactList id={library.id} />
-        <TypeName name={library.name} value={typed} onChange={setTyped} />
+        <TypeName name={library.name} value={typed} onChange={setTyped} other={intoName} />
         {error && (
           <p className="mkt-error" role="alert">
             {error}
@@ -281,7 +331,7 @@ export function RemoveDialog({
             variant="destructive"
             onClick={() => void confirm()}
             loading={busy}
-            disabled={typed !== library.name}
+            disabled={!sameName(typed, library.name)}
           >
             {t("libraryAdmin.remove.confirm")}
           </Button>

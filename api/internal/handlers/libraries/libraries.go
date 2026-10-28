@@ -498,7 +498,7 @@ func (h *Handler) deleteLibrary(w http.ResponseWriter, r *http.Request) int {
 	}
 	if purge {
 		confirm := r.URL.Query().Get("confirm")
-		if confirm != lib.Name {
+		if !sameName(confirm, lib.Name) {
 			return writeErr(w, r, &httperror.Error{
 				Type:   httperror.TypeConfirmationReq,
 				Title:  "confirmation required",
