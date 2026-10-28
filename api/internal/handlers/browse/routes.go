@@ -308,7 +308,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "continue watching", err)
 		return
 	}
-	added, err := h.recentlyAdded(ctx, s, "", RowSize)
+	added, scan, err := h.recentlyAddedScan(ctx, s, "")
 	if err != nil {
 		internal(w, r, "recently added", err)
 		return
@@ -318,7 +318,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "recently watched", err)
 		return
 	}
-	grouped, err := h.recentlyAddedGrouped(ctx, s, "", RowSize)
+	grouped, err := h.recentlyAddedGrouped(ctx, scan, RowSize)
 	if err != nil {
 		internal(w, r, "recently added by series", err)
 		return
@@ -432,7 +432,7 @@ func (h *Handler) Hub(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "continue watching", err)
 		return
 	}
-	added, err := h.recentlyAdded(ctx, s, id, RowSize)
+	added, scan, err := h.recentlyAddedScan(ctx, s, id)
 	if err != nil {
 		internal(w, r, "recently added", err)
 		return
@@ -462,7 +462,7 @@ func (h *Handler) Hub(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "on deck", err)
 		return
 	}
-	grouped, err := h.recentlyAddedGrouped(ctx, s, id, RowSize)
+	grouped, err := h.recentlyAddedGrouped(ctx, scan, RowSize)
 	if err != nil {
 		internal(w, r, "recently added by series", err)
 		return

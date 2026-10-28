@@ -27,13 +27,20 @@ type AddedEntry struct {
 	Count  int         `json:"count,omitempty"`
 }
 
-// recentlyAddedGrouped is the scope's (or one library's) additions grouped
-// by series, at most n entries.
-func (h *Handler) recentlyAddedGrouped(ctx context.Context, s scope, lib string, n int) ([]AddedEntry, error) {
-	cards, err := h.recentlyAdded(ctx, s, lib, groupScan)
+// recentlyAddedScan is the scope's (or one library's) newest additions, at
+// most groupScan: the grouped row reads them all, Recently Added the first
+// RowSize (the same order), so the home and a hub read them once.
+func (h *Handler) recentlyAddedScan(ctx context.Context, s scope, lib string) (added, scan []Card, err error) {
+	scan, err = h.recentlyAdded(ctx, s, lib, groupScan)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	return scan[:min(len(scan), RowSize)], scan, nil
+}
+
+// recentlyAddedGrouped is the additions cards (newest first, as
+// recentlyAddedScan reads them) grouped by series, at most n entries.
+func (h *Handler) recentlyAddedGrouped(ctx context.Context, cards []Card, n int) ([]AddedEntry, error) {
 	out := []AddedEntry{}
 	if len(cards) == 0 {
 		return out, nil
