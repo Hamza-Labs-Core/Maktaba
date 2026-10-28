@@ -115,9 +115,7 @@ export function OfflineActionDialog({ target, onClose, onDone }: OfflineActionDi
     >
       {result ? (
         <div role="status" className="mkt-q-offline__done">
-          <p>
-            {t("queue.offline.result", { queued: n(result.queued), merged: n(result.merged) })}
-          </p>
+          <p>{t("queue.offline.result", { queued: n(result.queued), merged: n(result.merged) })}</p>
           {result.notSetUp > 0 && (
             <p className="mkt-q-banner mkt-q-banner--warn">
               {t("queue.offline.notSetUp", { n: n(result.notSetUp) })}

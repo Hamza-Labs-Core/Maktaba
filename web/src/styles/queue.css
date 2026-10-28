@@ -1674,3 +1674,99 @@ summary.mkt-q-lane__title {
   background: var(--q-raised);
   margin-block: var(--space-3);
 }
+
+/* ---------- Epic 47: offline, MP4, no duplicates ---------- */
+.mkt-q-libs__rowactions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.mkt-q-libs__yt {
+  font-size: var(--font-size-sm);
+  min-inline-size: 12rem;
+}
+.mkt-q-libs__menu .mk-menu__trigger,
+.mkt-q-libs__bulk .mk-menu__trigger {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-fg);
+  cursor: pointer;
+}
+.mkt-q-offline,
+.mkt-q-ytsrc {
+  display: grid;
+  gap: var(--space-3);
+}
+.mkt-q-ytsrc__add {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2);
+  align-items: center;
+}
+.mkt-q-ytsrc__add > button {
+  grid-column: 2;
+  justify-self: start;
+}
+.mkt-q-ytsrc__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.mkt-q-ytsrc__item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  display: grid;
+  gap: var(--space-1);
+}
+.mkt-q-ytsrc__head,
+.mkt-q-ytsrc__meta,
+.mkt-q-ytsrc__actions,
+.mkt-q-ytsrc__lib {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-q-ytsrc__meta {
+  font-size: var(--font-size-sm);
+}
+.mkt-q-ytsrc__opts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-2);
+  align-items: end;
+}
+.mkt-q-ytsrc__opts label {
+  display: grid;
+  gap: var(--space-1);
+}
+.mkt-q-fa__paths {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-sm);
+  word-break: break-all;
+}
+.mkt-q-fa__trash {
+  margin: 0;
+  padding-inline-start: var(--space-4);
+  display: grid;
+  gap: var(--space-1);
+}
+.mkt-q-fa__state--failed {
+  color: var(--q-failing);
+}
+.mkt-q-fa__state--done {
+  color: var(--q-done);
+}
+.mkt-q-dup {
+  display: grid;
+  gap: var(--space-2);
+  margin-block-end: var(--space-3);
+}
+.mkt-q-dup tr[data-keeper] {
+  background: color-mix(in srgb, var(--q-done) 12%, transparent);
+}

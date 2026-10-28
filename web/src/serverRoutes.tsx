@@ -19,6 +19,8 @@ const QueueDetail = /* @__PURE__ */ page(() => import("./pages/queue/QueueDetail
 const ItemHistory = /* @__PURE__ */ page(() => import("./pages/queue/ItemHistory"), "ItemHistory");
 const Reports = /* @__PURE__ */ page(() => import("./pages/queue/Reports"), "Reports");
 const Failures = /* @__PURE__ */ page(() => import("./pages/queue/Failures"), "Failures");
+const Duplicates = /* @__PURE__ */ page(() => import("./pages/queue/Duplicates"), "Duplicates");
+const FileActions = /* @__PURE__ */ page(() => import("./pages/queue/FileActions"), "FileActions");
 const Transcription = /* @__PURE__ */ page(
   () => import("./pages/transcription/Transcription"),
   "Transcription"
@@ -75,6 +77,8 @@ export function serverRoutes() {
       <Route path="/queue/items/:kind/:id" element={<ItemHistory />} />
       <Route path="/queue/reports" element={<Reports />} />
       <Route path="/queue/failures" element={<Failures />} />
+      <Route path="/queue/duplicates" element={<Duplicates />} />
+      <Route path="/queue/file-actions" element={<FileActions />} />
       <Route path="/queue/:stage" element={<QueueDetail />} />
       <Route path="/transcription" element={<Transcription />} />
       <Route path="/settings/*" element={<Settings />} />

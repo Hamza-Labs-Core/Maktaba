@@ -53,6 +53,8 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/queue/items/:kind/:id", { topic: "processing", anchor: "item-history" }],
   ["/queue/reports", { topic: "processing", anchor: "reports" }],
   ["/queue/failures", { topic: "failures", anchor: "failing-items" }],
+  ["/queue/duplicates", { topic: "processing", anchor: "duplicates" }],
+  ["/queue/file-actions", { topic: "processing", anchor: "file-actions" }],
   ["/queue/:stage", { topic: "processing", anchor: "queue-page" }],
   ["/transcription", { topic: "transcription" }],
   ["/settings/rules", { topic: "rules" }],

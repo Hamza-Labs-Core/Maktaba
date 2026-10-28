@@ -179,7 +179,9 @@ export function YouTubeSourcesDialog({ library, onClose, onChanged }: YouTubeSou
       setUrl("");
       setFolder("");
       after(
-        r.refresh ? t("queue.yt.addedRefresh", { kind: r.source.kind }) : t("queue.yt.added", { kind: r.source.kind })
+        r.refresh
+          ? t("queue.yt.addedRefresh", { kind: r.source.kind })
+          : t("queue.yt.added", { kind: r.source.kind })
       );
     }
   };
@@ -220,7 +222,10 @@ export function YouTubeSourcesDialog({ library, onClose, onChanged }: YouTubeSou
 
   const resume = async () => {
     const r = await run("backfill", () => queueApi.resumeBackfill(library.id));
-    if (r) after(r.skipped > 0 ? t("queue.offline.notSetUp", { n: n(r.skipped) }) : t("queue.yt.resumed"));
+    if (r)
+      after(
+        r.skipped > 0 ? t("queue.offline.notSetUp", { n: n(r.skipped) }) : t("queue.yt.resumed")
+      );
   };
 
   const importTartube = async () => {
@@ -477,7 +482,12 @@ export function YouTubeSourcesDialog({ library, onClose, onChanged }: YouTubeSou
                 onChange={(e) => setTartube((v) => ({ ...v, channels: e.target.value }))}
               />
             </label>
-            <Button size="sm" type="submit" loading={busy === "tartube"} disabled={!tartube.path.trim()}>
+            <Button
+              size="sm"
+              type="submit"
+              loading={busy === "tartube"}
+              disabled={!tartube.path.trim()}
+            >
               {t("queue.yt.tartubeRun")}
             </Button>
           </form>
@@ -486,4 +496,3 @@ export function YouTubeSourcesDialog({ library, onClose, onChanged }: YouTubeSou
     </Modal>
   );
 }
-

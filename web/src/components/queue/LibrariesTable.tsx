@@ -72,7 +72,9 @@ export function YouTubeCell({ s }: { s: OfflineSummary | undefined }) {
         })}
         {y.backfill > 0 && <> · {t("queue.libs.yt.backfill", { n: n(y.backfill) })}</>}
       </div>
-      <div className="mkt-q-muted">{t("queue.libs.yt.refreshed", { time: fmt.ago(y.last_refresh) })}</div>
+      <div className="mkt-q-muted">
+        {t("queue.libs.yt.refreshed", { time: fmt.ago(y.last_refresh) })}
+      </div>
       {y.problems.length > 0 && (
         <div className="mkt-q-error">
           {t("queue.libs.yt.problems", { n: n(y.problems.length) })}

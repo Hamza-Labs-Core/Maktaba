@@ -387,6 +387,43 @@ export interface OfflineItem extends JobRef {
   error: string | null;
 }
 
+export interface DuplicateMember {
+  video_id: string;
+  path: string;
+  is_copy: boolean;
+  score: Record<string, unknown> | null;
+  title: string | null;
+  library_id: string;
+  library_name: string;
+  size_bytes: number | null;
+  duration_sec: number | null;
+  width: number | null;
+  height: number | null;
+  video_codec: string | null;
+  container: string | null;
+  bitrate_kbps: number | null;
+  viewers: number;
+  completed: number;
+  last_watched: string | null;
+}
+
+export type DuplicateStatus = "open" | "applied" | "dismissed" | "failed";
+
+export interface DuplicateGroup {
+  id: string;
+  library_id: string | null;
+  library_name: string | null;
+  tier: "exact" | "same_video";
+  status: DuplicateStatus;
+  keeper_video_id: string | null;
+  reason: string | null;
+  created_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  job: JobRef | null;
+  members: DuplicateMember[];
+}
+
 export interface FacetCount {
   value: string;
   label?: string;
@@ -933,8 +970,10 @@ export const queueApi = {
     api.post<LibraryActionResponse>(`/api/libraries/${q(id)}/convert`, body),
   dedupScanLibrary: (id: string, body: { dry_run?: boolean; all?: boolean }) =>
     api.post<LibraryActionResponse>(`/api/libraries/${q(id)}/dedup-scan`, body),
-  refreshYouTube: (id: string, body: { all?: boolean; full_listing?: boolean; refresh?: boolean }) =>
-    api.post<LibraryActionResponse>(`/api/libraries/${q(id)}/youtube/refresh`, body),
+  refreshYouTube: (
+    id: string,
+    body: { all?: boolean; full_listing?: boolean; refresh?: boolean }
+  ) => api.post<LibraryActionResponse>(`/api/libraries/${q(id)}/youtube/refresh`, body),
   resumeBackfill: (id: string) =>
     api.post<LibraryActionResponse>(`/api/libraries/${q(id)}/youtube/backfill`),
   retryDownloads: (id: string, body: { states?: DownloadState[]; source_id?: string }) =>
@@ -987,6 +1026,20 @@ export const queueApi = {
         limit,
       })}`
     ),
+  duplicates: (
+    p: { status?: string; tier?: string; library_id?: string; limit?: number },
+    cursor?: string | null
+  ) =>
+    api.get<{ items: DuplicateGroup[]; next: string | null }>(
+      `/api/queues/duplicates${qs({ ...p, cursor: cursor ?? undefined })}`
+    ),
+  applyDuplicate: (gid: string, keeper?: string) =>
+    api.post<{ group_id: string; job_id: number | null; outcome: EnqueueOutcome }>(
+      `/api/queues/duplicates/${q(gid)}/apply`,
+      keeper ? { keeper_video_id: keeper } : {}
+    ),
+  dismissDuplicate: (gid: string) =>
+    api.post<{ group_id: string; status: string }>(`/api/queues/duplicates/${q(gid)}/dismiss`),
   restoreFileAction: (id: string) =>
     api.post<{ action_id: string; job_id: number | null; outcome: EnqueueOutcome }>(
       `/api/queues/file-actions/${q(id)}/restore`

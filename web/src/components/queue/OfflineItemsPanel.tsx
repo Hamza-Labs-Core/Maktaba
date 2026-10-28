@@ -33,7 +33,9 @@ export function OfflineItemsPanel({ tick, libraryId }: OfflineItemsPanelProps) {
     queueApi
       .offlineItems({ library_id: libraryId, step: step || undefined, limit: 50 })
       .then((r) => {
-        setItems(Array.isArray(r?.items) ? r.items.filter((i) => step || SHOWN.includes(i.step)) : []);
+        setItems(
+          Array.isArray(r?.items) ? r.items.filter((i) => step || SHOWN.includes(i.step)) : []
+        );
         setNext(r?.next ?? null);
         setLoadError(false);
       })
@@ -64,7 +66,9 @@ export function OfflineItemsPanel({ tick, libraryId }: OfflineItemsPanelProps) {
     if (it.waiting_for_conversion) return t("queue.items.waitingConversion");
     if (it.state === "failed") return t("queue.items.state.failed");
     if (LIVE.has(it.state)) {
-      return it.state === "pending" ? t("queue.items.state.queued") : t(`queue.items.doing.${it.step}`);
+      return it.state === "pending"
+        ? t("queue.items.state.queued")
+        : t(`queue.items.doing.${it.step}`);
     }
     return t(`queue.items.state.${it.state}`);
   };
@@ -88,11 +92,13 @@ export function OfflineItemsPanel({ tick, libraryId }: OfflineItemsPanelProps) {
         </label>
       </div>
       <p className="mkt-q-muted">{t("queue.items.intro")}</p>
-      {(error || loadError) && (
+      {error && (
         <p role="alert" className="mkt-q-error">
-          {error ?? t("queue.error.load")}
+          {error}
         </p>
       )}
+      {/* a list that did not load is not an alert: the page's own banner says so */}
+      {loadError && <p className="mkt-q-error">{t("queue.items.loadError")}</p>}
       {items === null && !loadError && <p className="mkt-loading">{t("common.loading")}</p>}
       {items && items.length === 0 && <p className="mkt-q-empty">{t("queue.items.none")}</p>}
       {items && items.length > 0 && (
@@ -114,7 +120,11 @@ export function OfflineItemsPanel({ tick, libraryId }: OfflineItemsPanelProps) {
                 <tr key={it.id} data-state={it.state}>
                   <th scope="row">
                     <Link
-                      to={`/queue/items/${encodeURIComponent(it.subject_kind)}/${encodeURIComponent(it.subject_id)}`}
+                      to={
+                        (it.subject_kind as string) === "dup_group"
+                          ? "/queue/duplicates?status=all"
+                          : `/queue/items/${encodeURIComponent(it.subject_kind)}/${encodeURIComponent(it.subject_id)}`
+                      }
                     >
                       {bidiIsolate(it.subject_label)}
                     </Link>

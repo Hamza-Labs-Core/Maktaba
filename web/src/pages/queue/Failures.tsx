@@ -63,6 +63,7 @@ export function Failures() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [result, setResult] = useState<FailureActionResult | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [prefixDraft, setPrefixDraft] = useState(filter.path_prefix ?? "");
 
@@ -105,6 +106,21 @@ export function Failures() {
       setResult(r);
       setDialog(null);
       setSelected(new Set());
+      load();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Epic 47: undo the ledger row of a failed item's job (queues file_restore)
+  const restore = async (actionId: string) => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await queueApi.restoreFileAction(actionId);
+      setNotice(t("queue.failures.restoreQueued"));
       load();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
@@ -317,6 +333,11 @@ export function Failures() {
           {t("queue.failures.actionError", { error: actionError })}
         </p>
       )}
+      {notice && (
+        <p role="status" className="mkt-q-muted">
+          {notice}
+        </p>
+      )}
       {result && (
         <p role="status" className="mkt-q-muted">
           {t("queue.failures.done", {
@@ -495,6 +516,24 @@ export function Failures() {
                       >
                         {t("queue.failures.action.retry")}
                       </Button>
+                      {it.file_action?.restorable && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() => void restore(it.file_action!.id)}
+                        >
+                          {t("queue.fa.restore")}
+                        </Button>
+                      )}
+                      {it.file_action && (
+                        <Link
+                          className="mkt-q-linkbtn"
+                          to={`/queue/file-actions?library=${encodeURIComponent(it.library_id ?? "")}`}
+                        >
+                          {t("queue.failures.ledger")}
+                        </Link>
+                      )}
                       {it.subject_kind === "video" && (
                         <Button
                           size="sm"
