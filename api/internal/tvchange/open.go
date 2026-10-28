@@ -116,6 +116,7 @@ func (s *Store) Reopen(ctx context.Context, q queryer, ch *Change, actor *string
 	}
 	diff := copyMap(ch.Diff)
 	delete(diff, "stage")
+	delete(diff, HoldKey) // a new update: its check is a new one, announced as such
 	if s.AutoRestage(ctx, q) {
 		diff["stage"] = map[string]any{"requested_at": s.now().Format(time.RFC3339)}
 	}
@@ -176,6 +177,10 @@ func (s *Store) absorb(ctx context.Context, q queryer, ch *Change, newer []*Chan
 	fields := map[string]any{}
 	for _, n := range newer {
 		pending = MergePending(pending, WithPlanLayer(n.Pending().M, n.Digest), live)
+		if n.Origin == OriginManual && ch.Origin != OriginManual {
+			// a person's change joined: the open change waits for an approval now
+			fields["origin"], ch.Origin = OriginManual, OriginManual
+		}
 		if n.Digest != nil {
 			// the newer plan's: its approval is the queue's Apply of that digest
 			fields["digest"], fields["source"] = *n.Digest, n.Source

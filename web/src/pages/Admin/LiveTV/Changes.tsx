@@ -37,6 +37,7 @@ import {
   StateChip,
   actionError,
   sourceLabel,
+  OriginTag,
   useTk,
   useVisiblePoll,
   userName,
@@ -280,7 +281,9 @@ function ChangeTable({ items, users }: { items: TvChange[]; users: Record<string
           <span role="cell">
             <Kinds kinds={c.kinds} />
           </span>
-          <span role="cell">{sourceLabel(tk, c)}</span>
+          <span role="cell">
+            {sourceLabel(tk, c)} <OriginTag change={c} />
+          </span>
           <span role="cell">
             <ChecksSummary report={c.verify_report} />
           </span>
@@ -322,6 +325,8 @@ function SettingsPanel({ cfg }: { cfg: StagingConfig }) {
           {" · "}
           {t("tvchanges.settings.quietViewers", { n: n(cfg.quiet_max_viewers) })}
         </dd>
+        <dt>{t("tvchanges.settings.manual")}</dt>
+        <dd>{t("tvchanges.settings.manualValue")}</dd>
         <dt>{t("tvchanges.settings.secondAdmin")}</dt>
         <dd>{cfg.require_second_admin ? t("tvchanges.on") : t("tvchanges.off.short")}</dd>
         <dt>{t("tvchanges.settings.keepWarm")}</dt>

@@ -7,17 +7,20 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 )
 
-// Blocker reasons (story 35.3 AC5): a due run waits while one holds.
+// Blocker reasons (story 35.3 AC5): a due run waits while one holds. A TV change never
+// holds an update (the owner's rule of 2026-10-28, "tv changes should not block
+// updates"): the TV change controller sets it aside while the update runs and checks it
+// again after (tvchange/updatehold.go), and only the restart waits for a swap in progress
+// (Driver.tvSwapWait).
 const (
 	BlockActiveRun             = "run_active"
-	BlockTVChange              = "tv_change_in_flight"
 	BlockRoleNotRunning        = "role_not_running"
 	BlockRecentCrash           = "recent_crash"
 	BlockSupervisorUnreachable = "supervisor_unreachable"
@@ -58,9 +61,12 @@ type BlockerFunc func(ctx context.Context) (string, error)
 // Blocked calls f.
 func (f BlockerFunc) Blocked(ctx context.Context) (string, error) { return f(ctx) }
 
-// tvInFlight are the TV change states "staged…swapping" (Epic 33 R9.4): a binary change
-// would queue behind them anyway.
-var tvInFlight = []string{"staged", "verifying", "ready", "approved", "swapping"}
+// HomeBlockers are the blockers the home's scheduler runs with (router p35): a switch of
+// the home under way, and the home's health (supervisor: its loopback URL; "" is not
+// supervised). No TV change is among them.
+func HomeBlockers(db *sql.DB, supervisor string, hc *http.Client) []Blocker {
+	return []Blocker{SwitchoverBlocker{DB: db}, &HomeHealth{BaseURL: supervisor, HTTP: hc}}
+}
 
 // SwitchoverBlocker holds runs while a switch of the home (Epic 37) is under way: both
 // drain the machines and touch the home's database (a migration during its fence fails,
@@ -76,29 +82,6 @@ func (b SwitchoverBlocker) Blocked(ctx context.Context) (string, error) {
 	}
 	if open {
 		return BlockSwitchover, nil
-	}
-	return "", nil
-}
-
-// TVChangeBlocker holds runs while a TV change is in staged…swapping (story 35.3 AC5).
-type TVChangeBlocker struct{ DB *sql.DB }
-
-// Blocked implements Blocker. A database without tv_changes is not blocked.
-func (b TVChangeBlocker) Blocked(ctx context.Context) (string, error) {
-	if b.DB == nil {
-		return "", nil
-	}
-	var n int
-	err := b.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM tv_changes WHERE state IN ('`+
-		strings.Join(tvInFlight, "', '")+`')`).Scan(&n)
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "tv_changes") {
-			return "", nil
-		}
-		return "", err
-	}
-	if n > 0 {
-		return BlockTVChange, nil
 	}
 	return "", nil
 }

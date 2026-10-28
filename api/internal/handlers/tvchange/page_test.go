@@ -225,7 +225,7 @@ func TestDetailForThePage(t *testing.T) {
 			if code != 200 || cfg["swap_wait"] != "boundary" || cfg["quiet_window"] != "03:00-05:00" {
 				t.Fatalf("list config %d %v", code, out["config"])
 			}
-			if ap, _ := cfg["auto_promote"].(map[string]any); ap["lineup"] != "approval" {
+			if ap, _ := cfg["auto_promote"].(map[string]any); ap["lineup"] != "immediate" { // an automatic change's rule
 				t.Fatalf("auto promote %v", cfg)
 			}
 

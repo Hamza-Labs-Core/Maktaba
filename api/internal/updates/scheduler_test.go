@@ -54,7 +54,7 @@ func newFixture(t *testing.T, db *sql.DB) *fixture {
 		now: time.Date(2026, 10, 22, 3, 10, 0, 0, loc)}
 	f.store.Now = func() time.Time { return f.now }
 	f.svc = &Service{Store: f.store, Starter: f.starter, Notifier: f.notes, Current: "1.4.0", Loc: loc,
-		Now: func() time.Time { return f.now }, Blockers: []Blocker{TVChangeBlocker{DB: db}}}
+		Now: func() time.Time { return f.now }, Blockers: []Blocker{SwitchoverBlocker{DB: db}}}
 	return f
 }
 
@@ -84,28 +84,30 @@ func TestSchedulerStartsDueRun(t *testing.T) {
 	}
 }
 
-// TC3 (story 35.3): a TV change in flight, an active run, a crashed role, a deferral.
+// TC3 (story 35.3): an active run, a crashed role, a deferral - and a TV change in
+// flight, which no longer holds a run (the owner's rule of 2026-10-28).
 func TestSchedulerBlockers(t *testing.T) {
 	t.Parallel()
 	enableAutoInstall(t)
 	ctx := context.Background()
 	// each case has its own fixture: they run side by side (the unit tier's time cap)
 
-	t.Run("tv change in flight", func(t *testing.T) {
-		t.Parallel()
-		f := newFixture(t, sqliteDB(t))
-		seed(t, f.store, rel("1.5.0"))
-		if _, err := f.db.Exec(`INSERT INTO tv_changes (id, number, state, kinds) VALUES ('c1', 1, 'swapping', '["binary"]')`); err != nil {
-			t.Skipf("tv_changes shape: %v", err)
-		}
-		if d, _ := f.svc.Tick(ctx); d.Action != "blocked" || d.Reason != BlockTVChange {
-			t.Fatalf("tick: %+v", d)
-		}
-		_, _ = f.db.Exec(`UPDATE tv_changes SET state = 'live'`)
-		if d, _ := f.svc.Tick(ctx); d.Action != "started" {
-			t.Fatalf("after the swap: %+v", d)
-		}
-	})
+	// a TV change waiting for its approval (ready), or anywhere else in flight, never
+	// holds an update: the run starts with the production blockers in place
+	for _, state := range []string{"ready", "staged", "verifying", "approved", "swapping"} {
+		t.Run("tv change "+state, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, sqliteDB(t))
+			f.svc.Blockers = HomeBlockers(f.db, "", nil)
+			seed(t, f.store, rel("1.5.0"))
+			if _, err := f.db.Exec(`INSERT INTO tv_changes (id, number, state, kinds) VALUES ('c1', 1, $1, '["lineup"]')`, state); err != nil {
+				t.Fatal(err)
+			}
+			if d, _ := f.svc.Tick(ctx); d.Action != "started" {
+				t.Fatalf("an update during a %s TV change: %+v", state, d)
+			}
+		})
+	}
 
 	t.Run("crashed role", func(t *testing.T) {
 		t.Parallel()

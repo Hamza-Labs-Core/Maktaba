@@ -21,12 +21,18 @@ pytestmark = pytest.mark.integration
 _SHA = "ab" * 32
 
 
-def test_only_the_updaters_binary_change_is_immediate() -> None:
+def test_only_manual_changes_need_approval() -> None:
     cfg = MaktabaTvStagingConfig(auto_promote_binary="approval", auto_promote_lineup="approval")
     assert auto_rule(cfg, ["binary"], "auto_update") == "immediate"
     assert auto_rule(cfg, ["binary"], "manual") == "approval"
     assert auto_rule(cfg, ["binary"]) == "approval"
-    assert auto_rule(cfg, ["lineup", "binary"], "auto_update") == "approval"
+    # automatic: a stored "approval" from before the owner's rule reads as immediate
+    assert auto_rule(cfg, ["lineup", "binary"], "auto_update") == "immediate"
+    quiet = MaktabaTvStagingConfig(
+        auto_promote_lineup="quiet_window", auto_promote_binary="quiet_window"
+    )
+    assert auto_rule(quiet, ["lineup", "binary"], "auto_update") == "quiet_window"
+    assert auto_rule(quiet, ["binary"], "auto_update") == "immediate"
 
 
 @pytest.mark.asyncio

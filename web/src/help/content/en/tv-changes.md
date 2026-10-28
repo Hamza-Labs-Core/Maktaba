@@ -1,6 +1,6 @@
 # TV changes
 
-Every change to Maktaba TV is prepared next to what is on the air, checked, and put on the air only when an admin approves it. If something goes wrong, you can roll it back.
+Every change to Maktaba TV is prepared next to what is on the air and checked before it goes on the air. A change a person made (the channel editor, the filler pools, the TV settings, a rollback you pressed) waits for an admin's approval; a change Maktaba made itself (the lineup plan, the scheduler, an update's streaming software) goes on the air by itself once it passed its checks. If something goes wrong, you can roll it back.
 
 ## What it is {#what-it-is}
 
@@ -9,10 +9,10 @@ When TV staging is on, a change to the channels, a schedule, the TV settings or 
 1. It starts as a **Draft** that collects edits (from the channel editor, the filler pools, the lineup plan, the scheduler, the TV settings or an update).
 2. It is **staged**: the new version and its schedules are built next to the live one, without touching it.
 3. It is **checked**: Maktaba runs the new version and measures it.
-4. An admin **approves** it, and it is **swapped** on the air, each channel at the end of its current programme by default.
+4. A change a person made waits until an admin **approves** it; an automatic one goes on by itself (at once, or in the quiet window if its rule says so), however many channels it touches. It is then **swapped** on the air, each channel at the end of its current programme by default.
 5. For a while afterwards the previous version is kept, so you can **roll back**.
 
-Only one change goes through these steps at a time; the others wait their turn. You find the changes at **TV changes** ([/admin/live-tv/changes](/admin/live-tv/changes)); the Live TV page shows the change in flight and an **Open Changes** link. Only admins can open these pages. Staging is on by default; it is switched in [Settings → Rules](/settings/rules) under TV staging (see [Rules](/help/rules#tv-staging)).
+Only one change goes through these steps at a time; the others wait their turn. A change never holds up an app update: while the update restarts Maktaba, a change being staged or checked is set aside and checked again on the new version afterwards, and a change waiting for approval keeps waiting (checked again after the update, then back to waiting). You find the changes at **TV changes** ([/admin/live-tv/changes](/admin/live-tv/changes)); the Live TV page shows the change in flight and an **Open Changes** link. Only admins can open these pages. Staging is on by default; it is switched in [Settings → Rules](/settings/rules) under TV staging (see [Rules](/help/rules#tv-staging)).
 
 ## How to use it {#how-to-use}
 

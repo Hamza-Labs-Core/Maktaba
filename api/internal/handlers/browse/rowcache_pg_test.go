@@ -190,13 +190,15 @@ func TestRowCacheInvalidationPostgres(t *testing.T) {
 		defer e.c.mu.Unlock()
 		return e.c.entries[rowKey{lib, RowSize}] != nil
 	}
+	// fill caches both rows; a notice of an earlier write may still arrive and
+	// drop a fresh entry (rightly: it is a change), so it reads again until both stay
 	fill := func() {
 		t.Helper()
-		row(libA)
-		row(libB)
-		if !cached(libA) || !cached(libB) {
-			t.Fatal("not cached")
-		}
+		eventually(t, "both rows cached", func() bool {
+			row(libA)
+			row(libB)
+			return cached(libA) && cached(libB)
+		})
 	}
 	// waitFor waits until lib's entry is gone, then checks its row; the other
 	// library's entry stays

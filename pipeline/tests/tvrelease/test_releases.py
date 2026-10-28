@@ -19,21 +19,29 @@ from tests.tvrelease.helpers import add_channel, library_with
 pytestmark = pytest.mark.integration
 
 
-def test_defaults_every_kind_needs_approval() -> None:
+def test_defaults_only_manual_needs_approval() -> None:
     cfg = MaktabaTvStagingConfig()
     assert cfg.enabled is True  # owner decision: staging on by default
     assert cfg.swap_wait == "boundary" and cfg.hot_standby is True
-    # owner decisions: every kind waits for an admin but a (small) schedule change
+    # the owner's rule (2026-10-28): an automatic change of any kind goes on once verified,
+    # however many channels it touches; a manual one always waits for an admin
     for kind in CHANGE_KINDS:
-        want = "immediate" if kind == "schedule" else "approval"
-        assert getattr(cfg, f"auto_promote_{kind}") == want
-    assert cfg.auto_max_channels == 3
-    assert auto_rule(cfg, ["schedule"]) == "immediate"
-    assert auto_rule(cfg, ["lineup", "schedule"]) == "approval"
+        assert getattr(cfg, f"auto_promote_{kind}") == "immediate"
+    assert not hasattr(cfg, "auto_max_channels")
+    assert auto_rule(cfg, ["schedule", "lineup"], "write_channels") == "immediate"
+    assert auto_rule(cfg, ["schedule"], "schedule") == "immediate"
+    assert auto_rule(cfg, ["schedule"], "editor") == "approval"
+    assert auto_rule(cfg, ["schedule"]) == "approval"  # who made it unknown: manual
+    assert (
+        auto_rule(cfg, ["schedule"], "write_channels", "manual") == "approval"
+    )  # a person's edit joined
     loose = MaktabaTvStagingConfig(auto_promote_lineup="immediate", auto_promote_art="quiet_window")
-    assert auto_rule(loose, ["lineup"]) == "immediate"
-    assert auto_rule(loose, ["lineup", "art"]) == "quiet_window"  # the strictest wins
-    assert auto_rule(loose, ["lineup", "settings"]) == "approval"
+    assert auto_rule(loose, ["lineup"], "write_channels") == "immediate"
+    assert (
+        auto_rule(loose, ["lineup", "art"], "write_channels") == "quiet_window"
+    )  # the strictest wins
+    legacy = MaktabaTvStagingConfig(auto_promote_settings="approval")  # stored before the rule
+    assert auto_rule(legacy, ["lineup", "settings"], "write_channels") == "immediate"
     assert "tv_staging" in {s["key"] for s in rules.schema()["sections"]}
 
 

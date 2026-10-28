@@ -12,10 +12,12 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange/tvchangetest"
 )
 
-// Story 35.6 AC2 (plan TC fuzz): with every rule at approval, only the automatic updater's
-// change of the streaming binary alone resolves to immediate; a binary change by hand, and
-// one carrying another kind too, keep the rules.
-func TestOnlyTheUpdatersBinaryChangeIsImmediate(t *testing.T) {
+// The owner's rule of 2026-10-28, "only manual needs approval" (with Story 35.6 AC2): a
+// change a person made needs an approval whatever its source and kinds, and whatever the
+// rules say; an automatic one follows its kinds' auto rules - with every rule stored as
+// "approval" (before the rule) that reads immediate - and the updater's binary change
+// alone is immediate even under quiet_window.
+func TestOnlyManualChangesNeedApproval(t *testing.T) {
 	approval := Config{AutoPromote: map[string]string{}}
 	for _, k := range Kinds {
 		approval.AutoPromote[k] = RuleApproval
@@ -28,22 +30,44 @@ func TestOnlyTheUpdatersBinaryChangeIsImmediate(t *testing.T) {
 			sets = append(sets, []string{"binary", k}, []string{k, "binary"})
 		}
 	}
-	for _, src := range sources {
-		for _, kinds := range sets {
-			ch := &Change{Source: map[string]any{"kind": src}, Kinds: kinds}
-			want := RuleApproval
-			if src == SourceAutoUpdate && len(kinds) == 1 && kinds[0] == "binary" {
-				want = RuleImmediate
-			}
-			if got := ChangeRule(approval, ch); got != want {
-				t.Errorf("source %q kinds %v: %s, want %s", src, kinds, got, want)
+	for _, origin := range []string{OriginAuto, OriginManual, ""} {
+		for _, src := range sources {
+			for _, kinds := range sets {
+				ch := &Change{Source: map[string]any{"kind": src}, Kinds: kinds, Origin: origin}
+				want := RuleApproval
+				if origin == OriginAuto {
+					want = RuleImmediate
+				}
+				if got := ChangeRule(approval, ch); got != want {
+					t.Errorf("origin %q source %q kinds %v: %s, want %s", origin, src, kinds, got, want)
+				}
 			}
 		}
 	}
-	// a binary rule switched on by an admin applies to every source's binary change
-	quiet := Config{AutoPromote: map[string]string{"binary": RuleQuietWindow}}
-	if got := ChangeRule(quiet, &Change{Source: map[string]any{"kind": SourceManual}, Kinds: []string{"binary"}}); got != RuleQuietWindow {
+	quiet := Config{AutoPromote: map[string]string{"binary": RuleQuietWindow, "schedule": RuleImmediate}}
+	if got := ChangeRule(quiet, &Change{Origin: OriginAuto, Source: map[string]any{"kind": SourceSchedule},
+		Kinds: []string{"schedule", "binary"}}); got != RuleQuietWindow {
+		t.Errorf("an automatic change takes its kinds' strictest auto rule: %s", got)
+	}
+	if got := ChangeRule(quiet, &Change{Origin: OriginAuto, Source: map[string]any{"kind": SourceAutoUpdate},
+		Kinds: []string{"binary"}}); got != RuleImmediate {
+		t.Errorf("the updater's binary change: %s", got)
+	}
+	if got := ChangeRule(quiet, &Change{Origin: OriginManual, Source: map[string]any{"kind": SourceManual},
+		Kinds: []string{"binary"}}); got != RuleApproval {
 		t.Errorf("a manual binary change under quiet_window: %s", got)
+	}
+	// who opens a change decides its origin
+	admin := "11111111-1111-4111-8111-111111111111"
+	for kind, want := range map[string]string{SourceWriteChannels: OriginAuto, SourceSchedule: OriginAuto,
+		SourceAutoUpdate: OriginAuto, SourceEditor: OriginManual, SourceSettings: OriginManual,
+		SourceManual: OriginManual, SourceRollback: OriginAuto, "": OriginManual} {
+		if got := OriginFor(kind, nil); got != want {
+			t.Errorf("OriginFor(%q) = %s, want %s", kind, got, want)
+		}
+	}
+	if OriginFor(SourceRollback, &admin) != OriginManual {
+		t.Error("a rollback an admin pressed is manual")
 	}
 }
 
@@ -190,15 +214,28 @@ func TestManualBinaryChangeNeedsApproval(t *testing.T) {
 	}
 }
 
-func TestMixedKindsNeverAutoPromote(t *testing.T) {
+// The update's change whose kinds came out mixed is still automatic: it follows its
+// kinds' strictest auto rule (lineup at quiet_window: it waits for the window), never an
+// approval.
+func TestMixedKindsFollowTheStrictestAutoRule(t *testing.T) {
 	for _, be := range tvchangetest.Backends(t) {
 		t.Run(be.Name, func(t *testing.T) {
 			w := newAUWorld(t, be.DB)
+			if _, err := be.DB.Exec(`INSERT INTO app_settings (key, value) VALUES ('rules.tv_staging',
+				'{"auto_promote_lineup": "quiet_window", "quiet_window": "00:00-00:01"}')`); err != nil {
+				t.Fatal(err)
+			}
 			st := w.begin("run-1")
 			w.toReady(st.ChangeID, []string{"lineup", "binary"})
-			w.ready(st.ChangeID)
-			if ch := w.change(st.ChangeID); ch.State != StateReady {
-				t.Fatalf("a mixed change went on: %s", ch.State)
+			cfg, err := LoadConfig(context.Background(), be.DB)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := ChangeRule(cfg, w.change(st.ChangeID)); got != RuleQuietWindow {
+				t.Fatalf("rule %s", got)
+			}
+			if ch := w.change(st.ChangeID); ch.State != StateReady || ch.Origin != OriginAuto {
+				t.Fatalf("a mixed change: %s %s", ch.State, ch.Origin)
 			}
 		})
 	}

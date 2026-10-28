@@ -20,6 +20,7 @@ import { applyResolvedTheme, readMode, watchSystemTheme } from "./lib/theme";
 import { LibraryBrowser } from "./pages/LibraryBrowser";
 import { Home } from "./pages/Home";
 import { Libraries } from "./pages/Library/Libraries";
+import { PinnedLibraries } from "./pages/Library/PinnedLibraries";
 import { LibraryPage } from "./pages/Library/LibraryPage";
 import { SeriesBrowser } from "./pages/Library/SeriesBrowser";
 import { Playlists } from "./pages/Playlists/Playlists";
@@ -121,6 +122,7 @@ export function App() {
                           >
                             <Route path="/" element={IS_REMOTE ? <RemoteHome /> : <Home />} />
                             <Route path="/library" element={<Libraries />} />
+                            <Route path="/library/pinned" element={<PinnedLibraries />} />
                             <Route path="/library/:libraryId" element={<LibraryPage />} />
                             <Route
                               path="/library/:libraryId/collections"

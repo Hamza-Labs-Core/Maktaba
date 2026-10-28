@@ -34,6 +34,7 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/help/:topic", { topic: "getting-started" }],
   ["/", { topic: "library", anchor: "home" }],
   ["/library", { topic: "library", anchor: "libraries-page" }],
+  ["/library/pinned", { topic: "library", anchor: "pinning" }],
   ["/library/:libraryId", { topic: "library", anchor: "library-page" }],
   ["/library/:libraryId/collections", { topic: "library", anchor: "collections" }],
   ["/library/:libraryId/collections/:kind/:groupId", { topic: "library", anchor: "collections" }],
