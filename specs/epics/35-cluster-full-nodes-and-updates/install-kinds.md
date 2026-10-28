@@ -479,7 +479,19 @@ release, a slot bound to another's binary, bound while it is between two starts 
 release whose streaming software the live TV ran at the TV step's last answer (the journal's
 `tv.live_streaming`: a TV held there). A desktop app keeps that release's payload copy in
 `updates/payloads` past later commits, and a runtime copy its runtime directory; a slot bound to
-that release finds its binary there when `bin/releases/<v>` has none (`supervisor.WithKeptStreaming`). `maktaba-streaming --version --json` says the front
+that release finds its binary there when `bin/releases/<v>` has none (`supervisor.WithKeptStreaming`).
+A slot restarted with the server (every desktop app's update, and a plain server whose slots
+were not handed over) starts on the streaming software the live TV ran, not the new release's
+(`supervisor/held.go`, fixed 2026-10-28 after 0.3.37 → 0.3.39 put the owner's live TV on 0.3.39
+before its check ran): at the slots' first start the supervisor reads the live slot's own
+report (`tv_slots.version`), and while it is an older release than the one starting, TV
+staging is on and the live TV release does not record the new release's streaming, every slot
+the front door has not bound to a release runs that older release's binary. It stays on it
+across every restart (a held change, a Drop) until a change swaps the slots (a Retry that
+passes, a later release's change: the front door binds them to the new release). A staging
+off, no TV release, or a launcher's fallback to an older release starts the release's own
+binary; a held release whose binary is nowhere is logged at error (`tv_held_binary_missing`)
+and the slots run the new one. `maktaba-streaming --version --json` says the front
 door's `edge_protocol`, and the journal keeps the release's: the front door restarts only when they
 differ (`updater.FrontDoorRestarts`, the rule the TV handover asks before it lets the front door
 run on across the restart, story 35.7).

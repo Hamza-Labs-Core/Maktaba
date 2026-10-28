@@ -60,6 +60,10 @@ type Supervisor struct {
 	// keptStreaming, when set, finds a release's streaming binary where this install
 	// keeps it besides bin/releases (WithKeptStreaming).
 	keptStreaming func(version string) []string
+	// held is the streaming software the live TV is held on (held.go), resolved at the
+	// slots' first start under heldMu; read under mu.
+	held   heldStreaming
+	heldMu sync.Mutex
 }
 
 // child is one supervised role. Everything but proc is guarded by s.mu.
@@ -422,6 +426,10 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		if c.proc.BeforeStart != nil {
 			c.proc.BeforeStart()
 		}
+		var held heldStreaming
+		if c.proc.Role == RoleTVSlot {
+			held = s.heldFor(ctx, c) // once: a database query, outside the lock
+		}
 
 		s.mu.Lock()
 		if s.stopping {
@@ -446,6 +454,10 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		var info ExitInfo
 		survive := s.survivalLocked(c)
 		startErr := applyBindingKept(cmd, c.binding, c.basePath, s.keptStreaming)
+		if startErr == nil && held.path != "" && (c.binding == nil || c.binding.ReleaseID == "") {
+			// not bound by the front door, the TV held: the release the live TV runs
+			applyHeld(cmd, held.path)
+		}
 		if startErr == nil {
 			prepareTree(cmd)
 			orig := cmd.SysProcAttr

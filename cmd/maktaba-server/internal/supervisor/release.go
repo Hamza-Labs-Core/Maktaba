@@ -151,6 +151,10 @@ func (s *Supervisor) ReleasesInUse() []string {
 			out = append(out, v)
 		}
 	}
+	if s.held.path != "" {
+		// the release the live TV is held on: the unbound slots run its binary
+		add(s.held.version)
+	}
 	for _, c := range s.children {
 		// a slot's binding counts while it is bound, running or not (between two starts:
 		// a slot restarting must find its release's binary)
