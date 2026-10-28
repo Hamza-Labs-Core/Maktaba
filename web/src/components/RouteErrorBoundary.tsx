@@ -11,6 +11,7 @@
 import { Component, type ReactNode } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { useI18n } from "../lib/i18n";
+import { forgetAnswers } from "../lib/pageCache";
 
 interface Props {
   /** the current route: a new value clears the error */
@@ -36,6 +37,9 @@ export class RouteErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error) {
     console.error("[page] render failed", error);
+    // the answer the page failed on may be a kept one: a return (or Retry)
+    // reads afresh instead of failing on it again
+    forgetAnswers();
   }
 
   render() {

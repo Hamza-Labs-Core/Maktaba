@@ -122,11 +122,14 @@ describe("CloudDevices (test-cases/admin-devices.md)", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
-  it("DEV-04: loading text before the list arrives; Register already usable", async () => {
+  it("DEV-04: a table-shaped placeholder before the list arrives; Register already usable", async () => {
     const user = userEvent.setup();
     routeGet(get, { [DEV]: () => new Promise(() => {}) });
     open();
-    expect(await screen.findByText("Loading…")).toBeInTheDocument();
+    // busy at once; the table's shape after 0.4 s; never a "Loading…" text
+    const busy = await waitFor(() => document.querySelector('[aria-busy="true"]')!);
+    await waitFor(() => expect(busy.querySelector("table.mkt-table thead")).not.toBeNull());
+    expect(screen.queryByText("Loading…")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Register device" }));
     expect(await dialog("Register device")).toBeInTheDocument();
   });
@@ -197,7 +200,7 @@ describe("CloudDevices (test-cases/admin-devices.md)", () => {
     expect(screen.queryByText("No devices")).toBeNull();
   });
 
-  it("DEV-09: Try again shows Loading, then the list", async () => {
+  it("DEV-09: Try again shows the loading region, then the list", async () => {
     const user = userEvent.setup();
     let resolve: (v: unknown) => void = () => {};
     let n = 0;
@@ -211,7 +214,7 @@ describe("CloudDevices (test-cases/admin-devices.md)", () => {
     });
     open();
     await user.click(await screen.findByRole("button", { name: "Try again" }));
-    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(screen.queryByText("No devices")).toBeNull();
     await act(async () => resolve({ items: [d1] }));
     await table();

@@ -8,7 +8,7 @@
 // per-library filter. Each card shows the poster, name (user override
 // honoured server-side), a library badge, and watched/episode progress.
 // RTL-correct for Arabic series names via dir="auto".
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -18,6 +18,9 @@ import { api } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { TitleRow } from "../../help/HelpLink";
 import { LoadError } from "../../components/LoadError";
+import { Skeleton } from "@ds/components/Skeleton/Skeleton";
+import { Loading } from "../../components/Placeholders";
+import { usePageData } from "../../lib/usePageData";
 
 interface SeriesItem {
   id: string;
@@ -37,30 +40,24 @@ type Sort = "name" | "progress";
 
 export function SeriesBrowser() {
   const { t, n } = useI18n();
-  const [items, setItems] = useState<SeriesItem[] | null>(null);
-  const [err, setErr] = useState<unknown>(null);
-  const [reload, setReload] = useState(0);
   // The sort lives in the URL so Back and a refresh keep it.
   const [params, setParams] = useSearchParams();
   const sort: Sort = params.get("sort") === "progress" ? "progress" : "name";
-
-  useEffect(() => {
-    // A slower answer for an older sort must not overwrite a newer one.
-    let cancelled = false;
-    setItems(null);
-    setErr(null);
-    api
-      .get<{ items: SeriesItem[] }>(`/api/series?sort=${sort}`)
-      .then((r) => {
-        if (!cancelled) setItems(Array.isArray(r?.items) ? r.items : []);
-      })
-      .catch((e) => {
-        if (!cancelled) setErr(e);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sort, reload, t]);
+  // each sort its own list, kept for a return; a slower answer for an older
+  // sort never overwrites a newer one
+  const {
+    data: items,
+    err,
+    loading,
+    reload,
+  } = usePageData<SeriesItem[]>(
+    `series-list:${sort}`,
+    () =>
+      api
+        .get<{ items: SeriesItem[] }>(`/api/series?sort=${sort}`)
+        .then((r) => (Array.isArray(r?.items) ? r.items : [])),
+    [t]
+  );
 
   function changeSort(next: Sort) {
     const p = new URLSearchParams(params);
@@ -93,12 +90,10 @@ export function SeriesBrowser() {
         </label>
       </header>
 
-      {err != null && <LoadError error={err} onRetry={() => setReload((x) => x + 1)} />}
-      {!err && !items && (
-        <p className="mkt-loading" role="status">
-          {t("common.loading")}
-        </p>
-      )}
+      {err != null && <LoadError error={err} onRetry={reload} />}
+      <Loading loading={loading}>
+        <SeriesGridPlaceholder />
+      </Loading>
       {!err && items && items.length === 0 && (
         <EmptyState title={t("series.empty.title")} description={t("series.empty.desc")} />
       )}
@@ -137,6 +132,28 @@ export function SeriesBrowser() {
         </ul>
       )}
     </section>
+  );
+}
+
+/** The grid's cards (poster, name, badges, progress) while the list loads. */
+function SeriesGridPlaceholder() {
+  return (
+    <ul className="mkt-series-grid" aria-hidden="true">
+      {Array.from({ length: 6 }, (_, i) => (
+        <li key={i}>
+          <Card className="mkt-series-card">
+            <div className="mkt-series-card__poster">
+              <Skeleton variant="rect" className="mkt-ph-full" />
+            </div>
+            <div className="mkt-series-card__meta">
+              <Skeleton variant="text" className="mkt-ph-line" width="70%" />
+              <Skeleton variant="text" className="mkt-ph-line" width="40%" />
+              <Skeleton variant="text" className="mkt-ph-line" width="100%" />
+            </div>
+          </Card>
+        </li>
+      ))}
+    </ul>
   );
 }
 

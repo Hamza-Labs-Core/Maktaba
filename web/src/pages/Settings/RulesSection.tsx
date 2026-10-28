@@ -26,6 +26,7 @@ import { RemoteUsage } from "../Admin/RemoteUsage";
 import { HelpLink } from "../../help/HelpLink";
 import { ruleHelp } from "../../help/registry";
 import "./rules.css";
+import { LinesPlaceholder, Loading } from "../../components/Placeholders";
 
 /**
  * The rules schema in the reader's language: the catalog keys
@@ -386,9 +387,9 @@ export function RulesSection() {
             {t("settings.rules.loadError")} {loadError}
           </p>
         ) : (
-          <p className="mkt-loading" role="status">
-            {t("common.loading")}
-          </p>
+          <Loading loading>
+            <LinesPlaceholder lines={8} />
+          </Loading>
         )}
       </div>
     );

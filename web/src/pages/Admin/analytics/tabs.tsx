@@ -1,9 +1,12 @@
 // The analytics page's tabs (Epic 44 story 44.7). Each loads its own
 // endpoints for the query it is given, so only the open tab asks the server.
+// Each answer but the live Now tab's is kept by what it reads and for which
+// query (useLoad's key), so a return shows it at once.
 import { useCallback, useEffect, useState } from "react";
 import { Card } from "@ds/components/Card/Card";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { useI18n } from "../../../lib/i18n";
+import { Loading, TablePlaceholder } from "../../../components/Placeholders";
 import { BarList, Heatmap, LineChart } from "../../../components/charts/Charts";
 import {
   analyticsApi,
@@ -71,11 +74,15 @@ export function OverviewTab({ q, nonce }: TabProps) {
   const days = useDayLabels();
   const summary = useLoad(
     useCallback(() => analyticsApi.summary(q, nonce > 0).then(obj), [q, nonce]),
-    nonce
+    nonce,
+    false,
+    `summary:${JSON.stringify(q)}`
   );
   const activity = useLoad(
     useCallback(() => analyticsApi.activityStats(q).then(cleanActivity), [q]),
-    nonce
+    nonce,
+    false,
+    `activity:${JSON.stringify(q)}`
   );
   const s = summary.data;
   const surfaces = cleanStats(s?.surfaces);
@@ -215,7 +222,9 @@ export function NowTab({ q, nonce }: TabProps) {
       <Card header={<h2>{t("analytics.now.title")}</h2>}>
         <p className="mkt-muted">{t("analytics.now.auto")}</p>
         {rows === null ? (
-          <p className="mkt-loading">{t("common.loading")}</p>
+          <Loading loading>
+            <TablePlaceholder rows={3} columns={7} head />
+          </Loading>
         ) : rows.length === 0 ? (
           <EmptyState title={t("analytics.now.empty")} />
         ) : (
@@ -257,22 +266,30 @@ export function VideosTab({ q, nonce }: TabProps) {
   const { t, n } = useI18n();
   const summary = useLoad(
     useCallback(() => analyticsApi.summary(q, nonce > 0).then(obj), [q, nonce]),
-    nonce
+    nonce,
+    false,
+    `summary:${JSON.stringify(q)}`
   );
   const top = useLoad(
     useCallback(
       () => analyticsApi.topVideos(q, 20).then((v) => list<TopVideo>(obj(v).videos)),
       [q]
     ),
-    nonce
+    nonce,
+    false,
+    `top:${JSON.stringify(q)}`
   );
   const libs = useLoad(
     useCallback(() => analyticsApi.libraries(q).then((v) => cleanStats(obj(v).libraries)), [q]),
-    nonce
+    nonce,
+    false,
+    `libs:${JSON.stringify(q)}`
   );
   const genres = useLoad(
     useCallback(() => analyticsApi.genres(q).then((v) => cleanStats(obj(v).genres)), [q]),
-    nonce
+    nonce,
+    false,
+    `genres:${JSON.stringify(q)}`
   );
   const s = summary.data;
   if (licenseRefused([summary, top, libs, genres]))
@@ -354,15 +371,21 @@ export function LiveTVTab({ q, nonce }: TabProps) {
   const label = useLabels();
   const channels = useLoad(
     useCallback(() => analyticsApi.topChannels(q, 20).then(obj), [q]),
-    nonce
+    nonce,
+    false,
+    `channels:${JSON.stringify(q)}`
   );
   const remote = useLoad(
     useCallback(() => analyticsApi.remoteTV(q).then(obj), [q]),
-    nonce
+    nonce,
+    false,
+    `remote:${JSON.stringify(q)}`
   );
   const activity = useLoad(
     useCallback(() => analyticsApi.activityStats(q).then(cleanActivity), [q]),
-    nonce
+    nonce,
+    false,
+    `activity:${JSON.stringify(q)}`
   );
   const c = channels.data;
   const r = remote.data;
@@ -482,7 +505,9 @@ export function PeopleTab({ q, nonce }: TabProps) {
   const label = useLabels();
   const people = useLoad(
     useCallback(() => analyticsApi.people(q).then((v) => list<Person>(obj(v).people)), [q]),
-    nonce
+    nonce,
+    false,
+    `people:${JSON.stringify(q)}`
   );
   const rows = people.data;
   if (licenseRefused([people])) return <LoadError loads={[people]} />;
@@ -536,7 +561,9 @@ export function AppsTab({ q, nonce }: TabProps) {
   const label = useLabels();
   const apps = useLoad(
     useCallback(() => analyticsApi.apps(q).then(obj), [q]),
-    nonce
+    nonce,
+    false,
+    `apps:${JSON.stringify(q)}`
   );
   const a = apps.data;
   const rows = list<AppUsage>(a?.apps);

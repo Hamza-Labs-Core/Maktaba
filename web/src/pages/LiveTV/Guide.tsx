@@ -23,6 +23,9 @@ import { LoadError } from "../../components/LoadError";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useI18n } from "../../lib/i18n";
 import { useOptionalAuth } from "../../lib/auth";
+import { Skeleton } from "@ds/components/Skeleton/Skeleton";
+import { Loading } from "../../components/Placeholders";
+import { cachedAnswer, keepAnswer } from "../../lib/pageCache";
 import {
   channelLogo,
   channelsApi,
@@ -124,8 +127,14 @@ export function Guide() {
   const { t, formatDate } = useI18n();
   const nav = useNavigate();
   // only admins can create channels: the empty-state CTA is theirs
-  const isAdmin = useOptionalAuth()?.user?.is_admin === true;
-  const [guide, setGuide] = useState<GuideResponse | null>(null);
+  const me = useOptionalAuth()?.user;
+  const isAdmin = me?.is_admin === true;
+  const userId = me?.id ?? null;
+  // a return shows the last guide at once (lib/pageCache) while it reads the
+  // current window; the guide refreshes itself on its own clock after that
+  const [guide, setGuide] = useState<GuideResponse | null>(
+    () => cachedAnswer<GuideResponse>(userId, "guide:") ?? null
+  );
   const [err, setErr] = useState<unknown>(null);
   const [category, setCategory] = useState("");
   const [compact, setCompact] = useState(() =>
@@ -149,11 +158,12 @@ export function Guide() {
       .then((g) => {
         const srv = Date.parse(g.server_time);
         if (!Number.isNaN(srv)) offsetRef.current = srv - Date.now();
+        keepAnswer(userId, `guide:${category}`, g);
         setGuide(g);
         setErr(null);
       })
       .catch((e: unknown) => setErr(e));
-  }, [category]);
+  }, [category, userId]);
 
   useEffect(() => {
     load();
@@ -215,7 +225,31 @@ export function Guide() {
       </section>
     );
   }
-  if (!guide) return <p className="mkt-loading">{t("common.loading")}</p>;
+  if (!guide) {
+    return (
+      <section className="mkt-page mkt-guide">
+        <header className="mkt-page__header">
+          <TitleRow>
+            <h1>{t("guide.title")}</h1>
+          </TitleRow>
+        </header>
+        <Loading loading>
+          <div className="mkt-guide__scroll" aria-hidden="true">
+            {Array.from({ length: 5 }, (_, i) => (
+              <div className="mkt-guide__row" key={i}>
+                <span className="mkt-guide__chanhead">
+                  <Skeleton variant="text" className="mkt-ph-line" width="70%" />
+                </span>
+                <div className="mkt-guide__track">
+                  <Skeleton variant="rect" className="mkt-ph-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Loading>
+      </section>
+    );
+  }
 
   const channels = guide.channels;
 

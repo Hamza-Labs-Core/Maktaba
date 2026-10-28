@@ -6,6 +6,9 @@ import { Modal } from "@ds/components/Modal/Modal";
 import { Button } from "@ds/components/Button/Button";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useI18n } from "../lib/i18n";
+import { useOptionalAuth } from "../lib/auth";
+import { cachedAnswer, keepAnswer } from "../lib/pageCache";
+import { LinesPlaceholder, Loading } from "./Placeholders";
 import {
   addToCollection,
   COLLECTION_NAME_MAX,
@@ -34,15 +37,23 @@ export function AddToCollection({
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const userId = useOptionalAuth()?.user?.id ?? null;
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setLists(null);
+    // the library's collections its page kept show at once, read again behind them
+    const key = `library-collections:${libraryId}`;
+    const kept = cachedAnswer<Collection[]>(userId, key);
+    setLists(kept ? kept.filter((c) => !c.is_smart) : null);
     setLoadErr(null);
     setName("");
     fetchCollections(libraryId)
-      .then((cs) => !cancelled && setLists(cs.filter((c) => !c.is_smart)))
+      .then((cs) => {
+        if (cancelled) return;
+        keepAnswer(userId, key, cs);
+        setLists(cs.filter((c) => !c.is_smart));
+      })
       .catch((e) => {
         if (cancelled) return;
         setLists([]);
@@ -51,7 +62,7 @@ export function AddToCollection({
     return () => {
       cancelled = true;
     };
-  }, [open, libraryId, t]);
+  }, [open, libraryId, t, userId]);
 
   async function addTo(c: { id: string; name: string }) {
     setBusy(true);
@@ -102,7 +113,9 @@ export function AddToCollection({
       }
     >
       <div className="mkt-addpl">
-        {lists === null && <p className="mkt-loading">{t("common.loading")}</p>}
+        <Loading loading={lists === null}>
+          <LinesPlaceholder lines={3} />
+        </Loading>
         {loadErr && <p className="mkt-muted">{loadErr}</p>}
         {lists && lists.length > 0 && (
           <ul className="mkt-addpl__list" aria-label={t("collections.title")}>

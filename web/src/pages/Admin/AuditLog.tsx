@@ -21,6 +21,8 @@ import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
 import { TitleRow } from "../../help/HelpLink";
+import { usePageData } from "../../lib/usePageData";
+import { Loading, TablePlaceholder } from "../../components/Placeholders";
 
 interface AuditEntry {
   id: number;
@@ -32,6 +34,11 @@ interface AuditEntry {
 }
 
 type Source = "security" | "library";
+/** The rows loaded so far, and whether the last page was the end. */
+interface Feed {
+  items: AuditEntry[];
+  exhausted: boolean;
+}
 const PAGE = 50;
 
 export function AdminAuditLog() {
@@ -46,12 +53,9 @@ function AuditInner() {
   const { t, formatDate } = useI18n();
   const [source, setSource] = useState<Source>("security");
   const [libraryId, setLibraryId] = useState("");
-  const [rows, setRows] = useState<AuditEntry[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   // a failed "Load more" keeps the loaded rows and shows its error inline
   const [moreError, setMoreError] = useState<string | null>(null);
-  const [exhausted, setExhausted] = useState(false);
 
   // client-side filters
   const [eventFilter, setEventFilter] = useState("");
@@ -70,53 +74,72 @@ function AuditInner() {
     return `/api/libraries/${encodeURIComponent(id)}/audit?limit=${PAGE}${c}`;
   }
 
-  // Each request takes a sequence number; a response that is no longer the
-  // latest (the source or library id changed meanwhile) is dropped.
-  const seq = useRef(0);
+  async function page(url: string): Promise<Feed> {
+    const res = await api.get<{ items?: AuditEntry[] | null }>(url);
+    const items = Array.isArray(res?.items) ? res.items : [];
+    return { items, exhausted: items.length < PAGE };
+  }
 
-  async function load(reset: boolean) {
-    const cursor = reset ? undefined : nextCursor(rows, source);
-    const url = endpoint(cursor);
+  // The first page, read again whenever the source (or the library id for
+  // the library feed) changes; the library feed waits for a non-empty id. A
+  // return shows the rows kept for that feed at once (lib/usePageData).
+  const first = endpoint();
+  const feedKey =
+    first == null
+      ? null
+      : `admin:audit:${source}${source === "library" ? `:${libraryId.trim()}` : ""}`;
+  const {
+    data: feed,
+    err,
+    loading,
+    reload,
+    setData: setFeed,
+  } = usePageData<Feed>(feedKey, () => page(first!), [t]);
+  const rows = feedKey == null ? null : (feed?.items ?? null);
+  const exhausted = feed?.exhausted ?? false;
+  const error =
+    err == null
+      ? null
+      : err instanceof ApiError
+        ? err.problem.detail || err.problem.title
+        : t("common.error");
+
+  // Each "Load more" takes a sequence number; a page that is no longer the
+  // latest (the feed changed or was read again meanwhile) is dropped.
+  const seq = useRef(0);
+  useEffect(() => {
+    seq.current++;
+    setMoreError(null);
+    setLoadingMore(false);
+  }, [feedKey]);
+
+  function refresh() {
+    seq.current++;
+    setMoreError(null);
+    setLoadingMore(false);
+    reload();
+  }
+
+  async function more() {
+    const url = endpoint(nextCursor(rows, source));
+    if (!url) return;
     const mine = ++seq.current;
     setMoreError(null);
-    if (!url) {
-      setRows(null);
-      setError(null);
-      setLoadingMore(false);
-      return;
-    }
-    if (reset) {
-      setRows(null);
-      setExhausted(false);
-    } else {
-      setLoadingMore(true);
-    }
+    setLoadingMore(true);
     try {
-      const res = await api.get<{ items?: AuditEntry[] | null }>(url);
+      const next = await page(url);
       if (mine !== seq.current) return;
-      const items = Array.isArray(res?.items) ? res.items : [];
-      setError(null);
-      setExhausted(items.length < PAGE);
-      setRows((prev) => (reset || !prev ? items : [...prev, ...items]));
+      setFeed((prev) => ({
+        items: [...(prev?.items ?? []), ...next.items],
+        exhausted: next.exhausted,
+      }));
     } catch (e) {
       if (mine !== seq.current) return;
-      const msg = e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error");
-      if (reset) {
-        setError(msg);
-        setRows([]);
-      } else {
-        setMoreError(msg);
-      }
+      setMoreError(e instanceof ApiError ? e.problem.detail || e.problem.title : t("common.error"));
     } finally {
       if (mine === seq.current) setLoadingMore(false);
     }
   }
-
-  // Reload whenever the source (or the library id for the library feed)
-  // changes. The library feed waits for a non-empty id.
-  useEffect(() => {
-    void load(true);
-  }, [source, libraryId]);
 
   const events = useMemo(() => {
     const set = new Set<string>();
@@ -176,7 +199,7 @@ function AuditInner() {
           {moreError}
         </p>
       )}
-      <Button variant="secondary" loading={loadingMore} onClick={() => load(false)}>
+      <Button variant="secondary" loading={loadingMore} onClick={() => void more()}>
         {moreError ? t("common.retry") : t("common.loadMore")}
       </Button>
     </div>
@@ -189,7 +212,7 @@ function AuditInner() {
           <h1>{t("audit.title")}</h1>
         </TitleRow>
         <div className="mkt-toolbar" role="toolbar">
-          <Button variant="secondary" onClick={() => load(true)}>
+          <Button variant="secondary" onClick={refresh}>
             {t("common.refresh")}
           </Button>
           <Button variant="secondary" onClick={exportCsv} disabled={filtered.length === 0}>
@@ -255,13 +278,15 @@ function AuditInner() {
           title={t("common.error")}
           description={error}
           action={
-            <Button variant="secondary" onClick={() => load(true)}>
+            <Button variant="secondary" onClick={refresh}>
               {t("common.retry")}
             </Button>
           }
         />
       ) : rows === null ? (
-        <p className="mkt-loading">{t("common.loading")}</p>
+        <Loading loading={loading}>
+          <TablePlaceholder head />
+        </Loading>
       ) : filtered.length === 0 ? (
         <>
           <EmptyState

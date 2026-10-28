@@ -176,24 +176,58 @@ export function VideoGridPlaceholder({ cards = 6 }: { cards?: number }) {
   );
 }
 
-/** The list view's table (LibraryBrowser): a row per video. */
-export function VideoListPlaceholder({ rows = 6 }: { rows?: number }) {
+/**
+ * A table's rows (a `.mkt-table` page, the grid's list view): the first
+ * column wide, the others short; `head` draws the header row too.
+ */
+export function TablePlaceholder({
+  rows = 6,
+  columns = 5,
+  head = false,
+  className = "mkt-table",
+}: {
+  rows?: number;
+  columns?: number;
+  head?: boolean;
+  className?: string;
+}) {
+  const cells = (tag: "th" | "td", row: number) =>
+    Array.from({ length: columns }, (_, c) => {
+      const Cell = tag;
+      return (
+        <Cell key={`${row}:${c}`}>
+          <Skeleton variant="text" className="mkt-ph-line" width={c === 0 ? "70%" : "3rem"} />
+        </Cell>
+      );
+    });
   return (
-    <table className="mkt-table" aria-hidden="true">
+    <table className={className} aria-hidden="true">
+      {head && (
+        <thead>
+          <tr>{cells("th", -1)}</tr>
+        </thead>
+      )}
       <tbody>
         {Array.from({ length: rows }, (_, i) => (
-          <tr key={i}>
-            <td>
-              <Skeleton variant="text" className="mkt-ph-line" width="70%" />
-            </td>
-            {[0, 1, 2, 3].map((c) => (
-              <td key={c}>
-                <Skeleton variant="text" className="mkt-ph-line" width="3rem" />
-              </td>
-            ))}
-          </tr>
+          <tr key={i}>{cells("td", i)}</tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** Stacked text lines (a settings panel, a short list): `lines` bars of the text's height. */
+export function LinesPlaceholder({ lines = 4 }: { lines?: number }) {
+  return (
+    <div className="mkt-ph-lines" aria-hidden="true">
+      {Array.from({ length: lines }, (_, i) => (
+        <Skeleton
+          key={i}
+          variant="text"
+          className="mkt-ph-line"
+          width={i === lines - 1 ? "40%" : "90%"}
+        />
+      ))}
+    </div>
   );
 }

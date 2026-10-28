@@ -17,6 +17,7 @@ vi.mock("../lib/api", async () => {
 });
 vi.mock("../lib/auth", () => ({
   useAuth: () => ({ user: auth.user, logoutAll: vi.fn() }),
+  useOptionalAuth: () => ({ user: auth.user }),
 }));
 
 import { Settings } from "./Settings";

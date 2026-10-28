@@ -233,8 +233,8 @@ describe("LibraryACL (test-cases/admin-library-acl.md)", () => {
     expect(saveBtn()).toBeDisabled();
     fail = false;
     await userEvent.setup().click(screen.getByRole("button", { name: "Try again" }));
-    // While retrying: Loading…, not "Nothing to map"
-    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    // While retrying: the busy region, not "Nothing to map"
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(screen.queryByText("Nothing to map")).toBeNull();
     resolveRetry(DATA);
     expect(

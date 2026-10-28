@@ -2,7 +2,7 @@
 // answer kept for the signed-in user (lib/pageCache): coming back to a page
 // shows that answer at once and reads it again quietly, never the loading
 // placeholder. `loading` is only the first read, with nothing to show yet.
-import { useCallback, useEffect, useState, type DependencyList } from "react";
+import { useCallback, useEffect, useRef, useState, type DependencyList } from "react";
 import { useOptionalAuth } from "./auth";
 import { cachedAnswer, keepAnswer } from "./pageCache";
 
@@ -43,6 +43,9 @@ export function usePageData<T>(
   });
   const [held, setHeld] = useState<Held<T>>(fresh);
   const [reloads, setReloads] = useState(0);
+  // bumped by a change the page makes: a read that started before it is older
+  // than the change and must not overwrite it
+  const gen = useRef(0);
 
   // another page or user: what this one kept (or nothing), never the last one's
   let now = held;
@@ -54,15 +57,16 @@ export function usePageData<T>(
   useEffect(() => {
     if (key == null) return;
     let cancelled = false;
+    const mine = gen.current;
     setHeld((h) => (h.id === id && h.err != null ? { ...h, err: null } : h));
     load()
       .then((data) => {
-        if (cancelled) return;
+        if (cancelled || mine !== gen.current) return;
         keepAnswer(user, key, data);
         setHeld({ id, data, err: null });
       })
       .catch((err: unknown) => {
-        if (!cancelled) setHeld((h) => (h.id === id ? { ...h, err } : h));
+        if (!cancelled && mine === gen.current) setHeld((h) => (h.id === id ? { ...h, err } : h));
       });
     return () => {
       cancelled = true;
@@ -74,12 +78,15 @@ export function usePageData<T>(
   const setData = useCallback(
     (next: T | ((prev: T | null) => T | null)) =>
       setHeld((h) => {
+        // the page moved on (another key or user): this change was the last one's
+        if (h.id !== id) return h;
+        gen.current += 1;
         const data =
           typeof next === "function" ? (next as (prev: T | null) => T | null)(h.data) : next;
         if (data != null && key != null) keepAnswer(user, key, data);
         return { ...h, data };
       }),
-    [user, key]
+    [id, user, key]
   );
 
   return {
