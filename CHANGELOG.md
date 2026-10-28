@@ -490,6 +490,23 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A TV held on its old streaming software stays there through schedule and settings
+  changes.** While an update's TV check had failed and the live TV was held on v0.3.39, the
+  0.3.40 pipeline recorded its own `0.3.40` on every schedule release: staging ran the new
+  binary, and swapping the change in would have put the held TV on the software whose check had
+  just failed. A change that brings no binary of its own now records, stages and swaps on the
+  streaming software the live TV runs. The TV moves to new streaming software only when a
+  binary change passes its check: the update's Retry, or a later release's own. A staging slot
+  asked to run a release whose binary is not on the machine is refused at once, and the change's
+  staging fails with that reason instead of running other software.
+- **A TV schedule change's check no longer fails a staging slot that runs the right
+  software.** A release the pipeline builds for a schedule or settings change records its
+  streaming version as `0.3.40`, the slot reports `v0.3.40`, and the check compared them as
+  text: TV change #51 (2026-10-28) failed "the staging slot did not become healthy on the
+  release" three times with the slot up on that very binary. Versions now compare without the
+  `v`. A release recording no binary (a pipeline run from a source checkout records `0.0.1`)
+  stages and binds this install's streaming binary instead of asking for one that does not
+  exist.
 - **An update's TV check no longer fails a Mac's new streaming software on its warm-up.** The
   staging check of TV change #53 (0.3.37 → 0.3.38, 2026-10-28) failed 27 s in and rolled the
   update back, for three reasons none of which was the release: the staging slot's channels, all

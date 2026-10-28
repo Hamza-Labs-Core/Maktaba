@@ -33,8 +33,9 @@ from .snapshot import (
     content_digest,
     lineup_digest,
     live_snapshot,
+    live_streaming,
     release_digest,
-    streaming_version,
+    same_streaming,
 )
 
 __all__ = [
@@ -203,7 +204,7 @@ def compute_diff(
         # story 33.9 AC4: a cold rollback re-stages a previous release as a change
         kinds.add("rollback")
     binary = None
-    if streaming is not None and streaming[0] != streaming[1]:
+    if streaming is not None and not same_streaming(streaming[0], streaming[1]):
         kinds.add("binary")
         binary = {"from": streaming[0][0], "to": streaming[1][0]}
     diff = {
@@ -281,7 +282,7 @@ async def bootstrap(db: Any, snap: dict[str, Any] | None = None) -> str:
         rid = str(existing["id"])
     else:
         snap = snap or await live_snapshot(db)
-        streaming = streaming_version()
+        streaming = await live_streaming(db)
         content = content_digest(snap, streaming)
         rid = await _insert_release(
             db, digest=release_digest(content, None, []), kinds=["bootstrap"], sched_gen=gen,
@@ -355,14 +356,16 @@ async def build_release(
     base = await live_snapshot(db)
     base_id = await bootstrap(db, base)
     target = apply_pending(base, pending)
-    live_streaming = streaming_version()
-    target_streaming = tuple(pending.get("streaming") or live_streaming)
+    # what the live TV runs: a change that brings no binary of its own stages and swaps on
+    # it (a TV held on its old streaming software stays on it: live_streaming)
+    on_air = await live_streaming(db)
+    target_streaming = tuple(pending.get("streaming") or on_air)
     diff, kinds, sched = compute_diff(
-        base, target, pending, (live_streaming, (target_streaming[0], target_streaming[1]))
+        base, target, pending, (on_air, (target_streaming[0], target_streaming[1]))
     )
     content = content_digest(target, (target_streaming[0], target_streaming[1]))
     filler = _filler_edits(pending)
-    if content == content_digest(base, live_streaming) and not sched and not filler:
+    if content == content_digest(base, on_air) and not sched and not filler:
         return None, diff, kinds
     digest = release_digest(content, base_id, sorted(sched), filler)
     got = await db.fetchrow("SELECT id FROM tv_releases WHERE digest = $1", digest)

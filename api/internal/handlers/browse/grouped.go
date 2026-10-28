@@ -31,7 +31,14 @@ type AddedEntry struct {
 // most groupScan: the grouped row reads them all, Recently Added the first
 // RowSize (the same order), so the home and a hub read them once.
 func (h *Handler) recentlyAddedScan(ctx context.Context, s scope, lib string) (added, scan []Card, err error) {
-	scan, err = h.recentlyAdded(ctx, s, lib, groupScan)
+	if lib != "" {
+		// one library's: the same order and predicate, from the row cache
+		var m map[string][]Card
+		m, err = h.libraryRows(ctx, []string{lib}, groupScan)
+		scan = nonNil(m[lib])
+	} else {
+		scan, err = h.recentlyAdded(ctx, s, lib, groupScan)
+	}
 	if err != nil {
 		return nil, nil, err
 	}

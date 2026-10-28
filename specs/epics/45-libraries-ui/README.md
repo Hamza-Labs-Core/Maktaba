@@ -137,8 +137,8 @@ every row.
 | Route | What |
 |---|---|
 | `GET /api/libraries/summary` | One card per visible library: `{id, name, videos, duration_sec, poster_video_ids (up to 4 recent ones), latest_added_at, pinned, pin_position}`. |
-| `GET /api/me/pinned-libraries` / `PUT` `{library_ids: [...]}` | The user's pins in order. `PUT` replaces them (the order is the array's); a library the user may not see is 404 (the same as one that does not exist); at most 20. |
-| `GET /api/home` | `{continue_watching, recently_added, recently_watched, pinned: [{library: {id, name}, recently_added, continue_watching}]}`, 20 cards per row. |
+| `GET /api/me/pinned-libraries` / `PUT` `{library_ids: [...]}` | The user's pins in order. `PUT` replaces them (the order is the array's); a library the user may not see is 404 (the same as one that does not exist); any number of pins (no cap). |
+| `GET /api/home` | `{continue_watching, recently_added, recently_watched, pinned: [{library: {id, name}, recently_added, continue_watching}]}`, 20 cards per row. A library's newest videos (a pinned library's `recently_added`, a hub's) come from a per-process cache keyed by library: served at once, read again in the background past 30 s, dropped on every API process when the library's videos change (slot 0166's `browse.library_changed` NOTIFY). |
 | `GET /api/libraries/{id}/hub` | `{library: {id, name, videos}, rows: {continue_watching, recently_added, recently_watched, most_watched, series: [{id, name, episodes}], years: [{year, videos}]}}`; 404 for a library the user may not see. |
 | `GET /api/videos` (extended) | Adds `sort=published_at\|duration_sec\|plays` (besides `updated_at\|created_at\|title`), `order=asc\|desc`, and the filters `year=YYYY`, `watched=unwatched\|in_progress\|watched` (the caller's own), `series=<id>`. The cursor carries the sort and order. |
 
