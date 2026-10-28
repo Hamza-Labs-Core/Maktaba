@@ -39,7 +39,9 @@ func TestExecRunner_StalledEncoderIsStopped(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = h.Stop(context.Background()) })
-	if !waitUntil(10*time.Second, func() bool { return !h.Active() }) {
+	// Active goes false as the stop begins, Ended once the process is reaped: wait for
+	// the end itself (a loaded runner saw the moment between them, 2026-10-28)
+	if !waitUntil(10*time.Second, func() bool { return !h.Active() && h.Ended() }) {
 		t.Fatal("a stalled encoder ran on")
 	}
 	out := logs.String()
