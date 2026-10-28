@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import pickle
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -54,11 +55,11 @@ from ...integrations.youtube import (
     list_channel,
 )
 from ...integrations.youtube_errors import BOT_CHECK_KIND, RATE_LIMITED_KIND
+from ...library_mgmt import tartube_import
 from ...library_mgmt import youtube_sources as ys
 from ...scanner.walker import DEFAULT_IGNORE_DIRNAMES, DEFAULT_VIDEO_EXTENSIONS
 from ..context import StageContext, StageFailure
-from ..enqueue import enqueue_job
-from ..graph import EPIC47_PRIORITIES, StageResult, SubjectKind
+from ..graph import EPIC47_PRIORITIES, Request, StageResult, SubjectKind
 from ..hashing import canonical_hash
 from ..sql import is_pg, loads, now, to_ts, uid
 from .registry import StageImpl
@@ -400,6 +401,45 @@ async def _unlinked_videos(db: Any, library_id: UUID) -> set[UUID]:
 # ------------------------------------------------------------------ sources (Epic 47)
 
 
+async def _import_tartube(
+    db: Any, library_id: UUID, ctx: StageContext, spec: Any
+) -> dict[str, Any]:
+    """Seed the library from a Tartube database the owner named (payload ``{"tartube":
+    {"path": ..., "database": ..., "channels": [...]}}``; a path on this machine)."""
+    if not isinstance(spec, dict) or not isinstance(spec.get("path"), str):
+        raise StageFailure("tartube_bad_payload", "tartube needs a path", retryable=False)
+    path = ctx.local_path(str(spec["path"]))
+    db_path = spec.get("database")
+    database = ctx.local_path(db_path) if isinstance(db_path, str) and db_path else None
+    channels = [str(c) for c in spec.get("channels") or [] if isinstance(c, str)]
+    if not os.path.isabs(path) or not os.path.isfile(path):
+        raise StageFailure(
+            "tartube_missing", f"no Tartube export or database at {path}", retryable=False
+        )
+    try:
+        ids, rep = await asyncio.to_thread(
+            tartube_import.downloaded_ids,
+            path,
+            database=database,
+            channels=channels,
+            to_local=ctx.local_path,
+        )
+    except tartube_import.TartubeRefused as exc:
+        raise StageFailure("tartube_refused", str(exc), retryable=False) from exc
+    except (OSError, ValueError, EOFError, pickle.UnpicklingError) as exc:
+        raise StageFailure(
+            "tartube_unreadable", f"{path}: {type(exc).__name__}: {exc}", retryable=False
+        ) from exc
+    linked = await ys.linked_video_ids(db, library_id)
+    seeded = await ys.seed_done(
+        db, library_id, ids, reason="tartube", video_ids={i: linked[i] for i in ids if i in linked}
+    )
+    out = rep.as_json()
+    out["seeded"] = seeded
+    await ctx.log("info", f"Tartube: {rep.downloaded} downloaded, {seeded} new", out)
+    return out
+
+
 def _listing_archive(library_id: UUID) -> str:
     from ._youtube_drain import work_root
 
@@ -417,6 +457,12 @@ async def _check_sources(
     await ys.ensure_channel_sources(db, library_id)
     sources = await ys.load_sources(db, library_id, enabled_only=True)
     report: dict[str, Any] = {"sources": len(sources)}
+    tartube = (job.payload or {}).get("tartube")
+    if sources or tartube:
+        # story 47.12: what the library has is never downloaded again (before any listing)
+        report["seeded_library"] = await ys.seed_from_library(db, library_id)
+    if tartube:
+        report["tartube"] = await _import_tartube(db, library_id, ctx, tartube)
     if not sources:
         return report
     todo = [s for s in sources if refresh or s.status != "gone"]
@@ -467,17 +513,7 @@ async def _check_sources(
     queued: list[str] = []
     for stage, backfill in (("youtube_fetch", False), ("youtube_backfill", True)):
         if await ys.wanted_count(db, library_id, backfill=backfill):
-            res = await enqueue_job(
-                db,
-                subject_kind="library",
-                subject_id=library_id,
-                stage=stage,
-                priority=EPIC47_PRIORITIES[stage],
-                reason={"why": "youtube items wanted", "by": f"job:{job.id}"},
-                triggered_by=job.id,
-            )
-            if res.enqueued:
-                queued.append(stage)
+            queued.append(stage)
     report["queued"] = queued
     return report
 
@@ -556,9 +592,15 @@ async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
     subjects: tuple[tuple[SubjectKind, UUID], ...] = tuple(
         ("video", v) for v in sorted(changed_videos, key=str)
     )
+    library_requests = tuple(
+        Request(stage, "library", library_id, "youtube items wanted",
+                priority=EPIC47_PRIORITIES[stage])
+        for stage in sources.get("queued", ())
+    )  # fmt: skip
     return StageResult(
         output_hash=after.digest(),
         changed_subjects=subjects,
+        requests=library_requests,
         summary={
             "channels": len(channels),
             **counts,

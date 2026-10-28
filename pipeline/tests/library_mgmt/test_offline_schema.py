@@ -45,6 +45,7 @@ NEW_TABLES = (
 SEEDED_BEFORE_SYNC: dict[str, tuple[tuple[str, ...], bool]] = {
     "convert_mp4": (("video",), False),
     "youtube_fetch": (("library",), False),
+    "youtube_backfill": (("library",), False),
 }
 EPIC47_STAGES = (
     "convert_mp4",
@@ -272,9 +273,15 @@ def test_the_graph_has_the_epic47_stages() -> None:
     for name in EPIC47_STAGES:
         # no automatic trigger yet: nothing points at them and they point at nothing
         assert not by[name].edges and not by[name].entry_for
-        # the YouTube downloads are queued by the listing (story 47.8)
+        # the YouTube downloads are queued by the listing (story 47.8) and by themselves,
+        # one video a job; each landed video goes on to convert_mp4
         requesters = {s.name for s in GRAPH if name in s.may_request}
-        assert requesters <= ({"youtube_sync"} if name.startswith("youtube_") else set())
+        allowed = {
+            "youtube_fetch": {"youtube_sync", "youtube_fetch"},
+            "youtube_backfill": {"youtube_sync", "youtube_backfill"},
+            "convert_mp4": {"youtube_fetch", "youtube_backfill"},
+        }
+        assert requesters <= allowed.get(name, set())
         assert all(e.to != name for s in GRAPH for e in s.edges)
         assert get_impl(name) is not None and get_impl(name).run is not None  # type: ignore[union-attr]
     assert EPIC47_PRIORITIES["youtube_fetch"] < 150 < EPIC47_PRIORITIES["youtube_backfill"]
@@ -320,7 +327,7 @@ async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> No
     assert after["convert_mp4"] == (True, None)
     kinds = await db.fetchval("SELECT subject_kinds FROM job_stages WHERE stage = 'convert_mp4'")
     assert list(kinds if is_pg(db) else loads(kinds)) == ["video", "library"]
-    assert after["youtube_backfill"] == (False, "not_configured")
+    assert after["youtube_backfill"] == (True, None)  # story 47.10 shipped
     assert after["trash_purge"] == (True, None)
     assert after["youtube_fetch"] == (True, None)  # story 47.9 shipped
     pool = await db.fetchrow("SELECT scope, size FROM worker_pools WHERE pool = 'convert'")
