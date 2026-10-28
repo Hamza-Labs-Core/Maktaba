@@ -478,7 +478,12 @@ class FakeAudioDB:
             library_id, path = args
             for (video_id, cpath), (size, mtime) in self.video_copies.items():
                 v = self.videos.get(video_id)
-                if v is not None and v.library_id == library_id and cpath == path:
+                if (
+                    v is not None
+                    and v.library_id == library_id
+                    and cpath == path
+                    and size == v.size_bytes
+                ):
                     return _Row(
                         {
                             "id": video_id,
@@ -494,6 +499,11 @@ class FakeAudioDB:
             return None
         if s.startswith("DELETE FROM video_copies WHERE video_id = $1 AND path = $2"):
             self.video_copies.pop((UUID(str(args[0])), args[1]), None)
+            return None
+        if s.startswith("DELETE FROM video_copies WHERE path = $1 AND video_id <> $2"):
+            for ck in [k for k in self.video_copies if k[1] == args[0]]:
+                if ck[0] != UUID(str(args[1])):
+                    self.video_copies.pop(ck, None)
             return None
         if s.startswith("UPDATE videos SET last_seen_at = $2 WHERE id = $1"):
             v = self.videos.get(UUID(str(args[0])))

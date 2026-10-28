@@ -26,8 +26,8 @@ func TestReleaseBinarySpellings(t *testing.T) {
 	}{
 		{"0.3.40", "", "v0.3.40", ""},              // #51: the pipeline's spelling of this binary
 		{"v0.3.40", "abc", "v0.3.40", ""},          // this binary, as before
-		{"", "", "v0.3.40", ""},                    // no version recorded
-		{"0.0.1", "", "v0.3.40", ""},               // a source checkout's release
+		{"", "", "", ""},                           // no version recorded: the supervisor's choice
+		{"0.0.1", "abc", "", ""},                   // a source checkout's release: the same
 		{"v0.3.39", "def", "v0.3.39", "def"},       // another release's binary
 		{"0.3.39", "", "0.3.39", ""},               // the supervisor finds releases/0.3.39
 		{"v0.3.40-rc.1", "x", "v0.3.40-rc.1", "x"}, // a prerelease is another binary
@@ -75,7 +75,7 @@ func TestStageStartAsksForTheReleasesBinary(t *testing.T) {
 		t.Fatalf("the supervisor was not asked to start release %s: %v", plan.ReleaseID, bodies)
 		return nil
 	}
-	if b := stage("0.0.1", ""); b["version"] != "v0.3.40" {
+	if b := stage("0.0.1", ""); b["version"] != "" || b["sha256"] != "" {
 		t.Fatalf("a source checkout's release asked for %q", b["version"])
 	}
 	if b := stage("v0.3.41", "abc"); b["version"] != "v0.3.41" || b["sha256"] != "abc" {

@@ -303,6 +303,8 @@ func failedCheckList(report map[string]any) []Check {
 // release made from a source checkout says 0.0.1, the pipeline package's own version:
 // the owner's live release since 2026-10-22, so the update to 0.3.39 said "the TV stays
 // on 0.0.1"), and a slot started unbound runs the installed binary whatever it says.
+// The pipeline reads the same (tvrelease.snapshot.live_streaming) for the release of a
+// change that brings no binary of its own, so a held TV stays on its software (#404).
 func (c *Controller) liveStreaming(ctx context.Context) (string, error) {
 	if !IsSQLite(c.DB) { // TV slots run on a Postgres home only
 		var slotVer sql.NullString

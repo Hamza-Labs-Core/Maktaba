@@ -178,13 +178,18 @@ func (s *Supervisor) heldFor(ctx context.Context, c *child) heldStreaming {
 	return h
 }
 
-// applyHeld points an unbound slot's command at the held release's binary (no
-// MAKTABA_TV_RELEASE: it binds itself to the live release, as any unbound slot).
-func applyHeld(cmd *exec.Cmd, path string) {
+// applyHeldPath points a slot's command at the held release's binary.
+func applyHeldPath(cmd *exec.Cmd, path string) {
 	cmd.Path = path
 	if len(cmd.Args) > 0 {
 		cmd.Args[0] = path
 	}
+}
+
+// applyHeld points an unbound slot's command at the held release's binary (no
+// MAKTABA_TV_RELEASE: it binds itself to the live release, as any unbound slot).
+func applyHeld(cmd *exec.Cmd, path string) {
+	applyHeldPath(cmd, path)
 	env := make([]string, 0, len(cmd.Env))
 	for _, e := range cmd.Env {
 		if !strings.HasPrefix(e, "MAKTABA_TV_RELEASE=") {

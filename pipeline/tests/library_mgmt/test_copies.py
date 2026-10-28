@@ -175,3 +175,36 @@ async def test_a_missing_file_with_a_copy_is_healed(db: Database, tmp_path: Path
     assert rep.checked and rep.healed == 1 and rep.confirmed == 0
     row = await db.fetchrow("SELECT path FROM videos WHERE id = $1", str(v["id"]))
     assert str(row["path"]) == copy
+
+
+@pytest.mark.asyncio
+async def test_a_converted_videos_old_copy_becomes_a_video(db: Database, tmp_path: Path) -> None:
+    """Story 47.4 swaps a converted file into the row (new bytes, same id): its copies
+    of the old bytes are no copies any more; the next scan makes each a video."""
+    from maktaba_pipeline.identity.hasher import hash_file
+
+    w = await make_world(db, tmp_path)
+    _write(w.root, "a/Lecture.mkv", DATA)
+    _write(w.root, "b/Lecture (copy).mkv", DATA)
+    await _scan(db, w)
+    v = (await _videos(db, w))[0]
+    copy = (await _copies(db))[0][1]
+    own = Path(str(v["path"]))
+    mp4 = own.with_suffix(".mp4")
+    own.unlink()
+    mp4.write_bytes(b"converted " * 3000)
+    h = hash_file(mp4)
+    await db.execute(
+        "UPDATE videos SET path = $2, filename = $3, content_hash = $4, size_bytes = $5,"
+        " full_hash = NULL WHERE id = $1",
+        str(v["id"]),
+        str(mp4),
+        mp4.name,
+        h.content_hash,
+        h.size_bytes,
+    )
+    res = await _scan(db, w)
+    assert res.files_inserted == 1
+    assert await _copies(db) == []
+    paths = {str(r["path"]) for r in await _videos(db, w)}
+    assert paths == {str(mp4), copy}

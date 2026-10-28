@@ -887,19 +887,23 @@ GRAPH: tuple[StageDef, ...] = (
     # ---- Epic 47: offline, MP4, no duplicates (specs/epics/47-offline-convert-dedup) --
     # Convert a video's file to MP4 without losing it: the original goes to the library's
     # trash once the MP4 is verified and swapped in (library_mgmt/swap.py). The work
-    # folder and the full decode are on the home.
+    # folder and the full decode are on the home. A library's job plans its videos and
+    # enqueues one job per video that needs work (or, dry run, only writes the plan).
+    # No edges: the words and the picture are the same, so nothing downstream of the
+    # content hash (transcribe, index, embeddings) runs again; only probe reads the new
+    # container, and the thumbnails are made again only when their folder cannot move.
     StageDef(
         name="convert_mp4",
         label="Convert to MP4",
-        subject_kinds=("video",),
+        subject_kinds=("video", "library"),
         pool="convert",
         lane="media",
         lane_order=14,
         version=CONVERT_VERSION,
+        may_request=("probe", "thumbnail", "thumb_small"),
         external_write=True,
         max_attempts=2,
         placement="home",
-        unreleased=True,
     ),
     StageDef(
         name="dedup_scan",

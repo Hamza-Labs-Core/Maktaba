@@ -130,7 +130,9 @@ SELECT id, path FROM videos
 """
 
 # Story 47.5: a path that is a recorded copy of a video (the skip-rehash lookup's
-# fallback, so an unchanged copy is not hashed again on every scan).
+# fallback, so an unchanged copy is not hashed again on every scan). Only while
+# the video's file has the copy's size: a converted video (Epic 47.4) changed
+# its bytes, and its old copies are hashed again as files of their own.
 _SELECT_COPY_BY_PATH = """
 SELECT c.video_id AS id, c.size_bytes AS size_bytes, c.mtime AS mtime,
        v.content_hash AS content_hash
@@ -138,7 +140,17 @@ SELECT c.video_id AS id, c.size_bytes AS size_bytes, c.mtime AS mtime,
   JOIN videos v ON v.id = c.video_id
  WHERE v.library_id = $1
    AND c.path       = $2
+   AND c.size_bytes = v.size_bytes
  LIMIT 1
+"""
+
+# a path saved as (or moved into) a video is no copy of another video: a copy
+# recorded before that video's file was converted (its bytes changed) is not
+# one any more
+_FORGET_OTHER_COPIES = """
+DELETE FROM video_copies
+ WHERE path = $1 AND video_id <> $2
+   AND video_id IN (SELECT id FROM videos WHERE library_id = $3)
 """
 
 _TOUCH_VIDEO = "UPDATE videos SET last_seen_at = $2 WHERE id = $1"
@@ -285,6 +297,9 @@ class SqlScanStore:
                 video_id = _to_uuid(row["id"])
             if pre is not None and str(pre["path"]) != params.path:
                 await self._db.execute(_FORGET_COPY, str(video_id), params.path)
+            await self._db.execute(
+                _FORGET_OTHER_COPIES, params.path, str(video_id), params.library_id
+            )
 
             job_id: int | None = None
             if inserted and params.enqueue_probe:
