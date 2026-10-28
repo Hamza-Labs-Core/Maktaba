@@ -18,7 +18,7 @@ import pytest
 
 from maktaba_pipeline.db.jobs import Job
 from maktaba_pipeline.engine.claim import claim_for_pool
-from maktaba_pipeline.engine.context import StageContext
+from maktaba_pipeline.engine.context import StageContext, StageFailure
 from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES, bound_graph, get_stage, validate
@@ -471,16 +471,16 @@ async def test_a_full_work_disk_parks_the_job(
     ("failure", "cls"),
     [
         (convert_mp4._disk_full("/w/1", "10 bytes free, 99 needed"), "resource:disk"),
-        (convert_mp4.StageFailure("file_missing", "file_missing: x"), "item_permanent"),
+        (StageFailure("file_missing", "file_missing: x"), "item_permanent"),
         (
-            convert_mp4.StageFailure(
+            StageFailure(
                 "convert_verify",
                 "the MP4 failed its check locally: 1 problem(s), see file action a",
             ),
             "unknown",
         ),
         (
-            convert_mp4.StageFailure("ffmpeg_decode", "the original is damaged: Invalid data"),
+            StageFailure("ffmpeg_decode", "the original is damaged: Invalid data"),
             "item_permanent",
         ),
     ],
