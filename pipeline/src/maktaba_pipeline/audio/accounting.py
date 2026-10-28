@@ -86,9 +86,11 @@ def cpu_throttle_not_before(
     The check fires when ``load_avg_5m > threshold × cores``. The
     default threshold of 1.0 keeps the worker idle when the box is
     fully loaded; libraries that want to use spare cycles can lower
-    the threshold (e.g. ``0.7``) to claim only on quiet boxes.
+    the threshold (e.g. ``0.7``) to claim only on quiet boxes. ``cores`` None reads the
+    machine's; 0 (none known) never throttles.
     """
-    cores = cores or _detect_cores()
+    if cores is None:
+        cores = _detect_cores()
     if cores <= 0:
         return None
     if load_avg_5m <= threshold * cores:

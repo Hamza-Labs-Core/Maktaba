@@ -29,17 +29,15 @@ async def test_the_migrated_row_is_the_graphs_stage(db: Database, stage: str) ->
         s.lane_order,
         s.version,
     )
+    # what SQL reads before a worker's graph sync; edges, may_request and entry_for are the
+    # sync's (only the pipeline reads them), so the graph may change them without a slot
     assert as_list(r["subject_kinds"]) == sorted(s.subject_kinds)
-    assert as_list(r["entry_for"]) == sorted(s.entry_for)
-    assert as_list(r["may_request"]) == sorted(s.may_request)
     assert bool(r["external_write"]) == s.external_write
     assert (r["debounce_sec"], r["debounce_max_sec"], r["max_attempts"]) == (
         s.debounce_sec,
         s.debounce_max_sec,
         s.max_attempts,
     )
-    got = sorted(loads(r["edges"]) if isinstance(r["edges"], str) else r["edges"], key=str)
-    assert got == sorted(s.edges_json(), key=str)
 
 
 @pytest.mark.asyncio

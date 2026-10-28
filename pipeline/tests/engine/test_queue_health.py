@@ -168,9 +168,15 @@ async def test_an_override_changes_the_class(db: Database) -> None:
 
 @pytest.mark.asyncio
 async def test_a_missing_file_on_a_share_that_does_not_answer_waits_for_it(
-    db: Database,
+    db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # the factory's library root "/lib" does not exist here
+    from maktaba_pipeline.engine import failure_policy
+
+    # the share does not answer (the factory's root "/lib" is a real folder on Linux)
+    async def probe(root: str, timeout_s: float) -> bool:
+        return False
+
+    monkeypatch.setattr(failure_policy, "root_answers", probe)
     row, _ = await _fail_with(
         db, StageFailure("file_missing", "/lib/a.mp4: not found", retryable=False)
     )
