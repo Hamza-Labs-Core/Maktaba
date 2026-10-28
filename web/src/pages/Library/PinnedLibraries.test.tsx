@@ -143,9 +143,14 @@ describe("PinnedLibraries", () => {
     screen.getByRole("button", { name: `Move ${A.name} down` }).focus();
     await user.keyboard("{Enter}");
     await waitFor(() => expect(putCalls()).toEqual([[B.id, A.id, C.id]]));
+    // the focus is back on the pressed button at once, not on a later frame...
+    expect(screen.getByRole("button", { name: `Move ${A.name} down` })).toHaveFocus();
     // the handle: arrows move by one and the focus stays with the moved row
     const handleC = screen.getByRole("button", { name: `Reorder ${C.name}` });
     handleC.focus();
+    // ...so nothing pulls it back once the user has moved on
+    await new Promise((r) => setTimeout(r, 50));
+    expect(handleC).toHaveFocus();
     await user.keyboard("{ArrowUp}");
     await waitFor(() => expect(putCalls().at(-1)).toEqual([B.id, C.id, A.id]));
     await waitFor(() =>

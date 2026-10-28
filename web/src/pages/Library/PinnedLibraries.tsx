@@ -5,7 +5,7 @@
 // saves through lib/pins (PUT /api/me/pinned-libraries), which the sidebar's
 // Pinned group and Home follow; a refused save puts the old order back and a
 // toast says why. With nothing pinned, the page says how to pin from a card.
-import { useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { useToast } from "@ds/components/Toast/Toast";
@@ -49,18 +49,26 @@ export function PinnedLibraries() {
 
   // `act` names the control that moved the row: the focus stays on it in the
   // moved row, or goes to the row's handle when it is now disabled (at the top
-  // or the bottom)
+  // or the bottom). It is put back right after the new order is committed (a
+  // layout effect, in the same task as the key or click), never on a later
+  // frame, where it would pull the focus back from wherever the user went next.
+  const refocus = useRef<{ id: string; act: string } | null>(null);
+  useLayoutEffect(() => {
+    const want = refocus.current;
+    if (!want) return;
+    refocus.current = null;
+    const row = rows.current.get(want.id);
+    const btn = row?.querySelector<HTMLButtonElement>(`[data-act="${want.act}"]`);
+    const target =
+      btn && !btn.disabled ? btn : row?.querySelector<HTMLButtonElement>('[data-act="handle"]');
+    target?.focus();
+  }, [pins]);
+
   function moveAndFocus(from: number, to: number, act: string) {
     const id = pins?.[from]?.id;
+    if (!id || !pins || to < 0 || to >= pins.length || from === to) return;
+    refocus.current = { id, act };
     void move(from, to);
-    if (!id) return;
-    requestAnimationFrame(() => {
-      const row = rows.current.get(id);
-      const btn = row?.querySelector<HTMLButtonElement>(`[data-act="${act}"]`);
-      const target =
-        btn && !btn.disabled ? btn : row?.querySelector<HTMLButtonElement>('[data-act="handle"]');
-      target?.focus();
-    });
   }
 
   function key(e: KeyboardEvent<HTMLButtonElement>, i: number) {
