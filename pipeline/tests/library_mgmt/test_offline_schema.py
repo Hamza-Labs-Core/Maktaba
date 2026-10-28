@@ -47,6 +47,7 @@ SEEDED_BEFORE_SYNC: dict[str, tuple[tuple[str, ...], bool]] = {
     "dedup_scan": (("library",), False),  # stories 47.6/47.7: on at the next sync
     "dedup_apply": (("dup_group",), False),
     "youtube_fetch": (("library",), False),
+    "youtube_backfill": (("library",), False),
 }
 EPIC47_STAGES = (
     "convert_mp4",
@@ -277,13 +278,17 @@ def test_the_graph_has_the_epic47_stages() -> None:
         edges = [(e.to, e.map, e.when) for e in by[name].edges]
         assert edges == ([("dedup_scan", "same_video", "always")] if name == "convert_mp4" else [])
         assert not by[name].entry_for
-        # the YouTube downloads are queued by the listing (story 47.8); dedup_scan queues
+        # the YouTube downloads are queued by the listing (story 47.8) and by themselves,
+        # one video a job; each landed video goes on to convert_mp4; dedup_scan queues
         # dedup_apply for a group it may apply at once (story 47.6)
         requesters = {s.name for s in GRAPH if name in s.may_request}
-        allowed = {"youtube_sync"} if name.startswith("youtube_") else set()
-        if name == "dedup_apply":
-            allowed = {"dedup_scan"}
-        assert requesters <= allowed
+        allowed = {
+            "youtube_fetch": {"youtube_sync", "youtube_fetch"},
+            "youtube_backfill": {"youtube_sync", "youtube_backfill"},
+            "convert_mp4": {"youtube_fetch", "youtube_backfill"},
+            "dedup_apply": {"dedup_scan"},
+        }
+        assert requesters <= allowed.get(name, set())
         assert all(
             e.to != name
             for s in GRAPH
@@ -334,7 +339,7 @@ async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> No
     assert after["convert_mp4"] == (True, None)
     kinds = await db.fetchval("SELECT subject_kinds FROM job_stages WHERE stage = 'convert_mp4'")
     assert list(kinds if is_pg(db) else loads(kinds)) == ["video", "library"]
-    assert after["youtube_backfill"] == (False, "not_configured")
+    assert after["youtube_backfill"] == (True, None)  # story 47.10 shipped
     assert after["trash_purge"] == (True, None)
     assert after["youtube_fetch"] == (True, None)  # story 47.9 shipped
     assert after["dedup_scan"] == after["dedup_apply"] == (True, None)  # stories 47.6/47.7

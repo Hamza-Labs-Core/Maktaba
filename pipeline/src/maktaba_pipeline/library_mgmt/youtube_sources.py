@@ -183,6 +183,20 @@ async def linked_ids(db: Any, library_id: UUID) -> set[str]:
     return await _ids(db, _LINKED, library_id)
 
 
+async def linked_video_ids(db: Any, library_id: UUID) -> dict[str, UUID]:
+    """YouTube id -> one of the library's videos linked to it."""
+    rows = await db.fetch(
+        "SELECT m.external_id AS y, m.video_id AS v FROM media_metadata_enrichment m"
+        " JOIN videos v ON v.id = m.video_id WHERE v.library_id = $1 AND v.deleted_at IS NULL"
+        " AND m.provider = 'youtube' AND m.external_id IS NOT NULL",
+        uid(library_id),
+    )
+    out: dict[str, UUID] = {}
+    for r in rows:
+        out.setdefault(str(r["y"]), UUID(str(r["v"])))
+    return out
+
+
 async def local_ids(db: Any, library_id: UUID) -> set[str]:
     """What the library has: downloads that are ``done`` and linked videos."""
     done = await _ids(
@@ -448,3 +462,62 @@ async def wanted_count(db: Any, library_id: UUID, *, backfill: bool) -> int:
         to_ts(db, now()),
     )
     return int(n or 0)
+
+
+# ------------------------------------------------------------------ seeding (story 47.12)
+
+
+async def seed_done(
+    db: Any,
+    library_id: UUID,
+    ids: Iterable[str],
+    *,
+    reason: str,
+    video_ids: dict[str, UUID] | None = None,
+) -> int:
+    """Record ``ids`` as ``done`` (the library has them): a new row, or an existing one
+    that is not ``done`` yet (a ``downloading`` one is left to its job). They go into the
+    archive, so neither the listing nor the back catalogue ever asks for them again."""
+    video_ids = video_ids or {}
+    t = to_ts(db, now())
+    n = 0
+    no = False if is_pg(db) else 0
+    async with db.transaction():
+        for yid in ids:
+            vid = video_ids.get(yid)
+            rows = await db.fetch(
+                "INSERT INTO youtube_downloads (library_id, youtube_id, state, backfill, reason,"
+                " video_id, requested_at, done_at) VALUES ($1,$2,'done',$3,$4,$5,$6,$6)"
+                " ON CONFLICT (library_id, youtube_id) DO UPDATE SET state = 'done',"
+                " reason = EXCLUDED.reason, done_at = EXCLUDED.done_at,"
+                " video_id = COALESCE(youtube_downloads.video_id, EXCLUDED.video_id),"
+                " failure_class = NULL, error = NULL, not_before = NULL"
+                " WHERE youtube_downloads.state NOT IN ('done', 'downloading')"
+                " RETURNING youtube_id",
+                uid(library_id),
+                yid,
+                no,
+                reason,
+                uid(vid),
+                t,
+            )
+            n += len(rows)
+    return n
+
+
+async def seed_from_library(db: Any, library_id: UUID) -> int:
+    """The library's videos linked to a YouTube id are ``done`` (reason ``library``)."""
+    rows = await db.fetch(
+        "SELECT m.external_id AS y, m.video_id AS v FROM media_metadata_enrichment m"
+        " JOIN videos v ON v.id = m.video_id WHERE v.library_id = $1 AND v.deleted_at IS NULL"
+        " AND m.provider = 'youtube' AND m.external_id IS NOT NULL"
+        " AND NOT EXISTS (SELECT 1 FROM youtube_downloads d WHERE d.library_id = v.library_id"
+        "   AND d.youtube_id = m.external_id AND d.state = 'done')",
+        uid(library_id),
+    )
+    found: dict[str, UUID] = {}
+    for r in rows:
+        found.setdefault(str(r["y"]), UUID(str(r["v"])))
+    if not found:
+        return 0
+    return await seed_done(db, library_id, sorted(found), reason="library", video_ids=found)

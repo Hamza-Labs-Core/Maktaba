@@ -60,7 +60,11 @@ async def scan(db: Any, w: World) -> Any:
 
 
 async def video_at(db: Any, path: Path) -> str:
+    """The video at ``path``: its own file or one of its copies (which of two identical
+    files the scanner saw first depends on the file system's listing order)."""
     vid = await db.fetchval("SELECT id FROM videos WHERE path = $1", str(path))
+    if vid is None:
+        vid = await db.fetchval("SELECT video_id FROM video_copies WHERE path = $1", str(path))
     assert vid is not None, f"no video at {path}"
     return str(vid)
 
