@@ -58,7 +58,7 @@ describe("/queue/file-actions", () => {
     routeGet(get, { "/api/queues/file-actions": { items: rows, next: null, trash } });
     post.mockResolvedValue({ action_id: rows[0].id, job_id: 7, outcome: "inserted" });
     const { container } = renderAt(<FileActions />, "/queue/file-actions");
-    expect(await screen.findByText(/4 files, 3 GB; next purge/)).toBeInTheDocument();
+    expect(await screen.findByText(/files: 4 · 3 GB · next purge/)).toBeInTheDocument();
     expect(screen.getByText(/verification failed · frames 1200 != 1310/)).toBeInTheDocument();
     expect(screen.getByText("Restore queued")).toBeInTheDocument();
     // only the restorable row that is not queued has the button
@@ -101,7 +101,7 @@ describe("/queue/duplicates", () => {
     post.mockResolvedValue({ group_id: g.id, job_id: 1, outcome: "inserted" });
     const { container } = renderAt(<Duplicates />, "/queue/duplicates");
     expect(await screen.findByText("1920×1080")).toBeInTheDocument();
-    expect(screen.getByText("2 viewers, 1 finished")).toBeInTheDocument();
+    expect(screen.getByText("Watched by 2, finished by 1")).toBeInTheDocument();
     expect(screen.getByText("Not watched")).toBeInTheDocument();
     expect(screen.getByText("smb://nas/O/Playlists/Seerah 01.mp4")).toBeInTheDocument();
     // the first file is the keeper until another is chosen

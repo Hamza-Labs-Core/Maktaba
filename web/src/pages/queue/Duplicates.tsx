@@ -20,6 +20,17 @@ import "../../styles/queue.css";
 const STATUSES = ["open", "failed", "applied", "dismissed", "all"] as const;
 const LIVE = new Set(["pending", "claimed", "running", "resuming", "paused"]);
 
+/** A group's suggested keeper when none is recorded: the best picture, then the most
+ * watched, then the largest file (a byte-identical copy is never a keeper of its own). */
+export function suggestedKeeper(g: DuplicateGroup): string | null {
+  const own = g.members.filter((m) => !m.is_copy);
+  const px = (m: DuplicateMember) => (m.width ?? 0) * (m.height ?? 0);
+  const best = [...own].sort(
+    (a, b) => px(b) - px(a) || b.viewers - a.viewers || (b.size_bytes ?? 0) - (a.size_bytes ?? 0)
+  )[0];
+  return best?.video_id ?? null;
+}
+
 function resolution(m: DuplicateMember): string {
   return m.width && m.height ? `${m.width}×${m.height}` : "–";
 }
@@ -152,11 +163,12 @@ export function Duplicates() {
     setParams(p, { replace: true });
   };
 
-  const keeperOf = (g: DuplicateGroup) =>
-    keepers[g.id] ?? g.keeper_video_id ?? g.members.find((m) => !m.is_copy)?.video_id ?? null;
+  // the one shown as kept is the one Apply sends: the person's choice, else the
+  // group's keeper, else the best picture, then the most watched, then the largest
+  const keeperOf = (g: DuplicateGroup) => keepers[g.id] ?? g.keeper_video_id ?? suggestedKeeper(g);
 
   const apply = async (g: DuplicateGroup) => {
-    const chosen = keepers[g.id];
+    const chosen = keeperOf(g) ?? undefined;
     const r = await run(`apply:${g.id}`, () => queueApi.applyDuplicate(g.id, chosen));
     if (r) {
       setNotice(t("queue.dup.applied"));
@@ -180,7 +192,7 @@ export function Duplicates() {
   );
   const applyAllExact = async () => {
     const r = await run("apply-exact", async () => {
-      for (const g of openExact) await queueApi.applyDuplicate(g.id, keepers[g.id]);
+      for (const g of openExact) await queueApi.applyDuplicate(g.id, keeperOf(g) ?? undefined);
       return openExact.length;
     });
     if (r !== undefined) {

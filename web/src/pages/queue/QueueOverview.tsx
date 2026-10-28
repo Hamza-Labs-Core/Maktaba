@@ -62,6 +62,8 @@ export function QueueOverview() {
   const [offline, setOffline] = useState<Record<string, OfflineSummary> | undefined>(undefined);
   const [offlineAction, setOfflineAction] = useState<OfflineActionTarget | null>(null);
   const [sourcesOf, setSourcesOf] = useState<{ id: string; name: string } | null>(null);
+  // bumps after an action here, so "Where each item is" shows what was just queued
+  const [itemsBump, setItemsBump] = useState(0);
   const [extensions, setExtensions] = useState<Extension[] | null>(null);
   // an older /api/workers without the key leaves undefined: treat as unknown
   const workers = useWorkers() ?? null;
@@ -180,6 +182,7 @@ export function QueueOverview() {
     loadIssues();
     loadLibraries();
     loadOffline();
+    setItemsBump((b) => b + 1);
   };
 
   const onRetry = (g: FailureGroup) =>
@@ -331,7 +334,7 @@ export function QueueOverview() {
         onSources={admin ? (r) => setSourcesOf({ id: r.library_id, name: r.name }) : undefined}
       />
 
-      {admin && <OfflineItemsPanel tick={stream.finishedTick} />}
+      {admin && <OfflineItemsPanel tick={stream.finishedTick + itemsBump} />}
 
       <div className="mkt-q-cols">
         <div className="mkt-q-panel">

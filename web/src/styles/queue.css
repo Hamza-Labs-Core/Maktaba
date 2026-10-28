@@ -1770,3 +1770,34 @@ summary.mkt-q-lane__title {
 .mkt-q-dup tr[data-keeper] {
   background: color-mix(in srgb, var(--q-done) 12%, transparent);
 }
+
+/* the row menu opens towards the table, so the scrolling table wrap never clips it */
+.mkt-q-libs__menu .mk-menu__list {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+}
+.mkt-q-ytsrc input:not([type="checkbox"]):not([type="radio"]),
+.mkt-q-ytsrc select,
+.mkt-q-items select {
+  padding: var(--space-1) var(--space-2);
+  min-block-size: 36px;
+  color: var(--color-fg);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font: inherit;
+}
+.mkt-q-ytsrc__opts label.mkt-q-check {
+  display: flex;
+  align-items: center;
+}
+.mkt-q-ytsrc__opts > p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.mkt-q-ytsrc__opts > button {
+  justify-self: start;
+}
+.mkt-q-dup .mkt-q-num {
+  white-space: nowrap;
+}
