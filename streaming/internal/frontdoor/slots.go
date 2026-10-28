@@ -63,6 +63,9 @@ type Slots struct {
 	// StreamPSIWait is how much longer a live.ts read goes on for its first PAT and
 	// PMT when StreamSample brought none (0: 3 s; tests shorten it).
 	StreamPSIWait time.Duration
+	// StreamJoinWait is how long a live.ts read waits for its first byte (0:
+	// streamJoinWait; tests shorten it).
+	StreamJoinWait time.Duration
 	// OnEvent receives the failover and staging crash-loop events for the bell
 	// (story 33.13 AC1; nil: they are written to tv_slot_events when Pool is set,
 	// where the API's TV change controller turns them into notices).

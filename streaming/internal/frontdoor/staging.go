@@ -758,11 +758,14 @@ const (
 // that never saw them over that long is a stream without them (ts.conformity fails),
 // one cut short is too short to judge (verify.LiveTSJudged: measured again).
 func (s *Slots) sampleStream(ctx context.Context, base string, id uuid.UUID, d time.Duration, now time.Time) verify.TSReport {
-	psiWait := streamPSIWait
+	psiWait, joinWait := streamPSIWait, streamJoinWait
 	if s.StreamPSIWait > 0 {
 		psiWait = s.StreamPSIWait
 	}
-	sctx, cancel := context.WithTimeout(ctx, d+streamJoinWait+psiWait)
+	if s.StreamJoinWait > 0 {
+		joinWait = s.StreamJoinWait
+	}
+	sctx, cancel := context.WithTimeout(ctx, d+joinWait+psiWait)
 	defer cancel()
 	req, err := http.NewRequestWithContext(sctx, http.MethodGet, base+"/stream/channel/"+id.String()+"/live.ts", nil)
 	if err != nil {

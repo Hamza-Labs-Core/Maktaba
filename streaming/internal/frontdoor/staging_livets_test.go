@@ -110,44 +110,53 @@ func tsVerdict(t *testing.T, st verify.TSReport) verify.Result {
 func TestLiveTSReadAtAStationsStart(t *testing.T) {
 	ctx := context.Background()
 	id := uuid.New()
-	s := &Slots{StreamPSIWait: 600 * time.Millisecond}
+	s := &Slots{StreamPSIWait: 400 * time.Millisecond, StreamJoinWait: 200 * time.Millisecond}
 	read := func(base string) verify.TSReport {
 		return s.sampleStream(ctx, base, id, 150*time.Millisecond, time.Now())
 	}
 
 	// the read joins before the muxer's first PAT/PMT (they come 300 ms in): it reads
 	// on until it has them, and the stream passes
-	late := read(liveTSServer(t, func(i int) bool { return i >= 30 && i%10 == 0 }, 0))
-	if late.PATs == 0 || late.PMTs == 0 {
-		t.Fatalf("the read stopped before the first PAT/PMT: %+v", late)
-	}
-	if r := tsVerdict(t, late); r.Result != verify.Pass {
-		t.Fatalf("a start-of-stream read: %+v", r)
-	}
+	t.Run("joins before the first PAT", func(t *testing.T) {
+		t.Parallel()
+		late := read(liveTSServer(t, func(i int) bool { return i >= 30 && i%10 == 0 }, 0))
+		if late.PATs == 0 || late.PMTs == 0 {
+			t.Fatalf("the read stopped before the first PAT/PMT: %+v", late)
+		}
+		if r := tsVerdict(t, late); r.Result != verify.Pass {
+			t.Fatalf("a start-of-stream read: %+v", r)
+		}
+	})
 
 	// the station restarts under the read: a few packets, no PAT, then nothing: too
 	// short to judge (pending: measured again), not a fail
-	cut := read(liveTSServer(t, func(int) bool { return false }, 3))
-	if cut.Packets == 0 || cut.PATs != 0 || verify.LiveTSJudged(cut) {
-		t.Fatalf("cut read %+v", cut)
-	}
-	if r := tsVerdict(t, cut); r.Result != verify.Pending || !strings.Contains(r.Value, "too short") {
-		t.Fatalf("a read cut short: %+v", r)
-	}
+	t.Run("cut short", func(t *testing.T) {
+		t.Parallel()
+		cut := read(liveTSServer(t, func(int) bool { return false }, 3))
+		if cut.Packets == 0 || cut.PATs != 0 || verify.LiveTSJudged(cut) {
+			t.Fatalf("cut read %+v", cut)
+		}
+		if r := tsVerdict(t, cut); r.Result != verify.Pending || !strings.Contains(r.Value, "too short") {
+			t.Fatalf("a read cut short: %+v", r)
+		}
+	})
 
 	// a stream that carries no PAT/PMT at all: the read gives up after StreamPSIWait
-	// with seconds of stream clock read, and ts.conformity fails
-	start := time.Now()
-	none := read(liveTSServer(t, func(int) bool { return false }, 0))
-	if took := time.Since(start); took < 700*time.Millisecond || took > 3*time.Second {
-		t.Fatalf("the read took %s (want the sample and the PSI wait)", took)
-	}
-	if none.PATs != 0 || !verify.LiveTSJudged(none) {
-		t.Fatalf("no-PSI read %+v", none)
-	}
-	if r := tsVerdict(t, none); r.Result != verify.Fail || !strings.Contains(r.Value, "live.ts: no PAT/PMT") {
-		t.Fatalf("a stream without PAT/PMT: %+v", r)
-	}
+	// with stream clock read, and ts.conformity fails
+	t.Run("no PSI at all", func(t *testing.T) {
+		t.Parallel()
+		start := time.Now()
+		none := read(liveTSServer(t, func(int) bool { return false }, 0))
+		if took := time.Since(start); took < 500*time.Millisecond || took > 2*time.Second {
+			t.Fatalf("the read took %s (want the sample and the PSI wait)", took)
+		}
+		if none.PATs != 0 || !verify.LiveTSJudged(none) {
+			t.Fatalf("no-PSI read %+v", none)
+		}
+		if r := tsVerdict(t, none); r.Result != verify.Fail || !strings.Contains(r.Value, "live.ts: no PAT/PMT") {
+			t.Fatalf("a stream without PAT/PMT: %+v", r)
+		}
+	})
 }
 
 // A rolling probe ends on a settled sample only: a channel whose last sample failed (or
