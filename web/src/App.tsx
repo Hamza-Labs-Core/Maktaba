@@ -24,7 +24,8 @@ import { LibraryPage } from "./pages/Library/LibraryPage";
 import { SeriesBrowser } from "./pages/Library/SeriesBrowser";
 import { Playlists } from "./pages/Playlists/Playlists";
 import { PlaylistPage } from "./pages/Playlists/PlaylistPage";
-import { Collections } from "./pages/Collections/Collections";
+import { CollectionsRedirect } from "./pages/Collections/Collections";
+import { AutoCollectionPage } from "./pages/Collections/AutoCollectionPage";
 import { CollectionPage } from "./pages/Collections/CollectionPage";
 import { SeriesDetail } from "./pages/Library/SeriesDetail";
 import { VideoDetail } from "./pages/VideoDetail";
@@ -123,7 +124,11 @@ export function App() {
                             <Route path="/library/:libraryId" element={<LibraryPage />} />
                             <Route
                               path="/library/:libraryId/collections"
-                              element={<Collections />}
+                              element={<CollectionsRedirect />}
+                            />
+                            <Route
+                              path="/library/:libraryId/collections/:kind/:groupId"
+                              element={<AutoCollectionPage />}
                             />
                             <Route path="/collections/:collectionId" element={<CollectionPage />} />
                             <Route path="/videos" element={<LibraryBrowser />} />

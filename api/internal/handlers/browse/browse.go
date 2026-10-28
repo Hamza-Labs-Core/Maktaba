@@ -91,6 +91,10 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/me/videos/{id}", h.MyVideo)
 	r.Get("/api/videos/facets", h.Facets)
 	h.mountPlaylists(r)
+	// Epic 45 Phase 4 (groups.go): a library's Series and Collections tabs
+	r.Get("/api/libraries/{id}/series", h.LibrarySeries)
+	r.Get("/api/libraries/{id}/collections", h.LibraryCollections)
+	r.Get("/api/libraries/{id}/collections/{kind}/{gid}", h.AutoCollection)
 }
 
 func (h *Handler) now() time.Time {

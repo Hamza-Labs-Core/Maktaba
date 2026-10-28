@@ -170,7 +170,11 @@ export function seriesPictureUrl(series: {
   return own ?? (series.poster_video_id ? `/api/videos/${series.poster_video_id}/poster` : null);
 }
 
-function SeriesPoster({ series }: { series: SeriesItem }) {
+export function SeriesPoster({
+  series,
+}: {
+  series: { poster_path?: string | null; poster_video_id?: string | null };
+}) {
   const [broken, setBroken] = useState(false);
   const src = seriesPictureUrl(series);
   if (!src || broken) {
