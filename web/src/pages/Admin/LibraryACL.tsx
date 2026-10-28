@@ -22,7 +22,7 @@ import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
 import { TitleRow } from "../../help/HelpLink";
 import { usePageData } from "../../lib/usePageData";
-import { forgetAnswers } from "../../lib/pageCache";
+import { forgetAnswers, VIDEO_ANSWERS } from "../../lib/pageCache";
 import { Loading, TablePlaceholder } from "../../components/Placeholders";
 
 interface UserRef {
@@ -152,7 +152,7 @@ function LibraryACLInner() {
       setCells({ of: null, original: roles, current: roles });
       setMatrix((m) => m && { ...m, grants });
       // who sees which library changed: the libraries' pages are stale
-      forgetAnswers("libraries", "home");
+      forgetAnswers("libraries", ...VIDEO_ANSWERS);
       toast.show({ tone: "success", message: t("acl.saved") });
     } catch (e) {
       toast.show({

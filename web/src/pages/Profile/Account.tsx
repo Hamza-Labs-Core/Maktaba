@@ -79,7 +79,7 @@ export function Account() {
         </TitleRow>
       </header>
 
-      {error ? (
+      {error && profile === null ? (
         <ErrorState
           kind="server"
           title={t("common.error")}
@@ -96,6 +96,11 @@ export function Account() {
         </Loading>
       ) : (
         <div className="mkt-account__grid">
+          {error && (
+            <div className="mkt-alert" role="alert">
+              {error}
+            </div>
+          )}
           <ProfileForm
             profile={profile}
             onSaved={(p) => {

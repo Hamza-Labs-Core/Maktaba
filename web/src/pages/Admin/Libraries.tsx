@@ -28,7 +28,7 @@ import { AdminGate } from "../../components/AdminGate";
 import { TitleRow } from "../../help/HelpLink";
 import { ScanNow } from "../LibraryBrowser";
 import { usePageData } from "../../lib/usePageData";
-import { forgetAnswers } from "../../lib/pageCache";
+import { forgetAnswers, VIDEO_ANSWERS } from "../../lib/pageCache";
 import { Loading } from "../../components/Placeholders";
 import { LibraryForm } from "./libraries/LibraryForm";
 import { EmptyTrashDialog, MergeDialog, RemoveDialog } from "./libraries/ConfirmDialogs";
@@ -64,7 +64,7 @@ function LibrariesInner() {
   // a library added, edited, emptied, merged, removed or scanned: what every
   // page showed of the libraries and their videos is stale
   const changed = () => {
-    forgetAnswers("libraries", "hub:", "home", "videos:", "admin:library-acl");
+    forgetAnswers("libraries", "admin:library-acl", ...VIDEO_ANSWERS);
     reload();
   };
   const done = () => {

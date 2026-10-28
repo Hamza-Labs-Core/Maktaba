@@ -468,7 +468,8 @@ function DetailInner() {
           onClose={() => setDialog(null)}
           onDone={(c) => {
             setChange(c);
-            acted();
+            // approved, scheduled or promoted: the lineup changes as rollback's does
+            forgetAnswers("admin:tv-changes", "admin:channels", "admin:filler-pools", "guide:");
             setDialog(null);
             setMsg({ ok: true, text: t(`tvchanges.done.${dialog.mode}`) });
           }}
