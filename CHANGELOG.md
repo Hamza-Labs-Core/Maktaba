@@ -490,6 +490,15 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A TV held on its old streaming software stays there through schedule and settings
+  changes.** While an update's TV check had failed and the live TV was held on v0.3.39, the
+  0.3.40 pipeline recorded its own `0.3.40` on every schedule release: staging ran the new
+  binary, and swapping the change in would have put the held TV on the software whose check had
+  just failed. A change that brings no binary of its own now records, stages and swaps on the
+  streaming software the live TV runs. The TV moves to new streaming software only when a
+  binary change passes its check: the update's Retry, or a later release's own. A staging slot
+  asked to run a release whose binary is not on the machine is refused at once, and the change's
+  staging fails with that reason instead of running other software.
 - **A TV schedule change's check no longer fails a staging slot that runs the right
   software.** A release the pipeline builds for a schedule or settings change records its
   streaming version as `0.3.40`, the slot reports `v0.3.40`, and the check compared them as
