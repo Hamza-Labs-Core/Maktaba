@@ -483,7 +483,7 @@ func (ai *AppInstaller) Revert(_ context.Context, j *Journal) error {
 	}
 	switch {
 	case kept:
-		if err := layout.WriteOverride(ai.LauncherRoot, j.FromRef); err != nil {
+		if err := layout.WriteRollbackOverride(ai.LauncherRoot, j.FromRef, j.Job.Version); err != nil {
 			return err
 		}
 	case bundled != "" && bundled == from:

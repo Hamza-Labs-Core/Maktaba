@@ -226,3 +226,52 @@ func TestPendingDeadlineExtendsTheTimeout(t *testing.T) {
 		t.Fatalf("deadline %v", d)
 	}
 }
+
+// A rollback leaves the app's failed release on disk and the kept copy running. The app
+// installed again later (by hand, or an update to a newer release) runs, and the
+// override goes: on 2026-10-27 a hand install of 0.3.37 went on running the kept 0.3.35
+// until the override was removed by hand. The failed release itself, an older app, or an
+// override with no record of what failed keep the kept copy.
+func TestANewerAppTakesOverFromTheKeptCopy(t *testing.T) {
+	t.Parallel()
+	bundle, root := mkBundle(t, "run")
+	kept := filepath.Join(root, "updates", "payloads", "0.3.35")
+	mkPayload(t, kept, "0.3.35", "run", "old")
+	ln := &launcher{cfg: Config{Root: root, Bundle: bundle}, l: layout.New(root), log: newEventLog(layout.New(root).LauncherLog(), nil, time.Now)}
+	defer ln.log.Close()
+	runs := func(app string) string {
+		mkPayload(t, bundle, app, "run", "app")
+		return ln.bundlePayload()
+	}
+
+	// the rollback of 0.3.36: the app still holds it, the kept copy runs
+	if err := layout.WriteRollbackOverride(root, kept, "v0.3.36"); err != nil {
+		t.Fatal(err)
+	}
+	if p := runs("0.3.36"); p != kept {
+		t.Fatalf("the app on the failed 0.3.36 runs %q, want the kept copy", p)
+	}
+	// an app older than the kept copy never takes over
+	if p := runs("0.3.34"); p != kept {
+		t.Fatalf("an app on 0.3.34 runs %q, want the kept 0.3.35", p)
+	}
+	// a newer release installed: it runs and the override is gone
+	if p := runs("0.3.37"); p != bundle {
+		t.Fatalf("an app on 0.3.37 runs %q, want the app's own", p)
+	}
+	if layout.ReadOverride(root) != "" || layout.ReadOverrideFailed(root) != "" {
+		t.Fatalf("override %q failed %q left", layout.ReadOverride(root), layout.ReadOverrideFailed(root))
+	}
+	if ev := events(ln.l, "launcher_override_superseded"); len(ev) != 1 {
+		t.Fatalf("launcher_override_superseded = %+v", ev)
+	}
+
+	// an override with no record of the failed release (an older launcher's, or by
+	// hand): the app may be the release that failed, so the kept copy goes on running
+	if err := layout.WriteOverride(root, kept); err != nil {
+		t.Fatal(err)
+	}
+	if p := runs("0.3.38"); p != kept {
+		t.Fatalf("no record of the failed release: runs %q, want the kept copy", p)
+	}
+}

@@ -334,13 +334,18 @@ func (ln *launcher) markRecord(ver, record, reason string) {
 // the update orchestrator (or this guard) named in payload-override - a rolled-back
 // app update - when it is a payload, else the app's own. The app's own runs, under the
 // guard, once it is the release the guard tries (the app's install happened); until
-// then the kept copy goes on running.
+// then the kept copy goes on running. An app since installed by other means (a newer
+// release than the kept copy, and not the one that failed) takes over: the override is
+// cleared (on 2026-10-27 a hand install of 0.3.37 went on running the kept 0.3.35).
 func (ln *launcher) bundlePayload() string {
 	if o := layout.ReadOverride(ln.cfg.Root); o != "" && ln.cfg.RuntimeRoot == "" {
 		if g, err := layout.ReadGuard(ln.cfg.Root); err == nil && g != nil {
 			if v := payloadVersion(ln.cfg.Bundle); v != "" && v == layout.NormalizeVersion(g.Version) {
 				return ln.cfg.Bundle
 			}
+		}
+		if ln.appSupersedes(o) {
+			return ln.cfg.Bundle
 		}
 		if materializeOnWindows {
 			// the kept copy goes back into the app's own folder, where the firewall's
@@ -359,6 +364,27 @@ func (ln *launcher) bundlePayload() string {
 		ln.log.Event("launcher_override_missing", "", map[string]any{"payload": o})
 	}
 	return ln.cfg.Bundle
+}
+
+// appSupersedes clears the override kept is named in, and says so, when the app's own
+// payload is a release newer than the kept copy's and not the one the override rolled
+// back from. An override with no record of that release (written before it was kept, or
+// by hand) is left as it is: the app may be the release that failed.
+func (ln *launcher) appSupersedes(kept string) bool {
+	failed := layout.ReadOverrideFailed(ln.cfg.Root)
+	app := payloadVersion(ln.cfg.Bundle)
+	if failed == "" || app == "" || app == layout.NormalizeVersion(failed) {
+		return false
+	}
+	if was := payloadVersion(kept); was != "" && layout.CompareVersions(app, was) <= 0 {
+		return false
+	}
+	if err := layout.WriteOverride(ln.cfg.Root, ""); err != nil {
+		ln.log.Event("launcher_override_error", app, map[string]any{"payload": kept, "err": err.Error()})
+		return false
+	}
+	ln.log.Event("launcher_override_superseded", app, map[string]any{"payload": kept, "failed": failed})
+	return true
 }
 
 // payloadVersion is a payload's payload.json version ("" when unreadable).
@@ -412,7 +438,7 @@ func (ln *launcher) bundleRollback(reason string) bool {
 			ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason, "err": err.Error()})
 			return false
 		}
-		if err := layout.WriteOverride(ln.cfg.Root, g.PreviousPayload); err != nil {
+		if err := layout.WriteRollbackOverride(ln.cfg.Root, g.PreviousPayload, g.Version); err != nil {
 			ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason, "err": err.Error()})
 			return false
 		}

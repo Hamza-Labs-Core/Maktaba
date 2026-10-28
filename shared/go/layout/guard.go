@@ -94,14 +94,48 @@ func ReadOverride(root string) string {
 	return string(trimSpace(b))
 }
 
-// WriteOverride makes the launcher run payload in place of the bundle's ("" removes it).
+// OverrideFailedPath records the release a rollback's override was written for: the app's
+// own release then, which failed. A later app install of another release takes over from
+// the kept copy (the launcher's bundlePayload); the failed one never does by itself.
+func OverrideFailedPath(root string) string { return OverridePath(root) + ".failed" }
+
+// ReadOverrideFailed is the release the override rolled back from ("" not recorded: an
+// override written before this record, or by hand).
+func ReadOverrideFailed(root string) string {
+	b, err := os.ReadFile(OverrideFailedPath(root))
+	if err != nil {
+		return ""
+	}
+	return string(trimSpace(b))
+}
+
+// WriteRollbackOverride makes the launcher run payload in place of the bundle's after the
+// bundle's release failed, and records which release that was (WriteOverride, then
+// OverrideFailedPath).
+func WriteRollbackOverride(root, payload, failed string) error {
+	if err := WriteOverride(root, payload); err != nil {
+		return err
+	}
+	if payload == "" || failed == "" {
+		return nil
+	}
+	return WriteFileAtomic(OverrideFailedPath(root), []byte(NormalizeVersion(failed)+"\n"), 0o600)
+}
+
+// WriteOverride makes the launcher run payload in place of the bundle's ("" removes it,
+// and the record of the release it rolled back from).
 func WriteOverride(root, payload string) error {
 	if payload == "" {
-		err := os.Remove(OverridePath(root))
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
+		for _, p := range []string{OverridePath(root), OverrideFailedPath(root)} {
+			if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
 		}
 		return nil
+	}
+	// a new override has no record until its writer says which release failed
+	if err := os.Remove(OverrideFailedPath(root)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(OverridePath(root)), 0o700); err != nil {
 		return err
