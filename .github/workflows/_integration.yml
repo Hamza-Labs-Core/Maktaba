@@ -104,6 +104,32 @@ jobs:
       - name: Run integration tier
         run: make test-integration INTEGRATION_GO_PG_URL="$DATABASE_URL"
 
+      # The pipeline's file tests (Epic 47: verify, swap, trash, convert, dedup)
+      # make their media with real ffmpeg and skip without it. ffmpeg is
+      # installed only after the integration tier: on PATH earlier, it would
+      # also switch on the Go real-ffmpeg suites that belong to media-e2e.
+      - name: Apt package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: apt-integration-${{ hashFiles('tools/ci/apt-install.sh') }}-${{ github.run_id }}
+          restore-keys: apt-integration-
+
+      - name: Install ffmpeg
+        timeout-minutes: 15
+        env:
+          APT_INSTALL_TIMEOUT: "300"
+          APT_CACHE_DIR: /home/runner/apt-cache
+        run: |
+          tools/ci/apt-install.sh ffmpeg >/dev/null
+          ffmpeg -hide_banner -version | head -1
+
+      - name: Pipeline file tests, real ffmpeg
+        working-directory: pipeline
+        env:
+          MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+        run: uv run pytest -q -m integration tests/library_mgmt -p no:cacheprovider -rs
+
       # Story 31.R: the extension relay end to end in two processes — the Go hub
       # and service door (api/internal/cluster/agent/relayfixture) and a Python
       # node running the Plex stages through it — on a scratch database of the

@@ -19,6 +19,7 @@ lineup in another order has the same digest (TC1).
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,10 @@ __all__ = [
     "live_snapshot",
     "lineup_digest",
     "release_digest",
+    "bare_version",
+    "live_streaming",
+    "names_binary",
+    "same_streaming",
     "streaming_version",
 ]
 
@@ -146,6 +151,89 @@ def streaming_version() -> tuple[str, str]:
     return os.environ.get("MAKTABA_STREAMING_VERSION", __version__), os.environ.get(
         "MAKTABA_STREAMING_SHA256", ""
     )
+
+
+#: the version a pipeline run from a source checkout records (its package's placeholder,
+#: which names no streaming binary)
+SOURCE_CHECKOUT_VERSION = "0.0.1"
+
+_RELEASE_RE = re.compile(r"^[vV]?\d+\.\d+\.\d+")
+
+
+def bare_version(v: str | None) -> str:
+    """A version without its "v" (``layout.NormalizeVersion``: how the supervisor names a
+    release's directory, and how the API and the front door compare versions)."""
+    v = (v or "").strip()
+    if len(v) > 1 and v[0] in "vV" and v[1].isdigit():
+        return v[1:]
+    return v
+
+
+def names_binary(v: str | None) -> bool:
+    """Whether a recorded streaming version names a streaming binary: a release version,
+    not none, a source checkout's placeholder, "unknown" or a branch's name."""
+    b = bare_version(v)
+    return bool(_RELEASE_RE.match(b)) and b != SOURCE_CHECKOUT_VERSION
+
+
+def same_streaming(a: tuple[str, str], b: tuple[str, str]) -> bool:
+    """Two ``(version, sha256)`` name the same streaming binary: the same version however
+    it is spelled, and the same checksum when both have one."""
+    if bare_version(a[0]) != bare_version(b[0]):
+        return False
+    sa, sb = (a[1] or "").lower(), (b[1] or "").lower()
+    return not sa or not sb or sa == sb
+
+
+async def live_streaming(db: Any) -> tuple[str, str]:
+    """The streaming software the live TV runs: ``(version, sha256)``.
+
+    A release that changes no binary (a schedule, settings, lineup or art change) records
+    it, so it stages and swaps on what the live TV runs and never moves it to other
+    software (the owner's rule of 2026-10-28, #404: when only an update's TV check fails,
+    the TV stays on its old version until the update's Retry passes, or a later release's
+    own binary change passes its check). It is, as the API's ``liveStreaming`` and the
+    supervisor's ``HeldStreamingVersion`` read it:
+
+    1. the live slot's own report (``tv_slots.version``, the binary's version; a healthy
+       slot's first, then the latest): while the TV is held, the held release's;
+    2. else the live TV release's recorded version when it names a binary;
+    3. else this machine's (:func:`streaming_version`: no TV slot has run yet).
+
+    The checksum is the one a release recorded for that version, "" when none did (the
+    supervisor then finds the binary by its version: ``bin/releases/<v>`` or the copy the
+    install keeps of it).
+    """
+    rows: list[Any] = []
+    try:
+        rows = list(
+            await db.fetch(
+                "SELECT version FROM tv_slots WHERE role = 'live' AND COALESCE(version, '') <> ''"
+                " ORDER BY CASE WHEN state = 'healthy' THEN 0 ELSE 1 END, beat_at DESC"
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - a database before slot 0129
+        if "no such table" not in str(exc) and "does not exist" not in str(exc):
+            raise
+    version = next((str(r["version"]).strip() for r in rows if names_binary(r["version"])), "")
+    if not version:
+        rel = await db.fetchrow(
+            "SELECT r.streaming_version, r.streaming_sha256 FROM tv_routing t"
+            " JOIN tv_releases r ON r.id = t.live_release_id WHERE t.scope = 'cluster'"
+        )
+        if rel is not None and names_binary(rel["streaming_version"]):
+            return str(rel["streaming_version"]), str(rel["streaming_sha256"] or "")
+        return streaming_version()
+    sums = await db.fetch(
+        "SELECT streaming_version, streaming_sha256 FROM tv_releases"
+        " WHERE COALESCE(streaming_sha256, '') <> '' ORDER BY created_at DESC"
+    )
+    want = bare_version(version)
+    sha = next(
+        (str(r["streaming_sha256"]) for r in sums if bare_version(r["streaming_version"]) == want),
+        "",
+    )
+    return version, sha
 
 
 def content_digest(snap: dict[str, Any], streaming: tuple[str, str]) -> str:

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -177,7 +176,8 @@ type PutPinsRequest struct {
 
 // PutPins implements PUT /api/me/pinned-libraries: the caller's pins
 // become the list, in its order. A repeated id counts once; a library the
-// caller may not see is 404, the same as one that does not exist.
+// caller may not see is 404, the same as one that does not exist. There is
+// no cap on how many.
 func (h *Handler) PutPins(w http.ResponseWriter, r *http.Request) {
 	p := caller(w, r)
 	if p == nil {
@@ -189,7 +189,9 @@ func (h *Handler) PutPins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req PutPinsRequest
-	if e := common.ReadJSON(r, &req, 16<<10); e != nil {
+	// Any number of pins: the body's cap (a library id is about 40 bytes)
+	// passes some 25,000 of them.
+	if e := common.ReadJSON(r, &req, 1<<20); e != nil {
 		httperror.Write(w, r, e)
 		return
 	}
@@ -200,11 +202,6 @@ func (h *Handler) PutPins(w http.ResponseWriter, r *http.Request) {
 			seen[id] = true
 			ids = append(ids, id)
 		}
-	}
-	if len(ids) > MaxPins {
-		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "library_ids",
-			Message: "at most " + strconv.Itoa(MaxPins) + " libraries"}}))
-		return
 	}
 	s := scopeOf(p)
 	for _, id := range ids {
@@ -350,7 +347,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 	for i, pl := range pins {
 		pinIDs[i] = pl.ID
 	}
-	perLib, err := h.recentPerLibrary(ctx, pinIDs, RowSize)
+	perLib, err := h.libraryRows(ctx, pinIDs, RowSize)
 	if err != nil {
 		internal(w, r, "pinned recently added", err)
 		return

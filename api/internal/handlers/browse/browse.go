@@ -40,8 +40,6 @@ import (
 const (
 	// RowSize is the number of cards in a home or hub row.
 	RowSize = 20
-	// MaxPins caps a user's pinned libraries.
-	MaxPins = 20
 	// posterCount is how many recent videos a library card shows.
 	posterCount = 4
 	// mostWatchedDays is the window of the Most Watched row.
@@ -68,6 +66,10 @@ const cardColumns = `v.id, v.title, v.filename, v.library_id, v.duration_sec, v.
 type Handler struct {
 	DB      *sql.DB
 	NowFunc func() time.Time
+	// Rows, when set, serves the per-library rows (a pinned library's on the
+	// home, a hub's recently added) from memory (rowcache.go). Nil: read each
+	// time.
+	Rows *RowCache
 }
 
 // Mount attaches the routes. /api/libraries/summary is a static segment, so
@@ -300,6 +302,16 @@ func (h *Handler) recentPerLibrary(ctx context.Context, libs []string, n int) (m
 		out[c.LibraryID] = append(out[c.LibraryID], c)
 	}
 	return out, nil
+}
+
+// libraryRows is up to n of the newest visible videos of each library in
+// libs (already checked against the caller's scope): from Rows when set.
+// The cards are shared: read them, never change them.
+func (h *Handler) libraryRows(ctx context.Context, libs []string, n int) (map[string][]Card, error) {
+	if h.Rows == nil || len(libs) == 0 {
+		return h.recentPerLibrary(ctx, libs, n)
+	}
+	return h.Rows.rows(ctx, libs, n, h.recentPerLibrary)
 }
 
 // continueWatching is the caller's resumable videos, newest first: not

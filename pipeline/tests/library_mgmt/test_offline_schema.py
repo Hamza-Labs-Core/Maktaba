@@ -40,6 +40,13 @@ NEW_TABLES = (
     "youtube_sources",
     "youtube_downloads",
 )
+#: stage -> (subject_kinds, enabled) as 0166 seeded it, for a stage whose row the
+#: worker's graph sync changed when its story shipped
+SEEDED_BEFORE_SYNC: dict[str, tuple[tuple[str, ...], bool]] = {
+    "convert_mp4": (("video",), False),
+    "youtube_fetch": (("library",), False),
+    "youtube_backfill": (("library",), False),
+}
 EPIC47_STAGES = (
     "convert_mp4",
     "dedup_scan",
@@ -252,11 +259,14 @@ def test_the_graph_has_the_epic47_stages() -> None:
     assert set(EPIC47_STAGES) <= set(by)
     assert {p.pool for p in POOLS} >= {"convert"}
     convert = by["convert_mp4"]
+    # story 47.4: a library's job plans its videos and enqueues one job per video
     assert (convert.pool, convert.placement, convert.subject_kinds) == (
         "convert",
         "home",
-        ("video",),
+        ("video", "library"),
     )
+    assert not convert.unreleased
+    assert set(convert.may_request) == {"probe", "thumbnail", "thumb_small"}
     assert by["dedup_apply"].subject_kinds == ("dup_group",)
     assert by["trash_purge"].pool == "nas_write" and not by["trash_purge"].unreleased
     assert by["youtube_backfill"].pool == by["youtube_fetch"].pool == "network_yt"
@@ -286,9 +296,11 @@ async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> No
         assert s is not None
         r = rows[name]
         kinds = r["subject_kinds"] if is_pg(db) else loads(r["subject_kinds"])
+        # a stage whose story shipped after 0166: the worker's graph sync writes the rest
+        seeded = SEEDED_BEFORE_SYNC.get(name)
         assert (r["label"], list(kinds), r["pool"], r["lane"], r["lane_order"]) == (
             s.label,
-            list(s.subject_kinds),
+            list(seeded[0] if seeded else s.subject_kinds),
             s.pool,
             s.lane,
             s.lane_order,
@@ -299,15 +311,16 @@ async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> No
             s.external_write,
             s.placement,
         )
-        # the migration seeded them off but trash_purge (each one's story turns it on)
-        assert bool(r["enabled"]) == (name == "trash_purge")
+        assert bool(r["enabled"]) == (seeded[1] if seeded else not s.unreleased)
     # a worker's graph sync keeps the unreleased ones off and trash_purge on
     await sync_graph(db, GRAPH)
     after = {
         r["stage"]: (bool(r["enabled"]), r["disabled_reason"])
         for r in await db.fetch("SELECT stage, enabled, disabled_reason FROM job_stages")
     }
-    assert after["convert_mp4"] == (False, "not_configured")
+    assert after["convert_mp4"] == (True, None)
+    kinds = await db.fetchval("SELECT subject_kinds FROM job_stages WHERE stage = 'convert_mp4'")
+    assert list(kinds if is_pg(db) else loads(kinds)) == ["video", "library"]
     assert after["youtube_backfill"] == (True, None)  # story 47.10 shipped
     assert after["trash_purge"] == (True, None)
     assert after["youtube_fetch"] == (True, None)  # story 47.9 shipped

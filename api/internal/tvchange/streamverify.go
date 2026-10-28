@@ -237,7 +237,7 @@ func (c *Controller) moveQuiet(ctx context.Context, ch *Change, to, action strin
 }
 
 // slotHealthy: the staging slot answers, is bound to the change's release and runs
-// its binary version.
+// its binary version (however the release spells it: runsReleaseVersion).
 func slotHealthy(v *StagingView, plan StagingPlan) bool {
 	if v == nil || !v.Active || !v.Healthy || v.Status == nil || v.Plan == nil || v.Plan.ChangeID != plan.ChangeID {
 		return false
@@ -246,7 +246,7 @@ func slotHealthy(v *StagingView, plan StagingPlan) bool {
 	if st.Role != "staging" || st.Mismatch || st.Release != plan.ReleaseID {
 		return false
 	}
-	return plan.Version == "" || st.Version == plan.Version
+	return runsReleaseVersion(plan.Version, st.Version)
 }
 
 // runState is what a verification run keeps between ticks (verify_report.run).

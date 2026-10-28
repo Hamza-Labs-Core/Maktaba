@@ -454,9 +454,15 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		var info ExitInfo
 		survive := s.survivalLocked(c)
 		startErr := applyBindingKept(cmd, c.binding, c.basePath, s.keptStreaming)
-		if startErr == nil && held.path != "" && (c.binding == nil || c.binding.ReleaseID == "") {
+		switch {
+		case startErr != nil || held.path == "":
+		case c.binding == nil || c.binding.ReleaseID == "":
 			// not bound by the front door, the TV held: the release the live TV runs
 			applyHeld(cmd, held.path)
+		case unversioned(c.binding):
+			// bound to a release that names no binary (a release built before #404's fix,
+			// a source checkout's): the held TV's binary too, never the new software
+			applyHeldPath(cmd, held.path)
 		}
 		if startErr == nil {
 			prepareTree(cmd)

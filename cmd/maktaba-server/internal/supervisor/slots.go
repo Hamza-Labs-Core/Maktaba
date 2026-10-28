@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -135,7 +136,9 @@ func SlotExitReporter(streamAddr string) func(Process, ExitInfo) {
 
 // SlotBinding binds a slot instance to a TV release (story 33.2): the slot runs
 // that release's streaming binary, bin/releases/<version>/, only when its SHA-256
-// is the release's (ResolveReleaseBinary), and gets MAKTABA_TV_RELEASE.
+// is the release's (ResolveReleaseBinary), and gets MAKTABA_TV_RELEASE. A binding with
+// no version (a release that names no streaming binary) runs what an unbound slot runs:
+// the binary the live TV is held on while it is held (held.go), else this release's.
 type SlotBinding struct {
 	ReleaseID string `json:"release_id"`
 	Version   string `json:"version"`
@@ -151,22 +154,25 @@ func applyBinding(cmd *exec.Cmd, b *SlotBinding, base string) error {
 // applyBindingKept is applyBinding that also finds the release's binary among kept(version)
 // (WithKeptStreaming).
 func applyBindingKept(cmd *exec.Cmd, b *SlotBinding, base string, kept func(string) []string) error {
-	if b == nil || b.ReleaseID == "" {
+	if b == nil || b.ReleaseID == "" || unversioned(b) {
 		if base != "" && cmd.Path != base { // unbound again: the binary built with
 			cmd.Path = base
 			if len(cmd.Args) > 0 {
 				cmd.Args[0] = base
 			}
 		}
-		return nil
-	}
-	rb, err := resolveReleaseBinary(releaseBinRoot(base), b.Version, b.SHA256, version.Version, base, kept)
-	if err != nil {
-		return fmt.Errorf("tv_slot_refused: %w", err)
-	}
-	cmd.Path = rb.Path
-	if len(cmd.Args) > 0 {
-		cmd.Args[0] = rb.Path
+		if b == nil || b.ReleaseID == "" {
+			return nil
+		}
+	} else {
+		rb, err := resolveReleaseBinary(releaseBinRoot(base), b.Version, b.SHA256, version.Version, base, kept)
+		if err != nil {
+			return fmt.Errorf("tv_slot_refused: %w", err)
+		}
+		cmd.Path = rb.Path
+		if len(cmd.Args) > 0 {
+			cmd.Args[0] = rb.Path
+		}
 	}
 	env := make([]string, 0, len(cmd.Env)+1)
 	for _, e := range cmd.Env {
@@ -175,6 +181,44 @@ func applyBindingKept(cmd *exec.Cmd, b *SlotBinding, base string, kept func(stri
 		}
 	}
 	cmd.Env = append(env, "MAKTABA_TV_RELEASE="+b.ReleaseID)
+	return nil
+}
+
+// unversioned: a binding to a release that names no streaming binary.
+func unversioned(b *SlotBinding) bool { return b != nil && strings.TrimSpace(b.Version) == "" }
+
+// ErrBindingBinary: the release a slot is asked to run names a streaming binary this
+// install has nowhere (bin/releases/<v>, nor a kept copy), or not with its checksum.
+var ErrBindingBinary = errors.New("the TV release's streaming binary is not on this machine")
+
+// CheckBinding reports, before a slot instance is bound to b and started, whether the
+// binary b names can be run: a staging slot for a release held on an old version whose
+// binary is gone is refused at once, with the reason, instead of starting and failing
+// (or running other software than the release's).
+func (s *Supervisor) CheckBinding(instance string, b *SlotBinding) error {
+	if b == nil || b.ReleaseID == "" || unversioned(b) {
+		return nil
+	}
+	s.mu.Lock()
+	base := ""
+	found := false
+	for _, c := range s.children {
+		if c.proc.Role == RoleTVSlot && c.proc.Instance == instance {
+			base, found = c.basePath, true
+		}
+	}
+	kept := s.keptStreaming
+	s.mu.Unlock()
+	if !found {
+		return fmt.Errorf("no %s process %q", RoleTVSlot, instance)
+	}
+	if _, err := resolveReleaseBinary(releaseBinRoot(base), b.Version, b.SHA256, version.Version, base, kept); err != nil {
+		msg := fmt.Sprintf("tv-slot/%s cannot run TV release %s: its streaming binary %s is not on this machine (%v)",
+			instance, b.ReleaseID, b.Version, err)
+		s.errorf("%s", msg)
+		s.emit(Event{Role: RoleTVSlot, Kind: EventTVHeldMissing, Message: msg})
+		return fmt.Errorf("%w: streaming %s for release %s (%v)", ErrBindingBinary, b.Version, b.ReleaseID, err)
+	}
 	return nil
 }
 

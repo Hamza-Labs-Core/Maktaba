@@ -490,6 +490,33 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A TV held on its old streaming software stays there through schedule and settings
+  changes.** While an update's TV check had failed and the live TV was held on v0.3.39, the
+  0.3.40 pipeline recorded its own `0.3.40` on every schedule release: staging ran the new
+  binary, and swapping the change in would have put the held TV on the software whose check had
+  just failed. A change that brings no binary of its own now records, stages and swaps on the
+  streaming software the live TV runs. The TV moves to new streaming software only when a
+  binary change passes its check: the update's Retry, or a later release's own. A staging slot
+  asked to run a release whose binary is not on the machine is refused at once, and the change's
+  staging fails with that reason instead of running other software.
+- **A TV schedule change's check no longer fails a staging slot that runs the right
+  software.** A release the pipeline builds for a schedule or settings change records its
+  streaming version as `0.3.40`, the slot reports `v0.3.40`, and the check compared them as
+  text: TV change #51 (2026-10-28) failed "the staging slot did not become healthy on the
+  release" three times with the slot up on that very binary. Versions now compare without the
+  `v`. A release recording no binary (a pipeline run from a source checkout records `0.0.1`)
+  stages and binds this install's streaming binary instead of asking for one that does not
+  exist.
+- **An update's TV check no longer overloads the host it measures.** TV change #55 (0.3.39 →
+  0.3.40, 2026-10-28) failed channel.position and channel.wallclock on all 28 channels, 38–50 s
+  behind the wall clock, and held the TV on 0.3.39. The measurement was right and the release's
+  encoding was the same as live's: a binary change changes every channel, the staging budget was
+  the whole quiet host, and the staging slot started all 28 channels at once. Their output then ran
+  at 0.2–0.7x real time and fell further behind every second (−80 s at 100 s on a later run), so
+  no settle time could have passed it. The changed channels are now probed in a window that
+  starts at 4, doubles only while every staging station is on the wall clock, halves as soon as a
+  station's output runs slower than real time, and never again reaches the size that overloaded
+  the host. The checks are unchanged: a release that cannot keep up even alone still fails.
 - **An update's TV check no longer fails a Mac's new streaming software on its warm-up.** The
   staging check of TV change #53 (0.3.37 → 0.3.38, 2026-10-28) failed 27 s in and rolled the
   update back, for three reasons none of which was the release: the staging slot's channels, all
