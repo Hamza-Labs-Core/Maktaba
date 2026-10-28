@@ -528,7 +528,8 @@ func (h *Handler) series(ctx context.Context, lib string) ([]SeriesRef, error) {
 	return out, h.seriesPosters(ctx, lib, out)
 }
 
-// seriesPosters gives each series its first visible episode in lib: by season then
+// seriesPosters gives each series of out (and only those: the hub's row, a
+// page of the Series tab) its first visible episode in lib: by season then
 // episode (their overrides first), by absolute number for an absolute-numbered series,
 // as the series page orders them.
 func (h *Handler) seriesPosters(ctx context.Context, lib string, out []SeriesRef) error {
@@ -536,9 +537,13 @@ func (h *Handler) seriesPosters(ctx context.Context, lib string, out []SeriesRef
 		return nil
 	}
 	at := make(map[string]int, len(out))
+	ids := make([]string, len(out))
 	for i, sr := range out {
 		at[sr.ID] = i
+		ids[i] = sr.ID
 	}
+	args := []any{lib}
+	in := inList(ids, &args)
 	rows, err := h.DB.QueryContext(ctx, `SELECT series_id, video_id FROM (
 		SELECT se.series_id, se.video_id, ROW_NUMBER() OVER (PARTITION BY se.series_id ORDER BY
 			CASE WHEN s.numbering = 'absolute' THEN 0 ELSE COALESCE(se.season_override, se.season, 0) END,
@@ -547,7 +552,7 @@ func (h *Handler) seriesPosters(ctx context.Context, lib string, out []SeriesRef
 			v.id) AS n
 		FROM series_episodes se JOIN series s ON s.id = se.series_id
 		JOIN videos v ON v.id = se.video_id
-		WHERE v.library_id = $1 AND `+visible+`) firsts WHERE n = 1`, lib)
+		WHERE se.series_id IN (`+in+`) AND v.library_id = $1 AND `+visible+`) firsts WHERE n = 1`, args...)
 	if err != nil {
 		return err
 	}

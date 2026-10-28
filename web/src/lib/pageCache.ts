@@ -8,7 +8,8 @@
 // (forgetAnswers with the keys' prefixes).
 
 // Keys start with what the page shows, so a change can drop a family of them:
-//   home, libraries, hub:<library>, library-collections:<library>,
+//   home, libraries, hub:<library>, library-collections:<library>:<kind>,
+//   library-series:<library>:<sort>, collection:<kind>:<library>:<id>,
 //   collections:<library>, collection:<id>, playlists, playlist:<id>,
 //   videos:<query> (a library's grid), video:<id>, series-list:<query>,
 //   series:<id>, history:<kind>, search:<query>, guide:<day>, account:<page>,
@@ -26,6 +27,7 @@ export const VIDEO_ANSWERS = [
   "playlist",
   "collection",
   "library-collections:",
+  "library-series:",
 ];
 
 /** How many answers are kept: the least recently used one goes first. */

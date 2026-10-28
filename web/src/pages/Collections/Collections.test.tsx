@@ -1,7 +1,8 @@
-// Epic 45 Phase 3 (story 45.17) — a library's Collections page and one
-// collection's page: the cards, curation for admins only (create, rename,
-// reorder, remove, delete), a saved filter's chips and its Browse link, and
-// the 404 of a library or collection the user may not see.
+// Epic 45 Phase 3 (story 45.17) — one curated collection's page: curation
+// for admins only (rename, reorder, remove, delete), a saved filter's chips
+// and its Browse link, and the 404 of a collection the user may not see. The
+// library's list of collections is its page's Collections tab
+// (Library/LibraryTabs.test.tsx).
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -21,7 +22,6 @@ vi.mock("../../lib/api", async () => {
   return { ...actual, api: { ...actual.api, get, post, patch, delete: del } };
 });
 
-import { Collections } from "./Collections";
 import { CollectionPage } from "./CollectionPage";
 
 const LIB = "11111111-1111-4111-8111-111111111111";
@@ -64,9 +64,6 @@ function serve(over: Record<string, unknown> = {}) {
       const v = over[url];
       return v instanceof Error ? Promise.reject(v) : Promise.resolve(v);
     }
-    if (url === `/api/collections?library=${LIB}`)
-      return Promise.resolve({ items: [MANUAL, SMART] });
-    if (url === `/api/libraries/${LIB}`) return Promise.resolve({ id: LIB, name: "Tafsir" });
     if (url === "/api/collections/c1") return Promise.resolve(MANUAL);
     if (url === "/api/collections/c2") return Promise.resolve(SMART);
     if (url === "/api/collections/c1/items") return Promise.resolve(ITEMS);
@@ -81,20 +78,6 @@ function Loc() {
   return <span data-testid="loc">{pathname + search}</span>;
 }
 
-const renderList = (user = memberUser) =>
-  renderPage(
-    <>
-      <Collections />
-      <Loc />
-    </>,
-    {
-      path: `/library/${LIB}/collections`,
-      route: "/library/:libraryId/collections",
-      user,
-      extraRoutes: <Route path="/collections/:collectionId" element={<Loc />} />,
-    }
-  );
-
 const renderOne = (id: string, user = memberUser) =>
   renderPage(
     <>
@@ -105,45 +88,9 @@ const renderOne = (id: string, user = memberUser) =>
       path: `/collections/${id}`,
       route: "/collections/:collectionId",
       user,
-      extraRoutes: <Route path="/library/:libraryId/collections" element={<Loc />} />,
+      extraRoutes: <Route path="/library/:libraryId" element={<Loc />} />,
     }
   );
-
-describe("Collections", () => {
-  beforeEach(() => {
-    for (const f of [get, post, patch, del]) f.mockReset();
-    sessionStorage.clear();
-  });
-
-  it("lists the library's collections; a viewer gets no New collection", async () => {
-    serve();
-    renderList();
-    const manual = await screen.findByText("رمضان");
-    expect(manual.closest("a")).toHaveAttribute("href", "/collections/c1");
-    expect(screen.getByText(en["collections.smart"])).toBeInTheDocument();
-    expect(screen.queryByLabelText(en["collections.newName"])).toBeNull();
-  });
-
-  it("lets an admin make a collection and opens it", async () => {
-    serve();
-    post.mockResolvedValue({ id: "c9", library_id: LIB, name: "New one", is_smart: false });
-    renderList(adminUser);
-    await userEvent.type(await screen.findByLabelText(en["collections.newName"]), " New one ");
-    await userEvent.click(screen.getByRole("button", { name: en["collections.create"] }));
-    await waitFor(() =>
-      expect(post).toHaveBeenCalledWith("/api/collections", { library_id: LIB, name: "New one" })
-    );
-    await waitFor(() =>
-      expect(screen.getAllByTestId("loc").at(-1)).toHaveTextContent("/collections/c9")
-    );
-  });
-
-  it("answers not found for a library the user may not see", async () => {
-    serve({ [`/api/collections?library=${LIB}`]: notFound() });
-    renderList();
-    expect(await screen.findByText(en["libraryPage.notFound"])).toBeInTheDocument();
-  });
-});
 
 describe("CollectionPage", () => {
   beforeEach(() => {
@@ -206,7 +153,7 @@ describe("CollectionPage", () => {
     expect(await screen.findByRole("heading", { name: "Ramadan 1447" })).toBeInTheDocument();
   });
 
-  it("deletes after a confirmation and goes back to the library's collections", async () => {
+  it("deletes after a confirmation and goes back to the library's Collections tab", async () => {
     serve();
     del.mockResolvedValue(undefined);
     renderOne("c1", adminUser);
@@ -215,7 +162,9 @@ describe("CollectionPage", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: en["collections.delete"] }));
     await waitFor(() => expect(del).toHaveBeenCalledWith("/api/collections/c1"));
     await waitFor(() =>
-      expect(screen.getAllByTestId("loc").at(-1)).toHaveTextContent(`/library/${LIB}/collections`)
+      expect(screen.getAllByTestId("loc").at(-1)).toHaveTextContent(
+        `/library/${LIB}?tab=collections`
+      )
     );
   });
 
