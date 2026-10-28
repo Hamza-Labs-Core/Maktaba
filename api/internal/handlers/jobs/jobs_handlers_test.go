@@ -164,6 +164,27 @@ func TestRetry(t *testing.T) {
 			}
 		})
 	}
+	// Epic 47: a retry asks for what the failed job was asked (a dry run stays a
+	// dry run) at its stage's priority
+	t.Run("payload and priority carried", func(t *testing.T) {
+		row := jobRow(9, "convert_mp4", "failed")
+		row[5] = int64(150)
+		row[15], row[16] = "library", vid
+		db, r := newJobsFixture(
+			&queuestest.Rule{Match: "from processing_jobs where id = $1", Cols: jobCols, Rows: [][]driver.Value{row}},
+			&queuestest.Rule{Match: "select payload from processing_jobs j", Cols: []string{"payload"},
+				Rows: [][]driver.Value{{[]byte(`{"dry_run":true}`)}}},
+			&queuestest.Rule{Match: "processing_jobs_enqueue", Cols: []string{"job_id", "outcome"},
+				Rows: [][]driver.Value{{int64(57), "inserted"}}},
+		)
+		if rec := call(r, "POST", "/api/jobs/9/retry", true); rec.Code != 200 {
+			t.Fatalf("status %d %s", rec.Code, rec.Body.String())
+		}
+		a := db.Find("processing_jobs_enqueue")[0].Args
+		if a[3] != int64(150) || a[8] != `{"dry_run":true}` {
+			t.Fatalf("priority %v payload %v", a[3], a[8])
+		}
+	})
 	t.Run("unknown job", func(t *testing.T) {
 		_, r := newJobsFixture()
 		if rec := call(r, "POST", "/api/jobs/404/retry", true); rec.Code != 404 {
