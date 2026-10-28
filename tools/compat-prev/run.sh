@@ -154,9 +154,11 @@ cp -R "$ROOT/shared/db/migrations" "$PREV_DIR/shared/db/migrations"
 cd "$PREV_DIR/api"
 pkgs=$(grep -rlE 'MAKTABA_TEST_PG_URL|clustertest\.ScratchDB' --include='*_test.go' internal |
   xargs -n1 dirname | sort -u | sed 's#^#./#')
-# the tests that assert the release's own newest migration (its SchemaRev) say nothing of
-# compatibility: the newer migrations make them fail by design
-skip='^(TestSchemaRevIsTheHighestMigration)$'
+# the tests that assert the release's own newest migration (its SchemaRev), or its own
+# review of every table a machine's copy holds (copyReviewed: a new table must be decided
+# in the build that adds it, and this build's list does), say nothing of compatibility:
+# the newer migrations make them fail by design
+skip='^(TestSchemaRevIsTheHighestMigration|TestEveryTableIsDecidedForTheCopy)$'
 echo "==> $PREV's repository tests on this build's migrations ($(echo "$pkgs" | wc -l | tr -d ' ') packages)"
 set +e
 # shellcheck disable=SC2086 # one argument per package
