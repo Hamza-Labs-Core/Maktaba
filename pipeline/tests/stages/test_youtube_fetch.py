@@ -235,7 +235,8 @@ async def test_sync_marks_only_new_in_range_items(
     job = await run_stage(db, rt, "youtube_sync", "library", lib)
     assert job["state"] == "done", error_of(job)
     got = await rows(db, lib)
-    assert set(got) == {yid(1), yid(2), yid(3), yid(4), yid(6)}  # yid(5) is local
+    assert set(got) == {yid(n) for n in range(1, 7)}
+    assert (got[yid(5)]["state"], got[yid(5)]["reason"]) == ("done", "library")  # seeded
     assert got[yid(1)]["state"] == "wanted" and not got[yid(1)]["backfill"]
     assert got[yid(2)]["state"] == "skipped" and got[yid(2)]["reason"] == "members_only"
     assert got[yid(3)]["state"] == "skipped" and got[yid(3)]["reason"] == "live"

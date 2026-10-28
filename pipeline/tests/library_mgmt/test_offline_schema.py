@@ -308,7 +308,7 @@ async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> No
         for r in await db.fetch("SELECT stage, enabled, disabled_reason FROM job_stages")
     }
     assert after["convert_mp4"] == (False, "not_configured")
-    assert after["youtube_backfill"] == (False, "not_configured")
+    assert after["youtube_backfill"] == (True, None)  # story 47.10 shipped
     assert after["trash_purge"] == (True, None)
     assert after["youtube_fetch"] == (True, None)  # story 47.9 shipped
     pool = await db.fetchrow("SELECT scope, size FROM worker_pools WHERE pool = 'convert'")

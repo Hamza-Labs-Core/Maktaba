@@ -351,7 +351,6 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=3,
         version=YT_BACKFILL_VERSION,
         external_write=True,
-        unreleased=True,
     ),
     # Exact upload dates per video for series members (mediaintel "exact"); off until the
     # "exactdates" rules enable it. Detect runs again on the dates it finds.

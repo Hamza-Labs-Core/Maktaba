@@ -603,13 +603,13 @@ async def drain(db: Any, job: Any, ctx: StageContext, *, backfill: bool) -> Stag
         n = tally.done + tally.skipped + tally.gone + tally.failed
         counts[:] = list(await _backfill_progress(db, library_id)) if backfill else [n, total]
 
-    async def show(got: int = 0, size: int | None = None) -> None:
+    async def show(got: int = 0, size: int | None = None, *, force: bool = False) -> None:
         done, of = counts
         msg = f"backfill: {done:,} of {of:,}" if backfill else f"{done} of {of}"
         if got:
             msg += f" · {got / 1_000_000:.0f} MB"
             msg += f" of {size / 1_000_000:.0f} MB" if size else ""
-        await ctx.progress("download", done, of, msg)
+        await ctx.progress("download", done, of, msg, force=force)
 
     while queue:
         await ctx.check_cancel()
@@ -728,7 +728,7 @@ async def drain(db: Any, job: Any, ctx: StageContext, *, backfill: bool) -> Stag
             )
 
     await count()
-    await show()
+    await show(force=True)
     remaining = await ys.wanted_count(db, library_id, backfill=backfill)
     if backfill and remaining:
         # the next batch: this job's own follow-up once it ends (``rerun_requested``),
