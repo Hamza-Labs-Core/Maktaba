@@ -35,8 +35,8 @@ func kindOf(name string) string {
 	return "other"
 }
 
-// ListDumps is every finished dump in dir (*.dump), newest first; none when dir is
-// not there.
+// ListDumps is every finished dump in dir (*.dump: a file, or a directory-format dump's
+// folder), newest first; none when dir is not there.
 func ListDumps(dir string) ([]Dump, error) {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -47,14 +47,15 @@ func ListDumps(dir string) ([]Dump, error) {
 	}
 	out := []Dump{}
 	for _, e := range entries {
-		if !e.Type().IsRegular() || !strings.HasSuffix(e.Name(), backupSuffix) {
+		if !isDump(e) {
 			continue
 		}
 		info, err := e.Info()
 		if err != nil {
 			continue
 		}
-		out = append(out, Dump{Name: e.Name(), Kind: kindOf(e.Name()), Bytes: info.Size(), At: info.ModTime().UTC()})
+		p := filepath.Join(dir, e.Name())
+		out = append(out, Dump{Name: e.Name(), Kind: kindOf(e.Name()), Bytes: DumpBytes(p), At: info.ModTime().UTC()})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
 	return out, nil
@@ -63,7 +64,8 @@ func ListDumps(dir string) ([]Dump, error) {
 // ErrNotADump is a name that is not a finished dump of the folder.
 var ErrNotADump = errors.New("not a dump of the backups folder")
 
-// dumpPath is dir/name when name is a plain *.dump file name (no folder, no "..").
+// dumpPath is dir/name when name is a plain *.dump name (no folder, no "..") of a dump
+// there (a file, or a directory-format dump's folder; never a link).
 func dumpPath(dir, name string) (string, error) {
 	if name == "" || name != filepath.Base(name) || strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") ||
 		!strings.HasSuffix(name, backupSuffix) {
@@ -74,7 +76,7 @@ func dumpPath(dir, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !info.Mode().IsRegular() {
+	if !IsDump(info) {
 		return "", fmt.Errorf("%w: %q", ErrNotADump, name)
 	}
 	return p, nil
@@ -86,7 +88,7 @@ func DeleteDump(dir, name string) error {
 	if err != nil {
 		return err
 	}
-	return os.Remove(p)
+	return RemoveDump(p)
 }
 
 // MoveDumps moves every finished dump of from (and the record of the pre-update
@@ -114,10 +116,10 @@ func MoveDumps(from, to string) (int, error) {
 			continue
 		}
 		if err := os.Rename(src, dst); err != nil {
-			if err := copySame(src, dst); err != nil {
+			if err := copyDump(src, dst); err != nil {
 				return moved, fmt.Errorf("move %s to %s: %w", src, to, err)
 			}
-			if err := os.Remove(src); err != nil {
+			if err := RemoveDump(src); err != nil {
 				return moved, err
 			}
 		}
@@ -128,7 +130,41 @@ func MoveDumps(from, to string) (int, error) {
 	return moved, nil
 }
 
-// copySame copies src to dst (through dst.partial) and checks the copy's size.
+// copyDump copies the dump src to dst (through dst.partial, then moved into place): a
+// file, or a directory-format dump's folder file by file, each copy's size checked.
+func copyDump(src, dst string) error {
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return copySame(src, dst)
+	}
+	part := dst + ".partial"
+	_ = os.RemoveAll(part)
+	if err := os.MkdirAll(part, 0o700); err != nil {
+		return err
+	}
+	ents, err := os.ReadDir(src)
+	if err == nil {
+		for _, e := range ents {
+			if !e.Type().IsRegular() {
+				continue // a directory-format dump is flat: toc.dat and one file per table
+			}
+			if err = copySame(filepath.Join(src, e.Name()), filepath.Join(part, e.Name())); err != nil {
+				break
+			}
+		}
+	}
+	if err != nil {
+		_ = os.RemoveAll(part)
+		return err
+	}
+	_ = os.Chtimes(part, info.ModTime(), info.ModTime())
+	return os.Rename(part, dst)
+}
+
+// copySame copies the file src to dst (through dst.partial) and checks the copy's size.
 func copySame(src, dst string) error {
 	in, err := os.Open(src) //nolint:gosec // the backups folder's own file
 	if err != nil {

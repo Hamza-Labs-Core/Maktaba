@@ -1,6 +1,7 @@
 package pgbundle
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -49,7 +50,8 @@ const ReplacedDumpPrefix = "replaced-"
 // PruneBackups keeps, in a backups folder, the newest keep pre-update dumps (pre-*.dump,
 // keepPath always), the newest keep dumps of failed updates (failed-*.dump) and as many of
 // databases a restore replaced (replaced-*.dump), and removes the folders of rehearsals a
-// crash left (.rehearse-*, older than an hour): each holds a whole database.
+// crash left (.rehearse-*) and the dumps one cut short (*.partial), older than an hour:
+// each holds up to a whole database.
 func PruneBackups(dir, keepPath string, keep int) error {
 	keep = max(keep, 1)
 	entries, err := os.ReadDir(dir)
@@ -68,15 +70,15 @@ func PruneBackups(dir, keepPath string, keep int) error {
 		if err != nil {
 			continue // gone meanwhile
 		}
-		if e.IsDir() {
-			if strings.HasPrefix(name, ".rehearse-") && time.Since(info.ModTime()) > staleRehearsal {
-				if err := os.RemoveAll(filepath.Join(dir, name)); err != nil && firstErr == nil {
-					firstErr = err
-				}
+		stale := strings.HasPrefix(name, ".rehearse-") && e.IsDir() && time.Since(info.ModTime()) > staleRehearsal ||
+			strings.Contains(name, backupSuffix+".partial") && time.Since(lastWrite(filepath.Join(dir, name), info)) > staleRehearsal
+		if stale {
+			if err := os.RemoveAll(filepath.Join(dir, name)); err != nil && firstErr == nil {
+				firstErr = err
 			}
 			continue
 		}
-		if !strings.HasSuffix(name, backupSuffix) {
+		if !isDump(e) {
 			continue
 		}
 		for _, prefix := range []string{updateDumpPrefix, "failed-", ReplacedDumpPrefix} {
@@ -93,10 +95,29 @@ func PruneBackups(dir, keepPath string, keep int) error {
 			return dumps[i].mod.After(dumps[j].mod)
 		})
 		for _, d := range dumps[min(keep, len(dumps)):] {
-			if err := os.Remove(d.path); err != nil && !os.IsNotExist(err) && firstErr == nil {
+			if err := RemoveDump(d.path); err != nil && firstErr == nil {
 				firstErr = err
 			}
 		}
 	}
 	return firstErr
+}
+
+// lastWrite is when path (info) or, for a folder, any file in it last changed: a dump
+// being written changes one of its files, not its folder, for as long as a table takes.
+func lastWrite(path string, info fs.FileInfo) time.Time {
+	last := info.ModTime()
+	if !info.IsDir() {
+		return last
+	}
+	_ = filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if fi, err := d.Info(); err == nil && fi.ModTime().After(last) {
+			last = fi.ModTime()
+		}
+		return nil
+	})
+	return last
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // This test binary is also these tests' stand-ins (run before TestMain, so
@@ -193,13 +194,24 @@ type fakeDB struct {
 	migrateErr error
 	restoreErr error
 	block      chan struct{} // when set, the migrations wait on it (or the context)
+	// pending is how many of the payload's migrations the database lacks, when known
+	// (not known: the update dumps as it always did)
+	pending int
+	known   bool
 }
 
 func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 	t.Helper()
 	f := &fakeDB{cfg: cfg}
-	prevD, prevR, prevM, prevA := dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled
-	t.Cleanup(func() { dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled = prevD, prevR, prevM, prevA })
+	prevD, prevR, prevM, prevA, prevP := dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations
+	t.Cleanup(func() {
+		dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations = prevD, prevR, prevM, prevA, prevP
+	})
+	pendingMigrations = func(context.Context, *migrationGate) (int, bool) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return f.pending, f.known
+	}
 	dumpAsideBundled = func(_ context.Context, _ pgbundle.Bundle, path string) error {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -492,34 +504,140 @@ func TestAppBundleFailedRestoreIsFinishedNextStart(t *testing.T) {
 	}
 }
 
-// D2 (review A7): a putting back the launcher's fallback asked for (its deadline, a boot
-// loop) sets the failed state aside first, once; one the update's own rollback already
-// set aside is not dumped again.
-func TestAppBundleRestoreSetsTheFailedStateAside(t *testing.T) {
+// A rollback after the failed release's migrations ran (the launcher's fallback marked the
+// record: its deadline, a boot loop) puts the pre-update dump back and starts the release
+// before: nothing is dumped first, neither before the dump goes back nor in place of it.
+func TestAppBundleRollbackRestoresWithoutDumping(t *testing.T) {
 	cfg, payload := appEnv(t, "v0.2.0", "")
 	backups := filepath.Join(cfg.StateDir(), "backups")
 	_ = os.MkdirAll(backups, 0o700)
 	dump := filepath.Join(backups, "pre-v0.2.0-to-v0.3.0.dump")
 	_ = os.WriteFile(dump, []byte("dump"), 0o600)
-	restoring := apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
-		Dump: dump, Failed: "v0.3.0", Error: "launcher_deadline"}
-	record(t, cfg, restoring)
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
+		Dump: dump, Failed: "v0.3.0", Error: "launcher_deadline"})
 	f := installFakeDB(t, cfg)
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
 	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
 		t.Fatalf("= %v", err)
 	}
-	if len(f.asides) != 1 || !strings.HasPrefix(f.asides[0], "failed-v0.3.0-") || len(f.restores) != 1 {
-		t.Fatalf("asides %v restores %v", f.asides, f.restores)
+	if d, m, r := f.counts(); len(f.asides) != 0 || d != 0 || r != 1 || m != 1 || f.restores[0] != "pre-v0.2.0-to-v0.3.0.dump" {
+		t.Fatalf("asides %v, %d dumps, %d migrations, restores %v", f.asides, d, m, f.restores)
 	}
-	// set aside already (the update's rollback did it): not again
-	record(t, cfg, restoring)
+	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.State != apppayload.DatabaseMigrated {
+		t.Fatalf("record = %+v", rec)
+	}
+}
+
+// An update that adds no migration takes no dump: the database is checked (no migration
+// runs) and the record keeps the release whose migrations it holds, with the new one as
+// the release that runs. Going back to the release before (its rollback, which the
+// launcher's fallback does not mark: there is no dump) is a plain start too: nothing
+// dumped, nothing put back, no update attempt.
+func TestAppBundleUpdateWithoutMigrationsTakesNoDump(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.1", "")
+	t.Setenv(envLauncherRoot, "")
+	updates := filepath.Join(cfg.StateDir(), "updates")
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.pending, f.known = 0, true
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	d, m, r := f.counts()
+	if d != 0 || r != 0 || m != 1 || f.migrates[0] != "migrated" {
+		t.Fatalf("%d dumps, migrations %v (the check, the record untouched while it ran), %d restores", d, f.migrates, r)
+	}
+	rec := recorded(t, cfg)
+	if rec.Version != "v0.3.0" || rec.Release != "v0.3.1" || rec.State != apppayload.DatabaseMigrated || rec.Dump != "" ||
+		rec.From != "v0.3.0" {
+		t.Fatalf("record = %+v", rec)
+	}
+	if a, ok := attempts.Find(updates, "v0.3.1"); !ok || a.Outcome != attempts.Installed || a.From != "0.3.0" {
+		t.Fatalf("attempt = %+v %v", a, ok)
+	}
+	// the launcher's fallback finds no dump to put back: the record is not marked
+	if marked, err := layout.MarkRecordRestoring(apppayload.DatabasePath(cfg.StateDir()), "v0.3.1", "launcher_pending_timeout"); err != nil || marked {
+		t.Fatalf("marked = %v, %v", marked, err)
+	}
+	// the same release again: nothing to do
 	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
 	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
-		t.Fatalf("= %v", err)
+		t.Fatal(err)
 	}
-	if len(f.asides) != 1 || len(f.restores) != 2 {
-		t.Fatalf("asides %v restores %v", f.asides, f.restores)
+	// v0.3.0 again (the rollback): it knows the database; a plain start
+	newPayload(t, payload, "v0.3.0")
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("the release before again: %v", err)
+	}
+	if d, _, r := f.counts(); d != 0 || r != 0 || len(f.asides) != 0 {
+		t.Fatalf("%d dumps, %d restores, asides %v", d, r, f.asides)
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.3.0" || rec.Release != "" || rec.State != apppayload.DatabaseMigrated {
+		t.Fatalf("record = %+v", rec)
+	}
+	if _, ok := attempts.Find(updates, "v0.3.0"); ok {
+		t.Fatal("going back recorded as an update to v0.3.0")
+	}
+	// an older release than the database's migrations is still refused
+	newPayload(t, payload, "v0.2.9")
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); !supervisor.Halted(err) ||
+		supervisor.DetailOf(err).Code != "db_refused_older" {
+		t.Fatalf("an older release = %v", err)
+	}
+}
+
+// An update that adds migrations takes the dump the release before took for it while it
+// served (noted in the record, fresh): no dump of its own, it migrates at once; a stale
+// one, or one for another release, is not taken (the start dumps as before).
+func TestAppBundleUpdateTakesTheDumpTakenWhileServing(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.4.0", "")
+	backups := filepath.Join(cfg.StateDir(), "backups")
+	side := filepath.Join(backups, "pre-0.3.0-to-0.4.0.dump")
+	if err := os.MkdirAll(side, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(side, "toc.dat"), []byte("toc"), 0o600)
+	recPath := apppayload.DatabasePath(cfg.StateDir())
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
+	if err := layout.NoteRecordNext(recPath, "0.3.0", "0.4.0", side, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	f := installFakeDB(t, cfg)
+	f.pending, f.known = 3, true
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if d, m, _ := f.counts(); d != 0 || m != 1 || f.migrates[0] != apppayload.DatabaseMigrating {
+		t.Fatalf("%d dumps, migrations %v", d, f.migrates)
+	}
+	rec := recorded(t, cfg)
+	if rec.Version != "v0.4.0" || rec.State != apppayload.DatabaseMigrated || rec.Dump != side || rec.Next != "" {
+		t.Fatalf("record = %+v (the dump taken while serving is the way back)", rec)
+	}
+	// the way back is marked as any pre-update dump
+	if marked, err := layout.MarkRecordRestoring(recPath, "v0.4.0", "launcher_boot_loop"); err != nil || !marked {
+		t.Fatalf("marked = %v, %v", marked, err)
+	}
+
+	// a stale note (an update that did not switch then): the start dumps by itself
+	cfg2, payload2 := appEnv(t, "v0.4.0", "")
+	record(t, cfg2, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
+	if err := layout.NoteRecordNext(apppayload.DatabasePath(cfg2.StateDir()), "0.3.0", "0.4.0", side,
+		time.Now().Add(-2*nextDumpFresh)); err != nil {
+		t.Fatal(err)
+	}
+	f2 := installFakeDB(t, cfg2)
+	f2.pending, f2.known = 3, true
+	ps = appBundleGates(cfg2, payload2, testBundle(cfg2), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if d, _, _ := f2.counts(); d != 1 || recorded(t, cfg2).Dump == side {
+		t.Fatalf("a stale dump taken: %d dumps, record %+v", d, recorded(t, cfg2))
 	}
 }
 

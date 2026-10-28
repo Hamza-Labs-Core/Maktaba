@@ -53,7 +53,8 @@ const (
 	StepStage     = "stage"
 	StepSmoke     = "smoke"
 	StepRehearse  = "rehearse"
-	StepOrder     = "order" // the app's order, until the app staged the release
+	StepOrder     = "order"  // the app's order, until the app staged the release
+	StepBackup    = "backup" // the home's pre-update dump, while the running release serves (backup.go)
 	StepSwitch    = "switch"
 	StepRestart   = "restart"
 	StepWatch     = "watch"

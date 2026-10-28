@@ -204,6 +204,35 @@ func UnmarkRecordRestoring(path, failed string) (bool, error) {
 	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
 }
 
+// NoteRecordNext records in the database's record at path that the running release took
+// dump, the pre-update dump for next, while it served (an update's backup step, right
+// before its switch): next's start puts it in the record as its own pre-update dump
+// instead of taking one. A record not there yet is made as the start would read the
+// install (running's migrations, migrated). Fields it does not know are kept.
+func NoteRecordNext(path, running, next, dump string, at time.Time) error {
+	rec := map[string]any{}
+	b, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		rec["version"], rec["state"] = running, "migrated"
+	case err != nil:
+		return err
+	default:
+		if err := json.Unmarshal(b, &rec); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	rec["next"], rec["next_dump"], rec["next_at"] = next, dump, at.UTC().Format(time.RFC3339Nano)
+	out, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return WriteFileAtomic(path, append(out, '\n'), 0o644)
+}
+
 // RecordMigrated reports whether the record says version's migrations ran (or were
 // running: a database that may hold some of them).
 func RecordMigrated(path, version string) bool {

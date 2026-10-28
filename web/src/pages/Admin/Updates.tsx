@@ -577,7 +577,7 @@ const SAYS_PREVIOUS = new Set([
 ]);
 
 /** The steps an attempt fails at before its release runs (the app's check, download,
- * signature, install and relaunch; a run's preflight, stage, smoke test and switch): a
+ * signature, install and relaunch; a run's preflight, stage, smoke test, backup and switch): a
  * machine that runs that release now reached it another way. A failure at a later step
  * (the pipeline's environment, the database step) happened to the release it runs: it
  * still holds. */
@@ -590,6 +590,7 @@ const BEFORE_IT_RUNS = new Set([
   "preflight",
   "stage",
   "smoke",
+  "backup",
   "switch",
 ]);
 

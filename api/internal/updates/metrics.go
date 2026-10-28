@@ -62,7 +62,7 @@ var targetStates = []string{TargetPending, TargetOffline, TargetPreparing, Targe
 // knownSteps are the steps a machine's journal records (cmd/maktaba-server/internal/updater
 // Step*; a test holds them together): the step label's values, any other is stepOther.
 var knownSteps = map[string]bool{"preflight": true, "stage": true, "smoke": true, "rehearse": true, "order": true,
-	"switch": true, "restart": true, "watch": true, "commit": true, "launcher": true, "rollback": true, "tv": true}
+	"backup": true, "switch": true, "restart": true, "watch": true, "commit": true, "launcher": true, "rollback": true, "tv": true}
 
 // stepLabel is a step's label value.
 func stepLabel(step string) string {

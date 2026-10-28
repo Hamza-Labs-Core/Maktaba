@@ -178,10 +178,26 @@ updated its runtime) offers its own update for its window and tray.
    it (the release's `migrations` archive, verified like everything else). A failure blocks the
    version; the real database was never touched. Skipped above `rehearse_max_db_gb`, without
    `CREATEDB`, or for a release without a migrations archive (logged).
-2. **Apply: the 38.12 database step**, now for every home (it ran only inside the apps): at the
-   new release's start, before any role, the dump (`backups/pre-<old>-to-<new>.dump`, verified
-   with `pg_restore --list`), the migrations, the record `state/database.json`; a failed
-   migration puts the dump back and the run is `rolled_back` with nothing changed. Before an
+2. **Apply: the backup on the side, then the 38.12 database step** (owner rule, 2026-10-27: an
+   update never blocks the library for a backup). Right before its switch, the home's apply
+   (`internal/updater/backup.go`, step `backup`) compares the staged release's migrations (the
+   verified migrations archive of its `release.json`) with the newest migration the database
+   holds (goose's table):
+   - **none to run**: no backup (the step is `skipped`); the switch is a restart;
+   - **some, or that cannot be told**: the running release dumps the database while it goes on
+     serving (`pg_dump` reads one snapshot; `backups/pre-<old>-to-<new>.dump`, verified with
+     `pg_restore --list`), the step's detail saying how many MB it wrote; only the switch waits
+     for it. A dump that fails switches nothing (`apply_failed`, `db_dump_failed`). The dump is
+     noted in the record (`next`, `next_dump`, `next_at`).
+
+   Then, at the new release's start, before any role, the database step (now for every home; it
+   ran only inside the apps): a release with no migration to run takes no dump, checks the
+   database (`migrate up`, which applies nothing) and records it with `version` left at the
+   release whose migrations the database holds and `release` the one that runs, so the release
+   before it knows the database and may run on it again; a release with migrations takes the
+   dump noted for it (fresh: within an hour), else (a release installed another way) dumps as
+   before, then the migrations and the record `state/database.json`; a failed migration puts the
+   dump back and the run is `rolled_back` with nothing changed. Before an
    update's migrations the other client sessions on the database are ended (the machines' api
    sessions; replication goes on), and no migration waits longer than 2 minutes for a lock
    another session holds (`maktaba-api migrate --lock-timeout`, lib/pq's `lock_timeout`): it
@@ -194,14 +210,48 @@ updated its runtime) offers its own update for its window and tray.
    the cap bounds them (their lock waits are bounded by the lock timeout): 2 hours plus a
    quarter of an hour per GiB of the database plus three times the rehearsed migrations, past
    which any start step rolls back (`start_timeout`).
-3. **Rolling back after the migrations ran** (a check failed in the watch, or the launcher's guard
-   fired): the record is set to `restoring` (failed = the new release, dump = the one above)
-   before the previous release starts, and that release's database step puts the dump back
-   before any role runs (code every release since 38.12 has). What is lost: the writes between
-   the dump and the rollback — minutes, inside the window, with every pipeline worker of the
-   cluster drained from the home's apply until it commits. The failed state is dumped aside
-   first (`backups/failed-<new>-<utc>.dump`) for anyone who wants it back.
-4. **The machines' copies (Epic 37) across it.** A machine's copy follows only a home whose
+3. **Rolling back never dumps.** A release that added no migration, or whose migrations never
+   ran, left a record its rollback (the watch's, or the launcher's guard) does not mark: the
+   previous release starts at once, a restart. **After the migrations ran** (a check failed in
+   the watch, or the launcher's guard fired): the record is set to `restoring` (failed = the new
+   release, dump = the one above) before the previous release starts, and that release's
+   database step puts the dump back before any role runs (code every release since 38.12 has),
+   with nothing dumped first. What is lost: the writes between the dump and the rollback —
+   minutes, inside the window, with every pipeline worker of the cluster drained from the
+   home's apply until it commits — and the failed state, which is not kept (releases before
+   this rule dumped it aside first, `backups/failed-<new>-<utc>.dump`, which kept the library
+   down for as long as a whole dump takes).
+4. **The dumps' format** (`pgbundle/dumpfmt.go`). Every dump is a directory-format dump
+   (`pg_dump -Fd`, still named `*.dump`): one file per table, written by `DumpJobs` workers (half
+   the cores, 2 to 8) in one snapshot and put back by as many `pg_restore` workers; each file
+   compressed with `zstd:1`, else `lz4`, else `gzip:1` (else `-Z 1` for a `pg_dump` older than
+   16), the first the `pg_dump` at hand takes (the bundled one has zlib only). A worker locks
+   its table with NOWAIT: one locked out (a session asked for its table whole while the server
+   served) begins the dump again, twice at most. Every dump is whole (owner, 2026-10-27: a
+   backup that left the vectors out would cost days of embedding after a restore). The
+   tables of `pgbundle.Chunked` are written apart: `segment_embeddings`, semantic search's
+   vectors (31 of 47 GB on the home that measured it), was the bulk of a 35 GB dump that one
+   pg_dump worker wrote as text for ten minutes (formatting each vector's 384 numbers is the
+   cost, not the compression). A session of the dump's role exports a snapshot and stays open;
+   `pg_dump --snapshot` leaves those rows out, and `DumpJobs` psql sessions set the same
+   snapshot and each COPY one range of the key out in binary
+   (`chunk.public.segment_embeddings.<n>.bin` in the dump's folder, which pg_restore does not
+   read). Putting a dump back runs pre-data and data, then loads the chunks as many at once
+   (`pgbundle.LoadChunks`; one `\copy` each in the in-place restore's single transaction),
+   then post-data, so the indexes are built once over the loaded rows. Without a snapshot
+   session (no psql) pg_dump writes every table itself, slower but whole.
+   Measured on a scratch copy shaped like that home at full scale (24 GB: its tables, and 17M
+   distinct halfvec(384) vectors; the app's PostgreSQL 16, gzip:1, 8 workers): the single-file
+   dump of before took 619 s for 35.8 GB (the home's own log said ten minutes for 35 GB); this
+   one took 25 s for 17.2 GB, the vectors' chunks written beside the other tables. Putting it
+   back took 5 min 21 s (tables and data 91 s, the vectors 185 s, indexes 45 s; the home's
+   HNSW index comes on top of that).
+   The
+   folder's rules (`MakeRoom`, `PruneBackups`, the Backups page, moving the backups, a restore
+   by hand) take a dump's folder as they take a file, by its files' size; the single-file dumps
+   of before are read, restored, moved and pruned as they were; a dump a crash cut short
+   (`*.dump.partial`) goes once nothing was written to it for an hour.
+5. **The machines' copies (Epic 37) across it.** A machine's copy follows only a home whose
    schema is not ahead of its own: from the home's migration until that machine's update, it
    pauses (`incompatible`; its reads go to the home), and the machine's new release migrates
    its own database and copies the home anew. A dump put back takes the copies' logical slots
@@ -212,7 +262,7 @@ updated its runtime) offers its own update for its window and tray.
    its copy: the previous release refuses that database (reported as the copy's error, reads
    go to the home), while the copy's subscription keeps applying the home's changes; the copy
    is taken up again when the machine takes the release.
-5. **A restore by hand** (story 35.5 AC8): the Updates page lists the home's backups
+6. **A restore by hand** (story 35.5 AC8): the Updates page lists the home's backups
    (`/api/cluster/updates/backups`) and puts one back after its name is typed;
    `maktaba-server restore --backup <file> --confirm` does the same. The home's supervisor
    reads the dump's schema, picks the kept release of that schema (`updater.Keeper`: a plain

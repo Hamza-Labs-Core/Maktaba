@@ -105,7 +105,7 @@ The attempts, the logs and the database step of a desktop app's server:
 | the attempts | `~/Library/Application Support/Maktaba/updates/app-attempts.json`, `server-attempts.json` | `%LOCALAPPDATA%\Maktaba\updates\` (the same two) | the app's data folder, `updates/` |
 | the app's log | `~/Library/Logs/Maktaba/app.log` | `%LOCALAPPDATA%\Maktaba\logs\app.log` | the app's logs folder, `app.log` |
 | the server's log | `~/Library/Logs/Maktaba/server.log` | `%LOCALAPPDATA%\Maktaba\logs\` | the app's logs folder |
-| the database step | `~/Library/Application Support/Maktaba/state/database.json`; the dump before the update: `backups/pre-<from>-to-<to>.dump`; a failed state set aside: `backups/failed-*.dump` | the same under `%LOCALAPPDATA%\Maktaba` | the same under the data folder |
+| the database step | `~/Library/Application Support/Maktaba/state/database.json`; the backup before an update that migrates: `backups/pre-<from>-to-<to>.dump` (a folder: one file per table) | the same under `%LOCALAPPDATA%\Maktaba` | the same under the data folder |
 | the launcher | `~/Library/Application Support/Maktaba/updates/launcher.log` | `%LOCALAPPDATA%\Maktaba\updates\launcher.log` | the runtime's `updates/launcher.log` |
 
 On a Mac, the server's login item and code signing show in the system log:

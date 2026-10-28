@@ -84,7 +84,7 @@ or a release you rolled back by hand that refuses the newer schema.
   as `backups/replaced-<version>-<time>.dump` (restore that one to undo). The machines copy the
   restored database anew.
 - **What it loses**: every change made since the backup was taken — added videos, watch history,
-  settings, jobs done. A `pre-<from>-to-<to>.dump` is from the start of that update.
+  settings, jobs done. A `pre-<from>-to-<to>.dump` is from right before that update's switch.
 - **Refusals**: `restore_not_confirmed` (no confirmation), `restore_update_under_way` (cancel the
   run, or wait for it), `restore_no_release` (no kept release has the backup's schema: install the
   release it names, then restore), `restore_bad_backup` / `restore_no_backup` (not a backup's
@@ -146,7 +146,7 @@ Never a `--certificate-identity-regexp`: it accepts a fork's workflow too.
 `launcher_pending_timeout`, `launcher_refused`.
 
 - **Maktaba did**: put the previous release back (and, after its migrations, the database dump
-  taken before them; the failed state is kept as `backups/failed-<version>-<time>.dump`), and
+  taken before them, with nothing dumped first: the failed state is not kept), and
   blocked the release. The machines were not touched: they follow only a committed release.
 - **You**: read the reason and **See the logs** (the start's `[db]` lines, a role that kept
   stopping). `start_timeout` on a large database or a slow disk: the database step or the
@@ -196,7 +196,8 @@ running release was not touched. Free space on the disk of the install root (old
 
 ### The database step
 
-- `db_dump_failed`: the dump before the migrations failed, so nothing was changed. Usually the
+- `db_dump_failed`: the backup before the switch (or, for a release installed another way, at its
+  start) failed, so nothing was switched or changed. Usually the
   disk (see above) or the database's own error in the detail.
 - `rehearsal_failed`: the migrations failed on a scratch copy of the real data. Nothing was
   changed; the release is blocked. Send the detail with a bug report; skip the release.

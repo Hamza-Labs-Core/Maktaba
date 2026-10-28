@@ -246,28 +246,33 @@ func majorOf(versionOut string) int {
 	return n
 }
 
-// Dump writes a custom-format dump of the database to path (beside, then renamed: a
-// dump cut short is never taken for one), mode 0600, and checks it reads back.
+// Dump writes a dump of the whole database to path (DumpWith).
 func (t Target) Dump(ctx context.Context, path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	part := path + ".partial"
-	_ = os.Remove(part)
-	cmd, err := t.command(ctx, "pg_dump", "", "--format=custom", "--no-owner", "--file="+part)
+	return t.DumpWith(ctx, path, pgbundle.DumpOptions{})
+}
+
+// DumpWith writes a directory-format dump of the database to path (pgbundle.PgDump: its
+// workers, its compression, written beside and moved into place once it reads back, so a
+// dump cut short or unreadable is never taken for one), its owners left out, its folder
+// mode 0700.
+func (t Target) DumpWith(ctx context.Context, path string, opts pgbundle.DumpOptions) error {
+	conn, pw, err := t.parts("")
 	if err != nil {
 		return err
 	}
-	if out, err := cmd.CombinedOutput(); err != nil {
-		_ = os.Remove(part)
-		return fmt.Errorf("pg_dump: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	_ = os.Chmod(part, 0o600)
-	if _, err := t.VerifyDump(ctx, part); err != nil {
-		_ = os.Remove(part)
+	opts.Check = func(part string) error {
+		_ = os.Chmod(part, 0o700)
+		_, err := t.VerifyDump(ctx, part)
 		return err
 	}
-	return os.Rename(part, path)
+	opts.PgDumpArgs = append(opts.PgDumpArgs, "--no-owner")
+	if psql := t.bin("psql"); opts.Open == nil && havePSQL(psql) {
+		// the vectors in binary chunks, in the dump's snapshot (pgbundle.Chunked)
+		opts.Open = func(ctx context.Context) (*sql.DB, error) { return t.open(ctx, "") }
+		opts.PSQL = psql
+	}
+	return pgbundle.PgDump(ctx, t.bin("pg_dump"), []string{"--dbname=" + conn},
+		append(os.Environ(), "PGPASSWORD="+pw, "PGCONNECT_TIMEOUT=15"), path, opts)
 }
 
 // EndSessions ends the other client sessions on the database that its role may end
@@ -416,12 +421,8 @@ func (t Target) rehearse(ctx context.Context, api, dir string, maxBytes int64, l
 		defer cancel()
 		_, _ = d.ExecContext(dctx, `DROP DATABASE IF EXISTS `+scratch+` WITH (FORCE)`)
 	}()
-	restore, err := t.command(ctx, "pg_restore", scratch, "--no-owner", "--exit-on-error", dump)
-	if err != nil {
-		return r, err
-	}
-	if out, err := restore.CombinedOutput(); err != nil {
-		return r, fmt.Errorf("rehearsal_restore: pg_restore into %s: %v: %s", scratch, err, tail(out))
+	if err := t.restoreInto(ctx, scratch, dump); err != nil {
+		return r, fmt.Errorf("rehearsal_restore: %w", err)
 	}
 	scratchURL, err := t.urlFor(scratch)
 	if err != nil {
@@ -446,6 +447,40 @@ func (t Target) rehearse(ctx context.Context, api, dir string, maxBytes int64, l
 		return r, fmt.Errorf("rehearsal_failed: the release's migrations failed on a copy of this database: %s", tail(out.Bytes()))
 	}
 	return r, nil
+}
+
+// restoreInto restores dump into the empty database db of the same server, in parallel:
+// a dump with chunked tables (pgbundle.Chunked) in three steps, its tables and data, the
+// chunks, then its indexes and constraints.
+func (t Target) restoreInto(ctx context.Context, db, dump string) error {
+	jobs := pgbundle.DumpJobs()
+	restore := func(sections ...string) error {
+		args := append([]string{"--no-owner", "--exit-on-error", "--jobs=" + strconv.Itoa(jobs)}, sections...)
+		cmd, err := t.command(ctx, "pg_restore", db, append(args, dump)...)
+		if err != nil {
+			return err
+		}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("pg_restore into %s: %v: %s", db, err, tail(out))
+		}
+		return nil
+	}
+	chunks := pgbundle.Chunks(dump)
+	if len(chunks) == 0 {
+		return restore()
+	}
+	if err := restore("--section=pre-data", "--section=data"); err != nil {
+		return err
+	}
+	conn, pw, err := t.parts(db)
+	if err != nil {
+		return err
+	}
+	if err := pgbundle.LoadChunks(ctx, t.bin("psql"), []string{"--dbname=" + conn},
+		append(os.Environ(), "PGPASSWORD="+pw, "PGCONNECT_TIMEOUT=15"), chunks, jobs); err != nil {
+		return err
+	}
+	return restore("--section=post-data")
 }
 
 // urlFor is the URL of another database on the same server, for lib/pq (maktaba-api).
@@ -522,6 +557,10 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 		_, _ = d.ExecContext(ctx, `ANALYZE`)
 		return nil
 	}
+	if len(pgbundle.Chunks(dump)) > 0 {
+		return fmt.Errorf("restore %s: its vectors are binary chunks that psql loads, and there is no psql beside "+
+			"pg_restore (install the PostgreSQL client programs, or set MAKTABA_PG_BIN): nothing was changed", dump)
+	}
 	if _, err := d.ExecContext(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
 		return fmt.Errorf("make the public schema afresh: %w", err)
 	}
@@ -553,17 +592,16 @@ var havePSQL = func(psql string) bool {
 // pg_restore wrote the whole script; a pg_restore that fails part way (a cut dump) ends
 // psql before that, so the server rolls the transaction back. A psql that stops first (an
 // SQL error, ON_ERROR_STOP) stops pg_restore too (it would write into a pipe nobody reads
-// for ever), and its own words are the error.
+// for ever), and its own words are the error. A dump with chunked tables (pgbundle.Chunked)
+// is streamed in three parts: its tables and their data, a \copy of each chunk, then its
+// indexes and constraints.
 func (t Target) restoreAtomic(ctx context.Context, dump string, log io.Writer) error {
 	pctx, kill := context.WithCancel(ctx)
 	defer kill()
-	gen := exec.CommandContext(pctx, t.bin("pg_restore"), "--no-owner", "--no-publications", "--file=-", dump)
-	script, err := gen.StdoutPipe()
-	if err != nil {
-		return err
+	parts := [][]string{nil} // pg_restore's sections (nil: all of it); a "" marks the chunks
+	if chunks := pgbundle.Chunks(dump); len(chunks) > 0 {
+		parts = [][]string{{"--section=pre-data", "--section=data"}, {""}, {"--section=post-data"}}
 	}
-	var genErr bytes.Buffer
-	gen.Stderr = &genErr
 	cmd, err := t.command(pctx, "psql", "", "--no-psqlrc", "--quiet", "--set=ON_ERROR_STOP=1", "--single-transaction",
 		"--command=DROP SCHEMA public CASCADE; CREATE SCHEMA public;", "--file=-")
 	if err != nil {
@@ -579,28 +617,50 @@ func (t Target) restoreAtomic(ctx context.Context, dump string, log io.Writer) e
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("psql: %w", err)
 	}
-	if err := gen.Start(); err != nil {
+	stopped := func(copyErr error) error {
+		// psql stopped reading (its own error says why, its transaction rolled back): say
+		// what psql said
 		kill()
-		_ = cmd.Wait()
-		return fmt.Errorf("pg_restore: %w", err)
-	}
-	_, copyErr := io.Copy(in, script)
-	if copyErr != nil {
-		// psql stopped reading (its own error says why, its transaction rolled back): stop
-		// pg_restore, which would wait on the pipe for ever, then say what psql said
-		kill()
-		_ = gen.Wait()
 		werr := cmd.Wait()
 		if werr == nil {
 			werr = copyErr
 		}
 		return fmt.Errorf("restore %s (nothing changed: one transaction): psql stopped: %v: %s", dump, werr, tail(out.Bytes()))
 	}
-	if err := gen.Wait(); err != nil {
-		// the script is not whole: psql ends before its input does, with no commit
-		kill()
-		_ = cmd.Wait()
-		return fmt.Errorf("pg_restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(genErr.Bytes()))
+	for _, sections := range parts {
+		if len(sections) == 1 && sections[0] == "" {
+			if _, err := io.WriteString(in, pgbundle.CopyScript(pgbundle.Chunks(dump))); err != nil {
+				return stopped(err)
+			}
+			continue
+		}
+		args := append(append([]string{"--no-owner", "--no-publications"}, sections...), "--file=-", dump)
+		gen := exec.CommandContext(pctx, t.bin("pg_restore"), args...)
+		script, err := gen.StdoutPipe()
+		if err != nil {
+			kill()
+			_ = cmd.Wait()
+			return err
+		}
+		var genErr bytes.Buffer
+		gen.Stderr = &genErr
+		if err := gen.Start(); err != nil {
+			kill()
+			_ = cmd.Wait()
+			return fmt.Errorf("pg_restore: %w", err)
+		}
+		if _, copyErr := io.Copy(in, script); copyErr != nil {
+			// pg_restore would wait on the pipe for ever: stopped with psql
+			err := stopped(copyErr)
+			_ = gen.Wait()
+			return err
+		}
+		if err := gen.Wait(); err != nil {
+			// the script is not whole: psql ends before its input does, with no commit
+			kill()
+			_ = cmd.Wait()
+			return fmt.Errorf("pg_restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(genErr.Bytes()))
+		}
 	}
 	_ = in.Close() // the whole script: psql commits at its end
 	if err := cmd.Wait(); err != nil {
@@ -620,6 +680,31 @@ func appliedVersion(ctx context.Context, d *sql.DB) (int64, error) {
 	var v int64
 	err := d.QueryRowContext(ctx, `SELECT COALESCE(MAX(version_id), 0) FROM goose_db_version WHERE is_applied`).Scan(&v)
 	return v, err
+}
+
+// Applied is the newest migration the database holds (goose's table; 0 before the
+// first).
+func (t Target) Applied(ctx context.Context) (int64, error) {
+	d, err := t.open(ctx, "")
+	if err != nil {
+		return 0, err
+	}
+	defer d.Close()
+	return appliedVersion(ctx, d)
+}
+
+// Pending counts the release's migrations (the folder dir) the database does not hold:
+// what its start would run. ok is false when that cannot be told (no folder, the database
+// not reachable).
+func (t Target) Pending(ctx context.Context, dir string) (n int, ok bool) {
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return 0, false
+	}
+	applied, err := t.Applied(ctx)
+	if err != nil {
+		return 0, false
+	}
+	return pendingIn(dir, applied), true
 }
 
 // pendingIn counts dir's Postgres migrations above applied.

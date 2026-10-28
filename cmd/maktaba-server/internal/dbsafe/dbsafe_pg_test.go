@@ -120,14 +120,19 @@ func TestDumpVerifiedAndRestoredInPlace(t *testing.T) {
 	if err != nil || n < 100 {
 		t.Fatalf("verify: %d tables, %v", n, err)
 	}
-	if runtime.GOOS != "windows" {
-		if st, _ := os.Stat(dump); st.Mode().Perm() != 0o600 {
-			t.Fatalf("dump mode %v", st.Mode().Perm())
-		}
+	// a directory-format dump: the folder the user's only, its table of contents beside
+	// one file per table
+	st, err := os.Stat(dump)
+	if err != nil || !st.IsDir() {
+		t.Fatalf("dump %v: %v", st, err)
+	}
+	if runtime.GOOS != "windows" && st.Mode().Perm() != 0o700 {
+		t.Fatalf("dump mode %v", st.Mode().Perm())
 	}
 	bad := filepath.Join(r.t.Backups, "bad.dump")
-	raw, _ := os.ReadFile(dump)
-	_ = os.WriteFile(bad, raw[:len(raw)/3], 0o600)
+	_ = os.MkdirAll(bad, 0o700)
+	raw, _ := os.ReadFile(filepath.Join(dump, "toc.dat"))
+	_ = os.WriteFile(filepath.Join(bad, "toc.dat"), raw[:len(raw)/3], 0o600)
 	if _, err := r.t.VerifyDump(ctx, bad); err == nil {
 		t.Fatal("a cut dump verified")
 	}
@@ -430,14 +435,21 @@ func TestRestoreFailingLeavesTheDatabase(t *testing.T) {
 	if _, err := r.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('after.update', '1')`); err != nil {
 		t.Fatal(err)
 	}
-	// a dump cut part way: its restore fails (before, the schema was dropped first and
-	// the database left empty)
-	raw, _ := os.ReadFile(dump)
+	// a dump cut part way (a table's file of a directory-format one, a single file of
+	// before): its restore fails (before, the schema was dropped first and the database
+	// left empty)
 	bad := filepath.Join(r.t.Backups, "bad.dump")
-	_ = os.WriteFile(bad, raw[:len(raw)*2/3], 0o600)
+	cutDump(t, dump, bad)
+	old := filepath.Join(r.t.Backups, "old.dump")
+	r.oldDump(t, old)
+	raw, _ := os.ReadFile(old)
+	badOld := filepath.Join(r.t.Backups, "bad-old.dump")
+	_ = os.WriteFile(badOld, raw[:len(raw)*2/3], 0o600)
 	var log bytes.Buffer
-	if err := r.t.Restore(ctx, bad, &log); err == nil {
-		t.Fatal("a cut dump restored")
+	for _, d := range []string{bad, badOld} {
+		if err := r.t.Restore(ctx, d, &log); err == nil {
+			t.Fatalf("a cut dump restored: %s", d)
+		}
 	}
 	db2, err := r.t.open(ctx, "")
 	if err != nil {
@@ -451,6 +463,158 @@ func TestRestoreFailingLeavesTheDatabase(t *testing.T) {
 	}
 	if !r.has(t, "videos") {
 		t.Fatal("the failed restore left the database empty")
+	}
+}
+
+// cutDump copies the directory-format dump src to dst with its largest table's file cut
+// to two thirds.
+func cutDump(t *testing.T, src, dst string) {
+	t.Helper()
+	if err := os.MkdirAll(dst, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ents, err := os.ReadDir(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var largest string
+	var size int64
+	for _, e := range ents {
+		raw, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e.Name() != "toc.dat" && int64(len(raw)) > size {
+			largest, size = e.Name(), int64(len(raw))
+		}
+		_ = os.WriteFile(filepath.Join(dst, e.Name()), raw, 0o600)
+	}
+	if largest == "" {
+		t.Fatal("no table in the dump")
+	}
+	if err := os.Truncate(filepath.Join(dst, largest), size*2/3); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// oldDump writes a dump as Maktaba wrote them before the directory format: one
+// custom-format file (pg_dump -Fc -Z 1).
+func (r *pgRig) oldDump(t *testing.T, path string) {
+	t.Helper()
+	cmd, err := r.t.command(context.Background(), "pg_dump", "", "--format=custom", "-Z", "1", "--no-owner", "--file="+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("pg_dump -Fc: %v: %s", err, out)
+	}
+}
+
+// A dump of before (one custom-format file) is still read and put back in place, as the
+// directory-format ones are.
+func TestOldSingleFileDumpStillRestores(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	old := filepath.Join(r.t.Backups, "pre-1.3.0-to-1.4.0.dump")
+	_ = os.MkdirAll(r.t.Backups, 0o700)
+	r.oldDump(t, old)
+	if n, err := r.t.VerifyDump(ctx, old); err != nil || n < 100 {
+		t.Fatalf("verify: %d tables, %v", n, err)
+	}
+	if _, err := r.db.Exec(`CREATE TABLE after_update (id int)`); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	if err := r.t.Restore(ctx, old, &log); err != nil {
+		t.Fatalf("restore: %v\n%s", err, log.String())
+	}
+	db2, err := r.t.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+	r.db = db2
+	if r.has(t, "after_update") || !r.has(t, "videos") {
+		t.Fatal("the database is not as the old dump left it")
+	}
+}
+
+// Every dump keeps semantic search's vectors: written apart in binary chunks in the dump's
+// snapshot (pgbundle.Chunked), not by pg_dump, and put back between the tables and their
+// indexes, in place in one transaction and into another database in parallel.
+func TestDumpKeepsTheVectorsInChunks(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	if !r.has(t, "segment_embeddings") {
+		t.Skip("no pgvector in this Postgres: no segment_embeddings")
+	}
+	if _, err := r.db.Exec(`
+INSERT INTO libraries (id, name, roots) VALUES ('00000000-0000-0000-0000-0000000000a1', 'L', ARRAY['/l']);
+INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime) VALUES
+  ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a1', repeat('a', 64), '/l/v.mp4', 'v.mp4', 1, now());
+INSERT INTO audio_tracks (id, video_id, track_index) VALUES (1, '00000000-0000-0000-0000-0000000000b1', 0);
+INSERT INTO transcripts (id, video_id, audio_track_id, language, backend, model) VALUES
+  ('00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000b1', 1, 'en', 'b', 'm');
+INSERT INTO transcript_segments (id, transcript_id, seq, start_sec, end_sec, text)
+  SELECT g, '00000000-0000-0000-0000-0000000000c1', g, g, g + 1, 'hello ' || g FROM generate_series(1, 300) g;
+INSERT INTO segment_embeddings (segment_id, video_id, library_id, language, model, embedding)
+  SELECT g, '00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a1', 'en', 'm',
+   ('[' || array_to_string(array_fill((g / 1000.0)::real, ARRAY[384]), ',') || ']')::halfvec FROM generate_series(1, 300) g;`); err != nil {
+		t.Fatalf("the fixture: %v", err)
+	}
+	sum := func() string {
+		var s string
+		if err := r.db.QueryRow(`SELECT count(*) || ':' || sum(segment_id) || ':' || md5(string_agg(embedding::text, ',' ORDER BY segment_id))
+			FROM segment_embeddings`).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	want := sum()
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	chunks := pgbundle.Chunks(dump)
+	if len(chunks["public.segment_embeddings"]) != pgbundle.DumpJobs() {
+		t.Fatalf("chunks %v, want %d of the vectors", chunks, pgbundle.DumpJobs())
+	}
+	// written after the dump began: not in it
+	if _, err := r.db.Exec(`DELETE FROM segment_embeddings WHERE segment_id > 250`); err != nil {
+		t.Fatal(err)
+	}
+	reopen := func() {
+		db, err := r.t.open(ctx, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+		r.db = db
+	}
+	var log bytes.Buffer
+	if err := r.t.Restore(ctx, dump, &log); err != nil {
+		t.Fatalf("restore: %v\n%s", err, log.String())
+	}
+	reopen()
+	if got := sum(); got != want || !r.has(t, "segment_embeddings_hnsw") {
+		t.Fatalf("in place: vectors %s, want %s (index there: %v)", got, want, r.has(t, "segment_embeddings_hnsw"))
+	}
+	// into another database (a rehearsal's), in parallel
+	if _, err := r.db.Exec(`CREATE DATABASE chunk_check TEMPLATE template0`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = r.db.Exec(`DROP DATABASE IF EXISTS chunk_check WITH (FORCE)`) })
+	if err := r.t.restoreInto(ctx, "chunk_check", dump); err != nil {
+		t.Fatal(err)
+	}
+	other, err := r.t.open(ctx, "chunk_check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	var n int
+	if err := other.QueryRow(`SELECT count(*) FROM segment_embeddings`).Scan(&n); err != nil || n != 300 {
+		t.Fatalf("another database: %d vectors, %v", n, err)
 	}
 }
 

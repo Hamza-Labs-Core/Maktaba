@@ -4,11 +4,14 @@ package pgbundle
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -44,10 +47,22 @@ cat > "$FAKE_LOG/psql.sql"
 	"pg_dump": `#!/bin/sh
 echo "$@" >> "$FAKE_LOG/pg_dump.calls"
 while [ $# -gt 0 ]; do
-  case "$1" in -f) F="$2"; shift ;; esac
+  case "$1" in
+    -f) F="$2"; shift ;;
+    --file=*) F="${1#--file=}" ;;
+    --compress=*) C="${1#--compress=}" ;;
+  esac
   shift
 done
-echo dump > "$F"
+for r in $FAKE_REFUSE_COMPRESS; do
+  if [ "$C" = "$r" ]; then echo "pg_dump: error: this build does not support compression with $C" >&2; exit 1; fi
+done
+if [ -n "$FAKE_LOCKED" ] && [ ! -e "$FAKE_LOG/locked.$FAKE_LOCKED" ]; then
+  touch "$FAKE_LOG/locked.$FAKE_LOCKED"
+  mkdir "$F" && echo half > "$F/toc.dat"
+  echo 'pg_dump: error: could not obtain lock on relation "public.videos"' >&2; exit 1
+fi
+mkdir "$F" && echo toc > "$F/toc.dat" && echo rows > "$F/3456.dat.gz"
 `,
 }
 
@@ -84,6 +99,11 @@ func fakeBundle(t *testing.T) (Bundle, string) {
 		return nil
 	}
 	t.Cleanup(func() { readyCheck = prev })
+	// no snapshot session for the dumps: no server listens (never reach a real one on the
+	// port); pg_dump writes every table
+	prevOpen := openDB
+	openDB = func(string, string) (*sql.DB, error) { return nil, errors.New("fake programs: no server") }
+	t.Cleanup(func() { openDB = prevOpen })
 	return Bundle{
 		Home:    filepath.Join(root, "pg"),
 		Data:    filepath.Join(root, "state", "postgres"),
@@ -281,8 +301,13 @@ func TestBackupKeepsSeven(t *testing.T) {
 		t.Fatalf("kept the wrong dumps: %v", names)
 	}
 	calls := read(t, filepath.Join(logDir, "pg_dump.calls"))
-	if !strings.Contains(calls, "-Fc -Z 1 ") || !strings.Contains(calls, "-U "+SuperUser) || !strings.HasSuffix(strings.TrimSpace(calls), " maktaba") {
-		t.Errorf("pg_dump args:\n%s", calls)
+	if !strings.Contains(calls, "--format=directory --jobs="+strconv.Itoa(DumpJobs())+" --compress=zstd:1 ") ||
+		!strings.Contains(calls, "-U "+SuperUser) || !strings.Contains(calls, "--dbname=maktaba ") ||
+		strings.Contains(calls, "--exclude-table-data") {
+		t.Errorf("pg_dump args (a nightly dump is whole, in parallel):\n%s", calls)
+	}
+	if info, err := os.Stat(last); err != nil || !info.IsDir() || DumpBytes(last) == 0 {
+		t.Errorf("the dump %s is no directory-format dump: %v", last, err)
 	}
 	if got := b.lastBackup(); !got.Equal(start.AddDate(0, 0, 8)) {
 		t.Errorf("lastBackup = %v", got)
@@ -557,6 +582,69 @@ func TestDumpBeforeUpdate(t *testing.T) {
 	if n := lines(t, filepath.Join(logDir, "pg_dump.calls")); n != 5 {
 		t.Fatalf("pg_dump ran %d times, want 5", n)
 	}
+	// every dump whole: with no snapshot session for the chunks, pg_dump writes every table
+	if calls := read(t, filepath.Join(logDir, "pg_dump.calls")); strings.Contains(calls, "--exclude-table-data") ||
+		strings.Contains(calls, "--snapshot") {
+		t.Errorf("pg_dump calls:\n%s", calls)
+	}
+}
+
+// A worker that could not lock its table (a session asked for it whole while the server
+// served) begins the dump again; a dump that keeps failing otherwise says why.
+func TestPgDumpBeginsAgainWhenAWorkerWasLockedOut(t *testing.T) {
+	b, logDir := fakeBundle(t)
+	if err := b.Prepare(context.Background(), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_LOCKED", "once")
+	p, err := b.DumpBeforeUpdate(context.Background(), "v0.1.0", "v0.2.0", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := lines(t, filepath.Join(logDir, "pg_dump.calls")); n != 2 {
+		t.Fatalf("pg_dump ran %d times, want 2", n)
+	}
+	if got, _ := os.ReadFile(filepath.Join(p, "toc.dat")); string(got) != "toc\n" {
+		t.Fatalf("the dump kept the cut one's files: %q", got)
+	}
+	if err := os.WriteFile(b.Bin("pg_dump"), []byte("#!/bin/sh\necho 'pg_dump: error: could not obtain lock on relation' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.DumpBeforeUpdate(context.Background(), "v0.2.0", "v0.3.0", 2); err == nil ||
+		!strings.Contains(err.Error(), "could not obtain lock") {
+		t.Fatalf("a dump locked out every time = %v", err)
+	}
+}
+
+// A pg_dump built without zstd (the bundled one: zlib only) is asked for lz4, then gzip;
+// what it took is asked first from then on.
+func TestPgDumpFallsBackToACompressionItHas(t *testing.T) {
+	b, logDir := fakeBundle(t)
+	if err := b.Prepare(context.Background(), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_REFUSE_COMPRESS", "zstd:1 lz4")
+	for i := 0; i < 2; i++ {
+		if _, err := b.DumpBeforeUpdate(context.Background(), "v0.1.0", "v0.2.0", 2); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got []string
+	for _, c := range strings.Split(strings.TrimSpace(read(t, filepath.Join(logDir, "pg_dump.calls"))), "\n") {
+		for _, f := range strings.Fields(c) {
+			if v, ok := strings.CutPrefix(f, "--compress="); ok {
+				got = append(got, v)
+			}
+		}
+	}
+	if strings.Join(got, " ") != "zstd:1 lz4 gzip:1 gzip:1" {
+		t.Fatalf("compressions asked: %v", got)
+	}
+	entries, _ := os.ReadDir(b.Backups)
+	if len(entries) != 1 || entries[0].Name() != "pre-v0.1.0-to-v0.2.0.dump" {
+		t.Fatalf("backups = %v (one dump, no partial left)", entries)
+	}
+	compressionOf.Delete(b.Bin("pg_dump"))
 }
 
 // The bundled Postgres logs in UTC, as every other line of server.log.

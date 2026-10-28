@@ -2,15 +2,17 @@ package pgbundle
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	_ "github.com/lib/pq" // the dump's snapshot session
 )
 
 // KeepBackups is how many nightly dumps stay in backups/ when [backups] keep is not
@@ -61,16 +63,15 @@ const (
 	backupStamp  = "20060102-150405"
 )
 
-// Backup writes a pg_dump custom-format dump of the app database into
-// backups/ (maktaba-<local time>.dump, written beside and renamed into place)
-// and keeps the newest KeepBackups, after making room for it (MakeRoom). It
-// returns the dump's path.
+// Backup writes a dump of the whole app database (dumpfmt.go) into backups/
+// (maktaba-<local time>.dump, written beside and moved into place) and keeps the
+// newest KeepBackups, after making room for it (MakeRoom). It returns the dump's path.
 func (b Bundle) Backup(ctx context.Context, now time.Time) (string, error) {
 	if err := MakeRoomWith(b.Backups, b.room()); err != nil {
 		return "", err
 	}
 	path := filepath.Join(b.Backups, backupPrefix+now.Format(backupStamp)+backupSuffix)
-	if err := b.dumpTo(ctx, path); err != nil {
+	if err := b.dumpTo(ctx, path, DumpOptions{}); err != nil {
 		return "", err
 	}
 	b.recordNightly(now)
@@ -88,38 +89,37 @@ func (b Bundle) recordNightly(now time.Time) {
 	}
 }
 
-// DumpTo is dumpTo (the database step's dump of a failed update's state, set aside).
-func (b Bundle) DumpTo(ctx context.Context, path string) error { return b.dumpTo(ctx, path) }
+// DumpTo is a whole dump of the app database to path (a restore by hand sets the
+// database it replaces aside so).
+func (b Bundle) DumpTo(ctx context.Context, path string) error {
+	return b.dumpTo(ctx, path, DumpOptions{})
+}
 
-// dumpCompress is the dump's gzip level. pg_dump compresses on one core and the search
-// vectors (segment_embeddings, tens of GB as text) made the default level the whole
-// cost of a dump: level 1 is 5.5x faster for 27% more bytes (the pre-update dump the
-// app waits for before it starts: 36 minutes became 7).
-const dumpCompress = "1"
+// openDB opens the dump's snapshot session (tests with fake programs open none).
+var openDB = sql.Open
 
-// dumpTo writes a pg_dump custom-format dump of the app database to path
-// (written beside, path.partial, and renamed into place: a dump cut short is
-// never taken for one).
-func (b Bundle) dumpTo(ctx context.Context, path string) error {
+// dumpTo writes a dump of the app database to path (PgDump: written beside,
+// path.partial, and moved into place, so a dump cut short is never taken for one).
+func (b Bundle) dumpTo(ctx context.Context, path string, opts DumpOptions) error {
 	superPW, err := readPassword(b.passwordFile(SuperUser))
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
+	if opts.Open == nil {
+		opts.Open = func(context.Context) (*sql.DB, error) {
+			u, err := b.SuperURL()
+			if err != nil {
+				return nil, err
+			}
+			return openDB("postgres", u)
+		}
+		opts.PSQL = b.Bin("psql")
 	}
-	part := path + ".partial"
-	cmd := exec.CommandContext(ctx, b.Bin("pg_dump"), "-Fc", "-Z", dumpCompress, "-h", "127.0.0.1", "-p", strconv.Itoa(b.Port),
-		"-U", SuperUser, "-f", part, AppDatabase)
-	cmd.Env = append(os.Environ(), "PGPASSWORD="+superPW)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		_ = os.Remove(part)
-		return fmt.Errorf("pg_dump: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return os.Rename(part, path)
+	return PgDump(ctx, b.Bin("pg_dump"), []string{"-h", "127.0.0.1", "-p", strconv.Itoa(b.Port), "-U", SuperUser,
+		"--dbname=" + AppDatabase}, append(os.Environ(), "PGPASSWORD="+superPW), path, opts)
 }
 
-// backups lists the finished dumps, oldest first.
+// backups lists the finished nightly dumps, oldest first.
 func (b Bundle) backups() ([]string, error) {
 	entries, err := os.ReadDir(b.Backups)
 	if err != nil {
@@ -130,9 +130,8 @@ func (b Bundle) backups() ([]string, error) {
 	}
 	var out []string
 	for _, e := range entries {
-		n := e.Name()
-		if !e.IsDir() && strings.HasPrefix(n, backupPrefix) && strings.HasSuffix(n, backupSuffix) {
-			out = append(out, n)
+		if isDump(e) && strings.HasPrefix(e.Name(), backupPrefix) {
+			out = append(out, e.Name())
 		}
 	}
 	sort.Strings(out) // the stamp sorts by time
@@ -145,7 +144,7 @@ func (b Bundle) prune() error {
 		return err
 	}
 	for keep := b.nightly().Keep; len(names) > keep; {
-		if err := os.Remove(filepath.Join(b.Backups, names[0])); err != nil {
+		if err := RemoveDump(filepath.Join(b.Backups, names[0])); err != nil {
 			return err
 		}
 		names = names[1:]
