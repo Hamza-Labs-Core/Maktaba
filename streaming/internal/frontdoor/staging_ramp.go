@@ -23,6 +23,12 @@ import (
 // never again reaches the size that overloaded the host. A release that cannot keep up
 // even alone still fails: the window only sets how many channels are measured at once,
 // never what a measurement may show.
+//
+// A shrink never stops a station under a sample's read (TV change #56: the window went
+// from 14 to 6 under a live.ts read, and the broken read failed ts.conformity): the
+// stations being read stay warm, draining, until the read ends; the others go at once.
+// A station the budget must stop under a read has that sample retried, not scored
+// (planStagingWarm, sampleStaging).
 
 const (
 	// rampStart is the first window of rolling probes.

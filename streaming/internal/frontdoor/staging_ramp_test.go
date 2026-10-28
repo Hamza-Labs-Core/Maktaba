@@ -3,11 +3,13 @@ package frontdoor
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/frontdoor/verify"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
 )
 
@@ -193,6 +195,109 @@ func TestStagingPaceFromTheSlot(t *testing.T) {
 	for id, p := range run.pace {
 		if p.markAt.IsZero() || p.behind < 19*time.Second {
 			t.Fatalf("pace of %s: %+v", id, p)
+		}
+	}
+}
+
+// samplingWhile runs one staging sample pass and, once every warm station's live.ts
+// read is open, calls during; it returns when the pass ends.
+func samplingWhile(t *testing.T, g *slotRig, amber *fakeSlot, during func()) {
+	t.Helper()
+	g.slots.StreamSample = 800 * time.Millisecond
+	n := int32(len(g.slots.StagingView().Warm))
+	done := make(chan struct{})
+	go func() { g.slots.sampleStaging(context.Background()); close(done) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for amber.reads.Load() < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d of %d live.ts reads open", amber.reads.Load(), n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	during()
+	<-done
+}
+
+// TV change #56 (2026-10-28): the window halved from 14 to 6 (overloaded) and stopped
+// a station under its live.ts read; the broken read failed ts.conformity. A window that
+// shrinks now keeps the stations being read until their reads end, and drops them after.
+func TestStagingShrinkKeepsTheStationsBeingRead(t *testing.T) {
+	g, amber, run, _ := rampRig(t, 8)
+	ctx := context.Background()
+	g.slots.SyncWarm(ctx)
+	if got := rollingWarm(g); got != rampStart {
+		t.Fatalf("%d rolling probes", got)
+	}
+	samplingWhile(t, g, amber, func() {
+		setPace(g, run, 0.6, 3*time.Second)
+		g.slots.SyncWarm(ctx)
+		if got := rollingWarm(g); got != rampStart {
+			t.Errorf("a shrink during the reads kept %d of the %d rolling probes being read", got, rampStart)
+		}
+		draining := 0
+		for _, w := range g.slots.StagingView().Warm {
+			if w.Draining {
+				draining++
+			}
+		}
+		if draining != rampStart/2 {
+			t.Errorf("%d draining, want %d", draining, rampStart/2)
+		}
+	})
+	// the reads ended whole: scored as they are, not retried
+	for id, cp := range g.slots.StagingView().Samples {
+		for _, r := range cp.Results {
+			if strings.HasPrefix(r.Value, "retry") {
+				t.Errorf("%s: a whole read marked retry: %+v", id, r)
+			}
+		}
+	}
+	// and the window takes effect once they are done
+	g.slots.SyncWarm(ctx)
+	if got := rollingWarm(g); got != rampStart/2 {
+		t.Errorf("after the reads: %d rolling probes, want %d", got, rampStart/2)
+	}
+}
+
+// A station the budget must stop under a read: the sample is retried, never scored.
+func TestStagingStopUnderAReadIsRetried(t *testing.T) {
+	g, amber, run, ids := rampRig(t, 4)
+	ctx := context.Background()
+	g.slots.SyncWarm(ctx)
+	samplingWhile(t, g, amber, func() {
+		g.slots.Budget = func(context.Context) (int, int, int) { return 2, 0, 0 } // room for the probe channel only
+		g.slots.SyncWarm(ctx)
+		if got := rollingWarm(g); got != 0 {
+			t.Errorf("%d rolling probes past the budget", got)
+		}
+	})
+	v := g.slots.StagingView()
+	cp := v.Samples[ids[1].String()]
+	if cp == nil {
+		t.Fatal("no sample")
+	}
+	retried := false
+	for _, r := range cp.Results {
+		if r.Result == verify.Fail || r.Result == verify.Warn {
+			t.Errorf("a read cut short by a stop scored: %+v", r)
+		}
+		if r.Result == verify.Pending && strings.HasPrefix(r.Value, "retry") {
+			retried = true
+		}
+	}
+	if !retried {
+		t.Errorf("not marked retry: %+v", cp.Results)
+	}
+	g.slots.mu.Lock()
+	probed := run.probed[ids[1]]
+	g.slots.mu.Unlock()
+	if probed {
+		t.Error("a retried probe counted as done")
+	}
+	// the probe channel stayed warm through it: its read is scored as it is
+	for _, r := range v.Samples[ids[0].String()].Results {
+		if strings.HasPrefix(r.Value, "retry") {
+			t.Errorf("the probe channel's whole read marked retry: %+v", r)
 		}
 	}
 }
