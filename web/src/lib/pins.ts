@@ -4,7 +4,8 @@
 //   PUT /api/me/pinned-libraries  { library_ids: [...] } (the order is the array's; any
 //                                 number; a library the caller may not see is 404) -> the same document
 //
-// The sidebar's "Pinned" group, the Libraries page and a library's page share
+// The sidebar's "Pinned" group, the Libraries page, the Pinned libraries page
+// (`/library/pinned`, where the order is set) and a library's page share
 // one store: the nav reads it once per user, and a page that changes the pins
 // publishes the new list so the nav follows at once without another read.
 import { useEffect, useState } from "react";
@@ -79,8 +80,9 @@ export function savePins(next: LibraryRef[]): Promise<LibraryRef[]> {
       // the server's list wins (its names; a pin it no longer shows drops out)
       const final = parse(r);
       confirmed = final;
-      // Home has a row per pinned library
-      forgetAnswers("home");
+      // Home has a row per pinned library, and the libraries summary says
+      // which are pinned and where: both kept answers are stale now
+      forgetAnswers("home", "libraries");
       if (pins === next) publish(final);
       return final;
     } catch (e) {
@@ -98,18 +100,23 @@ export function togglePin(lib: LibraryRef, current: LibraryRef[]): Promise<Libra
   return savePins(has ? current.filter((p) => p.id !== lib.id) : [...current, lib]);
 }
 
+/** Moves the pin at `from` to position `to` (nothing to save when it stays put). */
+export function movePinTo(current: LibraryRef[], from: number, to: number): Promise<LibraryRef[]> {
+  if (from === to || from < 0 || from >= current.length || to < 0 || to >= current.length)
+    return Promise.resolve(current);
+  const next = current.slice();
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item!);
+  return savePins(next);
+}
+
 /** Moves the pin at `index` by `delta` (-1 up, +1 down). */
 export function movePin(
   current: LibraryRef[],
   index: number,
   delta: number
 ): Promise<LibraryRef[]> {
-  const to = index + delta;
-  if (to < 0 || to >= current.length) return Promise.resolve(current);
-  const next = current.slice();
-  const [item] = next.splice(index, 1);
-  next.splice(to, 0, item!);
-  return savePins(next);
+  return movePinTo(current, index, index + delta);
 }
 
 /** The pins of `user` (null while they load, or with no user). */

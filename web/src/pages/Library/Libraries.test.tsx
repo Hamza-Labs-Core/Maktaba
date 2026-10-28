@@ -1,6 +1,7 @@
 // Epic 45 — Libraries (`/library`): the summary cards, pin / unpin, the
-// Pinned list with up / down reordering (PUT /api/me/pinned-libraries), and
-// the shared pins store the sidebar reads.
+// compact Pinned strip with its Reorder link (the order is set on
+// /library/pinned, PinnedLibraries.test.tsx), and the shared pins store the
+// sidebar reads.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -105,7 +106,7 @@ describe("Libraries", () => {
     expect(kids.querySelector(".mkt-libcard__mosaic--empty")).not.toBeNull();
     expect(kids.querySelectorAll(".mkt-libcard__mosaic img")).toHaveLength(0);
     // nothing pinned: no Pinned section
-    expect(screen.queryByRole("region", { name: en["libraries.pinned"] })).toBeNull();
+    expect(screen.queryByRole("region", { name: /^Pinned/ })).toBeNull();
   });
 
   it("Pin adds the library at the end, Unpin removes it; the shared store follows", async () => {
@@ -119,7 +120,7 @@ describe("Libraries", () => {
     await waitFor(() => expect(putCalls()).toEqual([[A.id, B.id]]));
     expect(put.mock.calls[0][0]).toBe("/api/me/pinned-libraries");
     expect(screen.getByTestId("probe")).toHaveTextContent(`${A.name},${B.name}`);
-    const pinned = screen.getByRole("region", { name: en["libraries.pinned"] });
+    const pinned = screen.getByRole("region", { name: "Pinned (2)" });
     expect(within(pinned).getAllByRole("listitem")).toHaveLength(2);
     // a toast says what happened
     expect(await screen.findByText(`Pinned ${B.name} to the sidebar`)).toBeInTheDocument();
@@ -134,45 +135,40 @@ describe("Libraries", () => {
     expect(get.mock.calls.filter(([u]) => u === "/api/me/pinned-libraries")).toHaveLength(1);
   });
 
-  it("the Pinned list reorders with up / down buttons, keyboard accessible", async () => {
-    pins = [A, B, C];
-    serve(summary([A.id, B.id, C.id]));
+  it("the Pinned strip lists the pins in order with a Reorder link, and no ordering controls", async () => {
+    pins = [C, A, B];
+    serve(summary([C.id, A.id, B.id]));
     renderLibraries();
-    const user = userEvent.setup();
-    const pinned = await screen.findByRole("region", { name: en["libraries.pinned"] });
-    const names = () =>
-      within(pinned)
-        .getAllByRole("listitem")
-        .map((li) => li.querySelector("bdi")!.textContent);
-    expect(names()).toEqual([A.name, B.name, C.name]);
-    expect(within(pinned).getByRole("button", { name: `Move ${A.name} up` })).toBeDisabled();
-    expect(within(pinned).getByRole("button", { name: `Move ${C.name} down` })).toBeDisabled();
-    await user.click(within(pinned).getByRole("button", { name: `Move ${B.name} up` }));
-    await waitFor(() => expect(putCalls()).toEqual([[B.id, A.id, C.id]]));
-    expect(names()).toEqual([B.name, A.name, C.name]);
-    // by keyboard: focus "Move Lectures down" and press Enter
-    within(pinned)
-      .getByRole("button", { name: `Move ${B.name} down` })
-      .focus();
-    await user.keyboard("{Enter}");
-    await waitFor(() => expect(putCalls().at(-1)).toEqual([A.id, B.id, C.id]));
-    expect(screen.getByTestId("probe")).toHaveTextContent(`${A.name},${B.name},${C.name}`);
-  });
-
-  it("a refused change puts the pins back and says why", async () => {
-    pins = [A, B];
-    serve(summary([A.id, B.id]));
-    put.mockRejectedValue(
-      new ApiError({ type: "about:blank", title: "Not Found", status: 404, detail: "no library" })
+    const pinned = await screen.findByRole("region", { name: "Pinned (3)" });
+    const links = within(pinned).getAllByRole("link");
+    // the pins, in the user's order, then Reorder
+    expect(links.map((l) => l.textContent)).toEqual([
+      en["libraries.reorder"],
+      C.name,
+      A.name,
+      B.name,
+    ]);
+    expect(within(pinned).getByRole("link", { name: A.name })).toHaveAttribute(
+      "href",
+      `/library/${A.id}`
     );
-    renderLibraries();
-    const user = userEvent.setup();
-    const pinned = await screen.findByRole("region", { name: en["libraries.pinned"] });
-    await user.click(within(pinned).getByRole("button", { name: `Move ${B.name} up` }));
     expect(
-      await screen.findByText(`${en["libraries.pin.error"]}: ${en["error.kind.notFound"]}`)
-    ).toBeInTheDocument();
-    expect(screen.getByTestId("probe")).toHaveTextContent(`${A.name},${B.name}`);
+      within(pinned).getByRole("link", { name: en["libraries.reorder.label"] })
+    ).toHaveAttribute("href", "/library/pinned");
+    // the order is set on its own page: no move buttons, no drag handles, no pin
+    // toggles in the strip
+    expect(within(pinned).queryAllByRole("button")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /^Move / })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Reorder / })).toBeNull();
+    expect(document.querySelector("[draggable=true]")).toBeNull();
+    // each card keeps its pin toggle
+    for (const l of [A, B, C]) {
+      const card = screen
+        .getAllByText(l.name)
+        .map((el) => el.closest(".mkt-libcard"))
+        .find(Boolean)!;
+      expect(within(card as HTMLElement).getByRole("button", { pressed: true })).toBeVisible();
+    }
   });
 
   it("no libraries: a viewer is told to ask an admin; an admin gets Manage libraries", async () => {

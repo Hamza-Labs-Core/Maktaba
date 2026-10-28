@@ -2,22 +2,21 @@
 // (GET /api/libraries/summary): a 2x2 mosaic of recent posters, the name, the
 // number of videos and a pin icon in its corner (shown on hover or focus,
 // always when pinned); "All videos" opens the grid over every
-// library. The pinned ones lead the page in the user's order, with up / down
-// buttons to reorder them (PUT /api/me/pinned-libraries through lib/pins,
-// which the sidebar's Pinned group follows).
+// library. The pinned ones lead the page as a compact strip of links in the
+// user's order, with a "Reorder" link to the Pinned libraries page
+// (`/library/pinned`), where the order is set; the pins themselves go through
+// lib/pins (PUT /api/me/pinned-libraries), which the sidebar's Pinned group follows.
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
-import { useToast } from "@ds/components/Toast/Toast";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { fetchLibrarySummary, type LibrarySummary } from "../../lib/browse";
-import { movePin, usePins } from "../../lib/pins";
+import { usePins } from "../../lib/pins";
 import { PinToggle } from "../../components/PinToggle";
 import { TitleRow } from "../../help/HelpLink";
 import { SERVER_PAGES } from "../../lib/edition";
 import { LoadError } from "../../components/LoadError";
-import { errorText } from "../../lib/errorText";
 import { usePageData } from "../../lib/usePageData";
 import { CardGridPlaceholder, Loading } from "../../components/Placeholders";
 
@@ -73,7 +72,6 @@ function MosaicTile({ id }: { id: string }) {
 export function Libraries() {
   const { t, n } = useI18n();
   const { user } = useAuth();
-  const toast = useToast();
   const pins = usePins(user?.id);
   const {
     data: items,
@@ -81,22 +79,6 @@ export function Libraries() {
     loading,
     reload,
   } = usePageData<LibrarySummary[]>("libraries", fetchLibrarySummary, [t]);
-  const [moving, setMoving] = useState(false);
-
-  async function move(index: number, delta: number) {
-    if (!pins) return;
-    setMoving(true);
-    try {
-      await movePin(pins, index, delta);
-    } catch (e) {
-      toast.show({
-        tone: "error",
-        message: `${t("libraries.pin.error")}: ${errorText(e, t)}`,
-      });
-    } finally {
-      setMoving(false);
-    }
-  }
 
   return (
     <section className="mkt-page mkt-libraries">
@@ -113,35 +95,22 @@ export function Libraries() {
 
       {pins && pins.length > 0 && (
         <section className="mkt-libraries__pinned" aria-labelledby="mkt-libraries-pinned">
-          <h2 id="mkt-libraries-pinned">{t("libraries.pinned")}</h2>
-          <p className="mkt-muted">{t("libraries.pinned.hint")}</p>
-          <ol className="mkt-pinlist">
-            {pins.map((p, i) => (
-              <li key={p.id} className="mkt-pinlist__item">
-                <Link to={`/library/${encodeURIComponent(p.id)}`} className="mkt-pinlist__name">
+          <div className="mkt-libraries__pinned-head">
+            <h2 id="mkt-libraries-pinned">{t("libraries.pinnedCount", { n: n(pins.length) })}</h2>
+            <Link
+              className="mkt-libraries__reorder"
+              to="/library/pinned"
+              aria-label={t("libraries.reorder.label")}
+            >
+              {t("libraries.reorder")}
+            </Link>
+          </div>
+          <ol className="mkt-pinstrip">
+            {pins.map((p) => (
+              <li key={p.id}>
+                <Link to={`/library/${encodeURIComponent(p.id)}`} className="mkt-pinstrip__chip">
                   <bdi>{p.name}</bdi>
                 </Link>
-                <span className="mkt-pinlist__actions">
-                  <button
-                    type="button"
-                    className="mkt-btn mkt-btn--ghost"
-                    aria-label={t("libraries.moveUp", { name: p.name })}
-                    disabled={moving || i === 0}
-                    onClick={() => void move(i, -1)}
-                  >
-                    <span aria-hidden="true">↑</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="mkt-btn mkt-btn--ghost"
-                    aria-label={t("libraries.moveDown", { name: p.name })}
-                    disabled={moving || i === pins.length - 1}
-                    onClick={() => void move(i, 1)}
-                  >
-                    <span aria-hidden="true">↓</span>
-                  </button>
-                  <PinToggle lib={p} />
-                </span>
               </li>
             ))}
           </ol>
