@@ -31,8 +31,14 @@ Design: [design.md](design.md) §4, §3.5; README R4, R3.6, settings table.
   only by "Update now".
 - **AC5** The scheduler ticks every minute and starts a run only when: `auto_install`, a target exists,
   its age ≥ `min_release_age_hours`, now inside `window` and ≥ 30 min before its end, `deferred_until`
-  passed, no active run, no TV change in `staged…swapping`, every home role running and no crash in 10
-  min. Start = insert `update_runs(state=planned, trigger=auto)` then `POST /update/start` on the
+  passed, no active run, every home role running and no crash in 10
+  min. *Amended (owner, 2026-10-28: "tv changes should not block updates"):* a TV change never holds a
+  run (the `tv_change_in_flight` blocker is removed). The run starts; the TV change controller sets
+  the change in flight aside while the update holds the TV (a draft or a ready one is left as it is, a
+  staged or verifying one is cancelled cleanly back to draft with its staging slot released) and checks
+  it again on the new release after the update (Epic 33 "As built: who made a change, and app
+  updates"); the update's own binary change gets the staging slot first; only the home's restart waits
+  for a change that is swapping, at most 2 min, then goes on (the swap follows its failure rollback). Start = insert `update_runs(state=planned, trigger=auto)` then `POST /update/start` on the
   supervisor loopback.
 - **AC6** Just before starting, the GitHub release is re-read: gone, turned prerelease on `stable`, or a
   different `checksums.txt` → `withdrawn_at` set, not installed, notified.
@@ -51,7 +57,10 @@ Design: [design.md](design.md) §4, §3.5; README R4, R3.6, settings table.
 - **TC1** `TestChooseTarget` — table: channel, pin, skip, watermark, age, withdrawn, blocked,
   `min_upgrade_from` stepping stone, contract hold.
 - **TC2** `TestSchedulerWindow` — fake clock across the window edges, the 30-minute margin, DST change.
-- **TC3** `TestSchedulerBlockers` — TV change in flight, active run, crashed role, deferral.
+- **TC3** `TestSchedulerBlockers` — active run, crashed role, deferral; a TV change in any in-flight
+  state does not block (`TestDriverUpdateGoesAheadDuringAReadyTVChange`,
+  `TestDriverRestartWaitsForATVSwap*`, and in `tvchange` `TestManualReadyChangeIsSetAsideByAnUpdateAndCheckedAgain`,
+  `TestStagedChangeIsSetAsideByAnUpdateAndStagedAgain`).
 - **TC4** `TestCatalogVerifiesNewEntries` (fake GitHub + fixture release from 35.1), failure notifies.
 - **TC5** `TestRecheckWithdrawn`.
 - **TC6** `TestUpdateNowIgnoresWindowAndAge`, `TestPinBelowWatermark400`, `TestNonAdmin403`.

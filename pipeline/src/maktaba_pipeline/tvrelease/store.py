@@ -156,6 +156,7 @@ async def reopen(
         return ch
     diff = dict(ch.row.get("diff") or {})
     diff.pop("stage", None)
+    diff.pop("update_hold", None)  # a new update: its check is a new one
     if restage:
         diff["stage"] = {"requested_at": now().strftime("%Y-%m-%dT%H:%M:%SZ")}
     await transition(
@@ -193,25 +194,33 @@ async def create_change(
     digest: str | None = None,
     created_by: str | None = None,
     actor_source: str = "system",
+    origin: str | None = None,
 ) -> str:
-    """Insert a change (``draft`` or ``staged``) and its creation event."""
+    """Insert a change (``draft`` or ``staged``) and its creation event. ``origin`` (slot
+    0169): ``auto`` | ``manual``; None: the producer's (``config.origin_for``)."""
+    from .config import origin_for
+
     cid = str(uuid.uuid4())
     stamp = to_ts(db, now())
     diff = {"pending": pending}
+    if origin not in ("auto", "manual"):
+        origin = origin_for(str(source.get("kind", "")), created_by)
     if is_pg(db):
         await db.execute(
             "INSERT INTO tv_changes (id, state, title, source, change_set, digest, diff,"
-            " created_by, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)",
+            " created_by, created_at, updated_at, origin)"
+            " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10)",
             cid, state, title, dumps(source), dumps(change_set or {}), digest, dumps(diff),
-            created_by, stamp,
+            created_by, stamp, origin,
         )  # fmt: skip
     else:
         await db.execute(
             "INSERT INTO tv_changes (id, number, state, title, source, change_set, digest, diff,"
-            " created_by, created_at, updated_at) VALUES ($1,"
-            " (SELECT COALESCE(MAX(number), 0) + 1 FROM tv_changes),$2,$3,$4,$5,$6,$7,$8,$9,$9)",
+            " created_by, created_at, updated_at, origin) VALUES ($1,"
+            " (SELECT COALESCE(MAX(number), 0) + 1 FROM tv_changes),"
+            "$2,$3,$4,$5,$6,$7,$8,$9,$9,$10)",
             cid, state, title, dumps(source), dumps(change_set or {}), digest, dumps(diff),
-            created_by, stamp,
+            created_by, stamp, origin,
         )  # fmt: skip
     await event(
         db, cid, from_state=None, to_state=state, action="create", actor_source=actor_source,

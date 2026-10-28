@@ -68,6 +68,10 @@ type Change struct {
 	EndedAt       *time.Time      `json:"ended_at,omitempty"`
 	EndReason     *string         `json:"end_reason,omitempty"`
 	SupersededBy  *string         `json:"superseded_by,omitempty"`
+	// Origin is who made it (migration 0169): OriginAuto, the system (it goes on the air
+	// by its kind's rule, with no approval), or OriginManual, a person (it waits for an
+	// admin's approval). A change a person's edit joined is manual.
+	Origin string `json:"origin"`
 	// AllowedActions are the admin actions the state allows (story 33.10 AC8).
 	AllowedActions []string `json:"allowed_actions"`
 	// Events is the history (detail only).
@@ -188,7 +192,7 @@ func decodeJSON(b []byte, into any) {
 
 const changeCols = `id, number, release_id, base_release_id, state, kinds, title, source, change_set,
 	digest, diff, verify_report, auto_rule, approved_by, approved_at, anchor_at, swap_at, swap_wait,
-	created_by, created_at, updated_at, staged_at, ready_at, swapped_at, ended_at, end_reason, superseded_by`
+	created_by, created_at, updated_at, staged_at, ready_at, swapped_at, ended_at, end_reason, superseded_by, origin`
 
 // summaryCols is changeCols with an empty diff: a list never needs the diff,
 // and a channel plan's is tens of MB (the changes page read them all, ~500 MB a
@@ -198,18 +202,22 @@ var summaryCols = strings.Replace(changeCols, "digest, diff,", "digest, '{}' AS 
 func scanChange(rs interface{ Scan(...any) error }) (*Change, error) {
 	var c Change
 	var num sql.NullInt64
-	var rel, base, digest, rule, wait, by, reason, sup sql.NullString
+	var rel, base, digest, rule, wait, by, reason, sup, origin sql.NullString
 	var kinds, source, cs, diff, vr, appr []byte
 	var approvedAt, anchorAt, swapAt, createdAt, updatedAt, stagedAt, readyAt, swappedAt, endedAt nullTime
 	if err := rs.Scan(&c.ID, &num, &rel, &base, &c.State, &kinds, &c.Title, &source, &cs, &digest,
 		&diff, &vr, &rule, &appr, &approvedAt, &anchorAt, &swapAt, &wait, &by, &createdAt,
-		&updatedAt, &stagedAt, &readyAt, &swappedAt, &endedAt, &reason, &sup); err != nil {
+		&updatedAt, &stagedAt, &readyAt, &swappedAt, &endedAt, &reason, &sup, &origin); err != nil {
 		return nil, err
 	}
 	c.Number = num.Int64
 	c.ReleaseID, c.BaseReleaseID, c.Digest = strPtr(rel), strPtr(base), strPtr(digest)
 	c.AutoRule, c.SwapWait, c.CreatedBy = strPtr(rule), strPtr(wait), strPtr(by)
 	c.EndReason, c.SupersededBy = strPtr(reason), strPtr(sup)
+	c.Origin = OriginManual
+	if origin.String == OriginAuto {
+		c.Origin = OriginAuto
+	}
 	c.Kinds, c.ApprovedBy = []string{}, []string{}
 	c.Source, c.Diff, c.VerifyReport = map[string]any{}, map[string]any{}, map[string]any{}
 	decodeJSON(kinds, &c.Kinds)
@@ -356,15 +364,18 @@ func (s *Store) Insert(ctx context.Context, q queryer, c *Change) error {
 	if c.CreatedBy != nil {
 		by = *c.CreatedBy
 	}
+	if c.Origin != OriginAuto && c.Origin != OriginManual {
+		c.Origin = OriginFor(c.SourceKind(), c.CreatedBy)
+	}
 	var err error
 	if IsSQLite(s.DB) {
 		_, err = q.ExecContext(ctx, `INSERT INTO tv_changes (id, number, state, title, source, diff,
-			created_by, created_at, updated_at) VALUES ($1, (SELECT COALESCE(MAX(number), 0) + 1 FROM tv_changes),
-			$2, $3, $4, $5, $6, $7, $7)`, c.ID, c.State, c.Title, string(src), string(diff), by, ts(s.DB, now))
+			created_by, created_at, updated_at, origin) VALUES ($1, (SELECT COALESCE(MAX(number), 0) + 1 FROM tv_changes),
+			$2, $3, $4, $5, $6, $7, $7, $8)`, c.ID, c.State, c.Title, string(src), string(diff), by, ts(s.DB, now), c.Origin)
 	} else {
 		_, err = q.ExecContext(ctx, `INSERT INTO tv_changes (id, state, title, source, diff, created_by,
-			created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)`,
-			c.ID, c.State, c.Title, string(src), string(diff), by, now)
+			created_at, updated_at, origin) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8)`,
+			c.ID, c.State, c.Title, string(src), string(diff), by, now, c.Origin)
 	}
 	if err != nil {
 		return err

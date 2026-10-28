@@ -13,10 +13,11 @@ import (
 // The automatic updater's TV change (Epic 35 story 35.6, design §7.1): once the home's new
 // release runs, its supervisor asks for a change of the streaming binary alone,
 // source {kind: auto_update, run_id, version}, release = the live one with the new
-// streaming {version, sha256}. ChangeRule promotes it without an approval (the owner's
-// override of Epic 33 decision 2), at programme boundaries; it is staged, verified and
-// swapped like any change, queued behind the change in flight (README R9.4), and never
-// joined to anyone's open change (OpenChanges). One change per run: asking again returns
+// streaming {version, sha256}. ChangeRule promotes it without an approval (an automatic
+// change, origin auto), at programme boundaries; it is staged, verified and swapped like
+// any change, before any other draft and with a ready change set aside for it while the
+// update holds the TV (updatehold.go), and never joined to anyone's open change
+// (OpenChanges). One change per run: asking again returns
 // it (a supervisor that restarted mid-swap waits for the same one, EC1).
 
 // Outcomes of an automatic update's TV change, as its run reads them.
@@ -70,8 +71,8 @@ type AutoUpdateStatus struct {
 	// live slot reports (the binary's own), else the live TV release's ("" when none
 	// airs). A held change leaves the TV on it.
 	LiveStreaming string `json:"live_streaming,omitempty"`
-	// QueuedBehind is the change in flight it waits for (a ready one waits for an
-	// approval the run cannot get: the run gives up at its window's end).
+	// QueuedBehind is the change in flight it waits for (a ready one no one approved is
+	// set aside for it while the update holds the TV: updatehold.go).
 	QueuedBehind *QueuedRef `json:"queued_behind,omitempty"`
 	// TimeoutMinutes is how long the run waits once the change is staged:
 	// boundary_max_wait_minutes + 10 (story 35.6 AC3).

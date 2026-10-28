@@ -25,6 +25,9 @@ Design: [design.md](design.md) §7; README R5.1, decisions "Approval override", 
   with `swap_wait = boundary` without an approval. A `binary` change from any other source, and every
   `lineup`, `settings`, `schedule`, `art`, `live_slots` change, still follows `auto_promote_<kind>`
   (default `approval`). A change that mixes `binary` with another kind is never auto-promoted.
+  *Superseded by the owner's rule of 2026-10-28 ("only manual needs approval", Epic 33):* the updater's
+  change is automatic (`origin = auto`), so whatever its kinds it follows their auto rules
+  (`immediate` by default) and never waits for an approval; the binary-only one is `immediate` always.
 - **AC3** The orchestrator waits for the change to reach `live` or a terminal state, timeout
   `boundary_max_wait_minutes + 10`; `live` → step 11. *The owner's decision (2026-10-28): "when
   only the TV test fails, keep the update installed, leave TV on the old version, and notify me
@@ -38,7 +41,10 @@ Design: [design.md](design.md) §7; README R5.1, decisions "Approval override", 
   notified). The streaming binary the held TV runs is never pruned while a slot uses it.
 - **AC4** If another TV change is `ready` waiting for approval, the binary change queues behind it
   (Epic 33 R9.4); the run fails with `tv_change_pending` at the window end + `window_overrun_minutes`
-  and is retried next window.
+  and is retried next window. *Amended (owner, 2026-10-28: "tv changes should not block updates"):*
+  while the update holds the TV, a ready change no one approved is set aside as soon as the binary
+  change asks for the staging slot, and checked again on the new release after the update; only an
+  approved or swapping change is still waited for (`tv_change_pending` remains for that case).
 - **AC5** Fallback (no staging-capable runtime, `GET /api/tv/slots` reports one process): step 10
   restarts the `streaming` role on the new binary only while viewers (excluding probes) ≤
   `tv_staging.quiet_max_viewers`; otherwise it re-checks every 5 minutes inside the window and fails

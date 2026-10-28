@@ -133,6 +133,10 @@ func TestNotifyOnTransitions(t *testing.T) {
 				t.Fatal(err)
 			}
 			c := w.change(StateStaged, []string{"art"})
+			// an automatic change (only a manual one waits for an approval)
+			if _, err := be.DB.Exec(`UPDATE tv_changes SET origin = 'auto' WHERE id = $1`, c.ID); err != nil {
+				t.Fatal(err)
+			}
 			w.move(c, StateVerifying, ActionStartVerify, nil, nil)
 			w.move(c, StateReady, ActionPass, nil, nil)
 			w.move(c, StateSwapping, ActionAutoPromote, nil, nil)
