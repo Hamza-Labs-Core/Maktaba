@@ -63,6 +63,9 @@ type Controller struct {
 	// Staging is the front door's staging slot runtime (story 33.5); nil, or a
 	// front door without slots, verifies on the database only.
 	Staging StagingRuntime
+	// UpdateRun is the app update that holds the TV now ("" when none; updatehold.go);
+	// nil reads update_runs.
+	UpdateRun func(ctx context.Context) string
 
 	lastGC     time.Time
 	interimWhy string
@@ -208,10 +211,26 @@ func (c *Controller) Tick(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// an app update holds the TV (updatehold.go): changes in flight are set aside
+	holding := c.tickUpdateHold(ctx, open)
 	inFlight := false
 	for _, ch := range open {
 		if ch.State != StateDraft {
 			inFlight = true
+		}
+	}
+	if !inFlight {
+		// the automatic updater's binary change is staged before any other draft: its
+		// update waits for it
+		for i := len(open) - 1; i >= 0; i-- {
+			if ch := open[i]; ch.State == StateDraft && isAutoUpdate(ch) && stageRequested(ch) {
+				if err := c.requestStage(ctx, ch, false); err != nil {
+					c.Logger.Warn("tv change stage enqueue failed", "change_id", ch.ID, "error", err.Error())
+				} else {
+					inFlight = true
+				}
+				break
+			}
 		}
 	}
 	for i := len(open) - 1; i >= 0; i-- { // oldest first
@@ -252,6 +271,9 @@ func (c *Controller) Tick(ctx context.Context) error {
 				return err
 			}
 		case StateReady:
+			if heldByUpdate(holding, ch) && len(ch.ApprovedBy) == 0 {
+				continue // left as it is while the update runs; checked again after it
+			}
 			if c.Staging != nil {
 				if err := c.recheck(ctx, cfg, ch); err != nil && !errors.Is(err, ErrNoStagingRuntime) {
 					c.Logger.Warn("tv change recheck failed", "change_id", ch.ID, "error", err.Error())
@@ -270,7 +292,7 @@ func (c *Controller) Tick(ctx context.Context) error {
 				}
 			}
 		case StateDraft:
-			if !inFlight && stageRequested(ch) {
+			if !inFlight && stageRequested(ch) && !heldByUpdate(holding, ch) {
 				if err := c.requestStage(ctx, ch, false); err != nil {
 					c.Logger.Warn("tv change stage enqueue failed", "change_id", ch.ID, "error", err.Error())
 				} else {
@@ -344,6 +366,11 @@ func (c *Controller) RequestStage(ctx context.Context, ch *Change, actor *string
 	if err != nil {
 		return err
 	}
+	if other == nil && !isAutoUpdate(ch) && c.UpdateHolding(ctx) != "" {
+		// an app update holds the TV: staged once it ends (the request is kept)
+		ch.Diff["stage"] = map[string]any{"requested_at": c.now().Format(time.RFC3339)}
+		return c.Store.Set(ctx, c.DB, ch.ID, map[string]any{"diff": ch.Diff})
+	}
 	if other != nil && other.ID != ch.ID {
 		st := map[string]any{"requested_at": c.now().Format(time.RFC3339)}
 		ch.Diff["stage"] = st
@@ -389,12 +416,13 @@ func (c *Controller) ready(ctx context.Context, cfg Config, ch *Change) error {
 	if loc == nil {
 		loc = time.Local
 	}
-	warn, _ := ch.VerifyReport["warnings"].(float64)
-	if AutoBlocked(cfg, ch) != "" {
+	// the owner's rule (2026-10-28): a manual change waits for an approval; an automatic
+	// one goes on the air by its kind's rule, however many channels it touches
+	rule := ChangeRule(cfg, ch)
+	if rule == RuleApproval {
 		return nil
 	}
-	rule := ChangeRule(cfg, ch)
-	if AutoPromoteRule(cfg, rule, c.now().In(loc), c.viewers(ctx), warn > 0, ch.SwapAt) {
+	if AutoPromoteRule(cfg, rule, c.now().In(loc), c.viewers(ctx), ch.SwapAt) {
 		return c.startSwap(ctx, ch, ActionAutoPromote, map[string]any{"rule": rule})
 	}
 	return nil

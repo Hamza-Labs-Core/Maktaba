@@ -162,12 +162,15 @@ async def _keep_draft(db: Any, ch: Any, actor: str | None) -> str | None:
     if not pending:
         return None
     try:
+        # a person's rollback, or a person's change, is re-staged as a manual change: it
+        # waits for an approval (it never goes back on the air by itself)
+        origin = "manual" if actor or ch.row.get("origin") != "auto" else "auto"
         draft = await collapse_open(db)
         if draft is None:
             return await create_change(
                 db, state="draft", title=f"Re-stage #{ch.row.get('number') or ''}".strip(),
                 source={"kind": "restage", "change_id": ch.id}, pending=pending,
-                created_by=actor,
+                created_by=actor, origin=origin,
             )  # fmt: skip
         draft = await reopen(
             db, draft, restage=await auto_restage(db),
@@ -175,7 +178,10 @@ async def _keep_draft(db: Any, ch: Any, actor: str | None) -> str | None:
         )  # fmt: skip
         cur = with_plan_layer(draft.pending, draft.row.get("digest"))
         merged = merge_pending(pending, cur, await live_defs(db))
-        await update_change(db, draft.id, diff={**(draft.row.get("diff") or {}), "pending": merged})
+        extra: dict[str, Any] = {"origin": "manual"} if origin == "manual" else {}
+        await update_change(
+            db, draft.id, diff={**(draft.row.get("diff") or {}), "pending": merged}, **extra
+        )
         await event(
             db, draft.id, from_state="draft", to_state="draft", action="append",
             actor_source="system", actor_user_id=actor,

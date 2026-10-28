@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0169 - the job_stages seed matches the graph again, for what SQL reads before a
+-- Slot 0170 - the job_stages seed matches the graph again, for what SQL reads before a
 -- worker's graph sync (engine/sync.py) rewrites the rows: processing_jobs_enqueue checks
 -- a stage's subject_kinds and enabled, so on a freshly migrated database the API's
 -- library-level "Convert to MP4" and "Find duplicates" were refused until a worker ran.

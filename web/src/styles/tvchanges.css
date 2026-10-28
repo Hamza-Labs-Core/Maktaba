@@ -173,6 +173,15 @@
   font-size: var(--font-size-sm);
   margin-inline-end: var(--space-1);
 }
+/* who made a change: only a manual one waits for an approval */
+.mkt-tvx-origin {
+  display: inline-block;
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+.mkt-tvx-origin--manual {
+  color: var(--color-warn);
+}
 .mkt-tvx-checks {
   display: inline-flex;
   gap: var(--space-2);

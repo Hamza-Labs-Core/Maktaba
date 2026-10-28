@@ -68,6 +68,17 @@ export function sourceLabel(tk: (k: string, f: string) => string, c: TvChange): 
   return tk(`tvchanges.source.${k}`, k);
 }
 
+/** Who made it (the owner's rule: only a manual change waits for an approval). */
+export function OriginTag({ change }: { change: TvChange }) {
+  const { t } = useI18n();
+  const origin = change.origin === "auto" ? "auto" : "manual";
+  return (
+    <span className={`mkt-tvx-origin mkt-tvx-origin--${origin}`} data-testid="change-origin">
+      {t(`tvchanges.origin.${origin}`)}
+    </span>
+  );
+}
+
 /** "3 pass · 1 warn · 0 fail" (or "—" before the checks ran). */
 export function ChecksSummary({ report }: { report: VerifyReport | undefined }) {
   const { t, n } = useI18n();

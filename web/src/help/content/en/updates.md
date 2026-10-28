@@ -160,9 +160,9 @@ An update is available. Admins open [Admin → Updates](/admin/updates) to see i
 
 ### The TV during an update {#code-tv}
 
-- **What it means:** The TV moves to the new version at a programme boundary. Someone watched until the quiet window ended, another TV change waited for your approval, or the TV change's swap failed, the TV failed on the air after it switched, it took too long or it was cancelled.
+- **What it means:** The TV moves to the new version at a programme boundary. Another TV change never holds the update up: one being checked or waiting for approval is set aside and checked again after it, and the restart waits at most two minutes for a change that is switching channels. Someone watched until the quiet window ended, or the TV change's swap failed, the TV failed on the air after it switched, it took too long or it was cancelled.
 - **Does Maktaba fix it itself?** Yes: it waits for the next quiet window, or puts the previous version back. A swap that failed blocks that version until you try it again.
-- **What you can do:** Approve or reject the change waiting on [TV changes](/admin/live-tv/changes). Press **Try it again** once the cause is fixed. A change that only failed its check does not undo the update: see [The TV stayed on the previous version](/help/updates#tv-held).
+- **What you can do:** Press **Try it again** once the cause is fixed. A change that only failed its check does not undo the update: see [The TV stayed on the previous version](/help/updates#tv-held).
 
 ### The TV stayed on the previous version {#tv-held}
 

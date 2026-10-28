@@ -73,10 +73,14 @@ func SQLite(t *testing.T) *sql.DB {
 	stmts = append(stmts, slot(t, "0127_tv_releases_changes.sqlite.sql")...)
 	stmts = append(stmts, slot(t, "0130_notifications.sqlite.sql")...)
 	stmts = append(stmts, slot(t, "0137_tv_slot_events.sqlite.sql")...)
+	stmts = append(stmts, slot(t, "0169_tv_changes_origin.sqlite.sql")...)
 	for _, s := range stmts {
 		if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(s)), "INSERT INTO JOB_STAGES") {
 			continue
 		}
+		// the API's SQLite applier takes ADD COLUMN IF NOT EXISTS (api/migrate_sqlite.go);
+		// a fresh test database has none of the columns yet
+		s = strings.Replace(s, "ADD COLUMN IF NOT EXISTS", "ADD COLUMN", 1)
 		if _, err := db.Exec(s); err != nil {
 			t.Fatalf("%s: %v", s, err)
 		}

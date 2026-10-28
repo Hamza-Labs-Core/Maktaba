@@ -786,6 +786,52 @@ func (d *Driver) tvBusy(ctx context.Context) (bool, int) {
 	return n > quiet, n
 }
 
+// TVSwapWait is how long the home's restart waits for a TV change that swaps (a swap
+// takes seconds). Past it the update goes on: a swap the restart cuts follows the swap's
+// failure rollback (Epic 33). Only the restart waits: the run started and drained the
+// cluster already. No other TV change holds an update (the owner's rule of 2026-10-28):
+// the change controller sets them aside while it runs (tvchange/updatehold.go).
+const TVSwapWait = 2 * time.Minute
+
+// WaitTVSwapping is the restart's wait for a TV change that swaps.
+const WaitTVSwapping = "tv_swapping"
+
+// tvSwapWait reports whether the restart waits (true: the next tick asks again) for a TV
+// change in swapping, at most TVSwapWait from when it first saw one. A database without
+// tv_changes has none.
+func (d *Driver) tvSwapWait(ctx context.Context, run Run, det *RunDetail) bool {
+	var n int
+	if err := d.Store.DB.QueryRowContext(ctx, `SELECT count(*) FROM tv_changes WHERE state = 'swapping'`).Scan(&n); err != nil || n == 0 {
+		if det.TVSwapSince != nil || det.Waiting == WaitTVSwapping {
+			det.TVSwapSince = nil
+			if det.Waiting == WaitTVSwapping {
+				det.Waiting = ""
+			}
+			noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
+		}
+		return false
+	}
+	now := d.now()
+	if det.TVSwapSince == nil {
+		det.TVSwapSince, det.Waiting = &now, WaitTVSwapping
+		noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
+		d.log().Info("update restart waits for a TV change that switches channels", "event", "update_tv_swapping",
+			"run_id", run.ID, "max_wait", TVSwapWait.String())
+		return true
+	}
+	if now.Sub(*det.TVSwapSince) < TVSwapWait {
+		return true
+	}
+	if det.Waiting == WaitTVSwapping {
+		det.Waiting = ""
+		noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
+		d.log().Warn("update restart goes on: a TV change still switches channels", "event", "update_tv_swap_timeout",
+			"run_id", run.ID, "waited", now.Sub(*det.TVSwapSince).String())
+		d.audit(ctx, run, "tv_swap_wait_over", map[string]any{"waited_sec": int(now.Sub(*det.TVSwapSince).Seconds())})
+	}
+	return false
+}
+
 // homeGates waits for the window and the TV (an automatic run restarts the home only
 // inside its window, with nobody watching beyond tv_staging.quiet_max_viewers: the
 // spec's fallback while TV processes are not handed over across a restart), then drains
@@ -917,6 +963,9 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 	if d.withdrawn(ctx, run.Version, true) {
 		return nil // the next step ends the run (stopWithdrawn)
 	}
+	if d.tvSwapWait(ctx, run, &det) {
+		return nil // a TV change switches channels: the restart waits for it, briefly
+	}
 	apply := map[string]any{"run_id": run.ID}
 	if deadline := d.windowDeadline(run, pol); !deadline.IsZero() {
 		// the new release's TV change waits behind another change no longer than the
@@ -1037,6 +1086,9 @@ func (d *Driver) homeStaged(ctx context.Context, run Run, det RunDetail) error {
 	}
 	if d.withdrawn(ctx, run.Version, true) {
 		return nil // the next step ends the run and takes the order back (stopWithdrawn)
+	}
+	if d.tvSwapWait(ctx, run, &det) {
+		return nil // as for any home (draining)
 	}
 	apply := map[string]any{"run_id": run.ID}
 	if deadline := d.windowDeadline(run, pol); !deadline.IsZero() {

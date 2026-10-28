@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0169 (the job_stages seed matches the graph for what
+-- SQLite parity sibling for slot 0170 (the job_stages seed matches the graph for what
 -- the enqueue reads: subject_kinds, enabled; and the graph's versions).
 --
 UPDATE job_stages SET subject_kinds = '["library","video"]'

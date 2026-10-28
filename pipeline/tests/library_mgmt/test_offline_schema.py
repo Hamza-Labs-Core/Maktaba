@@ -307,7 +307,7 @@ async def test_the_migrated_rows_are_the_graphs(db: Database) -> None:
         assert s is not None
         r = rows[name]
         kinds = r["subject_kinds"] if is_pg(db) else loads(r["subject_kinds"])
-        # 0169 brought the rows the stories after 0166 changed back to the graph
+        # 0170 brought the rows the stories after 0166 changed back to the graph
         assert (r["label"], sorted(kinds), r["pool"], r["lane"], r["lane_order"]) == (
             s.label,
             sorted(s.subject_kinds),

@@ -23,7 +23,36 @@ const (
 	// SourceAutoUpdate is the automatic updater's change of the streaming binary (Epic 35
 	// story 35.6, autoupdate.go): a change of its own, which no save joins.
 	SourceAutoUpdate = "auto_update"
+	// SourceRollback is a cold rollback's change (swap.go coldRollback).
+	SourceRollback = "rollback"
 )
+
+// Origins of a change (tv_changes.origin, migration 0169; the owner's rule of
+// 2026-10-28, "only manual needs approval").
+const (
+	// OriginAuto: the system made it (a channel plan, a schedule release, the updater's
+	// binary change, a rollback no person asked for). It goes on the air by its kind's
+	// auto rule, with no approval and no limit on the channels it touches.
+	OriginAuto = "auto"
+	// OriginManual: a person made it, or a person's edit joined it. It always waits for
+	// an admin's approval.
+	OriginManual = "manual"
+)
+
+// OriginFor is the origin of a change a producer of kind opens; by is the person who
+// asked, if any (a rollback an admin pressed is manual, the automatic one is not).
+// Anything not known to be automatic is manual: it waits for an approval.
+func OriginFor(kind string, by *string) string {
+	switch kind {
+	case SourceWriteChannels, SourceSchedule, SourceAutoUpdate:
+		return OriginAuto
+	case SourceRollback, "restage":
+		if by == nil || *by == "" {
+			return OriginAuto
+		}
+	}
+	return OriginManual
+}
 
 // Pending is a change's diff.pending: what its producer wants (the shape the
 // pipeline's tvrelease/build.py reads):
@@ -293,7 +322,13 @@ func (d *Drafts) Save(ctx context.Context, p *principal.Principal, kind, title, 
 	}
 	diff["pending"] = pd.M
 	diff["summary"] = Summarize(pd)
-	if err := d.Store.Set(ctx, tx, c.ID, map[string]any{"diff": diff}); err != nil {
+	set := map[string]any{"diff": diff}
+	if OriginFor(kind, by) == OriginManual && c.Origin != OriginManual {
+		// a person's edit joined an automatic change: it waits for an approval now
+		set["origin"] = OriginManual
+		c.Origin = OriginManual
+	}
+	if err := d.Store.Set(ctx, tx, c.ID, set); err != nil {
 		return DraftRef{}, err
 	}
 	if !created {

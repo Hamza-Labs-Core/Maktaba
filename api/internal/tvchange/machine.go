@@ -43,6 +43,7 @@ var table = map[string]map[string]string{
 		ActionApprove:     StateStaged,
 		ActionCancel:      StateCancelled,
 		ActionFail:        StateDraft,
+		ActionSetAside:    StateDraft,
 	},
 	StateVerifying: {
 		ActionReopen:    StateDraft,
@@ -53,6 +54,7 @@ var table = map[string]map[string]string{
 		ActionSchedule:  StateVerifying,
 		ActionApprove:   StateVerifying,
 		ActionCancel:    StateCancelled,
+		ActionSetAside:  StateDraft,
 	},
 	StateReady: {
 		ActionReopen:      StateDraft,
@@ -65,6 +67,9 @@ var table = map[string]map[string]string{
 		ActionAutoApprove: StateApproved,
 		ActionAutoPromote: StateSwapping,
 		ActionPromote:     StateSwapping, // only when a rule allows it (Controller.Promote)
+		// an app update (updatehold.go): set aside, or checked again once it ended
+		ActionSetAside:           StateDraft,
+		ActionRecheckAfterUpdate: StateDraft,
 	},
 	StateApproved: {
 		ActionPromote:   StateSwapping,
