@@ -490,6 +490,14 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A TV schedule change's check no longer fails a staging slot that runs the right
+  software.** A release the pipeline builds for a schedule or settings change records its
+  streaming version as `0.3.40`, the slot reports `v0.3.40`, and the check compared them as
+  text: TV change #51 (2026-10-28) failed "the staging slot did not become healthy on the
+  release" three times with the slot up on that very binary. Versions now compare without the
+  `v`. A release recording no binary (a pipeline run from a source checkout records `0.0.1`)
+  stages and binds this install's streaming binary instead of asking for one that does not
+  exist.
 - **An update's TV check no longer overloads the host it measures.** TV change #55 (0.3.39 →
   0.3.40, 2026-10-28) failed channel.position and channel.wallclock on all 28 channels, 38–50 s
   behind the wall clock, and held the TV on 0.3.39. The measurement was right and the release's

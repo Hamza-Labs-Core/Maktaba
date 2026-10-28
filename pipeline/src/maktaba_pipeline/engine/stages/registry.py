@@ -78,6 +78,14 @@ CORE_MODULES: dict[str, str] = {
     "access_check": "maktaba_pipeline.engine.stages.access_check",
     "storage_canonicalize": "maktaba_pipeline.engine.stages.storage_canonicalize",
     "enrich": "maktaba_pipeline.engine.stages.enrich",
+    # Epic 47 (offline, MP4, no duplicates); all but trash_purge are stubs until their
+    # stories ship (the graph keeps them off: StageDef.unreleased)
+    "convert_mp4": "maktaba_pipeline.engine.stages.convert_mp4",
+    "dedup_scan": "maktaba_pipeline.engine.stages.dedup_scan",
+    "dedup_apply": "maktaba_pipeline.engine.stages.dedup_apply",
+    "youtube_fetch": "maktaba_pipeline.engine.stages.youtube_fetch",
+    "youtube_backfill": "maktaba_pipeline.engine.stages.youtube_backfill",
+    "trash_purge": "maktaba_pipeline.engine.stages.trash_purge",
 }
 _LEGACY_MODULE = "maktaba_pipeline.engine.stages.legacy"
 

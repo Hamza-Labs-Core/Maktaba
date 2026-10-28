@@ -793,13 +793,14 @@ func (s *Slots) superviseRelease(ctx context.Context, name, release string) {
 		// rollback is still the rolled-back one until the reverse commit runs
 		// (a standby restarted then would be the bad release, put back on the
 		// air by the next failover). This binary's version runs this binary.
+		// (however the release spells it, and for a release naming none: releaseBinary)
 		v, sum := version.Version, ""
 		if s.Pool != nil {
 			qctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			var rv, rs string
 			if s.Pool.QueryRow(qctx, `SELECT COALESCE(streaming_version, ''), COALESCE(streaming_sha256, '')
-				FROM tv_releases WHERE id = $1`, release).Scan(&rv, &rs) == nil && rv != "" && rv != version.Version {
-				v, sum = rv, rs
+				FROM tv_releases WHERE id = $1`, release).Scan(&rv, &rs) == nil {
+				v, sum = releaseBinary(rv, rs)
 			}
 			cancel()
 		}

@@ -36,6 +36,8 @@ def stage_enabled_state(
     stage: StageDef, extensions: Mapping[str, ExtensionState]
 ) -> tuple[bool, str | None]:
     """``(enabled, disabled_reason)`` the graph wants for ``stage``."""
+    if stage.unreleased:
+        return False, "not_configured"
     if stage.extension is None:
         return True, None
     state = extensions.get(stage.extension)

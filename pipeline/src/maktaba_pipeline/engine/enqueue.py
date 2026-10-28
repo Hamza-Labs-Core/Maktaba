@@ -347,6 +347,12 @@ async def _resolve_subject(db: Any, kind: str, sid: str) -> dict[str, str | None
     elif kind == "catalog":
         if sid != str(CATALOG_ID):
             return None
+    elif kind == "dup_group":
+        # Epic 47: a duplicate group, in its library (NULL for a group across libraries)
+        r = await db.fetchrow("SELECT library_id FROM duplicate_groups WHERE id = $1", sid)
+        if r is None:
+            return None
+        cols["library_id"] = None if r["library_id"] is None else str(r["library_id"])
     else:
         return None
     return cols
