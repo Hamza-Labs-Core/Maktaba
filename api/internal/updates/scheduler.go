@@ -327,7 +327,7 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 		if pl.Target != nil && pl.NextRunAt != nil {
 			s.notify(ctx, NoticeScheduled, notify.Payload{Severity: notify.SeverityInfo,
 				Params:  map[string]any{"version": pl.Target.Version, "at": pl.NextRunAt.Format(time.RFC3339)},
-				Link:    "/settings#updates",
+				Link:    "/admin/updates",
 				Subject: "release:" + pl.Target.Version, Every: notifyOnce})
 		}
 		return Decision{Action: "none", Reason: pl.Waiting}, nil
@@ -468,7 +468,7 @@ func (s *Service) start(ctx context.Context, r Release, pol Policy, trigger, act
 		s.Store.Audit(ctx, actor, src, "run_failed", r.Version, map[string]any{"run_id": run.ID, "code": code})
 		s.notify(ctx, NoticeRunFailed, notify.Payload{Severity: notify.SeverityError,
 			Params:  map[string]any{"version": r.Version, "code": code},
-			Link:    "/settings#updates",
+			Link:    "/admin/updates",
 			Subject: "run:" + run.ID, Every: notifyOnce})
 		return run, err
 	}

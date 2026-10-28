@@ -323,7 +323,7 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 			if CompareVersions(r.Version, NormalizeVersion(d.Current)) > 0 && !pol.EffectiveAutoInstall() {
 				d.notify(ctx, NoticeAvailable, notify.Payload{Severity: notify.SeverityInfo,
 					Params:  map[string]any{"version": r.Version},
-					Link:    "/settings#updates",
+					Link:    "/admin/updates",
 					Subject: "release:" + r.Version, Every: notifyOnce})
 			}
 		case ve != nil && ve.Incident():
@@ -350,7 +350,7 @@ func (d *Discoverer) staleHint(ctx context.Context, st State) {
 	}
 	d.notify(ctx, NoticeCheckStale, notify.Payload{Severity: notify.SeverityWarn,
 		Params:  map[string]any{"days": int(d.now().Sub(last).Hours() / 24), "error": st.LastCheckErr},
-		Link:    "/settings#updates",
+		Link:    "/admin/updates",
 		Subject: "update_check", Every: 24 * time.Hour})
 }
 
@@ -435,7 +435,7 @@ func (d *Discoverer) verify(ctx context.Context, r Release) (bool, *VerifyError)
 			"tag": r.Tag, "kind": ve.Kind, "file": ve.File, "detail": ve.Detail})
 		d.notify(ctx, NoticeVerifyFailed, notify.Payload{Severity: notify.SeverityError,
 			Params:  map[string]any{"version": r.Version, "kind": ve.Kind, "file": ve.File, "detail": ve.Detail},
-			Link:    "/settings#updates",
+			Link:    "/admin/updates",
 			Subject: "release:" + r.Version + ":" + sum, Every: notifyOnce})
 	}
 	return false, ve
@@ -476,7 +476,7 @@ func (d *Discoverer) retagCheck(ctx context.Context, cur, fresh Release, waterma
 		noteStore(d.log(), "SetVerifyError", d.Store.SetVerifyError(ctx, cur.Version, ve, ""))
 		d.Store.Audit(ctx, "", "system", "release_replay", cur.Version, params)
 		d.notify(ctx, NoticeReplay, notify.Payload{Severity: notify.SeverityError, Params: params,
-			Link: "/settings#updates", Subject: "release:" + cur.Version + ":" + sum, Every: notifyOnce})
+			Link: "/admin/updates", Subject: "release:" + cur.Version + ":" + sum, Every: notifyOnce})
 		return
 	}
 	noteStore(d.log(), "ResetForReverify", d.Store.ResetForReverify(ctx, cur.Version))
@@ -534,7 +534,7 @@ func (d *Discoverer) Recheck(ctx context.Context, r Release, channel string) (st
 	d.Store.Audit(ctx, "", "system", "release_withdrawn", r.Version, map[string]any{"reason": reason})
 	d.notify(ctx, NoticeReleaseWithdrew, notify.Payload{Severity: notify.SeverityWarn,
 		Params:  map[string]any{"version": r.Version, "reason": reason},
-		Link:    "/settings#updates",
+		Link:    "/admin/updates",
 		Subject: "release:" + r.Version, Every: notifyOnce})
 	return reason, nil
 }

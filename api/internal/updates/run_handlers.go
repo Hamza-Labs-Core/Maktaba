@@ -183,6 +183,11 @@ func (d *Driver) TargetAction(ctx context.Context, id, node, action, actor strin
 // with its version, install kind and update state.
 func (d *Driver) Machines(ctx context.Context, home Machine) []Machine {
 	home.Attempts = d.homeAttempts(ctx)
+	if a, ok := d.Store.lastHomeInstall(ctx); ok {
+		home.LastUpdate = lastUpdate(home.Attempts, a)
+	} else {
+		home.LastUpdate = lastUpdate(home.Attempts)
+	}
 	out := []Machine{home}
 	nodes, err := d.nodes(ctx)
 	if err != nil {
@@ -195,6 +200,9 @@ func (d *Driver) Machines(ctx context.Context, home Machine) []Machine {
 	}
 	run, _ := d.Store.ActiveRun(ctx)
 	var targets map[string]Target
+	// inRun: whether the run under way brings a machine (a catch-up or a retry names its
+	// machines; any other run, every machine behind its release)
+	inRun := func(string) bool { return false }
 	if run != nil {
 		targets = map[string]Target{}
 		if ts, err := d.Store.Targets(ctx, run.ID); err == nil {
@@ -202,8 +210,24 @@ func (d *Driver) Machines(ctx context.Context, home Machine) []Machine {
 				targets[t.NodeID] = t
 			}
 		}
+		only := map[string]bool{}
+		if _, det, err := d.Store.RunDetailOf(ctx, run.ID); err == nil {
+			for _, id := range det.Targets {
+				only[id] = true
+			}
+		}
+		inRun = func(id string) bool { return len(only) == 0 || only[id] }
 	}
 	convert := d.WorkerConvert(ctx)
+	// what happens next to a machine behind: the catch-up's own decision (read only)
+	var sc *catchUpScope
+	scope := func() catchUpScope {
+		if sc == nil {
+			s := d.scopeFor(ctx, d.policy(ctx), wm)
+			sc = &s
+		}
+		return *sc
+	}
 	for _, n := range nodes {
 		m := Machine{ID: n.id, Name: n.name, Role: "node", Version: NormalizeVersion(n.version), Platform: n.platform,
 			Convert: convert[n.id]}
@@ -238,6 +262,22 @@ func (d *Driver) Machines(ctx context.Context, home Machine) []Machine {
 			runs = append(runs, a)
 		}
 		m.Attempts = mergeAttempts(s.Attempts, runs...)
+		if a, ok := d.Store.lastHealthyTarget(ctx, n.id); ok {
+			m.LastUpdate = lastUpdate(m.Attempts, a)
+		} else {
+			m.LastUpdate = lastUpdate(m.Attempts)
+		}
+		switch {
+		case run != nil && m.Target == "" && online && inRun(n.id) && (m.State == "behind" || m.State == "up_to_date") && m.Version != "" &&
+			CompareVersions(m.Version, run.Version) < 0:
+			// the run under way updates it after the home (its rollout plans every machine
+			// behind the release)
+			m.Next = &NextStep{Version: NormalizeVersion(run.Version), Reason: NextInRun}
+		case run == nil && (m.State == "behind" || m.State == "offline") && m.Version != "" && wm != "" &&
+			CompareVersions(m.Version, wm) < 0:
+			next := d.catchUpFor(ctx, scope(), n, s, m.Version, online)
+			m.Next = &next
+		}
 		out = append(out, m)
 	}
 	return out

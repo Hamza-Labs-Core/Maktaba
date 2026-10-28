@@ -169,8 +169,20 @@ describe("Admin Updates", () => {
     expect(within(table).getByTestId("updates-machine-n1")).toHaveTextContent("studio-pc");
     expect(within(table).getByTestId("updates-machine-n1")).toHaveTextContent("behind");
     expect(within(table).getByTestId("updates-machine-n2")).toHaveTextContent("offline");
-    expect(screen.getByTestId("updates-next")).toHaveTextContent("Version 1.5.0 installs on");
-    expect(screen.getByTestId("updates-cluster-version")).toHaveTextContent("1.4.0");
+    // the next update: its day, the quiet window, and how long until then, with units
+    expect(screen.getByTestId("updates-next")).toHaveTextContent(
+      /^1\.5\.0 installs .+ between 03:00 and 05:00 \(.+\)\.$/
+    );
+    // this home: the version it runs (never the cluster's or a run's target)
+    expect(screen.getByTestId("updates-home-version")).toHaveTextContent(/^1\.4\.0$/);
+    expect(screen.getByTestId("updates-home")).toHaveTextContent("update available");
+    // the release and what will happen (no migration known: no backup step)
+    const release = screen.getByTestId("updates-release");
+    expect(release).toHaveTextContent("Release 1.5.0");
+    expect(within(release).queryByTestId("updates-what-backup")).toBeNull();
+    expect(within(release).getByTestId("updates-what-happens")).toHaveTextContent(
+      "Then the machines (2), one at a time"
+    );
   });
 
   it("a worker only: converted by its next update, or its installer to run once (story 35.8 AC8)", async () => {
@@ -228,7 +240,9 @@ describe("Admin Updates", () => {
       "Rehearse the database changes"
     );
     expect(screen.getByTestId("updates-home-steps")).toHaveTextContent("1 migrations in 2.0 s");
-    expect(screen.getByRole("button", { name: "Update now" })).toBeDisabled();
+    // during a run there is no release to start: no Update now
+    expect(screen.queryByRole("button", { name: "Update now" })).toBeNull();
+    expect(screen.getByTestId("updates-next")).toHaveTextContent("Updating to 1.5.0 now.");
     await user.click(screen.getByRole("button", { name: "Cancel this update" }));
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith("/api/cluster/updates/runs/run-1/cancel", {})
@@ -616,6 +630,143 @@ describe("Admin Updates", () => {
     expect(screen.getByTestId("updates-machine-home")).toHaveTextContent("الخادم الرئيسي");
   });
 
+  // The owner's cluster on 2026-10-28: a run to 0.3.36 rolled back (failed_tv), 0.3.37 was
+  // then installed on the home by hand; the PC runs 0.3.33 and catches up in the window.
+  // The page used to say "the cluster runs 0.3.37", "the last update, to 0.3.36" and offer
+  // to retry 0.3.36: each value now says the truth, once.
+  it("the home installed by hand after a rolled-back run, and a PC behind it", async () => {
+    const rolledBack = {
+      id: "b3cc",
+      version: "0.3.36",
+      from_version: "0.3.35",
+      trigger: "manual",
+      state: "rolled_back",
+      step: "tv",
+      started_at: "2026-10-27T20:59:10Z",
+      finished_at: "2026-10-28T00:02:22Z",
+      error: { code: "failed_tv" },
+    };
+    const windowAt = new Date(Date.now() + 3 * 3600_000 + 60_000).toISOString();
+    const byHand = {
+      id: "start-0.3.37",
+      at: new Date(Date.now() - 3 * 3600_000).toISOString(),
+      source: "server",
+      trigger: "start",
+      from: "0.3.35",
+      to: "0.3.37",
+      outcome: "installed",
+    };
+    const ov = overview({
+      current_version: "0.3.37",
+      watermark: "0.3.37",
+      plan: { held: false, stepping_stone: false, auto_install: true, due: false },
+      last_run: rolledBack,
+      machines: [
+        {
+          id: "home",
+          name: "home",
+          role: "home",
+          version: "0.3.37",
+          state: "up_to_date",
+          attempts: [
+            byHand,
+            {
+              ...byHand,
+              id: "run-b3cc",
+              source: "run",
+              to: "0.3.36",
+              outcome: "rolled_back",
+              at: rolledBack.started_at,
+            },
+          ],
+          last_update: byHand,
+        },
+        {
+          id: "pc",
+          name: "windows-pc",
+          role: "node",
+          version: "0.3.33",
+          state: "behind",
+          platform: "windows-amd64",
+          kind: "appbundle",
+          next: { version: "0.3.37", reason: "catch_up_window", at: windowAt },
+        },
+      ],
+    });
+    routes(ov, { ...rolledBack, install_kind: "appbundle", detail: {}, steps: [], targets: [] }, [
+      rolledBack,
+    ]);
+    renderPage();
+    const homeCard = await screen.findByTestId("updates-home");
+    expect(screen.getByTestId("updates-home-version")).toHaveTextContent(/^0\.3\.37$/);
+    expect(homeCard).toHaveTextContent("up to date");
+    expect(screen.getByTestId("updates-home-last")).toHaveTextContent(
+      "0.3.37, 3 hours ago (installed by hand)"
+    );
+    expect(screen.getByTestId("updates-next")).toHaveTextContent("Nothing to install: up to date.");
+    // the rolled-back run is history: not the last update, not up front, not offered again
+    expect(screen.queryByTestId("updates-last-failed")).toBeNull();
+    expect(
+      within(screen.getByTestId("updates-history-fold")).getByTestId("updates-run")
+    ).toHaveTextContent("0.3.36");
+    expect(screen.getByTestId("updates-history-fold")).not.toHaveAttribute("open");
+    // the PC: its own version, behind, and when it catches up, with units
+    const pc = screen.getByTestId("updates-machine-pc");
+    expect(pc).toHaveTextContent("0.3.33");
+    expect(pc).toHaveTextContent("behind");
+    expect(screen.getByTestId("updates-machine-pc-last")).toHaveTextContent("None recorded");
+    expect(screen.getByTestId("updates-machine-pc-next")).toHaveTextContent(
+      /^0\.3\.37 installs .+ between 03:00 and 05:00 \(in 3 hours( 1 minute)?\)\.$/
+    );
+  });
+
+  it("shows the release's notes as Markdown, never its HTML, and a Docker install's command", async () => {
+    const withNotes = overview({
+      plan: {
+        ...overview().plan,
+        target: { ...target, notes: "## Highlights\n\n- **Faster** scans\n- <b>raw</b>" },
+      },
+    });
+    get.mockImplementation((path: string) => {
+      if (path === "/api/cluster/updates") return Promise.resolve(withNotes);
+      if (path.startsWith("/api/cluster/updates/runs?")) return Promise.resolve({ items: [] });
+      if (path.startsWith("/api/system/updates"))
+        return Promise.resolve({
+          available: true,
+          current_version: "1.4.0",
+          latest_version: "1.5.0",
+          channel: "stable",
+          checked_at: finishedAt,
+          install: "docker",
+          instructions: "docker compose pull && docker compose up -d",
+        });
+      return Promise.reject(new Error("unexpected " + path));
+    });
+    renderPage();
+    const notes = await screen.findByTestId("updates-release-notes");
+    expect(within(notes).getByRole("heading", { name: "Highlights" })).toBeInTheDocument();
+    expect(within(notes).getByText("Faster").tagName).toBe("STRONG");
+    expect(within(notes).getByText("<b>raw</b>")).toBeInTheDocument();
+    expect(
+      await screen.findByText("docker compose pull && docker compose up -d")
+    ).toBeInTheDocument();
+  });
+
+  it("names the backup step only for a release that changes the database", async () => {
+    const cat = [{ ...target, version: "1.4.0", manifest: { schema_rev: 10 } }];
+    routes(
+      overview({
+        catalog: cat,
+        plan: { ...overview().plan, target: { ...target, manifest: { schema_rev: 11 } } },
+      }),
+      null
+    );
+    renderPage();
+    expect(await screen.findByTestId("updates-what-backup")).toHaveTextContent(
+      "backs up the library database first"
+    );
+  });
+
   it("colours states", () => {
     expect(stateTone("healthy")).toBe("success");
     expect(stateTone("rolled_back")).toBe("error");
@@ -658,7 +809,12 @@ describe("Admin Updates: the last update attempt", () => {
     routes(withAttempts([attempt({ outcome: "installed", ended_at: at })]), null);
     renderPage();
     const block = await screen.findByTestId("updates-machine-home-attempt");
-    expect(block).toHaveTextContent("Last update");
+    expect(block).toHaveTextContent("Last attempt");
+    // an attempt that installed is folded: the machines table says the last update
+    expect(block.tagName).toBe("DETAILS");
+    expect(screen.getByTestId("updates-machine-home-last")).toHaveTextContent(
+      "1.5.0, 5 minutes ago (by the desktop app)"
+    );
     expect(screen.getByTestId("updates-machine-home-attempt-headline")).toHaveTextContent(
       "Updated to 1.5.0"
     );

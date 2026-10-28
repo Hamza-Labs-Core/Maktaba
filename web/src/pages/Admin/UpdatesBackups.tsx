@@ -102,8 +102,13 @@ export function UpdatesBackups() {
   };
 
   return (
-    <section className="mkt-updates__backups" data-testid="updates-backups">
-      <h2>{t("updates.backups.title")}</h2>
+    <details className="mkt-updates__fold mkt-updates__backups" data-testid="updates-backups">
+      <summary>
+        <h2>{t("updates.backups.title")}</h2>
+        <span className="mkt-muted">
+          {t("updates.backups.count", { count: list.backups.length })}
+        </span>
+      </summary>
       <p className="mkt-muted">{t("updates.backups.intro")}</p>
       {list.restoring && (
         <p role="status" data-testid="updates-backups-restoring">
@@ -186,6 +191,6 @@ export function UpdatesBackups() {
           </>
         )}
       </Modal>
-    </section>
+    </details>
   );
 }

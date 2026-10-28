@@ -58,7 +58,7 @@ import { I18nProvider } from "../lib/i18n";
 import { watchSystemTheme } from "../lib/theme";
 import { adminUser, authState, memberUser, quietCrash, renderPage } from "../test/pageHarness";
 import { routeGet } from "../test/queueHarness";
-import { Settings, safeReleaseUrl } from "./Settings";
+import { Settings } from "./Settings";
 import en from "../i18n/en.json";
 
 // ─── data ────────────────────────────────────────────────────────────────
@@ -536,7 +536,7 @@ describe("Settings account (test-cases/settings-account.md)", () => {
       [
         "/settings/about",
         () => screen.findByText("Current version"),
-        ["/api/system/", "/api/cluster/updates"],
+        ["/api/system/", "/api/cluster/updates", "/api/auth/me", "/api/entitlements"],
       ],
     ];
     for (const [path, find, prefixes] of cases) {
@@ -1191,413 +1191,152 @@ describe("Settings privacy (test-cases/settings-privacy.md)", () => {
 
 // ─── About tab ──────────────────────────────────────────────────────────
 
-/** Fake timers that still let promises and userEvent run. */
-function fakeClock() {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
-  return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-}
-const tick = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
-
-/** /api/system/version answers: the first is the page load, the rest are polls. */
-function versionAnswers(...answers: unknown[]) {
-  let i = 0;
-  return () => {
-    const a = answers[Math.min(i++, answers.length - 1)];
-    return a instanceof Error ? Promise.reject(a) : a;
-  };
-}
-
+// About says what the app is (story 28.1, reworked): name, tagline, version and build,
+// the home and this machine, the plan, links and credits. Updates get one line, from the
+// same source and in the same words as the Updates page, and a link there.
 describe("Settings about (test-cases/settings-about.md)", () => {
-  it("SAB-01: shows version, commit, build date, channel and last checked", async () => {
+  const aboutGets = (over: Table = {}) =>
+    mockGets({
+      "/api/system/version": { ...VERSION, version: "v1.5.0", build_date: "1793147514" },
+      "/api/auth/me": { home_name: "Studio" },
+      "/api/entitlements": { tier: "pro" },
+      "/api/cluster/updates": overview(),
+      ...over,
+    });
+
+  it("SAB-01: what the app is: name, tagline, version, build, channel, machine, plan, app", async () => {
+    aboutGets();
     renderSettings("/settings/about", { user: memberUser });
-    await waitFor(() => expect(metaValue("Current version")).toHaveTextContent("1.5.0"));
-    expect(metaValue("Commit")).toHaveTextContent("abcdef1234");
-    expect(metaValue("Commit")).not.toHaveTextContent("abcdef12345");
-    expect(metaValue("Build date")).toHaveTextContent("2026-10-01");
+    expect(await screen.findByRole("heading", { level: 2, name: "Maktaba" })).toBeInTheDocument();
+    expect(screen.getByText(/Your home's video library/)).toBeInTheDocument();
+    // the version as the Updates page writes it: no "v"
+    await waitFor(() => expect(screen.getByTestId("about-version")).toHaveTextContent(/^1\.5\.0$/));
+    expect(screen.getByTestId("about-commit")).toHaveTextContent(/^abcdef1234$/);
+    // a build date in Unix seconds reads as a date, never the raw number
+    expect(screen.getByTestId("about-built")).not.toHaveTextContent("1793147514");
+    expect(screen.getByTestId("about-built")).toHaveTextContent("2026");
     expect(metaValue("Update channel")).toHaveTextContent("Stable");
-    const at = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(
-      new Date(UP_TO_DATE.checked_at)
+    expect(await screen.findByTestId("about-machine")).toHaveTextContent("Studio · the home");
+    expect(await screen.findByTestId("about-plan")).toHaveTextContent("Pro");
+    expect(metaValue("App")).toHaveTextContent("Web app");
+    const links = within(screen.getByRole("region", { name: "Links" }));
+    expect(links.getByRole("link", { name: "Project website" })).toHaveAttribute(
+      "href",
+      "https://github.com/Hamza-Labs-Core/Maktaba"
     );
-    expect(await screen.findByText("Last checked")).toBeInTheDocument();
-    expect(metaValue("Last checked")).toHaveTextContent(at);
-    expect(screen.getByRole("button", { name: "Check now" })).toBeInTheDocument();
-    expect(screen.getByText("You're up to date.")).toBeInTheDocument();
+    expect(links.getByRole("link", { name: "Help" })).toHaveAttribute("href", "/help");
+    expect(links.getByRole("link", { name: "Privacy" })).toHaveAttribute(
+      "href",
+      "/settings/privacy"
+    );
+    expect(screen.getByRole("heading", { name: "Acknowledgements" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "PostgreSQL" })).toBeInTheDocument();
   });
 
-  it("SAB-02: the version API fails: build version fallback", async () => {
-    const user = userEvent.setup();
-    const build = import.meta.env?.VITE_APP_VERSION ?? "dev";
-    mockGets({
+  it("SAB-02: the version API fails: the build's own version", async () => {
+    const build = (import.meta.env?.VITE_APP_VERSION ?? "dev").replace(/^v(?=\d)/, "");
+    aboutGets({
       "/api/system/version": () => Promise.reject(problem(500, "Internal Server Error")),
-      "/api/system/updates": { ...UP_TO_DATE, channel: "beta" },
     });
+    renderSettings("/settings/about", { user: memberUser });
+    expect(await screen.findByTestId("about-version")).toHaveTextContent(build);
+    expect(screen.queryByTestId("about-commit")).toBeNull();
+  });
+
+  it("SAB-04: a viewer gets one update line from the status, no Updates link, no update controls", async () => {
+    aboutGets();
     const { unmount } = renderSettings("/settings/about", { user: memberUser });
-    expect(await screen.findByText("You're up to date.")).toBeInTheDocument();
-    expect(metaValue("Current version")).toHaveTextContent(build);
-    expect(metaValue("Update channel")).toHaveTextContent("Beta");
-    expect(screen.queryByText("Commit")).not.toBeInTheDocument();
-    expect(screen.queryByText("Build date")).not.toBeInTheDocument();
-    unmount();
-
-    mockGets({
-      "/api/system/version": () => Promise.reject(new TypeError("Failed to fetch")),
-      "/api/system/updates": (url: string) =>
-        url.includes("refresh=true") ? UP_TO_DATE : Promise.reject(new TypeError("down")),
-    });
-    renderSettings("/settings/about", { user: memberUser });
-    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/system/updates"));
-    expect(metaValue("Current version")).toHaveTextContent(build);
-    expect(metaValue("Update channel")).toHaveTextContent("Stable");
-    expect(screen.queryByText("You're up to date.")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Check now" }));
-    expect(await screen.findByText("You're up to date.")).toBeInTheDocument();
-  });
-
-  it("SAB-03: missing or unknown optional version fields are hidden", async () => {
-    for (const v of [
-      { version: "1.5.0", commit: "unknown", build_date: "unknown" },
-      { version: "1.5.0", commit: null, build_date: "" },
-    ]) {
-      mockGets({
-        "/api/system/version": v,
-        "/api/system/updates": { ...UP_TO_DATE, channel: "beta" },
-      });
-      const { unmount } = renderSettings("/settings/about", { user: memberUser });
-      await waitFor(() => expect(metaValue("Update channel")).toHaveTextContent("Beta"));
-      expect(screen.queryByText("Commit")).not.toBeInTheDocument();
-      expect(screen.queryByText("Build date")).not.toBeInTheDocument();
-      unmount();
-    }
-  });
-
-  it("SAB-04: up to date / checks disabled messages", async () => {
-    const cases: [object, string | null][] = [
-      [UP_TO_DATE, "You're up to date."],
-      [{ ...UP_TO_DATE, disabled: true }, "Automatic update checks are off."],
-      [{ ...UP_TO_DATE, available: true }, null],
-    ];
-    for (const [upd, text] of cases) {
-      mockGets({ "/api/system/updates": upd });
-      const { unmount } = renderSettings("/settings/about", { user: memberUser });
-      await waitFor(() => expect(screen.getByText("Last checked")).toBeInTheDocument());
-      if (text) expect(screen.getByText(text)).toBeInTheDocument();
-      if (text !== "You're up to date.")
-        expect(screen.queryByText("You're up to date.")).not.toBeInTheDocument();
-      if (!text) {
-        expect(screen.queryByText("Automatic update checks are off.")).not.toBeInTheDocument();
-        expect(screen.queryByRole("region", { name: "Updates" })).not.toBeInTheDocument();
-      }
-      unmount();
-    }
-  });
-
-  it("SAB-05: the update available card with notes and the release link", async () => {
-    mockGets({ "/api/system/updates": AVAILABLE });
-    renderSettings("/settings/about", { user: memberUser });
-    const card = await screen.findByRole("region", { name: "Updates" });
-    expect(within(card).getByRole("heading", { level: 2 })).toHaveTextContent(
-      "Update available: 1.6.0"
-    );
-    const summary = card.querySelector("details > summary")!;
-    expect(summary).toHaveTextContent("Release notes");
-    // Markdown: the two bullets are a list
-    expect(Array.from(card.querySelectorAll("details li")).map((li) => li.textContent)).toEqual([
-      "faster",
-      "fixes",
-    ]);
-    const link = within(card).getByRole("link", { name: "View release" });
-    expect(link).toHaveAttribute("href", AVAILABLE.release_url);
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(link).toHaveAttribute("rel", "noreferrer");
-  });
-
-  it("SAB-06: release-note HTML is shown as text, never injected; a javascript: URL is not a link", async () => {
-    const notes = "<img src=x onerror=alert(1)><b>bold</b>";
-    mockGets({
-      "/api/system/updates": {
-        ...AVAILABLE,
-        release_notes: notes,
-        release_url: "javascript:alert(1)",
-      },
-    });
-    renderSettings("/settings/about", { user: memberUser });
-    const card = await screen.findByRole("region", { name: "Updates" });
-    expect(card.querySelector(".mkt-about__notes-body")!.textContent).toBe(notes);
-    expect(card.querySelector("img")).toBeNull();
-    expect(card.querySelector("b")).toBeNull();
-    expect(within(card).queryByRole("link")).not.toBeInTheDocument();
-    expect(document.querySelector('a[href^="javascript:"]')).toBeNull();
-  });
-
-  it("SAB-06: only http(s) release URLs become links (javascript:, data:, relative junk do not)", async () => {
-    for (const bad of [
-      "javascript:alert(1)",
-      " JavaScript:alert(1)",
-      "data:text/html,<script>alert(1)</script>",
-      "vbscript:x",
-      "/releases/v1.6.0",
-      "not a url",
-      "",
-    ]) {
-      expect(safeReleaseUrl(bad)).toBeNull();
-      mockGets({ "/api/system/updates": { ...AVAILABLE, release_url: bad } });
-      const { unmount } = renderSettings("/settings/about", { user: memberUser });
-      const card = await screen.findByRole("region", { name: "Updates" });
-      expect(within(card).queryByRole("link", { name: "View release" })).not.toBeInTheDocument();
-      unmount();
-    }
-    expect(safeReleaseUrl(42)).toBeNull();
-    expect(safeReleaseUrl("http://example.com/r")).toBe("http://example.com/r");
-    expect(safeReleaseUrl(AVAILABLE.release_url)).toBe(AVAILABLE.release_url);
-  });
-
-  it("SAB-07: Check now refreshes, shows busy, and toasts errors", async () => {
-    const user = userEvent.setup();
-    const refresh = vi.fn();
-    mockGets({
-      "/api/system/updates": (url: string) =>
-        url.includes("refresh=true") ? refresh() : UP_TO_DATE,
-    });
-    renderSettings("/settings/about", { user: memberUser });
-    await screen.findByText("You're up to date.");
-
-    // (d) pending, then (a) an update appears
-    let finish!: (v: unknown) => void;
-    refresh.mockReturnValueOnce(new Promise((r) => (finish = r)));
-    await user.click(screen.getByRole("button", { name: "Check now" }));
-    expect(screen.getByRole("button", { name: "Checking…" })).toBeDisabled();
-    await act(async () => finish({ ...AVAILABLE, checked_at: "2026-10-19T09:30:00Z" }));
-    expect(await screen.findByRole("region", { name: "Updates" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Check now" })).toBeEnabled();
-    expect(get).toHaveBeenCalledWith("/api/system/updates?refresh=true");
-
-    // (b) a problem: toast, old status kept
-    refresh.mockImplementationOnce(() =>
-      Promise.reject(problem(500, "Internal Server Error", { detail: "github rate limited" }))
-    );
-    await user.click(screen.getByRole("button", { name: "Check now" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Internal Server Error: github rate limited"
-    );
-    expect(screen.getByRole("region", { name: "Updates" })).toBeInTheDocument();
-
-    // (c) network
-    refresh.mockImplementationOnce(() => Promise.reject(new TypeError("Failed to fetch")));
-    await user.click(screen.getByRole("button", { name: "Check now" }));
-    expect(await screen.findByText("Something went wrong.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Check now" })).toBeEnabled();
-  });
-
-  it("SAB-08: a non-admin sees no Update now and no automatic updates card", async () => {
-    mockGets({ "/api/system/updates": AVAILABLE, "/api/cluster/updates": overview() });
-    const { unmount } = renderSettings("/settings/about", { user: memberUser });
-    const card = await screen.findByRole("region", { name: "Updates" });
-    expect(within(card).getByRole("link", { name: "View release" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Automatic updates")).not.toBeInTheDocument();
+    const line = await screen.findByTestId("about-update-status");
+    expect(line).toHaveTextContent("up to date");
+    expect(screen.queryByTestId("about-updates-link")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Update now|Check now|Save update settings/ })
+    ).toBeNull();
     expect(getPaths()).not.toContain("/api/cluster/updates");
     unmount();
 
-    renderSettings("/settings/about", { user: adminUser });
-    expect(await screen.findByRole("button", { name: "Update now" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Automatic updates" })).toBeInTheDocument();
+    aboutGets({ "/api/system/updates": AVAILABLE });
+    renderSettings("/settings/about", { user: memberUser });
+    const avail = await screen.findByTestId("about-update-status");
+    await waitFor(() => expect(avail).toHaveTextContent("update available"));
+    expect(avail).toHaveTextContent("1.6.0");
   });
 
-  it("SAB-09: admin Update now: downloading, restarting, done", async () => {
-    const user = fakeClock();
-    mockGets({
-      "/api/system/updates": AVAILABLE,
-      "/api/system/version": versionAnswers(
-        VERSION,
-        new Error("restarting"),
-        { version: "1.5.0" },
-        { version: "1.6.0" }
-      ),
+  it("SAB-05: an admin's line is the Updates page's: same status, same version, a link there", async () => {
+    aboutGets();
+    renderSettings("/settings/about");
+    const line = await screen.findByTestId("about-update-status");
+    await waitFor(() => expect(line).toHaveTextContent("update available"));
+    expect(line).toHaveTextContent("1.6.0");
+    expect(within(line).getByRole("link", { name: "Open Updates" })).toHaveAttribute(
+      "href",
+      "/admin/updates"
+    );
+    // everything else about updates is on the Updates page only
+    expect(screen.queryByText("Automatic updates")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Update now|Check now/ })).toBeNull();
+  });
+
+  it("SAB-05: on a joined machine, the line is that machine's: behind, and the release it catches up to", async () => {
+    aboutGets({
+      "/api/system/version": { ...VERSION, role: "node", node_id: "pc" },
+      "/api/cluster/updates": overview({
+        current_version: "1.6.0",
+        watermark: "1.6.0",
+        plan: { held: false, stepping_stone: false, auto_install: true, due: false },
+        machines: [
+          { id: "home", name: "home", role: "home", version: "1.6.0", state: "up_to_date" },
+          {
+            id: "pc",
+            name: "windows-pc",
+            role: "node",
+            version: "1.5.0",
+            state: "behind",
+            next: { version: "1.6.0", reason: "catch_up_window", at: "2026-10-22T07:00:00Z" },
+          },
+        ],
+      }),
     });
-    let posted!: (v: unknown) => void;
-    post.mockReturnValue(new Promise((r) => (posted = r)));
-    renderSettings("/settings/about", { user: adminUser });
-    await user.click(await screen.findByRole("button", { name: "Update now" }));
-    expect(post).toHaveBeenCalledTimes(1);
-    expect(post).toHaveBeenCalledWith("/api/admin/system/update", { confirm: true });
-    expect(screen.getByRole("button", { name: "Downloading…" })).toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent("Downloading…");
-    await act(async () => posted({}));
-    expect(screen.getByRole("status")).toHaveTextContent("Restarting…");
-    await tick(2000);
-    await tick(2000);
-    expect(screen.queryByText(/Updated\./)).not.toBeInTheDocument();
-    await tick(2000);
-    expect(await screen.findByText("Updated. Now running 1.6.0.")).toBeInTheDocument();
-    expect(metaValue("Current version")).toHaveTextContent("1.6.0");
-    expect(screen.queryByRole("button", { name: /Update now|Restarting/ })).not.toBeInTheDocument();
+    renderSettings("/settings/about");
+    const line = await screen.findByTestId("about-update-status");
+    await waitFor(() => expect(line).toHaveTextContent("behind"));
+    expect(line).toHaveTextContent("1.6.0");
+    expect(await screen.findByTestId("about-machine")).toHaveTextContent("A machine of Studio");
   });
 
-  it("SAB-10: an update whose version never changes is reported as rolled back", async () => {
-    const user = fakeClock();
-    mockGets({ "/api/system/updates": AVAILABLE, "/api/system/version": VERSION });
-    post.mockResolvedValue({});
-    renderSettings("/settings/about", { user: adminUser });
-    await user.click(await screen.findByRole("button", { name: "Update now" }));
-    await tick(62_000);
-    expect(await screen.findByText("Update failed and was rolled back.")).toBeInTheDocument();
-    expect(screen.queryByText(/Updated\. Now running/)).not.toBeInTheDocument();
-    expect(metaValue("Current version")).toHaveTextContent("1.5.0");
-  });
-
-  it("SAB-10: with no version at load, polling waits for a version other than the installed one", async () => {
-    const user = fakeClock();
-    mockGets({
-      "/api/system/updates": AVAILABLE,
-      "/api/system/version": versionAnswers(
-        new Error("down"),
-        { version: "1.5.0" },
-        { version: "1.6.0" }
-      ),
-    });
-    post.mockResolvedValue({});
-    renderSettings("/settings/about", { user: adminUser });
-    await user.click(await screen.findByRole("button", { name: "Update now" }));
-    await tick(2000);
-    expect(screen.queryByText(/Updated\./)).not.toBeInTheDocument();
-    await tick(2000);
-    expect(await screen.findByText("Updated. Now running 1.6.0.")).toBeInTheDocument();
-  });
-
-  it("SAB-11: a failed Update now (500 / 403 / network) can be tried again", async () => {
+  it("SAB-07: Copy version info copies the version, build and machine", async () => {
+    aboutGets();
+    const writeText = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
-    mockGets({ "/api/system/updates": AVAILABLE });
-    renderSettings("/settings/about", { user: adminUser });
-    const fails = [
-      problem(500, "Internal Server Error"),
-      problem(403, "Forbidden"),
-      new TypeError("Failed to fetch"),
-    ];
-    for (const err of fails) {
-      post.mockRejectedValueOnce(err);
-      await user.click(await screen.findByRole("button", { name: "Update now" }));
-      expect(await screen.findByText("Update failed.")).toHaveClass("mkt-error");
-      expect(screen.getByRole("button", { name: "Update now" })).toBeEnabled();
-    }
-    expect(post).toHaveBeenCalledTimes(3);
-  });
-
-  it("SAB-12: a Docker / package install 409 shows the instruction, no polling", async () => {
-    const user = userEvent.setup();
-    mockGets({ "/api/system/updates": AVAILABLE });
-    // [the 409's fields, the Docker instruction shown, the reason the update cannot start]
-    const runs: [Record<string, unknown>, string | null, string | null][] = [
-      [
-        { instructions: "docker compose pull && docker compose up -d" },
-        "docker compose pull && docker compose up -d",
-        null,
-      ],
-      // a blocked update is not a Docker install: its reason, in the page's words
-      [
-        { code: "recent_crash", detail: "an update cannot start now: recent_crash" },
-        null,
-        "The update can't start now: a part of the home's server crashed in the last ten minutes.",
-      ],
-      // a reason this page has no words for: the server's
-      [
-        { code: "something_new", detail: "an update cannot start now: something_new" },
-        null,
-        "The update can't start now: an update cannot start now: something_new.",
-      ],
-      [{}, null, null],
-    ];
-    for (const [extra, hint, blocked] of runs) {
-      get.mockClear();
-      post.mockRejectedValueOnce(problem(409, "Conflict", extra));
-      const { unmount } = renderSettings("/settings/about", { user: adminUser });
-      await user.click(await screen.findByRole("button", { name: "Update now" }));
-      if (hint) {
-        expect(await screen.findByText("This is a Docker install. Run:")).toBeInTheDocument();
-        expect(screen.getByText(hint).tagName).toBe("PRE");
-        expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
-        expect(screen.queryByText("Update failed.")).not.toBeInTheDocument();
-      } else if (blocked) {
-        expect(await screen.findByText(blocked)).toBeInTheDocument();
-        expect(screen.queryByText("This is a Docker install. Run:")).not.toBeInTheDocument();
-        expect(screen.queryByText("Update failed.")).not.toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "Update now" })).toBeEnabled();
-      } else {
-        expect(await screen.findByText("Update failed.")).toBeInTheDocument();
-      }
-      expect(getPaths().filter((p) => p === "/api/system/version")).toHaveLength(1);
-      unmount();
-    }
-  });
-
-  it("SAB-13: leaving the tab stops the polling", async () => {
-    const user = fakeClock();
-    mockGets({ "/api/system/updates": AVAILABLE, "/api/system/version": VERSION });
-    post.mockResolvedValue({});
-    renderSettings("/settings/about", { user: adminUser });
-    await user.click(await screen.findByRole("button", { name: "Update now" }));
-    await tick(4000);
-    await user.click(screen.getByRole("link", { name: "Account" }));
-    const polls = () => getPaths().filter((p) => p === "/api/system/version").length;
-    const before = polls();
-    await tick(60_000);
-    expect(polls()).toBeLessThanOrEqual(before + 1);
-    await user.click(screen.getByRole("link", { name: "About" }));
-    expect(await screen.findByRole("button", { name: "Update now" })).toBeEnabled();
-    expect(screen.queryByText("Restarting…")).not.toBeInTheDocument();
+    // after userEvent's setup, which puts its own clipboard in place
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    vi.stubGlobal("isSecureContext", true);
+    renderSettings("/settings/about");
+    await screen.findByTestId("about-commit");
+    await user.click(screen.getByRole("button", { name: "Copy version info" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    const text = String(writeText.mock.calls[0]?.[0]);
+    expect(text).toContain("Maktaba: 1.5.0");
+    expect(text).toContain("Commit: abcdef1234567890");
+    expect(text).toContain("Machine: home");
+    expect(await screen.findByText("Version info copied.")).toBeInTheDocument();
   });
 
   it("SAB-21: a signed-out deep link redirects to /login with no update calls", () => {
     renderSettings("/settings/about", { user: null });
-    expect(screen.getByText("login page (from /settings/about)")).toBeInTheDocument();
-    expect(get).not.toHaveBeenCalled();
-  });
-
-  it("SAB-22: a render crash shows the route error fallback; Back works", async () => {
-    const user = userEvent.setup();
-    quietCrash();
-    mockGets({ "/api/system/updates": { ...AVAILABLE, release_notes: { md: "x" } } });
-    renderSettings("/settings/models", { user: memberUser });
-    await screen.findByRole("heading", { name: "Model Management" });
-    await user.click(screen.getByRole("link", { name: "About" }));
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "go back" }));
-    expect(await screen.findByRole("heading", { name: "Model Management" })).toBeInTheDocument();
-    await user.click(screen.getByRole("link", { name: "go elsewhere" }));
-    expect(screen.getByText("elsewhere")).toBeInTheDocument();
+    expect(getPaths().filter((p) => p.includes("updates"))).toEqual([]);
   });
 
   it("SAB-23: Arabic: RTL, Arabic strings, versions left as they are", async () => {
+    aboutGets();
     localStorage.setItem("mkt:locale", "ar");
-    mockGets({ "/api/system/updates": AVAILABLE, "/api/cluster/updates": overview() });
-    renderSettings("/settings/about", { user: adminUser });
-    expect(document.documentElement).toHaveAttribute("dir", "rtl");
-    expect(await screen.findByText("يتوفر تحديث: 1.6.0")).toBeInTheDocument();
-    expect(metaValue("الإصدار الحالي")).toHaveTextContent("1.5.0");
-    expect(metaValue("قناة التحديث")).toHaveTextContent("مستقر");
-    expect(screen.getByRole("button", { name: "تحقق الآن" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "حدّث الآن" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "التحديثات التلقائية" })).toBeInTheDocument();
-    const at = new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium", timeStyle: "short" }).format(
-      new Date(AVAILABLE.checked_at)
-    );
-    expect(screen.getByText(at)).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/\bupdates?\.[a-z]+\./);
-  });
-
-  it("SAB-25: labelled regions, inputs and live phase texts", async () => {
-    const user = userEvent.setup();
-    mockGets({ "/api/system/updates": AVAILABLE, "/api/cluster/updates": overview() });
-    post.mockReturnValue(new Promise(() => {}));
-    renderSettings("/settings/about", { user: adminUser });
-    expect(await screen.findByRole("region", { name: "Updates" })).toBeInTheDocument();
-    const auto = await screen.findByRole("region", { name: "Automatic updates" });
-    expect(
-      within(auto).getByRole("switch", { name: /Install updates automatically/ })
-    ).toBeInTheDocument();
-    expect(within(auto).getByRole("combobox", { name: "Release channel" })).toBeInTheDocument();
-    expect(within(auto).getAllByRole("textbox")).toHaveLength(3);
-    for (const tb of within(auto).getAllByRole("textbox")) expect(tb).toHaveAccessibleName();
-    await user.click(screen.getByRole("button", { name: "Update now" }));
-    expect(screen.getByRole("status")).toHaveTextContent("Downloading…");
+    renderSettings("/settings/about");
+    expect(await screen.findByRole("heading", { level: 2, name: "مكتبة" })).toBeInTheDocument();
+    expect(document.documentElement.dir).toBe("rtl");
+    const line = await screen.findByTestId("about-update-status");
+    await waitFor(() => expect(line).toHaveTextContent("يتوفر تحديث"));
+    expect(within(line).getByText("1.6.0")).toHaveAttribute("dir", "ltr");
+    expect(screen.getByTestId("about-version")).toHaveAttribute("dir", "ltr");
+    expect(screen.getByRole("heading", { name: "شكر وتقدير" })).toBeInTheDocument();
   });
 });
