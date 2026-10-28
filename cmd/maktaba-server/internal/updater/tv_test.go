@@ -180,6 +180,24 @@ func TestTVStepHeldCommits(t *testing.T) {
 	}
 }
 
+// The update to 0.3.39 (2026-10-28): the live slot, started unbound by the app's restart,
+// ran 0.3.39's binary already when the check failed. The step says so rather than "the TV
+// stays on" the release it installs.
+func TestTVStepHeldOnThisReleaseSaysSo(t *testing.T) {
+	tv := &fakeTV{script: []TVStatus{{Outcome: TVHeld, ChangeID: "c1", Number: 54, State: "draft",
+		Reason: "verify_failed", Failed: []string{"ts.conformity"}, LiveStreaming: "v1.5.0"}}}
+	n, w := appliedRig(t, tv, nil)
+	j := n.waitState(StateCommitted)
+	if w.committed != "1.5.0" || j.TV == nil || j.TV.Outcome != TVHeld {
+		t.Fatalf("committed %q tv %+v", w.committed, j.TV)
+	}
+	s := stepOf(j, StepTV)
+	if s == nil || s.State != "held" || strings.Contains(s.Detail, "stays on") ||
+		!strings.Contains(s.Detail, "the live TV runs v1.5.0's streaming software already") {
+		t.Fatalf("tv step %+v", s)
+	}
+}
+
 // TC4: queued behind a change waiting for an approval past the window's end:
 // tv_change_pending (the driver retries it next window).
 func TestTVStepPendingApprovalTimesOut(t *testing.T) {

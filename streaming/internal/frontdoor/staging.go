@@ -91,6 +91,18 @@ type ChannelProbe struct {
 	FirstSegmentAfter float64 `json:"first_segment_after,omitempty"`
 }
 
+// settled reports a sample with nothing failed and nothing of the staging stream
+// itself still pending (splice.*, which waits on live's window, may be): one a rolling
+// probe may end on.
+func (cp *ChannelProbe) settled() bool {
+	for _, r := range cp.Results {
+		if r.Result == verify.Fail || (r.Result == verify.Pending && !strings.HasPrefix(r.Check, "splice.")) {
+			return false
+		}
+	}
+	return true
+}
+
 // WarmEntry is one channel of the staging warm set.
 type WarmEntry struct {
 	Channel string    `json:"channel"`
@@ -463,13 +475,16 @@ func (s *Slots) syncStaging(ctx context.Context, staging string, epoch int64, ca
 	sort.Slice(previews, func(i, j int) bool { return previews[i].String() < previews[j].String() })
 	s.mu.Lock()
 	// a rolling channel is done once it aired for probe_seconds and a sample
-	// measured enough of it (min(probe_seconds, 10 s) of segments, less one)
+	// measured enough of it (min(probe_seconds, 10 s) of segments, less one), with
+	// nothing failed or pending in it: its last sample is its final word, so one that
+	// failed is measured again (the API fails it on a second fail in a row; TV change
+	// #54 failed on one live.ts read cut short at a station's start, never re-read)
 	probeFor := time.Duration(maxInt(plan.ProbeSeconds, 5)) * time.Second
 	enough := minInt(int(probeFor/time.Second), sampleSeconds) - maxInt(run.expect.Segment, 1)
 	for id, at := range run.since {
 		cp := run.samples[id]
 		if _, ok := run.firstSeg[id]; ok && now.Sub(at) >= probeFor && cp != nil && cp.Staging != nil &&
-			cp.Staging.TS.Duration >= float64(enough) {
+			cp.Staging.TS.Duration >= float64(enough) && cp.settled() {
 			run.probed[id] = true
 		}
 	}
@@ -730,9 +745,27 @@ func (s *Slots) sample(ctx context.Context, name string, id uuid.UUID, n int, no
 // streamSampleFor is how much of a staging channel's live.ts a sample reads.
 const streamSampleFor = 3 * time.Second
 
-// sampleStream reads d of a slot's live.ts of a channel (the HDHomeRun path).
+// streamJoinWait is how long a live.ts read waits for its first byte (a station
+// starting); streamPSIWait how much longer than the sample it reads on for the first
+// PAT and PMT (a read that joined between them, or a station restarting under it).
+const (
+	streamJoinWait = 3 * time.Second
+	streamPSIWait  = 3 * time.Second
+)
+
+// sampleStream reads d of a slot's live.ts of a channel (the HDHomeRun path), from its
+// first byte and on until its first PAT and PMT, within streamPSIWait more: a read
+// that never saw them over that long is a stream without them (ts.conformity fails),
+// one cut short is too short to judge (verify.LiveTSJudged: measured again).
 func (s *Slots) sampleStream(ctx context.Context, base string, id uuid.UUID, d time.Duration, now time.Time) verify.TSReport {
-	sctx, cancel := context.WithTimeout(ctx, d+3*time.Second)
+	psiWait, joinWait := streamPSIWait, streamJoinWait
+	if s.StreamPSIWait > 0 {
+		psiWait = s.StreamPSIWait
+	}
+	if s.StreamJoinWait > 0 {
+		joinWait = s.StreamJoinWait
+	}
+	sctx, cancel := context.WithTimeout(ctx, d+joinWait+psiWait)
 	defer cancel()
 	req, err := http.NewRequestWithContext(sctx, http.MethodGet, base+"/stream/channel/"+id.String()+"/live.ts", nil)
 	if err != nil {
@@ -747,10 +780,14 @@ func (s *Slots) sampleStream(ctx context.Context, base string, id uuid.UUID, d t
 		return verify.TSReport{}
 	}
 	var buf bytes.Buffer
+	var psi verify.PSIScan
 	deadline := time.Now().Add(d)
 	chunk := make([]byte, 64<<10)
-	started := false
-	for time.Now().Before(deadline) || !started {
+	started, havePSI := false, false
+	for {
+		if t := time.Now(); started && !t.Before(deadline) && (havePSI || !t.Before(deadline.Add(psiWait))) {
+			break
+		}
 		n, err := resp.Body.Read(chunk)
 		if n > 0 {
 			if !started {
@@ -758,6 +795,9 @@ func (s *Slots) sampleStream(ctx context.Context, base string, id uuid.UUID, d t
 				deadline = time.Now().Add(d)
 			}
 			buf.Write(chunk[:n])
+			if !havePSI {
+				havePSI = psi.Feed(chunk[:n])
+			}
 		}
 		if err != nil || buf.Len() > 16<<20 {
 			break
