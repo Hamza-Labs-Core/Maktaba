@@ -92,6 +92,10 @@ func (b Bundle) Restore(ctx context.Context, dump string, opts RestoreOptions, l
 // a dump does not hold, are put back at the end); the schema, the grants and the default
 // privileges go in one worker at a time, the rows, the chunks and the indexes in parallel.
 func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts RestoreOptions, log io.Writer) error {
+	// a damaged dump is refused before the database is touched
+	if err := CheckCounts(dump); err != nil {
+		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
+	}
 	grants, err := b.databaseGrants(ctx, q)
 	if err != nil {
 		return err

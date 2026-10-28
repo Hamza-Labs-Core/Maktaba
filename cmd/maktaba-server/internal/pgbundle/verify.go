@@ -12,7 +12,9 @@ package pgbundle
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -138,17 +140,38 @@ func (m *Missing) add(kind, name string) {
 func (m *Missing) empty() bool { return len(m.Items) == 0 && len(m.Rows) == 0 }
 
 // DumpCounts are the rows every table held when the dump was taken (its CountsFile; nil
-// when it has none).
+// when it has none, or it cannot be read: CheckCounts says so).
 func DumpCounts(dump string) map[string]int64 {
+	c, _ := readCounts(dump)
+	return c
+}
+
+// readCounts reads the dump's CountsFile: nil and no error when it has none (a dump from
+// before them, a single-file dump), an error when it is there but cut or unreadable.
+func readCounts(dump string) (map[string]int64, error) {
+	if st, err := os.Stat(dump); err != nil || !st.IsDir() {
+		return nil, nil // a single-file dump (or none: the restore says so)
+	}
 	b, err := os.ReadFile(filepath.Join(dump, CountsFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("the dump's %s cannot be read: %w", CountsFile, err)
 	}
 	var c map[string]int64
-	if json.Unmarshal(b, &c) != nil {
-		return nil
+	if err := json.Unmarshal(b, &c); err != nil {
+		return nil, fmt.Errorf("the dump's %s is damaged (%v): the dump is not whole", CountsFile, err)
 	}
-	return c
+	return c, nil
+}
+
+// CheckCounts refuses a dump whose CountsFile is there but damaged, before a restore
+// changes anything: a dump cut or damaged in one file may be in others, and its rows could
+// not be checked.
+func CheckCounts(dump string) error {
+	_, err := readCounts(dump)
+	return err
 }
 
 // chunkHeader is the size of an empty binary COPY: its signature, flags, header extension
@@ -231,7 +254,7 @@ func VerifyRestore(ctx context.Context, dump, list string, query QueryFunc) erro
 	wantFns, wantFnACLs := map[string]int{}, map[string]int{}
 	var dataTables []string
 	for _, e := range ParseTOC(list) {
-		if e.Schema != "public" && !(e.Desc == "ACL" && e.Schema == "-") && e.Desc != "DEFAULT ACL" {
+		if e.Schema != "public" && (e.Desc != "ACL" || e.Schema != "-") && e.Desc != "DEFAULT ACL" {
 			continue
 		}
 		switch e.Desc {
@@ -324,7 +347,10 @@ func VerifyRestore(ctx context.Context, dump, list string, query QueryFunc) erro
 // verifyRows checks every table's rows against the dump's counts; a dump without them: the
 // chunked tables hold rows when their chunks do (the outage's empty segment_embeddings).
 func verifyRows(ctx context.Context, dump string, dataTables []string, query QueryFunc, m *Missing) error {
-	counts := DumpCounts(dump)
+	counts, err := readCounts(dump)
+	if err != nil {
+		return err
+	}
 	want := map[string]int64{}
 	if counts != nil {
 		for _, t := range dataTables {
@@ -368,8 +394,8 @@ func verifyRows(ctx context.Context, dump string, dataTables []string, query Que
 			sb.WriteString(" UNION ALL ")
 		}
 		schema, name, _ := strings.Cut(t, ".")
-		sb.WriteString(fmt.Sprintf(`SELECT '%s|' || count(*) FROM %s.%s`, strings.ReplaceAll(t, "'", "''"),
-			quoteIdent(schema), quoteIdent(name)))
+		fmt.Fprintf(&sb, `SELECT '%s|' || count(*) FROM %s.%s`, strings.ReplaceAll(t, "'", "''"),
+			quoteIdent(schema), quoteIdent(name))
 	}
 	rows, err := query(ctx, sb.String())
 	if err != nil {

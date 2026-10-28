@@ -537,6 +537,10 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 	if _, err := os.Stat(dump); err != nil {
 		return err
 	}
+	// a damaged dump is refused before the database is touched
+	if err := pgbundle.CheckCounts(dump); err != nil {
+		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
+	}
 	d, err := t.open(ctx, "")
 	if err != nil {
 		return err
