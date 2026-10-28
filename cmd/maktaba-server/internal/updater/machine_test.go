@@ -473,24 +473,23 @@ func TestWatchUnhealthyRollsBackAndRestoresTheDump(t *testing.T) {
 	}
 }
 
-// slowDump is a rehearser whose dump of the failed state takes until it is let go (a
-// large database's: 33 GB took longer than a quarter of an hour on 2026-10-27).
-type slowDump struct {
+// noDumpAside is a rehearser that fails the test if a rollback dumps the failed state.
+type noDumpAside struct {
 	fakeRehearser
-	dumping, done chan struct{}
+	t *testing.T
 }
 
-func (s *slowDump) DumpAside(context.Context, string) (string, error) {
-	close(s.dumping)
-	<-s.done
-	return "/fake/failed.dump", nil
+func (n *noDumpAside) DumpAside(context.Context, string) (string, error) {
+	n.t.Error("a rollback dumped the failed state aside")
+	return "", nil
 }
 
-// A rollback keeps the launcher's guard ahead of it while it dumps the failed state
-// aside: a guard left to its deadline made the launcher stop the server in the middle of
-// the dump and switch back by itself (launcher_pending_timeout, 2026-10-27). The switch
-// back still comes once the dump is done.
-func TestRollbackKeepsTheGuardWhileItDumpsAside(t *testing.T) {
+// A rollback dumps nothing before it switches back (the pre-update backup is what puts
+// the database back; on 2026-10-27 a quarter-hour dump of the failed state let the
+// launcher's guard run out and it stopped the server mid-dump), and nothing pushes the
+// launcher's guard once it has switched back (that would write back the guard the switch
+// back cleared).
+func TestRollbackDumpsNothingAndLeavesTheGuardAfterItsSwitchBack(t *testing.T) {
 	w := newWorld("1.4.0")
 	r := startRig(t, t.TempDir(), w, healthy)
 	_ = r.m.Prepare(homeJob())
@@ -500,41 +499,13 @@ func TestRollbackKeepsTheGuardWhileItDumpsAside(t *testing.T) {
 	w.migrated = true
 	r.stop()
 	n := startRig(t, r.dir, w, Verdict{Fatal: true, Why: "failed_tv"})
-	dump := &slowDump{dumping: make(chan struct{}), done: make(chan struct{})}
-	n.m.Rehearser = dump
+	n.m.Rehearser = &noDumpAside{t: t}
 	n.m.Resume()
-	select {
-	case <-dump.dumping:
-	case <-time.After(5 * time.Second):
-		t.Fatal("no dump of the failed state")
-	}
-	w.mu.Lock()
-	before := w.extends
-	w.mu.Unlock()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		w.mu.Lock()
-		pushed := w.extends - before
-		w.mu.Unlock()
-		if pushed >= 3 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the guard was pushed %d times during the dump", pushed)
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
-	if w.called("revert") {
-		t.Fatal("switched back before the dump was done")
-	}
-	close(dump.done)
 	n.waitExit()
 	n.waitState(StateRollingBack)
-	if !w.marked || w.next != "1.4.0" {
-		t.Fatalf("marked %v next %s", w.marked, w.next)
+	if !w.called("revert") || !w.marked || w.next != "1.4.0" {
+		t.Fatalf("revert %v marked %v next %s", w.called("revert"), w.marked, w.next)
 	}
-	// nothing pushes the guard once switched back (it would write back the guard the
-	// switch back cleared)
 	w.mu.Lock()
 	after := w.extends
 	w.mu.Unlock()

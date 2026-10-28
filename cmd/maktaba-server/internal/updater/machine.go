@@ -1368,10 +1368,11 @@ func (m *Machine) rollback(reason string) {
 	_ = m.mutate(func(j *Journal) { j.State, j.Reason, j.Rollbacks = StateRollingBack, reason, j.Rollbacks+1 })
 	_ = m.beginStep(StepRollback)
 	m.warnf("rolling back %s to %s: %s", j.Job.Version, orNone(j.From), reason)
-	// the launcher's guard is kept ahead of the rollback until its switch back: the dump
-	// of the failed state below takes as long as the database is large (a quarter of an
-	// hour for 33 GB), and a guard whose deadline passed meanwhile made the launcher stop
-	// this server in the middle of it and switch back by itself (2026-10-27)
+	// the launcher's guard is kept ahead of the rollback until its switch back (taking the
+	// TV change back may take its retries): a guard whose deadline passed during a
+	// rollback made the launcher stop this server and switch back by itself (2026-10-27,
+	// then in the middle of a quarter-hour dump of the failed state, a dump no rollback
+	// takes any more)
 	stopKeeping := m.keepGuard()
 	// the TV first (story 35.6 AC8): its change cancelled, or rolled back on the air
 	m.withdrawTV(reason)
