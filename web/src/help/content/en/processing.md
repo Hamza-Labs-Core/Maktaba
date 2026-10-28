@@ -73,6 +73,18 @@ Click an item's name anywhere (in Needs attention, Next up, the log) to open its
 
 **Reports** lists the pages the pipeline writes: **Channel plan**, **Plan preview**, **Channel audit**, **Library review pages** and **Other reports**. Pick one to read it on the page, or **Open in a new tab**. An admin can press **Preview channels** to plan the channels with the saved settings without writing anything, and **Show the stored plan** to see the last real plan.
 
+### Keep libraries offline, in MP4 and without duplicates {#offline}
+
+Each library row of the Queues page has a menu, in the order a video goes through: **Refresh from YouTube** (list the library's channels and playlists and download what is new), **Convert to MP4** and **Find duplicates**, plus **YouTube sources…** to add a channel or playlist by its URL, set its mode (new uploads and the back catalogue, new uploads only, or off) and its download options, retry what was gone or skipped, resume the back catalogue or import a Tartube database. **With selected** runs the first three for the ticked rows. A conversion or a duplicate search starts as a dry run: it writes its plan to the job and touches no file. The **YouTube**, **Not MP4** and **Duplicates** columns say where each library stands, and **Where each item is** shows each video's download, conversion and duplicate check, with the job's own **Cancel** and **Retry**.
+
+### Duplicates {#duplicates}
+
+**Duplicates** lists the groups of files that are the same video, with each file's path, size, resolution, codec and who watched it. Choose the file to keep and press **Apply**: the kept file takes the others' watch history, playlists, favourites and transcripts, and the other files go to the library's trash for 30 days. **Dismiss** a group that is not a duplicate; it does not come back. Identical files in one library merge by themselves; **Apply all identical** approves those still open.
+
+### File actions {#file-actions}
+
+**File actions** is the record of every file Maktaba converted, merged, downloaded, restored or purged, with what its check measured when it failed. A replaced file waits in its library's trash (`.maktaba/trash`) until its purge date, and **Restore** puts it back until then. The trash of each library, its size and its next purge are at the top; the trash is emptied once a day of what is past its date.
+
 ## What the states and messages mean {#states}
 
 ### Queue states {#queue-states}

@@ -14,6 +14,7 @@ import type {
   HealthSeries,
   JobRef,
   LibraryQueueRow,
+  OfflineSummary,
 } from "../../lib/queueApi";
 import { runMachine, useJobStream, useQueuesSnapshot, useWorkers } from "../../lib/useQueueStream";
 import { ActivityLog } from "../../components/queue/ActivityLog";
@@ -32,6 +33,12 @@ import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { WorkersStrip } from "../../components/queue/WorkersStrip";
 import { QueueHeader, overallState } from "../../components/queue/QueueHeader";
 import { RetriggerDialog, type RetriggerSubject } from "../../components/queue/RetriggerDialog";
+import {
+  OfflineActionDialog,
+  type OfflineActionTarget,
+} from "../../components/queue/OfflineActionDialog";
+import { OfflineItemsPanel } from "../../components/queue/OfflineItemsPanel";
+import { YouTubeSourcesDialog } from "../../components/queue/YouTubeSourcesDialog";
 import { useAction } from "../../components/queue/useAction";
 import { useThrottledReload } from "../../components/queue/useThrottledReload";
 import { safeGroups, safeLibraries, safeSnapshot } from "./safeData";
@@ -51,6 +58,12 @@ export function QueueOverview() {
   const admin = useIsAdmin();
   const [issues, setIssues] = useState<FailureGroup[]>([]);
   const [libraries, setLibraries] = useState<LibraryQueueRow[]>([]);
+  // Epic 47: the libraries' offline columns, and the dialogs of their actions (admins)
+  const [offline, setOffline] = useState<Record<string, OfflineSummary> | undefined>(undefined);
+  const [offlineAction, setOfflineAction] = useState<OfflineActionTarget | null>(null);
+  const [sourcesOf, setSourcesOf] = useState<{ id: string; name: string } | null>(null);
+  // bumps after an action here, so "Where each item is" shows what was just queued
+  const [itemsBump, setItemsBump] = useState(0);
   const [extensions, setExtensions] = useState<Extension[] | null>(null);
   // an older /api/workers without the key leaves undefined: treat as unknown
   const workers = useWorkers() ?? null;
@@ -73,10 +86,22 @@ export function QueueOverview() {
       .catch(() => {});
   }, []);
 
+  const loadOffline = useCallback(() => {
+    if (!admin) return;
+    queueApi
+      .offlineSummaries()
+      .then((r) => {
+        if (!Array.isArray(r?.items)) return;
+        setOffline(Object.fromEntries(r.items.map((s) => [s.library_id, s])));
+      })
+      .catch(() => {});
+  }, [admin]);
+
   useEffect(() => {
     loadIssues();
     loadLibraries();
-  }, [loadIssues, loadLibraries]);
+    loadOffline();
+  }, [loadIssues, loadLibraries, loadOffline]);
 
   useEffect(() => {
     queueApi
@@ -116,6 +141,7 @@ export function QueueOverview() {
 
   useThrottledReload(loadIssues, stream.finishedTick);
   useThrottledReload(loadLibraries, stream.finishedTick, 15_000);
+  useThrottledReload(loadOffline, stream.finishedTick, 15_000);
   useEffect(() => {
     if (snapshot) loadIssues();
   }, [snapshot?.issues_count]);
@@ -155,6 +181,8 @@ export function QueueOverview() {
     reload();
     loadIssues();
     loadLibraries();
+    loadOffline();
+    setItemsBump((b) => b + 1);
   };
 
   const onRetry = (g: FailureGroup) =>
@@ -289,7 +317,24 @@ export function QueueOverview() {
         </section>
       </div>
 
-      <LibrariesTable rows={libraries} stages={snapshot.stages} onRequeue={openDialog} />
+      <LibrariesTable
+        rows={libraries}
+        stages={snapshot.stages}
+        onRequeue={openDialog}
+        offline={admin ? offline : undefined}
+        onOffline={
+          admin
+            ? (a, rows) =>
+                setOfflineAction({
+                  action: a,
+                  libraries: rows.map((r) => ({ id: r.library_id, name: r.name })),
+                })
+            : undefined
+        }
+        onSources={admin ? (r) => setSourcesOf({ id: r.library_id, name: r.name }) : undefined}
+      />
+
+      {admin && <OfflineItemsPanel tick={stream.finishedTick + itemsBump} />}
 
       <div className="mkt-q-cols">
         <div className="mkt-q-panel">
@@ -299,6 +344,17 @@ export function QueueOverview() {
           <StylePanel libraries={libraries} canEdit={admin} />
         </div>
       </div>
+
+      <OfflineActionDialog
+        target={offlineAction}
+        onClose={() => setOfflineAction(null)}
+        onDone={refreshAfter}
+      />
+      <YouTubeSourcesDialog
+        library={sourcesOf}
+        onClose={() => setSourcesOf(null)}
+        onChanged={loadOffline}
+      />
 
       <RetriggerDialog
         open={dialog.open}

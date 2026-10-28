@@ -198,6 +198,230 @@ export interface FailureItem {
     host: string | null;
     checked_at: string;
   } | null;
+  /** Epic 47: the ledger row the failed job wrote (absent on older servers) */
+  file_action?: { id: string; kind: string; state: string; restorable: boolean } | null;
+}
+
+// ---------- Epic 47: offline, MP4, no duplicates ----------
+
+export interface LibraryActionResult {
+  library_id: string;
+  job_id: number | null;
+  outcome: EnqueueOutcome;
+}
+
+export interface LibraryActionResponse {
+  stage: string;
+  results: LibraryActionResult[];
+  enqueued: number;
+  coalesced: number;
+  skipped: number;
+}
+
+export interface SourceProblem {
+  source_id: string;
+  kind: string;
+  url: string;
+  status: string;
+  error: string | null;
+}
+
+export interface OfflineSummary {
+  library_id: string;
+  name: string;
+  youtube: {
+    sources: number;
+    sources_on: number;
+    wanted: number;
+    backfill: number;
+    downloading: number;
+    downloaded: number;
+    failed: number;
+    skipped: number;
+    gone: number;
+    last_refresh: string | null;
+    last_fetched: string | null;
+    problems: SourceProblem[];
+  };
+  not_mp4: number;
+  converting: number;
+  duplicates: number;
+  trash: { entries: number; bytes: number; next_purge_at: string | null };
+}
+
+export type SourceMode = "off" | "new_and_backfill" | "new_only";
+export const SOURCE_MODES: SourceMode[] = ["new_and_backfill", "new_only", "off"];
+
+export interface SourceOptions {
+  max_height?: number;
+  sub_langs?: string;
+  auto_subs?: boolean;
+  audio_only?: boolean;
+  cookies_from_browser?: string;
+  limit_rate?: string;
+}
+
+export interface YouTubeSource {
+  id: string;
+  library_id: string;
+  kind: "channel" | "playlist";
+  url: string;
+  external_id: string;
+  folder: string | null;
+  mode: SourceMode;
+  added_at: string | null;
+  options: SourceOptions;
+  status: string | null;
+  error: string | null;
+  last_checked_at: string | null;
+  last_fetched_at: string | null;
+  downloads: {
+    wanted: number;
+    backfill: number;
+    downloading: number;
+    done: number;
+    failed: number;
+    skipped: number;
+    gone: number;
+  };
+}
+
+export interface SourceWriteResponse {
+  source: YouTubeSource;
+  refresh: LibraryActionResult | null;
+}
+
+export type DownloadState = "wanted" | "downloading" | "done" | "skipped" | "gone" | "failed";
+
+export interface YouTubeDownload {
+  library_id: string;
+  library_name: string;
+  youtube_id: string;
+  source_id: string | null;
+  state: DownloadState;
+  backfill: boolean;
+  reason: string | null;
+  failure_class: string | null;
+  error: string | null;
+  attempts: number;
+  video_id: string | null;
+  upload_date: string | null;
+  requested_at: string | null;
+  done_at: string | null;
+  not_before: string | null;
+}
+
+export type FileActionKind = "convert" | "dedup" | "youtube_fetch" | "purge" | "restore";
+export const FILE_ACTION_KINDS: FileActionKind[] = [
+  "convert",
+  "dedup",
+  "youtube_fetch",
+  "restore",
+  "purge",
+];
+export type FileActionState =
+  | "planned"
+  | "staged"
+  | "verified"
+  | "swapped"
+  | "done"
+  | "rolled_back"
+  | "failed";
+export const FILE_ACTION_STATES: FileActionState[] = [
+  "done",
+  "failed",
+  "rolled_back",
+  "planned",
+  "staged",
+  "verified",
+  "swapped",
+];
+
+export interface FileAction {
+  id: string;
+  library_id: string;
+  library_name: string;
+  video_id: string | null;
+  video_title: string | null;
+  job_id: number | null;
+  kind: FileActionKind;
+  state: FileActionState;
+  old_path: string | null;
+  new_path: string | null;
+  trash_path: string | null;
+  old_size: number | null;
+  new_size: number | null;
+  verify: Record<string, unknown> | null;
+  error: string | null;
+  purge_after: string | null;
+  purged_at: string | null;
+  created_at: string;
+  updated_at: string;
+  restorable: boolean;
+  restore_queued: boolean;
+}
+
+export interface LibraryTrash {
+  library_id: string;
+  name: string;
+  entries: number;
+  bytes: number;
+  next_purge_at: string | null;
+  last_purge_at: string | null;
+}
+
+export interface FileActionFilter {
+  library_id?: string;
+  kind?: string;
+  state?: string;
+  restorable?: boolean;
+}
+
+export type OfflineStep = "download" | "convert" | "dedup" | "restore" | "purge";
+export const OFFLINE_STEPS: OfflineStep[] = ["download", "convert", "dedup", "restore", "purge"];
+
+export interface OfflineItem extends JobRef {
+  step: OfflineStep;
+  waiting_for_conversion: boolean;
+  downloading: string | null;
+  error: string | null;
+}
+
+export interface DuplicateMember {
+  video_id: string;
+  path: string;
+  is_copy: boolean;
+  score: Record<string, unknown> | null;
+  title: string | null;
+  library_id: string;
+  library_name: string;
+  size_bytes: number | null;
+  duration_sec: number | null;
+  width: number | null;
+  height: number | null;
+  video_codec: string | null;
+  container: string | null;
+  bitrate_kbps: number | null;
+  viewers: number;
+  completed: number;
+  last_watched: string | null;
+}
+
+export type DuplicateStatus = "open" | "applied" | "dismissed" | "failed";
+
+export interface DuplicateGroup {
+  id: string;
+  library_id: string | null;
+  library_name: string | null;
+  tier: "exact" | "same_video";
+  status: DuplicateStatus;
+  keeper_video_id: string | null;
+  reason: string | null;
+  created_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  job: JobRef | null;
+  members: DuplicateMember[];
 }
 
 export interface FacetCount {
@@ -732,4 +956,92 @@ export const queueApi = {
     ),
   failureAction: (req: FailureActionRequest) =>
     api.post<FailureActionResult>("/api/queues/failures/actions", req),
+
+  // ---- Epic 47 (admin; every call only queues work) ----
+  /** a job's own controls (the jobs API) */
+  cancelJob: (id: number) => api.post<unknown>(`/api/jobs/${id}/cancel`),
+  retryJob: (id: number) => api.post<unknown>(`/api/jobs/${id}/retry`),
+  offlineSummaries: () =>
+    api.get<{ items: OfflineSummary[]; cross_library_duplicates: number }>(
+      "/api/queues/offline-summary"
+    ),
+  /** id "all" with all: true runs it for every library */
+  convertLibrary: (id: string, body: { dry_run?: boolean; all?: boolean }) =>
+    api.post<LibraryActionResponse>(`/api/libraries/${q(id)}/convert`, body),
+  dedupScanLibrary: (id: string, body: { dry_run?: boolean; all?: boolean }) =>
+    api.post<LibraryActionResponse>(`/api/libraries/${q(id)}/dedup-scan`, body),
+  refreshYouTube: (
+    id: string,
+    body: { all?: boolean; full_listing?: boolean; refresh?: boolean }
+  ) => api.post<LibraryActionResponse>(`/api/libraries/${q(id)}/youtube/refresh`, body),
+  resumeBackfill: (id: string) =>
+    api.post<LibraryActionResponse>(`/api/libraries/${q(id)}/youtube/backfill`),
+  retryDownloads: (id: string, body: { states?: DownloadState[]; source_id?: string }) =>
+    api.post<{ wanted: number; new: number; backfill: number; results: LibraryActionResult[] }>(
+      `/api/libraries/${q(id)}/youtube/retry`,
+      body
+    ),
+  importTartube: (id: string, body: { path: string; database?: string; channels?: string[] }) =>
+    api.post<LibraryActionResponse>(`/api/libraries/${q(id)}/youtube/tartube`, body),
+  sources: (id: string) =>
+    api.get<{ items: YouTubeSource[] }>(`/api/libraries/${q(id)}/youtube/sources`),
+  addSource: (
+    id: string,
+    body: { url: string; mode?: SourceMode; folder?: string; options?: SourceOptions }
+  ) => api.post<SourceWriteResponse>(`/api/libraries/${q(id)}/youtube/sources`, body),
+  patchSource: (
+    id: string,
+    sid: string,
+    body: { mode?: SourceMode; folder?: string; options?: Record<string, unknown> }
+  ) => api.patch<SourceWriteResponse>(`/api/libraries/${q(id)}/youtube/sources/${q(sid)}`, body),
+  deleteSource: (id: string, sid: string) =>
+    api.delete<void>(`/api/libraries/${q(id)}/youtube/sources/${q(sid)}`),
+  youtubeDownloads: (p: {
+    library_id?: string;
+    source_id?: string;
+    state?: string;
+    cursor?: string | null;
+    limit?: number;
+  }) =>
+    api.get<{ items: YouTubeDownload[]; next: string | null }>(
+      `/api/queues/youtube-downloads${qs({ ...p })}`
+    ),
+  offlineItems: (p: {
+    library_id?: string;
+    step?: OfflineStep;
+    before?: string | null;
+    limit?: number;
+  }) =>
+    api.get<{ items: OfflineItem[]; next: string | null }>(
+      `/api/queues/offline-items${qs({ ...p })}`
+    ),
+  fileActions: (f: FileActionFilter, cursor?: string | null, limit = 50) =>
+    api.get<{ items: FileAction[]; next: string | null; trash: LibraryTrash[] }>(
+      `/api/queues/file-actions${qs({
+        library_id: f.library_id || undefined,
+        kind: f.kind || undefined,
+        state: f.state || undefined,
+        restorable: f.restorable ? "true" : undefined,
+        cursor: cursor ?? undefined,
+        limit,
+      })}`
+    ),
+  duplicates: (
+    p: { status?: string; tier?: string; library_id?: string; limit?: number },
+    cursor?: string | null
+  ) =>
+    api.get<{ items: DuplicateGroup[]; next: string | null }>(
+      `/api/queues/duplicates${qs({ ...p, cursor: cursor ?? undefined })}`
+    ),
+  applyDuplicate: (gid: string, keeper?: string) =>
+    api.post<{ group_id: string; job_id: number | null; outcome: EnqueueOutcome }>(
+      `/api/queues/duplicates/${q(gid)}/apply`,
+      keeper ? { keeper_video_id: keeper } : {}
+    ),
+  dismissDuplicate: (gid: string) =>
+    api.post<{ group_id: string; status: string }>(`/api/queues/duplicates/${q(gid)}/dismiss`),
+  restoreFileAction: (id: string) =>
+    api.post<{ action_id: string; job_id: number | null; outcome: EnqueueOutcome }>(
+      `/api/queues/file-actions/${q(id)}/restore`
+    ),
 };

@@ -75,6 +75,12 @@ export function QueueHeader({
         <Link className="mkt-q-linkbtn" to="/queue/reports">
           {t("queue.header.reports")}
         </Link>
+        <Link className="mkt-q-linkbtn" to="/queue/duplicates">
+          {t("queue.header.duplicates")}
+        </Link>
+        <Link className="mkt-q-linkbtn" to="/queue/file-actions">
+          {t("queue.header.fileActions")}
+        </Link>
         <Link className="mkt-q-linkbtn" to="/admin/extensions">
           {t("queue.header.extensions")}
         </Link>
