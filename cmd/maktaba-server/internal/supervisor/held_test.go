@@ -14,7 +14,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 )
 
-// copyTestBinary copies the test binary (the fake child) to dir/name: a release's
+// copyTestBinary copies the test binary (the fake child) to dir/name (name.exe on Windows): a release's
 // streaming binary another release's supervisor finds kept.
 func copyTestBinary(t *testing.T, dir, name string) string {
 	t.Helper()
@@ -25,7 +25,7 @@ func copyTestBinary(t *testing.T, dir, name string) string {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	p := filepath.Join(dir, name)
+	p := filepath.Join(dir, exe(name)) // Windows runs a program by its suffix
 	if err := os.WriteFile(p, b, 0o755); err != nil {
 		t.Fatal(err)
 	}
