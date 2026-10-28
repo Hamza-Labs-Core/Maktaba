@@ -344,7 +344,7 @@ Built with this section:
 
 Built in Phase 3 (below): 45.17 to 45.21.
 
-Left for later, by priority:
+Shelved (the owner's decision, 2026-10-28: not now; Epic 45 is done without them):
 
 - **45.22** Per-user star ratings, if favorites prove too coarse.
 - **45.23** Profiles with a PIN in the Mac app's window and parental limits beyond library ACLs (Low:
