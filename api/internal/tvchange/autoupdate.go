@@ -190,11 +190,6 @@ func (c *Controller) BeginAutoUpdate(ctx context.Context, runID, version, sha256
 	return c.AutoUpdate(ctx, runID)
 }
 
-// sameVersion compares two release versions as the slots do (a "v" prefix aside).
-func sameVersion(a, b string) bool {
-	return strings.TrimPrefix(strings.TrimSpace(a), "v") == strings.TrimPrefix(strings.TrimSpace(b), "v")
-}
-
 // AutoUpdate is the run's TV change as its run reads it.
 func (c *Controller) AutoUpdate(ctx context.Context, runID string) (AutoUpdateStatus, error) {
 	st := AutoUpdateStatus{RunID: runID, Outcome: AutoOutcomeNone}
