@@ -349,12 +349,16 @@ json.dump(d, open(p, "w"), indent=2)' "$SCRATCH/next/server/payload.json" "$NEXT
     die "runtime install --activate"
 wait_running 900
 
+# the payload under test is the same release relabelled, so it adds no migration: no dump
+# (the switch is a restart), and the record keeps the release whose migrations the
+# database holds, naming the one that now runs on it (docs/updates.md, "The database
+# during an update")
 dump="$(find "$DATA" -name "pre-*-to-$NEXT_VERSION.dump" -print -quit)"
-[ -n "$dump" ] || die "no database dump was taken before the update"
-log "the database was saved before the update: ${dump#"$DATA"/}"
-if [ "$(db_record version)" != "$NEXT_VERSION" ] || [ "$(db_record state)" != migrated ] ||
-    [ "$(db_record from)" != "$before_version" ]; then
-    die "the database is not recorded as migrated from $before_version to $NEXT_VERSION: $(cat "$DATA/state/database.json")"
+[ -z "$dump" ] || die "a database dump was taken for an update that adds no migration: ${dump#"$DATA"/}"
+log "no dump for an update that adds no migration"
+if [ "$(db_record version)" != "$before_version" ] || [ "$(db_record state)" != migrated ] ||
+    [ "$(db_record release)" != "$NEXT_VERSION" ]; then
+    die "the database is not recorded as $before_version's, run by $NEXT_VERSION: $(cat "$DATA/state/database.json")"
 fi
 if [ "$same_constraints" -eq 1 ]; then
     if [ ! -f "$record" ] || [ "$(stat -c %y "$record")" != "$record_before" ]; then
