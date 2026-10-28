@@ -82,15 +82,40 @@ describe("Guide (EPG grid)", () => {
     post.mockReset();
   });
 
-  // TC1 — proportional cells: a 30-min vs 120-min program render 1:4.
+  // TC1 — proportional cells: a 30-min vs 120-min program render 1:4. The
+  // window is two hours, so the 120-min one is the whole window (on its own
+  // row) and neither is cut; the clock is frozen so the window starts exactly
+  // where the long programme does.
   it("sizes cells proportional to duration", async () => {
-    get.mockResolvedValue(guidePayload());
-    renderGuide();
-    const cells = await screen.findAllByTestId("guide-cell");
-    expect(cells.length).toBe(2);
-    const w = (el: HTMLElement) => parseFloat(el.style.width);
-    const widths = cells.map(w).sort((a, b) => a - b);
-    expect(widths[1] / widths[0]).toBeCloseTo(4, 1);
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW });
+    try {
+      const payload = guidePayload();
+      const [short, long] = payload.channels[0].blocks;
+      short.start = iso(-30 * 60_000);
+      short.stop = iso(0);
+      long.start = iso(-30 * 60_000);
+      long.stop = iso(90 * 60_000);
+      payload.channels.push({
+        ...payload.channels[0],
+        channel: { ...payload.channels[0].channel, id: "c2", number: 2, name: "Films" },
+        blocks: [long],
+      });
+      payload.channels[0].blocks = [short];
+      get.mockResolvedValue(payload);
+      renderGuide();
+      const cells = await screen.findAllByTestId("guide-cell");
+      expect(cells.length).toBe(2);
+      for (const c of cells) {
+        expect(c).not.toHaveClass("mkt-guide__cell--cut-start");
+        expect(c).not.toHaveClass("mkt-guide__cell--cut-end");
+      }
+      const w = (el: HTMLElement) => parseFloat(el.style.width);
+      const widths = cells.map(w).sort((a, b) => a - b);
+      expect(widths[1] / widths[0]).toBeCloseTo(4, 5);
+      expect(widths[1]).toBeCloseTo(100, 5); // two hours fill the guide's width
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows channel logos and hides a logo that fails to load", async () => {

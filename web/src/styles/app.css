@@ -1428,25 +1428,34 @@ mark {
  * Logical properties (inset-inline-start / inline-size) throughout so the
  * grid, now-line and overlays mirror correctly under [dir="rtl"]. */
 
-/* 27.6 — EPG grid */
+/* 27.6 — EPG grid. The two-hour window fills the width beside the channel
+ * column: cells, ticks and the now-line are placed in percentages of the
+ * track, and programmes are clipped to the window, so the grid never scrolls
+ * sideways and nothing spills out of it. */
 .mkt-guide__scroll {
+  --mkt-guide-head: 160px;
   position: relative;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   padding-block-end: var(--space-3);
 }
 .mkt-guide__timeaxis {
   position: relative;
   height: 24px;
-  margin-inline-start: 160px;
+  margin-inline-start: var(--mkt-guide-head);
   border-block-end: 1px solid var(--color-border);
+  overflow: hidden;
 }
+/* a half-hour mark with its time reading on from it (no centring transform,
+ * so it mirrors under RTL with the logical inset alone) */
 .mkt-guide__tick {
   position: absolute;
-  inset-block-start: 0;
+  inset-block: 0;
+  padding-inline-start: var(--space-1);
+  border-inline-start: 1px solid var(--color-border);
   font-size: var(--font-size-sm);
+  line-height: 24px;
   color: var(--color-muted);
-  transform: translateX(-50%);
+  white-space: nowrap;
 }
 .mkt-guide__row {
   display: flex;
@@ -1454,16 +1463,14 @@ mark {
   border-block-end: 1px solid var(--color-border);
 }
 .mkt-guide__chanhead {
-  flex: 0 0 160px;
-  width: 160px;
+  flex: 0 0 var(--mkt-guide-head);
+  width: var(--mkt-guide-head);
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2);
-  position: sticky;
-  inset-inline-start: 0;
   background: var(--color-bg);
-  z-index: 1;
   color: inherit;
   text-decoration: none;
   cursor: pointer;
@@ -1486,14 +1493,25 @@ a.mkt-guide__chanhead:hover {
 }
 .mkt-guide__channame {
   font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mkt-guide__track {
   position: relative;
+  flex: 1 1 0;
+  min-width: 0;
   height: 56px;
+  overflow: hidden;
 }
 .mkt-guide__cell {
   position: absolute;
   inset-block: 4px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-inline-size: 2px;
   overflow: hidden;
   text-align: start;
   padding: var(--space-1) var(--space-2);
@@ -1503,6 +1521,37 @@ a.mkt-guide__chanhead:hover {
   color: var(--color-fg);
   cursor: pointer;
   white-space: nowrap;
+}
+/* A programme cut by the window's edge: square, dashed on that side, with a
+ * chevron pointing out of the window (earlier at the start, on at the end). */
+.mkt-guide__cell--cut-start {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  border-inline-start-style: dashed;
+  padding-inline-start: var(--space-1);
+}
+.mkt-guide__cell--cut-end {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+  border-inline-end-style: dashed;
+  padding-inline-end: var(--space-1);
+}
+.mkt-guide__cellcut {
+  flex: 0 0 auto;
+  inline-size: 6px;
+  block-size: 10px;
+  background: currentColor;
+  opacity: 0.6;
+}
+.mkt-guide__cellcut--start {
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
+}
+.mkt-guide__cellcut--end {
+  margin-inline-start: auto;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+[dir="rtl"] .mkt-guide__cellcut {
+  transform: scaleX(-1);
 }
 .mkt-guide__cell--airing {
   border-color: var(--color-accent);
@@ -1521,6 +1570,10 @@ a.mkt-guide__chanhead:hover {
   cursor: default;
 }
 .mkt-guide__celltitle {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--font-size-sm);
 }
 .mkt-guide__cellprogress {
@@ -1534,6 +1587,8 @@ a.mkt-guide__chanhead:hover {
   position: absolute;
   inset-block: 24px 0;
   inline-size: 2px;
+  /* centred on its moment */
+  margin-inline-start: -1px;
   background: var(--color-error);
   z-index: 2;
   pointer-events: none;
@@ -2094,6 +2149,27 @@ a.mkt-guide__chanhead:hover {
 @media (max-width: 640px) {
   .mkt-won__item {
     flex-basis: 70%;
+  }
+  /* the grid view on a phone: a narrower channel column (number and name,
+   * no logo) and hour labels only, so the two hours keep most of the width */
+  .mkt-guide__scroll {
+    --mkt-guide-head: 96px;
+  }
+  .mkt-guide__chanhead {
+    gap: var(--space-1);
+    padding: var(--space-1);
+  }
+  .mkt-guide__chanhead .mkt-guide__logo {
+    display: none;
+  }
+  .mkt-guide__channame {
+    font-size: var(--font-size-sm);
+  }
+  .mkt-guide__tick--half {
+    color: transparent;
+  }
+  .mkt-guide__cell {
+    padding-inline: var(--space-1);
   }
 }
 

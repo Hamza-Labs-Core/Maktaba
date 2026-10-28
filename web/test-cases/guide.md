@@ -2,7 +2,7 @@
 
 - **Route:** `/guide` (no params; no query-string state)
 - **Component:** `src/pages/LiveTV/Guide.tsx`; children in the same file: `WhatsOnNowList` (compact "What's on now" cards), `ChannelLogo`; design system `Modal`, `EmptyState`, `ErrorState`, `ProgressBar`, `Card`, `Badge`, `Button`.
-- **API calls:** `GET /api/channels/guide?start=<iso>&end=<iso>[&category=<c>]` via `channelsApi.guide()` in `src/lib/channels.ts`. The wire shape is `{ server_time?, channels?: [{ channel: {id, number, name, slug?, logo?, logo_url?}, blocks?: [{channel_id, kind, start, stop, title, sub_title?, desc?, poster?, series?, season?, episode?}] }] }`; `guideFrom()` maps it to `GuideResponse { server_time, channels: [{ channel: Channel, programs: Program[] }] }` (`channels ?? []`, `blocks ?? []`). Window is now − 30 min to now + 3 h. Re-fetched every 30 s (`REFRESH_MS`); a 1 s tick moves the now-line and progress without a refetch.
+- **API calls:** `GET /api/channels/guide?start=<iso>&end=<iso>[&category=<c>]` via `channelsApi.guide()` in `src/lib/channels.ts`. The wire shape is `{ server_time?, channels?: [{ channel: {id, number, name, slug?, logo?, logo_url?}, blocks?: [{channel_id, kind, start, stop, title, sub_title?, desc?, poster?, series?, season?, episode?}] }] }`; `guideFrom()` maps it to `GuideResponse { server_time, channels: [{ channel: Channel, programs: Program[] }] }` (`channels ?? []`, `blocks ?? []`). Window is now − 30 min to now + 90 min (two hours), spread across the full width beside the channel column; programmes are clipped to it. Re-fetched every 30 s (`REFRESH_MS`); a 1 s tick moves the now-line and progress without a refetch.
 - **Access:** any signed-in user (`RequireAuth` in `src/lib/auth.tsx` around `AppShell`); not admin-gated. Signed out → `/login`.
 - **Existing tests:** `src/pages/LiveTV/Guide.test.tsx` (mocks `api.get` from `src/lib/api`, so `channels.ts` mapping runs for real) — covers: proportional cell widths (30 vs 120 min = 1:4), logo shown and hidden on `error`, now-line present, airing cell click navigates to `/live/1`, future cell opens details without tuning, What's On Now toggle shows the current title, empty `channels: []` shows "No channels yet" + "Create a channel". Gaps: error/loading states, null and missing lists, filler collapse, category filter, mobile default, refresh/stale behaviour, server clock offset, keyboard/a11y, RTL, theme, crash recovery.
 
@@ -32,10 +32,12 @@
 | GDE-20 | Signed-out user is sent to `/login`; normal user sees guide | Permissions   | P1       | Yes (`Guide.cases.test.tsx`: a, b; c is RequireAuth)                                    |
 | GDE-21 | Render crash shows the route error fallback; Back works     | Error         | P1       | Yes (`Guide.cases.test.tsx`)                                                            |
 | GDE-22 | Back from the live player returns to the guide              | Navigation    | P2       | Yes (`Guide.cases.test.tsx`)                                                            |
-| GDE-23 | Phone width: grid scrolls inside its box, page does not     | Responsive    | P3       | No (e2e-only)                                                                           |
+| GDE-23 | Phone width: the grid fits the screen, nothing scrolls      | Responsive    | P3       | No (e2e-only)                                                                           |
 | GDE-24 | Arabic: RTL layout, Arabic strings, time axis mirrored      | RTL           | P2       | Yes (`Guide.cases.test.tsx`; visual mirroring e2e-only)                                 |
 | GDE-25 | Light and dark theme keep cells readable                    | Theme         | P3       | No (e2e-only)                                                                           |
 | GDE-26 | Keyboard: cells, filter and toggle reachable; dialog traps  | Accessibility | P2       | Yes (`Guide.cases.test.tsx`; focus ring e2e-only)                                       |
+| GDE-27 | Programmes are cut at both window edges                     | Layout        | P1       | Yes (`Guide.cases.test.tsx`)                                                            |
+| GDE-28 | The two hours fill the width, with half-hour ticks          | Layout        | P1       | Yes (`Guide.cases.test.tsx`; real widths e2e-only)                                      |
 
 ## Cases
 
@@ -47,7 +49,7 @@
 - **Preconditions / data:** signed in; `GET /api/channels/guide?...` → `guidePayload()` from the test: one channel `{id:"c1", number:1, name:"Movies"}` with blocks "Now Playing" (−10 min → +20 min) and "Later Show" (+20 min → +140 min).
 - **Steps:**
   1. Open `/guide`.
-- **Expected:** Heading "TV Guide". `data-testid="guide-grid"` present. Row shows number `1` and name "Movies". Two `data-testid="guide-cell"` buttons; width ratio 1:4. The airing cell has class `mkt-guide__cell--airing` and a progress bar span.
+- **Expected:** Heading "TV Guide". `data-testid="guide-grid"` present. Row shows number `1` and name "Movies". Two `data-testid="guide-cell"` buttons; widths are % of the two-hour window, ratio 1:4 for a 30-min vs a 120-min programme (the test puts them on two rows with a frozen clock so neither is cut). The airing cell has class `mkt-guide__cell--airing` and a progress bar span.
 
 ### GDE-02 — Now-line is drawn at the current time
 
@@ -57,7 +59,7 @@
 - **Preconditions / data:** as GDE-01.
 - **Steps:**
   1. Open `/guide`.
-- **Expected:** `data-testid="now-line"` exists with `inset-inline-start: 120px` (30 min × 4 px). It is `aria-hidden="true"`.
+- **Expected:** `data-testid="now-line"` exists with `inset-inline-start: 25%` (30 of the 120 min). It is `aria-hidden="true"`.
 
 ### GDE-03 — Clicking the airing cell tunes the channel
 
@@ -278,15 +280,15 @@
   3. Deep link `/guide?foo=1`.
 - **Expected:** Back renders the guide again (fresh fetch) with the grid. Unknown query params are ignored.
 
-### GDE-23 — Phone width: grid scrolls inside its box, page does not
+### GDE-23 — Phone width: the grid fits the screen, nothing scrolls
 
 - **Priority:** P3
 - **Category:** Responsive
 - **Covered by existing test?** No (e2e-only)
 - **Preconditions / data:** viewport 375 × 812, grid view forced (click "Grid view").
 - **Steps:**
-  1. Open `/guide`; scroll the grid sideways.
-- **Expected:** `document.documentElement.scrollWidth <= 375`. `.mkt-guide__scroll` scrolls horizontally; channel heads stay readable. Toolbar wraps; the select and toggle are reachable. App nav reachable.
+  1. Open `/guide`; try to scroll the grid sideways.
+- **Expected:** `document.documentElement.scrollWidth <= 375`. `.mkt-guide__scroll` does not scroll: the two hours fit beside a 96 px channel column (number and name, no logo), with hour labels only; channel heads stay readable. Toolbar wraps; the select and toggle are reachable. App nav reachable.
 
 ### GDE-24 — Arabic: RTL layout, Arabic strings, time axis mirrored
 
@@ -296,7 +298,7 @@
 - **Preconditions / data:** `localStorage["mkt:locale"]="ar"`; payload as GDE-01 with an Arabic channel name "قناة القرآن" and title "تلاوة".
 - **Steps:**
   1. Open `/guide`; toggle compact view; open a details dialog.
-- **Expected:** `<html dir="rtl" lang="ar">`. Heading "دليل القنوات"; empty title (with `channels: []`) "لا توجد قنوات بعد". Cells use `inset-inline-start` so time runs right to left and channel heads sit on the right; the second now-line (`nowX + 160`) lines up with the axis now-line in RTL. Arabic titles render unclipped.
+- **Expected:** `<html dir="rtl" lang="ar">`. Heading "دليل القنوات"; empty title (with `channels: []`) "لا توجد قنوات بعد". Cells use `inset-inline-start` so time runs right to left and channel heads sit on the right; the second now-line (past the channel column, 25% of the rest) lines up with the axis now-line in RTL. Arabic titles render unclipped.
 
 ### GDE-25 — Light and dark theme keep cells readable
 
@@ -318,3 +320,23 @@
   1. Tab from the page start through the toolbar and cells.
   2. Press Enter on the future cell; Tab inside the dialog; press Escape.
 - **Expected:** Toolbar has `role="toolbar"` and name "Guide controls"; the select has name "Category"; the toggle exposes `aria-pressed`. Every cell is a `<button>` with an accessible name (its title, or "Up next" for filler) and a visible focus ring. Enter on the airing cell tunes. The dialog traps focus, Escape closes it and focus returns to the cell. The now-lines and progress spans are `aria-hidden`.
+
+### GDE-27 — Programmes are cut at both window edges
+
+- **Priority:** P1
+- **Category:** Layout
+- **Covered by existing test?** Yes — `Guide.cases.test.tsx`
+- **Preconditions / data:** clock frozen; one channel with "Gone" (−100 → −40 min), "Early" (−60 → +10), "Middle" (+10 → +60), "Late" (+60 → +150), "Far" (+100 → +130).
+- **Steps:**
+  1. Open `/guide`.
+- **Expected:** Only "Early", "Middle" and "Late" render. "Early" starts at 0 % with its 40 visible minutes, class `mkt-guide__cell--cut-start` and a start chevron (`aria-hidden`); its title still reads and is its accessible name; its progress bar covers 30 of the 40 visible minutes, ending on the now-line. "Late" starts at 75 %, is 25 % wide, has class `mkt-guide__cell--cut-end` and an end chevron. Every cell ends at or before 100 %; the now-line is at 25 %. Under RTL the chevrons mirror and point out of the window.
+
+### GDE-28 — The two hours fill the width, with half-hour ticks
+
+- **Priority:** P1
+- **Category:** Layout
+- **Covered by existing test?** Yes — `Guide.cases.test.tsx` (real widths e2e-only)
+- **Preconditions / data:** clock frozen at 10:10 local (window 09:40 → 11:40); a channel with "Whole" (−30 → +90 min) and an empty channel.
+- **Steps:**
+  1. Open `/guide` at desktop and phone width.
+- **Expected:** No pixel widths in the grid's inline styles; "Whole" is 0 % → 100 %, uncut; the empty row's "No content" is 100 %. Ticks at 10:00, 10:30, 11:00, 11:30 (16.7 %, 41.7 %, 66.7 %, 91.7 %), the half-hours marked `mkt-guide__tick--half` (labels hidden on a phone). A tick within 8 min of the window's end is left out. In a browser the window spans from the channel column to the guide's edge at any width, and the page never scrolls sideways.
