@@ -25,6 +25,8 @@ const auth = vi.hoisted(() => ({
 }));
 vi.mock("../../lib/auth", () => ({
   useAuth: () => ({ user: auth.user, logoutAll: vi.fn() }),
+  // the pages' kept answers (lib/usePageData) are per user
+  useOptionalAuth: () => ({ user: auth.user }),
 }));
 
 import { Preferences } from "./Preferences";

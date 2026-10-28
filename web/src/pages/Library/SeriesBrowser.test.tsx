@@ -2,7 +2,7 @@
 // AC test_rtl_render, an Arabic series name carries dir="auto" so it
 // renders right-to-left.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, within, fireEvent } from "@testing-library/react";
+import { act, render, screen, waitFor, within, fireEvent } from "@testing-library/react";
 import en from "../../i18n/en.json";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, useLocation } from "react-router-dom";
@@ -216,10 +216,20 @@ describe("SeriesBrowser (test-cases/series-browser.md)", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
-  it("SER-08: loading text in a status region while pending", () => {
+  it("SER-08: a busy region while pending, the cards' shape after 0.4 s", () => {
+    vi.useFakeTimers();
     get.mockReturnValue(new Promise(() => {}));
     renderSeries();
-    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+    const busy = document.querySelector('[aria-busy="true"]')!;
+    expect(busy).not.toBeNull();
+    expect(busy.querySelector(".mkt-series-card")).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(busy.querySelectorAll("ul.mkt-series-grid > li .mkt-series-card__poster").length).toBe(
+      6
+    );
+    vi.useRealTimers();
     expect(screen.queryByText("No series detected yet")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });

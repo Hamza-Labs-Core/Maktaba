@@ -9,10 +9,14 @@
 // The Plex card also has "Sign in with Plex" (PlexSignin.tsx). Every
 // card lists each check of its last test (RemoteTestLines); the
 // Cloudflare Stream card adds the remote viewing status
-// (CloudflareRemote.tsx, Epic 32 story 32.6).
-import { useCallback, useEffect, useRef, useState } from "react";
+// (CloudflareRemote.tsx, Epic 32 story 32.6). A return shows the last
+// list at once (lib/usePageData) and reads it again quietly.
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
+import { Skeleton } from "@ds/components/Skeleton/Skeleton";
+import { usePageData } from "../../lib/usePageData";
+import { Loading } from "../../components/Placeholders";
 import { useI18n } from "../../lib/i18n";
 import { useOptionalAuth } from "../../lib/auth";
 import { AdminGate } from "../../components/AdminGate";
@@ -232,6 +236,34 @@ function ExtensionCard({ ext, onSaved }: { ext: Extension; onSaved: (e: Extensio
   );
 }
 
+/** The extension cards while the first read runs, on the cards' own classes. */
+function ExtensionsPlaceholder() {
+  return (
+    <div className="mkt-q-extlist" aria-hidden="true">
+      {[0, 1].map((i) => (
+        <section key={i} className="mkt-q-extcard">
+          <div className="mkt-q-extcard__head">
+            <div className="mkt-q-extcard__title">
+              <h2 className="mkt-q-section-title">
+                <Skeleton variant="text" className="mkt-ph-inline" width="8rem" />
+              </h2>
+            </div>
+          </div>
+          <Skeleton variant="text" className="mkt-ph-line" width="70%" />
+          <div className="mkt-q-extform">
+            <Skeleton variant="text" className="mkt-ph-line" width="90%" />
+            <Skeleton variant="text" className="mkt-ph-line" width="90%" />
+          </div>
+          <div className="mkt-q-extcard__actions">
+            <Skeleton variant="rect" className="mkt-ph-button" width="6rem" />
+            <Skeleton variant="rect" className="mkt-ph-button" width="9rem" />
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function AdminExtensions() {
   // Admin only, like the other admin pages. (useOptionalAuth: the page
   // is also rendered on its own, without an AuthProvider, in tests.)
@@ -244,19 +276,15 @@ function ExtensionsInner() {
   const { t } = useI18n();
   const { hash } = useLocation();
   const scrolled = useRef(false);
-  const [list, setList] = useState<Extension[] | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  const load = useCallback(() => {
-    queueApi
-      .extensions()
-      .then((r) => {
-        setList(r?.extensions ?? []);
-        setFailed(false);
-      })
-      .catch(() => setFailed(true));
-  }, []);
-  useEffect(load, [load]);
+  const {
+    data: list,
+    err,
+    loading,
+    setData: setList,
+  } = usePageData<Extension[]>("admin:extensions", () =>
+    queueApi.extensions().then((r) => r?.extensions ?? [])
+  );
+  const failed = err != null;
 
   // Deep links like #dizquetv: the cards only exist after the load, so
   // jump to the card once it is there.
@@ -287,9 +315,9 @@ function ExtensionsInner() {
           {t("queue.ext.error")}
         </p>
       ) : !list ? (
-        <p className="mkt-loading" role="status">
-          {t("common.loading")}
-        </p>
+        <Loading loading={loading}>
+          <ExtensionsPlaceholder />
+        </Loading>
       ) : list.length === 0 ? (
         <p className="mkt-q-empty">{t("queue.ext.none")}</p>
       ) : (

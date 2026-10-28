@@ -16,7 +16,9 @@
 //             versions in use; platforms and devices
 //
 // Export downloads the plays and viewings of the range and filters (CSV or
-// JSON). ACL: AdminGate is a UX guard only — every endpoint re-checks the
+// JSON). A return shows each tab's last answers for the same range and
+// filters at once (useLoad's key), the live Now tab excepted. ACL: AdminGate
+// is a UX guard only — every endpoint re-checks the
 // principal server-side and 403s non-admins.
 import { useCallback, useMemo, useState } from "react";
 import { Select } from "@ds/components/Select/Select";
@@ -93,7 +95,9 @@ function AnalyticsInner() {
           .then((v) => list<{ id: string; label: string }>(obj(v).libraries)),
       [rangeQ]
     ),
-    nonce
+    nonce,
+    false,
+    `filter-libraries:${JSON.stringify(rangeQ)}`
   );
   const people = useLoad(
     useCallback(
@@ -103,7 +107,9 @@ function AnalyticsInner() {
           .then((v) => list<{ user_id: string; username: string }>(obj(v).people)),
       [rangeQ]
     ),
-    nonce
+    nonce,
+    false,
+    `filter-people:${JSON.stringify(rangeQ)}`
   );
   const withSelected = (opts: { value: string; label: string }[], value: string) =>
     value && !opts.some((o) => o.value === value) ? [...opts, { value, label: value }] : opts;

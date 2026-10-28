@@ -28,6 +28,7 @@ import {
   type MoveDumpsAsk,
 } from "../../lib/serverSettingsApi";
 import { HelpLink } from "../../help/HelpLink";
+import { LinesPlaceholder, Loading } from "../../components/Placeholders";
 
 type Ready = Extract<BackupsDoc, { available: true }>;
 type NumKey = "keep" | "update_keep" | "reserve_percent" | "reserve_min_gb" | "max_share_percent";
@@ -154,7 +155,15 @@ export function BackupsSection({
       </section>
     );
   }
-  if (!doc) return <p className="mkt-loading">{t("common.loading")}</p>;
+  // live server state (a move, a restart, a backup): read each time, its
+  // placeholder only after 0.4 s
+  if (!doc) {
+    return (
+      <Loading loading>
+        <LinesPlaceholder lines={6} />
+      </Loading>
+    );
+  }
   if (!doc.available || !form) {
     return (
       <section className="mkt-storage__reach" aria-labelledby="mkt-storage-backups">

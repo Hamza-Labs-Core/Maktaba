@@ -11,6 +11,7 @@ vi.mock("../lib/api", async () => {
 });
 vi.mock("../lib/auth", () => ({
   useAuth: () => ({ user: { id: "u1", username: "root", is_admin: true } }),
+  useOptionalAuth: () => ({ user: { id: "u1", username: "root", is_admin: true } }),
 }));
 
 import { LibraryBrowser, SCAN_POLL_MS } from "./LibraryBrowser";

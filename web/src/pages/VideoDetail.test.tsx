@@ -477,11 +477,11 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Lecture 1" })).toBeInTheDocument();
   });
 
-  it("VID-12: loading state for the header and each tab", async () => {
+  it("VID-12: a busy region for the header and each tab", async () => {
     const pending = () => new Promise(() => {});
     serve({ "/api/videos/v1": pending });
     const first = renderVideo();
-    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(screen.queryByRole("tablist")).toBeNull();
     first.unmount();
     serve({
@@ -498,7 +498,7 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
     expect(document.querySelector(".mkt-context-card")).toBeNull();
     for (const tab of ["Metadata", "Transcript", "Chapters", "Files", "Processing", "Statistics"]) {
       await openTab(tab);
-      expect(within(screen.getByRole("tabpanel")).getByText("Loading…")).toBeInTheDocument();
+      expect(screen.getByRole("tabpanel").querySelector('[aria-busy="true"]')).not.toBeNull();
     }
   });
 

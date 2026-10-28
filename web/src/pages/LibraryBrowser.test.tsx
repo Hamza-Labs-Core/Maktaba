@@ -13,6 +13,7 @@ vi.mock("../lib/api", async () => {
 });
 vi.mock("../lib/auth", () => ({
   useAuth: () => ({ user: { id: "u1", username: "x", is_admin: false } }),
+  useOptionalAuth: () => ({ user: { id: "u1", username: "x", is_admin: false } }),
 }));
 
 import { LibraryBrowser } from "./LibraryBrowser";

@@ -8,11 +8,15 @@
 // Re-read every 2 s while visible (AC5). Stable layout (PR #76): the sections are always
 // there in the same order, rows keep their order (newest first) and their objects when
 // nothing changed (one batched update per poll), the skeleton shows on the first load
-// only.
-import { useCallback, useMemo, useState } from "react";
+// only, after 0.4 s. A return shows what the page last read at once (lib/pageCache), until
+// the first poll answers.
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AdminGate } from "../../../components/AdminGate";
+import { Loading } from "../../../components/Placeholders";
+import { useAuth } from "../../../lib/auth";
 import { useI18n } from "../../../lib/i18n";
+import { cachedAnswer, keepAnswer } from "../../../lib/pageCache";
 import {
   IN_FLIGHT,
   reconcile,
@@ -76,12 +80,26 @@ export function matches(f: Filter, s: ChangeState): boolean {
   }
 }
 
+/** What the page keeps for a return (lib/pageCache, "admin:tv-changes"). */
+interface Kept {
+  list: ChangeList;
+  slots: SlotsView | null;
+  releases: Release[] | null;
+}
+const KEPT = "admin:tv-changes";
+
 function ChangesInner() {
   const { t, n } = useI18n();
-  const [list, setList] = useState<ChangeList | null>(null);
-  const [slots, setSlots] = useState<SlotsView | null>(null);
-  const [releases, setReleases] = useState<Release[] | null>(null);
+  const userId = useAuth().user?.id;
+  const [kept] = useState(() => cachedAnswer<Kept>(userId, KEPT));
+  const [list, setList] = useState<ChangeList | null>(kept?.list ?? null);
+  const [slots, setSlots] = useState<SlotsView | null>(kept?.slots ?? null);
+  const [releases, setReleases] = useState<Release[] | null>(kept?.releases ?? null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (list) keepAnswer(userId, KEPT, { list, slots, releases } satisfies Kept);
+  }, [userId, list, slots, releases]);
   const [filter, setFilter] = useState<Filter>("all");
 
   const load = useCallback(async () => {
@@ -184,7 +202,9 @@ function ChangesInner() {
             ))}
           </div>
           {!list ? (
-            <div className="mkt-tvx-skeleton" aria-hidden="true" />
+            <Loading loading>
+              <div className="mkt-tvx-skeleton" aria-hidden="true" />
+            </Loading>
           ) : shown.length === 0 ? (
             <p className="mkt-tvx-hint">{t(`tvchanges.empty.${filter}`)}</p>
           ) : (
@@ -198,7 +218,9 @@ function ChangesInner() {
       <div className="mkt-tvx-card">
         <h2>{t("tvchanges.releases.title")}</h2>
         {!releases ? (
-          <div className="mkt-tvx-skeleton mkt-tvx-skeleton--short" aria-hidden="true" />
+          <Loading loading>
+            <div className="mkt-tvx-skeleton mkt-tvx-skeleton--short" aria-hidden="true" />
+          </Loading>
         ) : releases.length === 0 ? (
           <p className="mkt-tvx-hint">{t("tvchanges.releases.none")}</p>
         ) : (

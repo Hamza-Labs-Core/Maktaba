@@ -8,16 +8,26 @@
 //   GET    /api/entitlements           a viewer's read-only plan
 //
 // The API enforces every paid gate and every admin rule; this page only
-// shows them. The pasted license is write-only: no answer carries it.
-import { useEffect, useState } from "react";
+// shows them. The pasted license is write-only: no answer carries it. A
+// return to the page shows the last plan at once and reads it again quietly
+// (lib/usePageData).
+import { useState } from "react";
 import { Card } from "@ds/components/Card/Card";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
+import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { Textarea } from "@ds/components/Textarea/Textarea";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
+import { usePageData } from "../../lib/usePageData";
+import { forgetAnswers } from "../../lib/pageCache";
+import { LinesPlaceholder, Loading } from "../../components/Placeholders";
+
+// the kept answers' keys (lib/pageCache)
+const ENTITLEMENTS_KEY = "account:entitlements";
+const LICENSE_KEY = "account:license";
 
 /** The paid features, in the order Settings lists them. */
 export const FEATURES = [
@@ -96,23 +106,48 @@ function FeatureList({ features }: { features: Record<string, boolean> }) {
   );
 }
 
+async function loadEntitlements(): Promise<Entitlements> {
+  const e = await api.get<Entitlements>("/api/entitlements");
+  if (!e || typeof e !== "object") throw new Error("not entitlements");
+  return e;
+}
+
+async function loadLicense(): Promise<LicenseView> {
+  const v = await api.get<LicenseView>("/api/admin/license");
+  if (!v || typeof v !== "object") throw new Error("not a license view");
+  return v;
+}
+
+/** The plan, users and license cards while the first read is slow. */
+function AdminPlaceholder() {
+  return (
+    <div className="mkt-settings__panel mkt-subscription" aria-hidden="true">
+      {[4, 2, 3].map((lines, i) => (
+        <Card key={i} header={<Skeleton variant="text" className="mkt-ph-line" width="8rem" />}>
+          <LinesPlaceholder lines={lines} />
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 function ViewerSubscription() {
   const { t } = useI18n();
-  const [ent, setEnt] = useState<Entitlements | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    api
-      .get<Entitlements>("/api/entitlements")
-      .then((e) => (e && typeof e === "object" ? setEnt(e) : setFailed(true)))
-      .catch(() => setFailed(true));
-  }, []);
-  if (failed)
+  const { data: ent, err, loading } = usePageData<Entitlements>(ENTITLEMENTS_KEY, loadEntitlements);
+  if (err != null)
     return (
       <p className="mkt-alert" role="alert">
         {t("common.error")}
       </p>
     );
-  if (!ent) return <p className="mkt-loading">{t("common.loading")}</p>;
+  if (!ent)
+    return (
+      <Loading loading={loading}>
+        <div className="mkt-settings__panel mkt-subscription">
+          <LinesPlaceholder lines={4} />
+        </div>
+      </Loading>
+    );
   return (
     <div className="mkt-settings__panel mkt-subscription">
       <h2>{t("subscription.plan")}</h2>
@@ -134,30 +169,31 @@ function problemText(e: unknown, t: (k: string) => string): string {
 function AdminSubscription() {
   const { t, formatDate: d } = useI18n();
   const toast = useToast();
-  const [view, setView] = useState<LicenseView | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
+  const {
+    data: view,
+    err,
+    loading,
+    reload,
+    setData: setView,
+  } = usePageData<LicenseView>(LICENSE_KEY, loadLicense);
+  const failed = err != null ? problemText(err, t) : null;
   const [license, setLicense] = useState("");
   const [busy, setBusy] = useState<"apply" | "remove" | "check" | null>(null);
 
-  function load() {
-    setFailed(null);
-    api
-      .get<LicenseView>("/api/admin/license")
-      .then((v) => {
-        if (!v || typeof v !== "object") throw new Error("not a license view");
-        setView(v);
-      })
-      .catch((e) => setFailed(problemText(e, t)));
+  // the plan changed: a viewer's kept plan is stale, and so is this one
+  // until the new view is in
+  function planChanged(v?: LicenseView | null) {
+    forgetAnswers(ENTITLEMENTS_KEY, LICENSE_KEY);
+    if (v && typeof v === "object") setView(v);
+    else reload();
   }
-  useEffect(load, []);
 
   async function apply() {
     setBusy("apply");
     try {
       const v = await api.post<LicenseView>("/api/admin/license", JSON.parse(license.trim()));
       setLicense("");
-      if (v && typeof v === "object") setView(v);
-      else load();
+      planChanged(v);
       toast.show({ tone: "success", message: t("subscription.license.applied") });
     } catch (e) {
       toast.show({ tone: "error", message: problemText(e, t) });
@@ -172,7 +208,7 @@ function AdminSubscription() {
     try {
       await api.delete("/api/admin/license");
       toast.show({ tone: "success", message: t("subscription.license.removed") });
-      load();
+      planChanged();
     } catch (e) {
       toast.show({ tone: "error", message: problemText(e, t) });
     } finally {
@@ -184,7 +220,7 @@ function AdminSubscription() {
     setBusy("check");
     try {
       const v = await api.post<LicenseView>("/api/admin/license/refresh", {});
-      if (v && typeof v === "object") setView(v);
+      if (v && typeof v === "object") planChanged(v);
     } catch (e) {
       toast.show({ tone: "error", message: problemText(e, t) });
     } finally {
@@ -198,12 +234,17 @@ function AdminSubscription() {
         <p className="mkt-alert" role="alert">
           {failed}
         </p>
-        <Button variant="secondary" onClick={load}>
+        <Button variant="secondary" onClick={reload}>
           {t("common.retry")}
         </Button>
       </div>
     );
-  if (!view) return <p className="mkt-loading">{t("common.loading")}</p>;
+  if (!view)
+    return (
+      <Loading loading={loading}>
+        <AdminPlaceholder />
+      </Loading>
+    );
 
   const lic = view.license;
   const statusTone =

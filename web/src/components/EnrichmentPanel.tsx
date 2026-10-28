@@ -28,6 +28,8 @@ import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../lib/api";
 import { lookupMessage, useI18n } from "../lib/i18n";
+import { VIDEO_ANSWERS, forgetAnswers } from "../lib/pageCache";
+import { LinesPlaceholder, Loading } from "./Placeholders";
 
 interface FieldDiff {
   field: string;
@@ -148,6 +150,8 @@ export function EnrichmentPanel({ videoId, shortcuts = false, onDecided }: Enric
         external_id: c.external_id,
       });
       toast.show({ message: t("enrich.accepted"), tone: "success" });
+      // the video's title and picture may have changed everywhere
+      forgetAnswers(...VIDEO_ANSWERS);
       load();
       onDecided?.("accept");
     } catch (e) {
@@ -184,6 +188,7 @@ export function EnrichmentPanel({ videoId, shortcuts = false, onDecided }: Enric
         message: (r?.reverted ?? []).length > 0 ? t("enrich.reverted") : t("enrich.revertNothing"),
         tone: "success",
       });
+      forgetAnswers(...VIDEO_ANSWERS);
       load();
       onDecided?.("revert");
     } catch (e) {
@@ -250,7 +255,14 @@ export function EnrichmentPanel({ videoId, shortcuts = false, onDecided }: Enric
     }
   }
 
-  if (candidates == null) return <p className="mkt-loading">{t("common.loading")}</p>;
+  // live (a search may be running): not kept, only its placeholder waits
+  if (candidates == null) {
+    return (
+      <Loading loading>
+        <LinesPlaceholder lines={4} />
+      </Loading>
+    );
+  }
 
   const reason = (raw?: string) => {
     const r = (raw ?? "").trim();

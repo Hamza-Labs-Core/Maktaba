@@ -10,9 +10,11 @@
 //   GET /api/series/{id}/episodes?sort=episode    -> the series' lessons, in order
 //
 // The server takes at most 500 videos a call; a bigger selection is sent in
-// chunks. Every reader is defensive: a missing list is an empty one.
+// chunks. Every reader is defensive: a missing list is an empty one. Every
+// change drops the pages' kept answers it makes stale (lib/pageCache).
 import { api } from "./api";
 import type { VideoCard } from "./browse";
+import { VIDEO_ANSWERS, forgetAnswers } from "./pageCache";
 
 /** The most videos one call to the marks routes takes. */
 export const MARK_CHUNK = 500;
@@ -31,9 +33,14 @@ const str = (v: unknown, d = "") => (typeof v === "string" ? v : d);
 
 async function sumChunks(path: string, ids: string[], body: Record<string, unknown>) {
   let updated = 0;
-  for (const part of chunks(ids)) {
-    const r = obj(await api.post<unknown>(path, { video_ids: part, ...body }));
-    updated += num(r.updated, part.length);
+  try {
+    for (const part of chunks(ids)) {
+      const r = obj(await api.post<unknown>(path, { video_ids: part, ...body }));
+      updated += num(r.updated, part.length);
+    }
+  } finally {
+    // even a part done before a failure shows on every list of videos
+    forgetAnswers(...VIDEO_ANSWERS);
   }
   return updated;
 }
@@ -141,6 +148,7 @@ export async function createPlaylist(
     })
   );
   for (const part of rest) await addToPlaylist(created.id, part);
+  forgetAnswers("playlists", "video:");
   return created;
 }
 
@@ -152,11 +160,14 @@ export async function updatePlaylist(
   id: string,
   patch: { name?: string; description?: string }
 ): Promise<PlaylistSummary> {
-  return toSummary(await api.patch<unknown>(plPath(id), patch));
+  const p = toSummary(await api.patch<unknown>(plPath(id), patch));
+  forgetAnswers("playlist", "video:");
+  return p;
 }
 
 export async function deletePlaylist(id: string): Promise<void> {
   await api.delete(plPath(id));
+  forgetAnswers("playlist", "video:");
 }
 
 /** Appends the videos not already in the playlist; how many were added. */
@@ -166,15 +177,19 @@ export async function addToPlaylist(id: string, videoIds: string[]): Promise<num
     const r = obj(await api.post<unknown>(`${plPath(id)}/items`, { video_ids: part }));
     added += num(r.added);
   }
+  forgetAnswers("playlists", `playlist:${id}`, "video:");
   return added;
 }
 
 export async function removeFromPlaylist(id: string, videoId: string): Promise<void> {
   await api.delete(`${plPath(id)}/items/${encodeURIComponent(videoId)}`);
+  forgetAnswers("playlists", `playlist:${id}`, `video:${videoId}`);
 }
 
 export async function reorderPlaylist(id: string, videoIds: string[]): Promise<PlaylistDetail> {
-  return toDetail(await api.put<unknown>(`${plPath(id)}/order`, { video_ids: videoIds }));
+  const d = toDetail(await api.put<unknown>(`${plPath(id)}/order`, { video_ids: videoIds }));
+  forgetAnswers("playlists", `playlist:${id}`);
+  return d;
 }
 
 // ---- facets ----

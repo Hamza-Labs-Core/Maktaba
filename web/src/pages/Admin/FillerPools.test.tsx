@@ -14,6 +14,7 @@ vi.mock("../../lib/api", async () => {
 });
 vi.mock("../../lib/auth", () => ({
   useAuth: () => ({ user: { username: "admin", is_admin: true } }),
+  useOptionalAuth: () => null,
 }));
 
 import { FillerPools } from "./FillerPools";

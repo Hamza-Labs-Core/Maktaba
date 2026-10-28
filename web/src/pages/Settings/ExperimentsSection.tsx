@@ -9,6 +9,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../lib/api";
 import { lookupMessage, useI18n } from "../../lib/i18n";
 import { useFlagsClient } from "../../lib/flags";
+import { LinesPlaceholder, Loading } from "../../components/Placeholders";
 
 export interface CohortItem {
   name: string;
@@ -63,7 +64,9 @@ export function ExperimentsSection() {
           {t("common.error")}
         </p>
       ) : items === null ? (
-        <p className="mkt-loading">{t("common.loading")}</p>
+        <Loading loading>
+          <LinesPlaceholder lines={3} />
+        </Loading>
       ) : items.length === 0 ? (
         <p className="mkt-muted">{t("settings.experiments.none")}</p>
       ) : (

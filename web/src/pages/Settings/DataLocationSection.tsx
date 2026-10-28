@@ -24,6 +24,7 @@ import {
 } from "../../lib/serverSettingsApi";
 import { HelpLink } from "../../help/HelpLink";
 import { codedText, diskProblem, type Translate } from "../Setup/codedText";
+import { LinesPlaceholder, Loading } from "../../components/Placeholders";
 
 /** How often the page looks whether the server is back from a move. */
 export const MOVE_POLL_MS = 3000;
@@ -188,7 +189,15 @@ export function DataLocationSection({ pollMs = MOVE_POLL_MS }: { pollMs?: number
       </section>
     );
   }
-  if (!doc) return <p className="mkt-loading">{t("common.loading")}</p>;
+  // live server state (a move, a restart, a backup): read each time, its
+  // placeholder only after 0.4 s
+  if (!doc) {
+    return (
+      <Loading loading>
+        <LinesPlaceholder lines={4} />
+      </Loading>
+    );
+  }
 
   return (
     <section className="mkt-storage__reach" aria-labelledby="mkt-storage-location">

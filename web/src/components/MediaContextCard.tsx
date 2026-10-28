@@ -14,7 +14,6 @@
 // only when its data exists. Un-enriched videos get a minimal card:
 // "More like this" + a "Find metadata" CTA into the enrichment flow.
 // RTL-correct for Arabic summaries/names via dir="auto".
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
 import { Chip } from "@ds/components/Chip/Chip";
@@ -22,6 +21,7 @@ import { Badge } from "@ds/components/Badge/Badge";
 import { api } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { VideoPoster } from "./VideoViews";
+import { usePageData } from "../lib/usePageData";
 
 interface CastMember {
   entity_id?: string;
@@ -74,40 +74,32 @@ function ratingText(rating: Facts["rating"]): string | null {
 
 export function MediaContextCard({ videoId }: { videoId: string }) {
   const { t, n } = useI18n();
-  const [data, setData] = useState<ContextResponse | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    api
-      .get<ContextResponse>(`/api/videos/${encodeURIComponent(videoId)}/context`)
-      .then((r) => {
-        if (!alive) return;
-        const list = <T,>(v: T[] | null | undefined) =>
-          Array.isArray(v) ? v.filter((x): x is T => x != null) : [];
-        const f = r?.facts;
-        setData({
-          ...r,
-          // Drop null / non-array lists and null entries so a partial answer
-          // never crashes the video page.
-          facts: f
-            ? {
-                ...f,
-                genres: list(f.genres),
-                cast: list(f.cast).filter((c) => typeof c.name === "string"),
-                attribution: list(f.attribution),
-              }
-            : undefined,
-          related_in_library: list(r?.related_in_library),
-          more_like_this: list(r?.more_like_this),
-        });
-      })
-      .catch(() => {
-        if (alive) setData({ related_in_library: [], more_like_this: [] });
-      });
-    return () => {
-      alive = false;
-    };
-  }, [videoId]);
+  // kept for a return to the video (lib/usePageData); a failed read is a
+  // card with nothing in it
+  const read = usePageData<ContextResponse>(`video:${videoId}:context`, () =>
+    api.get<ContextResponse>(`/api/videos/${encodeURIComponent(videoId)}/context`).then((r) => {
+      const list = <T,>(v: T[] | null | undefined) =>
+        Array.isArray(v) ? v.filter((x): x is T => x != null) : [];
+      const f = r?.facts;
+      return {
+        ...r,
+        // Drop null / non-array lists and null entries so a partial answer
+        // never crashes the video page.
+        facts: f
+          ? {
+              ...f,
+              genres: list(f.genres),
+              cast: list(f.cast).filter((c) => typeof c.name === "string"),
+              attribution: list(f.attribution),
+            }
+          : undefined,
+        related_in_library: list(r?.related_in_library),
+        more_like_this: list(r?.more_like_this),
+      };
+    })
+  );
+  const data: ContextResponse | null =
+    read.err != null ? { related_in_library: [], more_like_this: [] } : read.data;
 
   if (!data) return null;
 
