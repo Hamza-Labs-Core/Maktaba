@@ -354,9 +354,11 @@ owner on 2026-10-19 (**accepted default**). The questions and their answers are 
  cancelled   failed (nothing changed; retried next window, at most 3 times, then blocked)  failed_migrate
                                                                                     (old binaries keep running)
  migrating ─► tv_swapping ─► restarting_roles ─► restarting_supervisor ─► watching ─► home_committed
-                 │ verify fail       │ health fail          │ boot-loop (launcher)    │ crash loop
+                 │ swap fail /       │ health fail          │ boot-loop (launcher)    │ crash loop
+                 │ fails after switch│                      │                         │
                  ▼                   ▼                      ▼                         ▼
              failed_tv          rolling_back ──────────────────────────────────► rolled_back
+ tv_swapping ─(verify fails before any swap: TV held on its software; owner decision 2026-10-28)─► home_committed
  home_committed ─► rolling_out ─► done | done_needs_person | done_with_failures | held (platform held / admin paused)
 ```
 
@@ -439,6 +441,7 @@ GET    /api/cluster/updates/runs/{id}/log      text/event-stream (live) or the a
 POST   /api/cluster/updates/runs/{id}/cancel   before migrate only
 POST   /api/cluster/updates/runs/{id}/resume   a held rollout
 POST   /api/cluster/updates/runs/{id}/targets/{node}/retry | /skip
+POST   /api/cluster/updates/runs/{id}/tv/retry | /drop   a TV held at the update (its check failed; 2026-10-28)
 POST   /api/admin/system/update                (Epic 28.3, kept) = Update now on the home; returns {run_id}
 GET    /api/system/updates                     (Epic 28.2, extended) + verified, policy, next_run_at
 

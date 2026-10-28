@@ -7,3 +7,6 @@ import "github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 // describe` build after the tag it was built from (by its commits after it, a
 // dirty tree after the clean build), never before it as a pre-release would be.
 func CompareVersions(a, b string) int { return layout.CompareVersions(a, b) }
+
+// bareVersion is a version as a release directory names it (no "v", no spaces).
+func bareVersion(v string) string { return layout.NormalizeVersion(v) }

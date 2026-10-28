@@ -57,8 +57,45 @@ type AppInstaller struct {
 	// WheelRoot is where the home's wheelhouse of a staged release goes (WheelhouseDir):
 	// the app's venv step builds the pipeline's environment from it ("" none).
 	WheelRoot string
+	// InUse are the releases running processes run from besides the current one (a TV
+	// slot bound to another release's streaming binary): their kept payloads stay (nil:
+	// none).
+	InUse func() []string
 
 	nudge nudger
+}
+
+// keptVersion is the version a kept payload holds ("" when the copy is not whole).
+func keptVersion(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, keptMarker))
+	if err != nil {
+		return ""
+	}
+	return layout.NormalizeVersion(strings.TrimSpace(string(b)))
+}
+
+// StreamingOf are the streaming binaries of version among the kept payloads (a TV slot
+// bound to that release runs one: a TV held on the release before).
+func (ai *AppInstaller) StreamingOf(version string) []string {
+	return KeptStreaming(ai.LauncherRoot, version)
+}
+
+// KeptStreaming are the streaming binaries of version among the desktop app's kept
+// payloads under launcherRoot/updates/payloads (the copies kept before its updates).
+func KeptStreaming(launcherRoot, version string) []string {
+	if strings.TrimSpace(launcherRoot) == "" || strings.TrimSpace(version) == "" {
+		return nil
+	}
+	dir := filepath.Join(launcherRoot, "updates", "payloads")
+	ents, _ := os.ReadDir(dir)
+	var out []string
+	for _, e := range ents {
+		p := filepath.Join(dir, e.Name())
+		if e.IsDir() && keptVersion(p) == layout.NormalizeVersion(version) {
+			out = append(out, filepath.Join(p, "bin", layout.Exe("maktaba-streaming")))
+		}
+	}
+	return out
 }
 
 func (ai *AppInstaller) now() time.Time {
@@ -516,7 +553,9 @@ func (ai *AppInstaller) appTouched(j *Journal) bool {
 
 // Commit implements Installer: the guard and the request gone, the app's own payload
 // runs (no override), the kept copy of the release before stays (the one to go back
-// to), older kept copies go.
+// to), and so does the copy of any release a TV slot runs (a TV held on the release
+// before when its change's check failed: the owner's decision of 2026-10-28); older kept
+// copies go.
 func (ai *AppInstaller) Commit(_ context.Context, j *Journal) error {
 	ai.requests().remove()
 	if err := layout.ClearGuard(ai.LauncherRoot); err != nil {
@@ -527,9 +566,22 @@ func (ai *AppInstaller) Commit(_ context.Context, j *Journal) error {
 	}
 	_ = keepSigned(ai.updatesDir(), j.Signed)
 	_ = os.RemoveAll(j.Staged)
+	used := map[string]bool{}
+	inUse := j.TV.keeps()
+	if ai.InUse != nil {
+		inUse = append(inUse, ai.InUse()...)
+	}
+	for _, v := range inUse {
+		if v = layout.NormalizeVersion(v); v != "" {
+			used[v] = true
+		}
+	}
 	ents, _ := os.ReadDir(filepath.Join(ai.updatesDir(), "payloads"))
 	for _, e := range ents {
 		p := filepath.Join(ai.updatesDir(), "payloads", e.Name())
+		if v := keptVersion(p); v != "" && used[v] {
+			continue
+		}
 		if !sameDir(p, j.FromRef) && !sameDir(p, ai.Payload) {
 			_ = os.RemoveAll(p)
 		}

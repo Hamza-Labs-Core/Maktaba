@@ -26,8 +26,16 @@ Design: [design.md](design.md) §7; README R5.1, decisions "Approval override", 
   `lineup`, `settings`, `schedule`, `art`, `live_slots` change, still follows `auto_promote_<kind>`
   (default `approval`). A change that mixes `binary` with another kind is never auto-promoted.
 - **AC3** The orchestrator waits for the change to reach `live` or a terminal state, timeout
-  `boundary_max_wait_minutes + 10`; `live` → step 11; `failed` → run state `failed_tv` (no role
-  restarted, pipeline undrained, version `blocked`, admin notified with the verify report).
+  `boundary_max_wait_minutes + 10`; `live` → step 11. *The owner's decision (2026-10-28): "when
+  only the TV test fails, keep the update installed, leave TV on the old version, and notify me
+  with Retry / Drop. Undo everything only if TV breaks after it has switched."* So: its
+  verification fails before any swap → the TV is `held`: the release commits (run `done`,
+  `detail.tv.outcome = held`), the live TV stays on the streaming software it ran, the change stays
+  a draft with its verify report, the version is not blocked, and the admin is notified
+  (`update.tv_held`) with **Retry** (verify again; a pass swaps as usual) and **Drop** (withdraw it)
+  on the Updates page, both admin-only in the API. Its swap fails, or the TV fails after it switched
+  (Epic 33.9 rollback) → run state `failed_tv` (the release rolled back, version `blocked`, admin
+  notified). The streaming binary the held TV runs is never pruned while a slot uses it.
 - **AC4** If another TV change is `ready` waiting for approval, the binary change queues behind it
   (Epic 33 R9.4); the run fails with `tv_change_pending` at the window end + `window_overrun_minutes`
   and is retried next window.
@@ -47,7 +55,13 @@ Design: [design.md](design.md) §7; README R5.1, decisions "Approval override", 
 
 - **TC1** `TestAutoUpdateBinaryChangeAutoPromotes` (tvchange: source auto_update + kind binary → immediate).
 - **TC2** `TestManualBinaryChangeNeedsApproval`, `TestMixedKindsNeverAutoPromote`.
-- **TC3** `TestOrchestratorTVStepWaitsForLive` / `...FailedTVBlocksVersion` (fake controller).
+- **TC3** `TestTVStepWaitsForLive`, `TestTVStepHeldCommits`, `TestTVStepFailedTVRollsBack`
+  (swap failed, rolled back after the switch); `TestDriverTVHeldCommitsTheRelease`,
+  `TestDriverFailedTVBlocksTheRelease`, `TestTVActionRetryAndDrop` (admin-only),
+  `TestAutoUpdateCheckFailedIsHeld`, `TestRetryAutoUpdateStagesTheHeldChangeAgain`,
+  `TestDropAutoUpdateCancelsTheHeldChange`; the held release kept:
+  `TestLayoutCommitKeepsTheReleaseTheTVRuns`, `TestAppCommitKeepsThePayloadTheTVRuns`,
+  `TestPruneKeepsWhatATVSlotRuns`, `TestSlotBindingFindsTheKeptBinary`.
 - **TC4** `TestTVStepPendingApprovalTimesOut` (`tv_change_pending`).
 - **TC5** `TestFallbackRestartWaitsForViewers` (fake `channel_runtime`, clock) and `...TVBusyAtWindowEnd`.
 - **TC6** `TestEdgeProtocolGate` (equal: no restart, version kept from pruning; different: restart after swap).
@@ -59,7 +73,8 @@ Design: [design.md](design.md) §7; README R5.1, decisions "Approval override", 
 - **EC1** Power loss while the change is `swapping`: on resume the orchestrator reads the change by
   `tv_change_id` and waits again; it never creates a second change for the same run.
 - **EC2** `tv_staging.enabled = false` with the runtime built: the fallback path (AC5) is used.
-- **EC3** Staging slot crash during verification: the change fails (Epic 33), AC3 applies.
+- **EC3** Staging slot crash during verification: the change fails its check (Epic 33): the TV is
+  held and the release commits (AC3).
 - **EC4** A node with slots: handled in its own apply (story 35.12, story 33.14 AC7), not here.
 
 ## Dependencies

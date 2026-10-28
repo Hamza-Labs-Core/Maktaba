@@ -57,6 +57,9 @@ type Supervisor struct {
 	// ho, when set, keeps the handover record and adopts what it lists (WithHandover,
 	// handover.go: Epic 35 story 35.7).
 	ho *handoverState
+	// keptStreaming, when set, finds a release's streaming binary where this install
+	// keeps it besides bin/releases (WithKeptStreaming).
+	keptStreaming func(version string) []string
 }
 
 // child is one supervised role. Everything but proc is guarded by s.mu.
@@ -442,7 +445,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		startedAt := s.now()
 		var info ExitInfo
 		survive := s.survivalLocked(c)
-		startErr := applyBinding(cmd, c.binding, c.basePath)
+		startErr := applyBindingKept(cmd, c.binding, c.basePath, s.keptStreaming)
 		if startErr == nil {
 			prepareTree(cmd)
 			orig := cmd.SysProcAttr

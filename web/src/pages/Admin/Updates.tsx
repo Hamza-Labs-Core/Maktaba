@@ -53,8 +53,10 @@ import {
   runCancellable,
   TARGET_RETRYABLE,
   TARGET_SKIPPABLE,
+  tvHeld,
   updatesApi,
   validVersion,
+  type RunTV,
   type UpdateAttempt,
   type UpdateMachine,
   type UpdateRun,
@@ -313,10 +315,20 @@ export function AdminUpdates() {
   // an ended run stays up front only while it needs someone: machines held, to retry, or
   // that need a person; anything else is history
   const viewEnded = Boolean(view && RUN_ENDED.has(view.state));
+  // a TV held at an update (its change's check failed: the release installed, the TV
+  // stayed on its streaming software) waits for Retry or Drop
+  const tvHeldNow = ov.tv_held;
+  const viewTVHeld = !!view && tvHeld(view.detail?.tv);
+  const tvAct = (runId: string, action: "retry" | "drop", heldOn: string) =>
+    act(
+      () => updatesApi.tvAction(runId, action),
+      action === "retry" ? t("updates.tv.retried") : t("updates.tv.dropped", { version: heldOn })
+    );
   const needsYou =
     viewEnded &&
     !!view &&
     (view.state === "done_needs_person" ||
+      viewTVHeld ||
       view.targets.some((x) => TARGET_RETRYABLE.has(x.state)) ||
       (view.state !== "superseded" &&
         view.state !== "cancelled" &&
@@ -414,6 +426,17 @@ export function AdminUpdates() {
           </div>
         </div>
       ))}
+      {tvHeldNow && (!view || view.id !== tvHeldNow.run_id) && (
+        <TVHeldBlock
+          tv={tvHeldNow}
+          version={tvHeldNow.version}
+          busy={busy || running}
+          testId="updates-tv-held"
+          onAction={(action) =>
+            tvAct(tvHeldNow.run_id, action, tvHeldNow.held_on || t("updates.tv.oldVersion"))
+          }
+        />
+      )}
       {lastFailed && last && (
         <div className="mkt-updates__callout" data-testid="updates-last-failed">
           <p>
@@ -575,6 +598,9 @@ export function AdminUpdates() {
           view={view}
           live={running}
           busy={busy}
+          onTV={(action) =>
+            tvAct(view.id, action, view.detail?.tv?.held_on || t("updates.tv.oldVersion"))
+          }
           onCancel={() => act(() => updatesApi.cancel(view.id), t("updates.page.cancelled"))}
           onResume={() => act(() => updatesApi.resume(view.id), t("updates.page.resumed"))}
           onTarget={(node, action) =>
@@ -639,6 +665,17 @@ export function AdminUpdates() {
                               ? "updates.page.appStaged"
                               : "updates.page.appOrdered",
                             { version: m.target }
+                          )}
+                        </span>
+                      )}
+                      {m.role === "home" && tvHeldNow && (
+                        <span
+                          className="mkt-updates__sub mkt-updates__tv-held"
+                          data-testid={`updates-machine-${m.id}-tv`}
+                        >
+                          {t(
+                            tvHeld(tvHeldNow) ? "updates.tv.homeHeld" : "updates.tv.homeRetrying",
+                            { version: tvHeldNow.held_on || t("updates.tv.oldVersion") }
                           )}
                         </span>
                       )}
@@ -734,6 +771,9 @@ export function AdminUpdates() {
             view={view}
             live={false}
             busy={busy}
+            onTV={(action) =>
+              tvAct(view.id, action, view.detail?.tv?.held_on || t("updates.tv.oldVersion"))
+            }
             onCancel={() => undefined}
             onResume={() => act(() => updatesApi.resume(view.id), t("updates.page.resumed"))}
             onTarget={(node, action) =>
@@ -1107,9 +1147,102 @@ interface RunPanelProps {
   onCancel: () => void;
   onResume: () => void;
   onTarget: (node: string, action: "retry" | "skip" | "rollback") => void;
+  /** A TV held at this run: check its change again, or drop it. */
+  onTV: (action: "retry" | "drop") => void;
 }
 
-function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelProps) {
+/** A TV held at an update (the owner's decision, 2026-10-28): the release installed, and
+ * the live TV stayed on its streaming software when the change's check failed before any
+ * swap. Held, it offers Retry (check it again: a pass swaps as usual) and Drop (withdraw
+ * it: the TV stays where it is until a later release), with what failed; afterwards it
+ * says what became of it. */
+function TVHeldBlock({
+  tv,
+  version,
+  busy,
+  testId,
+  onAction,
+}: {
+  tv: RunTV;
+  version: string;
+  busy: boolean;
+  testId: string;
+  onAction: (action: "retry" | "drop") => void;
+}) {
+  const w = useWords();
+  const { t } = w;
+  const on = tv.held_on || t("updates.tv.oldVersion");
+  const state = tv.state ?? "held";
+  const held = tvHeld(tv);
+  const checks = tv.checks?.length
+    ? tv.checks.map((c) => ({ name: c.check, value: c.value }))
+    : (tv.failed ?? []).map((name) => ({ name, value: undefined as string | undefined }));
+  return (
+    <div
+      className={held ? "mkt-updates__callout mkt-updates__tv-callout" : "mkt-updates__tv"}
+      role={held ? "status" : undefined}
+      data-testid={testId}
+    >
+      <p>
+        <strong data-testid={`${testId}-title`}>
+          {t(held ? "updates.tv.held" : `updates.tv.state.${state}`, {
+            version: on,
+            release: version,
+          })}
+        </strong>
+        {tv.number ? (
+          <span className="mkt-muted"> · {t("updates.tv.change", { number: tv.number })}</span>
+        ) : null}
+      </p>
+      {held && <p className="mkt-muted">{t("updates.tv.heldBody", { version: on })}</p>}
+      {held && checks.length > 0 && (
+        <details open data-testid={`${testId}-report`}>
+          <summary>{t("updates.tv.report", { count: checks.length })}</summary>
+          <ul className="mkt-updates__tv-checks">
+            {checks.map((c, i) => (
+              <li key={`${c.name}-${i}`}>
+                {w.word("tvcheck", c.name)}
+                {c.value ? (
+                  <span className="mkt-muted" dir="ltr">
+                    {" "}
+                    · {c.value}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {held && (
+        <div className="mkt-updates__actions">
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={busy}
+            onClick={() => onAction("retry")}
+            data-testid={`${testId}-retry`}
+          >
+            {t("updates.tv.retry")}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => onAction("drop")}
+            data-testid={`${testId}-drop`}
+          >
+            {t("updates.tv.drop")}
+          </Button>
+          <a className="mkt-helplink" href={hrefOf(updateCodeHelp("tv_held"))}>
+            {t("help.learnMore")}
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RunPanel({ view, live, busy, onCancel, onResume, onTarget, onTV }: RunPanelProps) {
   const w = useWords();
   const { t } = w;
   const homeSteps = view.steps.filter((s) => s.host === "home");
@@ -1163,6 +1296,15 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget }: RunPanelPr
           </span>
         )}
       </p>
+      {view.detail?.tv && (
+        <TVHeldBlock
+          tv={view.detail.tv}
+          version={view.version}
+          busy={busy || live}
+          testId="updates-run-tv"
+          onAction={onTV}
+        />
+      )}
       {view.error?.code && (
         <div className={failedRun ? "mkt-error" : "mkt-muted"} data-testid="updates-run-error">
           {w.code(String(view.error.code))}{" "}

@@ -313,7 +313,7 @@ On supervisor start, a journal with a run that is neither committed nor rolled b
 | 7 | `rehearse` | §6.2 (pending migrations and `rehearse_migrations`) | scratch DB dropped and redone | `failed`, version `blocked` |
 | 8 | `drain` | the home's pipeline: `cmd drain` to its worker sessions (Epic 31 agent), wait for running jobs up to `drain_timeout_minutes` (transcriptions checkpoint and are re-queued, Epic 31 R4.4) | re-send drain | (timeout is not a failure; remaining jobs are released) |
 | 9 | `migrate` | `bin/releases/<v>/maktaba-api migrate up` (the old API keeps serving; migrations are additive) | goose skips applied slots; NO TRANSACTION files are idempotent (§6.3) | `failed_migrate`: undrain, old binaries keep running, critical notification, version `blocked` |
-| 10 | `tv` | §7 | resumes by `tv_change_id` state | `failed_tv` → rollback (§5.6) of what was restarted: nothing yet; undrain |
+| 10 | `tv` | §7 | resumes by `tv_change_id` state | its check fails before any swap → `held`: the run goes on and commits, the TV stays on its software (owner decision 2026-10-28, §7.1); its swap fails or the TV fails after it switched → `failed_tv` → rollback (§5.6) of what was restarted: nothing yet; undrain |
 | 11 | `restart_roles` | one at a time: `api` → `pipeline` → front door (only if `edge_protocol` changed, §7.3); each: stop gracefully, start from `bin/releases/<v>/`, wait for health (§5.4) | `roles_done` in the journal | `rolling_back` |
 | 12 | `restart_supervisor` | §8: write `pending`, swap `previous`/`current`, hand over, exit 75; the new supervisor re-adopts, reads the journal, continues at 13 | the launcher's boot-loop guard | launcher rollback → the old supervisor finds the journal and completes `rolling_back` |
 | 13 | `watch` | 10 min: no crash loop of any role, `/readyz` green, TV routing epoch stable | resumes the remaining time | `rolling_back` |
@@ -337,7 +337,7 @@ SSDP answers, `discover.json` lists the same `DeviceID`, an HLS playlist of a li
 |---|---|
 | before `migrate` | restarts the step (idempotent); a run older than `window_overrun_minutes` past the window is marked `failed` (`interrupted`) and retried next window |
 | `migrate` | runs `migrate up` again (goose sees what is applied; §6.3 makes partial NO TRANSACTION files safe) |
-| `tv` | reads the TV change: `live` → next step; `failed` → `failed_tv`; in progress → waits for the controller |
+| `tv` | reads the TV change: `live` → next step; `held` (its check failed before any swap) → next step, the TV held; `failed` (its swap, or the TV after it switched) → `failed_tv`; in progress → waits for the controller |
 | `restart_roles` | roles in `roles_done` start from the new release, the rest from the old one; continues |
 | `restart_supervisor` / `watch` | the launcher started either the new supervisor (continue) or `previous` after its guard (finish `rolling_back`) |
 
@@ -421,7 +421,10 @@ exemption applies only to a change whose kinds are exactly `[binary]`: the updat
 and a binary change that a rebase merged with another kind (Epic 33 R9.4) waits for approval like any
 other. The
 orchestrator waits for `live` or a terminal state, with `boundary_max_wait_minutes` + 10 as its
-timeout. A verification failure → `failed_tv` (§5.3).
+timeout. ~~A verification failure → `failed_tv` (§5.3).~~ *Superseded by the owner's decision
+(2026-10-28):* a verification failure before any swap holds the TV on the streaming software it
+runs and the release commits (the admin retries or drops the change on the Updates page); only a
+failed swap, or a TV that fails after it switched, is `failed_tv` (§5.3).
 
 If another TV change is `ready` waiting for approval, the binary change queues behind it per
 Epic 33 R9.4 (rebased); the orchestrator does not wait for an approval it cannot get: it waits until
@@ -429,9 +432,10 @@ the window's end + overrun, then fails the run with `tv_change_pending` (retried
 
 *As built:* every home migrates at its new release's start ([install-kinds.md](install-kinds.md)),
 so this step runs in the new release's supervisor during its watch, and the release commits once
-the change is live; a failure rolls the release back (`failed_tv`, `tv_change_pending`,
-`tv_timeout`, `tv_change_cancelled`), and a rollback takes the change back first
-([install-kinds.md](install-kinds.md), "The TV step").
+the change is live, or once its check failed before any swap (the TV held: the owner's decision of
+2026-10-28); any other failure rolls the release back (`failed_tv` for a failed swap or a TV that
+failed after it switched, `tv_change_pending`, `tv_timeout`, `tv_change_cancelled`), and a
+rollback takes the change back first ([install-kinds.md](install-kinds.md), "The TV step").
 
 ### 7.2 Before the two-slot runtime (today)
 

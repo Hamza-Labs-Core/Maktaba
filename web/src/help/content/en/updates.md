@@ -57,6 +57,7 @@ Some releases change the database in a way that cannot be undone by going back t
 Admins open [Admin → Updates](/admin/updates). It shows, in this order:
 
 - **This home**: its version, last update, what happens next and automatic updates.
+- **Installed. TV held on …**: an update installed while its TV change failed its check; the TV stays on the previous version until you press **Retry** or **Drop** ([more](/help/updates#tv-held)). The home's row in **Machines** says "TV held on …" meanwhile.
 - **Release …**: the release available, and what will happen when it installs, with **Update now** and **Skip this version**.
 - **The update under way**: the version being installed and its step on the home and on each machine. **Cancel this update** stops it before the home switches. On a machine's row: **Retry**, **Skip** and **Roll back**. **Update the held machines** goes on with a rollout a failure held.
 - **Machines**: each machine's **Version** (the one it runs), its **State** (**up to date**, **update available**, **updating**, **behind** or **offline**), its **Last update** and what happens **Next**: for a machine behind the home, when it catches up (now, in the next quiet window, after a retry wait, or why not). Under it, its last attempt: when, from which version to which, the step it stopped at, the reason in plain words with **Learn more**, what to do next, **See the logs** and **Download the logs**.
@@ -99,6 +100,7 @@ Admins open [Admin → Updates](/admin/updates). It shows, in this order:
 - **Release … was re-published with other files and was refused**: see below.
 - **No successful update check for … days**: see below.
 - **The update to … could not start (…)**: see below.
+- **… is installed, but the TV stays on …: its check failed**: see [The TV stayed on the previous version](/help/updates#tv-held).
 
 ## FAQ {#faq}
 
@@ -158,9 +160,15 @@ An update is available. Admins open [Admin → Updates](/admin/updates) to see i
 
 ### The TV during an update {#code-tv}
 
-- **What it means:** The TV moves to the new version at a programme boundary. Someone watched until the quiet window ended, another TV change waited for your approval, or the TV change failed its checks, took too long or was cancelled.
-- **Does Maktaba fix it itself?** Yes: it waits for the next quiet window, or puts the previous version back. A TV change that failed blocks that version until you try it again.
-- **What you can do:** Approve or reject the change waiting on [TV changes](/admin/live-tv/changes), where the failed checks are listed. Press **Try it again** once the cause is fixed.
+- **What it means:** The TV moves to the new version at a programme boundary. Someone watched until the quiet window ended, another TV change waited for your approval, or the TV change's swap failed, the TV failed on the air after it switched, it took too long or it was cancelled.
+- **Does Maktaba fix it itself?** Yes: it waits for the next quiet window, or puts the previous version back. A swap that failed blocks that version until you try it again.
+- **What you can do:** Approve or reject the change waiting on [TV changes](/admin/live-tv/changes). Press **Try it again** once the cause is fixed. A change that only failed its check does not undo the update: see [The TV stayed on the previous version](/help/updates#tv-held).
+
+### The TV stayed on the previous version {#tv-held}
+
+- **What it means:** The update installed: the new server, web app and pipeline run. Only the TV's check of the new streaming software failed, before the TV switched, so the TV keeps playing on the previous version's streaming software. **Admin → Updates** says "Installed. TV held on …: its check failed", with what failed.
+- **Does Maktaba fix it itself?** No: nothing is undone and the version is not blocked, but the TV stays where it is until you choose.
+- **What you can do:** Press **Retry** to check the TV change again: when it passes, the TV moves at a programme boundary as usual. Press **Drop** to withdraw it: the TV stays on the previous version until a later release moves it. A later release replaces a held change by itself. Only a swap that fails, or a TV that fails on the air after it switched, puts the whole previous version back.
 
 ### A machine did not follow {#code-machine}
 

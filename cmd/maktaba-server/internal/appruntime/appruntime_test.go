@@ -486,6 +486,33 @@ func TestPruneKeepsCurrentAndTheOneBefore(t *testing.T) {
 	}
 }
 
+// A runtime a TV slot runs the streaming binary of (a TV held on the release before when
+// its change's check failed, story 35.6) is kept besides current, previous and keep.
+func TestPruneKeepsWhatATVSlotRuns(t *testing.T) {
+	r := testRuntime(t)
+	ctx := context.Background()
+	held := mustInstall(t, r, samplePayload(t, "v0.1.0")) // the live TV's streaming software
+	b := mustInstall(t, r, samplePayload(t, "v0.2.0"))
+	c := mustInstall(t, r, samplePayload(t, "v0.3.0"))
+	if _, err := r.Activate(ctx, b, nil, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Activate(ctx, c, nil, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := r.Prune(ctx, 2, "v0.1.0")
+	if err != nil || len(removed) != 0 {
+		t.Fatalf("removed %v (%v): the held TV's runtime must stay", removed, err)
+	}
+	if _, err := os.Stat(filepath.Join(r.Root, held)); err != nil {
+		t.Fatalf("the held TV's runtime is gone: %v", err)
+	}
+	// no longer used: pruned as any other
+	if removed, err := r.Prune(ctx, 2); err != nil || len(removed) != 1 || removed[0] != held {
+		t.Fatalf("removed %v (%v), want %s", removed, err, held)
+	}
+}
+
 func TestStatusSaysWhenTheBundledPayloadIsNew(t *testing.T) {
 	r := testRuntime(t)
 	old := samplePayload(t, "v0.2.0")

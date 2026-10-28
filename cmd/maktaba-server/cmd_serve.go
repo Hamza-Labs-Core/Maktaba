@@ -381,6 +381,11 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	if llmOpt != nil {
 		supOpts = append(supOpts, llmOpt)
 	}
+	if kept := keptStreaming(cfg); kept != nil {
+		// a TV slot bound to the release before (a TV held there, story 35.6) finds its
+		// binary in the app's kept payload or the runtime's other directory
+		supOpts = append(supOpts, supervisor.WithKeptStreaming(kept))
+	}
 	if dir := handoverDir(releaseDir); dir != "" {
 		// story 35.7: the TV processes' record, and the adoption of those the supervisor
 		// before handed over

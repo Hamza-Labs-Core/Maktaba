@@ -214,8 +214,10 @@ func (r Runtime) List() ([]Dir, error) {
 
 // Prune keeps current, the one that ran before it (`previous`) and the newest
 // others up to keep in all, and removes the rest (and what an install cut
-// short left). It returns what it removed.
-func (r Runtime) Prune(ctx context.Context, keep int) ([]string, error) {
+// short left). A directory of a version in inUse is kept besides (a TV slot runs its
+// streaming binary: a TV held on the release before, story 35.6). It returns what it
+// removed.
+func (r Runtime) Prune(ctx context.Context, keep int, inUse ...string) ([]string, error) {
 	if keep < 2 {
 		keep = 2 // never fewer than the running one and the one before
 	}
@@ -242,9 +244,15 @@ func (r Runtime) Prune(ctx context.Context, keep int) ([]string, error) {
 		}
 		kept[d.Name] = true
 	}
+	used := map[string]bool{}
+	for _, v := range inUse {
+		if v = bareVersion(v); v != "" {
+			used[v] = true
+		}
+	}
 	var removed []string
 	for _, d := range dirs {
-		if kept[d.Name] {
+		if kept[d.Name] || used[bareVersion(d.Version)] {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(r.Root, d.Name)); err != nil {

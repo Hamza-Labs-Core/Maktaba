@@ -288,8 +288,182 @@ func TestAutoUpdateSkipped(t *testing.T) {
 	}
 }
 
-// AC3 inputs: a failed verification (back to draft with its report) and a failed swap
-// are failures; the run's withdraw cancels a change not on the air yet.
+// held walks the run's change to a failed check: back to draft with its report.
+func (w *auWorld) held(run string) AutoUpdateStatus {
+	w.t.Helper()
+	ctx := context.Background()
+	st := w.begin(run)
+	ch := w.toReady(st.ChangeID, []string{"binary"})
+	if err := w.ctl.Store.Set(ctx, w.db, ch.ID, map[string]any{"verify_report": map[string]any{
+		"checks": []any{map[string]any{"check": "stream_plays", "channel_id": "c1", "result": ResultFail, "value": "no video"},
+			map[string]any{"check": "guide", "result": ResultPass}}}}); err != nil {
+		w.t.Fatal(err)
+	}
+	ch = w.change(ch.ID)
+	if err := w.ctl.Store.Move(ctx, w.db, ch, StateVerifying, ActionRecheckFail, nil, nil, nil); err != nil {
+		w.t.Fatal(err)
+	}
+	if err := w.ctl.failToDraft(ctx, ch, nil, "checks failed"); err != nil {
+		w.t.Fatal(err)
+	}
+	got, err := w.ctl.AutoUpdate(ctx, run)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	return got
+}
+
+// The owner's decision (2026-10-28): a check that fails before any swap holds the change
+// (a draft with its report) and leaves the live TV where it is: the run reads held, with
+// the checks that failed and the streaming software the TV stays on.
+func TestAutoUpdateCheckFailedIsHeld(t *testing.T) {
+	for _, be := range tvchangetest.Backends(t) {
+		t.Run(be.Name, func(t *testing.T) {
+			w := newAUWorld(t, be.DB)
+			got := w.held("run-1")
+			if got.Outcome != AutoOutcomeHeld || got.Reason != "verify_failed" || got.State != StateDraft ||
+				len(got.Failed) != 1 || got.Failed[0] != "stream_plays" || got.LiveStreaming != "v1.4.0" {
+				t.Fatalf("held: %+v", got)
+			}
+			if len(got.FailedChecks) != 1 || got.FailedChecks[0].ChannelID != "c1" || got.FailedChecks[0].Value != "no video" {
+				t.Fatalf("report summary %+v", got.FailedChecks)
+			}
+			// the live TV did not move
+			var live string
+			if err := be.DB.QueryRow(`SELECT live_release_id FROM tv_routing WHERE scope = 'cluster'`).Scan(&live); err != nil || live != w.live {
+				t.Fatalf("live release %q (%v)", live, err)
+			}
+		})
+	}
+}
+
+// Retry checks the held change again: it is asked to be staged (staged at once when
+// nothing is in flight) and reads in progress until its check ends; a pass swaps under its
+// rule (immediate). Asked again once it is no longer held: ErrNotHeld.
+func TestRetryAutoUpdateStagesTheHeldChangeAgain(t *testing.T) {
+	for _, be := range tvchangetest.Backends(t) {
+		t.Run(be.Name, func(t *testing.T) {
+			ctx := context.Background()
+			w := newAUWorld(t, be.DB)
+			st := w.held("run-1")
+			w.enqueued = nil
+			admin := "admin-1"
+			got, err := w.ctl.RetryAutoUpdate(ctx, "run-1", &admin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Outcome != AutoOutcomeQueued || strings.Join(w.enqueued, ",") != StageTVStage {
+				t.Fatalf("retried: %+v enqueued %v", got, w.enqueued)
+			}
+			if _, err := w.ctl.RetryAutoUpdate(ctx, "run-1", &admin); err != ErrNotHeld {
+				t.Fatalf("retried twice: %v", err)
+			}
+			if _, err := w.ctl.DropAutoUpdate(ctx, "run-1", &admin); err != ErrNotHeld {
+				t.Fatalf("dropped while checked again: %v", err)
+			}
+			// its check passes this time: ready, then swapped without an approval
+			ch := w.toReady(st.ChangeID, []string{"binary"})
+			w.ready(ch.ID)
+			if got := w.change(ch.ID); got.State != StateSwapping {
+				t.Fatalf("a retry that passed is %s, want swapping", got.State)
+			}
+			if got, _ := w.ctl.AutoUpdate(ctx, "run-1"); got.Outcome != AutoOutcomeInProgress {
+				t.Fatalf("swapping reads %+v", got)
+			}
+			if _, err := w.ctl.RetryAutoUpdate(ctx, "run-none", &admin); err != ErrNotHeld {
+				t.Fatalf("a run without a change: %v", err)
+			}
+		})
+	}
+}
+
+// Retry while another change is in flight: the request is kept, and the controller stages
+// it when its turn comes.
+func TestRetryAutoUpdateWaitsForTheChangeInFlight(t *testing.T) {
+	for _, be := range tvchangetest.Backends(t) {
+		t.Run(be.Name, func(t *testing.T) {
+			ctx := context.Background()
+			w := newAUWorld(t, be.DB)
+			w.held("run-1")
+			other := &Change{State: StateDraft, Title: "lineup", Source: map[string]any{"kind": SourceManual}, Diff: map[string]any{}}
+			if err := w.ctl.Store.Insert(ctx, be.DB, other); err != nil {
+				t.Fatal(err)
+			}
+			w.toReady(other.ID, []string{"lineup"})
+			w.enqueued = nil
+			got, err := w.ctl.RetryAutoUpdate(ctx, "run-1", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Outcome != AutoOutcomeQueued || len(w.enqueued) != 0 || got.QueuedBehind == nil || got.QueuedBehind.ID != other.ID {
+				t.Fatalf("retried behind another: %+v enqueued %v", got, w.enqueued)
+			}
+		})
+	}
+}
+
+// Drop withdraws the held change: cancelled (end_reason dropped), the TV left as it is.
+func TestDropAutoUpdateCancelsTheHeldChange(t *testing.T) {
+	for _, be := range tvchangetest.Backends(t) {
+		t.Run(be.Name, func(t *testing.T) {
+			ctx := context.Background()
+			w := newAUWorld(t, be.DB)
+			st := w.held("run-1")
+			admin := "admin-1"
+			got, err := w.ctl.DropAutoUpdate(ctx, "run-1", &admin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ch := w.change(st.ChangeID)
+			if got.Outcome != AutoOutcomeCancelled || got.EndReason != EndDropped || ch.State != StateCancelled {
+				t.Fatalf("dropped: %+v (%s)", got, ch.State)
+			}
+			if _, err := w.ctl.DropAutoUpdate(ctx, "run-1", &admin); err != ErrNotHeld {
+				t.Fatalf("dropped twice: %v", err)
+			}
+			if _, err := w.ctl.RetryAutoUpdate(ctx, "run-1", &admin); err != ErrNotHeld {
+				t.Fatalf("a dropped change retried: %v", err)
+			}
+			var live string
+			if err := be.DB.QueryRow(`SELECT live_release_id FROM tv_routing WHERE scope = 'cluster'`).Scan(&live); err != nil || live != w.live {
+				t.Fatalf("live release %q (%v)", live, err)
+			}
+		})
+	}
+}
+
+// A later release that commits replaces an older run's held change (a Retry of it would
+// air older software); its own change is left alone.
+func TestReplaceOlderAutoUpdates(t *testing.T) {
+	for _, be := range tvchangetest.Backends(t) {
+		t.Run(be.Name, func(t *testing.T) {
+			ctx := context.Background()
+			w := newAUWorld(t, be.DB)
+			old := w.held("run-1")
+			st2, err := w.ctl.BeginAutoUpdate(ctx, "run-2", "v1.6.0", strings.Repeat("2", 64))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if w.change(old.ChangeID).State != StateDraft {
+				t.Fatal("the held change went before the later release committed")
+			}
+			if err := w.ctl.ReplaceOlderAutoUpdates(ctx, "run-2"); err != nil {
+				t.Fatal(err)
+			}
+			got, _ := w.ctl.AutoUpdate(ctx, "run-1")
+			if got.Outcome != AutoOutcomeCancelled || got.EndReason != EndReplaced {
+				t.Fatalf("older: %+v", got)
+			}
+			if ch := w.change(st2.ChangeID); Terminal(ch.State) {
+				t.Fatalf("the committing run's own change is %s", ch.State)
+			}
+		})
+	}
+}
+
+// AC3 inputs: a failed swap is a failure (the run rolls back); the run's withdraw cancels
+// a change not on the air yet, a held one too (a release that rolls back for another
+// reason after its TV was held).
 func TestAutoUpdateFailuresAndWithdraw(t *testing.T) {
 	for _, be := range tvchangetest.Backends(t) {
 		t.Run(be.Name, func(t *testing.T) {
@@ -309,7 +483,7 @@ func TestAutoUpdateFailuresAndWithdraw(t *testing.T) {
 				t.Fatal(err)
 			}
 			got, _ := w.ctl.AutoUpdate(ctx, "run-1")
-			if got.Outcome != AutoOutcomeFailed || got.Reason != "verify_failed" || len(got.Failed) != 1 || got.Failed[0] != "stream_plays" {
+			if got.Outcome != AutoOutcomeHeld || got.Reason != "verify_failed" || len(got.Failed) != 1 || got.Failed[0] != "stream_plays" {
 				t.Fatalf("failed verification: %+v", got)
 			}
 			got, err := w.ctl.WithdrawAutoUpdate(ctx, "run-1", CodeTVFailedForTest)

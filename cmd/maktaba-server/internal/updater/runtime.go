@@ -57,8 +57,24 @@ type RuntimeInstaller struct {
 	// WheelRoot is where the home's wheelhouse of a staged release goes (WheelhouseDir):
 	// the app's venv step builds the pipeline's environment from it ("" none).
 	WheelRoot string
+	// InUse are the releases running processes run from besides the current one (a TV
+	// slot bound to another release's streaming binary): never pruned (nil: none).
+	InUse func() []string
 
 	nudge nudger
+}
+
+// StreamingOf are the streaming binaries of version among the installed runtime
+// directories (a TV slot bound to that release runs one: a TV held on the release before).
+func (ri *RuntimeInstaller) StreamingOf(version string) []string {
+	dirs, _ := ri.Runtime.List()
+	var out []string
+	for _, d := range dirs {
+		if layout.NormalizeVersion(d.Version) == layout.NormalizeVersion(version) {
+			out = append(out, filepath.Join(ri.Runtime.Root, d.Name, "bin", layout.Exe("maktaba-streaming")))
+		}
+	}
+	return out
 }
 
 func (ri *RuntimeInstaller) requests() requests {
@@ -372,8 +388,13 @@ func (ri *RuntimeInstaller) Commit(ctx context.Context, j *Journal) error {
 	if keep < 2 {
 		keep = 2
 	}
-	// what a prune leaves is pruned by the next commit; the release is kept either way
-	_, _ = ri.Runtime.Prune(ctx, keep)
+	// what a prune leaves is pruned by the next commit; the release is kept either way,
+	// and so is every release a TV slot runs (a TV held on the release before, story 35.6)
+	inUse := j.TV.keeps()
+	if ri.InUse != nil {
+		inUse = append(inUse, ri.InUse()...)
+	}
+	_, _ = ri.Runtime.Prune(ctx, keep, inUse...)
 	return nil
 }
 

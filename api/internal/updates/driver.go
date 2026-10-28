@@ -65,6 +65,9 @@ type Driver struct {
 	// Mirror is the home's copy of the releases its machines install (story 35.12 AC3; nil:
 	// the machines download from GitHub and PyPI themselves).
 	Mirror *Mirror
+	// TV is the TV change controller: a run's held TV change, retried or dropped by an
+	// admin (tvheld.go; nil: no Retry or Drop here).
+	TV TVChanges
 
 	obs       observer // what the last look saw (events.go)
 	mu        sync.Mutex
@@ -1085,6 +1088,9 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 		if st.Backup != nil && st.Backup.Path != "" {
 			noteStore(d.log(), "SetRunBackup", d.Store.SetRunBackup(ctx, run.ID, map[string]any{"path": st.Backup.Path, "bytes": st.Backup.Bytes}), "run_id", run.ID)
 		}
+		// only the TV's check failed: the release is kept, the TV held on its software
+		// (the owner's decision, 2026-10-28)
+		d.tvHeldAtCommit(ctx, run, &det, st)
 		return d.homeCommitted(ctx, run, det)
 	case MRolledBack:
 		doc := machineErr(st, "rolled_back")
@@ -1114,8 +1120,9 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 // The TV step's outcomes (story 35.6): the home's new release moves the TV to its
 // streaming binary through a TV change before it commits, and rolls back when that fails.
 const (
-	// CodeFailedTV: the change's verification or swap failed (or it was rolled back):
-	// the release is blocked, the admin told with the checks that failed.
+	// CodeFailedTV: the change's swap failed, or it was rolled back on the air after it
+	// switched: the release is blocked, the admin told. (A check that fails before any
+	// swap no longer rolls back: the TV is held, tvheld.go.)
 	CodeFailedTV = "failed_tv"
 	// CodeTVChangePending: queued behind a TV change that waits for an approval until
 	// the window's end: a gate, tried again in the next window (no attempt counted).
@@ -1158,6 +1165,9 @@ func (d *Driver) homeCommitted(ctx context.Context, run Run, det RunDetail) erro
 		return err
 	}
 	d.undrain(ctx, run, &det)
+	// the release committed: its streaming software is the one the TV moves to now, and an
+	// older run's held TV change goes (a Retry of it would air older software)
+	d.replaceOlderTV(ctx, run)
 	d.audit(ctx, run, "home_committed", nil)
 	d.notify(ctx, NoticeInstalledHome, notify.SeverityInfo, run, nil)
 	return d.Store.SetRunState(ctx, run.ID, RunHomeCommitted, "")

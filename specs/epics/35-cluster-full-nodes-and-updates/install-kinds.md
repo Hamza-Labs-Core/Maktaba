@@ -446,19 +446,40 @@ its watch, where the new streaming binary never meets an older schema:
    controller stages it when its turn comes. Rule: `immediate` only for source `auto_update` with
    kinds exactly `[binary]` (a binary change by hand, or one with another kind, keeps its rules).
 3. The release commits once it was healthy for its watch **and** its change is live (or there was
-   nothing to swap: TV staging off, no TV release yet, the binary live already).
-4. Failures roll the release back: `failed_tv` (its verification or swap failed, or it was rolled
-   back: the release blocked, the admin told with the checks that failed), `tv_change_pending`
-   (still behind a change awaiting approval at the window's end and overrun, which the apply
-   passes: a gate like `tv_busy`, no attempt counted), `tv_timeout` (not on the air within
-   `boundary_max_wait_minutes` + 10 of its stage: an attempt), `tv_change_cancelled` (an admin
-   cancelled it: blocked until a retry).
-5. A rollback for any reason takes the change back first: cancelled before the air, rolled back
-   (Epic 33.9, warm while the previous slot is warm, else cold) once live, and rolled back by the
-   controller when a swap under way ends.
+   nothing to swap: TV staging off, no TV release yet, the binary live already), or its change is
+   held (item 4).
+4. **The owner's decision (2026-10-28):** *"when only the TV test fails, keep the update
+   installed, leave TV on the old version, and notify me with Retry / Drop. Undo everything only
+   if TV breaks after it has switched."*
+   - **The preview fails** (the change's verification in the staging slot fails, before any swap):
+     the TV step ends `held` and the release commits. The new server, web and pipeline stay
+     installed; the run ends as succeeded (`done`) with `update_runs.detail.tv = {outcome: held,
+     change_id, number, held_on, failed}`; the live slots stay on their release and the streaming
+     software they ran (`held_on`); the change stays a draft with its verify report; the version is
+     not blocked and no attempt counts. The admin is told (`update.tv_held`, warn) and the Updates
+     page offers **Retry** (`POST /api/cluster/updates/runs/{id}/tv/retry`: the change is staged and
+     verified again; one that passes swaps at a programme boundary under its rule, `immediate`, as
+     usual; one that fails is held again) and **Drop** (`…/tv/drop`: the change is cancelled,
+     `end_reason = dropped`; the TV stays on the old streaming software until a later release).
+     Both are admin-only, enforced by the API. A later release that commits replaces a held change
+     (`end_reason = replaced`): a Retry never airs older software. A retry that passes and then
+     fails on the air is an Epic 33.9 rollback of the TV alone: the run committed long before.
+   - **Full rollback stays only for** a failure of the swap itself, and the live TV failing after
+     it switched (Epic 33.9 rolled it back): `failed_tv` (the release blocked, the admin told).
+   - The other ends roll back as before: `tv_change_pending` (still behind a change awaiting
+     approval at the window's end and overrun, which the apply passes: a gate like `tv_busy`, no
+     attempt counted), `tv_timeout` (not on the air within `boundary_max_wait_minutes` + 10 of its
+     stage: an attempt), `tv_change_cancelled` (an admin cancelled it: blocked until a retry).
+5. A rollback for any reason takes the change back first: cancelled before the air (a held one
+   too), rolled back (Epic 33.9, warm while the previous slot is warm, else cold) once live, and
+   rolled back by the controller when a swap under way ends.
 
 `keep_versions` pruning keeps every release a running process uses (a front door kept on its
-release, a slot bound to another's binary). `maktaba-streaming --version --json` says the front
+release, a slot bound to another's binary, bound while it is between two starts too), and the
+release whose streaming software the live TV ran at the TV step's last answer (the journal's
+`tv.live_streaming`: a TV held there). A desktop app keeps that release's payload copy in
+`updates/payloads` past later commits, and a runtime copy its runtime directory; a slot bound to
+that release finds its binary there when `bin/releases/<v>` has none (`supervisor.WithKeptStreaming`). `maktaba-streaming --version --json` says the front
 door's `edge_protocol`, and the journal keeps the release's: the front door restarts only when they
 differ (`updater.FrontDoorRestarts`, the rule the TV handover asks before it lets the front door
 run on across the restart, story 35.7).

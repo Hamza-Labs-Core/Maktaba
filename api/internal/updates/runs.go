@@ -123,6 +123,9 @@ type RunDetail struct {
 	// NodeDrains are the machines drained for their own apply (story 35.12 AC6: drain,
 	// switch, restart, check, undrain), each with its drain flag before.
 	NodeDrains map[string]NodeDrain `json:"node_drains,omitempty"`
+	// TV is the TV held at the home's commit: its change's check failed before any swap,
+	// so the live TV stayed on its streaming software (tvheld.go; nil: not held).
+	TV *RunTV `json:"tv,omitempty"`
 }
 
 // NodeDrain is a machine drained for its own apply.

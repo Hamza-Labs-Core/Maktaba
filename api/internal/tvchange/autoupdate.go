@@ -26,9 +26,21 @@ const (
 	AutoOutcomeQueued     = "queued"      // a draft behind the change in flight
 	AutoOutcomeInProgress = "in_progress" // staged … swapping
 	AutoOutcomeLive       = "live"        // on the air (or it aired what was live already)
-	AutoOutcomeFailed     = "failed"      // its verification or its swap failed, or it was rolled back
-	AutoOutcomeCancelled  = "cancelled"   // an admin cancelled it, or its run withdrew it
+	AutoOutcomeHeld       = "held"        // its check failed before any swap: a draft with its report
+	AutoOutcomeFailed     = "failed"      // its swap failed, or it was rolled back after it switched
+	AutoOutcomeCancelled  = "cancelled"   // an admin cancelled (or dropped) it, or its run withdrew it
 )
+
+// End reasons of an automatic update's held change: an admin dropped it (DropAutoUpdate),
+// or a later update's change replaced it (BeginAutoUpdate).
+const (
+	EndDropped  = "dropped"
+	EndReplaced = "replaced"
+)
+
+// ErrNotHeld: the run's change is not held (its check did not fail, or it was retried,
+// dropped or replaced since).
+var ErrNotHeld = errors.New("not_held")
 
 // Reasons an automatic update's change is skipped.
 const (
@@ -48,10 +60,15 @@ type AutoUpdateStatus struct {
 	EndReason string     `json:"end_reason,omitempty"`
 	Kinds     []string   `json:"kinds,omitempty"`
 	StagedAt  *time.Time `json:"staged_at,omitempty"`
-	// Reason is why it failed (verify_failed, swap_failed, rolled_back).
+	// Reason is why it failed or is held (verify_failed, swap_failed, rolled_back).
 	Reason string `json:"reason,omitempty"`
-	// Failed is the checks that failed (its verify report's), for the admin's notice.
-	Failed []string `json:"failed,omitempty"`
+	// Failed is the checks that failed (its verify report's), for the admin's notice;
+	// FailedChecks the same checks with their channel and value (the report's summary).
+	Failed       []string `json:"failed,omitempty"`
+	FailedChecks []Check  `json:"failed_checks,omitempty"`
+	// LiveStreaming is the streaming software the live TV runs now (the live TV
+	// release's, "" when none airs): a held change leaves the TV on it.
+	LiveStreaming string `json:"live_streaming,omitempty"`
 	// QueuedBehind is the change in flight it waits for (a ready one waits for an
 	// approval the run cannot get: the run gives up at its window's end).
 	QueuedBehind *QueuedRef `json:"queued_behind,omitempty"`
@@ -198,6 +215,9 @@ func (c *Controller) AutoUpdate(ctx context.Context, runID string) (AutoUpdateSt
 	if ch.EndReason != nil {
 		st.EndReason = *ch.EndReason
 	}
+	if st.LiveStreaming, err = c.liveStreaming(ctx); err != nil {
+		return st, err
+	}
 	switch ch.State {
 	case StateLive, StateSuperseded:
 		st.Outcome = AutoOutcomeLive
@@ -214,9 +234,12 @@ func (c *Controller) AutoUpdate(ctx context.Context, runID string) (AutoUpdateSt
 		if err != nil {
 			return st, err
 		}
-		if failed {
-			// its verification failed: back to draft with its report (no retry loop)
-			st.Outcome, st.Reason, st.Failed = AutoOutcomeFailed, "verify_failed", failedCheckNames(ch.VerifyReport)
+		if failed && !stageRequested(ch) {
+			// its check failed before any swap: back to draft with its report (no retry
+			// loop), held there until an admin retries or drops it, and the live TV stays
+			// on its streaming software (the owner's decision, 2026-10-28)
+			st.Outcome, st.Reason = AutoOutcomeHeld, "verify_failed"
+			st.Failed, st.FailedChecks = failedCheckNames(ch.VerifyReport), failedCheckList(ch.VerifyReport)
 			break
 		}
 		st.Outcome = AutoOutcomeQueued
@@ -255,6 +278,159 @@ func failedCheckNames(report map[string]any) []string {
 		}
 	}
 	return out
+}
+
+// failedCheckList are the failed checks of a verify report (at most 20: a summary).
+func failedCheckList(report map[string]any) []Check {
+	var out []Check
+	checks, _ := report["checks"].([]any)
+	for _, x := range checks {
+		m, _ := x.(map[string]any)
+		if m["result"] != ResultFail {
+			continue
+		}
+		c := Check{Result: ResultFail}
+		c.Check, _ = m["check"].(string)
+		c.ChannelID, _ = m["channel_id"].(string)
+		c.Value, _ = m["value"].(string)
+		if out = append(out, c); len(out) == 20 {
+			break
+		}
+	}
+	return out
+}
+
+// liveStreaming is the streaming software the live TV release runs ("" when none airs).
+func (c *Controller) liveStreaming(ctx context.Context) (string, error) {
+	var v sql.NullString
+	err := c.DB.QueryRowContext(ctx, `SELECT r.streaming_version FROM tv_routing t
+		JOIN tv_releases r ON r.id = t.live_release_id WHERE t.scope = 'cluster'`).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return v.String, err
+}
+
+// heldChange is the run's change when it is held: a draft whose check failed, not asked
+// to be staged again (ErrNotHeld otherwise; nil, nil when the run has none).
+func (c *Controller) heldChange(ctx context.Context, runID string) (*Change, error) {
+	id, err := c.autoChangeID(ctx, c.DB, runID)
+	if err != nil || id == "" {
+		if err == nil {
+			err = ErrNotHeld
+		}
+		return nil, err
+	}
+	ch, err := c.Store.Get(ctx, c.DB, id)
+	if err != nil {
+		return nil, err
+	}
+	if ch.State != StateDraft || stageRequested(ch) {
+		return nil, ErrNotHeld
+	}
+	failed, err := c.lastActionIs(ctx, ch.ID, ActionFail)
+	if err != nil {
+		return nil, err
+	}
+	if !failed {
+		return nil, ErrNotHeld
+	}
+	return ch, nil
+}
+
+// RetryAutoUpdate checks a held change again (an admin's Retry on the Updates page): it
+// is staged and verified as before; one that passes swaps at a programme boundary under
+// its rule (immediate, no approval), one that fails is held again. Staged at once when
+// nothing else is in flight, else when its turn comes.
+func (c *Controller) RetryAutoUpdate(ctx context.Context, runID string, actor *string) (AutoUpdateStatus, error) {
+	ch, err := c.heldChange(ctx, runID)
+	if err != nil {
+		return AutoUpdateStatus{}, err
+	}
+	if err := c.RequestStage(ctx, ch, actor); err != nil {
+		var ce *ConflictError
+		if !errors.As(err, &ce) || ce.Reason != "change_in_flight" {
+			return AutoUpdateStatus{}, err
+		}
+		// another change is in flight: it is staged when its turn comes (the request is kept)
+	}
+	who := ""
+	if actor != nil {
+		who = *actor
+	}
+	c.Logger.Info("tv change of an automatic update checked again", "event", "tv_change_auto_retry",
+		"change_id", ch.ID, "run_id", runID, "actor", who)
+	return c.AutoUpdate(ctx, runID)
+}
+
+// DropAutoUpdate withdraws a held change (an admin's Drop on the Updates page): it is
+// cancelled (end_reason dropped), and the TV stays on the streaming software it runs
+// until a later release's change.
+func (c *Controller) DropAutoUpdate(ctx context.Context, runID string, actor *string) (AutoUpdateStatus, error) {
+	ch, err := c.heldChange(ctx, runID)
+	if err != nil {
+		return AutoUpdateStatus{}, err
+	}
+	if err := c.Store.Move(ctx, c.DB, ch, StateCancelled, ActionCancel, actor,
+		map[string]any{"why": "dropped from the Updates page: its check failed"},
+		map[string]any{"ended_at": c.now(), "end_reason": EndDropped}); err != nil {
+		var ce *ConflictError
+		if errors.As(err, &ce) {
+			return AutoUpdateStatus{}, ErrNotHeld
+		}
+		return AutoUpdateStatus{}, err
+	}
+	c.Logger.Info("tv change of an automatic update dropped", "event", "tv_change_auto_dropped",
+		"change_id", ch.ID, "run_id", runID)
+	return c.AutoUpdate(ctx, runID)
+}
+
+// ReplaceOlderAutoUpdates cancels the automatic updates' drafts of runs other than runID
+// (end_reason replaced): once a later release committed, its streaming software is the
+// one the TV moves to, and a Retry of an older held change would air older software.
+// The run that commits calls it (a run that rolls back leaves the held change it found).
+func (c *Controller) ReplaceOlderAutoUpdates(ctx context.Context, runID string) error {
+	query := `SELECT id FROM tv_changes WHERE state = 'draft' AND source->>'kind' = $1
+		AND COALESCE(source->>'run_id', '') <> $2`
+	if IsSQLite(c.DB) {
+		query = `SELECT id FROM tv_changes WHERE state = 'draft' AND json_extract(source, '$.kind') = $1
+			AND COALESCE(json_extract(source, '$.run_id'), '') <> $2`
+	}
+	rows, err := c.DB.QueryContext(ctx, query, SourceAutoUpdate, runID)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		ch, err := c.Store.Get(ctx, c.DB, id)
+		if err != nil {
+			return err
+		}
+		if ch.State != StateDraft {
+			continue
+		}
+		if err := c.Store.Move(ctx, c.DB, ch, StateCancelled, ActionCancel, nil,
+			map[string]any{"why": "replaced by a later update's change (run " + runID + ")"},
+			map[string]any{"ended_at": c.now(), "end_reason": EndReplaced}); err != nil {
+			if moved(err) {
+				continue
+			}
+			return err
+		}
+		c.Logger.Info("tv change of an older automatic update replaced", "event", "tv_change_auto_replaced",
+			"change_id", id, "run_id", runID)
+	}
+	return nil
 }
 
 // lastActionIs reports whether a change's newest event is action.
