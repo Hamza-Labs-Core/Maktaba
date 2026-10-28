@@ -18,7 +18,9 @@ and schedules:
 6. the semantic store (Epic 43): once search reads ``segment_embeddings``, a video whose
    last ``index`` succeeded but has no vector there (a new home after a switchover: the
    machines' copies hold none) is indexed again; its fingerprint says so
-   (stages/index.py).
+   (stages/index.py);
+7. the file trash (Epic 47): a ``trash_purge`` once a day for each library whose trash
+   holds an entry past its ``purge_after``.
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ from uuid import UUID
 
 from ..log import get_logger
 from .enqueue import enqueue_job
-from .graph import CATALOG_ID, StageDef
+from .graph import CATALOG_ID, EPIC47_PRIORITIES, StageDef
 from .propagate import after_legacy_done
 from .sql import is_pg, loads, now, to_ts, uid
 
@@ -50,6 +52,8 @@ DEFAULT_YT_REFRESH_HOURS = 168
 #: Epic 47: a library with a YouTube source turned on refreshes daily by default
 DEFAULT_SOURCE_REFRESH_HOURS = 24.0
 SOURCE_REFRESH_PRIORITY = 110
+#: Epic 47: the trash is emptied of what is past its grace period once a day
+TRASH_PURGE_EVERY_HOURS = 24.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +65,7 @@ class ReconcileReport:
     library_sweep: int = 0
     periodic: int = 0
     semantic_missing: int = 0
+    trash_purge: int = 0
 
 
 async def reconcile_once(
@@ -85,7 +90,8 @@ async def reconcile_once(
         scans = await _library_sweeps(db, graph, t)
         periodic = await _periodic_stages(db, graph, t)
         missing = await _semantic_sweep(db, graph)
-    return ReconcileReport(True, propagated, refresh, sweep, scans, periodic, missing)
+        purges = await _trash_purges(db, graph, t)
+    return ReconcileReport(True, propagated, refresh, sweep, scans, periodic, missing, purges)
 
 
 async def _repair_unpropagated(db: Any, graph: Mapping[str, StageDef], t: datetime) -> int:
@@ -171,6 +177,43 @@ async def _youtube_refresh(
             # shares the pool: at the sweep's 500 it would wait behind every batch
             priority=SOURCE_REFRESH_PRIORITY if sources_on else SWEEP_PRIORITY,
             reason={"why": "scheduled refresh", "by": "system"},
+        )
+        n += 1 if res.job_id is not None else 0
+    return n
+
+
+async def _trash_purges(db: Any, graph: Mapping[str, StageDef], t: datetime) -> int:
+    """A ``trash_purge`` for each library whose trash holds an entry past its
+    ``purge_after``, once :data:`TRASH_PURGE_EVERY_HOURS` passed since its last one
+    (queued, running or finished); none while one is live."""
+    if "trash_purge" not in graph:
+        return 0
+    rows = await db.fetch(
+        "SELECT DISTINCT a.library_id AS id FROM file_actions a JOIN libraries l"
+        " ON l.id = a.library_id WHERE l.deleted_at IS NULL AND a.state = 'done'"
+        " AND a.trash_path IS NOT NULL AND a.purged_at IS NULL AND a.purge_after IS NOT NULL"
+        " AND a.purge_after <= $1",
+        to_ts(db, t),
+    )
+    cutoff = to_ts(db, t - timedelta(hours=TRASH_PURGE_EVERY_HOURS))
+    n = 0
+    for r in rows:
+        recent = await db.fetchval(
+            "SELECT 1 FROM processing_jobs WHERE subject_kind = 'library' AND subject_id = $1"
+            " AND stage = 'trash_purge' AND (state IN ('pending','claimed','running','resuming',"
+            "'paused') OR finished_at >= $2) LIMIT 1",
+            r["id"],
+            cutoff,
+        )
+        if recent is not None:
+            continue
+        res = await enqueue_job(
+            db,
+            subject_kind="library",
+            subject_id=UUID(str(r["id"])),
+            stage="trash_purge",
+            priority=EPIC47_PRIORITIES["trash_purge"],
+            reason={"why": "daily trash purge", "by": "system"},
         )
         n += 1 if res.job_id is not None else 0
     return n

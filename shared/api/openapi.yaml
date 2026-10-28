@@ -2852,6 +2852,417 @@ paths:
         '429': *id002
         '401': *id003
       operationId: applyQueueReviews
+  /libraries/{id}/convert:
+    post:
+      tags:
+      - Queue
+      summary: "Queue Convert to MP4 for a library (or every library: all)"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: "{dry_run?: boolean, all?: boolean}"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: convertLibrary
+  /libraries/{id}/dedup-scan:
+    post:
+      tags:
+      - Queue
+      summary: "Queue Find duplicates for a library (or every library: all)"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: "{dry_run?: boolean, all?: boolean}"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: dedupScanLibrary
+  /libraries/{id}/youtube/refresh:
+    post:
+      tags:
+      - Queue
+      summary: "Queue a forced YouTube refresh (youtube_sync)"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: "{all?: boolean, full_listing?: boolean, refresh?: boolean}"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: refreshLibraryYouTube
+  /libraries/{id}/youtube/backfill:
+    post:
+      tags:
+      - Queue
+      summary: "Resume the YouTube back catalogue (youtube_backfill)"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: resumeLibraryBackfill
+  /libraries/{id}/youtube/retry:
+    post:
+      tags:
+      - Queue
+      summary: "Want gone, skipped or failed downloads again and queue them"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: "{states?: [gone|skipped|failed], source_id?: uuid}"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: retryLibraryDownloads
+  /libraries/{id}/youtube/tartube:
+    post:
+      tags:
+      - Queue
+      summary: "Seed the library from a Tartube database on the home (youtube_sync)"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: "{path: string, database?: string, channels?: string[]}"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: importLibraryTartube
+  /libraries/{id}/youtube/sources:
+    get:
+      tags:
+      - Queue
+      summary: "A library's YouTube channels and playlists, with their downloads"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: listYouTubeSources
+    post:
+      tags:
+      - Queue
+      summary: "Follow a channel or playlist (resolved with yt-dlp); queues a refresh when on"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: "{url: string, mode?: off|new_and_backfill|new_only, folder?: string, options?: object}"
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: addYouTubeSource
+  /libraries/{id}/youtube/sources/{sid}:
+    patch:
+      tags:
+      - Queue
+      summary: "Change a source's mode, folder or options; turning it on queues a refresh"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: sid
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: "{mode?, folder?, options?}"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: patchYouTubeSource
+    delete:
+      tags:
+      - Queue
+      summary: "Stop following a source (its downloads keep their rows)"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: sid
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: No Content
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: deleteYouTubeSource
+  /libraries/{id}/offline-summary:
+    get:
+      tags:
+      - Queue
+      summary: "A library's YouTube, Not MP4, Duplicates and trash columns"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: getLibraryOfflineSummary
+  /queues/offline-summary:
+    get:
+      tags:
+      - Queue
+      summary: "Every library's offline columns, plus open cross-library duplicate groups"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: getOfflineSummaries
+  /queues/offline-items:
+    get:
+      tags:
+      - Queue
+      summary: "Where each item is: download, convert, dedup check (latest live or failed job)"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: getOfflineItems
+  /queues/youtube-downloads:
+    get:
+      tags:
+      - Queue
+      summary: "YouTube downloads by state (keyset paged)"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: listYouTubeDownloads
+  /queues/file-actions:
+    get:
+      tags:
+      - Queue
+      summary: "The file-action ledger (filters, keyset paged) and each library's trash"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: listFileActions
+  /queues/file-actions/{id}/restore:
+    post:
+      tags:
+      - Queue
+      summary: "Queue a ledger row's undo (file_restore)"
+      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: restoreFileAction
   /pools:
     get:
       tags:

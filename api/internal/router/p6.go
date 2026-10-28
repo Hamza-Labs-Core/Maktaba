@@ -208,6 +208,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	if d.PerfRegistry != nil {
 		d.PerfRegistry.Register(embedCache)
 	}
+	// one yt-dlp runner (its timeout cap and concurrency) for the Search page and
+	// for resolving a YouTube source the Queues page adds (Epic 47)
+	ytdlp := search.NewYtDlpSearcher(os.Getenv("MAKTABA_YTDLP"))
 	searchHandler := &search.Handler{
 		DB:             d.DB,
 		Semantic:       searchSemantic(d),
@@ -217,7 +220,7 @@ func MountP6(r chi.Router, d P6Deps) {
 		// Story 26.8: "From YouTube" runs yt-dlp's own search (no API key),
 		// the binary the TV live slots use. Without yt-dlp the Search page
 		// hides the section.
-		YouTube: search.NewYtDlpSearcher(os.Getenv("MAKTABA_YTDLP")),
+		YouTube: ytdlp,
 	}
 	searchHandler.Mount(r)
 
@@ -345,6 +348,7 @@ func MountP6(r chi.Router, d P6Deps) {
 		queuesHandler.Events = bus
 	}
 	queuesHandler.Secrets = d.Secrets
+	queuesHandler.Sources = ytdlp
 	if d.OnQueues != nil {
 		d.OnQueues(queuesHandler)
 	}

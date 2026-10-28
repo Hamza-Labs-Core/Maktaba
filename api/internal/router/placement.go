@@ -127,6 +127,11 @@ func buildPlacement() placement.Table {
 		// Epic 40: the failures page reads the ignores and the checks, its actions write
 		"/api/queues/failures",
 		"/api/queues/failures/actions",
+		// Epic 47: the offline pipelines' lists (the ledger, downloads, duplicates)
+		"/api/queues/offline-summary",
+		"/api/queues/offline-items",
+		"/api/queues/youtube-downloads",
+		"/api/queues/file-actions",
 		"/api/workers",
 		// story 35.9: the home's half of delegation
 		"/api/cluster/delegate/introspect",

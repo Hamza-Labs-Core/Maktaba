@@ -17,6 +17,7 @@ from watchdog.events import FileCreatedEvent, FileMovedEvent
 
 from maktaba_pipeline.engine.context import StageContext, StageFailure
 from maktaba_pipeline.engine.graph import get_stage
+from maktaba_pipeline.engine.sql import to_ts
 from maktaba_pipeline.engine.stages import trash_purge
 from maktaba_pipeline.library_mgmt import trash as trash_mod
 from maktaba_pipeline.library_mgmt.ledger import (
@@ -334,3 +335,90 @@ async def test_the_trash_purge_stage(db: Database, tmp_path: Path) -> None:
         await trash_purge.run(db, job, ctx)
     assert err.value.kind == "trash_size_mismatch" and err.value.retryable is False
     assert t2.exists()
+
+
+# ---------------------------------------------------------------- Restore is a queue job (47.11)
+
+
+def _stage_ctx() -> Any:
+    ctx = MagicMock(spec=StageContext)
+    ctx.local_path.side_effect = same
+
+    async def nothing(*a: Any, **k: Any) -> None:
+        return None
+
+    ctx.check_cancel.side_effect = nothing
+    ctx.progress.side_effect = nothing
+    return ctx
+
+
+@pytest.mark.asyncio
+async def test_the_file_restore_stage(db: Database, tmp_path: Path) -> None:
+    from maktaba_pipeline.engine.stages import file_restore
+
+    stage = get_stage("file_restore")
+    assert stage is not None and stage.pool == "nas_write" and stage.subject_kinds == ("library",)
+    w, vid, a, t = await _trashed(db, tmp_path)
+    fetched = await create_action(
+        db, library_id=w.library_id, kind="youtube_fetch", state="done", new_path="/x.mp4"
+    )
+    job = MagicMock()
+    job.id = 7
+    job.subject.id = w.library_id
+    job.payload = {"action_ids": [str(a.id), str(fetched.id), "not-a-uuid"]}
+    res = await file_restore.run(db, job, _stage_ctx())
+    # the original is back, the MP4 is in the trash; a download has no undo
+    assert res.outcome == "changed" and res.summary["restored"] == [str(a.id)]
+    assert [r["id"] for r in res.summary["refused"]] == [str(fetched.id)]
+    p = await w.assert_tracked(vid)
+    assert p.suffix == ".mkv" and not t.exists()
+    got = await get_action(db, a.id)
+    assert got is not None and got.state == "rolled_back"
+
+    # a follow-up that lists it again skips it
+    job.payload = {"action_ids": [str(a.id)]}
+    again = await file_restore.run(db, job, _stage_ctx())
+    assert again.outcome == "unchanged" and again.summary["already_restored"] == [str(a.id)]
+
+    # another library's row is refused; nothing restorable at all fails, not retried
+    other = await make_world(db, tmp_path / "other")
+    job.subject.id = other.library_id
+    job.payload = {"action_ids": [str(fetched.id)]}
+    with pytest.raises(StageFailure) as err:
+        await file_restore.run(db, job, _stage_ctx())
+    assert err.value.kind == "restore_refused" and err.value.retryable is False
+    job.payload = {}
+    with pytest.raises(StageFailure) as err:
+        await file_restore.run(db, job, _stage_ctx())
+    assert err.value.kind == "restore_bad_payload"
+
+
+@pytest.mark.asyncio
+async def test_the_reconciler_empties_the_trash_daily(db: Database, tmp_path: Path) -> None:
+    from maktaba_pipeline.engine.graph import GRAPH
+    from maktaba_pipeline.engine.reconcile import reconcile_once
+
+    graph = {s.name: s for s in GRAPH}
+    w, vid, a, t = await _trashed(db, tmp_path)
+    assert a.purge_after is not None
+    # nothing is due yet: no job
+    rep = await reconcile_once(db, graph, at=a.purge_after - timedelta(hours=1))
+    assert rep.trash_purge == 0
+    # due: one trash_purge for the library at its priority, and only one a day
+    rep = await reconcile_once(db, graph, at=a.purge_after + timedelta(hours=1))
+    assert rep.trash_purge == 1
+    job = await db.fetchrow(
+        "SELECT subject_id, priority FROM processing_jobs WHERE stage = 'trash_purge'"
+    )
+    assert str(job["subject_id"]) == str(w.library_id) and job["priority"] == 200
+    later = await reconcile_once(db, graph, at=a.purge_after + timedelta(hours=2))
+    assert later.trash_purge == 0
+    # it ran: the next one waits a day
+    await db.execute(
+        "UPDATE processing_jobs SET state = 'done', finished_at = $1 WHERE stage = 'trash_purge'",
+        to_ts(db, a.purge_after + timedelta(hours=1)),
+    )
+    same_day = await reconcile_once(db, graph, at=a.purge_after + timedelta(hours=3))
+    assert same_day.trash_purge == 0
+    next_day = await reconcile_once(db, graph, at=a.purge_after + timedelta(hours=26))
+    assert next_day.trash_purge == 1

@@ -77,3 +77,26 @@ the UI for that surface.
 | `GET` | `/videos/{id}/progress` | Watch progress | Fetch playback state for the current user and a video | — |
 | `PUT` | `/videos/{id}/progress` | Watch progress | Upsert playback state for the current user and a video | — |
 | `GET` | `/ws` | WebSocket | Upgrade to the realtime event stream | [1.1](stories-map.md), [7.11](stories-map.md), [7.16](stories-map.md), [10.15](stories-map.md), [11.2](stories-map.md) *(+2)* |
+
+## Epic 47: offline, MP4, duplicates (the Queues page)
+
+Admin only (the API answers 403 to anyone else, 401 signed out), audited, and queue-based: they enqueue through `processing_jobs_enqueue` and never run pipeline work themselves.
+
+| Method | Path | Tag | Summary | Owning stories |
+|--------|------|-----|---------|----------------|
+| `POST` | `/api/libraries/{id}/convert` | Queue | Queue Convert to MP4 for a library (or every library: all) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `POST` | `/api/libraries/{id}/dedup-scan` | Queue | Queue Find duplicates for a library (or every library: all) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `POST` | `/api/libraries/{id}/youtube/refresh` | Queue | Queue a forced YouTube refresh (youtube_sync) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `POST` | `/api/libraries/{id}/youtube/backfill` | Queue | Resume the YouTube back catalogue (youtube_backfill) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `POST` | `/api/libraries/{id}/youtube/retry` | Queue | Want gone, skipped or failed downloads again and queue them | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `POST` | `/api/libraries/{id}/youtube/tartube` | Queue | Seed the library from a Tartube database on the home (youtube_sync) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `GET` | `/api/libraries/{id}/youtube/sources` | Queue | A library's YouTube channels and playlists, with their downloads | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `POST` | `/api/libraries/{id}/youtube/sources` | Queue | Follow a channel or playlist (resolved with yt-dlp); queues a refresh when on | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `PATCH` | `/api/libraries/{id}/youtube/sources/{sid}` | Queue | Change a source's mode, folder or options; turning it on queues a refresh | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `DELETE` | `/api/libraries/{id}/youtube/sources/{sid}` | Queue | Stop following a source (its downloads keep their rows) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `GET` | `/api/libraries/{id}/offline-summary` | Queue | A library's YouTube, Not MP4, Duplicates and trash columns | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `GET` | `/api/queues/offline-summary` | Queue | Every library's offline columns, plus open cross-library duplicate groups | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `GET` | `/api/queues/offline-items` | Queue | Where each item is: download, convert, dedup check (latest live or failed job) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `GET` | `/api/queues/youtube-downloads` | Queue | YouTube downloads by state (keyset paged) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `GET` | `/api/queues/file-actions` | Queue | The file-action ledger (filters, keyset paged) and each library's trash | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+| `POST` | `/api/queues/file-actions/{id}/restore` | Queue | Queue a ledger row's undo (file_restore) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |

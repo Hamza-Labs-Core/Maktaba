@@ -32,6 +32,7 @@ var causeLabels = map[string]causeInfo{
 	"file_missing":         {"File is missing on disk", ActionRetry},
 	"ffmpeg_decode":        {"Could not decode the media file", ActionRetry},
 	"youtube_bot_check":    {"YouTube asked for a bot check", ActionOpenSettings},
+	"youtube_rate_limited": {"YouTube is limiting requests", ActionRetry},
 	"youtube_unavailable":  {"YouTube video or channel unavailable", ActionRetry},
 	"plex_unreachable":     {"Plex is unreachable", ActionOpenSettings},
 	"plex_auth":            {"Plex rejected the token", ActionOpenSettings},

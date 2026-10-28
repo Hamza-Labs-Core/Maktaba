@@ -63,6 +63,17 @@ type FailureItem struct {
 	MissingConfirm *time.Time `json:"missing_confirmed_at"`
 	YouTubeID      *string    `json:"youtube_id"`
 	Check          *ItemCheck `json:"access_check"`
+	// FileAction is the ledger row the failed job wrote (Epic 47): a failed
+	// conversion's measured check, or a row the file-actions page can restore.
+	FileAction *ItemFileAction `json:"file_action"`
+}
+
+// ItemFileAction is the latest file_actions row of an item's job.
+type ItemFileAction struct {
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`
+	State      string `json:"state"`
+	Restorable bool   `json:"restorable"`
 }
 
 // ItemCheck is the last access check of a video's file (item_checks).
@@ -192,7 +203,8 @@ func failureListSQL() string {
 SELECT i.id, i.stage, i.subject_kind, i.subject_id::text, ` + expr + `, i.path, i.lib_id::text, lib.name,
        i.state, i.status, i.error, i.error_cause, i.failure_class, i.parked_on, i.attempts, i.max_attempts,
        COALESCE(ev.first_at, i.finished_at, i.created_at), COALESCE(ev.last_at, i.finished_at, i.created_at),
-       i.missing_confirmed_at, yt.external_id, ic.ok, ic.error, ic.host, ic.checked_at
+       i.missing_confirmed_at, yt.external_id, ic.ok, ic.error, ic.host, ic.checked_at,
+       fa.id::text, fa.kind, fa.state, COALESCE(fa.restorable, false)
   FROM items i
   LEFT JOIN libraries lib ON lib.id = i.lib_id
   LEFT JOIN LATERAL (SELECT min(fe.at) AS first_at, max(fe.at) AS last_at FROM job_events fe
@@ -201,7 +213,9 @@ SELECT i.id, i.stage, i.subject_kind, i.subject_id::text, ` + expr + `, i.path, 
   LEFT JOIN LATERAL (SELECT m.external_id FROM media_metadata_enrichment m
                       WHERE i.subject_kind = 'video' AND m.video_id = i.subject_id
                         AND m.provider = 'youtube' AND NOT m.is_dismissed LIMIT 1) yt ON true
-  LEFT JOIN item_checks ic ON i.subject_kind = 'video' AND ic.video_id = i.subject_id` + joins + `
+  LEFT JOIN item_checks ic ON i.subject_kind = 'video' AND ic.video_id = i.subject_id
+  LEFT JOIN LATERAL (SELECT a.id, a.kind, a.state, ` + restorableSQL + ` AS restorable FROM file_actions a
+                      WHERE a.job_id = i.id ORDER BY a.created_at DESC LIMIT 1) fa ON true` + joins + `
  WHERE ` + itemFilterSQL + `
    AND ($8::bigint = 0 OR i.id < $8::bigint)
  ORDER BY i.id DESC
@@ -300,12 +314,14 @@ func (h *Handler) queryItems(ctx context.Context, args ...any) ([]FailureItem, e
 	out := []FailureItem{}
 	for rows.Next() {
 		var it FailureItem
-		var path, lib, libName, errTxt, cause, cls, parked, yt, chkErr, chkHost sql.NullString
+		var path, lib, libName, errTxt, cause, cls, parked, yt, chkErr, chkHost, faID, faKind, faState sql.NullString
+		var faRestorable bool
 		var first, last, missing, chkAt sql.NullTime
 		var chkOK sql.NullBool
 		if err := rows.Scan(&it.JobID, &it.Stage, &it.SubjectKind, &it.SubjectID, &it.Label, &path, &lib,
 			&libName, &it.State, &it.Status, &errTxt, &cause, &cls, &parked, &it.Attempts, &it.MaxAttempts,
-			&first, &last, &missing, &yt, &chkOK, &chkErr, &chkHost, &chkAt); err != nil {
+			&first, &last, &missing, &yt, &chkOK, &chkErr, &chkHost, &chkAt, &faID, &faKind, &faState,
+			&faRestorable); err != nil {
 			return nil, err
 		}
 		it.Path, it.LibraryID, it.LibraryName = nullStrPtr(path), nullStrPtr(lib), nullStrPtr(libName)
@@ -315,6 +331,10 @@ func (h *Handler) queryItems(ctx context.Context, args ...any) ([]FailureItem, e
 		it.YouTubeID = nullStrPtr(yt)
 		if chkOK.Valid && chkAt.Valid {
 			it.Check = &ItemCheck{OK: chkOK.Bool, Error: nullStrPtr(chkErr), Host: nullStrPtr(chkHost), CheckedAt: chkAt.Time}
+		}
+		if faID.Valid {
+			it.FileAction = &ItemFileAction{ID: faID.String, Kind: faKind.String, State: faState.String,
+				Restorable: faRestorable}
 		}
 		it.Reason = itemReason(it)
 		out = append(out, it)
@@ -364,6 +384,11 @@ func itemReason(it FailureItem) string {
 		return "damaged"
 	case strings.HasPrefix(sig, "youtube_unavailable"):
 		return "youtube_gone"
+	}
+	if r := epic47Reason(sig); r != "" {
+		return r
+	}
+	switch {
 	case it.Status == StatusRetrying:
 		return "retrying"
 	case cls == "transient" && it.State == "failed":
@@ -374,4 +399,32 @@ func itemReason(it FailureItem) string {
 		return "item"
 	}
 	return "unexplained"
+}
+
+// epic47Reasons are the failure kinds of the offline pipelines (Epic 47) by
+// their signature's prefix ("kind" or "kind:message"), as reason codes the
+// failures page words.
+var epic47Reasons = []struct{ prefix, reason string }{
+	{"convert_verify", "convert_verify"},
+	{"convert_swap", "convert_failed"},
+	{"convert_ffmpeg", "convert_failed"},
+	{"youtube_rate_limited", "youtube_rate_limited"},
+	{"youtube_bot_check", "youtube_bot_check"},
+	{"tartube_", "tartube"},
+	{"fk_not_covered", "dedup_blocked"},
+	{"keeper_unreadable", "dedup_keeper_unreadable"},
+	{"trash_move_failed", "trash_move_failed"},
+	{"trash_size_mismatch", "trash_changed"},
+	{"restore_", "restore_refused"},
+	// after three failed downloads in a row with one class (youtube_<class>)
+	{"youtube_", "youtube_downloads_failing"},
+}
+
+func epic47Reason(sig string) string {
+	for _, r := range epic47Reasons {
+		if strings.HasPrefix(sig, r.prefix) {
+			return r.reason
+		}
+	}
+	return ""
 }
