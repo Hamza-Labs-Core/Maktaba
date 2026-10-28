@@ -18,7 +18,8 @@ _MAX_LEN = 120
 _KNOWN: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (cause, re.compile(pattern, re.IGNORECASE))
     for cause, pattern in (
-        ("youtube_bot_check", r"confirm you.?re not a bot|sign in to confirm"),
+        ("youtube_bot_check", r"confirm you.?re not a bot|sign in to confirm(?! your age)"),
+        ("youtube_rate_limited", r"youtube_rate_limited|too many requests|http error 429"),
         (
             "youtube_unavailable",
             r"video unavailable|this channel does not exist|http error 404.*youtube"

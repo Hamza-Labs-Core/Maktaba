@@ -20,8 +20,17 @@ What it does:
    ``changed_subjects`` names the library's videos whose YouTube row changed.
 
 A bot check records ``status = 'bot_check'`` on the channel and fails the job
-with the non-retryable kind ``youtube_bot_check``: retrying at once only digs
-the hole deeper.
+with the kind ``youtube_bot_check``, which parks it on ``dependency:youtube`` (Epic 40):
+retrying at once only digs the hole deeper.
+
+Epic 47 (story 47.8) adds the **check** half of "make it offline": before the listing
+above, every *enabled* ``youtube_sources`` row (a channel or a playlist) is listed flat
+(:func:`maktaba_pipeline.library_mgmt.youtube_sources.list_source`; a channel listed in
+full once is read only up to the first id already known, ``--break-on-existing``), every
+listed id the library lacks is marked ``wanted`` (``backfill`` when it is older than the
+source), and ``youtube_fetch`` (new uploads, priority 120) or ``youtube_backfill`` (the
+back catalogue, priority 300) is queued. A payload ``{"full_listing": true}`` reads every
+source in full.
 """
 
 from __future__ import annotations
@@ -44,9 +53,12 @@ from ...integrations.youtube import (
     YtDlpFetcher,
     list_channel,
 )
+from ...integrations.youtube_errors import BOT_CHECK_KIND, RATE_LIMITED_KIND
+from ...library_mgmt import youtube_sources as ys
 from ...scanner.walker import DEFAULT_IGNORE_DIRNAMES, DEFAULT_VIDEO_EXTENSIONS
 from ..context import StageContext, StageFailure
-from ..graph import StageResult, SubjectKind
+from ..enqueue import enqueue_job
+from ..graph import EPIC47_PRIORITIES, StageResult, SubjectKind
 from ..hashing import canonical_hash
 from ..sql import is_pg, loads, now, to_ts, uid
 from .registry import StageImpl
@@ -385,6 +397,91 @@ async def _unlinked_videos(db: Any, library_id: UUID) -> set[UUID]:
     return {UUID(str(r["id"])) for r in rows}
 
 
+# ------------------------------------------------------------------ sources (Epic 47)
+
+
+def _listing_archive(library_id: UUID) -> str:
+    from ._youtube_drain import work_root
+
+    folder = work_root() / str(library_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    return str(folder / "listing-archive.txt")
+
+
+async def _check_sources(
+    db: Any, job: Any, ctx: StageContext, *, full: bool, refresh: bool
+) -> dict[str, Any]:
+    """List the enabled sources, mark what the library lacks ``wanted``, queue the
+    downloads. Raises the parking failures (bot check, too many requests)."""
+    library_id: UUID = job.subject.id
+    await ys.ensure_channel_sources(db, library_id)
+    sources = await ys.load_sources(db, library_id, enabled_only=True)
+    report: dict[str, Any] = {"sources": len(sources)}
+    if not sources:
+        return report
+    todo = [s for s in sources if refresh or s.status != "gone"]
+    known = await ys.known_ids(db, library_id)
+    local = await ys.local_ids(db, library_id)
+    archive = _listing_archive(library_id)
+    totals = ys.MarkReport()
+    counts = {"ok": 0, "gone": 0, "error": 0}
+    for n, src in enumerate(todo, 1):
+        await ctx.check_cancel()
+        await ctx.progress("sources", n - 1, len(todo), src.url)
+        first = src.last_checked_at is None
+        # a playlist is in no particular order, and a channel never listed in full has
+        # no head to stop at: both are read in full
+        incremental = not (full or first or src.kind == "playlist")
+        await asyncio.to_thread(ys.write_archive, archive, known)
+        try:
+            listing = await ys.list_source(src, archive=archive, break_on_existing=incremental)
+        except ys.ListingFailed as exc:
+            err = exc.error
+            if err.action == "bot_check":
+                await ys.set_source_status(db, src.id, "bot_check", err.message)
+                raise StageFailure(
+                    BOT_CHECK_KIND,
+                    f"YouTube asked to sign in (listing {src.url}); waiting before the next"
+                    " try, or give the source a signed-in browser's cookies",
+                ) from exc
+            if err.action == "rate_limited":
+                await ys.set_source_status(db, src.id, "rate_limited", err.message)
+                raise StageFailure(
+                    RATE_LIMITED_KIND,
+                    f"YouTube said too many requests (listing {src.url}); waiting at least an hour",
+                ) from exc
+            status = "gone" if err.action == "gone" else "error"
+            await ys.set_source_status(db, src.id, status, err.message)
+            counts[status] += 1
+            continue
+        rep = await ys.mark_listed(db, src, listing.entries, first_listing=first, local=local)
+        for k, v in rep.as_json().items():
+            setattr(totals, k, getattr(totals, k) + v)
+        known.update(e.youtube_id for e in listing.entries)
+        await ys.set_source_status(
+            db, src.id, "ok", None, checked=True, folder=ys.default_folder(src, listing.title)
+        )
+        counts["ok"] += 1
+    report.update(counts)
+    report.update(totals.as_json())
+    queued: list[str] = []
+    for stage, backfill in (("youtube_fetch", False), ("youtube_backfill", True)):
+        if await ys.wanted_count(db, library_id, backfill=backfill):
+            res = await enqueue_job(
+                db,
+                subject_kind="library",
+                subject_id=library_id,
+                stage=stage,
+                priority=EPIC47_PRIORITIES[stage],
+                reason={"why": "youtube items wanted", "by": f"job:{job.id}"},
+                triggered_by=job.id,
+            )
+            if res.enqueued:
+                queued.append(stage)
+    report["queued"] = queued
+    return report
+
+
 # ------------------------------------------------------------------ the stage
 
 
@@ -393,6 +490,10 @@ async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
     payload: dict[str, Any] = job.payload or {}
     refresh = bool(payload.get("refresh"))
     lang = str(payload.get("lang") or os.environ.get("MAKTABA_YT_LANG") or "ar")
+
+    sources = await _check_sources(
+        db, job, ctx, full=bool(payload.get("full_listing")), refresh=refresh
+    )
 
     before = await _snapshot(db, library_id)
 
@@ -464,6 +565,7 @@ async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
             "videos": len(after.videos),
             "playlists": len(after.playlists),
             "changed_rows": len(changed_ids),
+            "youtube_sources": sources,
         },
         log=tuple(log),
     )

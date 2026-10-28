@@ -35,6 +35,7 @@ __all__ = [
     "SHARE",
     "TRANSIENT",
     "UNKNOWN",
+    "YT_RATE_LIMIT",
     "class_for",
     "is_parking",
     "valid_class",
@@ -49,6 +50,9 @@ RESOURCE = "resource"
 MODEL = "dependency:model"
 #: a missing file whose library root does not answer: ``dependency:share:<root>``
 SHARE = "dependency:share"
+
+#: YouTube's "too many requests": a resource that cools down
+YT_RATE_LIMIT = "resource:youtube_rate_limit"
 
 #: (signature prefix, class), first match wins
 DEFAULT_TABLE: tuple[tuple[str, str], ...] = (
@@ -67,6 +71,10 @@ DEFAULT_TABLE: tuple[tuple[str, str], ...] = (
     ("ffmpeg_decode", ITEM_PERMANENT),
     ("permission_denied", ITEM_PERMANENT),
     ("youtube_unavailable", ITEM_PERMANENT),
+    # Epic 47: YouTube's bot check waits for YouTube (or for the owner's cookies); a 429
+    # cools down (the watchers release it an hour after the last one)
+    ("youtube_bot_check", "dependency:youtube"),
+    ("youtube_rate_limited", YT_RATE_LIMIT),
 )
 
 

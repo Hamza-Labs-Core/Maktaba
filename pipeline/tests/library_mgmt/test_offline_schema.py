@@ -263,7 +263,9 @@ def test_the_graph_has_the_epic47_stages() -> None:
     for name in EPIC47_STAGES:
         # no automatic trigger yet: nothing points at them and they point at nothing
         assert not by[name].edges and not by[name].entry_for
-        assert all(name not in s.may_request for s in GRAPH)
+        # the YouTube downloads are queued by the listing (story 47.8)
+        requesters = {s.name for s in GRAPH if name in s.may_request}
+        assert requesters <= ({"youtube_sync"} if name.startswith("youtube_") else set())
         assert all(e.to != name for s in GRAPH for e in s.edges)
         assert get_impl(name) is not None and get_impl(name).run is not None  # type: ignore[union-attr]
     assert EPIC47_PRIORITIES["youtube_fetch"] < 150 < EPIC47_PRIORITIES["youtube_backfill"]
@@ -297,7 +299,8 @@ async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> No
             s.external_write,
             s.placement,
         )
-        assert bool(r["enabled"]) == (not s.unreleased)
+        # the migration seeded them off but trash_purge (each one's story turns it on)
+        assert bool(r["enabled"]) == (name == "trash_purge")
     # a worker's graph sync keeps the unreleased ones off and trash_purge on
     await sync_graph(db, GRAPH)
     after = {
@@ -307,6 +310,7 @@ async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> No
     assert after["convert_mp4"] == (False, "not_configured")
     assert after["youtube_backfill"] == (False, "not_configured")
     assert after["trash_purge"] == (True, None)
+    assert after["youtube_fetch"] == (True, None)  # story 47.9 shipped
     pool = await db.fetchrow("SELECT scope, size FROM worker_pools WHERE pool = 'convert'")
     assert (pool["scope"], pool["size"]) == ("global", 1)
 

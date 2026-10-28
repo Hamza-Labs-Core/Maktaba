@@ -19,7 +19,15 @@ from ..db import claim_owner
 from ..db.jobs import Job
 from .enqueue import EnqueueResult, enqueue_job
 from .events import job_ref, log_event, publish
-from .graph import CATALOG_ID, Edge, GraphViolation, Request, StageDef, SubjectKind
+from .graph import (
+    CATALOG_ID,
+    EPIC47_PRIORITIES,
+    Edge,
+    GraphViolation,
+    Request,
+    StageDef,
+    SubjectKind,
+)
 from .sql import dumps, loads, now, to_ts, uid
 from .subjects import library_of_video, season_of_video
 
@@ -261,6 +269,8 @@ async def enqueue_follow_up(db: Any, job: Job, row: Any) -> EnqueueResult | None
         subject_kind=job.subject_kind,
         subject_id=job.subject.id,
         stage=job.stage,
+        # an Epic 47 stage keeps its place (the back catalogue's next batch stays at 300)
+        priority=EPIC47_PRIORITIES.get(job.stage),
         force=bool(row["rerun_force"]),
         force_cascade=bool(row["rerun_force_cascade"]),
         reason={
