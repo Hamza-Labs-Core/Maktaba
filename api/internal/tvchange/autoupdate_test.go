@@ -337,6 +337,40 @@ func TestAutoUpdateCheckFailedIsHeld(t *testing.T) {
 	}
 }
 
+// The update to 0.3.39 (2026-10-28) said "the TV stays on 0.0.1": the live release was
+// built from a source checkout and recorded the pipeline package's 0.0.1, while the live
+// slot ran a stamped binary. The held run names what the live slot reports it runs; the
+// live release's word stands only when no live slot beats (SQLite: no slots).
+func TestAutoUpdateHeldNamesTheLiveSlotsSoftware(t *testing.T) {
+	for _, be := range tvchangetest.Backends(t) {
+		t.Run(be.Name, func(t *testing.T) {
+			w := newAUWorld(t, be.DB)
+			w.exec(`UPDATE tv_releases SET streaming_version = '0.0.1' WHERE id = $1`, w.live)
+			if be.Name == "sqlite" {
+				if got := w.held("run-1"); got.Outcome != AutoOutcomeHeld || got.LiveStreaming != "0.0.1" {
+					t.Fatalf("no slots: %+v", got)
+				}
+				return
+			}
+			// a live slot whose beat stopped (the app down) is not taken at its word
+			w.exec(`INSERT INTO tv_slots (host_id, slot, role, state, version, beat_at)
+				VALUES ('h1', 'green', 'live', 'healthy', 'v0.3.36', now() - interval '10 minutes')`)
+			w.exec(`INSERT INTO tv_slots (host_id, slot, role, state, version, beat_at)
+				VALUES ('h1', 'blue', 'standby', 'healthy', 'v0.3.39', now())`)
+			got := w.held("run-1")
+			if got.Outcome != AutoOutcomeHeld || got.LiveStreaming != "0.0.1" {
+				t.Fatalf("a stale live slot: %+v", got)
+			}
+			// the live slot beats: its binary's version (the standby's is not the TV's)
+			w.exec(`UPDATE tv_slots SET version = 'v0.3.37', beat_at = now() WHERE slot = 'green'`)
+			if got, err := w.ctl.AutoUpdate(context.Background(), "run-1"); err != nil ||
+				got.Outcome != AutoOutcomeHeld || got.LiveStreaming != "v0.3.37" {
+				t.Fatalf("the live slot's software: %+v (%v)", got, err)
+			}
+		})
+	}
+}
+
 // Retry checks the held change again: it is asked to be staged (staged at once when
 // nothing is in flight) and reads in progress until its check ends; a pass swaps under its
 // rule (immediate). Asked again once it is no longer held: ErrNotHeld.

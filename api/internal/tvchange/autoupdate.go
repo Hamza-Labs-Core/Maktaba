@@ -66,8 +66,9 @@ type AutoUpdateStatus struct {
 	// FailedChecks the same checks with their channel and value (the report's summary).
 	Failed       []string `json:"failed,omitempty"`
 	FailedChecks []Check  `json:"failed_checks,omitempty"`
-	// LiveStreaming is the streaming software the live TV runs now (the live TV
-	// release's, "" when none airs): a held change leaves the TV on it.
+	// LiveStreaming is the streaming software the live TV runs now: the version the
+	// live slot reports (the binary's own), else the live TV release's ("" when none
+	// airs). A held change leaves the TV on it.
 	LiveStreaming string `json:"live_streaming,omitempty"`
 	// QueuedBehind is the change in flight it waits for (a ready one waits for an
 	// approval the run cannot get: the run gives up at its window's end).
@@ -300,8 +301,26 @@ func failedCheckList(report map[string]any) []Check {
 	return out
 }
 
-// liveStreaming is the streaming software the live TV release runs ("" when none airs).
+// liveStreaming is the streaming software the live TV runs ("" when none airs).
+//
+// The live slot's report comes first: it is the version stamped in the binary that runs.
+// A release's streaming_version is only what the release recorded when it was built (a
+// release made from a source checkout says 0.0.1, the pipeline package's own version:
+// the owner's live release since 2026-10-22, so the update to 0.3.39 said "the TV stays
+// on 0.0.1"), and a slot started unbound runs the installed binary whatever it says.
 func (c *Controller) liveStreaming(ctx context.Context) (string, error) {
+	if !IsSQLite(c.DB) { // TV slots run on a Postgres home only
+		var slotVer sql.NullString
+		err := c.DB.QueryRowContext(ctx, `SELECT version FROM tv_slots WHERE role = 'live' AND state = 'healthy'
+			AND COALESCE(version, '') <> '' AND beat_at > now() - interval '30 seconds'
+			ORDER BY beat_at DESC LIMIT 1`).Scan(&slotVer)
+		switch {
+		case err == nil && slotVer.String != "":
+			return slotVer.String, nil
+		case err != nil && !errors.Is(err, sql.ErrNoRows):
+			return "", err
+		}
+	}
 	var v sql.NullString
 	err := c.DB.QueryRowContext(ctx, `SELECT r.streaming_version FROM tv_routing t
 		JOIN tv_releases r ON r.id = t.live_release_id WHERE t.scope = 'cluster'`).Scan(&v)

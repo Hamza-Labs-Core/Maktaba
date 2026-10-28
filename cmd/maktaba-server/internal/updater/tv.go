@@ -74,7 +74,8 @@ type TVStatus struct {
 	StagedAt       *time.Time  `json:"staged_at,omitempty"`
 	TimeoutMinutes int         `json:"timeout_minutes,omitempty"`
 	QueuedBehind   *TVQueueRef `json:"queued_behind,omitempty"`
-	// LiveStreaming is the streaming software the live TV runs (its TV release's).
+	// LiveStreaming is the streaming software the live TV runs (the version its live
+	// slot reports, else its TV release's).
 	LiveStreaming string `json:"live_streaming,omitempty"`
 }
 
@@ -198,9 +199,15 @@ func (m *Machine) tvStep(ctx context.Context) (done bool, code, detail string) {
 		}
 		failed := append([]string(nil), st.Failed...)
 		_ = m.mutate(func(j *Journal) { j.TV.Outcome, j.TV.Failed = TVHeld, failed })
-		_ = m.endStep(StepTV, "held", fmt.Sprintf("%s: %s; the TV stays on %s", name, why, on))
-		m.warnf("%s: %s; the TV stays on %s and %s commits (retry or drop it on the Updates page)",
-			name, why, on, j.Job.Version)
+		stays := "the TV stays on " + on
+		if strings.TrimPrefix(on, "v") == strings.TrimPrefix(j.Job.Version, "v") {
+			// the live slot runs this release's binary already (a slot the restart
+			// started unbound runs the installed one): say so, not "stays"
+			stays = "the live TV runs " + on + "'s streaming software already"
+		}
+		_ = m.endStep(StepTV, "held", fmt.Sprintf("%s: %s; %s", name, why, stays))
+		m.warnf("%s: %s; %s and %s commits (retry or drop it on the Updates page)",
+			name, why, stays, j.Job.Version)
 		return true, "", ""
 	case TVFailed:
 		why := st.Reason

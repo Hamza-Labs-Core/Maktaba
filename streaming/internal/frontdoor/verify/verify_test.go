@@ -168,6 +168,46 @@ func TestChecksTSConformityCrafted(t *testing.T) {
 	}
 }
 
+// PSIScan finds the first PAT and then its PMT however the bytes are cut, and a PMT
+// before any PAT does not count; PCRSpan measures a read with no PAT at all.
+func TestPSIScanAndPCRSpan(t *testing.T) {
+	w := newTSW()
+	w.pmt(0x1000, 0x100, 0x101) // a PMT before the first PAT (a read joining mid-stream)
+	w.frame(0x100, 90000*1000, true, true)
+	w.pat(0x1000)
+	w.frame(0x100, 90000*1000+3000, false, true)
+	w.pmt(0x1000, 0x100, 0x101)
+	b := w.b
+	var p PSIScan
+	for i := 0; i < 4*188; i += 7 { // the PMT, a frame, the PAT, a frame: not yet
+		end := min(i+7, 4*188)
+		if p.Feed(b[i:end]) {
+			t.Fatalf("PSI seen at byte %d (a PMT before the PAT counted)", end)
+		}
+	}
+	if !p.PAT || p.PMT {
+		t.Fatalf("after the PAT: %+v", p)
+	}
+	if !p.Feed(b[4*188:]) {
+		t.Fatal("the PMT after the PAT was not seen")
+	}
+
+	all := craft(3, 30, nil)
+	var video []byte
+	for i := 0; i+188 <= len(all); i += 188 {
+		if pid := int(all[i+1]&0x1f)<<8 | int(all[i+2]); pid == 0x100 {
+			video = append(video, all[i:i+188]...)
+		}
+	}
+	r := AnalyzeTS(video, Options{})
+	if r.PATs != 0 || r.PCRSpan < 2.9 || r.PCRSpan > 3.0 || !LiveTSJudged(r) {
+		t.Fatalf("a 3 s read without PAT: pats %d, pcr span %.3f", r.PATs, r.PCRSpan)
+	}
+	if short := AnalyzeTS(video[:10*188], Options{}); short.PCRSpan > 0.5 || LiveTSJudged(short) {
+		t.Fatalf("ten frames: pcr span %.3f judged %v", short.PCRSpan, LiveTSJudged(short))
+	}
+}
+
 // ---- ffmpeg-made TS ----
 
 func ffmpegOr(t *testing.T) string {

@@ -39,23 +39,26 @@ type TSReport struct {
 	AudioType int     `json:"audio_type"`
 
 	// Video (from the SPS and the slice headers).
-	Codec       string  `json:"codec"` // h264 | hevc | other
-	Profile     int     `json:"profile"`
-	Level       int     `json:"level"`
-	Width       int     `json:"width"`
-	Height      int     `json:"height"`
-	FPS         float64 `json:"fps"`
-	Frames      int     `json:"frames"`
-	IDRs        int     `json:"idrs"`
-	MaxIDRGap   float64 `json:"max_idr_gap"` // seconds
-	GridIDRs    int     `json:"grid_idrs"`   // IDRs on a wall-clock multiple of the keyint (Grid)
-	BFrames     int     `json:"b_frames"`
-	OpenGOP     int     `json:"open_gop"` // random-access pictures that are not IDRs
-	PTSNotDTS   int     `json:"pts_not_dts"`
-	FirstPTS    int64   `json:"first_pts"`
-	FirstIDR    bool    `json:"first_idr"` // the sample starts with an IDR
-	CCErrors    int     `json:"cc_errors"`
-	PCRs        int     `json:"pcrs"`
+	Codec     string  `json:"codec"` // h264 | hevc | other
+	Profile   int     `json:"profile"`
+	Level     int     `json:"level"`
+	Width     int     `json:"width"`
+	Height    int     `json:"height"`
+	FPS       float64 `json:"fps"`
+	Frames    int     `json:"frames"`
+	IDRs      int     `json:"idrs"`
+	MaxIDRGap float64 `json:"max_idr_gap"` // seconds
+	GridIDRs  int     `json:"grid_idrs"`   // IDRs on a wall-clock multiple of the keyint (Grid)
+	BFrames   int     `json:"b_frames"`
+	OpenGOP   int     `json:"open_gop"` // random-access pictures that are not IDRs
+	PTSNotDTS int     `json:"pts_not_dts"`
+	FirstPTS  int64   `json:"first_pts"`
+	FirstIDR  bool    `json:"first_idr"` // the sample starts with an IDR
+	CCErrors  int     `json:"cc_errors"`
+	PCRs      int     `json:"pcrs"`
+	// PCRSpan is the seconds of stream clock the sample's PCRs span (first to last):
+	// how much of a live.ts read there was, PAT or not (Duration needs the PMT).
+	PCRSpan     float64 `json:"pcr_span,omitempty"`
 	PCRBack     int     `json:"pcr_back"`
 	VideoPTSBad int     `json:"video_pts_back"`
 
@@ -111,20 +114,21 @@ type pidState struct {
 
 // analyzer is one pass over a sample.
 type analyzer struct {
-	o       Options
-	r       TSReport
-	pids    map[int]*pidState
-	clock   int64 // the latest PCR (90 kHz) or video PTS, for the PAT gaps
-	haveClk bool
-	lastPAT int64
-	havePAT bool
-	lastPCR int64
-	havePCR bool
-	ptss    []int64
-	idrs    []int64
-	lastVPT int64
-	haveVPT bool
-	sawPic  bool
+	o        Options
+	r        TSReport
+	pids     map[int]*pidState
+	clock    int64 // the latest PCR (90 kHz) or video PTS, for the PAT gaps
+	haveClk  bool
+	lastPAT  int64
+	havePAT  bool
+	lastPCR  int64
+	havePCR  bool
+	firstPCR int64
+	ptss     []int64
+	idrs     []int64
+	lastVPT  int64
+	haveVPT  bool
+	sawPic   bool
 }
 
 // AnalyzeTS measures a TS sample. Segments may be given one by one (Segments)
@@ -233,6 +237,13 @@ func (a *analyzer) pcr(base int64) {
 		d := base - a.lastPCR
 		if d < 0 && d > -(1<<32) { // not a wrap
 			a.r.PCRBack++
+		}
+	} else {
+		a.firstPCR = base
+	}
+	if span := (base - a.firstPCR + ptsWrap) % ptsWrap; span < ptsWrap/2 {
+		if s := float64(span) / 90000; s > a.r.PCRSpan {
+			a.r.PCRSpan = s
 		}
 	}
 	a.lastPCR, a.havePCR = base, true
@@ -687,4 +698,62 @@ func (a *analyzer) sps(nal []byte) {
 	a.r.Profile, a.r.Level = profile, level
 	a.r.Width = (w+1)*16 - cx*(cl+cr)
 	a.r.Height = (2-fmo)*(h+1)*16 - cy*(ct+cb)
+}
+
+// PSIScan watches TS bytes as they arrive for the first PAT and then its PMT (a live.ts
+// read goes on until it has them: one that joined between two PATs, or a station that
+// restarted under it, is not a stream without them). The bytes may come in any pieces.
+type PSIScan struct {
+	tail     []byte
+	pmtPID   int
+	PAT, PMT bool
+}
+
+// Feed scans b and reports whether a PAT and then its PMT were seen so far.
+func (p *PSIScan) Feed(b []byte) bool {
+	if p.PAT && p.PMT {
+		return true
+	}
+	buf := append(p.tail, b...)
+	i := 0
+	for i+tsPacket <= len(buf) {
+		if buf[i] != 0x47 {
+			i++
+			continue
+		}
+		p.packet(buf[i : i+tsPacket])
+		i += tsPacket
+	}
+	p.tail = append(p.tail[:0], buf[i:]...)
+	return p.PAT && p.PMT
+}
+
+func (p *PSIScan) packet(pkt []byte) {
+	pid := int(pkt[1]&0x1f)<<8 | int(pkt[2])
+	if pkt[1]&0x40 == 0 || (pid != 0 && (!p.PAT || pid != p.pmtPID)) {
+		return
+	}
+	afc := (pkt[3] >> 4) & 3
+	if afc&1 == 0 {
+		return
+	}
+	off := 4
+	if afc&2 != 0 {
+		off += 1 + int(pkt[4])
+	}
+	if off >= tsPacket {
+		return
+	}
+	s := section(pkt[off:])
+	switch {
+	case pid == 0 && len(s) >= 12 && s[0] == 0:
+		for i := 8; i+4 <= len(s)-4; i += 4 {
+			if prog := int(s[i])<<8 | int(s[i+1]); prog != 0 {
+				p.pmtPID, p.PAT = int(s[i+2]&0x1f)<<8|int(s[i+3]), true
+				return
+			}
+		}
+	case pid == p.pmtPID && len(s) >= 16 && s[0] == 2:
+		p.PMT = true
+	}
 }
