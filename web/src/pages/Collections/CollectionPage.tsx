@@ -35,6 +35,7 @@ import {
   reorderCollection,
   type Collection,
 } from "../../lib/collections";
+import { libraryTabPath } from "../../lib/libraryTabs";
 import { shuffled, startQueue, startQueueFromQuery, watchPath } from "../../lib/playQueue";
 import { TitleRow } from "../../help/HelpLink";
 import { VideoPoster, formatDuration } from "../../components/VideoViews";
@@ -215,7 +216,7 @@ function CollectionOf({ id }: { id: string }) {
     try {
       await deleteCollection(id);
       toast.show({ tone: "success", message: t("collections.deleted", { name: col.name }) });
-      navigate(`/library/${encodeURIComponent(col.library_id)}/collections`);
+      navigate(libraryTabPath(col.library_id, "collections"));
     } catch (e) {
       fail(e);
       setBusy(false);
@@ -229,7 +230,7 @@ function CollectionOf({ id }: { id: string }) {
 
   return (
     <section className="mkt-page mkt-collection">
-      <Link className="mkt-crumb" to={`/library/${encodeURIComponent(col.library_id)}/collections`}>
+      <Link className="mkt-crumb" to={libraryTabPath(col.library_id, "collections")}>
         {t("collections.title")}
       </Link>
       <header className="mkt-page__header mkt-collection__header">

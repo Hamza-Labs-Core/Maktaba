@@ -302,9 +302,12 @@ def _clip(tmp: Path, name: str) -> Path:
     if extra == ["rotate"]:
         flat = tmp / f"{name}-flat.mp4"
         subprocess.run([*encode, str(flat)], check=True)
-        # the rotation is metadata only: the pixels stay landscape
+        # the rotation is metadata only: the pixels stay landscape. ffmpeg 6+ takes
+        # -display_rotation; older ones (Ubuntu 22.04's 4.4) the stream's rotate tag
         turn = [_FFMPEG, "-v", "error", "-y", "-display_rotation", "90", "-i", str(flat)]
-        subprocess.run([*turn, "-c", "copy", str(out)], check=True)
+        if subprocess.run([*turn, "-c", "copy", str(out)], check=False).returncode != 0:
+            tag = [_FFMPEG, "-v", "error", "-y", "-i", str(flat), "-c", "copy"]
+            subprocess.run([*tag, "-metadata:s:v:0", "rotate=90", str(out)], check=True)
     else:
         subprocess.run([*encode, *extra, str(out)], check=True)
     return out

@@ -36,6 +36,16 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **A library's Series and Collections tabs (Epic 45 story 45.24).** A library's page is now
+  Overview | Browse | Series | Collections, each tab its own address (Back returns to the tab
+  before). **Series**: every series of the library as a poster grid with its episodes and your
+  progress, sorted by name, newest episode or recently watched. **Collections**: the collections
+  Maktaba makes itself (topics "ملف", clips "مقاطع" and stand-alone "منفردات", the ones Plex shows,
+  marked **Automatic** and read-only, each with its own page) next to the admins' curated ones,
+  under a heading per kind with a filter and counts. The separate Collections button is gone and
+  `/library/:id/collections` opens the tab. API: `GET /api/libraries/{id}/series`,
+  `GET /api/libraries/{id}/collections`, `GET /api/libraries/{id}/collections/{topic|clip}/{id}`
+  (404 for a library you may not see).
 - **Plex-like watching, Phase 2 (Epic 45 stories 45.8 to 45.16).** Mark a video watched or
   unwatched, one at a time or many (**Select** on a library's grid); ticks and progress bars on
   the grid's cards; **Favorites** (a heart on the video page and the grid, a Favorites row on

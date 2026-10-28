@@ -4,11 +4,16 @@
 //     Continue Watching, Recently Added, Recently Watched, Most Watched,
 //     Series (each opens /series/:id) and By year (a chip opens Browse
 //     filtered to that year). Empty rows are not shown.
-//   Collections (story 45.17): the library's collections (GET
-//     /api/collections?library=), each opening its page; See all is
-//     /library/:id/collections.
+//     A Collections row (story 45.24): the library's collections, automatic
+//     and curated (GET /api/libraries/{id}/collections), each opening its
+//     page; its title and See all open the Collections tab, the Series row's
+//     the Series tab.
 //   Browse (?tab=browse): the full grid (LibraryBrowser, embedded) with its
 //     sort and filters in the URL.
+//   Series (?tab=series) and Collections (?tab=collections): LibraryTabs.
+//
+// Each tab is its own address (Back goes to the tab before); the old
+// /library/:id/collections page redirects to the Collections tab.
 //
 // A pin icon by the title for everyone (pin to the sidebar); admins also get
 // Scan now and Manage, at the header's end. A library
@@ -26,8 +31,12 @@ import { TitleRow } from "../../help/HelpLink";
 import { AddedRow, MediaRow, VideoRow } from "../../components/MediaRow";
 import { LibraryBrowser, ScanNow } from "../LibraryBrowser";
 import { PinToggle } from "../../components/PinToggle";
-import { fetchCollections, type Collection } from "../../lib/collections";
-import { CollectionCard } from "../Collections/Collections";
+import {
+  fetchLibraryCollections,
+  libraryTabPath,
+  type CollectionsPage,
+} from "../../lib/libraryTabs";
+import { CollectionsTab, LibraryCollectionCard, SeriesTab, collectionsKey } from "./LibraryTabs";
 import { SERVER_PAGES } from "../../lib/edition";
 import { LoadError } from "../../components/LoadError";
 import { LibraryPagePlaceholder, Loading } from "../../components/Placeholders";
@@ -35,7 +44,10 @@ import { usePageData } from "../../lib/usePageData";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type Tab = "overview" | "browse";
+const TABS = ["overview", "browse", "series", "collections"] as const;
+type Tab = (typeof TABS)[number];
+/** Cards a row of the Overview shows. */
+const ROW_CARDS = 20;
 
 export function LibraryPage() {
   const { libraryId = "" } = useParams();
@@ -48,7 +60,8 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
   const { t, n } = useI18n();
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
-  const tab: Tab = params.get("tab") === "browse" ? "browse" : "overview";
+  const rawTab = params.get("tab") as Tab | null;
+  const tab: Tab = rawTab && TABS.includes(rawTab) ? rawTab : "overview";
   const valid = UUID.test(libraryId);
   // the server ignores a malformed id elsewhere; here it is simply not found
   const page = usePageData<LibraryHub>(
@@ -56,12 +69,13 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
     () => fetchHub(libraryId),
     [t]
   );
-  // its own read: a failure only leaves the row out
-  const cols = usePageData<Collection[]>(valid ? `library-collections:${libraryId}` : null, () =>
-    fetchCollections(libraryId)
+  // its own read (the Collections tab's first page, kept for it): a failure
+  // only leaves the row out
+  const cols = usePageData<CollectionsPage>(valid ? collectionsKey(libraryId, "all") : null, () =>
+    fetchLibraryCollections(libraryId, "all")
   );
   const { data: hub, err: hubErr, loading } = page;
-  const collections = cols.data ?? [];
+  const collections = (cols.data?.items ?? []).slice(0, ROW_CARDS);
   const notFound = !valid || (hubErr instanceof ApiError && hubErr.status === 404);
   const err = notFound ? null : hubErr;
   function reload() {
@@ -69,11 +83,12 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
     cols.reload();
   }
 
+  // a tab is a step in the history: Back returns to the one before
   function selectTab(next: string) {
     const p = new URLSearchParams(params);
-    if (next === "browse") p.set("tab", "browse");
-    else p.delete("tab");
-    setParams(p, { replace: true });
+    if (next === "overview") p.delete("tab");
+    else p.set("tab", next);
+    setParams(p);
   }
 
   if (notFound) {
@@ -124,7 +139,8 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
     rows.series.length === 0 &&
     rows.years.length === 0 &&
     collections.length === 0;
-  const collectionsPath = `/library/${encodeURIComponent(libraryId)}/collections`;
+  const collectionsPath = libraryTabPath(libraryId, "collections");
+  const seriesPath = libraryTabPath(libraryId, "series");
 
   const overview = (
     <div className="mkt-library-page__overview">
@@ -164,10 +180,20 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
         testId="row-collections"
       >
         {collections.map((c) => (
-          <CollectionCard key={c.id} c={c} className="mkt-row__item mkt-libcard" />
+          <LibraryCollectionCard
+            key={`${c.kind}:${c.id}`}
+            libraryId={libraryId}
+            c={c}
+            className="mkt-row__item mkt-libcard"
+          />
         ))}
       </MediaRow>
-      <MediaRow title={t("libraryPage.row.series")} seeAllTo="/series" testId="row-series">
+      <MediaRow
+        title={t("libraryPage.row.series")}
+        titleTo={seriesPath}
+        seeAllTo={seriesPath}
+        testId="row-series"
+      >
         {rows.series.map((s) => (
           <li key={s.id} className="mkt-row__item">
             <Link to={`/series/${encodeURIComponent(s.id)}`} className="mkt-series-tile">
@@ -232,11 +258,6 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
           <span className="mkt-muted">{t("libraries.videos", { n: n(hub.library.videos) })}</span>
         </div>
         <div className="mkt-library-page__actions">
-          {(user?.is_admin || collections.length > 0) && (
-            <Link className="mkt-btn mkt-btn--ghost" to={collectionsPath}>
-              {t("collections.title")}
-            </Link>
-          )}
           {user?.is_admin && (
             <>
               {SERVER_PAGES && (
@@ -265,6 +286,16 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
                 years={rows.years.map((y) => y.year)}
               />
             ),
+          },
+          {
+            id: "series",
+            label: t("libraryPage.tab.series"),
+            content: <SeriesTab libraryId={libraryId} />,
+          },
+          {
+            id: "collections",
+            label: t("libraryPage.tab.collections"),
+            content: <CollectionsTab libraryId={libraryId} />,
           },
         ]}
       />

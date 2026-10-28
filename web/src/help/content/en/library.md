@@ -7,8 +7,8 @@ Find something to watch: Home, your libraries, each library's own page and every
 Maktaba watches your library folders and picks up new and changed files by itself; each new file then goes through [processing](/help/processing) (reading, transcribing, tagging) before it is fully ready. You browse what it found in four places:
 
 - [Home](/): rows across every library you may see, like Continue Watching and Recently Added, Live TV on now, and a row for each library you pinned.
-- [Libraries](/library): a card for each library, and the libraries you pinned in your order.
-- A library's page: its own rows (**Overview**) and all of its videos with sort and filters (**Browse**).
+- [Libraries](/library): a card for each library, and the libraries you pinned in your order (you set it on [Pinned libraries](/library/pinned)).
+- A library's page: its own rows (**Overview**), all of its videos with sort and filters (**Browse**), its series (**Series**) and its collections (**Collections**).
 - [All videos](/videos): every video of every library you may see, as cards or as a list.
 
 Which libraries you see is set by an admin (see [Library access](/help/library-access)). A library you may not see does not show anywhere: not on Home, not in a count, not in a row.
@@ -39,29 +39,48 @@ Each card shows four recent posters, the library's name and how many videos it h
 
 Press the **pin** icon to keep a library at hand: it is next to the library's name on its page, and in the corner of its card on the Libraries page (it shows when you point at the card, and stays once pinned). The pin turns solid, a short message confirms it, and the library shows under **Pinned** in the side menu with its own row on Home. Press the solid pin again to unpin it. You can pin as many libraries as you like.
 
-The **Pinned** list at the top of the Libraries page sets their order: use the up and down arrow buttons beside each one (they work with the keyboard too). The side menu and Home follow the new order at once. Your pins are saved on the server, so they follow you to every browser.
+The top of the Libraries page shows your pins as **Pinned (N)**. Press **Reorder** there to open the [Pinned libraries](/library/pinned) page, which sets their order:
+
+- Drag a library by its handle (the dotted grip at its start) to a new place.
+- Or use the buttons beside it: move to the top, up and down.
+- With the keyboard, focus the handle and press the up or down arrow; **Home** and **End** move it to the top or the bottom.
+- Press its pin to unpin it.
+
+Each change is saved at once, and the side menu and Home follow the new order. Your pins are saved on the server, so they follow you to every browser. With nothing pinned, the page says how to pin a library.
 
 ### A library's page {#library-page}
 
-The page opens on **Overview**. **Browse** shows every video of the library with sort and filters. Admins also see **Scan now** and **Manage**, which opens Manage libraries.
+The page opens on **Overview**. **Browse** shows every video of the library with sort and filters, **Series** its series and **Collections** its collections. Each tab has its own address (say `?tab=series`), so Back returns to the tab you were on and a shared link opens the same tab. Admins also see **Scan now** and **Manage**, which opens Manage libraries.
 
 ### Overview rows {#overview-rows}
 
 - **Continue Watching**, **On Deck**, **Recently Added** (grouped by series) and **Recently Watched**, as on Home, for this library only.
 - **Most Watched**: the videos played most in this library over the last 90 days, by everyone.
-- **Series**: the series found in this library. Click one to open the series (see [Series](/help/series)).
+- **Series**: the series found in this library. Click one to open the series (see [Series](/help/series)); the row's title and **See all** open the **Series** tab.
+- **Collections**: the library's collections, as on the **Collections** tab, which the row's title and **See all** open.
 - **By year**: one chip per year with how many videos are from it. Click a year to open **Browse** with that year's videos. The year is the file's date, which for downloaded videos is the day they were published.
+
+### Series {#series-tab}
+
+The **Series** tab shows every series with a lesson in this library: its picture, how many episodes it has here, and a bar with how many of them you watched (**In progress** when you started one and did not finish it). Pick **Sort**: **Name**, **Newest episode** (the series with the latest new lesson first) or **Recently watched** (the series you watched last first). It shows 60 at a time; **Load more** shows the next ones. Click a series to open it (see [Series](/help/series)).
 
 ### Collections {#collections}
 
-A collection is a group of a library's videos an admin put together: the **Collections** row on **Overview** shows them, and **See all** (or **Collections** at the top of the page) opens the library's Collections page. Everyone who can see the library sees its collections; only admins make and change them.
+The **Collections** tab shows the library's collections, under a heading for each kind, with the number in each:
+
+- **Topics**, **Clips** and **Stand-alone**: collections Maktaba makes by itself from the library's videos, marked **Automatic**. A topic gathers the lessons of one subject across shows; clips are the short pieces (and the promos), stand-alone the one-off videos that belong to no series. They are the same collections Plex shows for this library, in the same order. They update when the library changes, so nobody edits them; open one to play it (**Play all**, **Shuffle**, **Play from here**).
+- **Curated**: the collections admins make.
+
+The chips above them (**All**, **Topics**, **Clips**, **Stand-alone**, **Curated**) show one kind only; the choice is kept in the page's address. The old Collections page's address opens this tab. Everyone who can see the library sees its collections; only admins make and change the curated ones.
+
+A curated collection is one of two kinds:
 
 - **A list**: the videos in the order the admin chose. Open it to play everything (**Play all**, **Shuffle**) or **Play from here**.
 - **A saved filter** (marked so): it keeps the filters and sort of the **Browse** tab and always lists whatever matches them, as videos are added. **Show the videos** opens Browse with those filters.
 
 Admins:
 
-- **New collection** on the Collections page makes an empty list. To fill it, go to **Browse**, press **Select**, check videos, then **Add to collection**.
+- **New collection** on the **Collections** tab makes an empty list. To fill it, go to **Browse**, press **Select**, check videos, then **Add to collection**.
 - On a list's page, **↑** and **↓** move a video (with the keyboard too), **✕** takes it out, **Rename** and **Delete collection** change the collection itself. Deleting a collection never deletes its videos.
 - **Save as collection** on **Browse** saves the current filters and sort as a saved filter. **Edit filters** on its page opens Browse with them; change them and press **Save filters to the collection**.
 

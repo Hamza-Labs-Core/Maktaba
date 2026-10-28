@@ -132,8 +132,11 @@ def test_at_most_max_filler_per_gap_then_slate() -> None:
 
 @pytest.mark.asyncio
 async def test_filler_cooldowns_survive_a_topup() -> None:
+    # a named zone: the flex slot ends at midnight there, 4 h after t0, so filler runs to
+    # the horizon (in the server's zone it could end hours before, past every cooldown)
     ch = mk_channel(ChannelMode.SCHEDULE, mode_config={"slots": [{"start": "00:00", "end": "24:00",
-                                                                   "kind": "flex"}]})  # fmt: skip
+                                                                   "kind": "flex"}],
+                                                        "timezone": "America/New_York"})  # fmt: skip
     fs = FillerSet(lists=(FillerList("t", clips(30, MIN)),), repeat_cooldown_ms=20 * MIN)
     repo = FakeRepo(ch, [], filler=fs)
     t0 = dt("2026-06-14T00:00:00")

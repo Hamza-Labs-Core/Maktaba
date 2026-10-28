@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 
 from maktaba_pipeline.engine.graph import CATALOG_ID, GRAPH, POOLS
+from maktaba_pipeline.engine.sql import loads
+from maktaba_pipeline.engine.sync import stage_enabled_state
 from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_series_and_season, make_video
 from tests.engine.migrate import apply_sqlite, apply_statement, list_migrations, up_statements
@@ -174,8 +176,12 @@ def test_sqlite_rebuild_preserves_existing_rows(upgraded_from_87: sqlite3.Connec
 
 @pytest.mark.asyncio
 async def test_seed_matches_graph(db: Database) -> None:
+    """A freshly migrated database matches the graph before any worker syncs it, in every
+    field SQL reads (``processing_jobs_enqueue`` checks subject kinds, enabled, debounce and
+    attempts). Edges and ``may_request`` are the sync's: only the pipeline reads them."""
     rows = await db.fetch(
-        "SELECT stage, pool, lane, lane_order, version, legacy, write_mode FROM job_stages"
+        "SELECT stage, pool, lane, lane_order, version, legacy, write_mode, subject_kinds,"
+        " enabled, debounce_sec, debounce_max_sec, max_attempts FROM job_stages"
     )
     seeded = {r["stage"]: r for r in rows}
     assert set(seeded) == {s.name for s in GRAPH}
@@ -186,9 +192,19 @@ async def test_seed_matches_graph(db: Database) -> None:
             s.lane,
             s.lane_order,
             s.version,
+        ), s.name
+        assert bool(r["legacy"]) == s.legacy, s.name
+        assert r["write_mode"] == "auto", s.name
+        kinds = (
+            loads(r["subject_kinds"]) if isinstance(r["subject_kinds"], str) else r["subject_kinds"]
         )
-        assert bool(r["legacy"]) == s.legacy
-        assert r["write_mode"] == "auto"
+        assert sorted(kinds) == sorted(s.subject_kinds), s.name
+        assert (r["debounce_sec"], r["debounce_max_sec"], r["max_attempts"]) == (
+            s.debounce_sec,
+            s.debounce_max_sec,
+            s.max_attempts,
+        ), s.name
+        assert bool(r["enabled"]) == stage_enabled_state(s, {})[0], s.name
     pools = {r["pool"] for r in await db.fetch("SELECT pool FROM worker_pools")}
     assert pools == {p.pool for p in POOLS}
 

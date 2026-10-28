@@ -397,3 +397,55 @@ Role tests: a viewer reads only their libraries' collections (404 for another's 
 items) and every collection write is an admin's (403); the featured pick is admin-only; a viewer's hero
 and grouped row never show another library's video; trickplay follows the poster's rule.
 
+
+## Phase 4: a library's Series and Collections tabs
+
+The owner's decision (2026-10-28): a library's page gets **Series** and **Collections** tabs, and the
+separate Collections button and page go away. Maktaba's own queue jobs already group a library three
+ways, in its database, and the Plex extension pushes them to Plex as collections (nothing is pulled from
+Plex): series (`series`, `series_episodes`, from the detector), topic collections ("ملف",
+`topic_collections`/`topic_items`, the `topic_collections` stage) and clip groups ("مقاطع" filler and
+"منفردات" stand-alone, `clip_groups`/`clip_group_items`, the `clip_groups` stage). The web's curated
+`collections` (45.17) were empty, so the web showed no collections while Plex showed hundreds.
+
+### Phase 4 story (built)
+
+- **45.24** A library's Series and Collections tabs: the series with the user's progress, and one list
+  of the library's collections, automatic (topic, clip) and curated, each kind labelled; an automatic
+  collection's page; the old Collections page redirects to the tab.
+
+| Route (every signed-in user; 404 for a library they may not see, as one that does not exist) | What |
+|---|---|
+| `GET /api/libraries/{id}/series?sort=name\|newest\|recent&limit=&offset=` | The series with a visible episode in the library (the hub's Series row, unabridged), paged (60, at most 200): `{items: [{id, name, poster_path?, poster_video_id, episodes, watched, in_progress, latest_added_at, last_watched_at}], total, next}`. `watched`/`in_progress` are the caller's own (`playback_state`). `newest` puts the series with the newest episode first, `recent` the ones the caller watched last (never-watched after, by name). |
+| `GET /api/libraries/{id}/collections?kind=all\|topic\|filler\|standalone\|curated&limit=&offset=` | One paged list merging topic collections (`kind: topic`), clip groups (`kind: clip`, `subkind: filler\|standalone`) and the admins' collections (`kind: curated` or `smart`, both under the `curated` filter), in that order, each kind by name: `{items: [{kind, subkind?, id, name, videos, poster_video_ids, automatic}], counts: {all, topic, filler, standalone, curated}, total, next}`. Topic and clip groups count the library's visible videos and are left out with none; a list counts its visible videos the caller may see (as `GET /api/collections`); a saved filter's `videos` is null. |
+| `GET /api/libraries/{id}/collections/{topic\|clip}/{gid}?limit=&offset=` | An automatic collection's page: `{collection: {kind, subkind?, id, name, library, videos, automatic: true}, items: [video card + the caller's position_sec, completed], total, next}`, its videos in their stored `position` (the order Plex gets). A group of another library, another kind or an unknown id is 404. Read-only: the pipeline rebuilds it. |
+
+Mirroring Plex: the `plex_groups` stage writes every topic and every clip group of a library (the promos'
+"إعلانات" group is a filler clip group) whose members resolve in Plex; neither stage marks a group as
+TV-only or not for browsing, so Maktaba shows every group with at least one visible video, its members
+in `position` order, hidden videos (missing, superseded, deleted) left out. The display name is the
+group's `name` (Plex's title adds the library and the kind word, which the tab's headings carry).
+
+No migration. EXPLAIN ANALYZE on scratch data the size of the live library (75,000 videos, 2,572 series
+with 25,000 episodes, 42 topics with 1,211 items, 1,189 clip groups with 33,789 items): the Series page
+31 ms, the merged collections list 39 ms, a page's posters 15 ms, the largest group's page (10,000
+items) 19 ms, each one hash-join pass over the library's videos; no index changes the plan enough to be
+worth its writes. The hub's series posters now read only the listed series.
+
+Web: the library page's tabs are Overview | Browse | Series | Collections (`?tab=series`,
+`?tab=collections`); choosing a tab is a history step, so Back returns to the tab before. Series: a
+poster grid (episodes, an In progress badge, a watched bar), the sort in the URL (`by=newest|recent`),
+Load more. Collections: chips All / Topics / Clips / Stand-alone / Curated with their counts (`kind=` in
+the URL), a heading per kind under All, an Automatic badge on the pipeline's, admins' New collection;
+Load more. `/library/:id/collections/:kind/:gid` is an automatic collection's page (Play all, Shuffle,
+Play from here; no curation). The header's Collections button is gone; Overview's Collections row shows
+the merged list and its title and See all open the tab, the Series row's the Series tab;
+`/library/:id/collections` redirects to `?tab=collections`, and a curated collection's crumb and delete
+go back to the tab. Lists are kept per user (`usePageData`; `library-series:`, `library-collections:`
+families) with the delayed, layout-matching placeholders; en and ar; help (library: Series,
+Collections).
+
+Role tests (`router/libtabs_pg_test.go`, `browse/groups_test.go` on SQLite): a viewer of library A gets
+404 for B's series, collections and groups, for B's group under A's id, an unknown and a malformed
+library; signed out is 401; a list's count leaves out the videos the caller may not see; another user's
+progress never shows.

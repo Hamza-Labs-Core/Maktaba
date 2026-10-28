@@ -12,6 +12,7 @@ import pytest
 from maktaba_pipeline.db.jobs import DBConn, Job, Stage
 from maktaba_pipeline.engine.dispatch import EngineRuntime
 from maktaba_pipeline.engine.graph import GRAPH
+from maktaba_pipeline.engine.stages.registry import get_impl
 from maktaba_pipeline.engine.workers import live_workers, stages_without_worker
 from maktaba_pipeline.runtime import (
     Database,
@@ -50,7 +51,11 @@ async def test_default_worker_serves_every_stage_it_has_a_handler_for(db: Databa
         "fp_gate", "tag", "rate_style", "plan_channels", "write_channels",
     }  # fmt: skip
     served = set(stages)
-    assert served >= LEGACY_HANDLERS
+    # transcribing needs a speech model this machine may not have (a CI runner has none)
+    impl = get_impl("transcribe")
+    cannot = {"transcribe"} if impl and impl.unavailable and impl.unavailable() else set()
+    assert served >= LEGACY_HANDLERS - cannot
+    assert not (served & cannot)
     # legacy stages with no handler anywhere are not claimed (they would fail non-retryably)
     assert "categorize" not in served
     # the transcript analysis stages are engine stages now (this worker has numpy and
@@ -58,7 +63,8 @@ async def test_default_worker_serves_every_stage_it_has_a_handler_for(db: Databa
     assert {"chapter_infer", "topic_assign", "topic_recluster"} <= served
     # engine stages are served once their implementation exists
     assert (served & core_engine) <= core_engine
-    assert pools["probe"] == "nas_read" and pools["transcribe"] == "gpu"
+    assert pools["probe"] == "nas_read"
+    assert "transcribe" in cannot or pools["transcribe"] == "gpu"
     row = (await live_workers(db))[0]
     assert row["host"] == "PC" and set(row["stages"]) == served
     assert set(rt.graph) >= {s.name for s in GRAPH}
