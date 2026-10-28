@@ -35,31 +35,72 @@ import {
 import { TitleRow } from "../../help/HelpLink";
 import { SERVER_PAGES } from "../../lib/edition";
 
-// Pixels per minute on the time axis. The ratio between cells is what AC1
-// guarantees, so the absolute value is cosmetic — 4px/min gives a 1-hour
-// column of 240px and keeps a 30-min vs 120-min pair at the spec's 1:4.
-const PX_PER_MIN = 4;
 // Guide window: two hours, now − 30 min … now + 90 min (the owner's choice,
 // 2026-10-27: what is on now and next, not a long scroll).
 const WINDOW_BACK_MIN = 30;
 const WINDOW_FWD_MIN = 90;
+const WINDOW_MIN = WINDOW_BACK_MIN + WINDOW_FWD_MIN;
+// Half-hour ticks on the time axis: four across the two hours.
+const TICK_MIN = 30;
+// A tick needs this many minutes before the window's end to show its label.
+const TICK_LABEL_MIN = 8;
 const REFRESH_MS = 30_000;
 
 function minutesBetween(a: number, b: number): number {
   return (b - a) / 60_000;
 }
 
-// cellBox places a program on the time axis. A block with unparseable or
-// backwards timestamps gets the 2px minimum at the window start instead of a
-// NaN/negative width (which React drops, leaving an unsized cell).
-function cellBox(p: Program, windowStart: number): { start: number; width: number } {
+// pct places a span of minutes on the time axis as a share of the window.
+// The window always fills the guide's width beside the channel column, so
+// cells grow and shrink with the screen while durations keep their ratio (a
+// 30-min cell is a quarter of a 120-min one at any width).
+function pct(minutes: number): string {
+  return `${(minutes / WINDOW_MIN) * 100}%`;
+}
+
+interface CellBox {
+  /** minutes from the window start to the cell's visible start */
+  start: number;
+  /** the cell's visible minutes */
+  width: number;
+  /** the programme began before the window: the cell is cut at its start */
+  cutStart: boolean;
+  /** the programme runs past the window: the cell is cut at its end */
+  cutEnd: boolean;
+}
+
+// cellBox places a program on the time axis, clipped to the window: one that
+// started earlier begins at the window's start edge and one that runs on
+// stops at its end edge, so nothing spills out of the grid. A programme
+// wholly outside the window has no box (null). A block with unparseable or
+// backwards timestamps gets a zero-width box at the window start (the CSS
+// minimum keeps it visible) instead of a NaN/negative width, which React
+// drops, leaving an unsized cell.
+function cellBox(p: Program, windowStart: number): CellBox | null {
   const s = Date.parse(p.start_at);
   const e = Date.parse(p.end_at);
-  if (Number.isNaN(s) || Number.isNaN(e) || e <= s) return { start: 0, width: 2 };
+  if (Number.isNaN(s) || Number.isNaN(e) || e <= s) {
+    return { start: 0, width: 0, cutStart: false, cutEnd: false };
+  }
+  const windowEnd = windowStart + WINDOW_MIN * 60_000;
+  if (e <= windowStart || s >= windowEnd) return null;
+  const from = Math.max(s, windowStart);
+  const to = Math.min(e, windowEnd);
   return {
-    start: Math.max(0, minutesBetween(windowStart, s)) * PX_PER_MIN,
-    width: Math.max(2, minutesBetween(s, e) * PX_PER_MIN),
+    start: minutesBetween(windowStart, from),
+    width: minutesBetween(from, to),
+    cutStart: s < windowStart,
+    cutEnd: e > windowEnd,
   };
+}
+
+// visibleProgress is how far `now` is through the visible part of an airing
+// cell, so its progress bar ends on the now-line even when the programme
+// started before the window.
+function visibleProgress(box: CellBox, windowStart: number, nowMs: number): number {
+  if (box.width <= 0) return 0;
+  const elapsed = minutesBetween(windowStart, nowMs) - box.start;
+  return Math.min(1, Math.max(0, elapsed / box.width));
 }
 
 // collapseFiller merges runs of filler/bumper blocks into one cell so the
@@ -127,9 +168,8 @@ export function Guide() {
 
   const nowMs = Date.now() + offsetRef.current;
   const windowStart = nowMs - WINDOW_BACK_MIN * 60_000;
-  const totalMin = WINDOW_BACK_MIN + WINDOW_FWD_MIN;
-  const gridWidth = totalMin * PX_PER_MIN;
-  const nowX = WINDOW_BACK_MIN * PX_PER_MIN;
+  // the now-line's share of the window: a quarter of the way in
+  const nowFraction = WINDOW_BACK_MIN / WINDOW_MIN;
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -137,20 +177,27 @@ export function Guide() {
     return [...set].sort();
   }, [guide]);
 
-  // Hour ticks for the time axis header.
-  const hourTicks = useMemo(() => {
-    const ticks: Array<{ x: number; label: string }> = [];
+  // Half-hour ticks for the time axis header. Each label starts at its mark
+  // and reads toward the window's end, so a tick too close to that end to
+  // show its label is left out rather than cut.
+  const ticks = useMemo(() => {
+    const out: Array<{ ms: number; x: string; half: boolean; label: string }> = [];
     const first = new Date(windowStart);
-    first.setMinutes(0, 0, 0);
-    for (let ms = first.getTime(); ms < windowStart + totalMin * 60_000; ms += 3_600_000) {
-      if (ms < windowStart) continue;
-      ticks.push({
-        x: minutesBetween(windowStart, ms) * PX_PER_MIN,
-        label: new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    first.setSeconds(0, 0);
+    first.setMinutes(Math.ceil(first.getMinutes() / TICK_MIN) * TICK_MIN);
+    if (first.getTime() < windowStart) first.setMinutes(first.getMinutes() + TICK_MIN);
+    const lastLabel = windowStart + (WINDOW_MIN - TICK_LABEL_MIN) * 60_000;
+    for (let ms = first.getTime(); ms <= lastLabel; ms += TICK_MIN * 60_000) {
+      const at = new Date(ms);
+      out.push({
+        ms,
+        x: pct(minutesBetween(windowStart, ms)),
+        half: at.getMinutes() !== 0,
+        label: at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       });
     }
-    return ticks;
-  }, [windowStart, totalMin]);
+    return out;
+  }, [windowStart]);
 
   function onCellActivate(p: Program, channelNumber: number) {
     // The airing block tunes live; a future block opens details (AC3).
@@ -214,21 +261,30 @@ export function Guide() {
         <WhatsOnNowList channels={channels} nowMs={nowMs} onTune={(num) => nav(`/live/${num}`)} />
       ) : (
         <div className="mkt-guide__scroll" data-testid="guide-grid">
-          <div className="mkt-guide__timeaxis" style={{ width: gridWidth }}>
-            {hourTicks.map((tk) => (
-              <span key={tk.x} className="mkt-guide__tick" style={{ insetInlineStart: tk.x }}>
-                {tk.label}
+          <div className="mkt-guide__timeaxis" data-testid="guide-timeaxis">
+            {ticks.map((tk) => (
+              <span
+                key={tk.ms}
+                className={`mkt-guide__tick${tk.half ? " mkt-guide__tick--half" : ""}`}
+                data-testid="guide-tick"
+                style={{ insetInlineStart: tk.x }}
+              >
+                {/* times read left to right in Arabic too */}
+                <span dir="ltr">{tk.label}</span>
               </span>
             ))}
             <span
               className="mkt-guide__nowline mkt-guide__nowline--axis"
               data-testid="now-line"
-              style={{ insetInlineStart: nowX }}
+              style={{ insetInlineStart: pct(WINDOW_BACK_MIN) }}
               aria-hidden="true"
             />
           </div>
           {channels.map(({ channel, programs }) => {
-            const cells = collapseFiller(programs);
+            const cells = collapseFiller(programs).flatMap((p) => {
+              const box = cellBox(p, windowStart);
+              return box ? [{ p, box }] : [];
+            });
             return (
               <div className="mkt-guide__row" key={channel.id}>
                 <Link
@@ -241,37 +297,63 @@ export function Guide() {
                 >
                   <ChannelLogo src={channelLogo(channel)} />
                   <span className="mkt-guide__channum">{channel.number}</span>
-                  <span className="mkt-guide__channame">{channel.name}</span>
+                  {/* dir=auto: an English name in Arabic (or the reverse) is cut at its own end */}
+                  <span className="mkt-guide__channame" dir="auto">
+                    {channel.name}
+                  </span>
                 </Link>
-                <div className="mkt-guide__track" style={{ width: gridWidth }}>
+                <div className="mkt-guide__track">
                   {cells.length === 0 && (
                     <div
                       className="mkt-guide__cell mkt-guide__cell--empty"
-                      style={{ width: gridWidth }}
+                      style={{ width: "100%" }}
                     >
                       {t("guide.noContent")}
                     </div>
                   )}
-                  {cells.map((p) => {
-                    const box = cellBox(p, windowStart);
+                  {cells.map(({ p, box }) => {
                     const airing = isAiring(p, nowMs);
-                    const prog = progressFraction(p, nowMs);
+                    // progressFraction keeps a bad block bar-less; the bar
+                    // itself spans the visible part, up to the now-line
+                    const prog =
+                      progressFraction(p, nowMs) === null
+                        ? null
+                        : visibleProgress(box, windowStart, nowMs);
+                    const classes = ["mkt-guide__cell"];
+                    if (airing) classes.push("mkt-guide__cell--airing");
+                    if (isFiller(p.kind)) classes.push("mkt-guide__cell--filler");
+                    if (box.cutStart) classes.push("mkt-guide__cell--cut-start");
+                    if (box.cutEnd) classes.push("mkt-guide__cell--cut-end");
                     return (
                       <button
                         type="button"
                         key={`${p.seq}-${p.start_at}`}
-                        className={`mkt-guide__cell${airing ? " mkt-guide__cell--airing" : ""}${isFiller(p.kind) ? " mkt-guide__cell--filler" : ""}`}
+                        className={classes.join(" ")}
                         data-testid="guide-cell"
                         title={p.title}
                         style={{
-                          insetInlineStart: box.start,
-                          width: box.width,
+                          insetInlineStart: pct(box.start),
+                          width: pct(box.width),
                         }}
                         onClick={() => onCellActivate(p, channel.number)}
                       >
-                        <span className="mkt-guide__celltitle">
+                        {box.cutStart && (
+                          <span
+                            className="mkt-guide__cellcut mkt-guide__cellcut--start"
+                            data-testid="cell-cut-start"
+                            aria-hidden="true"
+                          />
+                        )}
+                        <span className="mkt-guide__celltitle" dir="auto">
                           {isFiller(p.kind) ? p.title || t("guide.upNext") : p.title}
                         </span>
+                        {box.cutEnd && (
+                          <span
+                            className="mkt-guide__cellcut mkt-guide__cellcut--end"
+                            data-testid="cell-cut-end"
+                            aria-hidden="true"
+                          />
+                        )}
                         {airing && prog !== null && (
                           <span
                             className="mkt-guide__cellprogress"
@@ -288,7 +370,10 @@ export function Guide() {
           })}
           <div
             className="mkt-guide__nowline"
-            style={{ insetInlineStart: nowX + 160 /* channel head gutter */ }}
+            // past the channel column, then the now share of what is left
+            style={{
+              insetInlineStart: `calc(var(--mkt-guide-head) + (100% - var(--mkt-guide-head)) * ${nowFraction})`,
+            }}
             aria-hidden="true"
           />
         </div>

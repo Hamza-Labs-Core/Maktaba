@@ -3,7 +3,7 @@
 // for real, as in Guide.test.tsx; the page is mounted with the shared page
 // harness (RequireAuth + RouteErrorBoundary + a signed-in user).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router-dom";
 
@@ -86,6 +86,12 @@ const guideCalls = () =>
   get.mock.calls.filter((c) => String(c[0]).startsWith("/api/channels/guide"));
 const cellNamed = (name: string) =>
   screen.getAllByTestId("guide-cell").find((c) => c.textContent?.includes(name))!;
+/** An element's inset-inline-start, in % of the window (jsdom drops it from `style`). */
+const inlineStart = (el: HTMLElement) => {
+  const m = /inset-inline-start:\s*(-?[\d.]+)%/.exec(el.getAttribute("style") ?? "");
+  if (!m) throw new Error(`no inset-inline-start in % on ${el.outerHTML}`);
+  return parseFloat(m[1]);
+};
 
 const realMatchMedia = window.matchMedia;
 
@@ -185,7 +191,7 @@ describe("Guide (test-cases/guide.md)", () => {
     expect(within(grid).queryAllByTestId("guide-cell")).toHaveLength(0);
     const empty = grid.querySelector(".mkt-guide__cell--empty") as HTMLElement;
     expect(empty).toHaveTextContent("No content");
-    expect(empty.style.width).toBe("480px"); // full width: 120 min × 4 px
+    expect(empty.style.width).toBe("100%"); // the whole two-hour window
 
     await user.click(screen.getByRole("button", { name: "What's on now" }));
     const card = within(screen.getByTestId("whats-on-now")).getByRole("button");
@@ -356,7 +362,7 @@ describe("Guide (test-cases/guide.md)", () => {
     expect(row1).toHaveLength(3);
     expect(row1[1]).toHaveTextContent("فواصل"); // the API's filler title
     expect(row1[1]).toHaveClass("mkt-guide__cell--filler");
-    expect(parseFloat(row1[1].style.width)).toBe(40);
+    expect(parseFloat(row1[1].style.width)).toBeCloseTo((10 / 120) * 100, 5); // 10 of 120 min
 
     await user.click(row1[1]);
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
@@ -537,7 +543,7 @@ describe("Guide (test-cases/guide.md)", () => {
       channels: [
         {
           channel: header("c1", 1, "Movies"),
-          blocks: [block("c1", "A", 0, 30), block("c1", "B", 50, 90)],
+          blocks: [block("c1", "A", 0, 40), block("c1", "B", 50, 90)],
         },
       ],
     });
@@ -659,12 +665,135 @@ describe("Guide (test-cases/guide.md)", () => {
     expect(screen.getByText("قناة القرآن")).toBeInTheDocument();
     // cells are placed with a logical (direction-aware) property
     expect(cellNamed("تلاوة").getAttribute("style")).toMatch(/inset-inline-start/);
-    expect(screen.getByTestId("now-line").getAttribute("style")).toMatch(
-      /inset-inline-start: 120px/
-    );
+    expect(screen.getByTestId("now-line").getAttribute("style")).toMatch(/inset-inline-start: 25%/);
     await user.click(screen.getByRole("button", { name: "ما يُعرض الآن" }));
     expect(within(screen.getByTestId("whats-on-now")).getByText("تلاوة")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "عرض الشبكة" })).toBeInTheDocument();
+  });
+
+  it("GDE-27: programmes are cut at both window edges, nothing spills out", async () => {
+    // a frozen clock: the window is exactly now − 30 … now + 90 min
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW });
+    get.mockResolvedValue({
+      server_time: iso(0),
+      channels: [
+        {
+          channel: header("c1", 1, "Movies"),
+          blocks: [
+            block("c1", "Gone", -100, -40), // over before the window
+            block("c1", "Early", -60, 10), // began 30 min before the window
+            block("c1", "Middle", 10, 60),
+            block("c1", "Late", 60, 150), // runs 60 min past the window
+            block("c1", "Far", 100, 130), // starts after the window
+          ],
+        },
+      ],
+    });
+    openGuide();
+    await screen.findByTestId("guide-grid");
+    const cells = screen.getAllByTestId("guide-cell");
+    expect(cells.map((c) => c.textContent)).toEqual(["Early", "Middle", "Late"]);
+
+    const early = cellNamed("Early");
+    expect(inlineStart(early)).toBe(0);
+    expect(parseFloat(early.style.width)).toBeCloseTo((40 / 120) * 100, 5);
+    expect(early).toHaveClass("mkt-guide__cell--cut-start");
+    expect(early).not.toHaveClass("mkt-guide__cell--cut-end");
+    expect(within(early).getByTestId("cell-cut-start")).toHaveAttribute("aria-hidden", "true");
+    expect(within(early).queryByTestId("cell-cut-end")).toBeNull();
+    // the title still reads, and the name is the title alone
+    expect(screen.getByRole("button", { name: "Early" })).toBe(early);
+    // the progress bar spans the visible part up to now: 30 of its 40 min
+    const bar = early.querySelector(".mkt-guide__cellprogress") as HTMLElement;
+    expect(parseFloat(bar.style.inlineSize)).toBeCloseTo(75, 5);
+
+    const middle = cellNamed("Middle");
+    expect(middle.className).not.toMatch(/cut-/);
+    expect(inlineStart(middle)).toBeCloseTo((40 / 120) * 100, 5);
+
+    const late = cellNamed("Late");
+    expect(inlineStart(late)).toBeCloseTo(75, 5);
+    expect(parseFloat(late.style.width)).toBeCloseTo(25, 5);
+    expect(late).toHaveClass("mkt-guide__cell--cut-end");
+    expect(late).not.toHaveClass("mkt-guide__cell--cut-start");
+    expect(within(late).getByTestId("cell-cut-end")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("button", { name: "Late" })).toBe(late);
+
+    // every cell sits inside the window: start ≥ 0 %, end ≤ 100 %
+    for (const c of cells) {
+      expect(inlineStart(c)).toBeGreaterThanOrEqual(0);
+      expect(inlineStart(c) + parseFloat(c.style.width)).toBeLessThanOrEqual(100 + 1e-9);
+    }
+    expect(inlineStart(screen.getByTestId("now-line"))).toBe(25);
+  });
+
+  it("GDE-28: the two hours fill the guide's width, with half-hour ticks", async () => {
+    // 10:10 local: the window is 09:40 … 11:40
+    NOW = new Date(2026, 9, 28, 10, 10).getTime();
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW });
+    get.mockResolvedValue({
+      server_time: iso(0),
+      channels: [
+        { channel: header("c1", 1, "Movies"), blocks: [block("c1", "Whole", -30, 90)] },
+        { channel: header("c2", 2, "Empty"), blocks: [] },
+      ],
+    });
+    openGuide();
+    const grid = await screen.findByTestId("guide-grid");
+    // no fixed pixel width anywhere: the track and axis take what is there
+    for (const el of grid.querySelectorAll<HTMLElement>(
+      ".mkt-guide__track, .mkt-guide__timeaxis"
+    )) {
+      expect(el.style.width).toBe("");
+    }
+    for (const el of grid.querySelectorAll<HTMLElement>("[style]")) {
+      expect(el.getAttribute("style")).not.toMatch(/\d+px/);
+    }
+    // a programme the length of the window is the full width, uncut
+    const whole = cellNamed("Whole");
+    expect(inlineStart(whole)).toBe(0);
+    expect(parseFloat(whole.style.width)).toBeCloseTo(100, 5);
+    expect(whole.className).not.toMatch(/cut-/);
+    expect((grid.querySelector(".mkt-guide__cell--empty") as HTMLElement).style.width).toBe("100%");
+
+    // half-hour ticks at 10:00, 10:30, 11:00 and 11:30 (20, 50, 80, 110 min in)
+    const ticks = screen.getAllByTestId("guide-tick");
+    expect(ticks.map(inlineStart).map((x) => Math.round(x * 1000) / 1000)).toEqual([
+      16.667, 41.667, 66.667, 91.667,
+    ]);
+    expect(ticks.map((t) => t.classList.contains("mkt-guide__tick--half"))).toEqual([
+      false,
+      true,
+      false,
+      true,
+    ]);
+  });
+
+  it("GDE-28: a tick too close to the window's end to show its time is left out", async () => {
+    // 10:25 local: the window is 09:55 … 11:55; 11:30 has 25 min, 12:00 is outside
+    NOW = new Date(2026, 9, 28, 10, 25).getTime();
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW });
+    get.mockResolvedValue({
+      server_time: iso(0),
+      channels: [{ channel: header("c1", 1, "Movies"), blocks: [block("c1", "A", -30, 90)] }],
+    });
+    openGuide();
+    await screen.findByTestId("guide-grid");
+    expect(screen.getAllByTestId("guide-tick")).toHaveLength(4); // 10:00 … 11:30
+
+    // 10:04 local: the window ends 11:34, 4 min after the 11:30 tick
+    cleanup();
+    NOW = new Date(2026, 9, 28, 10, 4).getTime();
+    vi.setSystemTime(NOW);
+    get.mockResolvedValue({
+      server_time: iso(0),
+      channels: [{ channel: header("c1", 1, "Movies"), blocks: [block("c1", "A", -30, 90)] }],
+    });
+    openGuide();
+    await screen.findByTestId("guide-grid");
+    const xs = screen.getAllByTestId("guide-tick").map(inlineStart);
+    expect(xs).toHaveLength(3); // 10:00, 10:30, 11:00 (not 11:30)
+    expect(Math.max(...xs)).toBeLessThan(100);
   });
 
   it("GDE-24: Arabic empty state title", async () => {
