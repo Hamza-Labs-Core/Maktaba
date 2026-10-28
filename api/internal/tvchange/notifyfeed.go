@@ -150,7 +150,12 @@ func (c *Controller) onEvent(ctx context.Context, cfg Config, e feedEvent) error
 			params["rule"] = rule
 			params["window"] = cfg.QuietWindow
 		} else {
+			// a manual change waits for an admin's approval: the admin is told, once (a
+			// change checked again after an app update was announced before)
 			kind, p.Severity = NotifyReady, notify.SeverityWarn
+			if afterUpdateRecheck(ch) {
+				p.Every = 30 * 24 * time.Hour
+			}
 		}
 	case e.Action == ActionFail: // back to draft (a row made before: to failed)
 		kind, p.Severity = NotifyFailed, notify.SeverityError

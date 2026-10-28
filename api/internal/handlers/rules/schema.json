@@ -4001,7 +4001,7 @@
      "kind": "bool",
      "group": "TV staging",
      "label": "Stage every TV change",
-     "help": "A lineup, schedule, settings or art change is prepared next to what is on the air, checked, and put on the air only when an admin approves it on the Changes page (Live TV -> Changes). On by default. Off: changes go on the air at once, as before Epic 33.",
+     "help": "A lineup, schedule, settings or art change is prepared next to what is on the air and checked before it goes on the air. A change a person made waits for an admin's approval on the Changes page (Live TV -> Changes); an automatic one goes on by the rules below. On by default. Off: changes go on the air at once, as before Epic 33.",
      "default": true
     },
     {
@@ -4009,10 +4009,9 @@
      "kind": "str",
      "group": "TV staging approval",
      "label": "Lineup changes",
-     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
-     "default": "approval",
+     "help": "When an automatic change of this kind (the channel plan, the schedule, the update's streaming software) goes on the air: immediate, as soon as it is verified; quiet_window, in the quiet window. A change a person made always waits for an admin's approval.",
+     "default": "immediate",
      "choices": [
-      "approval",
       "quiet_window",
       "immediate"
      ]
@@ -4022,10 +4021,9 @@
      "kind": "str",
      "group": "TV staging approval",
      "label": "Settings changes",
-     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
-     "default": "approval",
+     "help": "When an automatic change of this kind (the channel plan, the schedule, the update's streaming software) goes on the air: immediate, as soon as it is verified; quiet_window, in the quiet window. A change a person made always waits for an admin's approval.",
+     "default": "immediate",
      "choices": [
-      "approval",
       "quiet_window",
       "immediate"
      ]
@@ -4035,10 +4033,9 @@
      "kind": "str",
      "group": "TV staging approval",
      "label": "Live slots changes",
-     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
-     "default": "approval",
+     "help": "When an automatic change of this kind (the channel plan, the schedule, the update's streaming software) goes on the air: immediate, as soon as it is verified; quiet_window, in the quiet window. A change a person made always waits for an admin's approval.",
+     "default": "immediate",
      "choices": [
-      "approval",
       "quiet_window",
       "immediate"
      ]
@@ -4048,10 +4045,9 @@
      "kind": "str",
      "group": "TV staging approval",
      "label": "Art changes",
-     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
-     "default": "approval",
+     "help": "When an automatic change of this kind (the channel plan, the schedule, the update's streaming software) goes on the air: immediate, as soon as it is verified; quiet_window, in the quiet window. A change a person made always waits for an admin's approval.",
+     "default": "immediate",
      "choices": [
-      "approval",
       "quiet_window",
       "immediate"
      ]
@@ -4061,10 +4057,9 @@
      "kind": "str",
      "group": "TV staging approval",
      "label": "Schedule changes",
-     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
+     "help": "When an automatic change of this kind (the channel plan, the schedule, the update's streaming software) goes on the air: immediate, as soon as it is verified; quiet_window, in the quiet window. A change a person made always waits for an admin's approval.",
      "default": "immediate",
      "choices": [
-      "approval",
       "quiet_window",
       "immediate"
      ]
@@ -4074,10 +4069,9 @@
      "kind": "str",
      "group": "TV staging approval",
      "label": "Binary changes",
-     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
-     "default": "approval",
+     "help": "When an automatic change of this kind (the channel plan, the schedule, the update's streaming software) goes on the air: immediate, as soon as it is verified; quiet_window, in the quiet window. A change a person made always waits for an admin's approval.",
+     "default": "immediate",
      "choices": [
-      "approval",
       "quiet_window",
       "immediate"
      ]
@@ -4087,10 +4081,9 @@
      "kind": "str",
      "group": "TV staging approval",
      "label": "Rollback changes",
-     "help": "approval: an admin approves it; quiet_window: put on the air in the quiet window with no warnings; immediate: as soon as it is verified with no warnings.",
-     "default": "approval",
+     "help": "When an automatic change of this kind (the channel plan, the schedule, the update's streaming software) goes on the air: immediate, as soon as it is verified; quiet_window, in the quiet window. A change a person made always waits for an admin's approval.",
+     "default": "immediate",
      "choices": [
-      "approval",
       "quiet_window",
       "immediate"
      ]
@@ -4110,16 +4103,6 @@
      "label": "Viewers at most in the quiet window",
      "help": "",
      "default": 0,
-     "minimum": 0,
-     "maximum": 1000
-    },
-    {
-     "name": "auto_max_channels",
-     "kind": "int",
-     "group": "TV staging approval",
-     "label": "Changed channels at most for an automatic change",
-     "help": "A change a rule above would put on the air by itself waits for an admin when it touches more channels than this, or the planner left a conflict out. 0: no limit.",
-     "default": 3,
      "minimum": 0,
      "maximum": 1000
     },
@@ -4259,7 +4242,7 @@
      "kind": "bool",
      "group": "TV staging approval",
      "label": "A second admin approves",
-     "help": "The approver must not be the change's author.",
+     "help": "A change a person made is approved by an admin other than its author.",
      "default": false
     },
     {

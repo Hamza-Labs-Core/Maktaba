@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -12,7 +11,10 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/rules"
 )
 
-// Auto-promote rules, strictest first (README "Settings": auto_promote).
+// Auto-promote rules, strictest first (README "Settings": auto_promote). Since the
+// owner's rule of 2026-10-28 ("only manual needs approval") RuleApproval is a change's
+// rule only when a person made it (OriginManual); an automatic change follows its kinds'
+// auto rules, quiet_window or immediate (a stored "approval" reads as immediate).
 const (
 	RuleApproval    = "approval"
 	RuleQuietWindow = "quiet_window"
@@ -45,13 +47,7 @@ type Config struct {
 	StandbyWarm         string
 	ProbeChannel        string
 	VerifyProbeSeconds  int
-	// AutoMaxChannels: a change a rule would put on the air waits for an admin when it
-	// touches more channels than this; 0: no limit
-	AutoMaxChannels int
 }
-
-// DefaultAutoMaxChannels is tv_staging.auto_max_channels' default.
-const DefaultAutoMaxChannels = 3
 
 // DefaultSwapStartTimeoutMin is tv_staging.swap_start_timeout_minutes' default.
 // A front door that is up takes a swap within a second and fails one it cannot
@@ -84,10 +80,9 @@ func LoadConfig(ctx context.Context, db *sql.DB) (Config, error) {
 		RollingSwap:         asStr(m["rolling_swap"], "auto"),
 		StandbyWarm:         asStr(m["standby_warm"], "demand"),
 		ProbeChannel:        asStr(m["probe_channel"], ""),
-		AutoMaxChannels:     asInt(m["auto_max_channels"], DefaultAutoMaxChannels),
 	}
 	for _, k := range Kinds {
-		c.AutoPromote[k] = asStr(m["auto_promote_"+k], RuleApproval)
+		c.AutoPromote[k] = autoRule(asStr(m["auto_promote_"+k], RuleImmediate))
 	}
 	return c, nil
 }
@@ -125,6 +120,15 @@ func asInt(v any, def int) int {
 
 var ruleRank = map[string]int{RuleApproval: 0, RuleQuietWindow: 1, RuleImmediate: 2}
 
+// autoRule is a kind's auto rule: quiet_window, else immediate (an automatic change
+// never waits for an approval, so a stored "approval" from before reads as immediate).
+func autoRule(r string) string {
+	if r == RuleQuietWindow {
+		return RuleQuietWindow
+	}
+	return RuleImmediate
+}
+
 // StrictestRule is the strictest auto-promote rule among kinds (design §11.3, D4).
 // No kinds: approval.
 func StrictestRule(c Config, kinds []string) string {
@@ -144,19 +148,26 @@ func StrictestRule(c Config, kinds []string) string {
 	return best
 }
 
-// ChangeRule is the auto-promote rule of a change: immediate for the automatic updater's
-// change of the streaming binary alone (Epic 35 story 35.6, the owner's override of Epic
-// 33 decision 2: source auto_update and kinds exactly [binary]); every other change,
-// a binary change made by hand and one that carries another kind too, the strictest
-// rule of its kinds (approval by default).
+// ChangeRule is the auto-promote rule of a change (the owner's rule of 2026-10-28: "only
+// manual needs approval"): approval for a change a person made (OriginManual, whatever
+// its kinds); for an automatic one (OriginAuto) the strictest auto rule of its kinds,
+// quiet_window or immediate, with no limit on the channels it touches - and immediate
+// for the automatic updater's change of the streaming binary alone (Epic 35 story 35.6:
+// source auto_update and kinds exactly [binary]).
 func ChangeRule(c Config, ch *Change) string {
-	if ch != nil && ch.SourceKind() == SourceAutoUpdate && len(ch.Kinds) == 1 && ch.Kinds[0] == "binary" {
-		return RuleImmediate
-	}
-	if ch == nil {
+	if ch == nil || ch.Origin != OriginAuto {
 		return RuleApproval
 	}
-	return StrictestRule(c, ch.Kinds)
+	if ch.SourceKind() == SourceAutoUpdate && len(ch.Kinds) == 1 && ch.Kinds[0] == "binary" {
+		return RuleImmediate
+	}
+	rule := RuleImmediate
+	for _, k := range ch.Kinds {
+		if autoRule(c.AutoPromote[k]) == RuleQuietWindow {
+			rule = RuleQuietWindow
+		}
+	}
+	return rule
 }
 
 // InQuietWindow reports whether local time t is inside "HH:MM-HH:MM" (a window over
@@ -192,18 +203,16 @@ func hm(s string) (int, bool) {
 }
 
 // AutoPromote decides whether a ready change goes on the air by itself (design §11.3,
-// story 33.10 AC6): approval never; immediate when it has no warnings; quiet_window
-// at a moment inside the window with at most quiet_max_viewers viewers and no
-// warnings. An explicit swap_at in the future waits for it.
-func AutoPromote(c Config, kinds []string, local time.Time, viewers int, warnings bool, swapAt *time.Time) bool {
-	return AutoPromoteRule(c, StrictestRule(c, kinds), local, viewers, warnings, swapAt)
+// story 33.10 AC6): approval never; immediate at once; quiet_window at a moment inside
+// the window with at most quiet_max_viewers viewers. An explicit swap_at in the future
+// waits for it. Warnings do not hold an automatic change (only a failed check does,
+// which sends it back to draft): nobody would be asked to look at them.
+func AutoPromote(c Config, kinds []string, local time.Time, viewers int, swapAt *time.Time) bool {
+	return AutoPromoteRule(c, StrictestRule(c, kinds), local, viewers, swapAt)
 }
 
 // AutoPromoteRule is AutoPromote under a rule already resolved (ChangeRule).
-func AutoPromoteRule(c Config, rule string, local time.Time, viewers int, warnings bool, swapAt *time.Time) bool {
-	if warnings {
-		return false
-	}
+func AutoPromoteRule(c Config, rule string, local time.Time, viewers int, swapAt *time.Time) bool {
 	if swapAt != nil && local.Before(*swapAt) {
 		return false
 	}
@@ -214,40 +223,4 @@ func AutoPromoteRule(c Config, rule string, local time.Time, viewers int, warnin
 		return InQuietWindow(c.QuietWindow, local) && viewers <= c.QuietMaxViewers
 	}
 	return false
-}
-
-// lineupLists are the diff.lineup lists that name a channel the change touches.
-var lineupLists = []string{"added", "changed", "removed", "renamed", "renumbered"}
-
-// AutoBlocked is why a change an auto rule would put on the air still waits for an
-// admin ("" when nothing does): it touches more than AutoMaxChannels channels, or the
-// channel planner reported conflicts it left out.
-func AutoBlocked(c Config, ch *Change) string {
-	if c.AutoMaxChannels > 0 {
-		seen := map[string]bool{}
-		lineup, _ := ch.Diff["lineup"].(map[string]any)
-		for _, k := range lineupLists {
-			rows, _ := lineup[k].([]any)
-			for _, r := range rows {
-				row, _ := r.(map[string]any)
-				id, _ := row["id"].(string)
-				if id == "" {
-					id = fmt.Sprintf("%s#%d", k, len(seen))
-				}
-				seen[id] = true
-			}
-		}
-		if len(seen) > c.AutoMaxChannels {
-			return "too_many_channels"
-		}
-	}
-	var set struct {
-		Meta struct {
-			Conflicts []json.RawMessage `json:"conflicts"`
-		} `json:"meta"`
-	}
-	if len(ch.ChangeSet) > 0 && json.Unmarshal(ch.ChangeSet, &set) == nil && len(set.Meta.Conflicts) > 0 {
-		return "conflicts"
-	}
-	return ""
 }

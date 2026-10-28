@@ -117,7 +117,7 @@ Decides whether channels are also sent on to YouTube, Facebook or any RTMP addre
 
 ### TV staging {#tv-staging}
 
-Decides how TV changes reach the air. **Stage every TV change** (on) prepares each lineup, schedule, settings or art change next to what is on the air, checks it, and waits for approval. For each kind of change you pick approval (an admin approves), quiet_window (it goes on in the **Quiet window**, 03:00-05:00 by default, if there are no warnings) or immediate. **When a channel switches**: boundary waits for the end of the programme on the air. **Roll back automatically** and **Hot standby** protect the air after a switch. See [TV changes](/help/tv-changes).
+Decides how TV changes reach the air. **Stage every TV change** (on) prepares each lineup, schedule, settings or art change next to what is on the air, and checks it. A change a person made always waits for an admin's approval (**A second admin approves** makes it someone other than its author). For an automatic change (the lineup plan, the scheduler, an update's streaming software) you pick, for each kind, immediate (it goes on as soon as it is checked, the default) or quiet_window (it goes on in the **Quiet window**, 03:00-05:00 by default). **When a channel switches**: boundary waits for the end of the programme on the air. **Roll back automatically** and **Hot standby** protect the air after a switch. See [TV changes](/help/tv-changes).
 
 ### Channel strip {#tv-strip}
 

@@ -241,7 +241,7 @@ func TestSupersedeOnlyWhenTheNewerRunStarts(t *testing.T) {
 		x.Assets = []Asset{{Name: "release.json", URL: "https://github.test/release.json"}}
 	}))
 	r.f.svc.Blockers = append(r.f.svc.Blockers, BlockerFunc(func(context.Context) (string, error) {
-		return BlockTVChange, nil
+		return BlockSwitchover, nil
 	}))
 	if d, _ := r.f.svc.Tick(ctx); d.Action != "blocked" {
 		t.Fatalf("tick %+v", d)

@@ -1,8 +1,12 @@
 """The ``tv_staging`` rules (Epic 33, README "Settings"): every TV change goes through
-staging and waits for an admin's approval (owner decisions). The defaults are the owner's
-decisions, not "the current behaviour": staging is on, every kind of change needs an
-approval except a small schedule change (it goes on the air once verified), a watched
-channel switches at its programme boundary, the hot standby is on.
+staging. The defaults are the owner's decisions, not "the current behaviour": staging is
+on, a watched channel switches at its programme boundary, the hot standby is on - and
+"only manual needs approval" (2026-10-28): a change a person made (``origin = manual``:
+the channel editor, a lineup or settings edit, an admin's change, a rollback an admin
+pressed) always waits for an admin's approval; a change the system made (``origin =
+auto``: the channel plan, the schedule, the updater's binary, an automatic rollback) goes
+on the air by its kind's auto rule, ``immediate`` or ``quiet_window``, with no approval
+and no limit on the channels it touches.
 
 The README lists ``auto_promote`` as one map; here it is one setting per kind
 (``auto_promote_<kind>``) so the settings page shows each with its choices."""
@@ -13,12 +17,15 @@ from dataclasses import dataclass
 
 from ..settings import Help, register
 
-__all__ = ["AUTO_RULES", "CHANGE_KINDS", "MaktabaTvStagingConfig", "auto_rule"]
+__all__ = ["AUTO_RULES", "CHANGE_KINDS", "MaktabaTvStagingConfig", "auto_rule", "origin_for"]
 
 #: what a TV change may carry (story 33.10 AC3)
 CHANGE_KINDS = ("lineup", "schedule", "settings", "art", "live_slots", "binary", "rollback")
-#: auto-promote rules, strictest first
-AUTO_RULES = ("approval", "quiet_window", "immediate")
+#: an automatic change's rules, strictest first (a manual change's is always "approval";
+#: a stored "approval" from before reads as "immediate")
+AUTO_RULES = ("quiet_window", "immediate")
+#: the producers whose changes are automatic (the API's tvchange.OriginFor)
+AUTO_SOURCES = ("write_channels", "schedule", "auto_update")
 
 TST = "TV staging"
 TSA = "TV staging approval"
@@ -31,21 +38,18 @@ class MaktabaTvStagingConfig:
 
     #: changes go through staging (owner). Off: direct writes as before Epic 33
     enabled: bool = True
-    auto_promote_lineup: str = "approval"
-    auto_promote_settings: str = "approval"
-    auto_promote_live_slots: str = "approval"
-    auto_promote_art: str = "approval"
-    #: the planner's daily schedule refreshes go on the air by themselves (owner, Oct 2026)
+    #: an automatic change of each kind goes on the air once verified (owner, 2026-10-28)
+    auto_promote_lineup: str = "immediate"
+    auto_promote_settings: str = "immediate"
+    auto_promote_live_slots: str = "immediate"
+    auto_promote_art: str = "immediate"
     auto_promote_schedule: str = "immediate"
-    auto_promote_binary: str = "approval"
-    auto_promote_rollback: str = "approval"
+    auto_promote_binary: str = "immediate"
+    auto_promote_rollback: str = "immediate"
     #: local window ("HH:MM-HH:MM") for an auto-promote rule switched on (and front-door
     #: restarts)
     quiet_window: str = "03:00-05:00"
     quiet_max_viewers: int = 0
-    #: a change an auto rule would put on the air waits for an admin when it touches
-    #: more channels than this (or the planner left conflicts out); 0: no limit
-    auto_max_channels: int = 3
     #: boundary: a watched channel switches at its next programme boundary; immediate
     swap_wait: str = "boundary"
     boundary_max_wait_minutes: int = 30
@@ -69,22 +73,42 @@ class MaktabaTvStagingConfig:
     param_change_push: str = "approve"
 
 
+def origin_for(source_kind: str, created_by: str | None = None) -> str:
+    """Who made a change a producer of ``source_kind`` opens (``tv_changes.origin``, the
+    API's tvchange.OriginFor): ``auto`` for the channel plan, the schedule and the
+    updater's binary, and for a rollback or re-stage no person asked for; ``manual``
+    otherwise (it waits for an approval)."""
+    if source_kind in AUTO_SOURCES:
+        return "auto"
+    if source_kind in ("rollback", "restage") and not created_by:
+        return "auto"
+    return "manual"
+
+
 def auto_rule(
-    cfg: MaktabaTvStagingConfig, kinds: list[str] | tuple[str, ...], source_kind: str = ""
+    cfg: MaktabaTvStagingConfig,
+    kinds: list[str] | tuple[str, ...],
+    source_kind: str = "",
+    origin: str | None = None,
 ) -> str:
-    """The strictest auto-promote rule among ``kinds`` (story 33.10 AC6); ``immediate`` for
-    the automatic updater's change of the streaming binary alone (Epic 35 story 35.6, the
-    API's tvchange.ChangeRule): a binary change by hand, or one with another kind, keeps
-    the rules."""
+    """A change's rule (the API's tvchange.ChangeRule; the owner's rule of 2026-10-28):
+    ``approval`` for a manual change; for an automatic one the strictest auto rule among
+    ``kinds`` (``quiet_window`` or ``immediate``; a stored ``approval`` reads as
+    ``immediate``), and ``immediate`` for the updater's change of the streaming binary
+    alone (Epic 35 story 35.6). ``origin`` None: the producer's (:func:`origin_for`)."""
+    if (origin or origin_for(source_kind)) != "auto":
+        return "approval"
     if source_kind == "auto_update" and list(kinds) == ["binary"]:
         return "immediate"
-    rules = [str(getattr(cfg, f"auto_promote_{k}", "approval")) for k in kinds] or ["approval"]
-    return min(rules, key=lambda r: AUTO_RULES.index(r) if r in AUTO_RULES else 0)
+    rules = [str(getattr(cfg, f"auto_promote_{k}", "immediate")) for k in kinds]
+    return "quiet_window" if "quiet_window" in rules else "immediate"
 
 
 _RULE = (
-    "approval: an admin approves it; quiet_window: put on the air in the quiet window "
-    "with no warnings; immediate: as soon as it is verified with no warnings."
+    "When an automatic change of this kind (the channel plan, the schedule, the update's "
+    "streaming software) goes on the air: immediate, as soon as it is verified; "
+    "quiet_window, in the quiet window. A change a person made always waits for an "
+    "admin's approval."
 )
 
 register(
@@ -94,8 +118,9 @@ register(
             TST,
             "Stage every TV change",
             "A lineup, schedule, settings or art change is prepared next to what is on the "
-            "air, checked, and put on the air only when an admin approves it on the Changes "
-            "page (Live TV -> Changes). On by default. Off: changes go on the air at once, as "
+            "air and checked before it goes on the air. A change a person made waits for an "
+            "admin's approval on the Changes page (Live TV -> Changes); an automatic one goes "
+            "on by the rules below. On by default. Off: changes go on the air at once, as "
             "before Epic 33.",
         ),
         **{
@@ -110,16 +135,10 @@ register(
         "quiet_max_viewers": Help(
             TSA, "Viewers at most in the quiet window", minimum=0, maximum=1000
         ),
-        "auto_max_channels": Help(
-            TSA,
-            "Changed channels at most for an automatic change",
-            "A change a rule above would put on the air by itself waits for an admin when it "
-            "touches more channels than this, or the planner left a conflict out. 0: no limit.",
-            minimum=0,
-            maximum=1000,
-        ),
         "require_second_admin": Help(
-            TSA, "A second admin approves", "The approver must not be the change's author."
+            TSA,
+            "A second admin approves",
+            "A change a person made is approved by an admin other than its author.",
         ),
         "swap_wait": Help(
             TSS,

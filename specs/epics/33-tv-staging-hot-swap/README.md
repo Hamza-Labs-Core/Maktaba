@@ -75,7 +75,7 @@ draft (**accepted default**). Full list under "Decisions on the open questions" 
 | Seamless splicing | Both slots stamp **wall-clock-anchored timestamps on a fixed GOP grid** (story 33.4), so the same instant has the same PTS and an IDR in both slots: the TS splice is exact and continuous. A re-timestamping splicer covers the cases where that does not hold. |
 | Who owns the Cloudflare push | The **front door's push relay** (moves Epic 32 §7.4's pusher off the encoding slot). It holds one RTMPS/SRT session per channel and switches its *source* at a GOP boundary with continuous timestamps. Staging never pushes. |
 | Rollback | Warm (instant, while the previous slot is kept warm, default 15 min) or cold (re-stage the previous release, minutes; retention 24 h — accepted default). A LIVE crash or crash loop inside the grace period rolls back automatically. |
-| Approval (**owner**) | **Every change needs an admin's approval**: lineup, settings, schedule, art, live slots, upgrades. The auto-promote rules exist as settings but are all `approval` by default. Routine top-ups that only extend the existing grid with the same lineup and rules are **not** TV changes (they flow into every open generation); a *schedule change* is a change to grids, rules or content selection. **Amended by Epic 35 (owner, 2026-10-19):** a `binary` change made by the cluster updater (`source.kind = auto_update`) is promoted without approval (`auto_rule = immediate`, still at programme boundaries); every other kind, and a binary change made by hand, still needs approval. |
+| Approval (**owner**) | **Every change needs an admin's approval**: lineup, settings, schedule, art, live slots, upgrades. The auto-promote rules exist as settings but are all `approval` by default. Routine top-ups that only extend the existing grid with the same lineup and rules are **not** TV changes (they flow into every open generation); a *schedule change* is a change to grids, rules or content selection. **Amended by Epic 35 (owner, 2026-10-19):** a `binary` change made by the cluster updater (`source.kind = auto_update`) is promoted without approval (`auto_rule = immediate`, still at programme boundaries); every other kind, and a binary change made by hand, still needs approval. **Replaced by the owner's rule of 2026-10-28, "only manual needs approval":** a change a person made (`origin = manual`: the channel editor, a lineup, filler or settings edit, an admin's change, a rollback an admin pressed) always waits for an admin's approval (`require_second_admin` still applies); a change the system made (`origin = auto`: the channel plan, the schedule, the updater's binary, an automatic rollback) goes on the air by its kind's auto rule (`immediate` by default, or `quiet_window`) with no approval and no limit on the channels it touches (`auto_max_channels` is gone). See "As built: who made a change, and app updates". |
 | Defaults (**owner**) | `tv_staging.enabled = true` by default once built (the owner's call overrides the usual "defaults = current behaviour"); the setting stays so it can be turned off (then: direct writes, one live slot plus the hot standby). Phases A–B ship behind a build flag until the epic is complete. |
 | Swap timing (**owner**) | At each channel's programme boundary (`swap_wait = boundary`), as designed. |
 
@@ -267,10 +267,17 @@ draft (**accepted default**). Full list under "Decisions on the open questions" 
 - R9.3 Sources: a `write_channels` job, a channel editor save, a settings save in `tv`/`tv_output`,
   an upgrade, an admin "new change", a rollback.
 - R9.4 At most one change in `staged…swapping`; newer drafts queue and rebase on the release that
-  goes live (or are re-diffed against it).
-- R9.5 Approval by an admin is required for **every** change kind (owner decision; optionally a second
-  admin: `require_second_admin`). Auto-promote rules per kind (`approval` | `quiet_window` |
-  `immediate`) exist as settings, all `approval` by default.
+  goes live (or are re-diffed against it). No TV change holds an app update (the owner's rule of
+  2026-10-28, "tv changes should not block updates"): while the update restarts the home, a change
+  being staged or checked is set aside and staged again after it, a ready one waits, and the update's
+  own binary change gets the staging slot first (see "As built: who made a change, and app updates").
+- R9.5 *Replaced by the owner's rule of 2026-10-28 ("only manual needs approval"):* approval by an admin
+  is required for every **manual** change (`tv_changes.origin = manual`; optionally a second admin:
+  `require_second_admin`), whatever its kinds. An **automatic** change (`origin = auto`) never waits
+  for an approval: it follows its kinds' auto rule (`immediate` | `quiet_window`, one setting per kind,
+  all `immediate` by default; the strictest of its kinds wins) whatever the number of channels it
+  touches. *Before:* approval for every kind, the rules all `approval` by default, and
+  `auto_max_channels` (3) sending an automatic change that touched more channels to an admin.
 - R9.7 What is **not** a TV change: routine top-ups that only extend the existing grid with the same
   lineup, rules and content selection (they write every open generation, R3.4). A **schedule change**
   is a change to a channel's grid, rules (`rules.tv`, mode, slots) or content selection (sources,
@@ -288,7 +295,7 @@ draft (**accepted default**). Full list under "Decisions on the open questions" 
 - R11.1 With `tv_staging.enabled`, `write_channels.apply_changes` writes a draft TV change
   (snapshot + change set) instead of `channels`; `write_mode = review` parks it as today and the
   Changes page's Approve is the queue's Apply (it posts the digest); `write_mode = auto` stages it
-  right away (staged, verified, then waiting for approval under the default rules).
+  right away (staged, verified, then on the air by its rule: the plan's change is automatic).
 - R11.2 The channel editor and the filler/art editors save into the open change; the stale flag no
   longer rewrites the live generation. Every update joins the one open change until it is approved
   (story 33.12 AC3): a change already staged, verifying or ready that no one approved goes back to
@@ -345,8 +352,9 @@ draft (**accepted default**). Full list under "Decisions on the open questions" 
   and Plex viewers continue (one discontinuity / one splice), the Cloudflare broadcast and its simulcast
   outputs do not disconnect, and the crashed instance comes back as the new standby. An unapproved
   staged change is never put on the air by a crash.
-- Every change — including a schedule-only change and an upgrade — waits for an admin's approval
-  with the default settings; a routine top-up never creates a change.
+- Every change a person made waits for an admin's approval; an automatic change (the channel plan,
+  the schedule, an upgrade's binary) goes on the air by its rule without one, however many channels
+  it touches (the owner's rule of 2026-10-28); a routine top-up never creates a change.
 
 ---
 
@@ -435,7 +443,7 @@ so the On air page (Epic 32.5) shows both slots during a swap.
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Changes go through staging (owner). Off: direct writes as today; the live slot and the hot standby still run. |
-| `auto_promote` | `{lineup:"approval", settings:"approval", live_slots:"approval", art:"approval", schedule:"approval", binary:"approval", rollback:"approval"}` | Every kind needs approval (owner). Built as one setting per kind, `auto_promote_<kind>` (the settings page shows each with its choices). Strictest rule among a change's kinds wins. `approval` \| `quiet_window` \| `immediate`. A rollback pressed by an admin is itself the approval; the automatic rollback (`auto_rollback`) is not gated. |
+| `auto_promote` | `{lineup:"immediate", settings:"immediate", live_slots:"immediate", art:"immediate", schedule:"immediate", binary:"immediate", rollback:"immediate"}` | *The owner's rule of 2026-10-28:* the rule of an **automatic** change of each kind, `quiet_window` \| `immediate` (a stored `approval` from before reads as `immediate`); a manual change always needs an approval whatever these say. *Before:* every kind needed approval (owner), and `auto_max_channels` (3) held an automatic change that touched more channels for an admin (removed). Built as one setting per kind, `auto_promote_<kind>` (the settings page shows each with its choices). Strictest rule among a change's kinds wins. `approval` \| `quiet_window` \| `immediate`. A rollback pressed by an admin is itself the approval; the automatic rollback (`auto_rollback`) is not gated. |
 | `quiet_window` | `"03:00-05:00"` | Local time window for front-door restarts (R13.1) and for any auto-promote rule switched on; auto-promotion also requires ≤ `quiet_max_viewers`. |
 | `quiet_max_viewers` | `0` | |
 | `swap_wait` | `boundary` | `boundary` \| `immediate`. |
@@ -647,6 +655,14 @@ capacity (future).
    or content selection (R9.7).
    *Amended by Epic 35 (owner, 2026-10-19):* the `binary` kind is exempt when the change comes from the
    cluster updater (`source.kind = auto_update`); all other kinds keep needing approval.
+   *Replaced (owner, 2026-10-28): "only manual needs approval".* A change a person made needs an admin's
+   approval; a change the system made (the channel plan, the schedule, the updater's binary, an automatic
+   rollback) goes on the air by its kind's auto rule with no approval and no channel limit. Change #51
+   (an automatic "Channel plan" touching 27 channels) had sat in `ready` waiting for an admin nobody asked.
+12. **TV changes and app updates — owner (2026-10-28): "tv changes should not block updates".** An app
+    update always starts; the TV change in flight is set aside and checked again on the new release after
+    it (details in "As built: who made a change, and app updates"). Replaces Epic 35 story 35.3 AC5's
+    "no TV change in `staged…swapping`" condition.
 3. **Swap timing — owner.** At each channel's programme boundary (`swap_wait = boundary`), as designed.
 4. **Encoder-parameter changes and Cloudflare — accepted default.** A resolution/fps change on a pushed
    channel needs explicit acknowledgement in the approval, or that channel waits for its push to end
@@ -920,3 +936,41 @@ capacity (future).
   Metrics: `maktaba_tv_swaps_total`, `maktaba_tv_channel_switches_total`,
   `maktaba_tv_ts_splices_total{mode}`, `maktaba_tv_hls_stitches_total`,
   `maktaba_tv_rollbacks_total{reason}`, `maktaba_tv_channel_switch_latency_seconds`.
+
+## As built: who made a change, and app updates (the owner's rules of 2026-10-28)
+
+- **Origin** (slot 0169, `tv_changes.origin`, `auto` | `manual`, default `manual`). The producer that
+  opens a change sets it (`tvchange.OriginFor`, the pipeline's `config.origin_for`): `write_channels`,
+  `schedule` and `auto_update` are `auto`; `editor`, `settings`, `manual` (an admin's new change) are
+  `manual`; a cold rollback or a re-stage is `manual` when a person asked for it, else `auto`. A person's
+  edit that joins a change makes it `manual` for good (`Drafts.Save`, `CollapseOpen` / `collapse_open`):
+  an automatic plan joining a manual change leaves it manual. The backfill made the automatic producers'
+  changes no person's edit joined `auto`. The Changes page shows it next to the source ("automatic" /
+  "manual: an admin approves").
+- **Rule** (`ChangeRule`, the pipeline's `auto_rule`): `approval` for a manual change, always; for an
+  automatic one the strictest auto rule of its kinds (`quiet_window` if any kind says so, else
+  `immediate`), and `immediate` for the updater's binary-only change. An automatic change goes on the air
+  once checked with no approval, however many channels it touches, its verify warnings included (only a
+  failed check stops it, back to draft); `auto_max_channels` and the planner-conflicts hold
+  (`AutoBlocked`) are gone. "Swap now" on a ready manual change is refused (409 `approval_required`).
+- **Approval** stays an admin's, enforced by the API (`POST /api/tv/changes/{id}/approve` and
+  `/promote` answer 403 to anyone else; `TestApproveIsAdminOnly`), with `require_second_admin`. An
+  automatic change never needs the call. A manual change that becomes ready sends the admins
+  `tv.change.ready` once (a re-check after an app update does not send it again; a day later
+  `tv.change.waiting`).
+- **App updates** (`tvchange/updatehold.go`, `updates.TVSwapWait`). No TV change blocks an update: the
+  scheduler's `TVChangeBlocker` / `tv_change_in_flight` is gone (`updates.HomeBlockers`). While the update
+  holds the TV (its run in `draining` or `home_applying`, from the drain before the restart until it
+  commits or ends), the controller treats the changes other than the update's own binary change so:
+  - **draft**: left as it is, not staged until the update ended;
+  - **staged / verifying**: set aside (`set_aside`, back to draft with its stage asked again, its
+    staging slot released); not failed, not lost; staged and verified again on the new release after;
+  - **ready** (waiting for an approval or a quiet window): left as it is, neither re-checked nor put on
+    the air while the update runs; set aside only when the update's binary change asks for the staging
+    slot (that change gets it first). Once the update ended it is checked again on the new release
+    (`recheck_after_update`, ready → draft, staged again) and comes back to ready: an automatic change
+    then goes on by its rule, a manual one waits for its approval;
+  - **approved / swapping**: goes on. The home's restart (its apply, or a desktop app's go) waits for a
+    change in `swapping`, at most `TVSwapWait` (2 min); only that step waits, after the run started and
+    drained. Past it the update goes on and the swap follows its swap-failure rollback.
+  `diff.update_hold` records the hold (`run_id`, `from`, `released_at`).

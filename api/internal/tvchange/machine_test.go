@@ -9,9 +9,9 @@ import (
 func TestTransitionsTable(t *testing.T) {
 	want := map[string]map[string]string{
 		StateDraft:      {ActionStage: StateStaged, ActionApprove: StateDraft, ActionSchedule: StateDraft, ActionCancel: StateCancelled, ActionSupersede: StateSuperseded},
-		StateStaged:     {ActionStartVerify: StateVerifying, ActionSchedule: StateStaged, ActionApprove: StateStaged, ActionCancel: StateCancelled, ActionFail: StateDraft, ActionReopen: StateDraft, ActionSupersede: StateSuperseded},
-		StateVerifying:  {ActionPass: StateReady, ActionFail: StateDraft, ActionVerify: StateVerifying, ActionSchedule: StateVerifying, ActionApprove: StateVerifying, ActionCancel: StateCancelled, ActionReopen: StateDraft, ActionSupersede: StateSuperseded},
-		StateReady:      {ActionApprove: StateApproved, ActionVerify: StateVerifying, ActionSchedule: StateReady, ActionCancel: StateCancelled, ActionRecheckFail: StateVerifying, ActionAutoApprove: StateApproved, ActionAutoPromote: StateSwapping, ActionPromote: StateSwapping, ActionReopen: StateDraft, ActionSupersede: StateSuperseded},
+		StateStaged:     {ActionStartVerify: StateVerifying, ActionSchedule: StateStaged, ActionApprove: StateStaged, ActionCancel: StateCancelled, ActionFail: StateDraft, ActionReopen: StateDraft, ActionSupersede: StateSuperseded, ActionSetAside: StateDraft},
+		StateVerifying:  {ActionPass: StateReady, ActionFail: StateDraft, ActionVerify: StateVerifying, ActionSchedule: StateVerifying, ActionApprove: StateVerifying, ActionCancel: StateCancelled, ActionReopen: StateDraft, ActionSupersede: StateSuperseded, ActionSetAside: StateDraft},
+		StateReady:      {ActionApprove: StateApproved, ActionVerify: StateVerifying, ActionSchedule: StateReady, ActionCancel: StateCancelled, ActionRecheckFail: StateVerifying, ActionAutoApprove: StateApproved, ActionAutoPromote: StateSwapping, ActionPromote: StateSwapping, ActionReopen: StateDraft, ActionSupersede: StateSuperseded, ActionSetAside: StateDraft, ActionRecheckAfterUpdate: StateDraft},
 		StateApproved:   {ActionPromote: StateSwapping, ActionSwapStart: StateSwapping, ActionSchedule: StateApproved, ActionCancel: StateCancelled},
 		StateSwapping:   {ActionSwap: StateLive, ActionSwapFailed: StateReady, ActionRollback: StateRolledBack},
 		StateLive:       {ActionSupersede: StateSuperseded, ActionRollback: StateRolledBack},
@@ -22,7 +22,8 @@ func TestTransitionsTable(t *testing.T) {
 	}
 	actions := []string{ActionStage, ActionVerify, ActionApprove, ActionSchedule, ActionPromote, ActionCancel,
 		ActionRollback, ActionStartVerify, ActionPass, ActionFail, ActionRecheckFail, ActionAutoApprove,
-		ActionAutoPromote, ActionSwapStart, ActionSwap, ActionSwapFailed, ActionSupersede, ActionReopen}
+		ActionAutoPromote, ActionSwapStart, ActionSwap, ActionSwapFailed, ActionSupersede, ActionReopen,
+		ActionSetAside, ActionRecheckAfterUpdate}
 	if len(States()) != len(want) {
 		t.Fatalf("states %v", States())
 	}
@@ -97,32 +98,29 @@ func TestAutoPromoteRules(t *testing.T) {
 	day := time.Date(2026, 6, 15, 14, 0, 0, 0, time.UTC)
 	c := defaultConfig()
 	for _, at := range []time.Time{night, day} {
-		if AutoPromote(c, []string{"lineup"}, at, 0, false, nil) {
+		if AutoPromote(c, []string{"lineup"}, at, 0, nil) {
 			t.Fatal("approval promoted by itself")
 		}
 	}
 	c.AutoPromote["schedule"] = RuleImmediate
-	if !AutoPromote(c, []string{"schedule"}, day, 5, false, nil) {
+	if !AutoPromote(c, []string{"schedule"}, day, 5, nil) {
 		t.Error("immediate")
 	}
-	if AutoPromote(c, []string{"schedule"}, day, 5, true, nil) {
-		t.Error("warnings block an auto rule")
-	}
-	if AutoPromote(c, []string{"schedule", "lineup"}, day, 0, false, nil) {
+	if AutoPromote(c, []string{"schedule", "lineup"}, day, 0, nil) {
 		t.Error("the strictest rule (approval) wins")
 	}
 	later := day.Add(time.Hour)
-	if AutoPromote(c, []string{"schedule"}, day, 0, false, &later) {
+	if AutoPromote(c, []string{"schedule"}, day, 0, &later) {
 		t.Error("an explicit swap_at waits")
 	}
 	c.AutoPromote["art"] = RuleQuietWindow
-	if !AutoPromote(c, []string{"art"}, night, 0, false, nil) {
+	if !AutoPromote(c, []string{"art"}, night, 0, nil) {
 		t.Error("quiet window at night, no viewers")
 	}
-	if AutoPromote(c, []string{"art"}, night, 1, false, nil) {
+	if AutoPromote(c, []string{"art"}, night, 1, nil) {
 		t.Error("a viewer: not quiet")
 	}
-	if AutoPromote(c, []string{"art"}, day, 0, false, nil) {
+	if AutoPromote(c, []string{"art"}, day, 0, nil) {
 		t.Error("outside the window")
 	}
 	if StrictestRule(c, []string{"art", "schedule"}) != RuleQuietWindow {
@@ -133,10 +131,11 @@ func TestAutoPromoteRules(t *testing.T) {
 	}
 }
 
-// TestDefaultsAllApproval: the shipped rules (schema.json, from the pipeline's
-// MaktabaTvStagingConfig) put every kind behind an admin's approval except a schedule
-// change, which goes on the air once verified when it is small (owner decisions).
-func TestDefaultsAllApproval(t *testing.T) {
+// TestDefaultsAutoRules: the shipped rules (schema.json, from the pipeline's
+// MaktabaTvStagingConfig) put every kind's automatic change on the air once verified
+// (the owner's rule of 2026-10-28: only a manual change needs an approval), and a
+// stored "approval" from before reads as immediate.
+func TestDefaultsAutoRules(t *testing.T) {
 	c, err := LoadConfig(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -145,44 +144,15 @@ func TestDefaultsAllApproval(t *testing.T) {
 		t.Fatalf("defaults %+v", c)
 	}
 	for _, k := range Kinds {
-		want := RuleApproval
-		if k == "schedule" {
-			want = RuleImmediate
-		}
-		if c.AutoPromote[k] != want {
+		if c.AutoPromote[k] != RuleImmediate {
 			t.Errorf("%s: %s", k, c.AutoPromote[k])
 		}
 	}
-	if c.AutoMaxChannels != DefaultAutoMaxChannels {
-		t.Errorf("auto_max_channels %d", c.AutoMaxChannels)
-	}
-}
-
-// A change an auto rule would put on the air waits for an admin when it touches more
-// than auto_max_channels channels or the planner left conflicts out.
-func TestAutoBlocked(t *testing.T) {
-	c := defaultConfig()
-	c.AutoMaxChannels = 2
-	row := func(id string) any { return map[string]any{"id": id} }
-	ch := func(lineup map[string]any, set string) *Change {
-		return &Change{Diff: map[string]any{"lineup": lineup}, ChangeSet: []byte(set)}
-	}
-	if r := AutoBlocked(c, ch(map[string]any{"changed": []any{row("a")}}, `{"meta":{"conflicts":[],"user_edited":[{"key":"q"}]}}`)); r != "" {
-		t.Errorf("one channel, hand-edited ones left alone: %q", r)
-	}
-	// a channel renamed and changed counts once
-	if r := AutoBlocked(c, ch(map[string]any{"changed": []any{row("a"), row("b")}, "renamed": []any{row("a")}}, ``)); r != "" {
-		t.Errorf("two channels: %q", r)
-	}
-	if r := AutoBlocked(c, ch(map[string]any{"changed": []any{row("a"), row("b")}, "added": []any{row("c")}}, ``)); r != "too_many_channels" {
-		t.Errorf("three channels: %q", r)
-	}
-	if r := AutoBlocked(c, ch(nil, `{"meta":{"conflicts":[{"key":"x"}]}}`)); r != "conflicts" {
-		t.Errorf("conflicts: %q", r)
-	}
-	c.AutoMaxChannels = 0
-	if r := AutoBlocked(c, ch(map[string]any{"changed": []any{row("a"), row("b"), row("c")}}, ``)); r != "" {
-		t.Errorf("0 is no limit: %q", r)
+	for in, want := range map[string]string{RuleApproval: RuleImmediate, RuleQuietWindow: RuleQuietWindow,
+		RuleImmediate: RuleImmediate, "nonsense": RuleImmediate} {
+		if got := autoRule(in); got != want {
+			t.Errorf("autoRule(%q) = %s, want %s", in, got, want)
+		}
 	}
 }
 
