@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -76,9 +77,45 @@ func (b Bundle) Restore(ctx context.Context, dump string, opts RestoreOptions, l
 	})
 }
 
-// restoreInto makes the app database afresh on q's running server and restores
-// dump into it (Restore's work, and RestoreRunning's).
+// restoreInto makes the app database afresh on q's running server and restores dump
+// into it (Restore's work, and RestoreRunning's), checks it whole (VerifyRestore), and
+// only then lets the other logins in again. A parallel restore that fails, or comes out
+// incomplete, is done again with one worker (the whole of it: the database is made afresh
+// each time); one that fails again says what failed or what is missing.
+//
+// The outage of 2026-10-28: a joined machine kept logging in while its home's database
+// was put back, and as soon as the restore had made its functions it asked for its copy
+// (cluster_node_replica_grant), whose GRANTs on every table met pg_restore's own grants
+// ("tuple concurrently updated"): the restore stopped with every table's rows but none of
+// its indexes, keys, triggers or grants. Now no other login reaches the database while it
+// is put back (CONNECT is taken from PUBLIC, and the grants of the database itself, which
+// a dump does not hold, are put back at the end); the schema, the grants and the default
+// privileges go in one worker at a time, the rows, the chunks and the indexes in parallel.
 func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts RestoreOptions, log io.Writer) error {
+	grants, err := b.databaseGrants(ctx, q)
+	if err != nil {
+		return err
+	}
+	jobs := opts.Jobs
+	if jobs <= 0 {
+		jobs = max(1, runtime.NumCPU()/2)
+	}
+	err = b.restoreOnce(ctx, q, dump, opts, jobs, grants, log)
+	if err != nil && ctx.Err() == nil && jobs > 1 {
+		_, _ = fmt.Fprintf(log, "[postgres] the restore of %s with %d workers failed (%v): it is done again with one\n",
+			dump, jobs, err)
+		err = b.restoreOnce(ctx, q, dump, opts, 1, grants, log)
+	}
+	if err != nil {
+		return err
+	}
+	_ = os.Remove(b.grantsFile())
+	return nil
+}
+
+// restoreOnce is one try of restoreInto, with jobs workers.
+func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts RestoreOptions, jobs int,
+	grants []string, log io.Writer) error {
 	// the machines' copies decode the database through logical slots, which DROP
 	// DATABASE refuses to outlive
 	if err := q.Exec(ctx, "postgres", DropSlotsSQL(AppDatabase)); err != nil {
@@ -87,25 +124,27 @@ func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts Re
 	if err := q.Exec(ctx, "postgres", recreateSQL(opts)+clusterSQL); err != nil {
 		return fmt.Errorf("make a fresh %s database: %w", AppDatabase, err)
 	}
-	list, err := b.restoreList(ctx, dump, q.pw)
+	_, _ = fmt.Fprintf(log, "[postgres] putting %s back into a fresh %s database (%d workers): no other login "+
+		"reaches it until it is whole\n", dump, AppDatabase, jobs)
+	toc, err := b.tableOfContents(ctx, dump, q.pw)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(list) }()
-	jobs := opts.Jobs
-	if jobs <= 0 {
-		jobs = max(1, runtime.NumCPU()/2)
+	main, acls, err := writeRestoreLists(dump, toc)
+	if err != nil {
+		return err
 	}
+	defer func() { _ = os.Remove(main); _ = os.Remove(acls) }()
 	// not the dump's publications (the machines' copies, Epic 37): their slots went with the
 	// database, each machine copies it anew, and its next grant makes its publication again
 	// with the tables there then (cluster_copy_publication). A machine that asks meanwhile
-	// makes it while the tables come back, and the dump's own ALTER PUBLICATION ... ADD
+	// made it while the tables came back, and the dump's own ALTER PUBLICATION ... ADD
 	// TABLE then failed the whole restore ("is already member of publication"; the owner's
 	// rollback of 2026-10-27), as the in-place restore of another Postgres never did.
 	env := append(os.Environ(), "PGPASSWORD="+q.pw)
-	restore := func(sections ...string) error {
+	restore := func(list string, workers int, sections ...string) error {
 		args := []string{"-h", "127.0.0.1", "-p", strconv.Itoa(b.Port), "-U", SuperUser, "-d", AppDatabase, "--no-owner",
-			"--role=" + AppRole, "--exit-on-error", "--no-publications", "-j", strconv.Itoa(jobs), "-L", list}
+			"--role=" + AppRole, "--exit-on-error", "--no-publications", "-j", strconv.Itoa(workers), "-L", list}
 		for _, s := range sections {
 			args = append(args, "--section="+s)
 		}
@@ -113,29 +152,116 @@ func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts Re
 		cmd.Env = env
 		cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("pg_restore %s: %w", dump, err)
+			what := "the rows"
+			switch {
+			case list == acls:
+				what = "the grants"
+			case len(sections) == 1 && sections[0] == "pre-data":
+				what = "the tables and functions"
+			case len(sections) == 1 && sections[0] == "post-data":
+				what = "the indexes, keys and triggers"
+			}
+			return fmt.Errorf("pg_restore %s (%s): %w", dump, what, err)
 		}
 		return nil
 	}
-	chunks := Chunks(dump)
-	if len(chunks) == 0 {
-		if err := restore(); err != nil {
-			return err
-		}
-		return q.Exec(ctx, AppDatabase, "ANALYZE;")
+	// the schema: one worker (its items change shared rows of the catalog)
+	if err := restore(main, 1, "pre-data"); err != nil {
+		return err
+	}
+	// the rows, in parallel: each table's own COPY
+	if err := restore(main, jobs, "data"); err != nil {
+		return err
 	}
 	// the chunked tables' rows between their tables and their indexes (dumpfmt.go)
-	if err := restore("pre-data", "data"); err != nil {
+	if chunks := Chunks(dump); len(chunks) > 0 {
+		if err := LoadChunks(ctx, b.Bin("psql"), []string{"-h", "127.0.0.1", "-p", strconv.Itoa(b.Port), "-U", SuperUser,
+			"--dbname=" + AppDatabase}, env, chunks, jobs); err != nil {
+			return err
+		}
+	}
+	// the indexes, keys and triggers, in parallel (pg_restore orders those of a table)
+	if err := restore(main, jobs, "post-data"); err != nil {
 		return err
 	}
-	if err := LoadChunks(ctx, b.Bin("psql"), []string{"-h", "127.0.0.1", "-p", strconv.Itoa(b.Port), "-U", SuperUser,
-		"--dbname=" + AppDatabase}, env, chunks, jobs); err != nil {
+	// the grants and default privileges last, one worker: every object they name is there
+	if err := restore(acls, 1); err != nil {
 		return err
 	}
-	if err := restore("post-data"); err != nil {
+	if err := VerifyRestore(ctx, dump, toc, q.queryFunc(AppDatabase)); err != nil {
+		return fmt.Errorf("restore %s: %w", dump, err)
+	}
+	if err := q.Exec(ctx, AppDatabase, "ANALYZE;"); err != nil {
 		return err
 	}
-	return q.Exec(ctx, AppDatabase, "ANALYZE;")
+	// whole: the other logins may use it again, with the database's own grants as they were
+	_, _ = fmt.Fprintf(log, "[postgres] %s is put back whole: every table, index, key, trigger and grant, and its rows\n", dump)
+	if err := q.Exec(ctx, "postgres", strings.Join(grants, "\n")); err != nil {
+		return fmt.Errorf("give the database's grants back after the restore: %w", err)
+	}
+	return nil
+}
+
+// queryFunc is q's Query on database as a QueryFunc.
+func (q Querier) queryFunc(database string) QueryFunc {
+	return func(ctx context.Context, sql string) ([]string, error) { return q.Query(ctx, database, sql) }
+}
+
+// grantsFile keeps the app database's own grants (CONNECT, TEMPORARY: a dump does not hold
+// them) while a restore runs, for one that is cut short and done again by the next start
+// (the database then has CONNECT taken from PUBLIC).
+func (b Bundle) grantsFile() string { return filepath.Join(b.Backups, ".restore-database-grants.json") }
+
+// databaseGrants are the statements that give the app database its grants back as they
+// are before the restore (the grants file a restore cut short left, else the database's
+// own): those to PUBLIC (none said: the default, CONNECT and TEMPORARY) and to the other
+// roles (maktaba_worker's CONNECT, which the machines' logins come through).
+func (b Bundle) databaseGrants(ctx context.Context, q Querier) ([]string, error) {
+	var grants []string
+	if raw, err := os.ReadFile(b.grantsFile()); err == nil && json.Unmarshal(raw, &grants) == nil && len(grants) > 0 {
+		return grants, nil
+	}
+	rows, err := q.Query(ctx, "postgres", `SELECT CASE WHEN d.datacl IS NULL THEN 'default'
+		ELSE coalesce((SELECT string_agg(CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(r.rolname) END
+		                                 || ':' || a.privilege_type, ',')
+		      FROM aclexplode(d.datacl) a LEFT JOIN pg_roles r ON r.oid = a.grantee
+		      WHERE a.grantee <> d.datdba), '') END
+		FROM pg_database d WHERE d.datname = '`+AppDatabase+`'`)
+	if err != nil {
+		return nil, fmt.Errorf("read the %s database's grants: %w", AppDatabase, err)
+	}
+	spec := "default"
+	if len(rows) > 0 {
+		spec = rows[0]
+	}
+	if spec == "default" {
+		grants = []string{"GRANT CONNECT, TEMPORARY ON DATABASE " + AppDatabase + " TO PUBLIC;"}
+	} else {
+		for _, g := range strings.Split(spec, ",") {
+			who, priv, ok := strings.Cut(g, ":")
+			if !ok || (who != "PUBLIC" && !ValidRoleName(strings.Trim(who, `"`))) {
+				continue
+			}
+			// a role named in the grants may not be there (gone since): skipped, not failed
+			stmt := "GRANT " + priv + " ON DATABASE " + AppDatabase + " TO " + who + ";"
+			if who != "PUBLIC" {
+				stmt = "SELECT $$" + stmt + "$$ WHERE EXISTS (SELECT FROM pg_roles WHERE rolname = '" +
+					strings.Trim(who, `"`) + "')\\gexec"
+			}
+			grants = append(grants, stmt)
+		}
+	}
+	raw, err := json.Marshal(grants)
+	if err == nil {
+		err = os.MkdirAll(b.Backups, 0o700)
+	}
+	if err == nil {
+		err = os.WriteFile(b.grantsFile(), raw, 0o600)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("keep the %s database's grants while it is put back: %w", AppDatabase, err)
+	}
+	return grants, nil
 }
 
 // EndSessionsSQL ends every other client session on database db ("": the one it runs
@@ -222,6 +348,11 @@ func recreateSQL(opts RestoreOptions) string {
 	var sb strings.Builder
 	sb.WriteString("DROP DATABASE IF EXISTS " + AppDatabase + " WITH (FORCE);\n")
 	sb.WriteString("CREATE DATABASE " + AppDatabase + " OWNER " + AppRole + " TEMPLATE template0 ENCODING 'UTF8';\n")
+	// no other login reaches it until it is put back whole (restoreInto gives its grants
+	// back then): its owner and the superuser only, and anything that came in first goes
+	sb.WriteString("REVOKE ALL ON DATABASE " + AppDatabase + " FROM PUBLIC;\n")
+	sb.WriteString("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '" + AppDatabase +
+		"' AND pid <> pg_backend_pid();\n")
 	for _, r := range opts.Roles {
 		if !ValidRoleName(r) || r == AppRole || r == SuperUser {
 			continue
@@ -239,10 +370,11 @@ func recreateSQL(opts RestoreOptions) string {
 	return sb.String()
 }
 
-// restoreList writes the dump's table of contents without its extensions (and
-// their comments) and its grants on Postgres's own objects (pg_catalog's: a bundled
-// source's clusterSQL): those need the superuser, and the database has them already.
-func (b Bundle) restoreList(ctx context.Context, dump, superPW string) (string, error) {
+// tableOfContents is the dump's table of contents as it is restored: without its
+// extensions (and their comments) and its grants on Postgres's own objects (pg_catalog's:
+// a bundled source's clusterSQL): those need the superuser, and the database has them
+// already (commented out: pg_restore -L skips them, VerifyRestore does not look for them).
+func (b Bundle) tableOfContents(ctx context.Context, dump, superPW string) (string, error) {
 	cmd := exec.CommandContext(ctx, b.Bin("pg_restore"), "-l", dump)
 	cmd.Env = append(os.Environ(), "PGPASSWORD="+superPW)
 	var stderr bytes.Buffer
@@ -251,23 +383,48 @@ func (b Bundle) restoreList(ctx context.Context, dump, superPW string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("pg_restore -l %s: %w: %s", dump, err, strings.TrimSpace(stderr.String()))
 	}
-	f, err := os.CreateTemp(filepath.Dir(dump), ".restore-list-*")
-	if err != nil {
-		return "", err
-	}
-	w := bufio.NewWriter(f)
+	var sb strings.Builder
 	for _, line := range strings.Split(string(out), "\n") {
 		if !strings.HasPrefix(line, ";") && (strings.Contains(line, " EXTENSION - ") || strings.Contains(line, " COMMENT - EXTENSION ") ||
 			strings.Contains(line, " ACL pg_catalog ")) {
 			line = ";" + line
 		}
-		_, _ = w.WriteString(line + "\n")
+		sb.WriteString(line + "\n")
 	}
-	if err := w.Flush(); err != nil {
-		_ = f.Close()
-		return "", err
+	return sb.String(), nil
+}
+
+// writeRestoreLists writes the table of contents as two lists for pg_restore -L beside
+// the dump: main, every item but the grants and default privileges (restored by section),
+// and acls, those alone (restored last, once every object they name is there).
+func writeRestoreLists(dump, toc string) (main, acls string, err error) {
+	write := func(keep func(line string) bool) (string, error) {
+		f, err := os.CreateTemp(filepath.Dir(dump), ".restore-list-*")
+		if err != nil {
+			return "", err
+		}
+		w := bufio.NewWriter(f)
+		for _, line := range strings.Split(toc, "\n") {
+			if line != "" && !strings.HasPrefix(line, ";") && !keep(line) {
+				line = ";" + line
+			}
+			_, _ = w.WriteString(line + "\n")
+		}
+		if err := w.Flush(); err != nil {
+			_ = f.Close()
+			_ = os.Remove(f.Name())
+			return "", err
+		}
+		return f.Name(), f.Close()
 	}
-	return f.Name(), f.Close()
+	if main, err = write(func(l string) bool { return !isACL(l) }); err != nil {
+		return "", "", err
+	}
+	if acls, err = write(isACL); err != nil {
+		_ = os.Remove(main)
+		return "", "", err
+	}
+	return main, acls, nil
 }
 
 // Querier runs SQL as the superuser on a bundle's running server.

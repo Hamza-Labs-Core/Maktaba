@@ -38,6 +38,9 @@ const (
 	TVStateReplaced = "replaced" // a later release's change replaced it
 	TVStateFailed   = "failed"   // a retry's swap failed, or it was rolled back on the air
 	TVStateGone     = "gone"     // the change is no longer there (a database put back)
+	// TVStatePending: the release committed while its change still waited (an approval,
+	// a quiet window, a slow staging); it goes on by itself
+	TVStatePending = "pending"
 )
 
 // TVChanges is the TV change controller as a run's TV step needs it (tvchange.Controller).
@@ -108,6 +111,9 @@ func (t *RunTV) fill(ctx context.Context, tv TVChanges, runID string) {
 		return
 	}
 	t.State = tvState(st)
+	if t.Outcome == TVPending && t.State == TVStateRetrying {
+		t.State = TVStatePending // still on its first way to the air, not a retry
+	}
 	if t.State == TVStateHeld {
 		t.Failed, t.Checks = st.Failed, st.FailedChecks
 		if st.LiveStreaming != "" {
@@ -119,6 +125,17 @@ func (t *RunTV) fill(ctx context.Context, tv TVChanges, runID string) {
 // tvHeldAtCommit records a TV held at the home's commit: the run's detail, the admin's
 // notice (Retry and Drop are on the Updates page), the audit. The release is not blocked.
 func (d *Driver) tvHeldAtCommit(ctx context.Context, run Run, det *RunDetail, st *MachineStatus) {
+	if st != nil && st.TV != nil && st.TV.Outcome == TVPending && det.TV == nil {
+		// committed while its change still waited: the run says so (an admin may drop the
+		// change from the Updates page); nothing is held, nobody is warned
+		det.TV = &RunTV{Outcome: TVPending, ChangeID: st.TV.ChangeID, Number: st.TV.Number, HeldOn: st.TV.LiveStreaming,
+			State: TVStatePending}
+		noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
+		d.audit(ctx, run, "tv_pending", map[string]any{"change_id": st.TV.ChangeID, "live_streaming": st.TV.LiveStreaming})
+		d.log().Info("update installed with its TV change still waiting", "event", "update_tv_pending",
+			"run_id", run.ID, "version", run.Version, "change_id", st.TV.ChangeID)
+		return
+	}
 	if st == nil || st.TV == nil || st.TV.Outcome != TVHeld || det.TV != nil {
 		return
 	}
@@ -208,8 +225,8 @@ func (d *Driver) TVHeld(ctx context.Context) *TVHeldNow {
 	}
 	for _, r := range runs {
 		_, det, err := d.Store.RunDetailOf(ctx, r.ID)
-		if err != nil || det.TV == nil {
-			continue
+		if err != nil || det.TV == nil || det.TV.Outcome == TVPending {
+			continue // (a TV pending at the commit was never held)
 		}
 		det.TV.fill(ctx, d.TV, r.ID)
 		if det.TV.State != TVStateHeld && det.TV.State != TVStateRetrying {

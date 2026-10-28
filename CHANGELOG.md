@@ -10,6 +10,30 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An update is no longer rolled back because its TV change waits, a rollback no longer puts
+  the database back for additive migrations, and a restore that is needed is whole (the outage
+  of 2026-10-28).** The update to 0.3.42 passed every check, but its TV change waited half an
+  hour for an approval; the watch's bound ran out meanwhile (`watch_timeout`), the rollback put
+  the whole database back for one added row, and that restore failed part way (a joined machine
+  asking for its copy collided with the restore's grants: `tuple concurrently updated`), leaving
+  the library down for a quarter of an hour. Now: the watch judges the home's own health (the TV
+  slots are the TV step's), and a release healthy for its whole watch commits at once with its
+  TV change **pending** (it goes on by itself; never `watch_timeout`, `tv_change_pending` or
+  `tv_timeout`). A rollback whose migrations are all rollback-safe keeps the schema and puts
+  nothing back, for a previous release that says it runs on a kept schema
+  (`shared/db/migrations/meta/schema-keep.json`; its api is told with
+  `MAKTABA_SCHEMA_AHEAD_OK`); only a destructive migration puts the dump back. That restore
+  keeps every other login out until it is whole, restores the schema and the grants one at a
+  time and the rows, vectors and indexes in parallel, gives the database its own grants back
+  (the machines' CONNECT), is checked against the dump (every table, index, key, trigger,
+  function, grant and default privilege, and every table's rows: dumps now record them,
+  `counts.json`) before the record says `restored`, retries with one worker, and says exactly
+  what is missing when it cannot. The roles halted by the database step start again by
+  themselves once its record changes (put right by hand or by `maktaba-server restore`), and a
+  restart written by hand (`updates/restart`) is taken under the app's launcher too.
+
 ### Added
 
 - **Plex-like watching, Phase 2 (Epic 45 stories 45.8 to 45.16).** Mark a video watched or

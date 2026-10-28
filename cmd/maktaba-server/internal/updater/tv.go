@@ -10,13 +10,19 @@ import (
 // The TV step of the home's update (story 35.6, design §7.1). Once the new release runs,
 // its streaming binary goes on the air through the TV change controller (Epic 33): a
 // change of the binary alone (source auto_update), staged, verified and swapped at
-// programme boundaries without an approval. The release commits once that change is live
-// (or there was nothing to swap), or once its check failed before any swap: then the TV is
-// held on the streaming software it runs and the release commits all the same (the
-// owner's decision, 2026-10-28: the admin retries or drops the change from the Updates
-// page). A change whose swap fails, or that fails on the air after it switched, rolls the
-// release back; a rollback for any reason takes the change back (cancelled, or rolled back
-// on the air).
+// programme boundaries. The release commits once that change is live (or there was
+// nothing to swap), or once its check failed before any swap: then the TV is held on the
+// streaming software it runs and the release commits all the same (the owner's decision,
+// 2026-10-28: the admin retries or drops the change from the Updates page). A change whose
+// swap fails, or that fails on the air after it switched, rolls the release back; a
+// rollback for any reason takes the change back (cancelled, or rolled back on the air).
+//
+// The TV never holds the release up (the outage of 2026-10-28: a change that waited for
+// an approval kept the watch going until it ran out, watch_timeout, and the rollback's
+// restore failed). The watch judges the home's own health only; once the home passed its
+// watch, a TV change still waiting (for an approval, a quiet window, behind another
+// change, a slow staging, an API that does not answer) leaves the release committed with
+// the TV pending: the change goes on under the TV change controller by itself.
 // The step runs after the restart because the new release's migrations run at its start
 // (the database step): the new streaming binary never meets an older schema.
 
@@ -28,11 +34,18 @@ const (
 	TVInProgress = "in_progress"
 	TVLive       = "live"
 	TVHeld       = "held" // its check failed before any swap: the TV stays on its software
-	TVFailed     = "failed"
-	TVCancelled  = "cancelled"
+	// TVPending: the release committed while its change still waited (an approval, a
+	// quiet window, a slow staging): the change goes on under the TV change controller.
+	TVPending   = "pending"
+	TVFailed    = "failed"
+	TVCancelled = "cancelled"
 )
 
-// Codes a run rolls back with at its TV step (the API's updates.Code*).
+// Codes of the TV step (the API's updates.Code*). A run rolls back with CodeFailedTV (the
+// change's swap failed, or it failed on the air) and CodeTVChangeCancelled.
+// CodeTVChangePending and CodeTVTimeout name a change that waits (behind another, past its
+// stage's limit, the API silent): never a rollback any more, they say why the TV is
+// pending at the commit.
 const (
 	CodeFailedTV          = "failed_tv"
 	CodeTVChangePending   = "tv_change_pending"
@@ -125,15 +138,24 @@ func (m *Machine) SetTVDeadline(runID string, at time.Time) {
 	})
 }
 
-// tvStep moves the TV on (the watch calls it while the new release is healthy): done once
-// the change is live or skipped; code is set when the run must roll back.
-func (m *Machine) tvStep(ctx context.Context) (done bool, code, detail string) {
+// tvResult is where the TV step stands: done (live, skipped, held: the release commits),
+// failed (code: the run rolls back), or waiting (why: the release commits once the home
+// passed its watch, with the TV pending).
+type tvResult struct {
+	done         bool
+	code, detail string
+	waiting      string
+}
+
+// tvStep moves the TV on (the watch calls it while the new release is healthy).
+func (m *Machine) tvStep(ctx context.Context) tvResult {
 	j := m.Status().Journal
 	if m.TV == nil || j == nil || !j.Job.Home {
-		return true, "", ""
+		return tvResult{done: true}
 	}
-	if j.TV != nil && (j.TV.Outcome == TVLive || j.TV.Outcome == TVSkipped || j.TV.Outcome == TVHeld) {
-		return true, "", ""
+	if j.TV != nil && (j.TV.Outcome == TVLive || j.TV.Outcome == TVSkipped || j.TV.Outcome == TVHeld ||
+		j.TV.Outcome == TVPending) {
+		return tvResult{done: true}
 	}
 	now := m.now()
 	if j.TV == nil {
@@ -157,10 +179,11 @@ func (m *Machine) tvStep(ctx context.Context) (done bool, code, detail string) {
 		if j.TV.LastOK != nil {
 			last = *j.TV.LastOK
 		}
+		why := fmt.Sprintf("the TV change cannot be had yet: %v", err)
 		if now.Sub(last) >= tvAskLimit {
-			return false, CodeTVTimeout, fmt.Sprintf("the TV change could not be had for %s: %v", tvAskLimit, err)
+			why = fmt.Sprintf("%s: the TV change could not be had for %s: %v", CodeTVTimeout, tvAskLimit, err)
 		}
-		return false, "", ""
+		return tvResult{waiting: why}
 	}
 	_ = m.mutate(func(j *Journal) {
 		if j.TV != nil {
@@ -179,12 +202,12 @@ func (m *Machine) tvStep(ctx context.Context) (done bool, code, detail string) {
 		_ = m.mutate(func(j *Journal) { j.TV.Outcome = TVLive })
 		_ = m.endStep(StepTV, "done", name+" is on the air")
 		m.logf("%s is on the air: the TV runs %s's streaming software", name, j.Job.Version)
-		return true, "", ""
+		return tvResult{done: true}
 	case TVSkipped:
 		_ = m.mutate(func(j *Journal) { j.TV.Outcome = TVSkipped })
 		_ = m.endStep(StepTV, "skipped", tvSkipWhy(st.Skipped))
 		m.logf("no TV change: %s", tvSkipWhy(st.Skipped))
-		return true, "", ""
+		return tvResult{done: true}
 	case TVHeld:
 		// its check failed before any swap: the TV stays on the streaming software it
 		// runs, the release commits all the same, and the admin retries or drops the
@@ -208,41 +231,64 @@ func (m *Machine) tvStep(ctx context.Context) (done bool, code, detail string) {
 		_ = m.endStep(StepTV, "held", fmt.Sprintf("%s: %s; %s", name, why, stays))
 		m.warnf("%s: %s; %s and %s commits (retry or drop it on the Updates page)",
 			name, why, stays, j.Job.Version)
-		return true, "", ""
+		return tvResult{done: true}
 	case TVFailed:
 		why := st.Reason
 		if len(st.Failed) > 0 {
 			why += " (" + strings.Join(st.Failed, ", ") + ")"
 		}
-		return false, CodeFailedTV, name + ": " + why
+		return tvResult{code: CodeFailedTV, detail: name + ": " + why}
 	case TVCancelled:
-		return false, CodeTVChangeCancelled, name + " was cancelled"
+		return tvResult{code: CodeTVChangeCancelled, detail: name + " was cancelled"}
 	case TVQueued:
+		behind := "another change"
+		if q := st.QueuedBehind; q != nil {
+			behind = fmt.Sprintf("TV change #%d (%s)", q.Number, q.State)
+			if q.State == "ready" && !q.Approved {
+				behind = fmt.Sprintf("TV change #%d, which waits for an approval", q.Number)
+			}
+		}
+		why := fmt.Sprintf("%s waits behind %s", name, behind)
 		deadline := j.TV.StartedAt.Add(tvQueueDefault)
 		if j.TVDeadline != nil {
 			deadline = *j.TVDeadline
 		}
 		if now.After(deadline) {
-			behind := "another change"
-			if q := st.QueuedBehind; q != nil {
-				behind = fmt.Sprintf("TV change #%d (%s)", q.Number, q.State)
-				if q.State == "ready" && !q.Approved {
-					behind = fmt.Sprintf("TV change #%d, which waits for an approval", q.Number)
-				}
-			}
-			return false, CodeTVChangePending, fmt.Sprintf("%s waited behind %s until %s", name, behind,
+			why = fmt.Sprintf("%s: %s waited behind %s until %s", CodeTVChangePending, name, behind,
 				deadline.Format(time.RFC3339))
 		}
+		return tvResult{waiting: why}
 	case TVInProgress:
+		why := fmt.Sprintf("%s is %s", name, orNone(st.State))
+		if st.State == "ready" {
+			// staged and checked: it waits for its swap (an approval, a quiet window)
+			why = name + " passed its checks and waits for its swap (an approval or a quiet window)"
+		}
 		limit := tvTimeoutDefault
 		if st.TimeoutMinutes > 0 {
 			limit = time.Duration(st.TimeoutMinutes) * time.Minute
 		}
 		if st.StagedAt != nil && now.Sub(*st.StagedAt) >= limit {
-			return false, CodeTVTimeout, fmt.Sprintf("%s was not on the air %s after its stage (%s)", name, limit, st.State)
+			why = fmt.Sprintf("%s: %s was not on the air %s after its stage (%s)", CodeTVTimeout, name, limit, st.State)
 		}
+		return tvResult{waiting: why}
 	}
-	return false, "", ""
+	return tvResult{waiting: name + " is not on the air yet"}
+}
+
+// tvPending ends the TV step pending at the commit: the home passed its watch while its
+// TV change still waits (why). The change is not taken back: it goes on under the TV
+// change controller (an admin approves it, its window comes), and the release that ships
+// the streaming software the live TV runs is kept from pruning meanwhile (TVRun.keeps).
+func (m *Machine) tvPending(why string) {
+	j := m.Status().Journal
+	if j == nil || j.TV == nil || j.TV.Outcome != "" {
+		return
+	}
+	_ = m.mutate(func(j *Journal) { j.TV.Outcome = TVPending })
+	_ = m.endStep(StepTV, TVPending, why)
+	m.warnf("%s passed its watch while its TV change waits (%s): it commits, and the TV change goes on by itself",
+		j.Job.Version, why)
 }
 
 func tvSkipWhy(code string) string {
@@ -331,10 +377,4 @@ func FrontDoorRestarts(releaseEdge, runningEdge int) bool {
 		return true
 	}
 	return releaseEdge != runningEdge
-}
-
-// waitsForTV reports whether a watched release waits only for its TV step: healthy since
-// healthySince for its whole watch.
-func waitsForTV(v Verdict, healthySince, now time.Time, watch time.Duration) bool {
-	return v.Healthy && !healthySince.IsZero() && now.Sub(healthySince) >= watch
 }

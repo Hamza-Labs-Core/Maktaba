@@ -28,6 +28,19 @@ func TestSchemaAhead(t *testing.T) {
 	}
 }
 
+// A schema a rollback kept for this release (its migrations all rollback-safe, nothing put
+// back: the server's database step says so with MAKTABA_SCHEMA_AHEAD_OK) is not refused.
+func TestSchemaAheadKeptForThisRelease(t *testing.T) {
+	t.Setenv(envSchemaAheadOK, "1")
+	if err := schemaAhead(169, 167); err != nil {
+		t.Fatalf("a kept schema refused: %v", err)
+	}
+	t.Setenv(envSchemaAheadOK, "")
+	if err := schemaAhead(169, 167); !errors.Is(err, errSchemaAhead) {
+		t.Fatalf("without the record's word = %v", err)
+	}
+}
+
 func TestNewestMigration(t *testing.T) {
 	dir := t.TempDir()
 	for _, n := range []string{"0000_schema_version.sql", "0001_a.sql", "0001_a.sqlite.sql", "0007_b.sql",

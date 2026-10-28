@@ -1177,10 +1177,14 @@ const (
 	// swap no longer rolls back: the TV is held, tvheld.go.)
 	CodeFailedTV = "failed_tv"
 	// CodeTVChangePending: queued behind a TV change that waits for an approval until
-	// the window's end: a gate, tried again in the next window (no attempt counted).
+	// the window's end: a gate, tried again in the next window (no attempt counted). A
+	// home from 2026-10-28 on never rolls back for it: a TV that only waits leaves the
+	// release committed with the TV pending (the outage of 2026-10-28); kept for the
+	// homes before.
 	CodeTVChangePending = "tv_change_pending"
 	// CodeTVTimeout: the change did not reach the air within boundary_max_wait + 10
-	// minutes of its stage (an attempt, as any failed run).
+	// minutes of its stage (an attempt, as any failed run). As CodeTVChangePending: only a
+	// home from before 2026-10-28 rolls back for it.
 	CodeTVTimeout = "tv_timeout"
 	// CodeTVChangeCancelled: an admin cancelled the update's TV change: the release is
 	// blocked until an admin retries it.

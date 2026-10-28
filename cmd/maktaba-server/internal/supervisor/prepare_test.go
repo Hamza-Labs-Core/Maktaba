@@ -142,6 +142,43 @@ func TestHaltedPrepareIsNotTriedAgain(t *testing.T) {
 	}
 }
 
+// A HaltUntil (the database step's halt, 2026-10-28) has a way out: the process stays
+// failed with its reason while what it watches is unchanged, then its Prepare runs again
+// and the process starts, with no restart of the server.
+func TestHaltUntilStartsOnceItsWayOutCame(t *testing.T) {
+	prev := haltPoll
+	haltPoll = 10 * time.Millisecond
+	t.Cleanup(func() { haltPoll = prev })
+	var fixed atomic.Bool
+	var tries atomic.Int32
+	p, _ := fakeProc(t, RoleAPI, "serve")
+	p.Prepare = func(context.Context, func(Detail)) error {
+		tries.Add(1)
+		if !fixed.Load() {
+			return HaltUntil(Coded(Detail{Code: "db_restore_failed", Text: "putting the database back failed"}), fixed.Load)
+		}
+		return nil
+	}
+	s := New([]Process{p}, testPolicy(), WithLog(&syncBuffer{}))
+	stop, _ := running(t, s)
+	waitFor(t, s, "the halt shown", func(s Snapshot) bool {
+		c := proc(s, RoleAPI)
+		return c.State == StateFailed && c.DetailCode == "db_restore_failed" && c.NextRestartAt == nil
+	})
+	time.Sleep(50 * time.Millisecond)
+	if n := tries.Load(); n != 1 {
+		t.Fatalf("Prepare ran %d times before its way out, want 1", n)
+	}
+	fixed.Store(true) // the record put right
+	waitFor(t, s, "started once its way out came", runningPID(RoleAPI))
+	if n := tries.Load(); n != 2 {
+		t.Fatalf("Prepare ran %d times, want 2", n)
+	}
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // The coded detail is in /processes beside the English, and absent when there is none.
 func TestDetailFieldsInJSON(t *testing.T) {
 	raw, err := json.Marshal(ChildStatus{Role: RoleAPI, State: StateStarting, Detail: "Saving the library database before the update to v0.3.0",

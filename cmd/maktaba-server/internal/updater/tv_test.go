@@ -90,14 +90,12 @@ func stepOf(j *Journal, step string) *StepRecord {
 	return nil
 }
 
-// TC3 (story 35.6): the release commits only once its TV change is on the air, asked for
-// once; the watch's own bound does not cut the wait short.
-func TestTVStepWaitsForLive(t *testing.T) {
-	tv := &fakeTV{script: []TVStatus{{Outcome: TVQueued, ChangeID: "c1", Number: 7}}}
-	for i := 0; i < 40; i++ { // longer than the watch's bound (3 × 10 + 3 minutes)
-		tv.script = append(tv.script, TVStatus{Outcome: TVInProgress, ChangeID: "c1", Number: 7, State: "verifying"})
-	}
-	tv.script = append(tv.script, TVStatus{Outcome: TVLive, ChangeID: "c1", Number: 7, State: "live"})
+// TC3 (story 35.6): a TV change that goes on the air within the watch is asked for once,
+// and the release commits with it live.
+func TestTVStepLiveWithinTheWatch(t *testing.T) {
+	tv := &fakeTV{script: []TVStatus{{Outcome: TVQueued, ChangeID: "c1", Number: 7},
+		{Outcome: TVInProgress, ChangeID: "c1", Number: 7, State: "verifying"},
+		{Outcome: TVLive, ChangeID: "c1", Number: 7, State: "live"}}}
 	n, w := appliedRig(t, tv, nil)
 	j := n.waitState(StateCommitted)
 	if w.committed != "1.5.0" {
@@ -111,6 +109,81 @@ func TestTVStepWaitsForLive(t *testing.T) {
 	}
 	if s := stepOf(j, StepTV); s == nil || s.State != "done" {
 		t.Fatalf("tv step %+v", s)
+	}
+}
+
+// The outage of 2026-10-28: the home passed every check, but its TV change (#57) sat in
+// ready waiting for an admin's approval for half an hour; the approval's swap stopped a
+// TV slot and a transcription worker failed its probes once, and the watch, whose bound
+// had run on while the TV waited, rolled the release back (watch_timeout). The watch
+// judges the home alone: once the home passed it, the release commits with the TV pending
+// (the change not taken back, it goes on by itself), whatever comes after.
+func TestTVWaitingForAnApprovalNeverTimesTheWatchOut(t *testing.T) {
+	waiting := TVStatus{Outcome: TVInProgress, ChangeID: "c1", Number: 57, State: "ready", LiveStreaming: "v1.4.0"}
+	tv := &fakeTV{script: []TVStatus{waiting}}
+	n, w := appliedRig(t, tv, nil, func(n *rig) {
+		// the probe that failed once, at the approval's swap (on main: past the watch,
+		// within its bound, so its healthy run began again and the bound ran out)
+		n.health.at = map[int]Verdict{7: {Why: "pipeline/stt-1 /healthz: connection refused"}}
+	})
+	j := n.waitState(StateCommitted)
+	if w.committed != "1.5.0" || j.Error != nil || j.Reason != "" {
+		t.Fatalf("committed %q error %+v reason %q", w.committed, j.Error, j.Reason)
+	}
+	select {
+	case code := <-n.exited:
+		t.Fatalf("exited %d: a rollback", code)
+	default:
+	}
+	if begins, withdrawn := tv.took(); begins != 1 || len(withdrawn) != 0 {
+		t.Fatalf("begins %d, the waiting change taken back: %v", begins, withdrawn)
+	}
+	if j.TV == nil || j.TV.Outcome != TVPending || j.TV.LiveStreaming != "v1.4.0" {
+		t.Fatalf("tv %+v", j.TV)
+	}
+	s := stepOf(j, StepTV)
+	if s == nil || s.State != TVPending || !strings.Contains(s.Detail, "#57") || !strings.Contains(s.Detail, "approval") {
+		t.Fatalf("tv step %+v", s)
+	}
+	if got := j.TV.keeps(); len(got) != 1 || got[0] != "v1.4.0" {
+		t.Fatalf("keeps %v: the release the live TV runs must stay", got)
+	}
+}
+
+// A TV change that only waits never rolls the release back: queued behind a change that
+// waits for an approval past the window's end, staged longer than its limit, or an API
+// that does not answer about it. Each commits with the TV pending once the home passed
+// its watch.
+func TestTVStepWaitingCommitsPending(t *testing.T) {
+	staged := time.Date(2026, 10, 22, 3, 0, 0, 0, time.UTC)
+	deadline := time.Date(2026, 10, 22, 3, 5, 0, 0, time.UTC) // the window ends early in the watch
+	for name, c := range map[string]struct {
+		tv       *fakeTV
+		deadline *time.Time
+		says     string
+	}{
+		"approval past the window": {tv: &fakeTV{script: []TVStatus{{Outcome: TVQueued, ChangeID: "c1", Number: 8,
+			QueuedBehind: &TVQueueRef{ID: "c0", Number: 7, State: "ready"}}}}, deadline: &deadline,
+			says: CodeTVChangePending},
+		"slow staging": {tv: &fakeTV{script: []TVStatus{{Outcome: TVInProgress, ChangeID: "c1", Number: 7,
+			State: "swapping", StagedAt: &staged, TimeoutMinutes: 10}}}, says: CodeTVTimeout},
+		"silent API": {tv: &fakeTV{err: errors.New("connection refused")}, says: "connection refused"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			n, w := appliedRig(t, c.tv, c.deadline)
+			j := n.waitState(StateCommitted)
+			if w.committed != "1.5.0" || j.Error != nil {
+				t.Fatalf("committed %q error %+v", w.committed, j.Error)
+			}
+			if _, withdrawn := c.tv.took(); len(withdrawn) != 0 {
+				t.Fatalf("withdrawn %v", withdrawn)
+			}
+			s := stepOf(j, StepTV)
+			if j.TV == nil || j.TV.Outcome != TVPending || s == nil || s.State != TVPending ||
+				!strings.Contains(s.Detail, c.says) {
+				t.Fatalf("tv %+v step %+v", j.TV, s)
+			}
+		})
 	}
 }
 
@@ -195,44 +268,6 @@ func TestTVStepHeldOnThisReleaseSaysSo(t *testing.T) {
 	if s == nil || s.State != "held" || strings.Contains(s.Detail, "stays on") ||
 		!strings.Contains(s.Detail, "the live TV runs v1.5.0's streaming software already") {
 		t.Fatalf("tv step %+v", s)
-	}
-}
-
-// TC4: queued behind a change waiting for an approval past the window's end:
-// tv_change_pending (the driver retries it next window).
-func TestTVStepPendingApprovalTimesOut(t *testing.T) {
-	tv := &fakeTV{script: []TVStatus{{Outcome: TVQueued, ChangeID: "c1", Number: 8,
-		QueuedBehind: &TVQueueRef{ID: "c0", Number: 7, State: "ready"}}}}
-	// the clock moves a minute a read: the window ends a few minutes into the watch
-	deadline := time.Date(2026, 10, 22, 3, 20, 0, 0, time.UTC)
-	n, _ := appliedRig(t, tv, &deadline)
-	n.waitExit()
-	j := n.waitState(StateRollingBack)
-	if j.Error == nil || j.Error.Code != CodeTVChangePending {
-		t.Fatalf("error %+v", j.Error)
-	}
-}
-
-// A change staged but not on the air within boundary_max_wait + 10 minutes: tv_timeout.
-func TestTVStepTimesOutInFlight(t *testing.T) {
-	staged := time.Date(2026, 10, 22, 3, 0, 0, 0, time.UTC)
-	tv := &fakeTV{script: []TVStatus{{Outcome: TVInProgress, ChangeID: "c1", Number: 7, State: "swapping",
-		StagedAt: &staged, TimeoutMinutes: 40}}}
-	n, _ := appliedRig(t, tv, nil)
-	n.waitExit()
-	j := n.waitState(StateRollingBack)
-	if j.Error == nil || j.Error.Code != CodeTVTimeout {
-		t.Fatalf("error %+v", j.Error)
-	}
-}
-
-// An API that never answers about the change: tv_timeout after tvAskLimit, not a hang.
-func TestTVStepGivesUpOnASilentAPI(t *testing.T) {
-	tv := &fakeTV{err: errors.New("connection refused")}
-	n, _ := appliedRig(t, tv, nil)
-	n.waitExit()
-	if j := n.waitState(StateRollingBack); j.Error == nil || j.Error.Code != CodeTVTimeout {
-		t.Fatalf("error %+v", j.Error)
 	}
 }
 

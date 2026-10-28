@@ -48,7 +48,21 @@ func Halt(err error) error {
 	return &haltError{err: err}
 }
 
-type haltError struct{ err error }
+// HaltUntil is a Halt with a way out: the process stays failed until changed reports
+// true (looked at every haltPoll), then its Prepare runs again. changed must report the
+// state it watches, not an edge: every process halted on it asks (the 2026-10-28 outage:
+// a database record put right by hand left every role stopped until a full restart).
+func HaltUntil(err error, changed func() bool) error {
+	if err == nil {
+		return nil
+	}
+	return &haltError{err: err, changed: changed}
+}
+
+type haltError struct {
+	err     error
+	changed func() bool
+}
 
 func (e *haltError) Error() string { return e.err.Error() }
 func (e *haltError) Unwrap() error { return e.err }
@@ -58,6 +72,21 @@ func Halted(err error) bool {
 	var h *haltError
 	return errors.As(err, &h)
 }
+
+// HaltCleared reports whether err is a HaltUntil whose way out came.
+func HaltCleared(err error) bool {
+	var h *haltError
+	return errors.As(err, &h) && h.changed != nil && h.changed()
+}
+
+// haltWatched reports whether err is a HaltUntil (a Halt with a way out).
+func haltWatched(err error) bool {
+	var h *haltError
+	return errors.As(err, &h) && h.changed != nil
+}
+
+// haltPoll is how often a HaltUntil's way out is looked at.
+var haltPoll = 5 * time.Second
 
 // prepare runs c's Prepare until it succeeds (Epic 38 story 38.12). Meanwhile c
 // is starting, with what the Prepare reports as its detail; after a failure it is
@@ -104,6 +133,25 @@ func (s *Supervisor) prepare(ctx context.Context, c *child) bool {
 		c.status.NextRestartAt = next
 		s.mu.Unlock()
 		ev := Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: ReasonStartFailed, Message: err.Error()}
+		if halted && haltWatched(err) {
+			s.emit(ev)
+			s.errorf("%s cannot start: %v; it starts once what stopped it is put right", c.proc.Name(), err)
+			for !HaltCleared(err) {
+				t := time.NewTimer(haltPoll)
+				select {
+				case <-ctx.Done():
+					t.Stop()
+					return false
+				case <-t.C:
+				}
+			}
+			s.logf("%s: what stopped it changed: starting it again", c.proc.Name())
+			delay = prepareRetryFirst
+			if fr := s.policy.FailedRetry; fr > 0 && delay > fr {
+				delay = fr
+			}
+			continue
+		}
 		if halted {
 			s.emit(ev)
 			s.errorf("%s cannot start: %v; it stays stopped until the server starts again", c.proc.Name(), err)

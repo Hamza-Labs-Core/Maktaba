@@ -146,6 +146,41 @@ func TestDriverTVLiveIsNotHeld(t *testing.T) {
 	}
 }
 
+// The outage of 2026-10-28: a home whose release passed its watch while its TV change
+// waited for an approval commits with the TV pending. The run is done, nothing blocked
+// or counted, nobody warned of a held TV; its detail says the TV was pending, and the
+// overview shows no held TV.
+func TestDriverTVPendingCommitsTheRelease(t *testing.T) {
+	t.Parallel()
+	r := newDriverRig(t)
+	tv := &fakeTVChanges{st: tvchange.AutoUpdateStatus{Outcome: tvchange.AutoOutcomeInProgress, ChangeID: "ch-57",
+		Number: 57, State: "ready"}}
+	r.d.TV = tv
+	r.home.tv = &MachineTV{ChangeID: "ch-57", Number: 57, Outcome: TVPending, LiveStreaming: "v1.4.0"}
+	_, _ = r.f.svc.Tick(context.Background())
+	run := r.drive(t, 12)
+	ctx := context.Background()
+	if run.State != RunDone {
+		t.Fatalf("run %s %s", run.State, run.Error)
+	}
+	if rel, _ := r.f.store.Get(ctx, "1.5.0"); rel.BlockedReason != "" || rel.Attempts != 0 {
+		t.Fatalf("a pending TV counts against the release: %+v", rel)
+	}
+	if r.f.notes.find(NoticeTVHeld) != nil || r.f.notes.find(NoticeRolledBack) != nil {
+		t.Fatalf("notices %v", r.f.notes.kinds())
+	}
+	_, det, err := r.f.store.RunDetailOf(ctx, run.ID)
+	if err != nil || det.TV == nil || det.TV.Outcome != TVPending || det.TV.Number != 57 {
+		t.Fatalf("detail tv %+v (%v)", det.TV, err)
+	}
+	if !contains(auditActions(t, r.f), "tv_pending") {
+		t.Fatalf("audit %v", auditActions(t, r.f))
+	}
+	if held := r.d.TVHeld(ctx); held != nil {
+		t.Fatalf("a pending TV shown held: %+v", held)
+	}
+}
+
 // Retry and Drop: admins only (403 for anyone else, the controller untouched); a retry
 // while another run is under way is refused; a run whose TV is not held answers 409.
 func TestTVActionRetryAndDrop(t *testing.T) {

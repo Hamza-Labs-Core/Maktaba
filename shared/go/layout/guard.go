@@ -267,6 +267,73 @@ func NoteRecordNext(path, running, next, dump string, at time.Time) error {
 	return WriteFileAtomic(path, append(out, '\n'), 0o644)
 }
 
+// MarkRecordKept marks the database's record so that the release from starts on the
+// database failed's migrations made, with nothing put back: a rollback whose migrations
+// are all additive (rollback-safe for from, which says it runs on such a schema). The
+// record must say failed's migrations ran (migrated: not one cut short); its version
+// stays failed's (the schema the database holds) and kept_for names from, the older
+// release that may start on it (serve's database step, then its api, accept the newer
+// schema for it). It reports whether it marked the record. Fields it does not know are
+// kept.
+func MarkRecordKept(path, failed, from, reason string) (bool, error) {
+	if path == "" || from == "" {
+		return false, nil
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return false, fmt.Errorf("%s: %w", path, err)
+	}
+	str := func(k string) string { s, _ := rec[k].(string); return s }
+	if NormalizeVersion(str("version")) != NormalizeVersion(failed) || str("state") != "migrated" {
+		return false, nil
+	}
+	rec["kept_for"], rec["kept_reason"] = NormalizeVersion(from), reason
+	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
+	out, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
+}
+
+// UnmarkRecordKept takes back MarkRecordKept when the switch back failed: failed still
+// runs, on its own schema. It reports whether it changed the record.
+func UnmarkRecordKept(path, failed string) (bool, error) {
+	if path == "" {
+		return false, nil
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return false, fmt.Errorf("%s: %w", path, err)
+	}
+	str := func(k string) string { s, _ := rec[k].(string); return s }
+	if str("kept_for") == "" || NormalizeVersion(str("version")) != NormalizeVersion(failed) {
+		return false, nil
+	}
+	delete(rec, "kept_for")
+	delete(rec, "kept_reason")
+	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
+	out, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
+}
+
 // RecordMigrated reports whether the record says version's migrations ran (or were
 // running: a database that may hold some of them).
 func RecordMigrated(path, version string) bool {

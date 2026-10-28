@@ -555,7 +555,7 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 			return err
 		}
 		_, _ = d.ExecContext(ctx, `ANALYZE`)
-		return nil
+		return t.verifyRestore(ctx, d, dump)
 	}
 	if len(pgbundle.Chunks(dump)) > 0 {
 		return fmt.Errorf("restore %s: its vectors are binary chunks that psql loads, and there is no psql beside "+
@@ -575,6 +575,39 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 		return fmt.Errorf("pg_restore %s: %v: %s", dump, err, tail(out.Bytes()))
 	}
 	_, _ = d.ExecContext(ctx, `ANALYZE`)
+	return t.verifyRestore(ctx, d, dump)
+}
+
+// verifyRestore checks the database put back against the dump (pgbundle.VerifyRestore:
+// every object, grant and default privilege, every table's rows): a restore is recorded
+// done only when it is whole, and one that is not says what it lacks.
+func (t Target) verifyRestore(ctx context.Context, d *sql.DB, dump string) error {
+	cmd := exec.CommandContext(ctx, t.bin("pg_restore"), "-l", dump)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	toc, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("pg_restore -l %s: %v: %s", dump, err, tail(stderr.Bytes()))
+	}
+	query := func(ctx context.Context, q string) ([]string, error) {
+		rows, err := d.QueryContext(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out []string
+		for rows.Next() {
+			var s sql.NullString
+			if err := rows.Scan(&s); err != nil {
+				return nil, err
+			}
+			out = append(out, s.String)
+		}
+		return out, rows.Err()
+	}
+	if err := pgbundle.VerifyRestore(ctx, dump, string(toc), query); err != nil {
+		return fmt.Errorf("restore %s: %w", dump, err)
+	}
 	return nil
 }
 

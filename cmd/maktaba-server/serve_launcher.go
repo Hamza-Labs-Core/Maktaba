@@ -56,18 +56,32 @@ var stopFilePoll = 500 * time.Millisecond
 // exitRestart (EX_TEMPFAIL) asks the launcher to start current again.
 const exitRestart = 75
 
+// restartLayout is the layout whose updates/restart asks this serve to restart (exit 75
+// for its launcher): the plain layout of the release it runs from, else the state root
+// of a launcher that runs an app's payload or a runtime copy (MAKTABA_LAUNCHER_ROOT: the
+// launcher clears the same updates/restart before each start). nil: no launcher.
+func restartLayout(releaseDir string) *layout.Layout {
+	if releaseDir != "" {
+		l := layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir)))))
+		return &l
+	}
+	if root := strings.TrimSpace(os.Getenv(envLauncherRoot)); root != "" {
+		l := layout.New(root)
+		return &l
+	}
+	return nil
+}
+
 // watchLauncher cancels serve when the launcher's stop file appears, or when
-// a restart is requested (<install>/updates/restart, written by the API after
-// a self-update): then restart reports true and serve exits 75 once drained,
-// so the launcher starts the new current release.
+// a restart is requested (updates/restart: the API's after a self-update, the
+// settings' restart, or one written by hand, e.g. after a payload-override): then
+// restart reports true and serve exits 75 once drained, so the launcher starts the
+// release (or the payload) it runs next. Every launcher's serve takes it: under an
+// app's launcher too (2026-10-28: a restart written by hand was never taken there).
 func watchLauncher(ctx context.Context, cancel context.CancelFunc, releaseDir string) (restart *atomic.Bool) {
 	restart = new(atomic.Bool)
 	stop := os.Getenv(envStopFile)
-	var l *layout.Layout
-	if releaseDir != "" {
-		ll := layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir)))))
-		l = &ll
-	}
+	l := restartLayout(releaseDir)
 	if stop == "" && l == nil {
 		return restart
 	}

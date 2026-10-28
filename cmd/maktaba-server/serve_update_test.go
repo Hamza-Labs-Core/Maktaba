@@ -89,6 +89,22 @@ func TestMachineHealthStartSteps(t *testing.T) {
 	}
 }
 
+// The home's watch judges the home's own processes: a TV slot (its change's staging slot
+// starting, a slot its swap stopped, one that crash-loops) is the TV step's, never the
+// home's verdict (2026-10-28: "tv-slot/amber is starting" counted against the watch).
+func TestMachineHealthLeavesTheTVSlotsToTheTVStep(t *testing.T) {
+	t.Setenv("MAKTABA_APP_BUNDLE", "")
+	procs := []supervisor.ChildStatus{
+		{Role: supervisor.RoleStreaming, State: supervisor.StateRunning},
+		{Role: supervisor.RoleTVSlot, Instance: "amber", Wanted: true, State: supervisor.StateStarting},
+		{Role: supervisor.RoleTVSlot, Instance: "blue", Wanted: true, State: supervisor.StateBackoff, CrashLoop: true},
+	}
+	h := &machineHealth{snap: func() (supervisor.Snapshot, bool) { return supervisor.Snapshot{Processes: procs}, true }}
+	if v := h.Check(context.Background(), "v1.5.0"); !v.Healthy || v.Fatal {
+		t.Fatalf("the TV's slots judged the home: %+v", v)
+	}
+}
+
 // an api that does not answer at all says why in the verdict (a rollback's reason): the
 // transport's error, not "answers 0"; one that answers says its status.
 func TestMachineHealthSaysWhyTheAPIDidNotAnswer(t *testing.T) {

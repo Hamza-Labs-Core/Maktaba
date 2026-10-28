@@ -504,6 +504,124 @@ func TestAppBundleFailedRestoreIsFinishedNextStart(t *testing.T) {
 	}
 }
 
+// The outage of 2026-10-28: the restore failed, every role halted ("cannot start"), and
+// the owner put the database back by hand and set the record restored, which nothing
+// read until a full restart. The halt watches the record: once it changes, the same
+// step (every role waits on it) runs again, and the roles start.
+func TestAppBundleHaltEndsWhenTheRecordIsPutRight(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.2.0", "")
+	backups := filepath.Join(cfg.StateDir(), "backups")
+	_ = os.MkdirAll(backups, 0o700)
+	dump := filepath.Join(backups, "pre-v0.2.0-to-v0.3.0.dump")
+	_ = os.WriteFile(dump, []byte("dump"), 0o600)
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
+		Dump: dump, Failed: "v0.3.0", Error: "watch_timeout"})
+	f := installFakeDB(t, cfg)
+	f.restoreErr = errors.New("pg_restore: tuple concurrently updated")
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	api, streaming := prepareOf(t, ps, supervisor.RoleAPI), prepareOf(t, ps, supervisor.RoleStreaming)
+	err := api(context.Background(), noReport)
+	if !supervisor.Halted(err) || supervisor.DetailOf(err).Code != "db_restore_failed" {
+		t.Fatalf("the failed restore = %v", err)
+	}
+	if supervisor.HaltCleared(err) {
+		t.Fatal("the halt is over with the record unchanged")
+	}
+	if err := streaming(context.Background(), noReport); !supervisor.Halted(err) {
+		t.Fatalf("another role while the record is unchanged = %v", err)
+	}
+	if _, _, r := f.counts(); r != 1 {
+		t.Fatalf("%d restores: a halt is not tried again by itself", r)
+	}
+	// put right by hand, as the owner did: the database back, the record restored
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseRestored, From: "v0.2.0",
+		Dump: dump, Failed: "v0.3.0", Error: "watch_timeout"})
+	if !supervisor.HaltCleared(err) {
+		t.Fatal("the halt does not see the record put right")
+	}
+	if err := streaming(context.Background(), noReport); err != nil {
+		t.Fatalf("a role once the record says restored = %v", err)
+	}
+	if err := api(context.Background(), noReport); err != nil {
+		t.Fatalf("the api once the record says restored = %v", err)
+	}
+	if _, _, r := f.counts(); r != 1 {
+		t.Fatalf("%d restores: nothing is put back over a database put right", r)
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.State != apppayload.DatabaseMigrated {
+		t.Fatalf("record = %+v", rec)
+	}
+}
+
+// The outage's rollback (2026-10-28) put the whole database back for one additive
+// migration. A rollback whose migrations are all rollback-safe marks the record kept for
+// the release before (layout.MarkRecordKept, the updater's rollback): that release starts
+// on the newer schema with nothing put back, its api told it may (MAKTABA_SCHEMA_AHEAD_OK),
+// and the record keeps saying whose schema it is. Updating again finds no migration to run.
+func TestAppBundleRollbackKeepsAnAdditiveSchema(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	backups := filepath.Join(cfg.StateDir(), "backups")
+	_ = os.MkdirAll(backups, 0o700)
+	dump := filepath.Join(backups, "pre-v0.2.0-to-v0.3.0.dump")
+	_ = os.WriteFile(dump, []byte("dump"), 0o600)
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated, From: "v0.2.0", Dump: dump})
+	if ok, err := layout.MarkRecordKept(apppayload.DatabasePath(cfg.StateDir()), "v0.3.0", "v0.2.0", "watch_timeout"); err != nil || !ok {
+		t.Fatalf("kept = %v, %v", ok, err)
+	}
+	f := installFakeDB(t, cfg)
+	f.pending, f.known = 0, false // not told: a kept schema needs no count
+	newPayload(t, payload, "v0.2.0")
+	start := func() *exec.Cmd {
+		t.Helper()
+		ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+		if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+			t.Fatalf("the release before on the kept schema = %v", err)
+		}
+		for _, p := range ps {
+			if p.Role == supervisor.RoleAPI {
+				return p.Cmd
+			}
+		}
+		return nil
+	}
+	api := start()
+	if d, m, r := f.counts(); d != 0 || r != 0 || m != 1 {
+		t.Fatalf("%d dumps, %d migrations (the check), %d restores: nothing is put back", d, m, r)
+	}
+	if !contains(api.Env, "MAKTABA_SCHEMA_AHEAD_OK=1") {
+		t.Fatal("the api is not told the newer schema is kept for it")
+	}
+	rec := recorded(t, cfg)
+	if rec.Version != "v0.3.0" || rec.Release != "v0.2.0" || rec.KeptFor != "0.2.0" || rec.State != apppayload.DatabaseMigrated {
+		t.Fatalf("record = %+v", rec)
+	}
+	// started again (a restart): the same, still nothing put back
+	if api := start(); !contains(api.Env, "MAKTABA_SCHEMA_AHEAD_OK=1") {
+		t.Fatal("a restart lost the kept schema")
+	}
+	if d, _, r := f.counts(); d != 0 || r != 0 {
+		t.Fatalf("%d dumps, %d restores on a restart", d, r)
+	}
+	// the release a person installs again: its migrations are there already
+	f.pending, f.known = 0, true
+	newPayload(t, payload, "v0.3.0")
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("v0.3.0 again = %v", err)
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.3.0" || rec.Release != "" || rec.KeptFor != "" {
+		t.Fatalf("record after v0.3.0 again = %+v", rec)
+	}
+	// a release older than the one kept for is still refused
+	newPayload(t, payload, "v0.1.0")
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated, KeptFor: "0.2.0"})
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); !supervisor.Halted(err) ||
+		supervisor.DetailOf(err).Code != "db_refused_older" {
+		t.Fatalf("an older release than the one kept for = %v", err)
+	}
+}
+
 // A rollback after the failed release's migrations ran (the launcher's fallback marked the
 // record: its deadline, a boot loop) puts the pre-update dump back and starts the release
 // before: nothing is dumped first, neither before the dump goes back nor in place of it.

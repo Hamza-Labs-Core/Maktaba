@@ -21,6 +21,7 @@ type world struct {
 	calls     []string
 	migrated  bool // the database holds the new release's migrations
 	marked    bool // the record says: put the dump back
+	kept      bool // the record says: the schema is kept for the release before
 	committed string
 	exits     []int
 	// the desktop app's side of an order (an installer that orders from its app)
@@ -84,6 +85,16 @@ type fakeInst struct {
 	asks bool
 	// replaces: its launcher is replaced when a release needs a newer one
 	replaces bool
+	// keeps: its rollback keeps the schema (SchemaKeeper)
+	keeps bool
+}
+
+// KeepsSchema implements SchemaKeeper.
+func (f *fakeInst) KeepsSchema(*Journal) (bool, string) {
+	if f.keeps {
+		return true, "the fake's migrations are additive"
+	}
+	return false, "the fake's migrations drop a column"
 }
 
 // Extend implements Extender.
@@ -197,8 +208,17 @@ func (r fakeRecords) MarkRestore(_, _, _ string) (bool, error) {
 func (r fakeRecords) Unmark(string) error {
 	r.w.mu.Lock()
 	defer r.w.mu.Unlock()
-	r.w.marked = false
+	r.w.marked, r.w.kept = false, false
 	return nil
+}
+func (r fakeRecords) MarkKept(_, _, _ string) (bool, error) {
+	r.w.mu.Lock()
+	defer r.w.mu.Unlock()
+	if !r.w.migrated {
+		return false, nil
+	}
+	r.w.kept = true
+	return true, nil
 }
 func (r fakeRecords) Migrated(string) bool {
 	r.w.mu.Lock()
@@ -244,6 +264,8 @@ type fakeHealth struct {
 	// turnAt > 0: the verdict becomes turn at that check
 	checks, turnAt int
 	turn           Verdict
+	// at: the verdict of one check only (a probe that fails once), by its number
+	at map[int]Verdict
 }
 
 func (h *fakeHealth) set(v Verdict) { h.mu.Lock(); h.v = v; h.mu.Unlock() }
@@ -261,6 +283,9 @@ func (h *fakeHealth) Check(context.Context, string) Verdict {
 		h.v, h.turnAt = h.turn, 0
 	}
 	v := h.v
+	if once, ok := h.at[h.checks]; ok {
+		v = once
+	}
 	if h.moving && v.Pending {
 		h.n++
 		v.Progress = strconv.Itoa(h.n)
@@ -470,6 +495,36 @@ func TestWatchUnhealthyRollsBackAndRestoresTheDump(t *testing.T) {
 	}
 	if j.Steps[len(j.Steps)-1].Step != StepRollback {
 		t.Fatalf("steps %+v", j.Steps)
+	}
+}
+
+// A rollback whose migrations are all rollback-safe, to a release that runs on such a
+// schema, puts nothing back: the record says the database is kept for the release before
+// (no restoring mark), and the switch back goes on as any rollback. One that is not keeps
+// the old way (the dump goes back).
+func TestRollbackOfAdditiveMigrationsKeepsTheSchema(t *testing.T) {
+	for _, keeps := range []bool{true, false} {
+		t.Run(map[bool]string{true: "additive", false: "destructive"}[keeps], func(t *testing.T) {
+			w := newWorld("1.4.0")
+			r := startRig(t, t.TempDir(), w, healthy)
+			_ = r.m.Prepare(homeJob())
+			r.waitState(StatePrepared)
+			_ = r.m.Apply("run-1")
+			r.waitExit()
+			w.migrated = true
+			r.stop()
+			n := startRig(t, r.dir, w, Verdict{Why: "api /readyz 503"})
+			n.inst.keeps = keeps
+			n.m.Resume()
+			n.waitExit()
+			n.waitState(StateRollingBack)
+			w.mu.Lock()
+			marked, kept, next := w.marked, w.kept, w.next
+			w.mu.Unlock()
+			if marked == keeps || kept != keeps || next != "1.4.0" {
+				t.Fatalf("restore marked %v, kept %v, next %s", marked, kept, next)
+			}
+		})
 	}
 }
 

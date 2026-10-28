@@ -101,6 +101,11 @@ type MachineTV struct {
 // TVHeld is MachineTV.Outcome for a TV held on the streaming software it ran.
 const TVHeld = "held"
 
+// TVPending is MachineTV.Outcome for a release that committed while its TV change still
+// waited (an approval, a quiet window, a slow staging): the change goes on under the TV
+// change controller by itself, and never held the release up (the outage of 2026-10-28).
+const TVPending = "pending"
+
 // RunBackup is a dump of the home's database a run took (update_runs.backup).
 type RunBackup struct {
 	Path  string `json:"path"`

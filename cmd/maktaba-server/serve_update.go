@@ -444,7 +444,13 @@ func (r recordFile) Migrated(version string) bool { return layout.RecordMigrated
 func (r recordFile) NoteNext(running, next, dump string) error {
 	return layout.NoteRecordNext(string(r), running, next, dump, time.Now())
 }
+func (r recordFile) MarkKept(version, from, reason string) (bool, error) {
+	return layout.MarkRecordKept(string(r), version, from, reason)
+}
 func (r recordFile) Unmark(version string) error {
+	if _, err := layout.UnmarkRecordKept(string(r), version); err != nil {
+		return err
+	}
 	_, err := layout.UnmarkRecordRestoring(string(r), version)
 	return err
 }
@@ -840,6 +846,12 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		}
 		if p.Instance != "" && !p.Wanted {
 			continue // an on-demand process nobody asked for
+		}
+		if p.Role == supervisor.RoleTVSlot {
+			// the TV's: its change's staging slot starts, and its swap stops a slot, while
+			// the release is watched; the TV step (updater/tv.go) judges them, never the
+			// home's watch (2026-10-28: "tv-slot/amber is starting" counted against it)
+			continue
 		}
 		if haltCodes[p.DetailCode] {
 			return updater.Verdict{Fatal: true, Why: fmt.Sprintf("%s: %s", childName(p), p.Detail)}
