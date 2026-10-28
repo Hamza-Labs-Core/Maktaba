@@ -42,13 +42,6 @@ NEW_TABLES = (
 )
 #: stage -> (subject_kinds, enabled) as 0166 seeded it, for a stage whose row the
 #: worker's graph sync changed when its story shipped
-SEEDED_BEFORE_SYNC: dict[str, tuple[tuple[str, ...], bool]] = {
-    "convert_mp4": (("video",), False),
-    "dedup_scan": (("library",), False),  # stories 47.6/47.7: on at the next sync
-    "dedup_apply": (("dup_group",), False),
-    "youtube_fetch": (("library",), False),
-    "youtube_backfill": (("library",), False),
-}
 EPIC47_STAGES = (
     "convert_mp4",
     "dedup_scan",
@@ -300,7 +293,7 @@ def test_the_graph_has_the_epic47_stages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> None:
+async def test_the_migrated_rows_are_the_graphs(db: Database) -> None:
     rows = {
         r["stage"]: r
         for r in await db.fetch(
@@ -314,11 +307,10 @@ async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> No
         assert s is not None
         r = rows[name]
         kinds = r["subject_kinds"] if is_pg(db) else loads(r["subject_kinds"])
-        # a stage whose story shipped after 0166: the worker's graph sync writes the rest
-        seeded = SEEDED_BEFORE_SYNC.get(name)
-        assert (r["label"], list(kinds), r["pool"], r["lane"], r["lane_order"]) == (
+        # 0169 brought the rows the stories after 0166 changed back to the graph
+        assert (r["label"], sorted(kinds), r["pool"], r["lane"], r["lane_order"]) == (
             s.label,
-            list(seeded[0] if seeded else s.subject_kinds),
+            sorted(s.subject_kinds),
             s.pool,
             s.lane,
             s.lane_order,
@@ -329,8 +321,8 @@ async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> No
             s.external_write,
             s.placement,
         )
-        assert bool(r["enabled"]) == (seeded[1] if seeded else not s.unreleased)
-    # a worker's graph sync keeps the unreleased ones off and trash_purge on
+        assert bool(r["enabled"]) == (not s.unreleased), name
+    # a worker's graph sync keeps them as they are
     await sync_graph(db, GRAPH)
     after = {
         r["stage"]: (bool(r["enabled"]), r["disabled_reason"])
@@ -368,7 +360,8 @@ async def test_a_dup_group_is_a_subject(db: Database) -> None:
         str(gid),
         str(vid),
     )
-    # off until story 47.7: the enqueue says so
+    # an admin's off: the enqueue says so
+    await db.execute("UPDATE job_stages SET enabled = $1 WHERE stage = 'dedup_apply'", False)
     off = await enqueue_job(db, subject_kind="dup_group", subject_id=gid, stage="dedup_apply")
     assert (off.job_id, off.outcome) == (None, "disabled")
     await db.execute("UPDATE job_stages SET enabled = $1 WHERE stage = 'dedup_apply'", True)

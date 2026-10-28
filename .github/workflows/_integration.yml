@@ -130,6 +130,16 @@ jobs:
           MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
         run: uv run pytest -q -m integration tests/library_mgmt -p no:cacheprovider -rs
 
+      # Tests with no tier marker ran in no job: `make test-unit` takes `-m unit` and the
+      # tier above `-m integration`, and 45% of the pipeline's tests carry neither (the
+      # job_stages seed/graph parity and help coverage among them, which had drifted).
+      # They run here, on SQLite and this job's Postgres, with ffmpeg on PATH.
+      - name: Pipeline tests without a tier marker
+        working-directory: pipeline
+        env:
+          MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+        run: uv run pytest -q -m "not unit and not integration and not e2e" -p no:cacheprovider
+
       # Story 31.R: the extension relay end to end in two processes — the Go hub
       # and service door (api/internal/cluster/agent/relayfixture) and a Python
       # node running the Plex stages through it — on a scratch database of the
