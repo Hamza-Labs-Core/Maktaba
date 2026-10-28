@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import stat
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -54,6 +55,7 @@ __all__ = [
     "HashResult",
     "file_signature",
     "hash_file",
+    "hash_full_file",
     "hash_reader",
 ]
 
@@ -128,6 +130,35 @@ def hash_file(
     with open(p, "rb") as f:
         digest = hash_reader(f, size, head_tail=head_tail)
     return HashResult(content_hash=digest, size_bytes=size)
+
+
+FULL_HASH_CHUNK = 8 * 1024 * 1024
+
+
+def hash_full_file(
+    path: str | os.PathLike[str],
+    *,
+    chunk: int = FULL_HASH_CHUNK,
+    on_bytes: Callable[[int], None] | None = None,
+) -> str:
+    """BLAKE3 over every byte of ``path`` (``videos.full_hash``, Epic 47).
+
+    Not the identity: :func:`hash_file` reads 8 MiB at most. This reads the whole file
+    sequentially, for the few files a duplicate check needs it for; ``on_bytes(n)`` is
+    called after each chunk with its length (progress)."""
+    p = Path(path)
+    if not stat.S_ISREG(os.stat(p).st_mode):
+        raise ValueError(f"identity: not a regular file: {p}")
+    h = blake3()
+    with open(p, "rb") as f:
+        while True:
+            buf = f.read(chunk)
+            if not buf:
+                break
+            h.update(buf)
+            if on_bytes is not None:
+                on_bytes(len(buf))
+    return h.hexdigest()
 
 
 def hash_reader(

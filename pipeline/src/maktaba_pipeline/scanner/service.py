@@ -157,6 +157,9 @@ class SaveCandidateResult:
     video_id: UUID
     inserted: bool
     job_id: int | None
+    #: story 47.5: the file is a byte-identical copy of ``video_id``'s, recorded in
+    #: ``video_copies`` (the row kept its own path)
+    copy: bool = False
 
 
 class ScanStore(Protocol):
@@ -593,11 +596,11 @@ class Scanner:
             # ON CONFLICT (library_id, content_hash) swallowed the
             # insert: another walker run, or a duplicate file at a
             # different path within the same library, already owns the
-            # row. Story 1.2 grows the rename/move detection that
-            # updates `path` here; for now we just bookkeep.
+            # row: the store moved the row here (its old file is gone) or
+            # recorded this path as a copy (story 47.5).
             result.files_skipped += 1
             self._log.debug(
-                "scanner.video_already_present",
+                "scanner.copy_recorded" if save.copy else "scanner.video_already_present",
                 video_id=str(save.video_id),
                 path=candidate.path,
                 content_hash=hash_result.content_hash,
