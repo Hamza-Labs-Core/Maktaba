@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 __all__ = [
     "CONTENT_HASH_VERSION",
     "CATALOG_ID",
+    "EPIC47_PRIORITIES",
     "GRAPH",
     "MONOTONE_STAGES",
     "GraphBuilder",
@@ -56,8 +57,16 @@ __all__ = [
     "validate",
 ]
 
-SubjectKind = Literal["video", "library", "series", "season", "catalog"]
-SUBJECT_KINDS: tuple[SubjectKind, ...] = ("video", "library", "series", "season", "catalog")
+SubjectKind = Literal["video", "library", "series", "season", "catalog", "dup_group"]
+SUBJECT_KINDS: tuple[SubjectKind, ...] = (
+    "video",
+    "library",
+    "series",
+    "season",
+    "catalog",
+    # Epic 47: a duplicate_groups row (dedup_apply); its library is the group's
+    "dup_group",
+)
 
 #: The single global planning subject (decision D2).
 CATALOG_ID = UUID("00000000-0000-0000-0000-00000000ca7a")
@@ -89,6 +98,28 @@ TOPIC_ASSIGN_VERSION = 1
 TOPIC_RECLUSTER_VERSION = 1
 #: enrich (stages/enrich.py): the metadata provider
 ENRICH_VERSION = 1
+#: Epic 47 (offline, MP4, no duplicates): stages/convert_mp4.py, dedup_scan.py,
+#: dedup_apply.py, youtube_fetch.py, youtube_backfill.py, trash_purge.py
+CONVERT_VERSION = 1
+DEDUP_SCAN_VERSION = 1
+DEDUP_APPLY_VERSION = 1
+YT_FETCH_VERSION = 1
+YT_BACKFILL_VERSION = 1
+TRASH_PURGE_VERSION = 1
+
+#: Epic 47's enqueue priorities (lower runs first; normal pipeline work is 100): a
+#: library conversion or dedup never starves new videos, new uploads beat them, and the
+#: YouTube back catalogue only runs when nothing else wants the pool
+EPIC47_PRIORITIES: dict[str, int] = {
+    "convert_mp4": 150,
+    #: a per-video "Convert now" from the failures page
+    "convert_mp4_now": 50,
+    "dedup_scan": 150,
+    "dedup_apply": 150,
+    "youtube_fetch": 120,
+    "youtube_backfill": 300,
+    "trash_purge": 200,
+}
 
 EdgeMap = Literal[
     "same",
@@ -196,6 +227,8 @@ POOLS: tuple[PoolDef, ...] = (
     # takes the slot that writes the channels or lists YouTube
     PoolDef("audits", "Channel audit", "global", 1, 1),
     PoolDef("repairs", "Repairs", "global", 1, 1),
+    # Epic 47: a library's conversion to MP4 (ffmpeg plus a full decode), one at a time
+    PoolDef("convert", "Convert to MP4", "global", 1, 1),
 )
 
 
@@ -241,6 +274,9 @@ class StageDef:
     #: rule holding the interval in minutes (``rules.<section>.<field>``; 0: never). For a
     #: stage that checks another system nothing tells Maktaba about (Plex's channel map)
     every_minutes_rule: tuple[str, str] | None = None
+    #: in the graph (a tile on /queue) but its story has not shipped: the graph sync keeps
+    #: it off (``disabled_reason = 'not_configured'``) until the flag is dropped
+    unreleased: bool = False
 
     def edges_json(self) -> list[dict[str, Any]]:
         return [e.to_json() for e in self.edges]
@@ -290,6 +326,31 @@ GRAPH: tuple[StageDef, ...] = (
         entry_for=("library",),
         debounce_sec=300,
         debounce_max_sec=3600,
+    ),
+    # Epic 47: download what youtube_sync listed and the library lacks: new uploads, and
+    # (its own tile, so it pauses alone) the back catalogue. One pool for both: one stream
+    # of requests per home.
+    StageDef(
+        name="youtube_fetch",
+        label="YouTube downloads",
+        subject_kinds=("library",),
+        pool="network_yt",
+        lane="sources",
+        lane_order=2,
+        version=YT_FETCH_VERSION,
+        external_write=True,
+        unreleased=True,
+    ),
+    StageDef(
+        name="youtube_backfill",
+        label="YouTube back catalogue",
+        subject_kinds=("library",),
+        pool="network_yt",
+        lane="sources",
+        lane_order=3,
+        version=YT_BACKFILL_VERSION,
+        external_write=True,
+        unreleased=True,
     ),
     # Exact upload dates per video for series members (mediaintel "exact"); off until the
     # "exactdates" rules enable it. Detect runs again on the dates it finds.
@@ -822,6 +883,56 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=13,
         version=1,
         max_attempts=1,
+    ),
+    # ---- Epic 47: offline, MP4, no duplicates (specs/epics/47-offline-convert-dedup) --
+    # Convert a video's file to MP4 without losing it: the original goes to the library's
+    # trash once the MP4 is verified and swapped in (library_mgmt/swap.py). The work
+    # folder and the full decode are on the home.
+    StageDef(
+        name="convert_mp4",
+        label="Convert to MP4",
+        subject_kinds=("video",),
+        pool="convert",
+        lane="media",
+        lane_order=14,
+        version=CONVERT_VERSION,
+        external_write=True,
+        max_attempts=2,
+        placement="home",
+        unreleased=True,
+    ),
+    StageDef(
+        name="dedup_scan",
+        label="Find duplicates",
+        subject_kinds=("library",),
+        pool="nas_read",
+        lane="media",
+        lane_order=15,
+        version=DEDUP_SCAN_VERSION,
+        unreleased=True,
+    ),
+    # merges one duplicate group: user data to the keeper, the loser's file to the trash
+    StageDef(
+        name="dedup_apply",
+        label="Merge duplicates",
+        subject_kinds=("dup_group",),
+        pool="nas_write",
+        lane="media",
+        lane_order=16,
+        version=DEDUP_APPLY_VERSION,
+        external_write=True,
+        unreleased=True,
+    ),
+    # deletes the trash entries whose grace period has passed (library_mgmt/trash.py)
+    StageDef(
+        name="trash_purge",
+        label="Empty file trash",
+        subject_kinds=("library",),
+        pool="nas_write",
+        lane="media",
+        lane_order=17,
+        version=TRASH_PURGE_VERSION,
+        external_write=True,
     ),
     _legacy("categorize", "Categorize", ("video",), "cpu", 8),
     # Stub audit #4 (Story 26.5): a video's metadata suggestions from Maktaba's own intel

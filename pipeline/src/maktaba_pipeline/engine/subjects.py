@@ -37,6 +37,16 @@ async def label_of(db: Any, kind: str, subject_id: UUID | str) -> str:
         )
     elif kind == "series":
         row = await db.fetchrow("SELECT name AS l FROM series WHERE id = $1", sid)
+    elif kind == "dup_group":
+        # Epic 47: a duplicate group, named by its keeper (or any member)
+        row = await db.fetchrow(
+            "SELECT COALESCE(v.title, v.filename) AS l FROM duplicate_groups g"
+            " JOIN videos v ON v.id = COALESCE(g.keeper_video_id,"
+            "  (SELECT m.video_id FROM duplicate_members m WHERE m.group_id = g.id"
+            "    ORDER BY m.video_id LIMIT 1))"
+            " WHERE g.id = $1",
+            sid,
+        )
     else:
         return "Catalog"
     return str(row["l"]) if row is not None and row["l"] is not None else str(sid)

@@ -620,6 +620,22 @@ async def _start_engine(
             await agent.start_home()
         except Exception:  # noqa: BLE001 - the legacy map keeps working
             _log.exception("home_storage_start_failed")
+        try:
+            # Epic 47: file swaps a crash cut short are finished or undone (the share's
+            # paths resolve through the map start_home set); a row whose job still runs
+            # elsewhere is left to it
+            from .library_mgmt.swap import recover
+
+            recovered = await recover(database)
+            if recovered.touched:
+                _log.info(
+                    "file_actions_recovered",
+                    finished=len(recovered.finished),
+                    rolled_back=len(recovered.rolled_back),
+                    failed=len(recovered.failed),
+                )
+        except Exception:  # noqa: BLE001 - a repair, never a reason not to start
+            _log.exception("file_actions_recovery_failed")
         if not cfg.path_map.strip():
             # posters a node's thumbnail stage recorded in its own cache: cleared, made
             # again here (the stage is home-only now; idempotent). Only on the home's
