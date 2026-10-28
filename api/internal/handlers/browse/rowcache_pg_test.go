@@ -15,7 +15,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 )
 
-// The row cache's tests run on a scratch Postgres (slot 0166's trigger is
+// The row cache's tests run on a scratch Postgres (slot 0167's trigger is
 // what invalidates), only with MAKTABA_TEST_PG_URL.
 
 type rowCacheEnv struct {
@@ -175,7 +175,7 @@ func TestRowCacheColdReadSingleFlightPostgres(t *testing.T) {
 }
 
 // Every change of a library's videos drops its entries, whoever writes it:
-// slot 0166's trigger notifies, Listen hears. A change elsewhere, or of a
+// slot 0167's trigger notifies, Listen hears. A change elsewhere, or of a
 // column no card shows, keeps them.
 func TestRowCacheInvalidationPostgres(t *testing.T) {
 	e := newRowCacheEnv(t)

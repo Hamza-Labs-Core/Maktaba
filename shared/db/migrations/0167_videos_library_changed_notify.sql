@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0166: every API process hears when a library's rows change.
+-- Slot 0167: every API process hears when a library's rows change.
 --
 -- The API keeps each library's newest videos in memory (the pinned libraries'
 -- rows on the home, a library hub's recently added; api/internal/handlers/browse

@@ -15,7 +15,7 @@ package browse
 // answering (callers wanting it at once share one read).
 //
 // Entries are dropped when their library's videos change, on every API
-// process: slot 0166's trigger notifies browse.library_changed with the
+// process: slot 0167's trigger notifies browse.library_changed with the
 // library id for every insert, delete and change of a card's column in
 // videos, whoever writes it (the pipeline on any machine, the API, an admin's
 // SQL), and Listen hears it. While the listener is not connected nothing is
@@ -34,7 +34,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
-// LibraryChangedChannel is the NOTIFY channel slot 0166's trigger fires on;
+// LibraryChangedChannel is the NOTIFY channel slot 0167's trigger fires on;
 // its payload is the library id, or "*" for every library.
 const LibraryChangedChannel = "browse.library_changed"
 

@@ -175,7 +175,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	// Epic 45 story 45.4: the browsing routes. /api/libraries/summary is a
 	// static segment, which chi prefers to /api/libraries/{id}. With the
 	// bus's Postgres listener, the per-library rows come from memory, kept
-	// in step by slot 0166's browse.library_changed (no bus: read each time).
+	// in step by slot 0167's browse.library_changed (no bus: read each time).
 	browseHandler := &browse.Handler{DB: d.DB}
 	if d.BusCtx != nil && d.BusDSN != "" {
 		browseHandler.Rows = browse.NewRowCache(d.BusCtx)
