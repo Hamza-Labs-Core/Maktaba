@@ -1,8 +1,8 @@
 // The signed-in user's pinned libraries (Epic 45), in their order:
 //
 //   GET /api/me/pinned-libraries  -> { library_ids: [...], items: [{ id, name, position }] }
-//   PUT /api/me/pinned-libraries  { library_ids: [...] } (the order is the array's; at most
-//                                 20; a library the caller may not see is 404) -> the same document
+//   PUT /api/me/pinned-libraries  { library_ids: [...] } (the order is the array's; any
+//                                 number; a library the caller may not see is 404) -> the same document
 //
 // The sidebar's "Pinned" group, the Libraries page and a library's page share
 // one store: the nav reads it once per user, and a page that changes the pins
@@ -12,8 +12,6 @@ import { api } from "./api";
 import type { LibraryRef } from "./browse";
 
 export const PINS_PATH = "/api/me/pinned-libraries";
-/** The server keeps at most this many pins. */
-export const MAX_PINS = 20;
 
 let pins: LibraryRef[] | null = null;
 let loadedFor: string | null = null;
