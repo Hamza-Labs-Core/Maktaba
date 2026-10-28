@@ -47,6 +47,11 @@ var copyReviewed = []string{
 	"web_metadata_cache", "web_session_keys", "worker_pools", "workers", "youtube_channels",
 	"youtube_imports", "youtube_playlist_items", "youtube_playlists", "youtube_search_cache",
 	"youtube_videos",
+	// Epic 47 (slot 0166): the file ledger, copies, duplicate groups and YouTube sources
+	// and downloads hold paths, hashes and ids, no secret (a source's options name a
+	// browser for cookies, never the cookies)
+	"duplicate_groups", "duplicate_members", "file_actions", "video_copies",
+	"youtube_downloads", "youtube_sources",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.

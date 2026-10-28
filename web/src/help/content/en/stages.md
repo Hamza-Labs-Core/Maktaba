@@ -221,6 +221,30 @@ An older step kept for compatibility. Nothing queues it in this version, so it s
 
 Makes metadata suggestions for a video when you press Find metadata or Re-enrich: from what Maktaba already knows, and from a web search a language model reads when that is set up. Nothing is changed until you accept a suggestion. Runs on the main machine. Rules: [Finding metadata](/help/rules#enrich).
 
+### Convert to MP4 {#convert-mp4}
+
+Makes a video's file an MP4 that plays directly, without losing it: the new file is checked (it is decoded in full) before it takes the old one's place, and the original goes to the library's trash for 30 days. The video keeps its watch history, playlists and transcripts. Runs on the main machine, one file at a time. Not set up yet: it arrives in a later version.
+
+### Find duplicates {#dedup-scan}
+
+Looks through a library for the same video stored more than once: byte-identical copies, and the same lecture in another file. Not set up yet: it arrives in a later version.
+
+### Merge duplicates {#dedup-apply}
+
+Merges one group of duplicates into the copy that is kept: watch history, playlists and favourites move to it, and the other file goes to the library's trash. Not set up yet: it arrives in a later version.
+
+### Empty file trash {#trash-purge}
+
+Deletes the files in a library's trash (`.maktaba/trash` in each library folder) once their grace period has passed: 30 days unless the library says otherwise. Until then a converted original or a merged duplicate can be restored. A trashed file whose size changed is not deleted: the step stops and says so.
+
+### YouTube downloads {#youtube-fetch}
+
+Downloads the new uploads of a library's YouTube channels and playlists, with their subtitles and thumbnails, one at a time. Not set up yet: it arrives in a later version.
+
+### YouTube back catalogue {#youtube-backfill}
+
+Downloads the older videos of a library's YouTube sources in small batches, only when nothing else needs the YouTube slot. It can be paused on its own. Not set up yet: it arrives in a later version.
+
 ## What the states and messages mean {#states}
 
 - **Starts here**: no step feeds this one; it is started by a run, a schedule or a button.
