@@ -1,12 +1,26 @@
-"""``youtube_fetch`` (Epic 47, story 47.9): Download a library's new YouTube uploads.
+"""``youtube_fetch`` (Epic 47, story 47.9): download a library's new YouTube uploads.
 
-In the graph, off, until the story ships (story 47.1).
+Subject: a library. Pool ``network_yt`` (size 1, shared with the listing and the back
+catalogue: one stream of requests per home). Queued by ``youtube_sync`` at priority 120
+when it marks a new upload ``wanted``. One job drains the library's new items, newest
+first; the work is :func:`._youtube_drain.drain`.
 """
 
 from __future__ import annotations
 
-from ._unreleased import unreleased_impl
+from typing import Any
 
-__all__ = ["IMPL"]
+from ...integrations.youtube_download import unavailable
+from ..context import StageContext
+from ..graph import StageResult
+from ._youtube_drain import drain
+from .registry import StageImpl
 
-IMPL = unreleased_impl("youtube_fetch", "47.9")
+__all__ = ["IMPL", "run"]
+
+
+async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
+    return await drain(db, job, ctx, backfill=False)
+
+
+IMPL = StageImpl(run=run, unavailable=unavailable)

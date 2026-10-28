@@ -47,6 +47,9 @@ SWEEP_BATCH = 1000
 SWEEP_PRIORITY = 500
 UNPROPAGATED_AFTER_SEC = 60
 DEFAULT_YT_REFRESH_HOURS = 168
+#: Epic 47: a library with a YouTube source turned on refreshes daily by default
+DEFAULT_SOURCE_REFRESH_HOURS = 24.0
+SOURCE_REFRESH_PRIORITY = 110
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,31 +112,64 @@ async def _repair_unpropagated(db: Any, graph: Mapping[str, StageDef], t: dateti
     return n
 
 
+def _refresh_hours(settings: Any) -> float | None:
+    """``settings.youtube.refresh_every_hours`` (Epic 47), or None when not set."""
+    yt = settings.get("youtube") if isinstance(settings, dict) else None
+    every = yt.get("refresh_every_hours") if isinstance(yt, dict) else None
+    if isinstance(every, bool) or not isinstance(every, int | float) or every < 0:
+        return None
+    return float(every)
+
+
 async def _youtube_refresh(
     db: Any, graph: Mapping[str, StageDef], t: datetime, hours: float | None
 ) -> int:
+    """A ``youtube_sync`` for each library with YouTube channels or sources once its last
+    one is old enough: the library's ``settings.youtube.refresh_every_hours`` (0: only by
+    hand), else every :data:`DEFAULT_SOURCE_REFRESH_HOURS` for a library with a source
+    turned on (Epic 47), else the old listing-only interval."""
     if "youtube_sync" not in graph:
         return 0
     if hours is None:
         hours = float(os.environ.get("MAKTABA_YT_REFRESH_HOURS", DEFAULT_YT_REFRESH_HOURS))
-    cutoff = to_ts(db, t - timedelta(hours=hours))
     rows = await db.fetch(
-        "SELECT l.id AS id FROM libraries l"
-        " WHERE EXISTS (SELECT 1 FROM youtube_channels c WHERE c.library_id = l.id)"
-        " AND NOT EXISTS (SELECT 1 FROM processing_jobs j WHERE j.subject_kind = 'library'"
-        "   AND j.subject_id = l.id AND j.stage = 'youtube_sync'"
-        "   AND (j.state IN ('pending','claimed','running','resuming','paused')"
-        "        OR (j.state = 'done' AND j.finished_at >= $1)))",
-        cutoff,
+        "SELECT l.id AS id, l.settings AS settings,"
+        " EXISTS (SELECT 1 FROM youtube_sources s WHERE s.library_id = l.id"
+        "   AND s.mode <> 'off') AS sources_on FROM libraries l"
+        " WHERE l.deleted_at IS NULL AND (EXISTS (SELECT 1 FROM youtube_channels c"
+        "   WHERE c.library_id = l.id) OR EXISTS (SELECT 1 FROM youtube_sources s"
+        "   WHERE s.library_id = l.id AND s.mode <> 'off'))"
     )
     n = 0
     for r in rows:
+        try:
+            settings = loads(r["settings"])
+        except ValueError:
+            settings = None
+        sources_on = bool(r["sources_on"])
+        every = _refresh_hours(settings)
+        if every is None:
+            every = DEFAULT_SOURCE_REFRESH_HOURS if sources_on else hours
+        if every <= 0:
+            continue
+        recent = await db.fetchval(
+            "SELECT 1 FROM processing_jobs j WHERE j.subject_kind = 'library'"
+            " AND j.subject_id = $1 AND j.stage = 'youtube_sync'"
+            " AND (j.state IN ('pending','claimed','running','resuming','paused')"
+            "      OR (j.state = 'done' AND j.finished_at >= $2)) LIMIT 1",
+            str(r["id"]),
+            to_ts(db, t - timedelta(hours=every)),
+        )
+        if recent:
+            continue
         res = await enqueue_job(
             db,
             subject_kind="library",
             subject_id=UUID(str(r["id"])),
             stage="youtube_sync",
-            priority=SWEEP_PRIORITY,
+            # a library that downloads lists ahead of its back catalogue (300), which
+            # shares the pool: at the sweep's 500 it would wait behind every batch
+            priority=SOURCE_REFRESH_PRIORITY if sources_on else SWEEP_PRIORITY,
             reason={"why": "scheduled refresh", "by": "system"},
         )
         n += 1 if res.job_id is not None else 0

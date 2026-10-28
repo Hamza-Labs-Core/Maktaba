@@ -234,7 +234,7 @@ async def test_changed_rows_name_the_linked_videos(
 
 
 @pytest.mark.asyncio
-async def test_bot_check_is_recorded_and_fails_without_retry(
+async def test_bot_check_is_recorded_and_parks_on_youtube(
     db: Database, tmp_path: Path, fetcher: FakeFetcher
 ) -> None:
     lib = await make_library_with_folder(db, tmp_path)
@@ -242,7 +242,8 @@ async def test_bot_check_is_recorded_and_fails_without_retry(
     rt = await setup_runtime(db, [])
     job = await sync_job(db, rt, lib)
     err = error_of(job)
-    assert job["state"] == "failed"
+    # Epic 47: the job waits for YouTube (parked), it does not fail
+    assert job["state"] == "pending" and job["parked_on"] == "dependency:youtube"
     assert err["kind"] == "youtube_bot_check" and err["retryable"] is False
     assert await channel_status(db) == "bot_check"
 

@@ -323,6 +323,8 @@ GRAPH: tuple[StageDef, ...] = (
             Edge("detect", "same"),
             Edge("exact_dates", "same"),
         ),
+        # Epic 47: the listing queues the downloads of what the library lacks
+        may_request=("youtube_fetch", "youtube_backfill"),
         entry_for=("library",),
         debounce_sec=300,
         debounce_max_sec=3600,
@@ -339,7 +341,6 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=2,
         version=YT_FETCH_VERSION,
         external_write=True,
-        unreleased=True,
     ),
     StageDef(
         name="youtube_backfill",
