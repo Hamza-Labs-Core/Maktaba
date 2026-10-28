@@ -7,7 +7,7 @@ Find something to watch: Home, your libraries, each library's own page and every
 Maktaba watches your library folders and picks up new and changed files by itself; each new file then goes through [processing](/help/processing) (reading, transcribing, tagging) before it is fully ready. You browse what it found in four places:
 
 - [Home](/): rows across every library you may see, like Continue Watching and Recently Added, Live TV on now, and a row for each library you pinned.
-- [Libraries](/library): a card for each library, and the libraries you pinned in your order.
+- [Libraries](/library): a card for each library, and the libraries you pinned in your order (you set it on [Pinned libraries](/library/pinned)).
 - A library's page: its own rows (**Overview**) and all of its videos with sort and filters (**Browse**).
 - [All videos](/videos): every video of every library you may see, as cards or as a list.
 
@@ -39,7 +39,14 @@ Each card shows four recent posters, the library's name and how many videos it h
 
 Press the **pin** icon to keep a library at hand: it is next to the library's name on its page, and in the corner of its card on the Libraries page (it shows when you point at the card, and stays once pinned). The pin turns solid, a short message confirms it, and the library shows under **Pinned** in the side menu with its own row on Home. Press the solid pin again to unpin it. You can pin as many libraries as you like.
 
-The **Pinned** list at the top of the Libraries page sets their order: use the up and down arrow buttons beside each one (they work with the keyboard too). The side menu and Home follow the new order at once. Your pins are saved on the server, so they follow you to every browser.
+The top of the Libraries page shows your pins as **Pinned (N)**. Press **Reorder** there to open the [Pinned libraries](/library/pinned) page, which sets their order:
+
+- Drag a library by its handle (the dotted grip at its start) to a new place.
+- Or use the buttons beside it: move to the top, up and down.
+- With the keyboard, focus the handle and press the up or down arrow; **Home** and **End** move it to the top or the bottom.
+- Press its pin to unpin it.
+
+Each change is saved at once, and the side menu and Home follow the new order. Your pins are saved on the server, so they follow you to every browser. With nothing pinned, the page says how to pin a library.
 
 ### A library's page {#library-page}
 
