@@ -22,7 +22,14 @@ from maktaba_pipeline.library_mgmt.duplicates import (
     write_groups,
 )
 from maktaba_pipeline.runtime import Database
-from tests.library_mgmt.dedup_world import lecture, other_video, probe_into_db, scan, video_at
+from tests.library_mgmt.dedup_world import (
+    lecture,
+    mark_converted,
+    other_video,
+    probe_into_db,
+    scan,
+    video_at,
+)
 from tests.library_mgmt.epic47_world import World, make_world, same
 from tests.library_mgmt.media_fixtures import needs_ffmpeg, reencode_to_mp4
 
@@ -77,6 +84,7 @@ async def _library(db: Database, tmp_path: Path) -> tuple[World, dict[str, Any]]
     ids["own"] = own
     for k, p in (("a", Path(own)), ("c", c), ("d", d)):
         await probe_into_db(db, ids[k], p)
+    await mark_converted(db, *(ids[k] for k in ("a", "c", "d", "x", "y")))
     for k in ("x", "y"):
         await db.execute(
             "INSERT INTO media_metadata_enrichment (id, video_id, provider, external_id)"
@@ -168,10 +176,11 @@ async def test_write_dismiss_and_scan_again(db: Database, tmp_path: Path) -> Non
     assert await db.fetchval("SELECT COUNT(*) FROM duplicate_groups") == 2
 
 
-def _job(library_id: Any, payload: dict[str, Any]) -> Any:
+def _job(subject: Any, payload: dict[str, Any], kind: str = "library") -> Any:
     job = MagicMock()
     job.id = 1
-    job.subject.id = library_id
+    job.subject.id = subject
+    job.subject.kind = kind
     job.payload = payload
     return job
 
@@ -192,20 +201,26 @@ def _ctx() -> Any:
 @pytest.mark.asyncio
 async def test_the_stage_dry_run_and_auto_apply(db: Database, tmp_path: Path) -> None:
     w, ids = await _library(db, tmp_path)
+    # the library's dry run: its groups among the converted videos, nothing written
     dry = await dedup_scan.run(db, _job(w.library_id, {"dry_run": True}), _ctx())
-    assert dry.summary["dry_run"] and dry.summary["exact"] == 1
-    assert dry.summary["same_video"] == 2 and len(dry.summary["plan"]) == 3
-    assert not dry.requests
+    assert dry.summary["dry_run"] and dry.summary["groups"] == 3
+    assert len(dry.summary["plan"]) == 3 and not dry.requests
     assert await db.fetchval("SELECT COUNT(*) FROM duplicate_groups") == 0
     assert await db.fetchval("SELECT full_hash FROM videos WHERE id = $1", ids["a"]) is None
 
-    res = await dedup_scan.run(db, _job(w.library_id, {}), _ctx())
-    assert res.outcome == "changed" and res.summary["created"] == 3
+    # one item's check: the groups A is in
+    res = await dedup_scan.run(db, _job(ids["a"], {}, "video"), _ctx())
+    assert res.outcome == "changed" and res.summary["created"] == 2
+    assert (res.summary["exact"], res.summary["same_video"]) == (1, 1)
     exact = await db.fetchval("SELECT id FROM duplicate_groups WHERE tier = 'exact'")
     assert [(r.stage, r.subject_kind, str(r.subject_id)) for r in res.requests] == [
         ("dedup_apply", "dup_group", str(exact))
     ]
     assert res.requests[0].priority == 150
+    # C's check finds the same pair: no second group
+    again = await dedup_scan.run(db, _job(ids["c"], {}, "video"), _ctx())
+    assert again.summary["created"] == 0 and again.summary["known"] == 1
+    assert await db.fetchval("SELECT COUNT(*) FROM duplicate_groups") == 2
 
     # auto_exact off: the exact group waits for review like the rest
     await db.execute("DELETE FROM duplicate_groups")
@@ -214,5 +229,33 @@ async def test_the_stage_dry_run_and_auto_apply(db: Database, tmp_path: Path) ->
         str(w.library_id),
         '{"dedup": {"auto_exact": false}}',
     )
-    off = await dedup_scan.run(db, _job(w.library_id, {}), _ctx())
-    assert off.summary["created"] == 3 and not off.requests
+    off = await dedup_scan.run(db, _job(ids["a"], {}, "video"), _ctx())
+    assert off.summary["created"] == 2 and not off.requests
+
+
+@needs_ffmpeg
+@pytest.mark.asyncio
+async def test_a_third_copy_updates_the_open_group(db: Database, tmp_path: Path) -> None:
+    """A group whose members change is the same group with other members, not a fork."""
+    w, ids = await _library(db, tmp_path)
+    await dedup_scan.run(db, _job(ids["c"], {}, "video"), _ctx())
+    (g1,) = await db.fetch("SELECT id FROM duplicate_groups WHERE tier = 'same_video'")
+    third = w.root / "g" / "Lecture 1.mp4"
+    third.parent.mkdir()
+    c_path = str(await db.fetchval("SELECT path FROM videos WHERE id = $1", ids["c"]))
+    reencode_to_mp4(Path(c_path), third)  # a re-encode of the re-encode: other bytes
+    await scan(db, w)
+    v3 = await video_at(db, third)
+    await probe_into_db(db, v3, third)
+    await mark_converted(db, v3)
+    res = await dedup_scan.run(db, _job(v3, {}, "video"), _ctx())
+    assert res.summary["updated"] == 1 and res.summary["created"] == 0
+    rows = await db.fetch("SELECT id FROM duplicate_groups WHERE tier = 'same_video'")
+    assert [str(r["id"]) for r in rows] == [str(g1["id"])]
+    members = {
+        str(r["video_id"])
+        for r in await db.fetch(
+            "SELECT video_id FROM duplicate_members WHERE group_id = $1", str(g1["id"])
+        )
+    }
+    assert members == {ids["a"], ids["c"], v3}

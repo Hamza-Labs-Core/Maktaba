@@ -106,9 +106,10 @@ type fakeSlot struct {
 	stations []string
 	warm     []slot.WarmRequest
 	segs     atomic.Int32
-	pid      int  // the process id the status reports (0: none)
-	used     int  // the encoder sessions the status reports
-	refuse   bool // its warm route answers 503 (a slot restarting)
+	pid      int                // the process id the status reports (0: none)
+	used     int                // the encoder sessions the status reports
+	refuse   bool               // its warm route answers 503 (a slot restarting)
+	chans    []slot.StationInfo // what its stations air (output position, block)
 }
 
 func newFakeSlot(t *testing.T, name string, first int64, stations ...string) *fakeSlot {
@@ -188,7 +189,7 @@ func (f *fakeSlot) status() slot.Status {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slot.Status{Slot: f.name, Role: f.role, Epoch: f.epoch, PID: f.pid, Stations: append([]string{}, f.stations...),
-		EncodersUsed: f.used}
+		EncodersUsed: f.used, Channels: append([]slot.StationInfo(nil), f.chans...)}
 }
 
 func (f *fakeSlot) addr() string { return strings.TrimPrefix(f.srv.URL, "http://") }

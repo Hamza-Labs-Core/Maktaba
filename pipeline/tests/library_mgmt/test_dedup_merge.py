@@ -32,7 +32,7 @@ from maktaba_pipeline.library_mgmt.ledger import list_actions
 from maktaba_pipeline.library_mgmt.swap import restore
 from maktaba_pipeline.library_mgmt.trash import purge_due
 from maktaba_pipeline.runtime import Database
-from tests.library_mgmt.dedup_world import lecture, probe_into_db, scan, video_at
+from tests.library_mgmt.dedup_world import lecture, mark_converted, probe_into_db, scan, video_at
 from tests.library_mgmt.epic47_world import World, make_world, same
 from tests.library_mgmt.media_fixtures import mp4_faststart, needs_ffmpeg
 
@@ -127,6 +127,16 @@ def _job(gid: str, payload: dict[str, Any]) -> Any:
     job.id = 7
     job.subject.id = uuid.UUID(gid)
     job.payload = payload
+    return job
+
+
+def _check(vid: str) -> Any:
+    """One item's duplicate check (a video's dedup_scan job)."""
+    job = MagicMock()
+    job.id = 1
+    job.subject.id = uuid.UUID(vid)
+    job.subject.kind = "video"
+    job.payload = {}
     return job
 
 
@@ -419,11 +429,8 @@ async def test_exact_copies_merge_at_once_and_restore(db: Database, tmp_path: Pa
     vid = str(await db.fetchval("SELECT id FROM videos WHERE library_id = $1", str(w.library_id)))
     own = Path(str(await db.fetchval("SELECT path FROM videos WHERE id = $1", vid)))
     copy = b if own == a else a
-    job = MagicMock()
-    job.id = 1
-    job.subject.id = w.library_id
-    job.payload = {}
-    found = await dedup_scan.run(db, job, _ctx())
+    await mark_converted(db, vid)
+    found = await dedup_scan.run(db, _check(vid), _ctx())
     (req,) = found.requests
     gid = str(req.subject_id)
 
@@ -457,12 +464,9 @@ async def test_an_exact_group_that_changed_is_not_merged(db: Database, tmp_path:
     b.parent.mkdir()
     shutil.copyfile(a, b)
     await scan(db, w)
-    job = MagicMock()
-    job.id = 1
-    job.subject.id = w.library_id
-    job.payload = {}
-    (req,) = (await dedup_scan.run(db, job, _ctx())).requests
     vid = str(await db.fetchval("SELECT id FROM videos WHERE library_id = $1", str(w.library_id)))
+    await mark_converted(db, vid)
+    (req,) = (await dedup_scan.run(db, _check(vid), _ctx())).requests
     own = Path(str(await db.fetchval("SELECT path FROM videos WHERE id = $1", vid)))
     copy = b if own == a else a
     # the middle of the copy changes (same size, head and tail: the partial hash holds)

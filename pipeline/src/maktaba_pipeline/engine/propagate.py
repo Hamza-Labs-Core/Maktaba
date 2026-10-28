@@ -19,7 +19,15 @@ from ..db import claim_owner
 from ..db.jobs import Job
 from .enqueue import EnqueueResult, enqueue_job
 from .events import job_ref, log_event, publish
-from .graph import CATALOG_ID, Edge, GraphViolation, Request, StageDef, SubjectKind
+from .graph import (
+    CATALOG_ID,
+    EPIC47_PRIORITIES,
+    Edge,
+    GraphViolation,
+    Request,
+    StageDef,
+    SubjectKind,
+)
 from .sql import dumps, loads, now, to_ts, uid
 from .subjects import library_of_video, season_of_video
 
@@ -72,6 +80,8 @@ async def resolve_edge(
     m = edge.map
     if m == "same":
         return [(subj.kind, subj.id)]
+    if m == "same_video":
+        return [(subj.kind, subj.id)] if subj.kind == "video" else []
     if m == "catalog":
         return [("catalog", CATALOG_ID)]
     if m == "library_of":
@@ -194,9 +204,12 @@ async def finalize_success(
             "by": f"job:{job.id}",
             "from_stage": stage.name,
         }
-        if changed:
+        # an edge declared when="always" fires on every finished run, changed or not
+        # (not while a run waits for review or inputs)
+        settled = final_outcome not in ("awaiting_review", "waiting_inputs")
+        if changed or settled:
             for edge in stage.edges:
-                if edge.legacy:
+                if edge.legacy or not (changed or edge.when == "always"):
                     continue
                 target = graph.get(edge.to)
                 if target is None:
@@ -261,6 +274,8 @@ async def enqueue_follow_up(db: Any, job: Job, row: Any) -> EnqueueResult | None
         subject_kind=job.subject_kind,
         subject_id=job.subject.id,
         stage=job.stage,
+        # an Epic 47 stage keeps its place (the back catalogue's next batch stays at 300)
+        priority=job.priority if job.stage in EPIC47_PRIORITIES else None,
         force=bool(row["rerun_force"]),
         force_cascade=bool(row["rerun_force_cascade"]),
         reason={

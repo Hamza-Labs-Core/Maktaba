@@ -110,3 +110,17 @@ async def probe_into_db(db: Any, vid: str | UUID, path: Path, *, frames: bool = 
             uid(vid),
             _frames(path, float(info.duration or 0)),
         )
+
+
+async def mark_converted(db: Any, *video_ids: str | UUID) -> None:
+    """A finished ``convert_mp4`` job per video: its conversion is done (Epic 47
+    pipeline order), so it is a duplicate candidate."""
+    for vid in video_ids:
+        lib = await db.fetchval("SELECT library_id FROM videos WHERE id = $1", uid(vid))
+        await db.execute(
+            "INSERT INTO processing_jobs (subject_kind, subject_id, video_id, library_id,"
+            " stage, state, outcome) VALUES ('video', $1, $1, $2, 'convert_mp4', 'done',"
+            " 'skipped_unchanged')",
+            uid(vid),
+            str(lib),
+        )

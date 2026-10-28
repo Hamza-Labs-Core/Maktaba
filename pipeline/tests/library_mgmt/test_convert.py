@@ -198,7 +198,9 @@ async def assert_converted(
 
 async def test_the_stage_is_wired_without_a_cascade() -> None:
     s = get_stage("convert_mp4")
-    assert s is not None and not s.unreleased and not s.edges
+    assert s is not None and not s.unreleased
+    # one edge: the video's duplicate check after its conversion (Epic 47 pipeline order)
+    assert [(e.to, e.map, e.when) for e in s.edges] == [("dedup_scan", "same_video", "always")]
     assert s.subject_kinds == ("video", "library")
     validate()
 

@@ -35,7 +35,7 @@ from typing import Any
 from ..log import get_logger
 from .backfill import BATCH as BACKFILL_BATCH
 from .backfill import backfill_once
-from .failure_classes import MODEL, SHARE, QueueHealthConfig
+from .failure_classes import MODEL, SHARE, YT_RATE_LIMIT, QueueHealthConfig
 from .failure_policy import _roots, read_config, root_answers
 from .graph import StageDef
 from .sql import is_pg, now, parse_ts, to_ts
@@ -160,20 +160,35 @@ def _disk_probe(cfg: QueueHealthConfig) -> Probe:
     return True, "enough free space"
 
 
-async def _shm_probe(db: Any, cfg: QueueHealthConfig, at: datetime) -> Probe | None:
-    """Healthy once the cooldown passed since the last job ran out of shared memory; None
-    while nothing ever did (no row to write)."""
+async def _cooldown_probe(
+    db: Any, name: str, minutes: float, at: datetime, quiet: str
+) -> Probe | None:
+    """Healthy once ``minutes`` passed since the last job ran into ``name``; None while
+    nothing ever did (no row to write) or while it cools down (the row stays as the
+    failure wrote it)."""
     row = await db.fetchrow(
-        "SELECT healthy, checked_at FROM dependency_health WHERE name = 'resource:shm'"
+        "SELECT healthy, checked_at FROM dependency_health WHERE name = $1", name
     )
     if row is None:
         return None
     if bool(row["healthy"]):
-        return True, "no job ran out of shared memory recently"
+        return True, quiet
     last = parse_ts(row["checked_at"]) or at
-    if at - last >= timedelta(minutes=cfg.resource_cooldown_minutes):
+    if at - last >= timedelta(minutes=minutes):
         return True, "cooled down"
-    return None  # still cooling down: keep the row as the failure wrote it
+    return None
+
+
+async def _shm_probe(db: Any, cfg: QueueHealthConfig, at: datetime) -> Probe | None:
+    """Healthy once the cooldown passed since the last job ran out of shared memory."""
+    return await _cooldown_probe(
+        db, "resource:shm", cfg.resource_cooldown_minutes, at,
+        "no job ran out of shared memory recently",
+    )  # fmt: skip
+
+
+#: YouTube's 429 (Epic 47): a job that met it waits at least this long
+YT_RATE_LIMIT_COOLDOWN_MINUTES = 60.0
 
 
 async def probe_all(
@@ -185,6 +200,12 @@ async def probe_all(
     shm = await _shm_probe(db, cfg, at)
     if shm is not None:
         out["resource:shm"] = shm
+    yt = await _cooldown_probe(
+        db, YT_RATE_LIMIT, YT_RATE_LIMIT_COOLDOWN_MINUTES, at,
+        "YouTube has not said too many requests recently",
+    )  # fmt: skip
+    if yt is not None:
+        out[YT_RATE_LIMIT] = yt
     return out
 
 

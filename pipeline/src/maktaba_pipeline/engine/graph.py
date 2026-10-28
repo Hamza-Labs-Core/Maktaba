@@ -123,6 +123,9 @@ EPIC47_PRIORITIES: dict[str, int] = {
 
 EdgeMap = Literal[
     "same",
+    # the same subject when it is a video (a stage that also runs on libraries: its
+    # library jobs trigger nothing through this edge)
+    "same_video",
     "library_of",
     # a video's library, only while the video is in no season (the library tag's
     # loose videos): a series episode's transcript re-tags its season, not its library
@@ -323,6 +326,8 @@ GRAPH: tuple[StageDef, ...] = (
             Edge("detect", "same"),
             Edge("exact_dates", "same"),
         ),
+        # Epic 47: the listing queues the downloads of what the library lacks
+        may_request=("youtube_fetch", "youtube_backfill"),
         entry_for=("library",),
         debounce_sec=300,
         debounce_max_sec=3600,
@@ -339,7 +344,6 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=2,
         version=YT_FETCH_VERSION,
         external_write=True,
-        unreleased=True,
     ),
     StageDef(
         name="youtube_backfill",
@@ -889,8 +893,10 @@ GRAPH: tuple[StageDef, ...] = (
     # trash once the MP4 is verified and swapped in (library_mgmt/swap.py). The work
     # folder and the full decode are on the home. A library's job plans its videos and
     # enqueues one job per video that needs work (or, dry run, only writes the plan).
-    # No edges: the words and the picture are the same, so nothing downstream of the
-    # content hash (transcribe, index, embeddings) runs again; only probe reads the new
+    # One edge: a video's duplicate check runs once its conversion is done, whatever the
+    # outcome (the per-item chain download -> convert -> dedup, Epic 47 "Pipeline
+    # order"). Nothing downstream of the content hash (transcribe, index, embeddings)
+    # runs again: the words and the picture are the same; only probe reads the new
     # container, and the thumbnails are made again only when their folder cannot move.
     StageDef(
         name="convert_mp4",
@@ -900,6 +906,7 @@ GRAPH: tuple[StageDef, ...] = (
         lane="media",
         lane_order=14,
         version=CONVERT_VERSION,
+        edges=(Edge("dedup_scan", "same_video", when="always"),),
         may_request=("probe", "thumbnail", "thumb_small"),
         external_write=True,
         max_attempts=2,
@@ -908,7 +915,10 @@ GRAPH: tuple[StageDef, ...] = (
     StageDef(
         name="dedup_scan",
         label="Find duplicates",
-        subject_kinds=("library",),
+        # a video: its own check, queued by its conversion (the edge above); a library:
+        # "Find duplicates" queues each converted video's check and the conversion of
+        # every video never converted (enqueue_job, as convert's library job does)
+        subject_kinds=("library", "video"),
         pool="nas_read",
         lane="media",
         lane_order=15,

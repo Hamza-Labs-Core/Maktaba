@@ -38,7 +38,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from ..engine import paths
-from ..engine.sql import dumps, loads, now, parse_ts, to_ts, uid
+from ..engine.sql import dumps, is_pg, loads, now, parse_ts, to_ts, uid
 from ..identity.hasher import hash_full_file
 from ..thumbnail.dhash import hamming
 
@@ -51,6 +51,7 @@ __all__ = [
     "ScanPlan",
     "WriteReport",
     "auto_exact",
+    "conversion_states",
     "find_groups",
     "frames_match",
     "keeper_order",
@@ -385,6 +386,28 @@ async def _known_keys(db: Any, keys: Iterable[str]) -> dict[str, str]:
     return out
 
 
+async def conversion_states(db: Any, library_id: str | None = None) -> dict[str, str]:
+    """video id -> the state of its latest ``convert_mp4`` job (a dry run does not count).
+
+    A video is a duplicate candidate only once this is ``done`` (converted, already an
+    MP4, or skipped: Epic 47 "Pipeline order"); a video with no entry was never planned
+    for conversion."""
+    where, args = ("AND v.library_id = $1", [uid(library_id)]) if library_id else ("", [])
+    out: dict[str, str] = {}
+    for r in await db.fetch(
+        "SELECT j.subject_id AS vid, j.state AS state, j.payload AS payload"
+        " FROM processing_jobs j JOIN videos v ON v.id = j.subject_id"
+        f" WHERE j.subject_kind = 'video' AND j.stage = 'convert_mp4' {where}"
+        " ORDER BY j.id",
+        *args,
+    ):
+        payload = loads(r["payload"]) or {}
+        if isinstance(payload, dict) and payload.get("dry_run"):
+            continue
+        out[str(r["vid"])] = str(r["state"])
+    return out
+
+
 class _UnionFind:
     def __init__(self) -> None:
         self.parent: dict[str, str] = {}
@@ -413,19 +436,29 @@ async def find_groups(
     library_id: str,
     *,
     scope: Literal["library", "all"] = "library",
+    video_id: str | None = None,
+    converted_only: bool = True,
     to_local: ToLocal | None = None,
     progress: Progress | None = None,
     check_cancel: Callable[[], Awaitable[None]] | None = None,
 ) -> ScanPlan:
     """The duplicate groups of ``library_id`` (``scope="all"``: of every library, cross-
-    library groups included). Reads full hashes of the exact candidates only; writes
-    nothing (:func:`write_groups` does)."""
+    library groups included); with ``video_id``, only the groups that video is in (one
+    item's check). Only videos whose conversion is done are candidates
+    (``converted_only``): a file still queued for conversion is compared when its own
+    check runs, after it. Reads full hashes of the exact candidates only; writes nothing
+    (:func:`write_groups` does)."""
     local = to_local or paths.to_local
     lib = None if scope == "all" else str(library_id)
     rows = await _rows(db, lib)
+    if converted_only:
+        states = await conversion_states(db, lib)
+        rows = [r for r in rows if states.get(r.id) == "done"]
     by_id = {r.id: r for r in rows}
-    copies = await _copies(db, lib)
     plan = ScanPlan()
+    if video_id is not None and str(video_id) not in by_id:
+        return plan  # not converted yet (or gone): its check comes after its conversion
+    copies = await _copies(db, lib)
 
     # ---- exact: one content hash, two paths or more (a row's copies, other libraries)
     buckets: dict[str, list[Member]] = {}
@@ -433,7 +466,11 @@ async def find_groups(
         ms = [Member(r.id, r.library_id, r.path, False, r.size_bytes)]
         ms += [Member(r.id, r.library_id, p, True, s) for p, s in copies.get(r.id, [])]
         buckets.setdefault(r.content_hash, []).extend(ms)
-    candidates = [ms for ms in buckets.values() if len(ms) > 1]
+    candidates = [
+        ms
+        for ms in buckets.values()
+        if len(ms) > 1 and (video_id is None or any(m.video_id == str(video_id) for m in ms))
+    ]
     known = await _known_keys(db, [members_key(ms) for ms in candidates])
     todo: list[list[Member]] = []
     for ms in candidates:
@@ -525,6 +562,8 @@ async def find_groups(
                 ):
                     link(a.id, b.id, "same title, duration and frames")
     for vids in uf.groups():
+        if video_id is not None and str(video_id) not in vids:
+            continue
         ms = []
         for v in vids:
             r = by_id[v]
@@ -573,6 +612,8 @@ async def find_groups(
 class WriteReport:
     created: list[str] = field(default_factory=list)
     reopened: list[str] = field(default_factory=list)
+    #: an open group whose members changed (a third copy): its members replaced
+    updated: list[str] = field(default_factory=list)
     skipped_dismissed: int = 0
     removed_stale: int = 0
     #: the open exact groups of a library with auto_exact on: dedup_apply runs them
@@ -580,15 +621,32 @@ class WriteReport:
 
 
 async def write_groups(
-    db: Any, plan: ScanPlan, library_id: str, *, scope: Literal["library", "all"] = "library"
+    db: Any,
+    plan: ScanPlan,
+    library_id: str,
+    *,
+    scope: Literal["library", "all"] = "library",
+    video_id: str | None = None,
 ) -> WriteReport:
-    """Store the plan: new groups and their members, ``videos.full_hash`` of the rows
-    read; a failed group found again is open again; an open group not found again (its
-    members changed or went) is removed. One transaction."""
+    """Store the plan in one transaction, under one lock for every writer of groups (two
+    items' checks that see the same pair at once converge on one group):
+
+    * a group whose ``members_key`` was dismissed stays dismissed (not written);
+    * one already open is left as it is (a ``failed`` one is open again);
+    * otherwise an open group of the same tier that shares a member video is that group
+      with other members now (a third copy appeared): its members, key, keeper and
+      reason are replaced and its id kept; else a new group is made;
+    * ``videos.full_hash`` of the rows read is stored;
+    * an open group not found again is removed: with ``video_id``, the open groups that
+      video is in; else the open groups of the scope.
+    """
     report = WriteReport()
     stamp = to_ts(db, now())
     found = {g.key for g in plan.groups} | set(plan.known)
     async with db.transaction():
+        if is_pg(db):
+            # SQLite's write transaction (BEGIN IMMEDIATE) is one writer at a time already
+            await db.execute("SELECT pg_advisory_xact_lock(hashtext('maktaba.duplicate_groups'))")
         for vid, h in plan.full_hashes:
             await db.execute("UPDATE videos SET full_hash = $2 WHERE id = $1", vid, h)
         for g in plan.groups:
@@ -610,19 +668,44 @@ async def write_groups(
                     )
                     report.reopened.append(gid)
             else:
-                gid = str(uuid.uuid4())
-                await db.execute(
-                    "INSERT INTO duplicate_groups (id, library_id, tier, status,"
-                    " keeper_video_id, members_key, reason, created_at)"
-                    " VALUES ($1, $2, $3, 'open', $4, $5, $6, $7)",
-                    gid,
-                    g.library_id,
+                vids = g.video_ids
+                overlap = await db.fetchval(
+                    "SELECT d.id FROM duplicate_groups d"
+                    " JOIN duplicate_members m ON m.group_id = d.id"
+                    " WHERE d.status = 'open' AND d.tier = $1"
+                    f" AND m.video_id IN ({_ids_sql(len(vids), 2)})"
+                    " ORDER BY d.created_at LIMIT 1",
                     g.tier,
-                    g.keeper_video_id,
-                    g.key,
-                    g.reason,
-                    stamp,
+                    *vids,
                 )
+                if overlap is not None:
+                    gid = str(overlap)
+                    await db.execute(
+                        "UPDATE duplicate_groups SET library_id = $2, keeper_video_id = $3,"
+                        " members_key = $4, reason = $5 WHERE id = $1",
+                        gid,
+                        g.library_id,
+                        g.keeper_video_id,
+                        g.key,
+                        g.reason,
+                    )
+                    await db.execute("DELETE FROM duplicate_members WHERE group_id = $1", gid)
+                    report.updated.append(gid)
+                else:
+                    gid = str(uuid.uuid4())
+                    await db.execute(
+                        "INSERT INTO duplicate_groups (id, library_id, tier, status,"
+                        " keeper_video_id, members_key, reason, created_at)"
+                        " VALUES ($1, $2, $3, 'open', $4, $5, $6, $7)",
+                        gid,
+                        g.library_id,
+                        g.tier,
+                        g.keeper_video_id,
+                        g.key,
+                        g.reason,
+                        stamp,
+                    )
+                    report.created.append(gid)
                 for m in g.members:
                     await db.execute(
                         "INSERT INTO duplicate_members (group_id, video_id, path, is_copy, score)"
@@ -633,16 +716,24 @@ async def write_groups(
                         m.is_copy,
                         _json(g.scores.get(m.path, {})),
                     )
-                report.created.append(gid)
             if g.auto:
                 report.auto.append(gid)
-        # the open groups of this scope not found again
-        where = "library_id = $1" if scope == "library" else "1 = 1"
-        args = [uid(library_id)] if scope == "library" else []
-        for r in await db.fetch(
-            f"SELECT id, members_key FROM duplicate_groups WHERE {where} AND status = 'open'",
-            *args,
-        ):
+        # the open groups not found again
+        if video_id is not None:
+            stale = await db.fetch(
+                "SELECT DISTINCT d.id AS id, d.members_key AS members_key"
+                " FROM duplicate_groups d JOIN duplicate_members m ON m.group_id = d.id"
+                " WHERE d.status = 'open' AND m.video_id = $1",
+                uid(video_id),
+            )
+        else:
+            where = "library_id = $1" if scope == "library" else "1 = 1"
+            args = [uid(library_id)] if scope == "library" else []
+            stale = await db.fetch(
+                f"SELECT id, members_key FROM duplicate_groups WHERE {where} AND status = 'open'",
+                *args,
+            )
+        for r in stale:
             if str(r["members_key"]) not in found:
                 await db.execute("DELETE FROM duplicate_groups WHERE id = $1", str(r["id"]))
                 report.removed_stale += 1

@@ -25,7 +25,8 @@ import (
 // its release on the third slot instance (StageStart, with the release binding
 // the supervisor checks); the front door then keeps the staging warm set —
 // the channels with demand on live, the preview viewers' channels (33.6), the
-// probe channel and, in turn, each changed channel for verify_probe_seconds —
+// probe channel and, in turn, each changed channel for verify_probe_seconds (a
+// window of them at once that grows while the host keeps up: staging_ramp.go) —
 // within the encoder budget that live and the hot standby leave, and samples
 // the staging slot's output of each warm channel (and the live slot's, to
 // compare) every few seconds. The API reads the samples (GET
@@ -151,6 +152,11 @@ type stagingRun struct {
 	sampling  bool
 	previewMu sync.Mutex
 	previews  map[uuid.UUID]time.Time
+	// the rolling window (staging_ramp.go): how many rolling probes run at once, the
+	// size that overloaded the host (0: none yet), and each warm station's pace
+	window  int
+	ceiling int
+	pace    map[uuid.UUID]*stationPace
 }
 
 func parseIDs(in []string) []uuid.UUID {
@@ -404,9 +410,10 @@ func stagingBudget(capacity, nvencMax, vtMax, liveOn, standbyWarm, maxExtra int)
 
 // planStagingWarm orders the staging warm set (design §6.1): demand first, then
 // preview viewers, the probe channel, then the rolling window over the changed
-// channels not probed yet; removed channels never; cut to the budget.
+// channels not probed yet (at most window of them at once); removed channels never;
+// cut to the budget.
 func planStagingWarm(plan StagingPlan, demands []ChannelDemand, previews []uuid.UUID, probed map[uuid.UUID]bool,
-	budget int) (warm []WarmEntry, deferred []string) {
+	budget, window int) (warm []WarmEntry, deferred []string) {
 	removed := map[uuid.UUID]bool{}
 	for _, id := range parseIDs(plan.Removed) {
 		removed[id] = true
@@ -441,12 +448,16 @@ func planStagingWarm(plan StagingPlan, demands []ChannelDemand, previews []uuid.
 			add(id, WhyRolling)
 		}
 	}
-	for i, c := range cands {
-		if i < budget {
-			warm = append(warm, c)
-		} else {
+	rolling := 0
+	for _, c := range cands {
+		if len(warm) >= budget || (c.Why == WhyRolling && rolling >= window) {
 			deferred = append(deferred, c.Channel)
+			continue
 		}
+		if c.Why == WhyRolling {
+			rolling++
+		}
+		warm = append(warm, c)
 	}
 	return warm, deferred
 }
@@ -498,8 +509,10 @@ func (s *Slots) syncStaging(ctx context.Context, staging string, epoch int64, ca
 	for k, v := range run.probed {
 		probed[k] = v
 	}
+	s.rampLocked(run, staging, budget)
+	window := run.window
 	s.mu.Unlock()
-	warm, deferred := planStagingWarm(plan, demands, previews, probed, budget)
+	warm, deferred := planStagingWarm(plan, demands, previews, probed, budget, window)
 	s.mu.Lock()
 	keep := map[uuid.UUID]time.Time{}
 	for i := range warm {
@@ -515,6 +528,11 @@ func (s *Slots) syncStaging(ctx context.Context, staging string, epoch int64, ca
 	for id := range run.firstSeg {
 		if _, ok := keep[id]; !ok {
 			delete(run.firstSeg, id)
+		}
+	}
+	for id := range run.pace {
+		if _, ok := keep[id]; !ok {
+			delete(run.pace, id)
 		}
 	}
 	run.warm, run.deferred, run.budget = warm, deferred, budget

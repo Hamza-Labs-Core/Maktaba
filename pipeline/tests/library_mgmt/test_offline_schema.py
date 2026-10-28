@@ -46,6 +46,7 @@ SEEDED_BEFORE_SYNC: dict[str, tuple[tuple[str, ...], bool]] = {
     "convert_mp4": (("video",), False),
     "dedup_scan": (("library",), False),  # stories 47.6/47.7: on at the next sync
     "dedup_apply": (("dup_group",), False),
+    "youtube_fetch": (("library",), False),
 }
 EPIC47_STAGES = (
     "convert_mp4",
@@ -271,15 +272,24 @@ def test_the_graph_has_the_epic47_stages() -> None:
     assert by["trash_purge"].pool == "nas_write" and not by["trash_purge"].unreleased
     assert by["youtube_backfill"].pool == by["youtube_fetch"].pool == "network_yt"
     for name in EPIC47_STAGES:
-        # no edges: an admin enqueues them
-        assert not by[name].edges and not by[name].entry_for
-        # story 47.6: dedup_scan requests dedup_apply (auto_exact); nothing else yet
+        # one edge, the per-item order convert -> dedup (spec "Pipeline order"); the
+        # rest are enqueued by an admin or another stage
+        edges = [(e.to, e.map, e.when) for e in by[name].edges]
+        assert edges == ([("dedup_scan", "same_video", "always")] if name == "convert_mp4" else [])
+        assert not by[name].entry_for
+        # the YouTube downloads are queued by the listing (story 47.8); dedup_scan queues
+        # dedup_apply for a group it may apply at once (story 47.6)
+        requesters = {s.name for s in GRAPH if name in s.may_request}
+        allowed = {"youtube_sync"} if name.startswith("youtube_") else set()
+        if name == "dedup_apply":
+            allowed = {"dedup_scan"}
+        assert requesters <= allowed
         assert all(
-            name not in s.may_request
+            e.to != name
             for s in GRAPH
-            if (s.name, name) != ("dedup_scan", "dedup_apply")
+            for e in s.edges
+            if (s.name, name) != ("convert_mp4", "dedup_scan")
         )
-        assert all(e.to != name for s in GRAPH for e in s.edges)
         assert get_impl(name) is not None and get_impl(name).run is not None  # type: ignore[union-attr]
     assert EPIC47_PRIORITIES["youtube_fetch"] < 150 < EPIC47_PRIORITIES["youtube_backfill"]
 
@@ -326,6 +336,7 @@ async def test_the_migrated_rows_are_the_graphs_and_stay_off(db: Database) -> No
     assert list(kinds if is_pg(db) else loads(kinds)) == ["video", "library"]
     assert after["youtube_backfill"] == (False, "not_configured")
     assert after["trash_purge"] == (True, None)
+    assert after["youtube_fetch"] == (True, None)  # story 47.9 shipped
     assert after["dedup_scan"] == after["dedup_apply"] == (True, None)  # stories 47.6/47.7
     pool = await db.fetchrow("SELECT scope, size FROM worker_pools WHERE pool = 'convert'")
     assert (pool["scope"], pool["size"]) == ("global", 1)
