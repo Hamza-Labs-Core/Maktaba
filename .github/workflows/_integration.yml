@@ -65,6 +65,24 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
 
+      - name: Apt package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: apt-integration-${{ hashFiles('tools/ci/apt-install.sh') }}-${{ github.run_id }}
+          restore-keys: apt-integration-
+
+      # The pipeline's file tests (Epic 47: verify, swap, convert, dedup) make
+      # their media with ffmpeg and skip without it.
+      - name: Install ffmpeg
+        timeout-minutes: 15
+        env:
+          APT_INSTALL_TIMEOUT: "300"
+          APT_CACHE_DIR: /home/runner/apt-cache
+        run: |
+          tools/ci/apt-install.sh ffmpeg >/dev/null
+          ffmpeg -hide_banner -version | head -1
+
       - name: Install pipeline deps
         working-directory: pipeline
         run: uv sync --frozen --all-extras
