@@ -108,6 +108,7 @@ func PTSTime(pts int64, now time.Time) time.Time {
 type pidState struct {
 	cc      int
 	haveCC  bool
+	dup     bool // the last payload packet repeated the one before
 	pes     []byte
 	started bool
 }
@@ -198,16 +199,24 @@ func (a *analyzer) packet(p []byte) {
 		off += 1 + alen
 	}
 	st := a.state(pid)
+	// ISO/IEC 13818-1 §2.4.3.3, per PID: the counter goes up by one on each packet with
+	// payload (one without does not count); the first packet seen on a PID (a read
+	// that joined mid-stream) and one with discontinuity_indicator set start afresh; a
+	// packet may be sent twice in a row (a duplicate: the same counter), not three times.
+	dup := false
 	if afc&1 != 0 {
 		if st.haveCC && !disc {
-			want := (st.cc + 1) & 0x0f
-			if cc != want && cc != st.cc { // a duplicate packet is allowed once
+			switch {
+			case cc == (st.cc+1)&0x0f:
+			case cc == st.cc && !st.dup:
+				dup = true
+			default:
 				a.r.CCErrors++
 			}
 		}
-		st.cc, st.haveCC = cc, true
+		st.cc, st.haveCC, st.dup = cc, true, dup
 	}
-	if afc&1 == 0 || off >= tsPacket {
+	if afc&1 == 0 || off >= tsPacket || dup { // a duplicate's payload is already in
 		return
 	}
 	payload := p[off:]

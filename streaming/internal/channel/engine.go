@@ -398,13 +398,19 @@ func (e *Engine) EnsureReady(ctx context.Context, channelID uuid.UUID) (Pipeline
 // channel's single encode. Satisfies hdhr.Streamer.
 func (e *Engine) StreamChannelTS(ctx context.Context, channelID uuid.UUID, w io.Writer) error {
 	flusher, _ := w.(http.Flusher)
+	// one connection, one continuous TS: a station restarted under it carries on
+	// with the continuity counters where they were (ccJoin)
+	cc := newCCJoin()
 	for attempt := 0; attempt < 3; attempt++ {
 		p, err := e.Ensure(ctx, channelID)
 		if err != nil {
 			return err
 		}
+		if attempt > 0 {
+			cc.resume()
+		}
 		e.reg.attach(channelID)
-		err = pumpTS(ctx, p, w, flusher)
+		err = pumpTS(ctx, p, w, flusher, cc)
 		e.reg.detach(channelID)
 		if err != nil || ctx.Err() != nil {
 			return err
@@ -418,7 +424,7 @@ func (e *Engine) StreamChannelTS(ctx context.Context, channelID uuid.UUID, w io.
 // tuner lease is released promptly instead of when the hub gives up).
 const tsWriteTimeout = 15 * time.Second
 
-func pumpTS(ctx context.Context, p Pipeline, w io.Writer, flusher http.Flusher) error {
+func pumpTS(ctx context.Context, p Pipeline, w io.Writer, flusher http.Flusher, cc *ccJoin) error {
 	ch, cancel := p.Subscribe()
 	defer cancel()
 	var rc *http.ResponseController
@@ -436,7 +442,7 @@ func pumpTS(ctx context.Context, p Pipeline, w io.Writer, flusher http.Flusher) 
 			if rc != nil {
 				_ = rc.SetWriteDeadline(time.Now().Add(tsWriteTimeout))
 			}
-			if _, err := w.Write(b); err != nil {
+			if _, err := w.Write(cc.apply(b, false)); err != nil {
 				return err
 			}
 			if flusher != nil {

@@ -21,6 +21,9 @@ type Hub struct {
 	next   int
 	closed bool
 	buf    int
+	// cc runs the continuity counters on across the station's muxers (each
+	// pump is one muxer: a restarted one counts from its own start).
+	cc *ccJoin
 }
 
 // NewHub builds a hub; buf is the per-client queue length in chunks.
@@ -28,7 +31,7 @@ func NewHub(buf int) *Hub {
 	if buf <= 0 {
 		buf = 512 // ≈ 5 MB ≈ 7 s at 6 Mb/s
 	}
-	return &Hub{subs: map[int]chan []byte{}, buf: buf}
+	return &Hub{subs: map[int]chan []byte{}, buf: buf, cc: newCCJoin()}
 }
 
 // Subscribe registers a client. The channel closes when the hub closes
@@ -68,7 +71,7 @@ func (h *Hub) Publish(b []byte) {
 	if h.closed || len(h.subs) == 0 {
 		return
 	}
-	c := append([]byte(nil), b...)
+	c := h.cc.apply(append([]byte(nil), b...), true)
 	for id, ch := range h.subs {
 		select {
 		case ch <- c:
@@ -93,8 +96,12 @@ func (h *Hub) Close() {
 	}
 }
 
-// pump reads r in whole-packet chunks into the hub until EOF/error.
+// pump reads r (one muxer's output) in whole-packet chunks into the hub until
+// EOF/error.
 func (h *Hub) pump(r io.Reader) {
+	h.mu.Lock()
+	h.cc.resume()
+	h.mu.Unlock()
 	buf := make([]byte, hubChunk)
 	for {
 		n, err := io.ReadFull(r, buf)
